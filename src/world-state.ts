@@ -40,6 +40,7 @@ import {
 import { type DeficitMap, parseDeficits } from "./deficits";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
+import { stationTrafficRoster } from "./station-traffic";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
 // same names is the coupling it was extracted to prevent. Import from there.
@@ -56,7 +57,7 @@ export const WORLD_SCHEMA_VERSION = 1;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 3;
+export const WORLD_GENERATOR_VERSION = 4;
 
 export const GALAXY_COUNT = 8;
 
@@ -291,7 +292,7 @@ export function* enumerateCarriers(
 		systemIndex++
 	) {
 		const record = galaxy.systems[systemIndex];
-		for (const station of generateContents(record).stations)
+		for (const station of generateContents(record).stations) {
 			yield {
 				systemIndex,
 				localCarrierId: station.localCarrierId,
@@ -301,6 +302,17 @@ export function* enumerateCarriers(
 				orbitRadiusKm: station.orbit.radiusKm,
 				orbitTheta0: station.orbit.theta0,
 			};
+			for (const actor of stationTrafficRoster(systemIndex, station))
+				yield {
+					systemIndex,
+					localCarrierId: actor.localCarrierId,
+					key: actor.key,
+					stationType: `traffic:${station.type}:${actor.hullId}`,
+					parentId: station.id,
+					orbitRadiusKm: station.orbit.radiusKm,
+					orbitTheta0: station.orbit.theta0,
+				};
+		}
 	}
 }
 

@@ -99,17 +99,10 @@ describe("§9.1 namespace and baseline stability", () => {
 		// halves the galaxy green.
 		//
 		// A pin is a regression check, not a proof the number is *right*, so it
-		// is bracketed by the structure `station-types.md` claims: 1-3 stations
-		// per system over 8 x 256 systems, which puts any correct total between
-		// 2,048 and 6,144. Measured at this seed, every system in all eight
-		// galaxies carries at least one — so the bracket's floor is tight rather
-		// than nominal, and a generator change that started dropping stations
-		// would break the floor before it reached the pin.
-		// 3,229 before #118 reshaped the galaxy; the three galaxies whose layout
-		// attempt re-rolled regenerated whole and carry 33 fewer stations between
-		// them. The floor below still holds: every system in all eight galaxies
-		// carries at least one.
-		expect(carriers).toBe(3196);
+		// is bracketed by the generated station plus one Traffic Carrier per
+		// berth: the mandatory trade station contributes nine carriers and a
+		// three-role system contributes at most twenty-one.
+		expect(carriers).toBe(24932);
 		let systemsWithStations = 0;
 		let widest = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
@@ -119,10 +112,10 @@ describe("§9.1 namespace and baseline stability", () => {
 			systemsWithStations += perSystem.size;
 			widest = Math.max(widest, ...perSystem.values());
 		}
-		expect(widest).toBe(3);
+		expect(widest).toBe(21);
 		expect(systemsWithStations).toBe(8 * 256);
-		expect(carriers).toBeGreaterThanOrEqual(8 * 256);
-		expect(carriers).toBeLessThanOrEqual(8 * 256 * 3);
+		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * 9);
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * 21);
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -140,7 +133,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// The whole reason the key is composite: `station-trade` names one
 		// station in nearly every system.
 		expect(repeatsAcrossSystems).toBeGreaterThan(200);
-		expect(globalIds.size).toBe(3);
+		expect(globalIds.size).toBe(21);
 	});
 
 	test("market rows key on the same composite namespace", () => {
@@ -166,7 +159,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(3);
+		expect(WORLD_GENERATOR_VERSION).toBe(4);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -176,7 +169,7 @@ describe("§9.1 namespace and baseline stability", () => {
 });
 
 /**
- * Pinned at `WORLD_GENERATOR_VERSION` 3 against world seed `0x5ee11e`.
+ * Pinned at `WORLD_GENERATOR_VERSION` 4 against world seed `0x5ee11e`.
  *
  * - 1 → 2: node #32's orbit floor moved every floored station's generated
  *   placement — the set this hashes — so the baseline moved with it.
@@ -184,13 +177,11 @@ describe("§9.1 namespace and baseline stability", () => {
  *   radius, which moved every position and so re-rolled the layout `attempt`
  *   for three of these eight galaxies. An attempt is part of a system's seed,
  *   so those galaxies re-generated whole.
+ * - 3 → 4: #148/#266 added one home-owned Traffic Carrier per generated berth.
  *
- * **Five of the eight are unchanged, and that is correct rather than a stale
- * pin.** A system's polity is a function of `t`, and `t` is scale-free: the
- * profile's core radius is `R/√2`, so `radiusForQuantile(u)/R` depends only on
- * `u` and not on `R` (`tests/galaxy.test.ts` asserts it). `#118` therefore
- * changed *positions*, not what a system *is* — except in the galaxies whose
- * connectivity flipped and re-rolled the attempt. Those are galaxies 1, 2 and 6.
+ * Version 4 changes all eight hashes because every generated station now owns
+ * Traffic Carrier slots. At version 3, five were unchanged by #118's scale-only
+ * polity effect and only galaxies 1, 2 and 6 re-rolled their layout attempt.
  *
  * These are not arbitrary numbers to re-bless when the suite goes red. Each one
  * is a hash of every carrier slot's identity, type, parent and generated
@@ -199,8 +190,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	4141145946, 2438204208, 3662742635, 510919445, 3914238703, 1874293826,
-	1655201375, 1650131075,
+	1097279747, 3299010639, 2421711576, 2262254926, 2196932550, 3294311516,
+	1133819645, 493716014,
 ];
 
 // ---------------------------------------------------------------------------

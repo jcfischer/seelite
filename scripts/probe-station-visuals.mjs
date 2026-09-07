@@ -320,6 +320,12 @@ for (const viewport of VIEWPORTS) {
 	await installViewPlacement(page);
 	await page.goto(URL, { waitUntil: "load" });
 	await bootedGame(page);
+	await page.evaluate(() => {
+		const game = window.__seelite;
+		game.clearTrafficPresentation();
+		game.trafficSystemIndex = game.world.system.record.index;
+		game.trafficActors = [];
+	});
 
 	const stations = await page.evaluate(() =>
 		window.__seelite.world.system.contents.stations.map((s) => ({
@@ -343,8 +349,9 @@ for (const viewport of VIEWPORTS) {
 			id,
 		);
 		await page.evaluate(
-			([bodyId, range]) => window.__viewAlongAxis(bodyId, range),
-			[id, silhouetteKm * CLOSE_RADII],
+			([bodyId, range, comoving]) =>
+				window.__viewAlongAxis(bodyId, range, { comoving }),
+			[id, silhouetteKm * CLOSE_RADII, type === "refinery"],
 		);
 		const m = await measure(page, id);
 		lit[type] = { ...m, silhouetteKm };
@@ -538,6 +545,12 @@ for (const viewport of VIEWPORTS) {
 	await installViewPlacement(page);
 	await page.goto(URL, { waitUntil: "load" });
 	await bootedGame(page);
+	await page.evaluate(() => {
+		const game = window.__seelite;
+		game.clearTrafficPresentation();
+		game.trafficSystemIndex = game.world.system.record.index;
+		game.trafficActors = [];
+	});
 
 	const trade = await page.evaluate(() => {
 		const s = window.__seelite.world.system.contents.stations.find(
