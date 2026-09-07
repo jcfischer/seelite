@@ -62,8 +62,9 @@ interval expresses desired home state rather than an arrival deadline. A
 **Traffic route** may attach a real visit to another station; physical travel
 and contention may delay it. Each station role sets a parked-duty band, while
 actor phases vary within it. At most one pending movement intent reconciles the
-actor toward its current scheduled state. A full station's schedules always
-produce a departure within one minute.
+actor toward its current scheduled state under `station-traffic.md`'s “Delay
+and reconciliation” rule. A full station's schedules always produce a departure
+within one minute.
 _Avoid_: Random spawn timer
 
 **Traffic route**:

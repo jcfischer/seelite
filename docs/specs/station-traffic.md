@@ -148,6 +148,10 @@ arrival law in `arrival.ts`, including its route-length-derived 6–9 second
 duration. Launch runs that same law in reverse. Its outward crossing releases
 the berth and starts the actor's away interval.
 
+A home-station arrival materializes at its hold before requesting Clearance.
+For an in-system Traffic-route destination, the cruise leg has already brought
+the actor to that destination hold before the same request and wait begin.
+
 The hold-to-plane approach is a pure `gameTime` position law. Reserving the lane
 before it begins prevents a Traffic actor and the player from converging on the
 single aperture together, while still keeping external holds distinct from

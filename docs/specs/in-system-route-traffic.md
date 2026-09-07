@@ -12,9 +12,13 @@ Traffic rosters: its home station-qualified Carrier slot remains its persistence
 schedule, arbitration and presentation identity while it travels, queues and
 occupies a destination Berth.
 
-Each `away` interval has a stable ordinal. At its home launch boundary, the
-actor derives the eligible destinations in canonical station-ID order. A
-destination is eligible when it:
+Each `away` interval has a stable ordinal derived from its zero-based position
+in the actor's base schedule. Contention can delay a visit but cannot renumber
+that interval; the ordinal never counts completed trips, materializations or
+system visits. At its home launch boundary, the actor derives the eligible
+destinations in canonical station-ID order: ascending stable `Station.id`,
+using `a.id < b.id ? -1 : a.id > b.id ? 1 : 0`. A destination is eligible when
+it:
 
 1. is not the home station;
 2. has at least one Berth that fits the actor's hull; and
