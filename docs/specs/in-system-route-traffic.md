@@ -8,9 +8,10 @@
 
 A **Traffic route** is one home-owned Traffic actor visiting another station in
 the current system and returning home. The actor never transfers between
-Traffic rosters: its home station-qualified Carrier slot remains its persistence,
-schedule, arbitration and presentation identity while it travels, queues and
-occupies a destination Berth.
+Traffic rosters: its Carrier slot stays in the home roster as the persistence
+and schedule source. That slot's system-wide `CarrierKey` identifies the actor
+for arbitration and presentation while it travels, queues and occupies a
+destination Berth; the destination never acquires the slot.
 
 Each `away` interval has a stable ordinal derived from its zero-based position
 in the actor's base schedule. Contention can delay a visit but cannot renumber
@@ -84,7 +85,7 @@ docking cone and prevents a route from becoming an early clearance grant.
 
 The destination station treats the visitor as an ordinary Carrier in its
 Clearance queue, Transit lane and occupied-Berth set, but does not adopt it into
-its Traffic roster. Stable system-wide Carrier identity supplies every tie-break.
+its Traffic roster. The stable system-wide `CarrierKey` supplies every tie-break.
 
 The home Berth is free immediately after the outward aperture crossing and may
 be allocated normally while the actor is away. The returning actor requests
@@ -105,7 +106,7 @@ guards, proximity exits and travelled distance.
 Route progress advances on canonical 0.1-second ticks from the leg's physical
 start, plus one final fractional tick when queried between boundaries. Render
 frames consume the resulting projection; their `dt` never becomes route time.
-For equal system seed, Carrier identity, schedule boundary, world-state overlay,
+For equal system seed, `CarrierKey`, schedule boundary, world-state overlay,
 player-input timeline and `gameTime`, direct evaluation at time `t` must equal
 stepping to `t`.
 
@@ -113,6 +114,13 @@ The **player-input timeline** is the time-ordered sequence of the player's
 Clearance requests and grants, Berth occupancy, and Transit-lane claims that
 the shared station laws consume. Both direct and stepped evaluation receive
 the same sequence through the queried `gameTime`.
+
+The implementation must expose that sequence as an explicit typed input to the
+pure route evaluator before integrating Traffic routes. Headless checks inject
+fixture sequences; `Game` supplies the live current-system session events at
+the same transitions. This is a transient evaluation seam, not routine save
+history. A reload without such a supplied history reconstructs the seed-only
+route and then applies the player's current reservation or occupancy as below.
 
 Current-system caches may retain the last canonical state to avoid replaying a
 leg from its start every frame. They are disposable acceleration only. An
@@ -181,8 +189,8 @@ mutate either station market.
   moving-body safety.
 - This spec owns Traffic destination selection, the route lifecycle, canonical
   replay and the composition between those two domains.
-- `display-contact.ts` remains the presentation shape; route identity remains
-  the Carrier slot.
+- `display-contact.ts` remains the presentation shape; route identity is the
+  home slot's `CarrierKey`.
 - Hyperspace, combat AI, faction simulation and NPC market mutation remain out
   of scope.
 
@@ -222,7 +230,11 @@ or speed law.
 8. Canonical save output contains no routine destination, route phase, replay
    cache, queue, charge or motion row.
 9. Materialization is inclusive at 10,000 km and absent beyond it. Repeated
-   boundary crossings keep one Carrier identity and never duplicate a contact.
+   boundary crossings keep one `CarrierKey` and never duplicate a contact.
+10. Cold phase-equivalent queries at one and 365 elapsed game days perform work
+    independent of epoch age. Completed schedule intervals, stationary waits
+    and finished legs are skipped analytically; canonical stepping is bounded
+    to at most the one currently active non-stationary leg per actor.
 
 ### 8.2 Browser
 
@@ -241,12 +253,12 @@ A deterministic two- or three-station fixture shows one named Traffic actor:
 ## 9. Known integration risks
 
 - A literal fixed-step reconstruction from a very old game-clock epoch grows
-  with elapsed play time. The implementation must measure cold reconstruction
-  for all Traffic actors after long simulated sessions and may skip stationary
-  intervals, memoize current-system canonical states, or cache completed pure
-  leg results. Those optimizations must remain disposable and reproduce the
-  same projection; they may not become routine save authority or make visit
-  order observable.
+  with elapsed play time. Cold work must instead be independent of epoch age:
+  locate the current base-schedule interval arithmetically, skip completed or
+  stationary segments analytically, and canonical-step at most the one active
+  non-stationary leg per actor. Current-system memoization may accelerate that
+  same projection, but remains disposable and may not become routine save
+  authority or make visit order observable.
 - Canonical replay depends on applying the same player-input timeline to the
   shared station laws. Implementation acceptance must exercise delayed queue,
   Berth and Transit-lane inputs rather than only an uncontended seed fixture.

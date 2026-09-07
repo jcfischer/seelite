@@ -59,8 +59,8 @@ _Avoid_: Spawn table, traffic density
 **Traffic schedule**:
 A Traffic actor's game-clock sequence of parked and away intervals. An away
 interval expresses desired home state rather than an arrival deadline. A
-**Traffic route** may attach a real visit to another station; physical travel
-and contention may delay it. Each station role sets a parked-duty band, while
+real visit may attach to that interval; physical travel and contention may
+delay it. Each station role sets a parked-duty band, while
 actor phases vary within it. At most one pending movement intent reconciles the
 actor toward its current scheduled state under `station-traffic.md`'s “Delay
 and reconciliation” rule. A full station's schedules always produce a departure
@@ -69,10 +69,11 @@ _Avoid_: Random spawn timer
 
 **Traffic route**:
 A home-owned Traffic actor's deterministic visit to another compatible station
-in its current system and back. The actor keeps its home Traffic roster and
-Carrier slot throughout; the destination may hold its Berth without adopting
-it. The route composes the shared launch, cruise, Traffic-hold, Clearance,
-Transit-lane and arrival laws, and derives routine progress from the game clock.
+in its current system and back. Its Carrier slot stays in the home Traffic
+roster; the slot's **CarrierKey** identifies the visitor everywhere, and the
+destination may hold its Berth for that key without adopting the slot. The
+route composes the shared launch, cruise, Traffic hold, Clearance, Transit-lane
+and arrival laws, and derives routine progress from the game clock.
 A system with no eligible other station retains an abstract away interval.
 _Avoid_: Spawn path, roster transfer, timetable
 
