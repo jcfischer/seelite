@@ -59,6 +59,7 @@ export async function installViewFraming(page) {
 			g.clearTrafficPresentation();
 			g.trafficSystemIndex = g.world.system.record.index;
 			g.trafficActors = [];
+			g.updateTrafficAuthority = () => {};
 			g.updateTrafficPresentation = () => {};
 			// **Leave any dock first, and this is not housekeeping.** A docked or
 			// traversing session *places* the ship every frame (§12.6's

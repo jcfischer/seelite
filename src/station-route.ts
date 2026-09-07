@@ -8,7 +8,7 @@ import {
 	beginArrival,
 	beginLaunch,
 } from "./arrival";
-import type { CarrierKey } from "./carrier-key";
+import { carrierKey, type CarrierKey } from "./carrier-key";
 import {
 	advanceCruise,
 	CHARGE_PER_AU,
@@ -27,7 +27,7 @@ import {
 } from "./cruise-guidance";
 import { apertureFrame } from "./docking";
 import type { SystemRecord } from "./galaxy";
-import type { HullId } from "./hull";
+import type { HullEnvelope, HullId } from "./hull";
 import { HULL_SPECS } from "./hull";
 import {
 	advanceSystem,
@@ -144,17 +144,15 @@ export interface TrafficCruiseState {
 	initialPos?: Vec3;
 	initialNose?: Vec3;
 	initialChargeAu?: number;
-	waypointIndex?: number;
 	completedAtS?: number;
 	guidance?: CruiseGuidanceState | null;
-	initialWaypointIndex?: number;
 	initialGuidance?: CruiseGuidanceState | null;
 	initialPhase?: "cruise" | "blocked";
 	initialBlockedById?: string;
 	blockedById?: string;
 }
 
-/** Bounded by actor × destination × direction; a new schedule leg overwrites its key. */
+/** Bounded to 256 physical legs by deterministic oldest-entry eviction. */
 export type TrafficCruiseCache = Map<string, TrafficCruiseState>;
 
 export interface TrafficCruiseEnvironment {
@@ -172,7 +170,6 @@ export interface TrafficCruiseEnvironment {
 	) => {
 		nose: Vec3;
 		throttle: number;
-		waypointIndex?: number;
 		guidance?: CruiseGuidanceState | null;
 		error?: CruiseGuidanceError | null;
 	};
@@ -289,7 +286,6 @@ const advanceTrafficCruiseStep = (
 					: { x: 0, y: 0, z: 0 }
 				: scale(guidance.nose, step.speedKms),
 		nose: guidance.nose,
-		waypointIndex: guidance.waypointIndex ?? state.waypointIndex,
 		guidance:
 			step.exit === "proximity"
 				? null
@@ -317,8 +313,6 @@ export function evaluateTrafficCruise(
 	const initialPos = state.initialPos ?? state.pos;
 	const initialNose = state.initialNose ?? state.nose;
 	const initialChargeAu = state.initialChargeAu ?? state.chargeAu;
-	const initialWaypointIndex =
-		state.initialWaypointIndex ?? state.waypointIndex ?? 1;
 	const initialGuidance =
 		state.initialGuidance === undefined
 			? (state.guidance ?? null)
@@ -364,9 +358,7 @@ export function evaluateTrafficCruise(
 				initialPos: { ...initialPos },
 				initialNose: { ...initialNose },
 				initialChargeAu,
-				waypointIndex: initialWaypointIndex,
 				guidance: initialGuidance,
-				initialWaypointIndex,
 				initialGuidance,
 				initialPhase,
 				initialBlockedById,
@@ -411,6 +403,8 @@ export interface TrafficPlayerEvent {
 	toS: number;
 	key?: CarrierKey;
 	movement?: "arrival" | "launch";
+	/** Required for a shared Clearance queue contender. */
+	hull?: HullEnvelope;
 }
 
 export interface SystemTrafficProjection extends TrafficProjection {
@@ -766,7 +760,6 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		startedAtS: spoolEndS,
 		atS: spoolEndS,
 		workTicks: 0,
-		waypointIndex: 1,
 		guidance: initialGuidance.guidance,
 		initialPhase: initialGuidance.error ? "blocked" : "cruise",
 		initialBlockedById: initialGuidance.error?.blockerId,
@@ -951,25 +944,25 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		readyAt: holdReachedS,
 		hull: HULL_SPECS[actor.hullId].env,
 	};
-	const clearanceAtS = blockedUntil(
-		timeline,
-		selected.id,
-		"clearance",
-		holdReachedS,
-	);
-	if (gameTime < clearanceAtS)
-		return withRoute(actor, "clearance-queued", holdAt(gameTime), {
-			destinationStationId: selected.id,
-			chargeAu: drop.chargeAu,
-			queueRequest: request,
-			pendingIntent,
-			originBerthOccupied: false,
-			workTicks: drop.workTicks,
-		});
+	const clearanceAtS = holdReachedS;
 	const occupied =
 		input.occupiedByStation?.get(selected.id) ?? new Set<string>();
+	const playerClearanceRequests = timeline
+		.filter(
+			(event) =>
+				event.stationId === selected.id &&
+				event.kind === "clearance" &&
+				event.hull &&
+				event.fromS <= gameTime &&
+				event.toS > gameTime,
+		)
+		.map((event) => ({
+			key: event.key ?? carrierKey(record.index, "player"),
+			readyAt: event.fromS,
+			hull: event.hull!,
+		}));
 	const promotion = clearancePromotion(
-		[request],
+		[...playerClearanceRequests, request],
 		destinationInterior,
 		occupied,
 		clearanceAtS,

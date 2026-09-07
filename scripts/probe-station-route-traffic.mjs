@@ -26,11 +26,25 @@ try {
 		const sim = await import("/src/sim.ts");
 		const station = await import("/src/station.ts");
 		const docking = await import("/src/docking.ts");
+		const hull = await import("/src/hull.ts");
+		let maxWarmTicksPerCall = 0;
+		const cachedWork = () =>
+			[...g.trafficCruiseCache.values()].reduce(
+				(total, state) => total + state.workTicks,
+				0,
+			);
 		const refreshTraffic = () => {
 			let attempts = 0;
 			do {
 				g.trafficTick = Number.NaN;
-				g.updateTrafficPresentation(g.cameraPos());
+				const wasWarming = g.trafficWarmIndex < g.trafficActors.length;
+				const beforeWork = cachedWork();
+				g.updateTrafficAuthority();
+				if (wasWarming)
+					maxWarmTicksPerCall = Math.max(
+						maxWarmTicksPerCall,
+						cachedWork() - beforeWork,
+					);
 				attempts++;
 			} while (g.trafficRoutes.length === 0 && attempts <= 2_000);
 			return attempts;
@@ -164,9 +178,13 @@ try {
 			kind: "clearance",
 			fromS: departure,
 			toS: departure + 1_000,
+			hull: hull.HULL_SPECS.explorer.env,
 		};
 		const arrivalAt = arrivingSample.t + 0.2;
 		const clearance = present(arrivalAt, 100, [clearanceEvent]);
+		const incompatibleClearance = present(arrivalAt, 100, [
+			{ ...clearanceEvent, hull: hull.HULL_SPECS.carrier.env },
+		]);
 		const laneEvent = {
 			stationId: destination,
 			kind: "lane",
@@ -203,7 +221,7 @@ try {
 		});
 		g.world.gameTime = samples.get("cruise").t;
 		g.trafficTick = Number.NaN;
-		g.updateTrafficPresentation(g.cameraPos());
+		g.updateTrafficAuthority();
 		const retainedPlayerEvents = g.trafficPlayerTimeline.length;
 
 		const planetId = g.world.system.contents.planets[0]?.id;
@@ -238,6 +256,7 @@ try {
 			coldWarmCalls,
 			coldActorCount,
 			coldStartIndex,
+			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
 			actor: {
@@ -258,6 +277,7 @@ try {
 			boundary,
 			insideAgain,
 			clearance,
+			incompatibleClearance,
 			lane,
 			arriving,
 			docked,
@@ -328,7 +348,20 @@ try {
 					dockPhase: g.dock.phase,
 					requestCount: g.playerLaneRequests.size,
 				};
-				return { playerArrivalGuard, refusedLaunch };
+				g.berthOccupancy.set(stationId, new Set([berthId]));
+				g.clearTrafficPresentation();
+				const staleOccupancyCleared = g.berthOccupancy.size === 0;
+				g.trafficSystemIndex = g.world.system.record.index;
+				g.trafficActors = [];
+				g.trafficTick = 42;
+				g.render(0);
+				const renderLeavesAuthorityAlone = g.trafficTick === 42;
+				return {
+					playerArrivalGuard,
+					refusedLaunch,
+					staleOccupancyCleared,
+					renderLeavesAuthorityAlone,
+				};
 			})(),
 		};
 	});
@@ -391,12 +424,20 @@ try {
 	check(
 		"cold route replay is split across fixed-budget presentation calls",
 		result.coldWarmCalls > result.coldActorCount - result.coldStartIndex + 1 &&
-			result.coldWarmCalls <= 2_000,
+			result.coldWarmCalls <= 2_000 &&
+			result.maxWarmTicksPerCall > 0 &&
+			result.maxWarmTicksPerCall <= 100,
 		JSON.stringify({
 			calls: result.coldWarmCalls,
 			actors: result.coldActorCount,
 			start: result.coldStartIndex,
+			maxTicks: result.maxWarmTicksPerCall,
 		}),
+	);
+	check(
+		"an incompatible player request does not block a fitting Traffic berth",
+		result.incompatibleClearance.phase === "arriving",
+		JSON.stringify(result.incompatibleClearance),
 	);
 	check(
 		"explicit player events delay Traffic through shared queue arbitration",
@@ -467,6 +508,18 @@ try {
 			result.refusedLaunch.dockPhase === "docked" &&
 			result.refusedLaunch.requestCount === 0,
 		JSON.stringify(result.refusedLaunch),
+	);
+	check(
+		"system cleanup drops stale berth occupancy before warm-up",
+		result.staleOccupancyCleared === true,
+		JSON.stringify({ staleOccupancyCleared: result.staleOccupancyCleared }),
+	);
+	check(
+		"rendering presentation does not advance Traffic authority",
+		result.renderLeavesAuthorityAlone === true,
+		JSON.stringify({
+			renderLeavesAuthorityAlone: result.renderLeavesAuthorityAlone,
+		}),
 	);
 	await page.close();
 } finally {

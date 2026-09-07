@@ -176,12 +176,49 @@ describe("terminal-to-terminal route projection", () => {
 					kind: "clearance",
 					fromS: departure,
 					toS: departure + 1000,
+					hull: HULL_SPECS.explorer.env,
 				},
 			],
 		});
 		expect(delayed.key).toBe(actor.key);
 		expect(delayed.phase).toBe("clearance-queued");
 		expect(delayed.queueRequest?.key).toBe(actor.key);
+	});
+
+	test("an older incompatible player request does not block a fitting Carrier", () => {
+		let arrivalTime = departure;
+		let baseline = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: arrivalTime,
+		});
+		while (baseline.phase !== "arriving" && arrivalTime < departure + 900) {
+			arrivalTime += 0.5;
+			baseline = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: arrivalTime,
+			});
+		}
+		const projected = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: arrivalTime,
+			playerTimeline: [
+				{
+					stationId: required(
+						baseline.destinationStationId ?? undefined,
+						"incompatible-player destination",
+					),
+					kind: "clearance",
+					fromS: departure,
+					toS: departure + 1_000,
+					key: carrierKey(record.index, "player"),
+					hull: HULL_SPECS.carrier.env,
+				},
+			],
+		});
+		expect(projected.phase).toBe("arriving");
 	});
 
 	test("shared lane arbitration honors ready time instead of privileging the player", () => {

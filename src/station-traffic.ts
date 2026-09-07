@@ -227,17 +227,30 @@ export interface LaneRequest {
 	kind: "arrival" | "launch";
 }
 
+export interface StationTurn {
+	key: CarrierKey;
+	readyAt: number;
+	kind: "launch" | "arrival" | "clearance";
+}
+
+/** Total order used before committing non-preemptive station work. */
+export const compareStationTurns = (a: StationTurn, b: StationTurn): number =>
+	a.readyAt - b.readyAt ||
+	(a.kind === b.kind
+		? 0
+		: a.kind === "launch"
+			? -1
+			: b.kind === "launch"
+				? 1
+				: a.kind === "arrival"
+					? -1
+					: 1) ||
+	compareCarrierKeys(a.key, b.key);
+
 export function laneWinner(
 	requests: readonly LaneRequest[],
 ): LaneRequest | null {
-	return (
-		[...requests].sort(
-			(a, b) =>
-				a.readyAt - b.readyAt ||
-				(a.kind === b.kind ? 0 : a.kind === "launch" ? -1 : 1) ||
-				compareCarrierKeys(a.key, b.key),
-		)[0] ?? null
-	);
+	return [...requests].sort(compareStationTurns)[0] ?? null;
 }
 
 export const TRAFFIC_MATERIALIZE_KM = 10_000;

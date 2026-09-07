@@ -272,6 +272,7 @@ import {
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
+	type HullEnvelope,
 	type HullId,
 	type HullVariantId,
 } from "./hull";
@@ -288,10 +289,12 @@ import {
 	targetDesignation,
 } from "./display-contact";
 import {
+	compareStationTurns,
 	laneWinner,
 	materializeTrafficContact,
 	stationTrafficRoster,
 	TRAFFIC_DEMATERIALIZE_KM,
+	TRAFFIC_MATERIALIZE_KM,
 	trafficScheduleAt,
 	type TrafficActor,
 } from "./station-traffic";
@@ -3226,6 +3229,7 @@ class Game {
 		kind: TrafficPlayerEvent["kind"],
 		fromS: number,
 		movement?: "arrival" | "launch",
+		hull?: HullEnvelope,
 	) {
 		const key = this.playerTrafficKey();
 		if (
@@ -3245,6 +3249,7 @@ class Game {
 			toS: Number.POSITIVE_INFINITY,
 			key,
 			...(movement ? { movement } : {}),
+			...(hull ? { hull } : {}),
 		});
 	}
 
@@ -3298,6 +3303,7 @@ class Game {
 		this.trafficCruiseCache.clear();
 		this.trafficWarmIndex = 0;
 		this.playerLaneRequests.clear();
+		this.berthOccupancy.clear();
 		this.trafficTick = Number.NaN;
 		this.selectableCache = null;
 	}
@@ -3312,22 +3318,31 @@ class Game {
 			.sort((a, b) => compareCarrierKeys(a.key, b.key));
 	}
 
-	/** Materialize the 10 Hz canonical Traffic projection into one mesh/contact per Carrier. */
-	private updateTrafficPresentation(cameraPos: Vec3) {
+	/** Advance generated Traffic authority at the simulation boundary. */
+	private updateTrafficAuthority() {
 		this.ensureTrafficActors();
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
 		if (this.trafficWarmIndex < this.trafficActors.length) {
-			const actor = this.trafficActors[this.trafficWarmIndex];
-			const warmed = projectSystemTrafficActor({
-				record: this.world.system.record,
-				actor,
-				gameTime: tick / 10,
-				playerTimeline: this.trafficPlayerTimeline,
-				cruiseCache: this.trafficCruiseCache,
-				projectionSystem: makeSystem(this.world.system.record, tick / 10),
-				cruiseTickBudget: 100,
-			});
-			if (!warmed.warmIncomplete) this.trafficWarmIndex++;
+			// Four equal slices share one 100-tick frame ceiling. Finishing a cheap
+			// actor advances immediately instead of suppressing every Carrier for at
+			// least one whole frame per roster entry.
+			for (
+				let slice = 0;
+				slice < 4 && this.trafficWarmIndex < this.trafficActors.length;
+				slice++
+			) {
+				const actor = this.trafficActors[this.trafficWarmIndex];
+				const warmed = projectSystemTrafficActor({
+					record: this.world.system.record,
+					actor,
+					gameTime: tick / 10,
+					playerTimeline: this.trafficPlayerTimeline,
+					cruiseCache: this.trafficCruiseCache,
+					projectionSystem: makeSystem(this.world.system.record, tick / 10),
+					cruiseTickBudget: 25,
+				});
+				if (!warmed.warmIncomplete) this.trafficWarmIndex++;
+			}
 			return;
 		}
 		if (tick !== this.trafficTick) {
@@ -3398,17 +3413,16 @@ class Game {
 				}
 				occupied.set(stationId, set);
 			}
-			const orderedActors = baselines.sort(
-				(a, b) =>
-					Math.min(
-						a.projection.queueRequest?.readyAt ?? Number.POSITIVE_INFINITY,
-						a.projection.laneRequest?.readyAt ?? Number.POSITIVE_INFINITY,
-					) -
-						Math.min(
-							b.projection.queueRequest?.readyAt ?? Number.POSITIVE_INFINITY,
-							b.projection.laneRequest?.readyAt ?? Number.POSITIVE_INFINITY,
-						) || compareCarrierKeys(a.actor.key, b.actor.key),
-			);
+			const orderedActors = baselines.sort((a, b) => {
+				const turn = (row: (typeof baselines)[number]) =>
+					row.projection.laneRequest ?? {
+						key: row.actor.key,
+						readyAt:
+							row.projection.queueRequest?.readyAt ?? Number.POSITIVE_INFINITY,
+						kind: "clearance" as const,
+					};
+				return compareStationTurns(turn(a), turn(b));
+			});
 			for (const { actor, projection: baseline } of orderedActors) {
 				const ownsSettledBerth = Boolean(
 					baseline.terminalStationId &&
@@ -3475,43 +3489,59 @@ class Game {
 						occupied.set(stationId, set);
 					}
 				}
-
-				const previous = this.trafficContacts.get(actor.key);
-				const shown =
-					projection.phase === "abstract-away"
-						? null
-						: materializeTrafficContact(
-								actor,
-								projection,
-								this.world.ship.pos,
-								previous ? TRAFFIC_DEMATERIALIZE_KM : undefined,
-							);
-				if (!shown) {
-					if (previous) {
-						this.unregisterContact(previous);
-						this.trafficContacts.delete(actor.key);
-						this.selectableCache = null;
-					}
-					this.trafficMeshes.get(actor.key)?.removeFromParent();
-					continue;
-				}
-				if (previous) Object.assign(previous, shown);
-				else {
-					this.trafficContacts.set(actor.key, shown);
-					this.registerContact(shown);
-					this.selectableCache = null;
-				}
-				let mesh = this.trafficMeshes.get(actor.key);
-				if (!mesh) {
-					mesh = buildShipMesh(actor.hullId, actor.variant).root;
-					mesh.name = `traffic-${actor.localCarrierId}`;
-					this.trafficMeshes.set(actor.key, mesh);
-					this.nearScene.add(mesh);
-				} else if (!mesh.parent) this.nearScene.add(mesh);
 			}
 			this.berthOccupancy.clear();
 			for (const [stationId, berths] of occupied)
 				this.berthOccupancy.set(stationId, berths);
+		}
+	}
+
+	/** Synchronize contacts and meshes from authority without changing it. */
+	private updateTrafficPresentation(cameraPos: Vec3) {
+		for (const projection of this.trafficRoutes) {
+			const actor = this.trafficActors.find(
+				(candidate) => candidate.key === projection.key,
+			);
+			if (!actor) continue;
+			const previous = this.trafficContacts.get(actor.key);
+			const visible =
+				projection.phase !== "abstract-away" &&
+				length(sub(projection.pos, this.world.ship.pos)) <=
+					(previous ? TRAFFIC_DEMATERIALIZE_KM : TRAFFIC_MATERIALIZE_KM);
+			if (!visible) {
+				if (previous) {
+					this.unregisterContact(previous);
+					this.trafficContacts.delete(actor.key);
+					this.selectableCache = null;
+				}
+				this.trafficMeshes.get(actor.key)?.removeFromParent();
+				continue;
+			}
+			if (previous) {
+				previous.pos.x = projection.pos.x;
+				previous.pos.y = projection.pos.y;
+				previous.pos.z = projection.pos.z;
+				previous.velocity.x = projection.vel.x;
+				previous.velocity.y = projection.vel.y;
+				previous.velocity.z = projection.vel.z;
+			} else {
+				const shown = materializeTrafficContact(
+					actor,
+					projection,
+					this.world.ship.pos,
+				);
+				if (!shown) continue;
+				this.trafficContacts.set(actor.key, shown);
+				this.registerContact(shown);
+				this.selectableCache = null;
+			}
+			let mesh = this.trafficMeshes.get(actor.key);
+			if (!mesh) {
+				mesh = buildShipMesh(actor.hullId, actor.variant).root;
+				mesh.name = `traffic-${actor.localCarrierId}`;
+				this.trafficMeshes.set(actor.key, mesh);
+				this.nearScene.add(mesh);
+			} else if (!mesh.parent) this.nearScene.add(mesh);
 		}
 
 		for (const projection of this.trafficRoutes) {
@@ -5045,7 +5075,13 @@ class Game {
 		});
 		this.dockingStates.set(chosen.id, next);
 		if (next.clearance.kind === "queued")
-			this.openPlayerTrafficEvent(chosen.id, "clearance", this.world.gameTime);
+			this.openPlayerTrafficEvent(
+				chosen.id,
+				"clearance",
+				this.world.gameTime,
+				undefined,
+				PLAYER_ENVELOPE,
+			);
 		else this.closePlayerTrafficEvent(chosen.id, "clearance");
 		return { id: chosen.id, state: next };
 	}
@@ -6217,6 +6253,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		this.updateTrafficAuthority();
 		this.updateLocalFrameBody();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all

@@ -5,6 +5,7 @@ import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
 import {
 	clearancePromotion,
+	compareStationTurns,
 	laneWinner,
 	materializeTrafficContact,
 	stationTrafficRoster,
@@ -161,6 +162,16 @@ describe("shared station arbitration", () => {
 				{ key: arrival, readyAt: 10, kind: "arrival" },
 			]),
 		).toEqual({ key: arrival, readyAt: 10, kind: "arrival" });
+	});
+
+	test("frame commitment orders an exact-tie launch before an arrival", () => {
+		const arrival = carrierKey(7, "station-trade/traffic-00");
+		const launch = carrierKey(7, "station-trade/traffic-99");
+		const ordered = [
+			{ key: arrival, readyAt: 10, kind: "arrival" as const },
+			{ key: launch, readyAt: 10, kind: "launch" as const },
+		].sort(compareStationTurns);
+		expect(ordered.map((turn) => turn.kind)).toEqual(["launch", "arrival"]);
 	});
 });
 
