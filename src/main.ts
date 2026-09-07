@@ -1236,7 +1236,7 @@ class Game {
 	private readonly trafficOrigin = new THREE.Vector3();
 	private readonly trafficAttitude = new THREE.Matrix4();
 	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
-	/** Cold canonical replays are warmed one actor per frame before presentation. */
+	/** Cold canonical replays share a bounded per-frame warm-up budget. */
 	private trafficWarmIndex = 0;
 	/** Probe-visible readback of the pure projections used for this frame. */
 	readonly trafficRoutes: SystemTrafficProjection[] = [];
@@ -1566,7 +1566,19 @@ class Game {
 
 	/** The player and Traffic berth holds at one station (§13.2). */
 	private occupiedAt(id: string): ReadonlySet<string> {
+		// Cache warm-up has not yet reconstructed authoritative reservations.
+		// Fail closed rather than offering a berth Traffic may already own.
+		if (!this.trafficAuthorityReady())
+			return new Set(this.interiorOf(id).berths.map((berth) => berth.id));
 		return this.berthOccupancy.get(id) ?? EMPTY_BERTHS;
+	}
+
+	private trafficAuthorityReady(): boolean {
+		return (
+			Number.isFinite(this.trafficTick) &&
+			this.trafficWarmIndex >= this.trafficActors.length &&
+			this.trafficRoutes.length === this.trafficActors.length
+		);
 	}
 
 	/**
@@ -3291,13 +3303,17 @@ class Game {
 				this.trafficPlayerTimeline.splice(i, 1);
 	}
 
-	/** Drop only current-system Traffic presentation; generated authority is rebuilt on demand. */
-	private clearTrafficPresentation() {
+	private disposeTrafficPresentation() {
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
 		for (const mesh of this.trafficMeshes.values()) mesh.removeFromParent();
 		this.trafficContacts.clear();
 		this.trafficMeshes.clear();
+	}
+
+	/** Reset presentation and transient authority when its system changes. */
+	private clearTrafficPresentation() {
+		this.disposeTrafficPresentation();
 		this.trafficRoutes.length = 0;
 		this.trafficPlayerTimeline.length = 0;
 		this.trafficCruiseCache.clear();
@@ -3504,10 +3520,15 @@ class Game {
 			);
 			if (!actor) continue;
 			const previous = this.trafficContacts.get(actor.key);
+			const dx = projection.pos.x - this.world.ship.pos.x;
+			const dy = projection.pos.y - this.world.ship.pos.y;
+			const dz = projection.pos.z - this.world.ship.pos.z;
+			const rangeKm = previous
+				? TRAFFIC_DEMATERIALIZE_KM
+				: TRAFFIC_MATERIALIZE_KM;
 			const visible =
 				projection.phase !== "abstract-away" &&
-				length(sub(projection.pos, this.world.ship.pos)) <=
-					(previous ? TRAFFIC_DEMATERIALIZE_KM : TRAFFIC_MATERIALIZE_KM);
+				dx * dx + dy * dy + dz * dz <= rangeKm * rangeKm;
 			if (!visible) {
 				if (previous) {
 					this.unregisterContact(previous);
@@ -5518,6 +5539,7 @@ class Game {
 		readyAt: number,
 		movement: "arrival" | "launch",
 	): boolean {
+		if (!this.trafficAuthorityReady()) return false;
 		const contenders = this.trafficRoutes
 			.filter(
 				(route) =>

@@ -985,11 +985,6 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		key: actor.key,
 		movement: "arrival",
 	});
-	const lane = laneWinner([
-		{ key: actor.key, readyAt: laneAtS, kind: "arrival" },
-	]);
-	if (!lane || lane.key !== actor.key)
-		throw new Error(`lane arbitration lost the sole request for ${actor.key}`);
 	if (gameTime < laneAtS)
 		return withRoute(actor, "lane-queued", holdAt(gameTime), {
 			destinationStationId: selected.id,

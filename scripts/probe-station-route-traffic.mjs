@@ -52,6 +52,16 @@ try {
 		g.world.gameTime = 4;
 		sim.advanceSystem(g.world.system, 4);
 		const coldStartIndex = g.trafficWarmIndex;
+		const coldStationId = g.trafficActors[0]?.homeStationId;
+		const coldBerthCount = coldStationId
+			? g.berthIdsOfStation(coldStationId).length
+			: 0;
+		const coldOccupiedCount = coldStationId
+			? g.occupiedAt(coldStationId).size
+			: 0;
+		const coldLaneAvailable = coldStationId
+			? g.playerWinsTrafficLane(coldStationId, 4, "arrival")
+			: true;
 		const coldWarmCalls = refreshTraffic();
 		const coldActorCount = g.trafficActors.length;
 		const settledBerths = g.trafficRoutes
@@ -72,6 +82,17 @@ try {
 		const duplicateSettledBerths = settledBerths.filter(
 			(key, index) => settledBerths.indexOf(key) !== index,
 		);
+		const authorityTickMs = [];
+		for (let i = 1; i <= 12; i++) {
+			g.world.gameTime = 4 + i * 0.1;
+			sim.advanceSystem(g.world.system, g.world.gameTime);
+			const started = performance.now();
+			g.updateTrafficAuthority();
+			authorityTickMs.push(performance.now() - started);
+		}
+		const sortedAuthorityTickMs = [...authorityTickMs].sort((a, b) => a - b);
+		const authorityP95Ms =
+			sortedAuthorityTickMs[Math.ceil(sortedAuthorityTickMs.length * 0.95) - 1];
 		const actor = g.trafficActors.find(
 			(candidate) =>
 				candidate.homeStationId === "station-trade" && candidate.ordinal === 0,
@@ -256,9 +277,13 @@ try {
 			coldWarmCalls,
 			coldActorCount,
 			coldStartIndex,
+			coldBerthCount,
+			coldOccupiedCount,
+			coldLaneAvailable,
 			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
+			authorityP95Ms,
 			actor: {
 				key: actor.key,
 				name: actor.callsign,
@@ -433,6 +458,22 @@ try {
 			start: result.coldStartIndex,
 			maxTicks: result.maxWarmTicksPerCall,
 		}),
+	);
+	check(
+		"player berth and lane access fail closed until Traffic authority is warm",
+		result.coldBerthCount > 0 &&
+			result.coldOccupiedCount === result.coldBerthCount &&
+			result.coldLaneAvailable === false,
+		JSON.stringify({
+			berths: result.coldBerthCount,
+			occupied: result.coldOccupiedCount,
+			laneAvailable: result.coldLaneAvailable,
+		}),
+	);
+	check(
+		"warm 10 Hz Traffic authority stays inside one 60 Hz frame",
+		result.authorityP95Ms < 1000 / 60,
+		JSON.stringify({ p95Ms: result.authorityP95Ms }),
 	);
 	check(
 		"an incompatible player request does not block a fitting Traffic berth",

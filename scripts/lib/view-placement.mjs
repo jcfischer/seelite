@@ -59,6 +59,7 @@ export async function installViewFraming(page) {
 			g.clearTrafficPresentation();
 			g.trafficSystemIndex = g.world.system.record.index;
 			g.trafficActors = [];
+			g.trafficTick = Math.floor(g.world.gameTime * 10);
 			g.updateTrafficAuthority = () => {};
 			g.updateTrafficPresentation = () => {};
 			// **Leave any dock first, and this is not housekeeping.** A docked or
