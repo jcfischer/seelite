@@ -822,6 +822,12 @@ charge as the player-facing cruise path. Route time advances on canonical
 0.1-second ticks against the authoritative game clock; render cadence and visit
 order do not advance it.
 
+Section 7's 12 AU capacity remains the player baseline. Traffic routes extend
+the shared regeneration and docking-refill seams to accept an explicit capacity
+and pass their hull's `HULL_SPECS[hull].chargeAu`; distance consumption and the
+player default remain unchanged. `in-system-route-traffic.md` §1 defines the
+bounded detour-chain snapshot used only for initial destination eligibility.
+
 The actor cruises toward a moving destination Traffic hold, then uses normal
 flight and the station-owned clearance and arrival laws. Its 10,000 km
 materialization boundary creates only a mesh and `DisplayContact`; it does not

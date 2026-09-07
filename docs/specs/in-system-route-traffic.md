@@ -16,15 +16,24 @@ destination Berth; the destination never acquires the slot.
 Each `away` interval has a stable ordinal derived from its zero-based position
 in the actor's base schedule. Contention can delay a visit but cannot renumber
 that interval; the ordinal never counts completed trips, materializations or
-system visits. At its home launch boundary, the actor derives the eligible
-destinations in canonical station-ID order: ascending stable `Station.id`,
-using `a.id < b.id ? -1 : a.id > b.id ? 1 : 0`. A destination is eligible when
-it:
+system visits. At the outward aperture crossing that begins its away interval,
+the actor derives the eligible destinations in canonical station-ID order:
+ascending stable `Station.id`, using
+`a.id < b.id ? -1 : a.id > b.id ? 1 : 0`. A destination is eligible when it:
 
 1. is not the home station;
 2. has at least one Berth that fits the actor's hull; and
 3. has a bounded cruise plan whose complete planned distance fits the actor's
    full hull-specific drive charge.
+
+The eligibility plan is a bounded snapshot at that outward crossing. For each
+candidate hold, call `cruiseRouteBlocker` from the actor's crossing pose against
+masses evaluated at that `gameTime`. No blocker yields the one-segment chain
+`[from, hold]`. A blocker is passed once to `planCruiseDetour` with no retained
+side; `null` makes that destination ineligible, while a plan yields
+`[from, waypoint0, waypoint1, hold]`. The planned distance is the sum of the
+Euclidean lengths of adjacent chain segments. It includes the initial detour
+but is not a promise about later moving-body replans, which §4.2 handles.
 
 Let `n` be the eligible-list length, `actorOrdinal` the zero-based ordinal of
 the actor in its home Traffic roster, and `awayOrdinal` the zero-based ordinal
@@ -144,8 +153,8 @@ keeping the Traffic hold selected. If a replan has no safe side, the actor
 drops to normal flight in the blocker's frame and retries on canonical route
 ticks; it neither changes destination nor pretends the obstruction is absent.
 
-No planned leg begins unless its complete selected polyline fits the actor's
-full drive charge. A later moving-body replan can make that estimate stale. If
+No planned leg begins unless §1's complete eligibility chain fits the actor's
+full drive charge. A later moving-body replan can make that snapshot stale. If
 the actual metered travel exhausts charge, the actor drops to normal flight,
 regenerates at the existing passive rate, and retries when the remaining route
 is charge-reachable. The delay is ordinary schedule reconciliation, not saved
@@ -170,11 +179,15 @@ authority handoff.
 
 ## 6. Drive charge
 
-Traffic actors use `HULL_SPECS[hull].chargeAu`. `advanceCruise` meters actual
-powered distance through the existing distance-based charge law. Every
-completed dock refills to the hull's capacity for free, at home or away; normal
-flight uses the existing passive regeneration and cruise consumes no invented
-NPC reserve.
+Traffic actors use `HULL_SPECS[hull].chargeAu`. `advanceCruise` already meters
+actual powered distance through the existing distance-based consumption law,
+but today's regeneration and docking call sites cap every ship at the player's
+`CHARGE_CAPACITY_AU`. Implementation must parameterize those capacity/refill
+seams with an explicit `capacityAu`, defaulting to `CHARGE_CAPACITY_AU` so the
+player retains the current 12 AU behavior; Traffic passes its hull's
+`chargeAu`. Every completed dock then refills to that capacity for free, at home
+or away. Normal flight uses the same passive rate and cruise consumes no
+invented NPC reserve.
 
 Charge is routine derived route state. It is reconstructed from the last
 completed dock and metered canonical segments and does not add a save row.
@@ -222,8 +235,10 @@ or speed law.
    and oldest-ready policies. A visiting actor contributes to occupancy without
    joining the destination Traffic roster.
 6. The pure guidance path calls the production cruise speed, detour, moving-body
-   guard and charge functions. A control using straight timetable interpolation
-   must fail the obstruction fixture.
+   guard and distance-consumption functions. Regeneration and docking-refill
+   checks pass an explicit hull capacity while a player control remains capped
+   at 12 AU. A control using straight timetable interpolation must fail the
+   obstruction fixture.
 7. A full charge covers every initially selected planned polyline. Unexpected
    exhaustion follows normal-flight regeneration and deterministic retry, and a
    completed dock restores the actor's hull-specific capacity.
