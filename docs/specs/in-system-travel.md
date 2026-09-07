@@ -816,10 +816,11 @@ unchanged.
 Work-graph decision
 [#261](https://github.com/jcfischer/seelite/issues/261) gives a home-owned
 Traffic actor a real in-system route without adding another travel regime. Its
-pure guidance controller feeds the same `advanceCruise`, bounded detour,
-moving-body guard and distance-metered drive charge as the player-facing cruise
-path. Route time advances on canonical 0.1-second ticks against the
-authoritative game clock; render cadence and visit order do not advance it.
+implementation will extract a pure guidance controller that feeds the same
+`advanceCruise`, bounded detour, moving-body guard and distance-metered drive
+charge as the player-facing cruise path. Route time advances on canonical
+0.1-second ticks against the authoritative game clock; render cadence and visit
+order do not advance it.
 
 The actor cruises toward a moving destination Traffic hold, then uses normal
 flight and the station-owned clearance and arrival laws. Its 10,000 km

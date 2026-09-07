@@ -1,6 +1,6 @@
 # In-system route traffic
 
-> Resolved contract for work-graph decision
+> Decision contract for work-graph node
 > [“In-system route traffic: one carrier from departure berth to arrival
 > queue”](https://github.com/jcfischer/seelite/issues/261).
 
@@ -98,6 +98,11 @@ frames consume the resulting projection; their `dt` never becomes route time.
 For equal system seed, Carrier identity, schedule boundary, world-state overlay,
 player-input timeline and `gameTime`, direct evaluation at time `t` must equal
 stepping to `t`.
+
+The **player-input timeline** is the time-ordered sequence of the player's
+Clearance requests and grants, Berth occupancy, and Transit-lane claims that
+the shared station laws consume. Both direct and stepped evaluation receive
+the same sequence through the queried `gameTime`.
 
 Current-system caches may retain the last canonical state to avoid replaying a
 leg from its start every frame. They are disposable acceleration only. An
