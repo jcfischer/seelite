@@ -21,11 +21,12 @@ destination is eligible when it:
 3. has a bounded cruise plan whose complete planned distance fits the actor's
    full hull-specific drive charge.
 
-The actor's Carrier identity supplies a stable starting offset and the away
-ordinal advances through the eligible list. Two-station systems therefore
-select the only other station; three-station systems distribute successive
-visits across the eligible alternatives rather than drawing repeatedly from a
-mutable stream.
+Let `n` be the eligible-list length, `actorOrdinal` the zero-based ordinal of
+the actor in its home Traffic roster, and `awayOrdinal` the zero-based ordinal
+of this actor's away interval. The destination is
+`eligible[(actorOrdinal + awayOrdinal) mod n]`. Two-station systems therefore
+select the only other station; three-station systems rotate successive visits
+through the eligible alternatives without a mutable random stream.
 
 A one-station system, or an actor with no eligible destination, keeps #148's
 abstract-away behavior. It may perform the existing visible home launch and
@@ -80,6 +81,11 @@ docking cone and prevents a route from becoming an early clearance grant.
 The destination station treats the visitor as an ordinary Carrier in its
 Clearance queue, Transit lane and occupied-Berth set, but does not adopt it into
 its Traffic roster. Stable system-wide Carrier identity supplies every tie-break.
+
+The home Berth is free immediately after the outward aperture crossing and may
+be allocated normally while the actor is away. The returning actor requests
+any fitting home Berth through the normal Clearance queue; it has no claim on
+the Berth it departed from.
 
 ## 4. One cruise law
 
@@ -197,8 +203,9 @@ or speed law.
    Both arms receive the same player-input timeline. A render-`dt` control must
    fail if frame cadence leaks into route progress.
 4. The phase sequence follows §3. The origin Berth releases only at outward
-   crossing, and the destination receives no request before the exact Traffic
-   hold endpoint.
+   crossing, is then allocatable to another Carrier, and receives no implicit
+   return reservation. The destination receives no request before the exact
+   Traffic hold endpoint.
 5. Destination capacity and lane contention use the shared oldest-compatible
    and oldest-ready policies. A visiting actor contributes to occupancy without
    joining the destination Traffic roster.
@@ -227,11 +234,18 @@ A deterministic two- or three-station fixture shows one named Traffic actor:
    either the actor or the player; and
 6. arriving at the reserved destination Berth with no duplicate mesh or contact.
 
-## 9. Known weak joint
+## 9. Known integration risks
 
-A literal fixed-step reconstruction from a very old game-clock epoch grows with
-elapsed play time. The implementation must measure cold reconstruction for all
-Traffic actors after long simulated sessions and may skip stationary intervals,
-memoize current-system canonical states, or cache completed pure leg results.
-Those optimizations must remain disposable and reproduce the same projection;
-they may not become routine save authority or make visit order observable.
+- A literal fixed-step reconstruction from a very old game-clock epoch grows
+  with elapsed play time. The implementation must measure cold reconstruction
+  for all Traffic actors after long simulated sessions and may skip stationary
+  intervals, memoize current-system canonical states, or cache completed pure
+  leg results. Those optimizations must remain disposable and reproduce the
+  same projection; they may not become routine save authority or make visit
+  order observable.
+- Canonical replay depends on applying the same player-input timeline to the
+  shared station laws. Implementation acceptance must exercise delayed queue,
+  Berth and Transit-lane inputs rather than only an uncontended seed fixture.
+- The shared pure cruise guidance seam does not exist yet. Extraction must pin
+  player-cruise behavior before Traffic consumes it so integration cannot make
+  the two controllers drift together unnoticed.
