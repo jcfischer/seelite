@@ -1,0 +1,232 @@
+# In-system route traffic
+
+> Resolved contract for work-graph decision
+> [“In-system route traffic: one carrier from departure berth to arrival
+> queue”](https://github.com/jcfischer/seelite/issues/261).
+
+## 1. One home-owned visit
+
+A **Traffic route** is one home-owned Traffic actor visiting another station in
+the current system and returning home. The actor never transfers between
+Traffic rosters: its home station-qualified Carrier slot remains its persistence,
+schedule, arbitration and presentation identity while it travels, queues and
+occupies a destination Berth.
+
+Each `away` interval has a stable ordinal. At its home launch boundary, the
+actor derives the eligible destinations in canonical station-ID order. A
+destination is eligible when it:
+
+1. is not the home station;
+2. has at least one Berth that fits the actor's hull; and
+3. has a bounded cruise plan whose complete planned distance fits the actor's
+   full hull-specific drive charge.
+
+The actor's Carrier identity supplies a stable starting offset and the away
+ordinal advances through the eligible list. Two-station systems therefore
+select the only other station; three-station systems distribute successive
+visits across the eligible alternatives rather than drawing repeatedly from a
+mutable stream.
+
+A one-station system, or an actor with no eligible destination, keeps #148's
+abstract-away behavior. It may perform the existing visible home launch and
+scheduled return, but #261 invents no hidden station, local waypoint, or
+impossible route. Inter-system destinations remain #262's.
+
+## 2. The schedule expresses intent
+
+The Traffic schedule remains a home-state schedule. `away` and `parked` are
+desired states, not timetable promises:
+
+- `away` while parked at home creates a launch intent;
+- reaching the destination while `away` remains desired leaves the actor
+  docked there;
+- `parked` while away creates the return-home intent; and
+- arriving home satisfies `parked`.
+
+Physical traversal, cruise, charge and station contention decide when those
+transitions finish. A traversal or cruise leg is non-preemptive. If the desired
+state changes while one is active, the actor retains the one pending intent
+with the original schedule boundary as `readyAt`; later changes coalesce as
+specified by `station-traffic.md` §2.1. It never speeds up, teleports, skips a
+queue or reverses a live leg to catch a timetable.
+
+An actor whose return became due during its outbound leg still completes the
+destination arrival. It docks, refills, and presents the pending return intent
+at the next station movement opportunity; a late leg cannot turn one arrival
+into an immediate unarbitrated launch.
+
+## 3. Terminal-to-terminal lifecycle
+
+The route composes the existing laws in this order:
+
+| Phase | Authority and exit |
+| --- | --- |
+| `parked-home` | The actor occupies its home Berth. Desired `away` creates a launch intent with the schedule boundary as `readyAt`. |
+| `launch-queued` | The shared station Transit-lane arbitration orders the launch with player and Traffic arrivals and launches. |
+| `departing` | `arrival.ts` runs the reserved Berth's three-leg traversal in reverse. The home Berth remains occupied until the outward aperture crossing, where the reservation and grant are spent. |
+| `local-departure` | In normal flight, the actor aligns toward the selected destination Traffic hold and completes the existing three-second cruise spool. |
+| `cruise` | The pure Traffic guidance controller flies the existing cruise, detour, guard and charge laws toward the moving destination hold. |
+| `local-approach` | Cruise drops into the destination frame; normal-flight guidance reaches the exact Traffic hold with zero station-relative velocity. |
+| `clearance-queued` | Only after reaching the hold does the actor request a fitting destination Berth through the shared Clearance queue. |
+| `lane-queued` | A promoted request reserves its Berth and waits at the hold for the shared Transit lane. The grant window has not started. |
+| `arriving` | Lane award covers hold-to-standoff guidance, axis alignment, entry below the speed gate and the existing three-leg arrival traversal. |
+| `docked-away` | The actor occupies the destination Berth and refills its drive charge. Desired `parked` creates the mirrored return-home intent. |
+
+The destination Traffic hold is the cruise target, not the station centre. Its
+position and velocity are evaluated in the moving station frame at the same
+game-clock instant as every cruise mass. That leaves the actor outside the
+docking cone and prevents a route from becoming an early clearance grant.
+
+The destination station treats the visitor as an ordinary Carrier in its
+Clearance queue, Transit lane and occupied-Berth set, but does not adopt it into
+its Traffic roster. Stable system-wide Carrier identity supplies every tie-break.
+
+## 4. One cruise law
+
+Traffic travel uses `advanceCruise`; it does not interpolate along a timetable.
+The implementation extracts the current automatic-detour nose controller from
+`Game` into a Three.js-free pure seam so player automation and Traffic route
+guidance cannot drift. That controller supplies the visible nose, turn hold and
+waypoints; `advanceCruise` remains the authority for speed, arrival, moving-body
+guards, proximity exits and travelled distance.
+
+### 4.1 Canonical replay
+
+Route progress advances on canonical 0.1-second ticks from the leg's physical
+start, plus one final fractional tick when queried between boundaries. Render
+frames consume the resulting projection; their `dt` never becomes route time.
+For equal system seed, Carrier identity, schedule boundary, world-state overlay,
+player-input timeline and `gameTime`, direct evaluation at time `t` must equal
+stepping to `t`.
+
+Current-system caches may retain the last canonical state to avoid replaying a
+leg from its start every frame. They are disposable acceleration only. An
+unvisited system receives no background ticks; loading it reconstructs its
+Traffic routes from the same inputs.
+
+Player occupancy is an explicit live input, not visit history. It may delay a
+Traffic actor through the shared queues exactly as #148 requires. Routine queue
+and route delays remain transient: on reload they are rederived and the current
+player reservation or occupied Berth is applied, rather than saving a second
+world history merely because the player once looked at a system. A stepped run
+that includes a past player intervention is compared only with a direct run
+given that same intervention timeline; the seed-only baseline does not pretend
+the intervention never happened.
+
+### 4.2 Detour and recovery
+
+Every powered segment remains subject to the existing moving-body guard. A
+blocked direct leg uses the existing bounded two-waypoint station detour while
+keeping the Traffic hold selected. If a replan has no safe side, the actor
+drops to normal flight in the blocker's frame and retries on canonical route
+ticks; it neither changes destination nor pretends the obstruction is absent.
+
+No planned leg begins unless its complete selected polyline fits the actor's
+full drive charge. A later moving-body replan can make that estimate stale. If
+the actual metered travel exhausts charge, the actor drops to normal flight,
+regenerates at the existing passive rate, and retries when the remaining route
+is charge-reachable. The delay is ordinary schedule reconciliation, not saved
+exceptional state.
+
+## 5. Presentation is not authority
+
+The pure route projection owns the actor's phase, pose and velocity at every
+distance. The inclusive 10,000 km scanner boundary controls presentation only:
+inside it, `Game` creates one ship mesh and one targetable `DisplayContact` from
+the projection; outside it, those objects are absent.
+
+Crossing the boundary never starts, pauses or restarts motion. Re-entering range
+reconstructs the same Carrier, hull variant, callsign, pose, velocity and
+scanner classification at the queried `gameTime`. Repeated crossings cannot
+produce duplicate meshes or contacts.
+
+A visible Traffic route adds no collision or combat physics. A future combat or
+interdiction decision may explicitly interrupt the pure projection and create
+an exceptional Carrier consequence; mere visibility does not perform that
+authority handoff.
+
+## 6. Drive charge
+
+Traffic actors use `HULL_SPECS[hull].chargeAu`. `advanceCruise` meters actual
+powered distance through the existing distance-based charge law. Every
+completed dock refills to the hull's capacity for free, at home or away; normal
+flight uses the existing passive regeneration and cruise consumes no invented
+NPC reserve.
+
+Charge is routine derived route state. It is reconstructed from the last
+completed dock and metered canonical segments and does not add a save row.
+Cargo is likewise presentation-only here: a Traffic route does not buy, sell or
+mutate either station market.
+
+## 7. Ownership boundaries
+
+- `station-traffic.md` owns rosters, schedules, Traffic holds, queues, lane
+  arbitration and local terminal laws.
+- `in-system-travel.md` and `cruise.ts` own cruise dynamics, charge, detours and
+  moving-body safety.
+- This spec owns Traffic destination selection, the route lifecycle, canonical
+  replay and the composition between those two domains.
+- `display-contact.ts` remains the presentation shape; route identity remains
+  the Carrier slot.
+- Hyperspace, combat AI, faction simulation and NPC market mutation remain out
+  of scope.
+
+The implementation seam is a pure `station-route` module consuming Traffic,
+cruise, hull, station and clock data without importing Three.js. `Game` owns
+only current-system caches and presentation objects. The build must extract
+shared pure cruise guidance rather than copy the controller out of `Game`, and
+must not implement another berth allocator, queue, traversal, collision guard
+or speed law.
+
+## 8. Implementation acceptance
+
+### 8.1 Headless
+
+1. One-station systems and actors with no fitting charge-reachable destination
+   retain abstract-away behavior. Two-station systems select the other station;
+   three-station systems cycle deterministically through eligible alternatives.
+2. Destination selection is independent of collection and visit order, never
+   selects home, and never selects a station whose catalogue fits no Berth.
+3. Equal direct and canonical stepped evaluation produces the same phase, pose,
+   velocity, destination, charge, pending intent and queue request at time `t`.
+   Both arms receive the same player-input timeline. A render-`dt` control must
+   fail if frame cadence leaks into route progress.
+4. The phase sequence follows §3. The origin Berth releases only at outward
+   crossing, and the destination receives no request before the exact Traffic
+   hold endpoint.
+5. Destination capacity and lane contention use the shared oldest-compatible
+   and oldest-ready policies. A visiting actor contributes to occupancy without
+   joining the destination Traffic roster.
+6. The pure guidance path calls the production cruise speed, detour, moving-body
+   guard and charge functions. A control using straight timetable interpolation
+   must fail the obstruction fixture.
+7. A full charge covers every initially selected planned polyline. Unexpected
+   exhaustion follows normal-flight regeneration and deterministic retry, and a
+   completed dock restores the actor's hull-specific capacity.
+8. Canonical save output contains no routine destination, route phase, replay
+   cache, queue, charge or motion row.
+9. Materialization is inclusive at 10,000 km and absent beyond it. Repeated
+   boundary crossings keep one Carrier identity and never duplicate a contact.
+
+### 8.2 Browser
+
+A deterministic two- or three-station fixture shows one named Traffic actor:
+
+1. launching from its occupied home Berth through the live Transit lane;
+2. retaining the same target name and hull while leaving and re-entering scanner
+   range;
+3. appearing on the scanner in local flight and cruise from its projected pose
+   and velocity;
+4. reaching the destination Traffic hold without crossing station geometry;
+5. entering the live Clearance and Transit-lane queues without privileging
+   either the actor or the player; and
+6. arriving at the reserved destination Berth with no duplicate mesh or contact.
+
+## 9. Known weak joint
+
+A literal fixed-step reconstruction from a very old game-clock epoch grows with
+elapsed play time. The implementation must measure cold reconstruction for all
+Traffic actors after long simulated sessions and may skip stationary intervals,
+memoize current-system canonical states, or cache completed pure leg results.
+Those optimizations must remain disposable and reproduce the same projection;
+they may not become routine save authority or make visit order observable.

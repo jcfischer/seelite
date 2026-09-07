@@ -114,15 +114,18 @@ it does not need a per-frame simulation while the actor is outside the player's
 view or while its system is unvisited.
 
 A Traffic actor gains a simulation-owned ship mesh and `DisplayContact` only
-while its derived state is parked or performing the station-local arrival or
-launch sequence, and only within the player's existing 10,000 km scanner range.
-Its Carrier identity remains stable when the presentation object is absent.
+while its derived state has a local position — parked, performing a
+station-local sequence, or following an eligible Traffic route — and only
+within the player's existing 10,000 km scanner range. Its Carrier identity
+remains stable when the presentation object is absent.
 
-After clearing the aperture outward, the actor enters its abstract away interval
-and has no local position or contact. It reappears at a **Traffic hold** for its
-scheduled return. #261 may replace that interval with a real in-system journey;
-#262 may replace it with an inter-system journey. Until then, #148 does not
-fabricate a route between those endpoints.
+After clearing the aperture outward, an actor with no eligible in-system
+destination enters its abstract away interval and has no local position or
+contact. It reappears at a **Traffic hold** for its scheduled return. An actor
+with an eligible destination instead follows the home-owned **Traffic route**
+in `in-system-route-traffic.md`: the route supplies a real position and contact
+inside scanner range without transferring roster ownership. #262 may later
+replace the abstract interval with an inter-system journey.
 
 Unvisited systems require no background ticking. Loading the same system seed,
 world-state overlay and `gameTime` produces the same actor states regardless of
@@ -207,7 +210,8 @@ order, but is not barging without clearance.
 
 Station traffic reuses berth fit, reservations, clearance and Transit-lane
 occupancy from `docking.md`; it does not create a second docking model. Combat
-AI and interdiction remain `combat-model.md`'s. In-system journeys belong to
+AI and interdiction remain `combat-model.md`'s. In-system Traffic journeys are
+specified in `in-system-route-traffic.md` by
 [#261](https://github.com/jcfischer/seelite/issues/261), followed by
 inter-system journeys in
 [#262](https://github.com/jcfischer/seelite/issues/262).
