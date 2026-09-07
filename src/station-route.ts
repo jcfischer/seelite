@@ -145,6 +145,9 @@ export interface TrafficCruiseState {
 	initialGuidance?: CruiseGuidanceState | null;
 }
 
+/** Bounded by actor × destination × direction; a new schedule leg overwrites its key. */
+export type TrafficCruiseCache = Map<string, TrafficCruiseState>;
+
 export interface TrafficCruiseEnvironment {
 	params?: CruiseParams;
 	targetAt(gameTime: number): Mass;
@@ -191,9 +194,75 @@ const reachableChargeAu = (
 	);
 };
 
+const advanceTrafficCruiseStep = (
+	state: TrafficCruiseState,
+	dt: number,
+	environment: TrafficCruiseEnvironment,
+): TrafficCruiseState => {
+	if (state.phase === "regenerating") {
+		const atS = state.atS + dt;
+		const chargeAu = chargeAfterRegen(
+			state.chargeAu,
+			dt,
+			environment.capacityAu,
+		);
+		const target = environment.targetAt(atS);
+		const required = reachableChargeAu(
+			state.pos,
+			target,
+			environment.massesAt(atS),
+			environment.targetParentId,
+		);
+		return {
+			...state,
+			phase: chargeAu + 1e-12 >= required ? "cruise" : "regenerating",
+			chargeAu,
+			atS,
+			workTicks: state.workTicks + 1,
+		};
+	}
+	const target = environment.targetAt(state.atS);
+	const guidance = environment.guide?.(state, state.atS, dt, target) ?? {
+		nose: normal(sub(target.pos, state.pos), state.nose),
+		throttle: 1,
+	};
+	const step = advanceCruise({
+		pos: state.pos,
+		nose: guidance.nose,
+		throttle: guidance.throttle,
+		dt,
+		masses: environment.massesAt(state.atS),
+		target,
+		params: environment.params ?? DEFAULT_CRUISE,
+		chargeAu: state.chargeAu,
+		targetParentId: environment.targetParentId,
+	});
+	const completedAtS = state.atS + dt;
+	return {
+		...state,
+		phase:
+			step.exit === "arrival"
+				? "local-approach"
+				: step.starved
+					? "regenerating"
+					: "cruise",
+		pos: step.pos,
+		vel: scale(guidance.nose, step.speedKms),
+		nose: guidance.nose,
+		waypointIndex: guidance.waypointIndex ?? state.waypointIndex,
+		guidance:
+			guidance.guidance === undefined ? state.guidance : guidance.guidance,
+		chargeAu: chargeAfterTravel(state.chargeAu, step.travelledKm),
+		atS: completedAtS,
+		workTicks: state.workTicks + 1,
+		...(step.exit === "arrival" ? { completedAtS } : {}),
+	};
+};
+
 /**
- * Re-evaluate from the physical leg boundary on canonical 0.1 s ticks. Calls
- * may arrive at render cadence; the result depends only on the queried clock.
+ * Re-evaluate from the physical leg boundary on canonical 0.1 s ticks. A state
+ * on a canonical boundary resumes incrementally; fractional/non-monotonic
+ * queries replay from the boundary so render cadence never changes the result.
  */
 export function evaluateTrafficCruise(
 	state: TrafficCruiseState,
@@ -213,88 +282,50 @@ export function evaluateTrafficCruise(
 	const fullTicks = Math.floor((elapsed + 1e-10) / CANONICAL_ROUTE_DT_S);
 	const fullDuration = fullTicks * CANONICAL_ROUTE_DT_S;
 	const fractional = Math.max(0, elapsed - fullDuration);
-	const steps = Array.from({ length: fullTicks }, () => CANONICAL_ROUTE_DT_S);
-	if (fractional > 1e-9) steps.push(fractional);
-
-	let current: TrafficCruiseState = {
-		phase: "cruise",
-		pos: { ...initialPos },
-		vel: { x: 0, y: 0, z: 0 },
-		nose: { ...initialNose },
-		chargeAu: initialChargeAu,
-		startedAtS: state.startedAtS,
-		atS: state.startedAtS,
-		workTicks: 0,
-		initialPos: { ...initialPos },
-		initialNose: { ...initialNose },
-		initialChargeAu,
-		waypointIndex: initialWaypointIndex,
-		guidance: initialGuidance,
-		initialWaypointIndex,
-		initialGuidance,
-	};
-	for (const dt of steps) {
-		if (current.phase === "local-approach") break;
-		if (current.phase === "regenerating") {
-			const atS = current.atS + dt;
-			const chargeAu = chargeAfterRegen(
-				current.chargeAu,
-				dt,
-				environment.capacityAu,
-			);
-			const target = environment.targetAt(atS);
-			const required = reachableChargeAu(
-				current.pos,
-				target,
-				environment.massesAt(atS),
-				environment.targetParentId,
-			);
-			current = {
-				...current,
-				phase: chargeAu + 1e-12 >= required ? "cruise" : "regenerating",
-				chargeAu,
-				atS,
-				workTicks: current.workTicks + 1,
+	const stateTick = Math.round(
+		(state.atS - state.startedAtS) / CANONICAL_ROUTE_DT_S,
+	);
+	const stateIsCanonical =
+		state.atS >= state.startedAtS &&
+		Math.abs(
+			state.atS - (state.startedAtS + stateTick * CANONICAL_ROUTE_DT_S),
+		) < 1e-8;
+	const resume =
+		stateIsCanonical && state.atS > state.startedAtS && state.atS <= queryTimeS;
+	let current: TrafficCruiseState = resume
+		? {
+				...state,
+				pos: { ...state.pos },
+				vel: { ...state.vel },
+				nose: { ...state.nose },
+			}
+		: {
+				phase: "cruise",
+				pos: { ...initialPos },
+				vel: { x: 0, y: 0, z: 0 },
+				nose: { ...initialNose },
+				chargeAu: initialChargeAu,
+				startedAtS: state.startedAtS,
+				atS: state.startedAtS,
+				workTicks: 0,
+				initialPos: { ...initialPos },
+				initialNose: { ...initialNose },
+				initialChargeAu,
+				waypointIndex: initialWaypointIndex,
+				guidance: initialGuidance,
+				initialWaypointIndex,
+				initialGuidance,
 			};
-			continue;
-		}
-		const target = environment.targetAt(current.atS);
-		const guidance = environment.guide?.(current, current.atS, dt, target) ?? {
-			nose: normal(sub(target.pos, current.pos), current.nose),
-			throttle: 1,
-		};
-		const step = advanceCruise({
-			pos: current.pos,
-			nose: guidance.nose,
-			throttle: guidance.throttle,
-			dt,
-			masses: environment.massesAt(current.atS),
-			target,
-			params: environment.params ?? DEFAULT_CRUISE,
-			chargeAu: current.chargeAu,
-			targetParentId: environment.targetParentId,
-		});
-		const completedAtS = current.atS + dt;
-		current = {
-			...current,
-			phase:
-				step.exit === "arrival"
-					? "local-approach"
-					: step.starved
-						? "regenerating"
-						: "cruise",
-			pos: step.pos,
-			vel: scale(guidance.nose, step.speedKms),
-			nose: guidance.nose,
-			waypointIndex: guidance.waypointIndex ?? current.waypointIndex,
-			guidance:
-				guidance.guidance === undefined ? current.guidance : guidance.guidance,
-			chargeAu: chargeAfterTravel(current.chargeAu, step.travelledKm),
-			atS: completedAtS,
-			workTicks: current.workTicks + 1,
-			...(step.exit === "arrival" ? { completedAtS } : {}),
-		};
+	for (let tick = resume ? stateTick : 0; tick < fullTicks; tick++) {
+		if (current.phase === "local-approach") break;
+		current = advanceTrafficCruiseStep(
+			current,
+			CANONICAL_ROUTE_DT_S,
+			environment,
+		);
 	}
+	if (fractional > 1e-9 && current.phase !== "local-approach")
+		current = advanceTrafficCruiseStep(current, fractional, environment);
 	return { ...current, atS: queryTimeS };
 }
 
@@ -452,6 +483,7 @@ interface TrafficLegInput {
 	gameTime: number;
 	timeline: readonly TrafficPlayerEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
+	cruiseCache?: TrafficCruiseCache;
 	originStationId: string;
 	originBerthId: string;
 	destinationStationId: string | null;
@@ -664,7 +696,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			targetParentId: selected.parentId ?? null,
 		}).guidance,
 	};
-	const cruise = evaluateTrafficCruise(cruiseInitial, gameTime, {
+	const cruiseEnvironment: TrafficCruiseEnvironment = {
 		params: DEFAULT_CRUISE,
 		targetAt: (t) => {
 			const hold = holdAt(t);
@@ -691,7 +723,31 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				guidance: guided.guidance,
 			};
 		},
-	});
+	};
+	const cacheKey = `${record.index}|${actor.key}|${selected.id}|${finalPhase}`;
+	const canonicalTicks = Math.floor(
+		(gameTime - spoolEndS + 1e-10) / CANONICAL_ROUTE_DT_S,
+	);
+	const canonicalAtS =
+		spoolEndS + Math.max(0, canonicalTicks) * CANONICAL_ROUTE_DT_S;
+	const cached = input.cruiseCache?.get(cacheKey);
+	const base =
+		cached &&
+		cached.startedAtS === spoolEndS &&
+		cached.atS <= canonicalAtS + 1e-9
+			? cached
+			: cruiseInitial;
+	const canonical = evaluateTrafficCruise(
+		base,
+		canonicalAtS,
+		cruiseEnvironment,
+	);
+	if (!cached || canonical.atS >= cached.atS)
+		input.cruiseCache?.set(cacheKey, canonical);
+	const cruise =
+		gameTime > canonicalAtS + 1e-9
+			? evaluateTrafficCruise(canonical, gameTime, cruiseEnvironment)
+			: canonical;
 	if (cruise.phase === "cruise" || cruise.phase === "regenerating")
 		return withRoute(
 			actor,
@@ -929,6 +985,7 @@ interface TrafficVisitInput {
 	gameTime: number;
 	playerTimeline?: readonly TrafficPlayerEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
+	cruiseCache?: TrafficCruiseCache;
 	departureAtS: number;
 	launchReadyAtS: number;
 	awayOrdinal: number;
@@ -970,6 +1027,7 @@ function projectTrafficVisit(
 		gameTime,
 		timeline,
 		occupiedByStation: input.occupiedByStation,
+		cruiseCache: input.cruiseCache,
 		originStationId: actor.homeStationId,
 		originBerthId: homeBerth.id,
 		destinationStationId: null,
@@ -1019,6 +1077,7 @@ function projectTrafficVisit(
 		gameTime,
 		timeline,
 		occupiedByStation: input.occupiedByStation,
+		cruiseCache: input.cruiseCache,
 		originStationId: outbound.destinationStationId,
 		originBerthId: outbound.berthId,
 		destinationStationId: actor.homeStationId,
@@ -1042,6 +1101,7 @@ export function projectSystemTrafficActor(input: {
 	gameTime: number;
 	playerTimeline?: readonly TrafficPlayerEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
+	cruiseCache?: TrafficCruiseCache;
 }): SystemTrafficProjection {
 	const schedule = trafficScheduleAt(input.actor, input.gameTime);
 	const departureAtS =

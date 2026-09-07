@@ -290,10 +290,12 @@ import {
 	laneWinner,
 	materializeTrafficContact,
 	stationTrafficRoster,
+	trafficScheduleAt,
 	type TrafficActor,
 } from "./station-traffic";
 import {
 	projectSystemTrafficActor,
+	type TrafficCruiseCache,
 	type SystemTrafficProjection,
 	type TrafficPlayerEvent,
 } from "./station-route";
@@ -1223,6 +1225,7 @@ class Game {
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
 	private readonly trafficNose = new THREE.Vector3();
+	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
 	/** Probe-visible readback of the pure projections used for this frame. */
 	readonly trafficRoutes: SystemTrafficProjection[] = [];
 	/** Explicit transient player events consumed by canonical Traffic replay. */
@@ -3255,6 +3258,25 @@ class Game {
 		}
 	}
 
+	/** Retain exactly the event horizon the pure current/previous-visit replay can read. */
+	private prunePlayerTrafficTimeline(gameTime: number) {
+		let oldestReplayS = gameTime;
+		for (const actor of this.trafficActors) {
+			const schedule = trafficScheduleAt(actor, gameTime);
+			const departureAtS =
+				schedule.desired === "away"
+					? schedule.boundaryS
+					: schedule.boundaryS - actor.schedule.awayS;
+			oldestReplayS = Math.min(
+				oldestReplayS,
+				departureAtS - actor.schedule.cycleS,
+			);
+		}
+		for (let i = this.trafficPlayerTimeline.length - 1; i >= 0; i--)
+			if (this.trafficPlayerTimeline[i].toS < oldestReplayS)
+				this.trafficPlayerTimeline.splice(i, 1);
+	}
+
 	/** Drop only current-system Traffic presentation; generated authority is rebuilt on demand. */
 	private clearTrafficPresentation() {
 		for (const contact of this.trafficContacts.values())
@@ -3264,6 +3286,7 @@ class Game {
 		this.trafficMeshes.clear();
 		this.trafficRoutes.length = 0;
 		this.trafficPlayerTimeline.length = 0;
+		this.trafficCruiseCache.clear();
 		this.playerLaneRequests.clear();
 		this.trafficTick = Number.NaN;
 		this.selectableCache = null;
@@ -3286,6 +3309,7 @@ class Game {
 		if (tick !== this.trafficTick) {
 			this.trafficTick = tick;
 			this.trafficRoutes.length = 0;
+			this.prunePlayerTrafficTimeline(tick / 10);
 			const occupied = new Map<string, Set<string>>();
 			for (const [stationId, state] of this.dockingStates) {
 				if (!state.berthId) continue;
@@ -3324,6 +3348,7 @@ class Game {
 					gameTime: tick / 10,
 					playerTimeline: arbitrationTimeline,
 					occupiedByStation: occupied,
+					cruiseCache: this.trafficCruiseCache,
 				}),
 			}));
 			for (const { actor, projection: baseline } of baselines) {
@@ -3352,13 +3377,16 @@ class Game {
 			);
 			for (const { actor, projection: baseline } of orderedActors) {
 				const projection =
-					baseline.queueRequest || baseline.laneRequest
+					baseline.phase !== "parked-home" &&
+					baseline.phase !== "docked-away" &&
+					(baseline.queueRequest || baseline.laneRequest)
 						? projectSystemTrafficActor({
 								record: this.world.system.record,
 								actor,
 								gameTime: tick / 10,
 								playerTimeline: arbitrationTimeline,
 								occupiedByStation: occupied,
+								cruiseCache: this.trafficCruiseCache,
 							})
 						: baseline;
 				this.trafficRoutes.push(projection);
@@ -6002,7 +6030,10 @@ class Game {
 		}
 		this.detour = null;
 		const target = this.targetBody();
-		if (target) {
+		const stationTarget = this.world.system.contents.stations.some(
+			(station) => station.id === target?.id,
+		);
+		if (target && stationTarget) {
 			const begun = beginCruiseGuidance({
 				from: this.world.ship.pos,
 				target,

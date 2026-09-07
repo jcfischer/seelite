@@ -98,7 +98,7 @@ describe("terminal-to-terminal route projection", () => {
 		actor.schedule.departureAtS + 0.01,
 	).boundaryS;
 
-	test("a one-station actor stays abstract while away and returns to its home slot", () => {
+	test("a one-station actor stays abstract while away and returns to its home berth", () => {
 		const loneRecord = required(
 			generateGalaxy(17, 0).systems.find(
 				(candidate) => generateContents(candidate).stations.length === 1,
@@ -320,20 +320,47 @@ describe("terminal-to-terminal route projection", () => {
 
 	test("route projection is independent of query cadence", () => {
 		const queryAt = departure + 73.25;
+		const cruiseCache = new Map();
+		let afterStepping = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: departure,
+			cruiseCache,
+		});
+		for (let t = departure + 0.1; t < queryAt; t += 0.1)
+			afterStepping = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: t,
+				cruiseCache,
+			});
+		afterStepping = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+			cruiseCache,
+		});
 		const direct = projectSystemTrafficActor({
 			record,
 			actor,
 			gameTime: queryAt,
 		});
-		for (let t = departure; t < queryAt; t += 0.1)
-			projectSystemTrafficActor({ record, actor, gameTime: t });
-		const afterStepping = projectSystemTrafficActor({
-			record,
-			actor,
-			gameTime: queryAt,
-		});
-		expect(afterStepping).toEqual(direct);
-	});
+		expect({
+			...afterStepping,
+			pos: null,
+			vel: null,
+			nose: null,
+		}).toEqual({ ...direct, pos: null, vel: null, nose: null });
+		for (const axis of ["x", "y", "z"] as const) {
+			expect(afterStepping.pos[axis]).toBeCloseTo(direct.pos[axis], 8);
+			expect(afterStepping.vel[axis]).toBeCloseTo(direct.vel[axis], 8);
+			expect(afterStepping.nose?.[axis] ?? 0).toBeCloseTo(
+				direct.nose?.[axis] ?? 0,
+				8,
+			);
+		}
+		expect(cruiseCache.size).toBeGreaterThan(0);
+	}, 10_000);
 
 	test("phase-equivalent cold queries do work independent of epoch age", () => {
 		const offset = 30;

@@ -122,6 +122,48 @@ try {
 		const lane = present(arrivingSample.t, 100, [laneEvent]);
 		const arriving = present(arrivingSample.t, 100);
 		const docked = present(samples.get("docked-away").t, 100);
+		let returned = null;
+		for (
+			let t = departure + actor.schedule.awayS;
+			t < departure + actor.schedule.awayS + 900;
+			t += 0.5
+		) {
+			const projected = route.projectSystemTrafficActor({
+				record: g.world.system.record,
+				actor,
+				gameTime: t,
+			});
+			if (projected.phase === "parked-home") {
+				returned = { t, berthId: projected.berthId };
+				break;
+			}
+		}
+		const returnedLive = returned ? present(returned.t, 100) : null;
+
+		g.trafficPlayerTimeline.length = 0;
+		g.trafficPlayerTimeline.push({
+			stationId: actor.homeStationId,
+			kind: "lane",
+			fromS: -2_000_000,
+			toS: -1_000_000,
+		});
+		g.world.gameTime = samples.get("cruise").t;
+		g.trafficTick = Number.NaN;
+		g.updateTrafficPresentation(g.cameraPos());
+		const retainedPlayerEvents = g.trafficPlayerTimeline.length;
+
+		const planetId = g.world.system.contents.planets[0]?.id;
+		if (!planetId) throw new Error("seed 54 produced no planet target");
+		g.regime = "normal";
+		g.spoolLeftS = 0;
+		g.chargeAu = 1;
+		g.targetId = planetId;
+		g.engageCruise();
+		const planetCruise = {
+			spoolLeftS: g.spoolLeftS,
+			lastExit: g.lastExit,
+			detour: g.detour,
+		};
 
 		const holdProjection = route.projectSystemTrafficActor({
 			record: g.world.system.record,
@@ -156,6 +198,10 @@ try {
 			lane,
 			arriving,
 			docked,
+			returned,
+			returnedLive,
+			retainedPlayerEvents,
+			planetCruise,
 			holdDistance,
 			stationRadius:
 				station.STATION_GEOMETRY[destinationStation.type].coreRadiusKm,
@@ -231,6 +277,28 @@ try {
 			result.docked.meshCount === 1 &&
 			result.docked.meshAttached,
 		JSON.stringify(result.docked),
+	);
+	check(
+		"a settled actor retains its own occupied berth",
+		result.returned?.berthId &&
+			result.returnedLive?.phase === "parked-home" &&
+			result.returnedLive.contact?.id === result.actor.key,
+		JSON.stringify({
+			returned: result.returned,
+			live: result.returnedLive,
+		}),
+	);
+	check(
+		"completed player arbitration history is pruned beyond the replay horizon",
+		result.retainedPlayerEvents === 0,
+		JSON.stringify({ retainedPlayerEvents: result.retainedPlayerEvents }),
+	);
+	check(
+		"planet targets still enter ordinary cruise spool",
+		result.planetCruise.spoolLeftS > 0 &&
+			!result.planetCruise.lastExit.startsWith("detour unavailable") &&
+			result.planetCruise.detour === null,
+		JSON.stringify(result.planetCruise),
 	);
 	await page.close();
 } finally {

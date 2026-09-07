@@ -267,7 +267,7 @@ export function trafficHoldProjection(
 		pose.phaseRad,
 		pose.reference,
 	);
-	// Holds do not rotate with the slot: phase-zero is the smooth along-track
+	// Holds do not rotate with the aperture: phase-zero is the smooth along-track
 	// reference and Carrier identity chooses a spoke around the aperture axis.
 	const basis = slotBasis(frameAtPhase(frame, 0));
 	const angle = unit(`${key}|hold`) * Math.PI * 2;
