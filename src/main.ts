@@ -478,7 +478,7 @@ const PLAYER_ENVELOPE = HULL_SPECS[PLAYER_HULL[0]].env;
  *  once: `flightPerformance` is pure and the roster does not change mid-frame. */
 const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 
-/** Shared empty fallback for stations with no current player or Traffic holds. */
+/** Shared empty fallback for stations with no player or Traffic berth reservations. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
 
 /**
@@ -1229,7 +1229,12 @@ class Game {
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
 	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
 	private readonly trafficNose = new THREE.Vector3();
+	private readonly trafficUp = new THREE.Vector3();
+	private readonly trafficOrigin = new THREE.Vector3();
+	private readonly trafficAttitude = new THREE.Matrix4();
 	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
+	/** Cold canonical replays are warmed one actor per frame before presentation. */
+	private trafficWarmIndex = 0;
 	/** Probe-visible readback of the pure projections used for this frame. */
 	readonly trafficRoutes: SystemTrafficProjection[] = [];
 	/** Explicit transient player events consumed by canonical Traffic replay. */
@@ -3291,6 +3296,7 @@ class Game {
 		this.trafficRoutes.length = 0;
 		this.trafficPlayerTimeline.length = 0;
 		this.trafficCruiseCache.clear();
+		this.trafficWarmIndex = 0;
 		this.playerLaneRequests.clear();
 		this.trafficTick = Number.NaN;
 		this.selectableCache = null;
@@ -3310,6 +3316,18 @@ class Game {
 	private updateTrafficPresentation(cameraPos: Vec3) {
 		this.ensureTrafficActors();
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
+		if (this.trafficWarmIndex < this.trafficActors.length) {
+			const actor = this.trafficActors[this.trafficWarmIndex++];
+			projectSystemTrafficActor({
+				record: this.world.system.record,
+				actor,
+				gameTime: tick / 10,
+				playerTimeline: this.trafficPlayerTimeline,
+				cruiseCache: this.trafficCruiseCache,
+				projectionSystem: makeSystem(this.world.system.record, tick / 10),
+			});
+			return;
+		}
 		if (tick !== this.trafficTick) {
 			this.trafficTick = tick;
 			this.trafficRoutes.length = 0;
@@ -3497,10 +3515,21 @@ class Game {
 				this.trafficNose
 					.set(projection.nose.x, projection.nose.y, projection.nose.z)
 					.normalize();
-				mesh.quaternion.setFromUnitVectors(
-					this.trafficForward,
-					this.trafficNose,
-				);
+				if (projection.up) {
+					this.trafficUp
+						.set(projection.up.x, projection.up.y, projection.up.z)
+						.normalize();
+					this.trafficAttitude.lookAt(
+						this.trafficOrigin,
+						this.trafficNose,
+						this.trafficUp,
+					);
+					mesh.quaternion.setFromRotationMatrix(this.trafficAttitude);
+				} else
+					mesh.quaternion.setFromUnitVectors(
+						this.trafficForward,
+						this.trafficNose,
+					);
 			}
 		}
 	}

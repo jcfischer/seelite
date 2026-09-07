@@ -25,10 +25,23 @@ try {
 		const route = await import("/src/station-route.ts");
 		const sim = await import("/src/sim.ts");
 		const station = await import("/src/station.ts");
+		const refreshTraffic = () => {
+			let attempts = 0;
+			do {
+				g.trafficTick = Number.NaN;
+				g.updateTrafficPresentation(g.cameraPos());
+				attempts++;
+			} while (
+				g.trafficRoutes.length === 0 &&
+				attempts <= g.trafficActors.length + 1
+			);
+			return attempts;
+		};
 		g.world.gameTime = 4;
 		sim.advanceSystem(g.world.system, 4);
-		g.trafficTick = Number.NaN;
-		g.updateTrafficPresentation(g.cameraPos());
+		const coldStartIndex = g.trafficWarmIndex;
+		const coldWarmCalls = refreshTraffic();
+		const coldActorCount = g.trafficActors.length;
 		const settledBerths = g.trafficRoutes
 			.filter(
 				(item) =>
@@ -90,8 +103,7 @@ try {
 				y: expected.pos.y,
 				z: expected.pos.z,
 			};
-			g.trafficTick = Number.NaN;
-			g.updateTrafficPresentation(g.cameraPos());
+			refreshTraffic();
 			const projected = g.trafficRoutes.find((item) => item.key === actor.key);
 			if (projected) {
 				g.world.ship.pos = {
@@ -103,13 +115,29 @@ try {
 					g.clearTrafficPresentation();
 					g.trafficSystemIndex = g.world.system.record.index;
 				}
-				g.trafficTick = Number.NaN;
-				g.updateTrafficPresentation(g.cameraPos());
+				refreshTraffic();
 			}
 			g.render(0);
 			g.updateCockpit();
 			const contact = g.trafficContacts.get(actor.key);
 			const mesh = g.trafficMeshes.get(actor.key);
+			const liveProjection = g.trafficRoutes.find(
+				(item) => item.key === actor.key,
+			);
+			let attitude = null;
+			if (mesh && liveProjection?.nose && liveProjection.up) {
+				mesh.updateMatrixWorld(true);
+				const e = mesh.matrixWorld.elements;
+				const worldForward = { x: -e[8], y: -e[9], z: -e[10] };
+				const worldUp = { x: e[4], y: e[5], z: e[6] };
+				const cosine = (a, b) =>
+					(a.x * b.x + a.y * b.y + a.z * b.z) /
+					(Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z));
+				attitude = {
+					noseDot: cosine(worldForward, liveProjection.nose),
+					upDot: cosine(worldUp, liveProjection.up),
+				};
+			}
 			return {
 				phase: g.trafficRoutes.find((item) => item.key === actor.key)?.phase,
 				contact: contact
@@ -122,6 +150,7 @@ try {
 					(key) => key === actor.key,
 				).length,
 				scanner: g.scannerContacts.some((item) => item.id === actor.key),
+				attitude,
 			};
 		};
 
@@ -138,16 +167,17 @@ try {
 			fromS: departure,
 			toS: departure + 1_000,
 		};
-		const clearance = present(arrivingSample.t, 100, [clearanceEvent]);
+		const arrivalAt = arrivingSample.t + 0.2;
+		const clearance = present(arrivalAt, 100, [clearanceEvent]);
 		const laneEvent = {
 			stationId: destination,
 			kind: "lane",
 			fromS: departure,
-			toS: arrivingSample.t + 30,
+			toS: arrivalAt + 30,
 		};
-		const lane = present(arrivingSample.t, 100, [laneEvent]);
-		const arriving = present(arrivingSample.t, 100);
-		const docked = present(samples.get("docked-away").t, 100);
+		const lane = present(arrivalAt, 100, [laneEvent]);
+		const arriving = present(arrivalAt, 100);
+		const docked = present(samples.get("docked-away").t + 0.2, 100);
 		let returned = null;
 		for (
 			let t = departure + actor.schedule.awayS;
@@ -207,6 +237,9 @@ try {
 
 		return {
 			stationCount: g.world.system.contents.stations.length,
+			coldWarmCalls,
+			coldActorCount,
+			coldStartIndex,
 			settledBerths,
 			duplicateSettledBerths,
 			actor: {
@@ -217,6 +250,9 @@ try {
 			},
 			destination,
 			phases: [...samples.keys()],
+			sampleTimes: Object.fromEntries(
+				[...samples].map(([phase, sample]) => [phase, sample.t]),
+			),
 			cruise,
 			retained,
 			outside,
@@ -293,7 +329,16 @@ try {
 		}),
 	);
 	check(
-		"player clearance and lane claims delay Traffic through live queues",
+		"cold route replay is amortized one actor per presentation call",
+		result.coldWarmCalls === result.coldActorCount - result.coldStartIndex + 1,
+		JSON.stringify({
+			calls: result.coldWarmCalls,
+			actors: result.coldActorCount,
+			start: result.coldStartIndex,
+		}),
+	);
+	check(
+		"explicit player events delay Traffic through shared queue arbitration",
 		result.clearance.phase === "clearance-queued" &&
 			result.lane.phase === "lane-queued" &&
 			result.arriving.phase === "arriving",
@@ -318,6 +363,12 @@ try {
 			result.docked.meshCount === 1 &&
 			result.docked.meshAttached,
 		JSON.stringify(result.docked),
+	);
+	check(
+		"parked Traffic meshes preserve the projected nose and roll",
+		result.docked.attitude?.noseDot > 0.999 &&
+			result.docked.attitude?.upDot > 0.999,
+		JSON.stringify(result.docked.attitude),
 	);
 	check(
 		"a settled actor retains its own occupied berth",

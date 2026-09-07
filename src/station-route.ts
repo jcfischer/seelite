@@ -149,6 +149,8 @@ export interface TrafficCruiseState {
 	guidance?: CruiseGuidanceState | null;
 	initialWaypointIndex?: number;
 	initialGuidance?: CruiseGuidanceState | null;
+	initialPhase?: "cruise" | "blocked";
+	initialBlockedById?: string;
 	blockedById?: string;
 }
 
@@ -321,6 +323,14 @@ export function evaluateTrafficCruise(
 		state.initialGuidance === undefined
 			? (state.guidance ?? null)
 			: state.initialGuidance;
+	const initialPhase =
+		state.initialPhase ??
+		(state.atS === state.startedAtS && state.phase === "blocked"
+			? "blocked"
+			: "cruise");
+	const initialBlockedById =
+		state.initialBlockedById ??
+		(initialPhase === "blocked" ? state.blockedById : undefined);
 	const elapsed = Math.max(0, queryTimeS - state.startedAtS);
 	const fullTicks = Math.floor((elapsed + 1e-10) / CANONICAL_ROUTE_DT_S);
 	const fullDuration = fullTicks * CANONICAL_ROUTE_DT_S;
@@ -343,7 +353,7 @@ export function evaluateTrafficCruise(
 				nose: { ...state.nose },
 			}
 		: {
-				phase: "cruise",
+				phase: initialPhase,
 				pos: { ...initialPos },
 				vel: { x: 0, y: 0, z: 0 },
 				nose: { ...initialNose },
@@ -358,6 +368,9 @@ export function evaluateTrafficCruise(
 				guidance: initialGuidance,
 				initialWaypointIndex,
 				initialGuidance,
+				initialPhase,
+				initialBlockedById,
+				blockedById: initialBlockedById,
 			};
 	for (let tick = resume ? stateTick : 0; tick < fullTicks; tick++) {
 		if (current.phase === "local-approach") break;
@@ -373,11 +386,9 @@ export function evaluateTrafficCruise(
 }
 
 /** A visible low-speed departure corridor before the cruise drive takes over. */
-export const TRAFFIC_SPOOL_S = 15;
+export const TRAFFIC_SPOOL_S = 8;
 /** A readable final transit from the Traffic hold to the station aperture. */
-export const TRAFFIC_TERMINAL_APPROACH_S = 30;
-/** Keep a completed arrival visibly berthed before its return leg can begin. */
-export const TRAFFIC_DOCK_DWELL_S = 15;
+export const TRAFFIC_TERMINAL_APPROACH_S = 14;
 
 export type TrafficRoutePhase =
 	| "parked-home"
@@ -752,6 +763,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		workTicks: 0,
 		waypointIndex: 1,
 		guidance: initialGuidance.guidance,
+		initialPhase: initialGuidance.error ? "blocked" : "cruise",
+		initialBlockedById: initialGuidance.error?.blockerId,
 		blockedById: initialGuidance.error?.blockerId,
 	};
 	const cruiseEnvironment: TrafficCruiseEnvironment = {
@@ -1149,7 +1162,7 @@ function projectTrafficVisit(
 		);
 	const returnStartS =
 		outbound.phase === "docked-away" && outbound.completedAtS !== undefined
-			? Math.max(returnReadyAtS, outbound.completedAtS + TRAFFIC_DOCK_DWELL_S)
+			? Math.max(returnReadyAtS, outbound.completedAtS)
 			: Number.POSITIVE_INFINITY;
 	const returnWasCommitted =
 		input.desired === "parked" ||
@@ -1204,15 +1217,30 @@ export function projectSystemTrafficActor(input: {
 		schedule.desired === "away"
 			? schedule.boundaryS
 			: schedule.boundaryS - input.actor.schedule.awayS;
-	if (schedule.desired === "parked")
+	if (schedule.desired === "parked") {
+		const priorDepartureAtS = departureAtS - input.actor.schedule.cycleS;
+		const prior = projectTrafficVisit({
+			...input,
+			departureAtS: priorDepartureAtS,
+			launchReadyAtS: priorDepartureAtS,
+			awayOrdinal: schedule.awayOrdinal - 1,
+			desired: "parked",
+			desiredBoundaryS: priorDepartureAtS + input.actor.schedule.awayS,
+		});
+		if (prior.phase !== "parked-home") return prior;
 		return projectTrafficVisit({
 			...input,
 			departureAtS,
-			launchReadyAtS: departureAtS,
+			launchReadyAtS: Math.max(
+				departureAtS,
+				prior.completedAtS ?? departureAtS,
+			),
 			awayOrdinal: schedule.awayOrdinal,
 			desired: "parked",
 			desiredBoundaryS: schedule.boundaryS,
+			homeBerthId: prior.berthId ?? undefined,
 		});
+	}
 
 	const previousDepartureAtS = departureAtS - input.actor.schedule.cycleS;
 	const previous = projectTrafficVisit({

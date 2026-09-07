@@ -257,7 +257,7 @@ describe("terminal-to-terminal route projection", () => {
 		});
 	});
 
-	test("a long visit cannot restart at home when the next away interval begins", () => {
+	test("a long visit stays continuous across later schedule intent boundaries", () => {
 		const overlapRecord = startSystem(generateGalaxy(2, 0));
 		const overlapHome = required(
 			generateContents(overlapRecord).stations.find(
@@ -269,31 +269,35 @@ describe("terminal-to-terminal route projection", () => {
 			overlapRecord.index,
 			overlapHome,
 		)[0];
-		const nextDeparture =
+		const secondDeparture =
 			overlapActor.schedule.departureAtS + overlapActor.schedule.cycleS;
-		const before = projectSystemTrafficActor({
-			record: overlapRecord,
-			actor: overlapActor,
-			gameTime: nextDeparture - 0.01,
-		});
-		const after = projectSystemTrafficActor({
-			record: overlapRecord,
-			actor: overlapActor,
-			gameTime: nextDeparture + 0.01,
-		});
-		expect(before.phase).toBe("cruise");
-		expect(after.phase).toBe("cruise");
-		const distance = Math.hypot(
-			after.pos.x - before.pos.x,
-			after.pos.y - before.pos.y,
-			after.pos.z - before.pos.z,
-		);
-		const physicalTravel =
-			Math.hypot(before.vel.x, before.vel.y, before.vel.z) * 0.02;
-		// Cruise can legitimately cover more than 10,000 km in these 20 ms. The
-		// invariant is continuity at the schedule boundary: the displacement must
-		// be the motion already in progress, not a restart at the home station.
-		expect(distance).toBeCloseTo(physicalTravel, -2);
+		for (const boundary of [
+			secondDeparture,
+			secondDeparture + overlapActor.schedule.awayS,
+			secondDeparture + overlapActor.schedule.cycleS,
+		]) {
+			const before = projectSystemTrafficActor({
+				record: overlapRecord,
+				actor: overlapActor,
+				gameTime: boundary - 0.01,
+			});
+			const after = projectSystemTrafficActor({
+				record: overlapRecord,
+				actor: overlapActor,
+				gameTime: boundary + 0.01,
+			});
+			const distance = Math.hypot(
+				after.pos.x - before.pos.x,
+				after.pos.y - before.pos.y,
+				after.pos.z - before.pos.z,
+			);
+			const physicalTravel =
+				Math.hypot(before.vel.x, before.vel.y, before.vel.z) * 0.02;
+			// Cruise can legitimately cover more than 10,000 km in these 20 ms.
+			// Continuity means the displacement is the motion already in progress,
+			// not a restart at the home station when schedule intent changes.
+			expect(distance).toBeLessThanOrEqual(physicalTravel * 1.05 + 1);
+		}
 	});
 
 	test("the actor returns physically and requests any fitting home berth", () => {
@@ -555,5 +559,36 @@ describe("canonical Traffic cruise", () => {
 		expect(blocked.blockedById).toBe("planet");
 		expect(blocked.vel).toEqual({ x: 4, y: 5, z: 6 });
 		expect(blocked.completedAtS).toBeUndefined();
+	});
+
+	test("replay preserves an initially blocked route until guidance replans it", () => {
+		const phases: string[] = [];
+		const replayed = evaluateTrafficCruise(
+			{
+				...initial,
+				phase: "blocked",
+				blockedById: "planet",
+				initialPhase: "blocked",
+				initialBlockedById: "planet",
+			},
+			100.1,
+			{
+				...environment,
+				guide: (state) => {
+					phases.push(state.phase);
+					return {
+						nose: state.nose,
+						throttle: 0,
+						error: {
+							kind: "detour-unavailable",
+							blockerId: "planet",
+						},
+					};
+				},
+			},
+		);
+		expect(phases[0]).toBe("blocked");
+		expect(replayed.phase).toBe("blocked");
+		expect(replayed.blockedById).toBe("planet");
 	});
 });

@@ -79,13 +79,13 @@ The route composes the existing laws in this order:
 | `parked-home` | The actor occupies its home Berth. Desired `away` creates a launch intent with the schedule boundary as `readyAt`. |
 | `launch-queued` | The shared station Transit-lane arbitration orders the launch with player and Traffic arrivals and launches. |
 | `departing` | `arrival.ts` runs the reserved Berth's three-leg traversal in reverse. The home Berth remains occupied until the outward aperture crossing, where the reservation and grant are spent. |
-| `local-departure` | In normal flight, the actor aligns toward the selected destination Traffic hold and traverses a visible fifteen-second low-speed departure corridor before cruise takes over. |
+| `local-departure` | In normal flight, the actor aligns toward the selected destination Traffic hold and traverses a visible eight-second low-speed departure corridor before cruise takes over. |
 | `cruise` | The pure Traffic guidance controller flies the existing cruise, detour, guard and charge laws toward the moving destination hold. |
-| `local-approach` | Cruise drops into the destination frame; normal-flight guidance reaches the exact Traffic hold with zero station-relative velocity. The final hold-to-aperture transit lasts thirty seconds so arrival remains readable around the station. |
+| `local-approach` | Cruise drops into the destination frame; normal-flight guidance reaches the exact Traffic hold with zero station-relative velocity. The final hold-to-aperture transit lasts fourteen seconds so arrival remains readable around the station. |
 | `clearance-queued` | Only after reaching the hold does the actor request a fitting destination Berth through the shared Clearance queue. |
 | `lane-queued` | A promoted request reserves its Berth and waits at the hold for the shared Transit lane. The grant window has not started. |
 | `arriving` | Lane award covers hold-to-standoff guidance, axis alignment, entry below the speed gate and the existing three-leg arrival traversal. |
-| `docked-away` | The actor occupies the destination Berth and refills its drive charge for at least fifteen seconds. Desired `parked` then creates the mirrored return-home intent. |
+| `docked-away` | The actor occupies the destination Berth and refills its drive charge. Desired `parked` creates the mirrored return-home intent. |
 
 The destination Traffic hold is the cruise target, not the station centre. Its
 position and velocity are evaluated in the moving station frame at the same
