@@ -205,10 +205,22 @@ const PLACERS = {
 		await page.waitForSelector("#model-viewer canvas");
 		await page.evaluate(
 			async ([asset, radii, azimuth, elevation]) =>
-				window.__frameWorkbenchInterior(asset, radii, azimuth, elevation),
-			[shot.asset, shot.radii, shot.azimuth ?? 0, shot.elevation ?? 0],
+				window.__frameWorkbenchInterior(
+					asset,
+					radii,
+					azimuth,
+					elevation,
+					variant,
+				),
+			[
+				shot.asset,
+				shot.radii,
+				shot.azimuth ?? 0,
+				shot.elevation ?? 0,
+				shot.variant ?? "a",
+			],
 		);
-		return `workbench · ${shot.asset} interior`;
+		return `workbench · ${shot.asset} ${shot.variant ?? "a"} interior`;
 	},
 	"deep-sky": async (page) => {
 		// Back to the arrival point first. Turning the camera alone left the ship

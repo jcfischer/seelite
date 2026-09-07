@@ -70,6 +70,7 @@ import {
 	SHIP_SCALE,
 	buildMacroFixtures,
 	mast,
+	pipeRun,
 	radiatorArray,
 	tankRack,
 	truss,
@@ -86,9 +87,18 @@ import {
 	TRUSS_Y,
 	TUBE_X,
 	TUBE_Y,
+	hostDirOf,
 	isHost,
 	modularPlacements,
+	placementsOf,
 } from "./station-modular";
+import {
+	OUTPOST,
+	OUTPOST_VOCABULARY,
+	REFINERY,
+	REFINERY_RADIUS,
+	REFINERY_VOCABULARY,
+} from "./station-plant";
 import { DIRECTIONS } from "./wfc";
 import {
 	STATION_QUALITY,
@@ -866,8 +876,14 @@ export interface StationForm {
 	/** `berthSeed` is the station's own berth draw (`docking.md` §13.2), which
 	 *  reaches the interior and nothing else. Every builder takes it and most
 	 *  only forward it, which is the price of the alternative being a module
-	 *  global that a second station would overwrite. */
-	readonly build: (color: number, berthSeed: number) => BuiltPart;
+	 *  global that a second station would overwrite. `assemblySeed` is the
+	 *  station's assembly draw (§7.1), read only by a form that solves a plan;
+	 *  a hand-authored form declares two parameters and ignores the third. */
+	readonly build: (
+		color: number,
+		berthSeed: number,
+		assemblySeed: number,
+	) => BuiltPart;
 }
 
 export type StationFormId = "a" | "b" | "c" | "d";
@@ -3011,6 +3027,9 @@ function buildHeatRing(
  *  every outpost form, because the pad is what the category *is* — the rest of
  *  each form is the machine that justifies one. */
 function buildPadDeck(
+	/** The role whose aperture the deck carries — the two pad roles share this
+	 *  deck since #257, sized by `r` rather than by the role. */
+	type: StationType,
 	fixtures: StationFixture[],
 	r: number,
 	z: number,
@@ -3033,7 +3052,7 @@ function buildPadDeck(
 		undefined,
 	);
 	group.add(deck);
-	group.add(buildAperture("outpost", z, berthSeed));
+	group.add(buildAperture(type, z, berthSeed));
 	// Four floods on the coaming, and one warm heat lamp that breathes: the only
 	// motion an outpost has, and it says the machine is running rather than
 	// anything about clearance (§5.1).
@@ -3121,6 +3140,7 @@ function buildOutpostDerrick(color: number, berthSeed: number): BuiltPart {
 	}
 	group.add(
 		buildPadDeck(
+			"outpost",
 			fixtures,
 			r,
 			STATION_GEOMETRY.outpost.aperturePlaneKm,
@@ -3224,7 +3244,7 @@ function buildOutpostBuoy(color: number, berthSeed: number): BuiltPart {
 		fin.name = `fin-${i}`;
 		group.add(fin);
 	}
-	group.add(buildPadDeck(fixtures, r, r * 1.0, berthSeed));
+	group.add(buildPadDeck("outpost", fixtures, r, r * 1.0, berthSeed));
 	group.add(
 		portRun("outpost", 6, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -3321,7 +3341,7 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
 		brace.position.set(side * r * 0.4, -r * 0.25, -r * 0.35);
 		group.add(brace);
 	}
-	group.add(buildPadDeck(fixtures, r, r * 0.95, berthSeed));
+	group.add(buildPadDeck("outpost", fixtures, r, r * 0.95, berthSeed));
 	const flare = buildVentBank(fixtures, r * 1.0, r * 0.08);
 	flare.position.set(-r * 0.55, r * 0.75, -r * 1.1);
 	flare.rotation.x = -Math.PI / 2.2;
@@ -3373,6 +3393,52 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
 const MODULAR_CELL_KM = 0.2;
 
 /**
+ * The unit step of a `DIRECTIONS` index, in the plan's plane.
+ *
+ * Module level rather than a closure in each builder: three of them had it,
+ * and a change to how a plan's axes map onto the world would have had to be
+ * made in three places. The same reason `hostDirOf` and `radiatorLeaf` are
+ * shared.
+ */
+const towardCell = (dir: number) =>
+	new THREE.Vector3(DIRECTIONS[dir][0], DIRECTIONS[dir][1], 0);
+
+/** A cell's centre, given the vocabulary's pitch and the plane it lies in. */
+const cellCentreKm = (p: Placement, cellKm: number, z: number) =>
+	new THREE.Vector3(p.dx * cellKm, p.dy * cellKm, z);
+
+/**
+ * A leaf's radiator bank: panels on a spine running away from the host,
+ * standing out of the plan's plane both ways. Three builders had this inline
+ * — sage counted them — and they differed only in where the spine starts and
+ * how many panels it carries.
+ */
+function radiatorLeaf(
+	pools: Pools,
+	origin: THREE.Vector3,
+	host: THREE.Vector3,
+	count: number,
+	/** Which way the panels rise. Both ways by default, which is what a leaf
+	 *  in open space wants; the Works passes +Z alone, because its floor is
+	 *  under the bank. */
+	sides: readonly THREE.Vector3[] = [
+		new THREE.Vector3(0, 0, 1),
+		new THREE.Vector3(0, 0, -1),
+	],
+) {
+	const away = host.clone().negate();
+	for (const up of sides)
+		radiatorArray(pools, {
+			origin,
+			along: away,
+			up,
+			count,
+			panelWidthKm: SHIP_SCALE.panelKm,
+			panelHeightKm: SHIP_SCALE.panelHeightKm,
+		});
+}
+
+/**
  * Trade D — Assembly. A compact hub carrying the slot, a truss spine along
  * ±Y, and modules solved onto a diamond of cells by wave function collapse
  * (`station-modular.ts`, on seekolous's solver): habitat tubes docked end to
@@ -3389,21 +3455,26 @@ const MODULAR_CELL_KM = 0.2;
  * mouth — and no wider, so the modules read as the station and the hub as
  * the thing they dock to.
  *
- * **The plan is the berth seed's.** `buildStationForm` carries no station
- * identity but that draw, and it is per station and deterministic, which is
- * what the plan needs: two clients at one seed build one station, and a
- * station keeps its shape across visits. A finer identity is #202's "seed by
- * station id" and lands with it.
+ * **The plan is the assembly seed's** (`DOMAIN.STATION_ASSEMBLY`, #257). It
+ * was the berth seed's for a round, and sage asked for the split on #255: a
+ * station's shape and the side its berth is on were one number, so neither
+ * could vary alone. The draw is per station and deterministic, which is what
+ * the plan needs: two clients at one seed build one station, and a station
+ * keeps its shape across visits.
  *
  * Every module is the hub's colour where it is a hull and unpainted grey
  * where it is structure, so §7's colour cue survives the form.
  */
-function buildTradeModular(color: number, berthSeed: number): BuiltPart {
+function buildTradeModular(
+	color: number,
+	berthSeed: number,
+	assemblySeed: number,
+): BuiltPart {
 	const r = STATION_GEOMETRY.trade.coreRadiusKm;
 	const c = MODULAR_CELL_KM;
 	const group = new THREE.Group();
 	const fixtures: StationFixture[] = [];
-	const { placements } = modularPlacements(berthSeed);
+	const { placements } = modularPlacements(assemblySeed);
 	const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 	const plane = STATION_GEOMETRY.trade.aperturePlaneKm;
 	const structure = plainMaterial(0x6f7d88, 0.78, 0.42);
@@ -3434,9 +3505,8 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 	const pools = new Pools();
 	const tubeR = c * 0.24;
 	const tubes: Placement[] = [];
-	/** The unit vector of a `DIRECTIONS` index, in the grid's plane. */
-	const toward = (dir: number) => V(DIRECTIONS[dir][0], DIRECTIONS[dir][1], 0);
-	const cellCentre = (p: Placement) => V(p.dx * c, p.dy * c, 0);
+	const toward = towardCell;
+	const cellCentre = (p: Placement) => cellCentreKm(p, c, 0);
 	/** A docking collar on a tube's or the hub's port. */
 	const collar = (at: THREE.Vector3, axis: "x" | "y", radius: number) => {
 		const ring = new THREE.Mesh(
@@ -3553,7 +3623,7 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 					SHIP_SCALE.strutKm,
 					V(0, 0, 1),
 				);
-		return toward(p.host < 0 ? 1 : p.host);
+		return toward(hostDirOf(p));
 	};
 	for (const p of placements) {
 		const centre = cellCentre(p);
@@ -3592,17 +3662,12 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 				// A spine from the cell's edge across the cell, panels on it
 				// standing out of the plane both ways.
 				const host = leafSupport(p);
-				const origin = centre.clone().addScaledVector(host, c * 0.5);
-				const away = host.clone().negate();
-				for (const up of [V(0, 0, 1), V(0, 0, -1)])
-					radiatorArray(pools, {
-						origin,
-						along: away,
-						up,
-						count: 10,
-						panelWidthKm: SHIP_SCALE.panelKm,
-						panelHeightKm: SHIP_SCALE.panelHeightKm,
-					});
+				radiatorLeaf(
+					pools,
+					centre.clone().addScaledVector(host, c * 0.5),
+					host,
+					10,
+				);
 				break;
 			}
 			case TANKS: {
@@ -3698,6 +3763,644 @@ function buildTradeModular(color: number, berthSeed: number): BuiltPart {
 		),
 	);
 	return { group, fixtures, spinner: spun };
+}
+
+/**
+ * The cell pitch of the refinery Works, kilometres. 0.19 km carries a 60 m
+ * unit with a clear lane between neighbours, and the two-cell diamond spans
+ * 0.76 km — the width of floor a 0.62 km rock can be quarried to without
+ * cutting through its own flanks.
+ */
+const WORKS_CELL_KM = 0.16;
+/**
+ * The rock's nominal radius, and the floor its +Z face is machined to.
+ *
+ * **The floor is high on the rock and the plant is taller than the rim.**
+ * Flown once at a 0.62 km rock cut to 0.2: the rock displaces to 0.43 km at
+ * its pole, so every unit stood in a pit and the hero framing was bare rock
+ * with a pad in it. The cut takes the top quarter off a 0.55 km rock — the
+ * rim stands 0.07 km proud of the floor at the field's edge and falls away
+ * outside it — and a column tops out at 0.5 km, above the rock's own pole.
+ * What a pilot sees is a machined mesa with plant standing off it.
+ */
+const WORKS_ROCK_KM = 0.55;
+const WORKS_FLOOR_KM = 0.16;
+
+/**
+ * Refinery D — Works. **The rock is the station**, quarried flat across its
+ * +Z face, with a plant solved onto that floor by wave function collapse
+ * (`station-plant.ts`): a head house at the centre carrying the pad at the
+ * table's plane, a pipe line running from it to a mine head over the shaft
+ * at the −Y edge, and columns, crackers, pipe racks, tank farms, flare
+ * stacks and radiator banks where the plan puts them. Every station of the
+ * form its own plant, on the principal's steer (2026-09-06).
+ *
+ * **Two passes were flown and rejected before this one, and both were the
+ * same mistake from opposite sides.** The first stood every unit on a plated
+ * deck tile a cell wide, and the tiles were an opaque wall with the plant
+ * hidden behind them. The second removed the tiles and left the units
+ * hanging on 4 m pipes in open space with a 160 m pebble at one tip — the
+ * principal read it as *"modules linked only by trusses, one little asteroid
+ * with a ton of modules around it"*, which is the role inverted: the other
+ * three refinery forms are all rock first and machine second (§7.1), and so
+ * is this one now. The plant is 0.76 km across on a rock 1.24 km wide.
+ *
+ * **The floor is a bench, not a bowl.** `buildAsteroid`'s keep-clear volume
+ * eases its ceiling up toward the rim by `rimKm`, which the other three
+ * forms leave at 0.55 of the cut radius so a pad sits in a shallow dish;
+ * a plant needs a flat floor, so this one asks for 0.06 km and the rock
+ * rises round the field as a quarry rim rather than under it.
+ *
+ * A unit is sunk into the floor rather than standing on it, so the rock
+ * carries every part and `tests/station-mesh.test.ts`'s island check reads
+ * one body. The pipe web still runs between joined cells, on the surface,
+ * because a plant's pipes are what say which unit feeds which — but nothing
+ * structural hangs on them now.
+ *
+ * The pad is the head house's roof at the table's plane, and the corridor in
+ * front of it is a cylinder about the axis that no cell but the centre
+ * enters. Nothing spins (`docking.md` §4).
+ */
+function buildRefineryWorks(
+	color: number,
+	berthSeed: number,
+	assemblySeed: number,
+): BuiltPart {
+	const plane = STATION_GEOMETRY.refinery.aperturePlaneKm;
+	const c = WORKS_CELL_KM;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const { placements } = placementsOf(REFINERY_VOCABULARY, assemblySeed);
+	const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+	const structure = plainMaterial(0x6f7d88, 0.78, 0.42);
+	const tankSkin = plainMaterial(0xb2a894, 0.85, 0.16);
+	const pools = new Pools();
+	const toward = towardCell;
+	/** A cell's centre, on the quarried floor. */
+	const cellCentre = (p: Placement) => cellCentreKm(p, c, WORKS_FLOOR_KM);
+	const S = SHIP_SCALE;
+	const R = REFINERY;
+	const pipeR = S.pipeKm;
+
+	// The rock, quarried flat across the field and a cell beyond it, so the
+	// rim stands outside the outermost unit rather than through it.
+	group.add(
+		buildAsteroid(WORKS_ROCK_KM, "refinery-works", {
+			radiusKm: c * (REFINERY_RADIUS + 0.9),
+			ceilingKm: WORKS_FLOOR_KM,
+			rimKm: 0.05,
+		}),
+	);
+
+	// The head house: a squared block from inside the rock up to the underside
+	// of the pad slab, which is what carries the pad.
+	const headHalf = 0.115;
+	group.add(
+		shell(
+			[
+				{
+					z: WORKS_FLOOR_KM - 0.09,
+					w: headHalf,
+					h: headHalf,
+					e: 8,
+					hard: true,
+				},
+				{ z: plane - 0.016, w: headHalf, h: headHalf, e: 8 },
+			],
+			hullMaterial(color, "refinery"),
+			"core",
+			8,
+			true,
+		),
+	);
+	// The pad deck, sized so its slab spans the sim's berths (`stationInterior`
+	// puts them at ±0.155 km on a 0.19 km half-deck) rather than the role's
+	// core radius, which would cover the first ring of plant.
+	group.add(buildPadDeck("refinery", fixtures, 0.222, plane, berthSeed));
+
+	/** Three pipe lanes along the floor from one cell's centre to a neighbour's. */
+	const pipesBetween = (from: THREE.Vector3, to: THREE.Vector3) => {
+		const axis = to.clone().sub(from).normalize();
+		const across = V(-axis.y, axis.x, 0);
+		for (const lane of [-1, 0, 1]) {
+			const offset = across.clone().multiplyScalar(lane * pipeR * 4);
+			const a = from
+				.clone()
+				.add(offset)
+				.setZ(WORKS_FLOOR_KM + pipeR * 2);
+			const b = to
+				.clone()
+				.add(offset)
+				.setZ(WORKS_FLOOR_KM + pipeR * 2);
+			pipeRun(pools, [a, a.clone().lerp(b, 0.5), b], pipeR);
+		}
+	};
+	/** A distillation column: a drum standing off the floor, platform rings on it. */
+	const column = (p: Placement) => {
+		const centre = cellCentre(p);
+		// **The tallest thing on the floor**, which is what a distillation
+		// column is: 0.34 km puts its head above the rock's own pole.
+		const radius = 0.032;
+		const height = 0.34;
+		const drum = shell(
+			[
+				{ z: -0.05, w: radius, h: radius, e: 2, hard: true },
+				{ z: height, w: radius, h: radius, e: 2, hard: true },
+				{ z: height + 0.03, w: radius * 0.6, h: radius * 0.6, e: 2 },
+			],
+			hullMaterial(color, "refinery"),
+			`column-${p.dx}-${p.dy}`,
+			12,
+			true,
+		);
+		drum.position.copy(centre);
+		group.add(drum);
+		for (const z of [0.08, 0.17, 0.26]) {
+			const platform = new THREE.Mesh(
+				new THREE.TorusGeometry(radius * 1.14, radius * 0.09, 4, 16),
+				structure,
+			);
+			platform.position.set(centre.x, centre.y, centre.z + z);
+			platform.name = "column-platform";
+			group.add(platform);
+		}
+	};
+	/** A cracker: a squat block on the floor with two stacks. */
+	const cracker = (p: Placement) => {
+		const centre = cellCentre(p);
+		const block = shell(
+			[
+				{ z: -0.05, w: 0.07, h: 0.05, e: 8, hard: true },
+				{ z: 0.07, w: 0.07, h: 0.05, e: 8 },
+			],
+			hullMaterial(color, "refinery"),
+			`cracker-${p.dx}-${p.dy}`,
+			8,
+			true,
+		);
+		block.position.copy(centre);
+		group.add(block);
+		for (const x of [-0.036, 0.036]) {
+			const stack = shell(
+				[
+					{ z: 0.05, w: 0.013, h: 0.013, e: 2, hard: true },
+					{ z: 0.27, w: 0.01, h: 0.01, e: 2 },
+				],
+				structure,
+				`stack-${p.dx}-${p.dy}`,
+				8,
+				true,
+			);
+			stack.position.set(centre.x + x, centre.y, centre.z);
+			group.add(stack);
+		}
+	};
+	/** A tank farm: four drums on a ring main, standing on the floor. */
+	const tankFarm = (p: Placement) => {
+		const centre = cellCentre(p);
+		const radius = 0.026;
+		const corners = [
+			V(-0.036, -0.036, 0),
+			V(0.036, -0.036, 0),
+			V(0.036, 0.036, 0),
+			V(-0.036, 0.036, 0),
+		].map((v) => v.add(centre));
+		for (const [i, at] of corners.entries()) {
+			const drum = shell(
+				[
+					{ z: -0.03, w: radius, h: radius, e: 2, hard: true },
+					{ z: 0.07, w: radius, h: radius, e: 2, hard: true },
+					{ z: 0.09, w: radius * 0.7, h: radius * 0.7, e: 2 },
+				],
+				tankSkin,
+				`tank-${p.dx}-${p.dy}-${i}`,
+				10,
+				true,
+			);
+			drum.position.copy(at);
+			group.add(drum);
+		}
+		// The ring main runs through every drum and the cell's centre, which is
+		// where the plant's pipes arrive.
+		pipeRun(
+			pools,
+			[...corners, corners[0], centre, corners[2]].map((v) =>
+				v.clone().setZ(WORKS_FLOOR_KM + pipeR * 2),
+			),
+			pipeR,
+		);
+	};
+	for (const p of placements) {
+		const centre = cellCentre(p);
+		// The web: every joined pair once, from the lower-indexed side.
+		for (const dir of [1, 3])
+			if (p.joined[dir])
+				pipesBetween(centre, centre.clone().addScaledVector(toward(dir), c));
+		switch (p.module) {
+			case R.PIPE_X:
+			case R.PIPE_Y: {
+				// A rack cell is its pipes; a valve block on the floor marks it.
+				const block = shell(
+					[
+						{ z: -0.02, w: 0.022, h: 0.022, e: 8, hard: true },
+						{ z: 0.03, w: 0.022, h: 0.022, e: 8 },
+					],
+					structure,
+					`valves-${p.dx}-${p.dy}`,
+					8,
+					true,
+				);
+				block.position.copy(centre);
+				group.add(block);
+				break;
+			}
+			case R.COLUMN:
+				column(p);
+				break;
+			case R.CRACKER:
+				cracker(p);
+				break;
+			case R.SHAFT: {
+				// The mine head: a headframe over the shaft the plant eats from,
+				// with a hoist house beside it. The rock *is* the ore, so what
+				// stands here is the way into it rather than a pile beside it.
+				const house = shell(
+					[
+						{ z: -0.05, w: 0.05, h: 0.04, e: 8, hard: true },
+						{ z: 0.05, w: 0.05, h: 0.04, e: 8 },
+					],
+					hullMaterial(color, "refinery"),
+					"hoist-house",
+					8,
+					true,
+				);
+				house.position.copy(centre).setY(centre.y + 0.05);
+				group.add(house);
+				const top = centre.clone().setZ(centre.z + 0.26);
+				for (const [dx, dy] of [
+					[-0.045, -0.045],
+					[0.045, -0.045],
+					[0.045, 0.045],
+					[-0.045, 0.045],
+				])
+					truss(
+						pools,
+						centre.clone().add(V(dx, dy, -0.04)),
+						top,
+						S.strutKm,
+						V(0, 0, 1),
+					);
+				const sheave = new THREE.Mesh(
+					new THREE.TorusGeometry(0.02, 0.005, 4, 16),
+					structure,
+				);
+				sheave.position.copy(top);
+				sheave.rotation.y = Math.PI / 2;
+				sheave.name = "sheave";
+				group.add(sheave);
+				break;
+			}
+			case R.TANKS:
+				tankFarm(p);
+				break;
+			case R.FLARE: {
+				// A flare stack: a lattice mast off the floor with a vent bank at
+				// its head, throats up and away from the plant.
+				const top = centre.clone().setZ(centre.z + 0.32);
+				truss(
+					pools,
+					centre.clone().setZ(centre.z - 0.04),
+					top,
+					S.strutKm * 1.5,
+					V(1, 0, 0),
+				);
+				const bank = buildVentBank(fixtures, 0.1, 0.011);
+				bank.position.copy(top).setZ(top.z + 0.02);
+				group.add(bank);
+				break;
+			}
+			case R.RADIATOR: {
+				// **A rank of fins standing on the floor**, not a wing on the
+				// rock. `buildRadiator` — the Warren's, the Collar's and the
+				// Spar's — reaches 1.27 of its span and spans 1.34 across, so
+				// on a rock this size it is a flat plate as tall as the station
+				// whichever way it is turned; it was flown outboard on the
+				// flank and again rooted on the axis, and the sheet showed a
+				// billboard behind a rock both times. What a plant on a rock
+				// actually has is a farm laid out on the ground, and a rank of
+				// 0.1 km fins reads at range without being a wall.
+				//
+				// Its own dimensions rather than `SHIP_SCALE`'s, and plain
+				// meshes rather than the pools, because a fin sized to a
+				// courier is invisible on a 1.1 km rock and a pooled one is
+				// held to the fixture caps `tests/station-finish.test.ts`
+				// reads. A fixture is detail on a hull; this is plant.
+				const host = toward(hostDirOf(p));
+				const across = V(-host.y, host.x, 0);
+				const spine = centre.clone().addScaledVector(host, -c * 0.34);
+				const rail = new THREE.Mesh(
+					new THREE.BoxGeometry(0.012, 0.012, 0.012),
+					structure,
+				);
+				rail.scale.set(1, 1, 1);
+				rail.position.copy(spine).setZ(spine.z + 0.012);
+				group.add(rail);
+				for (let i = 0; i < 7; i++) {
+					const fin = new THREE.Mesh(
+						new THREE.BoxGeometry(0.1, 0.005, 0.075),
+						plainMaterial(0x5f6d78, 0.86, 0.3),
+					);
+					fin.position
+						.copy(spine)
+						.addScaledVector(across, (i - 3) * 0.026)
+						.addScaledVector(host, 0.05)
+						.setZ(spine.z + 0.045);
+					fin.quaternion.setFromUnitVectors(V(1, 0, 0), host);
+					fin.name = "radiator";
+					group.add(fin);
+				}
+				break;
+			}
+		}
+	}
+	pools.emit(group, "module");
+
+	// Lit ports down the head house's ±X faces, two rows: the crew works in
+	// the block the pad stands on.
+	group.add(
+		portRun("refinery", 12, (i, count, position, normal) => {
+			const { row, along } = rowsOf(i, count, 2);
+			const side = row === 0 ? 1 : -1;
+			normal.set(side, 0, 0);
+			position.set(
+				side * headHalf * 0.99,
+				(along - 0.5) * headHalf * 1.6,
+				WORKS_FLOOR_KM + 0.03 + (i % 3) * 0.06,
+			);
+		}),
+	);
+	// Clutter on the head house's ±Y faces, between the ports.
+	group.add(
+		greebleRun(
+			"refinery",
+			"refinery-d",
+			[
+				{
+					count: 18,
+					sizeKm: 0.028,
+					reliefKm: 0.02,
+					place: (i, count, position, normal) => {
+						const { row, along } = rowsOf(i, count, 2);
+						const side = row === 0 ? 1 : -1;
+						normal.set(0, side, 0);
+						// **Under the pad's own plane, with the piece's height to
+						// spare.** A row at 0.055 put the top band's centre at
+						// 0.385 km against a 0.396 km plane, so a 28 m piece
+						// crossed it — and the head house is 0.115 km half-wide
+						// against a 0.106 km corridor radius, so a piece on a ±Y
+						// face reaches 0.101 km from the axis. Inside the
+						// cylinder and past the plane is exactly what the
+						// corridor row forbids.
+						position.set(
+							(along - 0.5) * headHalf * 1.6,
+							side * headHalf,
+							WORKS_FLOOR_KM + 0.02 + (i % 4) * 0.038,
+						);
+					},
+				},
+			],
+			group,
+		),
+	);
+	return { group, fixtures };
+}
+
+/**
+ * The cell pitch of the outpost Cluster, kilometres: a 70 m can in each
+ * cell at 0.32 of it, and the three-cell diamond's tips at 0.33 km, inside
+ * the pool's 0.42 km reach. 0.09 was flown first and the cluster was a
+ * toy under its own 0.31 km pad, which the sim's berth catalogue sizes and
+ * the form cannot shrink.
+ */
+const CLUSTER_CELL_KM = 0.11;
+
+/**
+ * Outpost D — Cluster. The Assembly's grammar at a fifth of the size
+ * (`station-plant.ts`): a core can carrying the pad on its +Z face, a truss
+ * spine, habitat cans docked end to end, and tank racks, a tower and
+ * radiator fins where the plan hangs them. Every leaf is strutted from the
+ * centre of every host beside it, every member at `SHIP_SCALE`.
+ *
+ * The pad deck overhangs the first ring of cells, which is why the
+ * vocabulary bars the tower from that ring; everything else in a cell is
+ * shorter than the deck's underside. Nothing spins (`docking.md` §4).
+ */
+function buildOutpostCluster(
+	color: number,
+	berthSeed: number,
+	assemblySeed: number,
+): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const plane = STATION_GEOMETRY.outpost.aperturePlaneKm;
+	const c = CLUSTER_CELL_KM;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const { placements } = placementsOf(OUTPOST_VOCABULARY, assemblySeed);
+	const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+	const structure = plainMaterial(0x6f7d88, 0.78, 0.42);
+	const pools = new Pools();
+	const toward = towardCell;
+	const cellCentre = (p: Placement) => cellCentreKm(p, c, 0);
+	const S = SHIP_SCALE;
+	const O = OUTPOST;
+	const canR = c * 0.32;
+
+	// The core can, standing along the axis under the pad and sunk 10 m into
+	// the deck slab, which begins 0.16·r under the plane.
+	const coreR = c * 0.5;
+	group.add(
+		shell(
+			[
+				{ z: -c * 0.7, w: coreR * 0.8, h: coreR * 0.8, e: 2 },
+				{ z: -c * 0.5, w: coreR, h: coreR, e: 2, hard: true },
+				{ z: plane - r * 0.16 + 0.01, w: coreR, h: coreR, e: 2 },
+			],
+			hullMaterial(color, "outpost"),
+			"core",
+			12,
+			true,
+		),
+	);
+	group.add(buildPadDeck("outpost", fixtures, r, plane, berthSeed));
+	// The vent bank under the core, throats down and away from the pad: the
+	// only flare an outpost has, and the role's one moving light.
+	const vent = buildVentBank(fixtures, r * 0.6, r * 0.05);
+	vent.position.set(coreR * 0.3, 0, -c * 0.72);
+	vent.rotation.x = Math.PI;
+	group.add(vent);
+
+	const cans: Placement[] = [];
+	/** A docking collar on a can's or the core's port. */
+	const collar = (at: THREE.Vector3, axis: "x" | "y", radius: number) => {
+		const ring = new THREE.Mesh(
+			new THREE.TorusGeometry(radius * 1.02, radius * 0.12, 4, 16),
+			structure,
+		);
+		ring.position.copy(at);
+		if (axis === "x") ring.rotation.y = Math.PI / 2;
+		else ring.rotation.x = Math.PI / 2;
+		ring.name = "collar";
+		group.add(ring);
+	};
+	/** A habitat can the length of its cell, necked at both ends. */
+	const can = (p: Placement) => {
+		const centre = cellCentre(p);
+		const drum = shell(
+			[
+				{ z: -c * 0.5, w: canR * 0.8, h: canR * 0.8, e: 2, hard: true },
+				{ z: -c * 0.42, w: canR, h: canR, e: 2, hard: true },
+				{ z: c * 0.42, w: canR, h: canR, e: 2, hard: true },
+				{ z: c * 0.5, w: canR * 0.8, h: canR * 0.8, e: 2 },
+			],
+			hullMaterial(color, "outpost"),
+			`can-${p.dx}-${p.dy}`,
+			12,
+			true,
+		);
+		if (p.module === O.CAN_X) drum.rotation.y = Math.PI / 2;
+		else drum.rotation.x = Math.PI / 2;
+		drum.position.copy(centre);
+		group.add(drum);
+		const axisDirs = p.module === O.CAN_X ? [0, 1] : [2, 3];
+		for (const dir of axisDirs)
+			if (p.joined[dir])
+				collar(
+					centre.clone().addScaledVector(toward(dir), c * 0.5),
+					p.module === O.CAN_X ? "x" : "y",
+					canR,
+				);
+	};
+	/** A leaf's struts, from the centre of every host beside it. */
+	const leafSupport = (p: Placement) => {
+		const centre = cellCentre(p);
+		for (let dir = 0; dir < 4; dir++)
+			if (OUTPOST_VOCABULARY.hosts.has(p.beside[dir]))
+				truss(
+					pools,
+					centre.clone().addScaledVector(toward(dir), c),
+					centre,
+					S.strutKm,
+					V(0, 0, 1),
+				);
+		return toward(hostDirOf(p));
+	};
+	for (const p of placements) {
+		const centre = cellCentre(p);
+		switch (p.module) {
+			case O.CORE:
+				for (let dir = 0; dir < 4; dir++)
+					if (p.joined[dir])
+						collar(
+							toward(dir).multiplyScalar(coreR * 0.96),
+							dir < 2 ? "x" : "y",
+							canR * 1.15,
+						);
+				break;
+			case O.CAN_X:
+			case O.CAN_Y:
+				can(p);
+				cans.push(p);
+				break;
+			case O.TRUSS_X:
+			case O.TRUSS_Y: {
+				const axis = toward(p.module === O.TRUSS_X ? 1 : 3);
+				truss(
+					pools,
+					centre.clone().addScaledVector(axis, -c * 0.5),
+					centre.clone().addScaledVector(axis, c * 0.5),
+					S.trussKm,
+					V(0, 0, 1),
+				);
+				break;
+			}
+			case O.TANKS: {
+				const host = leafSupport(p);
+				tankRack(pools, {
+					origin: centre.clone().add(V(0, 0, -S.tankKm * 1.2)),
+					along: host,
+					up: V(0, 0, 1),
+					count: 4,
+					radiusKm: S.tankKm,
+					lengthKm: S.tankLengthKm,
+				});
+				break;
+			}
+			case O.TOWER:
+				leafSupport(p);
+				mast(pools, group, {
+					base: centre,
+					up: V(0, 0, 1),
+					heightKm: S.mastHeightKm,
+					widthKm: S.mastKm,
+				});
+				break;
+			case O.FINS: {
+				const host = leafSupport(p);
+				radiatorLeaf(
+					pools,
+					centre.clone().addScaledVector(host, c * 0.5),
+					host,
+					5,
+				);
+				break;
+			}
+		}
+	}
+	pools.emit(group, "module");
+
+	// Lit ports along the +Z face of every can, in its outboard half, for
+	// the Assembly's reason: the planted cans sit against the core.
+	group.add(
+		portRun("outpost", cans.length * 2, (i, count, position, normal) => {
+			const perCan = Math.max(1, Math.ceil(count / cans.length));
+			const at = cans[i % cans.length];
+			const slot = (Math.floor(i / cans.length) + 0.5) / perCan;
+			const outboard = toward(
+				at.module === O.CAN_X ? (at.dx >= 0 ? 1 : 0) : at.dy >= 0 ? 3 : 2,
+			);
+			normal.set(0, 0, 1);
+			position
+				.set(at.dx * c, at.dy * c, canR * 0.98)
+				.addScaledVector(outboard, (0.25 + slot * 0.2) * c);
+		}),
+	);
+	// Clutter on the core can's flank **above its port collars**, under the pad
+	// slab. Round the ports at z = 0 the collars cover ±40° of the flank, and
+	// a piece snapped onto a collar's square-section tube is one the mounting
+	// row's ray misses — three of `nostromo`'s tripled count landed there.
+	group.add(
+		greebleRun(
+			"outpost",
+			"outpost-d",
+			[
+				{
+					count: 10,
+					sizeKm: coreR * 0.12,
+					reliefKm: coreR * 0.1,
+					place: (i, count, position, normal) => {
+						const { theta } = ringAt(i, count);
+						normal.set(Math.cos(theta), Math.sin(theta), 0);
+						position
+							.copy(normal)
+							.multiplyScalar(coreR)
+							.setZ(c * 0.65 + (i % 3) * c * 0.22);
+					},
+				},
+			],
+			group,
+		),
+	);
+	return { group, fixtures };
 }
 
 /**
@@ -3798,6 +4501,20 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			reachKm: 1.15,
 			build: buildRefinerySpar,
 		},
+		{
+			id: "d",
+			name: "Works",
+			thesis:
+				"the rock quarried flat and a plant solved onto its floor by wave function collapse; the pad on the head house, a mine head at the edge",
+			// **The rock is what reaches**, and it is the same rock at every
+			// seed: 0.632–0.639 km over the spread, which is a 0.55 km asteroid
+			// displaced to about 1.15 of its nominal radius. Nothing the plan
+			// puts on the quarried floor passes it — the tallest column tops out
+			// at 0.5 km on the axis. `tests/station-mesh.test.ts` measures every
+			// plan its seed spread builds against this.
+			reachKm: 0.68,
+			build: buildRefineryWorks,
+		},
 	],
 	outpost: [
 		{
@@ -3821,6 +4538,17 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			reachKm: 0.42,
 			build: buildOutpostRig,
 		},
+		{
+			id: "d",
+			name: "Cluster",
+			thesis:
+				"the Assembly's grammar at a fifth of the size: a core can under the pad, a truss spine, cans and fins solved by wave function collapse",
+			// The spine's tips are 0.27 km out; a leaf beside a tip cell reaches
+			// about 0.25. The pool's figure, and the seed spread is measured
+			// against it.
+			reachKm: 0.42,
+			build: buildOutpostCluster,
+		},
 	],
 };
 
@@ -3838,21 +4566,19 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	trade: "a",
 	shipyard: "a",
-	// **Placeholder, and it says so.** This role was never ranked — round one
-	// sent it back with an instruction rather than an order — so `a` is first in
-	// the list and nothing more.
+	// **D, on the principal's yes to #257's sheet (2026-09-06).** Both pad
+	// roles were placeholders for two rounds — `a` was first in the list and
+	// nothing more, and the Warren's old justification had outlived the
+	// outline gate it reasoned about. The Works and the Cluster were built
+	// for a ranking round, shown at four plans under three finishes and four
+	// framings, and taken. These are choices now, and the first the two roles
+	// have had.
 	//
-	// It used to carry a justification: the Warren was chosen because it cleared
-	// the outline floor `probe-station.mjs` gated on, where the other two did
-	// not. That gate was withdrawn later in the same node, so the reasoning
-	// outlived the thing it reasoned about. The figures are still measured and
-	// printed; they are no longer a reason to pick one form over another.
-	refinery: "a",
-	// Unranked, like the refinery's was: three new forms and nobody has looked
-	// at them. It changes nothing in a running game either way — `system.ts`
-	// places no outposts, because what one sells and how often one exists are
-	// #13's and #6's questions rather than this round's.
-	outpost: "a",
+	// The refinery's changes what a running game draws: `system.ts` places
+	// refineries. The outpost's does not — it places no outposts, because
+	// what one sells and how often one exists are #13's and #6's questions.
+	refinery: "d",
+	outpost: "d",
 };
 
 const formOf = (type: StationType, id: StationFormId) => {
@@ -3902,13 +4628,18 @@ export function buildStationForm(
 	// the station's own draw puts a ship on a berth with no pad — and a default
 	// turns that into a silent wrong answer rather than a compile error.
 	berthSeed: number,
+	// **Also required.** The trade Assembly solved its plan from `berthSeed`
+	// for a round (#255) and sage asked for the split; a default here would
+	// put it back for any caller that forgot, silently, on a form whose whole
+	// point is that two stations differ.
+	assemblySeed: number,
 ): StationMesh {
 	const form = formOf(type, formId);
 	// The builder returns its own fixtures rather than filling an array handed
 	// to it: with an out-parameter the return type said a builder produced no
 	// lights while it in fact produced most of them, so a fourth station type
 	// would have compiled with none and lit nothing.
-	const built = form.build(color, berthSeed);
+	const built = form.build(color, berthSeed, assemblySeed);
 	// #202's macro structure, on the finishes that carry it. Added to the
 	// built group after the form so the fixtures can be cast onto the structure
 	// that exists, and inside it rather than beside it so a role that spins
@@ -3979,8 +4710,15 @@ export function buildStationMesh(
 	type: StationType,
 	color: number,
 	berthSeed: number,
+	assemblySeed: number,
 ): StationMesh {
-	return buildStationForm(type, SELECTED_FORM[type], color, berthSeed);
+	return buildStationForm(
+		type,
+		SELECTED_FORM[type],
+		color,
+		berthSeed,
+		assemblySeed,
+	);
 }
 
 /**

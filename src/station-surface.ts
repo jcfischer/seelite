@@ -357,7 +357,16 @@ export function buildAsteroid(
 	 * towards the rim — so it reads as ground that has been machined flat for
 	 * the pad, which is what it is.
 	 */
-	clear?: { radiusKm: number; ceilingKm: number },
+	clear?: {
+		radiusKm: number;
+		ceilingKm: number;
+		/** How far the ceiling rises from the centre to the rim of the cut. The
+		 *  default is the bench the three rock forms were flown with, a bowl
+		 *  easing up by 0.55 of the radius; the Works (#257) asks for a few
+		 *  tens of metres, because a plant stands on a floor and not in a bowl,
+		 *  and the rock then rises round the floor as a quarry rim. */
+		rimKm?: number;
+	},
 ): THREE.Mesh {
 	// Subdivision 4, not 3. Flat shading used to hide the tessellation by owning
 	// it; smooth-shaded with a normal map, a coarse hull shows its facets as
@@ -419,7 +428,10 @@ export function buildAsteroid(
 				// vertical wall, which reads as a hole punched in the rock rather
 				// than as a bench cut into it.
 				const t = rho / clear.radiusKm;
-				v.z = Math.min(v.z, clear.ceilingKm + clear.radiusKm * 0.55 * t * t);
+				v.z = Math.min(
+					v.z,
+					clear.ceilingKm + (clear.rimKm ?? clear.radiusKm * 0.55) * t * t,
+				);
 			}
 		}
 		position.setXYZ(i, v.x, v.y, v.z);

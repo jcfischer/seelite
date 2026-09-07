@@ -54,6 +54,13 @@ export const DOMAIN = {
 	 *  shift it, reproducing inside one tag exactly the coupling the tags exist
 	 *  to escape. */
 	STATION_BERTHS: 12,
+	/** The per-station assembly draw: the plan a wave-function-collapse form
+	 *  solves its modules onto (`station-types.md` §7.1). Its own tag rather
+	 *  than a read of `STATION_BERTHS`, which is what #255 shipped for the
+	 *  trade Assembly and what sage asked to split there: a form whose shape
+	 *  and whose berth side come from one number cannot vary one without the
+	 *  other. */
+	STATION_ASSEMBLY: 13,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

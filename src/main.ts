@@ -2438,6 +2438,7 @@ class Game {
 					station.type,
 					body.color,
 					station.berthSeed,
+					station.assemblySeed,
 				);
 				mesh = built.root;
 				// **E10's other half.** `station-mesh.ts` built the shields as

@@ -592,21 +592,54 @@ variants, and for the same reason: the pool is what a later decision draws on.
 | refinery | **Warren** — terraced plant cut into the rock; the pad is in the notch | **Collar** — a machined band gripping the rock at its waist | **Spar** — a processing spar run through the rock and out the far side |
 | outpost | **Derrick** — a lattice tower on a tank cluster, pad deck on top | **Buoy** — a stubby drum wearing radiator fins; nothing hangs off it | **Rig** — an angled truss holding a deck out over a drill head |
 
-Trade carries a fourth form since #202, **D — Assembly**: a compact hub
-carrying the slot, a truss spine, and modules solved onto a diamond of cells
-by wave function collapse (`station-modular.ts`, on seekolous's solver copied
-in and given directional adjacency). Its plan is the berth seed's, so every
-station of the form is its own shape and keeps it. The hub is what spins,
-for the shipyard's reason below. It entered the pool for a ranking round on
-the principal's yes (2026-09-06); `SELECTED_FORM.trade` stays A until that
-round ranks it.
+Three roles carry a fourth form, **D**, whose shape is a **plan solved by wave
+function collapse** rather than a drawing: a vocabulary of modules with
+per-axis adjacency rules, a few cells planted, the rest collapsed onto a
+diamond of cells from the station's own assembly seed (`DOMAIN.STATION_ASSEMBLY`,
+`Station.assemblySeed`, #257 — its own draw rather than the berth seed's, so a
+station's shape and the side its berth is on can vary alone). Every station of
+a solved form is its own shape and keeps it. `station-modular.ts` is the
+vocabulary core and the trade Assembly, on seekolous's solver copied in and
+given directional adjacency; `station-plant.ts` is the two pad roles'.
+
+- **Trade D — Assembly** (#202): a compact hub carrying the slot, a truss
+  spine, habitat tubes, junctions and lattice beams with radiator banks, tank
+  racks and a dish hung off them. The hub is what spins, for the shipyard's
+  reason below.
+- **Refinery D — Works** (#257): **the rock is the station.** A 0.55 km
+  asteroid quarried flat across its +Z face, with the plant solved onto that
+  floor: a head house at the centre carrying the pad at the table's plane, a
+  pipe line running from it to a mine head over the shaft at the −Y edge, a
+  flare stack beside the line, a radiator rank, and columns, crackers, pipe
+  racks and tank farms where the plan puts them. Every joined pair of cells
+  is piped centre to centre; the rock carries the mass. **Two passes were
+  flown and rejected on the sheet first, and they were the same mistake from
+  opposite sides**: units on plated deck tiles read as an opaque wall with
+  the plant hidden behind it, and units on pipes alone read as *"modules
+  linked only by trusses, one little asteroid with a ton of modules around
+  it"* — the role inverted, since the other three refinery forms are all
+  rock first and machine second.
+- **Outpost D — Cluster** (#257): the Assembly's grammar at a fifth of the
+  size — a core can carrying the pad on its +Z face, a truss spine, habitat
+  cans docked end to end, and tank racks, a tower and radiator fins. The tower
+  is barred from the first ring of cells, where the pad deck overhangs.
+
+The Assembly entered the pool for a ranking round on the principal's yes
+(2026-09-06); `SELECTED_FORM.trade` stays A until that round ranks it. **The
+Works and the Cluster were taken in that round** — shown at four plans under
+three finishes and four framings on the finish sheet
+(`scripts/shot-finishes.mjs`, which grew a `SEEDS` axis because one plan
+cannot show the variety a solved form is for), and selected for their roles.
+So a solved form is what the game draws for the refinery now, and every
+refinery in the galaxy is its own plant.
 
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
-and is one line per role so a later choice is one edit. Trade and shipyard are **A**
-because round one ranked their slot first; refinery and outpost are **A** as a
-placeholder, which the constant's own comment states, because those two roles
-were never ranked and a default that pretends otherwise is how a placeholder
-becomes the shipped answer.
+and is one line per role so a later choice is one edit. Trade and shipyard are
+**A** because round one ranked their slot first. **Refinery and outpost are D
+since 2026-09-06**, on the principal's yes to #257's sheet — the first choice
+either role has had, after two rounds in which `a` was a placeholder that said
+so. The refinery's changes what a running game draws; the outpost's does not,
+because `system.ts` places no outposts.
 
 **The letter carried forward and the geometry did not, which is worth being
 plain about.** Round one's trade A was a twelve-sided lofted drum; it has been
@@ -667,9 +700,12 @@ load, no downloaded assets.
    answers for it, where a defaulted field would silently inherit `false` and
    `0`. The same argument applies here and the same shape should be used —
    otherwise §7's build-breaking guarantee covers colour and nothing else.
-6. The **price offset** (§3) and the **hostile-odds factor** (§5.1) are derived
-   accessors, not stored fields, so they cannot drift from the commodity table's
-   gradients and from `system.government`.
+7. **`DOMAIN.STATION_ASSEMBLY = 13`**, and `Station` gains
+   **`assemblySeed: number`** (#257), drawn unconditionally in station order
+   from its own stream, beside the berth draw that `docking.md` §13.2 reads,
+   for the reason item 2 gives: a draw inside another tag shifts everything
+   after it.
+   It is the plan seed of a solved form (§7.1) and nothing else reads it.
 
 ---
 
