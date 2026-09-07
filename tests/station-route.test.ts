@@ -370,6 +370,52 @@ describe("terminal-to-terminal route projection", () => {
 		expect(cruiseCache.size).toBeGreaterThan(0);
 	}, 10_000);
 
+	test("cold cache warm-up obeys a fixed canonical tick budget", () => {
+		const cruiseCache = new Map();
+		const queryAt = departure + 73.25;
+		let projection = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+			cruiseCache,
+			cruiseTickBudget: 25,
+		});
+		expect(projection.warmIncomplete).toBe(true);
+		const cachedWork = () =>
+			[...cruiseCache.values()].reduce(
+				(total, state) => total + state.workTicks,
+				0,
+			);
+		expect(cachedWork()).toBeLessThanOrEqual(25);
+		let calls = 1;
+		while (projection.warmIncomplete && calls < 1_000) {
+			const beforeWork = cachedWork();
+			projection = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: queryAt,
+				cruiseCache,
+				cruiseTickBudget: 25,
+			});
+			expect(cachedWork() - beforeWork).toBeLessThanOrEqual(25);
+			calls++;
+		}
+		expect(projection.warmIncomplete).toBe(false);
+		expect(calls).toBeGreaterThan(1);
+		expect(calls).toBeLessThan(1_000);
+		const direct = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+		});
+		expect({ ...projection, pos: null, vel: null, nose: null }).toEqual({
+			...direct,
+			pos: null,
+			vel: null,
+			nose: null,
+		});
+	});
+
 	test("phase-equivalent cold queries do work independent of epoch age", () => {
 		const offset = 30;
 		const dayCycle = Math.floor(

@@ -3317,15 +3317,17 @@ class Game {
 		this.ensureTrafficActors();
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
 		if (this.trafficWarmIndex < this.trafficActors.length) {
-			const actor = this.trafficActors[this.trafficWarmIndex++];
-			projectSystemTrafficActor({
+			const actor = this.trafficActors[this.trafficWarmIndex];
+			const warmed = projectSystemTrafficActor({
 				record: this.world.system.record,
 				actor,
 				gameTime: tick / 10,
 				playerTimeline: this.trafficPlayerTimeline,
 				cruiseCache: this.trafficCruiseCache,
 				projectionSystem: makeSystem(this.world.system.record, tick / 10),
+				cruiseTickBudget: 100,
 			});
+			if (!warmed.warmIncomplete) this.trafficWarmIndex++;
 			return;
 		}
 		if (tick !== this.trafficTick) {
@@ -3381,21 +3383,20 @@ class Game {
 			for (const { actor, projection: baseline } of baselines) {
 				if (
 					!baseline.berthId ||
-					baseline.terminalStationId !== actor.homeStationId ||
+					!baseline.terminalStationId ||
 					(baseline.phase !== "parked-home" &&
+						baseline.phase !== "docked-away" &&
 						baseline.phase !== "launch-queued" &&
 						baseline.phase !== "departing")
 				)
 					continue;
-				const set = occupied.get(actor.homeStationId) ?? new Set<string>();
+				const stationId = baseline.terminalStationId;
+				const set = occupied.get(stationId) ?? new Set<string>();
 				if (!set.has(baseline.berthId)) {
 					set.add(baseline.berthId);
-					berthOwners.set(
-						berthKey(actor.homeStationId, baseline.berthId),
-						actor.key,
-					);
+					berthOwners.set(berthKey(stationId, baseline.berthId), actor.key);
 				}
-				occupied.set(actor.homeStationId, set);
+				occupied.set(stationId, set);
 			}
 			const orderedActors = baselines.sort(
 				(a, b) =>
@@ -3409,18 +3410,29 @@ class Game {
 						) || compareCarrierKeys(a.actor.key, b.actor.key),
 			);
 			for (const { actor, projection: baseline } of orderedActors) {
-				if (baseline.terminalStationId && baseline.berthId) {
-					const key = berthKey(baseline.terminalStationId, baseline.berthId);
-					if (berthOwners.get(key) === actor.key) {
-						occupied.get(baseline.terminalStationId)?.delete(baseline.berthId);
-						berthOwners.delete(key);
-					}
+				const ownsSettledBerth = Boolean(
+					baseline.terminalStationId &&
+						baseline.berthId &&
+						berthOwners.get(
+							berthKey(baseline.terminalStationId, baseline.berthId),
+						) === actor.key,
+				);
+				const settled =
+					baseline.phase === "parked-home" || baseline.phase === "docked-away";
+				if (
+					ownsSettledBerth &&
+					!settled &&
+					baseline.terminalStationId &&
+					baseline.berthId
+				) {
+					occupied.get(baseline.terminalStationId)?.delete(baseline.berthId);
+					berthOwners.delete(
+						berthKey(baseline.terminalStationId, baseline.berthId),
+					);
 				}
 				const projection =
-					baseline.queueRequest ||
-					baseline.laneRequest ||
-					baseline.phase === "parked-home" ||
-					baseline.phase === "docked-away"
+					(!settled && (baseline.queueRequest || baseline.laneRequest)) ||
+					(settled && !ownsSettledBerth)
 						? projectSystemTrafficActor({
 								record: this.world.system.record,
 								actor,
@@ -5315,6 +5327,11 @@ class Game {
 			pose: crossing,
 			state: this.dockingStateOf(id),
 			gameTime: this.world.gameTime,
+			laneAvailable: this.playerWinsTrafficLane(
+				id,
+				this.world.gameTime,
+				"arrival",
+			),
 		});
 		this.dockingStates.set(id, outcome.state);
 		this.lastEntry = outcome;
@@ -5439,29 +5456,14 @@ class Game {
 		const readyAt =
 			this.playerLaneRequests.get(stationId) ?? this.world.gameTime;
 		this.playerLaneRequests.set(stationId, readyAt);
-		const contenders = this.trafficRoutes
-			.filter(
-				(route) =>
-					route.terminalStationId === stationId &&
-					route.phase === "lane-queued" &&
-					route.laneRequest,
-			)
-			.map((route) => ({
-				key: route.key,
-				readyAt: route.laneRequest?.readyAt ?? this.world.gameTime,
-				kind: "arrival" as const,
-			}));
-		const active = this.trafficRoutes.some(
-			(route) =>
-				route.terminalStationId === stationId &&
-				(route.phase === "departing" || route.phase === "arriving"),
-		);
-		const playerKey = this.playerTrafficKey();
-		const winner = laneWinner([
-			...contenders,
-			{ key: playerKey, readyAt, kind: "launch" },
-		]);
-		if (active || winner?.key !== playerKey) return false;
+		const canLaunch = this.playerWinsTrafficLane(stationId, readyAt, "launch");
+		if (!canLaunch) {
+			// A button press is an attempt, not an invisible permanent queue entry.
+			// Retaining this request made every later Traffic tick lose forever when
+			// the player abandoned a refused launch.
+			this.playerLaneRequests.delete(stationId);
+			return false;
+		}
 		this.playerLaneRequests.delete(stationId);
 		this.dock = requestLaunch(
 			this.dock,
@@ -5472,6 +5474,38 @@ class Game {
 		if (this.dock.phase === "launching")
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
 		return this.dock.phase === "launching";
+	}
+
+	/** One arbitration rule for the player's two directions through the lane. */
+	private playerWinsTrafficLane(
+		stationId: string,
+		readyAt: number,
+		movement: "arrival" | "launch",
+	): boolean {
+		const contenders = this.trafficRoutes
+			.filter(
+				(route) =>
+					route.terminalStationId === stationId &&
+					route.phase === "lane-queued" &&
+					route.laneRequest,
+			)
+			.map((route) => ({
+				key: route.key,
+				readyAt: route.laneRequest?.readyAt ?? this.world.gameTime,
+				kind: route.laneRequest?.kind ?? "arrival",
+			}));
+		const active = this.trafficRoutes.some(
+			(route) =>
+				route.terminalStationId === stationId &&
+				(route.phase === "departing" || route.phase === "arriving"),
+		);
+		if (active) return false;
+		const playerKey = this.playerTrafficKey();
+		const winner = laneWinner([
+			...contenders,
+			{ key: playerKey, readyAt, kind: movement },
+		]);
+		return winner?.key === playerKey;
 	}
 
 	/** Skip the traversal in progress. Unconditional on both sides since §13.3:

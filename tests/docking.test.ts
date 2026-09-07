@@ -443,6 +443,28 @@ describe("§9.1.4 a failed entry repels and keeps its grant", () => {
 			frame.planeKm,
 		);
 	});
+
+	test("a busy shared lane safely repels a valid grant without hull damage", () => {
+		const frame = frameFor();
+		const granted = requestClearance(newDockingState(), {
+			gameTime: 0,
+			rangeKm: 500,
+			...TRAFFIC,
+		});
+		const outcome = attemptEntry({
+			frame,
+			pose: nominal(frame),
+			state: granted,
+			gameTime: 1,
+			laneAvailable: false,
+		});
+		expect(outcome.docked).toBe(false);
+		expect(outcome.laneBlocked).toBe(true);
+		expect(outcome.barged).toBe(false);
+		expect(outcome.damage).toBe(0);
+		expect(outcome.state).toEqual(granted);
+		expect(outcome.repelled).not.toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------

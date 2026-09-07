@@ -426,6 +426,8 @@ export interface SystemTrafficProjection extends TrafficProjection {
 	terminalStationId: string | null;
 	/** Physical completion boundary for a stationary terminal phase. */
 	completedAtS?: number;
+	/** A cache-warm call stopped at its fixed canonical tick budget. */
+	warmIncomplete: boolean;
 }
 
 const systemAt = (record: SystemRecord, gameTime: number) =>
@@ -497,6 +499,7 @@ const withRoute = (
 	workTicks: 0,
 	berthId: null,
 	terminalStationId: null,
+	warmIncomplete: false,
 	...extra,
 });
 
@@ -552,6 +555,8 @@ interface TrafficLegInput {
 	awayOrdinal: number;
 	finalPhase: "docked-away" | "parked-home";
 	pendingIntent: SystemTrafficProjection["pendingIntent"];
+	/** Shared across every leg one actor projection may visit. */
+	cruiseBudget?: { remainingTicks: number };
 }
 
 /** Project one non-preemptive station-to-station physical leg. */
@@ -812,26 +817,69 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			};
 		},
 	};
-	const cacheKey = `${record.index}|${actor.key}|${selected.id}|${finalPhase}`;
+	// A schedule query can project the previous and current visit in one call.
+	// Their otherwise-identical route keys must not evict each other while an
+	// incremental warm-up alternates between those visits.
+	const cacheKey = `${record.index}|${actor.key}|${selected.id}|${finalPhase}|${spoolEndS}`;
 	const canonicalTicks = Math.floor(
 		(gameTime - spoolEndS + 1e-10) / CANONICAL_ROUTE_DT_S,
 	);
-	const canonicalAtS =
+	const requestedCanonicalAtS =
 		spoolEndS + Math.max(0, canonicalTicks) * CANONICAL_ROUTE_DT_S;
 	const cached = input.cruiseCache?.get(cacheKey);
 	const base =
 		cached &&
 		cached.startedAtS === spoolEndS &&
-		cached.atS <= canonicalAtS + 1e-9
+		cached.atS <= requestedCanonicalAtS + 1e-9
 			? cached
 			: cruiseInitial;
+	const budgetTicks = Math.max(
+		0,
+		Math.floor(input.cruiseBudget?.remainingTicks ?? Infinity),
+	);
+	const canonicalAtS = Number.isFinite(budgetTicks)
+		? Math.min(
+				requestedCanonicalAtS,
+				base.atS + budgetTicks * CANONICAL_ROUTE_DT_S,
+			)
+		: requestedCanonicalAtS;
 	const canonical = evaluateTrafficCruise(
 		base,
 		canonicalAtS,
 		cruiseEnvironment,
 	);
-	if (!cached || canonical.atS >= cached.atS)
+	if (input.cruiseBudget)
+		input.cruiseBudget.remainingTicks = Math.max(
+			0,
+			input.cruiseBudget.remainingTicks -
+				Math.max(0, canonical.workTicks - base.workTicks),
+		);
+	if (!cached || canonical.atS >= cached.atS) {
+		if (!cached && input.cruiseCache && input.cruiseCache.size >= 256) {
+			const oldest = input.cruiseCache.keys().next().value;
+			if (oldest !== undefined) input.cruiseCache.delete(oldest);
+		}
 		input.cruiseCache?.set(cacheKey, canonical);
+	}
+	if (
+		canonicalAtS < requestedCanonicalAtS - 1e-9 &&
+		(canonical.phase === "cruise" ||
+			canonical.phase === "regenerating" ||
+			canonical.phase === "blocked")
+	)
+		return withRoute(
+			actor,
+			canonical.phase === "blocked" ? "local-departure" : canonical.phase,
+			{ ...canonical, key: actor.key },
+			{
+				destinationStationId: selected.id,
+				chargeAu: canonical.chargeAu,
+				pendingIntent,
+				originBerthOccupied: false,
+				workTicks: canonical.workTicks,
+				warmIncomplete: true,
+			},
+		);
 	const cruise =
 		gameTime > canonicalAtS + 1e-9
 			? evaluateTrafficCruise(canonical, gameTime, cruiseEnvironment)
@@ -1098,6 +1146,7 @@ interface TrafficVisitInput {
 	/** A return may continue past this boundary, but may not begin after it. */
 	returnStartBeforeS?: number;
 	homeBerthId?: string;
+	cruiseBudget?: { remainingTicks: number };
 }
 
 function projectTrafficVisit(
@@ -1142,6 +1191,7 @@ function projectTrafficVisit(
 		awayOrdinal: input.awayOrdinal,
 		finalPhase: "docked-away",
 		pendingIntent: returnIntent,
+		cruiseBudget: input.cruiseBudget,
 	});
 	if (outbound.phase === "abstract-away" && gameTime >= returnReadyAtS)
 		return withRoute(
@@ -1196,6 +1246,7 @@ function projectTrafficVisit(
 			input.desired === "away"
 				? { desired: "away", readyAt: input.desiredBoundaryS }
 				: null,
+		cruiseBudget: input.cruiseBudget,
 	});
 }
 
@@ -1211,7 +1262,14 @@ export function projectSystemTrafficActor(input: {
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
 	projectionSystem?: System;
+	/** Fixed canonical replay budget used only by incremental cache warm-up. */
+	cruiseTickBudget?: number;
 }): SystemTrafficProjection {
+	const cruiseBudget =
+		input.cruiseTickBudget === undefined
+			? undefined
+			: { remainingTicks: Math.max(0, Math.floor(input.cruiseTickBudget)) };
+	const visitInput = { ...input, cruiseBudget };
 	const schedule = trafficScheduleAt(input.actor, input.gameTime);
 	const departureAtS =
 		schedule.desired === "away"
@@ -1220,7 +1278,7 @@ export function projectSystemTrafficActor(input: {
 	if (schedule.desired === "parked") {
 		const priorDepartureAtS = departureAtS - input.actor.schedule.cycleS;
 		const prior = projectTrafficVisit({
-			...input,
+			...visitInput,
 			departureAtS: priorDepartureAtS,
 			launchReadyAtS: priorDepartureAtS,
 			awayOrdinal: schedule.awayOrdinal - 1,
@@ -1229,7 +1287,7 @@ export function projectSystemTrafficActor(input: {
 		});
 		if (prior.phase !== "parked-home") return prior;
 		return projectTrafficVisit({
-			...input,
+			...visitInput,
 			departureAtS,
 			launchReadyAtS: Math.max(
 				departureAtS,
@@ -1244,7 +1302,7 @@ export function projectSystemTrafficActor(input: {
 
 	const previousDepartureAtS = departureAtS - input.actor.schedule.cycleS;
 	const previous = projectTrafficVisit({
-		...input,
+		...visitInput,
 		departureAtS: previousDepartureAtS,
 		launchReadyAtS: previousDepartureAtS,
 		awayOrdinal: schedule.awayOrdinal - 1,
@@ -1255,7 +1313,7 @@ export function projectSystemTrafficActor(input: {
 	if (previous.phase !== "parked-home") return previous;
 
 	return projectTrafficVisit({
-		...input,
+		...visitInput,
 		departureAtS,
 		launchReadyAtS: Math.max(
 			departureAtS,

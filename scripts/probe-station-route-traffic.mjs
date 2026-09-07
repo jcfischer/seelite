@@ -25,16 +25,14 @@ try {
 		const route = await import("/src/station-route.ts");
 		const sim = await import("/src/sim.ts");
 		const station = await import("/src/station.ts");
+		const docking = await import("/src/docking.ts");
 		const refreshTraffic = () => {
 			let attempts = 0;
 			do {
 				g.trafficTick = Number.NaN;
 				g.updateTrafficPresentation(g.cameraPos());
 				attempts++;
-			} while (
-				g.trafficRoutes.length === 0 &&
-				attempts <= g.trafficActors.length + 1
-			);
+			} while (g.trafficRoutes.length === 0 && attempts <= 2_000);
 			return attempts;
 		};
 		g.world.gameTime = 4;
@@ -270,6 +268,68 @@ try {
 			holdDistance,
 			stationRadius:
 				station.STATION_GEOMETRY[destinationStation.type].coreRadiusKm,
+			...(() => {
+				const stationId = destination;
+				const frame = g.apertureFrameOf(stationId);
+				const berthId = g.berthIdsOfStation(stationId)[0];
+				const activeRoute = {
+					...holdProjection,
+					terminalStationId: stationId,
+					phase: "departing",
+				};
+				g.trafficRoutes.length = 0;
+				g.trafficRoutes.push(activeRoute);
+				g.dock = {
+					phase: "flying",
+					stationId: null,
+					berthId: null,
+					law: null,
+				};
+				g.dockingStates.set(stationId, {
+					clearance: { kind: "granted", expiresAtS: g.world.gameTime + 60 },
+					hostile: false,
+					hostileUntilS: null,
+					berthId,
+				});
+				g.resolveCrossing(stationId, frame, {
+					rel: {
+						x: frame.axis.x * (frame.planeKm + 1e-6),
+						y: frame.axis.y * (frame.planeKm + 1e-6),
+						z: frame.axis.z * (frame.planeKm + 1e-6),
+					},
+					vRel: {
+						x: frame.axis.x * -0.05,
+						y: frame.axis.y * -0.05,
+						z: frame.axis.z * -0.05,
+					},
+					nose: {
+						x: -frame.axis.x,
+						y: -frame.axis.y,
+						z: -frame.axis.z,
+					},
+					up: docking.slotBasis(frame).up,
+				});
+				const playerArrivalGuard = {
+					docked: g.lastEntry?.docked,
+					laneBlocked: g.lastEntry?.laneBlocked,
+					damage: g.lastEntry?.damage,
+					dockPhase: g.dock.phase,
+				};
+				g.dock = {
+					phase: "docked",
+					stationId,
+					berthId,
+					law: null,
+				};
+				g.playerLaneRequests.clear();
+				const launched = g.launch();
+				const refusedLaunch = {
+					launched,
+					dockPhase: g.dock.phase,
+					requestCount: g.playerLaneRequests.size,
+				};
+				return { playerArrivalGuard, refusedLaunch };
+			})(),
 		};
 	});
 
@@ -329,8 +389,9 @@ try {
 		}),
 	);
 	check(
-		"cold route replay is amortized one actor per presentation call",
-		result.coldWarmCalls === result.coldActorCount - result.coldStartIndex + 1,
+		"cold route replay is split across fixed-budget presentation calls",
+		result.coldWarmCalls > result.coldActorCount - result.coldStartIndex + 1 &&
+			result.coldWarmCalls <= 2_000,
 		JSON.stringify({
 			calls: result.coldWarmCalls,
 			actors: result.coldActorCount,
@@ -391,6 +452,21 @@ try {
 			!result.planetCruise.lastExit.startsWith("detour unavailable") &&
 			result.planetCruise.detour === null,
 		JSON.stringify(result.planetCruise),
+	);
+	check(
+		"a real player crossing yields to an active Traffic lane",
+		result.playerArrivalGuard.docked === false &&
+			result.playerArrivalGuard.laneBlocked === true &&
+			result.playerArrivalGuard.damage === 0 &&
+			result.playerArrivalGuard.dockPhase === "flying",
+		JSON.stringify(result.playerArrivalGuard),
+	);
+	check(
+		"a refused player launch leaves no request that can starve Traffic",
+		result.refusedLaunch.launched === false &&
+			result.refusedLaunch.dockPhase === "docked" &&
+			result.refusedLaunch.requestCount === 0,
+		JSON.stringify(result.refusedLaunch),
 	);
 	await page.close();
 } finally {
