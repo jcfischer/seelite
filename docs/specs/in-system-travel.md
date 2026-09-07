@@ -810,3 +810,27 @@ unchanged.
 - Whether the 2 km/s assist cap is the right speed to be left with beside a
   planet. §3 bounds the drop radius by that cap, and every argument about the
   crawl is really an argument about it.
+
+## 13. Traffic routes reuse cruise
+
+Work-graph decision
+[#261](https://github.com/jcfischer/seelite/issues/261) gives a home-owned
+Traffic actor a real in-system route without adding another travel regime. Its
+implementation will extract a pure guidance controller that feeds the same
+`advanceCruise`, bounded detour, moving-body guard and distance-metered drive
+charge as the player-facing cruise path. Route time advances on canonical
+0.1-second ticks against the authoritative game clock; render cadence and visit
+order do not advance it.
+
+Section 7's 12 AU capacity remains the player baseline. Traffic routes extend
+the shared regeneration and docking-refill seams to accept an explicit capacity
+and pass their hull's `HULL_SPECS[hull].chargeAu`; distance consumption and the
+player default remain unchanged. `in-system-route-traffic.md` §1 defines the
+bounded detour-chain snapshot used only for initial destination eligibility.
+
+The actor cruises toward a moving destination Traffic hold, then uses normal
+flight and the station-owned clearance and arrival laws. Its 10,000 km
+materialization boundary creates only a mesh and `DisplayContact`; it does not
+replace the derived route with a second mutable simulation. The complete
+composition and its implementation acceptance live in
+`in-system-route-traffic.md`.
