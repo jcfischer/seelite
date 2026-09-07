@@ -182,6 +182,7 @@ import {
 	bodyVelocity,
 	stationHostIdOf,
 	jumpWorldTo,
+	makeSystem,
 	makeWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
@@ -290,6 +291,7 @@ import {
 	laneWinner,
 	materializeTrafficContact,
 	stationTrafficRoster,
+	TRAFFIC_DEMATERIALIZE_KM,
 	trafficScheduleAt,
 	type TrafficActor,
 } from "./station-traffic";
@@ -1129,6 +1131,8 @@ class Game {
 	/** Per-row arrival estimates, refreshed on `ETA_INTERVAL_S`. */
 	private readonly navEtaCache = new Map<string, number | null>();
 	private navEtaAt = Number.NEGATIVE_INFINITY;
+	/** Last rendered Navigation order; tiny range changes do not reshuffle it. */
+	private navOrder: string[] = [];
 	/** The Galaxy Map tab's chart, while that tab is open. */
 	private chart: GalaxyChart | null = null;
 	/** Which mount request is current; see `setChartHost`. */
@@ -3310,7 +3314,11 @@ class Game {
 			this.trafficTick = tick;
 			this.trafficRoutes.length = 0;
 			this.prunePlayerTrafficTimeline(tick / 10);
+			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
 			const occupied = new Map<string, Set<string>>();
+			const berthOwners = new Map<string, CarrierKey>();
+			const berthKey = (stationId: string, berthId: string) =>
+				`${stationId}\u0000${berthId}`;
 			for (const [stationId, state] of this.dockingStates) {
 				if (!state.berthId) continue;
 				const set = occupied.get(stationId) ?? new Set<string>();
@@ -3349,6 +3357,7 @@ class Game {
 					playerTimeline: arbitrationTimeline,
 					occupiedByStation: occupied,
 					cruiseCache: this.trafficCruiseCache,
+					projectionSystem,
 				}),
 			}));
 			for (const { actor, projection: baseline } of baselines) {
@@ -3361,7 +3370,13 @@ class Game {
 				)
 					continue;
 				const set = occupied.get(actor.homeStationId) ?? new Set<string>();
-				set.add(baseline.berthId);
+				if (!set.has(baseline.berthId)) {
+					set.add(baseline.berthId);
+					berthOwners.set(
+						berthKey(actor.homeStationId, baseline.berthId),
+						actor.key,
+					);
+				}
 				occupied.set(actor.homeStationId, set);
 			}
 			const orderedActors = baselines.sort(
@@ -3376,10 +3391,18 @@ class Game {
 						) || compareCarrierKeys(a.actor.key, b.actor.key),
 			);
 			for (const { actor, projection: baseline } of orderedActors) {
+				if (baseline.terminalStationId && baseline.berthId) {
+					const key = berthKey(baseline.terminalStationId, baseline.berthId);
+					if (berthOwners.get(key) === actor.key) {
+						occupied.get(baseline.terminalStationId)?.delete(baseline.berthId);
+						berthOwners.delete(key);
+					}
+				}
 				const projection =
-					baseline.phase !== "parked-home" &&
-					baseline.phase !== "docked-away" &&
-					(baseline.queueRequest || baseline.laneRequest)
+					baseline.queueRequest ||
+					baseline.laneRequest ||
+					baseline.phase === "parked-home" ||
+					baseline.phase === "docked-away"
 						? projectSystemTrafficActor({
 								record: this.world.system.record,
 								actor,
@@ -3387,6 +3410,7 @@ class Game {
 								playerTimeline: arbitrationTimeline,
 								occupiedByStation: occupied,
 								cruiseCache: this.trafficCruiseCache,
+								projectionSystem,
 							})
 						: baseline;
 				this.trafficRoutes.push(projection);
@@ -3411,16 +3435,27 @@ class Game {
 							: projection.destinationStationId);
 					if (stationId) {
 						const set = occupied.get(stationId) ?? new Set<string>();
-						set.add(projection.berthId);
+						if (!set.has(projection.berthId)) {
+							set.add(projection.berthId);
+							berthOwners.set(
+								berthKey(stationId, projection.berthId),
+								actor.key,
+							);
+						}
 						occupied.set(stationId, set);
 					}
 				}
 
+				const previous = this.trafficContacts.get(actor.key);
 				const shown =
 					projection.phase === "abstract-away"
 						? null
-						: materializeTrafficContact(actor, projection, this.world.ship.pos);
-				const previous = this.trafficContacts.get(actor.key);
+						: materializeTrafficContact(
+								actor,
+								projection,
+								this.world.ship.pos,
+								previous ? TRAFFIC_DEMATERIALIZE_KM : undefined,
+							);
 				if (!shown) {
 					if (previous) {
 						this.unregisterContact(previous);
@@ -5600,6 +5635,7 @@ class Game {
 		this.etaAt = Number.NEGATIVE_INFINITY;
 		this.navEtaCache.clear();
 		this.navEtaAt = Number.NEGATIVE_INFINITY;
+		this.navOrder = [];
 		this.selectableCache = null;
 	}
 
@@ -5699,6 +5735,7 @@ class Game {
 		this.faceTheStar();
 		this.keys.clear();
 		this.navEtaCache.clear();
+		this.navOrder = [];
 
 		this.massesCache = null;
 		this.massesAt = Number.NaN;
@@ -6041,7 +6078,7 @@ class Game {
 				targetParentId: this.targetParentId(),
 			});
 			if (begun.error) {
-				const id = begun.error.slice(begun.error.lastIndexOf(" ") + 1);
+				const id = begun.error.blockerId;
 				this.lastExit = `detour unavailable: ${this.bodyFor(id)?.name ?? id}`;
 				return;
 			}
@@ -6445,7 +6482,7 @@ class Game {
 			steerDirect: false,
 		});
 		if (guided.error) {
-			const id = guided.error.slice(guided.error.lastIndexOf(" ") + 1);
+			const id = guided.error.blockerId;
 			this.dropOut(`detour unavailable: ${this.bodyFor(id)?.name ?? id}`);
 			return false;
 		}
@@ -7229,7 +7266,7 @@ class Game {
 			this.navEtaCache.clear();
 			this.navEtaAt = this.world.gameTime;
 		}
-		return projectNavTargets(
+		const rows = projectNavTargets(
 			this.world.ship.pos,
 			// **`selectable()`, not `system.bodies`.** It is the one list that
 			// decides what can be targeted at all — `cycleTarget` walks it and
@@ -7241,6 +7278,7 @@ class Game {
 			this.targetId,
 			{
 				filter: this.navFilter,
+				previousOrder: this.navOrder,
 				etaFor: ({ id }) => {
 					const cached = this.navEtaCache.get(id);
 					if (cached !== undefined) return cached;
@@ -7251,6 +7289,8 @@ class Game {
 				},
 			},
 		);
+		this.navOrder = rows.map(({ id }) => id);
+		return rows;
 	}
 
 	private refreshScannerContacts() {

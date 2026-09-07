@@ -21,6 +21,7 @@ import {
 import { cruiseRouteBlocker, planCruiseDetour } from "./cruise-detour";
 import {
 	beginCruiseGuidance,
+	type CruiseGuidanceError,
 	type CruiseGuidanceState,
 	stepCruiseGuidance,
 } from "./cruise-guidance";
@@ -33,6 +34,7 @@ import {
 	bodyAccelerationBound,
 	bodyVelocity,
 	makeSystem,
+	type System,
 	stationOf,
 	stationPose,
 } from "./sim";
@@ -124,7 +126,11 @@ export function selectTrafficDestination(input: {
 	return eligible[index];
 }
 
-export type TrafficCruisePhase = "cruise" | "local-approach" | "regenerating";
+export type TrafficCruisePhase =
+	| "cruise"
+	| "local-approach"
+	| "regenerating"
+	| "blocked";
 
 export interface TrafficCruiseState {
 	phase: TrafficCruisePhase;
@@ -143,6 +149,7 @@ export interface TrafficCruiseState {
 	guidance?: CruiseGuidanceState | null;
 	initialWaypointIndex?: number;
 	initialGuidance?: CruiseGuidanceState | null;
+	blockedById?: string;
 }
 
 /** Bounded by actor × destination × direction; a new schedule leg overwrites its key. */
@@ -159,11 +166,13 @@ export interface TrafficCruiseEnvironment {
 		gameTime: number,
 		dt: number,
 		target: Mass,
+		masses: readonly Mass[],
 	) => {
 		nose: Vec3;
 		throttle: number;
 		waypointIndex?: number;
 		guidance?: CruiseGuidanceState | null;
+		error?: CruiseGuidanceError | null;
 	};
 }
 
@@ -222,39 +231,73 @@ const advanceTrafficCruiseStep = (
 		};
 	}
 	const target = environment.targetAt(state.atS);
-	const guidance = environment.guide?.(state, state.atS, dt, target) ?? {
+	const masses = environment.massesAt(state.atS);
+	const guidance = environment.guide?.(
+		state,
+		state.atS,
+		dt,
+		target,
+		masses,
+	) ?? {
 		nose: normal(sub(target.pos, state.pos), state.nose),
 		throttle: 1,
 	};
+	if (guidance.error) {
+		const blocker = masses.find(
+			(candidate) => candidate.id === guidance.error?.blockerId,
+		);
+		return {
+			...state,
+			phase: "blocked",
+			vel: blocker?.vel ? { ...blocker.vel } : { x: 0, y: 0, z: 0 },
+			guidance: null,
+			blockedById: guidance.error.blockerId,
+			atS: state.atS + dt,
+			workTicks: state.workTicks + 1,
+		};
+	}
 	const step = advanceCruise({
 		pos: state.pos,
 		nose: guidance.nose,
 		throttle: guidance.throttle,
 		dt,
-		masses: environment.massesAt(state.atS),
+		masses,
 		target,
 		params: environment.params ?? DEFAULT_CRUISE,
 		chargeAu: state.chargeAu,
 		targetParentId: environment.targetParentId,
 	});
 	const completedAtS = state.atS + dt;
+	const stoppedBy = masses.find((mass) => mass.id === step.exitBodyId);
 	return {
 		...state,
 		phase:
 			step.exit === "arrival"
 				? "local-approach"
-				: step.starved
-					? "regenerating"
-					: "cruise",
+				: step.exit === "proximity"
+					? "blocked"
+					: step.starved
+						? "regenerating"
+						: "cruise",
 		pos: step.pos,
-		vel: scale(guidance.nose, step.speedKms),
+		vel:
+			step.exit === "proximity"
+				? stoppedBy?.vel
+					? { ...stoppedBy.vel }
+					: { x: 0, y: 0, z: 0 }
+				: scale(guidance.nose, step.speedKms),
 		nose: guidance.nose,
 		waypointIndex: guidance.waypointIndex ?? state.waypointIndex,
 		guidance:
-			guidance.guidance === undefined ? state.guidance : guidance.guidance,
+			step.exit === "proximity"
+				? null
+				: guidance.guidance === undefined
+					? state.guidance
+					: guidance.guidance,
 		chargeAu: chargeAfterTravel(state.chargeAu, step.travelledKm),
 		atS: completedAtS,
 		workTicks: state.workTicks + 1,
+		blockedById: step.exit === "proximity" ? step.exitBodyId : undefined,
 		...(step.exit === "arrival" ? { completedAtS } : {}),
 	};
 };
@@ -329,8 +372,12 @@ export function evaluateTrafficCruise(
 	return { ...current, atS: queryTimeS };
 }
 
-export const TRAFFIC_SPOOL_S = 3;
-export const TRAFFIC_TERMINAL_APPROACH_S = 12;
+/** A visible low-speed departure corridor before the cruise drive takes over. */
+export const TRAFFIC_SPOOL_S = 15;
+/** A readable final transit from the Traffic hold to the station aperture. */
+export const TRAFFIC_TERMINAL_APPROACH_S = 30;
+/** Keep a completed arrival visibly berthed before its return leg can begin. */
+export const TRAFFIC_DOCK_DWELL_S = 15;
 
 export type TrafficRoutePhase =
 	| "parked-home"
@@ -373,8 +420,7 @@ export interface SystemTrafficProjection extends TrafficProjection {
 const systemAt = (record: SystemRecord, gameTime: number) =>
 	makeSystem(record, gameTime);
 
-const frameAt = (record: SystemRecord, stationId: string, gameTime: number) => {
-	const system = systemAt(record, gameTime);
+const frameInSystem = (system: System, stationId: string, gameTime: number) => {
 	const station = stationOf(system, stationId);
 	const pose = stationPose(system, stationId, gameTime);
 	return {
@@ -389,6 +435,9 @@ const frameAt = (record: SystemRecord, stationId: string, gameTime: number) => {
 		),
 	};
 };
+
+const frameAt = (record: SystemRecord, stationId: string, gameTime: number) =>
+	frameInSystem(systemAt(record, gameTime), stationId, gameTime);
 
 const massesAt = (record: SystemRecord, gameTime: number): Mass[] => {
 	const system = systemAt(record, gameTime);
@@ -484,6 +533,7 @@ interface TrafficLegInput {
 	timeline: readonly TrafficPlayerEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
+	projectionSystem?: System;
 	originStationId: string;
 	originBerthId: string;
 	destinationStationId: string | null;
@@ -507,7 +557,9 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		finalPhase,
 		pendingIntent,
 	} = input;
-	const originNow = frameAt(record, originStationId, gameTime);
+	const originNow = input.projectionSystem
+		? frameInSystem(input.projectionSystem, originStationId, gameTime)
+		: frameAt(record, originStationId, gameTime);
 	const originInterior = stationInterior(
 		originNow.station.type,
 		STATION_GEOMETRY[originNow.station.type].aperturePlaneKm,
@@ -679,9 +731,19 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		);
 	}
 
+	const cruiseStartPos = add(
+		crossingPos,
+		scale(initialDirection, 2 * TRAFFIC_SPOOL_S),
+	);
+	const initialGuidance = beginCruiseGuidance({
+		from: cruiseStartPos,
+		target: { id: selected.id, pos: selected.hold },
+		masses: cruiseMassesAt(spoolEndS),
+		targetParentId: selected.parentId ?? null,
+	});
 	const cruiseInitial: TrafficCruiseState = {
-		phase: "cruise",
-		pos: add(crossingPos, scale(initialDirection, 2 * TRAFFIC_SPOOL_S)),
+		phase: initialGuidance.error ? "blocked" : "cruise",
+		pos: cruiseStartPos,
 		vel: scale(initialDirection, 2),
 		nose: initialDirection,
 		chargeAu: HULL_SPECS[actor.hullId].chargeAu,
@@ -689,12 +751,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		atS: spoolEndS,
 		workTicks: 0,
 		waypointIndex: 1,
-		guidance: beginCruiseGuidance({
-			from: add(crossingPos, scale(initialDirection, 2 * TRAFFIC_SPOOL_S)),
-			target: { id: selected.id, pos: selected.hold },
-			masses: cruiseMassesAt(spoolEndS),
-			targetParentId: selected.parentId ?? null,
-		}).guidance,
+		guidance: initialGuidance.guidance,
+		blockedById: initialGuidance.error?.blockerId,
 	};
 	const cruiseEnvironment: TrafficCruiseEnvironment = {
 		params: DEFAULT_CRUISE,
@@ -705,13 +763,29 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		massesAt: cruiseMassesAt,
 		targetParentId: selected.parentId ?? null,
 		capacityAu: HULL_SPECS[actor.hullId].chargeAu,
-		guide: (state, _t, dt, target) => {
+		guide: (state, _t, dt, target, masses) => {
+			const restarted =
+				state.phase === "blocked"
+					? beginCruiseGuidance({
+							from: state.pos,
+							target: { id: target.id, pos: target.pos },
+							masses,
+							targetParentId: selected.parentId ?? null,
+						})
+					: { guidance: state.guidance ?? null, error: null };
+			if (restarted.error)
+				return {
+					nose: state.nose,
+					throttle: 0,
+					guidance: null,
+					error: restarted.error,
+				};
 			const guided = stepCruiseGuidance({
-				guidance: state.guidance ?? null,
+				guidance: restarted.guidance,
 				pos: state.pos,
 				nose: state.nose,
 				target: { id: target.id, pos: target.pos },
-				masses: cruiseMassesAt(state.atS),
+				masses,
 				targetParentId: selected.parentId ?? null,
 				dt,
 				speedKms: length(state.vel),
@@ -721,6 +795,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				nose: guided.nose,
 				throttle: guided.throttle,
 				guidance: guided.guidance,
+				error: guided.error,
 			};
 		},
 	};
@@ -761,6 +836,19 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				workTicks: cruise.workTicks,
 			},
 		);
+	if (cruise.phase === "blocked")
+		return withRoute(
+			actor,
+			"local-departure",
+			{ ...cruise, key: actor.key },
+			{
+				destinationStationId: selected.id,
+				chargeAu: cruise.chargeAu,
+				pendingIntent,
+				originBerthOccupied: false,
+				workTicks: cruise.workTicks,
+			},
+		);
 
 	const dropAtS = cruise.completedAtS ?? gameTime;
 	const drop = cruise;
@@ -789,7 +877,9 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		);
 	}
 
-	const destinationNow = frameAt(record, selected.id, gameTime);
+	const destinationNow = input.projectionSystem
+		? frameInSystem(input.projectionSystem, selected.id, gameTime)
+		: frameAt(record, selected.id, gameTime);
 	const destinationInterior = stationInterior(
 		destinationNow.station.type,
 		STATION_GEOMETRY[destinationNow.station.type].aperturePlaneKm,
@@ -986,6 +1076,7 @@ interface TrafficVisitInput {
 	playerTimeline?: readonly TrafficPlayerEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
+	projectionSystem?: System;
 	departureAtS: number;
 	launchReadyAtS: number;
 	awayOrdinal: number;
@@ -1003,7 +1094,9 @@ function projectTrafficVisit(
 	const timeline = input.playerTimeline ?? [];
 	const departureAtS = input.departureAtS;
 	const returnReadyAtS = departureAtS + actor.schedule.awayS;
-	const homeNow = frameAt(record, actor.homeStationId, gameTime);
+	const homeNow = input.projectionSystem
+		? frameInSystem(input.projectionSystem, actor.homeStationId, gameTime)
+		: frameAt(record, actor.homeStationId, gameTime);
 	const homeInterior = stationInterior(
 		homeNow.station.type,
 		STATION_GEOMETRY[homeNow.station.type].aperturePlaneKm,
@@ -1028,6 +1121,7 @@ function projectTrafficVisit(
 		timeline,
 		occupiedByStation: input.occupiedByStation,
 		cruiseCache: input.cruiseCache,
+		projectionSystem: input.projectionSystem,
 		originStationId: actor.homeStationId,
 		originBerthId: homeBerth.id,
 		destinationStationId: null,
@@ -1055,15 +1149,15 @@ function projectTrafficVisit(
 		);
 	const returnStartS =
 		outbound.phase === "docked-away" && outbound.completedAtS !== undefined
-			? Math.max(returnReadyAtS, outbound.completedAtS)
+			? Math.max(returnReadyAtS, outbound.completedAtS + TRAFFIC_DOCK_DWELL_S)
 			: Number.POSITIVE_INFINITY;
 	const returnWasCommitted =
 		input.desired === "parked" ||
 		(input.returnStartBeforeS !== undefined &&
 			returnStartS < input.returnStartBeforeS);
+	if (gameTime < returnStartS) return outbound;
 	if (
 		outbound.phase !== "docked-away" ||
-		gameTime < returnReadyAtS ||
 		!returnWasCommitted ||
 		!outbound.destinationStationId ||
 		!outbound.berthId ||
@@ -1078,6 +1172,7 @@ function projectTrafficVisit(
 		timeline,
 		occupiedByStation: input.occupiedByStation,
 		cruiseCache: input.cruiseCache,
+		projectionSystem: input.projectionSystem,
 		originStationId: outbound.destinationStationId,
 		originBerthId: outbound.berthId,
 		destinationStationId: actor.homeStationId,
@@ -1102,6 +1197,7 @@ export function projectSystemTrafficActor(input: {
 	playerTimeline?: readonly TrafficPlayerEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
+	projectionSystem?: System;
 }): SystemTrafficProjection {
 	const schedule = trafficScheduleAt(input.actor, input.gameTime);
 	const departureAtS =

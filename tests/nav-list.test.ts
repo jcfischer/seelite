@@ -14,10 +14,10 @@
  * returns.
  */
 import { expect, test } from "bun:test";
-import { navFilterMatches, projectNavTargets } from "../src/cockpit";
 import { readdirSync } from "node:fs";
-import { codeOf, repoPath } from "./lib/source-scan";
+import { navFilterMatches, projectNavTargets } from "../src/cockpit";
 import { v3 } from "../src/vec3";
+import { codeOf, repoPath } from "./lib/source-scan";
 
 const BODIES = [
 	{
@@ -67,6 +67,35 @@ test("targets list nearest first, with the range the panel prints", () => {
 	expect(rows[0].distanceKm).toBeCloseTo(100, 6);
 	expect(rows[1].distanceKm).toBeCloseTo(300, 6);
 	expect(rows[3].distanceKm).toBeCloseTo(9_000, 6);
+});
+
+test("near-equal ranges retain their rendered order until the lead is meaningful", () => {
+	const bodies = [
+		{
+			id: "alpha",
+			name: "Alpha",
+			kind: "station" as const,
+			pos: v3(100, 0, 0),
+		},
+		{
+			id: "beta",
+			name: "Beta",
+			kind: "station" as const,
+			pos: v3(99.98, 0, 0),
+		},
+	];
+
+	expect(
+		projectNavTargets(v3(), bodies, null, {
+			previousOrder: ["alpha", "beta"],
+		}).map(({ id }) => id),
+	).toEqual(["alpha", "beta"]);
+	expect(
+		projectNavTargets(v3(), bodies, null, {
+			previousOrder: ["alpha", "beta"],
+			distanceHysteresisKm: 0.01,
+		}).map(({ id }) => id),
+	).toEqual(["beta", "alpha"]);
 });
 
 test("the projection holds no kind rule of its own", () => {

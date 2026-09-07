@@ -186,4 +186,20 @@ test("materialization is inclusive at 10,000 km and preserves contact identity",
 	expect(
 		materializeTrafficContact(actor, projection, { x: 0, y: 0, z: 0 }),
 	).toEqual(atEdge);
+	expect(
+		materializeTrafficContact(
+			actor,
+			projection,
+			{ x: -1_999.999, y: 0, z: 0 },
+			12_000,
+		),
+	).toEqual(atEdge);
+	expect(
+		materializeTrafficContact(
+			actor,
+			projection,
+			{ x: -2_000.001, y: 0, z: 0 },
+			12_000,
+		),
+	).toBeNull();
 });

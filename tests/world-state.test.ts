@@ -15,34 +15,34 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { generateGalaxy } from "../src/galaxy";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../src/deficits";
+import { generateGalaxy } from "../src/galaxy";
 import { HOLD_REFERENCE_T } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
 import {
-	type GalaxyEnvelope,
-	type Provenance,
-	type WorldState,
-	WORLD_GENERATOR_VERSION,
-	WORLD_SCHEMA_VERSION,
 	advanceTo,
+	applyTransition,
 	canonicalSnapshot,
 	carrierBaselineFingerprint,
 	compactWorld,
 	effectiveCarrier,
 	enumerateCarriers,
-	applyTransition,
+	type GalaxyEnvelope,
 	materializeDue,
 	newWorld,
 	observe,
+	type Provenance,
 	parseWorld,
 	readKnowledge,
 	recoveryProcessId,
 	serializeWorld,
 	setLegalHeat,
 	visit,
+	WORLD_GENERATOR_VERSION,
+	WORLD_SCHEMA_VERSION,
+	type WorldState,
 } from "../src/world-state";
 
 const WORLD = 0x5ee11e;
@@ -134,6 +134,20 @@ describe("§9.1 namespace and baseline stability", () => {
 		// station in nearly every system.
 		expect(repeatsAcrossSystems).toBeGreaterThan(200);
 		expect(globalIds.size).toBe(21);
+	});
+
+	test("station and Traffic carrier metadata stay structurally discriminated", () => {
+		const carriers = [...enumerateCarriers(WORLD, 0)];
+		const station = carriers.find((carrier) => carrier.kind === "station");
+		const traffic = carriers.find((carrier) => carrier.kind === "traffic");
+		if (!station || !traffic) throw new Error("missing generated carrier kind");
+		expect(station.kind).toBe("station");
+		if (station.kind === "station") expect(station.stationType).toBeDefined();
+		expect(traffic.kind).toBe("traffic");
+		if (traffic.kind === "traffic") {
+			expect(traffic.homeStationType).toBeDefined();
+			expect(traffic.hullId).toBeDefined();
+		}
 	});
 
 	test("market rows key on the same composite namespace", () => {

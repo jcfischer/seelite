@@ -283,13 +283,17 @@ describe("terminal-to-terminal route projection", () => {
 		});
 		expect(before.phase).toBe("cruise");
 		expect(after.phase).toBe("cruise");
-		expect(
-			Math.hypot(
-				after.pos.x - before.pos.x,
-				after.pos.y - before.pos.y,
-				after.pos.z - before.pos.z,
-			),
-		).toBeLessThan(10_000);
+		const distance = Math.hypot(
+			after.pos.x - before.pos.x,
+			after.pos.y - before.pos.y,
+			after.pos.z - before.pos.z,
+		);
+		const physicalTravel =
+			Math.hypot(before.vel.x, before.vel.y, before.vel.z) * 0.02;
+		// Cruise can legitimately cover more than 10,000 km in these 20 ms. The
+		// invariant is continuity at the schedule boundary: the displacement must
+		// be the motion already in progress, not a restart at the home station.
+		expect(distance).toBeCloseTo(physicalTravel, -2);
 	});
 
 	test("the actor returns physically and requests any fitting home berth", () => {
@@ -528,5 +532,28 @@ describe("canonical Traffic cruise", () => {
 		expect(recovered.phase).toBe("cruise");
 		expect(recovered.chargeAu).toBeGreaterThan(0);
 		expect(recovered.chargeAu).toBeLessThanOrEqual(18);
+	});
+
+	test("an unavailable detour stops in the blocker frame instead of becoming an arrival", () => {
+		const blocked = evaluateTrafficCruise(initial, 100.1, {
+			...environment,
+			massesAt: () => [
+				{
+					id: "planet",
+					pos: { x: 1_000, y: 0, z: 0 },
+					vel: { x: 4, y: 5, z: 6 },
+					radiusKm: 100,
+				},
+			],
+			guide: (state) => ({
+				nose: state.nose,
+				throttle: 0,
+				error: { kind: "detour-unavailable", blockerId: "planet" },
+			}),
+		});
+		expect(blocked.phase).toBe("blocked");
+		expect(blocked.blockedById).toBe("planet");
+		expect(blocked.vel).toEqual({ x: 4, y: 5, z: 6 });
+		expect(blocked.completedAtS).toBeUndefined();
 	});
 });

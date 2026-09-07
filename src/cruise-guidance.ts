@@ -18,12 +18,20 @@ export interface GuidanceTarget {
 	pos: Vec3;
 }
 
+export interface CruiseGuidanceError {
+	kind: "detour-unavailable";
+	blockerId: string;
+}
+
 export function beginCruiseGuidance(input: {
 	from: Vec3;
 	target: GuidanceTarget;
 	masses: readonly Mass[];
 	targetParentId: string | null;
-}): { guidance: CruiseGuidanceState | null; error: string | null } {
+}): {
+	guidance: CruiseGuidanceState | null;
+	error: CruiseGuidanceError | null;
+} {
 	const blocker = cruiseRouteBlocker(
 		input.from,
 		input.target.pos,
@@ -43,7 +51,10 @@ export function beginCruiseGuidance(input: {
 				guidance: { ...route, targetId: input.target.id, waypoint: 0 },
 				error: null,
 			}
-		: { guidance: null, error: `detour unavailable: ${blocker.id}` };
+		: {
+				guidance: null,
+				error: { kind: "detour-unavailable", blockerId: blocker.id },
+			};
 }
 
 const unit = (direction: Vec3, fallback: Vec3): Vec3 => {
@@ -111,7 +122,7 @@ export function stepCruiseGuidance(input: {
 	guidance: CruiseGuidanceState | null;
 	nose: Vec3;
 	throttle: number;
-	error: string | null;
+	error: CruiseGuidanceError | null;
 } {
 	let guidance =
 		input.guidance?.targetId === input.target.id ? input.guidance : null;
@@ -129,7 +140,7 @@ export function stepCruiseGuidance(input: {
 					guidance: null,
 					nose: input.nose,
 					throttle: 0,
-					error: `detour unavailable: ${blocker.id}`,
+					error: { kind: "detour-unavailable", blockerId: blocker.id },
 				};
 			guidance = {
 				...replanned,
@@ -158,7 +169,10 @@ export function stepCruiseGuidance(input: {
 						guidance: null,
 						nose: input.nose,
 						throttle: 0,
-						error: `detour unavailable: ${nextBlocker.id}`,
+						error: {
+							kind: "detour-unavailable",
+							blockerId: nextBlocker.id,
+						},
 					};
 				guidance = replanned;
 				point = guidance.waypoints[0];

@@ -25,7 +25,28 @@ try {
 		const route = await import("/src/station-route.ts");
 		const sim = await import("/src/sim.ts");
 		const station = await import("/src/station.ts");
+		g.world.gameTime = 4;
+		sim.advanceSystem(g.world.system, 4);
+		g.trafficTick = Number.NaN;
 		g.updateTrafficPresentation(g.cameraPos());
+		const settledBerths = g.trafficRoutes
+			.filter(
+				(item) =>
+					item.berthId &&
+					(item.phase === "parked-home" || item.phase === "docked-away"),
+			)
+			.map((item) =>
+				[
+					item.phase === "parked-home"
+						? g.trafficActors.find((candidate) => candidate.key === item.key)
+								?.homeStationId
+						: item.destinationStationId,
+					item.berthId,
+				].join("|"),
+			);
+		const duplicateSettledBerths = settledBerths.filter(
+			(key, index) => settledBerths.indexOf(key) !== index,
+		);
 		const actor = g.trafficActors.find(
 			(candidate) =>
 				candidate.homeStationId === "station-trade" && candidate.ordinal === 0,
@@ -53,7 +74,7 @@ try {
 			if (projected.phase === "docked-away") break;
 		}
 
-		const present = (t, distanceKm, events = []) => {
+		const present = (t, distanceKm, events = [], resetVisibility = false) => {
 			g.trafficPlayerTimeline.length = 0;
 			g.trafficPlayerTimeline.push(...events);
 			g.world.gameTime = t;
@@ -78,6 +99,10 @@ try {
 					y: projected.pos.y,
 					z: projected.pos.z,
 				};
+				if (resetVisibility) {
+					g.clearTrafficPresentation();
+					g.trafficSystemIndex = g.world.system.record.index;
+				}
 				g.trafficTick = Number.NaN;
 				g.updateTrafficPresentation(g.cameraPos());
 			}
@@ -101,9 +126,10 @@ try {
 		};
 
 		const cruise = present(samples.get("cruise").t, 100);
-		const outside = present(samples.get("cruise").t, 10_000.01);
+		const retained = present(samples.get("cruise").t, 10_000.01);
+		const outside = present(samples.get("cruise").t, 12_000.01);
+		const absentBand = present(samples.get("cruise").t, 11_000, [], true);
 		const boundary = present(samples.get("cruise").t, 10_000);
-		const outsideAgain = present(samples.get("cruise").t, 10_000.01);
 		const insideAgain = present(samples.get("cruise").t, 100);
 		const arrivingSample = samples.get("arriving");
 		const clearanceEvent = {
@@ -181,6 +207,8 @@ try {
 
 		return {
 			stationCount: g.world.system.contents.stations.length,
+			settledBerths,
+			duplicateSettledBerths,
 			actor: {
 				key: actor.key,
 				name: actor.callsign,
@@ -190,9 +218,10 @@ try {
 			destination,
 			phases: [...samples.keys()],
 			cruise,
+			retained,
 			outside,
+			absentBand,
 			boundary,
-			outsideAgain,
 			insideAgain,
 			clearance,
 			lane,
@@ -232,23 +261,35 @@ try {
 		JSON.stringify(result.cruise),
 	);
 	check(
-		"10,000 km materialization boundary is inclusive",
-		!result.outside.contact &&
+		"materialization uses a 10,000/12,000 km visibility hysteresis",
+		result.retained.contact?.id === result.actor.key &&
+			result.retained.meshAttached &&
+			!result.outside.contact &&
 			!result.outside.meshAttached &&
+			!result.absentBand.contact &&
 			result.boundary.contact?.id === result.actor.key &&
 			result.boundary.meshAttached,
-		JSON.stringify({ outside: result.outside, boundary: result.boundary }),
+		JSON.stringify({
+			retained: result.retained,
+			outside: result.outside,
+			absentBand: result.absentBand,
+			boundary: result.boundary,
+		}),
 	);
 	check(
 		"repeated crossings retain one contact, mesh, name, and hull",
-		!result.outsideAgain.contact &&
-			result.insideAgain.contact?.name === result.actor.name &&
+		result.insideAgain.contact?.name === result.actor.name &&
 			result.insideAgain.contact?.shipType === result.actor.hull &&
 			result.insideAgain.contactCount === 1 &&
 			result.insideAgain.meshCount === 1,
+		JSON.stringify(result.insideAgain),
+	);
+	check(
+		"settled generated actors never share a berth",
+		result.duplicateSettledBerths.length === 0,
 		JSON.stringify({
-			outside: result.outsideAgain,
-			inside: result.insideAgain,
+			settledBerths: result.settledBerths,
+			duplicates: result.duplicateSettledBerths,
 		}),
 	);
 	check(

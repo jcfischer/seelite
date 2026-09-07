@@ -241,6 +241,8 @@ export function laneWinner(
 }
 
 export const TRAFFIC_MATERIALIZE_KM = 10_000;
+/** Once visible, retain a ship through this wider boundary to prevent popping. */
+export const TRAFFIC_DEMATERIALIZE_KM = 12_000;
 
 export interface TrafficProjection {
 	key: CarrierKey;
@@ -330,11 +332,9 @@ export function materializeTrafficContact(
 	actor: TrafficActor,
 	projection: TrafficProjection | null,
 	observer: Vec3,
+	maxDistanceKm = TRAFFIC_MATERIALIZE_KM,
 ): DisplayContact | null {
-	if (
-		!projection ||
-		length(sub(projection.pos, observer)) > TRAFFIC_MATERIALIZE_KM
-	)
+	if (!projection || length(sub(projection.pos, observer)) > maxDistanceKm)
 		return null;
 	const env = HULL_SPECS[actor.hullId].env;
 	return {
