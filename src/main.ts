@@ -3334,6 +3334,7 @@ class Game {
 		this.ensureTrafficActors();
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
 		if (this.trafficWarmIndex < this.trafficActors.length) {
+			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
 			// Four equal slices share one 100-tick frame ceiling. Finishing a cheap
 			// actor advances immediately instead of suppressing every Carrier for at
 			// least one whole frame per roster entry.
@@ -3349,7 +3350,7 @@ class Game {
 					gameTime: tick / 10,
 					playerTimeline: this.trafficPlayerTimeline,
 					cruiseCache: this.trafficCruiseCache,
-					projectionSystem: makeSystem(this.world.system.record, tick / 10),
+					projectionSystem,
 					cruiseTickBudget: 25,
 				});
 				if (!warmed.warmIncomplete) this.trafficWarmIndex++;
