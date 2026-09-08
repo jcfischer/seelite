@@ -189,7 +189,8 @@ const slerpDirection = (a: Vec3, b: Vec3, u: number): Vec3 => {
 	const from = normal(a, { x: 0, y: 0, z: 1 });
 	const to = normal(b, from);
 	const cosine = Math.max(-1, Math.min(1, dot(from, to)));
-	if (cosine > 0.9995) return normal(interpolate(from, to, u), from);
+	if (cosine > 0.9995)
+		return normal(add(scale(from, 1 - u), scale(to, u)), from);
 	if (cosine < -0.9995) {
 		const helper =
 			Math.abs(from.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
