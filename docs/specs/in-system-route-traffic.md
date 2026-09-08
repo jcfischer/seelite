@@ -79,7 +79,7 @@ The route composes the existing laws in this order:
 | `parked-home` | The actor occupies its home Berth. Desired `away` creates a launch intent with the schedule boundary as `readyAt`. |
 | `launch-queued` | The shared station Transit-lane arbitration orders the launch with player and Traffic arrivals and launches. |
 | `departing` | `arrival.ts` runs the reserved Berth's three-leg traversal in reverse. The home Berth remains occupied until the outward aperture crossing, where the reservation and grant are spent. |
-| `local-departure` | In normal flight, the actor aligns toward the selected destination Traffic hold and traverses a visible eight-second low-speed departure corridor before cruise takes over. |
+| `local-departure` | In normal flight, the actor aligns toward the selected destination Traffic hold and remains in the translating station frame while traversing an 8 km exclusion bubble at 1 km/s. Cruise cannot take over until the actor is physically clear. |
 | `cruise` | The pure Traffic guidance controller flies the existing cruise, detour, guard and charge laws toward the moving destination hold. |
 | `local-approach` | Cruise drops into the destination frame; normal-flight guidance reaches the exact Traffic hold with zero station-relative velocity. The final hold-to-aperture transit lasts fourteen seconds so arrival remains readable around the station. |
 | `clearance-queued` | Only after reaching the hold does the actor request a fitting destination Berth through the shared Clearance queue. |

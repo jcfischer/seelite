@@ -283,6 +283,7 @@ export function playerWinsLane(
 }
 
 /** Station-owned local traversal laws used by route composition. */
+export const TRAFFIC_STATION_EXCLUSION_KM = 8;
 export const TRAFFIC_SPOOL_S = 8;
 export const TRAFFIC_TERMINAL_APPROACH_S = 14;
 

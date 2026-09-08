@@ -48,6 +48,7 @@ import {
 	parkedTrafficProjection,
 	type StationParticipant,
 	TRAFFIC_SPOOL_S,
+	TRAFFIC_STATION_EXCLUSION_KM,
 	TRAFFIC_TERMINAL_APPROACH_S,
 	type TrafficActor,
 	type TrafficProjection,
@@ -55,7 +56,7 @@ import {
 	trafficScheduleAt,
 } from "./station-traffic";
 import { AU_KM } from "./units";
-import { add, length, scale, sub, type Vec3 } from "./vec3";
+import { add, cross, dot, length, scale, sub, type Vec3 } from "./vec3";
 
 export const CANONICAL_ROUTE_DT_S = 0.1;
 
@@ -181,6 +182,33 @@ export interface TrafficCruiseEnvironment {
 const normal = (v: Vec3, fallback: Vec3): Vec3 => {
 	const n = length(v);
 	return n > 0 ? scale(v, 1 / n) : fallback;
+};
+
+/** Shortest-arc interpolation for a direction, including the antipodal case. */
+const slerpDirection = (a: Vec3, b: Vec3, u: number): Vec3 => {
+	const from = normal(a, { x: 0, y: 0, z: 1 });
+	const to = normal(b, from);
+	const cosine = Math.max(-1, Math.min(1, dot(from, to)));
+	if (cosine > 0.9995) return normal(interpolate(from, to, u), from);
+	if (cosine < -0.9995) {
+		const helper =
+			Math.abs(from.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+		const perpendicular = normal(cross(from, helper), {
+			x: 0,
+			y: 0,
+			z: 1,
+		});
+		return add(
+			scale(from, Math.cos(Math.PI * u)),
+			scale(perpendicular, Math.sin(Math.PI * u)),
+		);
+	}
+	const theta = Math.acos(cosine);
+	const sine = Math.sin(theta);
+	return add(
+		scale(from, Math.sin((1 - u) * theta) / sine),
+		scale(to, Math.sin(u * theta) / sine),
+	);
 };
 
 const reachableChargeAu = (
@@ -803,16 +831,52 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		sub(selected.hold, crossingPos),
 		crossingFrame.pose.axis,
 	);
+	const releaseDirection = normal(crossingRel, crossingFrame.pose.axis);
+	const releaseRangeKm = length(crossingRel);
+	const departureRelAt = (elapsedS: number) => {
+		const u = clamp01(elapsedS / TRAFFIC_SPOOL_S);
+		const direction = slerpDirection(
+			releaseDirection,
+			initialDirection,
+			smooth(u),
+		);
+		const rangeKm =
+			releaseRangeKm + (TRAFFIC_STATION_EXCLUSION_KM - releaseRangeKm) * u;
+		return scale(direction, rangeKm);
+	};
+	const departureRelVelocityAt = (elapsedS: number) => {
+		const h = 0.01;
+		const fromS = Math.max(0, elapsedS - h);
+		const toS = Math.min(TRAFFIC_SPOOL_S, elapsedS + h);
+		const spanS = toS - fromS;
+		return spanS > 0
+			? scale(sub(departureRelAt(toS), departureRelAt(fromS)), 1 / spanS)
+			: { x: 0, y: 0, z: 0 };
+	};
 	if (gameTime < spoolEndS) {
 		const dt = gameTime - launchEndS;
+		const departureU = smooth(clamp01(dt / TRAFFIC_SPOOL_S));
+		const current = frameAt(record, originStationId, gameTime);
+		const body = placedBody(current.system, originStationId);
+		// Stay in the translating station frame until physically clear. Using the
+		// launch-end world position as a fixed origin made an orbiting station move
+		// tens of kilometres away from its own departing ship before cruise began.
+		const releaseNose = arrivalAttitude(
+			launch,
+			1,
+			crossingFrame.pose.phaseRad,
+		).nose;
 		return withRoute(
 			actor,
 			"local-departure",
 			{
 				key: actor.key,
-				pos: add(crossingPos, scale(initialDirection, 2 * dt)),
-				vel: scale(initialDirection, 2),
-				nose: initialDirection,
+				pos: add(body.pos, departureRelAt(dt)),
+				vel: add(
+					bodyVelocity(current.system, originStationId, gameTime),
+					departureRelVelocityAt(dt),
+				),
+				nose: slerpDirection(releaseNose, initialDirection, departureU),
 			},
 			{
 				destinationStationId: selected.id,
@@ -822,9 +886,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		);
 	}
 
+	const cruiseStartFrame = frameAt(record, originStationId, spoolEndS);
+	const cruiseStartBody = placedBody(cruiseStartFrame.system, originStationId);
 	const cruiseStartPos = add(
-		crossingPos,
-		scale(initialDirection, 2 * TRAFFIC_SPOOL_S),
+		cruiseStartBody.pos,
+		departureRelAt(TRAFFIC_SPOOL_S),
 	);
 	const initialGuidance = beginCruiseGuidance({
 		from: cruiseStartPos,
@@ -835,7 +901,10 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const cruiseInitial: TrafficCruiseState = {
 		phase: initialGuidance.error ? "blocked" : "cruise",
 		pos: cruiseStartPos,
-		vel: scale(initialDirection, 2),
+		vel: add(
+			bodyVelocity(cruiseStartFrame.system, originStationId, spoolEndS),
+			departureRelVelocityAt(TRAFFIC_SPOOL_S),
+		),
 		nose: initialDirection,
 		chargeAu: HULL_SPECS[actor.hullId].chargeAu,
 		startedAtS: spoolEndS,
@@ -993,6 +1062,13 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	if (gameTime < holdReachedS) {
 		const hold = holdAt(gameTime);
 		const u = smooth(clamp01((gameTime - dropAtS) / approachS));
+		// Arrive at the hold already aligned to the station. Previously the nose
+		// stayed on the interplanetary leg until this phase ended, then changed by
+		// as much as 93.7 degrees in one 10 Hz authority tick.
+		const approachNose = normal(
+			interpolate(drop.nose, hold.nose ?? drop.nose, u),
+			drop.nose,
+		);
 		return withRoute(
 			actor,
 			"local-approach",
@@ -1000,7 +1076,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				key: actor.key,
 				pos: interpolate(drop.pos, hold.pos, u),
 				vel: interpolate(drop.vel, hold.vel, u),
-				nose: normal(sub(hold.pos, drop.pos), drop.nose),
+				nose: approachNose,
 			},
 			{
 				destinationStationId: selected.id,

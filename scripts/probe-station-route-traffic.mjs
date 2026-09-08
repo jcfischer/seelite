@@ -25,6 +25,7 @@ try {
 		const route = await import("/src/station-route.ts");
 		const sim = await import("/src/sim.ts");
 		const station = await import("/src/station.ts");
+		const traffic = await import("/src/station-traffic.ts");
 		const docking = await import("/src/docking.ts");
 		const hull = await import("/src/hull.ts");
 		let maxWarmTicksPerCall = 0;
@@ -314,6 +315,20 @@ try {
 				),
 			);
 		let worstTurn = null;
+		let departureBoundaryRelativeStepKm = Number.POSITIVE_INFINITY;
+		let lastLocalDepartureRangeKm = 0;
+		let firstCruiseRangeKm = 0;
+		const stationRelativeAt = (projection, t, stationId) => {
+			const system = sim.makeSystem(g.world.system.record);
+			sim.advanceSystem(system, t);
+			const body = system.byId.get(stationId);
+			if (!body) throw new Error(`missing station ${stationId}`);
+			return {
+				x: projection.pos.x - body.pos.x,
+				y: projection.pos.y - body.pos.y,
+				z: projection.pos.z - body.pos.z,
+			};
+		};
 		const movingPhase = new Set([
 			"departing",
 			"local-departure",
@@ -346,7 +361,39 @@ try {
 			) {
 				const angleRad = angleBetween(priorTurnProjection.nose, projected.nose);
 				if (!worstTurn || angleRad > worstTurn.angleRad)
-					worstTurn = { t, angleRad };
+					worstTurn = {
+						t,
+						angleRad,
+						fromPhase: priorTurnProjection.phase,
+						toPhase: projected.phase,
+					};
+			}
+			if (
+				priorTurnProjection.phase === "departing" &&
+				projected.phase === "local-departure"
+			) {
+				const beforeRel = stationRelativeAt(
+					priorTurnProjection,
+					t - 0.1,
+					actor.homeStationId,
+				);
+				const afterRel = stationRelativeAt(projected, t, actor.homeStationId);
+				departureBoundaryRelativeStepKm = Math.hypot(
+					afterRel.x - beforeRel.x,
+					afterRel.y - beforeRel.y,
+					afterRel.z - beforeRel.z,
+				);
+			}
+			if (projected.phase === "local-departure") {
+				const rel = stationRelativeAt(projected, t, actor.homeStationId);
+				lastLocalDepartureRangeKm = Math.hypot(rel.x, rel.y, rel.z);
+			}
+			if (
+				priorTurnProjection.phase === "local-departure" &&
+				projected.phase === "cruise"
+			) {
+				const rel = stationRelativeAt(projected, t, actor.homeStationId);
+				firstCruiseRangeKm = Math.hypot(rel.x, rel.y, rel.z);
 			}
 			priorTurnProjection = projected;
 			if (projected.phase === "docked-away") break;
@@ -661,6 +708,13 @@ try {
 			worstAuthorityTurnDeg: worstTurn
 				? (worstTurn.angleRad * 180) / Math.PI
 				: null,
+			worstAuthorityTurnPhases: worstTurn
+				? [worstTurn.fromPhase, worstTurn.toPhase]
+				: null,
+			departureBoundaryRelativeStepKm,
+			lastLocalDepartureRangeKm,
+			firstCruiseRangeKm,
+			trafficStationExclusionKm: traffic.TRAFFIC_STATION_EXCLUSION_KM,
 			flyingAttitudeStepRatio,
 			flyingPositionStepRatio,
 			flyingAttitudeSteps,
@@ -949,10 +1003,35 @@ try {
 			result.flyingPositionStepRatio < 1.5,
 		JSON.stringify({
 			authorityTurnDeg: result.worstAuthorityTurnDeg,
+			phases: result.worstAuthorityTurnPhases,
 			attitudeMovingSteps: result.flyingAttitudeMovingSteps,
 			positionMovingSteps: result.flyingPositionMovingSteps,
 			attitudeMaxToMeanStep: result.flyingAttitudeStepRatio,
 			positionMaxToMeanStep: result.flyingPositionStepRatio,
+		}),
+	);
+	check(
+		"Traffic attitude changes by at most 3 degrees per 10 Hz authority tick",
+		result.worstAuthorityTurnDeg > 0 && result.worstAuthorityTurnDeg <= 3,
+		JSON.stringify({
+			degrees: result.worstAuthorityTurnDeg,
+			phases: result.worstAuthorityTurnPhases,
+		}),
+	);
+	check(
+		"launch hands off to local departure in the same station-relative frame",
+		result.departureBoundaryRelativeStepKm < 0.25,
+		JSON.stringify({ stepKm: result.departureBoundaryRelativeStepKm }),
+	);
+	check(
+		"Traffic remains in local flight until outside the station exclusion bubble",
+		result.lastLocalDepartureRangeKm >=
+			result.trafficStationExclusionKm - 0.2 &&
+			result.firstCruiseRangeKm >= result.trafficStationExclusionKm,
+		JSON.stringify({
+			lastLocalKm: result.lastLocalDepartureRangeKm,
+			firstCruiseKm: result.firstCruiseRangeKm,
+			exclusionKm: result.trafficStationExclusionKm,
 		}),
 	);
 	check(
