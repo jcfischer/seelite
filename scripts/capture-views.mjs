@@ -226,8 +226,15 @@ const PLACERS = {
 		// workbench is query-gated and constructs no `Game` at all.
 		await page.goto(`${ORIGIN}/?model-viewer=station`, { waitUntil: "load" });
 		await page.waitForSelector("#model-viewer canvas");
+		// **The fifth element is destructured, and it was not.** `variant` was
+		// passed in the array and read as a free identifier inside the browser,
+		// which is a `ReferenceError` at the last view of the set — so `npm run
+		// views` has thrown before writing a manifest, and the sheet #98 makes
+		// the gate has been uncapturable, since `95ba0ca` (#257) added it. It is
+		// out of this node's scope and fixed here anyway: nothing else can put a
+		// before/after pair in front of the principal.
 		await page.evaluate(
-			async ([asset, radii, azimuth, elevation]) =>
+			async ([asset, radii, azimuth, elevation, variant]) =>
 				window.__frameWorkbenchInterior(
 					asset,
 					radii,

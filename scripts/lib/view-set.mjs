@@ -182,7 +182,7 @@ export const SHOT_KINDS = Object.freeze([
  *
  * **The exceptions are `refinery-cradle-berth` and `ringed-giant`, and each
  * names its own.** `SEED` 47 generates no refinery and no gas giant, so those
- * two carry `seed: 2` and `seed: 34` and their captures navigate. Saying "one
+ * two carry `seed: 2` and `seed: 5` and their captures navigate. Saying "one
  * seed" of this set would be the class of claim this file's own capture code
  * refuses: a caption asserting a fixture property the frames do not have.
  *
@@ -537,40 +537,48 @@ export const VIEWS = Object.freeze([
 	 * above against a different world. `refinery-cradle-berth` already
 	 * established the alternative.
 	 *
-	 * **Seed 34's `planet-6`, and both halves of #210 are why.** The two
-	 * shadows are drawn by the same geometry from opposite ends, and whether
-	 * either is in the picture is decided by the sun's elevation above the ring
-	 * plane — which is a fact about where the body sits at `GAME_TIME_S`, not
-	 * something a camera can recover. Measured over every ringed body in the
-	 * first four hundred seeds: seed 6's ice giant, which is the body #210's own
-	 * evidence was read off, stands at 63.6°, where the ring's shadow misses the
-	 * planet entirely and only one of the two exists. Seed 34's ice giant stands
-	 * at 33.6°, where the ring's inner half lays a band across the disc and the
-	 * planet still throws a shadow clear across the ring's anti-solar side.
-	 * Seeds 4, 10 and 29 sit near 5°, where the ring is edge-on to its own star
-	 * and the band on the planet collapses to a line.
+	 * **The seed and the angle are measured, and #210 needs *two* conditions of
+	 * them rather than one.** Both shadows are the same geometry read from
+	 * opposite ends, and each has its own way of not being in the picture:
 	 *
-	 * `sunAngleDeg` 60 for the same reason `planet-fill` takes 60 and not 0: at
-	 * 0 the star is behind the camera, the body is fully lit, and its shadow on
-	 * the ring falls on the side nothing can see. At 60 the ring is nearly
-	 * face-on to the camera (0.95 of full opening), the terminator crosses the
-	 * disc, and the anti-solar shadow band is in frame.
+	 * - The **ring's shadow on the planet** exists at all only while the sun is
+	 *   low enough over the ring plane for the annulus to project onto the
+	 *   sphere. Measured over every ringed body in the first four hundred
+	 *   seeds: seed 6's ice giant — the body #210's own evidence was read off —
+	 *   stands at 63.6°, where it misses the disc entirely. Seeds 4, 10 and 29
+	 *   sit near 5°, where it collapses to a line. Seed 5's jovian is at 27.8°,
+	 *   which lays a band across the disc.
+	 * - And it falls on the hemisphere **away** from the sun, so it is only
+	 *   visible from a camera on that side of the ring plane. This is what the
+	 *   first version of this view got wrong: seed 34 at 33.6° satisfies the
+	 *   elevation, and at every `sunAngleDeg` under 150 the camera stands on the
+	 *   *sun's* side. The captured frame showed the eclipse on the ring
+	 *   perfectly and a disc with nothing on it, which reads exactly like a
+	 *   shadow that was never drawn. Seed 5 is on the shadow side at every
+	 *   angle.
+	 *
+	 * `sunAngleDeg` 90 is where the two stop competing. Below it the disc is
+	 * fully lit and the planet's own shadow falls behind the ring where nothing
+	 * can see it; above about 120 the ring opens to 0.96 of full and the planet
+	 * is a crescent, so the band has almost no lit disc to cross. At 90 the
+	 * terminator runs down the middle, the ring is 0.83 open, and the eclipse
+	 * reaches out sideways across it.
 	 *
 	 * `radii` 6 rather than `planet-fill`'s 2: the ring runs out to 2.3 body
-	 * radii, so the frame has to hold more than four times the subject that
-	 * view does. Set by the same method as every other number here — opening
-	 * the PNG and looking — and nothing checks it.
+	 * radii, so the frame has to hold more than four times the subject that view
+	 * does. Set by the same method as every other number here — opening the PNG
+	 * and looking — and nothing checks it.
 	 */
 	{
 		name: "ringed-giant",
 		covers: [210, 206, 207, 99],
-		what: "An ice giant and its ring, seed 34, sun 33.6° above the ring plane. The planet's shadow across the ring's far side and the ring's band across the disc — the pair #210 draws.",
+		what: "A ringed gas giant, seed 5, sun 27.8° above the ring plane and 90° off the camera. The planet's shadow reaching across the ring and the ring's band across the disc — the pair #210 draws.",
 		shot: {
 			kind: "body-offset",
 			body: "planet-6",
-			seed: 34,
+			seed: 5,
 			radii: 6,
-			sunAngleDeg: 60,
+			sunAngleDeg: 90,
 			view: "chase",
 		},
 	},

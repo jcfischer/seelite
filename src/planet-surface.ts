@@ -153,6 +153,16 @@ export const DEFAULT_SUN_DIRECTION = new THREE.Vector3(
 	0.55,
 ).normalize();
 
+/**
+ * The Sun's angular radius at 1 AU, in radians — 696,340 km over 149.6 M.
+ *
+ * The penumbra a body's ring shadow is drawn with until the renderer says
+ * otherwise. A real figure rather than a shaped one, because it is a physical
+ * quantity the renderer computes per body and this is only the value a body
+ * carries before it is placed — a workbench or a test.
+ */
+export const DEFAULT_SUN_ANGULAR_RADIUS = 696_340 / 149_597_871;
+
 export interface BodyVisualOptions {
 	/** Unit vector from the body towards its star. Defaults to
 	 *  `DEFAULT_SUN_DIRECTION`; the live renderer updates it every frame,
@@ -174,9 +184,27 @@ export interface BodyVisual {
 	 *  being told about it separately. */
 	uniforms: Record<string, THREE.IUniform>;
 	surface: SurfaceClass;
-	/** Unit vector from the body towards its star, in any frame — it is a
-	 *  direction, so every frame agrees about it. */
-	setSunDirection(direction: THREE.Vector3): void;
+	/**
+	 * Where this body's star is, and how big it looks from here.
+	 *
+	 * `direction` is a unit vector from the body towards its star, in **world**
+	 * space. The docstring here used to say "in any frame — it is a direction,
+	 * so every frame agrees about it", which is false of a direction the moment
+	 * anything else in the shader is world space: #210's ring shadow marches
+	 * along this vector to a plane whose normal is taken off a world matrix, and
+	 * `wrappedDiffuse` has always dotted it with `vWorldN`.
+	 *
+	 * `starAngularRadius` is the star's radius over its distance, in radians. It
+	 * is the width of the penumbra a ring shadow gets, and it is **required**
+	 * rather than defaulted for `FlightPerformance`'s reason: a caller that
+	 * forgot would silently give every body in the game the Sun at 1 AU, and a
+	 * soft edge of the wrong width is not something anyone would notice.
+	 *
+	 * Writing the sun is also when the ring's world normal is re-read, because
+	 * that is the one moment per frame the body is told anything about where it
+	 * is. A body with no ring skips it.
+	 */
+	setSunDirection(direction: THREE.Vector3, starAngularRadius: number): void;
 	/** The world clock, seconds. Drives cloud drift and stellar granulation;
 	 *  every other class ignores it. */
 	setTime(seconds: number): void;
@@ -485,6 +513,31 @@ export function buildBodyVisual(
 		},
 		innerR: { value: 1.35 },
 		outerR: { value: 2.3 },
+		/**
+		 * #210's two shadows, and the three values they need beyond `sunDir`.
+		 *
+		 * `ringPresent` is the flag and not an inference. `innerR` and `outerR`
+		 * are on **every** body's uniform block, ringed or not — they predate
+		 * this and exist for the ring's own program — so a surface shader that
+		 * read them alone would lay a ring's shadow across the five giants in
+		 * eight that have no ring. Only the two ringable classes compile the
+		 * term at all, and this is what separates them inside those two.
+		 *
+		 * `ringNormal` is written from the ring child's **world** matrix each
+		 * time the sun moves, not composed from the tilt constants here: the
+		 * shadow marches along `sunDir`, which is a world direction, so a normal
+		 * in any other frame measures the two in different spaces. Nothing
+		 * rotates a body group today and this does not depend on that.
+		 *
+		 * `sunAngularRadius` is the penumbra. A ring shadow is sharp against the
+		 * planet and soft at the rim because the star is a disc rather than a
+		 * point, and how soft is the star's angular size times how far the
+		 * fragment is from the body. The default is the Sun at 1 AU, which is
+		 * what a body reads until the renderer tells it where its star is.
+		 */
+		ringPresent: { value: look.hasRings ? 1 : 0 },
+		ringNormal: { value: new THREE.Vector3(0, 1, 0) },
+		sunAngularRadius: { value: DEFAULT_SUN_ANGULAR_RADIUS },
 	};
 
 	const group = new THREE.Group();
@@ -773,8 +826,12 @@ export function buildBodyVisual(
 		shell.userData.shell = "atmosphere";
 		group.add(shell);
 	}
+	// Held so `setSunDirection` can re-read its world normal — #210's shadow on
+	// the planet is cast by *this* plane, and reaching into `group.children` for
+	// it later would be the lookup `setLayer`'s docstring argues against.
+	let ring: THREE.Mesh | undefined;
 	if (look.hasRings) {
-		const ring = new THREE.Mesh(
+		ring = new THREE.Mesh(
 			ringPlane(),
 			new THREE.ShaderMaterial({
 				uniforms,
@@ -823,8 +880,16 @@ export function buildBodyVisual(
 		group,
 		uniforms,
 		surface: look.surface,
-		setSunDirection(direction) {
+		setSunDirection(direction, starAngularRadius) {
 			(uniforms.sunDir.value as THREE.Vector3).copy(direction);
+			uniforms.sunAngularRadius.value = starAngularRadius;
+			// `getWorldDirection` updates the ring's world matrix from the root
+			// before reading its +Z, so this is exact rather than a frame stale —
+			// and it is the ring's *own* orientation, so a group that is ever
+			// turned by whatever holds it moves the shadow with the ring instead
+			// of leaving it behind.
+			if (ring)
+				ring.getWorldDirection(uniforms.ringNormal.value as THREE.Vector3);
 		},
 		setTime(seconds) {
 			uniforms.time.value = seconds;

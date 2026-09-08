@@ -31,6 +31,25 @@ export type SurfaceClass =
 	| "jovian"
 	| "iceGiant";
 
+/**
+ * The classes that can carry rings, as data rather than as a condition.
+ *
+ * Read by the draw below and by `planet-shaders.ts`, which compiles #210's ring
+ * shadow into these two programs and no others. That is what makes it one list:
+ * a class added here and not there would draw a ring with nothing under it, and
+ * the shadow term costs every fragment of every class it is compiled into, so
+ * it cannot simply go in all of them.
+ *
+ * It is also the anti-criterion `tests/planet-surfaces.test.ts` holds. A baked
+ * body is drawn from a cube whose lighting is applied afterwards, and the ring
+ * shadow lives in the *procedural* program — so a class that gained a bake
+ * descriptor while being ringable would lose its shadow with nothing going red.
+ */
+export const RINGED_CLASSES = Object.freeze([
+	"jovian",
+	"iceGiant",
+]) as readonly SurfaceClass[];
+
 export interface PlanetAppearance {
 	surface: SurfaceClass;
 	/** Insolation key `a/a_hab`: <1 is inside the habitable distance. */
@@ -243,8 +262,7 @@ export function appearanceFor(
 	// the hash comment above disclaims its distribution, and leaning on the low
 	// bits of a value declared "not a good distribution" would be taking back
 	// the disclaimer one line later.
-	if (surface === "jovian" || surface === "iceGiant")
-		look.hasRings = ((seed >>> 24) & 7) < 3;
+	if (RINGED_CLASSES.includes(surface)) look.hasRings = ((seed >>> 24) & 7) < 3;
 
 	return look;
 }

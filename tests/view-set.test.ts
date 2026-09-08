@@ -111,7 +111,7 @@ describe("the view set itself", () => {
 			(v) => (v.shot as { seed?: number }).seed !== undefined,
 		).map((v) => [v.name, (v.shot as { seed?: number }).seed]);
 		expect(declared).toEqual([
-			["ringed-giant", 34],
+			["ringed-giant", 5],
 			["refinery-cradle-berth", 2],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no
