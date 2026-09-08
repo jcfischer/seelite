@@ -137,6 +137,7 @@ export const LEVERS = Object.freeze({
 	203: "the hull finish: a second plating octave, muted paint, a rim, collars, open bells",
 	208: "the baked cube a planet is drawn from below two radii",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
+	210: "the planet's shadow across its ring, and the ring's back across the planet",
 });
 
 /**
@@ -177,13 +178,25 @@ export const SHOT_KINDS = Object.freeze([
 ]);
 
 /**
- * Eighteen views, one clock, and — with one declared exception — one seed.
+ * One clock, and — with two declared exceptions — one seed.
  *
- * **The exception is `refinery-cradle-berth`, and it names its own.** `SEED` 47
- * generates no refinery, so that view carries `seed: 2` and its capture
- * navigates. Saying "one seed" of this set would be the class of claim this
- * file's own capture code refuses: a caption asserting a fixture property the
- * frames do not have.
+ * **The exceptions are `refinery-cradle-berth` and `ringed-giant`, and each
+ * names its own.** `SEED` 47 generates no refinery and no gas giant, so those
+ * two carry `seed: 2` and `seed: 5` and their captures navigate. Saying "one
+ * seed" of this set would be the class of claim this file's own capture code
+ * refuses: a caption asserting a fixture property the frames do not have.
+ *
+ * **A declared seed used to be an ordering hazard and is not any more.** The
+ * navigation lived inside the `berth` placer, so every view *below* a
+ * seed-declaring one was captured on that view's world; it was harmless only
+ * because the one exception sat second to last. `capture-views.mjs` restores
+ * the seed a view declares — `SEED` when it declares none — before each view
+ * rather than after, so position in this list carries no meaning it did not
+ * before.
+ *
+ * The count of views is deliberately not stated here. It said eighteen while
+ * two were being added, which is the drift `LEVERS` above already warns about
+ * one paragraph up.
  *
  * #98 named four as a starting list and called it a proposal. Two things are
  * added here and both close a hole that list had. **`sky-only`**, because #100's
@@ -511,6 +524,61 @@ export const VIEWS = Object.freeze([
 			body: "planet-5",
 			radii: 2,
 			sunAngleDeg: 60,
+			view: "chase",
+		},
+	},
+	/**
+	 * **The only ringed body the sheet can show, and it names its own seed.**
+	 *
+	 * `SEED` 47 generates no gas giant at all — `FIXTURE.planets` is two rocky
+	 * worlds — and only a `jovian` or an `iceGiant` can carry rings
+	 * (`planet-appearance.ts`). So there is no framing of the fixture that puts
+	 * a ring in shot, and re-pinning `SEED` to get one would reframe every view
+	 * above against a different world. `refinery-cradle-berth` already
+	 * established the alternative.
+	 *
+	 * **The seed and the angle are measured, and #210 needs *two* conditions of
+	 * them rather than one.** Both shadows are the same geometry read from
+	 * opposite ends, and each has its own way of not being in the picture:
+	 *
+	 * - The **ring's shadow on the planet** exists at all only while the sun is
+	 *   low enough over the ring plane for the annulus to project onto the
+	 *   sphere. Measured over every ringed body in the first four hundred
+	 *   seeds: seed 6's ice giant — the body #210's own evidence was read off —
+	 *   stands at 63.6°, where it misses the disc entirely. Seeds 4, 10 and 29
+	 *   sit near 5°, where it collapses to a line. Seed 5's jovian is at 27.8°,
+	 *   which lays a band across the disc.
+	 * - And it falls on the hemisphere **away** from the sun, so it is only
+	 *   visible from a camera on that side of the ring plane. This is what the
+	 *   first version of this view got wrong: seed 34 at 33.6° satisfies the
+	 *   elevation, and at every `sunAngleDeg` under 150 the camera stands on the
+	 *   *sun's* side. The captured frame showed the eclipse on the ring
+	 *   perfectly and a disc with nothing on it, which reads exactly like a
+	 *   shadow that was never drawn. Seed 5 is on the shadow side at every
+	 *   angle.
+	 *
+	 * `sunAngleDeg` 90 is where the two stop competing. Below it the disc is
+	 * fully lit and the planet's own shadow falls behind the ring where nothing
+	 * can see it; above about 120 the ring opens to 0.96 of full and the planet
+	 * is a crescent, so the band has almost no lit disc to cross. At 90 the
+	 * terminator runs down the middle, the ring is 0.83 open, and the eclipse
+	 * reaches out sideways across it.
+	 *
+	 * `radii` 6 rather than `planet-fill`'s 2: the ring runs out to 2.3 body
+	 * radii, so the frame has to hold more than four times the subject that view
+	 * does. Set by the same method as every other number here — opening the PNG
+	 * and looking — and nothing checks it.
+	 */
+	{
+		name: "ringed-giant",
+		covers: [210, 206, 207, 99],
+		what: "A ringed gas giant, seed 5, sun 27.8° above the ring plane and 90° off the camera. The planet's shadow reaching across the ring and the ring's band across the disc — the pair #210 draws.",
+		shot: {
+			kind: "body-offset",
+			body: "planet-6",
+			seed: 5,
+			radii: 6,
+			sunAngleDeg: 90,
 			view: "chase",
 		},
 	},

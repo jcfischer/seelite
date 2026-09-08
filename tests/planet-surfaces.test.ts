@@ -1,13 +1,23 @@
 import { expect, test } from "bun:test";
+import * as THREE from "three";
 import { generateGalaxy } from "../src/galaxy";
 import {
+	RINGED_CLASSES,
 	type SurfaceClass,
 	appearanceFor,
 	appearanceOf,
 	classify,
 } from "../src/planet-appearance";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
-import { fragmentFor } from "../src/planet-shaders";
+import {
+	BAKE_DESCRIPTORS,
+	RING_FRAGMENT,
+	RING_GLSL,
+	RING_VERTEX,
+	bakedFragmentFor,
+	fragmentFor,
+} from "../src/planet-shaders";
+import { buildBodyVisual } from "../src/planet-surface";
 import { makeSystem } from "../src/sim";
 import { generateContents, orbitWarmth } from "../src/system";
 
@@ -163,4 +173,153 @@ test("appearanceOf is the same answer appearanceFor gives by hand", () => {
 	expect(appearanceOf({ id: planet.id, kind: "planet" }, contents)).toEqual(
 		appearanceFor("planet", planet.id, warmth, planet.isGasGiant),
 	);
+});
+
+/**
+ * **#210's two shadows, and the half of them a headless test can hold.**
+ *
+ * Neither shadow can be evaluated here: both are GLSL, and what they draw is
+ * `scripts/probe-planet-surfaces.mjs`'s to measure. What a test owns is
+ * everything around them — which programs the term is compiled into, which it
+ * must stay out of, that the two directions read one band rather than two
+ * copies of one, and that a body with no ring is told so rather than being
+ * handed a ring's radii and left to find out.
+ *
+ * The scale half is a source assertion for the same reason and is the weakest
+ * row here. It is worth having anyway: the defect it pins is that the eclipse
+ * term compared a **world-unit** distance against `1.0` while every body in the
+ * game is drawn at `radiusKm × layerFactor`, so the shadow was fully lit in
+ * every shipped frame and had been since it was written. A term that quietly
+ * loses its divisor goes back to that, and the probe that catches it needs a
+ * browser.
+ */
+test("the eclipse on a ring is measured in body radii, not in world units", () => {
+	// The vertex shader hands the fragment the world length of one body radius,
+	// and the fragment divides by it. Both halves, because either alone is inert.
+	expect(RING_VERTEX).toContain("vBodyR");
+	expect(RING_FRAGMENT).toContain("varying float vBodyR;");
+	expect(RING_FRAGMENT.replace(/\s+/g, " ")).toContain("/ vBodyR");
+});
+
+test("only the classes that can carry rings carry the ring's shadow", () => {
+	// The term costs every fragment of every program it is compiled into, and
+	// #248 measured planet fragments as the frame — so it is compiled per class
+	// rather than branched on a uniform, which `RELIEF_PATHS` argues for at
+	// length one screen up in the module it lives in.
+	for (const surface of RINGED_CLASSES)
+		expect([
+			surface,
+			fragmentFor(surface).includes("float ringShadow("),
+		]).toEqual([surface, true]);
+	const others = CLASSES.filter((s) => !RINGED_CLASSES.includes(s));
+	expect(others.length).toBeGreaterThan(5);
+	for (const surface of others)
+		expect([surface, fragmentFor(surface).includes("ringShadow")]).toEqual([
+			surface,
+			false,
+		]);
+	// And no baked program carries it. A baked body is drawn from a cube, and a
+	// cube cannot hold a shadow that moves with the sun.
+	for (const surface of Object.keys(BAKE_DESCRIPTORS) as SurfaceClass[])
+		expect([surface, bakedFragmentFor(surface).includes("ringShadow")]).toEqual(
+			[surface, false],
+		);
+});
+
+test("no class that can carry rings can also be baked", () => {
+	// The anti-criterion. Both halves are read from the modules that own them,
+	// so this goes red on the day a giant gains a bake descriptor — which would
+	// take its ring shadow away with nothing else noticing, because the shadow
+	// is in the procedural program and the baked one draws from a cube.
+	const baked = new Set(Object.keys(BAKE_DESCRIPTORS));
+	expect(RINGED_CLASSES.filter((s) => baked.has(s))).toEqual([]);
+	// Guarded on both sides, so it cannot pass by either list being empty.
+	expect(RINGED_CLASSES.length).toBe(2);
+	expect(baked.size).toBeGreaterThan(0);
+});
+
+test("both directions of the shadow read one band, not two copies of one", () => {
+	// What makes the band on the planet the *same* band the ring draws: one
+	// function, called from the ring's own fragment and from the surface's. The
+	// frequency literal is the tell — a second copy is what a hand-inlined
+	// version would look like, and it would drift on the first retune.
+	//
+	// **A call site, not a mention.** The first version of this row asserted
+	// `toContain("ringSample(")`, which the function's own *declaration*
+	// satisfies — both consumers could be deleted and it would still pass. Both
+	// halves are asserted instead: the declaration appears once, and there is at
+	// least one further occurrence, which can only be a call.
+	const occurrences = (haystack: string, needle: string) =>
+		haystack.split(needle).length - 1;
+	expect(occurrences(RING_GLSL, "void ringSample(")).toBe(1);
+	expect(occurrences(RING_FRAGMENT, "void ringSample(")).toBe(1);
+	expect(occurrences(RING_FRAGMENT, "ringSample(")).toBeGreaterThan(1);
+	for (const surface of RINGED_CLASSES) {
+		const source = fragmentFor(surface);
+		expect([surface, occurrences(source, "void ringSample(")]).toEqual([
+			surface,
+			1,
+		]);
+		expect([surface, occurrences(source, "ringSample(") > 1]).toEqual([
+			surface,
+			true,
+		]);
+		// And the band itself is spelled once per program, not once per caller.
+		expect([surface, occurrences(source, "t * 34.0")]).toEqual([surface, 1]);
+	}
+	expect(occurrences(RING_GLSL, "t * 34.0")).toBe(1);
+});
+
+/** A ringable class, built the way the generator builds one: `isGasGiant` and a
+ *  warmth on the warm side of the giant split, so `classify` returns `jovian`
+ *  rather than the test naming a class the generator might not agree with. */
+const giantLook = (id: string) => {
+	const look = appearanceFor("planet", id, 1.0, true);
+	expect(look.surface).toBe("jovian");
+	return look;
+};
+
+test("a body is told whether it has a ring, rather than inferring it from the radii", () => {
+	// `innerR` and `outerR` are in the shared uniform block on **every** body,
+	// ringed or not — they were there before #210 for the ring's own program to
+	// read. So a surface shader that decided from them alone would lay a ring's
+	// shadow across a giant that has none, and the two giants that do have one
+	// are three in eight. The flag is what separates them, and it is set from
+	// the same `hasRings` the ring mesh is built on.
+	const ringed = giantLook("planet-6");
+	ringed.hasRings = true;
+	const bare = { ...ringed, hasRings: false };
+	const sphere = new THREE.SphereGeometry(1, 8, 6);
+	const withRing = buildBodyVisual(ringed, sphere);
+	const withoutRing = buildBodyVisual(bare, sphere);
+	expect(withRing.uniforms.ringPresent?.value).toBe(1);
+	expect(withoutRing.uniforms.ringPresent?.value).toBe(0);
+});
+
+test("the ring normal handed to the surface is the ring's own world normal", () => {
+	// The shadow marches from a surface point along `sunDir`, which is a **world**
+	// direction, to the ring's plane — so the plane's normal has to be in the
+	// same frame or the two are measured in different spaces and the band lands
+	// somewhere arbitrary. Taken from the ring child's world matrix rather than
+	// from the tilt constants, so a group that is ever rotated by whatever holds
+	// it does not silently move the shadow off the ring.
+	const look = giantLook("planet-6");
+	look.hasRings = true;
+	const visual = buildBodyVisual(look, new THREE.SphereGeometry(1, 8, 6));
+	// A parent with a rotation of its own: the case the constants cannot answer.
+	const parent = new THREE.Group();
+	parent.rotation.set(0.4, -0.9, 0.25);
+	parent.add(visual.group);
+	parent.updateMatrixWorld(true);
+	visual.setSunDirection(new THREE.Vector3(1, 0, 0), 0.005);
+
+	const ring = visual.group.children.find(
+		(child) => child.name === "decor" && child instanceof THREE.Mesh,
+	);
+	expect(ring).toBeDefined();
+	const expected = new THREE.Vector3();
+	(ring as THREE.Object3D).getWorldDirection(expected);
+	const got = visual.uniforms.ringNormal?.value as THREE.Vector3;
+	expect(got.length()).toBeCloseTo(1, 6);
+	expect(Math.abs(got.dot(expected))).toBeCloseTo(1, 6);
 });

@@ -119,6 +119,40 @@ async function applyCaptureQuality(page) {
 }
 
 /**
+ * The seed the page is currently booted on, and the door every view goes
+ * through to change it.
+ *
+ * **Hoisted out of the `berth` placer, and the reason is an ordering trap that
+ * placer left behind.** A view that names its own seed navigates, and a
+ * navigation re-runs the init scripts and re-boots the game — so every view
+ * *after* it was captured on that view's world, not on `SEED`. Nothing went
+ * wrong only because the one seed-declaring view was second to last and the
+ * view after it navigates to the workbench anyway. That is a property of the
+ * list's order, held by no check, and the next seed-declaring view added
+ * anywhere else in the list would have silently re-seeded the frames below it.
+ *
+ * Restoring is the same act as declaring: a view with no `seed` wants `SEED`,
+ * so it navigates back if the page is somewhere else, and nothing at any
+ * position in the list depends on what ran before it. (A *jump* is what
+ * `CONTEXT.md` reserves for moving between star systems; this is a page load.)
+ *
+ * `__rememberBootPosition` is re-run on every navigation, because one resets
+ * the ship to the arrival point and drops what the previous boot remembered —
+ * `deep-sky` reads it, and it is only safe at any position in the list if
+ * every boot leaves one behind.
+ */
+let currentSeed = null;
+async function ensureSeed(page, seed) {
+	if (currentSeed === seed) return;
+	await page.goto(`${ORIGIN}/?seed=${seed}`, { waitUntil: "load" });
+	await bootedGame(page);
+	await applyCaptureQuality(page);
+	await page.evaluate(() => window.__rememberBootPosition());
+	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
+	currentSeed = seed;
+}
+
+/**
  * Both directions between the declared shot kinds and the placers built for
  * them: a kind with no placer, and a placer nothing declares.
  *
@@ -172,16 +206,6 @@ const PLACERS = {
 	},
 	berth: async (page, shot) => {
 		const id = `station-${shot.station}`;
-		// **A view may name its own seed**, and exactly one does: `SEED` 47
-		// generates no refinery. Navigating re-runs the init scripts and re-boots
-		// the game, so the clock is re-pinned after the jump rather than carried
-		// across it.
-		if (shot.seed !== undefined) {
-			await page.goto(`${ORIGIN}/?seed=${shot.seed}`, { waitUntil: "load" });
-			await bootedGame(page);
-			await applyCaptureQuality(page);
-			await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
-		}
 		await page.evaluate(
 			async ([stationId, berthId, opts]) =>
 				window.__parkInBerth(stationId, berthId, opts),
@@ -203,8 +227,15 @@ const PLACERS = {
 		// workbench is query-gated and constructs no `Game` at all.
 		await page.goto(`${ORIGIN}/?model-viewer=station`, { waitUntil: "load" });
 		await page.waitForSelector("#model-viewer canvas");
+		// **The fifth element is destructured, and it was not.** `variant` was
+		// passed in the array and read as a free identifier inside the browser,
+		// which is a `ReferenceError` at the last view of the set — so `npm run
+		// views` has thrown before writing a manifest, and the sheet #98 makes
+		// the gate has been uncapturable, since `95ba0ca` (#257) added it. It is
+		// out of this node's scope and fixed here anyway: nothing else can put a
+		// before/after pair in front of the principal.
 		await page.evaluate(
-			async ([asset, radii, azimuth, elevation]) =>
+			async ([asset, radii, azimuth, elevation, variant]) =>
 				window.__frameWorkbenchInterior(
 					asset,
 					radii,
@@ -361,6 +392,7 @@ await installViewFraming(page);
 await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
 await bootedGame(page);
 await applyCaptureQuality(page);
+currentSeed = SEED;
 let renderer;
 const captured = [];
 try {
@@ -384,14 +416,25 @@ try {
 		// **Not on the workbench**, which has no view cycle: `v` there is an
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.
-		if (view.shot.kind !== "workbench-interior")
+		if (view.shot.kind !== "workbench-interior") {
+			// Before the view is set, because a page load resets the game to the
+			// cockpit and would undo it.
+			await ensureSeed(page, view.shot.seed ?? SEED);
 			await setView(page, view.shot.view);
+		} else {
+			// The workbench is not the game and carries no seed. Its own
+			// navigation leaves the page somewhere `ensureSeed` cannot reason
+			// about, so the next view — there is none today — starts by navigating.
+			currentSeed = null;
+		}
 		const subject = await PLACERS[view.shot.kind](page, view.shot);
-		// **Again, after placing.** A placer may navigate — `berth` does, for the
-		// one view that names its own seed — and a reload resets the game to the
-		// cockpit. The refinery frame came back as the docked station console
-		// filling a frame declared `chase`. Idempotent, so every other view pays
-		// one property read for it.
+		// **Again, after placing**, because placing can move the view. The
+		// refinery frame came back as the docked station console filling a frame
+		// declared `chase` — diagnosed then as the seed navigation, which now
+		// happens above this loop body rather than inside a placer, and left
+		// standing because `berth` also *docks*, and a docked session owns the
+		// screen for a reason that has nothing to do with a reload. Idempotent,
+		// so every other view pays one property read for it.
 		if (view.shot.kind !== "workbench-interior")
 			await setView(page, view.shot.view);
 		// Three settle frames. The near/far handoff has a hysteresis band and the

@@ -11,7 +11,7 @@
  * Values look darker than the equivalent sRGB swatch on purpose.
  */
 
-import type { SurfaceClass } from "./planet-appearance";
+import { RINGED_CLASSES, type SurfaceClass } from "./planet-appearance";
 import { CLASS_GLSL, RELIEF } from "./planet-classes.glsl";
 
 /**
@@ -428,6 +428,7 @@ ${LIGHT_GLSL}
 float height(vec3 p);
 ${RELIEF}
 ${CLASS_GLSL[surface]}
+${RINGED_CLASSES.includes(surface) ? `${RING_GLSL}\n${RING_SHADOW_GLSL}` : ""}
 void main() {
   vec3 p = normalize(vObjP);
   vec3 N = normalize(vWorldN);
@@ -440,8 +441,19 @@ void main() {
   // against the rest of the frame. Diagnostic; see planet-surface.ts.
   if (perfAblate < 1.5) surface(p, albedo, N, emissive, specPower, specMask);
 
-  vec3 col = shade(albedo, N, V);
-  if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;
+${
+	RINGED_CLASSES.includes(surface)
+		? `  // #210. \`mix\` towards \`albedo * AMBIENT\` rather than a factor on the
+  // whole of \`shade\`, because the ambient floor is not the star's and a ring
+  // does not occlude it: at \`ringShadow\` 0 this is exactly what \`shade\`
+  // returns with the diffuse term gone.
+  float ringLight = ringShadow(vWorldP, vCenter, vRadius);
+  vec3 col = mix(albedo * AMBIENT, shade(albedo, N, V), ringLight);
+  if (specPower > 0.0)
+    col += sunColor * specular(N, V, specPower) * specMask * ringLight;`
+		: `  vec3 col = shade(albedo, N, V);
+  if (specPower > 0.0) col += sunColor * specular(N, V, specPower) * specMask;`
+}
   col += emissive;
   // Alpha is the literal 1.0 on the opaque surface, so only colour can go
   // wrong here. The shells use sane4, where alpha does the blending.
@@ -586,6 +598,50 @@ void main() {
 }
 `;
 
+/**
+ * What a ring is made of, at one radius — the one description both of #210's
+ * shadows read.
+ *
+ * The ring's own fragment draws it, and a ringed body's *surface* fragment
+ * marches a sun ray out to this plane and reads it again to know how much light
+ * got through. Sharing the function is what makes the band on the planet the
+ * same band as the band on the ring; two copies of this arithmetic would agree
+ * until the first retune and then quietly stop.
+ *
+ * `r` is in **body radii**, which is the unit the ring's geometry is authored
+ * in — the surface sphere is the unit sphere in the same group, so `innerR` and
+ * `outerR` need no conversion and a consumer in world units has to divide.
+ *
+ * **What an includer owes it: `NOISE_GLSL`, and a `seedOffset` uniform already
+ * declared.** The uniform is not declared here because every class chunk in
+ * `CLASS_GLSL` declares its own, and GLSL ES 1.00 rejects a redefinition — a
+ * copy here compiled fine on the ring's own program and took every gas giant
+ * in the game off the screen, which is a link failure and therefore silent
+ * except in the console. So the ring's fragment declares it above this, and
+ * `fragmentFor` emits this block *after* the class body that already has one.
+ */
+export const RING_GLSL = /* glsl */ `
+uniform float innerR;
+uniform float outerR;
+
+// The ring's own alpha, and therefore the deepest shadow it can cast. One
+// constant rather than a literal at each site: a ring you can see through is a
+// ring you can see through from both ends.
+const float RING_ALPHA = 0.85;
+
+void ringSample(float r, out float density, out float grain) {
+  grain = 0.0;
+  density = 0.0;
+  if (r < innerR || r > outerR) return;
+  float t = (r - innerR) / (outerR - innerR);
+  // Gaps are resonances, so they are narrow and sharp; the material between
+  // them varies smoothly. One field for each.
+  grain = fbm4(vec3(t * 34.0 + seedOffset, 2.3, 7.1));
+  float gap = smoothstep(0.02, 0.0, abs(fbm3(vec3(t * 7.0 + seedOffset, 5.0, 1.0)) - 0.5));
+  density = grain * (1.0 - gap) * smoothstep(0.0, 0.10, t) * smoothstep(1.0, 0.86, t);
+}
+`;
+
 /** A ring plane: banded opacity, plus the planet's own shadow across it. */
 export const RING_FRAGMENT = /* glsl */ `
 precision highp float;
@@ -593,21 +649,17 @@ ${SANITISE_GLSL}
 varying vec2 vRing;
 varying vec3 vWorldP;
 varying vec3 vCentre;
+varying float vBodyR;
 ${NOISE_GLSL}
-uniform vec3  sunDir;
-uniform float innerR;
-uniform float outerR;
 uniform float seedOffset;
+${RING_GLSL}
+uniform vec3  sunDir;
+uniform float sunAngularRadius;
 void main() {
   float r = length(vRing);
   if (r < innerR || r > outerR) discard;
-  float t = (r - innerR) / (outerR - innerR);
-
-  // Gaps are resonances, so they are narrow and sharp; the material between
-  // them varies smoothly. One field for each.
-  float grain = fbm4(vec3(t * 34.0 + seedOffset, 2.3, 7.1));
-  float gap   = smoothstep(0.02, 0.0, abs(fbm3(vec3(t * 7.0 + seedOffset, 5.0, 1.0)) - 0.5));
-  float density = grain * (1.0 - gap) * smoothstep(0.0, 0.10, t) * smoothstep(1.0, 0.86, t);
+  float density, grain;
+  ringSample(r, density, grain);
 
   // Eclipse: anything whose perpendicular distance from the planet-sun line is
   // under one radius is in shadow.
@@ -621,13 +673,32 @@ void main() {
   // The centre arrives as a varying because Three injects modelMatrix into the
   // vertex prefix only — reading it here compiles to nothing, the material
   // fails silently, and the rings simply do not draw.
-  vec3 toBody = vCentre - vWorldP;
+  //
+  // **And both distances are divided by one body radius, which is the defect
+  // #210 was opened over.** vWorldP and vCentre are world units and the
+  // group is scaled by radiusKm × layerFactor (main.ts), so perp on a
+  // 67,000 km ice giant runs to tens of thousands while the threshold it was
+  // compared against was the literal 1.0. smoothstep(0.94, 1.10, perp)
+  // returned 1 for every fragment of every ring in the game: the term was
+  // written, shipped, and had never darkened a pixel. It reads correctly at
+  // unit scale, which is the only place it was ever looked at.
+  vec3 toBody = (vCentre - vWorldP) / vBodyR;
   float along = dot(toBody, sunDir);
   float perp  = length(toBody - sunDir * along);
-  float shadow = (along < 0.0) ? 1.0 : smoothstep(0.94, 1.10, perp);
+
+  // The penumbra is the star's disc, projected. A point one body radius behind
+  // the planet sees the star barely occluded; a point out at the ring's edge is
+  // far enough that the star's own angular size smears the terminator over a
+  // real width. along is that distance in body radii, so the half-width of
+  // the transition is the star's angular radius times it — the umbra is sharp
+  // near the body and soft at the rim, which is what a ring shadow looks like.
+  float penumbra = max(sunAngularRadius * max(along, 0.0), 0.02);
+  float shadow = (along < 0.0)
+    ? 1.0
+    : smoothstep(1.0 - penumbra, 1.0 + penumbra, perp);
 
   vec3 ice = mix(vec3(0.30, 0.27, 0.23), vec3(0.55, 0.52, 0.47), grain);
-  gl_FragColor = sane4(vec4(ice * (0.25 + 0.75 * shadow), density * 0.85));
+  gl_FragColor = sane4(vec4(ice * (0.25 + 0.75 * shadow), density * RING_ALPHA));
 }
 `;
 
@@ -635,6 +706,7 @@ export const RING_VERTEX = /* glsl */ `
 varying vec2 vRing;
 varying vec3 vWorldP;
 varying vec3 vCentre;
+varying float vBodyR;
 void main() {
   vRing = position.xy;
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -642,7 +714,58 @@ void main() {
   // The planet's world position: the ring mesh carries no local translation, so
   // its own origin under modelMatrix *is* the body it orbits.
   vCentre = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  // One body radius in world units. The ring's own geometry is authored in body
+  // radii, so this is what turns a world-space distance back into the unit
+  // innerR and the eclipse threshold are written in. Uniform scale, so any
+  // axis of the model matrix gives the same length.
+  vBodyR = length(mat3(modelMatrix) * vec3(1.0, 0.0, 0.0));
   gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+/**
+ * The ring's shadow on the planet — the other half of #210, and the half that
+ * did not exist.
+ *
+ * A plane-annulus test: march from the surface point along the sun direction to
+ * the ring's plane, and ask what the ring is made of where it lands. A few dot
+ * products, and then `ringSample`, which is the same band the ring draws
+ * itself.
+ *
+ * **Compiled in per class rather than branched on a uniform.** It is only
+ * reachable on the two classes that can carry rings, and the argument against
+ * making it a uniform branch is the one `RELIEF_PATHS` makes above: a branch on
+ * a uniform is not reliably uniform control flow, some drivers evaluate both
+ * sides, and this branch has `ringSample`'s seven noise calls behind it. #248
+ * measured planet fragments as the frame, so a term evaluated on every terran
+ * world for a ring it cannot have is not a rounding error.
+ *
+ * `ringPresent` is still a uniform, because a giant usually has no ring and
+ * runs this program anyway — the draw in `planet-appearance.ts` gives rings to
+ * three eighths of them, so five giants in eight arrive here bare. That arm is
+ * the one a cost measurement has to take: it is where a driver that evaluates
+ * both sides would show up.
+ *
+ * Needs `NOISE_GLSL`, `RING_GLSL` and `LIGHT_GLSL` in front of it.
+ */
+export const RING_SHADOW_GLSL = /* glsl */ `
+uniform float ringPresent;
+uniform vec3  ringNormal;
+
+float ringShadow(vec3 P, vec3 C, float bodyR) {
+  if (ringPresent < 0.5) return 1.0;
+  float denom = dot(sunDir, ringNormal);
+  // The sun lies in the ring's own plane. The ray never meets it, and the
+  // shadow is a line of zero width rather than a band.
+  if (abs(denom) < 1e-5) return 1.0;
+  float s = dot(C - P, ringNormal) / denom;
+  // Behind the fragment: the ring's plane is on the far side of the body from
+  // the star, so nothing between this point and the sun is ring.
+  if (s <= 0.0) return 1.0;
+  float r = length((P + sunDir * s) - C) / bodyR;
+  float density, grain;
+  ringSample(r, density, grain);
+  return 1.0 - density * RING_ALPHA;
 }
 `;
 

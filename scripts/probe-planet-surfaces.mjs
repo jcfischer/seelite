@@ -245,7 +245,6 @@ const installHelpers = (page) =>
 		 * then grew a third.
 		 */
 		window.__discBox = (bodyId) => {
-			const g = window.__seelite;
 			// Decorations off for the capture, and this is the only place it is
 			// spelled — every measurement in this file goes through here, so
 			// hiding them in the callers instead left whichever caller was added
@@ -253,18 +252,7 @@ const installHelpers = (page) =>
 			// signatures were once taken with a ringed giant's 4.8-radius ring
 			// plane in the box, and the star's with its corona sprite in it.
 			window.__setDecorVisible(bodyId, false);
-			const src = g.renderer.domElement;
-			const cv = document.createElement("canvas");
-			cv.width = W;
-			cv.height = H;
-			const ctx = cv.getContext("2d", { willReadFrequently: true });
-			const frame = () => {
-				// Render and read in the same task: a WebGL canvas without
-				// `preserveDrawingBuffer` is cleared at the next composite.
-				g.render(0);
-				ctx.drawImage(src, 0, 0, W, H);
-				return ctx.getImageData(0, 0, W, H).data;
-			};
+			const frame = window.__framePixels;
 			const mesh = window.__meshOf(bodyId);
 			const shown = frame();
 			mesh.visible = false;
@@ -333,6 +321,39 @@ const installHelpers = (page) =>
 				}
 			}
 			return { pixels: box.changed, patches };
+		};
+
+		/**
+		 * Render one frame and hand back its pixels, at the probe's own logical
+		 * size rather than the canvas backing store's.
+		 *
+		 * **Render and read in the same task**: a WebGL canvas without
+		 * `preserveDrawingBuffer` is cleared at the next composite.
+		 *
+		 * One copy, because there were two. `__discBox` had this sequence inline
+		 * and #210's ring reading grew a second — and the second one read
+		 * `domElement.width`, which on a display with a device pixel ratio above 1
+		 * is not `W`. Its mask came out in device pixels while the centre it was
+		 * compared against was in logical ones: 89,973 ring pixels and 0 opposed
+		 * pairs, silently.
+		 */
+		// One scratch surface for the process, not one per read. Every caller here
+		// takes two or three frames back to back, and a `W x H` backing store and
+		// its 2D context per frame is real allocation for a buffer whose contents
+		// `getImageData` copies out anyway.
+		let scratch;
+		let scratchCtx;
+		window.__framePixels = () => {
+			const g = window.__seelite;
+			if (!scratch) {
+				scratch = document.createElement("canvas");
+				scratch.width = W;
+				scratch.height = H;
+				scratchCtx = scratch.getContext("2d", { willReadFrequently: true });
+			}
+			g.render(0);
+			scratchCtx.drawImage(g.renderer.domElement, 0, 0, W, H);
+			return scratchCtx.getImageData(0, 0, W, H).data;
 		};
 
 		/**
@@ -1718,6 +1739,159 @@ if (airless) {
 				`(±${span(row.whole).toFixed(1)})`,
 		);
 	}
+}
+
+/* #210. A ringed body's two shadows, each with its own control.
+ *
+ * **On its own page and its own seed.** The seed this probe runs on generates a
+ * ringed ice giant, and it is the wrong one for half of #210: its sun stands
+ * 63.6° above the ring plane, where the ring's shadow misses the sphere
+ * entirely. Seed 5's giant is at 27.8°, which is the same reason
+ * `scripts/lib/view-set.mjs` frames its `ringed-giant` view there.
+ *
+ * **Neither check drives `sunDir`, and that is deliberate.** The frame loop
+ * writes it per body inside `render` (`main.ts`), so a probe that assigned it
+ * and then rendered would measure its own assignment being overwritten — the
+ * trap `main.ts` already records for the vignette dial. Each check is built on
+ * a control the loop does not touch.
+ */
+{
+	const RING_URL = process.env.PROBE_RING_URL ?? `${ORIGIN}/?seed=5`;
+	const RING_BODY = process.env.PROBE_RING_BODY ?? "planet-6";
+	const ringPage = await browser.newPage({ viewport: VIEW });
+	watch(ringPage);
+	await installHelpers(ringPage);
+	await installViewPlacement(ringPage);
+	await installViewFraming(ringPage);
+	await ringPage.goto(RING_URL, { waitUntil: "domcontentloaded" });
+	await bootedGame(ringPage);
+	await ringPage.waitForFunction(
+		() => window.__seelite.bakeQueue.length === 0,
+		undefined,
+		{ timeout: 60_000 },
+	);
+	await ringPage.evaluate(([id]) => window.__sunOffset(id, 6, 90), [RING_BODY]);
+
+	/**
+	 * **The planet's shadow on its ring has no check here, and four were built.**
+	 *
+	 * Not an omission to close later. Every one of them passed on a build where
+	 * the term is provably dead — `main` before this node, where the eclipse
+	 * compared a world-unit distance against the literal `1.0` while a body is
+	 * drawn at `radiusKm × layerFactor` — and two of them passed *harder* there
+	 * than on the fixed build, which is the shape of a measurement reporting
+	 * something other than its subject. They are recorded because the next
+	 * attempt should not be the fifth of these.
+	 *
+	 * 1. **Point symmetry of the ring.** A ring's material is a function of its
+	 *    radius alone, so the drawn ring looks like it must be symmetric about
+	 *    the body's centre and the eclipse the one term that breaks it. An
+	 *    inclined annulus in *perspective* does not project to a conic centred on
+	 *    the body's image. Dead build 92.8% of opposed pairs past 0.6x, fixed
+	 *    build 62.4%.
+	 * 2. **The same, with pairs straddling the disc excluded** — the ring's near
+	 *    half is drawn over a planet that is lit on one side. 92.8% to 90.8%.
+	 * 3. **The same again, with the bloom off** — the ring is semi-transparent
+	 *    and the halo reaches through it. 90.8%, unmoved.
+	 * 4. **The fraction of ring pixels under half the ring's own 90th
+	 *    percentile.** Dead build 55.5%, fixed build 20.3% — inverted, because
+	 *    removing the shadow *raises* the percentile the population is measured
+	 *    against.
+	 *
+	 * A fifth arm was designed and blocked: set the body's `radiusKm` to 0.6 km,
+	 * where the old world-unit threshold falls inside the ring's annulus, and
+	 * assert the two arms agree — a direct test of the invariant the fix
+	 * establishes, on state `render` reads fresh rather than rewrites. At that
+	 * radius the body draws nothing at all and the mask comes back empty, which
+	 * is its own question and not this node's.
+	 *
+	 * What does hold this direction is the canonical view set: `ringed-giant`
+	 * moved 5.07% of its pixels past 24/255 between the two builds, against
+	 * 0.00% on a same-build control run of the same view — the only row in the
+	 * sheet whose change the control does not reproduce. Plus
+	 * `tests/planet-surfaces.test.ts`, which holds that the divisor is in the
+	 * source. Neither is a pixel check of the shadow, and saying so is better
+	 * than a green row that means nothing.
+	 */
+
+	/**
+	 * The ring's shadow on the planet, against the one control the frame loop
+	 * does not overwrite: the ring's **own radii**.
+	 *
+	 * `innerR` and `outerR` are set once at build and read by the shadow's
+	 * plane-annulus test. Pushing them out past anything a sun ray can reach
+	 * removes the shadow and changes nothing else — same camera, same sun, same
+	 * surface program — so the difference between the two frames is the term and
+	 * only the term. The ring itself is hidden throughout, so its own pixels are
+	 * not in the comparison, and the radii are put back afterwards.
+	 *
+	 * On a build with no ring shadow the two frames are **identical**, which is
+	 * why this reads a count rather than a ratio: there is no threshold to argue
+	 * about, and 0 is what `main` returns.
+	 */
+	const band = await ringPage.evaluate((id) => {
+		const g = window.__seelite;
+		const visual = g.bodyVisuals.get(id);
+		if (!visual) return null;
+		const u = visual.uniforms;
+		const frame = window.__framePixels;
+		window.__setDecorVisible(id, false);
+		const withRing = frame();
+		const inner = u.innerR.value;
+		const outer = u.outerR.value;
+		u.innerR.value = 50;
+		u.outerR.value = 60;
+		const withoutRing = frame();
+		u.innerR.value = inner;
+		u.outerR.value = outer;
+		window.__setDecorVisible(id, true);
+
+		const luma = (px, i) =>
+			0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+		let darkened = 0;
+		let brightened = 0;
+		let deepest = 0;
+		for (let i = 0; i < withRing.length; i += 4) {
+			const d = luma(withoutRing, i) - luma(withRing, i);
+			if (d > 4) darkened++;
+			else if (d < -4) brightened++;
+			if (d > deepest) deepest = d;
+		}
+		return { darkened, brightened, deepest };
+	}, RING_BODY);
+
+	check(
+		"the ringed body has a visual to read the ring's radii off",
+		band !== null,
+		band === null ? `no bodyVisual for ${RING_BODY}` : "found",
+	);
+	if (band) {
+		console.log(
+			`    ring shadow on the disc: ${band.darkened} px darkened, ` +
+				`${band.brightened} brightened, deepest ${band.deepest.toFixed(0)}/255`,
+		);
+		check(
+			// **The floor is a guard, not the claim.** What discriminates is that a
+			// build without the term draws the two frames *identically* and this
+			// reads exactly 0 — there is no threshold to argue about. 500 sits far
+			// above what antialiasing on a moved edge could produce and far below
+			// the 2,862 px a shipped run measures at this framing, so a band that
+			// shrank by four fifths would still pass and a band that vanished
+			// could not.
+			"the ring lays a band across the planet",
+			band.darkened > 500,
+			`${band.darkened} px darken when the ring's radii are within reach ` +
+				`(${band.brightened} brighten, which is antialiasing and should be near 0)`,
+		);
+		// The term may only ever remove light. A band that brightens the disc is
+		// a sign error, and it would read as "a change" to the row above.
+		check(
+			"the ring's shadow only ever darkens",
+			band.brightened < band.darkened / 20,
+			`${band.brightened} brightened against ${band.darkened} darkened`,
+		);
+	}
+	await ringPage.close();
 }
 
 await browser.close();

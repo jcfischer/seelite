@@ -6351,7 +6351,15 @@ class Game {
 				const sd = Math.hypot(sx, sy, sz);
 				if (sd > 0) SUN_DIR.set(sx / sd, sy / sd, sz / sd);
 				else SUN_DIR.set(0, 0, 1);
-				visual.setSunDirection(SUN_DIR);
+				// How big the star looks from this body, in radians — the width of
+				// the penumbra #210's ring shadow is drawn with. Computed here for
+				// the same reason `sunDir` is: it is a fact about where this body
+				// is. Radius over distance, so a body an AU further out sees a
+				// *smaller* star and gets a **sharper** shadow. The star itself
+				// takes 0, which is the same "no answer needed" case the
+				// direction's fallback covers.
+				const starAngularRadius = sd > 0 ? (star?.radiusKm ?? 0) / sd : 0;
+				visual.setSunDirection(SUN_DIR, starAngularRadius);
 				// The world clock, not a frame counter: cloud drift and stellar
 				// granulation are `f(gameTime)` like every other time-varying thing
 				// (#6), so they survive a pause and a save.
