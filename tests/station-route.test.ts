@@ -396,6 +396,37 @@ describe("terminal-to-terminal route projection", () => {
 		expect(laterPlayer.phase).toBe("arriving");
 	});
 
+	test("a committed traversal does not reset an older queued launch behind the player", () => {
+		const other = stationTrafficRoster(record.index, home)[1];
+		const afterCommittedLane = departure + 5.1;
+		const projected = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: afterCommittedLane,
+			playerTimeline: [
+				{
+					stationId: home.id,
+					kind: "lane",
+					movement: "arrival",
+					participant: { kind: "carrier", key: other.key },
+					fromS: departure,
+					toS: departure + 5,
+					committed: true,
+				},
+				{
+					stationId: home.id,
+					kind: "lane",
+					movement: "arrival",
+					participant: { kind: "player" },
+					fromS: departure + 3,
+					toS: departure + 20,
+				},
+			],
+		});
+		expect(projected.phase).toBe("departing");
+		expect(projected.laneStartedAtS).toBe(departure + 5);
+	});
+
 	test("a committed lane traversal cannot retroactively block its own Carrier", () => {
 		let arrivalTime = departure;
 		let baseline = projectSystemTrafficActor({

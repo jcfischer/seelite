@@ -596,7 +596,11 @@ const blockedUntil = (
 				const winner = laneWinner([
 					{
 						participant: { kind: "carrier", key: request.key },
-						readyAt: end,
+						// Waiting behind a committed traversal does not reset queue age.
+						// Comparing at `end` made an older Carrier look newer after each
+						// delay, so it yielded to the player while the player correctly
+						// yielded to its original ready time: a permanent mutual wait.
+						readyAt,
 						kind: request.movement,
 					},
 					{

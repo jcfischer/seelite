@@ -238,7 +238,9 @@ or speed law.
    Traffic hold endpoint.
 5. Destination capacity and lane contention use the shared oldest-compatible
    and oldest-ready policies. A visiting actor contributes to occupancy without
-   joining the destination Traffic roster.
+   joining the destination Traffic roster. Waiting behind a committed traversal
+   never resets the request's original `readyAt`; both player and Traffic
+   arbitration compare the same queue age after the lane becomes free.
 6. The pure guidance path calls the production cruise speed, detour, moving-body
    guard and distance-consumption functions. Regeneration and docking-refill
    checks pass an explicit hull capacity while a player control remains capped
