@@ -8544,7 +8544,6 @@ class Game {
 					const y = at.y + 4;
 					const bounds = labelBounds(x, y, text);
 					if (
-						bounds.left < 0 ||
 						bounds.right > w ||
 						bounds.top < 0 ||
 						bounds.bottom > h ||
