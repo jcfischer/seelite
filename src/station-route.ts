@@ -495,6 +495,49 @@ const withRoute = (
 	...extra,
 });
 
+/**
+ * A truthful presentation while canonical route replay is still warming.
+ *
+ * The caller selects home-owned actors from the base schedule without replaying
+ * a cruise leg. Showing exactly those actors gives the player visible occupancy
+ * immediately; actors whose current intent is away leave their home berth free.
+ * The authoritative projector later reuses the same CarrierKey, so presentation
+ * identity survives the hand-off.
+ */
+export function projectParkedTrafficActor(input: {
+	actor: TrafficActor;
+	gameTime: number;
+	projectionSystem: System;
+}): SystemTrafficProjection {
+	const home = frameInSystem(
+		input.projectionSystem,
+		input.actor.homeStationId,
+		input.gameTime,
+	);
+	const interior = stationInterior(
+		home.station.type,
+		STATION_GEOMETRY[home.station.type].aperturePlaneKm,
+		home.station.berthSeed,
+	);
+	const berth = interior.berths[input.actor.ordinal % interior.berths.length];
+	if (!berth) throw new Error(`no cold berth at ${input.actor.homeStationId}`);
+	return withRoute(
+		input.actor,
+		"parked-home",
+		parkedTrafficProjection(
+			home.system,
+			input.actor.homeStationId,
+			berth.id,
+			input.actor,
+			input.gameTime,
+		),
+		{
+			berthId: berth.id,
+			terminalStationId: input.actor.homeStationId,
+		},
+	);
+}
+
 const interpolate = (a: Vec3, b: Vec3, u: number): Vec3 => ({
 	x: a.x + (b.x - a.x) * u,
 	y: a.y + (b.y - a.y) * u,

@@ -159,8 +159,6 @@ import {
 	stepCharge,
 } from "./hyperspace";
 import {
-	type MarkerLabelBounds,
-	claimMarkerLabel,
 	angleOffNose,
 	directionTo,
 	duration,
@@ -176,6 +174,7 @@ import {
 	flightPerformance,
 	type Body,
 	type FlightControl,
+	type System,
 	type World,
 	advanceWorldClock,
 	bodyAccelerationBound,
@@ -299,6 +298,7 @@ import {
 	type TrafficActor,
 } from "./station-traffic";
 import {
+	projectParkedTrafficActor,
 	projectSystemTrafficActor,
 	type TrafficCruiseCache,
 	type SystemTrafficProjection,
@@ -1237,6 +1237,8 @@ class Game {
 	private readonly trafficOrigin = new THREE.Vector3();
 	private readonly trafficAttitude = new THREE.Matrix4();
 	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
+	/** Actors shown parked while their authoritative canonical replay warms. */
+	private readonly trafficColdActors = new Set<CarrierKey>();
 	/** Cold canonical replays share a bounded per-frame warm-up budget. */
 	private trafficWarmIndex = 0;
 	/** Probe-visible readback of the pure projections used for this frame. */
@@ -1567,11 +1569,10 @@ class Game {
 
 	/** The player and Traffic berth holds at one station (§13.2). */
 	private occupiedAt(id: string): ReadonlySet<string> {
-		// Cache warm-up has not yet reconstructed authoritative reservations.
-		// Fail closed rather than offering a berth Traffic may already own.
-		if (!this.trafficAuthorityReady())
-			return new Set(this.interiorOf(id).berths.map((berth) => berth.id));
-		return this.berthOccupancy.get(id) ?? EMPTY_BERTHS;
+		const traffic = this.berthOccupancy.get(id) ?? EMPTY_BERTHS;
+		const playerBerth = this.dockingStates.get(id)?.berthId;
+		if (!playerBerth || traffic.has(playerBerth)) return traffic;
+		return new Set([...traffic, playerBerth]);
 	}
 
 	private trafficAuthorityReady(): boolean {
@@ -3312,6 +3313,7 @@ class Game {
 		this.trafficRoutes.length = 0;
 		this.trafficPlayerTimeline.length = 0;
 		this.trafficCruiseCache.clear();
+		this.trafficColdActors.clear();
 		this.trafficWarmIndex = 0;
 		this.playerLaneRequests.clear();
 		this.berthOccupancy.clear();
@@ -3327,6 +3329,33 @@ class Game {
 		this.trafficActors = this.world.system.contents.stations
 			.flatMap((station) => stationTrafficRoster(index, station))
 			.sort((a, b) => compareCarrierKeys(a.key, b.key));
+		for (const actor of this.trafficActors)
+			if (trafficScheduleAt(actor, this.world.gameTime).desired === "parked")
+				this.trafficColdActors.add(actor.key);
+		this.refreshColdTraffic(this.world.gameTime);
+	}
+
+	/** Keep cold parked ships attached to their moving stations until hand-off. */
+	private refreshColdTraffic(gameTime: number, projectionSystem?: System) {
+		this.trafficRoutes.length = 0;
+		this.berthOccupancy.clear();
+		const system =
+			projectionSystem ?? makeSystem(this.world.system.record, gameTime);
+		for (const actor of this.trafficActors) {
+			if (!this.trafficColdActors.has(actor.key)) continue;
+			const projection = projectParkedTrafficActor({
+				actor,
+				gameTime,
+				projectionSystem: system,
+			});
+			if (!projection.berthId) continue;
+			this.trafficRoutes.push(projection);
+			const occupied = new Set(
+				this.berthOccupancy.get(actor.homeStationId) ?? EMPTY_BERTHS,
+			);
+			occupied.add(projection.berthId);
+			this.berthOccupancy.set(actor.homeStationId, occupied);
+		}
 	}
 
 	/** Advance generated Traffic authority at the simulation boundary. */
@@ -3335,6 +3364,7 @@ class Game {
 		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
 		if (this.trafficWarmIndex < this.trafficActors.length) {
 			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
+			this.refreshColdTraffic(tick / 10, projectionSystem);
 			// Four equal slices share one 100-tick frame ceiling. Finishing a cheap
 			// actor advances immediately instead of suppressing every Carrier for at
 			// least one whole frame per roster entry.
@@ -5542,6 +5572,8 @@ class Game {
 		readyAt: number,
 		movement: "arrival" | "launch",
 	): boolean {
+		// Cold parked projections make berth occupancy truthful, but they do not
+		// reconstruct an actor already committed to the shared transit lane.
 		if (!this.trafficAuthorityReady()) return false;
 		const contenders = this.trafficRoutes
 			.filter(
@@ -8058,29 +8090,9 @@ class Game {
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
 		ctx.font = "11px ui-monospace, Menlo, monospace";
-		const labelBounds = (
-			x: number,
-			y: number,
-			text: string,
-		): MarkerLabelBounds => ({
-			left: x - 3,
-			top: y - 12,
-			right: x + ctx.measureText(text).width + 3,
-			bottom: y + 5,
-		});
-		const occupiedLabels: MarkerLabelBounds[] = [];
 		const selectedBody = this.targetBody();
 		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
 		const selectedAt = selectedDir && place(selectedDir);
-		if (selectedBody && selectedAt?.on) {
-			occupiedLabels.push(
-				labelBounds(
-					selectedAt.x + 20,
-					selectedAt.y + 4,
-					`${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}`,
-				),
-			);
-		}
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
@@ -8118,16 +8130,6 @@ class Game {
 				if (body.kind === "station" || body.kind === "ship") {
 					const km = length(sub(body.pos, camPos));
 					const text = `${body.name}  ${range(km)}`;
-					const bounds = labelBounds(at.x + r + 6, at.y + 4, text);
-					if (body.kind === "ship") {
-						if (
-							bounds.right > w ||
-							bounds.top < 0 ||
-							bounds.bottom > h ||
-							!claimMarkerLabel(bounds, occupiedLabels)
-						)
-							continue;
-					} else occupiedLabels.push(bounds);
 					ctx.fillStyle = "rgba(140, 190, 220, 0.55)";
 					ctx.fillText(text, at.x + r + 6, at.y + 4);
 				}

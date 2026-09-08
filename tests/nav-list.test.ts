@@ -98,6 +98,35 @@ test("near-equal ranges retain their rendered order until the lead is meaningful
 	).toEqual(["beta", "alpha"]);
 });
 
+test("station-approach motion retains order below two kilometres", () => {
+	const bodies = [
+		{
+			id: "alpha",
+			name: "Alpha",
+			kind: "ship" as const,
+			pos: v3(100, 0, 0),
+		},
+		{
+			id: "beta",
+			name: "Beta",
+			kind: "ship" as const,
+			pos: v3(99.2, 0, 0),
+		},
+	];
+
+	expect(
+		projectNavTargets(v3(), bodies, null, {
+			previousOrder: ["alpha", "beta"],
+		}).map(({ id }) => id),
+	).toEqual(["alpha", "beta"]);
+	bodies[1].pos.x = 97.9;
+	expect(
+		projectNavTargets(v3(), bodies, null, {
+			previousOrder: ["alpha", "beta"],
+		}).map(({ id }) => id),
+	).toEqual(["beta", "alpha"]);
+});
+
 test("the projection holds no kind rule of its own", () => {
 	// **Deliberately lists the moon.** What can be targeted is `Game`'s rule —
 	// `selectable()`, which `cycleTarget` walks and `onSelectTarget` validates

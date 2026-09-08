@@ -228,8 +228,8 @@ export interface NavProjectionOptions {
 
 const EVERYTHING: NavFilter = { kinds: [], query: "" };
 
-/** Fifty metres: visible in the range, but too little to justify row churn. */
-export const NAV_ORDER_HYSTERESIS_KM = 0.05;
+/** Two kilometres: local Traffic motion should not continuously reshuffle the list. */
+export const NAV_ORDER_HYSTERESIS_KM = 2;
 
 /** Does one body survive the player's current narrowing? */
 export function navFilterMatches(

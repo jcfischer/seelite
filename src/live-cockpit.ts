@@ -222,6 +222,16 @@ export class LiveCockpit {
 	private lastKey = "";
 	private lastValueKey = "";
 	private lastNavKey = "";
+	private readonly navRowsById = new Map<
+		string,
+		{
+			item: HTMLLIElement;
+			button: HTMLButtonElement;
+			name: HTMLSpanElement;
+			kind: HTMLElement;
+			range: HTMLElement;
+		}
+	>();
 	private elements: CockpitElements | null = null;
 	/** The element handed to `onChartHost`, so it is handed back exactly once. */
 	private chartHost: HTMLElement | null = null;
@@ -346,6 +356,7 @@ export class LiveCockpit {
 			this.lastKey = key;
 			this.lastValueKey = "";
 			this.lastNavKey = "";
+			this.navRowsById.clear();
 			this.releaseChartHost();
 			this.root.innerHTML = this.markup(state);
 			const find = (selector: string) =>
@@ -441,15 +452,49 @@ export class LiveCockpit {
 			.join("|");
 		if (key === this.lastNavKey) return;
 		this.lastNavKey = key;
-		navList.innerHTML =
-			cells.length === 0
-				? '<li class="lc-nav-empty">NO TARGETS MATCH</li>'
-				: cells
-						.map(
-							({ row, range, eta }) =>
-								`<li><button class="lc-nav-row" type="button" data-live-nav-target="${escapeHtml(row.id)}" aria-current="${row.selected}"><span>${escapeHtml(row.name)}</span><i>${escapeHtml(row.displayKind.toUpperCase())}</i><em>${range} · ${eta}</em></button></li>`,
-						)
-						.join("");
+		if (cells.length === 0) {
+			this.navRowsById.clear();
+			if (!navList.querySelector(".lc-nav-empty")) {
+				const empty = document.createElement("li");
+				empty.className = "lc-nav-empty";
+				empty.textContent = "NO TARGETS MATCH";
+				navList.replaceChildren(empty);
+			}
+			return;
+		}
+
+		navList.querySelector(".lc-nav-empty")?.remove();
+		const liveIds = new Set(cells.map(({ row }) => row.id));
+		for (const [id, rowElements] of this.navRowsById)
+			if (!liveIds.has(id)) {
+				rowElements.item.remove();
+				this.navRowsById.delete(id);
+			}
+
+		for (const [index, { row, range: rangeText, eta }] of cells.entries()) {
+			let rowElements = this.navRowsById.get(row.id);
+			if (!rowElements) {
+				const item = document.createElement("li");
+				const button = document.createElement("button");
+				const name = document.createElement("span");
+				const kind = document.createElement("i");
+				const range = document.createElement("em");
+				button.className = "lc-nav-row";
+				button.type = "button";
+				button.dataset.liveNavTarget = row.id;
+				button.append(name, kind, range);
+				item.append(button);
+				rowElements = { item, button, name, kind, range };
+				this.navRowsById.set(row.id, rowElements);
+			}
+			rowElements.button.setAttribute("aria-current", String(row.selected));
+			rowElements.name.textContent = row.name;
+			rowElements.kind.textContent = row.displayKind.toUpperCase();
+			rowElements.range.textContent = `${rangeText} · ${eta}`;
+			const current = navList.children.item(index);
+			if (current !== rowElements.item)
+				navList.insertBefore(rowElements.item, current);
+		}
 	}
 
 	/** Tell the owner its chart host is going away, before the DOM drops it. */

@@ -7,9 +7,11 @@ import {
 } from "../src/cruise-guidance";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
+import { makeSystem } from "../src/sim";
 import {
 	CANONICAL_ROUTE_DT_S,
 	evaluateTrafficCruise,
+	projectParkedTrafficActor,
 	projectSystemTrafficActor,
 	selectTrafficDestination,
 	type TrafficCruiseEnvironment,
@@ -454,6 +456,36 @@ describe("terminal-to-terminal route projection", () => {
 			vel: null,
 			nose: null,
 		});
+	});
+
+	test("cold presentation parks only actors whose base schedule is parked", () => {
+		const projectionSystem = makeSystem(record, 0);
+		const actors = projectionSystem.contents.stations.flatMap((station) =>
+			stationTrafficRoster(record.index, station),
+		);
+		const cold = actors
+			.filter(
+				(candidate) => trafficScheduleAt(candidate, 0).desired === "parked",
+			)
+			.map((candidate) =>
+				projectParkedTrafficActor({
+					actor: candidate,
+					gameTime: 0,
+					projectionSystem,
+				}),
+			);
+		expect(cold.length).toBeGreaterThan(0);
+		expect(cold.length).toBeLessThan(actors.length);
+		for (const projection of cold) {
+			const candidate = required(
+				actors.find((item) => item.key === projection.key),
+				"cold actor",
+			);
+			expect(trafficScheduleAt(candidate, 0).desired).toBe("parked");
+			expect(projection.phase).toBe("parked-home");
+			expect(projection.terminalStationId).toBe(candidate.homeStationId);
+			expect(projection.berthId).not.toBeNull();
+		}
 	});
 
 	test("phase-equivalent cold queries do work independent of epoch age", () => {

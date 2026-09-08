@@ -46,13 +46,24 @@ try {
 						cachedWork() - beforeWork,
 					);
 				attempts++;
-			} while (g.trafficRoutes.length === 0 && attempts <= 2_000);
+			} while (!g.trafficAuthorityReady() && attempts <= 2_000);
 			return attempts;
 		};
 		g.world.gameTime = 4;
 		sim.advanceSystem(g.world.system, 4);
+		g.updateTrafficAuthority();
 		const coldStartIndex = g.trafficWarmIndex;
-		const coldStationId = g.trafficActors[0]?.homeStationId;
+		const coldRoutes = g.trafficRoutes.map((projection) => ({
+			key: projection.key,
+			phase: projection.phase,
+			berthId: projection.berthId,
+			stationId: projection.terminalStationId,
+		}));
+		const coldStationId = g.world.system.contents.stations.some(
+			(candidate) => candidate.id === "station-trade",
+		)
+			? "station-trade"
+			: g.trafficActors[0]?.homeStationId;
 		const coldBerthCount = coldStationId
 			? g.berthIdsOfStation(coldStationId).length
 			: 0;
@@ -62,7 +73,104 @@ try {
 		const coldLaneAvailable = coldStationId
 			? g.playerWinsTrafficLane(coldStationId, 4, "arrival")
 			: true;
+		const savedShipPos = { ...g.world.ship.pos };
+		const savedTargetId = g.targetId;
+		const coldStationBody = coldStationId
+			? g.world.system.byId.get(coldStationId)
+			: null;
+		if (coldStationBody) {
+			const frame = g.apertureFrameOf(coldStationId);
+			Object.assign(g.world.ship.pos, {
+				x: coldStationBody.pos.x + frame.axis.x * 40,
+				y: coldStationBody.pos.y + frame.axis.y * 40,
+				z: coldStationBody.pos.z + frame.axis.z * 40,
+			});
+			g.targetId = coldStationId;
+			g.updateTrafficPresentation(g.world.ship.pos);
+			g.view = "cockpit";
+			g.headLook = "forward";
+			g.faceTarget();
+		}
+		const coldStationRoutes = coldRoutes.filter(
+			(projection) => projection.stationId === coldStationId,
+		);
+		const coldAttachedMeshes = coldStationRoutes.filter(
+			(projection) => g.trafficMeshes.get(projection.key)?.parent,
+		).length;
+		const coldShipNames = coldStationRoutes
+			.map(
+				(projection) =>
+					g.trafficActors.find((actor) => actor.key === projection.key)
+						?.callsign,
+			)
+			.filter(Boolean);
+		const drawnLabelFrames = [];
+		const originalFillText = g.overlayCtx.fillText.bind(g.overlayCtx);
+		g.overlayCtx.fillText = (text, ...args) => {
+			drawnLabelFrames.at(-1)?.push(String(text));
+			return originalFillText(text, ...args);
+		};
+		for (let frame = 0; frame < 8; frame++) {
+			drawnLabelFrames.push([]);
+			g.drawMarkers(g.world.ship.pos);
+		}
+		g.overlayCtx.fillText = originalFillText;
+		const coldLabelContinuity = drawnLabelFrames.every((labels) =>
+			coldShipNames.every((name) =>
+				labels.some((label) => label.startsWith(`${name}  `)),
+			),
+		);
+		const coldLabelMissing = drawnLabelFrames.map((labels) =>
+			coldShipNames.filter(
+				(name) => !labels.some((label) => label.startsWith(`${name}  `)),
+			),
+		);
+		g.setHeadLook("left");
+		g.updateCockpit();
+		const navContact = [...g.trafficContacts.values()].find((contact) =>
+			coldShipNames.includes(contact.name),
+		);
+		const navBefore = [
+			...document.querySelectorAll("[data-live-nav-target]"),
+		].find((element) => element.dataset.liveNavTarget === navContact?.id);
+		navBefore?.focus();
+		const navTextBefore = navBefore?.textContent;
+		if (navContact) navContact.pos.x += 0.75;
+		g.updateCockpit();
+		const navAfter = [
+			...document.querySelectorAll("[data-live-nav-target]"),
+		].find((element) => element.dataset.liveNavTarget === navContact?.id);
+		const navRowIdentity = {
+			present: Boolean(navBefore && navAfter),
+			sameNode: navBefore === navAfter,
+			focusRetained: document.activeElement === navAfter,
+			textChanged: navTextBefore !== navAfter?.textContent,
+		};
+		g.setHeadLook("forward");
+		const coldClearance = coldStationId
+			? g.requestDockingClearance().state?.clearance
+			: null;
+		const coldPlayerBerth = coldStationId
+			? g.dockingStates.get(coldStationId)?.berthId
+			: null;
 		const coldWarmCalls = refreshTraffic();
+		const warmPlayerReserved = Boolean(
+			coldStationId &&
+				coldPlayerBerth &&
+				g.occupiedAt(coldStationId).has(coldPlayerBerth),
+		);
+		const warmTrafficConflict = g.trafficRoutes.some(
+			(projection) =>
+				projection.terminalStationId === coldStationId &&
+				projection.berthId === coldPlayerBerth &&
+				(projection.phase === "parked-home" ||
+					projection.phase === "docked-away"),
+		);
+		if (coldStationId) g.dockingStates.delete(coldStationId);
+		Object.assign(g.world.ship.pos, savedShipPos);
+		g.targetId = savedTargetId;
+		g.trafficTick = Number.NaN;
+		g.updateTrafficAuthority();
 		const coldActorCount = g.trafficActors.length;
 		const settledBerths = g.trafficRoutes
 			.filter(
@@ -282,9 +390,19 @@ try {
 			coldWarmCalls,
 			coldActorCount,
 			coldStartIndex,
+			coldRoutes,
+			coldAttachedMeshes,
+			coldLabelContinuity,
+			coldLabelMissing,
+			coldDrawnLabels: drawnLabelFrames[0],
+			navRowIdentity,
 			coldBerthCount,
 			coldOccupiedCount,
 			coldLaneAvailable,
+			coldClearance,
+			coldPlayerBerth,
+			warmPlayerReserved,
+			warmTrafficConflict,
 			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
@@ -483,15 +601,58 @@ try {
 		}),
 	);
 	check(
-		"player berth and lane access fail closed until Traffic authority is warm",
-		result.coldBerthCount > 0 &&
-			result.coldOccupiedCount === result.coldBerthCount &&
-			result.coldLaneAvailable === false,
+		"cold authority shows exactly the parked occupancy before replay finishes",
+		result.coldRoutes.length > 0 &&
+			result.coldRoutes.every(
+				(projection) =>
+					projection.phase === "parked-home" && projection.berthId,
+			) &&
+			result.coldOccupiedCount ===
+				result.coldRoutes.filter(
+					(projection) => projection.stationId === "station-trade",
+				).length &&
+			result.coldAttachedMeshes === result.coldOccupiedCount,
+		JSON.stringify({
+			berths: result.coldBerthCount,
+			occupied: result.coldOccupiedCount,
+			routes: result.coldRoutes,
+			attachedMeshes: result.coldAttachedMeshes,
+		}),
+	);
+	check(
+		"a cold-start player can reserve a spare berth and keeps it through warm-up",
+		result.coldOccupiedCount < result.coldBerthCount &&
+			result.coldLaneAvailable === false &&
+			result.coldClearance?.kind === "granted" &&
+			Boolean(result.coldPlayerBerth) &&
+			result.warmPlayerReserved &&
+			!result.warmTrafficConflict,
 		JSON.stringify({
 			berths: result.coldBerthCount,
 			occupied: result.coldOccupiedCount,
 			laneAvailable: result.coldLaneAvailable,
+			clearance: result.coldClearance,
+			playerBerth: result.coldPlayerBerth,
+			warmPlayerReserved: result.warmPlayerReserved,
+			warmTrafficConflict: result.warmTrafficConflict,
 		}),
+	);
+	check(
+		"every cold ship tracking label is continuous across repeated real draws",
+		result.coldLabelContinuity === true,
+		JSON.stringify({
+			coldLabelContinuity: result.coldLabelContinuity,
+			missing: result.coldLabelMissing,
+			drawn: result.coldDrawnLabels,
+		}),
+	);
+	check(
+		"Navigation updates a changing range without replacing or defocusing its row",
+		result.navRowIdentity.present &&
+			result.navRowIdentity.sameNode &&
+			result.navRowIdentity.focusRetained &&
+			result.navRowIdentity.textChanged,
+		JSON.stringify(result.navRowIdentity),
 	);
 	check(
 		"warm 10 Hz Traffic authority stays inside one 60 Hz frame",
