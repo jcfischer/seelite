@@ -199,6 +199,7 @@ try {
 			kind: "clearance",
 			fromS: departure,
 			toS: departure + 1_000,
+			participant: { kind: "player" },
 			hull: hull.HULL_SPECS.explorer.env,
 		};
 		const arrivalAt = arrivingSample.t + 0.2;
@@ -211,6 +212,8 @@ try {
 			kind: "lane",
 			fromS: departure,
 			toS: arrivalAt + 30,
+			participant: { kind: "player" },
+			movement: "launch",
 		};
 		const lane = present(arrivalAt, 100, [laneEvent]);
 		const arriving = present(arrivalAt, 100);
@@ -239,6 +242,8 @@ try {
 			kind: "lane",
 			fromS: -2_000_000,
 			toS: -1_000_000,
+			participant: { kind: "player" },
+			movement: "arrival",
 		});
 		g.world.gameTime = samples.get("cruise").t;
 		g.trafficTick = Number.NaN;
@@ -317,6 +322,23 @@ try {
 				const stationId = destination;
 				const frame = g.apertureFrameOf(stationId);
 				const berthId = g.berthIdsOfStation(stationId)[0];
+				g.trafficWarmIndex = g.trafficActors.length;
+				g.trafficRoutes.length = 0;
+				g.trafficRoutes.push({
+					...holdProjection,
+					terminalStationId: stationId,
+					phase: "launch-queued",
+					laneRequest: {
+						participant: { kind: "carrier", key: actor.key },
+						readyAt: g.world.gameTime - 1,
+						kind: "launch",
+					},
+				});
+				const playerBeatsOlderQueuedLaunch = g.playerWinsTrafficLane(
+					stationId,
+					g.world.gameTime,
+					"launch",
+				);
 				const activeRoute = {
 					...holdProjection,
 					terminalStationId: stationId,
@@ -382,6 +404,7 @@ try {
 				g.render(0);
 				const renderLeavesAuthorityAlone = g.trafficTick === 42;
 				return {
+					playerBeatsOlderQueuedLaunch,
 					playerArrivalGuard,
 					refusedLaunch,
 					staleOccupancyCleared,
@@ -534,6 +557,13 @@ try {
 			!result.planetCruise.lastExit.startsWith("detour unavailable") &&
 			result.planetCruise.detour === null,
 		JSON.stringify(result.planetCruise),
+	);
+	check(
+		"an older queued Traffic launch wins the live player lane check",
+		result.playerBeatsOlderQueuedLaunch === false,
+		JSON.stringify({
+			playerBeatsOlderQueuedLaunch: result.playerBeatsOlderQueuedLaunch,
+		}),
 	);
 	check(
 		"a real player crossing yields to an active Traffic lane",

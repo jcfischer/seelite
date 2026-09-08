@@ -8,7 +8,7 @@ import {
 	beginArrival,
 	beginLaunch,
 } from "./arrival";
-import { carrierKey, type CarrierKey } from "./carrier-key";
+import type { CarrierKey } from "./carrier-key";
 import {
 	advanceCruise,
 	CHARGE_PER_AU,
@@ -46,6 +46,9 @@ import {
 	type LaneRequest,
 	laneWinner,
 	parkedTrafficProjection,
+	type StationParticipant,
+	TRAFFIC_SPOOL_S,
+	TRAFFIC_TERMINAL_APPROACH_S,
 	type TrafficActor,
 	type TrafficProjection,
 	trafficHoldProjection,
@@ -377,11 +380,6 @@ export function evaluateTrafficCruise(
 	return { ...current, atS: queryTimeS };
 }
 
-/** A visible low-speed departure corridor before the cruise drive takes over. */
-export const TRAFFIC_SPOOL_S = 8;
-/** A readable final transit from the Traffic hold to the station aperture. */
-export const TRAFFIC_TERMINAL_APPROACH_S = 14;
-
 export type TrafficRoutePhase =
 	| "parked-home"
 	| "launch-queued"
@@ -396,12 +394,12 @@ export type TrafficRoutePhase =
 	| "docked-away"
 	| "abstract-away";
 
-export interface TrafficPlayerEvent {
+export interface TrafficArbitrationEvent {
 	stationId: string;
 	kind: "clearance" | "lane";
 	fromS: number;
 	toS: number;
-	key?: CarrierKey;
+	participant: StationParticipant;
 	movement?: "arrival" | "launch";
 	/** Required for a shared Clearance queue contender. */
 	hull?: HullEnvelope;
@@ -506,9 +504,9 @@ const smooth = (u: number) => u * u * (3 - 2 * u);
 const clamp01 = (u: number) => Math.max(0, Math.min(1, u));
 
 const blockedUntil = (
-	timeline: readonly TrafficPlayerEvent[],
+	timeline: readonly TrafficArbitrationEvent[],
 	stationId: string,
-	kind: TrafficPlayerEvent["kind"],
+	kind: TrafficArbitrationEvent["kind"],
 	readyAt: number,
 	request?: { key: CarrierKey; movement: "arrival" | "launch" },
 ): number => {
@@ -522,12 +520,24 @@ const blockedUntil = (
 			event.fromS <= end &&
 			event.toS > end
 		) {
-			if (kind === "lane" && request && event.key && event.movement) {
+			if (kind === "lane" && request && event.movement) {
 				const winner = laneWinner([
-					{ key: request.key, readyAt: end, kind: request.movement },
-					{ key: event.key, readyAt: event.fromS, kind: event.movement },
+					{
+						participant: { kind: "carrier", key: request.key },
+						readyAt: end,
+						kind: request.movement,
+					},
+					{
+						participant: event.participant,
+						readyAt: event.fromS,
+						kind: event.movement,
+					},
 				]);
-				if (winner?.key === request.key) continue;
+				if (
+					winner?.participant.kind === "carrier" &&
+					winner.participant.key === request.key
+				)
+					continue;
 			}
 			end = Math.max(end, event.toS);
 		}
@@ -538,7 +548,7 @@ interface TrafficLegInput {
 	record: SystemRecord;
 	actor: TrafficActor;
 	gameTime: number;
-	timeline: readonly TrafficPlayerEvent[];
+	timeline: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
 	projectionSystem?: System;
@@ -601,7 +611,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			{
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
-				laneRequest: { key: actor.key, readyAt: readyAtS, kind: "launch" },
+				laneRequest: {
+					participant: { kind: "carrier", key: actor.key },
+					readyAt: readyAtS,
+					kind: "launch",
+				},
 				pendingIntent,
 				originBerthOccupied: originStationId === actor.homeStationId,
 			},
@@ -642,7 +656,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			{
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
-				laneRequest: { key: actor.key, readyAt: readyAtS, kind: "launch" },
+				laneRequest: {
+					participant: { kind: "carrier", key: actor.key },
+					readyAt: readyAtS,
+					kind: "launch",
+				},
 				pendingIntent,
 				originBerthOccupied: originStationId === actor.homeStationId,
 			},
@@ -940,7 +958,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		destinationNow.station.berthSeed,
 	);
 	const request: ClearanceQueueRequest = {
-		key: actor.key,
+		participant: { kind: "carrier", key: actor.key },
 		readyAt: holdReachedS,
 		hull: HULL_SPECS[actor.hullId].env,
 	};
@@ -956,11 +974,15 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				event.fromS <= gameTime &&
 				event.toS > gameTime,
 		)
-		.map((event) => ({
-			key: event.key ?? carrierKey(record.index, "player"),
-			readyAt: event.fromS,
-			hull: event.hull!,
-		}));
+		.map((event) => {
+			if (!event.hull)
+				throw new Error("clearance arbitration event has no hull envelope");
+			return {
+				participant: event.participant,
+				readyAt: event.fromS,
+				hull: event.hull,
+			};
+		});
 	const promotion = clearancePromotion(
 		[...playerClearanceRequests, request],
 		destinationInterior,
@@ -972,7 +994,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				(candidate) => candidate.id === promotion.berthId,
 			)
 		: null;
-	if (!berth || promotion?.key !== actor.key)
+	if (
+		!berth ||
+		promotion?.participant.kind !== "carrier" ||
+		promotion.participant.key !== actor.key
+	)
 		return withRoute(actor, "clearance-queued", holdAt(gameTime), {
 			destinationStationId: selected.id,
 			chargeAu: drop.chargeAu,
@@ -992,7 +1018,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			chargeAu: drop.chargeAu,
 			pendingIntent,
 			queueRequest: request,
-			laneRequest: { key: actor.key, readyAt: clearanceAtS, kind: "arrival" },
+			laneRequest: {
+				participant: { kind: "carrier", key: actor.key },
+				readyAt: clearanceAtS,
+				kind: "arrival",
+			},
 			originBerthOccupied: false,
 			workTicks: drop.workTicks,
 			berthId: berth.id,
@@ -1030,7 +1060,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				pendingIntent,
 				queueRequest: request,
 				laneRequest: {
-					key: actor.key,
+					participant: { kind: "carrier", key: actor.key },
 					readyAt: clearanceAtS,
 					kind: "arrival",
 				},
@@ -1082,7 +1112,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				pendingIntent,
 				queueRequest: request,
 				laneRequest: {
-					key: actor.key,
+					participant: { kind: "carrier", key: actor.key },
 					readyAt: clearanceAtS,
 					kind: "arrival",
 				},
@@ -1109,7 +1139,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			chargeAu: HULL_SPECS[actor.hullId].chargeAu,
 			pendingIntent,
 			queueRequest: request,
-			laneRequest: { key: actor.key, readyAt: clearanceAtS, kind: "arrival" },
+			laneRequest: {
+				participant: { kind: "carrier", key: actor.key },
+				readyAt: clearanceAtS,
+				kind: "arrival",
+			},
 			originBerthOccupied: false,
 			workTicks: drop.workTicks,
 			berthId: berth.id,
@@ -1122,7 +1156,7 @@ interface TrafficVisitInput {
 	record: SystemRecord;
 	actor: TrafficActor;
 	gameTime: number;
-	playerTimeline?: readonly TrafficPlayerEvent[];
+	playerTimeline?: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
 	projectionSystem?: System;
@@ -1246,7 +1280,7 @@ export function projectSystemTrafficActor(input: {
 	record: SystemRecord;
 	actor: TrafficActor;
 	gameTime: number;
-	playerTimeline?: readonly TrafficPlayerEvent[];
+	playerTimeline?: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
 	projectionSystem?: System;

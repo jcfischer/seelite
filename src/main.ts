@@ -290,8 +290,8 @@ import {
 } from "./display-contact";
 import {
 	compareStationTurns,
-	laneWinner,
 	materializeTrafficContact,
+	playerWinsLane,
 	stationTrafficRoster,
 	TRAFFIC_DEMATERIALIZE_KM,
 	TRAFFIC_MATERIALIZE_KM,
@@ -302,7 +302,7 @@ import {
 	projectSystemTrafficActor,
 	type TrafficCruiseCache,
 	type SystemTrafficProjection,
-	type TrafficPlayerEvent,
+	type TrafficArbitrationEvent,
 } from "./station-route";
 import {
 	COCKPIT_EMISSIVE_INTENSITIES,
@@ -325,6 +325,7 @@ import {
 import { readDeficit } from "./deficits";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
 	newCommander,
@@ -1241,7 +1242,7 @@ class Game {
 	/** Probe-visible readback of the pure projections used for this frame. */
 	readonly trafficRoutes: SystemTrafficProjection[] = [];
 	/** Explicit transient player events consumed by canonical Traffic replay. */
-	readonly trafficPlayerTimeline: TrafficPlayerEvent[] = [];
+	readonly trafficPlayerTimeline: TrafficArbitrationEvent[] = [];
 	private readonly playerLaneRequests = new Map<string, number>();
 	/** The system a fired wind-up is waiting to move the world to, taken at the
 	 *  end of the frame it fired on. See `takePendingJump` (#187). */
@@ -3231,25 +3232,18 @@ class Game {
 		}
 	}
 
-	/** Stable transient identity for player participation in station arbitration. */
-	private playerTrafficKey(): CarrierKey {
-		return carrierKey(this.world.system.record.index, "player");
-	}
-
 	private openPlayerTrafficEvent(
 		stationId: string,
-		kind: TrafficPlayerEvent["kind"],
+		kind: TrafficArbitrationEvent["kind"],
 		fromS: number,
 		movement?: "arrival" | "launch",
 		hull?: HullEnvelope,
 	) {
-		const key = this.playerTrafficKey();
 		if (
 			this.trafficPlayerTimeline.some(
 				(event) =>
 					event.stationId === stationId &&
 					event.kind === kind &&
-					event.key === key &&
 					event.toS === Number.POSITIVE_INFINITY,
 			)
 		)
@@ -3259,7 +3253,7 @@ class Game {
 			kind,
 			fromS,
 			toS: Number.POSITIVE_INFINITY,
-			key,
+			participant: { kind: "player" },
 			...(movement ? { movement } : {}),
 			...(hull ? { hull } : {}),
 		});
@@ -3267,15 +3261,13 @@ class Game {
 
 	private closePlayerTrafficEvent(
 		stationId: string,
-		kind: TrafficPlayerEvent["kind"],
+		kind: TrafficArbitrationEvent["kind"],
 	) {
-		const key = this.playerTrafficKey();
 		for (let i = this.trafficPlayerTimeline.length - 1; i >= 0; i--) {
 			const event = this.trafficPlayerTimeline[i];
 			if (
 				event.stationId === stationId &&
 				event.kind === kind &&
-				event.key === key &&
 				event.toS === Number.POSITIVE_INFINITY
 			) {
 				event.toS = this.world.gameTime;
@@ -3306,7 +3298,10 @@ class Game {
 	private disposeTrafficPresentation() {
 		for (const contact of this.trafficContacts.values())
 			this.unregisterContact(contact);
-		for (const mesh of this.trafficMeshes.values()) mesh.removeFromParent();
+		for (const mesh of this.trafficMeshes.values()) {
+			mesh.removeFromParent();
+			disposeSubtree(mesh);
+		}
 		this.trafficContacts.clear();
 		this.trafficMeshes.clear();
 	}
@@ -3383,7 +3378,7 @@ class Game {
 					kind: "lane",
 					fromS,
 					toS: tick / 10 + 0.1,
-					key: this.playerTrafficKey(),
+					participant: { kind: "player" },
 					movement: "launch",
 				});
 			if (
@@ -3395,7 +3390,7 @@ class Game {
 					kind: "lane",
 					fromS: 0,
 					toS: tick / 10 + 0.1,
-					key: this.playerTrafficKey(),
+					participant: { kind: "player" },
 					movement: this.dock.phase === "launching" ? "launch" : "arrival",
 				});
 			const arbitrationTimeline = [...playerTimeline];
@@ -3431,12 +3426,19 @@ class Game {
 			}
 			const orderedActors = baselines.sort((a, b) => {
 				const turn = (row: (typeof baselines)[number]) =>
-					row.projection.laneRequest ?? {
-						key: row.actor.key,
-						readyAt:
-							row.projection.queueRequest?.readyAt ?? Number.POSITIVE_INFINITY,
-						kind: "clearance" as const,
-					};
+					row.projection.laneRequest
+						? {
+								participant: row.projection.laneRequest.participant,
+								readyAt: row.projection.laneRequest.readyAt,
+								kind: row.projection.laneRequest.kind,
+							}
+						: {
+								participant: { kind: "carrier" as const, key: row.actor.key },
+								readyAt:
+									row.projection.queueRequest?.readyAt ??
+									Number.POSITIVE_INFINITY,
+								kind: "clearance" as const,
+							};
 				return compareStationTurns(turn(a), turn(b));
 			});
 			for (const { actor, projection: baseline } of orderedActors) {
@@ -3484,7 +3486,7 @@ class Game {
 						fromS:
 							projection.laneRequest?.readyAt ?? Math.max(0, tick / 10 - 0.1),
 						toS: tick / 10 + 0.1,
-						key: projection.key,
+						participant: { kind: "carrier", key: projection.key },
 						movement: projection.phase === "departing" ? "launch" : "arrival",
 					});
 				if (projection.berthId) {
@@ -5542,13 +5544,10 @@ class Game {
 		if (!this.trafficAuthorityReady()) return false;
 		const contenders = this.trafficRoutes
 			.filter(
-				(route) =>
-					route.terminalStationId === stationId &&
-					route.phase === "lane-queued" &&
-					route.laneRequest,
+				(route) => route.terminalStationId === stationId && route.laneRequest,
 			)
 			.map((route) => ({
-				key: route.key,
+				participant: { kind: "carrier" as const, key: route.key },
 				readyAt: route.laneRequest?.readyAt ?? this.world.gameTime,
 				kind: route.laneRequest?.kind ?? "arrival",
 			}));
@@ -5558,12 +5557,7 @@ class Game {
 				(route.phase === "departing" || route.phase === "arriving"),
 		);
 		if (active) return false;
-		const playerKey = this.playerTrafficKey();
-		const winner = laneWinner([
-			...contenders,
-			{ key: playerKey, readyAt, kind: movement },
-		]);
-		return winner?.key === playerKey;
+		return playerWinsLane(contenders, readyAt, movement);
 	}
 
 	/** Skip the traversal in progress. Unconditional on both sides since §13.3:

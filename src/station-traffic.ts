@@ -194,14 +194,19 @@ export function trafficScheduleAt(
 	};
 }
 
+/** Identity used only while ordering a station turn; it is never persisted. */
+export type StationParticipant =
+	| { kind: "carrier"; key: CarrierKey }
+	| { kind: "player" };
+
 export interface ClearanceQueueRequest {
-	key: CarrierKey;
+	participant: StationParticipant;
 	readyAt: number;
 	hull: HullEnvelope;
 }
 
 export interface ClearancePromotion {
-	key: CarrierKey;
+	participant: StationParticipant;
 	berthId: string;
 }
 
@@ -213,25 +218,36 @@ export function clearancePromotion(
 	gameTime: number,
 ): ClearancePromotion | null {
 	for (const request of [...requests].sort(
-		(a, b) => a.readyAt - b.readyAt || compareCarrierKeys(a.key, b.key),
+		(a, b) =>
+			a.readyAt - b.readyAt ||
+			compareStationParticipants(a.participant, b.participant),
 	)) {
 		const berth = chooseBerth(interior, request.hull, occupied, gameTime);
-		if (berth) return { key: request.key, berthId: berth.id };
+		if (berth) return { participant: request.participant, berthId: berth.id };
 	}
 	return null;
 }
 
 export interface LaneRequest {
-	key: CarrierKey;
+	participant: StationParticipant;
 	readyAt: number;
 	kind: "arrival" | "launch";
 }
 
 export interface StationTurn {
-	key: CarrierKey;
+	participant: StationParticipant;
 	readyAt: number;
 	kind: "launch" | "arrival" | "clearance";
 }
+
+const compareStationParticipants = (
+	a: StationParticipant,
+	b: StationParticipant,
+): number => {
+	if (a.kind === "player") return b.kind === "player" ? 0 : -1;
+	if (b.kind === "player") return 1;
+	return compareCarrierKeys(a.key, b.key);
+};
 
 /** Total order used before committing non-preemptive station work. */
 export const compareStationTurns = (a: StationTurn, b: StationTurn): number =>
@@ -245,13 +261,30 @@ export const compareStationTurns = (a: StationTurn, b: StationTurn): number =>
 				: a.kind === "arrival"
 					? -1
 					: 1) ||
-	compareCarrierKeys(a.key, b.key);
+	compareStationParticipants(a.participant, b.participant);
 
 export function laneWinner(
 	requests: readonly LaneRequest[],
 ): LaneRequest | null {
 	return [...requests].sort(compareStationTurns)[0] ?? null;
 }
+
+/** Apply the same total order without inventing a persisted CarrierKey for the player. */
+export function playerWinsLane(
+	requests: readonly LaneRequest[],
+	readyAt: number,
+	kind: LaneRequest["kind"],
+): boolean {
+	const turns: StationTurn[] = [
+		...requests,
+		{ participant: { kind: "player" }, readyAt, kind },
+	];
+	return [...turns].sort(compareStationTurns)[0]?.participant.kind === "player";
+}
+
+/** Station-owned local traversal laws used by route composition. */
+export const TRAFFIC_SPOOL_S = 8;
+export const TRAFFIC_TERMINAL_APPROACH_S = 14;
 
 export const TRAFFIC_MATERIALIZE_KM = 10_000;
 /** Once visible, retain a ship through this wider boundary to prevent popping. */

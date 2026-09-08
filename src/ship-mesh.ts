@@ -16,8 +16,8 @@
  * below replaces the plate extrusion, the lathe, and the stock cylinder.
  */
 import * as THREE from "three";
-import { mutePaint } from "./surface";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { mutePaint } from "./surface";
 
 // Re-exported, not merely imported: `Ring` and `hullLoft` were this module's
 // own until #56 gave them a second caller, and every existing importer and test
@@ -45,6 +45,7 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "./hull";
+import { shared } from "./gpu-teardown";
 import {
 	currentHullFinish,
 	hullFinishId,
@@ -354,11 +355,8 @@ function exhaustGradientMap() {
 			data[i + 3] = 255;
 		}
 	}
-	exhaustGradient = new THREE.DataTexture(
-		data,
-		width,
-		height,
-		THREE.RGBAFormat,
+	exhaustGradient = shared(
+		new THREE.DataTexture(data, width, height, THREE.RGBAFormat),
 	);
 	exhaustGradient.colorSpace = THREE.SRGBColorSpace;
 	exhaustGradient.wrapS = THREE.ClampToEdgeWrapping;
@@ -403,7 +401,7 @@ function makePalette(id: HullId): Palette {
 		accent: mutePaint(authored.accent, finish.paint),
 	};
 	const painted = (color: number, roughness: number, metalness: number) =>
-		new THREE.MeshStandardMaterial({ color, roughness, metalness });
+		shared(new THREE.MeshStandardMaterial({ color, roughness, metalness }));
 	/**
 	 * The four structural finishes, plated (#101).
 	 *
@@ -431,13 +429,15 @@ function makePalette(id: HullId): Palette {
 		panel: platedPaint(scalePaint(colors.panel, SHADOW_PAINT_LIFT), 0.58, 0.36),
 		trim: platedPaint(scalePaint(0x33454d, SHADOW_PAINT_LIFT), 0.5, 0.55),
 		accent: platedPaint(colors.accent, 0.54, 0.24),
-		canopy: new THREE.MeshStandardMaterial({
-			color: 0x173743,
-			emissive: 0x061820,
-			emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.canopy,
-			roughness: 0.2,
-			metalness: 0.1,
-		}),
+		canopy: shared(
+			new THREE.MeshStandardMaterial({
+				color: 0x173743,
+				emissive: 0x061820,
+				emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.canopy,
+				roughness: 0.2,
+				metalness: 0.1,
+			}),
+		),
 		engine: painted(scalePaint(0x293b42, SHADOW_PAINT_LIFT), 0.42, 0.58),
 		exhaust:
 			finish.drive === "bowl"
@@ -445,22 +445,26 @@ function makePalette(id: HullId): Palette {
 					// a loft whose normals point outward, and three flips the normal
 					// for lighting. The map carries the hue and the throat's heat; the
 					// emissive is white so the map is the whole of the colour.
-					new THREE.MeshStandardMaterial({
-						color: 0x1b2f3a,
-						emissive: 0xffffff,
-						emissiveMap: exhaustGradientMap(),
-						emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
-						roughness: 0.5,
-						metalness: 0.1,
-						side: THREE.BackSide,
-					})
-				: new THREE.MeshStandardMaterial({
-						color: 0x7fc4df,
-						emissive: 0x4a9fca,
-						emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
-						roughness: 0.36,
-						metalness: 0.08,
-					}),
+					shared(
+						new THREE.MeshStandardMaterial({
+							color: 0x1b2f3a,
+							emissive: 0xffffff,
+							emissiveMap: exhaustGradientMap(),
+							emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+							roughness: 0.5,
+							metalness: 0.1,
+							side: THREE.BackSide,
+						}),
+					)
+				: shared(
+						new THREE.MeshStandardMaterial({
+							color: 0x7fc4df,
+							emissive: 0x4a9fca,
+							emissiveIntensity: SHIP_EMISSIVE_INTENSITIES.exhaust,
+							roughness: 0.36,
+							metalness: 0.08,
+						}),
+					),
 	};
 	palettes.set(key, palette);
 	return palette;
@@ -5966,16 +5970,17 @@ let navLightMaterial: THREE.ShaderMaterial | undefined;
  */
 function navLightsMaterial(): THREE.ShaderMaterial {
 	if (navLightMaterial) return navLightMaterial;
-	navLightMaterial = new THREE.ShaderMaterial({
-		uniforms: {
-			uPixelRatio: { value: 1 },
-			uNearPx: { value: NAV_LIGHT_NEAR_PX },
-			uMinPx: { value: NAV_LIGHT_MIN_PX },
-			uMaxPx: { value: NAV_LIGHT_MAX_PX },
-			uRefKm: { value: NAV_LIGHT_REF_KM },
-			uFadeKm: { value: NAV_LIGHT_FADE_KM },
-		},
-		vertexShader: `
+	navLightMaterial = shared(
+		new THREE.ShaderMaterial({
+			uniforms: {
+				uPixelRatio: { value: 1 },
+				uNearPx: { value: NAV_LIGHT_NEAR_PX },
+				uMinPx: { value: NAV_LIGHT_MIN_PX },
+				uMaxPx: { value: NAV_LIGHT_MAX_PX },
+				uRefKm: { value: NAV_LIGHT_REF_KM },
+				uFadeKm: { value: NAV_LIGHT_FADE_KM },
+			},
+			vertexShader: `
 			attribute vec3 lightColor;
 			uniform float uPixelRatio;
 			uniform float uNearPx;
@@ -5995,7 +6000,7 @@ function navLightsMaterial(): THREE.ShaderMaterial {
 				gl_Position = projectionMatrix * mv;
 			}
 		`,
-		fragmentShader: `
+			fragmentShader: `
 			varying vec3 vColor;
 			varying float vFade;
 			void main() {
@@ -6011,10 +6016,11 @@ function navLightsMaterial(): THREE.ShaderMaterial {
 				gl_FragColor = vec4(lit * intensity, 1.0);
 			}
 		`,
-		transparent: true,
-		blending: THREE.AdditiveBlending,
-		depthWrite: false,
-	});
+			transparent: true,
+			blending: THREE.AdditiveBlending,
+			depthWrite: false,
+		}),
+	);
 	navLightMaterial.name = "nav-lights";
 	return navLightMaterial;
 }

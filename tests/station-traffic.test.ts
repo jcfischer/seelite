@@ -7,6 +7,7 @@ import {
 	clearancePromotion,
 	compareStationTurns,
 	laneWinner,
+	playerWinsLane,
 	materializeTrafficContact,
 	stationTrafficRoster,
 	TRAFFIC_HULL_POOLS,
@@ -135,15 +136,26 @@ describe("shared station arbitration", () => {
 		);
 		const promoted = clearancePromotion(
 			[
-				{ key: roster[1].key, readyAt: 20, hull: HULL_SPECS.freighter.env },
-				{ key: roster[0].key, readyAt: 10, hull: HULL_SPECS.courier.env },
+				{
+					participant: { kind: "carrier", key: roster[1].key },
+					readyAt: 20,
+					hull: HULL_SPECS.freighter.env,
+				},
+				{
+					participant: { kind: "carrier", key: roster[0].key },
+					readyAt: 10,
+					hull: HULL_SPECS.courier.env,
+				},
 			],
 			interior,
 			occupied,
 			100,
 		);
 		// The older compatible request wins, even when input order is reversed.
-		expect(promoted?.key).toBe(roster[0].key);
+		expect(promoted?.participant).toEqual({
+			kind: "carrier",
+			key: roster[0].key,
+		});
 		expect(promoted?.berthId).toBe(interior.berths.at(-1)?.id);
 	});
 
@@ -152,26 +164,76 @@ describe("shared station arbitration", () => {
 		const launch = carrierKey(7, "station-trade/traffic-02");
 		expect(
 			laneWinner([
-				{ key: arrival, readyAt: 10, kind: "arrival" },
-				{ key: launch, readyAt: 10, kind: "launch" },
+				{
+					participant: { kind: "carrier", key: arrival },
+					readyAt: 10,
+					kind: "arrival",
+				},
+				{
+					participant: { kind: "carrier", key: launch },
+					readyAt: 10,
+					kind: "launch",
+				},
 			]),
-		).toEqual({ key: launch, readyAt: 10, kind: "launch" });
+		).toEqual({
+			participant: { kind: "carrier", key: launch },
+			readyAt: 10,
+			kind: "launch",
+		});
 		expect(
 			laneWinner([
-				{ key: launch, readyAt: 11, kind: "launch" },
-				{ key: arrival, readyAt: 10, kind: "arrival" },
+				{
+					participant: { kind: "carrier", key: launch },
+					readyAt: 11,
+					kind: "launch",
+				},
+				{
+					participant: { kind: "carrier", key: arrival },
+					readyAt: 10,
+					kind: "arrival",
+				},
 			]),
-		).toEqual({ key: arrival, readyAt: 10, kind: "arrival" });
+		).toEqual({
+			participant: { kind: "carrier", key: arrival },
+			readyAt: 10,
+			kind: "arrival",
+		});
 	});
 
 	test("frame commitment orders an exact-tie launch before an arrival", () => {
 		const arrival = carrierKey(7, "station-trade/traffic-00");
 		const launch = carrierKey(7, "station-trade/traffic-99");
 		const ordered = [
-			{ key: arrival, readyAt: 10, kind: "arrival" as const },
-			{ key: launch, readyAt: 10, kind: "launch" as const },
+			{
+				participant: { kind: "carrier" as const, key: arrival },
+				readyAt: 10,
+				kind: "arrival" as const,
+			},
+			{
+				participant: { kind: "carrier" as const, key: launch },
+				readyAt: 10,
+				kind: "launch" as const,
+			},
 		].sort(compareStationTurns);
 		expect(ordered.map((turn) => turn.kind)).toEqual(["launch", "arrival"]);
+	});
+
+	test("player lane arbitration includes an older queued Traffic launch", () => {
+		const launch = carrierKey(7, "station-trade/traffic-02");
+		expect(
+			playerWinsLane(
+				[
+					{
+						participant: { kind: "carrier", key: launch },
+						readyAt: 9,
+						kind: "launch",
+					},
+				],
+				10,
+				"launch",
+			),
+		).toBe(false);
+		expect(playerWinsLane([], 10, "launch")).toBe(true);
 	});
 });
 

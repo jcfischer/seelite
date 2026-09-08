@@ -176,13 +176,17 @@ describe("terminal-to-terminal route projection", () => {
 					kind: "clearance",
 					fromS: departure,
 					toS: departure + 1000,
+					participant: { kind: "player" },
 					hull: HULL_SPECS.explorer.env,
 				},
 			],
 		});
 		expect(delayed.key).toBe(actor.key);
 		expect(delayed.phase).toBe("clearance-queued");
-		expect(delayed.queueRequest?.key).toBe(actor.key);
+		expect(delayed.queueRequest?.participant).toEqual({
+			kind: "carrier",
+			key: actor.key,
+		});
 	});
 
 	test("an older incompatible player request does not block a fitting Carrier", () => {
@@ -213,7 +217,7 @@ describe("terminal-to-terminal route projection", () => {
 					kind: "clearance",
 					fromS: departure,
 					toS: departure + 1_000,
-					key: carrierKey(record.index, "player"),
+					participant: { kind: "player" },
 					hull: HULL_SPECS.carrier.env,
 				},
 			],
@@ -236,7 +240,6 @@ describe("terminal-to-terminal route projection", () => {
 				gameTime: arrivalTime,
 			});
 		}
-		const player = carrierKey(record.index, "player");
 		const olderPlayer = projectSystemTrafficActor({
 			record,
 			actor,
@@ -249,7 +252,7 @@ describe("terminal-to-terminal route projection", () => {
 					),
 					kind: "lane",
 					movement: "launch",
-					key: player,
+					participant: { kind: "player" },
 					fromS: departure,
 					toS: arrivalTime + 10,
 				},
@@ -267,7 +270,7 @@ describe("terminal-to-terminal route projection", () => {
 					),
 					kind: "lane",
 					movement: "launch",
-					key: player,
+					participant: { kind: "player" },
 					fromS: arrivalTime,
 					toS: arrivalTime + 10,
 				},
@@ -477,7 +480,7 @@ describe("terminal-to-terminal route projection", () => {
 		});
 		expect(year.phase).toBe(day.phase);
 		expect(day.workTicks).toBeLessThan(5_000);
-		expect(year.workTicks).toBeLessThan(5_000);
+		expect(Math.abs(year.workTicks - day.workTicks)).toBeLessThanOrEqual(50);
 	});
 });
 
