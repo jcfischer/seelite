@@ -1228,6 +1228,8 @@ class Game {
 	/** Current-system Traffic authority is pure; these are disposable presentation caches. */
 	private trafficSystemIndex = -1;
 	private trafficTick = Number.NaN;
+	/** Game time represented by `trafficRoutes`; presentation samples forward from it. */
+	private trafficProjectionAtS = Number.NaN;
 	private trafficActors: TrafficActor[] = [];
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
@@ -3318,6 +3320,7 @@ class Game {
 		this.playerLaneRequests.clear();
 		this.berthOccupancy.clear();
 		this.trafficTick = Number.NaN;
+		this.trafficProjectionAtS = Number.NaN;
 		this.selectableCache = null;
 	}
 
@@ -3339,6 +3342,7 @@ class Game {
 	private refreshColdTraffic(gameTime: number, projectionSystem?: System) {
 		this.trafficRoutes.length = 0;
 		this.berthOccupancy.clear();
+		this.trafficProjectionAtS = gameTime;
 		const system =
 			projectionSystem ?? makeSystem(this.world.system.record, gameTime);
 		for (const actor of this.trafficActors) {
@@ -3389,6 +3393,7 @@ class Game {
 		}
 		if (tick !== this.trafficTick) {
 			this.trafficTick = tick;
+			this.trafficProjectionAtS = tick / 10;
 			this.trafficRoutes.length = 0;
 			this.prunePlayerTrafficTimeline(tick / 10);
 			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
@@ -3547,15 +3552,28 @@ class Game {
 
 	/** Synchronize contacts and meshes from authority without changing it. */
 	private updateTrafficPresentation(cameraPos: Vec3) {
+		// Authority is deliberately 10 Hz, but a station can orbit roughly 3 km in
+		// one tenth of a second. Holding its ships at the previous world position
+		// made berth traffic jump that full distance on every authority tick. Sample
+		// the authoritative velocity at render time so contacts and meshes remain
+		// continuous without moving route arbitration into the render loop.
+		const sampleS = Number.isFinite(this.trafficProjectionAtS)
+			? Math.max(0, this.world.gameTime - this.trafficProjectionAtS)
+			: 0;
 		for (const projection of this.trafficRoutes) {
 			const actor = this.trafficActors.find(
 				(candidate) => candidate.key === projection.key,
 			);
 			if (!actor) continue;
 			const previous = this.trafficContacts.get(actor.key);
-			const dx = projection.pos.x - this.world.ship.pos.x;
-			const dy = projection.pos.y - this.world.ship.pos.y;
-			const dz = projection.pos.z - this.world.ship.pos.z;
+			const sampledPos = {
+				x: projection.pos.x + projection.vel.x * sampleS,
+				y: projection.pos.y + projection.vel.y * sampleS,
+				z: projection.pos.z + projection.vel.z * sampleS,
+			};
+			const dx = sampledPos.x - this.world.ship.pos.x;
+			const dy = sampledPos.y - this.world.ship.pos.y;
+			const dz = sampledPos.z - this.world.ship.pos.z;
 			const rangeKm = previous
 				? TRAFFIC_DEMATERIALIZE_KM
 				: TRAFFIC_MATERIALIZE_KM;
@@ -3572,16 +3590,16 @@ class Game {
 				continue;
 			}
 			if (previous) {
-				previous.pos.x = projection.pos.x;
-				previous.pos.y = projection.pos.y;
-				previous.pos.z = projection.pos.z;
+				previous.pos.x = sampledPos.x;
+				previous.pos.y = sampledPos.y;
+				previous.pos.z = sampledPos.z;
 				previous.velocity.x = projection.vel.x;
 				previous.velocity.y = projection.vel.y;
 				previous.velocity.z = projection.vel.z;
 			} else {
 				const shown = materializeTrafficContact(
 					actor,
-					projection,
+					{ ...projection, pos: sampledPos },
 					this.world.ship.pos,
 				);
 				if (!shown) continue;

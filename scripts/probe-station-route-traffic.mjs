@@ -166,6 +166,43 @@ try {
 				(projection.phase === "parked-home" ||
 					projection.phase === "docked-away"),
 		);
+		const warmSettled = g.trafficRoutes.find(
+			(projection) =>
+				projection.terminalStationId === coldStationId &&
+				(projection.phase === "parked-home" ||
+					projection.phase === "docked-away"),
+		);
+		let trafficAnchorDriftKm = Number.POSITIVE_INFINITY;
+		if (warmSettled && coldStationBody) {
+			g.updateTrafficPresentation(g.world.ship.pos);
+			const contact = g.trafficContacts.get(warmSettled.key);
+			if (contact) {
+				const initial = {
+					x: contact.pos.x - coldStationBody.pos.x,
+					y: contact.pos.y - coldStationBody.pos.y,
+					z: contact.pos.z - coldStationBody.pos.z,
+				};
+				trafficAnchorDriftKm = 0;
+				for (let frame = 1; frame <= 5; frame++) {
+					g.world.gameTime = 4 + frame / 60;
+					sim.advanceSystem(g.world.system, g.world.gameTime);
+					g.updateTrafficAuthority();
+					g.updateTrafficPresentation(g.world.ship.pos);
+					trafficAnchorDriftKm = Math.max(
+						trafficAnchorDriftKm,
+						Math.hypot(
+							contact.pos.x - coldStationBody.pos.x - initial.x,
+							contact.pos.y - coldStationBody.pos.y - initial.y,
+							contact.pos.z - coldStationBody.pos.z - initial.z,
+						),
+					);
+				}
+			}
+			g.world.gameTime = 4;
+			sim.advanceSystem(g.world.system, 4);
+			g.trafficTick = Number.NaN;
+			g.updateTrafficAuthority();
+		}
 		if (coldStationId) g.dockingStates.delete(coldStationId);
 		Object.assign(g.world.ship.pos, savedShipPos);
 		g.targetId = savedTargetId;
@@ -247,10 +284,13 @@ try {
 			refreshTraffic();
 			const projected = g.trafficRoutes.find((item) => item.key === actor.key);
 			if (projected) {
+				const sampleS = Number.isFinite(g.trafficProjectionAtS)
+					? Math.max(0, t - g.trafficProjectionAtS)
+					: 0;
 				g.world.ship.pos = {
-					x: projected.pos.x + distanceKm,
-					y: projected.pos.y,
-					z: projected.pos.z,
+					x: projected.pos.x + projected.vel.x * sampleS + distanceKm,
+					y: projected.pos.y + projected.vel.y * sampleS,
+					z: projected.pos.z + projected.vel.z * sampleS,
 				};
 				if (resetVisibility) {
 					g.clearTrafficPresentation();
@@ -403,6 +443,7 @@ try {
 			coldPlayerBerth,
 			warmPlayerReserved,
 			warmTrafficConflict,
+			trafficAnchorDriftKm,
 			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
@@ -645,6 +686,11 @@ try {
 			missing: result.coldLabelMissing,
 			drawn: result.coldDrawnLabels,
 		}),
+	);
+	check(
+		"settled Traffic stays attached between 10 Hz authority ticks",
+		result.trafficAnchorDriftKm < 0.01,
+		JSON.stringify({ driftKm: result.trafficAnchorDriftKm }),
 	);
 	check(
 		"Navigation updates a changing range without replacing or defocusing its row",
