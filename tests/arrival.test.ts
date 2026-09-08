@@ -522,6 +522,32 @@ describe("§13.3 — launch is the route run backwards", () => {
 		);
 		expect(evaluation.checks.rollMatch).toBe(true);
 	});
+
+	test("a rotating overhead launch keeps one half-turn direction between ticks", () => {
+		// The overhead berth starts with its up-vector opposite the slot's up and
+		// therefore asks quaternion interpolation for an exact 180-degree roll.
+		// That roll has two equally short directions. Recomputing it in the
+		// rotating station frame must choose the same one at every authority tick;
+		// otherwise a tiny sign change around a zero quaternion dot makes the ship
+		// roll out for one 10 Hz sample and immediately roll back on the next.
+		for (const berthId of ["overhead-near", "overhead-deep"]) {
+			const law = launchFrom("trade", berthId);
+			let previous = arrivalAttitude(law, 0, law.frame.phaseRad);
+			for (let tick = 1; tick <= Math.ceil(law.durationS * 10); tick++) {
+				const elapsedS = Math.min(law.durationS, tick / 10);
+				const phase = slotPhaseRad(SPIN_RPM_RANGE.maxRpm, elapsedS);
+				const current = arrivalAttitude(law, elapsedS / law.durationS, phase);
+				const label = `${berthId} at ${elapsedS.toFixed(1)}s`;
+				// Five degrees covers the station's own 1.8-degree step plus the
+				// eased traversal roll. The defect is a near-half-turn discontinuity.
+				expect([label, dot(previous.up, current.up) > 0.996]).toEqual([
+					label,
+					true,
+				]);
+				previous = current;
+			}
+		}
+	});
 });
 
 describe("§12.6 obligation 9 — the velocity is the law's own", () => {
