@@ -175,6 +175,47 @@ const PIXEL_RATIOS = [1, 2];
  */
 const DECOMPOSE = process.argv.includes("--decompose");
 
+/**
+ * Narrow the sweep to named classes or radii.
+ *
+ * The full table is eight classes by three relief paths by eight radii by two
+ * pixel ratios, three readings a cell — the right shape for pricing the surface
+ * and far too long to run twice on one afternoon. A question about **one** term
+ * wants two columns and its control, on both builds, on the same machine.
+ *
+ * A filter and not a second script: the table's refusals — an unparsable
+ * reading, a run the display clamped, a column standing inside the body — are
+ * what make a figure quotable, and a cut-down copy beside this one would have
+ * none of them. Naming a class or a radius the sweep does not have is a throw
+ * rather than a quiet empty table, for the reason every instrument here fails
+ * loudly.
+ *
+ *   node scripts/measure-planet-cost.mjs --classes terran,jovian --radii 2
+ */
+const listArg = (name) => {
+	const argv = process.argv.slice(2);
+	const eq = argv.find((a) => a.startsWith(`--${name}=`));
+	const value = eq
+		? eq.slice(name.length + 3)
+		: argv[argv.indexOf(`--${name}`) + 1];
+	if (!eq && !argv.includes(`--${name}`)) return null;
+	if (!value || value.startsWith("-"))
+		throw new Error(`--${name} requires a comma-separated value`);
+	return value.split(",").map((v) => v.trim());
+};
+const ONLY_CLASSES = listArg("classes");
+const ONLY_RADII = listArg("radii")?.map(Number);
+const narrow = (all, wanted, what) => {
+	if (!wanted) return all;
+	const missing = wanted.filter((w) => !all.includes(w));
+	if (missing.length)
+		throw new Error(
+			`--${what} names ${missing.join(", ")}, which the sweep does not have ` +
+				`(${all.join(", ")})`,
+		);
+	return all.filter((a) => wanted.includes(a));
+};
+
 /** Guard against a wrong-checkout dev server. `planet-shaders.ts` and
  *  `planet-classes.glsl.ts` are the modules this sweep is really about and
  *  neither can be used: both declare no top-level numeric constants, and
@@ -191,6 +232,12 @@ const FINGERPRINT = ["src/main.ts", "src/planet-surface.ts"];
  * in the sweep either way. Module level rather than inside the run, so the
  * printed table can name the same cell the run measured.
  */
+/** The radii this run actually sweeps — the whole ladder unless `--radii`
+ *  narrowed it. Everything that iterates a table column reads this rather than
+ *  `RADII`, or a narrowed run prints headers for cells it never measured and
+ *  the formatter throws on the first `undefined`. */
+const SWEPT_RADII = narrow([...RADII], ONLY_RADII, "radii");
+
 const CONTROL = ["terran", "four-tap", RADII[0]];
 const CONTROL_LABEL = `${CONTROL[0]}/${CONTROL[1]} at ${CONTROL[2]}r`;
 
@@ -680,9 +727,9 @@ async function run(pixelRatio) {
 			// recompile and a radius change is only a camera move, so this nest pays 16
 			// recompiles a run instead of 96, and every settle after one is a settle the
 			// cheap way.
-			for (const surfaceClass of classes)
+			for (const surfaceClass of narrow(classes, ONLY_CLASSES, "classes"))
 				for (const relief of paths)
-					for (const radii of RADII)
+					for (const radii of SWEPT_RADII)
 						rows.push(await cell(surfaceClass, relief, radii));
 		}
 
@@ -811,10 +858,10 @@ for (const {
 		for (const relief of runs[0].reliefPaths) {
 			console.log(`    relief: ${relief}`);
 			console.log(
-				`      ${"class".padEnd(10)}${RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
+				`      ${"class".padEnd(10)}${SWEPT_RADII.map((r) => `${r}r`.padStart(14)).join("")}`,
 			);
 			for (const surfaceClass of classes) {
-				const cells = RADII.map((radii) =>
+				const cells = SWEPT_RADII.map((radii) =>
 					label(
 						runRows.find(
 							(r) =>
