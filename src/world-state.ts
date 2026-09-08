@@ -39,6 +39,9 @@ import {
 } from "./carrier-key";
 import { type DeficitMap, parseDeficits } from "./deficits";
 import { generateGalaxy } from "./galaxy";
+import type { HullId } from "./hull";
+import type { StationType } from "./station";
+import { stationTrafficRoster } from "./station-traffic";
 import { generateContents } from "./system";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
@@ -56,7 +59,7 @@ export const WORLD_SCHEMA_VERSION = 1;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 3;
+export const WORLD_GENERATOR_VERSION = 4;
 
 export const GALAXY_COUNT = 8;
 
@@ -262,16 +265,25 @@ export const newWorld = (seed: number): WorldState => ({
 // ---------------------------------------------------------------------------
 
 /** One generated carrier slot, as the persistence layer sees it. */
-export interface GeneratedCarrier {
+interface GeneratedCarrierBase {
 	systemIndex: number;
 	localCarrierId: string;
 	key: CarrierKey;
-	/** Generated facts, for the fingerprint only. They are never persisted. */
-	stationType: string;
 	parentId: string | null;
 	orbitRadiusKm: number;
 	orbitTheta0: number;
 }
+
+/** Generated facts for the fingerprint only. They are never persisted. */
+export type GeneratedCarrier = GeneratedCarrierBase &
+	(
+		| { kind: "station"; stationType: StationType }
+		| {
+				kind: "traffic";
+				homeStationType: StationType;
+				hullId: HullId;
+		  }
+	);
 
 /**
  * Every generated carrier slot in one galaxy, in system order.
@@ -291,16 +303,30 @@ export function* enumerateCarriers(
 		systemIndex++
 	) {
 		const record = galaxy.systems[systemIndex];
-		for (const station of generateContents(record).stations)
+		for (const station of generateContents(record).stations) {
 			yield {
 				systemIndex,
 				localCarrierId: station.localCarrierId,
 				key: carrierKey(systemIndex, station.localCarrierId),
+				kind: "station",
 				stationType: station.type,
 				parentId: station.parentId,
 				orbitRadiusKm: station.orbit.radiusKm,
 				orbitTheta0: station.orbit.theta0,
 			};
+			for (const actor of stationTrafficRoster(systemIndex, station))
+				yield {
+					systemIndex,
+					localCarrierId: actor.localCarrierId,
+					key: actor.key,
+					kind: "traffic",
+					homeStationType: station.type,
+					hullId: actor.hullId,
+					parentId: station.id,
+					orbitRadiusKm: station.orbit.radiusKm,
+					orbitTheta0: station.orbit.theta0,
+				};
+		}
 	}
 }
 
@@ -330,10 +356,15 @@ export const carrierBaselineFingerprint = (
 	galaxyIndex: number,
 ): number => {
 	const parts: string[] = [];
-	for (const c of enumerateCarriers(worldSeed, galaxyIndex))
+	for (const c of enumerateCarriers(worldSeed, galaxyIndex)) {
+		const generatedType =
+			c.kind === "station"
+				? c.stationType
+				: `traffic:${c.homeStationType}:${c.hullId}`;
 		parts.push(
-			`${c.systemIndex}|${c.localCarrierId}|${c.stationType}|${c.parentId ?? "-"}|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`,
+			`${c.systemIndex}|${c.localCarrierId}|${generatedType}|${c.parentId ?? "-"}|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`,
 		);
+	}
 	return fnv1a(parts.join("\n"));
 };
 

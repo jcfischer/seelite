@@ -387,9 +387,17 @@ export function closingSpeed(
 	return length(sub(scale(nose, speedKms), targetVel));
 }
 
-/** §7's regeneration, saturating at the tank. */
-export function chargeAfterRegen(chargeAu: number, dt: number): number {
-	return Math.min(CHARGE_CAPACITY_AU, chargeAu + CHARGE_REGEN_AU_PER_S * dt);
+/** §7's regeneration, saturating at the caller's hull-specific tank.
+ *
+ * The player keeps the 12 AU default. Traffic routes pass the actor hull's
+ * capacity explicitly, so a 16 AU explorer does not silently become a courier
+ * merely because it spent time in normal flight. */
+export function chargeAfterRegen(
+	chargeAu: number,
+	dt: number,
+	capacityAu = CHARGE_CAPACITY_AU,
+): number {
+	return Math.min(capacityAu, chargeAu + CHARGE_REGEN_AU_PER_S * dt);
 }
 
 /** §7's consumption: one unit per AU travelled in cruise, never below zero. */

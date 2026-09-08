@@ -79,18 +79,22 @@ The route composes the existing laws in this order:
 | `parked-home` | The actor occupies its home Berth. Desired `away` creates a launch intent with the schedule boundary as `readyAt`. |
 | `launch-queued` | The shared station Transit-lane arbitration orders the launch with player and Traffic arrivals and launches. |
 | `departing` | `arrival.ts` runs the reserved Berth's three-leg traversal in reverse. The home Berth remains occupied until the outward aperture crossing, where the reservation and grant are spent. |
-| `local-departure` | In normal flight, the actor aligns toward the selected destination Traffic hold and completes the existing three-second cruise spool. |
+| `local-departure` | In normal flight, the actor follows the aperture axis through a 5 km exclusion bubble in the translating station frame. Its smooth speed profile never exceeds the player's 0.10 km/s aperture gate and carries it another 0.5 km clear before cruise can take over. |
 | `cruise` | The pure Traffic guidance controller flies the existing cruise, detour, guard and charge laws toward the moving destination hold. |
 | `local-approach` | Cruise drops into the destination frame; normal-flight guidance reaches the exact Traffic hold with zero station-relative velocity. |
 | `clearance-queued` | Only after reaching the hold does the actor request a fitting destination Berth through the shared Clearance queue. |
 | `lane-queued` | A promoted request reserves its Berth and waits at the hold for the shared Transit lane. The grant window has not started. |
-| `arriving` | Lane award covers hold-to-standoff guidance, axis alignment, entry below the speed gate and the existing three-leg arrival traversal. |
-| `docked-away` | The actor occupies the destination Berth and refills its drive charge. Desired `parked` creates the mirrored return-home intent. |
+| `arriving` | Lane award covers the Traffic hold-to-aperture docking tunnel at no more than the player's 0.10 km/s aperture gate, followed by the existing three-leg arrival traversal. |
+| `docked-away` | The actor occupies the destination Berth and refills its drive charge for at least thirty visible seconds. Desired `parked` then creates the mirrored return-home intent. |
 
 The destination Traffic hold is the cruise target, not the station centre. Its
 position and velocity are evaluated in the moving station frame at the same
 game-clock instant as every cruise mass. That leaves the actor outside the
 docking cone and prevents a route from becoming an early clearance grant.
+
+Inside that same 5 km station bubble, held player throttle-up and throttle-down
+inputs run at one tenth their normal rate. The maximum normal-flight speed is
+unchanged; this is a fine-control zone for navigating the aperture and bay.
 
 The destination station treats the visitor as an ordinary Carrier in its
 Clearance queue, Transit lane and occupied-Berth set, but does not adopt it into
@@ -163,9 +167,10 @@ exceptional state.
 ## 5. Presentation is not authority
 
 The pure route projection owns the actor's phase, pose and velocity at every
-distance. The inclusive 10,000 km scanner boundary controls presentation only:
-inside it, `Game` creates one ship mesh and one targetable `DisplayContact` from
-the projection; outside it, those objects are absent.
+distance. Presentation uses range hysteresis: an absent actor materializes at
+the inclusive 10,000 km scanner boundary, while an already-visible actor remains
+materialized until it leaves 12,000 km. Inside that retained band, `Game` keeps
+one ship mesh and one targetable `DisplayContact` from the projection.
 
 Crossing the boundary never starts, pauses or restarts motion. Re-entering range
 reconstructs the same Carrier, hull variant, callsign, pose, velocity and
@@ -233,7 +238,9 @@ or speed law.
    Traffic hold endpoint.
 5. Destination capacity and lane contention use the shared oldest-compatible
    and oldest-ready policies. A visiting actor contributes to occupancy without
-   joining the destination Traffic roster.
+   joining the destination Traffic roster. Waiting behind a committed traversal
+   never resets the request's original `readyAt`; both player and Traffic
+   arbitration compare the same queue age after the lane becomes free.
 6. The pure guidance path calls the production cruise speed, detour, moving-body
    guard and distance-consumption functions. Regeneration and docking-refill
    checks pass an explicit hull capacity while a player control remains capped
@@ -244,8 +251,9 @@ or speed law.
    completed dock restores the actor's hull-specific capacity.
 8. Canonical save output contains no routine destination, route phase, replay
    cache, queue, charge or motion row.
-9. Materialization is inclusive at 10,000 km and absent beyond it. Repeated
-   boundary crossings keep one `CarrierKey` and never duplicate a contact.
+9. Materialization is inclusive at 10,000 km and an existing presentation is
+   retained through 12,000 km. Repeated threshold crossings keep one
+   `CarrierKey` and never duplicate a contact.
 10. Cold phase-equivalent queries at one and 365 elapsed game days perform work
     independent of epoch age. Completed schedule intervals, stationary waits
     and finished legs are skipped analytically; canonical stepping is bounded

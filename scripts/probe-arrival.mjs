@@ -1,6 +1,6 @@
 /**
- * Cruise arrives at a station its planet used to hide — spec §12, flown in the
- * browser.
+ * Cruise reaches stations beside and behind their host planets — spec §12,
+ * flown in the browser.
  *
  *   npm run dev                       # in one shell
  *   node scripts/probe-arrival.mjs    # in another
@@ -21,8 +21,8 @@
  * - `station-shipyard` orbits a 35,192 km planet whose centre sits 17,758 km
  *   across the line of sight — 0.505 × the radius, so the sight line passes
  *   half a planet deep and the station is genuinely behind 35,000 km of world.
- *   That leg must still be stopped, and stopped *outside* the surface: a rule
- *   that reaches this one is one that flies through planets.
+ *   Automatic guidance must route around that host without changing the
+ *   selected station or flying through the planet.
  *
  * **It was `?seed=47` until #118.** The reshape moved every system, so that
  * seed's system no longer has either shape and both checks went red for having
@@ -39,8 +39,8 @@
  *
  * 1. The clear-space station is reached: the drop-out fires inside the drop
  *    radius, and not against the host.
- * 2. The occluded one is not: cruise ends against the host, with the ship
- *    outside its surface and inside the shell it no longer projects there.
+ * 2. The occluded one is reached by automatic detour while retaining safe
+ *    clearance from the host surface.
  * 3. Neither path goes inside a planet, sampled every stepped frame.
  * 4. A station that sat *inside* its host's shell — 49 of 337 in the corpus
  *    before #32, every gas giant among them — could be cruised away from.
@@ -168,12 +168,10 @@ async function flyTo(stationId) {
 			let everCruised = false;
 			let previous = { ...g.world.ship.pos };
 			for (let i = 0; i < limitS / dt; i++) {
-				// Re-aimed every frame: the perfect pilot, so that what this probe
-				// reports is the geometry and not a steering error. A player steers
-				// with the mouse continuously; a nose set once at 1.2 AU and held is
-				// neither the game nor the claim, and it grazes the host by drift
-				// alone.
-				g.faceTarget();
+				// Direct cruise still needs the perfect pilot this geometry probe has
+				// always supplied. Once automatic guidance owns a detour, though,
+				// re-aiming at the selected station would fight it every frame.
+				if (!g.detour) g.faceTarget();
 				g.step(dt);
 				g.render(dt);
 				elapsed += dt;
@@ -388,18 +386,15 @@ console.log(
 );
 
 check(
-	"a station genuinely behind its planet is still stopped by it",
-	behind.exit === `dropped by proximity to ${behind.hostId}`,
+	"a station genuinely behind its planet is reached by automatic detour",
+	behind.exit.startsWith("arrived at") &&
+		behind.missKm <= behind.dropRadiusKm + 5,
 	`${behind.exit} at ${(behind.missKm / 1000).toFixed(0)}k km from the station`,
 );
 check(
-	"the stop is at the host's standoff, not at the shell it no longer projects there",
-	behind.hostRangeRatio !== null &&
-		behind.hostRangeRatio >= 1 &&
-		behind.hostRangeRatio < 1 + (behind.surfaceMargin - 1) / 10,
-	`${behind.hostRangeRatio?.toFixed(5)} × the host's radius — the standoff is ` +
-		`${behind.clearanceKm} km on a ${(behind.hostRadiusKm / 1000).toFixed(0)}k km world, ` +
-		`against the ${behind.surfaceMargin} shell every other body keeps`,
+	"the automatic detour clears the host surface",
+	behind.closestRatio >= 1 - 1e-6,
+	`closest was ${behind.closestId} at ${behind.closestRatio.toFixed(6)} × its radius`,
 );
 check(
 	"and that path stayed outside every planet too",

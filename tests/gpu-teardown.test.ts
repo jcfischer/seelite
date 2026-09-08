@@ -39,6 +39,7 @@ import {
 	shared,
 } from "../src/gpu-teardown";
 import { generateGalaxy } from "../src/galaxy";
+import { buildShipMesh } from "../src/ship-mesh";
 import { type PlanetAppearance, appearanceOf } from "../src/planet-appearance";
 import {
 	type BodyVisual,
@@ -330,6 +331,17 @@ describe("disposeSubtree reaches every kind of resource a scene holds", () => {
 });
 
 describe("disposeSubtree keeps what the next system needs", () => {
+	test("tearing down a Traffic hull frees its owned buffers and keeps shared finishes", () => {
+		const leaving = buildShipMesh("courier", "a").root;
+		const staying = buildShipMesh("courier", "a").root;
+		const held = resourcesOf(staying);
+		const report = disposeSubtree(leaving);
+		expect(report.freed.size).toBeGreaterThan(0);
+		expect(report.kept.size).toBeGreaterThan(0);
+		for (const resource of report.freed) expect(held.has(resource)).toBe(false);
+		for (const resource of report.kept) expect(held.has(resource)).toBe(true);
+	});
+
 	test("tearing one station down leaves an identical one whole", () => {
 		// The failure this exists for: the plating maps are one pair per role and
 		// the hull materials one per (type, colour), so a walker that disposed

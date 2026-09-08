@@ -540,9 +540,35 @@ function attitudeFromQuat(q: Quat): { nose: Vec3; up: Vec3 } {
  * backwards through the bay.
  */
 function quatSlerp(a: Quat, b: Quat, t: number): Quat {
+	const halfTurnEpsilon = 1e-12;
 	let [bx, by, bz, bw] = b;
 	let d = a[0] * bx + a[1] * by + a[2] * bz + a[3] * bw;
-	if (d < 0) {
+	// At an exact half-turn `d` is zero, so both quaternion signs describe
+	// equally short 180-degree arcs. Floating-point noise in a rotating world
+	// frame can put that zero on opposite sides at adjacent samples: choosing by
+	// `d < 0` alone then makes the interpolated ship reverse its roll for one
+	// authority tick. Resolve the tie in the *from-attitude's local frame*.
+	// `inverse(a) * b` is unchanged when the station applies the same world
+	// rotation to both endpoints, and canonicalising its first material axis
+	// component therefore chooses one physical half-turn consistently.
+	if (Math.abs(d) <= halfTurnEpsilon) {
+		const rx = a[3] * bx - a[0] * bw - a[1] * bz + a[2] * by;
+		const ry = a[3] * by - a[1] * bw - a[2] * bx + a[0] * bz;
+		const rz = a[3] * bz - a[2] * bw - a[0] * by + a[1] * bx;
+		const first =
+			Math.abs(rx) > halfTurnEpsilon
+				? rx
+				: Math.abs(ry) > halfTurnEpsilon
+					? ry
+					: rz;
+		if (first < 0) {
+			bx = -bx;
+			by = -by;
+			bz = -bz;
+			bw = -bw;
+			d = -d;
+		}
+	} else if (d < 0) {
 		bx = -bx;
 		by = -by;
 		bz = -bz;
@@ -571,6 +597,24 @@ function quatSlerp(a: Quat, b: Quat, t: number): Quat {
 		a[2] * ka + bz * kb,
 		a[3] * ka + bw * kb,
 	];
+}
+
+/** Interpolate one complete attitude, never two independent directions.
+ * Exported for Traffic's pre-lane approach: it has the same obligation as an
+ * arrival law to keep nose and up orthogonal while aligning to a station.
+ */
+export function slerpAttitude(
+	from: { nose: Vec3; up: Vec3 },
+	to: { nose: Vec3; up: Vec3 },
+	t: number,
+): { nose: Vec3; up: Vec3 } {
+	return attitudeFromQuat(
+		quatSlerp(
+			quatFromAttitude(from.nose, from.up),
+			quatFromAttitude(to.nose, to.up),
+			clamp01(t),
+		),
+	);
 }
 
 /**
@@ -659,19 +703,7 @@ export function arrivalAttitude(
 	if (law.kind === "launch")
 		// A launch starts parked and ends square with the slot: the nose is
 		// already outward at both ends, so what this settles is the roll.
-		return attitudeFromQuat(
-			quatSlerp(
-				quatFromAttitude(parked.nose, parked.up),
-				quatFromAttitude(law.frame.axis, basis.up),
-				e,
-			),
-		);
+		return slerpAttitude(parked, { nose: law.frame.axis, up: basis.up }, e);
 	if (!law.fromNose || !law.fromUp) return parked;
-	return attitudeFromQuat(
-		quatSlerp(
-			quatFromAttitude(law.fromNose, law.fromUp),
-			quatFromAttitude(parked.nose, parked.up),
-			e,
-		),
-	);
+	return slerpAttitude({ nose: law.fromNose, up: law.fromUp }, parked, e);
 }

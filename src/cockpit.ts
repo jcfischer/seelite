@@ -6,8 +6,8 @@
  * second source of world position or selection state.
  */
 
-import { type Quat, directionTo, edgeOf, intoCameraFrame } from "./hud";
-import { type Vec3, length, sub } from "./vec3";
+import { directionTo, edgeOf, intoCameraFrame, type Quat } from "./hud";
+import { length, sub, type Vec3 } from "./vec3";
 
 export type HeadLook = "forward" | "left" | "right";
 
@@ -210,6 +210,10 @@ export const NAV_FILTER_KINDS = ["station", "planet", "star"] as const;
 
 export interface NavProjectionOptions {
 	filter?: NavFilter;
+	/** The last rendered order, used to keep near-equal ranges from swapping. */
+	previousOrder?: readonly string[];
+	/** A nearer row must lead by more than this distance before it moves up. */
+	distanceHysteresisKm?: number;
 	/**
 	 * The arrival estimate for one body, if the caller has one.
 	 *
@@ -223,6 +227,9 @@ export interface NavProjectionOptions {
 }
 
 const EVERYTHING: NavFilter = { kinds: [], query: "" };
+
+/** Two kilometres: local Traffic motion should not continuously reshuffle the list. */
+export const NAV_ORDER_HYSTERESIS_KM = 2;
 
 /** Does one body survive the player's current narrowing? */
 export function navFilterMatches(
@@ -269,7 +276,12 @@ export function projectNavTargets(
 	shipPos: Vec3,
 	bodies: readonly NavBody[],
 	targetId: string | null,
-	{ filter = EVERYTHING, etaFor }: NavProjectionOptions = {},
+	{
+		filter = EVERYTHING,
+		etaFor,
+		previousOrder,
+		distanceHysteresisKm = NAV_ORDER_HYSTERESIS_KM,
+	}: NavProjectionOptions = {},
 ): NavRow[] {
 	const rows: NavRow[] = [];
 	for (const body of bodies) {
@@ -284,9 +296,43 @@ export function projectNavTargets(
 			selected: body.id === targetId,
 		});
 	}
-	// Ties broken by id so the order is total: two stations at the same range
-	// would otherwise swap rows on a re-sort and the list would flicker.
-	rows.sort((a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id));
+	// Without history, distance plus id is a total and reproducible order.
+	if (!previousOrder?.length) {
+		rows.sort(
+			(a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id),
+		);
+		return rows;
+	}
+
+	// Begin in the last rendered order, then insertion-sort only genuine range
+	// leads. This is deliberately not a pairwise `sort` comparator: tolerance
+	// comparisons are not transitive, while this pass always produces one stable
+	// order and lets a new/closing target bubble as far as its real lead earns.
+	const prior = new Map(previousOrder.map((id, index) => [id, index]));
+	rows.sort((a, b) => {
+		const ar = prior.get(a.id);
+		const br = prior.get(b.id);
+		// Seed every known row in its prior order and append new rows. The
+		// insertion pass below then bubbles a new row only across contacts it
+		// leads by more than the deadband. Requiring both ranks here would mix
+		// history and distance in a non-transitive sort comparator.
+		if (ar !== undefined || br !== undefined)
+			return (
+				(ar ?? Number.POSITIVE_INFINITY) - (br ?? Number.POSITIVE_INFINITY)
+			);
+		return a.distanceKm - b.distanceKm || a.id.localeCompare(b.id);
+	});
+	for (let index = 1; index < rows.length; index++) {
+		let cursor = index;
+		while (
+			cursor > 0 &&
+			rows[cursor - 1].distanceKm - rows[cursor].distanceKm >
+				distanceHysteresisKm
+		) {
+			[rows[cursor - 1], rows[cursor]] = [rows[cursor], rows[cursor - 1]];
+			cursor--;
+		}
+	}
 	return rows;
 }
 

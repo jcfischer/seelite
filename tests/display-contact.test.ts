@@ -139,7 +139,12 @@ test("only selection and scanner read the contact list; other sites register pro
 		};
 		visit(member);
 	}
-	expect([...readers].sort()).toEqual(["refreshScannerContacts", "selectable"]);
+	expect([...readers].sort()).toEqual([
+		"refreshScannerContacts",
+		"registerContact",
+		"selectable",
+		"unregisterContact",
+	]);
 });
 
 test("target lookup and velocity follow the live contact, while bodies keep orbital velocity", () => {
