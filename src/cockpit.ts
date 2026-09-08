@@ -312,6 +312,10 @@ export function projectNavTargets(
 	rows.sort((a, b) => {
 		const ar = prior.get(a.id);
 		const br = prior.get(b.id);
+		// Seed every known row in its prior order and append new rows. The
+		// insertion pass below then bubbles a new row only across contacts it
+		// leads by more than the deadband. Requiring both ranks here would mix
+		// history and distance in a non-transitive sort comparator.
 		if (ar !== undefined || br !== undefined)
 			return (
 				(ar ?? Number.POSITIVE_INFINITY) - (br ?? Number.POSITIVE_INFINITY)

@@ -127,6 +127,41 @@ test("station-approach motion retains order below two kilometres", () => {
 	).toEqual(["beta", "alpha"]);
 });
 
+test("a newly visible contact joins the prior order through the same deadband", () => {
+	const known = [
+		{
+			id: "alpha",
+			name: "Alpha",
+			kind: "ship" as const,
+			pos: v3(100, 0, 0),
+		},
+		{
+			id: "beta",
+			name: "Beta",
+			kind: "ship" as const,
+			pos: v3(200, 0, 0),
+		},
+	];
+	const newcomer = {
+		id: "newcomer",
+		name: "Newcomer",
+		kind: "ship" as const,
+		pos: v3(99, 0, 0),
+	};
+
+	expect(
+		projectNavTargets(v3(), [...known, newcomer], null, {
+			previousOrder: ["alpha", "beta"],
+		}).map(({ id }) => id),
+	).toEqual(["alpha", "newcomer", "beta"]);
+	newcomer.pos.x = 97;
+	expect(
+		projectNavTargets(v3(), [...known, newcomer], null, {
+			previousOrder: ["alpha", "beta"],
+		}).map(({ id }) => id),
+	).toEqual(["newcomer", "alpha", "beta"]);
+});
+
 test("the projection holds no kind rule of its own", () => {
 	// **Deliberately lists the moon.** What can be targeted is `Game`'s rule —
 	// `selectable()`, which `cycleTarget` walks and `onSelectTarget` validates
