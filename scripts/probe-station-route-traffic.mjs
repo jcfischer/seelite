@@ -376,9 +376,17 @@ try {
 			const contact = g.trafficContacts.get(actor.key);
 			const mesh = g.trafficMeshes.get(actor.key);
 			if (contact && mesh) {
+				// Establish the new authority tick first. The following six samples
+				// are six render frames inside that interval; counting the deliberately
+				// skipped 0.1 s from `startT` as one frame would measure the probe's
+				// time jump rather than presentation smoothness.
+				g.world.gameTime = worstTurn.t;
+				sim.advanceSystem(g.world.system, g.world.gameTime);
+				g.updateTrafficAuthority();
+				g.updateTrafficPresentation(g.world.ship.pos);
 				const positions = [{ ...contact.pos }];
 				const attitudes = [mesh.quaternion.clone()];
-				for (let frame = 0; frame <= 6; frame++) {
+				for (let frame = 1; frame <= 6; frame++) {
 					g.world.gameTime = worstTurn.t + frame / 60;
 					sim.advanceSystem(g.world.system, g.world.gameTime);
 					g.updateTrafficAuthority();
@@ -414,6 +422,56 @@ try {
 				flyingPositionStepRatio = positionSpread.ratio;
 				flyingAttitudeMovingSteps = attitudeSpread.moving;
 				flyingPositionMovingSteps = positionSpread.moving;
+			}
+		}
+
+		// A world-space interpolation check cannot catch a pose that is smoothly
+		// one authority tick behind a fast-orbiting station. Observe a natural
+		// arrival from a station-relative camera and compare the presented contact
+		// with the canonical projector at the actual render time. The supplied
+		// recording showed the old error as two alternating screen positions.
+		let stationFrameMaxErrorKm = Number.POSITIVE_INFINITY;
+		const stationFrameSample = samples.get("arriving");
+		if (stationFrameSample?.projected.terminalStationId) {
+			const stationId = stationFrameSample.projected.terminalStationId;
+			const startT = Math.ceil(stationFrameSample.t * 10) / 10 + 0.2;
+			g.world.gameTime = startT;
+			sim.advanceSystem(g.world.system, startT);
+			g.clearTrafficPresentation();
+			g.trafficSystemIndex = g.world.system.record.index;
+			refreshTraffic();
+			stationFrameMaxErrorKm = 0;
+			for (let frame = 0; frame < 60; frame++) {
+				const t = startT + frame / 60;
+				g.world.gameTime = t;
+				sim.advanceSystem(g.world.system, t);
+				const body = g.world.system.byId.get(stationId);
+				const aperture = g.apertureFrameOf(stationId);
+				g.world.ship.pos = {
+					x: body.pos.x + aperture.axis.x * 4,
+					y: body.pos.y + aperture.axis.y * 4,
+					z: body.pos.z + aperture.axis.z * 4,
+				};
+				g.updateTrafficAuthority();
+				g.updateTrafficPresentation(g.world.ship.pos);
+				const contact = g.trafficContacts.get(actor.key);
+				const exact = route.projectSystemTrafficActor({
+					record: g.world.system.record,
+					actor,
+					gameTime: t,
+				});
+				if (!contact) {
+					stationFrameMaxErrorKm = Number.POSITIVE_INFINITY;
+					break;
+				}
+				stationFrameMaxErrorKm = Math.max(
+					stationFrameMaxErrorKm,
+					Math.hypot(
+						contact.pos.x - exact.pos.x,
+						contact.pos.y - exact.pos.y,
+						contact.pos.z - exact.pos.z,
+					),
+				);
 			}
 		}
 
@@ -486,12 +544,15 @@ try {
 			};
 		};
 
-		const cruise = present(samples.get("cruise").t, 100);
-		const retained = present(samples.get("cruise").t, 10_000.01);
-		const outside = present(samples.get("cruise").t, 12_000.01);
-		const absentBand = present(samples.get("cruise").t, 11_000, [], true);
-		const boundary = present(samples.get("cruise").t, 10_000);
-		const insideAgain = present(samples.get("cruise").t, 100);
+		// Tick-aligned so the exact 10,000 km boundary is not perturbed by the
+		// sub-tick prediction error this visibility test is not about.
+		const cruiseAt = Math.ceil(samples.get("cruise").t * 10) / 10;
+		const cruise = present(cruiseAt, 100);
+		const retained = present(cruiseAt, 10_000.01);
+		const outside = present(cruiseAt, 12_000.01);
+		const absentBand = present(cruiseAt, 11_000, [], true);
+		const boundary = present(cruiseAt, 10_000);
+		const insideAgain = present(cruiseAt, 100);
 		const arrivingSample = samples.get("arriving");
 		const clearanceEvent = {
 			stationId: destination,
@@ -606,6 +667,7 @@ try {
 			flyingPositionSteps,
 			flyingAttitudeMovingSteps,
 			flyingPositionMovingSteps,
+			stationFrameMaxErrorKm,
 			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
@@ -892,6 +954,11 @@ try {
 			attitudeMaxToMeanStep: result.flyingAttitudeStepRatio,
 			positionMaxToMeanStep: result.flyingPositionStepRatio,
 		}),
+	);
+	check(
+		"station-relative Traffic never falls one orbital authority tick behind",
+		result.stationFrameMaxErrorKm < 0.05,
+		JSON.stringify({ maxErrorKm: result.stationFrameMaxErrorKm }),
 	);
 	check(
 		"Navigation updates a changing range without replacing or defocusing its row",

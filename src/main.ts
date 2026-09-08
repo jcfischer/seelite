@@ -3620,10 +3620,10 @@ class Game {
 
 	/** Synchronize contacts and meshes from authority without changing it. */
 	private updateTrafficPresentation(cameraPos: Vec3) {
-		// Flying poses are displayed one authority interval behind. At the instant a
-		// new 10 Hz result arrives the previous result is still on screen; the next
-		// six 60 Hz frames interpolate to the new one. Authority remains deterministic
-		// and bounded while both translation and course corrections become continuous.
+		// Flying poses remain at render time while their 10 Hz authority correction
+		// is spread across the next six 60 Hz frames. Both endpoints are predicted
+		// forward below; interpolating their stale absolute positions would put an
+		// orbiting station's traffic one full tick behind the station itself.
 		const spanS = this.trafficProjectionAtS - this.trafficPreviousProjectionAtS;
 		const blend =
 			Number.isFinite(spanS) && spanS > 0
@@ -3661,13 +3661,49 @@ class Game {
 			const prior = settled
 				? null
 				: this.trafficPreviousRoutes.get(projection.key);
-			const sampledPos = prior
+			// Interpolate the *correction*, not two stale absolute positions. A
+			// station can translate several kilometres during one 10 Hz authority
+			// interval. Blending its old and new world-space poses therefore shows
+			// the Carrier one whole tick behind the current station/player frame;
+			// the recording from #266 exposed that as a 10 Hz jump between two
+			// apparent positions. Predict each authority sample to render time first,
+			// then blend between those predictions. The result is continuous at a
+			// tick boundary while retaining the smooth correction of a course change.
+			const predictAtRender = (
+				pose: Pick<TrafficProjection, "pos" | "vel">,
+				atS: number,
+			) => {
+				const dt = Number.isFinite(atS)
+					? Math.max(0, this.world.gameTime - atS)
+					: 0;
+				return {
+					x: pose.pos.x + pose.vel.x * dt,
+					y: pose.pos.y + pose.vel.y * dt,
+					z: pose.pos.z + pose.vel.z * dt,
+				};
+			};
+			// A settled pose was resampled from the station at render time just
+			// above. Predicting it again from the authority tick would apply the
+			// station's orbital velocity twice.
+			const currentAtRender = settled
+				? presented.pos
+				: predictAtRender(presented, this.trafficProjectionAtS);
+			const previousAtRender = prior
+				? predictAtRender(prior, this.trafficPreviousProjectionAtS)
+				: null;
+			const sampledPos = previousAtRender
 				? {
-						x: prior.pos.x + (presented.pos.x - prior.pos.x) * blend,
-						y: prior.pos.y + (presented.pos.y - prior.pos.y) * blend,
-						z: prior.pos.z + (presented.pos.z - prior.pos.z) * blend,
+						x:
+						previousAtRender.x +
+						(currentAtRender.x - previousAtRender.x) * blend,
+						y:
+						previousAtRender.y +
+						(currentAtRender.y - previousAtRender.y) * blend,
+						z:
+						previousAtRender.z +
+						(currentAtRender.z - previousAtRender.z) * blend,
 					}
-				: presented.pos;
+				: currentAtRender;
 			const dx = sampledPos.x - this.world.ship.pos.x;
 			const dy = sampledPos.y - this.world.ship.pos.y;
 			const dz = sampledPos.z - this.world.ship.pos.z;
@@ -5512,6 +5548,15 @@ class Game {
 				this.entryPoseOf(id),
 			);
 			if (!crossing) continue;
+			// `planeCrossing` intentionally solves an infinite mathematical plane.
+			// It says when a trajectory reaches the aperture depth, not whether the
+			// station occupies that point. Without this physical-volume gate, an
+			// ordinary fly-by 1.6 km off a 0.6 km station counted as barging through
+			// its entrance and silently made the station hostile. The body's radius
+			// is the authored bound of the dockable core; outside it there is neither
+			// hull nor aperture to enter.
+			const body = this.world.system.byId.get(id);
+			if (!body || length(crossing.rel) > body.radiusKm) continue;
 			this.resolveCrossing(id, from.frame, crossing);
 			return;
 		}

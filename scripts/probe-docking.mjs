@@ -493,6 +493,48 @@ if (undock) {
 	});
 }
 
+// A nearby trajectory can cross the *infinite mathematical plane* that carries
+// the aperture without crossing the station. The principal reproduced this at
+// 1.6 km with no request, impact, or attempted entry; it must remain an inert
+// fly-by rather than silently creating a hostile protocol state.
+console.log("\npassive station fly-by:");
+const passiveFlyby = await page.evaluate(() => {
+	const g = window.__seelite;
+	const D = window.__dock;
+	const id = D.spinner().id;
+	g.dockingComputerEngaged = false;
+	g.dockingStates.delete(id);
+	g.resetDock();
+	g.lastEntry = null;
+	const snap = g.dockingSnapshot(id);
+	const lateral = D.scale(snap.reference, 1.6);
+	const beforeRel = D.add(
+		D.scale(snap.axis, snap.planeKm + 0.01),
+		lateral,
+	);
+	D.place(id, beforeRel, D.scale(snap.axis, -0.2));
+	const before = g.dockingApproaches();
+	const afterRel = D.add(
+		D.scale(snap.axis, snap.planeKm - 0.01),
+		lateral,
+	);
+	D.place(id, afterRel, D.scale(snap.axis, -0.2));
+	g.stepDocking(before);
+	const after = g.dockingSnapshot(id);
+	return {
+		rangeKm: after.rangeKm,
+		hostile: after.hostile,
+		entry: after.lastEntry,
+	};
+});
+check(
+	"crossing the aperture plane 1.6 km off the station is only a passive fly-by",
+	passiveFlyby.rangeKm > 1.5 &&
+		passiveFlyby.hostile === false &&
+		passiveFlyby.entry === null,
+	JSON.stringify(passiveFlyby),
+);
+
 // ---------------------------------------------------------------------------
 // §9.2.4 — a hull-face approach is refused
 // ---------------------------------------------------------------------------
