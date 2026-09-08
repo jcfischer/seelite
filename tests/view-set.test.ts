@@ -88,10 +88,15 @@ describe("the view set itself", () => {
 		// whole-file `toContain` prints the whole file, which buries the one
 		// line that moved. Whitespace-collapsed, because a formatter owns the
 		// line breaks and a formatting change must not be a red run here.
-		const loop = source
-			.slice(source.indexOf("for (const view of VIEWS) {"))
-			.slice(0, 900)
-			.replace(/\s+/g, " ");
+		// Sliced to a structural end marker rather than a character count: a
+		// fixed window couples the assertion to the loop's comment length, so an
+		// unrelated edit above the target moves it out of range and fails a
+		// mechanism that still works.
+		const from = source.indexOf("for (const view of VIEWS) {");
+		const to = source.indexOf("const subject =", from);
+		expect(from).toBeGreaterThan(0);
+		expect(to).toBeGreaterThan(from);
+		const loop = source.slice(from, to).replace(/\s+/g, " ");
 		expect(loop).toContain("await ensureSeed(page, view.shot.seed ?? SEED);");
 		// And no placer navigates on a seed of its own any more. `PLACERS` is the
 		// object the loop dispatches through, so a `shot.seed` read inside it is

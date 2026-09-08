@@ -6354,8 +6354,9 @@ class Game {
 				// How big the star looks from this body, in radians — the width of
 				// the penumbra #210's ring shadow is drawn with. Computed here for
 				// the same reason `sunDir` is: it is a fact about where this body
-				// is, and a body an AU further out gets a softer shadow. The star
-				// itself takes 0, which is the same "no answer needed" case the
+				// is. Radius over distance, so a body an AU further out sees a
+				// *smaller* star and gets a **sharper** shadow. The star itself
+				// takes 0, which is the same "no answer needed" case the
 				// direction's fallback covers.
 				const starAngularRadius = sd > 0 ? (star?.radiusKm ?? 0) / sd : 0;
 				visual.setSunDirection(SUN_DIR, starAngularRadius);

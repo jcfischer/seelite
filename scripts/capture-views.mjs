@@ -133,9 +133,10 @@ async function applyCaptureQuality(page) {
  *
  * Restoring is the same act as declaring: a view with no `seed` wants `SEED`,
  * so it navigates back if the page is somewhere else, and nothing at any
- * position in the list depends on what ran before it.
+ * position in the list depends on what ran before it. (A *jump* is what
+ * `CONTEXT.md` reserves for moving between star systems; this is a page load.)
  *
- * `__rememberBootPosition` is re-run on every jump because a navigation resets
+ * `__rememberBootPosition` is re-run on every navigation, because one resets
  * the ship to the arrival point and drops what the previous boot remembered —
  * `deep-sky` reads it, and it is only safe at any position in the list if
  * every boot leaves one behind.
@@ -416,14 +417,14 @@ try {
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.
 		if (view.shot.kind !== "workbench-interior") {
-			// Before the view is set, because a jump resets the game to the
+			// Before the view is set, because a page load resets the game to the
 			// cockpit and would undo it.
 			await ensureSeed(page, view.shot.seed ?? SEED);
 			await setView(page, view.shot.view);
 		} else {
 			// The workbench is not the game and carries no seed. Its own
 			// navigation leaves the page somewhere `ensureSeed` cannot reason
-			// about, so the next view — there is none today — starts by jumping.
+			// about, so the next view — there is none today — starts by navigating.
 			currentSeed = null;
 		}
 		const subject = await PLACERS[view.shot.kind](page, view.shot);

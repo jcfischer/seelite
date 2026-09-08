@@ -245,7 +245,6 @@ const installHelpers = (page) =>
 		 * then grew a third.
 		 */
 		window.__discBox = (bodyId) => {
-			const g = window.__seelite;
 			// Decorations off for the capture, and this is the only place it is
 			// spelled — every measurement in this file goes through here, so
 			// hiding them in the callers instead left whichever caller was added
@@ -253,18 +252,7 @@ const installHelpers = (page) =>
 			// signatures were once taken with a ringed giant's 4.8-radius ring
 			// plane in the box, and the star's with its corona sprite in it.
 			window.__setDecorVisible(bodyId, false);
-			const src = g.renderer.domElement;
-			const cv = document.createElement("canvas");
-			cv.width = W;
-			cv.height = H;
-			const ctx = cv.getContext("2d", { willReadFrequently: true });
-			const frame = () => {
-				// Render and read in the same task: a WebGL canvas without
-				// `preserveDrawingBuffer` is cleared at the next composite.
-				g.render(0);
-				ctx.drawImage(src, 0, 0, W, H);
-				return ctx.getImageData(0, 0, W, H).data;
-			};
+			const frame = window.__framePixels;
 			const mesh = window.__meshOf(bodyId);
 			const shown = frame();
 			mesh.visible = false;
@@ -333,6 +321,32 @@ const installHelpers = (page) =>
 				}
 			}
 			return { pixels: box.changed, patches };
+		};
+
+		/**
+		 * Render one frame and hand back its pixels, at the probe's own logical
+		 * size rather than the canvas backing store's.
+		 *
+		 * **Render and read in the same task**: a WebGL canvas without
+		 * `preserveDrawingBuffer` is cleared at the next composite.
+		 *
+		 * One copy, because there were two. `__discBox` had this sequence inline
+		 * and #210's ring reading grew a second — and the second one read
+		 * `domElement.width`, which on a display with a device pixel ratio above 1
+		 * is not `W`. Its mask came out in device pixels while the centre it was
+		 * compared against was in logical ones: 89,973 ring pixels and 0 opposed
+		 * pairs, silently.
+		 */
+		window.__framePixels = () => {
+			const g = window.__seelite;
+			const src = g.renderer.domElement;
+			const cv = document.createElement("canvas");
+			cv.width = W;
+			cv.height = H;
+			const ctx = cv.getContext("2d", { willReadFrequently: true });
+			g.render(0);
+			ctx.drawImage(src, 0, 0, W, H);
+			return ctx.getImageData(0, 0, W, H).data;
 		};
 
 		/**
@@ -1813,18 +1827,7 @@ if (airless) {
 		const visual = g.bodyVisuals.get(id);
 		if (!visual) return null;
 		const u = visual.uniforms;
-		const src = g.renderer.domElement;
-		const W = src.width;
-		const H = src.height;
-		const cv = document.createElement("canvas");
-		cv.width = W;
-		cv.height = H;
-		const ctx = cv.getContext("2d", { willReadFrequently: true });
-		const frame = () => {
-			g.render(0);
-			ctx.drawImage(src, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
-		};
+		const frame = window.__framePixels;
 		window.__setDecorVisible(id, false);
 		const withRing = frame();
 		const inner = u.innerR.value;
@@ -1847,7 +1850,7 @@ if (airless) {
 			else if (d < -4) brightened++;
 			if (d > deepest) deepest = d;
 		}
-		return { darkened, brightened, deepest, pixels: W * H };
+		return { darkened, brightened, deepest };
 	}, RING_BODY);
 
 	check(
@@ -1861,8 +1864,15 @@ if (airless) {
 				`${band.brightened} brightened, deepest ${band.deepest.toFixed(0)}/255`,
 		);
 		check(
+			// **The floor is a guard, not the claim.** What discriminates is that a
+			// build without the term draws the two frames *identically* and this
+			// reads exactly 0 — there is no threshold to argue about. 500 sits far
+			// above what antialiasing on a moved edge could produce and far below
+			// the 2,862 px a shipped run measures at this framing, so a band that
+			// shrank by four fifths would still pass and a band that vanished
+			// could not.
 			"the ring lays a band across the planet",
-			band.darkened > 2000,
+			band.darkened > 500,
 			`${band.darkened} px darken when the ring's radii are within reach ` +
 				`(${band.brightened} brighten, which is antialiasing and should be near 0)`,
 		);

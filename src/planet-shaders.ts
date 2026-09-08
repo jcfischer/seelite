@@ -740,9 +740,11 @@ void main() {
  * measured planet fragments as the frame, so a term evaluated on every terran
  * world for a ring it cannot have is not a rounding error.
  *
- * `ringPresent` is still a uniform, because three in eight giants have no ring
- * and they run this program. That arm is the one a cost measurement has to
- * take: it is where a driver that evaluates both sides would show up.
+ * `ringPresent` is still a uniform, because a giant usually has no ring and
+ * runs this program anyway — the draw in `planet-appearance.ts` gives rings to
+ * three eighths of them, so five giants in eight arrive here bare. That arm is
+ * the one a cost measurement has to take: it is where a driver that evaluates
+ * both sides would show up.
  *
  * Needs `NOISE_GLSL`, `RING_GLSL` and `LIGHT_GLSL` in front of it.
  */

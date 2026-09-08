@@ -243,14 +243,31 @@ test("both directions of the shadow read one band, not two copies of one", () =>
 	// function, called from the ring's own fragment and from the surface's. The
 	// frequency literal is the tell — a second copy is what a hand-inlined
 	// version would look like, and it would drift on the first retune.
-	expect(RING_FRAGMENT).toContain("ringSample(");
-	for (const surface of RINGED_CLASSES)
-		expect(fragmentFor(surface)).toContain("ringSample(");
+	//
+	// **A call site, not a mention.** The first version of this row asserted
+	// `toContain("ringSample(")`, which the function's own *declaration*
+	// satisfies — both consumers could be deleted and it would still pass. Both
+	// halves are asserted instead: the declaration appears once, and there is at
+	// least one further occurrence, which can only be a call.
 	const occurrences = (haystack: string, needle: string) =>
 		haystack.split(needle).length - 1;
+	expect(occurrences(RING_GLSL, "void ringSample(")).toBe(1);
+	expect(occurrences(RING_FRAGMENT, "void ringSample(")).toBe(1);
+	expect(occurrences(RING_FRAGMENT, "ringSample(")).toBeGreaterThan(1);
+	for (const surface of RINGED_CLASSES) {
+		const source = fragmentFor(surface);
+		expect([surface, occurrences(source, "void ringSample(")]).toEqual([
+			surface,
+			1,
+		]);
+		expect([surface, occurrences(source, "ringSample(") > 1]).toEqual([
+			surface,
+			true,
+		]);
+		// And the band itself is spelled once per program, not once per caller.
+		expect([surface, occurrences(source, "t * 34.0")]).toEqual([surface, 1]);
+	}
 	expect(occurrences(RING_GLSL, "t * 34.0")).toBe(1);
-	for (const surface of RINGED_CLASSES)
-		expect(occurrences(fragmentFor(surface), "t * 34.0")).toBe(1);
 });
 
 /** A ringable class, built the way the generator builds one: `isGasGiant` and a

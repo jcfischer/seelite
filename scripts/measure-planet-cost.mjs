@@ -131,21 +131,39 @@ const OUT = "view-set";
  * ladder and the view is one rung of it. `RADII` must contain that rung, and
  * `tests/planet-cost.test.ts` is what holds the two together.
  */
-const PRICED_VIEW = "planet-fill";
+/**
+ * `--view <name>`: price a different frame from the sheet.
+ *
+ * The default is `planet-fill`, which is what #206 built this table for. #210
+ * needs a **ringed** body — the class table forces a class onto seed 47's
+ * subject and cannot give it a ring, so the arm where the ring's own seven noise
+ * calls actually run is not reachable from the default frame at all.
+ *
+ * A view name and not a body id, because a frame is four things and not one: the
+ * subject, its seed, the sun angle and the apparent size. Naming the view takes
+ * all four from the place that owns them, which is the rule this file already
+ * follows for `planet-fill`.
+ *
+ *   node scripts/measure-planet-cost.mjs --view ringed-giant --classes iceGiant
+ */
+const PRICED_VIEW = process.argv.includes("--view")
+	? (process.argv[process.argv.indexOf("--view") + 1] ?? "")
+	: "planet-fill";
 const priced = VIEWS.find((v) => v.name === PRICED_VIEW);
 if (!priced)
 	throw new Error(
-		`the view set no longer declares "${PRICED_VIEW}" — this sweep prices that ` +
-			`frame and has nothing to point at without it`,
+		`the view set declares no "${PRICED_VIEW}" — this sweep prices a frame from ` +
+			`that set and has nothing to point at without one`,
+	);
+if (priced.shot.kind !== "body-offset")
+	throw new Error(
+		`"${PRICED_VIEW}" is a ${priced.shot.kind} shot — this sweep places the ` +
+			`camera at a body's own radii and cannot frame one`,
 	);
 const SUBJECT = priced.shot.body;
 const SUN_ANGLE_DEG = priced.shot.sunAngleDeg;
-if (!RADII.includes(priced.shot.radii))
-	throw new Error(
-		`"${PRICED_VIEW}" is framed at ${priced.shot.radii} radii and the sweep has ` +
-			`no such column (${RADII.join(", ")}) — the table would not price the ` +
-			`frame the sheet shows`,
-	);
+/** The world the priced view is framed in — its own, or the fixture's. */
+const PRICED_SEED = priced.shot.seed ?? SEED;
 
 /**
  * The two drawing-buffer scales, as two runs.
@@ -236,7 +254,36 @@ const FINGERPRINT = ["src/main.ts", "src/planet-surface.ts"];
  *  narrowed it. Everything that iterates a table column reads this rather than
  *  `RADII`, or a narrowed run prints headers for cells it never measured and
  *  the formatter throws on the first `undefined`. */
-const SWEPT_RADII = narrow([...RADII], ONLY_RADII, "radii");
+/**
+ * The ladder this run sweeps: `RADII`, plus the priced view's own rung.
+ *
+ * The guard this replaces threw when `RADII` did not contain the rung — "the
+ * table would not price the frame the sheet shows" — which is right about the
+ * table and wrong as a refusal. The ladder is this file's and the framing is the
+ * view's, so the fix is to add the rung rather than to refuse the view.
+ */
+const LADDER = (() => {
+	const rung = priced.shot.radii;
+	const all = RADII.includes(rung) ? [...RADII] : [...RADII, rung];
+	return all.sort((a, b) => b - a);
+})();
+
+/** The radii this run actually sweeps — the whole ladder unless `--radii`
+ *  narrowed it. Everything that iterates a table column reads this rather than
+ *  `RADII`, or a narrowed run prints headers for cells it never measured and
+ *  the formatter throws on the first `undefined`.
+ *
+ *  **`RADII[0]` and the priced rung are not optional.** A narrowed run that
+ *  dropped the widest column failed only after both headed sweeps had run:
+ *  `farColumnVerdict` reads it as the run's own invariant — the place where the
+ *  subject is a few pixels and nothing should differ — and throws on a table
+ *  with no such cells. It is also the cheapest column in the sweep. */
+const SWEPT_RADII = (() => {
+	const wanted = narrow([...LADDER], ONLY_RADII, "radii");
+	return LADDER.filter(
+		(r) => r === RADII[0] || r === priced.shot.radii || wanted.includes(r),
+	);
+})();
 
 const CONTROL = ["terran", "four-tap", RADII[0]];
 const CONTROL_LABEL = `${CONTROL[0]}/${CONTROL[1]} at ${CONTROL[2]}r`;
@@ -418,7 +465,7 @@ async function run(pixelRatio) {
 		});
 		await installViewPlacement(page);
 		await installViewFraming(page);
-		await page.goto(`${origin}/?seed=${SEED}&fps`);
+		await page.goto(`${origin}/?seed=${PRICED_SEED}&fps`);
 		await bootedGame(page);
 		renderer = await assertPlayersRenderer(page, "measure a planet's cost");
 		await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
@@ -789,7 +836,7 @@ console.log(
 		: `  mode: class sweep — every class on both relief paths`,
 );
 console.log(
-	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${SUN_ANGLE_DEG}° from the star, seed ${SEED}`,
+	`  viewport: ${VIEWPORT.width}x${VIEWPORT.height}, ${SUBJECT} at ${SUN_ANGLE_DEG}° from the star, seed ${PRICED_SEED} (${PRICED_VIEW})`,
 );
 console.log(
 	`  ms/frame off the ?fps readout — median of ${READINGS} readings, ±the full range across them`,
