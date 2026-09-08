@@ -573,6 +573,24 @@ function quatSlerp(a: Quat, b: Quat, t: number): Quat {
 	];
 }
 
+/** Interpolate one complete attitude, never two independent directions.
+ * Exported for Traffic's pre-lane approach: it has the same obligation as an
+ * arrival law to keep nose and up orthogonal while aligning to a station.
+ */
+export function slerpAttitude(
+	from: { nose: Vec3; up: Vec3 },
+	to: { nose: Vec3; up: Vec3 },
+	t: number,
+): { nose: Vec3; up: Vec3 } {
+	return attitudeFromQuat(
+		quatSlerp(
+			quatFromAttitude(from.nose, from.up),
+			quatFromAttitude(to.nose, to.up),
+			clamp01(t),
+		),
+	);
+}
+
 /**
  * The pose a parked ship holds (§13.3): up-vector away from the berth surface,
  * nose along the berth's own `parkedNose`.
@@ -659,19 +677,7 @@ export function arrivalAttitude(
 	if (law.kind === "launch")
 		// A launch starts parked and ends square with the slot: the nose is
 		// already outward at both ends, so what this settles is the roll.
-		return attitudeFromQuat(
-			quatSlerp(
-				quatFromAttitude(parked.nose, parked.up),
-				quatFromAttitude(law.frame.axis, basis.up),
-				e,
-			),
-		);
+		return slerpAttitude(parked, { nose: law.frame.axis, up: basis.up }, e);
 	if (!law.fromNose || !law.fromUp) return parked;
-	return attitudeFromQuat(
-		quatSlerp(
-			quatFromAttitude(law.fromNose, law.fromUp),
-			quatFromAttitude(parked.nose, parked.up),
-			e,
-		),
-	);
+	return slerpAttitude({ nose: law.fromNose, up: law.fromUp }, parked, e);
 }

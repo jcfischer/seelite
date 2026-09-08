@@ -34,25 +34,79 @@ export interface MarkerLabelBounds {
 	bottom: number;
 }
 
+/** Context labels must clear an existing label by more than a rounding-width
+ * gap before returning. At typical cockpit motion eight pixels is enough to
+ * keep two names from alternating at the collision boundary without making
+ * the glass feel empty. */
+export const MARKER_LABEL_CLEARANCE_PX = 8;
+/** Minimum quiet time after a collision before a context label may return. */
+export const MARKER_LABEL_REAPPEAR_S = 0.3;
+
+const overlaps = (
+	bounds: MarkerLabelBounds,
+	other: MarkerLabelBounds,
+	gapPx: number,
+) =>
+	bounds.left < other.right + gapPx &&
+	bounds.right > other.left - gapPx &&
+	bounds.top < other.bottom + gapPx &&
+	bounds.bottom > other.top - gapPx;
+
 /** Keep unselected ship names readable when several hulls share a bearing.
  * Callers reserve the selected label first; it always wins over context.
  */
 export function claimMarkerLabel(
 	bounds: MarkerLabelBounds,
 	occupied: MarkerLabelBounds[],
+	gapPx = 0,
 ): boolean {
-	if (
-		occupied.some(
-			(other) =>
-				bounds.left < other.right &&
-				bounds.right > other.left &&
-				bounds.top < other.bottom &&
-				bounds.bottom > other.top,
-		)
-	)
-		return false;
+	if (occupied.some((other) => overlaps(bounds, other, gapPx))) return false;
 	occupied.push(bounds);
 	return true;
+}
+
+/** Stateful admission for passive marker labels.
+ *
+ * The selected target is deliberately not passed here: the renderer reserves
+ * it in `occupied` first, so it can never lose to context. A rejected passive
+ * label stays rejected briefly after the geometry separates; that release
+ * delay is what stops combat motion from turning the collision edge into a
+ * one-frame-on, one-frame-off flicker.
+ */
+export class MarkerLabelDeclutter {
+	private readonly hiddenUntil = new Map<string, number>();
+	private lastTimeS = Number.NEGATIVE_INFINITY;
+
+	beginFrame(gameTimeS: number) {
+		if (gameTimeS < this.lastTimeS) this.hiddenUntil.clear();
+		this.lastTimeS = gameTimeS;
+	}
+
+	claim(
+		id: string,
+		bounds: MarkerLabelBounds,
+		occupied: MarkerLabelBounds[],
+		gameTimeS: number,
+	): boolean {
+		if (
+			occupied.some((other) =>
+				overlaps(bounds, other, MARKER_LABEL_CLEARANCE_PX),
+			)
+		) {
+			this.hiddenUntil.set(id, gameTimeS + MARKER_LABEL_REAPPEAR_S);
+			return false;
+		}
+		if ((this.hiddenUntil.get(id) ?? Number.NEGATIVE_INFINITY) > gameTimeS)
+			return false;
+		this.hiddenUntil.delete(id);
+		occupied.push(bounds);
+		return true;
+	}
+
+	reset() {
+		this.hiddenUntil.clear();
+		this.lastTimeS = Number.NEGATIVE_INFINITY;
+	}
 }
 
 /** A quaternion, structurally — the renderer's `THREE.Quaternion` satisfies it,

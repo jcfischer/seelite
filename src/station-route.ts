@@ -7,6 +7,7 @@ import {
 	arrivalRelVelocity,
 	beginArrival,
 	beginLaunch,
+	slerpAttitude,
 } from "./arrival";
 import type { CarrierKey } from "./carrier-key";
 import {
@@ -25,7 +26,7 @@ import {
 	type CruiseGuidanceState,
 	stepCruiseGuidance,
 } from "./cruise-guidance";
-import { apertureFrame } from "./docking";
+import { apertureFrame, slotBasis } from "./docking";
 import type { SystemRecord } from "./galaxy";
 import type { HullEnvelope, HullId } from "./hull";
 import { HULL_SPECS } from "./hull";
@@ -57,7 +58,7 @@ import {
 	trafficScheduleAt,
 } from "./station-traffic";
 import { AU_KM } from "./units";
-import { add, length, scale, sub, type Vec3 } from "./vec3";
+import { add, dot, length, scale, sub, type Vec3 } from "./vec3";
 
 export const CANONICAL_ROUTE_DT_S = 0.1;
 
@@ -142,12 +143,14 @@ export interface TrafficCruiseState {
 	pos: Vec3;
 	vel: Vec3;
 	nose: Vec3;
+	up: Vec3;
 	chargeAu: number;
 	startedAtS: number;
 	atS: number;
 	workTicks: number;
 	initialPos?: Vec3;
 	initialNose?: Vec3;
+	initialUp?: Vec3;
 	initialChargeAu?: number;
 	completedAtS?: number;
 	guidance?: CruiseGuidanceState | null;
@@ -184,6 +187,13 @@ const normal = (v: Vec3, fallback: Vec3): Vec3 => {
 	const n = length(v);
 	return n > 0 ? scale(v, 1 / n) : fallback;
 };
+
+/** Carry roll through a small steering correction by projecting the previous
+ * up direction onto the new nose plane. Canonical guidance turns by only a few
+ * degrees per tick, so this is continuous and cannot hit the degenerate case
+ * that a fresh forward-to-nose quaternion does near its antipode. */
+const transportedUp = (up: Vec3, nose: Vec3): Vec3 =>
+	normal(sub(up, scale(nose, dot(up, nose))), up);
 
 const reachableChargeAu = (
 	from: Vec3,
@@ -273,6 +283,7 @@ const advanceTrafficCruiseStep = (
 	});
 	const completedAtS = state.atS + dt;
 	const stoppedBy = masses.find((mass) => mass.id === step.exitBodyId);
+	const up = transportedUp(state.up, guidance.nose);
 	return {
 		...state,
 		phase:
@@ -291,6 +302,7 @@ const advanceTrafficCruiseStep = (
 					: { x: 0, y: 0, z: 0 }
 				: scale(guidance.nose, step.speedKms),
 		nose: guidance.nose,
+		up,
 		guidance:
 			step.exit === "proximity"
 				? null
@@ -317,6 +329,7 @@ export function evaluateTrafficCruise(
 ): TrafficCruiseState {
 	const initialPos = state.initialPos ?? state.pos;
 	const initialNose = state.initialNose ?? state.nose;
+	const initialUp = state.initialUp ?? state.up;
 	const initialChargeAu = state.initialChargeAu ?? state.chargeAu;
 	const initialGuidance =
 		state.initialGuidance === undefined
@@ -350,18 +363,21 @@ export function evaluateTrafficCruise(
 				pos: { ...state.pos },
 				vel: { ...state.vel },
 				nose: { ...state.nose },
+				up: { ...state.up },
 			}
 		: {
 				phase: initialPhase,
 				pos: { ...initialPos },
 				vel: { x: 0, y: 0, z: 0 },
 				nose: { ...initialNose },
+				up: { ...initialUp },
 				chargeAu: initialChargeAu,
 				startedAtS: state.startedAtS,
 				atS: state.startedAtS,
 				workTicks: 0,
 				initialPos: { ...initialPos },
 				initialNose: { ...initialNose },
+				initialUp: { ...initialUp },
 				initialChargeAu,
 				guidance: initialGuidance,
 				initialGuidance,
@@ -805,6 +821,11 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		);
 
 	const releaseDirection = normal(crossingRel, crossingFrame.pose.axis);
+	const releaseAttitude = arrivalAttitude(
+		launch,
+		1,
+		crossingFrame.pose.phaseRad,
+	);
 	const releaseRangeKm = length(crossingRel);
 	const localDepartureKm = Math.max(
 		0,
@@ -865,6 +886,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 					departureRelVelocityAt(dt),
 				),
 				nose: releaseDirection,
+				up: releaseAttitude.up,
 			},
 			{
 				...departureCommit,
@@ -895,6 +917,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			departureRelVelocityAt(localDepartureS),
 		),
 		nose: releaseDirection,
+		up: releaseAttitude.up,
 		chargeAu: HULL_SPECS[actor.hullId].chargeAu,
 		startedAtS: spoolEndS,
 		atS: spoolEndS,
@@ -1058,9 +1081,10 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		// Arrive at the hold already aligned to the station. Previously the nose
 		// stayed on the interplanetary leg until this phase ended, then changed by
 		// as much as 93.7 degrees in one 10 Hz authority tick.
-		const approachNose = normal(
-			interpolate(drop.nose, hold.nose ?? drop.nose, u),
-			drop.nose,
+		const approachAttitude = slerpAttitude(
+			{ nose: drop.nose, up: drop.up },
+			{ nose: hold.nose ?? drop.nose, up: hold.up ?? drop.up },
+			u,
 		);
 		return withRoute(
 			actor,
@@ -1069,7 +1093,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				key: actor.key,
 				pos: interpolate(drop.pos, hold.pos, u),
 				vel: interpolate(drop.vel, hold.vel, u),
-				nose: approachNose,
+				...approachAttitude,
 			},
 			{
 				...departureCommit,
@@ -1220,6 +1244,18 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		const u = smooth(rawU);
 		const hold = holdAt(gameTime);
 		const holdRel = sub(hold.pos, body.pos);
+		const entryAttitude = {
+			nose: scale(current.frame.axis, -1),
+			up: slotBasis(current.frame).up,
+		};
+		const approachAttitude = slerpAttitude(
+			{
+				nose: hold.nose ?? entryAttitude.nose,
+				up: hold.up ?? entryAttitude.up,
+			},
+			entryAttitude,
+			u,
+		);
 		return withRoute(
 			actor,
 			"arriving",
@@ -1233,7 +1269,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 						(6 * rawU * (1 - rawU)) / terminalApproachS,
 					),
 				),
-				nose: scale(current.frame.axis, -1),
+				...approachAttitude,
 			},
 			{
 				...departureCommit,
@@ -1267,7 +1303,10 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		berth,
 		entryRel,
 		entryAtS,
-		{ nose: scale(entryFrame.frame.axis, -1), up: entryFrame.pose.reference },
+		{
+			nose: scale(entryFrame.frame.axis, -1),
+			up: slotBasis(entryFrame.frame).up,
+		},
 	);
 	const arrivalEndS = entryAtS + arrival.durationS;
 	if (gameTime < arrivalEndS) {

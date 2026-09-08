@@ -10,6 +10,9 @@
  */
 import { expect, test } from "bun:test";
 import {
+	MARKER_LABEL_CLEARANCE_PX,
+	MARKER_LABEL_REAPPEAR_S,
+	MarkerLabelDeclutter,
 	angleOffNose,
 	directionTo,
 	duration,
@@ -41,6 +44,49 @@ test("marker labels reserve space and refuse overlaps, including containment", (
 	expect(
 		claimMarkerLabel({ left: 110, top: 15, right: 140, bottom: 25 }, occupied),
 	).toBe(false);
+});
+
+test("context labels yield to the selected label and return only after a quiet gap", () => {
+	const selected = { left: 40, top: 40, right: 140, bottom: 58 };
+	const collision = { left: 80, top: 42, right: 180, bottom: 60 };
+	const separated = {
+		left: selected.right + MARKER_LABEL_CLEARANCE_PX + 1,
+		top: 42,
+		right: selected.right + MARKER_LABEL_CLEARANCE_PX + 101,
+		bottom: 60,
+	};
+	const labels = new MarkerLabelDeclutter();
+	labels.beginFrame(10);
+	expect(labels.claim("ship", collision, [selected], 10)).toBe(false);
+	labels.beginFrame(10 + MARKER_LABEL_REAPPEAR_S / 2);
+	expect(
+		labels.claim(
+			"ship",
+			separated,
+			[selected],
+			10 + MARKER_LABEL_REAPPEAR_S / 2,
+		),
+	).toBe(false);
+	labels.beginFrame(10 + MARKER_LABEL_REAPPEAR_S + 0.01);
+	expect(
+		labels.claim(
+			"ship",
+			separated,
+			[selected],
+			10 + MARKER_LABEL_REAPPEAR_S + 0.01,
+		),
+	).toBe(true);
+});
+
+test("rewinding the world clock clears marker-label cooldowns", () => {
+	const labels = new MarkerLabelDeclutter();
+	const selected = { left: 0, top: 0, right: 100, bottom: 20 };
+	const collision = { left: 10, top: 0, right: 110, bottom: 20 };
+	const clear = { left: 200, top: 0, right: 300, bottom: 20 };
+	labels.beginFrame(20);
+	expect(labels.claim("ship", collision, [selected], 20)).toBe(false);
+	labels.beginFrame(1);
+	expect(labels.claim("ship", clear, [selected], 1)).toBe(true);
 });
 
 /** A quaternion that rotates by `angle` about `axis` — the renderer builds

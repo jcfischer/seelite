@@ -159,6 +159,8 @@ import {
 	stepCharge,
 } from "./hyperspace";
 import {
+	type MarkerLabelBounds,
+	MarkerLabelDeclutter,
 	angleOffNose,
 	directionTo,
 	duration,
@@ -1252,6 +1254,8 @@ class Game {
 	private readonly trafficAttitude = new THREE.Matrix4();
 	private readonly trafficFromQuaternion = new THREE.Quaternion();
 	private readonly trafficToQuaternion = new THREE.Quaternion();
+	/** Selected-target-first admission and release hysteresis for glass labels. */
+	private readonly markerLabels = new MarkerLabelDeclutter();
 	private readonly trafficExactParked = new Map<
 		CarrierKey,
 		TrafficProjection
@@ -3398,6 +3402,7 @@ class Game {
 		this.trafficPreviousRoutes.clear();
 		this.trafficPreviousProjectionAtS = Number.NaN;
 		this.selectableCache = null;
+		this.markerLabels.reset();
 	}
 
 	private ensureTrafficActors() {
@@ -8474,9 +8479,30 @@ class Game {
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
 		ctx.font = "11px ui-monospace, Menlo, monospace";
+		this.markerLabels.beginFrame(this.world.gameTime);
+		const labelBounds = (
+			x: number,
+			y: number,
+			text: string,
+		): MarkerLabelBounds => ({
+			left: x - 3,
+			top: y - 12,
+			right: x + ctx.measureText(text).width + 3,
+			bottom: y + 5,
+		});
+		const occupiedLabels: MarkerLabelBounds[] = [];
 		const selectedBody = this.targetBody();
 		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
 		const selectedAt = selectedDir && place(selectedDir);
+		// Reserve the selected label before the stable station/ship walk below.
+		// Its label is never submitted to decluttering, so context can disappear
+		// behind it but it can never disappear behind context.
+		if (selectedBody && selectedAt?.on) {
+			const text = `${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}`;
+			occupiedLabels.push(
+				labelBounds(selectedAt.x + 20, selectedAt.y + 4, text),
+			);
+		}
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
@@ -8514,8 +8540,24 @@ class Game {
 				if (body.kind === "station" || body.kind === "ship") {
 					const km = length(sub(body.pos, camPos));
 					const text = `${body.name}  ${range(km)}`;
+					const x = at.x + r + 6;
+					const y = at.y + 4;
+					const bounds = labelBounds(x, y, text);
+					if (
+						bounds.left < 0 ||
+						bounds.right > w ||
+						bounds.top < 0 ||
+						bounds.bottom > h ||
+						!this.markerLabels.claim(
+							body.id,
+							bounds,
+							occupiedLabels,
+							this.world.gameTime,
+						)
+					)
+						continue;
 					ctx.fillStyle = "rgba(140, 190, 220, 0.55)";
-					ctx.fillText(text, at.x + r + 6, at.y + 4);
+					ctx.fillText(text, x, y);
 				}
 				continue;
 			}

@@ -153,6 +153,59 @@ describe("terminal-to-terminal route projection", () => {
 		expect(phases.at(-1)).toBe("docked-away");
 	});
 
+	test("every visible moving phase carries a continuous complete attitude", () => {
+		const moving = new Set([
+			"departing",
+			"local-departure",
+			"cruise",
+			"regenerating",
+			"local-approach",
+			"clearance-queued",
+			"lane-queued",
+			"arriving",
+		]);
+		let prior: ReturnType<typeof projectSystemTrafficActor> | null = null;
+		let worstStepDeg = 0;
+		for (
+			let tick = Math.ceil(departure * 10);
+			tick <= (departure + 900) * 10;
+			tick++
+		) {
+			const projection = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: tick / 10,
+			});
+			if (!moving.has(projection.phase)) {
+				prior = null;
+				if (projection.phase === "docked-away") break;
+				continue;
+			}
+			expect([
+				projection.phase,
+				Boolean(projection.nose),
+				Boolean(projection.up),
+			]).toEqual([projection.phase, true, true]);
+			const nose = projection.nose!;
+			const up = projection.up!;
+			const cosine = (a: typeof nose, b: typeof nose) =>
+				(a.x * b.x + a.y * b.y + a.z * b.z) /
+				(Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z));
+			expect(Math.abs(cosine(nose, up))).toBeLessThan(1e-8);
+			if (prior?.nose && prior.up) {
+				const noseStep = Math.acos(
+					Math.max(-1, Math.min(1, cosine(prior.nose, nose))),
+				);
+				const upStep = Math.acos(
+					Math.max(-1, Math.min(1, cosine(prior.up, up))),
+				);
+				worstStepDeg = Math.max(worstStepDeg, noseStep, upStep);
+			}
+			prior = projection;
+		}
+		expect(worstStepDeg * (180 / Math.PI)).toBeLessThan(6);
+	});
+
 	test("station-zone legs stay slow, clear the bubble, and visibly dwell", () => {
 		let maxZoneSpeedKms = 0;
 		let lastDepartureRangeKm = 0;
@@ -809,6 +862,7 @@ describe("canonical Traffic cruise", () => {
 		pos: { x: 0, y: 0, z: 0 },
 		vel: { x: 0, y: 0, z: 0 },
 		nose: { x: 1, y: 0, z: 0 },
+		up: { x: 0, y: 1, z: 0 },
 		chargeAu: 12,
 		startedAtS: 100,
 		atS: 100,

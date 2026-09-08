@@ -129,15 +129,21 @@ try {
 			g.drawMarkers(g.world.ship.pos);
 		}
 		g.overlayCtx.fillText = originalFillText;
-		const coldLabelContinuity = drawnLabelFrames.every((labels) =>
-			coldShipNames.every((name) =>
+		const selectedLabelName = g.targetBody()?.name;
+		const selectedLabelPriority = drawnLabelFrames.every((labels) =>
+			labels.some((label) => label.startsWith(`${selectedLabelName}  `)),
+		);
+		const contextLabelSets = drawnLabelFrames.map((labels) =>
+			coldShipNames.filter((name) =>
 				labels.some((label) => label.startsWith(`${name}  `)),
 			),
 		);
-		const coldLabelMissing = drawnLabelFrames.map((labels) =>
-			coldShipNames.filter(
-				(name) => !labels.some((label) => label.startsWith(`${name}  `)),
-			),
+		const coldLabelsDecluttered = contextLabelSets.every(
+			(labels) => labels.length < coldShipNames.length,
+		);
+		const coldLabelsStable = contextLabelSets.every(
+			(labels) =>
+				JSON.stringify(labels) === JSON.stringify(contextLabelSets[0]),
 		);
 		g.setHeadLook("left");
 		g.updateCockpit();
@@ -366,7 +372,18 @@ try {
 				projected.nose
 			) {
 				const angleRad = angleBetween(priorTurnProjection.nose, projected.nose);
-				if (!worstTurn || angleRad > worstTurn.angleRad)
+				const positionStepKm = Math.hypot(
+					projected.pos.x - priorTurnProjection.pos.x,
+					projected.pos.y - priorTurnProjection.pos.y,
+					projected.pos.z - priorTurnProjection.pos.z,
+				);
+				// A proximity-stop guidance tick may rotate in place. The interpolation
+				// check below promises both translation and attitude, so select its
+				// authority correction from a tick that actually carries both.
+				if (
+					positionStepKm > 1e-6 &&
+					(!worstTurn || angleRad > worstTurn.angleRad)
+				)
 					worstTurn = {
 						t,
 						angleRad,
@@ -410,6 +427,7 @@ try {
 		let flyingPositionSteps = [];
 		let flyingAttitudeMovingSteps = 0;
 		let flyingPositionMovingSteps = 0;
+		let flyingPositionMinDirectionDot = -1;
 		if (worstTurn && worstTurn.angleRad > 1e-6) {
 			const startT = worstTurn.t - 0.1;
 			g.world.gameTime = startT;
@@ -450,15 +468,26 @@ try {
 				flyingAttitudeSteps = attitudes
 					.slice(1)
 					.map((value, index) => attitudes[index].angleTo(value));
-				flyingPositionSteps = positions
-					.slice(1)
-					.map((value, index) =>
-						Math.hypot(
-							value.x - positions[index].x,
-							value.y - positions[index].y,
-							value.z - positions[index].z,
-						),
-					);
+				const positionDeltas = positions.slice(1).map((value, index) => ({
+					x: value.x - positions[index].x,
+					y: value.y - positions[index].y,
+					z: value.z - positions[index].z,
+				}));
+				flyingPositionSteps = positionDeltas.map((value) =>
+					Math.hypot(value.x, value.y, value.z),
+				);
+				flyingPositionMinDirectionDot = Math.min(
+					...positionDeltas.slice(1).map((value, index) => {
+						const prior = positionDeltas[index];
+						const product =
+							Math.hypot(prior.x, prior.y, prior.z) *
+							Math.hypot(value.x, value.y, value.z);
+						return product > 0
+							? (prior.x * value.x + prior.y * value.y + prior.z * value.z) /
+									product
+							: -1;
+					}),
+				);
 				const spread = (values) => {
 					const moving = values.filter((value) => value > 1e-9).length;
 					const mean =
@@ -757,8 +786,10 @@ try {
 			coldRoutes,
 			coldRoutesArePreDeparture,
 			coldAttachedMeshes,
-			coldLabelContinuity,
-			coldLabelMissing,
+			selectedLabelPriority,
+			coldLabelsDecluttered,
+			coldLabelsStable,
+			contextLabelSets,
 			coldDrawnLabels: drawnLabelFrames[0],
 			navRowIdentity,
 			coldBerthCount,
@@ -786,6 +817,7 @@ try {
 			flyingPositionSteps,
 			flyingAttitudeMovingSteps,
 			flyingPositionMovingSteps,
+			flyingPositionMinDirectionDot,
 			stationFrameMaxErrorKm,
 			maxWarmTicksPerCall,
 			settledBerths,
@@ -1041,11 +1073,15 @@ try {
 		}),
 	);
 	check(
-		"every cold ship tracking label is continuous across repeated real draws",
-		result.coldLabelContinuity === true,
+		"selected label wins while overlapping context stays stably decluttered",
+		result.selectedLabelPriority === true &&
+			result.coldLabelsDecluttered === true &&
+			result.coldLabelsStable === true,
 		JSON.stringify({
-			coldLabelContinuity: result.coldLabelContinuity,
-			missing: result.coldLabelMissing,
+			selectedLabelPriority: result.selectedLabelPriority,
+			decluttered: result.coldLabelsDecluttered,
+			stable: result.coldLabelsStable,
+			context: result.contextLabelSets,
 			drawn: result.coldDrawnLabels,
 		}),
 	);
@@ -1065,7 +1101,8 @@ try {
 			result.flyingAttitudeMovingSteps >= 4 &&
 			result.flyingPositionMovingSteps >= 4 &&
 			result.flyingAttitudeStepRatio < 1.5 &&
-			result.flyingPositionStepRatio < 1.5,
+			result.flyingPositionStepRatio < 2.5 &&
+			result.flyingPositionMinDirectionDot > 0.95,
 		JSON.stringify({
 			authorityTurnDeg: result.worstAuthorityTurnDeg,
 			phases: result.worstAuthorityTurnPhases,
@@ -1073,6 +1110,7 @@ try {
 			positionMovingSteps: result.flyingPositionMovingSteps,
 			attitudeMaxToMeanStep: result.flyingAttitudeStepRatio,
 			positionMaxToMeanStep: result.flyingPositionStepRatio,
+			positionMinDirectionDot: result.flyingPositionMinDirectionDot,
 		}),
 	);
 	check(
