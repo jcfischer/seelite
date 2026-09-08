@@ -5847,6 +5847,10 @@ class Game {
 			// a jumped-to system would hand the start system that system's
 			// cached interior and its live docking state under the same id.
 			this.clearSystemScopedState();
+			// `render` can follow this reset before another simulation step. Replace
+			// the departed system's traffic now so that frame cannot draw stale routes;
+			// this seeds only parked traffic and leaves full authority to normal warm-up.
+			this.ensureTrafficActors();
 		}
 		this.clearFlightSession();
 
@@ -6123,6 +6127,10 @@ class Game {
 		// refilled — §7 refills it on docking, and a jump is not a dock.
 		this.clearFlightSession();
 		this.clearSystemScopedState();
+		// A jump is taken at the end of a step and `render` follows immediately.
+		// Do the bounded system hand-off now: clear the departed routes and seed the
+		// destination's parked ships without running full traffic projection here.
+		this.ensureTrafficActors();
 		this.updateLocalFrameBody();
 		this.selectBootTarget();
 		this.faceTheStar();

@@ -115,6 +115,20 @@ describe("the jump itself", () => {
 		inOrder(perform, "jumpWorldTo(this.world, to)", "this.rebuildSystem()");
 	});
 
+	test("the destination traffic replaces departed routes before the jump returns", () => {
+		// `render` follows `step` in the same animation frame. Traffic authority is
+		// normally advanced at the start of a step, so waiting for the next one
+		// leaves one render able to consume the departed system's routes and meshes.
+		// `ensureTrafficActors` is the bounded hand-off: it clears those handles and
+		// seeds only parked destination traffic; full projection still warms later.
+		inOrder(
+			perform,
+			"this.clearSystemScopedState()",
+			"this.ensureTrafficActors()",
+		);
+		inOrder(perform, "this.ensureTrafficActors()", "this.selectBootTarget()");
+	});
+
 	test("the tank is spent, and the drive charge is not refilled", () => {
 		expect(perform).toContain("fuelLy: decision.plan.fuelLeftLy");
 		// §7 refills the cruise reserve on docking. A jump is not a dock, and a
@@ -161,6 +175,11 @@ describe("the jump itself", () => {
 			"resetWorldToStart(this.world)",
 		);
 		inOrder(reset, "resetWorldToStart(this.world)", "this.rebuildSystem()");
+		inOrder(
+			reset,
+			"this.clearSystemScopedState()",
+			"this.ensureTrafficActors()",
+		);
 	});
 
 	test("the jump prompt is not gated behind the target range", () => {

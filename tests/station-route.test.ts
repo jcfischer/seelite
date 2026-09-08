@@ -191,6 +191,44 @@ describe("terminal-to-terminal route projection", () => {
 		});
 	});
 
+	test("a completed player clearance still delays a direct historical replay", () => {
+		let queryAt = departure;
+		let baseline = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+		});
+		while (baseline.phase !== "docked-away" && queryAt < departure + 900) {
+			queryAt += 0.5;
+			baseline = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: queryAt,
+			});
+		}
+		expect(baseline.phase).toBe("docked-away");
+		const delayed = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+			playerTimeline: [
+				{
+					stationId: required(
+						baseline.destinationStationId ?? undefined,
+						"completed-clearance destination",
+					),
+					kind: "clearance",
+					fromS: departure,
+					toS: queryAt - 1,
+					participant: { kind: "player" },
+					hull: HULL_SPECS.explorer.env,
+				},
+			],
+		});
+		expect(delayed.phase).toBe("arriving");
+		expect(delayed.key).toBe(actor.key);
+	});
+
 	test("an older incompatible player request does not block a fitting Carrier", () => {
 		let arrivalTime = departure;
 		let baseline = projectSystemTrafficActor({

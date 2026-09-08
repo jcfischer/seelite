@@ -1005,29 +1005,33 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		readyAt: holdReachedS,
 		hull: HULL_SPECS[actor.hullId].env,
 	};
-	const clearanceAtS = holdReachedS;
+	const compatibleClearanceTimeline = timeline.filter((event) => {
+		if (event.kind !== "clearance") return true;
+		const hull = event.hull;
+		return Boolean(
+			hull &&
+				destinationInterior.berths.some((berth) => berthFits(berth, hull)),
+		);
+	});
+	const clearanceAtS = blockedUntil(
+		compatibleClearanceTimeline,
+		selected.id,
+		"clearance",
+		holdReachedS,
+	);
 	const occupied =
 		input.occupiedByStation?.get(selected.id) ?? new Set<string>();
-	const playerClearanceRequests = timeline
-		.filter(
-			(event) =>
-				event.stationId === selected.id &&
-				event.kind === "clearance" &&
-				event.hull &&
-				event.fromS <= gameTime &&
-				event.toS > gameTime,
-		)
-		.map((event) => {
-			if (!event.hull)
-				throw new Error("clearance arbitration event has no hull envelope");
-			return {
-				participant: event.participant,
-				readyAt: event.fromS,
-				hull: event.hull,
-			};
+	if (gameTime < clearanceAtS || !Number.isFinite(clearanceAtS))
+		return withRoute(actor, "clearance-queued", holdAt(gameTime), {
+			destinationStationId: selected.id,
+			chargeAu: drop.chargeAu,
+			queueRequest: request,
+			pendingIntent,
+			originBerthOccupied: false,
+			workTicks: drop.workTicks,
 		});
 	const promotion = clearancePromotion(
-		[...playerClearanceRequests, request],
+		[request],
 		destinationInterior,
 		occupied,
 		clearanceAtS,
