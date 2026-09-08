@@ -401,9 +401,14 @@ export interface TrafficArbitrationEvent {
 	toS: number;
 	participant: StationParticipant;
 	movement?: "arrival" | "launch";
+	/** A movement already in the shared lane is non-preemptive. */
+	committed?: boolean;
 	/** Required for a shared Clearance queue contender. */
 	hull?: HullEnvelope;
 }
+
+/** Session cache for berth decisions already made by one physical visit. */
+export type TrafficBerthCache = Map<string, string>;
 
 export interface SystemTrafficProjection extends TrafficProjection {
 	phase: TrafficRoutePhase;
@@ -412,6 +417,8 @@ export interface SystemTrafficProjection extends TrafficProjection {
 	pendingIntent: { desired: "parked" | "away"; readyAt: number } | null;
 	queueRequest: ClearanceQueueRequest | null;
 	laneRequest: LaneRequest | null;
+	/** Actual start of an active non-preemptive lane traversal. */
+	laneStartedAtS: number | null;
 	originBerthOccupied: boolean;
 	workTicks: number;
 	berthId: string | null;
@@ -487,6 +494,7 @@ const withRoute = (
 	pendingIntent: null,
 	queueRequest: null,
 	laneRequest: null,
+	laneStartedAtS: null,
 	originBerthOccupied: phase === "parked-home" || phase === "departing",
 	workTicks: 0,
 	berthId: null,
@@ -563,7 +571,14 @@ const blockedUntil = (
 			event.fromS <= end &&
 			event.toS > end
 		) {
-			if (kind === "lane" && request && event.movement) {
+			if (
+				kind === "lane" &&
+				request &&
+				event.participant.kind === "carrier" &&
+				event.participant.key === request.key
+			)
+				continue;
+			if (kind === "lane" && request && event.movement && !event.committed) {
 				const winner = laneWinner([
 					{
 						participant: { kind: "carrier", key: request.key },
@@ -594,6 +609,9 @@ interface TrafficLegInput {
 	timeline: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
+	berthCache?: TrafficBerthCache;
+	berthCacheTouched?: Set<string>;
+	recordBerthAssignments?: boolean;
 	projectionSystem?: System;
 	originStationId: string;
 	originBerthId: string;
@@ -654,6 +672,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			{
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
+				laneStartedAtS: departureAtS,
 				laneRequest: {
 					participant: { kind: "carrier", key: actor.key },
 					readyAt: readyAtS,
@@ -1030,12 +1049,35 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			originBerthOccupied: false,
 			workTicks: drop.workTicks,
 		});
-	const promotion = clearancePromotion(
-		[request],
-		destinationInterior,
-		occupied,
-		clearanceAtS,
-	);
+	const berthAssignmentKey = [
+		record.index,
+		actor.key,
+		originStationId,
+		selected.id,
+		awayOrdinal,
+		finalPhase,
+		readyAtS,
+	].join("|");
+	input.berthCacheTouched?.add(berthAssignmentKey);
+	const assignedBerthId = input.berthCache?.get(berthAssignmentKey);
+	const assignedBerth = assignedBerthId
+		? destinationInterior.berths.find(
+				(candidate) =>
+					candidate.id === assignedBerthId &&
+					berthFits(candidate, HULL_SPECS[actor.hullId].env),
+			)
+		: null;
+	const promotion = assignedBerth
+		? {
+				participant: { kind: "carrier" as const, key: actor.key },
+				berthId: assignedBerth.id,
+			}
+		: clearancePromotion(
+				[request],
+				destinationInterior,
+				occupied,
+				clearanceAtS,
+			);
 	const berth = promotion
 		? destinationInterior.berths.find(
 				(candidate) => candidate.id === promotion.berthId,
@@ -1054,6 +1096,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			originBerthOccupied: false,
 			workTicks: drop.workTicks,
 		});
+	if (!assignedBerth && berth && input.recordBerthAssignments !== false)
+		input.berthCache?.set(berthAssignmentKey, berth.id);
 	const laneAtS = blockedUntil(timeline, selected.id, "lane", clearanceAtS, {
 		key: actor.key,
 		movement: "arrival",
@@ -1103,6 +1147,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			{
 				destinationStationId: selected.id,
 				terminalStationId: selected.id,
+				laneStartedAtS: laneAtS,
 				chargeAu: drop.chargeAu,
 				pendingIntent,
 				queueRequest: request,
@@ -1155,6 +1200,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			{
 				destinationStationId: selected.id,
 				terminalStationId: selected.id,
+				laneStartedAtS: laneAtS,
 				chargeAu: drop.chargeAu,
 				pendingIntent,
 				queueRequest: request,
@@ -1206,6 +1252,9 @@ interface TrafficVisitInput {
 	playerTimeline?: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
+	berthCache?: TrafficBerthCache;
+	berthCacheTouched?: Set<string>;
+	recordBerthAssignments?: boolean;
 	projectionSystem?: System;
 	departureAtS: number;
 	launchReadyAtS: number;
@@ -1252,6 +1301,9 @@ function projectTrafficVisit(
 		timeline,
 		occupiedByStation: input.occupiedByStation,
 		cruiseCache: input.cruiseCache,
+		berthCache: input.berthCache,
+		berthCacheTouched: input.berthCacheTouched,
+		recordBerthAssignments: input.recordBerthAssignments,
 		projectionSystem: input.projectionSystem,
 		originStationId: actor.homeStationId,
 		originBerthId: homeBerth.id,
@@ -1304,6 +1356,9 @@ function projectTrafficVisit(
 		timeline,
 		occupiedByStation: input.occupiedByStation,
 		cruiseCache: input.cruiseCache,
+		berthCache: input.berthCache,
+		berthCacheTouched: input.berthCacheTouched,
+		recordBerthAssignments: input.recordBerthAssignments,
 		projectionSystem: input.projectionSystem,
 		originStationId: outbound.destinationStationId,
 		originBerthId: outbound.berthId,
@@ -1330,6 +1385,10 @@ export function projectSystemTrafficActor(input: {
 	playerTimeline?: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
 	cruiseCache?: TrafficCruiseCache;
+	berthCache?: TrafficBerthCache;
+	berthCacheTouched?: Set<string>;
+	/** False for an arbitration preview which must not commit a berth. */
+	recordBerthAssignments?: boolean;
 	projectionSystem?: System;
 	/** Fixed canonical replay budget used only by incremental cache warm-up. */
 	cruiseTickBudget?: number;

@@ -173,17 +173,21 @@ try {
 					projection.phase === "docked-away"),
 		);
 		let trafficAnchorDriftKm = Number.POSITIVE_INFINITY;
+		let parkedAttitudeStepRatio = Number.POSITIVE_INFINITY;
 		if (warmSettled && coldStationBody) {
 			g.updateTrafficPresentation(g.world.ship.pos);
 			const contact = g.trafficContacts.get(warmSettled.key);
-			if (contact) {
+			const mesh = g.trafficMeshes.get(warmSettled.key);
+			if (contact && mesh) {
 				const initial = {
 					x: contact.pos.x - coldStationBody.pos.x,
 					y: contact.pos.y - coldStationBody.pos.y,
 					z: contact.pos.z - coldStationBody.pos.z,
 				};
 				trafficAnchorDriftKm = 0;
-				for (let frame = 1; frame <= 5; frame++) {
+				const attitudeSteps = [];
+				let priorAttitude = mesh.quaternion.clone();
+				for (let frame = 1; frame <= 12; frame++) {
 					g.world.gameTime = 4 + frame / 60;
 					sim.advanceSystem(g.world.system, g.world.gameTime);
 					g.updateTrafficAuthority();
@@ -196,7 +200,16 @@ try {
 							contact.pos.z - coldStationBody.pos.z - initial.z,
 						),
 					);
+					attitudeSteps.push(priorAttitude.angleTo(mesh.quaternion));
+					priorAttitude = mesh.quaternion.clone();
 				}
+				const movingSteps = attitudeSteps.filter((step) => step > 1e-9);
+				parkedAttitudeStepRatio =
+					movingSteps.length > 0
+						? Math.max(...movingSteps) /
+							(movingSteps.reduce((sum, step) => sum + step, 0) /
+								movingSteps.length)
+						: 1;
 			}
 			g.world.gameTime = 4;
 			sim.advanceSystem(g.world.system, 4);
@@ -227,8 +240,14 @@ try {
 		const duplicateSettledBerths = settledBerths.filter(
 			(key, index) => settledBerths.indexOf(key) !== index,
 		);
+		// The browser lazily optimises the first full canonical replay after the
+		// bounded cold warm-up. Prime that path before measuring the steady 10 Hz
+		// authority cost this row names.
+		g.world.gameTime = 4.1;
+		sim.advanceSystem(g.world.system, g.world.gameTime);
+		g.updateTrafficAuthority();
 		const authorityTickMs = [];
-		for (let i = 1; i <= 12; i++) {
+		for (let i = 2; i <= 13; i++) {
 			g.world.gameTime = 4 + i * 0.1;
 			sim.advanceSystem(g.world.system, g.world.gameTime);
 			const started = performance.now();
@@ -265,6 +284,112 @@ try {
 			if (projected.phase === "docked-away") break;
 		}
 
+		const angleBetween = (a, b) =>
+			Math.acos(
+				Math.max(
+					-1,
+					Math.min(
+						1,
+						(a.x * b.x + a.y * b.y + a.z * b.z) /
+							(Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z)),
+					),
+				),
+			);
+		let worstTurn = null;
+		const movingPhase = new Set([
+			"departing",
+			"local-departure",
+			"cruise",
+			"local-approach",
+			"arriving",
+		]);
+		const firstAuthorityTick = Math.ceil(departure * 10);
+		let priorTurnProjection = route.projectSystemTrafficActor({
+			record: g.world.system.record,
+			actor,
+			gameTime: firstAuthorityTick / 10,
+		});
+		for (
+			let tick = firstAuthorityTick + 1;
+			tick <= firstAuthorityTick + 9_000;
+			tick++
+		) {
+			const t = tick / 10;
+			const projected = route.projectSystemTrafficActor({
+				record: g.world.system.record,
+				actor,
+				gameTime: t,
+			});
+			if (
+				movingPhase.has(priorTurnProjection.phase) &&
+				movingPhase.has(projected.phase) &&
+				priorTurnProjection.nose &&
+				projected.nose
+			) {
+				const angleRad = angleBetween(priorTurnProjection.nose, projected.nose);
+				if (!worstTurn || angleRad > worstTurn.angleRad)
+					worstTurn = { t, angleRad };
+			}
+			priorTurnProjection = projected;
+			if (projected.phase === "docked-away") break;
+		}
+		let flyingAttitudeStepRatio = Number.POSITIVE_INFINITY;
+		let flyingPositionStepRatio = Number.POSITIVE_INFINITY;
+		let flyingAttitudeSteps = [];
+		let flyingPositionSteps = [];
+		if (worstTurn && worstTurn.angleRad > 1e-6) {
+			const startT = worstTurn.t - 0.1;
+			g.world.gameTime = startT;
+			sim.advanceSystem(g.world.system, startT);
+			const startProjection = route.projectSystemTrafficActor({
+				record: g.world.system.record,
+				actor,
+				gameTime: startT,
+			});
+			g.world.ship.pos = {
+				x: startProjection.pos.x + 100,
+				y: startProjection.pos.y,
+				z: startProjection.pos.z,
+			};
+			refreshTraffic();
+			g.updateTrafficPresentation(g.world.ship.pos);
+			const contact = g.trafficContacts.get(actor.key);
+			const mesh = g.trafficMeshes.get(actor.key);
+			if (contact && mesh) {
+				const positions = [{ ...contact.pos }];
+				const attitudes = [mesh.quaternion.clone()];
+				for (let frame = 0; frame <= 6; frame++) {
+					g.world.gameTime = worstTurn.t + frame / 60;
+					sim.advanceSystem(g.world.system, g.world.gameTime);
+					g.updateTrafficAuthority();
+					g.updateTrafficPresentation(g.world.ship.pos);
+					positions.push({ ...contact.pos });
+					attitudes.push(mesh.quaternion.clone());
+				}
+				flyingAttitudeSteps = attitudes
+					.slice(1)
+					.map((value, index) => attitudes[index].angleTo(value));
+				flyingPositionSteps = positions
+					.slice(1)
+					.map((value, index) =>
+						Math.hypot(
+							value.x - positions[index].x,
+							value.y - positions[index].y,
+							value.z - positions[index].z,
+						),
+					);
+				const ratio = (values) => {
+					const moving = values.filter((value) => value > 1e-9);
+					return moving.length > 0
+						? Math.max(...moving) /
+								(moving.reduce((sum, value) => sum + value, 0) / moving.length)
+						: 1;
+				};
+				flyingAttitudeStepRatio = ratio(flyingAttitudeSteps);
+				flyingPositionStepRatio = ratio(flyingPositionSteps);
+			}
+		}
+
 		const present = (t, distanceKm, events = [], resetVisibility = false) => {
 			g.trafficPlayerTimeline.length = 0;
 			g.trafficPlayerTimeline.push(...events);
@@ -282,20 +407,19 @@ try {
 				z: expected.pos.z,
 			};
 			refreshTraffic();
-			const projected = g.trafficRoutes.find((item) => item.key === actor.key);
-			if (projected) {
-				const sampleS = Number.isFinite(g.trafficProjectionAtS)
-					? Math.max(0, t - g.trafficProjectionAtS)
-					: 0;
-				g.world.ship.pos = {
-					x: projected.pos.x + projected.vel.x * sampleS + distanceKm,
-					y: projected.pos.y + projected.vel.y * sampleS,
-					z: projected.pos.z + projected.vel.z * sampleS,
-				};
+			g.updateTrafficPresentation(g.world.ship.pos);
+			const anchored = g.trafficContacts.get(actor.key);
+			if (anchored) {
+				const anchor = { ...anchored.pos };
 				if (resetVisibility) {
 					g.clearTrafficPresentation();
 					g.trafficSystemIndex = g.world.system.record.index;
 				}
+				g.world.ship.pos = {
+					x: anchor.x + distanceKm,
+					y: anchor.y,
+					z: anchor.z,
+				};
 				refreshTraffic();
 			}
 			g.render(0);
@@ -444,10 +568,19 @@ try {
 			warmPlayerReserved,
 			warmTrafficConflict,
 			trafficAnchorDriftKm,
+			parkedAttitudeStepRatio,
+			worstAuthorityTurnDeg: worstTurn
+				? (worstTurn.angleRad * 180) / Math.PI
+				: null,
+			flyingAttitudeStepRatio,
+			flyingPositionStepRatio,
+			flyingAttitudeSteps,
+			flyingPositionSteps,
 			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
 			authorityP95Ms,
+			authorityTickMs,
 			actor: {
 				key: actor.key,
 				name: actor.callsign,
@@ -691,6 +824,22 @@ try {
 		"settled Traffic stays attached between 10 Hz authority ticks",
 		result.trafficAnchorDriftKm < 0.01,
 		JSON.stringify({ driftKm: result.trafficAnchorDriftKm }),
+	);
+	check(
+		"parked Traffic follows berth rotation without authority-tick attitude snaps",
+		result.parkedAttitudeStepRatio < 1.2,
+		JSON.stringify({ maxToMeanStep: result.parkedAttitudeStepRatio }),
+	);
+	check(
+		"flying Traffic spreads authority course corrections across render frames",
+		(result.worstAuthorityTurnDeg ?? 0) > 0.1 &&
+			result.flyingAttitudeStepRatio < 1.5 &&
+			result.flyingPositionStepRatio < 1.5,
+		JSON.stringify({
+			authorityTurnDeg: result.worstAuthorityTurnDeg,
+			attitudeMaxToMeanStep: result.flyingAttitudeStepRatio,
+			positionMaxToMeanStep: result.flyingPositionStepRatio,
+		}),
 	);
 	check(
 		"Navigation updates a changing range without replacing or defocusing its row",

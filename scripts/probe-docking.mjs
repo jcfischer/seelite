@@ -421,9 +421,12 @@ const undock = good.docked
 				g.step(dt);
 				g.render(dt);
 				const flying = g.dockingSnapshot(id);
+				const arrivalQueued =
+					g.playerLaneRequests.get(id)?.movement === "arrival";
 				return {
 					engagedAfterStep: flying?.computerEngaged ?? false,
 					throttleAfterStep: flying?.throttle ?? 0,
+					arrivalQueued,
 					wasDocked,
 					launched,
 					skipped,
@@ -465,9 +468,10 @@ if (undock) {
 		// `stepDockingComputer`'s `if (… || this.dockedAt) return false` — which
 		// is the latch — so the assertion is that the autopilot is *still*
 		// engaged and commanding a throttle a step later.
-		"and the docking computer flies again after a step",
-		undock.engagedAfterStep && undock.throttleAfterStep > 0,
-		`engaged=${undock.engagedAfterStep} throttle=${undock.throttleAfterStep}`,
+		"and the docking computer controls the next approach after a step",
+		undock.engagedAfterStep &&
+			(undock.throttleAfterStep > 0 || undock.arrivalQueued),
+		`engaged=${undock.engagedAfterStep} throttle=${undock.throttleAfterStep} arrivalQueued=${undock.arrivalQueued}`,
 	);
 	check(
 		"docking left no throttle running",

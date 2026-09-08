@@ -320,6 +320,92 @@ describe("terminal-to-terminal route projection", () => {
 		expect(laterPlayer.phase).toBe("arriving");
 	});
 
+	test("a committed lane traversal cannot retroactively block its own Carrier", () => {
+		let arrivalTime = departure;
+		let baseline = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: arrivalTime,
+		});
+		while (baseline.phase !== "arriving" && arrivalTime < departure + 900) {
+			arrivalTime += 0.5;
+			baseline = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: arrivalTime,
+			});
+		}
+		const stationId = required(
+			baseline.terminalStationId ?? undefined,
+			"active arrival station",
+		);
+		const laneStartedAtS = required(
+			baseline.laneStartedAtS ?? undefined,
+			"active arrival start",
+		);
+		const replayed = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: arrivalTime,
+			playerTimeline: [
+				{
+					stationId,
+					kind: "lane",
+					fromS: laneStartedAtS,
+					toS: arrivalTime + 1,
+					participant: { kind: "carrier", key: actor.key },
+					movement: "arrival",
+					committed: true,
+				},
+			],
+		});
+		expect(replayed.phase).toBe("arriving");
+		expect(replayed.laneStartedAtS).toBe(laneStartedAtS);
+	});
+
+	test("a physical visit keeps its granted berth when current occupancy is replayed", () => {
+		let queryAt = departure;
+		let baseline = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+		});
+		while (baseline.phase !== "docked-away" && queryAt < departure + 900) {
+			queryAt += 0.5;
+			baseline = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: queryAt,
+			});
+		}
+		const berthCache = new Map<string, string>();
+		const committed = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt,
+			berthCache,
+		});
+		const stationId = required(
+			committed.terminalStationId ?? undefined,
+			"settled visit station",
+		);
+		const berthId = required(
+			committed.berthId ?? undefined,
+			"settled visit berth",
+		);
+		expect(berthCache.size).toBeGreaterThan(0);
+		const replayed = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: queryAt + 0.1,
+			occupiedByStation: new Map([[stationId, new Set([berthId])]]),
+			berthCache,
+		});
+		expect(replayed.phase).toBe("docked-away");
+		expect(replayed.terminalStationId).toBe(stationId);
+		expect(replayed.berthId).toBe(berthId);
+	});
+
 	test("a parked schedule boundary remains pending until the outbound leg docks", () => {
 		const lateRecord = generateGalaxy(0, 0).systems[1];
 		const lateHome = generateContents(lateRecord).stations[0];
