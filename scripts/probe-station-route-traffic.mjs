@@ -247,35 +247,11 @@ try {
 		const duplicateSettledBerths = settledBerths.filter(
 			(key, index) => settledBerths.indexOf(key) !== index,
 		);
-		// The browser lazily optimises the first full canonical replay after the
-		// bounded cold warm-up. Prime that path before measuring the steady 10 Hz
-		// authority cost this row names.
-		g.world.gameTime = 4.1;
-		sim.advanceSystem(g.world.system, g.world.gameTime);
-		g.updateTrafficAuthority();
-		const authorityTickMs = [];
-		for (let i = 2; i <= 13; i++) {
-			g.world.gameTime = 4 + i * 0.1;
-			sim.advanceSystem(g.world.system, g.world.gameTime);
-			const started = performance.now();
-			g.updateTrafficAuthority();
-			authorityTickMs.push(performance.now() - started);
-		}
-		const sortedAuthorityTickMs = [...authorityTickMs].sort((a, b) => a - b);
-		const authorityP95Ms =
-			sortedAuthorityTickMs[Math.ceil(sortedAuthorityTickMs.length * 0.95) - 1];
 		const actor = g.trafficActors.find(
 			(candidate) =>
 				candidate.homeStationId === "station-trade" && candidate.ordinal === 0,
 		);
 		if (!actor) throw new Error("seed 54 produced no routable Traffic actor");
-		// This probe watches one route through the real Game integration. Keeping the
-		// cache focused avoids unrelated generated actors deciding which frame the
-		// named actor enters a shared queue; player contention is injected below.
-		g.trafficActors = [actor];
-		g.clearTrafficPresentation();
-		g.trafficSystemIndex = g.world.system.record.index;
-
 		const departure = actor.schedule.departureAtS;
 		const samples = new Map();
 		let destination = null;
@@ -290,6 +266,41 @@ try {
 				samples.set(projected.phase, { t, projected });
 			if (projected.phase === "docked-away") break;
 		}
+		// Prime and measure a short 10 Hz window inside every physical phase while
+		// all 18 actors and their real arbitration remain active. This includes the
+		// cruise replay and terminal contention work that parked startup ticks omit.
+		const authorityTickSamples = [];
+		for (const [phase, sample] of [...samples].sort(
+			(a, b) => a[1].t - b[1].t,
+		)) {
+			const firstTick = Math.ceil(sample.t * 10 - 1e-8);
+			g.world.gameTime = (firstTick - 1) / 10;
+			sim.advanceSystem(g.world.system, g.world.gameTime);
+			g.updateTrafficAuthority();
+			for (let offset = 0; offset < 6; offset++) {
+				g.world.gameTime = (firstTick + offset) / 10;
+				sim.advanceSystem(g.world.system, g.world.gameTime);
+				const started = performance.now();
+				g.updateTrafficAuthority();
+				authorityTickSamples.push({
+					phase,
+					ms: performance.now() - started,
+				});
+			}
+		}
+		const authorityTickMs = authorityTickSamples.map((sample) => sample.ms);
+		const sortedAuthorityTickMs = [...authorityTickMs].sort((a, b) => a - b);
+		const authorityP95Ms =
+			sortedAuthorityTickMs[Math.ceil(sortedAuthorityTickMs.length * 0.95) - 1];
+		const authorityMaxMs = Math.max(...authorityTickMs);
+
+		// The remaining presentation checks watch one route through the real Game
+		// integration. Keeping the cache focused avoids unrelated generated actors
+		// deciding which frame the named actor enters a shared queue; player
+		// contention is injected below.
+		g.trafficActors = [actor];
+		g.clearTrafficPresentation();
+		g.trafficSystemIndex = g.world.system.record.index;
 
 		const angleBetween = (a, b) =>
 			Math.acos(
@@ -344,6 +355,8 @@ try {
 		let flyingPositionStepRatio = Number.POSITIVE_INFINITY;
 		let flyingAttitudeSteps = [];
 		let flyingPositionSteps = [];
+		let flyingAttitudeMovingSteps = 0;
+		let flyingPositionMovingSteps = 0;
 		if (worstTurn && worstTurn.angleRad > 1e-6) {
 			const startT = worstTurn.t - 0.1;
 			g.world.gameTime = startT;
@@ -385,15 +398,22 @@ try {
 							value.z - positions[index].z,
 						),
 					);
-				const ratio = (values) => {
-					const moving = values.filter((value) => value > 1e-9);
-					return moving.length > 0
-						? Math.max(...moving) /
-								(moving.reduce((sum, value) => sum + value, 0) / moving.length)
-						: 1;
+				const spread = (values) => {
+					const moving = values.filter((value) => value > 1e-9).length;
+					const mean =
+						values.reduce((sum, value) => sum + value, 0) / values.length;
+					return {
+						moving,
+						ratio:
+							mean > 0 ? Math.max(...values) / mean : Number.POSITIVE_INFINITY,
+					};
 				};
-				flyingAttitudeStepRatio = ratio(flyingAttitudeSteps);
-				flyingPositionStepRatio = ratio(flyingPositionSteps);
+				const attitudeSpread = spread(flyingAttitudeSteps);
+				const positionSpread = spread(flyingPositionSteps);
+				flyingAttitudeStepRatio = attitudeSpread.ratio;
+				flyingPositionStepRatio = positionSpread.ratio;
+				flyingAttitudeMovingSteps = attitudeSpread.moving;
+				flyingPositionMovingSteps = positionSpread.moving;
 			}
 		}
 
@@ -584,11 +604,15 @@ try {
 			flyingPositionStepRatio,
 			flyingAttitudeSteps,
 			flyingPositionSteps,
+			flyingAttitudeMovingSteps,
+			flyingPositionMovingSteps,
 			maxWarmTicksPerCall,
 			settledBerths,
 			duplicateSettledBerths,
 			authorityP95Ms,
+			authorityMaxMs,
 			authorityTickMs,
+			authorityTickSamples,
 			actor: {
 				key: actor.key,
 				name: actor.callsign,
@@ -857,10 +881,14 @@ try {
 	check(
 		"flying Traffic spreads authority course corrections across render frames",
 		(result.worstAuthorityTurnDeg ?? 0) > 0.1 &&
+			result.flyingAttitudeMovingSteps >= 4 &&
+			result.flyingPositionMovingSteps >= 4 &&
 			result.flyingAttitudeStepRatio < 1.5 &&
 			result.flyingPositionStepRatio < 1.5,
 		JSON.stringify({
 			authorityTurnDeg: result.worstAuthorityTurnDeg,
+			attitudeMovingSteps: result.flyingAttitudeMovingSteps,
+			positionMovingSteps: result.flyingPositionMovingSteps,
 			attitudeMaxToMeanStep: result.flyingAttitudeStepRatio,
 			positionMaxToMeanStep: result.flyingPositionStepRatio,
 		}),
@@ -874,9 +902,15 @@ try {
 		JSON.stringify(result.navRowIdentity),
 	);
 	check(
-		"warm 10 Hz Traffic authority stays inside one 60 Hz frame",
+		"representative warm 10 Hz Traffic authority stays inside one 60 Hz frame at p95",
 		result.authorityP95Ms < 1000 / 60,
-		JSON.stringify({ p95Ms: result.authorityP95Ms }),
+		JSON.stringify({
+			p95Ms: result.authorityP95Ms,
+			maxMs: result.authorityMaxMs,
+			phases: Object.fromEntries(
+				result.authorityTickSamples.map((sample) => [sample.phase, true]),
+			),
+		}),
 	);
 	check(
 		"an incompatible player request does not block a fitting Traffic berth",

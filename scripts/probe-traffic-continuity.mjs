@@ -50,12 +50,18 @@ try {
 						(Math.hypot(prior.vel.x, prior.vel.y, prior.vel.z) +
 							Math.hypot(route.vel.x, route.vel.y, route.vel.z)) *
 						0.05;
-					if (deltaKm > Math.max(10, expectedKm * 4))
+					// Position samples are 0.1 s apart. Fifty metres covers integration
+					// and moving-frame curvature at phase boundaries; 2x the trapezoid
+					// distance covers guided acceleration without allowing low-speed
+					// kilometre teleports.
+					const allowedKm = Math.max(0.05, expectedKm * 2);
+					if (deltaKm > allowedKm)
 						jumps.push({
 							t,
 							key: route.key,
 							deltaKm,
 							expectedKm,
+							allowedKm,
 							from: prior.phase,
 							to: route.phase,
 							fromBerth: prior.berthId,
