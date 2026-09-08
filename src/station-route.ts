@@ -47,16 +47,17 @@ import {
 	laneWinner,
 	parkedTrafficProjection,
 	type StationParticipant,
-	TRAFFIC_SPOOL_S,
+	TRAFFIC_MIN_DOCKED_S,
 	TRAFFIC_STATION_EXCLUSION_KM,
-	TRAFFIC_TERMINAL_APPROACH_S,
+	TRAFFIC_STATION_LOCAL_SPEED_KM_S,
+	TRAFFIC_STATION_RELEASE_MARGIN_KM,
 	type TrafficActor,
 	type TrafficProjection,
 	trafficHoldProjection,
 	trafficScheduleAt,
 } from "./station-traffic";
 import { AU_KM } from "./units";
-import { add, cross, dot, length, scale, sub, type Vec3 } from "./vec3";
+import { add, length, scale, sub, type Vec3 } from "./vec3";
 
 export const CANONICAL_ROUTE_DT_S = 0.1;
 
@@ -182,34 +183,6 @@ export interface TrafficCruiseEnvironment {
 const normal = (v: Vec3, fallback: Vec3): Vec3 => {
 	const n = length(v);
 	return n > 0 ? scale(v, 1 / n) : fallback;
-};
-
-/** Shortest-arc interpolation for a direction, including the antipodal case. */
-const slerpDirection = (a: Vec3, b: Vec3, u: number): Vec3 => {
-	const from = normal(a, { x: 0, y: 0, z: 1 });
-	const to = normal(b, from);
-	const cosine = Math.max(-1, Math.min(1, dot(from, to)));
-	if (cosine > 0.9995)
-		return normal(add(scale(from, 1 - u), scale(to, u)), from);
-	if (cosine < -0.9995) {
-		const helper =
-			Math.abs(from.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
-		const perpendicular = normal(cross(from, helper), {
-			x: 0,
-			y: 0,
-			z: 1,
-		});
-		return add(
-			scale(from, Math.cos(Math.PI * u)),
-			scale(perpendicular, Math.sin(Math.PI * u)),
-		);
-	}
-	const theta = Math.acos(cosine);
-	const sine = Math.sin(theta);
-	return add(
-		scale(from, Math.sin((1 - u) * theta) / sine),
-		scale(to, Math.sin(u * theta) / sine),
-	);
 };
 
 const reachableChargeAu = (
@@ -454,6 +427,18 @@ export interface SystemTrafficProjection extends TrafficProjection {
 	terminalStationId: string | null;
 	/** Physical completion boundary for a stationary terminal phase. */
 	completedAtS?: number;
+	/** Identity of the physical visit retained across later schedule boundaries. */
+	visitDepartureAtS?: number;
+	visitLaunchReadyAtS?: number;
+	visitAwayOrdinal?: number;
+	visitHomeBerthId?: string;
+	visitOutboundDepartureAtS?: number;
+	visitOutboundArrivalAtS?: number;
+	visitReturnDepartureAtS?: number;
+	visitReturnArrivalAtS?: number;
+	/** Committed lane starts retained after their traversal phase has ended. */
+	departureStartedAtS?: number;
+	arrivalStartedAtS?: number;
 	/** A cache-warm call stopped at its fixed canonical tick budget. */
 	warmIncomplete: boolean;
 }
@@ -649,6 +634,8 @@ interface TrafficLegInput {
 	awayOrdinal: number;
 	finalPhase: "docked-away" | "parked-home";
 	pendingIntent: SystemTrafficProjection["pendingIntent"];
+	committedDepartureAtS?: number;
+	committedArrivalAtS?: number;
 	/** Shared across every leg one actor projection may visit. */
 	cruiseBudget?: { remainingTicks: number };
 }
@@ -680,13 +667,13 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	);
 	if (!originBerth)
 		throw new Error(`no berth ${originBerthId} at ${originStationId}`);
-	const departureAtS = blockedUntil(
-		timeline,
-		originStationId,
-		"lane",
-		readyAtS,
-		{ key: actor.key, movement: "launch" },
-	);
+	const departureAtS =
+		input.committedDepartureAtS ??
+		blockedUntil(timeline, originStationId, "lane", readyAtS, {
+			key: actor.key,
+			movement: "launch",
+		});
+	const departureCommit = { departureStartedAtS: departureAtS };
 	if (gameTime < departureAtS)
 		return withRoute(
 			actor,
@@ -745,6 +732,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				...arrivalAttitude(launch, u, current.pose.phaseRad),
 			},
 			{
+				...departureCommit,
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
 				laneStartedAtS: departureAtS,
@@ -809,10 +797,25 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				pos: crossingPos,
 				vel: bodyVelocity(crossingFrame.system, originStationId, launchEndS),
 			},
-			{ originBerthOccupied: false, pendingIntent },
+			{ ...departureCommit, originBerthOccupied: false, pendingIntent },
 		);
 
-	const spoolEndS = launchEndS + TRAFFIC_SPOOL_S;
+	const releaseDirection = normal(crossingRel, crossingFrame.pose.axis);
+	const releaseRangeKm = length(crossingRel);
+	const localDepartureKm = Math.max(
+		0,
+		TRAFFIC_STATION_EXCLUSION_KM +
+			TRAFFIC_STATION_RELEASE_MARGIN_KM -
+			releaseRangeKm,
+	);
+	// A smoothstep peaks at 1.5 times its average speed. Price the duration on
+	// that peak so the whole visible station-zone leg stays under the same speed
+	// ceiling as a player crossing the aperture.
+	const localDepartureS = Math.max(
+		CANONICAL_ROUTE_DT_S,
+		(1.5 * localDepartureKm) / TRAFFIC_STATION_LOCAL_SPEED_KM_S,
+	);
+	const spoolEndS = launchEndS + localDepartureS;
 	let movingSystem = systemAt(record, spoolEndS);
 	let movingAtS = spoolEndS;
 	const movingSystemAt = (t: number) => {
@@ -828,45 +831,25 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const holdAt = (t: number) =>
 		trafficHoldProjection(movingSystemAt(t), selected.id, actor.key, t);
 	const cruiseMassesAt = (t: number) => massesFromSystem(movingSystemAt(t), t);
-	const initialDirection = normal(
-		sub(selected.hold, crossingPos),
-		crossingFrame.pose.axis,
-	);
-	const releaseDirection = normal(crossingRel, crossingFrame.pose.axis);
-	const releaseRangeKm = length(crossingRel);
 	const departureRelAt = (elapsedS: number) => {
-		const u = clamp01(elapsedS / TRAFFIC_SPOOL_S);
-		const direction = slerpDirection(
-			releaseDirection,
-			initialDirection,
-			smooth(u),
-		);
-		const rangeKm =
-			releaseRangeKm + (TRAFFIC_STATION_EXCLUSION_KM - releaseRangeKm) * u;
-		return scale(direction, rangeKm);
+		const u = smooth(clamp01(elapsedS / localDepartureS));
+		const rangeKm = releaseRangeKm + localDepartureKm * u;
+		return scale(releaseDirection, rangeKm);
 	};
 	const departureRelVelocityAt = (elapsedS: number) => {
-		const h = 0.01;
-		const fromS = Math.max(0, elapsedS - h);
-		const toS = Math.min(TRAFFIC_SPOOL_S, elapsedS + h);
-		const spanS = toS - fromS;
-		return spanS > 0
-			? scale(sub(departureRelAt(toS), departureRelAt(fromS)), 1 / spanS)
-			: { x: 0, y: 0, z: 0 };
+		const u = clamp01(elapsedS / localDepartureS);
+		return scale(
+			releaseDirection,
+			(localDepartureKm * 6 * u * (1 - u)) / localDepartureS,
+		);
 	};
 	if (gameTime < spoolEndS) {
 		const dt = gameTime - launchEndS;
-		const departureU = smooth(clamp01(dt / TRAFFIC_SPOOL_S));
 		const current = frameAt(record, originStationId, gameTime);
 		const body = placedBody(current.system, originStationId);
 		// Stay in the translating station frame until physically clear. Using the
 		// launch-end world position as a fixed origin made an orbiting station move
 		// tens of kilometres away from its own departing ship before cruise began.
-		const releaseNose = arrivalAttitude(
-			launch,
-			1,
-			crossingFrame.pose.phaseRad,
-		).nose;
 		return withRoute(
 			actor,
 			"local-departure",
@@ -877,9 +860,10 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 					bodyVelocity(current.system, originStationId, gameTime),
 					departureRelVelocityAt(dt),
 				),
-				nose: slerpDirection(releaseNose, initialDirection, departureU),
+				nose: releaseDirection,
 			},
 			{
+				...departureCommit,
 				destinationStationId: selected.id,
 				originBerthOccupied: false,
 				pendingIntent,
@@ -891,7 +875,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const cruiseStartBody = placedBody(cruiseStartFrame.system, originStationId);
 	const cruiseStartPos = add(
 		cruiseStartBody.pos,
-		departureRelAt(TRAFFIC_SPOOL_S),
+		departureRelAt(localDepartureS),
 	);
 	const initialGuidance = beginCruiseGuidance({
 		from: cruiseStartPos,
@@ -904,9 +888,9 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		pos: cruiseStartPos,
 		vel: add(
 			bodyVelocity(cruiseStartFrame.system, originStationId, spoolEndS),
-			departureRelVelocityAt(TRAFFIC_SPOOL_S),
+			departureRelVelocityAt(localDepartureS),
 		),
-		nose: initialDirection,
+		nose: releaseDirection,
 		chargeAu: HULL_SPECS[actor.hullId].chargeAu,
 		startedAtS: spoolEndS,
 		atS: spoolEndS,
@@ -952,6 +936,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				dt,
 				speedKms: length(state.vel),
 				steerDirect: true,
+				turnRateRadS: 0.4,
 			});
 			return {
 				nose: guided.nose,
@@ -1016,6 +1001,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			canonical.phase === "blocked" ? "local-departure" : canonical.phase,
 			{ ...canonical, key: actor.key },
 			{
+				...departureCommit,
 				destinationStationId: selected.id,
 				chargeAu: canonical.chargeAu,
 				pendingIntent,
@@ -1034,6 +1020,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			cruise.phase,
 			{ ...cruise, key: actor.key },
 			{
+				...departureCommit,
 				destinationStationId: selected.id,
 				chargeAu: cruise.chargeAu,
 				pendingIntent,
@@ -1047,6 +1034,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			"local-departure",
 			{ ...cruise, key: actor.key },
 			{
+				...departureCommit,
 				destinationStationId: selected.id,
 				chargeAu: cruise.chargeAu,
 				pendingIntent,
@@ -1080,6 +1068,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				nose: approachNose,
 			},
 			{
+				...departureCommit,
 				destinationStationId: selected.id,
 				chargeAu: drop.chargeAu,
 				pendingIntent,
@@ -1120,6 +1109,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		input.occupiedByStation?.get(selected.id) ?? new Set<string>();
 	if (gameTime < clearanceAtS || !Number.isFinite(clearanceAtS))
 		return withRoute(actor, "clearance-queued", holdAt(gameTime), {
+			...departureCommit,
 			destinationStationId: selected.id,
 			chargeAu: drop.chargeAu,
 			queueRequest: request,
@@ -1167,6 +1157,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		promotion.participant.key !== actor.key
 	)
 		return withRoute(actor, "clearance-queued", holdAt(gameTime), {
+			...departureCommit,
 			destinationStationId: selected.id,
 			chargeAu: drop.chargeAu,
 			queueRequest: request,
@@ -1176,12 +1167,15 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		});
 	if (!assignedBerth && berth && input.recordBerthAssignments !== false)
 		input.berthCache?.set(berthAssignmentKey, berth.id);
-	const laneAtS = blockedUntil(timeline, selected.id, "lane", clearanceAtS, {
-		key: actor.key,
-		movement: "arrival",
-	});
+	const laneAtS =
+		input.committedArrivalAtS ??
+		blockedUntil(timeline, selected.id, "lane", clearanceAtS, {
+			key: actor.key,
+			movement: "arrival",
+		});
 	if (gameTime < laneAtS)
 		return withRoute(actor, "lane-queued", holdAt(gameTime), {
+			...departureCommit,
 			destinationStationId: selected.id,
 			terminalStationId: selected.id,
 			chargeAu: drop.chargeAu,
@@ -1197,32 +1191,49 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			berthId: berth.id,
 		});
 
-	const entryAtS = laneAtS + TRAFFIC_TERMINAL_APPROACH_S;
+	const laneFrame = frameAt(record, selected.id, laneAtS);
+	const laneBody = placedBody(laneFrame.system, selected.id);
+	const laneHoldRel = sub(
+		trafficHoldProjection(laneFrame.system, selected.id, actor.key, laneAtS)
+			.pos,
+		laneBody.pos,
+	);
+	const laneEntryRel = scale(
+		laneFrame.frame.axis,
+		laneFrame.frame.planeKm + 1e-6,
+	);
+	const terminalApproachKm = length(sub(laneEntryRel, laneHoldRel));
+	const terminalApproachS = Math.max(
+		CANONICAL_ROUTE_DT_S,
+		(1.5 * terminalApproachKm) / TRAFFIC_STATION_LOCAL_SPEED_KM_S,
+	);
+	const entryAtS = laneAtS + terminalApproachS;
 	if (gameTime < entryAtS) {
 		const current = frameAt(record, selected.id, gameTime);
 		const body = placedBody(current.system, selected.id);
-		const entry = add(
-			body.pos,
-			scale(current.frame.axis, current.frame.planeKm + 1e-6),
-		);
-		const u = smooth(
-			clamp01((gameTime - laneAtS) / TRAFFIC_TERMINAL_APPROACH_S),
-		);
+		const entryRel = scale(current.frame.axis, current.frame.planeKm + 1e-6);
+		const rawU = clamp01((gameTime - laneAtS) / terminalApproachS);
+		const u = smooth(rawU);
 		const hold = holdAt(gameTime);
+		const holdRel = sub(hold.pos, body.pos);
 		return withRoute(
 			actor,
 			"arriving",
 			{
 				key: actor.key,
-				pos: interpolate(hold.pos, entry, u),
-				vel: interpolate(
-					hold.vel,
+				pos: add(body.pos, interpolate(holdRel, entryRel, u)),
+				vel: add(
 					bodyVelocity(current.system, selected.id, gameTime),
-					u,
+					scale(
+						sub(entryRel, holdRel),
+						(6 * rawU * (1 - rawU)) / terminalApproachS,
+					),
 				),
 				nose: scale(current.frame.axis, -1),
 			},
 			{
+				...departureCommit,
+				arrivalStartedAtS: laneAtS,
 				destinationStationId: selected.id,
 				terminalStationId: selected.id,
 				laneStartedAtS: laneAtS,
@@ -1276,6 +1287,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				...arrivalAttitude(arrival, u, current.pose.phaseRad),
 			},
 			{
+				...departureCommit,
+				arrivalStartedAtS: laneAtS,
 				destinationStationId: selected.id,
 				terminalStationId: selected.id,
 				laneStartedAtS: laneAtS,
@@ -1305,6 +1318,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			gameTime,
 		),
 		{
+			...departureCommit,
+			arrivalStartedAtS: laneAtS,
 			destinationStationId: finalPhase === "docked-away" ? selected.id : null,
 			terminalStationId: selected.id,
 			chargeAu: HULL_SPECS[actor.hullId].chargeAu,
@@ -1342,6 +1357,10 @@ interface TrafficVisitInput {
 	/** A return may continue past this boundary, but may not begin after it. */
 	returnStartBeforeS?: number;
 	homeBerthId?: string;
+	outboundDepartureAtS?: number;
+	outboundArrivalAtS?: number;
+	returnDepartureAtS?: number;
+	returnArrivalAtS?: number;
 	cruiseBudget?: { remainingTicks: number };
 }
 
@@ -1367,6 +1386,17 @@ function projectTrafficVisit(
 		throw new Error(
 			`no home berth ${input.homeBerthId} at ${actor.homeStationId}`,
 		);
+	const markVisit = (
+		projection: SystemTrafficProjection,
+		commitments: Partial<SystemTrafficProjection> = {},
+	): SystemTrafficProjection => ({
+		...projection,
+		visitDepartureAtS: input.departureAtS,
+		visitLaunchReadyAtS: input.launchReadyAtS,
+		visitAwayOrdinal: input.awayOrdinal,
+		visitHomeBerthId: homeBerth.id,
+		...commitments,
+	});
 
 	const returnIntent =
 		input.desired === "parked" && gameTime >= input.desiredBoundaryS
@@ -1390,34 +1420,43 @@ function projectTrafficVisit(
 		awayOrdinal: input.awayOrdinal,
 		finalPhase: "docked-away",
 		pendingIntent: returnIntent,
+		committedDepartureAtS: input.outboundDepartureAtS,
+		committedArrivalAtS: input.outboundArrivalAtS,
 		cruiseBudget: input.cruiseBudget,
 	});
+	const outboundCommitments = {
+		visitOutboundDepartureAtS: outbound.departureStartedAtS,
+		visitOutboundArrivalAtS: outbound.arrivalStartedAtS,
+	};
 	if (outbound.phase === "abstract-away" && gameTime >= returnReadyAtS)
-		return withRoute(
-			actor,
-			"parked-home",
-			parkedTrafficProjection(
-				homeNow.system,
-				actor.homeStationId,
-				homeBerth.id,
+		return markVisit(
+			withRoute(
 				actor,
-				gameTime,
+				"parked-home",
+				parkedTrafficProjection(
+					homeNow.system,
+					actor.homeStationId,
+					homeBerth.id,
+					actor,
+					gameTime,
+				),
+				{
+					berthId: homeBerth.id,
+					terminalStationId: actor.homeStationId,
+					completedAtS: returnReadyAtS,
+				},
 			),
-			{
-				berthId: homeBerth.id,
-				terminalStationId: actor.homeStationId,
-				completedAtS: returnReadyAtS,
-			},
+			outboundCommitments,
 		);
 	const returnStartS =
 		outbound.phase === "docked-away" && outbound.completedAtS !== undefined
-			? Math.max(returnReadyAtS, outbound.completedAtS)
+			? Math.max(returnReadyAtS, outbound.completedAtS + TRAFFIC_MIN_DOCKED_S)
 			: Number.POSITIVE_INFINITY;
 	const returnWasCommitted =
 		input.desired === "parked" ||
 		(input.returnStartBeforeS !== undefined &&
 			returnStartS < input.returnStartBeforeS);
-	if (gameTime < returnStartS) return outbound;
+	if (gameTime < returnStartS) return markVisit(outbound, outboundCommitments);
 	if (
 		outbound.phase !== "docked-away" ||
 		!returnWasCommitted ||
@@ -1425,9 +1464,9 @@ function projectTrafficVisit(
 		!outbound.berthId ||
 		outbound.completedAtS === undefined
 	)
-		return outbound;
+		return markVisit(outbound, outboundCommitments);
 
-	return projectTrafficLeg({
+	const returned = projectTrafficLeg({
 		record,
 		actor,
 		gameTime,
@@ -1448,7 +1487,14 @@ function projectTrafficVisit(
 			input.desired === "away"
 				? { desired: "away", readyAt: input.desiredBoundaryS }
 				: null,
+		committedDepartureAtS: input.returnDepartureAtS,
+		committedArrivalAtS: input.returnArrivalAtS,
 		cruiseBudget: input.cruiseBudget,
+	});
+	return markVisit(returned, {
+		...outboundCommitments,
+		visitReturnDepartureAtS: returned.departureStartedAtS,
+		visitReturnArrivalAtS: returned.arrivalStartedAtS,
 	});
 }
 
@@ -1474,6 +1520,17 @@ export interface SystemTrafficAuthorityInput
 	recordBerthAssignments?: boolean;
 	/** Fixed canonical replay budget used only by incremental cache warm-up. */
 	cruiseTickBudget?: number;
+	/** Continue this already-authoritative visit instead of reselecting by intent. */
+	activeVisit?: {
+		departureAtS: number;
+		launchReadyAtS: number;
+		awayOrdinal: number;
+		homeBerthId?: string;
+		outboundDepartureAtS?: number;
+		outboundArrivalAtS?: number;
+		returnDepartureAtS?: number;
+		returnArrivalAtS?: number;
+	};
 }
 
 function projectSystemTrafficActorWithCaches(
@@ -1484,6 +1541,35 @@ function projectSystemTrafficActorWithCaches(
 			? undefined
 			: { remainingTicks: Math.max(0, Math.floor(input.cruiseTickBudget)) };
 	const visitInput = { ...input, cruiseBudget };
+	if (input.activeVisit)
+		return projectTrafficVisit({
+			...visitInput,
+			departureAtS: input.activeVisit.departureAtS,
+			launchReadyAtS: input.activeVisit.launchReadyAtS,
+			awayOrdinal: input.activeVisit.awayOrdinal,
+			homeBerthId: input.activeVisit.homeBerthId,
+			outboundDepartureAtS: input.activeVisit.outboundDepartureAtS,
+			outboundArrivalAtS: input.activeVisit.outboundArrivalAtS,
+			returnDepartureAtS: input.activeVisit.returnDepartureAtS,
+			returnArrivalAtS: input.activeVisit.returnArrivalAtS,
+			desired:
+				input.gameTime <
+				input.activeVisit.departureAtS + input.actor.schedule.awayS
+					? "away"
+					: "parked",
+			desiredBoundaryS:
+				input.activeVisit.departureAtS + input.actor.schedule.awayS,
+		});
+	// The world begins with the authored home roster. Schedule arithmetic has a
+	// mathematically valid negative cycle before the first departure, but it is
+	// not a physical visit and must never replace that initial parked state.
+	if (input.gameTime < input.actor.schedule.departureAtS)
+		return projectParkedTrafficActor({
+			actor: input.actor,
+			gameTime: input.gameTime,
+			projectionSystem:
+				input.projectionSystem ?? systemAt(input.record, input.gameTime),
+		});
 	const schedule = trafficScheduleAt(input.actor, input.gameTime);
 	const departureAtS =
 		schedule.desired === "away"
@@ -1491,52 +1577,62 @@ function projectSystemTrafficActorWithCaches(
 			: schedule.boundaryS - input.actor.schedule.awayS;
 	if (schedule.desired === "parked") {
 		const priorDepartureAtS = departureAtS - input.actor.schedule.cycleS;
-		const prior = projectTrafficVisit({
-			...visitInput,
-			departureAtS: priorDepartureAtS,
-			launchReadyAtS: priorDepartureAtS,
-			awayOrdinal: schedule.awayOrdinal - 1,
-			desired: "parked",
-			desiredBoundaryS: priorDepartureAtS + input.actor.schedule.awayS,
-		});
-		if (prior.phase !== "parked-home") return prior;
+		const prior =
+			priorDepartureAtS >= input.actor.schedule.departureAtS
+				? projectTrafficVisit({
+						...visitInput,
+						departureAtS: priorDepartureAtS,
+						launchReadyAtS: priorDepartureAtS,
+						awayOrdinal: schedule.awayOrdinal - 1,
+						desired: "parked",
+						desiredBoundaryS: priorDepartureAtS + input.actor.schedule.awayS,
+					})
+				: null;
+		if (prior && prior.phase !== "parked-home") return prior;
 		return projectTrafficVisit({
 			...visitInput,
 			departureAtS,
 			launchReadyAtS: Math.max(
 				departureAtS,
-				prior.completedAtS ?? departureAtS,
+				prior?.completedAtS !== undefined
+					? prior.completedAtS + TRAFFIC_MIN_DOCKED_S
+					: departureAtS,
 			),
 			awayOrdinal: schedule.awayOrdinal,
 			desired: "parked",
 			desiredBoundaryS: schedule.boundaryS,
-			homeBerthId: prior.berthId ?? undefined,
+			homeBerthId: prior?.berthId ?? undefined,
 		});
 	}
 
 	const previousDepartureAtS = departureAtS - input.actor.schedule.cycleS;
-	const previous = projectTrafficVisit({
-		...visitInput,
-		departureAtS: previousDepartureAtS,
-		launchReadyAtS: previousDepartureAtS,
-		awayOrdinal: schedule.awayOrdinal - 1,
-		desired: "away",
-		desiredBoundaryS: schedule.boundaryS,
-		returnStartBeforeS: schedule.boundaryS,
-	});
-	if (previous.phase !== "parked-home") return previous;
+	const previous =
+		previousDepartureAtS >= input.actor.schedule.departureAtS
+			? projectTrafficVisit({
+					...visitInput,
+					departureAtS: previousDepartureAtS,
+					launchReadyAtS: previousDepartureAtS,
+					awayOrdinal: schedule.awayOrdinal - 1,
+					desired: "away",
+					desiredBoundaryS: schedule.boundaryS,
+					returnStartBeforeS: schedule.boundaryS,
+				})
+			: null;
+	if (previous && previous.phase !== "parked-home") return previous;
 
 	return projectTrafficVisit({
 		...visitInput,
 		departureAtS,
 		launchReadyAtS: Math.max(
 			departureAtS,
-			previous.completedAtS ?? departureAtS,
+			previous?.completedAtS !== undefined
+				? previous.completedAtS + TRAFFIC_MIN_DOCKED_S
+				: departureAtS,
 		),
 		awayOrdinal: schedule.awayOrdinal,
 		desired: "away",
 		desiredBoundaryS: schedule.boundaryS,
-		homeBerthId: previous.berthId ?? undefined,
+		homeBerthId: previous?.berthId ?? undefined,
 	});
 }
 

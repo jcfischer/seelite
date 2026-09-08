@@ -6,7 +6,7 @@
 import { berthCentre, parkedAttitude, recomposeOffset } from "./arrival";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import type { DisplayContact } from "./display-contact";
-import { apertureFrame, frameAtPhase, slotBasis } from "./docking";
+import { apertureFrame, frameAtPhase, slotBasis, V_GATE_KMS } from "./docking";
 import { HULL_SPECS, type HullEnvelope, type HullId } from "./hull";
 import { bodyVelocity, type System, stationOf, stationPose } from "./sim";
 import { STATION_GEOMETRY, type StationType } from "./station";
@@ -92,6 +92,11 @@ const unit = (text: string): number => fnv1a(text) / 0x1_0000_0000;
 const lerp = (band: readonly [number, number], u: number): number =>
 	band[0] + (band[1] - band[0]) * u;
 
+/** Slow station-zone legs need enough room to finish before the next visit. */
+export const TRAFFIC_MIN_CYCLE_S = 900;
+/** A completed arrival remains visibly parked before another launch can begin. */
+export const TRAFFIC_MIN_DOCKED_S = 30;
+
 export interface TrafficSchedule {
 	cycleS: number;
 	departureAtS: number;
@@ -126,7 +131,7 @@ export function stationTrafficRoster(
 		role.intervalS,
 		unit(`${station.id}|cadence|${station.berthSeed}`),
 	);
-	const cycleS = 2 * count * cadence;
+	const cycleS = Math.max(2 * count * cadence, TRAFFIC_MIN_CYCLE_S);
 	const sharedPhase = unit(`${station.id}|phase|${station.berthSeed}`) * cycleS;
 	const compatible = TRAFFIC_HULL_POOLS[station.type].filter((id) =>
 		interior.berths.some((berth) => berthFits(berth, HULL_SPECS[id].env)),
@@ -161,7 +166,7 @@ export function stationTrafficRoster(
 			callsign: `${SELECTED_MODEL_NAME[hullId]} ${role.code}-${String(ordinal + 1).padStart(2, "0")}`,
 			schedule: {
 				cycleS,
-				departureAtS: sharedPhase + ordinal * 2 * cadence,
+				departureAtS: (sharedPhase + ordinal * 2 * cadence) % cycleS,
 				parkedDuty,
 				awayS: cycleS * (1 - parkedDuty),
 			},
@@ -283,9 +288,11 @@ export function playerWinsLane(
 }
 
 /** Station-owned local traversal laws used by route composition. */
-export const TRAFFIC_STATION_EXCLUSION_KM = 8;
-export const TRAFFIC_SPOOL_S = 8;
-export const TRAFFIC_TERMINAL_APPROACH_S = 14;
+export const TRAFFIC_STATION_EXCLUSION_KM = 5;
+/** Prevent the first cruise correction from dipping back inside the boundary. */
+export const TRAFFIC_STATION_RELEASE_MARGIN_KM = 0.5;
+/** Local station flight shares the player's aperture crossing speed ceiling. */
+export const TRAFFIC_STATION_LOCAL_SPEED_KM_S = V_GATE_KMS;
 
 export const TRAFFIC_MATERIALIZE_KM = 10_000;
 /** Once visible, retain a ship through this wider boundary to prevent popping. */

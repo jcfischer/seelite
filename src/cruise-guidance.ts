@@ -118,6 +118,7 @@ export function stepCruiseGuidance(input: {
 	dt: number;
 	speedKms: number;
 	steerDirect: boolean;
+	turnRateRadS?: number;
 }): {
 	guidance: CruiseGuidanceState | null;
 	nose: Vec3;
@@ -191,7 +192,11 @@ export function stepCruiseGuidance(input: {
 	const angle = angleBetween(input.nose, desired);
 	return {
 		guidance,
-		nose: slewToward(input.nose, desired, 0.6 * input.dt),
+		nose: slewToward(
+			input.nose,
+			desired,
+			(input.turnRateRadS ?? 0.6) * input.dt,
+		),
 		throttle: angle > 0.1 ? 0 : 1,
 		error: null,
 	};

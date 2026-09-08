@@ -7,7 +7,7 @@ import {
 } from "../src/cruise-guidance";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
-import { makeSystem } from "../src/sim";
+import { bodyVelocity, makeSystem } from "../src/sim";
 import {
 	CANONICAL_ROUTE_DT_S,
 	evaluateTrafficCruise,
@@ -20,6 +20,9 @@ import {
 } from "../src/station-route";
 import {
 	stationTrafficRoster,
+	TRAFFIC_MIN_DOCKED_S,
+	TRAFFIC_STATION_EXCLUSION_KM,
+	TRAFFIC_STATION_LOCAL_SPEED_KM_S,
 	trafficScheduleAt,
 } from "../src/station-traffic";
 import { generateContents } from "../src/system";
@@ -148,6 +151,78 @@ describe("terminal-to-terminal route projection", () => {
 		expect(phases).toContain("local-approach");
 		expect(phases).toContain("arriving");
 		expect(phases.at(-1)).toBe("docked-away");
+	});
+
+	test("station-zone legs stay slow, clear the bubble, and visibly dwell", () => {
+		let maxZoneSpeedKms = 0;
+		let lastDepartureRangeKm = 0;
+		let dockedAtS: number | null = null;
+		let leftDockAtS: number | null = null;
+		for (let t = departure; t <= departure + 900; t += 0.5) {
+			const projection = projectSystemTrafficActor({
+				record,
+				actor,
+				gameTime: t,
+			});
+			const system = makeSystem(record, t);
+			const nearestStation = system.contents.stations
+				.map((station) => ({
+					station,
+					body: system.byId.get(station.id),
+				}))
+				.filter(
+					(row): row is typeof row & { body: NonNullable<typeof row.body> } =>
+						Boolean(row.body),
+				)
+				.sort(
+					(a, b) =>
+						Math.hypot(
+							projection.pos.x - a.body.pos.x,
+							projection.pos.y - a.body.pos.y,
+							projection.pos.z - a.body.pos.z,
+						) -
+						Math.hypot(
+							projection.pos.x - b.body.pos.x,
+							projection.pos.y - b.body.pos.y,
+							projection.pos.z - b.body.pos.z,
+						),
+				)[0];
+			if (nearestStation) {
+				const rangeKm = Math.hypot(
+					projection.pos.x - nearestStation.body.pos.x,
+					projection.pos.y - nearestStation.body.pos.y,
+					projection.pos.z - nearestStation.body.pos.z,
+				);
+				if (projection.phase === "local-departure")
+					lastDepartureRangeKm = Math.max(lastDepartureRangeKm, rangeKm);
+				if (
+					projection.phase === "local-departure" ||
+					(projection.phase === "arriving" &&
+						rangeKm > nearestStation.body.radiusKm + 0.01)
+				) {
+					const stationVel = bodyVelocity(system, nearestStation.station.id, t);
+					maxZoneSpeedKms = Math.max(
+						maxZoneSpeedKms,
+						Math.hypot(
+							projection.vel.x - stationVel.x,
+							projection.vel.y - stationVel.y,
+							projection.vel.z - stationVel.z,
+						),
+					);
+				}
+			}
+			if (projection.phase === "docked-away") dockedAtS ??= t;
+			else if (dockedAtS !== null && leftDockAtS === null) leftDockAtS = t;
+			if (leftDockAtS !== null) break;
+		}
+		expect(maxZoneSpeedKms).toBeLessThanOrEqual(
+			TRAFFIC_STATION_LOCAL_SPEED_KM_S + 1e-3,
+		);
+		expect(lastDepartureRangeKm).toBeGreaterThan(TRAFFIC_STATION_EXCLUSION_KM);
+		expect(dockedAtS).not.toBeNull();
+		expect((leftDockAtS ?? 0) - (dockedAtS ?? 0)).toBeGreaterThanOrEqual(
+			TRAFFIC_MIN_DOCKED_S - 0.5,
+		);
 	});
 
 	test("a player-input timeline delays the shared queues without changing identity", () => {
@@ -519,7 +594,7 @@ describe("terminal-to-terminal route projection", () => {
 		let returned: ReturnType<typeof projectSystemTrafficActor> | null = null;
 		for (
 			let t = departure + actor.schedule.awayS;
-			t < departure + 420;
+			t < departure + 800;
 			t += 0.5
 		) {
 			const projection = projectSystemTrafficActor({
@@ -539,7 +614,7 @@ describe("terminal-to-terminal route projection", () => {
 	});
 
 	test("route projection is independent of query cadence", () => {
-		const queryAt = departure + 73.25;
+		const queryAt = departure + 120.25;
 		const cruiseCache = new Map();
 		let afterStepping = projectSystemTrafficAuthority({
 			record,
@@ -584,7 +659,7 @@ describe("terminal-to-terminal route projection", () => {
 
 	test("cold cache warm-up obeys a fixed canonical tick budget", () => {
 		const cruiseCache = new Map();
-		const queryAt = departure + 73.25;
+		const queryAt = departure + 120.25;
 		let projection = projectSystemTrafficAuthority({
 			record,
 			actor,

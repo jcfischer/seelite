@@ -295,6 +295,7 @@ import {
 	stationTrafficRoster,
 	TRAFFIC_DEMATERIALIZE_KM,
 	TRAFFIC_MATERIALIZE_KM,
+	TRAFFIC_STATION_EXCLUSION_KM,
 	trafficScheduleAt,
 	type TrafficActor,
 	type TrafficProjection,
@@ -523,6 +524,8 @@ function wrapAngle(radians: number) {
  *  autopilot that is overwriting it. */
 const THROTTLE_UP = "shift";
 const THROTTLE_DOWN = "control";
+/** Ten seconds from idle to full inside the station zone, rather than one. */
+const STATION_THROTTLE_RATE_SCALE = 0.1;
 
 const MOUSE_RAD_PER_PX = 0.0022;
 
@@ -3488,6 +3491,51 @@ class Game {
 				set.add(state.berthId);
 				occupied.set(stationId, set);
 			}
+			const previousBerthByActor = new Map<
+				CarrierKey,
+				{ stationId: string; berthId: string }
+			>();
+			for (const route of this.trafficPreviousRoutes.values()) {
+				if (!route.berthId) continue;
+				const routeActor = this.trafficActors.find(
+					(candidate) => candidate.key === route.key,
+				);
+				const stationId =
+					route.terminalStationId ??
+					(route.phase === "parked-home"
+						? routeActor?.homeStationId
+						: route.destinationStationId);
+				if (!stationId) continue;
+				const set = occupied.get(stationId) ?? new Set<string>();
+				set.add(route.berthId);
+				occupied.set(stationId, set);
+				previousBerthByActor.set(route.key, {
+					stationId,
+					berthId: route.berthId,
+				});
+			}
+			const berthHeldByOther = (
+				actorKey: CarrierKey,
+				own: { stationId: string; berthId: string },
+			) =>
+				this.dockingStates.get(own.stationId)?.berthId === own.berthId ||
+				[...previousBerthByActor].some(
+					([key, candidate]) =>
+						key !== actorKey &&
+						candidate.stationId === own.stationId &&
+						candidate.berthId === own.berthId,
+				);
+			const occupiedWithoutOwnPreviousBerth = (
+				actorKey: CarrierKey,
+			): ReadonlyMap<string, ReadonlySet<string>> => {
+				const own = previousBerthByActor.get(actorKey);
+				if (!own || berthHeldByOther(actorKey, own)) return occupied;
+				const withoutOwn = new Map<string, ReadonlySet<string>>(occupied);
+				const station = new Set(occupied.get(own.stationId) ?? EMPTY_BERTHS);
+				station.delete(own.berthId);
+				withoutOwn.set(own.stationId, station);
+				return withoutOwn;
+			};
 			const playerTimeline = [
 				...this.trafficPlayerTimeline,
 				...this.trafficCarrierTimeline,
@@ -3515,6 +3563,25 @@ class Game {
 					committed: true,
 				});
 			const arbitrationTimeline = [...playerTimeline];
+			const activeVisitFor = (actorKey: CarrierKey) => {
+				const prior = this.trafficPreviousRoutes.get(actorKey);
+				return prior &&
+					prior.phase !== "parked-home" &&
+					prior.visitDepartureAtS !== undefined &&
+					prior.visitLaunchReadyAtS !== undefined &&
+					prior.visitAwayOrdinal !== undefined
+					? {
+							departureAtS: prior.visitDepartureAtS,
+							launchReadyAtS: prior.visitLaunchReadyAtS,
+							awayOrdinal: prior.visitAwayOrdinal,
+							homeBerthId: prior.visitHomeBerthId,
+							outboundDepartureAtS: prior.visitOutboundDepartureAtS,
+							outboundArrivalAtS: prior.visitOutboundArrivalAtS,
+							returnDepartureAtS: prior.visitReturnDepartureAtS,
+							returnArrivalAtS: prior.visitReturnArrivalAtS,
+						}
+					: undefined;
+			};
 			const baselines = this.trafficActors.map((actor) => ({
 				actor,
 				projection: projectSystemTrafficAuthority({
@@ -3522,11 +3589,12 @@ class Game {
 					actor,
 					gameTime: tick / 10,
 					playerTimeline: arbitrationTimeline,
-					occupiedByStation: occupied,
+					occupiedByStation: occupiedWithoutOwnPreviousBerth(actor.key),
 					cruiseCache: this.trafficCruiseCache,
 					berthCache: this.trafficBerthCache,
 					recordBerthAssignments: false,
 					projectionSystem,
+					activeVisit: activeVisitFor(actor.key),
 				}),
 			}));
 			const orderedActors = baselines.sort((a, b) => {
@@ -3548,17 +3616,113 @@ class Game {
 			});
 			const touchedBerthAssignments = new Set<string>();
 			for (const { actor } of orderedActors) {
-				const projection = projectSystemTrafficAuthority({
-					record: this.world.system.record,
-					actor,
-					gameTime: tick / 10,
-					playerTimeline: arbitrationTimeline,
-					occupiedByStation: occupied,
-					cruiseCache: this.trafficCruiseCache,
-					berthCache: this.trafficBerthCache,
-					berthCacheTouched: touchedBerthAssignments,
-					projectionSystem,
-				});
+				const priorRoute = this.trafficPreviousRoutes.get(actor.key);
+				const priorBerth = previousBerthByActor.get(actor.key);
+				const priorBerthHeldByOther = priorBerth
+					? berthHeldByOther(actor.key, priorBerth)
+					: false;
+				if (priorBerth && !priorBerthHeldByOther)
+					occupied.get(priorBerth.stationId)?.delete(priorBerth.berthId);
+				let activeVisit = activeVisitFor(actor.key);
+				const projectActor = () =>
+					projectSystemTrafficAuthority({
+						record: this.world.system.record,
+						actor,
+						gameTime: tick / 10,
+						playerTimeline: arbitrationTimeline,
+						occupiedByStation: occupied,
+						cruiseCache: this.trafficCruiseCache,
+						berthCache: this.trafficBerthCache,
+						berthCacheTouched: touchedBerthAssignments,
+						projectionSystem,
+						activeVisit,
+					});
+				let projection = projectActor();
+				const visitFrom = (route: SystemTrafficProjection) =>
+					route.visitDepartureAtS !== undefined &&
+					route.visitLaunchReadyAtS !== undefined &&
+					route.visitAwayOrdinal !== undefined
+						? {
+								departureAtS: route.visitDepartureAtS,
+								launchReadyAtS: route.visitLaunchReadyAtS,
+								awayOrdinal: route.visitAwayOrdinal,
+								homeBerthId: route.visitHomeBerthId,
+								outboundDepartureAtS: route.visitOutboundDepartureAtS,
+								outboundArrivalAtS: route.visitOutboundArrivalAtS,
+								returnDepartureAtS: route.visitReturnDepartureAtS,
+								returnArrivalAtS: route.visitReturnArrivalAtS,
+							}
+						: undefined;
+				// A schedule boundary is intent, not elapsed physical travel. A visit
+				// first leaving a parked pose starts now; it may not replay a departure
+				// that happened only on paper while another visit was still finishing.
+				if (
+					priorRoute?.phase === "parked-home" &&
+					projection.phase !== "parked-home" &&
+					projection.phase !== "launch-queued" &&
+					(projection.departureStartedAtS ?? -Infinity) < tick / 10 - 0.05
+				) {
+					const nextVisit = visitFrom(projection);
+					if (nextVisit) {
+						activeVisit = {
+							...nextVisit,
+							homeBerthId: priorRoute.berthId ?? nextVisit.homeBerthId,
+							launchReadyAtS: tick / 10,
+							outboundDepartureAtS: undefined,
+							outboundArrivalAtS: undefined,
+							returnDepartureAtS: undefined,
+							returnArrivalAtS: undefined,
+						};
+						projection = projectActor();
+					}
+				}
+				// Queue promotion likewise starts an arrival at this authority tick.
+				// Replaying its old ready time here skipped the visible tunnel in one
+				// frame when a berth or lane finally became available.
+				if (
+					(priorRoute?.phase === "clearance-queued" ||
+						priorRoute?.phase === "lane-queued") &&
+					projection.phase !== "clearance-queued" &&
+					projection.phase !== "lane-queued"
+				) {
+					const continuing = activeVisit ?? visitFrom(projection);
+					if (continuing) {
+						const returning =
+							priorRoute.destinationStationId === actor.homeStationId;
+						activeVisit = {
+							...continuing,
+							...(returning
+								? { returnArrivalAtS: tick / 10 }
+								: { outboundArrivalAtS: tick / 10 }),
+						};
+						projection = projectActor();
+					}
+				}
+				const stationIdFor = (route: SystemTrafficProjection) =>
+					route.terminalStationId ??
+					(route.phase === "parked-home"
+						? actor.homeStationId
+						: route.destinationStationId);
+				let stationId = stationIdFor(projection);
+				// A cached historical grant is normally what prevents a Carrier from
+				// swapping pods when current occupancy is replayed. If that grant now
+				// collides with an older committed Carrier or the player's reservation,
+				// however, it cannot remain authoritative: keeping it would draw two
+				// ships on one pad and later make the lower-priority one disappear.
+				if (
+					projection.berthId &&
+					stationId &&
+					occupied.get(stationId)?.has(projection.berthId)
+				) {
+					for (const [key, berthId] of this.trafficBerthCache)
+						if (
+							berthId === projection.berthId &&
+							key.includes(`|${actor.key}|`)
+						)
+							this.trafficBerthCache.delete(key);
+					projection = projectActor();
+					stationId = stationIdFor(projection);
+				}
 				this.trafficRoutes.push(projection);
 				if (
 					projection.terminalStationId &&
@@ -3572,11 +3736,6 @@ class Game {
 						arbitrationTimeline.push(event);
 				}
 				if (projection.berthId) {
-					const stationId =
-						projection.terminalStationId ??
-						(projection.phase === "parked-home"
-							? actor.homeStationId
-							: projection.destinationStationId);
 					if (stationId) {
 						const set = occupied.get(stationId) ?? new Set<string>();
 						set.add(projection.berthId);
@@ -6618,6 +6777,11 @@ class Game {
 		// as its "before" half, and neither moves the ship, so a second
 		// evaluation would be the same answer at the same clock value.
 		const approaches = this.dockingApproaches();
+		const throttleRate = [...approaches.values()].some(
+			({ pose }) => length(pose.rel) <= TRAFFIC_STATION_EXCLUSION_KM,
+		)
+			? STATION_THROTTLE_RATE_SCALE
+			: 1;
 
 		if (this.stepDockingComputer(dt, approaches)) {
 			this.mouseDx = 0;
@@ -6671,9 +6835,9 @@ class Game {
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
 		if (this.keys.has(THROTTLE_UP))
-			this.throttle = Math.min(1, this.throttle + dt);
+			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
 		if (this.keys.has(THROTTLE_DOWN))
-			this.throttle = Math.max(0, this.throttle - dt);
+			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		this.audio.ambient(this.throttle);
 
 		// The spool-up runs in whichever regime the ship is in, and hands over at

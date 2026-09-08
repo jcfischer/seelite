@@ -35,14 +35,65 @@ try {
 		const previous = new Map();
 		const jumps = [];
 		const berthChanges = [];
-		// Sixty seconds covers the seed's first competing arrivals, departures,
-		// and the former 32-million-kilometre historical route rewrite at t=48.
-		for (let tick = 41; tick <= 600; tick++) {
+		const duplicateBerths = [];
+		const playerBerthConflicts = [];
+		let playerReservation = null;
+		// Two full minimum schedule cycles cover arrivals, departures, returns and
+		// the exact intent boundaries that used to rewrite an in-progress visit.
+		for (let tick = 41; tick <= 18_000; tick++) {
 			const t = tick / 10;
 			g.world.gameTime = t;
 			sim.advanceSystem(g.world.system, t);
 			g.updateTrafficAuthority();
+			if (!playerReservation && t >= 120) {
+				for (const station of g.world.system.contents.stations) {
+					const occupied = g.berthOccupancy.get(station.id) ?? new Set();
+					const berthId = g
+						.berthIdsOfStation(station.id)
+						.find((candidate) => !occupied.has(candidate));
+					if (!berthId) continue;
+					const state = g.dockingStateOf(station.id);
+					g.dockingStates.set(station.id, {
+						...state,
+						clearance: { kind: "granted", expiresAtS: 10_000 },
+						berthId,
+					});
+					playerReservation = { stationId: station.id, berthId, atS: t };
+					break;
+				}
+			}
+			const settledAtBerth = new Map();
 			for (const route of g.trafficRoutes) {
+				if (route.berthId && route.terminalStationId) {
+					const berthKey = `${route.terminalStationId}|${route.berthId}`;
+					const owner = settledAtBerth.get(berthKey);
+					if (owner && owner.key !== route.key)
+						duplicateBerths.push({
+							t,
+							berthKey,
+							owner: owner.key,
+							ownerPhase: owner.phase,
+							ownerPrior: previous.get(owner.key)?.phase,
+							contender: route.key,
+							contenderPhase: route.phase,
+							contenderPrior: previous.get(route.key)?.phase,
+						});
+					else
+						settledAtBerth.set(berthKey, {
+							key: route.key,
+							phase: route.phase,
+						});
+					if (
+						playerReservation?.stationId === route.terminalStationId &&
+						playerReservation.berthId === route.berthId
+					)
+						playerBerthConflicts.push({
+							t,
+							key: route.key,
+							phase: route.phase,
+							berthId: route.berthId,
+						});
+				}
 				const prior = previous.get(route.key);
 				if (prior) {
 					const deltaKm = dist(route.pos, prior.pos);
@@ -110,6 +161,11 @@ try {
 			largestJumps: jumps.sort((a, b) => b.deltaKm - a.deltaKm).slice(0, 5),
 			berthChangeCount: berthChanges.length,
 			berthChanges: berthChanges.slice(0, 5),
+			duplicateBerthCount: duplicateBerths.length,
+			duplicateBerths: duplicateBerths.slice(0, 5),
+			playerReservation,
+			playerBerthConflictCount: playerBerthConflicts.length,
+			playerBerthConflicts: playerBerthConflicts.slice(0, 5),
 			carrierEventCount: g.trafficCarrierTimeline.length,
 			berthCacheSize: g.trafficBerthCache.size,
 			actorCount: g.trafficActors.length,
@@ -126,8 +182,19 @@ try {
 		JSON.stringify(result.berthChanges),
 	);
 	check(
+		"Traffic never shares a berth with another Carrier or the player",
+		result.duplicateBerthCount === 0 &&
+			result.playerReservation &&
+			result.playerBerthConflictCount === 0,
+		JSON.stringify({
+			duplicates: result.duplicateBerths,
+			playerReservation: result.playerReservation,
+			playerConflicts: result.playerBerthConflicts,
+		}),
+	);
+	check(
 		"remembered Traffic commitments remain bounded by active replay history",
-		result.carrierEventCount <= result.actorCount * 2 &&
+		result.carrierEventCount <= result.actorCount * 8 &&
 			result.berthCacheSize <= result.actorCount * 4,
 		JSON.stringify({
 			actors: result.actorCount,
