@@ -1033,7 +1033,7 @@ try {
 		JSON.stringify({ retainedPlayerEvents: result.retainedPlayerEvents }),
 	);
 	check(
-		"planet targets still enter ordinary cruise spool",
+		"planet targets preserve pre-#266 cruise without station-only detours",
 		result.planetCruise.spoolLeftS > 0 &&
 			!result.planetCruise.lastExit.startsWith("detour unavailable") &&
 			result.planetCruise.detour === null,

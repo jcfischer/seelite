@@ -4969,7 +4969,10 @@ class Game {
 	}
 
 	/**
-	 * The body the selected target orbits, if any — #30's arrival rule reads it.
+	 * The planet hosting the selected station, if the target is a station —
+	 * #30's arrival rule reads it. This deliberately returns null for planets:
+	 * the automatic detour contract belongs to station travel, not to every body
+	 * with an orbital parent.
 	 *
 	 * `sim.ts` owns the rule; this is the handle's spelling of it, and it is
 	 * public because `probe-arrival.mjs` asks the page the same question rather
@@ -6432,15 +6435,13 @@ class Game {
 		}
 		this.detour = null;
 		const target = this.targetBody();
-		const stationTarget = this.world.system.contents.stations.some(
-			(station) => station.id === target?.id,
-		);
-		if (target && stationTarget) {
+		const targetParentId = this.targetParentId();
+		if (target && targetParentId) {
 			const begun = beginCruiseGuidance({
 				from: this.world.ship.pos,
 				target,
 				masses: this.masses(),
-				targetParentId: this.targetParentId(),
+				targetParentId,
 			});
 			if (begun.error) {
 				const id = begun.error.blockerId;
