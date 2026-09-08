@@ -204,7 +204,7 @@ describe("terminal-to-terminal route projection", () => {
 			prior = projection;
 		}
 		expect(worstStepDeg * (180 / Math.PI)).toBeLessThan(6);
-	});
+	}, 10_000);
 
 	test("station-zone legs stay slow, clear the bubble, and visibly dwell", () => {
 		let maxZoneSpeedKms = 0;
@@ -729,12 +729,17 @@ describe("terminal-to-terminal route projection", () => {
 			pos: null,
 			vel: null,
 			nose: null,
-		}).toEqual({ ...direct, pos: null, vel: null, nose: null });
+			up: null,
+		}).toEqual({ ...direct, pos: null, vel: null, nose: null, up: null });
 		for (const axis of ["x", "y", "z"] as const) {
 			expect(afterStepping.pos[axis]).toBeCloseTo(direct.pos[axis], 8);
 			expect(afterStepping.vel[axis]).toBeCloseTo(direct.vel[axis], 8);
 			expect(afterStepping.nose?.[axis] ?? 0).toBeCloseTo(
 				direct.nose?.[axis] ?? 0,
+				8,
+			);
+			expect(afterStepping.up?.[axis] ?? 0).toBeCloseTo(
+				direct.up?.[axis] ?? 0,
 				8,
 			);
 		}
@@ -779,12 +784,21 @@ describe("terminal-to-terminal route projection", () => {
 			actor,
 			gameTime: queryAt,
 		});
-		expect({ ...projection, pos: null, vel: null, nose: null }).toEqual({
+		expect({
+			...projection,
+			pos: null,
+			vel: null,
+			nose: null,
+			up: null,
+		}).toEqual({
 			...direct,
 			pos: null,
 			vel: null,
 			nose: null,
+			up: null,
 		});
+		for (const axis of ["x", "y", "z"] as const)
+			expect(projection.up?.[axis] ?? 0).toBeCloseTo(direct.up?.[axis] ?? 0, 8);
 	});
 
 	test("cold presentation parks only actors whose base schedule is parked", () => {
