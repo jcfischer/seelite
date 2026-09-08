@@ -337,16 +337,23 @@ const installHelpers = (page) =>
 		 * compared against was in logical ones: 89,973 ring pixels and 0 opposed
 		 * pairs, silently.
 		 */
+		// One scratch surface for the process, not one per read. Every caller here
+		// takes two or three frames back to back, and a `W x H` backing store and
+		// its 2D context per frame is real allocation for a buffer whose contents
+		// `getImageData` copies out anyway.
+		let scratch;
+		let scratchCtx;
 		window.__framePixels = () => {
 			const g = window.__seelite;
-			const src = g.renderer.domElement;
-			const cv = document.createElement("canvas");
-			cv.width = W;
-			cv.height = H;
-			const ctx = cv.getContext("2d", { willReadFrequently: true });
+			if (!scratch) {
+				scratch = document.createElement("canvas");
+				scratch.width = W;
+				scratch.height = H;
+				scratchCtx = scratch.getContext("2d", { willReadFrequently: true });
+			}
 			g.render(0);
-			ctx.drawImage(src, 0, 0, W, H);
-			return ctx.getImageData(0, 0, W, H).data;
+			scratchCtx.drawImage(g.renderer.domElement, 0, 0, W, H);
+			return scratchCtx.getImageData(0, 0, W, H).data;
 		};
 
 		/**
