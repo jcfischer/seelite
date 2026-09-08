@@ -57,34 +57,79 @@ const fullRun = (
 });
 
 describe("the view set itself", () => {
-	test("a view that declares its own seed is followed only by navigators", () => {
-		// **Ordering the set depends on and nothing else pinned.**
-		// `refinery-cradle-berth` carries `seed: 2` and its placer navigates; the
-		// page is left on that seed, so any view after it that expects `SEED` 47
-		// would be framed in the wrong system. It happens to be followed only by
-		// the workbench frame, which navigates away again — a fact this row makes
-		// a rule.
-		const navigates = (view: (typeof VIEWS)[number]) =>
-			view.shot.kind === "workbench-interior" ||
-			(view.shot as { seed?: number }).seed !== undefined;
-		let sawSeed = false;
-		for (const view of VIEWS) {
-			if (sawSeed)
-				expect([view.name, navigates(view)]).toEqual([view.name, true]);
-			if ((view.shot as { seed?: number }).seed !== undefined) sawSeed = true;
-		}
-		// And the rule is about a real case rather than a hypothetical one.
-		expect(sawSeed).toBe(true);
+	/**
+	 * **This replaces an ordering rule, and the reversal is the point.**
+	 *
+	 * The row here used to assert that a view declaring its own seed is followed
+	 * only by views that navigate — `refinery-cradle-berth` carried `seed: 2`,
+	 * its placer navigated, and the page was left on that seed, so anything
+	 * after it expecting `SEED` 47 would have been framed in the wrong system.
+	 * That rule held because the one exception sat second to last. #210 needs a
+	 * second exception and wants it beside the other planet views, so the
+	 * mechanism moved instead of the list: `capture-views.mjs` restores the seed
+	 * a view declares — `SEED` when it declares none — *before* each view, so no
+	 * view can inherit another's world and position carries no meaning.
+	 *
+	 * **A source assertion, and weaker than what it replaced.** The old rule was
+	 * a property of data this file imports; this is a claim about a script that
+	 * only runs headed, against a browser, and nothing here can execute it. What
+	 * it does catch is the specific regression that would make the new mechanism
+	 * silently useless — the restore being dropped, or a placer going back to
+	 * navigating on its own — which is the failure the old rule existed for. The
+	 * proof that it works is a capture run, and it is a person's to read.
+	 */
+	test("every view is captured on the seed it declares, whatever its position", async () => {
+		const source = await Bun.file(
+			new URL("../scripts/capture-views.mjs", import.meta.url),
+		).text();
+		// The restore is per view and takes the view's own seed, defaulting to
+		// the fixture's. Matched against the capture loop alone rather than the
+		// whole file: bun prints the received value on a failure, and a
+		// whole-file `toContain` prints the whole file, which buries the one
+		// line that moved. Whitespace-collapsed, because a formatter owns the
+		// line breaks and a formatting change must not be a red run here.
+		const loop = source
+			.slice(source.indexOf("for (const view of VIEWS) {"))
+			.slice(0, 900)
+			.replace(/\s+/g, " ");
+		expect(loop).toContain("await ensureSeed(page, view.shot.seed ?? SEED);");
+		// And no placer navigates on a seed of its own any more. `PLACERS` is the
+		// object the loop dispatches through, so a `shot.seed` read inside it is
+		// exactly the mechanism that came out.
+		const placers = source.slice(
+			source.indexOf("const PLACERS = {"),
+			source.indexOf("\n};", source.indexOf("const PLACERS = {")),
+		);
+		expect(placers.length).toBeGreaterThan(200);
+		expect(placers).not.toContain("shot.seed");
 	});
 
-	test("declares eighteen views with unique kebab-case names", () => {
+	/** Two views name their own seed, and both do it because the fixture cannot
+	 *  supply their subject: seed 47 generates no refinery and no gas giant. */
+	test("the views that declare a seed are the two the fixture cannot frame", () => {
+		const declared = VIEWS.filter(
+			(v) => (v.shot as { seed?: number }).seed !== undefined,
+		).map((v) => [v.name, (v.shot as { seed?: number }).seed]);
+		expect(declared).toEqual([
+			["ringed-giant", 34],
+			["refinery-cradle-berth", 2],
+		]);
+		// Half the reason, held here. The other half — that the fixture has no
+		// refinery — is already stronger than an assertion: `FIXTURE.stations`
+		// is a frozen literal, so `role === "refinery"` is a type error rather
+		// than a failing expectation, and tsc refuses to compile the check.
+		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
+	});
+
+	test("declares nineteen views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
-		// `planet-fill`. A literal and not `VIEWS.length`, which is the whole
-		// point: a view deleted by accident has to be a red run, and a check
-		// derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(18);
+		// `planet-fill`, nineteen since #210 added `ringed-giant`. A literal and
+		// not `VIEWS.length`, which is the whole point: a view deleted by
+		// accident has to be a red run, and a check derived from its own subject
+		// cannot be one.
+		expect(VIEWS.length).toBe(19);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -359,8 +404,8 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — eighteen since #206 added `planet-fill`.
-		expect(html).toContain("· clock 0.6–7.4s");
+		// many views the set declares — nineteen since #210 added `ringed-giant`.
+		expect(html).toContain("· clock 0.6–7.8s");
 		expect(html).not.toContain("pinned");
 	});
 
