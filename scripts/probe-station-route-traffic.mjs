@@ -957,7 +957,7 @@ try {
 	);
 	check(
 		"station-relative Traffic never falls one orbital authority tick behind",
-		result.stationFrameMaxErrorKm < 0.05,
+		result.stationFrameMaxErrorKm < 0.025,
 		JSON.stringify({ maxErrorKm: result.stationFrameMaxErrorKm }),
 	);
 	check(
