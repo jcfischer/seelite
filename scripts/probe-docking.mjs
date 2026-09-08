@@ -398,6 +398,15 @@ const undock = good.docked
 					if (g.dockingSnapshot(id).dockPhase === "docked") break;
 				}
 				const wasDocked = g.dockedAt === id;
+				// This section verifies the docking session's exit and re-entry latch,
+				// not shared Traffic ordering (the route probe owns both older-turn and
+				// active-lane cases). Isolate the session so a legitimate older Traffic
+				// launch cannot turn this into a second arbitration test.
+				g.clearTrafficPresentation();
+				g.trafficSystemIndex = g.world.system.record.index;
+				g.trafficActors = [];
+				g.trafficWarmIndex = 0;
+				g.trafficTick = Math.floor(g.world.gameTime * 10 + 1e-8);
 				const launched = g.launch();
 				// Obligation 5: a launch is unconditionally skippable.
 				const skipped = g.skipDockTraversal();

@@ -49,8 +49,9 @@ try {
 			} while (!g.trafficAuthorityReady() && attempts <= 2_000);
 			return attempts;
 		};
-		g.world.gameTime = 4;
-		sim.advanceSystem(g.world.system, 4);
+		const coldProbeAt = 4;
+		g.world.gameTime = coldProbeAt;
+		sim.advanceSystem(g.world.system, coldProbeAt);
 		g.updateTrafficAuthority();
 		const coldStartIndex = g.trafficWarmIndex;
 		const coldRoutes = g.trafficRoutes.map((projection) => ({
@@ -59,6 +60,12 @@ try {
 			berthId: projection.berthId,
 			stationId: projection.terminalStationId,
 		}));
+		const coldRoutesArePreDeparture = coldRoutes.every((projection) => {
+			const actor = g.trafficActors.find(
+				(candidate) => candidate.key === projection.key,
+			);
+			return actor && g.world.gameTime < actor.schedule.departureAtS;
+		});
 		const coldStationId = g.world.system.contents.stations.some(
 			(candidate) => candidate.id === "station-trade",
 		)
@@ -71,7 +78,7 @@ try {
 			? g.occupiedAt(coldStationId).size
 			: 0;
 		const coldLaneAvailable = coldStationId
-			? g.playerWinsTrafficLane(coldStationId, 4, "arrival")
+			? g.playerWinsTrafficLane(coldStationId, coldProbeAt, "arrival")
 			: true;
 		const savedShipPos = { ...g.world.ship.pos };
 		const savedTargetId = g.targetId;
@@ -555,6 +562,7 @@ try {
 			coldActorCount,
 			coldStartIndex,
 			coldRoutes,
+			coldRoutesArePreDeparture,
 			coldAttachedMeshes,
 			coldLabelContinuity,
 			coldLabelMissing,
@@ -626,7 +634,20 @@ try {
 						kind: "launch",
 					},
 				});
+				g.playerLaneRequests.set(stationId, {
+					readyAt: g.world.gameTime,
+					movement: "launch",
+				});
 				const playerBeatsOlderQueuedLaunch = g.playerWinsTrafficLane(
+					stationId,
+					g.world.gameTime,
+					"launch",
+				);
+				g.trafficRoutes[0] = {
+					...g.trafficRoutes[0],
+					phase: "docked-away",
+				};
+				const playerIgnoresSettledLaneHistory = g.playerWinsTrafficLane(
 					stationId,
 					g.world.gameTime,
 					"launch",
@@ -697,6 +718,7 @@ try {
 				const renderLeavesAuthorityAlone = g.trafficTick === 42;
 				return {
 					playerBeatsOlderQueuedLaunch,
+					playerIgnoresSettledLaneHistory,
 					playerArrivalGuard,
 					refusedLaunch,
 					staleOccupancyCleared,
@@ -775,8 +797,9 @@ try {
 		}),
 	);
 	check(
-		"cold authority shows exactly the parked occupancy before replay finishes",
+		"cold authority shows only never-departed parked occupancy before replay finishes",
 		result.coldRoutes.length > 0 &&
+			result.coldRoutesArePreDeparture === true &&
 			result.coldRoutes.every(
 				(projection) =>
 					projection.phase === "parked-home" && projection.berthId,
@@ -790,16 +813,17 @@ try {
 			berths: result.coldBerthCount,
 			occupied: result.coldOccupiedCount,
 			routes: result.coldRoutes,
+			preDeparture: result.coldRoutesArePreDeparture,
 			attachedMeshes: result.coldAttachedMeshes,
 		}),
 	);
 	check(
-		"a cold-start player can reserve a spare berth and keeps it through warm-up",
-		result.coldOccupiedCount < result.coldBerthCount &&
+		"a truthful full cold station queues the player without inventing a reservation",
+		result.coldOccupiedCount === result.coldBerthCount &&
 			result.coldLaneAvailable === false &&
-			result.coldClearance?.kind === "granted" &&
-			Boolean(result.coldPlayerBerth) &&
-			result.warmPlayerReserved &&
+			result.coldClearance?.kind === "queued" &&
+			!result.coldPlayerBerth &&
+			!result.warmPlayerReserved &&
 			!result.warmTrafficConflict,
 		JSON.stringify({
 			berths: result.coldBerthCount,
@@ -919,6 +943,13 @@ try {
 		result.playerBeatsOlderQueuedLaunch === false,
 		JSON.stringify({
 			playerBeatsOlderQueuedLaunch: result.playerBeatsOlderQueuedLaunch,
+		}),
+	);
+	check(
+		"settled route history is not a live Transit-lane contender",
+		result.playerIgnoresSettledLaneHistory === true,
+		JSON.stringify({
+			playerIgnoresSettledLaneHistory: result.playerIgnoresSettledLaneHistory,
 		}),
 	);
 	check(

@@ -12,6 +12,7 @@ import {
 	CANONICAL_ROUTE_DT_S,
 	evaluateTrafficCruise,
 	projectParkedTrafficActor,
+	projectSystemTrafficAuthority,
 	projectSystemTrafficActor,
 	selectTrafficDestination,
 	type TrafficCruiseEnvironment,
@@ -363,6 +364,51 @@ describe("terminal-to-terminal route projection", () => {
 		expect(replayed.laneStartedAtS).toBe(laneStartedAtS);
 	});
 
+	test("bunched departures retain the first launch as the committed lane owner", () => {
+		const startedAtS = departure;
+		const active = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: startedAtS + 0.1,
+		});
+		expect(active.phase).toBe("departing");
+		expect(active.laneStartedAtS).toBe(startedAtS);
+
+		const committed = {
+			stationId: home.id,
+			kind: "lane" as const,
+			fromS: startedAtS,
+			toS: startedAtS + 5,
+			participant: { kind: "carrier" as const, key: actor.key },
+			movement: "launch" as const,
+			committed: true,
+		};
+		const replayed = projectSystemTrafficActor({
+			record,
+			actor,
+			gameTime: startedAtS + 0.1,
+			playerTimeline: [committed],
+		});
+		expect(replayed.phase).toBe("departing");
+		expect(replayed.laneStartedAtS).toBe(startedAtS);
+
+		const other = {
+			...stationTrafficRoster(record.index, home)[1],
+			schedule: {
+				...stationTrafficRoster(record.index, home)[1].schedule,
+				departureAtS: startedAtS,
+			},
+		};
+		const queued = projectSystemTrafficActor({
+			record,
+			actor: other,
+			gameTime: startedAtS + 0.1,
+			playerTimeline: [committed],
+		});
+		expect(queued.phase).toBe("launch-queued");
+		expect(queued.laneStartedAtS).toBe(committed.toS);
+	});
+
 	test("a physical visit keeps its granted berth when current occupancy is replayed", () => {
 		let queryAt = departure;
 		let baseline = projectSystemTrafficActor({
@@ -379,7 +425,7 @@ describe("terminal-to-terminal route projection", () => {
 			});
 		}
 		const berthCache = new Map<string, string>();
-		const committed = projectSystemTrafficActor({
+		const committed = projectSystemTrafficAuthority({
 			record,
 			actor,
 			gameTime: queryAt,
@@ -394,7 +440,7 @@ describe("terminal-to-terminal route projection", () => {
 			"settled visit berth",
 		);
 		expect(berthCache.size).toBeGreaterThan(0);
-		const replayed = projectSystemTrafficActor({
+		const replayed = projectSystemTrafficAuthority({
 			record,
 			actor,
 			gameTime: queryAt + 0.1,
@@ -495,20 +541,20 @@ describe("terminal-to-terminal route projection", () => {
 	test("route projection is independent of query cadence", () => {
 		const queryAt = departure + 73.25;
 		const cruiseCache = new Map();
-		let afterStepping = projectSystemTrafficActor({
+		let afterStepping = projectSystemTrafficAuthority({
 			record,
 			actor,
 			gameTime: departure,
 			cruiseCache,
 		});
 		for (let t = departure + 0.1; t < queryAt; t += 0.1)
-			afterStepping = projectSystemTrafficActor({
+			afterStepping = projectSystemTrafficAuthority({
 				record,
 				actor,
 				gameTime: t,
 				cruiseCache,
 			});
-		afterStepping = projectSystemTrafficActor({
+		afterStepping = projectSystemTrafficAuthority({
 			record,
 			actor,
 			gameTime: queryAt,
@@ -539,7 +585,7 @@ describe("terminal-to-terminal route projection", () => {
 	test("cold cache warm-up obeys a fixed canonical tick budget", () => {
 		const cruiseCache = new Map();
 		const queryAt = departure + 73.25;
-		let projection = projectSystemTrafficActor({
+		let projection = projectSystemTrafficAuthority({
 			record,
 			actor,
 			gameTime: queryAt,
@@ -556,7 +602,7 @@ describe("terminal-to-terminal route projection", () => {
 		let calls = 1;
 		while (projection.warmIncomplete && calls < 1_000) {
 			const beforeWork = cachedWork();
-			projection = projectSystemTrafficActor({
+			projection = projectSystemTrafficAuthority({
 				record,
 				actor,
 				gameTime: queryAt,

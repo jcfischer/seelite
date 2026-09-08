@@ -718,6 +718,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			{
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
+				laneStartedAtS: departureAtS,
 				laneRequest: {
 					participant: { kind: "carrier", key: actor.key },
 					readyAt: readyAtS,
@@ -1378,21 +1379,29 @@ function projectTrafficVisit(
  * Project one complete home-owned visit. The base schedule supplies intent;
  * active traversal never reverses or teleports when that intent changes.
  */
-export function projectSystemTrafficActor(input: {
+export interface SystemTrafficProjectionInput {
 	record: SystemRecord;
 	actor: TrafficActor;
 	gameTime: number;
 	playerTimeline?: readonly TrafficArbitrationEvent[];
 	occupiedByStation?: ReadonlyMap<string, ReadonlySet<string>>;
+	projectionSystem?: System;
+}
+
+export interface SystemTrafficAuthorityInput
+	extends SystemTrafficProjectionInput {
 	cruiseCache?: TrafficCruiseCache;
 	berthCache?: TrafficBerthCache;
 	berthCacheTouched?: Set<string>;
 	/** False for an arbitration preview which must not commit a berth. */
 	recordBerthAssignments?: boolean;
-	projectionSystem?: System;
 	/** Fixed canonical replay budget used only by incremental cache warm-up. */
 	cruiseTickBudget?: number;
-}): SystemTrafficProjection {
+}
+
+function projectSystemTrafficActorWithCaches(
+	input: SystemTrafficAuthorityInput,
+): SystemTrafficProjection {
 	const cruiseBudget =
 		input.cruiseTickBudget === undefined
 			? undefined
@@ -1452,4 +1461,18 @@ export function projectSystemTrafficActor(input: {
 		desiredBoundaryS: schedule.boundaryS,
 		homeBerthId: previous.berthId ?? undefined,
 	});
+}
+
+/** Pure route projection: deterministic output with no authority/cache writes. */
+export function projectSystemTrafficActor(
+	input: SystemTrafficProjectionInput,
+): SystemTrafficProjection {
+	return projectSystemTrafficActorWithCaches(input);
+}
+
+/** Stateful authority wrapper which owns bounded replay and berth-decision caches. */
+export function projectSystemTrafficAuthority(
+	input: SystemTrafficAuthorityInput,
+): SystemTrafficProjection {
+	return projectSystemTrafficActorWithCaches(input);
 }

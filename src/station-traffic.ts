@@ -343,15 +343,18 @@ export function parkedTrafficProjection(
 	berthId: string,
 	actor: Pick<TrafficActor, "key">,
 	gameTime: number,
+	knownInterior?: StationInterior,
 ): TrafficProjection {
 	const station = stationOf(system, stationId);
 	const body = system.byId.get(stationId);
 	if (!body) throw new Error(`station ${stationId} has no placed body`);
-	const interior = stationInterior(
-		station.type,
-		STATION_GEOMETRY[station.type].aperturePlaneKm,
-		station.berthSeed,
-	);
+	const interior =
+		knownInterior ??
+		stationInterior(
+			station.type,
+			STATION_GEOMETRY[station.type].aperturePlaneKm,
+			station.berthSeed,
+		);
 	const berth = interior.berths.find((candidate) => candidate.id === berthId);
 	if (!berth) throw new Error(`no berth ${berthId} at ${stationId}`);
 	const pose = stationPose(system, stationId, gameTime);

@@ -301,7 +301,7 @@ import {
 } from "./station-traffic";
 import {
 	projectParkedTrafficActor,
-	projectSystemTrafficActor,
+	projectSystemTrafficAuthority,
 	type TrafficCruiseCache,
 	type SystemTrafficProjection,
 	type TrafficBerthCache,
@@ -3405,8 +3405,13 @@ class Game {
 		this.trafficActors = this.world.system.contents.stations
 			.flatMap((station) => stationTrafficRoster(index, station))
 			.sort((a, b) => compareCarrierKeys(a.key, b.key));
+		// Before the first scheduled departure is the only parked state the
+		// base schedule proves without replaying a physical visit. A later
+		// `desired: parked` boundary is only intent: a delayed outbound trip may
+		// still be away, so presenting it at home would invent both a ship and
+		// an occupied berth until authority finishes warming.
 		for (const actor of this.trafficActors)
-			if (trafficScheduleAt(actor, this.world.gameTime).desired === "parked")
+			if (this.world.gameTime < actor.schedule.departureAtS)
 				this.trafficColdActors.add(actor.key);
 		this.refreshColdTraffic(this.world.gameTime);
 	}
@@ -3453,7 +3458,7 @@ class Game {
 				slice++
 			) {
 				const actor = this.trafficActors[this.trafficWarmIndex];
-				const warmed = projectSystemTrafficActor({
+				const warmed = projectSystemTrafficAuthority({
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
@@ -3512,7 +3517,7 @@ class Game {
 			const arbitrationTimeline = [...playerTimeline];
 			const baselines = this.trafficActors.map((actor) => ({
 				actor,
-				projection: projectSystemTrafficActor({
+				projection: projectSystemTrafficAuthority({
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
@@ -3543,7 +3548,7 @@ class Game {
 			});
 			const touchedBerthAssignments = new Set<string>();
 			for (const { actor } of orderedActors) {
-				const projection = projectSystemTrafficActor({
+				const projection = projectSystemTrafficAuthority({
 					record: this.world.system.record,
 					actor,
 					gameTime: tick / 10,
@@ -3649,6 +3654,7 @@ class Game {
 					projection.berthId,
 					actor,
 					this.world.gameTime,
+					this.interiorOf(projection.terminalStationId),
 				);
 				this.trafficExactParked.set(actor.key, presented);
 			}
@@ -5693,7 +5699,10 @@ class Game {
 		if (!this.trafficAuthorityReady()) return false;
 		const contenders = this.trafficRoutes
 			.filter(
-				(route) => route.terminalStationId === stationId && route.laneRequest,
+				(route) =>
+					route.terminalStationId === stationId &&
+					route.laneRequest &&
+					(route.phase === "launch-queued" || route.phase === "lane-queued"),
 			)
 			.map((route) => ({
 				participant: { kind: "carrier" as const, key: route.key },
@@ -5706,14 +5715,10 @@ class Game {
 				(route.phase === "departing" || route.phase === "arriving"),
 		);
 		if (active) return false;
-		const reserved = this.playerLaneRequests.get(stationId);
-		// Ambient queued Traffic must not starve an explicit player movement. The
-		// player's request is next once the non-preemptive movement already in the
-		// lane has finished; authority sees the same request and holds later generated
-		// movements behind it. A hand-flown crossing with no request still uses
-		// ordinary oldest-ready arbitration below.
-		if (reserved?.movement === movement && reserved.readyAt === readyAt)
-			return true;
+		// A pre-registered computer/launch request is represented in Traffic's
+		// authority timeline, but it still competes here by the same oldest-ready
+		// ordering. Registration prevents later generated turns from overtaking;
+		// it does not grant the player priority over an older queued Carrier.
 		return playerWinsLane(contenders, readyAt, movement);
 	}
 
@@ -5738,10 +5743,24 @@ class Game {
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
 		if (!nearestId || !approach) return false;
 		const { frame } = approach;
+		const stationState = this.dockingStateOf(nearestId);
+		const awaitingBerth = stationState.clearance.kind === "queued";
 		const command = dockingComputerStep({
 			frame,
 			pose: approach.pose,
-			state: this.dockingStateOf(nearestId),
+			// A queued request is permission to line up and wait, not to enter.
+			// Feed the geometric controller a temporary live grant so it can track
+			// the rotating corridor; the run-in speed is held at zero below until
+			// the real protocol state promotes the request and names its berth.
+			state: awaitingBerth
+				? {
+						...stationState,
+						clearance: {
+							kind: "granted",
+							expiresAtS: Number.POSITIVE_INFINITY,
+						},
+					}
+				: stationState,
 			gameTime: this.world.gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
 		});
@@ -5765,18 +5784,23 @@ class Game {
 		this.setAttitude(nose, up);
 		let speedKms = command.speedKms;
 		if (command.phase === "run-in") {
-			const pending = this.playerLaneRequests.get(nearestId);
-			const readyAt =
-				pending?.movement === "arrival" ? pending.readyAt : this.world.gameTime;
-			this.playerLaneRequests.set(nearestId, {
-				readyAt,
-				movement: "arrival",
-			});
-			// The computer waits at the corridor entrance instead of testing a busy
-			// aperture and bouncing. An older non-preemptive movement still finishes;
-			// once it does, Traffic sees this request and later actors queue behind it.
-			if (!this.playerWinsTrafficLane(nearestId, readyAt, "arrival"))
-				speedKms = 0;
+			if (awaitingBerth) speedKms = 0;
+			else {
+				const pending = this.playerLaneRequests.get(nearestId);
+				const readyAt =
+					pending?.movement === "arrival"
+						? pending.readyAt
+						: this.world.gameTime;
+				this.playerLaneRequests.set(nearestId, {
+					readyAt,
+					movement: "arrival",
+				});
+				// The computer waits at the corridor entrance instead of testing a busy
+				// aperture and bouncing. An older non-preemptive movement still finishes;
+				// once it does, Traffic sees this request and later actors queue behind it.
+				if (!this.playerWinsTrafficLane(nearestId, readyAt, "arrival"))
+					speedKms = 0;
+			}
 		}
 		this.throttle = Math.min(1, speedKms / ASSIST_CAP_KMS);
 		// The rates are zeroed rather than left running: the computer is placing
