@@ -3694,14 +3694,14 @@ class Game {
 			const sampledPos = previousAtRender
 				? {
 						x:
-						previousAtRender.x +
-						(currentAtRender.x - previousAtRender.x) * blend,
+							previousAtRender.x +
+							(currentAtRender.x - previousAtRender.x) * blend,
 						y:
-						previousAtRender.y +
-						(currentAtRender.y - previousAtRender.y) * blend,
+							previousAtRender.y +
+							(currentAtRender.y - previousAtRender.y) * blend,
 						z:
-						previousAtRender.z +
-						(currentAtRender.z - previousAtRender.z) * blend,
+							previousAtRender.z +
+							(currentAtRender.z - previousAtRender.z) * blend,
 					}
 				: currentAtRender;
 			const dx = sampledPos.x - this.world.ship.pos.x;
