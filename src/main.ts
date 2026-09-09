@@ -998,6 +998,19 @@ class Game {
 		return this.keys.size;
 	}
 
+	/**
+	 * The throttle, 0..1.
+	 *
+	 * Read-only, and here for the same reason `heldKeyCount` is: the pad's
+	 * triggers *trim* this value rather than setting it (#283), and "a light
+	 * pull trims more slowly than a full one" is otherwise only a comment. The
+	 * cockpit draws the throttle as a texture and a lit fill, neither of which a
+	 * probe can read a number out of.
+	 */
+	get throttleFraction() {
+		return this.throttle;
+	}
+
 	/** The bloom pass, for the perf panel to switch. */
 	get bloom() {
 		return this.bloomPass ?? null;
@@ -4678,7 +4691,22 @@ class Game {
 	 * there: that console's own footer says the simulation continues, and it is
 	 * right.
 	 */
+	/**
+	 * The context, as read once at the top of this frame.
+	 *
+	 * Cached rather than recomputed: `readPadContext` asks the DOM which panel
+	 * is drawn, and `step` and `hasControlInput` both want the answer on every
+	 * frame. Three `querySelector` calls a frame on the flight path is the sort
+	 * of thing that only shows up in a profile, and the answer cannot change
+	 * between them — nothing inside one step mounts a panel.
+	 */
+	private padContextThisFrame: PadContext = "flight";
+
 	private padContext(): PadContext {
+		return this.padContextThisFrame;
+	}
+
+	private readPadContext(): PadContext {
 		if (this.settingsPanel?.isOpen()) return "modal";
 		// The instrument takes what a side console takes — six controls — and
 		// not the sticks: it is an overlay on a running game, and a panel that
@@ -4849,8 +4877,12 @@ class Game {
 	private pollPad() {
 		const frame = this.pad.poll();
 		this.padFrame = frame;
+		// Read once, here, even with no pad attached: `step` and
+		// `hasControlInput` read the cached value, and a stale one would answer
+		// for a panel that has since closed.
+		this.padContextThisFrame = this.readPadContext();
 		if (!frame.connected) return;
-		const context = this.padContext();
+		const context = this.padContextThisFrame;
 		const intents = padIntents(frame, context);
 		if (intents.keys.length > 0 || intents.activate) this.padAudioNotice();
 		if (context !== "flight") {
