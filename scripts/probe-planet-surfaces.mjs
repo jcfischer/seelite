@@ -1842,8 +1842,11 @@ check(
  * (`planet-classes.glsl.ts`), and both are smooth over the whole latitude
  * range: they would fill the middle of any tone histogram on their own. The
  * trend is estimated from the band means — the one job averaging is right for —
- * smoothed wide, and subtracted from each sample at its own latitude. What is
- * left is the band structure the complaint is about.
+ * by `quadraticTrend`, and subtracted from each sample at its own latitude.
+ * What is left is the band structure the complaint is about. **The method's
+ * history and its limits live in `lib/band-tones.mjs` and are not restated
+ * here**; this comment said "smoothed wide" for a round after the moving
+ * average was replaced by a fit, which is the drift a second copy buys.
  *
  * **Sarle's bimodality coefficient, and its threshold is not this repo's.**
  * `b = (skew² + 1) / kurtosis`, with the sample correction. A two-point

@@ -50,7 +50,7 @@
  * `probe-planet-surfaces.mjs`, where the deciding reason is that Sarle's rises
  * with skewness too.
  */
-export const quadraticTrend = (values) => {
+const quadraticTrend = (values) => {
 	const pts = [];
 	for (let i = 0; i < values.length; i++) {
 		const v = values[i];

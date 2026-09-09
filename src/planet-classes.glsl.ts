@@ -596,10 +596,12 @@ vec3 zonal(vec3 p, float rate) {
 // wrong end of it: a bell-shaped fbm through a linear gain either stays narrow,
 // which is a washed-out planet, or clips, and the clipped tails become two
 // modes. A triangle fold spends those tails on more bands instead. The profile
-// sweeps the belt-zone range and turns back, so the full range is used at every
-// gain and raising the gain adds bands rather than clipping. The fold is
-// continuous, so no band has a seam; its slope reverses at the turns, which is
-// a band boundary and is what those are.
+// sweeps the belt-zone range and turns back, so raising the gain adds bands
+// rather than clipping — at a gain large enough to reach the turns, which this
+// one is and a small one is not: at zero the profile is 0.5 everywhere and the
+// planet has no bands at all. The fold is continuous, so no band has a seam;
+// its slope reverses at the turns, which is a band boundary and is what those
+// are.
 //
 // **This shipped on the contact sheet and not on a measurement, and the reason
 // is worth keeping.** A statistic was built for it — Sarle's bimodality
@@ -614,9 +616,12 @@ vec3 zonal(vec3 p, float rate) {
 // this form, the numbers that were here for a round have been removed rather
 // than restated, and what carries it is the sheet.
 //
-// **It costs nothing.** A second octave was flown and is not here: it moved the
-// look no more than the gain does, for four more vnoise calls a fragment against
-// a budget of two. JOVIAN stays at the 18 it had.
+// **It adds no noise calls**, which is the budget the node set and is not the
+// same as costing nothing — the fold is a fract and an abs, and no shader-cost
+// measurement was taken for this change, so nothing here claims one. A second
+// octave was flown and is not here: it moved the look no more than the gain
+// does, for four more vnoise calls a fragment against a budget of two. JOVIAN
+// stays at the 18 it had.
 const float BAND_GAIN = 5.0;
 float bandProfile(float lat, float warpAmt) {
   float v = 0.5 + (fbm4(vec3(lat * 5.5 + warpAmt, 4.3 + seedOffset, 1.9)) - 0.5) * BAND_GAIN;

@@ -119,10 +119,14 @@ describe("the band-tone reading", () => {
 			const t = (band * 9 + k) / 900;
 			return (t * 2 - 1) * 20;
 		});
-		// One decimal: the sample-corrected estimate carries a finite-sample bias
-		// at 900 samples and reads 0.562 against the exact 0.556. Pinning it
-		// tighter would be pinning the sample size.
-		expect(bandMetrics(r, OPTS)?.b as number).toBeCloseTo(UNIFORM, 1);
+		// **A band, not one decimal.** `toBeCloseTo(UNIFORM, 1)` was the first
+		// spelling and it accepts 0.600 as matching 0.556 — a tolerance wide
+		// enough that the test could not establish the value it claims to
+		// reproduce. The sample-corrected estimate carries a finite-sample bias
+		// and reads 0.562 at 900 samples, so 0.02 is comfortably outside that
+		// bias and far inside anything that would be a different statistic.
+		const b = bandMetrics(r, OPTS)?.b as number;
+		expect(Math.abs(b - UNIFORM)).toBeLessThan(0.02);
 	});
 
 	/** The acceptance case proper: tones clustered toward the middle of their
@@ -146,10 +150,12 @@ describe("the band-tone reading", () => {
 		expect(m?.sd as number).toBeLessThan(1);
 	});
 
-	test("sizes the detrend window from populated bands, not from the bin count", () => {
+	test("reads the same surface the same at any bin count", () => {
 		// The same surface read at two bin counts with the same populated run.
-		// A window taken from `bins.length` would change the answer between
-		// these; taken from the populated count it cannot.
+		// This began as a window-size check, and the window is gone —
+		// `quadraticTrend` fits the populated bands and has none. The invariance
+		// it was really asserting is what matters and still holds: the reading is
+		// a property of the surface, not of how finely the lattice sampled it.
 		const shape = (band: number, k: number) =>
 			(k % 2 === 0 ? -20 : 20) + band * 1.5;
 		const narrow = bandMetrics(reading(120, 100, 9, shape), OPTS);
