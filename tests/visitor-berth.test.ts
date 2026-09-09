@@ -27,7 +27,15 @@ const stations = () => {
 };
 
 describe("the visitor berth", () => {
-	test("Traffic's roster is one short of the catalogue, everywhere", () => {
+	/**
+	 * Two hundred generated stations, which is `station-traffic.test.ts`'s
+	 * sample and not the galaxy: the rule is arithmetic on one station's own
+	 * catalogue, so a wider sweep re-measures the same expression against more
+	 * berth counts rather than reaching a rarer case. The row says "over the
+	 * sample" for that reason — #28's lesson is that a distribution claim owes
+	 * the N of the bucket it rests on, and this is not a distribution claim.
+	 */
+	test("Traffic's roster is one short of the catalogue, over the sample", () => {
 		const roster = stations().slice(0, 200);
 		expect(roster.length).toBeGreaterThan(50);
 		for (const { record, station } of roster) {

@@ -3721,7 +3721,7 @@ class Game {
 				 * `readyAtS` is part of the berth-assignment cache key, so the next
 				 * authority tick misses the cache and re-promotes a ship that has not
 				 * moved. A promotion is free to answer with a different berth, and a
-				 * parked ship then jumps pads.
+				 * parked ship then changes berths without moving.
 				 *
 				 * Measured at seed 54: `232:station-trade/traffic-03` parked in
 				 * `deck-deep` at 1088.0 s under key `…|parked-home|774.1762186` and
