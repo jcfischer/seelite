@@ -173,6 +173,39 @@ try {
 		const coldPlayerBerth = coldStationId
 			? g.dockingStates.get(coldStationId)?.berthId
 			: null;
+		/**
+		 * The same request again with the **visitor berth taken too** — since
+		 * #277 that is the only way a station is full for a player, because
+		 * Traffic's roster is the catalogue minus one and a cold station
+		 * therefore always has one berth free.
+		 *
+		 * This arm exists because the row above used to be the queued case: a
+		 * cold station was full by construction, every berth having a home
+		 * carrier parked on it, and the player was queued at capacity for ever.
+		 * That was #277's regression rather than a station being busy, so the
+		 * queue needs a fixture that makes a station genuinely full instead of
+		 * one that reads a defect as traffic.
+		 *
+		 * `berthOccupancy` is documented as writable for exactly this. The
+		 * injection is undone immediately, and `refreshTraffic()` below rebuilds
+		 * the map from the projections either way.
+		 */
+		let fullClearance = null;
+		let fullPlayerBerth = null;
+		if (coldStationId) {
+			const before = g.berthOccupancy.get(coldStationId);
+			g.berthOccupancy.set(
+				coldStationId,
+				new Set(g.berthIdsOfStation(coldStationId)),
+			);
+			g.dockingStates.delete(coldStationId);
+			fullClearance = g.requestDockingClearance().state?.clearance ?? null;
+			fullPlayerBerth = g.dockingStates.get(coldStationId)?.berthId ?? null;
+			g.dockingStates.delete(coldStationId);
+			if (before) g.berthOccupancy.set(coldStationId, before);
+			else g.berthOccupancy.delete(coldStationId);
+			g.requestDockingClearance();
+		}
 		const coldWarmCalls = refreshTraffic();
 		const warmPlayerReserved = Boolean(
 			coldStationId &&
@@ -794,6 +827,8 @@ try {
 			navRowIdentity,
 			coldBerthCount,
 			coldOccupiedCount,
+			fullClearance,
+			fullPlayerBerth,
 			coldLaneAvailable,
 			coldClearance,
 			coldPlayerBerth,
@@ -1056,11 +1091,10 @@ try {
 		}),
 	);
 	check(
-		"a truthful full cold station queues the player without inventing a reservation",
-		result.coldOccupiedCount === result.coldBerthCount &&
-			result.coldClearance?.kind === "queued" &&
-			!result.coldPlayerBerth &&
-			!result.warmPlayerReserved &&
+		"a cold station keeps the visitor berth free and grants it (#277)",
+		result.coldOccupiedCount === result.coldBerthCount - 1 &&
+			result.coldClearance?.kind === "granted" &&
+			Boolean(result.coldPlayerBerth) &&
 			!result.warmTrafficConflict,
 		JSON.stringify({
 			berths: result.coldBerthCount,
@@ -1068,8 +1102,21 @@ try {
 			laneAvailable: result.coldLaneAvailable,
 			clearance: result.coldClearance,
 			playerBerth: result.coldPlayerBerth,
-			warmPlayerReserved: result.warmPlayerReserved,
 			warmTrafficConflict: result.warmTrafficConflict,
+		}),
+	);
+	check(
+		"a truthful full station queues the player without inventing a reservation",
+		result.fullClearance?.kind === "queued" &&
+			// The position is the occupancy the allocator was handed, so a full
+			// station's reply is its capacity. Asserting the kind alone would pass a
+			// queue that named any number at all.
+			result.fullClearance.position === result.coldBerthCount &&
+			!result.fullPlayerBerth,
+		JSON.stringify({
+			berths: result.coldBerthCount,
+			clearance: result.fullClearance,
+			playerBerth: result.fullPlayerBerth,
 		}),
 	);
 	check(

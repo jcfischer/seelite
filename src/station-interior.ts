@@ -614,13 +614,53 @@ export function berthSpare(berth: Berth, hull: HullEnvelope): number {
  * against the same state is the same answer — which is the property the
  * headless tier can hold the reservation lifetime against.
  */
-export function chooseBerth(
-	interior: StationInterior,
+/**
+ * How many berths a station keeps out of Traffic's hands (#277).
+ *
+ * #266 gave every berth of every station a home carrier and parked all of them
+ * before their first departure, so `occupied` was the whole catalogue from the
+ * first frame and an arriving player was queued at the station's capacity —
+ * forever, at every station, on every seed. A grant is a berth reservation
+ * (`docking.md` §13.2), so with nothing free there was nothing to grant.
+ *
+ * The reserved berth is the **last in catalogue order**, and which one it is
+ * does not matter today: every berth of a station has the same clear envelope,
+ * so `berthFits` cannot tell them apart. `tests/visitor-berth.test.ts` holds
+ * that as a tripwire rather than as a fact — a reserved berth smaller than its
+ * neighbours would be a queue the player never advances through, which is this
+ * defect again in a shape nothing would catch.
+ *
+ * The queue is not deleted by this. It is what a *second* visitor gets, which
+ * is what §13.2 wrote it for.
+ */
+export const VISITOR_BERTHS_PER_STATION = 1;
+
+/**
+ * The berths Traffic may call home — the catalogue minus the visitor's.
+ *
+ * **One rule read by three callers**, because the roster's length
+ * (`stationTrafficRoster`), a carrier's home berth (`station-route.ts`) and
+ * Traffic's own allocator (`clearancePromotion`) each used the whole catalogue
+ * and would otherwise each need their own copy of "minus one". A station with
+ * one berth gives Traffic none.
+ */
+export function trafficBerths(interior: StationInterior): readonly Berth[] {
+	return interior.berths.slice(
+		0,
+		Math.max(0, interior.berths.length - VISITOR_BERTHS_PER_STATION),
+	);
+}
+
+/** `chooseBerth` over a caller's own subset of the catalogue — Traffic's, in
+ *  practice, which may not reach the visitor berth. The player's path goes
+ *  through `chooseBerth` and sees every berth, reserved one included. */
+export function chooseBerthFrom(
+	berths: readonly Berth[],
 	hull: HullEnvelope,
 	occupied: ReadonlySet<string>,
 	requestTimeS = 0,
 ): Berth | null {
-	const candidates = interior.berths.filter(
+	const candidates = berths.filter(
 		(berth) => !occupied.has(berth.id) && berthFits(berth, hull),
 	);
 	if (candidates.length === 0) return null;
@@ -631,4 +671,13 @@ export function chooseBerth(
 	const seconds = Math.floor(requestTimeS);
 	const index = ((seconds % tied.length) + tied.length) % tied.length;
 	return tied[index];
+}
+
+export function chooseBerth(
+	interior: StationInterior,
+	hull: HullEnvelope,
+	occupied: ReadonlySet<string>,
+	requestTimeS = 0,
+): Berth | null {
+	return chooseBerthFrom(interior.berths, hull, occupied, requestTimeS);
 }

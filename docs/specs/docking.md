@@ -558,18 +558,48 @@ required the scan and gave it no moment; requesting clearance is that moment, so
 a hostile arrival is something the player *asked for an answer about* rather
 than something that happens to them silently.
 
-### 6.1 The queue has no traffic yet
+### 6.1 Traffic's share of a catalogue, and the queue it leaves
 
 **Decision D6: build the queue path; grant immediately until station traffic
-is built.**
+is built.** Traffic was built by #266, and D6 was amended by **#277: a station
+keeps one berth for visitors, and Traffic's roster is the catalogue minus one.**
 
-Station traffic is #148's and unbuilt, so slot occupancy is always zero in the
-live game and every request is granted at once. The objection to this is that
-an unexercised branch rots, and the answer is a build obligation rather than a
-promise: **the queued and denied branches are driven by an injected occupancy
-input in the headless tests** (§9.1), so they are exercised code from the day
-they are written. #148 replaces the injection with real ships; it does not
-implement the branch. #8 retains combat AI and interdiction.
+D6 as first written assumed occupancy was always zero in the live game, because
+station traffic was #148's and unbuilt: the queued and denied branches were kept
+from rotting by **an injected occupancy input in the headless tests** (§9.1),
+exercised code from the day they were written.
+
+#266 became the caller that writes occupancy, and wrote every berth: one
+home-owned carrier per generated berth — **by construction**, the roster being
+sized from `interior.berths.length` — and all of them parked before their first
+departure. Occupancy therefore covered the whole catalogue wherever that
+construction held, so the player was queued at the station's capacity and — a
+grant being a berth reservation (§13.2) — could never dock. #277 is that
+regression and its ruling, and its receipt carries the readings: no figure is
+quoted here, because the build they were taken on no longer exists and no
+shipped instrument can reprint them.
+
+**The share is the catalogue minus one, and the reserved berth is not
+special-cased anywhere else.** Traffic's roster length, a carrier's home berth
+and Traffic's own promotion allocator all read one rule (`trafficBerths`), so a
+visiting carrier cannot take the visitor berth either; the player's own
+promotion goes through the full catalogue and may take any free berth including
+that one. Which berth is reserved does not matter while every berth of a station
+shares one clear envelope, and a test holds that as a tripwire rather than as a
+fact.
+
+**The queue is still not reachable in the live game, and D6's bargain stands
+unchanged.** There is one player, Traffic may not take the visitor berth, and no
+other visitor exists — so nothing can present a station with every berth taken.
+The queued and denied branches are exercised the way D6 said they would be: by
+injected occupancy, now from a browser probe as well as the headless tests.
+What would make the queue live is a second visitor — a rule that lets Traffic
+into the visitor berth, or an NPC that docks as a guest — and neither is
+specified here. #8 retains combat AI and interdiction.
+
+What is **not** decided here is whether a departed carrier's home berth is held
+while it is away. Today it is not, so a station's free capacity grows with the
+clock — recorded in #277 and left open.
 
 ---
 
