@@ -112,7 +112,8 @@ export const PLATE_FACTOR = 0.06;
  * static camera on a body that does not turn must read by construction, and it
  * is **not** evidence that a pad cannot flicker: in play the camera moves, and a
  * moving camera moves the transforms exactly as a turn does. Charted rather than
- * remembered — see the follow-up node under #269.
+ * remembered: node #282 owns the question, including the instrument arm that
+ * would have to move the camera before a pad can be measured at all.
  *
  * The previous attempt on this defect is still in the mouth bulkhead's own
  * comment below. It moved the *front* faces apart in z and read the symptom as
