@@ -510,10 +510,97 @@ the selection, which stays the chart's — a row click goes through the same
 `select` a click on the canvas does, so there is one selection rather than two
 that have to agree.
 
-**Stations are not a filter here.** They are carriers, and
+**#86 deliberately left stations out of this filter.** They are carriers, and
 `persistent-world-state.md` §3.1 requires them to read as timestamped "last
-known" rather than live omniscience; §10 defers them from the map entirely. A
-facility filter is its own node.
+known" rather than live omniscience. #116 resolves that deferred boundary in
+the subsection below.
+
+#### 5.2.1 Facilities knowledge boundary
+
+Ratified on #116. Generated public infrastructure is universal
+galaxy knowledge: an unvisited system may show its station count, station roles,
+and permanent facilities implied by those roles. This is immutable baseline
+information, not a player-knowledge row.
+
+A refinery's black-market flag remains learned by visiting, as
+`station-types.md` §5.2 requires. Mutable carrier condition, prices, stock, and
+other current facts are intelligence: they appear only when learned through an
+approved information channel and carry `persistent-world-state.md` §3.1's
+timestamped last-known semantics. Their absence must never be filled from live
+objective state.
+
+Facility filters match known structural presence, not current availability. A
+system therefore continues to match a Shipyard filter when that shipyard's
+last-known condition is disabled or destroyed. The condition is a separate
+annotation on the result; it never silently removes the result. V1 has no
+"available now" facility filter, because last-known intelligence cannot make
+that promise.
+
+Mutable condition reads as a compact condition-plus-age annotation in the
+finder row: for example `OPERATIONAL · SEEN 2H AGO` or
+`DESTROYED · SEEN 3D AGO`. A carrier never observed reads `STATUS UNKNOWN`.
+The selected-system card exposes the exact observation time and report source.
+The result row remains visually active; greying the whole row would confuse
+stale intelligence with an unavailable facility or a disabled control.
+
+Entering a system receives a public System relay report and refreshes the
+operational condition of every station in that system. Docking refreshes the
+docked station again and reveals its private facts, including black-market
+presence. Opening the Galaxy Map is never an information channel, and v1 adds
+no separate long-range scan for this purpose. The starting system receives the
+same public report when the initial world is established, so its knowledge does
+not depend on having arrived through hyperspace first.
+
+Facility chips extend the existing finder controls. Finder rows carry the
+compact facility and last-known annotations; selecting one fills the existing
+system record card with the complete station roster, exact observation times,
+and report sources. The chart's points remain a geographic surface: facility
+filters add no point glyphs or colours and do not remove points from the chart.
+This preserves §5.1's division: the list finds and the chart shows where.
+
+A filter over a private fact is explicitly knowledge-scoped. The black-market
+control is labelled `KNOWN FENCE`; its result area contains known positive
+matches and a compact count of systems inside the current name, economy, and
+jump narrowing whose private fact remains unchecked. It does not print the
+unknown systems as a second galaxy-sized list. Zero matches therefore means
+"no known fence", never "no fence exists".
+
+The facility chip set is exactly `REFINERY`, `SHIPYARD`, and `KNOWN FENCE`.
+There is no `TRADE` chip because every generated system has a trade station and
+the control would narrow nothing. The public chips use the canonical station
+roles rather than proxy labels such as `MINING` or `HULLS`; exclusive equipment
+remains detail in the selected system's station roster.
+
+Active facility chips combine with `AND` at system level: `REFINERY` plus
+`SHIPYARD` means a system containing both roles, and adding `KNOWN FENCE`
+requires at least one refinery there that the player knows has a black market.
+Economy chips remain `OR` within their group because one system has one
+economy. Name, economy, facilities, and jump budget combine with `AND` across
+groups. Like every other active narrowing in §5.2, any facility chip expands
+the finder; clearing it collapses only when all narrowing has returned to its
+default.
+
+Last-known intelligence never expires. Its age increases until an approved
+information channel refreshes it; `STATUS UNKNOWN` means never observed, not
+older than a threshold. Age never removes, greys, or reclassifies a fact.
+
+A finder row annotates only the station roles matched by the active facility
+chips, one condition and age per matched role. It never collapses mixed carrier
+conditions into a system-wide status. `KNOWN FENCE` uses its refinery's
+last-known condition. With no facility chip active, §5.2's existing compact row
+is unchanged; the selected-system card remains the complete roster.
+
+An observed recovery schedule is remembered intelligence, never a prediction
+promoted to fact. Passing its `completesAt` does not change a finder row from
+`REPAIRING`; the selected-system card shows the remembered time as
+`DUE <time> · UNCONFIRMED`, then `OVERDUE · UNCONFIRMED`. Only a later System
+relay, docking observation, or other approved information channel may report
+the completed condition.
+
+Docking at a refinery permanently establishes its immutable black-market flag
+as known-present or known-absent. An undocked refinery is unchecked. A system
+with no refinery is neither a match nor unchecked, because its public station
+roles already prove that a fence cannot be generated there.
 
 ### 5.3 The hover label: naming a system without a click
 
@@ -1243,14 +1330,41 @@ course control — and the build that fails it is a feature nobody wrote. It is
 numbered rather than folded into another item so that the sentence above stays
 true of exactly the items it names.
 
+### 9.4 Facilities knowledge and finder extension
+
+The implementation spawned by #116 as #275 owes both tiers:
+
+1. **Public infrastructure is complete without discovery.** Every generated
+   system projects its station count, names, roles, and role-derived permanent
+   facilities without reading objective or knowledge overlays. `REFINERY` and
+   `SHIPYARD` match that structure even when condition is unknown, disabled, or
+   destroyed; there is no availability filter.
+2. **The chip algebra is exact.** The set is `REFINERY`, `SHIPYARD`, and
+   `KNOWN FENCE`; facility chips intersect, economy chips union, and the four
+   filter groups intersect. Every facility chip expands the finder under §5.2's
+   existing rule. Chip-only searches retain §5.2's existing jump-budget and
+   beyond-range behavior.
+3. **Fence knowledge is three-valued.** A checked generated true flag is a
+   match, checked false is a known non-match, and no private-fact marker is
+   unchecked. The result reports the exact unchecked count inside the other
+   active narrowing and never lists those systems as positive or negative.
+4. **Condition presentation never predicts.** Matched roles show their own
+   condition and relative observation age, or `STATUS UNKNOWN`; elapsed time
+   never expires knowledge or materializes an observed recovery completion.
+   The record card carries exact times, sources, and an unconfirmed due or
+   overdue recovery schedule.
+5. **Information channels are explicit.** Initial world establishment and a
+   hyperspace arrival refresh every local station from the System relay;
+   docking refreshes that station and checks a refinery's black-market fact.
+   Opening the map changes no knowledge row.
+6. **The rendered ownership boundary holds.** Activating each chip produces the
+   expected rows and annotations at desktop and narrow widths; selection shows
+   the full station roster in the existing record card. The same system-point
+   set, colours, and visibility are measured before and after facility
+   narrowing, so the chart remains geography-only.
+
 ## 10. Deferred
 
-- **Last-known station information on the map.**
-  `persistent-world-state.md` §3.1 requires the map to present carrier state as
-  timestamped "last known" rather than live omniscience. The system record in §5
-  is seed-derived and always knowable; the *stations inside* a system are
-  carriers and are not. Nothing in this spec displays them yet, and whatever
-  does inherits §3.1.
 - **Whether the core haze ships.** §6 leaves it off and built.
 - **Route safety, traffic, and legal status on the chart** — derived
   projections (§8 of `persistent-world-state.md`), and none of them decided.

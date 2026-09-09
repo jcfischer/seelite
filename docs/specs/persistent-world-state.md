@@ -40,6 +40,18 @@ Knowledge and physical condition are independent.
 - Objective events outside the player's information channels do not update knowledge or `observedRecovery` automatically.
 - A player-caused explicit transition updates knowledge immediately. A lazily materialized completion changes objective condition only, even when the player initiated its recovery; the player knew the schedule, not its successful outcome. Otherwise a revisit, report, relay, or later explicit intelligence mechanic updates knowledge.
 - The galaxy map presents this as timestamped “last known” information, not unexplained live omniscience.
+- Condition intelligence and learned private facility facts are independent inside
+  one carrier's knowledge row. An optional
+  `knownPrivateFacts.blackMarket` marker stores only `learnedAt` and its report
+  source. The black-market value itself remains generated baseline data: once
+  the marker exists, the generated refinery flag supplies known-present or
+  known-absent; without it, the fact is unchecked. The marker is invalid for a
+  non-refinery carrier.
+- A `system-relay` observation, received on initial world establishment and
+  every later system entry, refreshes condition intelligence for every station
+  in that system while preserving learned private-fact markers. A `docking`
+  observation refreshes that station and adds its refinery black-market marker.
+  Neither map opening nor elapsed time observes anything.
 
 ### 3.2 Objective condition
 
@@ -137,14 +149,34 @@ The implementation node owes headless tests proving:
 3. **Transition table:** every allowed transition works, every invalid transition fails loudly, knowledge combines independently with every objective condition, repeated destroy/replace cycles preserve instance ordinals, and repeated interrupt/restart cycles produce distinct recovery-process identities. The sequence destroyed → repairing → assisted or rescheduled → replacement complete retains one episode ordinal and the original player attribution through completion.
 4. **Lazy recovery boundaries:** immediately before, exactly at, and after `completesAt` produce the specified condition and replacement ordinal without a tick loop. A due completion first materialized at different later access times always records `occurredAt = completesAt` and produces identical canonical snapshots.
 5. **Order independence:** the same seed, snapshot, and `gameTime` yield the same effective state and canonical sorted projection regardless of map insertion order, access order, or which systems were visited first; same-timestamp completions resolve in canonical `CarrierKey` order.
-6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. Byte-format compatibility and migration policy are deferred to the save-format decision.
+6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery` and learned private-fact markers, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. Byte-format compatibility and migration policy are deferred to the save-format decision.
 7. **Compaction equivalence:** compacting transitions cannot change effective capabilities, scheduled recovery, latest attribution, or last-known information including `observedRecovery`.
 8. **Hard bounds:** active objective rows, causal summaries, and knowledge rows never exceed one each per generated carrier; repeated destroy/replace and interrupt/restart cycles do not increase that bound.
 9. **Atomicity and integrity:** a round trip cannot combine `gameTime` or one galaxy envelope from one snapshot with state from another, and truncated or partially written typed domains fail validation rather than reading as absent rows.
+10. **Facility knowledge:** public station roles require no knowledge row; initial
+    establishment and system entry observe every local station through
+    `system-relay`; docking observes one station and marks a refinery's
+    black-market fact checked. Later condition observations preserve that
+    marker, the marker survives replacement of the carrier instance, and the
+    snapshot never persists the generated black-market boolean itself. A
+    generated false flag with a marker is known-absent; the same flag without a
+    marker is unchecked.
+    Adding the marker changes the serialized knowledge-row shape, so the
+    implementation bumps `WORLD_SCHEMA_VERSION`; it does not silently accept a
+    version-1 snapshot as though the new field had always been present.
 
 All arithmetic and state-machine checks are headless. A later carrier's visible world evidence or map/HUD presentation also owes the repository's browser probe tier.
 
-**Implemented in `src/world-state.ts` and the leaf `src/carrier-key.ts`, checked by `tests/world-state.test.ts`.** That file has ten `describe` blocks: nine titled `§9.1` … `§9.9`, one for each obligation above and numbered as this section numbers it, plus `§7 the envelope's writers` — what §7 asks of the write path rather than of the model, titled so that counting blocks against this list does not read as a mismatch. The legal-status domain is present as the typed per-galaxy slot §7 requires and nothing more — thresholds, decay and the Clean/Wanted/Fugitive label belong to the combat node, and being derived, the label is a §8 projection that must not be saved.
+**Obligations 1–9 are implemented in `src/world-state.ts` and the leaf
+`src/carrier-key.ts`, checked by `tests/world-state.test.ts`.** That file has ten
+`describe` blocks: nine titled `§9.1` … `§9.9`, one for each implemented
+obligation above, plus `§7 the envelope's writers` — what §7 asks of the write
+path rather than of the model, titled so that counting blocks against this list
+does not read as a mismatch. #116's implementation handoff must add §9.10. The
+legal-status domain is present as the typed per-galaxy slot §7 requires and
+nothing more — thresholds, decay and the Clean/Wanted/Fugitive label belong to
+the combat node, and being derived, the label is a §8 projection that must not
+be saved.
 
 ## 10. Deferred decisions
 

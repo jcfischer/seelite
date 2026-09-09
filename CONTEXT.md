@@ -109,8 +109,18 @@ A carrier instance's objective physical condition. `docs/specs/persistent-world-
 _Avoid_: Status flag, lifecycle
 
 **Last-known state**:
-The player's timestamped knowledge of a carrier instance and its observed operational condition. It may differ from the objective condition when events happen out of sight.
+The player's timestamped knowledge of a carrier instance and its observed
+operational condition. It may differ from the objective condition when events
+happen out of sight. It never expires; its increasing age carries the
+uncertainty until an approved information channel refreshes it.
 _Avoid_: Live map state, discovery status
+
+**System relay**:
+The public station-condition report received when the player enters a system.
+It refreshes Last-known state for every station there, but reveals no private
+facility facts such as black-market presence. Opening the Galaxy Map does not
+contact a System relay.
+_Avoid_: Live galaxy feed, long-range scan
 
 **Recovery process**:
 A named, visible, and interruptible in-world process that repairs a carrier instance or replaces it with a new one.
