@@ -127,6 +127,10 @@ const EXEMPT = new Map([
 		"#246's headed calibration for EXT_disjoint_timer_query_webgl2: it prints the span, gain and floor arms so a later ANGLE can be re-qualified, and asserts nothing — the pass/fail judgement is the refusal shipped in src/frame-attribution.ts, and a table that also gated would be the check deriving itself from its own subject",
 	],
 	[
+		"measure-mouth-flicker.mjs",
+		"#269's attribution instrument for the station-mouth flicker: it prints the temporal-median area, the ray hits against the depth quantum and the hide-and-diff arms so a later fight can be named, and asserts nothing — the pass/fail judgement is probe-station-mouth.mjs, and a table that also gated would be the check deriving itself from its own subject",
+	],
+	[
 		"measure-light-cost.mjs",
 		"#99's headed frame-cost instrument; it asserts nothing by design — #98 settled that there is no frame-time floor to gate on — so there are no checks for a watch to report into",
 	],

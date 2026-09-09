@@ -54,6 +54,73 @@ export const INTERIOR_GROUP_NAME = "station-interior";
 export const PLATE_FACTOR = 0.06;
 
 /**
+ * **One aperture, four rings, and only one of them may own its edge (#269).**
+ *
+ * `station-interior.ts` sets `laneHalfAcrossKm` to `aperture.widthKm / 2` and
+ * `laneHalfUpKm` to `aperture.heightKm / 2`, and `ringAround` puts a ring's
+ * inner face exactly at the extent it is handed. So four rings around one mouth
+ * — `station-mesh.ts`'s coaming and its lit aperture bars, this module's mouth
+ * bulkhead and its lane edge — each placed an inner face on the same plane, and
+ * every pair of them that also overlaps in depth drew the same throat wall.
+ *
+ * Coplanar faces have identical depth, three's `depthFunc` is `LessEqualDepth`,
+ * and opaque objects are sorted front-to-back by their centres — so the
+ * *last-drawn* face wins, and as the station turns and that sort flips, the
+ * winner flips with it. That is why the symptom is temporal: a 2748-pixel region
+ * of the trade station's inner mouth appears for one frame and is gone the next,
+ * which is what the principal's playtest recording shows.
+ *
+ * **The lit exterior rim owns the edge and every other ring steps back from it,
+ * each by its own multiple of this.** Distinct multiples rather than one, because
+ * three rings sharing a *new* plane is the same defect moved: the coaming, the
+ * bulkhead and the lane edge overlap one another in depth as well, which is why
+ * hiding the lit bars leaves a smaller fight rather than none.
+ *
+ * **Why this size.** Under a `1/z` depth buffer with the near layer's 0.01 km
+ * near plane and 24 bits, two faces are distinguishable while they are further
+ * apart than `z²·(1/near − 1/far)/2²⁴` — 0.19 mm at the 0.17 km this was
+ * measured at, and 4 m only at 26 km. So no fixed offset removes a coplanarity
+ * at *every* range; what it does is push the return out past the range where the
+ * mouth is more than a few pixels of rim. At 26 km the trade's 120 m opening
+ * subtends 0.26°, about five pixels across a 60° frame. Under that bound this is
+ * the smallest step that stays invisible on the one ring where it moves anything
+ * a player sees — the lane edge's lit border, 4 m of a 17 m border on a 120 m
+ * opening.
+ *
+ * The previous attempt on this defect is still in the mouth bulkhead's own
+ * comment below. It moved the *front* faces apart in z and read the symptom as
+ * fixed; the inner side faces were never moved, and they are what was left.
+ */
+export const RIM_SEPARATION_KM = 0.004;
+
+/**
+ * How far each ring steps back from the aperture edge, in `RIM_SEPARATION_KM`.
+ *
+ * Ordered by how much of the visible opening each may give up. The lit exterior
+ * bars are the docking cue and own the edge at zero. The lane edge is the lit
+ * border a parked pilot reads, so it moves least. The coaming and the mouth
+ * bulkhead are structure whose only requirement is not to block the slot, so
+ * they step back furthest — and end up buried inside the 24 m lit bar, where
+ * nothing can see them.
+ */
+export const RIM_STEPS = {
+	apertureLight: 0,
+	laneEdge: 1,
+	coaming: 2,
+	mouthBulkhead: 3,
+} as const;
+
+/** The inner half-extents a ring should be built to, given the aperture's own
+ *  and which ring it is. */
+export function ringInsideAperture(
+	inner: { across: number; up: number },
+	step: keyof typeof RIM_STEPS,
+): { across: number; up: number } {
+	const back = RIM_STEPS[step] * RIM_SEPARATION_KM;
+	return { across: inner.across + back, up: inner.up + back };
+}
+
+/**
  * The shell's surface: five slabs, two-sided.
  *
  * **It was one `BackSide` box, and its sixth face was a lid.** A closed box
@@ -324,7 +391,13 @@ export function buildStationInterior(
 	// shield is mounted on, facing every berth.
 	for (const [w, h, x, y] of ringAround(
 		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
-		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+		// **Stepped back from the lane, not cut to it** (`RIM_SEPARATION_KM`).
+		// The step is 12 m here, which is inside the lit bar's own 24 m, so the
+		// hole this wall carries is wider than the opening and covered by it.
+		ringInsideAperture(
+			{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+			"mouthBulkhead",
+		),
 	)) {
 		if (w <= 0 || h <= 0) continue;
 		const panel = box(w, h, plate, structure, "interior-bulkhead");
@@ -333,6 +406,11 @@ export function buildStationInterior(
 		// two coplanar front faces there z-fight — the symptom is a slot that
 		// flickers as the station turns, which reads as the aperture not being
 		// there.
+		//
+		// **That was half the fix and read as the whole of it** (#269). Moving the
+		// front faces apart in z left the *inner side* faces exactly on the lane,
+		// which is where the flicker actually was; `RIM_SEPARATION_KM` above is
+		// the other half.
 		panel.position.set(x, y, interior.mouthAxialKm - plate * 0.6);
 		group.add(panel);
 	}
@@ -351,13 +429,21 @@ export function buildStationInterior(
 	// because `tests/station-mesh.test.ts`'s connectivity check shrinks every
 	// part before testing contact and a graze is not a joint. Straddling the
 	// panel's inner face is both.
+	//
+	// **And one step back from the lane, not on it** (`RIM_SEPARATION_KM`). This
+	// is the ring that gives up least, because it is the only one of the four
+	// whose inner edge a player reads: 4 m of a 17 m border on a 120 m opening.
 	const laneGlow = glowMaterial(visuals.strobeColor);
+	const laneEdgeInner = ringInsideAperture(
+		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+		"laneEdge",
+	);
 	for (const [w, h, x, y] of ringAround(
 		{
-			across: interior.laneHalfAcrossKm + plate * 2.5,
-			up: interior.laneHalfUpKm + plate * 2.5,
+			across: laneEdgeInner.across + plate * 2.5,
+			up: laneEdgeInner.up + plate * 2.5,
 		},
-		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+		laneEdgeInner,
 	)) {
 		const strip = box(w, h, plate * 1.2, laneGlow, "interior-lane-edge");
 		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.3);

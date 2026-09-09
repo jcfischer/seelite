@@ -121,6 +121,7 @@ import {
 	NAMEPLATE_NAME,
 	buildStationInterior,
 	ringAround,
+	ringInsideAperture,
 } from "./station-interior-mesh";
 import { stationInterior } from "./station-interior";
 import { disposeSubtree, isShared, shared } from "./gpu-teardown";
@@ -680,7 +681,15 @@ function coamingRing(
 		across: (aperture.widthKm * outerScale.across) / 2,
 		up: (aperture.heightKm * outerScale.up) / 2,
 	};
-	const inner = { across: aperture.widthKm / 2, up: aperture.heightKm / 2 };
+	// **Stepped back from the aperture edge rather than cut to it** (#269,
+	// `RIM_SEPARATION_KM`). The lit bars below own that edge; a coaming that
+	// shared it put a second face on the same plane, and the two took turns
+	// winning the depth test as the station turned. The step is 8 m and the bar
+	// that covers it is 24 m wide, so nothing here is exposed by it.
+	const inner = ringInsideAperture(
+		{ across: aperture.widthKm / 2, up: aperture.heightKm / 2 },
+		"coaming",
+	);
 	const bars: THREE.Mesh[] = [];
 	for (const [w, h, x, y] of ringAround(outer, inner)) {
 		if (w <= 0 || h <= 0) continue;
@@ -730,6 +739,12 @@ function buildAperture(
 	// Four bars around the mouth rather than a ring: the slot is a rectangle, and
 	// which side is the long one is what a ship rolls to line its beam up with
 	// (#157 — check 4 measures the up-vector against the *short* axis).
+	//
+	// **These are the ring that owns the aperture edge** (#269,
+	// `RIM_STEPS.apertureLight` is zero). They are the docking cue, so they are
+	// the one ring whose inner face is the opening rather than a step back from
+	// it — and the reason the other three step back at all is that they were all
+	// on this plane, taking turns to win the depth test as the station turned.
 	const lights: [number, number, number, number][] = [
 		[w + bar * 2, bar, 0, (h + bar) / 2],
 		[w + bar * 2, bar, 0, -(h + bar) / 2],
