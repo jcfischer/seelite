@@ -588,9 +588,14 @@ that one. Which berth is reserved does not matter while every berth of a station
 shares one clear envelope, and a test holds that as a tripwire rather than as a
 fact.
 
-**The queue is not dead code again.** It is what a *second* visitor gets, and
-what the first gets at a station whose free berth is already taken. #8 retains
-combat AI and interdiction.
+**The queue is still not reachable in the live game, and D6's bargain stands
+unchanged.** There is one player, Traffic may not take the visitor berth, and no
+other visitor exists — so nothing can present a station with every berth taken.
+The queued and denied branches are exercised the way D6 said they would be: by
+injected occupancy, now from a browser probe as well as the headless tests.
+What would make the queue live is a second visitor — a rule that lets Traffic
+into the visitor berth, or an NPC that docks as a guest — and neither is
+specified here. #8 retains combat AI and interdiction.
 
 What is **not** decided here is whether a departed carrier's home berth is held
 while it is away. Today it is not, so a station's free capacity grows with the
