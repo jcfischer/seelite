@@ -1848,22 +1848,22 @@ check(
  * here**; this comment said "smoothed wide" for a round after the moving
  * average was replaced by a fit, which is the drift a second copy buys.
  *
- * **Sarle's bimodality coefficient, and its threshold is not this repo's.**
- * `b = (skew² + 1) / kurtosis`, with the sample correction. A two-point
- * distribution — which is what a two-tone surface is — gives 1.0; a uniform one
- * gives 5/9; a normal one 1/3. So 5/9 is a floor stated by the statistic rather
- * than fitted to either build, and it says something the node can be held to:
- * the tones must be at least as spread as uniform. It is scale-free by
- * construction, which the two earlier metrics were not — both normalised the
- * residual by its own extremes, which is a control taken from inside the arm.
+ * **Sarle's bimodality coefficient**, defined and tested in
+ * `lib/band-tones.mjs` — 1.0 is two-point, 5/9 uniform, 1/3 normal, and the
+ * threshold is the statistic's rather than this repo's. Not restated further
+ * here. It is scale-free by construction, which the two metrics it replaced
+ * were not — both normalised the residual by its own extremes, which is a
+ * control taken from inside the arm.
  *
  * **The control is a repeat, not a second surface.** Three seconds of world
  * time: `zonal` advects at 0.020, so the surface has barely moved and what the
  * two reads differ by is the instrument. Thirty seconds was tried and is a
  * different stretch of the planet — it moved the earlier metric by 40 points
- * and told us nothing about repeatability. A control that reads exactly zero
- * means the clock never reached the surface program, and that is reported as a
- * failure rather than as a perfect margin.
+ * and told us nothing about repeatability. A reading of exactly zero is **not**
+ * treated as a broken clock — that is what this said for a round, and the
+ * observation does not support it: a tone distribution can be invariant under a
+ * longitude advection while the clock works, because the bands slide and the
+ * histogram of them does not. Only the upper end is asserted; see the check.
  */
 // Close enough that a band is many samples rather than a few. The signature
 // sweep above stands at READ_RADII for a different question, and is restored.
@@ -1948,14 +1948,31 @@ if (jovianA?.b && jovianB?.b) {
 			`   residual sd ${jovianA.sd.toFixed(2)} / ${jovianB.sd.toFixed(2)}`,
 	);
 
+	/*
+	 * **This is a repeatability bound, and it is not a clock check.**
+	 *
+	 * It read as one for a round: the zero branch said "the clock is not reaching
+	 * the surface program", which the observation does not support. What is
+	 * measured is one aggregate coefficient before and after a longitude
+	 * advection, and a tone distribution can be invariant under that while the
+	 * clock works perfectly — the bands slide and the histogram of them does not
+	 * move. So a zero here is a fact about the statistic and not a diagnosis of
+	 * the renderer, and it is no longer a failure.
+	 *
+	 * What the check is for is the upper end: a coefficient that swings by more
+	 * than the ceiling between two reads of the same build is one whose noise is
+	 * comparable to anything it might report, and no number taken from it means
+	 * much. That end is the assertion.
+	 */
 	check(
-		"the control moved, and by less than the reading",
-		noise > 0 && noise <= BIMODALITY_NOISE_CEILING,
-		noise === 0
-			? `${BAND_CONTROL_DT}s of world time changed nothing — the clock is not ` +
-					"reaching the surface program, so the reading below has no control"
-			: `${BAND_CONTROL_DT}s of world time moved the coefficient by ` +
-					`${noise.toFixed(3)}, against a ceiling of ${BIMODALITY_NOISE_CEILING}`,
+		"two reads of the same build agree",
+		noise <= BIMODALITY_NOISE_CEILING,
+		`${BAND_CONTROL_DT}s of world time moved the coefficient by ` +
+			`${noise.toFixed(3)}, against a ceiling of ${BIMODALITY_NOISE_CEILING}` +
+			(noise === 0
+				? " — an exact repeat, which is what a translation-invariant tone " +
+					"distribution gives and is not evidence about the clock"
+				: ""),
 	);
 
 	/*

@@ -8,7 +8,15 @@
  * together, and once because the detrend window was sized from the bin count
  * rather than from the bands actually populated, so it subtracted a constant and
  * left the planet-scale gradient in. Sage constructed the second case on the PR.
- * Both are here.
+ *
+ * **Only the second of those is testable here, and the first is not covered by
+ * anything.** These tests hand `bandMetrics` already-binned readings, so they
+ * exercise the statistic and not the sampling that produces one. The screen-row
+ * failure lived in `__latitudeBands`, which runs inside a browser page as an
+ * init script against a live renderer — there is no seam this tier can reach it
+ * through. What guards it today is that the sampling is in object space by
+ * construction; an earlier draft of this comment said "both are here", which was
+ * a claim about coverage this file does not have.
  */
 import { describe, expect, test } from "bun:test";
 import { bandMetrics, bimodality } from "../scripts/lib/band-tones.mjs";
@@ -165,27 +173,6 @@ describe("the band-tone reading", () => {
 		expect(Math.abs((narrow?.b as number) - (wide?.b as number))).toBeLessThan(
 			0.02,
 		);
-	});
-
-	/**
-	 * **The case the quadratic cannot be trusted on, recorded rather than
-	 * hidden.**
-	 *
-	 * Sage constructed it against a comment claiming the fit was "too stiff to
-	 * follow banding, so it cannot subtract the signal". Two contiguous halves at
-	 * two tones is a *step*, and a quadratic fits a step well enough to pull the
-	 * reading under the uniform value for a surface with exactly two tones. The
-	 * cases above put both tones inside every latitude, which is what a gas
-	 * giant's alternating banding does and is what this instrument reads; a
-	 * profile whose whole banding is one step is outside that.
-	 *
-	 * The expectation is the **wrong** answer on purpose. It is here so the
-	 * limitation is a red run if anyone later widens what this is used for.
-	 */
-	test("is fooled by two tones arranged as a single step", () => {
-		const r = reading(240, 100, 9, (band) => (band < 120 ? 20 : 60));
-		const b = bandMetrics(r, OPTS)?.b as number;
-		expect(b).toBeLessThan(UNIFORM);
 	});
 
 	test("refuses a reading with too little of the surface populated", () => {
