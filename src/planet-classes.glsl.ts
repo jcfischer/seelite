@@ -586,34 +586,37 @@ vec3 zonal(vec3 p, float rate) {
 // which is a barber pole: every band identical, evenly spaced, and unmistakably
 // synthetic.
 //
-// **Folded, not clamped, and that is the whole of #209's band fix.** What
-// shipped was stretch(fbm4(...)), and the caller then put a smoothstep on it:
-// stretch() divides by FBM_SPREAD and clamps, so it saturates over most of its
-// range, and a smoothstep over a third of the remainder finished the job. Two
-// tones came out. Measured on that build, Sarle's bimodality coefficient over
-// the detrended surface was 0.911, where 1.0 is a two-point distribution and
-// 5/9 uniform; the histogram was two peaks 78 luma apart with a trough between.
+// **Folded, not clamped (#209).** What shipped was stretch(fbm4(...)) with a
+// smoothstep on top at the call site: stretch() divides by FBM_SPREAD and
+// clamps, so it saturates over most of its range, and the smoothstep spanned a
+// third of the remainder. Two tones came out, and the principal reported them.
 //
-// Warping the boundary — which is where this node expected the fix — moves an
+// Warping the boundary — which is where the node expected the fix — moves an
 // edge and adds no tones. The mapping is what had to change, and a clamp is the
 // wrong end of it: a bell-shaped fbm through a linear gain either stays narrow,
-// which is a washed-out planet, or clips, and the clipped tails *are* the two
-// modes. Measured across gains with the clamp in place, bimodality and contrast
-// rose together — 0.464 at 11.6 luma sd through 0.567 at 20.0 — so there was no
-// setting of it that was both banded and graded.
+// which is a washed-out planet, or clips, and the clipped tails become two
+// modes. A triangle fold spends those tails on more bands instead. The profile
+// sweeps the belt-zone range and turns back, so the full range is used at every
+// gain and raising the gain adds bands rather than clipping. The fold is
+// continuous, so no band has a seam; its slope reverses at the turns, which is
+// a band boundary and is what those are.
 //
-// A triangle fold spends those tails on more bands instead of on modes. The
-// profile sweeps the belt-zone range and turns back, so the full range is used
-// at every gain, the distribution comes out broad rather than two-peaked, and
-// raising the gain adds bands rather than clipping. At 5.0 the same measurement
-// reads 0.499 at 26.9 luma sd — main's contrast, without main's two tones. The
-// fold is continuous, so no band has a seam; its slope reverses at the turns,
-// which is a band boundary and is what those are.
+// **This shipped on the contact sheet and not on a measurement, and the reason
+// is worth keeping.** A statistic was built for it — Sarle's bimodality
+// coefficient over the detrended latitude profile, still printed by
+// probe-planet-surfaces.mjs — and it does not measure this. Under a correct
+// detrend it reads 0.541 on this build against **0.261** on the two-tone build
+// it replaced, because Sarle's is (skew² + 1) / kurtosis and a dominant tone
+// with a thin tail of dark bands is skewed rather than bimodal. The figures
+// that motivated the change in the first place came from a detrend window sized
+// from the bin count rather than from the populated bands, which left the
+// planet-scale gradient in; Sage caught it. So: no figure here is evidence for
+// this form, the numbers that were here for a round have been removed rather
+// than restated, and what carries it is the sheet.
 //
-// **It costs nothing.** A second octave here read 0.504 at 28.0 — inside the
-// noise of the single-octave form — for four more vnoise calls a fragment,
-// against a budget of two. So the fold does it alone and JOVIAN stays at the 18
-// it had.
+// **It costs nothing.** A second octave was flown and is not here: it moved the
+// look no more than the gain does, for four more vnoise calls a fragment against
+// a budget of two. JOVIAN stays at the 18 it had.
 const float BAND_GAIN = 5.0;
 float bandProfile(float lat, float warpAmt) {
   float v = 0.5 + (fbm4(vec3(lat * 5.5 + warpAmt, 4.3 + seedOffset, 1.9)) - 0.5) * BAND_GAIN;
@@ -648,10 +651,9 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   // **The band's own value, not a threshold on it (#209).** This was
   // smoothstep(0.34, 0.62, band) — a second binarisation on top of the one
   // stretch was already doing, mapping two thirds of the profile's range to a
-  // flat belt or a flat zone. Removing it alone took the bimodality from 0.717
-  // to 0.567 at an unchanged profile. bandProfile now sweeps its whole range,
-  // so the ramp is the mix itself and there is nothing left for a threshold to
-  // do but undo it.
+  // flat belt or a flat zone. bandProfile now sweeps its whole range, so the
+  // ramp is the mix itself and there is nothing left for a threshold to do but
+  // undo it.
   albedo = mix(belt, zone, band);
 
   // Bright equatorial zone and darker polar hoods: the large-scale shape that

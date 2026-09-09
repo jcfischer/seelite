@@ -55,6 +55,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { bandMetrics } from "./lib/band-tones.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 
 const ORIGIN =
@@ -1872,13 +1873,8 @@ const BAND_MIN_SAMPLES = 8;
 // view and star cones very nearly coincide, so one gate does most of both jobs.
 const BAND_MIN_NDOTV = 0.45;
 const BAND_MIN_NDOTL = 0.45;
-// **A fraction of the covered run, not of the bin count.** The lit, face-on cap
-// is centred on the sub-solar point rather than on the equator, so it covers a
-// minority of the latitude range. A window sized from `BAND_BINS` was ±40 over
-// 45 covered bands, which is a moving average of nearly the whole profile: it
-// subtracted the bands along with the trend. Sized from what is actually there,
-// it stays wide against the planet-scale terms and narrow against the bands.
-const BAND_TREND_FRACTION = 3;
+// Below this the reading is the lit crescent running out rather than a surface.
+const BAND_MIN_RESIDUAL_SAMPLES = 400;
 // Seconds of world time between the two control reads.
 const BAND_CONTROL_DT = 3;
 // Sarle's, for a uniform distribution. Stated by the statistic, not by this
@@ -1889,70 +1885,6 @@ const BIMODALITY_CEILING = 5 / 9;
 // noise is comparable to what it reports, and the reading below is not a fact
 // about the build.
 const BIMODALITY_NOISE_CEILING = 0.05;
-
-/** A series less its own wide moving average, holes preserved. */
-const smoothed = (values, window) =>
-	values.map((v, i) => {
-		if (v === null) return null;
-		let sum = 0;
-		let n = 0;
-		for (let k = i - window; k <= i + window; k++) {
-			const u = values[k];
-			if (u === undefined || u === null) continue;
-			sum += u;
-			n++;
-		}
-		return n === 0 ? null : sum / n;
-	});
-
-/**
- * Sarle's bimodality coefficient over a sample.
- *
- * The sample-corrected form, because the uncorrected one is biased low at small
- * n and the correction is what makes 5/9 the right number to compare against.
- */
-const bimodality = (values) => {
-	const n = values.length;
-	if (n < 40) return null;
-	const mean = values.reduce((a, b) => a + b, 0) / n;
-	const dev = values.map((v) => v - mean);
-	const m2 = dev.reduce((a, d) => a + d * d, 0) / n;
-	if (m2 <= 0) return null;
-	const sd = Math.sqrt(m2);
-	const m3 = dev.reduce((a, d) => a + d ** 3, 0) / n;
-	const m4 = dev.reduce((a, d) => a + d ** 4, 0) / n;
-	const skew = m3 / sd ** 3;
-	const excess = m4 / m2 ** 2 - 3;
-	const denom = excess + (3 * (n - 1) ** 2) / ((n - 2) * (n - 3));
-	return denom > 0 ? (skew * skew + 1) / denom : null;
-};
-
-const bandMetrics = ({ bins, samples }) => {
-	if (samples.length < 400) return null;
-	const trend = smoothed(
-		bins,
-		Math.max(1, Math.round(bins.length / BAND_TREND_FRACTION)),
-	);
-	// A sample whose own latitude has no trend estimate has nothing to be
-	// detrended against, and passing it through raw would put the planet-scale
-	// shape back into the distribution one band at a time.
-	const residual = samples
-		.filter(([i]) => trend[i] !== null && trend[i] !== undefined)
-		.map(([i, luma]) => luma - trend[i]);
-	const covered = bins.filter((v) => v !== null).length;
-	return {
-		b: bimodality(residual),
-		samples: residual.length,
-		covered,
-		sd: Math.sqrt(
-			residual.reduce(
-				(a, v) =>
-					a + (v - residual.reduce((x, y) => x + y, 0) / residual.length) ** 2,
-				0,
-			) / residual.length,
-		),
-	};
-};
 
 await page.evaluate(
 	([id, radii]) => window.__viewBodyLit(id, radii),
@@ -1976,7 +1908,7 @@ const jovianProfile = async () => {
 			},
 		],
 	);
-	return bandMetrics(raw);
+	return bandMetrics(raw, { minSamples: BAND_MIN_RESIDUAL_SAMPLES });
 };
 
 const jovianA = await jovianProfile();
@@ -2023,12 +1955,35 @@ if (jovianA?.b && jovianB?.b) {
 					`${noise.toFixed(3)}, against a ceiling of ${BIMODALITY_NOISE_CEILING}`,
 	);
 
-	check(
-		"the jovian's tones are at least as spread as uniform",
-		jovianA.b < BIMODALITY_CEILING && jovianB.b < BIMODALITY_CEILING,
-		`Sarle's coefficient ${jovianA.b.toFixed(3)} against ${BIMODALITY_CEILING.toFixed(3)}, ` +
-			`the uniform value — 1.0 is two-point and 0.33 normal — with a same-build ` +
-			`repeat differing by ${noise.toFixed(3)}`,
+	/*
+	 * **Reported, not gated, and the reason is that it measures the wrong
+	 * thing.**
+	 *
+	 * This was a check against 5/9, the uniform value, on the reasoning that a
+	 * two-tone surface approaches 1.0 and a graded one falls away from it. Two
+	 * measurements killed the gate. Under the *corrected* detrend the shipped
+	 * build of #209 reads 0.541 and the build it replaced reads **0.261** — so
+	 * the threshold passes the surface the principal called two-tone and nearly
+	 * fails the one that replaced it. Sarle's is `(skew² + 1) / kurtosis`, and a
+	 * dominant tone with a thin tail of dark bands is *skewed* rather than
+	 * bimodal, which is exactly what the shipped surface is and what lifts its
+	 * coefficient.
+	 *
+	 * So the statistic answers a real question about a distribution and not the
+	 * question the node asked, and a gate on it would fail the wrong builds. It
+	 * is left printing, because the reading is repeatable to 0.004 and a later
+	 * node arguing about band tones should have the number in front of it — but
+	 * whether these bands read as two tones is settled on the contact sheet by a
+	 * person, which is what `CLAUDE.md`'s third tier is for.
+	 *
+	 * `BIMODALITY_CEILING` stays as the printed reference point rather than as a
+	 * pass condition. `tests/band-tones.test.ts` still gates the *statistic* —
+	 * that it rejects constructed two-tone input and reproduces 5/9 on uniform —
+	 * which is a claim about the instrument and is checkable.
+	 */
+	console.log(
+		`    reference: uniform is ${BIMODALITY_CEILING.toFixed(3)}, two-point 1.0, ` +
+			"normal 0.333 — reported, not gated; see the comment above",
 	);
 }
 
