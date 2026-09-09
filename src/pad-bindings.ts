@@ -67,10 +67,13 @@ export type PadContext = "flight" | "console" | "modal";
  * | `select` (Create) | `` ` `` | charge the hyperspace jump |
  * | d-pad ←/↑/→ | `1` / `2` / `3` | head-look port, forward, starboard |
  *
- * **Unbound: `home` and d-pad ↓.** The module reports both; nothing here claims
- * them. The tuning dials, the perf panel's six toggles and the settings key
- * stay on the keyboard — seventeen buttons cannot carry twenty-six letters, and
- * saying which are dropped is better than discovering it in flight.
+ * D-pad ↓ is not in the table because what it does is not a key: it hands the
+ * pad to the frame instrument and takes it back (`PadIntents.instrument`).
+ *
+ * **Unbound: `home` alone.** The module reports it; nothing here claims it. The
+ * tuning dials and the settings key stay on the keyboard — seventeen buttons
+ * cannot carry twenty-six letters, and saying which are dropped is better than
+ * discovering it in flight.
  */
 export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
 	a: "enter",
@@ -119,6 +122,15 @@ export interface PadIntents {
 	readonly activate: boolean;
 	/** Close the panel, or turn the head back to forward. */
 	readonly back: boolean;
+	/**
+	 * Hand the pad to the frame instrument, or take it back.
+	 *
+	 * The perf panel is a developer overlay behind `?perf` with no head-look
+	 * position of its own, so it needs a way in that costs a player nothing.
+	 * D-pad **down** is it: the other three directions are the three head-look
+	 * positions, and down was the last free one.
+	 */
+	readonly instrument: boolean;
 }
 
 const NO_INTENTS: PadIntents = {
@@ -128,6 +140,7 @@ const NO_INTENTS: PadIntents = {
 	valueDelta: 0,
 	activate: false,
 	back: false,
+	instrument: false,
 };
 
 export function padIntents(
@@ -142,6 +155,7 @@ export function padIntents(
 	let valueDelta = 0;
 	let activate = false;
 	let back = false;
+	let instrument = false;
 
 	for (const name of frame.pressed) {
 		if (context === "modal") {
@@ -166,11 +180,23 @@ export function padIntents(
 			else if (name === "b") back = true;
 			continue;
 		}
+		if (name === "down") {
+			instrument = true;
+			continue;
+		}
 		const key = PAD_FLIGHT_KEYS[name];
 		if (key !== undefined) keys.push(key);
 	}
 
-	return { keys, focusDelta, tabDelta, valueDelta, activate, back };
+	return {
+		keys,
+		focusDelta,
+		tabDelta,
+		valueDelta,
+		activate,
+		back,
+		instrument,
+	};
 }
 
 /**

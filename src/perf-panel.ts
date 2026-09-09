@@ -78,6 +78,10 @@ const STYLE = `
   padding: 6px 9px; pointer-events: none; white-space: pre;
 }
 #seelite-perf b { color: #ffd479; font-weight: 600; }
+/* The pad's cursor, drawn only while the pad holds the panel (#283). An
+   inline-block, so the ring encloses a whole row of this white-space: pre
+   layout rather than only the glyphs on it. */
+#seelite-perf .cursor { display: inline-block; outline: 1px solid #ffd479; outline-offset: 1px; }
 /*
  * The refusal reason is a sentence, not a column, and the panel is
  * white-space: pre with no width cap — so one unwrapped 245-character line
@@ -593,8 +597,26 @@ function identity(value: string | null): string {
  *
  * Idempotent, like the frame meter: mounting twice gives one panel.
  */
-export function mountPerfPanel(targets: PerfTargets) {
-	if (document.getElementById("seelite-perf")) return () => {};
+/**
+ * What a mounted frame instrument can be asked to do from the pad (#283).
+ *
+ * It is **not** modal: the panel sits over a running game and flight continues
+ * while the pad holds it, because a panel that stopped the ship would be
+ * measuring a different frame from the one it exists to measure.
+ */
+export interface PerfPanelHandle {
+	/** Whether the pad currently holds this panel. */
+	readonly isFocused: () => boolean;
+	readonly setFocused: (on: boolean) => void;
+	/** Walk the row cursor, wrapping. A no-op while the pad does not hold it. */
+	readonly moveCursor: (delta: number) => void;
+	/** Toggle the focused switch, or run `restore all` on the last row. */
+	readonly activate: () => void;
+	readonly unmount: () => void;
+}
+
+export function mountPerfPanel(targets: PerfTargets): PerfPanelHandle | null {
+	if (document.getElementById("seelite-perf")) return null;
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
@@ -755,15 +777,28 @@ export function mountPerfPanel(targets: PerfTargets) {
 		const occlusion = targets.occlusion();
 		panel.dataset.attributionEnabled = String(attribution.enabled);
 		panel.dataset.gpuStatus = attribution.gpu.status;
+		panel.dataset.perfPadFocus = String(padFocused);
+		// The ring is drawn only while the pad holds the panel. A cursor on a
+		// keyboard-driven instrument is a mark on a row nothing is pointing at,
+		// which reads as a state the player is in and is not.
+		const ring = (index: number, line: string) =>
+			padFocused && index === cursor
+				? `<span class="cursor" data-perf-focus>${line}</span>`
+				: line;
 		panel.innerHTML = `${switches
-			.map((s) => {
+			.map((s, i) => {
 				const v = s.state();
 				const off = v === "off" || v === "flat";
-				return `<b>${s.key}</b> ${s.label.padEnd(11)}<span class="${
-					off ? "off" : ""
-				}">${v}</span>`;
+				return ring(
+					i,
+					`<b>${s.key}</b> ${s.label.padEnd(11)}<span class="${
+						off ? "off" : ""
+					}">${v}</span>`,
+				);
 			})
-			.join("\n")}\n<b>${RESTORE_KEY}</b> restore all
+			.join(
+				"\n",
+			)}\n${ring(switches.length, `<b>${RESTORE_KEY}</b> restore all`)}
 
 FRAME ATTRIBUTION
 CPU simulation/step         ${metric(attribution.cpu["simulation/step"].medianMs)} med  ${metric(attribution.cpu["simulation/step"].p95Ms)} p95
@@ -784,24 +819,40 @@ renderer                    ${identity(attribution.renderer.api)}
 rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 	};
 
+	/**
+	 * The cursor the pad walks (#283) — the switches, then `restore all`.
+	 *
+	 * Kept as an index rather than through `panel-focus`, and for that module's
+	 * own stated reason: this list is fixed, never re-sorts and never loses a
+	 * row, so the identity-versus-position problem the shared cursor exists to
+	 * solve cannot arise. What the pad needed here was a way in.
+	 */
+	let cursor = 0;
+	let padFocused = false;
+	const rowCount = () => switches.length + 1;
+
+	const restoreAll = () => {
+		if (targets.bloom) targets.bloom.enabled = true;
+		setShells(scenes, { atmosphere: true, clouds: true });
+		setAblate(scenes, 0);
+		// **Set, then un-pin, in that order and only once.** `setSurface` pins
+		// the bodies it touches (#207), so clearing the pin first and setting
+		// after would leave every planet held at four-tap for the rest of the
+		// session — with the picture looking exactly right until a planet got
+		// small. The first version did both, which worked and read as though the
+		// ordering did not matter (sage, PR #254). Handing the bands back is
+		// what "restore all" means for this row.
+		setSurface(scenes, "four-tap");
+		unpinRelief(scenes);
+		setCrater(scenes, false);
+	};
+
 	const onKey = (e: KeyboardEvent) => {
 		// No Cmd, Ctrl or Alt. The keys are checked against the flight bindings by
 		// `tests/perf-panel-keys.test.ts` rather than by assertion here.
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.key === RESTORE_KEY) {
-			if (targets.bloom) targets.bloom.enabled = true;
-			setShells(scenes, { atmosphere: true, clouds: true });
-			setAblate(scenes, 0);
-			// **Set, then un-pin, in that order and only once.** `setSurface` pins
-			// the bodies it touches (#207), so clearing the pin first and setting
-			// after would leave every planet held at four-tap for the rest of the
-			// session — with the picture looking exactly right until a planet got
-			// small. The first version did both, which worked and read as though
-			// the ordering did not matter (sage, PR #254). Handing the bands back
-			// is what "restore all" means for this row.
-			setSurface(scenes, "four-tap");
-			unpinRelief(scenes);
-			setCrater(scenes, false);
+			restoreAll();
 			draw();
 			return;
 		}
@@ -818,9 +869,38 @@ rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
 	const tick = window.setInterval(draw, 1000);
 	draw();
 
-	return () => {
-		window.removeEventListener("keydown", onKey);
-		window.clearInterval(tick);
-		panel.remove();
+	return {
+		/** Whether the pad currently holds this panel. */
+		isFocused: () => padFocused,
+		/**
+		 * Hand the panel to the pad, or give it back.
+		 *
+		 * The panel is **not** modal — it is a developer instrument that sits
+		 * over a running game, and flight continues while it is held. What the
+		 * pad takes is the same six controls a side console takes.
+		 */
+		setFocused: (on: boolean) => {
+			if (padFocused === on) return;
+			padFocused = on;
+			draw();
+		},
+		moveCursor: (delta: number) => {
+			if (!padFocused || delta === 0) return;
+			const n = rowCount();
+			cursor = (((cursor + delta) % n) + n) % n;
+			draw();
+		},
+		activate: () => {
+			if (!padFocused) return;
+			const hit = switches[cursor];
+			if (hit) hit.toggle();
+			else restoreAll();
+			draw();
+		},
+		unmount: () => {
+			window.removeEventListener("keydown", onKey);
+			window.clearInterval(tick);
+			panel.remove();
+		},
 	};
 }

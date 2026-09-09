@@ -157,6 +157,7 @@ import {
 	padFlightAxes,
 	padIntents,
 } from "./pad-bindings";
+import type { PerfPanelHandle } from "./perf-panel";
 import type { SettingsPanelHandle } from "./settings-panel";
 import {
 	JUMP_CHARGE_S,
@@ -543,6 +544,14 @@ function wrapAngle(radians: number) {
  *  §7's cancel test asks whether the player is holding one; a rebind that
  *  reached only the first would move the throttle without cancelling the
  *  autopilot that is overwriting it. */
+/**
+ * How fast a fully-deflected stick drags the galaxy chart, pixels per second.
+ *
+ * In the pointer's own unit, because `Handle.orbit` takes a drag in pixels — so
+ * the figure reads as "a full stick is this much mouse drag a second", which is
+ * a thing that can be compared with one.
+ */
+const CHART_ORBIT_PX_PER_S = 420;
 const THROTTLE_UP = "shift";
 const THROTTLE_DOWN = "control";
 /** Ten seconds from idle to full inside the station zone, rather than one. */
@@ -4671,7 +4680,17 @@ class Game {
 	 */
 	private padContext(): PadContext {
 		if (this.settingsPanel?.isOpen()) return "modal";
-		return this.view === "cockpit" && this.headLook !== "forward"
+		// The instrument takes what a side console takes — six controls — and
+		// not the sticks: it is an overlay on a running game, and a panel that
+		// stopped the ship would be measuring a different frame from the one it
+		// is there to measure.
+		if (this.perfPanel?.isFocused()) return "console";
+		// A console is whichever surface is actually drawn, which is not only a
+		// turned head: docked with the head forward, the station console is on
+		// the forward wall and is the only thing on it. `hasFocusScope` reads
+		// the rendered DOM, so this cannot claim a console the player is not
+		// looking at.
+		return this.view === "cockpit" && this.liveCockpit.hasFocusScope()
 			? "console"
 			: "flight";
 	}
@@ -4684,6 +4703,14 @@ class Game {
 	 * nothing here changes that; this is a second way in, not a replacement.
 	 */
 	settingsPanel: SettingsPanelHandle | null = null;
+
+	/**
+	 * The frame instrument, when `?perf` mounted one.
+	 *
+	 * `null` for every player: the panel is behind a query gate and nothing in
+	 * the default route constructs it. Held so d-pad down can hand it the pad.
+	 */
+	perfPanel: PerfPanelHandle | null = null;
 
 	/**
 	 * Act on a panel's share of the pad.
@@ -4701,14 +4728,114 @@ class Game {
 			if (intents.valueDelta !== 0) panel.stepValue(intents.valueDelta);
 			return;
 		}
-		// A console. `back` is the way out of one — Circle turns the head
-		// forward, which is also what makes Cross free to activate a row rather
-		// than launch.
+		// The instrument first: while it holds the pad it holds all six of the
+		// controls a console would, so a live-cockpit panel behind it must not
+		// also read them.
+		const perf = this.perfPanel;
+		if (perf?.isFocused()) {
+			if (intents.back || intents.instrument) return perf.setFocused(false);
+			if (intents.focusDelta !== 0) perf.moveCursor(intents.focusDelta);
+			if (intents.activate) perf.activate();
+			for (const key of intents.keys) this.command(key);
+			return;
+		}
+		// A console.
+		//
+		// **The sticks are not taken here**, and that is the point rather than
+		// an oversight: the console's own footer says "Simulation continues
+		// while this console is open", so suspending flight every time the pilot
+		// glanced at the target list would stop the ship. What a console takes
+		// is six discrete controls; everything else still flies.
 		if (intents.back) {
+			// Circle is the way out. It is also what frees Cross to activate a
+			// row rather than launch — and nothing is lost, because LAUNCH is a
+			// button *on* the right console and Cross still presses it.
 			this.setHeadLook("forward");
 			return;
 		}
+		if (intents.focusDelta !== 0)
+			this.liveCockpit.stepFocus(intents.focusDelta);
+		if (intents.tabDelta !== 0) this.liveCockpit.stepTab(intents.tabDelta);
+		// The console acts on its own rows and refuses the chart's, which are
+		// drawn inside the same panel and belong to a handle it does not hold.
+		if (intents.activate && !this.liveCockpit.activateFocus())
+			this.activateChartRow(this.liveCockpit.focusedElement());
 		for (const key of intents.keys) this.command(key);
+	}
+
+	/**
+	 * Whether the chart has taken the right stick this frame.
+	 *
+	 * The one place a console claims a stick, and the reason is that the mouse
+	 * already behaves this way: dragging the chart means leaving pointer lock,
+	 * so the pointer cannot orbit the cluster and fly the ship at the same
+	 * instant either. The ship is not left uncontrolled — the left stick still
+	 * rolls, the triggers still trim the throttle and every button still acts.
+	 */
+	private chartHasStick(): boolean {
+		return (
+			this.chart !== null &&
+			this.view === "cockpit" &&
+			this.headLook === "left" &&
+			this.leftTab === "Galaxy Map"
+		);
+	}
+
+	/**
+	 * Orbit the chart from the right stick.
+	 *
+	 * Driven from `animate` rather than from `step`, because `step` returns
+	 * early while docked (§12 suspends flight) and the chart is readable there —
+	 * a camera that froze on arrival would be a chart the player could not turn
+	 * exactly when they are planning the next leg.
+	 *
+	 * The stick is a rate and `orbit` takes pixels, so the product is a *pixel
+	 * rate*: a full deflection sweeps `CHART_ORBIT_PX_PER_S` pixels of drag per
+	 * second, which is the unit the pointer hands it.
+	 */
+	private stepChartOrbit(dt: number) {
+		if (dt <= 0 || !this.chartHasStick()) return;
+		const frame = this.padFrame;
+		if (!frame?.connected) return;
+		const dx = frame.axes.rightX * CHART_ORBIT_PX_PER_S * dt;
+		const dy = frame.axes.rightY * CHART_ORBIT_PX_PER_S * dt;
+		if (dx === 0 && dy === 0) return;
+		this.chart?.handle.orbit(dx, dy);
+	}
+
+	/**
+	 * Work one of the chart's own controls from the pad.
+	 *
+	 * **Through `GalaxyChart.handle`, which is the chart's own API** — not
+	 * through a synthetic click on the element. The element is only how the
+	 * cursor *names* the row; what it does is a method call, the same one the
+	 * chart's own click listener makes.
+	 *
+	 * `haze` and the jump budget are toggles rather than commands, so each is
+	 * read before it is written: the button publishes its state in
+	 * `aria-pressed`, and the budget lives on the finder's filter.
+	 */
+	private activateChartRow(element: HTMLElement | null) {
+		const chart = this.chart?.handle;
+		if (!element || !chart) return;
+		const data = element.dataset;
+		if (data.mapHaze !== undefined) {
+			chart.setHaze(!chart.state.haze);
+		} else if (data.mapCourse !== undefined) {
+			chart.commitCourse();
+		} else if (data.mapClear !== undefined) {
+			chart.clearCourse();
+		} else if (data.mapFinderEconomy !== undefined) {
+			chart.toggleFinderEconomy(Number(data.mapFinderEconomy));
+		} else if (data.mapFinderBudgetDown !== undefined) {
+			chart.setFinderBudget(chart.state.finder.filter.budgetJumps - 1);
+		} else if (data.mapFinderBudgetUp !== undefined) {
+			chart.setFinderBudget(chart.state.finder.filter.budgetJumps + 1);
+		} else if (data.mapFinderCentre !== undefined) {
+			chart.centreOn(Number(data.mapFinderCentre));
+		} else if (data.mapFinderRow !== undefined) {
+			chart.select(Number(data.mapFinderRow));
+		}
 	}
 
 	/**
@@ -4730,6 +4857,7 @@ class Game {
 			this.applyPanelIntents(intents, context);
 			return;
 		}
+		if (intents.instrument) this.perfPanel?.setFocused(true);
 		// Through `command`, not through a second copy of what each key does.
 		// The pad presses the key; one implementation stays one implementation.
 		for (const key of intents.keys) this.command(key);
@@ -6950,10 +7078,13 @@ class Game {
 		// itself, and the keyboard's own 1.41x on a diagonal is left exactly as
 		// it was.
 		const padAxes = padFlightAxes(this.padFrame, this.padContext());
-		const yaw =
-			this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padAxes.yaw;
-		const pitch =
-			this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padAxes.pitch;
+		// Zeroed, not merely unread: `hasControlInput` reads these two below, and
+		// a stick orbiting the chart must not also cancel the docking computer.
+		const stickToChart = this.chartHasStick();
+		const padYaw = stickToChart ? 0 : padAxes.yaw;
+		const padPitch = stickToChart ? 0 : padAxes.pitch;
+		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padYaw;
+		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padPitch;
 		const roll = this.axis(["e"], ["q"]) + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
@@ -7814,6 +7945,9 @@ class Game {
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)
 			: 0;
 		this.lastTime = now;
+		// After `dt` and before the step: the chart's camera is not flight, and
+		// it must keep turning while §12 has flight suspended.
+		this.stepChartOrbit(dt);
 		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
 		if (dt > 0) this.step(dt);
 		if (this.frameAttribution)
@@ -9159,12 +9293,17 @@ if (query.has("model-viewer")) {
 		import("./perf-panel").then(async ({ mountPerfPanel }) => {
 			const attribution = await game.enableFrameAttribution();
 			if (!attribution) return;
-			const unmount = mountPerfPanel({
+			const perf = mountPerfPanel({
 				scenes: [game.nearScene, game.approachScene, game.farScene],
 				bloom: game.bloom,
 				attribution,
 				occlusion: () => game.occlusionState,
 			});
+			if (!perf) return;
+			// Held on the game so d-pad down can hand the pad to the instrument
+			// and take it back (#283). `?perf` is the only route to one, so the
+			// field is null for every player.
+			game.perfPanel = perf;
 			let tornDown = false;
 			const teardown = (event: PageTransitionEvent) => {
 				// A persisted page is frozen, not gone. Keep its diagnostic ownership
@@ -9172,7 +9311,8 @@ if (query.has("model-viewer")) {
 				if (event.persisted) return;
 				if (tornDown) return;
 				tornDown = true;
-				unmount();
+				perf.unmount();
+				game.perfPanel = null;
 				game.disableFrameAttribution();
 			};
 			window.addEventListener("pagehide", teardown);

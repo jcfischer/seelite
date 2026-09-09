@@ -128,6 +128,23 @@ describe("a press becomes a command, once", () => {
 		expect(padIntents(press("home"), "flight").keys).toEqual([]);
 	});
 
+	test("d-pad down asks for the instrument, and is the last free direction", () => {
+		// The perf panel is a developer overlay with no head-look position of
+		// its own, so it needs a way in that costs nothing a player uses. Down
+		// was the one d-pad direction the flight table had not claimed — left,
+		// forward and right are the three head-look positions.
+		const asked = padIntents(press("down"), "flight");
+		expect(asked.instrument).toBe(true);
+		expect(asked.keys).toEqual([]);
+		expect(asked.focusDelta).toBe(0);
+	});
+
+	test("nothing else asks for it", () => {
+		for (const name of STANDARD_BUTTONS)
+			if (name !== "down")
+				expect(padIntents(press(name), "flight").instrument, name).toBe(false);
+	});
+
 	test("a disconnected pad says nothing at all", () => {
 		expect(padIntents(absent, "flight")).toEqual(padIntents(rest, "flight"));
 		expect(padIntents(absent, "flight").keys).toEqual([]);
@@ -145,6 +162,10 @@ describe("a console takes six controls and leaves the rest flying", () => {
 		expect(padIntents(press("up"), "console").focusDelta).toBe(-1);
 		expect(padIntents(press("down"), "console").focusDelta).toBe(1);
 		expect(padIntents(press("up"), "console").keys).toEqual([]);
+	});
+
+	test("down walks the list rather than reaching for the instrument", () => {
+		expect(padIntents(press("down"), "console").instrument).toBe(false);
 	});
 
 	test("up and down are head-look again once the head is forward", () => {
