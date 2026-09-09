@@ -65,13 +65,16 @@ export const NO_KNOWLEDGE: FinderKnowledge = {};
  * test asserting the same three properties of each. `galaxy-finder.test.ts`
  * has them for this one.
  *
- * `budgetJumps` is the third control and is this list's own: the local list has
- * no analogue because everything on it is in the system you are in.
+ * `budgetJumps` is this list's own and the local list has no analogue, because
+ * everything on it is in the system you are in. `facilities` (#275) is the
+ * fourth control, and its knowledge dimension has no analogue there either.
  */
 export interface FinderFilter {
 	query: string;
 	/** Economy indices into `ECONOMY_NAMES`. Empty means every economy. */
 	economies: readonly number[];
+	/** §5.2.1's facility chips, intersecting. Empty means no facility
+	 *  narrowing, and the row carries no annotation. */
 	facilities: readonly FacilityChip[];
 	/** The jump bound on the primary list, at least 1. */
 	budgetJumps: number;
@@ -161,7 +164,7 @@ export function resetFinderSession(): void {
 /**
  * D4: is any narrowing active?
  *
- * **This is what expands the panel**, and it deliberately reads all three
+ * **This is what expands the panel**, and it deliberately reads all four
  * controls rather than the query alone. An expand rule keyed to the text field
  * would leave the chips and the budget dead until something was typed — the
  * defect `live-cockpit.ts` records having shipped once already, where a state
@@ -560,22 +563,21 @@ export function projectFinder(
 					uncheckedFence++;
 				continue;
 			}
-			// **Built inside the branch that keeps it, annotations included.**
-			// Constructed before the test, a chip-only narrowing at the default
-			// budget allocated a row and took a square root for every matching
-			// out-of-budget system and then dropped it — up to 250 of them on
-			// one chip click. The annotation array is one more allocation with
-			// the same shape, so it is built here rather than above the test.
-			const annotate = () =>
-				filter.facilities.map(
-					(facility) => facilities.present.get(facility) as FacilityAnnotation,
-				);
-			if (inBudgetHere) inBudget.push(row(system, from, here, annotate()));
-			else if (hasQuery) beyondRange.push(row(system, from, here, annotate()));
+			// Exactly one of the two branches below runs: the `continue` at the
+			// top of the loop has already dropped every system that yields no
+			// row, so nothing here is built and discarded. It was a lazy closure
+			// before that guard existed, against a chip-only narrowing at the
+			// default budget that allocated a row and took a square root for
+			// every matching out-of-budget system before dropping it.
+			const matched = filter.facilities.map(
+				(facility) => facilities.present.get(facility) as FacilityAnnotation,
+			);
+			if (inBudgetHere) inBudget.push(row(system, from, here, matched));
+			else beyondRange.push(row(system, from, here, matched));
 			continue;
 		}
 		if (inBudgetHere) inBudget.push(row(system, from, here, []));
-		else if (hasQuery) beyondRange.push(row(system, from, here, []));
+		else beyondRange.push(row(system, from, here, []));
 	}
 
 	inBudget.sort(byReach);

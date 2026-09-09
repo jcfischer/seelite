@@ -410,14 +410,21 @@ const undock = good.docked
 				);
 				const dockedKnowledge = (() => {
 					const env = g.commerceWorld.galaxies[g.world.system.record.galaxy];
-					// **The whole key, never a suffix of it.** Written as an
-					// `endsWith` over every row in the galaxy first: the four
-					// `station-*` ids are not suffixes of each other so it held
-					// at this seed, but it drops the system index, and after a
-					// jump the first inserted `*:station-refinery` from some
-					// other system wins — the check named "the station it docked
-					// at" would then be reading a carrier the ship never visited.
-					const key = `${g.world.system.record.index}:${station?.localCarrierId}`;
+					// **The whole key, never a suffix of it, and the game's own
+					// `carrierKey` rather than a second copy of its format.**
+					// Written as an `endsWith` over every row in the galaxy
+					// first: the four `station-*` ids are not suffixes of each
+					// other so it held at this seed, but it drops the system
+					// index, and after a jump the first inserted
+					// `*:station-refinery` from some other system wins — the
+					// check named "the station it docked at" would then be
+					// reading a carrier the ship never visited. Spelling the
+					// key out here was the same mistake one layer up:
+					// `persistent-world-state.md` §2 owns that shape.
+					const key = g.carrierKey(
+						g.world.system.record.index,
+						station?.localCarrierId,
+					);
 					const row = env?.knowledge?.[key];
 					return {
 						key,

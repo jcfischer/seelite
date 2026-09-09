@@ -947,6 +947,11 @@ const facilityRows = () =>
 			// re-derived: the cap is the panel's constant and a probe carrying a
 			// copy goes red the day it moves.
 			drawnCount: map.state.finder.drawn.inBudget,
+			// Both groups, because `[data-map-finder-row]` is every drawn row.
+			// Compared against the in-budget count alone this held only because
+			// these checks never set a query, so `beyondRange` is always empty —
+			// a coincidence of the fixture, not the claim.
+			drawnBeyond: map.state.finder.drawn.beyondRange,
 			projected: map.state.finder.inBudget.map((r) => ({
 				index: r.index,
 				facilities: r.matchedFacilities.map((a) => a.facility),
@@ -1034,6 +1039,17 @@ const facilityChecks = async (where) => {
 	 * a cell width. So this waits for the layout to be applied *and* for the
 	 * width that layout implies.
 	 */
+	// **Read after the collapse has actually landed.** Taken straight after
+	// `clearFinder` with no wait, this is the *open* width whenever the
+	// `ResizeObserver` has not fired yet — and `openTheFinder` then waits out
+	// its thirty seconds looking for a cell narrower than one already narrow.
+	await page.waitForFunction(
+		() =>
+			document
+				.querySelector("[data-map-finder]")
+				?.getAttribute("data-map-finder-layout") === "closed",
+	);
+	await nextFrames(page);
 	const closedWidth = (await chartSurface()).cell.width;
 	const openTheFinder = async (open) => {
 		await open();
@@ -1074,7 +1090,7 @@ const facilityChecks = async (where) => {
 			state.expanded &&
 				state.resultsShown &&
 				drawn.filterFacilities.join(",") === facility &&
-				drawn.rows.length === drawn.drawnCount &&
+				drawn.rows.length === drawn.drawnCount + drawn.drawnBeyond &&
 				(owesRows ? drawn.rows.length > 0 : drawn.rows.length === 0) &&
 				drawn.rows
 					.slice(0, capped)
@@ -2016,6 +2032,18 @@ const knowledgeSnapshot = () =>
 			window.__seelite.commerceWorld.galaxies.map((g) => g.knowledge),
 		),
 	);
+/** How many carrier rows the whole galaxy set holds. `snapshot.length > 2` was
+ *  the guard here and it cannot fail: the snapshot's floor is
+ *  `[{},{},{},{},{},{},{},{}]`, twenty-five characters, so a build where the
+ *  boot relay never ran would compare empty to empty and pass green. */
+const knowledgeRows = async () =>
+	page.evaluate(() =>
+		window.__seelite.commerceWorld.galaxies.reduce(
+			(n, g) => n + Object.keys(g.knowledge).length,
+			0,
+		),
+	);
+const rowsBefore = await knowledgeRows();
 const knowledgeBefore = await knowledgeSnapshot();
 await clickTab("Navigation");
 await page.waitForFunction(() => window.__seeliteGalaxyMap == null);
@@ -2031,8 +2059,8 @@ await nextFrames(page);
 const knowledgeAfter = await knowledgeSnapshot();
 check(
 	"opening the map, browsing it and selecting a system changes no knowledge row",
-	knowledgeBefore === knowledgeAfter && knowledgeBefore.length > 2,
-	`${knowledgeBefore.length} bytes of knowledge before, ${knowledgeAfter.length} after, ${knowledgeBefore === knowledgeAfter ? "identical" : "CHANGED"}`,
+	knowledgeBefore === knowledgeAfter && rowsBefore > 0,
+	`${rowsBefore} carrier rows before, ${await knowledgeRows()} after, snapshot ${knowledgeBefore === knowledgeAfter ? "identical" : "CHANGED"}`,
 );
 await clearFinder();
 

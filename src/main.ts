@@ -937,9 +937,13 @@ function forwardOf(q: THREE.Quaternion): Vec3 {
 
 /** The empty knowledge overlay, as one object. The chart compares the map by
  *  identity to decide whether to re-project, so a fresh `{}` per render misses
- *  that memo every frame. Declared here rather than imported from
- *  `galaxy-finder.ts`, which is in the lazily loaded chart chunk. */
-const EMPTY_KNOWLEDGE: Readonly<Record<string, never>> = {};
+ *  that memo every frame.
+ *
+ *  **Same name as `galaxy-finder.ts`'s deliberately, and not the same
+ *  binding.** That module is in the lazily loaded chart chunk, so importing it
+ *  here would pull the finder into the main bundle for one empty object; two
+ *  names for one sentinel is the worse trade, because the pair then drifts. */
+const NO_KNOWLEDGE: Readonly<Record<string, never>> = {};
 
 class Game {
 	readonly world: World;
@@ -1561,6 +1565,11 @@ class Game {
 	 *  scheme is: a probe that restated it would assert against its own copy and
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
+
+	/** `persistent-world-state.md` §2's composite key, for the same reason. The
+	 *  docking probe built `${systemIndex}:${localCarrierId}` itself, which is a
+	 *  second implementation of a structure the spec owns. */
+	readonly carrierKey = carrierKey;
 
 	/**
 	 * Which hull is flying, and what that means — the roster's own figures, not a
@@ -5271,7 +5280,7 @@ class Game {
 					// `handle.jumpTo`, and `observeSystemRelay` replaces the
 					// envelope — so the destination's just-relayed stations
 					// rendered `STATUS UNKNOWN` while their ages ticked up.
-					// **`EMPTY_KNOWLEDGE`, not a fresh `{}`.** The panel compares the
+					// **`NO_KNOWLEDGE`, not a fresh `{}`.** The panel compares the
 					// map by identity to decide whether to re-project, and a
 					// literal here allocates a new object on every render — so
 					// a galaxy with no envelope yet would miss the memo every
@@ -5279,7 +5288,7 @@ class Game {
 					// changes.
 					knowledge: () =>
 						this.commerceWorld.galaxies[this.world.system.record.galaxy]
-							?.knowledge ?? EMPTY_KNOWLEDGE,
+							?.knowledge ?? NO_KNOWLEDGE,
 					now: () => this.world.gameTime,
 					// The course is the game's, not the chart's (#187) — the chart
 					// is disposed on every tab toggle and a course held inside it

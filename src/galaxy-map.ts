@@ -922,10 +922,10 @@ export function mountGalaxyChart({
 				),
 			);
 			card.textContent = [
-				selected.name,
-				`${ECONOMY_NAMES[selected.economy]} · ${GOVERNMENT_NAMES[selected.government]}`,
-				`TL ${selected.displayTL} · pop ${(selected.population / 10).toFixed(1)} bn`,
-				`${distanceLy(current.pos, selected.pos).toFixed(1)} LY direct`,
+				record.name,
+				`${ECONOMY_NAMES[record.economy]} · ${GOVERNMENT_NAMES[record.government]}`,
+				`TL ${record.displayTL} · pop ${(record.population / 10).toFixed(1)} bn`,
+				`${distanceLy(current.pos, record.pos).toFixed(1)} LY direct`,
 				route === null
 					? "no route within range"
 					: route.jumps === 0
@@ -934,7 +934,7 @@ export function mountGalaxyChart({
 				"",
 				...stations,
 				"",
-				selected.description,
+				record.description,
 			].join("\n");
 		}
 
