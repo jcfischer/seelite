@@ -571,13 +571,11 @@ export async function installViewPlacement(page) {
 			};
 			const actualKm = Math.hypot(d.x, d.y, d.z);
 			const cos =
-				(d.x * pose.axis.x + d.y * pose.axis.y + d.z * pose.axis.z) /
-				actualKm;
+				(d.x * pose.axis.x + d.y * pose.axis.y + d.z * pose.axis.z) / actualKm;
 			return {
 				askedKm: rangeKm,
 				actualKm,
-				offAxisDeg:
-					(Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI,
+				offAxisDeg: (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI,
 			};
 		};
 	});
