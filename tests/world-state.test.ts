@@ -1025,7 +1025,7 @@ describe("§9.10 facility knowledge", () => {
 	});
 	/**
 	 * §9.10: "the marker survives replacement of the carrier instance". The
-	 * black-market flag is generated baseline data about the *slot*, not about
+	 * black-market flag is generated baseline data about the *berth*, not about
 	 * the instance standing in it, so blowing the refinery up and rebuilding it
 	 * cannot un-learn where the fence is.
 	 */

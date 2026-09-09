@@ -137,12 +137,22 @@ export interface FinderPanelOptions {
 	/** The chart's root. The panel appends itself and is removed with it. */
 	root: HTMLElement;
 	systems: readonly SystemRecord[];
-	knowledge?: FinderKnowledge;
+	/**
+	 * Last-known station intelligence, read on every render.
+	 *
+	 * **A getter, and required.** Held as a value it froze at mount, and
+	 * `observeSystemRelay` replaces the envelope immutably — so a jump with the
+	 * map open left the destination's just-relayed stations reading
+	 * `STATUS UNKNOWN` until a tab remount, while `now` ticked their ages up
+	 * beside them. Required for the reason `FlightPerformance` is: a default
+	 * empty map is indistinguishable in a diff from a caller that forgot, and
+	 * it renders a plausible galaxy nobody has ever visited.
+	 */
+	knowledge: () => FinderKnowledge;
 	/** The world clock, read on every render for the same reason as
 	 *  `currentSystem`: §5.2.1's row age is relative, and a value captured at
-	 *  mount would freeze it. Defaults to zero, which reads every observation
-	 *  as `SEEN JUST NOW` — right for a mount with no world behind it. */
-	now?: () => number;
+	 *  mount would freeze it. */
+	now: () => number;
 	/** Where the ship is — read on every render, because a jump moves it. */
 	currentSystem: () => SystemRecord;
 	/** The chart's selection, which the panel highlights and never owns. */
@@ -184,6 +194,15 @@ export interface FinderPanel {
 	readonly state: FinderPanelState;
 }
 
+/** A chip's pressed look, in one place — the facility row was a line-for-line
+ *  copy of the economy row's, and a third row would have copied it again. */
+const paintChip = (chip: HTMLButtonElement, on: boolean): void => {
+	chip.setAttribute("aria-pressed", String(on));
+	chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
+	chip.style.borderColor = on ? "#ffb347" : "#26506e";
+	chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
+};
+
 const el = <K extends keyof HTMLElementTagNameMap>(
 	tag: K,
 ): HTMLElementTagNameMap[K] => document.createElement(tag);
@@ -191,8 +210,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 export function mountFinderPanel({
 	root,
 	systems,
-	knowledge = {},
-	now = () => 0,
+	knowledge,
+	now,
 	currentSystem,
 	selectedIndex,
 	onSelect,
@@ -220,6 +239,9 @@ export function mountFinderPanel({
 	/** The filter and origin the held `results` were projected from. `selected`
 	 *  is deliberately absent: it changes the highlight, not the rows. */
 	let projectionKey = "";
+	/** The knowledge map the memoised projection was built from, compared by
+	 *  identity rather than folded into `projectionKey`. */
+	let projectionKnowledge: FinderKnowledge | null = null;
 	let drawn = { inBudget: 0, beyondRange: 0 };
 
 	// ---- Furniture ---------------------------------------------------------
@@ -563,20 +585,12 @@ export function mountFinderPanel({
 		budgetValue.textContent = String(filter.budgetJumps);
 		budgetDown.disabled = filter.budgetJumps <= 1;
 		budgetUp.disabled = filter.budgetJumps >= FINDER_MAX_BUDGET;
-		chips.forEach((chip, economy) => {
-			const on = filter.economies.includes(economy);
-			chip.setAttribute("aria-pressed", String(on));
-			chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
-			chip.style.borderColor = on ? "#ffb347" : "#26506e";
-			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
-		});
-		facilityChips.forEach((chip, i) => {
-			const on = filter.facilities.includes(FACILITY_CHIPS[i]);
-			chip.setAttribute("aria-pressed", String(on));
-			chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
-			chip.style.borderColor = on ? "#ffb347" : "#26506e";
-			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
-		});
+		chips.forEach((chip, economy) =>
+			paintChip(chip, filter.economies.includes(economy)),
+		);
+		facilityChips.forEach((chip, i) =>
+			paintChip(chip, filter.facilities.includes(FACILITY_CHIPS[i])),
+		);
 
 		const expanded = finderIsNarrowed(filter);
 		applyLayout(expanded);
@@ -601,9 +615,16 @@ export function mountFinderPanel({
 		// below. Skipped unless one of its two inputs actually moved.
 		const here = currentSystem();
 		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}|${[...filter.facilities].sort().join(",")}`;
-		if (inputKey !== projectionKey) {
+		// **The knowledge map is the third input, and it is compared by
+		// identity.** It is replaced rather than mutated on every observation,
+		// so a reference that has not moved cannot have changed — and a string
+		// key cannot hold one, which is why this sits beside `inputKey` rather
+		// than inside it.
+		const rows = knowledge();
+		if (inputKey !== projectionKey || rows !== projectionKnowledge) {
 			projectionKey = inputKey;
-			results = projectFinder(systems, here, filter, undefined, knowledge);
+			projectionKnowledge = rows;
+			results = projectFinder(systems, here, filter, { knowledge: rows });
 		}
 		const { inBudget, beyondRange, uncheckedFence } = results;
 		// **Keyed on what the rows actually print.** Two filters can yield the

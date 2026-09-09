@@ -920,7 +920,15 @@ await clearFinder();
  * splits into one system with real readings and 255 with none. That is the
  * split §5.2.1 cares about, and it is why no fixture is injected here.
  */
-const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"];
+// **Read off the page, never restated.** A probe carrying its own copy of a
+// module constant goes falsely red the day the module changes it, which is this
+// repo's standing rule; `clearFinder` and the `observedChip` block below already
+// enumerate the same attribute.
+const FACILITY_CHIPS = await page.evaluate(() =>
+	[...document.querySelectorAll("[data-map-finder-facility]")].map(
+		(chip) => chip.dataset.mapFinderFacility,
+	),
+);
 
 const clickFacility = (facility) =>
 	page.evaluate((name) => {
@@ -976,6 +984,7 @@ const chartSurface = () =>
 		const { width, height } = map.viewport();
 		return {
 			systemCount: map.state.systemCount,
+			cell: { width, height },
 			lit: map.state.litIndices.join(","),
 			points: map
 				.projected()
@@ -997,6 +1006,47 @@ const chartSurface = () =>
  */
 const facilityChecks = async (where) => {
 	await clearFinder();
+	/**
+	 * **The control is another narrowing, and the layout has to settle first.**
+	 *
+	 * Read against a *closed* finder this fails on a correct build: expanding
+	 * the panel takes a column off the chart's cell (§5.2), so every
+	 * canvas-relative position moves under any narrowing at all. An economy chip
+	 * expands it exactly as a facility chip does, so both arms share a cell
+	 * width and the only difference left is the filter.
+	 *
+	 * And `nextFrames` is not enough to reach it — the panel applies its layout
+	 * from a `ResizeObserver`, so two frames after a chip click the canvas can
+	 * still be the closed width, which is how this first read 1011 px against
+	 * 743 and reported all 256 points moved.
+	 *
+	 * **Waiting for a *narrower* canvas is the desktop's rule, not the rule.**
+	 * Below `FINDER_MIN_CHART_PX` the panel covers the chart instead of taking a
+	 * column, so the cell never moves and `settled(0, closed - 1)` waits thirty
+	 * seconds for something that will not happen. This waits for the width to
+	 * stop changing, which is true of both layouts.
+	 */
+	const stableViewport = () =>
+		page.waitForFunction(() => {
+			const now = window.__seeliteGalaxyMap.viewport().width;
+			const last = window.__seeliteSettleWidth;
+			window.__seeliteSettleWidth = now;
+			return last === now;
+		});
+	const openTheFinder = async (open) => {
+		await open();
+		await page.evaluate(() => {
+			window.__seeliteSettleWidth = null;
+		});
+		await stableViewport();
+		await nextFrames(page);
+	};
+	await openTheFinder(() =>
+		page.evaluate(() => {
+			document.querySelector('[data-map-finder-economy="0"]').click();
+			window.__seeliteGalaxyMap.setFinderBudget(9);
+		}),
+	);
 	const before = await chartSurface();
 
 	for (const facility of FACILITY_CHIPS) {
@@ -1107,19 +1157,41 @@ const facilityChecks = async (where) => {
 	/**
 	 * §9.4: "the same system-point set, colours, and visibility are measured
 	 * before and after facility narrowing, so the chart remains geography-only."
-	 * Compared as strings so a single moved or recoloured point fails — a count
+	 *
+	 * **Read *while* a chip is on, and again after clearing.** Written first as
+	 * two readings either side of a `clearFinder`, it never looked at the chart
+	 * under a narrowing at all — a build that moved or recoloured points while a
+	 * chip was active and restored them on clear passed it, which is the whole
+	 * failure the sentence names. The restored reading is kept as a second arm,
+	 * because a build that changed the chart permanently is a different defect.
+	 *
+	 * Compared as strings so a single moved or recoloured point fails: a count
 	 * cannot see a swap, which is the failure `output-stage`'s multisample check
 	 * records having shipped once.
 	 */
 	await clearFinder();
-	const after = await chartSurface();
+	await openTheFinder(async () => {
+		await clickFacility("REFINERY");
+		await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
+	});
+	const narrowed = await chartSurface();
 	check(
 		`${where}: facility narrowing leaves the chart's points, colours and visibility untouched`,
-		after.systemCount === before.systemCount &&
-			after.lit === before.lit &&
-			after.points === before.points,
-		`${after.systemCount} points, lit set ${after.lit === before.lit ? "identical" : "changed"}, positions ${after.points === before.points ? "identical" : "changed"}`,
+		narrowed.systemCount === before.systemCount &&
+			narrowed.lit === before.lit &&
+			narrowed.points === before.points,
+		`${narrowed.systemCount} points under a facility chip against ${before.systemCount} under an economy chip, lit set ${narrowed.lit === before.lit ? "identical" : "CHANGED"}, positions ${narrowed.points === before.points ? "identical" : "CHANGED"}` +
+			(narrowed.points === before.points
+				? ""
+				: ` — first difference ${(() => {
+						const a = before.points.split("|");
+						const b = narrowed.points.split("|");
+						for (let i = 0; i < Math.max(a.length, b.length); i++)
+							if (a[i] !== b[i]) return `${a[i]} vs ${b[i]}`;
+						return "none";
+					})()}, cell ${JSON.stringify(before.cell)} vs ${JSON.stringify(narrowed.cell)}`),
 	);
+	await clearFinder();
 };
 
 await facilityChecks("desktop");
@@ -1145,15 +1217,12 @@ const cardReadings = await page.evaluate(() => {
 		const card = document.querySelector("[data-map-record]");
 		return card?.textContent ?? "";
 	};
-	const stations = (index) =>
-		window.__seeliteStationRoster ? window.__seeliteStationRoster(index) : null;
 	const rows = map.state.finder.inBudget;
 	return {
 		hereText: read(map.state.currentIndex),
 		awayText: read(
 			(rows.find((r) => r.index !== map.state.currentIndex) ?? rows[0]).index,
 		),
-		stations,
 	};
 });
 check(

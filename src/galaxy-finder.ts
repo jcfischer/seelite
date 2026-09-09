@@ -22,12 +22,24 @@ import { type JumpReach, projectJumps } from "./galaxy-route";
 import { carrierKey } from "./carrier-key";
 import { generateContents } from "./system";
 import type { StationType } from "./station";
-import type { ObservedRecovery, OperationalCondition } from "./world-state";
-import type { KnowledgeRow } from "./world-state";
+import type {
+	GalaxyEnvelope,
+	KnowledgeRow,
+	ObservedRecovery,
+	OperationalCondition,
+} from "./world-state";
 
 export const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"] as const;
 export type FacilityChip = (typeof FACILITY_CHIPS)[number];
-export type FinderKnowledge = Readonly<Record<string, KnowledgeRow>>;
+/**
+ * The knowledge map as the finder reads it.
+ *
+ * **Derived from the envelope, never re-declared.** Written first as
+ * `Record<string, KnowledgeRow>`, which widens `CarrierKey` back to a bare
+ * string on the finder's public surface — and the brand exists precisely so a
+ * raw string cannot index it (`carrier-key.ts`).
+ */
+export type FinderKnowledge = Readonly<GalaxyEnvelope["knowledge"]>;
 
 /**
  * What the player has narrowed the galaxy to.
@@ -230,9 +242,14 @@ export function facilityAnnotationLabel(
 }
 
 /**
- * §5.2.1's remembered recovery, as the record card prints it: `DUE 100s ·
+ * §5.2.1's remembered recovery, as the record card prints it: `DUE @ 100s ·
  * UNCONFIRMED` before the remembered completion, `OVERDUE · UNCONFIRMED` after
  * it.
+ *
+ * **The `@` is not decoration.** `completesAt` is a world-clock reading and
+ * every other figure in a finder row is relative (`SEEN 2H AGO`), so `DUE 70s`
+ * reads as seventy seconds remaining when it means world time 70. The record
+ * card already marks an absolute time that way — `${source} @ ${observedAt}s`.
  *
  * **Both are unconfirmed and neither is a completion.** Passing `completesAt`
  * changes the wording and nothing else — only a relay or a docking report may
@@ -247,7 +264,51 @@ export function recoveryScheduleLabel(
 ): string {
 	return now >= recovery.completesAt
 		? "OVERDUE · UNCONFIRMED"
-		: `DUE ${recovery.completesAt.toFixed(0)}s · UNCONFIRMED`;
+		: `DUE @ ${recovery.completesAt.toFixed(0)}s · UNCONFIRMED`;
+}
+
+/**
+ * §5.2.1's three-valued fence, as the record card prints it.
+ *
+ * **The rule has one home.** `facilitiesOf` claims the three values "live in
+ * this branch and nowhere else", and the record card had a second copy of them
+ * — reachable only from the browser tier, which is the wrong tier for a rule
+ * about what a marker's absence means. The generated flag supplies the value
+ * once a marker exists; without one the fact is unchecked, whatever the flag
+ * says. A non-refinery has no fence to have an opinion about.
+ */
+export function fenceStatusLabel(
+	role: StationType,
+	blackMarket: boolean,
+	known: KnowledgeRow | undefined,
+): string | null {
+	if (role !== "refinery") return null;
+	if (!known?.knownPrivateFacts?.blackMarket) return "FENCE UNCHECKED";
+	return blackMarket ? "KNOWN FENCE" : "KNOWN NO FENCE";
+}
+
+/**
+ * One station's line in §5.2.1's record card: the exact observation time and
+ * report source the finder row's relative age is a rounding of, plus the
+ * remembered recovery and the fence.
+ *
+ * Beside `recoveryScheduleLabel` and `fenceStatusLabel` for the reason those
+ * two are here — it was ~25 lines of formatting inside an already long render
+ * branch, where only the browser tier could reach it.
+ */
+export function stationRosterLine(
+	station: { name: string; type: StationType; blackMarket: boolean },
+	known: KnowledgeRow | undefined,
+	now: number,
+): string {
+	const condition = known
+		? `${known.observedCondition} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
+		: "STATUS UNKNOWN";
+	const schedule = known?.observedRecovery
+		? ` · ${recoveryScheduleLabel(known.observedRecovery, now)}`
+		: "";
+	const fence = fenceStatusLabel(station.type, station.blackMarket, known);
+	return `${station.name} — ${station.type.toUpperCase()} · ${condition}${schedule}${fence ? ` · ${fence}` : ""}`;
 }
 
 /** One row of the finder, as the panel prints it. */
@@ -400,6 +461,20 @@ function byReach(a: FinderRow, b: FinderRow): number {
 }
 
 /**
+ * `projectFinder`'s two optional inputs.
+ *
+ * **An object rather than two more positionals.** `knowledge` arrived behind
+ * the optional `maxJump`, so every real caller had to write
+ * `projectFinder(systems, here, filter, undefined, knowledge)` — a placeholder
+ * the panel carried and fourteen tests repeated, and the shape that keeps
+ * growing a fifth and a sixth positional.
+ */
+export interface ProjectFinderOptions {
+	maxJump?: number;
+	knowledge?: FinderKnowledge;
+}
+
+/**
  * The finder's two lists for one galaxy.
  *
  * **One traversal, not 256 routes.** `projectJumps` labels the whole pool from
@@ -416,8 +491,7 @@ export function projectFinder(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	filter: FinderFilter,
-	maxJump = JUMP_RANGE_LY,
-	knowledge: FinderKnowledge = {},
+	{ maxJump = JUMP_RANGE_LY, knowledge = {} }: ProjectFinderOptions = {},
 ): FinderResults {
 	const projection = projectJumps(systems, from, maxJump);
 	const normalised = filter.query.trim().toLowerCase();
@@ -431,6 +505,12 @@ export function projectFinder(
 		if (!finderMatches(system, filter, normalised)) continue;
 		const here = projection.reach(system);
 		const inBudgetHere = here !== undefined && here.jumps <= filter.budgetJumps;
+		// **Nothing below can produce anything for this system.** Out of budget
+		// with no query yields no row in either group, and the unchecked count
+		// is gated on the budget too — so without this the default one-jump
+		// browse generated ~250 systems' contents per chip toggle and dropped
+		// every one. It is the same waste the comment further down names.
+		if (!inBudgetHere && !hasQuery) continue;
 		// **The roster is read only when a chip asks for it.** Generating a
 		// system to answer a question no chip posed cost the whole galaxy's
 		// contents on every keystroke, and §5.2.1 leaves the unannotated row

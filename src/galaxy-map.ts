@@ -43,7 +43,7 @@ import {
 	startSystem,
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
-import { type FinderKnowledge, recoveryScheduleLabel } from "./galaxy-finder";
+import { type FinderKnowledge, stationRosterLine } from "./galaxy-finder";
 import { carrierKey } from "./carrier-key";
 import { generateContents } from "./system";
 import {
@@ -329,12 +329,13 @@ export interface GalaxyChartOptions {
 	galaxyIndex: number;
 	/** Where the ship is. Defaults to the galaxy's own start system. */
 	currentIndex?: number;
-	/** Read-only last-known station intelligence; mounting never writes it.
-	 *  Opening the map is not an information channel (§5.2.1). */
-	knowledge?: FinderKnowledge;
+	/** Read-only last-known station intelligence; mounting never writes it, and
+	 *  opening the map is not an information channel (§5.2.1). A getter, and
+	 *  required, for the reason `mountFinderPanel`'s own doc gives. */
+	knowledge: () => FinderKnowledge;
 	/** The world clock. Read on every render, so an age and an overdue
 	 *  recovery are current rather than frozen at mount. */
-	now?: () => number;
+	now: () => number;
 	/**
 	 * Bind `h` and `Escape` on `window`. Default off.
 	 *
@@ -389,8 +390,8 @@ export function mountGalaxyChart({
 	worldSeed,
 	galaxyIndex,
 	currentIndex,
-	knowledge = {},
-	now = () => 0,
+	knowledge,
+	now,
 	globalKeys = false,
 	course: initialCourse = null,
 	onCourse,
@@ -906,30 +907,16 @@ export function mountGalaxyChart({
 			card.style.display = "block";
 			// §5.2.1's roster: every station, its exact observation time and
 			// report source — the finder row carries the compact relative age,
-			// and this is where the number behind it lives.
-			const stations = generateContents(record).stations.map((station) => {
-				const known =
-					knowledge[carrierKey(record.index, station.localCarrierId)];
-				const condition = known
-					? `${known.observedCondition} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
-					: "STATUS UNKNOWN";
-				// **A remembered schedule is never promoted.** §5.2.1: passing
-				// `completesAt` moves the card from `DUE` to `OVERDUE` and
-				// changes nothing else — both are `UNCONFIRMED`, because only a
-				// relay or a docking report may say the repair finished. The
-				// row above still reads `repairing` either way.
-				const recovery = known?.observedRecovery;
-				const schedule = recovery
-					? ` · ${recoveryScheduleLabel(recovery, now())}`
-					: "";
-				const fence =
-					station.type !== "refinery"
-						? ""
-						: known?.knownPrivateFacts?.blackMarket
-							? ` · ${station.blackMarket ? "KNOWN FENCE" : "KNOWN NO FENCE"}`
-							: " · FENCE UNCHECKED";
-				return `${station.name} — ${station.type.toUpperCase()} · ${condition}${schedule}${fence}`;
-			});
+			// and this is where the number behind it lives. The formatting is
+			// `galaxy-finder.ts`'s, so the headless tier can reach it.
+			const rows = knowledge();
+			const stations = generateContents(record).stations.map((station) =>
+				stationRosterLine(
+					station,
+					rows[carrierKey(record.index, station.localCarrierId)],
+					now(),
+				),
+			);
 			card.textContent = [
 				selected.name,
 				`${ECONOMY_NAMES[selected.economy]} · ${GOVERNMENT_NAMES[selected.government]}`,
@@ -1695,5 +1682,17 @@ export function mountGalaxyMap(): void {
 	const host = el("div");
 	Object.assign(host.style, { position: "fixed", inset: "0" });
 	document.body.appendChild(host);
-	mountGalaxyChart({ host, worldSeed, galaxyIndex, globalKeys: true });
+	// **The workbench says it has no world, rather than letting a default say
+	// it.** There is no `WorldState` behind this page at all, so every station
+	// reads `STATUS UNKNOWN` and every age `SEEN JUST NOW` — which is correct
+	// here and is exactly what a forgetful game mount would also produce, so
+	// the two are spelt out rather than defaulted.
+	mountGalaxyChart({
+		host,
+		worldSeed,
+		galaxyIndex,
+		knowledge: () => ({}),
+		now: () => 0,
+		globalKeys: true,
+	});
 }

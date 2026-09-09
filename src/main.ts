@@ -5259,12 +5259,15 @@ class Game {
 					worldSeed: this.world.seed,
 					galaxyIndex: this.world.system.record.galaxy,
 					currentIndex: this.world.system.record.index,
-					knowledge:
+					// **Both getters, for the same reason `currentSystem` is one.**
+					// Held as values these froze at mount: a jump with the map
+					// open runs `observeCurrentSystemRelay` and then
+					// `handle.jumpTo`, and `observeSystemRelay` replaces the
+					// envelope — so the destination's just-relayed stations
+					// rendered `STATUS UNKNOWN` while their ages ticked up.
+					knowledge: () =>
 						this.commerceWorld.galaxies[this.world.system.record.galaxy]
 							?.knowledge ?? {},
-					// §5.2.1's ages are relative to the world clock, and the map
-					// outlives many seconds of it. A getter, not a value: the
-					// chart reads it on every render.
 					now: () => this.world.gameTime,
 					// The course is the game's, not the chart's (#187) — the chart
 					// is disposed on every tab toggle and a course held inside it

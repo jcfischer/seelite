@@ -641,16 +641,8 @@ describe("§9.4 facilities knowledge", () => {
 	});
 
 	test("public refinery and shipyard roles project with no knowledge overlay", () => {
-		const refinery = galaxy.systems.find((system) =>
-			generateContents(system).stations.some(
-				(station) => station.type === "refinery",
-			),
-		) as SystemRecord;
-		const shipyard = galaxy.systems.find((system) =>
-			generateContents(system).stations.some(
-				(station) => station.type === "shipyard",
-			),
-		) as SystemRecord;
+		const refinery = withRole("refinery");
+		const shipyard = withRole("shipyard");
 		const refineries = projectFinder(
 			galaxy.systems,
 			here,
@@ -676,16 +668,7 @@ describe("§9.4 facilities knowledge", () => {
 	});
 
 	test("known fences match only a checked generated true fact and count unchecked refineries", () => {
-		const system = galaxy.systems.find((candidate) => {
-			const refinery = generateContents(candidate).stations.find(
-				(station) => station.type === "refinery",
-			);
-			return refinery?.blackMarket === true;
-		}) as SystemRecord;
-		const refinery = generateContents(system).stations.find(
-			(station) => station.type === "refinery",
-		);
-		if (!refinery) throw new Error("fixture needs a refinery");
+		const { system, refinery } = fenceSystem(true);
 		const result = projectFinder(
 			galaxy.systems,
 			here,
@@ -693,15 +676,16 @@ describe("§9.4 facilities knowledge", () => {
 				facilities: ["KNOWN FENCE"],
 				budgetJumps: FINDER_MAX_BUDGET,
 			}),
-			undefined,
 			{
-				[carrierKey(system.index, refinery.localCarrierId)]: {
-					observedInstanceOrdinal: 0,
-					observedCondition: "operational",
-					observedAt: 9,
-					source: "docking",
-					knownPrivateFacts: {
-						blackMarket: { learnedAt: 9, source: "docking" },
+				knowledge: {
+					[carrierKey(system.index, refinery.localCarrierId)]: {
+						observedInstanceOrdinal: 0,
+						observedCondition: "operational",
+						observedAt: 9,
+						source: "docking",
+						knownPrivateFacts: {
+							blackMarket: { learnedAt: 9, source: "docking" },
+						},
 					},
 				},
 			},
@@ -726,13 +710,14 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-			undefined,
 			{
-				[carrierKey(system.index, shipyard.localCarrierId)]: {
-					observedInstanceOrdinal: 0,
-					observedCondition: "disabled",
-					observedAt: 1000,
-					source: "system-relay",
+				knowledge: {
+					[carrierKey(system.index, shipyard.localCarrierId)]: {
+						observedInstanceOrdinal: 0,
+						observedCondition: "disabled",
+						observedAt: 1000,
+						source: "system-relay",
+					},
 				},
 			},
 		);
@@ -785,13 +770,14 @@ describe("§9.4 facilities knowledge", () => {
 				galaxy.systems,
 				here,
 				filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-				undefined,
 				{
-					[carrierKey(system.index, shipyard.localCarrierId)]: {
-						observedInstanceOrdinal: 0,
-						observedCondition: condition,
-						observedAt: 5,
-						source: "docking",
+					knowledge: {
+						[carrierKey(system.index, shipyard.localCarrierId)]: {
+							observedInstanceOrdinal: 0,
+							observedCondition: condition,
+							observedAt: 5,
+							source: "docking",
+						},
 					},
 				},
 			);
@@ -822,14 +808,15 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-			undefined,
 			{
-				[carrierKey(system.index, shipyard.localCarrierId)]: {
-					observedInstanceOrdinal: 0,
-					observedCondition: "repairing",
-					observedAt: 10,
-					source: "docking",
-					observedRecovery: recovery,
+				knowledge: {
+					[carrierKey(system.index, shipyard.localCarrierId)]: {
+						observedInstanceOrdinal: 0,
+						observedCondition: "repairing",
+						observedAt: 10,
+						source: "docking",
+						observedRecovery: recovery,
+					},
 				},
 			},
 		);
@@ -903,8 +890,9 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-			undefined,
-			knowledge,
+			{
+				knowledge: knowledge,
+			},
 		);
 		const row = seen.inBudget.find(
 			(candidate) => candidate.index === system.index,
@@ -928,8 +916,9 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-			undefined,
-			checked(system, refinery, "disabled", 40),
+			{
+				knowledge: checked(system, refinery, "disabled", 40),
+			},
 		);
 		const row = seen.inBudget.find(
 			(candidate) => candidate.index === system.index,
@@ -957,8 +946,9 @@ describe("§9.4 facilities knowledge", () => {
 			galaxy.systems,
 			here,
 			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-			undefined,
-			checked(system, refinery, "operational", 3),
+			{
+				knowledge: checked(system, refinery, "operational", 3),
+			},
 		);
 		expect(seen.inBudget.map((row) => row.index)).not.toContain(system.index);
 
@@ -1143,11 +1133,33 @@ describe("§9.4 facilities knowledge", () => {
 			startedAt: 10,
 			completesAt: 70,
 		};
-		expect(recoveryScheduleLabel(recovery, 69)).toBe("DUE 70s · UNCONFIRMED");
+		// The `@` marks it absolute. `DUE 70s` read as seventy seconds
+		// remaining, beside a row whose every other figure is relative.
+		expect(recoveryScheduleLabel(recovery, 69)).toBe("DUE @ 70s · UNCONFIRMED");
 		expect(recoveryScheduleLabel(recovery, 70)).toBe("OVERDUE · UNCONFIRMED");
 		expect(recoveryScheduleLabel(recovery, 10_000)).toBe(
 			"OVERDUE · UNCONFIRMED",
 		);
+	});
+
+	/**
+	 * **The invariant `facilitiesOf` argues from, pinned rather than asserted.**
+	 * Its comment says a system has at most one station per role, so §5.2.1's
+	 * "never collapses mixed carrier conditions" has no case to answer — and
+	 * `present.set` silently keeps the last station, so a second refinery would
+	 * collapse exactly what the spec forbids collapsing. Nothing in the diff
+	 * checked it. Swept over every system of every galaxy, because it is a
+	 * property of the generator.
+	 */
+	test("no generated system carries two stations of one role", () => {
+		let systems = 0;
+		for (let g = 0; g < GALAXY_COUNT; g++)
+			for (const system of generateGalaxy(WORLD_SEED, g).systems) {
+				const roles = generateContents(system).stations.map((s) => s.type);
+				expect(new Set(roles).size).toBe(roles.length);
+				systems++;
+			}
+		expect(systems).toBe(GALAXY_COUNT * 256);
 	});
 
 	/** §9.4 item 2: any facility chip expands the finder, under §5.2's rule. */

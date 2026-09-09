@@ -410,16 +410,21 @@ const undock = good.docked
 				);
 				const dockedKnowledge = (() => {
 					const env = g.commerceWorld.galaxies[g.world.system.record.galaxy];
+					// **The whole key, never a suffix of it.** Written as an
+					// `endsWith` over every row in the galaxy first: the four
+					// `station-*` ids are not suffixes of each other so it held
+					// at this seed, but it drops the system index, and after a
+					// jump the first inserted `*:station-refinery` from some
+					// other system wins — the check named "the station it docked
+					// at" would then be reading a carrier the ship never visited.
 					const key = `${g.world.system.record.index}:${station?.localCarrierId}`;
-					const row = Object.entries(env?.knowledge ?? {}).find(([k]) =>
-						k.endsWith(String(station?.localCarrierId)),
-					);
+					const row = env?.knowledge?.[key];
 					return {
 						key,
 						type: station?.type ?? null,
-						source: row?.[1]?.source ?? null,
-						observedAt: row?.[1]?.observedAt ?? null,
-						marker: row?.[1]?.knownPrivateFacts?.blackMarket ?? null,
+						source: row?.source ?? null,
+						observedAt: row?.observedAt ?? null,
+						marker: row?.knownPrivateFacts?.blackMarket ?? null,
 					};
 				})();
 				// This section verifies the docking session's exit and re-entry latch,
