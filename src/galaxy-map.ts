@@ -43,7 +43,11 @@ import {
 	startSystem,
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
-import { type FinderKnowledge, stationRosterLine } from "./galaxy-finder";
+import {
+	type FinderKnowledge,
+	NO_KNOWLEDGE,
+	stationRosterLine,
+} from "./galaxy-finder";
 import { carrierKey } from "./carrier-key";
 import { generateContents } from "./system";
 import {
@@ -1422,9 +1426,14 @@ export function mountGalaxyChart({
 	 * `SEEN JUST NOW` for as long as the tab was up, and a remembered repair
 	 * never turned `OVERDUE`.
 	 *
-	 * Minute granularity, because that is the label's own: a per-frame
-	 * recompute to move a number that cannot change 3,600 times an hour is the
-	 * expensive way to be wrong.
+	 * Minute granularity, because a per-frame recompute to move a number that
+	 * changes at most once a minute is the expensive way to be right. **The
+	 * bound is 60 s, and neither label is aligned to it**: `Math.floor(now()/60)`
+	 * buckets do not line up with `elapsed` crossing sixty — an `observedAt` of
+	 * 30 keeps reading `SEEN JUST NOW` until `now` reaches 120 — and
+	 * `recoveryScheduleLabel` flips at an arbitrary `completesAt`. So a label
+	 * can be up to a minute behind, which is the accuracy this buys and not
+	 * more.
 	 */
 	let paintedMinute = Math.floor(now() / 60);
 	const frame = (): void => {
@@ -1691,7 +1700,7 @@ export function mountGalaxyMap(): void {
 		host,
 		worldSeed,
 		galaxyIndex,
-		knowledge: () => ({}),
+		knowledge: () => NO_KNOWLEDGE,
 		now: () => 0,
 		globalKeys: true,
 	});

@@ -15,6 +15,7 @@
 import {
 	FINDER_MAX_BUDGET,
 	FACILITY_CHIPS,
+	type FacilityAnnotation,
 	type FacilityChip,
 	type FinderKnowledge,
 	facilityAnnotationLabel,
@@ -231,6 +232,23 @@ export function mountFinderPanel({
 	/** The drawn row buttons by system index, so a selection restyles rather
 	 *  than rebuilds. Cleared whenever the list is rebuilt. */
 	const rowElements = new Map<number, HTMLElement>();
+	/**
+	 * Every drawn `[data-map-finder-facility-row]` span with the annotation it
+	 * prints, so a minute's passing rewrites text rather than rebuilding rows.
+	 *
+	 * **The alternative was in the list key and it was wrong twice over.** A
+	 * world-minute term there rebuilt every drawn row once a minute — under an
+	 * economy-only narrowing too, where no row prints an age at all — and
+	 * `resultsEl.replaceChildren` takes the focused pick or centre button with
+	 * it, dropping keyboard focus to `<body>`. The `rowElements`/`paintedIndex`
+	 * machinery beside this exists to avoid exactly that teardown.
+	 */
+	const annotationLines: Array<{
+		line: HTMLElement;
+		annotation: FacilityAnnotation;
+	}> = [];
+	/** The world-minute the drawn ages were written at; `null` before any. */
+	let labelledMinute: number | null = null;
 	/** Which index is currently painted as selected, so a repaint touches the
 	 *  two rows that changed rather than all of them. */
 	let paintedIndex: number | null = null;
@@ -530,7 +548,9 @@ export function mountFinderPanel({
 				fontSize: "9px",
 				letterSpacing: ".05em",
 			});
-			line.textContent = `${annotation.facility} · ${facilityAnnotationLabel(annotation, now())}`;
+			// Held so the age can be rewritten without rebuilding the row — see
+			// `retimeAnnotations`.
+			annotationLines.push({ line, annotation });
 			pick.append(line);
 		}
 
@@ -601,6 +621,8 @@ export function mountFinderPanel({
 			results = { inBudget: [], beyondRange: [], uncheckedFence: 0 };
 			resultsEl.replaceChildren();
 			rowElements.clear();
+			annotationLines.length = 0;
+			labelledMinute = null;
 			paintedIndex = null;
 			listKey = "";
 			projectionKey = "";
@@ -661,16 +683,12 @@ export function mountFinderPanel({
 			// match changed neither group's rows — both empty — so the key held
 			// and the panel kept printing the narrower budget's count. The probe
 			// read 4 off the DOM against the projection's 105.
-			.concat(`|fence${uncheckedFence}`)
-			// **And the minute, because an age is a thing the row prints.** The
-			// projection is memoised on the filter and the chart repaints on
-			// events, so without this a row kept whatever age it was built with
-			// for as long as the map stayed open. Minutes, not frames: that is
-			// the coarsest unit `facilityAnnotationLabel` can move.
-			.concat(`|t${Math.floor(now() / 60)}`);
+			.concat(`|fence${uncheckedFence}`);
 		if (key !== listKey) {
 			listKey = key;
 			rowElements.clear();
+			annotationLines.length = 0;
+			labelledMinute = null;
 			paintedIndex = null;
 			const parts: HTMLElement[] = [];
 			if (inBudget.length === 0) {
@@ -732,6 +750,18 @@ export function mountFinderPanel({
 			const after = next === null ? null : rowElements.get(next);
 			if (after) paintRow(after, true);
 			paintedIndex = next;
+		}
+
+		// **The ages, rewritten rather than rebuilt.** `facilityAnnotationLabel`
+		// is a function of the world clock, so a map left open froze every one
+		// of them; at minute granularity this is a handful of `textContent`
+		// writes against a full teardown of the drawn list, and it keeps the
+		// focused row's buttons in the document.
+		const minute = Math.floor(now() / 60);
+		if (minute !== labelledMinute) {
+			labelledMinute = minute;
+			for (const { line, annotation } of annotationLines)
+				line.textContent = `${annotation.facility} · ${facilityAnnotationLabel(annotation, now())}`;
 		}
 	};
 

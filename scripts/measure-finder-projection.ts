@@ -1,37 +1,54 @@
 /**
- * What one finder projection costs, with and without a facility chip.
+ * What the facility-chip guard in `projectFinder` saves, measured against a
+ * build without it.
  *
- * **The figure this exists for is a two-arm timing quoted in a PR body**, and a
- * measurement stated with no instrument behind it reads as measured while being
- * unreproducible — the failure `a-prediction-in-a-spec-reads-as-a-measurement`
- * names. So the number is not written down anywhere; this prints it on the
- * machine it is run on.
+ * **The first version of this script measured the wrong thing.** Its two arms
+ * were "no chip" and "REFINERY chip" — both on the *guarded* build — so the
+ * difference it printed was the cost of *using* a chip over a different row
+ * set, not the cost the guard removes. No arm ran the unguarded code at all,
+ * which leaves the figure unable to support the sentence it exists for. The
+ * arms here are one filter through two implementations:
  *
- * The arms differ by one thing: `projectFinder` reads a system's whole station
- * roster (`generateContents`) only when a facility chip is active. Without that
- * guard, a keystroke generated the contents of every matching system — up to the
- * galaxy's 256 — to answer a question no chip had posed.
+ * - **guarded** — `projectFinder` as it ships: with no facility chip active it
+ *   never reads a system's station roster.
+ * - **roster read anyway** — the same projection plus `generateContents` for
+ *   every system the name and economy narrowing admits, which is what the
+ *   shipped code did before the guard.
+ *
+ * The second arm is reconstructed here rather than kept behind a flag in
+ * `galaxy-finder.ts`: a production branch existing for one measurement is
+ * production state serving a script. What the guard removes is
+ * `generateContents` over the admitted set, and that is what this runs.
+ *
+ * **A query, not a bare browse.** The harm is per keystroke. With no query at
+ * the default one-jump budget, `projectFinder` now skips a system that cannot
+ * yield a row before it would read any roster, so a browse is not where the
+ * cost was. A one-character query admits most of the galaxy, which is the shape
+ * a player types through.
  *
  *   bun scripts/measure-finder-projection.ts
  *
  * **The arms are interleaved and the order is shuffled from a printed seed**,
  * because a block design that always runs its arms in the same order measures
- * the order: `measure-light-cost.mjs` reported a term at 0.12–0.14 ms with
+ * the order: `measure-light-cost.mjs` reported a term at 0.12-0.14 ms with
  * 144/144 pairings separated, and shuffling dropped the same term to a coin
- * toss. A range is quoted, never one reading.
+ * toss. Quantiles are printed, never one reading. Every sample is taken on a
+ * warm JIT, which is the state a player's session is in.
  */
 
 import { generateGalaxy } from "../src/galaxy";
 import {
-	FINDER_MAX_BUDGET,
-	type FacilityChip,
+	FINDER_DEFAULT_BUDGET,
 	finderDefaultFilter,
+	finderMatches,
 	projectFinder,
 } from "../src/galaxy-finder";
+import { generateContents } from "../src/system";
 
 const WORLD_SEED = 0x5ee11e;
 const REPEATS = 24;
-const WARMUP = 8;
+const WARMUP = 4;
+const QUERY = "a";
 
 const seedArg = process.argv.find((a) => a.startsWith("--seed="));
 const shuffleSeed = seedArg ? Number(seedArg.slice(7)) : Date.now() & 0xffff;
@@ -44,26 +61,37 @@ const rng = (state: number) => () => {
 
 const galaxy = generateGalaxy(WORLD_SEED, 0);
 const here = galaxy.systems[0];
+const filter = {
+	...finderDefaultFilter(),
+	query: QUERY,
+	budgetJumps: FINDER_DEFAULT_BUDGET,
+};
+const normalised = QUERY.trim().toLowerCase();
 
-const arms: Array<{ name: string; facilities: readonly FacilityChip[] }> = [
-	{ name: "no facility chip", facilities: [] },
-	{ name: "REFINERY", facilities: ["REFINERY"] },
-];
-
-const once = (facilities: readonly FacilityChip[]): number => {
-	const filter = {
-		...finderDefaultFilter(),
-		facilities,
-		budgetJumps: FINDER_MAX_BUDGET,
-	};
+const guarded = (): number => {
 	const t0 = performance.now();
-	projectFinder(galaxy.systems, here, filter, {
-		knowledge: {},
-	});
+	projectFinder(galaxy.systems, here, filter);
 	return performance.now() - t0;
 };
 
-for (const arm of arms) for (let i = 0; i < WARMUP; i++) once(arm.facilities);
+/** The shipped projection plus the roster read the guard removes. */
+const unguarded = (): number => {
+	const t0 = performance.now();
+	projectFinder(galaxy.systems, here, filter);
+	for (const system of galaxy.systems) {
+		if (system.galaxy !== here.galaxy) continue;
+		if (!finderMatches(system, filter, normalised)) continue;
+		generateContents(system);
+	}
+	return performance.now() - t0;
+};
+
+const arms = [
+	{ name: "guarded (shipped)", run: guarded },
+	{ name: "roster read anyway", run: unguarded },
+];
+
+for (const arm of arms) for (let i = 0; i < WARMUP; i++) arm.run();
 
 const samples = new Map<string, number[]>(arms.map((a) => [a.name, []]));
 const order: number[] = [];
@@ -74,27 +102,30 @@ for (let i = order.length - 1; i > 0; i--) {
 	const j = Math.floor(random() * (i + 1));
 	[order[i], order[j]] = [order[j], order[i]];
 }
-for (const a of order)
-	samples.get(arms[a].name)?.push(once(arms[a].facilities));
+for (const a of order) samples.get(arms[a].name)?.push(arms[a].run());
 
 const quantile = (xs: number[], q: number): number => {
 	const sorted = [...xs].sort((x, y) => x - y);
 	return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
 };
 
+const admitted = galaxy.systems.filter(
+	(s) => s.galaxy === here.galaxy && finderMatches(s, filter, normalised),
+).length;
+
 console.log(
-	`seelite finder projection — ${galaxy.systems.length} systems, seed 0x${WORLD_SEED.toString(16)}, ` +
+	`seelite finder projection — query "${QUERY}" at budget ${FINDER_DEFAULT_BUDGET}, ` +
+		`${admitted} of ${galaxy.systems.length} systems admitted, ` +
 		`${REPEATS} interleaved runs per arm, shuffle seed ${shuffleSeed}`,
 );
 for (const arm of arms) {
 	const xs = samples.get(arm.name) ?? [];
 	console.log(
-		`  ${arm.name.padEnd(18)} median ${quantile(xs, 0.5).toFixed(3)} ms  ` +
+		`  ${arm.name.padEnd(20)} median ${quantile(xs, 0.5).toFixed(3)} ms  ` +
 			`(p10 ${quantile(xs, 0.1).toFixed(3)}, p90 ${quantile(xs, 0.9).toFixed(3)})`,
 	);
 }
 console.log(
-	"\nThe difference is `generateContents` over every system the name and economy\n" +
-		"narrowing admits. It is paid on every keystroke, which is why the guard is\n" +
-		"on the chip rather than on the result.",
+	"\nThe difference is `generateContents` over the admitted set, paid on every\n" +
+		"keystroke. It is what the chip guard removes from the unannotated path.",
 );

@@ -41,6 +41,10 @@ export type FacilityChip = (typeof FACILITY_CHIPS)[number];
  */
 export type FinderKnowledge = Readonly<GalaxyEnvelope["knowledge"]>;
 
+/** The empty overlay, as one object. A caller returning a fresh `{}` defeats
+ *  the panel's identity comparison and re-projects the galaxy every render. */
+export const NO_KNOWLEDGE: FinderKnowledge = {};
+
 /**
  * What the player has narrowed the galaxy to.
  *
@@ -267,24 +271,42 @@ export function recoveryScheduleLabel(
 		: `DUE @ ${recovery.completesAt.toFixed(0)}s · UNCONFIRMED`;
 }
 
+/** §5.2.1's three values for a refinery's fence. */
+export type FenceKnowledge = "known-fence" | "known-absent" | "unchecked";
+
 /**
- * §5.2.1's three-valued fence, as the record card prints it.
+ * §5.2.1's three-valued fence, and **this is its one home.**
  *
- * **The rule has one home.** `facilitiesOf` claims the three values "live in
- * this branch and nowhere else", and the record card had a second copy of them
- * — reachable only from the browser tier, which is the wrong tier for a rule
- * about what a marker's absence means. The generated flag supplies the value
- * once a marker exists; without one the fact is unchecked, whatever the flag
- * says. A non-refinery has no fence to have an opinion about.
+ * The rule was written three times over two rounds: inline in `facilitiesOf`,
+ * again in the record card's render branch, and again in the label below.
+ * `fenceStatusLabel`'s doc claimed exclusivity while `facilitiesOf` kept its
+ * own branch — which is the claim a later reader trusts when changing one of
+ * them. Both call this now.
+ *
+ * The generated flag supplies the value once a marker exists; without one the
+ * fact is unchecked, whatever the flag says.
  */
+export function fenceKnowledge(
+	blackMarket: boolean,
+	known: KnowledgeRow | undefined,
+): FenceKnowledge {
+	if (!known?.knownPrivateFacts?.blackMarket) return "unchecked";
+	return blackMarket ? "known-fence" : "known-absent";
+}
+
+/** `fenceKnowledge` as the record card prints it. A non-refinery has no fence
+ *  to have an opinion about. */
 export function fenceStatusLabel(
 	role: StationType,
 	blackMarket: boolean,
 	known: KnowledgeRow | undefined,
 ): string | null {
 	if (role !== "refinery") return null;
-	if (!known?.knownPrivateFacts?.blackMarket) return "FENCE UNCHECKED";
-	return blackMarket ? "KNOWN FENCE" : "KNOWN NO FENCE";
+	return {
+		unchecked: "FENCE UNCHECKED",
+		"known-fence": "KNOWN FENCE",
+		"known-absent": "KNOWN NO FENCE",
+	}[fenceKnowledge(blackMarket, known)];
 }
 
 /**
@@ -394,13 +416,14 @@ function facilitiesOf(system: SystemRecord, knowledge: FinderKnowledge) {
 		});
 		if (station.type === "refinery") {
 			present.set("REFINERY", annotate("REFINERY"));
-			// §5.2.1's three values live in this branch and nowhere else: a
-			// marker plus a generated true is a match, a marker plus a
-			// generated false is a *known* non-match — neither a row nor an
-			// unchecked refinery — and no marker at all is unchecked.
-			const marker = known?.knownPrivateFacts?.blackMarket;
-			if (!marker) uncheckedFence = true;
-			else if (station.blackMarket)
+			// §5.2.1's three values, from `fenceKnowledge` rather than from a
+			// second copy of the rule: a marker plus a generated true is a
+			// match, a marker plus a generated false is a *known* non-match —
+			// neither a row nor an unchecked refinery — and no marker at all is
+			// unchecked.
+			const fence = fenceKnowledge(station.blackMarket, known);
+			if (fence === "unchecked") uncheckedFence = true;
+			else if (fence === "known-fence")
 				present.set("KNOWN FENCE", annotate("KNOWN FENCE"));
 		}
 		if (station.type === "shipyard")

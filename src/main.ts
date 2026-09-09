@@ -935,6 +935,12 @@ function forwardOf(q: THREE.Quaternion): Vec3 {
 	return v3(f.x, f.y, f.z);
 }
 
+/** The empty knowledge overlay, as one object. The chart compares the map by
+ *  identity to decide whether to re-project, so a fresh `{}` per render misses
+ *  that memo every frame. Declared here rather than imported from
+ *  `galaxy-finder.ts`, which is in the lazily loaded chart chunk. */
+const EMPTY_KNOWLEDGE: Readonly<Record<string, never>> = {};
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -5265,9 +5271,15 @@ class Game {
 					// `handle.jumpTo`, and `observeSystemRelay` replaces the
 					// envelope — so the destination's just-relayed stations
 					// rendered `STATUS UNKNOWN` while their ages ticked up.
+					// **`EMPTY_KNOWLEDGE`, not a fresh `{}`.** The panel compares the
+					// map by identity to decide whether to re-project, and a
+					// literal here allocates a new object on every render — so
+					// a galaxy with no envelope yet would miss the memo every
+					// frame and re-project 256 systems for a map that never
+					// changes.
 					knowledge: () =>
 						this.commerceWorld.galaxies[this.world.system.record.galaxy]
-							?.knowledge ?? {},
+							?.knowledge ?? EMPTY_KNOWLEDGE,
 					now: () => this.world.gameTime,
 					// The course is the game's, not the chart's (#187) — the chart
 					// is disposed on every tab toggle and a course held inside it

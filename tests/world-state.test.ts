@@ -1025,9 +1025,17 @@ describe("§9.10 facility knowledge", () => {
 	});
 	/**
 	 * §9.10: "the marker survives replacement of the carrier instance". The
-	 * black-market flag is generated baseline data about the *berth*, not about
+	 * black-market flag is generated baseline data about the **carrier slot** —
+	 * `persistent-world-state.md` §2's term, and `carrier-key.ts`'s — not about
 	 * the instance standing in it, so blowing the refinery up and rebuilding it
 	 * cannot un-learn where the fence is.
+	 *
+	 * (Two review rounds moved this word in opposite directions: `slot` was
+	 * flagged as an alias for **Berth**, and `berth` then as an alias for
+	 * **Transit lane**. Neither is what the sentence means. CONTEXT.md's own
+	 * Berth entry anticipates this — "a reviewer flagging one of those has found
+	 * the alias rule firing on an English word" — so it names the repo's actual
+	 * term for the persisted thing instead.)
 	 */
 	test("the marker survives a destroy and replacement of the carrier", () => {
 		let world = observeDocking(newWorld(WORLD), 0, OTHER, 10, true);
@@ -1048,6 +1056,23 @@ describe("§9.10 facility knowledge", () => {
 		// A new instance, a fresh condition reading — and the same learned fact.
 		expect(row?.observedInstanceOrdinal).toBe(1);
 		expect(row?.observedAt).toBe(90);
+		expect(row?.knownPrivateFacts?.blackMarket).toEqual({
+			learnedAt: 10,
+			source: "docking",
+		});
+	});
+
+	/**
+	 * §3.1 names `learnedAt` for when the fact was *learned*. Re-docking is a
+	 * fresh condition reading and not a fresh discovery, so the marker it finds
+	 * is the one it keeps — written unconditionally it moved forward on every
+	 * return trip, and a fact learned at the first visit reported the last.
+	 */
+	test("re-docking refreshes the condition and leaves learnedAt where it was", () => {
+		let world = observeDocking(newWorld(WORLD), 0, OTHER, 10, true);
+		world = observeDocking(world, 0, OTHER, 400, true);
+		const row = readKnowledge(world.galaxies[0], OTHER);
+		expect(row?.observedAt).toBe(400);
 		expect(row?.knownPrivateFacts?.blackMarket).toEqual({
 			learnedAt: 10,
 			source: "docking",

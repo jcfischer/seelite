@@ -979,7 +979,13 @@ export const observeDocking = (
 			...env.knowledge,
 			[key]: {
 				...row,
-				knownPrivateFacts: {
+				// **`learnedAt` is when it was learned, not when it was last
+				// checked.** Written unconditionally, every later docking at the
+				// same refinery moved it forward — so a fact learned on the
+				// first visit reported the most recent visit's clock, and
+				// §3.1's "learned by visiting" would age backwards on a return
+				// trip. A marker already there is kept.
+				knownPrivateFacts: row.knownPrivateFacts ?? {
 					blackMarket: { learnedAt: gameTime, source: "docking" },
 				},
 			},

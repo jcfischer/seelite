@@ -1023,22 +1023,29 @@ const facilityChecks = async (where) => {
 	 * **Waiting for a *narrower* canvas is the desktop's rule, not the rule.**
 	 * Below `FINDER_MIN_CHART_PX` the panel covers the chart instead of taking a
 	 * column, so the cell never moves and `settled(0, closed - 1)` waits thirty
-	 * seconds for something that will not happen. This waits for the width to
-	 * stop changing, which is true of both layouts.
+	 * seconds for something that will not happen.
+	 *
+	 * **And "two equal readings" is not evidence either.** On a raf poll that is
+	 * satisfied by two frames at the *closed* width, before the `ResizeObserver`
+	 * has fired — which is the state the wait exists to get past, so the guard
+	 * would be a proxy for settling rather than a reading of it. What is
+	 * checkable is the panel's own applied layout: `data-map-finder-layout` is
+	 * written by `applyLayout` and says which rule ran, and each layout implies
+	 * a cell width. So this waits for the layout to be applied *and* for the
+	 * width that layout implies.
 	 */
-	const stableViewport = () =>
-		page.waitForFunction(() => {
-			const now = window.__seeliteGalaxyMap.viewport().width;
-			const last = window.__seeliteSettleWidth;
-			window.__seeliteSettleWidth = now;
-			return last === now;
-		});
+	const closedWidth = (await chartSurface()).cell.width;
 	const openTheFinder = async (open) => {
 		await open();
-		await page.evaluate(() => {
-			window.__seeliteSettleWidth = null;
-		});
-		await stableViewport();
+		await page.waitForFunction((closed) => {
+			const layout = document
+				.querySelector("[data-map-finder]")
+				?.getAttribute("data-map-finder-layout");
+			const width = window.__seeliteGalaxyMap.viewport().width;
+			if (layout === "column") return width < closed - 0.5;
+			if (layout === "cover") return Math.abs(width - closed) < 0.5;
+			return false;
+		}, closedWidth);
 		await nextFrames(page);
 	};
 	await openTheFinder(() =>
