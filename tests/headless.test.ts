@@ -41,6 +41,7 @@ const HEADLESS = [
 	"deficits",
 	"docking",
 	"galaxy",
+	"gamepad",
 	"hud",
 	"hull",
 	"hyperspace",
@@ -90,6 +91,7 @@ test("no module has been quietly dropped from the list", () => {
 		"deficits",
 		"docking",
 		"galaxy",
+		"gamepad",
 		"hud",
 		"hull",
 		"hyperspace",
@@ -237,4 +239,17 @@ test("src/relief-bands.ts imports nothing but a type", () => {
 	// no dynamic one.
 	expect(source.match(/\bimport\b/g)).toHaveLength(1);
 	expect(source.match(/\brequire\s*\(/g)).toBeNull();
+});
+
+test("src/gamepad.ts is a leaf, which is what makes it copyable", () => {
+	// The module arrived here as a **copy** from seekolous (#249) and will be
+	// copied again; an import is the one thing that would not survive that, since
+	// a third game pasting this file would paste a reference to a module it does
+	// not have. Its header states the rule in prose; this is the half of it that
+	// cannot be argued with.
+	//
+	// It is also the mechanical half of the no-binding-table rule: a binding
+	// table would have to name a station, a target or a regime, and every one of
+	// those names lives behind an import.
+	expect(importsIn("gamepad.ts")).toEqual([]);
 });
