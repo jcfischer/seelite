@@ -520,15 +520,28 @@ export async function installViewPlacement(page) {
 
 		/** Put the camera on a station's aperture axis at `rangeKm` and look back
 		 *  down it — the view a docking approach has, and the one viewpoint
-		 *  defined for all three types. The axis comes from `poseOfStation`. */
+		 *  defined for all three types. The axis comes from `poseOfStation`.
+		 *
+		 *  Returns what the placement actually achieved:
+		 *  `{ askedKm, actualKm, offAxisDeg }`, all measured after the last frame
+		 *  against the body re-read at that moment. A placement is a request and
+		 *  the frame loop is free to carry the subject off it, so where a caller
+		 *  framed from is a reading rather than a constant — see the framing check
+		 *  in `probe-station-visuals.mjs`. */
 		window.__viewAlongAxis = async (bodyId, rangeKm, opts) => {
 			const g = window.__seelite;
 			const body = g.world.system.bodies.find((b) => b.id === bodyId);
 			const pose = g.poseOfStation(bodyId);
-			// Opt-in rather than the default, because the probes that had this
-			// helper first are measuring against the range they set and a silent
-			// change of what "parked" means would move their numbers.
-			const vel = opts?.comoving ? g.stationVelocity(bodyId) : undefined;
+			// Co-moving is the default, and `comoving: false` is the opt-out for a
+			// caller that genuinely wants a ship at rest in sim space. "Parked"
+			// meaning "not moving with the thing you are looking at" is not a
+			// framing beside a station: see `__placeShipAt`'s docstring for the
+			// ~30 km/s and what it did to a shot in four frames. This was opt-in
+			// until #271, defended by a comment about not moving the numbers of
+			// the probes that had the helper first — every one of those had since
+			// opted in, so the flag had outlived its own reason.
+			const vel =
+				opts?.comoving === false ? undefined : g.stationVelocity(bodyId);
 			await window.__placeShipAt(
 				{
 					x: body.pos.x + pose.axis.x * rangeKm,
@@ -543,6 +556,27 @@ export async function installViewPlacement(page) {
 				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
 			g.orientation.setFromUnitVectors(from, to);
 			await frame();
+			// Re-read both ends: the body has moved since the placement aimed at
+			// it, which is the whole of what this reading is for. **Two numbers,
+			// because a range on its own understates it** — a station carried
+			// across the frame leaves most of the error off the axis rather than
+			// along it, and a camera 12% short but 16° round the side is looking
+			// at a different face of the subject.
+			const now = g.world.system.bodies.find((b) => b.id === bodyId);
+			const p = g.world.ship.pos;
+			const d = {
+				x: p.x - now.pos.x,
+				y: p.y - now.pos.y,
+				z: p.z - now.pos.z,
+			};
+			const actualKm = Math.hypot(d.x, d.y, d.z);
+			const cos =
+				(d.x * pose.axis.x + d.y * pose.axis.y + d.z * pose.axis.z) / actualKm;
+			return {
+				askedKm: rangeKm,
+				actualKm,
+				offAxisDeg: (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI,
+			};
 		};
 	});
 }
