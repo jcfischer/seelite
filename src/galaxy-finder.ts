@@ -21,6 +21,8 @@ import {
 import { type JumpReach, projectJumps } from "./galaxy-route";
 import { carrierKey } from "./carrier-key";
 import { generateContents } from "./system";
+import type { StationType } from "./station";
+import type { ObservedRecovery, OperationalCondition } from "./world-state";
 import type { KnowledgeRow } from "./world-state";
 
 export const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"] as const;
@@ -158,6 +160,75 @@ export function finderIsNarrowed(filter: FinderFilter): boolean {
 	);
 }
 
+/**
+ * §5.2.1's annotation on one matched role.
+ *
+ * **It is a fact about the carrier, not an echo of the chip.** The first
+ * implementation set `FinderRow.matchedFacilities` to `[...filter.facilities]`,
+ * so a row printed back exactly what was asked for — a value no build could
+ * get wrong, and no check could catch. This carries what the *station* is:
+ * which role matched, and what the player last saw there.
+ *
+ * `condition`, `observedAt` and `source` are all `null` together, which is
+ * §5.2.1's `STATUS UNKNOWN` — a carrier never observed, not one observed long
+ * ago. Knowledge here never expires.
+ *
+ * **No age, and no formatted string.** Age is `now` minus `observedAt`, and
+ * `now` moves every frame while the projection is memoised on the filter. A
+ * formatted label baked in here would be the stalest thing in the panel;
+ * `facilityAnnotationLabel` renders it at paint time instead.
+ */
+export interface FacilityAnnotation {
+	facility: FacilityChip;
+	/** The station role carrying the fact. `KNOWN FENCE` uses its refinery's
+	 *  (§5.2.1), because the fence is not a carrier of its own. */
+	role: StationType;
+	name: string;
+	condition: OperationalCondition | null;
+	observedAt: number | null;
+	source: string | null;
+	/** §3.1's remembered schedule, present only on a `repairing` observation.
+	 *  The record card prints it as unconfirmed; nothing here promotes it. */
+	observedRecovery?: ObservedRecovery;
+}
+
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE;
+const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
+
+/**
+ * §5.2.1's compact condition-plus-age, as the finder row prints it:
+ * `OPERATIONAL · SEEN 2H AGO`, `DESTROYED · SEEN 3D AGO`, `STATUS UNKNOWN`.
+ *
+ * **Elapsed time is a display term and nothing else.** A `repairing` row whose
+ * remembered `completesAt` is long past still reads `REPAIRING` — §5.2.1 is
+ * explicit that only an approved information channel may report the completed
+ * condition, so the one place that could quietly promote it does not look at
+ * `observedRecovery` at all. The record card is where the remembered schedule
+ * surfaces, marked `UNCONFIRMED`.
+ *
+ * The coarsest unit that fits wins, floored, so an age never rounds *up* into
+ * a longer one than has actually passed. Under a minute is `JUST NOW` rather
+ * than `0M`, which reads as a broken clock.
+ */
+export function facilityAnnotationLabel(
+	annotation: FacilityAnnotation,
+	now: number,
+): string {
+	if (annotation.condition === null || annotation.observedAt === null)
+		return "STATUS UNKNOWN";
+	const elapsed = Math.max(0, now - annotation.observedAt);
+	const age =
+		elapsed >= SECONDS_PER_DAY
+			? `${Math.floor(elapsed / SECONDS_PER_DAY)}D AGO`
+			: elapsed >= SECONDS_PER_HOUR
+				? `${Math.floor(elapsed / SECONDS_PER_HOUR)}H AGO`
+				: elapsed >= SECONDS_PER_MINUTE
+					? `${Math.floor(elapsed / SECONDS_PER_MINUTE)}M AGO`
+					: "JUST NOW";
+	return `${annotation.condition.toUpperCase()} · SEEN ${age}`;
+}
+
 /** One row of the finder, as the panel prints it. */
 export interface FinderRow {
 	index: number;
@@ -171,7 +242,9 @@ export interface FinderRow {
 	routeLy: number | null;
 	/** Straight-line distance, which exists even where a route does not. */
 	distanceLy: number;
-	matchedFacilities: FacilityChip[];
+	/** §5.2.1's per-role annotation, one entry per active facility chip and
+	 *  empty when none is. */
+	matchedFacilities: FacilityAnnotation[];
 }
 
 /**
@@ -208,19 +281,48 @@ export function finderMatches(
 	return normalised === "" || system.name.toLowerCase().includes(normalised);
 }
 
+/**
+ * What one system offers each facility chip, annotated.
+ *
+ * **Called only when a facility chip is active.** It reads the system's whole
+ * station roster, which means generating the system — and with no chip on, that
+ * is 256 system generations per keystroke to answer a question nobody asked.
+ * §5.2.1 says the row is unchanged with no chip active, so the caller skips it.
+ *
+ * A system has at most one station per role (`system.ts`), so a role's
+ * annotation is unambiguous and §5.2.1's "never collapses mixed carrier
+ * conditions" has no case to answer here: each chip annotates its own carrier.
+ */
 function facilitiesOf(system: SystemRecord, knowledge: FinderKnowledge) {
-	const present = new Set<FacilityChip>();
+	const present = new Map<FacilityChip, FacilityAnnotation>();
 	let uncheckedFence = false;
 	for (const station of generateContents(system).stations) {
+		const known: KnowledgeRow | undefined =
+			knowledge[carrierKey(system.index, station.localCarrierId)];
+		const annotate = (facility: FacilityChip): FacilityAnnotation => ({
+			facility,
+			role: station.type,
+			name: station.name,
+			condition: known?.observedCondition ?? null,
+			observedAt: known?.observedAt ?? null,
+			source: known?.source ?? null,
+			...(known?.observedRecovery
+				? { observedRecovery: known.observedRecovery }
+				: {}),
+		});
 		if (station.type === "refinery") {
-			present.add("REFINERY");
-			const marker =
-				knowledge[carrierKey(system.index, station.localCarrierId)]
-					?.knownPrivateFacts?.blackMarket;
+			present.set("REFINERY", annotate("REFINERY"));
+			// §5.2.1's three values live in this branch and nowhere else: a
+			// marker plus a generated true is a match, a marker plus a
+			// generated false is a *known* non-match — neither a row nor an
+			// unchecked refinery — and no marker at all is unchecked.
+			const marker = known?.knownPrivateFacts?.blackMarket;
 			if (!marker) uncheckedFence = true;
-			else if (station.blackMarket) present.add("KNOWN FENCE");
+			else if (station.blackMarket)
+				present.set("KNOWN FENCE", annotate("KNOWN FENCE"));
 		}
-		if (station.type === "shipyard") present.add("SHIPYARD");
+		if (station.type === "shipyard")
+			present.set("SHIPYARD", annotate("SHIPYARD"));
 	}
 	return { present, uncheckedFence };
 }
@@ -235,7 +337,7 @@ const row = (
 	system: SystemRecord,
 	from: SystemRecord,
 	reach: JumpReach | undefined,
-	matchedFacilities: FacilityChip[],
+	matchedFacilities: FacilityAnnotation[],
 ): FinderRow => ({
 	index: system.index,
 	name: system.name,
@@ -306,26 +408,47 @@ export function projectFinder(
 	for (const system of systems) {
 		if (system.galaxy !== from.galaxy) continue;
 		if (!finderMatches(system, filter, normalised)) continue;
-		const facilities = facilitiesOf(system, knowledge);
-		if (
-			!filter.facilities.every((facility) => facilities.present.has(facility))
-		) {
-			if (
-				filter.facilities.includes("KNOWN FENCE") &&
-				facilities.uncheckedFence
-			)
-				uncheckedFence++;
+		const here = projection.reach(system);
+		const inBudgetHere = here !== undefined && here.jumps <= filter.budgetJumps;
+		// **The roster is read only when a chip asks for it.** Generating a
+		// system to answer a question no chip posed cost the whole galaxy's
+		// contents on every keystroke, and §5.2.1 leaves the unannotated row
+		// exactly as §5.2 had it.
+		if (filter.facilities.length > 0) {
+			const facilities = facilitiesOf(system, knowledge);
+			const missing = filter.facilities.filter(
+				(facility) => !facilities.present.has(facility),
+			);
+			if (missing.length > 0) {
+				// §5.2.1's count: systems "inside the current name, economy,
+				// and jump narrowing" whose fence is unchecked. Scoped to the
+				// budget because the first pass counted every unchecked
+				// refinery in the galaxy, so the one-jump budget the finder
+				// opens on reported a number no narrowing could move. Scoped to
+				// *only* the fence missing because checking a fence in a system
+				// that fails another chip could never make it a match.
+				if (
+					inBudgetHere &&
+					missing.length === 1 &&
+					missing[0] === "KNOWN FENCE" &&
+					facilities.uncheckedFence
+				)
+					uncheckedFence++;
+				continue;
+			}
+			const matched = filter.facilities.map(
+				(facility) => facilities.present.get(facility) as FacilityAnnotation,
+			);
+			// **Built inside the branch that keeps it.** Constructed before the
+			// test, a chip-only narrowing at the default budget allocated a row
+			// and took a square root for every matching out-of-budget system
+			// and then dropped it — up to 250 of them on one chip click.
+			if (inBudgetHere) inBudget.push(row(system, from, here, matched));
+			else if (hasQuery) beyondRange.push(row(system, from, here, matched));
 			continue;
 		}
-		const here = projection.reach(system);
-		// **Built inside the branch that keeps it.** Constructed before the
-		// test, a chip-only narrowing at the default budget allocated a row and
-		// took a square root for every matching out-of-budget system and then
-		// dropped it — up to 250 of them on one chip click.
-		if (here !== undefined && here.jumps <= filter.budgetJumps)
-			inBudget.push(row(system, from, here, [...filter.facilities]));
-		else if (hasQuery)
-			beyondRange.push(row(system, from, here, [...filter.facilities]));
+		if (inBudgetHere) inBudget.push(row(system, from, here, []));
+		else if (hasQuery) beyondRange.push(row(system, from, here, []));
 	}
 
 	inBudget.sort(byReach);

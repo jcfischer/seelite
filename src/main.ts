@@ -5262,6 +5262,10 @@ class Game {
 					knowledge:
 						this.commerceWorld.galaxies[this.world.system.record.galaxy]
 							?.knowledge ?? {},
+					// §5.2.1's ages are relative to the world clock, and the map
+					// outlives many seconds of it. A getter, not a value: the
+					// chart reads it on every render.
+					now: () => this.world.gameTime,
 					// The course is the game's, not the chart's (#187) — the chart
 					// is disposed on every tab toggle and a course held inside it
 					// went with it.

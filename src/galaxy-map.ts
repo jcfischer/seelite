@@ -329,8 +329,12 @@ export interface GalaxyChartOptions {
 	galaxyIndex: number;
 	/** Where the ship is. Defaults to the galaxy's own start system. */
 	currentIndex?: number;
-	/** Read-only last-known station intelligence; mounting never writes it. */
+	/** Read-only last-known station intelligence; mounting never writes it.
+	 *  Opening the map is not an information channel (§5.2.1). */
 	knowledge?: FinderKnowledge;
+	/** The world clock. Read on every render, so an age and an overdue
+	 *  recovery are current rather than frozen at mount. */
+	now?: () => number;
 	/**
 	 * Bind `h` and `Escape` on `window`. Default off.
 	 *
@@ -386,6 +390,7 @@ export function mountGalaxyChart({
 	galaxyIndex,
 	currentIndex,
 	knowledge = {},
+	now = () => 0,
 	globalKeys = false,
 	course: initialCourse = null,
 	onCourse,
@@ -780,6 +785,7 @@ export function mountGalaxyChart({
 		root,
 		systems: galaxy.systems,
 		knowledge,
+		now,
 		currentSystem: () => current,
 		selectedIndex: () => selected?.index ?? null,
 		onSelect: (index) => select(index),
@@ -898,19 +904,33 @@ export function mountGalaxyChart({
 			// read as a dead click — a colour change and nothing else. Only the
 			// chain line is conditional.
 			card.style.display = "block";
+			// §5.2.1's roster: every station, its exact observation time and
+			// report source — the finder row carries the compact relative age,
+			// and this is where the number behind it lives.
 			const stations = generateContents(record).stations.map((station) => {
 				const known =
 					knowledge[carrierKey(record.index, station.localCarrierId)];
 				const condition = known
 					? `${known.observedCondition} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
 					: "STATUS UNKNOWN";
+				// **A remembered schedule is never promoted.** §5.2.1: passing
+				// `completesAt` moves the card from `DUE` to `OVERDUE` and
+				// changes nothing else — both are `UNCONFIRMED`, because only a
+				// relay or a docking report may say the repair finished. The
+				// row above still reads `repairing` either way.
+				const recovery = known?.observedRecovery;
+				const schedule = !recovery
+					? ""
+					: now() >= recovery.completesAt
+						? ` · OVERDUE · UNCONFIRMED`
+						: ` · DUE ${recovery.completesAt.toFixed(0)}s · UNCONFIRMED`;
 				const fence =
 					station.type !== "refinery"
 						? ""
 						: known?.knownPrivateFacts?.blackMarket
 							? ` · ${station.blackMarket ? "KNOWN FENCE" : "KNOWN NO FENCE"}`
 							: " · FENCE UNCHECKED";
-				return `${station.name} — ${station.type.toUpperCase()} · ${condition}${fence}`;
+				return `${station.name} — ${station.type.toUpperCase()} · ${condition}${schedule}${fence}`;
 			});
 			card.textContent = [
 				selected.name,

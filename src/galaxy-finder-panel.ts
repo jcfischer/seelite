@@ -17,6 +17,7 @@ import {
 	FACILITY_CHIPS,
 	type FacilityChip,
 	type FinderKnowledge,
+	facilityAnnotationLabel,
 	type FinderFilter,
 	type FinderResults,
 	type FinderRow,
@@ -137,6 +138,11 @@ export interface FinderPanelOptions {
 	root: HTMLElement;
 	systems: readonly SystemRecord[];
 	knowledge?: FinderKnowledge;
+	/** The world clock, read on every render for the same reason as
+	 *  `currentSystem`: §5.2.1's row age is relative, and a value captured at
+	 *  mount would freeze it. Defaults to zero, which reads every observation
+	 *  as `SEEN JUST NOW` — right for a mount with no world behind it. */
+	now?: () => number;
 	/** Where the ship is — read on every render, because a jump moves it. */
 	currentSystem: () => SystemRecord;
 	/** The chart's selection, which the panel highlights and never owns. */
@@ -182,6 +188,7 @@ export function mountFinderPanel({
 	root,
 	systems,
 	knowledge = {},
+	now = () => 0,
 	currentSystem,
 	selectedIndex,
 	onSelect,
@@ -480,9 +487,26 @@ export function mountFinderPanel({
 			row.economy.toUpperCase(),
 			row.government.toUpperCase(),
 			`TL ${row.displayTL}`,
-			...row.matchedFacilities,
 		].join(" · ");
 		pick.append(name, reach, detail);
+
+		// **One line per matched role, and the row stays active.** §5.2.1
+		// forbids greying it: a stale reading and an unavailable facility are
+		// different facts, and one grey row cannot say which it is. The label
+		// is rendered here rather than carried on the row because it is a
+		// function of `now`, and the projection is memoised on the filter.
+		for (const annotation of row.matchedFacilities) {
+			const line = el("span");
+			line.setAttribute("data-map-finder-facility-row", annotation.facility);
+			Object.assign(line.style, {
+				gridColumn: "1/3",
+				color: "#8fb2c9",
+				fontSize: "9px",
+				letterSpacing: ".05em",
+			});
+			line.textContent = `${annotation.facility} · ${facilityAnnotationLabel(annotation, now())}`;
+			pick.append(line);
+		}
 
 		const centre = el("button");
 		centre.type = "button";
@@ -582,7 +606,11 @@ export function mountFinderPanel({
 		// same rows, and the ship moving under a fixed filter yields different
 		// chains under the same indices — so the key carries the identity, the
 		// jump count *and the chain length*, plus both group sizes so a change
-		// past the cap still rewrites the "+N more" line. The length was missing
+		// past the cap still rewrites the "+N more" line, and the facility
+		// annotations, which are the other thing a row prints. **`now` is
+		// deliberately not in it**: the age is derived from the clock, so a key
+		// carrying it would repaint the whole list every frame the map is open
+		// to move a number that changes at minute granularity.  The length was missing
 		// at first, which would leave a row whose hop count survived a jump
 		// printing the chain length of the system the ship had left. **No red
 		// build for that one**: it needs a jump that preserves group membership
@@ -594,7 +622,12 @@ export function mountFinderPanel({
 				(rows) =>
 					`${rows.length}#${rows
 						.slice(0, FINDER_DRAWN_ROWS)
-						.map((r) => `${r.index}:${r.jumps}:${r.routeLy?.toFixed(1)}`)
+						.map(
+							(r) =>
+								`${r.index}:${r.jumps}:${r.routeLy?.toFixed(1)}:${r.matchedFacilities
+									.map((a) => `${a.facility}=${a.condition}@${a.observedAt}`)
+									.join("+")}`,
+						)
 						.join(",")}`,
 			)
 			.join("|");
