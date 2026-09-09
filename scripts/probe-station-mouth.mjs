@@ -7,8 +7,8 @@
  * rectangle — `station-interior.ts` sets `laneHalfAcrossKm` to
  * `aperture.widthKm / 2`, and `ringAround` puts every ring's inner face exactly
  * there — so the coaming, the lit aperture bars, the bay's mouth bulkhead and
- * its lane edge all claim the same throat wall, and any two of them that also
- * overlap in depth fight over it.
+ * its lane edge all claim the same inner aperture wall, and any two of them that
+ * also overlap in depth fight over it.
  *
  * **The metric is a temporal median, not a frame difference.** The station
  * turns, so adjacent frames legitimately differ over the whole silhouette —
@@ -35,6 +35,11 @@
  * the whole aperture group hidden. On the build this was written against the
  * present rows read 2748 and 31 against a hidden-aperture floor of 0 and 0.
  */
+import {
+	FLICKER_CHANGED,
+	FLICKER_SAME,
+	installFlickerDetector,
+} from "./lib/flicker-detector.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -73,6 +78,7 @@ try {
 		viewport: { width: 1100, height: 720 },
 	});
 	watch(page);
+	await installFlickerDetector(page);
 	await page.goto(`${ORIGIN}/?seed=54`, { waitUntil: "load" });
 	await bootedGame(page);
 
@@ -175,13 +181,6 @@ try {
 				ctx.drawImage(canvas, 0, 0);
 				return ctx.getImageData(0, 0, W, H).data;
 			};
-			const dmax = (a, b, i) =>
-				Math.max(
-					Math.abs(a[i] - b[i]),
-					Math.abs(a[i + 1] - b[i + 1]),
-					Math.abs(a[i + 2] - b[i + 2]),
-				);
-
 			const sweep = (erode) => {
 				let a = frameAt(options.atS);
 				let b = frameAt(options.atS + options.stepS);
@@ -190,27 +189,17 @@ try {
 				let peakAtS = null;
 				for (let k = 2; k < options.frames; k++) {
 					const c = frameAt(options.atS + k * options.stepS);
-					const raw = new Uint8Array(W * H);
-					for (let p = 0; p < W * H; p++) {
-						const i = p * 4;
-						if (dmax(a, c, i) < 12 && dmax(a, b, i) > 30 && dmax(b, c, i) > 30)
-							raw[p] = 1;
-					}
-					// A pixel survives only with every neighbour inside the radius
-					// also set: a hairline cannot, a filled region can.
-					let area = 0;
-					for (let y = erode; y < H - erode; y++)
-						for (let x = erode; x < W - erode; x++) {
-							if (!raw[y * W + x]) continue;
-							let solid = 1;
-							for (let oy = -erode; oy <= erode && solid; oy++)
-								for (let ox = -erode; ox <= erode; ox++)
-									if (!raw[(y + oy) * W + x + ox]) {
-										solid = 0;
-										break;
-									}
-							area += solid;
-						}
+					// The detector is `scripts/lib/flicker-detector.mjs`, shared with
+					// `measure-mouth-flicker.mjs`: this row gates on it and that one
+					// explains it, and two copies would let the two disagree about
+					// what was measured.
+					const { area } = window.__flickerMask(a, b, c, {
+						width: W,
+						height: H,
+						erode,
+						changed: options.changed,
+						same: options.same,
+					});
 					total += area;
 					if (area > peak) {
 						peak = area;
@@ -250,7 +239,17 @@ try {
 			g.outputPass.setDither(g.settings.value.dither === "on");
 			return { rungs, apertureGroups };
 		},
-		[stationId, { atS: AT_S, frames: FRAMES, stepS: STEP_S, rungs: RUNGS }],
+		[
+			stationId,
+			{
+				atS: AT_S,
+				frames: FRAMES,
+				stepS: STEP_S,
+				rungs: RUNGS,
+				changed: FLICKER_CHANGED,
+				same: FLICKER_SAME,
+			},
+		],
 	);
 
 	check(

@@ -61,7 +61,8 @@ export const PLATE_FACTOR = 0.06;
  * inner face exactly at the extent it is handed. So four rings around one mouth
  * — `station-mesh.ts`'s coaming and its lit aperture bars, this module's mouth
  * bulkhead and its lane edge — each placed an inner face on the same plane, and
- * every pair of them that also overlaps in depth drew the same throat wall.
+ * every pair of them that also overlaps in depth drew the same inner aperture
+ * wall.
  *
  * What was measured is that at every sampled flickering pixel the two nearest
  * surfaces are **0.00 mm apart against a depth resolution of 0.19 mm** — closer
@@ -73,10 +74,15 @@ export const PLATE_FACTOR = 0.06;
  * what the principal's playtest recording shows.
  *
  * Note which of the two paths applies to which pair, because it is not one
- * throughout: three sorts opaque objects by shader program before depth, so the
- * lit bars (Standard), the mouth bulkhead (Lambert) and the lane edge (Basic)
- * hold a fixed order between them and flicker by rounding alone. Separating the
- * faces removes both paths, which is why the fix does not have to choose.
+ * throughout. `painterSortStable` compares `groupOrder`, `renderOrder`,
+ * **`material.id`** and only then `z` — read off the installed
+ * `WebGLRenderLists.js`, and it is material id rather than shader program, which
+ * an earlier revision of this comment said. A material's id is assigned when it
+ * is constructed and never changes, so the lit bars, the mouth bulkhead and the
+ * lane edge hold one fixed order for the life of the page and cannot flicker by
+ * order at all: those pairs are rounding alone. Order is available only to two
+ * meshes sharing a material, where `z` decides. Separating the faces removes
+ * both paths, which is why the fix does not have to choose.
  *
  * **The lit exterior rim owns the edge and every other ring steps back from it,
  * each by its own multiple of this** (`RIM_STEPS`).
@@ -91,9 +97,9 @@ export const PLATE_FACTOR = 0.06;
  * where the mouth is a few pixels of rim. At 13 km the trade's 120 m opening
  * subtends 0.53°, about eleven pixels across a 60° frame.
  *
- * From above by what a step *removes*. Every ring here reaches the throat, and a
- * ring that steps back leaves the wall open behind the lit bar in the depth band
- * the bar does not cover — 17 m deep on the trade. **This shipped at 4 m for one
+ * From above by what a step *removes*. Every ring here reaches the aperture
+ * edge, and a ring that steps back leaves the inner wall open behind the lit bar
+ * in the depth band the bar does not cover — 17 m deep on the trade. **This shipped at 4 m for one
  * round and the mouth leaked:** the coaming is two steps, so its own gap was 8 m,
  * and `probe-traffic-mouth.mjs` — which puts a freighter hull on the camera ray
  * in front of a bar and asserts the mouth writes no pixels through it — went from

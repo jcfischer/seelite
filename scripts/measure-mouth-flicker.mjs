@@ -39,6 +39,11 @@
  * other measurement script here.
  */
 import {
+	FLICKER_CHANGED,
+	FLICKER_SAME,
+	installFlickerDetector,
+} from "./lib/flicker-detector.mjs";
+import {
 	bootedGame,
 	guardedOrigin,
 	installViewPlacement,
@@ -72,9 +77,12 @@ const STEP_S = num("step", 1 / 60);
 /** Erosion radius, pixels. 0 reports the raw median mask. */
 const ERODE = num("erode", 2);
 /** Per-channel difference that counts as a change, and the ceiling under which
- *  two frames count as agreeing. */
-const CHANGED = num("changed", 30);
-const SAME = num("same", 12);
+ *  two frames count as agreeing. Defaulted from the shared detector, so a
+ *  retune there reaches this instrument and the probe together — and still
+ *  overridable here, because exploring a threshold is what an instrument is
+ *  for. */
+const CHANGED = num("changed", FLICKER_CHANGED);
+const SAME = num("same", FLICKER_SAME);
 const VIEW = arg("view", "cockpit");
 const MODE = arg("mode", "sweep");
 /** Names hidden in **every** arm, the baseline included. A residual is only
@@ -99,6 +107,7 @@ try {
 		viewport: { width: 1100, height: 720 },
 	});
 	await installViewPlacement(page);
+	await installFlickerDetector(page);
 	await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
 	await bootedGame(page);
 
@@ -227,60 +236,21 @@ try {
 				return ctx.getImageData(0, 0, W, H).data;
 			};
 
-			const dmax = (a, b, i) =>
-				Math.max(
-					Math.abs(a[i] - b[i]),
-					Math.abs(a[i + 1] - b[i + 1]),
-					Math.abs(a[i + 2] - b[i + 2]),
-				);
-
-			/** The median mask for the triple centred on frame `k`, eroded. */
-			const medianMask = (a, b, c) => {
-				const raw = new Uint8Array(W * H);
-				let rawCount = 0;
-				for (let p = 0; p < W * H; p++) {
-					const i = p * 4;
-					if (
-						dmax(a, c, i) < options.same &&
-						dmax(a, b, i) > options.changed &&
-						dmax(b, c, i) > options.changed
-					) {
-						raw[p] = 1;
-						rawCount++;
-					}
-				}
-				if (options.erode <= 0) return { mask: raw, area: rawCount, rawCount };
-				// A pixel survives only with every neighbour inside the radius set:
-				// a hairline cannot, a filled region can. This is the difference
-				// between "an edge moved" and "a polygon appeared".
-				const eroded = new Uint8Array(W * H);
-				let area = 0;
-				const r = options.erode;
-				for (let y = r; y < H - r; y++)
-					for (let x = r; x < W - r; x++) {
-						if (!raw[y * W + x]) continue;
-						let solid = 1;
-						for (let oy = -r; oy <= r && solid; oy++)
-							for (let ox = -r; ox <= r; ox++)
-								if (!raw[(y + oy) * W + x + ox]) {
-									solid = 0;
-									break;
-								}
-						if (solid) {
-							eroded[y * W + x] = 1;
-							area++;
-						}
-					}
-				return { mask: eroded, area, rawCount };
-			};
+			// The detector is `scripts/lib/flicker-detector.mjs`, shared with
+			// `probe-station-mouth.mjs`. This script explains a mask and that one
+			// gates on it, so a retune of either threshold has to reach both.
+			const medianMask = (a, b, c) =>
+				window.__flickerMask(a, b, c, {
+					width: W,
+					height: H,
+					erode: options.erode,
+					changed: options.changed,
+					same: options.same,
+				});
 
 			const sweep = (hidden) => {
-				const restore = [];
-				for (const name of [...options.baseHide, ...(hidden ?? [])])
-					for (const object of byName.get(name) ?? []) {
-						restore.push([object, object.visible]);
-						object.visible = false;
-					}
+				const names = [...options.baseHide, ...(hidden ?? [])];
+				const restore = hide(names);
 				let a = frameAt(t0);
 				let b = frameAt(t0 + options.stepS);
 				const rows = [];
@@ -294,7 +264,7 @@ try {
 					a = b;
 					b = c;
 				}
-				for (const [object, was] of restore) object.visible = was;
+				restore();
 				return { rows, peak };
 			};
 
@@ -331,6 +301,7 @@ try {
 			// data URL so the run leaves the evidence on disk rather than in a
 			// number the next reader has to trust.
 			if (options.savePeak && base.peak?.area) {
+				const restore = hide(options.baseHide);
 				g.world.gameTime = base.peak.at;
 				g.render(0);
 				ctx.drawImage(canvas, 0, 0);
@@ -344,6 +315,7 @@ try {
 				}
 				ctx.putImageData(paint, 0, 0);
 				out.peakOverlay = scratch.toDataURL("image/png");
+				restore();
 			}
 
 			// **Which objects the surviving pixels are drawn from.** The camera
@@ -353,6 +325,15 @@ try {
 				const peak = base.peak;
 				out.rays = { at: peak?.at ?? null, hits: [], points: [] };
 				if (peak?.area) {
+					// Under the same hiding the mask was measured under, and the
+					// hidden objects excluded from the ray's own hits — a ray that
+					// can still strike an object the arm removed reports it as the
+					// culprit for a pixel that arm did not draw.
+					const restoreRays = hide(options.baseHide);
+					const excluded = new Set();
+					for (const name of options.baseHide)
+						for (const object of byName.get(name) ?? [])
+							object.traverse((child) => excluded.add(child));
 					g.world.gameTime = peak.at;
 					g.render(0);
 					const caster = new THREE.Raycaster();
@@ -373,7 +354,12 @@ try {
 						caster.set(origin, dir);
 						const hits = caster.intersectObject(g.nearScene, true);
 						const named = hits
-							.filter((h) => h.object.visible && !inPlayer(h.object))
+							.filter(
+								(h) =>
+									h.object.visible &&
+									!inPlayer(h.object) &&
+									!excluded.has(h.object),
+							)
 							.slice(0, 2)
 							.map((h) => ({
 								name: h.object.name || h.object.parent?.name || "(unnamed)",
@@ -386,9 +372,10 @@ try {
 							// point says the ray hit something; a local one says which
 							// face of which bar, and can be compared against the numbers
 							// in `station-mesh.ts` directly.
-							const local = station.worldToLocal(
-								hits.find((h) => !inPlayer(h.object)).point.clone(),
+							const first = hits.find(
+								(h) => !inPlayer(h.object) && !excluded.has(h.object),
 							);
+							const local = station.worldToLocal(first.point.clone());
 							out.rays.points.push({
 								key,
 								local: {
@@ -396,7 +383,7 @@ try {
 									y: local.y,
 									z: local.z,
 								},
-								faceNormal: hits.find((h) => !inPlayer(h.object)).normal,
+								faceNormal: first.normal,
 							});
 						}
 						const row = tally.get(key) ?? {
@@ -425,6 +412,7 @@ try {
 						farKm: g.nearCamera.far,
 						bits: depthBits,
 					};
+					restoreRays();
 					out.rays.hits = [...tally.values()]
 						.sort((a2, b2) => b2.count - a2.count)
 						.map((row) => ({
