@@ -549,7 +549,7 @@ docked station again and reveals its private facts, including black-market
 presence. Opening the Galaxy Map is never an information channel, and v1 adds
 no separate long-range scan for this purpose. The starting system receives the
 same public report when the initial world is established, so its knowledge does
-not depend on having arrived through hyperspace first.
+not depend on having completed a jump first.
 
 Facility chips extend the existing finder controls. Finder rows carry the
 compact facility and last-known annotations; selecting one fills the existing
@@ -1354,7 +1354,7 @@ The implementation spawned by #116 as #275 owes both tiers:
    The record card carries exact times, sources, and an unconfirmed due or
    overdue recovery schedule.
 5. **Information channels are explicit.** Initial world establishment and a
-   hyperspace arrival refresh every local station from the System relay;
+   jump arrival refresh every local station from the System relay;
    docking refreshes that station and checks a refinery's black-market fact.
    Opening the map changes no knowledge row.
 6. **The rendered ownership boundary holds.** Activating each chip produces the
