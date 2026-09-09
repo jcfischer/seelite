@@ -229,6 +229,27 @@ export function facilityAnnotationLabel(
 	return `${annotation.condition.toUpperCase()} · SEEN ${age}`;
 }
 
+/**
+ * §5.2.1's remembered recovery, as the record card prints it: `DUE 100s ·
+ * UNCONFIRMED` before the remembered completion, `OVERDUE · UNCONFIRMED` after
+ * it.
+ *
+ * **Both are unconfirmed and neither is a completion.** Passing `completesAt`
+ * changes the wording and nothing else — only a relay or a docking report may
+ * say the repair finished, so the row's condition stays `repairing` on both
+ * sides of it. It lives here rather than inline in the card because a rule
+ * about what elapsed time may and may not conclude is exactly the thing a
+ * headless tier should hold.
+ */
+export function recoveryScheduleLabel(
+	recovery: ObservedRecovery,
+	now: number,
+): string {
+	return now >= recovery.completesAt
+		? "OVERDUE · UNCONFIRMED"
+		: `DUE ${recovery.completesAt.toFixed(0)}s · UNCONFIRMED`;
+}
+
 /** One row of the finder, as the panel prints it. */
 export interface FinderRow {
 	index: number;

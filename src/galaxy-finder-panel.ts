@@ -164,6 +164,10 @@ export interface FinderPanelState {
 	/** How many rows of each group are actually in the DOM, so a probe can tell
 	 *  a cap from a short list. */
 	drawn: { inBudget: number; beyondRange: number };
+	/** §5.2.1's unchecked-refinery count under the current narrowing. Exposed
+	 *  for the same reason as `drawn`: a probe must read the number the panel
+	 *  printed, not compute a second one and compare it with itself. */
+	uncheckedFence: number;
 }
 
 export interface FinderPanel {
@@ -630,7 +634,13 @@ export function mountFinderPanel({
 						)
 						.join(",")}`,
 			)
-			.join("|");
+			.join("|")
+			// **The unchecked count is part of what the results area prints.**
+			// Left out, widening the budget under `KNOWN FENCE` with no known
+			// match changed neither group's rows — both empty — so the key held
+			// and the panel kept printing the narrower budget's count. The probe
+			// read 4 off the DOM against the projection's 105.
+			.concat(`|fence${uncheckedFence}`);
 		if (key !== listKey) {
 			listKey = key;
 			rowElements.clear();
@@ -773,6 +783,7 @@ export function mountFinderPanel({
 				inBudget: results.inBudget,
 				beyondRange: results.beyondRange,
 				drawn,
+				uncheckedFence: results.uncheckedFence,
 			};
 		},
 	};

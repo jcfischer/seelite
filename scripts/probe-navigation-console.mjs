@@ -632,6 +632,12 @@ const clearFinder = async () => {
 		for (const chip of document.querySelectorAll("[data-map-finder-economy]"))
 			if (chip.getAttribute("aria-pressed") === "true")
 				map.toggleFinderEconomy(Number(chip.dataset.mapFinderEconomy));
+		// **A facility chip left on leaks into every later check.** It was not
+		// cleared here at first, and #275's own checks were the ones that put a
+		// chip on — so the layout, hover and cap checks below would all have run
+		// under a narrowing nothing named.
+		for (const chip of document.querySelectorAll("[data-map-finder-facility]"))
+			if (chip.getAttribute("aria-pressed") === "true") chip.click();
 	});
 };
 
@@ -897,6 +903,274 @@ check(
 );
 await clearFinder();
 
+// ---- Facility chips (#275, against galaxy-map.md §9.4) --------------------
+
+/**
+ * **§9.4's sixth obligation is the only one that needs a browser**, and it is
+ * three separate claims: the chips produce the pure projection's rows, the rows
+ * carry §5.2.1's annotation, and the chart is untouched by any of it.
+ *
+ * The chips are clicked in the **DOM**, never through the handle. §115's own
+ * note above records a build whose chips were dead because a state attribute
+ * swallowed every click while `state.filter` was perfectly correct — driving
+ * the handle reproduces that build exactly and passes.
+ *
+ * The knowledge behind this is the *game's*: booting observes the start
+ * system's stations through the System relay and nothing else, so the galaxy
+ * splits into one system with real readings and 255 with none. That is the
+ * split §5.2.1 cares about, and it is why no fixture is injected here.
+ */
+const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"];
+
+const clickFacility = (facility) =>
+	page.evaluate((name) => {
+		const chip = document.querySelector(`[data-map-finder-facility="${name}"]`);
+		if (!chip) throw new Error(`no ${name} chip`);
+		chip.click();
+	}, facility);
+
+/** What the rows actually print, per row, off the DOM. */
+const facilityRows = () =>
+	page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		return {
+			filterFacilities: map.state.finder.filter.facilities,
+			// The panel's own count of what it put in the DOM. Read rather than
+			// re-derived: the cap is the panel's constant and a probe carrying a
+			// copy goes red the day it moves.
+			drawnCount: map.state.finder.drawn.inBudget,
+			projected: map.state.finder.inBudget.map((r) => ({
+				index: r.index,
+				facilities: r.matchedFacilities.map((a) => a.facility),
+			})),
+			rows: [...document.querySelectorAll("[data-map-finder-row]")].map(
+				(row) => ({
+					index: Number(row.dataset.mapFinderRow),
+					disabled:
+						row.disabled === true ||
+						row.getAttribute("aria-disabled") === "true",
+					annotations: [
+						...row.querySelectorAll("[data-map-finder-facility-row]"),
+					].map((line) => line.textContent),
+				}),
+			),
+			unchecked: (() => {
+				const line = document.querySelector(
+					"[data-map-finder-unchecked-fence]",
+				);
+				return line === null
+					? null
+					: {
+							count: Number(line.dataset.mapFinderUncheckedFence),
+							says: line.textContent,
+						};
+			})(),
+		};
+	});
+
+/** The chart as geography: which points exist, where they are, which are lit
+ *  (the chart's one colour distinction) and which are on screen. */
+const chartSurface = () =>
+	page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		const { width, height } = map.viewport();
+		return {
+			systemCount: map.state.systemCount,
+			lit: map.state.litIndices.join(","),
+			points: map
+				.projected()
+				.map(
+					(p) =>
+						`${p.index}:${p.x.toFixed(2)}:${p.y.toFixed(2)}:${p.behind ? 1 : 0}:${
+							p.x >= 0 && p.y >= 0 && p.x <= width && p.y <= height ? 1 : 0
+						}`,
+				)
+				.join("|"),
+		};
+	});
+
+/**
+ * The whole §9.4 browser obligation at one viewport. Run at both widths,
+ * because §5.2.1 puts the finder in a column on one and over the chart on the
+ * other, and "the rows render" is a different claim when the panel is the
+ * whole screen.
+ */
+const facilityChecks = async (where) => {
+	await clearFinder();
+	const before = await chartSurface();
+
+	for (const facility of FACILITY_CHIPS) {
+		await clearFinder();
+		await clickFacility(facility);
+		await nextFrames(page);
+		const state = await finderState();
+		const drawn = await facilityRows();
+		const capped = Math.min(state.inBudget.length, drawn.rows.length);
+		// **`KNOWN FENCE` is expected to be empty here and the others are not.**
+		// A fresh boot has docked nowhere, so no fence is checked — demanding
+		// rows of all three failed on the one chip whose empty list is the
+		// spec's own zero-known-match case, and demanding rows of none would
+		// pass a build whose public chips returned nothing at all.
+		const owesRows = facility !== "KNOWN FENCE";
+		check(
+			`${where}: the ${facility} chip expands the finder and draws the projection's rows`,
+			state.expanded &&
+				state.resultsShown &&
+				drawn.filterFacilities.join(",") === facility &&
+				drawn.rows.length === drawn.drawnCount &&
+				(owesRows ? drawn.rows.length > 0 : drawn.rows.length === 0) &&
+				drawn.rows
+					.slice(0, capped)
+					.every((row, i) => row.index === drawn.projected[i]?.index),
+			`expanded ${state.expanded}, ${state.inBudget.length} projected, ${drawn.rows.length} drawn, first ${drawn.rows[0]?.index} against ${drawn.projected[0]?.index}`,
+		);
+		if (owesRows)
+			check(
+				`${where}: every ${facility} row annotates that role and only that role, and none is disabled`,
+				drawn.rows.length > 0 &&
+					drawn.rows.every(
+						(row) =>
+							row.annotations.length === 1 &&
+							row.annotations[0].startsWith(`${facility} · `) &&
+							!row.disabled,
+					),
+				`${drawn.rows.length} rows, first "${drawn.rows[0]?.annotations[0]}", disabled ${drawn.rows.filter((r) => r.disabled).length}`,
+			);
+	}
+
+	/**
+	 * §5.2.1's two readings, in one list.
+	 *
+	 * **The chip has to be one the start system carries**, and the seed decides
+	 * which. A fresh boot has observed exactly that system, so the observed
+	 * reading can only appear under a chip its own roster matches — written
+	 * against `REFINERY` first, and the start system has a shipyard and no
+	 * refinery, so sixty rows came back every one of them `STATUS UNKNOWN`.
+	 * Both readings are demanded, because a build that rendered only one would
+	 * pass a check that looked for either.
+	 */
+	await clearFinder();
+	const observedChip = await page.evaluate(() => {
+		const map = window.__seeliteGalaxyMap;
+		for (const chip of document.querySelectorAll(
+			"[data-map-finder-facility]",
+		)) {
+			const name = chip.dataset.mapFinderFacility;
+			if (name === "KNOWN FENCE") continue;
+			chip.click();
+			map.setFinderBudget(9);
+			const hit = map.state.finder.inBudget.some(
+				(row) => row.index === map.state.currentIndex,
+			);
+			chip.click();
+			map.setFinderBudget(1);
+			if (hit) return name;
+		}
+		return null;
+	});
+	await clickFacility(observedChip ?? "SHIPYARD");
+	await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
+	await nextFrames(page);
+	const mixed = await facilityRows();
+	const labels = mixed.rows.map((r) => r.annotations[0] ?? "");
+	check(
+		`${where}: an observed role and a never-observed one render distinctly in one list`,
+		labels.some((l) => /·\s+SEEN .+ AGO$|·\s+SEEN JUST NOW$/.test(l)) &&
+			labels.some((l) => l.endsWith("STATUS UNKNOWN")),
+		`${observedChip}: ${labels.length} rows: ${[...new Set(labels)].slice(0, 4).join(" / ")}`,
+	);
+
+	/**
+	 * §5.2.1: "Zero matches therefore means 'no known fence', never 'no fence
+	 * exists'." A fresh boot has docked nowhere, so this is exactly the
+	 * zero-known-match case, and the panel owes the count rather than silence.
+	 */
+	await clearFinder();
+	await clickFacility("KNOWN FENCE");
+	await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
+	await nextFrames(page);
+	const fence = await facilityRows();
+	const fenceState = await finderState();
+	const fenceUnchecked = await page.evaluate(
+		() => window.__seeliteGalaxyMap.state.finder.uncheckedFence,
+	);
+	check(
+		`${where}: KNOWN FENCE prints its exact unchecked count with no known match to show`,
+		fenceState.inBudget.length === 0 &&
+			fence.unchecked !== null &&
+			fence.unchecked.count === fenceUnchecked &&
+			fence.unchecked.count > 0 &&
+			fence.unchecked.says.includes(String(fence.unchecked.count)),
+		`${fenceState.inBudget.length} known matches, panel says ${fence.unchecked?.count} against the projection's ${fenceUnchecked}, line "${fence.unchecked?.says}"`,
+	);
+
+	/**
+	 * §9.4: "the same system-point set, colours, and visibility are measured
+	 * before and after facility narrowing, so the chart remains geography-only."
+	 * Compared as strings so a single moved or recoloured point fails — a count
+	 * cannot see a swap, which is the failure `output-stage`'s multisample check
+	 * records having shipped once.
+	 */
+	await clearFinder();
+	const after = await chartSurface();
+	check(
+		`${where}: facility narrowing leaves the chart's points, colours and visibility untouched`,
+		after.systemCount === before.systemCount &&
+			after.lit === before.lit &&
+			after.points === before.points,
+		`${after.systemCount} points, lit set ${after.lit === before.lit ? "identical" : "changed"}, positions ${after.points === before.points ? "identical" : "changed"}`,
+	);
+};
+
+await facilityChecks("desktop");
+
+/**
+ * §5.2.1: "selecting one fills the existing system record card with the
+ * complete station roster, exact observation times, and report sources."
+ *
+ * The **start system** is the one the boot relay observed, so it is the only
+ * selection that can carry a time and a source at all; selecting an unvisited
+ * one shows the roster with `STATUS UNKNOWN`. Both are asserted, because a card
+ * that printed the roster and dropped the observation would satisfy either
+ * alone.
+ */
+await clearFinder();
+await clickFacility("REFINERY");
+await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
+await nextFrames(page);
+const cardReadings = await page.evaluate(() => {
+	const map = window.__seeliteGalaxyMap;
+	const read = (index) => {
+		map.select(index);
+		const card = document.querySelector("[data-map-record]");
+		return card?.textContent ?? "";
+	};
+	const stations = (index) =>
+		window.__seeliteStationRoster ? window.__seeliteStationRoster(index) : null;
+	const rows = map.state.finder.inBudget;
+	return {
+		hereText: read(map.state.currentIndex),
+		awayText: read(
+			(rows.find((r) => r.index !== map.state.currentIndex) ?? rows[0]).index,
+		),
+		stations,
+	};
+});
+check(
+	"the record card carries the roster with exact observation times and sources",
+	/@\s*\d+s/.test(cardReadings.hereText) &&
+		/(system-relay|docking)/.test(cardReadings.hereText) &&
+		/TRADE|REFINERY|SHIPYARD|OUTPOST/.test(cardReadings.hereText),
+	`observed card: ${JSON.stringify(cardReadings.hereText.slice(0, 200))}`,
+);
+check(
+	"an unobserved system's card still shows its public roster, marked unknown",
+	/STATUS UNKNOWN/.test(cardReadings.awayText) &&
+		/TRADE|REFINERY|SHIPYARD|OUTPOST/.test(cardReadings.awayText),
+	`unobserved card: ${JSON.stringify(cardReadings.awayText.slice(0, 200))}`,
+);
+await clearFinder();
+
 /**
  * **D6's session persistence, which is only visible across a remount.**
  *
@@ -1115,6 +1389,7 @@ check(
 	shrunkMode === "cover",
 	`layout "${shrunkMode}"`,
 );
+await facilityChecks("narrow console");
 await page.setViewportSize({ width: 1280, height: 760 });
 await nextFrames(page);
 await clearFinder();

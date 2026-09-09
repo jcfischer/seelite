@@ -18,6 +18,7 @@ import {
 	finderMatches,
 	finderSessionFilter,
 	facilityAnnotationLabel,
+	recoveryScheduleLabel,
 	type FacilityAnnotation,
 	type FinderKnowledge,
 	projectFinder,
@@ -1124,6 +1125,29 @@ describe("§9.4 facilities knowledge", () => {
 		expect(seen.inBudget.length).toBeGreaterThan(0);
 		for (const row of seen.inBudget) expect(row.matchedFacilities).toEqual([]);
 		expect(seen.uncheckedFence).toBe(0);
+	});
+
+	/**
+	 * §5.2.1: "Passing its `completesAt` does not change a finder row from
+	 * `REPAIRING`; the selected-system card shows the remembered time as
+	 * `DUE <time> · UNCONFIRMED`, then `OVERDUE · UNCONFIRMED`."
+	 *
+	 * Both sides of `completesAt` and the boundary itself, because the whole
+	 * rule is that crossing it concludes nothing.
+	 */
+	test("a remembered recovery reads as due, then overdue, and never as complete", () => {
+		const recovery = {
+			processId: "p1",
+			kind: "repair" as const,
+			consequenceArea: "system:3",
+			startedAt: 10,
+			completesAt: 70,
+		};
+		expect(recoveryScheduleLabel(recovery, 69)).toBe("DUE 70s · UNCONFIRMED");
+		expect(recoveryScheduleLabel(recovery, 70)).toBe("OVERDUE · UNCONFIRMED");
+		expect(recoveryScheduleLabel(recovery, 10_000)).toBe(
+			"OVERDUE · UNCONFIRMED",
+		);
 	});
 
 	/** §9.4 item 2: any facility chip expands the finder, under §5.2's rule. */

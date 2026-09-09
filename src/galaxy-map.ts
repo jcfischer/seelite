@@ -43,7 +43,7 @@ import {
 	startSystem,
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
-import type { FinderKnowledge } from "./galaxy-finder";
+import { type FinderKnowledge, recoveryScheduleLabel } from "./galaxy-finder";
 import { carrierKey } from "./carrier-key";
 import { generateContents } from "./system";
 import {
@@ -919,11 +919,9 @@ export function mountGalaxyChart({
 				// relay or a docking report may say the repair finished. The
 				// row above still reads `repairing` either way.
 				const recovery = known?.observedRecovery;
-				const schedule = !recovery
-					? ""
-					: now() >= recovery.completesAt
-						? ` · OVERDUE · UNCONFIRMED`
-						: ` · DUE ${recovery.completesAt.toFixed(0)}s · UNCONFIRMED`;
+				const schedule = recovery
+					? ` · ${recoveryScheduleLabel(recovery, now())}`
+					: "";
 				const fence =
 					station.type !== "refinery"
 						? ""
