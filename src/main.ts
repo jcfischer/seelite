@@ -344,6 +344,7 @@ import {
 import { readDeficit } from "./deficits";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import { NO_KNOWLEDGE } from "./knowledge-labels";
 import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
@@ -934,16 +935,6 @@ function forwardOf(q: THREE.Quaternion): Vec3 {
 	const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
 	return v3(f.x, f.y, f.z);
 }
-
-/** The empty knowledge overlay, as one object. The chart compares the map by
- *  identity to decide whether to re-project, so a fresh `{}` per render misses
- *  that memo every frame.
- *
- *  **Same name as `galaxy-finder.ts`'s deliberately, and not the same
- *  binding.** That module is in the lazily loaded chart chunk, so importing it
- *  here would pull the finder into the main bundle for one empty object; two
- *  names for one sentinel is the worse trade, because the pair then drifts. */
-const NO_KNOWLEDGE: Readonly<Record<string, never>> = {};
 
 class Game {
 	readonly world: World;
@@ -6271,14 +6262,21 @@ class Game {
 			const station = this.world.system.contents.stations.find(
 				(candidate) => candidate.id === id,
 			);
-			if (station)
-				this.commerceWorld = observeDocking(
-					this.commerceWorld,
-					this.world.system.record.galaxy,
-					carrierKey(this.world.system.record.index, station.localCarrierId),
-					this.world.gameTime,
-					station.type === "refinery",
+			// **Loud, not silent.** `if (station)` made a docked id missing from
+			// the roster a no-op, so §9.10's docking write would vanish with
+			// nothing said — and the berth grant two lines down already refuses
+			// the analogous case out loud rather than papering over it.
+			if (!station)
+				throw new Error(
+					`docked at ${id}, which is not in this system's roster`,
 				);
+			this.commerceWorld = observeDocking(
+				this.commerceWorld,
+				this.world.system.record.galaxy,
+				carrierKey(this.world.system.record.index, station.localCarrierId),
+				this.world.gameTime,
+				station.type === "refinery",
+			);
 			// **E2: crossing the plane hands the ship over.** The skill test
 			// ended here, so from this instant the ship is on rails and nothing
 			// can fail — the arrival is a position law, and `stepDockedWorld`

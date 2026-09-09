@@ -490,12 +490,34 @@ const undock = good.docked
 if (undock) {
 	check("the ship was docked to begin with", undock.wasDocked);
 	check(
-		"docking observed the station it docked at, and checked a refinery's fence",
+		"docking observed the station it docked at",
 		undock.dockedKnowledge.source === "docking" &&
-			Number.isFinite(undock.dockedKnowledge.observedAt) &&
-			(undock.dockedKnowledge.type === "refinery") ===
-				(undock.dockedKnowledge.marker !== null),
-		`${undock.dockedKnowledge.type} ${undock.dockedKnowledge.key}: source ${undock.dockedKnowledge.source} at ${undock.dockedKnowledge.observedAt}, marker ${JSON.stringify(undock.dockedKnowledge.marker)}`,
+			Number.isFinite(undock.dockedKnowledge.observedAt),
+		`${undock.dockedKnowledge.type} ${undock.dockedKnowledge.key}: source ${undock.dockedKnowledge.source} at ${undock.dockedKnowledge.observedAt}`,
+	);
+	/**
+	 * **The fence arm of §9.10's docking channel is not covered, and this says
+	 * so rather than pretending.**
+	 *
+	 * The previous version asserted `(type === "refinery") === (marker !== null)`
+	 * and was sold as "a marker exactly when the station is a refinery". This
+	 * fixture docks at `D.spinner()`, and `station.ts` gives `spins: false` to
+	 * both pad roles — so `type` is never `refinery` here and the biconditional
+	 * collapses to `marker === null`, which any non-refinery docking satisfies.
+	 * A build that never wrote a refinery marker at all passed it.
+	 *
+	 * Half of it is real and stays above: a non-refinery docking must *not*
+	 * manufacture a marker. The other half needs a docking at a pad role, which
+	 * is a different approach profile and a different probe. **This asserts the
+	 * fixture's shape instead**, so the day it does yield a refinery the row goes
+	 * red and whoever sees it writes the arm rather than inheriting a check that
+	 * silently covers one side.
+	 */
+	check(
+		"a non-refinery docking manufactures no fence marker — and this fixture has only those",
+		undock.dockedKnowledge.type !== "refinery" &&
+			undock.dockedKnowledge.marker === null,
+		`docked at a ${undock.dockedKnowledge.type}, marker ${JSON.stringify(undock.dockedKnowledge.marker)} — the refinery arm is unproven in this tier`,
 	);
 	check("§12.2's launch is accepted from a docked ship", undock.launched);
 	check(

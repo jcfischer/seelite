@@ -17,10 +17,6 @@ import {
 	finderIsNarrowed,
 	finderMatches,
 	finderSessionFilter,
-	facilityAnnotationLabel,
-	recoveryScheduleLabel,
-	type FacilityAnnotation,
-	type FinderKnowledge,
 	projectFinder,
 	rememberFinderBudget,
 	resetFinderSession,
@@ -34,6 +30,12 @@ import {
 	startSystem,
 } from "../src/galaxy";
 import { carrierKey } from "../src/carrier-key";
+import {
+	type FacilityAnnotation,
+	type FinderKnowledge,
+	facilityAnnotationLabel,
+	recoveryScheduleLabel,
+} from "../src/knowledge-labels";
 import { planRoute, projectJumps } from "../src/galaxy-route";
 import { generateContents } from "../src/system";
 import type { StationType } from "../src/station";
@@ -621,6 +623,23 @@ describe("§9.4 facilities knowledge", () => {
 		return { system, refinery: stationOf(system, "refinery") };
 	};
 
+	/** A knowledge overlay with one carrier observed and no private fact
+	 *  checked — the relay's reading. */
+	const observed = (
+		system: SystemRecord,
+		station: Station,
+		condition: OperationalCondition,
+		observedAt: number,
+		source: string,
+	): FinderKnowledge => ({
+		[carrierKey(system.index, station.localCarrierId)]: {
+			observedInstanceOrdinal: 0,
+			observedCondition: condition,
+			observedAt,
+			source,
+		},
+	});
+
 	/** A knowledge overlay with one carrier docked at, so its private fact is
 	 *  checked. */
 	const checked = (
@@ -676,19 +695,7 @@ describe("§9.4 facilities knowledge", () => {
 				facilities: ["KNOWN FENCE"],
 				budgetJumps: FINDER_MAX_BUDGET,
 			}),
-			{
-				knowledge: {
-					[carrierKey(system.index, refinery.localCarrierId)]: {
-						observedInstanceOrdinal: 0,
-						observedCondition: "operational",
-						observedAt: 9,
-						source: "docking",
-						knownPrivateFacts: {
-							blackMarket: { learnedAt: 9, source: "docking" },
-						},
-					},
-				},
-			},
+			{ knowledge: checked(system, refinery, "operational", 9) },
 		);
 		expect(result.inBudget.map((row) => row.index)).toContain(system.index);
 		expect(result.uncheckedFence).toBeGreaterThan(0);
@@ -711,14 +718,7 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
 			{
-				knowledge: {
-					[carrierKey(system.index, shipyard.localCarrierId)]: {
-						observedInstanceOrdinal: 0,
-						observedCondition: "disabled",
-						observedAt: 1000,
-						source: "system-relay",
-					},
-				},
+				knowledge: observed(system, shipyard, "disabled", 1000, "system-relay"),
 			},
 		);
 		const row = seen.inBudget.find(
@@ -770,16 +770,7 @@ describe("§9.4 facilities knowledge", () => {
 				galaxy.systems,
 				here,
 				filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-				{
-					knowledge: {
-						[carrierKey(system.index, shipyard.localCarrierId)]: {
-							observedInstanceOrdinal: 0,
-							observedCondition: condition,
-							observedAt: 5,
-							source: "docking",
-						},
-					},
-				},
+				{ knowledge: observed(system, shipyard, condition, 5, "docking") },
 			);
 			const row = seen.inBudget.find(
 				(candidate) => candidate.index === system.index,
@@ -809,6 +800,9 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
 			{
+				// Spelt out rather than through `observed`: this is the only row
+				// in the file that carries a remembered recovery, and a
+				// parameter for one caller is the wider helper.
 				knowledge: {
 					[carrierKey(system.index, shipyard.localCarrierId)]: {
 						observedInstanceOrdinal: 0,
@@ -878,14 +872,13 @@ describe("§9.4 facilities knowledge", () => {
 	test("age never removes a row or reclassifies its condition", () => {
 		const system = withRole("shipyard");
 		const shipyard = stationOf(system, "shipyard");
-		const knowledge = {
-			[carrierKey(system.index, shipyard.localCarrierId)]: {
-				observedInstanceOrdinal: 0,
-				observedCondition: "operational" as const,
-				observedAt: 0,
-				source: "system-relay",
-			},
-		};
+		const knowledge = observed(
+			system,
+			shipyard,
+			"operational",
+			0,
+			"system-relay",
+		);
 		const seen = projectFinder(
 			galaxy.systems,
 			here,

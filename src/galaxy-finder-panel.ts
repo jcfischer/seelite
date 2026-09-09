@@ -15,10 +15,7 @@
 import {
 	FINDER_MAX_BUDGET,
 	FACILITY_CHIPS,
-	type FacilityAnnotation,
 	type FacilityChip,
-	type FinderKnowledge,
-	facilityAnnotationLabel,
 	type FinderFilter,
 	type FinderResults,
 	type FinderRow,
@@ -27,6 +24,12 @@ import {
 	projectFinder,
 	rememberFinderBudget,
 } from "./galaxy-finder";
+import {
+	type FacilityAnnotation,
+	type FinderKnowledge,
+	facilityAnnotationLabel,
+	worldMinute,
+} from "./knowledge-labels";
 import { ECONOMY_NAMES, type SystemRecord } from "./galaxy";
 
 /**
@@ -548,8 +551,8 @@ export function mountFinderPanel({
 				fontSize: "9px",
 				letterSpacing: ".05em",
 			});
-			// Held so the age can be rewritten without rebuilding the row — see
-			// `retimeAnnotations`.
+			// Held so the age can be rewritten without rebuilding the row — the
+			// minute block at the end of `render` is what rewrites it.
 			annotationLines.push({ line, annotation });
 			pick.append(line);
 		}
@@ -626,6 +629,8 @@ export function mountFinderPanel({
 			paintedIndex = null;
 			listKey = "";
 			projectionKey = "";
+			// Both halves of the memo, or a close leaves one behind.
+			projectionKnowledge = null;
 			drawn = { inBudget: 0, beyondRange: 0 };
 			return;
 		}
@@ -757,7 +762,7 @@ export function mountFinderPanel({
 		// of them; at minute granularity this is a handful of `textContent`
 		// writes against a full teardown of the drawn list, and it keeps the
 		// focused row's buttons in the document.
-		const minute = Math.floor(now() / 60);
+		const minute = worldMinute(now());
 		if (minute !== labelledMinute) {
 			labelledMinute = minute;
 			for (const { line, annotation } of annotationLines)

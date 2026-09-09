@@ -1025,17 +1025,11 @@ describe("§9.10 facility knowledge", () => {
 	});
 	/**
 	 * §9.10: "the marker survives replacement of the carrier instance". The
-	 * black-market flag is generated baseline data about the **carrier slot** —
-	 * `persistent-world-state.md` §2's term, and `carrier-key.ts`'s — not about
-	 * the instance standing in it, so blowing the refinery up and rebuilding it
-	 * cannot un-learn where the fence is.
-	 *
-	 * (Two review rounds moved this word in opposite directions: `slot` was
-	 * flagged as an alias for **Berth**, and `berth` then as an alias for
-	 * **Transit lane**. Neither is what the sentence means. CONTEXT.md's own
-	 * Berth entry anticipates this — "a reviewer flagging one of those has found
-	 * the alias rule firing on an English word" — so it names the repo's actual
-	 * term for the persisted thing instead.)
+	 * black-market flag is generated baseline data about the persisted carrier
+	 * identity — `persistent-world-state.md` §2's `localCarrierId`, the thing
+	 * `carrierKey` files a save row under — and not about the instance standing
+	 * in it. So blowing the refinery up and rebuilding it cannot un-learn where
+	 * the fence is.
 	 */
 	test("the marker survives a destroy and replacement of the carrier", () => {
 		let world = observeDocking(newWorld(WORLD), 0, OTHER, 10, true);

@@ -1141,7 +1141,16 @@ const facilityChecks = async (where) => {
 		}
 		return null;
 	});
-	await clickFacility(observedChip ?? "SHIPYARD");
+	// **A precondition, not a fallback.** `?? "SHIPYARD"` ran the check under an
+	// arbitrary chip in exactly the state the search exists to rule out — and
+	// this block's own note records what that looks like: sixty rows, every one
+	// of them `STATUS UNKNOWN`, which is the check failing for the wrong reason.
+	check(
+		`${where}: the start system carries a public facility to read an observation on`,
+		observedChip !== null,
+		`observed chip ${observedChip}`,
+	);
+	if (observedChip !== null) await clickFacility(observedChip);
 	await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
 	await nextFrames(page);
 	const mixed = await facilityRows();

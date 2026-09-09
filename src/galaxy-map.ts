@@ -47,7 +47,8 @@ import {
 	type FinderKnowledge,
 	NO_KNOWLEDGE,
 	stationRosterLine,
-} from "./galaxy-finder";
+	worldMinute,
+} from "./knowledge-labels";
 import { carrierKey } from "./carrier-key";
 import { generateContents } from "./system";
 import {
@@ -810,6 +811,58 @@ export function mountGalaxyChart({
 	 *  the map's recurring two-implementations trap in miniature. */
 	let litSet = new Set<number>();
 
+	/**
+	 * The selected system's record card.
+	 *
+	 * **Its own function because the minute tick calls it and `recompute` is
+	 * expensive.** A clock minute changes only the card's observation ages and
+	 * the finder's annotations; running the whole `recompute` for that reran
+	 * `reachable()` over 256 points with its attribute upload, rewrote the
+	 * drop-line buffer, and ran `planRoute` and `courseProgress` — the O(n²)
+	 * Dijkstra this file's own comment names — to arrive at an unchanged answer,
+	 * once a minute, for a text label.
+	 */
+	const paintCard = (): void => {
+		if (selected === null) {
+			card.style.display = "none";
+		} else {
+			const record = selected;
+			// **The record does not depend on a route.** It is seed-derived and
+			// always knowable, and §5 says clicking a system shows it. Gating
+			// the whole card on `route !== null` made an unroutable selection
+			// read as a dead click — a colour change and nothing else. Only the
+			// chain line is conditional.
+			card.style.display = "block";
+			// §5.2.1's roster: every station, its exact observation time and
+			// report source — the finder row carries the compact relative age,
+			// and this is where the number behind it lives. The formatting is
+			// `galaxy-finder.ts`'s, so the headless tier can reach it.
+			const rows = knowledge();
+			const stations = generateContents(record).stations.map((station) =>
+				stationRosterLine(
+					station,
+					rows[carrierKey(record.index, station.localCarrierId)],
+					now(),
+				),
+			);
+			card.textContent = [
+				record.name,
+				`${ECONOMY_NAMES[record.economy]} · ${GOVERNMENT_NAMES[record.government]}`,
+				`TL ${record.displayTL} · pop ${(record.population / 10).toFixed(1)} bn`,
+				`${distanceLy(current.pos, record.pos).toFixed(1)} LY direct`,
+				route === null
+					? "no route within range"
+					: route.jumps === 0
+						? "you are here"
+						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
+				"",
+				...stations,
+				"",
+				record.description,
+			].join("\n");
+		}
+	};
+
 	const recompute = (): void => {
 		lit = reachable(galaxy.systems, current);
 		litSet = new Set(lit.map((s) => s.index));
@@ -899,44 +952,7 @@ export function mountGalaxyChart({
 		hazeButton.textContent = `core haze: ${haze.visible ? "on" : "off"}`;
 		hazeButton.setAttribute("aria-pressed", String(haze.visible));
 
-		if (selected === null) {
-			card.style.display = "none";
-		} else {
-			const record = selected;
-			// **The record does not depend on a route.** It is seed-derived and
-			// always knowable, and §5 says clicking a system shows it. Gating
-			// the whole card on `route !== null` made an unroutable selection
-			// read as a dead click — a colour change and nothing else. Only the
-			// chain line is conditional.
-			card.style.display = "block";
-			// §5.2.1's roster: every station, its exact observation time and
-			// report source — the finder row carries the compact relative age,
-			// and this is where the number behind it lives. The formatting is
-			// `galaxy-finder.ts`'s, so the headless tier can reach it.
-			const rows = knowledge();
-			const stations = generateContents(record).stations.map((station) =>
-				stationRosterLine(
-					station,
-					rows[carrierKey(record.index, station.localCarrierId)],
-					now(),
-				),
-			);
-			card.textContent = [
-				record.name,
-				`${ECONOMY_NAMES[record.economy]} · ${GOVERNMENT_NAMES[record.government]}`,
-				`TL ${record.displayTL} · pop ${(record.population / 10).toFixed(1)} bn`,
-				`${distanceLy(current.pos, record.pos).toFixed(1)} LY direct`,
-				route === null
-					? "no route within range"
-					: route.jumps === 0
-						? "you are here"
-						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
-				"",
-				...stations,
-				"",
-				record.description,
-			].join("\n");
-		}
+		paintCard();
 
 		// D3 suppresses the label over the *selected* system, so a selection
 		// change is a label change even though the pointer has not moved.
@@ -1435,12 +1451,15 @@ export function mountGalaxyChart({
 	 * can be up to a minute behind, which is the accuracy this buys and not
 	 * more.
 	 */
-	let paintedMinute = Math.floor(now() / 60);
+	let paintedMinute = worldMinute(now());
 	const frame = (): void => {
-		const minute = Math.floor(now() / 60);
+		const minute = worldMinute(now());
 		if (minute !== paintedMinute) {
 			paintedMinute = minute;
-			recompute();
+			// The card's ages and the finder's annotations, and nothing else —
+			// see `paintCard` for why this is not `recompute()`.
+			paintCard();
+			finder.render();
 		}
 		if (resizePending) {
 			resizePending = false;
