@@ -31,8 +31,24 @@
  *
  * A quadratic has neither problem. It removes a global ramp and a global bow —
  * which is what `JOVIAN`'s equatorial brightening and polar hood are — exactly
- * and at every band including the first and the last, and it is far too stiff to
- * follow banding, so it cannot subtract the signal. There is no window to size.
+ * and at every band including the first and the last, and there is no window to
+ * size.
+ *
+ * **It is not neutral toward every banding, and the first version of this
+ * comment claimed it was.** "Too stiff to follow banding, so it cannot subtract
+ * the signal" is false as stated: Sage constructed a profile whose populated
+ * bands are two contiguous halves at two tones, which is a step, and a quadratic
+ * fits a step well enough to pull the reading to 0.453 — under 5/9 for a surface
+ * with exactly two tones. `tests/band-tones.test.ts` holds that case so the
+ * limitation is recorded rather than asserted away.
+ *
+ * What is true is narrower and is what this is used for: a quadratic cannot
+ * follow banding that **alternates several times** across the run, which is what
+ * a gas giant's does, and the surfaces this reads are of that kind. A profile
+ * whose whole banding is one step is outside what it can be trusted on. That is
+ * one of several reasons the coefficient is reported rather than gated — see
+ * `probe-planet-surfaces.mjs`, where the deciding reason is that Sarle's rises
+ * with skewness too.
  */
 export const quadraticTrend = (values) => {
 	const pts = [];

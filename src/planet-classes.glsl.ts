@@ -673,8 +673,8 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
    * from the same filament field so the wisps inside the oval belong to the
    * ones outside it. The **rim** is the shell between eye and edge, where a
    * real vortex piles its cloud up brightest. And the edge is broken by the
-   * band turbulence rather than being a circle — turb is the warp already
-   * applied to the latitude, so the storm frays where the bands do.
+   * band turbulence rather than being a circle — turb is the same latitude
+   * displacement the bands already use, so the storm frays where they do.
    */
   float stormR = distance(p, spotA) / 0.42;
   float storm = smoothstep(1.0, 0.15, stormR + turb * 1.6);
@@ -686,11 +686,28 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   float eye = smoothstep(0.34, 0.05, stormR);
   stormBody = mix(stormBody, vec3(0.830, 0.660, 0.480), eye * (0.35 + 0.35 * filament));
   albedo = mix(albedo, stormBody, storm * 0.80);
-  // A tail drawn out along the band the storm sits in: the zonal flow carries
-  // the oval's colour downstream, which is the read that says the spot is *in*
-  // the flow rather than on top of it.
-  float tail = smoothstep(1.9, 0.4, distance(vec2(q.x, q.z) * 1.0, vec2(spotA.x, spotA.z)))
-             * smoothstep(0.20, 0.02, abs(lat - spotA.y));
+  /*
+   * A tail drawn out along the band the storm sits in, so the spot reads as
+   * being *in* the flow rather than sitting on top of it.
+   *
+   * **In the storm's own frame, and that is not a detail.** The first version
+   * measured the tail from q and the mask from p. q is p advected by zonal(),
+   * so the two frames separate at the zonal rate: at this latitude the tail's
+   * centre travels about 108° in two minutes while the mask stays put, and the
+   * tail that is supposed to trail the storm becomes a second unexplained blob
+   * on the far side of the planet. Sage caught it — it is invisible in a still
+   * frame and the sheet is still frames.
+   *
+   * The mask is on p because a storm is a feature of the planet rather than of
+   * the flow over it; the tail follows the mask. The *sense* of downstream is
+   * still real — the tail is offset along the band, not centred on the spot —
+   * and it is the band's own axis rather than a clock that gives it a
+   * direction, which is what keeps the two attached at every time.
+   */
+  vec3 downstream = normalize(cross(vec3(0.0, 1.0, 0.0), spotA));
+  vec3 tailCentre = normalize(spotA - downstream * 0.30);
+  float tail = smoothstep(0.62, 0.10, distance(p, tailCentre))
+             * smoothstep(0.20, 0.02, abs(p.y - spotA.y));
   albedo = mix(albedo, stormBody, tail * 0.22 * (1.0 - storm));
 
   // Thin high haze catches light before the deck does.

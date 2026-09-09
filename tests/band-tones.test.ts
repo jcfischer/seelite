@@ -161,6 +161,27 @@ describe("the band-tone reading", () => {
 		);
 	});
 
+	/**
+	 * **The case the quadratic cannot be trusted on, recorded rather than
+	 * hidden.**
+	 *
+	 * Sage constructed it against a comment claiming the fit was "too stiff to
+	 * follow banding, so it cannot subtract the signal". Two contiguous halves at
+	 * two tones is a *step*, and a quadratic fits a step well enough to pull the
+	 * reading under the uniform value for a surface with exactly two tones. The
+	 * cases above put both tones inside every latitude, which is what a gas
+	 * giant's alternating banding does and is what this instrument reads; a
+	 * profile whose whole banding is one step is outside that.
+	 *
+	 * The expectation is the **wrong** answer on purpose. It is here so the
+	 * limitation is a red run if anyone later widens what this is used for.
+	 */
+	test("is fooled by two tones arranged as a single step", () => {
+		const r = reading(240, 100, 9, (band) => (band < 120 ? 20 : 60));
+		const b = bandMetrics(r, OPTS)?.b as number;
+		expect(b).toBeLessThan(UNIFORM);
+	});
+
 	test("refuses a reading with too little of the surface populated", () => {
 		expect(
 			bandMetrics(
