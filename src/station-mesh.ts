@@ -684,8 +684,11 @@ function coamingRing(
 	// **Stepped back from the aperture edge rather than cut to it** (#269,
 	// `RIM_SEPARATION_KM`). The lit bars below own that edge; a coaming that
 	// shared it put a second face on the same plane, and the two took turns
-	// winning the depth test as the station turned. The step is 8 m and the bar
-	// that covers it is 24 m wide, so nothing here is exposed by it.
+	// winning the depth test as the station turned. The step is 2 m and the bar
+	// that stands in front of it is 24 m deep, so nothing here is exposed by it —
+	// but it is the step that sets `RIM_SEPARATION_KM`'s ceiling, because this
+	// ring is the one whose step-back can open a hole into the bay. Flown at 8 m
+	// it did, and `probe-traffic-mouth.mjs` read it.
 	const inner = ringInsideAperture(
 		{ across: aperture.widthKm / 2, up: aperture.heightKm / 2 },
 		"coaming",

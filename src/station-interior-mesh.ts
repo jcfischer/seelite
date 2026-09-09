@@ -63,45 +63,77 @@ export const PLATE_FACTOR = 0.06;
  * bulkhead and its lane edge — each placed an inner face on the same plane, and
  * every pair of them that also overlaps in depth drew the same throat wall.
  *
- * Coplanar faces have identical depth, three's `depthFunc` is `LessEqualDepth`,
- * and opaque objects are sorted front-to-back by their centres — so the
- * *last-drawn* face wins, and as the station turns and that sort flips, the
- * winner flips with it. That is why the symptom is temporal: a 2748-pixel region
- * of the trade station's inner mouth appears for one frame and is gone the next,
- * which is what the principal's playtest recording shows.
+ * What was measured is that at every sampled flickering pixel the two nearest
+ * surfaces are **0.00 mm apart against a depth resolution of 0.19 mm** — closer
+ * than the buffer can tell them apart. Which one is written is then decided per
+ * pixel by how each transform's depth rounds, and between equal depths by draw
+ * order under `LessEqualDepth`. Both of those move when the transforms move, so
+ * a turning station reshuffles the winner every frame: a 2748-pixel region of
+ * the trade's inner mouth appears for one frame and is gone the next, which is
+ * what the principal's playtest recording shows.
+ *
+ * Note which of the two paths applies to which pair, because it is not one
+ * throughout: three sorts opaque objects by shader program before depth, so the
+ * lit bars (Standard), the mouth bulkhead (Lambert) and the lane edge (Basic)
+ * hold a fixed order between them and flicker by rounding alone. Separating the
+ * faces removes both paths, which is why the fix does not have to choose.
  *
  * **The lit exterior rim owns the edge and every other ring steps back from it,
- * each by its own multiple of this.** Distinct multiples rather than one, because
- * three rings sharing a *new* plane is the same defect moved: the coaming, the
- * bulkhead and the lane edge overlap one another in depth as well, which is why
- * hiding the lit bars leaves a smaller fight rather than none.
+ * each by its own multiple of this** (`RIM_STEPS`).
  *
- * **Why this size.** Under a `1/z` depth buffer with the near layer's 0.01 km
- * near plane and 24 bits, two faces are distinguishable while they are further
- * apart than `z²·(1/near − 1/far)/2²⁴` — 0.19 mm at the 0.17 km this was
- * measured at, and 4 m only at 26 km. So no fixed offset removes a coplanarity
- * at *every* range; what it does is push the return out past the range where the
- * mouth is more than a few pixels of rim. At 26 km the trade's 120 m opening
- * subtends 0.26°, about five pixels across a 60° frame. Under that bound this is
- * the smallest step that stays invisible on the one ring where it moves anything
- * a player sees — the lane edge's lit border, 4 m of a 17 m border on a 120 m
- * opening.
+ * **Why this size, and it is bounded from both ends.**
+ *
+ * From below by the depth buffer. `logarithmicDepthBuffer` is off, so under the
+ * near layer's 0.01 km near plane and 24 bits two faces are distinguishable
+ * while they are further apart than `z²·(1/near − 1/far)/2²⁴` — 0.19 mm at the
+ * 0.17 km this was measured at, and 1 m only at 13 km. No fixed offset removes a
+ * coplanarity at *every* range; what it buys is that the fight returns only past
+ * where the mouth is a few pixels of rim. At 13 km the trade's 120 m opening
+ * subtends 0.53°, about eleven pixels across a 60° frame.
+ *
+ * From above by what a step *removes*. Every ring here reaches the throat, and a
+ * ring that steps back leaves the wall open behind the lit bar in the depth band
+ * the bar does not cover — 17 m deep on the trade. **This shipped at 4 m for one
+ * round and the mouth leaked:** the coaming is two steps, so its own gap was 8 m,
+ * and `probe-traffic-mouth.mjs` — which puts a freighter hull on the camera ray
+ * in front of a bar and asserts the mouth writes no pixels through it — went from
+ * green to 9 leaked pixels at 7.7/255. Attributed rather than guessed: returning
+ * the coaming's step alone to zero made it green again, with the other two still
+ * at 4 m. So the ceiling is not a matter of taste — a step wide enough to see
+ * through is a hole in the station. At 1 m all three steps are green on both
+ * probes.
+ *
+ * **The pad roles have the same construction and are out of this node's scope,
+ * not cleared by it.** `buildPadDeck` builds its deck ring and its touchdown
+ * ring to one `hole` and the two overlap in depth, so their inner faces are
+ * coplanar in exactly this way. #269 is *rotating* mouths and a pad has
+ * `spins: false`, so the instrument — which holds the camera still — reads a raw
+ * temporal median of 0 on the refinery at 0.35 km and 0.6 km. That is what a
+ * static camera on a body that does not turn must read by construction, and it
+ * is **not** evidence that a pad cannot flicker: in play the camera moves, and a
+ * moving camera moves the transforms exactly as a turn does. Charted rather than
+ * remembered — see the follow-up node under #269.
  *
  * The previous attempt on this defect is still in the mouth bulkhead's own
  * comment below. It moved the *front* faces apart in z and read the symptom as
  * fixed; the inner side faces were never moved, and they are what was left.
  */
-export const RIM_SEPARATION_KM = 0.004;
+export const RIM_SEPARATION_KM = 0.001;
 
 /**
  * How far each ring steps back from the aperture edge, in `RIM_SEPARATION_KM`.
  *
  * Ordered by how much of the visible opening each may give up. The lit exterior
  * bars are the docking cue and own the edge at zero. The lane edge is the lit
- * border a parked pilot reads, so it moves least. The coaming and the mouth
- * bulkhead are structure whose only requirement is not to block the slot, so
- * they step back furthest — and end up buried inside the 24 m lit bar, where
- * nothing can see them.
+ * border a parked pilot reads, so it moves least — 1 m of a 17 m border on a
+ * 120 m opening. The coaming and the mouth bulkhead are structure whose only
+ * requirement is not to block the slot, so they step back furthest, and 3 m is
+ * still well inside the 24 m lit bar that stands in front of them.
+ *
+ * Distinct multiples rather than one shared step, because three rings on a *new*
+ * shared plane is the same defect moved: these three overlap one another in
+ * depth as well, which is why hiding the lit bars leaves a smaller fight rather
+ * than none.
  */
 export const RIM_STEPS = {
 	apertureLight: 0,
@@ -392,8 +424,9 @@ export function buildStationInterior(
 	for (const [w, h, x, y] of ringAround(
 		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
 		// **Stepped back from the lane, not cut to it** (`RIM_SEPARATION_KM`).
-		// The step is 12 m here, which is inside the lit bar's own 24 m, so the
-		// hole this wall carries is wider than the opening and covered by it.
+		// The step is 3 m here, well inside the 24 m lit bar that stands in front
+		// of it, so the hole this wall carries is wider than the opening and
+		// covered by it.
 		ringInsideAperture(
 			{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
 			"mouthBulkhead",
@@ -432,7 +465,7 @@ export function buildStationInterior(
 	//
 	// **And one step back from the lane, not on it** (`RIM_SEPARATION_KM`). This
 	// is the ring that gives up least, because it is the only one of the four
-	// whose inner edge a player reads: 4 m of a 17 m border on a 120 m opening.
+	// whose inner edge a player reads: 1 m of a 17 m border on a 120 m opening.
 	const laneGlow = glowMaterial(visuals.strobeColor);
 	const laneEdgeInner = ringInsideAperture(
 		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
