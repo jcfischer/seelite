@@ -47,6 +47,7 @@ const HEADLESS = [
 	"hyperspace",
 	"names",
 	"noise",
+	"panel-focus",
 	"planet-appearance",
 	"rng",
 	"ship-mesh",
@@ -97,6 +98,7 @@ test("no module has been quietly dropped from the list", () => {
 		"hyperspace",
 		"names",
 		"noise",
+		"panel-focus",
 		"planet-appearance",
 		"rng",
 		"ship-mesh",
@@ -252,4 +254,13 @@ test("src/gamepad.ts is a leaf, which is what makes it copyable", () => {
 	// table would have to name a station, a target or a regime, and every one of
 	// those names lives behind an import.
 	expect(importsIn("gamepad.ts")).toEqual([]);
+});
+
+test("src/panel-focus.ts is a leaf, which is what lets six panels share it", () => {
+	// The cursor model is the one thing the Navigation list, the market rows, the
+	// chart's buttons, the settings rows and the perf toggles have in common, and
+	// the only way it stays that is by naming none of them. An import here would
+	// be a station, a commodity or a setting key arriving in the model, and the
+	// next panel would need its own.
+	expect(importsIn("panel-focus.ts")).toEqual([]);
 });
