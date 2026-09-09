@@ -33,6 +33,8 @@ import {
 	materializeDue,
 	newWorld,
 	observe,
+	observeDocking,
+	observeSystemRelay,
 	type Provenance,
 	parseWorld,
 	readKnowledge,
@@ -966,6 +968,17 @@ describe("§9.6 round trip", () => {
 		});
 	});
 
+	test("the round trip preserves a learned black-market marker, never its generated value", () => {
+		const before = observeDocking(newWorld(WORLD), 0, OTHER, 12, true);
+		const raw = serializeWorld(before) as {
+			galaxies: Array<{ knowledge: Record<string, unknown> }>;
+		};
+		const row = raw.galaxies[0].knowledge[OTHER] as Record<string, unknown>;
+		expect(row).toHaveProperty("knownPrivateFacts.blackMarket.learnedAt", 12);
+		expect(JSON.stringify(row)).not.toContain("blackMarketValue");
+		expect(parseWorld(raw)).toEqual(before);
+	});
+
 	test("all eight galaxy namespaces stay separate", () => {
 		const after = parseWorld(serializeWorld(populated()));
 		expect(Object.keys(after.galaxies[0].objective).sort()).toEqual(
@@ -985,6 +998,31 @@ describe("§9.6 round trip", () => {
 		const after = parseWorld(serializeWorld(populated()));
 		expect(after.galaxies[0].deficits[KEY]?.goods.Food).toBe(12);
 		expect(after.galaxies[0].deficits[KEY]?.updatedAt).toBe(20);
+	});
+});
+
+describe("§9.10 facility knowledge", () => {
+	test("the relay observes every supplied station while preserving private facts", () => {
+		const refinery = OTHER;
+		const trade = KEY;
+		let world = observeDocking(newWorld(WORLD), 0, refinery, 10, true);
+		world = observeSystemRelay(world, 0, [trade, refinery], 20);
+		expect(readKnowledge(world.galaxies[0], trade)).toMatchObject({
+			observedAt: 20,
+			source: "system-relay",
+		});
+		expect(readKnowledge(world.galaxies[0], refinery)).toMatchObject({
+			observedAt: 20,
+			source: "system-relay",
+			knownPrivateFacts: { blackMarket: { learnedAt: 10, source: "docking" } },
+		});
+	});
+
+	test("docking a non-refinery does not manufacture a private-fact marker", () => {
+		const world = observeDocking(newWorld(WORLD), 0, KEY, 10, false);
+		expect(
+			readKnowledge(world.galaxies[0], KEY)?.knownPrivateFacts,
+		).toBeUndefined();
 	});
 });
 
@@ -1340,23 +1378,23 @@ describe("§9.9 atomicity and integrity", () => {
 		const raw = serializeWorld(newWorld(WORLD)) as Record<string, unknown> & {
 			galaxies: Record<string, unknown>[];
 		};
-		// A v2 save adds a domain. Checking the shape first made it die as
+		// A v3 save adds a domain. Checking the shape first made it die as
 		// "factionInfluence is not a declared state domain", which tells the
 		// save/load node nothing about what to run.
-		raw.worldSchemaVersion = 2;
+		raw.worldSchemaVersion = 3;
 		raw.galaxies[0].factionInfluence = { "3": 0.4 };
 		expect(() => parseWorld(raw)).toThrow(
-			/worldSchemaVersion 2 needs a migration/,
+			/worldSchemaVersion 3 needs a migration/,
 		);
 		// **And at the top level.** The first fix moved the version read ahead of
 		// the *envelope* loops only, leaving the declared-field loop in front of
-		// it — so a v2 save adding a top-level field still died with exactly the
+		// it — so a v3 save adding a top-level field still died with exactly the
 		// error the move was meant to stop. This is the case that check missed.
 		const topLevel = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
-		topLevel.worldSchemaVersion = 2;
+		topLevel.worldSchemaVersion = 3;
 		topLevel.shipLog = [];
 		expect(() => parseWorld(topLevel)).toThrow(
-			/worldSchemaVersion 2 needs a migration/,
+			/worldSchemaVersion 3 needs a migration/,
 		);
 		const older = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
 		older.worldGeneratorVersion = 0;

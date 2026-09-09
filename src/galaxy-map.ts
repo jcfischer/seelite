@@ -43,6 +43,9 @@ import {
 	startSystem,
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
+import type { FinderKnowledge } from "./galaxy-finder";
+import { carrierKey } from "./carrier-key";
+import { generateContents } from "./system";
 import {
 	type Course,
 	type CourseProgress,
@@ -326,6 +329,8 @@ export interface GalaxyChartOptions {
 	galaxyIndex: number;
 	/** Where the ship is. Defaults to the galaxy's own start system. */
 	currentIndex?: number;
+	/** Read-only last-known station intelligence; mounting never writes it. */
+	knowledge?: FinderKnowledge;
 	/**
 	 * Bind `h` and `Escape` on `window`. Default off.
 	 *
@@ -380,6 +385,7 @@ export function mountGalaxyChart({
 	worldSeed,
 	galaxyIndex,
 	currentIndex,
+	knowledge = {},
 	globalKeys = false,
 	course: initialCourse = null,
 	onCourse,
@@ -773,6 +779,7 @@ export function mountGalaxyChart({
 	const finder = mountFinderPanel({
 		root,
 		systems: galaxy.systems,
+		knowledge,
 		currentSystem: () => current,
 		selectedIndex: () => selected?.index ?? null,
 		onSelect: (index) => select(index),
@@ -884,12 +891,27 @@ export function mountGalaxyChart({
 		if (selected === null) {
 			card.style.display = "none";
 		} else {
+			const record = selected;
 			// **The record does not depend on a route.** It is seed-derived and
 			// always knowable, and §5 says clicking a system shows it. Gating
 			// the whole card on `route !== null` made an unroutable selection
 			// read as a dead click — a colour change and nothing else. Only the
 			// chain line is conditional.
 			card.style.display = "block";
+			const stations = generateContents(record).stations.map((station) => {
+				const known =
+					knowledge[carrierKey(record.index, station.localCarrierId)];
+				const condition = known
+					? `${known.observedCondition} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
+					: "STATUS UNKNOWN";
+				const fence =
+					station.type !== "refinery"
+						? ""
+						: known?.knownPrivateFacts?.blackMarket
+							? ` · ${station.blackMarket ? "KNOWN FENCE" : "KNOWN NO FENCE"}`
+							: " · FENCE UNCHECKED";
+				return `${station.name} — ${station.type.toUpperCase()} · ${condition}${fence}`;
+			});
 			card.textContent = [
 				selected.name,
 				`${ECONOMY_NAMES[selected.economy]} · ${GOVERNMENT_NAMES[selected.government]}`,
@@ -900,6 +922,8 @@ export function mountGalaxyChart({
 					: route.jumps === 0
 						? "you are here"
 						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
+				"",
+				...stations,
 				"",
 				selected.description,
 			].join("\n");

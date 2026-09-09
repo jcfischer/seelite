@@ -14,6 +14,9 @@
 
 import {
 	FINDER_MAX_BUDGET,
+	FACILITY_CHIPS,
+	type FacilityChip,
+	type FinderKnowledge,
 	type FinderFilter,
 	type FinderResults,
 	type FinderRow,
@@ -133,6 +136,7 @@ export interface FinderPanelOptions {
 	/** The chart's root. The panel appends itself and is removed with it. */
 	root: HTMLElement;
 	systems: readonly SystemRecord[];
+	knowledge?: FinderKnowledge;
 	/** Where the ship is — read on every render, because a jump moves it. */
 	currentSystem: () => SystemRecord;
 	/** The chart's selection, which the panel highlights and never owns. */
@@ -165,6 +169,7 @@ export interface FinderPanel {
 	render(): void;
 	setQuery(query: string): void;
 	toggleEconomy(economy: number): void;
+	toggleFacility(facility: FacilityChip): void;
 	setBudget(jumps: number): void;
 	readonly state: FinderPanelState;
 }
@@ -176,6 +181,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 export function mountFinderPanel({
 	root,
 	systems,
+	knowledge = {},
 	currentSystem,
 	selectedIndex,
 	onSelect,
@@ -183,7 +189,11 @@ export function mountFinderPanel({
 	onLayoutChange,
 }: FinderPanelOptions): FinderPanel {
 	let filter: FinderFilter = finderSessionFilter();
-	let results: FinderResults = { inBudget: [], beyondRange: [] };
+	let results: FinderResults = {
+		inBudget: [],
+		beyondRange: [],
+		uncheckedFence: 0,
+	};
 	/** Which of the three layouts is on the element — a cache of what was
 	 *  applied, not a second answer to "is it open"; `finderIsNarrowed` remains
 	 *  the only one of those. */
@@ -276,6 +286,26 @@ export function mountFinderPanel({
 			cursor: "pointer",
 		});
 		chip.addEventListener("click", () => toggleEconomy(economy));
+		chipRow.appendChild(chip);
+		return chip;
+	});
+	const facilityChips = FACILITY_CHIPS.map((facility) => {
+		const chip = el("button");
+		chip.type = "button";
+		chip.textContent = facility;
+		chip.setAttribute("data-map-finder-facility", facility);
+		Object.assign(chip.style, {
+			font: "inherit",
+			fontSize: "9px",
+			letterSpacing: "0.06em",
+			color: "#8fb2c9",
+			background: "transparent",
+			border: "1px solid #26506e",
+			borderRadius: "3px",
+			padding: "3px 6px",
+			cursor: "pointer",
+		});
+		chip.addEventListener("click", () => toggleFacility(facility));
 		chipRow.appendChild(chip);
 		return chip;
 	});
@@ -446,7 +476,12 @@ export function mountFinderPanel({
 			fontSize: "9px",
 			letterSpacing: ".05em",
 		});
-		detail.textContent = `${row.economy.toUpperCase()} · ${row.government.toUpperCase()} · TL ${row.displayTL}`;
+		detail.textContent = [
+			row.economy.toUpperCase(),
+			row.government.toUpperCase(),
+			`TL ${row.displayTL}`,
+			...row.matchedFacilities,
+		].join(" · ");
 		pick.append(name, reach, detail);
 
 		const centre = el("button");
@@ -507,6 +542,13 @@ export function mountFinderPanel({
 			chip.style.borderColor = on ? "#ffb347" : "#26506e";
 			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
 		});
+		facilityChips.forEach((chip, i) => {
+			const on = filter.facilities.includes(FACILITY_CHIPS[i]);
+			chip.setAttribute("aria-pressed", String(on));
+			chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
+			chip.style.borderColor = on ? "#ffb347" : "#26506e";
+			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
+		});
 
 		const expanded = finderIsNarrowed(filter);
 		applyLayout(expanded);
@@ -514,7 +556,7 @@ export function mountFinderPanel({
 			// **The projection is skipped while the panel is closed**, so a chart
 			// click does not pay a whole-pool relaxation for a list showing
 			// nothing.
-			results = { inBudget: [], beyondRange: [] };
+			results = { inBudget: [], beyondRange: [], uncheckedFence: 0 };
 			resultsEl.replaceChildren();
 			rowElements.clear();
 			paintedIndex = null;
@@ -530,12 +572,12 @@ export function mountFinderPanel({
 		// each, sorts both groups, and is then thrown away by the key comparison
 		// below. Skipped unless one of its two inputs actually moved.
 		const here = currentSystem();
-		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}`;
+		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}|${[...filter.facilities].sort().join(",")}`;
 		if (inputKey !== projectionKey) {
 			projectionKey = inputKey;
-			results = projectFinder(systems, here, filter);
+			results = projectFinder(systems, here, filter, undefined, knowledge);
 		}
-		const { inBudget, beyondRange } = results;
+		const { inBudget, beyondRange, uncheckedFence } = results;
 		// **Keyed on what the rows actually print.** Two filters can yield the
 		// same rows, and the ship moving under a fixed filter yields different
 		// chains under the same indices — so the key carries the identity, the
@@ -582,6 +624,21 @@ export function mountFinderPanel({
 				});
 				heading.textContent = "BEYOND RANGE";
 				parts.push(heading, ...buildGroup(beyondRange, true));
+			}
+			if (filter.facilities.includes("KNOWN FENCE")) {
+				const unchecked = el("p");
+				unchecked.setAttribute(
+					"data-map-finder-unchecked-fence",
+					String(uncheckedFence),
+				);
+				Object.assign(unchecked.style, {
+					margin: "6px 2px",
+					color: "#7fa8c4",
+					fontSize: "9px",
+					letterSpacing: ".08em",
+				});
+				unchecked.textContent = `${uncheckedFence} REFINER${uncheckedFence === 1 ? "Y" : "IES"} UNCHECKED`;
+				parts.push(unchecked);
 			}
 			resultsEl.replaceChildren(...parts);
 			drawn = {
@@ -631,6 +688,14 @@ export function mountFinderPanel({
 		});
 	}
 
+	function toggleFacility(facility: FacilityChip): void {
+		patch({
+			facilities: filter.facilities.includes(facility)
+				? filter.facilities.filter((value) => value !== facility)
+				: [...filter.facilities, facility],
+		});
+	}
+
 	query.addEventListener("input", () => patch({ query: query.value }));
 	// A search field's clear affordance fires `search`, not `input`, in Safari.
 	query.addEventListener("search", () => patch({ query: query.value }));
@@ -666,6 +731,7 @@ export function mountFinderPanel({
 		render,
 		setQuery: (value: string) => patch({ query: value }),
 		toggleEconomy,
+		toggleFacility,
 		setBudget: (jumps: number) => patch({ budgetJumps: jumps }),
 		get state(): FinderPanelState {
 			return {

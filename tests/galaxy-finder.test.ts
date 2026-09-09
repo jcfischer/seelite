@@ -29,7 +29,9 @@ import {
 	generateGalaxy,
 	startSystem,
 } from "../src/galaxy";
+import { carrierKey } from "../src/carrier-key";
 import { planRoute, projectJumps } from "../src/galaxy-route";
+import { generateContents } from "../src/system";
 
 const WORLD_SEED = 0x5ee11e;
 const galaxy = generateGalaxy(WORLD_SEED, 0);
@@ -571,6 +573,78 @@ describe("D6 — the session budget", () => {
 		} finally {
 			resetFinderSession();
 		}
+	});
+});
+
+describe("§9.4 facilities knowledge", () => {
+	test("public refinery and shipyard roles project with no knowledge overlay", () => {
+		const refinery = galaxy.systems.find((system) =>
+			generateContents(system).stations.some(
+				(station) => station.type === "refinery",
+			),
+		) as SystemRecord;
+		const shipyard = galaxy.systems.find((system) =>
+			generateContents(system).stations.some(
+				(station) => station.type === "shipyard",
+			),
+		) as SystemRecord;
+		const refineries = projectFinder(
+			galaxy.systems,
+			here,
+			filter({
+				facilities: ["REFINERY"],
+				budgetJumps: FINDER_MAX_BUDGET,
+			}),
+		);
+		const shipyards = projectFinder(
+			galaxy.systems,
+			here,
+			filter({
+				facilities: ["SHIPYARD"],
+				budgetJumps: FINDER_MAX_BUDGET,
+			}),
+		);
+		expect(refineries.inBudget.map((row) => row.index)).toContain(
+			refinery.index,
+		);
+		expect(shipyards.inBudget.map((row) => row.index)).toContain(
+			shipyard.index,
+		);
+	});
+
+	test("known fences match only a checked generated true fact and count unchecked refineries", () => {
+		const system = galaxy.systems.find((candidate) => {
+			const refinery = generateContents(candidate).stations.find(
+				(station) => station.type === "refinery",
+			);
+			return refinery?.blackMarket === true;
+		}) as SystemRecord;
+		const refinery = generateContents(system).stations.find(
+			(station) => station.type === "refinery",
+		);
+		if (!refinery) throw new Error("fixture needs a refinery");
+		const result = projectFinder(
+			galaxy.systems,
+			here,
+			filter({
+				facilities: ["KNOWN FENCE"],
+				budgetJumps: FINDER_MAX_BUDGET,
+			}),
+			undefined,
+			{
+				[carrierKey(system.index, refinery.localCarrierId)]: {
+					observedInstanceOrdinal: 0,
+					observedCondition: "operational",
+					observedAt: 9,
+					source: "docking",
+					knownPrivateFacts: {
+						blackMarket: { learnedAt: 9, source: "docking" },
+					},
+				},
+			},
+		);
+		expect(result.inBudget.map((row) => row.index)).toContain(system.index);
+		expect(result.uncheckedFence).toBeGreaterThan(0);
 	});
 });
 

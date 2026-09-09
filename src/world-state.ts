@@ -51,7 +51,7 @@ import { generateContents } from "./system";
  * The mutable-state schema version (§2). Bump when the shape of anything in a
  * `GalaxyEnvelope` changes; the save/load node owns migration and rejection.
  */
-export const WORLD_SCHEMA_VERSION = 1;
+export const WORLD_SCHEMA_VERSION = 2;
 
 /**
  * The seeded-baseline version (§2). Bump on **any** generator change that can
@@ -173,6 +173,10 @@ export interface KnowledgeRow {
 	observedAt: number;
 	source: string;
 	observedRecovery?: ObservedRecovery;
+	/** A private refinery fact is known only after an explicit docking report. */
+	knownPrivateFacts?: {
+		blackMarket: { learnedAt: number; source: string };
+	};
 }
 
 /**
@@ -883,6 +887,7 @@ const writeKnowledge = (
 	observedAt: number,
 	source: string,
 ): GalaxyEnvelope => {
+	const prior = env.knowledge[key];
 	const row: KnowledgeRow = {
 		observedInstanceOrdinal: state.instanceOrdinal,
 		observedCondition: state.condition,
@@ -901,6 +906,9 @@ const writeKnowledge = (
 						completesAt: state.recovery.completesAt,
 					},
 				}
+			: {}),
+		...(prior?.knownPrivateFacts
+			? { knownPrivateFacts: prior.knownPrivateFacts }
 			: {}),
 	};
 	return { ...env, knowledge: { ...env.knowledge, [key]: row } };
@@ -936,6 +944,48 @@ export const observe = (
 			source,
 		),
 	);
+};
+
+/** The System relay reports condition intelligence for every local station. */
+export const observeSystemRelay = (
+	world: WorldState,
+	galaxyIndex: number,
+	keys: readonly CarrierKey[],
+	gameTime: number,
+): WorldState =>
+	keys.reduce(
+		(current, key) =>
+			observe(current, galaxyIndex, key, gameTime, "system-relay"),
+		world,
+	);
+
+/** Docking reports one station and, only at a refinery, checks its private fact. */
+export const observeDocking = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	gameTime: number,
+	isRefinery: boolean,
+): WorldState => {
+	const observed = observe(world, galaxyIndex, key, gameTime, "docking");
+	if (!isRefinery) return observed;
+	const env = observed.galaxies[galaxyIndex];
+	const row = env.knowledge[key];
+	if (!row) throw new Error(`docking observation did not write ${key}`);
+	const galaxies = observed.galaxies.slice();
+	galaxies[galaxyIndex] = {
+		...env,
+		knowledge: {
+			...env.knowledge,
+			[key]: {
+				...row,
+				knownPrivateFacts: {
+					blackMarket: { learnedAt: gameTime, source: "docking" },
+				},
+			},
+		},
+	};
+	return { ...observed, galaxies };
 };
 
 /** §7's visited-flag domain. Sorted and unique, so insertion order cannot
@@ -1072,6 +1122,13 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 		source: k.source,
 		...(k.observedRecovery
 			? { observedRecovery: { ...k.observedRecovery } }
+			: {}),
+		...(k.knownPrivateFacts
+			? {
+					knownPrivateFacts: {
+						blackMarket: { ...k.knownPrivateFacts.blackMarket },
+					},
+				}
 			: {}),
 	})),
 	deficits: canonicalMap(env.deficits, (row) => {
@@ -1317,6 +1374,25 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 		row.observedRecovery === undefined
 			? undefined
 			: parseObservedRecovery(row.observedRecovery, `knowledge ${key}`);
+	const facts = row.knownPrivateFacts;
+	let knownPrivateFacts: KnowledgeRow["knownPrivateFacts"];
+	if (facts !== undefined) {
+		const factObject = asObject(facts, `knowledge ${key} knownPrivateFacts`);
+		const blackMarket = asObject(
+			factObject.blackMarket,
+			`knowledge ${key} knownPrivateFacts.blackMarket`,
+		);
+		knownPrivateFacts = {
+			blackMarket: {
+				learnedAt: num(
+					blackMarket,
+					"learnedAt",
+					`knowledge ${key} blackMarket`,
+				),
+				source: str(blackMarket, "source", `knowledge ${key} blackMarket`),
+			},
+		};
+	}
 	return {
 		observedInstanceOrdinal: ordinal(
 			row,
@@ -1327,6 +1403,7 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 		observedAt: num(row, "observedAt", `knowledge ${key}`),
 		source: str(row, "source", `knowledge ${key}`),
 		...(observedRecovery ? { observedRecovery } : {}),
+		...(knownPrivateFacts ? { knownPrivateFacts } : {}),
 	};
 };
 

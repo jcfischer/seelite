@@ -19,6 +19,13 @@ import {
 	distanceLy,
 } from "./galaxy";
 import { type JumpReach, projectJumps } from "./galaxy-route";
+import { carrierKey } from "./carrier-key";
+import { generateContents } from "./system";
+import type { KnowledgeRow } from "./world-state";
+
+export const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"] as const;
+export type FacilityChip = (typeof FACILITY_CHIPS)[number];
+export type FinderKnowledge = Readonly<Record<string, KnowledgeRow>>;
 
 /**
  * What the player has narrowed the galaxy to.
@@ -47,6 +54,7 @@ export interface FinderFilter {
 	query: string;
 	/** Economy indices into `ECONOMY_NAMES`. Empty means every economy. */
 	economies: readonly number[];
+	facilities: readonly FacilityChip[];
 	/** The jump bound on the primary list, at least 1. */
 	budgetJumps: number;
 }
@@ -81,6 +89,7 @@ export const FINDER_MAX_BUDGET = 16;
 export const finderDefaultFilter = (): FinderFilter => ({
 	query: "",
 	economies: [],
+	facilities: [],
 	budgetJumps: FINDER_DEFAULT_BUDGET,
 });
 
@@ -144,6 +153,7 @@ export function finderIsNarrowed(filter: FinderFilter): boolean {
 	return (
 		filter.query.trim() !== "" ||
 		filter.economies.length > 0 ||
+		filter.facilities.length > 0 ||
 		filter.budgetJumps !== FINDER_DEFAULT_BUDGET
 	);
 }
@@ -161,6 +171,7 @@ export interface FinderRow {
 	routeLy: number | null;
 	/** Straight-line distance, which exists even where a route does not. */
 	distanceLy: number;
+	matchedFacilities: FacilityChip[];
 }
 
 /**
@@ -175,6 +186,7 @@ export interface FinderRow {
 export interface FinderResults {
 	inBudget: FinderRow[];
 	beyondRange: FinderRow[];
+	uncheckedFence: number;
 }
 
 /**
@@ -196,6 +208,23 @@ export function finderMatches(
 	return normalised === "" || system.name.toLowerCase().includes(normalised);
 }
 
+function facilitiesOf(system: SystemRecord, knowledge: FinderKnowledge) {
+	const present = new Set<FacilityChip>();
+	let uncheckedFence = false;
+	for (const station of generateContents(system).stations) {
+		if (station.type === "refinery") {
+			present.add("REFINERY");
+			const marker =
+				knowledge[carrierKey(system.index, station.localCarrierId)]
+					?.knownPrivateFacts?.blackMarket;
+			if (!marker) uncheckedFence = true;
+			else if (station.blackMarket) present.add("KNOWN FENCE");
+		}
+		if (station.type === "shipyard") present.add("SHIPYARD");
+	}
+	return { present, uncheckedFence };
+}
+
 /**
  * **No `selected` field.** Which row is selected is the chart's fact, not the
  * projection's, and a copy here is one that goes stale the moment a render
@@ -206,6 +235,7 @@ const row = (
 	system: SystemRecord,
 	from: SystemRecord,
 	reach: JumpReach | undefined,
+	matchedFacilities: FacilityChip[],
 ): FinderRow => ({
 	index: system.index,
 	name: system.name,
@@ -215,6 +245,7 @@ const row = (
 	jumps: reach?.jumps ?? null,
 	routeLy: reach?.ly ?? null,
 	distanceLy: distanceLy(from.pos, system.pos),
+	matchedFacilities,
 });
 
 /**
@@ -263,27 +294,41 @@ export function projectFinder(
 	from: SystemRecord,
 	filter: FinderFilter,
 	maxJump = JUMP_RANGE_LY,
+	knowledge: FinderKnowledge = {},
 ): FinderResults {
 	const projection = projectJumps(systems, from, maxJump);
 	const normalised = filter.query.trim().toLowerCase();
 	const hasQuery = normalised !== "";
 	const inBudget: FinderRow[] = [];
 	const beyondRange: FinderRow[] = [];
+	let uncheckedFence = 0;
 
 	for (const system of systems) {
 		if (system.galaxy !== from.galaxy) continue;
 		if (!finderMatches(system, filter, normalised)) continue;
+		const facilities = facilitiesOf(system, knowledge);
+		if (
+			!filter.facilities.every((facility) => facilities.present.has(facility))
+		) {
+			if (
+				filter.facilities.includes("KNOWN FENCE") &&
+				facilities.uncheckedFence
+			)
+				uncheckedFence++;
+			continue;
+		}
 		const here = projection.reach(system);
 		// **Built inside the branch that keeps it.** Constructed before the
 		// test, a chip-only narrowing at the default budget allocated a row and
 		// took a square root for every matching out-of-budget system and then
 		// dropped it — up to 250 of them on one chip click.
 		if (here !== undefined && here.jumps <= filter.budgetJumps)
-			inBudget.push(row(system, from, here));
-		else if (hasQuery) beyondRange.push(row(system, from, here));
+			inBudget.push(row(system, from, here, [...filter.facilities]));
+		else if (hasQuery)
+			beyondRange.push(row(system, from, here, [...filter.facilities]));
 	}
 
 	inBudget.sort(byReach);
 	beyondRange.sort(byReach);
-	return { inBudget, beyondRange };
+	return { inBudget, beyondRange, uncheckedFence };
 }

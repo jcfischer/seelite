@@ -353,6 +353,8 @@ import {
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
+	observeDocking,
+	observeSystemRelay,
 	visit,
 	type WorldState,
 } from "./world-state";
@@ -1950,6 +1952,7 @@ class Game {
 			this.world.system.record.galaxy,
 			this.world.system.record.index,
 		);
+		this.observeCurrentSystemRelay();
 		for (const _body of this.world.system.bodies)
 			this.scannerContactBuffer.push({} as ScannerContact);
 		this.updateLocalFrameBody();
@@ -5256,6 +5259,9 @@ class Game {
 					worldSeed: this.world.seed,
 					galaxyIndex: this.world.system.record.galaxy,
 					currentIndex: this.world.system.record.index,
+					knowledge:
+						this.commerceWorld.galaxies[this.world.system.record.galaxy]
+							?.knowledge ?? {},
 					// The course is the game's, not the chart's (#187) — the chart
 					// is disposed on every tab toggle and a course held inside it
 					// went with it.
@@ -6234,6 +6240,17 @@ class Game {
 		this.throttle = 0;
 
 		if (outcome.docked) {
+			const station = this.world.system.contents.stations.find(
+				(candidate) => candidate.id === id,
+			);
+			if (station)
+				this.commerceWorld = observeDocking(
+					this.commerceWorld,
+					this.world.system.record.galaxy,
+					carrierKey(this.world.system.record.index, station.localCarrierId),
+					this.world.gameTime,
+					station.type === "refinery",
+				);
 			// **E2: crossing the plane hands the ship over.** The skill test
 			// ended here, so from this instant the ship is on rails and nothing
 			// can fail — the arrival is a position law, and `stepDockedWorld`
@@ -6974,6 +6991,7 @@ class Game {
 		// §7's visited flag, per galaxy (`persistent-world-state.md` §7). The
 		// start system is recorded at boot; this is every system after it.
 		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
+		this.observeCurrentSystemRelay();
 
 		// The flight session, reset to what arriving in a system is: at rest, in
 		// normal flight, pointed at the new star, with nothing left of the leg
@@ -6995,6 +7013,19 @@ class Game {
 		// left.
 		this.chart?.handle.jumpTo(to.index);
 		this.jumpNotice = `arrived at ${to.name}`;
+	}
+
+	/** The System relay is an arrival channel, never a map-opening side effect. */
+	private observeCurrentSystemRelay(): void {
+		const { record, contents } = this.world.system;
+		this.commerceWorld = observeSystemRelay(
+			this.commerceWorld,
+			record.galaxy,
+			contents.stations.map((station) =>
+				carrierKey(record.index, station.localCarrierId),
+			),
+			this.world.gameTime,
+		);
 	}
 
 	/**
