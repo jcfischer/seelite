@@ -18,8 +18,9 @@
  */
 
 import * as THREE from "three";
+import { shared } from "./gpu-teardown";
 import { scaleUVs, setUvUnits, uvUnitsOf } from "./loft";
-import { type Splice, makeSplicer } from "./shader-splice";
+import { makeSplicer, type Splice } from "./shader-splice";
 import {
 	type MacroOctave,
 	type PlatingProfile,
@@ -393,7 +394,7 @@ function hullMaps(): HullMaps {
 		map.wrapS = THREE.RepeatWrapping;
 		map.wrapT = THREE.RepeatWrapping;
 		map.needsUpdate = true;
-		return map;
+		return shared(map);
 	};
 	const wearBytes = wearTexels(finish.plating, plate, size);
 	const albedo = texture(plate, true);

@@ -55,6 +55,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { bandMetrics } from "./lib/band-tones.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 
 const ORIGIN =
@@ -176,6 +177,33 @@ const installHelpers = (page) =>
 					body.pos.x - star.pos.x,
 					body.pos.y - star.pos.y,
 					body.pos.z - star.pos.z,
+				],
+				radii,
+			);
+		};
+
+		/**
+		 * Stand `radii` body radii off `bodyId` on the **star's** side, looking
+		 * back at it: the whole visible face lit, flat on.
+		 *
+		 * `__viewBody` below is 55° off that axis on purpose — a terminator is
+		 * what makes relief and atmosphere read, and that is what a signature
+		 * wants. It is the wrong frame for reading *banding*: with the camera and
+		 * the star 55° apart, the latitudes that are both face-on and lit are a
+		 * narrow lune, and #209's band profile came back with 26 of 120 bands and
+		 * 271 samples in it. Here the two cones very nearly coincide, so a single
+		 * cosine gate keeps most of the latitude range.
+		 */
+		window.__viewBodyLit = (bodyId, radii) => {
+			const g = window.__seelite;
+			const body = g.world.system.bodies.find((b) => b.id === bodyId);
+			const star = g.world.system.bodies.find((b) => b.kind === "star");
+			window.__lookAtFrom(
+				bodyId,
+				[
+					star.pos.x - body.pos.x,
+					star.pos.y - body.pos.y,
+					star.pos.z - body.pos.z,
 				],
 				radii,
 			);
@@ -321,6 +349,125 @@ const installHelpers = (page) =>
 				}
 			}
 			return { pixels: box.changed, patches };
+		};
+
+		/**
+		 * Every lit, face-on sample of a body's surface as a `(sinLat, luma)`
+		 * pair, plus the mean per latitude band.
+		 *
+		 * **Samples and not band means, and that distinction cost two revisions
+		 * of this check.** The question #209 asks is how many *tones* a banded
+		 * surface has, and every averaging step manufactures the answer. A screen
+		 * row was the first spelling: `__lookAtFrom` leaves the roll wherever it
+		 * falls, so a row cuts diagonally across bands and averages a belt and a
+		 * zone into an intermediate that is not on the planet. Binning by true
+		 * latitude fixed the axis and kept the fault — `turb` in `JOVIAN` warps
+		 * the boundary by up to 0.08 in latitude at frequency 5.5, nearly half a
+		 * band, so at most latitudes some longitudes are belt and some are zone,
+		 * and the bin mean is the same manufactured tone. It moved 40 points
+		 * between two reads 30s apart, because `zonal` slides a third of the
+		 * visible cap through in that time and changes which longitudes straddle.
+		 *
+		 * So the samples come back individually. The band means come back too,
+		 * because averaging is right for exactly one job — estimating the smooth
+		 * planet-scale trend that is subtracted off — and wrong for the tones.
+		 *
+		 * **Latitude and not screen space.** A lattice in object space, binned by
+		 * `asin(y)`, projected out to the pixel it lands on. It survives any
+		 * camera roll and any obliquity, which the ringed giants have: their ring
+		 * plane is the equator.
+		 *
+		 * **The limb and the terminator are excluded by geometry, not by an
+		 * inset.** `limbDarken` and `wrappedDiffuse` in `planet-shaders.ts` put
+		 * monotone ramps on the outer and the dark pixels of *every* class, and a
+		 * tone histogram including them would report the shared lighting law as
+		 * this class's banding. A box inset cannot remove them: the terminator is
+		 * a curve across the disc, not a border of it. `minNdotV` and `minNdotL`
+		 * are read off the same normals the shader is given.
+		 */
+		window.__latitudeBands = (bodyId, opts) => {
+			const g = window.__seelite;
+			const mesh = window.__meshOf(bodyId);
+			if (!mesh) return { bins: [], samples: [] };
+			const V3 = g.nearScene.position.constructor;
+
+			// The camera that draws the layer this body is currently in. A body's
+			// layer is its distance (`CLAUDE.md`), so it is looked up rather than
+			// assumed — projecting with the wrong one puts every sample off frame
+			// and reports an empty profile, which reads exactly like a body that
+			// is not there.
+			let root = mesh;
+			while (root.parent) root = root.parent;
+			const camera =
+				root === g.nearScene
+					? g.nearCamera
+					: root === g.approachScene
+						? g.approachCamera
+						: g.farCamera;
+
+			// The star direction the surface program itself is given, rather than a
+			// second derivation of it. A body's shells and its surface are separate
+			// materials; the one carrying `sunDir` is the one being measured.
+			let sunDir = null;
+			mesh.traverse((o) => {
+				if (!sunDir && o.material?.uniforms?.sunDir)
+					sunDir = o.material.uniforms.sunDir.value;
+			});
+			if (!sunDir) return { bins: [], samples: [] };
+
+			const box = window.__discBox(bodyId);
+			if (box.changed === 0) return { bins: [], samples: [] };
+
+			const centre = mesh.localToWorld(new V3(0, 0, 0));
+			const camPos = camera.getWorldPosition(new V3());
+			const bins = Array.from({ length: opts.bins }, () => ({ sum: 0, n: 0 }));
+			const samples = [];
+
+			// Equal steps in sin(latitude) — equal-area bands, so a polar bin is
+			// not a handful of pixels standing beside an equatorial one that has
+			// thousands.
+			for (let i = 0; i < opts.bins; i++) {
+				const sinLat = -1 + ((i + 0.5) * 2) / opts.bins;
+				const cosLat = Math.sqrt(Math.max(1 - sinLat * sinLat, 0));
+				for (let j = 0; j < opts.longitudes; j++) {
+					const lon = (j * 2 * Math.PI) / opts.longitudes;
+					const local = new V3(
+						Math.cos(lon) * cosLat,
+						sinLat,
+						Math.sin(lon) * cosLat,
+					);
+					const world = mesh.localToWorld(local.clone());
+					const N = world.clone().sub(centre).normalize();
+					const view = camPos.clone().sub(world).normalize();
+					if (N.dot(view) < opts.minNdotV) continue;
+					if (N.dot(sunDir) < opts.minNdotL) continue;
+					const ndc = world.clone().project(camera);
+					const x = Math.round(((ndc.x + 1) / 2) * box.W);
+					const y = Math.round(((1 - ndc.y) / 2) * box.H);
+					if (x < 0 || y < 0 || x >= box.W || y >= box.H) continue;
+					const k = (y * box.W + x) * 4;
+					// Still gated on the difference mask: a sample that projects to a
+					// pixel the body did not paint is one the near clip or another
+					// body took, and its luma belongs to whatever is there instead.
+					if (!box.moved(k)) continue;
+					// Rec. 709 luma. Belt and zone share a hue by design, so the
+					// banding is carried in brightness and a per-channel profile
+					// would be three noisier copies of this one.
+					const luma =
+						0.2126 * box.shown[k] +
+						0.7152 * box.shown[k + 1] +
+						0.0722 * box.shown[k + 2];
+					bins[i].sum += luma;
+					bins[i].n++;
+					samples.push([i, luma]);
+				}
+			}
+			return {
+				samples,
+				// A bin holding a handful of samples is the lit crescent running
+				// out, not a band, and its mean swings with which few it caught.
+				bins: bins.map((b) => (b.n >= opts.minSamples ? b.sum / b.n : null)),
+			};
 		};
 
 		/**
@@ -1681,6 +1828,184 @@ check(
 		`repeat of ${forcedFloor.toFixed(1)} × ${NOISE_MARGIN}, worst over all ` +
 		`${forced.length} classes`,
 );
+
+/* 3b. The jovian's bands: two tones, or many.
+ *
+ * #209. `gallery-jovian` showed two-tone bands with hard edges. The signature
+ * above cannot see that and is not meant to — it is a mean over a fifth of the
+ * disc a cell, and two tones and fifty give the same patch mean whenever the
+ * bands are narrower than a cell. `__latitudeBands` carries why a screen row
+ * and then a latitude *mean* both failed at it too.
+ *
+ * **Detrended, because two of the three things in this surface are not bands.**
+ * `JOVIAN` brightens its equator and darkens a polar hood
+ * (`planet-classes.glsl.ts`), and both are smooth over the whole latitude
+ * range: they would fill the middle of any tone histogram on their own. The
+ * trend is estimated from the band means — the one job averaging is right for —
+ * by `quadraticTrend`, and subtracted from each sample at its own latitude.
+ * What is left is the band structure the complaint is about. **The method's
+ * history and its limits live in `lib/band-tones.mjs` and are not restated
+ * here**; this comment said "smoothed wide" for a round after the moving
+ * average was replaced by a fit, which is the drift a second copy buys.
+ *
+ * **Sarle's bimodality coefficient**, defined and tested in
+ * `lib/band-tones.mjs` — 1.0 is two-point, 5/9 uniform, 1/3 normal, and the
+ * threshold is the statistic's rather than this repo's. Not restated further
+ * here. It is scale-free by construction, which the two metrics it replaced
+ * were not — both normalised the residual by its own extremes, which is a
+ * control taken from inside the arm.
+ *
+ * **The control is a repeat, not a second surface.** Three seconds of world
+ * time: `zonal` advects at 0.020, so the surface has barely moved and what the
+ * two reads differ by is the instrument. Thirty seconds was tried and is a
+ * different stretch of the planet — it moved the earlier metric by 40 points
+ * and told us nothing about repeatability. A reading of exactly zero is **not**
+ * treated as a broken clock — that is what this said for a round, and the
+ * observation does not support it: a tone distribution can be invariant under a
+ * longitude advection while the clock works, because the bands slide and the
+ * histogram of them does not. Only the upper end is asserted; see the check.
+ */
+// Close enough that a band is many samples rather than a few. The signature
+// sweep above stands at READ_RADII for a different question, and is restored.
+const BAND_RADII = 2;
+const BAND_BINS = 240;
+const BAND_LONGITUDES = 192;
+const BAND_MIN_SAMPLES = 8;
+// Well inside the limb and the terminator, where the shared lighting laws own
+// the gradient rather than the class. Read against `__viewBodyLit`, where the
+// view and star cones very nearly coincide, so one gate does most of both jobs.
+const BAND_MIN_NDOTV = 0.45;
+const BAND_MIN_NDOTL = 0.45;
+// Below this the reading is the lit crescent running out rather than a surface.
+const BAND_MIN_RESIDUAL_SAMPLES = 400;
+// Seconds of world time between the two control reads.
+const BAND_CONTROL_DT = 3;
+// Sarle's, for a uniform distribution. Stated by the statistic, not by this
+// repo: at or above it the tones are as clustered as two-point, below it they
+// are at least as spread as uniform.
+const BIMODALITY_CEILING = 5 / 9;
+// A repeat that moves the coefficient by more than this is an instrument whose
+// noise is comparable to what it reports, and the reading below is not a fact
+// about the build.
+const BIMODALITY_NOISE_CEILING = 0.05;
+
+await page.evaluate(
+	([id, radii]) => window.__viewBodyLit(id, radii),
+	[subject.id, BAND_RADII],
+);
+const jovianProfile = async () => {
+	await page.evaluate(
+		([id, klass]) => window.__seelite.redrawBodyAs(id, klass),
+		[subject.id, "jovian"],
+	);
+	const raw = await page.evaluate(
+		([id, opts]) => window.__latitudeBands(id, opts),
+		[
+			subject.id,
+			{
+				bins: BAND_BINS,
+				longitudes: BAND_LONGITUDES,
+				minSamples: BAND_MIN_SAMPLES,
+				minNdotV: BAND_MIN_NDOTV,
+				minNdotL: BAND_MIN_NDOTL,
+			},
+		],
+	);
+	return bandMetrics(raw, { minSamples: BAND_MIN_RESIDUAL_SAMPLES });
+};
+
+const jovianA = await jovianProfile();
+await page.evaluate((dt) => {
+	window.__seelite.world.gameTime += dt;
+}, BAND_CONTROL_DT);
+const jovianB = await jovianProfile();
+await page.evaluate(
+	(id) => window.__seelite.redrawBodyAs(id, null),
+	subject.id,
+);
+await page.evaluate(
+	([id, radii]) => window.__viewBody(id, radii, 0),
+	[subject.id, READ_RADII],
+);
+
+check(
+	"the forced jovian lands enough of its surface to read tones off",
+	Boolean(jovianA?.b) && Boolean(jovianB?.b),
+	jovianA
+		? `${jovianA.samples} detrended samples over ${jovianA.covered} of ` +
+				`${BAND_BINS} latitude bands`
+		: `too little of the disc was lit and face-on at ${BAND_RADII} radii`,
+);
+
+if (jovianA?.b && jovianB?.b) {
+	const noise = Math.abs(jovianA.b - jovianB.b);
+	console.log(
+		`\n  ${subject.id} drawn as jovian at ${BAND_RADII} radii — ` +
+			`${jovianA.samples} samples over ${jovianA.covered} latitude bands, detrended`,
+	);
+	console.log(
+		`    bimodality ${jovianA.b.toFixed(3)} / ${jovianB.b.toFixed(3)}` +
+			`   residual sd ${jovianA.sd.toFixed(2)} / ${jovianB.sd.toFixed(2)}`,
+	);
+
+	/*
+	 * **This is a repeatability bound, and it is not a clock check.**
+	 *
+	 * It read as one for a round: the zero branch said "the clock is not reaching
+	 * the surface program", which the observation does not support. What is
+	 * measured is one aggregate coefficient before and after a longitude
+	 * advection, and a tone distribution can be invariant under that while the
+	 * clock works perfectly — the bands slide and the histogram of them does not
+	 * move. So a zero here is a fact about the statistic and not a diagnosis of
+	 * the renderer, and it is no longer a failure.
+	 *
+	 * What the check is for is the upper end: a coefficient that swings by more
+	 * than the ceiling between two reads of the same build is one whose noise is
+	 * comparable to anything it might report, and no number taken from it means
+	 * much. That end is the assertion.
+	 */
+	check(
+		"two reads of the same build agree",
+		noise <= BIMODALITY_NOISE_CEILING,
+		`${BAND_CONTROL_DT}s of world time moved the coefficient by ` +
+			`${noise.toFixed(3)}, against a ceiling of ${BIMODALITY_NOISE_CEILING}` +
+			(noise === 0
+				? " — an exact repeat, which is what a translation-invariant tone " +
+					"distribution gives and is not evidence about the clock"
+				: ""),
+	);
+
+	/*
+	 * **Reported, not gated, and the reason is that it measures the wrong
+	 * thing.**
+	 *
+	 * This was a check against 5/9, the uniform value, on the reasoning that a
+	 * two-tone surface approaches 1.0 and a graded one falls away from it. Two
+	 * measurements killed the gate. Under the *corrected* detrend the shipped
+	 * build of #209 reads 0.541 and the build it replaced reads **0.261** — so
+	 * the threshold passes the surface the principal called two-tone and nearly
+	 * fails the one that replaced it. Sarle's is `(skew² + 1) / kurtosis`, and a
+	 * dominant tone with a thin tail of dark bands is *skewed* rather than
+	 * bimodal, which is exactly what the shipped surface is and what lifts its
+	 * coefficient.
+	 *
+	 * So the statistic answers a real question about a distribution and not the
+	 * question the node asked, and a gate on it would fail the wrong builds. It
+	 * is left printing, because the reading is repeatable to 0.004 and a later
+	 * node arguing about band tones should have the number in front of it — but
+	 * whether these bands read as two tones is settled on the contact sheet by a
+	 * person, which is what `CLAUDE.md`'s third tier is for.
+	 *
+	 * `BIMODALITY_CEILING` stays as the printed reference point rather than as a
+	 * pass condition. `tests/band-tones.test.ts` still gates the *statistic* —
+	 * that it rejects constructed two-tone input and reproduces 5/9 on uniform —
+	 * which is a claim about the instrument and is checkable.
+	 */
+	console.log(
+		`    reference: uniform is ${BIMODALITY_CEILING.toFixed(3)}, two-point 1.0, ` +
+			"normal 0.333 — reported, not gated; see the comment above",
+	);
+}
 
 /* 4. The budget, per layer, on the class that costs the most. */
 const RANGES = [

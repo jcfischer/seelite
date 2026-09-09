@@ -4,6 +4,14 @@ This glossary defines vocabulary for seelite's planned causal world model and po
 
 ## Language
 
+Each `_Avoid_` list is local to the canonical term immediately above it: it
+names words that must not be used as aliases for that concept, not globally
+forbidden vocabulary. A word can therefore remain canonical for a different
+concept defined elsewhere in this glossary. In particular, **Berth** and
+**Clearance queue** must not be used to mean **Transit lane**, while each keeps
+its own distinct canonical meaning below; `Command` remains ordinary English
+for controller input under the explicit scope note on **Intervention**.
+
 **Display contact**:
 A targetable presentation identity outside the generated body list. Its producer
 supplies position, velocity, name, hull type and scanner classification;

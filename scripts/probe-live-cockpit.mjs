@@ -136,14 +136,15 @@ function measureLiveCockpit() {
 			? (scanner.position.y - deck.position.y) * deckNormal.y +
 				(scanner.position.z - deck.position.z) * deckNormal.z
 			: 0;
-	const expectedContacts = game.world.system.bodies.filter(
-		(body) =>
-			Math.hypot(
-				body.pos.x - game.world.ship.pos.x,
-				body.pos.y - game.world.ship.pos.y,
-				body.pos.z - game.world.ship.pos.z,
-			) <= game.scannerRangeKm,
-	).length;
+	const inScannerRange = (contact) =>
+		Math.hypot(
+			contact.pos.x - game.world.ship.pos.x,
+			contact.pos.y - game.world.ship.pos.y,
+			contact.pos.z - game.world.ship.pos.z,
+		) <= game.scannerRangeKm;
+	const expectedContacts =
+		game.world.system.bodies.filter(inScannerRange).length +
+		game.contacts.filter(inScannerRange).length;
 	const rangeRingFootprint = game.nearScene
 		.getObjectsByProperty("name", "scanner-range-ring")
 		.map((ring) => {
@@ -331,7 +332,7 @@ for (const viewport of VIEWPORTS) {
 		`renderer is sole visible canvas: ${forward.rendererIsOnlyVisibleCanvas}; cockpit mesh: ${forward.cockpitMesh}`,
 	);
 	check(
-		`${viewport.name}: the one scanner is physically mounted to its lower-centre deck and mirrors true simulation contacts`,
+		`${viewport.name}: the one scanner is physically mounted to its lower-centre deck and mirrors registered live contacts`,
 		forward.scannerMounted &&
 			forward.contacts === forward.expectedContacts &&
 			forward.contacts > 0 &&

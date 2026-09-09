@@ -356,6 +356,12 @@ for (const viewport of VIEWPORTS) {
 	await installViewPlacement(page);
 	await page.goto(URL, { waitUntil: "load" });
 	await bootedGame(page);
+	await page.evaluate(() => {
+		const game = window.__seelite;
+		game.clearTrafficPresentation();
+		game.trafficSystemIndex = game.world.system.record.index;
+		game.trafficActors = [];
+	});
 
 	const stations = await page.evaluate(() =>
 		window.__seelite.world.system.contents.stations.map((s) => ({
@@ -378,6 +384,10 @@ for (const viewport of VIEWPORTS) {
 			(bodyId) => window.__seelite.visualOfStation(bodyId).silhouetteKm,
 			id,
 		);
+		// Bare, and co-moving because that is the default now. #266 had reached
+		// for `comoving: type === "refinery"` — the one role whose framing had
+		// already broken visibly — which is this defect answered per form; the
+		// framing check below is what makes that unnecessary.
 		const framing = await page.evaluate(
 			([bodyId, range]) => window.__viewAlongAxis(bodyId, range),
 			[id, silhouetteKm * CLOSE_RADII],
@@ -583,6 +593,12 @@ for (const viewport of VIEWPORTS) {
 	await installViewPlacement(page);
 	await page.goto(URL, { waitUntil: "load" });
 	await bootedGame(page);
+	await page.evaluate(() => {
+		const game = window.__seelite;
+		game.clearTrafficPresentation();
+		game.trafficSystemIndex = game.world.system.record.index;
+		game.trafficActors = [];
+	});
 
 	const trade = await page.evaluate(() => {
 		const s = window.__seelite.world.system.contents.stations.find(

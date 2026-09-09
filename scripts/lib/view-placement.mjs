@@ -53,6 +53,15 @@ export async function installViewFraming(page) {
 		 */
 		window.__parkInBerth = async (stationId, berthId, opts = {}) => {
 			const g = window.__seelite;
+			// Canonical visual fixtures own their berth layout. Dynamic Traffic is
+			// verified by its own live route probe; leaving it enabled here lets a
+			// scheduled carrier invalidate the deliberately forced visual berth.
+			g.clearTrafficPresentation();
+			g.trafficSystemIndex = g.world.system.record.index;
+			g.trafficActors = [];
+			g.trafficTick = Math.floor(g.world.gameTime * 10);
+			g.updateTrafficAuthority = () => {};
+			g.updateTrafficPresentation = () => {};
 			// **Leave any dock first, and this is not housekeeping.** A docked or
 			// traversing session *places* the ship every frame (§12.6's
 			// obligation 9), so a teleport onto another station's axis is undone

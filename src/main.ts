@@ -141,10 +141,10 @@ import {
 	legSeconds,
 } from "./cruise";
 import {
-	cruiseRouteBlocker,
-	planCruiseDetour,
-	type DetourPlan,
-} from "./cruise-detour";
+	beginCruiseGuidance,
+	stepCruiseGuidance,
+	type CruiseGuidanceState,
+} from "./cruise-guidance";
 import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 import { type Course, courseProgress } from "./galaxy-route";
 import {
@@ -160,7 +160,7 @@ import {
 } from "./hyperspace";
 import {
 	type MarkerLabelBounds,
-	claimMarkerLabel,
+	MarkerLabelDeclutter,
 	angleOffNose,
 	directionTo,
 	duration,
@@ -176,12 +176,14 @@ import {
 	flightPerformance,
 	type Body,
 	type FlightControl,
+	type System,
 	type World,
 	advanceWorldClock,
 	bodyAccelerationBound,
 	bodyVelocity,
 	stationHostIdOf,
 	jumpWorldTo,
+	makeSystem,
 	makeWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
@@ -271,6 +273,7 @@ import {
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
+	type HullEnvelope,
 	type HullId,
 	type HullVariantId,
 } from "./hull";
@@ -286,6 +289,27 @@ import {
 	isDisplayContact,
 	targetDesignation,
 } from "./display-contact";
+import {
+	compareStationTurns,
+	materializeTrafficContact,
+	parkedTrafficProjection,
+	playerWinsLane,
+	stationTrafficRoster,
+	TRAFFIC_DEMATERIALIZE_KM,
+	TRAFFIC_MATERIALIZE_KM,
+	TRAFFIC_STATION_EXCLUSION_KM,
+	trafficScheduleAt,
+	type TrafficActor,
+	type TrafficProjection,
+} from "./station-traffic";
+import {
+	projectParkedTrafficActor,
+	projectSystemTrafficAuthority,
+	type TrafficCruiseCache,
+	type SystemTrafficProjection,
+	type TrafficBerthCache,
+	type TrafficArbitrationEvent,
+} from "./station-route";
 import {
 	COCKPIT_EMISSIVE_INTENSITIES,
 	COCKPIT_KEY_LIGHT,
@@ -306,7 +330,8 @@ import {
 } from "./live-cockpit";
 import { readDeficit } from "./deficits";
 import { marketStationOf } from "./market";
-import { carrierKey } from "./carrier-key";
+import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
 	newCommander,
@@ -463,8 +488,7 @@ const PLAYER_ENVELOPE = HULL_SPECS[PLAYER_HULL[0]].env;
  *  once: `flightPerformance` is pure and the roster does not change mid-frame. */
 const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 
-/** No other ship holds a berth in the live game — station traffic is #148's. Shared
- *  rather than allocated per station per frame. */
+/** Shared empty fallback for stations with no player or Traffic berth reservations. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
 
 /**
@@ -502,6 +526,8 @@ function wrapAngle(radians: number) {
  *  autopilot that is overwriting it. */
 const THROTTLE_UP = "shift";
 const THROTTLE_DOWN = "control";
+/** Ten seconds from idle to full inside the station zone, rather than one. */
+const STATION_THROTTLE_RATE_SCALE = 0.1;
 
 const MOUSE_RAD_PER_PX = 0.0022;
 
@@ -1117,6 +1143,8 @@ class Game {
 	/** Per-row arrival estimates, refreshed on `ETA_INTERVAL_S`. */
 	private readonly navEtaCache = new Map<string, number | null>();
 	private navEtaAt = Number.NEGATIVE_INFINITY;
+	/** Last rendered Navigation order; tiny range changes do not reshuffle it. */
+	private navOrder: string[] = [];
 	/** The Galaxy Map tab's chart, while that tab is open. */
 	private chart: GalaxyChart | null = null;
 	/** Which mount request is current; see `setChartHost`. */
@@ -1198,6 +1226,57 @@ class Game {
 	private selectableCache: Body[] | null = null;
 	/** Producers register stable objects; only selection and scanner merge them. */
 	private readonly contacts: DisplayContact[] = [];
+	private registerContact(contact: DisplayContact) {
+		if (!this.contacts.includes(contact)) this.contacts.push(contact);
+	}
+	private unregisterContact(contact: DisplayContact) {
+		const at = this.contacts.indexOf(contact);
+		if (at >= 0) this.contacts.splice(at, 1);
+	}
+	/** Current-system Traffic authority is pure; these are disposable presentation caches. */
+	private trafficSystemIndex = -1;
+	private trafficTick = Number.NaN;
+	/** Game time represented by the current authoritative `trafficRoutes`. */
+	private trafficProjectionAtS = Number.NaN;
+	/** Prior authoritative pose set, retained only for one-tick presentation interpolation. */
+	private readonly trafficPreviousRoutes = new Map<
+		CarrierKey,
+		SystemTrafficProjection
+	>();
+	private trafficPreviousProjectionAtS = Number.NaN;
+	private trafficActors: TrafficActor[] = [];
+	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
+	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
+	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
+	private readonly trafficNose = new THREE.Vector3();
+	private readonly trafficUp = new THREE.Vector3();
+	private readonly trafficOrigin = new THREE.Vector3();
+	private readonly trafficAttitude = new THREE.Matrix4();
+	private readonly trafficFromQuaternion = new THREE.Quaternion();
+	private readonly trafficToQuaternion = new THREE.Quaternion();
+	/** Selected-target-first admission and release hysteresis for glass labels. */
+	private readonly markerLabels = new MarkerLabelDeclutter();
+	private readonly trafficExactParked = new Map<
+		CarrierKey,
+		TrafficProjection
+	>();
+	private readonly trafficCruiseCache: TrafficCruiseCache = new Map();
+	/** Berths already granted to physical visits; prevents historical route rewrites. */
+	private readonly trafficBerthCache: TrafficBerthCache = new Map();
+	/** Actors shown parked while their authoritative canonical replay warms. */
+	private readonly trafficColdActors = new Set<CarrierKey>();
+	/** Cold canonical replays share a bounded per-frame warm-up budget. */
+	private trafficWarmIndex = 0;
+	/** Probe-visible readback of the pure projections used for this frame. */
+	readonly trafficRoutes: SystemTrafficProjection[] = [];
+	/** Explicit transient player events consumed by canonical Traffic replay. */
+	readonly trafficPlayerTimeline: TrafficArbitrationEvent[] = [];
+	/** Completed and active Carrier lane commitments retained for canonical replay. */
+	private readonly trafficCarrierTimeline: TrafficArbitrationEvent[] = [];
+	private readonly playerLaneRequests = new Map<
+		string,
+		{ readyAt: number; movement: "arrival" | "launch" }
+	>();
 	/** The system a fired wind-up is waiting to move the world to, taken at the
 	 *  end of the frame it fired on. See `takePendingJump` (#187). */
 	private pendingJump: number | null = null;
@@ -1242,11 +1321,10 @@ class Game {
 	 *  visible reason. */
 	lastExit = "";
 	/** Internal route state only: targetId remains the selected station. */
-	private detour:
-		| (DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 })
-		| null = null;
+	private detour: CruiseGuidanceState | null = null;
 	/** Reused while steering an active detour; cruise must not make per-frame Three allocations. */
 	private readonly detourDirection = new THREE.Vector3();
+	private readonly detourCurrentNose = new THREE.Vector3();
 	private readonly detourOrientation = new THREE.Quaternion();
 	private readonly detourForward = new THREE.Vector3(0, 0, -1);
 	private warp!: WarpField;
@@ -1514,18 +1592,26 @@ class Game {
 	/**
 	 * §6.1's injected slot occupancy, per station.
 	 *
-	 * Empty in the live game, and that is the spec's own state of affairs: station
-	 * traffic is #148's and unbuilt, so every request is granted at once. It is a
-	 * writable map rather than a constant zero so the queued branch is reachable
-	 * from a probe as well as from the headless tests — an unexercised branch is
-	 * what §6.1 refuses.
+	 * Rebuilt from deterministic Traffic projections at 10 Hz and augmented by
+	 * player reservations. It remains writable so controlled probes can force the
+	 * queued branch through the same allocator the game uses.
 	 */
 	readonly berthOccupancy = new Map<string, ReadonlySet<string>>();
 
-	/** The berths other ships hold at one station (§13.2). Empty in the live
-	 *  game for `slotOccupancy`'s reason, and writable for the same one. */
+	/** The player and Traffic berth holds at one station (§13.2). */
 	private occupiedAt(id: string): ReadonlySet<string> {
-		return this.berthOccupancy.get(id) ?? EMPTY_BERTHS;
+		const traffic = this.berthOccupancy.get(id) ?? EMPTY_BERTHS;
+		const playerBerth = this.dockingStates.get(id)?.berthId;
+		if (!playerBerth || traffic.has(playerBerth)) return traffic;
+		return new Set([...traffic, playerBerth]);
+	}
+
+	private trafficAuthorityReady(): boolean {
+		return (
+			Number.isFinite(this.trafficTick) &&
+			this.trafficWarmIndex >= this.trafficActors.length &&
+			this.trafficRoutes.length === this.trafficActors.length
+		);
 	}
 
 	/**
@@ -1922,7 +2008,7 @@ class Game {
 					)
 				: null;
 		this.warp = warpField(this.world.seed);
-		if (this.combatRig) this.contacts.push(this.combatRig.contact);
+		if (this.combatRig) this.registerContact(this.combatRig.contact);
 		this.nearScene.add(this.warp.object);
 		// Something is selected on frame one. §6 makes selection a convenience
 		// rather than a rail, but a cruise panel with an empty target field on
@@ -3178,6 +3264,677 @@ class Game {
 		}
 	}
 
+	private openPlayerTrafficEvent(
+		stationId: string,
+		kind: TrafficArbitrationEvent["kind"],
+		fromS: number,
+		movement?: "arrival" | "launch",
+		hull?: HullEnvelope,
+	) {
+		if (
+			this.trafficPlayerTimeline.some(
+				(event) =>
+					event.stationId === stationId &&
+					event.kind === kind &&
+					event.toS === Number.POSITIVE_INFINITY,
+			)
+		)
+			return;
+		this.trafficPlayerTimeline.push({
+			stationId,
+			kind,
+			fromS,
+			toS: Number.POSITIVE_INFINITY,
+			participant: { kind: "player" },
+			...(kind === "lane" ? { committed: true } : {}),
+			...(movement ? { movement } : {}),
+			...(hull ? { hull } : {}),
+		});
+	}
+
+	private closePlayerTrafficEvent(
+		stationId: string,
+		kind: TrafficArbitrationEvent["kind"],
+	) {
+		for (let i = this.trafficPlayerTimeline.length - 1; i >= 0; i--) {
+			const event = this.trafficPlayerTimeline[i];
+			if (
+				event.stationId === stationId &&
+				event.kind === kind &&
+				event.toS === Number.POSITIVE_INFINITY
+			) {
+				event.toS = this.world.gameTime;
+				return;
+			}
+		}
+	}
+
+	/** Retain exactly the event horizon the pure current/previous-visit replay can read. */
+	private pruneTrafficTimelines(gameTime: number) {
+		let oldestReplayS = gameTime;
+		for (const actor of this.trafficActors) {
+			const schedule = trafficScheduleAt(actor, gameTime);
+			const departureAtS =
+				schedule.desired === "away"
+					? schedule.boundaryS
+					: schedule.boundaryS - actor.schedule.awayS;
+			oldestReplayS = Math.min(
+				oldestReplayS,
+				departureAtS - actor.schedule.cycleS,
+			);
+		}
+		for (let i = this.trafficPlayerTimeline.length - 1; i >= 0; i--)
+			if (this.trafficPlayerTimeline[i].toS < oldestReplayS)
+				this.trafficPlayerTimeline.splice(i, 1);
+		for (let i = this.trafficCarrierTimeline.length - 1; i >= 0; i--)
+			if (this.trafficCarrierTimeline[i].toS < oldestReplayS)
+				this.trafficCarrierTimeline.splice(i, 1);
+	}
+
+	/** Record or extend the physical lane interval a Carrier has already won. */
+	private recordCarrierTrafficLane(
+		projection: SystemTrafficProjection,
+		toS: number,
+	): TrafficArbitrationEvent | null {
+		if (
+			!projection.terminalStationId ||
+			projection.laneStartedAtS === null ||
+			(projection.phase !== "departing" && projection.phase !== "arriving")
+		)
+			return null;
+		const movement = projection.phase === "departing" ? "launch" : "arrival";
+		let existing: TrafficArbitrationEvent | undefined;
+		for (let i = this.trafficCarrierTimeline.length - 1; i >= 0; i--) {
+			const candidate = this.trafficCarrierTimeline[i];
+			if (
+				candidate.stationId === projection.terminalStationId &&
+				candidate.participant.kind === "carrier" &&
+				candidate.participant.key === projection.key &&
+				candidate.movement === movement &&
+				candidate.fromS === projection.laneStartedAtS
+			) {
+				existing = candidate;
+				break;
+			}
+		}
+		if (existing) {
+			existing.toS = Math.max(existing.toS, toS);
+			return existing;
+		}
+		const event: TrafficArbitrationEvent = {
+			stationId: projection.terminalStationId,
+			kind: "lane",
+			fromS: projection.laneStartedAtS,
+			toS,
+			participant: { kind: "carrier", key: projection.key },
+			movement,
+			committed: true,
+		};
+		this.trafficCarrierTimeline.push(event);
+		return event;
+	}
+
+	private disposeTrafficPresentation() {
+		for (const contact of this.trafficContacts.values())
+			this.unregisterContact(contact);
+		for (const mesh of this.trafficMeshes.values()) {
+			mesh.removeFromParent();
+			disposeSubtree(mesh);
+		}
+		this.trafficContacts.clear();
+		this.trafficMeshes.clear();
+	}
+
+	/** Reset presentation and transient authority when its system changes. */
+	private clearTrafficPresentation() {
+		this.disposeTrafficPresentation();
+		this.trafficRoutes.length = 0;
+		this.trafficPlayerTimeline.length = 0;
+		this.trafficCarrierTimeline.length = 0;
+		this.trafficCruiseCache.clear();
+		this.trafficBerthCache.clear();
+		this.trafficColdActors.clear();
+		this.trafficWarmIndex = 0;
+		this.playerLaneRequests.clear();
+		this.berthOccupancy.clear();
+		this.trafficTick = Number.NaN;
+		this.trafficProjectionAtS = Number.NaN;
+		this.trafficPreviousRoutes.clear();
+		this.trafficPreviousProjectionAtS = Number.NaN;
+		this.selectableCache = null;
+		this.markerLabels.reset();
+	}
+
+	private ensureTrafficActors() {
+		const index = this.world.system.record.index;
+		if (this.trafficSystemIndex === index) return;
+		this.clearTrafficPresentation();
+		this.trafficSystemIndex = index;
+		this.trafficActors = this.world.system.contents.stations
+			.flatMap((station) => stationTrafficRoster(index, station))
+			.sort((a, b) => compareCarrierKeys(a.key, b.key));
+		// Before the first scheduled departure is the only parked state the
+		// base schedule proves without replaying a physical visit. A later
+		// `desired: parked` boundary is only intent: a delayed outbound trip may
+		// still be away, so presenting it at home would invent both a ship and
+		// an occupied berth until authority finishes warming.
+		for (const actor of this.trafficActors)
+			if (this.world.gameTime < actor.schedule.departureAtS)
+				this.trafficColdActors.add(actor.key);
+		this.refreshColdTraffic(this.world.gameTime);
+	}
+
+	/** Keep cold parked ships attached to their moving stations until hand-off. */
+	private refreshColdTraffic(gameTime: number, projectionSystem?: System) {
+		this.trafficRoutes.length = 0;
+		this.berthOccupancy.clear();
+		this.trafficPreviousRoutes.clear();
+		this.trafficPreviousProjectionAtS = Number.NaN;
+		this.trafficProjectionAtS = gameTime;
+		const system =
+			projectionSystem ?? makeSystem(this.world.system.record, gameTime);
+		for (const actor of this.trafficActors) {
+			if (!this.trafficColdActors.has(actor.key)) continue;
+			const projection = projectParkedTrafficActor({
+				actor,
+				gameTime,
+				projectionSystem: system,
+			});
+			if (!projection.berthId) continue;
+			this.trafficRoutes.push(projection);
+			const occupied = new Set(
+				this.berthOccupancy.get(actor.homeStationId) ?? EMPTY_BERTHS,
+			);
+			occupied.add(projection.berthId);
+			this.berthOccupancy.set(actor.homeStationId, occupied);
+		}
+	}
+
+	/** Advance generated Traffic authority at the simulation boundary. */
+	private updateTrafficAuthority() {
+		this.ensureTrafficActors();
+		const tick = Math.floor(this.world.gameTime * 10 + 1e-8);
+		if (this.trafficWarmIndex < this.trafficActors.length) {
+			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
+			this.refreshColdTraffic(tick / 10, projectionSystem);
+			// Four equal slices share one 100-tick frame ceiling. Finishing a cheap
+			// actor advances immediately instead of suppressing every Carrier for at
+			// least one whole frame per roster entry.
+			for (
+				let slice = 0;
+				slice < 4 && this.trafficWarmIndex < this.trafficActors.length;
+				slice++
+			) {
+				const actor = this.trafficActors[this.trafficWarmIndex];
+				const warmed = projectSystemTrafficAuthority({
+					record: this.world.system.record,
+					actor,
+					gameTime: tick / 10,
+					playerTimeline: this.trafficPlayerTimeline,
+					cruiseCache: this.trafficCruiseCache,
+					projectionSystem,
+					cruiseTickBudget: 25,
+				});
+				if (!warmed.warmIncomplete) this.trafficWarmIndex++;
+			}
+			return;
+		}
+		if (tick !== this.trafficTick) {
+			this.trafficTick = tick;
+			this.trafficPreviousRoutes.clear();
+			for (const route of this.trafficRoutes)
+				this.trafficPreviousRoutes.set(route.key, route);
+			this.trafficPreviousProjectionAtS = this.trafficProjectionAtS;
+			this.trafficProjectionAtS = tick / 10;
+			this.trafficRoutes.length = 0;
+			this.pruneTrafficTimelines(tick / 10);
+			const projectionSystem = makeSystem(this.world.system.record, tick / 10);
+			const occupied = new Map<string, Set<string>>();
+			for (const [stationId, state] of this.dockingStates) {
+				if (!state.berthId) continue;
+				const set = occupied.get(stationId) ?? new Set<string>();
+				set.add(state.berthId);
+				occupied.set(stationId, set);
+			}
+			const previousBerthByActor = new Map<
+				CarrierKey,
+				{ stationId: string; berthId: string }
+			>();
+			for (const route of this.trafficPreviousRoutes.values()) {
+				if (!route.berthId) continue;
+				const routeActor = this.trafficActors.find(
+					(candidate) => candidate.key === route.key,
+				);
+				const stationId =
+					route.terminalStationId ??
+					(route.phase === "parked-home"
+						? routeActor?.homeStationId
+						: route.destinationStationId);
+				if (!stationId) continue;
+				const set = occupied.get(stationId) ?? new Set<string>();
+				set.add(route.berthId);
+				occupied.set(stationId, set);
+				previousBerthByActor.set(route.key, {
+					stationId,
+					berthId: route.berthId,
+				});
+			}
+			const berthHeldByOther = (
+				actorKey: CarrierKey,
+				own: { stationId: string; berthId: string },
+			) =>
+				this.dockingStates.get(own.stationId)?.berthId === own.berthId ||
+				[...previousBerthByActor].some(
+					([key, candidate]) =>
+						key !== actorKey &&
+						candidate.stationId === own.stationId &&
+						candidate.berthId === own.berthId,
+				);
+			const occupiedWithoutOwnPreviousBerth = (
+				actorKey: CarrierKey,
+			): ReadonlyMap<string, ReadonlySet<string>> => {
+				const own = previousBerthByActor.get(actorKey);
+				if (!own || berthHeldByOther(actorKey, own)) return occupied;
+				const withoutOwn = new Map<string, ReadonlySet<string>>(occupied);
+				const station = new Set(occupied.get(own.stationId) ?? EMPTY_BERTHS);
+				station.delete(own.berthId);
+				withoutOwn.set(own.stationId, station);
+				return withoutOwn;
+			};
+			const playerTimeline = [
+				...this.trafficPlayerTimeline,
+				...this.trafficCarrierTimeline,
+			];
+			for (const [stationId, request] of this.playerLaneRequests)
+				playerTimeline.push({
+					stationId,
+					kind: "lane",
+					fromS: request.readyAt,
+					toS: tick / 10 + 0.1,
+					participant: { kind: "player" },
+					movement: request.movement,
+				});
+			if (
+				(this.dock.phase === "arriving" || this.dock.phase === "launching") &&
+				this.dock.stationId
+			)
+				playerTimeline.push({
+					stationId: this.dock.stationId,
+					kind: "lane",
+					fromS: 0,
+					toS: tick / 10 + 0.1,
+					participant: { kind: "player" },
+					movement: this.dock.phase === "launching" ? "launch" : "arrival",
+					committed: true,
+				});
+			const arbitrationTimeline = [...playerTimeline];
+			const activeVisitFor = (actorKey: CarrierKey) => {
+				const prior = this.trafficPreviousRoutes.get(actorKey);
+				return prior &&
+					prior.phase !== "parked-home" &&
+					prior.visitDepartureAtS !== undefined &&
+					prior.visitLaunchReadyAtS !== undefined &&
+					prior.visitAwayOrdinal !== undefined
+					? {
+							departureAtS: prior.visitDepartureAtS,
+							launchReadyAtS: prior.visitLaunchReadyAtS,
+							awayOrdinal: prior.visitAwayOrdinal,
+							homeBerthId: prior.visitHomeBerthId,
+							outboundDepartureAtS: prior.visitOutboundDepartureAtS,
+							outboundArrivalAtS: prior.visitOutboundArrivalAtS,
+							returnDepartureAtS: prior.visitReturnDepartureAtS,
+							returnArrivalAtS: prior.visitReturnArrivalAtS,
+						}
+					: undefined;
+			};
+			const baselines = this.trafficActors.map((actor) => ({
+				actor,
+				projection: projectSystemTrafficAuthority({
+					record: this.world.system.record,
+					actor,
+					gameTime: tick / 10,
+					playerTimeline: arbitrationTimeline,
+					occupiedByStation: occupiedWithoutOwnPreviousBerth(actor.key),
+					cruiseCache: this.trafficCruiseCache,
+					berthCache: this.trafficBerthCache,
+					recordBerthAssignments: false,
+					projectionSystem,
+					activeVisit: activeVisitFor(actor.key),
+				}),
+			}));
+			const orderedActors = baselines.sort((a, b) => {
+				const turn = (row: (typeof baselines)[number]) =>
+					row.projection.laneRequest
+						? {
+								participant: row.projection.laneRequest.participant,
+								readyAt: row.projection.laneRequest.readyAt,
+								kind: row.projection.laneRequest.kind,
+							}
+						: {
+								participant: { kind: "carrier" as const, key: row.actor.key },
+								readyAt:
+									row.projection.queueRequest?.readyAt ??
+									Number.POSITIVE_INFINITY,
+								kind: "clearance" as const,
+							};
+				return compareStationTurns(turn(a), turn(b));
+			});
+			const touchedBerthAssignments = new Set<string>();
+			for (const { actor } of orderedActors) {
+				const priorRoute = this.trafficPreviousRoutes.get(actor.key);
+				const priorBerth = previousBerthByActor.get(actor.key);
+				const priorBerthHeldByOther = priorBerth
+					? berthHeldByOther(actor.key, priorBerth)
+					: false;
+				if (priorBerth && !priorBerthHeldByOther)
+					occupied.get(priorBerth.stationId)?.delete(priorBerth.berthId);
+				let activeVisit = activeVisitFor(actor.key);
+				const projectActor = () =>
+					projectSystemTrafficAuthority({
+						record: this.world.system.record,
+						actor,
+						gameTime: tick / 10,
+						playerTimeline: arbitrationTimeline,
+						occupiedByStation: occupied,
+						cruiseCache: this.trafficCruiseCache,
+						berthCache: this.trafficBerthCache,
+						berthCacheTouched: touchedBerthAssignments,
+						projectionSystem,
+						activeVisit,
+					});
+				let projection = projectActor();
+				const visitFrom = (route: SystemTrafficProjection) =>
+					route.visitDepartureAtS !== undefined &&
+					route.visitLaunchReadyAtS !== undefined &&
+					route.visitAwayOrdinal !== undefined
+						? {
+								departureAtS: route.visitDepartureAtS,
+								launchReadyAtS: route.visitLaunchReadyAtS,
+								awayOrdinal: route.visitAwayOrdinal,
+								homeBerthId: route.visitHomeBerthId,
+								outboundDepartureAtS: route.visitOutboundDepartureAtS,
+								outboundArrivalAtS: route.visitOutboundArrivalAtS,
+								returnDepartureAtS: route.visitReturnDepartureAtS,
+								returnArrivalAtS: route.visitReturnArrivalAtS,
+							}
+						: undefined;
+				// A schedule boundary is intent, not elapsed physical travel. A visit
+				// first leaving a parked pose starts now; it may not replay a departure
+				// that happened only on paper while another visit was still finishing.
+				if (
+					priorRoute?.phase === "parked-home" &&
+					projection.phase !== "parked-home" &&
+					projection.phase !== "launch-queued" &&
+					(projection.departureStartedAtS ?? -Infinity) < tick / 10 - 0.05
+				) {
+					const nextVisit = visitFrom(projection);
+					if (nextVisit) {
+						activeVisit = {
+							...nextVisit,
+							homeBerthId: priorRoute.berthId ?? nextVisit.homeBerthId,
+							launchReadyAtS: tick / 10,
+							outboundDepartureAtS: undefined,
+							outboundArrivalAtS: undefined,
+							returnDepartureAtS: undefined,
+							returnArrivalAtS: undefined,
+						};
+						projection = projectActor();
+					}
+				}
+				// Queue promotion likewise starts an arrival at this authority tick.
+				// Replaying its old ready time here skipped the visible tunnel in one
+				// frame when a berth or lane finally became available.
+				if (
+					(priorRoute?.phase === "clearance-queued" ||
+						priorRoute?.phase === "lane-queued") &&
+					projection.phase !== "clearance-queued" &&
+					projection.phase !== "lane-queued"
+				) {
+					const continuing = activeVisit ?? visitFrom(projection);
+					if (continuing) {
+						const returning =
+							priorRoute.destinationStationId === actor.homeStationId;
+						activeVisit = {
+							...continuing,
+							...(returning
+								? { returnArrivalAtS: tick / 10 }
+								: { outboundArrivalAtS: tick / 10 }),
+						};
+						projection = projectActor();
+					}
+				}
+				const stationIdFor = (route: SystemTrafficProjection) =>
+					route.terminalStationId ??
+					(route.phase === "parked-home"
+						? actor.homeStationId
+						: route.destinationStationId);
+				let stationId = stationIdFor(projection);
+				// A cached historical grant is normally what prevents a Carrier from
+				// swapping pods when current occupancy is replayed. If that grant now
+				// collides with an older committed Carrier or the player's reservation,
+				// however, it cannot remain authoritative: keeping it would draw two
+				// ships on one pad and later make the lower-priority one disappear.
+				if (
+					projection.berthId &&
+					stationId &&
+					occupied.get(stationId)?.has(projection.berthId)
+				) {
+					for (const [key, berthId] of this.trafficBerthCache)
+						if (
+							berthId === projection.berthId &&
+							key.includes(`|${actor.key}|`)
+						)
+							this.trafficBerthCache.delete(key);
+					projection = projectActor();
+					stationId = stationIdFor(projection);
+				}
+				this.trafficRoutes.push(projection);
+				if (
+					projection.terminalStationId &&
+					(projection.phase === "departing" || projection.phase === "arriving")
+				) {
+					const event = this.recordCarrierTrafficLane(
+						projection,
+						tick / 10 + 0.1,
+					);
+					if (event && !arbitrationTimeline.includes(event))
+						arbitrationTimeline.push(event);
+				}
+				if (projection.berthId) {
+					if (stationId) {
+						const set = occupied.get(stationId) ?? new Set<string>();
+						set.add(projection.berthId);
+						occupied.set(stationId, set);
+					}
+				}
+			}
+			for (const key of this.trafficBerthCache.keys())
+				if (!touchedBerthAssignments.has(key))
+					this.trafficBerthCache.delete(key);
+			this.berthOccupancy.clear();
+			for (const [stationId, berths] of occupied)
+				this.berthOccupancy.set(stationId, berths);
+		}
+	}
+
+	/** Convert a projected nose/up pair to the quaternion the ship mesh uses. */
+	private trafficQuaternion(
+		projection: Pick<TrafficProjection, "nose" | "up">,
+		out: THREE.Quaternion,
+	): boolean {
+		if (!projection.nose) return false;
+		this.trafficNose
+			.set(projection.nose.x, projection.nose.y, projection.nose.z)
+			.normalize();
+		if (!projection.up) {
+			out.setFromUnitVectors(this.trafficForward, this.trafficNose);
+			return true;
+		}
+		this.trafficUp
+			.set(projection.up.x, projection.up.y, projection.up.z)
+			.normalize();
+		this.trafficAttitude.lookAt(
+			this.trafficOrigin,
+			this.trafficNose,
+			this.trafficUp,
+		);
+		out.setFromRotationMatrix(this.trafficAttitude);
+		return true;
+	}
+
+	/** Synchronize contacts and meshes from authority without changing it. */
+	private updateTrafficPresentation(cameraPos: Vec3) {
+		// Flying poses remain at render time while their 10 Hz authority correction
+		// is spread across the next six 60 Hz frames. Both endpoints are predicted
+		// forward below; interpolating their stale absolute positions would put an
+		// orbiting station's traffic one full tick behind the station itself.
+		const spanS = this.trafficProjectionAtS - this.trafficPreviousProjectionAtS;
+		const blend =
+			Number.isFinite(spanS) && spanS > 0
+				? Math.max(
+						0,
+						Math.min(
+							1,
+							(this.world.gameTime - this.trafficProjectionAtS) / spanS,
+						),
+					)
+				: 1;
+		this.trafficExactParked.clear();
+		for (const projection of this.trafficRoutes) {
+			const actor = this.trafficActors.find(
+				(candidate) => candidate.key === projection.key,
+			);
+			if (!actor) continue;
+			const previous = this.trafficContacts.get(actor.key);
+			const settled =
+				projection.phase === "parked-home" ||
+				projection.phase === "docked-away" ||
+				projection.phase === "launch-queued";
+			let presented: TrafficProjection = projection;
+			if (settled && projection.terminalStationId && projection.berthId) {
+				presented = parkedTrafficProjection(
+					this.world.system,
+					projection.terminalStationId,
+					projection.berthId,
+					actor,
+					this.world.gameTime,
+					this.interiorOf(projection.terminalStationId),
+				);
+				this.trafficExactParked.set(actor.key, presented);
+			}
+			const prior = settled
+				? null
+				: this.trafficPreviousRoutes.get(projection.key);
+			// Interpolate the *correction*, not two stale absolute positions. A
+			// station can translate several kilometres during one 10 Hz authority
+			// interval. Blending its old and new world-space poses therefore shows
+			// the Carrier one whole tick behind the current station/player frame;
+			// the recording from #266 exposed that as a 10 Hz jump between two
+			// apparent positions. Predict each authority sample to render time first,
+			// then blend between those predictions. The result is continuous at a
+			// tick boundary while retaining the smooth correction of a course change.
+			const predictAtRender = (
+				pose: Pick<TrafficProjection, "pos" | "vel">,
+				atS: number,
+			) => {
+				const dt = Number.isFinite(atS)
+					? Math.max(0, this.world.gameTime - atS)
+					: 0;
+				return {
+					x: pose.pos.x + pose.vel.x * dt,
+					y: pose.pos.y + pose.vel.y * dt,
+					z: pose.pos.z + pose.vel.z * dt,
+				};
+			};
+			// A settled pose was resampled from the station at render time just
+			// above. Predicting it again from the authority tick would apply the
+			// station's orbital velocity twice.
+			const currentAtRender = settled
+				? presented.pos
+				: predictAtRender(presented, this.trafficProjectionAtS);
+			const previousAtRender = prior
+				? predictAtRender(prior, this.trafficPreviousProjectionAtS)
+				: null;
+			const sampledPos = previousAtRender
+				? {
+						x:
+							previousAtRender.x +
+							(currentAtRender.x - previousAtRender.x) * blend,
+						y:
+							previousAtRender.y +
+							(currentAtRender.y - previousAtRender.y) * blend,
+						z:
+							previousAtRender.z +
+							(currentAtRender.z - previousAtRender.z) * blend,
+					}
+				: currentAtRender;
+			const dx = sampledPos.x - this.world.ship.pos.x;
+			const dy = sampledPos.y - this.world.ship.pos.y;
+			const dz = sampledPos.z - this.world.ship.pos.z;
+			const rangeKm = previous
+				? TRAFFIC_DEMATERIALIZE_KM
+				: TRAFFIC_MATERIALIZE_KM;
+			const visible =
+				projection.phase !== "abstract-away" &&
+				dx * dx + dy * dy + dz * dz <= rangeKm * rangeKm;
+			if (!visible) {
+				if (previous) {
+					this.unregisterContact(previous);
+					this.trafficContacts.delete(actor.key);
+					this.selectableCache = null;
+				}
+				this.trafficMeshes.get(actor.key)?.removeFromParent();
+				continue;
+			}
+			if (previous) {
+				previous.pos.x = sampledPos.x;
+				previous.pos.y = sampledPos.y;
+				previous.pos.z = sampledPos.z;
+				previous.velocity.x = projection.vel.x;
+				previous.velocity.y = projection.vel.y;
+				previous.velocity.z = projection.vel.z;
+			} else {
+				const shown = materializeTrafficContact(
+					actor,
+					{ ...projection, pos: sampledPos },
+					this.world.ship.pos,
+				);
+				if (!shown) continue;
+				this.trafficContacts.set(actor.key, shown);
+				this.registerContact(shown);
+				this.selectableCache = null;
+			}
+			let mesh = this.trafficMeshes.get(actor.key);
+			if (!mesh) {
+				mesh = buildShipMesh(actor.hullId, actor.variant).root;
+				mesh.name = `traffic-${actor.localCarrierId}`;
+				this.trafficMeshes.set(actor.key, mesh);
+				this.nearScene.add(mesh);
+			} else if (!mesh.parent) this.nearScene.add(mesh);
+		}
+
+		for (const projection of this.trafficRoutes) {
+			const contact = this.trafficContacts.get(projection.key);
+			const mesh = this.trafficMeshes.get(projection.key);
+			if (!contact || !mesh || !mesh.parent) continue;
+			mesh.position.set(
+				contact.pos.x - cameraPos.x,
+				contact.pos.y - cameraPos.y,
+				contact.pos.z - cameraPos.z,
+			);
+			const exact = this.trafficExactParked.get(projection.key);
+			const prior = exact
+				? null
+				: this.trafficPreviousRoutes.get(projection.key);
+			const target = exact ?? projection;
+			if (!this.trafficQuaternion(target, this.trafficToQuaternion)) continue;
+			if (prior && this.trafficQuaternion(prior, this.trafficFromQuaternion)) {
+				this.trafficFromQuaternion.slerp(this.trafficToQuaternion, blend);
+				mesh.quaternion.copy(this.trafficFromQuaternion);
+			} else mesh.quaternion.copy(this.trafficToQuaternion);
+		}
+	}
+
 	/** Build the review hulls. Where they go is settled on the first frame. */
 	private buildFleetReview() {
 		const group = new THREE.Group();
@@ -3202,7 +3959,7 @@ class Game {
 				scannerClass: "unknown",
 			};
 			this.fleet.push({ mesh: hull, slot, contact });
-			this.contacts.push(contact);
+			this.registerContact(contact);
 		}
 		this.nearScene.add(group);
 	}
@@ -4376,7 +5133,10 @@ class Game {
 	}
 
 	/**
-	 * The body the selected target orbits, if any — #30's arrival rule reads it.
+	 * The planet hosting the selected station, if the target is a station —
+	 * #30's arrival rule reads it. This deliberately returns null for planets:
+	 * the automatic detour contract belongs to station travel, not to every body
+	 * with an orbital parent.
 	 *
 	 * `sim.ts` owns the rule; this is the handle's spelling of it, and it is
 	 * public because `probe-arrival.mjs` asks the page the same question rather
@@ -4668,7 +5428,7 @@ class Game {
 			// and the envelope it has to fit.
 			interior: this.interiorOf(chosen.id),
 			hull: PLAYER_ENVELOPE,
-			// §6.1: empty in the live game. #148 replaces the map, not the branch.
+			// §6.1: the same live Traffic occupancy map the route projector fills.
 			occupied: this.occupiedAt(chosen.id),
 			// #13 §5.1.1's shipyard scan. The predicate behind it is #8's and
 			// unbuilt, so nothing fails one yet — the *moment* is what this node
@@ -4676,6 +5436,15 @@ class Game {
 			scanFails: false,
 		});
 		this.dockingStates.set(chosen.id, next);
+		if (next.clearance.kind === "queued")
+			this.openPlayerTrafficEvent(
+				chosen.id,
+				"clearance",
+				this.world.gameTime,
+				undefined,
+				PLAYER_ENVELOPE,
+			);
+		else this.closePlayerTrafficEvent(chosen.id, "clearance");
 		return { id: chosen.id, state: next };
 	}
 
@@ -4863,6 +5632,14 @@ class Game {
 		if (!this.hasDockingComputer) return;
 		this.dockingComputerEngaged = !this.dockingComputerEngaged;
 		if (this.dockingComputerEngaged) this.lastComputerRefusal = null;
+		else this.clearPlayerArrivalLaneRequests();
+	}
+
+	/** A cancelled computer approach must not keep an invisible arrival turn. */
+	private clearPlayerArrivalLaneRequests() {
+		for (const [stationId, request] of this.playerLaneRequests)
+			if (request.movement === "arrival")
+				this.playerLaneRequests.delete(stationId);
 	}
 
 	/**
@@ -4885,6 +5662,8 @@ class Game {
 				occupied: this.occupiedAt(id),
 				sessionHere: this.dock.stationId === id && this.dock.phase !== "flying",
 			});
+			if (state.clearance.kind === "queued" && next.clearance.kind !== "queued")
+				this.closePlayerTrafficEvent(id, "clearance");
 			// `tickDocking` returns the same reference when nothing fired, which is
 			// most frames of most stations. Writing it back anyway is a map write
 			// per station per frame for a value that did not change.
@@ -4936,6 +5715,15 @@ class Game {
 				this.entryPoseOf(id),
 			);
 			if (!crossing) continue;
+			// `planeCrossing` intentionally solves an infinite mathematical plane.
+			// It says when a trajectory reaches the aperture depth, not whether the
+			// station occupies that point. Without this physical-volume gate, an
+			// ordinary fly-by 1.6 km off a 0.6 km station counted as barging through
+			// its entrance and silently made the station hostile. The body's radius
+			// is the authored bound of the dockable core; outside it there is neither
+			// hull nor aperture to enter.
+			const body = this.world.system.byId.get(id);
+			if (!body || length(crossing.rel) > body.radiusKm) continue;
 			this.resolveCrossing(id, from.frame, crossing);
 			return;
 		}
@@ -4949,12 +5737,22 @@ class Game {
 		frame: ApertureFrame,
 		crossing: EntryPose,
 	) {
+		const arrivalRequest = this.playerLaneRequests.get(id);
 		const outcome = attemptEntry({
 			frame,
 			pose: crossing,
 			state: this.dockingStateOf(id),
 			gameTime: this.world.gameTime,
+			laneAvailable: this.playerWinsTrafficLane(
+				id,
+				arrivalRequest?.movement === "arrival"
+					? arrivalRequest.readyAt
+					: this.world.gameTime,
+				"arrival",
+			),
 		});
+		if (arrivalRequest?.movement === "arrival")
+			this.playerLaneRequests.delete(id);
 		this.dockingStates.set(id, outcome.state);
 		this.lastEntry = outcome;
 		// Whatever happens next, the ship ends up in the station's frame or
@@ -4995,6 +5793,7 @@ class Game {
 				{ nose: crossing.nose, up: crossing.up },
 				this.world.gameTime,
 			);
+			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			this.world.ship.vel = stationVel;
 			return;
 		}
@@ -5022,6 +5821,7 @@ class Game {
 	private stepDockPhase(dt: number) {
 		const wasAt = this.dock.stationId;
 		const wasLaunching = this.dock.phase === "launching";
+		const wasArriving = this.dock.phase === "arriving";
 		const out = stepDockedWorld(
 			this.world,
 			this.dock,
@@ -5037,6 +5837,12 @@ class Game {
 			const state = this.dockingStates.get(wasAt);
 			if (state) this.dockingStates.set(wasAt, releaseBerth(state));
 		}
+		if (
+			wasAt &&
+			((wasLaunching && this.dock.phase === "flying") ||
+				(wasArriving && this.dock.phase === "docked"))
+		)
+			this.closePlayerTrafficEvent(wasAt, "lane");
 		// The clock moved, so §6 moves with it: grants expire and hostility
 		// decays while the player sits docked. This line is the reason the
 		// caller's comment names what runs rather than implying the rest — it
@@ -5066,13 +5872,66 @@ class Game {
 	 */
 	launch(): boolean {
 		if (this.dock.phase !== "docked" || !this.dock.stationId) return false;
+		const stationId = this.dock.stationId;
+		const pending = this.playerLaneRequests.get(stationId);
+		const readyAt =
+			pending?.movement === "launch" ? pending.readyAt : this.world.gameTime;
+		this.playerLaneRequests.set(stationId, {
+			readyAt,
+			movement: "launch",
+		});
+		const canLaunch = this.playerWinsTrafficLane(stationId, readyAt, "launch");
+		if (!canLaunch) {
+			// A button press is an attempt, not an invisible permanent queue entry.
+			// Retaining this request made every later Traffic tick lose forever when
+			// the player abandoned a refused launch.
+			this.playerLaneRequests.delete(stationId);
+			return false;
+		}
+		this.playerLaneRequests.delete(stationId);
 		this.dock = requestLaunch(
 			this.dock,
 			this.apertureFrameOf(this.dock.stationId),
 			this.interiorOf(this.dock.stationId),
 			this.world.gameTime,
 		);
+		if (this.dock.phase === "launching")
+			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
 		return this.dock.phase === "launching";
+	}
+
+	/** One arbitration rule for the player's two directions through the lane. */
+	private playerWinsTrafficLane(
+		stationId: string,
+		readyAt: number,
+		movement: "arrival" | "launch",
+	): boolean {
+		// Cold parked projections make berth occupancy truthful, but they do not
+		// reconstruct an actor already committed to the shared transit lane.
+		if (!this.trafficAuthorityReady()) return false;
+		const contenders = this.trafficRoutes
+			.filter(
+				(route) =>
+					route.terminalStationId === stationId &&
+					route.laneRequest &&
+					(route.phase === "launch-queued" || route.phase === "lane-queued"),
+			)
+			.map((route) => ({
+				participant: { kind: "carrier" as const, key: route.key },
+				readyAt: route.laneRequest?.readyAt ?? this.world.gameTime,
+				kind: route.laneRequest?.kind ?? "arrival",
+			}));
+		const active = this.trafficRoutes.some(
+			(route) =>
+				route.terminalStationId === stationId &&
+				(route.phase === "departing" || route.phase === "arriving"),
+		);
+		if (active) return false;
+		// A pre-registered computer/launch request is represented in Traffic's
+		// authority timeline, but it still competes here by the same oldest-ready
+		// ordering. Registration prevents later generated turns from overtaking;
+		// it does not grant the player priority over an older queued Carrier.
+		return playerWinsLane(contenders, readyAt, movement);
 	}
 
 	/** Skip the traversal in progress. Unconditional on both sides since §13.3:
@@ -5080,7 +5939,9 @@ class Game {
 	 *  aperture. E4's per-type novelty flags are retired, not stored. */
 	skipDockTraversal(): boolean {
 		if (!canSkipTraversal(this.dock)) return false;
+		const stationId = this.dock.stationId;
 		this.dock = skipTraversal(this.dock, this.world.gameTime);
+		if (stationId) this.closePlayerTrafficEvent(stationId, "lane");
 		return true;
 	}
 
@@ -5094,10 +5955,24 @@ class Game {
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
 		if (!nearestId || !approach) return false;
 		const { frame } = approach;
+		const stationState = this.dockingStateOf(nearestId);
+		const awaitingBerth = stationState.clearance.kind === "queued";
 		const command = dockingComputerStep({
 			frame,
 			pose: approach.pose,
-			state: this.dockingStateOf(nearestId),
+			// A queued request is permission to line up and wait, not to enter.
+			// Feed the geometric controller a temporary live grant so it can track
+			// the rotating corridor; the run-in speed is held at zero below until
+			// the real protocol state promotes the request and names its berth.
+			state: awaitingBerth
+				? {
+						...stationState,
+						clearance: {
+							kind: "granted",
+							expiresAtS: Number.POSITIVE_INFINITY,
+						},
+					}
+				: stationState,
 			gameTime: this.world.gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
 		});
@@ -5110,6 +5985,7 @@ class Game {
 			// speed nobody chose, so the throttle goes to zero and the reason is
 			// recorded for the HUD node to read.
 			this.dockingComputerEngaged = false;
+			this.clearPlayerArrivalLaneRequests();
 			this.lastComputerRefusal = command.refused;
 			this.throttle = 0;
 			return false;
@@ -5118,7 +5994,27 @@ class Game {
 		const nose = slewToward(this.nose(), command.nose, rate.yaw * dt);
 		const up = slewToward(this.shipUp(), command.up, rate.roll * dt);
 		this.setAttitude(nose, up);
-		this.throttle = Math.min(1, command.speedKms / ASSIST_CAP_KMS);
+		let speedKms = command.speedKms;
+		if (command.phase === "run-in") {
+			if (awaitingBerth) speedKms = 0;
+			else {
+				const pending = this.playerLaneRequests.get(nearestId);
+				const readyAt =
+					pending?.movement === "arrival"
+						? pending.readyAt
+						: this.world.gameTime;
+				this.playerLaneRequests.set(nearestId, {
+					readyAt,
+					movement: "arrival",
+				});
+				// The computer waits at the corridor entrance instead of testing a busy
+				// aperture and bouncing. An older non-preemptive movement still finishes;
+				// once it does, Traffic sees this request and later actors queue behind it.
+				if (!this.playerWinsTrafficLane(nearestId, readyAt, "arrival"))
+					speedKms = 0;
+			}
+		}
+		this.throttle = Math.min(1, speedKms / ASSIST_CAP_KMS);
 		// The rates are zeroed rather than left running: the computer is placing
 		// the attitude directly, and a momentum term still turning underneath it
 		// would fight the slew every frame.
@@ -5263,6 +6159,7 @@ class Game {
 		this.etaAt = Number.NEGATIVE_INFINITY;
 		this.navEtaCache.clear();
 		this.navEtaAt = Number.NEGATIVE_INFINITY;
+		this.navOrder = [];
 		this.selectableCache = null;
 	}
 
@@ -5326,6 +6223,10 @@ class Game {
 			// a jumped-to system would hand the start system that system's
 			// cached interior and its live docking state under the same id.
 			this.clearSystemScopedState();
+			// `render` can follow this reset before another simulation step. Replace
+			// the departed system's traffic now so that frame cannot draw stale routes;
+			// this seeds only parked traffic and leaves full authority to normal warm-up.
+			this.ensureTrafficActors();
 		}
 		this.clearFlightSession();
 
@@ -5362,6 +6263,7 @@ class Game {
 		this.faceTheStar();
 		this.keys.clear();
 		this.navEtaCache.clear();
+		this.navOrder = [];
 
 		this.massesCache = null;
 		this.massesAt = Number.NaN;
@@ -5601,6 +6503,10 @@ class Game {
 		// refilled — §7 refills it on docking, and a jump is not a dock.
 		this.clearFlightSession();
 		this.clearSystemScopedState();
+		// A jump is taken at the end of a step and `render` follows immediately.
+		// Do the bounded system hand-off now: clear the departed routes and seed the
+		// destination's parked ships without running full traffic projection here.
+		this.ensureTrafficActors();
 		this.updateLocalFrameBody();
 		this.selectBootTarget();
 		this.faceTheStar();
@@ -5693,28 +6599,20 @@ class Game {
 		}
 		this.detour = null;
 		const target = this.targetBody();
-		if (target && this.targetParentId()) {
-			const masses = this.masses();
-			const blocker = cruiseRouteBlocker(
-				this.world.ship.pos,
-				target.pos,
-				masses,
-				this.targetParentId(),
-			);
-			if (blocker) {
-				const route = planCruiseDetour({
-					from: this.world.ship.pos,
-					target: target.pos,
-					blocker,
-					masses,
-					targetParentId: this.targetParentId(),
-				});
-				if (!route) {
-					this.lastExit = `detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`;
-					return;
-				}
-				this.detour = { ...route, targetId: target.id, waypoint: 0 };
+		const targetParentId = this.targetParentId();
+		if (target && targetParentId) {
+			const begun = beginCruiseGuidance({
+				from: this.world.ship.pos,
+				target,
+				masses: this.masses(),
+				targetParentId,
+			});
+			if (begun.error) {
+				const id = begun.error.blockerId;
+				this.lastExit = `detour unavailable: ${this.bodyFor(id)?.name ?? id}`;
+				return;
 			}
+			this.detour = begun.guidance;
 		}
 		this.spoolLeftS = SPOOL_S;
 		this.lastExit = "";
@@ -5786,6 +6684,7 @@ class Game {
 	 * exactly what the game runs rather than its own copy of the order.
 	 */
 	step(dt: number) {
+		this.updateTrafficAuthority();
 		this.updateLocalFrameBody();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
@@ -5865,8 +6764,10 @@ class Game {
 		// other, so it takes an armed jump — it simply never armed one.
 		if (charging(this.jumpCharge)) this.stepJumpCharge(dt);
 
-		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll))
+		if (this.dockingComputerEngaged && this.hasControlInput(yaw, pitch, roll)) {
 			this.dockingComputerEngaged = false;
+			this.clearPlayerArrivalLaneRequests();
+		}
 		if (this.detour && this.hasControlInput(yaw, pitch, roll)) {
 			this.detour = null;
 			// A throttle key is the player's chosen value for this same frame.
@@ -5881,6 +6782,11 @@ class Game {
 		// as its "before" half, and neither moves the ship, so a second
 		// evaluation would be the same answer at the same clock value.
 		const approaches = this.dockingApproaches();
+		const throttleRate = [...approaches.values()].some(
+			({ pose }) => length(pose.rel) <= TRAFFIC_STATION_EXCLUSION_KM,
+		)
+			? STATION_THROTTLE_RATE_SCALE
+			: 1;
 
 		if (this.stepDockingComputer(dt, approaches)) {
 			this.mouseDx = 0;
@@ -5934,9 +6840,9 @@ class Game {
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
 		if (this.keys.has(THROTTLE_UP))
-			this.throttle = Math.min(1, this.throttle + dt);
+			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
 		if (this.keys.has(THROTTLE_DOWN))
-			this.throttle = Math.max(0, this.throttle - dt);
+			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		this.audio.ambient(this.throttle);
 
 		// The spool-up runs in whichever regime the ship is in, and hands over at
@@ -6088,62 +6994,10 @@ class Game {
 		if (step.starved) this.dropOut("drive charge exhausted");
 	}
 
-	/** Replan the currently active leg against current and linearly projected masses. */
-	private replanDetourLeg(
-		detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 },
-		target: Body,
-		point: Vec3,
-		masses: readonly Mass[],
-		dt: number,
-	): {
-		detour: DetourPlan & { targetId: string; waypoint: 0 | 1 | 2 };
-		point: Vec3;
-	} | null {
-		const currentBlocker = cruiseRouteBlocker(
-			this.world.ship.pos,
-			point,
-			masses,
-			this.targetParentId(),
-		);
-		const blocker =
-			currentBlocker ??
-			cruiseRouteBlocker(
-				this.world.ship.pos,
-				point,
-				masses,
-				this.targetParentId(),
-				dt,
-			);
-		if (!blocker) return { detour, point };
-		const route = planCruiseDetour({
-			from: this.world.ship.pos,
-			target: target.pos,
-			blocker,
-			masses,
-			targetParentId: this.targetParentId(),
-			previousSide: blocker.id === detour.bodyId ? detour.side : undefined,
-			// Route candidates use one consistent future snapshot, even when the
-			// blocker already intersects the current leg. Planning that case at `t`
-			// while testing its next leg at `t + dt` can send the ship into a body
-			// that has already crossed the newly chosen side by the next frame.
-			projectionS: dt,
-		});
-		if (!route) {
-			this.dropOut(
-				`detour unavailable: ${this.bodyFor(blocker.id)?.name ?? blocker.id}`,
-			);
-			return null;
-		}
-		const replanned = { ...route, targetId: target.id, waypoint: 0 as const };
-		this.detour = replanned;
-		return { detour: replanned, point: replanned.waypoints[0] };
-	}
-
 	/** Turn toward the current internal waypoint; physical motion remains cruise. */
 	private stepDetour(dt: number): boolean {
-		let detour = this.detour;
-		if (!detour) return true;
-		if (detour.targetId !== this.targetId) {
+		if (!this.detour) return true;
+		if (this.detour.targetId !== this.targetId) {
 			this.detour = null;
 			this.throttle = 1;
 			return true;
@@ -6154,61 +7008,34 @@ class Game {
 			this.throttle = 1;
 			return true;
 		}
-		let point =
-			detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
-		const masses = this.masses();
-		let active = this.replanDetourLeg(detour, target, point, masses, dt);
-		if (!active) return false;
-		detour = active.detour;
-		point = active.point;
-		// Cruise can cover far more than a kilometre per frame.  Treat a waypoint
-		// as reached over the next swept frame rather than demanding an endpoint
-		// sample land on it, or a fast ship turns back and spends its charge circling.
-		let advancedWaypoint = false;
-		if (
-			length(sub(point, this.world.ship.pos)) <
-			Math.max(1_000, this.cruiseSpeedKms * dt * 2)
-		) {
-			if (detour.waypoint === 0) {
-				detour.waypoint = 1;
-				advancedWaypoint = true;
-			} else if (detour.waypoint === 1) {
-				detour.waypoint = 2;
-				advancedWaypoint = true;
-			}
+		const guided = stepCruiseGuidance({
+			guidance: this.detour,
+			pos: this.world.ship.pos,
+			nose: this.nose(),
+			target,
+			masses: this.masses(),
+			targetParentId: this.targetParentId(),
+			dt,
+			speedKms: this.cruiseSpeedKms,
+			steerDirect: false,
+		});
+		if (guided.error) {
+			const id = guided.error.blockerId;
+			this.dropOut(`detour unavailable: ${this.bodyFor(id)?.name ?? id}`);
+			return false;
 		}
-		let next = point;
-		if (advancedWaypoint) {
-			point =
-				detour.waypoint === 2 ? target.pos : detour.waypoints[detour.waypoint];
-			// A swept waypoint reach can select a new leg this frame. Re-evaluate it
-			// before the physical cruise step so the moving guard is a backstop, not
-			// the first response to a newly closed route.
-			active = this.replanDetourLeg(detour, target, point, masses, dt);
-			if (!active) return false;
-			detour = active.detour;
-			next = active.point;
-		}
-		const direction = sub(next, this.world.ship.pos);
-		const distance = length(direction);
-		if (distance === 0) return true;
+		this.detour = guided.guidance;
+		this.throttle = guided.throttle;
 		const desired = this.detourDirection.set(
-			direction.x / distance,
-			direction.y / distance,
-			direction.z / distance,
+			guided.nose.x,
+			guided.nose.y,
+			guided.nose.z,
 		);
-		const desiredOrientation = this.detourOrientation.setFromUnitVectors(
-			this.detourForward,
-			desired,
-		);
-		const angle = this.orientation.angleTo(desiredOrientation);
-		this.orientation.rotateTowards(desiredOrientation, 0.6 * dt);
-		// Turning at cruise speed is bounded by the visible nose, not an invisible
-		// velocity vector. Hold translation while the turn is materially unfinished:
-		// a fractional throttle is still millions of km/s far from a planet, which
-		// can carry a nose that is visibly turning into the guard before it aligns.
-		// Manual throttle input cancels the detour before this method runs.
-		this.throttle = angle > 0.1 ? 0 : 1;
+		this.detourCurrentNose
+			.copy(this.detourForward)
+			.applyQuaternion(this.orientation);
+		this.detourOrientation.setFromUnitVectors(this.detourCurrentNose, desired);
+		this.orientation.premultiply(this.detourOrientation).normalize();
 		return true;
 	}
 
@@ -6249,6 +7076,7 @@ class Game {
 	 */
 	render(dt = 0) {
 		const camPos = this.cameraPos();
+		this.updateTrafficPresentation(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
 		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
@@ -6984,7 +7812,7 @@ class Game {
 			this.navEtaCache.clear();
 			this.navEtaAt = this.world.gameTime;
 		}
-		return projectNavTargets(
+		const rows = projectNavTargets(
 			this.world.ship.pos,
 			// **`selectable()`, not `system.bodies`.** It is the one list that
 			// decides what can be targeted at all — `cycleTarget` walks it and
@@ -6996,6 +7824,7 @@ class Game {
 			this.targetId,
 			{
 				filter: this.navFilter,
+				previousOrder: this.navOrder,
 				etaFor: ({ id }) => {
 					const cached = this.navEtaCache.get(id);
 					if (cached !== undefined) return cached;
@@ -7006,6 +7835,8 @@ class Game {
 				},
 			},
 		);
+		this.navOrder = rows.map(({ id }) => id);
+		return rows;
 	}
 
 	private refreshScannerContacts() {
@@ -7656,6 +8487,7 @@ class Game {
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
 		ctx.font = "11px ui-monospace, Menlo, monospace";
+		this.markerLabels.beginFrame(this.world.gameTime);
 		const labelBounds = (
 			x: number,
 			y: number,
@@ -7670,13 +8502,13 @@ class Game {
 		const selectedBody = this.targetBody();
 		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
 		const selectedAt = selectedDir && place(selectedDir);
+		// Reserve the selected label before the stable station/ship walk below.
+		// Its label is never submitted to decluttering, so context can disappear
+		// behind it but it can never disappear behind context.
 		if (selectedBody && selectedAt?.on) {
+			const text = `${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}`;
 			occupiedLabels.push(
-				labelBounds(
-					selectedAt.x + 20,
-					selectedAt.y + 4,
-					`${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}`,
-				),
+				labelBounds(selectedAt.x + 20, selectedAt.y + 4, text),
 			);
 		}
 		for (const body of this.selectable()) {
@@ -7716,18 +8548,23 @@ class Game {
 				if (body.kind === "station" || body.kind === "ship") {
 					const km = length(sub(body.pos, camPos));
 					const text = `${body.name}  ${range(km)}`;
-					const bounds = labelBounds(at.x + r + 6, at.y + 4, text);
-					if (body.kind === "ship") {
-						if (
-							bounds.right > w ||
-							bounds.top < 0 ||
-							bounds.bottom > h ||
-							!claimMarkerLabel(bounds, occupiedLabels)
+					const x = at.x + r + 6;
+					const y = at.y + 4;
+					const bounds = labelBounds(x, y, text);
+					if (
+						bounds.right > w ||
+						bounds.top < 0 ||
+						bounds.bottom > h ||
+						!this.markerLabels.claim(
+							body.id,
+							bounds,
+							occupiedLabels,
+							this.world.gameTime,
 						)
-							continue;
-					} else occupiedLabels.push(bounds);
+					)
+						continue;
 					ctx.fillStyle = "rgba(140, 190, 220, 0.55)";
-					ctx.fillText(text, at.x + r + 6, at.y + 4);
+					ctx.fillText(text, x, y);
 				}
 				continue;
 			}

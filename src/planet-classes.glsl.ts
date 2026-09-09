@@ -585,8 +585,47 @@ vec3 zonal(vec3 p, float rate) {
 // unequal widths with unequal spacing. The old prototype used sin(lat * 12),
 // which is a barber pole: every band identical, evenly spaced, and unmistakably
 // synthetic.
+//
+// **Folded, not clamped (#209).** What shipped was stretch(fbm4(...)) with a
+// smoothstep on top at the call site: stretch() divides by FBM_SPREAD and
+// clamps, so it saturates over most of its range, and the smoothstep spanned a
+// third of the remainder. Two tones came out, and the principal reported them.
+//
+// Warping the boundary — which is where the node expected the fix — moves an
+// edge and adds no tones. The mapping is what had to change, and a clamp is the
+// wrong end of it: a bell-shaped fbm through a linear gain either stays narrow,
+// which is a washed-out planet, or clips, and the clipped tails become two
+// modes. A triangle fold spends those tails on more bands instead. The profile
+// sweeps the belt-zone range and turns back, so raising the gain adds bands
+// rather than clipping — at a gain large enough to reach the turns, which this
+// one is and a small one is not: at zero the profile is 0.5 everywhere and the
+// planet has no bands at all. The fold is continuous, so no band has a seam;
+// its slope reverses at the turns, which is a band boundary and is what those
+// are.
+//
+// **This shipped on the contact sheet and not on a measurement, and the reason
+// is worth keeping.** A statistic was built for it — Sarle's bimodality
+// coefficient over the detrended latitude profile, still printed by
+// probe-planet-surfaces.mjs — and it does not measure this. Under a correct
+// detrend it reads 0.541 on this build against **0.261** on the two-tone build
+// it replaced, because Sarle's is (skew² + 1) / kurtosis and a dominant tone
+// with a thin tail of dark bands is skewed rather than bimodal. The figures
+// that motivated the change in the first place came from a detrend window sized
+// from the bin count rather than from the populated bands, which left the
+// planet-scale gradient in; Sage caught it. So: no figure here is evidence for
+// this form, the numbers that were here for a round have been removed rather
+// than restated, and what carries it is the sheet.
+//
+// **It adds no noise calls**, which is the budget the node set and is not the
+// same as costing nothing — the fold is a fract and an abs, and no shader-cost
+// measurement was taken for this change, so nothing here claims one. A second
+// octave was flown and is not here: it moved the look no more than the gain
+// does, for four more vnoise calls a fragment against a budget of two. JOVIAN
+// stays at the 18 it had.
+const float BAND_GAIN = 5.0;
 float bandProfile(float lat, float warpAmt) {
-  return stretch(fbm4(vec3(lat * 5.5 + warpAmt, 4.3 + seedOffset, 1.9)));
+  float v = 0.5 + (fbm4(vec3(lat * 5.5 + warpAmt, 4.3 + seedOffset, 1.9)) - 0.5) * BAND_GAIN;
+  return abs(fract(v * 0.5) * 2.0 - 1.0);
 }
 `;
 
@@ -614,16 +653,67 @@ void surface(vec3 p, inout vec3 albedo, inout vec3 N,
   // classes were sharing a hue.
   vec3 zone = mix(vec3(0.560, 0.440, 0.215), vec3(0.760, 0.640, 0.375), filament);
   vec3 belt = mix(vec3(0.145, 0.062, 0.028), vec3(0.290, 0.135, 0.055), filament);
-  albedo = mix(belt, zone, smoothstep(0.34, 0.62, band));
+  // **The band's own value, not a threshold on it (#209).** This was
+  // smoothstep(0.34, 0.62, band) — a second binarisation on top of the one
+  // stretch was already doing, mapping two thirds of the profile's range to a
+  // flat belt or a flat zone. bandProfile now sweeps its whole range, so the
+  // ramp is the mix itself and there is nothing left for a threshold to do but
+  // undo it.
+  albedo = mix(belt, zone, band);
 
   // Bright equatorial zone and darker polar hoods: the large-scale shape that
   // survives at a distance when the band detail no longer resolves.
   albedo = mix(albedo, albedo * 1.22, smoothstep(0.30, 0.02, abs(lat)));
   albedo = mix(albedo, vec3(0.180, 0.140, 0.110), smoothstep(0.72, 0.99, abs(lat)));
 
-  // The storm itself, tinted where the vortex wound the coordinate tightest.
-  float storm = smoothstep(0.40, 0.0, distance(p, spotA) / 0.42);
-  albedo = mix(albedo, mix(vec3(0.520, 0.155, 0.075), vec3(0.700, 0.360, 0.190), filament), storm * 0.80);
+  /*
+   * The storm, and it has an inside (#209).
+   *
+   * It was one radial falloff painted over the bands, which is what made it
+   * read as a decal: uniform tint, one scale, and a boundary that owed nothing
+   * to the flow around it. Three things give it a form instead, and none of
+   * them is a new noise call — all three read the fields already computed.
+   *
+   * The **eye** is the centre lightened: the second scale inside the mask, cut
+   * from the same filament field so the wisps inside the oval belong to the
+   * ones outside it. The **rim** is the shell between eye and edge, where a
+   * real vortex piles its cloud up brightest. And the edge is broken by the
+   * band turbulence rather than being a circle — turb is the same latitude
+   * displacement the bands already use, so the storm frays where they do.
+   */
+  float stormR = distance(p, spotA) / 0.42;
+  float storm = smoothstep(1.0, 0.15, stormR + turb * 1.6);
+  vec3 stormBody = mix(vec3(0.520, 0.155, 0.075), vec3(0.700, 0.360, 0.190), filament);
+  // The rim: brightest partway out, falling off to either side.
+  float rim = storm * smoothstep(0.15, 0.55, stormR) * (1.0 - smoothstep(0.55, 0.95, stormR));
+  stormBody = mix(stormBody, vec3(0.780, 0.470, 0.270), rim * 0.55);
+  // The eye, lighter and quieter than the wall around it.
+  float eye = smoothstep(0.34, 0.05, stormR);
+  stormBody = mix(stormBody, vec3(0.830, 0.660, 0.480), eye * (0.35 + 0.35 * filament));
+  albedo = mix(albedo, stormBody, storm * 0.80);
+  /*
+   * A tail drawn out along the band the storm sits in, so the spot reads as
+   * being *in* the flow rather than sitting on top of it.
+   *
+   * **In the storm's own frame, and that is not a detail.** The first version
+   * measured the tail from q and the mask from p. q is p advected by zonal(),
+   * so the two frames separate at the zonal rate: at this latitude the tail's
+   * centre travels about 108° in two minutes while the mask stays put, and the
+   * tail that is supposed to trail the storm becomes a second unexplained blob
+   * on the far side of the planet. Sage caught it — it is invisible in a still
+   * frame and the sheet is still frames.
+   *
+   * The mask is on p because a storm is a feature of the planet rather than of
+   * the flow over it; the tail follows the mask. The *sense* of downstream is
+   * still real — the tail is offset along the band, not centred on the spot —
+   * and it is the band's own axis rather than a clock that gives it a
+   * direction, which is what keeps the two attached at every time.
+   */
+  vec3 downstream = normalize(cross(vec3(0.0, 1.0, 0.0), spotA));
+  vec3 tailCentre = normalize(spotA - downstream * 0.30);
+  float tail = smoothstep(0.62, 0.10, distance(p, tailCentre))
+             * smoothstep(0.20, 0.02, abs(p.y - spotA.y));
+  albedo = mix(albedo, stormBody, tail * 0.22 * (1.0 - storm));
 
   // Thin high haze catches light before the deck does.
   albedo += vec3(0.030, 0.028, 0.024) * filament;

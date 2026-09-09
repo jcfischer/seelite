@@ -398,6 +398,15 @@ const undock = good.docked
 					if (g.dockingSnapshot(id).dockPhase === "docked") break;
 				}
 				const wasDocked = g.dockedAt === id;
+				// This section verifies the docking session's exit and re-entry latch,
+				// not shared Traffic ordering (the route probe owns both older-turn and
+				// active-lane cases). Isolate the session so a legitimate older Traffic
+				// launch cannot turn this into a second arbitration test.
+				g.clearTrafficPresentation();
+				g.trafficSystemIndex = g.world.system.record.index;
+				g.trafficActors = [];
+				g.trafficWarmIndex = 0;
+				g.trafficTick = Math.floor(g.world.gameTime * 10 + 1e-8);
 				const launched = g.launch();
 				// Obligation 5: a launch is unconditionally skippable.
 				const skipped = g.skipDockTraversal();
@@ -421,9 +430,12 @@ const undock = good.docked
 				g.step(dt);
 				g.render(dt);
 				const flying = g.dockingSnapshot(id);
+				const arrivalQueued =
+					g.playerLaneRequests.get(id)?.movement === "arrival";
 				return {
 					engagedAfterStep: flying?.computerEngaged ?? false,
 					throttleAfterStep: flying?.throttle ?? 0,
+					arrivalQueued,
 					wasDocked,
 					launched,
 					skipped,
@@ -465,9 +477,10 @@ if (undock) {
 		// `stepDockingComputer`'s `if (… || this.dockedAt) return false` — which
 		// is the latch — so the assertion is that the autopilot is *still*
 		// engaged and commanding a throttle a step later.
-		"and the docking computer flies again after a step",
-		undock.engagedAfterStep && undock.throttleAfterStep > 0,
-		`engaged=${undock.engagedAfterStep} throttle=${undock.throttleAfterStep}`,
+		"and the docking computer controls the next approach after a step",
+		undock.engagedAfterStep &&
+			(undock.throttleAfterStep > 0 || undock.arrivalQueued),
+		`engaged=${undock.engagedAfterStep} throttle=${undock.throttleAfterStep} arrivalQueued=${undock.arrivalQueued}`,
 	);
 	check(
 		"docking left no throttle running",
@@ -479,6 +492,42 @@ if (undock) {
 		window.__seelite.setThrottle(0);
 	});
 }
+
+// A nearby trajectory can cross the *infinite mathematical plane* that carries
+// the aperture without crossing the station. The principal reproduced this at
+// 1.6 km with no request, impact, or attempted entry; it must remain an inert
+// fly-by rather than silently creating a hostile protocol state.
+console.log("\npassive station fly-by:");
+const passiveFlyby = await page.evaluate(() => {
+	const g = window.__seelite;
+	const D = window.__dock;
+	const id = D.spinner().id;
+	g.dockingComputerEngaged = false;
+	g.dockingStates.delete(id);
+	g.resetDock();
+	g.lastEntry = null;
+	const snap = g.dockingSnapshot(id);
+	const lateral = D.scale(snap.reference, 1.6);
+	const beforeRel = D.add(D.scale(snap.axis, snap.planeKm + 0.01), lateral);
+	D.place(id, beforeRel, D.scale(snap.axis, -0.2));
+	const before = g.dockingApproaches();
+	const afterRel = D.add(D.scale(snap.axis, snap.planeKm - 0.01), lateral);
+	D.place(id, afterRel, D.scale(snap.axis, -0.2));
+	g.stepDocking(before);
+	const after = g.dockingSnapshot(id);
+	return {
+		rangeKm: after.rangeKm,
+		hostile: after.hostile,
+		entry: after.lastEntry,
+	};
+});
+check(
+	"crossing the aperture plane 1.6 km off the station is only a passive fly-by",
+	passiveFlyby.rangeKm > 1.5 &&
+		passiveFlyby.hostile === false &&
+		passiveFlyby.entry === null,
+	JSON.stringify(passiveFlyby),
+);
 
 // ---------------------------------------------------------------------------
 // §9.2.4 — a hull-face approach is refused

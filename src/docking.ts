@@ -897,6 +897,8 @@ export interface EntryOutcome {
 	/** Whether this crossing was the missing-grant case — the only one that
 	 *  turns the station hostile. */
 	barged: boolean;
+	/** Whether shared Traffic lane ownership, rather than piloting, refused it. */
+	laneBlocked: boolean;
 }
 
 /**
@@ -915,10 +917,13 @@ export function attemptEntry(input: {
 	pose: EntryPose;
 	state: DockingState;
 	gameTime: number;
+	/** Shared station-lane arbitration. Omitted by pure docking callers. */
+	laneAvailable?: boolean;
 	damageScale?: number;
 }): EntryOutcome {
 	const { frame, pose, gameTime } = input;
 	const barged = !grantLive(input.state, gameTime);
+	const laneBlocked = input.laneAvailable === false;
 	const state: DockingState = barged
 		? {
 				...input.state,
@@ -930,7 +935,7 @@ export function attemptEntry(input: {
 	const evaluation = evaluateEntry(frame, pose, { hostile: state.hostile });
 	// A barge is a failed entry whatever the geometry says: the checks are
 	// evaluated so the diagnostics are complete, and the verdict is not theirs.
-	const docked = !barged && evaluation.passed;
+	const docked = !barged && !laneBlocked && evaluation.passed;
 	if (docked)
 		return {
 			docked: true,
@@ -939,6 +944,7 @@ export function attemptEntry(input: {
 			damage: 0,
 			repelled: null,
 			barged,
+			laneBlocked,
 		};
 	return {
 		docked: false,
@@ -947,9 +953,15 @@ export function attemptEntry(input: {
 		// a piloting error, not a protocol violation, and making the player
 		// re-request after every bounce would turn §6 into paperwork.
 		state,
-		damage: entryDamage(evaluation.speedKms, input.damageScale),
+		// Losing an otherwise-valid shared-lane claim is traffic control, not a
+		// piloting mistake. Repel safely without charging hull damage.
+		damage:
+			laneBlocked && evaluation.passed
+				? 0
+				: entryDamage(evaluation.speedKms, input.damageScale),
 		repelled: repel(frame, pose),
 		barged,
+		laneBlocked,
 	};
 }
 

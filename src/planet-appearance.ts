@@ -200,8 +200,39 @@ const CLASS_TRAITS: Record<
 		seaLevel: 0.9,
 		cloudCover: 0.12,
 	},
-	jovian: { atmosphere: 1, atmosphereColor: 0xd8a05a },
-	iceGiant: { atmosphere: 1, atmosphereColor: 0x4a86c8 },
+	/*
+	 * **The giants are no longer at the maximum, and that is what the orange
+	 * halo was (#209).**
+	 *
+	 * `atmosphere` reaches the shell twice over in `planet-surface.ts`: as
+	 * `atmoStrength`, the alpha the shell contributes, and through
+	 * `shellScale = 1.06 + atmosphere * 0.05`, how far it stands off the
+	 * surface. At 1 the giants carried the thickest and strongest shell in the
+	 * game — thicker than Venus needs a reason to be — and `ATMOSPHERE_FRAGMENT`
+	 * did the rest correctly: a wide annulus of saturated `atmoColor` around a
+	 * disc whose own colours it then dominated.
+	 *
+	 * `gallery-jovian` read that as "a uniform orange ring", and the term the
+	 * node asked for as its replacement — limb darkening — was already in
+	 * `shade()` for every class and had been since #59. Nothing needed adding.
+	 * What was wrong was this row: 0.55 puts the jovian's shell at 1.088 radii
+	 * rather than 1.11 and halves what it contributes, so the limb reads as air
+	 * over a surface instead of as a painted ring, and the surface's own
+	 * darkening at the edge is no longer buried under it.
+	 *
+	 * The colour moves with it. 0xd8a05a is the mid-band gold, which is why the
+	 * ring looked like a wider band: an atmosphere seen edge-on is *not* the
+	 * deck's colour, it is what the deck's colour becomes after a long path
+	 * through haze. Warmer and paler, and the sunset term in the shell shader
+	 * grades it further at the grazing end.
+	 *
+	 * The ice giant keeps a thicker shell than the jovian at 0.7: methane haze
+	 * burying the banding is the whole read of that class
+	 * (`planet-classes.glsl.ts`), so its limb is meant to be soft. It was never
+	 * the subject of the complaint.
+	 */
+	jovian: { atmosphere: 0.55, atmosphereColor: 0xe8be8a },
+	iceGiant: { atmosphere: 0.7, atmosphereColor: 0x6fa4d8 },
 };
 
 /**
