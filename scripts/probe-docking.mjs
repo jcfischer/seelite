@@ -398,6 +398,30 @@ const undock = good.docked
 					if (g.dockingSnapshot(id).dockPhase === "docked") break;
 				}
 				const wasDocked = g.dockedAt === id;
+				// **`persistent-world-state.md` §9.10's docking channel, at the
+				// one place it is actually reachable.** The write lives in
+				// `main.ts`'s crossing handler, so no headless tier touches it:
+				// `world-state.test.ts` proves `observeDocking` does the right
+				// thing to a world, and nothing proved the game ever calls it.
+				// The row is read *before* the launch below, because launching
+				// is what leaves the station.
+				const station = g.world.system.contents.stations.find(
+					(s) => s.id === id,
+				);
+				const dockedKnowledge = (() => {
+					const env = g.commerceWorld.galaxies[g.world.system.record.galaxy];
+					const key = `${g.world.system.record.index}:${station?.localCarrierId}`;
+					const row = Object.entries(env?.knowledge ?? {}).find(([k]) =>
+						k.endsWith(String(station?.localCarrierId)),
+					);
+					return {
+						key,
+						type: station?.type ?? null,
+						source: row?.[1]?.source ?? null,
+						observedAt: row?.[1]?.observedAt ?? null,
+						marker: row?.[1]?.knownPrivateFacts?.blackMarket ?? null,
+					};
+				})();
 				// This section verifies the docking session's exit and re-entry latch,
 				// not shared Traffic ordering (the route probe owns both older-turn and
 				// active-lane cases). Isolate the session so a legitimate older Traffic
@@ -437,6 +461,7 @@ const undock = good.docked
 					throttleAfterStep: flying?.throttle ?? 0,
 					arrivalQueued,
 					wasDocked,
+					dockedKnowledge,
 					launched,
 					skipped,
 					stillDocked: g.dockedAt === id,
@@ -452,6 +477,14 @@ const undock = good.docked
 	: null;
 if (undock) {
 	check("the ship was docked to begin with", undock.wasDocked);
+	check(
+		"docking observed the station it docked at, and checked a refinery's fence",
+		undock.dockedKnowledge.source === "docking" &&
+			Number.isFinite(undock.dockedKnowledge.observedAt) &&
+			(undock.dockedKnowledge.type === "refinery") ===
+				(undock.dockedKnowledge.marker !== null),
+		`${undock.dockedKnowledge.type} ${undock.dockedKnowledge.key}: source ${undock.dockedKnowledge.source} at ${undock.dockedKnowledge.observedAt}, marker ${JSON.stringify(undock.dockedKnowledge.marker)}`,
+	);
 	check("§12.2's launch is accepted from a docked ship", undock.launched);
 	check(
 		"and it is unconditionally skippable (§12.6 obligation 5)",

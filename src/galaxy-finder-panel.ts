@@ -640,7 +640,13 @@ export function mountFinderPanel({
 			// match changed neither group's rows — both empty — so the key held
 			// and the panel kept printing the narrower budget's count. The probe
 			// read 4 off the DOM against the projection's 105.
-			.concat(`|fence${uncheckedFence}`);
+			.concat(`|fence${uncheckedFence}`)
+			// **And the minute, because an age is a thing the row prints.** The
+			// projection is memoised on the filter and the chart repaints on
+			// events, so without this a row kept whatever age it was built with
+			// for as long as the map stayed open. Minutes, not frames: that is
+			// the coarsest unit `facilityAnnotationLabel` can move.
+			.concat(`|t${Math.floor(now() / 60)}`);
 		if (key !== listKey) {
 			listKey = key;
 			rowElements.clear();

@@ -1426,7 +1426,26 @@ export function mountGalaxyChart({
 	const pitchAxis = new THREE.Vector3();
 
 	let animationFrame = 0;
+	/**
+	 * **A last-known age is the one thing on this chart that changes with no
+	 * event behind it.** Everything else the card and the finder print is
+	 * recomputed when the player does something — a selection, a jump, a chip.
+	 * §5.2.1's `SEEN 2H AGO` and the card's `DUE … · UNCONFIRMED` are functions
+	 * of the world clock, so a map left open froze both: an observation stayed
+	 * `SEEN JUST NOW` for as long as the tab was up, and a remembered repair
+	 * never turned `OVERDUE`.
+	 *
+	 * Minute granularity, because that is the label's own: a per-frame
+	 * recompute to move a number that cannot change 3,600 times an hour is the
+	 * expensive way to be wrong.
+	 */
+	let paintedMinute = Math.floor(now() / 60);
 	const frame = (): void => {
+		const minute = Math.floor(now() / 60);
+		if (minute !== paintedMinute) {
+			paintedMinute = minute;
+			recompute();
+		}
 		if (resizePending) {
 			resizePending = false;
 			resize();

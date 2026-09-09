@@ -1925,6 +1925,41 @@ if (plan.uncontested && plan.contested && plan.hysteresis && plan.release) {
 	});
 }
 
+/**
+ * §5.2.1: "Opening the Galaxy Map is never an information channel."
+ *
+ * The chart takes `knowledge` as a value and has no writer, so this is true by
+ * construction — and the construction is exactly what a later node could
+ * change without noticing, which is why it is measured rather than argued. The
+ * whole galaxy's knowledge is serialised either side of a full leave-and-return
+ * of the chart tab, so a row added, refreshed or re-sourced anywhere fails it.
+ */
+const knowledgeSnapshot = () =>
+	page.evaluate(() =>
+		JSON.stringify(
+			window.__seelite.commerceWorld.galaxies.map((g) => g.knowledge),
+		),
+	);
+const knowledgeBefore = await knowledgeSnapshot();
+await clickTab("Navigation");
+await page.waitForFunction(() => window.__seeliteGalaxyMap == null);
+await clickTab("Galaxy Map");
+await page.waitForFunction(() => window.__seeliteGalaxyMap != null);
+await nextFrames(page);
+await page.evaluate(() => {
+	const map = window.__seeliteGalaxyMap;
+	map.setFinderBudget(9);
+	map.select(map.state.litIndices[0] ?? map.state.currentIndex);
+});
+await nextFrames(page);
+const knowledgeAfter = await knowledgeSnapshot();
+check(
+	"opening the map, browsing it and selecting a system changes no knowledge row",
+	knowledgeBefore === knowledgeAfter && knowledgeBefore.length > 2,
+	`${knowledgeBefore.length} bytes of knowledge before, ${knowledgeAfter.length} after, ${knowledgeBefore === knowledgeAfter ? "identical" : "CHANGED"}`,
+);
+await clearFinder();
+
 // ---- Teardown -------------------------------------------------------------
 
 await clickTab("Navigation");
