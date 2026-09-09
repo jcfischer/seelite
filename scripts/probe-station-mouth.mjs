@@ -12,16 +12,20 @@
  *
  * **The metric is a temporal median, not a frame difference.** The station
  * turns, so adjacent frames legitimately differ over the whole silhouette —
- * 25,000–30,000 pixels a frame on the recording with nothing wrong. What only a
- * discontinuity can produce is a pixel where the two *neighbours* agree with
- * each other and the middle frame disagrees with both. Continuous motion across
- * an edge cannot.
+ * 25,000–30,000 pixels a frame on the recording with nothing wrong. This finds a
+ * pixel where the two *neighbours* agree with each other and the middle frame
+ * disagrees with both, and erodes the result, because a one-pixel silhouette
+ * lands on a different pixel each frame and hairlines otherwise trace every rim
+ * — on the recording, 304 of 337 frames carry some.
  *
- * **And it is eroded, because a moving edge still trips the raw median.** A
- * one-pixel silhouette lands on a different pixel each frame, so hairlines trace
- * every rim in the raw mask — on the recording, 304 of 337 frames carry some.
- * Only a region that survives an erosion is a polygon rather than an edge, which
- * is the distinction acceptance 2 draws in the node.
+ * **That still does not prove a polygon popped, which is why the floor arm is
+ * not optional** (sage, round 2). A subject moving further than its own extent
+ * between frames produces the same signature; the detector's own docstring
+ * carries the counterexample. The floor arm runs the identical sweep over the
+ * identical rotation with the aperture group hidden and reads 0 here, so the
+ * motion in these framings cannot be what a non-zero reading is made of. A rung
+ * whose floor is not 0 is reporting on its own framing, not on the mouth, and it
+ * is checked as its own row rather than assumed.
  *
  * **Two framings, because one erosion radius cannot serve both.** The fighting
  * face is 24 m deep at a lateral 35 m, so its projected width falls from about
@@ -39,6 +43,7 @@ import {
 	FLICKER_CHANGED,
 	FLICKER_SAME,
 	installFlickerDetector,
+	installPinAndFrame,
 } from "./lib/flicker-detector.mjs";
 import {
 	bootedGame,
@@ -79,6 +84,7 @@ try {
 	});
 	watch(page);
 	await installFlickerDetector(page);
+	await installPinAndFrame(page);
 	await page.goto(`${ORIGIN}/?seed=54`, { waitUntil: "load" });
 	await bootedGame(page);
 
@@ -109,71 +115,6 @@ try {
 			scratch.width = W;
 			scratch.height = H;
 			const ctx = scratch.getContext("2d", { willReadFrequently: true });
-
-			/**
-			 * Put the bodies at an absolute clock and the camera on the axis, in
-			 * that order, without letting a real animation frame run.
-			 *
-			 * Writing `gameTime` alone moves only the *drawn* phase: bodies are
-			 * placed by `advanceSystem`, which the write does not call. And
-			 * `__viewAlongAxis` awaits two animation frames, which the loop
-			 * servicing them advances the clock through — so a sweep placed with
-			 * it starts wherever the page's boot happened to finish. Both were
-			 * measured: they moved the same build's reading by 30%.
-			 */
-			const place = (rangeKm) => {
-				g.world.gameTime = 0;
-				advanceWorldClock(g.world, options.atS);
-				const body = g.world.system.bodies.find((b) => b.id === id);
-				const pose = g.poseOfStation(id);
-				g.world.ship.pos = {
-					x: body.pos.x + pose.axis.x * rangeKm,
-					y: body.pos.y + pose.axis.y * rangeKm,
-					z: body.pos.z + pose.axis.z * rangeKm,
-				};
-				// Co-moving, for `__placeShipAt`'s reason: at 1 AU a station is
-				// carried at ~30 km/s, so a ship at rest in sim space is not parked
-				// beside it.
-				g.world.ship.vel = g.stationVelocity(id);
-				const from = g.nearScene.position.clone().set(0, 0, -1);
-				const to = g.nearScene.position
-					.clone()
-					.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
-				g.orientation.setFromUnitVectors(from, to);
-				const d = {
-					x: g.world.ship.pos.x - body.pos.x,
-					y: g.world.ship.pos.y - body.pos.y,
-					z: g.world.ship.pos.z - body.pos.z,
-				};
-				const actualKm = Math.hypot(d.x, d.y, d.z);
-				// **One frame drawn before anything is looked up.** A body's render
-				// layer is decided inside `render`, so until a frame runs the
-				// station is still wherever boot left it — and the first rung's
-				// `getObjectByName` on the near scene found nothing, which made its
-				// floor arm hide nothing and read identical to the present arm.
-				// Identical is exactly what a floor that cannot be lowered looks
-				// like, so the row passed as a defect and failed as a floor.
-				g.render(0);
-				// #271: a placement is a request, and a camera round the side of a
-				// subject is looking at a different face of it. Both are read back.
-				return {
-					askedKm: rangeKm,
-					actualKm,
-					offAxisDeg:
-						(Math.acos(
-							Math.min(
-								1,
-								Math.max(
-									-1,
-									(d.x * pose.axis.x + d.y * pose.axis.y + d.z * pose.axis.z) /
-										actualKm,
-								),
-							),
-						) *
-							180) /
-						Math.PI,
-				};
-			};
 
 			const frameAt = (t) => {
 				g.world.gameTime = t;
@@ -214,12 +155,19 @@ try {
 			const rungs = [];
 			let apertureGroups = 0;
 			for (const rung of options.rungs) {
-				const placement = place(rung.rangeKm);
+				// `installPinAndFrame` in `scripts/lib/flicker-detector.mjs`, shared
+				// with `measure-mouth-flicker.mjs`: the framing is the basis of the
+				// measurement, and two copies of it are two things to retune.
+				const placement = await window.__pinAndFrame(id, {
+					atS: options.atS,
+					rangeKm: rung.rangeKm,
+				});
 				// **Resolved after the placement, not before it.** A body's render
 				// layer is its distance, so the station is in the far scene until
-				// the camera is put beside it — looked up first, this found nothing
-				// and the floor arm silently hid nothing at all, which reads exactly
-				// like a floor that cannot be lowered.
+				// the camera is put beside it and a frame has drawn — looked up
+				// first, this found nothing, the floor arm hid nothing at all, and
+				// it read exactly like a floor that cannot be lowered.
+				// `__pinAndFrame` draws that frame before it returns.
 				const aperture = [];
 				g.nearScene.getObjectByName(id)?.traverse((child) => {
 					if (child.name === "aperture") aperture.push(child);

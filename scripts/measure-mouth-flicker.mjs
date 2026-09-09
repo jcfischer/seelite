@@ -26,14 +26,23 @@
  * Two attributions, because they answer different halves:
  *
  * - `rays` casts the camera ray through each surviving pixel and reports the
- *   two nearest hits by object name, with the gap between them. Two hits inside
+ *   two nearest hits by object name, with the gap between them. Names and a gap
+ *   only: a column of hit *coordinates* was carried for a round and removed,
+ *   because the aperture hangs inside `spinner` and a reading taken in the
+ *   station root's frame still has the spin in it — a hit on a constant-x face
+ *   acquires a moving y, which is precisely what makes it uncomparable to the
+ *   construction figures it existed to be compared against (sage, round 2).
+ *   Nothing in #269 rested on it; the names, the gap against the depth quantum
+ *   and the hide arms are what the attribution was made of. Two hits inside
  *   the depth buffer's resolution at that range is a depth fight and names both
  *   parties; one hit that is present at `t` and absent at `t ± dt` is a
  *   visibility change and names one.
- * - `hide` re-runs the whole sweep with one named set of objects hidden. The
- *   set whose removal takes the area to zero is the responsible one, and it is
- *   evidence a ray cast cannot give: a ray reads the scene graph, and a pass
- *   that draws outside it — occlusion, bloom — is invisible to it.
+ * - `hide` re-runs the whole sweep with one named set of objects hidden. It is
+ *   evidence a ray cast cannot give — a ray reads the scene graph, and a pass
+ *   that draws outside it, occlusion or bloom, is invisible to it — and it is
+ *   read as a set rather than a ranking. `--base-hide` nests one arm inside
+ *   another, which is the only reading that isolates a pair when several fights
+ *   overlap. `hideNames` below carries the rule in full.
  *
  * Run against a dev server on this working tree (`npm run dev`), like every
  * other measurement script here.
@@ -42,6 +51,7 @@ import {
 	FLICKER_CHANGED,
 	FLICKER_SAME,
 	installFlickerDetector,
+	installPinAndFrame,
 } from "./lib/flicker-detector.mjs";
 import {
 	bootedGame,
@@ -108,6 +118,7 @@ try {
 	});
 	await installViewPlacement(page);
 	await installFlickerDetector(page);
+	await installPinAndFrame(page);
 	await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
 	await bootedGame(page);
 
@@ -129,7 +140,6 @@ try {
 			// its `Raycaster` would be walking objects built by the first. This is
 			// the module Vite already handed the app.
 			const THREE = await import("/node_modules/.vite/deps/three.js");
-			const { advanceWorldClock } = await import("/src/sim.ts");
 			cancelAnimationFrame(g.animationFrame);
 			g.view = options.view;
 			g.setHeadLook("forward");
@@ -148,70 +158,15 @@ try {
 			scratch.width = W;
 			scratch.height = H;
 			const ctx = scratch.getContext("2d", { willReadFrequently: true });
-			// **An absolute clock, and the bodies moved to it — then the camera
-			// placed, in that order.** Three revisions of this were wrong, each
-			// producing a different answer on the same build:
-			//
-			// - `savedClock + from` swept whatever part of the turn the page's own
-			//   boot had reached, so two runs disagreed by 30%.
-			// - Writing `gameTime` alone moves only the *drawn* phase — bodies are
-			//   placed by `advanceSystem`, which the write does not call — so the
-			//   station stayed wherever the boot's last real frame had left it, and
-			//   the star and the aperture axis with it.
-			// - Placing through `__viewAlongAxis` awaits two animation frames, and
-			//   the loop servicing them advances the clock again.
-			//
-			// So: bodies to an absolute `t0` first, then the camera against the
-			// pose read at that instant, then no more real frames — the sweep
-			// writes `gameTime` and renders by hand, which turns the station and
-			// nothing else.
-			g.world.gameTime = 0;
-			advanceWorldClock(g.world, options.fromS);
+			// `installPinAndFrame` in `scripts/lib/flicker-detector.mjs`, shared
+			// with `probe-station-mouth.mjs` because the framing is the basis of
+			// the measurement. Its docstring carries the three ways of doing this
+			// that were wrong first, each of which moved the same build's answer.
 			const t0 = options.fromS;
-
-			const body = g.world.system.bodies.find((b) => b.id === id);
-			const pose = g.poseOfStation(id);
-			g.world.ship.pos = {
-				x: body.pos.x + pose.axis.x * options.rangeKm,
-				y: body.pos.y + pose.axis.y * options.rangeKm,
-				z: body.pos.z + pose.axis.z * options.rangeKm,
-			};
-			// Co-moving, for `__placeShipAt`'s reason: at 1 AU the station is
-			// carried at ~30 km/s, and a camera at rest in sim space is not
-			// parked beside it. Nothing here integrates the ship, so this only
-			// has to be right for the frame the pose was read at — but the
-			// **reading below is what says so**, rather than this comment.
-			g.world.ship.vel = g.stationVelocity(id);
-			g.orientation.setFromUnitVectors(
-				new THREE.Vector3(0, 0, -1),
-				new THREE.Vector3(-pose.axis.x, -pose.axis.y, -pose.axis.z),
-			);
-			// #271's reading: a placement is a request, and both numbers are owed
-			// — a camera short in range but round the side is looking at a
-			// different face.
-			const d = {
-				x: g.world.ship.pos.x - body.pos.x,
-				y: g.world.ship.pos.y - body.pos.y,
-				z: g.world.ship.pos.z - body.pos.z,
-			};
-			const actualKm = Math.hypot(d.x, d.y, d.z);
-			const placement = {
-				askedKm: options.rangeKm,
-				actualKm,
-				offAxisDeg:
-					(Math.acos(
-						Math.min(
-							1,
-							Math.max(
-								-1,
-								(d.x * pose.axis.x + d.y * pose.axis.y + d.z * pose.axis.z) /
-									actualKm,
-							),
-						),
-					) *
-						180) /
-					Math.PI,
-			};
+			const placement = await window.__pinAndFrame(id, {
+				atS: t0,
+				rangeKm: options.rangeKm,
+			});
 
 			// The named sets a run may hide, resolved once against this station's
 			// drawn tree. `null` is the baseline arm and hides nothing.
@@ -346,13 +301,17 @@ try {
 			// the unprojected pixel direction from there.
 			if (options.mode === "sweep" || options.mode === "rays") {
 				const peak = base.peak;
-				out.rays = { at: peak?.at ?? null, hits: [], points: [] };
+				out.rays = { at: peak?.at ?? null, hits: [] };
 				if (peak?.area) {
 					// Under the same hiding the mask was measured under, and the
 					// hidden objects excluded from the ray's own hits — a ray that
 					// can still strike an object the arm removed reports it as the
 					// culprit for a pixel that arm did not draw.
 					const restoreRays = hide(options.baseHide);
+					// **And excluded from the ray's own hits.** Three's `Raycaster`
+					// does not skip an invisible object, so a ray that can still
+					// strike what this arm removed will report it as the culprit for
+					// a pixel that arm did not draw.
 					const excluded = new Set();
 					for (const name of options.baseHide)
 						for (const object of byName.get(name) ?? [])
@@ -389,26 +348,6 @@ try {
 								distanceKm: h.distance,
 							}));
 						const key = named.map((h) => h.name).join(" | ") || "(nothing)";
-						if (named.length && out.rays.points.length < 12) {
-							// The hit read back in the **station's own frame**, which is
-							// where the geometry that placed it was written. A world
-							// point says the ray hit something; a local one says which
-							// face of which bar, and can be compared against the numbers
-							// in `station-mesh.ts` directly.
-							const first = hits.find(
-								(h) => !inPlayer(h.object) && !excluded.has(h.object),
-							);
-							const local = station.worldToLocal(first.point.clone());
-							out.rays.points.push({
-								key,
-								local: {
-									x: local.x,
-									y: local.y,
-									z: local.z,
-								},
-								faceNormal: first.normal,
-							});
-						}
 						const row = tally.get(key) ?? {
 							key,
 							count: 0,
@@ -452,9 +391,24 @@ try {
 				}
 			}
 
-			// **What removing a candidate does to the whole sweep.** One arm per
-			// name, so an arm that takes the area to zero has named the object and
-			// an arm that does not has cleared it.
+			// **What removing a candidate does to the whole sweep**, and read it as
+			// a set rather than a ranking (sage, round 2).
+			//
+			// An arm that takes the area to **zero** names an object every
+			// remaining fight needs. An arm that *reduces* it names a participant
+			// in some of them. An arm that changes nothing clears that object only
+			// for the pairs still measured beside it — **it does not exonerate**,
+			// and an earlier revision of this comment said it did, against this
+			// script's own output: hiding `aperture-light` left 1285 px while the
+			// bars are an attributed party to most of what was there.
+			//
+			// An arm that gets *worse* is confounded rather than informative:
+			// removing a dark surface behind the mouth raises the contrast the
+			// same fight is measured against.
+			//
+			// Separating overlapping fights is what `--base-hide` is for. Nesting
+			// one arm inside another is the only reading here that isolates a
+			// pair.
 			if (options.mode === "sweep" || options.mode === "hide") {
 				out.hide = [];
 				for (const name of options.hideNames.filter((n) => byName.has(n)))
@@ -604,17 +558,6 @@ try {
 				Buffer.from(url.split(",")[1], "base64"),
 			);
 		console.log(`\nwrote ${SAVE}-frame.png and ${SAVE}-overlay.png`);
-	}
-
-	if (result.rays?.points?.length) {
-		console.log("\nfirst hits, in the station's own frame (core radii):");
-		for (const p of result.rays.points)
-			console.log(
-				`  ${p.key.padEnd(42)} x ${p.local.x.toFixed(5)}  y ${p.local.y.toFixed(5)}  z ${p.local.z.toFixed(5)}` +
-					(p.faceNormal
-						? `   n (${p.faceNormal.x.toFixed(2)}, ${p.faceNormal.y.toFixed(2)}, ${p.faceNormal.z.toFixed(2)})`
-						: ""),
-			);
 	}
 } finally {
 	await browser.close();

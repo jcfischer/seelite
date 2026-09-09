@@ -15,19 +15,39 @@
  *
  * A station turns, so adjacent frames legitimately differ over the whole
  * silhouette — 25,000–30,000 pixels a frame on the principal's recording of a
- * mouth that was working. What only a discontinuity produces is a pixel where
- * the two *neighbours* agree with each other and the middle frame disagrees with
- * both. Continuous motion across an edge cannot.
+ * mouth that was working. What this finds instead is a pixel where the two
+ * *neighbours* agree with each other and the middle frame disagrees with both,
+ * which is a discontinuity in what that pixel shows.
  *
  * ## And why it is eroded
  *
  * A one-pixel silhouette under rotation lands on a different pixel each frame,
  * so hairlines trace every rim in the raw mask — 304 of the recording's 337
- * frames carry some. Only a region that survives an erosion is a polygon that
- * popped rather than an edge that moved, which is the distinction #269's
- * acceptance 2 draws. `rawCount` is kept beside `area` because a fix that merely
- * pushed a fight under the erosion radius would show as a raw count that did not
- * move.
+ * frames carry some. Erosion drops those: only a region several pixels across in
+ * every direction survives it. `rawCount` is kept beside `area` because a fix
+ * that merely pushed a fight under the erosion radius would show as a raw count
+ * that did not move.
+ *
+ * ## What a surviving region does **not** prove, and what closes the gap
+ *
+ * It does not prove a polygon popped, and an earlier revision of this file
+ * claimed it did — that continuous motion across an edge could not produce one.
+ * It can: a subject that moves further than its own extent between frames lands
+ * on disjoint pixels in all three, so the middle one differs from two neighbours
+ * that agree. Sage built the case (PR #284, round 2) and it is exact — an
+ * always-visible 8x16 rectangle translating 12 px a frame reads `area` 48 at
+ * `erode` 2.
+ *
+ * So the reading is conditional, and #269's consumers meet the condition **by
+ * measurement rather than by assertion**. `probe-station-mouth.mjs` runs the
+ * same sweep, over the same rotation, with the aperture group hidden, and reads
+ * **0** at both of its framings. The motion is unchanged in that arm; only the
+ * geometry is gone. A mask that survived the motion alone would survive it
+ * there too.
+ *
+ * Anything else that adopts this detector inherits the obligation: either show
+ * the subject's per-frame displacement is small against its own extent, or carry
+ * a control arm with the same motion and no candidate.
  */
 
 /**
@@ -102,3 +122,75 @@ export async function installFlickerDetector(page) {
  */
 export const FLICKER_CHANGED = 30;
 export const FLICKER_SAME = 12;
+
+/**
+ * Install `window.__pinAndFrame(id, { atS, rangeKm })` on this page.
+ *
+ * Puts the bodies at an absolute game clock and the camera on a station's
+ * aperture axis, in that order, without letting a real animation frame run —
+ * and returns `{ askedKm, actualKm, offAxisDeg }`, which is #271's reading: a
+ * placement is a request, and a camera round the side of a subject is looking at
+ * a different face of it.
+ *
+ * **Shared because it is the measurement's basis** (sage, PR #284, round 2).
+ * `probe-station-mouth.mjs` gates on a framing and `measure-mouth-flicker.mjs`
+ * explains one, and two copies of the setup is two things to retune when the
+ * framing moves.
+ *
+ * Three ways of doing this were wrong first, and each moved the same build's
+ * answer:
+ *
+ * - an offset from the boot clock, which swept whatever part of the station's
+ *   turn the page's own boot had reached;
+ * - writing `gameTime` alone, which moves only the *drawn* phase — bodies are
+ *   placed by `advanceSystem`, which the write does not call — leaving the
+ *   station, the aperture axis and the star where boot left them;
+ * - `__viewAlongAxis`, which awaits two animation frames that the loop
+ *   servicing them advances the clock through.
+ *
+ * It draws one frame before returning, because a body's render layer is decided
+ * inside `render`: until a frame has run the station is not in the near scene
+ * and nothing can be looked up on it.
+ *
+ * Call before `page.goto`; it re-runs on every navigation.
+ */
+export async function installPinAndFrame(page) {
+	await page.addInitScript(() => {
+		window.__pinAndFrame = async (id, { atS, rangeKm }) => {
+			const g = window.__seelite;
+			const { advanceWorldClock } = await import("/src/sim.ts");
+			g.world.gameTime = 0;
+			advanceWorldClock(g.world, atS);
+			const body = g.world.system.bodies.find((b) => b.id === id);
+			const pose = g.poseOfStation(id);
+			g.world.ship.pos = {
+				x: body.pos.x + pose.axis.x * rangeKm,
+				y: body.pos.y + pose.axis.y * rangeKm,
+				z: body.pos.z + pose.axis.z * rangeKm,
+			};
+			// Co-moving, for `__placeShipAt`'s reason: at 1 AU a station is
+			// carried at ~30 km/s, so a ship at rest in sim space is not parked
+			// beside it.
+			g.world.ship.vel = g.stationVelocity(id);
+			const from = g.nearScene.position.clone().set(0, 0, -1);
+			const to = g.nearScene.position
+				.clone()
+				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
+			g.orientation.setFromUnitVectors(from, to);
+			g.render(0);
+			const d = {
+				x: g.world.ship.pos.x - body.pos.x,
+				y: g.world.ship.pos.y - body.pos.y,
+				z: g.world.ship.pos.z - body.pos.z,
+			};
+			const actualKm = Math.hypot(d.x, d.y, d.z);
+			const cos =
+				(d.x * pose.axis.x + d.y * pose.axis.y + d.z * pose.axis.z) / actualKm;
+			return {
+				askedKm: rangeKm,
+				actualKm,
+				offAxisDeg: (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI,
+			};
+		};
+	});
+}
