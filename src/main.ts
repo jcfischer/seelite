@@ -3755,12 +3755,23 @@ class Game {
 					// on a stale one. If the prior berth turns out to be held by
 					// someone else, the collision pass below deletes the entry and
 					// re-promotes — which is the same guard a genuine grant gets.
-					for (const key of touchedBerthAssignments)
+					// **Matched on the key's fields, not on a substring.** A berth id is
+					// station-local — every station has a `deck-deep` — so a rewrite
+					// keyed on the actor and the berth alone could land on this
+					// actor's assignment at a *different* station that happens to name
+					// the same berth. `station-route.ts` builds the key as
+					// `record | actor | origin | destination | awayOrdinal | phase |
+					// readyAtS`, and an actor key carries no `|`, so splitting is
+					// exact.
+					for (const key of touchedBerthAssignments) {
+						const [, keyActor, , keyDestination] = key.split("|");
 						if (
-							key.includes(`|${actor.key}|`) &&
+							keyActor === actor.key &&
+							keyDestination === projection.terminalStationId &&
 							this.trafficBerthCache.get(key) === projection.berthId
 						)
 							this.trafficBerthCache.set(key, priorRoute.berthId);
+					}
 					projection = projectActor();
 				}
 				const stationIdFor = (route: SystemTrafficProjection) =>

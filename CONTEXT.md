@@ -57,8 +57,10 @@ derive from that identity and remain stable when it returns.
 _Avoid_: Spawn, ambient ship, anonymous ship
 
 **Traffic roster**:
-The finite set of **Traffic actor** Carrier slots belonging to one station,
-one actor per berth. Roster size is a population ceiling: each actor's own
+The finite set of **Traffic actor** Carrier slots belonging to one station, one
+actor per berth Traffic may call home — the catalogue minus the one berth a
+station keeps free for a visitor (#277). Roster size is a population ceiling:
+each actor's own
 **Traffic schedule** takes it away from its berth for part of the cycle. Hulls
 are deterministic draws from the station role's compatible pool, including its
 required signature hull, so stations of one role can have different casts.
