@@ -457,15 +457,18 @@ export function projectFinder(
 					uncheckedFence++;
 				continue;
 			}
-			const matched = filter.facilities.map(
-				(facility) => facilities.present.get(facility) as FacilityAnnotation,
-			);
-			// **Built inside the branch that keeps it.** Constructed before the
-			// test, a chip-only narrowing at the default budget allocated a row
-			// and took a square root for every matching out-of-budget system
-			// and then dropped it — up to 250 of them on one chip click.
-			if (inBudgetHere) inBudget.push(row(system, from, here, matched));
-			else if (hasQuery) beyondRange.push(row(system, from, here, matched));
+			// **Built inside the branch that keeps it, annotations included.**
+			// Constructed before the test, a chip-only narrowing at the default
+			// budget allocated a row and took a square root for every matching
+			// out-of-budget system and then dropped it — up to 250 of them on
+			// one chip click. The annotation array is one more allocation with
+			// the same shape, so it is built here rather than above the test.
+			const annotate = () =>
+				filter.facilities.map(
+					(facility) => facilities.present.get(facility) as FacilityAnnotation,
+				);
+			if (inBudgetHere) inBudget.push(row(system, from, here, annotate()));
+			else if (hasQuery) beyondRange.push(row(system, from, here, annotate()));
 			continue;
 		}
 		if (inBudgetHere) inBudget.push(row(system, from, here, []));
