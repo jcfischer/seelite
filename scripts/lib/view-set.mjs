@@ -138,6 +138,7 @@ export const LEVERS = Object.freeze({
 	208: "the baked cube a planet is drawn from below two radii",
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
+	209: "the gas giant's band tones, its storm's interior, and its limb",
 });
 
 /**
@@ -579,6 +580,44 @@ export const VIEWS = Object.freeze([
 			seed: 5,
 			radii: 6,
 			sunAngleDeg: 90,
+			view: "chase",
+		},
+	},
+	/**
+	 * **A gas giant close enough to read, which nothing in the set was** (#209).
+	 *
+	 * The node was written naming `planet-fill` and `station-shipyard-flank` as
+	 * its views, and neither can judge it: `tests/view-set.test.ts` asserts that
+	 * every planet of the canonical `SEED` is rocky — `planet-fill` frames one
+	 * of them — and the other is a station. `ringed-giant` is the only gas giant
+	 * in the set and it stands at 6 radii to hold a ring that runs out to 2.3,
+	 * where a band edge and a storm's eye are a few pixels each.
+	 *
+	 * So this is the one case the map's rule allows a new view for: no existing
+	 * frame shows the surface. It borrows `ringed-giant`'s seed and body rather
+	 * than finding its own — seed 5's `planet-6` is the jovian that view already
+	 * established and navigates to, and a second declared seed would be a second
+	 * world to keep track of for no gain. What differs is the range and the
+	 * light: 2 radii, the same as `planet-fill`, which is where #206's own table
+	 * says the surface is at the largest apparent size it still resolves at.
+	 *
+	 * `sunAngleDeg` 35 rather than `planet-fill`'s 60. The bands and the storm
+	 * are albedo, so they want light; the limb is the other half of what this
+	 * node changed and needs a slice of terminator on the disc to be seen
+	 * against. 35 keeps most of the face lit with the terminator still inside
+	 * the frame. `chase` for `planet-fill`'s reason — the canopy frame would eat
+	 * a third of the one thing the view exists to show.
+	 */
+	{
+		name: "giant-fill",
+		covers: [209, 206, 207, 99],
+		what: "A gas giant spanning the frame at two radii, seed 5, lit from 35°. Band tones and edges, the storm's eye and rim, and the limb where the shell meets the disc.",
+		shot: {
+			kind: "body-offset",
+			body: "planet-6",
+			seed: 5,
+			radii: 2,
+			sunAngleDeg: 35,
 			view: "chase",
 		},
 	},

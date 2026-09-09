@@ -109,14 +109,18 @@ describe("the view set itself", () => {
 		expect(placers).not.toContain("shot.seed");
 	});
 
-	/** Two views name their own seed, and both do it because the fixture cannot
-	 *  supply their subject: seed 47 generates no refinery and no gas giant. */
-	test("the views that declare a seed are the two the fixture cannot frame", () => {
+	/** Three views name their own seed, and every one does it because the
+	 *  fixture cannot supply its subject: seed 47 generates no refinery and no
+	 *  gas giant. Two of the three are the same gas giant at two ranges —
+	 *  `ringed-giant` at six radii for #210's pair of shadows, `giant-fill` at
+	 *  two for #209's band tones and limb. */
+	test("the views that declare a seed are the ones the fixture cannot frame", () => {
 		const declared = VIEWS.filter(
 			(v) => (v.shot as { seed?: number }).seed !== undefined,
 		).map((v) => [v.name, (v.shot as { seed?: number }).seed]);
 		expect(declared).toEqual([
 			["ringed-giant", 5],
+			["giant-fill", 5],
 			["refinery-cradle-berth", 2],
 		]);
 		// Half the reason, held here. The other half — that the fixture has no
@@ -126,15 +130,15 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares nineteen views with unique kebab-case names", () => {
+	test("declares twenty views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
-		// `planet-fill`, nineteen since #210 added `ringed-giant`. A literal and
-		// not `VIEWS.length`, which is the whole point: a view deleted by
-		// accident has to be a red run, and a check derived from its own subject
-		// cannot be one.
-		expect(VIEWS.length).toBe(19);
+		// `planet-fill`, nineteen since #210 added `ringed-giant`, twenty since
+		// #209 added `giant-fill`. A literal and not `VIEWS.length`, which is
+		// the whole point: a view deleted by accident has to be a red run, and a
+		// check derived from its own subject cannot be one.
+		expect(VIEWS.length).toBe(20);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -409,8 +413,8 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — nineteen since #210 added `ringed-giant`.
-		expect(html).toContain("· clock 0.6–7.8s");
+		// many views the set declares — twenty since #209 added `giant-fill`.
+		expect(html).toContain("· clock 0.6–8.2s");
 		expect(html).not.toContain("pinned");
 	});
 
