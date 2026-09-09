@@ -38,16 +38,24 @@
  * always-visible 8x16 rectangle translating 12 px a frame reads `area` 48 at
  * `erode` 2.
  *
- * So the reading is conditional, and #269's consumers meet the condition **by
- * measurement rather than by assertion**. `probe-station-mouth.mjs` runs the
- * same sweep, over the same rotation, with the aperture group hidden, and reads
- * **0** at both of its framings. The motion is unchanged in that arm; only the
- * geometry is gone. A mask that survived the motion alone would survive it
- * there too.
+ * **So a mask says where to look and not what is there**, and the floor arm does
+ * not close that gap either. An earlier revision said it did — that the same
+ * sweep with the aperture hidden reading 0 showed the motion could not be what
+ * the mask was made of. It does not: hiding the aperture removes the candidate
+ * *and* the moving geometry together, so its zero is consistent with both
+ * readings. Sage caught that in round 3, having caught the claim it replaced in
+ * round 2. What the floor arm does establish is narrower and still worth having:
+ * the mask requires the aperture, so it is not made by the rest of the station.
  *
- * Anything else that adopts this detector inherits the obligation: either show
- * the subject's per-frame displacement is small against its own extent, or carry
- * a control arm with the same motion and no candidate.
+ * What separates a depth fight from motion is **attribution, not the mask**. For
+ * #269 that was `measure-mouth-flicker.mjs`'s ray column — every sampled pixel's
+ * two nearest surfaces within the depth buffer's own resolution at that range,
+ * 0.00 mm against 0.19 mm — together with the outcome: separating coplanar faces
+ * by a metre removed the mask, and no motion-derived signal responds to that.
+ *
+ * A consumer of this detector therefore gates on *a discontinuity at the mouth*,
+ * which is what #269's acceptance 2 asks for, and owes its diagnosis to an
+ * instrument rather than to the count.
  */
 
 /**

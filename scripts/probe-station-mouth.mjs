@@ -18,14 +18,18 @@
  * lands on a different pixel each frame and hairlines otherwise trace every rim
  * — on the recording, 304 of 337 frames carry some.
  *
- * **That still does not prove a polygon popped, which is why the floor arm is
- * not optional** (sage, round 2). A subject moving further than its own extent
- * between frames produces the same signature; the detector's own docstring
- * carries the counterexample. The floor arm runs the identical sweep over the
- * identical rotation with the aperture group hidden and reads 0 here, so the
- * motion in these framings cannot be what a non-zero reading is made of. A rung
- * whose floor is not 0 is reporting on its own framing, not on the mouth, and it
- * is checked as its own row rather than assumed.
+ * **What this gates on is a discontinuity at the mouth, not a diagnosis of one.**
+ * A subject moving further than its own extent between frames produces the same
+ * signature — the detector's docstring carries the counterexample and the two
+ * rounds of overclaiming it took to get that written down. The floor arm, which
+ * hides the aperture group, does not settle it either: it removes the candidate
+ * and the moving geometry together. What it does establish is that a non-zero
+ * reading needs the aperture, so a rung whose floor is not 0 is reporting on its
+ * own framing rather than on the mouth — which is why each floor is checked as
+ * its own row instead of assumed.
+ *
+ * Naming the cause is `measure-mouth-flicker.mjs`'s job, and for #269 the answer
+ * was two surfaces inside the depth buffer's own resolution.
  *
  * **Two framings, because one erosion radius cannot serve both.** The fighting
  * face is 24 m deep at a lateral 35 m, so its projected width falls from about

@@ -11,32 +11,34 @@
  * **A whole-frame difference cannot see this and neither can a single pair.**
  * The station turns, so every adjacent pair differs over the whole silhouette —
  * measured on the recording, 25,000–30,000 pixels a frame moved past 24/255 with
- * nothing wrong. What isolates a discontinuity is the *temporal median*: a pixel
- * where the two neighbours agree with each other and the middle frame disagrees
- * with both. Continuous motion cannot produce that; a polygon that draws in one
- * frame and not the next can.
+ * nothing wrong. The *temporal median* localises a discontinuity instead: a
+ * pixel where the two neighbours agree with each other and the middle frame
+ * disagrees with both. `scripts/lib/flicker-detector.mjs` owns it, and owns what
+ * it does **not** establish — a surviving region is not on its own proof that a
+ * polygon popped, and this file claimed it was for two rounds.
  *
- * **And the raw median mask is not a defect count either.** A rotating edge one
+ * **The raw median mask is not a defect count either.** A rotating edge one
  * pixel wide legitimately lands on a different pixel each frame, so thin lines
  * trace every silhouette in the mask — 304 of the recording's 337 frames carry
- * some. The reading that means something is what survives an erosion: a filled
- * region several pixels across in every direction is a polygon, and a hairline
- * is an edge. `--erode` is that radius and `area` is what it leaves.
+ * some. `--erode` drops those; `area` is what survives and `rawCount` is what
+ * was there before, because a change that merely pushed a fight under the radius
+ * would show as a raw count that did not move.
  *
- * Two attributions, because they answer different halves:
+ * **So a mask is where to look, and the two attributions below are what say what
+ * it is.** Neither the mask nor its size is the finding.
  *
- * - `rays` casts the camera ray through each surviving pixel and reports the
- *   two nearest hits by object name, with the gap between them. Names and a gap
- *   only: a column of hit *coordinates* was carried for a round and removed,
- *   because the aperture hangs inside `spinner` and a reading taken in the
+ * - `rays` casts the camera ray through each surviving pixel and reports the two
+ *   nearest hits by name, with the gap between them **in camera-space depth**
+ *   against the depth buffer's own resolution there. Two surfaces inside that
+ *   resolution are a depth fight and the row names both parties; that is the
+ *   reading that separates a fight from motion, and it is the one #269 rested
+ *   on.
+ *
+ *   Names and a gap only. A column of hit *coordinates* was carried for a round
+ *   and removed: the aperture hangs inside `spinner`, so a reading in the
  *   station root's frame still has the spin in it — a hit on a constant-x face
- *   acquires a moving y, which is precisely what makes it uncomparable to the
+ *   acquires a moving y, which is exactly what made it uncomparable to the
  *   construction figures it existed to be compared against (sage, round 2).
- *   Nothing in #269 rested on it; the names, the gap against the depth quantum
- *   and the hide arms are what the attribution was made of. Two hits inside
- *   the depth buffer's resolution at that range is a depth fight and names both
- *   parties; one hit that is present at `t` and absent at `t ± dt` is a
- *   visibility change and names one.
  * - `hide` re-runs the whole sweep with one named set of objects hidden. It is
  *   evidence a ray cast cannot give — a ray reads the scene graph, and a pass
  *   that draws outside it, occlusion or bloom, is invisible to it — and it is
@@ -148,8 +150,23 @@ try {
 			// term and not geometry, so removing it removes noise and no signal.
 			g.outputPass.setDither(false);
 
+			// **The composer's attachment, not the default framebuffer** (sage,
+			// round 3). The station's depth is written into the target
+			// `EffectComposer` was handed, and `DEPTH_BITS` read after a render
+			// answers for whatever is bound then — which is the canvas, whose
+			// precision this renderer never uses. Bound explicitly here and put
+			// back; a target that reports nothing leaves `depthBits` null and the
+			// quantum column prints as unknown rather than as 24.
 			const gl = g.renderer.getContext();
-			const depthBits = gl.getParameter(gl.DEPTH_BITS) || 24;
+			const composerTarget =
+				g.composer?.renderTarget1 ?? g.composer?.renderTarget2 ?? null;
+			let depthBits = null;
+			if (composerTarget) {
+				const was = g.renderer.getRenderTarget();
+				g.renderer.setRenderTarget(composerTarget);
+				depthBits = gl.getParameter(gl.DEPTH_BITS) || null;
+				g.renderer.setRenderTarget(was);
+			}
 
 			const canvas = g.renderer.domElement;
 			const W = canvas.width;
@@ -346,6 +363,7 @@ try {
 							.map((h) => ({
 								name: h.object.name || h.object.parent?.name || "(unnamed)",
 								distanceKm: h.distance,
+								point: h.point.clone(),
 							}));
 						const key = named.map((h) => h.name).join(" | ") || "(nothing)";
 						const row = tally.get(key) ?? {
@@ -357,15 +375,24 @@ try {
 						};
 						row.count++;
 						if (named.length === 2) {
-							const gap = named[1].distanceKm - named[0].distanceKm;
+							// **Camera-space depth, not ray distance** (sage, round 3).
+							// The quantum is derived from a `1/z` buffer, where `z` is
+							// the distance along the view axis; an off-axis ray's own
+							// length overstates it by `1/cos`, which would read two
+							// separable surfaces as coincident.
+							const depth0 = depthAlongView(named[0].point);
+							const depth1 = depthAlongView(named[1].point);
+							const gap = depth1 - depth0;
 							row.gapKm.push(gap);
 							// **The depth buffer's own resolution at this range**, which
 							// is what decides whether two surfaces can be told apart:
 							// `z²·(1/near − 1/far)/2^bits`. Anything inside it is a
 							// fight rather than a stack.
-							if (gap < quantumKm(named[0].distanceKm)) row.coincident++;
+							const q = quantumKm(depth0);
+							if (q !== null && gap < q) row.coincident++;
 						}
-						if (named.length >= 1) row.nearKm.push(named[0].distanceKm);
+						if (named.length >= 1)
+							row.nearKm.push(depthAlongView(named[0].point));
 						tally.set(key, row);
 					}
 					out.rays.sampled = sampled;
@@ -438,7 +465,23 @@ try {
 			 * 16-bit attachment resolves 256 times more coarsely than the 24-bit
 			 * one this arithmetic would otherwise claim.
 			 */
+			/**
+			 * A world point's depth along the view axis, kilometres.
+			 *
+			 * The near camera sits at the near scene's origin with the view
+			 * orientation, so this is the point projected onto the camera's own
+			 * forward direction — which is the `z` a `1/z` buffer stores, and not
+			 * the ray's length.
+			 */
+			function depthAlongView(point) {
+				const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+					g.nearCamera.quaternion,
+				);
+				return point.dot(forward);
+			}
+
 			function quantumKm(z) {
+				if (depthBits === null) return null;
 				return (
 					(z * z * (1 / g.nearCamera.near - 1 / g.nearCamera.far)) /
 					2 ** depthBits

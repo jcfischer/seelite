@@ -65,7 +65,7 @@ export const PLATE_FACTOR = 0.06;
  * wall.
  *
  * What was measured is that at every sampled flickering pixel the two nearest
- * surfaces are **0.00 mm apart against a depth resolution of 0.19 mm** — closer
+ * surfaces are **0.00 mm apart against a depth resolution of 0.16 mm** — closer
  * than the buffer can tell them apart. Which one is written is then decided per
  * pixel by how each transform's depth rounds, and between equal depths by draw
  * order under `LessEqualDepth`. Both of those move when the transforms move, so
@@ -91,8 +91,12 @@ export const PLATE_FACTOR = 0.06;
  *
  * From below by the depth buffer. `logarithmicDepthBuffer` is off, so under the
  * near layer's 0.01 km near plane and 24 bits two faces are distinguishable
- * while they are further apart than `z²·(1/near − 1/far)/2²⁴` — 0.19 mm at the
- * 0.17 km this was measured at, and 1 m only at 13 km. No fixed offset removes a
+ * while they are further apart than `z²·(1/near − 1/far)/2²⁴` — 0.16 mm at the
+ * 0.163 km of camera-space depth this was measured at, and 1 m only at 13 km.
+ * The bit count is the composer's own attachment read back with that target
+ * bound, not the canvas the renderer never draws into; it happens to be 24
+ * either way, which is exactly why reading the wrong one went unnoticed for two
+ * rounds. No fixed offset removes a
  * coplanarity at *every* range; what it buys is that the fight returns only past
  * where the mouth is a few pixels of rim. At 13 km the trade's 120 m opening
  * subtends 0.53°, about eleven pixels across a 60° frame.
