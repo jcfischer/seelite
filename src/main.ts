@@ -491,6 +491,14 @@ const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 /** Shared empty fallback for stations with no player or Traffic berth reservations. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
 
+/** The route phases in which a Carrier is at a berth and not moving — the set
+ *  `probe-traffic-continuity.mjs` asserts a berth cannot change across. */
+const SETTLED_PHASES: readonly string[] = [
+	"parked-home",
+	"docked-away",
+	"launch-queued",
+];
+
 /**
  * How fast the chase camera swings round the hull while a key is held.
  *
@@ -3702,6 +3710,58 @@ class Game {
 						};
 						projection = projectActor();
 					}
+				}
+				/**
+				 * **A settled Carrier keeps the berth it is settled in.**
+				 *
+				 * Once the prior route reads `parked-home`, `activeVisitFor` stops
+				 * remembering the finished visit — correctly, it is over — and the
+				 * projector replays it from the schedule instead. The replay's
+				 * `launchReadyAtS` lands a tick earlier than the remembered one, and
+				 * `readyAtS` is part of the berth-assignment cache key, so the next
+				 * authority tick misses the cache and re-promotes a ship that has not
+				 * moved. A promotion is free to answer with a different berth, and a
+				 * parked ship then jumps pads.
+				 *
+				 * Measured at seed 54: `232:station-trade/traffic-03` parked in
+				 * `deck-deep` at 1088.0 s under key `…|parked-home|774.1762186` and
+				 * was re-promoted to `port-near` at 1088.1 s under
+				 * `…|parked-home|774.0762186` — the same visit, the key 0.1 s apart.
+				 *
+				 * **This is older than the visitor berth and was masked by slack.**
+				 * With one carrier per berth the re-promotion had a single candidate
+				 * and returned the berth the ship was already in; #279 freed a berth
+				 * and the allocator started answering differently. So the pin is here
+				 * rather than on the cache key: a key that tolerated the wobble would
+				 * hide the re-promotion instead of preventing it.
+				 */
+				if (
+					priorRoute?.berthId &&
+					projection.berthId &&
+					projection.berthId !== priorRoute.berthId &&
+					SETTLED_PHASES.includes(priorRoute.phase) &&
+					SETTLED_PHASES.includes(projection.phase) &&
+					priorRoute.terminalStationId === projection.terminalStationId
+				) {
+					// Written into the cache the projector already consults, and not
+					// through `activeVisit`: a parked projection replays the finished
+					// visit and takes its home berth from *that* replay
+					// (`homeBerthId: previous?.berthId` in `station-route.ts`), which
+					// overrides anything the caller supplies. The cache is the one
+					// channel the promotion reads before it allocates.
+					//
+					// The keys are the ones this projection just touched, so the
+					// rewrite lands on the decision that produced the move rather than
+					// on a stale one. If the prior berth turns out to be held by
+					// someone else, the collision pass below deletes the entry and
+					// re-promotes — which is the same guard a genuine grant gets.
+					for (const key of touchedBerthAssignments)
+						if (
+							key.includes(`|${actor.key}|`) &&
+							this.trafficBerthCache.get(key) === projection.berthId
+						)
+							this.trafficBerthCache.set(key, priorRoute.berthId);
+					projection = projectActor();
 				}
 				const stationIdFor = (route: SystemTrafficProjection) =>
 					route.terminalStationId ??
