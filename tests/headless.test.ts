@@ -47,6 +47,7 @@ const HEADLESS = [
 	"hyperspace",
 	"names",
 	"noise",
+	"pad-bindings",
 	"panel-focus",
 	"planet-appearance",
 	"rng",
@@ -98,6 +99,7 @@ test("no module has been quietly dropped from the list", () => {
 		"hyperspace",
 		"names",
 		"noise",
+		"pad-bindings",
 		"panel-focus",
 		"planet-appearance",
 		"rng",
@@ -263,4 +265,19 @@ test("src/panel-focus.ts is a leaf, which is what lets six panels share it", () 
 	// be a station, a commodity or a setting key arriving in the model, and the
 	// next panel would need its own.
 	expect(importsIn("panel-focus.ts")).toEqual([]);
+});
+
+test("src/pad-bindings.ts names the pad module only as a type", () => {
+	// The binding table is the one place that knows a button means `j`, and it
+	// has to be loadable here for that to be checked at all. It is not a leaf —
+	// it names `PadFrame` — and what keeps that harmless is that the import is
+	// **type-only** and erased at build. A value import of the same name would
+	// compile, would not be erased, and would put a second copy of the pad
+	// module's constants behind this one.
+	const source = codeOf("src/pad-bindings.ts");
+	const froms = source.match(/\bfrom\s*["'][^"']+["']/g) ?? [];
+	expect(froms).toEqual(['from "./gamepad"']);
+	expect(source).toMatch(/import type \{[^}]*\} from "\.\/gamepad"/);
+	expect(source.match(/\bimport\b/g)).toHaveLength(1);
+	expect(source.match(/\brequire\s*\(/g)).toBeNull();
 });

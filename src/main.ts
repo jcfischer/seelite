@@ -147,6 +147,17 @@ import {
 } from "./cruise-guidance";
 import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
 import { type Course, courseProgress } from "./galaxy-route";
+// The pad, normalised. What any of it *means* is `pollPad` and the panel
+// routing below, and nowhere else — that module was copied in from seekolous
+// and must not learn what a station is.
+import { GamepadSource, type PadFrame } from "./gamepad";
+import {
+	type PadContext,
+	type PadIntents,
+	padFlightAxes,
+	padIntents,
+} from "./pad-bindings";
+import type { SettingsPanelHandle } from "./settings-panel";
 import {
 	JUMP_CHARGE_S,
 	JUMP_TANK_LY,
@@ -1119,6 +1130,27 @@ class Game {
 	private frameAttributionGeneration = 0;
 	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX();
+	/**
+	 * The pad (#283). Constructed here because construction reaches for nothing —
+	 * `navigator` is touched inside `poll()` alone, which is rule 2 of the
+	 * module's header and the reason it sits on the headless list.
+	 */
+	private readonly pad = new GamepadSource();
+	/**
+	 * The pad's last frame, or `null` before the first poll.
+	 *
+	 * Null rather than a synthetic disconnected frame: a probe that cancels the
+	 * frame loop and steps the world by hand never polls, and a zeroed frame
+	 * would let it read "a pad is present and holding nothing" — which is a
+	 * different claim from "nobody has asked".
+	 */
+	private padFrame: PadFrame | null = null;
+	/**
+	 * Said once per session, not per frame: the pad cannot open an
+	 * `AudioContext`, so a session begun on the pad is silent until any key or
+	 * click. See `padAudioNotice`.
+	 */
+	private padAudioNoticeSaid = false;
 	private throttle = 0;
 	private frameBody: Body | null = null;
 	/** A surface stop can happen farther than `NEAR_FAR_KM` from a giant's
@@ -4625,6 +4657,103 @@ class Game {
 					COCKPIT_EMISSIVE_INTENSITIES.throttleIdle);
 	}
 
+	/**
+	 * Where the pad's discrete controls are pointed this frame (#283).
+	 *
+	 * Read off the game's own state rather than off a flag the pad sets, which
+	 * is what keeps seekolous's rule intact: nothing records which device is in
+	 * charge, so the mouse can act on the same panel in the same frame.
+	 *
+	 * `modal` is a screen mounted over the canvas — settings or the perf panel.
+	 * `console` is a head turned to a side console, and the sticks keep flying
+	 * there: that console's own footer says the simulation continues, and it is
+	 * right.
+	 */
+	private padContext(): PadContext {
+		if (this.settingsPanel?.isOpen()) return "modal";
+		return this.view === "cockpit" && this.headLook !== "forward"
+			? "console"
+			: "flight";
+	}
+
+	/**
+	 * The settings screen, once it has been mounted.
+	 *
+	 * Held so the pad can drive the cursor the screen already has. The screen
+	 * keeps owning the keyboard — it takes `keydown` in the capture phase — and
+	 * nothing here changes that; this is a second way in, not a replacement.
+	 */
+	settingsPanel: SettingsPanelHandle | null = null;
+
+	/**
+	 * Act on a panel's share of the pad.
+	 *
+	 * Split from `pollPad` because the two answer different questions: that one
+	 * decides *where the pad is pointed*, this one does what was asked once the
+	 * answer is known.
+	 */
+	private applyPanelIntents(intents: PadIntents, context: PadContext) {
+		if (context === "modal") {
+			const panel = this.settingsPanel;
+			if (!panel) return;
+			if (intents.back) return panel.close();
+			if (intents.focusDelta !== 0) panel.moveCursor(intents.focusDelta);
+			if (intents.valueDelta !== 0) panel.stepValue(intents.valueDelta);
+			return;
+		}
+		// A console. `back` is the way out of one — Circle turns the head
+		// forward, which is also what makes Cross free to activate a row rather
+		// than launch.
+		if (intents.back) {
+			this.setHeadLook("forward");
+			return;
+		}
+		for (const key of intents.keys) this.command(key);
+	}
+
+	/**
+	 * Read the pad, once per frame, and act on its edges.
+	 *
+	 * Called from `animate` before `step`, so a press and the frame it belongs
+	 * to are the same frame. `poll` is the only thing in the module that touches
+	 * `navigator`, and calling it twice in one frame would leave the second call
+	 * with an empty `pressed` set — so there is exactly one caller.
+	 */
+	private pollPad() {
+		const frame = this.pad.poll();
+		this.padFrame = frame;
+		if (!frame.connected) return;
+		const context = this.padContext();
+		const intents = padIntents(frame, context);
+		if (intents.keys.length > 0 || intents.activate) this.padAudioNotice();
+		if (context !== "flight") {
+			this.applyPanelIntents(intents, context);
+			return;
+		}
+		// Through `command`, not through a second copy of what each key does.
+		// The pad presses the key; one implementation stays one implementation.
+		for (const key of intents.keys) this.command(key);
+	}
+
+	/**
+	 * Say once that the pad cannot make a sound.
+	 *
+	 * A gamepad button is not an *activation triggering input event* — the HTML
+	 * specification's list is pointer, keyboard and touch — so it cannot open an
+	 * `AudioContext`. A session begun on the pad and played without touching the
+	 * keyboard or mouse is therefore silent, and the player has no way to guess
+	 * why. Any key or click unlocks it.
+	 *
+	 * Said on the first pad *action* rather than on the first connected frame,
+	 * because the browser hides a pad until a button is pressed and that first
+	 * press is deliberately swallowed as a wake-up.
+	 */
+	private padAudioNotice() {
+		if (this.padAudioNoticeSaid || !this.audio.silent) return;
+		this.padAudioNoticeSaid = true;
+		this.jumpNotice = "PAD: press any key or click once to enable sound";
+	}
+
 	private onKey(e: KeyboardEvent, down: boolean) {
 		const key = e.key.toLowerCase();
 		if (down && !e.repeat && e.altKey) {
@@ -4826,6 +4955,12 @@ class Game {
 			// so a player pushing the throttle got neither a cancel nor an effect.
 			this.keys.has(THROTTLE_UP) ||
 			this.keys.has(THROTTLE_DOWN) ||
+			// The pad's trim counts for the same reason the keys do. The sticks
+			// are already in `yaw`/`pitch`/`roll` above, and they reach here
+			// **deadzoned** — `applyRadialDeadzone` returns a hard zero inside
+			// the zone, so a resting stick cannot disengage an autopilot the
+			// player never touched (#283's F3).
+			padFlightAxes(this.padFrame, this.padContext()).throttleTrim !== 0 ||
 			this.mouseDx !== 0 ||
 			this.mouseDy !== 0
 		);
@@ -6809,9 +6944,17 @@ class Game {
 			aimOrigin: this.cameraPos(),
 			aimNose: this.weaponAim(),
 		});
-		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]);
-		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]);
-		const roll = this.axis(["e"], ["q"]);
+		// The pad's sticks sit **beside** the key set rather than through it, so
+		// the pad's contribution keeps its own magnitude (#283's F1). Nothing
+		// clamps the sum here: `stepAngular` clamps the command to [-1, 1]
+		// itself, and the keyboard's own 1.41x on a diagonal is left exactly as
+		// it was.
+		const padAxes = padFlightAxes(this.padFrame, this.padContext());
+		const yaw =
+			this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padAxes.yaw;
+		const pitch =
+			this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padAxes.pitch;
+		const roll = this.axis(["e"], ["q"]) + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
 		// stepped, so the cancel and the input land on the same frame rather than
@@ -6914,6 +7057,17 @@ class Game {
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
 		if (this.keys.has(THROTTLE_DOWN))
 			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
+		// The triggers **trim** the throttle rather than setting it (#283's F2).
+		// A pull is a speed, not a position: let go and the throttle stays where
+		// it was, which is what a throttle is — and it keeps `throttleRate`,
+		// which is scaled down near a station so docking stays flyable, and
+		// keeps every existing writer of `this.throttle` from being fought on
+		// the next frame. `pad-bindings.ts` argues the rejected arm.
+		if (padAxes.throttleTrim !== 0)
+			this.throttle = Math.min(
+				1,
+				Math.max(0, this.throttle + padAxes.throttleTrim * dt * throttleRate),
+			);
 		this.audio.ambient(this.throttle);
 
 		// The spool-up runs in whichever regime the ship is in, and hands over at
@@ -7651,6 +7805,10 @@ class Game {
 
 	private animate = () => {
 		this.animationFrame = requestAnimationFrame(this.animate);
+		// Before the step, so a press and the frame it belongs to are the same
+		// frame. Exactly one caller: `poll` computes its edges against the
+		// previous call, so a second one in the same frame reports no presses.
+		this.pollPad();
 		const now = performance.now();
 		const dt = this.lastTime
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)
@@ -8973,8 +9131,11 @@ if (query.has("model-viewer")) {
 	// the game exists. Gated first, so nothing is imported when it is not asked
 	// for.
 	// The settings screen is a player-facing feature, so it is not gated.
-	import("./settings-panel").then(({ mountSettingsPanel }) =>
-		mountSettingsPanel(
+	import("./settings-panel").then(({ mountSettingsPanel }) => {
+		// Held on the game so the pad can drive the cursor the screen already
+		// has (#283). The screen keeps owning the keyboard in the capture phase;
+		// this is a second way in rather than a replacement.
+		game.settingsPanel = mountSettingsPanel(
 			game.settings,
 			() => game.releaseHeldKeys(),
 			// What the antialiasing row is *actually* rendering at, when the GPU
@@ -8991,8 +9152,8 @@ if (query.has("model-viewer")) {
 						? "unsupported here"
 						: `${got}x here`;
 			},
-		),
-	);
+		);
+	});
 
 	if (query.has("perf"))
 		import("./perf-panel").then(async ({ mountPerfPanel }) => {

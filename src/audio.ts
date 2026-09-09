@@ -26,6 +26,25 @@ export class AudioFX {
 	/** Last level written, so the gain is set on change and not every frame. */
 	private bedLevel = -1;
 
+	/**
+	 * True while nothing can be heard — no context yet, or one the browser is
+	 * holding suspended until a user gesture.
+	 *
+	 * The HTML specification's *activation triggering input event* is a list —
+	 * pointer, keyboard, touch — and gamepad input is not on it, so a pad press
+	 * does not grant user activation and cannot open a context. That is what the
+	 * specification says; no browser has been tested against it here. A player
+	 * who undocks with Cross and never touches keyboard or mouse therefore gets
+	 * silence, and `Game.padAudioNotice` reads this to say so once (#283).
+	 *
+	 * `!== "running"` rather than `=== "suspended"`: a *closed* context makes no
+	 * sound either, and reading that as audible would suppress the one line that
+	 * explains the silence.
+	 */
+	get silent(): boolean {
+		return this.ctx === null || this.ctx.state !== "running";
+	}
+
 	/** Must be called after a user gesture to unlock audio. */
 	ensure() {
 		if (!this.ctx) {

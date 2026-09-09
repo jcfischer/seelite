@@ -63,6 +63,27 @@ const STYLE = `
 #seelite-settings .hint { margin-top: 14px; color: #7f97b8; font-size: 11.5px; }
 `;
 
+/**
+ * What a mounted settings screen can be asked to do.
+ *
+ * The panel kept its own integer cursor rather than adopting `panel-focus`
+ * (#283), and that is deliberate rather than an omission: `SETTING_KEYS` is a
+ * fixed list that never re-sorts and never loses a row, so the identity-versus-
+ * position problem the shared model exists to solve does not arise here. What
+ * the pad needed was a way in, not a second cursor beside this one.
+ */
+export interface SettingsPanelHandle {
+	/** Whether the screen is currently mounted over the canvas. */
+	readonly isOpen: () => boolean;
+	readonly close: () => void;
+	/** Walk the row cursor, wrapping. A no-op while the screen is closed. */
+	readonly moveCursor: (delta: number) => void;
+	/** Change the focused row's value, as ←→ does. */
+	readonly stepValue: (delta: number) => void;
+	/** Tear the screen and its key listener down. */
+	readonly unmount: () => void;
+}
+
 export function mountSettingsPanel(
 	store: SettingsStore,
 	/** Called as the screen opens, to drop keys the player is still holding. */
@@ -82,7 +103,7 @@ export function mountSettingsPanel(
 		key: K,
 		value: Settings[K],
 	) => string | null,
-) {
+): SettingsPanelHandle {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
@@ -180,9 +201,25 @@ export function mountSettingsPanel(
 	window.addEventListener("keydown", onKey, true);
 	const unsubscribe = store.subscribe(draw);
 
-	return () => {
-		window.removeEventListener("keydown", onKey, true);
-		unsubscribe();
-		close();
+	return {
+		isOpen: () => root !== null,
+		close,
+		moveCursor: (delta: number) => {
+			if (!root) return;
+			cursor =
+				(((cursor + delta) % SETTING_KEYS.length) + SETTING_KEYS.length) %
+				SETTING_KEYS.length;
+			draw();
+		},
+		stepValue: (delta: number) => {
+			if (!root || delta === 0) return;
+			step(SETTING_KEYS[cursor] as keyof Settings, delta);
+			draw();
+		},
+		unmount: () => {
+			window.removeEventListener("keydown", onKey, true);
+			unsubscribe();
+			close();
+		},
 	};
 }
