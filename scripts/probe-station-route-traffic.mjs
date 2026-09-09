@@ -1107,7 +1107,12 @@ try {
 	);
 	check(
 		"a truthful full station queues the player without inventing a reservation",
-		result.fullClearance?.kind === "queued" && !result.fullPlayerBerth,
+		result.fullClearance?.kind === "queued" &&
+			// The position is the occupancy the allocator was handed, so a full
+			// station's reply is its capacity. Asserting the kind alone would pass a
+			// queue that named any number at all.
+			result.fullClearance.position === result.coldBerthCount &&
+			!result.fullPlayerBerth,
 		JSON.stringify({
 			berths: result.coldBerthCount,
 			clearance: result.fullClearance,
