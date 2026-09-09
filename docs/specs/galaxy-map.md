@@ -517,14 +517,14 @@ the subsection below.
 
 #### 5.2.1 Facilities knowledge boundary
 
-Ratified on #116. Generated public infrastructure is universal
-galaxy knowledge: an unvisited system may show its station count, station roles,
-and permanent facilities implied by those roles. This is immutable baseline
-information, not a player-knowledge row.
+Decision record #116 establishes that generated public infrastructure is
+universal galaxy knowledge: an unvisited system may show its station count,
+station roles, and permanent facilities implied by those roles. This is
+immutable baseline information, not a player-knowledge row.
 
-A refinery's black-market flag remains learned by visiting, as
-`station-types.md` §5.2 requires. Mutable carrier condition, prices, stock, and
-other current facts are intelligence: they appear only when learned through an
+A refinery's black-market flag remains learned by visiting, consistent with
+`station-types.md` §5.2. Mutable carrier condition, prices, stock, and other
+current facts are intelligence: they appear only when learned through an
 approved information channel and carry `persistent-world-state.md` §3.1's
 timestamped last-known semantics. Their absence must never be filled from live
 objective state.

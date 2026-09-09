@@ -116,10 +116,10 @@ uncertainty until an approved information channel refreshes it.
 _Avoid_: Live map state, discovery status
 
 **System relay**:
-The public station-condition report received when the player enters a system.
-It refreshes Last-known state for every station there, but reveals no private
-facility facts such as black-market presence. Opening the Galaxy Map does not
-contact a System relay.
+The public station-condition report received when the initial world is
+established or the player later enters a system (#116). It refreshes Last-known
+state for every station there, but reveals no private facility facts such as
+black-market presence. Opening the Galaxy Map does not contact a System relay.
 _Avoid_: Live galaxy feed, long-range scan
 
 **Recovery process**:
