@@ -540,7 +540,8 @@ export async function installViewPlacement(page) {
 			// until #271, defended by a comment about not moving the numbers of
 			// the probes that had the helper first — every one of those had since
 			// opted in, so the flag had outlived its own reason.
-			const vel = opts?.comoving ? g.stationVelocity(bodyId) : undefined;
+			const vel =
+				opts?.comoving === false ? undefined : g.stationVelocity(bodyId);
 			await window.__placeShipAt(
 				{
 					x: body.pos.x + pose.axis.x * rangeKm,
