@@ -107,19 +107,13 @@ const OUTLINE_RADII = 900;
  * How far a placement may land from the framing it asked for: a fraction of the
  * range, and an angle off the aperture axis.
  *
- * A placement is a request. The frame loop owns the clock and carries the
- * station on while a ship at rest stands still, so where a caller framed *from*
- * is a reading rather than a constant. This is the check on the **framing
- * itself** rather than on the aperture pixels that were its downstream symptom
- * — #263's refinery went to 0 lit aperture pixels on one viewport, which reads
- * as a form-specific defect and was a framing that landed somewhere else.
- *
- * **Two numbers, because the range alone understates it.** The station is
- * carried across the frame rather than toward the camera, so most of a drifted
- * framing's error is *lateral*: parked, the trade lands 1.648 km out where it
- * asked for 1.860, which is 0.212 km of range error and 0.405 km of sideways
- * — **14.24° round the side**, a different face of the subject at a trade
- * Coriolis. A check on the range alone would have reported that as 11%.
+ * Why a placement is a reading rather than a constant, and why it takes two
+ * numbers, is `__viewAlongAxis`'s in `probe-guard.mjs`, beside the code that
+ * measures them. What belongs here is where the two tolerances came from, and
+ * that this is the check on the **framing itself** rather than on the aperture
+ * pixels that were its downstream symptom — #263's refinery went to 0 lit
+ * aperture pixels on one viewport, which reads as a form-specific defect and
+ * was a framing that landed somewhere else.
  *
  * Bounded from above by the falsifying build. Parked, one run on this machine:
  * range trade −11.41% / −9.75%, refinery +3.83% / +2.15%, shipyard −2.15% /
