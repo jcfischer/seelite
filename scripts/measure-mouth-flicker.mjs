@@ -248,6 +248,29 @@ try {
 					same: options.same,
 				});
 
+			/**
+			 * Hide a named set and hand back the undo.
+			 *
+			 * Separated from `sweep` because the **peak capture and the ray
+			 * attribution have to run under the same hiding the mask was measured
+			 * under** (sage, PR #284 round 1). The first version restored inside
+			 * `sweep`, so a `--base-hide=aperture-light` run measured its residual
+			 * with the bars gone and then named the culprits — and saved the
+			 * overlay — with the bars back, attributing a residual against a scene
+			 * that contains the thing excluded from it.
+			 */
+			const hide = (names) => {
+				const restore = [];
+				for (const name of names)
+					for (const object of byName.get(name) ?? []) {
+						restore.push([object, object.visible]);
+						object.visible = false;
+					}
+				return () => {
+					for (const [object, was] of restore) object.visible = was;
+				};
+			};
+
 			const sweep = (hidden) => {
 				const names = [...options.baseHide, ...(hidden ?? [])];
 				const restore = hide(names);
