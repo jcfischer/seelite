@@ -149,7 +149,7 @@ The implementation node owes headless tests proving:
 3. **Transition table:** every allowed transition works, every invalid transition fails loudly, knowledge combines independently with every objective condition, repeated destroy/replace cycles preserve instance ordinals, and repeated interrupt/restart cycles produce distinct recovery-process identities. The sequence destroyed → repairing → assisted or rescheduled → replacement complete retains one episode ordinal and the original player attribution through completion.
 4. **Lazy recovery boundaries:** immediately before, exactly at, and after `completesAt` produce the specified condition and replacement ordinal without a tick loop. A due completion first materialized at different later access times always records `occurredAt = completesAt` and produces identical canonical snapshots.
 5. **Order independence:** the same seed, snapshot, and `gameTime` yield the same effective state and canonical sorted projection regardless of map insertion order, access order, or which systems were visited first; same-timestamp completions resolve in canonical `CarrierKey` order.
-6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery` and learned private-fact markers, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. Byte-format compatibility and migration policy are deferred to the save-format decision.
+6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. #275 extends this guarantee to learned private-fact markers. Byte-format compatibility and migration policy are deferred to the save-format decision.
 7. **Compaction equivalence:** compacting transitions cannot change effective capabilities, scheduled recovery, latest attribution, or last-known information including `observedRecovery`.
 8. **Hard bounds:** active objective rows, causal summaries, and knowledge rows never exceed one each per generated carrier; repeated destroy/replace and interrupt/restart cycles do not increase that bound.
 9. **Atomicity and integrity:** a round trip cannot combine `gameTime` or one galaxy envelope from one snapshot with state from another, and truncated or partially written typed domains fail validation rather than reading as absent rows.
@@ -167,12 +167,13 @@ The implementation node owes headless tests proving:
 
 All arithmetic and state-machine checks are headless. A later carrier's visible world evidence or map/HUD presentation also owes the repository's browser probe tier.
 
-**Obligations 1–9 are implemented in `src/world-state.ts` and the leaf
-`src/carrier-key.ts`, checked by `tests/world-state.test.ts`.** That file has ten
-`describe` blocks: nine titled `§9.1` … `§9.9`, one for each implemented
-obligation above, plus `§7 the envelope's writers` — what §7 asks of the write
-path rather than of the model, titled so that counting blocks against this list
-does not read as a mismatch. #116's implementation handoff must add §9.10. The
+**The pre-#116 portions of obligations 1–9 are implemented in
+`src/world-state.ts` and the leaf `src/carrier-key.ts`, checked by
+`tests/world-state.test.ts`.** That file has ten `describe` blocks: nine titled
+`§9.1` … `§9.9`, one for each implemented obligation above, plus `§7 the
+envelope's writers` — what §7 asks of the write path rather than of the model,
+titled so that counting blocks against this list does not read as a mismatch.
+#275 must add §9.10 and the learned-private-fact extension to §9.6. The
 legal-status domain is present as the typed per-galaxy field §7 requires and
 nothing more — thresholds, decay and the Clean/Wanted/Fugitive label belong to
 the combat node, and being derived, the label is a §8 projection that must not
