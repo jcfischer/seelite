@@ -570,10 +570,14 @@ from rotting by **an injected occupancy input in the headless tests** (§9.1),
 exercised code from the day they were written.
 
 #266 became the caller that writes occupancy, and wrote every berth: one
-home-owned carrier per generated berth, all of them parked before their first
-departure. The player was then queued at the station's capacity at every station
-of every seed, and — a grant being a berth reservation (§13.2) — could never
-dock at all. #277 is that regression and its ruling.
+home-owned carrier per generated berth — **by construction**, the roster being
+sized from `interior.berths.length` — and all of them parked before their first
+departure. Occupancy therefore covered the whole catalogue wherever that
+construction held, so the player was queued at the station's capacity and — a
+grant being a berth reservation (§13.2) — could never dock. Measured at seeds 1,
+2, 3 and 7: queue position 8 at a trade station, 6 at a shipyard, 4 at a
+refinery, each equal to that station's berth count. #277 is that regression and
+its ruling.
 
 **The share is the catalogue minus one, and the reserved berth is not
 special-cased anywhere else.** Traffic's roster length, a carrier's home berth
