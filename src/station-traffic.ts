@@ -12,7 +12,8 @@ import { bodyVelocity, type System, stationOf, stationPose } from "./sim";
 import { STATION_GEOMETRY, type StationType } from "./station";
 import {
 	berthFits,
-	chooseBerth,
+	chooseBerthFrom,
+	trafficBerths,
 	type StationInterior,
 	stationInterior,
 } from "./station-interior";
@@ -115,7 +116,8 @@ export interface TrafficActor {
 	schedule: TrafficSchedule;
 }
 
-/** One home-owned actor per generated berth. */
+/** One home-owned actor per berth Traffic may call home — the catalogue minus
+ *  the visitor berth §277 reserves. */
 export function stationTrafficRoster(
 	systemIndex: number,
 	station: Station,
@@ -125,7 +127,9 @@ export function stationTrafficRoster(
 		STATION_GEOMETRY[station.type].aperturePlaneKm,
 		station.berthSeed,
 	);
-	const count = interior.berths.length;
+	// #277: the catalogue minus the visitor berth. Sized from the same rule the
+	// home-berth map reads, so the two cannot disagree about who owns what.
+	const count = trafficBerths(interior).length;
 	const role = TRAFFIC_ROLE[station.type];
 	const cadence = lerp(
 		role.intervalS,
@@ -227,7 +231,16 @@ export function clearancePromotion(
 			a.readyAt - b.readyAt ||
 			compareStationParticipants(a.participant, b.participant),
 	)) {
-		const berth = chooseBerth(interior, request.hull, occupied, gameTime);
+		// Traffic's own allocator, so it may not reach the visitor berth (#277) —
+		// a visiting carrier that took it would re-close the station to the
+		// player for as long as it stayed. The player's promotion goes through
+		// `chooseBerth` in `docking.ts` and sees the whole catalogue.
+		const berth = chooseBerthFrom(
+			trafficBerths(interior),
+			request.hull,
+			occupied,
+			gameTime,
+		);
 		if (berth) return { participant: request.participant, berthId: berth.id };
 	}
 	return null;

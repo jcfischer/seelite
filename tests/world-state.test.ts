@@ -100,9 +100,11 @@ describe("§9.1 namespace and baseline stability", () => {
 		//
 		// A pin is a regression check, not a proof the number is *right*, so it
 		// is bracketed by the generated station plus one Traffic Carrier per
-		// berth: the mandatory trade station contributes nine carriers and a
-		// three-role system contributes at most twenty-one.
-		expect(carriers).toBe(24932);
+		// berth Traffic may call home — the catalogue minus #277's visitor
+		// berth. The mandatory trade station contributes eight carriers (its own
+		// plus seven of eight berths) and a three-role system at most eighteen.
+		// It read 24932 while Traffic held every berth.
+		expect(carriers).toBe(21736);
 		let systemsWithStations = 0;
 		let widest = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
@@ -112,10 +114,10 @@ describe("§9.1 namespace and baseline stability", () => {
 			systemsWithStations += perSystem.size;
 			widest = Math.max(widest, ...perSystem.values());
 		}
-		expect(widest).toBe(21);
+		expect(widest).toBe(18);
 		expect(systemsWithStations).toBe(8 * 256);
-		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * 9);
-		expect(carriers).toBeLessThanOrEqual(8 * 256 * 21);
+		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * 8);
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * 18);
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -133,7 +135,9 @@ describe("§9.1 namespace and baseline stability", () => {
 		// The whole reason the key is composite: `station-trade` names one
 		// station in nearly every system.
 		expect(repeatsAcrossSystems).toBeGreaterThan(200);
-		expect(globalIds.size).toBe(21);
+		// Three station carriers and fifteen Traffic ones — the widest system's
+		// roster since #277 reserved a visitor berth at each of its stations.
+		expect(globalIds.size).toBe(18);
 	});
 
 	test("station and Traffic carrier metadata stay structurally discriminated", () => {
@@ -173,7 +177,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(4);
+		expect(WORLD_GENERATOR_VERSION).toBe(5);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -192,10 +196,20 @@ describe("§9.1 namespace and baseline stability", () => {
  *   for three of these eight galaxies. An attempt is part of a system's seed,
  *   so those galaxies re-generated whole.
  * - 3 → 4: #148/#266 added one home-owned Traffic Carrier per generated berth.
+ * - 4 → 5: #277 reserved a visitor berth at every station, so the roster is the
+ *   catalogue minus one and every station loses its highest-ordinal Traffic
+ *   slot.
  *
- * Version 4 changes all eight hashes because every generated station now owns
- * Traffic Carrier slots. At version 3, five were unchanged by #118's scale-only
+ * Version 4 changed all eight hashes because every generated station gained
+ * Traffic Carrier slots; version 5 changes all eight again because every one of
+ * them loses a slot. At version 3, five were unchanged by #118's scale-only
  * polity effect and only galaxies 1, 2 and 6 re-rolled their layout attempt.
+ *
+ * **The bump is the point, not the paperwork.** This row's own rule is that a
+ * moved carrier set owes a version bump and a migration; #89 still owns the
+ * save, so today the bump is what makes a version-4 snapshot fail its load
+ * check loudly instead of silently pointing at a carrier that no longer
+ * exists.
  *
  * These are not arbitrary numbers to re-bless when the suite goes red. Each one
  * is a hash of every carrier slot's identity, type, parent and generated
@@ -204,8 +218,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	1097279747, 3299010639, 2421711576, 2262254926, 2196932550, 3294311516,
-	1133819645, 493716014,
+	3533000626, 1070577234, 2722668670, 3149233322, 2273383725, 63070487,
+	656005811, 694742327,
 ];
 
 // ---------------------------------------------------------------------------

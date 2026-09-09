@@ -40,7 +40,7 @@ import {
 	stationPose,
 } from "./sim";
 import { STATION_GEOMETRY } from "./station";
-import { berthFits, stationInterior } from "./station-interior";
+import { berthFits, stationInterior, trafficBerths } from "./station-interior";
 import {
 	type ClearanceQueueRequest,
 	clearancePromotion,
@@ -1424,7 +1424,9 @@ function projectTrafficVisit(
 	);
 	const homeBerth = input.homeBerthId
 		? homeInterior.berths.find((berth) => berth.id === input.homeBerthId)
-		: homeInterior.berths[actor.ordinal % homeInterior.berths.length];
+		: trafficBerths(homeInterior)[
+				actor.ordinal % trafficBerths(homeInterior).length
+			];
 	if (!homeBerth)
 		throw new Error(
 			`no home berth ${input.homeBerthId} at ${actor.homeStationId}`,

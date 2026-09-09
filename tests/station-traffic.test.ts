@@ -14,6 +14,7 @@ import {
 	TRAFFIC_ROLE,
 	trafficScheduleAt,
 } from "../src/station-traffic";
+import { trafficBerths } from "../src/station-interior";
 import { generateContents } from "../src/system";
 import { enumerateCarriers, WORLD_GENERATOR_VERSION } from "../src/world-state";
 
@@ -33,7 +34,7 @@ const stations = () => {
 
 describe("station Traffic roster", () => {
 	test("Traffic slots join the version-4 persistence Carrier namespace", () => {
-		expect(WORLD_GENERATOR_VERSION).toBe(4);
+		expect(WORLD_GENERATOR_VERSION).toBe(5);
 		const generated = [...enumerateCarriers(WORLD, 0)];
 		const traffic = generated.filter((carrier) =>
 			carrier.localCarrierId.includes("/traffic-"),
@@ -44,11 +45,14 @@ describe("station Traffic roster", () => {
 		);
 	});
 
-	test("one stable, fitting actor per berth with each role signature", () => {
+	test("one stable, fitting actor per Traffic berth with each role signature", () => {
 		for (const { record, station } of stations().slice(0, 200)) {
 			const interior = interiorOfStation(station);
 			const roster = stationTrafficRoster(record.index, station);
-			expect(roster).toHaveLength(interior.berths.length);
+			// Per berth Traffic may call home, which is the catalogue minus the
+			// visitor berth (#277). `tests/visitor-berth.test.ts` owns the share
+			// itself; this row only needs the roster to match whatever it is.
+			expect(roster).toHaveLength(trafficBerths(interior).length);
 			expect(new Set(roster.map((actor) => actor.key)).size).toBe(
 				roster.length,
 			);
@@ -131,9 +135,13 @@ describe("shared station arbitration", () => {
 		);
 		const roster = stationTrafficRoster(record.index, station);
 		const interior = interiorOfStation(station);
-		const occupied = new Set(
-			interior.berths.slice(0, -1).map((berth) => berth.id),
-		);
+		// Every Traffic berth but the last, so exactly one berth this allocator
+		// may reach is free. **Not `interior.berths.slice(0, -1)`**: that left
+		// the *visitor* berth as the only free one, and since #277 Traffic's
+		// allocator cannot reach it — the promotion would be null for a reason
+		// that has nothing to do with what this row is about.
+		const allowed = trafficBerths(interior);
+		const occupied = new Set(allowed.slice(0, -1).map((berth) => berth.id));
 		const promoted = clearancePromotion(
 			[
 				{
@@ -156,7 +164,7 @@ describe("shared station arbitration", () => {
 			kind: "carrier",
 			key: roster[0].key,
 		});
-		expect(promoted?.berthId).toBe(interior.berths.at(-1)?.id);
+		expect(promoted?.berthId).toBe(allowed.at(-1)?.id);
 	});
 
 	test("lane uses oldest ready, CarrierKey, and launch-first only on an exact tie", () => {
