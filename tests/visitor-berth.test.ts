@@ -17,12 +17,11 @@ const WORLD = 0x5ee11e;
  * `interior.berths.length`, so one home carrier per berth was a property of the
  * construction rather than of a seed, and every one of them parked before its
  * first departure — leaving `occupied` covering the whole catalogue and the
- * docking computer waiting for a berth it would never be offered. It was
- * *measured* at seeds 1, 2, 3 and 7, where the queue position equalled each
- * station's berth count; this file's own evidence is the fixed world below and
- * its sample, and neither claims the other's scope. The arithmetic is here
- * rather than in a browser because that is what it is —
- * `probe-dock-arrival.mjs` owns the flown half.
+ * docking computer waiting for a berth it would never be offered. The readings
+ * taken on that build live on #277's receipt and are not restated here: it is
+ * gone, so nothing can reprint them. This file's own evidence is the fixed
+ * world below and its sample. The arithmetic is here rather than in a browser
+ * because that is what it is — `probe-dock-arrival.mjs` owns the flown half.
  */
 const stations = () => {
 	const galaxy = generateGalaxy(WORLD, 0);

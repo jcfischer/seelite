@@ -574,10 +574,10 @@ home-owned carrier per generated berth — **by construction**, the roster being
 sized from `interior.berths.length` — and all of them parked before their first
 departure. Occupancy therefore covered the whole catalogue wherever that
 construction held, so the player was queued at the station's capacity and — a
-grant being a berth reservation (§13.2) — could never dock. Measured at seeds 1,
-2, 3 and 7: queue position 8 at a trade station, 6 at a shipyard, 4 at a
-refinery, each equal to that station's berth count. #277 is that regression and
-its ruling.
+grant being a berth reservation (§13.2) — could never dock. #277 is that
+regression and its ruling, and its receipt carries the readings: no figure is
+quoted here, because the build they were taken on no longer exists and no
+shipped instrument can reprint them.
 
 **The share is the catalogue minus one, and the reserved berth is not
 special-cased anywhere else.** Traffic's roster length, a carrier's home berth
