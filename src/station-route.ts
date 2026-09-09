@@ -1422,11 +1422,12 @@ function projectTrafficVisit(
 		STATION_GEOMETRY[homeNow.station.type].aperturePlaneKm,
 		homeNow.station.berthSeed,
 	);
+	// One binding: the collection indexed and the length it is taken modulo must
+	// be the same subset, and two calls do not say so.
+	const homeTrafficBerths = trafficBerths(homeInterior);
 	const homeBerth = input.homeBerthId
 		? homeInterior.berths.find((berth) => berth.id === input.homeBerthId)
-		: trafficBerths(homeInterior)[
-				actor.ordinal % trafficBerths(homeInterior).length
-			];
+		: homeTrafficBerths[actor.ordinal % homeTrafficBerths.length];
 	if (!homeBerth)
 		throw new Error(
 			`no home berth ${input.homeBerthId} at ${actor.homeStationId}`,

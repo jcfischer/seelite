@@ -13,11 +13,16 @@ const WORLD = 0x5ee11e;
  * catalogue minus one and a player arriving at a cold station is granted rather
  * than queued.
  *
- * The failure this replaces was total: one home carrier per berth, every one of
- * them parked before its first departure, so `occupied` was the whole catalogue
- * at every station of every seed and the docking computer waited for a berth it
- * would never be offered. The arithmetic is here rather than in a browser
- * because that is what it is — `probe-dock-arrival.mjs` owns the flown half.
+ * The failure this replaces was total. The roster was sized from
+ * `interior.berths.length`, so one home carrier per berth was a property of the
+ * construction rather than of a seed, and every one of them parked before its
+ * first departure — leaving `occupied` covering the whole catalogue and the
+ * docking computer waiting for a berth it would never be offered. It was
+ * *measured* at seeds 1, 2, 3 and 7, where the queue position equalled each
+ * station's berth count; this file's own evidence is the fixed world below and
+ * its sample, and neither claims the other's scope. The arithmetic is here
+ * rather than in a browser because that is what it is —
+ * `probe-dock-arrival.mjs` owns the flown half.
  */
 const stations = () => {
 	const galaxy = generateGalaxy(WORLD, 0);
