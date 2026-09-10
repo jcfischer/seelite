@@ -529,6 +529,65 @@ try {
 			`open ${open}; changed ${changed.join(", ") || "nothing"}`,
 		);
 
+		// **The screen scrolls under the cursor.** At 700x480 the last rows sit
+		// below the viewport, and the pad has no other way to reach them — a
+		// cursor walked onto one changed a setting the player could not see.
+		// Sage found it, round 6; the keyboard had the same hole, because a
+		// mouse can scroll and nobody had tried without one.
+		// **A viewport the dialog does not fit.** `#seelite-settings` is the
+		// scroll container and only overflows when the box is taller than the
+		// window — at 700x480 all six rows and their notes fit, so the first
+		// version of this check reached the last row with nothing to scroll and
+		// passed with the fix removed. The overflow is asserted below rather
+		// than assumed.
+		await page.setViewportSize({ width: 700, height: 320 });
+		await frames(2);
+		const overflows = await page.evaluate(() => {
+			const overlay = document.querySelector("#seelite-settings");
+			return overlay ? overlay.scrollHeight > overlay.clientHeight + 1 : false;
+		});
+		const box = () =>
+			page.evaluate(() => {
+				// **Against the scroll container, not the box.** `.box` is the
+				// thing that overflows, so its own rect contains every row by
+				// construction and the check passed with the fix removed.
+				// `#seelite-settings` is what has `overflow-y: auto`, and its
+				// rect is what the player can actually see.
+				const overlay = document.querySelector("#seelite-settings");
+				const rows = [...document.querySelectorAll("#seelite-settings .row")];
+				const at = rows.findIndex(
+					(r) => r.getAttribute("aria-selected") === "true",
+				);
+				if (!overlay || at === -1) return null;
+				const o = overlay.getBoundingClientRect();
+				const r = rows[at].getBoundingClientRect();
+				return {
+					index: at,
+					rows: rows.length,
+					visible: r.top >= o.top - 1 && r.bottom <= o.bottom + 1,
+				};
+			});
+		// Every row the walk lands on, so one that scrolled out of sight fails
+		// the check rather than being averaged away by a later one that did not.
+		let lowest = null;
+		for (let i = 0; i < 12; i++) {
+			await tap(B.down);
+			const now = await box();
+			if (now && (lowest === null || !now.visible)) lowest = now;
+		}
+		await page.setViewportSize({ width: 1280, height: 860 });
+		await frames(2);
+		check(
+			"walking the settings screen keeps the selected row on screen",
+			overflows &&
+				lowest !== null &&
+				lowest.index > 0 &&
+				lowest.visible === true,
+			lowest === null
+				? "no selected row found"
+				: `dialog overflows ${overflows}; reached row ${lowest.index} of ${lowest.rows}; on screen ${lowest.visible}`,
+		);
+
 		// Cross advances the focused row, which is what clicking it does on that
 		// screen. The modal branch ignored `activate` entirely, so the one button
 		// a pad player reaches for first did nothing. Sage found it, round 5.

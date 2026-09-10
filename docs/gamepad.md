@@ -93,7 +93,7 @@ Xbox pad reads `a`/`b`/`x`/`y` literally.
 | `start` (Options) | docking computer | `u` |
 | `select` (Create) | charge the Jump | `` ` `` |
 | d-pad ← / ↑ / → | head-look port, forward, starboard | `1` / `2` / `3` |
-| d-pad ↓ | hand the pad to the frame instrument, and back | — |
+| d-pad ↓ | hand the pad to the frame instrument (Circle gives it back) | — |
 
 **The throttle is a trim, not a position**, and that is #283's F2. A trigger
 reporting an absolute 0–1 throttle was the obvious alternative and is wrong for
@@ -116,7 +116,7 @@ agrees with the mouse: push right, the nose goes right.
 | --- | --- |
 | d-pad ↑ / ↓ | walk the cursor |
 | `a` (Cross) | act on the focused row |
-| `b` (Circle) | back out — to the forward view, or out of the instrument |
+| `b` (Circle) | back out — to the forward view, out of a modal, or out of the instrument |
 | `l1` / `r1` | previous and next tab |
 | right stick | orbit the galaxy chart, on the Galaxy Map tab only |
 | everything else | still flies the ship |

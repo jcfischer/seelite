@@ -171,6 +171,33 @@ export function mountSettingsPanel(
 		draw();
 	};
 
+	/**
+	 * Walk the row cursor, wrapping, and reveal where it landed.
+	 *
+	 * One implementation for the arrow keys and the pad (#283, round 6): the
+	 * handle repeated the wrap and the redraw, so settings navigation had two
+	 * bodies to keep in step and only one of them scrolled.
+	 */
+	const moveCursor = (delta: number) => {
+		if (!root || delta === 0) return;
+		cursor =
+			(((cursor + delta) % SETTING_KEYS.length) + SETTING_KEYS.length) %
+			SETTING_KEYS.length;
+		draw();
+		// **The screen scrolls, and the pad has no other way to scroll it.** At
+		// 700x480 the last three rows sit below the viewport, so a cursor walked
+		// onto one changed a setting the player could not see. The keyboard had
+		// the same hole and nobody had noticed, because a mouse can scroll.
+		// Sage found it, round 6.
+		root.querySelectorAll(".row")[cursor]?.scrollIntoView({ block: "nearest" });
+	};
+
+	const stepValue = (delta: number) => {
+		if (!root || delta === 0) return;
+		step(SETTING_KEYS[cursor] as keyof Settings, delta);
+		draw();
+	};
+
 	const onKey = (e: KeyboardEvent) => {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		if (!root) {
@@ -185,15 +212,10 @@ export function mountSettingsPanel(
 		e.preventDefault();
 		e.stopPropagation();
 		if (e.key === "Escape" || e.key === SETTINGS_KEY) return close();
-		if (e.key === "ArrowDown") cursor = (cursor + 1) % SETTING_KEYS.length;
-		else if (e.key === "ArrowUp")
-			cursor = (cursor - 1 + SETTING_KEYS.length) % SETTING_KEYS.length;
-		else if (e.key === "ArrowRight")
-			step(SETTING_KEYS[cursor] as keyof Settings, 1);
-		else if (e.key === "ArrowLeft")
-			step(SETTING_KEYS[cursor] as keyof Settings, -1);
-		else return;
-		draw();
+		if (e.key === "ArrowDown") moveCursor(1);
+		else if (e.key === "ArrowUp") moveCursor(-1);
+		else if (e.key === "ArrowRight") stepValue(1);
+		else if (e.key === "ArrowLeft") stepValue(-1);
 	};
 
 	// Capture phase, so the game's own handler does not also act on a key that
@@ -204,18 +226,8 @@ export function mountSettingsPanel(
 	return {
 		isOpen: () => root !== null,
 		close,
-		moveCursor: (delta: number) => {
-			if (!root) return;
-			cursor =
-				(((cursor + delta) % SETTING_KEYS.length) + SETTING_KEYS.length) %
-				SETTING_KEYS.length;
-			draw();
-		},
-		stepValue: (delta: number) => {
-			if (!root || delta === 0) return;
-			step(SETTING_KEYS[cursor] as keyof Settings, delta);
-			draw();
-		},
+		moveCursor,
+		stepValue,
 		unmount: () => {
 			window.removeEventListener("keydown", onKey, true);
 			unsubscribe();

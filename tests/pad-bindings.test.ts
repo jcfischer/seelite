@@ -60,12 +60,30 @@ const rest = readPad(pad(), NOTHING);
 const absent = readPad(null, NOTHING);
 
 describe("the flight table names keys the keyboard already understands", () => {
-	test("every binding is a key `command` can be given", () => {
+	test("every binding is a key `Game.command` actually handles", () => {
 		// The pad does not get its own copy of what a button does. It presses the
 		// key, and one implementation stays one implementation — a second copy is
 		// how the pad and the keyboard come to disagree about what `j` means.
+		//
+		// **Read off `command`'s own cases, not matched against a shape.** This
+		// was a regular expression accepting any single letter, which `p` and `z`
+		// satisfy while `command` handles neither — so deleting a handler left
+		// the check green and the binding dead. Sage found that, round 6. A
+		// source read rather than an import because `main.ts` cannot be loaded in
+		// this tier; it is the same trade `tests/output-stage.test.ts` makes.
+		const source = codeOf("src/main.ts");
+		const body = source.slice(source.indexOf("private command(key: string)"));
+		const handled = new Set(
+			[
+				...body.slice(0, body.indexOf("\n\t}")).matchAll(/case "([^"]+)":/g),
+			].map((m) => m[1]),
+		);
+		expect(handled.size).toBeGreaterThan(10);
 		for (const key of Object.values(PAD_FLIGHT_KEYS))
-			expect(key).toMatch(/^[a-z0-9`]$|^enter$/);
+			expect(
+				handled.has(key),
+				`${key} is bound but command does not handle it`,
+			).toBe(true);
 	});
 
 	test("no two buttons are bound to the same key", () => {
