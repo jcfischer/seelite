@@ -1345,9 +1345,14 @@ const cardReadings = await page.evaluate(() => {
 	};
 });
 check(
-	"the record card carries the roster with exact observation times and sources",
-	/@\s*\d+s/.test(cardReadings.hereText) &&
-		/(system-relay|docking)/.test(cardReadings.hereText) &&
+	"the record card carries the roster with exact observation ages and named sources",
+	// **The age, not a timestamp, and the channel in words.** This asserted
+	// `@ 37s` and the raw `system-relay` — the world clock the game never shows
+	// the player, and the save's own enum. Both were caught by a person looking
+	// at the built card, which no form of this check would have done.
+	/SEEN \d+[DHMS]( \d\d[HMS])? AGO/.test(cardReadings.hereText) &&
+		/(RELAY REPORT|DOCKED HERE|YOUR DOING)/.test(cardReadings.hereText) &&
+		!/system-relay|@\s*\d+s/.test(cardReadings.hereText) &&
 		/TRADE|REFINERY|SHIPYARD|OUTPOST/.test(cardReadings.hereText),
 	`observed card: ${JSON.stringify(cardReadings.hereText.slice(0, 200))}`,
 );

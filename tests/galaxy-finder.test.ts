@@ -36,6 +36,7 @@ import {
 	type LastKnownState,
 	facilityAnnotationLabel,
 	recoveryScheduleLabel,
+	stationRosterLine,
 } from "../src/knowledge-labels";
 import { planRoute, projectJumps } from "../src/galaxy-route";
 import { generateContents } from "../src/system";
@@ -1131,6 +1132,55 @@ describe("§9.4 facilities knowledge", () => {
 			for (const system of generateGalaxy(WORLD_SEED, g).systems)
 				seeds.add(system.seed);
 		expect(seeds.size).toBe(GALAXY_COUNT * 256);
+	});
+
+	/**
+	 * §5.2.1: "The selected-system card exposes the exact observation time and
+	 * report source."
+	 *
+	 * **Both halves were wrong on the first build a person looked at**, and
+	 * neither was reachable from a check: the source printed the save's own enum
+	 * (`system-relay`) and the time printed the world clock at the moment of
+	 * observation (`@ 37s`), which is anchored to a clock the game never shows.
+	 * The exact reading is an *age* now — precise where the finder row is coarse,
+	 * against a reference the player has.
+	 */
+	test("a roster line names its channel in the player's words and its age exactly", () => {
+		const station = {
+			name: "RABEINOR",
+			type: "shipyard" as const,
+			blackMarket: false,
+		};
+		const at = (source: string, observedAt: number) => ({
+			observedInstanceOrdinal: 0,
+			observedCondition: "operational" as const,
+			observedAt,
+			source,
+		});
+		expect(stationRosterLine(station, at("system-relay", 37), 259)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL · RELAY REPORT · SEEN 3M 42S AGO",
+		);
+		expect(stationRosterLine(station, at("docking", 257), 325)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL · DOCKED HERE · SEEN 1M 08S AGO",
+		);
+		expect(stationRosterLine(station, at("intervention", 0), 4 * 3600)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL · YOUR DOING · SEEN 4H 00M AGO",
+		);
+		// Two units, never three, and a day rolls up to days-and-hours.
+		expect(
+			stationRosterLine(station, at("docking", 0), 3 * 86_400 + 4 * 3600),
+		).toBe("RABEINOR — SHIPYARD · OPERATIONAL · DOCKED HERE · SEEN 3D 04H AGO");
+		expect(stationRosterLine(station, at("docking", 0), 9)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL · DOCKED HERE · SEEN 9S AGO",
+		);
+		// A channel nobody has mapped shows itself rather than vanishing.
+		expect(stationRosterLine(station, at("courier-rumour", 0), 5)).toContain(
+			"courier-rumour",
+		);
+		// And never observed still says so, with no age at all.
+		expect(stationRosterLine(station, undefined, 900)).toBe(
+			"RABEINOR — SHIPYARD · STATUS UNKNOWN",
+		);
 	});
 
 	/** §9.4 item 2: any facility chip expands the finder, under §5.2's rule. */

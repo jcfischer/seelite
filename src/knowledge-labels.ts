@@ -209,9 +209,47 @@ export function fenceStatusLabel(
 }
 
 /**
- * One station's line in §5.2.1's record card: the exact observation time and
+ * How a report channel reads on the card.
+ *
+ * **The save's own words are not the player's.** `source` is the persisted enum
+ * — `system-relay`, `docking`, `intervention` — and the card printed it raw, so
+ * a roster line read `OPERATIONAL · system-relay @ 37s`. The principal caught it
+ * on the first look at the built thing, which is what that tier is for.
+ *
+ * An unknown source falls through to itself rather than to a placeholder: a
+ * channel added later should look odd on the card, not invisible.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+	"system-relay": "RELAY REPORT",
+	docking: "DOCKED HERE",
+	intervention: "YOUR DOING",
+};
+
+/** The exact age behind the finder row's coarse one — `1M 08S AGO`, `3D 04H
+ *  AGO`. Two units, never three: the card is precise, not a stopwatch. */
+const exactAge = (elapsed: number): string => {
+	const s = Math.max(0, Math.floor(elapsed));
+	const d = Math.floor(s / SECONDS_PER_DAY);
+	const h = Math.floor((s % SECONDS_PER_DAY) / SECONDS_PER_HOUR);
+	const m = Math.floor((s % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+	const sec = s % SECONDS_PER_MINUTE;
+	const pad = (n: number) => String(n).padStart(2, "0");
+	if (d > 0) return `${d}D ${pad(h)}H AGO`;
+	if (h > 0) return `${h}H ${pad(m)}M AGO`;
+	if (m > 0) return `${m}M ${pad(sec)}S AGO`;
+	return `${sec}S AGO`;
+};
+
+/**
+ * One station's line in §5.2.1's record card: the exact observation age and
  * report source the finder row's relative age is a rounding of, plus the
  * remembered recovery and the fence.
+ *
+ * **Elapsed, not a timestamp.** This printed `@ 37s` — the world clock at the
+ * moment of observation — and nothing in the game shows that clock, so the
+ * figure was anchored to something the player cannot see. §5.2.1 wants the card
+ * to carry the exact reading the row rounds; an exact *age* does that against a
+ * reference the player has, which is now.
  *
  * Beside `recoveryScheduleLabel` and `fenceStatusLabel` for the reason those
  * two are here — it was ~25 lines of formatting inside an already long render
@@ -223,7 +261,7 @@ export function stationRosterLine(
 	now: number,
 ): string {
 	const condition = known
-		? `${known.observedCondition.toUpperCase()} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
+		? `${known.observedCondition.toUpperCase()} · ${SOURCE_LABELS[known.source] ?? known.source} · SEEN ${exactAge(now - known.observedAt)}`
 		: "STATUS UNKNOWN";
 	const schedule = known?.observedRecovery
 		? ` · ${recoveryScheduleLabel(known.observedRecovery, now)}`
