@@ -54,6 +54,116 @@ export const INTERIOR_GROUP_NAME = "station-interior";
 export const PLATE_FACTOR = 0.06;
 
 /**
+ * **One aperture, four rings, and only one of them may own its edge (#269).**
+ *
+ * `station-interior.ts` sets `laneHalfAcrossKm` to `aperture.widthKm / 2` and
+ * `laneHalfUpKm` to `aperture.heightKm / 2`, and `ringAround` puts a ring's
+ * inner face exactly at the extent it is handed. So four rings around one mouth
+ * — `station-mesh.ts`'s coaming and its lit aperture bars, this module's mouth
+ * bulkhead and its lane edge — each placed an inner face on the same plane, and
+ * every pair of them that also overlaps in depth drew the same inner aperture
+ * wall.
+ *
+ * What was measured is that at every sampled flickering pixel the two nearest
+ * surfaces are **0.00 mm apart against a depth resolution of 0.16 mm** — closer
+ * than the buffer can tell them apart. Which one is written is then decided per
+ * pixel by how each transform's depth rounds, and between equal depths by draw
+ * order under `LessEqualDepth`. Both of those move when the transforms move, so
+ * a turning station reshuffles the winner every frame: a 2748-pixel region of
+ * the trade's inner mouth appears for one frame and is gone the next, which is
+ * what the principal's playtest recording shows.
+ *
+ * Note which of the two paths applies to which pair, because it is not one
+ * throughout. `painterSortStable` compares `groupOrder`, `renderOrder`,
+ * **`material.id`** and only then `z` — read off the installed
+ * `WebGLRenderLists.js`, and it is material id rather than shader program, which
+ * an earlier revision of this comment said. A material's id is assigned when it
+ * is constructed and never changes, so the lit bars, the mouth bulkhead and the
+ * lane edge hold one fixed order for the life of the page and cannot flicker by
+ * order at all: those pairs are rounding alone. Order is available only to two
+ * meshes sharing a material, where `z` decides. Separating the faces removes
+ * both paths, which is why the fix does not have to choose.
+ *
+ * **The lit exterior rim owns the edge and every other ring steps back from it,
+ * each by its own multiple of this** (`RIM_STEPS`).
+ *
+ * **Why this size, and it is bounded from both ends.**
+ *
+ * From below by the depth buffer. `logarithmicDepthBuffer` is off, so under the
+ * near layer's 0.01 km near plane and 24 bits two faces are distinguishable
+ * while they are further apart than `z²·(1/near − 1/far)/2²⁴` — 0.16 mm at the
+ * 0.163 km of camera-space depth this was measured at, and 1 m only at 13 km.
+ * The bit count is the composer's own attachment read back with that target
+ * bound, not the canvas the renderer never draws into; it happens to be 24
+ * either way, which is exactly why reading the wrong one went unnoticed for two
+ * rounds. No fixed offset removes a
+ * coplanarity at *every* range; what it buys is that the fight returns only past
+ * where the mouth is a few pixels of rim. At 13 km the trade's 120 m opening
+ * subtends 0.53°, about eleven pixels across a 60° frame.
+ *
+ * From above by what a step *removes*. Every ring here reaches the aperture
+ * edge, and a ring that steps back leaves the inner wall open behind the lit bar
+ * in the depth band the bar does not cover — 17 m deep on the trade. **This shipped at 4 m for one
+ * round and the mouth leaked:** the coaming is two steps, so its own gap was 8 m,
+ * and `probe-traffic-mouth.mjs` — which puts a freighter hull on the camera ray
+ * in front of a bar and asserts the mouth writes no pixels through it — went from
+ * green to 9 leaked pixels at 7.7/255. Attributed rather than guessed: returning
+ * the coaming's step alone to zero made it green again, with the other two still
+ * at 4 m. So the ceiling is not a matter of taste — a step wide enough to see
+ * through is a hole in the station. At 1 m all three steps are green on both
+ * probes.
+ *
+ * **The pad roles have the same construction and are out of this node's scope,
+ * not cleared by it.** `buildPadDeck` builds its deck ring and its touchdown
+ * ring to one `hole` and the two overlap in depth, so their inner faces are
+ * coplanar in exactly this way. #269 is *rotating* mouths and a pad has
+ * `spins: false`, so the instrument — which holds the camera still — reads a raw
+ * temporal median of 0 on the refinery at 0.35 km and 0.6 km. That is what a
+ * static camera on a body that does not turn must read by construction, and it
+ * is **not** evidence that a pad cannot flicker: in play the camera moves, and a
+ * moving camera moves the transforms exactly as a turn does. Charted rather than
+ * remembered: node #282 owns the question, including the instrument arm that
+ * would have to move the camera before a pad can be measured at all.
+ *
+ * The previous attempt on this defect is still in the mouth bulkhead's own
+ * comment below. It moved the *front* faces apart in z and read the symptom as
+ * fixed; the inner side faces were never moved, and they are what was left.
+ */
+export const RIM_SEPARATION_KM = 0.001;
+
+/**
+ * How far each ring steps back from the aperture edge, in `RIM_SEPARATION_KM`.
+ *
+ * Ordered by how much of the visible opening each may give up. The lit exterior
+ * bars are the docking cue and own the edge at zero. The lane edge is the lit
+ * border a parked pilot reads, so it moves least — 1 m of a 17 m border on a
+ * 120 m opening. The coaming and the mouth bulkhead are structure whose only
+ * requirement is not to block the slot, so they step back furthest, and 3 m is
+ * still well inside the 24 m lit bar that stands in front of them.
+ *
+ * Distinct multiples rather than one shared step, because three rings on a *new*
+ * shared plane is the same defect moved: these three overlap one another in
+ * depth as well, which is why hiding the lit bars leaves a smaller fight rather
+ * than none.
+ */
+export const RIM_STEPS = {
+	apertureLight: 0,
+	laneEdge: 1,
+	coaming: 2,
+	mouthBulkhead: 3,
+} as const;
+
+/** The inner half-extents a ring should be built to, given the aperture's own
+ *  and which ring it is. */
+export function ringInsideAperture(
+	inner: { across: number; up: number },
+	step: keyof typeof RIM_STEPS,
+): { across: number; up: number } {
+	const back = RIM_STEPS[step] * RIM_SEPARATION_KM;
+	return { across: inner.across + back, up: inner.up + back };
+}
+
+/**
  * The shell's surface: five slabs, two-sided.
  *
  * **It was one `BackSide` box, and its sixth face was a lid.** A closed box
@@ -324,7 +434,14 @@ export function buildStationInterior(
 	// shield is mounted on, facing every berth.
 	for (const [w, h, x, y] of ringAround(
 		{ across: interior.halfAcrossKm, up: interior.halfUpKm },
-		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+		// **Stepped back from the lane, not cut to it** (`RIM_SEPARATION_KM`).
+		// The step is 3 m here, well inside the 24 m lit bar that stands in front
+		// of it, so the hole this wall carries is wider than the opening and
+		// covered by it.
+		ringInsideAperture(
+			{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+			"mouthBulkhead",
+		),
 	)) {
 		if (w <= 0 || h <= 0) continue;
 		const panel = box(w, h, plate, structure, "interior-bulkhead");
@@ -333,6 +450,11 @@ export function buildStationInterior(
 		// two coplanar front faces there z-fight — the symptom is a slot that
 		// flickers as the station turns, which reads as the aperture not being
 		// there.
+		//
+		// **That was half the fix and read as the whole of it** (#269). Moving the
+		// front faces apart in z left the *inner side* faces exactly on the lane,
+		// which is where the flicker actually was; `RIM_SEPARATION_KM` above is
+		// the other half.
 		panel.position.set(x, y, interior.mouthAxialKm - plate * 0.6);
 		group.add(panel);
 	}
@@ -351,13 +473,21 @@ export function buildStationInterior(
 	// because `tests/station-mesh.test.ts`'s connectivity check shrinks every
 	// part before testing contact and a graze is not a joint. Straddling the
 	// panel's inner face is both.
+	//
+	// **And one step back from the lane, not on it** (`RIM_SEPARATION_KM`). This
+	// is the ring that gives up least, because it is the only one of the four
+	// whose inner edge a player reads: 1 m of a 17 m border on a 120 m opening.
 	const laneGlow = glowMaterial(visuals.strobeColor);
+	const laneEdgeInner = ringInsideAperture(
+		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+		"laneEdge",
+	);
 	for (const [w, h, x, y] of ringAround(
 		{
-			across: interior.laneHalfAcrossKm + plate * 2.5,
-			up: interior.laneHalfUpKm + plate * 2.5,
+			across: laneEdgeInner.across + plate * 2.5,
+			up: laneEdgeInner.up + plate * 2.5,
 		},
-		{ across: interior.laneHalfAcrossKm, up: interior.laneHalfUpKm },
+		laneEdgeInner,
 	)) {
 		const strip = box(w, h, plate * 1.2, laneGlow, "interior-lane-edge");
 		strip.position.set(x, y, interior.mouthAxialKm - plate * 1.3);
