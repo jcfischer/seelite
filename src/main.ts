@@ -4761,7 +4761,11 @@ class Game {
 		// also read them.
 		const perf = this.perfPanel;
 		if (perf?.isFocused()) {
-			if (intents.back || intents.instrument) return perf.setFocused(false);
+			// **Circle, and not d-pad down again.** While the instrument holds the
+			// pad the context is a console's, so down walks its rows — which means
+			// `instrument` is never asked for from in here, and a branch reading it
+			// was unreachable. `probe-pad-instrument.mjs` found that, not review.
+			if (intents.back) return perf.setFocused(false);
 			if (intents.focusDelta !== 0) perf.moveCursor(intents.focusDelta);
 			if (intents.activate) perf.activate();
 			for (const key of intents.keys) this.command(key);
@@ -6649,6 +6653,18 @@ class Game {
 
 	/** The tank's capacity, likewise. */
 	readonly fuelCapacityLy = JUMP_TANK_LY;
+
+	/**
+	 * The commander's balance, credits — likewise on the handle so a probe reads
+	 * the game's number rather than its own.
+	 *
+	 * Here because a station action is otherwise invisible from outside: #283's
+	 * panel probe has to show that Cross on a BUY row *bought something*, and
+	 * "a row was focused" is not that.
+	 */
+	get creditsCr(): number {
+		return this.commander.credits;
+	}
 
 	/**
 	 * Commit to a destination, or clear one — the chart's "set course" button,
