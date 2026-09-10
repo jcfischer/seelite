@@ -33,6 +33,8 @@ import {
 	materializeDue,
 	newWorld,
 	observe,
+	observeDocking,
+	observeSystemRelay,
 	type Provenance,
 	parseWorld,
 	readKnowledge,
@@ -966,6 +968,16 @@ describe("§9.6 round trip", () => {
 		});
 	});
 
+	test("the round trip preserves a learned black-market marker, never its generated value", () => {
+		const before = observeDocking(newWorld(WORLD), 0, OTHER, 12, true);
+		const raw = serializeWorld(before) as {
+			galaxies: Array<{ knowledge: Record<string, unknown> }>;
+		};
+		const row = raw.galaxies[0].knowledge[OTHER] as Record<string, unknown>;
+		expect(row).toHaveProperty("knownPrivateFacts.blackMarket.learnedAt", 12);
+		expect(parseWorld(raw)).toEqual(before);
+	});
+
 	test("all eight galaxy namespaces stay separate", () => {
 		const after = parseWorld(serializeWorld(populated()));
 		expect(Object.keys(after.galaxies[0].objective).sort()).toEqual(
@@ -985,6 +997,150 @@ describe("§9.6 round trip", () => {
 		const after = parseWorld(serializeWorld(populated()));
 		expect(after.galaxies[0].deficits[KEY]?.goods.Food).toBe(12);
 		expect(after.galaxies[0].deficits[KEY]?.updatedAt).toBe(20);
+	});
+});
+
+describe("§9.10 facility knowledge", () => {
+	test("the relay observes every supplied station while preserving private facts", () => {
+		const refinery = OTHER;
+		const trade = KEY;
+		let world = observeDocking(newWorld(WORLD), 0, refinery, 10, true);
+		world = observeSystemRelay(world, 0, [trade, refinery], 20);
+		expect(readKnowledge(world.galaxies[0], trade)).toMatchObject({
+			observedAt: 20,
+			source: "system-relay",
+		});
+		expect(readKnowledge(world.galaxies[0], refinery)).toMatchObject({
+			observedAt: 20,
+			source: "system-relay",
+			knownPrivateFacts: { blackMarket: { learnedAt: 10, source: "docking" } },
+		});
+	});
+
+	test("docking a non-refinery does not manufacture a private-fact marker", () => {
+		const world = observeDocking(newWorld(WORLD), 0, KEY, 10, false);
+		expect(
+			readKnowledge(world.galaxies[0], KEY)?.knownPrivateFacts,
+		).toBeUndefined();
+	});
+	/**
+	 * §9.10: "the marker survives replacement of the carrier instance". The
+	 * black-market flag is generated baseline data about the persisted carrier
+	 * identity — `persistent-world-state.md` §2's `localCarrierId`, the thing
+	 * `carrierKey` files a save row under — and not about the instance standing
+	 * in it. So blowing the refinery up and rebuilding it cannot un-learn where
+	 * the fence is.
+	 */
+	test("the marker survives a destroy and replacement of the carrier", () => {
+		let world = observeDocking(newWorld(WORLD), 0, OTHER, 10, true);
+		world = applyTransition(world, 0, OTHER, {
+			kind: "destroy",
+			occurredAt: 20,
+			cause: PIRATE,
+		});
+		world = applyTransition(world, 0, OTHER, {
+			kind: "replacement-start",
+			occurredAt: 20,
+			cause: PLAYER,
+			consequenceArea: "system:11",
+			completesAt: 80,
+		});
+		world = observeSystemRelay(world, 0, [OTHER], 90);
+		const row = readKnowledge(world.galaxies[0], OTHER);
+		// A new instance, a fresh condition reading — and the same learned fact.
+		expect(row?.observedInstanceOrdinal).toBe(1);
+		expect(row?.observedAt).toBe(90);
+		expect(row?.knownPrivateFacts?.blackMarket).toEqual({
+			learnedAt: 10,
+			source: "docking",
+		});
+	});
+
+	/**
+	 * §3.1 names `learnedAt` for when the fact was *learned*. Re-docking is a
+	 * fresh condition reading and not a fresh discovery, so the marker it finds
+	 * is the one it keeps — written unconditionally it moved forward on every
+	 * return trip, and a fact learned at the first visit reported the last.
+	 */
+	test("re-docking refreshes the condition and leaves learnedAt where it was", () => {
+		let world = observeDocking(newWorld(WORLD), 0, OTHER, 10, true);
+		world = observeDocking(world, 0, OTHER, 400, true);
+		const row = readKnowledge(world.galaxies[0], OTHER);
+		expect(row?.observedAt).toBe(400);
+		expect(row?.knownPrivateFacts?.blackMarket).toEqual({
+			learnedAt: 10,
+			source: "docking",
+		});
+	});
+
+	/**
+	 * §9.10: "the snapshot never persists the generated black-market boolean
+	 * itself".
+	 *
+	 * **The first version of this check could not fail.** It asserted the
+	 * serialized row did not contain the string `blackMarketValue`, and nothing
+	 * anywhere in the repository is named that — a tautology, whatever the
+	 * marker held. This enumerates the marker's keys instead, so a build that
+	 * copied the generated flag in under any name goes red.
+	 */
+	test("the serialized marker carries when and from whom, and nothing else", () => {
+		const world = observeDocking(newWorld(WORLD), 0, OTHER, 12, true);
+		const raw = serializeWorld(world) as {
+			galaxies: Array<{
+				knowledge: Record<
+					string,
+					{ knownPrivateFacts?: Record<string, Record<string, unknown>> }
+				>;
+			}>;
+		};
+		const marker = raw.galaxies[0].knowledge[OTHER].knownPrivateFacts
+			?.blackMarket as Record<string, unknown>;
+		expect(Object.keys(marker).sort()).toEqual(["learnedAt", "source"]);
+		expect(Object.values(marker).some((v) => typeof v === "boolean")).toBe(
+			false,
+		);
+	});
+
+	/**
+	 * §9.10: "A generated false flag with a marker is known-absent; the same
+	 * flag without a marker is unchecked." The knowledge row is identical in
+	 * both cases bar the marker — the *value* never enters the save, so the
+	 * only thing distinguishing known-absent from unchecked is the marker's
+	 * presence. This is the model half; `galaxy-finder.test.ts` holds the half
+	 * that reads the generated flag back.
+	 */
+	test("checked and unchecked differ by the marker alone", () => {
+		const unchecked = observe(newWorld(WORLD), 0, OTHER, 5, "system-relay");
+		const checked = observeDocking(newWorld(WORLD), 0, OTHER, 5, true);
+		const strip = (world: WorldState) => {
+			const row = readKnowledge(world.galaxies[0], OTHER);
+			if (!row) throw new Error("no row");
+			const { knownPrivateFacts, source, ...rest } = row;
+			return rest;
+		};
+		expect(strip(unchecked)).toEqual(strip(checked));
+		expect(
+			readKnowledge(unchecked.galaxies[0], OTHER)?.knownPrivateFacts,
+		).toBeUndefined();
+		expect(
+			readKnowledge(checked.galaxies[0], OTHER)?.knownPrivateFacts,
+		).toBeDefined();
+	});
+
+	/**
+	 * §9.10: adding the marker changed the row shape, so the parser "does not
+	 * silently accept a version-1 snapshot as though the new field had always
+	 * been present". The neighbouring §9.9 check covers a *later* version; this
+	 * is the prior one, which is the direction a real save file comes from.
+	 */
+	test("a version-1 snapshot is refused rather than read as markerless", () => {
+		const raw = serializeWorld(
+			observe(newWorld(WORLD), 0, OTHER, 5, "system-relay"),
+		) as Record<string, unknown>;
+		raw.worldSchemaVersion = 1;
+		expect(() => parseWorld(raw)).toThrow(
+			/worldSchemaVersion 1 needs a migration/,
+		);
 	});
 });
 
@@ -1340,23 +1496,23 @@ describe("§9.9 atomicity and integrity", () => {
 		const raw = serializeWorld(newWorld(WORLD)) as Record<string, unknown> & {
 			galaxies: Record<string, unknown>[];
 		};
-		// A v2 save adds a domain. Checking the shape first made it die as
+		// A v3 save adds a domain. Checking the shape first made it die as
 		// "factionInfluence is not a declared state domain", which tells the
 		// save/load node nothing about what to run.
-		raw.worldSchemaVersion = 2;
+		raw.worldSchemaVersion = 3;
 		raw.galaxies[0].factionInfluence = { "3": 0.4 };
 		expect(() => parseWorld(raw)).toThrow(
-			/worldSchemaVersion 2 needs a migration/,
+			/worldSchemaVersion 3 needs a migration/,
 		);
 		// **And at the top level.** The first fix moved the version read ahead of
 		// the *envelope* loops only, leaving the declared-field loop in front of
-		// it — so a v2 save adding a top-level field still died with exactly the
+		// it — so a v3 save adding a top-level field still died with exactly the
 		// error the move was meant to stop. This is the case that check missed.
 		const topLevel = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
-		topLevel.worldSchemaVersion = 2;
+		topLevel.worldSchemaVersion = 3;
 		topLevel.shipLog = [];
 		expect(() => parseWorld(topLevel)).toThrow(
-			/worldSchemaVersion 2 needs a migration/,
+			/worldSchemaVersion 3 needs a migration/,
 		);
 		const older = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
 		older.worldGeneratorVersion = 0;

@@ -29,7 +29,20 @@ import {
 	generateGalaxy,
 	startSystem,
 } from "../src/galaxy";
+import { carrierKey } from "../src/carrier-key";
+import {
+	type FacilityAnnotation,
+	type FacilityChip,
+	type LastKnownState,
+	facilityAnnotationLabel,
+	recoveryScheduleLabel,
+	stationRosterLine,
+} from "../src/knowledge-labels";
 import { planRoute, projectJumps } from "../src/galaxy-route";
+import { generateContents } from "../src/system";
+import type { StationType } from "../src/station";
+import type { Station } from "../src/system";
+import type { OperationalCondition } from "../src/world-state";
 
 const WORLD_SEED = 0x5ee11e;
 const galaxy = generateGalaxy(WORLD_SEED, 0);
@@ -571,6 +584,655 @@ describe("D6 — the session budget", () => {
 		} finally {
 			resetFinderSession();
 		}
+	});
+});
+
+describe("§9.4 facilities knowledge", () => {
+	/** Every check in this block projects at the widest budget and differs only
+	 *  in its chips and its overlay; the assertions were buried in the call. */
+	const project = (
+		facilities: FacilityChip[],
+		knowledge?: LastKnownState,
+		over: Partial<FinderFilter> = {},
+	) =>
+		projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities, budgetJumps: FINDER_MAX_BUDGET, ...over }),
+			knowledge ? { knowledge } : undefined,
+		);
+
+	/** The first system in this galaxy carrying `role`, which every check here
+	 *  needs and none of them may assume exists. */
+	const withRole = (role: StationType): SystemRecord => {
+		const found = galaxy.systems.find(
+			(system) =>
+				system.galaxy === here.galaxy &&
+				generateContents(system).stations.some(
+					(station) => station.type === role,
+				),
+		);
+		if (!found) throw new Error(`the fixture galaxy has no ${role}`);
+		return found;
+	};
+
+	const stationOf = (system: SystemRecord, role: StationType): Station => {
+		const station = generateContents(system).stations.find(
+			(candidate) => candidate.type === role,
+		);
+		if (!station) throw new Error(`${system.name} has no ${role}`);
+		return station;
+	};
+
+	/** A system whose generated refinery flag is `flag` — the two halves of
+	 *  §5.2.1's three-valued fence, which differ only in that flag. */
+	const fenceSystem = (flag: boolean) => {
+		const system = galaxy.systems.find((candidate) => {
+			if (candidate.galaxy !== here.galaxy) return false;
+			const refinery = generateContents(candidate).stations.find(
+				(station) => station.type === "refinery",
+			);
+			return refinery !== undefined && refinery.blackMarket === flag;
+		});
+		if (!system)
+			throw new Error(`the fixture galaxy has no refinery flagged ${flag}`);
+		return { system, refinery: stationOf(system, "refinery") };
+	};
+
+	/** A knowledge overlay with one carrier observed and no private fact
+	 *  checked — the relay's reading. */
+	const observed = (
+		system: SystemRecord,
+		station: Station,
+		condition: OperationalCondition,
+		observedAt: number,
+		source: string,
+	): LastKnownState => ({
+		[carrierKey(system.index, station.localCarrierId)]: {
+			observedInstanceOrdinal: 0,
+			observedCondition: condition,
+			observedAt,
+			source,
+		},
+	});
+
+	/** A knowledge overlay with one carrier docked at, so its private fact is
+	 *  checked. */
+	const checked = (
+		system: SystemRecord,
+		station: Station,
+		condition: OperationalCondition,
+		observedAt: number,
+	): LastKnownState => ({
+		[carrierKey(system.index, station.localCarrierId)]: {
+			observedInstanceOrdinal: 0,
+			observedCondition: condition,
+			observedAt,
+			source: "docking",
+			knownPrivateFacts: {
+				blackMarket: { learnedAt: observedAt, source: "docking" },
+			},
+		},
+	});
+
+	test("public refinery and shipyard roles project with no knowledge overlay", () => {
+		const refinery = withRole("refinery");
+		const shipyard = withRole("shipyard");
+		const refineries = project(["REFINERY"]);
+		const shipyards = project(["SHIPYARD"]);
+		expect(refineries.inBudget.map((row) => row.index)).toContain(
+			refinery.index,
+		);
+		expect(shipyards.inBudget.map((row) => row.index)).toContain(
+			shipyard.index,
+		);
+	});
+
+	test("known fences match only a checked generated true fact and count unchecked refineries", () => {
+		const { system, refinery } = fenceSystem(true);
+		const result = projectFinder(
+			galaxy.systems,
+			here,
+			filter({
+				facilities: ["KNOWN FENCE"],
+				budgetJumps: FINDER_MAX_BUDGET,
+			}),
+			{ knowledge: checked(system, refinery, "operational", 9) },
+		);
+		expect(result.inBudget.map((row) => row.index)).toContain(system.index);
+		expect(result.uncheckedFence).toBeGreaterThan(0);
+	});
+
+	/**
+	 * **§5.2.1's annotation is a fact about the carrier, not an echo of the
+	 * chip.** The first implementation set `matchedFacilities` to
+	 * `[...filter.facilities]`, so every row printed back exactly what was
+	 * asked for and no build could fail the check — the tautology
+	 * `a-check-derived-from-its-subject` names. A row annotates the *station*
+	 * it matched on: its role, its last-known condition, and when that was
+	 * seen.
+	 */
+	test("a matched role carries its own condition and observation, never the filter's chips", () => {
+		const system = withRole("shipyard");
+		const shipyard = stationOf(system, "shipyard");
+		const seen = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
+			{
+				knowledge: observed(system, shipyard, "disabled", 1000, "system-relay"),
+			},
+		);
+		const row = seen.inBudget.find(
+			(candidate) => candidate.index === system.index,
+		);
+		expect(row?.matchedFacilities).toEqual([
+			{
+				facility: "SHIPYARD",
+				role: "shipyard",
+				name: shipyard.name,
+				condition: "disabled",
+				observedAt: 1000,
+				source: "system-relay",
+			},
+		]);
+
+		// The same system with no knowledge row at all still matches — the
+		// structure is public — and reads as never observed.
+		const blind = project(["SHIPYARD"]);
+		expect(
+			blind.inBudget.find((candidate) => candidate.index === system.index)
+				?.matchedFacilities,
+		).toEqual([
+			{
+				facility: "SHIPYARD",
+				role: "shipyard",
+				name: shipyard.name,
+				condition: null,
+				observedAt: null,
+				source: null,
+			},
+		]);
+	});
+
+	/**
+	 * §5.2.1: "there is no availability filter". A destroyed shipyard is still
+	 * a shipyard, and the condition is an annotation that never removes the
+	 * row.
+	 */
+	test("a destroyed or repairing role still matches, and says so", () => {
+		const system = withRole("shipyard");
+		const shipyard = stationOf(system, "shipyard");
+		for (const condition of ["disabled", "destroyed", "repairing"] as const) {
+			const seen = projectFinder(
+				galaxy.systems,
+				here,
+				filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
+				{ knowledge: observed(system, shipyard, condition, 5, "docking") },
+			);
+			const row = seen.inBudget.find(
+				(candidate) => candidate.index === system.index,
+			);
+			expect(row?.matchedFacilities[0].condition).toBe(condition);
+		}
+	});
+
+	/**
+	 * §5.2.1: an observed recovery is remembered intelligence. The projection
+	 * carries the remembered schedule so the card can print it as unconfirmed;
+	 * it never promotes it to a completion, which is what
+	 * `facilityAnnotationLabel` pins below.
+	 */
+	test("a repairing role carries its remembered schedule, and elapsed time never completes it", () => {
+		const system = withRole("shipyard");
+		const shipyard = stationOf(system, "shipyard");
+		const recovery = {
+			processId: "p1",
+			kind: "repair" as const,
+			consequenceArea: "docking",
+			startedAt: 10,
+			completesAt: 100,
+		};
+		const seen = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
+			{
+				// Spelt out rather than through `observed`: this is the only row
+				// in the file that carries a remembered recovery, and a
+				// parameter for one caller is the wider helper.
+				knowledge: {
+					[carrierKey(system.index, shipyard.localCarrierId)]: {
+						observedInstanceOrdinal: 0,
+						observedCondition: "repairing",
+						observedAt: 10,
+						source: "docking",
+						observedRecovery: recovery,
+					},
+				},
+			},
+		);
+		const annotation = seen.inBudget.find(
+			(candidate) => candidate.index === system.index,
+		)?.matchedFacilities[0];
+		expect(annotation?.observedRecovery).toEqual(recovery);
+		// Long past `completesAt`, and still repairing.
+		expect(
+			facilityAnnotationLabel(annotation as FacilityAnnotation, 10_000),
+		).toBe("REPAIRING · SEEN 2H AGO");
+	});
+
+	/**
+	 * §5.2.1's two worked examples, plus the never-observed case. Age is
+	 * relative and coarse; the exact time belongs to the record card.
+	 */
+	test("the compact annotation is condition plus relative age", () => {
+		const at = (condition: OperationalCondition, observedAt: number) =>
+			({
+				facility: "SHIPYARD",
+				role: "shipyard",
+				name: "X",
+				condition,
+				observedAt,
+				source: "system-relay",
+			}) satisfies FacilityAnnotation;
+		expect(facilityAnnotationLabel(at("operational", 0), 2 * 3600)).toBe(
+			"OPERATIONAL · SEEN 2H AGO",
+		);
+		expect(facilityAnnotationLabel(at("destroyed", 0), 3 * 86_400)).toBe(
+			"DESTROYED · SEEN 3D AGO",
+		);
+		expect(facilityAnnotationLabel(at("operational", 0), 120)).toBe(
+			"OPERATIONAL · SEEN 2M AGO",
+		);
+		expect(facilityAnnotationLabel(at("operational", 0), 5)).toBe(
+			"OPERATIONAL · SEEN JUST NOW",
+		);
+		expect(
+			facilityAnnotationLabel(
+				{
+					facility: "REFINERY",
+					role: "refinery",
+					name: "X",
+					condition: null,
+					observedAt: null,
+					source: null,
+				},
+				9_999,
+			),
+		).toBe("STATUS UNKNOWN");
+	});
+
+	/**
+	 * §5.2.1: knowledge never expires. A row seen a thousand days ago is still
+	 * a row, with a bigger number on it.
+	 */
+	test("age never removes a row or reclassifies its condition", () => {
+		const system = withRole("shipyard");
+		const shipyard = stationOf(system, "shipyard");
+		const knowledge = observed(
+			system,
+			shipyard,
+			"operational",
+			0,
+			"system-relay",
+		);
+		const seen = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
+			{
+				knowledge: knowledge,
+			},
+		);
+		const row = seen.inBudget.find(
+			(candidate) => candidate.index === system.index,
+		);
+		expect(row?.matchedFacilities[0].condition).toBe("operational");
+		expect(
+			facilityAnnotationLabel(
+				row?.matchedFacilities[0] as FacilityAnnotation,
+				1000 * 86_400,
+			),
+		).toBe("OPERATIONAL · SEEN 1000D AGO");
+	});
+
+	/**
+	 * §5.2.1: "`KNOWN FENCE` uses its refinery's last-known condition." The
+	 * fence is not a carrier of its own, so its annotation is the refinery's.
+	 */
+	test("a known fence annotates with its refinery's condition", () => {
+		const { system, refinery } = fenceSystem(true);
+		const seen = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
+			{
+				knowledge: checked(system, refinery, "disabled", 40),
+			},
+		);
+		const row = seen.inBudget.find(
+			(candidate) => candidate.index === system.index,
+		);
+		expect(row?.matchedFacilities).toEqual([
+			{
+				facility: "KNOWN FENCE",
+				role: "refinery",
+				name: refinery.name,
+				condition: "disabled",
+				observedAt: 40,
+				source: "docking",
+			},
+		]);
+	});
+
+	/**
+	 * §5.2.1's three values. A checked *false* flag is a known non-match — it
+	 * is neither a row nor an unchecked refinery, and the diff that shipped
+	 * had no case for it at all.
+	 */
+	test("a checked false fence is a known non-match, not an unchecked one", () => {
+		const { system, refinery } = fenceSystem(false);
+		const seen = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
+			{
+				knowledge: checked(system, refinery, "operational", 3),
+			},
+		);
+		expect(seen.inBudget.map((row) => row.index)).not.toContain(system.index);
+
+		// The same system with no marker is unchecked instead — the difference
+		// between the two is the marker and nothing else.
+		const blind = project(["KNOWN FENCE"]);
+		expect(blind.uncheckedFence).toBeGreaterThan(seen.uncheckedFence);
+	});
+
+	/**
+	 * §5.2.1: the count is "systems inside the current name, economy, and jump
+	 * narrowing". The first implementation counted every unchecked refinery in
+	 * the galaxy however far away, so the one-jump budget the finder opens on
+	 * reported a number that no narrowing could move.
+	 */
+	test("the unchecked count respects the jump budget", () => {
+		const near = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities: ["KNOWN FENCE"], budgetJumps: 1 }),
+		);
+		const far = project(["KNOWN FENCE"]);
+		expect(near.uncheckedFence).toBeLessThan(far.uncheckedFence);
+		// And it is bounded by what the budget can reach at all.
+		const reachable = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
+		const withinOne = galaxy.systems.filter((system) => {
+			const reach = reachable.reach(system);
+			return (
+				system.galaxy === here.galaxy && reach !== undefined && reach.jumps <= 1
+			);
+		});
+		expect(near.uncheckedFence).toBeLessThanOrEqual(withinOne.length);
+	});
+
+	/**
+	 * §5.2.1: the count sits inside the *other* narrowing too. A name query
+	 * that admits one system cannot report the galaxy's unchecked refineries.
+	 */
+	test("the unchecked count respects the name and economy narrowing", () => {
+		const wide = project(["KNOWN FENCE"]);
+		const narrowed = projectFinder(
+			galaxy.systems,
+			here,
+			filter({
+				facilities: ["KNOWN FENCE"],
+				budgetJumps: FINDER_MAX_BUDGET,
+				query: galaxy.systems[0].name,
+			}),
+		);
+		expect(narrowed.uncheckedFence).toBeLessThan(wide.uncheckedFence);
+	});
+
+	/**
+	 * §5.2.1: "A system with no refinery is neither a match nor unchecked."
+	 */
+	test("a system with no refinery is never counted unchecked", () => {
+		const seen = project(["KNOWN FENCE"]);
+		const refineryCount = galaxy.systems.filter(
+			(system) =>
+				system.galaxy === here.galaxy &&
+				generateContents(system).stations.some(
+					(station) => station.type === "refinery",
+				),
+		).length;
+		expect(seen.uncheckedFence).toBeLessThanOrEqual(refineryCount);
+	});
+
+	/**
+	 * Checking a fence in a system that fails a *different* active chip could
+	 * never turn it into a match, so it is not a refinery the player has any
+	 * reason to go and check.
+	 */
+	test("a system failing another active chip is not counted unchecked", () => {
+		const fenceOnly = project(["KNOWN FENCE"]);
+		const withShipyard = project(["KNOWN FENCE", "SHIPYARD"]);
+		expect(withShipyard.uncheckedFence).toBeLessThan(fenceOnly.uncheckedFence);
+	});
+
+	/**
+	 * §9.4 item 2: facility chips intersect at system level.
+	 */
+	test("REFINERY and SHIPYARD together mean both, and each row annotates both", () => {
+		const budget = filter({
+			facilities: ["REFINERY", "SHIPYARD"],
+			budgetJumps: FINDER_MAX_BUDGET,
+		});
+		const both = projectFinder(galaxy.systems, here, budget);
+		const refineries = project(["REFINERY"]);
+		const shipyards = project(["SHIPYARD"]);
+		const indices = new Set(both.inBudget.map((row) => row.index));
+		expect(indices.size).toBeGreaterThan(0);
+		expect(indices.size).toBeLessThan(refineries.inBudget.length);
+		expect(indices.size).toBeLessThan(shipyards.inBudget.length);
+		for (const row of both.inBudget) {
+			expect(row.matchedFacilities.map((a) => a.facility).sort()).toEqual([
+				"REFINERY",
+				"SHIPYARD",
+			]);
+			const contents = generateContents(
+				galaxy.systems.find((s) => s.index === row.index) as SystemRecord,
+			);
+			expect(
+				contents.stations.some((station) => station.type === "refinery"),
+			).toBe(true);
+			expect(
+				contents.stations.some((station) => station.type === "shipyard"),
+			).toBe(true);
+		}
+	});
+
+	/**
+	 * §5.2.1: "With no facility chip active, §5.2's existing compact row is
+	 * unchanged."
+	 *
+	 * **This pins the row and not the cost.** `projectFinder` also skips the
+	 * station roster entirely with no chip active, which is worth far more —
+	 * it is 256 system generations per keystroke — and removing that guard was
+	 * flown here and left every assertion below green, because an unread
+	 * roster and a read one produce the same empty annotation list. The saving
+	 * is `facilitiesOf`'s doc comment to state and a reader's to keep; nothing
+	 * in this tier can see it.
+	 */
+	test("no facility chip means no annotation", () => {
+		const seen = projectFinder(
+			galaxy.systems,
+			here,
+			filter({ budgetJumps: FINDER_MAX_BUDGET }),
+		);
+		expect(seen.inBudget.length).toBeGreaterThan(0);
+		for (const row of seen.inBudget) expect(row.matchedFacilities).toEqual([]);
+		expect(seen.uncheckedFence).toBe(0);
+	});
+
+	/**
+	 * §5.2.1: "Passing its `completesAt` does not change a finder row from
+	 * `REPAIRING`; the selected-system card shows the remembered time as
+	 * `DUE <time> · UNCONFIRMED`, then `OVERDUE · UNCONFIRMED`."
+	 *
+	 * Both sides of `completesAt` and the boundary itself, because the whole
+	 * rule is that crossing it concludes nothing.
+	 */
+	test("a remembered recovery reads as due, then overdue, and never as complete", () => {
+		const recovery = {
+			processId: "p1",
+			kind: "repair" as const,
+			consequenceArea: "system:3",
+			startedAt: 10,
+			completesAt: 70,
+		};
+		// The `@` marks it absolute. `DUE 70s` read as seventy seconds
+		// remaining, beside a row whose every other figure is relative.
+		expect(recoveryScheduleLabel(recovery, 69)).toBe("DUE @ 70s · UNCONFIRMED");
+		expect(recoveryScheduleLabel(recovery, 70)).toBe("OVERDUE · UNCONFIRMED");
+		expect(recoveryScheduleLabel(recovery, 10_000)).toBe(
+			"OVERDUE · UNCONFIRMED",
+		);
+	});
+
+	/**
+	 * **The invariant `facilitiesOf` argues from, pinned rather than asserted.**
+	 * Its comment says a system has at most one station per role, so §5.2.1's
+	 * "never collapses mixed carrier conditions" has no case to answer — and
+	 * `present.set` silently keeps the last station, so a second refinery would
+	 * collapse exactly what the spec forbids collapsing. Nothing in the diff
+	 * checked it. Swept over every system of every galaxy, because it is a
+	 * property of the generator.
+	 */
+	test("no generated system carries two stations of one role", () => {
+		let systems = 0;
+		for (let g = 0; g < GALAXY_COUNT; g++)
+			for (const system of generateGalaxy(WORLD_SEED, g).systems) {
+				const roles = generateContents(system).stations.map((s) => s.type);
+				expect(new Set(roles).size).toBe(roles.length);
+				systems++;
+			}
+		expect(systems).toBe(GALAXY_COUNT * 256);
+	});
+
+	/**
+	 * **`station-roster.ts` keys its cache on `system.seed`**, and that key's
+	 * uniqueness was a claim in a doc comment with nothing behind it. A
+	 * collision hands one system another's roster, so every annotation and the
+	 * unchecked-fence count would read the wrong carrier — silently, and only
+	 * for the colliding pair. Same sweep as above, because it is the same
+	 * property of the generator.
+	 */
+	test("every system in a world has its own seed, which the roster cache keys on", () => {
+		const seeds = new Set<number>();
+		for (let g = 0; g < GALAXY_COUNT; g++)
+			for (const system of generateGalaxy(WORLD_SEED, g).systems)
+				seeds.add(system.seed);
+		expect(seeds.size).toBe(GALAXY_COUNT * 256);
+	});
+
+	/**
+	 * §5.2.1: "The selected-system card exposes the exact observation time and
+	 * report source."
+	 *
+	 * **Both halves were wrong on the first build a person looked at**, and
+	 * neither was reachable from a check: the source printed the save's own enum
+	 * (`system-relay`) and the time printed the world clock at the moment of
+	 * observation (`@ 37s`), which is anchored to a clock the game never shows.
+	 * The exact reading is an *age* now — precise where the finder row is coarse,
+	 * against a reference the player has.
+	 */
+	test("a roster line names its channel in the player's words and its age exactly", () => {
+		const station = {
+			name: "RABEINOR",
+			type: "shipyard" as const,
+			blackMarket: false,
+		};
+		const at = (source: string, observedAt: number) => ({
+			observedInstanceOrdinal: 0,
+			observedCondition: "operational" as const,
+			observedAt,
+			source,
+		});
+		expect(stationRosterLine(station, at("system-relay", 37), 259)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    RELAY REPORT · SEEN 3M 42S AGO",
+		);
+		expect(stationRosterLine(station, at("docking", 257), 325)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    DOCKED HERE · SEEN 1M 08S AGO",
+		);
+		expect(stationRosterLine(station, at("intervention", 0), 4 * 3600)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    YOUR DOING · SEEN 4H 00M AGO",
+		);
+		// Two units, never three, and a day rolls up to days-and-hours.
+		expect(
+			stationRosterLine(station, at("docking", 0), 3 * 86_400 + 4 * 3600),
+		).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    DOCKED HERE · SEEN 3D 04H AGO",
+		);
+		expect(stationRosterLine(station, at("docking", 0), 9)).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    DOCKED HERE · SEEN 9S AGO",
+		);
+		// A channel nobody has mapped shows itself rather than vanishing.
+		expect(stationRosterLine(station, at("courier-rumour", 0), 5)).toContain(
+			"courier-rumour",
+		);
+		// **Never observed is one line, not two with an empty second.** There is
+		// nothing known to put on a second line, and a shipyard has no fence.
+		expect(stationRosterLine(station, undefined, 900)).toBe(
+			"RABEINOR — SHIPYARD · STATUS UNKNOWN",
+		);
+		// An unobserved refinery does have a second line: the fence is a fact
+		// about it whether or not anyone has looked.
+		expect(
+			stationRosterLine(
+				{ name: "LEBEBEZA", type: "refinery", blackMarket: true },
+				undefined,
+				900,
+			),
+		).toBe("LEBEBEZA — REFINERY · STATUS UNKNOWN\n    FENCE UNCHECKED");
+	});
+
+	/**
+	 * **The card is sized from this, so it is measured rather than assumed.**
+	 * As one line a roster entry ran to 84 characters at its worst, which no
+	 * card width on a 1280 stage fits — it wrapped mid-phrase and a continuation
+	 * began `· RELAY REPORT`, which is what the principal saw and rejected. The
+	 * split holds every line a player meets inside the card's 540px.
+	 */
+	test("no roster line a player meets is longer than the card is wide", () => {
+		let worst = "";
+		for (let g = 0; g < GALAXY_COUNT; g++)
+			for (const system of generateGalaxy(WORLD_SEED, g).systems)
+				for (const station of generateContents(system).stations)
+					for (const known of [
+						undefined,
+						{
+							observedInstanceOrdinal: 0,
+							observedCondition: "operational" as const,
+							// The oldest reading the label can print in two units.
+							observedAt: 0,
+							source: "system-relay",
+						},
+					])
+						for (const line of stationRosterLine(
+							station,
+							known,
+							3 * 86_400 + 4 * 3600,
+						).split("\n"))
+							if (line.length > worst.length) worst = line;
+		// 540px of card less 22px of padding, at the console's monospace cell.
+		// The bound is characters because the test cannot measure a font; the
+		// pixel figure it stands for is in `galaxy-map.ts` beside `maxWidth`.
+		expect(worst.length).toBeLessThanOrEqual(53);
+	});
+
+	/** §9.4 item 2: any facility chip expands the finder, under §5.2's rule. */
+	test("a facility chip alone counts as narrowing", () => {
+		expect(finderIsNarrowed(filter({ facilities: ["REFINERY"] }))).toBe(true);
+		expect(finderIsNarrowed(filter())).toBe(false);
 	});
 });
 

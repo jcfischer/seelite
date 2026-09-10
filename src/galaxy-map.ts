@@ -44,6 +44,14 @@ import {
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
 import {
+	type LastKnownState,
+	NO_KNOWLEDGE,
+	stationRosterLine,
+	worldMinute,
+} from "./knowledge-labels";
+import { carrierKey } from "./carrier-key";
+import { rosterOf } from "./station-roster";
+import {
 	type Course,
 	type CourseProgress,
 	type Route,
@@ -326,6 +334,13 @@ export interface GalaxyChartOptions {
 	galaxyIndex: number;
 	/** Where the ship is. Defaults to the galaxy's own start system. */
 	currentIndex?: number;
+	/** Read-only last-known station intelligence; mounting never writes it, and
+	 *  opening the map is not an information channel (§5.2.1). A getter, and
+	 *  required, for the reason `mountFinderPanel`'s own doc gives. */
+	knowledge: () => LastKnownState;
+	/** The world clock. Read on every render, so an age and an overdue
+	 *  recovery are current rather than frozen at mount. */
+	now: () => number;
 	/**
 	 * Bind `h` and `Escape` on `window`. Default off.
 	 *
@@ -380,6 +395,8 @@ export function mountGalaxyChart({
 	worldSeed,
 	galaxyIndex,
 	currentIndex,
+	knowledge,
+	now,
 	globalKeys = false,
 	course: initialCourse = null,
 	onCourse,
@@ -523,7 +540,19 @@ export function mountGalaxyChart({
 		borderLeft: "2px solid #ffb347",
 		borderRadius: "3px",
 		pointerEvents: "none",
-		maxWidth: "260px",
+		// **Wide enough for the longest roster line, and never wider than the
+		// stage.** 260px wrapped every one of them mid-phrase, so a continuation
+		// began `· RELAY REPORT` and the card read as a column of fragments. The
+		// figure is measured rather than guessed, and the line that sets it is
+		// not the one you would expect: `NAME — REFINERY · STATUS UNKNOWN ·
+		// FENCE UNCHECKED` at 511px, an *un*observed refinery, beats every
+		// observed reading. 540 clears it with room for a longer name.
+		//
+		// The `min` is what keeps that safe on the 390px console, where no width
+		// fits that line: the placement clamp below reads `offsetWidth` every
+		// frame and pushes the card left, but a card wider than the stage has
+		// nowhere left to be pushed.
+		maxWidth: "min(540px, calc(100% - 24px))",
 		whiteSpace: "pre-wrap",
 	});
 	stage.appendChild(card);
@@ -773,6 +802,8 @@ export function mountGalaxyChart({
 	const finder = mountFinderPanel({
 		root,
 		systems: galaxy.systems,
+		knowledge,
+		now,
 		currentSystem: () => current,
 		selectedIndex: () => selected?.index ?? null,
 		onSelect: (index) => select(index),
@@ -791,6 +822,58 @@ export function mountGalaxyChart({
 	 *  that have to agree. A label reading "in range" over a dim point would be
 	 *  the map's recurring two-implementations trap in miniature. */
 	let litSet = new Set<number>();
+
+	/**
+	 * The selected system's record card.
+	 *
+	 * **Its own function because the minute tick calls it and `recompute` is
+	 * expensive.** A clock minute changes only the card's observation ages and
+	 * the finder's annotations; running the whole `recompute` for that reran
+	 * `reachable()` over 256 points with its attribute upload, rewrote the
+	 * drop-line buffer, and ran `planRoute` and `courseProgress` — the O(n²)
+	 * Dijkstra this file's own comment names — to arrive at an unchanged answer,
+	 * once a minute, for a text label.
+	 */
+	const paintCard = (): void => {
+		if (selected === null) {
+			card.style.display = "none";
+		} else {
+			const record = selected;
+			// **The record does not depend on a route.** It is seed-derived and
+			// always knowable, and §5 says clicking a system shows it. Gating
+			// the whole card on `route !== null` made an unroutable selection
+			// read as a dead click — a colour change and nothing else. Only the
+			// chain line is conditional.
+			card.style.display = "block";
+			// §5.2.1's roster: every station, its exact observation time and
+			// report source — the finder row carries the compact relative age,
+			// and this is where the number behind it lives. The formatting is
+			// `galaxy-finder.ts`'s, so the headless tier can reach it.
+			const rows = knowledge();
+			const stations = rosterOf(record).map((station) =>
+				stationRosterLine(
+					station,
+					rows[carrierKey(record.index, station.localCarrierId)],
+					now(),
+				),
+			);
+			card.textContent = [
+				record.name,
+				`${ECONOMY_NAMES[record.economy]} · ${GOVERNMENT_NAMES[record.government]}`,
+				`TL ${record.displayTL} · pop ${(record.population / 10).toFixed(1)} bn`,
+				`${distanceLy(current.pos, record.pos).toFixed(1)} LY direct`,
+				route === null
+					? "no route within range"
+					: route.jumps === 0
+						? "you are here"
+						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
+				"",
+				...stations,
+				"",
+				record.description,
+			].join("\n");
+		}
+	};
 
 	const recompute = (): void => {
 		lit = reachable(galaxy.systems, current);
@@ -881,29 +964,7 @@ export function mountGalaxyChart({
 		hazeButton.textContent = `core haze: ${haze.visible ? "on" : "off"}`;
 		hazeButton.setAttribute("aria-pressed", String(haze.visible));
 
-		if (selected === null) {
-			card.style.display = "none";
-		} else {
-			// **The record does not depend on a route.** It is seed-derived and
-			// always knowable, and §5 says clicking a system shows it. Gating
-			// the whole card on `route !== null` made an unroutable selection
-			// read as a dead click — a colour change and nothing else. Only the
-			// chain line is conditional.
-			card.style.display = "block";
-			card.textContent = [
-				selected.name,
-				`${ECONOMY_NAMES[selected.economy]} · ${GOVERNMENT_NAMES[selected.government]}`,
-				`TL ${selected.displayTL} · pop ${(selected.population / 10).toFixed(1)} bn`,
-				`${distanceLy(current.pos, selected.pos).toFixed(1)} LY direct`,
-				route === null
-					? "no route within range"
-					: route.jumps === 0
-						? "you are here"
-						: `${route.jumps} jump(s) · ${route.totalLy.toFixed(1)} LY · ${route.totalCr.toFixed(0)} Cr`,
-				"",
-				selected.description,
-			].join("\n");
-		}
+		paintCard();
 
 		// D3 suppresses the label over the *selected* system, so a selection
 		// change is a label change even though the pointer has not moved.
@@ -1384,7 +1445,31 @@ export function mountGalaxyChart({
 	const pitchAxis = new THREE.Vector3();
 
 	let animationFrame = 0;
+	/**
+	 * **A last-known age is the one thing on this chart that changes with no
+	 * event behind it.** Everything else the card and the finder print is
+	 * recomputed when the player does something — a selection, a jump, a chip.
+	 * §5.2.1's `SEEN 2H AGO` and the card's `DUE … · UNCONFIRMED` are functions
+	 * of the world clock, so a map left open froze both: an observation stayed
+	 * `SEEN JUST NOW` for as long as the tab was up, and a remembered repair
+	 * never turned `OVERDUE`.
+	 *
+	 * Minute granularity, because a per-frame recompute to move a number that
+	 * changes at most once a minute is the expensive way to be right.
+	 * `worldMinute`'s doc owns what that bound is and why neither label is
+	 * aligned to it; this comment carried a near-verbatim second copy of it for
+	 * a round after the rule moved into one module.
+	 */
+	let paintedMinute = worldMinute(now());
 	const frame = (): void => {
+		const minute = worldMinute(now());
+		if (minute !== paintedMinute) {
+			paintedMinute = minute;
+			// The card's ages and the finder's annotations, and nothing else —
+			// see `paintCard` for why this is not `recompute()`.
+			paintCard();
+			finder.render();
+		}
 		if (resizePending) {
 			resizePending = false;
 			resize();
@@ -1634,5 +1719,17 @@ export function mountGalaxyMap(): void {
 	const host = el("div");
 	Object.assign(host.style, { position: "fixed", inset: "0" });
 	document.body.appendChild(host);
-	mountGalaxyChart({ host, worldSeed, galaxyIndex, globalKeys: true });
+	// **The workbench says it has no world, rather than letting a default say
+	// it.** There is no `WorldState` behind this page at all, so every station
+	// reads `STATUS UNKNOWN` and every age `SEEN JUST NOW` — which is correct
+	// here and is exactly what a forgetful game mount would also produce, so
+	// the two are spelt out rather than defaulted.
+	mountGalaxyChart({
+		host,
+		worldSeed,
+		galaxyIndex,
+		knowledge: () => NO_KNOWLEDGE,
+		now: () => 0,
+		globalKeys: true,
+	});
 }

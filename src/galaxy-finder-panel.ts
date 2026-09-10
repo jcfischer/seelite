@@ -22,6 +22,14 @@ import {
 	projectFinder,
 	rememberFinderBudget,
 } from "./galaxy-finder";
+import {
+	FACILITY_CHIPS,
+	type FacilityAnnotation,
+	type FacilityChip,
+	type LastKnownState,
+	facilityAnnotationLabel,
+	worldMinute,
+} from "./knowledge-labels";
 import { ECONOMY_NAMES, type SystemRecord } from "./galaxy";
 
 /**
@@ -133,6 +141,22 @@ export interface FinderPanelOptions {
 	/** The chart's root. The panel appends itself and is removed with it. */
 	root: HTMLElement;
 	systems: readonly SystemRecord[];
+	/**
+	 * Last-known station intelligence, read on every render.
+	 *
+	 * **A getter, and required.** Held as a value it froze at mount, and
+	 * `observeSystemRelay` replaces the envelope immutably — so a jump with the
+	 * map open left the destination's just-relayed stations reading
+	 * `STATUS UNKNOWN` until a tab remount, while `now` ticked their ages up
+	 * beside them. Required for the reason `FlightPerformance` is: a default
+	 * empty map is indistinguishable in a diff from a caller that forgot, and
+	 * it renders a plausible galaxy nobody has ever visited.
+	 */
+	knowledge: () => LastKnownState;
+	/** The world clock, read on every render for the same reason as
+	 *  `currentSystem`: §5.2.1's row age is relative, and a value captured at
+	 *  mount would freeze it. */
+	now: () => number;
 	/** Where the ship is — read on every render, because a jump moves it. */
 	currentSystem: () => SystemRecord;
 	/** The chart's selection, which the panel highlights and never owns. */
@@ -154,6 +178,10 @@ export interface FinderPanelState {
 	/** How many rows of each group are actually in the DOM, so a probe can tell
 	 *  a cap from a short list. */
 	drawn: { inBudget: number; beyondRange: number };
+	/** §5.2.1's unchecked-refinery count under the current narrowing. Exposed
+	 *  for the same reason as `drawn`: a probe must read the number the panel
+	 *  printed, not compute a second one and compare it with itself. */
+	uncheckedFence: number;
 }
 
 export interface FinderPanel {
@@ -169,6 +197,15 @@ export interface FinderPanel {
 	readonly state: FinderPanelState;
 }
 
+/** A chip's pressed look, in one place — the facility row was a line-for-line
+ *  copy of the economy row's, and a third row would have copied it again. */
+const paintChip = (chip: HTMLButtonElement, on: boolean): void => {
+	chip.setAttribute("aria-pressed", String(on));
+	chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
+	chip.style.borderColor = on ? "#ffb347" : "#26506e";
+	chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
+};
+
 const el = <K extends keyof HTMLElementTagNameMap>(
 	tag: K,
 ): HTMLElementTagNameMap[K] => document.createElement(tag);
@@ -176,6 +213,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(
 export function mountFinderPanel({
 	root,
 	systems,
+	knowledge,
+	now,
 	currentSystem,
 	selectedIndex,
 	onSelect,
@@ -183,7 +222,11 @@ export function mountFinderPanel({
 	onLayoutChange,
 }: FinderPanelOptions): FinderPanel {
 	let filter: FinderFilter = finderSessionFilter();
-	let results: FinderResults = { inBudget: [], beyondRange: [] };
+	let results: FinderResults = {
+		inBudget: [],
+		beyondRange: [],
+		uncheckedFence: 0,
+	};
 	/** Which of the three layouts is on the element — a cache of what was
 	 *  applied, not a second answer to "is it open"; `finderIsNarrowed` remains
 	 *  the only one of those. */
@@ -191,6 +234,23 @@ export function mountFinderPanel({
 	/** The drawn row buttons by system index, so a selection restyles rather
 	 *  than rebuilds. Cleared whenever the list is rebuilt. */
 	const rowElements = new Map<number, HTMLElement>();
+	/**
+	 * Every drawn `[data-map-finder-facility-row]` span with the annotation it
+	 * prints, so a minute's passing rewrites text rather than rebuilding rows.
+	 *
+	 * **The alternative was in the list key and it was wrong twice over.** A
+	 * world-minute term there rebuilt every drawn row once a minute — under an
+	 * economy-only narrowing too, where no row prints an age at all — and
+	 * `resultsEl.replaceChildren` takes the focused pick or centre button with
+	 * it, dropping keyboard focus to `<body>`. The `rowElements`/`paintedIndex`
+	 * machinery beside this exists to avoid exactly that teardown.
+	 */
+	const annotationLines: Array<{
+		line: HTMLElement;
+		annotation: FacilityAnnotation;
+	}> = [];
+	/** The world-minute the drawn ages were written at; `null` before any. */
+	let labelledMinute: number | null = null;
 	/** Which index is currently painted as selected, so a repaint touches the
 	 *  two rows that changed rather than all of them. */
 	let paintedIndex: number | null = null;
@@ -199,6 +259,9 @@ export function mountFinderPanel({
 	/** The filter and origin the held `results` were projected from. `selected`
 	 *  is deliberately absent: it changes the highlight, not the rows. */
 	let projectionKey = "";
+	/** The knowledge map the memoised projection was built from, compared by
+	 *  identity rather than folded into `projectionKey`. */
+	let projectionKnowledge: LastKnownState | null = null;
 	let drawn = { inBudget: 0, beyondRange: 0 };
 
 	// ---- Furniture ---------------------------------------------------------
@@ -276,6 +339,26 @@ export function mountFinderPanel({
 			cursor: "pointer",
 		});
 		chip.addEventListener("click", () => toggleEconomy(economy));
+		chipRow.appendChild(chip);
+		return chip;
+	});
+	const facilityChips = FACILITY_CHIPS.map((facility) => {
+		const chip = el("button");
+		chip.type = "button";
+		chip.textContent = facility;
+		chip.setAttribute("data-map-finder-facility", facility);
+		Object.assign(chip.style, {
+			font: "inherit",
+			fontSize: "9px",
+			letterSpacing: "0.06em",
+			color: "#8fb2c9",
+			background: "transparent",
+			border: "1px solid #26506e",
+			borderRadius: "3px",
+			padding: "3px 6px",
+			cursor: "pointer",
+		});
+		chip.addEventListener("click", () => toggleFacility(facility));
 		chipRow.appendChild(chip);
 		return chip;
 	});
@@ -446,8 +529,32 @@ export function mountFinderPanel({
 			fontSize: "9px",
 			letterSpacing: ".05em",
 		});
-		detail.textContent = `${row.economy.toUpperCase()} · ${row.government.toUpperCase()} · TL ${row.displayTL}`;
+		detail.textContent = [
+			row.economy.toUpperCase(),
+			row.government.toUpperCase(),
+			`TL ${row.displayTL}`,
+		].join(" · ");
 		pick.append(name, reach, detail);
+
+		// **One line per matched role, and the row stays active.** §5.2.1
+		// forbids greying it: a stale reading and an unavailable facility are
+		// different facts, and one grey row cannot say which it is. The label
+		// is rendered here rather than carried on the row because it is a
+		// function of `now`, and the projection is memoised on the filter.
+		for (const annotation of row.matchedFacilities) {
+			const line = el("span");
+			line.setAttribute("data-map-finder-facility-row", annotation.facility);
+			Object.assign(line.style, {
+				gridColumn: "1/3",
+				color: "#8fb2c9",
+				fontSize: "9px",
+				letterSpacing: ".05em",
+			});
+			// Held so the age can be rewritten without rebuilding the row — the
+			// minute block at the end of `render` is what rewrites it.
+			annotationLines.push({ line, annotation });
+			pick.append(line);
+		}
 
 		const centre = el("button");
 		centre.type = "button";
@@ -500,13 +607,12 @@ export function mountFinderPanel({
 		budgetValue.textContent = String(filter.budgetJumps);
 		budgetDown.disabled = filter.budgetJumps <= 1;
 		budgetUp.disabled = filter.budgetJumps >= FINDER_MAX_BUDGET;
-		chips.forEach((chip, economy) => {
-			const on = filter.economies.includes(economy);
-			chip.setAttribute("aria-pressed", String(on));
-			chip.style.color = on ? "#ffe1a9" : "#8fb2c9";
-			chip.style.borderColor = on ? "#ffb347" : "#26506e";
-			chip.style.background = on ? "rgba(255,179,71,.18)" : "transparent";
-		});
+		chips.forEach((chip, economy) =>
+			paintChip(chip, filter.economies.includes(economy)),
+		);
+		facilityChips.forEach((chip, i) =>
+			paintChip(chip, filter.facilities.includes(FACILITY_CHIPS[i])),
+		);
 
 		const expanded = finderIsNarrowed(filter);
 		applyLayout(expanded);
@@ -514,12 +620,16 @@ export function mountFinderPanel({
 			// **The projection is skipped while the panel is closed**, so a chart
 			// click does not pay a whole-pool relaxation for a list showing
 			// nothing.
-			results = { inBudget: [], beyondRange: [] };
+			results = { inBudget: [], beyondRange: [], uncheckedFence: 0 };
 			resultsEl.replaceChildren();
 			rowElements.clear();
+			annotationLines.length = 0;
+			labelledMinute = null;
 			paintedIndex = null;
 			listKey = "";
 			projectionKey = "";
+			// Both halves of the memo, or a close leaves one behind.
+			projectionKnowledge = null;
 			drawn = { inBudget: 0, beyondRange: 0 };
 			return;
 		}
@@ -530,17 +640,28 @@ export function mountFinderPanel({
 		// each, sorts both groups, and is then thrown away by the key comparison
 		// below. Skipped unless one of its two inputs actually moved.
 		const here = currentSystem();
-		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}`;
-		if (inputKey !== projectionKey) {
+		const inputKey = `${here.index}|${filter.budgetJumps}|${filter.query.trim().toLowerCase()}|${[...filter.economies].sort((a, b) => a - b).join(",")}|${[...filter.facilities].sort().join(",")}`;
+		// **The knowledge map is the third input, and it is compared by
+		// identity.** It is replaced rather than mutated on every observation,
+		// so a reference that has not moved cannot have changed — and a string
+		// key cannot hold one, which is why this sits beside `inputKey` rather
+		// than inside it.
+		const rows = knowledge();
+		if (inputKey !== projectionKey || rows !== projectionKnowledge) {
 			projectionKey = inputKey;
-			results = projectFinder(systems, here, filter);
+			projectionKnowledge = rows;
+			results = projectFinder(systems, here, filter, { knowledge: rows });
 		}
-		const { inBudget, beyondRange } = results;
+		const { inBudget, beyondRange, uncheckedFence } = results;
 		// **Keyed on what the rows actually print.** Two filters can yield the
 		// same rows, and the ship moving under a fixed filter yields different
 		// chains under the same indices — so the key carries the identity, the
 		// jump count *and the chain length*, plus both group sizes so a change
-		// past the cap still rewrites the "+N more" line. The length was missing
+		// past the cap still rewrites the "+N more" line, and the facility
+		// annotations, which are the other thing a row prints. **`now` is
+		// deliberately not in it**: the age is derived from the clock, so a key
+		// carrying it would repaint the whole list every frame the map is open
+		// to move a number that changes at minute granularity.  The length was missing
 		// at first, which would leave a row whose hop count survived a jump
 		// printing the chain length of the system the ship had left. **No red
 		// build for that one**: it needs a jump that preserves group membership
@@ -552,13 +673,34 @@ export function mountFinderPanel({
 				(rows) =>
 					`${rows.length}#${rows
 						.slice(0, FINDER_DRAWN_ROWS)
-						.map((r) => `${r.index}:${r.jumps}:${r.routeLy?.toFixed(1)}`)
+						.map(
+							(r) =>
+								`${r.index}:${r.jumps}:${r.routeLy?.toFixed(1)}:${r.matchedFacilities
+									.map((a) => `${a.facility}=${a.condition}@${a.observedAt}`)
+									.join("+")}`,
+						)
 						.join(",")}`,
 			)
-			.join("|");
+			.join("|")
+			// **The unchecked count is part of what the results area prints.**
+			// Left out, widening the budget under `KNOWN FENCE` with no known
+			// match changed neither group's rows — both empty — so the key held
+			// and the panel kept printing the narrower budget's count. The probe
+			// read 4 off the DOM against the projection's 105.
+			// **The chip's presence, not just its count.** The unchecked line is
+			// gated on `KNOWN FENCE` being on, and the count alone cannot see
+			// that: type a query matching nothing, and turning the chip on
+			// leaves both groups empty and the count at zero, so the key holds
+			// and §5.2.1's line never appears — and turning it back off leaves
+			// the line it did draw standing.
+			.concat(
+				`|fence${filter.facilities.includes("KNOWN FENCE") ? uncheckedFence : "-"}`,
+			);
 		if (key !== listKey) {
 			listKey = key;
 			rowElements.clear();
+			annotationLines.length = 0;
+			labelledMinute = null;
 			paintedIndex = null;
 			const parts: HTMLElement[] = [];
 			if (inBudget.length === 0) {
@@ -583,6 +725,21 @@ export function mountFinderPanel({
 				heading.textContent = "BEYOND RANGE";
 				parts.push(heading, ...buildGroup(beyondRange, true));
 			}
+			if (filter.facilities.includes("KNOWN FENCE")) {
+				const unchecked = el("p");
+				unchecked.setAttribute(
+					"data-map-finder-unchecked-fence",
+					String(uncheckedFence),
+				);
+				Object.assign(unchecked.style, {
+					margin: "6px 2px",
+					color: "#7fa8c4",
+					fontSize: "9px",
+					letterSpacing: ".08em",
+				});
+				unchecked.textContent = `${uncheckedFence} REFINER${uncheckedFence === 1 ? "Y" : "IES"} UNCHECKED`;
+				parts.push(unchecked);
+			}
 			resultsEl.replaceChildren(...parts);
 			drawn = {
 				inBudget: Math.min(inBudget.length, FINDER_DRAWN_ROWS),
@@ -606,6 +763,18 @@ export function mountFinderPanel({
 			if (after) paintRow(after, true);
 			paintedIndex = next;
 		}
+
+		// **The ages, rewritten rather than rebuilt.** `facilityAnnotationLabel`
+		// is a function of the world clock, so a map left open froze every one
+		// of them; at minute granularity this is a handful of `textContent`
+		// writes against a full teardown of the drawn list, and it keeps the
+		// focused row's buttons in the document.
+		const minute = worldMinute(now());
+		if (minute !== labelledMinute) {
+			labelledMinute = minute;
+			for (const { line, annotation } of annotationLines)
+				line.textContent = `${annotation.facility} · ${facilityAnnotationLabel(annotation, now())}`;
+		}
 	};
 
 	// ---- Controls ----------------------------------------------------------
@@ -628,6 +797,14 @@ export function mountFinderPanel({
 			economies: filter.economies.includes(economy)
 				? filter.economies.filter((e) => e !== economy)
 				: [...filter.economies, economy],
+		});
+	}
+
+	function toggleFacility(facility: FacilityChip): void {
+		patch({
+			facilities: filter.facilities.includes(facility)
+				? filter.facilities.filter((value) => value !== facility)
+				: [...filter.facilities, facility],
 		});
 	}
 
@@ -674,6 +851,7 @@ export function mountFinderPanel({
 				inBudget: results.inBudget,
 				beyondRange: results.beyondRange,
 				drawn,
+				uncheckedFence: results.uncheckedFence,
 			};
 		},
 	};

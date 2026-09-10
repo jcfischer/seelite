@@ -19,6 +19,16 @@ import {
 	distanceLy,
 } from "./galaxy";
 import { type JumpReach, projectJumps } from "./galaxy-route";
+import { carrierKey } from "./carrier-key";
+import { rosterOf } from "./station-roster";
+import {
+	FACILITY_CHIPS,
+	type FacilityAnnotation,
+	type FacilityChip,
+	type LastKnownState,
+	fenceKnowledge,
+} from "./knowledge-labels";
+import type { KnowledgeRow } from "./world-state";
 
 /**
  * What the player has narrowed the galaxy to.
@@ -40,13 +50,17 @@ import { type JumpReach, projectJumps } from "./galaxy-route";
  * test asserting the same three properties of each. `galaxy-finder.test.ts`
  * has them for this one.
  *
- * `budgetJumps` is the third control and is this list's own: the local list has
- * no analogue because everything on it is in the system you are in.
+ * `budgetJumps` is this list's own and the local list has no analogue, because
+ * everything on it is in the system you are in. `facilities` (#275) is the
+ * fourth control, and its knowledge dimension has no analogue there either.
  */
 export interface FinderFilter {
 	query: string;
 	/** Economy indices into `ECONOMY_NAMES`. Empty means every economy. */
 	economies: readonly number[];
+	/** §5.2.1's facility chips, intersecting. Empty means no facility
+	 *  narrowing, and the row carries no annotation. */
+	facilities: readonly FacilityChip[];
 	/** The jump bound on the primary list, at least 1. */
 	budgetJumps: number;
 }
@@ -81,6 +95,7 @@ export const FINDER_MAX_BUDGET = 16;
 export const finderDefaultFilter = (): FinderFilter => ({
 	query: "",
 	economies: [],
+	facilities: [],
 	budgetJumps: FINDER_DEFAULT_BUDGET,
 });
 
@@ -134,7 +149,7 @@ export function resetFinderSession(): void {
 /**
  * D4: is any narrowing active?
  *
- * **This is what expands the panel**, and it deliberately reads all three
+ * **This is what expands the panel**, and it deliberately reads all four
  * controls rather than the query alone. An expand rule keyed to the text field
  * would leave the chips and the budget dead until something was typed — the
  * defect `live-cockpit.ts` records having shipped once already, where a state
@@ -144,6 +159,7 @@ export function finderIsNarrowed(filter: FinderFilter): boolean {
 	return (
 		filter.query.trim() !== "" ||
 		filter.economies.length > 0 ||
+		filter.facilities.length > 0 ||
 		filter.budgetJumps !== FINDER_DEFAULT_BUDGET
 	);
 }
@@ -161,6 +177,9 @@ export interface FinderRow {
 	routeLy: number | null;
 	/** Straight-line distance, which exists even where a route does not. */
 	distanceLy: number;
+	/** §5.2.1's per-role annotation, one entry per active facility chip and
+	 *  empty when none is. */
+	matchedFacilities: FacilityAnnotation[];
 }
 
 /**
@@ -175,6 +194,7 @@ export interface FinderRow {
 export interface FinderResults {
 	inBudget: FinderRow[];
 	beyondRange: FinderRow[];
+	uncheckedFence: number;
 }
 
 /**
@@ -197,6 +217,61 @@ export function finderMatches(
 }
 
 /**
+ * What one system offers each facility chip, annotated.
+ *
+ * **Called only when a facility chip is active.** It reads the system's whole
+ * station roster, which means generating the system — and with no chip on, that
+ * is 256 system generations per keystroke to answer a question nobody asked.
+ * §5.2.1 says the row is unchanged with no chip active, so the caller skips it.
+ *
+ * A system has at most one station per role (`system.ts`), so a role's
+ * annotation is unambiguous and §5.2.1's "never collapses mixed carrier
+ * conditions" has no case to answer here: each chip annotates its own carrier.
+ */
+function facilitiesOf(
+	system: SystemRecord,
+	knowledge: LastKnownState,
+	wanted: readonly FacilityChip[],
+) {
+	const present = new Map<FacilityChip, FacilityAnnotation>();
+	let uncheckedFence = false;
+	for (const station of rosterOf(system)) {
+		const known: KnowledgeRow | undefined =
+			knowledge[carrierKey(system.index, station.localCarrierId)];
+		const annotate = (facility: FacilityChip): FacilityAnnotation => ({
+			facility,
+			role: station.type,
+			name: station.name,
+			condition: known?.observedCondition ?? null,
+			observedAt: known?.observedAt ?? null,
+			source: known?.source ?? null,
+			...(known?.observedRecovery
+				? { observedRecovery: known.observedRecovery }
+				: {}),
+		});
+		if (station.type === "refinery") {
+			// **Only what a chip asked for.** A `REFINERY`-only narrowing built
+			// a shipyard annotation for every admitted system on every
+			// keystroke, and threw it away.
+			if (wanted.includes("REFINERY"))
+				present.set("REFINERY", annotate("REFINERY"));
+			// §5.2.1's three values, from `fenceKnowledge` rather than from a
+			// second copy of the rule: a marker plus a generated true is a
+			// match, a marker plus a generated false is a *known* non-match —
+			// neither a row nor an unchecked refinery — and no marker at all is
+			// unchecked.
+			const fence = fenceKnowledge(station.blackMarket, known);
+			if (fence === "unchecked") uncheckedFence = true;
+			else if (fence === "known-fence" && wanted.includes("KNOWN FENCE"))
+				present.set("KNOWN FENCE", annotate("KNOWN FENCE"));
+		}
+		if (station.type === "shipyard" && wanted.includes("SHIPYARD"))
+			present.set("SHIPYARD", annotate("SHIPYARD"));
+	}
+	return { present, uncheckedFence };
+}
+
+/**
  * **No `selected` field.** Which row is selected is the chart's fact, not the
  * projection's, and a copy here is one that goes stale the moment a render
  * skips the projection — which is exactly what the panel does when only the
@@ -206,6 +281,7 @@ const row = (
 	system: SystemRecord,
 	from: SystemRecord,
 	reach: JumpReach | undefined,
+	matchedFacilities: FacilityAnnotation[],
 ): FinderRow => ({
 	index: system.index,
 	name: system.name,
@@ -215,6 +291,7 @@ const row = (
 	jumps: reach?.jumps ?? null,
 	routeLy: reach?.ly ?? null,
 	distanceLy: distanceLy(from.pos, system.pos),
+	matchedFacilities,
 });
 
 /**
@@ -246,6 +323,20 @@ function byReach(a: FinderRow, b: FinderRow): number {
 }
 
 /**
+ * `projectFinder`'s two optional inputs.
+ *
+ * **An object rather than two more positionals.** `knowledge` arrived behind
+ * the optional `maxJump`, so every real caller had to write
+ * `projectFinder(systems, here, filter, undefined, knowledge)` — a placeholder
+ * the panel carried and fourteen tests repeated, and the shape that keeps
+ * growing a fifth and a sixth positional.
+ */
+export interface ProjectFinderOptions {
+	maxJump?: number;
+	knowledge?: LastKnownState;
+}
+
+/**
  * The finder's two lists for one galaxy.
  *
  * **One traversal, not 256 routes.** `projectJumps` labels the whole pool from
@@ -262,28 +353,70 @@ export function projectFinder(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
 	filter: FinderFilter,
-	maxJump = JUMP_RANGE_LY,
+	{ maxJump = JUMP_RANGE_LY, knowledge = {} }: ProjectFinderOptions = {},
 ): FinderResults {
 	const projection = projectJumps(systems, from, maxJump);
 	const normalised = filter.query.trim().toLowerCase();
 	const hasQuery = normalised !== "";
 	const inBudget: FinderRow[] = [];
 	const beyondRange: FinderRow[] = [];
+	let uncheckedFence = 0;
 
 	for (const system of systems) {
 		if (system.galaxy !== from.galaxy) continue;
 		if (!finderMatches(system, filter, normalised)) continue;
 		const here = projection.reach(system);
-		// **Built inside the branch that keeps it.** Constructed before the
-		// test, a chip-only narrowing at the default budget allocated a row and
-		// took a square root for every matching out-of-budget system and then
-		// dropped it — up to 250 of them on one chip click.
-		if (here !== undefined && here.jumps <= filter.budgetJumps)
-			inBudget.push(row(system, from, here));
-		else if (hasQuery) beyondRange.push(row(system, from, here));
+		const inBudgetHere = here !== undefined && here.jumps <= filter.budgetJumps;
+		// **Nothing below can produce anything for this system.** Out of budget
+		// with no query yields no row in either group, and the unchecked count
+		// is gated on the budget too — so without this the default one-jump
+		// browse generated ~250 systems' contents per chip toggle and dropped
+		// every one. It is the same waste the comment further down names.
+		if (!inBudgetHere && !hasQuery) continue;
+		let matched: FacilityAnnotation[] = [];
+		// **The roster is read only when a chip asks for it.** Generating a
+		// system to answer a question no chip posed cost the whole galaxy's
+		// contents on every keystroke, and §5.2.1 leaves the unannotated row
+		// exactly as §5.2 had it.
+		if (filter.facilities.length > 0) {
+			const facilities = facilitiesOf(system, knowledge, filter.facilities);
+			const missing = filter.facilities.filter(
+				(facility) => !facilities.present.has(facility),
+			);
+			if (missing.length > 0) {
+				// §5.2.1's count: systems "inside the current name, economy,
+				// and jump narrowing" whose fence is unchecked. Scoped to the
+				// budget because the first pass counted every unchecked
+				// refinery in the galaxy, so the one-jump budget the finder
+				// opens on reported a number no narrowing could move. Scoped to
+				// *only* the fence missing because checking a fence in a system
+				// that fails another chip could never make it a match.
+				if (
+					inBudgetHere &&
+					missing.length === 1 &&
+					missing[0] === "KNOWN FENCE" &&
+					facilities.uncheckedFence
+				)
+					uncheckedFence++;
+				continue;
+			}
+			// Built once, and never discarded: the `continue` at the top of the
+			// loop has already dropped every system that yields no row. It was
+			// a lazy closure before that guard existed, against a chip-only
+			// narrowing at the default budget that allocated a row and took a
+			// square root for every matching out-of-budget system before
+			// dropping it.
+			matched = filter.facilities.map(
+				(facility) => facilities.present.get(facility) as FacilityAnnotation,
+			);
+		}
+		// **One dispatch, not one per branch.** Which group a row joins is one
+		// rule; written twice, a later change to it lands in one arm.
+		if (inBudgetHere) inBudget.push(row(system, from, here, matched));
+		else beyondRange.push(row(system, from, here, matched));
 	}
 
 	inBudget.sort(byReach);
 	beyondRange.sort(byReach);
-	return { inBudget, beyondRange };
+	return { inBudget, beyondRange, uncheckedFence };
 }

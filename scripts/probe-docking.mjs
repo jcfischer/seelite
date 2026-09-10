@@ -398,6 +398,42 @@ const undock = good.docked
 					if (g.dockingSnapshot(id).dockPhase === "docked") break;
 				}
 				const wasDocked = g.dockedAt === id;
+				// **`persistent-world-state.md` §9.10's docking channel, at the
+				// one place it is actually reachable.** The write lives in
+				// `main.ts`'s crossing handler, so no headless tier touches it:
+				// `world-state.test.ts` proves `observeDocking` does the right
+				// thing to a world, and nothing proved the game ever calls it.
+				// The row is read *before* the launch below, because launching
+				// is what leaves the station.
+				const station = g.world.system.contents.stations.find(
+					(s) => s.id === id,
+				);
+				const dockedKnowledge = (() => {
+					const env = g.commerceWorld.galaxies[g.world.system.record.galaxy];
+					// **The whole key, never a suffix of it, and the game's own
+					// `carrierKey` rather than a second copy of its format.**
+					// Written as an `endsWith` over every row in the galaxy
+					// first: the four `station-*` ids are not suffixes of each
+					// other so it held at this seed, but it drops the system
+					// index, and after a jump the first inserted
+					// `*:station-refinery` from some other system wins — the
+					// check named "the station it docked at" would then be
+					// reading a carrier the ship never visited. Spelling the
+					// key out here was the same mistake one layer up:
+					// `persistent-world-state.md` §2 owns that shape.
+					const key = g.carrierKey(
+						g.world.system.record.index,
+						station?.localCarrierId,
+					);
+					const row = env?.knowledge?.[key];
+					return {
+						key,
+						type: station?.type ?? null,
+						source: row?.source ?? null,
+						observedAt: row?.observedAt ?? null,
+						marker: row?.knownPrivateFacts?.blackMarket ?? null,
+					};
+				})();
 				// This section verifies the docking session's exit and re-entry latch,
 				// not shared Traffic ordering (the route probe owns both older-turn and
 				// active-lane cases). Isolate the session so a legitimate older Traffic
@@ -437,6 +473,7 @@ const undock = good.docked
 					throttleAfterStep: flying?.throttle ?? 0,
 					arrivalQueued,
 					wasDocked,
+					dockedKnowledge,
 					launched,
 					skipped,
 					stillDocked: g.dockedAt === id,
@@ -452,6 +489,37 @@ const undock = good.docked
 	: null;
 if (undock) {
 	check("the ship was docked to begin with", undock.wasDocked);
+	check(
+		"docking observed the station it docked at",
+		undock.dockedKnowledge.source === "docking" &&
+			Number.isFinite(undock.dockedKnowledge.observedAt),
+		`${undock.dockedKnowledge.type} ${undock.dockedKnowledge.key}: source ${undock.dockedKnowledge.source} at ${undock.dockedKnowledge.observedAt}`,
+	);
+	/**
+	 * **The fence arm of §9.10's docking channel is not covered, and this says
+	 * so rather than pretending.**
+	 *
+	 * The previous version asserted `(type === "refinery") === (marker !== null)`
+	 * and was sold as "a marker exactly when the station is a refinery". This
+	 * fixture docks at `D.spinner()`, and `station.ts` gives `spins: false` to
+	 * the refinery and the outpost — so `type` is never `refinery` here and the
+	 * biconditional collapses to `marker === null`, which any non-refinery
+	 * docking satisfies.
+	 * A build that never wrote a refinery marker at all passed it.
+	 *
+	 * Half of it is real and stays above: a non-refinery docking must *not*
+	 * manufacture a marker. The other half needs a docking at a refinery, which
+	 * is a different approach profile and a different probe. **This asserts the
+	 * fixture's shape instead**, so the day it does yield a refinery the row goes
+	 * red and whoever sees it writes the arm rather than inheriting a check that
+	 * silently covers one side.
+	 */
+	check(
+		"a non-refinery docking manufactures no fence marker — and this fixture has only those",
+		undock.dockedKnowledge.type !== "refinery" &&
+			undock.dockedKnowledge.marker === null,
+		`docked at a ${undock.dockedKnowledge.type}, marker ${JSON.stringify(undock.dockedKnowledge.marker)} — the refinery arm is unproven in this tier`,
+	);
 	check("§12.2's launch is accepted from a docked ship", undock.launched);
 	check(
 		"and it is unconditionally skippable (§12.6 obligation 5)",

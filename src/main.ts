@@ -344,6 +344,7 @@ import {
 import { readDeficit } from "./deficits";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import { NO_KNOWLEDGE } from "./knowledge-labels";
 import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
@@ -353,6 +354,8 @@ import {
 } from "./station-commerce";
 import {
 	newWorld as newPersistentWorld,
+	observeDocking,
+	observeSystemRelay,
 	visit,
 	type WorldState,
 } from "./world-state";
@@ -1554,6 +1557,11 @@ class Game {
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
 
+	/** `persistent-world-state.md` §2's composite key, for the same reason. The
+	 *  docking probe built `${systemIndex}:${localCarrierId}` itself, which is a
+	 *  second implementation of a structure the spec owns. */
+	readonly carrierKey = carrierKey;
+
 	/**
 	 * Which hull is flying, and what that means — the roster's own figures, not a
 	 * probe's copy of them.
@@ -1950,6 +1958,7 @@ class Game {
 			this.world.system.record.galaxy,
 			this.world.system.record.index,
 		);
+		this.observeCurrentSystemRelay();
 		for (const _body of this.world.system.bodies)
 			this.scannerContactBuffer.push({} as ScannerContact);
 		this.updateLocalFrameBody();
@@ -5256,6 +5265,22 @@ class Game {
 					worldSeed: this.world.seed,
 					galaxyIndex: this.world.system.record.galaxy,
 					currentIndex: this.world.system.record.index,
+					// **Both getters, for the same reason `currentSystem` is one.**
+					// Held as values these froze at mount: a jump with the map
+					// open runs `observeCurrentSystemRelay` and then
+					// `handle.jumpTo`, and `observeSystemRelay` replaces the
+					// envelope — so the destination's just-relayed stations
+					// rendered `STATUS UNKNOWN` while their ages ticked up.
+					// **`NO_KNOWLEDGE`, not a fresh `{}`.** The panel compares the
+					// map by identity to decide whether to re-project, and a
+					// literal here allocates a new object on every render — so
+					// a galaxy with no envelope yet would miss the memo every
+					// frame and re-project 256 systems for a map that never
+					// changes.
+					knowledge: () =>
+						this.commerceWorld.galaxies[this.world.system.record.galaxy]
+							?.knowledge ?? NO_KNOWLEDGE,
+					now: () => this.world.gameTime,
 					// The course is the game's, not the chart's (#187) — the chart
 					// is disposed on every tab toggle and a course held inside it
 					// went with it.
@@ -6234,6 +6259,24 @@ class Game {
 		this.throttle = 0;
 
 		if (outcome.docked) {
+			const station = this.world.system.contents.stations.find(
+				(candidate) => candidate.id === id,
+			);
+			// **Loud, not silent.** `if (station)` made a docked id missing from
+			// the roster a no-op, so §9.10's docking write would vanish with
+			// nothing said — and the reservation lookup below already refuses
+			// the analogous case out loud rather than papering over it.
+			if (!station)
+				throw new Error(
+					`docked at ${id}, which is not in this system's roster`,
+				);
+			this.commerceWorld = observeDocking(
+				this.commerceWorld,
+				this.world.system.record.galaxy,
+				carrierKey(this.world.system.record.index, station.localCarrierId),
+				this.world.gameTime,
+				station.type === "refinery",
+			);
 			// **E2: crossing the plane hands the ship over.** The skill test
 			// ended here, so from this instant the ship is on rails and nothing
 			// can fail — the arrival is a position law, and `stepDockedWorld`
@@ -6974,6 +7017,7 @@ class Game {
 		// §7's visited flag, per galaxy (`persistent-world-state.md` §7). The
 		// start system is recorded at boot; this is every system after it.
 		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
+		this.observeCurrentSystemRelay();
 
 		// The flight session, reset to what arriving in a system is: at rest, in
 		// normal flight, pointed at the new star, with nothing left of the leg
@@ -6995,6 +7039,19 @@ class Game {
 		// left.
 		this.chart?.handle.jumpTo(to.index);
 		this.jumpNotice = `arrived at ${to.name}`;
+	}
+
+	/** The System relay is an arrival channel, never a map-opening side effect. */
+	private observeCurrentSystemRelay(): void {
+		const { record, contents } = this.world.system;
+		this.commerceWorld = observeSystemRelay(
+			this.commerceWorld,
+			record.galaxy,
+			contents.stations.map((station) =>
+				carrierKey(record.index, station.localCarrierId),
+			),
+			this.world.gameTime,
+		);
 	}
 
 	/**
