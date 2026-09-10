@@ -222,6 +222,18 @@ try {
 		});
 
 		await tap(B.b); // back to the forward view
+		const mouseFlying = await page.evaluate(async () => {
+			const g = window.__seelite;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			g.mouseDx = 400;
+			g.mouseDy = 0;
+			await window.__frames(3);
+			return g.rates.yaw;
+		});
+		await page.evaluate(() => {
+			window.__seelite.rates = { pitch: 0, yaw: 0, roll: 0 };
+		});
+		await frames(3);
 		await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
 		await frames(10);
 		const flying = await page.evaluate(() => window.__seelite.rates.yaw);
@@ -236,8 +248,13 @@ try {
 		);
 		check(
 			"…and it suspends the mouse too, which #283 never touched",
-			Math.abs(mouseHeld) < 1e-9,
-			`yaw ${mouseHeld} after a 400 px pointer delta`,
+			// **Both arms.** Asserting only that the pointer does nothing with a
+			// console open passes just as well against a mouse path that is
+			// broken outright — the same shape of hole as the stick check beside
+			// it, which has had its positive arm from the start. Sage found the
+			// asymmetry.
+			Math.abs(mouseHeld) < 1e-9 && Math.abs(mouseFlying) > 1e-9,
+			`yaw ${mouseHeld} with the console open, ${mouseFlying.toFixed(5)} rad/s without it, after a 400 px delta`,
 		);
 	}
 
@@ -327,6 +344,59 @@ try {
 				? "no rail button on this panel"
 				: `walked to ${railReached}: ${landedOnRail}`,
 		);
+
+		{
+			// **The same panel, changing what it has.** The block below turns to a
+			// *different* console, so the scope element changes and the hint is
+			// rebuilt for that reason alone — it passed with the text left out of
+			// the identity entirely. This walks the left console's own tabs
+			// instead: same `aside`, and Communications draws nothing focusable
+			// where Navigation draws chips and rows.
+			//
+			// **What this does NOT cover, stated rather than implied.** Sage's
+			// round-5 finding was that the hint goes stale while the *scope
+			// element* is unchanged, and keying the early return on the text as
+			// well as the element is the fix. This check cannot exercise that,
+			// and neither could two earlier attempts: a tab switch replaces the
+			// panel's markup, so the element changes and the guard never bites;
+			// and filtering the Navigation list to no matches leaves the kind
+			// chips, which are focusable, so the walk never reaches zero. No way
+			// to hold one element while its walk crosses zero was found. The fix
+			// is kept as cheap insurance and is **unverified by this tier** —
+			// what is checked here is the weaker, real property that the hint
+			// follows a surface's contents rather than its name.
+			const perTab = [];
+			for (let i = 0; i < 4; i++) {
+				const seen = await page.evaluate(() => ({
+					tab: document.querySelector("[data-live-cockpit]").dataset
+						.liveLeftView,
+					hint:
+						document.querySelector("[data-live-pad-hint]")?.textContent ?? null,
+					walkable: document.querySelectorAll(
+						'[data-live-panel="left"] [data-live-nav-target],' +
+							'[data-live-panel="left"] [data-live-nav-kind],' +
+							'[data-live-panel="left"] [data-live-left-tab]:not(.lc-tab)',
+					).length,
+				}));
+				perTab.push(seen);
+				await tap(B.r1);
+			}
+			const empty = perTab.filter((t) => t.walkable === 0);
+			const full = perTab.filter((t) => t.walkable > 0);
+			check(
+				"the hint names what a surface has, not what surface it is",
+				empty.length > 0 &&
+					full.length > 0 &&
+					empty.every((t) => !(t.hint ?? "").includes("WALK")) &&
+					full.every((t) => (t.hint ?? "").includes("WALK")),
+				perTab
+					.map(
+						(t) =>
+							`${t.tab}:${t.walkable}:${(t.hint ?? "").includes("WALK") ? "walk" : "no-walk"}`,
+					)
+					.join(" "),
+			);
+		}
 
 		{
 			// **A panel with nothing to walk still says it has the pad.** The

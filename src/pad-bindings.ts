@@ -23,7 +23,10 @@
  *
  * ## Four contexts, and the second one is the interesting one
  *
- * `flight` is the forward view, and it is the only context that moves the ship.
+ * `flight` is the forward view. It and `instrument` are the two contexts that
+ * move the ship — `contextFliesShip` is the predicate, and an earlier version of
+ * this line called flight the only one, which the instrument paragraph below
+ * then contradicted.
  *
  * `console` is a head turned to a side console, or the station console on the
  * forward wall while docked. It claims **six discrete controls** — the d-pad's
@@ -119,33 +122,25 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
 };
 
 /**
- * The line a console shows a pad player, owned here beside the bindings it
- * names.
+ * The line a console shows a pad player, built from what that surface has.
  *
- * It was written into `live-cockpit.ts` and was a third copy of a table this
- * module and `docs/gamepad.md` already own — a rebind would have moved two of
- * the three. Sage asked.
+ * Owned here beside the bindings it names: it was written into
+ * `live-cockpit.ts` and was a third copy of a table this module and
+ * `docs/gamepad.md` already own, so a rebind moved two of the three.
  *
- * **"CONTROLLER", not "PAD".** On a *station* console the shorter word collides
- * with `CONTEXT.md`'s berth sense, which is the one place in this game where
- * that reading is live. And the buttons are named by their standard-mapping
- * positions rather than drawn as DualSense glyphs, because an Xbox pad reads
- * `a`/`b` literally and this module says so above.
+ * **Assembled rather than picked from near-copies.** It began as one constant,
+ * gained a station variant that was the first minus one segment, and would have
+ * gained a third and fourth for the empty walk — three of them left dead the
+ * moment this function replaced them, which sage then found. A surface with
+ * nothing focusable must not promise a walk, and the station console must not
+ * promise a back: it is reached with the head already forward, so `back` would
+ * turn a forward head forward.
+ *
+ * **"CONTROLLER", not "PAD".** On a *station* console the shorter word meets
+ * `CONTEXT.md`'s berth sense, which is the one surface in this game where that
+ * reading is live. The buttons are named by standard-mapping position rather
+ * than drawn as DualSense glyphs, because an Xbox pad reads `a`/`b` literally.
  */
-export const PAD_CONSOLE_HINT =
-	"CONTROLLER · UP/DOWN WALK · A SELECT · B BACK · L1/R1 TAB";
-
-/**
- * The same line for the station console, which has no back.
- *
- * That surface is reached **docked with the head forward**, so `back` turns the
- * head to forward when it already is — and `b` is claimed by the console branch,
- * so it does not request clearance either. Promising BACK there names a button
- * that does nothing. Sage found it.
- */
-export const PAD_STATION_HINT =
-	"CONTROLLER · UP/DOWN WALK · A SELECT · L1/R1 TAB";
-
 /**
  * The hint a surface should show, built from its two facts.
  *

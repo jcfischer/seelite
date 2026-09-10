@@ -568,7 +568,17 @@ export class LiveCockpit {
 		// What the empty walk changes is the *hint*, not the marker: WALK is the
 		// one segment that becomes a lie there, and the others stay true.
 		const wanted = present ? scope : null;
-		if (wanted === this.padScope) return;
+		// **The text is part of the identity, not just the element.** Keyed on
+		// the scope alone, a hint went stale whenever the *same* panel changed
+		// what it had — narrow the Navigation filter to nothing and the line went
+		// on promising a walk. Sage found it.
+		const text = wanted
+			? padHintFor({
+					station: wanted.matches("[data-live-station-console]"),
+					walkable: elements.length > 0,
+				})
+			: "";
+		if (wanted === this.padScope && text === this.padHint?.textContent) return;
 		if (this.padScope) delete this.padScope.dataset.livePadScope;
 		this.padHint?.remove();
 		this.padHint = null;
@@ -578,12 +588,7 @@ export class LiveCockpit {
 		const hint = document.createElement("p");
 		hint.className = "lc-pad-hint";
 		hint.dataset.livePadHint = "";
-		// The station console has no back, so it does not promise one; and a
-		// panel with nothing focusable does not promise a walk.
-		hint.textContent = padHintFor({
-			station: wanted.matches("[data-live-station-console]"),
-			walkable: elements.length > 0,
-		});
+		hint.textContent = text;
 		wanted.append(hint);
 		this.padHint = hint;
 	}
