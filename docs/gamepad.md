@@ -124,13 +124,19 @@ agrees with the mouse: push right, the nose goes right.
 | `b` (Circle) | back out — to the forward view, out of a modal, or out of the instrument |
 | `l1` / `r1` | previous and next tab |
 | sticks, triggers, mouse | **suspended** — the ship coasts |
+| the keyboard | still flies, deliberately — a key has to be held |
 | every other button | still acts on the ship |
 
-**The cursor walks content, not chrome.** Tabs are not in the walk: they have the
-shoulders, and passing through the tab row to reach a list was the first thing
-the principal found wrong with it. The panel holding the pad says so — a cool
-ring on its border, matching the cursor's — and carries a hint line naming the
-four controls above. Both are drawn only when a pad is attached.
+**The cursor walks content, not chrome.** Tabs are not in the walk: they have
+the shoulders, and passing through the tab row to reach a list was the first
+thing the principal found wrong with it. The Navigation rail's own GALAXY MAP
+button stays walkable — it carries a tab's attribute and is not a tab.
+
+The panel holding the pad says so — a cool ring on its border, matching the
+cursor's — and carries a hint line. Both are drawn only when a pad is attached,
+and the hint names **what that surface actually has**: a panel with nothing
+focusable does not promise a walk, and the station console does not promise a
+back, because it is reached with the head already forward.
 
 On the Galaxy Map tab the right stick orbits the cluster, which is the one thing
 a stick still does inside a console.

@@ -278,27 +278,45 @@ try {
 			// winning was the defect: on a row that is both selected and ringed
 			// it removed `aria-current`'s amber, which is the one row the "two
 			// highlights, two questions" argument is about. Sage found it.
+			//
+			// **And this check was written unable to fail on that.** The first
+			// version asserted only that a shadow existed and the background was
+			// not transparent — which the `!important` version satisfies, since
+			// it keeps the outer glow and paints its own background. It reads the
+			// selected row's colour from the stylesheet's own rule now and
+			// requires the ringed row to still be wearing it. It also restored
+			// nothing, leaving `data-live-focus` on a live row that every later
+			// check finds first with a global query.
 			const layered = await page.evaluate(() => {
-				const rows = [...document.querySelectorAll("[data-live-nav-target]")];
-				const row = rows[0];
+				const row = document.querySelector("[data-live-nav-target]");
 				if (!row) return null;
+				const hadCurrent = row.getAttribute("aria-current");
+				const hadFocus = row.dataset.liveFocus;
 				row.setAttribute("aria-current", "true");
+				const selectedOnly = getComputedStyle(row).backgroundColor;
 				row.dataset.liveFocus = "true";
 				const style = getComputedStyle(row);
-				return {
+				const both = {
 					background: style.backgroundColor,
-					shadow: style.boxShadow.length > 0 && style.boxShadow !== "none",
+					shadow: style.boxShadow,
 				};
+				// Put the row back exactly as it was found.
+				if (hadCurrent === null) row.removeAttribute("aria-current");
+				else row.setAttribute("aria-current", hadCurrent);
+				if (hadFocus === undefined) delete row.dataset.liveFocus;
+				else row.dataset.liveFocus = hadFocus;
+				return { selectedOnly, ...both };
 			});
 			check(
 				"the ring layers over the selected fill instead of replacing it",
 				layered !== null &&
-					layered.shadow === true &&
-					layered.background.replace(/\s/g, "") !==
-						"rgba(0,0,0,0)".replace(/\s/g, ""),
+					// The fill the selected row wears is unchanged by the ring…
+					layered.background === layered.selectedOnly &&
+					// …and the ring is drawn as a shadow over it, inset and outer.
+					layered.shadow.includes("inset"),
 				layered === null
 					? "no navigation row to test"
-					: `background ${layered.background}, ring shadow ${layered.shadow}`,
+					: `selected ${layered.selectedOnly}, selected+ringed ${layered.background}; shadow ${layered.shadow.includes("inset") ? "layered" : "not inset"}`,
 			);
 		}
 
@@ -309,6 +327,36 @@ try {
 				? "no rail button on this panel"
 				: `walked to ${railReached}: ${landedOnRail}`,
 		);
+
+		{
+			// **A panel with nothing to walk still says it has the pad.** The
+			// marker was gated on the walk being non-empty, and this branch had
+			// just created the empty-walk surfaces by taking the tab rows out of
+			// the cursor — so turning to starboard undocked suspended the sticks
+			// and the mouse with nothing on screen saying why. Sage found it.
+			await tap(B.right);
+			const starboard = await page.evaluate(() => {
+				const scope = document.querySelector('[data-live-pad-scope="true"]');
+				const hint = document.querySelector("[data-live-pad-hint]");
+				const walkable = document.querySelectorAll(
+					'[data-live-panel][data-active="true"] [data-live-nav-target],' +
+						'[data-live-panel][data-active="true"] [data-live-station-action],' +
+						'[data-live-panel][data-active="true"] [data-live-nav-kind]',
+				).length;
+				return {
+					marked: scope?.getAttribute("data-live-panel") ?? null,
+					hint: hint?.textContent ?? null,
+					walkable,
+				};
+			});
+			await tap(B.left);
+			check(
+				"a panel with nothing to walk still says it holds the pad, and drops only the WALK",
+				starboard.marked === "right" &&
+					(starboard.walkable > 0 || !(starboard.hint ?? "").includes("WALK")),
+				`marked ${starboard.marked}, ${starboard.walkable} walkable, hint: ${starboard.hint ?? "none"}`,
+			);
+		}
 
 		check(
 			"the panel holding the pad says so, and carries the hint line",

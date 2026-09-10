@@ -4706,7 +4706,9 @@ class Game {
 	 *
 	 * `modal` is the settings screen. `console` is a head turned to a side
 	 * console, or the station console on the forward wall while docked, and it
-	 * **suspends flight input** — see `pad-bindings.ts`'s header for the
+	 * **suspends the pad and the mouse** — the keyboard is out of scope by the
+	 * principal's ask, for the reason at the pointer gate — see
+	 * `pad-bindings.ts`'s header for the
 	 * principal's reversal and why the footer it cites is a claim about the
 	 * world rather than about the controls. `instrument` is the `?perf` overlay,
 	 * which claims a console's buttons and keeps the sticks.
@@ -4722,9 +4724,16 @@ class Game {
 	 *
 	 * A probe that cancels the frame loop and steps the world by hand never
 	 * polls, so this stays at whatever it last said — `"flight"` if nothing ever
-	 * polled. That is harmless rather than merely unlikely: with no poll there
-	 * is no `padFrame` either, so every pad term downstream is already zero and
-	 * the context decides nothing.
+	 * polled.
+	 *
+	 * **That used to be harmless and no longer is.** The argument was that with
+	 * no poll there is no `padFrame` either, so every pad term downstream is
+	 * zero and the context decides nothing. Since the reversal it also decides
+	 * whether a *pointer* delta reaches the ship, and the mouse has no
+	 * `padFrame` to be absent. A stale value therefore means a probe stepping by
+	 * hand flies with whatever suspension state the last poll left. `"flight"`
+	 * is the safe default for that — it is what the game does with no panel open
+	 * — and every probe here drives the frame loop. Sage found the stale claim.
 	 */
 	private padContextThisFrame: PadContext = "flight";
 
@@ -7273,12 +7282,21 @@ class Game {
 		// *nudge* rather than a stick position, so it enters as an impulse on the
 		// rate and is then damped like everything else; the keys are the stick.
 		//
-		// **A panel suspends it, exactly as it suspends the sticks.** The pad's
-		// reversal is the mouse's too — the reason was never about the device,
-		// and a player reading a console with the pointer captured had the same
-		// ship flying off underneath them. The accumulated delta is **consumed**
-		// rather than held, so closing the panel does not deliver a turn built up
-		// while it was open.
+		// **A panel suspends it, exactly as it suspends the sticks.** A player
+		// reading a console with the pointer captured had the same ship flying
+		// off underneath them. The accumulated delta is **consumed** rather than
+		// held, so closing the panel does not deliver a turn built up while it
+		// was open.
+		//
+		// **The keyboard is deliberately not in this**, and an earlier version of
+		// this comment claimed the reason "was never about the device", which
+		// overreached: `this.axis(...)` a few lines below is unconditional. The
+		// principal asked for the pad and the mouse by name, and the two differ
+		// from a key in a way that matters — a key has to be *held*, so a keyboard
+		// player reading a console is not flying unless they are still pressing
+		// something, while a stick drifts and a pointer nudges without sustained
+		// intent. Whether the keyboard should join them is the principal's, not
+		// mine to widen. Sage caught the overreach.
 		const flying = contextFliesShip(this.padContext());
 		const impulse = flying
 			? {

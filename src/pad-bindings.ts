@@ -147,6 +147,26 @@ export const PAD_STATION_HINT =
 	"CONTROLLER · UP/DOWN WALK · A SELECT · L1/R1 TAB";
 
 /**
+ * The hint a surface should show, built from its two facts.
+ *
+ * Assembled rather than picked from a list of near-copies: the station line was
+ * the console line minus one segment, and the empty-walk case would have been a
+ * third and fourth. A surface with nothing focusable must not promise a walk —
+ * and it still gets a marker, because the ship is suspended there either way and
+ * the *marker* answers a different question from the *hint*.
+ */
+export function padHintFor(surface: {
+	station: boolean;
+	walkable: boolean;
+}): string {
+	const segments = ["CONTROLLER"];
+	if (surface.walkable) segments.push("UP/DOWN WALK", "A SELECT");
+	if (!surface.station) segments.push("B BACK");
+	segments.push("L1/R1 TAB");
+	return segments.join(" · ");
+}
+
+/**
  * What the pad asked for this frame, in the game's own words.
  *
  * The deltas are `-1`, `0` or `1` — one row or one tab per press, never per

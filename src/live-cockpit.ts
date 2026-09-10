@@ -17,7 +17,7 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
-import { PAD_CONSOLE_HINT, PAD_STATION_HINT } from "./pad-bindings";
+import { padHintFor } from "./pad-bindings";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -558,11 +558,16 @@ export class LiveCockpit {
 		// a comment claiming the opposite, and a second one beside the scan
 		// `focusedElement` already does. Sage found that too; the eager argument
 		// was the same mistake as the sweep it replaced.
-		// Gated on there being something to walk, not on a panel existing: the
-		// right console undocked and the Communications tab both draw zero
-		// focusable rows, and "UP/DOWN WALK" over an empty walk is an
-		// instruction to do nothing.
-		const wanted = present && elements.length > 0 ? scope : null;
+		// **Gated on the scope, which is the same predicate that stops the ship.**
+		// It was gated on the walk being non-empty, and this branch had just
+		// *created* the empty-walk surfaces by taking the tab rows out of it — so
+		// turning to starboard undocked suspended the sticks and the mouse with
+		// nothing on screen saying why. Sage found it: the marker must answer the
+		// question "does this panel have the pad", and that question is `scope`.
+		//
+		// What the empty walk changes is the *hint*, not the marker: WALK is the
+		// one segment that becomes a lie there, and the others stay true.
+		const wanted = present ? scope : null;
 		if (wanted === this.padScope) return;
 		if (this.padScope) delete this.padScope.dataset.livePadScope;
 		this.padHint?.remove();
@@ -573,10 +578,12 @@ export class LiveCockpit {
 		const hint = document.createElement("p");
 		hint.className = "lc-pad-hint";
 		hint.dataset.livePadHint = "";
-		// The station console has no back, so it does not promise one.
-		hint.textContent = wanted.matches("[data-live-station-console]")
-			? PAD_STATION_HINT
-			: PAD_CONSOLE_HINT;
+		// The station console has no back, so it does not promise one; and a
+		// panel with nothing focusable does not promise a walk.
+		hint.textContent = padHintFor({
+			station: wanted.matches("[data-live-station-console]"),
+			walkable: elements.length > 0,
+		});
 		wanted.append(hint);
 		this.padHint = hint;
 	}
@@ -592,11 +599,7 @@ export class LiveCockpit {
 		if (this.padPresent === present) return;
 		this.padPresent = present;
 		const elements = this.focusElements();
-		this.markPadScope(
-			present,
-			elements.length > 0 ? this.focusScope() : null,
-			elements,
-		);
+		this.markPadScope(present, this.focusScope(), elements);
 	}
 
 	private applyFocusRing(scroll = false) {
@@ -616,7 +619,7 @@ export class LiveCockpit {
 		// DOM queries to five — under a comment claiming only a pad paid for it,
 		// which was true and beside the point. Sage found it, round 3.
 		const elements = this.focusElements();
-		const scope = elements.length > 0 ? this.focusScope() : null;
+		const scope = this.focusScope();
 		this.markPadScope(this.padPresent, scope, elements);
 		const element = this.focusedElement(elements);
 		if (!element) return;
