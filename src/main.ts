@@ -4706,8 +4706,9 @@ class Game {
 	 *
 	 * `modal` is the settings screen. `console` is a head turned to a side
 	 * console, or the station console on the forward wall while docked, and it
-	 * **suspends the pad and the mouse** — the keyboard is out of scope by the
-	 * principal's ask, for the reason at the pointer gate — see
+	 * **suspends the pad and the mouse** — the keyboard keeps flying, which is
+	 * the principal's ruling and not an omission; the reason is at the pointer
+	 * gate — see
 	 * `pad-bindings.ts`'s header for the
 	 * principal's reversal and why the footer it cites is a claim about the
 	 * world rather than about the controls. `instrument` is the `?perf` overlay,
@@ -7288,15 +7289,15 @@ class Game {
 		// held, so closing the panel does not deliver a turn built up while it
 		// was open.
 		//
-		// **The keyboard is deliberately not in this**, and an earlier version of
-		// this comment claimed the reason "was never about the device", which
-		// overreached: `this.axis(...)` a few lines below is unconditional. The
-		// principal asked for the pad and the mouse by name, and the two differ
-		// from a key in a way that matters — a key has to be *held*, so a keyboard
-		// player reading a console is not flying unless they are still pressing
-		// something, while a stick drifts and a pointer nudges without sustained
-		// intent. Whether the keyboard should join them is the principal's, not
-		// mine to widen. Sage caught the overreach.
+		// **The keyboard is deliberately not in this, and that is now a ruling
+		// rather than an omission.** `this.axis(...)` a few lines below is
+		// unconditional, and the principal confirmed it should stay so when the
+		// question was put to them. The difference is real: a key has to be
+		// *held*, so a keyboard player reading a console is not flying unless
+		// they are still pressing something, while a stick drifts and a pointer
+		// nudges without sustained intent. An earlier version of this comment
+		// said the reason "was never about the device", which overreached in the
+		// other direction; sage caught that.
 		const flying = contextFliesShip(this.padContext());
 		const impulse = flying
 			? {

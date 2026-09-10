@@ -124,7 +124,7 @@ agrees with the mouse: push right, the nose goes right.
 | `b` (Circle) | back out — to the forward view, out of a modal, or out of the instrument |
 | `l1` / `r1` | previous and next tab |
 | sticks, triggers, mouse | **suspended** — the ship coasts |
-| the keyboard | still flies, deliberately — a key has to be held |
+| the keyboard | still flies — the principal's ruling; a key has to be *held* |
 | every other button | still acts on the ship |
 
 **The cursor walks content, not chrome.** Tabs are not in the walk: they have
