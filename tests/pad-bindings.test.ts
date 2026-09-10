@@ -7,6 +7,7 @@
  * load — and a table nothing can load is a table nothing checks.
  */
 import { describe, expect, test } from "bun:test";
+import { codeOf } from "./lib/source-scan";
 import {
 	type PadButtonName,
 	type RawPad,
@@ -329,5 +330,83 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 			NOTHING,
 		);
 		expect(padFlightAxes(both, "flight").throttleTrim).toBe(0);
+	});
+});
+
+describe("the standard mapping's numbering, as literals", () => {
+	// **The one place a renumbering can be caught.** Every other fixture in this
+	// repo derives its indices from `STANDARD_BUTTONS` — the unit helpers above
+	// and `scripts/lib/fake-pad.mjs` alike — so each of them agrees with the
+	// module *by construction* and none could report that the module had drifted
+	// from the W3C specification.
+	//
+	// `probe-gamepad.mjs` used to carry this check and lost it when the three
+	// probes were given one shared fixture (#283, round 1), while the fixture's
+	// docstring went on claiming the probe still asserted it. Sage read the
+	// claim against the code, round 5. It belongs here rather than in a browser:
+	// it is a comparison of two lists.
+	const W3C = [
+		"a",
+		"b",
+		"x",
+		"y",
+		"l1",
+		"r1",
+		"l2",
+		"r2",
+		"select",
+		"start",
+		"l3",
+		"r3",
+		"up",
+		"down",
+		"left",
+		"right",
+		"home",
+	];
+
+	test("every button sits where the standard mapping puts it", () => {
+		// Compared as plain strings: `STANDARD_BUTTONS` is a literal-union tuple,
+		// and typing `W3C` to match it would make the check agree with the module
+		// by construction — which is the whole thing this is here to avoid.
+		expect([...STANDARD_BUTTONS] as string[]).toEqual(W3C);
+	});
+
+	test("and there are exactly seventeen of them", () => {
+		// A count as well as an order: a mapping that grew an eighteenth position
+		// would pass a prefix comparison, and the fixtures build their button
+		// arrays to a length of seventeen.
+		expect(STANDARD_BUTTONS).toHaveLength(17);
+	});
+});
+
+describe("the audio unlock keeps its listeners until it has worked", () => {
+	// **A source assertion, and the reason is that the state cannot be reached
+	// from a probe here.** Sage's round 5 finding is that removing both unlock
+	// paths unconditionally spends them on a keystroke that granted no user
+	// activation — they saw Escape do exactly that. In this repo's Chromium
+	// Escape *does* grant activation, so `probe-gamepad.mjs` cannot build the
+	// case: it presses Escape, the context opens, and the check passes with the
+	// guard removed. Asserting the guard's presence is what is left, and
+	// `tests/output-stage.test.ts` sets the precedent — it reads the spliced
+	// shader source for the same reason.
+	//
+	// It is a weaker check than a behavioural one and says so. What it cannot
+	// see is whether the guard is correct, only that the removal is not
+	// unconditional.
+
+	test("the removal sits behind a silence check", () => {
+		const source = codeOf("src/main.ts");
+		const unlock = source.slice(source.indexOf("const unlockAudio = () => {"));
+		const body = unlock.slice(0, unlock.indexOf("};"));
+		expect(body).toContain("this.audio.ensure()");
+		expect(body).toContain("if (this.audio.silent) return;");
+		// And the guard precedes both removals, which is the whole of it.
+		expect(body.indexOf("if (this.audio.silent) return;")).toBeLessThan(
+			body.indexOf('removeEventListener("pointerdown"'),
+		);
+		expect(body.indexOf("if (this.audio.silent) return;")).toBeLessThan(
+			body.indexOf('removeEventListener("keydown"'),
+		);
 	});
 });

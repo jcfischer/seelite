@@ -28,7 +28,8 @@
  * console is open"*, which is true and load-bearing: suspending the sticks
  * every time the pilot glanced at the target list would stop the ship. So a
  * console claims **six controls** — the d-pad's two vertical positions, the two
- * face buttons and the two shoulders — and everything else keeps flying.
+ * face buttons and the two shoulders — and everything else falls through to the
+ * flight table and keeps flying.
  *
  * `modal` is the **settings screen and nothing else** — the one place the whole
  * pad is taken. `settings-panel.ts` already does exactly this for the keyboard,
@@ -95,16 +96,6 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
 	left: "1",
 	up: "2",
 	right: "3",
-};
-
-/** The six a console takes, and what each becomes there. */
-const CONSOLE_CLAIMS: Partial<Record<PadButtonName, keyof PadIntents>> = {
-	up: "focusDelta",
-	down: "focusDelta",
-	a: "activate",
-	b: "back",
-	l1: "tabDelta",
-	r1: "tabDelta",
 };
 
 /**
@@ -177,14 +168,38 @@ export function padIntents(
 			else if (name === "b") back = true;
 			continue;
 		}
-		if (context === "console" && CONSOLE_CLAIMS[name]) {
-			if (name === "up") focusDelta -= 1;
-			else if (name === "down") focusDelta += 1;
-			else if (name === "l1") tabDelta -= 1;
-			else if (name === "r1") tabDelta += 1;
-			else if (name === "a") activate = true;
-			else if (name === "b") back = true;
-			continue;
+		// **One list, not a table beside a switch.** This was a
+		// `CONSOLE_CLAIMS` map naming each button's field, checked for
+		// membership and then re-implemented below — so the map's *values* were
+		// never read and editing one changed nothing. Sage found the dead half,
+		// round 5. A console's six claims are the six cases here; anything not
+		// claimed falls through to the flight table, which is the rule stated
+		// once.
+		if (context === "console") {
+			if (name === "up") {
+				focusDelta -= 1;
+				continue;
+			}
+			if (name === "down") {
+				focusDelta += 1;
+				continue;
+			}
+			if (name === "l1") {
+				tabDelta -= 1;
+				continue;
+			}
+			if (name === "r1") {
+				tabDelta += 1;
+				continue;
+			}
+			if (name === "a") {
+				activate = true;
+				continue;
+			}
+			if (name === "b") {
+				back = true;
+				continue;
+			}
 		}
 		if (name === "down") {
 			instrument = true;

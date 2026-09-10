@@ -356,6 +356,12 @@ try {
 		// got no context and no second notice — the once-only flag was spent.
 		// Sage found it, round 4. The probe never clicks, so a key is the only
 		// unlock it can exercise.
+		// **Escape first**, which is the key that exposed the second defect: the
+		// unlock removed both listeners whether or not it had worked, so one
+		// keystroke that granted no activation spent the pointer path too and
+		// every later key and click found nothing. Sage, round 5.
+		await page.keyboard.press("Escape");
+		await frames(2);
 		await page.keyboard.press("KeyP");
 		await frames(2);
 		const silent = await page.evaluate(() => window.__seelite.audio.silent);

@@ -529,6 +529,25 @@ try {
 			`open ${open}; changed ${changed.join(", ") || "nothing"}`,
 		);
 
+		// Cross advances the focused row, which is what clicking it does on that
+		// screen. The modal branch ignored `activate` entirely, so the one button
+		// a pad player reaches for first did nothing. Sage found it, round 5.
+		const beforeCross = await page.evaluate(() => ({
+			...window.__seelite.settings.value,
+		}));
+		await tap(B.a);
+		const afterCross = await page.evaluate(() => ({
+			...window.__seelite.settings.value,
+		}));
+		const crossChanged = Object.keys(beforeCross).filter(
+			(k) => beforeCross[k] !== afterCross[k],
+		);
+		check(
+			"Cross advances the focused setting, as clicking the row does",
+			crossChanged.length === 1,
+			`changed ${crossChanged.join(", ") || "nothing"}`,
+		);
+
 		await tap(B.b);
 		const closed = await page.evaluate(
 			() => !document.querySelector("[data-settings-panel]"),

@@ -2372,6 +2372,12 @@ class Game {
 		// what a gamepad button is not.
 		const unlockAudio = () => {
 			this.audio.ensure();
+			// **Only once it worked.** Removing both paths unconditionally spent
+			// them on any keystroke — Escape first, and every later key and click
+			// found no listener while the context stayed suspended. Sage found it,
+			// round 5. `silent` is the context's own state, so this asks whether
+			// the unlock happened rather than whether it was attempted.
+			if (this.audio.silent) return;
 			window.removeEventListener("pointerdown", unlockAudio);
 			window.removeEventListener("keydown", unlockAudio);
 		};
@@ -4771,6 +4777,10 @@ class Game {
 			if (intents.back) return panel.close();
 			if (intents.focusDelta !== 0) panel.moveCursor(intents.focusDelta);
 			if (intents.valueDelta !== 0) panel.stepValue(intents.valueDelta);
+			// Cross advances the focused row, which is what clicking it does on
+			// that screen. The branch ignored `activate` entirely, so the one
+			// button a pad player reaches for first did nothing. Sage, round 5.
+			if (intents.activate) panel.stepValue(1);
 			return;
 		}
 		// The instrument first: while it holds the pad it holds all six of the

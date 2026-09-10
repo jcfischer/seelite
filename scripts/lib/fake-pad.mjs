@@ -20,9 +20,14 @@
  *
  * **Deliberately not imported from `src/gamepad.ts`.** A fixture built from the
  * module's own list agrees with it by construction and could not report that
- * either of them had drifted from the specification; `probe-gamepad.mjs`
- * asserts these numbers against the module, which is the one place a
- * renumbering can be caught.
+ * either of them had drifted from the specification.
+ *
+ * **Where the drift *is* caught is `tests/pad-bindings.test.ts`**, which
+ * compares `STANDARD_BUTTONS` against the seventeen names as literals. An
+ * earlier version of this paragraph said `probe-gamepad.mjs` asserted it, and
+ * that was false: the probe carried such a check before the three fixtures were
+ * merged into this one, and the check went with them. Sage read the claim
+ * against the code, round 5.
  */
 export const STANDARD_INDEX = {
 	a: 0,
