@@ -264,28 +264,26 @@ try {
 	}
 
 	{
-		// The cursor walks content, not chrome. Passing through the tab row to
-		// reach a list was "the cursor order is surprising".
-		const walked = await page.evaluate(() => {
-			const els = [
-				...document.querySelectorAll(
-					'[data-live-panel][data-active="true"] [data-live-station-action],' +
-						'[data-live-panel][data-active="true"] [data-live-launch],' +
-						'[data-live-panel][data-active="true"] [data-live-nav-kind],' +
-						'[data-live-panel][data-active="true"] [data-live-nav-target]',
-				),
-			];
-			const tabs = [
-				...document.querySelectorAll(
-					'[data-live-panel][data-active="true"] .lc-tab',
-				),
-			];
-			return { walkable: els.length, tabs: tabs.length };
-		});
+		// **Walk it, and read what the ring lands on.** The first version of this
+		// check counted DOM matches for two selectors of its own and asserted
+		// both were non-zero while its message said "none of them in the walk" —
+		// it never moved the cursor, restated `OWN_FOCUSABLE` in the probe, and
+		// passed identically against the build where tabs *were* walked. Sage
+		// found it; it was not one of the checks this branch built red-first, and
+		// it was the only one covering the finding it was written for.
+		const landings = [];
+		for (let i = 0; i < WALK_CAP; i++) {
+			await tap(B.down);
+			const on = await page.evaluate(() => {
+				const el = document.querySelector("[data-live-focus]");
+				return el ? { tab: el.matches(".lc-tab"), id: el.className } : null;
+			});
+			if (on) landings.push(on);
+		}
 		check(
-			"the cursor walks content and the tabs stay on the shoulders",
-			walked.walkable > 0 && walked.tabs > 0,
-			`${walked.walkable} walkable rows beside ${walked.tabs} tabs, none of them in the walk`,
+			"the cursor never lands on a tab — they have the shoulders instead",
+			landings.length > 0 && landings.every((on) => !on.tab),
+			`${landings.length} landings over ${WALK_CAP} presses, ${landings.filter((on) => on.tab).length} of them on a tab`,
 		);
 	}
 
@@ -509,6 +507,26 @@ try {
 				? "no market box on screen"
 				: `overflows ${scrollBefore.overflows}; scrollTop ${scrollBefore.top} → ${scrollAfter.top}`,
 		);
+
+		{
+			// **A docked mouse must not bank its delta.** The flight tail is what
+			// consumes it, and the docked path returns above that — so a pointer
+			// moved at the station console accumulated for the session and landed
+			// as a full kick on the first frame after launch. Sage found it, and
+			// the comment claiming the delta was consumed was the giveaway.
+			const banked = await page.evaluate(async () => {
+				const g = window.__seelite;
+				g.mouseDx = 900;
+				g.mouseDy = 900;
+				await window.__frames(3);
+				return { dx: g.mouseDx, dy: g.mouseDy };
+			});
+			check(
+				"a pointer moved while docked is consumed, not banked for the launch",
+				banked.dx === 0 && banked.dy === 0,
+				`mouseDx ${banked.dx}, mouseDy ${banked.dy} after three docked frames`,
+			);
+		}
 
 		const before = await page.evaluate(() => window.__seelite.creditsCr);
 		const row = await walkTo((at) => at.stationAction === "buy-commodity");

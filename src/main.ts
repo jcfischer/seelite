@@ -154,6 +154,7 @@ import { GamepadSource, type PadFrame } from "./gamepad";
 import {
 	type PadContext,
 	type PadIntents,
+	contextFliesShip,
 	padFlightAxes,
 	padIntents,
 } from "./pad-bindings";
@@ -4703,10 +4704,12 @@ class Game {
 	 * is what keeps seekolous's rule intact: nothing records which device is in
 	 * charge, so the mouse can act on the same panel in the same frame.
 	 *
-	 * `modal` is a screen mounted over the canvas — settings or the perf panel.
-	 * `console` is a head turned to a side console, and the sticks keep flying
-	 * there: that console's own footer says the simulation continues, and it is
-	 * right.
+	 * `modal` is the settings screen. `console` is a head turned to a side
+	 * console, or the station console on the forward wall while docked, and it
+	 * **suspends flight input** — see `pad-bindings.ts`'s header for the
+	 * principal's reversal and why the footer it cites is a claim about the
+	 * world rather than about the controls. `instrument` is the `?perf` overlay,
+	 * which claims a console's buttons and keeps the sticks.
 	 */
 	/**
 	 * The context, as read once at the top of this frame.
@@ -4800,13 +4803,9 @@ class Game {
 			for (const key of intents.keys) this.command(key);
 			return;
 		}
-		// A console.
-		//
-		// **The sticks are not taken here**, and that is the point rather than
-		// an oversight: the console's own footer says "Simulation continues
-		// while this console is open", so suspending flight every time the pilot
-		// glanced at the target list would stop the ship. What a console takes
-		// is six discrete controls; everything else still flies.
+		// A console. It takes six discrete controls **and** suspends flight
+		// input; `pad-bindings.ts`'s header owns why, and this comment asserted
+		// the opposite for a round after the reversal landed.
 		if (intents.back) {
 			// Circle is the way out. It is also what frees Cross to activate a
 			// row rather than launch — and nothing is lost, because LAUNCH is a
@@ -5175,7 +5174,7 @@ class Game {
 			// **Only while flying.** A panel swallows the pointer delta below, so
 			// counting it here would let a mouse moved over an open console
 			// disengage the docking computer without touching the ship.
-			(this.padContext() === "flight" &&
+			(contextFliesShip(this.padContext()) &&
 				(this.mouseDx !== 0 || this.mouseDy !== 0))
 		);
 	}
@@ -7137,6 +7136,15 @@ class Game {
 		// world keeps running" cannot tell a running world from three running
 		// subsystems.
 		if (!flightLive(this.dock.phase)) {
+			// **Drop the pointer delta here too.** The flight tail below is what
+			// normally consumes it, and this returns above that — so a mouse
+			// moved while docked banked its delta for the whole session and
+			// delivered it as a `MOUSE_MAX_STEP` kick on the first frame after
+			// launch. Docked at the station console is exactly the case this
+			// branch's reversal is about, and the comment there claimed the
+			// delta was consumed. Sage found it.
+			this.mouseDx = 0;
+			this.mouseDy = 0;
 			this.stepDockPhase(dt);
 			return;
 		}
@@ -7175,19 +7183,21 @@ class Game {
 		// clamps the sum here: `stepAngular` clamps the command to [-1, 1]
 		// itself, and the keyboard's own 1.41x on a diagonal is left exactly as
 		// it was.
-		// **The chart's own zeroing is gone, because it is now subsumed.** It
-		// existed so a stick orbiting the cluster did not also fly the ship or
-		// cancel the docking computer; the Galaxy Map tab is a console, and since
-		// the principal's reversal a console returns no axes at all. Keeping the
-		// special case would have been a branch that can never be taken —
-		// exactly the dead half sage found in the console binding table.
-		// `stepChartOrbit` reads `frame.axes` raw, which is why the chart still
-		// turns.
+		// **The chart's zeroing is back, and deleting it was a blocker.** It
+		// exists so a stick orbiting the cluster does not also fly the ship or
+		// cancel the docking computer. I removed it claiming the branch could
+		// never be taken now that a console returns no axes — and that claim was
+		// false: `readPadContext` answers `"instrument"` before it ever tests for
+		// a console, the instrument *does* fly, and its d-pad ← is unclaimed so
+		// it falls through to head-look. Pad-focus the instrument, turn to port,
+		// open Galaxy Map, and the right stick orbited the cluster and yawed the
+		// ship. Sage found it; the prose was the defect.
 		const padAxes = padFlightAxes(this.padFrame, this.padContext());
-		const yaw =
-			this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padAxes.yaw;
-		const pitch =
-			this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padAxes.pitch;
+		const stickToChart = this.chartHasStick();
+		const padYaw = stickToChart ? 0 : padAxes.yaw;
+		const padPitch = stickToChart ? 0 : padAxes.pitch;
+		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padYaw;
+		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padPitch;
 		const roll = this.axis(["e"], ["q"]) + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
@@ -7266,7 +7276,7 @@ class Game {
 		// ship flying off underneath them. The accumulated delta is **consumed**
 		// rather than held, so closing the panel does not deliver a turn built up
 		// while it was open.
-		const flying = this.padContext() === "flight";
+		const flying = contextFliesShip(this.padContext());
 		const impulse = flying
 			? {
 					pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),

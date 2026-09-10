@@ -124,6 +124,9 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
  * held d-pad is a thing a player will eventually want and is not in this node;
  * adding it means a timer, and a timer is state this function does not have.
  */
+export const PAD_CONSOLE_HINT =
+	"CONTROLLER · UP/DOWN WALK · A SELECT · B BACK · L1/R1 TAB";
+
 export interface PadIntents {
 	/** Keys to hand to `Game.command`, in press order. */
 	readonly keys: readonly string[];
@@ -296,15 +299,28 @@ const NO_AXES: PadFlightAxes = { yaw: 0, pitch: 0, roll: 0, throttleTrim: 0 };
  */
 const negate = (value: number) => (value === 0 ? 0 : -value);
 
+/**
+ * Whether input in this context reaches the ship at all.
+ *
+ * **One owner, because three of them disagreed.** The rule was written inline
+ * here, again as `padContext() === "flight"` for the mouse, and a third time in
+ * `hasControlInput` — and the copies had already drifted on `instrument`, where
+ * the sticks flew and the mouse did not, so the one mode whose whole purpose is
+ * measuring a frame *while it is flown* could not be flown by mouse. Sage found
+ * that, and the blocker beside it was the same drift reaching the galaxy chart.
+ *
+ * See the header for which contexts fly, why a console does not, and why the
+ * instrument is an exception rather than an oversight.
+ */
+export function contextFliesShip(context: PadContext): boolean {
+	return context === "flight" || context === "instrument";
+}
+
 export function padFlightAxes(
 	frame: PadFrame | null,
 	context: PadContext,
 ): PadFlightAxes {
-	// **A panel stops the ship; the instrument does not** — see the header on
-	// why a console suspends these, on why the throttle is held rather than
-	// zeroed, and on why `instrument` is an exception rather than an oversight.
-	if (!frame?.connected || (context !== "flight" && context !== "instrument"))
-		return NO_AXES;
+	if (!frame?.connected || !contextFliesShip(context)) return NO_AXES;
 	return {
 		yaw: negate(frame.axes.rightX),
 		pitch: negate(frame.axes.rightY),

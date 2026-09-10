@@ -17,6 +17,7 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
+import { PAD_CONSOLE_HINT } from "./pad-bindings";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -526,24 +527,34 @@ export class LiveCockpit {
 	 * The hint is drawn **only while a pad is present**, because a line telling
 	 * a keyboard player about Cross is noise on every frame they ever see.
 	 */
-	private markPadScope(present: boolean) {
-		const scope = this.focusScope();
-		for (const stale of this.root.querySelectorAll<HTMLElement>(
-			"[data-live-pad-scope]",
-		))
-			if (stale !== scope) delete stale.dataset.livePadScope;
-		for (const stale of this.root.querySelectorAll(".lc-pad-hint"))
-			if (!present || stale.parentElement !== scope) stale.remove();
-		if (!scope || !present) return;
-		scope.dataset.livePadScope = "true";
-		if (!scope.querySelector(".lc-pad-hint")) {
-			const hint = document.createElement("p");
-			hint.className = "lc-pad-hint";
-			hint.dataset.livePadHint = "";
-			hint.textContent = "PAD · ↑↓ WALK · ✕ SELECT · ○ BACK · L1/R1 TAB";
-			scope.append(hint);
-		}
+	private markPadScope(present: boolean, scope: HTMLElement | null) {
+		// **Remembered, not queried — the rule the ring already follows.** The
+		// first version swept the cockpit twice with `querySelectorAll`, for two
+		// attributes this class is the only writer of, on every rendered frame
+		// whether or not a pad was attached: it put back exactly the per-frame
+		// scanning that was removed a round earlier, and doubled it. Sage found
+		// that, and found that the sweep *skipped the live scope* — so a pad
+		// disconnect took the hint away and left the border still claiming the
+		// d-pad was walking that panel.
+		const wanted = present ? scope : null;
+		if (wanted === this.padScope) return;
+		if (this.padScope) delete this.padScope.dataset.livePadScope;
+		this.padHint?.remove();
+		this.padHint = null;
+		this.padScope = wanted;
+		if (!wanted) return;
+		wanted.dataset.livePadScope = "true";
+		const hint = document.createElement("p");
+		hint.className = "lc-pad-hint";
+		hint.dataset.livePadHint = "";
+		hint.textContent = PAD_CONSOLE_HINT;
+		wanted.append(hint);
+		this.padHint = hint;
 	}
+
+	/** The panel wearing the scope marker, and the hint line inside it. */
+	private padScope: HTMLElement | null = null;
+	private padHint: HTMLElement | null = null;
 
 	/** Whether a pad is attached, so the hint is drawn for a player who has one. */
 	private padPresent = false;
@@ -551,13 +562,13 @@ export class LiveCockpit {
 	setPadPresent(present: boolean) {
 		if (this.padPresent === present) return;
 		this.padPresent = present;
-		this.markPadScope(present);
+		this.markPadScope(present, this.focusScope());
 	}
 
 	private applyFocusRing(scroll = false) {
 		const reveal = scroll || this.revealOnNextRing;
 		this.revealOnNextRing = false;
-		this.markPadScope(this.padPresent);
+		this.markPadScope(this.padPresent, this.focusScope());
 		// **Remembered, not queried.** This runs on every rendered frame, pad or
 		// no pad, and a `querySelectorAll` over the cockpit for an attribute this
 		// class is the only writer of is a scan for something it already knows.
