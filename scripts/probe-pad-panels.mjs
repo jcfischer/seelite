@@ -418,6 +418,91 @@ try {
 				? `ring on ${row.stationName}; credits ${before} → ${after}`
 				: `no BUY row found in ${WALK_CAP} presses`,
 		);
+
+		// **After the purchase check, not before it.** Both of the checks below
+		// spend credits, and running them first left the commander too poor to
+		// buy anything — so "Cross on a BUY row buys something" went red for a
+		// reason that was not the pad, and the scroll check below stopped
+		// exercising a rebuild at all because a refused purchase redraws nothing.
+		//
+		// **A mouse click must move the ring the pad walks**, even when the click
+		// rebuilds the rows. Round 1 read the clicked element's identity *after*
+		// dispatching, and a purchase detaches it — so the sync silently found
+		// nothing and the next Cross bought the previously-ringed commodity.
+		// Sage reproduced exactly that, round 2.
+		const clicked = await page.evaluate(() => {
+			const rows = [...document.querySelectorAll("[data-live-station-action]")];
+			// Not the one under the ring, or the check cannot tell a working sync
+			// from a no-op.
+			const ringed = document.querySelector("[data-live-focus]");
+			const pick = rows.find((el) => el !== ringed);
+			if (!pick) return null;
+			pick.click();
+			return {
+				action: pick.dataset.liveStationAction,
+				name: pick.dataset.liveStationName,
+			};
+		});
+		await frames(2);
+		const ringAfterClick = await focused();
+		check(
+			"a mouse click moves the ring the pad walks, even when it rebuilds the rows",
+			clicked !== null &&
+				ringAfterClick !== null &&
+				ringAfterClick.stationAction === clicked.action &&
+				ringAfterClick.stationName === clicked.name,
+			clicked === null
+				? "no station row to click"
+				: `clicked ${clicked.action} ${clicked.name}; ring on ${ringAfterClick?.stationAction} ${ringAfterClick?.stationName}`,
+		);
+
+		// **And a transaction must not leave the ring below the fold.** The
+		// rebuild replaces the market element outright — measured at 700x480,
+		// `scrollTop` 120 → 0 with `sameElement: false` — so a row the pad had
+		// scrolled to and bought came back off screen while Cross went on buying
+		// it. Sage found it, round 2.
+		//
+		// **Every precondition is asserted rather than assumed.** The first two
+		// versions of this check passed with the fix removed: one walked twelve
+		// blind presses and landed on a tab, where Cross rebuilds nothing, and
+		// one landed on a `sell` row with an empty hold, where it transacts
+		// nothing. So the walk requires a row that is *below the fold*, and the
+		// check requires the credits to have actually moved.
+		await page.setViewportSize({ width: 700, height: 480 });
+		await frames(2);
+		let below = null;
+		for (let i = 0; i < WALK_CAP; i++) {
+			const at = await focused();
+			const box = await marketScroll();
+			if (at?.stationAction === "buy-commodity" && box && box.top > 0) {
+				below = { at, box };
+				break;
+			}
+			await tap(B.down);
+		}
+		const creditsBefore = await page.evaluate(() => window.__seelite.creditsCr);
+		if (below) await tap(B.a);
+		await frames(2);
+		const creditsAfter = await page.evaluate(() => window.__seelite.creditsCr);
+		const afterBuy = await marketScroll();
+		const ringVisible = await page.evaluate(() => {
+			const box = document.querySelector(".lc-station-market");
+			const el = document.querySelector("[data-live-focus]");
+			if (!box || !el) return null;
+			const b = box.getBoundingClientRect();
+			const r = el.getBoundingClientRect();
+			return r.top >= b.top - 1 && r.bottom <= b.bottom + 1;
+		});
+		await page.setViewportSize({ width: 1280, height: 860 });
+		await frames(2);
+		check(
+			"a transaction leaves the ring on screen, not under the fold its rebuild makes",
+			below !== null && creditsAfter !== creditsBefore && ringVisible === true,
+			below === null
+				? `no BUY row below the fold in ${WALK_CAP} presses`
+				: `bought ${below.at.stationName} at scrollTop ${below.box.top} → ${afterBuy?.top}; ` +
+						`credits ${creditsBefore} → ${creditsAfter}; ring inside the box ${ringVisible}`,
+		);
 	}
 
 	// --- 6. the settings screen -------------------------------------------

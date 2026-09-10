@@ -46,16 +46,14 @@ const press = (name: PadButtonName, value = 1) => {
 const sticks = (axes: [number, number, number, number]) =>
 	readPad(pad({ axes }), NOTHING);
 
-/** A frame with one analog trigger pulled to `value`. */
-const trigger = (name: "l2" | "r2", value: number) => {
-	const index = STANDARD_BUTTONS.indexOf(name);
-	const buttons = STANDARD_BUTTONS.map((_, i) =>
-		i === index
-			? { pressed: value >= 0.5, value }
-			: { pressed: false, value: 0 },
-	);
-	return readPad(pad({ buttons }), NOTHING);
-};
+/**
+ * A frame with one analog trigger pulled to `value`.
+ *
+ * The same construction as `press`, which is the point: a trigger is a button
+ * that reports a continuous pull, and building it a second way would let the
+ * two drift. Sage asked for the reuse, round 2.
+ */
+const trigger = (name: "l2" | "r2", value: number) => press(name, value);
 
 const rest = readPad(pad(), NOTHING);
 const absent = readPad(null, NOTHING);

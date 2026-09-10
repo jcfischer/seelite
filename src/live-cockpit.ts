@@ -255,13 +255,19 @@ export class LiveCockpit {
 		// Delegation keeps clicks live after a structural render is replaced.
 		this.root.addEventListener("click", (event) => {
 			const element = event.target as HTMLElement;
-			this.handleClick(element);
-			// The pointer moves the ring the pad walks, so the two are never in
-			// two places. Done *after* the dispatch: a click that changes the
-			// tab replaces the elements, and a cursor set against the old ones
-			// would name a row that no longer exists.
+			// **The id is read before the dispatch and applied after it**, and
+			// both halves are the point. An accepted transaction rebuilds the
+			// market synchronously, so the clicked element is *detached* by the
+			// time the dispatch returns and an `indexOf` against the fresh list
+			// silently finds nothing — round 1 put the whole sync after the
+			// dispatch and left the ring on the previous row, so clicking BUY on
+			// one commodity and then pressing Cross bought a different one. And
+			// the cursor cannot simply be set first either: a click that changes
+			// the tab replaces the rows, and an id that is gone must leave the
+			// cursor alone, which is what `setFocus` does. Sage found it, round 2.
 			this.syncFocusToPointer(
-				element.closest<HTMLElement>(LiveCockpit.FOCUSABLE) ?? element,
+				element.closest<HTMLElement>(LiveCockpit.FOCUSABLE),
+				() => this.handleClick(element),
 			);
 			this.applyFocusRing();
 		});
@@ -391,6 +397,18 @@ export class LiveCockpit {
 	private focusCursor: FocusCursor = NO_FOCUS;
 
 	/**
+	 * Reveal the ring on the next render, once.
+	 *
+	 * A transaction rebuilds the market rows and the rebuild resets the box's
+	 * `scrollTop` to zero, so a row the pad had scrolled to and bought came back
+	 * below the fold while Cross went on buying it. Scrolling on *every* render
+	 * is not the fix — that would drag a player who is scrolling with the mouse
+	 * back to the ring sixty times a second — so it is a one-shot, set where the
+	 * pad acts and consumed where the ring is drawn. Sage found it, round 2.
+	 */
+	private revealOnNextRing = false;
+
+	/**
 	 * Which surface the cursor is on: the console the head is turned to, or the
 	 * station console on the forward wall while docked.
 	 *
@@ -428,27 +446,32 @@ export class LiveCockpit {
 	private focusIds(elements: readonly HTMLElement[]): string[] {
 		const seen = new Map<string, number>();
 		return elements.map((el) => {
-			const d = el.dataset;
-			const base =
-				d.liveStationAction !== undefined
-					? `station-action:${d.liveStationAction}:${d.liveStationName}`
-					: d.liveStationTab !== undefined
-						? `station-tab:${d.liveStationTab}`
-						: d.liveLaunch !== undefined
-							? "launch"
-							: d.liveRightTab !== undefined
-								? `right-tab:${d.liveRightTab}`
-								: d.liveLeftTab !== undefined
-									? `left-tab:${d.liveLeftTab}`
-									: d.liveNavKind !== undefined
-										? `nav-kind:${d.liveNavKind}`
-										: d.liveNavTarget !== undefined
-											? `nav-target:${d.liveNavTarget}`
-											: LiveCockpit.foreignFocusId(el);
+			const base = LiveCockpit.focusIdOf(el);
 			const count = (seen.get(base) ?? 0) + 1;
 			seen.set(base, count);
 			return count === 1 ? base : `${base}#${count}`;
 		});
+	}
+
+	/**
+	 * One element's name, before the occurrence suffix.
+	 *
+	 * A flat walk rather than the nested ternary this started as: eight branches
+	 * indented eight deep read as one expression a reader has to unpick, and the
+	 * ninth would have been worse. Sage asked, round 2.
+	 */
+	private static focusIdOf(el: HTMLElement): string {
+		const d = el.dataset;
+		if (d.liveStationAction !== undefined)
+			return `station-action:${d.liveStationAction}:${d.liveStationName}`;
+		if (d.liveStationTab !== undefined)
+			return `station-tab:${d.liveStationTab}`;
+		if (d.liveLaunch !== undefined) return "launch";
+		if (d.liveRightTab !== undefined) return `right-tab:${d.liveRightTab}`;
+		if (d.liveLeftTab !== undefined) return `left-tab:${d.liveLeftTab}`;
+		if (d.liveNavKind !== undefined) return `nav-kind:${d.liveNavKind}`;
+		if (d.liveNavTarget !== undefined) return `nav-target:${d.liveNavTarget}`;
+		return LiveCockpit.foreignFocusId(el);
 	}
 
 	/** Whether the pad has anything to walk here at all. */
@@ -465,6 +488,8 @@ export class LiveCockpit {
 	 * the same reason.
 	 */
 	private applyFocusRing(scroll = false) {
+		const reveal = scroll || this.revealOnNextRing;
+		this.revealOnNextRing = false;
 		for (const stale of this.root.querySelectorAll<HTMLElement>(
 			"[data-live-focus]",
 		))
@@ -482,7 +507,7 @@ export class LiveCockpit {
 		// Only on a *move*: a structural redraw re-applies the ring every frame,
 		// and scrolling there would fight a player who had scrolled with the
 		// mouse. Sage found the whole of this, round 1.
-		if (scroll) element.scrollIntoView({ block: "nearest", inline: "nearest" });
+		if (reveal) element.scrollIntoView({ block: "nearest", inline: "nearest" });
 	}
 
 	/** Walk the cursor. `-1` is up the list and `1` is down it. */
@@ -506,6 +531,9 @@ export class LiveCockpit {
 		if (!element) return false;
 		if (!element.closest(LiveCockpit.OWN_FOCUSABLE)) return false;
 		this.handleClick(element);
+		// The dispatch may rebuild this surface — a purchase does — and the
+		// rebuild lands on a later frame, so the reveal is armed rather than done.
+		this.revealOnNextRing = true;
 		return true;
 	}
 
@@ -581,15 +609,20 @@ export class LiveCockpit {
 	 * repo inherited with the module: whichever acted last is in charge, and no
 	 * flag records which.
 	 */
-	private syncFocusToPointer(element: HTMLElement) {
-		const elements = this.focusElements();
-		const at = elements.indexOf(element);
-		if (at === -1) return;
-		const ids = this.focusIds(elements);
-		const id = ids[at];
-		if (id === undefined) return;
+	private syncFocusToPointer(
+		element: HTMLElement | null,
+		dispatch: () => void,
+	) {
+		const before = this.focusElements();
+		const at = element ? before.indexOf(element) : -1;
+		const id = at === -1 ? null : (this.focusIds(before)[at] ?? null);
+		dispatch();
+		if (id === null) return;
+		// Against the list as it is *now*. The id is stable across a rebuild, so
+		// this lands on the replacement row; if the click replaced the surface
+		// entirely the id is absent and `setFocus` keeps the cursor where it was.
 		this.focusCursor = setFocus(
-			ids.map((each) => ({ id: each })),
+			this.focusIds(this.focusElements()).map((each) => ({ id: each })),
 			this.focusCursor,
 			id,
 		);
