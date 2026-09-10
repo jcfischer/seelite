@@ -27,47 +27,16 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 
 /** The W3C standard mapping, as literals — see `probe-gamepad.mjs` on why. */
-const B = { a: 0, b: 1, down: 13 };
+const B = STANDARD_INDEX;
 
 await guardedOrigin(ORIGIN);
 const { check, watch, exit } = tally();
-
-const installFakePad = () => {
-	const pad = {
-		id: "Fake DualSense (STANDARD GAMEPAD)",
-		mapping: "standard",
-		index: 0,
-		connected: true,
-		axes: [0, 0, 0, 0],
-		buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
-	};
-	Object.defineProperty(navigator, "getGamepads", {
-		configurable: true,
-		value: () => [pad],
-	});
-	window.__frames = (n) =>
-		new Promise((res) => {
-			let seen = 0;
-			const tick = () => {
-				if (++seen >= n) res({ frames: seen });
-				else requestAnimationFrame(tick);
-			};
-			requestAnimationFrame(tick);
-		});
-	window.__pad = {
-		hold(i, value = 1) {
-			pad.buttons[i] = { pressed: value >= 0.5, value };
-		},
-		release(i) {
-			pad.buttons[i] = { pressed: false, value: 0 };
-		},
-	};
-};
 
 const browser = await launchChromium();
 try {
@@ -127,14 +96,25 @@ try {
 		`perfPadFocus ${released}`,
 	);
 
-	const stillFlying = await perf.evaluate(() => {
-		const g = window.__seelite;
-		return g.headLook === "forward" && g.view === "cockpit";
-	});
+	// **Fly the ship *while* the instrument holds the pad.** The first version of
+	// this check read `headLook` and `view` after Circle had already released
+	// it, which is green whether or not the axes were suspended during ownership
+	// — it asserted nothing about the claim in its own name. Sage found that,
+	// round 1. Take the instrument again, deflect a stick, and read the rate.
+	await tap(B.down);
+	await perf.evaluate(() => window.__pad.axes(0, 0, 1, 0));
+	await frames(12);
+	const flownWhileHeld = await perf.evaluate(() => ({
+		yaw: window.__seelite.rates.yaw,
+		held:
+			document.querySelector("[data-perf-panel]")?.dataset.perfPadFocus ?? null,
+	}));
+	await perf.evaluate(() => window.__pad.axes(0, 0, 0, 0));
+	await tap(B.b);
 	check(
-		"the instrument is not modal: the ship is still there underneath",
-		stillFlying,
-		`headLook/view unchanged ${stillFlying}`,
+		"the instrument is not modal: the stick still flies the ship while it holds the pad",
+		flownWhileHeld.held === "true" && Math.abs(flownWhileHeld.yaw) > 1e-6,
+		`perfPadFocus ${flownWhileHeld.held}, yaw ${flownWhileHeld.yaw.toFixed(5)} rad/s`,
 	);
 } finally {
 	await browser.close();

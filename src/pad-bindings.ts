@@ -70,7 +70,7 @@ export type PadContext = "flight" | "console" | "modal";
  * | `l3` | `f` | face the target |
  * | `r3` | `v` | cockpit or chase |
  * | `start` (Options) | `u` | docking computer |
- * | `select` (Create) | `` ` `` | charge the hyperspace jump |
+ * | `select` (Create) | `` ` `` | charge the Jump |
  * | d-pad ←/↑/→ | `1` / `2` / `3` | head-look port, forward, starboard |
  *
  * D-pad ↓ is not in the table because what it does is not a key: it hands the

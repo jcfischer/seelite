@@ -73,36 +73,14 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
 
-/**
- * The W3C standard mapping, as literals.
- *
- * Not read off `src/gamepad.ts`. This is the one place a renumbering there can
- * be caught, and a fake that imported the list would move with it.
- */
-const B = {
-	a: 0,
-	b: 1,
-	x: 2,
-	y: 3,
-	l1: 4,
-	r1: 5,
-	l2: 6,
-	r2: 7,
-	select: 8,
-	start: 9,
-	l3: 10,
-	r3: 11,
-	up: 12,
-	down: 13,
-	left: 14,
-	right: 15,
-	home: 16,
-};
+/** The standard mapping and the fixture, shared by the three pad probes. */
+const B = STANDARD_INDEX;
 
 /**
  * Frames per stick arm.
@@ -118,72 +96,6 @@ const FRAMES = 20;
 
 await guardedOrigin(ORIGIN);
 const { check, watch, exit } = tally();
-
-const installFakePad = () => {
-	const pad = {
-		id: "Fake DualSense (STANDARD GAMEPAD)",
-		mapping: "standard",
-		index: 0,
-		connected: true,
-		axes: [0, 0, 0, 0],
-		buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
-	};
-	let unplugged = false;
-	let calls = 0;
-	// `defineProperty` rather than assignment: `getGamepads` lives on
-	// `Navigator.prototype` and is not writable through the instance, so a plain
-	// `navigator.getGamepads = …` is a silent no-op — the failure that would
-	// make every check below pass for the wrong reason.
-	Object.defineProperty(navigator, "getGamepads", {
-		configurable: true,
-		value: () => {
-			calls += 1;
-			return unplugged ? [] : [pad];
-		},
-	});
-	/**
-	 * One frame clock for the whole probe.
-	 *
-	 * In the page rather than in node, because half the checks wait for frames
-	 * from inside a `page.evaluate` and half from outside. A frame here is a
-	 * large fraction of a second under SwiftShader, so how many a check waits
-	 * for is a number worth having in one place.
-	 */
-	window.__frames = (n) =>
-		new Promise((res) => {
-			let seen = 0;
-			const tick = () => {
-				if (++seen >= n) res({ frames: seen });
-				else requestAnimationFrame(tick);
-			};
-			requestAnimationFrame(tick);
-		});
-	window.__pad = {
-		raw: pad,
-		get calls() {
-			return calls;
-		},
-		resetCalls() {
-			calls = 0;
-		},
-		axes(lx, ly, rx, ry) {
-			pad.axes = [lx, ly, rx, ry];
-		},
-		hold(i, value = 1) {
-			pad.buttons[i] = { pressed: value >= 0.5, value };
-		},
-		release(i) {
-			pad.buttons[i] = { pressed: false, value: 0 };
-		},
-		rest() {
-			pad.axes = [0, 0, 0, 0];
-			pad.buttons = pad.buttons.map(() => ({ pressed: false, value: 0 }));
-		},
-		unplug() {
-			unplugged = true;
-		},
-	};
-};
 
 const browser = await launchChromium();
 try {

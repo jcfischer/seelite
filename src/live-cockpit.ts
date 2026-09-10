@@ -464,29 +464,32 @@ export class LiveCockpit {
 	 * not. Clearing by query rather than by remembering the last element, for
 	 * the same reason.
 	 */
-	private applyFocusRing() {
+	private applyFocusRing(scroll = false) {
 		for (const stale of this.root.querySelectorAll<HTMLElement>(
 			"[data-live-focus]",
 		))
 			delete stale.dataset.liveFocus;
-		const elements = this.focusElements();
-		if (elements.length === 0) return;
-		const ids = this.focusIds(elements);
-		const item = focusedItem(
-			ids.map((id) => ({ id })),
-			this.focusCursor,
-		);
-		if (!item) return;
-		const at = ids.indexOf(item.id);
-		const element = at === -1 ? null : elements[at];
-		if (element) element.dataset.liveFocus = "true";
+		const element = this.focusedElement();
+		if (!element) return;
+		element.dataset.liveFocus = "true";
+		// **A ring below the fold is worse than no ring.** The Navigation list,
+		// the market rows and the finder's results are all `overflow: auto`, so a
+		// cursor walked past the visible rows is drawn on a row nobody can see —
+		// and Cross still buys it. `block: "nearest"` because the row is usually
+		// already in view and scrolling it to the middle every press would make
+		// the list jump under a player who is only stepping down it.
+		//
+		// Only on a *move*: a structural redraw re-applies the ring every frame,
+		// and scrolling there would fight a player who had scrolled with the
+		// mouse. Sage found the whole of this, round 1.
+		if (scroll) element.scrollIntoView({ block: "nearest", inline: "nearest" });
 	}
 
 	/** Walk the cursor. `-1` is up the list and `1` is down it. */
 	stepFocus(delta: number) {
 		const ids = this.focusIds(this.focusElements()).map((id) => ({ id }));
 		this.focusCursor = moveFocus(ids, this.focusCursor, delta);
-		this.applyFocusRing();
+		this.applyFocusRing(true);
 	}
 
 	/**

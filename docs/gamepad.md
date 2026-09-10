@@ -91,7 +91,7 @@ Xbox pad reads `a`/`b`/`x`/`y` literally.
 | `l3` | face the target | `f` |
 | `r3` | cockpit or chase | `v` |
 | `start` (Options) | docking computer | `u` |
-| `select` (Create) | charge the hyperspace jump | `` ` `` |
+| `select` (Create) | charge the Jump | `` ` `` |
 | d-pad ← / ↑ / → | head-look port, forward, starboard | `1` / `2` / `3` |
 | d-pad ↓ | hand the pad to the frame instrument, and back | — |
 

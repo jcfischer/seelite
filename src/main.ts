@@ -4832,7 +4832,12 @@ class Game {
 	 * second, which is the unit the pointer hands it.
 	 */
 	private stepChartOrbit(dt: number) {
-		if (dt <= 0 || !this.chartHasStick()) return;
+		// **The modal check is here as well as in `padFlightAxes`.** This method
+		// reads `frame.axes` raw rather than going through that function, so the
+		// settings screen — which takes the *whole* pad — was leaving the right
+		// stick turning the chart behind the dialog. Sage found it, round 1.
+		if (dt <= 0 || this.padContext() === "modal" || !this.chartHasStick())
+			return;
 		const frame = this.padFrame;
 		if (!frame?.connected) return;
 		const dx = frame.axes.rightX * CHART_ORBIT_PX_PER_S * dt;
@@ -4894,15 +4899,22 @@ class Game {
 		if (!frame.connected) return;
 		const context = this.padContextThisFrame;
 		const intents = padIntents(frame, context);
-		if (intents.keys.length > 0 || intents.activate) this.padAudioNotice();
+		const acted = intents.keys.length > 0 || intents.activate;
 		if (context !== "flight") {
 			this.applyPanelIntents(intents, context);
+			if (acted) this.padAudioNotice();
 			return;
 		}
 		if (intents.instrument) this.perfPanel?.setFocused(true);
 		// Through `command`, not through a second copy of what each key does.
 		// The pad presses the key; one implementation stays one implementation.
 		for (const key of intents.keys) this.command(key);
+		// **After the dispatch, not before it.** `command` opens by clearing
+		// `jumpNotice` — #187's "dismissed by playing" — so a notice written
+		// first was wiped by the very press that triggered it, and the once-only
+		// flag was already spent. The player got silence and no explanation.
+		// Sage found it, round 1.
+		if (acted) this.padAudioNotice();
 	}
 
 	/**

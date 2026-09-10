@@ -10,7 +10,9 @@ forbidden vocabulary. A word can therefore remain canonical for a different
 concept defined elsewhere in this glossary. In particular, **Berth** and
 **Clearance queue** must not be used to mean **Transit lane**, while each keeps
 its own distinct canonical meaning below; `Command` remains ordinary English
-for controller input under the explicit scope note on **Intervention**.
+for controller input under the explicit scope note on **Intervention** — which
+since #283 has a second consumer, `stepAngular`'s commanded rate, and a pad
+binding table that speaks of pressing one.
 
 **Display contact**:
 A targetable presentation identity outside the generated body list. Its producer
@@ -183,7 +185,7 @@ _Avoid_: Touchdown deck, apron, exterior pad
 **Berth**:
 Where one ship parks in a station interior, addressed as **interior face × depth band** — deck, port wall, starboard wall or overhead; near or deep. In a bay the face is the wall the berth is bolted to; on a landing pad there is one surface, so the face is the *side of the landing lane* the berth stands on and every berth is in the `near` band, because a deck has no depth. Its **family** (open deck pad, wall-side berth, recessed service cradle) changes presentation and parked pose and never the docking interaction. It accepts a hull when its declared clear length, beam and height contain that hull's envelope; there is no S/M/L class. `docs/specs/docking.md` §13.2 owns the catalogue, the fit predicate and the allocation.
 _Avoid_: Docking bay, slot, pad, landing pad
-These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries three senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), and since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above). A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth.
+These are aliases for **a berth** and nothing else. **The scope note is the point of the entry, not a footnote to it**, and it has grown once already: the repo has had to correct one alias that read as banning an English word. "Slot" is an aperture kind — `aperture.kind === "slot"` is code. "Pad" now carries **four** senses that are not this one — a berth *family* (open deck pad), the surface a ship settles onto (`berth-pad`), since #165 an aperture kind and the interior presentation that goes with it (**Landing pad** above), and since #283 the **game controller**: `src/gamepad.ts`, `PadFrame`, `padIntents`, `docs/gamepad.md`. That fourth one arrived as a *copy* — the module is byte-identical to seekolous's and says "pad" throughout — so it could not have been renamed here even if the sense were worth renaming, and it is not: a controller is what every player calls a pad. A reviewer flagging one of those has found the alias rule firing on an English word rather than on a synonym for a berth.
 
 **Failed entry**:
 A crossing of the aperture plane that does not satisfy every check. It repels the ship, damages it, and keeps its clearance grant; unless it was a barge it does not turn the station hostile. Damage is quadratic in the closing speed above a floor, so a failed entry at the gate speed is survivable by design while one flown at the assist cap is not — "it costs you something, not everything" is a claim about the gate, not a guarantee at any speed. `docs/specs/docking.md` §2 owns the model.

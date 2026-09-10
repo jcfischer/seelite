@@ -42,9 +42,13 @@
  *
  * ## What it does not cover
  *
- * The two free-text filters. A pad cannot type, the chips are what narrow those
- * lists, and no on-screen keyboard was written — so there is nothing here to
- * check beyond the chips, which are checked.
+ * The two free-text filters, because a pad cannot type and no on-screen keyboard
+ * was written. What narrows those lists for a pad is the chips, and the finder's
+ * economy chip is checked *through the pad* below — an earlier version narrowed
+ * the panel with a direct `toggleFinderEconomy` call while this paragraph
+ * claimed the chips were covered, which is a claim a broken dispatch would have
+ * survived. The Navigation console's kind chips are still not exercised; they
+ * take the same `handleClick` path as its rows, which is checked.
  *
  * Usage:
  *   npm run dev
@@ -56,30 +60,13 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 
 /** The W3C standard mapping, as literals — see `probe-gamepad.mjs` on why. */
-const B = {
-	a: 0,
-	b: 1,
-	x: 2,
-	y: 3,
-	l1: 4,
-	r1: 5,
-	l2: 6,
-	r2: 7,
-	select: 8,
-	start: 9,
-	l3: 10,
-	r3: 11,
-	up: 12,
-	down: 13,
-	left: 14,
-	right: 15,
-	home: 16,
-};
+const B = STANDARD_INDEX;
 
 /**
  * How far the cursor may be walked looking for a row.
@@ -94,40 +81,16 @@ const WALK_CAP = 40;
 await guardedOrigin(ORIGIN);
 const { check, watch, exit } = tally();
 
-const installFakePad = () => {
-	const pad = {
-		id: "Fake DualSense (STANDARD GAMEPAD)",
-		mapping: "standard",
-		index: 0,
-		connected: true,
-		axes: [0, 0, 0, 0],
-		buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
-	};
-	Object.defineProperty(navigator, "getGamepads", {
-		configurable: true,
-		value: () => [pad],
-	});
-	window.__frames = (n) =>
-		new Promise((res) => {
-			let seen = 0;
-			const tick = () => {
-				if (++seen >= n) res({ frames: seen });
-				else requestAnimationFrame(tick);
-			};
-			requestAnimationFrame(tick);
-		});
-	window.__pad = {
-		hold(i, value = 1) {
-			pad.buttons[i] = { pressed: value >= 0.5, value };
-		},
-		release(i) {
-			pad.buttons[i] = { pressed: false, value: 0 };
-		},
-		rest() {
-			pad.axes = [0, 0, 0, 0];
-			pad.buttons = pad.buttons.map(() => ({ pressed: false, value: 0 }));
-		},
-	};
+/**
+ * The one helper only this probe needs, installed **beside** the shared fixture
+ * rather than wrapping it.
+ *
+ * `addInitScript` serialises the function body and sends it to the page, so a
+ * wrapper that called `installFakePad()` would reach for a name that does not
+ * exist there. Playwright runs every registered init script, so two calls is
+ * the composition.
+ */
+const installPlaceOnAxis = () => {
 	/**
 	 * Place the ship on a station's aperture axis, cleared and with §7's
 	 * computer flying.
@@ -167,6 +130,7 @@ try {
 	});
 	watch(page);
 	await page.addInitScript(installFakePad);
+	await page.addInitScript(installPlaceOnAxis);
 	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
 	await bootedGame(page);
 
@@ -188,6 +152,7 @@ try {
 				stationAction: d.liveStationAction ?? null,
 				stationName: d.liveStationName ?? null,
 				mapHaze: d.mapHaze !== undefined,
+				finderEconomy: d.mapFinderEconomy ?? null,
 				finderRow: d.mapFinderRow ?? null,
 				text: (el.textContent ?? "").trim().slice(0, 40),
 			};
@@ -320,13 +285,30 @@ try {
 	}
 
 	{
-		// **Narrow the finder first.** It draws no result rows until its filter
-		// says something (`finderIsNarrowed`), so a walk that went looking for
-		// one on an unfiltered panel found nothing and reported it as a failure
-		// of the pad. An economy chip is the pad's own way to narrow it, which
-		// is #283's F7 answer: the chips are what a device that cannot type has.
-		await page.evaluate(() =>
-			window.__seeliteGalaxyMap?.toggleFinderEconomy(0),
+		// **Narrow the finder with the pad, not with a direct call.** It draws no
+		// result rows until its filter says something (`finderIsNarrowed`), so a
+		// walk on an unfiltered panel found nothing and reported it as a failure
+		// of the pad. The first fix reached for `toggleFinderEconomy` directly —
+		// which narrowed the panel and checked nothing, while the header claimed
+		// the chips were covered. Sage caught the claim, round 1. Walking to a
+		// chip and pressing Cross is both the narrowing *and* the check, and it
+		// is #283's F7 answer: chips are what a device that cannot type has.
+		const chipBefore = await page.evaluate(
+			() =>
+				window.__seeliteGalaxyMap?.state.finder.filter.economies?.length ?? -1,
+		);
+		const chip = await walkTo((at) => at.finderEconomy !== null);
+		if (chip) await tap(B.a);
+		const chipAfter = await page.evaluate(
+			() =>
+				window.__seeliteGalaxyMap?.state.finder.filter.economies?.length ?? -1,
+		);
+		check(
+			"Cross on an economy chip narrows the finder, which is how a pad filters at all",
+			chip !== null && chipAfter !== chipBefore,
+			chip
+				? `chip ${chip.finderEconomy}; economies ${chipBefore} → ${chipAfter}`
+				: `no economy chip found in ${WALK_CAP} presses`,
 		);
 		await frames(2);
 		const before = await page.evaluate(
@@ -384,6 +366,45 @@ try {
 			"the station console is a pad surface with the head forward, which is where it is drawn",
 			context,
 			`console present ${context}`,
+		);
+
+		// **The ring must not walk below the fold**, and the market is where that
+		// can be shown: seventeen rows in an `overflow: auto` box. The first
+		// version of this check watched the Navigation list instead and reported
+		// "the list fits, so there is nothing to scroll" — a check that never
+		// ran, which is worse than one that fails. Sage found the defect itself
+		// in round 1, with a fixture that activated a row while `scrollTop`
+		// stayed zero.
+		const marketScroll = () =>
+			page.evaluate(() => {
+				const box = document.querySelector(".lc-station-market");
+				if (!box) return null;
+				return {
+					top: box.scrollTop,
+					overflows: box.scrollHeight > box.clientHeight + 1,
+				};
+			});
+		// **At a narrow viewport**, because the fold has to be real. The station
+		// console is `inset: 7% 8% 12%`, so at 1280x860 seventeen market rows fit
+		// and the box never scrolls — the check reported "overflows false" and
+		// proved nothing. `probe-station-visuals` has the same two arms for the
+		// same reason.
+		await page.setViewportSize({ width: 700, height: 480 });
+		await frames(2);
+		const scrollBefore = await marketScroll();
+		for (let i = 0; i < 12; i++) await tap(B.down);
+		const scrollAfter = await marketScroll();
+		await page.setViewportSize({ width: 1280, height: 860 });
+		await frames(2);
+		check(
+			"walking the market past the fold scrolls it, so the ring is never on a row nobody can see",
+			scrollBefore !== null &&
+				scrollAfter !== null &&
+				scrollBefore.overflows &&
+				scrollAfter.top > scrollBefore.top,
+			scrollBefore === null || scrollAfter === null
+				? "no market box on screen"
+				: `overflows ${scrollBefore.overflows}; scrollTop ${scrollBefore.top} → ${scrollAfter.top}`,
 		);
 
 		const before = await page.evaluate(() => window.__seelite.creditsCr);
