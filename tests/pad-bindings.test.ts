@@ -299,6 +299,28 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		expect(Math.abs(half.yaw)).toBeCloseTo((0.6 - 0.18) / (1 - 0.18), 6);
 	});
 
+	test("an open console suspends them too, which is the principal's ruling", () => {
+		// **This reverses what #283 shipped.** The node argued that a console
+		// takes six discrete controls and the sticks keep flying, from the
+		// console's own footer — "Simulation continues while this console is
+		// open". Flown, that reads as the ship flying off while you are reading
+		// it. The world still runs; the *controls* are what a panel takes.
+		expect(padFlightAxes(sticks([1, 1, 1, 1]), "console")).toEqual({
+			yaw: 0,
+			pitch: 0,
+			roll: 0,
+			throttleTrim: 0,
+		});
+	});
+
+	test("and the throttle is held rather than zeroed", () => {
+		// The trim is refused, so the throttle keeps whatever value it had and
+		// the ship coasts. Driving it to zero was offered and declined: it
+		// changes your speed without being asked.
+		expect(padFlightAxes(trigger("r2", 1), "console").throttleTrim).toBe(0);
+		expect(padFlightAxes(trigger("l2", 1), "console").throttleTrim).toBe(0);
+	});
+
 	test("a modal panel suspends the sticks, which a key release cannot do", () => {
 		// A key is an event and can be forgotten; a stick is a position and is
 		// re-reported every frame, so there is nothing to release. This is the
@@ -311,8 +333,26 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		});
 	});
 
-	test("an open console does not suspend them", () => {
-		expect(padFlightAxes(sticks([0, 0, 1, 0]), "console").yaw).toBe(-1);
+	test("a panel stops the ship; the instrument does not", () => {
+		expect(padFlightAxes(sticks([0, 0, 1, 0]), "flight").yaw).toBe(-1);
+		expect(padFlightAxes(sticks([0, 0, 1, 0]), "console").yaw).toBe(0);
+		expect(padFlightAxes(sticks([0, 0, 1, 0]), "modal").yaw).toBe(0);
+		// **The one exception, and it is not an inconsistency.** The frame
+		// instrument is a developer overlay behind `?perf` whose whole purpose is
+		// measuring a frame *while it is flown*; a mode that stopped the ship
+		// would measure a different frame from the one it exists for. It takes a
+		// console's six buttons and leaves the sticks alone.
+		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
+		expect(padFlightAxes(trigger("r2", 1), "instrument").throttleTrim).toBe(1);
+	});
+
+	test("the instrument still claims the six a console claims", () => {
+		expect(padIntents(press("up"), "instrument").focusDelta).toBe(-1);
+		expect(padIntents(press("a"), "instrument").activate).toBe(true);
+		expect(padIntents(press("b"), "instrument").back).toBe(true);
+		expect(padIntents(press("up"), "instrument").keys).toEqual([]);
+		// And everything else still flies it.
+		expect(padIntents(press("y"), "instrument").keys).toEqual(["j"]);
 	});
 });
 

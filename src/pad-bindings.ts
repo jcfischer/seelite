@@ -21,15 +21,38 @@
  * implementation stays one implementation, and the pad cannot drift away from
  * the keyboard while nobody is looking.
  *
- * ## Three contexts, and the second one is the interesting one
+ * ## Four contexts, and the second one is the interesting one
  *
- * `flight` is the forward view. `console` is a head turned to the left or right
- * console — and the console's own footer says *"Simulation continues while this
- * console is open"*, which is true and load-bearing: suspending the sticks
- * every time the pilot glanced at the target list would stop the ship. So a
- * console claims **six controls** — the d-pad's two vertical positions, the two
- * face buttons and the two shoulders — and everything else falls through to the
- * flight table and keeps flying.
+ * `flight` is the forward view. It and `instrument` are the two contexts that
+ * move the ship — `contextFliesShip` is the predicate, and an earlier version of
+ * this line called flight the only one, which the instrument paragraph below
+ * then contradicted.
+ *
+ * `console` is a head turned to a side console, or the station console on the
+ * forward wall while docked. It claims **six discrete controls** — the d-pad's
+ * two vertical positions, the two face buttons and the two shoulders — and it
+ * **suspends the sticks, the triggers and the mouse**. The mouse belongs in
+ * that sentence: this header is the declared owner of the reversal, and it was
+ * the incomplete copy while `docs/gamepad.md` had it right.
+ *
+ * That suspension is a reversal, and the reasoning it replaced is worth keeping
+ * because it was wrong in an instructive way. The console's footer says
+ * *"Simulation continues while this console is open"*, and #283 read it as *the
+ * ship must stay flyable*, so the sticks kept flying. It is a claim about the
+ * **world** — orbits, markets, NPCs, all of which do go on running — and not
+ * about the controls. Flown, the version that kept them was a ship flying off
+ * while its pilot read a list.
+ *
+ * The throttle is *held* rather than zeroed, so the ship coasts on the velocity
+ * it had. Driving it to zero was offered and declined: it changes your speed
+ * without being asked.
+ *
+ * `instrument` is the frame overlay behind `?perf`, and it is the one exception
+ * to that suspension rather than an inconsistency in it. It takes a console's
+ * six buttons and **leaves the sticks alone**, because it exists to measure a
+ * frame *while it is flown* — a mode that stopped the ship would be measuring a
+ * different frame from the one it is there for. The reversal above is about the
+ * panels a player reads; this is an instrument a developer watches.
  *
  * `modal` is the **settings screen and nothing else** — the one place the whole
  * pad is taken. `settings-panel.ts` already does exactly this for the keyboard,
@@ -55,7 +78,7 @@ import type { PadButtonName, PadFrame } from "./gamepad";
  * keeps seekolous's rule intact: no field records which device is in charge,
  * and the mouse can act on the same panel in the same frame.
  */
-export type PadContext = "flight" | "console" | "modal";
+export type PadContext = "flight" | "console" | "modal" | "instrument";
 
 /**
  * The flight table. DualSense labels in brackets; an Xbox pad reads `a`/`b`/
@@ -97,6 +120,46 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
 	up: "2",
 	right: "3",
 };
+
+/**
+ * The line a console shows a pad player, built from what that surface has.
+ *
+ * Owned here beside the bindings it names: it was written into
+ * `live-cockpit.ts` and was a third copy of a table this module and
+ * `docs/gamepad.md` already own, so a rebind moved two of the three.
+ *
+ * **Assembled rather than picked from near-copies.** It began as one constant,
+ * gained a station variant that was the first minus one segment, and would have
+ * gained a third and fourth for the empty walk — three of them left dead the
+ * moment this function replaced them, which sage then found. A surface with
+ * nothing focusable must not promise a walk, and the station console must not
+ * promise a back: it is reached with the head already forward, so `back` would
+ * turn a forward head forward.
+ *
+ * **"CONTROLLER", not "PAD".** On a *station* console the shorter word meets
+ * `CONTEXT.md`'s berth sense, which is the one surface in this game where that
+ * reading is live. The buttons are named by standard-mapping position rather
+ * than drawn as DualSense glyphs, because an Xbox pad reads `a`/`b` literally.
+ */
+/**
+ * The hint a surface should show, built from its two facts.
+ *
+ * Assembled rather than picked from a list of near-copies: the station line was
+ * the console line minus one segment, and the empty-walk case would have been a
+ * third and fourth. A surface with nothing focusable must not promise a walk —
+ * and it still gets a marker, because the ship is suspended there either way and
+ * the *marker* answers a different question from the *hint*.
+ */
+export function padHintFor(surface: {
+	station: boolean;
+	walkable: boolean;
+}): string {
+	const segments = ["CONTROLLER"];
+	if (surface.walkable) segments.push("UP/DOWN WALK", "A SELECT");
+	if (!surface.station) segments.push("B BACK");
+	segments.push("L1/R1 TAB");
+	return segments.join(" · ");
+}
 
 /**
  * What the pad asked for this frame, in the game's own words.
@@ -175,7 +238,7 @@ export function padIntents(
 		// round 5. A console's six claims are the six cases here; anything not
 		// claimed falls through to the flight table, which is the rule stated
 		// once.
-		if (context === "console") {
+		if (context === "console" || context === "instrument") {
 			if (name === "up") {
 				focusDelta -= 1;
 				continue;
@@ -278,11 +341,28 @@ const NO_AXES: PadFlightAxes = { yaw: 0, pitch: 0, roll: 0, throttleTrim: 0 };
  */
 const negate = (value: number) => (value === 0 ? 0 : -value);
 
+/**
+ * Whether input in this context reaches the ship at all.
+ *
+ * **One owner, because three of them disagreed.** The rule was written inline
+ * here, again as `padContext() === "flight"` for the mouse, and a third time in
+ * `hasControlInput` — and the copies had already drifted on `instrument`, where
+ * the sticks flew and the mouse did not, so the one mode whose whole purpose is
+ * measuring a frame *while it is flown* could not be flown by mouse. Sage found
+ * that, and the blocker beside it was the same drift reaching the galaxy chart.
+ *
+ * See the header for which contexts fly, why a console does not, and why the
+ * instrument is an exception rather than an oversight.
+ */
+export function contextFliesShip(context: PadContext): boolean {
+	return context === "flight" || context === "instrument";
+}
+
 export function padFlightAxes(
 	frame: PadFrame | null,
 	context: PadContext,
 ): PadFlightAxes {
-	if (!frame?.connected || context === "modal") return NO_AXES;
+	if (!frame?.connected || !contextFliesShip(context)) return NO_AXES;
 	return {
 		yaw: negate(frame.axes.rightX),
 		pitch: negate(frame.axes.rightY),

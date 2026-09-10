@@ -17,6 +17,7 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
+import { padHintFor } from "./pad-bindings";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -189,10 +190,27 @@ const STYLE = `
 .lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
 .lc-nav-row:hover { background: rgba(223, 122, 20, .14); }
 .lc-nav-row[aria-current="true"] { background: rgba(223, 122, 20, .3); color: #fff0c9; }
-/* The pad's cursor. A ring rather than a fill, because aria-current already
-   owns the fill on a nav row and the two answer different questions: which row
-   is selected, and which row the pad would act on next. #283. */
-[data-live-focus="true"] { outline: 2px solid #ffe0a2; outline-offset: 1px; border-radius: 2px; }
+/* The pad's cursor. A ring *and* a wash rather than a ring alone: a 2px amber
+   outline on an amber console was the principal's first finding on the flown
+   leg — it does not read, least of all on a nav row that already carries
+   aria-current's fill. The wash is cool where every other highlight here is
+   warm, so the two answer their different questions in different colours:
+   which row is selected, and which row the pad would act on next. #283. */
+[data-live-focus="true"] {
+  outline: 2px solid #9fe8ff; outline-offset: 2px; border-radius: 3px;
+  /* The wash is an inset shadow, not a background. Written as a background it
+     needed !important to win, and winning is exactly wrong: it replaced
+     aria-current's amber fill on a row that is both selected and ringed —
+     the one row this comment's "two highlights, two questions" is about. A
+     shadow layers over the fill instead of fighting it for one property. */
+  box-shadow: 0 0 12px rgba(120, 210, 255, .55),
+    inset 0 0 0 100vmax rgba(96, 200, 255, .22);
+}
+/* Which surface the pad is on. Same cool family as the ring, on the panel's own
+   border, so "the d-pad is walking this one" is answerable without pressing
+   anything. */
+[data-live-pad-scope="true"] { border-color: #9fe8ff !important; box-shadow: inset 0 0 68px rgba(231, 123, 31, .17), 0 0 22px rgba(120, 210, 255, .4); }
+.lc-pad-hint { margin-top: 8px; color: #9fe8ff; font-size: 10px; letter-spacing: .05em; opacity: .85; }
 .lc-nav-row i { color: #cb8c51; font-style: normal; }
 .lc-nav-row em { color: #f5bd78; font-style: normal; }
 .lc-nav-empty { padding: 10px 6px; color: #cb8c51; font-size: 11px; }
@@ -357,14 +375,31 @@ export class LiveCockpit {
 	 * an on-screen keyboard was refused (#283's F7) because #70 already refused
 	 * a second UI grammar.
 	 */
+	/**
+	 * What the cursor walks — **content, not chrome**.
+	 *
+	 * The tabs are deliberately absent, and that is the principal's finding on
+	 * the first flown leg: walking every focusable element in draw order meant
+	 * reaching a list by passing through the tab row first, which reads as the
+	 * cursor going somewhere nobody asked for. Tabs have their own control — the
+	 * two shoulders — so they need no place in the walk, and `stepTab` finds
+	 * them by class rather than through this list.
+	 *
+	 * `[data-live-launch]` stays: it is an action on the right console, not a
+	 * way of getting to one.
+	 */
 	private static readonly OWN_FOCUSABLE = [
 		"[data-live-station-action]",
-		"[data-live-station-tab]",
 		"[data-live-launch]",
-		"[data-live-right-tab]",
-		"[data-live-left-tab]",
 		"[data-live-nav-kind]",
 		"[data-live-nav-target]",
+		// **The rail's GALAXY MAP button, which is not a tab.** It carries
+		// `data-live-left-tab` and no `lc-tab` class, so dropping that attribute
+		// wholesale took it out of the walk *and* out of `stepTab`'s reach — a
+		// control that left the pad entirely, which neither the PR body nor the
+		// "never lands on a tab" check could see. Sage found it. The `:not`
+		// keeps the tab row out while leaving the button in.
+		"[data-live-left-tab]:not(.lc-tab)",
 	].join(",");
 
 	/**
@@ -491,6 +526,101 @@ export class LiveCockpit {
 	/** The element the ring was last written on, so clearing it is not a query. */
 	private ringed: HTMLElement | null = null;
 
+	/**
+	 * Say which surface the pad is on, and how to work it.
+	 *
+	 * Both were the principal's findings on the first flown leg: nothing on
+	 * screen said which panel the d-pad was walking — least of all docked with
+	 * the head forward, where the station console is the surface and no head
+	 * turn announced it — and nothing said what the buttons did. The settings
+	 * screen has had a hint line since long before the pad; the consoles had
+	 * none.
+	 *
+	 * The hint is drawn **only while a pad is present**, because a line telling
+	 * a keyboard player about Cross is noise on every frame they ever see.
+	 */
+	private markPadScope(
+		holds: boolean,
+		scope: HTMLElement | null,
+		elements: readonly HTMLElement[],
+	) {
+		// **Remembered, not queried — the rule the ring already follows.** The
+		// first version swept the cockpit twice with `querySelectorAll`, for two
+		// attributes this class is the only writer of, on every rendered frame
+		// whether or not a pad was attached: it put back exactly the per-frame
+		// scanning that was removed a round earlier, and doubled it. Sage found
+		// that, and found that the sweep *skipped the live scope* — so a pad
+		// disconnect took the hint away and left the border still claiming the
+		// d-pad was walking that panel.
+		// **The query is inside, and only a pad pays for it.** It was an argument
+		// computed at both call sites on every rendered frame and then thrown
+		// away here for every keyboard player — a full failed subtree scan under
+		// a comment claiming the opposite, and a second one beside the scan
+		// `focusedElement` already does. Sage found that too; the eager argument
+		// was the same mistake as the sweep it replaced.
+		// **The marker answers "does this panel hold the pad", and only the game
+		// knows that.** Two earlier gates got it wrong in opposite directions:
+		// on the walk being non-empty, which hid the marker on the very surfaces
+		// this branch had emptied; and then on the scope alone, which claimed the
+		// pad for a drawn panel while the instrument or the settings screen
+		// actually held it. `holds` is the game's answer.
+		//
+		// What an empty walk changes is the *hint*, not the marker: WALK is the
+		// one segment that becomes a lie there, and the others stay true.
+		const wanted = holds ? scope : null;
+		// **The text is part of the identity, not just the element.** Keyed on
+		// the scope alone, a hint went stale whenever the *same* panel changed
+		// what it had — narrow the Navigation filter to nothing and the line went
+		// on promising a walk. Sage found it.
+		const text = wanted
+			? padHintFor({
+					station: wanted.matches("[data-live-station-console]"),
+					walkable: elements.length > 0,
+				})
+			: "";
+		if (wanted === this.padScope && text === this.padHint?.textContent) return;
+		if (this.padScope) delete this.padScope.dataset.livePadScope;
+		this.padHint?.remove();
+		this.padHint = null;
+		this.padScope = wanted;
+		if (!wanted) return;
+		wanted.dataset.livePadScope = "true";
+		const hint = document.createElement("p");
+		hint.className = "lc-pad-hint";
+		hint.dataset.livePadHint = "";
+		hint.textContent = text;
+		wanted.append(hint);
+		this.padHint = hint;
+	}
+
+	/** The panel wearing the scope marker, and the hint line inside it. */
+	private padScope: HTMLElement | null = null;
+	private padHint: HTMLElement | null = null;
+
+	/**
+	 * Whether **this console** currently holds the pad.
+	 *
+	 * Not "is a pad attached", which is what it was and which made the marker
+	 * answer the wrong question. `readPadContext` returns `instrument` and
+	 * `modal` *before* it ever asks whether a console is drawn, so a panel can
+	 * be on screen while something else owns the pad entirely — hand the frame
+	 * instrument the pad and turn to port, and the port console wore the border
+	 * and the hint while up/down walked the instrument and the ship flew on.
+	 * Sage found it and called it a blocker, with that repro and a second one
+	 * through the settings scrim.
+	 *
+	 * The game owns the context, so the game answers the question; this class
+	 * is told, and does not guess from what it can see.
+	 */
+	private padHolds = false;
+
+	setPadHolds(holds: boolean) {
+		if (this.padHolds === holds) return;
+		this.padHolds = holds;
+		const elements = this.focusElements();
+		this.markPadScope(holds, this.focusScope(), elements);
+	}
+
 	private applyFocusRing(scroll = false) {
 		const reveal = scroll || this.revealOnNextRing;
 		this.revealOnNextRing = false;
@@ -502,7 +632,15 @@ export class LiveCockpit {
 		// declined, because no instrument here says it costs anything.
 		if (this.ringed) delete this.ringed.dataset.liveFocus;
 		this.ringed = null;
-		const element = this.focusedElement();
+		// **One scan for the frame**, handed to both. `focusElements` is a
+		// `focusScope` query plus a six-selector `querySelectorAll`, and running
+		// it here *and* inside `markPadScope` took a pad player's frame from two
+		// DOM queries to five — under a comment claiming only a pad paid for it,
+		// which was true and beside the point. Sage found it, round 3.
+		const elements = this.focusElements();
+		const scope = this.focusScope();
+		this.markPadScope(this.padHolds, scope, elements);
+		const element = this.focusedElement(elements);
 		if (!element) return;
 		element.dataset.liveFocus = "true";
 		this.ringed = element;
@@ -553,8 +691,8 @@ export class LiveCockpit {
 	 * `activateFocus` returns `false` the focused row belongs to the chart, and
 	 * the game routes it to the chart's own handle.
 	 */
-	focusedElement(): HTMLElement | null {
-		const elements = this.focusElements();
+	focusedElement(scanned?: readonly HTMLElement[]): HTMLElement | null {
+		const elements = scanned ?? this.focusElements();
 		if (elements.length === 0) return null;
 		const items = this.focusIds(elements).map((id) => ({ id }));
 		// **Write the resolved position back.** The cursor's contract is "the id

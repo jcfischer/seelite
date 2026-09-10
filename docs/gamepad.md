@@ -51,16 +51,21 @@ the contract protects — that the copied module stays game-agnostic — holds.
 **`flight`** is the forward view. The pad flies the ship.
 
 **`console`** is a surface being read: a head turned to the port or starboard
-console, the station console on the forward wall while docked, or the frame
-instrument holding the pad. A console claims **six controls** — the d-pad's two
-vertical positions, the two face buttons and the two shoulders — and everything
-else keeps flying.
+console, or the station console on the forward wall while docked. It claims
+**six controls** — the d-pad's two vertical positions, the two face buttons and
+the two shoulders — and it **suspends the sticks, the triggers and the mouse**.
 
-That last part is deliberate rather than an omission. The console's own footer
-says *"Simulation continues while this console is open"*, and it is right, so
-suspending the sticks every time the pilot glanced at the target list would stop
-the ship. #283 was charted expecting the sticks to be handed over; flying it
-says otherwise.
+That suspension is a reversal of what #283 first shipped, and the reasoning it
+replaced was wrong in a way worth keeping. **`src/pad-bindings.ts`'s header owns
+the argument and this file does not repeat it** — it was verbatim in both for a
+round, which is the third-copy drift `CLAUDE.md` warns about. What is worth
+knowing without opening it: the footer is a claim about the *world*, not the
+controls, and the throttle is **held** rather than zeroed, so you coast.
+
+**`instrument`** is the frame overlay behind `?perf`, and it is the one
+exception. It takes a console's six buttons and leaves the sticks alone, because
+it exists to measure a frame *while it is flown* — a mode that stopped the ship
+would measure a different frame from the one it is there for.
 
 **`modal`** is the settings screen and nothing else — the one place the whole
 pad is taken, sticks included. `settings-panel.ts` already does this for the
@@ -115,17 +120,26 @@ agrees with the mouse: push right, the nose goes right.
 | control | does |
 | --- | --- |
 | d-pad ↑ / ↓ | walk the cursor |
-| `a` (Cross) | act on the focused row |
+| `a` (Cross) | act on the ringed row |
 | `b` (Circle) | back out — to the forward view, out of a modal, or out of the instrument |
 | `l1` / `r1` | previous and next tab |
-| right stick | orbit the galaxy chart, on the Galaxy Map tab only |
-| everything else | still flies the ship |
+| sticks, triggers, mouse | **suspended** — the ship coasts |
+| the keyboard | still flies — the principal's ruling; a key has to be *held* |
+| every other button | still acts on the ship |
 
-The right stick is the one exception to that last row, and the mouse behaves the
-same way: dragging the chart means leaving pointer lock, so the pointer cannot
-orbit the cluster and fly the ship at the same instant either. The ship is not
-uncontrolled — the left stick still rolls, the triggers still trim, every button
-still acts.
+**The cursor walks content, not chrome.** Tabs are not in the walk: they have
+the shoulders, and passing through the tab row to reach a list was the first
+thing the principal found wrong with it. The Navigation rail's own GALAXY MAP
+button stays walkable — it carries a tab's attribute and is not a tab.
+
+The panel holding the pad says so — a cool ring on its border, matching the
+cursor's — and carries a hint line. Both are drawn only when a pad is attached,
+and the hint names **what that surface actually has**: a panel with nothing
+focusable does not promise a walk, and the station console does not promise a
+back, because it is reached with the head already forward.
+
+On the Galaxy Map tab the right stick orbits the cluster, which is the one thing
+a stick still does inside a console.
 
 On the settings screen, ← and → change the focused row's value, which is what
 that screen's own hint line says. The pad adopts its model rather than inventing

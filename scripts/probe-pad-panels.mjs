@@ -200,6 +200,300 @@ try {
 		);
 	}
 
+	{
+		// **A panel suspends the ship, and that is the principal's reversal of
+		// what #283 shipped.** Deflect a stick with a console open and the ship
+		// must not turn; close it and the same deflection must.
+		await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
+		await frames(10);
+		const held = await page.evaluate(() => window.__seelite.rates.yaw);
+		await page.evaluate(() => window.__pad.rest());
+		await frames(6);
+
+		// The mouse, the same way. #283 never touched it and it had the same
+		// property for the same reason.
+		const mouseHeld = await page.evaluate(async () => {
+			const g = window.__seelite;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			g.mouseDx = 400;
+			g.mouseDy = 0;
+			await window.__frames(3);
+			return g.rates.yaw;
+		});
+
+		await tap(B.b); // back to the forward view
+		const mouseFlying = await page.evaluate(async () => {
+			const g = window.__seelite;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			g.mouseDx = 400;
+			g.mouseDy = 0;
+			await window.__frames(3);
+			return g.rates.yaw;
+		});
+		await page.evaluate(() => {
+			window.__seelite.rates = { pitch: 0, yaw: 0, roll: 0 };
+		});
+		await frames(3);
+		await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
+		await frames(10);
+		const flying = await page.evaluate(() => window.__seelite.rates.yaw);
+		await page.evaluate(() => window.__pad.rest());
+		await frames(6);
+		await tap(B.left); // and back into the console for the checks below
+
+		check(
+			"a console suspends the stick, and the forward view gives it back",
+			Math.abs(held) < 1e-9 && Math.abs(flying) > 1e-6,
+			`yaw ${held} with the console open, ${flying.toFixed(5)} rad/s without it`,
+		);
+		check(
+			"…and it suspends the mouse too, which #283 never touched",
+			// **Both arms.** Asserting only that the pointer does nothing with a
+			// console open passes just as well against a mouse path that is
+			// broken outright — the same shape of hole as the stick check beside
+			// it, which has had its positive arm from the start. Sage found the
+			// asymmetry.
+			Math.abs(mouseHeld) < 1e-9 && Math.abs(mouseFlying) > 1e-9,
+			`yaw ${mouseHeld} with the console open, ${mouseFlying.toFixed(5)} rad/s without it, after a 400 px delta`,
+		);
+	}
+
+	{
+		// Which surface has the pad, and how to work it — the two findings that
+		// were "I can't tell which panel has the pad" and "I can't tell which
+		// buttons walk it".
+		const marked = await page.evaluate(() => {
+			const scope = document.querySelector("[data-live-pad-scope='true']");
+			const hint = document.querySelector("[data-live-pad-hint]");
+			return {
+				scope: scope?.getAttribute("data-live-panel") ?? null,
+				hintIn: hint?.parentElement?.getAttribute("data-live-panel") ?? null,
+				hint: hint?.textContent ?? null,
+			};
+		});
+		// The rail's GALAXY MAP button is not a tab and must stay in the walk —
+		// dropping `data-live-left-tab` wholesale took a control out of the pad's
+		// reach entirely, seen by neither the PR body nor the tab check. Sage.
+		const railReached = await page.evaluate(() => {
+			const rail = document.querySelector(
+				'[data-live-panel][data-active="true"] [data-live-left-tab]:not(.lc-tab)',
+			);
+			return rail ? rail.textContent?.trim() : null;
+		});
+		let landedOnRail = false;
+		for (let i = 0; i < WALK_CAP && railReached; i++) {
+			const on = await focused();
+			if (on?.text?.toUpperCase() === railReached.toUpperCase()) {
+				landedOnRail = true;
+				break;
+			}
+			await tap(B.down);
+		}
+		{
+			// **The ring layers over the selected fill rather than replacing it.**
+			// Written as a `background` the wash needed `!important` to win, and
+			// winning was the defect: on a row that is both selected and ringed
+			// it removed `aria-current`'s amber, which is the one row the "two
+			// highlights, two questions" argument is about. Sage found it.
+			//
+			// **And this check was written unable to fail on that.** The first
+			// version asserted only that a shadow existed and the background was
+			// not transparent — which the `!important` version satisfies, since
+			// it keeps the outer glow and paints its own background. It reads the
+			// selected row's colour from the stylesheet's own rule now and
+			// requires the ringed row to still be wearing it. It also restored
+			// nothing, leaving `data-live-focus` on a live row that every later
+			// check finds first with a global query.
+			const layered = await page.evaluate(() => {
+				const row = document.querySelector("[data-live-nav-target]");
+				if (!row) return null;
+				const hadCurrent = row.getAttribute("aria-current");
+				const hadFocus = row.dataset.liveFocus;
+				row.setAttribute("aria-current", "true");
+				const selectedOnly = getComputedStyle(row).backgroundColor;
+				row.dataset.liveFocus = "true";
+				const style = getComputedStyle(row);
+				const both = {
+					background: style.backgroundColor,
+					shadow: style.boxShadow,
+				};
+				// Put the row back exactly as it was found.
+				if (hadCurrent === null) row.removeAttribute("aria-current");
+				else row.setAttribute("aria-current", hadCurrent);
+				if (hadFocus === undefined) delete row.dataset.liveFocus;
+				else row.dataset.liveFocus = hadFocus;
+				return { selectedOnly, ...both };
+			});
+			check(
+				"the ring layers over the selected fill instead of replacing it",
+				layered !== null &&
+					// The fill the selected row wears is unchanged by the ring…
+					layered.background === layered.selectedOnly &&
+					// …and the ring is drawn as a shadow over it, inset and outer.
+					layered.shadow.includes("inset"),
+				layered === null
+					? "no navigation row to test"
+					: `selected ${layered.selectedOnly}, selected+ringed ${layered.background}; shadow ${layered.shadow.includes("inset") ? "layered" : "not inset"}`,
+			);
+		}
+
+		check(
+			"the rail's own button is still walkable — it is not a tab",
+			railReached !== null && landedOnRail,
+			railReached === null
+				? "no rail button on this panel"
+				: `walked to ${railReached}: ${landedOnRail}`,
+		);
+
+		{
+			// **The same panel, changing what it has.** The block below turns to a
+			// *different* console, so the scope element changes and the hint is
+			// rebuilt for that reason alone — it passed with the text left out of
+			// the identity entirely. This walks the left console's own tabs
+			// instead: same `aside`, and Communications draws nothing focusable
+			// where Navigation draws chips and rows.
+			//
+			// **What this does NOT cover, stated rather than implied.** Sage's
+			// round-5 finding was that the hint goes stale while the *scope
+			// element* is unchanged, and keying the early return on the text as
+			// well as the element is the fix. This check cannot exercise that,
+			// and neither could two earlier attempts: a tab switch replaces the
+			// panel's markup, so the element changes and the guard never bites;
+			// and filtering the Navigation list to no matches leaves the kind
+			// chips, which are focusable, so the walk never reaches zero. No way
+			// to hold one element while its walk crosses zero was found. The fix
+			// is kept as cheap insurance and is **unverified by this tier** —
+			// what is checked here is the weaker, real property that the hint
+			// follows a surface's contents rather than its name.
+			const perTab = [];
+			for (let i = 0; i < 4; i++) {
+				const seen = await page.evaluate(() => ({
+					tab: document.querySelector("[data-live-cockpit]").dataset
+						.liveLeftView,
+					hint:
+						document.querySelector("[data-live-pad-hint]")?.textContent ?? null,
+					walkable: document.querySelectorAll(
+						'[data-live-panel="left"] [data-live-nav-target],' +
+							'[data-live-panel="left"] [data-live-nav-kind],' +
+							'[data-live-panel="left"] [data-live-left-tab]:not(.lc-tab)',
+					).length,
+				}));
+				perTab.push(seen);
+				await tap(B.r1);
+			}
+			const empty = perTab.filter((t) => t.walkable === 0);
+			const full = perTab.filter((t) => t.walkable > 0);
+			check(
+				"the hint names what a surface has, not what surface it is",
+				empty.length > 0 &&
+					full.length > 0 &&
+					empty.every((t) => !(t.hint ?? "").includes("WALK")) &&
+					full.every((t) => (t.hint ?? "").includes("WALK")),
+				perTab
+					.map(
+						(t) =>
+							`${t.tab}:${t.walkable}:${(t.hint ?? "").includes("WALK") ? "walk" : "no-walk"}`,
+					)
+					.join(" "),
+			);
+		}
+
+		{
+			// **A panel with nothing to walk still says it has the pad.** The
+			// marker was gated on the walk being non-empty, and this branch had
+			// just created the empty-walk surfaces by taking the tab rows out of
+			// the cursor — so turning to starboard undocked suspended the sticks
+			// and the mouse with nothing on screen saying why. Sage found it.
+			await tap(B.right);
+			const starboard = await page.evaluate(() => {
+				const scope = document.querySelector('[data-live-pad-scope="true"]');
+				const hint = document.querySelector("[data-live-pad-hint]");
+				const walkable = document.querySelectorAll(
+					'[data-live-panel][data-active="true"] [data-live-nav-target],' +
+						'[data-live-panel][data-active="true"] [data-live-station-action],' +
+						'[data-live-panel][data-active="true"] [data-live-nav-kind]',
+				).length;
+				return {
+					marked: scope?.getAttribute("data-live-panel") ?? null,
+					hint: hint?.textContent ?? null,
+					walkable,
+				};
+			});
+			await tap(B.left);
+			check(
+				"a panel with nothing to walk still says it holds the pad, and drops only the WALK",
+				starboard.marked === "right" &&
+					(starboard.walkable > 0 || !(starboard.hint ?? "").includes("WALK")),
+				`marked ${starboard.marked}, ${starboard.walkable} walkable, hint: ${starboard.hint ?? "none"}`,
+			);
+		}
+
+		{
+			// **The settings screen holds the whole pad, so no console may claim
+			// it.** The console stays visible through settings' own scrim, and
+			// the marker was gated on the panel being *drawn* rather than on it
+			// holding anything — so it went on saying "the d-pad walks me" while
+			// `modal` had the lot. Sage called this half of the blocker, with
+			// this exact repro; neither context had a probe.
+			await page.keyboard.press("z");
+			await frames(3);
+			const underModal = await page.evaluate(() => ({
+				settings: Boolean(document.querySelector("[data-settings-panel]")),
+				marked: document.querySelector('[data-live-pad-scope="true"]') !== null,
+				hint: document.querySelector("[data-live-pad-hint]") !== null,
+			}));
+			await page.keyboard.press("z");
+			await frames(3);
+			const afterClose = await page.evaluate(
+				() => document.querySelector('[data-live-pad-scope="true"]') !== null,
+			);
+			check(
+				"a console does not claim the pad while the settings screen holds it",
+				underModal.settings === true &&
+					underModal.marked === false &&
+					underModal.hint === false &&
+					afterClose === true,
+				`settings open ${underModal.settings}: marked ${underModal.marked}, hint ${underModal.hint}; marked again after closing ${afterClose}`,
+			);
+		}
+
+		check(
+			"the panel holding the pad says so, and carries the hint line",
+			marked.scope === "left" &&
+				marked.hintIn === "left" &&
+				(marked.hint ?? "").includes("WALK"),
+			`scope ${marked.scope}, hint in ${marked.hintIn}: ${marked.hint ?? "none"}`,
+		);
+	}
+
+	{
+		// **Walk it, and read what the ring lands on.** The first version of this
+		// check counted DOM matches for two selectors of its own and asserted
+		// both were non-zero while its message said "none of them in the walk" —
+		// it never moved the cursor, restated `OWN_FOCUSABLE` in the probe, and
+		// passed identically against the build where tabs *were* walked. Sage
+		// found it; it was not one of the checks this branch built red-first, and
+		// it was the only one covering the finding it was written for.
+		const landings = [];
+		for (let i = 0; i < WALK_CAP; i++) {
+			await tap(B.down);
+			const on = await page.evaluate(() => {
+				const el = document.querySelector("[data-live-focus]");
+				return el ? { tab: el.matches(".lc-tab") } : null;
+			});
+			if (on) landings.push(on);
+			// Break on the first tab, as every other walk in this file does: the
+			// property has failed by then, and forty round trips to re-confirm it
+			// is forty frame waits nobody reads.
+			if (on?.tab) break;
+		}
+		check(
+			"the cursor never lands on a tab — they have the shoulders instead",
+			landings.length > 0 && landings.every((on) => !on.tab),
+			`${landings.length} landings over ${WALK_CAP} presses, ${landings.filter((on) => on.tab).length} of them on a tab`,
+		);
+	}
+
 	// --- 2. the left console: its tabs ------------------------------------
 
 	{
@@ -251,8 +545,22 @@ try {
 		// Back to the port console and onto the chart's tab. Through the same
 		// callback a click uses: walk the ring to the tab and press Cross.
 		await tap(B.left);
-		const tab = await walkTo((at) => at.text.toUpperCase() === "GALAXY MAP");
-		if (tab) await tap(B.a);
+		// **R1, not a walk to the tab row.** The cursor no longer walks tabs —
+		// they have the shoulders, and passing through them to reach a list was
+		// the principal's "the cursor order is surprising". So the way onto the
+		// chart is the control a player would use.
+		let tab = null;
+		for (let i = 0; i < 4; i++) {
+			await tap(B.r1);
+			const now = await page.evaluate(
+				() =>
+					document.querySelector("[data-live-cockpit]").dataset.liveLeftView,
+			);
+			if (now === "Galaxy Map") {
+				tab = now;
+				break;
+			}
+		}
 		// The chart is a dynamic import. Without this the focus list has no
 		// foreign rows on it and every check below would pass vacuously.
 		const mounted = await page
@@ -262,7 +570,7 @@ try {
 			.then(() => true)
 			.catch(() => false);
 		check(
-			"Cross on the GALAXY MAP row mounts the chart",
+			"R1 onto the Galaxy Map tab mounts the chart",
 			tab !== null && mounted,
 			mounted ? "chart handle present" : "no chart after 30s",
 		);
@@ -407,6 +715,44 @@ try {
 				: `overflows ${scrollBefore.overflows}; scrollTop ${scrollBefore.top} → ${scrollAfter.top}`,
 		);
 
+		{
+			// **A docked mouse must not bank its delta.** The flight tail is what
+			// consumes it, and the docked path returns above that — so a pointer
+			// moved at the station console accumulated for the session and landed
+			// as a full kick on the first frame after launch. Sage found it, and
+			// the comment claiming the delta was consumed was the giveaway.
+			const banked = await page.evaluate(async () => {
+				const g = window.__seelite;
+				g.mouseDx = 900;
+				g.mouseDy = 900;
+				await window.__frames(3);
+				return { dx: g.mouseDx, dy: g.mouseDy };
+			});
+			check(
+				"a pointer moved while docked is consumed, not banked for the launch",
+				banked.dx === 0 && banked.dy === 0,
+				`mouseDx ${banked.dx}, mouseDy ${banked.dy} after three docked frames`,
+			);
+		}
+
+		{
+			// The station console is reached docked with the head forward, so it
+			// has no back — `back` would turn a forward head forward. Promising
+			// "B BACK" there names a button that does nothing. Sage found it.
+			const hint = await page.evaluate(() => {
+				const el = document.querySelector("[data-live-pad-hint]");
+				const inStation = el?.closest("[data-live-station-console]") !== null;
+				return { text: el?.textContent ?? null, inStation };
+			});
+			check(
+				"the station console's hint does not promise a back it has not got",
+				hint.inStation === true &&
+					(hint.text ?? "").includes("WALK") &&
+					!(hint.text ?? "").includes("BACK"),
+				`in station ${hint.inStation}: ${hint.text ?? "none"}`,
+			);
+		}
+
 		const before = await page.evaluate(() => window.__seelite.creditsCr);
 		const row = await walkTo((at) => at.stationAction === "buy-commodity");
 		if (row) await tap(B.a);
@@ -470,20 +816,29 @@ try {
 		// check requires the credits to have actually moved.
 		await page.setViewportSize({ width: 700, height: 480 });
 		await frames(2);
+		// **Keep going until one actually buys.** A BUY row below the fold is not
+		// enough: the commander has 100 Cr, and with the cursor walking content
+		// only it landed on Computers, whose price the wallet refused —
+		// `credits 100 -> 100`, a check reporting a failure of the pad that was a
+		// failure of the purse. Press, read, and walk on if nothing moved.
 		let below = null;
+		let creditsBefore = 0;
+		let creditsAfter = 0;
 		for (let i = 0; i < WALK_CAP; i++) {
 			const at = await focused();
 			const box = await marketScroll();
 			if (at?.stationAction === "buy-commodity" && box && box.top > 0) {
-				below = { at, box };
-				break;
+				creditsBefore = await page.evaluate(() => window.__seelite.creditsCr);
+				await tap(B.a);
+				await frames(2);
+				creditsAfter = await page.evaluate(() => window.__seelite.creditsCr);
+				if (creditsAfter !== creditsBefore) {
+					below = { at, box };
+					break;
+				}
 			}
 			await tap(B.down);
 		}
-		const creditsBefore = await page.evaluate(() => window.__seelite.creditsCr);
-		if (below) await tap(B.a);
-		await frames(2);
-		const creditsAfter = await page.evaluate(() => window.__seelite.creditsCr);
 		const afterBuy = await marketScroll();
 		const ringVisible = await page.evaluate(() => {
 			const box = document.querySelector(".lc-station-market");
