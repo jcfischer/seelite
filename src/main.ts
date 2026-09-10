@@ -4699,6 +4699,12 @@ class Game {
 	 * frame. Three `querySelector` calls a frame on the flight path is the sort
 	 * of thing that only shows up in a profile, and the answer cannot change
 	 * between them — nothing inside one step mounts a panel.
+	 *
+	 * A probe that cancels the frame loop and steps the world by hand never
+	 * polls, so this stays at whatever it last said — `"flight"` if nothing ever
+	 * polled. That is harmless rather than merely unlikely: with no poll there
+	 * is no `padFrame` either, so every pad term downstream is already zero and
+	 * the context decides nothing.
 	 */
 	private padContextThisFrame: PadContext = "flight";
 

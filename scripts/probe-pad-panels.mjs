@@ -215,7 +215,14 @@ try {
 	}
 
 	{
-		const row = await walkTo((at) => at.navTarget !== null);
+		// **Past whatever is already selected.** Asserting that the target
+		// *changed* is right — a check that let it stay put would pass on a pad
+		// that did nothing — but the boot target is in this list, and landing the
+		// ring on it would fail for a reason that is not the pad.
+		const already = await page.evaluate(() => window.__seelite.targetId);
+		const row = await walkTo(
+			(at) => at.navTarget !== null && at.navTarget !== already,
+		);
 		const before = await page.evaluate(() => window.__seelite.targetId);
 		if (row) await tap(B.a);
 		const after = await page.evaluate(() => window.__seelite.targetId);
