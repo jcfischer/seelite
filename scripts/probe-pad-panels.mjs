@@ -272,6 +272,36 @@ try {
 			}
 			await tap(B.down);
 		}
+		{
+			// **The ring layers over the selected fill rather than replacing it.**
+			// Written as a `background` the wash needed `!important` to win, and
+			// winning was the defect: on a row that is both selected and ringed
+			// it removed `aria-current`'s amber, which is the one row the "two
+			// highlights, two questions" argument is about. Sage found it.
+			const layered = await page.evaluate(() => {
+				const rows = [...document.querySelectorAll("[data-live-nav-target]")];
+				const row = rows[0];
+				if (!row) return null;
+				row.setAttribute("aria-current", "true");
+				row.dataset.liveFocus = "true";
+				const style = getComputedStyle(row);
+				return {
+					background: style.backgroundColor,
+					shadow: style.boxShadow.length > 0 && style.boxShadow !== "none",
+				};
+			});
+			check(
+				"the ring layers over the selected fill instead of replacing it",
+				layered !== null &&
+					layered.shadow === true &&
+					layered.background.replace(/\s/g, "") !==
+						"rgba(0,0,0,0)".replace(/\s/g, ""),
+				layered === null
+					? "no navigation row to test"
+					: `background ${layered.background}, ring shadow ${layered.shadow}`,
+			);
+		}
+
 		check(
 			"the rail's own button is still walkable — it is not a tab",
 			railReached !== null && landedOnRail,
@@ -302,9 +332,13 @@ try {
 			await tap(B.down);
 			const on = await page.evaluate(() => {
 				const el = document.querySelector("[data-live-focus]");
-				return el ? { tab: el.matches(".lc-tab"), id: el.className } : null;
+				return el ? { tab: el.matches(".lc-tab") } : null;
 			});
 			if (on) landings.push(on);
+			// Break on the first tab, as every other walk in this file does: the
+			// property has failed by then, and forty round trips to re-confirm it
+			// is forty frame waits nobody reads.
+			if (on?.tab) break;
 		}
 		check(
 			"the cursor never lands on a tab — they have the shoulders instead",
@@ -551,6 +585,24 @@ try {
 				"a pointer moved while docked is consumed, not banked for the launch",
 				banked.dx === 0 && banked.dy === 0,
 				`mouseDx ${banked.dx}, mouseDy ${banked.dy} after three docked frames`,
+			);
+		}
+
+		{
+			// The station console is reached docked with the head forward, so it
+			// has no back — `back` would turn a forward head forward. Promising
+			// "B BACK" there names a button that does nothing. Sage found it.
+			const hint = await page.evaluate(() => {
+				const el = document.querySelector("[data-live-pad-hint]");
+				const inStation = el?.closest("[data-live-station-console]") !== null;
+				return { text: el?.textContent ?? null, inStation };
+			});
+			check(
+				"the station console's hint does not promise a back it has not got",
+				hint.inStation === true &&
+					(hint.text ?? "").includes("WALK") &&
+					!(hint.text ?? "").includes("BACK"),
+				`in station ${hint.inStation}: ${hint.text ?? "none"}`,
 			);
 		}
 

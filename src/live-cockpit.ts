@@ -17,7 +17,7 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
-import { PAD_CONSOLE_HINT } from "./pad-bindings";
+import { PAD_CONSOLE_HINT, PAD_STATION_HINT } from "./pad-bindings";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -198,8 +198,13 @@ const STYLE = `
    which row is selected, and which row the pad would act on next. #283. */
 [data-live-focus="true"] {
   outline: 2px solid #9fe8ff; outline-offset: 2px; border-radius: 3px;
-  background: rgba(96, 200, 255, .22) !important;
-  box-shadow: 0 0 12px rgba(120, 210, 255, .55);
+  /* The wash is an inset shadow, not a background. Written as a background it
+     needed !important to win, and winning is exactly wrong: it replaced
+     aria-current's amber fill on a row that is both selected and ringed —
+     the one row this comment's "two highlights, two questions" is about. A
+     shadow layers over the fill instead of fighting it for one property. */
+  box-shadow: 0 0 12px rgba(120, 210, 255, .55),
+    inset 0 0 0 100vmax rgba(96, 200, 255, .22);
 }
 /* Which surface the pad is on. Same cool family as the ring, on the panel's own
    border, so "the d-pad is walking this one" is answerable without pressing
@@ -534,7 +539,11 @@ export class LiveCockpit {
 	 * The hint is drawn **only while a pad is present**, because a line telling
 	 * a keyboard player about Cross is noise on every frame they ever see.
 	 */
-	private markPadScope(present: boolean) {
+	private markPadScope(
+		present: boolean,
+		scope: HTMLElement | null,
+		elements: readonly HTMLElement[],
+	) {
 		// **Remembered, not queried — the rule the ring already follows.** The
 		// first version swept the cockpit twice with `querySelectorAll`, for two
 		// attributes this class is the only writer of, on every rendered frame
@@ -549,12 +558,11 @@ export class LiveCockpit {
 		// a comment claiming the opposite, and a second one beside the scan
 		// `focusedElement` already does. Sage found that too; the eager argument
 		// was the same mistake as the sweep it replaced.
-		const elements = present ? this.focusElements() : [];
 		// Gated on there being something to walk, not on a panel existing: the
 		// right console undocked and the Communications tab both draw zero
 		// focusable rows, and "UP/DOWN WALK" over an empty walk is an
 		// instruction to do nothing.
-		const wanted = elements.length > 0 ? this.focusScope() : null;
+		const wanted = present && elements.length > 0 ? scope : null;
 		if (wanted === this.padScope) return;
 		if (this.padScope) delete this.padScope.dataset.livePadScope;
 		this.padHint?.remove();
@@ -565,7 +573,10 @@ export class LiveCockpit {
 		const hint = document.createElement("p");
 		hint.className = "lc-pad-hint";
 		hint.dataset.livePadHint = "";
-		hint.textContent = PAD_CONSOLE_HINT;
+		// The station console has no back, so it does not promise one.
+		hint.textContent = wanted.matches("[data-live-station-console]")
+			? PAD_STATION_HINT
+			: PAD_CONSOLE_HINT;
 		wanted.append(hint);
 		this.padHint = hint;
 	}
@@ -580,13 +591,17 @@ export class LiveCockpit {
 	setPadPresent(present: boolean) {
 		if (this.padPresent === present) return;
 		this.padPresent = present;
-		this.markPadScope(present);
+		const elements = this.focusElements();
+		this.markPadScope(
+			present,
+			elements.length > 0 ? this.focusScope() : null,
+			elements,
+		);
 	}
 
 	private applyFocusRing(scroll = false) {
 		const reveal = scroll || this.revealOnNextRing;
 		this.revealOnNextRing = false;
-		this.markPadScope(this.padPresent);
 		// **Remembered, not queried.** This runs on every rendered frame, pad or
 		// no pad, and a `querySelectorAll` over the cockpit for an attribute this
 		// class is the only writer of is a scan for something it already knows.
@@ -595,7 +610,15 @@ export class LiveCockpit {
 		// declined, because no instrument here says it costs anything.
 		if (this.ringed) delete this.ringed.dataset.liveFocus;
 		this.ringed = null;
-		const element = this.focusedElement();
+		// **One scan for the frame**, handed to both. `focusElements` is a
+		// `focusScope` query plus a six-selector `querySelectorAll`, and running
+		// it here *and* inside `markPadScope` took a pad player's frame from two
+		// DOM queries to five — under a comment claiming only a pad paid for it,
+		// which was true and beside the point. Sage found it, round 3.
+		const elements = this.focusElements();
+		const scope = elements.length > 0 ? this.focusScope() : null;
+		this.markPadScope(this.padPresent, scope, elements);
+		const element = this.focusedElement(elements);
 		if (!element) return;
 		element.dataset.liveFocus = "true";
 		this.ringed = element;
@@ -646,8 +669,8 @@ export class LiveCockpit {
 	 * `activateFocus` returns `false` the focused row belongs to the chart, and
 	 * the game routes it to the chart's own handle.
 	 */
-	focusedElement(): HTMLElement | null {
-		const elements = this.focusElements();
+	focusedElement(scanned?: readonly HTMLElement[]): HTMLElement | null {
+		const elements = scanned ?? this.focusElements();
 		if (elements.length === 0) return null;
 		const items = this.focusIds(elements).map((id) => ({ id }));
 		// **Write the resolved position back.** The cursor's contract is "the id

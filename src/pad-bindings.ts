@@ -28,7 +28,9 @@
  * `console` is a head turned to a side console, or the station console on the
  * forward wall while docked. It claims **six discrete controls** — the d-pad's
  * two vertical positions, the two face buttons and the two shoulders — and it
- * **suspends the sticks and the triggers**.
+ * **suspends the sticks, the triggers and the mouse**. The mouse belongs in
+ * that sentence: this header is the declared owner of the reversal, and it was
+ * the incomplete copy while `docs/gamepad.md` had it right.
  *
  * That suspension is a reversal, and the reasoning it replaced is worth keeping
  * because it was wrong in an instructive way. The console's footer says
@@ -132,6 +134,17 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
  */
 export const PAD_CONSOLE_HINT =
 	"CONTROLLER · UP/DOWN WALK · A SELECT · B BACK · L1/R1 TAB";
+
+/**
+ * The same line for the station console, which has no back.
+ *
+ * That surface is reached **docked with the head forward**, so `back` turns the
+ * head to forward when it already is — and `b` is claimed by the console branch,
+ * so it does not request clearance either. Promising BACK there names a button
+ * that does nothing. Sage found it.
+ */
+export const PAD_STATION_HINT =
+	"CONTROLLER · UP/DOWN WALK · A SELECT · L1/R1 TAB";
 
 /**
  * What the pad asked for this frame, in the game's own words.
