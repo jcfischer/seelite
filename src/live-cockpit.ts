@@ -189,10 +189,22 @@ const STYLE = `
 .lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
 .lc-nav-row:hover { background: rgba(223, 122, 20, .14); }
 .lc-nav-row[aria-current="true"] { background: rgba(223, 122, 20, .3); color: #fff0c9; }
-/* The pad's cursor. A ring rather than a fill, because aria-current already
-   owns the fill on a nav row and the two answer different questions: which row
-   is selected, and which row the pad would act on next. #283. */
-[data-live-focus="true"] { outline: 2px solid #ffe0a2; outline-offset: 1px; border-radius: 2px; }
+/* The pad's cursor. A ring *and* a wash rather than a ring alone: a 2px amber
+   outline on an amber console was the principal's first finding on the flown
+   leg — it does not read, least of all on a nav row that already carries
+   aria-current's fill. The wash is cool where every other highlight here is
+   warm, so the two answer their different questions in different colours:
+   which row is selected, and which row the pad would act on next. #283. */
+[data-live-focus="true"] {
+  outline: 2px solid #9fe8ff; outline-offset: 2px; border-radius: 3px;
+  background: rgba(96, 200, 255, .22) !important;
+  box-shadow: 0 0 12px rgba(120, 210, 255, .55);
+}
+/* Which surface the pad is on. Same cool family as the ring, on the panel's own
+   border, so "the d-pad is walking this one" is answerable without pressing
+   anything. */
+[data-live-pad-scope="true"] { border-color: #9fe8ff !important; box-shadow: inset 0 0 68px rgba(231, 123, 31, .17), 0 0 22px rgba(120, 210, 255, .4); }
+.lc-pad-hint { margin-top: 8px; color: #9fe8ff; font-size: 10px; letter-spacing: .05em; opacity: .85; }
 .lc-nav-row i { color: #cb8c51; font-style: normal; }
 .lc-nav-row em { color: #f5bd78; font-style: normal; }
 .lc-nav-empty { padding: 10px 6px; color: #cb8c51; font-size: 11px; }
@@ -357,12 +369,22 @@ export class LiveCockpit {
 	 * an on-screen keyboard was refused (#283's F7) because #70 already refused
 	 * a second UI grammar.
 	 */
+	/**
+	 * What the cursor walks — **content, not chrome**.
+	 *
+	 * The tabs are deliberately absent, and that is the principal's finding on
+	 * the first flown leg: walking every focusable element in draw order meant
+	 * reaching a list by passing through the tab row first, which reads as the
+	 * cursor going somewhere nobody asked for. Tabs have their own control — the
+	 * two shoulders — so they need no place in the walk, and `stepTab` finds
+	 * them by class rather than through this list.
+	 *
+	 * `[data-live-launch]` stays: it is an action on the right console, not a
+	 * way of getting to one.
+	 */
 	private static readonly OWN_FOCUSABLE = [
 		"[data-live-station-action]",
-		"[data-live-station-tab]",
 		"[data-live-launch]",
-		"[data-live-right-tab]",
-		"[data-live-left-tab]",
 		"[data-live-nav-kind]",
 		"[data-live-nav-target]",
 	].join(",");
@@ -491,9 +513,51 @@ export class LiveCockpit {
 	/** The element the ring was last written on, so clearing it is not a query. */
 	private ringed: HTMLElement | null = null;
 
+	/**
+	 * Say which surface the pad is on, and how to work it.
+	 *
+	 * Both were the principal's findings on the first flown leg: nothing on
+	 * screen said which panel the d-pad was walking — least of all docked with
+	 * the head forward, where the station console is the surface and no head
+	 * turn announced it — and nothing said what the buttons did. The settings
+	 * screen has had a hint line since long before the pad; the consoles had
+	 * none.
+	 *
+	 * The hint is drawn **only while a pad is present**, because a line telling
+	 * a keyboard player about Cross is noise on every frame they ever see.
+	 */
+	private markPadScope(present: boolean) {
+		const scope = this.focusScope();
+		for (const stale of this.root.querySelectorAll<HTMLElement>(
+			"[data-live-pad-scope]",
+		))
+			if (stale !== scope) delete stale.dataset.livePadScope;
+		for (const stale of this.root.querySelectorAll(".lc-pad-hint"))
+			if (!present || stale.parentElement !== scope) stale.remove();
+		if (!scope || !present) return;
+		scope.dataset.livePadScope = "true";
+		if (!scope.querySelector(".lc-pad-hint")) {
+			const hint = document.createElement("p");
+			hint.className = "lc-pad-hint";
+			hint.dataset.livePadHint = "";
+			hint.textContent = "PAD · ↑↓ WALK · ✕ SELECT · ○ BACK · L1/R1 TAB";
+			scope.append(hint);
+		}
+	}
+
+	/** Whether a pad is attached, so the hint is drawn for a player who has one. */
+	private padPresent = false;
+
+	setPadPresent(present: boolean) {
+		if (this.padPresent === present) return;
+		this.padPresent = present;
+		this.markPadScope(present);
+	}
+
 	private applyFocusRing(scroll = false) {
 		const reveal = scroll || this.revealOnNextRing;
 		this.revealOnNextRing = false;
+		this.markPadScope(this.padPresent);
 		// **Remembered, not queried.** This runs on every rendered frame, pad or
 		// no pad, and a `querySelectorAll` over the cockpit for an attribute this
 		// class is the only writer of is a scan for something it already knows.

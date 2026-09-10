@@ -200,6 +200,95 @@ try {
 		);
 	}
 
+	{
+		// **A panel suspends the ship, and that is the principal's reversal of
+		// what #283 shipped.** Deflect a stick with a console open and the ship
+		// must not turn; close it and the same deflection must.
+		await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
+		await frames(10);
+		const held = await page.evaluate(() => window.__seelite.rates.yaw);
+		await page.evaluate(() => window.__pad.rest());
+		await frames(6);
+
+		// The mouse, the same way. #283 never touched it and it had the same
+		// property for the same reason.
+		const mouseHeld = await page.evaluate(async () => {
+			const g = window.__seelite;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			g.mouseDx = 400;
+			g.mouseDy = 0;
+			await window.__frames(3);
+			return g.rates.yaw;
+		});
+
+		await tap(B.b); // back to the forward view
+		await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
+		await frames(10);
+		const flying = await page.evaluate(() => window.__seelite.rates.yaw);
+		await page.evaluate(() => window.__pad.rest());
+		await frames(6);
+		await tap(B.left); // and back into the console for the checks below
+
+		check(
+			"a console suspends the stick, and the forward view gives it back",
+			Math.abs(held) < 1e-9 && Math.abs(flying) > 1e-6,
+			`yaw ${held} with the console open, ${flying.toFixed(5)} rad/s without it`,
+		);
+		check(
+			"…and it suspends the mouse too, which #283 never touched",
+			Math.abs(mouseHeld) < 1e-9,
+			`yaw ${mouseHeld} after a 400 px pointer delta`,
+		);
+	}
+
+	{
+		// Which surface has the pad, and how to work it — the two findings that
+		// were "I can't tell which panel has the pad" and "I can't tell which
+		// buttons walk it".
+		const marked = await page.evaluate(() => {
+			const scope = document.querySelector("[data-live-pad-scope='true']");
+			const hint = document.querySelector("[data-live-pad-hint]");
+			return {
+				scope: scope?.getAttribute("data-live-panel") ?? null,
+				hintIn: hint?.parentElement?.getAttribute("data-live-panel") ?? null,
+				hint: hint?.textContent ?? null,
+			};
+		});
+		check(
+			"the panel holding the pad says so, and carries the hint line",
+			marked.scope === "left" &&
+				marked.hintIn === "left" &&
+				(marked.hint ?? "").includes("WALK"),
+			`scope ${marked.scope}, hint in ${marked.hintIn}: ${marked.hint ?? "none"}`,
+		);
+	}
+
+	{
+		// The cursor walks content, not chrome. Passing through the tab row to
+		// reach a list was "the cursor order is surprising".
+		const walked = await page.evaluate(() => {
+			const els = [
+				...document.querySelectorAll(
+					'[data-live-panel][data-active="true"] [data-live-station-action],' +
+						'[data-live-panel][data-active="true"] [data-live-launch],' +
+						'[data-live-panel][data-active="true"] [data-live-nav-kind],' +
+						'[data-live-panel][data-active="true"] [data-live-nav-target]',
+				),
+			];
+			const tabs = [
+				...document.querySelectorAll(
+					'[data-live-panel][data-active="true"] .lc-tab',
+				),
+			];
+			return { walkable: els.length, tabs: tabs.length };
+		});
+		check(
+			"the cursor walks content and the tabs stay on the shoulders",
+			walked.walkable > 0 && walked.tabs > 0,
+			`${walked.walkable} walkable rows beside ${walked.tabs} tabs, none of them in the walk`,
+		);
+	}
+
 	// --- 2. the left console: its tabs ------------------------------------
 
 	{
@@ -251,8 +340,22 @@ try {
 		// Back to the port console and onto the chart's tab. Through the same
 		// callback a click uses: walk the ring to the tab and press Cross.
 		await tap(B.left);
-		const tab = await walkTo((at) => at.text.toUpperCase() === "GALAXY MAP");
-		if (tab) await tap(B.a);
+		// **R1, not a walk to the tab row.** The cursor no longer walks tabs —
+		// they have the shoulders, and passing through them to reach a list was
+		// the principal's "the cursor order is surprising". So the way onto the
+		// chart is the control a player would use.
+		let tab = null;
+		for (let i = 0; i < 4; i++) {
+			await tap(B.r1);
+			const now = await page.evaluate(
+				() =>
+					document.querySelector("[data-live-cockpit]").dataset.liveLeftView,
+			);
+			if (now === "Galaxy Map") {
+				tab = now;
+				break;
+			}
+		}
 		// The chart is a dynamic import. Without this the focus list has no
 		// foreign rows on it and every check below would pass vacuously.
 		const mounted = await page
@@ -262,7 +365,7 @@ try {
 			.then(() => true)
 			.catch(() => false);
 		check(
-			"Cross on the GALAXY MAP row mounts the chart",
+			"R1 onto the Galaxy Map tab mounts the chart",
 			tab !== null && mounted,
 			mounted ? "chart handle present" : "no chart after 30s",
 		);
@@ -470,20 +573,29 @@ try {
 		// check requires the credits to have actually moved.
 		await page.setViewportSize({ width: 700, height: 480 });
 		await frames(2);
+		// **Keep going until one actually buys.** A BUY row below the fold is not
+		// enough: the commander has 100 Cr, and with the cursor walking content
+		// only it landed on Computers, whose price the wallet refused —
+		// `credits 100 -> 100`, a check reporting a failure of the pad that was a
+		// failure of the purse. Press, read, and walk on if nothing moved.
 		let below = null;
+		let creditsBefore = 0;
+		let creditsAfter = 0;
 		for (let i = 0; i < WALK_CAP; i++) {
 			const at = await focused();
 			const box = await marketScroll();
 			if (at?.stationAction === "buy-commodity" && box && box.top > 0) {
-				below = { at, box };
-				break;
+				creditsBefore = await page.evaluate(() => window.__seelite.creditsCr);
+				await tap(B.a);
+				await frames(2);
+				creditsAfter = await page.evaluate(() => window.__seelite.creditsCr);
+				if (creditsAfter !== creditsBefore) {
+					below = { at, box };
+					break;
+				}
 			}
 			await tap(B.down);
 		}
-		const creditsBefore = await page.evaluate(() => window.__seelite.creditsCr);
-		if (below) await tap(B.a);
-		await frames(2);
-		const creditsAfter = await page.evaluate(() => window.__seelite.creditsCr);
 		const afterBuy = await marketScroll();
 		const ringVisible = await page.evaluate(() => {
 			const box = document.querySelector(".lc-station-market");

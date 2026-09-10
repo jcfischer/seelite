@@ -23,13 +23,31 @@
  *
  * ## Three contexts, and the second one is the interesting one
  *
- * `flight` is the forward view. `console` is a head turned to the left or right
- * console — and the console's own footer says *"Simulation continues while this
- * console is open"*, which is true and load-bearing: suspending the sticks
- * every time the pilot glanced at the target list would stop the ship. So a
- * console claims **six controls** — the d-pad's two vertical positions, the two
- * face buttons and the two shoulders — and everything else falls through to the
- * flight table and keeps flying.
+ * `flight` is the forward view, and it is the only context that moves the ship.
+ *
+ * `console` is a head turned to a side console, or the station console on the
+ * forward wall while docked. It claims **six discrete controls** — the d-pad's
+ * two vertical positions, the two face buttons and the two shoulders — and it
+ * **suspends the sticks and the triggers**.
+ *
+ * That suspension is a reversal, and the reasoning it replaced is worth keeping
+ * because it was wrong in an instructive way. The console's footer says
+ * *"Simulation continues while this console is open"*, and #283 read it as *the
+ * ship must stay flyable*, so the sticks kept flying. It is a claim about the
+ * **world** — orbits, markets, NPCs, all of which do go on running — and not
+ * about the controls. Flown, the version that kept them was a ship flying off
+ * while its pilot read a list.
+ *
+ * The throttle is *held* rather than zeroed, so the ship coasts on the velocity
+ * it had. Driving it to zero was offered and declined: it changes your speed
+ * without being asked.
+ *
+ * `instrument` is the frame overlay behind `?perf`, and it is the one exception
+ * to that suspension rather than an inconsistency in it. It takes a console's
+ * six buttons and **leaves the sticks alone**, because it exists to measure a
+ * frame *while it is flown* — a mode that stopped the ship would be measuring a
+ * different frame from the one it is there for. The reversal above is about the
+ * panels a player reads; this is an instrument a developer watches.
  *
  * `modal` is the **settings screen and nothing else** — the one place the whole
  * pad is taken. `settings-panel.ts` already does exactly this for the keyboard,
@@ -55,7 +73,7 @@ import type { PadButtonName, PadFrame } from "./gamepad";
  * keeps seekolous's rule intact: no field records which device is in charge,
  * and the mouse can act on the same panel in the same frame.
  */
-export type PadContext = "flight" | "console" | "modal";
+export type PadContext = "flight" | "console" | "modal" | "instrument";
 
 /**
  * The flight table. DualSense labels in brackets; an Xbox pad reads `a`/`b`/
@@ -175,7 +193,7 @@ export function padIntents(
 		// round 5. A console's six claims are the six cases here; anything not
 		// claimed falls through to the flight table, which is the rule stated
 		// once.
-		if (context === "console") {
+		if (context === "console" || context === "instrument") {
 			if (name === "up") {
 				focusDelta -= 1;
 				continue;
@@ -282,7 +300,11 @@ export function padFlightAxes(
 	frame: PadFrame | null,
 	context: PadContext,
 ): PadFlightAxes {
-	if (!frame?.connected || context === "modal") return NO_AXES;
+	// **A panel stops the ship; the instrument does not** — see the header on
+	// why a console suspends these, on why the throttle is held rather than
+	// zeroed, and on why `instrument` is an exception rather than an oversight.
+	if (!frame?.connected || (context !== "flight" && context !== "instrument"))
+		return NO_AXES;
 	return {
 		yaw: negate(frame.axes.rightX),
 		pitch: negate(frame.axes.rightY),

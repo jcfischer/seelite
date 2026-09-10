@@ -4732,10 +4732,12 @@ class Game {
 	private readPadContext(): PadContext {
 		if (this.settingsPanel?.isOpen()) return "modal";
 		// The instrument takes what a side console takes — six controls — and
-		// not the sticks: it is an overlay on a running game, and a panel that
+		// **not the sticks**: it is an overlay on a running game, and a mode that
 		// stopped the ship would be measuring a different frame from the one it
-		// is there to measure.
-		if (this.perfPanel?.isFocused()) return "console";
+		// is there to measure. That is why it has its own context rather than
+		// sharing the console's, which since the principal's reversal suspends
+		// flight input.
+		if (this.perfPanel?.isFocused()) return "instrument";
 		// A console is whichever surface is actually drawn, which is not only a
 		// turned head: docked with the head forward, the station console is on
 		// the forward wall and is the only thing on it. `hasFocusScope` reads
@@ -4917,6 +4919,8 @@ class Game {
 	private pollPad() {
 		const frame = this.pad.poll();
 		this.padFrame = frame;
+		// The consoles draw their hint line only for a player who has a pad.
+		this.liveCockpit.setPadPresent(frame.connected);
 		// Read once, here, even with no pad attached: `step` and
 		// `hasControlInput` read the cached value, and a stale one would answer
 		// for a panel that has since closed.
@@ -5168,8 +5172,11 @@ class Game {
 			// the zone, so a resting stick cannot disengage an autopilot the
 			// player never touched (#283's F3).
 			padFlightAxes(this.padFrame, this.padContext()).throttleTrim !== 0 ||
-			this.mouseDx !== 0 ||
-			this.mouseDy !== 0
+			// **Only while flying.** A panel swallows the pointer delta below, so
+			// counting it here would let a mouse moved over an open console
+			// disengage the docking computer without touching the ship.
+			(this.padContext() === "flight" &&
+				(this.mouseDx !== 0 || this.mouseDy !== 0))
 		);
 	}
 
@@ -7168,14 +7175,19 @@ class Game {
 		// clamps the sum here: `stepAngular` clamps the command to [-1, 1]
 		// itself, and the keyboard's own 1.41x on a diagonal is left exactly as
 		// it was.
+		// **The chart's own zeroing is gone, because it is now subsumed.** It
+		// existed so a stick orbiting the cluster did not also fly the ship or
+		// cancel the docking computer; the Galaxy Map tab is a console, and since
+		// the principal's reversal a console returns no axes at all. Keeping the
+		// special case would have been a branch that can never be taken —
+		// exactly the dead half sage found in the console binding table.
+		// `stepChartOrbit` reads `frame.axes` raw, which is why the chart still
+		// turns.
 		const padAxes = padFlightAxes(this.padFrame, this.padContext());
-		// Zeroed, not merely unread: `hasControlInput` reads these two below, and
-		// a stick orbiting the chart must not also cancel the docking computer.
-		const stickToChart = this.chartHasStick();
-		const padYaw = stickToChart ? 0 : padAxes.yaw;
-		const padPitch = stickToChart ? 0 : padAxes.pitch;
-		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padYaw;
-		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padPitch;
+		const yaw =
+			this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padAxes.yaw;
+		const pitch =
+			this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padAxes.pitch;
 		const roll = this.axis(["e"], ["q"]) + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
@@ -7247,11 +7259,21 @@ class Game {
 		// principal's choice of "both, mouse on by default". A pointer delta is a
 		// *nudge* rather than a stick position, so it enters as an impulse on the
 		// rate and is then damped like everything else; the keys are the stick.
-		const impulse = {
-			pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
-			yaw: clampAbs(-this.mouseDx * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
-			roll: 0,
-		};
+		//
+		// **A panel suspends it, exactly as it suspends the sticks.** The pad's
+		// reversal is the mouse's too — the reason was never about the device,
+		// and a player reading a console with the pointer captured had the same
+		// ship flying off underneath them. The accumulated delta is **consumed**
+		// rather than held, so closing the panel does not deliver a turn built up
+		// while it was open.
+		const flying = this.padContext() === "flight";
+		const impulse = flying
+			? {
+					pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
+					yaw: clampAbs(-this.mouseDx * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
+					roll: 0,
+				}
+			: { pitch: 0, yaw: 0, roll: 0 };
 		this.mouseDx = 0;
 		this.mouseDy = 0;
 
