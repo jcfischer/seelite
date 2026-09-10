@@ -488,16 +488,24 @@ export class LiveCockpit {
 	 * not. Clearing by query rather than by remembering the last element, for
 	 * the same reason.
 	 */
+	/** The element the ring was last written on, so clearing it is not a query. */
+	private ringed: HTMLElement | null = null;
+
 	private applyFocusRing(scroll = false) {
 		const reveal = scroll || this.revealOnNextRing;
 		this.revealOnNextRing = false;
-		for (const stale of this.root.querySelectorAll<HTMLElement>(
-			"[data-live-focus]",
-		))
-			delete stale.dataset.liveFocus;
+		// **Remembered, not queried.** This runs on every rendered frame, pad or
+		// no pad, and a `querySelectorAll` over the cockpit for an attribute this
+		// class is the only writer of is a scan for something it already knows.
+		// Sage asked three rounds running; this is the half of it that needs no
+		// measurement to justify — the remaining `focusElements` scan is still
+		// declined, because no instrument here says it costs anything.
+		if (this.ringed) delete this.ringed.dataset.liveFocus;
+		this.ringed = null;
 		const element = this.focusedElement();
 		if (!element) return;
 		element.dataset.liveFocus = "true";
+		this.ringed = element;
 		// **A ring below the fold is worse than no ring.** The Navigation list,
 		// the market rows and the finder's results are all `overflow: auto`, so a
 		// cursor walked past the visible rows is drawn on a row nobody can see —

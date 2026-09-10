@@ -320,6 +320,52 @@ try {
 		);
 	}
 
+	// --- braking must not accelerate --------------------------------------
+
+	{
+		// **The trim is a control input, so it cancels a detour — and the branch
+		// that cancels one falls through to full cruise unless the player is
+		// working the throttle.** That exemption named only the keyboard, so a
+		// left-trigger pull went to 98.3% where `control` leaves 18.3%: braking
+		// accelerated. Sage found it, round 4.
+		const braked = await page.evaluate(async () => {
+			const g = window.__seelite;
+			g.setThrottle(0.2);
+			// A detour is what makes the branch reachable; the field is the one
+			// the cancel reads.
+			g.detour = { reason: "probe", legs: [] };
+			window.__pad.hold(6, 1); // l2 — throttle down
+			await window.__frames(3);
+			const throttle = g.throttleFraction;
+			window.__pad.rest();
+			await window.__frames(2);
+			return { throttle, detour: g.detour };
+		});
+		check(
+			"a left-trigger pull that cancels a detour brakes rather than accelerating",
+			braked.throttle < 0.2 && braked.detour === null,
+			`throttle ${braked.throttle.toFixed(3)} from 0.200, detour ${braked.detour === null ? "cancelled" : "still set"}`,
+		);
+	}
+
+	// --- the audio notice's promise ---------------------------------------
+
+	{
+		// The notice says "press any key or click once to enable sound". Only the
+		// pointer path called `ensure`, so a player who did what the line said
+		// got no context and no second notice — the once-only flag was spent.
+		// Sage found it, round 4. The probe never clicks, so a key is the only
+		// unlock it can exercise.
+		await page.keyboard.press("KeyP");
+		await frames(2);
+		const silent = await page.evaluate(() => window.__seelite.audio.silent);
+		check(
+			"a keystroke unlocks the sound, which is what the pad's notice promises",
+			silent === false,
+			`audio silent ${silent}`,
+		);
+	}
+
 	// --- where the poll lives ---------------------------------------------
 	//
 	// Last, and that is a precondition rather than a preference: the second arm

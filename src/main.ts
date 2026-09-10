@@ -2363,9 +2363,20 @@ class Game {
 		window.addEventListener("blur", () => {
 			this.mouseFiring = false;
 		});
-		window.addEventListener("pointerdown", () => this.audio.ensure(), {
-			once: true,
-		});
+		// **A key unlocks the sound as well as a click**, because #283's pad
+		// notice tells the player so: "press any key or click once to enable
+		// sound". Only the pointer path existed, so a player who did what the
+		// line said got no context and no second notice — the once-only flag was
+		// already spent. Sage found it, round 4. Both are *activation triggering
+		// input events* as the HTML specification lists them, which is exactly
+		// what a gamepad button is not.
+		const unlockAudio = () => {
+			this.audio.ensure();
+			window.removeEventListener("pointerdown", unlockAudio);
+			window.removeEventListener("keydown", unlockAudio);
+		};
+		window.addEventListener("pointerdown", unlockAudio);
+		window.addEventListener("keydown", unlockAudio);
 		// Pointer lock on click, Escape to release — the browser's own contract,
 		// and the only way to get relative mouse deltas that do not stop at the
 		// edge of the window. Keyboard steering stays live throughout, so a
@@ -4867,19 +4878,17 @@ class Game {
 		} else if (data.mapCourse !== undefined) {
 			chart.commitCourse();
 		} else if (data.mapClear !== undefined) {
-			// **Both halves, because the mouse does both.** The chart's own Clear
-			// listener drops the course *and* deselects, so a pad that only
-			// cleared the course left the selection, its route preview and its
-			// detail card on screen — one control doing two different things
-			// depending on which device pressed it. Sage found it, round 3.
-			chart.clearCourse();
-			chart.select(null);
+			// The chart's own Clear action, not a reconstruction of it. Round 3
+			// had this dropping the course alone while the mouse listener also
+			// deselected; round 4 made both call one named action rather than
+			// leaving two copies to be kept in step. Sage, both times.
+			chart.clearAll();
 		} else if (data.mapFinderEconomy !== undefined) {
 			chart.toggleFinderEconomy(Number(data.mapFinderEconomy));
 		} else if (data.mapFinderBudgetDown !== undefined) {
-			chart.setFinderBudget(chart.state.finder.filter.budgetJumps - 1);
+			chart.stepFinderBudget(-1);
 		} else if (data.mapFinderBudgetUp !== undefined) {
-			chart.setFinderBudget(chart.state.finder.filter.budgetJumps + 1);
+			chart.stepFinderBudget(1);
 		} else if (data.mapFinderCentre !== undefined) {
 			chart.centreOn(Number(data.mapFinderCentre));
 		} else if (data.mapFinderRow !== undefined) {
@@ -7190,7 +7199,18 @@ class Game {
 			// A throttle key is the player's chosen value for this same frame.
 			// Do not briefly promote throttle-down to full cruise before its normal
 			// input handling below can apply it.
-			if (!this.keys.has(THROTTLE_UP) && !this.keys.has(THROTTLE_DOWN))
+			//
+			// **The trigger is a throttle input too**, and leaving it out of this
+			// guard made braking *accelerate*: the trim counts as control input,
+			// so a left-trigger pull cancelled the detour and then fell through to
+			// full cruise — 98.3% throttle where the same act on `control` leaves
+			// 18.3%. Sage found it, round 4, and it is exactly the failure the
+			// keyboard half of this guard was written for.
+			if (
+				!this.keys.has(THROTTLE_UP) &&
+				!this.keys.has(THROTTLE_DOWN) &&
+				padAxes.throttleTrim === 0
+			)
 				this.throttle = 1;
 		}
 
