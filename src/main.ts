@@ -4867,7 +4867,13 @@ class Game {
 		} else if (data.mapCourse !== undefined) {
 			chart.commitCourse();
 		} else if (data.mapClear !== undefined) {
+			// **Both halves, because the mouse does both.** The chart's own Clear
+			// listener drops the course *and* deselects, so a pad that only
+			// cleared the course left the selection, its route preview and its
+			// detail card on screen — one control doing two different things
+			// depending on which device pressed it. Sage found it, round 3.
 			chart.clearCourse();
+			chart.select(null);
 		} else if (data.mapFinderEconomy !== undefined) {
 			chart.toggleFinderEconomy(Number(data.mapFinderEconomy));
 		} else if (data.mapFinderBudgetDown !== undefined) {

@@ -22,6 +22,7 @@ import {
 	NO_FOCUS,
 	focusedItem,
 	moveFocus,
+	refreshFocus,
 	setFocus,
 } from "./panel-focus";
 
@@ -547,13 +548,17 @@ export class LiveCockpit {
 	focusedElement(): HTMLElement | null {
 		const elements = this.focusElements();
 		if (elements.length === 0) return null;
-		const ids = this.focusIds(elements);
-		const item = focusedItem(
-			ids.map((id) => ({ id })),
-			this.focusCursor,
-		);
+		const items = this.focusIds(elements).map((id) => ({ id }));
+		// **Write the resolved position back.** The cursor's contract is "the id
+		// it means and the index it was last drawn at", and until #283's round 3
+		// only `moveFocus` ever wrote that index — so a row focused at the top of
+		// the Navigation list and later re-sorted down it still remembered the
+		// top, and the moment it left scanner range the fallback dropped the
+		// cursor there. Resolving here is where "last drawn at" becomes true.
+		this.focusCursor = refreshFocus(items, this.focusCursor);
+		const item = focusedItem(items, this.focusCursor);
 		if (!item) return null;
-		const at = ids.indexOf(item.id);
+		const at = items.findIndex((each) => each.id === item.id);
 		return at === -1 ? null : (elements[at] ?? null);
 	}
 

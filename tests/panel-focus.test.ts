@@ -14,6 +14,7 @@ import {
 	NO_FOCUS,
 	focusedItem,
 	moveFocus,
+	refreshFocus,
 	resolveFocus,
 	setFocus,
 } from "../src/panel-focus";
@@ -151,5 +152,43 @@ describe("setFocus is how the mouse and the pad stay one cursor", () => {
 		const three = items("a", "b", "c");
 		const cursor = at("b", 1);
 		expect(setFocus(three, cursor, "nowhere")).toEqual(cursor);
+	});
+});
+
+describe("refreshFocus makes 'the index it was last drawn at' true", () => {
+	// The header's claim was aspirational until #283's round 3: only `moveFocus`
+	// ever wrote the index, so a row that was focused at one position and later
+	// re-sorted to another still remembered the old one — and the fallback then
+	// dropped the cursor to the wrong part of the list the moment that row left.
+
+	test("a re-sorted row's remembered position follows it", () => {
+		const before = items("moon", "station", "planet");
+		const after = items("station", "planet", "moon");
+		const cursor = setFocus(before, NO_FOCUS, "moon");
+		expect(cursor.index).toBe(0);
+		expect(refreshFocus(after, cursor)).toEqual({ id: "moon", index: 2 });
+	});
+
+	test("and that is what the fallback then uses when the row goes", () => {
+		const before = items("moon", "station", "planet");
+		const after = items("station", "planet", "moon");
+		const gone = items("station", "planet", "beacon");
+		const stale = setFocus(before, NO_FOCUS, "moon");
+		// Without the refresh the cursor still says index 0, so a vanished row
+		// sends the player to the head of the list.
+		expect(resolveFocus(gone, stale)).toBe(0);
+		// With it, the cursor lands where the row was last actually drawn.
+		expect(resolveFocus(gone, refreshFocus(after, stale))).toBe(2);
+	});
+
+	test("an empty list leaves the cursor untouched rather than blanking it", () => {
+		const cursor = at("moon", 2);
+		expect(refreshFocus([], cursor)).toEqual(cursor);
+	});
+
+	test("refreshing an unchanged list is a no-op", () => {
+		const three = items("a", "b", "c");
+		const cursor = at("b", 1);
+		expect(refreshFocus(three, cursor)).toEqual(cursor);
 	});
 });

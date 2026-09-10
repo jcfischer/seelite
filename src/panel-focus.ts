@@ -120,6 +120,30 @@ export function moveFocus(
 }
 
 /**
+ * Re-resolve a cursor against the list as it is now, remembering where it
+ * landed.
+ *
+ * **The header of this module was a claim its callers did not keep.** It says a
+ * cursor carries "the id it means and the index it was last drawn at", and the
+ * index half was only ever written by `moveFocus` — so a row focused at index 0
+ * and later re-sorted to index 3 still remembered 0, and when it vanished the
+ * fallback dropped the cursor to the top of the list rather than near where the
+ * player was reading. That is the exact failure the two-part cursor exists to
+ * prevent, arriving through the half nobody refreshed. Sage found it, round 3.
+ *
+ * A panel calls this wherever it draws the ring, which is what makes "last
+ * drawn at" true rather than aspirational.
+ */
+export function refreshFocus(
+	items: readonly FocusItem[],
+	cursor: FocusCursor,
+): FocusCursor {
+	const index = resolveFocus(items, cursor);
+	if (index === -1) return cursor;
+	return { id: items[index]?.id ?? null, index };
+}
+
+/**
  * Put the cursor on a named row — how a pointer and a pad stay one cursor.
  *
  * The mouse click path already exists on every one of these surfaces and is not
