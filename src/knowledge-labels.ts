@@ -20,7 +20,20 @@ import type {
 	ObservedRecovery,
 	OperationalCondition,
 } from "./world-state";
-import type { FacilityChip } from "./galaxy-finder";
+
+/**
+ * §5.2.1's exact chip set.
+ *
+ * **Here rather than in `galaxy-finder.ts`, so this module is a leaf.** It was
+ * imported back from the finder, which pointed the low-level module at the
+ * high-level one it had just been split out of — a declaration cycle held open
+ * only by that import staying type-only, which nothing asserted, against a doc
+ * comment staking the module on importing types and nothing else.
+ * `tests/headless.test.ts` asserts the leafness now, the way it does for
+ * `units.ts`, `vec3.ts` and `hull.ts`.
+ */
+export const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"] as const;
+export type FacilityChip = (typeof FACILITY_CHIPS)[number];
 
 /**
  * The knowledge map as a reader of last-known state sees it.
@@ -205,7 +218,7 @@ export function stationRosterLine(
 	now: number,
 ): string {
 	const condition = known
-		? `${known.observedCondition} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
+		? `${known.observedCondition.toUpperCase()} · ${known.source} @ ${known.observedAt.toFixed(0)}s`
 		: "STATUS UNKNOWN";
 	const schedule = known?.observedRecovery
 		? ` · ${recoveryScheduleLabel(known.observedRecovery, now)}`

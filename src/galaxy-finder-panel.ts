@@ -14,8 +14,6 @@
 
 import {
 	FINDER_MAX_BUDGET,
-	FACILITY_CHIPS,
-	type FacilityChip,
 	type FinderFilter,
 	type FinderResults,
 	type FinderRow,
@@ -25,7 +23,9 @@ import {
 	rememberFinderBudget,
 } from "./galaxy-finder";
 import {
+	FACILITY_CHIPS,
 	type FacilityAnnotation,
+	type FacilityChip,
 	type FinderKnowledge,
 	facilityAnnotationLabel,
 	worldMinute,
@@ -688,7 +688,15 @@ export function mountFinderPanel({
 			// match changed neither group's rows — both empty — so the key held
 			// and the panel kept printing the narrower budget's count. The probe
 			// read 4 off the DOM against the projection's 105.
-			.concat(`|fence${uncheckedFence}`);
+			// **The chip's presence, not just its count.** The unchecked line is
+			// gated on `KNOWN FENCE` being on, and the count alone cannot see
+			// that: type a query matching nothing, and turning the chip on
+			// leaves both groups empty and the count at zero, so the key holds
+			// and §5.2.1's line never appears — and turning it back off leaves
+			// the line it did draw standing.
+			.concat(
+				`|fence${filter.facilities.includes("KNOWN FENCE") ? uncheckedFence : "-"}`,
+			);
 		if (key !== listKey) {
 			listKey = key;
 			rowElements.clear();

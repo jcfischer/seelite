@@ -952,12 +952,27 @@ export const observeSystemRelay = (
 	galaxyIndex: number,
 	keys: readonly CarrierKey[],
 	gameTime: number,
-): WorldState =>
-	keys.reduce(
-		(current, key) =>
-			observe(current, galaxyIndex, key, gameTime, "system-relay"),
-		world,
+): WorldState => {
+	for (const key of keys) assertCarrierKey(key);
+	// **One envelope write for the whole report, not one per station.** Folding
+	// `observe` over the keys paid `advanceTo` — a `materializeDue` sweep with
+	// its sort over every galaxy — once per station, and shallow-copied a
+	// knowledge map that grows for the whole session once per station too. The
+	// relay is a single report; this writes it as one.
+	return withEnvelope(world, galaxyIndex, gameTime, (env) =>
+		keys.reduce(
+			(current, key) =>
+				writeKnowledge(
+					current,
+					key,
+					effectiveCarrier(current, key, gameTime),
+					gameTime,
+					"system-relay",
+				),
+			env,
+		),
 	);
+};
 
 /** Docking reports one station and, only at a refinery, checks its private fact. */
 export const observeDocking = (

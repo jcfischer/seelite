@@ -6264,7 +6264,7 @@ class Game {
 			);
 			// **Loud, not silent.** `if (station)` made a docked id missing from
 			// the roster a no-op, so §9.10's docking write would vanish with
-			// nothing said — and the berth grant two lines down already refuses
+			// nothing said — and the reservation lookup below already refuses
 			// the analogous case out loud rather than papering over it.
 			if (!station)
 				throw new Error(

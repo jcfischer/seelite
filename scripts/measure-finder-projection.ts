@@ -7,18 +7,21 @@
  * difference it printed was the cost of *using* a chip over a different row
  * set, not the cost the guard removes. No arm ran the unguarded code at all,
  * which leaves the figure unable to support the sentence it exists for. The
- * arms here are one filter through two implementations:
+ * arms here are one filter through three implementations:
  *
- * - **guarded** — `projectFinder` as it ships: with no facility chip active it
- *   never reads a system's station roster.
- * - **roster read anyway** — the same projection plus `generateContents` for
- *   every system the name and economy narrowing admits, which is what the
- *   shipped code did before the guard.
+ * - **no chip** — `projectFinder` as it ships: with no facility chip active it
+ *   never reads a system's station roster at all.
+ * - **chip on, cache warm** — the same projection with `REFINERY` active, after
+ *   the roster cache has been populated. This is what a keystroke costs while a
+ *   chip is on, from the second keystroke onward.
+ * - **roster read per system** — the projection plus `generateContents` for
+ *   every admitted system. That is what the shipped code did before the chip
+ *   guard, and before the roster cache; it is also the *first* keystroke's cost
+ *   with a chip on, once per session per system.
  *
- * The second arm is reconstructed here rather than kept behind a flag in
+ * The third arm is reconstructed here rather than kept behind a flag in
  * `galaxy-finder.ts`: a production branch existing for one measurement is
- * production state serving a script. What the guard removes is
- * `generateContents` over the admitted set, and that is what this runs.
+ * production state serving a script.
  *
  * **A query, not a bare browse.** The harm is per keystroke. With no query at
  * the default one-jump budget, `projectFinder` now skips a system that cannot
@@ -74,8 +77,19 @@ const guarded = (): number => {
 	return performance.now() - t0;
 };
 
-/** The shipped projection plus the roster read the guard removes. */
-const unguarded = (): number => {
+/** The shipped chip path, with the roster cache warm — what a keystroke costs
+ *  while a facility chip is on, after the first one. */
+const chipped = (): number => {
+	const t0 = performance.now();
+	projectFinder(galaxy.systems, here, { ...filter, facilities: ["REFINERY"] });
+	return performance.now() - t0;
+};
+
+/** `generateContents` over the admitted set: the work the chip guard removes
+ *  from the unannotated path, and — since the roster cache landed — the work
+ *  that cache removes from every keystroke after the first. Measured beside the
+ *  projection so the arms share their baseline. */
+const rosterPerSystem = (): number => {
 	const t0 = performance.now();
 	projectFinder(galaxy.systems, here, filter);
 	for (const system of galaxy.systems) {
@@ -87,8 +101,9 @@ const unguarded = (): number => {
 };
 
 const arms = [
-	{ name: "guarded (shipped)", run: guarded },
-	{ name: "roster read anyway", run: unguarded },
+	{ name: "no chip (shipped)", run: guarded },
+	{ name: "chip on, cache warm", run: chipped },
+	{ name: "roster read per system", run: rosterPerSystem },
 ];
 
 for (const arm of arms) for (let i = 0; i < WARMUP; i++) arm.run();
@@ -121,11 +136,14 @@ console.log(
 for (const arm of arms) {
 	const xs = samples.get(arm.name) ?? [];
 	console.log(
-		`  ${arm.name.padEnd(20)} median ${quantile(xs, 0.5).toFixed(3)} ms  ` +
+		`  ${arm.name.padEnd(24)} median ${quantile(xs, 0.5).toFixed(3)} ms  ` +
 			`(p10 ${quantile(xs, 0.1).toFixed(3)}, p90 ${quantile(xs, 0.9).toFixed(3)})`,
 	);
 }
 console.log(
-	"\nThe difference is `generateContents` over the admitted set, paid on every\n" +
-		"keystroke. It is what the chip guard removes from the unannotated path.",
+	"\nThe third arm is `generateContents` over the admitted set. It is what the\n" +
+		"chip guard removes from the unannotated path, and what the roster cache\n" +
+		"removes from every keystroke after the first — so the second arm is the\n" +
+		"warm cost of a chip, not the cold one. The cold pass is the third arm's\n" +
+		"figure once, on the first keystroke of a session.",
 );

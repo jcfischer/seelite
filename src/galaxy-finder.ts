@@ -20,22 +20,15 @@ import {
 } from "./galaxy";
 import { type JumpReach, projectJumps } from "./galaxy-route";
 import { carrierKey } from "./carrier-key";
-import { generateContents } from "./system";
-import type { StationType } from "./station";
+import { type Station, generateContents } from "./system";
 import {
+	FACILITY_CHIPS,
 	type FacilityAnnotation,
+	type FacilityChip,
 	type FinderKnowledge,
 	fenceKnowledge,
 } from "./knowledge-labels";
-import type {
-	GalaxyEnvelope,
-	KnowledgeRow,
-	ObservedRecovery,
-	OperationalCondition,
-} from "./world-state";
-
-export const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"] as const;
-export type FacilityChip = (typeof FACILITY_CHIPS)[number];
+import type { KnowledgeRow } from "./world-state";
 
 /**
  * What the player has narrowed the galaxy to.
@@ -235,10 +228,37 @@ export function finderMatches(
  * annotation is unambiguous and §5.2.1's "never collapses mixed carrier
  * conditions" has no case to answer here: each chip annotates its own carrier.
  */
-function facilitiesOf(system: SystemRecord, knowledge: FinderKnowledge) {
+/**
+ * A system's station roster, cached.
+ *
+ * **Cached here rather than on `generateContents`.** That call builds the star,
+ * the planet ladder and every moon roll to hand back a roster the finder reads
+ * three fields of, and `projectFinder` makes it once per admitted system per
+ * keystroke — ten typed characters regenerate the admitted galaxy ten times.
+ * A cache inside `generateContents` would alias the live system `sim.ts` builds
+ * from the same call, which is a different object with a different lifetime; a
+ * cache here is read-only and the finder never mutates what it gets.
+ *
+ * Keyed on the system's own seed, which is unique across galaxies and worlds —
+ * an index alone collides between galaxies, and between two seeds on one page.
+ */
+const rosterCache = new Map<number, readonly Station[]>();
+const rosterOf = (system: SystemRecord): readonly Station[] => {
+	const hit = rosterCache.get(system.seed);
+	if (hit) return hit;
+	const stations = generateContents(system).stations;
+	rosterCache.set(system.seed, stations);
+	return stations;
+};
+
+function facilitiesOf(
+	system: SystemRecord,
+	knowledge: FinderKnowledge,
+	wanted: readonly FacilityChip[],
+) {
 	const present = new Map<FacilityChip, FacilityAnnotation>();
 	let uncheckedFence = false;
-	for (const station of generateContents(system).stations) {
+	for (const station of rosterOf(system)) {
 		const known: KnowledgeRow | undefined =
 			knowledge[carrierKey(system.index, station.localCarrierId)];
 		const annotate = (facility: FacilityChip): FacilityAnnotation => ({
@@ -253,7 +273,11 @@ function facilitiesOf(system: SystemRecord, knowledge: FinderKnowledge) {
 				: {}),
 		});
 		if (station.type === "refinery") {
-			present.set("REFINERY", annotate("REFINERY"));
+			// **Only what a chip asked for.** A `REFINERY`-only narrowing built
+			// a shipyard annotation for every admitted system on every
+			// keystroke, and threw it away.
+			if (wanted.includes("REFINERY"))
+				present.set("REFINERY", annotate("REFINERY"));
 			// §5.2.1's three values, from `fenceKnowledge` rather than from a
 			// second copy of the rule: a marker plus a generated true is a
 			// match, a marker plus a generated false is a *known* non-match —
@@ -261,10 +285,10 @@ function facilitiesOf(system: SystemRecord, knowledge: FinderKnowledge) {
 			// unchecked.
 			const fence = fenceKnowledge(station.blackMarket, known);
 			if (fence === "unchecked") uncheckedFence = true;
-			else if (fence === "known-fence")
+			else if (fence === "known-fence" && wanted.includes("KNOWN FENCE"))
 				present.set("KNOWN FENCE", annotate("KNOWN FENCE"));
 		}
-		if (station.type === "shipyard")
+		if (station.type === "shipyard" && wanted.includes("SHIPYARD"))
 			present.set("SHIPYARD", annotate("SHIPYARD"));
 	}
 	return { present, uncheckedFence };
@@ -378,7 +402,7 @@ export function projectFinder(
 		// contents on every keystroke, and §5.2.1 leaves the unannotated row
 		// exactly as §5.2 had it.
 		if (filter.facilities.length > 0) {
-			const facilities = facilitiesOf(system, knowledge);
+			const facilities = facilitiesOf(system, knowledge, filter.facilities);
 			const missing = filter.facilities.filter(
 				(facility) => !facilities.present.has(facility),
 			);

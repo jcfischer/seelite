@@ -502,12 +502,13 @@ if (undock) {
 	 * The previous version asserted `(type === "refinery") === (marker !== null)`
 	 * and was sold as "a marker exactly when the station is a refinery". This
 	 * fixture docks at `D.spinner()`, and `station.ts` gives `spins: false` to
-	 * both pad roles — so `type` is never `refinery` here and the biconditional
-	 * collapses to `marker === null`, which any non-refinery docking satisfies.
+	 * the refinery and the outpost — so `type` is never `refinery` here and the
+	 * biconditional collapses to `marker === null`, which any non-refinery
+	 * docking satisfies.
 	 * A build that never wrote a refinery marker at all passed it.
 	 *
 	 * Half of it is real and stays above: a non-refinery docking must *not*
-	 * manufacture a marker. The other half needs a docking at a pad role, which
+	 * manufacture a marker. The other half needs a docking at a refinery, which
 	 * is a different approach profile and a different probe. **This asserts the
 	 * fixture's shape instead**, so the day it does yield a refinery the row goes
 	 * red and whoever sees it writes the arm rather than inheriting a check that

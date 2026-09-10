@@ -937,6 +937,18 @@ const clickFacility = (facility) =>
 		chip.click();
 	}, facility);
 
+/** Turn a chip on and widen the budget to where its matches live. The triple —
+ *  click, widen, settle — was written out at four call sites, so a change to how
+ *  the budget is widened had to land in four places. */
+const showFacility = async (name, budget = 9) => {
+	await clickFacility(name);
+	await page.evaluate(
+		(b) => window.__seeliteGalaxyMap.setFinderBudget(b),
+		budget,
+	);
+	await nextFrames(page);
+};
+
 /** What the rows actually print, per row, off the DOM. */
 const facilityRows = () =>
 	page.evaluate(() => {
@@ -1168,9 +1180,7 @@ const facilityChecks = async (where) => {
 	 * zero-known-match case, and the panel owes the count rather than silence.
 	 */
 	await clearFinder();
-	await clickFacility("KNOWN FENCE");
-	await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
-	await nextFrames(page);
+	await showFacility("KNOWN FENCE");
 	const fence = await facilityRows();
 	const fenceState = await finderState();
 	const fenceUnchecked = await page.evaluate(
@@ -1184,6 +1194,35 @@ const facilityChecks = async (where) => {
 			fence.unchecked.count > 0 &&
 			fence.unchecked.says.includes(String(fence.unchecked.count)),
 		`${fenceState.inBudget.length} known matches, panel says ${fence.unchecked?.count} against the projection's ${fenceUnchecked}, line "${fence.unchecked?.says}"`,
+	);
+
+	/**
+	 * **The count line under a query that matches nothing.**
+	 *
+	 * §5.2.1 owes the unchecked count wherever `KNOWN FENCE` is on, and the
+	 * empty-result case is the one where the panel's repaint key could not see
+	 * the chip: both groups stay empty and the count stays at zero, so a key
+	 * built from the rows and the count alone does not move, the results area is
+	 * never rebuilt, and the line never appears. Turning the chip back off left
+	 * the line it did draw standing, for the same reason. Neither is reachable
+	 * from the headless tier — the projection is right in both.
+	 */
+	await clearFinder();
+	await page.evaluate(() => window.__seeliteGalaxyMap.setFinderQuery("zzzzqq"));
+	await nextFrames(page);
+	const beforeChip = await facilityRows();
+	await clickFacility("KNOWN FENCE");
+	await nextFrames(page);
+	const withChip = await facilityRows();
+	await clickFacility("KNOWN FENCE");
+	await nextFrames(page);
+	const offAgain = await facilityRows();
+	check(
+		`${where}: the unchecked line appears and disappears with the chip, even on an empty result`,
+		beforeChip.unchecked === null &&
+			withChip.unchecked !== null &&
+			offAgain.unchecked === null,
+		`no-match query: before ${JSON.stringify(beforeChip.unchecked)}, with the chip ${JSON.stringify(withChip.unchecked)}, off again ${JSON.stringify(offAgain.unchecked)}`,
 	);
 
 	/**
@@ -1239,9 +1278,7 @@ await facilityChecks("desktop");
  * alone.
  */
 await clearFinder();
-await clickFacility("REFINERY");
-await page.evaluate(() => window.__seeliteGalaxyMap.setFinderBudget(9));
-await nextFrames(page);
+await showFacility("REFINERY");
 const cardReadings = await page.evaluate(() => {
 	const map = window.__seeliteGalaxyMap;
 	const read = (index) => {

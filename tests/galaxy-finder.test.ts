@@ -32,6 +32,7 @@ import {
 import { carrierKey } from "../src/carrier-key";
 import {
 	type FacilityAnnotation,
+	type FacilityChip,
 	type FinderKnowledge,
 	facilityAnnotationLabel,
 	recoveryScheduleLabel,
@@ -586,6 +587,20 @@ describe("D6 — the session budget", () => {
 });
 
 describe("§9.4 facilities knowledge", () => {
+	/** Every check in this block projects at the widest budget and differs only
+	 *  in its chips and its overlay; the assertions were buried in the call. */
+	const project = (
+		facilities: FacilityChip[],
+		knowledge?: FinderKnowledge,
+		over: Partial<FinderFilter> = {},
+	) =>
+		projectFinder(
+			galaxy.systems,
+			here,
+			filter({ facilities, budgetJumps: FINDER_MAX_BUDGET, ...over }),
+			knowledge ? { knowledge } : undefined,
+		);
+
 	/** The first system in this galaxy carrying `role`, which every check here
 	 *  needs and none of them may assume exists. */
 	const withRole = (role: StationType): SystemRecord => {
@@ -662,22 +677,8 @@ describe("§9.4 facilities knowledge", () => {
 	test("public refinery and shipyard roles project with no knowledge overlay", () => {
 		const refinery = withRole("refinery");
 		const shipyard = withRole("shipyard");
-		const refineries = projectFinder(
-			galaxy.systems,
-			here,
-			filter({
-				facilities: ["REFINERY"],
-				budgetJumps: FINDER_MAX_BUDGET,
-			}),
-		);
-		const shipyards = projectFinder(
-			galaxy.systems,
-			here,
-			filter({
-				facilities: ["SHIPYARD"],
-				budgetJumps: FINDER_MAX_BUDGET,
-			}),
-		);
+		const refineries = project(["REFINERY"]);
+		const shipyards = project(["SHIPYARD"]);
 		expect(refineries.inBudget.map((row) => row.index)).toContain(
 			refinery.index,
 		);
@@ -737,11 +738,7 @@ describe("§9.4 facilities knowledge", () => {
 
 		// The same system with no knowledge row at all still matches — the
 		// structure is public — and reads as never observed.
-		const blind = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
+		const blind = project(["SHIPYARD"]);
 		expect(
 			blind.inBudget.find((candidate) => candidate.index === system.index)
 				?.matchedFacilities,
@@ -947,11 +944,7 @@ describe("§9.4 facilities knowledge", () => {
 
 		// The same system with no marker is unchecked instead — the difference
 		// between the two is the marker and nothing else.
-		const blind = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
+		const blind = project(["KNOWN FENCE"]);
 		expect(blind.uncheckedFence).toBeGreaterThan(seen.uncheckedFence);
 	});
 
@@ -967,11 +960,7 @@ describe("§9.4 facilities knowledge", () => {
 			here,
 			filter({ facilities: ["KNOWN FENCE"], budgetJumps: 1 }),
 		);
-		const far = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
+		const far = project(["KNOWN FENCE"]);
 		expect(near.uncheckedFence).toBeLessThan(far.uncheckedFence);
 		// And it is bounded by what the budget can reach at all.
 		const reachable = projectJumps(galaxy.systems, here, JUMP_RANGE_LY);
@@ -989,11 +978,7 @@ describe("§9.4 facilities knowledge", () => {
 	 * that admits one system cannot report the galaxy's unchecked refineries.
 	 */
 	test("the unchecked count respects the name and economy narrowing", () => {
-		const wide = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
+		const wide = project(["KNOWN FENCE"]);
 		const narrowed = projectFinder(
 			galaxy.systems,
 			here,
@@ -1010,11 +995,7 @@ describe("§9.4 facilities knowledge", () => {
 	 * §5.2.1: "A system with no refinery is neither a match nor unchecked."
 	 */
 	test("a system with no refinery is never counted unchecked", () => {
-		const seen = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
+		const seen = project(["KNOWN FENCE"]);
 		const refineryCount = galaxy.systems.filter(
 			(system) =>
 				system.galaxy === here.galaxy &&
@@ -1031,19 +1012,8 @@ describe("§9.4 facilities knowledge", () => {
 	 * reason to go and check.
 	 */
 	test("a system failing another active chip is not counted unchecked", () => {
-		const fenceOnly = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["KNOWN FENCE"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
-		const withShipyard = projectFinder(
-			galaxy.systems,
-			here,
-			filter({
-				facilities: ["KNOWN FENCE", "SHIPYARD"],
-				budgetJumps: FINDER_MAX_BUDGET,
-			}),
-		);
+		const fenceOnly = project(["KNOWN FENCE"]);
+		const withShipyard = project(["KNOWN FENCE", "SHIPYARD"]);
 		expect(withShipyard.uncheckedFence).toBeLessThan(fenceOnly.uncheckedFence);
 	});
 
@@ -1056,16 +1026,8 @@ describe("§9.4 facilities knowledge", () => {
 			budgetJumps: FINDER_MAX_BUDGET,
 		});
 		const both = projectFinder(galaxy.systems, here, budget);
-		const refineries = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["REFINERY"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
-		const shipyards = projectFinder(
-			galaxy.systems,
-			here,
-			filter({ facilities: ["SHIPYARD"], budgetJumps: FINDER_MAX_BUDGET }),
-		);
+		const refineries = project(["REFINERY"]);
+		const shipyards = project(["SHIPYARD"]);
 		const indices = new Set(both.inBudget.map((row) => row.index));
 		expect(indices.size).toBeGreaterThan(0);
 		expect(indices.size).toBeLessThan(refineries.inBudget.length);

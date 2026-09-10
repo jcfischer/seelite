@@ -146,6 +146,27 @@ test("src/units.ts is a leaf, which is the whole of its job", () => {
 	expect(importsIn("units.ts")).toEqual([]);
 });
 
+test("src/knowledge-labels.ts imports types and nothing else", () => {
+	// **Its doc stakes the module on this**, and until #275's fifth review round
+	// nothing checked it: the module imported `FacilityChip` back from
+	// `galaxy-finder.ts` — the high-level module it had just been split out of —
+	// while `galaxy-finder.ts` imported `fenceKnowledge` the other way. A
+	// declaration cycle, held open only by one side staying type-only.
+	//
+	// A *value* import here is what would matter: it is pulled by both the main
+	// bundle and the lazily loaded chart chunk, so a runtime dependency drags
+	// the finder into the game's entry chunk for a handful of label strings.
+	// Type imports are erased and cost nothing, which is why this counts value
+	// imports rather than asserting the empty list `units.ts` gets.
+	const code = codeOf("src/knowledge-labels.ts");
+	const valueImports = (code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length;
+	const reExports = (code.match(/^\s*export\s+.*\bfrom\s*["']/gm) ?? []).length;
+	expect({ valueImports, reExports }).toEqual({
+		valueImports: 0,
+		reExports: 0,
+	});
+});
+
 test("the hysteresis band fits inside the near layer's reach", () => {
 	// The threshold is not what has to fit — the *band* is. A body admitted to
 	// the near layer is held there out to `HANDOFF_KM × HANDOFF_HYSTERESIS`, so
