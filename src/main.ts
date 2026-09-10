@@ -4706,9 +4706,12 @@ class Game {
 	 *
 	 * `modal` is the settings screen. `console` is a head turned to a side
 	 * console, or the station console on the forward wall while docked, and it
-	 * **suspends the pad and the mouse** — the keyboard keeps flying, which is
-	 * the principal's ruling and not an omission; the reason is at the pointer
-	 * gate — see
+	 * **suspends the pad's sticks and triggers, and the mouse** — a console
+	 * claims six discrete controls and every other button still reaches the
+	 * ship, so "suspends the pad" was four times wider than the code, and the
+	 * entry point for the context reader is the worst place to overstate it.
+	 * The keyboard keeps flying, which is the principal's ruling rather than an
+	 * omission; the reason is at the pointer gate — see
 	 * `pad-bindings.ts`'s header for the
 	 * principal's reversal and why the footer it cites is a claim about the
 	 * world rather than about the controls. `instrument` is the `?perf` overlay,
@@ -4732,14 +4735,27 @@ class Game {
 	 * zero and the context decides nothing. Since the reversal it also decides
 	 * whether a *pointer* delta reaches the ship, and the mouse has no
 	 * `padFrame` to be absent. A stale value therefore means a probe stepping by
-	 * hand flies with whatever suspension state the last poll left. `"flight"`
-	 * is the safe default for that — it is what the game does with no panel open
-	 * — and every probe here drives the frame loop. Sage found the stale claim.
+	 * hand flies with whatever suspension state the last poll left.
+	 *
+	 * **And `"flight"` is the fail-*open* direction, not the safe one.** An
+	 * earlier version of this paragraph called it safe and added that "every
+	 * probe here drives the frame loop", which is false —
+	 * `probe-docking-traffic` and `probe-traffic-mouth` both cancel the loop and
+	 * step by hand. So the fallback below reads the DOM afresh while no poll has
+	 * ever happened, which is the case that can be answered exactly; a loop
+	 * cancelled *after* polling keeps the last answer, and that is stated rather
+	 * than dressed up. Sage found both the stale claim and the inversion.
 	 */
 	private padContextThisFrame: PadContext = "flight";
 
 	private padContext(): PadContext {
-		return this.padContextThisFrame;
+		// Before the first poll there is no cached answer, so read the truth
+		// rather than the initial value — that is the one staleness case which
+		// can be settled exactly, and post-reversal the default decides whether a
+		// pointer delta reaches the ship.
+		return this.padFrame === null
+			? this.readPadContext()
+			: this.padContextThisFrame;
 	}
 
 	private readPadContext(): PadContext {
@@ -4839,11 +4855,21 @@ class Game {
 	/**
 	 * Whether the chart has taken the right stick this frame.
 	 *
-	 * The one place a console claims a stick, and the reason is that the mouse
-	 * already behaves this way: dragging the chart means leaving pointer lock,
-	 * so the pointer cannot orbit the cluster and fly the ship at the same
-	 * instant either. The ship is not left uncontrolled — the left stick still
-	 * rolls, the triggers still trim the throttle and every button still acts.
+	 * The one thing a stick still *does* inside a console — everything else it
+	 * would have done is suspended there, which is the principal's reversal.
+	 *
+	 * **This paragraph said the opposite for four rounds.** It described the
+	 * pre-reversal world, where a console kept the sticks and this was the one
+	 * place that claimed one: "the left stick still rolls, the triggers still
+	 * trim". Neither is true now — `padFlightAxes` returns nothing at all in a
+	 * console, and the same diff's test asserts a pulled trigger reads `0` there.
+	 * A fourth copy of "does this context fly?", surviving beside the
+	 * `contextFliesShip` that was introduced to end exactly that. Sage found it.
+	 *
+	 * What remains true is why the chart gets its stick when nothing else does:
+	 * the mouse already behaves this way, since dragging the chart means leaving
+	 * pointer lock, so the pointer cannot orbit the cluster and fly at the same
+	 * instant either.
 	 */
 	private chartHasStick(): boolean {
 		return (
@@ -4931,12 +4957,20 @@ class Game {
 	private pollPad() {
 		const frame = this.pad.poll();
 		this.padFrame = frame;
-		// The consoles draw their hint line only for a player who has a pad.
-		this.liveCockpit.setPadPresent(frame.connected);
 		// Read once, here, even with no pad attached: `step` and
 		// `hasControlInput` read the cached value, and a stale one would answer
 		// for a panel that has since closed.
 		this.padContextThisFrame = this.readPadContext();
+		// **Told, not guessed, and told *after* the read.** The console cannot
+		// see which context owns the pad — `readPadContext` answers `instrument`
+		// and `modal` before it ever asks whether a console is drawn — so a panel
+		// merely *on screen* was wearing the marker while something else held the
+		// pad. The game knows, so the game says. Written first, this read last
+		// frame's context and the marker lagged a frame; the comment claiming it
+		// came after was wrong before this line moved.
+		this.liveCockpit.setPadHolds(
+			frame.connected && this.padContextThisFrame === "console",
+		);
 		if (!frame.connected) return;
 		const context = this.padContextThisFrame;
 		const intents = padIntents(frame, context);

@@ -540,7 +540,7 @@ export class LiveCockpit {
 	 * a keyboard player about Cross is noise on every frame they ever see.
 	 */
 	private markPadScope(
-		present: boolean,
+		holds: boolean,
 		scope: HTMLElement | null,
 		elements: readonly HTMLElement[],
 	) {
@@ -558,16 +558,16 @@ export class LiveCockpit {
 		// a comment claiming the opposite, and a second one beside the scan
 		// `focusedElement` already does. Sage found that too; the eager argument
 		// was the same mistake as the sweep it replaced.
-		// **Gated on the scope, which is the same predicate that stops the ship.**
-		// It was gated on the walk being non-empty, and this branch had just
-		// *created* the empty-walk surfaces by taking the tab rows out of it — so
-		// turning to starboard undocked suspended the sticks and the mouse with
-		// nothing on screen saying why. Sage found it: the marker must answer the
-		// question "does this panel have the pad", and that question is `scope`.
+		// **The marker answers "does this panel hold the pad", and only the game
+		// knows that.** Two earlier gates got it wrong in opposite directions:
+		// on the walk being non-empty, which hid the marker on the very surfaces
+		// this branch had emptied; and then on the scope alone, which claimed the
+		// pad for a drawn panel while the instrument or the settings screen
+		// actually held it. `holds` is the game's answer.
 		//
-		// What the empty walk changes is the *hint*, not the marker: WALK is the
+		// What an empty walk changes is the *hint*, not the marker: WALK is the
 		// one segment that becomes a lie there, and the others stay true.
-		const wanted = present ? scope : null;
+		const wanted = holds ? scope : null;
 		// **The text is part of the identity, not just the element.** Keyed on
 		// the scope alone, a hint went stale whenever the *same* panel changed
 		// what it had — narrow the Navigation filter to nothing and the line went
@@ -597,14 +597,28 @@ export class LiveCockpit {
 	private padScope: HTMLElement | null = null;
 	private padHint: HTMLElement | null = null;
 
-	/** Whether a pad is attached, so the hint is drawn for a player who has one. */
-	private padPresent = false;
+	/**
+	 * Whether **this console** currently holds the pad.
+	 *
+	 * Not "is a pad attached", which is what it was and which made the marker
+	 * answer the wrong question. `readPadContext` returns `instrument` and
+	 * `modal` *before* it ever asks whether a console is drawn, so a panel can
+	 * be on screen while something else owns the pad entirely — hand the frame
+	 * instrument the pad and turn to port, and the port console wore the border
+	 * and the hint while up/down walked the instrument and the ship flew on.
+	 * Sage found it and called it a blocker, with that repro and a second one
+	 * through the settings scrim.
+	 *
+	 * The game owns the context, so the game answers the question; this class
+	 * is told, and does not guess from what it can see.
+	 */
+	private padHolds = false;
 
-	setPadPresent(present: boolean) {
-		if (this.padPresent === present) return;
-		this.padPresent = present;
+	setPadHolds(holds: boolean) {
+		if (this.padHolds === holds) return;
+		this.padHolds = holds;
 		const elements = this.focusElements();
-		this.markPadScope(present, this.focusScope(), elements);
+		this.markPadScope(holds, this.focusScope(), elements);
 	}
 
 	private applyFocusRing(scroll = false) {
@@ -625,7 +639,7 @@ export class LiveCockpit {
 		// which was true and beside the point. Sage found it, round 3.
 		const elements = this.focusElements();
 		const scope = this.focusScope();
-		this.markPadScope(this.padPresent, scope, elements);
+		this.markPadScope(this.padHolds, scope, elements);
 		const element = this.focusedElement(elements);
 		if (!element) return;
 		element.dataset.liveFocus = "true";

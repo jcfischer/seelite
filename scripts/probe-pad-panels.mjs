@@ -428,6 +428,35 @@ try {
 			);
 		}
 
+		{
+			// **The settings screen holds the whole pad, so no console may claim
+			// it.** The console stays visible through settings' own scrim, and
+			// the marker was gated on the panel being *drawn* rather than on it
+			// holding anything — so it went on saying "the d-pad walks me" while
+			// `modal` had the lot. Sage called this half of the blocker, with
+			// this exact repro; neither context had a probe.
+			await page.keyboard.press("z");
+			await frames(3);
+			const underModal = await page.evaluate(() => ({
+				settings: Boolean(document.querySelector("[data-settings-panel]")),
+				marked: document.querySelector('[data-live-pad-scope="true"]') !== null,
+				hint: document.querySelector("[data-live-pad-hint]") !== null,
+			}));
+			await page.keyboard.press("z");
+			await frames(3);
+			const afterClose = await page.evaluate(
+				() => document.querySelector('[data-live-pad-scope="true"]') !== null,
+			);
+			check(
+				"a console does not claim the pad while the settings screen holds it",
+				underModal.settings === true &&
+					underModal.marked === false &&
+					underModal.hint === false &&
+					afterClose === true,
+				`settings open ${underModal.settings}: marked ${underModal.marked}, hint ${underModal.hint}; marked again after closing ${afterClose}`,
+			);
+		}
+
 		check(
 			"the panel holding the pad says so, and carries the hint line",
 			marked.scope === "left" &&
