@@ -199,6 +199,18 @@ export interface Handle {
 	select(index: number | null): void;
 	commitCourse(): boolean;
 	clearCourse(): void;
+	/**
+	 * What the chart's own **Clear** button does — the course *and* the
+	 * selection.
+	 *
+	 * Separate from `clearCourse`, which drops the course alone and has its own
+	 * callers. #283's pad reaches the button through this handle and reproduced
+	 * the pair by hand, dropping only the course; a named action is what stops
+	 * one control behaving differently depending on which device pressed it.
+	 */
+	clearAll(): void;
+	/** Step the finder's jump budget by `delta`, as its `−`/`+` buttons do. */
+	stepFinderBudget(delta: number): void;
 	setHaze(on: boolean): void;
 	/** Move the ship, so a probe can watch the course re-derive from a new
 	 *  origin rather than trusting that it would. */
@@ -1313,11 +1325,21 @@ export function mountGalaxyChart({
 
 	hazeButton.addEventListener("click", () => setHaze(!haze.visible));
 	courseButton.addEventListener("click", () => commitCourse());
-	clearButton.addEventListener("click", () => {
+	/**
+	 * What Clear does: drop the course *and* the selection.
+	 *
+	 * A named action rather than a listener body, because #283's pad reaches the
+	 * same control through `Handle` and had to reproduce the pair — it dropped
+	 * only the course, leaving the selection, its route preview and its detail
+	 * card on screen. One control behaving differently depending on which device
+	 * pressed it is the thing a shared action prevents. Sage, round 4.
+	 */
+	const clearAll = () => {
 		course = null;
 		onCourse?.(null);
 		select(null);
-	});
+	};
+	clearButton.addEventListener("click", clearAll);
 	const onKeyDown = (e: KeyboardEvent): void => {
 		if (e.key === "h" || e.key === "H") setHaze(!haze.visible);
 		if (e.key === "Escape") select(null);
@@ -1516,6 +1538,10 @@ export function mountGalaxyChart({
 			orbit(dx, dy);
 		},
 		zoom,
+		clearAll,
+		stepFinderBudget(delta: number) {
+			finder.setBudget(finder.state.filter.budgetJumps + delta);
+		},
 		setFinderQuery: finder.setQuery,
 		toggleFinderEconomy: finder.toggleEconomy,
 		setFinderBudget: finder.setBudget,

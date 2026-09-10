@@ -17,6 +17,14 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
+import {
+	type FocusCursor,
+	NO_FOCUS,
+	focusedItem,
+	moveFocus,
+	refreshFocus,
+	setFocus,
+} from "./panel-focus";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
@@ -181,6 +189,10 @@ const STYLE = `
 .lc-nav-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; width: 100%; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .22); padding: 5px 6px; background: transparent; color: #ffdcb0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
 .lc-nav-row:hover { background: rgba(223, 122, 20, .14); }
 .lc-nav-row[aria-current="true"] { background: rgba(223, 122, 20, .3); color: #fff0c9; }
+/* The pad's cursor. A ring rather than a fill, because aria-current already
+   owns the fill on a nav row and the two answer different questions: which row
+   is selected, and which row the pad would act on next. #283. */
+[data-live-focus="true"] { outline: 2px solid #ffe0a2; outline-offset: 1px; border-radius: 2px; }
 .lc-nav-row i { color: #cb8c51; font-style: normal; }
 .lc-nav-row em { color: #f5bd78; font-style: normal; }
 .lc-nav-empty { padding: 10px 6px; color: #cb8c51; font-size: 11px; }
@@ -242,9 +254,24 @@ export class LiveCockpit {
 		this.root.id = "live-cockpit";
 		this.root.setAttribute("data-live-cockpit", "true");
 		// Delegation keeps clicks live after a structural render is replaced.
-		this.root.addEventListener("click", (event) =>
-			this.handleClick(event.target as HTMLElement),
-		);
+		this.root.addEventListener("click", (event) => {
+			const element = event.target as HTMLElement;
+			// **The id is read before the dispatch and applied after it**, and
+			// both halves are the point. An accepted transaction rebuilds the
+			// market synchronously, so the clicked element is *detached* by the
+			// time the dispatch returns and an `indexOf` against the fresh list
+			// silently finds nothing — round 1 put the whole sync after the
+			// dispatch and left the ring on the previous row, so clicking BUY on
+			// one commodity and then pressing Cross bought a different one. And
+			// the cursor cannot simply be set first either: a click that changes
+			// the tab replaces the rows, and an id that is gone must leave the
+			// cursor alone, which is what `setFocus` does. Sage found it, round 2.
+			this.syncFocusToPointer(
+				element.closest<HTMLElement>(LiveCockpit.FOCUSABLE),
+				() => this.handleClick(element),
+			);
+			this.applyFocusRing();
+		});
 		this.root.addEventListener("input", (event) => {
 			const field = event.target as HTMLElement;
 			if (field.matches("[data-live-nav-query]"))
@@ -318,6 +345,302 @@ export class LiveCockpit {
 		if (row) this.callbacks.onSelectTarget(row.dataset.liveNavTarget as string);
 	}
 
+	// -------------------------------------------------------------------------
+	// The pad's cursor (#283)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Everything on a console a pad can act on, in the order it is drawn.
+	 *
+	 * **Not the nav filter's text field.** `[data-live-nav-query]` is free text
+	 * and a pad cannot type; the kind chips are what narrow the list for it, and
+	 * an on-screen keyboard was refused (#283's F7) because #70 already refused
+	 * a second UI grammar.
+	 */
+	private static readonly OWN_FOCUSABLE = [
+		"[data-live-station-action]",
+		"[data-live-station-tab]",
+		"[data-live-launch]",
+		"[data-live-right-tab]",
+		"[data-live-left-tab]",
+		"[data-live-nav-kind]",
+		"[data-live-nav-target]",
+	].join(",");
+
+	/**
+	 * The chart's controls, which are drawn **inside** the left panel but are
+	 * not this class's to act on.
+	 *
+	 * The Galaxy Map tab hosts `galaxy-map.ts`, which brings its own DOM and its
+	 * own `Handle`. Those elements join the cursor's list so the ring can walk
+	 * them in the order they are drawn — but `activateFocus` refuses them and
+	 * hands them back, because acting on one means calling the chart's handle
+	 * and this class holds no reference to a chart. Teaching it their vocabulary
+	 * is exactly the coupling that handle exists to avoid.
+	 *
+	 * `[data-map-finder-query]` is again absent, and again because a pad cannot
+	 * type.
+	 */
+	private static readonly FOREIGN_FOCUSABLE = [
+		"[data-map-haze]",
+		"[data-map-course]",
+		"[data-map-clear]",
+		"[data-map-finder-economy]",
+		"[data-map-finder-budget-down]",
+		"[data-map-finder-budget-up]",
+		"[data-map-finder-row]",
+		"[data-map-finder-centre]",
+	].join(",");
+
+	private static readonly FOCUSABLE =
+		`${LiveCockpit.OWN_FOCUSABLE},${LiveCockpit.FOREIGN_FOCUSABLE}`;
+
+	private focusCursor: FocusCursor = NO_FOCUS;
+
+	/**
+	 * Reveal the ring on the next render, once.
+	 *
+	 * A transaction rebuilds the market rows and the rebuild resets the box's
+	 * `scrollTop` to zero, so a row the pad had scrolled to and bought came back
+	 * below the fold while Cross went on buying it. Scrolling on *every* render
+	 * is not the fix — that would drag a player who is scrolling with the mouse
+	 * back to the ring sixty times a second — so it is a one-shot, set where the
+	 * pad acts and consumed where the ring is drawn. Sage found it, round 2.
+	 */
+	private revealOnNextRing = false;
+
+	/**
+	 * Which surface the cursor is on: the console the head is turned to, or the
+	 * station console on the forward wall while docked.
+	 *
+	 * Read off the **rendered DOM** rather than off the state that produced it.
+	 * A list derived from state can name a row the renderer skipped, and the
+	 * ring would then sit on nothing; this cannot disagree with what the player
+	 * is looking at.
+	 */
+	private focusScope(): HTMLElement | null {
+		return (
+			this.root.querySelector<HTMLElement>(
+				'[data-live-panel][data-active="true"]',
+			) ?? this.root.querySelector<HTMLElement>("[data-live-station-console]")
+		);
+	}
+
+	private focusElements(): HTMLElement[] {
+		const scope = this.focusScope();
+		return scope
+			? [...scope.querySelectorAll<HTMLElement>(LiveCockpit.FOCUSABLE)]
+			: [];
+	}
+
+	/**
+	 * A stable name for a focusable element, built from the attributes the click
+	 * path already reads.
+	 *
+	 * Stable across a redraw is the whole requirement: `panel-focus` follows a
+	 * row by identity so a re-sorting Navigation list cannot slide the cursor
+	 * onto a different body. A name is not always unique on its own — the
+	 * Navigation rail carries a second `GALAXY MAP` button with the same
+	 * `data-live-left-tab` as the tab — so a repeat gets an occurrence suffix,
+	 * which is stable because the two are always drawn in the same order.
+	 */
+	private focusIds(elements: readonly HTMLElement[]): string[] {
+		const seen = new Map<string, number>();
+		return elements.map((el) => {
+			const base = LiveCockpit.focusIdOf(el);
+			const count = (seen.get(base) ?? 0) + 1;
+			seen.set(base, count);
+			return count === 1 ? base : `${base}#${count}`;
+		});
+	}
+
+	/**
+	 * One element's name, before the occurrence suffix.
+	 *
+	 * A flat walk rather than the nested ternary this started as: eight branches
+	 * indented eight deep read as one expression a reader has to unpick, and the
+	 * ninth would have been worse. Sage asked, round 2.
+	 */
+	private static focusIdOf(el: HTMLElement): string {
+		const d = el.dataset;
+		if (d.liveStationAction !== undefined)
+			return `station-action:${d.liveStationAction}:${d.liveStationName}`;
+		if (d.liveStationTab !== undefined)
+			return `station-tab:${d.liveStationTab}`;
+		if (d.liveLaunch !== undefined) return "launch";
+		if (d.liveRightTab !== undefined) return `right-tab:${d.liveRightTab}`;
+		if (d.liveLeftTab !== undefined) return `left-tab:${d.liveLeftTab}`;
+		if (d.liveNavKind !== undefined) return `nav-kind:${d.liveNavKind}`;
+		if (d.liveNavTarget !== undefined) return `nav-target:${d.liveNavTarget}`;
+		return LiveCockpit.foreignFocusId(el);
+	}
+
+	/** Whether the pad has anything to walk here at all. */
+	hasFocusScope(): boolean {
+		return this.focusScope() !== null;
+	}
+
+	/**
+	 * Draw the ring, and only there.
+	 *
+	 * Called after every render because a structural rebuild replaces the
+	 * elements the attribute was on — the cursor survives it, the attribute does
+	 * not. Clearing by query rather than by remembering the last element, for
+	 * the same reason.
+	 */
+	/** The element the ring was last written on, so clearing it is not a query. */
+	private ringed: HTMLElement | null = null;
+
+	private applyFocusRing(scroll = false) {
+		const reveal = scroll || this.revealOnNextRing;
+		this.revealOnNextRing = false;
+		// **Remembered, not queried.** This runs on every rendered frame, pad or
+		// no pad, and a `querySelectorAll` over the cockpit for an attribute this
+		// class is the only writer of is a scan for something it already knows.
+		// Sage asked three rounds running; this is the half of it that needs no
+		// measurement to justify — the remaining `focusElements` scan is still
+		// declined, because no instrument here says it costs anything.
+		if (this.ringed) delete this.ringed.dataset.liveFocus;
+		this.ringed = null;
+		const element = this.focusedElement();
+		if (!element) return;
+		element.dataset.liveFocus = "true";
+		this.ringed = element;
+		// **A ring below the fold is worse than no ring.** The Navigation list,
+		// the market rows and the finder's results are all `overflow: auto`, so a
+		// cursor walked past the visible rows is drawn on a row nobody can see —
+		// and Cross still buys it. `block: "nearest"` because the row is usually
+		// already in view and scrolling it to the middle every press would make
+		// the list jump under a player who is only stepping down it.
+		//
+		// Only on a *move*: a structural redraw re-applies the ring every frame,
+		// and scrolling there would fight a player who had scrolled with the
+		// mouse. Sage found the whole of this, round 1.
+		if (reveal) element.scrollIntoView({ block: "nearest", inline: "nearest" });
+	}
+
+	/** Walk the cursor. `-1` is up the list and `1` is down it. */
+	stepFocus(delta: number) {
+		const ids = this.focusIds(this.focusElements()).map((id) => ({ id }));
+		this.focusCursor = moveFocus(ids, this.focusCursor, delta);
+		this.applyFocusRing(true);
+	}
+
+	/**
+	 * Do what the focused row does — **through the click path, not through a
+	 * synthetic click**.
+	 *
+	 * `handleClick` takes an element and walks `closest` from it, so handing it
+	 * the focused element runs exactly the branch a mouse would run. Dispatching
+	 * a `MouseEvent` instead would be testing the DOM's hit-testing, which is
+	 * not the thing that has to work.
+	 */
+	activateFocus(): boolean {
+		const element = this.focusedElement();
+		if (!element) return false;
+		if (!element.closest(LiveCockpit.OWN_FOCUSABLE)) return false;
+		this.handleClick(element);
+		// The dispatch may rebuild this surface — a purchase does — and the
+		// rebuild lands on a later frame, so the reveal is armed rather than done.
+		this.revealOnNextRing = true;
+		return true;
+	}
+
+	/**
+	 * The element under the ring.
+	 *
+	 * Exposed for the one caller that owns a surface this class does not: when
+	 * `activateFocus` returns `false` the focused row belongs to the chart, and
+	 * the game routes it to the chart's own handle.
+	 */
+	focusedElement(): HTMLElement | null {
+		const elements = this.focusElements();
+		if (elements.length === 0) return null;
+		const items = this.focusIds(elements).map((id) => ({ id }));
+		// **Write the resolved position back.** The cursor's contract is "the id
+		// it means and the index it was last drawn at", and until #283's round 3
+		// only `moveFocus` ever wrote that index — so a row focused at the top of
+		// the Navigation list and later re-sorted down it still remembered the
+		// top, and the moment it left scanner range the fallback dropped the
+		// cursor there. Resolving here is where "last drawn at" becomes true.
+		this.focusCursor = refreshFocus(items, this.focusCursor);
+		const item = focusedItem(items, this.focusCursor);
+		if (!item) return null;
+		const at = items.findIndex((each) => each.id === item.id);
+		return at === -1 ? null : (elements[at] ?? null);
+	}
+
+	/**
+	 * A stable name for one of the chart's controls.
+	 *
+	 * The finder's rows are keyed by **system index**, which is what the panel's
+	 * own click handler reads — so the cursor follows a system when the result
+	 * list re-sorts under a changed filter, rather than sliding onto whatever
+	 * took that row.
+	 */
+	private static foreignFocusId(el: HTMLElement): string {
+		const d = el.dataset;
+		if (d.mapHaze !== undefined) return "map-haze";
+		if (d.mapCourse !== undefined) return "map-course";
+		if (d.mapClear !== undefined) return "map-clear";
+		if (d.mapFinderEconomy !== undefined)
+			return `finder-economy:${d.mapFinderEconomy}`;
+		if (d.mapFinderBudgetDown !== undefined) return "finder-budget-down";
+		if (d.mapFinderBudgetUp !== undefined) return "finder-budget-up";
+		if (d.mapFinderCentre !== undefined)
+			return `finder-centre:${d.mapFinderCentre}`;
+		return `finder-row:${d.mapFinderRow}`;
+	}
+
+	/**
+	 * Change the tab of whichever console the cursor is on.
+	 *
+	 * Found by reading `aria-selected` off the drawn tabs rather than by knowing
+	 * which of three tab lists this surface has. The panel already says which
+	 * one is current, in the attribute a screen reader uses; a second copy of
+	 * that knowledge here is a third list to keep in step.
+	 */
+	stepTab(delta: number) {
+		const scope = this.focusScope();
+		if (!scope || delta === 0) return;
+		const tabs = [...scope.querySelectorAll<HTMLElement>(".lc-tab")];
+		if (tabs.length === 0) return;
+		const current = tabs.findIndex(
+			(tab) => tab.getAttribute("aria-selected") === "true",
+		);
+		const from = current === -1 ? 0 : current;
+		const next = (((from + delta) % tabs.length) + tabs.length) % tabs.length;
+		const tab = tabs[next];
+		if (tab) this.handleClick(tab);
+	}
+
+	/**
+	 * Put the cursor where the pointer just acted.
+	 *
+	 * So the ring the pad walks is the row the mouse last used, and neither
+	 * device has to be told the other exists — seekolous's rule, which this
+	 * repo inherited with the module: whichever acted last is in charge, and no
+	 * flag records which.
+	 */
+	private syncFocusToPointer(
+		element: HTMLElement | null,
+		dispatch: () => void,
+	) {
+		const before = this.focusElements();
+		const at = element ? before.indexOf(element) : -1;
+		const id = at === -1 ? null : (this.focusIds(before)[at] ?? null);
+		dispatch();
+		if (id === null) return;
+		// Against the list as it is *now*. The id is stable across a rebuild, so
+		// this lands on the replacement row; if the click replaced the surface
+		// entirely the id is absent and `setFocus` keeps the cursor where it was.
+		this.focusCursor = setFocus(
+			this.focusIds(this.focusElements()).map((each) => ({ id: each })),
+			this.focusCursor,
+			id,
+		);
+	}
+
 	/** The filter last rendered — the base every chip toggle is applied to. */
 	private filter: NavFilter = { kinds: [], query: "" };
 
@@ -389,6 +712,10 @@ export class LiveCockpit {
 		if (elements.navQuery && elements.navQuery.value !== state.navFilter.query)
 			elements.navQuery.value = state.navFilter.query;
 		this.renderNav(state, elements);
+		// After the nav rows, because `renderNav` rebuilds them and a rebuild
+		// takes the attribute with it. The cursor is not in the markup, so it
+		// survives; the ring has to be put back.
+		this.applyFocusRing();
 		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;

@@ -26,6 +26,11 @@ npm run dev            # then open the URL it prints; add ?seed=42 to pin a worl
 Fly with **W/S** or **↑/↓** (pitch), **A/D** or **←/→** (yaw), **Q/E** (roll),
 **Shift/Ctrl** (throttle).
 
+A **game controller** works too, and the sticks are analog where a key has one
+speed: right stick to fly, left stick to roll, triggers to trim the throttle,
+and the d-pad and face buttons to work the consoles. `docs/gamepad.md` has the
+table and what the pad cannot do.
+
 ## Checks
 
 Two tiers, and the split is the point. Anything that is arithmetic gets asserted

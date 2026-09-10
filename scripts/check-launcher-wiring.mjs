@@ -236,7 +236,16 @@ for (const path of scripts(DIR).sort()) {
 	// rather than accidental contamination of some other rendering assertion.
 	// Keeping the exception exact preserves the suite-wide refusal for every
 	// other probe.
-	if (name !== "probe-frame-attribution.mjs" && /[?&]perf\b/.test(code))
+	// `probe-pad-instrument.mjs` joins the exception on the same terms (#283):
+	// the panel is its subject rather than a contaminant, and it sends no keys
+	// at all — every input it makes is a pad button, which that key listener
+	// cannot see. The list stays a list of names so the suite-wide refusal holds
+	// for every probe that has not argued its way onto it.
+	const PERF_OWNERS = new Set([
+		"probe-frame-attribution.mjs",
+		"probe-pad-instrument.mjs",
+	]);
+	if (!PERF_OWNERS.has(name) && /[?&]perf\b/.test(code))
 		problems.push(
 			`${name}: opens a page with ?perf — that mounts the diagnostic panel, ` +
 				`whose key listener would then see this probe's keystrokes`,

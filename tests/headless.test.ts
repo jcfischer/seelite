@@ -41,11 +41,14 @@ const HEADLESS = [
 	"deficits",
 	"docking",
 	"galaxy",
+	"gamepad",
 	"hud",
 	"hull",
 	"hyperspace",
 	"names",
 	"noise",
+	"pad-bindings",
+	"panel-focus",
 	"planet-appearance",
 	"rng",
 	"ship-mesh",
@@ -90,11 +93,14 @@ test("no module has been quietly dropped from the list", () => {
 		"deficits",
 		"docking",
 		"galaxy",
+		"gamepad",
 		"hud",
 		"hull",
 		"hyperspace",
 		"names",
 		"noise",
+		"pad-bindings",
+		"panel-focus",
 		"planet-appearance",
 		"rng",
 		"ship-mesh",
@@ -235,6 +241,43 @@ test("src/relief-bands.ts imports nothing but a type", () => {
 	expect(source).toMatch(/import type \{[^}]*\} from "\.\/planet-shaders"/);
 	// And no other import form at all — no bare `import "…"` for a side effect,
 	// no dynamic one.
+	expect(source.match(/\bimport\b/g)).toHaveLength(1);
+	expect(source.match(/\brequire\s*\(/g)).toBeNull();
+});
+
+test("src/gamepad.ts is a leaf, which is what makes it copyable", () => {
+	// The module arrived here as a **copy** from seekolous (#249) and will be
+	// copied again; an import is the one thing that would not survive that, since
+	// a third game pasting this file would paste a reference to a module it does
+	// not have. Its header states the rule in prose; this is the half of it that
+	// cannot be argued with.
+	//
+	// It is also the mechanical half of the no-binding-table rule: a binding
+	// table would have to name a station, a target or a regime, and every one of
+	// those names lives behind an import.
+	expect(importsIn("gamepad.ts")).toEqual([]);
+});
+
+test("src/panel-focus.ts is a leaf, which is what lets six panels share it", () => {
+	// The cursor model is the one thing the Navigation list, the market rows, the
+	// chart's buttons, the settings rows and the perf toggles have in common, and
+	// the only way it stays that is by naming none of them. An import here would
+	// be a station, a commodity or a setting key arriving in the model, and the
+	// next panel would need its own.
+	expect(importsIn("panel-focus.ts")).toEqual([]);
+});
+
+test("src/pad-bindings.ts names the pad module only as a type", () => {
+	// The binding table is the one place that knows a button means `j`, and it
+	// has to be loadable here for that to be checked at all. It is not a leaf —
+	// it names `PadFrame` — and what keeps that harmless is that the import is
+	// **type-only** and erased at build. A value import of the same name would
+	// compile, would not be erased, and would put a second copy of the pad
+	// module's constants behind this one.
+	const source = codeOf("src/pad-bindings.ts");
+	const froms = source.match(/\bfrom\s*["'][^"']+["']/g) ?? [];
+	expect(froms).toEqual(['from "./gamepad"']);
+	expect(source).toMatch(/import type \{[^}]*\} from "\.\/gamepad"/);
 	expect(source.match(/\bimport\b/g)).toHaveLength(1);
 	expect(source.match(/\brequire\s*\(/g)).toBeNull();
 });
