@@ -36,14 +36,19 @@ export const FACILITY_CHIPS = ["REFINERY", "SHIPYARD", "KNOWN FENCE"] as const;
 export type FacilityChip = (typeof FACILITY_CHIPS)[number];
 
 /**
- * The knowledge map as a reader of last-known state sees it.
+ * CONTEXT.md's **Last-known state**, as a map from carrier to row.
+ *
+ * **Named for the concept, not for one reader.** It was `FinderKnowledge` while
+ * the record card took the same type through `GalaxyChartOptions.knowledge` —
+ * and this module's own doc says these labels live here because two surfaces
+ * read them and neither owns them.
  *
  * **Derived from the envelope, never re-declared.** Written first as
  * `Record<string, KnowledgeRow>`, which widens `CarrierKey` back to a bare
  * string on the public surface — and the brand exists precisely so a raw string
  * cannot index it (`carrier-key.ts`).
  */
-export type FinderKnowledge = Readonly<GalaxyEnvelope["knowledge"]>;
+export type LastKnownState = Readonly<GalaxyEnvelope["knowledge"]>;
 
 /**
  * The empty overlay, as one object.
@@ -55,7 +60,7 @@ export type FinderKnowledge = Readonly<GalaxyEnvelope["knowledge"]>;
  * inside the chart chunk, and a later `knowledge() === NO_KNOWLEDGE` written
  * against the exported one would have quietly failed for the game.
  */
-export const NO_KNOWLEDGE: FinderKnowledge = {};
+export const NO_KNOWLEDGE: LastKnownState = Object.freeze({});
 
 /**
  * Which world-minute a clock reading falls in.

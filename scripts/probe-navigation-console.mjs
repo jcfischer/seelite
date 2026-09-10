@@ -1090,7 +1090,13 @@ const facilityChecks = async (where) => {
 		await nextFrames(page);
 		const state = await finderState();
 		const drawn = await facilityRows();
-		const capped = Math.min(state.inBudget.length, drawn.rows.length);
+		// **Against the in-budget count, never the DOM's row count.**
+		// `drawn.rows` is every drawn row including a `BEYOND RANGE` group, and
+		// `drawn.projected` is the in-budget group alone — so slicing by the DOM
+		// count could index a beyond-range row against an in-budget projection.
+		// It holds today only because these checks set no query, the same
+		// fixture coincidence `drawnBeyond` is commented for.
+		const capped = Math.min(drawn.drawnCount, drawn.projected.length);
 		// **`KNOWN FENCE` is expected to be empty here and the others are not.**
 		// A fresh boot has docked nowhere, so no fence is checked — demanding
 		// rows of all three failed on the one chip whose empty list is the
@@ -1223,6 +1229,50 @@ const facilityChecks = async (where) => {
 			withChip.unchecked !== null &&
 			offAgain.unchecked === null,
 		`no-match query: before ${JSON.stringify(beforeChip.unchecked)}, with the chip ${JSON.stringify(withChip.unchecked)}, off again ${JSON.stringify(offAgain.unchecked)}`,
+	);
+
+	/**
+	 * **The age moves with the clock, and the row survives it moving.**
+	 *
+	 * §5.2.1's age is relative, and the chart recomputes on player actions only —
+	 * so a map left open froze every reading, which is a wrong number on screen
+	 * rather than a missing one. The first fix put the world-minute in the
+	 * panel's list key, which rebuilt every drawn row once a minute and took the
+	 * focused pick or centre button with it; the second rewrites the annotation
+	 * spans in place. **Both halves are checked here**: the text has to change,
+	 * and the row element has to be the same one afterwards.
+	 *
+	 * The clock is driven by stepping the sim at `MAX_DT` rather than waiting a
+	 * real minute. Nothing else in the file needs the world to advance, which is
+	 * why this is the only place that does it.
+	 */
+	await clearFinder();
+	await showFacility(observedChip ?? FACILITY_CHIPS[0]);
+	const aged = await page.evaluate(async () => {
+		const rowOf = () =>
+			document.querySelector("[data-map-finder-facility-row]");
+		const before = rowOf()?.textContent ?? null;
+		// Stamp the row's own element, so "the same element" is checkable rather
+		// than inferred from the text.
+		const row = rowOf()?.closest("[data-map-finder-row]");
+		if (row) row.dataset.probeStamp = "kept";
+		const g = window.__seelite;
+		const started = g.world.gameTime;
+		while (g.world.gameTime - started < 90) g.step(g.units.MAX_DT);
+		await new Promise((r) =>
+			requestAnimationFrame(() => requestAnimationFrame(r)),
+		);
+		const stampedAfter =
+			rowOf()?.closest("[data-map-finder-row]")?.dataset.probeStamp ?? null;
+		return { before, after: rowOf()?.textContent ?? null, stampedAfter };
+	});
+	check(
+		`${where}: an open map's ages follow the world clock, and the rows survive it`,
+		aged.before !== null &&
+			aged.after !== null &&
+			aged.after !== aged.before &&
+			aged.stampedAfter === "kept",
+		`"${aged.before}" -> "${aged.after}", row element ${aged.stampedAfter === "kept" ? "kept" : "REBUILT"}`,
 	);
 
 	/**

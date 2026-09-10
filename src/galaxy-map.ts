@@ -44,13 +44,13 @@ import {
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
 import {
-	type FinderKnowledge,
+	type LastKnownState,
 	NO_KNOWLEDGE,
 	stationRosterLine,
 	worldMinute,
 } from "./knowledge-labels";
 import { carrierKey } from "./carrier-key";
-import { generateContents } from "./system";
+import { rosterOf } from "./station-roster";
 import {
 	type Course,
 	type CourseProgress,
@@ -337,7 +337,7 @@ export interface GalaxyChartOptions {
 	/** Read-only last-known station intelligence; mounting never writes it, and
 	 *  opening the map is not an information channel (§5.2.1). A getter, and
 	 *  required, for the reason `mountFinderPanel`'s own doc gives. */
-	knowledge: () => FinderKnowledge;
+	knowledge: () => LastKnownState;
 	/** The world clock. Read on every render, so an age and an overdue
 	 *  recovery are current rather than frozen at mount. */
 	now: () => number;
@@ -838,7 +838,7 @@ export function mountGalaxyChart({
 			// and this is where the number behind it lives. The formatting is
 			// `galaxy-finder.ts`'s, so the headless tier can reach it.
 			const rows = knowledge();
-			const stations = generateContents(record).stations.map((station) =>
+			const stations = rosterOf(record).map((station) =>
 				stationRosterLine(
 					station,
 					rows[carrierKey(record.index, station.localCarrierId)],
@@ -1443,13 +1443,10 @@ export function mountGalaxyChart({
 	 * never turned `OVERDUE`.
 	 *
 	 * Minute granularity, because a per-frame recompute to move a number that
-	 * changes at most once a minute is the expensive way to be right. **The
-	 * bound is 60 s, and neither label is aligned to it**: `Math.floor(now()/60)`
-	 * buckets do not line up with `elapsed` crossing sixty — an `observedAt` of
-	 * 30 keeps reading `SEEN JUST NOW` until `now` reaches 120 — and
-	 * `recoveryScheduleLabel` flips at an arbitrary `completesAt`. So a label
-	 * can be up to a minute behind, which is the accuracy this buys and not
-	 * more.
+	 * changes at most once a minute is the expensive way to be right.
+	 * `worldMinute`'s doc owns what that bound is and why neither label is
+	 * aligned to it; this comment carried a near-verbatim second copy of it for
+	 * a round after the rule moved into one module.
 	 */
 	let paintedMinute = worldMinute(now());
 	const frame = (): void => {

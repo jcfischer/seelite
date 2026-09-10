@@ -33,7 +33,7 @@ import { carrierKey } from "../src/carrier-key";
 import {
 	type FacilityAnnotation,
 	type FacilityChip,
-	type FinderKnowledge,
+	type LastKnownState,
 	facilityAnnotationLabel,
 	recoveryScheduleLabel,
 } from "../src/knowledge-labels";
@@ -591,7 +591,7 @@ describe("§9.4 facilities knowledge", () => {
 	 *  in its chips and its overlay; the assertions were buried in the call. */
 	const project = (
 		facilities: FacilityChip[],
-		knowledge?: FinderKnowledge,
+		knowledge?: LastKnownState,
 		over: Partial<FinderFilter> = {},
 	) =>
 		projectFinder(
@@ -646,7 +646,7 @@ describe("§9.4 facilities knowledge", () => {
 		condition: OperationalCondition,
 		observedAt: number,
 		source: string,
-	): FinderKnowledge => ({
+	): LastKnownState => ({
 		[carrierKey(system.index, station.localCarrierId)]: {
 			observedInstanceOrdinal: 0,
 			observedCondition: condition,
@@ -662,7 +662,7 @@ describe("§9.4 facilities knowledge", () => {
 		station: Station,
 		condition: OperationalCondition,
 		observedAt: number,
-	): FinderKnowledge => ({
+	): LastKnownState => ({
 		[carrierKey(system.index, station.localCarrierId)]: {
 			observedInstanceOrdinal: 0,
 			observedCondition: condition,
@@ -1115,6 +1115,22 @@ describe("§9.4 facilities knowledge", () => {
 				systems++;
 			}
 		expect(systems).toBe(GALAXY_COUNT * 256);
+	});
+
+	/**
+	 * **`station-roster.ts` keys its cache on `system.seed`**, and that key's
+	 * uniqueness was a claim in a doc comment with nothing behind it. A
+	 * collision hands one system another's roster, so every annotation and the
+	 * unchecked-fence count would read the wrong carrier — silently, and only
+	 * for the colliding pair. Same sweep as above, because it is the same
+	 * property of the generator.
+	 */
+	test("every system in a world has its own seed, which the roster cache keys on", () => {
+		const seeds = new Set<number>();
+		for (let g = 0; g < GALAXY_COUNT; g++)
+			for (const system of generateGalaxy(WORLD_SEED, g).systems)
+				seeds.add(system.seed);
+		expect(seeds.size).toBe(GALAXY_COUNT * 256);
 	});
 
 	/** §9.4 item 2: any facility chip expands the finder, under §5.2's rule. */

@@ -70,6 +70,8 @@ const filter = {
 	budgetJumps: FINDER_DEFAULT_BUDGET,
 };
 const normalised = QUERY.trim().toLowerCase();
+const byIndex = new Map<number, (typeof galaxy.systems)[number]>();
+for (const system of galaxy.systems) byIndex.set(system.index, system);
 
 const guarded = (): number => {
 	const t0 = performance.now();
@@ -91,12 +93,13 @@ const chipped = (): number => {
  *  projection so the arms share their baseline. */
 const rosterPerSystem = (): number => {
 	const t0 = performance.now();
-	projectFinder(galaxy.systems, here, filter);
-	for (const system of galaxy.systems) {
-		if (system.galaxy !== here.galaxy) continue;
-		if (!finderMatches(system, filter, normalised)) continue;
-		generateContents(system);
-	}
+	// **The rows the projection already found, not a second filter pass.** This
+	// re-walked all 256 systems through `finderMatches` — work arm 1 had already
+	// paid inside `projectFinder`, and work the chip guard does not remove — so
+	// the printed delta carried a whole extra name-and-economy sweep.
+	const rows = projectFinder(galaxy.systems, here, filter);
+	for (const row of [...rows.inBudget, ...rows.beyondRange])
+		generateContents(byIndex.get(row.index) as (typeof galaxy.systems)[number]);
 	return performance.now() - t0;
 };
 

@@ -173,9 +173,17 @@ export interface KnowledgeRow {
 	observedAt: number;
 	source: string;
 	observedRecovery?: ObservedRecovery;
-	/** A private refinery fact is known only after an explicit docking report. */
+	/**
+	 * Private facility facts, each known only after an explicit docking report.
+	 *
+	 * **Plural container, optional members.** `blackMarket` was mandatory
+	 * whenever the container existed, so a carrier whose only checked fact was a
+	 * later one had no representable row — and this shape is behind
+	 * `WORLD_SCHEMA_VERSION`, where correcting it once saves exist costs a
+	 * migration rather than an edit.
+	 */
 	knownPrivateFacts?: {
-		blackMarket: { learnedAt: number; source: string };
+		blackMarket?: { learnedAt: number; source: string };
 	};
 }
 
@@ -859,12 +867,10 @@ export function applyTransition(
 	// §3.1: a player-caused explicit transition is witnessed by definition.
 	// A cause with role `none` happened out of sight and leaves knowledge alone.
 	if (event.cause.playerRole !== "none")
-		envelope = writeKnowledge(
+		envelope = withKnowledgeRow(
 			envelope,
 			key,
-			next,
-			event.occurredAt,
-			"intervention",
+			knowledgeRowFor(envelope, key, next, event.occurredAt, "intervention"),
 		);
 
 	const galaxies = advanced.galaxies.slice();
@@ -876,7 +882,9 @@ export function applyTransition(
 // §3.1 — knowledge
 // ---------------------------------------------------------------------------
 
-const writeKnowledge = (
+/** The row one observation writes. Separate from the envelope write so a report
+ *  covering many carriers can copy the map once rather than once per carrier. */
+const knowledgeRowFor = (
 	env: GalaxyEnvelope,
 	key: CarrierKey,
 	state: {
@@ -886,7 +894,7 @@ const writeKnowledge = (
 	},
 	observedAt: number,
 	source: string,
-): GalaxyEnvelope => {
+): KnowledgeRow => {
 	const prior = env.knowledge[key];
 	const row: KnowledgeRow = {
 		observedInstanceOrdinal: state.instanceOrdinal,
@@ -911,8 +919,18 @@ const writeKnowledge = (
 			? { knownPrivateFacts: prior.knownPrivateFacts }
 			: {}),
 	};
-	return { ...env, knowledge: { ...env.knowledge, [key]: row } };
+	return row;
 };
+
+/** One row into an envelope. */
+const withKnowledgeRow = (
+	env: GalaxyEnvelope,
+	key: CarrierKey,
+	row: KnowledgeRow,
+): GalaxyEnvelope => ({
+	...env,
+	knowledge: { ...env.knowledge, [key]: row },
+});
 
 export const readKnowledge = (
 	env: GalaxyEnvelope,
@@ -936,12 +954,16 @@ export const observe = (
 ): WorldState => {
 	assertCarrierKey(key);
 	return withEnvelope(world, galaxyIndex, gameTime, (env) =>
-		writeKnowledge(
+		withKnowledgeRow(
 			env,
 			key,
-			effectiveCarrier(env, key, gameTime),
-			gameTime,
-			source,
+			knowledgeRowFor(
+				env,
+				key,
+				effectiveCarrier(env, key, gameTime),
+				gameTime,
+				source,
+			),
 		),
 	);
 };
@@ -954,24 +976,25 @@ export const observeSystemRelay = (
 	gameTime: number,
 ): WorldState => {
 	for (const key of keys) assertCarrierKey(key);
-	// **One envelope write for the whole report, not one per station.** Folding
+	// **One envelope write and one map copy for the whole report.** Folding
 	// `observe` over the keys paid `advanceTo` — a `materializeDue` sweep with
-	// its sort over every galaxy — once per station, and shallow-copied a
-	// knowledge map that grows for the whole session once per station too. The
-	// relay is a single report; this writes it as one.
-	return withEnvelope(world, galaxyIndex, gameTime, (env) =>
-		keys.reduce(
-			(current, key) =>
-				writeKnowledge(
-					current,
-					key,
-					effectiveCarrier(current, key, gameTime),
-					gameTime,
-					"system-relay",
-				),
-			env,
-		),
-	);
+	// its sort over every galaxy — once per station, and copied a knowledge map
+	// that grows for the whole session once per station too. The first fix
+	// removed the `advanceTo` and left the per-station copy in place while a
+	// comment claimed both; the rows are built against one envelope and spread
+	// into one object now.
+	return withEnvelope(world, galaxyIndex, gameTime, (env) => {
+		const rows: Record<string, KnowledgeRow> = {};
+		for (const key of keys)
+			rows[key] = knowledgeRowFor(
+				env,
+				key,
+				effectiveCarrier(env, key, gameTime),
+				gameTime,
+				"system-relay",
+			);
+		return { ...env, knowledge: { ...env.knowledge, ...rows } };
+	});
 };
 
 /** Docking reports one station and, only at a refinery, checks its private fact. */
@@ -1399,20 +1422,26 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 	let knownPrivateFacts: KnowledgeRow["knownPrivateFacts"];
 	if (facts !== undefined) {
 		const factObject = asObject(facts, `knowledge ${key} knownPrivateFacts`);
-		const blackMarket = asObject(
-			factObject.blackMarket,
-			`knowledge ${key} knownPrivateFacts.blackMarket`,
-		);
-		knownPrivateFacts = {
-			blackMarket: {
-				learnedAt: num(
-					blackMarket,
-					"learnedAt",
-					`knowledge ${key} blackMarket`,
-				),
-				source: str(blackMarket, "source", `knowledge ${key} blackMarket`),
-			},
-		};
+		// **Each member is optional, and the container may hold none.** The
+		// parser required `blackMarket` while the model stopped requiring it,
+		// which is the pair that lets a shape the model calls legal fail to load.
+		if (factObject.blackMarket === undefined) knownPrivateFacts = {};
+		else {
+			const blackMarket = asObject(
+				factObject.blackMarket,
+				`knowledge ${key} knownPrivateFacts.blackMarket`,
+			);
+			knownPrivateFacts = {
+				blackMarket: {
+					learnedAt: num(
+						blackMarket,
+						"learnedAt",
+						`knowledge ${key} blackMarket`,
+					),
+					source: str(blackMarket, "source", `knowledge ${key} blackMarket`),
+				},
+			};
+		}
 	}
 	return {
 		observedInstanceOrdinal: ordinal(

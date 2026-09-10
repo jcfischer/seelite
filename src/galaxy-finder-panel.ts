@@ -26,7 +26,7 @@ import {
 	FACILITY_CHIPS,
 	type FacilityAnnotation,
 	type FacilityChip,
-	type FinderKnowledge,
+	type LastKnownState,
 	facilityAnnotationLabel,
 	worldMinute,
 } from "./knowledge-labels";
@@ -152,7 +152,7 @@ export interface FinderPanelOptions {
 	 * empty map is indistinguishable in a diff from a caller that forgot, and
 	 * it renders a plausible galaxy nobody has ever visited.
 	 */
-	knowledge: () => FinderKnowledge;
+	knowledge: () => LastKnownState;
 	/** The world clock, read on every render for the same reason as
 	 *  `currentSystem`: §5.2.1's row age is relative, and a value captured at
 	 *  mount would freeze it. */
@@ -193,7 +193,6 @@ export interface FinderPanel {
 	render(): void;
 	setQuery(query: string): void;
 	toggleEconomy(economy: number): void;
-	toggleFacility(facility: FacilityChip): void;
 	setBudget(jumps: number): void;
 	readonly state: FinderPanelState;
 }
@@ -262,7 +261,7 @@ export function mountFinderPanel({
 	let projectionKey = "";
 	/** The knowledge map the memoised projection was built from, compared by
 	 *  identity rather than folded into `projectionKey`. */
-	let projectionKnowledge: FinderKnowledge | null = null;
+	let projectionKnowledge: LastKnownState | null = null;
 	let drawn = { inBudget: 0, beyondRange: 0 };
 
 	// ---- Furniture ---------------------------------------------------------
@@ -844,7 +843,6 @@ export function mountFinderPanel({
 		render,
 		setQuery: (value: string) => patch({ query: value }),
 		toggleEconomy,
-		toggleFacility,
 		setBudget: (jumps: number) => patch({ budgetJumps: jumps }),
 		get state(): FinderPanelState {
 			return {

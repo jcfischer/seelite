@@ -117,13 +117,20 @@ The player's timestamped knowledge of a carrier instance and its observed
 operational condition. It may differ from the objective condition when events
 happen out of sight. It never expires; its increasing age carries the
 uncertainty until an approved information channel refreshes it.
+
+The same row also holds any **private facility facts** the player has checked —
+black-market presence at a refinery is the only one in v1 (#275). Those are
+scoped to the carrier's persisted identity rather than to the instance, so
+unlike the observed condition they survive the carrier being destroyed and
+replaced; the row stores only when the fact was learned and from what source,
+never the generated value, which the baseline supplies once a marker exists.
 _Avoid_: Live map state, discovery status
 
 **System relay**:
 The public station-condition report received when the initial world is
 established or the player later enters a system (#116). It refreshes Last-known
-state for every station there, but reveals no private facility facts such as
-black-market presence. Opening the Galaxy Map does not contact a System relay.
+state for every station there, and preserves any private facility facts already
+checked, but reveals no new ones such as black-market presence. Opening the Galaxy Map does not contact a System relay.
 _Avoid_: Live galaxy feed, long-range scan
 
 **Recovery process**:

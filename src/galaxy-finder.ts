@@ -20,12 +20,12 @@ import {
 } from "./galaxy";
 import { type JumpReach, projectJumps } from "./galaxy-route";
 import { carrierKey } from "./carrier-key";
-import { type Station, generateContents } from "./system";
+import { rosterOf } from "./station-roster";
 import {
 	FACILITY_CHIPS,
 	type FacilityAnnotation,
 	type FacilityChip,
-	type FinderKnowledge,
+	type LastKnownState,
 	fenceKnowledge,
 } from "./knowledge-labels";
 import type { KnowledgeRow } from "./world-state";
@@ -228,32 +228,9 @@ export function finderMatches(
  * annotation is unambiguous and §5.2.1's "never collapses mixed carrier
  * conditions" has no case to answer here: each chip annotates its own carrier.
  */
-/**
- * A system's station roster, cached.
- *
- * **Cached here rather than on `generateContents`.** That call builds the star,
- * the planet ladder and every moon roll to hand back a roster the finder reads
- * three fields of, and `projectFinder` makes it once per admitted system per
- * keystroke — ten typed characters regenerate the admitted galaxy ten times.
- * A cache inside `generateContents` would alias the live system `sim.ts` builds
- * from the same call, which is a different object with a different lifetime; a
- * cache here is read-only and the finder never mutates what it gets.
- *
- * Keyed on the system's own seed, which is unique across galaxies and worlds —
- * an index alone collides between galaxies, and between two seeds on one page.
- */
-const rosterCache = new Map<number, readonly Station[]>();
-const rosterOf = (system: SystemRecord): readonly Station[] => {
-	const hit = rosterCache.get(system.seed);
-	if (hit) return hit;
-	const stations = generateContents(system).stations;
-	rosterCache.set(system.seed, stations);
-	return stations;
-};
-
 function facilitiesOf(
 	system: SystemRecord,
-	knowledge: FinderKnowledge,
+	knowledge: LastKnownState,
 	wanted: readonly FacilityChip[],
 ) {
 	const present = new Map<FacilityChip, FacilityAnnotation>();
@@ -356,7 +333,7 @@ function byReach(a: FinderRow, b: FinderRow): number {
  */
 export interface ProjectFinderOptions {
 	maxJump?: number;
-	knowledge?: FinderKnowledge;
+	knowledge?: LastKnownState;
 }
 
 /**
