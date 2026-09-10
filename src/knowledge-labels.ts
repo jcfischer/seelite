@@ -260,12 +260,24 @@ export function stationRosterLine(
 	known: KnowledgeRow | undefined,
 	now: number,
 ): string {
-	const condition = known
-		? `${known.observedCondition.toUpperCase()} · ${SOURCE_LABELS[known.source] ?? known.source} · SEEN ${exactAge(now - known.observedAt)}`
-		: "STATUS UNKNOWN";
-	const schedule = known?.observedRecovery
-		? ` · ${recoveryScheduleLabel(known.observedRecovery, now)}`
-		: "";
-	const fence = fenceStatusLabel(station.type, station.blackMarket, known);
-	return `${station.name} — ${station.type.toUpperCase()} · ${condition}${schedule}${fence ? ` · ${fence}` : ""}`;
+	// **Two lines, and the break is deliberate.** As one line this runs to 84
+	// characters at its worst — an observed refinery with an old reading and an
+	// unchecked fence — which no card width on a 1280 stage fits, so it wrapped
+	// mid-phrase and a continuation began `· RELAY REPORT`. What the station
+	// *is* goes on the first line; what is *known* about it goes on the second,
+	// indented, so an entry reads as one thing at any width.
+	const head = `${station.name} — ${station.type.toUpperCase()} · ${
+		known ? known.observedCondition.toUpperCase() : "STATUS UNKNOWN"
+	}`;
+	const reading = [
+		known ? (SOURCE_LABELS[known.source] ?? known.source) : null,
+		known ? `SEEN ${exactAge(now - known.observedAt)}` : null,
+		known?.observedRecovery
+			? recoveryScheduleLabel(known.observedRecovery, now)
+			: null,
+		fenceStatusLabel(station.type, station.blackMarket, known),
+	]
+		.filter((part) => part)
+		.join(" · ");
+	return reading ? `${head}\n    ${reading}` : head;
 }

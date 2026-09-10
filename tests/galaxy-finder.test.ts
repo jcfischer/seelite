@@ -1158,29 +1158,75 @@ describe("§9.4 facilities knowledge", () => {
 			source,
 		});
 		expect(stationRosterLine(station, at("system-relay", 37), 259)).toBe(
-			"RABEINOR — SHIPYARD · OPERATIONAL · RELAY REPORT · SEEN 3M 42S AGO",
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    RELAY REPORT · SEEN 3M 42S AGO",
 		);
 		expect(stationRosterLine(station, at("docking", 257), 325)).toBe(
-			"RABEINOR — SHIPYARD · OPERATIONAL · DOCKED HERE · SEEN 1M 08S AGO",
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    DOCKED HERE · SEEN 1M 08S AGO",
 		);
 		expect(stationRosterLine(station, at("intervention", 0), 4 * 3600)).toBe(
-			"RABEINOR — SHIPYARD · OPERATIONAL · YOUR DOING · SEEN 4H 00M AGO",
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    YOUR DOING · SEEN 4H 00M AGO",
 		);
 		// Two units, never three, and a day rolls up to days-and-hours.
 		expect(
 			stationRosterLine(station, at("docking", 0), 3 * 86_400 + 4 * 3600),
-		).toBe("RABEINOR — SHIPYARD · OPERATIONAL · DOCKED HERE · SEEN 3D 04H AGO");
+		).toBe(
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    DOCKED HERE · SEEN 3D 04H AGO",
+		);
 		expect(stationRosterLine(station, at("docking", 0), 9)).toBe(
-			"RABEINOR — SHIPYARD · OPERATIONAL · DOCKED HERE · SEEN 9S AGO",
+			"RABEINOR — SHIPYARD · OPERATIONAL\n    DOCKED HERE · SEEN 9S AGO",
 		);
 		// A channel nobody has mapped shows itself rather than vanishing.
 		expect(stationRosterLine(station, at("courier-rumour", 0), 5)).toContain(
 			"courier-rumour",
 		);
-		// And never observed still says so, with no age at all.
+		// **Never observed is one line, not two with an empty second.** There is
+		// nothing known to put on a second line, and a shipyard has no fence.
 		expect(stationRosterLine(station, undefined, 900)).toBe(
 			"RABEINOR — SHIPYARD · STATUS UNKNOWN",
 		);
+		// An unobserved refinery does have a second line: the fence is a fact
+		// about it whether or not anyone has looked.
+		expect(
+			stationRosterLine(
+				{ name: "LEBEBEZA", type: "refinery", blackMarket: true },
+				undefined,
+				900,
+			),
+		).toBe("LEBEBEZA — REFINERY · STATUS UNKNOWN\n    FENCE UNCHECKED");
+	});
+
+	/**
+	 * **The card is sized from this, so it is measured rather than assumed.**
+	 * As one line a roster entry ran to 84 characters at its worst, which no
+	 * card width on a 1280 stage fits — it wrapped mid-phrase and a continuation
+	 * began `· RELAY REPORT`, which is what the principal saw and rejected. The
+	 * split holds every line a player meets inside the card's 540px.
+	 */
+	test("no roster line a player meets is longer than the card is wide", () => {
+		let worst = "";
+		for (let g = 0; g < GALAXY_COUNT; g++)
+			for (const system of generateGalaxy(WORLD_SEED, g).systems)
+				for (const station of generateContents(system).stations)
+					for (const known of [
+						undefined,
+						{
+							observedInstanceOrdinal: 0,
+							observedCondition: "operational" as const,
+							// The oldest reading the label can print in two units.
+							observedAt: 0,
+							source: "system-relay",
+						},
+					])
+						for (const line of stationRosterLine(
+							station,
+							known,
+							3 * 86_400 + 4 * 3600,
+						).split("\n"))
+							if (line.length > worst.length) worst = line;
+		// 540px of card less 22px of padding, at the console's monospace cell.
+		// The bound is characters because the test cannot measure a font; the
+		// pixel figure it stands for is in `galaxy-map.ts` beside `maxWidth`.
+		expect(worst.length).toBeLessThanOrEqual(53);
 	});
 
 	/** §9.4 item 2: any facility chip expands the finder, under §5.2's rule. */

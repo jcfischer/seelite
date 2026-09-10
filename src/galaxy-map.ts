@@ -540,7 +540,19 @@ export function mountGalaxyChart({
 		borderLeft: "2px solid #ffb347",
 		borderRadius: "3px",
 		pointerEvents: "none",
-		maxWidth: "260px",
+		// **Wide enough for the longest roster line, and never wider than the
+		// stage.** 260px wrapped every one of them mid-phrase, so a continuation
+		// began `· RELAY REPORT` and the card read as a column of fragments. The
+		// figure is measured rather than guessed, and the line that sets it is
+		// not the one you would expect: `NAME — REFINERY · STATUS UNKNOWN ·
+		// FENCE UNCHECKED` at 511px, an *un*observed refinery, beats every
+		// observed reading. 540 clears it with room for a longer name.
+		//
+		// The `min` is what keeps that safe on the 390px console, where no width
+		// fits that line: the placement clamp below reads `offsetWidth` every
+		// frame and pushes the card left, but a card wider than the stage has
+		// nowhere left to be pushed.
+		maxWidth: "min(540px, calc(100% - 24px))",
 		whiteSpace: "pre-wrap",
 	});
 	stage.appendChild(card);
