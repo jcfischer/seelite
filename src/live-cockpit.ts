@@ -388,6 +388,13 @@ export class LiveCockpit {
 		"[data-live-launch]",
 		"[data-live-nav-kind]",
 		"[data-live-nav-target]",
+		// **The rail's GALAXY MAP button, which is not a tab.** It carries
+		// `data-live-left-tab` and no `lc-tab` class, so dropping that attribute
+		// wholesale took it out of the walk *and* out of `stepTab`'s reach — a
+		// control that left the pad entirely, which neither the PR body nor the
+		// "never lands on a tab" check could see. Sage found it. The `:not`
+		// keeps the tab row out while leaving the button in.
+		"[data-live-left-tab]:not(.lc-tab)",
 	].join(",");
 
 	/**
@@ -527,7 +534,7 @@ export class LiveCockpit {
 	 * The hint is drawn **only while a pad is present**, because a line telling
 	 * a keyboard player about Cross is noise on every frame they ever see.
 	 */
-	private markPadScope(present: boolean, scope: HTMLElement | null) {
+	private markPadScope(present: boolean) {
 		// **Remembered, not queried — the rule the ring already follows.** The
 		// first version swept the cockpit twice with `querySelectorAll`, for two
 		// attributes this class is the only writer of, on every rendered frame
@@ -536,7 +543,18 @@ export class LiveCockpit {
 		// that, and found that the sweep *skipped the live scope* — so a pad
 		// disconnect took the hint away and left the border still claiming the
 		// d-pad was walking that panel.
-		const wanted = present ? scope : null;
+		// **The query is inside, and only a pad pays for it.** It was an argument
+		// computed at both call sites on every rendered frame and then thrown
+		// away here for every keyboard player — a full failed subtree scan under
+		// a comment claiming the opposite, and a second one beside the scan
+		// `focusedElement` already does. Sage found that too; the eager argument
+		// was the same mistake as the sweep it replaced.
+		const elements = present ? this.focusElements() : [];
+		// Gated on there being something to walk, not on a panel existing: the
+		// right console undocked and the Communications tab both draw zero
+		// focusable rows, and "UP/DOWN WALK" over an empty walk is an
+		// instruction to do nothing.
+		const wanted = elements.length > 0 ? this.focusScope() : null;
 		if (wanted === this.padScope) return;
 		if (this.padScope) delete this.padScope.dataset.livePadScope;
 		this.padHint?.remove();
@@ -562,13 +580,13 @@ export class LiveCockpit {
 	setPadPresent(present: boolean) {
 		if (this.padPresent === present) return;
 		this.padPresent = present;
-		this.markPadScope(present, this.focusScope());
+		this.markPadScope(present);
 	}
 
 	private applyFocusRing(scroll = false) {
 		const reveal = scroll || this.revealOnNextRing;
 		this.revealOnNextRing = false;
-		this.markPadScope(this.padPresent, this.focusScope());
+		this.markPadScope(this.padPresent);
 		// **Remembered, not queried.** This runs on every rendered frame, pad or
 		// no pad, and a `querySelectorAll` over the cockpit for an attribute this
 		// class is the only writer of is a scan for something it already knows.

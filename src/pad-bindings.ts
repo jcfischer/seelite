@@ -21,7 +21,7 @@
  * implementation stays one implementation, and the pad cannot drift away from
  * the keyboard while nobody is looking.
  *
- * ## Three contexts, and the second one is the interesting one
+ * ## Four contexts, and the second one is the interesting one
  *
  * `flight` is the forward view, and it is the only context that moves the ship.
  *
@@ -117,6 +117,23 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
 };
 
 /**
+ * The line a console shows a pad player, owned here beside the bindings it
+ * names.
+ *
+ * It was written into `live-cockpit.ts` and was a third copy of a table this
+ * module and `docs/gamepad.md` already own — a rebind would have moved two of
+ * the three. Sage asked.
+ *
+ * **"CONTROLLER", not "PAD".** On a *station* console the shorter word collides
+ * with `CONTEXT.md`'s berth sense, which is the one place in this game where
+ * that reading is live. And the buttons are named by their standard-mapping
+ * positions rather than drawn as DualSense glyphs, because an Xbox pad reads
+ * `a`/`b` literally and this module says so above.
+ */
+export const PAD_CONSOLE_HINT =
+	"CONTROLLER · UP/DOWN WALK · A SELECT · B BACK · L1/R1 TAB";
+
+/**
  * What the pad asked for this frame, in the game's own words.
  *
  * The deltas are `-1`, `0` or `1` — one row or one tab per press, never per
@@ -124,9 +141,6 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
  * held d-pad is a thing a player will eventually want and is not in this node;
  * adding it means a timer, and a timer is state this function does not have.
  */
-export const PAD_CONSOLE_HINT =
-	"CONTROLLER · UP/DOWN WALK · A SELECT · B BACK · L1/R1 TAB";
-
 export interface PadIntents {
 	/** Keys to hand to `Game.command`, in press order. */
 	readonly keys: readonly string[];

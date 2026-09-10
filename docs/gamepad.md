@@ -55,17 +55,12 @@ console, or the station console on the forward wall while docked. It claims
 **six controls** — the d-pad's two vertical positions, the two face buttons and
 the two shoulders — and it **suspends the sticks, the triggers and the mouse**.
 
-That suspension is a reversal, and the reasoning it replaced is worth keeping
-because it was wrong in an instructive way. The console's own footer says
-*"Simulation continues while this console is open"*, and #283 read that as *the
-ship must stay flyable*, so it left the sticks flying. It is a claim about the
-**world** — orbits, markets and NPCs, all of which do go on running — and not
-about the controls. Flown, the version that kept them was a ship flying off
-while its pilot read a list.
-
-The throttle is **held** rather than zeroed: the ship coasts on the velocity it
-had, and nothing is re-armed when the panel closes. Driving it to zero was
-offered and declined, because it changes your speed without being asked.
+That suspension is a reversal of what #283 first shipped, and the reasoning it
+replaced was wrong in a way worth keeping. **`src/pad-bindings.ts`'s header owns
+the argument and this file does not repeat it** — it was verbatim in both for a
+round, which is the third-copy drift `CLAUDE.md` warns about. What is worth
+knowing without opening it: the footer is a claim about the *world*, not the
+controls, and the throttle is **held** rather than zeroed, so you coast.
 
 **`instrument`** is the frame overlay behind `?perf`, and it is the one
 exception. It takes a console's six buttons and leaves the sticks alone, because

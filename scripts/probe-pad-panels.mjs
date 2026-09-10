@@ -254,6 +254,32 @@ try {
 				hint: hint?.textContent ?? null,
 			};
 		});
+		// The rail's GALAXY MAP button is not a tab and must stay in the walk —
+		// dropping `data-live-left-tab` wholesale took a control out of the pad's
+		// reach entirely, seen by neither the PR body nor the tab check. Sage.
+		const railReached = await page.evaluate(() => {
+			const rail = document.querySelector(
+				'[data-live-panel][data-active="true"] [data-live-left-tab]:not(.lc-tab)',
+			);
+			return rail ? rail.textContent?.trim() : null;
+		});
+		let landedOnRail = false;
+		for (let i = 0; i < WALK_CAP && railReached; i++) {
+			const on = await focused();
+			if (on?.text?.toUpperCase() === railReached.toUpperCase()) {
+				landedOnRail = true;
+				break;
+			}
+			await tap(B.down);
+		}
+		check(
+			"the rail's own button is still walkable — it is not a tab",
+			railReached !== null && landedOnRail,
+			railReached === null
+				? "no rail button on this panel"
+				: `walked to ${railReached}: ${landedOnRail}`,
+		);
+
 		check(
 			"the panel holding the pad says so, and carries the hint line",
 			marked.scope === "left" &&

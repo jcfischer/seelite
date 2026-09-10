@@ -4794,9 +4794,12 @@ class Game {
 		const perf = this.perfPanel;
 		if (perf?.isFocused()) {
 			// **Circle, and not d-pad down again.** While the instrument holds the
-			// pad the context is a console's, so down walks its rows — which means
-			// `instrument` is never asked for from in here, and a branch reading it
-			// was unreachable. `probe-pad-instrument.mjs` found that, not review.
+			// pad, down walks its rows, so `instrument` is never asked for from in
+			// here and a branch reading it was unreachable —
+			// `probe-pad-instrument.mjs` found that, not review. The context is
+			// its own since the reversal, rather than the console's this comment
+			// used to name: a console suspends flight input and the instrument
+			// must not.
 			if (intents.back) return perf.setFocused(false);
 			if (intents.focusDelta !== 0) perf.moveCursor(intents.focusDelta);
 			if (intents.activate) perf.activate();
