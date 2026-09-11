@@ -30,9 +30,12 @@
  *    silhouette at all** — at both ranges — and, **at the near range only**,
  *    that re-measuring one reproduces it. That control is about whether the
  *    measurement works rather than about what it finds, and it is near-range
- *    only because at 60 km the mask is a few dozen pixels and the control itself
- *    reads about 0.17: a check whose noise is three times its own ceiling is not
- *    a check.
+ *    only because at 60 km the mask is a few dozen pixels and the control is of
+ *    the same order as the thing it would be separating. **The figure moved
+ *    under #290** — parked it read 0.028, co-moving it reads 0.200-0.300 over
+ *    three runs — so the number is not restated here: the run prints it, and
+ *    what it means is that at 60 km this metric is near the end of its
+ *    usefulness. Why it moved is #120's.
  *
  * 2. **The slot tracks the spin.** Its screen-space orientation advances at the
  *    station's own `spinRpm`, and it is measured twice over:
@@ -75,6 +78,7 @@
  */
 import {
 	bootedGame,
+	checkFraming,
 	guardedOrigin,
 	installViewPlacement,
 	launchChromium,
@@ -153,11 +157,18 @@ const GRID = 24;
  *
  * It is only meaningful against the metric's own noise, so the run measures that
  * too, by capturing one station twice (the control below). Measured while it was
- * still a gate: the three pairs came out at about 0.35 (trade/refinery), 0.61
- * (trade/shipyard) and 0.62 (refinery/shipyard), against a control of 0.02. The
- * closest pair was the two compact types, which is where the identity claim is
- * hardest, and 0.25 left that pair about 40% of headroom while sitting an order
- * of magnitude above the noise.
+ * still a gate, from a **parked** framing: the three pairs came out at about
+ * 0.35 (trade/refinery), 0.61 (trade/shipyard) and 0.62 (refinery/shipyard),
+ * against a control of 0.02. The closest pair was the two compact types, which
+ * is where the identity claim is hardest, and 0.25 left that pair about 40% of
+ * headroom while sitting an order of magnitude above the noise.
+ *
+ * **#290 moved the closest pair and the headroom with it.** Framed co-moving,
+ * trade/refinery reads 0.271 rather than 0.35 — 8% above this floor, not 40% —
+ * and the near control reads 0.088 against a ceiling of 0.12. So the figure to
+ * restore is not this one: re-arming the gate means re-measuring the spread
+ * first, and 0.25 is now close enough to the closest pair that it would be
+ * asserting a margin it does not have.
  */
 const MIN_DIFFERENCE = 0.25;
 
@@ -205,19 +216,13 @@ const MAX_CONTROL_DIFFERENCE = 0.12;
  *  loop decides when the samples land rather than the probe. */
 const SPIN_TOLERANCE = 0.06;
 
-/**
- * How far a placement may land from the framing it asked for.
- *
- * Not this probe's figures: they are `probe-station-visuals.mjs`'s, and that
- * file states where they came from — bounded above by a falsifying build and
- * below by what a co-moving placement lands. A second derivation here would be
- * a second thing to keep true. What belongs here is why this probe has them at
- * all, which is #272: its framings were read 3.06°–4.31° off the aperture axis
- * at `RANGE_KM`, six to nine times the angle below, and it had no check that
- * could say so.
- */
-const FRAMING_TOLERANCE = 0.01;
-const FRAMING_TOLERANCE_DEG = 0.5;
+// The framing tolerances and `checkFraming` are imported, not declared: they
+// are `probe-guard.mjs`'s, beside the placement they are a tolerance on. The
+// first version of this node wrote them as fresh literals under a comment
+// saying they belonged to another file, which is the second copy the comment
+// claimed to avoid — sage found it. Why this probe gates on them at all is
+// #272: its framings landed 4.69°–5.20° off the aperture axis at `RANGE_KM`,
+// nine to ten times the tolerance, and nothing here could say so.
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -296,20 +301,10 @@ async function viewAlongAxis(id, rangeKm) {
 	);
 }
 
-/** Gate one placement on both tolerances, and print the numbers either way —
- *  `probe-station-visuals.mjs`'s detail string, because a receipt that says
- *  only `ok` cannot be read against a later run. */
-function checkFraming(label, framing) {
-	const drift = (framing.actualKm - framing.askedKm) / framing.askedKm;
-	check(
-		`${label} is framed where it asked`,
-		Math.abs(drift) <= FRAMING_TOLERANCE &&
-			framing.offAxisDeg <= FRAMING_TOLERANCE_DEG,
-		`asked ${framing.askedKm.toFixed(3)} km, landed ` +
-			`${framing.actualKm.toFixed(3)} km (${(drift * 100).toFixed(2)}%), ` +
-			`${framing.offAxisDeg.toFixed(2)}° off the axis`,
-	);
-}
+/** This probe's `check` bound into the shared gate, so the two call sites read
+ *  as one line each. */
+const framedWhereItAsked = (label, framing) =>
+	checkFraming(check, label, framing);
 
 /**
  * The station's silhouette as a `GRID × GRID` occupancy mask.
@@ -518,7 +513,7 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// refinery at 0 lit aperture pixels and that looks like a defect in the
 		// form; it was a framing that landed somewhere else, and only a check on
 		// the framing itself says so.
-		checkFraming(
+		framedWhereItAsked(
 			`${rangeKm} km — ${station.type}`,
 			await viewAlongAxis(station.id, rangeKm),
 		);
@@ -580,11 +575,14 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		console.log(
 			`  control (trade measured twice): 1 − IoU = ${drift.toFixed(3)}`,
 		);
-		// Gated only where the shape comparison is. At the far range the mask is a
-		// few dozen pixels and the control reads about 0.17 — measured, printed,
-		// and the reason the far-range pairwise figures above are reported rather
-		// than asserted: a metric whose noise is half its signal is not evidence,
-		// and the honest far-range claim is the extent one below.
+		// Gated only where the shape comparison is, and the far control is the
+		// reason the far-range pairwise figures above are reported rather than
+		// asserted: a metric whose noise is of the same order as its signal is
+		// not evidence, and the honest far-range claim is the extent one below.
+		// **The figure is deliberately not quoted here** — it is printed on the
+		// line above, it moved under #290 (0.028 parked, 0.200-0.300 co-moving
+		// over three runs), and a third copy of it in this file had already gone
+		// stale. Why it moved is #120's question, not this probe's.
 		if (gate.control)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
@@ -724,8 +722,18 @@ const wrap = (d) => {
  * and only the assertion differs, and a change to how the delta is taken should
  * land in one place.
  */
-async function angleRateRadS(id, waitMs) {
-	await viewAlongAxis(id, RANGE_KM);
+async function angleRateRadS(id, waitMs, label) {
+	// The second placement site, and it gates like the first. Sage found this
+	// one ungated: it frames at `RANGE_KM`, which is exactly where #272's red
+	// case lived, and a bad landing here falls through to `no aperture in the
+	// mesh` — which is #263's misdiagnosis, a framing failure wearing a form
+	// defect's name. Note this block was silently *changed* by the helper swap:
+	// it used to hold the ship at rest across `waitMs`, which at ~30 km/s is
+	// tens of thousands of kilometres of relative carry, and now it moves with
+	// the station. The spin rates it reports are unmoved either way — both arms
+	// are in the round-1 comment on the PR — because the angle is read off the
+	// slot's own transform rather than off where the camera stands.
+	framedWhereItAsked(label, await viewAlongAxis(id, RANGE_KM));
 	const first = await slotAngle(id);
 	if (first.missing) return { missing: true };
 	await page.waitForTimeout(waitMs);
@@ -739,7 +747,11 @@ for (const station of setup.stations) {
 	if (station.spinRpm === 0) continue;
 	// Long enough to measure, short enough that the fastest station turns well
 	// under half a revolution — past π the wrap makes the direction ambiguous.
-	const sample = await angleRateRadS(station.id, 1500);
+	const sample = await angleRateRadS(
+		station.id,
+		1500,
+		`spin — ${station.type}`,
+	);
 	if (sample.missing) {
 		check(
 			`${station.type}: the slot is drawn`,
@@ -803,7 +815,11 @@ for (const rpm of ends) {
 		},
 		[spinner.id, rpm],
 	);
-	const sample = await angleRateRadS(spinner.id, 1500);
+	const sample = await angleRateRadS(
+		spinner.id,
+		1500,
+		`spin — ${spinner.type} at ${rpm.toFixed(2)} rpm`,
+	);
 	const expected = (2 * Math.PI * rpm) / 60;
 	console.log(
 		`  ${spinner.type} driven to ${rpm.toFixed(2)} rpm (§4's ` +
@@ -829,7 +845,7 @@ await page.evaluate(
 
 const pad = setup.stations.find((s) => s.spinRpm === 0);
 if (pad) {
-	const sample = await angleRateRadS(pad.id, 1200);
+	const sample = await angleRateRadS(pad.id, 1200, `spin — ${pad.type} pad`);
 	// The refinery's pad does not rotate at all (§4), which is what removes the
 	// roll match from its docking interaction. A pad that crept would make that
 	// a different game without failing any headless test.

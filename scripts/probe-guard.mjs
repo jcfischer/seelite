@@ -580,3 +580,57 @@ export async function installViewPlacement(page) {
 		};
 	});
 }
+
+/**
+ * How far a placement may land from the framing it asked for: a fraction of the
+ * range, and an angle off the aperture axis.
+ *
+ * **Here rather than in a probe, because two probes gate on it.** #271 wrote
+ * these in `probe-station-visuals.mjs` as module-local consts and #290 needed
+ * the same pair — copying them would have left a retune of the documented
+ * figures silently not reaching the second gate, which is the drift a shared
+ * owner exists to prevent. They live beside `installViewPlacement` because they
+ * are the tolerance on what it lands.
+ *
+ * **Where they came from (#271).** Bounded from above by the falsifying build:
+ * parked, one run on one machine, range trade −11.41% / −9.75%, refinery
+ * +3.83% / +2.15%, shipyard −2.15% / −2.15%, and off-axis 14.24° / 11.96°,
+ * 14.89° / 10.89°, 6.18° / 6.18° (desktop / narrow). So the tightest red arm is
+ * 2.15% on the range and 6.18° on the angle, and a tolerance at or above either
+ * would not be a check on that arm. Bounded from below by what co-moving lands:
+ * ≤0.02% and ≤0.01°, printed in the detail of every check that uses them.
+ *
+ * The magnitude of the red side is **frame-cost dependent** — it is how far the
+ * station travelled while the loop ran, not a constant of the geometry — so it
+ * is a figure to re-measure rather than to quote. #290 re-measured it at a
+ * different range and got a different red: at `RANGE_KM` 5 km the angle is
+ * 4.69°–5.20°, and at 60 km it is 0.35°–0.44°, which is **inside** this
+ * tolerance. A parked framing is not red everywhere.
+ */
+export const FRAMING_TOLERANCE = 0.01;
+export const FRAMING_TOLERANCE_DEG = 0.5;
+
+/**
+ * Gate one placement on both tolerances and print the numbers either way.
+ *
+ * `check` is the caller's, from its own `tally()` — the helper cannot own the
+ * counter without owning the exit code too. The detail string is printed on a
+ * pass as well as a fail, because a receipt that says only `ok` cannot be read
+ * against a later run.
+ *
+ * Both numbers, and #271's reason: a station carried across the frame leaves
+ * most of the error off the axis rather than along it, so a camera 12% short
+ * but 16° round the side is looking at a different face of the subject and a
+ * range check alone passes it.
+ */
+export function checkFraming(check, label, framing) {
+	const drift = (framing.actualKm - framing.askedKm) / framing.askedKm;
+	check(
+		`${label} is framed where it asked`,
+		Math.abs(drift) <= FRAMING_TOLERANCE &&
+			framing.offAxisDeg <= FRAMING_TOLERANCE_DEG,
+		`asked ${framing.askedKm.toFixed(3)} km, landed ` +
+			`${framing.actualKm.toFixed(3)} km (${(drift * 100).toFixed(2)}%), ` +
+			`${framing.offAxisDeg.toFixed(2)}° off the axis`,
+	);
+}
