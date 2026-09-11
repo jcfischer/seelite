@@ -344,7 +344,10 @@ export function* enumerateCarriers(
 
 /** FNV-1a, 32-bit. A hash, not a checksum with any cryptographic claim: what
  *  it has to do is change when its input does. */
-const fnv1a = (text: string): number => {
+/** Exported for `save-envelope.ts`, which hashes `{ world, commander }` with
+ *  it. A second copy in that module would be a second answer to "is this the
+ *  same save", which is the question the hash exists to settle. */
+export const fnv1a = (text: string): number => {
 	let h = 0x811c9dc5;
 	for (let i = 0; i < text.length; i++) {
 		h ^= text.charCodeAt(i);
