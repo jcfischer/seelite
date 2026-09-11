@@ -76,6 +76,7 @@
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -205,36 +206,18 @@ const MAX_CONTROL_DIFFERENCE = 0.12;
 const SPIN_TOLERANCE = 0.06;
 
 /**
- * One layer-agnostic mesh lookup and one "settle two frames" for every evaluate
- * in this file.
+ * How far a placement may land from the framing it asked for.
  *
- * Installed as an init script rather than repeated three times: the rule "a
- * body is drawn in whichever layer its distance puts it in" is the renderer's,
- * and a probe that states it three times has three places to get it wrong. The
- * same pattern `probe-guard.mjs` uses for `__recoverCamSim`.
+ * Not this probe's figures: they are `probe-station-visuals.mjs`'s, and that
+ * file states where they came from — bounded above by a falsifying build and
+ * below by what a co-moving placement lands. A second derivation here would be
+ * a second thing to keep true. What belongs here is why this probe has them at
+ * all, which is #272: its framings were read 3.06°–4.31° off the aperture axis
+ * at `RANGE_KM`, six to nine times the angle below, and it had no check that
+ * could say so.
  */
-const installMeshLookup = (page) =>
-	page.addInitScript(() => {
-		window.__meshOfBody = (id) =>
-			window.__seelite.nearScene.getObjectByName(id) ??
-			window.__seelite.farScene.getObjectByName(id) ??
-			null;
-		/**
-		 * Place the ship and let the renderer catch up.
-		 *
-		 * **Two** frames, not one: the first may already be in flight when the
-		 * position is written, so it can compose from a mix of the old and new
-		 * ship positions. The second is unambiguously after the write. Written
-		 * once because two copies drift the day that count changes.
-		 */
-		window.__placeShipAt = async (pos) => {
-			const g = window.__seelite;
-			g.world.ship.pos = pos;
-			g.world.ship.vel = { x: 0, y: 0, z: 0 };
-			await new Promise((r) => requestAnimationFrame(() => r()));
-			await new Promise((r) => requestAnimationFrame(() => r()));
-		};
-	});
+const FRAMING_TOLERANCE = 0.01;
+const FRAMING_TOLERANCE_DEG = 0.5;
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -243,7 +226,11 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
-await installMeshLookup(page);
+// `__meshOfBody`, `__placeShipAt` and `__viewAlongAxis`, from the one module
+// that owns them. The private copies this replaced are #272's subject; the
+// deleted `__meshOfBody` was byte-identical to probe-guard's, and the deleted
+// `__placeShipAt` differed by exactly the argument that mattered.
+await installViewPlacement(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
@@ -280,37 +267,47 @@ if (!allThree) {
 }
 
 /**
- * Put the camera on a station's aperture axis at `RANGE_KM` and look back down
+ * Put the camera on a station's aperture axis at `rangeKm` and look back down
  * it, so the aperture faces the viewer.
  *
  * The ship is placed rather than flown, for `probe-handoff.mjs`'s reason: the
  * distances involved take hours under thrust, and the renderer cannot tell a
  * placed ship from a flown one.
  *
- * Returns nothing: every caller's next act reads the page itself, and a payload
- * none of them used read as one they were meant to.
+ * **This probe used to own a copy of the placement and of the helper under it,
+ * and that is what #272 was.** `installMeshLookup` installed a private
+ * `__placeShipAt` taking **one** argument, shadowing `probe-guard.mjs`'s
+ * two-argument version, so the co-moving default #271 gave `__viewAlongAxis`
+ * never reached here — and #271's audit of that helper's callers could not see
+ * a call site that does not call it. Worse for whoever came next: handing the
+ * private copy a velocity was a **silent no-op**, JavaScript discarding the
+ * extra argument, and the run came back bit-identical, which reads exactly like
+ * a measured null result.
+ *
+ * Returns the placement's own reading of what it achieved. A placement is a
+ * request and the frame loop is free to carry the subject off it, so this is a
+ * reading rather than a constant — `__viewAlongAxis`'s docstring carries why it
+ * takes two numbers and not one.
  */
 async function viewAlongAxis(id, rangeKm) {
 	return page.evaluate(
-		async ([bodyId, range]) => {
-			const g = window.__seelite;
-			const body = g.world.system.bodies.find((b) => b.id === bodyId);
-			const pose = g.poseOfStation(bodyId);
-			await window.__placeShipAt({
-				x: body.pos.x + pose.axis.x * range,
-				y: body.pos.y + pose.axis.y * range,
-				z: body.pos.z + pose.axis.z * range,
-			});
-			// A camera looks down its own −Z, so aiming at the station means
-			// mapping −Z onto −axis. `Vector3` is not reachable from the page, so
-			// the two vectors are borrowed from an object that already holds some.
-			const from = g.nearScene.position.clone().set(0, 0, -1);
-			const to = g.nearScene.position
-				.clone()
-				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
-			g.orientation.setFromUnitVectors(from, to);
-		},
+		([bodyId, range]) => window.__viewAlongAxis(bodyId, range),
 		[id, rangeKm],
+	);
+}
+
+/** Gate one placement on both tolerances, and print the numbers either way —
+ *  `probe-station-visuals.mjs`'s detail string, because a receipt that says
+ *  only `ok` cannot be read against a later run. */
+function checkFraming(label, framing) {
+	const drift = (framing.actualKm - framing.askedKm) / framing.askedKm;
+	check(
+		`${label} is framed where it asked`,
+		Math.abs(drift) <= FRAMING_TOLERANCE &&
+			framing.offAxisDeg <= FRAMING_TOLERANCE_DEG,
+		`asked ${framing.askedKm.toFixed(3)} km, landed ` +
+			`${framing.actualKm.toFixed(3)} km (${(drift * 100).toFixed(2)}%), ` +
+			`${framing.offAxisDeg.toFixed(2)}° off the axis`,
 	);
 }
 
@@ -517,7 +514,14 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	 *  back out. */
 	let control = null;
 	for (const station of setup.stations) {
-		await viewAlongAxis(station.id, rangeKm);
+		// Gated on the placement, not on its downstream symptom. #263 read a
+		// refinery at 0 lit aperture pixels and that looks like a defect in the
+		// form; it was a framing that landed somewhere else, and only a check on
+		// the framing itself says so.
+		checkFraming(
+			`${rangeKm} km — ${station.type}`,
+			await viewAlongAxis(station.id, rangeKm),
+		);
 		// The trade station is captured *twice from one evaluate*, and the second
 		// copy is the control. Two evaluates cannot measure this metric's noise:
 		// real frames run in the gap and carry the station along its orbit, which
