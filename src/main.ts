@@ -198,6 +198,7 @@ import {
 	jumpWorldTo,
 	makeSystem,
 	makeWorld,
+	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
 	stationOf,
@@ -342,6 +343,23 @@ import {
 	type RightTab,
 } from "./live-cockpit";
 import { readDeficit } from "./deficits";
+import {
+	type CommanderRecord,
+	type SaveEnvelope,
+	newCommanderRecord,
+	parseSave,
+	serializeSave,
+} from "./save-envelope";
+import {
+	DEFAULT_SLOT,
+	type FlushReason,
+	SAVE_DB_NAME,
+	SAVE_DEBOUNCE_MS,
+	SAVE_RETRY_LIMIT,
+	SAVE_STORE_NAME,
+	SaveStore,
+	indexedDbSaveBackend,
+} from "./save-store";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -355,7 +373,12 @@ import {
 import {
 	newWorld as newPersistentWorld,
 	observeDocking,
+	advanceTo,
+	applyTransition,
+	effectiveCarrier,
 	observeSystemRelay,
+	setDeficits,
+	type TransitionEvent,
 	visit,
 	type WorldState,
 } from "./world-state";
@@ -1193,6 +1216,19 @@ class Game {
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
 	private commerceWorld!: WorldState;
+	/** #89's D7 flag, chosen at new game and never edited. Read by the death
+	 *  path, not enforced by it — see `save-store.ts`. */
+	private permadeath = false;
+	/** Set by the load arm, read once by the constructor: a restored ship keeps
+	 *  the attitude it was saved with rather than being turned to face a star. */
+	private restoredAttitude = false;
+	/** The save, once the boot has opened a store. Null in every workbench
+	 *  route and in a probe that did not ask for one, so every call site is a
+	 *  no-op there rather than a guard at each. */
+	saveStore: SaveStore | null = null;
+	/** Why the boot's load refused, if it did. D9: the player is told which
+	 *  slot failed and why; the record itself is left alone. */
+	saveFault: string | null = null;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
@@ -1947,22 +1983,103 @@ class Game {
 		return this.stationVisuals.get(id)?.nameplates ?? [];
 	}
 
-	constructor(seed: number) {
-		this.world = makeWorld(seed);
-		this.commerceWorld = newPersistentWorld(seed);
-		// §7's visited flag for the system a new game starts in. Recorded here
-		// rather than only on arrival, so the set is "everywhere the ship has
-		// been" rather than "everywhere it has jumped to" (#187).
-		this.commerceWorld = visit(
-			this.commerceWorld,
-			this.world.system.record.galaxy,
-			this.world.system.record.index,
-		);
+	/**
+	 * A new game, or a loaded one.
+	 *
+	 * **The load is a constructor arm rather than a method**, and that is
+	 * `resetWorldToStart`'s argument applied: `Game` calls `makeWorld` exactly
+	 * once and holds per-system caches deliberately never invalidated on that
+	 * basis — the baked `environmentMap`, the `interiors` berth catalogue. A
+	 * `load()` that swapped `this.world` mid-session would be the world rebuild
+	 * that comment rules out.
+	 */
+	constructor(seed: number, save: SaveEnvelope | null = null) {
+		if (save) {
+			// `restoreWorld` rather than `makeWorld` plus a jump: `jumpWorldTo`
+			// throws across a galaxy boundary on purpose, so a save taken in
+			// galaxy 3 is unreachable that way.
+			this.world = restoreWorld(
+				save.world.seed,
+				save.commander.galaxyIndex,
+				save.commander.systemIndex,
+				save.world.gameTime,
+			);
+			this.commerceWorld = save.world;
+			this.commander = save.commander.state;
+			this.chargeAu = save.commander.chargeAu;
+			this.permadeath = save.commander.permadeath;
+			// **A docked save resumes in flight at the arrival point, and that
+			// is a deliberate scale-down rather than an omission.** Re-entering
+			// a berth means rebuilding a whole dock session — the grant, the
+			// reservation, the interior, the on-rails placement — inside state
+			// #72 is open to extract from this class. Restoring `flight.pos`
+			// without that session would be worse than not trying: the berth
+			// pose is *inside* the station, so the ship would resume in flight
+			// inside the hull. `dockedAt` is recorded, round-trips, and is
+			// honoured by the node that extracts the session.
+			if (save.commander.dockedAt === null) {
+				const f = save.commander.flight;
+				this.world.ship.pos = v3(f.pos[0], f.pos[1], f.pos[2]);
+				this.world.ship.vel = v3(f.vel[0], f.vel[1], f.vel[2]);
+				this.orientation.set(
+					f.orientation[0],
+					f.orientation[1],
+					f.orientation[2],
+					f.orientation[3],
+				);
+				// **A save taken in cruise resumes at rest in normal flight, at
+				// the position it was taken at.** The leg is lost; the place is
+				// not.
+				//
+				// This was `regime = f.regime` plus the throttle and the leg's
+				// start time, and the probe's in-flight arm showed the ship
+				// coming back in normal flight at zero anyway — because a leg is
+				// none of those three. `stepCruise` reads the target, the
+				// detour and `cruiseSpeedKms`, which are leg state this record
+				// does not carry; with them at their defaults the first frame
+				// disengages and `exitVelocity` writes the ship to a stop. So
+				// the arm was restoring something that could not survive one
+				// step, and reporting success.
+				//
+				// Carrying them is a real design question rather than four more
+				// fields — a resumed leg re-enters a guard sweep against bodies
+				// that have moved, and #30's rules are written for a leg that
+				// was engaged from where the ship is. It is charted, not
+				// guessed at here. And a saved cruise **velocity** must not be
+				// restored under any arm: it is the cruise law's, up to ~10⁶×
+				// combat speed, and handing it to normal flight is a ship that
+				// cannot be flown.
+				if (f.regime === "cruise") {
+					this.world.ship.vel = v3();
+					this.regime = "normal";
+					this.throttle = 0;
+				} else {
+					this.regime = f.regime;
+					this.throttle = f.throttle;
+				}
+				this.restoredAttitude = true;
+			}
+		} else {
+			this.world = makeWorld(seed);
+			this.commerceWorld = newPersistentWorld(seed);
+			// §7's visited flag for the system a new game starts in. Recorded
+			// here rather than only on arrival, so the set is "everywhere the
+			// ship has been" rather than "everywhere it has jumped to" (#187).
+			this.commerceWorld = visit(
+				this.commerceWorld,
+				this.world.system.record.galaxy,
+				this.world.system.record.index,
+			);
+		}
 		this.observeCurrentSystemRelay();
 		for (const _body of this.world.system.bodies)
 			this.scannerContactBuffer.push({} as ScannerContact);
 		this.updateLocalFrameBody();
-		this.faceTheStar();
+		// **Not on a restored attitude.** A loaded commander is pointed where
+		// they were pointed; facing the star would be the boot overwriting the
+		// one field of `flight` that is hardest to notice being wrong, because
+		// a ship facing a star looks exactly like a ship that was.
+		if (!this.restoredAttitude) this.faceTheStar();
 
 		this.renderer = new THREE.WebGLRenderer({
 			// **`false`, and that is the honest setting** (#200). This flag
@@ -6304,6 +6421,20 @@ class Game {
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			this.world.ship.vel = stationVel;
+			// D4's unconditional dock flush, and the one that lays down #89's
+			// `lastDocked` checkpoint — the record a non-permadeath death
+			// restores.
+			//
+			// **After `enterArrival`, not before it.** It fired at the plane
+			// crossing for a round, where the dock session did not yet name a
+			// station: both records then carried `dockedAt: null` and a
+			// `flight.pos` in the mouth with inward velocity, so a death restore
+			// would have taken the in-flight arm and put the ship at the
+			// aperture with no grant — which by #9's protocol is a hostile
+			// station on load. From this line the arrival is on rails and cannot
+			// fail, so the write still cannot record a dock that did not happen.
+			this.saveDirty();
+			this.saveFlush("dock");
 			return;
 		}
 		// §2.0: repelled, damaged, and left outside — never inside the station.
@@ -6345,6 +6476,12 @@ class Game {
 		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
 			const state = this.dockingStates.get(wasAt);
 			if (state) this.dockingStates.set(wasAt, releaseBerth(state));
+			// **This is where `dockedAt` becomes null**, so this is where the
+			// record stops describing a parked ship. Left to the debounce, a tab
+			// closed in the first moments of a launch reloaded as still parked —
+			// which is what the flush above was wrongly credited with
+			// preventing.
+			this.saveDirty();
 		}
 		if (
 			wasAt &&
@@ -6404,8 +6541,18 @@ class Game {
 			this.interiorOf(this.dock.stationId),
 			this.world.gameTime,
 		);
-		if (this.dock.phase === "launching")
+		if (this.dock.phase === "launching") {
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
+			// D4's undock flush. **The record still names the station here** —
+			// `commanderRecord` reads every phase that is not `flying`, and this
+			// runs inside `phase === "launching"` — so what this writes is a ship
+			// on rails on its way out, which restores at the arrival point like
+			// any other non-flying phase. The comment here claimed the opposite
+			// for a round. What actually clears `dockedAt` is the outward
+			// crossing below, and that is where the second write is.
+			this.saveDirty();
+			this.saveFlush("undock");
+		}
 		return this.dock.phase === "launching";
 	}
 
@@ -7039,6 +7186,16 @@ class Game {
 		// left.
 		this.chart?.handle.jumpTo(to.index);
 		this.jumpNotice = `arrived at ${to.name}`;
+		// D4's jump flush, **after the arrival is finished and not before it**.
+		// It ran beside `visit`, above `clearFlightSession` and `faceTheStar`,
+		// so the record carried the departure system's regime, throttle and
+		// attitude beside the new arrival position — and the flush cleared the
+		// dirty flag, so nothing below re-armed a write. A restore from that
+		// record resumed at the new arrival point under the old throttle,
+		// pointed away from the star. Same class as the dock flush this branch
+		// already moved, and found the same way.
+		this.saveDirty();
+		this.saveFlush("jump");
 	}
 
 	/** The System relay is an arrival channel, never a map-opening side effect. */
@@ -7052,6 +7209,7 @@ class Game {
 			),
 			this.world.gameTime,
 		);
+		this.saveDirty();
 	}
 
 	/**
@@ -7188,6 +7346,8 @@ class Game {
 			this.frameBody =
 				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
 		this.regime = "normal";
+		// The other end of the leg — see the note beside the engage.
+		this.saveDirty();
 		this.detour = null;
 		this.cruiseSpeedKms = 0;
 		this.throttle = 0;
@@ -7456,6 +7616,13 @@ class Game {
 			this.spoolLeftS = Math.max(0, this.spoolLeftS - dt);
 			if (this.spoolLeftS === 0) {
 				this.regime = "cruise";
+				// **A leg's two ends are transitions, and its middle is not.** Position
+				// and attitude are saved state (`CommanderRecord.flight`) and vary every
+				// frame, so they ride on whatever else writes — but a within-system
+				// cruise leg with no market event would write nothing at all, including
+				// at quit, which is the leg-loss D4 rejected. The engage and the exit
+				// are the two moments worth a write.
+				this.saveDirty();
 				this.proximityFrameBodyId = null;
 				this.throttle = 1;
 				this.legStartedAtS = this.world.gameTime;
@@ -8351,6 +8518,152 @@ class Game {
 		return this.stationConsoleCache;
 	}
 
+	/**
+	 * The player half of a save, read **at the moment a write fires** (#89 D5).
+	 *
+	 * Every field here is renderer session state with no other typed home,
+	 * which is what #90 was asked to fix: the galaxy and system indices, the
+	 * station the ship is parked in, the cruise reserve, the permadeath flag,
+	 * and — the one #89 could not have listed, because it decided a cadence and
+	 * not a load path — where the ship actually is.
+	 */
+	commanderRecord(): CommanderRecord {
+		const base = newCommanderRecord(this.commander.hull);
+		// **Every phase that is not `flying`**, not just `docked`. A record
+		// written during an arrival or a launch has the ship on rails inside a
+		// station's geometry, and `dockedAt` is what routes the load to the
+		// arrival point instead of to `flight.pos` — which on a launch is the
+		// berth pose, *inside the hull*. Reading `docked` alone put both of
+		// those cases on the in-flight arm.
+		const station =
+			this.dock.phase !== "flying" && this.dock.stationId
+				? stationOf(this.world.system, this.dock.stationId)
+				: null;
+		return {
+			...base,
+			state: this.commander,
+			galaxyIndex: this.world.system.record.galaxy,
+			systemIndex: this.world.system.record.index,
+			dockedAt: station
+				? carrierKey(this.world.system.record.index, station.localCarrierId)
+				: null,
+			chargeAu: this.chargeAu,
+			permadeath: this.permadeath,
+			flight: {
+				pos: [
+					this.world.ship.pos.x,
+					this.world.ship.pos.y,
+					this.world.ship.pos.z,
+				],
+				vel: [
+					this.world.ship.vel.x,
+					this.world.ship.vel.y,
+					this.world.ship.vel.z,
+				],
+				orientation: [
+					this.orientation.x,
+					this.orientation.y,
+					this.orientation.z,
+					this.orientation.w,
+				],
+				regime: this.regime,
+				throttle: this.throttle,
+			},
+		};
+	}
+
+	/**
+	 * #89's D7, at the one moment it can be chosen.
+	 *
+	 * **It refuses on a loaded commander**, because a flag that can be flipped
+	 * later is a setting and not a choice — and the one thing D7 does promise is
+	 * that the flag was written at creation.
+	 */
+	choosePermadeath(): void {
+		if (this.commerceWorld.gameTime > 0)
+			throw new Error("permadeath is chosen at new game, not later");
+		this.permadeath = true;
+		this.saveDirty();
+	}
+
+	/**
+	 * Apply a carrier transition to the live world — the path #43's prototype
+	 * needs and nothing in the game yet reaches.
+	 *
+	 * `persistent-world-state.md` §4's table has been implemented and tested
+	 * since #46, and until now the only caller was its own test: nothing in
+	 * flight damages a carrier, so the whole domain was unreachable from a
+	 * running game. A prototype should not have to build the wire before it can
+	 * ask its question, and #90 is the node that owns the wire.
+	 *
+	 * It is the module's writer, unedited — the clock refusal, the galaxy
+	 * bound and `materializeDue` all apply, so a debug hook cannot put the
+	 * world in a state a real writer could not.
+	 */
+	applyCarrierTransition(key: CarrierKey, event: TransitionEvent): void {
+		this.commerceWorld = applyTransition(
+			this.commerceWorld,
+			this.world.system.record.galaxy,
+			key,
+			event,
+		);
+		this.saveDirty();
+	}
+
+	/** The effective condition of one carrier right now, for the same caller. */
+	carrierCondition(key: CarrierKey) {
+		return effectiveCarrier(
+			this.commerceWorld.galaxies[this.world.system.record.galaxy],
+			key,
+			this.world.gameTime,
+		);
+	}
+
+	/**
+	 * The whole save, world and commander, as the store asks for it.
+	 *
+	 * **The clock is advanced here, and that is the one-clock rule closing its
+	 * last gap.** `commerceWorld.gameTime` only moves inside `withEnvelope`, so
+	 * it is the time of the last *world* event — a dock, a relay observation, a
+	 * trade. `commanderRecord().flight.pos` is read now. A cruise leg with no
+	 * market event would therefore pair a current position with a stale clock,
+	 * and `restoreWorld(…, save.world.gameTime)` would then do exactly what its
+	 * own comment forbids: leave every planet an orbit out of date beside a ship
+	 * that is where it is.
+	 *
+	 * `advanceTo` is the module's own verb and materializes any completion the
+	 * advance passes, so this cannot step over one.
+	 */
+	saveEnvelope(): SaveEnvelope {
+		this.commerceWorld = advanceTo(this.commerceWorld, this.world.gameTime);
+		return { world: this.commerceWorld, commander: this.commanderRecord() };
+	}
+
+	/**
+	 * #89's D4 trigger: **any** change to saved state, coalesced by the store.
+	 *
+	 * A no-op with no store, which is every workbench route and any probe that
+	 * did not ask for one — so a call site is a bare call rather than a guard
+	 * repeated a dozen times.
+	 */
+	private saveDirty(): void {
+		this.saveStore?.markDirty();
+	}
+
+	/** D4's unconditional flushes. Deliberately **not** called on death: the
+	 *  tab-close window is left open, which is #89's correction read as written. */
+	saveFlush(reason: FlushReason): void {
+		// **No slot argument.** `SaveStore` owns which slot is active, because the
+		// debounce writes `live` off that field and a second owner here would
+		// split `live` and `lastDocked` across two slots the moment anything
+		// selected one.
+		void this.saveStore?.flush(reason).catch((error) => {
+			// D9: a failed write leaves the previous record in place. Stale
+			// rather than broken, and said out loud rather than swallowed.
+			console.error(`save: the ${reason} flush did not land`, error);
+		});
+	}
+
 	/** Applies a complete commerce result or leaves both owner states untouched. */
 	private transactStation(action: StationAction) {
 		const context = this.dockedStationContext();
@@ -8369,15 +8682,19 @@ class Game {
 		});
 		if (!result.accepted) return;
 		this.commander = result.commander;
-		this.commerceWorld = {
-			...this.commerceWorld,
-			gameTime: this.world.gameTime / 60,
-			galaxies: this.commerceWorld.galaxies.map((current, index) =>
-				index === galaxyIndex
-					? { ...current, deficits: result.deficits }
-					: current,
-			),
-		};
+		// Through the module's own writer, not by hand. `setDeficits` carries
+		// the galaxy bound, the "no write before the clock" refusal and
+		// `materializeDue`, and it takes the world clock in **seconds** — the
+		// spread this replaced set `gameTime` to the *minutes* figure beside it,
+		// which is the unit a deficit row's `updatedAt` wants and the clock
+		// never does.
+		this.commerceWorld = setDeficits(
+			this.commerceWorld,
+			galaxyIndex,
+			result.deficits,
+			this.world.gameTime,
+		);
+		this.saveDirty();
 		this.stationConsoleRevision += 1;
 		this.updateCockpit();
 	}
@@ -9496,11 +9813,139 @@ if (query.has("model-viewer")) {
 	const { mountPlanetPrototype } = await import("./planet-prototype");
 	mountPlanetPrototype();
 } else {
-	const game = new Game(seedFromQuery());
+	// #89's store, opened before the game is constructed. The load is a
+	// constructor arm rather than a method (see `Game`'s constructor), so the
+	// save has to exist first — which is why this boot awaits IndexedDB rather
+	// than handing the game a store to fill in later.
+	//
+	// **A failure to open or parse never blocks the boot.** D9: the player is
+	// told which slot failed and why, the bad record is left exactly where it
+	// is so it can still be exported, and the game starts fresh rather than
+	// refusing to start at all.
+	const saveBackend = indexedDbSaveBackend();
+	let loaded: SaveEnvelope | null = null;
+	let saveFault: string | null = null;
+	if (!query.has("no-save")) {
+		try {
+			const raw = await saveBackend.read(DEFAULT_SLOT, "live");
+			if (raw !== null) loaded = parseSave(raw);
+		} catch (error) {
+			saveFault = error instanceof Error ? error.message : String(error);
+			console.error(`save: slot "${DEFAULT_SLOT}" would not load`, error);
+		}
+	}
+	// **An explicit `?seed=` outranks a save, and it does not delete one.**
+	// A loaded envelope builds from `save.world.seed`, so the URL seed was read
+	// and then silently ignored: once any save existed at an origin — and
+	// IndexedDB is per-origin and survives in a real profile — every later
+	// `?seed=N` visit booted somebody else's galaxy with nothing said. A probe
+	// never met it, because each launch gets a fresh context.
+	//
+	// Asking for a seed is asking for that world, so the save is **set aside**
+	// rather than loaded: the record is untouched, and no store is attached to
+	// it below, which is D9's rule applied to a case D9 did not have in mind.
+	if (loaded && query.has("seed") && loaded.world.seed !== seedFromQuery()) {
+		saveFault =
+			`slot "${DEFAULT_SLOT}" holds seed ${loaded.world.seed}; ` +
+			`?seed=${seedFromQuery()} asked for another world, so the save was ` +
+			"left alone and not loaded";
+		console.warn(`save: ${saveFault}`);
+		loaded = null;
+	}
+	// **Inside the same fallback as the parse.** The comment above promises a
+	// failure never blocks the boot, and for a round `new Game(seed, loaded)`
+	// sat outside the guard: a record that parsed and then would not restore
+	// threw at module scope and the page did not boot at all. The bounds in
+	// `parseCommander` close the known route in; this closes the class.
+	let game: Game;
+	try {
+		game = new Game(seedFromQuery(), loaded);
+	} catch (error) {
+		saveFault = error instanceof Error ? error.message : String(error);
+		console.error("save: the loaded save would not restore", error);
+		loaded = null;
+		game = new Game(seedFromQuery(), null);
+	}
+	// **Chosen at new game, and only at new game** (#89's D7). A loaded
+	// commander carries the flag it was created with; a query parameter cannot
+	// turn permadeath on or off for a commander that already exists, because
+	// that would make the flag a setting rather than a choice.
+	//
+	// A URL parameter rather than a screen, because there is no new-game screen
+	// to put it on yet: this game boots straight in. The flag ships in the
+	// schema from day one — which is what D7 asked for and the reason it is not
+	// waiting for that screen — and the screen reads it when there is one.
+	game.saveFault = saveFault;
+	// **D9's one promise: the bad record is never overwritten.** A store
+	// attached to the slot whose record just refused would write over it on the
+	// first dirty event — the next dock, the next trade, the relay observe on
+	// the next jump — and that record is the only copy of whatever is left, and
+	// the only thing the player can still export. So a refused load leaves the
+	// fresh game with no store at all rather than with one aimed at the
+	// wreckage.
+	//
+	// The player is *told* — D9 again — and a `console.error` is not telling
+	// them. `saveFault` is on the game for the new-game screen to read; there is
+	// no such screen yet (see `choosePermadeath`), and the surface belongs to
+	// the node that builds one. Recorded rather than quietly left out.
+	if (!query.has("no-save") && saveFault === null) {
+		game.saveStore = new SaveStore({
+			backend: saveBackend,
+			schedule: (fn, ms) => {
+				const id = window.setTimeout(fn, ms);
+				return () => window.clearTimeout(id);
+			},
+			current: () => game.saveEnvelope(),
+			// **D9's "the player is told", on the path that does most of the
+			// writing.** A debounced write has no caller to reject to, and for a
+			// round the store took this callback and the boot did not pass it —
+			// so the shipped game still told nobody while a test proved the
+			// mechanism worked.
+			onWriteFailed: (error, consecutive) => {
+				game.saveFault =
+					`the save would not write (${consecutive} in a row): ` +
+					(error instanceof Error ? error.message : String(error));
+				if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
+					console.error(`save: ${game.saveFault}`, error);
+			},
+		});
+		// D4's quit flush. `pagehide` and not `beforeunload`: the latter does not
+		// fire on a mobile tab kill, and a persisted page is frozen rather than
+		// gone. **There is no death flush beside it** — #89 leaves that window
+		// open deliberately, and adding one here would be someone closing a hole
+		// the policy states it is not closing.
+		window.addEventListener("pagehide", () => game.saveFlush("quit"));
+		// **After the store, not before it.** `choosePermadeath` marks the save
+		// dirty and the call sat above the construction, where `saveStore` is
+		// still null — so the mark was dropped. The quit flush writes
+		// unconditionally now and would have caught it anyway, which is exactly
+		// the kind of second mechanism that makes the first one's absence
+		// invisible.
+		if (!loaded && query.has("permadeath")) game.choosePermadeath();
+	}
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
 	(window as unknown as { __seelite: Game }).__seelite = game;
+	// Read off the page by `scripts/probe-save.mjs` rather than restated there:
+	// a probe with its own copy of the debounce goes falsely red the day the
+	// module moves it.
+	(
+		window as unknown as {
+			__seelite: { save: Record<string, unknown> };
+		}
+	).__seelite.save = {
+		debounceMs: SAVE_DEBOUNCE_MS,
+		dbName: SAVE_DB_NAME,
+		storeName: SAVE_STORE_NAME,
+		defaultSlot: DEFAULT_SLOT,
+		backend: saveBackend,
+		// The module function, not a method on the game: a probe that wants a
+		// blob at a chosen size needs the serializer, and adding a "give me a
+		// big save" method to `Game` would be production state existing for one
+		// caller.
+		serialize: serializeSave,
+	};
 
 	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
 	// two shells, the surface shader and the crater path, so a body can be flown

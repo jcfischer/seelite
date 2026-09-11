@@ -344,7 +344,10 @@ export function* enumerateCarriers(
 
 /** FNV-1a, 32-bit. A hash, not a checksum with any cryptographic claim: what
  *  it has to do is change when its input does. */
-const fnv1a = (text: string): number => {
+/** Exported for `save-envelope.ts`, which hashes `{ world, commander }` with
+ *  it. A second copy in that module would be a second answer to "is this the
+ *  same save", which is the question the hash exists to settle. */
+export const fnv1a = (text: string): number => {
 	let h = 0x811c9dc5;
 	for (let i = 0; i < text.length; i++) {
 		h ^= text.charCodeAt(i);
@@ -596,9 +599,11 @@ function assertCarrierKey(key: CarrierKey): void {
  * corruption then surfaced a long way from its cause, inside a canonicaliser
  * or as "expected eight galaxy envelopes" on the next load.
  */
-/** §7's visited domain range, in one place: `visit` applies it at the write and
- *  `parseVisited` at the load, and they are meant to stay identical. */
-const isSystemIndex = (v: unknown): boolean =>
+/** §7's visited domain range, in one place: `visit` applies it at the write,
+ *  `parseVisited` at the load, and `save-envelope.ts` on the commander's own
+ *  system index — three readers of one range, which is why it is exported
+ *  rather than restated. */
+export const isSystemIndex = (v: unknown): boolean =>
 	typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 255;
 
 function assertGalaxy(galaxyIndex: number): void {
@@ -1052,6 +1057,31 @@ export const visit = (
 				},
 	);
 };
+
+/**
+ * §7's deficit domain: the market's memory of the player, installed whole.
+ *
+ * `economy-trade.md` §5.5's arithmetic stays in `deficits.ts` — this writer
+ * takes the map that `recordTrade` (or `transactAtStation`, which wraps it)
+ * already returned and files it under the galaxy, with `withEnvelope`'s bound,
+ * clock refusal and materialization. It is a setter for the same reason
+ * `setLegalHeat` is: the domain's rules are not this module's, and duplicating
+ * them here would be the second copy `deficits.ts`'s own header refuses.
+ *
+ * **`at` is seconds, and it is the only unit this module speaks.** A
+ * `DeficitRow.updatedAt` is game *minutes* — `deficits.ts` says so — and
+ * `World.gameTime` in `sim.ts` is seconds. The conversion belongs at the call
+ * that builds the row, never at the clock: the caller that got it the other way
+ * round divided the world clock by sixty on its way in, and the damage would
+ * have surfaced as a save whose every `completesAt` sat an hour in the future.
+ */
+export const setDeficits = (
+	world: WorldState,
+	galaxyIndex: number,
+	deficits: DeficitMap,
+	at: number,
+): WorldState =>
+	withEnvelope(world, galaxyIndex, at, (env) => ({ ...env, deficits }));
 
 /** §7's legal-status domain. The persisted pair only — the label and the
  *  police response are §8 projections. */

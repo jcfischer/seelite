@@ -40,6 +40,7 @@ import {
 	readKnowledge,
 	recoveryProcessId,
 	serializeWorld,
+	setDeficits,
 	setLegalHeat,
 	visit,
 	WORLD_GENERATOR_VERSION,
@@ -1357,6 +1358,45 @@ describe("§7 the envelope's writers", () => {
 	test("setLegalHeat refuses a stamp from the past", () => {
 		const w = setLegalHeat(newWorld(WORLD), 0, 10, 500);
 		expect(() => setLegalHeat(w, 0, 3, 5)).toThrow(/before the clock/);
+	});
+
+	test("setDeficits writes through the envelope, and the clock stays in seconds", () => {
+		// The unit trap this writer exists to close. A deficit row's `updatedAt`
+		// is game *minutes* (`deficits.ts`), and the world clock is **seconds**
+		// (`sim.ts`'s `World.gameTime`). A caller holding both and spreading a
+		// new `gameTime` in by hand has to convert one of them, and the fifth
+		// writer converted the wrong one.
+		const at = 6000;
+		const map = recordTrade({}, KEY, {
+			goodName: "Food",
+			units: 20,
+			gameTimeMin: at / 60,
+			holdT: HOLD_REFERENCE_T,
+		});
+		const w = setDeficits(newWorld(WORLD), 0, map, at);
+		expect(w.gameTime).toBe(at);
+		expect(w.galaxies[0].deficits[KEY]?.updatedAt).toBe(at / 60);
+		expect(w.galaxies[0].deficits[KEY]?.goods.Food).toBeCloseTo(20, 10);
+		// Every other envelope is untouched, and the snapshot still loads.
+		expect(w.galaxies[1].deficits).toEqual({});
+		expect(parseWorld(serializeWorld(w)).galaxies[0].deficits[KEY]).toEqual(
+			w.galaxies[0].deficits[KEY],
+		);
+	});
+
+	test("setDeficits refuses what every other writer refuses", () => {
+		const w = newWorld(WORLD);
+		expect(() => setDeficits(w, 8, {}, 0)).toThrow(/galaxy/);
+		expect(() => setDeficits(w, -1, {}, 0)).toThrow(/galaxy/);
+		expect(() => setDeficits(w, 0, {}, Number.NaN)).toThrow(/finite/);
+		const later = setDeficits(w, 0, {}, 500);
+		expect(() => setDeficits(later, 0, {}, 5)).toThrow(/before the clock/);
+		// And it materializes a due completion rather than stepping over it,
+		// which is the bug the `withEnvelope` comment records against writer #3.
+		expect(
+			setDeficits(underRepair(), 0, {}, 500).galaxies[0].objective[KEY]
+				?.condition,
+		).toBe("operational");
 	});
 
 	test("a save listing one system twice is rejected", () => {
