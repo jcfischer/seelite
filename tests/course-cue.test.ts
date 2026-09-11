@@ -78,9 +78,9 @@ describe("underway, the row is §8.3's two facts", () => {
 	 * `galaxy-generation.md` guarantees same-galaxy connectivity and §8.2 makes
 	 * a course envelope-matched to its galaxy — so the reachable refusal is a
 	 * next hop the tank cannot pay for. The row carries the *tone* and not the
-	 * sentence: `planJump` owns those words and the cruise prompt prints them,
-	 * and one quantity spelled two ways is how the glass comes to say two
-	 * things about one fact.
+	 * sentence: `planJump` owns the codes, `jumpRefusalText` owns the words and
+	 * §3's prompt prints them. One quantity spelled two ways is how the glass
+	 * comes to say two things about one fact.
 	 */
 	test("an unaffordable next hop is red, and says nothing extra", () => {
 		const refused = courseCue(underway({ affordable: false }));

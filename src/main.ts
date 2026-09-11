@@ -780,21 +780,23 @@ const GLASS_BOTTOM_FRACTION = 0.66;
  */
 const FLOOR_STRIP_HEIGHT_PX = 26;
 /**
- * The band §8.3's course row occupies, directly above the strip's.
+ * How many bands the floor stacks: §5.1's strip, and §8.3's course row above it.
  *
- * **The strip's own band, because the two share a type.** `floorFont` sizes
- * every glyph on the floor from `FLOOR_STRIP_HEIGHT_PX`, so a course band
- * declared independently is a box whose contents another number governs: raise
- * the strip's type and the row's glyphs climb above a `top` the record still
- * reports as fixed, which is the value the overlap check reads. One band per
- * row removes the question rather than documenting it.
+ * **One height for both, because `floorFont` sizes every glyph on the floor
+ * from `FLOOR_STRIP_HEIGHT_PX`.** A course band declared as its own number is a
+ * box whose contents another number governs — raise the strip's type and the
+ * row's glyphs climb above a `top` the record still reports as fixed, which is
+ * the value a sampler reads. It was briefly an alias for exactly that reason,
+ * which is worse than a count: an alias exists so the two *can* diverge, and
+ * `floorBox` wrote the strip's height into every box regardless.
  *
- * **Reserved whether or not a course is set.** The row itself is absent with no
- * course (#117 D2), but the prompt and §3's clearance line are offset by this
- * band unconditionally — a line that jumps a row the moment the player commits
- * to a destination is a worse instrument than one sitting a row higher always.
+ * **The course band is reserved whether or not a course is set.** The row is
+ * absent with no course (#117 D2), but the prompt and §3's clearance line are
+ * offset by it unconditionally — a line that jumps a row the moment the player
+ * commits to a destination is a worse instrument than one sitting a row higher
+ * always.
  */
-const FLOOR_COURSE_HEIGHT_PX = FLOOR_STRIP_HEIGHT_PX;
+const FLOOR_BANDS = 2;
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
 /**
@@ -830,7 +832,7 @@ const CLEARANCE_ABOVE_FLOOR_PX = PROMPT_ABOVE_FLOOR_PX + PROMPT_LINE_HEIGHT_PX;
  * is one edit rather than three.
  */
 const floorTopY = (h: number) =>
-	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX - FLOOR_COURSE_HEIGHT_PX;
+	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * FLOOR_BANDS;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -1042,11 +1044,15 @@ interface DirectorRender {
 	funnelState: "clear" | "off-axis" | "blocked";
 	/** The clearance line as drawn, and whether it was drawn as blocking. */
 	clearanceText: string;
-	/** Its band on the overlay, so a check can compare it against the other
-	 *  lines anchored to `floorTopY` rather than trusting that they clear. */
-	clearanceTop: number;
-	clearanceHeight: number;
 	blocking: boolean;
+}
+
+/** The set course's chain as last planned — one shape, named because the cache
+ *  field and the method that fills it both spelled it out. */
+interface CourseChain {
+	destination: SystemRecord;
+	nextHop: SystemRecord | null;
+	remaining: number;
 }
 
 interface HologramGlyph {
@@ -1585,11 +1591,7 @@ class Game {
 	 */
 	private courseChainCache: {
 		key: string;
-		chain: {
-			destination: SystemRecord;
-			nextHop: SystemRecord | null;
-			remaining: number;
-		} | null;
+		chain: CourseChain | null;
 	} | null = null;
 	/**
 	 * What §5's flight-floor strip painted this frame, or `null` when it painted
@@ -7188,10 +7190,11 @@ class Game {
 	/**
 	 * The next system on the set course, or `null`.
 	 *
-	 * **Re-derived every time it is asked**, never remembered as a cursor: an
-	 * off-plan jump then re-plans instead of desyncing, which is
-	 * `galaxy-route.ts`'s own rule and the reason a `Course` is a destination
-	 * and not a chain.
+	 * **Never remembered as a cursor**: an off-plan jump re-plans instead of
+	 * desyncing, which is `galaxy-route.ts`'s own rule and the reason a `Course`
+	 * is a destination and not a chain. Re-derived whenever the course or the
+	 * ship's system changes — this said "every time it is asked" while the body
+	 * had been routed through `courseChain`'s cache.
 	 */
 	nextHop(): SystemRecord | null {
 		// **Through the same cache the course row reads.** This ran
@@ -7202,6 +7205,12 @@ class Game {
 		// and the cache's own comment claimed the per-frame search was gone.
 		const cue = this.courseChain();
 		return cue?.nextHop ?? null;
+	}
+
+	/** `planJump` against this ship and this tank — the first and third
+	 *  arguments are always these two fields, and four sites spelled them. */
+	private jumpDecision(to: SystemRecord) {
+		return planJump(this.world.system.record, to, this.commander.fuelLy);
 	}
 
 	/**
@@ -7220,12 +7229,6 @@ class Game {
 	 * key that sometimes does nothing is indistinguishable from a key that is
 	 * not bound.
 	 */
-	/** `planJump` against this ship and this tank — the first and third
-	 *  arguments are always these two fields, and four sites spelled them. */
-	private jumpDecision(to: SystemRecord) {
-		return planJump(this.world.system.record, to, this.commander.fuelLy);
-	}
-
 	chargeJump(): boolean {
 		// **Before the clear, not after it.** The window's own notice is what
 		// `cruisePrompt` prints while charging, so returning through the clear
@@ -7248,11 +7251,7 @@ class Game {
 				: "no course set — pick one on the galaxy chart";
 			return false;
 		}
-		const decision = planJump(
-			this.world.system.record,
-			to,
-			this.commander.fuelLy,
-		);
+		const decision = this.jumpDecision(to);
 		if (!decision.ok) {
 			this.jumpNotice = jumpRefusalText(decision.refusal, to.name);
 			return false;
@@ -9186,11 +9185,7 @@ class Game {
 	 * sentences were written separately and disagreed about which states are
 	 * corrupt.
 	 */
-	private courseChain(): {
-		destination: SystemRecord;
-		nextHop: SystemRecord | null;
-		remaining: number;
-	} | null {
+	private courseChain(): CourseChain | null {
 		const course = this.course;
 		if (!course) return null;
 		const here = this.world.system.record;
@@ -9611,9 +9606,8 @@ class Game {
 		// Derived from the floor's own bands rather than restated, so raising
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
-		// or not a course is set: see `FLOOR_COURSE_HEIGHT_PX`.
-		const clearanceBaselineY = floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX;
-		ctx.fillText(clearanceText, cx, clearanceBaselineY);
+		// or not a course is set: see `FLOOR_BANDS`.
+		ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -9627,10 +9621,6 @@ class Game {
 			throatCornersPx,
 			funnelState,
 			clearanceText,
-			// The same band `TextRaster` gives a centred prompt, so the two
-			// lines sharing `floorTopY` are compared in one another's terms.
-			clearanceTop: clearanceBaselineY - 14,
-			clearanceHeight: PROMPT_LINE_HEIGHT_PX,
 			blocking: state.blocking !== null,
 		};
 	}

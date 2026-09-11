@@ -619,10 +619,10 @@ export type CourseCue =
 			 *
 			 * The caller asks `planJump`, so the gate that refuses and the cue
 			 * that warns cannot drift apart. **The cue carries the tone and not
-			 * the sentence** (#117 D3): `planJump` owns the words
-			 * (`out-of-range`, `insufficient-fuel`) and the cruise prompt prints
-			 * them, and one quantity spelled in two places is how the glass comes
-			 * to say two things about one fact.
+			 * the sentence** (#117 D3): `planJump` owns the *codes*,
+			 * `jumpRefusalText` below owns the words, and §3's prompt prints
+			 * them. One quantity spelled in two places is how the glass comes to
+			 * say two things about one fact.
 			 */
 			affordable: boolean;
 	  }

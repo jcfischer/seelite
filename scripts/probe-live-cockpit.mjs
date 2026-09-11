@@ -751,14 +751,25 @@ for (const viewport of VIEWPORTS) {
 		return g.fuelLy;
 	});
 	await nextFrames(page);
-	const noCourse = await page.evaluate(() => ({
-		row: window.__seelite.floorRender?.courseRow ?? null,
-		box: window.__seelite.floorRender?.courseBox ?? null,
-	}));
+	const noCourse = await page.evaluate(() => {
+		const f = window.__seelite.floorRender;
+		return {
+			// **The floor itself, first.** `f?.courseRow ?? null` is `null` both
+			// for a row deliberately not drawn and for a frame with no floor at
+			// all — a docked ship, a focused console — so the D2 check cleared
+			// on a frame it was never meant to read. That is the control that
+			// never runs, in the check whose own docstring warns about it.
+			floorPainted: f !== null,
+			row: f?.courseRow ?? null,
+			box: f?.courseBox ?? null,
+		};
+	});
 	check(
 		`${viewport.name}: with no course set, no course row is painted`,
-		noCourse.row === null && noCourse.box === null,
-		`row ${JSON.stringify(noCourse.row)}`,
+		noCourse.floorPainted === true &&
+			noCourse.row === null &&
+			noCourse.box === null,
+		`floor painted ${noCourse.floorPainted}; row ${JSON.stringify(noCourse.row)}`,
 	);
 
 	/**
