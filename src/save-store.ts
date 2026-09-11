@@ -77,6 +77,17 @@ export const SAVE_DEBOUNCE_MS = 400;
 /** The default slot, for a player who never names one. */
 export const DEFAULT_SLOT = "default";
 
+/**
+ * How many consecutive debounced-write failures re-arm the timer before it
+ * stops drumming.
+ *
+ * Not a give-up: the dirty flag survives the cap, so the next dock, trade, jump
+ * or quit still retries. What the cap ends is a refusing backend being asked
+ * every window forever, each attempt paying the synchronous serialize a player
+ * feels.
+ */
+export const SAVE_RETRY_LIMIT = 3;
+
 /** A slot holds two records (#89's D7 correction). */
 export type SaveRecordKind = "live" | "lastDocked";
 
@@ -127,7 +138,7 @@ export interface SaveStoreOptions {
 	current: () => SaveEnvelope;
 	/** Called when a debounced write fails. Every other write path rejects to
 	 *  its caller; this one has none. */
-	onWriteFailed?: (error: unknown) => void;
+	onWriteFailed?: (error: unknown, consecutive: number) => void;
 }
 
 const fail = (message: string): never => {
@@ -158,7 +169,12 @@ export class SaveStore {
 	private slot = DEFAULT_SLOT;
 	/** Told when a debounced write fails — the one write path with no caller to
 	 *  reject to, and the one D9's "the player is told" could not reach. */
-	private readonly onWriteFailed?: (error: unknown) => void;
+	private readonly onWriteFailed?: (
+		error: unknown,
+		consecutive: number,
+	) => void;
+	/** Consecutive debounced-write failures, reset by any write that lands. */
+	private failures = 0;
 
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
@@ -190,8 +206,16 @@ export class SaveStore {
 				// none of the writing waiting on the cadence doing almost all of
 				// it. And D9 says the player is *told*; nothing reached them at
 				// all, because `saveFault` is written once at boot.
-				this.onWriteFailed?.(error);
-				this.markDirty();
+				this.failures += 1;
+				this.onWriteFailed?.(error, this.failures);
+				// **Capped, and the cap is not a nicety.** Re-arming without one
+				// paid the synchronous `serializeSave` hitch every window
+				// forever against a backend that is simply refusing — a quota,
+				// a private window — and paid it silently. After the cap the
+				// flag stays dirty, so the next dock, trade, jump or quit still
+				// retries; what stops is the drum.
+				if (this.failures < SAVE_RETRY_LIMIT) this.markDirty();
+				else this.dirty = true;
 			});
 		}, SAVE_DEBOUNCE_MS);
 	}
@@ -256,6 +280,7 @@ export class SaveStore {
 		});
 		try {
 			await this.inFlight;
+			this.failures = 0;
 		} catch (error) {
 			// The write did not land, so the save is still dirty. D9: the
 			// previous record is untouched — stale rather than broken.

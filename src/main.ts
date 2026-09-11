@@ -355,6 +355,7 @@ import {
 	type FlushReason,
 	SAVE_DB_NAME,
 	SAVE_DEBOUNCE_MS,
+	SAVE_RETRY_LIMIT,
 	SAVE_STORE_NAME,
 	SaveStore,
 	indexedDbSaveBackend,
@@ -7164,8 +7165,6 @@ class Game {
 		// start system is recorded at boot; this is every system after it.
 		this.commerceWorld = visit(this.commerceWorld, to.galaxy, to.index);
 		this.observeCurrentSystemRelay();
-		this.saveDirty();
-		this.saveFlush("jump");
 
 		// The flight session, reset to what arriving in a system is: at rest, in
 		// normal flight, pointed at the new star, with nothing left of the leg
@@ -7187,6 +7186,16 @@ class Game {
 		// left.
 		this.chart?.handle.jumpTo(to.index);
 		this.jumpNotice = `arrived at ${to.name}`;
+		// D4's jump flush, **after the arrival is finished and not before it**.
+		// It ran beside `visit`, above `clearFlightSession` and `faceTheStar`,
+		// so the record carried the departure system's regime, throttle and
+		// attitude beside the new arrival position — and the flush cleared the
+		// dirty flag, so nothing below re-armed a write. A restore from that
+		// record resumed at the new arrival point under the old throttle,
+		// pointed away from the star. Same class as the dock flush this branch
+		// already moved, and found the same way.
+		this.saveDirty();
+		this.saveFlush("jump");
 	}
 
 	/** The System relay is an arrival channel, never a map-opening side effect. */
@@ -9887,6 +9896,18 @@ if (query.has("model-viewer")) {
 				return () => window.clearTimeout(id);
 			},
 			current: () => game.saveEnvelope(),
+			// **D9's "the player is told", on the path that does most of the
+			// writing.** A debounced write has no caller to reject to, and for a
+			// round the store took this callback and the boot did not pass it —
+			// so the shipped game still told nobody while a test proved the
+			// mechanism worked.
+			onWriteFailed: (error, consecutive) => {
+				game.saveFault =
+					`the save would not write (${consecutive} in a row): ` +
+					(error instanceof Error ? error.message : String(error));
+				if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
+					console.error(`save: ${game.saveFault}`, error);
+			},
 		});
 		// D4's quit flush. `pagehide` and not `beforeunload`: the latter does not
 		// fire on a mobile tab kill, and a persisted page is frozen rather than

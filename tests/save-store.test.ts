@@ -22,6 +22,7 @@ import {
 	SaveStore,
 	memorySaveBackend,
 	SAVE_DEBOUNCE_MS,
+	SAVE_RETRY_LIMIT,
 } from "../src/save-store";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { newWorld, visit } from "../src/world-state";
@@ -297,7 +298,7 @@ describe("#89 D6 — slots, export and import", () => {
 		// dock, trade, jump or quit — the cadence doing almost none of the
 		// writing waiting on the cadence doing almost all of it. And nothing
 		// reached the player at all, which D9 says is what must not happen.
-		const failures = [];
+		const failures: string[] = [];
 		const clock = manualScheduler();
 		const backend = memorySaveBackend();
 		const store = new SaveStore({
@@ -316,6 +317,35 @@ describe("#89 D6 — slots, export and import", () => {
 		expect(clock.armed).toBe(true);
 		clock.fire();
 		await store.settled();
+		expect(backend.writes).toBe(1);
+	});
+
+	test("the retry stops drumming after the cap, and the save stays dirty", async () => {
+		// **Re-arming without a cap was the fix becoming the next defect.** A
+		// backend that simply refuses — a quota, a private window — was asked
+		// every window forever, each attempt paying the synchronous serialize a
+		// player feels, and silently. The cap ends the drum; it does not give
+		// up, because the flag survives and the next flush still writes.
+		const clock = manualScheduler();
+		const backend = memorySaveBackend();
+		const failures: number[] = [];
+		const store = new SaveStore({
+			backend,
+			schedule: clock.scheduler,
+			current: () => envelope(100),
+			onWriteFailed: (_error, consecutive) => failures.push(consecutive),
+		});
+		store.markDirty();
+		for (let i = 0; i < SAVE_RETRY_LIMIT + 2 && clock.armed; i++) {
+			backend.failNextWrite();
+			clock.fire();
+			await store.settled();
+		}
+		expect(failures).toEqual([1, 2, 3]);
+		expect(clock.armed).toBe(false);
+		expect(backend.writes).toBe(0);
+		// Still dirty, so an unconditional flush writes.
+		await store.flush("dock");
 		expect(backend.writes).toBe(1);
 	});
 

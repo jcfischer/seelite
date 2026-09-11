@@ -112,7 +112,12 @@ describe("#89 D5 — the save envelope", () => {
 		expect(() => parseSave(raw)).not.toThrow();
 	});
 
-	test("obligation 5: truncation and graft fail distinguishably", () => {
+	test("obligation 5: truncation and graft fail distinguishably — at the top level", () => {
+		// **Named for what it shows.** A *missing half* is caught before the
+		// hash and reports which half; a truncation *inside* a half is caught by
+		// the hash and reports the checksum, because a 32-bit FNV-1a knows the
+		// bytes changed and nothing about how. The message says so rather than
+		// naming a graft it cannot establish, which is what it did for a round.
 		const raw = serializeSave({
 			world: world(),
 			commander: commander(),

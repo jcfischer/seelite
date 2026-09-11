@@ -355,7 +355,12 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	// Hashed before either half is parsed, so a graft is reported as a graft
 	// rather than as whichever field the splice happened to break first.
 	if (integrity !== fnv1a(JSON.stringify(body)))
-		fail("integrity check failed — this envelope was assembled from two saves");
+		fail(
+			"integrity check failed — this save does not match its own checksum. " +
+				"It was edited, corrupted, or assembled from two saves; the hash " +
+				"cannot say which. It is left as it is — export it rather than " +
+				"loading it.",
+		);
 	return { world: parseWorld(o.world), commander: parseCommander(o.commander) };
 }
 

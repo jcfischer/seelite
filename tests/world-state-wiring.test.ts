@@ -95,6 +95,27 @@ describe("the Game's world writes", () => {
 		expect(arm.slice(0, 300)).toContain('this.regime = "normal";');
 	});
 
+	test("the boot tells the player when a write fails (#89 D9)", () => {
+		// The store took an `onWriteFailed` and the boot did not pass it for a
+		// round, so the shipped game still told nobody while a test proved the
+		// mechanism worked. A debounced write is the one path with no caller to
+		// reject to, and it is the path that does almost all the writing.
+		expect(MAIN).toContain("onWriteFailed:");
+		expect(MAIN).toContain("game.saveFault =");
+	});
+
+	test("the jump flush runs after the arrival finishes", () => {
+		// It ran beside `visit`, above `clearFlightSession` and `faceTheStar`,
+		// so the record carried the departure system's regime, throttle and
+		// attitude beside the new arrival position — and clearing the dirty flag
+		// meant nothing below re-armed a write.
+		const jump = MAIN.indexOf('this.saveFlush("jump")');
+		expect(jump).toBeGreaterThan(0);
+		expect(
+			MAIN.lastIndexOf("this.clearFlightSession();", jump),
+		).toBeGreaterThan(MAIN.lastIndexOf("visit(this.commerceWorld", jump));
+	});
+
 	test("a refused save is never given a store aimed at it (#89 D9)", () => {
 		// D9's one promise is that the bad record is never overwritten — it is
 		// the only copy of whatever is left and the only thing the player can
