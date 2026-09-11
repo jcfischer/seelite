@@ -533,17 +533,66 @@ function anyPerpendicularTo(a: Vec3): Vec3 {
 	return scale(c, 1 / length(c));
 }
 
-export function makeWorld(seed: number): World {
-	const galaxy = generateGalaxy(seed, START_GALAXY);
-	const record = startSystem(galaxy);
-	const system = makeSystem(record, 0);
+/**
+ * Build a world at a named galaxy, system and clock — the load path's half of
+ * construction (#90).
+ *
+ * A save records all three, and none is what a new game has. `jumpWorldTo`
+ * **throws** on a destination in another galaxy, deliberately: `World.galaxy`
+ * is one galaxy held whole and crossing one is the Galactic Hyperdrive, a
+ * different act at a different price. So a save taken in galaxy 3 cannot be
+ * reached by constructing and jumping; it needs a world built for that galaxy
+ * from the start, which is this.
+ *
+ * **The ship lands at the arrival point, and a caller with a saved position
+ * overwrites it.** That is not a default standing in for a missing feature: a
+ * restore with no flight record — a `lastDocked` checkpoint, a future migration
+ * — needs somewhere legitimate to be, and the arrival point is where every
+ * other entry to a system puts a ship.
+ *
+ * `makeWorld` is a call to this rather than a second construction path beside
+ * it. Two paths is how the start system and the load path drift apart, and the
+ * drift would be invisible: both produce a plausible world.
+ */
+export function restoreWorld(
+	seed: number,
+	galaxyIndex: number,
+	systemIndex: number,
+	gameTime: number,
+): World {
+	if (!Number.isInteger(galaxyIndex) || galaxyIndex < 0 || galaxyIndex > 7)
+		throw new Error(`restoreWorld: ${galaxyIndex} is not a galaxy index`);
+	if (!Number.isFinite(gameTime) || gameTime < 0)
+		throw new Error(`restoreWorld: ${gameTime} is not a clock`);
+	const galaxy = generateGalaxy(seed, galaxyIndex);
+	const record = galaxy.systems[systemIndex];
+	if (!record)
+		throw new Error(
+			`restoreWorld: galaxy ${galaxyIndex} has no system ${systemIndex}`,
+		);
+	// The clock reaches `makeSystem`, so the bodies are placed where it puts
+	// them. Building at zero and assigning `gameTime` afterwards would pass
+	// every field check and leave every planet an orbit out of date.
+	const system = makeSystem(record, gameTime);
 	return {
 		seed,
-		gameTime: 0,
+		gameTime,
 		galaxy,
 		system,
-		ship: { pos: arrivalPoint(record, system.contents, null, 0), vel: v3() },
+		ship: {
+			pos: arrivalPoint(record, system.contents, null, gameTime),
+			vel: v3(),
+		},
 	};
+}
+
+export function makeWorld(seed: number): World {
+	return restoreWorld(
+		seed,
+		START_GALAXY,
+		startSystem(generateGalaxy(seed, START_GALAXY)).index,
+		0,
+	);
 }
 
 /**
