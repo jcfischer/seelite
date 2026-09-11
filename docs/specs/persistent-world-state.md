@@ -132,7 +132,7 @@ The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain stores th
 
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
-The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Save slots, autosave cadence, rollback, and permadeath remain undecided. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
+The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence, rollback and permadeath were decided by node #89 and implemented by #90; see §10. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
 
 ## 8. Derived effects
 
@@ -149,7 +149,7 @@ The implementation node owes headless tests proving:
 3. **Transition table:** every allowed transition works, every invalid transition fails loudly, knowledge combines independently with every objective condition, repeated destroy/replace cycles preserve instance ordinals, and repeated interrupt/restart cycles produce distinct recovery-process identities. The sequence destroyed → repairing → assisted or rescheduled → replacement complete retains one episode ordinal and the original player attribution through completion.
 4. **Lazy recovery boundaries:** immediately before, exactly at, and after `completesAt` produce the specified condition and replacement ordinal without a tick loop. A due completion first materialized at different later access times always records `occurredAt = completesAt` and produces identical canonical snapshots.
 5. **Order independence:** the same seed, snapshot, and `gameTime` yield the same effective state and canonical sorted projection regardless of map insertion order, access order, or which systems were visited first; same-timestamp completions resolve in canonical `CarrierKey` order.
-6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. #275 extends this guarantee to learned private-fact markers. Byte-format compatibility and migration policy are deferred to the save-format decision.
+6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. #275 extends this guarantee to learned private-fact markers. Byte-format compatibility and migration policy were the save-format decision, taken in #89: a version mismatch refuses with a named message and leaves the record untouched on disk, and the migration table becomes mandatory from the v1.0 public release.
 7. **Compaction equivalence:** compacting transitions cannot change effective capabilities, scheduled recovery, latest attribution, or last-known information including `observedRecovery`.
 8. **Hard bounds:** active objective rows, causal summaries, and knowledge rows never exceed one each per generated carrier; repeated destroy/replace and interrupt/restart cycles do not increase that bound.
 9. **Atomicity and integrity:** a round trip cannot combine `gameTime` or one galaxy envelope from one snapshot with state from another, and truncated or partially written typed domains fail validation rather than reading as absent rows.
@@ -181,9 +181,18 @@ be saved.
 
 ## 10. Deferred decisions
 
+**Save encoding, migration, slots, autosave cadence and permadeath were on
+this list and are not deferred any more.** Node #89 chose all five and node #90
+shipped them, so the line that carried them was a false assertion in a ratified
+spec for as long as it stood. The choices live in #89's resolution and are
+implemented in `src/save-store.ts` and `src/save-envelope.ts`, whose headers
+carry the reasoning; they are **not restated here**, because a third copy of a
+decision is the drift this document warns about elsewhere. Cloud storage is not
+deferred either — it is ruled out by the map's browser-only, no-backend, no
+runtime network constraint, which is a constraint rather than an open question.
+
 This model deliberately does not choose:
 
-- save file encoding, schema migration, slots, autosave cadence, cloud storage, or permadeath;
 - which infrastructure carriers v1 ships;
 - carrier-specific repair/replacement duration, cost, or spawned actor geometry;
 - a full mission, traffic, faction, or economy simulation;

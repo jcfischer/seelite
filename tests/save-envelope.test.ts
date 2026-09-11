@@ -20,7 +20,12 @@ import {
 	serializeSave,
 } from "../src/save-envelope";
 import { LOCAL_CARRIER_ID } from "../src/station";
-import { newWorld, setDeficits, visit } from "../src/world-state";
+import {
+	enumerateCarriers,
+	newWorld,
+	setDeficits,
+	visit,
+} from "../src/world-state";
 
 const SEED = 0x5ee11e;
 const KEY = carrierKey(3, LOCAL_CARRIER_ID.trade);
@@ -142,6 +147,59 @@ describe("#89 D5 — the save envelope", () => {
 				}),
 			),
 		).toThrow(/hull/);
+	});
+
+	test("obligation 3: the save's size is bounded by the carrier count", () => {
+		// #89's obligation 3, and **the count is the load-bearing half**: a
+		// generator change that collided two carrier keys would shrink the store
+		// while every byte figure still looked healthy, and `parseWorld` cannot
+		// see it — a collided row is a perfectly well-formed row that happens to
+		// have overwritten another.
+		//
+		// **This is the one-galaxy tier, not T1.** Saturating all eight takes
+		// about a minute, which is not a thing to put on every push; the
+		// saturated ceiling is `scripts/measure-save-size.ts`'s and is run by
+		// hand. Which half is gated and which is an instrument is stated here
+		// rather than left for a reader to infer (the map's constraint from
+		// #28).
+		let w = newWorld(SEED);
+		const keys = [...enumerateCarriers(SEED, 0)].map((c) => c.key);
+		const env = w.galaxies[0];
+		for (const key of keys)
+			env.deficits[key] = { goods: { Food: -63.4 }, updatedAt: 0 };
+		w = { ...w, galaxies: w.galaxies.map((e, i) => (i === 0 ? env : e)) };
+		expect(Object.keys(env.deficits).length).toBe(keys.length);
+		const sizeOf = (rows: number) => {
+			const cut = { ...env, deficits: {} as typeof env.deficits };
+			for (const key of keys.slice(0, rows))
+				cut.deficits[key] = { goods: { Food: -63.4 }, updatedAt: 0 };
+			return JSON.stringify(
+				serializeSave({
+					world: {
+						...w,
+						galaxies: w.galaxies.map((e, i) => (i === 0 ? cut : e)),
+					},
+					commander: commander(),
+				}),
+			).length;
+		};
+		// **The size is linear in the row count, which is the claim #89's tiers
+		// rest on.** A byte ceiling asserted here would be this test predicting
+		// the instrument's answer, and a prediction stated as a measurement is
+		// what `economy-trade.md` already got wrong once; the saturated figure
+		// belongs to the script and nowhere else. What is checkable without
+		// re-running it is the shape: halve the rows, halve the growth.
+		const empty = sizeOf(0);
+		const half = sizeOf(Math.floor(keys.length / 2)) - empty;
+		const full = sizeOf(keys.length) - empty;
+		expect(full / half).toBeGreaterThan(1.9);
+		expect(full / half).toBeLessThan(2.1);
+		const json = JSON.stringify(
+			serializeSave({ world: w, commander: commander() }),
+		);
+		expect(
+			parseSave(JSON.parse(json)).world.galaxies[0].deficits[keys[0]],
+		).toBeTruthy();
 	});
 
 	test("permadeath round-trips, and a new commander defaults to off", () => {
