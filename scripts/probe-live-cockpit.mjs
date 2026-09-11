@@ -805,6 +805,36 @@ for (const viewport of VIEWPORTS) {
 	);
 
 	/**
+	 * **And it does not draw on the cruise/jump prompt.**
+	 *
+	 * The row went into the gap the prompt was sitting in, and the two painted
+	 * on one baseline: `COURSE ERBILE 6 jumps` under `press \` to jump to
+	 * ERBILE`, both centred, both perfectly recorded. Every record-reading row
+	 * above was green through it. Two instruments overlap or they do not, and
+	 * that is a question about rectangles rather than about either record — so
+	 * this compares them.
+	 */
+	const stacking = await page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			prompt: g.cockpitPrompt.text ? { ...g.cockpitPrompt.bounds } : null,
+			promptText: g.cockpitPrompt.text,
+			courseBox: g.floorRender?.courseBox ?? null,
+			// The row's own band, so the comparison is against the glyphs rather
+			// than against a baseline with nothing above it.
+			courseTop: (g.floorRender?.courseBox?.y ?? 0) - 12,
+		};
+	});
+	check(
+		`${viewport.name}: the course row and the cruise prompt do not overlap`,
+		stacking.courseBox !== null &&
+			// The prompt must actually be drawn, or this asserts nothing.
+			stacking.prompt !== null &&
+			stacking.prompt.top + stacking.prompt.height <= stacking.courseTop,
+		`prompt "${stacking.promptText}" ${stacking.prompt?.top}…${(stacking.prompt?.top ?? 0) + (stacking.prompt?.height ?? 0)} against a course row from ${stacking.courseTop}`,
+	);
+
+	/**
 	 * **The refusal paints, and the affordable reading does not.**
 	 *
 	 * #117 D3 gives the row a tone and no sentence of its own, so the only

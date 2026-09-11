@@ -786,6 +786,9 @@ const FLOOR_STRIP_HEIGHT_PX = 26;
  * to a destination is a worse instrument than one sitting 22 px higher always.
  */
 const FLOOR_COURSE_HEIGHT_PX = 22;
+/** How far the cruise/jump prompt clears the floor's topmost band. The
+ *  fraction it replaced left exactly this much above the strip. */
+const PROMPT_ABOVE_FLOOR_PX = 10;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -9579,7 +9582,21 @@ class Game {
 		);
 		if (prompt) {
 			const x = w / 2;
-			const y = h * 0.62;
+			// **Above the floor's bands, derived from them.** This was `h * 0.62`,
+			// which at the shipped glass bottom of `h * 0.66` is a gap of 0.04h —
+			// 36 px at 900, or the strip's own 26 plus ten. §5.1 already says the
+			// strip draws "below the cruise prompt", so the prompt is anchored to
+			// the floor and was merely spelled as a fraction that happened to
+			// clear it. #117's course row went into that gap and the two drew on
+			// top of each other: `COURSE ERBILE 6 jumps` and "press ` to jump to
+			// ERBILE" on one baseline, both centred. No probe row saw it — the
+			// record each writes is perfectly correct — and it was obvious in the
+			// first captured frame.
+			const y =
+				h * GLASS_BOTTOM_FRACTION -
+				FLOOR_STRIP_HEIGHT_PX -
+				FLOOR_COURSE_HEIGHT_PX -
+				PROMPT_ABOVE_FLOOR_PX;
 			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
 			ctx.fillStyle = PROMPT_FILL;
