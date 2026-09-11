@@ -471,18 +471,15 @@ for (const viewport of VIEWPORTS) {
 		 * **The box carries its band.** Both samplers had their own
 		 * `Math.floor(box.y) - 12, …, 16` — a glyph height copied out of the
 		 * page, which goes lenient the day the type is raised rather than going
-		 * red. The course row's box states its top and height; the strip's
-		 * cells do not yet, so they pass the fallback the old copies used and
-		 * the copy lives in exactly one place now.
+		 * red. Every floor box states its `top` and `height` now, so there is no
+		 * fallback left to be lenient with: a box without a band is a page that
+		 * has changed shape, and it throws rather than sampling a guess.
 		 */
-		window.__refusalRedInBox = (
-			box,
-			fallbackRise = 12,
-			fallbackHeight = 16,
-		) => {
+		window.__refusalRedInBox = (box) => {
 			if (!box) return null;
-			const top = box.top ?? Math.floor(box.y) - fallbackRise;
-			const height = box.height ?? fallbackHeight;
+			const { top, height } = box;
+			if (typeof top !== "number" || typeof height !== "number")
+				throw new Error("floor box carries no band");
 			const overlay = document.getElementById("overlay");
 			const ctx = overlay.getContext("2d", { willReadFrequently: true });
 			const data = ctx.getImageData(

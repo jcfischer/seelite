@@ -168,6 +168,7 @@ import {
 	JUMP_CHARGE_S,
 	JUMP_TANK_LY,
 	type JumpCharge,
+	type JumpRefusal,
 	beginCharge,
 	cancelCharge,
 	charging,
@@ -813,19 +814,14 @@ const CLEARANCE_ABOVE_FLOOR_PX = 16;
 /**
  * What a refused jump says, in one place.
  *
- * The refusals are the module's, so the words the player reads and the gate
- * that produced them cannot drift apart — and **two surfaces read them now**:
+ * The refusals are the module's — `JumpRefusal` is imported rather than
+ * respelled, because a second copy of the set is the drift this comment claims
+ * not to have — so the words the player reads and the gate that produced them
+ * cannot come apart — and **two surfaces read them now**:
  * the notice a key press writes, and §3's prompt, which used to offer "press `
  * to jump to X" beside a course row this build had already painted red.
  */
-const jumpRefusalText = (
-	refusal:
-		| "same-system"
-		| "other-galaxy"
-		| "out-of-range"
-		| "insufficient-fuel",
-	to: SystemRecord,
-): string =>
+const jumpRefusalText = (refusal: JumpRefusal, to: SystemRecord): string =>
 	({
 		"same-system": "already there",
 		"other-galaxy": "no galactic hyperdrive fitted",
@@ -904,6 +900,38 @@ function floorRunWidths(
 			widths.reduce((a, b) => a + b, 0) +
 			FLOOR_CELL_GAP_PX * scale * (cells.length - 1),
 	};
+}
+
+/**
+ * Paint one floor cell: its label, then its value in §4's tone.
+ *
+ * **One painter, because the floor has two runs.** §5.2 says "two runs on one
+ * floor authored two ways is how a floor comes to look like two instruments",
+ * and the course row was authored the second way in the same change that wrote
+ * the sentence — the strip's loop and the row each repeating the same
+ * font/fill/label/value sequence, so a tone or gap change had to land twice.
+ * Copying the block is also what dropped the strip's `ctx.restore()`: the
+ * course block brought its own save/restore pair and read as the closing one.
+ */
+function drawFloorCell(
+	ctx: CanvasRenderingContext2D,
+	cell: FloorCell,
+	x: number,
+	baselineY: number,
+	labelWidth: number,
+	labelGap: number,
+	labelFont: string,
+	valueFont: string,
+) {
+	ctx.font = labelFont;
+	ctx.fillStyle = FLOOR_LABEL_FILL;
+	ctx.fillText(cell.label, x, baselineY);
+	ctx.font = valueFont;
+	ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
+	// The label width comes from the measuring pass rather than a second
+	// `measureText` here — four labels re-measured every frame for a value that
+	// changes only with the viewport.
+	ctx.fillText(cell.value, x + labelWidth + labelGap, baselineY);
 }
 
 /** One cell's value by label. Throws rather than printing `undefined` on a
@@ -1519,7 +1547,6 @@ class Game {
 			remaining: number;
 		} | null;
 	} | null = null;
-
 	/**
 	 * What §5's flight-floor strip painted this frame, or `null` when it painted
 	 * nothing — a focused console has replaced the glass.
@@ -1532,7 +1559,16 @@ class Game {
 
 	floorRender: {
 		cells: FloorCell[];
-		boxes: { label: string; x: number; y: number; width: number }[];
+		boxes: {
+			label: string;
+			x: number;
+			y: number;
+			width: number;
+			/** Every floor box states its band, so a sampler reads it rather than
+			 *  keeping a glyph height that goes lenient when the type is raised. */
+			height: number;
+			top: number;
+		}[];
 		/** §8.3's course row as painted, or `null` where no course is set and
 		 *  the row was deliberately not drawn. */
 		courseRow: FloorCell | null;
@@ -9094,7 +9130,13 @@ class Game {
 	}
 
 	/**
-	 * §8.3's course row, from the course as it is now — or `null` for no row.
+	 * §8.3's course row **as a state**, from the course as it is now — or `null`
+	 * for no row at all.
+	 *
+	 * Named for the state rather than the row because `courseCue` is the
+	 * formatter: `courseRow(): CourseCue` beside `courseCue(): FloorCell` read
+	 * as each other's inverse, and the call site said so out loud —
+	 * `const courseRow = courseCue(this.courseRow())`.
 	 *
 	 * **Re-derived, never remembered as a cursor**, for `galaxy-route.ts`'s own
 	 * reason: a `Course` is a destination and not a chain, so an off-plan jump
@@ -9108,7 +9150,7 @@ class Game {
 	 * is a distance and a comparison and the tank moves without the ship
 	 * jumping.
 	 */
-	courseRow(): CourseCue | null {
+	courseCueState(): CourseCue | null {
 		const course = this.course;
 		if (!course) return null;
 		const here = this.world.system.record;
@@ -9152,7 +9194,7 @@ class Game {
 
 	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
 		const cells = this.floorCells();
-		const courseRow = courseCue(this.courseRow());
+		const courseRow = courseCue(this.courseCueState());
 
 		// **Fitted to the widest reading the strip can take, not to this one.**
 		// Sized to the live values it re-centred whenever a digit changed, and
@@ -9220,20 +9262,37 @@ class Game {
 		const baselineY =
 			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
 		let x = (w - total) / 2;
-		const boxes: { label: string; x: number; y: number; width: number }[] = [];
+		const boxes: {
+			label: string;
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+			top: number;
+		}[] = [];
 		ctx.save();
 		ctx.textAlign = "left";
 		for (const [i, cell] of cells.entries()) {
-			boxes.push({ label: cell.label, x, y: baselineY, width: widths[i] });
-			ctx.font = labelFont;
-			ctx.fillStyle = FLOOR_LABEL_FILL;
-			ctx.fillText(cell.label, x, baselineY);
-			ctx.font = valueFont;
-			ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
-			// The label width comes from the measuring pass rather than a second
-			// `measureText` here — four labels re-measured every frame for a
-			// value that changes only with the viewport.
-			ctx.fillText(cell.value, x + labelWidths[i] + labelGap, baselineY);
+			boxes.push({
+				label: cell.label,
+				x,
+				y: baselineY,
+				width: widths[i],
+				// Every floor box states its own band, so nothing sampling one
+				// keeps a glyph height of its own.
+				height: FLOOR_STRIP_HEIGHT_PX,
+				top: glassBottomY - FLOOR_STRIP_HEIGHT_PX,
+			});
+			drawFloorCell(
+				ctx,
+				cell,
+				x,
+				baselineY,
+				labelWidths[i],
+				labelGap,
+				labelFont,
+				valueFont,
+			);
 			x += widths[i] + cellGap;
 		}
 		// §8.3's course row, above the strip and on the same centre axis.
@@ -9255,19 +9314,16 @@ class Game {
 			const courseBaselineY =
 				floorTopY(h) + FLOOR_COURSE_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION);
 			const courseX = (w - run.total) / 2;
-			ctx.save();
-			ctx.textAlign = "left";
-			ctx.font = labelFont;
-			ctx.fillStyle = FLOOR_LABEL_FILL;
-			ctx.fillText(courseRow.label, courseX, courseBaselineY);
-			ctx.font = valueFont;
-			ctx.fillStyle = FLOOR_TONE_FILL[courseRow.tone];
-			ctx.fillText(
-				courseRow.value,
-				courseX + run.labelWidths[0] + labelGap,
+			drawFloorCell(
+				ctx,
+				courseRow,
+				courseX,
 				courseBaselineY,
+				run.labelWidths[0],
+				labelGap,
+				labelFont,
+				valueFont,
 			);
-			ctx.restore();
 			courseBox = {
 				x: courseX,
 				y: courseBaselineY,
@@ -9281,6 +9337,13 @@ class Game {
 				top: floorTopY(h),
 			};
 		}
+		// **The strip's own save, closed once for both runs.** It was closed at
+		// the end of the cell loop until the course block was pasted in there
+		// with a save/restore pair of its own, which read as the closing one —
+		// so `ctx.save()` ran every frame with no match, pushing an entry onto
+		// the 2D state stack and leaking `textAlign`, the value font and the
+		// last cell's fill into every later draw on the overlay.
+		ctx.restore();
 
 		this.floorRender = {
 			cells,
