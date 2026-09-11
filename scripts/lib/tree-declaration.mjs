@@ -27,15 +27,18 @@
  * `head`, `branch` and `dirty` are for the human reading a contact sheet, which
  * is the tier where a wrong-checkout run is *least* likely to be noticed: a
  * probe asserts numbers, a sheet is looked at by someone with no way to know
- * which tree it came from. They are read per request rather than once at boot,
- * because `dirty` changes under an editing session and a stale answer there is
- * the kind of precise-and-wrong label `capture-views` already avoids for its
- * own ref. They are **omitted** where git cannot be read — an archive export or
+ * which tree it came from. They are read per request — cached for at most
+ * `GIT_TTL_MS`, and never once at boot — because `dirty` changes under an
+ * editing session and a stale answer there is the kind of precise-and-wrong
+ * label `capture-views` already avoids for its own ref. They are **omitted** where git cannot be read — an archive export or
  * a tree with no `.git` is still a tree worth declaring — so a consumer checks
  * for them rather than assuming them.
  */
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
 
 /**
  * Where the declaration is served.
@@ -47,20 +50,27 @@ import { realpathSync } from "node:fs";
  */
 export const TREE_ENDPOINT = "/__seelite/tree";
 
-/** `head`, `branch` and `dirty`, or nothing at all. See the note above on why
- *  a missing git is not an error. */
-function readGit(cwd) {
+/**
+ * `head`, `branch` and `dirty`, or nothing at all. See the note above on why a
+ * missing git is not an error.
+ *
+ * **Async, and that is the mitigation rather than the cache below it.**
+ * `execFileSync` stalls the whole Node event loop while it forks, and
+ * `git status --porcelain` walks the working tree — so on a server serving
+ * probes, that stall lands on another request's module transform. The first
+ * fix for this was a one-second cache, which does not help: `probe-all` runs
+ * probes sequentially by default and each one boots a Chromium before asking,
+ * so consecutive fetches are minutes apart and every one of them misses. The
+ * cache is kept because a burst is cheap to make cheaper, but it is a bonus.
+ */
+async function readGit(cwd) {
 	try {
-		const at = (args) =>
-			execFileSync("git", args, {
-				cwd,
-				encoding: "utf8",
-				stdio: ["ignore", "pipe", "ignore"],
-			}).trim();
+		const at = async (args) =>
+			(await run("git", args, { cwd, encoding: "utf8" })).stdout.trim();
 		return {
-			head: at(["rev-parse", "HEAD"]),
-			branch: at(["rev-parse", "--abbrev-ref", "HEAD"]),
-			dirty: at(["status", "--porcelain"]).length > 0,
+			head: await at(["rev-parse", "HEAD"]),
+			branch: await at(["rev-parse", "--abbrev-ref", "HEAD"]),
+			dirty: (await at(["status", "--porcelain"])).length > 0,
 		};
 	} catch {
 		return {};
@@ -70,12 +80,10 @@ function readGit(cwd) {
 /**
  * How long a reading of git is reused.
  *
- * Three `execFileSync` calls inside a middleware stall the whole Node event
- * loop while they fork, and `git status --porcelain` walks the working tree —
- * so on a concurrent `probe-all` that stall lands on another probe's in-flight
- * module transform (#296 review). A second is short enough that an edit is
- * reflected by the time anyone reads the answer, and long enough that a run of
- * probes pays for one reading rather than thirty-seven.
+ * **A bonus, not the mitigation** — `readGit` above says why, and the claim
+ * that used to sit here ("a run of probes pays for one reading rather than
+ * thirty-seven") was false under the runner's own default. What it covers is a
+ * burst: several fetches inside a second, which a concurrent run can produce.
  *
  * Cached rather than computed once at boot, which was the other option offered:
  * a branch *can* change under a running server, and a stale branch printed on a
@@ -96,14 +104,16 @@ const GIT_TTL_MS = 1000;
  */
 function gitCache() {
 	let at = 0;
-	let value = {};
+	/** The *promise*, not the value: two requests arriving together must share
+	 *  one reading rather than starting a second before the first resolves. */
+	let pending = null;
 	return (cwd) => {
 		const now = Date.now();
-		if (!at || now - at > GIT_TTL_MS) {
-			value = readGit(cwd);
+		if (!pending || now - at > GIT_TTL_MS) {
+			pending = readGit(cwd);
 			at = now;
 		}
-		return value;
+		return pending;
 	};
 }
 
@@ -135,22 +145,39 @@ export function treeDeclaration() {
 		configureServer(server) {
 			const root = realpathSync(server.config.root);
 			const gitFacts = gitCache();
-			server.middlewares.use((req, res, next) => {
+			server.middlewares.use(async (req, res, next) => {
 				// The query is split off rather than matched through, so a cache
 				// buster on the URL does not read as a different path.
 				if ((req.url ?? "").split("?")[0] !== TREE_ENDPOINT) return next();
-				// **Loopback only.** `vite.config.ts` sets `host: true`, so the dev
-				// server binds every interface — and this answer carries the
-				// absolute project root, which spells the OS username, plus the
-				// branch being worked on. That is worth nothing to an attacker and
-				// worth not handing out either; every consumer is a probe or a
-				// capture on the same machine. A non-loopback caller falls through
-				// to vite, which answers `index.html` — so it looks to them exactly
-				// like a server without the plugin, which is the truthful thing for
-				// it to look like.
-				if (!isLoopback(req.socket?.remoteAddress)) return next();
+				// **Two gates, and one of them is not enough.**
+				//
+				// `vite.config.ts` sets `host: true`, so the server binds every
+				// interface, and this answer carries the absolute project root —
+				// which spells the OS username — plus the branch in hand. Every
+				// consumer is a probe or a capture on this machine, so the socket
+				// has to be loopback.
+				//
+				// That alone was shipped for a round and does not hold. Running
+				// before vite's internal middlewares is deliberate — the SPA
+				// fallback would otherwise answer first — but it also means
+				// running before vite's `allowedHosts` check. A page at
+				// `evil.example.com` that re-resolves to 127.0.0.1 reaches this
+				// over a **loopback socket**, and the socket test waves it
+				// through: measured on this branch, `Host: evil.example.com` got
+				// 403 from vite on `/src/main.ts` and 200 with the declaration
+				// here. So the `Host` header is checked too, and the ordering
+				// stays.
+				//
+				// A refused caller falls through to **vite**, and what it sees is
+				// vite's answer rather than a refusal of ours: `index.html` for a
+				// remote address asking for a local name, and its own 403 where
+				// `allowedHosts` rejects the host — which is what the rebinding
+				// case gets, measured. Either way it is indistinguishable from a
+				// server that does not carry this plugin, which is the truthful
+				// thing for it to look like.
+				if (!isLocalRequest(req)) return next();
 				res.setHeader("Content-Type", "application/json");
-				res.end(JSON.stringify({ root, ...gitFacts(root) }));
+				res.end(JSON.stringify({ root, ...(await gitFacts(root)) }));
 			});
 		},
 	};
@@ -164,3 +191,34 @@ const isLoopback = (addr) =>
 	addr === "127.0.0.1" ||
 	(typeof addr === "string" &&
 		(addr.startsWith("127.") || addr.startsWith("::ffff:127.")));
+
+/**
+ * The hostname the caller asked for, without its port, and without `new URL`.
+ *
+ * A bracketed IPv6 literal keeps its brackets stripped rather than being split
+ * on the colons inside it.
+ */
+const hostnameOf = (host) => {
+	const h = String(host ?? "");
+	if (h.startsWith("[")) return h.slice(1, h.indexOf("]"));
+	return h.split(":")[0];
+};
+
+/**
+ * A name that cannot have been handed out by somebody else's DNS.
+ *
+ * `localhost` and anything under it are reserved for the loopback interface,
+ * and a bare IP literal is not a name at all — there is no zone to rebind. Any
+ * other name reached this server because a resolver said so, and that resolver
+ * is not necessarily the user's.
+ */
+const isLocalName = (name) =>
+	name === "localhost" ||
+	name.endsWith(".localhost") ||
+	/^\d{1,3}(\.\d{1,3}){3}$/.test(name) ||
+	/^[0-9a-f:]+$/i.test(name);
+
+/** Both gates: a loopback socket *and* a host nobody else's DNS can spell. */
+const isLocalRequest = (req) =>
+	isLoopback(req.socket?.remoteAddress) &&
+	isLocalName(hostnameOf(req.headers?.host));

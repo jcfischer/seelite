@@ -110,12 +110,21 @@ const NO_PLUGIN =
 	`A vite server started without the tree-declaration plugin answers any\n` +
 	`unknown path with index.html, which is what this looks like. Check that\n` +
 	`vite.config.ts still lists treeDeclaration(), and that the server was\n` +
-	`started with that config.`;
+	`started with that config.\n\n` +
+	`It also looks exactly like this from anywhere but the machine the server\n` +
+	`is on: the endpoint answers a loopback socket asking for a local name,\n` +
+	`and nothing else. If this origin is another host, that is the reason,\n` +
+	`and the config there is fine.`;
 
-const BAD_SHAPE =
+const NO_ROOT =
 	`That is JSON, so something is serving this path — but it carries no\n` +
 	`string 'root', which is the one field the guard compares. Check what is\n` +
 	`on that port before touching vite.config.ts.`;
+
+const NOT_JSON =
+	`That claims to be JSON and does not parse as any, so something on that\n` +
+	`port is answering this path and getting it wrong. Check what is there\n` +
+	`before touching vite.config.ts.`;
 
 /**
  * Throws unless the server at `origin` declares this working tree.
@@ -148,10 +157,10 @@ export async function assertServingThisTree(origin) {
 	try {
 		declared = JSON.parse(body);
 	} catch {
-		throw new Error(undeclared(origin, url, type, body, BAD_SHAPE));
+		throw new Error(undeclared(origin, url, type, body, NOT_JSON));
 	}
 	if (typeof declared?.root !== "string")
-		throw new Error(undeclared(origin, url, type, body, BAD_SHAPE));
+		throw new Error(undeclared(origin, url, type, body, NO_ROOT));
 
 	// The declared root is resolved the way this module's own is, so two
 	// spellings of one tree compare equal. A path that does not exist on this
@@ -184,9 +193,25 @@ export async function assertServingThisTree(origin) {
  * serves is the server's to declare, so a probe has nothing to choose here.
  */
 export async function guardedOrigin(origin) {
+	return (await guardedTree(origin)).origin;
+}
+
+/**
+ * The same preamble, handing back **both** halves: the resolved origin and the
+ * declaration the server made.
+ *
+ * `guardedOrigin` above throws the declaration away, which is right for the
+ * fifty callers that only want to be sure — and wrong for `capture-views.mjs`,
+ * which stamps the declaration on the contact sheet. That script reached past
+ * the preamble to `assertServingThisTree(ORIGIN)` for a round and silently lost
+ * `originOf` and the `PROBE_URL` override with it: a `PROBE_ORIGIN` ending in a
+ * slash then built the endpoint off a doubled one, fell through to the SPA
+ * fallback, and refused a correct server while blaming its config (#296
+ * review). One entry point rather than two spellings of the preamble.
+ */
+export async function guardedTree(origin) {
 	const resolved = originOf(process.env.PROBE_URL ?? origin);
-	await assertServingThisTree(resolved);
-	return resolved;
+	return { origin: resolved, served: await assertServingThisTree(resolved) };
 }
 
 /**

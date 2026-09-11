@@ -56,8 +56,8 @@ import {
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import {
-	assertServingThisTree,
 	bootedGame,
+	guardedTree,
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
@@ -345,15 +345,21 @@ async function rebuildSheet(out) {
  * person with no way to tell which checkout the pixels came from. #123's
  * wrong-tree capture was caught by an arithmetic tell in a *probe*, not by
  * anyone looking at the sheet it produced. So the declaration goes into the
- * manifest and onto the sheet beside this process's own git ref: when the two
- * disagree, the frames were taken of something other than what was captured.
+ * manifest and onto the sheet beside this process's own git ref.
+ *
+ * **It is a record of provenance, not a cross-check**, and the comment here
+ * said otherwise for a round. A live run cannot show the two disagreeing: the
+ * guard throws unless the declared root is this one, and `REF` comes from
+ * `git rev-parse` in that same tree. What the field buys is that a sheet on
+ * disk, or two sheets compared weeks apart, names the checkout its pixels came
+ * from — which is exactly what #123's sheet could not.
  *
  * There is no file list any more — the guard used to fingerprint one, and a
  * module with no top-level numeric constants could not be pointed at, which for
  * this script meant the cockpit interior and the planet shaders. A declaration
  * is a property of the server, so that gap closed with it.
  */
-const served = await assertServingThisTree(ORIGIN);
+const { served } = await guardedTree(ORIGIN);
 
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });

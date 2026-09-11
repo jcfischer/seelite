@@ -26,8 +26,13 @@ import { createServer as netServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createServer } from "vite";
-import { codeOf, repoPath } from "./lib/source-scan";
+import { createServer, type ViteDevServer } from "vite";
+import {
+	callsWithArgument,
+	codeOf,
+	repoPath,
+	scriptFiles,
+} from "./lib/source-scan";
 import {
 	assertServingThisTree,
 	TREE_ENDPOINT,
@@ -86,19 +91,41 @@ afterAll(async () => {
  * That is also their limit, and the wiring row below is what covers it: none of
  * them would notice `vite.config.ts` losing the plugin.
  */
-async function serve(root: string, { declare = true } = {}): Promise<string> {
+async function serve(
+	root: string,
+	{ declare = true, useConfigFile = false } = {},
+): Promise<{ origin: string; server: ViteDevServer }> {
 	const port = await freePort();
 	const server = await createServer({
-		configFile: false,
+		// `useConfigFile` is the wiring row's, and it is the one arm that must
+		// **not** pass the plugin by hand: the whole question there is whether
+		// the shipped `vite.config.ts` still lists it.
+		...(useConfigFile
+			? {}
+			: { configFile: false, plugins: declare ? [treeDeclaration()] : [] }),
 		root,
 		logLevel: "silent",
-		plugins: declare ? [treeDeclaration()] : [],
 		server: { port, strictPort: true, host: "127.0.0.1" },
 	});
 	await server.listen();
 	running.push(server);
-	return `http://127.0.0.1:${port}`;
+	return { origin: `http://127.0.0.1:${port}`, server };
 }
+
+/**
+ * One plugin-enabled server on this tree, shared by every row that varies only
+ * the *request*.
+ *
+ * A vite boot is not free and `npm test` runs on every change; three rows were
+ * standing up three identical servers to ask three different questions of them
+ * (#296 review). Rows that vary the *server* — another root, no plugin, the
+ * shipped config — still get their own.
+ */
+let ownTree: Promise<{ origin: string; server: ViteDevServer }> | null = null;
+const ownTreeOrigin = async () => {
+	ownTree ??= serve(REPO);
+	return (await ownTree).origin;
+};
 
 /**
  * A second tree whose fingerprint files are byte-identical to this one's.
@@ -123,7 +150,7 @@ function siblingTree(): string {
 
 test("a server on another tree with identical constants is refused", async () => {
 	const sibling = siblingTree();
-	const origin = await serve(sibling);
+	const { origin } = await serve(sibling);
 	// The constants agree — that is the fixture's whole point — so the message
 	// must be about identity. Both roots are named, because "wrong tree" without
 	// saying which one sends the reader to check the server they are looking at.
@@ -137,8 +164,7 @@ test("a server on another tree with identical constants is refused", async () =>
 }, 60000);
 
 test("a server on this tree passes, and reports the tree it declared", async () => {
-	const origin = await serve(REPO);
-	const served = await assertServingThisTree(origin);
+	const served = await assertServingThisTree(await ownTreeOrigin());
 	expect(served.root).toBe(REPO);
 	// The git fields are what the contact sheet stamps. They are optional by
 	// contract, but this tree is a git checkout, so here they are present.
@@ -148,7 +174,7 @@ test("a server on this tree passes, and reports the tree it declared", async () 
 }, 60000);
 
 test("a server with no declaration is refused, by what came back and not by a status", async () => {
-	const origin = await serve(REPO, { declare: false });
+	const { origin } = await serve(REPO, { declare: false });
 	const err = await assertServingThisTree(origin).then(
 		() => null,
 		(e: Error) => e,
@@ -166,7 +192,7 @@ test("a root reached through a symlink passes", async () => {
 	// the two spellings of one tree must compare equal.
 	const link = join(tmpTree("seelite-link-"), "tree");
 	symlinkSync(REPO, link);
-	const origin = await serve(link);
+	const { origin } = await serve(link);
 	const served = await assertServingThisTree(origin);
 	expect(served.root).toBe(REPO);
 }, 60000);
@@ -217,15 +243,8 @@ test("a declaration is read on its shape, whatever status carries it", async () 
  * tree.
  */
 test("the shipped vite config serves the declaration", async () => {
-	const port = await freePort();
-	const server = await createServer({
-		root: REPO,
-		logLevel: "silent",
-		server: { port, strictPort: true, host: "127.0.0.1" },
-	});
-	await server.listen();
-	running.push(server);
-	const served = await assertServingThisTree(`http://127.0.0.1:${port}`);
+	const { origin } = await serve(REPO, { useConfigFile: true });
+	const served = await assertServingThisTree(origin);
 	expect(served.root).toBe(REPO);
 }, 60000);
 
@@ -243,16 +262,7 @@ test("the shipped vite config serves the declaration", async () => {
  * reads, so this is the decision under test and not a mock of it.
  */
 test("a non-loopback caller gets no declaration", async () => {
-	const port = await freePort();
-	const server = await createServer({
-		configFile: false,
-		root: REPO,
-		logLevel: "silent",
-		plugins: [treeDeclaration()],
-		server: { port, strictPort: true, host: "127.0.0.1" },
-	});
-	await server.listen();
-	running.push(server);
+	const { origin, server } = await serve(REPO);
 	// The connection is genuinely local, so its address is overwritten on the
 	// way in — the middleware asks the socket and this is what it will be told.
 	server.httpServer?.on("connection", (socket) => {
@@ -261,8 +271,38 @@ test("a non-loopback caller gets no declaration", async () => {
 			configurable: true,
 		});
 	});
-	const res = await fetch(`http://127.0.0.1:${port}${TREE_ENDPOINT}`);
+	const res = await fetch(`${origin}${TREE_ENDPOINT}`);
 	expect(res.headers.get("content-type")).toContain("text/html");
+}, 60000);
+
+/**
+ * A loopback socket asking for somebody else's name gets nothing.
+ *
+ * **The socket test alone shipped for a round and does not hold.** The
+ * middleware runs before vite's internal ones on purpose — the SPA fallback
+ * would otherwise answer first — which also puts it before vite's
+ * `allowedHosts` check. A page at `evil.example.com` re-resolved to 127.0.0.1
+ * reaches this over a loopback socket, so the socket says yes. Measured on the
+ * branch that shipped it: `Host: evil.example.com` got **403** from vite on
+ * `/src/main.ts` and **200 application/json** here, carrying the root, the
+ * branch and the head.
+ *
+ * No override this time — the `Host` header is the request's own, so this is
+ * the attack spelt exactly as it arrives.
+ */
+test("a loopback socket asking for a foreign host gets no declaration", async () => {
+	const { origin } = await serve(REPO);
+	const res = await fetch(`${origin}${TREE_ENDPOINT}`, {
+		headers: { Host: "evil.example.com" },
+	});
+	expect(res.headers.get("content-type")).not.toContain("application/json");
+	// And the ordinary local spellings still work, or the gate is just off.
+	for (const host of ["localhost", "127.0.0.1"]) {
+		const ok = await fetch(`${origin}${TREE_ENDPOINT}`, {
+			headers: { Host: host },
+		});
+		expect(ok.headers.get("content-type")).toContain("application/json");
+	}
 }, 60000);
 
 test("the guard and the plugin agree on where the declaration lives", () => {
@@ -278,40 +318,21 @@ test("no caller passes a file list any more", () => {
 	// stale list is bit-identical to one that was cleaned up, and a green probe
 	// run says nothing either way. This is the half that can fail.
 	//
-	// **The walk is recursive and the count is not stated.** A flat read of
-	// `scripts` plus a hardcoded `scripts/lib` leaves any new subdirectory
-	// unscanned, which is the fail-open shape `tests/lib/source-scan.ts` records
-	// against its own walk; and a figure in the name of a test is a figure that
-	// rots — the first version of this said fifty where the sweep touched 33.
+	// **The walk is recursive and the count is not stated.** Both were wrong
+	// once: a flat read of `scripts` left any new subdirectory unscanned, and
+	// the prose said fifty where the sweep touched 33. The walk and the
+	// argument scan live in `tests/lib/source-scan.ts` now, beside the rest of
+	// this suite's source-reading machinery.
 	//
 	// Comments are stripped first: this file's own prose names the old shape,
 	// and so does `probe-guard.mjs`'s history note. A scan that read those would
 	// be red about text nobody executes.
-	const walk = (rel: string): string[] =>
-		readdirSync(repoPath(rel), { withFileTypes: true }).flatMap((e) =>
-			e.isDirectory()
-				? walk(`${rel}/${e.name}`)
-				: e.name.endsWith(".mjs")
-					? [`${rel}/${e.name}`]
-					: [],
-		);
-	// A balanced scan from the call's own open paren, not `[^)]*` — that stops
-	// at the first `)` and so reads `guardedOrigin(originOf(x), [...])` as
-	// single-argument, which is the call shape most likely to be left behind.
-	const passesTwo = (source: string) => {
-		for (const m of source.matchAll(
-			/\b(?:guardedOrigin|assertServingThisTree)\s*\(/g,
-		)) {
-			let depth = 0;
-			for (let i = m.index + m[0].length - 1; i < source.length; i++) {
-				const c = source[i];
-				if ("([{".includes(c)) depth++;
-				else if (")]}".includes(c)) {
-					if (--depth === 0) break;
-				} else if (c === "," && depth === 1) return true;
-			}
-		}
-		return false;
-	};
-	expect(walk("scripts").filter((f) => passesTwo(codeOf(f)))).toEqual([]);
+	const offenders = scriptFiles().filter((f) =>
+		callsWithArgument(codeOf(f), [
+			"guardedOrigin",
+			"assertServingThisTree",
+			"guardedTree",
+		]),
+	);
+	expect(offenders).toEqual([]);
 });
