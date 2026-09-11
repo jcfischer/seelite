@@ -28,9 +28,14 @@
  * is the tier where a wrong-checkout run is *least* likely to be noticed: a
  * probe asserts numbers, a sheet is looked at by someone with no way to know
  * which tree it came from. They are read per request — cached for at most
- * `GIT_TTL_MS`, and never once at boot — because `dirty` changes under an
- * editing session and a stale answer there is the kind of precise-and-wrong
- * label `capture-views` already avoids for its own ref. They are **omitted** where git cannot be read — an archive export or
+ * `GIT_TTL_MS`, and never once at boot.
+ *
+ * **Not for `capture-views`' sake**, which is what this said for a round: that
+ * script asks once, before Chromium launches, and stamps the one reading on a
+ * sheet written minutes later, so freshness buys it nothing. The reason is
+ * simply that a server can outlive a commit and a checkout — an agent session
+ * leaves one up for hours — and the reading is off the critical path now that
+ * it is async, so there is nothing to buy by staling it. They are **omitted** where git cannot be read — an archive export or
  * a tree with no `.git` is still a tree worth declaring — so a consumer checks
  * for them rather than assuming them.
  */
@@ -206,7 +211,6 @@ export function treeDeclaration() {
  *  local caller, so the check cannot be an equality against one string. */
 const isLoopback = (addr) =>
 	addr === "::1" ||
-	addr === "127.0.0.1" ||
 	(typeof addr === "string" &&
 		(addr.startsWith("127.") || addr.startsWith("::ffff:127.")));
 

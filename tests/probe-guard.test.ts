@@ -194,13 +194,10 @@ test("a server on another tree with identical constants is refused", async () =>
 	// The constants agree — that is the fixture's whole point — so the message
 	// must be about identity. Both roots are named, because "wrong tree" without
 	// saying which one sends the reader to check the server they are looking at.
-	const err = await assertServingThisTree(origin).then(
-		() => null,
-		(e: Error) => e,
-	);
+	const err = await refusalFrom(origin);
 	expect(err).not.toBeNull();
-	expect(err!.message).toContain(realpathSync(sibling));
-	expect(err!.message).toContain(REPO);
+	expect(err?.message).toContain(realpathSync(sibling));
+	expect(err?.message).toContain(REPO);
 }, 60000);
 
 test("a server on this tree passes, and reports the tree it declared", async () => {
@@ -215,15 +212,12 @@ test("a server on this tree passes, and reports the tree it declared", async () 
 
 test("a server with no declaration is refused, by what came back and not by a status", async () => {
 	const { origin } = await serve(REPO, { declare: false });
-	const err = await assertServingThisTree(origin).then(
-		() => null,
-		(e: Error) => e,
-	);
+	const err = await refusalFrom(origin);
 	expect(err).not.toBeNull();
 	// Vite answers an unknown path with `index.html` and a **200**, so a guard
 	// reading `res.ok` would take the SPA fallback for a declaration. The message
 	// names what came back instead.
-	expect(err!.message).toContain("text/html");
+	expect(err?.message).toContain("text/html");
 }, 60000);
 
 test("a root reached through a symlink passes", async () => {
@@ -388,10 +382,48 @@ test("a root that does not exist here is refused, and named as declared", async 
 	expect(err?.message).toContain(REPO);
 }, 60000);
 
-test("the guard and the plugin agree on where the declaration lives", () => {
-	// One owner for the path. A guard looking somewhere the plugin does not serve
-	// refuses every server in the repo, and reads exactly like a server that does
-	// not declare.
+/**
+ * No web page can read the declaration.
+ *
+ * The whole reason for the two gates above is that this answer is worth not
+ * handing out: the root spells the OS username and the branch says what is
+ * being worked on. Neither gate helps against a page that simply `fetch`es it
+ * — the browser sends no foreign `Host`, and the socket is loopback. What
+ * stops that is the **absence of an `Access-Control-Allow-Origin` header**.
+ *
+ * **That absence is structural, not a default**, and the review finding this
+ * row answers said otherwise — that it rests on vite 6's restrictive `cors`
+ * setting, so `server.cors: true` would silently expose the root and branch.
+ * Measured: with `cors: true` the row still passes, because the middleware is
+ * pre-internal and ends the response itself, so vite's cors middleware never
+ * runs on it. No vite setting can reach this response.
+ *
+ * What the row does catch is the regression that is actually reachable: the
+ * endpoint growing a permissive header of its own. Adding
+ * `res.setHeader("Access-Control-Allow-Origin", "*")` beside the content type
+ * makes this the one failure in the file. Written down because a row that
+ * cannot fail reads exactly like one that holds — and this one nearly shipped
+ * with the wrong mechanism named above it.
+ */
+test("the declaration is not readable cross-origin", async () => {
+	const origin = await ownTreeOrigin();
+	const res = await fetch(`${origin}${TREE_ENDPOINT}`, {
+		headers: { Origin: "http://evil.example.com" },
+	});
+	expect(res.headers.get("access-control-allow-origin")).toBeNull();
+	// And the request still succeeded, or the row would pass on a server that
+	// refused it for some unrelated reason.
+	expect(res.headers.get("content-type")).toContain("application/json");
+}, 60000);
+
+test("the endpoint path is pinned", () => {
+	// **Not an agreement check** — it read as one for a round, and there is only
+	// one value: `probe-guard.mjs` re-exports the plugin's constant, so the
+	// disagreement it named cannot be produced. What proves guard and plugin
+	// meet is the wiring row above, which boots a server and asks it.
+	//
+	// What this pins is the literal: the path is a URL an operator curls and a
+	// reader greps for, so moving it should be a decision rather than a rename.
 	expect(TREE_ENDPOINT).toBe("/__seelite/tree");
 });
 

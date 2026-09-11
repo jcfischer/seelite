@@ -124,12 +124,30 @@ export function callsWithArgument(source: string, names: string[]): boolean {
 	const head = new RegExp(`\\b(?:${names.join("|")})\\s*\\(`, "g");
 	for (const m of source.matchAll(head)) {
 		let depth = 0;
+		let quote = "";
 		for (let i = m.index + m[0].length - 1; i < source.length; i++) {
 			const c = source[i];
-			if ("([{".includes(c)) depth++;
+			// A quoted span is text, not structure. Without this,
+			// `guardedOrigin("a,b")` reads as two arguments — and the escape
+			// check is what stops a backslash-escaped quote closing the span early.
+			if (quote) {
+				if (c === "\\") i++;
+				else if (c === quote) quote = "";
+				continue;
+			}
+			if (c === '"' || c === "'" || c === "`") quote = c;
+			else if ("([{".includes(c)) depth++;
 			else if (")]}".includes(c)) {
 				if (--depth === 0) break;
-			} else if (c === "," && depth === 1) return true;
+			} else if (c === "," && depth === 1) {
+				// **A trailing comma is not an argument.** biome wraps a long
+				// single-argument call and puts one before the closing paren, so
+				// a scan without this reads formatting as a defect — and the only
+				// reason no row trips it today is that no such call happens to be
+				// wrapped.
+				if (/^\s*\)/.test(source.slice(i + 1))) continue;
+				return true;
+			}
 		}
 	}
 	return false;

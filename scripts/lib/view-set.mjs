@@ -873,7 +873,7 @@ const esc = (s) =>
  * only ever be exercised against the one real set is a rule nothing has watched
  * fail. It defaults to `VIEWS`, so every caller but a test passes one argument.
  *
- * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, served?: {root: string, head?: string, branch?: string, dirty?: boolean}, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
+ * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, served?: import("./tree-declaration.mjs").TreeDeclaration, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
  * @param {ReadonlyArray<{name: string, what: string, covers: number[]}>} [views]
  * @returns {string} a standalone HTML page
  */
@@ -920,7 +920,14 @@ export function contactSheet(runs, views = VIEWS) {
 	 * for #123's failure those are the two different things: a dev server left
 	 * running in a sibling worktree served a whole other branch's hulls into a
 	 * sheet labelled with this one's ref, and nobody looking at it could have
-	 * known. The server's own declaration is what closes that, so it is printed.
+	 * known. The server's own declaration is what is printed here.
+	 *
+	 * **It is provenance, not a cross-check** — `capture-views.mjs` carries
+	 * the argument, and this file claimed the detection for a round. What
+	 * closes #123 is the *refusal*: the guard throws unless the declared root
+	 * is the capture's own tree, so a live run cannot reach the disagreement
+	 * this line would show. What the line buys is that a sheet on disk names
+	 * the checkout its pixels came from, which is what #123's sheet could not.
 	 *
 	 * **The root is always shown, and the branch is the extra.** It was the
 	 * other way round for a round — `branch@head` where git could be read, with
@@ -953,7 +960,7 @@ export function contactSheet(runs, views = VIEWS) {
 		.map(
 			(r) =>
 				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span>` +
-				`<span title="${esc(r.served?.root ?? "")}">${esc(servedBy(r))}</span></th>`,
+				`<span>${esc(servedBy(r))}</span></th>`,
 		)
 		.join("");
 	const rows = views

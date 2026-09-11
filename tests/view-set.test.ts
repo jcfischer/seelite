@@ -17,6 +17,7 @@
  * the map with no view pointed at it would be judged on somebody else's frame.
  */
 import { describe, expect, test } from "bun:test";
+import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
 import {
@@ -34,12 +35,9 @@ import {
 
 /** A manifest as `capture-views.mjs` writes one, for a run that captured everything. */
 type ViewShot = { name: string; file: string; gameTime?: number };
-type Served = {
-	root: string;
-	head?: string;
-	branch?: string;
-	dirty?: boolean;
-};
+/** The producer's own type, imported rather than restated — `allowJs` resolves
+ *  the JSDoc typedef, so a shape change in the plugin goes red here. */
+type Served = TreeDeclaration;
 
 const fullRun = (
 	label: string,
@@ -462,8 +460,13 @@ describe("the contact sheet", () => {
 	 * #123's capture ran against a dev server in a sibling worktree, and the
 	 * sheet it produced carried this checkout's ref over another branch's hulls.
 	 * The ref names the tree the *script* ran in; this names the tree the
-	 * *server* declared, and the sheet has to show both or the disagreement is
-	 * invisible to the one person whose yes is the gate.
+	 * *server* declared.
+	 *
+	 * **Provenance, not a detection**, which this said for a round. The guard
+	 * refuses a server whose root is not the capture's own tree, so a live run
+	 * cannot produce the disagreement — the fixture below fabricates a root
+	 * this machine has never had. What the line is for is that a sheet on disk
+	 * names the checkout its pixels came from.
 	 */
 	test("names the tree the server declared, beside the ref the script ran at", () => {
 		const html = contactSheet([fullRun("before")]);

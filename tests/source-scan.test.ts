@@ -12,9 +12,9 @@
  * deleted outright, newlines included, so a `file:line` computed from the result
  * pointed hundreds of lines away in the one output such a test ever produces.
  */
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { codeOf, repoPath } from "./lib/source-scan";
+import { callsWithArgument, codeOf, repoPath } from "./lib/source-scan";
 
 /** The most heavily commented file in the project, which is where drift
  *  accumulates and so where the property is worth measuring. */
@@ -104,4 +104,59 @@ test("a `//` inside a URL is not a comment", () => {
 	// The statement is not truncated mid-literal: it still closes and terminates.
 	// Under the naive strip this line ends at `"http:`.
 	expect(line?.trimEnd().endsWith('";')).toBe(true);
+});
+
+/**
+ * `callsWithArgument` — the predicate the guard's caller sweep rests on.
+ *
+ * **It had no arm at all.** It was used in one place, nothing asserted it ever
+ * returns `true`, and the PR quoting "the scan was red with the 33 call sites"
+ * was quoting a red run of the *regex it replaced* — so nothing established
+ * that the shipped scanner discriminates. A predicate whose false answer is the
+ * green one is exactly the shape that passes by doing nothing.
+ */
+describe("callsWithArgument", () => {
+	const fires = (src: string) => callsWithArgument(src, ["guardedOrigin"]);
+
+	test("a plain second argument fires it", () => {
+		expect(fires('await guardedOrigin(ORIGIN, ["src/main.ts"]);')).toBe(true);
+	});
+
+	test("a second argument behind a nested call fires it", () => {
+		// The shape the `[^)]*` pattern this replaced read as single-argument,
+		// and the one a leftover file list is most likely to hide behind.
+		expect(
+			fires('await guardedOrigin(originOf(ORIGIN), ["src/main.ts"]);'),
+		).toBe(true);
+	});
+
+	test("a single argument does not", () => {
+		expect(fires("await guardedOrigin(ORIGIN);")).toBe(false);
+		expect(fires("await guardedOrigin(originOf(ORIGIN));")).toBe(false);
+	});
+
+	test("a trailing comma is formatting, not an argument", () => {
+		// biome wraps a long single-argument call and leaves one of these. No
+		// call in the tree is currently wrapped, so the row was green by luck of
+		// formatting rather than by the rule.
+		expect(
+			fires("await guardedOrigin(\n\tSOME_VERY_LONG_ORIGIN_NAME,\n);"),
+		).toBe(false);
+	});
+
+	test("a comma inside a string is text, not structure", () => {
+		expect(fires('guardedOrigin("http://a,b");')).toBe(false);
+	});
+
+	test("another function's second argument does not fire it", () => {
+		expect(fires('somethingElse(ORIGIN, ["src/main.ts"]);')).toBe(false);
+	});
+
+	test("a comment naming the old shape does not fire it", () => {
+		// Callers are scanned through `codeOf`, which blanks comments — but the
+		// predicate is given raw text here so the two concerns stay separate.
+		expect(
+			callsWithArgument(codeOf("scripts/probe-guard.mjs"), ["guardedOrigin"]),
+		).toBe(false);
+	});
 });
