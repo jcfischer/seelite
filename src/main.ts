@@ -786,9 +786,55 @@ const FLOOR_STRIP_HEIGHT_PX = 26;
  * to a destination is a worse instrument than one sitting 22 px higher always.
  */
 const FLOOR_COURSE_HEIGHT_PX = 22;
-/** How far the cruise/jump prompt clears the floor's topmost band. The
- *  fraction it replaced left exactly this much above the strip. */
+/**
+ * How far the cruise/jump prompt clears the floor's topmost band.
+ *
+ * **Ten pixels, which is what `h * 0.62` left at h = 900 and nowhere else.**
+ * The value it replaced was a *fraction* — 0.04h against a glass bottom of
+ * 0.66h — so the old gap above the strip was 4.4 px at the probe's 760 and
+ * 7.76 px at 844. Naming it "exactly this much" was true of one viewport, and
+ * a fixed pixel gap is the right shape here because every band it clears is
+ * fixed pixels too.
+ */
 const PROMPT_ABOVE_FLOOR_PX = 10;
+/** How far §3's clearance line clears the same band. */
+const CLEARANCE_ABOVE_FLOOR_PX = 16;
+
+/**
+ * The top of the floor's band stack — above the strip and above §8.3's course
+ * row — as a y on the overlay.
+ *
+ * **One owner, because this PR exists for the want of one.** The course band
+ * was added and the prompt did not know about it, so the two drew on one
+ * baseline; the clearance line was spared only because it already derived
+ * itself from the strip's band. Three sites read this now, and a fourth band
+ * is one edit rather than three.
+ */
+/**
+ * What a refused jump says, in one place.
+ *
+ * The refusals are the module's, so the words the player reads and the gate
+ * that produced them cannot drift apart — and **two surfaces read them now**:
+ * the notice a key press writes, and §3's prompt, which used to offer "press `
+ * to jump to X" beside a course row this build had already painted red.
+ */
+const jumpRefusalText = (
+	refusal:
+		| "same-system"
+		| "other-galaxy"
+		| "out-of-range"
+		| "insufficient-fuel",
+	to: SystemRecord,
+): string =>
+	({
+		"same-system": "already there",
+		"other-galaxy": "no galactic hyperdrive fitted",
+		"out-of-range": `${to.name} is out of range`,
+		"insufficient-fuel": `not enough fuel for ${to.name}`,
+	})[refusal];
+
+const floorTopY = (h: number) =>
+	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX - FLOOR_COURSE_HEIGHT_PX;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -1459,15 +1505,6 @@ class Game {
 	 * compare the rendered glyphs with the renderer's own placement contract. */
 	readonly cockpitPrompt = new TextRaster();
 	/**
-	 * What §5's flight-floor strip painted this frame, or `null` when it painted
-	 * nothing — a focused console has replaced the glass.
-	 *
-	 * **Written by the draw, from the values it drew**, the same pattern as
-	 * `directorRender`. A record assembled beside the draw from the same state
-	 * would let a probe assert a strip that was never painted, which is the
-	 * check-that-cannot-fail this repo has shipped once already.
-	 */
-	/**
 	 * The course chain as last planned, and what it was planned from.
 	 *
 	 * `courseRow` owns it; see that method for why a per-frame `planRoute` is
@@ -1483,13 +1520,31 @@ class Game {
 		} | null;
 	} | null = null;
 
+	/**
+	 * What §5's flight-floor strip painted this frame, or `null` when it painted
+	 * nothing — a focused console has replaced the glass.
+	 *
+	 * **Written by the draw, from the values it drew**, the same pattern as
+	 * `directorRender`. A record assembled beside the draw from the same state
+	 * would let a probe assert a strip that was never painted, which is the
+	 * check-that-cannot-fail this repo has shipped once already.
+	 */
+
 	floorRender: {
 		cells: FloorCell[];
 		boxes: { label: string; x: number; y: number; width: number }[];
 		/** §8.3's course row as painted, or `null` where no course is set and
 		 *  the row was deliberately not drawn. */
 		courseRow: FloorCell | null;
-		courseBox: { x: number; y: number; width: number } | null;
+		courseBox: {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+			/** The top of the row's band. A probe reads this rather than
+			 *  subtracting a glyph height of its own. */
+			top: number;
+		} | null;
 		baselineY: number;
 		glassBottomY: number;
 		/** What the strip was shrunk by to fit its widest reading in this
@@ -5771,7 +5826,24 @@ class Game {
 		// the floor strip at four cells and gives it no home. This line does not
 		// stand in for that.
 		const hop = this.nextHop();
-		if (hop) return `press \` to jump to ${hop.name}`;
+		if (hop) {
+			// **The same gate §8.3's course row reddens on.** The row carried the
+			// tone and this line carried the sentence, and §5.2 said so — but
+			// this line never asked `planJump`, so a tank too short for the next
+			// hop painted a red row beside "press ` to jump to ANDIMA" and the
+			// refusal arrived only after the key was pressed. That is #92's
+			// `chargeReadsEmpty` defect exactly: two halves of one reading
+			// disagreeing on the glass, and the fix is the same one — one
+			// predicate, read by both.
+			const decision = planJump(
+				this.world.system.record,
+				hop,
+				this.commander.fuelLy,
+			);
+			return decision.ok
+				? `press \` to jump to ${hop.name}`
+				: jumpRefusalText(decision.refusal, hop);
+		}
 		if (targetKm === null) return "T selects a target";
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
@@ -7038,8 +7110,13 @@ class Game {
 		);
 		if (to === undefined) return false;
 		const course = setCourse(this.world.galaxy.systems, here, to);
+		// **Both refusals leave any standing course alone.** An unknown index
+		// returned early above while an unroutable destination fell through to
+		// `setCourseTo(null)` — two refusals of one call, returning the same
+		// `false` with opposite side effects.
+		if (course === null) return false;
 		this.setCourseTo(course);
-		return course !== null;
+		return true;
 	}
 
 	/**
@@ -7104,14 +7181,7 @@ class Game {
 			this.commander.fuelLy,
 		);
 		if (!decision.ok) {
-			// The refusals are the module's, so the words the player reads and the
-			// gate that produced them cannot drift apart.
-			this.jumpNotice = {
-				"same-system": "already there",
-				"other-galaxy": "no galactic hyperdrive fitted",
-				"out-of-range": `${to.name} is out of range`,
-				"insufficient-fuel": `not enough fuel for ${to.name}`,
-			}[decision.refusal];
+			this.jumpNotice = jumpRefusalText(decision.refusal, to);
 			return false;
 		}
 		this.jumpCharge = beginCharge(to.index);
@@ -9173,13 +9243,17 @@ class Game {
 		// label/value/tone grammar, in its own band, rather than a fifth cell
 		// (#117 D1). With no course it is absent, and absence here moves nothing
 		// below it (#117 D2).
-		let courseBox: { x: number; y: number; width: number } | null = null;
+		let courseBox: {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+			top: number;
+		} | null = null;
 		if (courseRow !== null) {
 			const run = floorRunWidths(ctx, [courseRow], scale);
 			const courseBaselineY =
-				glassBottomY -
-				FLOOR_STRIP_HEIGHT_PX -
-				FLOOR_COURSE_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
+				floorTopY(h) + FLOOR_COURSE_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION);
 			const courseX = (w - run.total) / 2;
 			ctx.save();
 			ctx.textAlign = "left";
@@ -9194,7 +9268,18 @@ class Game {
 				courseBaselineY,
 			);
 			ctx.restore();
-			courseBox = { x: courseX, y: courseBaselineY, width: run.total };
+			courseBox = {
+				x: courseX,
+				y: courseBaselineY,
+				width: run.total,
+				// **The band, not a probe's guess at it.** The overlap check and
+				// the tone sampler both need the row's top, and both had their
+				// own `- 12`: raise the type and the real top rises above it, so
+				// the check written to catch this PR's own collision would go
+				// lenient without going red.
+				height: FLOOR_COURSE_HEIGHT_PX,
+				top: floorTopY(h),
+			};
 		}
 
 		this.floorRender = {
@@ -9430,14 +9515,7 @@ class Game {
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
 		// or not a course is set: see `FLOOR_COURSE_HEIGHT_PX`.
-		ctx.fillText(
-			clearanceText,
-			cx,
-			h * GLASS_BOTTOM_FRACTION -
-				FLOOR_STRIP_HEIGHT_PX -
-				FLOOR_COURSE_HEIGHT_PX -
-				16,
-		);
+		ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -9597,11 +9675,7 @@ class Game {
 			// ERBILE" on one baseline, both centred. No probe row saw it — the
 			// record each writes is perfectly correct — and it was obvious in the
 			// first captured frame.
-			const y =
-				h * GLASS_BOTTOM_FRACTION -
-				FLOOR_STRIP_HEIGHT_PX -
-				FLOOR_COURSE_HEIGHT_PX -
-				PROMPT_ABOVE_FLOOR_PX;
+			const y = floorTopY(h) - PROMPT_ABOVE_FLOOR_PX;
 			ctx.font = PROMPT_FONT;
 			ctx.textAlign = "center";
 			ctx.fillStyle = PROMPT_FILL;

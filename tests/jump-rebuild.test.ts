@@ -197,8 +197,18 @@ describe("the jump itself", () => {
 		const prompt = methodBody("cruisePrompt");
 		inOrder(prompt, "const hop = this.nextHop()", "if (targetKm === null)");
 		inOrder(prompt, "const hop = this.nextHop()", "3600 * ASSIST_CAP_KMS");
-		// And it is returned from that read, not merely computed there.
-		expect(prompt).toContain("if (hop) return");
+		// And the branch **returns**, not merely computes — otherwise the read
+		// could sit above the range tests and still fall through to them.
+		//
+		// This was `toContain("if (hop) return")`, a pin on one spelling: #117
+		// gave the branch a body — it asks `planJump` so the line agrees with
+		// §8.3's course row about whether the hop is affordable — and the pin
+		// went red on a refactor that changes nothing this test is about. What
+		// it holds now is the ordering that *is* the bug: the branch returns
+		// before either range test is reached.
+		inOrder(prompt, "if (hop) {", "return decision.ok");
+		inOrder(prompt, "return decision.ok", "if (targetKm === null)");
+		inOrder(prompt, "return decision.ok", "3600 * ASSIST_CAP_KMS");
 	});
 
 	test("cancelling clears the armed jump, not only the charge", () => {

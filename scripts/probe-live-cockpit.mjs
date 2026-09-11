@@ -465,6 +465,34 @@ for (const viewport of VIEWPORTS) {
 	 * apart is not measuring the tone it names.
 	 */
 	await page.evaluate(() => {
+		/**
+		 * Read a floor box's own band and count §4's refusal fill in it.
+		 *
+		 * **The box carries its band.** Both samplers had their own
+		 * `Math.floor(box.y) - 12, …, 16` — a glyph height copied out of the
+		 * page, which goes lenient the day the type is raised rather than going
+		 * red. The course row's box states its top and height; the strip's
+		 * cells do not yet, so they pass the fallback the old copies used and
+		 * the copy lives in exactly one place now.
+		 */
+		window.__refusalRedInBox = (
+			box,
+			fallbackRise = 12,
+			fallbackHeight = 16,
+		) => {
+			if (!box) return null;
+			const top = box.top ?? Math.floor(box.y) - fallbackRise;
+			const height = box.height ?? fallbackHeight;
+			const overlay = document.getElementById("overlay");
+			const ctx = overlay.getContext("2d", { willReadFrequently: true });
+			const data = ctx.getImageData(
+				Math.floor(box.x),
+				Math.floor(top),
+				Math.ceil(box.width),
+				Math.ceil(height),
+			).data;
+			return window.__refusalRed(data);
+		};
 		window.__refusalRed = (data) => {
 			let red = 0;
 			for (let i = 0; i < data.length; i += 4)
@@ -660,21 +688,11 @@ for (const viewport of VIEWPORTS) {
 	 * string.
 	 */
 	const redInChargeCell = () =>
-		page.evaluate(() => {
-			const g = window.__seelite;
-			const box = g.floorRender?.boxes.find((b) => b.label === "CHARGE");
-			if (!box) return null;
-			const overlay = document.getElementById("overlay");
-			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const data = ctx.getImageData(
-				Math.floor(box.x),
-				Math.floor(box.y) - 12,
-				Math.ceil(box.width),
-				16,
-			).data;
-			return window.__refusalRed(data);
-			return red;
-		});
+		page.evaluate(() =>
+			window.__refusalRedInBox(
+				window.__seelite.floorRender?.boxes.find((b) => b.label === "CHARGE"),
+			),
+		);
 	const redWhenCharged = await redInChargeCell();
 	await page.evaluate(() => {
 		window.__seelite.chargeAu = 0;
@@ -719,8 +737,8 @@ for (const viewport of VIEWPORTS) {
 	/**
 	 * The row is drawn or it is not, and both states are the decision.
 	 *
-	 * #117 D2 chose **absence** over a dormant slot, which is a claim about the
-	 * glass rather than about a string — so this reads the draw's own record,
+	 * §5.2 / #117 D2 chose absence over a dormant field, which is a claim about
+	 * the glass rather than about a string — so this reads the draw's own record,
 	 * which is written from what the draw drew, and then reads where the row
 	 * landed. A record assembled beside the draw would let this assert a row
 	 * that never painted, which is the check-that-cannot-fail this repo has
@@ -820,9 +838,11 @@ for (const viewport of VIEWPORTS) {
 			prompt: g.cockpitPrompt.text ? { ...g.cockpitPrompt.bounds } : null,
 			promptText: g.cockpitPrompt.text,
 			courseBox: g.floorRender?.courseBox ?? null,
-			// The row's own band, so the comparison is against the glyphs rather
-			// than against a baseline with nothing above it.
-			courseTop: (g.floorRender?.courseBox?.y ?? 0) - 12,
+			// **The row's own band, off the page.** This was `y - 12`, a glyph
+			// height the probe kept a copy of — raise the type and the real top
+			// rises above it, so the check written to catch this PR's own
+			// collision goes lenient without going red.
+			courseTop: g.floorRender?.courseBox?.top ?? null,
 		};
 	});
 	check(
@@ -830,6 +850,7 @@ for (const viewport of VIEWPORTS) {
 		stacking.courseBox !== null &&
 			// The prompt must actually be drawn, or this asserts nothing.
 			stacking.prompt !== null &&
+			stacking.courseTop !== null &&
 			stacking.prompt.top + stacking.prompt.height <= stacking.courseTop,
 		`prompt "${stacking.promptText}" ${stacking.prompt?.top}…${(stacking.prompt?.top ?? 0) + (stacking.prompt?.height ?? 0)} against a course row from ${stacking.courseTop}`,
 	);
@@ -844,20 +865,9 @@ for (const viewport of VIEWPORTS) {
 	 * condition `planJump` actually refuses rather than a second copy of it.
 	 */
 	const redInCourseRow = () =>
-		page.evaluate(() => {
-			const g = window.__seelite;
-			const box = g.floorRender?.courseBox;
-			if (!box) return null;
-			const overlay = document.getElementById("overlay");
-			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const data = ctx.getImageData(
-				Math.floor(box.x),
-				Math.floor(box.y) - 12,
-				Math.ceil(box.width),
-				16,
-			).data;
-			return window.__refusalRed(data);
-		});
+		page.evaluate(() =>
+			window.__refusalRedInBox(window.__seelite.floorRender?.courseBox),
+		);
 	const redWithFuel = await redInCourseRow();
 	const fuelledRow = await page.evaluate(
 		() => window.__seelite.floorRender?.courseRow ?? null,
@@ -882,6 +892,28 @@ for (const viewport of VIEWPORTS) {
 			// prompt, not to this row.
 			dryRow?.value === courseSet.row?.value,
 		`${redWithFuel} red pixels fuelled (${fuelledRow?.tone}), ${redWithoutFuel} dry (${dryRow?.tone}); "${dryRow?.value}" against "${courseSet.row?.value}"`,
+	);
+
+	/**
+	 * **And the prompt says the same thing the row does.**
+	 *
+	 * §5.2 claimed "`planJump` owns those words and §3's prompt prints them"
+	 * before it was true: `cruisePrompt` never asked `planJump`, so the glass
+	 * offered "press ` to jump to ANDIMA" beside a row this build had already
+	 * painted red, and the refusal arrived only after the key was pressed. That
+	 * is #92's `chargeReadsEmpty` defect one instrument over, and it is checked
+	 * the way that one is — the two halves of one reading, on one frame.
+	 */
+	const dryPrompt = await page.evaluate(
+		() => window.__seelite.cockpitPrompt.text,
+	);
+	check(
+		`${viewport.name}: the prompt and the course row agree about an unaffordable hop`,
+		dryRow?.tone === "refused" &&
+			// The words are `planJump`'s, through `jumpRefusalText`, so this is
+			// the shipped sentence and not a second copy of it.
+			/not enough fuel for \S+/.test(dryPrompt),
+		`row ${dryRow?.tone}, prompt "${dryPrompt}"`,
 	);
 
 	/**

@@ -630,17 +630,10 @@ export type CourseCue =
 /**
  * The course row, or `null` for no row at all.
  *
- * **Absence, not a dormant slot** (#117 D2). §5 calls the floor "the minimum
- * that keeps a hull-hidden cockpit flyable"; a permanent field reading
- * `NO COURSE` is not that. The reflow objection that makes a dormant slot
- * attractive on the strip does not apply to a row of its own.
- *
- * **Arriving does not clear it** (#117 D4), ratified as shipped rather than
- * changed: the handle's course survives the last jump, `courseProgress` reports
- * `arrived`, and `chargeJump` already prints "course complete — set another on
- * the galaxy chart". A course is player intent under
- * `persistent-world-state.md` §7, and intent is not cancelled by being
- * satisfied.
+ * Two of §5.2's decisions are visible in the shape of this function and the
+ * arguments for them live there, not here: `null` is **absence** rather than a
+ * dormant slot (#117 D2), and an `arrived` cue still returns a row, because
+ * arriving does not clear a course (#117 D4).
  */
 export function courseCue(cue: CourseCue | null): FloorCell | null {
 	if (cue === null) return null;
@@ -665,11 +658,14 @@ export function courseCue(cue: CourseCue | null): FloorCell | null {
 /**
  * The most jumps the row reserves room for.
  *
- * Sampled over all eight galaxies at the shipped world seed, the longest route
- * is 13 jumps; this is the two-digit ceiling above it rather than that figure,
- * because a bound that tracks a measurement has to be re-measured whenever the
- * generator moves and a digit boundary does not. `tests/course-cue.test.ts`
- * sweeps the generator against it.
+ * **The two-digit ceiling, not the measured diameter** — a bound that tracks a
+ * measurement has to be re-measured whenever the generator moves, and a digit
+ * boundary does not. `tests/course-cue.test.ts` measures the diameter over
+ * every origin in all eight galaxies and pins it exactly, which is where the
+ * figure lives; it is deliberately not restated here, because the first version
+ * of this comment said 13 and the diameter is 14. A 1-in-17 stride over origins
+ * had found the 13, and a stride cannot find a diameter: it needs *both*
+ * endpoints in the sampled set.
  */
 const COURSE_CUE_JUMPS_WIDEST = 99;
 

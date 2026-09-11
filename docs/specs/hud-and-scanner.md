@@ -294,9 +294,15 @@ not apply to a row of its own.
 `courseProgress` returns `null` only on a corrupt save — which `parseCourse`
 refuses loudly, and which this row draws nothing for rather than inventing a
 second answer. What *is* reachable is a next hop the hyperspace tank cannot pay
-for, and there the row **reddens and says nothing extra**: `planJump` owns those
-words and §3's prompt prints them, and one quantity spelled in two places is how
-the glass comes to say two things about one fact.
+for, and there the row **reddens and says nothing extra of its own**: `planJump`
+owns those words and §3's prompt prints them.
+
+**That was a claim before it was true.** The prompt never asked `planJump` — it
+offered "press ` to jump to ANDIMA" beside a row this build had already painted
+red, and the refusal arrived only after the key was pressed. It is #92's
+`chargeReadsEmpty` defect one instrument over: two halves of one reading
+disagreeing on the glass. The fix is the same one — **one predicate, read by
+both**, with the words themselves owned by a single `jumpRefusalText`.
 
 **Arriving does not clear the course.** Ratified as shipped rather than changed:
 the course survives the last jump, `courseProgress` reports it, and the jump key
@@ -307,7 +313,7 @@ by being satisfied.
 **The row is bounded because a system name is.** `systemName` draws three or
 four pairs of at most two characters and its guard loop extends only a name
 still under two, so `SYSTEM_NAME_MAX_CHARS` is 8 — and the jump count is
-reserved at two digits against a longest measured route of 13.
+reserved at two digits against a longest measured route of 14.
 `tests/course-cue.test.ts` sweeps both against the real generator, which is what
 keeps the bound a measurement rather than a number chosen to be safe.
 

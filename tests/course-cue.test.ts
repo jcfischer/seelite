@@ -20,10 +20,14 @@ import {
 	courseCueWidest,
 } from "../src/cockpit";
 import { generateGalaxy } from "../src/galaxy";
-import { planRoute } from "../src/galaxy-route";
+import { projectJumps } from "../src/galaxy-route";
 import { SYSTEM_NAME_MAX_CHARS, SYSTEM_NAME_MIN_CHARS } from "../src/names";
 
 const WORLD_SEED = 0x5ee11e;
+
+/** The longest route any galaxy holds at `WORLD_SEED`, measured below and
+ *  quoted by `hud-and-scanner.md` §5.2. */
+const GALAXY_DIAMETER_JUMPS = 14;
 
 const underway = (
 	over: Partial<Extract<CourseCue, { kind: "underway" }>> = {},
@@ -37,12 +41,7 @@ const underway = (
 	}) satisfies CourseCue;
 
 describe("absence is the absent state, not a dormant one", () => {
-	/**
-	 * #117 D2. §5 calls the floor "the minimum that keeps a hull-hidden cockpit
-	 * flyable"; a permanent field reading `NO COURSE` is not that. The reflow
-	 * objection that makes a dormant slot attractive on the strip does not
-	 * apply to a row of its own — absence there moves nothing.
-	 */
+	/** §5.2 / #117 D2 — the argument is there; this is the assertion. */
 	test("no course draws no row", () => {
 		expect(courseCue(null)).toBeNull();
 	});
@@ -164,25 +163,38 @@ describe("the bound's assumptions hold against the real generator", () => {
 	});
 
 	/**
-	 * Every origin against every destination is 65,536 Dijkstra runs per
-	 * galaxy; the stride samples origins and keeps every destination, which is
-	 * what makes the *longest* chain reachable — a long route is long for its
-	 * destination's sake, not its origin's.
+	 * **Every origin, through the projection rather than a route each.**
+	 *
+	 * This was a 1-in-17 stride over origins running `planRoute` per
+	 * destination — 32,768 single-source searches to answer a question one
+	 * search per origin answers, and sage measured it at 11.8 s on a loaded
+	 * machine against bun's 5 s default. `projectJumps` is that one search, and
+	 * the whole sweep is 383 ms.
+	 *
+	 * **The stride also hid the answer, and its stated reason was false.** "A
+	 * long route is long for its destination's sake, not its origin's" is wrong
+	 * for an undirected shortest-path graph: the diameter needs *both*
+	 * endpoints in the sampled set. The strided sweep reported 13 and the
+	 * number reached §5.2's prose; the true diameter is 14.
 	 */
-	test("no route is more jumps than the bound prints", () => {
+	test("the longest route in any galaxy fits the two digits the row prints", () => {
 		let most = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
 			const { systems } = generateGalaxy(WORLD_SEED, galaxy);
-			for (let i = 0; i < systems.length; i += 17)
+			for (const from of systems) {
+				const projection = projectJumps(systems, from);
 				for (const to of systems) {
-					const route = planRoute(systems, systems[i], to);
-					if (route && route.jumps > most) most = route.jumps;
+					const reach = projection.reach(to);
+					if (reach !== undefined && reach.jumps > most) most = reach.jumps;
 				}
+			}
 		}
-		// 13 when this was written. The bound is the two-digit ceiling, so what
-		// this asserts is that the generator has not grown a three-digit chain
-		// under the formatter.
-		expect(most).toBeGreaterThan(0);
-		expect(most).toBeLessThanOrEqual(99);
+		// **Exact, because §5.2 transcribes it.** `toBeLessThanOrEqual(99)` was
+		// the whole assertion for a round, which cannot tell 14 from 98 — and a
+		// figure quoted in prose needs an exact assertion behind it, which is
+		// `economy-trade.md` §1's rule and the reason two figures were invented
+		// in #25. A generator retune that moves this should read the spec.
+		expect(most).toBe(GALAXY_DIAMETER_JUMPS);
+		expect(most).toBeLessThan(100);
 	});
 });
