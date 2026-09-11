@@ -283,8 +283,6 @@ async function placeShipAtLocalOffset(page, local) {
 	}, local);
 }
 
-// The guard compares top-level numeric declarations in the renderer and unit
-// surfaces; scanner projection terms are covered by cockpit's unit tests.
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();

@@ -18,6 +18,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	realpathSync,
+	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -62,12 +63,29 @@ const freePort = (): Promise<number> =>
  * somewhere that looks unrelated.
  */
 const running: Array<{ close: () => Promise<void> }> = [];
+/** Every tmp tree this file makes, removed with the servers. Two rows copy
+ *  `src/units.ts` and `src/main.ts` into one, and a suite that leaves a fresh
+ *  pair in tmp on every run is littering. */
+const madeDirs: string[] = [];
+const tmpTree = (prefix: string) => {
+	const dir = mkdtempSync(join(tmpdir(), prefix));
+	madeDirs.push(dir);
+	return dir;
+};
 afterAll(async () => {
 	for (const s of running) await s.close();
+	for (const d of madeDirs) rmSync(d, { recursive: true, force: true });
 });
 
-/** A vite dev server on `root`, with or without the declaration plugin, and the
- *  origin to ask about it. */
+/**
+ * A vite dev server on `root`, with or without the declaration plugin, and the
+ * origin to ask about it.
+ *
+ * `configFile: false` and the plugin passed by hand, because these rows are
+ * about the *guard* and need to vary something the shipped config does not.
+ * That is also their limit, and the wiring row below is what covers it: none of
+ * them would notice `vite.config.ts` losing the plugin.
+ */
 async function serve(root: string, { declare = true } = {}): Promise<string> {
 	const port = await freePort();
 	const server = await createServer({
@@ -92,7 +110,7 @@ async function serve(root: string, { declare = true } = {}): Promise<string> {
  * difference in the constants.
  */
 function siblingTree(): string {
-	const dir = mkdtempSync(join(tmpdir(), "seelite-sibling-"));
+	const dir = tmpTree("seelite-sibling-");
 	mkdirSync(join(dir, "src"), { recursive: true });
 	for (const f of ["src/units.ts", "src/main.ts"])
 		cpSync(join(REPO, f), join(dir, f));
@@ -146,7 +164,7 @@ test("a root reached through a symlink passes", async () => {
 	// Where a correct server gets wrongly accused. macOS `/tmp` is a symlink to
 	// `/private/tmp`, so this is the standing case rather than an exotic one:
 	// the two spellings of one tree must compare equal.
-	const link = join(mkdtempSync(join(tmpdir(), "seelite-link-")), "tree");
+	const link = join(tmpTree("seelite-link-"), "tree");
 	symlinkSync(REPO, link);
 	const origin = await serve(link);
 	const served = await assertServingThisTree(origin);
@@ -181,6 +199,72 @@ test("a declaration is read on its shape, whatever status carries it", async () 
 	expect(served.root).toBe(REPO);
 }, 60000);
 
+/**
+ * The shipped `vite.config.ts` still lists the plugin.
+ *
+ * **Every other row here boots with `configFile: false` and hands the plugin
+ * over by argument**, so all of them prove the guard and none of them prove the
+ * wiring (#296 review). Deleting `plugins: [treeDeclaration()]` from the config
+ * leaves `npm test`, `tsc`, `format:check` and `build` green — the plugin is
+ * `configureServer`-only, so a production build never touches it — and the
+ * probes do not run in CI. That is a one-line edit with nothing between it and
+ * a merge.
+ *
+ * It boots the **real config** rather than reading the file for a substring: a
+ * grep would pass on the import alone, on a commented-out line, and on a
+ * plugin listed under a condition that is false at run time. What is asserted
+ * is that a server started the way `npm run dev` starts one answers with this
+ * tree.
+ */
+test("the shipped vite config serves the declaration", async () => {
+	const port = await freePort();
+	const server = await createServer({
+		root: REPO,
+		logLevel: "silent",
+		server: { port, strictPort: true, host: "127.0.0.1" },
+	});
+	await server.listen();
+	running.push(server);
+	const served = await assertServingThisTree(`http://127.0.0.1:${port}`);
+	expect(served.root).toBe(REPO);
+}, 60000);
+
+/**
+ * The endpoint answers a local caller and nobody else.
+ *
+ * `vite.config.ts` sets `host: true`, so the dev server binds every interface,
+ * and the declaration spells the absolute project root — which carries the OS
+ * username — plus the branch in hand. A non-loopback caller falls through to
+ * vite and gets `index.html`, which is what a server with no plugin looks
+ * like, so the refusal an outsider sees is the truthful one.
+ *
+ * Driven through `remoteAddress` rather than by actually reaching in over the
+ * LAN, which a test cannot arrange. The socket is the one thing the middleware
+ * reads, so this is the decision under test and not a mock of it.
+ */
+test("a non-loopback caller gets no declaration", async () => {
+	const port = await freePort();
+	const server = await createServer({
+		configFile: false,
+		root: REPO,
+		logLevel: "silent",
+		plugins: [treeDeclaration()],
+		server: { port, strictPort: true, host: "127.0.0.1" },
+	});
+	await server.listen();
+	running.push(server);
+	// The connection is genuinely local, so its address is overwritten on the
+	// way in — the middleware asks the socket and this is what it will be told.
+	server.httpServer?.on("connection", (socket) => {
+		Object.defineProperty(socket, "remoteAddress", {
+			value: "192.168.1.50",
+			configurable: true,
+		});
+	});
+	const res = await fetch(`http://127.0.0.1:${port}${TREE_ENDPOINT}`);
+	expect(res.headers.get("content-type")).toContain("text/html");
+}, 60000);
+
 test("the guard and the plugin agree on where the declaration lives", () => {
 	// One owner for the path. A guard looking somewhere the plugin does not serve
 	// refuses every server in the repo, and reads exactly like a server that does
@@ -189,23 +273,45 @@ test("the guard and the plugin agree on where the declaration lives", () => {
 });
 
 test("no caller passes a file list any more", () => {
-	// The fingerprint took a `files` argument and fifty callers passed one.
+	// The fingerprint took a `files` argument and every probe passed one.
 	// JavaScript swallows an extra argument in silence, so a caller left with a
 	// stale list is bit-identical to one that was cleaned up, and a green probe
 	// run says nothing either way. This is the half that can fail.
 	//
+	// **The walk is recursive and the count is not stated.** A flat read of
+	// `scripts` plus a hardcoded `scripts/lib` leaves any new subdirectory
+	// unscanned, which is the fail-open shape `tests/lib/source-scan.ts` records
+	// against its own walk; and a figure in the name of a test is a figure that
+	// rots — the first version of this said fifty where the sweep touched 33.
+	//
 	// Comments are stripped first: this file's own prose names the old shape,
 	// and so does `probe-guard.mjs`'s history note. A scan that read those would
 	// be red about text nobody executes.
-	const scripts = readdirSync(repoPath("scripts"))
-		.filter((f) => f.endsWith(".mjs"))
-		.map((f) => `scripts/${f}`);
-	const nested = readdirSync(repoPath("scripts/lib"))
-		.filter((f) => f.endsWith(".mjs"))
-		.map((f) => `scripts/lib/${f}`);
-	const twoArgs = /\b(?:guardedOrigin|assertServingThisTree)\s*\([^)]*,/;
-	const offenders = [...scripts, ...nested].filter((f) =>
-		twoArgs.test(codeOf(f)),
-	);
-	expect(offenders).toEqual([]);
+	const walk = (rel: string): string[] =>
+		readdirSync(repoPath(rel), { withFileTypes: true }).flatMap((e) =>
+			e.isDirectory()
+				? walk(`${rel}/${e.name}`)
+				: e.name.endsWith(".mjs")
+					? [`${rel}/${e.name}`]
+					: [],
+		);
+	// A balanced scan from the call's own open paren, not `[^)]*` — that stops
+	// at the first `)` and so reads `guardedOrigin(originOf(x), [...])` as
+	// single-argument, which is the call shape most likely to be left behind.
+	const passesTwo = (source: string) => {
+		for (const m of source.matchAll(
+			/\b(?:guardedOrigin|assertServingThisTree)\s*\(/g,
+		)) {
+			let depth = 0;
+			for (let i = m.index + m[0].length - 1; i < source.length; i++) {
+				const c = source[i];
+				if ("([{".includes(c)) depth++;
+				else if (")]}".includes(c)) {
+					if (--depth === 0) break;
+				} else if (c === "," && depth === 1) return true;
+			}
+		}
+		return false;
+	};
+	expect(walk("scripts").filter((f) => passesTwo(codeOf(f)))).toEqual([]);
 });

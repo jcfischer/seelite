@@ -49,7 +49,7 @@ export const TREE_ENDPOINT = "/__seelite/tree";
 
 /** `head`, `branch` and `dirty`, or nothing at all. See the note above on why
  *  a missing git is not an error. */
-function gitFacts(cwd) {
+function readGit(cwd) {
 	try {
 		const at = (args) =>
 			execFileSync("git", args, {
@@ -68,6 +68,46 @@ function gitFacts(cwd) {
 }
 
 /**
+ * How long a reading of git is reused.
+ *
+ * Three `execFileSync` calls inside a middleware stall the whole Node event
+ * loop while they fork, and `git status --porcelain` walks the working tree —
+ * so on a concurrent `probe-all` that stall lands on another probe's in-flight
+ * module transform (#296 review). A second is short enough that an edit is
+ * reflected by the time anyone reads the answer, and long enough that a run of
+ * probes pays for one reading rather than thirty-seven.
+ *
+ * Cached rather than computed once at boot, which was the other option offered:
+ * a branch *can* change under a running server, and a stale branch printed on a
+ * contact sheet is exactly the precise-and-wrong label this file exists to
+ * prevent.
+ */
+const GIT_TTL_MS = 1000;
+
+/**
+ * One cache per plugin instance, which is one per served root.
+ *
+ * **Not a module-level cache**, and the first version was: two servers in one
+ * process then share a reading, so a tree with no git can hand its empty answer
+ * to a real checkout that asks a millisecond later. `tests/probe-guard.test.ts`
+ * does exactly that — it stands a tmp tree up and this tree up in the same
+ * file — and went red on it. A cache keyed on nothing is keyed on whoever
+ * asked first.
+ */
+function gitCache() {
+	let at = 0;
+	let value = {};
+	return (cwd) => {
+		const now = Date.now();
+		if (!at || now - at > GIT_TTL_MS) {
+			value = readGit(cwd);
+			at = now;
+		}
+		return value;
+	};
+}
+
+/**
  * The vite plugin.
  *
  * The middleware is installed **directly** rather than from a returned
@@ -77,17 +117,50 @@ function gitFacts(cwd) {
  * shape the guard has to be able to tell apart from a declaration.
  */
 export function treeDeclaration() {
-	return {
+	/**
+	 * Annotated, because `apply` is a literal union in vite's types and a plain
+	 * object literal in a `.mjs` widens it to `string` — which `tsc --noEmit`
+	 * rejects at every call site rather than here.
+	 *
+	 * @type {import("vite").Plugin}
+	 */
+	const plugin = {
 		name: "seelite-tree-declaration",
+		// Serve only, stated rather than implied by having `configureServer`
+		// alone. `vite.config.ts` is loaded by `npm run build` too, and a
+		// probe-harness module reaching the production config graph with no
+		// declared scope is a direction this repo does not otherwise allow
+		// (#296 review).
+		apply: "serve",
 		configureServer(server) {
 			const root = realpathSync(server.config.root);
+			const gitFacts = gitCache();
 			server.middlewares.use((req, res, next) => {
 				// The query is split off rather than matched through, so a cache
 				// buster on the URL does not read as a different path.
 				if ((req.url ?? "").split("?")[0] !== TREE_ENDPOINT) return next();
+				// **Loopback only.** `vite.config.ts` sets `host: true`, so the dev
+				// server binds every interface — and this answer carries the
+				// absolute project root, which spells the OS username, plus the
+				// branch being worked on. That is worth nothing to an attacker and
+				// worth not handing out either; every consumer is a probe or a
+				// capture on the same machine. A non-loopback caller falls through
+				// to vite, which answers `index.html` — so it looks to them exactly
+				// like a server without the plugin, which is the truthful thing for
+				// it to look like.
+				if (!isLoopback(req.socket?.remoteAddress)) return next();
 				res.setHeader("Content-Type", "application/json");
 				res.end(JSON.stringify({ root, ...gitFacts(root) }));
 			});
 		},
 	};
+	return plugin;
 }
+
+/** `::1` and `::ffff:127.0.0.1` are both how a dual-stack listener spells a
+ *  local caller, so the check cannot be an equality against one string. */
+const isLoopback = (addr) =>
+	addr === "::1" ||
+	addr === "127.0.0.1" ||
+	(typeof addr === "string" &&
+		(addr.startsWith("127.") || addr.startsWith("::ffff:127.")));

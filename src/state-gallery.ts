@@ -24,8 +24,18 @@ import {
 	stationMarketScreen,
 } from "./station-console";
 
-/** Stamped into the gallery's own markup, where a probe reads it to tell one
- *  build of this browser-only prototype from another. */
+/**
+ * Stamped into the gallery's markup as `data-gallery-version`, and **nothing
+ * reads it** — not a probe, not a test, not the page.
+ *
+ * Said plainly because the comment this replaces claimed a probe did (#296
+ * review). Its predecessor called it "a probe-guard fingerprint", which was
+ * true of a mechanism that no longer exists; the repair invented a consumer
+ * instead, which is worse. `MODEL_VIEWER_VERSION` was deleted in the same
+ * change for having no reader, and the honest difference is only that this one
+ * reaches the DOM: removing it changes what the page emits, which is a decision
+ * for whoever owns the gallery's markup rather than for a guard node.
+ */
 export const GALLERY_VERSION = 1;
 
 export type GalleryStateId =

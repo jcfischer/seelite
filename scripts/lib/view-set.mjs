@@ -920,9 +920,15 @@ export function contactSheet(runs, views = VIEWS) {
 	 * for #123's failure those are the two different things: a dev server left
 	 * running in a sibling worktree served a whole other branch's hulls into a
 	 * sheet labelled with this one's ref, and nobody looking at it could have
-	 * known. The server's own declaration is what closes that, so it is printed
-	 * — the branch and short head where git could be read, and the root path
-	 * either way, because a path is what tells two worktrees apart.
+	 * known. The server's own declaration is what closes that, so it is printed.
+	 *
+	 * **The root is always shown, and the branch is the extra.** It was the
+	 * other way round for a round — `branch@head` where git could be read, with
+	 * the root only in a hover title — and that renders two worktrees of the
+	 * same branch at the same commit as an identical string, which is precisely
+	 * the pair #296 demonstrated the guard on. A path is what tells two
+	 * checkouts apart; a ref is what tells two builds apart, and the sheet needs
+	 * both.
 	 *
 	 * **Absent is a state, not an error.** A `before` half captured at a base
 	 * commit was written by a `capture-views` that did not record this, and a
@@ -933,10 +939,15 @@ export function contactSheet(runs, views = VIEWS) {
 	const servedBy = (run) => {
 		const s = run.served;
 		if (!s) return "served: not recorded";
-		const where = s.branch
-			? `${s.branch}@${String(s.head).slice(0, 7)}`
-			: s.root;
-		return `served: ${where}${s.dirty ? "-dirty" : ""}`;
+		// Both fields gated together, because they are read together and the
+		// declaration emits all of git or none of it. Keying on `branch` alone
+		// while reading `head` prints `main@undefine` the day that stops being
+		// true, which the JSDoc type above already allows.
+		const ref =
+			s.branch && s.head
+				? ` (${s.branch}@${String(s.head).slice(0, 7)}${s.dirty ? "-dirty" : ""})`
+				: "";
+		return `served: ${s.root}${ref}`;
 	};
 	const head = runs
 		.map(

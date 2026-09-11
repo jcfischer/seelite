@@ -295,15 +295,21 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
 - **The dev server declares which tree it serves, and the guard reads that
   declaration (#296).** `probe-guard` used to compare top-level numeric
   constants between the served module and the local file, which is a similarity
-  test standing in for an identity question — and #123 caught it passing a
-  sibling worktree whose `src/ship-mesh.ts` differed by 5,567 added and 5,038
-  removed lines. Every capture taken against that server was of the wrong
-  build, and the tell was arithmetic in an unrelated probe rather than anything
-  that checked. The vite plugin in `scripts/lib/tree-declaration.mjs` serves
+  test standing in for an identity question — and #123 caught it passing a dev
+  server on a sibling worktree. Every capture taken against that server was of
+  the wrong build, and the tell was arithmetic in an unrelated probe rather
+  than anything that checked. **The measurement is not restated here** —
+  `scripts/lib/tree-declaration.mjs` owns it beside the plugin, and this file
+  carried a third copy of it for a round. What is worth knowing without opening
+  either: the two trees differed by thousands of lines in one module and the
+  guard read them as the same tree, because two checkouts off one commit agree
+  on every top-level constant unless a branch happens to change one. The vite plugin in `scripts/lib/tree-declaration.mjs` serves
   the project root at `/__seelite/tree`, `assertServingThisTree` compares it
   against its own, and **there is no file list**: identity is a property of the
-  server, so the five modules that could not be fingerprinted for having no
-  top-level numeric constants are no longer a gap. Three things follow. The
+  server, so a module with no top-level numeric constants is no longer a gap.
+  **The set is not counted here**: it was written as five in one place and four
+  in two others inside one change, and a deleted comment named a sixth — which
+  is what a count of a set nobody enumerated is worth. Three things follow. The
   guard validates **shape and content type, never status** — vite answers an
   unknown path with `index.html` and a 200, so an absent endpoint looks
   successful. Both roots are `realpathSync`'d, because macOS `/tmp` is a

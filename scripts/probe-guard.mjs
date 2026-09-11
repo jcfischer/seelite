@@ -33,19 +33,18 @@
  *
  * It used to compare **top-level numeric constants** between the file on disk
  * and the module the server handed back, and that could not answer the
- * question. Two sibling worktrees off the same commit agree on every one of
- * those unless a branch happens to change a module constant, so the fingerprint
- * was a subset both copies share by construction. #123 measured the miss:
- * `src/ship-mesh.ts` differed between the two trees by 5,567 added and 5,038
- * removed lines, and the guard read them as the same tree — a whole branch's
- * worth of hulls captured into a contact sheet with nothing saying a word.
+ * question. **The argument and its measurement are not restated here** —
+ * `scripts/lib/tree-declaration.mjs` owns them beside the plugin, and #123 has
+ * the original. What is worth knowing at this end is the shape: the fingerprint
+ * was a subset of the file that two checkouts share by construction, so it
+ * could not separate them, and it did not.
  *
- * Two consequences worth knowing. The `files` argument is gone, along with the
- * four modules the fingerprint **refused by name** for declaring no top-level
- * numeric constants — identity is a property of the server, not of any file, so
- * nothing is unguardable any more. And the check now rests on the server's
- * cooperation: a plain `vite` with the plugin removed declares nothing and is
- * refused, which is the right direction to fail in.
+ * Two consequences worth knowing. The `files` argument is gone, and with it the
+ * refusal for a module declaring no top-level numeric constants — identity is a
+ * property of the server, not of any file, so no module is unguardable any
+ * more. And the check now rests on the server's cooperation: a plain `vite`
+ * with the plugin removed declares nothing and is refused, which is the right
+ * direction to fail in.
  *
  * What it still does not catch: a server on the **right** tree serving a
  * **stale** module out of its own cache. That is a different question from
@@ -90,17 +89,33 @@ const whereToLook = (origin) =>
 	`-sTCP:LISTEN -t | head -1) -d cwd\n` +
 	`Then stop it, or point the probe elsewhere with PROBE_ORIGIN.`;
 
-/** The server answered, but not with a declaration. Says what came back — the
- *  type and the head of the body — because the likely cause is a `vite` without
- *  the plugin, and from the outside that looks like a working server. */
-const undeclared = (origin, url, type, body) =>
+/**
+ * The server answered, but not with a declaration.
+ *
+ * **Two causes, and they get different advice.** A non-JSON body is almost
+ * always a vite with no plugin — its fallback answers any unknown path with
+ * `index.html` — so that branch names the wiring. A body that *is* JSON and
+ * still has no usable `root` is a different server or a different version of
+ * this one, and telling its operator to check `vite.config.ts` sends them to a
+ * file that is fine. One message for both said the first thing in every case,
+ * which is a confident wrong answer half the time (#296 review).
+ */
+const undeclared = (origin, url, type, body, why) =>
 	`The dev server at ${origin} does not declare which tree it serves.\n` +
 	`  - ${url} answered ${type}\n` +
 	`  - it begins: ${JSON.stringify(body.slice(0, 120))}\n\n` +
+	`${why}\n\n${whereToLook(origin)}`;
+
+const NO_PLUGIN =
 	`A vite server started without the tree-declaration plugin answers any\n` +
 	`unknown path with index.html, which is what this looks like. Check that\n` +
 	`vite.config.ts still lists treeDeclaration(), and that the server was\n` +
-	`started with that config.\n\n${whereToLook(origin)}`;
+	`started with that config.`;
+
+const BAD_SHAPE =
+	`That is JSON, so something is serving this path — but it carries no\n` +
+	`string 'root', which is the one field the guard compares. Check what is\n` +
+	`on that port before touching vite.config.ts.`;
 
 /**
  * Throws unless the server at `origin` declares this working tree.
@@ -128,15 +143,15 @@ export async function assertServingThisTree(origin) {
 	const type = res.headers.get("content-type") ?? "(none)";
 	const body = await res.text();
 	if (!type.includes("application/json"))
-		throw new Error(undeclared(origin, url, type, body));
+		throw new Error(undeclared(origin, url, type, body, NO_PLUGIN));
 	let declared;
 	try {
 		declared = JSON.parse(body);
 	} catch {
-		throw new Error(undeclared(origin, url, type, body));
+		throw new Error(undeclared(origin, url, type, body, BAD_SHAPE));
 	}
 	if (typeof declared?.root !== "string")
-		throw new Error(undeclared(origin, url, type, body));
+		throw new Error(undeclared(origin, url, type, body, BAD_SHAPE));
 
 	// The declared root is resolved the way this module's own is, so two
 	// spellings of one tree compare equal. A path that does not exist on this

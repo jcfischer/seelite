@@ -348,8 +348,8 @@ async function rebuildSheet(out) {
  * manifest and onto the sheet beside this process's own git ref: when the two
  * disagree, the frames were taken of something other than what was captured.
  *
- * There is no file list any more — the guard used to fingerprint one and the
- * four modules with no top-level numeric constants were unguardable, which for
+ * There is no file list any more — the guard used to fingerprint one, and a
+ * module with no top-level numeric constants could not be pointed at, which for
  * this script meant the cockpit interior and the planet shaders. A declaration
  * is a property of the server, so that gap closed with it.
  */

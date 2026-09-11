@@ -468,13 +468,20 @@ describe("the contact sheet", () => {
 	test("names the tree the server declared, beside the ref the script ran at", () => {
 		const html = contactSheet([fullRun("before")]);
 		expect(html).toContain("abc1234");
-		expect(html).toContain("served: main@9f3c1a2");
+		// The **root** first and the ref in parentheses. Both, and in that order:
+		// the PR's own demonstration is two worktrees of one branch at one
+		// commit, which a ref alone renders as an identical string.
+		expect(html).toContain(
+			"served: /Users/someone/work/seelite (main@9f3c1a2)",
+		);
 	});
 
 	test("says a dirty served tree was dirty", () => {
 		const run = fullRun("before");
 		run.served = { ...run.served, root: "/w/seelite", dirty: true };
-		expect(contactSheet([run])).toContain("served: main@9f3c1a2-dirty");
+		expect(contactSheet([run])).toContain(
+			"served: /w/seelite (main@9f3c1a2-dirty)",
+		);
 	});
 
 	/**
