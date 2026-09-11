@@ -9042,7 +9042,12 @@ class Game {
 		const course = this.course;
 		if (!course) return null;
 		const here = this.world.system.record;
-		const key = `${course.galaxy}:${course.destinationIndex}:${here.index}`;
+		// **The ship's galaxy is in the key, not only the course's.** A course is
+		// per-galaxy and `courseProgress` returns `null` when the two disagree —
+		// which is the *only* way it goes null on a sound save — so a key without
+		// it serves galaxy 0's chain to a ship standing at the same index in
+		// galaxy 1.
+		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(this.world.galaxy.systems, course, here);
 			this.courseChainCache =

@@ -21,7 +21,7 @@ import {
 } from "../src/cockpit";
 import { generateGalaxy } from "../src/galaxy";
 import { planRoute } from "../src/galaxy-route";
-import { SYSTEM_NAME_MAX_CHARS } from "../src/names";
+import { SYSTEM_NAME_MAX_CHARS, SYSTEM_NAME_MIN_CHARS } from "../src/names";
 
 const WORLD_SEED = 0x5ee11e;
 
@@ -144,15 +144,23 @@ describe("the bound's assumptions hold against the real generator", () => {
 	 * bound stated beside a generator that can exceed it is the clipped strip
 	 * #92 shipped, one module over.
 	 */
-	test("no system name exceeds the declared maximum", () => {
+	test("every system name is inside the declared band", () => {
 		let longest = "";
+		let shortest = null;
 		for (let galaxy = 0; galaxy < 8; galaxy++)
-			for (const system of generateGalaxy(WORLD_SEED, galaxy).systems)
+			for (const system of generateGalaxy(WORLD_SEED, galaxy).systems) {
 				if (system.name.length > longest.length) longest = system.name;
+				if (shortest === null || system.name.length < shortest.length)
+					shortest = system.name;
+			}
 		expect(longest.length).toBeLessThanOrEqual(SYSTEM_NAME_MAX_CHARS);
 		// And the ceiling is reached, so it is a measurement rather than a
 		// number chosen to be safe.
 		expect(longest.length).toBe(SYSTEM_NAME_MAX_CHARS);
+		// The floor is §9.6's other half. It is the guard loop's own
+		// post-condition, and the reason the row can assume a name at all — an
+		// empty one would centre a run of nothing beside a jump count.
+		expect(shortest?.length).toBeGreaterThanOrEqual(SYSTEM_NAME_MIN_CHARS);
 	});
 
 	/**
