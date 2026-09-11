@@ -110,11 +110,7 @@ const SAVE = arg("save", "");
 
 const browser = await launchChromium();
 try {
-	await guardedOrigin(ORIGIN, [
-		"src/main.ts",
-		"src/station-mesh.ts",
-		"src/station-interior-mesh.ts",
-	]);
+	await guardedOrigin(ORIGIN);
 	const page = await browser.newPage({
 		viewport: { width: 1100, height: 720 },
 	});

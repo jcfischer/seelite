@@ -224,11 +224,7 @@ const compare = (page, mode) =>
 		[mode, MOVED],
 	);
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/occlusion.ts",
-	"src/main.ts",
-	"src/light-rig.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 // **An explicit context, because one row below needs a second page that shares
 // this one's `localStorage`.** `browser.newPage()` makes a throwaway context of

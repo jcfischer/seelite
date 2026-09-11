@@ -292,12 +292,26 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   knows where two plates meet; `hullLoft` writes a per-vertex `crease` attribute
   and `ship-surface.ts` patches it into `roughnessFactor`. A map term and a
   crease term answer different questions and neither substitutes.
-- **`src/station-visuals.ts` can no longer be fingerprinted by probe-guard.**
-  Its only top-level numeric constant moved to `src/surface.ts` in #101, and the
-  guard reads nothing else there — profile figures are nested and the light
-  colours are hex. It joins `cockpit.ts`, `live-cockpit.ts`, `planet-shaders.ts`
-  and `planet-classes.glsl.ts` in that set. Naming it in a guard list does not
-  guard it; it makes the probe throw before it starts.
+- **The dev server declares which tree it serves, and the guard reads that
+  declaration (#296).** `probe-guard` used to compare top-level numeric
+  constants between the served module and the local file, which is a similarity
+  test standing in for an identity question — and #123 caught it passing a
+  sibling worktree whose `src/ship-mesh.ts` differed by 5,567 added and 5,038
+  removed lines. Every capture taken against that server was of the wrong
+  build, and the tell was arithmetic in an unrelated probe rather than anything
+  that checked. The vite plugin in `scripts/lib/tree-declaration.mjs` serves
+  the project root at `/__seelite/tree`, `assertServingThisTree` compares it
+  against its own, and **there is no file list**: identity is a property of the
+  server, so the five modules that could not be fingerprinted for having no
+  top-level numeric constants are no longer a gap. Three things follow. The
+  guard validates **shape and content type, never status** — vite answers an
+  unknown path with `index.html` and a 200, so an absent endpoint looks
+  successful. Both roots are `realpathSync`'d, because macOS `/tmp` is a
+  symlink and a correct server reached that way would otherwise be accused.
+  And a server started **without** the plugin is refused, which is the right
+  direction to fail in but means removing it from `vite.config.ts` stops every
+  probe. What this still does not catch is a stale module served off the right
+  tree; that is #297.
 - **The occlusion passes are gated on enclosure, and a frame-cost claim owes
   the antialias arm.** #241. The pair **doubles** the open-space frame. **The
   figures are not restated here** — `occlusion.ts` owns the table and

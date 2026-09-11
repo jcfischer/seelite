@@ -49,13 +49,13 @@
  */
 
 /**
- * The shadow map's resolution, and a top-level number on purpose.
+ * The shadow map's resolution.
  *
- * `probe-guard.mjs` fingerprints a checkout by reading top-level `const NAME =
- * <number>` out of the modules a probe names. Every figure below is nested
- * inside `OCCLUSION`, which the guard cannot see — so naming this module in a
- * guard list without this line would make the probe throw before it started,
- * which is the trap `CLAUDE.md` records against `station-visuals.ts`.
+ * Top level rather than inside `OCCLUSION` with every other figure, and that
+ * placement outlived its reason: it was hoisted so `probe-guard` could
+ * fingerprint this module by its top-level numeric constants, which is not how
+ * the guard works any more (#296). Left where it is because moving it now would
+ * touch every reader for no gain.
  *
  * 2048 rather than 1024 or 4096 because #201 asked for it. What that buys is
  * `shadowFit`'s to describe and `scripts/probe-occlusion.mjs`'s to measure.

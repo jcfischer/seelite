@@ -35,7 +35,7 @@ function state() {
 	};
 }
 
-await guardedOrigin(ORIGIN, ["src/model-viewer.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

@@ -873,7 +873,7 @@ const esc = (s) =>
  * only ever be exercised against the one real set is a rule nothing has watched
  * fail. It defaults to `VIEWS`, so every caller but a test passes one argument.
  *
- * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
+ * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, served?: {root: string, head?: string, branch?: string, dirty?: boolean}, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
  * @param {ReadonlyArray<{name: string, what: string, covers: number[]}>} [views]
  * @returns {string} a standalone HTML page
  */
@@ -913,10 +913,36 @@ export function contactSheet(runs, views = VIEWS) {
 		if (!times.length) return "";
 		return ` · clock ${Math.min(...times).toFixed(1)}–${Math.max(...times).toFixed(1)}s`;
 	};
+	/**
+	 * Which tree the frames were actually taken of.
+	 *
+	 * `gitRef` above is the ref of the checkout the capture *script* ran in, and
+	 * for #123's failure those are the two different things: a dev server left
+	 * running in a sibling worktree served a whole other branch's hulls into a
+	 * sheet labelled with this one's ref, and nobody looking at it could have
+	 * known. The server's own declaration is what closes that, so it is printed
+	 * — the branch and short head where git could be read, and the root path
+	 * either way, because a path is what tells two worktrees apart.
+	 *
+	 * **Absent is a state, not an error.** A `before` half captured at a base
+	 * commit was written by a `capture-views` that did not record this, and a
+	 * sheet that refused such a run could never show a before/after for the
+	 * change that introduced it. It says so rather than leaving a blank that
+	 * reads as agreement.
+	 */
+	const servedBy = (run) => {
+		const s = run.served;
+		if (!s) return "served: not recorded";
+		const where = s.branch
+			? `${s.branch}@${String(s.head).slice(0, 7)}`
+			: s.root;
+		return `served: ${where}${s.dirty ? "-dirty" : ""}`;
+	};
 	const head = runs
 		.map(
 			(r) =>
-				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span></th>`,
+				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span>` +
+				`<span title="${esc(r.served?.root ?? "")}">${esc(servedBy(r))}</span></th>`,
 		)
 		.join("");
 	const rows = views

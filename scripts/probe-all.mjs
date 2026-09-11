@@ -142,7 +142,7 @@ const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 1);
  * Files that match the naming convention but are not probes.
  *
  * `probe-all` is this runner. `probe-guard` is the shared launcher and
- * fingerprint check that every probe imports — a module, with nothing at top
+ * tree-declaration check that every probe imports — a module, with nothing at top
  * level. Left in, it is spawned as a probe, does nothing, exits 0, and is
  * counted as a **passing gate**. That is the exact failure the reporter and
  * quarantine bookkeeping above exists to prevent: a suite reading as covering

@@ -167,11 +167,7 @@ function measureConsole() {
 // identity, and a stale bundle of the module that computes every row count,
 // gate and reason here would have passed. It now names `UNIVERSAL_TL_BONUS`,
 // which is §4.1's gate and the number this probe's equipment checks turn on.
-await guardedOrigin(ORIGIN, [
-	"src/state-gallery.ts",
-	"src/market.ts",
-	"src/station-console.ts",
-]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

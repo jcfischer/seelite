@@ -7,7 +7,7 @@ import {
 } from "./probe-guard.mjs";
 
 const origin = process.argv[2] ?? "http://127.0.0.1:5173";
-await guardedOrigin(origin, ["src/station-route.ts"]);
+await guardedOrigin(origin);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

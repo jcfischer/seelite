@@ -234,14 +234,6 @@ const narrow = (all, wanted, what) => {
 	return all.filter((a) => wanted.includes(a));
 };
 
-/** Guard against a wrong-checkout dev server. `planet-shaders.ts` and
- *  `planet-classes.glsl.ts` are the modules this sweep is really about and
- *  neither can be used: both declare no top-level numeric constants, and
- *  `probe-guard` throws rather than lie about a file it cannot compare.
- *  `planet-surface.ts` is the nearest module that can be — it is what builds
- *  the mesh and installs the two switches this drives. */
-const FINGERPRINT = ["src/main.ts", "src/planet-surface.ts"];
-
 /**
  * The cell the drift control reads, twice.
  *
@@ -428,7 +420,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 const buried = radiiRefusal(RADII);
 if (buried) throw new Error(buried);
 
-const origin = await guardedOrigin(ORIGIN, FINGERPRINT);
+const origin = await guardedOrigin(ORIGIN);
 
 /**
  * One run at one pixel ratio: every class at every apparent size on both relief

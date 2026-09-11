@@ -620,9 +620,6 @@ const installHelpers = (page) =>
 		};
 	});
 
-// The guard's default pair. This probe's own subject — `planet-surface.ts` —
-// declares no top-level numeric constants, and the question the guard asks is
-// "is this the same tree?", not "is my subject current".
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();

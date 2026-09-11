@@ -8,7 +8,7 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-await guardedOrigin(ORIGIN, ["src/station-route.ts", "src/units.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

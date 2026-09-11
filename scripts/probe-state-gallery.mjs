@@ -148,7 +148,7 @@ function measureGalleryState() {
 	};
 }
 
-await guardedOrigin(ORIGIN, ["src/units.ts", "src/state-gallery.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

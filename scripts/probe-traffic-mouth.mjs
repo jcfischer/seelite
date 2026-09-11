@@ -9,7 +9,7 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-await guardedOrigin(ORIGIN, ["src/main.ts", "src/station-mesh.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

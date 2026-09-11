@@ -153,11 +153,7 @@ const timed = (page, shadows, ao, warm = 1) =>
 const block = (page, shadows, ao, warm = 1) =>
 	timed(page, shadows, ao, warm).then((r) => r.ms);
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/occlusion.ts",
-	"src/light-rig.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 // `deviceScaleFactor: 2` for `measure-light-cost.mjs`'s reason: the ambient
 // occlusion is fill-rate bound and the machine this targets has a retina panel,

@@ -89,7 +89,7 @@ const SEEDS = (process.env.SEEDS ?? "0").split(",").map((value) => {
 	return n;
 });
 
-await guardedOrigin(ORIGIN, ["src/ship-surface.ts", "src/station-mesh.ts"]);
+await guardedOrigin(ORIGIN);
 await mkdir(OUT, { recursive: true });
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } });

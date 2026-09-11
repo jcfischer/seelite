@@ -24,7 +24,8 @@ import {
 	stationMarketScreen,
 } from "./station-console";
 
-/** A probe-guard fingerprint for this browser-only prototype. */
+/** Stamped into the gallery's own markup, where a probe reads it to tell one
+ *  build of this browser-only prototype from another. */
 export const GALLERY_VERSION = 1;
 
 export type GalleryStateId =

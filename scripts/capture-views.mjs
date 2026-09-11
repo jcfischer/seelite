@@ -56,8 +56,8 @@ import {
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import {
+	assertServingThisTree,
 	bootedGame,
-	guardedOrigin,
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
@@ -336,21 +336,24 @@ async function rebuildSheet(out) {
 	return runs;
 }
 
-// One file per surface the set is pointed at, so an edit to any of them cannot
-// be captured green against a dev server serving a different checkout.
-//
-// Two of the seven views' subjects are missing from this list, and that is a
-// gap rather than a choice. The guard fingerprints a file by its top-level
-// numeric constants and refuses one that has none — which `cockpit.ts`,
-// `live-cockpit.ts`, `planet-shaders.ts` and `planet-classes.glsl.ts` all are.
-// So the cockpit interior and the planet shaders can change under a stale
-// server and this capture will not notice. #105 is where the cockpit's own
-// constants land; this list should gain it there.
-await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/ship-mesh.ts",
-	"src/station-mesh.ts",
-]);
+/**
+ * Which tree the server is serving — refused if it is not this one, and kept,
+ * because the sheet prints it.
+ *
+ * **The value is the point here and not only the refusal.** A probe asserts
+ * numbers a later reader can re-derive; a contact sheet is looked at by a
+ * person with no way to tell which checkout the pixels came from. #123's
+ * wrong-tree capture was caught by an arithmetic tell in a *probe*, not by
+ * anyone looking at the sheet it produced. So the declaration goes into the
+ * manifest and onto the sheet beside this process's own git ref: when the two
+ * disagree, the frames were taken of something other than what was captured.
+ *
+ * There is no file list any more — the guard used to fingerprint one and the
+ * four modules with no top-level numeric constants were unguardable, which for
+ * this script meant the cockpit interior and the planet shaders. A declaration
+ * is a property of the server, so that gap closed with it.
+ */
+const served = await assertServingThisTree(ORIGIN);
 
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
@@ -532,6 +535,13 @@ if (fault) {
 const manifest = {
 	label: LABEL,
 	gitRef: REF,
+	/**
+	 * The tree the *server* said it was serving, beside `gitRef`, which is the
+	 * tree this *process* was run from. Two fields rather than one because the
+	 * failure they exist for is exactly the two disagreeing — a capture script
+	 * run in one checkout against a dev server left running in another.
+	 */
+	served,
 	capturedAt: new Date().toISOString(),
 	renderer,
 	seed: SEED,

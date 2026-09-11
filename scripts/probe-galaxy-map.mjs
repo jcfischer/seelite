@@ -92,7 +92,7 @@ const nextFrame = (page) =>
 			new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
 	);
 
-await guardedOrigin(ORIGIN, ["src/galaxy-map.ts", "src/galaxy-route.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

@@ -33,7 +33,7 @@ const nearestRank = (values, q) => {
 
 // Navigate to the origin the guard actually checked. A raw ORIGIN here would
 // make this script's timing a claim about a server the guard did not examine.
-const origin = await guardedOrigin(ORIGIN, ["src/units.ts", "src/main.ts"]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 const boots = [];
 let renderer = null;

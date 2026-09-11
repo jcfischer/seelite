@@ -10,11 +10,7 @@ const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const SEEDS = Number(process.argv[3] ?? 20);
 const FIRST_SEED = Number(process.argv[4] ?? 1);
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/cruise-detour.ts",
-	"src/cruise.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
