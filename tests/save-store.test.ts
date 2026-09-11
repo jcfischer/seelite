@@ -263,6 +263,24 @@ describe("#89 D6 — slots, export and import", () => {
 		expect(await h.store.exportSlot("copy")).toBe(text);
 	});
 
+	test("a queued write does not inherit the previous write's failure", async () => {
+		// `while (this.inFlight) await this.inFlight` rethrew whatever the
+		// in-flight write rejected with, so a dock flush queued behind a failing
+		// debounced write threw before writing anything — no `lastDocked`
+		// checkpoint, on a failure that was not its own.
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		h.clock.fire();
+		await h.store.settled();
+		h.set(321);
+		h.store.markDirty();
+		await h.store.flush("dock");
+		expect(
+			(await h.store.load("default", "lastDocked")).commander.state.credits,
+		).toBe(321);
+	});
+
 	test("a slot name that would address another slot is refused", async () => {
 		// A record is keyed `${slot} ${kind}`, so `"a b"` lists as `"a"` and
 		// `deleteSlot("a")` removes it. Only the default slot is reachable until

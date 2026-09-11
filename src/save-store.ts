@@ -176,15 +176,33 @@ export class SaveStore {
 		await this.run(kinds, slot);
 	}
 
-	/** Resolves once no write is in flight. Tests await it; so does quit. */
+	/**
+	 * Resolves once no write is in flight.
+	 *
+	 * **Quit does not await it**, and the comment here said it did. `pagehide`
+	 * runs `saveFlush`, which is `void`-ed by construction, so the quit flush is
+	 * best-effort: a page torn down mid-transaction loses that write. That is
+	 * the same class of loss #89 already accepts for the debounce window and for
+	 * permadeath on a tab close, and an async store cannot close it — but a
+	 * module that claims otherwise is worse than the gap. The only caller is
+	 * `scripts/probe-save.mjs`, which has to await the store because it reads
+	 * the record back.
+	 */
 	async settled(): Promise<void> {
-		while (this.inFlight) await this.inFlight;
+		while (this.inFlight) await this.inFlight.catch(() => {});
 	}
 
 	private async run(kinds: SaveRecordKind[], slot: string): Promise<void> {
 		// Queue behind whatever is already writing rather than racing it. The
 		// awaited chain is what keeps `maxInFlight` at one.
-		while (this.inFlight) await this.inFlight;
+		//
+		// **The rejection is swallowed, not inherited.** A bare `await` here
+		// rethrows whatever the in-flight write failed with, so a `flush("dock")`
+		// queued behind a failing debounced write threw before writing anything
+		// — no `lastDocked` checkpoint, and `settled()` rejecting too. The
+		// earlier write's failure is its own caller's; this one still has its
+		// own to report.
+		while (this.inFlight) await this.inFlight.catch(() => {});
 		const blob = serializeSave(this.current());
 		this.dirty = false;
 		const work = (async () => {

@@ -182,9 +182,19 @@ be saved.
 ## 10. Deferred decisions
 
 **Save encoding, migration, slots, autosave cadence and permadeath were on
-this list and are not deferred any more.** Node #89 chose all five and node #90
-shipped them, so the line that carried them was a false assertion in a ratified
-spec for as long as it stood. The choices live in #89's resolution and are
+this list and are not deferred any more.** Node #89 chose all five, so the line that
+carried them was a false assertion in a ratified spec for as long as it stood.
+
+**What #90 shipped and what it did not, because "decided" and "reached" are
+different claims and this paragraph made only one of them for a round.**
+Encoding, migration and the autosave cadence are shipped and exercised by the
+game: IndexedDB, a version refusal that leaves the record readable, and a
+debounced write with four unconditional flushes. **Permadeath, slots and
+export/import are decided and implemented but not reachable by a player**:
+`choosePermadeath` is on a URL parameter, and `setSlot`, `exportSlot` and
+`importSlot` have no caller outside their own tests, because there is no
+new-game or save screen to reach them from. `save-store.ts` says so where a
+reader meets it. The choices live in #89's resolution and are
 implemented in `src/save-store.ts` and `src/save-envelope.ts`, whose headers
 carry the reasoning; they are **not restated here**, because a third copy of a
 decision is the drift this document warns about elsewhere. Cloud storage is not

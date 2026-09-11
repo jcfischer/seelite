@@ -337,6 +337,39 @@ try {
 			Math.abs(clock.saved - clock.sim) < 1e-6,
 			`saved ${clock.saved.toFixed(3)} against sim ${clock.sim.toFixed(3)}`,
 		);
+		// **A restored cruise leg has to still be a leg.** The load arm set
+		// `regime` alone for a round, so `stepCruise` ran at the field default
+		// throttle of zero and the first frame wrote the ship's velocity to a
+		// stop — a save that lost the leg rather than a missing field. The
+		// throttle is carried now and the leg's start time is set beside it.
+		const cruise = await page.evaluate(async () => {
+			const g = window.__seelite;
+			const record = g.commanderRecord();
+			const restored = {
+				...record,
+				dockedAt: null,
+				flight: { ...record.flight, regime: "cruise", throttle: 1 },
+			};
+			const round = g.save.serialize({
+				world: g.saveEnvelope().world,
+				commander: restored,
+			});
+			// Through the parser, so a field the schema would refuse cannot pass
+			// here and fail on a player's machine.
+			return {
+				regime: JSON.parse(JSON.stringify(round)).commander.flight.regime,
+				throttle: JSON.parse(JSON.stringify(round)).commander.flight.throttle,
+			};
+		});
+		// **This row checks the schema, not the flying.** It goes red on a build
+		// whose `SavedFlight` has no throttle, and it cannot see whether the load
+		// arm uses the field — `tests/world-state-wiring.test.ts` reads the arm
+		// for that, because `Game` is not constructible headless.
+		check(
+			"a cruise save carries the throttle that makes it a leg",
+			cruise.regime === "cruise" && cruise.throttle === 1,
+			JSON.stringify(cruise),
+		);
 		check(
 			"the lastDocked checkpoint names the station the ship docked at",
 			checkpoint !== null &&

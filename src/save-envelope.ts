@@ -50,8 +50,16 @@ import {
  * The world's shape and the commander's change for different reasons, and a
  * save that had to bump the world's version to add a commander field would put
  * a migration obligation on eight galaxy envelopes that did not move.
+ *
+ * **2 adds `flight.throttle`.** A cruise leg is flown at full throttle and the
+ * engage sets it; a restore that put the regime back without it ran `stepCruise`
+ * at the field default of zero, and the first frame overwrote the restored
+ * velocity with a stop. The throttle is session state like everything else in
+ * `flight`, so it is carried rather than reconstructed. Free to bump: nothing
+ * has shipped a version 1 record, and D8's refusal is what a player would meet
+ * if one had.
  */
-export const SAVE_SCHEMA_VERSION = 1;
+export const SAVE_SCHEMA_VERSION = 2;
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -66,6 +74,16 @@ export interface SavedFlight {
 	/** Attitude as `[x, y, z, w]`. Not a `THREE.Quaternion`: see the header. */
 	orientation: readonly [number, number, number, number];
 	regime: SavedRegime;
+	/**
+	 * The commanded throttle, 0…1.
+	 *
+	 * **Load-bearing in cruise and not merely cosmetic.** The engage sets it to
+	 * 1 beside the regime, and `stepCruise` reads it every frame: a restore that
+	 * set `regime` alone flew the leg at zero and wrote the ship's velocity to a
+	 * stop on the first frame, which reads as a save that lost the leg rather
+	 * than as a missing field.
+	 */
+	throttle: number;
 }
 
 /** The player half of a save. */
@@ -126,6 +144,7 @@ export const newCommanderRecord = (
 		vel: [0, 0, 0],
 		orientation: [0, 0, 0, 1],
 		regime: "normal",
+		throttle: 0,
 	},
 });
 
@@ -159,6 +178,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 			vel: [...record.flight.vel],
 			orientation: [...record.flight.orientation],
 			regime: record.flight.regime,
+			throttle: record.flight.throttle,
 		},
 	};
 };
@@ -223,11 +243,15 @@ const parseFlight = (raw: unknown): SavedFlight => {
 	const [px, py, pz] = tuple(o, "pos", 3, "commander.flight");
 	const [vx, vy, vz] = tuple(o, "vel", 3, "commander.flight");
 	const [ox, oy, oz, ow] = tuple(o, "orientation", 4, "commander.flight");
+	const throttle = num(o, "throttle", "commander.flight");
+	if (throttle < 0 || throttle > 1)
+		fail(`commander.flight: ${throttle} is not a throttle`);
 	return {
 		pos: [px, py, pz],
 		vel: [vx, vy, vz],
 		orientation: [ox, oy, oz, ow],
 		regime: regime as SavedRegime,
+		throttle,
 	};
 };
 

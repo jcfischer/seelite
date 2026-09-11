@@ -2027,6 +2027,14 @@ class Game {
 					f.orientation[3],
 				);
 				this.regime = f.regime;
+				this.throttle = f.throttle;
+				// **A cruise leg needs its own start time as well as its
+				// throttle.** `stepCruise` measures the leg from `legStartedAtS`,
+				// and a restore that left it at the field default would date the
+				// leg to the beginning of time. The engage sets both beside the
+				// regime; a restore has to set all three or it is restoring a
+				// regime rather than a leg.
+				if (f.regime === "cruise") this.legStartedAtS = this.world.gameTime;
 				this.restoredAttitude = true;
 			}
 		} else {
@@ -8529,6 +8537,7 @@ class Game {
 					this.orientation.w,
 				],
 				regime: this.regime,
+				throttle: this.throttle,
 			},
 		};
 	}

@@ -83,6 +83,20 @@ describe("the Game's world writes", () => {
 		expect(body.slice(0, 400)).toContain("applyTransition(");
 	});
 
+	test("a restored cruise leg gets the throttle and start time that make it one", () => {
+		// `stepCruise` reads `throttle` every frame and dates the leg from
+		// `legStartedAtS`. The load arm set `regime` alone for a round, so a
+		// restored leg ran at the field default of zero and the first frame
+		// wrote the ship's velocity to a stop — a save that lost the leg rather
+		// than a field that was missing. `tests/save-envelope.test.ts` holds the
+		// field's round trip; what only the source can show is that the arm
+		// *uses* it, because `Game` builds a renderer and is not constructible
+		// headless.
+		const arm = MAIN.split("this.regime = f.regime;")[1] ?? "";
+		expect(arm.slice(0, 600)).toContain("this.throttle = f.throttle;");
+		expect(arm.slice(0, 600)).toContain("this.legStartedAtS");
+	});
+
 	test("a refused save is never given a store aimed at it (#89 D9)", () => {
 		// D9's one promise is that the bad record is never overwritten — it is
 		// the only copy of whatever is left and the only thing the player can
