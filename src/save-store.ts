@@ -51,8 +51,16 @@ import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
  * rather than an arithmetic one, and no bun figure can pick it. Measured by
  * `scripts/probe-save.mjs`, which does a real IndexedDB write and read of a
  * save at T4's byte scale in the page and prints the spread. The window clears
- * the **median** write there, so the common case is one transaction rather than
- * a queue. It does not clear the worst, and it is not meant to: a maximum over
+ * a **whole median save** there — the synchronous serialize plus the
+ * transaction, because the first version priced only the async half and the
+ * half a player feels as a dropped frame is the other one. So the common case
+ * is one transaction rather than a queue.
+ *
+ * The transaction is **almost entirely fixed cost**: the same probe writes the
+ * live game's own save and the padded one in one interleaved run, and a factor
+ * of ~380 in size costs about 2 ms. That is why a bigger save does not want a
+ * bigger window, and it is measured in the shipped probe rather than quoted
+ * from two runs of two revisions, which is what it was for a round. It does not clear the worst, and it is not meant to: a maximum over
  * a dozen samples is not a bound — the probe read 330–345 ms on three quiet
  * runs and 412 on a loaded one — and a write slower than the window is handled
  * rather than prevented, because `run` queues behind whatever is in flight
@@ -87,6 +95,20 @@ export type Scheduler = (fn: () => void, ms: number) => () => void;
 export interface SaveBackend {
 	read(slot: string, kind: SaveRecordKind): Promise<unknown | null>;
 	write(slot: string, kind: SaveRecordKind, blob: unknown): Promise<void>;
+	/**
+	 * The same bytes under several keys, in **one** transaction.
+	 *
+	 * A dock flush writes `live` and `lastDocked` from one blob, and running
+	 * them as two sequential transactions cost twice the measured median and
+	 * left a window where the pair disagreed. One transaction halves the
+	 * latency and makes the checkpoint and the live record land together, which
+	 * is what D1 chose a transactional store for.
+	 */
+	writeMany(
+		slot: string,
+		kinds: readonly SaveRecordKind[],
+		blob: unknown,
+	): Promise<void>;
 	slots(): Promise<string[]>;
 	deleteSlot(slot: string): Promise<void>;
 }
@@ -103,6 +125,9 @@ export interface SaveStoreOptions {
 	 * than the state that settled.
 	 */
 	current: () => SaveEnvelope;
+	/** Called when a debounced write fails. Every other write path rejects to
+	 *  its caller; this one has none. */
+	onWriteFailed?: (error: unknown) => void;
 }
 
 const fail = (message: string): never => {
@@ -131,11 +156,15 @@ export class SaveStore {
 	 *  state. */
 	private inFlight: Promise<void> | null = null;
 	private slot = DEFAULT_SLOT;
+	/** Told when a debounced write fails — the one write path with no caller to
+	 *  reject to, and the one D9's "the player is told" could not reach. */
+	private readonly onWriteFailed?: (error: unknown) => void;
 
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
 		this.schedule = options.schedule;
 		this.current = options.current;
+		this.onWriteFailed = options.onWriteFailed;
 	}
 
 	/** The slot subsequent debounced writes go to. */
@@ -150,11 +179,19 @@ export class SaveStore {
 		this.cancel?.();
 		this.cancel = this.schedule(() => {
 			this.cancel = null;
-			void this.run(["live"], this.slot).catch(() => {
-				// A debounced write has no caller to reject to. The record it
-				// failed to replace is still there (D9's stale-not-broken), and
-				// the dirty flag survives, so the next flush retries.
-				this.dirty = true;
+			void this.run(["live"], this.slot).catch((error) => {
+				// A debounced write has no caller to reject to, and the record it
+				// failed to replace is still there (D9's stale-not-broken).
+				//
+				// **It re-arms rather than waiting for a flush.** Setting the
+				// flag alone was described as "the next flush retries", and it
+				// armed nothing: a failed debounced write then sat until the next
+				// dock, trade, jump or quit, which is the cadence doing almost
+				// none of the writing waiting on the cadence doing almost all of
+				// it. And D9 says the player is *told*; nothing reached them at
+				// all, because `saveFault` is written once at boot.
+				this.onWriteFailed?.(error);
+				this.markDirty();
 			});
 		}, SAVE_DEBOUNCE_MS);
 	}
@@ -213,9 +250,7 @@ export class SaveStore {
 		while (this.inFlight) await this.inFlight.catch(() => {});
 		const blob = serializeSave(this.current());
 		this.dirty = false;
-		const work = (async () => {
-			for (const kind of kinds) await this.backend.write(slot, kind, blob);
-		})();
+		const work = this.backend.writeMany(slot, kinds, blob);
 		this.inFlight = work.finally(() => {
 			this.inFlight = null;
 		});
@@ -367,6 +402,9 @@ export function memorySaveBackend(): MemorySaveBackend {
 			return copy(rows.get(at(slot, kind)) ?? null);
 		},
 		async write(slot, kind, blob) {
+			return this.writeMany(slot, [kind], blob);
+		},
+		async writeMany(slot, kinds, blob) {
 			inFlight += 1;
 			maxInFlight = Math.max(maxInFlight, inFlight);
 			try {
@@ -375,7 +413,9 @@ export function memorySaveBackend(): MemorySaveBackend {
 					failNext = false;
 					throw new Error("backend: the write failed");
 				}
-				rows.set(at(slot, kind), copy(blob));
+				// One transaction, so either every key lands or none does — the
+				// same all-or-nothing the IndexedDB backend gets for free.
+				for (const kind of kinds) rows.set(at(slot, kind), copy(blob));
 				writes += 1;
 			} finally {
 				inFlight -= 1;
@@ -471,6 +511,9 @@ export function indexedDbSaveBackend(
 			return value ?? null;
 		},
 		async write(slot, kind, blob) {
+			return this.writeMany(slot, [kind], blob);
+		},
+		async writeMany(slot, kinds, blob) {
 			const handle = await open();
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
 			// The write is awaited on the **transaction**, not on the request:
@@ -484,7 +527,8 @@ export function indexedDbSaveBackend(
 					reject(new Error("save: the backend aborted the write"));
 				tx.onerror = () => reject(new Error("save: the backend refused"));
 			});
-			tx.objectStore(SAVE_STORE_NAME).put(blob, at(slot, kind));
+			const store = tx.objectStore(SAVE_STORE_NAME);
+			for (const kind of kinds) store.put(blob, at(slot, kind));
 			await done;
 		},
 		async slots() {

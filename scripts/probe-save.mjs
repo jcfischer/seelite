@@ -113,20 +113,53 @@ try {
 					updatedAt: 0,
 				};
 		const bytes = JSON.stringify(blob).length;
+		// **The small blob is kept, and the two scales are interleaved.** The
+		// claim that "53 KiB and 714 KiB differ by about 5 ms, so the cost here
+		// is fixed overhead rather than bytes" was true and unreproducible: the
+		// two points came from two probe revisions, not from one run, and that
+		// conclusion is what licenses picking a window at a single byte scale.
+		// The arms alternate, because a block design that always runs them in
+		// the same order measures the order (`measure-light-cost.mjs` has the
+		// scar).
+		const small = JSON.parse(JSON.stringify(save.serialize(live)));
+		const smallBytes = JSON.stringify(small).length;
 		const writes = [];
 		const reads = [];
+		const smallWrites = [];
+		// **The synchronous half, which nothing measured — and note whose save
+		// it is.** A debounced write runs `serializeSave(current())` first:
+		// `advanceTo` over eight galaxies, `serializeWorld`, a `JSON.stringify`
+		// of the whole save and an FNV-1a pass over every character, all on the
+		// main thread, where a player feels it as a dropped frame.
+		//
+		// This arm serializes **the live game's own save**, which is the tier
+		// #89 calls T5/T6 and the one play actually writes — not the padded blob
+		// the transaction arm carries. They are different subjects and the
+		// output says so. Serializing at T4's scale would need a T4-scale
+		// `WorldState` in the page, which is `scripts/measure-save-size.ts`'s
+		// job and its bun column already prints.
+		const serializes = [];
 		for (let i = 0; i < 12; i++) {
+			const s0 = performance.now();
+			save.serialize(window.__seelite.saveEnvelope());
+			serializes.push(performance.now() - s0);
 			const t0 = performance.now();
 			await save.backend.write("probe", "live", blob);
 			const t1 = performance.now();
 			await save.backend.read("probe", "live");
 			reads.push(performance.now() - t1);
 			writes.push(t1 - t0);
+			const u0 = performance.now();
+			await save.backend.write("probe-small", "live", small);
+			smallWrites.push(performance.now() - u0);
 		}
 		const back = await save.backend.read("probe", "live");
 		return {
 			bytes,
+			smallBytes,
 			writes,
+			smallWrites,
+			serializes,
 			reads,
 			debounceMs: save.debounceMs,
 			dbName: save.dbName,
@@ -139,6 +172,10 @@ try {
 
 	const writeMs = median(store.writes);
 	const readMs = median(store.reads);
+	const smallWriteMs = median(store.smallWrites);
+	const serializeMs = median(store.serializes);
+	// What the player's main thread actually spends on one save.
+	const hitchMs = serializeMs;
 	console.log(
 		`\nIndexedDB at ${(store.bytes / 1024).toFixed(0)} KiB of JSON, ${store.writes.length} runs:`,
 	);
@@ -147,6 +184,12 @@ try {
 	);
 	console.log(
 		`  read  median ${readMs.toFixed(1)} ms, range ${Math.min(...store.reads).toFixed(1)}–${Math.max(...store.reads).toFixed(1)}`,
+	);
+	console.log(
+		`  serialize median ${serializeMs.toFixed(1)} ms, range ${Math.min(...store.serializes).toFixed(1)}–${Math.max(...store.serializes).toFixed(1)} (synchronous, on the main thread)`,
+	);
+	console.log(
+		`  the same run at ${(store.smallBytes / 1024).toFixed(1)} KiB: write median ${smallWriteMs.toFixed(1)} ms — ${(writeMs - smallWriteMs).toFixed(1)} ms for ${((store.bytes - store.smallBytes) / 1024).toFixed(0)} KiB more, a factor of ${(store.bytes / store.smallBytes).toFixed(0)} in size`,
 	);
 	console.log(`  debounce window declared: ${store.debounceMs} ms`);
 
@@ -165,16 +208,30 @@ try {
 	// window is not a fault either: `SaveStore` queues behind an in-flight
 	// write rather than racing it, and `tests/save-store.test.ts` holds that.
 	check(
-		"the debounce window is above the median write on this machine",
-		store.debounceMs > writeMs,
-		`window ${store.debounceMs} ms against a median write of ${writeMs.toFixed(1)} ms (worst ${Math.max(...store.writes).toFixed(1)}, unasserted)`,
+		"the debounce window is above a whole median save, both halves",
+		store.debounceMs > writeMs + serializeMs,
+		`window ${store.debounceMs} ms against ${serializeMs.toFixed(1)} ms of serialize + ${writeMs.toFixed(1)} ms of transaction (worst write ${Math.max(...store.writes).toFixed(1)}, unasserted)`,
+	);
+	// **The transaction here is mostly not about bytes, and this is the arm
+	// that says so** rather than a sentence quoting two runs. Interleaved, so
+	// drift cannot be read as the difference.
+	const sizeFactor = store.bytes / store.smallBytes;
+	check(
+		"the transaction is mostly not about bytes",
+		writeMs < smallWriteMs * 3,
+		`a factor of ${sizeFactor.toFixed(0)} in size — ${(store.smallBytes / 1024).toFixed(1)} KiB at ${smallWriteMs.toFixed(1)} ms against ${(store.bytes / 1024).toFixed(0)} KiB at ${writeMs.toFixed(1)} ms`,
 	);
 	// **A band, not a floor.** A window far above the write is not free either —
 	// it is the bounded loss on a tab close, and #89 accepts one window of it.
 	check(
-		"and not more than an order of magnitude above the median",
-		store.debounceMs < Math.max(20, writeMs) * 50,
-		`window ${store.debounceMs} ms, median write ${writeMs.toFixed(1)} ms`,
+		"and not more than an order of magnitude above it",
+		store.debounceMs < Math.max(20, writeMs + serializeMs) * 10,
+		`window ${store.debounceMs} ms, whole median save ${(writeMs + serializeMs).toFixed(1)} ms`,
+	);
+	// The hitch is the half a player can feel, so it is printed beside a frame
+	// rather than folded into the window.
+	console.log(
+		`  main-thread cost of one live-scale save: ${hitchMs.toFixed(1)} ms (a 60 fps frame is 16.7)`,
 	);
 
 	// -----------------------------------------------------------------------
@@ -374,7 +431,7 @@ try {
 		// arm uses the field — `tests/world-state-wiring.test.ts` reads the arm
 		// for that, because `Game` is not constructible headless.
 		check(
-			"a cruise save carries the throttle that makes it a leg",
+			"a cruise save round-trips its regime and throttle",
 			cruise.regime === "cruise" && cruise.throttle === 1,
 			JSON.stringify(cruise),
 		);

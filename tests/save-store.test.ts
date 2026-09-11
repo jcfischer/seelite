@@ -291,6 +291,46 @@ describe("#89 D6 — slots, export and import", () => {
 		).toBe(321);
 	});
 
+	test("a failed debounced write re-arms rather than waiting for a flush", async () => {
+		// Setting the dirty flag alone was described as "the next flush retries"
+		// and armed nothing, so a failed debounced write sat until the next
+		// dock, trade, jump or quit — the cadence doing almost none of the
+		// writing waiting on the cadence doing almost all of it. And nothing
+		// reached the player at all, which D9 says is what must not happen.
+		const failures = [];
+		const clock = manualScheduler();
+		const backend = memorySaveBackend();
+		const store = new SaveStore({
+			backend,
+			schedule: clock.scheduler,
+			current: () => envelope(100),
+			onWriteFailed: (error) => failures.push(String(error)),
+		});
+		store.markDirty();
+		backend.failNextWrite();
+		clock.fire();
+		await store.settled();
+		expect(backend.writes).toBe(0);
+		expect(failures.length).toBe(1);
+		// Re-armed: the retry is a timer, not the next unrelated transition.
+		expect(clock.armed).toBe(true);
+		clock.fire();
+		await store.settled();
+		expect(backend.writes).toBe(1);
+	});
+
+	test("a dock flush writes both records in one transaction", async () => {
+		// Two sequential transactions of the same bytes cost twice the measured
+		// median and left a window where the checkpoint and the live record
+		// disagreed. `writes` counts transactions, not keys.
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("dock");
+		expect(h.backend.writes).toBe(1);
+		expect(await h.backend.has("default", "live")).toBe(true);
+		expect(await h.backend.has("default", "lastDocked")).toBe(true);
+	});
+
 	test("a slot name that would address another slot is refused", async () => {
 		// A record is keyed `${slot} ${kind}`, so `"a b"` lists as `"a"` and
 		// `deleteSlot("a")` removes it. Only the default slot is reachable until
