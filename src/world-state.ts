@@ -1053,6 +1053,31 @@ export const visit = (
 	);
 };
 
+/**
+ * §7's deficit domain: the market's memory of the player, installed whole.
+ *
+ * `economy-trade.md` §5.5's arithmetic stays in `deficits.ts` — this writer
+ * takes the map that `recordTrade` (or `transactAtStation`, which wraps it)
+ * already returned and files it under the galaxy, with `withEnvelope`'s bound,
+ * clock refusal and materialization. It is a setter for the same reason
+ * `setLegalHeat` is: the domain's rules are not this module's, and duplicating
+ * them here would be the second copy `deficits.ts`'s own header refuses.
+ *
+ * **`at` is seconds, and it is the only unit this module speaks.** A
+ * `DeficitRow.updatedAt` is game *minutes* — `deficits.ts` says so — and
+ * `World.gameTime` in `sim.ts` is seconds. The conversion belongs at the call
+ * that builds the row, never at the clock: the caller that got it the other way
+ * round divided the world clock by sixty on its way in, and the damage would
+ * have surfaced as a save whose every `completesAt` sat an hour in the future.
+ */
+export const setDeficits = (
+	world: WorldState,
+	galaxyIndex: number,
+	deficits: DeficitMap,
+	at: number,
+): WorldState =>
+	withEnvelope(world, galaxyIndex, at, (env) => ({ ...env, deficits }));
+
 /** §7's legal-status domain. The persisted pair only — the label and the
  *  police response are §8 projections. */
 export const setLegalHeat = (

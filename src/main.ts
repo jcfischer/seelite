@@ -356,6 +356,7 @@ import {
 	newWorld as newPersistentWorld,
 	observeDocking,
 	observeSystemRelay,
+	setDeficits,
 	visit,
 	type WorldState,
 } from "./world-state";
@@ -8369,15 +8370,18 @@ class Game {
 		});
 		if (!result.accepted) return;
 		this.commander = result.commander;
-		this.commerceWorld = {
-			...this.commerceWorld,
-			gameTime: this.world.gameTime / 60,
-			galaxies: this.commerceWorld.galaxies.map((current, index) =>
-				index === galaxyIndex
-					? { ...current, deficits: result.deficits }
-					: current,
-			),
-		};
+		// Through the module's own writer, not by hand. `setDeficits` carries
+		// the galaxy bound, the "no write before the clock" refusal and
+		// `materializeDue`, and it takes the world clock in **seconds** — the
+		// spread this replaced set `gameTime` to the *minutes* figure beside it,
+		// which is the unit a deficit row's `updatedAt` wants and the clock
+		// never does.
+		this.commerceWorld = setDeficits(
+			this.commerceWorld,
+			galaxyIndex,
+			result.deficits,
+			this.world.gameTime,
+		);
 		this.stationConsoleRevision += 1;
 		this.updateCockpit();
 	}
