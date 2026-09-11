@@ -348,6 +348,7 @@ import {
 	type SaveEnvelope,
 	newCommanderRecord,
 	parseSave,
+	serializeSave,
 } from "./save-envelope";
 import {
 	DEFAULT_SLOT,
@@ -9730,6 +9731,11 @@ if (query.has("model-viewer")) {
 		storeName: SAVE_STORE_NAME,
 		defaultSlot: DEFAULT_SLOT,
 		backend: saveBackend,
+		// The module function, not a method on the game: a probe that wants a
+		// blob at a chosen size needs the serializer, and adding a "give me a
+		// big save" method to `Game` would be production state existing for one
+		// caller.
+		serialize: serializeSave,
 		makeStore: (current: () => SaveEnvelope) =>
 			new SaveStore({
 				backend: saveBackend,
