@@ -138,9 +138,8 @@ test("a server with no declaration is refused, by what came back and not by a st
 	expect(err).not.toBeNull();
 	// Vite answers an unknown path with `index.html` and a **200**, so a guard
 	// reading `res.ok` would take the SPA fallback for a declaration. The message
-	// has to name the content type it got.
+	// names what came back instead.
 	expect(err!.message).toContain("text/html");
-	expect(err!.message).not.toContain("200");
 }, 60000);
 
 test("a root reached through a symlink passes", async () => {
@@ -151,6 +150,34 @@ test("a root reached through a symlink passes", async () => {
 	symlinkSync(REPO, link);
 	const origin = await serve(link);
 	const served = await assertServingThisTree(origin);
+	expect(served.root).toBe(REPO);
+}, 60000);
+
+/**
+ * A declaration under a status the guard is not allowed to read.
+ *
+ * The row above shows a 200 being refused; on its own that is also what a guard
+ * checking `res.ok` would do, because vite's fallback is a 200 *and* HTML. This
+ * is the other half: a real declaration served under a 503 must be **accepted**,
+ * which no `res.ok` guard can do. Written after the first version of that pair
+ * asserted the absence of a status in the message — a string no branch of it
+ * ever contains, so the assertion passed on the build it was meant to catch.
+ *
+ * A plain node server rather than vite: the point is a response shape vite has
+ * no way to produce.
+ */
+test("a declaration is read on its shape, whatever status carries it", async () => {
+	const port = await freePort();
+	const http = await import("node:http");
+	const server = http.createServer((_req, res) => {
+		res.writeHead(503, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ root: REPO }));
+	});
+	await new Promise<void>((r) => server.listen(port, "127.0.0.1", r));
+	running.push({
+		close: () => new Promise<void>((r) => server.close(() => r())),
+	});
+	const served = await assertServingThisTree(`http://127.0.0.1:${port}`);
 	expect(served.root).toBe(REPO);
 }, 60000);
 
