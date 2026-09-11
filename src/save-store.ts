@@ -165,12 +165,20 @@ export class SaveStore {
 	 * A flush with nothing dirty writes nothing: the record on disk already
 	 * says what the world says, and rewriting it would spend a transaction to
 	 * change no bytes.
+	 *
+	 * **`quit` is the exception, and it has to be.** The other three flushes
+	 * each follow a `saveDirty()` at the transition that caused them, so the
+	 * flag is set by the time they run; `pagehide` follows nothing. A new game
+	 * flown in normal flight only and then closed had *never* dirtied, so it
+	 * wrote no `live` record at all — and with `?permadeath`, the D7 choice went
+	 * with it. The premise "the record on disk already says what the world says"
+	 * is false when there is no record.
 	 */
 	async flush(reason: FlushReason, slot: string = this.slot): Promise<void> {
 		assertSlot(slot);
 		this.cancel?.();
 		this.cancel = null;
-		if (!this.dirty) return;
+		if (!this.dirty && reason !== "quit") return;
 		const kinds: SaveRecordKind[] =
 			reason === "dock" ? ["live", "lastDocked"] : ["live"];
 		await this.run(kinds, slot);

@@ -599,9 +599,11 @@ function assertCarrierKey(key: CarrierKey): void {
  * corruption then surfaced a long way from its cause, inside a canonicaliser
  * or as "expected eight galaxy envelopes" on the next load.
  */
-/** §7's visited domain range, in one place: `visit` applies it at the write and
- *  `parseVisited` at the load, and they are meant to stay identical. */
-const isSystemIndex = (v: unknown): boolean =>
+/** §7's visited domain range, in one place: `visit` applies it at the write,
+ *  `parseVisited` at the load, and `save-envelope.ts` on the commander's own
+ *  system index — three readers of one range, which is why it is exported
+ *  rather than restated. */
+export const isSystemIndex = (v: unknown): boolean =>
 	typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 255;
 
 function assertGalaxy(galaxyIndex: number): void {

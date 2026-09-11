@@ -39,6 +39,7 @@ import {
 import {
 	fnv1a,
 	GALAXY_COUNT,
+	isSystemIndex,
 	parseWorld,
 	serializeWorld,
 	type WorldState,
@@ -286,12 +287,18 @@ const parseCommander = (raw: unknown): CommanderRecord => {
 		fail(`commander: ${String(dockedAt)} is not a carrier key`);
 	if (typeof o.permadeath !== "boolean")
 		fail("commander: permadeath is not a boolean");
-	// **Bounded, not merely finite.** `restoreWorld` throws on a galaxy index
-	// outside 0..7 or a system the galaxy does not have, and the boot builds the
-	// game from what this returns — so a record that parses and then cannot be
-	// restored is a record that kills every boot at that origin. `importSlot`
-	// validates a file with `parseSave` and nothing else, which makes an
-	// imported file the way in.
+	// **Bounded, not merely finite — and bounded on both indices.** For a round
+	// the system index was checked only for being a non-negative integer while
+	// the comment claimed it covered "a system the galaxy does not have", so
+	// `systemIndex: 999` parsed cleanly and `restoreWorld` threw on it later.
+	// `isSystemIndex` is `world-state.ts`'s own range, exported rather than
+	// restated here: §7's visited domain and this field are the same 0..255.
+	//
+	// The harm is bounded rather than fatal — `main.ts` catches a restore that
+	// throws and starts fresh with a named fault — and that does not make the
+	// check optional. A record refused at the parser is one the player can still
+	// export under D9; one refused inside the constructor has already lost the
+	// reason it was refused.
 	const galaxyIndex = num(o, "galaxyIndex", "commander");
 	if (
 		!Number.isInteger(galaxyIndex) ||
@@ -300,7 +307,7 @@ const parseCommander = (raw: unknown): CommanderRecord => {
 	)
 		fail(`commander: ${galaxyIndex} is not a galaxy index`);
 	const systemIndex = num(o, "systemIndex", "commander");
-	if (!Number.isInteger(systemIndex) || systemIndex < 0)
+	if (!isSystemIndex(systemIndex))
 		fail(`commander: ${systemIndex} is not a system index`);
 	return {
 		state: {

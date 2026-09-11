@@ -132,10 +132,20 @@ describe("#89 D4 — the write cadence", () => {
 		}
 	});
 
-	test("a flush with nothing dirty writes nothing", async () => {
+	test("a flush with nothing dirty writes nothing — except quit", async () => {
 		const h = harness();
+		for (const reason of ["dock", "undock", "jump"] as const) {
+			await h.store.flush(reason);
+			expect(h.backend.writes).toBe(0);
+		}
+		// **Quit is the exception and has to be.** The other three each follow a
+		// `saveDirty()` at the transition that caused them; `pagehide` follows
+		// nothing, so a new game flown in normal flight only and then closed had
+		// never dirtied and wrote no record at all — and with `?permadeath` the
+		// D7 choice went with it.
 		await h.store.flush("quit");
-		expect(h.backend.writes).toBe(0);
+		expect(h.backend.writes).toBe(1);
+		expect((await h.store.load("default")).commander.state.credits).toBe(100);
 	});
 
 	test("a flush during a debounced write queues behind it rather than racing", async () => {

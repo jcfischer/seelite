@@ -39,8 +39,16 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 let context = null;
 
-/** The seed every arm shares, so the two page loads in the reload arm are the
- *  same galaxy and the same station. */
+/**
+ * The seed every arm shares.
+ *
+ * **The second load does not read it**, and the comment here said it did: a
+ * loaded envelope builds from `save.world.seed`. What `?seed=` does on page two
+ * is match the record, which is what keeps the boot from setting the save aside
+ * — an explicit seed that disagrees with a save outranks it. The arm passes
+ * either way; its stated mechanism has to be the real one or a later reader
+ * changing this constant reasons from a wire that is not running.
+ */
 const SEED = 42;
 
 const median = (xs) => {
@@ -426,7 +434,105 @@ try {
 			after.gameTime > 60,
 			`clock ${after.gameTime}`,
 		);
+		// -------------------------------------------------------------------
+		// The in-flight restore arm, which nothing else reaches
+		// -------------------------------------------------------------------
+		// The reload above flushes while docked, so page two takes the docked
+		// arm every time — and the in-flight arm is where `flight.pos`, the
+		// regime, the throttle and the `faceTheStar` guard all live. A record is
+		// seeded directly, because getting the ship into open space on a
+		// scripted flight is a cruise leg this probe has no business flying.
+		const seeded = await reloaded.evaluate(async () => {
+			const g = window.__seelite;
+			const env = g.saveEnvelope();
+			const pos = { x: 1234.5, y: -678.25, z: 90.125 };
+			const orientation = [0.5, 0.5, 0.5, 0.5];
+			const record = {
+				...env.commander,
+				dockedAt: null,
+				flight: {
+					pos: [pos.x, pos.y, pos.z],
+					vel: [0.25, -0.5, 0.75],
+					orientation,
+					regime: "cruise",
+					throttle: 1,
+				},
+			};
+			await g.save.backend.write(
+				g.save.defaultSlot,
+				"live",
+				g.save.serialize({ world: env.world, commander: record }),
+			);
+			return { pos, orientation, seed: env.world.seed };
+		});
 		await reloaded.close();
+
+		const third = await context.newPage();
+		watch(third);
+		await third.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+		await bootedGame(third);
+		const inFlight = await third.evaluate(() => {
+			const g = window.__seelite;
+			return {
+				fault: g.saveFault,
+				pos: { ...g.world.ship.pos },
+				vel: { ...g.world.ship.vel },
+				regime: g.regime,
+				throttle: g.throttle,
+				orientation: [
+					g.orientation.x,
+					g.orientation.y,
+					g.orientation.z,
+					g.orientation.w,
+				],
+				dockPhase: g.dock.phase,
+			};
+		});
+		console.log(`\nin-flight restore: ${JSON.stringify(inFlight)}`);
+		const near = (a, b) => Math.abs(a - b) < 1e-6;
+		check(
+			"an in-flight save restores the ship where it was, not at the arrival point",
+			inFlight.fault === null &&
+				near(inFlight.pos.x, seeded.pos.x) &&
+				near(inFlight.pos.y, seeded.pos.y) &&
+				near(inFlight.pos.z, seeded.pos.z),
+			JSON.stringify({
+				got: inFlight.pos,
+				want: seeded.pos,
+				fault: inFlight.fault,
+			}),
+		);
+		// **The `faceTheStar` guard, which nothing held.** It runs
+		// unconditionally at the end of the world setup, and a ship facing a
+		// star looks exactly like a ship that was — so a restore that lost its
+		// attitude would read as a working one.
+		check(
+			"and keeps the attitude it was saved with rather than facing the star",
+			seeded.orientation.every((v, i) => near(inFlight.orientation[i], v)),
+			JSON.stringify({ got: inFlight.orientation, want: seeded.orientation }),
+		);
+		// **A cruise save comes back at rest in normal flight, and that is the
+		// answer rather than a gap.** This row read `regime === "cruise"` for a
+		// round and went red: a leg is not a regime plus a throttle.
+		// `stepCruise` reads the target, the detour and `cruiseSpeedKms`, none
+		// of which the record carries, so the first frame disengaged and
+		// `exitVelocity` wrote the ship to a stop — the arm was restoring
+		// something that could not survive one step. The place is kept; the leg
+		// is charted.
+		check(
+			"a cruise save comes back at rest in normal flight, keeping its place",
+			inFlight.regime === "normal" &&
+				inFlight.throttle === 0 &&
+				near(inFlight.vel.x, 0) &&
+				near(inFlight.vel.y, 0) &&
+				near(inFlight.vel.z, 0),
+			JSON.stringify({
+				regime: inFlight.regime,
+				throttle: inFlight.throttle,
+				vel: inFlight.vel,
+			}),
+		);
+		await third.close();
 	} else {
 		await page.close();
 	}

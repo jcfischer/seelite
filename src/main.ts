@@ -2026,15 +2026,36 @@ class Game {
 					f.orientation[2],
 					f.orientation[3],
 				);
-				this.regime = f.regime;
-				this.throttle = f.throttle;
-				// **A cruise leg needs its own start time as well as its
-				// throttle.** `stepCruise` measures the leg from `legStartedAtS`,
-				// and a restore that left it at the field default would date the
-				// leg to the beginning of time. The engage sets both beside the
-				// regime; a restore has to set all three or it is restoring a
-				// regime rather than a leg.
-				if (f.regime === "cruise") this.legStartedAtS = this.world.gameTime;
+				// **A save taken in cruise resumes at rest in normal flight, at
+				// the position it was taken at.** The leg is lost; the place is
+				// not.
+				//
+				// This was `regime = f.regime` plus the throttle and the leg's
+				// start time, and the probe's in-flight arm showed the ship
+				// coming back in normal flight at zero anyway — because a leg is
+				// none of those three. `stepCruise` reads the target, the
+				// detour and `cruiseSpeedKms`, which are leg state this record
+				// does not carry; with them at their defaults the first frame
+				// disengages and `exitVelocity` writes the ship to a stop. So
+				// the arm was restoring something that could not survive one
+				// step, and reporting success.
+				//
+				// Carrying them is a real design question rather than four more
+				// fields — a resumed leg re-enters a guard sweep against bodies
+				// that have moved, and #30's rules are written for a leg that
+				// was engaged from where the ship is. It is charted, not
+				// guessed at here. And a saved cruise **velocity** must not be
+				// restored under any arm: it is the cruise law's, up to ~10⁶×
+				// combat speed, and handing it to normal flight is a ship that
+				// cannot be flown.
+				if (f.regime === "cruise") {
+					this.world.ship.vel = v3();
+					this.regime = "normal";
+					this.throttle = 0;
+				} else {
+					this.regime = f.regime;
+					this.throttle = f.throttle;
+				}
 				this.restoredAttitude = true;
 			}
 		} else {
@@ -9804,6 +9825,24 @@ if (query.has("model-viewer")) {
 			console.error(`save: slot "${DEFAULT_SLOT}" would not load`, error);
 		}
 	}
+	// **An explicit `?seed=` outranks a save, and it does not delete one.**
+	// A loaded envelope builds from `save.world.seed`, so the URL seed was read
+	// and then silently ignored: once any save existed at an origin — and
+	// IndexedDB is per-origin and survives in a real profile — every later
+	// `?seed=N` visit booted somebody else's galaxy with nothing said. A probe
+	// never met it, because each launch gets a fresh context.
+	//
+	// Asking for a seed is asking for that world, so the save is **set aside**
+	// rather than loaded: the record is untouched, and no store is attached to
+	// it below, which is D9's rule applied to a case D9 did not have in mind.
+	if (loaded && query.has("seed") && loaded.world.seed !== seedFromQuery()) {
+		saveFault =
+			`slot "${DEFAULT_SLOT}" holds seed ${loaded.world.seed}; ` +
+			`?seed=${seedFromQuery()} asked for another world, so the save was ` +
+			"left alone and not loaded";
+		console.warn(`save: ${saveFault}`);
+		loaded = null;
+	}
 	// **Inside the same fallback as the parse.** The comment above promises a
 	// failure never blocks the boot, and for a round `new Game(seed, loaded)`
 	// sat outside the guard: a record that parsed and then would not restore
@@ -9827,7 +9866,6 @@ if (query.has("model-viewer")) {
 	// to put it on yet: this game boots straight in. The flag ships in the
 	// schema from day one — which is what D7 asked for and the reason it is not
 	// waiting for that screen — and the screen reads it when there is one.
-	if (!loaded && query.has("permadeath")) game.choosePermadeath();
 	game.saveFault = saveFault;
 	// **D9's one promise: the bad record is never overwritten.** A store
 	// attached to the slot whose record just refused would write over it on the
@@ -9856,6 +9894,13 @@ if (query.has("model-viewer")) {
 		// open deliberately, and adding one here would be someone closing a hole
 		// the policy states it is not closing.
 		window.addEventListener("pagehide", () => game.saveFlush("quit"));
+		// **After the store, not before it.** `choosePermadeath` marks the save
+		// dirty and the call sat above the construction, where `saveStore` is
+		// still null — so the mark was dropped. The quit flush writes
+		// unconditionally now and would have caught it anyway, which is exactly
+		// the kind of second mechanism that makes the first one's absence
+		// invisible.
+		if (!loaded && query.has("permadeath")) game.choosePermadeath();
 	}
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends
