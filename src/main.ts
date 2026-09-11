@@ -110,9 +110,13 @@ import type {
 import { AudioFX } from "./audio";
 import { CombatPrototypeRig } from "./combat-rig";
 import {
+	COURSE_CUE_LABEL,
 	FLIGHT_FLOOR_LABELS,
 	SCANNER_RANGE_KM,
+	type CourseCue,
 	chargeReadsEmpty,
+	courseCue,
+	courseCueWidest,
 	flightFloorWidest,
 	type FloorCell,
 	type FloorTone,
@@ -146,7 +150,7 @@ import {
 	type CruiseGuidanceState,
 } from "./cruise-guidance";
 import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
-import { type Course, courseProgress } from "./galaxy-route";
+import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
 // and must not learn what a station is.
@@ -773,6 +777,15 @@ const GLASS_BOTTOM_FRACTION = 0.66;
  * this number.
  */
 const FLOOR_STRIP_HEIGHT_PX = 26;
+/**
+ * The band §8.3's course row occupies, directly above the strip's.
+ *
+ * **Reserved whether or not a course is set.** The row itself is absent with no
+ * course (#117 D2), but the docking director's clearance line is offset by this
+ * band unconditionally — a line that jumps 22 px the moment the player commits
+ * to a destination is a worse instrument than one sitting 22 px higher always.
+ */
+const FLOOR_COURSE_HEIGHT_PX = 22;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -1451,9 +1464,29 @@ class Game {
 	 * would let a probe assert a strip that was never painted, which is the
 	 * check-that-cannot-fail this repo has shipped once already.
 	 */
+	/**
+	 * The course chain as last planned, and what it was planned from.
+	 *
+	 * `courseRow` owns it; see that method for why a per-frame `planRoute` is
+	 * not an option. `chain: null` records a course that did not resolve, so a
+	 * corrupt one is searched for once rather than on every frame.
+	 */
+	private courseChainCache: {
+		key: string;
+		chain: {
+			destination: SystemRecord;
+			nextHop: SystemRecord | null;
+			remaining: number;
+		} | null;
+	} | null = null;
+
 	floorRender: {
 		cells: FloorCell[];
 		boxes: { label: string; x: number; y: number; width: number }[];
+		/** §8.3's course row as painted, or `null` where no course is set and
+		 *  the row was deliberately not drawn. */
+		courseRow: FloorCell | null;
+		courseBox: { x: number; y: number; width: number } | null;
 		baselineY: number;
 		glassBottomY: number;
 		/** What the strip was shrunk by to fit its widest reading in this
@@ -1666,6 +1699,10 @@ class Game {
 		CHARGE_REGEN_AU_PER_S,
 		SPOOL_S,
 	);
+	/** The widest reading §8.3's course row can take, on the handle for the same
+	 *  reason `floorWidest` is: a probe measuring the fit drives the run the
+	 *  layout was solved for rather than a copy of it. */
+	readonly courseWidest = courseCueWidest();
 	/** The wind-up, so a probe driving the strip to its widest reading asks the
 	 *  sim how long a spool is rather than assuming one. */
 	readonly spoolSeconds = SPOOL_S;
@@ -6937,6 +6974,20 @@ class Game {
 		return this.commander.fuelLy;
 	}
 
+	/**
+	 * And writable, for the same reason `chargeAu` is.
+	 *
+	 * §8.3's course row reddens on exactly the condition `planJump` refuses
+	 * (#117 D3), and the browser tier has to *reach* that condition to check
+	 * that the refusal paints rather than merely that a record says so. The
+	 * alternative is a probe reaching through the handle into `commander`,
+	 * which is a second path to one quantity and the thing every accessor on
+	 * this handle exists to prevent.
+	 */
+	set fuelLy(ly: number) {
+		this.commander.fuelLy = ly;
+	}
+
 	/** The tank's capacity, likewise. */
 	readonly fuelCapacityLy = JUMP_TANK_LY;
 
@@ -6962,6 +7013,30 @@ class Game {
 	setCourseTo(course: Course | null) {
 		this.course = course;
 		this.jumpNotice = "";
+	}
+
+	/**
+	 * Commit to a destination by system index, through `setCourse`.
+	 *
+	 * On the handle so the browser tier drives the **shipped** commit — the same
+	 * function the chart's "set course" button calls — rather than assembling a
+	 * `Course` literal beside its own copy of `COURSE_SCHEMA_VERSION`. A probe
+	 * with its own copy of a constant goes falsely red the day the module
+	 * changes it, and a probe with its own copy of a *commit* is not checking
+	 * the commit at all.
+	 *
+	 * Returns whether a course was set: `setCourse` refuses a destination
+	 * `planRoute` cannot reach.
+	 */
+	commitCourseTo(index: number): boolean {
+		const here = this.world.system.record;
+		const to = this.world.galaxy.systems.find(
+			(s) => s.galaxy === here.galaxy && s.index === index,
+		);
+		if (to === undefined) return false;
+		const course = setCourse(this.world.galaxy.systems, here, to);
+		this.setCourseTo(course);
+		return course !== null;
 	}
 
 	/**
@@ -8945,8 +9020,61 @@ class Game {
 		});
 	}
 
+	/**
+	 * §8.3's course row, from the course as it is now — or `null` for no row.
+	 *
+	 * **Re-derived, never remembered as a cursor**, for `galaxy-route.ts`'s own
+	 * reason: a `Course` is a destination and not a chain, so an off-plan jump
+	 * re-plans instead of desyncing.
+	 *
+	 * **But not re-derived every frame.** `courseProgress` runs `planRoute`, an
+	 * O(n²) Dijkstra over 256 systems; the chart already records that a getter
+	 * which looks free was one full search per read. The chain is cached against
+	 * the two things that can change it — which course, and where the ship is —
+	 * and the *affordability* is asked fresh on every call, because `planJump`
+	 * is a distance and a comparison and the tank moves without the ship
+	 * jumping.
+	 */
+	courseRow(): CourseCue | null {
+		const course = this.course;
+		if (!course) return null;
+		const here = this.world.system.record;
+		const key = `${course.galaxy}:${course.destinationIndex}:${here.index}`;
+		if (this.courseChainCache?.key !== key) {
+			const progress = courseProgress(this.world.galaxy.systems, course, here);
+			this.courseChainCache =
+				progress === null
+					? { key, chain: null }
+					: {
+							key,
+							chain: {
+								destination: progress.route.to,
+								nextHop: progress.nextHop?.system ?? null,
+								remaining: progress.remaining,
+							},
+						};
+		}
+		const chain = this.courseChainCache.chain;
+		// A course whose destination cannot be found is a corrupt save, not a
+		// state to draw — `parseCourse` is what refuses it, loudly, and this
+		// draws nothing rather than inventing a second answer.
+		if (chain === null) return null;
+		if (chain.nextHop === null)
+			return { kind: "arrived", destination: chain.destination.name };
+		return {
+			kind: "underway",
+			nextHop: chain.nextHop.name,
+			remaining: chain.remaining,
+			// **The gate itself, not a copy of it.** The cue reddens on exactly
+			// the condition that refuses the jump, so the row and the refusal it
+			// predicts cannot drift apart.
+			affordable: planJump(here, chain.nextHop, this.commander.fuelLy).ok,
+		};
+	}
+
 	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
 		const cells = this.floorCells();
+		const courseRow = courseCue(this.courseRow());
 
 		// **Fitted to the widest reading the strip can take, not to this one.**
 		// Sized to the live values it re-centred whenever a digit changed, and
@@ -8969,7 +9097,20 @@ class Game {
 				label,
 				value: this.floorWidest[label],
 			}));
-			const atOne = floorRunWidths(ctx, widestCells, 1).total;
+			// **Both runs on the floor are fitted, not just the strip.** The
+			// course row is centred on the same axis and drawn at the same
+			// scale, so a solve that ignored it would fit one instrument and
+			// clip the other — which is #92's own failure with a second run
+			// added to the floor.
+			const widestCourse = [
+				{ label: COURSE_CUE_LABEL, value: this.courseWidest },
+			];
+			const runAt = (scale: number) =>
+				Math.max(
+					floorRunWidths(ctx, widestCells, scale).total,
+					floorRunWidths(ctx, widestCourse, scale).total,
+				);
+			const atOne = runAt(1);
 			const solved = Math.max(
 				FLOOR_MIN_SCALE,
 				Math.min(1, available / Math.max(1, atOne)),
@@ -8977,7 +9118,7 @@ class Game {
 			// Rounded down to a step so a one-pixel viewport change does not
 			// re-lay the strip out at an imperceptibly different size.
 			const stepped = Math.max(FLOOR_MIN_SCALE, Math.floor(solved * 50) / 50);
-			const fitted = floorRunWidths(ctx, widestCells, stepped).total;
+			const fitted = runAt(stepped);
 			this.floorFit = {
 				width: w,
 				scale: stepped,
@@ -9017,11 +9158,46 @@ class Game {
 			ctx.fillText(cell.value, x + labelWidths[i] + labelGap, baselineY);
 			x += widths[i] + cellGap;
 		}
-		ctx.restore();
+		// §8.3's course row, above the strip and on the same centre axis.
+		//
+		// **Drawn from the same run-measuring pass as the strip**, so the two
+		// cannot come to be laid out two ways; it is one cell in the strip's own
+		// label/value/tone grammar, in its own band, rather than a fifth cell
+		// (#117 D1). With no course it is absent, and absence here moves nothing
+		// below it (#117 D2).
+		let courseBox: { x: number; y: number; width: number } | null = null;
+		if (courseRow !== null) {
+			const run = floorRunWidths(ctx, [courseRow], scale);
+			const courseBaselineY =
+				glassBottomY -
+				FLOOR_STRIP_HEIGHT_PX -
+				FLOOR_COURSE_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
+			const courseX = (w - run.total) / 2;
+			ctx.save();
+			ctx.textAlign = "left";
+			ctx.font = labelFont;
+			ctx.fillStyle = FLOOR_LABEL_FILL;
+			ctx.fillText(courseRow.label, courseX, courseBaselineY);
+			ctx.font = valueFont;
+			ctx.fillStyle = FLOOR_TONE_FILL[courseRow.tone];
+			ctx.fillText(
+				courseRow.value,
+				courseX + run.labelWidths[0] + labelGap,
+				courseBaselineY,
+			);
+			ctx.restore();
+			courseBox = { x: courseX, y: courseBaselineY, width: run.total };
+		}
 
 		this.floorRender = {
 			cells,
 			boxes,
+			// **Written by the draw, from what the draw drew.** `null` is the
+			// row that was not painted, which is the state #117 D2 chose — and
+			// a record assembled beside the draw would let a probe assert a
+			// course row that never landed.
+			courseRow,
+			courseBox,
 			baselineY,
 			glassBottomY,
 			scale,
@@ -9242,12 +9418,17 @@ class Game {
 		// pilot could only half read, which is the one line §3 says must carry its
 		// reason.
 		// Above the strip, not 16 px off the glass bottom, which is inside it.
-		// Derived from `FLOOR_STRIP_HEIGHT_PX` rather than restated, so raising
-		// the strip cannot leave this line sitting on top of it.
+		// Derived from the floor's own bands rather than restated, so raising
+		// the strip — or the course row #117 put above it — cannot leave this
+		// line sitting on top of either. The course band is subtracted whether
+		// or not a course is set: see `FLOOR_COURSE_HEIGHT_PX`.
 		ctx.fillText(
 			clearanceText,
 			cx,
-			h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX - 16,
+			h * GLASS_BOTTOM_FRACTION -
+				FLOOR_STRIP_HEIGHT_PX -
+				FLOOR_COURSE_HEIGHT_PX -
+				16,
 		);
 		ctx.textAlign = "left";
 		ctx.restore();

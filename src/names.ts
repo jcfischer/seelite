@@ -96,6 +96,24 @@ const randByte = (rand: () => number): number => Math.floor(rand() * 256);
  * and compared against a measured sample — so the next reader gets a checked
  * number instead of a third plausible one.
  */
+/**
+ * The longest name `systemName` can return, and the shortest.
+ *
+ * **Derived from the draw rather than measured off a galaxy.** A name is 3 or 4
+ * pairs, each contributing at most two characters, so four pairs of two is the
+ * ceiling; the guard loop below runs only while the name is still under two
+ * characters, so it can never extend a name that already has its pairs. §9.6 of
+ * `galaxy-generation.md` states the same 2-8 band from the other direction.
+ *
+ * It is exported because a *presentation* tier needs it: `hud-and-scanner.md`
+ * §5.1 lays an instrument out against its widest reachable reading, and a cell
+ * carrying a system name has no such reading without this. `tests/course-cue.test.ts`
+ * sweeps every system in all eight galaxies against it, and asserts the ceiling
+ * is actually reached — a bound nothing touches is a bound nobody checked.
+ */
+export const SYSTEM_NAME_MAX_CHARS = 8;
+export const SYSTEM_NAME_MIN_CHARS = 2;
+
 export function systemName(rand: () => number): string {
 	const pairCount = rand() < 0.5 ? 3 : 4;
 	let name = "";

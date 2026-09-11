@@ -850,7 +850,15 @@ Wiring it into an actual save file belongs to
 
 The next hop and the jumps remaining belong on the flight floor or the
 Navigation console — a course the player cannot see from the cockpit is a course
-they will forget they set. #69 owns the placement.
+they will forget they set.
+
+**Settled by [#117](https://github.com/jcfischer/seelite/issues/117): the flight
+floor, as a row of its own above §5.1's strip.** The line above said "#69 owns
+the placement" long after #69 shipped the docking cue and owned nothing here.
+`hud-and-scanner.md` §5.2 is the contract; what it settles beyond the placement
+is that the row is **absent** with no course, that it carries a *tone* and not a
+sentence when the tank cannot pay for the next hop, and that arriving does not
+clear the course.
 
 ---
 

@@ -9,8 +9,16 @@ provide the simulation surfaces this visual contract will eventually consume.
 
 This is the cockpit-first language for a pilot flying normal, assist-off, cruise,
 targeting, and docking states. It does not replace #21's flight model, mouse
-controls, or target-marker math, and it does not implement combat or #11's
-galaxy map.
+controls, or target-marker math, and it does not implement combat.
+
+**The galaxy map is not excluded, it is owned elsewhere.** This paragraph read
+"it does not implement #11's galaxy map" while #11 was closed and the chart
+mounted — so a reader learned the map was out of scope and not who has it. The
+chart is [#96](https://github.com/jcfischer/seelite/issues/96), on the left
+console's sibling tab (§5); the finder is
+[#115](https://github.com/jcfischer/seelite/issues/115). What this spec *does*
+own of the map is §5.2 below: `galaxy-map.md` §8.3's course cue is a cockpit
+instrument, and #117 put it on the floor.
 
 **It does own the market**, since #70. The original text of this paragraph
 declined it while `economy-trade.md` §11 was handing it here, and the screen was
@@ -243,6 +251,65 @@ The comment claimed that ownership before the code had it — the strip placed
 itself at `glassBottomY - 9` with a fixed 13 px font while only the clearance
 line read the constant, so raising the type would have slid the strip under the
 line without touching the number it was supposedly anchored to.
+
+
+### 5.2 The course row
+
+Built under [#117](https://github.com/jcfischer/seelite/issues/117), which took
+`galaxy-map.md` §8.3's obligation — "the next hop and the jumps remaining belong
+on the flight floor or the Navigation console" — and picked the floor.
+
+**A row of its own, above §5.1's strip, not a fifth cell in it.** The Navigation
+console was read out on §8.3's own argument: a console is read by turning the
+head away from the glass, which is exactly the posture in which a course is
+forgotten. A fifth cell was read out on width. §5.1's strip is laid out against
+its widest *reachable* reading and the fit is memoised for the width it was
+solved at; a cell carrying a system name costs that bound about twelve
+characters — permanently if the cell is dormant with no course, and as a reflow
+of four already-solved cells if it is absent. A row of its own pays neither.
+
+It keeps the strip's grammar — a label, a value and a §4 tone, measured by the
+same run-width pass and centred on the same axis — because two runs on one floor
+authored two ways is how a floor comes to look like two instruments. The
+`FLOOR_COURSE_HEIGHT_PX` band above the strip is reserved **whether or not a
+course is set**, and §3's clearance line is offset by it unconditionally: a line
+that jumps the moment the player commits to a destination is a worse instrument
+than one sitting a row higher always.
+
+| state | reads | tone |
+|---|---|---|
+| no course | *nothing is drawn* | — |
+| underway | `LAVEIAN 3 jumps`, singular on the last leg | passive |
+| underway, tank short | the same reading | **refused** |
+| arrived | `LAVEIAN arrived` | confirmed |
+
+**Absence, not a dormant slot.** §5 calls the floor "the minimum that keeps a
+hull-hidden cockpit flyable"; a permanent field reading `NO COURSE` is not that,
+and the reflow objection that makes a dormant slot attractive on the strip does
+not apply to a row of its own.
+
+**There is no unreachable state, because the generator cannot produce one.**
+§5 of `galaxy-generation.md` guarantees same-galaxy connectivity and §8.2 of
+`galaxy-map.md` makes a course envelope-matched to its galaxy, so
+`courseProgress` returns `null` only on a corrupt save — which `parseCourse`
+refuses loudly, and which this row draws nothing for rather than inventing a
+second answer. What *is* reachable is a next hop the hyperspace tank cannot pay
+for, and there the row **reddens and says nothing extra**: `planJump` owns those
+words and §3's prompt prints them, and one quantity spelled in two places is how
+the glass comes to say two things about one fact.
+
+**Arriving does not clear the course.** Ratified as shipped rather than changed:
+the course survives the last jump, `courseProgress` reports it, and the jump key
+already answers "course complete — set another on the galaxy chart". A course is
+player intent under `persistent-world-state.md` §7, and intent is not cancelled
+by being satisfied.
+
+**The row is bounded because a system name is.** `systemName` draws three or
+four pairs of at most two characters and its guard loop extends only a name
+still under two, so `SYSTEM_NAME_MAX_CHARS` is 8 — and the jump count is
+reserved at two digits against a longest measured route of 13.
+`tests/course-cue.test.ts` sweeps both against the real generator, which is what
+keeps the bound a measurement rather than a number chosen to be safe.
 
 ## 6. Responsive behaviour
 
