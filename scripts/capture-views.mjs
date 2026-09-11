@@ -57,7 +57,7 @@ import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
-	guardedOrigin,
+	guardedTree,
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
@@ -144,7 +144,7 @@ async function applyCaptureQuality(page) {
 let currentSeed = null;
 async function ensureSeed(page, seed) {
 	if (currentSeed === seed) return;
-	await page.goto(`${ORIGIN}/?seed=${seed}`, { waitUntil: "load" });
+	await page.goto(`${SERVING}/?seed=${seed}`, { waitUntil: "load" });
 	await bootedGame(page);
 	await applyCaptureQuality(page);
 	await page.evaluate(() => window.__rememberBootPosition());
@@ -225,7 +225,7 @@ const PLACERS = {
 		// **It navigates**, which is why the set puts it last: every view above
 		// needs the game and this one needs the game not to be there. The
 		// workbench is query-gated and constructs no `Game` at all.
-		await page.goto(`${ORIGIN}/?model-viewer=station`, { waitUntil: "load" });
+		await page.goto(`${SERVING}/?model-viewer=station`, { waitUntil: "load" });
 		await page.waitForSelector("#model-viewer canvas");
 		// **The fifth element is destructured, and it was not.** `variant` was
 		// passed in the array and read as a free identifier inside the browser,
@@ -336,21 +336,34 @@ async function rebuildSheet(out) {
 	return runs;
 }
 
-// One file per surface the set is pointed at, so an edit to any of them cannot
-// be captured green against a dev server serving a different checkout.
-//
-// Two of the seven views' subjects are missing from this list, and that is a
-// gap rather than a choice. The guard fingerprints a file by its top-level
-// numeric constants and refuses one that has none — which `cockpit.ts`,
-// `live-cockpit.ts`, `planet-shaders.ts` and `planet-classes.glsl.ts` all are.
-// So the cockpit interior and the planet shaders can change under a stale
-// server and this capture will not notice. #105 is where the cockpit's own
-// constants land; this list should gain it there.
-await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/ship-mesh.ts",
-	"src/station-mesh.ts",
-]);
+/**
+ * Which tree the server is serving — refused if it is not this one, and kept,
+ * because the sheet prints it.
+ *
+ * **The value is the point here and not only the refusal.** A probe asserts
+ * numbers a later reader can re-derive; a contact sheet is looked at by a
+ * person with no way to tell which checkout the pixels came from. #123's
+ * wrong-tree capture was caught by an arithmetic tell in a *probe*, not by
+ * anyone looking at the sheet it produced. So the declaration goes into the
+ * manifest and onto the sheet beside this process's own git ref.
+ *
+ * **It is a record of provenance, not a cross-check.** `view-set.mjs`'s
+ * `servedBy` owns that argument; what matters here is the consequence for this
+ * script. The guard throws unless the declared root is this tree, so a live run
+ * cannot show the two disagreeing — which is only true while the *checked*
+ * origin and the *navigated* one are the same. They were not for a round:
+ * `guardedTree` resolves `PROBE_URL` and this took only the declaration from
+ * it, so with that variable set the guard validated one server and the frames
+ * came from another, with the validated server's root stamped on them. That is
+ * #123's own failure rebuilt out of its fix. `SERVING` is the checked origin
+ * and every navigation goes there.
+ *
+ * There is no file list any more — the guard used to fingerprint one, and a
+ * module with no top-level numeric constants could not be pointed at, which for
+ * this script meant the cockpit interior and the planet shaders. A declaration
+ * is a property of the server, so that gap closed with it.
+ */
+const { origin: SERVING, served } = await guardedTree(ORIGIN);
 
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
@@ -389,7 +402,7 @@ page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+await page.goto(`${SERVING}/?seed=${SEED}`, { waitUntil: "load" });
 await bootedGame(page);
 await applyCaptureQuality(page);
 currentSeed = SEED;
@@ -532,6 +545,13 @@ if (fault) {
 const manifest = {
 	label: LABEL,
 	gitRef: REF,
+	/**
+	 * The tree the *server* said it was serving, beside `gitRef`, which is the
+	 * tree this *process* was run from. Two fields rather than one because the
+	 * failure they exist for is exactly the two disagreeing — a capture script
+	 * run in one checkout against a dev server left running in another.
+	 */
+	served,
 	capturedAt: new Date().toISOString(),
 	renderer,
 	seed: SEED,

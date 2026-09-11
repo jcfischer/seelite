@@ -873,7 +873,7 @@ const esc = (s) =>
  * only ever be exercised against the one real set is a rule nothing has watched
  * fail. It defaults to `VIEWS`, so every caller but a test passes one argument.
  *
- * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
+ * @param {Array<{label: string, gitRef: string, capturedAt: string, renderer: string, seed: number, served?: import("./tree-declaration.mjs").TreeDeclaration, views: Array<{name: string, file: string, gameTime?: number}>}>} runs
  * @param {ReadonlyArray<{name: string, what: string, covers: number[]}>} [views]
  * @returns {string} a standalone HTML page
  */
@@ -913,10 +913,54 @@ export function contactSheet(runs, views = VIEWS) {
 		if (!times.length) return "";
 		return ` · clock ${Math.min(...times).toFixed(1)}–${Math.max(...times).toFixed(1)}s`;
 	};
+	/**
+	 * Which tree the frames were actually taken of.
+	 *
+	 * `gitRef` above is the ref of the checkout the capture *script* ran in, and
+	 * for #123's failure those are the two different things: a dev server left
+	 * running in a sibling worktree served a whole other branch's hulls into a
+	 * sheet labelled with this one's ref, and nobody looking at it could have
+	 * known. The server's own declaration is what is printed here.
+	 *
+	 * **It is provenance, not a cross-check** — `capture-views.mjs` carries
+	 * the argument, and this file claimed the detection for a round. What
+	 * closes #123 is the *refusal*: the guard throws unless the declared root
+	 * is the capture's own tree, so a live run cannot reach the disagreement
+	 * this line would show. What the line buys is that a sheet on disk names
+	 * the checkout its pixels came from, which is what #123's sheet could not.
+	 *
+	 * **The root is always shown, and the branch is the extra.** It was the
+	 * other way round for a round — `branch@head` where git could be read, with
+	 * the root only in a hover title — and that renders two worktrees of the
+	 * same branch at the same commit as an identical string, which is precisely
+	 * the pair #296 demonstrated the guard on. A path is what tells two
+	 * checkouts apart; a ref is what tells two builds apart, and the sheet needs
+	 * both.
+	 *
+	 * **Absent is a state, not an error.** A `before` half captured at a base
+	 * commit was written by a `capture-views` that did not record this, and a
+	 * sheet that refused such a run could never show a before/after for the
+	 * change that introduced it. It says so rather than leaving a blank that
+	 * reads as agreement.
+	 */
+	const servedBy = (run) => {
+		const s = run.served;
+		if (!s) return "served: not recorded";
+		// Both fields gated together, because they are read together and the
+		// declaration emits all of git or none of it. Keying on `branch` alone
+		// while reading `head` prints `main@undefine` the day that stops being
+		// true, which the JSDoc type above already allows.
+		const ref =
+			s.branch && s.head
+				? ` (${s.branch}@${String(s.head).slice(0, 7)}${s.dirty ? "-dirty" : ""})`
+				: "";
+		return `served: ${s.root}${ref}`;
+	};
 	const head = runs
 		.map(
 			(r) =>
-				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span></th>`,
+				`<th><b>${esc(r.label)}</b><span>${esc(r.gitRef)} · ${esc(r.renderer)}${esc(clockSpan(r))}</span>` +
+				`<span>${esc(servedBy(r))}</span></th>`,
 		)
 		.join("");
 	const rows = views

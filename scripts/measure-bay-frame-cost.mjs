@@ -569,11 +569,7 @@ const apertureFraction = (page, subjectId) =>
 		return { visible, whole, pixels: w * h };
 	}, subjectId);
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/frame-attribution.ts",
-	"src/station-interior-mesh.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 
 /**

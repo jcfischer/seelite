@@ -21,7 +21,7 @@ const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const VIEWPORT = { width: 1440, height: 900 };
 const SAMPLES = Number(process.env.SAMPLES ?? 10);
 
-await guardedOrigin(ORIGIN, ["src/ship-surface.ts", "src/station-mesh.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium({
 	headless: false,
 	args: ["--disable-gpu-vsync", "--disable-frame-rate-limit"],

@@ -84,10 +84,7 @@ const WATCH_WEBGL = () => {
 	);
 };
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/frame-attribution.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: 1200, height: 760 } });
 const t = tally();

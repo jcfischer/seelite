@@ -75,10 +75,7 @@ const AT_S = 2;
 const FRAMES = 30;
 const STEP_S = 1 / 60;
 
-await guardedOrigin(ORIGIN, [
-	"src/station-mesh.ts",
-	"src/station-interior-mesh.ts",
-]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

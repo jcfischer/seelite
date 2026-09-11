@@ -406,11 +406,7 @@ async function measureHullChase(page) {
 	);
 }
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/light-rig.ts",
-	"src/main.ts",
-	"src/ship-mesh.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const t = tally();

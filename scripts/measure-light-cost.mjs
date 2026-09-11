@@ -156,11 +156,7 @@ const ms = (xs) => xs.map((r) => r.ms);
 // The guard's *return* is what gets navigated, not the raw `ORIGIN` — the
 // probes do it that way, and measuring a target the guard did not resolve is a
 // silent way to measure a different server.
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/light-rig.ts",
-	"src/output-stage.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 // `deviceScaleFactor: 2` and not the default 1: the drawing buffer is what the
 // fill-rate-bound terms are paid over, and the machine this targets has a

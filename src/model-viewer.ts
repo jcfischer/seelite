@@ -170,19 +170,6 @@ const STATION_FAMILY: ModelFamily = {
 
 const FAMILIES: ModelFamily[] = [SHIP_FAMILY, STATION_FAMILY];
 
-/**
- * The workbench's only top-level numeric constant, and it exists for that.
- *
- * `probe-model-viewer.mjs` calls `guardedOrigin(ORIGIN, ["src/model-viewer.ts"])`,
- * and `probe-guard.mjs` proves the dev server is serving *this* checkout by
- * comparing the top-level numeric literals it can parse out of that file. All
- * of the workbench's tuning lives inside `mountModelViewer`, so this is the
- * only literal it can see; without it the guard throws
- * "declares no top-level numeric constants, so there is nothing to compare".
- * Read the guard's own rule before deleting this as unused.
- */
-export const MODEL_VIEWER_VERSION = 1;
-
 type ViewerState = {
 	asset: string;
 	variant: string;

@@ -144,10 +144,7 @@ const CAPTURE = () => {
 	};
 };
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/output-stage.ts",
-	"src/main.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const page = await browser.newPage({ viewport: VIEWPORT });
 const t = tally();

@@ -281,10 +281,7 @@ export interface ConsoleEquipmentScreen {
  *
  * Named rather than written twice, because the gate and its inverse below both
  * carry it and a change to one that missed the other would shift the whole
- * catalogue by a tech level with no test naming the number. It is also the
- * module's only top-level constant, which is what lets `probe-guard`
- * fingerprint it — a probe measuring this module's output could not name it
- * while every number in it was buried in an expression.
+ * catalogue by a tech level with no test naming the number.
  */
 export const UNIVERSAL_TL_BONUS = 3;
 

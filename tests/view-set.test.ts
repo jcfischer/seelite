@@ -17,6 +17,7 @@
  * the map with no view pointed at it would be judged on somebody else's frame.
  */
 import { describe, expect, test } from "bun:test";
+import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 import { makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
 import {
@@ -34,6 +35,10 @@ import {
 
 /** A manifest as `capture-views.mjs` writes one, for a run that captured everything. */
 type ViewShot = { name: string; file: string; gameTime?: number };
+/** The producer's own type, imported rather than restated — `allowJs` resolves
+ *  the JSDoc typedef, so a shape change in the plugin goes red here. */
+type Served = TreeDeclaration;
+
 const fullRun = (
 	label: string,
 ): {
@@ -42,6 +47,7 @@ const fullRun = (
 	capturedAt: string;
 	renderer: string;
 	seed: number;
+	served?: Served;
 	views: ViewShot[];
 } => ({
 	label,
@@ -49,6 +55,12 @@ const fullRun = (
 	capturedAt: "2026-08-28T12:00:00.000Z",
 	renderer: "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
 	seed: SEED,
+	served: {
+		root: "/Users/someone/work/seelite",
+		head: "9f3c1a2b4d5e6f708192a3b4c5d6e7f809a1b2c3",
+		branch: "main",
+		dirty: false,
+	},
 	views: VIEWS.map((v, i) => ({
 		name: v.name,
 		file: `${label}/${v.name}.png`,
@@ -442,6 +454,60 @@ describe("the contact sheet", () => {
 		const extra = fullRun("after");
 		extra.views.push({ name: "improvised", file: "after/improvised.png" });
 		expect(() => contactSheet([extra])).toThrow("improvised");
+	});
+
+	/**
+	 * #123's capture ran against a dev server in a sibling worktree, and the
+	 * sheet it produced carried this checkout's ref over another branch's hulls.
+	 * The ref names the tree the *script* ran in; this names the tree the
+	 * *server* declared.
+	 *
+	 * **Provenance, not a detection**, which this said for a round. The guard
+	 * refuses a server whose root is not the capture's own tree, so a live run
+	 * cannot produce the disagreement — the fixture below fabricates a root
+	 * this machine has never had. What the line is for is that a sheet on disk
+	 * names the checkout its pixels came from.
+	 */
+	test("names the tree the server declared, beside the ref the script ran at", () => {
+		const html = contactSheet([fullRun("before")]);
+		expect(html).toContain("abc1234");
+		// The **root** first and the ref in parentheses. Both, and in that order:
+		// the PR's own demonstration is two worktrees of one branch at one
+		// commit, which a ref alone renders as an identical string.
+		expect(html).toContain(
+			"served: /Users/someone/work/seelite (main@9f3c1a2)",
+		);
+	});
+
+	test("says a dirty served tree was dirty", () => {
+		const run = fullRun("before");
+		run.served = { ...run.served, root: "/w/seelite", dirty: true };
+		expect(contactSheet([run])).toContain(
+			"served: /w/seelite (main@9f3c1a2-dirty)",
+		);
+	});
+
+	/**
+	 * The `before` half of any pair spanning #296 was captured by a script that
+	 * did not record this. A sheet that refused those could never show the
+	 * before/after for the change that introduced the field — so it is absent
+	 * rather than wrong, and says so instead of leaving a blank that reads as
+	 * agreement.
+	 */
+	test("says so rather than refusing a run captured before the field existed", () => {
+		const old = fullRun("before");
+		old.served = undefined;
+		const html = contactSheet([old]);
+		expect(html).toContain("served: not recorded");
+		expect(html).toContain("abc1234");
+	});
+
+	/** Git is optional in the declaration — an export with no `.git` is still a
+	 *  tree worth naming — so the root carries it when the branch cannot. */
+	test("falls back to the root path where the server could not read git", () => {
+		const run = fullRun("before");
+		run.served = { root: "/w/seelite-296" };
+		expect(contactSheet([run])).toContain("served: /w/seelite-296");
 	});
 
 	test("refuses no runs at all rather than emitting an empty sheet", () => {

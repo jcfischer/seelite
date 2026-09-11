@@ -25,10 +25,7 @@ const VIEWPORT = { width: 1440, height: 900 };
 const BLOCKS = 8;
 const FRAMES_PER_BLOCK = 40;
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/frame-attribution.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
 await page.goto(`${origin}/?seed=${SEED}`);

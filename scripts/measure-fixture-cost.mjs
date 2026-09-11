@@ -49,7 +49,7 @@ const FINISHES = [
 ];
 const SAMPLES = Number(process.env.SAMPLES ?? 8);
 
-await guardedOrigin(ORIGIN, ["src/ship-surface.ts", "src/station-mesh.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium({
 	headless: false,
 	args: ["--disable-gpu-vsync", "--disable-frame-rate-limit"],

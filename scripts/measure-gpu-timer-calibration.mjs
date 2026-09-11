@@ -74,10 +74,7 @@ const REPS = Number(process.env.REPS ?? 12);
 const SPAN_FRAMES = Number(process.env.SPAN_FRAMES ?? 60);
 const KS = Object.freeze([1, 2, 3, 4]);
 
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/frame-attribution.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 
 /**

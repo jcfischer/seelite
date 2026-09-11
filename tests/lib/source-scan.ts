@@ -92,3 +92,63 @@ export const srcFiles = (): string[] =>
 	(readdirSync(repoPath("src"), { recursive: true }) as string[])
 		.filter((f) => f.endsWith(".ts"))
 		.map((f) => `src/${f}`);
+
+/**
+ * Every `.mjs` script under `scripts/`, as repo-relative paths.
+ *
+ * Recursive, and beside {@link srcFiles} for its reason: a flat read plus a
+ * hardcoded `scripts/lib` is complete only until somebody adds a directory,
+ * and it fails open in exactly the direction a new script arrives from.
+ */
+export const scriptFiles = (): string[] =>
+	(readdirSync(repoPath("scripts"), { recursive: true }) as string[])
+		.filter((f) => f.endsWith(".mjs"))
+		.map((f) => `scripts/${f}`);
+
+/**
+ * Does `source` call any of `names` with more than one argument?
+ *
+ * **A balanced scan from the call's own open paren, not `\(\[^)]*,`.** That
+ * pattern stops at the first `)`, so `guardedOrigin(originOf(x), ["a.ts"])`
+ * reads as single-argument — and a nested call is the shape a leftover
+ * argument is most likely to hide behind. JavaScript swallows an extra
+ * argument in silence, so a caller left with a stale one is bit-identical at
+ * run time to a cleaned one: nothing but a scan of the text can tell them
+ * apart.
+ *
+ * Here rather than inside the one test that wants it (#296 review): a depth
+ * counter over source text is general machinery, and this file is where this
+ * suite keeps that.
+ */
+export function callsWithArgument(source: string, names: string[]): boolean {
+	const head = new RegExp(`\\b(?:${names.join("|")})\\s*\\(`, "g");
+	for (const m of source.matchAll(head)) {
+		let depth = 0;
+		let quote = "";
+		for (let i = m.index + m[0].length - 1; i < source.length; i++) {
+			const c = source[i];
+			// A quoted span is text, not structure. Without this,
+			// `guardedOrigin("a,b")` reads as two arguments — and the escape
+			// check is what stops a backslash-escaped quote closing the span early.
+			if (quote) {
+				if (c === "\\") i++;
+				else if (c === quote) quote = "";
+				continue;
+			}
+			if (c === '"' || c === "'" || c === "`") quote = c;
+			else if ("([{".includes(c)) depth++;
+			else if (")]}".includes(c)) {
+				if (--depth === 0) break;
+			} else if (c === "," && depth === 1) {
+				// **A trailing comma is not an argument.** biome wraps a long
+				// single-argument call and puts one before the closing paren, so
+				// a scan without this reads formatting as a defect — and the only
+				// reason no row trips it today is that no such call happens to be
+				// wrapped.
+				if (/^\s*\)/.test(source.slice(i + 1))) continue;
+				return true;
+			}
+		}
+	}
+	return false;
+}

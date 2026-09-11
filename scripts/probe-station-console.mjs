@@ -161,17 +161,7 @@ function measureConsole() {
 	};
 }
 
-// All three modules whose output this probe asserts on. `station-console.ts`
-// was left out for a round on the premise that it declares no top-level
-// numbers — true at the time and beside the point: the guard is about tree
-// identity, and a stale bundle of the module that computes every row count,
-// gate and reason here would have passed. It now names `UNIVERSAL_TL_BONUS`,
-// which is §4.1's gate and the number this probe's equipment checks turn on.
-await guardedOrigin(ORIGIN, [
-	"src/state-gallery.ts",
-	"src/market.ts",
-	"src/station-console.ts",
-]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

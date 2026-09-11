@@ -33,17 +33,7 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 
-/*
- * Both modules, and **what the guard can and cannot see** — the same caveat
- * `probe-ship-visuals.mjs` records. probe-guard fingerprints a module by its
- * top-level numeric constants, so what `cockpit-surface.ts` contributes is
- * `COCKPIT_PANEL_KM` and `COCKPIT_MAP_SIZE`. `COCKPIT_PLATING`,
- * `COCKPIT_FINISHES`, `COCKPIT_LAMP` and `COCKPIT_KEY_LIGHT` are all nested and
- * the guard reads none of them: a dev server serving another checkout whose
- * profile or lamp figures differ would still pass. `COCKPIT_CHAMFER_KM` is
- * top-level and is read.
- */
-await guardedOrigin(ORIGIN, ["src/main.ts", "src/cockpit-surface.ts"]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

@@ -9,27 +9,7 @@ const VIEWPORTS = [
 	{ name: "narrow", width: 390, height: 844 },
 ];
 
-// Both modules, because this probe now asserts hull geometry as well as the
-// renderer around it. Guarding on `main.ts` alone meant an edit to
-// `ship-mesh.ts` could be probed green against a stale dev server serving a
-// different checkout — the exact failure `probe-guard.mjs` exists to prevent.
-/*
- * #101's surface, and **what the guard can and cannot see**.
- *
- * probe-guard fingerprints a module by its top-level numeric constants, so what
- * these two add is `SHIP_PANEL_KM`, `PLATE_TEXTURE_SIZE` and
- * `SEAM_HALF_WIDTH_PX` — the plate size on both sides of the divide, and the
- * groove width. `SHIP_PLATING` and `HULL_QUALITY` are nested and the guard reads
- * neither: a dev server serving another checkout whose profile figures differ
- * would still pass. Written down rather than implied, because a guard list is
- * exactly the kind of thing a reader takes as a coverage claim.
- */
-await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/ship-mesh.ts",
-	"src/ship-surface.ts",
-	"src/surface.ts",
-]);
+await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 

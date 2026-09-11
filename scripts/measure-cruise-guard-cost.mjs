@@ -16,11 +16,7 @@ import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const BLOCKS = 12;
 const FRAMES_PER_BLOCK = 20;
-const origin = await guardedOrigin(ORIGIN, [
-	"src/main.ts",
-	"src/cruise.ts",
-	"src/sim.ts",
-]);
+const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await page.goto(`${origin}/?seed=42`);

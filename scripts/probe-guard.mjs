@@ -25,30 +25,39 @@
  *
  * ## What it compares
  *
- * Top-level `const NAME = <number>` declarations, between the file on disk and
- * the module the server hands back. Vite strips types and comments but leaves
- * identifiers and numeric literals alone, so these survive transformation — and
- * they are exactly what a probe's expectations are usually written against.
+ * The **identity of the tree**, declared by the server itself. The vite plugin
+ * in `scripts/lib/tree-declaration.mjs` serves the absolute path of its own
+ * project root at `/__seelite/tree`, and this compares that against the root
+ * this module sits in. One fetch, one string comparison, and the refusal names
+ * the offending checkout.
  *
- * It cannot catch every divergence, and does not claim to: two checkouts that
- * differ only inside a function body will pass, and so will one whose sole change
- * is inside a file the guard was not pointed at. What it does catch is the case
- * that actually happened — a whole other checkout on the port — and it catches it
- * on every probe that calls it.
+ * It used to compare **top-level numeric constants** between the file on disk
+ * and the module the server handed back, and that could not answer the
+ * question. **The argument and its measurement are not restated here** —
+ * `scripts/lib/tree-declaration.mjs` owns them beside the plugin, and #123 has
+ * the original. What is worth knowing at this end is the shape: the fingerprint
+ * was a subset of the file that two checkouts share by construction, so it
+ * could not separate them, and it did not.
  *
- * "Every probe" is load-bearing and was not true when this was written: it guarded
- * three of the twenty-one that talk to a dev server, while the note above claimed
- * coverage. A safeguard that protects a seventh of the runs and reads as universal
- * is its own kind of false confidence.
+ * Two consequences worth knowing. The `files` argument is gone, and with it the
+ * refusal for a module declaring no top-level numeric constants — identity is a
+ * property of the server, not of any file, so no module is unguardable any
+ * more. And the check now rests on the server's cooperation: a plain `vite`
+ * with the plugin removed declares nothing and is refused, which is the right
+ * direction to fail in.
  *
- * The one caller without a guard is `probe-all`, and deliberately: given no target
- * it starts its own Vite server from this directory, which cannot be the wrong
- * tree, and given one it spawns probes that each carry this check.
+ * What it does not catch: a server on the **right** tree serving a **stale**
+ * module out of its own cache. That is a different question from identity and
+ * is charted separately (#297) — but read it as ground this change **gives
+ * up**, not as ground nobody held. The fingerprint fetched each named file and
+ * refused a mismatch, so a stale `src/units.ts` whose top-level constant had
+ * moved was refused by it. It said "still" here for a round, which scopes #297
+ * as new work rather than as restoring a check this merge drops.
  */
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 
 /**
  * The scheme-and-host of a probe URL, without `new URL`.
@@ -61,96 +70,118 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const originOf = (u) => u.replace(/^(https?:\/\/[^/]+).*$/, "$1");
 
 /**
- * `const NAME = 1.5;` / `const NAME = -3;` / `const NAME = 6e3;` — top level,
- * numeric only.
+ * The tree this module is part of, resolved.
  *
- * The exponent branch is required, not defensive: esbuild serves `6000` as
- * `6e3`, so a pattern without it reads the served module as *missing* the
- * constant and this guard accuses a correct server of being the wrong tree.
- * The leading-dot branch (`const NAME = .5;`) is the other direction and *is*
- * defensive — a leading-zero strip is a normal minifier move and has not been
- * observed here, but a matcher that silently drops a constant is the failure
- * this file exists to prevent. `Number()` below normalises every form, so they
- * compare equal once matched.
- *
- * **`export const` counts too**, which is seelite's one divergence from
- * seekolous's copy of this file. Its fingerprint files were modules whose
- * tuning constants happened to be private; here the load-bearing numbers are
- * the unit scheme in `src/units.ts`, and every one of them is exported. Without
- * this branch the guard reads that file as declaring no constants at all and
- * throws "point the guard at a file that has some" — refusing to run against a
- * perfectly good server. Vite serves the `export` keyword through unchanged in
- * dev, so both sides of the comparison see the same form.
+ * From this file's own location rather than from `process.cwd()`: a probe is
+ * run from wherever its operator happens to be standing, and the question is
+ * which checkout the *code doing the asking* came out of. `realpathSync`
+ * because the other side resolves too — a tree reached through a symlink is the
+ * same tree, and on macOS `/tmp` is one.
  */
-const CONSTS =
-	/^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*;/gm;
+const OWN_ROOT = realpathSync(
+	resolve(dirname(fileURLToPath(import.meta.url)), ".."),
+);
 
-const numericConsts = (source) => {
-	const out = new Map();
-	for (const [, name, value] of source.matchAll(CONSTS))
-		out.set(name, Number(value));
-	return out;
-};
+/** Re-exported so a consumer of the guard has one import rather than two, and
+ *  so nothing spells the path a second time. */
+export { TREE_ENDPOINT };
+
+/** The same "who owns that port" recipe both refusals end with. */
+const whereToLook = (origin) =>
+	`Most likely another 'npm run dev' owns that port. Find it with:\n` +
+	`  lsof -a -p $(lsof -nP -iTCP:$(echo ${origin} | sed 's/.*://') ` +
+	`-sTCP:LISTEN -t | head -1) -d cwd\n` +
+	`Then stop it, or point the probe elsewhere with PROBE_ORIGIN.`;
 
 /**
- * Throws unless the served modules agree with the local files.
+ * The server answered, but not with a declaration.
  *
- * `files` are repo-relative paths the server can also resolve, e.g.
- * `["src/wind.ts"]`. Pass the ones a probe's expectations actually rest on.
+ * **Two causes, and they get different advice.** A non-JSON body is almost
+ * always a vite with no plugin — its fallback answers any unknown path with
+ * `index.html` — so that branch names the wiring. A body that *is* JSON and
+ * still has no usable `root` is a different server or a different version of
+ * this one, and telling its operator to check `vite.config.ts` sends them to a
+ * file that is fine. One message for both said the first thing in every case,
+ * which is a confident wrong answer half the time (#296 review).
  */
-export async function assertServingThisTree(origin, files) {
-	const problems = [];
-	for (const file of files) {
-		let served;
-		try {
-			const res = await fetch(`${origin}/${file}`);
-			if (!res.ok) {
-				problems.push(`${file}: server answered ${res.status}`);
-				continue;
-			}
-			served = await res.text();
-		} catch (e) {
-			problems.push(`${file}: could not fetch — ${e.message}`);
-			continue;
-		}
-		const local = numericConsts(await readFile(file, "utf8"));
-		const remote = numericConsts(served);
-		// A file with no top-level numeric constants cannot be compared this way,
-		// and saying "wrong tree" about it would be a lie. `src/wind.ts` is exactly
-		// that — its numbers are class fields, not module constants — and pointing
-		// the guard at it produced a confident, wrong accusation on a correct server.
-		// That is the failure mode this whole file exists to prevent, so it gets its
-		// own message and names the caller's choice rather than the server.
-		if (local.size === 0) {
-			throw new Error(
-				`probe-guard cannot use ${file}: it declares no top-level numeric ` +
-					`constants, so there is nothing to compare. Point the guard at a file ` +
-					`that has some.`,
-			);
-		}
-		if (remote.size === 0) {
-			problems.push(`${file}: served module declared no numeric constants`);
-			continue;
-		}
-		for (const [name, value] of local) {
-			if (!remote.has(name)) {
-				problems.push(`${file}: ${name} is missing from the served module`);
-			} else if (remote.get(name) !== value) {
-				problems.push(
-					`${file}: ${name} is ${value} here and ${remote.get(name)} there`,
-				);
-			}
-		}
+const undeclared = (origin, url, type, body, why) =>
+	`The dev server at ${origin} does not declare which tree it serves.\n` +
+	`  - ${url} answered ${type}\n` +
+	`  - it begins: ${JSON.stringify(body.slice(0, 120))}\n\n` +
+	`${why}\n\n${whereToLook(origin)}`;
+
+const NO_PLUGIN =
+	`A vite server started without the tree-declaration plugin answers any\n` +
+	`unknown path with index.html, which is what this looks like. Check that\n` +
+	`vite.config.ts still lists treeDeclaration(), and that the server was\n` +
+	`started with that config.\n\n` +
+	`It also looks exactly like this from anywhere but the machine the server\n` +
+	`is on: the endpoint answers a loopback socket asking for a local name,\n` +
+	`and nothing else. If this origin is another host, that is the reason,\n` +
+	`and the config there is fine.`;
+
+const NO_ROOT =
+	`That is JSON, so something is serving this path — but it carries no\n` +
+	`string 'root', which is the one field the guard compares. Check what is\n` +
+	`on that port before touching vite.config.ts.`;
+
+const NOT_JSON =
+	`That claims to be JSON and does not parse as any, so something on that\n` +
+	`port is answering this path and getting it wrong. Check what is there\n` +
+	`before touching vite.config.ts.`;
+
+/**
+ * Throws unless the server at `origin` declares this working tree.
+ *
+ * Returns the declaration on success — `{ root }`, plus `head`, `branch` and
+ * `dirty` where the server could read git. `capture-views.mjs` stamps those on
+ * the contact sheet, which is the tier where a wrong-checkout run is least
+ * likely to be noticed by eye.
+ *
+ * **Shape and content type, never `res.ok`.** An absent endpoint is not a 404
+ * here: vite answers an unknown path with `index.html` and a **200**, so a
+ * status check reads the SPA fallback as a successful declaration. Measured on
+ * this repo's own config while the check was being built.
+ */
+export async function assertServingThisTree(origin) {
+	const url = `${origin}${TREE_ENDPOINT}`;
+	let res;
+	try {
+		res = await fetch(url);
+	} catch (e) {
+		throw new Error(
+			`Could not reach ${url} — ${e.message}\n\n${whereToLook(origin)}`,
+		);
 	}
-	if (!problems.length) return;
-	throw new Error(
-		`The dev server at ${origin} is not serving this working tree.\n` +
-			problems.map((p) => `  - ${p}`).join("\n") +
-			`\n\nMost likely another 'npm run dev' owns that port. Find it with:\n` +
-			`  lsof -a -p $(lsof -nP -iTCP:$(echo ${origin} | sed 's/.*://') ` +
-			`-sTCP:LISTEN -t | head -1) -d cwd\n` +
-			`Then stop it, or point the probe elsewhere with PROBE_ORIGIN.`,
-	);
+	const type = res.headers.get("content-type") ?? "(none)";
+	const body = await res.text();
+	if (!type.includes("application/json"))
+		throw new Error(undeclared(origin, url, type, body, NO_PLUGIN));
+	let declared;
+	try {
+		declared = JSON.parse(body);
+	} catch {
+		throw new Error(undeclared(origin, url, type, body, NOT_JSON));
+	}
+	if (typeof declared?.root !== "string")
+		throw new Error(undeclared(origin, url, type, body, NO_ROOT));
+
+	// The declared root is resolved the way this module's own is, so two
+	// spellings of one tree compare equal. A path that does not exist on this
+	// machine cannot be resolved and is simply not this tree — it is named as
+	// declared rather than swallowed, because "the server says it is serving a
+	// directory I cannot see" is the useful half of that message.
+	let servedRoot = declared.root;
+	try {
+		servedRoot = realpathSync(declared.root);
+	} catch {}
+	if (servedRoot !== OWN_ROOT)
+		throw new Error(
+			`The dev server at ${origin} is not serving this working tree.\n` +
+				`  - it serves ${servedRoot}\n` +
+				`  - this is   ${OWN_ROOT}\n\n${whereToLook(origin)}`,
+		);
+	return declared;
 }
 
 /**
@@ -162,12 +193,29 @@ export async function assertServingThisTree(origin, files) {
  * synchronised edits across files whose only shared concern is this.
  *
  * Pass the probe's own `ORIGIN` default; `PROBE_URL` overrides it, and only its
- * scheme-and-host is used.
+ * scheme-and-host is used. There is no second argument: which tree a server
+ * serves is the server's to declare, so a probe has nothing to choose here.
  */
-export async function guardedOrigin(origin, files = FINGERPRINT) {
+export async function guardedOrigin(origin) {
+	return (await guardedTree(origin)).origin;
+}
+
+/**
+ * The same preamble, handing back **both** halves: the resolved origin and the
+ * declaration the server made.
+ *
+ * `guardedOrigin` above throws the declaration away, which is right for every
+ * caller that only wants to be sure — and wrong for `capture-views.mjs`,
+ * which stamps the declaration on the contact sheet. That script reached past
+ * the preamble to `assertServingThisTree(ORIGIN)` for a round and silently lost
+ * `originOf` and the `PROBE_URL` override with it: a `PROBE_ORIGIN` ending in a
+ * slash then built the endpoint off a doubled one, fell through to the SPA
+ * fallback, and refused a correct server while blaming its config (#296
+ * review). One entry point rather than two spellings of the preamble.
+ */
+export async function guardedTree(origin) {
 	const resolved = originOf(process.env.PROBE_URL ?? origin);
-	await assertServingThisTree(resolved, files);
-	return resolved;
+	return { origin: resolved, served: await assertServingThisTree(resolved) };
 }
 
 /**
@@ -312,18 +360,6 @@ export async function bootedGame(page, timeout = 20000) {
 		{ timeout },
 	);
 }
-
-/**
- * The default pair to fingerprint a checkout with.
- *
- * The question is "is this the same tree?", not "is this probe's own subject
- * current" — so the files are chosen for having many top-level numeric
- * constants rather than for relevance to any one probe. `units.ts` is the unit
- * scheme and `main.ts` the renderer's tuning; between them they carry most of
- * the numbers a probe's expectations rest on. A probe with a sharper interest
- * can pass its own list.
- */
-const FINGERPRINT = ["src/units.ts", "src/main.ts"];
 
 /**
  * The check counter, the reporter and the exit summary, in one object.
