@@ -36,6 +36,7 @@
  */
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { isIP } from "node:net";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -51,6 +52,19 @@ const run = promisify(execFile);
 export const TREE_ENDPOINT = "/__seelite/tree";
 
 /**
+ * What the endpoint answers with.
+ *
+ * Exported for the reason `TREE_ENDPOINT` is: the shape was spelt out in
+ * `view-set.mjs`'s JSDoc, again as a `type Served` in `tests/view-set.test.ts`,
+ * and again as assertions in `tests/probe-guard.test.ts`, with the producer
+ * owning none of it. The git fields are one optional group — `readGit` returns
+ * all three or returns nothing — which is why a consumer that keys on `branch`
+ * while reading `head` is reading a shape this does not produce.
+ *
+ * @typedef {{root: string, head?: string, branch?: string, dirty?: boolean}} TreeDeclaration
+ */
+
+/**
  * `head`, `branch` and `dirty`, or nothing at all. See the note above on why a
  * missing git is not an error.
  *
@@ -61,17 +75,21 @@ export const TREE_ENDPOINT = "/__seelite/tree";
  * fix for this was a one-second cache, which does not help: `probe-all` runs
  * probes sequentially by default and each one boots a Chromium before asking,
  * so consecutive fetches are minutes apart and every one of them misses. The
- * cache is kept because a burst is cheap to make cheaper, but it is a bonus.
+ * cache is kept for a burst, and it is not what stops the stall.
  */
 async function readGit(cwd) {
 	try {
 		const at = async (args) =>
 			(await run("git", args, { cwd, encoding: "utf8" })).stdout.trim();
-		return {
-			head: await at(["rev-parse", "HEAD"]),
-			branch: await at(["rev-parse", "--abbrev-ref", "HEAD"]),
-			dirty: (await at(["status", "--porcelain"])).length > 0,
-		};
+		// In parallel: three unrelated processes, and nothing here reads
+		// another's output. Serial cost measured at about 0.13 s against 0.03 s
+		// for one, paid by every probe and capture before Chromium launches.
+		const [head, branch, status] = await Promise.all([
+			at(["rev-parse", "HEAD"]),
+			at(["rev-parse", "--abbrev-ref", "HEAD"]),
+			at(["status", "--porcelain"]),
+		]);
+		return { head, branch, dirty: status.length > 0 };
 	} catch {
 		return {};
 	}
@@ -80,10 +98,10 @@ async function readGit(cwd) {
 /**
  * How long a reading of git is reused.
  *
- * **A bonus, not the mitigation** — `readGit` above says why, and the claim
- * that used to sit here ("a run of probes pays for one reading rather than
- * thirty-seven") was false under the runner's own default. What it covers is a
- * burst: several fetches inside a second, which a concurrent run can produce.
+ * **Not the mitigation** — `readGit` above is, and the claim that used to sit
+ * here ("a run of probes pays for one reading rather than thirty-seven") was
+ * false under the runner's own default. What this covers is a burst: several
+ * fetches inside a second, which a concurrent run can produce.
  *
  * Cached rather than computed once at boot, which was the other option offered:
  * a branch *can* change under a running server, and a stale branch printed on a
@@ -211,12 +229,17 @@ const hostnameOf = (host) => {
  * and a bare IP literal is not a name at all — there is no zone to rebind. Any
  * other name reached this server because a resolver said so, and that resolver
  * is not necessarily the user's.
+ *
+ * **`isIP` rather than a pattern**, because the patterns this replaces were
+ * wider than the thing they described: `/^\d{1,3}(\.\d{1,3}){3}$/` admits
+ * `999.1.1.1` and `/^[0-9a-f:]+$/i` admits a bare label like `beef`, neither of
+ * which is an IP literal — and a resolver search suffix can give a bare label
+ * an answer. No registrable TLD matches either today, so this was a widening
+ * of the allow-list rather than a demonstrated path, and it is still the wrong
+ * shape of check: parse the literal, do not describe it.
  */
 const isLocalName = (name) =>
-	name === "localhost" ||
-	name.endsWith(".localhost") ||
-	/^\d{1,3}(\.\d{1,3}){3}$/.test(name) ||
-	/^[0-9a-f:]+$/i.test(name);
+	name === "localhost" || name.endsWith(".localhost") || isIP(name) !== 0;
 
 /** Both gates: a loopback socket *and* a host nobody else's DNS can spell. */
 const isLocalRequest = (req) =>

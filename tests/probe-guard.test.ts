@@ -22,11 +22,11 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { createServer as netServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type ViteDevServer } from "vite";
+import { freePort } from "../scripts/lib/free-port.mjs";
 import {
 	callsWithArgument,
 	codeOf,
@@ -40,25 +40,6 @@ import {
 import { treeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 
 const REPO = realpathSync(join(dirname(fileURLToPath(import.meta.url)), ".."));
-
-/**
- * A port nobody is serving on, from the OS.
- *
- * Vite's own `port: 0` is not honoured — it falls back to 5173, which is the
- * developer's `npm run dev` default. `probe-all.mjs` carries the same helper
- * for the same reason; duplicated rather than shared because that one is a
- * runner's private concern and importing it here would make a test file depend
- * on the probe runner booting.
- */
-const freePort = (): Promise<number> =>
-	new Promise((resolve, reject) => {
-		const probe = netServer();
-		probe.on("error", reject);
-		probe.listen(0, "127.0.0.1", () => {
-			const { port } = probe.address() as { port: number };
-			probe.close(() => resolve(port));
-		});
-	});
 
 /**
  * Every server this file starts, closed at the end.
@@ -102,13 +83,25 @@ async function serve(
 		// the shipped `vite.config.ts` still lists it.
 		...(useConfigFile
 			? {}
-			: { configFile: false, plugins: declare ? [treeDeclaration()] : [] }),
+			: {
+					configFile: false,
+					plugins: declare ? [treeDeclaration()] : [],
+					// **No dependency discovery**, and it is a teardown fix rather
+					// than a speed one. The `declare: false` row is the only server
+					// here that lets a request reach vite — it answers
+					// `index.html` — which starts the optimizer and its esbuild
+					// child, and `server.close()` then waits on that child past
+					// bun's 5 s hook timeout. It surfaced as an unnamed test with a
+					// hook timeout, and moved between rows as rows were added.
+					// Nothing here needs an optimized dependency.
+					optimizeDeps: { noDiscovery: true, include: [] },
+				}),
 		root,
 		logLevel: "silent",
 		server: { port, strictPort: true, host: "127.0.0.1" },
 	});
 	await server.listen();
-	running.push(server);
+	running.push({ close: () => server.close() });
 	return { origin: `http://127.0.0.1:${port}`, server };
 }
 
@@ -126,6 +119,53 @@ const ownTreeOrigin = async () => {
 	ownTree ??= serve(REPO);
 	return (await ownTree).origin;
 };
+
+/**
+ * A bare node server answering the endpoint with exactly this, and `index.html`
+ * for everything else.
+ *
+ * Three of the guard's four refusals are about a response vite has no way to
+ * make — a declaration under a failing status, JSON that does not parse, JSON
+ * with no `root`. The messages were split apart because one of them was a
+ * confident wrong answer for a round; without an arm each, nothing says which
+ * branch a reader actually gets.
+ */
+async function serveRaw(
+	status: number,
+	type: string,
+	body: string,
+): Promise<string> {
+	const port = await freePort();
+	const http = await import("node:http");
+	const server = http.createServer((req, res) => {
+		if ((req.url ?? "").split("?")[0] !== TREE_ENDPOINT) {
+			res.writeHead(200, { "Content-Type": "text/html" });
+			return res.end("<!doctype html>");
+		}
+		res.writeHead(status, { "Content-Type": type });
+		res.end(body);
+	});
+	await new Promise<void>((r) => server.listen(port, "127.0.0.1", r));
+	running.push({
+		close: () =>
+			new Promise<void>((r) => {
+				// **Connections first.** `close()` stops accepting and then waits
+				// for the sockets already open, and `fetch` leaves a keep-alive
+				// one behind after every row — so the teardown sat on them until
+				// bun's 5 s hook timeout and the file reported a failure with no
+				// test attached to it.
+				server.closeAllConnections();
+				server.close(() => r());
+			}),
+	});
+	return `http://127.0.0.1:${port}`;
+}
+
+const refusalFrom = async (origin: string) =>
+	assertServingThisTree(origin).then(
+		() => null,
+		(e: Error) => e,
+	);
 
 /**
  * A second tree whose fingerprint files are byte-identical to this one's.
@@ -211,17 +251,12 @@ test("a root reached through a symlink passes", async () => {
  * no way to produce.
  */
 test("a declaration is read on its shape, whatever status carries it", async () => {
-	const port = await freePort();
-	const http = await import("node:http");
-	const server = http.createServer((_req, res) => {
-		res.writeHead(503, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ root: REPO }));
-	});
-	await new Promise<void>((r) => server.listen(port, "127.0.0.1", r));
-	running.push({
-		close: () => new Promise<void>((r) => server.close(() => r())),
-	});
-	const served = await assertServingThisTree(`http://127.0.0.1:${port}`);
+	const origin = await serveRaw(
+		503,
+		"application/json",
+		JSON.stringify({ root: REPO }),
+	);
+	const served = await assertServingThisTree(origin);
 	expect(served.root).toBe(REPO);
 }, 60000);
 
@@ -291,7 +326,7 @@ test("a non-loopback caller gets no declaration", async () => {
  * the attack spelt exactly as it arrives.
  */
 test("a loopback socket asking for a foreign host gets no declaration", async () => {
-	const { origin } = await serve(REPO);
+	const origin = await ownTreeOrigin();
 	const res = await fetch(`${origin}${TREE_ENDPOINT}`, {
 		headers: { Host: "evil.example.com" },
 	});
@@ -303,6 +338,54 @@ test("a loopback socket asking for a foreign host gets no declaration", async ()
 		});
 		expect(ok.headers.get("content-type")).toContain("application/json");
 	}
+}, 60000);
+
+/**
+ * JSON that carries no `root` is refused, and not by blaming the config.
+ *
+ * The advice differs by cause and that is the whole reason there is more than
+ * one message: telling the operator of a server that *is* answering this path
+ * to go and check `vite.config.ts` sends them to a file that is fine.
+ */
+test("JSON with no root is refused without blaming vite.config.ts", async () => {
+	const origin = await serveRaw(
+		200,
+		"application/json",
+		JSON.stringify({ branch: "main" }),
+	);
+	const err = await refusalFrom(origin);
+	expect(err).not.toBeNull();
+	expect(err?.message).toContain("carries no");
+	expect(err?.message).not.toContain("vite.config.ts still lists");
+}, 60000);
+
+/** A content type that lies about its body is a third case again — the message
+ *  that used to cover it opened "That is JSON", on the branch where parsing
+ *  had just failed. */
+test("a body that claims JSON and is not says so", async () => {
+	const origin = await serveRaw(200, "application/json", "not json at all");
+	const err = await refusalFrom(origin);
+	expect(err?.message).toContain("claims to be JSON");
+	expect(err?.message).not.toContain("vite.config.ts still lists");
+}, 60000);
+
+/**
+ * A root this machine cannot resolve is a mismatch, named as declared.
+ *
+ * `realpathSync` throws on a path that is not there, and swallowing that would
+ * report the tree as agreeing. "The server says it is serving a directory I
+ * cannot see" is the useful half of the message, so the declared string is
+ * printed rather than dropped.
+ */
+test("a root that does not exist here is refused, and named as declared", async () => {
+	const origin = await serveRaw(
+		200,
+		"application/json",
+		JSON.stringify({ root: "/no/such/tree/anywhere" }),
+	);
+	const err = await refusalFrom(origin);
+	expect(err?.message).toContain("/no/such/tree/anywhere");
+	expect(err?.message).toContain(REPO);
 }, 60000);
 
 test("the guard and the plugin agree on where the declaration lives", () => {

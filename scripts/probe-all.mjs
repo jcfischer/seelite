@@ -69,6 +69,7 @@ import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createServer } from "vite";
+import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -254,32 +255,6 @@ async function runAll(files) {
 		Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker()),
 	);
 	return results;
-}
-
-/**
- * A port nobody is already serving on, from the OS.
- *
- * Vite's own `port: 0` is not honoured — it falls back to 5173 — and 5173 is
- * exactly the wrong port to land on: it is the developer's `npm run dev`
- * default, and it is the fallback baked into every probe that reads neither
- * knob. Serving there makes those two failures invisible. A probe that ignored
- * `PROBE_ORIGIN` would quietly probe *our* server and pass, and running the
- * suite beside a dev server would quietly probe *that* one instead — which is
- * how three probes were misdiagnosed while this runner was being written.
- *
- * So the port is taken from the OS and pinned with `strictPort`, and a probe
- * that reaches for 5173 now fails loudly instead of being right by accident.
- */
-async function freePort() {
-	const net = await import("node:net");
-	return new Promise((resolve, reject) => {
-		const probe = net.createServer();
-		probe.on("error", reject);
-		probe.listen(0, "127.0.0.1", () => {
-			const { port } = probe.address();
-			probe.close(() => resolve(port));
-		});
-	});
 }
 
 /** Start a dev server on a free port, or use the target we were handed. See

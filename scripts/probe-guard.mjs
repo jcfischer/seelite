@@ -46,9 +46,13 @@
  * with the plugin removed declares nothing and is refused, which is the right
  * direction to fail in.
  *
- * What it still does not catch: a server on the **right** tree serving a
- * **stale** module out of its own cache. That is a different question from
- * identity and is charted separately (#297).
+ * What it does not catch: a server on the **right** tree serving a **stale**
+ * module out of its own cache. That is a different question from identity and
+ * is charted separately (#297) — but read it as ground this change **gives
+ * up**, not as ground nobody held. The fingerprint fetched each named file and
+ * refused a mismatch, so a stale `src/units.ts` whose top-level constant had
+ * moved was refused by it. It said "still" here for a round, which scopes #297
+ * as new work rather than as restoring a check this merge drops.
  */
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -200,8 +204,8 @@ export async function guardedOrigin(origin) {
  * The same preamble, handing back **both** halves: the resolved origin and the
  * declaration the server made.
  *
- * `guardedOrigin` above throws the declaration away, which is right for the
- * fifty callers that only want to be sure — and wrong for `capture-views.mjs`,
+ * `guardedOrigin` above throws the declaration away, which is right for every
+ * caller that only wants to be sure — and wrong for `capture-views.mjs`,
  * which stamps the declaration on the contact sheet. That script reached past
  * the preamble to `assertServingThisTree(ORIGIN)` for a round and silently lost
  * `originOf` and the `PROBE_URL` override with it: a `PROBE_ORIGIN` ending in a

@@ -24,10 +24,6 @@ import {
 	stationMarketScreen,
 } from "./station-console";
 
-/** Stamped into the gallery's markup as `data-gallery-version`; nothing reads
- *  it. Kept because removing it changes what the page emits (#296 review). */
-export const GALLERY_VERSION = 1;
-
 export type GalleryStateId =
 	| "assist-on"
 	| "assist-off"
@@ -1019,7 +1015,7 @@ export function renderGalleryState(
 		footer:
 			"Tuning stays on this right-console tab, never on the flight floor.",
 	});
-	return `<div class="sg-wrap" data-gallery-version="${GALLERY_VERSION}" data-gallery-state-active="${state.id}" data-gallery-dock-phase="${phase}" data-gallery-clock-min="${view.gameTimeMin}" data-gallery-market-epoch="${marketEpoch(view.station.station.phaseMin, view.gameTimeMin)}">
+	return `<div class="sg-wrap" data-gallery-state-active="${state.id}" data-gallery-dock-phase="${phase}" data-gallery-clock-min="${view.gameTimeMin}" data-gallery-market-epoch="${marketEpoch(view.station.station.phaseMin, view.gameTimeMin)}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>
 		${docked ? renderConsoleRig(view) : ""}
 		<nav class="sg-states" aria-label="Cockpit states">${GALLERY_STATES.map((candidate) => `<button class="sg-state" type="button" data-gallery-state="${candidate.id}" aria-pressed="${candidate.id === state.id}">${candidate.label}</button>`).join("")}</nav>

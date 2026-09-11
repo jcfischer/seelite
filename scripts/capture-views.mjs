@@ -144,7 +144,7 @@ async function applyCaptureQuality(page) {
 let currentSeed = null;
 async function ensureSeed(page, seed) {
 	if (currentSeed === seed) return;
-	await page.goto(`${ORIGIN}/?seed=${seed}`, { waitUntil: "load" });
+	await page.goto(`${SERVING}/?seed=${seed}`, { waitUntil: "load" });
 	await bootedGame(page);
 	await applyCaptureQuality(page);
 	await page.evaluate(() => window.__rememberBootPosition());
@@ -225,7 +225,7 @@ const PLACERS = {
 		// **It navigates**, which is why the set puts it last: every view above
 		// needs the game and this one needs the game not to be there. The
 		// workbench is query-gated and constructs no `Game` at all.
-		await page.goto(`${ORIGIN}/?model-viewer=station`, { waitUntil: "load" });
+		await page.goto(`${SERVING}/?model-viewer=station`, { waitUntil: "load" });
 		await page.waitForSelector("#model-viewer canvas");
 		// **The fifth element is destructured, and it was not.** `variant` was
 		// passed in the array and read as a free identifier inside the browser,
@@ -347,19 +347,23 @@ async function rebuildSheet(out) {
  * anyone looking at the sheet it produced. So the declaration goes into the
  * manifest and onto the sheet beside this process's own git ref.
  *
- * **It is a record of provenance, not a cross-check**, and the comment here
- * said otherwise for a round. A live run cannot show the two disagreeing: the
- * guard throws unless the declared root is this one, and `REF` comes from
- * `git rev-parse` in that same tree. What the field buys is that a sheet on
- * disk, or two sheets compared weeks apart, names the checkout its pixels came
- * from — which is exactly what #123's sheet could not.
+ * **It is a record of provenance, not a cross-check.** `view-set.mjs`'s
+ * `servedBy` owns that argument; what matters here is the consequence for this
+ * script. The guard throws unless the declared root is this tree, so a live run
+ * cannot show the two disagreeing — which is only true while the *checked*
+ * origin and the *navigated* one are the same. They were not for a round:
+ * `guardedTree` resolves `PROBE_URL` and this took only the declaration from
+ * it, so with that variable set the guard validated one server and the frames
+ * came from another, with the validated server's root stamped on them. That is
+ * #123's own failure rebuilt out of its fix. `SERVING` is the checked origin
+ * and every navigation goes there.
  *
  * There is no file list any more — the guard used to fingerprint one, and a
  * module with no top-level numeric constants could not be pointed at, which for
  * this script meant the cockpit interior and the planet shaders. A declaration
  * is a property of the server, so that gap closed with it.
  */
-const { served } = await guardedTree(ORIGIN);
+const { origin: SERVING, served } = await guardedTree(ORIGIN);
 
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
@@ -398,7 +402,7 @@ page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+await page.goto(`${SERVING}/?seed=${SEED}`, { waitUntil: "load" });
 await bootedGame(page);
 await applyCaptureQuality(page);
 currentSeed = SEED;
