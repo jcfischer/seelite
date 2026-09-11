@@ -118,9 +118,9 @@ describe("the row is laid out against its widest possible reading", () => {
 		const name = "M".repeat(SYSTEM_NAME_MAX_CHARS);
 		const readings: CourseCue[] = [
 			{ kind: "arrived", destination: name },
-			{ kind: "underway", nextHop: name, remaining: 1, affordable: true },
-			{ kind: "underway", nextHop: name, remaining: 9, affordable: false },
-			{ kind: "underway", nextHop: name, remaining: 99, affordable: true },
+			underway({ nextHop: name, remaining: 1 }),
+			underway({ nextHop: name, remaining: 9, affordable: false }),
+			underway({ nextHop: name, remaining: 99 }),
 		];
 		for (const reading of readings) {
 			const row = courseCue(reading);
@@ -136,18 +136,13 @@ describe("the row is laid out against its widest possible reading", () => {
 		const name = "M".repeat(SYSTEM_NAME_MAX_CHARS);
 		const produced = [
 			courseCue({ kind: "arrived", destination: name })?.value,
-			courseCue({
-				kind: "underway",
-				nextHop: name,
-				remaining: 99,
-				affordable: true,
-			})?.value,
+			courseCue(underway({ nextHop: name, remaining: 99 }))?.value,
 		];
 		expect(produced).toContain(widest);
 	});
 });
 
-describe("the bound's assumptions hold against the real generator", () => {
+describe("the bound's assumptions hold over the sampled seeds", () => {
 	/**
 	 * The two inputs the bound is built from are facts about the galaxy, not
 	 * about the formatter, so they are swept rather than asserted in prose. A

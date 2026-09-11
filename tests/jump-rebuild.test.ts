@@ -211,6 +211,34 @@ describe("the jump itself", () => {
 		inOrder(prompt, "return decision.ok", "3600 * ASSIST_CAP_KMS");
 	});
 
+	/**
+	 * **The two lines above the floor cannot overlap, by construction.**
+	 *
+	 * `floorTopY` is the one owner of the band stack since #117, and four
+	 * surfaces read it: the strip, §8.3's course row, the cruise/jump prompt and
+	 * §3's clearance line. The last two are both `PROMPT_FONT` and both centred
+	 * on `cx`, so their gap is the difference of two constants — and moving the
+	 * prompt onto the anchor closed it from 11.6 px at the probe's 760 to 6,
+	 * which is less than a line.
+	 *
+	 * **Why a source scan and not a pixel row.** The pair coexists only when a
+	 * course is set *and* the ship is inside `DIRECTOR_RANGE_KM` with an engaged
+	 * docking state — a frame the live-cockpit probe cannot reach without
+	 * `probe-docking`'s rig, and a probe row that clears because nothing was
+	 * drawn is the control that never runs. The construction is the guarantee:
+	 * the clearance offset is *derived* from the prompt's, a line further out.
+	 * This goes red the day someone writes a literal back in.
+	 */
+	test("§3's clearance line is derived a whole line above the prompt", () => {
+		expect(main).toContain(
+			"const CLEARANCE_ABOVE_FLOOR_PX = PROMPT_ABOVE_FLOOR_PX + PROMPT_LINE_HEIGHT_PX;",
+		);
+		// And the line height is the one `TextRaster` gives a centred prompt,
+		// not a number picked to make the sum come out.
+		expect(codeOf("src/text-raster.ts")).toContain("this.bounds.height = 18;");
+		expect(main).toContain("const PROMPT_LINE_HEIGHT_PX = 18;");
+	});
+
 	test("cancelling clears the armed jump, not only the charge", () => {
 		// A charge that has fired is already idle, so a `charging` guard alone
 		// would let damage on the terminal frame report a cancellation and the

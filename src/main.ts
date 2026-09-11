@@ -782,25 +782,42 @@ const FLOOR_STRIP_HEIGHT_PX = 26;
 /**
  * The band §8.3's course row occupies, directly above the strip's.
  *
+ * **The strip's own band, because the two share a type.** `floorFont` sizes
+ * every glyph on the floor from `FLOOR_STRIP_HEIGHT_PX`, so a course band
+ * declared independently is a box whose contents another number governs: raise
+ * the strip's type and the row's glyphs climb above a `top` the record still
+ * reports as fixed, which is the value the overlap check reads. One band per
+ * row removes the question rather than documenting it.
+ *
  * **Reserved whether or not a course is set.** The row itself is absent with no
- * course (#117 D2), but the docking director's clearance line is offset by this
- * band unconditionally — a line that jumps 22 px the moment the player commits
- * to a destination is a worse instrument than one sitting 22 px higher always.
+ * course (#117 D2), but the prompt and §3's clearance line are offset by this
+ * band unconditionally — a line that jumps a row the moment the player commits
+ * to a destination is a worse instrument than one sitting a row higher always.
  */
-const FLOOR_COURSE_HEIGHT_PX = 22;
+const FLOOR_COURSE_HEIGHT_PX = FLOOR_STRIP_HEIGHT_PX;
+/** A `PROMPT_FONT` line's own band, which both lines below occupy. */
+const PROMPT_LINE_HEIGHT_PX = 18;
 /**
  * How far the cruise/jump prompt clears the floor's topmost band.
  *
- * **Ten pixels, which is what `h * 0.62` left at h = 900 and nowhere else.**
- * The value it replaced was a *fraction* — 0.04h against a glass bottom of
- * 0.66h — so the old gap above the strip was 4.4 px at the probe's 760 and
- * 7.76 px at 844. Naming it "exactly this much" was true of one viewport, and
- * a fixed pixel gap is the right shape here because every band it clears is
- * fixed pixels too.
+ * **A fixed gap, which is what every band it clears is.** The value it replaced
+ * was a *fraction* — 0.04h against a glass bottom of 0.66h — so the old gap
+ * above the strip was 4.4 px at the probe's 760 and 7.76 px at 844. Calling it
+ * "exactly" the same thing was true of h = 900 alone.
  */
 const PROMPT_ABOVE_FLOOR_PX = 10;
-/** How far §3's clearance line clears the same band. */
-const CLEARANCE_ABOVE_FLOOR_PX = 16;
+/**
+ * How far §3's clearance line clears the same band — **a prompt line further,
+ * because the two share the anchor now.**
+ *
+ * It was a bare 16 against a `h * 0.62` prompt, which at the probe's 760 left
+ * 11.6 px between two 13 px lines. Anchoring the prompt to `floorTopY` closed
+ * that to 6 and nothing measured it: the pair is drawn by two methods, each
+ * writing a correct record of its own. This is the same collision the course
+ * row had with the prompt, one surface further out, and it is stacked rather
+ * than spaced by eye.
+ */
+const CLEARANCE_ABOVE_FLOOR_PX = PROMPT_ABOVE_FLOOR_PX + PROMPT_LINE_HEIGHT_PX;
 
 /**
  * The top of the floor's band stack — above the strip and above §8.3's course
@@ -906,6 +923,30 @@ interface FloorBox {
 }
 
 /**
+ * A floor box from its band, so the band→baseline rule is written once.
+ *
+ * The strip derived its baseline down from the glass bottom while the course
+ * row derived its own up from `floorTopY` — the same rule from opposite ends,
+ * in two six-field literals. That is "two runs on one floor authored two ways"
+ * again, in the block whose comment argues against it.
+ */
+function floorBox(
+	label: string,
+	x: number,
+	width: number,
+	top: number,
+): FloorBox {
+	return {
+		label,
+		x,
+		width,
+		top,
+		height: FLOOR_STRIP_HEIGHT_PX,
+		y: top + FLOOR_STRIP_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION),
+	};
+}
+
+/**
  * Paint one floor cell: its label, then its value in §4's tone.
  *
  * **One painter, because the floor has two runs.** §5.2 says "two runs on one
@@ -1001,6 +1042,10 @@ interface DirectorRender {
 	funnelState: "clear" | "off-axis" | "blocked";
 	/** The clearance line as drawn, and whether it was drawn as blocking. */
 	clearanceText: string;
+	/** Its band on the overlay, so a check can compare it against the other
+	 *  lines anchored to `floorTopY` rather than trusting that they clear. */
+	clearanceTop: number;
+	clearanceHeight: number;
 	blocking: boolean;
 }
 
@@ -5852,11 +5897,7 @@ class Game {
 			// `chargeReadsEmpty` defect exactly: two halves of one reading
 			// disagreeing on the glass, and the fix is the same one — one
 			// predicate, read by both.
-			const decision = planJump(
-				this.world.system.record,
-				hop,
-				this.commander.fuelLy,
-			);
+			const decision = this.jumpDecision(hop);
 			return decision.ok
 				? `press \` to jump to ${hop.name}`
 				: jumpRefusalText(decision.refusal, hop.name);
@@ -7117,6 +7158,14 @@ class Game {
 	 * changes it, and a probe with its own copy of a *commit* is not checking
 	 * the commit at all.
 	 *
+	 * **It is a second path to the commit, deliberately.** The chart's own
+	 * `commitCourse` is a longer sequence — select, `setCourse`, hold, `onCourse`,
+	 * recompute the legend and the card — and this skips all of it but the
+	 * `setCourse`, because the chart need not be mounted for a course to exist
+	 * (#187: the course is the game's, not the chart's). What the probe drives
+	 * through this is the commit and the state, never the chart's button; the
+	 * button is `probe-galaxy-map`'s.
+	 *
 	 * Returns whether a course was set: `setCourse` refuses a destination
 	 * `planRoute` cannot reach.
 	 */
@@ -7171,6 +7220,12 @@ class Game {
 	 * key that sometimes does nothing is indistinguishable from a key that is
 	 * not bound.
 	 */
+	/** `planJump` against this ship and this tank — the first and third
+	 *  arguments are always these two fields, and four sites spelled them. */
+	private jumpDecision(to: SystemRecord) {
+		return planJump(this.world.system.record, to, this.commander.fuelLy);
+	}
+
 	chargeJump(): boolean {
 		// **Before the clear, not after it.** The window's own notice is what
 		// `cruisePrompt` prints while charging, so returning through the clear
@@ -9112,27 +9167,6 @@ class Game {
 	}
 
 	/**
-	 * §8.3's course row **as a state**, from the course as it is now — or `null`
-	 * for no row at all.
-	 *
-	 * Named for the state rather than the row because `courseCue` is the
-	 * formatter: `courseRow(): CourseCue` beside `courseCue(): FloorCell` read
-	 * as each other's inverse, and the call site said so out loud —
-	 * `const courseRow = courseCue(this.courseRow())`.
-	 *
-	 * **Re-derived, never remembered as a cursor**, for `galaxy-route.ts`'s own
-	 * reason: a `Course` is a destination and not a chain, so an off-plan jump
-	 * re-plans instead of desyncing.
-	 *
-	 * **But not re-derived every frame.** `courseProgress` runs `planRoute`, an
-	 * O(n²) Dijkstra over 256 systems; the chart already records that a getter
-	 * which looks free was one full search per read. The chain is cached against
-	 * the two things that can change it — which course, and where the ship is —
-	 * and the *affordability* is asked fresh on every call, because `planJump`
-	 * is a distance and a comparison and the tank moves without the ship
-	 * jumping.
-	 */
-	/**
 	 * The set course's chain, planned once per (course, where the ship is).
 	 *
 	 * **Re-derived, never remembered as a cursor**, for `galaxy-route.ts`'s own
@@ -9166,9 +9200,18 @@ class Game {
 		// which is `courseProgress`'s fourth argument and today a constant.
 		// #185 makes the range hull-aware, and a key blind to it would then
 		// serve the previous hull's chain.
-		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${JUMP_RANGE_LY}`;
+		// One local, passed *and* keyed. Interpolating the constant while letting
+		// `courseProgress` take its own default keyed a number this call could
+		// not vary — protection the comment claimed and the key did not give.
+		const maxJump = JUMP_RANGE_LY;
+		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${maxJump}`;
 		if (this.courseChainCache?.key !== key) {
-			const progress = courseProgress(this.world.galaxy.systems, course, here);
+			const progress = courseProgress(
+				this.world.galaxy.systems,
+				course,
+				here,
+				maxJump,
+			);
 			this.courseChainCache =
 				progress === null
 					? { key, chain: null }
@@ -9204,11 +9247,7 @@ class Game {
 			// **The gate itself, not a copy of it.** The cue reddens on exactly
 			// the condition that refuses the jump, so the row and the refusal it
 			// predicts cannot drift apart.
-			affordable: planJump(
-				this.world.system.record,
-				chain.nextHop,
-				this.commander.fuelLy,
-			).ok,
+			affordable: this.jumpDecision(chain.nextHop).ok,
 		};
 	}
 
@@ -9290,16 +9329,16 @@ class Game {
 		ctx.save();
 		ctx.textAlign = "left";
 		for (const [i, cell] of cells.entries()) {
-			boxes.push({
-				label: cell.label,
-				x,
-				y: baselineY,
-				width: widths[i],
-				// Every floor box states its own band, so nothing sampling one
-				// keeps a glyph height of its own.
-				height: FLOOR_STRIP_HEIGHT_PX,
-				top: glassBottomY - FLOOR_STRIP_HEIGHT_PX,
-			});
+			// Every floor box states its own band, so nothing sampling one keeps
+			// a glyph height of its own.
+			boxes.push(
+				floorBox(
+					cell.label,
+					x,
+					widths[i],
+					glassBottomY - FLOOR_STRIP_HEIGHT_PX,
+				),
+			);
 			drawFloorCell(
 				ctx,
 				cell,
@@ -9318,9 +9357,9 @@ class Game {
 		let courseBox: FloorBox | null = null;
 		if (courseRow !== null) {
 			const run = floorRunWidths(ctx, [courseRow], scale);
-			const courseBaselineY =
-				floorTopY(h) + FLOOR_COURSE_HEIGHT_PX * (1 - FLOOR_BASELINE_FRACTION);
 			const courseX = (w - run.total) / 2;
+			courseBox = floorBox(courseRow.label, courseX, run.total, floorTopY(h));
+			const courseBaselineY = courseBox.y;
 			drawFloorCell(
 				ctx,
 				courseRow,
@@ -9331,19 +9370,6 @@ class Game {
 				},
 				floorType,
 			);
-			courseBox = {
-				label: courseRow.label,
-				x: courseX,
-				y: courseBaselineY,
-				width: run.total,
-				// **The band, not a probe's guess at it.** The overlap check and
-				// the tone sampler both need the row's top, and both had their
-				// own `- 12`: raise the type and the real top rises above it, so
-				// the check written to catch this PR's own collision would go
-				// lenient without going red.
-				height: FLOOR_COURSE_HEIGHT_PX,
-				top: floorTopY(h),
-			};
 		}
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
@@ -9586,7 +9612,8 @@ class Game {
 		// the strip — or the course row #117 put above it — cannot leave this
 		// line sitting on top of either. The course band is subtracted whether
 		// or not a course is set: see `FLOOR_COURSE_HEIGHT_PX`.
-		ctx.fillText(clearanceText, cx, floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX);
+		const clearanceBaselineY = floorTopY(h) - CLEARANCE_ABOVE_FLOOR_PX;
+		ctx.fillText(clearanceText, cx, clearanceBaselineY);
 		ctx.textAlign = "left";
 		ctx.restore();
 
@@ -9600,6 +9627,10 @@ class Game {
 			throatCornersPx,
 			funnelState,
 			clearanceText,
+			// The same band `TextRaster` gives a centred prompt, so the two
+			// lines sharing `floorTopY` are compared in one another's terms.
+			clearanceTop: clearanceBaselineY - 14,
+			clearanceHeight: PROMPT_LINE_HEIGHT_PX,
 			blocking: state.blocking !== null,
 		};
 	}
