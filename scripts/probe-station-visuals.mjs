@@ -64,6 +64,7 @@
  */
 import {
 	bootedGame,
+	checkFraming,
 	guardedOrigin,
 	installViewPlacement,
 	launchChromium,
@@ -103,31 +104,11 @@ const CLOSE_RADII = 3;
 const REDUCED_RADII = 48;
 const OUTLINE_RADII = 900;
 
-/**
- * How far a placement may land from the framing it asked for: a fraction of the
- * range, and an angle off the aperture axis.
- *
- * Why a placement is a reading rather than a constant, and why it takes two
- * numbers, is `__viewAlongAxis`'s in `probe-guard.mjs`, beside the code that
- * measures them. What belongs here is where the two tolerances came from, and
- * that this is the check on the **framing itself** rather than on the aperture
- * pixels that were its downstream symptom — #263's refinery went to 0 lit
- * aperture pixels on one viewport, which reads as a form-specific defect and
- * was a framing that landed somewhere else.
- *
- * Bounded from above by the falsifying build. Parked, one run on this machine:
- * range trade −11.41% / −9.75%, refinery +3.83% / +2.15%, shipyard −2.15% /
- * −2.15%, and off-axis 14.24° / 11.96°, 14.89° / 10.89°, 6.18° / 6.18°
- * (desktop / narrow). So the tightest red arm is 2.15% on the range and 6.18°
- * on the angle, and a tolerance at or above either would not be a check on that
- * arm. Bounded from below by what co-moving lands: ≤0.02% and ≤0.01°,
- * printed in the detail of every one of these six checks. The magnitude of the
- * red side is **frame-cost dependent** — it is how far the station travelled
- * while the loop ran, not a constant of the geometry — so it is a figure to
- * re-measure rather than to quote.
- */
-const FRAMING_TOLERANCE = 0.01;
-const FRAMING_TOLERANCE_DEG = 0.5;
+// The framing tolerances moved to `probe-guard.mjs` under #290, which owns them
+// and states why. What stays here is why *this* probe gates on the framing
+// rather than on its downstream symptom: #263's refinery went to 0 lit aperture
+// pixels on one viewport, which reads as a form-specific defect and was a
+// framing that landed somewhere else.
 
 /** The silhouette mask is resampled to this grid before shapes are compared —
  *  `probe-station.mjs`'s grid, for the same reason: the comparison must be of
@@ -392,15 +373,7 @@ for (const viewport of VIEWPORTS) {
 			([bodyId, range]) => window.__viewAlongAxis(bodyId, range),
 			[id, silhouetteKm * CLOSE_RADII],
 		);
-		const drift = (framing.actualKm - framing.askedKm) / framing.askedKm;
-		check(
-			`${viewport.name}: ${type} is framed where it asked`,
-			Math.abs(drift) <= FRAMING_TOLERANCE &&
-				framing.offAxisDeg <= FRAMING_TOLERANCE_DEG,
-			`asked ${framing.askedKm.toFixed(3)} km, landed ` +
-				`${framing.actualKm.toFixed(3)} km (${(drift * 100).toFixed(2)}%), ` +
-				`${framing.offAxisDeg.toFixed(2)}° off the axis`,
-		);
+		checkFraming(check, `${viewport.name}: ${type}`, framing);
 		const m = await measure(page, id);
 		lit[type] = { ...m, silhouetteKm };
 		check(

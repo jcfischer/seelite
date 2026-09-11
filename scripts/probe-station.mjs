@@ -30,9 +30,12 @@
  *    silhouette at all** — at both ranges — and, **at the near range only**,
  *    that re-measuring one reproduces it. That control is about whether the
  *    measurement works rather than about what it finds, and it is near-range
- *    only because at 60 km the mask is a few dozen pixels and the control itself
- *    reads about 0.17: a check whose noise is three times its own ceiling is not
- *    a check.
+ *    only because at 60 km the mask is a few dozen pixels and the control is of
+ *    the same order as the thing it would be separating. **The figure moved
+ *    under #290** — parked it read 0.028, co-moving it reads 0.200-0.300 over
+ *    three runs — so the number is not restated here: the run prints it, and
+ *    what it means is that at 60 km this metric is near the end of its
+ *    usefulness. Why it moved is #120's.
  *
  * 2. **The slot tracks the spin.** Its screen-space orientation advances at the
  *    station's own `spinRpm`, and it is measured twice over:
@@ -75,7 +78,9 @@
  */
 import {
 	bootedGame,
+	checkFraming,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -152,11 +157,18 @@ const GRID = 24;
  *
  * It is only meaningful against the metric's own noise, so the run measures that
  * too, by capturing one station twice (the control below). Measured while it was
- * still a gate: the three pairs came out at about 0.35 (trade/refinery), 0.61
- * (trade/shipyard) and 0.62 (refinery/shipyard), against a control of 0.02. The
- * closest pair was the two compact types, which is where the identity claim is
- * hardest, and 0.25 left that pair about 40% of headroom while sitting an order
- * of magnitude above the noise.
+ * still a gate, from a **parked** framing: the three pairs came out at about
+ * 0.35 (trade/refinery), 0.61 (trade/shipyard) and 0.62 (refinery/shipyard),
+ * against a control of 0.02. The closest pair was the two compact types, which
+ * is where the identity claim is hardest, and 0.25 left that pair about 40% of
+ * headroom while sitting an order of magnitude above the noise.
+ *
+ * **#290 moved the closest pair and the headroom with it.** Framed co-moving,
+ * trade/refinery reads 0.271 rather than 0.35 — 8% above this floor, not 40%.
+ * So the figure to restore is not this one: re-arming the gate means
+ * re-measuring the spread first, and 0.25 is now close enough to the closest
+ * pair that it would be asserting a margin it does not have. What the control
+ * itself now reads is `MAX_CONTROL_DIFFERENCE`'s to state, below.
  */
 const MIN_DIFFERENCE = 0.25;
 
@@ -167,9 +179,16 @@ const MIN_DIFFERENCE = 0.25;
  * two moves on the 24 × 24 grid.
  *
  * **Bracketed, and the two sides are not equally well measured.** Seven
- * consecutive runs at 5 km put the control at 0.046, 0.047, 0.051, 0.053,
- * 0.058, 0.060 and 0.064 — seven samples, and 0.12 sits **1.9×** above the
- * worst of them.
+ * consecutive runs at 5 km, **parked**, put the control at 0.046, 0.047, 0.051,
+ * 0.053, 0.058, 0.060 and 0.064 — seven samples, and 0.12 sat **1.9×** above
+ * the worst of them.
+ *
+ * **#290 spent most of that headroom, and the figure above is no longer this
+ * branch's.** Framed co-moving the same control reads 0.088, 0.088, 0.088 —
+ * three samples, not seven — so 0.12 sits **1.35×** above it rather than 1.9×.
+ * Still a threshold, and a far steadier one: the parked series was a fresh draw
+ * of the drift each run and this one is not. But anyone sizing or re-arming this
+ * gate should read 1.35× and three samples, not 1.9× and seven.
  *
  * The upper side is weaker and should be read as such. `MIN_DIFFERENCE` above
  * is this file's own reference for how far two *different* stations must read
@@ -204,37 +223,13 @@ const MAX_CONTROL_DIFFERENCE = 0.12;
  *  loop decides when the samples land rather than the probe. */
 const SPIN_TOLERANCE = 0.06;
 
-/**
- * One layer-agnostic mesh lookup and one "settle two frames" for every evaluate
- * in this file.
- *
- * Installed as an init script rather than repeated three times: the rule "a
- * body is drawn in whichever layer its distance puts it in" is the renderer's,
- * and a probe that states it three times has three places to get it wrong. The
- * same pattern `probe-guard.mjs` uses for `__recoverCamSim`.
- */
-const installMeshLookup = (page) =>
-	page.addInitScript(() => {
-		window.__meshOfBody = (id) =>
-			window.__seelite.nearScene.getObjectByName(id) ??
-			window.__seelite.farScene.getObjectByName(id) ??
-			null;
-		/**
-		 * Place the ship and let the renderer catch up.
-		 *
-		 * **Two** frames, not one: the first may already be in flight when the
-		 * position is written, so it can compose from a mix of the old and new
-		 * ship positions. The second is unambiguously after the write. Written
-		 * once because two copies drift the day that count changes.
-		 */
-		window.__placeShipAt = async (pos) => {
-			const g = window.__seelite;
-			g.world.ship.pos = pos;
-			g.world.ship.vel = { x: 0, y: 0, z: 0 };
-			await new Promise((r) => requestAnimationFrame(() => r()));
-			await new Promise((r) => requestAnimationFrame(() => r()));
-		};
-	});
+// `checkFraming` is imported rather than written here, and the two tolerances
+// it gates on live behind it in `probe-guard.mjs`, which owns them and states
+// why. Nothing in this file names them, which is the point. What is local to this probe is
+// only that it gates at all, which is #272: its framings landed several degrees
+// off the aperture axis at `RANGE_KM` and nothing here could say so. The angles
+// are in `FRAMING_TOLERANCE`'s docstring rather than here, because a figure in
+// two files is the drift this import exists to end.
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -243,7 +238,11 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
-await installMeshLookup(page);
+// `__meshOfBody`, `__placeShipAt` and `__viewAlongAxis`, from the one module
+// that owns them. The private copies this replaced are #272's subject; the
+// deleted `__meshOfBody` was byte-identical to probe-guard's, and the deleted
+// `__placeShipAt` differed by exactly the argument that mattered.
+await installViewPlacement(page);
 await page.goto(URL, { waitUntil: "load" });
 await bootedGame(page);
 
@@ -280,39 +279,44 @@ if (!allThree) {
 }
 
 /**
- * Put the camera on a station's aperture axis at `RANGE_KM` and look back down
+ * Put the camera on a station's aperture axis at `rangeKm` and look back down
  * it, so the aperture faces the viewer.
  *
  * The ship is placed rather than flown, for `probe-handoff.mjs`'s reason: the
  * distances involved take hours under thrust, and the renderer cannot tell a
  * placed ship from a flown one.
  *
- * Returns nothing: every caller's next act reads the page itself, and a payload
- * none of them used read as one they were meant to.
+ * **This probe used to own a copy of the placement and of the helper under it,
+ * and that is what #272 was.** `installMeshLookup` installed a private
+ * `__placeShipAt` taking **one** argument, and this file never called
+ * `installViewPlacement` at all — so probe-guard's two-argument version was
+ * never in the page. **Nothing was shadowed**, and an earlier draft of this
+ * docstring said it was: there is no init-script resolution-order hazard here,
+ * only a probe carrying a private copy of a helper it never installed the
+ * shared one of. That is why the co-moving default #271 gave `__viewAlongAxis`
+ * never reached this file, and why #271's audit of that helper's callers could
+ * not see a call site that does not call it.
+ *
+ * Worse for whoever came next: handing the private copy a velocity was a
+ * **silent no-op**, JavaScript discarding the extra argument, and the run came
+ * back bit-identical, which reads exactly like a measured null result.
+ *
+ * Returns the placement's own reading of what it achieved. A placement is a
+ * request and the frame loop is free to carry the subject off it, so this is a
+ * reading rather than a constant — `__viewAlongAxis`'s docstring carries why it
+ * takes two numbers and not one.
  */
 async function viewAlongAxis(id, rangeKm) {
 	return page.evaluate(
-		async ([bodyId, range]) => {
-			const g = window.__seelite;
-			const body = g.world.system.bodies.find((b) => b.id === bodyId);
-			const pose = g.poseOfStation(bodyId);
-			await window.__placeShipAt({
-				x: body.pos.x + pose.axis.x * range,
-				y: body.pos.y + pose.axis.y * range,
-				z: body.pos.z + pose.axis.z * range,
-			});
-			// A camera looks down its own −Z, so aiming at the station means
-			// mapping −Z onto −axis. `Vector3` is not reachable from the page, so
-			// the two vectors are borrowed from an object that already holds some.
-			const from = g.nearScene.position.clone().set(0, 0, -1);
-			const to = g.nearScene.position
-				.clone()
-				.set(-pose.axis.x, -pose.axis.y, -pose.axis.z);
-			g.orientation.setFromUnitVectors(from, to);
-		},
+		([bodyId, range]) => window.__viewAlongAxis(bodyId, range),
 		[id, rangeKm],
 	);
 }
+
+/** This probe's `check` bound into the shared gate, so the two call sites read
+ *  as one line each. */
+const framedWhereItAsked = (label, framing) =>
+	checkFraming(check, label, framing);
 
 /**
  * The station's silhouette as a `GRID × GRID` occupancy mask.
@@ -517,7 +521,14 @@ async function silhouettesAt(rangeKm, floor, gate) {
 	 *  back out. */
 	let control = null;
 	for (const station of setup.stations) {
-		await viewAlongAxis(station.id, rangeKm);
+		// Gated on the placement, not on its downstream symptom. #263 read a
+		// refinery at 0 lit aperture pixels and that looks like a defect in the
+		// form; it was a framing that landed somewhere else, and only a check on
+		// the framing itself says so.
+		framedWhereItAsked(
+			`${rangeKm} km — ${station.type}`,
+			await viewAlongAxis(station.id, rangeKm),
+		);
 		// The trade station is captured *twice from one evaluate*, and the second
 		// copy is the control. Two evaluates cannot measure this metric's noise:
 		// real frames run in the gap and carry the station along its orbit, which
@@ -576,11 +587,24 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		console.log(
 			`  control (trade measured twice): 1 − IoU = ${drift.toFixed(3)}`,
 		);
-		// Gated only where the shape comparison is. At the far range the mask is a
-		// few dozen pixels and the control reads about 0.17 — measured, printed,
-		// and the reason the far-range pairwise figures above are reported rather
-		// than asserted: a metric whose noise is half its signal is not evidence,
-		// and the honest far-range claim is the extent one below.
+		// Gated only where the shape comparison is, and the far control is the
+		// reason the far-range pairwise figures above are reported rather than
+		// asserted: a metric whose noise is of the same order as its signal is
+		// not evidence, and the honest far-range claim is the extent one below.
+		// The figure and the arm it moved under are in the module docstring; it
+		// is printed on the line above, and this file has already carried one
+		// copy of it into staleness.
+		//
+		// **What it is not** is the resample losing a small subject. #290 named
+		// that as the candidate and then measured it: at 60 km the two control
+		// captures agree exactly on lit pixels (32 and 32), on bounding box
+		// (8x8 and 8x8) and on filled grid cells (288 and 288), and still
+		// disagree by 0.400 of IoU. The clock is pinned and no frame lands
+		// between them, so the scene is identical — what differs is *which*
+		// pixels, not how many. That is the rasteriser and the threshold on a
+		// 32-pixel subject, which is what this control was built to see. `#120`
+		// owns the metric and `MAX_CONTROL_DIFFERENCE` names its finer-grid
+		// alternative.
 		if (gate.control)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
@@ -720,8 +744,27 @@ const wrap = (d) => {
  * and only the assertion differs, and a change to how the delta is taken should
  * land in one place.
  */
-async function angleRateRadS(id, waitMs) {
-	await viewAlongAxis(id, RANGE_KM);
+async function angleRateRadS(id, waitMs, label) {
+	// The second placement site, and it gates like the first. Sage found this
+	// one ungated: it frames at `RANGE_KM`, which is exactly where #272's red
+	// case lived, and a bad landing here falls through to `no aperture in the
+	// mesh` — #263's misdiagnosis, a framing failure wearing a form defect's
+	// name. So the gate is not redundant here: it is what would catch a landing
+	// that carried the aperture off camera.
+	//
+	// #290's helper swap changed this block's arm: it used to hold the ship at
+	// rest across `waitMs`, which at ~30 km/s is some 45 km of relative carry
+	// from a 5 km framing, and now it moves with the station. **The rates are
+	// unmoved, measured on both** — parked against co-moving, on an expected
+	// 0.1141 / 0.2765 / 0.0628 / 0.3142 rad/s: trade 0.1140 against 0.1141,
+	// shipyard 0.2765 against 0.2765, slow end 0.0627 against 0.0628, fast end
+	// 0.3142 against 0.3142, and the pad 0.0000 rad on both.
+	//
+	// *Why* they survive 45 km of carry is **not established**. It is not that
+	// the angle is camera-independent — `slotAngle` projects through
+	// `nearCamera` and is screen-space by construction — and an earlier draft of
+	// this comment claimed exactly that.
+	framedWhereItAsked(`spin — ${label}`, await viewAlongAxis(id, RANGE_KM));
 	const first = await slotAngle(id);
 	if (first.missing) return { missing: true };
 	await page.waitForTimeout(waitMs);
@@ -735,7 +778,7 @@ for (const station of setup.stations) {
 	if (station.spinRpm === 0) continue;
 	// Long enough to measure, short enough that the fastest station turns well
 	// under half a revolution — past π the wrap makes the direction ambiguous.
-	const sample = await angleRateRadS(station.id, 1500);
+	const sample = await angleRateRadS(station.id, 1500, `${station.type}`);
 	if (sample.missing) {
 		check(
 			`${station.type}: the slot is drawn`,
@@ -799,7 +842,11 @@ for (const rpm of ends) {
 		},
 		[spinner.id, rpm],
 	);
-	const sample = await angleRateRadS(spinner.id, 1500);
+	const sample = await angleRateRadS(
+		spinner.id,
+		1500,
+		`${spinner.type} at ${rpm.toFixed(2)} rpm`,
+	);
 	const expected = (2 * Math.PI * rpm) / 60;
 	console.log(
 		`  ${spinner.type} driven to ${rpm.toFixed(2)} rpm (§4's ` +
@@ -825,7 +872,7 @@ await page.evaluate(
 
 const pad = setup.stations.find((s) => s.spinRpm === 0);
 if (pad) {
-	const sample = await angleRateRadS(pad.id, 1200);
+	const sample = await angleRateRadS(pad.id, 1200, `${pad.type} pad`);
 	// The refinery's pad does not rotate at all (§4), which is what removes the
 	// roll match from its docking interaction. A pad that crept would make that
 	// a different game without failing any headless test.
