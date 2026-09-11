@@ -6,6 +6,8 @@
  * second source of world position or selection state.
  */
 
+import type { JumpRefusal } from "./hyperspace";
+import { SYSTEM_NAME_MAX_CHARS } from "./names";
 import { directionTo, edgeOf, intoCameraFrame, type Quat } from "./hud";
 import { length, sub, type Vec3 } from "./vec3";
 
@@ -571,3 +573,153 @@ export function flightFloorCells(state: FlightFloorState): FloorCell[] {
 
 	return [mode, thr, assistCell, charge];
 }
+
+/**
+ * §8.3's course cue, as a row of its own above §5.1's strip — node #117.
+ *
+ * `galaxy-map.md` §8.3 states the obligation and deliberately places it
+ * nowhere: "the next hop and the jumps remaining belong on the flight floor or
+ * the Navigation console — a course the player cannot see from the cockpit is a
+ * course they will forget they set." #117 read the console out on §8.3's own
+ * argument — a console is read by turning the head *away* from the glass, which
+ * is exactly the posture in which a course is forgotten — and then read a fifth
+ * strip cell out on width.
+ *
+ * **Why not a fifth cell.** `flightFloorWidest` lays the strip out against its
+ * widest reachable reading and memoises the fit for the width it solved at, and
+ * #92's receipt records a fit taken on a full tank clipping both ends of the run
+ * drawn a second later. A cell carrying a system name costs that bound about
+ * twelve characters: permanently, if the cell is dormant when there is no
+ * course; and as a reflow of the four solved cells, if it is absent. Its own row
+ * pays neither — it is drawn or it is not, and the strip below it never moves.
+ *
+ * It keeps the strip's own grammar — a label, a value and a §4 tone, measured by
+ * the same `floorRunWidths` — because two runs on one floor authored two ways is
+ * how a floor comes to look like two instruments.
+ */
+export const COURSE_CUE_LABEL = "COURSE";
+
+/**
+ * What the cue has to say, with the impossible states unrepresentable.
+ *
+ * `courseProgress` reports `remaining` and `nextHop` side by side, so "three
+ * jumps left and no next hop" is a shape the caller can build and the formatter
+ * would have to decide about. Splitting on arrival instead means the decision is
+ * made where the projection is read, once, rather than defended in the printer.
+ */
+export type CourseCue =
+	| {
+			kind: "underway";
+			/** The next system on the course — §8.3's first fact. */
+			nextHop: string;
+			/** Jumps remaining to the destination — §8.3's second. */
+			remaining: number;
+			/**
+			 * Whether the ship can actually make the next hop right now.
+			 *
+			 * The caller asks `planJump`, so the gate that refuses and the cue
+			 * that warns cannot drift apart. **The cue carries the tone and not
+			 * the sentence** (#117 D3): `planJump` owns the *codes*,
+			 * `jumpRefusalText` below owns the words, and §3's prompt prints
+			 * them. One quantity spelled in two places is how the glass comes to
+			 * say two things about one fact.
+			 */
+			affordable: boolean;
+	  }
+	| { kind: "arrived"; destination: string };
+
+/**
+ * The course row, or `null` for no row at all.
+ *
+ * Two of §5.2's decisions are visible in the shape of this function and the
+ * arguments for them live there, not here: `null` is **absence** rather than a
+ * dormant slot (#117 D2), and an `arrived` cue still returns a row, because
+ * arriving does not clear a course (#117 D4).
+ */
+export function courseCue(cue: CourseCue | null): FloorCell | null {
+	if (cue === null) return null;
+	if (cue.kind === "arrived")
+		return {
+			label: COURSE_CUE_LABEL,
+			value: `${cue.destination} arrived`,
+			// Green is §4's confirmed, engaged state, and a destination reached
+			// is the one moment on this row that is a result rather than a
+			// reference.
+			tone: "confirmed",
+		};
+	return {
+		label: COURSE_CUE_LABEL,
+		// Singular on the last leg. It is the reading a short hop shows the
+		// whole way, so "1 jumps" would be the most-seen form of this row.
+		value: `${cue.nextHop} ${cue.remaining} jump${cue.remaining === 1 ? "" : "s"}`,
+		tone: cue.affordable ? "passive" : "refused",
+	};
+}
+
+/**
+ * The most jumps the row reserves room for.
+ *
+ * **The two-digit ceiling, not the measured diameter** — a bound that tracks a
+ * measurement has to be re-measured whenever the generator moves, and a digit
+ * boundary does not. `tests/course-cue.test.ts` measures the diameter over
+ * every origin in all eight galaxies and pins it exactly, which is where the
+ * figure lives; it is deliberately not restated here, because the first version
+ * of this comment said 13 and the diameter is 14. A 1-in-17 stride over origins
+ * had found the 13, and a stride cannot find a diameter: it needs *both*
+ * endpoints in the sampled set.
+ */
+const COURSE_CUE_JUMPS_WIDEST = 99;
+
+/**
+ * The widest reading the row can ever take.
+ *
+ * **Asked of the formatter, never restated beside it.** The strip carried four
+ * literals of its own shapes until #92 found that a format change in one had no
+ * compile-time tie to the other; this is the same rule one instrument over. The
+ * font is monospace, so a character count is a width.
+ */
+export function courseCueWidest(): string {
+	const name = "M".repeat(SYSTEM_NAME_MAX_CHARS);
+	const candidates: CourseCue[] = [
+		{ kind: "arrived", destination: name },
+		{ kind: "underway", nextHop: name, remaining: 1, affordable: true },
+		{
+			kind: "underway",
+			nextHop: name,
+			remaining: COURSE_CUE_JUMPS_WIDEST,
+			affordable: true,
+		},
+	];
+	let widest = "";
+	for (const candidate of candidates) {
+		const row = courseCue(candidate);
+		if (row !== null && row.value.length > widest.length) widest = row.value;
+	}
+	return widest;
+}
+
+/**
+ * What a refused jump says.
+ *
+ * **One owner for the sentences, in the tier that formats.** `planJump` owns
+ * the *codes* (`JumpRefusal`) and this owns the words — §5.2 said "`planJump`
+ * owns those words", which was never quite true and stopped being true at all
+ * once two surfaces printed them: the notice a key press writes, and §3's
+ * prompt, which used to offer "press ` to jump to X" beside a course row the
+ * same frame had painted red.
+ *
+ * It lives here rather than in `main.ts` for the split this module already is:
+ * state in the entrypoint, formatting in the presentation tier. Nothing can
+ * import `main.ts`, so a refusal spelled there is one the chart — which already
+ * prints course state — cannot reach.
+ */
+export const jumpRefusalText = (
+	refusal: JumpRefusal,
+	destinationName: string,
+): string =>
+	({
+		"same-system": "already there",
+		"other-galaxy": "no galactic hyperdrive fitted",
+		"out-of-range": `${destinationName} is out of range`,
+		"insufficient-fuel": `not enough fuel for ${destinationName}`,
+	})[refusal];

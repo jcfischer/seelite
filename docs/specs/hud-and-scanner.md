@@ -9,8 +9,16 @@ provide the simulation surfaces this visual contract will eventually consume.
 
 This is the cockpit-first language for a pilot flying normal, assist-off, cruise,
 targeting, and docking states. It does not replace #21's flight model, mouse
-controls, or target-marker math, and it does not implement combat or #11's
-galaxy map.
+controls, or target-marker math, and it does not implement combat.
+
+**The galaxy map is not excluded, it is owned elsewhere.** This paragraph read
+"it does not implement #11's galaxy map" while #11 was closed and the chart
+mounted — so a reader learned the map was out of scope and not who has it. The
+chart is [#96](https://github.com/jcfischer/seelite/issues/96), on the left
+console's sibling tab (§5); the finder is
+[#115](https://github.com/jcfischer/seelite/issues/115). What this spec *does*
+own of the map is §5.2 below: `galaxy-map.md` §8.3's course cue is a cockpit
+instrument, and #117 put it on the floor.
 
 **It does own the market**, since #70. The original text of this paragraph
 declined it while `economy-trade.md` §11 was handing it here, and the screen was
@@ -243,6 +251,90 @@ The comment claimed that ownership before the code had it — the strip placed
 itself at `glassBottomY - 9` with a fixed 13 px font while only the clearance
 line read the constant, so raising the type would have slid the strip under the
 line without touching the number it was supposedly anchored to.
+
+
+### 5.2 The course row
+
+Built under [#117](https://github.com/jcfischer/seelite/issues/117), which took
+`galaxy-map.md` §8.3's obligation — "the next hop and the jumps remaining belong
+on the flight floor or the Navigation console" — and picked the floor.
+
+**A row of its own, above §5.1's strip, not a fifth cell in it.** The Navigation
+console was read out on §8.3's own argument: a console is read by turning the
+head away from the glass, which is exactly the posture in which a course is
+forgotten. A fifth cell was read out on width. §5.1's strip is laid out against
+its widest *reachable* reading and the fit is memoised for the width it was
+solved at; a cell carrying a system name costs that bound about twelve
+characters — permanently if the cell is dormant with no course, and as a reflow
+of four already-solved cells if it is absent. A row of its own pays neither.
+
+It keeps the strip's grammar — a label, a value and a §4 tone, measured by the
+same run-width pass and centred on the same axis — because two runs on one floor
+authored two ways is how a floor comes to look like two instruments. The
+`FLOOR_COURSE_HEIGHT_PX` band above the strip is reserved **whether or not a
+course is set**, and §3's clearance line is offset by it unconditionally: a line
+that jumps the moment the player commits to a destination is a worse instrument
+than one sitting a row higher always.
+
+| state | reads | tone |
+|---|---|---|
+| no course | *nothing is drawn* | — |
+| underway | `LAVEIAN 3 jumps`, singular on the last leg | passive |
+| underway, tank short | the same reading | **refused** |
+| arrived | `LAVEIAN arrived` | confirmed |
+
+**Absence, not a dormant slot.** §5 calls the floor "the minimum that keeps a
+hull-hidden cockpit flyable"; a permanent field reading `NO COURSE` is not that,
+and the reflow objection that makes a dormant slot attractive on the strip does
+not apply to a row of its own.
+
+**There is no unreachable state, because the generator cannot produce one.**
+§5 of `galaxy-generation.md` guarantees same-galaxy connectivity, so no
+destination in a galaxy is unroutable from any other.
+
+`courseProgress` still has a `null`, and it is worth naming precisely, because
+the row draws nothing for it and *drawing nothing* is also D2's deliberate
+no-course state. Two things reach it. A destination index that resolves to no
+system is a **corrupt save**, which `parseCourse` refuses loudly and this row
+does not try to second-guess. And a ship whose galaxy differs from the course's
+is **not corrupt** — a course is per-galaxy state under
+`persistent-world-state.md` §7 — but it is unreachable today: `planJump` refuses
+`other-galaxy` with "no galactic hyperdrive fitted", so nothing moves a ship
+between galaxies. When one is fitted, the pairing of a course to a galaxy needs
+an owner, and this row will report whatever that owner decides rather than
+deciding it. What *is* reachable is a next hop the hyperspace tank cannot pay
+for, and there the row **reddens and says nothing extra of its own**:
+`planJump` owns the *codes*, `jumpRefusalText` owns the words, and §3's prompt
+prints them.
+
+**That was a claim before it was true.** The prompt never asked `planJump` — it
+offered "press ` to jump to ANDIMA" beside a row this build had already painted
+red, and the refusal arrived only after the key was pressed. It is #92's
+`chargeReadsEmpty` defect one instrument over: two halves of one reading
+disagreeing on the glass. The fix is the same one — **one predicate, read by
+both**, with the words themselves owned by a single `jumpRefusalText`.
+
+**Arriving does not clear the course.** Ratified as shipped rather than changed:
+the course survives the last jump, `courseProgress` reports it, and the jump key
+already answers "course complete — set another on the galaxy chart". A course is
+player intent under `persistent-world-state.md` §7, and intent is not cancelled
+by being satisfied.
+
+**The row is bounded because a system name is.** `systemName` draws three or
+four pairs of at most two characters and its guard loop extends only a name
+still under two, so `SYSTEM_NAME_MAX_CHARS` is 8 — a ceiling of the draw, true
+of every seed.
+
+The jump count is reserved at **two digits**, and that figure is of a different
+kind: it is measured, and a measurement is of the worlds it visited.
+`tests/course-cue.test.ts` sweeps every origin in all eight galaxies at four
+seeds and puts the longest route at **13–14**, so the row's two digits have an
+order of magnitude of headroom. It is not a property of the generator —
+`seedFromQuery` gives a player one of 2^32 worlds and the sweep sees four — and
+this paragraph said "the real generator" for a round, which is the claim a
+single-seed figure cannot carry. What makes it a measurement rather than a
+number chosen to be safe is that the band is asserted exactly, not that the
+sweep is exhaustive.
 
 ## 6. Responsive behaviour
 

@@ -453,6 +453,59 @@ for (const viewport of VIEWPORTS) {
 	// ---- §5's flight-floor strip (#92) ------------------------------------
 
 	/**
+	 * §4's refusal fill, counted once for every sampler on this page.
+	 *
+	 * **The green channel is what discriminates it, not the red one.** The first
+	 * version asked only that the pixel was red-dominant — `r > 170` and
+	 * `r > b + 60` — which the *action* amber `rgba(255,196,110)` satisfies as
+	 * comfortably as the refusal `rgba(255,110,96)` does. The CHARGE cell's band
+	 * happens to have no amber in it and the check passed for years; §8.3's
+	 * course row sits where the target brackets cross, and read 339 amber pixels
+	 * in the arm asserting none — the same 339 both before and after the tank
+	 * was filled, which is how the two defects were told apart. A sampler that cannot tell §4's two warm tones
+	 * apart is not measuring the tone it names.
+	 */
+	await page.evaluate(() => {
+		/**
+		 * Read a floor box's own band and count §4's refusal fill in it.
+		 *
+		 * **The box carries its band.** Both samplers had their own
+		 * `Math.floor(box.y) - 12, …, 16` — a glyph height copied out of the
+		 * page, which goes lenient the day the type is raised rather than going
+		 * red. Every floor box states its `top` and `height` now, so there is no
+		 * fallback left to be lenient with: a box without a band is a page that
+		 * has changed shape, and it throws rather than sampling a guess.
+		 */
+		window.__refusalRedInBox = (box) => {
+			if (!box) return null;
+			const { top, height } = box;
+			if (typeof top !== "number" || typeof height !== "number")
+				throw new Error("floor box carries no band");
+			const overlay = document.getElementById("overlay");
+			const ctx = overlay.getContext("2d", { willReadFrequently: true });
+			const data = ctx.getImageData(
+				Math.floor(box.x),
+				Math.floor(top),
+				Math.ceil(box.width),
+				Math.ceil(height),
+			).data;
+			return window.__refusalRed(data);
+		};
+		window.__refusalRed = (data) => {
+			let red = 0;
+			for (let i = 0; i < data.length; i += 4)
+				if (
+					data[i + 3] > 40 &&
+					data[i] > 170 &&
+					data[i + 1] < 150 &&
+					data[i] > data[i + 2] + 60
+				)
+					red++;
+			return red;
+		};
+	});
+
+	/**
 	 * Read the strip as painted, plus the sim state each cell is *about*.
 	 *
 	 * Both halves in one evaluate, on one frame: comparing a record taken now
@@ -633,27 +686,11 @@ for (const viewport of VIEWPORTS) {
 	 * string.
 	 */
 	const redInChargeCell = () =>
-		page.evaluate(() => {
-			const g = window.__seelite;
-			const box = g.floorRender?.boxes.find((b) => b.label === "CHARGE");
-			if (!box) return null;
-			const overlay = document.getElementById("overlay");
-			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const data = ctx.getImageData(
-				Math.floor(box.x),
-				Math.floor(box.y) - 12,
-				Math.ceil(box.width),
-				16,
-			).data;
-			let red = 0;
-			for (let i = 0; i < data.length; i += 4) {
-				// §4's refusal fill is rgba(255,110,96,…): strongly red-dominant.
-				// The passive fill is rgba(150,205,240,…), which is the opposite.
-				if (data[i + 3] > 40 && data[i] > 170 && data[i] > data[i + 2] + 60)
-					red++;
-			}
-			return red;
-		});
+		page.evaluate(() =>
+			window.__refusalRedInBox(
+				window.__seelite.floorRender?.boxes.find((b) => b.label === "CHARGE"),
+			),
+		);
 	const redWhenCharged = await redInChargeCell();
 	await page.evaluate(() => {
 		window.__seelite.chargeAu = 0;
@@ -692,6 +729,239 @@ for (const viewport of VIEWPORTS) {
 		!targetSecondary.includes("CHARGE") && ETA_READOUT.test(targetSecondary),
 		`"${targetSecondary}"`,
 	);
+
+	// ---- §8.3's course row (#117) -----------------------------------------
+
+	/**
+	 * The row is drawn or it is not, and both states are the decision.
+	 *
+	 * §5.2 / #117 D2 chose absence over a dormant field, which is a claim about
+	 * the glass rather than about a string — so this reads the draw's own record,
+	 * which is written from what the draw drew, and then reads where the row
+	 * landed. A record assembled beside the draw would let this assert a row
+	 * that never painted, which is the check-that-cannot-fail this repo has
+	 * shipped once already.
+	 */
+	const restoreFuel = await page.evaluate(() => {
+		const g = window.__seelite;
+		// Put the drive back: the CHARGE refusal above left it empty, and an
+		// empty drive is not what these rows are about.
+		g.chargeAu = 11.9;
+		g.setCourseTo(null);
+		return g.fuelLy;
+	});
+	await nextFrames(page);
+	const noCourse = await page.evaluate(() => {
+		const f = window.__seelite.floorRender;
+		return {
+			// **The floor itself, first.** `f?.courseRow ?? null` is `null` both
+			// for a row deliberately not drawn and for a frame with no floor at
+			// all — a docked ship, a focused console — so the D2 check cleared
+			// on a frame it was never meant to read. That is the control that
+			// never runs, in the check whose own docstring warns about it.
+			floorPainted: f !== null,
+			row: f?.courseRow ?? null,
+			box: f?.courseBox ?? null,
+		};
+	});
+	check(
+		`${viewport.name}: with no course set, no course row is painted`,
+		noCourse.floorPainted === true &&
+			noCourse.row === null &&
+			noCourse.box === null,
+		`floor painted ${noCourse.floorPainted}; row ${JSON.stringify(noCourse.row)}`,
+	);
+
+	/**
+	 * **A destination the ship is not already at**, so the row reads §8.3's two
+	 * facts rather than the arrival state. The index comes off the page's own
+	 * galaxy: a probe with its own copy of a system index goes falsely red the
+	 * day the generator moves.
+	 */
+	const committed = await page.evaluate(() => {
+		const g = window.__seelite;
+		// **A full tank, explicitly.** Read at boot the tank is whatever the
+		// session has spent, so the first arm of the refusal check below was
+		// measuring a row that was *already* red — the affordable reading has to
+		// be reachable before a refusal can be attributed to anything.
+		//
+		// **Two defects, one reading, and they were told apart by the tone.**
+		// The arm asserting no red printed 339 both before and after this line
+		// was added, which is the tell: those 339 pixels were never the row.
+		// They are the amber target brackets crossing this band, admitted by a
+		// red predicate that did not look at the green channel — see
+		// `__refusalRed`. What the tank fixed was the *tone*, `refused` to
+		// `passive`, and the check asserts that separately now for exactly this
+		// reason. Sage caught the two fixes claiming one number as their
+		// evidence.
+		g.fuelLy = g.fuelCapacityLy;
+		const here = g.world.system.record;
+		// Every system is routable from every other inside a galaxy (§5 of
+		// `galaxy-generation.md`), so the first one that is not this one is a
+		// course the commit will accept.
+		const elsewhere = g.world.galaxy.systems.find(
+			(s) => s.galaxy === here.galaxy && s.index !== here.index,
+		);
+		return g.commitCourseTo(elsewhere.index);
+	});
+	await nextFrames(page);
+	check(
+		`${viewport.name}: the chart's own commit sets a course`,
+		committed === true,
+		`commitCourseTo returned ${committed}`,
+	);
+	const courseSet = await page.evaluate(() => {
+		const g = window.__seelite;
+		const r = g.floorRender;
+		return {
+			row: r?.courseRow ?? null,
+			box: r?.courseBox ?? null,
+			baselineY: r?.baselineY ?? null,
+			glassBottomY: r?.glassBottomY ?? null,
+			marginPx: r?.marginPx ?? 0,
+			widest: g.courseWidest,
+		};
+	});
+	check(
+		`${viewport.name}: a set course paints §8.3's row, above the strip and inside the glass`,
+		courseSet.row !== null &&
+			courseSet.box !== null &&
+			// Above the strip: a smaller y is higher on the canvas.
+			courseSet.box.y < courseSet.baselineY &&
+			// And still on the flying glass, not off the top of it.
+			courseSet.box.y > 0 &&
+			courseSet.box.x >= courseSet.marginPx &&
+			courseSet.box.x + courseSet.box.width <=
+				viewport.width - courseSet.marginPx &&
+			// The widest reading the row can take is what the fit was solved
+			// for, read off the page rather than restated here.
+			courseSet.row.value.length <= courseSet.widest.length,
+		`"${courseSet.row?.label} ${courseSet.row?.value}" at y ${courseSet.box?.y.toFixed(0)} of a strip baseline ${courseSet.baselineY?.toFixed(0)}, bound "${courseSet.widest}"`,
+	);
+
+	/**
+	 * **And it does not draw on the cruise/jump prompt.**
+	 *
+	 * The row went into the gap the prompt was sitting in, and the two painted
+	 * on one baseline: `COURSE ERBILE 6 jumps` under `press \` to jump to
+	 * ERBILE`, both centred, both perfectly recorded. Every record-reading row
+	 * above was green through it. Two instruments overlap or they do not, and
+	 * that is a question about rectangles rather than about either record — so
+	 * this compares them.
+	 */
+	const stacking = await page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			prompt: g.cockpitPrompt.text ? { ...g.cockpitPrompt.bounds } : null,
+			promptText: g.cockpitPrompt.text,
+			courseBox: g.floorRender?.courseBox ?? null,
+			// **The row's own band, off the page.** This was `y - 12`, a glyph
+			// height the probe kept a copy of — raise the type and the real top
+			// rises above it, so the check written to catch this PR's own
+			// collision goes lenient without going red.
+			courseTop: g.floorRender?.courseBox?.top ?? null,
+		};
+	});
+	check(
+		`${viewport.name}: the course row and the cruise prompt do not overlap`,
+		stacking.courseBox !== null &&
+			// The prompt must actually be drawn, or this asserts nothing.
+			stacking.prompt !== null &&
+			stacking.courseTop !== null &&
+			stacking.prompt.top + stacking.prompt.height <= stacking.courseTop,
+		`prompt "${stacking.promptText}" ${stacking.prompt?.top}…${(stacking.prompt?.top ?? 0) + (stacking.prompt?.height ?? 0)} against a course row from ${stacking.courseTop}`,
+	);
+
+	/**
+	 * **The refusal paints, and the affordable reading does not.**
+	 *
+	 * #117 D3 gives the row a tone and no sentence of its own, so the only
+	 * thing that can be checked about it is the pixels — the same argument the
+	 * CHARGE cell's red sampler is built on, and the same sampler shape. The
+	 * tank is driven to empty through the handle, which is what makes this the
+	 * condition `planJump` actually refuses rather than a second copy of it.
+	 */
+	const redInCourseRow = () =>
+		page.evaluate(() =>
+			window.__refusalRedInBox(window.__seelite.floorRender?.courseBox),
+		);
+	const redWithFuel = await redInCourseRow();
+	const fuelledRow = await page.evaluate(
+		() => window.__seelite.floorRender?.courseRow ?? null,
+	);
+	await page.evaluate(() => {
+		window.__seelite.fuelLy = 0;
+	});
+	await nextFrames(page);
+	const redWithoutFuel = await redInCourseRow();
+	const dryRow = await page.evaluate(
+		() => window.__seelite.floorRender?.courseRow ?? null,
+	);
+	check(
+		`${viewport.name}: an unaffordable next hop paints the course row as a refusal`,
+		redWithFuel === 0 &&
+			redWithoutFuel > 20 &&
+			// Named rather than left implicit in the pixel count: an arm that is
+			// red for its own reasons reads exactly like the effect not working.
+			fuelledRow?.tone === "passive" &&
+			dryRow?.tone === "refused" &&
+			// And it says nothing extra: the words belong to `planJump` and the
+			// prompt, not to this row.
+			dryRow?.value === courseSet.row?.value,
+		`${redWithFuel} red pixels fuelled (${fuelledRow?.tone}), ${redWithoutFuel} dry (${dryRow?.tone}); "${dryRow?.value}" against "${courseSet.row?.value}"`,
+	);
+
+	/**
+	 * **And the prompt says the same thing the row does.**
+	 *
+	 * §5.2 claimed "`planJump` owns those words and §3's prompt prints them"
+	 * before it was true: `cruisePrompt` never asked `planJump`, so the glass
+	 * offered "press ` to jump to ANDIMA" beside a row this build had already
+	 * painted red, and the refusal arrived only after the key was pressed. That
+	 * is #92's `chargeReadsEmpty` defect one instrument over, and it is checked
+	 * the way that one is — the two halves of one reading, on one frame.
+	 */
+	const dryPrompt = await page.evaluate(
+		() => window.__seelite.cockpitPrompt.text,
+	);
+	check(
+		`${viewport.name}: the prompt and the course row agree about an unaffordable hop`,
+		dryRow?.tone === "refused" &&
+			// The words are `planJump`'s, through `jumpRefusalText`, so this is
+			// the shipped sentence and not a second copy of it.
+			/not enough fuel for \S+/.test(dryPrompt),
+		`row ${dryRow?.tone}, prompt "${dryPrompt}"`,
+	);
+
+	/**
+	 * **Arriving leaves the row standing** (#117 D4), ratified as shipped: a
+	 * course is player intent, and intent is not cancelled by being satisfied.
+	 * A course set to the system the ship is already in is the arrival state by
+	 * construction, and `courseProgress` reports it without anything being
+	 * stored.
+	 */
+	await page.evaluate((fuel) => {
+		const g = window.__seelite;
+		g.fuelLy = fuel;
+		g.commitCourseTo(g.world.system.record.index);
+	}, restoreFuel);
+	await nextFrames(page);
+	const arrived = await page.evaluate(() => {
+		const g = window.__seelite;
+		return {
+			row: g.floorRender?.courseRow ?? null,
+			here: g.world.system.record.name,
+		};
+	});
+	check(
+		`${viewport.name}: arriving leaves the course row standing, reading the destination`,
+		arrived.row !== null &&
+			arrived.row.value === `${arrived.here} arrived` &&
+			arrived.row.tone === "confirmed",
+		`"${arrived.row?.value}" (${arrived.row?.tone}) at ${arrived.here}`,
+	);
+	await page.evaluate(() => window.__seelite.setCourseTo(null));
+	await nextFrames(page);
 
 	/**
 	 * **The right console's ASSIST and CHARGE rows are no longer empty.**
