@@ -372,8 +372,11 @@ import {
 import {
 	newWorld as newPersistentWorld,
 	observeDocking,
+	applyTransition,
+	effectiveCarrier,
 	observeSystemRelay,
 	setDeficits,
+	type TransitionEvent,
 	visit,
 	type WorldState,
 } from "./world-state";
@@ -8500,6 +8503,53 @@ class Game {
 		};
 	}
 
+	/**
+	 * #89's D7, at the one moment it can be chosen.
+	 *
+	 * **It refuses on a loaded commander**, because a flag that can be flipped
+	 * later is a setting and not a choice — and the one thing D7 does promise is
+	 * that the flag was written at creation.
+	 */
+	choosePermadeath(): void {
+		if (this.commerceWorld.gameTime > 0)
+			throw new Error("permadeath is chosen at new game, not later");
+		this.permadeath = true;
+		this.saveDirty();
+	}
+
+	/**
+	 * Apply a carrier transition to the live world — the path #43's prototype
+	 * needs and nothing in the game yet reaches.
+	 *
+	 * `persistent-world-state.md` §4's table has been implemented and tested
+	 * since #46, and until now the only caller was its own test: nothing in
+	 * flight damages a carrier, so the whole domain was unreachable from a
+	 * running game. A prototype should not have to build the wire before it can
+	 * ask its question, and #90 is the node that owns the wire.
+	 *
+	 * It is the module's writer, unedited — the clock refusal, the galaxy
+	 * bound and `materializeDue` all apply, so a debug hook cannot put the
+	 * world in a state a real writer could not.
+	 */
+	applyCarrierTransition(key: CarrierKey, event: TransitionEvent): void {
+		this.commerceWorld = applyTransition(
+			this.commerceWorld,
+			this.world.system.record.galaxy,
+			key,
+			event,
+		);
+		this.saveDirty();
+	}
+
+	/** The effective condition of one carrier right now, for the same caller. */
+	carrierCondition(key: CarrierKey) {
+		return effectiveCarrier(
+			this.commerceWorld.galaxies[this.world.system.record.galaxy],
+			key,
+			this.world.gameTime,
+		);
+	}
+
 	/** The whole save, world and commander, as the store asks for it. */
 	saveEnvelope(): SaveEnvelope {
 		return { world: this.commerceWorld, commander: this.commanderRecord() };
@@ -9697,6 +9747,16 @@ if (query.has("model-viewer")) {
 		}
 	}
 	const game = new Game(seedFromQuery(), loaded);
+	// **Chosen at new game, and only at new game** (#89's D7). A loaded
+	// commander carries the flag it was created with; a query parameter cannot
+	// turn permadeath on or off for a commander that already exists, because
+	// that would make the flag a setting rather than a choice.
+	//
+	// A URL parameter rather than a screen, because there is no new-game screen
+	// to put it on yet: this game boots straight in. The flag ships in the
+	// schema from day one — which is what D7 asked for and the reason it is not
+	// waiting for that screen — and the screen reads it when there is one.
+	if (!loaded && query.has("permadeath")) game.choosePermadeath();
 	game.saveFault = saveFault;
 	if (!query.has("no-save")) {
 		game.saveStore = new SaveStore({

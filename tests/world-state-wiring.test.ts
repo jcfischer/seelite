@@ -65,6 +65,30 @@ describe("the Game's world writes", () => {
 		expect(byHand).toEqual([]);
 	});
 
+	test("the carrier-condition path is reachable from a running game", () => {
+		// §4's transition table has been implemented and tested since #46, and
+		// until #90 its only caller was its own test: nothing in flight damages a
+		// carrier, so the whole domain was unreachable from a running game and
+		// #43's prototype would have had to build the wire before it could ask
+		// its question. A source check, for the same reason as the rows above —
+		// `Game` builds a renderer and is not constructible headless.
+		expect(MAIN).toContain("applyCarrierTransition(");
+		expect(MAIN).toContain("carrierCondition(");
+		// And it goes through the module's writer rather than editing the
+		// envelope, so a debug hook cannot reach a state a real writer could not.
+		const body = MAIN.split("applyCarrierTransition(")[1] ?? "";
+		expect(body.slice(0, 400)).toContain("applyTransition(");
+	});
+
+	test("permadeath is chosen at new game and cannot be flipped later", () => {
+		const body = MAIN.split("choosePermadeath(): void")[1] ?? "";
+		// The refusal, not just the assignment: a flag that can be turned on
+		// after the fact is a setting, and D7 promises it was written at
+		// creation.
+		expect(body.slice(0, 300)).toContain("gameTime > 0");
+		expect(MAIN).toContain('!loaded && query.has("permadeath")');
+	});
+
 	test("the renderer never converts the world clock into minutes", () => {
 		// `this.world.gameTime / 60` is game minutes, which is the right unit for
 		// `stationMarketScreen`, `readDeficit` and `recordTrade` and the wrong
