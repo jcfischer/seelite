@@ -6,6 +6,7 @@
  * second source of world position or selection state.
  */
 
+import type { JumpRefusal } from "./hyperspace";
 import { SYSTEM_NAME_MAX_CHARS } from "./names";
 import { directionTo, edgeOf, intoCameraFrame, type Quat } from "./hud";
 import { length, sub, type Vec3 } from "./vec3";
@@ -696,3 +697,29 @@ export function courseCueWidest(): string {
 	}
 	return widest;
 }
+
+/**
+ * What a refused jump says.
+ *
+ * **One owner for the sentences, in the tier that formats.** `planJump` owns
+ * the *codes* (`JumpRefusal`) and this owns the words — §5.2 said "`planJump`
+ * owns those words", which was never quite true and stopped being true at all
+ * once two surfaces printed them: the notice a key press writes, and §3's
+ * prompt, which used to offer "press ` to jump to X" beside a course row the
+ * same frame had painted red.
+ *
+ * It lives here rather than in `main.ts` for the split this module already is:
+ * state in the entrypoint, formatting in the presentation tier. Nothing can
+ * import `main.ts`, so a refusal spelled there is one the chart — which already
+ * prints course state — cannot reach.
+ */
+export const jumpRefusalText = (
+	refusal: JumpRefusal,
+	destinationName: string,
+): string =>
+	({
+		"same-system": "already there",
+		"other-galaxy": "no galactic hyperdrive fitted",
+		"out-of-range": `${destinationName} is out of range`,
+		"insufficient-fuel": `not enough fuel for ${destinationName}`,
+	})[refusal];

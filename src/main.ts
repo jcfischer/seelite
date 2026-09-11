@@ -117,6 +117,7 @@ import {
 	chargeReadsEmpty,
 	courseCue,
 	courseCueWidest,
+	jumpRefusalText,
 	flightFloorWidest,
 	type FloorCell,
 	type FloorTone,
@@ -149,7 +150,7 @@ import {
 	stepCruiseGuidance,
 	type CruiseGuidanceState,
 } from "./cruise-guidance";
-import { GOVERNMENT_NAMES, type SystemRecord } from "./galaxy";
+import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
@@ -811,24 +812,6 @@ const CLEARANCE_ABOVE_FLOOR_PX = 16;
  * itself from the strip's band. Three sites read this now, and a fourth band
  * is one edit rather than three.
  */
-/**
- * What a refused jump says, in one place.
- *
- * The refusals are the module's — `JumpRefusal` is imported rather than
- * respelled, because a second copy of the set is the drift this comment claims
- * not to have — so the words the player reads and the gate that produced them
- * cannot come apart — and **two surfaces read them now**:
- * the notice a key press writes, and §3's prompt, which used to offer "press `
- * to jump to X" beside a course row this build had already painted red.
- */
-const jumpRefusalText = (refusal: JumpRefusal, to: SystemRecord): string =>
-	({
-		"same-system": "already there",
-		"other-galaxy": "no galactic hyperdrive fitted",
-		"out-of-range": `${to.name} is out of range`,
-		"insufficient-fuel": `not enough fuel for ${to.name}`,
-	})[refusal];
-
 const floorTopY = (h: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX - FLOOR_COURSE_HEIGHT_PX;
 /** Where the baseline sits inside the band, and how big the value type is —
@@ -903,6 +886,26 @@ function floorRunWidths(
 }
 
 /**
+ * Where one floor run landed, and the band it landed in.
+ *
+ * **One shape, because this PR proved what four copies cost**: adding `top` and
+ * `height` so a sampler could stop keeping its own glyph height meant editing
+ * the field's type, the local it is built into, and the course row's separate
+ * literal. The course row has a label like any other cell (`COURSE_CUE_LABEL`),
+ * so it is one of these rather than a second shape.
+ */
+interface FloorBox {
+	label: string;
+	x: number;
+	y: number;
+	width: number;
+	/** The band the run occupies, so a sampler reads it rather than keeping a
+	 *  glyph height that goes lenient when the type is raised. */
+	height: number;
+	top: number;
+}
+
+/**
  * Paint one floor cell: its label, then its value in §4's tone.
  *
  * **One painter, because the floor has two runs.** §5.2 says "two runs on one
@@ -916,22 +919,18 @@ function floorRunWidths(
 function drawFloorCell(
 	ctx: CanvasRenderingContext2D,
 	cell: FloorCell,
-	x: number,
-	baselineY: number,
-	labelWidth: number,
-	labelGap: number,
-	labelFont: string,
-	valueFont: string,
+	at: { x: number; baselineY: number; labelWidth: number },
+	type: { labelGap: number; labelFont: string; valueFont: string },
 ) {
-	ctx.font = labelFont;
+	ctx.font = type.labelFont;
 	ctx.fillStyle = FLOOR_LABEL_FILL;
-	ctx.fillText(cell.label, x, baselineY);
-	ctx.font = valueFont;
+	ctx.fillText(cell.label, at.x, at.baselineY);
+	ctx.font = type.valueFont;
 	ctx.fillStyle = FLOOR_TONE_FILL[cell.tone];
 	// The label width comes from the measuring pass rather than a second
 	// `measureText` here — four labels re-measured every frame for a value that
 	// changes only with the viewport.
-	ctx.fillText(cell.value, x + labelWidth + labelGap, baselineY);
+	ctx.fillText(cell.value, at.x + at.labelWidth + type.labelGap, at.baselineY);
 }
 
 /** One cell's value by label. Throws rather than printing `undefined` on a
@@ -1556,31 +1555,13 @@ class Game {
 	 * would let a probe assert a strip that was never painted, which is the
 	 * check-that-cannot-fail this repo has shipped once already.
 	 */
-
 	floorRender: {
 		cells: FloorCell[];
-		boxes: {
-			label: string;
-			x: number;
-			y: number;
-			width: number;
-			/** Every floor box states its band, so a sampler reads it rather than
-			 *  keeping a glyph height that goes lenient when the type is raised. */
-			height: number;
-			top: number;
-		}[];
+		boxes: FloorBox[];
 		/** §8.3's course row as painted, or `null` where no course is set and
 		 *  the row was deliberately not drawn. */
 		courseRow: FloorCell | null;
-		courseBox: {
-			x: number;
-			y: number;
-			width: number;
-			height: number;
-			/** The top of the row's band. A probe reads this rather than
-			 *  subtracting a glyph height of its own. */
-			top: number;
-		} | null;
+		courseBox: FloorBox | null;
 		baselineY: number;
 		glassBottomY: number;
 		/** What the strip was shrunk by to fit its widest reading in this
@@ -5878,7 +5859,7 @@ class Game {
 			);
 			return decision.ok
 				? `press \` to jump to ${hop.name}`
-				: jumpRefusalText(decision.refusal, hop);
+				: jumpRefusalText(decision.refusal, hop.name);
 		}
 		if (targetKm === null) return "T selects a target";
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
@@ -7164,13 +7145,14 @@ class Game {
 	 * and not a chain.
 	 */
 	nextHop(): SystemRecord | null {
-		if (!this.course) return null;
-		const progress = courseProgress(
-			this.world.galaxy.systems,
-			this.course,
-			this.world.system.record,
-		);
-		return progress?.nextHop?.system ?? null;
+		// **Through the same cache the course row reads.** This ran
+		// `courseProgress` — a 256-node Dijkstra with four typed-array
+		// allocations — on every call, and `cruisePrompt` calls it from the
+		// per-frame overlay draw. So the chain cache added for the row bought
+		// the frame nothing while the identical search ran twenty lines away,
+		// and the cache's own comment claimed the per-frame search was gone.
+		const cue = this.courseChain();
+		return cue?.nextHop ?? null;
 	}
 
 	/**
@@ -7217,7 +7199,7 @@ class Game {
 			this.commander.fuelLy,
 		);
 		if (!decision.ok) {
-			this.jumpNotice = jumpRefusalText(decision.refusal, to);
+			this.jumpNotice = jumpRefusalText(decision.refusal, to.name);
 			return false;
 		}
 		this.jumpCharge = beginCharge(to.index);
@@ -9150,16 +9132,41 @@ class Game {
 	 * is a distance and a comparison and the tank moves without the ship
 	 * jumping.
 	 */
-	courseCueState(): CourseCue | null {
+	/**
+	 * The set course's chain, planned once per (course, where the ship is).
+	 *
+	 * **Re-derived, never remembered as a cursor**, for `galaxy-route.ts`'s own
+	 * reason: a `Course` is a destination and not a chain, so an off-plan jump
+	 * re-plans instead of desyncing.
+	 *
+	 * **But not re-planned every frame.** `courseProgress` runs `planRoute` — a
+	 * 256-node Dijkstra with four typed-array allocations — and the chart
+	 * already records that a getter which looks free was one full search per
+	 * read. Two callers share this: §8.3's row, and `nextHop`, which
+	 * `cruisePrompt` reaches from the per-frame overlay draw. They did not for a
+	 * round, so the cache bought the frame nothing while the identical search
+	 * ran twenty lines away — and this comment claimed otherwise.
+	 *
+	 * `null` is "no course, or one that does not resolve" — §5.2 owns what the
+	 * second of those means and this does not restate it, because the two
+	 * sentences were written separately and disagreed about which states are
+	 * corrupt.
+	 */
+	private courseChain(): {
+		destination: SystemRecord;
+		nextHop: SystemRecord | null;
+		remaining: number;
+	} | null {
 		const course = this.course;
 		if (!course) return null;
 		const here = this.world.system.record;
-		// **The ship's galaxy is in the key, not only the course's.** A course is
-		// per-galaxy and `courseProgress` returns `null` when the two disagree —
-		// which is the *only* way it goes null on a sound save — so a key without
-		// it serves galaxy 0's chain to a ship standing at the same index in
-		// galaxy 1.
-		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}`;
+		// **Every input `courseProgress` reads is in the key.** The ship's
+		// galaxy as well as the course's — a course is per-galaxy, and §5.2
+		// names what a mismatch between the two means — and the jump range,
+		// which is `courseProgress`'s fourth argument and today a constant.
+		// #185 makes the range hull-aware, and a key blind to it would then
+		// serve the previous hull's chain.
+		const key = `${course.galaxy}:${course.destinationIndex}:${here.galaxy}:${here.index}:${JUMP_RANGE_LY}`;
 		if (this.courseChainCache?.key !== key) {
 			const progress = courseProgress(this.world.galaxy.systems, course, here);
 			this.courseChainCache =
@@ -9174,10 +9181,19 @@ class Game {
 							},
 						};
 		}
-		const chain = this.courseChainCache.chain;
-		// A course whose destination cannot be found is a corrupt save, not a
-		// state to draw — `parseCourse` is what refuses it, loudly, and this
-		// draws nothing rather than inventing a second answer.
+		return this.courseChainCache.chain;
+	}
+
+	/**
+	 * §8.3's course row **as a state**, or `null` for no row at all.
+	 *
+	 * Named for the state rather than the row because `courseCue` is the
+	 * formatter: `courseRow(): CourseCue` beside `courseCue(): FloorCell` read
+	 * as each other's inverse, and the call site said so out loud —
+	 * `const courseRow = courseCue(this.courseRow())`.
+	 */
+	courseCueState(): CourseCue | null {
+		const chain = this.courseChain();
 		if (chain === null) return null;
 		if (chain.nextHop === null)
 			return { kind: "arrived", destination: chain.destination.name };
@@ -9188,7 +9204,11 @@ class Game {
 			// **The gate itself, not a copy of it.** The cue reddens on exactly
 			// the condition that refuses the jump, so the row and the refusal it
 			// predicts cannot drift apart.
-			affordable: planJump(here, chain.nextHop, this.commander.fuelLy).ok,
+			affordable: planJump(
+				this.world.system.record,
+				chain.nextHop,
+				this.commander.fuelLy,
+			).ok,
 		};
 	}
 
@@ -9257,19 +9277,16 @@ class Game {
 		const labelGap = FLOOR_LABEL_GAP_PX * scale;
 		const cellGap = FLOOR_CELL_GAP_PX * scale;
 		const { widths, labelWidths, total } = floorRunWidths(ctx, cells, scale);
+		// The three typography arguments are identical at both call sites and
+		// come from one fit solve, so they travel together rather than as three
+		// of eight positionals a reader has to align.
+		const floorType = { labelGap, labelFont, valueFont };
 
 		const glassBottomY = h * GLASS_BOTTOM_FRACTION;
 		const baselineY =
 			glassBottomY - FLOOR_STRIP_HEIGHT_PX * FLOOR_BASELINE_FRACTION;
 		let x = (w - total) / 2;
-		const boxes: {
-			label: string;
-			x: number;
-			y: number;
-			width: number;
-			height: number;
-			top: number;
-		}[] = [];
+		const boxes: FloorBox[] = [];
 		ctx.save();
 		ctx.textAlign = "left";
 		for (const [i, cell] of cells.entries()) {
@@ -9286,12 +9303,8 @@ class Game {
 			drawFloorCell(
 				ctx,
 				cell,
-				x,
-				baselineY,
-				labelWidths[i],
-				labelGap,
-				labelFont,
-				valueFont,
+				{ x, baselineY, labelWidth: labelWidths[i] },
+				floorType,
 			);
 			x += widths[i] + cellGap;
 		}
@@ -9302,13 +9315,7 @@ class Game {
 		// label/value/tone grammar, in its own band, rather than a fifth cell
 		// (#117 D1). With no course it is absent, and absence here moves nothing
 		// below it (#117 D2).
-		let courseBox: {
-			x: number;
-			y: number;
-			width: number;
-			height: number;
-			top: number;
-		} | null = null;
+		let courseBox: FloorBox | null = null;
 		if (courseRow !== null) {
 			const run = floorRunWidths(ctx, [courseRow], scale);
 			const courseBaselineY =
@@ -9317,14 +9324,15 @@ class Game {
 			drawFloorCell(
 				ctx,
 				courseRow,
-				courseX,
-				courseBaselineY,
-				run.labelWidths[0],
-				labelGap,
-				labelFont,
-				valueFont,
+				{
+					x: courseX,
+					baselineY: courseBaselineY,
+					labelWidth: run.labelWidths[0],
+				},
+				floorType,
 			);
 			courseBox = {
+				label: courseRow.label,
 				x: courseX,
 				y: courseBaselineY,
 				width: run.total,

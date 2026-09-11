@@ -25,9 +25,20 @@ import { SYSTEM_NAME_MAX_CHARS, SYSTEM_NAME_MIN_CHARS } from "../src/names";
 
 const WORLD_SEED = 0x5ee11e;
 
-/** The longest route any galaxy holds at `WORLD_SEED`, measured below and
- *  quoted by `hud-and-scanner.md` §5.2. */
-const GALAXY_DIAMETER_JUMPS = 14;
+/**
+ * The seeds the diameter is measured over.
+ *
+ * **A seed, not the generator.** `seedFromQuery` gives a player one of 2^32
+ * worlds, and a sweep of one of them cannot say what the generator does — §5.2
+ * called a single-seed figure a property of "the real generator" for a round.
+ * Four is not 2^32 either; what it buys is a *spread* rather than a point, and
+ * the spread is what the bound is judged against.
+ */
+const SEEDS = [0x5ee11e, 1, 2, 0xdeadbeef] as const;
+
+/** The band those seeds put the longest route in. Measured, not guessed —
+ *  the wider sweep behind it is in the test below. */
+const DIAMETER_BAND = { min: 13, max: 14 } as const;
 
 const underway = (
 	over: Partial<Extract<CourseCue, { kind: "underway" }>> = {},
@@ -168,33 +179,46 @@ describe("the bound's assumptions hold against the real generator", () => {
 	 * This was a 1-in-17 stride over origins running `planRoute` per
 	 * destination — 32,768 single-source searches to answer a question one
 	 * search per origin answers, and sage measured it at 11.8 s on a loaded
-	 * machine against bun's 5 s default. `projectJumps` is that one search, and
-	 * the whole sweep is 383 ms.
+	 * machine against bun's 5 s default. `projectJumps` is that one search.
 	 *
 	 * **The stride also hid the answer, and its stated reason was false.** "A
 	 * long route is long for its destination's sake, not its origin's" is wrong
 	 * for an undirected shortest-path graph: the diameter needs *both*
 	 * endpoints in the sampled set. The strided sweep reported 13 and the
-	 * number reached §5.2's prose; the true diameter is 14.
+	 * number reached §5.2's prose as a measurement; the diameter at that seed
+	 * is 14.
+	 *
+	 * **And a seed is not the generator.** Four seeds put it at 13–14 against a
+	 * bound of 99, so what the row reserves has an order of magnitude of
+	 * headroom — which is the claim worth making, and it is a claim about a
+	 * spread rather than about one world.
 	 */
-	test("the longest route in any galaxy fits the two digits the row prints", () => {
-		let most = 0;
-		for (let galaxy = 0; galaxy < 8; galaxy++) {
-			const { systems } = generateGalaxy(WORLD_SEED, galaxy);
-			for (const from of systems) {
-				const projection = projectJumps(systems, from);
-				for (const to of systems) {
-					const reach = projection.reach(to);
-					if (reach !== undefined && reach.jumps > most) most = reach.jumps;
+	test("the longest route over the sampled seeds fits the two digits the row prints", () => {
+		let low = Number.POSITIVE_INFINITY;
+		let high = 0;
+		for (const seed of SEEDS) {
+			let most = 0;
+			for (let galaxy = 0; galaxy < 8; galaxy++) {
+				const { systems } = generateGalaxy(seed, galaxy);
+				for (const from of systems) {
+					const projection = projectJumps(systems, from);
+					for (const to of systems) {
+						const reach = projection.reach(to);
+						if (reach !== undefined && reach.jumps > most) most = reach.jumps;
+					}
 				}
 			}
+			low = Math.min(low, most);
+			high = Math.max(high, most);
 		}
-		// **Exact, because §5.2 transcribes it.** `toBeLessThanOrEqual(99)` was
+		// **A band, because §5.2 transcribes it.** `toBeLessThanOrEqual(99)` was
 		// the whole assertion for a round, which cannot tell 14 from 98 — and a
 		// figure quoted in prose needs an exact assertion behind it, which is
 		// `economy-trade.md` §1's rule and the reason two figures were invented
 		// in #25. A generator retune that moves this should read the spec.
-		expect(most).toBe(GALAXY_DIAMETER_JUMPS);
-		expect(most).toBeLessThan(100);
+		expect(low).toBe(DIAMETER_BAND.min);
+		expect(high).toBe(DIAMETER_BAND.max);
+		// And the headroom the row's two digits actually have.
+		expect(high).toBeLessThan(100);
 	});
 });

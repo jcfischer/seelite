@@ -289,13 +289,23 @@ and the reflow objection that makes a dormant slot attractive on the strip does
 not apply to a row of its own.
 
 **There is no unreachable state, because the generator cannot produce one.**
-§5 of `galaxy-generation.md` guarantees same-galaxy connectivity and §8.2 of
-`galaxy-map.md` makes a course envelope-matched to its galaxy, so
-`courseProgress` returns `null` only on a corrupt save — which `parseCourse`
-refuses loudly, and which this row draws nothing for rather than inventing a
-second answer. What *is* reachable is a next hop the hyperspace tank cannot pay
-for, and there the row **reddens and says nothing extra of its own**: `planJump`
-owns those words and §3's prompt prints them.
+§5 of `galaxy-generation.md` guarantees same-galaxy connectivity, so no
+destination in a galaxy is unroutable from any other.
+
+`courseProgress` still has a `null`, and it is worth naming precisely, because
+the row draws nothing for it and *drawing nothing* is also D2's deliberate
+no-course state. Two things reach it. A destination index that resolves to no
+system is a **corrupt save**, which `parseCourse` refuses loudly and this row
+does not try to second-guess. And a ship whose galaxy differs from the course's
+is **not corrupt** — a course is per-galaxy state under
+`persistent-world-state.md` §7 — but it is unreachable today: `planJump` refuses
+`other-galaxy` with "no galactic hyperdrive fitted", so nothing moves a ship
+between galaxies. When one is fitted, the pairing of a course to a galaxy needs
+an owner, and this row will report whatever that owner decides rather than
+deciding it. What *is* reachable is a next hop the hyperspace tank cannot pay
+for, and there the row **reddens and says nothing extra of its own**:
+`planJump` owns the *codes*, `jumpRefusalText` owns the words, and §3's prompt
+prints them.
 
 **That was a claim before it was true.** The prompt never asked `planJump` — it
 offered "press ` to jump to ANDIMA" beside a row this build had already painted
@@ -312,10 +322,19 @@ by being satisfied.
 
 **The row is bounded because a system name is.** `systemName` draws three or
 four pairs of at most two characters and its guard loop extends only a name
-still under two, so `SYSTEM_NAME_MAX_CHARS` is 8 — and the jump count is
-reserved at two digits against a longest measured route of 14.
-`tests/course-cue.test.ts` sweeps both against the real generator, which is what
-keeps the bound a measurement rather than a number chosen to be safe.
+still under two, so `SYSTEM_NAME_MAX_CHARS` is 8 — a ceiling of the draw, true
+of every seed.
+
+The jump count is reserved at **two digits**, and that figure is of a different
+kind: it is measured, and a measurement is of the worlds it visited.
+`tests/course-cue.test.ts` sweeps every origin in all eight galaxies at four
+seeds and puts the longest route at **13–14**, so the row's two digits have an
+order of magnitude of headroom. It is not a property of the generator —
+`seedFromQuery` gives a player one of 2^32 worlds and the sweep sees four — and
+this paragraph said "the real generator" for a round, which is the claim a
+single-seed figure cannot carry. What makes it a measurement rather than a
+number chosen to be safe is that the band is asserted exactly, not that the
+sweep is exhaustive.
 
 ## 6. Responsive behaviour
 

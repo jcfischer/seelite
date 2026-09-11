@@ -461,7 +461,8 @@ for (const viewport of VIEWPORTS) {
 	 * comfortably as the refusal `rgba(255,110,96)` does. The CHARGE cell's band
 	 * happens to have no amber in it and the check passed for years; §8.3's
 	 * course row sits where the target brackets cross, and read 339 amber pixels
-	 * in the arm asserting none. A sampler that cannot tell §4's two warm tones
+	 * in the arm asserting none — the same 339 both before and after the tank
+	 * was filled, which is how the two defects were told apart. A sampler that cannot tell §4's two warm tones
 	 * apart is not measuring the tone it names.
 	 */
 	await page.evaluate(() => {
@@ -769,11 +770,19 @@ for (const viewport of VIEWPORTS) {
 	const committed = await page.evaluate(() => {
 		const g = window.__seelite;
 		// **A full tank, explicitly.** Read at boot the tank is whatever the
-		// session has spent, and the first arm of the refusal check below then
-		// measures a row that is *already* red — which is how it first ran: 339
-		// red pixels in the arm asserting none, against 554 in the arm asserting
-		// some. The affordable reading has to be reachable before the refusal
-		// can be attributed to anything.
+		// session has spent, so the first arm of the refusal check below was
+		// measuring a row that was *already* red — the affordable reading has to
+		// be reachable before a refusal can be attributed to anything.
+		//
+		// **Two defects, one reading, and they were told apart by the tone.**
+		// The arm asserting no red printed 339 both before and after this line
+		// was added, which is the tell: those 339 pixels were never the row.
+		// They are the amber target brackets crossing this band, admitted by a
+		// red predicate that did not look at the green channel — see
+		// `__refusalRed`. What the tank fixed was the *tone*, `refused` to
+		// `passive`, and the check asserts that separately now for exactly this
+		// reason. Sage caught the two fixes claiming one number as their
+		// evidence.
 		g.fuelLy = g.fuelCapacityLy;
 		const here = g.world.system.record;
 		// Every system is routable from every other inside a galaxy (§5 of
