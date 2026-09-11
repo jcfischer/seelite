@@ -63,10 +63,6 @@ try {
 	});
 	const page = await context.newPage();
 	watch(page);
-	page.on("console", (m) => {
-		if (m.type() === "error") console.log(`  [page] ${m.text()}`);
-	});
-	page.on("pageerror", (e) => console.log(`  [pageerror] ${e.message}`));
 	// **Not `?no-save`.** The store has to be live: the reload arm below reads
 	// back what this page wrote, and a page booted with saving off would flush
 	// nothing and the arm would be inert rather than failing.
