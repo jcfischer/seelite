@@ -80,6 +80,15 @@ describe("the Game's world writes", () => {
 		expect(body.slice(0, 400)).toContain("applyTransition(");
 	});
 
+	test("a refused save is never given a store aimed at it (#89 D9)", () => {
+		// D9's one promise is that the bad record is never overwritten — it is
+		// the only copy of whatever is left and the only thing the player can
+		// still export. A store attached to that slot would write over it on the
+		// first dirty event: the next dock, the next trade, the relay observe on
+		// the next jump. The guard is on the construction, not on the write.
+		expect(MAIN).toContain('!query.has("no-save") && saveFault === null');
+	});
+
 	test("permadeath is chosen at new game and cannot be flipped later", () => {
 		const body = MAIN.split("choosePermadeath(): void")[1] ?? "";
 		// The refusal, not just the assignment: a flag that can be turned on

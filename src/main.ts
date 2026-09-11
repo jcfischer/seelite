@@ -6365,14 +6365,6 @@ class Game {
 				this.world.gameTime,
 				station.type === "refinery",
 			);
-			// D4's unconditional dock flush, and the one that also lays down
-			// #89's `lastDocked` checkpoint — the record a non-permadeath death
-			// restores. It fires here, at the plane crossing, rather than when
-			// the ship parks: from this instant the arrival is on rails and
-			// cannot fail, so a write here cannot record a dock that did not
-			// happen.
-			this.saveDirty();
-			this.saveFlush("dock");
 			// **E2: crossing the plane hands the ship over.** The skill test
 			// ended here, so from this instant the ship is on rails and nothing
 			// can fail — the arrival is a position law, and `stepDockedWorld`
@@ -6400,6 +6392,20 @@ class Game {
 			);
 			this.openPlayerTrafficEvent(id, "lane", this.world.gameTime, "arrival");
 			this.world.ship.vel = stationVel;
+			// D4's unconditional dock flush, and the one that lays down #89's
+			// `lastDocked` checkpoint — the record a non-permadeath death
+			// restores.
+			//
+			// **After `enterArrival`, not before it.** It fired at the plane
+			// crossing for a round, where the dock session did not yet name a
+			// station: both records then carried `dockedAt: null` and a
+			// `flight.pos` in the mouth with inward velocity, so a death restore
+			// would have taken the in-flight arm and put the ship at the
+			// aperture with no grant — which by #9's protocol is a hostile
+			// station on load. From this line the arrival is on rails and cannot
+			// fail, so the write still cannot record a dock that did not happen.
+			this.saveDirty();
+			this.saveFlush("dock");
 			return;
 		}
 		// §2.0: repelled, damaged, and left outside — never inside the station.
@@ -7293,6 +7299,8 @@ class Game {
 			this.frameBody =
 				this.world.system.byId.get(this.proximityFrameBodyId) ?? null;
 		this.regime = "normal";
+		// The other end of the leg — see the note beside the engage.
+		this.saveDirty();
 		this.detour = null;
 		this.cruiseSpeedKms = 0;
 		this.throttle = 0;
@@ -7561,6 +7569,13 @@ class Game {
 			this.spoolLeftS = Math.max(0, this.spoolLeftS - dt);
 			if (this.spoolLeftS === 0) {
 				this.regime = "cruise";
+				// **A leg's two ends are transitions, and its middle is not.** Position
+				// and attitude are saved state (`CommanderRecord.flight`) and vary every
+				// frame, so they ride on whatever else writes — but a within-system
+				// cruise leg with no market event would write nothing at all, including
+				// at quit, which is the leg-loss D4 rejected. The engage and the exit
+				// are the two moments worth a write.
+				this.saveDirty();
 				this.proximityFrameBodyId = null;
 				this.throttle = 1;
 				this.legStartedAtS = this.world.gameTime;
@@ -8467,8 +8482,14 @@ class Game {
 	 */
 	commanderRecord(): CommanderRecord {
 		const base = newCommanderRecord(this.commander.hull);
+		// **Every phase that is not `flying`**, not just `docked`. A record
+		// written during an arrival or a launch has the ship on rails inside a
+		// station's geometry, and `dockedAt` is what routes the load to the
+		// arrival point instead of to `flight.pos` — which on a launch is the
+		// berth pose, *inside the hull*. Reading `docked` alone put both of
+		// those cases on the in-flight arm.
 		const station =
-			this.dock.phase === "docked" && this.dock.stationId
+			this.dock.phase !== "flying" && this.dock.stationId
 				? stationOf(this.world.system, this.dock.stationId)
 				: null;
 		return {
@@ -9758,7 +9779,19 @@ if (query.has("model-viewer")) {
 	// waiting for that screen — and the screen reads it when there is one.
 	if (!loaded && query.has("permadeath")) game.choosePermadeath();
 	game.saveFault = saveFault;
-	if (!query.has("no-save")) {
+	// **D9's one promise: the bad record is never overwritten.** A store
+	// attached to the slot whose record just refused would write over it on the
+	// first dirty event — the next dock, the next trade, the relay observe on
+	// the next jump — and that record is the only copy of whatever is left, and
+	// the only thing the player can still export. So a refused load leaves the
+	// fresh game with no store at all rather than with one aimed at the
+	// wreckage.
+	//
+	// The player is *told* — D9 again — and a `console.error` is not telling
+	// them. `saveFault` is on the game for the new-game screen to read; there is
+	// no such screen yet (see `choosePermadeath`), and the surface belongs to
+	// the node that builds one. Recorded rather than quietly left out.
+	if (!query.has("no-save") && saveFault === null) {
 		game.saveStore = new SaveStore({
 			backend: saveBackend,
 			schedule: (fn, ms) => {

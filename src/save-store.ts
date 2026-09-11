@@ -50,11 +50,15 @@ import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
  * #89 left this to the wire-in on purpose: it is a browser-tier measurement
  * rather than an arithmetic one, and no bun figure can pick it. Measured by
  * `scripts/probe-save.mjs`, which does a real IndexedDB write and read of a
- * T4-scale save in the page and prints the spread. The window is set above the
- * observed write, so the common case is one transaction rather than a queue —
- * and the cost of getting it wrong is asymmetric: too short queues writes
- * behind each other, too long widens the loss on a tab close, and #89 already
- * accepts a loss of one window.
+ * save at T4's byte scale in the page and prints the spread. The window clears
+ * the **median** write there, so the common case is one transaction rather than
+ * a queue. It does not clear the worst, and it is not meant to: a maximum over
+ * a dozen samples is not a bound — the probe read 330–345 ms on three quiet
+ * runs and 412 on a loaded one — and a write slower than the window is handled
+ * rather than prevented, because `run` queues behind whatever is in flight
+ * instead of racing it. The cost is asymmetric in the other direction too: too
+ * long widens the loss on a tab close, and #89 already accepts a loss of one
+ * window.
  *
  * **It is the bounded loss, and it is read off the page rather than restated**
  * — `window.__seelite.save.debounceMs` — so a probe cannot go falsely red

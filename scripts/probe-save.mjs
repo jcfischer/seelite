@@ -138,17 +138,26 @@ try {
 		store.roundTripped,
 		`${(store.bytes / 1024).toFixed(0)} KiB, db ${store.dbName}`,
 	);
+	// **Against the median, not against the maximum.** The first version of
+	// this row asserted the window cleared the worst of twelve writes, and it
+	// went red at 411.8 ms on a loaded machine having read 330–345 on three
+	// quiet ones — a maximum over twelve samples is not a bound, which is the
+	// same mistake the repo's own constraint records about floors. What #89
+	// asks for is that **the common case is one transaction rather than a
+	// queue**, and the common case is the median. A write slower than the
+	// window is not a fault either: `SaveStore` queues behind an in-flight
+	// write rather than racing it, and `tests/save-store.test.ts` holds that.
 	check(
-		"the debounce window is above the worst write this machine did",
-		store.debounceMs > Math.max(...store.writes),
-		`window ${store.debounceMs} ms against a worst write of ${Math.max(...store.writes).toFixed(1)} ms`,
+		"the debounce window is above the median write on this machine",
+		store.debounceMs > writeMs,
+		`window ${store.debounceMs} ms against a median write of ${writeMs.toFixed(1)} ms (worst ${Math.max(...store.writes).toFixed(1)}, unasserted)`,
 	);
 	// **A band, not a floor.** A window far above the write is not free either —
 	// it is the bounded loss on a tab close, and #89 accepts one window of it.
 	check(
 		"and not more than an order of magnitude above the median",
 		store.debounceMs < Math.max(20, writeMs) * 50,
-		`window ${store.debounceMs} ms against a median write of ${writeMs.toFixed(1)} ms`,
+		`window ${store.debounceMs} ms, median write ${writeMs.toFixed(1)} ms`,
 	);
 
 	// -----------------------------------------------------------------------
@@ -286,6 +295,25 @@ try {
 		// the build with no store is the red case this arm exists to catch, and
 		// a probe that crashes on it reports nothing a reader can act on.
 		check("the page boots with a live save store", flushed.store === true);
+
+		// **The checkpoint names the station it was taken at.** The dock flush
+		// fired before `enterArrival` for a round, so both records carried
+		// `dockedAt: null` and a `flight.pos` in the mouth — a death restore
+		// would then have taken the in-flight arm and put the ship at the
+		// aperture with no grant, which by #9's protocol is a hostile station on
+		// load.
+		const checkpoint = await page.evaluate(async () => {
+			const g = window.__seelite;
+			const raw = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
+			return raw ? raw.commander : null;
+		});
+		check(
+			"the lastDocked checkpoint names the station the ship docked at",
+			checkpoint !== null &&
+				typeof checkpoint.dockedAt === "string" &&
+				checkpoint.dockedAt.includes(":"),
+			JSON.stringify(checkpoint && { dockedAt: checkpoint.dockedAt }),
+		);
 
 		// **Close the first page before opening the second.** It is a running
 		// game: its rAF loop keeps drawing, and a second boot alongside it timed
