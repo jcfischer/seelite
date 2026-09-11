@@ -38,6 +38,7 @@ import {
 } from "./station-commerce";
 import {
 	fnv1a,
+	GALAXY_COUNT,
 	parseWorld,
 	serializeWorld,
 	type WorldState,
@@ -261,6 +262,22 @@ const parseCommander = (raw: unknown): CommanderRecord => {
 		fail(`commander: ${String(dockedAt)} is not a carrier key`);
 	if (typeof o.permadeath !== "boolean")
 		fail("commander: permadeath is not a boolean");
+	// **Bounded, not merely finite.** `restoreWorld` throws on a galaxy index
+	// outside 0..7 or a system the galaxy does not have, and the boot builds the
+	// game from what this returns — so a record that parses and then cannot be
+	// restored is a record that kills every boot at that origin. `importSlot`
+	// validates a file with `parseSave` and nothing else, which makes an
+	// imported file the way in.
+	const galaxyIndex = num(o, "galaxyIndex", "commander");
+	if (
+		!Number.isInteger(galaxyIndex) ||
+		galaxyIndex < 0 ||
+		galaxyIndex >= GALAXY_COUNT
+	)
+		fail(`commander: ${galaxyIndex} is not a galaxy index`);
+	const systemIndex = num(o, "systemIndex", "commander");
+	if (!Number.isInteger(systemIndex) || systemIndex < 0)
+		fail(`commander: ${systemIndex} is not a system index`);
 	return {
 		state: {
 			credits: num(state, "credits", "commander.state"),
@@ -269,8 +286,8 @@ const parseCommander = (raw: unknown): CommanderRecord => {
 			fuelLy: num(state, "fuelLy", "commander.state"),
 			hull: hull as HullId,
 		},
-		galaxyIndex: num(o, "galaxyIndex", "commander"),
-		systemIndex: num(o, "systemIndex", "commander"),
+		galaxyIndex,
+		systemIndex,
 		dockedAt: (dockedAt as CarrierKey | null) ?? null,
 		chargeAu: num(o, "chargeAu", "commander"),
 		permadeath: o.permadeath as boolean,

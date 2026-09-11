@@ -202,6 +202,25 @@ describe("#89 D5 — the save envelope", () => {
 		).toBeTruthy();
 	});
 
+	test("an index that parses but cannot be restored is refused here", () => {
+		// `restoreWorld` throws on a galaxy outside 0..7 or a system the galaxy
+		// does not have, and the boot builds the game from what `parseSave`
+		// returns — so a record that parses and then will not restore is one
+		// that kills every boot at that origin. `importSlot` validates a file
+		// with `parseSave` and nothing else, which makes an imported file the
+		// way in. Finite is not enough.
+		const bad = (patch: Record<string, unknown>) =>
+			serializeSave({
+				world: world(),
+				commander: { ...commander(), ...patch } as CommanderRecord,
+			});
+		expect(() => parseSave(bad({ galaxyIndex: 8 }))).toThrow(/galaxy index/);
+		expect(() => parseSave(bad({ galaxyIndex: -1 }))).toThrow(/galaxy index/);
+		expect(() => parseSave(bad({ galaxyIndex: 1.5 }))).toThrow(/galaxy index/);
+		expect(() => parseSave(bad({ systemIndex: -1 }))).toThrow(/system index/);
+		expect(() => parseSave(bad({ systemIndex: 2.5 }))).toThrow(/system index/);
+	});
+
 	test("permadeath round-trips, and a new commander defaults to off", () => {
 		expect(newCommanderRecord("courier").permadeath).toBe(false);
 		const save = {

@@ -109,6 +109,17 @@ const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
 };
 
+/**
+ * A record is keyed `` `${slot} ${kind}` ``, so a space in a name makes one
+ * slot addressable as another: `"a b"` lists as `"a"` and `deleteSlot("a")`
+ * removes it. Only `DEFAULT_SLOT` is reachable until a naming surface lands, so
+ * this is a boundary closed before it opens rather than a fix.
+ */
+const assertSlot = (slot: string): void => {
+	if (slot.length === 0 || slot.includes(" "))
+		fail(`"${slot}" is not a slot name — a name may not contain a space`);
+};
+
 export class SaveStore {
 	private readonly backend: SaveBackend;
 	private readonly schedule: Scheduler;
@@ -129,6 +140,7 @@ export class SaveStore {
 
 	/** The slot subsequent debounced writes go to. */
 	setSlot(slot: string): void {
+		assertSlot(slot);
 		this.slot = slot;
 	}
 
@@ -155,6 +167,7 @@ export class SaveStore {
 	 * change no bytes.
 	 */
 	async flush(reason: FlushReason, slot: string = this.slot): Promise<void> {
+		assertSlot(slot);
 		this.cancel?.();
 		this.cancel = null;
 		if (!this.dirty) return;
@@ -253,6 +266,7 @@ export class SaveStore {
 	 * that is half a save cannot leave a slot half-filled.
 	 */
 	async importSlot(slot: string, text: string): Promise<void> {
+		assertSlot(slot);
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(text);

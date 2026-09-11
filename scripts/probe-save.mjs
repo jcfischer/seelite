@@ -86,9 +86,18 @@ try {
 		// it.** T4 is 419 *carriers* with four saturated domains each; padding
 		// 419 single-domain rows gave 53 KiB under a comment calling that
 		// T4-scale, which is a figure invented in prose. The store's cost is
-		// about bytes, so bytes are what this grows to: T4's 1379 KiB UTF-16 is
-		// about 706 KiB of JSON characters, and the loop stops when it arrives.
-		const T4_JSON_CHARS = 706 * 1024;
+		// about bytes, so bytes are what this grows to.
+		//
+		// **Derived, and the first derivation was wrong.** A UTF-16 KiB is 1024
+		// *bytes* at two bytes a character, so T4's 1379 KiB UTF-16 is
+		// `1379 * 1024 / 2` characters — about 689 KiB of them, not 706. The
+		// previous line read `706 * 1024` and overshot by 2.4%, which is small
+		// and is still a number nobody could check. The tier figure itself is
+		// `scripts/measure-save-size.ts`'s and is the one thing here that is a
+		// transcription; it is named as such rather than read off the page,
+		// because that script is not something the page runs.
+		const T4_KIB_UTF16 = 1379;
+		const T4_JSON_CHARS = (T4_KIB_UTF16 * 1024) / 2;
 		for (let i = 0; JSON.stringify(blob).length < T4_JSON_CHARS; i++)
 			for (let j = 0; j < 200; j++)
 				env.deficits[`${i * 200 + j}:station-trade`] = {
@@ -307,6 +316,27 @@ try {
 			const raw = await g.save.backend.read(g.save.defaultSlot, "lastDocked");
 			return raw ? raw.commander : null;
 		});
+		// **The blocker round 3 found.** `commerceWorld.gameTime` moves only
+		// inside `withEnvelope`, so it is the time of the last *world* event,
+		// while `flight.pos` is read now. A cruise leg with no market event
+		// paired a current position with a stale clock, and `restoreWorld` then
+		// places every body at that clock — an orbit out of date beside a ship
+		// that is where it is. `saveEnvelope` advances the clock now.
+		const clock = await page.evaluate(async () => {
+			const g = window.__seelite;
+			// Move the sim without touching the persistent world: no dock, no
+			// trade, no jump — the shape a cruise leg has.
+			const dt = g.units.MAX_DT;
+			for (let i = 0; i < 300; i++) g.step(dt);
+			g.saveStore.markDirty();
+			const env = g.saveEnvelope();
+			return { saved: env.world.gameTime, sim: g.world.gameTime };
+		});
+		check(
+			"the saved clock is the sim's, not the last world writer's",
+			Math.abs(clock.saved - clock.sim) < 1e-6,
+			`saved ${clock.saved.toFixed(3)} against sim ${clock.sim.toFixed(3)}`,
+		);
 		check(
 			"the lastDocked checkpoint names the station the ship docked at",
 			checkpoint !== null &&

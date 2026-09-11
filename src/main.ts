@@ -372,6 +372,7 @@ import {
 import {
 	newWorld as newPersistentWorld,
 	observeDocking,
+	advanceTo,
 	applyTransition,
 	effectiveCarrier,
 	observeSystemRelay,
@@ -1224,8 +1225,6 @@ class Game {
 	 *  route and in a probe that did not ask for one, so every call site is a
 	 *  no-op there rather than a guard at each. */
 	saveStore: SaveStore | null = null;
-	/** Which slot the debounced writes go to. */
-	saveSlot = DEFAULT_SLOT;
 	/** Why the boot's load refused, if it did. D9: the player is told which
 	 *  slot failed and why; the record itself is left alone. */
 	saveFault: string | null = null;
@@ -6447,6 +6446,12 @@ class Game {
 		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
 			const state = this.dockingStates.get(wasAt);
 			if (state) this.dockingStates.set(wasAt, releaseBerth(state));
+			// **This is where `dockedAt` becomes null**, so this is where the
+			// record stops describing a parked ship. Left to the debounce, a tab
+			// closed in the first moments of a launch reloaded as still parked —
+			// which is what the flush above was wrongly credited with
+			// preventing.
+			this.saveDirty();
 		}
 		if (
 			wasAt &&
@@ -6508,9 +6513,13 @@ class Game {
 		);
 		if (this.dock.phase === "launching") {
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
-			// D4's undock flush. The `dockedAt` in the record has just become
-			// null, and leaving that to the debounce would mean a tab closed on
-			// the way out reloads as still parked.
+			// D4's undock flush. **The record still names the station here** —
+			// `commanderRecord` reads every phase that is not `flying`, and this
+			// runs inside `phase === "launching"` — so what this writes is a ship
+			// on rails on its way out, which restores at the arrival point like
+			// any other non-flying phase. The comment here claimed the opposite
+			// for a round. What actually clears `dockedAt` is the outward
+			// crossing below, and that is where the second write is.
 			this.saveDirty();
 			this.saveFlush("undock");
 		}
@@ -8571,8 +8580,23 @@ class Game {
 		);
 	}
 
-	/** The whole save, world and commander, as the store asks for it. */
+	/**
+	 * The whole save, world and commander, as the store asks for it.
+	 *
+	 * **The clock is advanced here, and that is the one-clock rule closing its
+	 * last gap.** `commerceWorld.gameTime` only moves inside `withEnvelope`, so
+	 * it is the time of the last *world* event — a dock, a relay observation, a
+	 * trade. `commanderRecord().flight.pos` is read now. A cruise leg with no
+	 * market event would therefore pair a current position with a stale clock,
+	 * and `restoreWorld(…, save.world.gameTime)` would then do exactly what its
+	 * own comment forbids: leave every planet an orbit out of date beside a ship
+	 * that is where it is.
+	 *
+	 * `advanceTo` is the module's own verb and materializes any completion the
+	 * advance passes, so this cannot step over one.
+	 */
 	saveEnvelope(): SaveEnvelope {
+		this.commerceWorld = advanceTo(this.commerceWorld, this.world.gameTime);
 		return { world: this.commerceWorld, commander: this.commanderRecord() };
 	}
 
@@ -8590,7 +8614,11 @@ class Game {
 	/** D4's unconditional flushes. Deliberately **not** called on death: the
 	 *  tab-close window is left open, which is #89's correction read as written. */
 	saveFlush(reason: FlushReason): void {
-		void this.saveStore?.flush(reason, this.saveSlot).catch((error) => {
+		// **No slot argument.** `SaveStore` owns which slot is active, because the
+		// debounce writes `live` off that field and a second owner here would
+		// split `live` and `lastDocked` across two slots the moment anything
+		// selected one.
+		void this.saveStore?.flush(reason).catch((error) => {
 			// D9: a failed write leaves the previous record in place. Stale
 			// rather than broken, and said out loud rather than swallowed.
 			console.error(`save: the ${reason} flush did not land`, error);
@@ -9767,7 +9795,20 @@ if (query.has("model-viewer")) {
 			console.error(`save: slot "${DEFAULT_SLOT}" would not load`, error);
 		}
 	}
-	const game = new Game(seedFromQuery(), loaded);
+	// **Inside the same fallback as the parse.** The comment above promises a
+	// failure never blocks the boot, and for a round `new Game(seed, loaded)`
+	// sat outside the guard: a record that parsed and then would not restore
+	// threw at module scope and the page did not boot at all. The bounds in
+	// `parseCommander` close the known route in; this closes the class.
+	let game: Game;
+	try {
+		game = new Game(seedFromQuery(), loaded);
+	} catch (error) {
+		saveFault = error instanceof Error ? error.message : String(error);
+		console.error("save: the loaded save would not restore", error);
+		loaded = null;
+		game = new Game(seedFromQuery(), null);
+	}
 	// **Chosen at new game, and only at new game** (#89's D7). A loaded
 	// commander carries the flag it was created with; a query parameter cannot
 	// turn permadeath on or off for a commander that already exists, because
@@ -9829,15 +9870,6 @@ if (query.has("model-viewer")) {
 		// big save" method to `Game` would be production state existing for one
 		// caller.
 		serialize: serializeSave,
-		makeStore: (current: () => SaveEnvelope) =>
-			new SaveStore({
-				backend: saveBackend,
-				schedule: (fn, ms) => {
-					const id = window.setTimeout(fn, ms);
-					return () => window.clearTimeout(id);
-				},
-				current,
-			}),
 	};
 
 	// `?perf` mounts the cost-attribution panel — live switches for bloom, the

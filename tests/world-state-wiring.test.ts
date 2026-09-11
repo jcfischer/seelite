@@ -65,17 +65,20 @@ describe("the Game's world writes", () => {
 		expect(byHand).toEqual([]);
 	});
 
-	test("the carrier-condition path is reachable from a running game", () => {
-		// §4's transition table has been implemented and tested since #46, and
-		// until #90 its only caller was its own test: nothing in flight damages a
-		// carrier, so the whole domain was unreachable from a running game and
-		// #43's prototype would have had to build the wire before it could ask
-		// its question. A source check, for the same reason as the rows above —
-		// `Game` builds a renderer and is not constructible headless.
+	test("the carrier-condition hook exists and writes through the module", () => {
+		// **Named for what it can check.** It was called "the path is reachable
+		// from a running game", and `toContain("applyCarrierTransition(")` is
+		// satisfied by the method's own declaration — so the row stayed green on
+		// a build where nothing ever called it, which is the state its comment
+		// claimed #90 had fixed. Nothing in the game calls it yet and nothing is
+		// meant to: §4's table has no in-flight producer, and #43's prototype is
+		// the first consumer. What this can hold is that the hook is here and
+		// that it goes through the module's writer rather than editing the
+		// envelope, so a debug caller cannot reach a state a real writer could
+		// not. A source check, for the same reason as the rows above — `Game`
+		// builds a renderer and is not constructible headless.
 		expect(MAIN).toContain("applyCarrierTransition(");
 		expect(MAIN).toContain("carrierCondition(");
-		// And it goes through the module's writer rather than editing the
-		// envelope, so a debug hook cannot reach a state a real writer could not.
 		const body = MAIN.split("applyCarrierTransition(")[1] ?? "";
 		expect(body.slice(0, 400)).toContain("applyTransition(");
 	});

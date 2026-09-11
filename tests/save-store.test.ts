@@ -263,6 +263,18 @@ describe("#89 D6 — slots, export and import", () => {
 		expect(await h.store.exportSlot("copy")).toBe(text);
 	});
 
+	test("a slot name that would address another slot is refused", async () => {
+		// A record is keyed `${slot} ${kind}`, so `"a b"` lists as `"a"` and
+		// `deleteSlot("a")` removes it. Only the default slot is reachable until
+		// a naming surface lands; the boundary is closed before it opens.
+		const h = harness();
+		expect(() => h.store.setSlot("a b")).toThrow(/slot name/);
+		expect(() => h.store.setSlot("")).toThrow(/slot name/);
+		await expect(h.store.flush("dock", "a b")).rejects.toThrow(/slot name/);
+		await expect(h.store.importSlot("a b", "{}")).rejects.toThrow(/slot name/);
+		expect(await h.store.slots()).toEqual([]);
+	});
+
 	test("importing a file that is not a save refuses and writes nothing", async () => {
 		const h = harness();
 		await expect(h.store.importSlot("copy", "{]")).rejects.toThrow(/save/i);

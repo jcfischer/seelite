@@ -132,7 +132,7 @@ The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain stores th
 
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
-The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence, rollback and permadeath were decided by node #89 and implemented by #90; see §10. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
+The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence and permadeath were decided by node #89 and implemented by #90; see §10. **Rollback was decided and is not yet reached**: #89's correction makes a non-permadeath death restore the last dock, `SaveStore.restoreAfterDeath` implements it, and nothing calls it because the game has no death path — #90 wired the flag and the record, not the death. Stated here rather than left to read as shipped, which is the class of false assertion §10 was corrected for. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
 
 ## 8. Derived effects
 
