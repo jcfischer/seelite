@@ -164,11 +164,11 @@ const GRID = 24;
  * headroom while sitting an order of magnitude above the noise.
  *
  * **#290 moved the closest pair and the headroom with it.** Framed co-moving,
- * trade/refinery reads 0.271 rather than 0.35 — 8% above this floor, not 40% —
- * and the near control reads 0.088 against a ceiling of 0.12. So the figure to
- * restore is not this one: re-arming the gate means re-measuring the spread
- * first, and 0.25 is now close enough to the closest pair that it would be
- * asserting a margin it does not have.
+ * trade/refinery reads 0.271 rather than 0.35 — 8% above this floor, not 40%.
+ * So the figure to restore is not this one: re-arming the gate means
+ * re-measuring the spread first, and 0.25 is now close enough to the closest
+ * pair that it would be asserting a margin it does not have. What the control
+ * itself now reads is `MAX_CONTROL_DIFFERENCE`'s to state, below.
  */
 const MIN_DIFFERENCE = 0.25;
 
@@ -179,9 +179,16 @@ const MIN_DIFFERENCE = 0.25;
  * two moves on the 24 × 24 grid.
  *
  * **Bracketed, and the two sides are not equally well measured.** Seven
- * consecutive runs at 5 km put the control at 0.046, 0.047, 0.051, 0.053,
- * 0.058, 0.060 and 0.064 — seven samples, and 0.12 sits **1.9×** above the
- * worst of them.
+ * consecutive runs at 5 km, **parked**, put the control at 0.046, 0.047, 0.051,
+ * 0.053, 0.058, 0.060 and 0.064 — seven samples, and 0.12 sat **1.9×** above
+ * the worst of them.
+ *
+ * **#290 spent most of that headroom, and the figure above is no longer this
+ * branch's.** Framed co-moving the same control reads 0.088, 0.088, 0.088 —
+ * three samples, not seven — so 0.12 sits **1.35×** above it rather than 1.9×.
+ * Still a threshold, and a far steadier one: the parked series was a fresh draw
+ * of the drift each run and this one is not. But anyone sizing or re-arming this
+ * gate should read 1.35× and three samples, not 1.9× and seven.
  *
  * The upper side is weaker and should be read as such. `MIN_DIFFERENCE` above
  * is this file's own reference for how far two *different* stations must read
@@ -216,8 +223,9 @@ const MAX_CONTROL_DIFFERENCE = 0.12;
  *  loop decides when the samples land rather than the probe. */
 const SPIN_TOLERANCE = 0.06;
 
-// The framing tolerances and `checkFraming` are imported, not declared —
-// `probe-guard.mjs` owns them and states why. What is local to this probe is
+// `checkFraming` is imported rather than written here, and the two tolerances
+// it gates on live behind it in `probe-guard.mjs`, which owns them and states
+// why. Nothing in this file names them, which is the point. What is local to this probe is
 // only that it gates at all, which is #272: its framings landed several degrees
 // off the aperture axis at `RANGE_KM` and nothing here could say so. The angles
 // are in `FRAMING_TOLERANCE`'s docstring rather than here, because a figure in
@@ -280,13 +288,18 @@ if (!allThree) {
  *
  * **This probe used to own a copy of the placement and of the helper under it,
  * and that is what #272 was.** `installMeshLookup` installed a private
- * `__placeShipAt` taking **one** argument, shadowing `probe-guard.mjs`'s
- * two-argument version, so the co-moving default #271 gave `__viewAlongAxis`
- * never reached here — and #271's audit of that helper's callers could not see
- * a call site that does not call it. Worse for whoever came next: handing the
- * private copy a velocity was a **silent no-op**, JavaScript discarding the
- * extra argument, and the run came back bit-identical, which reads exactly like
- * a measured null result.
+ * `__placeShipAt` taking **one** argument, and this file never called
+ * `installViewPlacement` at all — so probe-guard's two-argument version was
+ * never in the page. **Nothing was shadowed**, and an earlier draft of this
+ * docstring said it was: there is no init-script resolution-order hazard here,
+ * only a probe carrying a private copy of a helper it never installed the
+ * shared one of. That is why the co-moving default #271 gave `__viewAlongAxis`
+ * never reached this file, and why #271's audit of that helper's callers could
+ * not see a call site that does not call it.
+ *
+ * Worse for whoever came next: handing the private copy a velocity was a
+ * **silent no-op**, JavaScript discarding the extra argument, and the run came
+ * back bit-identical, which reads exactly like a measured null result.
  *
  * Returns the placement's own reading of what it achieved. A placement is a
  * request and the frame loop is free to carry the subject off it, so this is a
@@ -578,10 +591,20 @@ async function silhouettesAt(rangeKm, floor, gate) {
 		// reason the far-range pairwise figures above are reported rather than
 		// asserted: a metric whose noise is of the same order as its signal is
 		// not evidence, and the honest far-range claim is the extent one below.
-		// **The figure is deliberately not quoted here** — it is printed on the
-		// line above, it moved under #290 (0.028 parked, 0.200-0.300 co-moving
-		// over three runs), and a third copy of it in this file had already gone
-		// stale. Why it moved is #120's question, not this probe's.
+		// The figure and the arm it moved under are in the module docstring; it
+		// is printed on the line above, and this file has already carried one
+		// copy of it into staleness.
+		//
+		// **What it is not** is the resample losing a small subject. #290 named
+		// that as the candidate and then measured it: at 60 km the two control
+		// captures agree exactly on lit pixels (32 and 32), on bounding box
+		// (8x8 and 8x8) and on filled grid cells (288 and 288), and still
+		// disagree by 0.400 of IoU. The clock is pinned and no frame lands
+		// between them, so the scene is identical — what differs is *which*
+		// pixels, not how many. That is the rasteriser and the threshold on a
+		// 32-pixel subject, which is what this control was built to see. `#120`
+		// owns the metric and `MAX_CONTROL_DIFFERENCE` names its finer-grid
+		// alternative.
 		if (gate.control)
 			check(
 				`${rangeKm} km — re-measuring one station reproduces its silhouette`,
@@ -729,14 +752,18 @@ async function angleRateRadS(id, waitMs, label) {
 	// name. So the gate is not redundant here: it is what would catch a landing
 	// that carried the aperture off camera.
 	//
-	// This block was silently *changed* by #290's helper swap: it used to hold
-	// the ship at rest across `waitMs`, which at ~30 km/s is some 45 km of
-	// relative carry from a 5 km framing, and now it moves with the station.
-	// **The rates are unmoved, measured on both arms** — the round-1 comment on
-	// PR #291 has the table — and *why* is not established here. It is not
-	// because the angle is camera-independent: `slotAngle` projects through
-	// `nearCamera` and is screen-space by construction, which sage caught this
-	// comment claiming otherwise.
+	// #290's helper swap changed this block's arm: it used to hold the ship at
+	// rest across `waitMs`, which at ~30 km/s is some 45 km of relative carry
+	// from a 5 km framing, and now it moves with the station. **The rates are
+	// unmoved, measured on both** — parked against co-moving, on an expected
+	// 0.1141 / 0.2765 / 0.0628 / 0.3142 rad/s: trade 0.1140 against 0.1141,
+	// shipyard 0.2765 against 0.2765, slow end 0.0627 against 0.0628, fast end
+	// 0.3142 against 0.3142, and the pad 0.0000 rad on both.
+	//
+	// *Why* they survive 45 km of carry is **not established**. It is not that
+	// the angle is camera-independent — `slotAngle` projects through
+	// `nearCamera` and is screen-space by construction — and an earlier draft of
+	// this comment claimed exactly that.
 	framedWhereItAsked(`spin — ${label}`, await viewAlongAxis(id, RANGE_KM));
 	const first = await slotAngle(id);
 	if (first.missing) return { missing: true };
