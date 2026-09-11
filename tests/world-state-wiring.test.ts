@@ -52,6 +52,14 @@ describe("the Game's world writes", () => {
 		const byHand = assignments.filter(
 			(rhs) =>
 				!rhs.startsWith("newPersistentWorld(") &&
+				// The load arm. A snapshot that came out of `parseSave` is the
+				// one right-hand side that is neither a construction nor a
+				// write: it is the world being *adopted*, already validated, and
+				// requiring it to go through a writer would mean replaying the
+				// save through `applyTransition` to arrive at what it already
+				// says. Spelled as the exact expression rather than as a
+				// pattern, so a hand-built object literal cannot hide behind it.
+				rhs !== "save.world;" &&
 				!WRITERS.some((w) => rhs.startsWith(`${w}(`)),
 		);
 		expect(byHand).toEqual([]);
