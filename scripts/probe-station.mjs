@@ -216,13 +216,12 @@ const MAX_CONTROL_DIFFERENCE = 0.12;
  *  loop decides when the samples land rather than the probe. */
 const SPIN_TOLERANCE = 0.06;
 
-// The framing tolerances and `checkFraming` are imported, not declared: they
-// are `probe-guard.mjs`'s, beside the placement they are a tolerance on. The
-// first version of this node wrote them as fresh literals under a comment
-// saying they belonged to another file, which is the second copy the comment
-// claimed to avoid — sage found it. Why this probe gates on them at all is
-// #272: its framings landed 4.69°–5.20° off the aperture axis at `RANGE_KM`,
-// nine to ten times the tolerance, and nothing here could say so.
+// The framing tolerances and `checkFraming` are imported, not declared —
+// `probe-guard.mjs` owns them and states why. What is local to this probe is
+// only that it gates at all, which is #272: its framings landed several degrees
+// off the aperture axis at `RANGE_KM` and nothing here could say so. The angles
+// are in `FRAMING_TOLERANCE`'s docstring rather than here, because a figure in
+// two files is the drift this import exists to end.
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
@@ -726,14 +725,19 @@ async function angleRateRadS(id, waitMs, label) {
 	// The second placement site, and it gates like the first. Sage found this
 	// one ungated: it frames at `RANGE_KM`, which is exactly where #272's red
 	// case lived, and a bad landing here falls through to `no aperture in the
-	// mesh` — which is #263's misdiagnosis, a framing failure wearing a form
-	// defect's name. Note this block was silently *changed* by the helper swap:
-	// it used to hold the ship at rest across `waitMs`, which at ~30 km/s is
-	// tens of thousands of kilometres of relative carry, and now it moves with
-	// the station. The spin rates it reports are unmoved either way — both arms
-	// are in the round-1 comment on the PR — because the angle is read off the
-	// slot's own transform rather than off where the camera stands.
-	framedWhereItAsked(label, await viewAlongAxis(id, RANGE_KM));
+	// mesh` — #263's misdiagnosis, a framing failure wearing a form defect's
+	// name. So the gate is not redundant here: it is what would catch a landing
+	// that carried the aperture off camera.
+	//
+	// This block was silently *changed* by #290's helper swap: it used to hold
+	// the ship at rest across `waitMs`, which at ~30 km/s is some 45 km of
+	// relative carry from a 5 km framing, and now it moves with the station.
+	// **The rates are unmoved, measured on both arms** — the round-1 comment on
+	// PR #291 has the table — and *why* is not established here. It is not
+	// because the angle is camera-independent: `slotAngle` projects through
+	// `nearCamera` and is screen-space by construction, which sage caught this
+	// comment claiming otherwise.
+	framedWhereItAsked(`spin — ${label}`, await viewAlongAxis(id, RANGE_KM));
 	const first = await slotAngle(id);
 	if (first.missing) return { missing: true };
 	await page.waitForTimeout(waitMs);
@@ -747,11 +751,7 @@ for (const station of setup.stations) {
 	if (station.spinRpm === 0) continue;
 	// Long enough to measure, short enough that the fastest station turns well
 	// under half a revolution — past π the wrap makes the direction ambiguous.
-	const sample = await angleRateRadS(
-		station.id,
-		1500,
-		`spin — ${station.type}`,
-	);
+	const sample = await angleRateRadS(station.id, 1500, `${station.type}`);
 	if (sample.missing) {
 		check(
 			`${station.type}: the slot is drawn`,
@@ -818,7 +818,7 @@ for (const rpm of ends) {
 	const sample = await angleRateRadS(
 		spinner.id,
 		1500,
-		`spin — ${spinner.type} at ${rpm.toFixed(2)} rpm`,
+		`${spinner.type} at ${rpm.toFixed(2)} rpm`,
 	);
 	const expected = (2 * Math.PI * rpm) / 60;
 	console.log(
@@ -845,7 +845,7 @@ await page.evaluate(
 
 const pad = setup.stations.find((s) => s.spinRpm === 0);
 if (pad) {
-	const sample = await angleRateRadS(pad.id, 1200, `spin — ${pad.type} pad`);
+	const sample = await angleRateRadS(pad.id, 1200, `${pad.type} pad`);
 	// The refinery's pad does not rotate at all (§4), which is what removes the
 	// roll match from its docking interaction. A pad that crept would make that
 	// a different game without failing any headless test.

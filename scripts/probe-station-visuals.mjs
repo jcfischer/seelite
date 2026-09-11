@@ -104,14 +104,11 @@ const CLOSE_RADII = 3;
 const REDUCED_RADII = 48;
 const OUTLINE_RADII = 900;
 
-// The framing tolerances moved to `probe-guard.mjs` under #290, beside the
-// placement they are a tolerance on, because `probe-station.mjs` gates on them
-// too. They were module-local here and a second probe copying them would have
-// left a retune of the documented figures reaching one gate and not the other.
-// The derivation travelled with them; what stays here is why *this* probe gates
-// on the framing rather than on its downstream symptom — #263's refinery went to
-// 0 lit aperture pixels on one viewport, which reads as a form-specific defect
-// and was a framing that landed somewhere else.
+// The framing tolerances moved to `probe-guard.mjs` under #290, which owns them
+// and states why. What stays here is why *this* probe gates on the framing
+// rather than on its downstream symptom: #263's refinery went to 0 lit aperture
+// pixels on one viewport, which reads as a form-specific defect and was a
+// framing that landed somewhere else.
 
 /** The silhouette mask is resampled to this grid before shapes are compared —
  *  `probe-station.mjs`'s grid, for the same reason: the comparison must be of
