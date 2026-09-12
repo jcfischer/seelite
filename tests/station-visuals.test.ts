@@ -137,12 +137,67 @@ describe("a fixture is on the station it is mounted on", () => {
 		// core radius passes the very defect its own comment recounted, a lamp at
 		// (0.45, 0, 0.45)·r buried inside the hull at a length of 0.64·r.
 		//
-		// The floor is a fraction of the form's **own declared reach** now, which
-		// is the only per-form scale there is. Every strobe in the pool sits
-		// between 0.72 and 0.97 of it, and the buried case is 0.67 — so this
-		// catches a fixture placed well inside the hull and, honestly, cannot see
-		// one that is inside by a few metres. That class is caught by the island
-		// check instead, which is why both exist.
+		// The floor is a fraction of the reach of **the member the lamp is bolted
+		// to**, which is not the same thing as the form's declared reach and was
+		// until #300. That reach is the *frame's* on a form whose frame is most
+		// of it: the Gantry declares 1.66 km of boom and its drum is 0.47 km
+		// across, so a strobe correctly mounted on the spinning member sits at
+		// 0.26 of the declared figure and read as buried. §5 asks the pair to
+		// mark the member that turns, so the member that turns is the scale.
+		//
+		// Every strobe in the pool sits between 0.72 and 0.97 of its own
+		// member's reach and the buried case is 0.67 — so this catches a fixture
+		// placed well inside and, honestly, cannot see one that is inside by a
+		// few metres. That class is caught by the island check and by §5's axis
+		// row below, which is why all three exist.
+		/** How far the subtree a lamp hangs from reaches, ignoring the lamps —
+		 *  a lamp that reached further than its own member would otherwise raise
+		 *  the floor it is being measured against. */
+		const memberReachKm = (member: THREE.Object3D) => {
+			let reach = 0;
+			const at = new THREE.Vector3();
+			member.updateMatrixWorld(true);
+			// **In the member's own frame**, which is the frame a lamp's
+			// `position` is already in. A station mesh is authored in kilometres
+			// and then divided by its core radius on an inner group, so world
+			// space here is normalised radii and comparing the two would be
+			// comparing a kilometre against a radius.
+			const toMember = member.matrixWorld.clone().invert();
+			const corner = new THREE.Vector3();
+			member.traverse((child) => {
+				if (child.name === "strobe-a" || child.name === "strobe-b") return;
+				const mesh = child as THREE.Mesh;
+				// **An instanced pool is read through its instances**, which is
+				// the whole of `instanceBoxes`' reason for existing: the base
+				// geometry of a greeble pool is a unit box at the origin, and
+				// walking its `position` attribute reports every pool on every
+				// form at √3/2 — larger than three of the four trade hulls, and
+				// a floor derived from it fails a correctly mounted lamp.
+				if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
+					for (const box of instanceBoxes(mesh as THREE.InstancedMesh))
+						for (const x of [box.min.x, box.max.x])
+							for (const y of [box.min.y, box.max.y])
+								for (const z of [box.min.z, box.max.z])
+									reach = Math.max(
+										reach,
+										corner.set(x, y, z).applyMatrix4(toMember).length(),
+									);
+					return;
+				}
+				const position = mesh.geometry?.getAttribute("position");
+				if (!position) return;
+				for (let i = 0; i < position.count; i++)
+					reach = Math.max(
+						reach,
+						at
+							.fromBufferAttribute(position, i)
+							.applyMatrix4(mesh.matrixWorld)
+							.applyMatrix4(toMember)
+							.length(),
+					);
+			});
+			return reach;
+		};
 		for (const type of TYPES) {
 			const hasStrobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
 			for (const form of STATION_FORMS[type]) {
@@ -160,11 +215,15 @@ describe("a fixture is on the station it is mounted on", () => {
 					]);
 					if (!lamp) continue;
 					const p = (lamp as THREE.Object3D).position;
-					expect([type, form.id, p.length() > form.reachKm * 0.68]).toEqual([
+					// The member is the lamp's grandparent: `strobePair` returns a
+					// group of its own, which is what a form adds.
+					const member = lamp.parent?.parent ?? root;
+					const memberKm = memberReachKm(member);
+					expect([
 						type,
 						form.id,
-						true,
-					]);
+						memberKm > 0 && p.length() > memberKm * 0.68,
+					]).toEqual([type, form.id, true]);
 					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
 				}
 			}

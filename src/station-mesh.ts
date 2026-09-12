@@ -506,6 +506,21 @@ function buildWindowGrid(
 		count: number,
 		position: THREE.Vector3,
 		normal: THREE.Vector3,
+		/**
+		 * Which way the pane's own long axis runs, **optional** (#300).
+		 *
+		 * Left alone, the pane is turned by `setFromUnitVectors(+Z, normal)`,
+		 * which is what every run in this file has always got: the roll is
+		 * whatever that produces, and for a face whose normal is +Z it is none
+		 * at all, so the 30 m axis lies along world X. That is fine on a
+		 * rectangular face and wrong on a **ring**, where a run round a slot or
+		 * a pad wants each pane laid along its own tangent or its own radius.
+		 *
+		 * Opt-in rather than defaulted, and deliberately: handing every caller
+		 * an explicit basis would re-roll every pane on all twelve forms, which
+		 * is a silent repaint of work already judged on a sheet.
+		 */
+		tangent: THREE.Vector3,
 	) => void,
 ): THREE.InstancedMesh {
 	const panes = new THREE.InstancedMesh(
@@ -521,9 +536,29 @@ function buildWindowGrid(
 	const normal = new THREE.Vector3();
 	const unitZ = new THREE.Vector3(0, 0, 1);
 	const one = new THREE.Vector3(1, 1, 1);
+	const tangent = new THREE.Vector3();
+	const basis = new THREE.Matrix4();
+	const across = new THREE.Vector3();
+	const along = new THREE.Vector3();
 	for (let i = 0; i < count; i++) {
-		place(i, count, position, normal);
-		quaternion.setFromUnitVectors(unitZ, normal);
+		tangent.set(0, 0, 0);
+		place(i, count, position, normal, tangent);
+		if (tangent.lengthSq() === 0) quaternion.setFromUnitVectors(unitZ, normal);
+		else {
+			// Gram-Schmidt against the normal rather than trusting the caller to
+			// hand back something perpendicular: a tangent taken from a radius
+			// on a sloped face is not, and the result would be a sheared pane
+			// rather than a rolled one.
+			along.copy(tangent).addScaledVector(normal, -tangent.dot(normal));
+			if (along.lengthSq() === 0) quaternion.setFromUnitVectors(unitZ, normal);
+			else {
+				along.normalize();
+				across.crossVectors(normal, along).normalize();
+				quaternion.setFromRotationMatrix(
+					basis.makeBasis(along, across, normal),
+				);
+			}
+		}
 		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
 	}
 	panes.instanceMatrix.needsUpdate = true;
@@ -1019,6 +1054,7 @@ function portRun(
 		count: number,
 		position: THREE.Vector3,
 		normal: THREE.Vector3,
+		tangent: THREE.Vector3,
 	) => void,
 ) {
 	const count = Math.max(
@@ -1386,10 +1422,82 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 
-	// The strobes on two opposite equatorial faces, flat against them.
+	/**
+	 * **A forward run on the +Z diamond, round the slot and outside the
+	 * coaming** (#300).
+	 *
+	 * The equatorial grid above stays — §5 asks a fixture to read *from* the
+	 * axis, not only from it, and the flank is a real view — but from the axis
+	 * it reads nothing at all: everything at or behind the equator is hidden,
+	 * and #274 measured the whole grid at exactly 0 px from three silhouette
+	 * radii while its bounding sphere spanned 209 px of the frame. The docking
+	 * face is the one surface an approach looks at full-on, so the run that a
+	 * pilot sees goes there.
+	 *
+	 * **Two concentric rings rather than one** (#36, via `rowsOf`). Seven panes
+	 * on one row became a continuous strip light when tripled, and a single ring
+	 * round the slot is the same figure bent into a circle — a halo, not
+	 * windows. The second ring is offset half a step so the two do not line up
+	 * radially.
+	 *
+	 * The radii are the four constraints solved at once, in fractions of the
+	 * face plane's own half-diagonal so a re-sized hull carries them. Outside
+	 * the coaming, whose corner stands at 0.34 of it (1.5× the slot's width and
+	 * 3× its height, halved); inside the diamond, whose edge is at 1/√2 = 0.707
+	 * of it at the nearest point; and clear of both by more than a pane's own
+	 * half-diagonal. Well outside the 69.5 m corridor either way, and behind the
+	 * declared aperture plane, which the frame stands 6% proud of.
+	 */
+	const FORWARD_RINGS = [0.44, 0.61];
+	group.add(
+		portRun("trade", 12, (i, count, position, normal) => {
+			const { row, along, perRow } = rowsOf(i, count, FORWARD_RINGS.length);
+			// Half a step of stagger on the outer ring, taken from `perRow`
+			// rather than from a literal: the count is the role's rather than
+			// this call's, so a density change must not line the rings up.
+			const theta = (along + (row * 0.5) / perRow) * Math.PI * 2;
+			normal.set(0, 0, 1);
+			position.set(
+				Math.cos(theta) * face * FORWARD_RINGS[row],
+				Math.sin(theta) * face * FORWARD_RINGS[row],
+				face * 1.004,
+			);
+		}),
+	);
+
+	/**
+	 * **The strobes on the +Z diamond, at opposite corners of it** (#274, #300).
+	 *
+	 * They were on two opposite equatorial faces, and from the aperture axis the
+	 * docking face occludes its own hull lights: the sightline from 1.86 km to a
+	 * lamp at `(±face·1.02, 0, face·0.5)` crosses the face plane at 0.90·face,
+	 * inside the diamond. Both read exactly 0 px. Standing one proud enough to
+	 * clear that was on the table and rejected — a light on a stalk, eating the
+	 * silhouette budget, and still edge-on.
+	 *
+	 * §5 worried that a fixture on the face plane "may read less well than one
+	 * on the rim", and for this viewpoint that is **backwards**. From the axis a
+	 * lamp at radius ρ on the face traces a circle in the frame once per
+	 * revolution, so the rotation rate is read straight off the sweep; a rim
+	 * lamp traces its own circle and is occluded at *every* phase of it at three
+	 * radii, not half. §5 is corrected.
+	 *
+	 * **Inboard of the corners, not on them.** A diamond corner is a hull vertex
+	 * at the full 0.57 km, so a 42 m lamp centred there would reach 0.606 km and
+	 * become the farthest point of the station — which §2 forbids of anything
+	 * tagged `detail`. At 0.62 of the half-diagonal the lamp reaches 0.50 km,
+	 * inside the hull's own corners, and `tests/station-visuals.test.ts` decides
+	 * that rather than this comment.
+	 *
+	 * **Centred on the face plane, so it is sunk into it.** Standing the lamp
+	 * *on* the plane — its back face exactly at `face` — leaves two surfaces
+	 * touching at a plane and nothing overlapping, which
+	 * `tests/station-mesh.test.ts` reads, correctly, as a light hanging in front
+	 * of a station. Half sunk, it still shows its whole lit face down the axis.
+	 */
 	group.add(
 		strobePair("trade", fixtures, r * 0.07, (side, position) => {
-			position.set(side * face * 1.02, 0, face * 0.5);
+			position.set(side * face * 0.62, 0, face);
 		}),
 	);
 	// Plant on the four equatorial faces, in the bands above and below the
@@ -1854,6 +1962,32 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			berthSeed,
 		),
 	);
+	/**
+	 * **The strobes belong to the spinning member, and on this form that is the
+	 * drum** (#274, #300).
+	 *
+	 * §5 used to give them to "the Coriolis hull ... the shipyard spins about
+	 * the same axis for the same reason". `SELECTED_FORM.shipyard` is the
+	 * Gantry — a keel with a drum on a bearing — so there is no shared Coriolis
+	 * hull for one answer to be one answer for, and the pair had been added to
+	 * `group`, the **static keel**, at `z = -SHIPYARD_KEEL_AFT_KM`. What a
+	 * strobe carries is that the station turns and how fast; bolted to the part
+	 * that does not turn it carries nothing, and that is a §5 violation with no
+	 * pixel in it. Written against the spinning member, the rule survives the
+	 * next form re-ranking; written against a form, it went stale at the last
+	 * one.
+	 *
+	 * On the drum's forward face, flanking the slot, for the trade station's
+	 * reason: from the axis a lamp there traces a circle in the frame once per
+	 * revolution. At `r * 0.3` it is well outside the 69.5 m corridor and well
+	 * inside the face's own 0.42·r half-width, and it stood at 3.9 px and 0 px
+	 * on the keel.
+	 */
+	spun.add(
+		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
+			position.set(side * r * 0.3, 0, r * 0.62);
+		}),
+	);
 	group.add(spun);
 	// **The frame is plated, since the principal's second sheet.** The keel,
 	// rails, booms and struts were a plain light grey and took no finish —
@@ -1991,18 +2125,74 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 				r * 0.03,
 			);
 	}
-	// On the keel's own underside, inside its half-height and inside its length.
+	/**
+	 * **The bay is the gap between the two booms, and the work light is in it**
+	 * (#300, on the principal's ruling).
+	 *
+	 * The floods and the arc were on the keel's underside at
+	 * `z = -SHIPYARD_KEEL_AFT_KM`, which is aft of the drum and across the axis:
+	 * from the one viewpoint a docking approach has, #274 measured the four
+	 * floods at 3 px seen grazing and the arc at exactly 0, at a clock where its
+	 * own drive is 0.98. §5 gives the yard "cold blue-white floodlit bays" and
+	 * "one bay carries a welding arc", and a bay nobody arriving can see carries
+	 * nothing.
+	 *
+	 * The booms are the answer because of what they already are: they were
+	 * carried forward past the hub precisely so the frame reaches into the
+	 * approach view (#28), and the volume between them is the only part of this
+	 * form a ship could be held in. So the floods go on their **inboard** faces,
+	 * aimed across the gap, and the arc sits on one of them — a yard working on
+	 * a hull in its own arms.
+	 *
+	 * They stay on `frame`, which does not turn. §5 asks only the **strobes** to
+	 * mark rotation; a work light marks work, and a welding arc that swung round
+	 * the axis would be a beacon rather than a job.
+	 *
+	 * **A bay light is only a bay light if it faces the approach.** Laid flat on
+	 * a boom's inboard face, a flood's broad side points across the gap and
+	 * presents its 36 m edge to the axis: the first version of this move read 12
+	 * px and the arc, sunk inside the member it was bolted to, read 0 again. So
+	 * each flood is turned until its lit face looks 35° inboard of the axis —
+	 * far enough to be a light *in* the bay, flat enough to be seen from
+	 * outside it — and its 0.156 km length runs across the boom rather than
+	 * along it, because a bar whose length is along the boom cannot turn its
+	 * face toward the boom's own axis at all. It overhangs an 86 m member by
+	 * 35 m each side, which is a light on a bracket.
+	 *
+	 * `BOOM_FACE_Y` is that face: the boom's centre at `r * 0.8` less its
+	 * half-width at these stations. Each fixture straddles it, so it overlaps
+	 * the member it is mounted on — `tests/station-mesh.test.ts` reads a fixture
+	 * that only touches as a light hanging beside a station — and stands proud
+	 * of it, which is what the diagnosis above says it has to do.
+	 */
+	const BOOM_FACE_Y = r * 0.728;
+	const FLOOD_TILT = Math.PI * 0.19;
 	group.add(
 		buildBayLights(
 			fixtures,
 			r,
-			(i, position) =>
-				position.set(
-					-span * 0.34 + i * span * 0.23,
-					-r * 0.3,
-					-SHIPYARD_KEEL_AFT_KM,
-				),
-			new THREE.Vector3(span * 0.14, -r * 0.24, -SHIPYARD_KEEL_AFT_KM),
+			(i, flood) => {
+				const side = i % 2 === 0 ? -1 : 1;
+				// Inboard is +Y for the port boom and −Y for the starboard one,
+				// so the tilt takes the side's sign.
+				flood.quaternion.setFromUnitVectors(
+					new THREE.Vector3(0, 1, 0),
+					new THREE.Vector3(
+						0,
+						-side * Math.sin(FLOOD_TILT),
+						Math.cos(FLOOD_TILT),
+					),
+				);
+				flood.position.set(
+					0,
+					side * BOOM_FACE_Y,
+					r * (0.95 + Math.floor(i / 2) * 0.55),
+				);
+			},
+			// On the port boom's inboard face, standing proud of it and clear in
+			// z of both floods on that side: a sphere sunk into the member reads
+			// as nothing, and one hanging in the gap would be an island.
+			new THREE.Vector3(0, -r * 0.7, r * 1.22),
 		),
 	);
 	group.add(
@@ -2018,11 +2208,6 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 				r * 0.44,
 				(row === 0 ? -1 : 1) * r * 0.16 - SHIPYARD_KEEL_AFT_KM,
 			);
-		}),
-	);
-	group.add(
-		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * span * 0.55, 0, -SHIPYARD_KEEL_AFT_KM);
 		}),
 	);
 	// Along the keel's underside, opposite the ports on its top. A yard's keel
@@ -2197,8 +2382,8 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		buildBayLights(
 			fixtures,
 			r,
-			(i, position) =>
-				position.set(
+			(i, flood) =>
+				flood.position.set(
 					-span * 0.2 + i * span * 0.13,
 					r * 0.2,
 					r * 0.4 - SHIPYARD_KEEL_AFT_KM,
@@ -2343,14 +2528,18 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		buildBayLights(
 			fixtures,
 			r,
-			(i, position) => {
+			(i, flood) => {
 				const theta = Math.PI * 0.3 + (i / 3) * Math.PI * 1.35;
 				// On the arc's inner *surface*, derived from its tube radius. At
 				// `major * 0.86` they hung 60 m inside the slip — invisible to the
 				// island check, whose boxes overlap because the arc's box spans the
 				// whole ring, and plainly floating on screen.
 				const inner = major - r * 0.18;
-				position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);
+				flood.position.set(
+					Math.cos(theta) * inner,
+					Math.sin(theta) * inner,
+					0,
+				);
 			},
 			new THREE.Vector3(major - r * 0.18, 0, 0),
 		),
@@ -2421,7 +2610,11 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 function buildBayLights(
 	fixtures: StationFixture[],
 	r: number,
-	place: (i: number, position: THREE.Vector3) => void,
+	/** The flood itself and not only its position (#300): a flood is a wide thin
+	 *  bar, so a face whose normal is not the one it was drawn for needs it
+	 *  turned as well as moved. The Gantry's booms are the first caller to want
+	 *  that; the three that do not simply ignore the rotation. */
+	place: (i: number, flood: THREE.Mesh) => void,
 	arcAt: THREE.Vector3,
 ): THREE.Group {
 	const group = new THREE.Group();
@@ -2430,7 +2623,7 @@ function buildBayLights(
 			new THREE.BoxGeometry(r * 0.26, r * 0.03, r * 0.06),
 			FLOOD_MATERIAL,
 		);
-		place(i, flood.position);
+		place(i, flood);
 		flood.name = "bay-flood";
 		detail(flood, "reduced");
 		group.add(flood);
@@ -2478,8 +2671,10 @@ function buildBayLights(
  */
 function buildVentBank(
 	fixtures: StationFixture[],
+	/** The bank's own length. Everything else here is proportioned from it —
+	 *  there used to be a second `radius` argument and nothing read it, so five
+	 *  call sites were passing a dial that did nothing (#300). */
 	length: number,
-	radius: number,
 ): THREE.Group {
 	const stack = new THREE.Group();
 	// Proportioned from its own length rather than from the old stack's tube
@@ -2505,6 +2700,14 @@ function buildVentBank(
 		STATION_VISUALS.refinery.heatColor,
 		STATION_EMISSIVE_INTENSITIES.off,
 	);
+	/** How far the nozzles lean off the bank's own axis, and the direction that
+	 *  makes — shared by the pipe and the glow inside it, so the two cannot
+	 *  drift apart. They did: the throat's position was written out in the
+	 *  bank's frame and put the plate 0.05 of a bank-length **down the bore**,
+	 *  where the pipe's own wall hides it from every direction but straight
+	 *  down it (#300, measured at 0 px on the selected refinery). */
+	const NOZZLE_TILT = 0.35;
+	const bore = new THREE.Vector3(0, Math.sin(NOZZLE_TILT), Math.cos(NOZZLE_TILT));
 	for (let i = 0; i < 4; i++) {
 		const nozzle = shell(
 			[
@@ -2517,20 +2720,21 @@ function buildVentBank(
 			true,
 		);
 		nozzle.position.set(-length * 0.24 + i * length * 0.17, 0, across * 0.7);
-		nozzle.rotation.x = -0.35;
+		nozzle.rotation.x = -NOZZLE_TILT;
 		stack.add(nozzle);
-		// The lit throat, sunk into the nozzle's mouth rather than standing at
-		// the end of it: it is the inside of the pipe glowing, so it has to be
-		// inside the pipe.
+		// The lit throat, in the nozzle's **mouth** — still inside the pipe, so
+		// it is the inside of the pipe glowing rather than a lamp on the end of
+		// one, but recessed by its own thickness instead of by a bore's width.
+		// Turned with the pipe as well as placed by it: a plate lying across a
+		// leaning pipe is a lid, not a throat.
 		const throat = new THREE.Mesh(
 			new THREE.BoxGeometry(across * 0.5, across * 0.5, across * 0.2),
 			glow,
 		);
-		throat.position.set(
-			-length * 0.24 + i * length * 0.17,
-			length * 0.3 * 0.34,
-			across * 0.7 + length * 0.27,
-		);
+		throat.quaternion.copy(nozzle.quaternion);
+		throat.position
+			.copy(nozzle.position)
+			.addScaledVector(bore, length * 0.34 - across * 0.12);
 		throat.name = "flare";
 		detail(throat, "reduced");
 		stack.add(throat);
@@ -2692,7 +2896,7 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 		[r * 0.86, r * 0.6, 0.55],
 		[-r * 0.72, r * 0.78, -0.7],
 	]) {
-		const flare = buildVentBank(fixtures, r * 1.05, r * 0.07);
+		const flare = buildVentBank(fixtures, r * 1.05);
 		flare.position.set(x, y, r * 0.36);
 		flare.rotation.x = -Math.PI / 2.6;
 		flare.rotation.y = lean;
@@ -2846,7 +3050,7 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 	);
 	group.add(buildAperture("refinery", r * 1.0, berthSeed));
 	for (const side of [-1, 1]) {
-		const flare = buildVentBank(fixtures, r * 0.9, r * 0.07);
+		const flare = buildVentBank(fixtures, r * 0.9);
 		flare.position.set(side * major * 0.82, r * 0.42, 0);
 		flare.rotation.x = -Math.PI / 2.6;
 		flare.rotation.z = side * 0.35;
@@ -2959,7 +3163,7 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 		group.add(tank);
 	}
 	for (const side of [-1, 1]) {
-		const flare = buildVentBank(fixtures, r * 0.85, r * 0.07);
+		const flare = buildVentBank(fixtures, r * 0.85);
 		flare.position.set(side * r * 0.34, r * 0.3, -r * 1.5);
 		flare.rotation.x = -Math.PI / 2.3;
 		flare.rotation.z = side * 0.3;
@@ -3168,7 +3372,7 @@ function buildOutpostDerrick(color: number, berthSeed: number): BuiltPart {
 	// Rooted **on a tank**, not beside the cluster: the tanks sit on a 0.42·r
 	// circle and are 0.34·r across, so a boom starting at 0.6·r began in empty
 	// space and the whole flare was a detached island.
-	const flare = buildVentBank(fixtures, r * 0.9, r * 0.08);
+	const flare = buildVentBank(fixtures, r * 0.9);
 	flare.position.set(r * 0.42, -r * 0.42, -r * 1.3);
 	flare.rotation.x = -Math.PI / 2.4;
 	flare.rotation.y = 0.5;
@@ -3360,7 +3564,7 @@ function buildOutpostRig(color: number, berthSeed: number): BuiltPart {
 		group.add(brace);
 	}
 	group.add(buildPadDeck("outpost", fixtures, r, r * 0.95, berthSeed));
-	const flare = buildVentBank(fixtures, r * 1.0, r * 0.08);
+	const flare = buildVentBank(fixtures, r * 1.0);
 	flare.position.set(-r * 0.55, r * 0.75, -r * 1.1);
 	flare.rotation.x = -Math.PI / 2.2;
 	flare.rotation.y = -0.5;
@@ -4092,7 +4296,18 @@ function buildRefineryWorks(
 					S.strutKm * 1.5,
 					V(1, 0, 0),
 				);
-				const bank = buildVentBank(fixtures, 0.1, 0.011);
+				// **Sized to this form, not to a ship** (#300). At 0.1 km the
+				// bank's throats were 8.5 m plates on a station 1.36 km across
+				// and measured **2.9 px** at docking range — so they drew
+				// nothing wherever they were put, and §5 says *"Its flare is
+				// its light."* That was a size defect wearing a placement
+				// defect's clothes: the throats already face +Z and nothing
+				// occludes them. Every other refinery form builds this bank at
+				// 0.85–1.05 of its core radius; this one was at a quarter of
+				// that. A cell and a quarter is what the plan's own grid
+				// allows, and `tests/station-mesh.test.ts` holds the reach and
+				// the corridor it has to stay inside.
+				const bank = buildVentBank(fixtures, WORKS_CELL_KM * 1.25);
 				bank.position.copy(top).setZ(top.z + 0.02);
 				group.add(bank);
 				break;
@@ -4143,17 +4358,40 @@ function buildRefineryWorks(
 	}
 	pools.emit(group, "module");
 
-	// Lit ports down the head house's ±X faces, two rows: the crew works in
-	// the block the pad stands on.
+	/**
+	 * **Lit ports on the dock face, which is what §5 asks for** (#300).
+	 *
+	 * They were two rows down the head house's ±X faces — vertical walls, so
+	 * from the aperture axis they are edge-on and #274 measured them at exactly
+	 * 0 px while their bounding sphere spanned 85 px of the frame. §5's own
+	 * sentence for this role is *"lit ports on the dock face"*, and the dock
+	 * face is the pad deck.
+	 *
+	 * **The deck is crowded, and the gaps are what places them.** Four berths
+	 * stand on it at radius 0.155 km on the ±X and ±Y axes, each 58 m across, so
+	 * each occupies about ±17° of the ring; `buildPadDeck` puts four floods on
+	 * the diagonals at 0.82 of its own radius. The free sectors are the eight
+	 * midpoints between those, and one port sits in each — laid **radially**,
+	 * which is what the tangent argument above is for: a 30 m pane turned across
+	 * the ring subtends 10° and would crowd a berth, and the same pane turned
+	 * along it subtends 2°.
+	 *
+	 * The radius is the other half of the fit: inside the deck's own 0.20 km
+	 * edge and outside the heat ring's 0.148 km, with the pane's 30 m of length
+	 * inside both.
+	 */
+	const PAD_PORT_RADIUS_KM = 0.171;
 	group.add(
-		portRun("refinery", 12, (i, count, position, normal) => {
-			const { row, along } = rowsOf(i, count, 2);
-			const side = row === 0 ? 1 : -1;
-			normal.set(side, 0, 0);
+		portRun("refinery", 4, (i, count, position, normal, tangent) => {
+			const theta = ((i + 0.5) / count) * Math.PI * 2;
+			normal.set(0, 0, 1);
+			// Along the radius, so the pane's length runs outward rather than
+			// round the ring.
+			tangent.set(Math.cos(theta), Math.sin(theta), 0);
 			position.set(
-				side * headHalf * 0.99,
-				(along - 0.5) * headHalf * 1.6,
-				WORKS_FLOOR_KM + 0.03 + (i % 3) * 0.06,
+				Math.cos(theta) * PAD_PORT_RADIUS_KM,
+				Math.sin(theta) * PAD_PORT_RADIUS_KM,
+				plane + 0.004,
 			);
 		}),
 	);
@@ -4252,7 +4490,7 @@ function buildOutpostCluster(
 	group.add(buildPadDeck("outpost", fixtures, r, plane, berthSeed));
 	// The vent bank under the core, throats down and away from the pad: the
 	// only flare an outpost has, and the role's one moving light.
-	const vent = buildVentBank(fixtures, r * 0.6, r * 0.05);
+	const vent = buildVentBank(fixtures, r * 0.6);
 	vent.position.set(coreR * 0.3, 0, -c * 0.72);
 	vent.rotation.x = Math.PI;
 	group.add(vent);
