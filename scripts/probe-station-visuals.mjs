@@ -8,9 +8,17 @@
  * buffers, the waveforms, and §2's rule that a detail level may not change the
  * outline. What is left for a browser is what none of that can see.
  *
- * 1. **Each role's lit signature is its own.** §5 gives the trade station warm
- *    habitation light and a pair of alternating hull strobes, the shipyard cold
- *    bays and a white arc, and the refinery a warm flare.
+ * 1. **Each role's lit signature is its own, and every fixture in it reads.**
+ *    §5 gives the trade station warm habitation light and a pair of alternating
+ *    hull strobes, the shipyard cold bays and a white arc, and the refinery a
+ *    warm flare.
+ *
+ *    The floor is **per fixture** since #300. It was per role, summed over the
+ *    role's whole set, and #274 is what a sum cannot see: the shipyard totalled
+ *    26 px with its strobe pair and its weld arc at exactly zero, all 26 of
+ *    them keel-top ports seen grazing, and the refinery totalled 679 px with
+ *    its ports and all four flare throats at zero. A sum passes on whichever
+ *    light still works.
  *
  *    Measured on the pixels the role's **own fixtures** contribute — the frame
  *    as drawn, differenced against the same frame with every fixture switched

@@ -1982,10 +1982,21 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * revolution. At `r * 0.3` it is well outside the 69.5 m corridor and well
 	 * inside the face's own 0.42·r half-width, and it stood at 3.9 px and 0 px
 	 * on the keel.
+	 *
+	 * **Mostly sunk, and the 6 m that is not stands in front of the aperture
+	 * plane.** This form's hull face *is* its declared plane — the trade
+	 * station's is 25 m behind its own, which is why its lamp needs no such
+	 * note — so a fixture on this surface is either proud of the plane or
+	 * invisible, and a lamp flush with it z-fights the face it is lying on.
+	 * Nothing forbids it: the corridor row owns the volume a ship descends
+	 * through and a lamp at 0.18 km is far outside its 69.5 m cylinder. But
+	 * `CLAUDE.md` said pad berths were the only parts of a station drawn in
+	 * front of a plane, and that sentence is amended rather than quietly
+	 * falsified.
 	 */
 	spun.add(
 		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * r * 0.3, 0, r * 0.62);
+			position.set(side * r * 0.3, 0, r * 0.62 - r * 0.07 * 0.15);
 		}),
 	);
 	group.add(spun);
@@ -2535,11 +2546,7 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 				// island check, whose boxes overlap because the arc's box spans the
 				// whole ring, and plainly floating on screen.
 				const inner = major - r * 0.18;
-				flood.position.set(
-					Math.cos(theta) * inner,
-					Math.sin(theta) * inner,
-					0,
-				);
+				flood.position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);
 			},
 			new THREE.Vector3(major - r * 0.18, 0, 0),
 		),
@@ -2707,7 +2714,11 @@ function buildVentBank(
 	 *  where the pipe's own wall hides it from every direction but straight
 	 *  down it (#300, measured at 0 px on the selected refinery). */
 	const NOZZLE_TILT = 0.35;
-	const bore = new THREE.Vector3(0, Math.sin(NOZZLE_TILT), Math.cos(NOZZLE_TILT));
+	const bore = new THREE.Vector3(
+		0,
+		Math.sin(NOZZLE_TILT),
+		Math.cos(NOZZLE_TILT),
+	);
 	for (let i = 0; i < 4; i++) {
 		const nozzle = shell(
 			[

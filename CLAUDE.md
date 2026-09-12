@@ -171,14 +171,19 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   `endAxialKm === mouthAxialKm` on a pad and the volume runs outward to
   `stagingAxialKm`; `interiorAxialSpanKm` is the one place that ordering lives,
   and a consumer that reads `[end, mouth]` directly gets a pad backwards.
-- **A pad's berths are the only parts of a station drawn in front of the
-  aperture plane, so the corridor row is their gate.**
+- **The corridor row is the gate on anything drawn in front of the aperture
+  plane, and a pad's berths are no longer the only such thing (#300).**
   `tests/station-mesh.test.ts` forbids anything inside the aperture's
   half-diagonal cylinder extended outward, and `PAD_CORRIDOR_MARGIN_FACTOR` is
   what keeps a berth's service boom — which reaches *inboard* of its own apron —
   on the right side of it. At 0.5 the boom cleared by 11 cm, which is a
   coincidence; the margin is 0.75 and it clears by 7.6 m. Anything added to a
-  pad inherits the question.
+  pad inherits the question. What joined the berths there is the Gantry's strobe
+  pair: **this form's hull face is its declared plane** — the trade station's is
+  25 m behind its own, which is why its diamond lamp needs no such note — so a
+  fixture on the shipyard's forward face is either proud of the plane or
+  invisible, and the pair stands 6 m proud at 0.18 km from the axis, far outside
+  the 69.5 m cylinder.
 - **A bay wider than the form that holds it pokes through the hull, and only
   half of that is checkable.** `tests/station-interior.test.ts` measures the bay
   against the **slot** forms' `core` box, which is the body their slot is cut
