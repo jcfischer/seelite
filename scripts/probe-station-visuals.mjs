@@ -124,6 +124,58 @@ const { check, watch, exit } = tally();
 let scannedPrograms = false;
 
 /**
+ * Every object name the role-light difference hides — one list, and the only
+ * one (#300).
+ *
+ * #28's amber aperture frame is **not** in it: it is not this pass's light and
+ * it is the same colour on all three, so including it would dilute the three
+ * signatures toward each other.
+ */
+const FIXTURE_NAMES = [
+	"windows",
+	"strobe-a",
+	"strobe-b",
+	"bay-flood",
+	"weld-arc",
+	"heat-glow",
+	"flare",
+	"vent-manifold",
+];
+
+/**
+ * The fixtures `station-visuals.md` §5 gives each role by name — the set the
+ * per-fixture floor below is asserted over.
+ *
+ * **A subset of `FIXTURE_NAMES`, asserted rather than trusted**, so the two
+ * cannot drift into two lists. §5's table is the authority: the trade station's
+ * warm grid and its strobe pair, the shipyard's cool grid, floodlit bays, weld
+ * arc and the same strobes, and the refinery's lit ports, heat ring and vent
+ * throats.
+ *
+ * Two names in `FIXTURE_NAMES` are deliberately **not** here, and neither is an
+ * oversight. `vent-manifold` is the structure the throats are sunk into — a
+ * plain material lit by the sun, not a light §5 gives anyone — and the
+ * refinery's `bay-flood` is the pad deck's own work light, which §5 gives to the
+ * shipyard's bays. Both stay in the hide list because both are removed when the
+ * role's own contribution is differenced out; neither carries a floor, because
+ * §5 does not ask them to read from anywhere.
+ */
+const SPEC_FIXTURES = {
+	trade: ["windows", "strobe-a", "strobe-b"],
+	shipyard: ["windows", "bay-flood", "weld-arc", "strobe-a", "strobe-b"],
+	refinery: ["windows", "heat-glow", "flare"],
+};
+
+for (const [role, names] of Object.entries(SPEC_FIXTURES))
+	for (const name of names)
+		if (!FIXTURE_NAMES.includes(name))
+			throw new Error(
+				`SPEC_FIXTURES.${role} names "${name}", which the hide list does not: ` +
+					"the per-fixture floor would be measured against a frame that " +
+					"still draws it",
+			);
+
+/**
  * Everything this probe needs about one station, from **one** evaluate.
  *
  * Five renders of the same scene — the station as drawn, with its aperture bars
@@ -143,9 +195,9 @@ let scannedPrograms = false;
  * and the sun's direction depends on where in its orbit the station is, so any
  * absolute threshold would be tuned to one moment of one orbit.
  */
-const measure = (page, bodyId) =>
+const measure = (page, bodyId, type) =>
 	page.evaluate(
-		([id, grid]) => {
+		([id, grid, fixtureNames, specNames]) => {
 			const g = window.__seelite;
 			const W = 560;
 			const H = 400;
@@ -163,6 +215,8 @@ const measure = (page, bodyId) =>
 			};
 			const mesh = window.__meshOfBody(id);
 			if (!mesh) return { missing: true };
+			const luma = (d, i) =>
+				0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
 
 			/**
 			 * **Pin the clock with the strobes lit**, for the five renders below.
@@ -194,20 +248,6 @@ const measure = (page, bodyId) =>
 			const bars = hideWhere((c) => c.name === "aperture-light");
 			const noAperture = frame();
 			show(bars);
-			// Every light §5 gives a role, by name. #28's amber aperture frame is
-			// **not** in the list: it is not this pass's light and it is the same
-			// colour on all three, so including it would dilute the three
-			// signatures toward each other.
-			const fixtureNames = [
-				"windows",
-				"strobe-a",
-				"strobe-b",
-				"bay-flood",
-				"weld-arc",
-				"heat-glow",
-				"flare",
-				"vent-manifold",
-			];
 			const lights = hideWhere((c) => fixtureNames.includes(c.name));
 			const unlit = frame();
 			show(lights);
@@ -222,11 +262,136 @@ const measure = (page, bodyId) =>
 			mesh.visible = false;
 			const empty = frame();
 			mesh.visible = true;
+
+			// --- The per-fixture floor's measurement (#300) --------------------
+			//
+			// §5 asks each fixture it names to read **from the aperture axis**,
+			// and a role total cannot see a dead one. #274 measured the shipyard
+			// at 26 px with its strobes and its arc at exactly zero: 23 of those
+			// 26 were keel-top ports seen grazing, so the role passed on a
+			// fixture that was never the one in question. Each name is therefore
+			// hidden **alone** and differenced against the frame as drawn.
+			const changed = (a, b) => {
+				let count = 0;
+				let peak = 0;
+				for (let i = 0; i < W * H; i++) {
+					const d = Math.abs(luma(a, i) - luma(b, i));
+					if (d <= 6) continue;
+					count++;
+					if (d > peak) peak = d;
+				}
+				return { count, peak };
+			};
+
+			/**
+			 * The clock each fixture is measured at: where its own drive is
+			 * strongest inside one strobe period.
+			 *
+			 * **One pinned clock cannot carry this measurement.** At 0.05 s —
+			 * the value the five renders above use, chosen so `strobe-a` is
+			 * mid-flash — `strobe-b` is exactly half a period behind and
+			 * **dark**, so hiding it differences a near-black box against the
+			 * hull and reports zero whatever surface it is standing on. The
+			 * shipyard's arc is the same shape one step weaker: it rides a
+			 * stepped 7 Hz flicker at 0.85 depth, so an unchosen clock reads it
+			 * at 15% of its own brightness. Taking each drive's argmax makes the
+			 * reading about **placement**, which is what §5 rules on, rather
+			 * than about which moment the probe happened to pin.
+			 *
+			 * §5.2 is what makes this cheap: every intensity is a pure function
+			 * of `gameTime`, so the sweep is written rather than waited for.
+			 */
+			const kindOf = {
+				"strobe-a": "strobe-a",
+				"strobe-b": "strobe-b",
+				"weld-arc": "work",
+				"heat-glow": "work",
+				flare: "flare",
+			};
+			const best = {};
+			for (let i = 0; i < 40; i++) {
+				const clockS = i * 0.05;
+				g.world.gameTime = clockS;
+				g.render(0);
+				for (const f of g.visualOfStation(id).fixtures)
+					if (!best[f.kind] || f.intensity > best[f.kind].drive)
+						best[f.kind] = { clockS, drive: f.intensity };
+			}
+
+			/**
+			 * How wide a fixture is on this canvas, in pixels, with nothing in
+			 * front of it.
+			 *
+			 * A zero pixel count cannot say *why* on its own — sub-pixel and
+			 * occluded read identically — and the two want opposite fixes. The
+			 * camera sits at the origin and only rotates (`main.ts`), so an
+			 * object's world position is already its offset from the eye, and
+			 * this is its apparent diameter. Read beside the count it separates
+			 * the two: a fixture four pixels across contributing nothing is
+			 * behind something.
+			 */
+			const focal = H / 2 / Math.tan((g.nearCamera.fov * Math.PI) / 360);
+			const spanPx = (object) => {
+				let sphere = null;
+				if (object.isInstancedMesh) {
+					object.computeBoundingSphere();
+					sphere = object.boundingSphere;
+				} else if (object.geometry) {
+					object.geometry.computeBoundingSphere();
+					sphere = object.geometry.boundingSphere;
+				}
+				if (!sphere) return 0;
+				const m = object.matrixWorld.elements;
+				const scale = Math.max(
+					Math.hypot(m[0], m[1], m[2]),
+					Math.hypot(m[4], m[5], m[6]),
+					Math.hypot(m[8], m[9], m[10]),
+				);
+				const c = sphere.center;
+				const distance = Math.hypot(
+					m[0] * c.x + m[4] * c.y + m[8] * c.z + m[12],
+					m[1] * c.x + m[5] * c.y + m[9] * c.z + m[13],
+					m[2] * c.x + m[6] * c.y + m[10] * c.z + m[14],
+				);
+				if (!(distance > 0)) return 0;
+				return (2 * sphere.radius * scale * focal) / distance;
+			};
+
+			// Grouped by clock so one base frame serves every fixture measured
+			// at it, rather than one per name.
+			const groups = new Map();
+			for (const name of specNames) {
+				const kind = kindOf[name];
+				const clockS = kind && best[kind] ? best[kind].clockS : 0.05;
+				if (!groups.has(clockS)) groups.set(clockS, []);
+				groups.get(clockS).push(name);
+			}
+			const perFixture = {};
+			for (const [clockS, names] of groups) {
+				g.world.gameTime = clockS;
+				const base = frame();
+				for (const name of names) {
+					const objects = [];
+					mesh.traverse((child) => {
+						if (child.name === name) objects.push(child);
+					});
+					const hidden = hideWhere((c) => c.name === name);
+					const { count, peak } = changed(base, frame());
+					show(hidden);
+					const kind = kindOf[name];
+					perFixture[name] = {
+						objects: objects.length,
+						count,
+						peak,
+						clockS,
+						drive: kind ? (best[kind]?.drive ?? 0) : null,
+						spanPx: objects.reduce((w, o) => Math.max(w, spanPx(o)), 0),
+					};
+				}
+			}
+
 			g.world.gameTime = savedClock;
 			g.render(0);
-
-			const luma = (d, i) =>
-				0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
 
 			/** The pixels that differ between two renders, cropped to their own
 			 *  box and resampled — so two masks compare as shapes and not as
@@ -303,9 +468,10 @@ const measure = (page, bodyId) =>
 				// What the accessories themselves contribute, measured directly
 				// rather than as a difference of two counts.
 				accessories: maskOf(drawn, bare),
+				perFixture,
 			};
 		},
-		[bodyId, GRID],
+		[bodyId, GRID, FIXTURE_NAMES, SPEC_FIXTURES[type] ?? []],
 	);
 
 for (const viewport of VIEWPORTS) {
@@ -353,7 +519,7 @@ for (const viewport of VIEWPORTS) {
 			[id, silhouetteKm * CLOSE_RADII],
 		);
 		checkFraming(check, `${viewport.name}: ${type}`, framing);
-		const m = await measure(page, id);
+		const m = await measure(page, id, type);
 		lit[type] = { ...m, silhouetteKm };
 		check(
 			`${viewport.name}: ${type} is on screen with its aperture lit`,
@@ -495,13 +661,50 @@ for (const viewport of VIEWPORTS) {
 				.join(", "),
 	);
 	const roleLight = (type) => lit[type].lights;
-	check(
-		`${viewport.name}: every role puts its own light on screen`,
-		["trade", "shipyard", "refinery"].every((t) => roleLight(t).count > 0),
-		["trade", "shipyard", "refinery"]
-			.map((t) => `${t} ${roleLight(t).count}px`)
-			.join(", "),
-	);
+
+	/**
+	 * **Per fixture, not per role** (#300).
+	 *
+	 * This check used to be `every role puts its own light on screen`, summed
+	 * over the role's whole fixture set. #274 is what that could not see: the
+	 * shipyard totalled 26 px with its strobe pair and its weld arc at exactly
+	 * zero — all 26 were keel-top ports seen grazing — and the refinery totalled
+	 * 679 px with `windows` and all four `flare` at zero, while §5 says *"Its
+	 * flare is its light."* A sum passes on whichever fixture still works.
+	 *
+	 * **A name with no objects is a failure, not a skip.** A renamed fixture
+	 * would otherwise contribute nothing to the frame and nothing to the check,
+	 * and a role with every light renamed away would read as passing.
+	 *
+	 * The reading beside each zero is `spanPx` — how wide the fixture is on this
+	 * canvas with nothing in front of it. It is what separates a fixture too
+	 * small to see from one standing behind the hull, and the two want opposite
+	 * fixes.
+	 */
+	for (const type of ["trade", "shipyard", "refinery"]) {
+		const per = lit[type].perFixture;
+		const names = Object.keys(per);
+		const dead = names.filter(
+			(n) => per[n].objects === 0 || per[n].count === 0,
+		);
+		check(
+			`${viewport.name}: every fixture §5 gives the ${type} reads from its own aperture axis`,
+			names.length > 0 && dead.length === 0,
+			names
+				.map(
+					(n) =>
+						`${n} ${per[n].count}px` +
+						(per[n].objects === 0
+							? " (no object of that name)"
+							: ` (${per[n].objects} obj, ${per[n].spanPx.toFixed(1)}px wide` +
+								(per[n].drive === null
+									? ""
+									: `, drive ${per[n].drive.toFixed(2)} @ ${per[n].clockS.toFixed(2)}s`) +
+								")"),
+				)
+				.join(", "),
+		);
+	}
 	check(
 		`${viewport.name}: the three roles light differently, warm to cold`,
 		roleLight("refinery").warmth > roleLight("trade").warmth &&
