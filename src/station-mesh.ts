@@ -49,6 +49,12 @@
  */
 
 import * as THREE from "three";
+import {
+	type GlowClass,
+	glowMaterial,
+	glowPoints,
+	steadyGlowMaterial,
+} from "./station-glow";
 import { mutePaint } from "./surface";
 import { EMISSIVE_CEILING } from "./light-rig";
 import { appendRing, cutRing, ringTriangles } from "./face-cut";
@@ -266,6 +272,13 @@ export interface StationFixture {
 	material: THREE.MeshStandardMaterial;
 	base: number;
 	kind: StationFixtureKind;
+	/**
+	 * The glare this light is seen by at range, when it has one (#300).
+	 * Written beside `material.emissiveIntensity` every frame and never brighter
+	 * than it — `station-glow.ts` has why a real-sized fitting needs one, and
+	 * `tests/station-glow.test.ts` holds the two equal.
+	 */
+	glow?: THREE.ShaderMaterial;
 }
 
 /**
@@ -486,6 +499,58 @@ interface BuiltPart {
 }
 
 /**
+ * Real-size station fittings, kilometres (#300).
+ *
+ * **The principal's ruling on #300's first sheet**: every light was *"way too
+ * big — think about how big a light would be on a station that is several km
+ * big"*. They were a 42 m strobe, a 30 × 12 m pane, a 156 m flood and a 60 m
+ * welding arc. These are what the real fittings are, and `station-glow.ts` is
+ * how a fitting this small is seen from the approach at all.
+ */
+export const FITTING_KM = Object.freeze({
+	/** A strobe lamp's cube edge. */
+	strobe: 0.002,
+	/** A window pane: width, height, depth. */
+	pane: Object.freeze([0.003, 0.0015, 0.0005] as const),
+	/** A floodlight: its long face, its short face, its depth. */
+	flood: Object.freeze([0.004, 0.001, 0.002] as const),
+	/** The welding arc's radius — the spark itself is centimetres; this is
+	 *  the lit ball of plasma and spatter round it. */
+	arcRadius: 0.0005,
+	/** A flare throat's lit face, at most — a small bank's mouth is narrower. */
+	throat: 0.008,
+});
+
+/**
+ * Hang a glow under one fitting, at its own origin, named like it.
+ *
+ * Named like the fitting so `probe-station-visuals.mjs` hides both with one
+ * name; a child so the detail band that hides a tagged fitting hides its glare.
+ * The lift is the fitting's half-size, so its own housing cannot occlude it.
+ */
+function withGlow(
+	fitting: THREE.Object3D,
+	sizeKm: number,
+	material: THREE.ShaderMaterial,
+): THREE.Object3D {
+	fitting.add(
+		glowPoints(
+			fitting.name,
+			[new THREE.Vector3()],
+			sizeKm,
+			sizeKm * 0.75,
+			material,
+		),
+	);
+	return fitting;
+}
+
+/** A driven fixture's glow: its own material, so the clock can write it. */
+function drivenGlow(color: number, glowClass: GlowClass) {
+	return glowMaterial(color, STATION_EMISSIVE_INTENSITIES.off, glowClass);
+}
+
+/**
  * A lit window grid as one `InstancedMesh`, placed by the caller's rule.
  *
  * Both grids in this file — the Coriolis hull's 28 panes solved onto the face
@@ -536,6 +601,7 @@ function buildWindowGrid(
 	const normal = new THREE.Vector3();
 	const unitZ = new THREE.Vector3(0, 0, 1);
 	const one = new THREE.Vector3(1, 1, 1);
+	const glowAt: THREE.Vector3[] = [];
 	const tangent = new THREE.Vector3();
 	const basis = new THREE.Matrix4();
 	const across = new THREE.Vector3();
@@ -560,8 +626,25 @@ function buildWindowGrid(
 			}
 		}
 		panes.setMatrixAt(i, matrix.compose(position, quaternion, one));
+		glowAt.push(position.clone());
 	}
 	panes.instanceMatrix.needsUpdate = true;
+	// One glow point per pane, at the pane's own centre and in the grid's frame
+	// — a pane is under a pixel at approach range and a grid of them is what
+	// says a station is lived in (#300).
+	panes.add(
+		glowPoints(
+			"windows",
+			glowAt,
+			FITTING_KM.pane[0],
+			FITTING_KM.pane[0] * 0.5,
+			steadyGlowMaterial(
+				STATION_VISUALS[type].windowColor,
+				PANE_MATERIALS[type].emissiveIntensity,
+				"pane",
+			),
+		),
+	);
 	return panes;
 }
 
@@ -601,7 +684,7 @@ function detail<T extends THREE.Object3D>(
  * exception and are built per station, because §7's colour cue is per type.
  */
 const PANE_COUNT = 28;
-const PANE_GEOMETRY = shared(new THREE.BoxGeometry(0.03, 0.012, 0.004));
+const PANE_GEOMETRY = shared(new THREE.BoxGeometry(...FITTING_KM.pane));
 /**
  * One pane material per role, from the profile's `windowColor` — habitation
  * light is warmer on the refinery than on the two Coriolis hulls.
@@ -691,6 +774,12 @@ const FLOOD_MATERIAL = shared(
 		STATION_VISUALS.shipyard.floodColor,
 		STATION_EMISSIVE_INTENSITIES.flood,
 	),
+);
+/** The floods' glare: steady, so one shared material like the floods'. */
+const FLOOD_GLOW = steadyGlowMaterial(
+	STATION_VISUALS.shipyard.floodColor,
+	STATION_EMISSIVE_INTENSITIES.flood,
+	"flood",
 );
 
 /**
@@ -1165,9 +1254,11 @@ function greebleRun(
 function strobePair(
 	type: StationType,
 	fixtures: StationFixture[],
-	size: number,
 	place: (side: number, position: THREE.Vector3) => void,
 ) {
+	/** Real size (#300): a caller no longer picks one, because every caller
+	 *  picked a fraction of its core radius and got a 36–42 m lamp. */
+	const size = FITTING_KM.strobe;
 	const group = new THREE.Group();
 	const sides: [StationFixtureKind, number][] = [
 		["strobe-a", -1],
@@ -1185,11 +1276,14 @@ function strobePair(
 		place(side, lamp.position);
 		lamp.name = kind;
 		detail(lamp, "reduced");
+		const glow = drivenGlow(STATION_VISUALS[type].strobeColor, "point");
+		withGlow(lamp, size, glow);
 		group.add(lamp);
 		fixtures.push({
 			material,
 			base: STATION_EMISSIVE_INTENSITIES.strobe,
 			kind,
+			glow,
 		});
 	}
 	return group;
@@ -1496,7 +1590,7 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	 * of a station. Half sunk, it still shows its whole lit face down the axis.
 	 */
 	group.add(
-		strobePair("trade", fixtures, r * 0.07, (side, position) => {
+		strobePair("trade", fixtures, (side, position) => {
 			position.set(side * face * 0.62, 0, face);
 		}),
 	);
@@ -1756,7 +1850,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 	group.add(
-		strobePair("trade", fixtures, r * 0.06, (side, position) => {
+		strobePair("trade", fixtures, (side, position) => {
 			position.set(0, side * (major + tube * 1.1), 0);
 		}),
 	);
@@ -1834,7 +1928,7 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 	group.add(
-		strobePair("trade", fixtures, r * 0.07, (side, position) => {
+		strobePair("trade", fixtures, (side, position) => {
 			position.set(side * body * 1.02, 0, r * 0.6);
 		}),
 	);
@@ -1995,8 +2089,8 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * falsified.
 	 */
 	spun.add(
-		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
-			position.set(side * r * 0.3, 0, r * 0.62 - r * 0.07 * 0.15);
+		strobePair("shipyard", fixtures, (side, position) => {
+			position.set(side * r * 0.3, 0, r * 0.62 - FITTING_KM.strobe * 0.2);
 		}),
 	);
 	group.add(spun);
@@ -2203,7 +2297,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 			// On the port boom's inboard face, standing proud of it and clear in
 			// z of both floods on that side: a sphere sunk into the member reads
 			// as nothing, and one hanging in the gap would be an island.
-			new THREE.Vector3(0, -r * 0.7, r * 1.22),
+			new THREE.Vector3(0, -BOOM_FACE_Y + FITTING_KM.arcRadius * 0.8, r * 1.22),
 		),
 	);
 	group.add(
@@ -2423,7 +2517,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 	group.add(
-		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
+		strobePair("shipyard", fixtures, (side, position) => {
 			// Inside the slab's own half-length (`span * 0.54`), not on it: at
 			// 0.55 one of the pair sat clear of the hull it is mounted on.
 			position.set(side * span * 0.5, 0, r * 0.36 - SHIPYARD_KEEL_AFT_KM);
@@ -2564,7 +2658,7 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 	group.add(
-		strobePair("shipyard", fixtures, r * 0.07, (side, position) => {
+		strobePair("shipyard", fixtures, (side, position) => {
 			const theta = Math.PI * 0.28 + (side > 0 ? 0 : Math.PI * 1.4);
 			position.set(Math.cos(theta) * major, Math.sin(theta) * major, 0);
 		}),
@@ -2626,12 +2720,19 @@ function buildBayLights(
 ): THREE.Group {
 	const group = new THREE.Group();
 	for (let i = 0; i < 4; i++) {
+		// The long face along X, as before, so every caller's orientation still
+		// holds; only the size is real now (#300).
 		const flood = new THREE.Mesh(
-			new THREE.BoxGeometry(r * 0.26, r * 0.03, r * 0.06),
+			new THREE.BoxGeometry(
+				FITTING_KM.flood[0],
+				FITTING_KM.flood[2],
+				FITTING_KM.flood[1],
+			),
 			FLOOD_MATERIAL,
 		);
 		place(i, flood);
 		flood.name = "bay-flood";
+		withGlow(flood, FITTING_KM.flood[0], FLOOD_GLOW);
 		detail(flood, "reduced");
 		group.add(flood);
 	}
@@ -2640,17 +2741,20 @@ function buildBayLights(
 		STATION_EMISSIVE_INTENSITIES.off,
 	);
 	const arc = new THREE.Mesh(
-		new THREE.SphereGeometry(r * 0.05, 8, 6),
+		new THREE.SphereGeometry(FITTING_KM.arcRadius, 8, 6),
 		arcMaterial,
 	);
 	arc.position.copy(arcAt);
 	arc.name = "weld-arc";
 	detail(arc, "reduced");
+	const arcGlow = drivenGlow(STATION_VISUALS.shipyard.floodColor, "point");
+	withGlow(arc, FITTING_KM.arcRadius * 2, arcGlow);
 	group.add(arc);
 	fixtures.push({
 		material: arcMaterial,
 		base: STATION_EMISSIVE_INTENSITIES.weldArc,
 		kind: "work",
+		glow: arcGlow,
 	});
 	return group;
 }
@@ -2707,6 +2811,7 @@ function buildVentBank(
 		STATION_VISUALS.refinery.heatColor,
 		STATION_EMISSIVE_INTENSITIES.off,
 	);
+	const throatGlare = drivenGlow(STATION_VISUALS.refinery.heatColor, "flood");
 	/** How far the nozzles lean off the bank's own axis, and the direction that
 	 *  makes — shared by the pipe and the glow inside it, so the two cannot
 	 *  drift apart. They did: the throat's position was written out in the
@@ -2738,8 +2843,13 @@ function buildVentBank(
 		// one, but recessed by its own thickness instead of by a bore's width.
 		// Turned with the pipe as well as placed by it: a plate lying across a
 		// leaning pipe is a lid, not a throat.
+		// **Real-size, and never wider than the mouth it glows in** (#300). It
+		// was half the manifold's width, which on the banks the Warren, the
+		// Collar and the Spar build — 0.34 to 0.42 km long — is a 29–36 m lit
+		// plate; a flare throat is metres. The glow is what reads at range.
+		const throatKm = Math.min(across * 0.5, FITTING_KM.throat);
 		const throat = new THREE.Mesh(
-			new THREE.BoxGeometry(across * 0.5, across * 0.5, across * 0.2),
+			new THREE.BoxGeometry(throatKm, throatKm, throatKm * 0.4),
 			glow,
 		);
 		throat.quaternion.copy(nozzle.quaternion);
@@ -2748,6 +2858,7 @@ function buildVentBank(
 			.addScaledVector(bore, length * 0.34 - across * 0.12);
 		throat.name = "flare";
 		detail(throat, "reduced");
+		withGlow(throat, throatKm, throatGlare);
 		stack.add(throat);
 	}
 	// One fixture for the bank, kind `flare`: it is the flare system's light,
@@ -2756,6 +2867,7 @@ function buildVentBank(
 		material: glow,
 		base: STATION_EMISSIVE_INTENSITIES.refineryFlare,
 		kind: "flare",
+		glow: throatGlare,
 	});
 	return stack;
 }
@@ -3292,7 +3404,11 @@ function buildPadDeck(
 	for (let i = 0; i < 4; i++) {
 		const theta = (i / 4) * Math.PI * 2 + Math.PI / 4;
 		const flood = new THREE.Mesh(
-			new THREE.BoxGeometry(r * 0.16, r * 0.05, r * 0.05),
+			new THREE.BoxGeometry(
+				FITTING_KM.flood[0],
+				FITTING_KM.flood[1],
+				FITTING_KM.flood[2],
+			),
 			FLOOD_MATERIAL,
 		);
 		flood.position.set(
@@ -3303,6 +3419,7 @@ function buildPadDeck(
 		flood.rotation.z = theta;
 		flood.name = "bay-flood";
 		detail(flood, "reduced");
+		withGlow(flood, FITTING_KM.flood[0], FLOOD_GLOW);
 		group.add(flood);
 	}
 	group.add(buildHeatRing(fixtures, r * 0.62, z + r * 0.03));
@@ -3958,7 +4075,7 @@ function buildTradeModular(
 	// short of the end, it touches structure and stays inside the truss's own
 	// reach.
 	group.add(
-		strobePair("trade", fixtures, r * 0.06, (side, position) => {
+		strobePair("trade", fixtures, (side, position) => {
 			// Straddling the longeron: the lamp is three times the ship-scale
 			// truss's width, so its centre sits 0.4 of its size outboard of the
 			// longeron's face and the box overlaps the member either way.
@@ -4318,7 +4435,7 @@ function buildRefineryWorks(
 				// that. A cell and a quarter is what the plan's own grid
 				// allows, and `tests/station-mesh.test.ts` holds the reach and
 				// the corridor it has to stay inside.
-				const bank = buildVentBank(fixtures, WORKS_CELL_KM * 1.25);
+				const bank = buildVentBank(fixtures, 0.1);
 				bank.position.copy(top).setZ(top.z + 0.02);
 				group.add(bank);
 				break;
@@ -5065,6 +5182,9 @@ export function updateStationVisuals(
 	for (const fixture of mesh.fixtures) {
 		fixture.material.emissiveIntensity =
 			fixture.base * fixtureIntensity(mesh.type, fixture.kind, gameTime);
+		if (fixture.glow)
+			fixture.glow.uniforms.uIntensity.value =
+				fixture.material.emissiveIntensity;
 	}
 }
 

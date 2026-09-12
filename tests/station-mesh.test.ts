@@ -449,6 +449,18 @@ describe("a station is one object, not a scatter of parts", () => {
 			// The Slipway's welding flare hangs in the slip where the work is,
 			// in the ring's gap by construction: a light, not a part.
 			if (object.name === "weld-arc") return;
+			// **A real-size lamp is smaller than this proxy's own tolerance**
+			// (#300). The shrink below takes up to 2.4 m off every face of a
+			// part, and a 2 m strobe seated half in its face shrinks to a 1 m box
+			// that the hull's box, shrunk 2.4 m inward, can never reach — so the
+			// row read both of the Coriolis's strobes as floating. A seated lamp
+			// is not expressible here at all. Its mounting is held by `both
+			// strobes sit out on the hull` in `station-visuals.test.ts`, against
+			// the member it is bolted to, and by §5's axis row beside it.
+			if (object.name === "strobe-a" || object.name === "strobe-b") return;
+			// A glow is not a part: it is a point at its fitting's own centre,
+			// drawn as glare (`station-glow.ts`), and it has no volume to mount.
+			if (object.userData.glow) return;
 			// A pane is a decal on a face, not a part: `window panes sit out
 			// near the shell they belong to` above is its mounting check, and
 			// three of the Buoy's ride a drum face at a standoff wider than this
