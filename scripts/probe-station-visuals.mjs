@@ -124,56 +124,22 @@ const { check, watch, exit } = tally();
 let scannedPrograms = false;
 
 /**
- * Every object name the role-light difference hides — one list, and the only
- * one (#300).
+ * The names the role-light difference hides — §5's own fixtures plus the two
+ * objects that sit among them (#300).
  *
- * #28's amber aperture frame is **not** in it: it is not this pass's light and
- * it is the same colour on all three, so including it would dilute the three
- * signatures toward each other.
- */
-const FIXTURE_NAMES = [
-	"windows",
-	"strobe-a",
-	"strobe-b",
-	"bay-flood",
-	"weld-arc",
-	"heat-glow",
-	"flare",
-	"vent-manifold",
-];
-
-/**
- * The fixtures `station-visuals.md` §5 gives each role by name — the set the
- * per-fixture floor below is asserted over.
+ * **§5's list is read off the page**, from `window.__seelite.specFixtures`,
+ * which is `station-visuals.ts`'s `SPEC_FIXTURE_NAMES`. A probe with its own
+ * copy of it would stay green the day §5 gains a fixture, which is exactly the
+ * shape of defect #274 found: a role total passing on whichever light still
+ * worked. What stays here is the pair that is hidden but carries no floor.
  *
- * **A subset of `FIXTURE_NAMES`, asserted rather than trusted**, so the two
- * cannot drift into two lists. §5's table is the authority: the trade station's
- * warm grid and its strobe pair, the shipyard's cool grid, floodlit bays, weld
- * arc and the same strobes, and the refinery's lit ports, heat ring and vent
- * throats.
- *
- * Two names in `FIXTURE_NAMES` are deliberately **not** here, and neither is an
- * oversight. `vent-manifold` is the structure the throats are sunk into — a
+ * `vent-manifold` is the structure the refinery's throats are sunk into — a
  * plain material lit by the sun, not a light §5 gives anyone — and the
- * refinery's `bay-flood` is the pad deck's own work light, which §5 gives to the
- * shipyard's bays. Both stay in the hide list because both are removed when the
- * role's own contribution is differenced out; neither carries a floor, because
- * §5 does not ask them to read from anywhere.
+ * refinery's `bay-flood` is the pad deck's own work light, where §5 gives
+ * floodlit bays to the shipyard. Both are removed when a role's own
+ * contribution is differenced out; neither is asked to read from anywhere.
  */
-const SPEC_FIXTURES = {
-	trade: ["windows", "strobe-a", "strobe-b"],
-	shipyard: ["windows", "bay-flood", "weld-arc", "strobe-a", "strobe-b"],
-	refinery: ["windows", "heat-glow", "flare"],
-};
-
-for (const [role, names] of Object.entries(SPEC_FIXTURES))
-	for (const name of names)
-		if (!FIXTURE_NAMES.includes(name))
-			throw new Error(
-				`SPEC_FIXTURES.${role} names "${name}", which the hide list does not: ` +
-					"the per-fixture floor would be measured against a frame that " +
-					"still draws it",
-			);
+const UNRULED_NAMES = ["bay-flood", "vent-manifold"];
 
 /**
  * Everything this probe needs about one station, from **one** evaluate.
@@ -197,8 +163,10 @@ for (const [role, names] of Object.entries(SPEC_FIXTURES))
  */
 const measure = (page, bodyId, type) =>
 	page.evaluate(
-		([id, grid, fixtureNames, specNames]) => {
+		([id, grid, unruled, role]) => {
 			const g = window.__seelite;
+			const specNames = g.specFixtures[role] ?? [];
+			const fixtureNames = [...new Set([...specNames, ...unruled])];
 			const W = 560;
 			const H = 400;
 			const src = g.renderer.domElement;
@@ -471,7 +439,7 @@ const measure = (page, bodyId, type) =>
 				perFixture,
 			};
 		},
-		[bodyId, GRID, FIXTURE_NAMES, SPEC_FIXTURES[type] ?? []],
+		[bodyId, GRID, UNRULED_NAMES, type],
 	);
 
 for (const viewport of VIEWPORTS) {

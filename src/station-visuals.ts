@@ -267,6 +267,38 @@ export type StationDetailLevel = "full" | "reduced" | "outline";
 export type StationFixtureKind = "strobe-a" | "strobe-b" | "work" | "flare";
 
 /**
+ * The objects §5's table names as each role's light, by the name the mesh
+ * carries — **one list, and this is it** (#300).
+ *
+ * Here rather than in `station-mesh.ts` or in a probe, because §5 is this
+ * module's spec and because there are three readers: `tests/station-visuals.ts`
+ * asserts each of these reads from the aperture axis, `probe-station-visuals`
+ * asserts the same thing in pixels, and the forms place them. A probe's own
+ * copy would go falsely green the day §5 gains a fixture, which is the shape of
+ * defect #274 found: a role total passing on whichever light still worked.
+ *
+ * **What is deliberately not here.** The Works' `vent-manifold` is the
+ * structure the throats are sunk into — a plain material lit by the sun, not a
+ * light §5 gives anyone — and the refinery's `bay-flood` is the pad deck's own
+ * work light, where §5 gives floodlit bays to the shipyard. Both are still
+ * hidden when a role's own contribution is differenced out; neither carries a
+ * floor, because §5 does not ask them to read from anywhere. The outpost has no
+ * §5 row at all: nothing in the game places one (#56).
+ */
+export const SPEC_FIXTURE_NAMES: Readonly<Record<string, readonly string[]>> =
+	Object.freeze({
+		trade: Object.freeze(["windows", "strobe-a", "strobe-b"]),
+		shipyard: Object.freeze([
+			"windows",
+			"bay-flood",
+			"weld-arc",
+			"strobe-a",
+			"strobe-b",
+		]),
+		refinery: Object.freeze(["windows", "heat-glow", "flare"]),
+	});
+
+/**
  * The band edges, in **the station's own silhouette radii** (§3).
  *
  * Radii and not kilometres, because a rule in kilometres gives the refinery's

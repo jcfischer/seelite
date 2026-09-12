@@ -21,6 +21,7 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { STATION_TYPES, type StationType } from "../src/station";
 import {
+	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
 	buildStationForm,
@@ -30,6 +31,7 @@ import {
 } from "../src/station-mesh";
 import {
 	DETAIL_RADII,
+	SPEC_FIXTURE_NAMES,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	strobeIntensity,
@@ -41,6 +43,7 @@ import {
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
+import { instanceBoxes } from "./helpers/instance-boxes";
 import { reachKm } from "./helpers/station-reach";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
@@ -404,4 +407,118 @@ describe("what the renderer drives, at every range", () => {
 			);
 		}
 	});
+});
+
+/**
+ * §5's placement rule, headless: **every fixture §5 names reads from the
+ * aperture axis** (#300).
+ *
+ * `probe-station-visuals.mjs` owns the pixel form of this and is the instrument
+ * #274's figures come from. This is the geometric form, and the two answer
+ * different questions on purpose. A probe can say a fixture contributes nothing
+ * and cannot say whether that is because it is behind the hull or because it is
+ * two pixels across; this row answers only the first, exactly, and is silent on
+ * size — which is why the refinery's flare passes here at 2.9 px on screen and
+ * fails there.
+ *
+ * **A ray cast from outside is legitimate where one cast from inside is not.**
+ * `CLAUDE.md`'s warning — a hull mesh is `FrontSide`, so a ray from inside
+ * passes straight through — is about the interior checks. Coming the other way,
+ * down the axis from the docking approach, the first surface a ray meets is a
+ * front face and the cull does not apply.
+ *
+ * **Every phase, not one.** The trade station and the shipyard turn, so a
+ * fixture on a spinning member is somewhere different every frame; #274's whole
+ * argument for the +Z diamond is that a lamp there traces a circle in the frame
+ * and is visible at *every* phase, where a rim lamp is occluded at every phase.
+ * A row that built at rotation zero would be checking one of them.
+ */
+describe("§5 — every fixture reads from the aperture axis", () => {
+	/** The probe's `CLOSE_RADII`: docking range, in the station's own radii. */
+	const CLOSE_RADII = 3;
+	/** Eighths of a turn. A fixture visible at all of them is visible at any. */
+	const PHASES = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (i * Math.PI) / 4);
+
+	/** The points on a fixture a ray is aimed at: an instanced run's instance
+	 *  centres, and otherwise the object's own world box centre and corners. A
+	 *  fixture reads if **any** of them is reachable — a half-hidden lamp is a
+	 *  lamp you can see. */
+	const targets = (object: THREE.Object3D): THREE.Vector3[] => {
+		if ((object as THREE.InstancedMesh).isInstancedMesh)
+			return instanceBoxes(object as THREE.InstancedMesh).map((b) =>
+				b.getCenter(new THREE.Vector3()),
+			);
+		const box = new THREE.Box3().setFromObject(object);
+		if (box.isEmpty()) return [object.getWorldPosition(new THREE.Vector3())];
+		const out = [box.getCenter(new THREE.Vector3())];
+		for (const x of [box.min.x, box.max.x])
+			for (const y of [box.min.y, box.max.y])
+				for (const z of [box.min.z, box.max.z])
+					out.push(new THREE.Vector3(x, y, z));
+		return out;
+	};
+
+	/** Whether anything that is not this fixture stands between the eye and one
+	 *  of its points. */
+	const readsFromAxis = (
+		root: THREE.Object3D,
+		fixture: THREE.Object3D,
+		eye: THREE.Vector3,
+	) => {
+		const raycaster = new THREE.Raycaster();
+		const own = new Set<THREE.Object3D>();
+		fixture.traverse((child) => own.add(child));
+		for (const point of targets(fixture)) {
+			const toPoint = point.clone().sub(eye);
+			const range = toPoint.length();
+			if (range === 0) continue;
+			raycaster.set(eye, toPoint.divideScalar(range));
+			raycaster.far = range * 1.001;
+			const blocked = raycaster
+				.intersectObject(root, true)
+				.some((hit) => !own.has(hit.object) && hit.distance < range - 1e-6);
+			if (!blocked) return true;
+		}
+		return false;
+	};
+
+	for (const [type, names] of Object.entries(SPEC_FIXTURE_NAMES)) {
+		test(`the ${type}'s fixtures are all reachable down its own axis`, () => {
+			const station = type as StationType;
+			const { root, spinner } = buildStationForm(
+				station,
+				SELECTED_FORM[station],
+				GREY,
+				0,
+				0,
+			);
+			// The aperture is on +Z (`station-mesh.test.ts` asserts it), so the
+			// eye stands out along +Z at the range the probe frames from.
+			const eye = new THREE.Vector3(
+				0,
+				0,
+				STATION_SILHOUETTE_KM[station] * CLOSE_RADII,
+			);
+			const dead: string[] = [];
+			for (const phase of spinner ? PHASES : [0]) {
+				if (spinner) spinner.rotation.z = phase;
+				root.updateMatrixWorld(true);
+				for (const name of names) {
+					const objects: THREE.Object3D[] = [];
+					root.traverse((child) => {
+						if (child.name === name) objects.push(child);
+					});
+					// A name with no object is a failure, not a skip: a renamed
+					// fixture must not read as a passing role.
+					if (objects.length === 0) {
+						dead.push(`${name} (no object of that name)`);
+						continue;
+					}
+					if (!objects.some((o) => readsFromAxis(root, o, eye)))
+						dead.push(`${name} @ ${((phase * 180) / Math.PI).toFixed(0)}°`);
+				}
+			}
+			expect([type, dead]).toEqual([type, []]);
+		});
+	}
 });
