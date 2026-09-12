@@ -36,6 +36,7 @@ import {
 import {
 	DETAIL_RADII,
 	SPEC_FIXTURE_NAMES,
+	beaconIntensity,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	strobeIntensity,
@@ -669,5 +670,82 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 					?.position.set(side * face * 1.02, 0, face * 0.5);
 		});
 		expect(hidden.length).toBeGreaterThan(0);
+	});
+});
+
+/**
+ * #300's second sheet: a ring of strobes that runs round a slot's mouth, and a
+ * hazard beacon on the plant that does not spin.
+ */
+describe("the mouth chase and the refinery's beacons", () => {
+	test("every slot role rings its mouth with lamps an equal step of the period apart", () => {
+		for (const type of ["trade", "shipyard"] as const) {
+			const mesh = buildStationMesh(type, GREY, 0, 0);
+			const chase = mesh.fixtures.filter((f) => f.kind === "chase");
+			const { strobePeriodS } = STATION_VISUALS[type].activity;
+			// Enough that the flash reads as running round, not as a few blinks.
+			expect([type, chase.length >= 8]).toEqual([type, true]);
+			const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
+			offsets.forEach((offset, i) =>
+				expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
+			);
+		}
+	});
+
+	test("the chase runs: at any lit moment one lamp leads and they are not in unison", () => {
+		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		let sawOne = false;
+		for (let i = 0; i < 80; i++) {
+			updateStationVisuals(mesh, i * 0.025, 1, "high");
+			const lit = mesh.fixtures.filter(
+				(f) => f.kind === "chase" && f.material.emissiveIntensity > 0,
+			).length;
+			// Never the whole ring at once — that would be a flash, not a chase.
+			expect(lit).toBeLessThan(
+				mesh.fixtures.filter((f) => f.kind === "chase").length,
+			);
+			if (lit >= 1) sawOne = true;
+		}
+		expect(sawOne).toBe(true);
+	});
+
+	test("a pad role gets no ring, because a pad has no frame round a hole", () => {
+		for (const type of ["refinery", "outpost"] as const)
+			expect([
+				type,
+				buildStationMesh(type, GREY, 0, 0).fixtures.filter(
+					(f) => f.kind === "chase",
+				).length,
+			]).toEqual([type, 0]);
+	});
+
+	test("the beacon blinks for its duty and is dark on a role that declares none", () => {
+		const { beaconPeriodS, beaconDuty } = STATION_VISUALS.refinery.activity;
+		expect(beaconPeriodS).toBeGreaterThan(0);
+		let lit = 0;
+		const samples = 2000;
+		for (let i = 0; i < samples; i++)
+			if (beaconIntensity("refinery", (i / samples) * beaconPeriodS, 0) > 0)
+				lit++;
+		expect(lit / samples).toBeCloseTo(beaconDuty, 2);
+		for (const type of ["trade", "shipyard", "outpost"] as const)
+			expect([type, beaconIntensity(type, 0.1, 0)]).toEqual([type, 0]);
+	});
+
+	test("every refinery plan carries a beacon on its headframe and one on its flare stack", () => {
+		for (const seed of [0, 1, 2, 3, 4, 5]) {
+			const { root } = buildStationForm(
+				"refinery",
+				SELECTED_FORM.refinery,
+				GREY,
+				0,
+				seed,
+			);
+			let beacons = 0;
+			root.traverse((o) => {
+				if (o.name === "obstruction-beacon" && !o.userData.glow) beacons++;
+			});
+			expect([seed, beacons >= 2]).toEqual([seed, true]);
+		}
 	});
 });

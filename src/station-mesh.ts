@@ -272,6 +272,9 @@ export interface StationFixture {
 	material: THREE.MeshStandardMaterial;
 	base: number;
 	kind: StationFixtureKind;
+	/** Where in its waveform this light sits, seconds: a chase lamp's place
+	 *  round the mouth, zero for everything that flashes as its kind does. */
+	offsetS: number;
 	/**
 	 * The glare this light is seen by at range, when it has one (#300).
 	 * Written beside `material.emissiveIntensity` every frame and never brighter
@@ -839,8 +842,97 @@ function coamingRing(
  * z-fight, and the symptom is a slot that flickers in and out of existence as
  * the station rotates, which reads as the aperture not being there at all.
  */
+/**
+ * **A ring of strobes round a slot's mouth, flashing in sequence** (#300).
+ *
+ * The principal's reading of #300's second sheet: on a whole trade station only
+ * two strobes were visible, and a pilot expects the mouth itself to be marked by
+ * strobing lights. Ten real-size lamps stand on the lit frame — the corners,
+ * the side bars and a pair on each long bar — and each flashes on the role's own
+ * strobe period at its own place in it, so the flash runs round the slot once a
+ * period.
+ *
+ * **White, and they say nothing about docking state.** Red and green by
+ * clearance was on the table and declined: §5.1 gives state to the HUD
+ * director, which can also give the reason, and a red mark alone never carries
+ * a consequence. What the chase carries is *where the mouth is*, from ranges
+ * where the frame itself has not resolved.
+ *
+ * On the slot roles only. A pad has no frame round a hole to run round; the
+ * refinery's hazard is marked by beacons instead.
+ */
+function mouthStrobes(
+	type: StationType,
+	fixtures: StationFixture[],
+	w: number,
+	h: number,
+	bar: number,
+	faceZ: number,
+): THREE.Group {
+	const group = new THREE.Group();
+	const size = FITTING_KM.strobe;
+	const period = STATION_VISUALS[type].activity.strobePeriodS;
+	// **On the lit frame's front face, and only where the frame is outside the
+	// corridor.** `tests/station-mesh.test.ts` forbids any vertex within the
+	// slot's half-diagonal of the axis in front of the mouth, and the first ring
+	// stood two lamps 61 m off the axis against a 69.5 m cylinder. The side
+	// bars and the corners are outside it everywhere; the top and bottom bars
+	// only once they are far enough along — so those carry a pair each, at the
+	// radius where the bar leaves the cylinder, and nothing at their middle.
+	// Derived from the aperture rather than written for 120 x 70, so a slot of
+	// another size keeps the guarantee. `clear` is the cylinder plus a lamp's
+	// own half-diagonal and a margin.
+	const clear = Math.hypot(w, h) / 2 + size * 3;
+	const sideX = Math.max((w + bar) / 2 + bar / 4, clear);
+	const cornerX = (w + bar) / 2;
+	const cornerY = (h + bar) / 2;
+	const barY = (h + bar) / 2 + bar * 0.2;
+	const pairX = Math.min(
+		w / 2 + bar,
+		Math.sqrt(Math.max(0, clear * clear - barY * barY)),
+	);
+	// Counter-clockwise from +X, so the sequence runs round rather than across.
+	const ring: [number, number][] = [
+		[sideX, 0],
+		[cornerX, cornerY],
+		[pairX, barY],
+		[-pairX, barY],
+		[-cornerX, cornerY],
+		[-sideX, 0],
+		[-cornerX, -cornerY],
+		[-pairX, -barY],
+		[pairX, -barY],
+		[cornerX, -cornerY],
+	];
+	ring.forEach(([x, y], i) => {
+		const material = emissiveMaterial(
+			STATION_VISUALS[type].strobeColor,
+			STATION_EMISSIVE_INTENSITIES.off,
+		);
+		const lamp = new THREE.Mesh(
+			new THREE.BoxGeometry(size, size, size * 0.6),
+			material,
+		);
+		lamp.position.set(x, y, faceZ + bar / 2);
+		lamp.name = "mouth-strobe";
+		detail(lamp, "reduced");
+		const glow = drivenGlow(STATION_VISUALS[type].strobeColor, "point");
+		withGlow(lamp, size, glow);
+		group.add(lamp);
+		fixtures.push({
+			material,
+			base: STATION_EMISSIVE_INTENSITIES.strobe,
+			kind: "chase",
+			offsetS: (i / ring.length) * period,
+			glow,
+		});
+	});
+	return group;
+}
+
 function buildAperture(
 	type: StationType,
+	fixtures: StationFixture[],
 	faceZ: number,
 	berthSeed: number,
 ): THREE.Group {
@@ -891,6 +983,8 @@ function buildAperture(
 		light.name = "aperture-light";
 		group.add(light);
 	}
+	if (aperture.kind === "slot")
+		group.add(mouthStrobes(type, fixtures, w, h, bar, faceZ));
 	// **E11's mouth shield, and it is added before the bay** so that
 	// `buildStationForm`'s traversal collects the two plates mouth-first, which
 	// is the order `probe-dock-arrival.mjs` indexes into. §3.2 records that the
@@ -1283,6 +1377,7 @@ function strobePair(
 			material,
 			base: STATION_EMISSIVE_INTENSITIES.strobe,
 			kind,
+			offsetS: 0,
 			glow,
 		});
 	}
@@ -1479,7 +1574,12 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	// happens to be this face 6% proud, and `tests/station-mesh.test.ts` asserts
 	// the two agree rather than trusting the comment.
 	group.add(
-		buildAperture("trade", STATION_GEOMETRY.trade.aperturePlaneKm, berthSeed),
+		buildAperture(
+			"trade",
+			fixtures,
+			STATION_GEOMETRY.trade.aperturePlaneKm,
+			berthSeed,
+		),
 	);
 
 	// The window grid, on the four equatorial square faces. Each pane sits on
@@ -1835,7 +1935,7 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 	// **On the hub's own front cap**, at the same z its last ring sits at. Set
 	// short of it the hub stood 6 m past the mouth — a station poking into the
 	// corridor a ship flies down, which is the one place nothing may be.
-	group.add(buildAperture("trade", r * 0.34, berthSeed));
+	group.add(buildAperture("trade", fixtures, r * 0.34, berthSeed));
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2;
@@ -1917,7 +2017,7 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		group.add(band);
 	}
 	// At the drum's own front cap (`r * 0.88`), not 20 m in front of it.
-	group.add(buildAperture("trade", r * 0.88, berthSeed));
+	group.add(buildAperture("trade", fixtures, r * 0.88, berthSeed));
 	group.add(
 		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
 			const theta = (i / count) * Math.PI * 2 * 3;
@@ -2052,6 +2152,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	spun.add(
 		buildAperture(
 			"shipyard",
+			fixtures,
 			STATION_GEOMETRY.shipyard.aperturePlaneKm,
 			berthSeed,
 		),
@@ -2479,7 +2580,7 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 			true,
 		),
 	);
-	spun.add(buildAperture("shipyard", r * 0.6, berthSeed));
+	spun.add(buildAperture("shipyard", fixtures, r * 0.6, berthSeed));
 	group.add(spun);
 
 	// Inside the bay mouth, which is where a bay's floods are.
@@ -2588,7 +2689,7 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	const spun = new THREE.Group();
 	spun.name = "spun";
 	spun.add(spine);
-	spun.add(buildAperture("shipyard", r * 0.64, berthSeed));
+	spun.add(buildAperture("shipyard", fixtures, r * 0.64, berthSeed));
 	group.add(spun);
 	// Struts from the hub to the arc, nested a group per angle — two Euler
 	// angles on one object leaves the result to `Euler`'s order, and all four
@@ -2754,6 +2855,7 @@ function buildBayLights(
 		material: arcMaterial,
 		base: STATION_EMISSIVE_INTENSITIES.weldArc,
 		kind: "work",
+		offsetS: 0,
 		glow: arcGlow,
 	});
 	return group;
@@ -2867,6 +2969,7 @@ function buildVentBank(
 		material: glow,
 		base: STATION_EMISSIVE_INTENSITIES.refineryFlare,
 		kind: "flare",
+		offsetS: 0,
 		glow: throatGlare,
 	});
 	return stack;
@@ -3004,6 +3107,7 @@ function buildRefineryWarren(color: number, berthSeed: number): BuiltPart {
 	group.add(
 		buildAperture(
 			"refinery",
+			fixtures,
 			STATION_GEOMETRY.refinery.aperturePlaneKm,
 			berthSeed,
 		),
@@ -3171,7 +3275,7 @@ function buildRefineryCollar(color: number, berthSeed: number): BuiltPart {
 			undefined,
 		),
 	);
-	group.add(buildAperture("refinery", r * 1.0, berthSeed));
+	group.add(buildAperture("refinery", fixtures, r * 1.0, berthSeed));
 	for (const side of [-1, 1]) {
 		const flare = buildVentBank(fixtures, r * 0.9);
 		flare.position.set(side * major * 0.82, r * 0.42, 0);
@@ -3263,7 +3367,7 @@ function buildRefinerySpar(color: number, berthSeed: number): BuiltPart {
 			undefined,
 		),
 	);
-	group.add(buildAperture("refinery", r * 1.22, berthSeed));
+	group.add(buildAperture("refinery", fixtures, r * 1.22, berthSeed));
 	// Tanks strung along the exposed length, off-axis so the spar does not read
 	// as a smooth rod.
 	for (let i = 0; i < 3; i++) {
@@ -3353,6 +3457,7 @@ function buildHeatRing(
 		material,
 		base: STATION_EMISSIVE_INTENSITIES.heatRing,
 		kind: "work",
+		offsetS: 0,
 	});
 	return glow;
 }
@@ -3397,7 +3502,7 @@ function buildPadDeck(
 		undefined,
 	);
 	group.add(deck);
-	group.add(buildAperture(type, z, berthSeed));
+	group.add(buildAperture(type, fixtures, z, berthSeed));
 	// Four floods on the coaming, and one warm heat lamp that breathes: the only
 	// motion an outpost has, and it says the machine is running rather than
 	// anything about clearance (§5.1).
@@ -3849,7 +3954,7 @@ function buildTradeModular(
 			apertureCut("trade"),
 		),
 	);
-	spun.add(buildAperture("trade", plane, berthSeed));
+	spun.add(buildAperture("trade", fixtures, plane, berthSeed));
 	group.add(spun);
 
 	const pools = new Pools();
@@ -4171,6 +4276,47 @@ const WORKS_FLOOR_KM = 0.16;
  * front of it is a cylinder about the axis that no cell but the centre
  * enters. Nothing spins (`docking.md` §4).
  */
+/**
+ * **A hazard beacon on a plant that does not spin** (#300).
+ *
+ * §5 gave the refinery no strobes, and for its own reason: a strobe carries that
+ * a station turns, and this one does not. The principal's ruling on #300's
+ * second sheet keeps that reason and adds a different signal — a slow blink on
+ * the plant's tallest structures, which says something is there to clip rather
+ * than that anything rotates. So §5's sentence becomes "no rotation marker"
+ * rather than "no strobes".
+ *
+ * White, not an aviation red: `hud-and-scanner.md` §4 reserves red for
+ * refusal, and a red light on a station would read as a denial.
+ */
+function obstructionBeacon(
+	fixtures: StationFixture[],
+	at: THREE.Vector3,
+): THREE.Mesh {
+	const size = FITTING_KM.strobe;
+	const material = emissiveMaterial(
+		STATION_VISUALS.refinery.strobeColor,
+		STATION_EMISSIVE_INTENSITIES.off,
+	);
+	const lamp = new THREE.Mesh(
+		new THREE.BoxGeometry(size, size, size),
+		material,
+	);
+	lamp.position.copy(at);
+	lamp.name = "obstruction-beacon";
+	detail(lamp, "reduced");
+	const glow = drivenGlow(STATION_VISUALS.refinery.strobeColor, "point");
+	withGlow(lamp, size, glow);
+	fixtures.push({
+		material,
+		base: STATION_EMISSIVE_INTENSITIES.strobe,
+		kind: "beacon",
+		offsetS: 0,
+		glow,
+	});
+	return lamp;
+}
+
 function buildRefineryWorks(
 	color: number,
 	berthSeed: number,
@@ -4408,6 +4554,14 @@ function buildRefineryWorks(
 				sheave.rotation.y = Math.PI / 2;
 				sheave.name = "sheave";
 				group.add(sheave);
+				// On top of the sheave: the headframe is in every plan, so every
+				// refinery carries at least this one (#300).
+				group.add(
+					// Half sunk into the sheave's crown. The ring's top is at 25 m —
+					// its 20 m radius plus its 5 m tube — and at 22 m the lamp was
+					// inside the tube, hidden from every direction.
+					obstructionBeacon(fixtures, top.clone().setZ(top.z + 0.025)),
+				);
 				break;
 			}
 			case R.TANKS:
@@ -4438,6 +4592,14 @@ function buildRefineryWorks(
 				const bank = buildVentBank(fixtures, 0.1);
 				bank.position.copy(top).setZ(top.z + 0.02);
 				group.add(bank);
+				// Beyond the bank's last nozzle and above its manifold: the flare
+				// stack is the tallest thing on the plant (#300).
+				group.add(
+					// Half sunk into the manifold's top face at its +X end, beyond
+					// the last nozzle: at 0.037 it sat inside the manifold's own
+					// section and no ray down the axis reached it.
+					obstructionBeacon(fixtures, top.clone().add(V(0.036, 0, 0.039))),
+				);
 				break;
 			}
 			case R.RADIATOR: {
@@ -5181,7 +5343,8 @@ export function updateStationVisuals(
 	// by the fixture's own lit intensity.
 	for (const fixture of mesh.fixtures) {
 		fixture.material.emissiveIntensity =
-			fixture.base * fixtureIntensity(mesh.type, fixture.kind, gameTime);
+			fixture.base *
+			fixtureIntensity(mesh.type, fixture.kind, gameTime, fixture.offsetS);
 		if (fixture.glow)
 			fixture.glow.uniforms.uIntensity.value =
 				fixture.material.emissiveIntensity;

@@ -264,7 +264,16 @@ export type StationDetailLevel = "full" | "reduced" | "outline";
 /** What kind of light a fixture is, which is what decides its waveform. Here
  *  rather than in `station-mesh.ts` because `fixtureIntensity` below is the
  *  function that answers for every member. */
-export type StationFixtureKind = "strobe-a" | "strobe-b" | "work" | "flare";
+export type StationFixtureKind =
+	| "strobe-a"
+	| "strobe-b"
+	| "work"
+	| "flare"
+	/** One lamp of the ring round a slot's mouth; its fixture's `offsetS` is
+	 *  its place in the chase (#300). */
+	| "chase"
+	/** A hazard beacon on a station that does not spin (#300). */
+	| "beacon";
 
 /**
  * The objects §5's table names as each role's light, by the name the mesh
@@ -287,15 +296,21 @@ export type StationFixtureKind = "strobe-a" | "strobe-b" | "work" | "flare";
  */
 export const SPEC_FIXTURE_NAMES: Readonly<Record<string, readonly string[]>> =
 	Object.freeze({
-		trade: Object.freeze(["windows", "strobe-a", "strobe-b"]),
+		trade: Object.freeze(["windows", "strobe-a", "strobe-b", "mouth-strobe"]),
 		shipyard: Object.freeze([
 			"windows",
 			"bay-flood",
 			"weld-arc",
 			"strobe-a",
 			"strobe-b",
+			"mouth-strobe",
 		]),
-		refinery: Object.freeze(["windows", "heat-glow", "flare"]),
+		refinery: Object.freeze([
+			"windows",
+			"heat-glow",
+			"flare",
+			"obstruction-beacon",
+		]),
 	});
 
 /**
@@ -345,6 +360,18 @@ export interface ActivityProfile {
 	/** Whether the flicker interpolates between ticks — a flare breathing —
 	 *  or steps between them, which is what an arc does. */
 	flickerSmooth: boolean;
+	/**
+	 * A hazard beacon's blink period, seconds; zero for a role with none (#300).
+	 *
+	 * Separate from the strobe, and the reason is §5's: a strobe carries that
+	 * the station **turns and how fast**, so a role that does not spin carries
+	 * none. A beacon carries that something **is there** — the tallest thing on
+	 * a plant a pilot might clip — which is true of a station that stands still.
+	 * Slower and longer than a strobe so the two cannot be read as one signal.
+	 */
+	beaconPeriodS: number;
+	/** Fraction of the period a beacon is lit. */
+	beaconDuty: number;
 }
 
 export interface StationVisualProfile {
@@ -478,6 +505,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerHz: 0,
 			flickerDepth: 0,
 			flickerSmooth: false,
+			beaconPeriodS: 0,
+			beaconDuty: 0,
 		},
 		// **Warm**, which the first version was not: 0xdfe8ff is a blue-white, and
 		// §5 calls the trade station's window grid habitation light. The probe reads
@@ -517,6 +546,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerHz: 7,
 			flickerDepth: 0.85,
 			flickerSmooth: false,
+			beaconPeriodS: 0,
+			beaconDuty: 0,
 		},
 		windowColor: 0xdfe8ff,
 		strobeColor: STROBE_WHITE,
@@ -553,6 +584,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerHz: 1.7,
 			flickerDepth: 0.32,
 			flickerSmooth: true,
+			beaconPeriodS: 1.5,
+			beaconDuty: 0.25,
 		},
 		windowColor: 0xffcf9a,
 		strobeColor: STROBE_WHITE,
@@ -593,6 +626,8 @@ export const STATION_VISUALS: Record<StationType, StationVisualProfile> = {
 			flickerHz: 0.5,
 			flickerDepth: 0.28,
 			flickerSmooth: true,
+			beaconPeriodS: 0,
+			beaconDuty: 0,
 		},
 		windowColor: 0xffcf9a,
 		strobeColor: STROBE_WHITE,
@@ -688,6 +723,29 @@ export function strobeIntensity(
 }
 
 /**
+ * A hazard beacon's brightness at `gameTime`, 0–1 (§5.2, #300).
+ *
+ * The strobe's shape — a short ramp at each edge so no frame misses the blink
+ * — on the beacon's own slower period and longer duty. Zero for a role that
+ * declares no beacon, so a caller multiplies unconditionally.
+ */
+export function beaconIntensity(
+	type: StationType,
+	gameTime: number,
+	offsetS: number,
+): number {
+	const { beaconPeriodS, beaconDuty } = STATION_VISUALS[type].activity;
+	if (beaconPeriodS <= 0 || beaconDuty <= 0) return 0;
+	const phase = ((((gameTime + offsetS) / beaconPeriodS) % 1) + 1) % 1;
+	if (phase >= beaconDuty) return 0;
+	const p = phase / beaconDuty;
+	const ramp = 0.08;
+	if (p < ramp) return p / ramp;
+	if (p > 1 - ramp) return (1 - p) / ramp;
+	return 1;
+}
+
+/**
  * The role's work-light flicker at `gameTime`, 0–1 (§5.2).
  *
  * 1 for a role whose profile declares no depth, so a caller multiplies by this
@@ -731,8 +789,16 @@ export function fixtureIntensity(
 	type: StationType,
 	kind: StationFixtureKind,
 	gameTime: number,
+	/** The fixture's own place in its waveform, seconds. Only a chase lamp and
+	 *  a beacon read it; required anyway, so a caller cannot forget it on the
+	 *  kinds that do and light a whole ring in unison. */
+	offsetS: number,
 ): number {
 	switch (kind) {
+		case "chase":
+			return strobeIntensity(type, gameTime, offsetS);
+		case "beacon":
+			return beaconIntensity(type, gameTime, offsetS);
 		case "strobe-a":
 			return strobeIntensity(type, gameTime, 0);
 		case "strobe-b":

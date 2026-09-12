@@ -104,6 +104,8 @@ const FITTING_CAP_KM: Readonly<Record<string, number>> = {
 	"bay-flood": 0.005,
 	"weld-arc": 0.0015,
 	flare: 0.01,
+	"mouth-strobe": 0.003,
+	"obstruction-beacon": 0.003,
 };
 
 describe("the lights are station fittings, not ship-sized boxes", () => {

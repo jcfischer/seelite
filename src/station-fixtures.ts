@@ -642,7 +642,13 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 			glowPoints(lamp.name, [new THREE.Vector3()], sizeKm, sizeKm * 0.75, glow),
 		);
 		group.add(lamp);
-		site.fixtures.push({ material, base: site.strobeBase, kind, glow });
+		site.fixtures.push({
+			material,
+			base: site.strobeBase,
+			kind,
+			offsetS: 0,
+			glow,
+		});
 	};
 
 	const declaration = DECLARATIONS[`${site.type}/${site.formId}`];

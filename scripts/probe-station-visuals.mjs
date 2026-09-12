@@ -280,6 +280,11 @@ const measure = (page, bodyId, type) =>
 			const kindOf = {
 				"strobe-a": "strobe-a",
 				"strobe-b": "strobe-b",
+				// Every lamp of the ring shares the kind and flashes at its own
+				// offset, so the argmax is the moment *some* lamp is lit — which
+				// is what hiding the whole ring by one name then measures (#300).
+				"mouth-strobe": "chase",
+				"obstruction-beacon": "beacon",
 				"weld-arc": "work",
 				"heat-glow": "work",
 				flare: "flare",

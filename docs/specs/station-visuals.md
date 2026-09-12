@@ -271,9 +271,9 @@ Each role carries one emissive signature and one motion:
 
 | Role | Light | Activity |
 |---|---|---|
-| trade | warm window grid, plus a pair of hull strobes on the docking face | the strobes alternate on a 2 s period at a 12% duty cycle |
-| shipyard | cool window grid, cold blue-white floodlit bays, and the same strobe pair | one bay carries a welding arc — a fast, deep flicker; the strobes alternate as the trade station's do |
-| refinery | glowing vent throats, a heat ring and lit ports on the dock face | the throats and the ring breathe on a slow shallow flicker |
+| trade | warm window grid, a pair of hull strobes on the docking face, and a ring of strobes on the mouth's lit frame | the pair alternates on a 2 s period at a 12% duty cycle; the ring flashes on the same period, one lamp after another round the slot |
+| shipyard | cool window grid, cold blue-white floodlit bays, the same strobe pair and the same mouth ring | one bay carries a welding arc — a fast, deep flicker; the strobes and the ring run as the trade station's do |
+| refinery | glowing vent throats, a heat ring, lit ports on the dock face, and hazard beacons on its tallest structures | the throats and the ring breathe on a slow shallow flicker; the beacons blink slowly, longer and slower than a strobe |
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.
@@ -343,8 +343,36 @@ The trade station's window grid is a **warm** white and the shipyard's a cool
 one. That is the pair's finest distinction and it is deliberate: it is what makes
 the two Coriolis hulls read apart in the one measurement that ignores shape.
 
-The refinery carries no strobes: it does not spin, and a rotation marker on a
-station that does not rotate marks nothing. Its flare is its light.
+The refinery carries **no rotation marker**: it does not spin, and a marker of
+rotation on a station that does not rotate marks nothing. Its flare is its
+light. What it does carry is a **hazard beacon** on each of its tallest
+structures — the flare stack and the mine headframe, which every plan has — and
+that is a different signal, not the strobe under another name: a beacon says
+something is there to clip, which is as true of a station that stands still as
+of one that turns. So it blinks on its own slower period with a longer duty,
+and it is white rather than an aviation red, because `hud-and-scanner.md` §4
+owns red as refusal. This sentence said "no strobes" until #300's second sheet,
+where the principal asked for beacons on the refinery.
+
+**Every light here is a real fitting, and is seen at range by its glow**
+(#300). The principal ruled every light on #300's first sheet *"way too big —
+think about how big a light would be on a station that is several km big"*:
+they were a 42 m strobe, a 30 × 12 m pane, a 156 m flood and a 60 m arc. A
+strobe or beacon is 2 m now, a pane 3 × 1.5 m, a flood 4 m, the arc 1 m and a
+flare throat at most 8 m. A fitting that size is under a pixel from the
+approach, so each carries a glow — additive, in its own colour, floored at a
+few pixels and capped so the fitting shows up close — driven by the same clock
+and never brighter than the fitting. The glow draws only where its fitting
+does, so none is drawn at outline range.
+
+**The mouth carries a ring of strobes, and it says nothing about docking
+state** (#300). On a slot role, ten lamps stand on the lit frame round the
+mouth, each flashing on the role's strobe period at its own place in it, so the
+flash runs round the slot once a period: it says where the mouth is, from
+ranges where the frame has not resolved. Red and green by clearance was asked
+for and declined on §5.1's ground below. The lamps stand only where the frame
+is outside the docking corridor, which is why a long bar carries a pair and
+nothing at its middle.
 
 ### 5.1 The prohibition
 
@@ -386,6 +414,12 @@ replays exactly.
   light cannot be buried inside the thing it is meant to sit on — a fraction of
   that member's own reach, not of the form's declared one, because the Gantry
   declares 1.66 km of boom around a 0.47 km drum;
+- every light is within a real fitting's size, carries a glow named like it,
+  driven at exactly its intensity, hidden wherever it is, never pickable and
+  never brighter than the exposure ceiling (`tests/station-glow.test.ts`); the
+  mouth ring's lamps sit an equal step of the period apart and never all light
+  at once, and every refinery plan carries a beacon on its headframe and one on
+  its flare stack;
 - **no fixture named above is wholly hidden from the aperture axis**, at every
   eighth of a turn, by rays cast from three silhouette radii to the fixture's
   own front-facing surface. The row's claim is exactly that and no more: it

@@ -457,7 +457,13 @@ describe("a station is one object, not a scatter of parts", () => {
 			// is not expressible here at all. Its mounting is held by `both
 			// strobes sit out on the hull` in `station-visuals.test.ts`, against
 			// the member it is bolted to, and by §5's axis row beside it.
-			if (object.name === "strobe-a" || object.name === "strobe-b") return;
+			if (
+				object.name === "strobe-a" ||
+				object.name === "strobe-b" ||
+				object.name === "mouth-strobe" ||
+				object.name === "obstruction-beacon"
+			)
+				return;
 			// A glow is not a part: it is a point at its fitting's own centre,
 			// drawn as glare (`station-glow.ts`), and it has no volume to mount.
 			if (object.userData.glow) return;
