@@ -14,6 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
+import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
 import { codeOf } from "./lib/source-scan";
 
@@ -97,6 +98,19 @@ describe("the perf panel stays out of the flight controls", () => {
 		for (const key of [...PERF_KEYS, RESTORE_KEY])
 			expect(`${key} vs settings: ${key === SETTINGS_KEY}`).toBe(
 				`${key} vs settings: false`,
+			);
+	});
+
+	test("the Commander overlay's key is no flight binding and no other panel's key", () => {
+		// `persistent-world-state.md` §11.1: it opens on a key the flight bindings
+		// do not hold, and settings and the perf panel listen beside it.
+		const bound = boundKeys(main);
+		expect(`${COMMANDER_KEY}: ${bound.has(COMMANDER_KEY)}`).toBe(
+			`${COMMANDER_KEY}: false`,
+		);
+		for (const key of [...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY])
+			expect(`${key} vs commander: ${key === COMMANDER_KEY}`).toBe(
+				`${key} vs commander: false`,
 			);
 	});
 

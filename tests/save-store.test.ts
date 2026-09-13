@@ -166,6 +166,18 @@ describe("#89 D4 — the write cadence", () => {
 		expect((await h.store.load("default")).commander.state.credits).toBe(100);
 	});
 
+	test("a new game's first flush writes `live` with nothing dirty, and only `live`", async () => {
+		// §11.3: the pending new game clears only once its first `live` record
+		// lands, and nothing has dirtied a world constructed a frame ago. A
+		// `quit` would write it too, but a flush named for a tab closing is not
+		// what a boot is doing.
+		const h = harness({ slot: "New" });
+		await h.store.flush("new-game");
+		expect(h.backend.writes).toBe(1);
+		expect(await h.backend.has("New", "live")).toBe(true);
+		expect(await h.backend.has("New", "lastDocked")).toBe(false);
+	});
+
 	test("a flush during a debounced write queues behind it rather than racing", async () => {
 		// **The check the previous version of this test could not make.** New
 		// dirt during a write only arms the debounce, so nothing re-enters the

@@ -190,13 +190,13 @@ different claims and this paragraph made only one of them for a round.**
 Encoding, migration and the autosave cadence are shipped and exercised by the
 game: IndexedDB, a version refusal that leaves the record readable, and a
 debounced write with four unconditional flushes. **Permadeath, slots and
-export/import are decided and implemented but not reachable by a player**:
-`choosePermadeath` is on a URL parameter, and `CommanderCatalog`'s `exportSlot`
-and `importSlot` have no caller outside their own tests, because there is no
-new-game or save screen to reach them from. `save-store.ts` says so where a
-reader meets it. **§11 specifies that screen and #306 builds it**; this
-sentence and `save-store.ts`'s header stay true until #306 lands, and flipping
-both is #306's obligation, not a reader's inference from §11 existing. The choices live in #89's resolution and are
+export/import were decided and implemented before a player could reach them**,
+and #306 made them reachable: §11's Commander overlay chooses
+permadeath at New game and lists, loads, exports, imports, renames and deletes
+Commanders through `CommanderCatalog`. `?permadeath` survives only under
+`?boot=direct` (§11.6). This paragraph said "not reachable" until then, and the
+same flip removed the matching note from `main.ts`'s boot block.
+The choices live in #89's resolution and are
 implemented in `src/save-store.ts` and `src/save-envelope.ts`, whose headers
 carry the reasoning; they are **not restated here**, because a third copy of a
 decision is the drift this document warns about elsewhere. Cloud storage is not
@@ -215,8 +215,11 @@ This model deliberately does not choose:
 Decided in [#304](https://github.com/jcfischer/seelite/issues/304) (S1–S7), with
 four points #304 left open settled on
 [#305](https://github.com/jcfischer/seelite/issues/305). **Specified here, built
-by [#306](https://github.com/jcfischer/seelite/issues/306)** — nothing below is
-reachable by a player until that node lands. A **Commander** is what the player
+by [#306](https://github.com/jcfischer/seelite/issues/306)**. The overlay, the boot and
+every operation below are reachable; §11.5's in-play badge is the part still to
+land. Until it does, a failed debounced write is held on `saveFault` and logged,
+and a failed dock, undock or jump flush is only logged; neither has a player
+surface. A **Commander** is what the player
 sees of one save slot (`CONTEXT.md`); `SaveStore`'s slot vocabulary is storage
 and does not change.
 
