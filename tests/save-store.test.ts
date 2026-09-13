@@ -18,11 +18,14 @@ import {
 	serializeSave,
 } from "../src/save-envelope";
 import {
-	type Scheduler,
-	SaveStore,
+	DEFAULT_SLOT,
 	memorySaveBackend,
+	memorySlotLocks,
+	type Scheduler,
 	SAVE_DEBOUNCE_MS,
 	SAVE_RETRY_LIMIT,
+	SaveStore,
+	type SlotLocks,
 } from "../src/save-store";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { newWorld, visit } from "../src/world-state";
@@ -69,9 +72,17 @@ const envelope = (credits: number): SaveEnvelope => ({
 /** A store wired to a manual clock, with `current` returning whatever the test
  *  last set — which is what `Game` will pass: a getter, not a snapshot, so the
  *  debounced write serializes the world at the moment it fires. */
-const harness = (options: { permadeath?: boolean } = {}) => {
+const harness = (
+	options: {
+		permadeath?: boolean;
+		backend?: ReturnType<typeof memorySaveBackend>;
+		locks?: SlotLocks;
+		slot?: string;
+	} = {},
+) => {
 	const clock = manualScheduler();
-	const backend = memorySaveBackend();
+	const backend = options.backend ?? memorySaveBackend();
+	const locks = options.locks ?? memorySlotLocks();
 	let state = envelope(100);
 	if (options.permadeath)
 		state = {
@@ -80,12 +91,15 @@ const harness = (options: { permadeath?: boolean } = {}) => {
 		};
 	const store = new SaveStore({
 		backend,
+		locks,
 		schedule: clock.scheduler,
 		current: () => state,
+		slot: options.slot,
 	});
 	return {
 		clock,
 		backend,
+		locks,
 		store,
 		set(credits: number) {
 			state = {
@@ -303,6 +317,7 @@ describe("#89 D6 — slots, export and import", () => {
 		const backend = memorySaveBackend();
 		const store = new SaveStore({
 			backend,
+			locks: memorySlotLocks(),
 			schedule: clock.scheduler,
 			current: () => envelope(100),
 			onWriteFailed: (error) => failures.push(String(error)),
@@ -331,6 +346,7 @@ describe("#89 D6 — slots, export and import", () => {
 		const failures: number[] = [];
 		const store = new SaveStore({
 			backend,
+			locks: memorySlotLocks(),
 			schedule: clock.scheduler,
 			current: () => envelope(100),
 			onWriteFailed: (_error, consecutive) => failures.push(consecutive),
@@ -417,6 +433,262 @@ describe("#89 D8/D9 — refusal, and never overwriting the bad record", () => {
 		// Stale rather than broken — D9's residual risk, and the store must not
 		// have made it worse.
 		expect((await h.store.load("alpha")).commander.state.credits).toBe(100);
+	});
+});
+
+/** A slot with a `live` and a `lastDocked` record, written through the store. */
+const seeded = async (
+	h: ReturnType<typeof harness>,
+	slot: string,
+	credits = 100,
+) => {
+	h.set(credits);
+	h.store.markDirty();
+	await h.store.flush("dock", slot);
+};
+
+describe("§11.4 — the active-Commander pointer", () => {
+	test("with no pointer the active Commander is the default, and nothing fell back", async () => {
+		const h = harness();
+		expect(await h.store.resolveActive()).toEqual({
+			slot: DEFAULT_SLOT,
+			pending: null,
+			fellBack: false,
+		});
+	});
+
+	test("the pointer names the active Commander", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.store.chooseCommander("jameson");
+		expect((await h.store.resolveActive()).slot).toBe("jameson");
+	});
+
+	test("a pointer naming a Commander that is gone falls back to the default, and says so", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.store.chooseCommander("jameson");
+		await h.backend.deleteSlot("jameson");
+		expect(await h.store.resolveActive()).toEqual({
+			slot: DEFAULT_SLOT,
+			pending: null,
+			fellBack: true,
+		});
+	});
+});
+
+describe("§11.3 — the one-shot continue", () => {
+	test("Load: consumed by exactly one boot, into the Commander the pointer names", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.store.chooseCommander("jameson");
+		expect(await h.store.takeOneShot()).toBe("jameson");
+		expect(await h.store.takeOneShot()).toBeNull();
+		expect((await h.store.resolveActive()).slot).toBe("jameson");
+	});
+
+	test("Import: the imported Commander is the one the one-shot names", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		const text = await h.store.exportSlot("jameson");
+		await h.store.importSlot("copy", text);
+		await h.store.chooseCommander("copy");
+		expect(await h.store.takeOneShot()).toBe("copy");
+		expect((await h.store.resolveActive()).slot).toBe("copy");
+	});
+
+	test("New game: the pending Commander is the one the one-shot names", async () => {
+		const h = harness();
+		await h.store.beginNewGame({ name: "fresh", seed: 7, permadeath: true });
+		expect(await h.store.takeOneShot()).toBe("fresh");
+		expect(await h.store.takeOneShot()).toBeNull();
+	});
+
+	test("Load refuses a Commander whose lock another store holds, and writes nothing", async () => {
+		const locks = memorySlotLocks();
+		const backend = memorySaveBackend();
+		const tabA = harness({ backend, locks, slot: "jameson" });
+		const tabB = harness({ backend, locks });
+		await seeded(tabA, "jameson");
+		expect(await tabA.store.hold()).toBe(true);
+		await expect(tabB.store.chooseCommander("jameson")).rejects.toThrow(
+			/open in another tab/,
+		);
+		expect(await tabB.store.takeOneShot()).toBeNull();
+	});
+});
+
+describe("§11.3 — a pending new game", () => {
+	test("a pending new game whose Commander has no record boots into that game, not the default", async () => {
+		const h = harness();
+		await h.store.beginNewGame({ name: "fresh", seed: 7, permadeath: true });
+		expect(await h.backend.has("fresh", "live")).toBe(false);
+		expect(await h.store.resolveActive()).toEqual({
+			slot: "fresh",
+			pending: { name: "fresh", seed: 7, permadeath: true },
+			fellBack: false,
+		});
+	});
+
+	test("it survives until its first live record lands, and not a moment earlier", async () => {
+		const h = harness({ slot: "fresh" });
+		await h.store.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await expect(h.store.finishNewGame()).rejects.toThrow(/no save yet/);
+		expect((await h.store.resolveActive()).pending).not.toBeNull();
+		h.store.markDirty();
+		await h.store.flush("quit");
+		await h.store.finishNewGame();
+		expect(await h.store.resolveActive()).toEqual({
+			slot: "fresh",
+			pending: null,
+			fellBack: false,
+		});
+	});
+});
+
+describe("§11.3 — one rule for names", () => {
+	test("new game, import and rename each refuse a name already taken", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await seeded(h, "other");
+		const text = await h.store.exportSlot("jameson");
+		await expect(
+			h.store.beginNewGame({ name: "jameson", seed: 1, permadeath: false }),
+		).rejects.toThrow(/already a Commander/);
+		await expect(h.store.importSlot("jameson", text)).rejects.toThrow(
+			/already a Commander/,
+		);
+		await expect(h.store.renameSlot("other", "jameson")).rejects.toThrow(
+			/already a Commander/,
+		);
+		// Nothing was replaced: the taken Commander still carries its own record.
+		expect((await h.store.load("other")).commander.state.credits).toBe(100);
+	});
+
+	test("a name a pending new game holds is taken, although it has no record yet", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.store.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		const text = await h.store.exportSlot("jameson");
+		await expect(h.store.importSlot("fresh", text)).rejects.toThrow(
+			/already a Commander/,
+		);
+		await expect(h.store.renameSlot("jameson", "fresh")).rejects.toThrow(
+			/already a Commander/,
+		);
+	});
+
+	test("import refuses a record the parser refuses, and writes nothing", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.backend.corruptVersion("jameson", "live");
+		const text = await h.store.exportSlot("jameson");
+		await expect(h.store.importSlot("copy", text)).rejects.toThrow(
+			/saveSchemaVersion/,
+		);
+		expect((await h.store.slots()).sort()).toEqual(["jameson"]);
+	});
+});
+
+describe("§11.3 — rename and delete", () => {
+	test("rename moves both records and the pointer, and leaves no old name behind", async () => {
+		const h = harness();
+		await seeded(h, "jameson", 100);
+		h.set(555);
+		h.store.markDirty();
+		await h.store.flush("jump", "jameson");
+		await h.store.chooseCommander("jameson");
+		await h.store.renameSlot("jameson", "elite");
+		expect((await h.store.slots()).sort()).toEqual(["elite"]);
+		expect((await h.store.load("elite")).commander.state.credits).toBe(555);
+		expect(
+			(await h.store.load("elite", "lastDocked")).commander.state.credits,
+		).toBe(100);
+		expect((await h.store.resolveActive()).slot).toBe("elite");
+	});
+
+	test("a rename interrupted between copy and delete leaves two Commanders, never zero", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		h.backend.failNextDelete();
+		await expect(h.store.renameSlot("jameson", "elite")).rejects.toThrow(
+			/backend/,
+		);
+		expect((await h.store.slots()).sort()).toEqual(["elite", "jameson"]);
+	});
+
+	test("delete removes the Commander", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.store.deleteSlot("jameson");
+		expect(await h.store.slots()).toEqual([]);
+	});
+
+	test("delete and rename refuse a Commander whose lock is held — this tab's or another's", async () => {
+		const locks = memorySlotLocks();
+		const backend = memorySaveBackend();
+		const tabA = harness({ backend, locks, slot: "jameson" });
+		const tabB = harness({ backend, locks });
+		await seeded(tabA, "jameson");
+		expect(await tabA.store.hold()).toBe(true);
+		for (const store of [tabA.store, tabB.store]) {
+			await expect(store.deleteSlot("jameson")).rejects.toThrow(
+				/open in another tab|in play/,
+			);
+			await expect(store.renameSlot("jameson", "elite")).rejects.toThrow(
+				/open in another tab|in play/,
+			);
+		}
+		expect(await tabB.store.slots()).toEqual(["jameson"]);
+	});
+
+	test("a second store cannot hold a Commander the first already holds", async () => {
+		const locks = memorySlotLocks();
+		const backend = memorySaveBackend();
+		const tabA = harness({ backend, locks, slot: "jameson" });
+		const tabB = harness({ backend, locks, slot: "jameson" });
+		expect(await tabA.store.hold()).toBe(true);
+		expect(await tabB.store.hold()).toBe(false);
+	});
+
+	test("a refused lock check releases what it took, so the Commander stays usable", async () => {
+		const locks = memorySlotLocks();
+		const h = harness({ locks });
+		await seeded(h, "jameson");
+		await h.store.chooseCommander("jameson");
+		// The check took the lock and gave it back: a store may now hold it.
+		const tab = harness({ backend: h.backend, locks, slot: "jameson" });
+		expect(await tab.store.hold()).toBe(true);
+	});
+});
+
+describe("§11.5 — faults are held per record kind", () => {
+	test("a lastDocked fault survives a good debounced write and clears on a good dock flush", async () => {
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
+		expect([...h.store.failedKinds].sort()).toEqual(["lastDocked", "live"]);
+		// A debounced write carries `live` alone.
+		h.store.markDirty();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.failedKinds]).toEqual(["lastDocked"]);
+		h.store.markDirty();
+		await h.store.flush("dock");
+		expect([...h.store.failedKinds]).toEqual([]);
+	});
+
+	test("a debounced write failing holds a live fault until a write lands", async () => {
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.failedKinds]).toEqual(["live"]);
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.failedKinds]).toEqual([]);
 	});
 });
 

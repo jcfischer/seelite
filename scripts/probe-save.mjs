@@ -31,7 +31,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
-import { gameUrl } from "./lib/game-url.mjs";
+import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -39,6 +39,9 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 let context = null;
+/** The contexts §11.4's rows open, each with its own IndexedDB — closed in the
+ *  `finally` whatever row they stopped on. */
+const extraContexts = [];
 
 /**
  * The seed every arm shares.
@@ -170,6 +173,57 @@ try {
 					Object.keys(env.deficits).length,
 		};
 	});
+
+	// What §11.4's rows at the end need from a booted game, read here while one
+	// is running: every name off the page, and a record key read off a record
+	// this arm just wrote rather than restated — the key's separator is a
+	// detail of the backend, and a probe with its own copy of it would seed a
+	// version-1 record the upgraded game cannot find, which reads as data loss.
+	const saveMeta = await page.evaluate(async () => {
+		const g = window.__seelite;
+		const s = g.save;
+		const keys = await new Promise((resolve, reject) => {
+			const open = indexedDB.open(s.dbName);
+			open.onerror = () => reject(new Error("keys: open failed"));
+			open.onsuccess = () => {
+				const db = open.result;
+				const request = db
+					.transaction(s.storeName, "readonly")
+					.objectStore(s.storeName)
+					.getAllKeys();
+				request.onsuccess = () => {
+					db.close();
+					resolve(request.result.map(String));
+				};
+				request.onerror = () => reject(new Error("keys: read failed"));
+			};
+		});
+		const written = keys.find(
+			(key) => key.startsWith("probe-small") && key.endsWith("live"),
+		);
+		return {
+			dbName: s.dbName,
+			dbVersion: s.dbVersion,
+			storeName: s.storeName,
+			pointerStoreName: s.pointerStoreName,
+			blockedMessage: s.blockedMessage,
+			closedMessage: s.closedMessage,
+			defaultSlot: s.defaultSlot,
+			liveKey: written
+				? s.defaultSlot + written.slice("probe-small".length)
+				: null,
+			blob: s.serialize(g.saveEnvelope()),
+		};
+	});
+	check(
+		"the page names every §11.4 constant and a record key can be read back",
+		typeof saveMeta.dbVersion === "number" &&
+			typeof saveMeta.pointerStoreName === "string" &&
+			typeof saveMeta.blockedMessage === "string" &&
+			typeof saveMeta.closedMessage === "string" &&
+			saveMeta.liveKey !== null,
+		JSON.stringify({ ...saveMeta, blob: undefined }),
+	);
 
 	const writeMs = median(store.writes);
 	const readMs = median(store.reads);
@@ -594,7 +648,194 @@ try {
 	} else {
 		await page.close();
 	}
+
+	// -----------------------------------------------------------------------
+	// §11.4: the pointer store, against the real IndexedDB
+	// -----------------------------------------------------------------------
+	// The in-memory backend keeps the pointer in its own map, so it is disjoint
+	// from the slots by construction and no headless row can see the collision
+	// the second object store exists to prevent. These rows can.
+	//
+	// **Every seeding page is a workbench route.** A game page opens the save
+	// database at boot, which upgrades it — so a version-1 database seeded from
+	// a game page would already be version 2 before the seed landed. The
+	// workbench mounts no game and opens nothing.
+	const seedV1 = async (bench, keepOpen) =>
+		bench.evaluate(
+			([meta, hold]) =>
+				new Promise((resolve, reject) => {
+					const open = indexedDB.open(meta.dbName, 1);
+					open.onupgradeneeded = () =>
+						open.result.createObjectStore(meta.storeName);
+					open.onerror = () => reject(new Error("seed: open failed"));
+					open.onsuccess = () => {
+						const db = open.result;
+						const tx = db.transaction(meta.storeName, "readwrite");
+						tx.objectStore(meta.storeName).put(meta.blob, meta.liveKey);
+						tx.oncomplete = () => {
+							// Held with **no** `versionchange` handler, which is the
+							// shape of a tab still running the version-1 build.
+							if (hold) window.__heldV1 = db;
+							else db.close();
+							resolve(db.version);
+						};
+					};
+				}),
+			[saveMeta, keepOpen],
+		);
+
+	// The version-1 database a save from before §11 left behind.
+	const upgradeContext = await browser.newContext({
+		viewport: { width: 1280, height: 800 },
+	});
+	extraContexts.push(upgradeContext);
+	const bench = await upgradeContext.newPage();
+	watch(bench, "upgrade bench");
+	await bench.goto(workbenchUrl(ORIGIN, { "model-viewer": "ship" }), {
+		waitUntil: "load",
+	});
+	const seededVersion = await seedV1(bench, false);
+	await bench.close();
+	const upgraded = await upgradeContext.newPage();
+	watch(upgraded, "upgraded game");
+	await upgraded.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
+	await bootedGame(upgraded);
+	const afterUpgrade = await upgraded.evaluate(async (meta) => {
+		const g = window.__seelite;
+		const live = await g.save.backend.read(meta.defaultSlot, "live");
+		// A pointer written, so the listing below has something to leave out.
+		await g.save.backend.writeMeta({ active: meta.defaultSlot });
+		const slots = await g.save.backend.slots();
+		const shape = await new Promise((resolve) => {
+			const open = indexedDB.open(meta.dbName);
+			open.onsuccess = () => {
+				const db = open.result;
+				const out = {
+					version: db.version,
+					stores: [...db.objectStoreNames].sort(),
+				};
+				db.close();
+				resolve(out);
+			};
+		});
+		return {
+			fault: g.saveFault,
+			liveIntact: JSON.stringify(live) === JSON.stringify(meta.blob),
+			pointer: await g.save.backend.readMeta("active"),
+			slots,
+			...shape,
+		};
+	}, saveMeta);
+	console.log(`\nversion-1 upgrade: ${JSON.stringify(afterUpgrade)}`);
+	check(
+		"a version-1 database already holding saves opens under version 2 with every record intact",
+		seededVersion === 1 &&
+			afterUpgrade.fault === null &&
+			afterUpgrade.version === saveMeta.dbVersion &&
+			afterUpgrade.liveIntact &&
+			afterUpgrade.stores.includes(saveMeta.storeName) &&
+			afterUpgrade.stores.includes(saveMeta.pointerStoreName),
+		JSON.stringify({ seededVersion, ...afterUpgrade }),
+	);
+	check(
+		"slots() lists the Commanders and not the pointer store",
+		afterUpgrade.pointer === saveMeta.defaultSlot &&
+			JSON.stringify(afterUpgrade.slots) ===
+				JSON.stringify([saveMeta.defaultSlot]),
+		JSON.stringify({
+			slots: afterUpgrade.slots,
+			pointer: afterUpgrade.pointer,
+		}),
+	);
+	await upgraded.close();
+
+	// A tab still open on the version-1 build: the upgrade is blocked.
+	const blockedContext = await browser.newContext({
+		viewport: { width: 1280, height: 800 },
+	});
+	extraContexts.push(blockedContext);
+	const holder = await blockedContext.newPage();
+	watch(holder, "version-1 holder");
+	await holder.goto(workbenchUrl(ORIGIN, { "model-viewer": "ship" }), {
+		waitUntil: "load",
+	});
+	await seedV1(holder, true);
+	const blocked = await blockedContext.newPage();
+	watch(blocked, "blocked game");
+	await blocked.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
+	// **The boot completing is half the row.** An unhandled block never boots
+	// at all, so `bootedGame` timing out here is the failure this row names.
+	const bootedDespiteBlock = await bootedGame(blocked)
+		.then(() => true)
+		.catch(() => false);
+	const blockedState = bootedDespiteBlock
+		? await blocked.evaluate(() => ({
+				fault: window.__seelite.saveFault,
+				store: window.__seelite.saveStore !== null,
+			}))
+		: null;
+	check(
+		"a version-1 connection left open produces the named blocked fault and a boot, not a hang",
+		bootedDespiteBlock &&
+			blockedState.fault === saveMeta.blockedMessage &&
+			blockedState.store === false,
+		JSON.stringify({ bootedDespiteBlock, ...blockedState }),
+	);
+	await blocked.close();
+	await holder.close();
+
+	// This build's own connection meets a newer version and steps aside.
+	const newerContext = await browser.newContext({
+		viewport: { width: 1280, height: 800 },
+	});
+	extraContexts.push(newerContext);
+	const running = await newerContext.newPage();
+	watch(running, "running game");
+	await running.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
+	await bootedGame(running);
+	const newer = await newerContext.newPage();
+	watch(newer, "newer build");
+	await newer.goto(workbenchUrl(ORIGIN, { "model-viewer": "ship" }), {
+		waitUntil: "load",
+	});
+	// A version this build never ships stands in for the next one: the handler
+	// is version-agnostic. A connection that did not step aside blocks this
+	// open, which then never succeeds — hence the timeout arm.
+	const newerOpened = await newer.evaluate(
+		(meta) =>
+			new Promise((resolve) => {
+				const open = indexedDB.open(meta.dbName, meta.dbVersion + 1);
+				const timer = setTimeout(() => resolve("still blocked"), 5000);
+				open.onsuccess = () => {
+					clearTimeout(timer);
+					open.result.close();
+					resolve("opened");
+				};
+			}),
+		saveMeta,
+	);
+	const afterVersionChange = await running.evaluate(async (meta) => {
+		const g = window.__seelite;
+		try {
+			await g.save.backend.write(
+				meta.defaultSlot,
+				"live",
+				g.save.serialize(g.saveEnvelope()),
+			);
+			return "wrote";
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+	}, saveMeta);
+	check(
+		"a connection the game holds steps aside for a newer version, and its next write fails by name",
+		newerOpened === "opened" && afterVersionChange === saveMeta.closedMessage,
+		JSON.stringify({ newerOpened, afterVersionChange }),
+	);
+	await newer.close();
+	await running.close();
 } finally {
+	for (const extra of extraContexts) await extra.close().catch(() => {});
 	await context?.close();
 	await browser.close();
 }

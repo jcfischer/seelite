@@ -122,10 +122,69 @@ export interface SaveBackend {
 	): Promise<void>;
 	slots(): Promise<string[]>;
 	deleteSlot(slot: string): Promise<void>;
+	/**
+	 * Both records of `from` under `to`, in **one** transaction.
+	 *
+	 * A rename is copy-then-delete (`persistent-world-state.md` §11.3), and the
+	 * copy carries two different blobs — so it cannot be `writeMany`, and two
+	 * `write`s would leave a window with half a Commander under the new name.
+	 * Refuses when `from` holds no record, rather than copying nothing.
+	 */
+	copySlot(from: string, to: string): Promise<void>;
+	/**
+	 * A value in the **pointer store** (§11.4): the active Commander, the
+	 * one-shot continue and a pending new game. Outside `SaveEnvelope` and its
+	 * integrity hash, and outside the slots store, so `slots()` never lists one.
+	 */
+	readMeta(key: SaveMetaKey): Promise<unknown | null>;
+	/** Several pointer-store values in one transaction. `null` deletes a key. */
+	writeMeta(entries: Partial<Record<SaveMetaKey, unknown>>): Promise<void>;
+	/** Read a pointer-store value and delete it, in one transaction — which is
+	 *  what makes the one-shot continue consumed by exactly one boot. */
+	takeMeta(key: SaveMetaKey): Promise<unknown | null>;
+}
+
+/** The pointer store's keys (§11.3, §11.4). */
+export type SaveMetaKey = "active" | "oneShot" | "pending";
+
+/**
+ * A Commander's exclusive lock, per tab (§11.3).
+ *
+ * `tryHold` never waits: it returns a release, or `null` when anybody holds the
+ * lock — another tab, or this tab's own attached store, because the same
+ * exclusive lock is not granted twice. Injected, because bun has no Web Locks;
+ * `webSlotLocks` is the browser's and `memorySlotLocks` the headless tier's.
+ */
+export interface SlotLocks {
+	tryHold(slot: string): Promise<(() => void) | null>;
+}
+
+/** What New game chose, on disk before the reload (§11.3, S5). */
+export interface PendingNewGame {
+	name: string;
+	seed: number;
+	permadeath: boolean;
+}
+
+/** The Commander a boot is for, and how it was arrived at (§11.2, §11.4). */
+export interface ActiveCommander {
+	slot: string;
+	/** Set when a pending new game names the slot, which has no record yet. */
+	pending: PendingNewGame | null;
+	/** The pointer named a Commander that is gone, so this is the default. */
+	fellBack: boolean;
 }
 
 export interface SaveStoreOptions {
 	backend: SaveBackend;
+	/**
+	 * Required, not defaulted, for `FlightPerformance`'s reason: a store that
+	 * forgot its locks would grant every rename and delete, and the two are
+	 * indistinguishable in a diff.
+	 */
+	locks: SlotLocks;
+	/** The Commander debounced writes go to. `DEFAULT_SLOT` when omitted. */
+	slot?: string;
 	schedule: Scheduler;
 	/**
 	 * The state to write, read **at the moment the write fires**.
@@ -156,8 +215,48 @@ const assertSlot = (slot: string): void => {
 		fail(`"${slot}" is not a slot name — a name may not contain a space`);
 };
 
+/**
+ * A pending new game as read back, or `null` for none.
+ *
+ * Shape-checked rather than cast: the pointer store is outside the envelope's
+ * hash, so nothing else stands between a stray value and a boot that builds a
+ * world from it. A value that is not one is a named refusal, which the boot's
+ * D9 path turns into a fault rather than a world built from garbage.
+ */
+const parsePending = (raw: unknown): PendingNewGame | null => {
+	if (raw === null || raw === undefined) return null;
+	const o = raw as Record<string, unknown>;
+	if (
+		typeof raw !== "object" ||
+		typeof o.name !== "string" ||
+		typeof o.seed !== "number" ||
+		!Number.isInteger(o.seed) ||
+		o.seed < 0 ||
+		o.seed > 0xffff_ffff ||
+		typeof o.permadeath !== "boolean"
+	)
+		fail("the pending new game on disk is not one this build can read");
+	assertSlot(o.name as string);
+	return {
+		name: o.name as string,
+		seed: o.seed as number,
+		permadeath: o.permadeath as boolean,
+	};
+};
+
 export class SaveStore {
 	private readonly backend: SaveBackend;
+	private readonly locks: SlotLocks;
+	/** The release of this store's own lock, once `hold` has taken it. */
+	private held: (() => void) | null = null;
+	/**
+	 * The record kinds whose last write failed (§11.5). A kind clears only on a
+	 * write **of that kind** that lands: a debounced write carries `live` alone,
+	 * so a failed dock flush keeps `lastDocked` held through any number of good
+	 * debounced writes — the checkpoint a non-permadeath death restores is still
+	 * the older one, and the badge must still say so.
+	 */
+	private readonly failed = new Set<SaveRecordKind>();
 	private readonly schedule: Scheduler;
 	private readonly current: () => SaveEnvelope;
 	private dirty = false;
@@ -178,6 +277,11 @@ export class SaveStore {
 
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
+		this.locks = options.locks;
+		if (options.slot !== undefined) {
+			assertSlot(options.slot);
+			this.slot = options.slot;
+		}
 		this.schedule = options.schedule;
 		this.current = options.current;
 		this.onWriteFailed = options.onWriteFailed;
@@ -281,12 +385,20 @@ export class SaveStore {
 		try {
 			await this.inFlight;
 			this.failures = 0;
+			for (const kind of kinds) this.failed.delete(kind);
 		} catch (error) {
 			// The write did not land, so the save is still dirty. D9: the
 			// previous record is untouched — stale rather than broken.
 			this.dirty = true;
+			for (const kind of kinds) this.failed.add(kind);
 			throw error;
 		}
+	}
+
+	/** The record kinds whose last write failed; §11.5's badge shows while this
+	 *  is not empty. */
+	get failedKinds(): ReadonlySet<SaveRecordKind> {
+		return this.failed;
 	}
 
 	/**
@@ -353,6 +465,9 @@ export class SaveStore {
 	 */
 	async importSlot(slot: string, text: string): Promise<void> {
 		assertSlot(slot);
+		// Into a **new** Commander, never over one (§11.3): a slot is the whole
+		// save, so importing into a taken name would replace that Commander.
+		await this.assertFree(slot);
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(text);
@@ -373,6 +488,149 @@ export class SaveStore {
 		if (lastDocked !== null)
 			await this.backend.write(slot, "lastDocked", lastDocked);
 	}
+
+	// -------------------------------------------------------------------------
+	// The Commander overlay's operations (`persistent-world-state.md` §11.3–4)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Takes this store's own Commander lock for the life of the tab, or reports
+	 * that another store already has it. Idempotent once held.
+	 *
+	 * An attached store holds it so that no other tab can rename or delete the
+	 * Commander it is writing, and so a second tab cannot attach a second store
+	 * to the same slot — two stores writing one slot.
+	 */
+	async hold(): Promise<boolean> {
+		if (this.held) return true;
+		this.held = await this.locks.tryHold(this.slot);
+		return this.held !== null;
+	}
+
+	/**
+	 * The Commander a boot is for (§11.2 step 1, §11.4).
+	 *
+	 * A pending new game wins before any slot is read: its slot is empty by
+	 * design. Otherwise the pointer; a pointer naming a Commander that is gone
+	 * falls back to the default and says so. No pointer at all is the default,
+	 * which is where every save before §11 lives — not a fallback.
+	 */
+	async resolveActive(): Promise<ActiveCommander> {
+		const pending = parsePending(await this.backend.readMeta("pending"));
+		if (pending) return { slot: pending.name, pending, fellBack: false };
+		const active = await this.backend.readMeta("active");
+		if (active === null || active === DEFAULT_SLOT)
+			return { slot: DEFAULT_SLOT, pending: null, fellBack: false };
+		if (
+			typeof active === "string" &&
+			(await this.backend.slots()).includes(active)
+		)
+			return { slot: active, pending: null, fellBack: false };
+		return { slot: DEFAULT_SLOT, pending: null, fellBack: true };
+	}
+
+	/**
+	 * Load and Import's last step (§11.3): points at a Commander and writes the
+	 * one-shot continue that lets the reload skip the overlay.
+	 *
+	 * Refuses a Commander another tab holds, without waiting — that would be two
+	 * stores writing one slot. The check takes the lock and gives it straight
+	 * back, so it leaves the Commander free for the boot the reload makes.
+	 */
+	async chooseCommander(slot: string): Promise<void> {
+		assertSlot(slot);
+		await this.withFreeLock(slot, async () => {});
+		await this.backend.writeMeta({ active: slot, oneShot: slot });
+	}
+
+	/**
+	 * The one-shot continue, consumed: the Commander it names, or `null`.
+	 * A second call returns `null` — one transaction reads and deletes it.
+	 */
+	async takeOneShot(): Promise<string | null> {
+		const value = await this.backend.takeMeta("oneShot");
+		return typeof value === "string" ? value : null;
+	}
+
+	/**
+	 * New game's choice, on disk before the reload (§11.3, S5): the pending
+	 * record, the pointer and the one-shot, in one transaction.
+	 *
+	 * No envelope is built here — a `SaveEnvelope` needs a world and a flight,
+	 * and only a constructed `Game` has those. `finishNewGame` clears the
+	 * pending record once the new Commander's first `live` record has landed.
+	 */
+	async beginNewGame(choice: PendingNewGame): Promise<void> {
+		const pending = parsePending(choice) as PendingNewGame;
+		await this.assertFree(pending.name);
+		await this.backend.writeMeta({
+			pending,
+			active: pending.name,
+			oneShot: pending.name,
+		});
+	}
+
+	/**
+	 * Clears the pending new game, and refuses to while its Commander has no
+	 * `live` record: until then the pending record is the only thing on disk
+	 * holding what the player chose.
+	 */
+	async finishNewGame(): Promise<void> {
+		const pending = parsePending(await this.backend.readMeta("pending"));
+		if (!pending) return;
+		if ((await this.backend.read(pending.name, "live")) === null)
+			fail(`the new Commander "${pending.name}" has no save yet`);
+		await this.backend.writeMeta({ pending: null });
+	}
+
+	/**
+	 * Copy-then-delete (§11.3). A failure between the two leaves two
+	 * Commanders, never zero. The pointer follows the Commander it named.
+	 */
+	async renameSlot(from: string, to: string): Promise<void> {
+		assertSlot(from);
+		assertSlot(to);
+		await this.assertFree(to);
+		await this.withFreeLock(from, async () => {
+			await this.backend.copySlot(from, to);
+			if ((await this.backend.readMeta("active")) === from)
+				await this.backend.writeMeta({ active: to });
+			await this.backend.deleteSlot(from);
+		});
+	}
+
+	/** Deletes a Commander. The overlay asks for confirmation first; the store
+	 *  refuses one a tab has a store attached to. */
+	async deleteSlot(slot: string): Promise<void> {
+		assertSlot(slot);
+		await this.withFreeLock(slot, () => this.backend.deleteSlot(slot));
+	}
+
+	/**
+	 * One rule for names (§11.3): a name in `slots()` is taken, and so is the
+	 * name a pending new game holds, which has no record yet.
+	 */
+	private async assertFree(name: string): Promise<void> {
+		const pending = parsePending(await this.backend.readMeta("pending"));
+		if (pending?.name === name || (await this.backend.slots()).includes(name))
+			fail(`there is already a Commander named "${name}"`);
+	}
+
+	/** Runs `work` while holding `slot`'s lock, refusing when anyone else — this
+	 *  tab's own store included — already holds it. */
+	private async withFreeLock(
+		slot: string,
+		work: () => Promise<void>,
+	): Promise<void> {
+		const release = await this.locks.tryHold(slot);
+		if (!release)
+			fail(`Commander "${slot}" is open in another tab or in play here`);
+		try {
+			await work();
+		} finally {
+			(release as () => void)();
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +649,9 @@ export interface MemorySaveBackend extends SaveBackend {
 	hold(): void;
 	release(): void;
 	failNextWrite(): void;
+	/** Fail the next `deleteSlot`, so a rename can be interrupted between its
+	 *  copy and its delete — a state a happy path never reaches. */
+	failNextDelete(): void;
 	corruptVersion(slot: string, kind: SaveRecordKind): Promise<void>;
 	truncate(slot: string, kind: SaveRecordKind): Promise<void>;
 }
@@ -402,6 +663,11 @@ export interface MemorySaveBackend extends SaveBackend {
  */
 export function memorySaveBackend(): MemorySaveBackend {
 	const rows = new Map<string, unknown>();
+	// Its own map, so the pointer store is disjoint from the slots by
+	// construction here — which is why the collision it guards against is
+	// checked against the real IndexedDB backend instead (§11.4).
+	const meta = new Map<SaveMetaKey, unknown>();
+	let failDelete = false;
 	let writes = 0;
 	let inFlight = 0;
 	let maxInFlight = 0;
@@ -450,8 +716,39 @@ export function memorySaveBackend(): MemorySaveBackend {
 			return [...new Set([...rows.keys()].map((k) => k.split(" ")[0]))];
 		},
 		async deleteSlot(slot) {
+			if (failDelete) {
+				failDelete = false;
+				throw new Error("backend: the delete failed");
+			}
 			for (const key of [...rows.keys()])
 				if (key.startsWith(`${slot} `)) rows.delete(key);
+		},
+		async copySlot(from, to) {
+			const kinds: SaveRecordKind[] = ["live", "lastDocked"];
+			const found = kinds.filter((kind) => rows.has(at(from, kind)));
+			if (found.length === 0)
+				throw new Error(`save: "${from}" holds no record to copy`);
+			for (const kind of found)
+				rows.set(at(to, kind), copy(rows.get(at(from, kind))));
+		},
+		async readMeta(key) {
+			return copy(meta.get(key) ?? null);
+		},
+		async writeMeta(entries) {
+			for (const [key, value] of Object.entries(entries) as [
+				SaveMetaKey,
+				unknown,
+			][])
+				if (value === null || value === undefined) meta.delete(key);
+				else meta.set(key, copy(value));
+		},
+		async takeMeta(key) {
+			const value = copy(meta.get(key) ?? null);
+			meta.delete(key);
+			return value;
+		},
+		failNextDelete() {
+			failDelete = true;
 		},
 		async has(slot, kind) {
 			return rows.has(at(slot, kind));
@@ -496,17 +793,72 @@ export function memorySaveBackend(): MemorySaveBackend {
  */
 export const SAVE_DB_NAME = "seelite-saves";
 export const SAVE_STORE_NAME = "slots";
-const SAVE_DB_VERSION = 1;
+/**
+ * The pointer store (§11.4): the active Commander, the one-shot continue and a
+ * pending new game.
+ *
+ * **Its own object store, not a key in `slots`.** A record there is filed under
+ * its slot name, a separator and its kind, and `slots()` lists the distinct
+ * prefixes of every key — so a pointer stored there would be listed as a
+ * Commander, and `deleteSlot` could match it.
+ */
+export const SAVE_POINTER_STORE_NAME = "pointer";
+/**
+ * 2 adds the pointer store. The upgrade creates it and touches nothing in
+ * `slots`, so every version-1 save opens under version 2 intact —
+ * `scripts/probe-save.mjs` seeds a version-1 database and checks it.
+ */
+export const SAVE_DB_VERSION = 2;
 
-const openSaveDb = (factory: IDBFactory): Promise<IDBDatabase> =>
+/** What `open` reports while another tab holds the database at an older
+ *  version, and the upgrade is waiting for it (§11.4). */
+export const SAVE_BLOCKED_MESSAGE =
+	"save: another seelite tab is still open on an older version of the save — close it, then reload this one";
+
+/** What every operation reports after another tab upgraded the database out
+ *  from under this one, which closed its connection. */
+export const SAVE_CLOSED_MESSAGE =
+	"save: the save was upgraded by another seelite tab — reload this one";
+
+const openSaveDb = (
+	factory: IDBFactory,
+	onVersionChange: () => void,
+): Promise<IDBDatabase> =>
 	new Promise((resolve, reject) => {
 		const request = factory.open(SAVE_DB_NAME, SAVE_DB_VERSION);
+		let refused = false;
 		request.onupgradeneeded = () => {
 			const db = request.result;
 			if (!db.objectStoreNames.contains(SAVE_STORE_NAME))
 				db.createObjectStore(SAVE_STORE_NAME);
+			if (!db.objectStoreNames.contains(SAVE_POINTER_STORE_NAME))
+				db.createObjectStore(SAVE_POINTER_STORE_NAME);
 		};
-		request.onsuccess = () => resolve(request.result);
+		// **A blocked upgrade is a named fault, not a hang.** A tab still open on
+		// the version-1 build holds the database and the upgrade waits for it,
+		// and the boot awaits this open before it builds a game — so a block with
+		// no handler never boots at all. The request stays pending; if it does
+		// succeed later, that connection is closed rather than leaked, because
+		// this boot has already taken D9's path.
+		request.onblocked = () => {
+			refused = true;
+			reject(new Error(SAVE_BLOCKED_MESSAGE));
+		};
+		request.onsuccess = () => {
+			const db = request.result;
+			if (refused) {
+				db.close();
+				return;
+			}
+			// The other half: when a newer build opens the database, this
+			// connection steps aside rather than blocking it forever, and every
+			// later operation here fails with a name the badge can show.
+			db.onversionchange = () => {
+				db.close();
+				onVersionChange();
+			};
+			resolve(db);
+		};
 		request.onerror = () =>
 			reject(new Error(`save: the save database would not open`));
 	});
@@ -517,13 +869,39 @@ const asPromise = <T>(request: IDBRequest<T>): Promise<T> =>
 		request.onerror = () => reject(new Error("save: the backend refused"));
 	});
 
+/**
+ * A transaction's outcome. Created before any request is issued, so a
+ * transaction that completes during an `await` cannot be missed — and awaited
+ * on the **transaction**, not on a request: a resolved `put` only means the
+ * request was accepted, and a transaction that aborts afterwards leaves the old
+ * record in place, which is D9's stale-not-broken and must be reported as a
+ * failure rather than as a success.
+ */
+const transactionDone = (tx: IDBTransaction): Promise<void> =>
+	new Promise<void>((resolve, reject) => {
+		tx.oncomplete = () => resolve();
+		tx.onabort = () => reject(new Error("save: the backend aborted the write"));
+		tx.onerror = () => reject(new Error("save: the backend refused"));
+	});
+
 export function indexedDbSaveBackend(
 	factory: IDBFactory = indexedDB,
 ): SaveBackend {
 	let db: Promise<IDBDatabase> | null = null;
+	let closed = false;
 	const open = () => {
-		db ??= openSaveDb(factory);
-		return db;
+		// A closed handle's `transaction()` throws a bare `InvalidStateError`,
+		// which names nothing a player could act on.
+		if (closed) return Promise.reject(new Error(SAVE_CLOSED_MESSAGE));
+		const opening = (db ??= openSaveDb(factory, () => {
+			closed = true;
+			db = null;
+		}));
+		// A refused open is not cached: the next caller asks again.
+		opening.catch(() => {
+			if (db === opening) db = null;
+		});
+		return opening;
 	};
 	const at = (slot: string, kind: SaveRecordKind) => `${slot} ${kind}`;
 	return {
@@ -541,17 +919,7 @@ export function indexedDbSaveBackend(
 		async writeMany(slot, kinds, blob) {
 			const handle = await open();
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
-			// The write is awaited on the **transaction**, not on the request:
-			// a resolved `put` only means the request was accepted, and a
-			// transaction that aborts afterwards leaves the old record in
-			// place — which is D9's stale-not-broken and must be reported as a
-			// failure rather than as a success.
-			const done = new Promise<void>((resolve, reject) => {
-				tx.oncomplete = () => resolve();
-				tx.onabort = () =>
-					reject(new Error("save: the backend aborted the write"));
-				tx.onerror = () => reject(new Error("save: the backend refused"));
-			});
+			const done = transactionDone(tx);
 			const store = tx.objectStore(SAVE_STORE_NAME);
 			for (const kind of kinds) store.put(blob, at(slot, kind));
 			await done;
@@ -573,9 +941,127 @@ export function indexedDbSaveBackend(
 			const keys = await asPromise(store.getAllKeys());
 			for (const key of keys)
 				if (String(key).startsWith(`${slot} `)) store.delete(key);
-			await new Promise<void>((resolve, reject) => {
-				tx.oncomplete = () => resolve();
-				tx.onerror = () => reject(new Error("save: the backend refused"));
+			await transactionDone(tx);
+		},
+		async copySlot(from, to) {
+			const handle = await open();
+			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
+			const done = transactionDone(tx);
+			const store = tx.objectStore(SAVE_STORE_NAME);
+			const kinds: SaveRecordKind[] = ["live", "lastDocked"];
+			let found = 0;
+			let answered = 0;
+			// Gets and puts chained on request callbacks, not on `await`: the
+			// transaction commits once no request is pending, and a gap the event
+			// loop can run through is where a copy would find it already finished.
+			for (const kind of kinds) {
+				const get = store.get(at(from, kind));
+				get.onsuccess = () => {
+					if (get.result !== undefined) {
+						found += 1;
+						store.put(get.result, at(to, kind));
+					}
+					answered += 1;
+					if (answered === kinds.length && found === 0) tx.abort();
+				};
+			}
+			try {
+				await done;
+			} catch (error) {
+				if (found === 0) fail(`"${from}" holds no record to copy`);
+				throw error;
+			}
+		},
+		async readMeta(key) {
+			const handle = await open();
+			const tx = handle.transaction(SAVE_POINTER_STORE_NAME, "readonly");
+			const value = await asPromise(
+				tx.objectStore(SAVE_POINTER_STORE_NAME).get(key),
+			);
+			return value ?? null;
+		},
+		async writeMeta(entries) {
+			const handle = await open();
+			const tx = handle.transaction(SAVE_POINTER_STORE_NAME, "readwrite");
+			const done = transactionDone(tx);
+			const store = tx.objectStore(SAVE_POINTER_STORE_NAME);
+			for (const [key, value] of Object.entries(entries))
+				if (value === null || value === undefined) store.delete(key);
+				else store.put(value, key);
+			await done;
+		},
+		async takeMeta(key) {
+			const handle = await open();
+			const tx = handle.transaction(SAVE_POINTER_STORE_NAME, "readwrite");
+			const done = transactionDone(tx);
+			const store = tx.objectStore(SAVE_POINTER_STORE_NAME);
+			let value: unknown = null;
+			const get = store.get(key);
+			get.onsuccess = () => {
+				value = get.result ?? null;
+				if (value !== null) store.delete(key);
+			};
+			await done;
+			return value;
+		},
+	};
+}
+
+/**
+ * The headless tier's locks: a set of held names in one process, standing in
+ * for the tabs of one origin.
+ */
+export function memorySlotLocks(): SlotLocks {
+	const held = new Set<string>();
+	return {
+		async tryHold(slot) {
+			if (held.has(slot)) return null;
+			held.add(slot);
+			let released = false;
+			return () => {
+				if (released) return;
+				released = true;
+				held.delete(slot);
+			};
+		},
+	};
+}
+
+/** The prefix a Commander's Web Lock name carries, so no other lock on the
+ *  origin can collide with one. */
+export const SAVE_LOCK_PREFIX = "seelite-commander:";
+
+/**
+ * The browser's locks: an exclusive Web Lock per Commander, requested with
+ * `ifAvailable` so it never waits (§11.3).
+ *
+ * **A Web Lock lives only while its callback's promise is pending.** So the
+ * callback returns a promise that the release resolves and nothing else does,
+ * and `tryHold` resolves with that release as soon as the lock is granted — a
+ * lock held for the life of the tab is one whose release is never called.
+ *
+ * **It assumes a secure context.** `navigator.locks` exists only there, so on
+ * plain http off localhost the default argument is `undefined` and `tryHold`
+ * rejects rather than answering `null`. The probes run on localhost and the
+ * deploy target is HTTPS, so neither meets it.
+ */
+export function webSlotLocks(locks: LockManager = navigator.locks): SlotLocks {
+	return {
+		tryHold(slot) {
+			return new Promise((resolve) => {
+				locks
+					.request(
+						`${SAVE_LOCK_PREFIX}${slot}`,
+						{ mode: "exclusive", ifAvailable: true },
+						(lock) => {
+							if (!lock) {
+								resolve(null);
+								return;
+							}
+							return new Promise<void>((release) => resolve(() => release()));
+						},
+					)
+					.catch(() => resolve(null));
 			});
 		},
 	};
