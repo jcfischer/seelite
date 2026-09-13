@@ -188,7 +188,7 @@ evidence, and #283 does not close without it.
   is open the pad drives it, and Circle closes it.
 - **Type a Commander's name or a seed** (once #306 lands). The new-game form
   pre-fills both — a free default name and a random seed — so a pad player can
-  start a game by accepting them; changing either takes the keyboard, for the
+  start a game by accepting them, and re-roll the seed; retyping either takes the keyboard, for the
   reason under **Type** above.
 - **Reach the tuning dials or the perf panel's letter keys.** Seventeen buttons
   cannot carry twenty-six letters plus `PERF_KEYS`, `RESTORE_KEY` and

@@ -237,8 +237,10 @@ for either screen (`docs/gamepad.md`).
 behind it — except a boot that consumes §11.3's one-shot continue, which the
 player's own choice on the overlay wrote:
 
-1. Read the **active-Commander pointer** (§11.4). With no pointer, the slot is
-   `default`, which is where every save before §11 lives.
+1. Read the **active-Commander pointer** (§11.4) and what lies beside it. **A
+   pending new game is consumed first**, before any slot is read or any fallback
+   applies (§11.3): its slot has no record yet by design. Otherwise, with no
+   pointer, the slot is `default`, which is where every save before §11 lives.
 2. Read and parse that slot's `live` record exactly as today, with D9's faults.
 3. Construct the `Game` from it, or fresh when there is nothing to load or the
    load failed — as today.
@@ -279,7 +281,8 @@ pointed Commander, attaching the store and releasing the clock as Continue does.
 The player has just chosen that Commander on the overlay, and asking again is
 the same question twice. Any other reload — the player's own, a crash, a new
 tab — finds no one-shot and opens the overlay, which is S2. A one-shot naming a
-Commander whose load fails is discarded and the overlay opens with the fault.
+Commander whose load fails, or whose slot lock another tab took in the meantime,
+is discarded and the overlay opens with the fault.
 
 **One rule for names.** New game, Import and Rename all **refuse a name already
 in `slots()`** and say so on the overlay. A slot is the whole save, so writing to
@@ -297,7 +300,9 @@ a taken name would replace that Commander rather than create one.
   first `live` write into the named slot, and only then clears the pending
   record and continues. A tab closed at any point in that sequence loses nothing
   the player chose: either the pending record or the first save is on disk.
-- **Load / switch** sets the pointer and reloads.
+- **Load / switch** requests the chosen slot's Web Lock without waiting and
+  refuses when another tab holds it; otherwise it sets the pointer, writes the
+  one-shot continue, and reloads.
 - **Export** hands the player `exportSlot`'s file. It is offered for any slot,
   including one whose record this build refuses — D9's rescue path.
 - **Import** asks for a name and runs `importSlot` into a **new** slot, under
@@ -334,7 +339,9 @@ overlay says so rather than failing silently.
 lives in the same IndexedDB database as the slots, **outside `SaveEnvelope` and
 outside its integrity hash**. #89's one hash covers `{ world, commander }`; the
 pointer is neither, and a cleared profile clears it with the slots it names. A
-pointer naming a slot that no longer exists falls back to `default` and says so.
+pointer naming a slot that no longer exists falls back to `default` and says so — **except while a pending new game names
+it**: that slot is empty because its first save has not been written, not
+because it was deleted.
 
 **It is a second object store, not a key in `slots`.** `indexedDbSaveBackend`
 files a record under its slot name, a separator and its kind, and `slots()`
@@ -376,6 +383,12 @@ fails and raises its own badge rather than blocking the upgrade forever.
   lands — clearing it on a debounced write would hide the fault while a
   non-permadeath death still restores the older dock. The badge shows while
   either is held.
+- **The overlay's words name the Commander, never the slot.** Some `saveFault`
+  messages are built with the storage word today — `?seed`'s set-aside reads
+  `slot "default" holds seed …` (`main.ts`, the boot block) — and the overlay
+  shows `saveFault`. #306 rewords every `saveFault` message the overlay can
+  display, so `CONTEXT.md`'s "the player never sees the word" is true of the
+  shipped text and not only of the labels.
 
 ### 11.6 Probes and view capture
 
@@ -405,7 +418,11 @@ Load and Import alike; a pending new game surviving until its first `live` write
 lands; a switch refused when its awaited flush fails; Export, Rename and Delete
 causing no reload;
 a rename interrupted between copy and delete leaving two; delete and rename
-refusing the active Commander; new game, import and rename each refusing a taken
+refusing a Commander whose slot lock is held, through an injected lock since bun
+has no Web Locks; a pending new game whose pointer names an empty slot booting
+into that game and not falling back to `default`; no `saveFault` message the
+overlay can show containing the word `slot`; new game, import and rename each
+refusing a taken
 name; import refusing a record `parseSave` refuses; a `lastDocked` fault
 surviving a successful debounced write and clearing on a dock flush; `gameTime`
 unchanged across frames while the boot overlay is open; no store attached before
@@ -421,7 +438,8 @@ clear it, while the next good dock flush does; the pad drives the overlay as
 saves opens under version 2 with every record intact and `slots()` listing the
 slots and not the pointer's store; a version-1 connection left open produces the
 named blocked fault and a boot, not a hang; and a second tab refuses Continue,
-Rename and Delete on a Commander the first tab holds.
+Load, Rename and Delete on a Commander the first tab holds, and a one-shot boot
+into a Commander another tab took opens the overlay with that fault.
 
 **And a look at a rendered frame** of the overlay and of the badge in both states
 before either is called done — #94's rule for anything drawn on the glass.
