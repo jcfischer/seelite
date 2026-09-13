@@ -682,9 +682,24 @@ describe("§11.3 — a pending new game", () => {
 		expect(await h.catalog.resolveActive()).toEqual({
 			slot: DEFAULT_SLOT,
 			pending: null,
-			fellBack: true,
+			fellBack: false,
 		});
 		expect(await h.backend.readMeta("pending")).toBeNull();
+	});
+
+	test("deleting the active Commander clears the pointer, so the next boot reports no fallback", async () => {
+		// The player chose the delete. A pointer left naming the gone Commander
+		// would boot the default with a notice that something fell back.
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.catalog.chooseCommander("jameson");
+		await h.catalog.deleteSlot("jameson");
+		expect(await h.backend.readMeta("active")).toBeNull();
+		expect(await h.catalog.resolveActive()).toEqual({
+			slot: DEFAULT_SLOT,
+			pending: null,
+			fellBack: false,
+		});
 	});
 
 	test("a New game choice this build cannot write is refused as the choice, not as a record on disk", async () => {

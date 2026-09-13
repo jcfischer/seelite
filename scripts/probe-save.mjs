@@ -792,16 +792,31 @@ try {
 		.then(() => true)
 		.catch(() => false);
 	const blockedState = bootedDespiteBlock
-		? await blocked.evaluate(() => ({
-				fault: window.__seelite.saveFault,
-				store: window.__seelite.saveStore !== null,
-			}))
+		? await blocked.evaluate(
+				async (meta) => ({
+					fault: window.__seelite.saveFault,
+					store: window.__seelite.saveStore !== null,
+					// A later call in the same tab. A second open queues behind the
+					// first, which is still pending, and fires no `blocked` event of
+					// its own, so a refusal that is not remembered hangs here.
+					retry: await Promise.race([
+						window.__seelite.save.backend.read(meta.defaultSlot, "live").then(
+							() => "resolved",
+							(error) =>
+								error instanceof Error ? error.message : String(error),
+						),
+						new Promise((resolve) => setTimeout(() => resolve("hung"), 3000)),
+					]),
+				}),
+				saveMeta,
+			)
 		: null;
 	check(
-		"a version-1 connection left open produces the named blocked fault and a boot, not a hang",
+		"a version-1 connection left open produces the named blocked fault, a boot, and the same fault on a later call, not a hang",
 		bootedDespiteBlock &&
 			blockedState.fault === saveMeta.blockedMessage &&
-			blockedState.store === false,
+			blockedState.store === false &&
+			blockedState.retry === saveMeta.blockedMessage,
 		JSON.stringify({ bootedDespiteBlock, ...blockedState }),
 	);
 	await blocked.close();
@@ -888,6 +903,10 @@ try {
 		await b.deleteSlot("probe-copy-a");
 		const slots = await b.slots();
 		await b.writeMeta({ oneShot: "probe-copy-b" });
+		// Two reads in sequence. Two concurrent readers do not test the single
+		// transaction either: against a build that split the read and the delete
+		// into two transactions, Chromium still handed the one-shot to only one
+		// of them. That property rests on the code; this row checks the result.
 		const taken = [await b.takeMeta("oneShot"), await b.takeMeta("oneShot")];
 		return { copied, refusal, slots, taken };
 	});
@@ -902,7 +921,7 @@ try {
 		JSON.stringify(metaOps),
 	);
 	check(
-		"takeMeta in IndexedDB hands the one-shot to exactly one reader",
+		"takeMeta in IndexedDB returns the one-shot once, then nothing",
 		metaOps.taken[0] === "probe-copy-b" && metaOps.taken[1] === null,
 		JSON.stringify(metaOps.taken),
 	);

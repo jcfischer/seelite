@@ -702,6 +702,11 @@ export class CommanderCatalog {
 		await this.withFreeLock(slot, async () => {
 			await this.backend.deleteSlot(slot);
 			await this.clearPendingFor(slot);
+			// **The pointer goes too.** The player chose this delete, so the next
+			// boot is the default with nothing to report. A pointer left naming the
+			// gone Commander would say that something fell back.
+			if ((await this.backend.readMeta("active")) === slot)
+				await this.backend.writeMeta({ active: null });
 		});
 	}
 
@@ -1024,17 +1029,27 @@ export function indexedDbSaveBackend(
 ): SaveBackend {
 	let db: Promise<IDBDatabase> | null = null;
 	let closed = false;
+	let blocked = false;
 	const open = () => {
 		// A closed handle's `transaction()` throws a bare `InvalidStateError`,
 		// which names nothing a player could act on.
 		if (closed) return Promise.reject(new Error(SAVE_CLOSED_MESSAGE));
+		// **A blocked open is remembered, not retried.** The first request is
+		// still pending behind the old tab, and a second open queues behind it
+		// with no `blocked` event of its own, so a retry hung rather than
+		// failing. The message already tells the player to reload.
+		if (blocked) return Promise.reject(new Error(SAVE_BLOCKED_MESSAGE));
 		const opening = (db ??= openSaveDb(factory, () => {
 			closed = true;
 			db = null;
 		}));
-		// A refused open is not cached: the next caller asks again.
-		opening.catch(() => {
+		// Any other refused open is not cached: the next caller asks again. This
+		// handler is attached before any caller awaits `opening`, so the flag is
+		// set before a caller's own rejection runs.
+		opening.catch((error) => {
 			if (db === opening) db = null;
+			if (error instanceof Error && error.message === SAVE_BLOCKED_MESSAGE)
+				blocked = true;
 		});
 		return opening;
 	};
