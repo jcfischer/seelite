@@ -57,11 +57,13 @@ import { shared } from "./gpu-teardown";
  * and how many times the fitting's own projected size its glare spans.
  *
  * **The floors are pixels of the render target**, which is what `gl_PointSize`
- * is in. They are set against the one reader that has to see them at range:
- * `probe-station-visuals.mjs` reads a 560 × 400 canvas downsampled from its
- * viewport, so a 3.5 px floor at a 720 px viewport is about 2 px there — enough
- * for a lit disc to clear its luma threshold of 6, and small enough to read as
- * a point rather than as a lamp.
+ * is in, and they were raised once on measurement (#300). At 3.5 px for a point
+ * and 3 for a flood, `probe-station-visuals.mjs` read the shipyard's strobes at
+ * 2 px, its mouth ring at 1 and its floods at 2 from its approach, where a
+ * 1.66 km frame puts the camera 5 km out. That probe reads a 560 × 400 canvas
+ * downsampled from its viewport, so a 5 px floor at a 720 px viewport is about
+ * 3 px there — enough to clear its luma threshold of 6 without a lamp reading
+ * as a disc.
  *
  * **The caps are what stop the glare swallowing the fitting up close.** Past
  * the distance where `spread × projected size` exceeds the cap, the housing is
@@ -69,9 +71,9 @@ import { shared } from "./gpu-teardown";
  */
 export const GLOW_CLASSES = Object.freeze({
 	/** Strobes, beacons, the welding arc: point sources that have to be found. */
-	point: Object.freeze({ minPx: 3.5, maxPx: 14, spread: 3 }),
+	point: Object.freeze({ minPx: 5, maxPx: 14, spread: 3 }),
 	/** Floodlights and the flare's throats: a lit face, a little softer. */
-	flood: Object.freeze({ minPx: 3, maxPx: 12, spread: 2.5 }),
+	flood: Object.freeze({ minPx: 4, maxPx: 12, spread: 2.5 }),
 	/** Window panes and approach lamps: many of them, so the smallest floor. */
 	pane: Object.freeze({ minPx: 2, maxPx: 8, spread: 2 }),
 } as const);

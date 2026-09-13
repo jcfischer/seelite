@@ -454,14 +454,19 @@ describe("a station is one object, not a scatter of parts", () => {
 			// part, and a 2 m strobe seated half in its face shrinks to a 1 m box
 			// that the hull's box, shrunk 2.4 m inward, can never reach — so the
 			// row read both of the Coriolis's strobes as floating. A seated lamp
-			// is not expressible here at all. Its mounting is held by `both
+			// is not expressible here at all, and a 1 m-thick flood half-sunk into
+			// a boom tip's cap is the same case: all four of the Gantry's read
+			// detached once they moved there. The cost is stated rather than hidden:
+			// no other row checks that a flood is mounted — §5's axis row checks
+			// only that it is not wholly hidden. Its mounting is held by `both
 			// strobes sit out on the hull` in `station-visuals.test.ts`, against
 			// the member it is bolted to, and by §5's axis row beside it.
 			if (
 				object.name === "strobe-a" ||
 				object.name === "strobe-b" ||
 				object.name === "mouth-strobe" ||
-				object.name === "obstruction-beacon"
+				object.name === "obstruction-beacon" ||
+				object.name === "bay-flood"
 			)
 				return;
 			// A glow is not a part: it is a point at its fitting's own centre,

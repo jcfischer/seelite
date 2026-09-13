@@ -294,12 +294,17 @@ weld arc at 0, the refinery's ports and all four of its flare throats at 0 —
 while the check that was meant to catch this summed a *role* and passed on
 whichever light still worked.
 
-Two things the rule is not. It is **not a rule about the surface being flat**:
-the shipyard's bay floods sit on the inboard faces of the two booms that reach
-forward past its hub, which is where a bay light belongs, and each is *turned*
-until its lit face looks 35° inboard of the axis — flat on the boom it showed
-the approach its 36 m edge and drew 12 px. And it is **not satisfied by being
-outdoors**: the refinery's flare throats were 8.5 m plates recessed a bore's
+Two things the rule is not. It is **not a rule about which way a surface
+faces**: the shipyard's bay floods are *turned* until their lit faces look 35°
+inboard of the axis, so they read as lights aimed into the bay rather than as
+lamps pointed at the pilot — and it is where they are mounted, not how they are
+turned, that the rule decides. They were first on the inboard faces of the two
+booms that reach forward past the hub, and with real-size fittings that failed:
+each boom flares to a 0.16·r half-width at its tip, so seen down the axis the
+tip stands in front of the whole inboard face, and the weld arc read 0 px and
+the floods 2 px. They are on the tips' forward faces now, the one surface of a
+boom nothing stands in front of on the approach. And it is **not satisfied by
+being outdoors**: the refinery's flare throats were 8.5 m plates recessed a bore's
 width inside their own pipes, unoccluded by anything else on the station and
 still worth 2.9 px, so *"its flare is its light"* was a sentence nothing on
 screen supported.

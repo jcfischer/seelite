@@ -2354,24 +2354,24 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * mark rotation; a work light marks work, and a welding arc that swung round
 	 * the axis would be a beacon rather than a job.
 	 *
-	 * **A bay light is only a bay light if it faces the approach.** Laid flat on
-	 * a boom's inboard face, a flood's broad side points across the gap and
-	 * presents its 36 m edge to the axis: the first version of this move read 12
-	 * px and the arc, sunk inside the member it was bolted to, read 0 again. So
-	 * each flood is turned until its lit face looks 35° inboard of the axis —
-	 * far enough to be a light *in* the bay, flat enough to be seen from
-	 * outside it — and its 0.156 km length runs across the boom rather than
-	 * along it, because a bar whose length is along the boom cannot turn its
-	 * face toward the boom's own axis at all. It overhangs an 86 m member by
-	 * 35 m each side, which is a light on a bracket.
+	 * **On the boom tips' forward faces, because the tips hide everything behind
+	 * them.** The booms run forward along the approach axis and flare to a
+	 * 0.16·r half-width at their tips (z = 1.9·r), so from the axis each tip's cap
+	 * covers |y| from 0.64·r to 0.96·r — which is exactly where a fitting on a
+	 * boom's inboard face (0.728·r) stands. Measured there with real-size fittings
+	 * and their glows, from three silhouette radii: the arc read **0 px** and the
+	 * floods 2 px. The cap is the one surface of a boom that nothing stands in
+	 * front of on the approach, so the work light is mounted on it: two floods on
+	 * each tip's inboard half, lit faces turned 35° inboard so they read as lights
+	 * aimed into the bay, and the arc between the port pair — a yard working at
+	 * the end of its arm.
 	 *
-	 * `BOOM_FACE_Y` is that face: the boom's centre at `r * 0.8` less its
-	 * half-width at these stations. Each fixture straddles it, so it overlaps
-	 * the member it is mounted on — `tests/station-mesh.test.ts` reads a fixture
-	 * that only touches as a light hanging beside a station — and stands proud
-	 * of it, which is what the diagnosis above says it has to do.
+	 * Each fixture is centred on the cap's plane, so it is half sunk into the
+	 * member carrying it rather than touching it at a face.
 	 */
-	const BOOM_FACE_Y = r * 0.728;
+	const TIP_Z = r * 1.9;
+	const TIP_INBOARD_Y = r * 0.72;
+	const TIP_ACROSS_X = r * 0.08;
 	const FLOOD_TILT = Math.PI * 0.19;
 	group.add(
 		buildBayLights(
@@ -2390,15 +2390,13 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 					),
 				);
 				flood.position.set(
-					0,
-					side * BOOM_FACE_Y,
-					r * (0.95 + Math.floor(i / 2) * 0.55),
+					(Math.floor(i / 2) === 0 ? -1 : 1) * TIP_ACROSS_X,
+					side * TIP_INBOARD_Y,
+					TIP_Z,
 				);
 			},
-			// On the port boom's inboard face, standing proud of it and clear in
-			// z of both floods on that side: a sphere sunk into the member reads
-			// as nothing, and one hanging in the gap would be an island.
-			new THREE.Vector3(0, -BOOM_FACE_Y + FITTING_KM.arcRadius * 0.8, r * 1.22),
+			// Between the port tip's two floods, on the same cap.
+			new THREE.Vector3(0, -TIP_INBOARD_Y, TIP_Z),
 		),
 	);
 	group.add(
