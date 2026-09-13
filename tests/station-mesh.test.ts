@@ -53,23 +53,17 @@ import {
 	mouthPlane,
 } from "./helpers/aperture-opening";
 import { instanceBoxes } from "./helpers/instance-boxes";
+import {
+	ASSEMBLY_SEEDS,
+	PLAN_SEEDS,
+	SOLVED_FORMS,
+	isSolvedForm,
+} from "./helpers/solved-forms";
+import { LAMP_NAMES, seatedOnStructure } from "./helpers/structure-rays";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
 // loop in this file, and a hand-written list is exactly the place it would not.
 const TYPES: StationType[] = STATION_TYPES;
-
-/**
- * The forms whose shape is a plan solved from the assembly seed (#202, #257),
- * and a spread of seeds to build each at. Every row below that builds at
- * seed zero measures one plan of a form whose whole point is that plans
- * differ; these rows measure the spread.
- */
-const SOLVED_FORMS: [StationType, StationFormId][] = [
-	["trade", "d"],
-	["refinery", "d"],
-	["outpost", "d"],
-];
-const ASSEMBLY_SEEDS = [0, 1, 2, 3, 17, 42, 1000, 65535, 7, 8, 12345, 99999];
 
 /** Any colour: these tests are about geometry. The two that are about the
  *  colour cue pass their own and say so. */
@@ -449,6 +443,27 @@ describe("a station is one object, not a scatter of parts", () => {
 			// The Slipway's welding flare hangs in the slip where the work is,
 			// in the ring's gap by construction: a light, not a part.
 			if (object.name === "weld-arc") return;
+			// **A real-size lamp is smaller than this proxy's own tolerance**
+			// (#300). The shrink below takes up to 2.4 m off every face of a
+			// part, and a 2 m strobe seated half in its face shrinks to a 1 m box
+			// that the hull's box, shrunk 2.4 m inward, can never reach — so the
+			// row read both of the Coriolis's strobes as floating. A seated lamp
+			// is not expressible here at all, and a 1 m-thick flood half-sunk into
+			// a boom tip's cap is the same case: all four of the Gantry's read
+			// detached once they moved there. Their mounting is held instead by
+			// `every lamp is seated on the structure it is bolted to` at the end
+			// of this file, by ray against the surfaces themselves.
+			if (
+				object.name === "strobe-a" ||
+				object.name === "strobe-b" ||
+				object.name === "mouth-strobe" ||
+				object.name === "obstruction-beacon" ||
+				object.name === "bay-flood"
+			)
+				return;
+			// A glow is not a part: it is a point at its fitting's own centre,
+			// drawn as glare (`station-glow.ts`), and it has no volume to mount.
+			if (object.userData.glow) return;
 			// A pane is a decal on a face, not a part: `window panes sit out
 			// near the shell they belong to` above is its mounting check, and
 			// three of the Buoy's ride a drum face at a standoff wider than this
@@ -1208,5 +1223,69 @@ describe("§13.5 row 3 — every berth is inside its own drawn interior", () => 
 					true,
 				]);
 			}
+	});
+});
+
+/**
+ * **A real-size lamp is mounted on something** (#300's review).
+ *
+ * The islands check above cannot hold a lamp — its shrink is larger than the
+ * fitting — so it skips them by name, and for a round nothing else checked
+ * that one was mounted: three trade forms carried strobes metres off their
+ * hulls and the Slipway's sat inside its own tube. This is that check, by ray
+ * against the surfaces themselves (`helpers/structure-rays.ts`). The welding
+ * arc is not in it: it hangs in the slip where the work is, by construction.
+ */
+describe("every lamp is seated on the structure it is bolted to", () => {
+	const floating = (root: THREE.Object3D) => {
+		root.updateMatrixWorld(true);
+		const out: string[] = [];
+		root.traverse((o) => {
+			if (!LAMP_NAMES.has(o.name) || o.name === "weld-arc" || o.userData.glow)
+				return;
+			if (!seatedOnStructure(root, o)) {
+				const p = o.position;
+				out.push(
+					`${o.name} at (${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})`,
+				);
+			}
+		});
+		return out;
+	};
+
+	test("on every form, and every plan of a solved form", () => {
+		for (const type of TYPES)
+			for (const form of STATION_FORMS[type])
+				for (const seed of isSolvedForm(type, form.id) ? PLAN_SEEDS : [0]) {
+					const { root } = buildStationForm(type, form.id, GREY, 0, seed);
+					expect([type, form.id, seed, floating(root)]).toEqual([
+						type,
+						form.id,
+						seed,
+						[],
+					]);
+				}
+	});
+
+	test("the row goes red for a beacon a hundred metres off its mount", () => {
+		const { root } = buildStationForm(
+			"refinery",
+			SELECTED_FORM.refinery,
+			GREY,
+			0,
+			0,
+		);
+		const beacon = root.getObjectByName("obstruction-beacon");
+		expect(beacon).toBeDefined();
+		(beacon as THREE.Object3D).position.z += 0.1;
+		expect(floating(root).length).toBeGreaterThan(0);
+	});
+
+	test("and for a strobe six metres off its face", () => {
+		const { root } = buildStationForm("trade", SELECTED_FORM.trade, GREY, 0, 0);
+		const strobe = root.getObjectByName("strobe-a");
+		expect(strobe).toBeDefined();
+		(strobe as THREE.Object3D).position.z += 0.006;
+		expect(floating(root).length).toBeGreaterThan(0);
 	});
 });

@@ -19,10 +19,16 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { STATION_TYPES, type StationType } from "../src/station";
 import {
+	STATION_GEOMETRY,
+	STATION_TYPES,
+	type StationType,
+} from "../src/station";
+import {
+	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
+	type StationFormId,
 	buildStationForm,
 	buildStationMesh,
 	setStationDetail,
@@ -30,6 +36,8 @@ import {
 } from "../src/station-mesh";
 import {
 	DETAIL_RADII,
+	SPEC_FIXTURE_NAMES,
+	beaconIntensity,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	strobeIntensity,
@@ -41,6 +49,8 @@ import {
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
+import { instanceBoxes } from "./helpers/instance-boxes";
+import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
 import { reachKm } from "./helpers/station-reach";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
@@ -134,12 +144,67 @@ describe("a fixture is on the station it is mounted on", () => {
 		// core radius passes the very defect its own comment recounted, a lamp at
 		// (0.45, 0, 0.45)·r buried inside the hull at a length of 0.64·r.
 		//
-		// The floor is a fraction of the form's **own declared reach** now, which
-		// is the only per-form scale there is. Every strobe in the pool sits
-		// between 0.72 and 0.97 of it, and the buried case is 0.67 — so this
-		// catches a fixture placed well inside the hull and, honestly, cannot see
-		// one that is inside by a few metres. That class is caught by the island
-		// check instead, which is why both exist.
+		// The floor is a fraction of the reach of **the member the lamp is bolted
+		// to**, which is not the same thing as the form's declared reach and was
+		// until #300. That reach is the *frame's* on a form whose frame is most
+		// of it: the Gantry declares 1.66 km of boom and its drum is 0.47 km
+		// across, so a strobe correctly mounted on the spinning member sits at
+		// 0.26 of the declared figure and read as buried. §5 asks the pair to
+		// mark the member that turns, so the member that turns is the scale.
+		//
+		// Every strobe in the pool sits between 0.72 and 0.97 of its own
+		// member's reach and the buried case is 0.67 — so this catches a fixture
+		// placed well inside and, honestly, cannot see one that is inside by a
+		// few metres. That class is caught by the island check and by §5's axis
+		// row below, which is why all three exist.
+		/** How far the subtree a lamp hangs from reaches, ignoring the lamps —
+		 *  a lamp that reached further than its own member would otherwise raise
+		 *  the floor it is being measured against. */
+		const memberReachKm = (member: THREE.Object3D) => {
+			let reach = 0;
+			const at = new THREE.Vector3();
+			member.updateMatrixWorld(true);
+			// **In the member's own frame**, which is the frame a lamp's
+			// `position` is already in. A station mesh is authored in kilometres
+			// and then divided by its core radius on an inner group, so world
+			// space here is normalised radii and comparing the two would be
+			// comparing a kilometre against a radius.
+			const toMember = member.matrixWorld.clone().invert();
+			const corner = new THREE.Vector3();
+			member.traverse((child) => {
+				if (child.name === "strobe-a" || child.name === "strobe-b") return;
+				const mesh = child as THREE.Mesh;
+				// **An instanced pool is read through its instances**, which is
+				// the whole of `instanceBoxes`' reason for existing: the base
+				// geometry of a greeble pool is a unit box at the origin, and
+				// walking its `position` attribute reports every pool on every
+				// form at √3/2 — larger than three of the four trade hulls, and
+				// a floor derived from it fails a correctly mounted lamp.
+				if ((mesh as THREE.InstancedMesh).isInstancedMesh) {
+					for (const box of instanceBoxes(mesh as THREE.InstancedMesh))
+						for (const x of [box.min.x, box.max.x])
+							for (const y of [box.min.y, box.max.y])
+								for (const z of [box.min.z, box.max.z])
+									reach = Math.max(
+										reach,
+										corner.set(x, y, z).applyMatrix4(toMember).length(),
+									);
+					return;
+				}
+				const position = mesh.geometry?.getAttribute("position");
+				if (!position) return;
+				for (let i = 0; i < position.count; i++)
+					reach = Math.max(
+						reach,
+						at
+							.fromBufferAttribute(position, i)
+							.applyMatrix4(mesh.matrixWorld)
+							.applyMatrix4(toMember)
+							.length(),
+					);
+			});
+			return reach;
+		};
 		for (const type of TYPES) {
 			const hasStrobes = STATION_VISUALS[type].activity.strobePeriodS > 0;
 			for (const form of STATION_FORMS[type]) {
@@ -157,12 +222,44 @@ describe("a fixture is on the station it is mounted on", () => {
 					]);
 					if (!lamp) continue;
 					const p = (lamp as THREE.Object3D).position;
-					expect([type, form.id, p.length() > form.reachKm * 0.68]).toEqual([
+					// The member is the lamp's grandparent: `strobePair` returns a
+					// group of its own, which is what a form adds.
+					const member = lamp.parent?.parent ?? root;
+					const memberKm = memberReachKm(member);
+					expect([
 						type,
 						form.id,
+						memberKm > 0 && p.length() > memberKm * 0.68,
+					]).toEqual([type, form.id, true]);
+					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
+				}
+			}
+		}
+	});
+
+	/**
+	 * **The strobe pair marks rotation, so it has to turn** (§5, #274). The
+	 * Gantry's pair sat on its static keel until #300; the review found the
+	 * Hangar, the Slipway and the Assembly with the same fault, because only the
+	 * selected form had been moved. A form that names no spinner turns whole,
+	 * and its spinner is its body.
+	 */
+	test("every form's strobe pair turns with the member that spins", () => {
+		for (const type of TYPES) {
+			if (!(STATION_VISUALS[type].activity.strobePeriodS > 0)) continue;
+			for (const form of STATION_FORMS[type]) {
+				const { root, spinner } = buildStationForm(type, form.id, GREY, 0, 0);
+				for (const kind of ["strobe-a", "strobe-b"]) {
+					let turns = false;
+					root.getObjectByName(kind)?.traverseAncestors((a) => {
+						if (a === spinner) turns = true;
+					});
+					expect([type, form.id, kind, turns]).toEqual([
+						type,
+						form.id,
+						kind,
 						true,
 					]);
-					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
 				}
 			}
 		}
@@ -402,6 +499,327 @@ describe("what the renderer drives, at every range", () => {
 				(second?.base ?? 0) * strobeIntensity("trade", t, strobePeriodS / 2),
 				9,
 			);
+		}
+	});
+});
+
+/**
+ * §5's placement rule, headless: **no fixture §5 names is wholly hidden from
+ * the aperture axis** (#300).
+ *
+ * `probe-station-visuals.mjs` owns the pixel form of this and is the instrument
+ * #274's figures come from. This is the geometric form, and the division
+ * between them is exact rather than a duplication. **This row answers only
+ * whether *any* of a fixture's own surface can be reached down the axis.** It
+ * cannot answer how much, and the attempt to make it — a fraction of reachable
+ * surface samples — was flown and does not work: a weld arc buried in the boom
+ * it is bolted to scored 0.67 of its front-facing vertices while measuring
+ * **0 px**, against a heat ring at 0.53 measuring 526. Eleven metres of a 60 m
+ * sphere stood proud of the member, and its vertices do not know that the
+ * silhouette they add up to is a sliver. Visible *area* is a pixel question and
+ * the probe is where it is answered.
+ *
+ * What this still buys is the class the probe cannot watch: the probes do not
+ * run in CI (#14), and every fixture #274 found was **wholly** occluded rather
+ * than thin — the trade station's grid and both its strobes, the refinery's
+ * ports. This row is red on all of those and runs on every push.
+ *
+ * **The samples are the fixture's own front-facing surface**, not its bounding
+ * box. A box's corners measure how deeply a fixture is *sunk* rather than
+ * whether it shows: a half-sunk lamp reads 4 of 9 corners and a lit pane lying
+ * on a deck reads 1 of 9, and both are plainly visible.
+ *
+ * **A ray cast from outside is legitimate where one cast from inside is not.**
+ * `CLAUDE.md`'s warning — a hull mesh is `FrontSide`, so a ray from inside
+ * passes straight through — is about the interior checks. Coming the other way,
+ * down the axis from the docking approach, the first surface a ray meets is a
+ * front face and the cull does not apply.
+ *
+ * **Every phase, not one.** The trade station and the shipyard turn, so a
+ * fixture on a spinning member is somewhere different every frame; #274's whole
+ * argument for the +Z diamond is that a lamp there is visible at *every* phase
+ * where a rim lamp is occluded at every phase. A row built at rotation zero
+ * would be checking one of them.
+ */
+describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
+	/** The probe's `CLOSE_RADII`: docking range, in the station's own radii. */
+	const CLOSE_RADII = 3;
+	/** Eighths of a turn. A fixture visible at all of them is visible at any. */
+	const PHASES = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (i * Math.PI) / 4);
+	/** How many surface points a fixture is sampled at. Enough that a sliver of
+	 *  a lamp is represented and few enough that eight phases of three forms
+	 *  stay under a second. */
+	const SAMPLE_CAP = 48;
+
+	/**
+	 * Points on a fixture's own surface that face the eye, in world space.
+	 *
+	 * Instanced runs are expanded through their instance matrices: the window
+	 * grid is one `InstancedMesh` whose base geometry is a single pane at the
+	 * origin, and sampling that would ask about a pane the station does not
+	 * have.
+	 */
+	const facingPoints = (object: THREE.Object3D, eye: THREE.Vector3) => {
+		const found: { at: THREE.Vector3; out: THREE.Vector3 }[] = [];
+		const normalMatrix = new THREE.Matrix3();
+		const world = new THREE.Matrix4();
+		const instance = new THREE.Matrix4();
+		object.traverse((child) => {
+			// A light pool lies on the surface round its lamp and reaches past
+			// it: sampling it would let a hidden lamp read as reachable (#300).
+			if (child.userData.pool) return;
+			const mesh = child as THREE.Mesh;
+			const positions = mesh.geometry?.getAttribute("position");
+			const normals = mesh.geometry?.getAttribute("normal");
+			if (!positions || !normals) return;
+			const pool = (mesh as THREE.InstancedMesh).isInstancedMesh
+				? (mesh as THREE.InstancedMesh)
+				: null;
+			for (let k = 0; k < (pool ? pool.count : 1); k++) {
+				if (pool) {
+					pool.getMatrixAt(k, instance);
+					world.multiplyMatrices(mesh.matrixWorld, instance);
+				} else world.copy(mesh.matrixWorld);
+				normalMatrix.getNormalMatrix(world);
+				for (let i = 0; i < positions.count; i++)
+					found.push({
+						at: new THREE.Vector3()
+							.fromBufferAttribute(positions, i)
+							.applyMatrix4(world),
+						out: new THREE.Vector3()
+							.fromBufferAttribute(normals, i)
+							.applyMatrix3(normalMatrix)
+							.normalize(),
+					});
+			}
+		});
+		const toEye = new THREE.Vector3();
+		const front = found.filter(
+			({ at, out }) => out.dot(toEye.copy(eye).sub(at).normalize()) > 0.05,
+		);
+		const stride = Math.max(1, Math.ceil(front.length / SAMPLE_CAP));
+		const sampled: THREE.Vector3[] = [];
+		for (let i = 0; i < front.length; i += stride) sampled.push(front[i].at);
+		return sampled;
+	};
+
+	/** Whether anything that is not this fixture stands between the eye and any
+	 *  point of its own surface that faces the eye. */
+	const readsFromAxis = (
+		root: THREE.Object3D,
+		fixture: THREE.Object3D,
+		eye: THREE.Vector3,
+	) => {
+		const raycaster = new THREE.Raycaster();
+		const own = new Set<THREE.Object3D>();
+		fixture.traverse((child) => own.add(child));
+		for (const point of facingPoints(fixture, eye)) {
+			const toPoint = point.clone().sub(eye);
+			const range = toPoint.length();
+			if (range === 0) continue;
+			raycaster.set(eye, toPoint.divideScalar(range));
+			// Just short of the point itself, so the fixture's own far side
+			// cannot be counted as a blocker of its near side.
+			raycaster.far = range * 0.9999;
+			const blocked = raycaster
+				.intersectObject(root, true)
+				.some((hit) => !own.has(hit.object));
+			if (!blocked) return true;
+		}
+		return false;
+	};
+
+	/** Fixtures of one role that no ray down the axis can reach, at any phase. */
+	const hiddenFixtures = (
+		station: StationType,
+		names: readonly string[],
+		{
+			move,
+			formId = SELECTED_FORM[station],
+			assemblySeed = 0,
+		}: {
+			move?: (root: THREE.Object3D) => void;
+			formId?: StationFormId;
+			assemblySeed?: number;
+		} = {},
+	) => {
+		const { root, spinner } = buildStationForm(
+			station,
+			formId,
+			GREY,
+			0,
+			assemblySeed,
+		);
+		move?.(root);
+		// The aperture is on +Z (`station-mesh.test.ts` asserts it), so the eye
+		// stands out along +Z at the range the probe frames from — **in core
+		// radii**, because that is what the built tree is in (`normalise`). In
+		// kilometres it put each role at its own unstated range: the trade
+		// station at 1.8 silhouette radii, the refinery at 1.2.
+		const eye = new THREE.Vector3(
+			0,
+			0,
+			(STATION_SILHOUETTE_KM[station] * CLOSE_RADII) /
+				STATION_GEOMETRY[station].coreRadiusKm,
+		);
+		const dead: string[] = [];
+		for (const phase of spinner ? PHASES : [0]) {
+			if (spinner) spinner.rotation.z = phase;
+			root.updateMatrixWorld(true);
+			for (const name of names) {
+				const objects: THREE.Object3D[] = [];
+				root.traverse((child) => {
+					if (child.name === name) objects.push(child);
+				});
+				// A name with no object is a failure, not a skip: a renamed
+				// fixture must not read as a passing role.
+				if (objects.length === 0) {
+					dead.push(`${name} (no object of that name)`);
+					continue;
+				}
+				if (!objects.some((o) => readsFromAxis(root, o, eye)))
+					dead.push(`${name} @ ${((phase * 180) / Math.PI).toFixed(0)}°`);
+			}
+		}
+		return dead;
+	};
+
+	for (const type of TYPES) {
+		const names = SPEC_FIXTURE_NAMES[type];
+		if (!names) continue;
+		test(`the ${type}'s fixtures are all reachable down its own axis, on every plan`, () => {
+			// A solved form is a family of plans (#257), and the check on one
+			// seed is a check on one plan.
+			const seeds = isSolvedForm(type, SELECTED_FORM[type]) ? PLAN_SEEDS : [0];
+			for (const assemblySeed of seeds)
+				expect([
+					type,
+					assemblySeed,
+					hiddenFixtures(type, names, { assemblySeed }),
+				]).toEqual([type, assemblySeed, []]);
+		});
+	}
+
+	/**
+	 * **§5's rule is written against the member that spins, so it holds on
+	 * every form, not only the selected one.** The row above builds the forms
+	 * the game ships; a re-ranking would ship a form nothing had checked, which
+	 * is how the Hangar, the Slipway and the Assembly kept their strobes on
+	 * structure that does not turn (#300's review).
+	 */
+	test("every form's strobe pair is reachable down its own axis", () => {
+		for (const type of TYPES) {
+			if (!(STATION_VISUALS[type].activity.strobePeriodS > 0)) continue;
+			for (const form of STATION_FORMS[type])
+				expect([
+					type,
+					form.id,
+					hiddenFixtures(type, ["strobe-a", "strobe-b"], { formId: form.id }),
+				]).toEqual([type, form.id, []]);
+		}
+	});
+
+	/**
+	 * **The control, because the row above is the whole of #300's CI cover.**
+	 *
+	 * Moving the trade station's strobes back where #274 found them — flat
+	 * against two opposite equatorial faces — has to make it red, and this is
+	 * the exact geometry it found: the sightline from three silhouette radii to
+	 * a lamp at `(±face·1.02, 0, face·0.5)` crosses the +Z face plane at
+	 * 0.90·face, inside the diamond, so the docking face occludes its own hull
+	 * lights at every phase. Without this the row could be asserting a
+	 * reachability nothing is ever going to block.
+	 */
+	test("the axis row goes red when a strobe is put back on the equator", () => {
+		const face = STATION_GEOMETRY.trade.coreRadiusKm * 0.95 * Math.SQRT1_2;
+		const hidden = hiddenFixtures("trade", ["strobe-a", "strobe-b"], {
+			move: (root) => {
+				for (const [kind, side] of [
+					["strobe-a", -1],
+					["strobe-b", 1],
+				] as const)
+					root
+						.getObjectByName(kind)
+						?.position.set(side * face * 1.02, 0, face * 0.5);
+			},
+		});
+		expect(hidden.length).toBeGreaterThan(0);
+	});
+});
+
+/**
+ * #300's second sheet: a ring of strobes that runs round a slot's mouth, and a
+ * hazard beacon on the plant that does not spin.
+ */
+describe("the mouth chase and the refinery's beacons", () => {
+	test("every slot role rings its mouth with lamps an equal step of the period apart", () => {
+		for (const type of ["trade", "shipyard"] as const) {
+			const mesh = buildStationMesh(type, GREY, 0, 0);
+			const chase = mesh.fixtures.filter((f) => f.kind === "chase");
+			const { strobePeriodS } = STATION_VISUALS[type].activity;
+			// Enough that the flash reads as running round, not as a few blinks.
+			expect([type, chase.length >= 8]).toEqual([type, true]);
+			const offsets = chase.map((f) => f.offsetS).sort((a, b) => a - b);
+			offsets.forEach((offset, i) =>
+				expect(offset).toBeCloseTo((i / chase.length) * strobePeriodS, 9),
+			);
+		}
+	});
+
+	test("the chase runs: at any lit moment one lamp leads and they are not in unison", () => {
+		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		let sawOne = false;
+		for (let i = 0; i < 80; i++) {
+			updateStationVisuals(mesh, i * 0.025, 1, "high");
+			const lit = mesh.fixtures.filter(
+				(f) => f.kind === "chase" && f.material.emissiveIntensity > 0,
+			).length;
+			// Never the whole ring at once — that would be a flash, not a chase.
+			expect(lit).toBeLessThan(
+				mesh.fixtures.filter((f) => f.kind === "chase").length,
+			);
+			if (lit >= 1) sawOne = true;
+		}
+		expect(sawOne).toBe(true);
+	});
+
+	test("a pad role gets no ring, because a pad has no frame round a hole", () => {
+		for (const type of ["refinery", "outpost"] as const)
+			expect([
+				type,
+				buildStationMesh(type, GREY, 0, 0).fixtures.filter(
+					(f) => f.kind === "chase",
+				).length,
+			]).toEqual([type, 0]);
+	});
+
+	test("the beacon blinks for its duty and is dark on a role that declares none", () => {
+		const { beaconPeriodS, beaconDuty } = STATION_VISUALS.refinery.activity;
+		expect(beaconPeriodS).toBeGreaterThan(0);
+		let lit = 0;
+		const samples = 2000;
+		for (let i = 0; i < samples; i++)
+			if (beaconIntensity("refinery", (i / samples) * beaconPeriodS, 0) > 0)
+				lit++;
+		expect(lit / samples).toBeCloseTo(beaconDuty, 2);
+		for (const type of ["trade", "shipyard", "outpost"] as const)
+			expect([type, beaconIntensity(type, 0.1, 0)]).toEqual([type, 0]);
+	});
+
+	test("every refinery plan carries a beacon on its headframe and one on its flare stack", () => {
+		for (const seed of [0, 1, 2, 3, 4, 5]) {
+			const { root } = buildStationForm(
+				"refinery",
+				SELECTED_FORM.refinery,
+				GREY,
+				0,
+				seed,
+			);
+			let beacons = 0;
+			root.traverse((o) => {
+				if (o.name === "obstruction-beacon" && !o.userData.glow) beacons++;
+			});
+			expect([seed, beacons >= 2]).toEqual([seed, true]);
 		}
 	});
 });

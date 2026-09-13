@@ -289,6 +289,7 @@ import {
 	updateStationVisuals,
 	warmStationMaps,
 } from "./station-mesh";
+import { SPEC_FIXTURE_NAMES } from "./station-visuals";
 import {
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
@@ -1747,6 +1748,11 @@ class Game {
 	 *  scheme is: a probe that restated it would assert against its own copy and
 	 *  go falsely red the day the flight model retunes it. */
 	readonly assistCapKms = ASSIST_CAP_KMS;
+
+	/** `station-visuals.md` §5's fixture names per role, on the handle for the
+	 *  same reason: `probe-station-visuals.mjs` asserts a floor per fixture, and
+	 *  a probe holding its own copy would stay green the day §5 gains one. */
+	readonly specFixtures = SPEC_FIXTURE_NAMES;
 
 	/** `persistent-world-state.md` §2's composite key, for the same reason. The
 	 *  docking probe built `${systemIndex}:${localCarrierId}` itself, which is a

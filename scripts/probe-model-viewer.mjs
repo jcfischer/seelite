@@ -95,20 +95,33 @@ for (const viewport of VIEWPORTS) {
 			engine: state.engine,
 			beacons: 0,
 			lit: 0,
+			glows: 0,
+			glowsLit: 0,
 		};
 		holder.traverse((object) => {
 			if (!object.name.startsWith("beacon")) return;
+			// A beacon's glare is a child named like it (#300): a shader
+			// material, read through its drive rather than `emissiveIntensity`.
+			if (object.userData.glow) {
+				out.glows += 1;
+				if (object.material?.uniforms?.uIntensity?.value === state.engine)
+					out.glowsLit += 1;
+				return;
+			}
 			out.beacons += 1;
 			if (object.material?.emissiveIntensity === state.engine) out.lit += 1;
 		});
 		return out;
 	});
 	check(
-		`${viewport.name}: the industrial trade station's beacons take the engine cue`,
+		`${viewport.name}: the industrial trade station's beacons take the engine cue, glare included`,
 		beacons.finish === "industrial" &&
 			beacons.engine === 0.35 &&
 			beacons.beacons > 0 &&
-			beacons.lit === beacons.beacons,
+			beacons.lit === beacons.beacons &&
+			beacons.glows === beacons.beacons &&
+			beacons.glowsLit === beacons.glows,
+		JSON.stringify(beacons),
 	);
 	await page.close();
 }

@@ -271,9 +271,9 @@ Each role carries one emissive signature and one motion:
 
 | Role | Light | Activity |
 |---|---|---|
-| trade | warm window grid, plus a pair of hull strobes on the beam | the strobes alternate on a 2 s period at a 12% duty cycle |
-| shipyard | cool window grid, cold blue-white floodlit bays, and the same strobe pair | one bay carries a welding arc — a fast, deep flicker; the strobes alternate as the trade station's do |
-| refinery | glowing vent throats, a heat ring and lit ports on the dock face | the throats and the ring breathe on a slow shallow flicker |
+| trade | warm window grid, a pair of hull strobes on the docking face, and a ring of strobes on the mouth's lit frame | the pair alternates on a 2 s period at a 12% duty cycle; the ring flashes on the same period, one lamp after another round the slot |
+| shipyard | cool window grid, cold blue-white floodlit bays, the same strobe pair and the same mouth ring | one bay carries a welding arc — a fast, deep flicker; the strobes and the ring run as the trade station's do |
+| refinery | glowing vent throats, a heat ring, lit ports on the dock face, and hazard beacons on its tallest structures | the throats and the ring breathe on a slow shallow flicker; the beacons blink on their own period, holding each flash longer than a strobe does |
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.
@@ -283,14 +283,56 @@ Every fixture is placed to read **from the aperture axis**, because that is the
 one viewpoint defined for all three types and the one an arriving pilot has. The
 refinery's lit ports were first put round the drum's side, where they are edge-on
 from that axis and drew *zero pixels* — a crewed station reading as an unlit tank
-from the only direction anyone approaches it. They are on the drum's face now,
-round the pad.
+from the only direction anyone approaches it.
 
-The strobe pair belongs to the **Coriolis hull**, not to the trade station: the
-shipyard spins about the same axis for the same reason, so marking it is the
-same problem with the same answer. What separates the two roles is the work light — the shipyard's
+Reading from the axis is a **placement rule**, and it is this: every fixture
+named above goes on or forward of its form's outermost axis-facing surface.
+Nowhere else is a rule, however reasonable it sounds. #274 measured all three
+roles and found eight dead fixture names across them — the trade station's whole
+window grid and both its strobes at exactly 0 px, the shipyard's strobes and its
+weld arc at 0, the refinery's ports and all four of its flare throats at 0 —
+while the check that was meant to catch this summed a *role* and passed on
+whichever light still worked.
+
+Two things the rule is not. It is **not a rule about which way a surface
+faces**: the shipyard's bay floods are *turned* until their lit faces look 35°
+inboard of the axis, so they read as lights aimed into the bay rather than as
+lamps pointed at the pilot — and it is where they are mounted, not how they are
+turned, that the rule decides. They were first on the inboard faces of the two
+booms that reach forward past the hub, and with real-size fittings that failed:
+each boom flares to a 0.16·r half-width at its tip, so seen down the axis the
+tip stands in front of the whole inboard face, and the weld arc read 0 px and
+the floods 2 px. They are on the tips' forward faces now, the one surface of a
+boom nothing stands in front of on the approach. And it is **not satisfied by
+being outdoors**: the refinery's flare throats were 8.5 m plates recessed a bore's
+width inside their own pipes, unoccluded by anything else on the station and
+still worth 2.9 px, so *"its flare is its light"* was a sentence nothing on
+screen supported.
+
+The strobe pair belongs to the **spinning member** — whichever part of a form
+turns — and not to a role, a hull, or a form. It was written against "the
+Coriolis hull", on the reasoning that the shipyard spins about the same axis for
+the same reason, and that went stale the moment `SELECTED_FORM.shipyard` became
+the Gantry: a keel with a drum on a bearing is not a Coriolis, there is no shared
+hull for one answer to be one answer for, and the pair had been bolted to the
+**static keel**, marking a rotation it did not share. What a strobe carries is
+that the station turns and how fast, so the member that turns is the thing it has
+to be on. Written this way the rule survives the next re-ranking; written against
+a form it did not survive the last one.
+
+What separates the two roles is the work light — the shipyard's
 cold bays and its arc against the trade station's warm grid — and the drydock
 frame that is already carrying the outline.
+
+**A fixture on the docking face reads the rotation better than one on the rim,
+not worse.** The first version of this section worried the other way round. It
+is a fact about the geometry rather than a preference: from the aperture axis a
+lamp at radius ρ on the +Z face traces a **circle** in the frame once per
+revolution, so the rate is read straight off the sweep, while a rim lamp traces
+its own circle and is *occluded at every phase of it* at three radii — at 0° by
+the +Z face, and at 45° the sightline to `(0.721, 0.721, 0.5)·face` meets the
+forward triangle's plane strictly inside that triangle. A rim lamp is a sliver
+only at infinity.
 
 **They are not a port/starboard pair, and they are not coloured as one.** The
 first version made them red and green and described them as marking port and
@@ -306,8 +348,71 @@ The trade station's window grid is a **warm** white and the shipyard's a cool
 one. That is the pair's finest distinction and it is deliberate: it is what makes
 the two Coriolis hulls read apart in the one measurement that ignores shape.
 
-The refinery carries no strobes: it does not spin, and a rotation marker on a
-station that does not rotate marks nothing. Its flare is its light.
+The refinery carries **no rotation marker**: it does not spin, and a marker of
+rotation on a station that does not rotate marks nothing. Its flare is its
+light. What it does carry is a **hazard beacon** on each of its tallest
+structures — the flare stack and the mine headframe, which every plan has — and
+that is a different signal, not the strobe under another name: a beacon says
+something is there to clip, which is as true of a station that stands still as
+of one that turns. So it blinks on its own period, holding each flash longer,
+and it is white rather than an aviation red, because `hud-and-scanner.md` §4
+owns red as refusal. This sentence said "no strobes" until #300's second sheet,
+where the principal asked for beacons on the refinery.
+
+**Every light here is a real fitting, and is seen at range by its glow**
+(#300). The principal ruled every light on #300's first sheet *"way too big —
+think about how big a light would be on a station that is several km big"*:
+they were a 42 m strobe, a 30 × 12 m pane, a 156 m flood and a 60 m arc. A
+strobe or beacon is 2 m now, a pane 3 × 1.5 m, a flood 4 m, the arc 1 m and a
+flare throat at most 8 m. A fitting that size is under a pixel from the
+approach, so each carries a glow — additive, in its own colour, floored at a
+few pixels and capped so the fitting shows up close — driven by the same clock. The glow draws only where its fitting does, so none
+is drawn at outline range.
+
+**A blinking light burns past the bloom threshold; a steady one does not**
+(#300). Steady glows — windows, floods, the flare throats, the weld arc — peak
+at their fixture's drive, under #199's emissive ceiling. Strobes, beacons and
+the mouth ring carry a white-hot core that crosses the bloom threshold, as the
+ship's nav lights do, and that is the principal's ruling amending #199 for
+blinking point lights. The reason is measured rather than argued: from the
+cockpit on the player's GPU, those lights sit on or beside the brightest
+surfaces a station has — lit plating, the amber aperture frame, the nameplate —
+which read 141–227 of 255 at the lamps' own screen positions from 6 to 19 km.
+A glow capped at the ceiling and added onto that drew nothing a pilot could see
+(strobe-b at 18.6 km: 212 lit, 212 hidden), while beacons standing against
+black space read at 226. A headless probe on a software rasteriser had called
+every one of those lights present, which is why this paragraph cites the GPU.
+
+**A blinking light is drawn with its glare, and lays light on the surface it
+is mounted on** (#300). The hot core alone was visible and did not *feel* like
+a light, in the principal's words, and two measurements on the principal's GPU
+at Retina scale say why. Every glow was drawn at half its intended size: its
+pixel floor counted device pixels while the game draws at 2x, which the ship's
+nav lights had already corrected for. And bloom cannot supply glare to a source
+this small: turning bloom off, strengthening it four times, running it at full
+resolution or making the core twenty times brighter changed the lamp's
+surroundings by almost nothing. So glare is part of the sprite — a blinking
+light's glow is a tight white centre inside a faint wide skirt, sized by the
+range rather than by a floor — for a 2 m lamp in a 60° field 900 points tall,
+about 5 points from 20 km out, 14 at 5 km, 36 at
+2 km, capped at 56 near 1 km; at a fixed 18 points it was as wide as the
+station itself 50 km out and never grew on approach — and every blinking lamp that stands on a surface (the docking-face
+strobes, the mouth ring) lays a soft disc of light on
+that surface, 20–50 m across, flashing with it. It is a decal and not a light
+source: real point lights were declined for their cost to every material in
+the near layer. A beacon on a tip — a finish's mast, the refinery's sheave
+crown and flare stack — has no surface round it and gets glare without a pool;
+a pool with no surface under it is a sheet of light in space, which is where an
+additive glow is easiest to see (the principal's ruling on #300's review).
+
+**The mouth carries a ring of strobes, and it says nothing about docking
+state** (#300). On a slot role, ten lamps stand on the lit frame round the
+mouth, each flashing on the role's strobe period at its own place in it, so the
+flash runs round the slot once a period: it says where the mouth is, from
+ranges where the frame has not resolved. Red and green by clearance was asked
+for and declined on §5.1's ground below. The lamps stand only where the frame
+is outside the docking corridor, which is why a long bar carries a pair and
+nothing at its middle.
 
 ### 5.1 The prohibition
 
@@ -345,11 +450,38 @@ replays exactly.
   role;
 - activity intensities are pure in `gameTime`, bounded to [0, 1], and the
   strobe's duty cycle is the declared one;
-- every fixture on a Coriolis hull sums to `r` on the face plane, so a light
-  cannot be buried inside the hull it is meant to sit on.
+- a strobe sits out on the surface of **the member it is mounted on**, so a
+  light cannot be buried inside the thing it is meant to sit on — a fraction of
+  that member's own reach, not of the form's declared one, because the Gantry
+  declares 1.66 km of boom around a 0.47 km drum;
+- every light is within a real fitting's size, carries a glow named like it,
+  driven at exactly its intensity, hidden wherever it is, never pickable, its
+  drive never above the exposure ceiling, and every pool lies on structure on
+  every form (`tests/station-glow.test.ts`); every lamp on every form is seated
+  on the structure it is bolted to, by ray (`tests/station-mesh.test.ts`); every
+  form's strobe pair turns with its spinner and reads down its own axis; the
+  mouth ring's lamps sit an equal step of the period apart and never all light
+  at once, and every refinery plan carries a beacon on its headframe and one on
+  its flare stack;
+- **no fixture named above is wholly hidden from the aperture axis**, at every
+  eighth of a turn, by rays cast from three silhouette radii to the fixture's
+  own front-facing surface. The row's claim is exactly that and no more: it
+  cannot say how much of a fixture shows, and the attempt to make it — a
+  fraction of reachable samples — fails, because a weld arc buried in its own
+  boom scores 0.67 while measuring 0 px against a heat ring at 0.53 measuring
+  526. Visible *area* is a pixel question. A control moves a strobe back onto
+  the equator and the row goes red.
 
 **Browser** (`scripts/probe-station-visuals.mjs`) — what no arithmetic reaches:
 
+- **`every fixture §5 gives the <role> reads from its own aperture axis`** —
+  per fixture and not per role, each name hidden alone and differenced against
+  the frame as drawn, at the clock where that fixture's own drive peaks. A
+  lamp's pool of light stays lit while its lamp is hidden, so a pool spilling
+  onto visible plating cannot carry a lamp that is itself behind something. A name with no object is a failure rather than a skip, so a
+  renamed fixture cannot read as a passing role. Each reading carries the
+  fixture's apparent diameter beside it, because a zero cannot otherwise say
+  whether it is sub-pixel or occluded and the two want opposite fixes;
 - each role is distinguishable from the other two by its *lit* appearance at
   close range, measured the same differenced-mask way #28 measures outline, and
   **still asserted** — #28's outline gate was withdrawn on 2026-08-26

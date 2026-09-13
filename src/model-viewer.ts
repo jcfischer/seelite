@@ -459,8 +459,23 @@ export function mountModelViewer(): void {
 		if (!mesh) return;
 		mesh.scale.set(state.beam, 1, state.length);
 		mesh.traverse((object) => {
-			if (!(object instanceof THREE.Mesh)) return;
 			const isEngine = family.emissive(object.name);
+			// **A lamp's glare takes the cue with its lamp** (#300's review). A
+			// glow is named like its fitting, so the name rule reaches it, but it
+			// is `Points` or a shader-material pool and the loop below skipped
+			// both — every beacon's glare stayed dark in the sheet. A blinking
+			// glow and a pool own their material; a steady glow's is shared and
+			// never mutated (`station-glow.ts`), so it keeps its own drive.
+			if (object.userData.glow) {
+				const material = (object as THREE.Mesh | THREE.Points)
+					.material as THREE.ShaderMaterial;
+				const owned =
+					object.userData.pool || (material.uniforms?.uHalo?.value ?? 0) > 0;
+				if (isEngine && owned && material.uniforms?.uIntensity)
+					material.uniforms.uIntensity.value = state.engine;
+				return;
+			}
+			if (!(object instanceof THREE.Mesh)) return;
 			const materials = Array.isArray(object.material)
 				? object.material
 				: [object.material];

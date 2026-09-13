@@ -139,6 +139,7 @@ export const LEVERS = Object.freeze({
 	257: "the refinery and outpost forms solved by wave function collapse, and selected",
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
 	209: "the gas giant's band tones, its storm's interior, and its limb",
+	300: "every §5 fixture on the surface its own aperture axis looks at",
 });
 
 /**
@@ -279,9 +280,76 @@ export const VIEWS = Object.freeze([
 		 * face was culled and every frame taken from a berth read correctly
 		 * throughout.
 		 */
-		covers: [199, 162, 101, 103, 99, 202, 203],
-		what: "On the aperture axis at three silhouette radii — the docking face, its plating and the lit aperture.",
+		covers: [199, 162, 101, 103, 99, 202, 203, 300, 102],
+		/**
+		 * **102 is back here, which reverses #129** (#300). It came off because
+		 * the aperture face was the one face a station's clutter and ports were
+		 * deliberately kept off, so tripling the ports moved this frame by as
+		 * much as a frame with no station surface in it: 0.03–0.10% of pixels
+		 * against a same-build control of 0.00–0.06%. That premise is now false.
+		 * The trade station carries a forward window run on the +Z diamond and
+		 * both its strobes at opposite corners of it, and those are the only
+		 * lights on this role a docking approach can see at all — the
+		 * equatorial grid reads exactly 0 px from here and always did.
+		 *
+		 * So this is the frame lever 102 is judged on for the *axis* case, and
+		 * `station-flank` keeps the flank case. Both are still needed: neither
+		 * shows the other's surface.
+		 */
+		what: "On the aperture axis at three silhouette radii — the docking face, its plating, the lit aperture, and the forward window run and strobes round the slot.",
 		shot: { kind: "station-axis", station: "trade", radii: 3, view: "chase" },
+	},
+	{
+		name: "station-shipyard-axis",
+		covers: [300, 102, 101, 99, 202],
+		/**
+		 * **The shipyard from its own aperture axis, which nothing in the set
+		 * had ever framed** (#300). Every station-axis view was the trade
+		 * station's, and #300 moves this form's strobe pair onto the drum that
+		 * turns and its bay floods and weld arc onto the two booms — all four
+		 * of which read 0 px, 0 px and 3 px from here before it. A lever with
+		 * no view is judged on somebody else's frame, and `uncoveredLevers`
+		 * asserts that rather than describing it.
+		 *
+		 * Three radii, which is the probe's `CLOSE_RADII` and this set's other
+		 * axis view: the comparison worth having is against the frame the
+		 * figures were measured at. The subject is sparse and 1.66 km of
+		 * declared reach is mostly boom, so it fills less of the frame than the
+		 * trade station does at the same rung — that is the form, not the
+		 * framing, and #146 halves it again on the sheet.
+		 */
+		what: "A shipyard on its own aperture axis at three radii: the strobes on the drum that turns, and the floods and weld arc between the two booms.",
+		shot: {
+			kind: "station-axis",
+			station: "shipyard",
+			radii: 3,
+			view: "chase",
+		},
+	},
+	{
+		name: "station-refinery-axis",
+		covers: [300, 102, 101, 99, 202, 165],
+		/**
+		 * **The refinery from its own aperture axis, on seed 2** (#300). `SEED`
+		 * 47 generates no refinery, so this declares its own the way
+		 * `refinery-cradle-berth` does and for the same reason — and that view
+		 * is a *berth* frame, looking at the deck from a cradle on it, so it
+		 * cannot show what an arriving pilot sees.
+		 *
+		 * What it is evidence for: the lit ports moved off the head house's
+		 * edge-on walls onto the pad deck, in the sectors between the berths and
+		 * the floods, and the flare stack's vent bank sized to this form rather
+		 * than to a ship. The ports read 0 px from here and the throats 0 px at
+		 * 2.9 px wide.
+		 */
+		what: "A refinery on its own aperture axis at three radii, seed 2: the lit ports round the pad, the heat ring, and the flare stack's throats.",
+		shot: {
+			kind: "station-axis",
+			station: "refinery",
+			radii: 3,
+			view: "chase",
+			seed: 2,
+		},
 	},
 	{
 		name: "station-flank",

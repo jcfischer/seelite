@@ -43,6 +43,14 @@
  */
 
 import * as THREE from "three";
+import {
+	BLINKING_CORE_GAIN,
+	BLINKING_HALO_GAIN,
+	glowMaterial,
+	glowPoints,
+	steadyGlowMaterial,
+	glowOnFitting,
+} from "./station-glow";
 import { shared } from "./gpu-teardown";
 import { revolve } from "./loft";
 import { castOntoStructure } from "./station-greebles";
@@ -508,7 +516,7 @@ function dockingCollar(
 	planeKm: number,
 	innerKm: number,
 	outerKm: number,
-	lampMaterial: THREE.Material,
+	lampMaterial: THREE.MeshStandardMaterial,
 ) {
 	const tube = (outerKm - innerKm) / 2;
 	const major = innerKm + tube;
@@ -521,6 +529,7 @@ function dockingCollar(
 	into.add(ring);
 	const lamps = new THREE.InstancedMesh(UNIT_BOX, lampMaterial, 8);
 	const matrix = new THREE.Matrix4();
+	const glowAt: THREE.Vector3[] = [];
 	for (let i = 0; i < 8; i++) {
 		const theta = ((i + 0.5) / 8) * Math.PI * 2;
 		matrix.compose(
@@ -530,12 +539,29 @@ function dockingCollar(
 				planeKm + tube * 0.6,
 			),
 			new THREE.Quaternion().setFromAxisAngle(UNIT_Z, theta),
-			new THREE.Vector3(tube * 1.2, tube * 0.7, tube * 0.7),
+			// A real approach lamp (#300), not a box a collar's tube wide.
+			new THREE.Vector3(0.003, 0.0015, 0.0015),
 		);
 		lamps.setMatrixAt(i, matrix);
+		glowAt.push(new THREE.Vector3().setFromMatrixPosition(matrix));
 	}
 	lamps.instanceMatrix.needsUpdate = true;
 	lamps.name = "approach-lamps";
+	lamps.add(
+		glowPoints(
+			"approach-lamps",
+			glowAt,
+			0.003,
+			0.0015,
+			// The lamp's own colour and intensity, read off the material it was
+			// handed rather than passed a second time beside it.
+			steadyGlowMaterial(
+				lampMaterial.emissive.getHex(),
+				lampMaterial.emissiveIntensity,
+				"pane",
+			),
+		),
+	);
 	into.add(lamps);
 }
 
@@ -615,8 +641,27 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 		);
 		lamp.position.copy(position);
 		lamp.name = `beacon-${kind}`;
+		// Its glare, as `station-glow.ts` gives every station light (#300): a
+		// 2 m beacon is under a pixel at two kilometres, and "reads as a point
+		// through bloom" was a job the old 8 m box was doing by being too big.
+		// A blinking light with its glare, and no pool: a beacon stands on a
+		// mast tip, with no surface round it to lay light on (#300).
+		const glow = glowMaterial(
+			visuals.strobeColor,
+			0,
+			"blink",
+			BLINKING_CORE_GAIN,
+			BLINKING_HALO_GAIN,
+		);
+		glowOnFitting(lamp, sizeKm, glow);
 		group.add(lamp);
-		site.fixtures.push({ material, base: site.strobeBase, kind });
+		site.fixtures.push({
+			material,
+			base: site.strobeBase,
+			kind,
+			offsetS: 0,
+			glow,
+		});
 	};
 
 	const declaration = DECLARATIONS[`${site.type}/${site.formId}`];
@@ -632,7 +677,7 @@ interface DeclarationContext {
 	pools: Pools;
 	mount: ReturnType<typeof mounter>;
 	beaconAt: (position: THREE.Vector3, sizeKm: number) => void;
-	lampMaterial: THREE.Material;
+	lampMaterial: THREE.MeshStandardMaterial;
 }
 
 /**
@@ -663,9 +708,10 @@ export const SHIP_SCALE = {
 	/** A comms mast's lattice and height; the dish is 1.9 lattices across. */
 	mastKm: 0.008,
 	mastHeightKm: 0.09,
-	/** A beacon's lamp: larger than a lamp is, because it has to read as a
-	 *  point at two kilometres through bloom, and no larger. */
-	beaconKm: 0.008,
+	/** A beacon's lamp: a real one (#300). It was 8 m so that it would read as
+	 *  a point at two kilometres through bloom; its glow does that now, and the
+	 *  principal ruled every station light too big for a km-scale station. */
+	beaconKm: 0.002,
 	/** The docking collar's band, out from its inner radius. */
 	collarKm: 0.016,
 	/**
