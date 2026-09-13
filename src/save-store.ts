@@ -674,7 +674,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 	let gate: Promise<void> | null = null;
 	let openGate: (() => void) | null = null;
 	let failNext = false;
-	const at = (slot: string, kind: SaveRecordKind) => `${slot} ${kind}`;
+	const at = (slot: string, kind: SaveRecordKind) => `${slot}\0${kind}`;
 	const copy = (value: unknown) =>
 		value === null || value === undefined
 			? null
@@ -713,7 +713,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 			}
 		},
 		async slots() {
-			return [...new Set([...rows.keys()].map((k) => k.split(" ")[0]))];
+			return [...new Set([...rows.keys()].map((k) => k.split("\0")[0]))];
 		},
 		async deleteSlot(slot) {
 			if (failDelete) {
@@ -721,7 +721,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 				throw new Error("backend: the delete failed");
 			}
 			for (const key of [...rows.keys()])
-				if (key.startsWith(`${slot} `)) rows.delete(key);
+				if (key.startsWith(`${slot}\0`)) rows.delete(key);
 		},
 		async copySlot(from, to) {
 			const kinds: SaveRecordKind[] = ["live", "lastDocked"];
@@ -903,7 +903,7 @@ export function indexedDbSaveBackend(
 		});
 		return opening;
 	};
-	const at = (slot: string, kind: SaveRecordKind) => `${slot} ${kind}`;
+	const at = (slot: string, kind: SaveRecordKind) => `${slot}\0${kind}`;
 	return {
 		async read(slot, kind) {
 			const handle = await open();
@@ -931,7 +931,9 @@ export function indexedDbSaveBackend(
 				tx.objectStore(SAVE_STORE_NAME).getAllKeys(),
 			);
 			return [
-				...new Set(keys.map((key) => String(key).split(" ")[0]).filter(Boolean)),
+				...new Set(
+					keys.map((key) => String(key).split("\0")[0]).filter(Boolean),
+				),
 			];
 		},
 		async deleteSlot(slot) {
@@ -940,7 +942,7 @@ export function indexedDbSaveBackend(
 			const store = tx.objectStore(SAVE_STORE_NAME);
 			const keys = await asPromise(store.getAllKeys());
 			for (const key of keys)
-				if (String(key).startsWith(`${slot} `)) store.delete(key);
+				if (String(key).startsWith(`${slot}\0`)) store.delete(key);
 			await transactionDone(tx);
 		},
 		async copySlot(from, to) {
