@@ -194,7 +194,9 @@ export/import are decided and implemented but not reachable by a player**:
 `choosePermadeath` is on a URL parameter, and `setSlot`, `exportSlot` and
 `importSlot` have no caller outside their own tests, because there is no
 new-game or save screen to reach them from. `save-store.ts` says so where a
-reader meets it. The choices live in #89's resolution and are
+reader meets it. **§11 specifies that screen and #306 builds it**; this
+sentence and `save-store.ts`'s header stay true until #306 lands, and flipping
+both is #306's obligation, not a reader's inference from §11 existing. The choices live in #89's resolution and are
 implemented in `src/save-store.ts` and `src/save-envelope.ts`, whose headers
 carry the reasoning; they are **not restated here**, because a third copy of a
 decision is the drift this document warns about elsewhere. Cloud storage is not
@@ -207,3 +209,139 @@ This model deliberately does not choose:
 - carrier-specific repair/replacement duration, cost, or spawned actor geometry;
 - a full mission, traffic, faction, or economy simulation;
 - permanent story-state categories beyond the same sparse typed-domain rule.
+
+## 11. The Commander overlay
+
+Decided in [#304](https://github.com/jcfischer/seelite/issues/304) (S1–S7), with
+four points #304 left open settled on
+[#305](https://github.com/jcfischer/seelite/issues/305). **Specified here, built
+by [#306](https://github.com/jcfischer/seelite/issues/306)** — nothing below is
+reachable by a player until that node lands. A **Commander** is what the player
+sees of one save slot (`CONTEXT.md`); `SaveStore`'s slot vocabulary is storage
+and does not change.
+
+### 11.1 What it is, and why it is not a second grammar
+
+A plain-DOM overlay beside the settings screen (`settings-panel.ts`), out of the
+fiction. The map's #70 constraint gives every *game* screen a cockpit wall or a
+tab; settings is the precedent for a surface that is neither station business nor
+fiction, and the Commander overlay is the second such surface rather than a
+second grammar (S1). It opens on a key the flight bindings do not hold, exported
+beside `SETTINGS_KEY` and tested apart from the flight bindings the way that key
+is. While open it is a `modal` pad context, so `readPadContext` answers `modal`
+for either screen (`docs/gamepad.md`).
+
+### 11.2 Boot
+
+**Every boot opens the overlay first** (S2), with the game already constructed
+behind it:
+
+1. Read the **active-Commander pointer** (§11.4). With no pointer, the slot is
+   `default`, which is where every save before §11 lives.
+2. Read and parse that slot's `live` record exactly as today, with D9's faults.
+3. Construct the `Game` from it, or fresh when there is nothing to load or the
+   load failed — as today.
+4. Open the overlay. **The world clock does not advance while the boot overlay
+   is open** (S7): the frame loop may draw, but the step receives no time. A save
+   carries its `gameTime` and no time passes while the page is closed, so holding
+   the clock here is the same as the page not yet being open — neither a pause
+   nor compressed time.
+5. **No `SaveStore` is attached until the player chooses.** `flush("quit")`
+   writes unconditionally on `pagehide`, so a store attached behind the boot
+   overlay would write a `live` record for a Commander nobody picked if the tab
+   were closed there. This is D9's "a refused load leaves the fresh game with no
+   store" extended to every boot.
+
+**Continue** attaches the store to the active Commander and releases the clock.
+It is selected by default, and unavailable when there is nothing to continue or
+the load failed. Once in play, the overlay opened by key keeps settings' rule:
+the world runs under it.
+
+### 11.3 Operations (S3)
+
+Every operation except Continue ends in a **page reload** into the active
+Commander, because the only `new Game(` is the boot's and nothing rebuilds a game
+in the page. Nothing here changes that.
+
+- **New game** takes three choices (S5): a **name**, pre-filled with a free
+  default; a **galaxy seed**, pre-filled with a random seed the player can keep,
+  retype or re-roll — there is no canonical seed, and `seedFromQuery` gives a
+  random one today; and **permadeath**, on or off. The new Commander must exist
+  on disk with its seed and #89's D7 flag **before** the reload, so a tab closed
+  between the choice and the boot cannot lose the choice. Then the pointer names
+  it and the page reloads.
+- **Load / switch** sets the pointer and reloads.
+- **Export** hands the player `exportSlot`'s file. It is offered for any slot,
+  including one whose record this build refuses — D9's rescue path.
+- **Import** asks for a name, runs `importSlot` into a **new** slot, and refuses
+  a name that is already taken rather than overwriting it. `parseSave`'s
+  integrity and version refusals are what import refuses on.
+- **Rename** is copy-then-delete: both records to the new name, then
+  `deleteSlot` on the old one. A failure between the two leaves two Commanders,
+  never zero.
+- **Delete** asks for confirmation.
+- **Rename and delete refuse the active Commander.**
+
+`SaveStore` gains the delete and rename it does not have; `SaveBackend` already
+has `deleteSlot`.
+
+### 11.4 Names and the active pointer
+
+**A Commander's name is its slot key** (#305). `CommanderRecord` has no name
+field, and adding one bumps `SAVE_SCHEMA_VERSION`, which `parseSave` refuses —
+every existing save would stop loading. As the key it costs no schema change,
+and it matches `exportSlot`'s rule that the file names no slot, which is why
+import asks for a name. `assertSlot` refuses an empty name and a space; the
+overlay says so rather than failing silently.
+
+**The active-Commander pointer** lives in the same IndexedDB database as the
+slots, **outside `SaveEnvelope` and outside its integrity hash**. #89's one hash
+covers `{ world, commander }`; the pointer is neither, and a cleared profile
+clears it with the slots it names. A pointer naming a slot that no longer exists
+falls back to `default` and says so.
+
+### 11.5 Faults (S4)
+
+- **At boot**: a refused load or `?seed`'s set-aside opens the overlay with the
+  message, and Export of the slot it concerns.
+- **In play**: the save-fault badge (`hud-and-scanner.md` §5.3) is raised by a
+  debounced write that has failed `SAVE_RETRY_LIMIT` times **or by any failed
+  dock, undock or jump flush**. The second half is new: today `saveFlush` only
+  logs a failed flush (`main.ts`, its `.catch`) and sets nothing, so the dock
+  flush — the write that lays down `lastDocked` — could fail with no player
+  surface at all. A failed `quit` flush has no frame left to draw it in and
+  stays a log line. The badge opens the overlay, whose message is `saveFault`;
+  it clears on the next write that lands.
+
+### 11.6 Probes and view capture
+
+A boot that always waits blocks every browser script that loads the game's
+default route, and `capture-views`. **A dedicated query parameter, `?boot=direct`,
+boots as the game does before §11**: no overlay, the clock running, the store
+attached as today (#305). `?seed`, `?permadeath` and `?no-save` keep their
+current meaning under it.
+
+No shared game-URL builder exists today — every script writes its own `goto`. #306
+adds one in `scripts/lib`, moves every default-route boot onto it, and adds a
+headless row that fails on any script building a default-route URL by hand.
+Workbench routes (`?model-viewer`, `?galaxy-map`, `?planet-prototype`,
+`?hud-gallery`) do not boot the game and need nothing.
+
+Without `?boot=direct`, a `?seed` pre-fills the new-game seed field; it does not
+skip the overlay.
+
+### 11.7 Verification obligations
+
+Headless: the active pointer's read, write and fallback; rename's crash case
+leaving two; delete and rename refusing the active Commander; import refusing a
+taken name and a record `parseSave` refuses; `gameTime` unchanged across frames
+while the boot overlay is open; no store attached before the choice; the URL
+builder row.
+
+Browser: the overlay opens at boot with the clock held; Continue releases it; a
+boot fault shows its message and offers Export; a forced write failure raises the
+badge in flight and while docked, and a good write clears it; the pad drives the
+overlay as `modal`.
+
+**And a look at a rendered frame** of the overlay and of the badge in both states
+before either is called done — #94's rule for anything drawn on the glass.
