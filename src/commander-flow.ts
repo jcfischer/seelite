@@ -207,9 +207,12 @@ export function withRestoreFault(plan: BootPlan, error: unknown): BootPlan {
 }
 
 /**
- * A one-shot boot whose Commander another tab holds (§11.3): the one-shot is
- * discarded and the overlay opens with the fault. Continue stays available —
- * the record is fine, and the other tab may close. A new plan is returned.
+ * A one-shot boot whose attach failed after the boot read the record (§11.3):
+ * the one-shot is discarded and the overlay opens with the fault. Continue
+ * stays available, because the fault is one a retry can clear — another tab's
+ * lock, which goes when that tab closes, or a read of a record the boot had
+ * just read, which is the backend failing. A record this build refuses never
+ * reaches here: the boot faults on it first. A new plan is returned.
  */
 export function withLockFault(plan: BootPlan, fault: string): BootPlan {
 	return { ...plan, mode: "overlay", fault };

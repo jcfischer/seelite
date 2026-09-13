@@ -285,12 +285,25 @@ try {
 
 	await clearFault(tabB);
 	await tabB.click('[data-commander="Probe One"] [data-action="load"]');
-	await waitFor(tabB, () => document.querySelector("[data-commander-fault]"));
+	// **Load's own refusal, not the one left over from Continue.** Removing the
+	// drawn fault does not clear the overlay's state, and the next redraw puts
+	// Continue's message back; the catalog's refusal is worded differently.
+	await waitFor(tabB, () =>
+		/or in play here/.test(
+			document.querySelector("[data-commander-fault]")?.textContent ?? "",
+		),
+	);
 	s = await state(tabB);
+	const loadOneShot = await tabB.evaluate(() =>
+		window.__seelite.save.backend.readMeta("oneShot"),
+	);
 	check(
 		"a second tab refuses Load of that Commander",
-		/another tab/.test(s.fault ?? "") && s.open && s.attached === null,
-		JSON.stringify(s),
+		/or in play here/.test(s.fault ?? "") &&
+			s.open &&
+			s.attached === null &&
+			loadOneShot === null,
+		`${JSON.stringify(s)} one-shot: ${loadOneShot}`,
 	);
 
 	await clearFault(tabB);
@@ -424,7 +437,9 @@ try {
 	const exported = file ? readFileSync(await file.path(), "utf8") : "";
 	let exportedLive = false;
 	try {
-		exportedLive = JSON.parse(exported).live !== null;
+		const live = JSON.parse(exported).live;
+		// A record, not merely a key: `undefined !== null` passed a file with none.
+		exportedLive = typeof live === "object" && live !== null;
 	} catch {}
 	check(
 		"Export hands the player a file holding the Commander's save",

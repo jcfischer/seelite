@@ -632,7 +632,16 @@ export function mountCommanderOverlay(
 		picker?.addEventListener("change", async () => {
 			const file = picker.files?.[0];
 			if (!file) return;
-			const text = await file.text();
+			let text: string;
+			try {
+				text = await file.text();
+			} catch (error) {
+				// Outside `perform`, so a failed read would otherwise be an unhandled
+				// rejection and the player would see nothing happen.
+				refusal = messageOf(error);
+				draw();
+				return;
+			}
 			const stem = file.name.replace(/\.seelite-save\.json$|\.json$/i, "");
 			view = {
 				kind: "import",
