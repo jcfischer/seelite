@@ -332,7 +332,8 @@ has `deleteSlot`.
 field, and adding one bumps `SAVE_SCHEMA_VERSION`, which `parseSave` refuses —
 every existing save would stop loading. As the key it costs no schema change,
 and it matches `exportSlot`'s rule that the file names no slot, which is why
-import asks for a name. `assertSlot` refuses an empty name and a space; the
+import asks for a name. `assertSlot` refuses an empty name, a space and the
+record key's NUL separator; the
 overlay says so rather than failing silently.
 
 **The active-Commander pointer** — and §11.3's one-shot continue beside it —

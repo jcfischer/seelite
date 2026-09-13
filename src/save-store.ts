@@ -91,6 +91,23 @@ export const SAVE_RETRY_LIMIT = 3;
 /** A slot holds two records (#89's D7 correction). */
 export type SaveRecordKind = "live" | "lastDocked";
 
+/** Every record kind, for the operations that move a whole slot. A kind added
+ *  to the type and missed here would be dropped by a rename. */
+export const SAVE_RECORD_KINDS = [
+	"live",
+	"lastDocked",
+] as const satisfies readonly SaveRecordKind[];
+
+/**
+ * What a record key puts between its slot and its kind: `recordKey` builds the
+ * key, `slotOfKey` reads the slot back, and `assertSlot` refuses a name that
+ * holds it. Both backends key through these.
+ */
+const KEY_SEPARATOR = "\0";
+const recordKey = (slot: string, kind: SaveRecordKind) =>
+	`${slot}${KEY_SEPARATOR}${kind}`;
+const slotOfKey = (key: unknown) => String(key).split(KEY_SEPARATOR)[0];
+
 /** Why a flush is happening. `dock` is the one that also writes the
  *  checkpoint; the rest are D4's unconditional flushes. */
 export type FlushReason = "dock" | "undock" | "jump" | "quit";
@@ -205,14 +222,21 @@ const fail = (message: string): never => {
 };
 
 /**
- * A record is keyed `` `${slot} ${kind}` ``, so a space in a name makes one
- * slot addressable as another: `"a b"` lists as `"a"` and `deleteSlot("a")`
- * removes it. Only `DEFAULT_SLOT` is reachable until a naming surface lands, so
- * this is a boundary closed before it opens rather than a fix.
+ * A record is keyed by `recordKey`, so a name holding `KEY_SEPARATOR` makes one
+ * slot addressable as another: `"a\0b"` lists as `"a"` and `deleteSlot("a")`
+ * removes it.
+ *
+ * **This said a space for a round, and checked for one.** The separator is a NUL
+ * byte, and the source held it as a literal byte, which the Read tool renders as
+ * a space; the comment, the check, a test comment and §11.4 were all written
+ * from what it showed. The space rule stays because §11.4 ratifies it. The
+ * separator rule is the one that closes the collision.
  */
 const assertSlot = (slot: string): void => {
-	if (slot.length === 0 || slot.includes(" "))
-		fail(`"${slot}" is not a slot name — a name may not contain a space`);
+	if (slot.length === 0 || slot.includes(" ") || slot.includes(KEY_SEPARATOR))
+		fail(
+			`"${slot}" is not a slot name — a name may not contain a space or a NUL character`,
+		);
 };
 
 /**
@@ -255,6 +279,13 @@ export class SaveStore {
 	 * so a failed dock flush keeps `lastDocked` held through any number of good
 	 * debounced writes — the checkpoint a non-permadeath death restores is still
 	 * the older one, and the badge must still say so.
+	 *
+	 * **Per kind, not per Commander, and that is enough.** A store writes one
+	 * Commander for the life of its tab: it holds that Commander's lock, which
+	 * refuses a rename or a delete of it, and the game flushes with no slot
+	 * argument. `flush`'s `slot` parameter and `setSlot` are the tests' and the
+	 * probe's seams. A caller that aimed one store at two Commanders would mix
+	 * their faults here.
 	 */
 	private readonly failed = new Set<SaveRecordKind>();
 	private readonly schedule: Scheduler;
@@ -516,7 +547,7 @@ export class SaveStore {
 	 * which is where every save before §11 lives — not a fallback.
 	 */
 	async resolveActive(): Promise<ActiveCommander> {
-		const pending = parsePending(await this.backend.readMeta("pending"));
+		const pending = await this.readPending();
 		if (pending) return { slot: pending.name, pending, fellBack: false };
 		const active = await this.backend.readMeta("active");
 		if (active === null || active === DEFAULT_SLOT)
@@ -536,11 +567,20 @@ export class SaveStore {
 	 * Refuses a Commander another tab holds, without waiting — that would be two
 	 * stores writing one slot. The check takes the lock and gives it straight
 	 * back, so it leaves the Commander free for the boot the reload makes.
+	 *
+	 * **It clears a pending new game.** A pending record is read before the
+	 * pointer, so one left by a new game whose tab closed before its first save
+	 * would win over the Commander chosen here. That includes a pending record
+	 * this build cannot read, so Load is also a way out of that fault.
 	 */
 	async chooseCommander(slot: string): Promise<void> {
 		assertSlot(slot);
 		await this.withFreeLock(slot, async () => {});
-		await this.backend.writeMeta({ active: slot, oneShot: slot });
+		await this.backend.writeMeta({
+			pending: null,
+			active: slot,
+			oneShot: slot,
+		});
 	}
 
 	/**
@@ -576,7 +616,7 @@ export class SaveStore {
 	 * holding what the player chose.
 	 */
 	async finishNewGame(): Promise<void> {
-		const pending = parsePending(await this.backend.readMeta("pending"));
+		const pending = await this.readPending();
 		if (!pending) return;
 		if ((await this.backend.read(pending.name, "live")) === null)
 			fail(`the new Commander "${pending.name}" has no save yet`);
@@ -611,9 +651,18 @@ export class SaveStore {
 	 * name a pending new game holds, which has no record yet.
 	 */
 	private async assertFree(name: string): Promise<void> {
-		const pending = parsePending(await this.backend.readMeta("pending"));
+		// **An unreadable pending record holds no name.** Refusing here would
+		// refuse the `beginNewGame` that is meant to overwrite it, and import and
+		// rename with it. The boot still faults on the record in `resolveActive`.
+		const pending = await this.readPending().catch(() => null);
 		if (pending?.name === name || (await this.backend.slots()).includes(name))
 			fail(`there is already a Commander named "${name}"`);
+	}
+
+	/** The pending new game on disk, or `null`. Refuses one this build cannot
+	 *  read, by name. */
+	private async readPending(): Promise<PendingNewGame | null> {
+		return parsePending(await this.backend.readMeta("pending"));
 	}
 
 	/** Runs `work` while holding `slot`'s lock, refusing when anyone else — this
@@ -674,7 +723,6 @@ export function memorySaveBackend(): MemorySaveBackend {
 	let gate: Promise<void> | null = null;
 	let openGate: (() => void) | null = null;
 	let failNext = false;
-	const at = (slot: string, kind: SaveRecordKind) => `${slot}\0${kind}`;
 	const copy = (value: unknown) =>
 		value === null || value === undefined
 			? null
@@ -690,7 +738,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 			return maxInFlight;
 		},
 		async read(slot, kind) {
-			return copy(rows.get(at(slot, kind)) ?? null);
+			return copy(rows.get(recordKey(slot, kind)) ?? null);
 		},
 		async write(slot, kind, blob) {
 			return this.writeMany(slot, [kind], blob);
@@ -706,14 +754,14 @@ export function memorySaveBackend(): MemorySaveBackend {
 				}
 				// One transaction, so either every key lands or none does — the
 				// same all-or-nothing the IndexedDB backend gets for free.
-				for (const kind of kinds) rows.set(at(slot, kind), copy(blob));
+				for (const kind of kinds) rows.set(recordKey(slot, kind), copy(blob));
 				writes += 1;
 			} finally {
 				inFlight -= 1;
 			}
 		},
 		async slots() {
-			return [...new Set([...rows.keys()].map((k) => k.split("\0")[0]))];
+			return [...new Set([...rows.keys()].map((k) => slotOfKey(k)))];
 		},
 		async deleteSlot(slot) {
 			if (failDelete) {
@@ -721,15 +769,15 @@ export function memorySaveBackend(): MemorySaveBackend {
 				throw new Error("backend: the delete failed");
 			}
 			for (const key of [...rows.keys()])
-				if (key.startsWith(`${slot}\0`)) rows.delete(key);
+				if (slotOfKey(key) === slot) rows.delete(key);
 		},
 		async copySlot(from, to) {
-			const kinds: SaveRecordKind[] = ["live", "lastDocked"];
-			const found = kinds.filter((kind) => rows.has(at(from, kind)));
+			const kinds = SAVE_RECORD_KINDS;
+			const found = kinds.filter((kind) => rows.has(recordKey(from, kind)));
 			if (found.length === 0)
 				throw new Error(`save: "${from}" holds no record to copy`);
 			for (const kind of found)
-				rows.set(at(to, kind), copy(rows.get(at(from, kind))));
+				rows.set(recordKey(to, kind), copy(rows.get(recordKey(from, kind))));
 		},
 		async readMeta(key) {
 			return copy(meta.get(key) ?? null);
@@ -751,10 +799,10 @@ export function memorySaveBackend(): MemorySaveBackend {
 			failDelete = true;
 		},
 		async has(slot, kind) {
-			return rows.has(at(slot, kind));
+			return rows.has(recordKey(slot, kind));
 		},
 		async raw(slot, kind) {
-			return copy(rows.get(at(slot, kind)) ?? null);
+			return copy(rows.get(recordKey(slot, kind)) ?? null);
 		},
 		hold() {
 			gate = new Promise<void>((resolve) => {
@@ -770,13 +818,15 @@ export function memorySaveBackend(): MemorySaveBackend {
 			failNext = true;
 		},
 		async corruptVersion(slot, kind) {
-			const row = rows.get(at(slot, kind)) as Record<string, unknown>;
-			rows.set(at(slot, kind), { ...row, saveSchemaVersion: 0 });
+			const row = rows.get(recordKey(slot, kind)) as Record<string, unknown>;
+			rows.set(recordKey(slot, kind), { ...row, saveSchemaVersion: 0 });
 		},
 		async truncate(slot, kind) {
-			const row = { ...(rows.get(at(slot, kind)) as Record<string, unknown>) };
+			const row = {
+				...(rows.get(recordKey(slot, kind)) as Record<string, unknown>),
+			};
 			delete row.commander;
-			rows.set(at(slot, kind), row);
+			rows.set(recordKey(slot, kind), row);
 		},
 	};
 }
@@ -903,13 +953,12 @@ export function indexedDbSaveBackend(
 		});
 		return opening;
 	};
-	const at = (slot: string, kind: SaveRecordKind) => `${slot}\0${kind}`;
 	return {
 		async read(slot, kind) {
 			const handle = await open();
 			const tx = handle.transaction(SAVE_STORE_NAME, "readonly");
 			const value = await asPromise(
-				tx.objectStore(SAVE_STORE_NAME).get(at(slot, kind)),
+				tx.objectStore(SAVE_STORE_NAME).get(recordKey(slot, kind)),
 			);
 			return value ?? null;
 		},
@@ -921,7 +970,7 @@ export function indexedDbSaveBackend(
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
 			const done = transactionDone(tx);
 			const store = tx.objectStore(SAVE_STORE_NAME);
-			for (const kind of kinds) store.put(blob, at(slot, kind));
+			for (const kind of kinds) store.put(blob, recordKey(slot, kind));
 			await done;
 		},
 		async slots() {
@@ -930,19 +979,14 @@ export function indexedDbSaveBackend(
 			const keys = await asPromise(
 				tx.objectStore(SAVE_STORE_NAME).getAllKeys(),
 			);
-			return [
-				...new Set(
-					keys.map((key) => String(key).split("\0")[0]).filter(Boolean),
-				),
-			];
+			return [...new Set(keys.map((key) => slotOfKey(key)).filter(Boolean))];
 		},
 		async deleteSlot(slot) {
 			const handle = await open();
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
 			const store = tx.objectStore(SAVE_STORE_NAME);
 			const keys = await asPromise(store.getAllKeys());
-			for (const key of keys)
-				if (String(key).startsWith(`${slot}\0`)) store.delete(key);
+			for (const key of keys) if (slotOfKey(key) === slot) store.delete(key);
 			await transactionDone(tx);
 		},
 		async copySlot(from, to) {
@@ -950,18 +994,18 @@ export function indexedDbSaveBackend(
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
 			const done = transactionDone(tx);
 			const store = tx.objectStore(SAVE_STORE_NAME);
-			const kinds: SaveRecordKind[] = ["live", "lastDocked"];
+			const kinds = SAVE_RECORD_KINDS;
 			let found = 0;
 			let answered = 0;
 			// Gets and puts chained on request callbacks, not on `await`: the
 			// transaction commits once no request is pending, and a gap the event
 			// loop can run through is where a copy would find it already finished.
 			for (const kind of kinds) {
-				const get = store.get(at(from, kind));
+				const get = store.get(recordKey(from, kind));
 				get.onsuccess = () => {
 					if (get.result !== undefined) {
 						found += 1;
-						store.put(get.result, at(to, kind));
+						store.put(get.result, recordKey(to, kind));
 					}
 					answered += 1;
 					if (answered === kinds.length && found === 0) tx.abort();

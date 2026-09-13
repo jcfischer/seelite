@@ -378,14 +378,17 @@ describe("#89 D6 — slots, export and import", () => {
 	});
 
 	test("a slot name that would address another slot is refused", async () => {
-		// A record is keyed `${slot} ${kind}`, so `"a b"` lists as `"a"` and
-		// `deleteSlot("a")` removes it. Only the default slot is reachable until
-		// a naming surface lands; the boundary is closed before it opens.
+		// A record is keyed `${slot}\0${kind}`, so `"a\0b"` lists as `"a"` and
+		// `deleteSlot("a")` removes it. This comment and the check both said a
+		// space for a round: the Read tool renders the NUL byte as one, and the
+		// check was written from what it showed. The space rule stays, because
+		// §11.4 ratifies it; the separator is the rule that closes the collision.
 		const h = harness();
-		expect(() => h.store.setSlot("a b")).toThrow(/slot name/);
-		expect(() => h.store.setSlot("")).toThrow(/slot name/);
-		await expect(h.store.flush("dock", "a b")).rejects.toThrow(/slot name/);
-		await expect(h.store.importSlot("a b", "{}")).rejects.toThrow(/slot name/);
+		for (const name of ["a b", "a\0b", ""]) {
+			expect(() => h.store.setSlot(name)).toThrow(/slot name/);
+			await expect(h.store.flush("dock", name)).rejects.toThrow(/slot name/);
+			await expect(h.store.importSlot(name, "{}")).rejects.toThrow(/slot name/);
+		}
 		expect(await h.store.slots()).toEqual([]);
 	});
 
@@ -504,6 +507,22 @@ describe("§11.3 — the one-shot continue", () => {
 		expect(await h.store.takeOneShot()).toBeNull();
 	});
 
+	test("Load after an abandoned new game boots the loaded Commander, not the abandoned one", async () => {
+		// The tab closed before the new Commander's first `live` record landed,
+		// so the pending record is still on disk. A pending new game is read
+		// before the pointer, so a Load that left it there would boot `fresh`.
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.store.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.store.takeOneShot();
+		await h.store.chooseCommander("jameson");
+		expect(await h.store.resolveActive()).toEqual({
+			slot: "jameson",
+			pending: null,
+			fellBack: false,
+		});
+	});
+
 	test("Load refuses a Commander whose lock another store holds, and writes nothing", async () => {
 		const locks = memorySlotLocks();
 		const backend = memorySaveBackend();
@@ -544,6 +563,27 @@ describe("§11.3 — a pending new game", () => {
 			fellBack: false,
 		});
 	});
+
+	test("an unreadable pending record faults the boot, and a new game replaces it", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.backend.writeMeta({ pending: { name: "lost", seed: -1 } });
+		await expect(h.store.resolveActive()).rejects.toThrow(/pending new game/);
+		// It holds no name this build can read, so it takes none: import and
+		// rename still work, and New game is the way out of the fault.
+		const text = await h.store.exportSlot("jameson");
+		await h.store.importSlot("copy", text);
+		await h.store.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		expect((await h.store.resolveActive()).slot).toBe("fresh");
+	});
+
+	test("an unreadable pending record is also cleared by Load", async () => {
+		const h = harness();
+		await seeded(h, "jameson");
+		await h.backend.writeMeta({ pending: "garbage" });
+		await h.store.chooseCommander("jameson");
+		expect((await h.store.resolveActive()).slot).toBe("jameson");
+	});
 });
 
 describe("§11.3 — one rule for names", () => {
@@ -576,6 +616,21 @@ describe("§11.3 — one rule for names", () => {
 		await expect(h.store.renameSlot("jameson", "fresh")).rejects.toThrow(
 			/already a Commander/,
 		);
+	});
+
+	test("new game and rename refuse a name holding the key separator", async () => {
+		// `"jameson\0x"` would list as `"jameson"`, so it would pass the name
+		// rule against a Commander that exists and share its delete.
+		const h = harness();
+		await seeded(h, "jameson");
+		await seeded(h, "other");
+		await expect(
+			h.store.beginNewGame({ name: "jameson\0x", seed: 1, permadeath: false }),
+		).rejects.toThrow(/slot name/);
+		await expect(h.store.renameSlot("other", "jameson\0x")).rejects.toThrow(
+			/slot name/,
+		);
+		expect((await h.store.slots()).sort()).toEqual(["jameson", "other"]);
 	});
 
 	test("import refuses a record the parser refuses, and writes nothing", async () => {
@@ -651,7 +706,7 @@ describe("§11.3 — rename and delete", () => {
 		expect(await tabB.store.hold()).toBe(false);
 	});
 
-	test("a refused lock check releases what it took, so the Commander stays usable", async () => {
+	test("the lock check gives the lock back, so a store may hold it afterwards", async () => {
 		const locks = memorySlotLocks();
 		const h = harness({ locks });
 		await seeded(h, "jameson");

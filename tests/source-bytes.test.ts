@@ -12,13 +12,8 @@
  *   Claude substrate stopped before it read the diff (#309).
  */
 import { expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
-import { repoPath, scriptFiles, srcFiles } from "./lib/source-scan";
-
-const testFiles = (): string[] =>
-	(readdirSync(repoPath("tests"), { recursive: true }) as string[])
-		.filter((f) => f.endsWith(".ts"))
-		.map((f) => `tests/${f}`);
+import { readFileSync } from "node:fs";
+import { repoPath, scriptFiles, srcFiles, testFiles } from "./lib/source-scan";
 
 test("no source file holds a literal NUL byte", () => {
 	const files = [
