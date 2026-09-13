@@ -336,10 +336,9 @@ field, and adding one bumps `SAVE_SCHEMA_VERSION`, which `parseSave` refuses —
 every existing save would stop loading. As the key it costs no schema change,
 and it matches `exportSlot`'s rule that the file names no slot, which is why
 import asks for a name. `assertSlot` refuses an empty name and the record key's
-NUL separator. It refused a space for a round, and that rule came from a
-misreading: the source held the separator as a literal NUL byte, which a text
-view shows as a space. A space in a name is harmless to a record key, a Web Lock
-name and an export. The
+NUL separator, and nothing else: a space in a name is harmless to a record key,
+a Web Lock name and an export (`tests/source-bytes.test.ts` records why a space
+was once refused). The
 overlay says so rather than failing silently.
 
 **The active-Commander pointer** — and §11.3's one-shot continue beside it —

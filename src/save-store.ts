@@ -196,9 +196,13 @@ export interface SaveStoreOptions {
 	backend: SaveBackend;
 	/**
 	 * What `hold` takes this store's Commander lock from. Required, not
-	 * defaulted, for `FlightPerformance`'s reason: a store with no lock would let
-	 * `CommanderCatalog` rename or delete the Commander it is writing, and the two
-	 * are indistinguishable in a diff.
+	 * defaulted, for `FlightPerformance`'s reason: a store built without it could
+	 * never hold its Commander, and the two are indistinguishable in a diff.
+	 *
+	 * **Holding is `hold`'s, not the constructor's.** A held lock refuses the
+	 * catalog's rename and delete. It does not stop this store's own writes: a
+	 * store whose `hold()` returned `false` still flushes, and the caller that
+	 * attaches a store is what decides not to write then.
 	 */
 	locks: SlotLocks;
 	/** The Commander debounced writes go to. `DEFAULT_SLOT` when omitted. */
@@ -225,16 +229,15 @@ const fail = (message: string): never => {
 /**
  * A record is keyed by `recordKey`, so a name holding `KEY_SEPARATOR` makes one
  * slot addressable as another: `"a\0b"` lists as `"a"` and `deleteSlot("a")`
- * removes it.
+ * removes it. A space is allowed: `tests/source-bytes.test.ts` records why this
+ * once refused one.
  *
- * **This said a space for two rounds, and checked for one.** The separator is a
- * NUL byte, and the source held it as a literal byte, which the Read tool renders
- * as a space. The comment, the check, a test comment and §11.4 were all written
- * from what it showed, so a space in a name is allowed now: a record key, a Web
- * Lock name and an export all take one.
+ * Each refusal names its own reason, because the overlay shows it to a player.
  */
 const assertSlot = (slot: string): void => {
-	if (slot.length === 0 || slot.includes(KEY_SEPARATOR))
+	if (slot.length === 0)
+		fail(`"" is not a slot name — a name may not be empty`);
+	if (slot.includes(KEY_SEPARATOR))
 		fail(
 			`"${slot}" is not a slot name — a name may not contain a NUL character`,
 		);
@@ -563,14 +566,24 @@ export class CommanderCatalog {
 	/**
 	 * The Commander a boot is for (§11.2 step 1, §11.4).
 	 *
-	 * A pending new game wins before any slot is read: its slot is empty by
-	 * design. Otherwise the pointer; a pointer naming a Commander that is gone
-	 * falls back to the default and says so. No pointer at all is the default,
-	 * which is where every save before §11 lives — not a fallback.
+	 * A pending new game wins before the pointer: its slot is empty by design.
+	 * Otherwise the pointer; a pointer naming a Commander that is gone falls
+	 * back to the default and says so. No pointer at all is the default, which
+	 * is where every save before §11 lives — not a fallback.
 	 */
 	async resolveActive(): Promise<ActiveCommander> {
 		const pending = await this.readPending();
-		if (pending) return { slot: pending.name, pending, fellBack: false };
+		if (pending) {
+			// **A pending record beside a `live` record lost only its clean-up**:
+			// the tab closed between the first save and `finishNewGame`. The save
+			// wins, so a boot never builds a fresh world over that progress.
+			const landed = (await this.backend.read(pending.name, "live")) !== null;
+			return {
+				slot: pending.name,
+				pending: landed ? null : pending,
+				fellBack: false,
+			};
+		}
 		const active = await this.backend.readMeta("active");
 		if (active === null || active === DEFAULT_SLOT)
 			return { slot: DEFAULT_SLOT, pending: null, fellBack: false };
@@ -676,7 +689,16 @@ export class CommanderCatalog {
 		// **An unreadable pending record holds no name.** Refusing here would
 		// refuse the `beginNewGame` that is meant to overwrite it, and import and
 		// rename with it. The boot still faults on the record in `resolveActive`.
-		const pending = await this.readPending().catch(() => null);
+		// Only the parser's refusal is read as "no name": a backend that fails to
+		// read rejects, because a name a readable pending game holds is not free
+		// just because the read failed.
+		const raw = await this.backend.readMeta("pending");
+		let pending: PendingNewGame | null;
+		try {
+			pending = parsePending(raw);
+		} catch {
+			pending = null;
+		}
 		if (pending?.name === name || (await this.backend.slots()).includes(name))
 			fail(`there is already a Commander named "${name}"`);
 	}

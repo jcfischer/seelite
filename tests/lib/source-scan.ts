@@ -93,13 +93,6 @@ export const srcFiles = (): string[] =>
 		.filter((f) => f.endsWith(".ts"))
 		.map((f) => `src/${f}`);
 
-/** Every TypeScript file under `tests/`, as repo-relative paths. Recursive for
- *  {@link srcFiles}'s reason. */
-export const testFiles = (): string[] =>
-	(readdirSync(repoPath("tests"), { recursive: true }) as string[])
-		.filter((f) => f.endsWith(".ts"))
-		.map((f) => `tests/${f}`);
-
 /**
  * Every script under `scripts/` with one of `extensions`, as repo-relative
  * paths. `.mjs` by default, which is every probe.

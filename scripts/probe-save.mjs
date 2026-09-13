@@ -212,6 +212,12 @@ try {
 			liveKey: written
 				? s.defaultSlot + written.slice("probe-small".length)
 				: null,
+			lastDockedKey: written
+				? `${s.defaultSlot}${written.slice("probe-small".length, -"live".length)}lastDocked`
+				: null,
+			otherKey: written
+				? `probe-v1-other${written.slice("probe-small".length)}`
+				: null,
 			blob: s.serialize(g.saveEnvelope()),
 		};
 	});
@@ -671,7 +677,16 @@ try {
 					open.onsuccess = () => {
 						const db = open.result;
 						const tx = db.transaction(meta.storeName, "readwrite");
-						tx.objectStore(meta.storeName).put(meta.blob, meta.liveKey);
+						// Both kinds for the default Commander and a record for a
+						// second one: an upgrade that kept one record and lost the
+						// others must not pass as "every record intact".
+						const store = tx.objectStore(meta.storeName);
+						store.put(meta.blob, meta.liveKey);
+						store.put(
+							{ ...meta.blob, probe: "lastDocked" },
+							meta.lastDockedKey,
+						);
+						store.put({ ...meta.blob, probe: "other" }, meta.otherKey);
 						tx.oncomplete = () => {
 							// Held with **no** `versionchange` handler, which is the
 							// shape of a tab still running the version-1 build.
@@ -702,10 +717,14 @@ try {
 	await bootedGame(upgraded);
 	const afterUpgrade = await upgraded.evaluate(async (meta) => {
 		const g = window.__seelite;
-		const live = await g.save.backend.read(meta.defaultSlot, "live");
+		const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+		const b = g.save.backend;
+		const live = await b.read(meta.defaultSlot, "live");
+		const lastDocked = await b.read(meta.defaultSlot, "lastDocked");
+		const other = await b.read("probe-v1-other", "live");
 		// A pointer written, so the listing below has something to leave out.
-		await g.save.backend.writeMeta({ active: meta.defaultSlot });
-		const slots = await g.save.backend.slots();
+		await b.writeMeta({ active: meta.defaultSlot });
+		const slots = await b.slots();
 		const shape = await new Promise((resolve) => {
 			const open = indexedDB.open(meta.dbName);
 			open.onsuccess = () => {
@@ -720,7 +739,10 @@ try {
 		});
 		return {
 			fault: g.saveFault,
-			liveIntact: JSON.stringify(live) === JSON.stringify(meta.blob),
+			liveIntact:
+				same(live, meta.blob) &&
+				same(lastDocked, { ...meta.blob, probe: "lastDocked" }) &&
+				same(other, { ...meta.blob, probe: "other" }),
 			pointer: await g.save.backend.readMeta("active"),
 			slots,
 			...shape,
@@ -740,8 +762,8 @@ try {
 	check(
 		"slots() lists the Commanders and not the pointer store",
 		afterUpgrade.pointer === saveMeta.defaultSlot &&
-			JSON.stringify(afterUpgrade.slots) ===
-				JSON.stringify([saveMeta.defaultSlot]),
+			JSON.stringify([...afterUpgrade.slots].sort()) ===
+				JSON.stringify([saveMeta.defaultSlot, "probe-v1-other"].sort()),
 		JSON.stringify({
 			slots: afterUpgrade.slots,
 			pointer: afterUpgrade.pointer,

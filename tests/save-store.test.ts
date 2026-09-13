@@ -382,10 +382,12 @@ describe("#89 D6 — slots, export and import", () => {
 
 	test("a slot name that would address another slot is refused", async () => {
 		// A record is keyed `${slot}\0${kind}`, so `"a\0b"` lists as `"a"` and
-		// `deleteSlot("a")` removes it. This comment and the check both said a
-		// space for two rounds: the Read tool renders the NUL byte as one, and
-		// the check was written from what it showed.
+		// `deleteSlot("a")` removes it. Why this once said a space:
+		// `tests/source-bytes.test.ts`.
 		const h = harness();
+		// Each refusal names its own reason, because the overlay shows it.
+		await expect(h.store.flush("dock", "")).rejects.toThrow(/may not be empty/);
+		await expect(h.store.flush("dock", "a\0b")).rejects.toThrow(/NUL/);
 		for (const name of ["a\0b", ""]) {
 			await expect(h.store.flush("dock", name)).rejects.toThrow(/slot name/);
 			await expect(h.catalog.importSlot(name, "{}")).rejects.toThrow(
@@ -601,6 +603,39 @@ describe("§11.3 — a pending new game", () => {
 		await h.backend.writeMeta({ pending: "garbage" });
 		await h.catalog.chooseCommander("jameson");
 		expect((await h.catalog.resolveActive()).slot).toBe("jameson");
+	});
+
+	test("a pending record beside a save that already landed does not replace the save", async () => {
+		// The tab closed between the new Commander's first `live` write and
+		// `finishNewGame`. A boot that followed `pending.seed` would build a
+		// fresh world over the progress on disk.
+		const h = harness({ slot: "fresh" });
+		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		h.store.markDirty();
+		await h.store.flush("quit");
+		expect(await h.catalog.resolveActive()).toEqual({
+			slot: "fresh",
+			pending: null,
+			fellBack: false,
+		});
+	});
+
+	test("a backend that fails to read the pending record refuses a name, not frees it", async () => {
+		const h = harness();
+		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		const failing = {
+			...h.backend,
+			readMeta: () => Promise.reject(new Error("backend: the read failed")),
+		};
+		const catalog = new CommanderCatalog({ backend: failing, locks: h.locks });
+		await expect(
+			catalog.beginNewGame({ name: "fresh", seed: 9, permadeath: true }),
+		).rejects.toThrow(/backend/);
+		expect(await h.backend.readMeta("pending")).toEqual({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+		});
 	});
 });
 
