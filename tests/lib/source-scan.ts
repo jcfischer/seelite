@@ -64,7 +64,7 @@ export const repoPath = (rel: string) =>
  * than three scanners are worth, so it is a limit written down rather than one
  * closed.
  */
-const stripComments = (src: string) =>
+export const stripComments = (src: string) =>
 	src.replace(/\/\*[\s\S]*?\*\/|(?<!:)\/\/[^\n]*/g, (m) =>
 		m.replace(/[^\n]/g, " "),
 	);
@@ -94,42 +94,52 @@ export const srcFiles = (): string[] =>
 		.map((f) => `src/${f}`);
 
 /**
- * Every `.mjs` script under `scripts/`, as repo-relative paths.
+ * Every script under `scripts/` with one of `extensions`, as repo-relative
+ * paths. `.mjs` by default, which is every probe.
  *
  * Recursive, and beside {@link srcFiles} for its reason: a flat read plus a
  * hardcoded `scripts/lib` is complete only until somebody adds a directory,
- * and it fails open in exactly the direction a new script arrives from.
+ * and it fails open in exactly the direction a new script arrives from. The
+ * extensions are a parameter because `scripts/` holds TypeScript instruments
+ * too, and a scan of what a script *does* has to read those (#306).
  */
-export const scriptFiles = (): string[] =>
+export const scriptFiles = (extensions: string[] = [".mjs"]): string[] =>
 	(readdirSync(repoPath("scripts"), { recursive: true }) as string[])
-		.filter((f) => f.endsWith(".mjs"))
+		.filter((f) => extensions.some((ext) => f.endsWith(ext)))
 		.map((f) => `scripts/${f}`);
 
 /**
- * Does `source` call any of `names` with more than one argument?
+ * Every call matched by `head`, with the text of each top-level argument.
  *
- * **A balanced scan from the call's own open paren, not `\(\[^)]*,`.** That
- * pattern stops at the first `)`, so `guardedOrigin(originOf(x), ["a.ts"])`
- * reads as single-argument — and a nested call is the shape a leftover
- * argument is most likely to hide behind. JavaScript swallows an extra
- * argument in silence, so a caller left with a stale one is bit-identical at
- * run time to a cleaned one: nothing but a scan of the text can tell them
- * apart.
+ * `head` is a global pattern ending at the call's open paren. **A balanced scan
+ * from that paren, not `\(\[^)]*,`.** That pattern stops at the first `)`, so
+ * `guardedOrigin(originOf(x), ["a.ts"])` reads as single-argument — and a nested
+ * call is the shape a leftover argument is most likely to hide behind.
  *
- * Here rather than inside the one test that wants it (#296 review): a depth
- * counter over source text is general machinery, and this file is where this
- * suite keeps that.
+ * A quoted span is text, not structure: without that, `guardedOrigin("a,b")`
+ * reads as two arguments, and the escape check is what stops a backslash-escaped
+ * quote closing the span early. A template's `${…}` is inside its quote, so a
+ * comma there is text too. **A trailing comma is not an argument**: biome wraps
+ * a long single-argument call and puts one before the closing paren.
+ *
+ * One walker for every scanner of call arguments (#306 review): the URL-builder
+ * scan needed the first argument's text where `callsWithArgument` needs only a
+ * count, and a second walker is the divergence the stripper above was merged to
+ * end.
  */
-export function callsWithArgument(source: string, names: string[]): boolean {
-	const head = new RegExp(`\\b(?:${names.join("|")})\\s*\\(`, "g");
+export function callArguments(
+	source: string,
+	head: RegExp,
+): { index: number; args: string[] }[] {
+	const calls: { index: number; args: string[] }[] = [];
 	for (const m of source.matchAll(head)) {
+		const open = m.index + m[0].length - 1;
+		const args: string[] = [];
 		let depth = 0;
 		let quote = "";
-		for (let i = m.index + m[0].length - 1; i < source.length; i++) {
+		let start = open + 1;
+		for (let i = open; i < source.length; i++) {
 			const c = source[i];
-			// A quoted span is text, not structure. Without this,
-			// `guardedOrigin("a,b")` reads as two arguments — and the escape
-			// check is what stops a backslash-escaped quote closing the span early.
 			if (quote) {
 				if (c === "\\") i++;
 				else if (c === quote) quote = "";
@@ -138,17 +148,33 @@ export function callsWithArgument(source: string, names: string[]): boolean {
 			if (c === '"' || c === "'" || c === "`") quote = c;
 			else if ("([{".includes(c)) depth++;
 			else if (")]}".includes(c)) {
-				if (--depth === 0) break;
+				if (--depth === 0) {
+					args.push(source.slice(start, i));
+					break;
+				}
 			} else if (c === "," && depth === 1) {
-				// **A trailing comma is not an argument.** biome wraps a long
-				// single-argument call and puts one before the closing paren, so
-				// a scan without this reads formatting as a defect — and the only
-				// reason no row trips it today is that no such call happens to be
-				// wrapped.
-				if (/^\s*\)/.test(source.slice(i + 1))) continue;
-				return true;
+				args.push(source.slice(start, i));
+				start = i + 1;
 			}
 		}
+		if (args.length > 0 && args[args.length - 1].trim() === "") args.pop();
+		calls.push({ index: m.index, args });
 	}
-	return false;
+	return calls;
+}
+
+/**
+ * Does `source` call any of `names` with more than one argument?
+ *
+ * JavaScript swallows an extra argument in silence, so a caller left with a
+ * stale one is bit-identical at run time to a cleaned one: nothing but a scan of
+ * the text can tell them apart. {@link callArguments} does the scanning.
+ *
+ * Here rather than inside the one test that wants it (#296 review): a depth
+ * counter over source text is general machinery, and this file is where this
+ * suite keeps that.
+ */
+export function callsWithArgument(source: string, names: string[]): boolean {
+	const head = new RegExp(`\\b(?:${names.join("|")})\\s*\\(`, "g");
+	return callArguments(source, head).some((call) => call.args.length > 1);
 }

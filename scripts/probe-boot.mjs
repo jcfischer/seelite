@@ -75,8 +75,19 @@ const { check, watch, exit } = tally();
  * `PROBE_URL` override applies unless a caller passes `null` — its parameters
  * win and these fill in what it lacks, so `combat` still reaches a URL the
  * override replaced.
+ *
+ * `checkBoot` reads the boot mode the page took **before** the boot wait (#306).
+ * The mode is set when the game is constructed, ahead of the first frame, so a
+ * page that did not boot direct is named here rather than only timing out in
+ * `bootedGame`. It shows that `gameUrl`'s `?boot=direct` reached the page's own
+ * reading of it — not that `direct` skips the Commander overlay, which does not
+ * exist yet and is shown by the node that builds it.
  */
-async function open(params = { seed: SEED }, override = process.env.PROBE_URL) {
+async function open(
+	params = { seed: SEED },
+	override = process.env.PROBE_URL,
+	{ checkBoot = false } = {},
+) {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 	watch(page);
 	await installCamSim(page);
@@ -86,18 +97,18 @@ async function open(params = { seed: SEED }, override = process.env.PROBE_URL) {
 			waitUntil: "load",
 		},
 	);
+	if (checkBoot) {
+		const boot = await page
+			.waitForFunction(() => window.__seelite?.boot, null, { timeout: 20000 })
+			.then((handle) => handle.jsonValue())
+			.catch(() => null);
+		check("a probe page boots direct", boot === "direct", `boot mode ${boot}`);
+	}
 	await bootedGame(page);
 	return page;
 }
 
-const page = await open();
-
-// #306: every script boots through `gameUrl`, and this is the row that shows
-// its `?boot=direct` reached the page. Once the Commander overlay lands, a page
-// that read anything else would stop at the overlay and every probe after
-// this one would time out on a boot wait instead of naming the cause.
-const boot = await page.evaluate(() => window.__seelite.boot);
-check("a probe page boots direct", boot === "direct", `boot mode ${boot}`);
+const page = await open(undefined, undefined, { checkBoot: true });
 
 const state = await page.evaluate(() => {
 	const g = window.__seelite;

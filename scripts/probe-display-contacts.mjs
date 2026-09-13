@@ -13,18 +13,24 @@ await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 try {
-	for (const query of ["", "&fleet", "&combat=1", "&fleet&combat=1"]) {
+	for (const extra of [
+		{},
+		{ fleet: true },
+		{ combat: 1 },
+		{ fleet: true, combat: 1 },
+	]) {
+		// The label the check names have always carried, derived from the
+		// parameters rather than written beside them: the URL is `gameUrl`'s.
+		const query = Object.entries(extra)
+			.map(([key, value]) => (value === true ? `&${key}` : `&${key}=${value}`))
+			.join("");
 		const page = await browser.newPage({
 			viewport: { width: 1440, height: 900 },
 		});
 		watch(page);
-		await page.goto(
-			gameUrl(ORIGIN, {
-				seed: 42,
-				...Object.fromEntries(new URLSearchParams(query)),
-			}),
-			{ waitUntil: "load" },
-		);
+		await page.goto(gameUrl(ORIGIN, { seed: 42, ...extra }), {
+			waitUntil: "load",
+		});
 		await bootedGame(page);
 		const initial = await page.evaluate(() => {
 			const g = window.__seelite;

@@ -141,7 +141,7 @@ async function checkTerminators(page, classes, depths) {
 	 * 0.62 of its radius, so a sample any nearer the centre lands *on* the
 	 * terminator and reads half-lit for every class. Past ~0.85 the atmosphere
 	 * shell takes over and the measurement stops being about the surface — and that
-	 * bound has to hold for the patch's *corner*, not its centre 0.78 radii
+	 * bound has to hold for the patch's *corner*, not its centre: centre 0.78 radii
 	 * out with a 0.06 half-width reaches 0.86.
 	 *
 	 * **Rings and coronae are hidden for this**, so the number is about the body: a

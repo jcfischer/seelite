@@ -13,13 +13,12 @@
  * the headless tier, where CI does run.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
 	BOOT_DIRECT,
 	BOOT_PARAM,
 	gameUrl,
-	unbuiltNavigations,
 	WORKBENCH_ROUTES,
 	workbenchUrl,
 } from "../scripts/lib/game-url.mjs";
@@ -28,8 +27,51 @@ import {
 	BOOT_DIRECT as SRC_BOOT_DIRECT,
 	bootMode,
 } from "../src/boot-mode";
+import {
+	callArguments,
+	repoPath,
+	scriptFiles,
+	stripComments,
+} from "./lib/source-scan";
 
 const ORIGIN = "http://127.0.0.1:5199";
+
+const BUILDERS = ["gameUrl", "workbenchUrl"];
+
+/**
+ * Every `.goto(` in a script source whose URL is not visibly a builder's.
+ *
+ * Accepted: a builder call as the argument, or a name bound by
+ * `const|let|var NAME = gameUrl(…)` / `workbenchUrl(…)` somewhere in the file.
+ * Refused: everything else, including a function parameter — its call sites
+ * are not checked, so a helper that takes a URL has to build it inside.
+ *
+ * Textual, and it says so: a name bound to a builder in one scope and shadowed
+ * by a hand-built string in another passes. It reads the source through the
+ * suite's one comment stripper and one argument walker (`tests/lib/source-scan.ts`)
+ * rather than its own, and inherits that stripper's stated limit — a
+ * block-comment opener inside a string literal blanks what follows it.
+ */
+function unbuiltNavigations(source: string): { line: number; arg: string }[] {
+	const code = stripComments(source);
+	const builderCall = new RegExp(`^(?:${BUILDERS.join("|")})\\s*\\(`);
+	const bound = new Set(
+		[
+			...code.matchAll(
+				new RegExp(
+					`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:${BUILDERS.join("|")})\\s*\\(`,
+					"g",
+				),
+			),
+		].map((m) => m[1]),
+	);
+	return callArguments(code, /\.goto\s*\(/g).flatMap(({ index, args }) => {
+		const arg = (args[0] ?? "").trim();
+		if (builderCall.test(arg)) return [];
+		if (/^[A-Za-z_$][\w$]*$/.test(arg) && bound.has(arg)) return [];
+		return [{ line: code.slice(0, index).split("\n").length, arg }];
+	});
+}
 
 describe("gameUrl", () => {
 	test("adds boot=direct to a default-route boot", () => {
@@ -250,31 +292,21 @@ describe("unbuiltNavigations", () => {
 });
 
 describe("every script boots through the builder", () => {
-	const SCRIPTS = join(import.meta.dir, "../scripts");
-	const files = (dir: string): string[] =>
-		readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-			e.isDirectory()
-				? files(join(dir, e.name))
-				: /\.(mjs|ts)$/.test(e.name)
-					? [join(dir, e.name)]
-					: [],
-		);
-	const all = files(SCRIPTS);
+	// `.ts` as well as `.mjs`: `scripts/` holds TypeScript instruments, and one
+	// of those opening a page would boot the game like any probe.
+	const all = scriptFiles([".mjs", ".ts"]);
+	const sourceOf = (rel: string) => readFileSync(repoPath(rel), "utf8");
 
 	test("the scan sees the scripts directory", () => {
 		// A floor rather than a count, for `check-launcher-wiring.mjs`'s reason: a
 		// retired probe should not fail this, and a scan that sees nothing must.
-		const navigating = all.filter((f) =>
-			/\.goto\s*\(/.test(readFileSync(f, "utf8")),
-		);
+		const navigating = all.filter((f) => /\.goto\s*\(/.test(sourceOf(f)));
 		expect(navigating.length).toBeGreaterThanOrEqual(30);
 	});
 
 	test("no script builds a game URL by hand", () => {
 		const offenders = all.flatMap((f) =>
-			unbuiltNavigations(readFileSync(f, "utf8")).map(
-				(n) => `${relative(SCRIPTS, f)}:${n.line}: ${n.arg}`,
-			),
+			unbuiltNavigations(sourceOf(f)).map((n) => `${f}:${n.line}: ${n.arg}`),
 		);
 		expect(offenders).toEqual([]);
 	});
