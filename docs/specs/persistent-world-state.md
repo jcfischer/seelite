@@ -398,11 +398,14 @@ boots as the game does before §11**: no overlay, the clock running, the store
 attached as today (#305). `?seed`, `?permadeath` and `?no-save` keep their
 current meaning under it.
 
-No shared game-URL builder exists today — every script writes its own `goto`. #306
-adds one in `scripts/lib`, moves every default-route boot onto it, and adds a
-headless row that fails on any script building a default-route URL by hand.
-Workbench routes (`?model-viewer`, `?galaxy-map`, `?planet-prototype`,
-`?hud-gallery`) do not boot the game and need nothing.
+**Every script builds its URL through `scripts/lib/game-url.mjs`** (#306, PR
+#308): `gameUrl` for a boot of the game, `workbenchUrl` for the workbench routes
+(`?model-viewer`, `?galaxy-map`, `?planet-prototype`, `?hud-gallery`).
+`tests/game-url.test.ts` fails on any `.goto(` whose URL is not one of the two.
+**A workbench URL carries `?boot=direct` too**, although a workbench builds no
+game: its close drops only its own route and assigns the rest of the URL, which
+is a boot of the default route, so a probe that closes back to flight would
+otherwise land on the overlay.
 
 **Without `?boot=direct`, a `?seed` pre-fills the new-game seed field and does
 nothing else**: it does not skip the overlay, and it does not set the active

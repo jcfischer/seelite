@@ -61,6 +61,7 @@ import {
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
+import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -144,7 +145,7 @@ async function applyCaptureQuality(page) {
 let currentSeed = null;
 async function ensureSeed(page, seed) {
 	if (currentSeed === seed) return;
-	await page.goto(`${SERVING}/?seed=${seed}`, { waitUntil: "load" });
+	await page.goto(gameUrl(SERVING, { seed }), { waitUntil: "load" });
 	await bootedGame(page);
 	await applyCaptureQuality(page);
 	await page.evaluate(() => window.__rememberBootPosition());
@@ -225,7 +226,9 @@ const PLACERS = {
 		// **It navigates**, which is why the set puts it last: every view above
 		// needs the game and this one needs the game not to be there. The
 		// workbench is query-gated and constructs no `Game` at all.
-		await page.goto(`${SERVING}/?model-viewer=station`, { waitUntil: "load" });
+		await page.goto(workbenchUrl(SERVING, { "model-viewer": "station" }), {
+			waitUntil: "load",
+		});
 		await page.waitForSelector("#model-viewer canvas");
 		// **The fifth element is destructured, and it was not.** `variant` was
 		// passed in the array and read as a free identifier inside the browser,
@@ -402,7 +405,7 @@ page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(`${SERVING}/?seed=${SEED}`, { waitUntil: "load" });
+await page.goto(gameUrl(SERVING, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(page);
 await applyCaptureQuality(page);
 currentSeed = SEED;

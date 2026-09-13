@@ -55,6 +55,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -238,7 +239,7 @@ const t = tally();
 t.watch(page);
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(`${origin}/?seed=${SEED}`);
+await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
 
@@ -470,7 +471,7 @@ const coldBootAt = async (settings) => {
 	// page error nor a shader failure, and `check-launcher-wiring.mjs` refuses
 	// the file over it — which is how these two were caught.
 	t.watch(writer);
-	await writer.goto(`${origin}/?seed=${SEED}`);
+	await writer.goto(gameUrl(origin, { seed: SEED }));
 	await bootedGame(writer);
 	await writer.evaluate((want) => {
 		const store = window.__seelite.settings;
@@ -479,7 +480,7 @@ const coldBootAt = async (settings) => {
 	await writer.close();
 	const reader = await context.newPage();
 	t.watch(reader);
-	await reader.goto(`${origin}/?seed=${SEED}`);
+	await reader.goto(gameUrl(origin, { seed: SEED }));
 	await bootedGame(reader);
 	const read = await reader.evaluate(() => {
 		const game = window.__seelite;

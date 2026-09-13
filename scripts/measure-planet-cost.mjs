@@ -113,6 +113,7 @@ import {
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const OUT = "view-set";
@@ -457,7 +458,7 @@ async function run(pixelRatio) {
 		});
 		await installViewPlacement(page);
 		await installViewFraming(page);
-		await page.goto(`${origin}/?seed=${PRICED_SEED}&fps`);
+		await page.goto(gameUrl(origin, { seed: PRICED_SEED, fps: true }));
 		await bootedGame(page);
 		renderer = await assertPlayersRenderer(page, "measure a planet's cost");
 		await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);

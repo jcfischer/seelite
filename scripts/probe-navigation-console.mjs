@@ -17,6 +17,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 /**
  * The open cell's crowding band — **measured, and it lands on the closed one.**
@@ -60,7 +61,11 @@ const EXPANDED_CROWDING = [0.64, 0.82];
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const PAGE_URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
+const PAGE_URL = gameUrl(
+	ORIGIN,
+	{ seed: 42 },
+	{ override: process.env.PROBE_URL },
+);
 
 await guardedOrigin(ORIGIN);
 const browser = await launchChromium();

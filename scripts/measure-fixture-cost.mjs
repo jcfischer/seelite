@@ -30,6 +30,7 @@
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { fillStage } from "./lib/workbench.mjs";
 import { guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const VIEWPORT = { width: 1440, height: 900 };
@@ -84,9 +85,12 @@ try {
 			...FINISHES.map((finish) => ({ finish, label: finish })),
 		];
 		for (const { finish, label } of cells) {
-			await page.goto(`${ORIGIN}/?model-viewer=station&finish=${finish}`, {
-				waitUntil: "load",
-			});
+			await page.goto(
+				workbenchUrl(ORIGIN, { "model-viewer": "station", finish }),
+				{
+					waitUntil: "load",
+				},
+			);
 			await page.waitForSelector("#model-viewer canvas");
 			renderer = await assertPlayersRenderer(
 				page,

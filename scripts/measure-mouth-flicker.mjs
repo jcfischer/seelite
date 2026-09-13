@@ -61,6 +61,7 @@ import {
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.env.ORIGIN ?? "http://localhost:5173";
@@ -117,7 +118,7 @@ try {
 	await installViewPlacement(page);
 	await installFlickerDetector(page);
 	await installPinAndFrame(page);
-	await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
 	await bootedGame(page);
 
 	const stationId = await page.evaluate(

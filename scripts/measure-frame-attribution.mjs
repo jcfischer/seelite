@@ -18,6 +18,7 @@
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { rollingStatistics } from "../src/frame-statistics.js";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const SEED = 47;
@@ -28,7 +29,7 @@ const FRAMES_PER_BLOCK = 40;
 const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: false });
 const page = await browser.newPage({ viewport: VIEWPORT });
-await page.goto(`${origin}/?seed=${SEED}`);
+await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 const renderer = await assertPlayersRenderer(page, "measure frame attribution");
 

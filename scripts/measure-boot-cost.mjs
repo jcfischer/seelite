@@ -16,6 +16,7 @@
  */
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const VIEWPORT = { width: 1440, height: 900 };
@@ -30,7 +31,7 @@ const page = await browser.newPage({ viewport: VIEWPORT });
 let renderer = null;
 const fps = [];
 try {
-	await page.goto(`${ORIGIN}/?fps`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { fps: true }), { waitUntil: "load" });
 	await bootedGame(page);
 	renderer = await assertPlayersRenderer(page, "measure the boot frame");
 	// Let the boot settle: shaders compile and maps upload on the first frames.

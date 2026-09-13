@@ -5,6 +5,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -18,7 +19,7 @@ watch(page);
 const rows = [];
 const nonEngagingSeeds = [];
 for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
-	await page.goto(`${origin}/?seed=${seed}`);
+	await page.goto(gameUrl(origin, { seed }));
 	await bootedGame(page);
 	const row = await page.evaluate((seed) => {
 		const g = window.__seelite;

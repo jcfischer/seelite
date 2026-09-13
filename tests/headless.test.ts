@@ -279,6 +279,14 @@ test("src/gamepad.ts is a leaf, which is what makes it copyable", () => {
 	expect(importsIn("gamepad.ts")).toEqual([]);
 });
 
+test("src/boot-mode.ts is a leaf, which is what keeps its test headless", () => {
+	// `tests/game-url.test.ts` imports it to assert the page and the probe URL
+	// builder spell `?boot=direct` the same way (#306). The Commander overlay
+	// that reads the mode is DOM and storage; an import from here toward either
+	// would pull that into the headless tier and nothing else would go red.
+	expect(importsIn("boot-mode.ts")).toEqual([]);
+});
+
 test("src/panel-focus.ts is a leaf, which is what lets six panels share it", () => {
 	// The cursor model is the one thing the Navigation list, the market rows, the
 	// chart's buttons, the settings rows and the perf toggles have in common, and

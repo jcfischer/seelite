@@ -1,5 +1,6 @@
 /** Prove the query-gated procedural-model workbench stays outside Game. */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -42,7 +43,9 @@ const { check, watch, exit } = tally();
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
-	await page.goto(`${ORIGIN}/?model-viewer=ship`, { waitUntil: "load" });
+	await page.goto(workbenchUrl(ORIGIN, { "model-viewer": "ship" }), {
+		waitUntil: "load",
+	});
 	await page.waitForSelector("#model-viewer canvas");
 	const initial = await page.evaluate(state);
 	check(
@@ -82,9 +85,12 @@ for (const viewport of VIEWPORTS) {
 	);
 	// #202's beacons are lit by name like the strobes; the selector is a
 	// string test, so this reads the materials back rather than trusting it.
-	await page.goto(`${ORIGIN}/?model-viewer=station&finish=industrial`, {
-		waitUntil: "load",
-	});
+	await page.goto(
+		workbenchUrl(ORIGIN, { "model-viewer": "station", finish: "industrial" }),
+		{
+			waitUntil: "load",
+		},
+	);
 	await page.waitForSelector("#model-viewer canvas");
 	await page.locator('[data-model-asset="trade"]').click();
 	await page.locator('[data-model-control="engine"]').fill("35");

@@ -29,6 +29,7 @@
  * projected point.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -126,7 +127,9 @@ for (const viewport of VIEWPORTS) {
 		viewport: { width: viewport.width, height: viewport.height },
 	});
 	watch(page, viewport.name);
-	await page.goto(`${ORIGIN}/?galaxy-map=0`, { waitUntil: "load" });
+	await page.goto(workbenchUrl(ORIGIN, { "galaxy-map": 0 }), {
+		waitUntil: "load",
+	});
 	await page.waitForSelector("#galaxy-map canvas");
 	await nextFrame(page);
 

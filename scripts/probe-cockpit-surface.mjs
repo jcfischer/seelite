@@ -25,6 +25,7 @@
  *    judged. Toggled in the page, checked in the page.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -143,7 +144,7 @@ const READABLE = [
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
-	await page.goto(ORIGIN, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN), { waitUntil: "load" });
 	await page.waitForFunction(() => Boolean(window.__seelite));
 
 	const high = await page.evaluate(state);

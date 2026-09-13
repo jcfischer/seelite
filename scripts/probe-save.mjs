@@ -31,6 +31,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -74,7 +75,7 @@ try {
 	// **Not `?no-save`.** The store has to be live: the reload arm below reads
 	// back what this page wrote, and a page booted with saving off would flush
 	// nothing and the arm would be inert rather than failing.
-	await page.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
 	await bootedGame(page);
 
 	const store = await page.evaluate(async () => {
@@ -450,7 +451,7 @@ try {
 		await page.close();
 		const reloaded = await context.newPage();
 		watch(reloaded);
-		await reloaded.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+		await reloaded.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
 		await bootedGame(reloaded);
 		const after = await reloaded.evaluate(
 			([station]) => {
@@ -526,7 +527,7 @@ try {
 
 		const third = await context.newPage();
 		watch(third);
-		await third.goto(`${ORIGIN}/?seed=${SEED}`, { waitUntil: "load" });
+		await third.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
 		await bootedGame(third);
 		const inFlight = await third.evaluate(() => {
 			const g = window.__seelite;

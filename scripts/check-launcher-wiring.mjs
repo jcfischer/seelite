@@ -249,7 +249,18 @@ for (const path of scripts(DIR).sort()) {
 		"probe-frame-attribution.mjs",
 		"probe-pad-instrument.mjs",
 	]);
-	if (!PERF_OWNERS.has(name) && /[?&]perf\b/.test(code))
+	// Both spellings (#306). A probe's URL is `gameUrl(origin, { perf: 1 })`
+	// now, which has no `?perf` in it — so the query form alone would pass every
+	// probe that asks for the panel through the builder, which is all of them.
+	// Two limits, in opposite directions. It is **broader** than a URL: any
+	// `perf:` object key in a non-owner script is refused, whether or not it
+	// reaches `gameUrl` — none does today, and a script that needs one can join
+	// PERF_OWNERS with a reason. And it is **blind** to a flag that arrives
+	// through a variable or a spread, which no text scan can follow.
+	if (
+		!PERF_OWNERS.has(name) &&
+		/[?&]perf\b|(?:^|[{,\s])["']?perf["']?\s*:/m.test(code)
+	)
 		problems.push(
 			`${name}: opens a page with ?perf — that mounts the diagnostic panel, ` +
 				`whose key listener would then see this probe's keystrokes`,

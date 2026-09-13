@@ -1,6 +1,7 @@
 /** Prove the live renderer exposes #35's hull identity only where it is useful:
  * chase view. Cockpit remains the instrument-first flight view. */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -57,7 +58,7 @@ function state() {
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
-	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
 	const cockpit = await page.evaluate(state);
 	check(
@@ -148,7 +149,7 @@ for (const viewport of VIEWPORTS) {
 for (const viewport of VIEWPORTS.slice(0, 1)) {
 	const page = await browser.newPage({ viewport });
 	watch(page, `${viewport.name} fleet`);
-	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
 	const ungated = await page.evaluate(state);
 	check(
@@ -156,7 +157,9 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 		ungated.fleet === 0 && ungated.hulls === 1,
 	);
 
-	await page.goto(`${ORIGIN}/?seed=42&fleet`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: 42, fleet: true }), {
+		waitUntil: "load",
+	});
 	await page.waitForFunction(() => window.__seelite?.frames > 2);
 	const gated = await page.evaluate(() => {
 		const game = window.__seelite;
@@ -216,7 +219,7 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 {
 	const page = await browser.newPage({ viewport: VIEWPORTS[0] });
 	watch(page, "hull surface");
-	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await page.waitForFunction(() => window.__seelite?.frames > 1);
 	// Chase, so the hull is in front of the camera and fills enough of the frame
 	// for a plate to be more than one pixel across.

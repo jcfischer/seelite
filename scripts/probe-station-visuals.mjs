@@ -78,6 +78,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -86,7 +87,7 @@ const ORIGIN =
  *  range. See `probe-station.mjs`'s note on this constant for the re-pick
  *  criterion and for a known flake in that probe: the two share the fixture and
  *  must share the seed. */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
+const URL = gameUrl(ORIGIN, { seed: 54 }, { override: process.env.PROBE_URL });
 
 const VIEWPORTS = [
 	{ name: "desktop", width: 1100, height: 720 },

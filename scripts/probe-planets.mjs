@@ -13,10 +13,15 @@
  *   every continent).
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?planet-prototype";
+const PAGE_URL = workbenchUrl(
+	ORIGIN,
+	{ "planet-prototype": true },
+	{ override: process.env.PROBE_URL },
+);
 
 /** Every rung the ladder must reach. Order is the gallery's layout choice and
  *  not part of the claim, so this is compared as a set — reordering the gallery
@@ -499,7 +504,7 @@ async function reportBudget(page, classes) {
 	 */
 	const perClass = [];
 	for (const name of classes) {
-		await page.goto(`${ORIGIN}/?planet-prototype=${name}`, {
+		await page.goto(workbenchUrl(ORIGIN, { "planet-prototype": name }), {
 			waitUntil: "load",
 		});
 		await page.waitForFunction(

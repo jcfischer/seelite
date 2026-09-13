@@ -66,13 +66,18 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /** The seed is the fixture: see the header. A different one is a different
  *  claim, so it is not configurable. */
 const SEED = 481;
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=${SEED}`;
+const URL = gameUrl(
+	ORIGIN,
+	{ seed: SEED },
+	{ override: process.env.PROBE_URL },
+);
 /** Sim seconds a leg is given. Generous against the ~60 s legs both are. */
 const LIMIT_S = 300;
 

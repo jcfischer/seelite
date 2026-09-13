@@ -74,10 +74,11 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
+const URL = gameUrl(ORIGIN, { seed: 42 }, { override: process.env.PROBE_URL });
 
 /** The standard mapping and the fixture, shared by the three pad probes. */
 const B = STANDARD_INDEX;

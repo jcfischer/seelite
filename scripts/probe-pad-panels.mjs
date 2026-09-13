@@ -61,6 +61,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -131,7 +132,7 @@ try {
 	watch(page);
 	await page.addInitScript(installFakePad);
 	await page.addInitScript(installPlaceOnAxis);
-	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(page);
 
 	const frames = (n) => page.evaluate((count) => window.__frames(count), n);

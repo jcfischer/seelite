@@ -2,6 +2,7 @@
 import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
 import { fillStage } from "./lib/workbench.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const OUT = process.argv[2] ?? "/tmp/ships";
@@ -27,7 +28,9 @@ const VIEWS = [
 await mkdir(OUT, { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
-await page.goto(`${ORIGIN}/?model-viewer=ship`, { waitUntil: "load" });
+await page.goto(workbenchUrl(ORIGIN, { "model-viewer": "ship" }), {
+	waitUntil: "load",
+});
 await page.waitForSelector("#model-viewer canvas");
 const ROLES = await page.evaluate(() =>
 	[...document.querySelectorAll("[data-model-asset]")].map(

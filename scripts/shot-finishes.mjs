@@ -38,6 +38,7 @@ import { join } from "node:path";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { fillStage } from "./lib/workbench.mjs";
 import { guardedOrigin, launchChromium } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const labelFlag = process.argv.indexOf("--label");
@@ -103,7 +104,11 @@ try {
 		for (const finish of FINISHES)
 			for (const seed of seeds) {
 				await page.goto(
-					`${ORIGIN}/?model-viewer=${family}&finish=${finish}&assembly=${seed}`,
+					workbenchUrl(ORIGIN, {
+						"model-viewer": family,
+						finish,
+						assembly: seed,
+					}),
 					{ waitUntil: "load" },
 				);
 				await page.waitForSelector("#model-viewer canvas");

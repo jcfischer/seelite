@@ -3,6 +3,7 @@
  * its contract. It checks every named state at desktop and narrow viewports.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -155,9 +156,12 @@ const { check, watch, exit } = tally();
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
-	await page.goto(`${ORIGIN}/?seed=42&hud-gallery=assist-on`, {
-		waitUntil: "load",
-	});
+	await page.goto(
+		workbenchUrl(ORIGIN, { seed: 42, "hud-gallery": "assist-on" }),
+		{
+			waitUntil: "load",
+		},
+	);
 	await page.waitForSelector("#state-gallery");
 
 	for (const state of STATES) {

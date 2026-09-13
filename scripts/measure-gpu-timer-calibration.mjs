@@ -66,6 +66,7 @@ import {
 	setView,
 	settleFrames,
 } from "./lib/view-placement.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const SEED = 47;
@@ -91,7 +92,7 @@ try {
 	// Both installers run through `addInitScript`, so they precede the navigation.
 	await installViewPlacement(page);
 	await installViewFraming(page);
-	await page.goto(`${origin}/?seed=${SEED}`);
+	await page.goto(gameUrl(origin, { seed: SEED }));
 	await bootedGame(page);
 	const renderer = await assertPlayersRenderer(page, "gpu timer calibration");
 

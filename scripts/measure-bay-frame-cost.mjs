@@ -124,6 +124,7 @@ import {
 	installViewPlacement,
 	launchChromium,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -591,7 +592,7 @@ async function openPage(seed) {
 	await installViewPlacement(p);
 	await installViewFraming(p);
 	await installSubjects(p);
-	await p.goto(`${origin}/?seed=${seed}`);
+	await p.goto(gameUrl(origin, { seed }));
 	await bootedGame(p);
 	const r = await assertPlayersRenderer(p, "decompose a bay frame");
 	await p.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);

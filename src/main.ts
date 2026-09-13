@@ -367,6 +367,7 @@ import {
 	SaveStore,
 	indexedDbSaveBackend,
 } from "./save-store";
+import { type BootMode, bootMode } from "./boot-mode";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -10197,6 +10198,12 @@ if (query.has("model-viewer")) {
 	// told which slot failed and why, the bad record is left exactly where it
 	// is so it can still be exported, and the game starts fresh rather than
 	// refusing to start at all.
+	//
+	// The boot mode is read once, here, ahead of the load (#306). Nothing below
+	// consults it yet. It is read here because §11.6 will make `?seed`'s
+	// set-aside depend on it, and the value that set-aside reads and the value
+	// the page exposes should then be one read rather than two.
+	const boot = bootMode(query);
 	const saveBackend = indexedDbSaveBackend();
 	let loaded: SaveEnvelope | null = null;
 	let saveFault: string | null = null;
@@ -10321,6 +10328,12 @@ if (query.has("model-viewer")) {
 		// caller.
 		serialize: serializeSave,
 	};
+	// The boot mode this page read (#306, `persistent-world-state.md` §11.6).
+	// Nothing acts on it yet — the overlay it skips does not exist — and it is
+	// exposed so `probe-boot.mjs` can show that `gameUrl`'s `?boot=direct`
+	// reached the page rather than being assumed to.
+	(window as unknown as { __seelite: { boot: BootMode } }).__seelite.boot =
+		boot;
 
 	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
 	// two shells, the surface shader and the crater path, so a body can be flown

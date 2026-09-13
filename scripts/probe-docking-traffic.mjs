@@ -5,6 +5,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const origin = process.argv[2] ?? "http://127.0.0.1:5173";
 await guardedOrigin(origin);
@@ -17,7 +18,7 @@ try {
 			viewport: { width: 900, height: 620 },
 		});
 		watch(page);
-		await page.goto(`${origin}/?seed=54`, { waitUntil: "load" });
+		await page.goto(gameUrl(origin, { seed: 54 }), { waitUntil: "load" });
 		await bootedGame(page);
 		const result = await page.evaluate(async (startAtS) => {
 			const g = window.__seelite;
