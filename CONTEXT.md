@@ -200,8 +200,8 @@ its permadeath flag, listed, loaded, exported, imported, renamed and deleted in
 the Commander overlay. Its name **is** the slot key. It is the whole save — both
 of the slot's records — and not `CommanderRecord`, which is only the player half
 of one `SaveEnvelope`. `docs/specs/persistent-world-state.md` §11 owns the
-overlay and the active-Commander pointer. **Scope note:** `slot`, `slots()`,
-`exportSlot` and `CommanderCatalog`'s `importSlot`, `renameSlot` and
+overlay and the active-Commander pointer. **Scope note:** `slot` and
+`CommanderCatalog`'s `slots()`, `exportSlot`, `importSlot`, `renameSlot` and
 `deleteSlot` are the storage layer's words for the same thing and stay as they
 are; this entry governs what a player reads, not what the store calls its keys.
 _Avoid_: save game, save file, profile (in player-facing text)

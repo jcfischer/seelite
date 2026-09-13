@@ -201,6 +201,13 @@ try {
 		const written = keys.find(
 			(key) => key.startsWith("probe-small") && key.endsWith("live"),
 		);
+		// The separator, read once off a written key: what lies between the slot
+		// name and the kind.
+		const separator = written
+			? written.slice("probe-small".length, -"live".length)
+			: null;
+		const key = (slot, kind) =>
+			separator === null ? null : `${slot}${separator}${kind}`;
 		return {
 			dbName: s.dbName,
 			dbVersion: s.dbVersion,
@@ -209,15 +216,9 @@ try {
 			blockedMessage: s.blockedMessage,
 			closedMessage: s.closedMessage,
 			defaultSlot: s.defaultSlot,
-			liveKey: written
-				? s.defaultSlot + written.slice("probe-small".length)
-				: null,
-			lastDockedKey: written
-				? `${s.defaultSlot}${written.slice("probe-small".length, -"live".length)}lastDocked`
-				: null,
-			otherKey: written
-				? `probe-v1-other${written.slice("probe-small".length)}`
-				: null,
+			liveKey: key(s.defaultSlot, "live"),
+			lastDockedKey: key(s.defaultSlot, "lastDocked"),
+			otherKey: key("probe-v1-other", "live"),
 			blob: s.serialize(g.saveEnvelope()),
 		};
 	});

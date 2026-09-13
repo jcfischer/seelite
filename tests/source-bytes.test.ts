@@ -6,8 +6,9 @@
  * source rather than run it:
  * - Search tools treat the file as binary.
  * - The Read tool renders the byte as a space, so an edit that spans it cannot
- *   match. `assertSlot` refused a space for two rounds of #309 because its
- *   check was written from what the Read tool showed.
+ *   match. `assertSlot` refused a space from #292 (071142d), because its check
+ *   was written from what a text view showed, and #309 kept that rule for two
+ *   review rounds for the same reason.
  * - The Soma policy guard passes a review prompt through an environment
  *   variable. That variable cannot hold a NUL, so every sage lens on the
  *   Claude substrate stopped before it read the diff (#309).

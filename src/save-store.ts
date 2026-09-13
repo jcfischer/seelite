@@ -108,6 +108,10 @@ const recordKey = (slot: string, kind: SaveRecordKind) =>
 	`${slot}${KEY_SEPARATOR}${kind}`;
 const slotOfKey = (key: unknown) => String(key).split(KEY_SEPARATOR)[0];
 
+/** `copySlot`'s refusal, shared by both backends so the wording cannot drift. */
+const noRecordToCopy = (slot: string): never =>
+	fail(`"${slot}" holds no record to copy`);
+
 /** Why a flush is happening. `dock` is the one that also writes the
  *  checkpoint; the rest are D4's unconditional flushes. */
 export type FlushReason = "dock" | "undock" | "jump" | "quit";
@@ -236,10 +240,10 @@ const fail = (message: string): never => {
  */
 const assertSlot = (slot: string): void => {
 	if (slot.length === 0)
-		fail(`"" is not a slot name — a name may not be empty`);
+		fail(`"" is not a Commander name — a name may not be empty`);
 	if (slot.includes(KEY_SEPARATOR))
 		fail(
-			`"${slot}" is not a slot name — a name may not contain a NUL character`,
+			`"${slot}" is not a Commander name — a name may not contain a NUL character`,
 		);
 };
 
@@ -250,8 +254,15 @@ const assertSlot = (slot: string): void => {
  * hash, so nothing else stands between a stray value and a boot that builds a
  * world from it. A value that is not one is a named refusal, which the boot's
  * D9 path turns into a fault rather than a world built from garbage.
+ *
+ * `refusal` names what was being read: the same check guards the record on
+ * disk and the choice New game is about to write, and the overlay shows the
+ * message.
  */
-const parsePending = (raw: unknown): PendingNewGame | null => {
+const parsePending = (
+	raw: unknown,
+	refusal = "the pending new game on disk is not one this build can read",
+): PendingNewGame | null => {
 	if (raw === null || raw === undefined) return null;
 	const o = raw as Record<string, unknown>;
 	if (
@@ -263,7 +274,7 @@ const parsePending = (raw: unknown): PendingNewGame | null => {
 		o.seed > 0xffff_ffff ||
 		typeof o.permadeath !== "boolean"
 	)
-		fail("the pending new game on disk is not one this build can read");
+		fail(refusal);
 	assertSlot(o.name as string);
 	return {
 		name: o.name as string,
@@ -277,6 +288,8 @@ export class SaveStore {
 	private readonly locks: SlotLocks;
 	/** The release of this store's own lock, once `hold` has taken it. */
 	private held: (() => void) | null = null;
+	/** The lock request in flight, shared by overlapping `hold` calls. */
+	private holding: Promise<(() => void) | null> | null = null;
 	/**
 	 * The record kinds whose last write failed (§11.5). A kind clears only on a
 	 * write **of that kind** that lands: a debounced write carries `live` alone,
@@ -461,35 +474,6 @@ export class SaveStore {
 		return this.load(slot, "lastDocked");
 	}
 
-	async slots(): Promise<string[]> {
-		return this.backend.slots();
-	}
-
-	/**
-	 * D6's export: the **slot**, both records, as text.
-	 *
-	 * With no backend, a cleared profile or a storage eviction destroys the
-	 * commander, and this file is the only mitigation that exists. It doubles
-	 * as a bug report someone can attach, which is why it is plain JSON.
-	 *
-	 * The records are copied out unparsed, so a slot holding a record this
-	 * build refuses can still be exported — which is the whole of D9's point.
-	 */
-	async exportSlot(slot: string): Promise<string> {
-		const live = await this.backend.read(slot, "live");
-		const lastDocked = await this.backend.read(slot, "lastDocked");
-		if (live === null && lastDocked === null)
-			fail(`slot "${slot}" has no record to export`);
-		// **The file names no slot.** A slot is where the player filed the save,
-		// not a property of it — and a file that carried one would either be
-		// refused on import into a different slot or quietly disagree with
-		// where it landed, so a re-export could not be byte-identical.
-		return JSON.stringify({ live, lastDocked }, null, "\t");
-	}
-
-	/** The lock request in flight, shared by overlapping `hold` calls. */
-	private holding: Promise<(() => void) | null> | null = null;
-
 	/**
 	 * Takes this store's own Commander lock for the life of the tab, or reports
 	 * that another store already has it. Idempotent once held.
@@ -563,6 +547,32 @@ export class CommanderCatalog {
 			await this.backend.write(slot, "lastDocked", lastDocked);
 	}
 
+	async slots(): Promise<string[]> {
+		return this.backend.slots();
+	}
+
+	/**
+	 * D6's export: the **slot**, both records, as text.
+	 *
+	 * With no backend, a cleared profile or a storage eviction destroys the
+	 * commander, and this file is the only mitigation that exists. It doubles
+	 * as a bug report someone can attach, which is why it is plain JSON.
+	 *
+	 * The records are copied out unparsed, so a slot holding a record this
+	 * build refuses can still be exported — which is the whole of D9's point.
+	 */
+	async exportSlot(slot: string): Promise<string> {
+		const live = await this.backend.read(slot, "live");
+		const lastDocked = await this.backend.read(slot, "lastDocked");
+		if (live === null && lastDocked === null)
+			fail(`slot "${slot}" has no record to export`);
+		// **The file names no slot.** A slot is where the player filed the save,
+		// not a property of it — and a file that carried one would either be
+		// refused on import into a different slot or quietly disagree with
+		// where it landed, so a re-export could not be byte-identical.
+		return JSON.stringify({ live, lastDocked }, null, "\t");
+	}
+
 	/**
 	 * The Commander a boot is for (§11.2 step 1, §11.4).
 	 *
@@ -570,14 +580,20 @@ export class CommanderCatalog {
 	 * Otherwise the pointer; a pointer naming a Commander that is gone falls
 	 * back to the default and says so. No pointer at all is the default, which
 	 * is where every save before §11 lives — not a fallback.
+	 *
+	 * **It writes in one case**: it clears a pending record whose Commander
+	 * already has a `live` record.
 	 */
 	async resolveActive(): Promise<ActiveCommander> {
 		const pending = await this.readPending();
 		if (pending) {
 			// **A pending record beside a `live` record lost only its clean-up**:
 			// the tab closed between the first save and `finishNewGame`. The save
-			// wins, so a boot never builds a fresh world over that progress.
+			// wins, so a boot never builds a fresh world over that progress, and
+			// the boot finishes the clean-up: left on disk, the record would win
+			// over the pointer again once a rename or delete empties the name.
 			const landed = (await this.backend.read(pending.name, "live")) !== null;
+			if (landed) await this.backend.writeMeta({ pending: null });
 			return {
 				slot: pending.name,
 				pending: landed ? null : pending,
@@ -636,7 +652,10 @@ export class CommanderCatalog {
 	 * pending record once the new Commander's first `live` record has landed.
 	 */
 	async beginNewGame(choice: PendingNewGame): Promise<void> {
-		const pending = parsePending(choice) as PendingNewGame;
+		const pending = parsePending(
+			choice,
+			"the New game choice is not one this build can write",
+		) as PendingNewGame;
 		await this.assertFree(pending.name);
 		await this.backend.writeMeta({
 			pending,
@@ -660,7 +679,8 @@ export class CommanderCatalog {
 
 	/**
 	 * Copy-then-delete (§11.3). A failure between the two leaves two
-	 * Commanders, never zero. The pointer follows the Commander it named.
+	 * Commanders, never zero. The pointer follows the Commander it named, and a
+	 * pending record naming the old name is cleared.
 	 */
 	async renameSlot(from: string, to: string): Promise<void> {
 		assertSlot(from);
@@ -671,6 +691,7 @@ export class CommanderCatalog {
 			if ((await this.backend.readMeta("active")) === from)
 				await this.backend.writeMeta({ active: to });
 			await this.backend.deleteSlot(from);
+			await this.clearPendingFor(from);
 		});
 	}
 
@@ -678,7 +699,21 @@ export class CommanderCatalog {
 	 *  refuses one a tab has a store attached to. */
 	async deleteSlot(slot: string): Promise<void> {
 		assertSlot(slot);
-		await this.withFreeLock(slot, () => this.backend.deleteSlot(slot));
+		await this.withFreeLock(slot, async () => {
+			await this.backend.deleteSlot(slot);
+			await this.clearPendingFor(slot);
+		});
+	}
+
+	/**
+	 * Clears a pending record that names `slot`. Rename and delete end that
+	 * name, and a record left behind would win over the pointer at the next
+	 * boot. Read raw, not parsed, so an unreadable record never blocks a delete.
+	 */
+	private async clearPendingFor(slot: string): Promise<void> {
+		const raw = await this.backend.readMeta("pending");
+		if ((raw as { name?: unknown } | null)?.name === slot)
+			await this.backend.writeMeta({ pending: null });
 	}
 
 	/**
@@ -825,7 +860,7 @@ export function memorySaveBackend(): MemorySaveBackend {
 			const found = SAVE_RECORD_KINDS.filter((kind) =>
 				rows.has(recordKey(from, kind)),
 			);
-			if (found.length === 0) fail(`"${from}" holds no record to copy`);
+			if (found.length === 0) noRecordToCopy(from);
 			for (const kind of found)
 				rows.set(recordKey(to, kind), copy(rows.get(recordKey(from, kind))));
 		},
@@ -1046,6 +1081,9 @@ export function indexedDbSaveBackend(
 			const store = tx.objectStore(SAVE_STORE_NAME);
 			let found = 0;
 			let answered = 0;
+			// Only this abort means "no record". Any other failure of the transaction
+			// is the backend's, and is reported as one.
+			let aborted = false;
 			// Gets and puts chained on request callbacks, not on `await`: the
 			// transaction commits once no request is pending, and a gap the event
 			// loop can run through is where a copy would find it already finished.
@@ -1057,13 +1095,16 @@ export function indexedDbSaveBackend(
 						store.put(get.result, recordKey(to, kind));
 					}
 					answered += 1;
-					if (answered === SAVE_RECORD_KINDS.length && found === 0) tx.abort();
+					if (answered === SAVE_RECORD_KINDS.length && found === 0) {
+						aborted = true;
+						tx.abort();
+					}
 				};
 			}
 			try {
 				await done;
 			} catch (error) {
-				if (found === 0) fail(`"${from}" holds no record to copy`);
+				if (aborted) noRecordToCopy(from);
 				throw error;
 			}
 		},

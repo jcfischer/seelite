@@ -191,8 +191,8 @@ Encoding, migration and the autosave cadence are shipped and exercised by the
 game: IndexedDB, a version refusal that leaves the record readable, and a
 debounced write with four unconditional flushes. **Permadeath, slots and
 export/import are decided and implemented but not reachable by a player**:
-`choosePermadeath` is on a URL parameter, and `exportSlot` and
-`CommanderCatalog.importSlot` have no caller outside their own tests, because there is no
+`choosePermadeath` is on a URL parameter, and `CommanderCatalog`'s `exportSlot`
+and `importSlot` have no caller outside their own tests, because there is no
 new-game or save screen to reach them from. `save-store.ts` says so where a
 reader meets it. **§11 specifies that screen and #306 builds it**; this
 sentence and `save-store.ts`'s header stay true until #306 lands, and flipping

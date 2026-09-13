@@ -271,7 +271,7 @@ describe("#89 D6 — slots, export and import", () => {
 		await h.store.flush("dock", "beta");
 		expect((await h.store.load("alpha")).commander.state.credits).toBe(100);
 		expect((await h.store.load("beta")).commander.state.credits).toBe(777);
-		expect((await h.store.slots()).sort()).toEqual(["alpha", "beta"]);
+		expect((await h.catalog.slots()).sort()).toEqual(["alpha", "beta"]);
 	});
 
 	test("export then import reproduces the slot, both records", async () => {
@@ -281,14 +281,14 @@ describe("#89 D6 — slots, export and import", () => {
 		h.set(777);
 		h.store.markDirty();
 		await h.store.flush("jump", "alpha");
-		const text = await h.store.exportSlot("alpha");
+		const text = await h.catalog.exportSlot("alpha");
 		await h.catalog.importSlot("copy", text);
 		expect((await h.store.load("copy")).commander.state.credits).toBe(777);
 		expect(
 			(await h.store.load("copy", "lastDocked")).commander.state.credits,
 		).toBe(100);
 		// Byte-for-byte at the model boundary, which is what #89 asked for.
-		expect(await h.store.exportSlot("copy")).toBe(text);
+		expect(await h.catalog.exportSlot("copy")).toBe(text);
 	});
 
 	test("a queued write does not inherit the previous write's failure", async () => {
@@ -389,12 +389,14 @@ describe("#89 D6 — slots, export and import", () => {
 		await expect(h.store.flush("dock", "")).rejects.toThrow(/may not be empty/);
 		await expect(h.store.flush("dock", "a\0b")).rejects.toThrow(/NUL/);
 		for (const name of ["a\0b", ""]) {
-			await expect(h.store.flush("dock", name)).rejects.toThrow(/slot name/);
+			await expect(h.store.flush("dock", name)).rejects.toThrow(
+				/Commander name/,
+			);
 			await expect(h.catalog.importSlot(name, "{}")).rejects.toThrow(
-				/slot name/,
+				/Commander name/,
 			);
 		}
-		expect(await h.store.slots()).toEqual([]);
+		expect(await h.catalog.slots()).toEqual([]);
 	});
 
 	test("a Commander name may hold a space", async () => {
@@ -403,7 +405,7 @@ describe("#89 D6 — slots, export and import", () => {
 		const h = harness();
 		h.store.markDirty();
 		await h.store.flush("dock", "Commander Jameson");
-		expect(await h.store.slots()).toEqual(["Commander Jameson"]);
+		expect(await h.catalog.slots()).toEqual(["Commander Jameson"]);
 		await h.catalog.beginNewGame({
 			name: "New Hope",
 			seed: 1,
@@ -415,7 +417,7 @@ describe("#89 D6 — slots, export and import", () => {
 	test("importing a file that is not a save refuses and writes nothing", async () => {
 		const h = harness();
 		await expect(h.catalog.importSlot("copy", "{]")).rejects.toThrow(/save/i);
-		expect(await h.store.slots()).toEqual([]);
+		expect(await h.catalog.slots()).toEqual([]);
 	});
 });
 
@@ -429,7 +431,7 @@ describe("#89 D8/D9 — refusal, and never overwriting the bad record", () => {
 		// **The bad record is never overwritten.** It is the only copy of
 		// whatever is left, and export is the whole reason D9 keeps it.
 		expect(await h.backend.has("alpha", "live")).toBe(true);
-		expect(typeof (await h.store.exportSlot("alpha"))).toBe("string");
+		expect(typeof (await h.catalog.exportSlot("alpha"))).toBe("string");
 	});
 
 	test("a truncated record fails as a named error rather than as an empty world", async () => {
@@ -468,6 +470,17 @@ const seeded = async (
 	h.set(credits);
 	h.store.markDirty();
 	await h.store.flush("dock", slot);
+};
+
+/** Two tabs of one origin: one backend and one set of locks. Tab A writes
+ *  `jameson`; tab B writes `slotB`, or the default. */
+const twoTabs = (slotB?: string) => {
+	const locks = memorySlotLocks();
+	const backend = memorySaveBackend();
+	return {
+		tabA: harness({ backend, locks, slot: "jameson" }),
+		tabB: harness({ backend, locks, slot: slotB }),
+	};
 };
 
 describe("§11.4 — the active-Commander pointer", () => {
@@ -513,7 +526,7 @@ describe("§11.3 — the one-shot continue", () => {
 	test("Import: the imported Commander is the one the one-shot names", async () => {
 		const h = harness();
 		await seeded(h, "jameson");
-		const text = await h.store.exportSlot("jameson");
+		const text = await h.catalog.exportSlot("jameson");
 		await h.catalog.importSlot("copy", text);
 		await h.catalog.chooseCommander("copy");
 		expect(await h.catalog.takeOneShot()).toBe("copy");
@@ -544,10 +557,7 @@ describe("§11.3 — the one-shot continue", () => {
 	});
 
 	test("Load refuses a Commander whose lock another store holds, and writes nothing", async () => {
-		const locks = memorySlotLocks();
-		const backend = memorySaveBackend();
-		const tabA = harness({ backend, locks, slot: "jameson" });
-		const tabB = harness({ backend, locks });
+		const { tabA, tabB } = twoTabs();
 		await seeded(tabA, "jameson");
 		expect(await tabA.store.hold()).toBe(true);
 		await expect(tabB.catalog.chooseCommander("jameson")).rejects.toThrow(
@@ -591,7 +601,7 @@ describe("§11.3 — a pending new game", () => {
 		await expect(h.catalog.resolveActive()).rejects.toThrow(/pending new game/);
 		// It holds no name this build can read, so it takes none: import and
 		// rename still work, and New game is the way out of the fault.
-		const text = await h.store.exportSlot("jameson");
+		const text = await h.catalog.exportSlot("jameson");
 		await h.catalog.importSlot("copy", text);
 		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
 		expect((await h.catalog.resolveActive()).slot).toBe("fresh");
@@ -637,6 +647,52 @@ describe("§11.3 — a pending new game", () => {
 			permadeath: false,
 		});
 	});
+
+	test("a boot that finds a pending record beside a landed save clears it", async () => {
+		const h = harness({ slot: "fresh" });
+		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		h.store.markDirty();
+		await h.store.flush("quit");
+		await h.catalog.resolveActive();
+		expect(await h.backend.readMeta("pending")).toBeNull();
+	});
+
+	test("renaming a Commander a stale pending record names does not bring the old name back", async () => {
+		// No boot ran between the first save and the rename, so the pending
+		// record is still on disk. Once `fresh` has no record, it would win over
+		// the pointer and boot a fresh world under the old name.
+		const h = harness({ slot: "fresh" });
+		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		h.store.markDirty();
+		await h.store.flush("quit");
+		await h.catalog.renameSlot("fresh", "elite");
+		expect(await h.catalog.resolveActive()).toEqual({
+			slot: "elite",
+			pending: null,
+			fellBack: false,
+		});
+	});
+
+	test("deleting a Commander a stale pending record names clears the record", async () => {
+		const h = harness({ slot: "fresh" });
+		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		h.store.markDirty();
+		await h.store.flush("quit");
+		await h.catalog.deleteSlot("fresh");
+		expect(await h.catalog.resolveActive()).toEqual({
+			slot: DEFAULT_SLOT,
+			pending: null,
+			fellBack: true,
+		});
+		expect(await h.backend.readMeta("pending")).toBeNull();
+	});
+
+	test("a New game choice this build cannot write is refused as the choice, not as a record on disk", async () => {
+		const h = harness();
+		await expect(
+			h.catalog.beginNewGame({ name: "fresh", seed: -1, permadeath: false }),
+		).rejects.toThrow(/New game choice/);
+	});
 });
 
 describe("§11.3 — one rule for names", () => {
@@ -644,7 +700,7 @@ describe("§11.3 — one rule for names", () => {
 		const h = harness();
 		await seeded(h, "jameson");
 		await seeded(h, "other");
-		const text = await h.store.exportSlot("jameson");
+		const text = await h.catalog.exportSlot("jameson");
 		await expect(
 			h.catalog.beginNewGame({ name: "jameson", seed: 1, permadeath: false }),
 		).rejects.toThrow(/already a Commander/);
@@ -662,7 +718,7 @@ describe("§11.3 — one rule for names", () => {
 		const h = harness();
 		await seeded(h, "jameson");
 		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
-		const text = await h.store.exportSlot("jameson");
+		const text = await h.catalog.exportSlot("jameson");
 		await expect(h.catalog.importSlot("fresh", text)).rejects.toThrow(
 			/already a Commander/,
 		);
@@ -683,22 +739,22 @@ describe("§11.3 — one rule for names", () => {
 				seed: 1,
 				permadeath: false,
 			}),
-		).rejects.toThrow(/slot name/);
+		).rejects.toThrow(/Commander name/);
 		await expect(h.catalog.renameSlot("other", "jameson\0x")).rejects.toThrow(
-			/slot name/,
+			/Commander name/,
 		);
-		expect((await h.store.slots()).sort()).toEqual(["jameson", "other"]);
+		expect((await h.catalog.slots()).sort()).toEqual(["jameson", "other"]);
 	});
 
 	test("import refuses a record the parser refuses, and writes nothing", async () => {
 		const h = harness();
 		await seeded(h, "jameson");
 		await h.backend.corruptVersion("jameson", "live");
-		const text = await h.store.exportSlot("jameson");
+		const text = await h.catalog.exportSlot("jameson");
 		await expect(h.catalog.importSlot("copy", text)).rejects.toThrow(
 			/saveSchemaVersion/,
 		);
-		expect((await h.store.slots()).sort()).toEqual(["jameson"]);
+		expect((await h.catalog.slots()).sort()).toEqual(["jameson"]);
 	});
 });
 
@@ -711,7 +767,7 @@ describe("§11.3 — rename and delete", () => {
 		await h.store.flush("jump", "jameson");
 		await h.catalog.chooseCommander("jameson");
 		await h.catalog.renameSlot("jameson", "elite");
-		expect((await h.store.slots()).sort()).toEqual(["elite"]);
+		expect((await h.catalog.slots()).sort()).toEqual(["elite"]);
 		expect((await h.store.load("elite")).commander.state.credits).toBe(555);
 		expect(
 			(await h.store.load("elite", "lastDocked")).commander.state.credits,
@@ -726,21 +782,18 @@ describe("§11.3 — rename and delete", () => {
 		await expect(h.catalog.renameSlot("jameson", "elite")).rejects.toThrow(
 			/backend/,
 		);
-		expect((await h.store.slots()).sort()).toEqual(["elite", "jameson"]);
+		expect((await h.catalog.slots()).sort()).toEqual(["elite", "jameson"]);
 	});
 
 	test("delete removes the Commander", async () => {
 		const h = harness();
 		await seeded(h, "jameson");
 		await h.catalog.deleteSlot("jameson");
-		expect(await h.store.slots()).toEqual([]);
+		expect(await h.catalog.slots()).toEqual([]);
 	});
 
 	test("delete and rename refuse a Commander whose lock is held — this tab's or another's", async () => {
-		const locks = memorySlotLocks();
-		const backend = memorySaveBackend();
-		const tabA = harness({ backend, locks, slot: "jameson" });
-		const tabB = harness({ backend, locks });
+		const { tabA, tabB } = twoTabs();
 		await seeded(tabA, "jameson");
 		expect(await tabA.store.hold()).toBe(true);
 		for (const catalog of [tabA.catalog, tabB.catalog]) {
@@ -751,14 +804,11 @@ describe("§11.3 — rename and delete", () => {
 				/open in another tab|in play/,
 			);
 		}
-		expect(await tabB.store.slots()).toEqual(["jameson"]);
+		expect(await tabB.catalog.slots()).toEqual(["jameson"]);
 	});
 
 	test("a second store cannot hold a Commander the first already holds", async () => {
-		const locks = memorySlotLocks();
-		const backend = memorySaveBackend();
-		const tabA = harness({ backend, locks, slot: "jameson" });
-		const tabB = harness({ backend, locks, slot: "jameson" });
+		const { tabA, tabB } = twoTabs("jameson");
 		expect(await tabA.store.hold()).toBe(true);
 		expect(await tabB.store.hold()).toBe(false);
 	});
@@ -767,10 +817,7 @@ describe("§11.3 — rename and delete", () => {
 		// The second `tryHold` answers `null` because the first already holds the
 		// lock. Written over the first's release, that `null` would leave the lock
 		// held with nothing able to release it, and the store reporting it lost.
-		const locks = memorySlotLocks();
-		const backend = memorySaveBackend();
-		const tabA = harness({ backend, locks, slot: "jameson" });
-		const tabB = harness({ backend, locks, slot: "jameson" });
+		const { tabA, tabB } = twoTabs("jameson");
 		const both = await Promise.all([tabA.store.hold(), tabA.store.hold()]);
 		expect(both).toEqual([true, true]);
 		expect(await tabA.store.hold()).toBe(true);
