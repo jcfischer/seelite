@@ -260,9 +260,17 @@ the world runs under it.
 
 ### 11.3 Operations (S3)
 
-Every operation except Continue ends in a **page reload** into the active
-Commander, because the only `new Game(` is the boot's and nothing rebuilds a game
-in the page. Nothing here changes that.
+**New game, Load and Import end in a page reload** into the Commander the
+pointer names, because the only `new Game(` is the boot's and nothing rebuilds a
+game in the page. Nothing here changes that. **Export, Rename and Delete do not
+reload**: they update the overlay in place. A reload straight after Export could
+cancel the download on D9's rescue path, and Rename and Delete change no game.
+
+**A switch out of a game in play awaits its flush.** When a store is attached,
+New game, Load and Import first await `flush("quit")` on the outgoing Commander,
+and a flush that fails refuses the switch with the fault. `pagehide`'s own quit
+flush is best-effort — a page torn down mid-transaction loses that write — so a
+switch the player chose does not rely on it.
 
 **A reload the overlay caused does not open the overlay again.** New game, Load
 and Import write a **one-shot continue** beside the pointer (§11.4) before
@@ -280,21 +288,35 @@ a taken name would replace that Commander rather than create one.
 - **New game** takes three choices (S5): a **name**, pre-filled with a free
   default; a **galaxy seed**, pre-filled with a random seed the player can keep,
   retype or re-roll — there is no canonical seed, and `seedFromQuery` gives a
-  random one today; and **permadeath**, on or off. The new Commander must exist
-  on disk with its seed and #89's D7 flag **before** the reload, so a tab closed
-  between the choice and the boot cannot lose the choice. Then the pointer names
-  it and the page reloads.
+  random one today; and **permadeath**, on or off. **The choice is on disk
+  before the reload, as a pending new game rather than a save**: name, seed and
+  #89's D7 flag, written to the pointer's store (§11.4) with the one-shot
+  continue. No envelope is built there — a `SaveEnvelope` needs a world and a
+  flight, and only a constructed `Game` has those. The boot that consumes the
+  pending new game constructs a fresh `Game` from its seed and flag, awaits its
+  first `live` write into the named slot, and only then clears the pending
+  record and continues. A tab closed at any point in that sequence loses nothing
+  the player chose: either the pending record or the first save is on disk.
 - **Load / switch** sets the pointer and reloads.
 - **Export** hands the player `exportSlot`'s file. It is offered for any slot,
   including one whose record this build refuses — D9's rescue path.
 - **Import** asks for a name and runs `importSlot` into a **new** slot, under
   the name rule above. `parseSave`'s integrity and version refusals are what
-  import refuses a file on.
+  import refuses a file on. Then the pointer names it, the one-shot continue is
+  written, and the page reloads.
 - **Rename** is copy-then-delete: both records to the new name, then
   `deleteSlot` on the old one. A failure between the two leaves two Commanders,
   never zero.
 - **Delete** asks for confirmation.
-- **Rename and delete refuse the active Commander.**
+- **Rename and delete refuse any Commander a tab has a store attached to** —
+  this tab's or another's. The pointer is shared by every tab of the origin, but
+  a store attaches per tab, so refusing only the one the pointer names lets tab B
+  delete the Commander tab A is still writing, and tab A's next write recreates
+  it with a `live` record alone. An attached store holds an **exclusive Web Lock
+  named by its slot** for the life of the tab; Rename and Delete request that
+  lock without waiting and refuse when it is held. The same lock refuses
+  Continue into a Commander already open in another tab, which is two stores
+  writing one slot.
 
 `SaveStore` gains the delete and rename it does not have; `SaveBackend` already
 has `deleteSlot`.
@@ -321,7 +343,19 @@ there would be listed as a Commander, and `deleteSlot` could match it. The
 pointer gets its own store, which is a `SAVE_DB_VERSION` bump from 1 to 2; the
 upgrade creates the new store and leaves `slots` and every record in it
 untouched. `SaveBackend` gains the pointer's read and write, and the in-memory
-backend implements them the same way so the headless tier checks the policy.
+backend implements them so the headless tier checks the policy — but not the
+separation: an in-memory pointer is disjoint from the slots by construction, so
+the collision it guards against is checked against the real IndexedDB backend
+(§11.7).
+
+**A blocked upgrade is a named fault, not a hang.** A tab still open on the
+version-1 build holds the database, and the upgrade waits for it. `openSaveDb`
+has no `onblocked` handler today, and the boot awaits the read before it builds
+the game, so an unhandled block never boots at all. The open refuses on
+`onblocked` with a message naming the cause — another seelite tab is open — and
+D9's path takes over: a fresh game, no store, and the overlay says why. The
+version-1 tab's connection gets `onversionchange` and closes, so its next write
+fails and raises its own badge rather than blocking the upgrade forever.
 
 ### 11.5 Faults (S4)
 
@@ -365,8 +399,11 @@ ask, so the rule applies only where nothing asks — under `?boot=direct`.
 
 ### 11.7 Verification obligations
 
-Headless: the active pointer's read, write and fallback, and `slots()` never
-listing the pointer's store; the one-shot continue consumed by exactly one boot;
+Headless: the active pointer's read, write and fallback; the one-shot continue
+consumed by exactly one boot, into the slot the pointer names after New game,
+Load and Import alike; a pending new game surviving until its first `live` write
+lands; a switch refused when its awaited flush fails; Export, Rename and Delete
+causing no reload;
 a rename interrupted between copy and delete leaving two; delete and rename
 refusing the active Commander; new game, import and rename each refusing a taken
 name; import refusing a record `parseSave` refuses; a `lastDocked` fault
@@ -376,9 +413,15 @@ the choice; `?seed` without `?boot=direct` setting nothing aside; the URL builde
 row.
 
 Browser: the overlay opens at boot with the clock held; Continue releases it; a
-boot fault shows its message and offers Export; a forced write failure raises the
-badge in flight and while docked, and a good write clears it; the pad drives the
-overlay as `modal`.
+boot fault shows its message and offers Export; a forced `live` write failure
+raises the badge in flight and while docked and a good debounced write clears it;
+a forced dock-flush failure raises it and a good debounced write does **not**
+clear it, while the next good dock flush does; the pad drives the overlay as
+`modal`. Against the real IndexedDB backend: a version-1 database already holding
+saves opens under version 2 with every record intact and `slots()` listing the
+slots and not the pointer's store; a version-1 connection left open produces the
+named blocked fault and a boot, not a hang; and a second tab refuses Continue,
+Rename and Delete on a Commander the first tab holds.
 
 **And a look at a rendered frame** of the overlay and of the badge in both states
 before either is called done — #94's rule for anything drawn on the glass.
