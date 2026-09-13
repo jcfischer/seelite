@@ -112,8 +112,15 @@ const slotOfKey = (key: unknown) => String(key).split(KEY_SEPARATOR)[0];
 const noRecordToCopy = (slot: string): never =>
 	fail(`"${slot}" holds no record to copy`);
 
-/** Why a flush is happening. `dock` is the one that also writes the
- *  checkpoint; the rest are D4's unconditional flushes. */
+/**
+ * Why a flush is happening. `dock` is the one that also writes the checkpoint;
+ * the rest are D4's unconditional flushes.
+ *
+ * `quit` means leaving this Commander, whichever way: a tab closing, or a
+ * switch the overlay awaits before New game, Load or Import (§11.3). Both write
+ * `live` with nothing dirty. `new-game` is the first write a new Commander
+ * gets, which is neither.
+ */
 export type FlushReason = "dock" | "undock" | "jump" | "quit" | "new-game";
 
 /**

@@ -123,6 +123,12 @@ describe("the Game's world writes", () => {
 		// first dirty event: the next dock, the next trade, the relay observe on
 		// the next jump. The guard is on the construction, not on the write.
 		expect(MAIN).toContain("!noSave && plan.fault === null");
+		// **And on the one-shot path**, which attaches with no such guard: a
+		// record that parses and will not restore turns the plan into an overlay
+		// boot there. `withRestoreFault` is tested headless; this pins that the
+		// boot calls it. Textual, so it proves the call is present and nothing
+		// about what surrounds it.
+		expect(MAIN).toContain("plan = withRestoreFault(plan, error);");
 	});
 
 	test("permadeath is chosen at new game and cannot be flipped later", () => {

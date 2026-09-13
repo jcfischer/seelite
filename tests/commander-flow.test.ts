@@ -15,6 +15,7 @@ import {
 	CommanderSwitch,
 	lockHeldFault,
 	lockRequestFault,
+	messageOf,
 	pendingFor,
 	permadeathAtAttach,
 	planBoot,
@@ -447,7 +448,9 @@ describe("CommanderSwitch: what reloads, and the awaited flush (§11.3)", () => 
 });
 
 describe("the overlay's words name the Commander, never the slot (§11.5)", () => {
-	const SLOT_WORD = /\bslot\b/i;
+	// The storage word, and `CONTEXT.md`'s Commander entry's player-facing
+	// _Avoid_ list, as the label row in `commander-overlay.test.ts` checks.
+	const SLOT_WORD = /\b(slot|save game|save file|profile)\b/i;
 
 	test("every fault a boot, an attach or a switch can hand the overlay", async () => {
 		const messages: string[] = [
@@ -459,7 +462,7 @@ describe("the overlay's words name the Commander, never the slot (§11.5)", () =
 			try {
 				await run();
 			} catch (error) {
-				messages.push(error instanceof Error ? error.message : String(error));
+				messages.push(messageOf(error));
 			}
 		};
 
@@ -675,5 +678,31 @@ describe("an attach reads the record again once it holds the lock (§11.3)", () 
 		]);
 		expect(faulted.faultSlot).toBeNull();
 		expect(plan.mode).toBe("continue");
+	});
+
+	test("a pending new game's Commander that another tab saved since the boot read is not overwritten", async () => {
+		// Two tabs booted while the pending record was on disk. Tab A continued,
+		// played and closed; tab B's attach would write a fresh world over it.
+		const o = origin();
+		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: false });
+		await o.catalog.takeOneShot();
+		const plan = await o.boot();
+		expect(plan.pending?.name).toBe("New");
+		await o.backend.write("New", "live", serializeSave(envelope(5)));
+		const before = await o.backend.read("New", "live");
+		const attached: SaveStore[] = [];
+		const result = await attachCommander({
+			slot: "New",
+			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: plan.record,
+			pending: pendingFor(plan, "New"),
+			makeStore: (slot) => o.store(slot, () => envelope(OTHER_SEED)),
+			onHeld: (store) => attached.push(store),
+		});
+		expect(result).toEqual({ attached: false, fault: null, stale: true });
+		expect(attached.length).toBe(0);
+		expect(await o.backend.read("New", "live")).toEqual(before);
+		expect(await o.store("New").hold()).toBe(true);
 	});
 });

@@ -319,20 +319,20 @@ export async function attachCommander(
 		return { attached: false, fault: lockRequestFault(slot, error) };
 	}
 	if (!held) return { attached: false, fault: lockHeldFault(slot) };
-	// A pending new game's Commander has no record by design, and
-	// `resolveActive` already settled one that landed.
-	if (!pending) {
-		let now: unknown;
-		try {
-			now = await backend.read(slot, "live");
-		} catch (error) {
-			store.release();
-			return { attached: false, fault: loadFault(slot, error) };
-		}
-		if (recordText(now) !== bootRecord) {
-			store.release();
-			return { attached: false, fault: null, stale: true };
-		}
+	// **A pending new game is read again too.** Its boot read nothing, so its
+	// `bootRecord` is `null` — and a record there now is another tab that booted
+	// on the same pending record, continued, played and saved. The reload finds
+	// that save, and `resolveActive` clears the pending record beside it.
+	let now: unknown;
+	try {
+		now = await backend.read(slot, "live");
+	} catch (error) {
+		store.release();
+		return { attached: false, fault: loadFault(slot, error) };
+	}
+	if (recordText(now) !== bootRecord) {
+		store.release();
+		return { attached: false, fault: null, stale: true };
 	}
 	onHeld(store);
 	if (pending) {

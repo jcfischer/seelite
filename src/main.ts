@@ -10261,6 +10261,8 @@ if (query.has("model-viewer")) {
 	const noSave = query.has("no-save");
 	const saveBackend = indexedDbSaveBackend();
 	const saveLocks = webSlotLocks();
+	// Read once: an unusable `?seed` warns as it is read.
+	const askedSeed = querySeed();
 	const catalog = new CommanderCatalog({
 		backend: saveBackend,
 		locks: saveLocks,
@@ -10270,7 +10272,7 @@ if (query.has("model-viewer")) {
 		backend: saveBackend,
 		boot,
 		noSave,
-		querySeed: querySeed(),
+		querySeed: askedSeed,
 	});
 	for (const line of [plan.fault, plan.notice])
 		if (line !== null) console.warn(`save: ${line}`);
@@ -10279,7 +10281,7 @@ if (query.has("model-viewer")) {
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
-	const worldSeed = plan.pending?.seed ?? querySeed() ?? randomSeed();
+	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
 	try {
 		game = new Game(worldSeed, plan.loaded);
