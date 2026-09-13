@@ -10198,6 +10198,11 @@ if (query.has("model-viewer")) {
 	// told which slot failed and why, the bad record is left exactly where it
 	// is so it can still be exported, and the game starts fresh rather than
 	// refusing to start at all.
+	//
+	// The boot mode is read once, here, ahead of the load (#306). §11.6 makes
+	// `?seed`'s set-aside below depend on it, so the value the load consults and
+	// the value the page exposes have to be the same read.
+	const boot = bootMode(query);
 	const saveBackend = indexedDbSaveBackend();
 	let loaded: SaveEnvelope | null = null;
 	let saveFault: string | null = null;
@@ -10327,7 +10332,7 @@ if (query.has("model-viewer")) {
 	// exposed so `probe-boot.mjs` can show that `gameUrl`'s `?boot=direct`
 	// reached the page rather than being assumed to.
 	(window as unknown as { __seelite: { boot: BootMode } }).__seelite.boot =
-		bootMode(query);
+		boot;
 
 	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
 	// two shells, the surface shader and the crater path, so a body can be flown

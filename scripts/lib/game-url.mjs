@@ -51,11 +51,20 @@ export const WORKBENCH_ROUTES = Object.freeze([
  */
 function append(into, params, skip = () => false) {
 	for (const [key, value] of Object.entries(params)) {
-		if (value === undefined || value === null || value === false) continue;
+		if (!present(value)) continue;
 		if (skip(key)) continue;
 		into.append(key, value === true ? "" : String(value));
 	}
 }
+
+/**
+ * Whether a parameter value reaches the URL. `append` leaves the others off, so
+ * every guard that asks "does this URL carry X" asks it through this.
+ *
+ * @param {ParamValue} value
+ */
+const present = (value) =>
+	value !== undefined && value !== null && value !== false;
 
 /** @param {URLSearchParams} query */
 const render = (query) =>
@@ -73,22 +82,23 @@ const render = (query) =>
  * `override` is the `PROBE_URL` knob several probes read: when it is a
  * non-empty string it replaces the origin and the query, and the caller's
  * parameters fill in only what it does not already set — the knob exists to
- * point a probe at another world, so its seed wins. Either way the result
- * boots direct unless it already names a boot, so a person setting the knob
- * does not get a probe that hangs on the overlay.
+ * point a probe at another world, so its seed wins. `force` names the
+ * parameters that win over it anyway, for an arm whose whole point is one flag.
+ * Either way the result boots direct unless it already names a boot, so a
+ * person setting the knob does not get a probe that hangs on the overlay.
  *
  * `boot: null` leaves the parameter off. That is for a probe of the overlay
  * itself, and nothing else should want it.
  *
  * @param {string} origin
  * @param {Params} [params]
- * @param {{ override?: string, boot?: string | null }} [options]
+ * @param {{ override?: string, force?: string[], boot?: string | null }} [options]
  * @returns {string}
  */
 export function gameUrl(
 	origin,
 	params = {},
-	{ override, boot = BOOT_DIRECT } = {},
+	{ override, force = [], boot = BOOT_DIRECT } = {},
 ) {
 	if (BOOT_PARAM in params)
 		throw new Error(
@@ -99,8 +109,14 @@ export function gameUrl(
 		throw new Error(
 			`gameUrl: "${route}" is a workbench route and boots no game — use workbenchUrl`,
 		);
+	const unset = force.find((key) => !present(params[key]));
+	if (unset !== undefined)
+		throw new Error(
+			`gameUrl: force names "${unset}", which the parameters do not set`,
+		);
 	const base = new globalThis.URL(override ? override : `${origin}/`);
 	const query = new URLSearchParams(base.search);
+	for (const key of force) query.delete(key);
 	append(query, params, (key) => query.has(key));
 	if (boot !== null && !query.has(BOOT_PARAM)) query.set(BOOT_PARAM, boot);
 	const search = render(query);
@@ -108,7 +124,13 @@ export function gameUrl(
 }
 
 /**
- * The URL of a workbench route. No boot parameter: these build no game.
+ * The URL of a workbench route.
+ *
+ * **It boots direct too**, although a workbench builds no game. Both closes
+ * (`model-viewer.ts`, `state-gallery.ts`) drop their own route and assign the
+ * rest of the URL, which is a boot of the default route — so a probe that
+ * closes a workbench back to flight needs the parameter already there, and the
+ * page ignores it until then.
  *
  * Refuses parameters that name no workbench route, because those load the
  * default route — a game boot written as a workbench URL is the hand-built URL
@@ -124,21 +146,33 @@ export function gameUrl(
  * @returns {string}
  */
 export function workbenchUrl(origin, params, { override } = {}) {
-	if (override) {
-		const query = new globalThis.URL(override).searchParams;
-		if (!WORKBENCH_ROUTES.some((r) => query.has(r)))
-			throw new Error(
-				`workbenchUrl: override ${override} names no workbench route — ` +
-					`that URL boots the game; use gameUrl`,
-			);
-		return override;
-	}
-	if (!WORKBENCH_ROUTES.some((r) => r in params))
-		throw new Error(
-			`workbenchUrl: no workbench route in ${JSON.stringify(Object.keys(params))} — ` +
-				`that URL boots the game; use gameUrl`,
+	const base = new globalThis.URL(override ? override : `${origin}/`);
+	const query = new URLSearchParams(base.search);
+	if (override)
+		assertWorkbench(
+			WORKBENCH_ROUTES.filter((r) => query.has(r)),
+			`override ${override}`,
 		);
-	const query = new URLSearchParams();
-	append(query, params);
-	return `${origin}/?${render(query)}`;
+	else {
+		assertWorkbench(
+			WORKBENCH_ROUTES.filter((r) => present(params[r])),
+			JSON.stringify(Object.keys(params)),
+		);
+		append(query, params);
+	}
+	if (!query.has(BOOT_PARAM)) query.set(BOOT_PARAM, BOOT_DIRECT);
+	return `${base.origin}${base.pathname}?${render(query)}`;
+}
+
+/**
+ * The one refusal both arms of `workbenchUrl` make.
+ *
+ * @param {string[]} routes the workbench routes the URL would actually carry
+ * @param {string} described what was asked for, for the message
+ */
+function assertWorkbench(routes, described) {
+	if (routes.length === 0)
+		throw new Error(
+			`workbenchUrl: no workbench route in ${described} — that URL boots the game; use gameUrl`,
+		);
 }

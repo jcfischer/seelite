@@ -11,6 +11,12 @@
  * keeps working until the overlay lands and then hangs on it, and nothing on
  * GitHub runs the probes (#14) — so the hand-built URL has to fail here, in
  * the headless tier, where CI does run.
+ *
+ * The scan reads the navigations a **script** makes. The page makes its own: a
+ * workbench's close drops its route parameter and assigns the rest of the URL,
+ * which lands on the default route. No text scan of `scripts/` sees that, so
+ * `workbenchUrl` carries `boot=direct` as well, and a row below holds both
+ * closes to keeping every other parameter.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -29,6 +35,7 @@ import {
 } from "../src/boot-mode";
 import {
 	callArguments,
+	codeOf,
 	repoPath,
 	scriptFiles,
 	stripComments,
@@ -153,6 +160,26 @@ describe("gameUrl", () => {
 		).toBe("2");
 	});
 
+	test("a forced parameter overwrites the override's value", () => {
+		// `probe-boot`'s combat arm: a `PROBE_URL` carrying `combat=0` must not
+		// switch off the flag the arm exists to set.
+		const url = new URL(
+			gameUrl(
+				ORIGIN,
+				{ seed: 42, combat: 1 },
+				{ override: "http://o.test:1/?seed=7&combat=0", force: ["combat"] },
+			),
+		);
+		expect(url.searchParams.get("combat")).toBe("1");
+		expect(url.searchParams.get("seed")).toBe("7");
+	});
+
+	test("force must name a parameter the caller set", () => {
+		expect(() => gameUrl(ORIGIN, { seed: 1 }, { force: ["combat"] })).toThrow(
+			/force/,
+		);
+	});
+
 	test("a workbench route is refused, because it does not boot the game", () => {
 		for (const route of WORKBENCH_ROUTES)
 			expect(() => gameUrl(ORIGIN, { [route]: "x" })).toThrow(/workbench/);
@@ -160,17 +187,44 @@ describe("gameUrl", () => {
 });
 
 describe("workbenchUrl", () => {
-	test("names its route and carries no boot", () => {
+	test("names its route and boots direct, for the close that drops the route", () => {
 		const url = new URL(
 			workbenchUrl(ORIGIN, { "model-viewer": "station", finish: "worn" }),
 		);
 		expect(url.searchParams.get("model-viewer")).toBe("station");
 		expect(url.searchParams.get("finish")).toBe("worn");
-		expect(url.searchParams.has("boot")).toBe(false);
+		expect(url.searchParams.get("boot")).toBe("direct");
 	});
 
 	test("refuses parameters that name no workbench route, which would boot the game", () => {
 		expect(() => workbenchUrl(ORIGIN, { seed: 42 })).toThrow(/workbench/);
+	});
+
+	test("a route whose value is left off is no route", () => {
+		expect(() => workbenchUrl(ORIGIN, { "planet-prototype": false })).toThrow(
+			/workbench/,
+		);
+		expect(() =>
+			workbenchUrl(ORIGIN, { "galaxy-map": undefined, seed: 1 }),
+		).toThrow(/workbench/);
+	});
+
+	test("both workbench closes keep every parameter but their route", () => {
+		// What makes `boot=direct` on a workbench URL reach the flight it closes
+		// to: each close deletes its own route and assigns the rest.
+		for (const [file, route] of [
+			["src/model-viewer.ts", "model-viewer"],
+			["src/state-gallery.ts", "hud-gallery"],
+		]) {
+			const code = codeOf(file);
+			const assigns = code.match(/window\.location\.assign\(/g) ?? [];
+			expect(assigns.length).toBe(1);
+			expect(code).toMatch(
+				new RegExp(
+					`new URL\\(window\\.location\\.href\\);\\s*\\w+\\.searchParams\\.delete\\("${route}"\\);\\s*window\\.location\\.assign\\(`,
+				),
+			);
+		}
 	});
 
 	test("the route list is the branches main.ts takes instead of the game", () => {
@@ -202,7 +256,7 @@ describe("workbenchUrl", () => {
 				{ "planet-prototype": true },
 				{ override: "http://o.test:1/?planet-prototype=moon" },
 			),
-		).toBe("http://o.test:1/?planet-prototype=moon");
+		).toBe("http://o.test:1/?planet-prototype=moon&boot=direct");
 		expect(() =>
 			workbenchUrl(
 				ORIGIN,

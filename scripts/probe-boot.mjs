@@ -67,14 +67,29 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
 /**
+ * `gameUrl`'s options under this file's one rule for the `PROBE_URL` knob: it
+ * applies unless a caller says `override: false`, and its parameters win over
+ * the caller's except the ones named in `force`.
+ *
+ * Options rather than a URL-returning wrapper, because the scan in
+ * `tests/game-url.test.ts` accepts a navigation only through a `gameUrl` call
+ * or a name bound to one — a wrapper would be the hand-built URL it refuses.
+ */
+const probeOptions = ({
+	override = process.env.PROBE_URL,
+	force = [],
+} = {}) => ({
+	override: override || undefined,
+	force,
+});
+
+/**
  * Open one page, wait for a drawn frame, and report page errors as failures.
  *
  * Takes the parameters rather than a URL, so the URL is built here by
  * `gameUrl` (#306): a helper that took a string would let a caller hand it a
  * hand-built one that the scan in `tests/game-url.test.ts` cannot see. The
- * `PROBE_URL` override applies unless a caller passes `null` — its parameters
- * win and these fill in what it lacks, so `combat` still reaches a URL the
- * override replaced.
+ * `PROBE_URL` rule is `probeOptions`'s.
  *
  * `checkBoot` reads the boot mode the page took **before** the boot wait (#306).
  * The mode is set when the game is constructed, ahead of the first frame, so a
@@ -83,20 +98,17 @@ const { check, watch, exit } = tally();
  * reading of it — not that `direct` skips the Commander overlay, which does not
  * exist yet and is shown by the node that builds it.
  */
-async function open(
+async function open({
 	params = { seed: SEED },
-	override = process.env.PROBE_URL,
-	{ checkBoot = false } = {},
-) {
+	override,
+	force,
+	checkBoot = false,
+} = {}) {
 	const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 	watch(page);
 	await installCamSim(page);
-	await page.goto(
-		gameUrl(ORIGIN, params, { override: override ?? undefined }),
-		{
-			waitUntil: "load",
-		},
-	);
+	const url = gameUrl(ORIGIN, params, probeOptions({ override, force }));
+	await page.goto(url, { waitUntil: "load" });
 	if (checkBoot) {
 		const boot = await page
 			.waitForFunction(() => window.__seelite?.boot, null, { timeout: 20000 })
@@ -108,7 +120,7 @@ async function open(
 	return page;
 }
 
-const page = await open(undefined, undefined, { checkBoot: true });
+const page = await open({ checkBoot: true });
 
 const state = await page.evaluate(() => {
 	const g = window.__seelite;
@@ -558,8 +570,8 @@ check(
 // what made the last of them time out.
 await reload.close();
 
-// `null`: the other seed is the point, so the override must not replace it.
-const other = await open({ seed: OTHER_SEED }, null);
+// The other seed is the point, so the override must not replace it.
+const other = await open({ params: { seed: OTHER_SEED }, override: false });
 const otherStars = await other.evaluate(() => {
 	const points = window.__seelite.backdropScene.children.find(
 		(c) => c.isPoints,
@@ -689,7 +701,7 @@ async function fpsGate() {
 		gameUrl(
 			ORIGIN,
 			{ seed: SEED, fps: true },
-			{ override: process.env.PROBE_URL },
+			probeOptions({ force: ["fps"] }),
 		),
 		{ waitUntil: "load" },
 	);
@@ -973,8 +985,12 @@ async function combatRigAbsentInNormalFlight() {
 	// neither `?combat=1` nor `&combat=1` is safe against it — the first version
 	// of this line used `?` on a URL already carrying `?seed=42`, the flag never
 	// parsed, and the control row below failed for a reason it did not name.
-	// `gameUrl` adds the flag to whichever URL the override left.
-	const combatPage = await open({ seed: SEED, combat: 1 });
+	// `gameUrl` adds the flag to whichever URL the override left, and `force`
+	// keeps an override's own `combat=0` from switching the arm off.
+	const combatPage = await open({
+		params: { seed: SEED, combat: 1 },
+		force: ["combat"],
+	});
 	const enabled = await combatPage.evaluate(() => ({
 		rig: window.__seelite.combatRig !== null,
 		target: Boolean(

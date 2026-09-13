@@ -19,11 +19,11 @@ try {
 		{ combat: 1 },
 		{ fleet: true, combat: 1 },
 	]) {
-		// The label the check names have always carried, derived from the
-		// parameters rather than written beside them: the URL is `gameUrl`'s.
-		const query = Object.entries(extra)
-			.map(([key, value]) => (value === true ? `&${key}` : `&${key}=${value}`))
-			.join("");
+		// Named by the parameters' keys, not by a query string: the URL is
+		// `gameUrl`'s, and a label that spelled one would copy its rules.
+		const label = Object.keys(extra).join("+") || "default";
+		const fleet = "fleet" in extra;
+		const combat = "combat" in extra;
 		const page = await browser.newPage({
 			viewport: { width: 1440, height: 900 },
 		});
@@ -49,10 +49,9 @@ try {
 				fleetCount: g.fleet.length,
 			};
 		});
-		const expected =
-			(query.includes("fleet") ? 33 : 0) + (query.includes("combat") ? 1 : 0);
+		const expected = (fleet ? 33 : 0) + (combat ? 1 : 0);
 		check(
-			`${query || "default"}: producer count and neutral metadata`,
+			`${label}: producer count and neutral metadata`,
 			initial.contacts.length === expected &&
 				initial.contacts.every(
 					(c) =>
@@ -64,7 +63,7 @@ try {
 				),
 		);
 		check(
-			`${query || "default"}: contacts selectable and scannable, never generated bodies`,
+			`${label}: contacts selectable and scannable, never generated bodies`,
 			initial.contacts.every(
 				(c) =>
 					initial.selectedIds.includes(c.id) &&
@@ -72,7 +71,7 @@ try {
 					!initial.bodyIds.includes(c.id),
 			),
 		);
-		if (!query) {
+		if (!fleet && !combat) {
 			for (const d of await page.evaluate(designationFrames)) {
 				check(
 					`Target panel paints ${d.expected} within its bounds`,
@@ -82,7 +81,7 @@ try {
 			}
 		}
 		if (expected) {
-			if (query.includes("fleet")) {
+			if (fleet) {
 				const labels = await page.evaluate(() => {
 					const g = window.__seelite;
 					const ctx = g.overlayCtx;
@@ -119,14 +118,12 @@ try {
 					}
 				});
 				check(
-					`${query}: unselected ship names paint visible pixels`,
+					`${label}: unselected ship names paint visible pixels`,
 					labels.namesDrawn > 0 && labels.changedPixels > 50,
 					JSON.stringify(labels),
 				);
 			}
-			const id = query.includes("fleet")
-				? initial.contacts[32].id
-				: initial.contacts[0].id;
+			const id = fleet ? initial.contacts[32].id : initial.contacts[0].id;
 			// Exercise real key events in both directions at the body's/contact's seam.
 			const predecessor =
 				initial.selectedIds[
@@ -138,7 +135,7 @@ try {
 			}, predecessor);
 			await page.keyboard.press("t");
 			check(
-				`${query}: T selects the contact`,
+				`${label}: T selects the contact`,
 				await page.evaluate(
 					(id) => window.__seelite.targetBody()?.id === id,
 					id,
@@ -146,7 +143,7 @@ try {
 			);
 			await page.keyboard.press("g");
 			check(
-				`${query}: G cycles back`,
+				`${label}: G cycles back`,
 				await page.evaluate(
 					(id) => window.__seelite.targetId === id,
 					predecessor,
@@ -161,7 +158,7 @@ try {
 				id,
 			);
 			check(
-				`${query}: selected contact has a visible scanner glyph`,
+				`${label}: selected contact has a visible scanner glyph`,
 				await page.evaluate(
 					(id) =>
 						Boolean(
@@ -193,7 +190,7 @@ try {
 				};
 			}, id);
 			check(
-				`${query}: Navigation prints the named ship and a finite ETA`,
+				`${label}: Navigation prints the named ship and a finite ETA`,
 				Number.isFinite(eta.value) &&
 					eta.value >= 0 &&
 					Number.isFinite(eta.actual) &&
@@ -202,7 +199,7 @@ try {
 				JSON.stringify(eta),
 			);
 			check(
-				`${query}: target velocity comes from the contact`,
+				`${label}: target velocity comes from the contact`,
 				JSON.stringify(eta.speed) === JSON.stringify(eta.velocity),
 			);
 			const estimates = await page.evaluate((id) => {
@@ -239,7 +236,7 @@ try {
 				}
 			}, id);
 			check(
-				`${query}: non-zero Navigation ETA uses the existing flight and cruise laws`,
+				`${label}: non-zero Navigation ETA uses the existing flight and cruise laws`,
 				estimates.normal > 0 &&
 					Number.isFinite(estimates.normal) &&
 					estimates.normal === estimates.expectedNormal &&
@@ -261,7 +258,7 @@ try {
 				id,
 			);
 			check(
-				`${query}: Navigation row selects the contact`,
+				`${label}: Navigation row selects the contact`,
 				await page.evaluate((id) => window.__seelite.targetId === id, id),
 			);
 		}
