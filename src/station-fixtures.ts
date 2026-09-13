@@ -43,7 +43,12 @@
  */
 
 import * as THREE from "three";
-import { glowMaterial, glowPoints, steadyGlowMaterial } from "./station-glow";
+import {
+	BLINKING_CORE_GAIN,
+	glowMaterial,
+	glowPoints,
+	steadyGlowMaterial,
+} from "./station-glow";
 import { shared } from "./gpu-teardown";
 import { revolve } from "./loft";
 import { castOntoStructure } from "./station-greebles";
@@ -637,7 +642,12 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 		// Its glare, as `station-glow.ts` gives every station light (#300): a
 		// 2 m beacon is under a pixel at two kilometres, and "reads as a point
 		// through bloom" was a job the old 8 m box was doing by being too big.
-		const glow = glowMaterial(visuals.strobeColor, 0, "point");
+		const glow = glowMaterial(
+			visuals.strobeColor,
+			0,
+			"point",
+			BLINKING_CORE_GAIN,
+		);
 		lamp.add(
 			glowPoints(lamp.name, [new THREE.Vector3()], sizeKm, sizeKm * 0.75, glow),
 		);

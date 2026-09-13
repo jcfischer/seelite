@@ -366,9 +366,22 @@ they were a 42 m strobe, a 30 × 12 m pane, a 156 m flood and a 60 m arc. A
 strobe or beacon is 2 m now, a pane 3 × 1.5 m, a flood 4 m, the arc 1 m and a
 flare throat at most 8 m. A fitting that size is under a pixel from the
 approach, so each carries a glow — additive, in its own colour, floored at a
-few pixels and capped so the fitting shows up close — driven by the same clock
-and never brighter than the fitting. The glow draws only where its fitting
-does, so none is drawn at outline range.
+few pixels and capped so the fitting shows up close — driven by the same clock. The glow draws only where its fitting does, so none
+is drawn at outline range.
+
+**A blinking light burns past the bloom threshold; a steady one does not**
+(#300). Steady glows — windows, floods, the flare throats, the weld arc — peak
+at their fixture's drive, under #199's emissive ceiling. Strobes, beacons and
+the mouth ring carry a white-hot core that crosses the bloom threshold, as the
+ship's nav lights do, and that is the principal's ruling amending #199 for
+blinking point lights. The reason is measured rather than argued: from the
+cockpit on the player's GPU, those lights sit on or beside the brightest
+surfaces a station has — lit plating, the amber aperture frame, the nameplate —
+which read 141–227 of 255 at the lamps' own screen positions from 6 to 19 km.
+A glow capped at the ceiling and added onto that drew nothing a pilot could see
+(strobe-b at 18.6 km: 212 lit, 212 hidden), while beacons standing against
+black space read at 226. A headless probe on a software rasteriser had called
+every one of those lights present, which is why this paragraph cites the GPU.
 
 **The mouth carries a ring of strobes, and it says nothing about docking
 state** (#300). On a slot role, ten lamps stand on the lit frame round the

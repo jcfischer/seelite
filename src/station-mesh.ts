@@ -50,6 +50,7 @@
 
 import * as THREE from "three";
 import {
+	BLINKING_CORE_GAIN,
 	type GlowClass,
 	glowMaterial,
 	glowPoints,
@@ -549,8 +550,8 @@ function withGlow(
 }
 
 /** A driven fixture's glow: its own material, so the clock can write it. */
-function drivenGlow(color: number, glowClass: GlowClass) {
-	return glowMaterial(color, STATION_EMISSIVE_INTENSITIES.off, glowClass);
+function drivenGlow(color: number, glowClass: GlowClass, core: number) {
+	return glowMaterial(color, STATION_EMISSIVE_INTENSITIES.off, glowClass, core);
 }
 
 /**
@@ -916,7 +917,11 @@ function mouthStrobes(
 		lamp.position.set(x, y, faceZ + bar / 2);
 		lamp.name = "mouth-strobe";
 		detail(lamp, "reduced");
-		const glow = drivenGlow(STATION_VISUALS[type].strobeColor, "point");
+		const glow = drivenGlow(
+			STATION_VISUALS[type].strobeColor,
+			"point",
+			BLINKING_CORE_GAIN,
+		);
 		withGlow(lamp, size, glow);
 		group.add(lamp);
 		fixtures.push({
@@ -1370,7 +1375,11 @@ function strobePair(
 		place(side, lamp.position);
 		lamp.name = kind;
 		detail(lamp, "reduced");
-		const glow = drivenGlow(STATION_VISUALS[type].strobeColor, "point");
+		const glow = drivenGlow(
+			STATION_VISUALS[type].strobeColor,
+			"point",
+			BLINKING_CORE_GAIN,
+		);
 		withGlow(lamp, size, glow);
 		group.add(lamp);
 		fixtures.push({
@@ -2846,7 +2855,7 @@ function buildBayLights(
 	arc.position.copy(arcAt);
 	arc.name = "weld-arc";
 	detail(arc, "reduced");
-	const arcGlow = drivenGlow(STATION_VISUALS.shipyard.floodColor, "point");
+	const arcGlow = drivenGlow(STATION_VISUALS.shipyard.floodColor, "point", 0);
 	withGlow(arc, FITTING_KM.arcRadius * 2, arcGlow);
 	group.add(arc);
 	fixtures.push({
@@ -2911,7 +2920,11 @@ function buildVentBank(
 		STATION_VISUALS.refinery.heatColor,
 		STATION_EMISSIVE_INTENSITIES.off,
 	);
-	const throatGlare = drivenGlow(STATION_VISUALS.refinery.heatColor, "flood");
+	const throatGlare = drivenGlow(
+		STATION_VISUALS.refinery.heatColor,
+		"flood",
+		0,
+	);
 	/** How far the nozzles lean off the bank's own axis, and the direction that
 	 *  makes — shared by the pipe and the glow inside it, so the two cannot
 	 *  drift apart. They did: the throat's position was written out in the
@@ -4303,7 +4316,11 @@ function obstructionBeacon(
 	lamp.position.copy(at);
 	lamp.name = "obstruction-beacon";
 	detail(lamp, "reduced");
-	const glow = drivenGlow(STATION_VISUALS.refinery.strobeColor, "point");
+	const glow = drivenGlow(
+		STATION_VISUALS.refinery.strobeColor,
+		"point",
+		BLINKING_CORE_GAIN,
+	);
 	withGlow(lamp, size, glow);
 	fixtures.push({
 		material,

@@ -15,7 +15,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { EMISSIVE_CEILING } from "../src/light-rig";
+import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
 import { STATION_TYPES, type StationType } from "../src/station";
 import { GLOW_CLASSES, glowPixelSize } from "../src/station-glow";
 import {
@@ -246,7 +246,7 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 		}
 	});
 
-	test("no glow can be brighter than the exposure ceiling", () => {
+	test("a glow's drive never exceeds the exposure ceiling", () => {
 		for (const type of STATION_TYPES) {
 			const mesh = buildStationMesh(type, GREY, 0, 0);
 			for (const t of [0, 0.05, 0.75, 1.05, 1.75, 7.42]) {
@@ -261,5 +261,59 @@ describe("every §5 fixture carries a glow, wired to its fitting", () => {
 				});
 			}
 		}
+	});
+});
+
+/**
+ * **A blinking point light carries a white-hot core above the ceiling** (#300).
+ *
+ * Measured on the principal's GPU, facing each station from the cockpit: the
+ * docking-face strobes and the mouth ring sit on or beside the brightest
+ * surfaces a station has — lit plating, the amber aperture frame, the
+ * nameplate — which read 141–227 of 255 at the lamps' own screen positions from
+ * 6 to 19 km. A glow capped at the emissive ceiling added onto that cannot
+ * stand out (strobe-b at 18.6 km: 212 lit, 212 hidden), while the truss beacons
+ * against black space read at peak 226. The principal's ruling amends #199's
+ * exposure rule for **blinking point lights only**: their core crosses the
+ * bloom threshold, as the ship's nav lights already do. Steady lights —
+ * windows, floods, the flare throats, the welding arc — stay under it.
+ */
+describe("a blinking point light burns past the bloom threshold; a steady light does not", () => {
+	const BLINKING = new Set(["strobe-a", "strobe-b", "chase", "beacon"]);
+
+	test("every blinking fixture's glow has a core that crosses the threshold, every other glow has none", () => {
+		for (const type of ["trade", "shipyard", "refinery"] as const) {
+			const mesh = buildStationMesh(type, GREY, 0, 0);
+			const kindOfGlow = new Map<THREE.Material, string>();
+			for (const f of mesh.fixtures) if (f.glow) kindOfGlow.set(f.glow, f.kind);
+			const wrong: string[] = [];
+			mesh.root.traverse((object) => {
+				if (!object.userData.glow) return;
+				const material = (object as THREE.Points)
+					.material as THREE.ShaderMaterial;
+				const core = Number(material.uniforms.uCore?.value ?? Number.NaN);
+				const kind = kindOfGlow.get(material) ?? "steady";
+				const base = mesh.fixtures.find((f) => f.glow === material)?.base ?? 0;
+				if (BLINKING.has(kind)) {
+					// Peak radiance at the centre: the drive times (1 + core gain).
+					if (!(core > 0 && base * (1 + core) > EXPOSURE.bloom.threshold))
+						wrong.push(`${object.name}/${kind} core=${core} base=${base}`);
+				} else if (core !== 0) {
+					wrong.push(`${object.name}/${kind} steady light with core=${core}`);
+				}
+			});
+			expect([type, wrong]).toEqual([type, []]);
+		}
+	});
+
+	test("the core gain is in the shader, not only declared", () => {
+		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		const strobe = mesh.fixtures.find((f) => f.kind === "strobe-a")?.glow;
+		expect(strobe).toBeDefined();
+		const source = (strobe as THREE.ShaderMaterial).fragmentShader;
+		expect(source).toContain("uniform float uCore");
+		// Read into the output, not just declared: a declared, unused uniform
+		// compiles, links and draws exactly the old glow.
+		expect(/uCore\s*\)|\*\s*uCore|uCore\s*\*/.test(source)).toBe(true);
 	});
 });

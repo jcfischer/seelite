@@ -20,10 +20,18 @@
  *   saturated red crosses bloom. `probe-station-visuals.mjs` orders the three
  *   roles warm to cold by `R − B` over their own light pixels, and a white core
  *   drags every role toward zero. A station glow keeps its fixture's colour.
- * - **No bloom forcing.** The peak is the fixture's own drive, which
- *   `STATION_EMISSIVE_INTENSITIES` holds at or under `EMISSIVE_CEILING` — the
- *   exposure budget #199 enumerates. The glow is not allowed to be brighter
- *   than the fitting it belongs to.
+ * - **A hot core only where a light blinks** (#300). A steady glow's peak is
+ *   its fixture's drive, which `STATION_EMISSIVE_INTENSITIES` holds at or under
+ *   `EMISSIVE_CEILING` — #199's budget — so windows, floods, the throats and the
+ *   arc force no halo. Strobes, beacons and the mouth ring do: they get a
+ *   white-hot centre worth `BLINKING_CORE_GAIN` times their drive, which
+ *   crosses the bloom threshold as the ship's nav lights do. That is the
+ *   principal's ruling, and the reason is measured: from the cockpit, on the
+ *   player's GPU, those lights sit on or beside the brightest surfaces a
+ *   station has, which read 141–227 of 255 at the lamps' own screen positions
+ *   from 6 to 19 km, and a ceiling-capped glow added there drew nothing
+ *   visible — strobe-b at 18.6 km read 212 lit and 212 hidden — while truss
+ *   beacons against black space read at 226.
  * - **Scale-invariant sizing.** A ship is always in the near layer, where view
  *   units are kilometres; a station moves between three layers and is drawn
  *   normalised to its core radius (`station-mesh.ts`). So the size is computed
@@ -130,15 +138,21 @@ void main() {
 const FRAGMENT = `
 uniform vec3 uColor;
 uniform float uIntensity;
+uniform float uCore;
 void main() {
 	float r = min(length(gl_PointCoord - 0.5) * 2.0, 1.0);
 	float core = 1.0 - r;
-	// A hot centre and a soft skirt, in the fixture's own colour: no mix toward
-	// white, for the warmth ordering this module's docstring names.
+	// A soft skirt in the fixture's own colour. With uCore at 0 — every steady
+	// light — this is the whole glow and nothing crosses the ceiling.
 	float falloff = core * core * (0.35 + 0.65 * core);
-	float intensity = uIntensity * falloff;
+	// A blinking light's white-hot centre: narrow, so the skirt keeps its colour,
+	// and bright enough to cross the bloom threshold, so it haloes past the lit
+	// plating and the aperture frame it sits beside.
+	float hot = pow(core, 4.0);
+	vec3 lit = mix(uColor, vec3(1.0), min(uCore, 1.0) * hot * 0.85);
+	float intensity = uIntensity * (falloff + hot * uCore);
 	if (intensity <= 0.002) discard;
-	gl_FragColor = vec4(uColor * intensity, 1.0);
+	gl_FragColor = vec4(lit * intensity, 1.0);
 }
 `;
 
@@ -149,10 +163,20 @@ void main() {
  * `updateStationVisuals` writes it beside the fitting's `emissiveIntensity`; a
  * steady one — windows, floods — can take a `shared()` one per colour.
  */
+/**
+ * The core gain a blinking point light's glow carries — strobes, beacons, the
+ * mouth ring. With a drive at the ceiling's 0.95 the centre peaks near 3.2,
+ * past the bloom threshold of 1; 2.4 is the ship nav lights' own hot term.
+ */
+export const BLINKING_CORE_GAIN = 2.4;
+
 export function glowMaterial(
 	color: number,
 	intensity: number,
 	glowClass: GlowClass,
+	/** 0 for a steady light; `BLINKING_CORE_GAIN` for a blinking one. Required,
+	 *  so a new light has to say which it is rather than defaulting to dim. */
+	core: number,
 ): THREE.ShaderMaterial {
 	const cls = GLOW_CLASSES[glowClass];
 	// Raw shader, so its colour is linear: a hex written for the sRGB pipeline
@@ -162,6 +186,7 @@ export function glowMaterial(
 		uniforms: {
 			uColor: { value: new THREE.Vector3(linear.r, linear.g, linear.b) },
 			uIntensity: { value: intensity },
+			uCore: { value: core },
 			uHalfHeightPx: { value: 360 },
 			uMinPx: { value: cls.minPx },
 			uMaxPx: { value: cls.maxPx },
@@ -187,7 +212,7 @@ export function steadyGlowMaterial(
 	const key = `${color}:${intensity}:${glowClass}`;
 	let material = steadyCache.get(key);
 	if (!material) {
-		material = shared(glowMaterial(color, intensity, glowClass));
+		material = shared(glowMaterial(color, intensity, glowClass, 0));
 		steadyCache.set(key, material);
 	}
 	return material;
