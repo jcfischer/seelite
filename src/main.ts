@@ -10199,9 +10199,10 @@ if (query.has("model-viewer")) {
 	// is so it can still be exported, and the game starts fresh rather than
 	// refusing to start at all.
 	//
-	// The boot mode is read once, here, ahead of the load (#306). §11.6 makes
-	// `?seed`'s set-aside below depend on it, so the value the load consults and
-	// the value the page exposes have to be the same read.
+	// The boot mode is read once, here, ahead of the load (#306). Nothing below
+	// consults it yet. It is read here because §11.6 will make `?seed`'s
+	// set-aside depend on it, and the value that set-aside reads and the value
+	// the page exposes should then be one read rather than two.
 	const boot = bootMode(query);
 	const saveBackend = indexedDbSaveBackend();
 	let loaded: SaveEnvelope | null = null;

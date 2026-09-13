@@ -116,6 +116,13 @@ export function gameUrl(
 		);
 	const base = new globalThis.URL(override ? override : `${origin}/`);
 	const query = new URLSearchParams(base.search);
+	// The knob is held to the same rule as the parameters: an override naming a
+	// workbench route builds no game, and the probe would hang in its boot wait.
+	const overridden = WORKBENCH_ROUTES.find((r) => query.has(r));
+	if (overridden)
+		throw new Error(
+			`gameUrl: override ${override} names the workbench route "${overridden}" and boots no game — use workbenchUrl`,
+		);
 	for (const key of force) query.delete(key);
 	append(query, params, (key) => query.has(key));
 	if (boot !== null && !query.has(BOOT_PARAM)) query.set(BOOT_PARAM, boot);
@@ -146,6 +153,12 @@ export function gameUrl(
  * @returns {string}
  */
 export function workbenchUrl(origin, params, { override } = {}) {
+	// As in `gameUrl`: a `boot` in the parameters would survive the close and
+	// send the page it closes to wherever that value says.
+	if (BOOT_PARAM in params)
+		throw new Error(
+			`workbenchUrl: "${BOOT_PARAM}" is set by the builder, not the parameters`,
+		);
 	const base = new globalThis.URL(override ? override : `${origin}/`);
 	const query = new URLSearchParams(base.search);
 	if (override)

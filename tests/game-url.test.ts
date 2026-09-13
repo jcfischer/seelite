@@ -184,6 +184,16 @@ describe("gameUrl", () => {
 		for (const route of WORKBENCH_ROUTES)
 			expect(() => gameUrl(ORIGIN, { [route]: "x" })).toThrow(/workbench/);
 	});
+
+	test("an override naming a workbench route is refused too", () => {
+		expect(() =>
+			gameUrl(
+				ORIGIN,
+				{ seed: 1 },
+				{ override: `${ORIGIN}/?model-viewer=ship` },
+			),
+		).toThrow(/workbench/);
+	});
 });
 
 describe("workbenchUrl", () => {
@@ -198,6 +208,12 @@ describe("workbenchUrl", () => {
 
 	test("refuses parameters that name no workbench route, which would boot the game", () => {
 		expect(() => workbenchUrl(ORIGIN, { seed: 42 })).toThrow(/workbench/);
+	});
+
+	test("refuses a boot in the parameters, which the close would keep", () => {
+		expect(() =>
+			workbenchUrl(ORIGIN, { "model-viewer": "ship", boot: "overlay" }),
+		).toThrow(/boot/);
 	});
 
 	test("a route whose value is left off is no route", () => {
