@@ -95,8 +95,8 @@ const probeOptions = ({
  * The mode is set when the game is constructed, ahead of the first frame, so a
  * page that did not boot direct is named here rather than only timing out in
  * `bootedGame`. It shows that `gameUrl`'s `?boot=direct` reached the page's own
- * reading of it — not that `direct` skips the Commander overlay, which does not
- * exist yet and is shown by the node that builds it.
+ * reading of it, and — once booted — that a direct boot skipped the Commander
+ * overlay (§11.6). `probe-commander.mjs` checks the player's side.
  */
 async function open({
 	params = { seed: SEED },
@@ -117,6 +117,18 @@ async function open({
 		check("a probe page boots direct", boot === "direct", `boot mode ${boot}`);
 	}
 	await bootedGame(page);
+	if (checkBoot) {
+		const direct = await page.evaluate(() => ({
+			mode: window.__seelite.commanderBoot?.mode ?? null,
+			overlay: Boolean(document.querySelector("[data-commander-overlay]")),
+			clockHeld: window.__seelite.clockHeld,
+		}));
+		check(
+			"a direct boot skips the Commander overlay and runs the clock",
+			direct.mode === "direct" && !direct.overlay && direct.clockHeld === false,
+			JSON.stringify(direct),
+		);
+	}
 	return page;
 }
 

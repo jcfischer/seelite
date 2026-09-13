@@ -114,7 +114,7 @@ const noRecordToCopy = (slot: string): never =>
 
 /** Why a flush is happening. `dock` is the one that also writes the
  *  checkpoint; the rest are D4's unconditional flushes. */
-export type FlushReason = "dock" | "undock" | "jump" | "quit";
+export type FlushReason = "dock" | "undock" | "jump" | "quit" | "new-game";
 
 /**
  * The scheduler the debounce runs on, injected.
@@ -384,7 +384,7 @@ export class SaveStore {
 		assertSlot(slot);
 		this.cancel?.();
 		this.cancel = null;
-		if (!this.dirty && reason !== "quit") return;
+		if (!this.dirty && reason !== "quit" && reason !== "new-game") return;
 		const kinds: SaveRecordKind[] =
 			reason === "dock" ? ["live", "lastDocked"] : ["live"];
 		await this.run(kinds, slot);
@@ -455,7 +455,7 @@ export class SaveStore {
 	): Promise<SaveEnvelope> {
 		const raw = await this.backend.read(slot, kind);
 		if (raw === null || raw === undefined)
-			fail(`slot "${slot}" has no ${kind} record`);
+			fail(`Commander "${slot}" has no ${kind} record`);
 		return parseSave(raw);
 	}
 
@@ -565,7 +565,7 @@ export class CommanderCatalog {
 		const live = await this.backend.read(slot, "live");
 		const lastDocked = await this.backend.read(slot, "lastDocked");
 		if (live === null && lastDocked === null)
-			fail(`slot "${slot}" has no record to export`);
+			fail(`Commander "${slot}" has no record to export`);
 		// **The file names no slot.** A slot is where the player filed the save,
 		// not a property of it — and a file that carried one would either be
 		// refused on import into a different slot or quietly disagree with

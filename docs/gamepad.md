@@ -67,9 +67,10 @@ exception. It takes a console's six buttons and leaves the sticks alone, because
 it exists to measure a frame *while it is flown* — a mode that stopped the ship
 would measure a different frame from the one it is there for.
 
-**`modal`** is the settings screen and, once #306 lands, the Commander overlay
-(`persistent-world-state.md` §11) — the one place the whole pad is taken, sticks
-included. `settings-panel.ts` already does this for the
+**`modal`** is the settings screen and the Commander overlay
+(`persistent-world-state.md` §11) — the two places the whole pad is taken, sticks
+included. When both could claim the pad the overlay does, because settings does
+not open over it. `settings-panel.ts` already does this for the
 keyboard by calling `releaseHeldKeys` on open, because a held throttle key kept
 flying the ship behind a screen the player was reading. A key is an *event* and
 can be forgotten; a stick is a **position, re-reported every frame**, so there

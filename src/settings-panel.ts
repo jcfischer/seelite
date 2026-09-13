@@ -201,7 +201,15 @@ export function mountSettingsPanel(
 	const onKey = (e: KeyboardEvent) => {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		if (!root) {
-			if (e.key === SETTINGS_KEY) {
+			// **Not over the Commander overlay, and not from a field.** Both
+			// listen on the window in the capture phase, and a stopped event still
+			// reaches every listener on that same target — so a `z` typed into a
+			// Commander's name opened this screen on top of it.
+			if (
+				e.key === SETTINGS_KEY &&
+				!(e.target instanceof HTMLInputElement) &&
+				!document.querySelector("[data-commander-overlay]")
+			) {
 				e.preventDefault();
 				open();
 			}

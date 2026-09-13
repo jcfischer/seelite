@@ -354,10 +354,10 @@ import {
 	type CommanderRecord,
 	type SaveEnvelope,
 	newCommanderRecord,
-	parseSave,
 	serializeSave,
 } from "./save-envelope";
 import {
+	CommanderCatalog,
 	DEFAULT_SLOT,
 	type FlushReason,
 	SAVE_BLOCKED_MESSAGE,
@@ -373,6 +373,17 @@ import {
 	webSlotLocks,
 } from "./save-store";
 import { type BootMode, bootMode } from "./boot-mode";
+import {
+	attachCommander,
+	CommanderSwitch,
+	planBoot,
+	restoreFault,
+} from "./commander-flow";
+import {
+	COMMANDER_KEY,
+	type CommanderOverlayHandle,
+	mountCommanderOverlay,
+} from "./commander-overlay";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -1374,8 +1385,18 @@ class Game {
 	 *  no-op there rather than a guard at each. */
 	saveStore: SaveStore | null = null;
 	/** Why the boot's load refused, if it did. D9: the player is told which
-	 *  slot failed and why; the record itself is left alone. */
+	 *  Commander failed and why; the record itself is left alone. */
 	saveFault: string | null = null;
+	/**
+	 * Whether the world clock is held (`persistent-world-state.md` §11.2 step 4,
+	 * S7). The frame loop still draws and polls the pad; the step receives no
+	 * time. Held from construction until the boot attaches a store or the
+	 * player chooses Continue, so a permadeath choice still finds the clock at
+	 * zero.
+	 */
+	clockHeld = false;
+	/** The Commander overlay, once the boot has mounted it (§11). */
+	commanderOverlay: CommanderOverlayHandle | null = null;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
@@ -5056,7 +5077,8 @@ class Game {
 	}
 
 	private readPadContext(): PadContext {
-		if (this.settingsPanel?.isOpen()) return "modal";
+		if (this.commanderOverlay?.isOpen() || this.settingsPanel?.isOpen())
+			return "modal";
 		// The instrument takes what a side console takes — six controls — and
 		// **not the sticks**: it is an overlay on a running game, and a mode that
 		// stopped the ship would be measuring a different frame from the one it
@@ -5100,6 +5122,16 @@ class Game {
 	 */
 	private applyPanelIntents(intents: PadIntents, context: PadContext) {
 		if (context === "modal") {
+			// The Commander overlay first: at boot it is the only thing on the
+			// glass, and settings does not open over it.
+			const overlay = this.commanderOverlay;
+			if (overlay?.isOpen()) {
+				if (intents.back) return overlay.back();
+				if (intents.focusDelta !== 0) overlay.moveCursor(intents.focusDelta);
+				if (intents.valueDelta !== 0) overlay.stepValue(intents.valueDelta);
+				if (intents.activate) overlay.activate();
+				return;
+			}
 			const panel = this.settingsPanel;
 			if (!panel) return;
 			if (intents.back) return panel.close();
@@ -8595,7 +8627,10 @@ class Game {
 		// it must keep turning while §12 has flight suspended.
 		this.stepChartOrbit(dt);
 		const updateStartedAt = this.frameAttribution ? performance.now() : 0;
-		if (dt > 0) this.step(dt);
+		// **The clock is held, not the loop** (§11.2): `lastTime` above still
+		// moves, so the frame after Continue carries one frame of time rather than
+		// everything since the page opened.
+		if (dt > 0 && !this.clockHeld) this.step(dt);
 		if (this.frameAttribution)
 			this.frameAttribution.recordCpu(
 				"simulation/step",
@@ -10142,15 +10177,23 @@ function clock(seconds: number): string {
  * rather than reject the request.
  */
 function seedFromQuery(): number {
+	return querySeed() ?? (Math.random() * 0x1_0000_0000) >>> 0;
+}
+
+/**
+ * `?seed=` when it is usable, and `null` when it is absent or not a number —
+ * which is what `?seed`'s set-aside and New game's pre-fill ask (§11.6). A
+ * random seed standing in for an unusable one would set a Commander aside for a
+ * world nobody asked for.
+ */
+function querySeed(): number | null {
 	const raw = new URLSearchParams(window.location.search).get("seed");
-	if (raw !== null) {
-		const pinned = Number(raw);
-		if (raw.trim() !== "" && Number.isFinite(pinned)) {
-			return Math.abs(Math.trunc(pinned)) >>> 0;
-		}
-		console.warn(`[seelite] ignoring unusable ?seed=${JSON.stringify(raw)}`);
-	}
-	return (Math.random() * 0x1_0000_0000) >>> 0;
+	if (raw === null) return null;
+	const pinned = Number(raw);
+	if (raw.trim() !== "" && Number.isFinite(pinned))
+		return Math.abs(Math.trunc(pinned)) >>> 0;
+	console.warn(`[seelite] ignoring unusable ?seed=${JSON.stringify(raw)}`);
+	return null;
 }
 
 // Any family the workbench knows — `ship` (#35) or `station` (#56). The gate
@@ -10194,125 +10237,168 @@ if (query.has("model-viewer")) {
 	const { mountPlanetPrototype } = await import("./planet-prototype");
 	mountPlanetPrototype();
 } else {
-	// #89's store, opened before the game is constructed. The load is a
-	// constructor arm rather than a method (see `Game`'s constructor), so the
-	// save has to exist first — which is why this boot awaits IndexedDB rather
-	// than handing the game a store to fill in later.
+	// #89's store and §11's boot around it. The load is a constructor arm
+	// rather than a method (see `Game`'s constructor), so the save has to be
+	// read first — which is why this boot awaits IndexedDB rather than handing
+	// the game a store to fill in later.
+	//
+	// **The decisions are `commander-flow.ts`'s, and this block carries them
+	// out.** This file cannot run under bun, so the one-shot continue, the
+	// pending new game, the pointer's fallback and `?seed`'s set-aside live
+	// where `tests/commander-flow.test.ts` reaches them. What is left here is
+	// what only a page has: the `Game`, the held clock, `pagehide` and the
+	// reload.
 	//
 	// **A failure to open or parse never blocks the boot.** D9: the player is
-	// told which slot failed and why, the bad record is left exactly where it
-	// is so it can still be exported, and the game starts fresh rather than
+	// told which Commander failed and why, the bad record is left exactly where
+	// it is so it can still be exported, and the game starts fresh rather than
 	// refusing to start at all.
 	//
-	// The boot mode is read once, here, ahead of the load (#306). Nothing below
-	// consults it yet. It is read here because §11.6 will make `?seed`'s
-	// set-aside depend on it, and the value that set-aside reads and the value
-	// the page exposes should then be one read rather than two.
+	// **An explicit `?seed=` outranks a save under `?boot=direct`, and it does
+	// not delete one.** Once any save existed at an origin, every later
+	// `?seed=N` visit booted somebody else's galaxy with nothing said, so a
+	// direct boot sets the Commander aside. Without direct the overlay asks
+	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
+	const noSave = query.has("no-save");
 	const saveBackend = indexedDbSaveBackend();
-	let loaded: SaveEnvelope | null = null;
-	let saveFault: string | null = null;
-	if (!query.has("no-save")) {
-		try {
-			const raw = await saveBackend.read(DEFAULT_SLOT, "live");
-			if (raw !== null) loaded = parseSave(raw);
-		} catch (error) {
-			saveFault = error instanceof Error ? error.message : String(error);
-			console.error(`save: slot "${DEFAULT_SLOT}" would not load`, error);
-		}
-	}
-	// **An explicit `?seed=` outranks a save, and it does not delete one.**
-	// A loaded envelope builds from `save.world.seed`, so the URL seed was read
-	// and then silently ignored: once any save existed at an origin — and
-	// IndexedDB is per-origin and survives in a real profile — every later
-	// `?seed=N` visit booted somebody else's galaxy with nothing said. A probe
-	// never met it, because each launch gets a fresh context.
-	//
-	// Asking for a seed is asking for that world, so the save is **set aside**
-	// rather than loaded: the record is untouched, and no store is attached to
-	// it below, which is D9's rule applied to a case D9 did not have in mind.
-	if (loaded && query.has("seed") && loaded.world.seed !== seedFromQuery()) {
-		saveFault =
-			`slot "${DEFAULT_SLOT}" holds seed ${loaded.world.seed}; ` +
-			`?seed=${seedFromQuery()} asked for another world, so the save was ` +
-			"left alone and not loaded";
-		console.warn(`save: ${saveFault}`);
-		loaded = null;
-	}
+	const saveLocks = webSlotLocks();
+	const catalog = new CommanderCatalog({
+		backend: saveBackend,
+		locks: saveLocks,
+	});
+	const plan = await planBoot({
+		catalog,
+		backend: saveBackend,
+		boot,
+		noSave,
+		querySeed: querySeed(),
+	});
+	for (const line of [plan.fault, plan.notice])
+		if (line !== null) console.warn(`save: ${line}`);
 	// **Inside the same fallback as the parse.** The comment above promises a
 	// failure never blocks the boot, and for a round `new Game(seed, loaded)`
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
+	const worldSeed = plan.pending?.seed ?? seedFromQuery();
 	let game: Game;
 	try {
-		game = new Game(seedFromQuery(), loaded);
+		game = new Game(worldSeed, plan.loaded);
 	} catch (error) {
-		saveFault = error instanceof Error ? error.message : String(error);
 		console.error("save: the loaded save would not restore", error);
-		loaded = null;
-		game = new Game(seedFromQuery(), null);
+		plan.fault = restoreFault(plan.slot, error);
+		plan.faultSlot = plan.slot;
+		plan.loaded = null;
+		plan.canContinue = false;
+		if (plan.mode === "continue") plan.mode = "overlay";
+		game = new Game(worldSeed, null);
 	}
-	// **Chosen at new game, and only at new game** (#89's D7). A loaded
-	// commander carries the flag it was created with; a query parameter cannot
-	// turn permadeath on or off for a commander that already exists, because
-	// that would make the flag a setting rather than a choice.
-	//
-	// A URL parameter rather than a screen, because there is no new-game screen
-	// to put it on yet: this game boots straight in. The flag ships in the
-	// schema from day one — which is what D7 asked for and the reason it is not
-	// waiting for that screen — and the screen reads it when there is one.
-	game.saveFault = saveFault;
-	// **D9's one promise: the bad record is never overwritten.** A store
-	// attached to the slot whose record just refused would write over it on the
-	// first dirty event — the next dock, the next trade, the relay observe on
-	// the next jump — and that record is the only copy of whatever is left, and
-	// the only thing the player can still export. So a refused load leaves the
-	// fresh game with no store at all rather than with one aimed at the
-	// wreckage.
-	//
-	// The player is *told* — D9 again — and a `console.error` is not telling
-	// them. `saveFault` is on the game for the new-game screen to read; there is
-	// no such screen yet (see `choosePermadeath`), and the surface belongs to
-	// the node that builds one. Recorded rather than quietly left out.
-	if (!query.has("no-save") && saveFault === null) {
-		game.saveStore = new SaveStore({
-			backend: saveBackend,
-			// Required by the store, and inert here: nothing in this build renames,
-			// deletes or holds a Commander. The overlay that does is §11's next PR.
-			locks: webSlotLocks(),
-			schedule: (fn, ms) => {
-				const id = window.setTimeout(fn, ms);
-				return () => window.clearTimeout(id);
-			},
-			current: () => game.saveEnvelope(),
-			// **D9's "the player is told", on the path that does most of the
-			// writing.** A debounced write has no caller to reject to, and for a
-			// round the store took this callback and the boot did not pass it —
-			// so the shipped game still told nobody while a test proved the
-			// mechanism worked.
-			onWriteFailed: (error, consecutive) => {
-				game.saveFault =
-					`the save would not write (${consecutive} in a row): ` +
-					(error instanceof Error ? error.message : String(error));
-				if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
-					console.error(`save: ${game.saveFault}`, error);
+	// Held until a store is attached or the player chooses (§11.2 step 4).
+	game.clockHeld = true;
+	game.saveFault = plan.fault;
+	/** The Commander this tab's store writes, once one is attached. */
+	let attachedSlot: string | null = null;
+	// **D9's one promise: the bad record is never overwritten**, and §11.2
+	// step 5 extends it to every boot: no store is attached to a Commander
+	// nobody chose. A store attached to a record that refused would write over
+	// it on the first dirty event, and that record is the only copy of
+	// whatever is left. So the boot attaches only on a plan with no fault, and
+	// `attachCommander` wires a store only once its lock is held (§11.3).
+	const attach = async (slot: string): Promise<string | null> => {
+		const pending = plan.pending?.name === slot ? plan.pending : null;
+		const result = await attachCommander({
+			slot,
+			catalog,
+			pending,
+			makeStore: (name) =>
+				new SaveStore({
+					backend: saveBackend,
+					locks: saveLocks,
+					slot: name,
+					schedule: (fn, ms) => {
+						const id = window.setTimeout(fn, ms);
+						return () => window.clearTimeout(id);
+					},
+					current: () => game.saveEnvelope(),
+					// **D9's "the player is told", on the path that does most of
+					// the writing.** A debounced write has no caller to reject to,
+					// and for a round the store took this callback and the boot did
+					// not pass it — so the shipped game still told nobody while a
+					// test proved the mechanism worked.
+					onWriteFailed: (error, consecutive) => {
+						game.saveFault =
+							`the save would not write (${consecutive} in a row): ` +
+							(error instanceof Error ? error.message : String(error));
+						if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
+							console.error(`save: ${game.saveFault}`, error);
+					},
+				}),
+			onHeld: (store) => {
+				game.saveStore = store;
+				attachedSlot = slot;
+				// D4's quit flush. `pagehide` and not `beforeunload`: the latter
+				// does not fire on a mobile tab kill, and a persisted page is
+				// frozen rather than gone. **There is no death flush beside it** —
+				// #89 leaves that window open deliberately.
+				window.addEventListener("pagehide", () => game.saveFlush("quit"));
+				// **Chosen at new game, and only at new game** (#89's D7): New
+				// game's choice, or `?permadeath` on a direct boot with nothing
+				// loaded. **After the store, not before it**: `choosePermadeath`
+				// marks the save dirty, and with no store the mark is dropped.
+				const permadeath = pending
+					? pending.permadeath
+					: boot === "direct" && !plan.loaded && query.has("permadeath");
+				if (permadeath) game.choosePermadeath();
 			},
 		});
-		// D4's quit flush. `pagehide` and not `beforeunload`: the latter does not
-		// fire on a mobile tab kill, and a persisted page is frozen rather than
-		// gone. **There is no death flush beside it** — #89 leaves that window
-		// open deliberately, and adding one here would be someone closing a hole
-		// the policy states it is not closing.
-		window.addEventListener("pagehide", () => game.saveFlush("quit"));
-		// **After the store, not before it.** `choosePermadeath` marks the save
-		// dirty and the call sat above the construction, where `saveStore` is
-		// still null — so the mark was dropped. The quit flush writes
-		// unconditionally now and would have caught it anyway, which is exactly
-		// the kind of second mechanism that makes the first one's absence
-		// invisible.
-		if (!loaded && query.has("permadeath")) game.choosePermadeath();
+		if (result.fault !== null) {
+			game.saveFault = result.fault;
+			console.warn(`save: ${result.fault}`);
+		}
+		return result.attached ? null : result.fault;
+	};
+	let openAtBoot = plan.mode === "overlay";
+	if (plan.mode === "direct") {
+		if (!noSave && plan.fault === null) await attach(plan.slot);
+		game.clockHeld = false;
+	} else if (plan.mode === "continue") {
+		// §11.3: a one-shot whose Commander another tab took in the meantime is
+		// discarded, and the overlay opens with that fault.
+		const fault = await attach(plan.slot);
+		if (fault === null) game.clockHeld = false;
+		else {
+			plan.fault = fault;
+			openAtBoot = true;
+		}
 	}
+	game.commanderOverlay = mountCommanderOverlay({
+		catalog: noSave ? null : catalog,
+		switcher: noSave
+			? null
+			: new CommanderSwitch({
+					catalog,
+					store: () => game.saveStore,
+					reload: () => window.location.reload(),
+				}),
+		boot: {
+			slot: plan.slot,
+			canContinue: plan.canContinue,
+			pendingName: plan.pending?.name ?? null,
+			fault: plan.fault,
+			faultSlot: plan.faultSlot,
+			notice: plan.notice,
+			seedPrefill: plan.seedPrefill,
+		},
+		openAtBoot,
+		inPlay: () => attachedSlot,
+		onContinue: async (slot) => {
+			const fault = noSave ? null : await attach(slot);
+			if (fault === null) game.clockHeld = false;
+			return fault;
+		},
+		releaseHeldKeys: () => game.releaseHeldKeys(),
+	});
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
@@ -10341,11 +10427,28 @@ if (query.has("model-viewer")) {
 		serialize: serializeSave,
 	};
 	// The boot mode this page read (#306, `persistent-world-state.md` §11.6).
-	// Nothing acts on it yet — the overlay it skips does not exist — and it is
-	// exposed so `probe-boot.mjs` can show that `gameUrl`'s `?boot=direct`
+	// Exposed so `probe-boot.mjs` can show that `gameUrl`'s `?boot=direct`
 	// reached the page rather than being assumed to.
 	(window as unknown as { __seelite: { boot: BootMode } }).__seelite.boot =
 		boot;
+	// The Commander boot as the plan decided it, and the overlay's handle, for
+	// `probe-commander.mjs` — read off the page rather than inferred from the DOM.
+	// **Not `commander`**: `__seelite` is the `Game`, and that name is its
+	// commerce state, which a handle assigned over it would silently replace.
+	(
+		window as unknown as {
+			__seelite: { commanderBoot: Record<string, unknown> };
+		}
+	).__seelite.commanderBoot = {
+		key: COMMANDER_KEY,
+		mode: plan.mode,
+		slot: plan.slot,
+		fault: plan.fault,
+		overlay: game.commanderOverlay,
+		catalog,
+		attached: () => attachedSlot,
+		clockHeld: () => game.clockHeld,
+	};
 
 	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
 	// two shells, the surface shader and the crater path, so a body can be flown

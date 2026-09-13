@@ -54,8 +54,8 @@
  * different frame from the one it is there for. The reversal above is about the
  * panels a player reads; this is an instrument a developer watches.
  *
- * `modal` is the **settings screen and nothing else** — the one place the whole
- * pad is taken. `settings-panel.ts` already does exactly this for the keyboard,
+ * `modal` is the **settings screen and the Commander overlay** (#306) — the two
+ * places the whole pad is taken. `settings-panel.ts` already does exactly this for the keyboard,
  * by calling `releaseHeldKeys` on open: a held throttle key kept flying the
  * ship behind a screen the player was reading. A key is an *event* and can be
  * forgotten; a stick is a **position, re-reported every frame**, so there is
