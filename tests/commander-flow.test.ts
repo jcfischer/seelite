@@ -18,7 +18,9 @@ import {
 	pendingFor,
 	permadeathAtAttach,
 	planBoot,
+	recordText,
 	restoreFault,
+	withLockFault,
 	withRestoreFault,
 } from "../src/commander-flow";
 import {
@@ -271,6 +273,8 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 		const result = await attachCommander({
 			slot: "Jameson",
 			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: null,
 			pending: null,
 			makeStore: (slot) => o.store(slot),
 			onHeld: (store) => attached.push(store),
@@ -291,6 +295,8 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 		const result = await attachCommander({
 			slot: DEFAULT_SLOT,
 			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: null,
 			pending: null,
 			makeStore: (slot) =>
 				new SaveStore({
@@ -316,6 +322,8 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 		const result = await attachCommander({
 			slot: "Jameson",
 			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: recordText(await o.backend.read("Jameson", "live")),
 			pending: null,
 			makeStore: (slot) => o.store(slot),
 			onHeld: (store) => attached.push(store),
@@ -335,6 +343,8 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 		const attaching = attachCommander({
 			slot: plan.slot,
 			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: plan.record,
 			pending: plan.pending,
 			makeStore: (slot) => o.store(slot, () => envelope(5)),
 			onHeld: () => {},
@@ -356,6 +366,8 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 		const result = await attachCommander({
 			slot: plan.slot,
 			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: plan.record,
 			pending: plan.pending,
 			makeStore: (slot) => o.store(slot),
 			onHeld: () => {},
@@ -588,5 +600,80 @@ describe("the rules a boot applies after the plan (§11.2, §11.3, D7, D9)", () 
 				true,
 			),
 		).toBe(false);
+	});
+});
+
+describe("an attach reads the record again once it holds the lock (§11.3)", () => {
+	test("a boot keeps the record it read, as text", async () => {
+		const o = origin();
+		await o.save("Jameson");
+		await o.catalog.chooseCommander("Jameson");
+		const plan = await o.boot();
+		expect(plan.record).toBe(
+			recordText(await o.backend.read("Jameson", "live")),
+		);
+		expect((await origin().boot()).record).toBeNull();
+	});
+
+	test("a record another tab saved after this boot read it is not attached to, and the lock is given back", async () => {
+		// The page's game was built from the boot's read. A store attached to it
+		// would write that older world over the other tab's progress on the
+		// first dirty event, or on the quit flush.
+		const o = origin();
+		await o.save("Jameson", SEED);
+		await o.catalog.chooseCommander("Jameson");
+		await o.catalog.takeOneShot();
+		const plan = await o.boot();
+		await o.backend.write(
+			"Jameson",
+			"live",
+			serializeSave(envelope(OTHER_SEED)),
+		);
+		const attached: SaveStore[] = [];
+		const result = await attachCommander({
+			slot: "Jameson",
+			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: plan.record,
+			pending: null,
+			makeStore: (slot) => o.store(slot),
+			onHeld: (store) => attached.push(store),
+		});
+		expect(result).toEqual({ attached: false, fault: null, stale: true });
+		expect(attached.length).toBe(0);
+		expect(await o.store("Jameson").hold()).toBe(true);
+	});
+
+	test("an unchanged record attaches", async () => {
+		const o = origin();
+		await o.save("Jameson");
+		await o.catalog.chooseCommander("Jameson");
+		const plan = await o.boot();
+		const result = await attachCommander({
+			slot: "Jameson",
+			catalog: o.catalog,
+			backend: o.backend,
+			bootRecord: plan.record,
+			pending: null,
+			makeStore: (slot) => o.store(slot),
+			onHeld: () => {},
+		});
+		expect(result).toEqual({ attached: true, fault: null });
+	});
+
+	test("a one-shot refused by another tab's lock opens the overlay and keeps Continue for a retry", async () => {
+		const o = origin();
+		await o.save("Jameson");
+		await o.catalog.chooseCommander("Jameson");
+		const plan = await o.boot();
+		expect(plan.mode).toBe("continue");
+		const faulted = withLockFault(plan, "held");
+		expect([faulted.mode, faulted.fault, faulted.canContinue]).toEqual([
+			"overlay",
+			"held",
+			true,
+		]);
+		expect(faulted.faultSlot).toBeNull();
+		expect(plan.mode).toBe("continue");
 	});
 });

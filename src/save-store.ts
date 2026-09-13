@@ -497,6 +497,16 @@ export class SaveStore {
 		if (release && !this.held) this.held = release;
 		return this.held !== null;
 	}
+
+	/**
+	 * Gives the lock back. For a store that was never wired: an attach that
+	 * found the record changed since the boot read it holds the lock only long
+	 * enough to read it again.
+	 */
+	release(): void {
+		this.held?.();
+		this.held = null;
+	}
 }
 
 /**

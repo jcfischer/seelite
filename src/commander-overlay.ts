@@ -16,7 +16,13 @@
  * `CONTEXT.md`).
  */
 
-import { type CommanderSwitch, messageOf, randomSeed } from "./commander-flow";
+import {
+	type BootPlan,
+	type CommanderSwitch,
+	messageOf,
+	randomSeed,
+} from "./commander-flow";
+import { isEditable } from "./editable-target";
 import type { CommanderCatalog } from "./save-store";
 
 /**
@@ -170,15 +176,11 @@ export interface CommanderOverlayOptions {
 	/** `null` under `?no-save`. */
 	catalog: CommanderCatalog | null;
 	switcher: CommanderSwitch | null;
-	boot: {
-		slot: string;
-		canContinue: boolean;
-		pendingName: string | null;
-		fault: string | null;
-		faultSlot: string | null;
-		notice: string | null;
-		seedPrefill: number | null;
-	};
+	/** The plan's fields the overlay shows, and the pending new game's name. */
+	boot: Pick<
+		BootPlan,
+		"slot" | "canContinue" | "fault" | "faultSlot" | "notice" | "seedPrefill"
+	> & { pendingName: string | null };
 	/** Whether the overlay opens at once: every player boot, and not a
 	 *  direct or one-shot one. */
 	openAtBoot: boolean;
@@ -262,10 +264,6 @@ const escapeHtml = (text: string) =>
 			] as string,
 	);
 
-/** Whether a key event's target is a text field, which keeps its typing. */
-export const isEditable = (target: EventTarget | null) =>
-	target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-
 /** Hands the player a file. A `Blob` link, because nothing here talks to a
  *  server (the map's no-backend constraint). */
 function downloadText(filename: string, text: string) {
@@ -306,6 +304,10 @@ export function mountCommanderOverlay(
 		return switcher;
 	};
 	const wrap = (i: number, n: number) => ((i % n) + n) % n;
+	/** A Commander row's chosen action: the one the player picked, or the first
+	 *  the row offers. */
+	const chosenOf = (row: Extract<MenuRow, { kind: "commander" }>) =>
+		chosenAction.get(row.slot) ?? row.enabled[0];
 
 	let root: HTMLElement | null = null;
 	let view: View = { kind: "menu" };
@@ -501,7 +503,7 @@ export function mountCommanderOverlay(
 				fileInput()?.click();
 				return;
 			case "commander": {
-				const action = chosenAction.get(row.slot) ?? row.enabled[0];
+				const action = chosenOf(row);
 				if (!action || !row.enabled.includes(action)) return;
 				if (action === "export") return exportCommander(row.slot);
 				if (action === "load") return void perform(() => sw().load(row.slot));
@@ -537,7 +539,7 @@ export function mountCommanderOverlay(
 						html += `<div class="heading">Commanders</div>`;
 					}
 					if (row.kind === "commander") {
-						const chosen = chosenAction.get(row.slot) ?? row.enabled[0];
+						const chosen = chosenOf(row);
 						const tag =
 							row.slot === options.inPlay()
 								? " · in play"
@@ -600,16 +602,16 @@ export function mountCommanderOverlay(
 			el.addEventListener("click", (event) => {
 				if (busy) return;
 				cursor = Number(el.dataset.row);
-				const action = (event.target as HTMLElement).closest<HTMLElement>(
+				const actionEl = (event.target as HTMLElement).closest<HTMLElement>(
 					"[data-action]",
-				)?.dataset.action as CommanderAction | undefined;
+				);
+				// **A refused action does nothing.** Falling through to `activate`
+				// ran the row's chosen action instead — an Export on the Commander in
+				// play, whose only offered action it is.
+				if (actionEl?.getAttribute("aria-disabled") === "true") return draw();
+				const action = actionEl?.dataset.action as CommanderAction | undefined;
 				const slot = el.dataset.commander;
-				const actionDisabled =
-					(event.target as HTMLElement)
-						.closest("[data-action]")
-						?.getAttribute("aria-disabled") === "true";
-				if (action && slot !== undefined && !actionDisabled)
-					chosenAction.set(slot, action);
+				if (action && slot !== undefined) chosenAction.set(slot, action);
 				if ((event.target as HTMLElement).tagName === "INPUT") return draw();
 				// A disabled row does nothing, and the highlight still has to follow
 				// the cursor it moved.
@@ -700,9 +702,7 @@ export function mountCommanderOverlay(
 		if (view.kind === "menu") {
 			const row = menuRows()[cursor];
 			if (row?.kind !== "commander" || row.enabled.length === 0) return;
-			const at = row.enabled.indexOf(
-				chosenAction.get(row.slot) ?? row.enabled[0],
-			);
+			const at = row.enabled.indexOf(chosenOf(row));
 			const n = row.enabled.length;
 			chosenAction.set(
 				row.slot,

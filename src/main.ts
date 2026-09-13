@@ -381,6 +381,7 @@ import {
 	permadeathAtAttach,
 	planBoot,
 	randomSeed,
+	withLockFault,
 	withRestoreFault,
 } from "./commander-flow";
 import {
@@ -10174,21 +10175,14 @@ function clock(seconds: number): string {
 }
 
 /**
- * The world seed: `?seed=` if it is usable, a random one otherwise.
- *
- * The emptiness test cannot be dropped in favour of `Number()` alone:
- * `Number("")` and `Number("   ")` are both 0, so `?seed=` would pin world 0
- * rather than reject the request.
- */
-function seedFromQuery(): number {
-	return querySeed() ?? randomSeed();
-}
-
-/**
  * `?seed=` when it is usable, and `null` when it is absent or not a number —
  * which is what `?seed`'s set-aside and New game's pre-fill ask (§11.6). A
  * random seed standing in for an unusable one would set a Commander aside for a
  * world nobody asked for.
+ *
+ * The emptiness test cannot be dropped in favour of `Number()` alone:
+ * `Number("")` and `Number("   ")` are both 0, so `?seed=` would pin world 0
+ * rather than reject the request.
  */
 function querySeed(): number | null {
 	const raw = new URLSearchParams(window.location.search).get("seed");
@@ -10285,7 +10279,7 @@ if (query.has("model-viewer")) {
 	// sat outside the guard: a record that parsed and then would not restore
 	// threw at module scope and the page did not boot at all. The bounds in
 	// `parseCommander` close the known route in; this closes the class.
-	const worldSeed = plan.pending?.seed ?? seedFromQuery();
+	const worldSeed = plan.pending?.seed ?? querySeed() ?? randomSeed();
 	let game: Game;
 	try {
 		game = new Game(worldSeed, plan.loaded);
@@ -10310,6 +10304,8 @@ if (query.has("model-viewer")) {
 		const result = await attachCommander({
 			slot,
 			catalog,
+			backend: saveBackend,
+			bootRecord: plan.record,
 			pending,
 			makeStore: (name) =>
 				new SaveStore({
@@ -10349,10 +10345,23 @@ if (query.has("model-viewer")) {
 					game.choosePermadeath();
 			},
 		});
-		if (result.fault !== null) {
-			game.saveFault = result.fault;
-			console.warn(`save: ${result.fault}`);
+		if (result.stale) {
+			// **Another tab saved this Commander after this page read it.** The game
+			// on this page is the older world, so it is not continued: the reload
+			// builds the game from the save, and the one-shot skips the overlay the
+			// player just answered. `attachCommander` gave the lock back first.
+			try {
+				await catalog.chooseCommander(slot);
+			} catch (error) {
+				return messageOf(error);
+			}
+			window.location.reload();
+			return new Promise<never>(() => {});
 		}
+		// Every result, not only a fault: a lock fault from a one-shot boot is
+		// stale once a later Continue attaches.
+		game.saveFault = result.fault;
+		if (result.fault !== null) console.warn(`save: ${result.fault}`);
 		return result.attached ? null : result.fault;
 	};
 	let openAtBoot = plan.mode === "overlay";
@@ -10365,7 +10374,7 @@ if (query.has("model-viewer")) {
 		const fault = await attach(plan.slot);
 		if (fault === null) game.clockHeld = false;
 		else {
-			plan.fault = fault;
+			plan = withLockFault(plan, fault);
 			openAtBoot = true;
 		}
 	}

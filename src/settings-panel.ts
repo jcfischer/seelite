@@ -16,7 +16,7 @@ import {
 	type SettingsStore,
 	settingSpec,
 } from "./settings";
-import { isEditable } from "./commander-overlay";
+import { isEditable } from "./editable-target";
 
 /** The key that opens it, exported so a test can hold it apart from the flight
  *  bindings and from the perf panel's. */

@@ -98,8 +98,18 @@ export interface BootPlan {
 	/** The Commander a fault concerns, which the overlay offers Export of. */
 	faultSlot: string | null;
 	notice: string | null;
-	/** Something to continue, and no fault. */
+	/**
+	 * Something to continue, and no fault that concerns its record. A lock fault
+	 * (`withLockFault`) keeps it: the Commander is continuable once the other tab
+	 * closes.
+	 */
 	canContinue: boolean;
+	/**
+	 * The Commander's `live` record as this boot read it, as text (`recordText`),
+	 * or `null` for none. An attach compares it with the record it reads once it
+	 * holds the lock, because the page's game was built from this read.
+	 */
+	record: string | null;
 	/** Under the overlay a `?seed` pre-fills New game and does nothing else. */
 	seedPrefill: number | null;
 }
@@ -126,6 +136,7 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 		notice: null,
 		canContinue: false,
 		seedPrefill: direct ? null : querySeed,
+		record: null,
 	};
 	// A fresh game that saves nothing, so there is always something to continue.
 	if (noSave) {
@@ -149,6 +160,7 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 	if (!plan.pending) {
 		try {
 			const raw = await backend.read(plan.slot, "live");
+			plan.record = recordText(raw);
 			if (raw !== null) plan.loaded = parseSave(raw);
 		} catch (error) {
 			plan.fault = loadFault(plan.slot, error);
@@ -194,6 +206,24 @@ export function withRestoreFault(plan: BootPlan, error: unknown): BootPlan {
 	};
 }
 
+/**
+ * A one-shot boot whose Commander another tab holds (§11.3): the one-shot is
+ * discarded and the overlay opens with the fault. Continue stays available —
+ * the record is fine, and the other tab may close. A new plan is returned.
+ */
+export function withLockFault(plan: BootPlan, fault: string): BootPlan {
+	return { ...plan, mode: "overlay", fault };
+}
+
+/**
+ * A `live` record as text, or `null` for none: what a boot read and what an
+ * attach reads again are compared this way. IndexedDB hands back a structured
+ * clone with the keys in the order they were written, so one stored value
+ * always gives the same text.
+ */
+export const recordText = (raw: unknown): string | null =>
+	raw === null || raw === undefined ? null : JSON.stringify(raw);
+
 /** The pending new game an attach into `slot` finishes, or `null` when the
  *  pending record names another Commander or there is none. */
 export function pendingFor(
@@ -234,6 +264,9 @@ export const randomSeed = (): number => (Math.random() * 0x1_0000_0000) >>> 0;
 export interface AttachInput {
 	slot: string;
 	catalog: CommanderCatalog;
+	backend: SaveBackend;
+	/** `BootPlan.record`: the record the page's game was built from. */
+	bootRecord: string | null;
 	pending: PendingNewGame | null;
 	makeStore: (slot: string) => SaveStore;
 	/**
@@ -246,6 +279,11 @@ export interface AttachInput {
 export interface AttachResult {
 	attached: boolean;
 	fault: string | null;
+	/**
+	 * Another tab saved this Commander after the boot read it. Nothing is
+	 * attached and the lock is given back; the caller reloads into the save.
+	 */
+	stale?: true;
 }
 
 /**
@@ -256,6 +294,13 @@ export interface AttachResult {
  * catalog's rename and delete; it does not stop a store's own writes, so a
  * store attached without it would be a second tab writing one Commander.
  *
+ * **Nor is a store attached to a record that changed since the boot read it.**
+ * The page's game was built from that read, and it lives on the page for as long
+ * as the overlay is open. Another tab can play the same Commander in that time,
+ * save, and close — and a store attached here would write the older world over
+ * that progress on its first dirty event. So the record is read again once the
+ * lock is held, which is the first moment no other tab can write it.
+ *
  * A pending new game writes its first `live` record here, and only once that
  * lands is the pending record cleared. A first write that fails leaves the
  * store attached — it holds the lock and the next write retries — and the
@@ -264,7 +309,8 @@ export interface AttachResult {
 export async function attachCommander(
 	input: AttachInput,
 ): Promise<AttachResult> {
-	const { slot, catalog, pending, makeStore, onHeld } = input;
+	const { slot, catalog, backend, bootRecord, pending, makeStore, onHeld } =
+		input;
 	const store = makeStore(slot);
 	let held: boolean;
 	try {
@@ -273,6 +319,21 @@ export async function attachCommander(
 		return { attached: false, fault: lockRequestFault(slot, error) };
 	}
 	if (!held) return { attached: false, fault: lockHeldFault(slot) };
+	// A pending new game's Commander has no record by design, and
+	// `resolveActive` already settled one that landed.
+	if (!pending) {
+		let now: unknown;
+		try {
+			now = await backend.read(slot, "live");
+		} catch (error) {
+			store.release();
+			return { attached: false, fault: loadFault(slot, error) };
+		}
+		if (recordText(now) !== bootRecord) {
+			store.release();
+			return { attached: false, fault: null, stale: true };
+		}
+	}
 	onHeld(store);
 	if (pending) {
 		try {

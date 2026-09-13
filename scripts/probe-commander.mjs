@@ -230,7 +230,7 @@ try {
 		};
 	});
 	check(
-		"the new Commander's first save lands, then its pending record clears",
+		"the new Commander's first save lands and its pending record clears",
 		landed.live && landed.pending === null,
 		JSON.stringify(landed),
 	);
@@ -336,7 +336,9 @@ try {
 	);
 	check(
 		"a one-shot boot into a Commander another tab holds opens the overlay with that fault",
-		s.mode === "continue" &&
+		// `withLockFault` turned the plan into an overlay boot; the consumed one-shot
+		// and the lock fault are what show it was one.
+		s.mode === "overlay" &&
 			s.open &&
 			s.attached === null &&
 			s.clockHeld &&
@@ -345,19 +347,30 @@ try {
 		`${JSON.stringify(s)} one-shot left: ${oneShotLeft}`,
 	);
 
-	// The first tab's lock goes with its document, and the second tab's check
+	// The first tab plays on and saves after the second tab read the record, then
+	// closes. Its lock goes with its document, and the second tab's Continue
 	// straight after is the release timing #309 could not test headless.
+	await tabA.waitForTimeout(1500);
+	const savedByA = await tabA.evaluate(async () => {
+		const g = window.__seelite;
+		await g.saveStore.flush("quit");
+		const raw = await g.save.backend.read("Probe One", "live");
+		return raw.world.gameTime;
+	});
 	await tabA.close();
-	await tabB.keyboard.press("Enter");
-	const tookOver = await waitFor(
-		tabB,
-		() => window.__seelite.commanderBoot.attached() === "Probe One",
-	);
+	await reloadedBy(tabB, () => tabB.keyboard.press("Enter"));
 	s = await state(tabB);
+	const resumedAt = await tabB.evaluate(
+		() => window.__seelite.saveEnvelope().world.gameTime,
+	);
 	check(
-		"once the first tab closes, the second continues into the Commander",
-		tookOver && !s.open && !s.clockHeld,
-		JSON.stringify(s),
+		"Continue into a Commander another tab saved since this page read it reloads into that save, not over it",
+		s.mode === "continue" &&
+			s.attached === "Probe One" &&
+			!s.open &&
+			savedByA > 0 &&
+			resumedAt >= savedByA,
+		`${JSON.stringify(s)} saved by the first tab at ${savedByA}, resumed at ${resumedAt}`,
 	);
 
 	// -----------------------------------------------------------------------
@@ -387,6 +400,22 @@ try {
 			inPlayActions.export === "false" &&
 			underOverlay.after > underOverlay.before,
 		`${JSON.stringify(inPlayActions)} gameTime ${underOverlay.before} → ${underOverlay.after}`,
+	);
+
+	const noDownload = tabB
+		.waitForEvent("download", { timeout: 1500 })
+		.then(() => true)
+		.catch(() => false);
+	await tabB.click('[data-commander="Probe One"] [data-action="load"]');
+	const disabledClick = {
+		downloaded: await noDownload,
+		open: (await state(tabB)).open,
+		form: Boolean(await tabB.$("[data-field]")),
+	};
+	check(
+		"a click on a refused action does nothing",
+		!disabledClick.downloaded && disabledClick.open && !disabledClick.form,
+		JSON.stringify(disabledClick),
 	);
 
 	const download = tabB.waitForEvent("download", { timeout: 15000 });
@@ -434,9 +463,16 @@ try {
 	);
 
 	await tabB.click('[data-commander="Spare Two"] [data-action="delete"]');
-	const askedFirst = await tabB.evaluate(
-		() => document.querySelector("[data-commander]") === null,
-	);
+	// Asked, not merely changed view: the confirmation is on the glass and the
+	// Commander is still on disk until it is answered.
+	const askedFirst =
+		(await tabB.evaluate(
+			() =>
+				document.querySelector("[data-commander]") === null &&
+				(
+					document.querySelector("#seelite-commander")?.textContent ?? ""
+				).includes("for good"),
+		)) && (await slotsOf(tabB)).includes("Spare Two");
 	await button(tabB, 1).click();
 	const deleted = await waitFor(
 		tabB,
