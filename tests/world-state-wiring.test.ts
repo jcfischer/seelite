@@ -131,7 +131,9 @@ describe("the Game's world writes", () => {
 		// after the fact is a setting, and D7 promises it was written at
 		// creation.
 		expect(body.slice(0, 300)).toContain("gameTime > 0");
-		expect(MAIN).toContain('!plan.loaded && query.has("permadeath")');
+		expect(MAIN).toContain(
+			'permadeathAtAttach(plan, slot, query.has("permadeath"))',
+		);
 	});
 
 	test("the renderer never converts the world clock into minutes", () => {

@@ -376,8 +376,12 @@ import { type BootMode, bootMode } from "./boot-mode";
 import {
 	attachCommander,
 	CommanderSwitch,
+	messageOf,
+	pendingFor,
+	permadeathAtAttach,
 	planBoot,
-	restoreFault,
+	randomSeed,
+	withRestoreFault,
 } from "./commander-flow";
 import {
 	COMMANDER_KEY,
@@ -10177,7 +10181,7 @@ function clock(seconds: number): string {
  * rather than reject the request.
  */
 function seedFromQuery(): number {
-	return querySeed() ?? (Math.random() * 0x1_0000_0000) >>> 0;
+	return querySeed() ?? randomSeed();
 }
 
 /**
@@ -10267,7 +10271,7 @@ if (query.has("model-viewer")) {
 		backend: saveBackend,
 		locks: saveLocks,
 	});
-	const plan = await planBoot({
+	let plan = await planBoot({
 		catalog,
 		backend: saveBackend,
 		boot,
@@ -10287,11 +10291,7 @@ if (query.has("model-viewer")) {
 		game = new Game(worldSeed, plan.loaded);
 	} catch (error) {
 		console.error("save: the loaded save would not restore", error);
-		plan.fault = restoreFault(plan.slot, error);
-		plan.faultSlot = plan.slot;
-		plan.loaded = null;
-		plan.canContinue = false;
-		if (plan.mode === "continue") plan.mode = "overlay";
+		plan = withRestoreFault(plan, error);
 		game = new Game(worldSeed, null);
 	}
 	// Held until a store is attached or the player chooses (§11.2 step 4).
@@ -10306,7 +10306,7 @@ if (query.has("model-viewer")) {
 	// whatever is left. So the boot attaches only on a plan with no fault, and
 	// `attachCommander` wires a store only once its lock is held (§11.3).
 	const attach = async (slot: string): Promise<string | null> => {
-		const pending = plan.pending?.name === slot ? plan.pending : null;
+		const pending = pendingFor(plan, slot);
 		const result = await attachCommander({
 			slot,
 			catalog,
@@ -10329,7 +10329,7 @@ if (query.has("model-viewer")) {
 					onWriteFailed: (error, consecutive) => {
 						game.saveFault =
 							`the save would not write (${consecutive} in a row): ` +
-							(error instanceof Error ? error.message : String(error));
+							messageOf(error);
 						if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
 							console.error(`save: ${game.saveFault}`, error);
 					},
@@ -10342,14 +10342,11 @@ if (query.has("model-viewer")) {
 				// frozen rather than gone. **There is no death flush beside it** —
 				// #89 leaves that window open deliberately.
 				window.addEventListener("pagehide", () => game.saveFlush("quit"));
-				// **Chosen at new game, and only at new game** (#89's D7): New
-				// game's choice, or `?permadeath` on a direct boot with nothing
-				// loaded. **After the store, not before it**: `choosePermadeath`
-				// marks the save dirty, and with no store the mark is dropped.
-				const permadeath = pending
-					? pending.permadeath
-					: boot === "direct" && !plan.loaded && query.has("permadeath");
-				if (permadeath) game.choosePermadeath();
+				// **Chosen at new game, and only at new game** (#89's D7).
+				// **After the store, not before it**: `choosePermadeath` marks the save
+				// dirty, and with no store the mark is dropped.
+				if (permadeathAtAttach(plan, slot, query.has("permadeath")))
+					game.choosePermadeath();
 			},
 		});
 		if (result.fault !== null) {

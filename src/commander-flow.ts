@@ -24,7 +24,8 @@ import {
 	type SaveStore,
 } from "./save-store";
 
-const messageOf = (error: unknown): string =>
+/** An error's message, or the thrown value as text. */
+export const messageOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
 // ---------------------------------------------------------------------------
@@ -173,6 +174,58 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 		plan.mode = "continue";
 	return plan;
 }
+
+/**
+ * A record that parsed and then would not build a game (D9).
+ *
+ * **A one-shot into it opens the overlay.** A `continue` plan attaches a store,
+ * and a store attached to that Commander would write over the record on the
+ * first dirty event — the only copy of whatever is left. A new plan is
+ * returned; the one given is not changed.
+ */
+export function withRestoreFault(plan: BootPlan, error: unknown): BootPlan {
+	return {
+		...plan,
+		mode: plan.mode === "continue" ? "overlay" : plan.mode,
+		fault: restoreFault(plan.slot, error),
+		faultSlot: plan.slot,
+		loaded: null,
+		canContinue: false,
+	};
+}
+
+/** The pending new game an attach into `slot` finishes, or `null` when the
+ *  pending record names another Commander or there is none. */
+export function pendingFor(
+	plan: BootPlan,
+	slot: string,
+): PendingNewGame | null {
+	return plan.pending?.name === slot ? plan.pending : null;
+}
+
+/**
+ * Whether an attach into `slot` chooses permadeath (#89's D7): New game's
+ * choice, or `?permadeath` on a direct boot with nothing loaded. A query
+ * parameter never chooses it for a Commander the overlay offered, nor for one
+ * that already exists — that would make the flag a setting.
+ */
+export function permadeathAtAttach(
+	plan: BootPlan,
+	slot: string,
+	queryPermadeath: boolean,
+): boolean {
+	const pending = pendingFor(plan, slot);
+	if (pending) return pending.permadeath;
+	return (
+		plan.mode === "direct" &&
+		plan.loaded === null &&
+		plan.pending === null &&
+		queryPermadeath
+	);
+}
+
+/** A random galaxy seed, for a boot or a New game with none asked for. */
+export const randomSeed = (): number => (Math.random() * 0x1_0000_0000) >>> 0;
 
 // ---------------------------------------------------------------------------
 // Attaching a store (§11.2 step 5)

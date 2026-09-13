@@ -71,7 +71,11 @@ describe("commanderMenu", () => {
 		expect(exportRow).toMatchObject({ slot: "default" });
 	});
 
-	test("the labels name Commanders and never the storage word", () => {
+	test("the labels name Commanders, never the storage word or an avoided alias", () => {
+		// `CONTEXT.md`'s Commander entry: _Avoid_ save game, save file, profile in
+		// player-facing text. The first labels checked only the storage word and
+		// shipped "Import a save file…".
+		const AVOIDED = /\b(slot|save game|save file|profile)\b/i;
 		const rows = commanderMenu({
 			...base,
 			slots: ["default", "Jameson"],
@@ -80,7 +84,7 @@ describe("commanderMenu", () => {
 			faultSlot: "Jameson",
 		});
 		for (const row of rows)
-			expect(`${row.label}: ${/\bslot\b/i.test(row.label)}`).toBe(
+			expect(`${row.label}: ${AVOIDED.test(row.label)}`).toBe(
 				`${row.label}: false`,
 			);
 	});

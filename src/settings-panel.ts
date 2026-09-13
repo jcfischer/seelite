@@ -16,6 +16,7 @@ import {
 	type SettingsStore,
 	settingSpec,
 } from "./settings";
+import { isEditable } from "./commander-overlay";
 
 /** The key that opens it, exported so a test can hold it apart from the flight
  *  bindings and from the perf panel's. */
@@ -207,7 +208,7 @@ export function mountSettingsPanel(
 			// Commander's name opened this screen on top of it.
 			if (
 				e.key === SETTINGS_KEY &&
-				!(e.target instanceof HTMLInputElement) &&
+				!isEditable(e.target) &&
 				!document.querySelector("[data-commander-overlay]")
 			) {
 				e.preventDefault();

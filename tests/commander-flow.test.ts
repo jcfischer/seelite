@@ -15,8 +15,11 @@ import {
 	CommanderSwitch,
 	lockHeldFault,
 	lockRequestFault,
+	pendingFor,
+	permadeathAtAttach,
 	planBoot,
 	restoreFault,
+	withRestoreFault,
 } from "../src/commander-flow";
 import {
 	newCommanderRecord,
@@ -496,5 +499,94 @@ describe("the overlay's words name the Commander, never the slot (§11.5)", () =
 			expect(`${message}: ${SLOT_WORD.test(message)}`).toBe(
 				`${message}: false`,
 			);
+	});
+});
+
+describe("the rules a boot applies after the plan (§11.2, §11.3, D7, D9)", () => {
+	test("a record that parses and will not restore is a fault, and a one-shot into it opens the overlay", async () => {
+		const o = origin();
+		await o.save("Jameson");
+		await o.catalog.chooseCommander("Jameson");
+		const plan = await o.boot();
+		expect(plan.mode).toBe("continue");
+		const faulted = withRestoreFault(plan, new Error("bad hull"));
+		// D9: a one-shot boot would otherwise attach a store over the record.
+		expect(faulted.mode).toBe("overlay");
+		expect(faulted.fault).toBe(restoreFault("Jameson", new Error("bad hull")));
+		expect(faulted.faultSlot).toBe("Jameson");
+		expect(faulted.loaded).toBeNull();
+		expect(faulted.canContinue).toBe(false);
+		// The plan it was given is not changed under the caller.
+		expect(plan.mode).toBe("continue");
+	});
+
+	test("a restore fault leaves an overlay or a direct boot in its own mode", async () => {
+		const o = origin();
+		await o.save(DEFAULT_SLOT);
+		for (const boot of ["overlay", "direct"] as const) {
+			const faulted = withRestoreFault(await o.boot({ boot }), "bad");
+			expect(faulted.mode).toBe(boot);
+			expect(faulted.fault).not.toBeNull();
+		}
+	});
+
+	test("an attach finishes the pending new game only for the Commander it names", async () => {
+		const o = origin();
+		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: true });
+		const plan = await o.boot();
+		expect(pendingFor(plan, "New")?.seed).toBe(5);
+		expect(pendingFor(plan, "Other")).toBeNull();
+	});
+
+	test("permadeath is chosen by New game, or by `?permadeath` on a direct boot with nothing loaded, and never otherwise", async () => {
+		const pending = origin();
+		await pending.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: true,
+		});
+		const pendingPlan = await pending.boot();
+		expect(permadeathAtAttach(pendingPlan, "New", false)).toBe(true);
+		expect(permadeathAtAttach(pendingPlan, "Other", true)).toBe(false);
+
+		const chosenOff = origin();
+		await chosenOff.catalog.beginNewGame({
+			name: "Off",
+			seed: 5,
+			permadeath: false,
+		});
+		expect(
+			permadeathAtAttach(await chosenOff.boot({ boot: "direct" }), "Off", true),
+		).toBe(false);
+
+		const fresh = origin();
+		expect(
+			permadeathAtAttach(
+				await fresh.boot({ boot: "direct" }),
+				DEFAULT_SLOT,
+				true,
+			),
+		).toBe(true);
+		expect(
+			permadeathAtAttach(
+				await fresh.boot({ boot: "direct" }),
+				DEFAULT_SLOT,
+				false,
+			),
+		).toBe(false);
+		// A query parameter cannot choose it for a Commander the overlay offered.
+		expect(permadeathAtAttach(await fresh.boot(), DEFAULT_SLOT, true)).toBe(
+			false,
+		);
+
+		const loaded = origin();
+		await loaded.save(DEFAULT_SLOT);
+		expect(
+			permadeathAtAttach(
+				await loaded.boot({ boot: "direct" }),
+				DEFAULT_SLOT,
+				true,
+			),
+		).toBe(false);
 	});
 });

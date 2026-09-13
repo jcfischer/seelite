@@ -217,8 +217,9 @@ four points #304 left open settled on
 [#305](https://github.com/jcfischer/seelite/issues/305). **Specified here, built
 by [#306](https://github.com/jcfischer/seelite/issues/306)**. The overlay, the boot and
 every operation below are reachable; §11.5's in-play badge is the part still to
-land, and until it does a fault raised in flight is held on `saveFault` and
-logged, with no player surface. A **Commander** is what the player
+land. Until it does, a failed debounced write is held on `saveFault` and logged,
+and a failed dock, undock or jump flush is only logged; neither has a player
+surface. A **Commander** is what the player
 sees of one save slot (`CONTEXT.md`); `SaveStore`'s slot vocabulary is storage
 and does not change.
 

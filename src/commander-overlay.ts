@@ -16,7 +16,7 @@
  * `CONTEXT.md`).
  */
 
-import type { CommanderSwitch } from "./commander-flow";
+import { type CommanderSwitch, messageOf, randomSeed } from "./commander-flow";
 import type { CommanderCatalog } from "./save-store";
 
 /**
@@ -118,7 +118,11 @@ export function commanderMenu(input: MenuInput): MenuRow[] {
 				(action) => action === "export" || slot !== input.inPlay,
 			),
 		});
-	rows.push({ kind: "import", label: "Import a save file…", enabled: true });
+	rows.push({
+		kind: "import",
+		label: "Import a Commander from a file…",
+		enabled: true,
+	});
 	return rows;
 }
 
@@ -146,8 +150,6 @@ export function parseSeed(text: string): number | null {
 	const seed = Number(trimmed);
 	return seed <= 0xffff_ffff ? seed : null;
 }
-
-const randomSeed = () => (Math.random() * 0x1_0000_0000) >>> 0;
 
 // ---------------------------------------------------------------------------
 // The drawing
@@ -260,7 +262,8 @@ const escapeHtml = (text: string) =>
 			] as string,
 	);
 
-const isEditable = (target: EventTarget | null) =>
+/** Whether a key event's target is a text field, which keeps its typing. */
+export const isEditable = (target: EventTarget | null) =>
 	target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 
 /** Hands the player a file. A `Blob` link, because nothing here talks to a
@@ -275,7 +278,10 @@ function downloadText(filename: string, text: string) {
 	document.body.append(link);
 	link.click();
 	link.remove();
-	setTimeout(() => URL.revokeObjectURL(url), 0);
+	// **Not on the next tick.** Some browsers start the download after the click
+	// returns, and a URL revoked first downloads nothing. Chromium, which the
+	// probe runs, is not one of them.
+	setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 /** A file name for a Commander's export: letters, digits, spaces and `._()-`
@@ -293,6 +299,13 @@ export function mountCommanderOverlay(
 		document.head.append(style);
 	}
 	const { catalog, switcher } = options;
+	/** The switch, or a named refusal under `?no-save`, where no row that needs it
+	 *  is offered. */
+	const sw = (): CommanderSwitch => {
+		if (!switcher) throw new Error("saving is off on this page (?no-save)");
+		return switcher;
+	};
+	const wrap = (i: number, n: number) => ((i % n) + n) % n;
 
 	let root: HTMLElement | null = null;
 	let view: View = { kind: "menu" };
@@ -330,7 +343,7 @@ export function mountCommanderOverlay(
 		try {
 			await work();
 		} catch (error) {
-			refusal = error instanceof Error ? error.message : String(error);
+			refusal = messageOf(error);
 		} finally {
 			busy = false;
 			draw();
@@ -342,7 +355,7 @@ export function mountCommanderOverlay(
 		try {
 			slots = await catalog.slots();
 		} catch (error) {
-			refusal = error instanceof Error ? error.message : String(error);
+			refusal = messageOf(error);
 		}
 		if (!cursorPlaced && view.kind === "menu") {
 			cursor = initialCursor(menuRows());
@@ -385,7 +398,7 @@ export function mountCommanderOverlay(
 								return;
 							}
 							void perform(() =>
-								(switcher as CommanderSwitch).newGame({
+								sw().newGame({
 									name: v.name,
 									seed,
 									permadeath: v.permadeath,
@@ -403,7 +416,7 @@ export function mountCommanderOverlay(
 						label: "Rename",
 						run: () =>
 							void perform(async () => {
-								await (switcher as CommanderSwitch).rename(v.from, v.name);
+								await sw().rename(v.from, v.name);
 								if (active === v.from) active = v.name;
 								info = `Commander "${v.from}" is now "${v.name}"`;
 								refusal = null;
@@ -421,7 +434,7 @@ export function mountCommanderOverlay(
 						label: `Delete Commander "${v.slot}" for good`,
 						run: () =>
 							void perform(async () => {
-								await (switcher as CommanderSwitch).remove(v.slot);
+								await sw().remove(v.slot);
 								if (active === v.slot) {
 									canContinue = false;
 									pendingName = null;
@@ -439,10 +452,7 @@ export function mountCommanderOverlay(
 					{
 						kind: "button",
 						label: "Import",
-						run: () =>
-							void perform(() =>
-								(switcher as CommanderSwitch).importCommander(v.name, v.text),
-							),
+						run: () => void perform(() => sw().importCommander(v.name, v.text)),
 					},
 					cancel,
 				];
@@ -494,10 +504,7 @@ export function mountCommanderOverlay(
 				const action = chosenAction.get(row.slot) ?? row.enabled[0];
 				if (!action || !row.enabled.includes(action)) return;
 				if (action === "export") return exportCommander(row.slot);
-				if (action === "load")
-					return void perform(() =>
-						(switcher as CommanderSwitch).load(row.slot),
-					);
+				if (action === "load") return void perform(() => sw().load(row.slot));
 				view =
 					action === "rename"
 						? { kind: "rename", from: row.slot, name: row.slot, seed: "" }
@@ -510,7 +517,7 @@ export function mountCommanderOverlay(
 
 	const exportCommander = (slot: string) =>
 		void perform(async () => {
-			const text = await (switcher as CommanderSwitch).exportCommander(slot);
+			const text = await sw().exportCommander(slot);
 			downloadText(exportFileName(slot), text);
 			info = `Commander "${slot}" exported`;
 		});
@@ -557,7 +564,7 @@ export function mountCommanderOverlay(
 						? `Rename Commander "${escapeHtml(v.from)}"`
 						: v.kind === "delete"
 							? `Delete Commander "${escapeHtml(v.slot)}"?`
-							: "Import a save file";
+							: "Import a Commander from a file";
 			body =
 				`<div class="heading">${title}</div>` +
 				formRows()
@@ -597,9 +604,17 @@ export function mountCommanderOverlay(
 					"[data-action]",
 				)?.dataset.action as CommanderAction | undefined;
 				const slot = el.dataset.commander;
-				if (action && slot !== undefined) chosenAction.set(slot, action);
+				const actionDisabled =
+					(event.target as HTMLElement)
+						.closest("[data-action]")
+						?.getAttribute("aria-disabled") === "true";
+				if (action && slot !== undefined && !actionDisabled)
+					chosenAction.set(slot, action);
 				if ((event.target as HTMLElement).tagName === "INPUT") return draw();
+				// A disabled row does nothing, and the highlight still has to follow
+				// the cursor it moved.
 				activate();
+				draw();
 			});
 		for (const input of root.querySelectorAll<HTMLInputElement>(
 			"input[data-field]",
@@ -609,8 +624,11 @@ export function mountCommanderOverlay(
 				const field = input.dataset.field as "name" | "seed";
 				view[field] = input.value;
 			});
-		fileInput()?.addEventListener("change", async () => {
-			const file = fileInput()?.files?.[0];
+		// **The element that changed, not the one in `root` now.** A redraw while the
+		// picker is open replaces the input, and the change then fires on the old one.
+		const picker = fileInput();
+		picker?.addEventListener("change", async () => {
+			const file = picker.files?.[0];
 			if (!file) return;
 			const text = await file.text();
 			const stem = file.name.replace(/\.seelite-save\.json$|\.json$/i, "");
@@ -670,7 +688,7 @@ export function mountCommanderOverlay(
 	const moveCursor = (delta: number) => {
 		if (!root || busy || delta === 0) return;
 		const n = rowCount();
-		cursor = (((cursor + delta) % n) + n) % n;
+		cursor = wrap(cursor + delta, n);
 		draw();
 		root
 			.querySelector(`.row[data-row="${cursor}"]`)
@@ -688,7 +706,7 @@ export function mountCommanderOverlay(
 			const n = row.enabled.length;
 			chosenAction.set(
 				row.slot,
-				row.enabled[(((at + delta) % n) + n) % n] as CommanderAction,
+				row.enabled[wrap(at + delta, n)] as CommanderAction,
 			);
 			return draw();
 		}
