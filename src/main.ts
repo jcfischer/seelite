@@ -360,12 +360,17 @@ import {
 import {
 	DEFAULT_SLOT,
 	type FlushReason,
+	SAVE_BLOCKED_MESSAGE,
+	SAVE_CLOSED_MESSAGE,
 	SAVE_DB_NAME,
+	SAVE_DB_VERSION,
 	SAVE_DEBOUNCE_MS,
+	SAVE_POINTER_STORE_NAME,
 	SAVE_RETRY_LIMIT,
 	SAVE_STORE_NAME,
 	SaveStore,
 	indexedDbSaveBackend,
+	webSlotLocks,
 } from "./save-store";
 import { type BootMode, bootMode } from "./boot-mode";
 import { marketStationOf } from "./market";
@@ -10273,6 +10278,9 @@ if (query.has("model-viewer")) {
 	if (!query.has("no-save") && saveFault === null) {
 		game.saveStore = new SaveStore({
 			backend: saveBackend,
+			// Required by the store, and inert here: nothing in this build renames,
+			// deletes or holds a Commander. The overlay that does is §11's next PR.
+			locks: webSlotLocks(),
 			schedule: (fn, ms) => {
 				const id = window.setTimeout(fn, ms);
 				return () => window.clearTimeout(id);
@@ -10319,7 +10327,11 @@ if (query.has("model-viewer")) {
 	).__seelite.save = {
 		debounceMs: SAVE_DEBOUNCE_MS,
 		dbName: SAVE_DB_NAME,
+		dbVersion: SAVE_DB_VERSION,
 		storeName: SAVE_STORE_NAME,
+		pointerStoreName: SAVE_POINTER_STORE_NAME,
+		blockedMessage: SAVE_BLOCKED_MESSAGE,
+		closedMessage: SAVE_CLOSED_MESSAGE,
 		defaultSlot: DEFAULT_SLOT,
 		backend: saveBackend,
 		// The module function, not a method on the game: a probe that wants a
