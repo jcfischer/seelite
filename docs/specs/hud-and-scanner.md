@@ -355,7 +355,7 @@ tone and a short text label — shape and text as well as colour. It is absent
 while saves are writing; it appears on the faults `persistent-world-state.md`
 §11.5 names — a debounced write failing `SAVE_RETRY_LIMIT` times in a row, or
 any failed dock, undock or jump flush — opens the Commander overlay when
-activated, and clears on the next write that lands. **Which corner is decided on a rendered frame**, in both states, not
+activated, and clears when §11.5's per-record rule says it does. **Which corner is decided on a rendered frame**, in both states, not
 here.
 
 ## 6. Responsive behaviour

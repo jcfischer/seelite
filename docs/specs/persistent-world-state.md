@@ -234,7 +234,8 @@ for either screen (`docs/gamepad.md`).
 ### 11.2 Boot
 
 **Every boot opens the overlay first** (S2), with the game already constructed
-behind it:
+behind it — except a boot that consumes §11.3's one-shot continue, which the
+player's own choice on the overlay wrote:
 
 1. Read the **active-Commander pointer** (§11.4). With no pointer, the slot is
    `default`, which is where every save before §11 lives.
@@ -263,6 +264,19 @@ Every operation except Continue ends in a **page reload** into the active
 Commander, because the only `new Game(` is the boot's and nothing rebuilds a game
 in the page. Nothing here changes that.
 
+**A reload the overlay caused does not open the overlay again.** New game, Load
+and Import write a **one-shot continue** beside the pointer (§11.4) before
+reloading; the boot that reads it consumes it and continues straight into the
+pointed Commander, attaching the store and releasing the clock as Continue does.
+The player has just chosen that Commander on the overlay, and asking again is
+the same question twice. Any other reload — the player's own, a crash, a new
+tab — finds no one-shot and opens the overlay, which is S2. A one-shot naming a
+Commander whose load fails is discarded and the overlay opens with the fault.
+
+**One rule for names.** New game, Import and Rename all **refuse a name already
+in `slots()`** and say so on the overlay. A slot is the whole save, so writing to
+a taken name would replace that Commander rather than create one.
+
 - **New game** takes three choices (S5): a **name**, pre-filled with a free
   default; a **galaxy seed**, pre-filled with a random seed the player can keep,
   retype or re-roll — there is no canonical seed, and `seedFromQuery` gives a
@@ -273,9 +287,9 @@ in the page. Nothing here changes that.
 - **Load / switch** sets the pointer and reloads.
 - **Export** hands the player `exportSlot`'s file. It is offered for any slot,
   including one whose record this build refuses — D9's rescue path.
-- **Import** asks for a name, runs `importSlot` into a **new** slot, and refuses
-  a name that is already taken rather than overwriting it. `parseSave`'s
-  integrity and version refusals are what import refuses on.
+- **Import** asks for a name and runs `importSlot` into a **new** slot, under
+  the name rule above. `parseSave`'s integrity and version refusals are what
+  import refuses a file on.
 - **Rename** is copy-then-delete: both records to the new name, then
   `deleteSlot` on the old one. A failure between the two leaves two Commanders,
   never zero.
@@ -294,24 +308,40 @@ and it matches `exportSlot`'s rule that the file names no slot, which is why
 import asks for a name. `assertSlot` refuses an empty name and a space; the
 overlay says so rather than failing silently.
 
-**The active-Commander pointer** lives in the same IndexedDB database as the
-slots, **outside `SaveEnvelope` and outside its integrity hash**. #89's one hash
-covers `{ world, commander }`; the pointer is neither, and a cleared profile
-clears it with the slots it names. A pointer naming a slot that no longer exists
-falls back to `default` and says so.
+**The active-Commander pointer** — and §11.3's one-shot continue beside it —
+lives in the same IndexedDB database as the slots, **outside `SaveEnvelope` and
+outside its integrity hash**. #89's one hash covers `{ world, commander }`; the
+pointer is neither, and a cleared profile clears it with the slots it names. A
+pointer naming a slot that no longer exists falls back to `default` and says so.
+
+**It is a second object store, not a key in `slots`.** `indexedDbSaveBackend`
+files a record under its slot name, a separator and its kind, and `slots()`
+lists the distinct prefixes of every key in that store — so a pointer stored
+there would be listed as a Commander, and `deleteSlot` could match it. The
+pointer gets its own store, which is a `SAVE_DB_VERSION` bump from 1 to 2; the
+upgrade creates the new store and leaves `slots` and every record in it
+untouched. `SaveBackend` gains the pointer's read and write, and the in-memory
+backend implements them the same way so the headless tier checks the policy.
 
 ### 11.5 Faults (S4)
 
-- **At boot**: a refused load or `?seed`'s set-aside opens the overlay with the
-  message, and Export of the slot it concerns.
+- **At boot**: a refused load opens the overlay with the message, and Export of
+  the slot it concerns. `?seed`'s set-aside is a fault **only under
+  `?boot=direct`** (§11.6); without it, `?seed` sets nothing aside.
 - **In play**: the save-fault badge (`hud-and-scanner.md` §5.3) is raised by a
   debounced write that has failed `SAVE_RETRY_LIMIT` times **or by any failed
   dock, undock or jump flush**. The second half is new: today `saveFlush` only
   logs a failed flush (`main.ts`, its `.catch`) and sets nothing, so the dock
   flush — the write that lays down `lastDocked` — could fail with no player
   surface at all. A failed `quit` flush has no frame left to draw it in and
-  stays a log line. The badge opens the overlay, whose message is `saveFault`;
-  it clears on the next write that lands.
+  stays a log line. The badge opens the overlay, whose message is `saveFault`.
+  **It is held per record kind, and each kind clears only on a write of that
+  kind.** A debounced write carries `live` alone; a dock flush writes `live` and
+  `lastDocked` in one transaction. So a `live` fault clears on the next write
+  that lands, and a `lastDocked` fault clears only on the next dock flush that
+  lands — clearing it on a debounced write would hide the fault while a
+  non-permadeath death still restores the older dock. The badge shows while
+  either is held.
 
 ### 11.6 Probes and view capture
 
@@ -327,16 +357,23 @@ headless row that fails on any script building a default-route URL by hand.
 Workbench routes (`?model-viewer`, `?galaxy-map`, `?planet-prototype`,
 `?hud-gallery`) do not boot the game and need nothing.
 
-Without `?boot=direct`, a `?seed` pre-fills the new-game seed field; it does not
-skip the overlay.
+**Without `?boot=direct`, a `?seed` pre-fills the new-game seed field and does
+nothing else**: it does not skip the overlay, and it does not set the active
+Commander aside, so Continue stays available. Today's set-aside exists because a
+boot straight into a save could not ask which world was wanted; the overlay does
+ask, so the rule applies only where nothing asks — under `?boot=direct`.
 
 ### 11.7 Verification obligations
 
-Headless: the active pointer's read, write and fallback; rename's crash case
-leaving two; delete and rename refusing the active Commander; import refusing a
-taken name and a record `parseSave` refuses; `gameTime` unchanged across frames
-while the boot overlay is open; no store attached before the choice; the URL
-builder row.
+Headless: the active pointer's read, write and fallback, and `slots()` never
+listing the pointer's store; the one-shot continue consumed by exactly one boot;
+a rename interrupted between copy and delete leaving two; delete and rename
+refusing the active Commander; new game, import and rename each refusing a taken
+name; import refusing a record `parseSave` refuses; a `lastDocked` fault
+surviving a successful debounced write and clearing on a dock flush; `gameTime`
+unchanged across frames while the boot overlay is open; no store attached before
+the choice; `?seed` without `?boot=direct` setting nothing aside; the URL builder
+row.
 
 Browser: the overlay opens at boot with the clock held; Continue releases it; a
 boot fault shows its message and offers Export; a forced write failure raises the
