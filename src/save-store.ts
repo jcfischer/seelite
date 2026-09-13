@@ -93,7 +93,7 @@ export type SaveRecordKind = "live" | "lastDocked";
 
 /** Every record kind, for the operations that move a whole slot. A kind added
  *  to the type and missed here would be dropped by a rename. */
-export const SAVE_RECORD_KINDS = [
+const SAVE_RECORD_KINDS = [
 	"live",
 	"lastDocked",
 ] as const satisfies readonly SaveRecordKind[];
@@ -195,9 +195,10 @@ export interface ActiveCommander {
 export interface SaveStoreOptions {
 	backend: SaveBackend;
 	/**
-	 * Required, not defaulted, for `FlightPerformance`'s reason: a store that
-	 * forgot its locks would grant every rename and delete, and the two are
-	 * indistinguishable in a diff.
+	 * What `hold` takes this store's Commander lock from. Required, not
+	 * defaulted, for `FlightPerformance`'s reason: a store with no lock would let
+	 * `CommanderCatalog` rename or delete the Commander it is writing, and the two
+	 * are indistinguishable in a diff.
 	 */
 	locks: SlotLocks;
 	/** The Commander debounced writes go to. `DEFAULT_SLOT` when omitted. */
@@ -226,16 +227,16 @@ const fail = (message: string): never => {
  * slot addressable as another: `"a\0b"` lists as `"a"` and `deleteSlot("a")`
  * removes it.
  *
- * **This said a space for a round, and checked for one.** The separator is a NUL
- * byte, and the source held it as a literal byte, which the Read tool renders as
- * a space; the comment, the check, a test comment and §11.4 were all written
- * from what it showed. The space rule stays because §11.4 ratifies it. The
- * separator rule is the one that closes the collision.
+ * **This said a space for two rounds, and checked for one.** The separator is a
+ * NUL byte, and the source held it as a literal byte, which the Read tool renders
+ * as a space. The comment, the check, a test comment and §11.4 were all written
+ * from what it showed, so a space in a name is allowed now: a record key, a Web
+ * Lock name and an export all take one.
  */
 const assertSlot = (slot: string): void => {
-	if (slot.length === 0 || slot.includes(" ") || slot.includes(KEY_SEPARATOR))
+	if (slot.length === 0 || slot.includes(KEY_SEPARATOR))
 		fail(
-			`"${slot}" is not a slot name — a name may not contain a space or a NUL character`,
+			`"${slot}" is not a slot name — a name may not contain a NUL character`,
 		);
 };
 
@@ -283,9 +284,8 @@ export class SaveStore {
 	 * **Per kind, not per Commander, and that is enough.** A store writes one
 	 * Commander for the life of its tab: it holds that Commander's lock, which
 	 * refuses a rename or a delete of it, and the game flushes with no slot
-	 * argument. `flush`'s `slot` parameter and `setSlot` are the tests' and the
-	 * probe's seams. A caller that aimed one store at two Commanders would mix
-	 * their faults here.
+	 * argument. `flush`'s `slot` parameter is the tests' and the probe's seam. A
+	 * caller that aimed one store at two Commanders would mix their faults here.
 	 */
 	private readonly failed = new Set<SaveRecordKind>();
 	private readonly schedule: Scheduler;
@@ -316,12 +316,6 @@ export class SaveStore {
 		this.schedule = options.schedule;
 		this.current = options.current;
 		this.onWriteFailed = options.onWriteFailed;
-	}
-
-	/** The slot subsequent debounced writes go to. */
-	setSlot(slot: string): void {
-		assertSlot(slot);
-		this.slot = slot;
 	}
 
 	/** D4's trigger: any change to saved state, coalesced. */
@@ -490,6 +484,52 @@ export class SaveStore {
 		return JSON.stringify({ live, lastDocked }, null, "\t");
 	}
 
+	/** The lock request in flight, shared by overlapping `hold` calls. */
+	private holding: Promise<(() => void) | null> | null = null;
+
+	/**
+	 * Takes this store's own Commander lock for the life of the tab, or reports
+	 * that another store already has it. Idempotent once held.
+	 *
+	 * An attached store holds it so that no other tab can rename or delete the
+	 * Commander it is writing, and so a second tab cannot attach a second store
+	 * to the same slot — two stores writing one slot.
+	 *
+	 * **Overlapping calls share one request.** Each call asking for itself let
+	 * the second one's `null` (the first already held the lock) overwrite the
+	 * first one's release, which left a lock nothing could give back. Rejects
+	 * when the request itself fails, which is a fault and not a Commander held
+	 * elsewhere.
+	 */
+	async hold(): Promise<boolean> {
+		if (this.held) return true;
+		this.holding ??= this.locks.tryHold(this.slot).finally(() => {
+			this.holding = null;
+		});
+		const release = await this.holding;
+		if (release && !this.held) this.held = release;
+		return this.held !== null;
+	}
+}
+
+/**
+ * The Commander overlay's operations (`persistent-world-state.md` §11.3–§11.4),
+ * on `{ backend, locks }` alone.
+ *
+ * **Not on `SaveStore`, because of dependency order.** A store writes one
+ * Commander and needs `current`, which needs a constructed `Game`. The boot calls
+ * `resolveActive` to learn which Commander that is, and an overlay in a fault
+ * state, with no store attached, still has to reach New game and Load.
+ */
+export class CommanderCatalog {
+	private readonly backend: SaveBackend;
+	private readonly locks: SlotLocks;
+
+	constructor(options: { backend: SaveBackend; locks: SlotLocks }) {
+		this.backend = options.backend;
+		this.locks = options.locks;
+	}
+
 	/**
 	 * D6's import. Both records are parsed before either is written, so a file
 	 * that is half a save cannot leave a slot half-filled.
@@ -518,24 +558,6 @@ export class SaveStore {
 		if (live !== null) await this.backend.write(slot, "live", live);
 		if (lastDocked !== null)
 			await this.backend.write(slot, "lastDocked", lastDocked);
-	}
-
-	// -------------------------------------------------------------------------
-	// The Commander overlay's operations (`persistent-world-state.md` §11.3–4)
-	// -------------------------------------------------------------------------
-
-	/**
-	 * Takes this store's own Commander lock for the life of the tab, or reports
-	 * that another store already has it. Idempotent once held.
-	 *
-	 * An attached store holds it so that no other tab can rename or delete the
-	 * Commander it is writing, and so a second tab cannot attach a second store
-	 * to the same slot — two stores writing one slot.
-	 */
-	async hold(): Promise<boolean> {
-		if (this.held) return true;
-		this.held = await this.locks.tryHold(this.slot);
-		return this.held !== null;
 	}
 
 	/**
@@ -575,7 +597,7 @@ export class SaveStore {
 	 */
 	async chooseCommander(slot: string): Promise<void> {
 		assertSlot(slot);
-		await this.withFreeLock(slot, async () => {});
+		await this.assertUnlocked(slot);
 		await this.backend.writeMeta({
 			pending: null,
 			active: slot,
@@ -663,6 +685,12 @@ export class SaveStore {
 	 *  read, by name. */
 	private async readPending(): Promise<PendingNewGame | null> {
 		return parsePending(await this.backend.readMeta("pending"));
+	}
+
+	/** Refuses a Commander whose lock anyone holds, and holds nothing itself: the
+	 *  check takes the lock and gives it straight back. */
+	private assertUnlocked(slot: string): Promise<void> {
+		return this.withFreeLock(slot, async () => {});
 	}
 
 	/** Runs `work` while holding `slot`'s lock, refusing when anyone else — this
@@ -772,10 +800,10 @@ export function memorySaveBackend(): MemorySaveBackend {
 				if (slotOfKey(key) === slot) rows.delete(key);
 		},
 		async copySlot(from, to) {
-			const kinds = SAVE_RECORD_KINDS;
-			const found = kinds.filter((kind) => rows.has(recordKey(from, kind)));
-			if (found.length === 0)
-				throw new Error(`save: "${from}" holds no record to copy`);
+			const found = SAVE_RECORD_KINDS.filter((kind) =>
+				rows.has(recordKey(from, kind)),
+			);
+			if (found.length === 0) fail(`"${from}" holds no record to copy`);
 			for (const kind of found)
 				rows.set(recordKey(to, kind), copy(rows.get(recordKey(from, kind))));
 		},
@@ -994,13 +1022,12 @@ export function indexedDbSaveBackend(
 			const tx = handle.transaction(SAVE_STORE_NAME, "readwrite");
 			const done = transactionDone(tx);
 			const store = tx.objectStore(SAVE_STORE_NAME);
-			const kinds = SAVE_RECORD_KINDS;
 			let found = 0;
 			let answered = 0;
 			// Gets and puts chained on request callbacks, not on `await`: the
 			// transaction commits once no request is pending, and a gap the event
 			// loop can run through is where a copy would find it already finished.
-			for (const kind of kinds) {
+			for (const kind of SAVE_RECORD_KINDS) {
 				const get = store.get(recordKey(from, kind));
 				get.onsuccess = () => {
 					if (get.result !== undefined) {
@@ -1008,7 +1035,7 @@ export function indexedDbSaveBackend(
 						store.put(get.result, recordKey(to, kind));
 					}
 					answered += 1;
-					if (answered === kinds.length && found === 0) tx.abort();
+					if (answered === SAVE_RECORD_KINDS.length && found === 0) tx.abort();
 				};
 			}
 			try {
@@ -1075,7 +1102,7 @@ export function memorySlotLocks(): SlotLocks {
 
 /** The prefix a Commander's Web Lock name carries, so no other lock on the
  *  origin can collide with one. */
-export const SAVE_LOCK_PREFIX = "seelite-commander:";
+const SAVE_LOCK_PREFIX = "seelite-commander:";
 
 /**
  * The browser's locks: an exclusive Web Lock per Commander, requested with
@@ -1086,15 +1113,20 @@ export const SAVE_LOCK_PREFIX = "seelite-commander:";
  * and `tryHold` resolves with that release as soon as the lock is granted — a
  * lock held for the life of the tab is one whose release is never called.
  *
+ * **A request that fails rejects, and only a lock not granted is `null`.** Both
+ * answered `null` for a round, so a document that was no longer active, or a
+ * `SecurityError`, read as "open in another tab". A caller treats a rejection
+ * as a fault.
+ *
  * **It assumes a secure context.** `navigator.locks` exists only there, so on
  * plain http off localhost the default argument is `undefined` and `tryHold`
- * rejects rather than answering `null`. The probes run on localhost and the
- * deploy target is HTTPS, so neither meets it.
+ * rejects. The probes run on localhost and the deploy target is HTTPS, so
+ * neither meets it.
  */
 export function webSlotLocks(locks: LockManager = navigator.locks): SlotLocks {
 	return {
 		tryHold(slot) {
-			return new Promise((resolve) => {
+			return new Promise((resolve, reject) => {
 				locks
 					.request(
 						`${SAVE_LOCK_PREFIX}${slot}`,
@@ -1107,7 +1139,7 @@ export function webSlotLocks(locks: LockManager = navigator.locks): SlotLocks {
 							return new Promise<void>((release) => resolve(() => release()));
 						},
 					)
-					.catch(() => resolve(null));
+					.catch(reject);
 			});
 		},
 	};

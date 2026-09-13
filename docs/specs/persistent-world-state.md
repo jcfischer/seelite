@@ -191,8 +191,8 @@ Encoding, migration and the autosave cadence are shipped and exercised by the
 game: IndexedDB, a version refusal that leaves the record readable, and a
 debounced write with four unconditional flushes. **Permadeath, slots and
 export/import are decided and implemented but not reachable by a player**:
-`choosePermadeath` is on a URL parameter, and `setSlot`, `exportSlot` and
-`importSlot` have no caller outside their own tests, because there is no
+`choosePermadeath` is on a URL parameter, and `exportSlot` and
+`CommanderCatalog.importSlot` have no caller outside their own tests, because there is no
 new-game or save screen to reach them from. `save-store.ts` says so where a
 reader meets it. **§11 specifies that screen and #306 builds it**; this
 sentence and `save-store.ts`'s header stay true until #306 lands, and flipping
@@ -323,7 +323,10 @@ a taken name would replace that Commander rather than create one.
   Continue into a Commander already open in another tab, which is two stores
   writing one slot.
 
-`SaveStore` gains the delete and rename it does not have; `SaveBackend` already
+The delete and rename `SaveStore` did not have land on `CommanderCatalog`, beside
+the pointer, the one-shot, the pending new game and import. The catalog is built
+from the backend and the locks alone, because the boot reads the pointer before
+it can build a store for the Commander the pointer names. `SaveBackend` already
 has `deleteSlot`.
 
 ### 11.4 Names and the active pointer
@@ -332,8 +335,11 @@ has `deleteSlot`.
 field, and adding one bumps `SAVE_SCHEMA_VERSION`, which `parseSave` refuses —
 every existing save would stop loading. As the key it costs no schema change,
 and it matches `exportSlot`'s rule that the file names no slot, which is why
-import asks for a name. `assertSlot` refuses an empty name, a space and the
-record key's NUL separator; the
+import asks for a name. `assertSlot` refuses an empty name and the record key's
+NUL separator. It refused a space for a round, and that rule came from a
+misreading: the source held the separator as a literal NUL byte, which a text
+view shows as a space. A space in a name is harmless to a record key, a Web Lock
+name and an export. The
 overlay says so rather than failing silently.
 
 **The active-Commander pointer** — and §11.3's one-shot continue beside it —

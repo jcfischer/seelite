@@ -834,6 +834,56 @@ try {
 	);
 	await newer.close();
 	await running.close();
+
+	// The IndexedDB `copySlot` and `takeMeta` that ship. Every headless row runs
+	// against the in-memory backend, so these two transactions are checked here
+	// or nowhere. Its own context: the row above upgraded that one's database
+	// past the version this build opens.
+	const metaContext = await browser.newContext({
+		viewport: { width: 1280, height: 800 },
+	});
+	extraContexts.push(metaContext);
+	const metaPage = await metaContext.newPage();
+	watch(metaPage, "meta game");
+	await metaPage.goto(gameUrl(ORIGIN, { seed: SEED }), { waitUntil: "load" });
+	await bootedGame(metaPage);
+	const metaOps = await metaPage.evaluate(async () => {
+		const b = window.__seelite.save.backend;
+		await b.write("probe-copy-a", "live", { mark: "live" });
+		await b.write("probe-copy-a", "lastDocked", { mark: "lastDocked" });
+		await b.copySlot("probe-copy-a", "probe-copy-b");
+		const copied = [
+			(await b.read("probe-copy-b", "live"))?.mark ?? null,
+			(await b.read("probe-copy-b", "lastDocked"))?.mark ?? null,
+		];
+		const refusal = await b
+			.copySlot("probe-copy-none", "probe-copy-c")
+			.then(() => "copied nothing")
+			.catch((error) =>
+				error instanceof Error ? error.message : String(error),
+			);
+		await b.deleteSlot("probe-copy-a");
+		const slots = await b.slots();
+		await b.writeMeta({ oneShot: "probe-copy-b" });
+		const taken = [await b.takeMeta("oneShot"), await b.takeMeta("oneShot")];
+		return { copied, refusal, slots, taken };
+	});
+	console.log(`\npointer-store transactions: ${JSON.stringify(metaOps)}`);
+	check(
+		"copySlot carries both records in IndexedDB, and refuses a Commander with none",
+		JSON.stringify(metaOps.copied) === JSON.stringify(["live", "lastDocked"]) &&
+			/holds no record to copy/.test(metaOps.refusal) &&
+			metaOps.slots.includes("probe-copy-b") &&
+			!metaOps.slots.includes("probe-copy-a") &&
+			!metaOps.slots.includes("probe-copy-c"),
+		JSON.stringify(metaOps),
+	);
+	check(
+		"takeMeta in IndexedDB hands the one-shot to exactly one reader",
+		metaOps.taken[0] === "probe-copy-b" && metaOps.taken[1] === null,
+		JSON.stringify(metaOps.taken),
+	);
+	await metaPage.close();
 } finally {
 	for (const extra of extraContexts) await extra.close().catch(() => {});
 	await context?.close();
