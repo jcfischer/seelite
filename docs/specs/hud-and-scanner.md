@@ -336,6 +336,28 @@ single-seed figure cannot carry. What makes it a measurement rather than a
 number chosen to be safe is that the band is asserted exactly, not that the
 sweep is exhaustive.
 
+### 5.3 The save-fault badge
+
+Specified by [#305](https://github.com/jcfischer/seelite/issues/305) from #304's
+S4, built by [#306](https://github.com/jcfischer/seelite/issues/306);
+`persistent-world-state.md` §11.5 owns when it is raised.
+
+**A fixed corner of the glass, in flight and docked alike.** Not a row on §5's
+floor: M10 hides the whole floor while docked, and the dock flush is one of the
+writes that can fail, so a floor badge would be invisible exactly then. Not a
+§5.1 strip cell, for #117's reason: the strip memoises its widest reading. Not the
+Communications console: a console is read by turning away from the glass, which
+is the course row's argument for why a console cue is forgotten.
+
+The corner sits outside §5's floor and outside §8's station console, so neither
+state hides it and nothing reflows when it appears. It carries §4's **refusal**
+tone and a short text label — shape and text as well as colour. It is absent
+while no fault is held; it appears on the faults `persistent-world-state.md`
+§11.5 names — a debounced write failing `SAVE_RETRY_LIMIT` times in a row, or
+any failed dock, undock or jump flush — opens the Commander overlay when
+activated, and clears when §11.5's per-record rule says it does. **Which corner is decided on a rendered frame**, in both states, not
+here.
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either

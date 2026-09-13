@@ -67,8 +67,9 @@ exception. It takes a console's six buttons and leaves the sticks alone, because
 it exists to measure a frame *while it is flown* — a mode that stopped the ship
 would measure a different frame from the one it is there for.
 
-**`modal`** is the settings screen and nothing else — the one place the whole
-pad is taken, sticks included. `settings-panel.ts` already does this for the
+**`modal`** is the settings screen and, once #306 lands, the Commander overlay
+(`persistent-world-state.md` §11) — the one place the whole pad is taken, sticks
+included. `settings-panel.ts` already does this for the
 keyboard by calling `releaseHeldKeys` on open, because a held throttle key kept
 flying the ship behind a screen the player was reading. A key is an *event* and
 can be forgotten; a stick is a **position, re-reported every frame**, so there
@@ -185,6 +186,10 @@ evidence, and #283 does not close without it.
   and both are walkable rows.
 - **Open the settings screen.** `z` on the keyboard is the only way in. Once it
   is open the pad drives it, and Circle closes it.
+- **Type a Commander's name or a seed** (once #306 lands). The new-game form
+  pre-fills both — a free default name and a random seed — so a pad player can
+  start a game by accepting them, and re-roll the seed; retyping either takes the keyboard, for the
+  reason under **Type** above.
 - **Reach the tuning dials or the perf panel's letter keys.** Seventeen buttons
   cannot carry twenty-six letters plus `PERF_KEYS`, `RESTORE_KEY` and
   `SETTINGS_KEY`. What the pad claims is the flight-critical set; the dials stay
