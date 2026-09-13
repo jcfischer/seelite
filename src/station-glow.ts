@@ -84,6 +84,13 @@ export const GLOW_CLASSES = Object.freeze({
 	flood: Object.freeze({ minPx: 4, maxPx: 12, spread: 2.5 }),
 	/** Window panes and approach lamps: many of them, so the smallest floor. */
 	pane: Object.freeze({ minPx: 2, maxPx: 8, spread: 2 }),
+	/**
+	 * Strobes, beacons, the mouth ring: a blinking light drawn with its glare
+	 * (#300). The sprite is large because the glare is *in* it — measured on the
+	 * principal's GPU, bloom gains a source this small almost nothing, even at
+	 * twenty times the core — and the centre stays tight inside it.
+	 */
+	blink: Object.freeze({ minPx: 18, maxPx: 48, spread: 12 }),
 } as const);
 
 export type GlowClass = keyof typeof GLOW_CLASSES;
@@ -105,10 +112,20 @@ export function glowPixelSize(
 	projectionYY: number,
 	halfHeightPx: number,
 	glow: { minPx: number; maxPx: number; spread: number },
+	/**
+	 * The renderer's pixel ratio. The floor and cap are **points on screen**, so
+	 * they scale by it; `halfHeightPx` is already in the target's device pixels.
+	 * Leaving this out drew every glow at half size on a Retina display (#300),
+	 * which is what the ship's nav lights had already solved with `uPixelRatio`.
+	 */
+	pixelRatio: number,
 ): number {
 	const projected =
 		(sizeView / Math.max(distanceView, 1e-9)) * projectionYY * halfHeightPx;
-	return Math.min(glow.maxPx, Math.max(glow.minPx, projected * glow.spread));
+	return Math.min(
+		glow.maxPx * pixelRatio,
+		Math.max(glow.minPx * pixelRatio, projected * glow.spread),
+	);
 }
 
 const VERTEX = `
@@ -118,6 +135,7 @@ uniform float uHalfHeightPx;
 uniform float uMinPx;
 uniform float uMaxPx;
 uniform float uSpread;
+uniform float uPixelRatio;
 void main() {
 	vec4 mv = modelViewMatrix * vec4(position, 1.0);
 	// The model-view scale, so a size authored in the station's kilometres is
@@ -125,7 +143,7 @@ void main() {
 	float scale = length(modelViewMatrix[0].xyz);
 	float dist = max(length(mv.xyz), 1e-9);
 	float projected = (glowSize * scale / dist) * projectionMatrix[1][1] * uHalfHeightPx;
-	gl_PointSize = clamp(projected * uSpread, uMinPx, uMaxPx);
+	gl_PointSize = clamp(projected * uSpread, uMinPx * uPixelRatio, uMaxPx * uPixelRatio);
 	// Lifted toward the eye by the fitting's own half-size, so the housing the
 	// glow sits inside cannot occlude it from any direction — while structure
 	// more than a fitting's width in front of it still does, which is the
@@ -139,18 +157,20 @@ const FRAGMENT = `
 uniform vec3 uColor;
 uniform float uIntensity;
 uniform float uCore;
+uniform float uHalo;
 void main() {
 	float r = min(length(gl_PointCoord - 0.5) * 2.0, 1.0);
 	float core = 1.0 - r;
-	// A soft skirt in the fixture's own colour. With uCore at 0 — every steady
-	// light — this is the whole glow and nothing crosses the ceiling.
+	// A steady light: a soft skirt in the fixture's own colour, and nothing else.
 	float falloff = core * core * (0.35 + 0.65 * core);
-	// A blinking light's white-hot centre: narrow, so the skirt keeps its colour,
-	// and bright enough to cross the bloom threshold, so it haloes past the lit
-	// plating and the aperture frame it sits beside.
-	float hot = pow(core, 4.0);
+	// A blinking light: its sprite is large, so its centre is kept tight inside
+	// it and the rest is glare — a wide, faint skirt, which is what makes a lamp
+	// read as a light rather than as a lit pixel.
+	bool blinking = uHalo > 0.0;
+	float hot = pow(core, blinking ? 14.0 : 4.0);
+	float glare = pow(core, 2.6) * uHalo;
 	vec3 lit = mix(uColor, vec3(1.0), min(uCore, 1.0) * hot * 0.85);
-	float intensity = uIntensity * (falloff + hot * uCore);
+	float intensity = uIntensity * ((blinking ? glare : falloff) + hot * uCore);
 	if (intensity <= 0.002) discard;
 	gl_FragColor = vec4(lit * intensity, 1.0);
 }
@@ -170,6 +190,9 @@ void main() {
  */
 export const BLINKING_CORE_GAIN = 2.4;
 
+/** How bright a blinking light's glare skirt is, relative to its drive. */
+export const BLINKING_HALO_GAIN = 0.6;
+
 export function glowMaterial(
 	color: number,
 	intensity: number,
@@ -177,6 +200,8 @@ export function glowMaterial(
 	/** 0 for a steady light; `BLINKING_CORE_GAIN` for a blinking one. Required,
 	 *  so a new light has to say which it is rather than defaulting to dim. */
 	core: number,
+	/** 0 for a steady light; `BLINKING_HALO_GAIN` for a blinking one. */
+	halo: number,
 ): THREE.ShaderMaterial {
 	const cls = GLOW_CLASSES[glowClass];
 	// Raw shader, so its colour is linear: a hex written for the sRGB pipeline
@@ -187,6 +212,8 @@ export function glowMaterial(
 			uColor: { value: new THREE.Vector3(linear.r, linear.g, linear.b) },
 			uIntensity: { value: intensity },
 			uCore: { value: core },
+			uHalo: { value: halo },
+			uPixelRatio: { value: 1 },
 			uHalfHeightPx: { value: 360 },
 			uMinPx: { value: cls.minPx },
 			uMaxPx: { value: cls.maxPx },
@@ -212,7 +239,7 @@ export function steadyGlowMaterial(
 	const key = `${color}:${intensity}:${glowClass}`;
 	let material = steadyCache.get(key);
 	if (!material) {
-		material = shared(glowMaterial(color, intensity, glowClass, 0));
+		material = shared(glowMaterial(color, intensity, glowClass, 0, 0));
 		steadyCache.set(key, material);
 	}
 	return material;
@@ -263,6 +290,86 @@ export function glowPoints(
 			? target.height
 			: renderer.getDrawingBufferSize(halfHeight).y;
 		material.uniforms.uHalfHeightPx.value = height / 2;
+		material.uniforms.uPixelRatio.value = renderer.getPixelRatio();
 	};
 	return glow;
+}
+
+const POOL_VERTEX = `
+varying vec2 vUv;
+void main() {
+	vUv = uv;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const POOL_FRAGMENT = `
+uniform vec3 uColor;
+uniform float uIntensity;
+uniform float uGain;
+varying vec2 vUv;
+void main() {
+	float r = length(vUv - 0.5) * 2.0;
+	float f = pow(max(0.0, 1.0 - r), 2.0);
+	float intensity = uIntensity * uGain * f;
+	if (intensity <= 0.002) discard;
+	gl_FragColor = vec4(uColor * intensity, 1.0);
+}
+`;
+
+/** How bright a light pool is at its centre, relative to its lamp's drive. */
+export const POOL_GAIN = 0.35;
+
+/**
+ * The light a blinking lamp lays on the surface it is mounted on (#300).
+ *
+ * A soft additive disc, flashing with its lamp. It is a decal, not a light
+ * source: the principal chose light *seen on* the plating over real point
+ * lights, whose per-pixel cost reaches every station and hull material in the
+ * near layer.
+ */
+export function poolMaterial(color: number): THREE.ShaderMaterial {
+	const linear = new THREE.Color().setHex(color).convertSRGBToLinear();
+	const material = new THREE.ShaderMaterial({
+		uniforms: {
+			uColor: { value: new THREE.Vector3(linear.r, linear.g, linear.b) },
+			uIntensity: { value: 0 },
+			uGain: { value: POOL_GAIN },
+		},
+		vertexShader: POOL_VERTEX,
+		fragmentShader: POOL_FRAGMENT,
+		transparent: true,
+		blending: THREE.AdditiveBlending,
+		depthWrite: false,
+		// Lying on the plating, so it must win the depth test against the face
+		// it is coplanar with rather than take turns with it as the station turns.
+		polygonOffset: true,
+		polygonOffsetFactor: -2,
+		polygonOffsetUnits: -2,
+	});
+	material.name = "station-light-pool";
+	return material;
+}
+
+/**
+ * A pool of light as a child of its lamp: a disc in the lamp's local XY plane,
+ * so a lamp on a +Z-facing surface lays it on that surface. Named like the lamp,
+ * so the probe hides both with one name; flagged `glow` and `pool`; never picked.
+ */
+export function poolMesh(
+	name: string,
+	radiusKm: number,
+	liftKm: number,
+	material: THREE.ShaderMaterial,
+): THREE.Mesh {
+	const pool = new THREE.Mesh(
+		new THREE.PlaneGeometry(radiusKm * 2, radiusKm * 2),
+		material,
+	);
+	pool.position.z = liftKm;
+	pool.name = name;
+	pool.userData.glow = true;
+	pool.userData.pool = true;
+	pool.raycast = noRaycast;
+	return pool;
 }

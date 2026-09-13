@@ -45,6 +45,7 @@
 import * as THREE from "three";
 import {
 	BLINKING_CORE_GAIN,
+	BLINKING_HALO_GAIN,
 	glowMaterial,
 	glowPoints,
 	steadyGlowMaterial,
@@ -642,11 +643,14 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 		// Its glare, as `station-glow.ts` gives every station light (#300): a
 		// 2 m beacon is under a pixel at two kilometres, and "reads as a point
 		// through bloom" was a job the old 8 m box was doing by being too big.
+		// A blinking light with its glare, and no pool: a beacon stands on a
+		// mast tip, with no surface round it to lay light on (#300).
 		const glow = glowMaterial(
 			visuals.strobeColor,
 			0,
-			"point",
+			"blink",
 			BLINKING_CORE_GAIN,
+			BLINKING_HALO_GAIN,
 		);
 		lamp.add(
 			glowPoints(lamp.name, [new THREE.Vector3()], sizeKm, sizeKm * 0.75, glow),

@@ -51,9 +51,12 @@
 import * as THREE from "three";
 import {
 	BLINKING_CORE_GAIN,
+	BLINKING_HALO_GAIN,
 	type GlowClass,
 	glowMaterial,
 	glowPoints,
+	poolMaterial,
+	poolMesh,
 	steadyGlowMaterial,
 } from "./station-glow";
 import { mutePaint } from "./surface";
@@ -283,6 +286,9 @@ export interface StationFixture {
 	 * `tests/station-glow.test.ts` holds the two equal.
 	 */
 	glow?: THREE.ShaderMaterial;
+	/** The pool of light a surface-mounted blinking lamp lays round itself
+	 *  (#300), driven beside its glow. */
+	pool?: THREE.ShaderMaterial;
 }
 
 /**
@@ -550,8 +556,39 @@ function withGlow(
 }
 
 /** A driven fixture's glow: its own material, so the clock can write it. */
-function drivenGlow(color: number, glowClass: GlowClass, core: number) {
-	return glowMaterial(color, STATION_EMISSIVE_INTENSITIES.off, glowClass, core);
+function drivenGlow(
+	color: number,
+	glowClass: GlowClass,
+	core: number,
+	halo: number,
+) {
+	return glowMaterial(
+		color,
+		STATION_EMISSIVE_INTENSITIES.off,
+		glowClass,
+		core,
+		halo,
+	);
+}
+
+/** A blinking light's glow: the `blink` class, its hot core and its glare. */
+function blinkingGlow(color: number) {
+	return drivenGlow(color, "blink", BLINKING_CORE_GAIN, BLINKING_HALO_GAIN);
+}
+
+/**
+ * Lay a pool of light on the surface a lamp is mounted on, and return its
+ * material for the clock to drive (#300). The lamp is centred on its surface,
+ * so the pool sits a hand's breadth proud of the lamp's own origin.
+ */
+function withPool(
+	lamp: THREE.Object3D,
+	radiusKm: number,
+	color: number,
+): THREE.ShaderMaterial {
+	const material = poolMaterial(color);
+	lamp.add(poolMesh(lamp.name, radiusKm, 0.0003, material));
+	return material;
 }
 
 /**
@@ -917,12 +954,9 @@ function mouthStrobes(
 		lamp.position.set(x, y, faceZ + bar / 2);
 		lamp.name = "mouth-strobe";
 		detail(lamp, "reduced");
-		const glow = drivenGlow(
-			STATION_VISUALS[type].strobeColor,
-			"point",
-			BLINKING_CORE_GAIN,
-		);
+		const glow = blinkingGlow(STATION_VISUALS[type].strobeColor);
 		withGlow(lamp, size, glow);
+		const pool = withPool(lamp, 0.012, STATION_VISUALS[type].strobeColor);
 		group.add(lamp);
 		fixtures.push({
 			material,
@@ -930,6 +964,7 @@ function mouthStrobes(
 			kind: "chase",
 			offsetS: (i / ring.length) * period,
 			glow,
+			pool,
 		});
 	});
 	return group;
@@ -1375,12 +1410,9 @@ function strobePair(
 		place(side, lamp.position);
 		lamp.name = kind;
 		detail(lamp, "reduced");
-		const glow = drivenGlow(
-			STATION_VISUALS[type].strobeColor,
-			"point",
-			BLINKING_CORE_GAIN,
-		);
+		const glow = blinkingGlow(STATION_VISUALS[type].strobeColor);
 		withGlow(lamp, size, glow);
+		const pool = withPool(lamp, 0.025, STATION_VISUALS[type].strobeColor);
 		group.add(lamp);
 		fixtures.push({
 			material,
@@ -1388,6 +1420,7 @@ function strobePair(
 			kind,
 			offsetS: 0,
 			glow,
+			pool,
 		});
 	}
 	return group;
@@ -2855,7 +2888,12 @@ function buildBayLights(
 	arc.position.copy(arcAt);
 	arc.name = "weld-arc";
 	detail(arc, "reduced");
-	const arcGlow = drivenGlow(STATION_VISUALS.shipyard.floodColor, "point", 0);
+	const arcGlow = drivenGlow(
+		STATION_VISUALS.shipyard.floodColor,
+		"point",
+		0,
+		0,
+	);
 	withGlow(arc, FITTING_KM.arcRadius * 2, arcGlow);
 	group.add(arc);
 	fixtures.push({
@@ -2923,6 +2961,7 @@ function buildVentBank(
 	const throatGlare = drivenGlow(
 		STATION_VISUALS.refinery.heatColor,
 		"flood",
+		0,
 		0,
 	);
 	/** How far the nozzles lean off the bank's own axis, and the direction that
@@ -4316,18 +4355,16 @@ function obstructionBeacon(
 	lamp.position.copy(at);
 	lamp.name = "obstruction-beacon";
 	detail(lamp, "reduced");
-	const glow = drivenGlow(
-		STATION_VISUALS.refinery.strobeColor,
-		"point",
-		BLINKING_CORE_GAIN,
-	);
+	const glow = blinkingGlow(STATION_VISUALS.refinery.strobeColor);
 	withGlow(lamp, size, glow);
+	const pool = withPool(lamp, 0.02, STATION_VISUALS.refinery.strobeColor);
 	fixtures.push({
 		material,
 		base: STATION_EMISSIVE_INTENSITIES.strobe,
 		kind: "beacon",
 		offsetS: 0,
 		glow,
+		pool,
 	});
 	return lamp;
 }
@@ -5362,6 +5399,9 @@ export function updateStationVisuals(
 			fixtureIntensity(mesh.type, fixture.kind, gameTime, fixture.offsetS);
 		if (fixture.glow)
 			fixture.glow.uniforms.uIntensity.value =
+				fixture.material.emissiveIntensity;
+		if (fixture.pool)
+			fixture.pool.uniforms.uIntensity.value =
 				fixture.material.emissiveIntensity;
 	}
 }

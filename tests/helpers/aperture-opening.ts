@@ -213,6 +213,11 @@ export function corridorIntrusions(
 		// The aperture's own frame lives in the corridor by construction — it
 		// *is* the opening.
 		if (object.name.startsWith("aperture")) return;
+		// A light pool is a lit decal lying on a surface, with no volume a ship
+		// could strike (#300). The mouth ring's pools reach a few metres inside
+		// the corridor from lamps that stand outside it, and a ship flying
+		// through a pool of light is flying through light.
+		if (object.userData.pool) return;
 		const instanced = object as THREE.InstancedMesh;
 		const count = instanced.isInstancedMesh ? instanced.count : 1;
 		for (let n = 0; n < count; n++) {

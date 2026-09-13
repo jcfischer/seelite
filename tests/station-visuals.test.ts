@@ -535,6 +535,9 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		const world = new THREE.Matrix4();
 		const instance = new THREE.Matrix4();
 		object.traverse((child) => {
+			// A light pool lies on the surface round its lamp and reaches past
+			// it: sampling it would let a hidden lamp read as reachable (#300).
+			if (child.userData.pool) return;
 			const mesh = child as THREE.Mesh;
 			const positions = mesh.geometry?.getAttribute("position");
 			const normals = mesh.geometry?.getAttribute("normal");

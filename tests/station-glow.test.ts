@@ -37,17 +37,17 @@ describe("a glow's size is a floor and a cap round its fitting's projected size"
 		// A 2 m strobe at 5 km, a 60° vertical field and a 900 px target: the
 		// fitting itself projects to about a third of a pixel.
 		const yy = 1 / Math.tan(Math.PI / 6);
-		expect(glowPixelSize(0.002, 5, yy, 450, point)).toBe(point.minPx);
+		expect(glowPixelSize(0.002, 5, yy, 450, point, 1)).toBe(point.minPx);
 	});
 
 	test("up close it is capped, so the housing is what you see", () => {
-		expect(glowPixelSize(0.002, 0.01, 1.732, 450, point)).toBe(point.maxPx);
+		expect(glowPixelSize(0.002, 0.01, 1.732, 450, point, 1)).toBe(point.maxPx);
 	});
 
 	test("between the two it is the fitting's projected size times its spread", () => {
 		const yy = 1.732;
 		// Chosen to land between floor and cap for the point class.
-		const size = glowPixelSize(0.002, 0.4, yy, 450, point);
+		const size = glowPixelSize(0.002, 0.4, yy, 450, point, 1);
 		const projected = (0.002 / 0.4) * yy * 450;
 		expect(size).toBeCloseTo(projected * point.spread, 9);
 		expect(size).toBeGreaterThan(point.minPx);
@@ -58,9 +58,9 @@ describe("a glow's size is a floor and a cap round its fitting's projected size"
 		// A station is drawn normalised to its core radius and in three layers
 		// at three scales; the view-space units change and the ratio does not.
 		for (const scale of [1, 1 / 0.6, 1e-3, 1e3])
-			expect(glowPixelSize(0.002 * scale, 0.4 * scale, 1.732, 450, point)).toBe(
-				glowPixelSize(0.002, 0.4, 1.732, 450, point),
-			);
+			expect(
+				glowPixelSize(0.002 * scale, 0.4 * scale, 1.732, 450, point, 1),
+			).toBe(glowPixelSize(0.002, 0.4, 1.732, 450, point, 1));
 	});
 
 	test("every class floors below its cap", () => {
@@ -288,7 +288,8 @@ describe("a blinking point light burns past the bloom threshold; a steady light 
 			for (const f of mesh.fixtures) if (f.glow) kindOfGlow.set(f.glow, f.kind);
 			const wrong: string[] = [];
 			mesh.root.traverse((object) => {
-				if (!object.userData.glow) return;
+				// A light pool is a decal, not a glow sprite: it has no core.
+				if (!object.userData.glow || object.userData.pool) return;
 				const material = (object as THREE.Points)
 					.material as THREE.ShaderMaterial;
 				const core = Number(material.uniforms.uCore?.value ?? Number.NaN);
@@ -315,5 +316,159 @@ describe("a blinking point light burns past the bloom threshold; a steady light 
 		// Read into the output, not just declared: a declared, unused uniform
 		// compiles, links and draws exactly the old glow.
 		expect(/uCore\s*\)|\*\s*uCore|uCore\s*\*/.test(source)).toBe(true);
+	});
+});
+
+/**
+ * **A station light should feel like a light: glare round it, light on what is
+ * near it** (#300).
+ *
+ * The principal's reading of the build with hot cores: lights visible, but
+ * *"doesn't feel like real lights"*. Measured on the principal's GPU at Retina
+ * scale: every glow was drawn at half its intended size, because the pixel
+ * floor counted device pixels and the game draws at 2x; and bloom added no
+ * visible halo to a source that small — even a core twenty times brighter, or
+ * a source six times larger, gained almost nothing from bloom. So glare is
+ * drawn into the light's own sprite, and a faint pool of light lies on the
+ * surface around each surface-mounted blinking light.
+ */
+describe("glare and light pools", () => {
+	const SURFACE_BLINKERS = new Set([
+		"strobe-a",
+		"strobe-b",
+		"mouth-strobe",
+		"obstruction-beacon",
+	]);
+
+	test("a glow's floor and cap are points on screen, scaled by the pixel ratio", () => {
+		const point = GLOW_CLASSES.point;
+		const yy = 1 / Math.tan(Math.PI / 6);
+		expect(glowPixelSize(0.002, 50, yy, 900, point, 2)).toBe(point.minPx * 2);
+		expect(glowPixelSize(0.002, 0.001, yy, 900, point, 2)).toBe(
+			point.maxPx * 2,
+		);
+		expect(glowPixelSize(0.002, 50, yy, 450, point, 1)).toBe(point.minPx);
+	});
+
+	test("the pixel ratio reaches the shader, from the renderer at draw time", () => {
+		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		const strobe = mesh.fixtures.find((f) => f.kind === "strobe-a")
+			?.glow as THREE.ShaderMaterial;
+		expect(strobe.vertexShader).toContain("uPixelRatio");
+		let glow: THREE.Object3D | undefined;
+		mesh.root.traverse((o) => {
+			if (!glow && o.userData.glow && (o as THREE.Points).material === strobe)
+				glow = o;
+		});
+		expect(glow).toBeDefined();
+		const fakeRenderer = {
+			getRenderTarget: () => null,
+			getDrawingBufferSize: (v: THREE.Vector2) => v.set(2880, 1800),
+			getPixelRatio: () => 2,
+		};
+		(glow as THREE.Object3D).onBeforeRender(
+			fakeRenderer as never,
+			null as never,
+			null as never,
+			null as never,
+			strobe,
+			null as never,
+		);
+		expect(strobe.uniforms.uPixelRatio.value).toBe(2);
+	});
+
+	test("a blinking light's glow carries a glare halo and a larger floor; a steady glow carries neither", () => {
+		const blink = new Set(["strobe-a", "strobe-b", "chase", "beacon"]);
+		for (const type of ["trade", "shipyard", "refinery"] as const) {
+			const mesh = buildStationMesh(type, GREY, 0, 0);
+			const kindOf = new Map<THREE.Material, string>();
+			for (const f of mesh.fixtures) if (f.glow) kindOf.set(f.glow, f.kind);
+			const wrong: string[] = [];
+			let steadyFloor = Number.POSITIVE_INFINITY;
+			let blinkFloor = Number.POSITIVE_INFINITY;
+			mesh.root.traverse((o) => {
+				if (!o.userData.glow || o.userData.pool) return;
+				const m = (o as THREE.Points).material as THREE.ShaderMaterial;
+				const halo = Number(m.uniforms.uHalo?.value ?? Number.NaN);
+				if (blink.has(kindOf.get(m) ?? "")) {
+					if (!(halo > 0))
+						wrong.push(`${o.name} blinking without halo (${halo})`);
+					blinkFloor = Math.min(blinkFloor, m.uniforms.uMinPx.value);
+				} else {
+					if (halo !== 0) wrong.push(`${o.name} steady with halo ${halo}`);
+					steadyFloor = Math.min(steadyFloor, m.uniforms.uMinPx.value);
+				}
+			});
+			expect([type, wrong]).toEqual([type, []]);
+			expect([type, blinkFloor > steadyFloor]).toEqual([type, true]);
+		}
+	});
+
+	test("every surface-mounted blinking light lays a pool of light on its surface", () => {
+		for (const type of ["trade", "shipyard", "refinery"] as const) {
+			const mesh = buildStationMesh(type, GREY, 0, 0);
+			mesh.root.updateMatrixWorld(true);
+			const missing: string[] = [];
+			mesh.root.traverse((o) => {
+				if (!SURFACE_BLINKERS.has(o.name) || o.userData.glow) return;
+				const pool = o.children.find((c) => c.userData.pool);
+				if (!pool) {
+					missing.push(`${o.name} (no pool)`);
+					return;
+				}
+				if (pool.name !== o.name)
+					missing.push(`${o.name} (pool named ${pool.name})`);
+				// A disc a few tens of metres across, in the lamp's kilometres.
+				const box = new THREE.Box3().setFromObject(pool);
+				const size = box.getSize(new THREE.Vector3());
+				const across =
+					Math.max(size.x, size.y, size.z) *
+					(o.matrixWorld.getMaxScaleOnAxis() > 0
+						? 1 / o.matrixWorld.getMaxScaleOnAxis()
+						: 1);
+				if (!(across >= 0.016 && across <= 0.08))
+					missing.push(`${o.name} pool ${(across * 1000).toFixed(0)} m across`);
+			});
+			expect([type, missing]).toEqual([type, []]);
+		}
+	});
+
+	test("a pool is not pickable, and a finish beacon on a mast tip has none", () => {
+		const mesh = buildStationMesh("trade", GREY, 0, 0);
+		mesh.root.updateMatrixWorld(true);
+		const raycaster = new THREE.Raycaster(
+			new THREE.Vector3(0, 0, 10),
+			new THREE.Vector3(0, 0, -1),
+		);
+		expect(
+			raycaster
+				.intersectObject(mesh.root, true)
+				.filter((h) => h.object.userData.pool),
+		).toEqual([]);
+		let beaconPools = 0;
+		mesh.root.traverse((o) => {
+			if (o.name.startsWith("beacon-") && o.userData.pool) beaconPools++;
+		});
+		expect(beaconPools).toBe(0);
+	});
+
+	test("the clock drives a pool at its fixture's intensity, under the ceiling", () => {
+		for (const type of ["trade", "shipyard", "refinery"] as const) {
+			const mesh = buildStationMesh(type, GREY, 0, 0);
+			for (const t of [0.05, 0.75, 1.05]) {
+				updateStationVisuals(mesh, t, 1, "high");
+				for (const f of mesh.fixtures) {
+					if (!f.pool) continue;
+					const drive = f.pool.uniforms.uIntensity.value;
+					expect([type, f.kind, t, drive]).toEqual([
+						type,
+						f.kind,
+						t,
+						f.material.emissiveIntensity,
+					]);
+					expect(drive <= EMISSIVE_CEILING).toBe(true);
+				}
+			}
+		}
 	});
 });

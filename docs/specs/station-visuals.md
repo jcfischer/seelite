@@ -383,6 +383,23 @@ A glow capped at the ceiling and added onto that drew nothing a pilot could see
 black space read at 226. A headless probe on a software rasteriser had called
 every one of those lights present, which is why this paragraph cites the GPU.
 
+**A blinking light is drawn with its glare, and lays light on the surface it
+is mounted on** (#300). The hot core alone was visible and did not *feel* like
+a light, in the principal's words, and two measurements on the principal's GPU
+at Retina scale say why. Every glow was drawn at half its intended size: its
+pixel floor counted device pixels while the game draws at 2x, which the ship's
+nav lights had already corrected for. And bloom cannot supply glare to a source
+this small: turning bloom off, strengthening it four times, running it at full
+resolution or making the core twenty times brighter changed the lamp's
+surroundings by almost nothing. So glare is part of the sprite — a blinking
+light's glow is 18–48 points across, a tight white centre inside a faint wide
+skirt — and every blinking lamp that stands on a surface (the docking-face
+strobes, the mouth ring, the refinery's beacons) lays a soft disc of light on
+that surface, 12–25 m across, flashing with it. It is a decal and not a light
+source: real point lights were declined for their cost to every material in
+the near layer. A finish beacon on a mast tip has no surface round it and gets
+glare without a pool.
+
 **The mouth carries a ring of strobes, and it says nothing about docking
 state** (#300). On a slot role, ten lamps stand on the lit frame round the
 mouth, each flashing on the role's strobe period at its own place in it, so the
