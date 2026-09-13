@@ -28,6 +28,7 @@ import {
 	tally,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -45,7 +46,9 @@ try {
 	});
 	watch(perf, "perf");
 	await perf.addInitScript(installFakePad);
-	await perf.goto(`${ORIGIN}/?seed=42&perf`, { waitUntil: "load" });
+	await perf.goto(gameUrl(ORIGIN, { seed: 42, perf: true }), {
+		waitUntil: "load",
+	});
 	await bootedGame(perf);
 	await perf.waitForSelector("[data-perf-panel]", { timeout: 30000 });
 

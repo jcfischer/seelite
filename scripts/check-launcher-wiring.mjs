@@ -249,7 +249,15 @@ for (const path of scripts(DIR).sort()) {
 		"probe-frame-attribution.mjs",
 		"probe-pad-instrument.mjs",
 	]);
-	if (!PERF_OWNERS.has(name) && /[?&]perf\b/.test(code))
+	// Both spellings (#306). A probe's URL is `gameUrl(origin, { perf: 1 })`
+	// now, which has no `?perf` in it — so the query form alone would pass every
+	// probe that asks for the panel through the builder, which is all of them.
+	// The key form is matched as an object key or a quoted one, and `probe-all`
+	// has no such key, so nothing else reads as one.
+	if (
+		!PERF_OWNERS.has(name) &&
+		/[?&]perf\b|(?:^|[{,\s])["']?perf["']?\s*:/m.test(code)
+	)
 		problems.push(
 			`${name}: opens a page with ?perf — that mounts the diagnostic panel, ` +
 				`whose key listener would then see this probe's keystrokes`,

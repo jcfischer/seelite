@@ -74,10 +74,11 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
+const URL = gameUrl(ORIGIN, { seed: 42 }, { override: process.env.PROBE_URL });
 
 /**
  * Where to stand, as multiples of `HANDOFF_KM`, **in order**.

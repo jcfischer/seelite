@@ -84,6 +84,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -126,7 +127,7 @@ const ORIGIN =
  * table belongs to node #84 ("is probe-station's margin too tight?") and the
  * finer-grid alternative to #120, where they are posted.
  */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=54`;
+const URL = gameUrl(ORIGIN, { seed: 54 }, { override: process.env.PROBE_URL });
 
 /** Where the camera stands, kilometres from the station centre. Far enough that
  *  the shipyard's 1.5 km frame is inside the frame, close enough that the

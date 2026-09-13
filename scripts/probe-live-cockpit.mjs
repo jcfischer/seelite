@@ -4,6 +4,7 @@
  * and head-look states rather than the fixed design fixtures.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -290,7 +291,7 @@ const { check, watch, exit } = tally();
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
-	await page.goto(`${ORIGIN}/?seed=42`, { waitUntil: "load" });
+	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 	await page.waitForFunction(
 		() =>
@@ -1050,7 +1051,9 @@ const combatPage = await browser.newPage({
 	viewport: { width: 1280, height: 760 },
 });
 watch(combatPage, "prototype combat");
-await combatPage.goto(`${ORIGIN}/?seed=42&combat=1`, { waitUntil: "load" });
+await combatPage.goto(gameUrl(ORIGIN, { seed: 42, combat: 1 }), {
+	waitUntil: "load",
+});
 await combatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
 await combatPage.waitForFunction(
 	() =>
@@ -1301,7 +1304,7 @@ const narrowCombatPage = await browser.newPage({
 	viewport: { width: 390, height: 844 },
 });
 watch(narrowCombatPage, "prototype combat narrow");
-await narrowCombatPage.goto(`${ORIGIN}/?seed=42&combat=1`, {
+await narrowCombatPage.goto(gameUrl(ORIGIN, { seed: 42, combat: 1 }), {
 	waitUntil: "load",
 });
 await narrowCombatPage.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });

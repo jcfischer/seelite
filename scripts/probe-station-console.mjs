@@ -16,6 +16,7 @@
  * arrival against the load and reported a slow machine as a build defect.
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -167,7 +168,9 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
 watch(page, "docked");
-await page.goto(`${ORIGIN}/?seed=42&hud-gallery=docked`, { waitUntil: "load" });
+await page.goto(workbenchUrl(ORIGIN, { seed: 42, "hud-gallery": "docked" }), {
+	waitUntil: "load",
+});
 await page.waitForSelector("#state-gallery");
 
 // --- Obligation 11 - M4's negative, asserted inside an arrival we start ----

@@ -44,10 +44,11 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=42`;
+const URL = gameUrl(ORIGIN, { seed: 42 }, { override: process.env.PROBE_URL });
 
 /** How far a marker may sit from the mesh it marks, in NDC. 0.002 of a 900-pixel
  *  viewport is under a pixel; the failure this catches is half a screen. */
@@ -213,7 +214,9 @@ check(
 
 // The overlay assertions above deliberately use the default live-cockpit route.
 // Keep this older legacy-HUD ETA check as a separate compatibility pass.
-await page.goto(`${ORIGIN}/?seed=42&legacy-hud=1`, { waitUntil: "load" });
+await page.goto(gameUrl(ORIGIN, { seed: 42, "legacy-hud": 1 }), {
+	waitUntil: "load",
+});
 await bootedGame(page);
 const legacyEta = await page.evaluate(async () => {
 	const g = window.__seelite;

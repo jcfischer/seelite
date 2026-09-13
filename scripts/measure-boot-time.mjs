@@ -18,6 +18,7 @@
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
 import { VIEWPORT } from "./lib/view-set.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 const SAMPLES = 10;
@@ -53,7 +54,7 @@ for (let i = 0; i < SAMPLES; i++) {
 	});
 	const page = await context.newPage();
 	const started = performance.now();
-	await page.goto(`${origin}/?seed=${SEED}`, { waitUntil: "commit" });
+	await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "commit" });
 	await bootedGame(page);
 	const elapsed = performance.now() - started;
 	renderer ??= await assertPlayersRenderer(page, "measure boot time");

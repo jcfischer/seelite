@@ -13,10 +13,15 @@
  *   every continent).
  */
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import { workbenchUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?planet-prototype";
+const PAGE_URL = workbenchUrl(
+	ORIGIN,
+	{ "planet-prototype": true },
+	{ override: process.env.PROBE_URL },
+);
 
 /** Every rung the ladder must reach. Order is the gallery's layout choice and
  *  not part of the claim, so this is compared as a set — reordering the gallery
@@ -136,7 +141,7 @@ async function checkTerminators(page, classes, depths) {
 	 * 0.62 of its radius, so a sample any nearer the centre lands *on* the
 	 * terminator and reads half-lit for every class. Past ~0.85 the atmosphere
 	 * shell takes over and the measurement stops being about the surface — and that
-	 * bound has to hold for the patch's *corner*, not its centre: centre 0.78 radii
+	 * bound has to hold for the patch's *corner*, not its centre 0.78 radii
 	 * out with a 0.06 half-width reaches 0.86.
 	 *
 	 * **Rings and coronae are hidden for this**, so the number is about the body: a
@@ -499,7 +504,7 @@ async function reportBudget(page, classes) {
 	 */
 	const perClass = [];
 	for (const name of classes) {
-		await page.goto(`${ORIGIN}/?planet-prototype=${name}`, {
+		await page.goto(workbenchUrl(ORIGIN, { "planet-prototype": name }), {
 			waitUntil: "load",
 		});
 		await page.waitForFunction(

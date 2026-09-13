@@ -57,6 +57,7 @@ import {
 } from "./probe-guard.mjs";
 import { bandMetrics } from "./lib/band-tones.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
@@ -84,7 +85,7 @@ const ORIGIN =
  * a seed that drew four, because the scan behind it read `galaxy.systems[0]`
  * rather than the start system `makeWorld` picks.
  */
-const URL = process.env.PROBE_URL ?? `${ORIGIN}/?seed=6`;
+const URL = gameUrl(ORIGIN, { seed: 6 }, { override: process.env.PROBE_URL });
 
 const VIEW = { width: 900, height: 900 };
 
@@ -1686,7 +1687,11 @@ check(
  * A seed picked for a generated property is a fixture that a regeneration
  * silently invalidates; re-find it by scanning `makeWorld`, never by guessing.
  */
-const NEUTRAL_URL = process.env.PROBE_NEUTRAL_URL ?? `${ORIGIN}/?seed=8`;
+const NEUTRAL_URL = gameUrl(
+	ORIGIN,
+	{ seed: 8 },
+	{ override: process.env.PROBE_NEUTRAL_URL },
+);
 const neutralPage = await browser.newPage({ viewport: VIEW });
 watch(neutralPage);
 await installHelpers(neutralPage);
@@ -2078,7 +2083,11 @@ if (airless) {
  * a control the loop does not touch.
  */
 {
-	const RING_URL = process.env.PROBE_RING_URL ?? `${ORIGIN}/?seed=5`;
+	const RING_URL = gameUrl(
+		ORIGIN,
+		{ seed: 5 },
+		{ override: process.env.PROBE_RING_URL },
+	);
 	const RING_BODY = process.env.PROBE_RING_BODY ?? "planet-6";
 	const ringPage = await browser.newPage({ viewport: VIEW });
 	watch(ringPage);

@@ -101,6 +101,7 @@ import { installViewFraming } from "./lib/view-placement.mjs";
  */
 import { GAME_TIME_S as CLOCK, SEED } from "./lib/view-set.mjs";
 import { installViewPlacement } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -414,7 +415,7 @@ t.watch(page);
 
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(`${origin}/?seed=${SEED}`);
+await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 await page.evaluate((clock) => window.__startClockAt(clock), CLOCK);
 

@@ -17,6 +17,7 @@ import {
 // Read off the module rather than restated here: a third refused status would
 // otherwise turn this probe falsely red.
 import { isRefusedGpuStatus } from "../src/gpu-timing-status.js";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -92,7 +93,7 @@ t.watch(page);
 await page.addInitScript(WATCH_WEBGL);
 
 // ── default route: no UI, sampler, or query traffic ──────────────────────────
-await page.goto(`${origin}/?seed=47`);
+await page.goto(gameUrl(origin, { seed: 47 }));
 await bootedGame(page);
 const defaultRoute = await page.evaluate(() => ({
 	panel: Boolean(document.getElementById("seelite-perf")),
@@ -113,7 +114,7 @@ t.check(
 );
 
 // ── ?fps stays a cadence meter, not an attribution alias ────────────────────
-await page.goto(`${origin}/?seed=47&fps=1`);
+await page.goto(gameUrl(origin, { seed: 47, fps: 1 }));
 await bootedGame(page);
 const fpsRoute = await page.evaluate(() => ({
 	fps: Boolean(document.querySelector("[data-fps-meter]")),
@@ -169,7 +170,7 @@ t.check(
 );
 
 // ── ?perf owns the sampler and reports the rendered frame ──────────────────
-await page.goto(`${origin}/?seed=47&perf=1`);
+await page.goto(gameUrl(origin, { seed: 47, perf: 1 }));
 await bootedGame(page);
 await page.waitForSelector("#seelite-perf[data-attribution-enabled='true']");
 await page.waitForFunction(

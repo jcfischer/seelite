@@ -367,6 +367,7 @@ import {
 	SaveStore,
 	indexedDbSaveBackend,
 } from "./save-store";
+import { type BootMode, bootMode } from "./boot-mode";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -10321,6 +10322,12 @@ if (query.has("model-viewer")) {
 		// caller.
 		serialize: serializeSave,
 	};
+	// The boot mode this page read (#306, `persistent-world-state.md` §11.6).
+	// Nothing acts on it yet — the overlay it skips does not exist — and it is
+	// exposed so `probe-boot.mjs` can show that `gameUrl`'s `?boot=direct`
+	// reached the page rather than being assumed to.
+	(window as unknown as { __seelite: { boot: BootMode } }).__seelite.boot =
+		bootMode(query);
 
 	// `?perf` mounts the cost-attribution panel — live switches for bloom, the
 	// two shells, the surface shader and the crater path, so a body can be flown

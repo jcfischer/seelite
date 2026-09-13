@@ -36,10 +36,15 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const PAGE_URL = process.env.PROBE_URL ?? ORIGIN + "/?seed=1";
+const PAGE_URL = gameUrl(
+	ORIGIN,
+	{ seed: 1 },
+	{ override: process.env.PROBE_URL },
+);
 
 /**
  * This file's own thresholds — **not** the game's, and named here so the three
