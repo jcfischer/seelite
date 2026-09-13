@@ -374,9 +374,7 @@ const measure = (page, bodyId, type) =>
 					for (const [pool, lamp] of lifted) lamp.parent.attach(pool);
 					// Not by name alone: a pool carries its lamp's name, so the name
 					// would hide it again after the lift.
-					const hidden = hideWhere(
-						(c) => c.name === name && !c.userData.pool,
-					);
+					const hidden = hideWhere((c) => c.name === name && !c.userData.pool);
 					if (hidden.some((h) => h.userData.pool))
 						throw new Error(`${name}: a pool was hidden with its lamp`);
 					const { count, peak } = changed(base, frame());
