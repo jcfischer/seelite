@@ -353,15 +353,39 @@ const measure = (page, bodyId, type) =>
 				const base = frame();
 				for (const name of names) {
 					const objects = [];
+					// The fittings, not their glows or pools: `spanPx` is the
+					// fitting's own apparent size, and a pool is a 20–50 m disc
+					// carrying the same name.
 					mesh.traverse((child) => {
-						if (child.name === name) objects.push(child);
+						if (child.name === name && !child.userData.glow)
+							objects.push(child);
 					});
-					const hidden = hideWhere((c) => c.name === name);
+					// **A lamp's pool stays lit while the lamp is hidden** (#300's
+					// review). A pool is a child of its lamp, so hiding the lamp hid
+					// the pool, and a pool spilling onto visible plating could carry
+					// a lamp that is itself behind something. Lifted out to the
+					// lamp's parent for the measurement, world transform kept, and put
+					// back after.
+					const lifted = [];
+					mesh.traverse((child) => {
+						if (child.userData.pool && child.parent?.name === name)
+							lifted.push([child, child.parent]);
+					});
+					for (const [pool, lamp] of lifted) lamp.parent.attach(pool);
+					// Not by name alone: a pool carries its lamp's name, so the name
+					// would hide it again after the lift.
+					const hidden = hideWhere(
+						(c) => c.name === name && !c.userData.pool,
+					);
+					if (hidden.some((h) => h.userData.pool))
+						throw new Error(`${name}: a pool was hidden with its lamp`);
 					const { count, peak } = changed(base, frame());
 					show(hidden);
+					for (const [pool, lamp] of lifted) lamp.attach(pool);
 					const kind = kindOf[name];
 					perFixture[name] = {
 						objects: objects.length,
+						poolsLit: lifted.length,
 						count,
 						peak,
 						clockS,
@@ -677,7 +701,7 @@ for (const viewport of VIEWPORTS) {
 						`${n} ${per[n].count}px` +
 						(per[n].objects === 0
 							? " (no object of that name)"
-							: ` (${per[n].objects} obj, ${per[n].spanPx.toFixed(1)}px wide` +
+							: ` (${per[n].objects} obj, ${per[n].poolsLit} pools lit, ${per[n].spanPx.toFixed(1)}px wide` +
 								(per[n].drive === null
 									? ""
 									: `, drive ${per[n].drive.toFixed(2)} @ ${per[n].clockS.toFixed(2)}s`) +

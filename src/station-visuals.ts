@@ -293,25 +293,31 @@ export type StationFixtureKind =
  * hidden when a role's own contribution is differenced out; neither carries a
  * floor, because §5 does not ask them to read from anywhere. The outpost has no
  * §5 row at all: nothing in the game places one (#56).
+ *
+ * **The names are the selected form's.** Only the Works — the refinery's form
+ * D, the one the game builds — carries `obstruction-beacon`; the Warren, the
+ * Collar and the Spar do not. A re-ranking to one of them turns §5's axis row
+ * red by name, which is the intended failure rather than a silent pass.
  */
-export const SPEC_FIXTURE_NAMES: Readonly<Record<string, readonly string[]>> =
-	Object.freeze({
-		trade: Object.freeze(["windows", "strobe-a", "strobe-b", "mouth-strobe"]),
-		shipyard: Object.freeze([
-			"windows",
-			"bay-flood",
-			"weld-arc",
-			"strobe-a",
-			"strobe-b",
-			"mouth-strobe",
-		]),
-		refinery: Object.freeze([
-			"windows",
-			"heat-glow",
-			"flare",
-			"obstruction-beacon",
-		]),
-	});
+export const SPEC_FIXTURE_NAMES: Readonly<
+	Partial<Record<StationType, readonly string[]>>
+> = Object.freeze({
+	trade: Object.freeze(["windows", "strobe-a", "strobe-b", "mouth-strobe"]),
+	shipyard: Object.freeze([
+		"windows",
+		"bay-flood",
+		"weld-arc",
+		"strobe-a",
+		"strobe-b",
+		"mouth-strobe",
+	]),
+	refinery: Object.freeze([
+		"windows",
+		"heat-glow",
+		"flare",
+		"obstruction-beacon",
+	]),
+});
 
 /**
  * The band edges, in **the station's own silhouette radii** (§3).
@@ -726,7 +732,8 @@ export function strobeIntensity(
  * A hazard beacon's brightness at `gameTime`, 0–1 (§5.2, #300).
  *
  * The strobe's shape — a short ramp at each edge so no frame misses the blink
- * — on the beacon's own slower period and longer duty. Zero for a role that
+ * — on the beacon's own period and duty: it repeats faster than a strobe and
+ * holds each flash longer. Zero for a role that
  * declares no beacon, so a caller multiplies unconditionally.
  */
 export function beaconIntensity(

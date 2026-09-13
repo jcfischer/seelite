@@ -273,7 +273,7 @@ Each role carries one emissive signature and one motion:
 |---|---|---|
 | trade | warm window grid, a pair of hull strobes on the docking face, and a ring of strobes on the mouth's lit frame | the pair alternates on a 2 s period at a 12% duty cycle; the ring flashes on the same period, one lamp after another round the slot |
 | shipyard | cool window grid, cold blue-white floodlit bays, the same strobe pair and the same mouth ring | one bay carries a welding arc — a fast, deep flicker; the strobes and the ring run as the trade station's do |
-| refinery | glowing vent throats, a heat ring, lit ports on the dock face, and hazard beacons on its tallest structures | the throats and the ring breathe on a slow shallow flicker; the beacons blink slowly, longer and slower than a strobe |
+| refinery | glowing vent throats, a heat ring, lit ports on the dock face, and hazard beacons on its tallest structures | the throats and the ring breathe on a slow shallow flicker; the beacons blink on their own period, holding each flash longer than a strobe does |
 
 The colours are drawn from `hud-and-scanner.md` §4's grammar rather than a
 second palette: cool for structure and work light, warm for habitation and heat.
@@ -354,7 +354,7 @@ light. What it does carry is a **hazard beacon** on each of its tallest
 structures — the flare stack and the mine headframe, which every plan has — and
 that is a different signal, not the strobe under another name: a beacon says
 something is there to clip, which is as true of a station that stands still as
-of one that turns. So it blinks on its own slower period with a longer duty,
+of one that turns. So it blinks on its own period, holding each flash longer,
 and it is white rather than an aviation red, because `hud-and-scanner.md` §4
 owns red as refusal. This sentence said "no strobes" until #300's second sheet,
 where the principal asked for beacons on the refinery.
@@ -393,14 +393,17 @@ this small: turning bloom off, strengthening it four times, running it at full
 resolution or making the core twenty times brighter changed the lamp's
 surroundings by almost nothing. So glare is part of the sprite — a blinking
 light's glow is a tight white centre inside a faint wide skirt, sized by the
-range rather than by a floor — about 5 points from 20 km out, 14 at 5 km, 36 at
+range rather than by a floor — for a 2 m lamp in a 60° field 900 points tall,
+about 5 points from 20 km out, 14 at 5 km, 36 at
 2 km, capped at 56 near 1 km; at a fixed 18 points it was as wide as the
 station itself 50 km out and never grew on approach — and every blinking lamp that stands on a surface (the docking-face
-strobes, the mouth ring, the refinery's beacons) lays a soft disc of light on
-that surface, 12–25 m across, flashing with it. It is a decal and not a light
+strobes, the mouth ring) lays a soft disc of light on
+that surface, 20–50 m across, flashing with it. It is a decal and not a light
 source: real point lights were declined for their cost to every material in
-the near layer. A finish beacon on a mast tip has no surface round it and gets
-glare without a pool.
+the near layer. A beacon on a tip — a finish's mast, the refinery's sheave
+crown and flare stack — has no surface round it and gets glare without a pool;
+a pool with no surface under it is a sheet of light in space, which is where an
+additive glow is easiest to see (the principal's ruling on #300's review).
 
 **The mouth carries a ring of strobes, and it says nothing about docking
 state** (#300). On a slot role, ten lamps stand on the lit frame round the
@@ -452,8 +455,11 @@ replays exactly.
   that member's own reach, not of the form's declared one, because the Gantry
   declares 1.66 km of boom around a 0.47 km drum;
 - every light is within a real fitting's size, carries a glow named like it,
-  driven at exactly its intensity, hidden wherever it is, never pickable and
-  never brighter than the exposure ceiling (`tests/station-glow.test.ts`); the
+  driven at exactly its intensity, hidden wherever it is, never pickable, its
+  drive never above the exposure ceiling, and every pool lies on structure on
+  every form (`tests/station-glow.test.ts`); every lamp on every form is seated
+  on the structure it is bolted to, by ray (`tests/station-mesh.test.ts`); every
+  form's strobe pair turns with its spinner and reads down its own axis; the
   mouth ring's lamps sit an equal step of the period apart and never all light
   at once, and every refinery plan carries a beacon on its headframe and one on
   its flare stack;
@@ -468,10 +474,11 @@ replays exactly.
 
 **Browser** (`scripts/probe-station-visuals.mjs`) — what no arithmetic reaches:
 
-- **every fixture this section names puts pixels on screen from its own role's
-  aperture axis** — per fixture and not per role, each name hidden alone and
-  differenced against the frame as drawn, at the clock where that fixture's own
-  drive peaks. A name with no object is a failure rather than a skip, so a
+- **`every fixture §5 gives the <role> reads from its own aperture axis`** —
+  per fixture and not per role, each name hidden alone and differenced against
+  the frame as drawn, at the clock where that fixture's own drive peaks. A
+  lamp's pool of light stays lit while its lamp is hidden, so a pool spilling
+  onto visible plating cannot carry a lamp that is itself behind something. A name with no object is a failure rather than a skip, so a
   renamed fixture cannot read as a passing role. Each reading carries the
   fixture's apparent diameter beside it, because a zero cannot otherwise say
   whether it is sub-pixel or occluded and the two want opposite fixes;

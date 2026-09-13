@@ -6,7 +6,7 @@
  * panes 30 × 12 m, floods 156 m long, a welding arc 60 m across, on stations a
  * kilometre or three wide. The fittings are real-sized now — a strobe is 2 m,
  * a pane 3 × 1.5 m — and at docking range a real fitting is under a pixel: a
- * 3 m lamp on the shipyard at three silhouette radii is half a pixel on a
+ * 3 m pane on the shipyard at three silhouette radii is half a pixel on a
  * 1440 × 900 frame. Antialiasing is off by default, so geometry that small
  * either flickers or does not rasterise at all. A real light is seen at that
  * range by its glare, not by its housing, and this is the glare.
@@ -16,10 +16,11 @@
  * pixels. Three things differ here, and each is a constraint the ship's lights
  * never had:
  *
- * - **No white core.** The ship mixes 85% toward white at the centre so a
- *   saturated red crosses bloom. `probe-station-visuals.mjs` orders the three
- *   roles warm to cold by `R − B` over their own light pixels, and a white core
- *   drags every role toward zero. A station glow keeps its fixture's colour.
+ * - **A steady glow keeps its fixture's colour.** The ship mixes 85% toward
+ *   white at the centre so a saturated red crosses bloom, and
+ *   `probe-station-visuals.mjs` orders the three roles warm to cold by `R − B`
+ *   over their own light pixels, so windows, floods, throats and the arc carry
+ *   no white core. Blinking lights do, as the next point says.
  * - **A hot core only where a light blinks** (#300). A steady glow's peak is
  *   its fixture's drive, which `STATION_EMISSIVE_INTENSITIES` holds at or under
  *   `EMISSIVE_CEILING` — #199's budget — so windows, floods, the throats and the
@@ -36,8 +37,8 @@
  *   units are kilometres; a station moves between three layers and is drawn
  *   normalised to its core radius (`station-mesh.ts`). So the size is computed
  *   from the projected *ratio* of the fitting's own size to its distance, which
- *   is the same number in every layer and every scale, and floored in pixels of
- *   the target actually being drawn into.
+ *   is the same number in every layer and every scale, and floored in points
+ *   scaled to the pixels of the target actually being drawn into.
  *
  * **Named like its fitting, and a child of it.** `probe-station-visuals.mjs`
  * hides a fixture by name, and a glow parented under the fitting is hidden with
@@ -53,7 +54,8 @@
  * in `tests/station-visuals.test.ts` would read every fixture as hidden behind
  * some other fixture's glare.
  *
- * Imports only three and types, so `station-fixtures.ts` can use it without
+ * Imports only three and `gpu-teardown`'s `shared` marker, so
+ * `station-fixtures.ts` can use it without
  * the cycle `station-mesh.ts` would close. Not imported by `station-visuals.ts`,
  * which stays headless-pure.
  */
@@ -64,8 +66,9 @@ import { shared } from "./gpu-teardown";
  * How a class of light is drawn: the smallest it may be on screen, the largest,
  * and how many times the fitting's own projected size its glare spans.
  *
- * **The floors are pixels of the render target**, which is what `gl_PointSize`
- * is in, and they were raised once on measurement (#300). At 3.5 px for a point
+ * **The floors and caps are points on screen**, multiplied by the renderer's
+ * pixel ratio into the target pixels `gl_PointSize` is in, and they were
+ * raised once on measurement (#300), at a pixel ratio of 1. At 3.5 px for a point
  * and 3 for a flood, `probe-station-visuals.mjs` read the shipyard's strobes at
  * 2 px, its mouth ring at 1 and its floods at 2 from its approach, where a
  * 1.66 km frame puts the camera 5 km out. That probe reads a 560 × 400 canvas
@@ -78,7 +81,7 @@ import { shared } from "./gpu-teardown";
  * larger than its glow and the geometry is what you see.
  */
 export const GLOW_CLASSES = Object.freeze({
-	/** Strobes, beacons, the welding arc: point sources that have to be found. */
+	/** The welding arc: a steady point source that has to be found. */
 	point: Object.freeze({ minPx: 5, maxPx: 14, spread: 3 }),
 	/** Floodlights and the flare's throats: a lit face, a little softer. */
 	flood: Object.freeze({ minPx: 4, maxPx: 12, spread: 2.5 }),
@@ -94,14 +97,29 @@ export const GLOW_CLASSES = Object.freeze({
 	 * the floor governed at every range, so a glow was the same size on screen
 	 * 50 km out as on final approach — as wide as the station itself far out,
 	 * in the principal's reading. The floor is a point now, and the spread is
-	 * large enough that the projected term takes over on approach: about
-	 * 5 points from 20 km out, 14 at 5 km, 36 at 2 km, capped at 56 near 1 km.
+	 * large enough that the projected term takes over on approach: for a 2 m
+	 * lamp in a 60° field 900 points tall, about 5 points from 20 km out, 14 at
+	 * 5 km, 36 at 2 km, capped at 56 near 1 km. A shorter view draws each in
+	 * proportion — the probe's 720-point viewport reads 2 km at about 29.
 	 * `tests/station-glow.test.ts` pins that shape.
 	 */
 	blink: Object.freeze({ minPx: 5, maxPx: 56, spread: 46 }),
 } as const);
 
 export type GlowClass = keyof typeof GLOW_CLASSES;
+
+/**
+ * A hex written for the sRGB pipeline, in the linear light a raw shader wants.
+ *
+ * **Decoded once.** Three's `setHex` already converts into the linear working
+ * space while `ColorManagement` is on, which it is in this game; the
+ * `convertSRGBToLinear` this module and the ship's nav lights carried after it
+ * decoded a second time and crushed every channel that is not 0 or 255
+ * (#300's review).
+ */
+function linearColor(hex: number): THREE.Color {
+	return new THREE.Color().setHex(hex);
+}
 
 /**
  * The on-screen diameter a glow is drawn at, in render-target pixels — the
@@ -152,10 +170,10 @@ void main() {
 	float dist = max(length(mv.xyz), 1e-9);
 	float projected = (glowSize * scale / dist) * projectionMatrix[1][1] * uHalfHeightPx;
 	gl_PointSize = clamp(projected * uSpread, uMinPx * uPixelRatio, uMaxPx * uPixelRatio);
-	// Lifted toward the eye by the fitting's own half-size, so the housing the
-	// glow sits inside cannot occlude it from any direction — while structure
-	// more than a fitting's width in front of it still does, which is the
-	// occlusion that is real.
+	// Lifted toward the eye by glowLift, which a builder sets past the
+	// fitting's own half-size (FITTING_GLOW_LIFT), so the housing the glow
+	// sits inside cannot occlude it - while structure more than a fitting's
+	// width in front of it still does, which is the occlusion that is real.
 	mv.xyz -= normalize(mv.xyz) * min(glowLift * scale, dist * 0.5);
 	gl_Position = projectionMatrix * mv;
 }
@@ -185,22 +203,23 @@ void main() {
 `;
 
 /**
- * A glow material in one fixture's colour at one intensity.
- *
- * `uIntensity` is the drive. A clock-driven fixture gets its own material and
- * `updateStationVisuals` writes it beside the fitting's `emissiveIntensity`; a
- * steady one — windows, floods — can take a `shared()` one per colour.
- */
-/**
  * The core gain a blinking point light's glow carries — strobes, beacons, the
- * mouth ring. With a drive at the ceiling's 0.95 the centre peaks near 3.2,
- * past the bloom threshold of 1; 2.4 is the ship nav lights' own hot term.
+ * mouth ring. With a drive at the ceiling's 0.95 the centre reaches
+ * 0.95 × (halo + core) = 2.85, past the bloom threshold of 1; 2.4 is the ship
+ * nav lights' own hot term.
  */
 export const BLINKING_CORE_GAIN = 2.4;
 
 /** How bright a blinking light's glare skirt is, relative to its drive. */
 export const BLINKING_HALO_GAIN = 0.6;
 
+/**
+ * A glow material in one fixture's colour at one intensity.
+ *
+ * `uIntensity` is the drive. A clock-driven fixture gets its own material and
+ * `updateStationVisuals` writes it beside the fitting's `emissiveIntensity`; a
+ * steady one — windows, floods — can take a `shared()` one per colour.
+ */
 export function glowMaterial(
 	color: number,
 	intensity: number,
@@ -212,9 +231,7 @@ export function glowMaterial(
 	halo: number,
 ): THREE.ShaderMaterial {
 	const cls = GLOW_CLASSES[glowClass];
-	// Raw shader, so its colour is linear: a hex written for the sRGB pipeline
-	// is converted rather than handed straight over, as the ship's lights do.
-	const linear = new THREE.Color().setHex(color).convertSRGBToLinear();
+	const linear = linearColor(color);
 	const material = new THREE.ShaderMaterial({
 		uniforms: {
 			uColor: { value: new THREE.Vector3(linear.r, linear.g, linear.b) },
@@ -303,6 +320,36 @@ export function glowPoints(
 	return glow;
 }
 
+/**
+ * How far a single fitting's glow stands toward the eye, as a fraction of the
+ * fitting's largest dimension: past its own half-size, so the housing the glow
+ * sits in cannot occlude it.
+ */
+export const FITTING_GLOW_LIFT = 0.75;
+
+/**
+ * Hang a glow under one fitting, at its own origin, named like it — the one
+ * way a station builder or a finish's fixtures gives a single lamp its glare.
+ *
+ * Named like the fitting so `probe-station-visuals.mjs` hides both with one
+ * name; a child so the detail band that hides a tagged fitting hides its glare.
+ */
+export function glowOnFitting(
+	fitting: THREE.Object3D,
+	sizeKm: number,
+	material: THREE.ShaderMaterial,
+): THREE.Points {
+	const glow = glowPoints(
+		fitting.name,
+		[new THREE.Vector3()],
+		sizeKm,
+		sizeKm * FITTING_GLOW_LIFT,
+		material,
+	);
+	fitting.add(glow);
+	return glow;
+}
+
 const POOL_VERTEX = `
 varying vec2 vUv;
 void main() {
@@ -337,7 +384,7 @@ export const POOL_GAIN = 0.35;
  * near layer.
  */
 export function poolMaterial(color: number): THREE.ShaderMaterial {
-	const linear = new THREE.Color().setHex(color).convertSRGBToLinear();
+	const linear = linearColor(color);
 	const material = new THREE.ShaderMaterial({
 		uniforms: {
 			uColor: { value: new THREE.Vector3(linear.r, linear.g, linear.b) },

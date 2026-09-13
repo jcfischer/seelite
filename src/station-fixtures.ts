@@ -49,6 +49,7 @@ import {
 	glowMaterial,
 	glowPoints,
 	steadyGlowMaterial,
+	glowOnFitting,
 } from "./station-glow";
 import { shared } from "./gpu-teardown";
 import { revolve } from "./loft";
@@ -652,9 +653,7 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 			BLINKING_CORE_GAIN,
 			BLINKING_HALO_GAIN,
 		);
-		lamp.add(
-			glowPoints(lamp.name, [new THREE.Vector3()], sizeKm, sizeKm * 0.75, glow),
-		);
+		glowOnFitting(lamp, sizeKm, glow);
 		group.add(lamp);
 		site.fixtures.push({
 			material,

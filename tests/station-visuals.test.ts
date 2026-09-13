@@ -28,6 +28,7 @@ import {
 	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
+	type StationFormId,
 	buildStationForm,
 	buildStationMesh,
 	setStationDetail,
@@ -49,6 +50,7 @@ import {
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 import { instanceBoxes } from "./helpers/instance-boxes";
+import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
 import { reachKm } from "./helpers/station-reach";
 
 // From `station.ts`, not a literal: a fourth station type must reach every
@@ -230,6 +232,34 @@ describe("a fixture is on the station it is mounted on", () => {
 						memberKm > 0 && p.length() > memberKm * 0.68,
 					]).toEqual([type, form.id, true]);
 					expect(p.length()).toBeLessThanOrEqual(form.reachKm);
+				}
+			}
+		}
+	});
+
+	/**
+	 * **The strobe pair marks rotation, so it has to turn** (§5, #274). The
+	 * Gantry's pair sat on its static keel until #300; the review found the
+	 * Hangar, the Slipway and the Assembly with the same fault, because only the
+	 * selected form had been moved. A form that names no spinner turns whole,
+	 * and its spinner is its body.
+	 */
+	test("every form's strobe pair turns with the member that spins", () => {
+		for (const type of TYPES) {
+			if (!(STATION_VISUALS[type].activity.strobePeriodS > 0)) continue;
+			for (const form of STATION_FORMS[type]) {
+				const { root, spinner } = buildStationForm(type, form.id, GREY, 0, 0);
+				for (const kind of ["strobe-a", "strobe-b"]) {
+					let turns = false;
+					root.getObjectByName(kind)?.traverseAncestors((a) => {
+						if (a === spinner) turns = true;
+					});
+					expect([type, form.id, kind, turns]).toEqual([
+						type,
+						form.id,
+						kind,
+						true,
+					]);
 				}
 			}
 		}
@@ -603,22 +633,34 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 	const hiddenFixtures = (
 		station: StationType,
 		names: readonly string[],
-		move?: (root: THREE.Object3D) => void,
+		{
+			move,
+			formId = SELECTED_FORM[station],
+			assemblySeed = 0,
+		}: {
+			move?: (root: THREE.Object3D) => void;
+			formId?: StationFormId;
+			assemblySeed?: number;
+		} = {},
 	) => {
 		const { root, spinner } = buildStationForm(
 			station,
-			SELECTED_FORM[station],
+			formId,
 			GREY,
 			0,
-			0,
+			assemblySeed,
 		);
 		move?.(root);
 		// The aperture is on +Z (`station-mesh.test.ts` asserts it), so the eye
-		// stands out along +Z at the range the probe frames from.
+		// stands out along +Z at the range the probe frames from — **in core
+		// radii**, because that is what the built tree is in (`normalise`). In
+		// kilometres it put each role at its own unstated range: the trade
+		// station at 1.8 silhouette radii, the refinery at 1.2.
 		const eye = new THREE.Vector3(
 			0,
 			0,
-			STATION_SILHOUETTE_KM[station] * CLOSE_RADII,
+			(STATION_SILHOUETTE_KM[station] * CLOSE_RADII) /
+				STATION_GEOMETRY[station].coreRadiusKm,
 		);
 		const dead: string[] = [];
 		for (const phase of spinner ? PHASES : [0]) {
@@ -642,13 +684,40 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 		return dead;
 	};
 
-	for (const [type, names] of Object.entries(SPEC_FIXTURE_NAMES))
-		test(`the ${type}'s fixtures are all reachable down its own axis`, () => {
-			expect([type, hiddenFixtures(type as StationType, names)]).toEqual([
-				type,
-				[],
-			]);
+	for (const type of TYPES) {
+		const names = SPEC_FIXTURE_NAMES[type];
+		if (!names) continue;
+		test(`the ${type}'s fixtures are all reachable down its own axis, on every plan`, () => {
+			// A solved form is a family of plans (#257), and the check on one
+			// seed is a check on one plan.
+			const seeds = isSolvedForm(type, SELECTED_FORM[type]) ? PLAN_SEEDS : [0];
+			for (const assemblySeed of seeds)
+				expect([
+					type,
+					assemblySeed,
+					hiddenFixtures(type, names, { assemblySeed }),
+				]).toEqual([type, assemblySeed, []]);
 		});
+	}
+
+	/**
+	 * **§5's rule is written against the member that spins, so it holds on
+	 * every form, not only the selected one.** The row above builds the forms
+	 * the game ships; a re-ranking would ship a form nothing had checked, which
+	 * is how the Hangar, the Slipway and the Assembly kept their strobes on
+	 * structure that does not turn (#300's review).
+	 */
+	test("every form's strobe pair is reachable down its own axis", () => {
+		for (const type of TYPES) {
+			if (!(STATION_VISUALS[type].activity.strobePeriodS > 0)) continue;
+			for (const form of STATION_FORMS[type])
+				expect([
+					type,
+					form.id,
+					hiddenFixtures(type, ["strobe-a", "strobe-b"], { formId: form.id }),
+				]).toEqual([type, form.id, []]);
+		}
+	});
 
 	/**
 	 * **The control, because the row above is the whole of #300's CI cover.**
@@ -663,14 +732,16 @@ describe("§5 — no fixture is wholly hidden from the aperture axis", () => {
 	 */
 	test("the axis row goes red when a strobe is put back on the equator", () => {
 		const face = STATION_GEOMETRY.trade.coreRadiusKm * 0.95 * Math.SQRT1_2;
-		const hidden = hiddenFixtures("trade", ["strobe-a", "strobe-b"], (root) => {
-			for (const [kind, side] of [
-				["strobe-a", -1],
-				["strobe-b", 1],
-			] as const)
-				root
-					.getObjectByName(kind)
-					?.position.set(side * face * 1.02, 0, face * 0.5);
+		const hidden = hiddenFixtures("trade", ["strobe-a", "strobe-b"], {
+			move: (root) => {
+				for (const [kind, side] of [
+					["strobe-a", -1],
+					["strobe-b", 1],
+				] as const)
+					root
+						.getObjectByName(kind)
+						?.position.set(side * face * 1.02, 0, face * 0.5);
+			},
 		});
 		expect(hidden.length).toBeGreaterThan(0);
 	});

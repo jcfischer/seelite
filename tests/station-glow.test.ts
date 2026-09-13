@@ -17,16 +17,24 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { EMISSIVE_CEILING, EXPOSURE } from "../src/light-rig";
 import { STATION_TYPES, type StationType } from "../src/station";
-import { GLOW_CLASSES, glowPixelSize } from "../src/station-glow";
+import {
+	GLOW_CLASSES,
+	glowMaterial,
+	glowPixelSize,
+	poolMaterial,
+} from "../src/station-glow";
 import {
 	SELECTED_FORM,
 	STATION_FORMS,
+	type StationFormId,
 	buildStationForm,
 	buildStationMesh,
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
 import { SPEC_FIXTURE_NAMES } from "../src/station-visuals";
+import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
+import { poolOverhang } from "./helpers/structure-rays";
 
 const GREY = 0x9aa6b2;
 
@@ -333,12 +341,11 @@ describe("a blinking point light burns past the bloom threshold; a steady light 
  * surface around each surface-mounted blinking light.
  */
 describe("glare and light pools", () => {
-	const SURFACE_BLINKERS = new Set([
-		"strobe-a",
-		"strobe-b",
-		"mouth-strobe",
-		"obstruction-beacon",
-	]);
+	/** The blinking lights mounted on a broad face. An obstruction beacon is
+	 *  not one: it stands on a tip — a sheave's crown, a manifold's end — with
+	 *  no surface round it to light, as a finish's mast beacon does (the
+	 *  principal's ruling on #300's review). */
+	const SURFACE_BLINKERS = new Set(["strobe-a", "strobe-b", "mouth-strobe"]);
 
 	test("a glow's floor and cap are points on screen, scaled by the pixel ratio", () => {
 		const point = GLOW_CLASSES.point;
@@ -404,9 +411,16 @@ describe("glare and light pools", () => {
 		}
 	});
 
-	test("every surface-mounted blinking light lays a pool of light on its surface", () => {
-		for (const type of ["trade", "shipyard", "refinery"] as const) {
-			const mesh = buildStationMesh(type, GREY, 0, 0);
+	test("every surface-mounted blinking light lays a pool of light on its surface, on every form", () => {
+		for (const type of STATION_TYPES)
+			for (const form of STATION_FORMS[type]) checkPools(type, form.id);
+	});
+
+	/** Pools present, named and sized on one form. */
+	const checkPools = (type: StationType, formId: StationFormId) => {
+		{
+			const { root } = buildStationForm(type, formId, GREY, 0, 0);
+			const mesh = { root };
 			mesh.root.updateMatrixWorld(true);
 			const missing: string[] = [];
 			mesh.root.traverse((o) => {
@@ -429,7 +443,64 @@ describe("glare and light pools", () => {
 				if (!(across >= 0.016 && across <= 0.08))
 					missing.push(`${o.name} pool ${(across * 1000).toFixed(0)} m across`);
 			});
-			expect([type, missing]).toEqual([type, []]);
+			expect([type, formId, missing]).toEqual([type, formId, []]);
+		}
+	};
+
+	/**
+	 * **A pool lies on a surface, or it is a sheet of light in space** (#300's
+	 * review). A pool is a flat disc in its lamp's own XY plane, so a lamp that
+	 * was only moved, never turned, laid a 50 m disc edge-on through a curved
+	 * hull; and a beacon's 40 m pool on a 5 m sheave hung almost wholly in
+	 * space, where an additive glow is easiest to see.
+	 */
+	test("every pool lies on the surface round its lamp, on every form and plan", () => {
+		for (const type of STATION_TYPES)
+			for (const form of STATION_FORMS[type])
+				for (const seed of isSolvedForm(type, form.id) ? PLAN_SEEDS : [0]) {
+					const { root } = buildStationForm(type, form.id, GREY, 0, seed);
+					root.updateMatrixWorld(true);
+					const bare: string[] = [];
+					root.traverse((o) => {
+						if (!o.userData.pool) return;
+						const miss = poolOverhang(root, o as THREE.Mesh, 0.003);
+						if (miss.length) bare.push(`${o.name} ${miss.join(" ")}`);
+					});
+					expect([type, form.id, seed, bare]).toEqual([
+						type,
+						form.id,
+						seed,
+						[],
+					]);
+				}
+	});
+
+	test("the pool row goes red for a lamp lifted off its face", () => {
+		const { root } = buildStationForm("trade", SELECTED_FORM.trade, GREY, 0, 0);
+		const strobe = root.getObjectByName("strobe-a") as THREE.Object3D;
+		strobe.position.z += 0.01;
+		root.updateMatrixWorld(true);
+		const pool = strobe.children.find((c) => c.userData.pool) as THREE.Mesh;
+		expect(poolOverhang(root, pool, 0.003).length).toBeGreaterThan(0);
+	});
+
+	test("an obstruction beacon on a tip lays no pool", () => {
+		for (const seed of PLAN_SEEDS) {
+			const { root } = buildStationForm(
+				"refinery",
+				SELECTED_FORM.refinery,
+				GREY,
+				0,
+				seed,
+			);
+			let beacons = 0;
+			let pools = 0;
+			root.traverse((o) => {
+				if (o.name !== "obstruction-beacon") return;
+				if (o.userData.pool) pools++;
+				else if (!o.userData.glow) beacons++;
+			});
+			expect([seed, beacons > 0, pools]).toEqual([seed, true, 0]);
 		}
 	});
 
@@ -505,5 +576,47 @@ describe("a blinking glow's size follows the range", () => {
 		const sizes = ladder.map(at);
 		for (let i = 1; i < sizes.length; i++)
 			expect([ladder[i], sizes[i] >= sizes[i - 1]]).toEqual([ladder[i], true]);
+	});
+
+	/**
+	 * **The rows above hold `glowPixelSize`, and the GPU runs the shader**
+	 * (#300's review). The two are one formula written twice, so a change to
+	 * either alone would leave every row here green. These pin the shader's
+	 * own lines to the TypeScript's.
+	 */
+	test("the vertex shader draws the size the TypeScript computes", () => {
+		const { vertexShader } = glowMaterial(0xffffff, 1, "blink", 0, 0);
+		expect(vertexShader).toContain(
+			"float projected = (glowSize * scale / dist) * projectionMatrix[1][1] * uHalfHeightPx;",
+		);
+		expect(vertexShader).toContain(
+			"gl_PointSize = clamp(projected * uSpread, uMinPx * uPixelRatio, uMaxPx * uPixelRatio);",
+		);
+	});
+});
+
+/**
+ * **A colour is decoded from sRGB once** (#300's review). Three's `setHex`
+ * already converts into the linear working space while `ColorManagement` is on,
+ * which it is here; the extra `convertSRGBToLinear` the ship's nav lights and
+ * the station glows carried decoded it a second time, darkening and saturating
+ * every light that is not pure white.
+ */
+describe("a light's colour reaches its shader in linear light, decoded once", () => {
+	const decode = (channel: number) => {
+		const s = channel / 255;
+		return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	};
+
+	test("a glow and a pool", () => {
+		const hex = 0xff8040;
+		for (const color of [
+			glowMaterial(hex, 1, "point", 0, 0).uniforms.uColor.value,
+			poolMaterial(hex).uniforms.uColor.value,
+		]) {
+			expect(color.x).toBeCloseTo(decode(0xff), 6);
+			expect(color.y).toBeCloseTo(decode(0x80), 6);
+			expect(color.z).toBeCloseTo(decode(0x40), 6);
+		}
 	});
 });

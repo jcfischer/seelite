@@ -58,6 +58,7 @@ import {
 	poolMaterial,
 	poolMesh,
 	steadyGlowMaterial,
+	glowOnFitting,
 } from "./station-glow";
 import { mutePaint } from "./surface";
 import { EMISSIVE_CEILING } from "./light-rig";
@@ -88,7 +89,6 @@ import {
 import {
 	DISH,
 	HUB,
-	MODULAR_RADIUS,
 	NODE,
 	type Placement,
 	RADIATOR,
@@ -531,30 +531,6 @@ export const FITTING_KM = Object.freeze({
 	throat: 0.008,
 });
 
-/**
- * Hang a glow under one fitting, at its own origin, named like it.
- *
- * Named like the fitting so `probe-station-visuals.mjs` hides both with one
- * name; a child so the detail band that hides a tagged fitting hides its glare.
- * The lift is the fitting's half-size, so its own housing cannot occlude it.
- */
-function withGlow(
-	fitting: THREE.Object3D,
-	sizeKm: number,
-	material: THREE.ShaderMaterial,
-): THREE.Object3D {
-	fitting.add(
-		glowPoints(
-			fitting.name,
-			[new THREE.Vector3()],
-			sizeKm,
-			sizeKm * 0.75,
-			material,
-		),
-	);
-	return fitting;
-}
-
 /** A driven fixture's glow: its own material, so the clock can write it. */
 function drivenGlow(
 	color: number,
@@ -589,6 +565,65 @@ function withPool(
 	const material = poolMaterial(color);
 	lamp.add(poolMesh(lamp.name, radiusKm, 0.0003, material));
 	return material;
+}
+
+/**
+ * The radius of the pool of light a blinking lamp lays, kilometres, by the
+ * surface it stands on (#300's review). A pool has to lie on that surface —
+ * `tests/station-glow.test.ts` casts from its disc and fails one hanging off an
+ * edge or a curve — so a broad flat face takes the widest, and a 24 m aperture
+ * frame bar or a faceted tube a narrower one.
+ */
+const LAMP_POOL_KM = Object.freeze({ face: 0.025, bar: 0.01, tube: 0.01 });
+
+const PLUS_Z = new THREE.Vector3(0, 0, 1);
+
+/**
+ * One blinking lamp: its housing, its glow, its pool if it stands on a face,
+ * and its fixture record (#300). The mouth ring, the strobe pair and the
+ * obstruction beacon were three copies of this.
+ *
+ * **Seated by a surface point and its outward normal**, the way `portRun`
+ * places a pane. The lamp's local +Z is turned onto the normal, so its pool —
+ * a disc in the lamp's own XY plane — lies on that surface; a lamp that was
+ * only moved laid its pool edge-on through a curved hull. Centred on the point,
+ * so it is half sunk into the face it is bolted to.
+ */
+function blinkingLamp(
+	fixtures: StationFixture[],
+	color: number,
+	name: string,
+	kind: StationFixtureKind,
+	offsetS: number,
+	at: THREE.Vector3,
+	normal: THREE.Vector3,
+	/** Its pool's radius, or `null` for a lamp on a tip with no face round it. */
+	poolKm: number | null,
+	/** The housing's depth along its normal, as a fraction of its size. */
+	depth: number,
+): THREE.Mesh {
+	const size = FITTING_KM.strobe;
+	const material = emissiveMaterial(color, STATION_EMISSIVE_INTENSITIES.off);
+	const lamp = new THREE.Mesh(
+		new THREE.BoxGeometry(size, size, size * depth),
+		material,
+	);
+	lamp.position.copy(at);
+	lamp.quaternion.setFromUnitVectors(PLUS_Z, normal.clone().normalize());
+	lamp.name = name;
+	detail(lamp, "reduced");
+	const glow = blinkingGlow(color);
+	glowOnFitting(lamp, size, glow);
+	const pool = poolKm === null ? undefined : withPool(lamp, poolKm, color);
+	fixtures.push({
+		material,
+		base: STATION_EMISSIVE_INTENSITIES.strobe,
+		kind,
+		offsetS,
+		glow,
+		pool,
+	});
+	return lamp;
 }
 
 /**
@@ -929,7 +964,9 @@ function mouthStrobes(
 		w / 2 + bar,
 		Math.sqrt(Math.max(0, clear * clear - barY * barY)),
 	);
-	// Counter-clockwise from +X, so the sequence runs round rather than across.
+	// Listed counter-clockwise from +X, so the sequence runs round rather than
+	// across. A larger offset reaches the flash earlier in the period, so the
+	// flash itself travels the other way — clockwise, last lamp listed first.
 	const ring: [number, number][] = [
 		[sideX, 0],
 		[cornerX, cornerY],
@@ -942,31 +979,22 @@ function mouthStrobes(
 		[pairX, -barY],
 		[cornerX, -cornerY],
 	];
-	ring.forEach(([x, y], i) => {
-		const material = emissiveMaterial(
-			STATION_VISUALS[type].strobeColor,
-			STATION_EMISSIVE_INTENSITIES.off,
-		);
-		const lamp = new THREE.Mesh(
-			new THREE.BoxGeometry(size, size, size * 0.6),
-			material,
-		);
-		lamp.position.set(x, y, faceZ + bar / 2);
-		lamp.name = "mouth-strobe";
-		detail(lamp, "reduced");
-		const glow = blinkingGlow(STATION_VISUALS[type].strobeColor);
-		withGlow(lamp, size, glow);
-		const pool = withPool(lamp, 0.012, STATION_VISUALS[type].strobeColor);
-		group.add(lamp);
-		fixtures.push({
-			material,
-			base: STATION_EMISSIVE_INTENSITIES.strobe,
-			kind: "chase",
-			offsetS: (i / ring.length) * period,
-			glow,
-			pool,
-		});
-	});
+	ring.forEach(([x, y], i) =>
+		group.add(
+			blinkingLamp(
+				fixtures,
+				STATION_VISUALS[type].strobeColor,
+				"mouth-strobe",
+				"chase",
+				(i / ring.length) * period,
+				// On the frame bar's front face.
+				new THREE.Vector3(x, y, faceZ + bar / 2),
+				PLUS_Z,
+				LAMP_POOL_KM.bar,
+				0.6,
+			),
+		),
+	);
 	return group;
 }
 
@@ -1388,40 +1416,39 @@ function greebleRun(
 function strobePair(
 	type: StationType,
 	fixtures: StationFixture[],
-	place: (side: number, position: THREE.Vector3) => void,
+	/** Its pools' radius, from `LAMP_POOL_KM` by the surface it stands on. */
+	poolKm: number,
+	/**
+	 * Where each lamp stands: a point **on** the surface, and that surface's
+	 * outward normal, which starts as +Z. Real size since #300, so a caller
+	 * no longer picks a lamp size — every caller had picked a fraction of its
+	 * core radius and got a 36–42 m lamp, and three of them kept offsets
+	 * written for that size, which left 2 m lamps metres off their hulls.
+	 */
+	place: (side: number, position: THREE.Vector3, normal: THREE.Vector3) => void,
 ) {
-	/** Real size (#300): a caller no longer picks one, because every caller
-	 *  picked a fraction of its core radius and got a 36–42 m lamp. */
-	const size = FITTING_KM.strobe;
 	const group = new THREE.Group();
 	const sides: [StationFixtureKind, number][] = [
 		["strobe-a", -1],
 		["strobe-b", 1],
 	];
 	for (const [kind, side] of sides) {
-		const material = emissiveMaterial(
-			STATION_VISUALS[type].strobeColor,
-			STATION_EMISSIVE_INTENSITIES.off,
+		const position = new THREE.Vector3();
+		const normal = PLUS_Z.clone();
+		place(side, position, normal);
+		group.add(
+			blinkingLamp(
+				fixtures,
+				STATION_VISUALS[type].strobeColor,
+				kind,
+				kind,
+				0,
+				position,
+				normal,
+				poolKm,
+				0.6,
+			),
 		);
-		const lamp = new THREE.Mesh(
-			new THREE.BoxGeometry(size, size, size * 0.6),
-			material,
-		);
-		place(side, lamp.position);
-		lamp.name = kind;
-		detail(lamp, "reduced");
-		const glow = blinkingGlow(STATION_VISUALS[type].strobeColor);
-		withGlow(lamp, size, glow);
-		const pool = withPool(lamp, 0.025, STATION_VISUALS[type].strobeColor);
-		group.add(lamp);
-		fixtures.push({
-			material,
-			base: STATION_EMISSIVE_INTENSITIES.strobe,
-			kind,
-			offsetS: 0,
-			glow,
-			pool,
-		});
 	}
 	return group;
 }
@@ -1719,11 +1746,11 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	 * radii, not half. §5 is corrected.
 	 *
 	 * **Inboard of the corners, not on them.** A diamond corner is a hull vertex
-	 * at the full 0.57 km, so a 42 m lamp centred there would reach 0.606 km and
+	 * at the full 0.57 km, so a lamp centred there would stand past it and
 	 * become the farthest point of the station — which §2 forbids of anything
-	 * tagged `detail`. At 0.62 of the half-diagonal the lamp reaches 0.50 km,
-	 * inside the hull's own corners, and `tests/station-visuals.test.ts` decides
-	 * that rather than this comment.
+	 * tagged `detail`. At 0.62 of the half-diagonal the lamp is well inside the
+	 * hull's own corners, and `tests/station-visuals.test.ts` decides that
+	 * rather than this comment.
 	 *
 	 * **Centred on the face plane, so it is sunk into it.** Standing the lamp
 	 * *on* the plane — its back face exactly at `face` — leaves two surfaces
@@ -1732,7 +1759,7 @@ function buildTradeCoriolis(color: number, berthSeed: number): BuiltPart {
 	 * of a station. Half sunk, it still shows its whole lit face down the axis.
 	 */
 	group.add(
-		strobePair("trade", fixtures, (side, position) => {
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
 			position.set(side * face * 0.62, 0, face);
 		}),
 	);
@@ -1992,8 +2019,12 @@ function buildTradeRing(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 	group.add(
-		strobePair("trade", fixtures, (side, position) => {
-			position.set(0, side * (major + tube * 1.1), 0);
+		// On the rim's crown, the face of the tube that looks down the axis
+		// (#300's review): the ring turns whole, so a lamp there sweeps a
+		// circle in the approach's frame. It stood past the rim's outer face,
+		// metres off the hull, at an offset written for a 42 m lamp.
+		strobePair("trade", fixtures, LAMP_POOL_KM.tube, (side, position) => {
+			position.set(0, side * major, tube);
 		}),
 	);
 	// On the rim's two side faces, never on its outer one. #102's rule and this
@@ -2070,8 +2101,11 @@ function buildTradeDrum(color: number, berthSeed: number): BuiltPart {
 		}),
 	);
 	group.add(
-		strobePair("trade", fixtures, (side, position) => {
-			position.set(side * body * 1.02, 0, r * 0.6);
+		// On the front cap beside the slot, where the approach looks (#300's
+		// review). It stood out on the barrel's side, metres off the hull and
+		// hidden from the axis by the cap.
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(0, side * body * 0.5, r * 0.88);
 		}),
 	);
 	// Down the barrel, on the opposite helix to the window run so the two do not
@@ -2220,11 +2254,11 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * inside the face's own 0.42·r half-width, and it stood at 3.9 px and 0 px
 	 * on the keel.
 	 *
-	 * **Mostly sunk, and the 6 m that is not stands in front of the aperture
+	 * **Half sunk, and the half that is not stands in front of the aperture
 	 * plane.** This form's hull face *is* its declared plane — the trade
 	 * station's is 25 m behind its own, which is why its lamp needs no such
 	 * note — so a fixture on this surface is either proud of the plane or
-	 * invisible, and a lamp flush with it z-fights the face it is lying on.
+	 * invisible.
 	 * Nothing forbids it: the corridor row owns the volume a ship descends
 	 * through and a lamp at 0.18 km is far outside its 69.5 m cylinder. But
 	 * `CLAUDE.md` said pad berths were the only parts of a station drawn in
@@ -2232,8 +2266,8 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * falsified.
 	 */
 	spun.add(
-		strobePair("shipyard", fixtures, (side, position) => {
-			position.set(side * r * 0.3, 0, r * 0.62 - FITTING_KM.strobe * 0.2);
+		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(side * r * 0.3, 0, r * 0.62);
 		}),
 	);
 	group.add(spun);
@@ -2392,7 +2426,7 @@ function buildShipyardGantry(color: number, berthSeed: number): BuiltPart {
 	 * aimed across the gap, and the arc sits on one of them — a yard working on
 	 * a hull in its own arms.
 	 *
-	 * They stay on `frame`, which does not turn. §5 asks only the **strobes** to
+	 * They stay on the static `group`, not in `spun`. §5 asks only the **strobes** to
 	 * mark rotation; a work light marks work, and a welding arc that swung round
 	 * the axis would be a beacon rather than a job.
 	 *
@@ -2621,6 +2655,14 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 		),
 	);
 	spun.add(buildAperture("shipyard", fixtures, r * 0.6, berthSeed));
+	// The strobe pair on the hub's forward face, above and below the slot
+	// (§5, #300's review): the hub is what turns, and the slab the pair stood
+	// on did not.
+	spun.add(
+		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(0, side * r * 0.22, r * 0.6);
+		}),
+	);
 	group.add(spun);
 
 	// Inside the bay mouth, which is where a bay's floods are.
@@ -2655,13 +2697,6 @@ function buildShipyardHangar(color: number, berthSeed: number): BuiltPart {
 				(row === 0 ? -1 : 1) * r * 0.24,
 				-r * 0.46 - SHIPYARD_KEEL_AFT_KM,
 			);
-		}),
-	);
-	group.add(
-		strobePair("shipyard", fixtures, (side, position) => {
-			// Inside the slab's own half-length (`span * 0.54`), not on it: at
-			// 0.55 one of the pair sat clear of the hull it is mounted on.
-			position.set(side * span * 0.5, 0, r * 0.36 - SHIPYARD_KEEL_AFT_KM);
 		}),
 	);
 	// On the slab's back face, beside the port run and set into the same
@@ -2730,6 +2765,14 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 	spun.name = "spun";
 	spun.add(spine);
 	spun.add(buildAperture("shipyard", fixtures, r * 0.64, berthSeed));
+	// The strobe pair on the hub's forward face, above and below the slot
+	// (§5, #300's review): the arc does not turn, and the pair stood on its
+	// centreline, inside its own tube.
+	spun.add(
+		strobePair("shipyard", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(0, side * r * 0.18, r * 0.64);
+		}),
+	);
 	group.add(spun);
 	// Struts from the hub to the arc, nested a group per angle — two Euler
 	// angles on one object leaves the result to `Euler`'s order, and all four
@@ -2780,7 +2823,15 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 				// `major * 0.86` they hung 60 m inside the slip — invisible to the
 				// island check, whose boxes overlap because the arc's box spans the
 				// whole ring, and plainly floating on screen.
-				const inner = major - r * 0.18;
+				// **On** that surface, not 12 m into the tube (#300's review):
+				// `r * 0.18` half-sank a 156 m flood and buried a real 4 m one.
+				// The tube is flat-shaded, so its inner face between two ring
+				// vertices is a chord, up to 6 m inboard of the circle through
+				// them; the flood sits on the chord.
+				const seg = (Math.PI * 1.45) / 22;
+				const local =
+					((((theta - Math.PI * 0.28) % seg) + seg) % seg) - seg / 2;
+				const inner = ((major - r * 0.2) * Math.cos(seg / 2)) / Math.cos(local);
 				flood.position.set(Math.cos(theta) * inner, Math.sin(theta) * inner, 0);
 			},
 			new THREE.Vector3(major - r * 0.18, 0, 0),
@@ -2796,12 +2847,6 @@ function buildShipyardSlipway(color: number, berthSeed: number): BuiltPart {
 				Math.sin(theta) * major * 0.82,
 				0,
 			);
-		}),
-	);
-	group.add(
-		strobePair("shipyard", fixtures, (side, position) => {
-			const theta = Math.PI * 0.28 + (side > 0 ? 0 : Math.PI * 1.4);
-			position.set(Math.cos(theta) * major, Math.sin(theta) * major, 0);
 		}),
 	);
 	// On the broken ring's two flat sides, along the arc the ports look out of.
@@ -2873,7 +2918,7 @@ function buildBayLights(
 		);
 		place(i, flood);
 		flood.name = "bay-flood";
-		withGlow(flood, FITTING_KM.flood[0], FLOOD_GLOW);
+		glowOnFitting(flood, FITTING_KM.flood[0], FLOOD_GLOW);
 		detail(flood, "reduced");
 		group.add(flood);
 	}
@@ -2894,7 +2939,7 @@ function buildBayLights(
 		0,
 		0,
 	);
-	withGlow(arc, FITTING_KM.arcRadius * 2, arcGlow);
+	glowOnFitting(arc, FITTING_KM.arcRadius * 2, arcGlow);
 	group.add(arc);
 	fixtures.push({
 		material: arcMaterial,
@@ -3010,7 +3055,7 @@ function buildVentBank(
 			.addScaledVector(bore, length * 0.34 - across * 0.12);
 		throat.name = "flare";
 		detail(throat, "reduced");
-		withGlow(throat, throatKm, throatGlare);
+		glowOnFitting(throat, throatKm, throatGlare);
 		stack.add(throat);
 	}
 	// One fixture for the bank, kind `flare`: it is the flare system's light,
@@ -3574,7 +3619,7 @@ function buildPadDeck(
 		flood.rotation.z = theta;
 		flood.name = "bay-flood";
 		detail(flood, "reduced");
-		withGlow(flood, FITTING_KM.flood[0], FLOOD_GLOW);
+		glowOnFitting(flood, FITTING_KM.flood[0], FLOOD_GLOW);
 		group.add(flood);
 	}
 	group.add(buildHeatRing(fixtures, r * 0.62, z + r * 0.03));
@@ -4005,6 +4050,14 @@ function buildTradeModular(
 		),
 	);
 	spun.add(buildAperture("trade", fixtures, plane, berthSeed));
+	// The strobe pair on the hub's front cap, above and below the slot (§5,
+	// #300's review): the hub is what turns, and the spine's longerons the
+	// pair stood on do not.
+	spun.add(
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			position.set(0, side * hubR * 0.62, plane);
+		}),
+	);
 	group.add(spun);
 
 	const pools = new Pools();
@@ -4221,26 +4274,6 @@ function buildTradeModular(
 				.addScaledVector(outboard, (0.25 + slot * 0.2) * c);
 		}),
 	);
-	// The strobes near the spine's two ends, which are the assembly's beam.
-	// **On a longeron, not on the axis.** Centred on the spine's end plane a
-	// lamp sits inside the lattice's hollow section, a metre clear of every
-	// member — the island check reads that per instance now — and it also
-	// reaches past the truss, so hiding it at `outline` would move the
-	// outline. Seated on the (+X, +Z) longeron's outer face a fifth of a cell
-	// short of the end, it touches structure and stays inside the truss's own
-	// reach.
-	group.add(
-		strobePair("trade", fixtures, (side, position) => {
-			// Straddling the longeron: the lamp is three times the ship-scale
-			// truss's width, so its centre sits 0.4 of its size outboard of the
-			// longeron's face and the box overlaps the member either way.
-			position.set(
-				SHIP_SCALE.trussKm * 0.5 + r * 0.06 * 0.4,
-				side * (MODULAR_RADIUS * c + c * 0.3),
-				SHIP_SCALE.trussKm * 0.5,
-			);
-		}),
-	);
 	// Clutter on the hub's own flank, between the ports of its docked tubes.
 	group.add(
 		greebleRun(
@@ -4343,30 +4376,21 @@ function obstructionBeacon(
 	fixtures: StationFixture[],
 	at: THREE.Vector3,
 ): THREE.Mesh {
-	const size = FITTING_KM.strobe;
-	const material = emissiveMaterial(
+	// **On a tip, so glare and no pool** — the principal's ruling on #300's
+	// review. A sheave's crown is a 5 m tube and a manifold's end is not much
+	// more, so a pool round either hung almost wholly in space, as a finish's
+	// mast beacon would.
+	return blinkingLamp(
+		fixtures,
 		STATION_VISUALS.refinery.strobeColor,
-		STATION_EMISSIVE_INTENSITIES.off,
+		"obstruction-beacon",
+		"beacon",
+		0,
+		at,
+		PLUS_Z,
+		null,
+		1,
 	);
-	const lamp = new THREE.Mesh(
-		new THREE.BoxGeometry(size, size, size),
-		material,
-	);
-	lamp.position.copy(at);
-	lamp.name = "obstruction-beacon";
-	detail(lamp, "reduced");
-	const glow = blinkingGlow(STATION_VISUALS.refinery.strobeColor);
-	withGlow(lamp, size, glow);
-	const pool = withPool(lamp, 0.02, STATION_VISUALS.refinery.strobeColor);
-	fixtures.push({
-		material,
-		base: STATION_EMISSIVE_INTENSITIES.strobe,
-		kind: "beacon",
-		offsetS: 0,
-		glow,
-		pool,
-	});
-	return lamp;
 }
 
 function buildRefineryWorks(
@@ -4630,17 +4654,15 @@ function buildRefineryWorks(
 					S.strutKm * 1.5,
 					V(1, 0, 0),
 				);
-				// **Sized to this form, not to a ship** (#300). At 0.1 km the
-				// bank's throats were 8.5 m plates on a station 1.36 km across
-				// and measured **2.9 px** at docking range — so they drew
-				// nothing wherever they were put, and §5 says *"Its flare is
-				// its light."* That was a size defect wearing a placement
-				// defect's clothes: the throats already face +Z and nothing
-				// occludes them. Every other refinery form builds this bank at
-				// 0.85–1.05 of its core radius; this one was at a quarter of
-				// that. A cell and a quarter is what the plan's own grid
-				// allows, and `tests/station-mesh.test.ts` holds the reach and
-				// the corridor it has to stay inside.
+				// **The bank stays the Works' size, and its throats carry the
+				// light** (#300). At 0.1 km the throats were 8.5 m plates on a
+				// station 1.36 km across and measured **2.9 px** at docking
+				// range, and §5 says *"Its flare is its light."* Growing the
+				// bank to a cell and a quarter was tried and put back: each
+				// throat is a real-size lit face with its own glare now
+				// (`FITTING_KM.throat`, `station-glow.ts`), which is what makes
+				// it read, and `tests/station-mesh.test.ts` holds the reach and
+				// the corridor the bank has to stay inside.
 				const bank = buildVentBank(fixtures, 0.1);
 				bank.position.copy(top).setZ(top.z + 0.02);
 				group.add(bank);
@@ -4714,13 +4736,12 @@ function buildRefineryWorks(
 	 * each occupies about ±17° of the ring; `buildPadDeck` puts four floods on
 	 * the diagonals at 0.82 of its own radius. The free sectors are the eight
 	 * midpoints between those, and one port sits in each — laid **radially**,
-	 * which is what the tangent argument above is for: a 30 m pane turned across
-	 * the ring subtends 10° and would crowd a berth, and the same pane turned
-	 * along it subtends 2°.
+	 * which is what the tangent argument above is for. The crowding that
+	 * argument was written against belonged to the old 30 m pane; the real 3 m
+	 * pane (#300) fits either way.
 	 *
 	 * The radius is the other half of the fit: inside the deck's own 0.20 km
-	 * edge and outside the heat ring's 0.148 km, with the pane's 30 m of length
-	 * inside both.
+	 * edge and outside the heat ring's 0.148 km, with the pane inside both.
 	 */
 	const PAD_PORT_RADIUS_KM = 0.171;
 	group.add(

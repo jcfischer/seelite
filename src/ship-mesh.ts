@@ -5918,7 +5918,7 @@ const BUILDERS: Record<HullId, Record<HullVariantId, Builder>> = {
  * in one and off in the other is a difference the reviewer has to discount by
  * hand. A strobe wants a deterministic clock first.
  */
-const NAV_LIGHTS = [
+export const NAV_LIGHTS = [
 	{ role: "port", color: 0xff2f1c },
 	{ role: "starboard", color: 0x24ff62 },
 	{ role: "dorsal", color: 0xe8f0ff },
@@ -6099,9 +6099,11 @@ function addNavLights(root: THREE.Group) {
 	NAV_LIGHTS.forEach((light, i) => {
 		const p = at[light.role];
 		positions.set([p.x, p.y, p.z], i * 3);
-		// The shader is raw, so its colours are linear: a hex written for the
-		// sRGB pipeline has to be converted rather than handed straight over.
-		color.setHex(light.color).convertSRGBToLinear();
+		// The shader is raw, so its colours are linear. `setHex` decodes the
+		// sRGB hex into three's linear working space, and that is the only
+		// decode: a second `convertSRGBToLinear` here crushed every channel that
+		// is not 0 or 255 (#300's review).
+		color.setHex(light.color);
 		colors.set([color.r, color.g, color.b], i * 3);
 	});
 	const geometry = new THREE.BufferGeometry();

@@ -11,6 +11,7 @@ import {
 import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
+	NAV_LIGHTS,
 	NAV_LIGHT_PROUD,
 	SHIP_DESIGN_ROUND,
 	buildShipMesh,
@@ -513,6 +514,20 @@ describe("procedural ship visual language", () => {
 				const port = of("port");
 				const starboard = of("starboard");
 				const tail = of("tail");
+				// Decoded from sRGB once (#300's review): three's `setHex` already
+				// converts, so a second `convertSRGBToLinear` crushed every
+				// channel that is not 0 or 255 — port's green 0x2f to a tenth.
+				const decode = (c: number) => {
+					const s = c / 255;
+					return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+				};
+				for (const light of NAV_LIGHTS) {
+					const { color } = of(light.role);
+					expect([
+						light.role,
+						Math.abs(color.g - decode((light.color >> 8) & 255)) < 1e-6,
+					]).toEqual([light.role, true]);
+				}
 
 				// Red to port, green to starboard. Flipped, the lights would still
 				// be visible and would tell the player the wrong way round, which
