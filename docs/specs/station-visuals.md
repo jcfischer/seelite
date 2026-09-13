@@ -392,8 +392,10 @@ nav lights had already corrected for. And bloom cannot supply glare to a source
 this small: turning bloom off, strengthening it four times, running it at full
 resolution or making the core twenty times brighter changed the lamp's
 surroundings by almost nothing. So glare is part of the sprite — a blinking
-light's glow is 18–48 points across, a tight white centre inside a faint wide
-skirt — and every blinking lamp that stands on a surface (the docking-face
+light's glow is a tight white centre inside a faint wide skirt, sized by the
+range rather than by a floor — about 5 points from 20 km out, 14 at 5 km, 36 at
+2 km, capped at 56 near 1 km; at a fixed 18 points it was as wide as the
+station itself 50 km out and never grew on approach — and every blinking lamp that stands on a surface (the docking-face
 strobes, the mouth ring, the refinery's beacons) lays a soft disc of light on
 that surface, 12–25 m across, flashing with it. It is a decal and not a light
 source: real point lights were declined for their cost to every material in

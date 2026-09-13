@@ -89,8 +89,16 @@ export const GLOW_CLASSES = Object.freeze({
 	 * (#300). The sprite is large because the glare is *in* it — measured on the
 	 * principal's GPU, bloom gains a source this small almost nothing, even at
 	 * twenty times the core — and the centre stays tight inside it.
+	 *
+	 * **Its size comes from the range, not from the floor.** At 18 points
+	 * the floor governed at every range, so a glow was the same size on screen
+	 * 50 km out as on final approach — as wide as the station itself far out,
+	 * in the principal's reading. The floor is a point now, and the spread is
+	 * large enough that the projected term takes over on approach: about
+	 * 5 points from 20 km out, 14 at 5 km, 36 at 2 km, capped at 56 near 1 km.
+	 * `tests/station-glow.test.ts` pins that shape.
 	 */
-	blink: Object.freeze({ minPx: 18, maxPx: 48, spread: 12 }),
+	blink: Object.freeze({ minPx: 5, maxPx: 56, spread: 46 }),
 } as const);
 
 export type GlowClass = keyof typeof GLOW_CLASSES;

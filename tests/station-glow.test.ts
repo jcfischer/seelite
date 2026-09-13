@@ -472,3 +472,38 @@ describe("glare and light pools", () => {
 		}
 	});
 });
+
+/**
+ * **A blinking light is a point far out and grows as you close** (#300).
+ *
+ * The principal's reading of the glare build: *"looks a lot better. Glow is
+ * too large at distance (same size as station 50km out) — scale that down a
+ * bit and make it bigger on approach."* The blink class was floored at 18
+ * points, and a 2 m lamp's projected size times its spread stayed under that
+ * floor until the ship was nearly docked, so every glow was the same size on
+ * screen at every range. The size now has to come from the range, not from the
+ * floor. Measured in points at a 60° vertical field with a 900-point-tall view
+ * (half-height 450), pixel ratio 1.
+ */
+describe("a blinking glow's size follows the range", () => {
+	const blink = GLOW_CLASSES.blink;
+	const yy = 1 / Math.tan(Math.PI / 6);
+	const at = (km: number) => glowPixelSize(0.002, km, yy, 450, blink, 1);
+
+	test("far out it is a point, not a disc the size of the station", () => {
+		expect(at(50)).toBeLessThanOrEqual(6);
+		expect(at(20)).toBeLessThanOrEqual(8);
+	});
+
+	test("on approach it is large", () => {
+		expect(at(2)).toBeGreaterThanOrEqual(30);
+		expect(at(1)).toBeGreaterThanOrEqual(at(2));
+	});
+
+	test("it never shrinks as the ship closes", () => {
+		const ladder = [80, 50, 30, 20, 10, 6, 4, 3, 2, 1.5, 1, 0.5, 0.2];
+		const sizes = ladder.map(at);
+		for (let i = 1; i < sizes.length; i++)
+			expect([ladder[i], sizes[i] >= sizes[i - 1]]).toEqual([ladder[i], true]);
+	});
+});
