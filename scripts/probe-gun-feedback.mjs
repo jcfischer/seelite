@@ -9,8 +9,8 @@
  * keyboard, the mouse, or the fake pad the gamepad probes use — and reads what
  * the player gets: tracer pixels on the overlay and the shot sound.
  *
- * The controller's other bindings (L1/R1 throttle, L2 target, R2 not trimming)
- * are `probe-gamepad.mjs`'s, so one remap edits one probe (sage #328).
+ * The controller's other bindings (L2/R2 throttle, L1/R1 target, Square not
+ * trimming) are `probe-gamepad.mjs`'s, so one remap edits one probe (sage #328).
  */
 import { installFakePad, STANDARD_INDEX } from "./lib/fake-pad.mjs";
 import {
@@ -203,16 +203,16 @@ check(
 // The controller's trigger.
 // ---------------------------------------------------------------------------
 const pad = await heldAndReleased(
-	() => page.evaluate((i) => window.__pad.hold(i, 1), STANDARD_INDEX.r2),
-	() => page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.r2),
+	() => page.evaluate((i) => window.__pad.hold(i, 1), STANDARD_INDEX.x),
+	() => page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.x),
 );
 check(
-	"R2 held fires the pulse laser, with the tracer and the sound",
+	"Square held fires the pulse laser, with the tracer and the sound",
 	pad.held.cyan > 0 && pad.held.shots > pad.before.shots,
 	JSON.stringify(pad.held),
 );
 check(
-	"releasing R2 clears the tracer",
+	"releasing Square clears the tracer",
 	pad.released.cyan === 0,
 	JSON.stringify(pad.released),
 );

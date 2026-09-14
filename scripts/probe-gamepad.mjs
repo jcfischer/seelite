@@ -45,9 +45,7 @@
  *   - The triggers read as switches (`held` rather than `values`) reds only
  *     "a light pull trims the throttle more slowly than a full one", at
  *     **0.0000/s** against 1.10/s: a quarter-pull is under the press threshold,
- *     so a switch reports nothing at all. **Measured on the triggers, before
- *     #324 moved the trim to the shoulders.** That row now presses a shoulder
- *     at a partial value, and this mutant was not run again against it.
+ *     so a switch reports nothing at all.
  *   - `pollPad` moved out of `animate` and onto `setInterval(16)` reds the
  *     wiring pair and only that pair — **6 calls across 10 frames**, and
  *     **125 calls in 2 s** with `rAF` stubbed out against the real tree's 0.
@@ -145,24 +143,24 @@ try {
 	// --- the button table acts --------------------------------------------
 
 	{
+		// **Square fires since #324**, so it no longer toggles the assist, which
+		// stays on the keyboard by the principal's ruling.
 		const before = await page.evaluate(() => window.__seelite.assist);
 		await tapPad(B.x);
 		const after = await page.evaluate(() => window.__seelite.assist);
 		check(
-			"Square toggles the flight assist",
-			before !== after,
+			"Square no longer toggles the flight assist",
+			before === after,
 			`assist ${before} → ${after}`,
 		);
-		await tapPad(B.x);
 	}
 
 	{
 		const before = await page.evaluate(() => window.__seelite.targetId);
-		// L2 since #324: the shoulders took the throttle so R2 could fire.
-		await tapPad(B.l2);
+		await tapPad(B.r1);
 		const after = await page.evaluate(() => window.__seelite.targetId);
 		check(
-			"L2 cycles the target",
+			"R1 cycles the target",
 			before !== after,
 			`target ${before} → ${after}`,
 		);
@@ -279,7 +277,7 @@ try {
 		await frames(2);
 		const before = await page.evaluate(() => window.__seelite.throttleFraction);
 		await page.evaluate(({ i, v }) => window.__pad.hold(i, v), {
-			i: B.r1,
+			i: B.r2,
 			v: value,
 		});
 		const started = Date.now();
@@ -295,12 +293,12 @@ try {
 		const full = await trimArm(1);
 		const light = await trimArm(0.25);
 		check(
-			"the right shoulder opens the throttle",
+			"the right trigger opens the throttle",
 			full.moved > 0,
 			`throttle moved ${full.moved.toFixed(4)}`,
 		);
 		check(
-			"a partial shoulder value trims the throttle more slowly than a full one",
+			"a light pull trims the throttle more slowly than a full one",
 			light.perSecond > 0 && light.perSecond < full.perSecond * 0.6,
 			`${light.perSecond.toFixed(4)}/s light against ${full.perSecond.toFixed(4)}/s full`,
 		);
@@ -310,7 +308,7 @@ try {
 		// **Off the clamp first.** The arms above leave the throttle at 1, where
 		// "it did not move" is also what a broken trim reads — the ceiling holds
 		// it there either way. Trim down to somewhere in the middle, then watch.
-		await page.evaluate((i) => window.__pad.hold(i, 1), B.l1);
+		await page.evaluate((i) => window.__pad.hold(i, 1), B.l2);
 		await frames(4);
 		await page.evaluate(() => window.__pad.rest());
 		await frames(2);
@@ -318,13 +316,13 @@ try {
 		await frames(8);
 		const after = await page.evaluate(() => window.__seelite.throttleFraction);
 		check(
-			"a resting shoulder holds the throttle where it is, which is the whole of F2",
+			"a resting trigger holds the throttle where it is, which is the whole of F2",
 			before > 0.02 && before < 0.98 && Math.abs(after - before) < 1e-9,
 			`throttle ${before.toFixed(4)} → ${after.toFixed(4)}`,
 		);
-		// **R2 fires now, and must not also trim** (#324). Read from the middle of
+		// **Square fires, and must not also trim** (#324). Read from the middle of
 		// the range the check above left, where a trim in either direction shows.
-		await page.evaluate((i) => window.__pad.hold(i, 1), B.r2);
+		await page.evaluate((i) => window.__pad.hold(i, 1), B.x);
 		await frames(8);
 		await page.evaluate(() => window.__pad.rest());
 		await frames(2);
@@ -332,7 +330,7 @@ try {
 			() => window.__seelite.throttleFraction,
 		);
 		check(
-			"R2 no longer moves the throttle",
+			"Square held does not move the throttle",
 			Math.abs(afterR2 - after) < 1e-9,
 			`throttle ${after.toFixed(4)} → ${afterR2.toFixed(4)}`,
 		);
@@ -352,7 +350,7 @@ try {
 			// A detour is what makes the branch reachable; the field is the one
 			// the cancel reads.
 			g.detour = { reason: "probe", legs: [] };
-			window.__pad.hold(4, 1); // l1 — throttle down since #324
+			window.__pad.hold(6, 1); // l2 — throttle down
 			await window.__frames(3);
 			const throttle = g.throttleFraction;
 			window.__pad.rest();
@@ -360,7 +358,7 @@ try {
 			return { throttle, detour: g.detour };
 		});
 		check(
-			"a left-shoulder press that cancels a detour brakes rather than accelerating",
+			"a left-trigger pull that cancels a detour brakes rather than accelerating",
 			braked.throttle < 0.2 && braked.detour === null,
 			`throttle ${braked.throttle.toFixed(3)} from 0.200, detour ${braked.detour === null ? "cancelled" : "still set"}`,
 		);

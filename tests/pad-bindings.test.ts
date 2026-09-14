@@ -94,17 +94,16 @@ describe("the flight table names keys the keyboard already understands", () => {
 
 	test("the flight-critical set from the node is all there", () => {
 		const bound = new Set(Object.values(PAD_FLIGHT_KEYS));
-		// assist, cruise, next target, face, clearance, docking computer,
+		// cruise, next/previous target, face, clearance, docking computer,
 		// launch/skip, view, jump, and the three head-look positions.
 		//
-		// **Previous target left the pad in #324, by the principal's ruling**:
-		// the shoulders took the throttle so R2 could fire, and L2 kept only
-		// next target. `g` stays on the keyboard.
-		expect(bound.has("g")).toBe(false);
+		// **Assist left the pad in #324, by the principal's ruling**: Square is
+		// the laser's trigger, and flight assist stays on the keyboard's `x`.
+		expect(bound.has("x")).toBe(false);
 		for (const key of [
-			"x",
 			"j",
 			"t",
+			"g",
 			"f",
 			"c",
 			"u",
@@ -124,19 +123,18 @@ describe("a press becomes a command, once", () => {
 		expect(padIntents(press("a"), "flight").keys).toEqual(["enter"]);
 	});
 
-	test("Square toggles the assist", () => {
-		expect(padIntents(press("x"), "flight").keys).toEqual(["x"]);
+	test("Square presses no key: it is the laser's trigger (#324)", () => {
+		expect(padIntents(press("x"), "flight").keys).toEqual([]);
 	});
 
 	test("a button merely held is not a press", () => {
 		// `command` fires on the edge, exactly as `onKey`'s `!e.repeat` does.
-		// Reading the held set instead would toggle the assist sixty times a
-		// second.
-		const held: ReadonlySet<PadButtonName> = new Set<PadButtonName>(["x"]);
+		// Reading the held set instead would toggle cruise sixty times a second.
+		const held: ReadonlySet<PadButtonName> = new Set<PadButtonName>(["y"]);
 		const frame = readPad(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
-					n === "x"
+					n === "y"
 						? { pressed: true, value: 1 }
 						: { pressed: false, value: 0 },
 				),
@@ -220,7 +218,7 @@ describe("a console takes six controls and leaves the rest flying", () => {
 
 	test("everything else still flies the ship", () => {
 		expect(padIntents(press("y"), "console").keys).toEqual(["j"]);
-		expect(padIntents(press("x"), "console").keys).toEqual(["x"]);
+		expect(padIntents(press("l3"), "console").keys).toEqual(["f"]);
 		expect(padIntents(press("select"), "console").keys).toEqual(["`"]);
 	});
 });
@@ -322,8 +320,8 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// The trim is refused, so the throttle keeps whatever value it had and
 		// the ship coasts. Driving it to zero was offered and declined: it
 		// changes your speed without being asked.
-		expect(padFlightAxes(press("r1"), "console").throttleTrim).toBe(0);
-		expect(padFlightAxes(press("l1"), "console").throttleTrim).toBe(0);
+		expect(padFlightAxes(trigger("r2", 1), "console").throttleTrim).toBe(0);
+		expect(padFlightAxes(trigger("l2", 1), "console").throttleTrim).toBe(0);
 	});
 
 	test("a modal panel suspends the sticks, which a key release cannot do", () => {
@@ -348,9 +346,9 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// would measure a different frame from the one it exists for. It takes a
 		// console's six buttons and leaves the sticks alone.
 		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
-		// The shoulders are the instrument's tab steps, so they do not also trim
-		// there (sage #328): one press, one meaning.
-		expect(padFlightAxes(press("r1"), "instrument").throttleTrim).toBe(0);
+		// The triggers trim there too; the shoulders are its tab steps, and the
+		// two do not collide (sage #328's worry, answered by the triggers).
+		expect(padFlightAxes(trigger("r2", 1), "instrument").throttleTrim).toBe(1);
 		expect(padIntents(press("r1"), "instrument").tabDelta).toBe(1);
 	});
 
@@ -365,21 +363,23 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 });
 
 describe("the throttle is a trim, and the rejected arm is why", () => {
-	test("the right shoulder opens it and the left closes it (#324)", () => {
-		expect(padFlightAxes(press("r1"), "flight").throttleTrim).toBe(1);
-		expect(padFlightAxes(press("l1"), "flight").throttleTrim).toBe(-1);
+	test("the right trigger opens it and the left closes it", () => {
+		expect(padFlightAxes(trigger("r2", 1), "flight").throttleTrim).toBe(1);
+		expect(padFlightAxes(trigger("l2", 1), "flight").throttleTrim).toBe(-1);
 	});
 
-	test("the triggers no longer move it", () => {
-		expect(padFlightAxes(trigger("r2", 1), "flight").throttleTrim).toBe(0);
-		expect(padFlightAxes(trigger("l2", 1), "flight").throttleTrim).toBe(0);
+	test("the shoulders do not move it", () => {
+		expect(padFlightAxes(press("r1"), "flight").throttleTrim).toBe(0);
+		expect(padFlightAxes(press("l1"), "flight").throttleTrim).toBe(0);
 	});
 
-	test("a shoulder that reports a partial value trims by it", () => {
-		expect(padFlightAxes(press("r1", 0.25), "flight").throttleTrim).toBe(0.25);
+	test("a light pull trims slowly, which the keyboard cannot do", () => {
+		expect(padFlightAxes(trigger("r2", 0.25), "flight").throttleTrim).toBe(
+			0.25,
+		);
 	});
 
-	test("a resting shoulder holds the throttle where it is", () => {
+	test("a resting trigger holds the throttle where it is", () => {
 		// This is the arm that was chosen. A *position* trigger would send the
 		// throttle to zero the moment the player let go, which is not what a
 		// throttle is — and it would fight three existing writers: the near-
@@ -387,11 +387,11 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 		expect(padFlightAxes(rest, "flight").throttleTrim).toBe(0);
 	});
 
-	test("both shoulders together cancel out", () => {
+	test("both triggers together cancel out", () => {
 		const both = readPad(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
-					n === "l1" || n === "r1"
+					n === "l2" || n === "r2"
 						? { pressed: true, value: 1 }
 						: { pressed: false, value: 0 },
 				),
@@ -402,23 +402,23 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 	});
 });
 
-describe("R2 is the trigger and L2 the next target (#324)", () => {
-	test("R2 held fires in flight, and a light pull below the threshold does not", () => {
-		expect(padFireHeld(trigger("r2", 1), "flight")).toBe(true);
-		expect(padFireHeld(trigger("r2", 0.1), "flight")).toBe(false);
+describe("Square is the trigger, and the shoulders the targets (#324)", () => {
+	test("Square held fires in flight, and nothing else does", () => {
+		expect(padFireHeld(press("x"), "flight")).toBe(true);
+		expect(padFireHeld(trigger("r2", 1), "flight")).toBe(false);
 		expect(padFireHeld(rest, "flight")).toBe(false);
 		expect(padFireHeld(absent, "flight")).toBe(false);
 	});
 
 	test("a console suspends the trigger with the sticks", () => {
-		expect(padFireHeld(trigger("r2", 1), "console")).toBe(false);
-		expect(padFireHeld(trigger("r2", 1), "modal")).toBe(false);
+		expect(padFireHeld(press("x"), "console")).toBe(false);
+		expect(padFireHeld(press("x"), "modal")).toBe(false);
 	});
 
-	test("L2 steps to the next target, and the shoulders no longer do", () => {
-		expect(padIntents(trigger("l2", 1), "flight").keys).toEqual(["t"]);
-		expect(padIntents(press("r1"), "flight").keys).toEqual([]);
-		expect(padIntents(press("l1"), "flight").keys).toEqual([]);
+	test("R1 and L1 step the target, and L2 presses no key", () => {
+		expect(padIntents(press("r1"), "flight").keys).toEqual(["t"]);
+		expect(padIntents(press("l1"), "flight").keys).toEqual(["g"]);
+		expect(padIntents(trigger("l2", 1), "flight").keys).toEqual([]);
 	});
 });
 
