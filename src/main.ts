@@ -290,6 +290,14 @@ import {
 	drawGunTracer,
 	stepGunFeedback,
 } from "./gun-feedback";
+import { raiderLog } from "./raider-log";
+import {
+	type Canister,
+	dropCanisters,
+	raiderDestruction,
+	scoops,
+	stepCanisters,
+} from "./raider-wreck";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -444,6 +452,7 @@ import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
 	newCommander,
+	scoopCargo,
 	transactAtStation,
 	type StationAction,
 } from "./station-commerce";
@@ -1832,6 +1841,9 @@ class Game {
 	raiderFiring = false;
 	/** The pulse laser's tracer and shot-sound pacing (`gun-feedback.ts`). */
 	gunFeedback: GunFeedback = QUIET_GUN;
+	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
+	 *  state: they expire in five minutes and are not saved. */
+	canisters: Canister[] = [];
 	/** The tracer's geometry and pacing, for a probe to read rather than restate. */
 	readonly gunTracer = {
 		ports: TRACER_PORTS,
@@ -7314,6 +7326,7 @@ class Game {
 		this.encounterView = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
+		this.canisters = [];
 		this.lastExit = "";
 		this.detour = null;
 		this.frameBody = null;
@@ -7646,6 +7659,28 @@ class Game {
 				`fired on by ${name}`,
 			);
 		if (step.encounter.phase === "over") {
+			// #324 part d: a kill is the slot's world-state destruction, which
+			// schedules its replacement, and the wreck drops its cargo.
+			if (step.encounter.end === "destroyed" && step.wreck) {
+				const record = this.world.system.record;
+				const now = this.world.gameTime;
+				this.applyCarrierTransition(
+					encounter.slot.key,
+					raiderDestruction(record.index, now),
+				);
+				this.canisters = [
+					...this.canisters,
+					...dropCanisters({
+						systemSeed: record.seed,
+						government: record.government,
+						key: encounter.slot.key,
+						killedAt: now,
+						pos: step.wreck.pos,
+						vel: step.wreck.vel,
+					}),
+				];
+				this.audio.explosion();
+			}
 			const notice = step.encounter.end
 				? ENCOUNTER_END_NOTICE[step.encounter.end]
 				: null;
@@ -7664,6 +7699,39 @@ class Game {
 	 */
 	private readonly slotOperational = (key: CarrierKey): boolean =>
 		this.carrierCondition(key).condition === "operational";
+
+	/**
+	 * Drift the canisters, expire the old ones, and scoop any the ship passes
+	 * close and slow (#324 part d). A full hold leaves the canister in space.
+	 */
+	private stepCargoCanisters(dt: number) {
+		if (this.canisters.length === 0) return;
+		const kept: Canister[] = [];
+		for (const canister of stepCanisters(
+			this.canisters,
+			dt,
+			this.world.gameTime,
+		)) {
+			if (!scoops(canister, this.world.ship)) {
+				kept.push(canister);
+				continue;
+			}
+			const took = scoopCargo(
+				this.commander,
+				canister.commodity,
+				canister.tonnes,
+			);
+			if (!took.accepted) {
+				kept.push(canister);
+				this.lastExit = "hold full: canister left in space";
+				continue;
+			}
+			this.commander = took.commander;
+			this.lastExit = `scooped ${canister.tonnes} t ${canister.commodity}`;
+			this.saveDirty();
+		}
+		this.canisters = kept;
+	}
 
 	/** Draw the leg's encounter, if the leg has none running. */
 	private scheduleLegEncounter() {
@@ -8146,6 +8214,7 @@ class Game {
 		// world masses are read, and may drop the player out of cruise before the
 		// regime branch below chooses how to fly this frame.
 		this.stepRaider(dt, shot);
+		this.stepCargoCanisters(dt);
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
@@ -9192,6 +9261,20 @@ class Game {
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			// #324's full duel detail, only while the glass shows the duel row.
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
+			// #324 part d: the raider lifecycle on the Communications console,
+			// derived from world state, newest first.
+			raiderLog: raiderLog(
+				this.commerceWorld.galaxies[this.world.system.record.galaxy],
+				this.world.system.record.index,
+				this.world.system.record.government,
+				this.world.gameTime,
+			)
+				.slice(0, 6)
+				.map((line) => {
+					const m = Math.floor(line.at / 60);
+					const s = Math.floor(line.at % 60);
+					return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}  ${line.text}`;
+				}),
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
@@ -10279,6 +10362,29 @@ class Game {
 		ctx.lineTo(w / 2, h / 2 - 2);
 		ctx.stroke();
 
+		// #324 part d: cargo canisters, a small green diamond each with its good
+		// and range, so a pilot can find them after a kill.
+		for (const canister of this.canisters) {
+			const dir = directionTo(camPos, canister.pos);
+			const at = dir && place(dir);
+			if (!at?.on) continue;
+			ctx.strokeStyle = "rgba(150, 240, 170, 0.9)";
+			ctx.fillStyle = "rgba(150, 240, 170, 0.9)";
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.moveTo(at.x, at.y - 6);
+			ctx.lineTo(at.x + 6, at.y);
+			ctx.lineTo(at.x, at.y + 6);
+			ctx.lineTo(at.x - 6, at.y);
+			ctx.closePath();
+			ctx.stroke();
+			ctx.font = "11px ui-monospace, Menlo, monospace";
+			ctx.fillText(
+				`CARGO ${canister.commodity.toUpperCase()}  ${range(length(sub(canister.pos, camPos)))}`,
+				at.x + 10,
+				at.y + 4,
+			);
+		}
 		// The production gun's tracer: on the glass in the cockpit, and over the
 		// whole frame in chase, where there is no glass (sage #328 — a chase view
 		// with no tracer is the dead-key defect again). The rig draws its own

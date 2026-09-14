@@ -86,6 +86,9 @@ export interface LiveCockpitState {
 	/** #324's duel detail for the Flight console — fore, aft, hull, energy bank and
 	 *  heat — or `null` in peace. */
 	duel: DuelConsoleReadout | null;
+	/** #324 part d: the Communications console's raider lifecycle lines,
+	 *  newest first, each with its game-clock time. */
+	raiderLog: readonly string[];
 	tuning: string;
 	/** §8's one forward-wall screen, supplied only for the docked station. */
 	stationConsole: {
@@ -151,6 +154,8 @@ interface CockpitElements {
 	duelHull: HTMLElement | null;
 	duelBank: HTMLElement | null;
 	duelHeat: HTMLElement | null;
+	/** #324 part d: the Communications console's raider log list. */
+	raiderLog: HTMLElement | null;
 	navList: HTMLElement | null;
 	navQuery: HTMLInputElement | null;
 	arrow: HTMLElement | null;
@@ -873,6 +878,7 @@ export class LiveCockpit {
 				duelHull: find("[data-live-duel-hull]"),
 				duelBank: find("[data-live-duel-bank]"),
 				duelHeat: find("[data-live-duel-heat]"),
+				raiderLog: find("[data-live-raider-log]"),
 				navList: find("[data-live-nav-list]"),
 				navQuery: this.root.querySelector<HTMLInputElement>(
 					"[data-live-nav-query]",
@@ -904,7 +910,7 @@ export class LiveCockpit {
 		// survives; the ring has to be put back.
 		this.applyFocusRing();
 		const duelKey = state.duel ? Object.values(state.duel).join(",") : "";
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}|${state.raiderLog.join("/")}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
 		// The reason can change while the hold stands — a carrier clears the lane
@@ -922,6 +928,12 @@ export class LiveCockpit {
 					: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
 		if (elements.contactCount)
 			elements.contactCount.textContent = String(state.contacts.length);
+		// #324 part d: the raider lifecycle, a line each. Escaped, although every
+		// line is built from a slot name and a fixed phrase.
+		if (elements.raiderLog)
+			elements.raiderLog.innerHTML = state.raiderLog.length
+				? state.raiderLog.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
+				: "<li>No signals</li>";
 		// **These two rendered as labels with nothing beside them.** §5 gives the
 		// Flight console assist and the Drive console the cruise charge, and the
 		// markup has carried both rows since the console was built — with an
@@ -1161,7 +1173,7 @@ export class LiveCockpit {
 		if (state.leftTab === "Galaxy Map")
 			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
-			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span></div></div></div>`;
+			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span></div></div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>
 				`<button class="lc-chip" type="button" data-live-nav-kind="${kind}" aria-pressed="${state.navFilter.kinds.includes(kind)}">${kind.toUpperCase()}</button>`,
