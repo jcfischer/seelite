@@ -10440,6 +10440,7 @@ if (query.has("model-viewer")) {
 		}
 	).__seelite.save = {
 		debounceMs: SAVE_DEBOUNCE_MS,
+		retryLimit: SAVE_RETRY_LIMIT,
 		dbName: SAVE_DB_NAME,
 		dbVersion: SAVE_DB_VERSION,
 		storeName: SAVE_STORE_NAME,
