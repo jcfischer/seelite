@@ -430,7 +430,10 @@ try {
 		"in flight, a debounced write failing SAVE_RETRY_LIMIT times shows the badge, on top of the glass",
 		raisedInFlight &&
 			inFlightState.shown &&
-			JSON.stringify(inFlightState.kinds) === '["live"]',
+			JSON.stringify(inFlightState.kinds) === '["live"]' &&
+			// Raised *at* the cap: a store that raised on the first failure also
+			// shows the badge here, one message earlier.
+			(inFlightState.fault ?? "").includes(`(${limits.retryLimit} in a row)`),
 		JSON.stringify(inFlightState),
 	);
 
@@ -697,7 +700,8 @@ try {
 			"while docked, a debounced write failing SAVE_RETRY_LIMIT times shows the badge over the station console",
 			raisedDocked &&
 				dockedState.shown &&
-				JSON.stringify(dockedState.kinds) === '["live"]',
+				JSON.stringify(dockedState.kinds) === '["live"]' &&
+				(dockedState.fault ?? "").includes(`(${limits.retryLimit} in a row)`),
 			JSON.stringify(dockedState),
 		);
 		await restoreWrites(page);
