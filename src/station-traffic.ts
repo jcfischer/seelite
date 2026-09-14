@@ -6,6 +6,7 @@
 import { berthCentre, parkedAttitude, recomposeOffset } from "./arrival";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import type { DisplayContact } from "./display-contact";
+import type { TrafficRoutePhase } from "./station-route";
 import { apertureFrame, frameAtPhase, slotBasis, V_GATE_KMS } from "./docking";
 import { HULL_SPECS, type HullEnvelope, type HullId } from "./hull";
 import { bodyVelocity, type System, stationOf, stationPose } from "./sim";
@@ -298,6 +299,67 @@ export function playerWinsLane(
 		{ participant: { kind: "player" }, readyAt, kind },
 	];
 	return [...turns].sort(compareStationTurns)[0]?.participant.kind === "player";
+}
+
+/** Why Traffic will not give the player the lane yet (#314). */
+export type LaneRefusal =
+	| "traffic-starting"
+	| "carrier-in-lane"
+	| "carrier-queued-ahead";
+
+/**
+ * What the player's lane arbitration reads of a route. `phase` is the route's
+ * own union, through a type-only import: `station-route.ts` imports this
+ * module, and a type import is erased before it could close that cycle.
+ */
+export interface LaneRouteView {
+	key: CarrierKey;
+	terminalStationId: string | null;
+	phase: TrafficRoutePhase;
+	laneRequest?: Pick<LaneRequest, "readyAt" | "kind"> | null;
+}
+
+/**
+ * The player's turn at a station's lane, as a reason rather than a yes/no.
+ *
+ * `null` is the lane. The order is the one `Game` used: a Traffic authority
+ * still warming cannot see an actor already committed to the lane, a carrier
+ * moving through it is non-preemptive, and otherwise the oldest ready request
+ * wins by `playerWinsLane`'s total order. **A refused request that keeps its
+ * `readyAt` keeps its place** in that order, which is what a held launch is.
+ */
+export function playerLaneRefusal(input: {
+	authorityReady: boolean;
+	routes: readonly LaneRouteView[];
+	stationId: string;
+	readyAt: number;
+	movement: LaneRequest["kind"];
+}): LaneRefusal | null {
+	if (!input.authorityReady) return "traffic-starting";
+	const here = input.routes.filter(
+		(route) => route.terminalStationId === input.stationId,
+	);
+	if (
+		here.some(
+			(route) => route.phase === "departing" || route.phase === "arriving",
+		)
+	)
+		return "carrier-in-lane";
+	const contenders: LaneRequest[] = here.flatMap((route) =>
+		route.laneRequest &&
+		(route.phase === "launch-queued" || route.phase === "lane-queued")
+			? [
+					{
+						participant: { kind: "carrier" as const, key: route.key },
+						readyAt: route.laneRequest.readyAt,
+						kind: route.laneRequest.kind,
+					},
+				]
+			: [],
+	);
+	return playerWinsLane(contenders, input.readyAt, input.movement)
+		? null
+		: "carrier-queued-ahead";
 }
 
 /** Station-owned local traversal laws used by route composition. */
