@@ -246,7 +246,8 @@ describe("the jump itself", () => {
 		// and the reset write the condition too; neither lands damage.
 		const take = methodBody("takeDamage");
 		expect(take).toContain("this.cancelJumpCharge(reason)");
-		expect(take).toContain("this.spoolLeftS = 0");
+		expect(take).toContain("this.cancelSpoolUp(reason)");
+		expect(methodBody("cancelSpoolUp")).toContain("this.spoolLeftS = 0");
 		expect(main.match(/this\.condition = applyDamage\(/g) ?? []).toHaveLength(
 			1,
 		);

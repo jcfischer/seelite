@@ -573,6 +573,10 @@ const PLAYER_ENVELOPE = HULL_SPECS[PLAYER_HULL[0]].env;
  *  once: `flightPerformance` is pure and the roster does not change mid-frame. */
 const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 
+/** A whole ship of the flown hull. A function, because a condition is mutable
+ *  state and every caller needs its own. */
+const playerFullCondition = (): ShipCondition => fullCondition(PLAYER_HULL[0]);
+
 /** Shared empty fallback for stations with no player or Traffic berth reservations. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
 
@@ -1948,12 +1952,16 @@ class Game {
 	 *
 	 * Three writers: `step` advances it, `resetFlightToStart` refills it, and
 	 * `takeDamage` is the only place damage lands — so every source of damage
-	 * cancels what damage cancels. **Not saved**, as before #324, so a reload
-	 * refills it; nothing else repairs it. `docking.md` §10 hands "how damage is
-	 * undone" to the combat node, and that is still an open question for the
-	 * principal rather than a default.
+	 * cancels what damage cancels.
+	 *
+	 * **Shields recover and hull does not.** A failed dock at the gate lands
+	 * inside a full fore shield, so it costs a few seconds of lowered shields
+	 * and nothing that lasts — the principal's ruling on #324 (2026-09-14),
+	 * recorded in `docking.md` §10. Hull damage stays until something repairs
+	 * it, and nothing does yet. **Not saved**, as before #324, so a reload
+	 * refills the whole condition.
 	 */
-	condition: ShipCondition = fullCondition(PLAYER_HULL[0]);
+	condition: ShipCondition = playerFullCondition();
 
 	/**
 	 * §12's dock state machine — arriving, docked, launching, or flying.
@@ -5454,11 +5462,8 @@ class Game {
 				break;
 			case "j":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
-				else if (this.spoolLeftS > 0) {
-					this.spoolLeftS = 0;
-					this.detour = null;
-					this.lastExit = "spool-up cancelled";
-				} else this.engageCruise();
+				else if (this.spoolLeftS > 0) this.cancelSpoolUp();
+				else this.engageCruise();
 				return;
 			case "`":
 				// §8's jump, on the one key left.
@@ -6416,6 +6421,7 @@ class Game {
 			this.dock.stationId === target
 				? (this.dock.berthId ?? state.berthId)
 				: state.berthId;
+		const full = playerFullCondition();
 		return {
 			stationId: target,
 			rangeKm: length(pose.rel),
@@ -6487,8 +6493,8 @@ class Game {
 			// The full head-on pool and the full condition, so a probe asserting
 			// §2.1's quarter-pool bound — and resetting to full before it — reads
 			// both off the page instead of restating the shield and hull figures.
-			poolMax: headOnPool(fullCondition(PLAYER_HULL[0])),
-			conditionFull: fullCondition(PLAYER_HULL[0]),
+			poolMax: headOnPool(full),
+			conditionFull: full,
 			lastEntry: this.lastEntry,
 		};
 	}
@@ -7192,7 +7198,7 @@ class Game {
 		this.clearFlightSession();
 		// A reset is a boot, and a boot has a whole ship. Here and not in
 		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
-		this.condition = fullCondition(PLAYER_HULL[0]);
+		this.condition = playerFullCondition();
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -7410,11 +7416,21 @@ class Game {
 		if (!(amount > 0)) return;
 		this.condition = applyDamage(this.condition, amount, side);
 		this.cancelJumpCharge(reason);
-		if (this.spoolLeftS > 0) {
-			this.spoolLeftS = 0;
-			this.detour = null;
-			this.lastExit = `spool-up cancelled — ${reason}`;
-		}
+		this.cancelSpoolUp(reason);
+	}
+
+	/**
+	 * `in-system-travel.md` §4's cruise spool-up, cancelled — by the player's
+	 * key (no reason) or by damage. One method for both, for the reason
+	 * `cancelJumpCharge` is one.
+	 */
+	cancelSpoolUp(reason?: string) {
+		if (this.spoolLeftS <= 0) return;
+		this.spoolLeftS = 0;
+		this.detour = null;
+		this.lastExit = reason
+			? `spool-up cancelled — ${reason}`
+			: "spool-up cancelled";
 	}
 
 	/**

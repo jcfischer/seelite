@@ -826,7 +826,13 @@ before merge.
   quarter-pool bound at `V_GATE`, not a parameter substituted for it. §9.1.10's
   parameterised test can never fail on the value #8 actually ships, so without
   that obligation D1's survivability guarantee crosses a node boundary with an
-  owner on neither side. #8 also owns replacing §6's interim hostility cooldown;
+  owner on neither side. **#324 (a) discharged the test**: `DOCKING_DAMAGE_SCALE`
+  is asserted in `tests/ship-condition.test.ts` against a quarter of the
+  head-on pool (fore shield and hull) on every hull. **And the principal ruled
+  on the pools (2026-09-14):** shields recharge, hull does not, so a failed
+  entry that stays inside the fore shield costs seconds of lowered shields and
+  nothing lasting; repair of hull damage is still open. #8 also owns replacing
+  §6's interim hostility cooldown;
   the
   legal-status predicate behind §6's shipyard scan and the decay that clears
   station hostility. It inherits §9.1.10 as a test it must satisfy, not author.

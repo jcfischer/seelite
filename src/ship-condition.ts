@@ -19,9 +19,10 @@ import { type Vec3, dot } from "./vec3";
 export const SHIELD_POOL = 106;
 /** The shared energy bank's capacity. */
 export const ENERGY_BANK = 100;
-/** Laser heat at which the gun locks. It releases at half (`HEAT_RELEASE`). */
+/** Laser heat at which the gun locks. */
 export const HEAT_LOCK = 100;
-const HEAT_RELEASE = HEAT_LOCK * 0.5;
+/** Heat a locked gun must cool to before it fires again. */
+export const HEAT_RELEASE = HEAT_LOCK * 0.5;
 
 /** §2's starter weapon. Rates per second of sim time. */
 export const PULSE_LASER = {

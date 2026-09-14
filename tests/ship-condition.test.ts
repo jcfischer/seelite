@@ -13,6 +13,7 @@ import {
 	ENERGY_REGEN_PER_S,
 	HEAT_COOL_PER_S,
 	HEAT_LOCK,
+	HEAT_RELEASE,
 	PULSE_LASER,
 	SHIELD_POOL,
 	SHIELD_RECHARGE_DELAY_S,
@@ -159,10 +160,8 @@ describe("the pulse laser", () => {
 			c = stepCondition(c, DT, true).condition;
 			seconds += DT;
 		}
-		expect(c.heat).toBeLessThanOrEqual(HEAT_LOCK * 0.5);
-		expect(c.heat).toBeGreaterThan(
-			HEAT_LOCK * 0.5 - HEAT_COOL_PER_S * DT - 1e-9,
-		);
+		expect(c.heat).toBeLessThanOrEqual(HEAT_RELEASE);
+		expect(c.heat).toBeGreaterThan(HEAT_RELEASE - HEAT_COOL_PER_S * DT - 1e-9);
 	});
 
 	test("heat never exceeds the instrument scale", () => {

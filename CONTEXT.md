@@ -245,7 +245,15 @@ screen at `economy-trade.md` §6.1's 0.2 Cr per 0.1 LY. Its capacity is
 `tankLy`, because that constant is the connectivity graph's edge predicate —
 #185 is the node that makes both hull-aware. Distinct from the **drive charge**,
 which is cruise's own 12 AU reserve with free refills on docking.
-_Avoid_: Fuel (unqualified), drive charge, energy
+_Avoid_: Fuel (unqualified), drive charge, energy (unqualified)
+
+**Energy bank**:
+A ship's shared combat reserve (`combat-model.md` §2): lasers spend it, and it
+recharges the lower shield first, so weapon fire and recovery compete. It
+regenerates on its own while the gun is idle and is never bought or refuelled.
+`src/ship-condition.ts` owns its figures. Distinct from the **Hyperspace tank**
+and the **drive charge**, which move the ship; the energy bank never does.
+_Avoid_: Energy (unqualified), capacitor, power
 
 **Witchspace**:
 Where the ship is between two systems. It costs no sim time today: the clock
