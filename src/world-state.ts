@@ -40,6 +40,7 @@ import {
 import { type DeficitMap, parseDeficits } from "./deficits";
 import { generateGalaxy } from "./galaxy";
 import type { HullId } from "./hull";
+import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
 import type { StationType } from "./station";
 import { stationTrafficRoster } from "./station-traffic";
 import { generateContents } from "./system";
@@ -59,7 +60,7 @@ export const WORLD_SCHEMA_VERSION = 2;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 5;
+export const WORLD_GENERATOR_VERSION = 6;
 
 export const GALAXY_COUNT = 8;
 
@@ -295,6 +296,9 @@ export type GeneratedCarrier = GeneratedCarrierBase &
 				homeStationType: StationType;
 				hullId: HullId;
 		  }
+		/** A raider encounter slot (`raider-slots.ts`, #324). It belongs to its
+		 *  system rather than to a station, so it has no parent and no orbit. */
+		| { kind: "raider"; hullId: HullId }
 	);
 
 /**
@@ -339,6 +343,17 @@ export function* enumerateCarriers(
 					orbitTheta0: station.orbit.theta0,
 				};
 		}
+		for (const slot of raiderSlots(systemIndex, record.government))
+			yield {
+				systemIndex,
+				localCarrierId: slot.localCarrierId,
+				key: slot.key,
+				kind: "raider",
+				hullId: RAIDER_HULL_ID,
+				parentId: null,
+				orbitRadiusKm: 0,
+				orbitTheta0: 0,
+			};
 	}
 }
 
@@ -375,7 +390,9 @@ export const carrierBaselineFingerprint = (
 		const generatedType =
 			c.kind === "station"
 				? c.stationType
-				: `traffic:${c.homeStationType}:${c.hullId}`;
+				: c.kind === "traffic"
+					? `traffic:${c.homeStationType}:${c.hullId}`
+					: `raider:${c.hullId}`;
 		parts.push(
 			`${c.systemIndex}|${c.localCarrierId}|${generatedType}|${c.parentId ?? "-"}|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`,
 		);

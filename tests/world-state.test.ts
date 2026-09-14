@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { raiderSlotCount } from "../src/raider-slots";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
@@ -107,7 +108,21 @@ describe("§9.1 namespace and baseline stability", () => {
 		// berth. The mandatory trade station contributes eight carriers (its own
 		// plus seven of eight berths) and a three-role system at most eighteen.
 		// It read 24932 while Traffic held every berth.
-		expect(carriers).toBe(21736);
+		//
+		// #324 added the raider encounter slots, one to four per system by law,
+		// and left the station and Traffic slots exactly where they were: 21736
+		// of these are still those, and the rest are raiders.
+		expect(carriers).toBe(27802);
+		let raiders = 0;
+		let expectedRaiders = 0;
+		for (let galaxy = 0; galaxy < 8; galaxy++) {
+			for (const c of enumerateCarriers(WORLD, galaxy))
+				if (c.kind === "raider") raiders++;
+			for (const record of generateGalaxy(WORLD, galaxy).systems)
+				expectedRaiders += raiderSlotCount(record.government);
+		}
+		expect(raiders).toBe(expectedRaiders);
+		expect(carriers - raiders).toBe(21736);
 		let systemsWithStations = 0;
 		let widest = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
@@ -117,10 +132,12 @@ describe("§9.1 namespace and baseline stability", () => {
 			systemsWithStations += perSystem.size;
 			widest = Math.max(widest, ...perSystem.values());
 		}
-		expect(widest).toBe(18);
+		expect(widest).toBe(21);
 		expect(systemsWithStations).toBe(8 * 256);
-		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * 8);
-		expect(carriers).toBeLessThanOrEqual(8 * 256 * 18);
+		// Eight station and Traffic carriers at the least plus one raider slot;
+		// eighteen at the most plus four.
+		expect(carriers).toBeGreaterThanOrEqual(8 * 256 * (8 + 1));
+		expect(carriers).toBeLessThanOrEqual(8 * 256 * (18 + 4));
 	});
 
 	test("a local id repeats across systems and never inside one", () => {
@@ -139,8 +156,9 @@ describe("§9.1 namespace and baseline stability", () => {
 		// station in nearly every system.
 		expect(repeatsAcrossSystems).toBeGreaterThan(200);
 		// Three station carriers and fifteen Traffic ones — the widest system's
-		// roster since #277 reserved a visitor berth at each of its stations.
-		expect(globalIds.size).toBe(18);
+		// roster since #277 reserved a visitor berth at each of its stations —
+		// and #324's four raider slots.
+		expect(globalIds.size).toBe(22);
 	});
 
 	test("station and Traffic carrier metadata stay structurally discriminated", () => {
@@ -155,6 +173,11 @@ describe("§9.1 namespace and baseline stability", () => {
 			expect(traffic.homeStationType).toBeDefined();
 			expect(traffic.hullId).toBeDefined();
 		}
+		const raider = carriers.find((carrier) => carrier.kind === "raider");
+		if (!raider) throw new Error("missing raider carrier kind");
+		if (raider.kind === "raider") expect(raider.hullId).toBe("raider");
+		// A raider slot belongs to its system, not to a station.
+		expect(raider.parentId).toBeNull();
 	});
 
 	test("market rows key on the same composite namespace", () => {
@@ -180,7 +203,7 @@ describe("§9.1 namespace and baseline stability", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
 		// `WORLD_GENERATOR_VERSION` owes a bump and a migration.
-		expect(WORLD_GENERATOR_VERSION).toBe(5);
+		expect(WORLD_GENERATOR_VERSION).toBe(6);
 		const fingerprints = [0, 1, 2, 3, 4, 5, 6, 7].map((g) =>
 			carrierBaselineFingerprint(WORLD, g),
 		);
@@ -202,6 +225,9 @@ describe("§9.1 namespace and baseline stability", () => {
  * - 4 → 5: #277 reserved a visitor berth at every station, so the roster is the
  *   catalogue minus one and every station loses its highest-ordinal Traffic
  *   slot.
+ * - 5 → 6: #324 added one to four raider encounter slots to every system, by
+ *   the principal's ruling that raiders are enumerated carriers. The station
+ *   and Traffic slots did not move — the count row above holds them at 21736.
  *
  * Version 4 changed all eight hashes because every generated station gained
  * Traffic Carrier slots; version 5 changes all eight again because every one of
@@ -221,8 +247,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	3533000626, 1070577234, 2722668670, 3149233322, 2273383725, 63070487,
-	656005811, 694742327,
+	838257999, 663646173, 2373306951, 957887233, 2147018064, 3527541206,
+	2815733683, 3044912208,
 ];
 
 // ---------------------------------------------------------------------------

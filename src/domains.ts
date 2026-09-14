@@ -61,6 +61,10 @@ export const DOMAIN = {
 	 *  and whose berth side come from one number cannot vary one without the
 	 *  other. */
 	STATION_ASSEMBLY: 13,
+	/** A cruise leg's raider encounter (`raider-slots.ts`, #324): whether one
+	 *  comes, which slot, where and when. Split again by the leg, so a leg's
+	 *  draw moves nothing else in the system and no two legs share one. */
+	ENCOUNTER: 14,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
