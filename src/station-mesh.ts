@@ -5062,7 +5062,12 @@ const WHEEL = Object.freeze({
 });
 
 /** A rectangular-section rim, swept round the axis as an open loft. */
-function wheelRim(innerKm: number, outerKm: number, z: number, widthKm: number) {
+function wheelRim(
+	innerKm: number,
+	outerKm: number,
+	z: number,
+	widthKm: number,
+) {
 	const station = (radius: number, at: number): Ring => ({
 		z: at,
 		w: radius,
@@ -5164,15 +5169,39 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 		const theta = (k / WHEEL.frameStations) * Math.PI * 2;
 		const next = ((k + 1) / WHEEL.frameStations) * Math.PI * 2;
 		bars.push(
-			frameBar(at(railOuter, theta, railAft), at(railOuter, theta, railFore), bar),
-			frameBar(at(railInner, theta, railAft), at(railInner, theta, railFore), bar),
-			frameBar(at(railInner, theta, railFore), at(railOuter, theta, railFore), bar),
-			frameBar(at(railInner, theta, railAft), at(railOuter, theta, railAft), bar),
+			frameBar(
+				at(railOuter, theta, railAft),
+				at(railOuter, theta, railFore),
+				bar,
+			),
+			frameBar(
+				at(railInner, theta, railAft),
+				at(railInner, theta, railFore),
+				bar,
+			),
+			frameBar(
+				at(railInner, theta, railFore),
+				at(railOuter, theta, railFore),
+				bar,
+			),
+			frameBar(
+				at(railInner, theta, railAft),
+				at(railOuter, theta, railAft),
+				bar,
+			),
 			// One diagonal per bay on the outer face, alternating, which is what
 			// makes the lattice read as a structure rather than a ladder.
 			k % 2 === 0
-				? frameBar(at(railOuter, theta, railAft), at(railOuter, next, railFore), bar)
-				: frameBar(at(railOuter, theta, railFore), at(railOuter, next, railAft), bar),
+				? frameBar(
+						at(railOuter, theta, railAft),
+						at(railOuter, next, railFore),
+						bar,
+					)
+				: frameBar(
+						at(railOuter, theta, railFore),
+						at(railOuter, next, railAft),
+						bar,
+					),
 		);
 	}
 	const members = new THREE.Mesh(mergeGeometries(bars), frameMaterial);
