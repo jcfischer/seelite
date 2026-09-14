@@ -16,6 +16,7 @@ import {
 	INTERDICTION_RANGE_KM,
 	cruiseTurnRate,
 } from "../src/interdiction";
+import { raiderAtDrop } from "../src/duel";
 import { legEncounter, raiderSlots } from "../src/raider-slots";
 import { PULSE_LASER, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
@@ -23,6 +24,21 @@ import { type Vec3, add, dot, length, scale, sub, v3 } from "../src/vec3";
 
 const DT = 1 / 60;
 const WORLD = 0x5ee11e;
+
+/** Every slot operational: the world before any raider is destroyed. */
+const ALL_UP = () => true;
+
+/** `forceEncounter` with every slot up, which every row below but the
+ *  consequence rows wants. It cannot return null then. */
+function forceUp(
+	...args: Parameters<typeof forceEncounter> extends [unknown, ...infer Rest]
+		? Rest
+		: never
+): Encounter {
+	const e = forceEncounter(ALL_UP, ...args);
+	if (!e) throw new Error("every slot is up, so an encounter must be forced");
+	return e;
+}
 
 const yaw = (v: Vec3, rad: number): Vec3 =>
 	v3(
@@ -110,7 +126,7 @@ describe("scheduling", () => {
 		let checked = 0;
 		for (let leg = 0; leg < 200; leg++) {
 			const drawn = legEncounter(record.seed, record.government, leg);
-			const e = scheduleEncounter(5, record, leg, 100);
+			const e = scheduleEncounter(ALL_UP, 5, record, leg, 100);
 			if (!drawn) {
 				expect(e).toBeNull();
 				continue;
@@ -125,12 +141,62 @@ describe("scheduling", () => {
 		}
 		expect(checked).toBeGreaterThan(0);
 	});
+
+	test("a slot that is not operational fields no raider, and the draw does not move (#324 d)", () => {
+		const record = generateGalaxy(WORLD, 0).systems[5];
+		const slots = raiderSlots(5, record.government);
+		let checked = 0;
+		for (let leg = 0; leg < 200; leg++) {
+			const drawn = legEncounter(record.seed, record.government, leg);
+			if (!drawn) continue;
+			const down = slots[drawn.slotIndex].key;
+			// Only the drawn slot is down; the others are up, and still unused.
+			expect(
+				scheduleEncounter((k) => k !== down, 5, record, leg, 100),
+			).toBeNull();
+			checked++;
+		}
+		expect(checked).toBeGreaterThan(0);
+	});
+
+	test("a kill reports where the raider came apart, and only on that frame", () => {
+		const start = forceUp(3, 0, "ahead", 10, 30);
+		const pilotShip = { pos: v3(0, 0, 0), vel: v3(0, 0, -0.2) };
+		const nearlyDead: Encounter = {
+			...start,
+			phase: "duel",
+			raider: {
+				flight: raiderAtDrop(v3(0, 0, -3), pilotShip, 7),
+				condition: { ...fullCondition("raider"), fore: 0, aft: 0, hull: 1e-6 },
+			},
+		};
+		const flight = {
+			pos: v3(0, 0, 0),
+			nose: v3(0, 0, -1),
+			inCruise: false,
+			speedKms: 0,
+		};
+		const idle = stepEncounter(nearlyDead, frame(20, flight, false));
+		expect(idle.wreck).toBeNull();
+		const step = stepEncounter(nearlyDead, frame(20, flight, true));
+		expect(step.encounter.end).toBe("destroyed");
+		expect(step.wreck).not.toBeNull();
+		expect(step.wreck?.pos.z).toBeCloseTo(-3, 1);
+	});
+
+	test("a forced raider takes the first operational slot, or none", () => {
+		const slots = raiderSlots(3, 0);
+		const e = forceEncounter((k) => k !== slots[0].key, 3, 0, "ahead", 10, 30);
+		expect(e?.slot).toEqual(slots[1]);
+		expect(e?.name).toBe("Raider 02");
+		expect(forceEncounter(() => false, 3, 0, "ahead", 10, 30)).toBeNull();
+	});
 });
 
 describe("appearance", () => {
 	for (const bearing of ["behind", "alongside", "ahead"] as const)
 		test(`a raider appears ${bearing} at its range`, () => {
-			const e = forceEncounter(3, 0, bearing, 10, 30);
+			const e = forceUp(3, 0, bearing, 10, 30);
 			const { firstContact, pilot } = fly(e, { untilS: 10.05 });
 			expect(firstContact).not.toBeNull();
 			if (!firstContact) return;
@@ -143,7 +209,7 @@ describe("appearance", () => {
 		});
 
 	test("nothing shows before it appears", () => {
-		const e = forceEncounter(3, 0, "behind", 10, 30);
+		const e = forceUp(3, 0, "behind", 10, 30);
 		const f = { pos: v3(), nose: v3(0, 0, -1), inCruise: true, speedKms: 500 };
 		const step = stepEncounter(e, frame(9.5, f));
 		expect(step.contact).toBeNull();
@@ -151,7 +217,7 @@ describe("appearance", () => {
 	});
 
 	test("a leg that ends before the raider appears ends the encounter unseen", () => {
-		const e = forceEncounter(3, 0, "behind", 10, 30);
+		const e = forceUp(3, 0, "behind", 10, 30);
 		const f = { pos: v3(), nose: v3(0, 0, -1), inCruise: false, speedKms: 0 };
 		const step = stepEncounter(e, frame(10.2, f));
 		expect(step.contact).toBeNull();
@@ -162,7 +228,7 @@ describe("appearance", () => {
 
 describe("the contest in play", () => {
 	test("a pilot holding course is dropped out of cruise after the charge", () => {
-		const e = forceEncounter(3, 0, "behind", 10, 30);
+		const e = forceUp(3, 0, "behind", 10, 30);
 		const { dropAt, e: after } = fly(e, { untilS: 20 });
 		expect(dropAt).not.toBeNull();
 		expect((dropAt ?? 0) - 10).toBeGreaterThanOrEqual(
@@ -174,7 +240,7 @@ describe("the contest in play", () => {
 
 	test("a pilot turning hard at the raider's appearance breaks free", () => {
 		const rate = cruiseTurnRate(flightPerformance("courier"));
-		const e = forceEncounter(3, 0, "behind", 10, 30);
+		const e = forceUp(3, 0, "behind", 10, 30);
 		const flown = fly(e, { untilS: 20, turn: (t) => (t >= 10 ? rate : 0) });
 		expect(flown.dropAt).toBeNull();
 		expect(flown.e.phase).toBe("over");
@@ -182,7 +248,7 @@ describe("the contest in play", () => {
 	});
 
 	test("a pilot who drops out mid-contest submits: the duel starts", () => {
-		const e = forceEncounter(3, 0, "behind", 10, 30);
+		const e = forceUp(3, 0, "behind", 10, 30);
 		const flown = fly(e, { untilS: 11.2, cruise: (t) => t < 11 });
 		expect(flown.e.phase).toBe("duel");
 	});
@@ -193,7 +259,7 @@ describe("an encounter belongs to its leg (sage round 1)", () => {
 		// Round 1: `missed` was checked only once the appearance time had
 		// passed, so a player who dropped out and spooled again inside the
 		// delay met the old leg's raider — and that leg's own draw was skipped.
-		const e = forceEncounter(3, 0, "behind", 30, 30);
+		const e = forceUp(3, 0, "behind", 30, 30);
 		const f = { pos: v3(), nose: v3(0, 0, -1), inCruise: false, speedKms: 0 };
 		const step = stepEncounter(e, frame(12, f));
 		expect(step.encounter.phase).toBe("over");
@@ -202,7 +268,7 @@ describe("an encounter belongs to its leg (sage round 1)", () => {
 	});
 
 	test("a raider that would appear beyond lock range is lost, and never shows", () => {
-		const e = forceEncounter(3, 0, "behind", 10, INTERDICTION_RANGE_KM + 1);
+		const e = forceUp(3, 0, "behind", 10, INTERDICTION_RANGE_KM + 1);
 		const f = { pos: v3(), nose: v3(0, 0, -1), inCruise: true, speedKms: 500 };
 		const step = stepEncounter(e, frame(10.2, f));
 		expect(step.encounter.phase).toBe("over");
@@ -213,13 +279,13 @@ describe("an encounter belongs to its leg (sage round 1)", () => {
 
 describe("the duel in play", () => {
 	test("the raider closes and its fire comes back for the player to take", () => {
-		const e = forceEncounter(3, 0, "ahead", 10, 30);
+		const e = forceUp(3, 0, "ahead", 10, 30);
 		const flown = fly(e, { untilS: 90 });
 		expect(flown.hits).toBeGreaterThan(0);
 	});
 
 	test("a pilot back in cruise has escaped", () => {
-		const e = forceEncounter(3, 0, "behind", 10, 30);
+		const e = forceUp(3, 0, "behind", 10, 30);
 		const flown = fly(e, {
 			untilS: 30,
 			// Caught at the charge, then back in cruise from 20 s.

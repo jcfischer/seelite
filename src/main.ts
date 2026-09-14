@@ -7657,6 +7657,14 @@ class Game {
 		}
 	}
 
+	/**
+	 * Whether a raider slot can field a raider now (#324 part d): operational
+	 * in world state at this game time. A destroyed or repairing slot is no
+	 * route threat.
+	 */
+	private readonly slotOperational = (key: CarrierKey): boolean =>
+		this.carrierCondition(key).condition === "operational";
+
 	/** Draw the leg's encounter, if the leg has none running. */
 	private scheduleLegEncounter() {
 		if (this.combatRig) return;
@@ -7665,9 +7673,10 @@ class Game {
 		const now = this.world.gameTime;
 		const leg = Math.floor(now);
 		this.encounter =
-			scheduleEncounter(record.index, record, leg, now) ??
+			scheduleEncounter(this.slotOperational, record.index, record, leg, now) ??
 			(RAIDER_PLAYTEST
 				? forceEncounter(
+						this.slotOperational,
 						record.index,
 						record.government,
 						PLAYTEST_BEARINGS[leg % PLAYTEST_BEARINGS.length],
@@ -7685,6 +7694,7 @@ class Game {
 	forceRaider(bearing: EncounterBearing = "behind", inS = 1, rangeKm = 30) {
 		const record = this.world.system.record;
 		this.encounter = forceEncounter(
+			this.slotOperational,
 			record.index,
 			record.government,
 			bearing,
