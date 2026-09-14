@@ -212,8 +212,8 @@ describe("the volume holds what it says it holds", () => {
 		// used to read "the two pad roles' bays are held by the canonical view
 		// set alone"; those roles have no bay now, so there is nothing to poke
 		// through a hull, and what they draw stands in *front* of the plane,
-		// where `tests/station-mesh.test.ts`'s corridor row measures it over all
-		// twelve forms.
+		// where `tests/station-mesh.test.ts`'s corridor row measures it over every
+		// form.
 		for (const type of STATION_TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const interior = interiorOf(type);

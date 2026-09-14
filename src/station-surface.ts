@@ -1,7 +1,7 @@
 /**
  * How a station's surfaces are *made*, as opposed to what shape they are.
  *
- * `station-mesh.ts` authors twelve forms; this module gives them a surface.
+ * `station-mesh.ts` authors the forms; this module gives them a surface.
  * The two share only `shell`'s use of a panel size, and separating them keeps a
  * 2,900-line module from being two subjects at once: UV projection, the
  * triplanar patch, normal smoothing and the asteroid all answer "how does this

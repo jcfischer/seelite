@@ -367,7 +367,7 @@ describe("§7's secondary cue, and the detail that is not the identity", () => {
 		// stands *proud* of the plane rather than behind it, and it clears the
 		// bars laterally instead — its ring's hole is cut to the approach
 		// corridor, which is wider than the bars are set. That clearance is the
-		// corridor row's, and it is asserted over all twelve forms.
+		// corridor row's, and it is asserted over every form.
 		for (const type of TYPES) {
 			if (STATION_GEOMETRY[type].aperture.kind !== "slot") continue;
 			const { root } = buildStationMesh(type, GREY, 0, 0);
