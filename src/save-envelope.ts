@@ -359,8 +359,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		fail(
 			"integrity check failed — this save does not match its own checksum. " +
 				"It was edited, corrupted, or assembled from two saves; the hash " +
-				"cannot say which. It is left as it is — export it rather than " +
-				"loading it.",
+				"cannot say which.",
 		);
 	return { world: parseWorld(o.world), commander: parseCommander(o.commander) };
 }
