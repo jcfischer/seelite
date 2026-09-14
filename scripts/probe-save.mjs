@@ -70,7 +70,8 @@ const badgeOf = (page) =>
 		const g = window.__seelite;
 		const el = document.querySelector("[data-save-badge]");
 		const kinds = [...(g.saveStore?.faultKinds ?? [])].sort();
-		if (!el) return { mounted: false, shown: false, kinds, fault: g.saveFault };
+		if (!el)
+			return { mounted: false, shown: false, kinds, fault: g.saveFaultText() };
 		const r = el.getBoundingClientRect();
 		const hit = el.hidden
 			? null
@@ -83,7 +84,7 @@ const badgeOf = (page) =>
 				r.height > 0 &&
 				(hit === el || el.contains(hit)),
 			kinds,
-			fault: g.saveFault,
+			fault: g.saveFaultText(),
 		};
 	});
 
@@ -437,7 +438,9 @@ try {
 		JSON.stringify(inFlightState),
 	);
 
-	// The badge opens the overlay, whose message is `saveFault` (§11.5).
+	// The badge opens the overlay, which names the fault the store holds (§11.5).
+	// Checked against the words the forced failure must produce, not against
+	// the page's own reader, which would compare the overlay with itself.
 	const opened = await page
 		.click("[data-save-badge]", { timeout: 5_000 })
 		.then(() =>
@@ -449,14 +452,13 @@ try {
 		);
 	const shownFault = await page.evaluate(() => ({
 		text: document.querySelector("[data-commander-fault]")?.textContent ?? null,
-		saveFault: window.__seelite.saveFault,
 	}));
 	check(
 		"clicking the badge opens the Commander overlay with the fault it holds",
 		opened &&
-			shownFault.text !== null &&
-			shownFault.text === shownFault.saveFault &&
-			shownFault.text.includes("in a row"),
+			(shownFault.text ?? "").includes(
+				`(${limits.retryLimit} in a row): probe: forced write failure`,
+			),
 		JSON.stringify(shownFault),
 	);
 	await page.keyboard.press("Escape");
@@ -707,10 +709,11 @@ try {
 		await restoreWrites(page);
 		await page.evaluate(() => window.__seelite.saveStore?.markDirty());
 		const clearedDocked = await badgeBecomes(page, false, badgeWaitMs);
+		const clearedDockedState = await badgeOf(page);
 		check(
 			"and a good debounced write clears it while docked",
-			clearedDocked && (await badgeOf(page)).kinds.length === 0,
-			JSON.stringify(await badgeOf(page)),
+			clearedDocked && clearedDockedState.kinds.length === 0,
+			JSON.stringify(clearedDockedState),
 		);
 
 		await forceWriteFailures(page, null);
@@ -728,7 +731,10 @@ try {
 				JSON.stringify(dockFaultState.kinds) === '["lastDocked","live"]',
 			JSON.stringify(dockFaultState),
 		);
-		await restoreWrites(page);
+		// **One debounced failure, then its retry lands.** The overlay named that
+		// write rather than the dock flush for a round, while the badge stood for
+		// `lastDocked` (sage, #311 round 1).
+		await forceWriteFailures(page, 1);
 		await page.evaluate(() => window.__seelite.saveStore?.markDirty());
 		const liveOnly = await page
 			.waitForFunction(
@@ -745,11 +751,13 @@ try {
 			);
 		await twoFrames(page);
 		const afterDebounce = await badgeOf(page);
+		await restoreWrites(page);
 		check(
-			"a good debounced write does not clear a dock-flush fault",
+			"a debounced write that fails and then lands does not clear a dock-flush fault, nor replace its words",
 			liveOnly &&
 				afterDebounce.shown &&
-				JSON.stringify(afterDebounce.kinds) === '["lastDocked"]',
+				JSON.stringify(afterDebounce.kinds) === '["lastDocked"]' &&
+				(afterDebounce.fault ?? "").startsWith("the dock save would not write"),
 			JSON.stringify(afterDebounce),
 		);
 		await page.evaluate(() => {

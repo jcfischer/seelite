@@ -381,7 +381,9 @@ fails and raises its own badge rather than blocking the upgrade forever.
   `saveFlush` only logged a failed flush (`main.ts`, its `.catch`), so the dock
   flush — the write that lays down `lastDocked` — could fail with no player
   surface at all. A failed `quit` flush has no frame left to draw it in and
-  stays a log line. The badge opens the overlay, whose message is `saveFault`.
+  stays a log line. The badge opens the overlay, which names the failure still
+  held for each kind (`Game.saveFaultText`) — not the last failure, which may be
+  a write that has since landed.
   **With no store attached, a `saveFault` is itself the badge**: a
   `?boot=direct` boot whose attach failed plays on with nothing that will write
   (`saveFaultHeld`, `src/save-badge.ts`).

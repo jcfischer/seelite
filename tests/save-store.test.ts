@@ -29,6 +29,7 @@ import {
 	SaveStore,
 	type SlotLocks,
 } from "../src/save-store";
+import { heldSaveFault } from "../src/save-badge";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { newWorld, visit } from "../src/world-state";
 
@@ -886,6 +887,24 @@ describe("§11.5 — faults are held per record kind", () => {
 		h.store.markDirty();
 		await h.store.flush("dock");
 		expect([...h.store.faultKinds]).toEqual([]);
+	});
+
+	test("a later failure that lands does not replace a held dock fault's words (#311 round 1)", async () => {
+		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
+		const dockWords = heldSaveFault(h.store, null);
+		expect(dockWords).toContain("the dock save would not write");
+		// One debounced failure below the cap, then its retry lands.
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		h.clock.fire();
+		await h.store.settled();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.faultKinds]).toEqual(["lastDocked"]);
+		expect(heldSaveFault(h.store, null)).toBe(dockWords);
 	});
 
 	test("a debounced write is a fault only once it has failed SAVE_RETRY_LIMIT times in a row", async () => {

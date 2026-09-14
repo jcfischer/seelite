@@ -22,6 +22,7 @@ import {
 	type FlushReason,
 	type PendingNewGame,
 	type SaveBackend,
+	type SaveFault,
 	type SaveStore,
 } from "./save-store";
 
@@ -70,6 +71,12 @@ export const flushFault = (reason: FlushReason, error: unknown): string =>
 /** A debounced write that did not land, and how many in a row have not. */
 export const writeFault = (consecutive: number, error: unknown): string =>
 	`the save would not write (${consecutive} in a row): ${messageOf(error)}`;
+
+/** The words for a fault the store holds (§11.5). */
+export const heldFaultText = (fault: SaveFault): string =>
+	fault.reason === "debounce"
+		? writeFault(fault.consecutive, fault.error)
+		: flushFault(fault.reason, fault.error);
 
 /** The pointer named a Commander that is gone (§11.4). Said, not a fault: the
  *  default Commander loads normally. */

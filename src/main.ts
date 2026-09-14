@@ -394,7 +394,7 @@ import {
 import {
 	mountSaveBadge,
 	type SaveBadgeHandle,
-	saveFaultHeld,
+	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
@@ -8655,7 +8655,7 @@ class Game {
 		if (this.legacyHud) this.updateHud();
 		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
 		// badge shows in every view.
-		this.saveBadge?.update(saveFaultHeld(this.saveStore, this.saveFault));
+		this.saveBadge?.update(this.saveFaultText() !== null);
 	};
 
 	private readonly chaseOffset = new THREE.Vector3();
@@ -8943,14 +8943,20 @@ class Game {
 		// selected one.
 		void this.saveStore?.flush(reason).catch((error) => {
 			// D9: a failed write leaves the previous record in place. Stale
-			// rather than broken, and said out loud rather than swallowed.
-			// **Out loud to the player too (§11.5).** For three PRs this only
-			// logged, so the dock flush — the write that lays down `lastDocked` —
-			// could fail with nothing on the glass. The store holds the kinds; this
-			// is the message the badge's overlay shows.
-			this.saveFault = flushFault(reason, error);
-			console.error(`save: ${this.saveFault}`, error);
+			// rather than broken, and said out loud rather than swallowed. The
+			// store holds the failure against the kinds it did not write, which is
+			// what the badge and its overlay read (§11.5, `saveFaultText`).
+			console.error(`save: ${flushFault(reason, error)}`, error);
 		});
+	}
+
+	/**
+	 * The save fault the badge stands for, in the overlay's words, or `null`
+	 * while none is held (`heldSaveFault`). The one reader for the frame loop's
+	 * badge and for the overlay the badge opens, so the two cannot disagree.
+	 */
+	saveFaultText(): string | null {
+		return heldSaveFault(this.saveStore, this.saveFault);
 	}
 
 	/** Applies a complete commerce result or leaves both owner states untouched. */
@@ -10336,15 +10342,13 @@ if (query.has("model-viewer")) {
 						return () => window.clearTimeout(id);
 					},
 					current: () => game.saveEnvelope(),
-					// **D9's "the player is told", on the path that does most of
-					// the writing.** A debounced write has no caller to reject to,
-					// and for a round the store took this callback and the boot did
-					// not pass it — so the shipped game still told nobody while a
-					// test proved the mechanism worked.
+					// A debounced write has no caller to reject to. The store raises
+					// the badge at `SAVE_RETRY_LIMIT` (§11.5); this is the log line.
+					// **Not `saveFault`**: one field written by every failure named a
+					// write that had since landed (sage, #311 round 1).
 					onWriteFailed: (error, consecutive) => {
-						game.saveFault = writeFault(consecutive, error);
 						if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
-							console.error(`save: ${game.saveFault}`, error);
+							console.error(`save: ${writeFault(consecutive, error)}`, error);
 					},
 				}),
 			onHeld: (store) => {
@@ -10415,10 +10419,8 @@ if (query.has("model-viewer")) {
 		},
 		openAtBoot,
 		inPlay: () => attachedSlot,
-		// By the badge's own rule, so the overlay never shows a fault the badge
-		// has already cleared.
-		fault: () =>
-			saveFaultHeld(game.saveStore, game.saveFault) ? game.saveFault : null,
+		// The badge's own reader, so the two cannot disagree.
+		fault: () => game.saveFaultText(),
 		onContinue: async (slot) => {
 			const fault = noSave ? null : await attach(slot);
 			if (fault === null) game.clockHeld = false;

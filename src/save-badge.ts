@@ -11,24 +11,40 @@
  * and below the settings screen (60) and the overlay (70), which it opens.
  */
 
+import { heldFaultText } from "./commander-flow";
 import { COMMANDER_KEY } from "./commander-overlay";
-import type { SaveRecordKind } from "./save-store";
+import type { SaveFault, SaveRecordKind } from "./save-store";
+
+/** The dock checkpoint first: it is the record a death restores. */
+const HELD_ORDER: readonly SaveRecordKind[] = ["lastDocked", "live"];
 
 /**
- * Whether the badge shows.
+ * The fault the badge stands for, in the overlay's words, or `null` when the
+ * badge is hidden.
  *
- * **With a store, the store's held kinds decide, and the message does not.**
- * `saveFault` keeps the last text written to it after the write that replaced
- * it lands, so it cannot say whether a fault is still held.
+ * **With a store, the store's held faults decide, each with its own cause.** A
+ * single message field was written by every later failure, so after a failed
+ * dock flush a debounced write that failed once and then landed left the badge
+ * up for `lastDocked` and the overlay describing the write that had landed
+ * (sage, #311 round 1). A dock flush holds both kinds with one cause, which is
+ * said once.
  *
- * **With no store, a fault is the badge.** A direct boot whose attach failed
- * plays on with nothing that will write, and the fault on `saveFault` is the
- * only record of why. A boot with nothing wrong, and `?no-save`, have no fault.
+ * **With no store, the boot's fault is the badge.** A direct boot whose attach
+ * failed plays on with nothing that will write, and `saveFault` is the only
+ * record of why. A boot with nothing wrong, and `?no-save`, have no fault.
  */
-export const saveFaultHeld = (
-	store: { readonly faultKinds: ReadonlySet<SaveRecordKind> } | null,
-	fault: string | null,
-): boolean => (store !== null ? store.faultKinds.size > 0 : fault !== null);
+export function heldSaveFault(
+	store: { readonly heldFaults: ReadonlyMap<SaveRecordKind, SaveFault> } | null,
+	bootFault: string | null,
+): string | null {
+	if (store === null) return bootFault;
+	const texts = new Set<string>();
+	for (const kind of HELD_ORDER) {
+		const fault = store.heldFaults.get(kind);
+		if (fault) texts.add(heldFaultText(fault));
+	}
+	return texts.size > 0 ? [...texts].join("; ") : null;
+}
 
 export type BadgeCorner =
 	| "top-left"
@@ -44,7 +60,6 @@ export interface SaveBadgeHandle {
 	readonly update: (held: boolean) => void;
 	/** For the frame capture that decides the corner. */
 	readonly setCorner: (corner: BadgeCorner) => void;
-	readonly element: HTMLButtonElement;
 }
 
 const STYLE_ID = "seelite-save-badge-style";
@@ -103,6 +118,5 @@ export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
 		setCorner: (corner) => {
 			element.dataset.corner = corner;
 		},
-		element,
 	};
 }
