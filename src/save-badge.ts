@@ -59,28 +59,20 @@ export const hasHeldSaveFault = (
 	bootFault: string | null,
 ): boolean => (store === null ? bootFault !== null : store.heldFaults.size > 0);
 
-export type BadgeCorner =
-	| "top-left"
-	| "top-right"
-	| "bottom-left"
-	| "bottom-right";
-
-/** §5.3 leaves the corner to a rendered frame. Provisional until that ruling. */
-export const DEFAULT_BADGE_CORNER: BadgeCorner = "top-left";
-
 export interface SaveBadgeHandle {
 	/** Shows or hides the badge; touches the DOM only when that changes. */
 	readonly update: (held: boolean) => void;
-	/** For the frame capture that decides the corner. */
-	readonly setCorner: (corner: BadgeCorner) => void;
 }
 
 const STYLE_ID = "seelite-save-badge-style";
 // §4's refusal tone, the overlay's own fault red, and a shape and a word beside
-// the colour, so it does not rest on colour alone.
+// the colour, so it does not rest on colour alone. **Top-left**: the
+// principal's ruling on #311's four-corner frames, in flight and docked. Both
+// bottom corners sat on the key-hint lines, and top-right is where `?fps` and
+// `?perf` put their instruments.
 const STYLE = `
 #seelite-save-badge {
-  position: fixed; z-index: 50; margin: 0;
+  position: fixed; top: 12px; left: 12px; z-index: 50; margin: 0;
   display: flex; align-items: center; gap: 8px; padding: 5px 10px;
   font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: .12em; color: #ffb1a8;
@@ -92,10 +84,6 @@ const STYLE = `
   font: inherit; color: #ff6b5e; padding: 0 4px;
   border: 1px solid rgba(255, 107, 94, .6); border-radius: 3px;
 }
-#seelite-save-badge[data-corner="top-left"] { top: 12px; left: 12px; }
-#seelite-save-badge[data-corner="top-right"] { top: 12px; right: 12px; }
-#seelite-save-badge[data-corner="bottom-left"] { bottom: 12px; left: 12px; }
-#seelite-save-badge[data-corner="bottom-right"] { bottom: 12px; right: 12px; }
 `;
 
 export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
@@ -109,7 +97,6 @@ export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
 	element.id = "seelite-save-badge";
 	element.type = "button";
 	element.dataset.saveBadge = "";
-	element.dataset.corner = DEFAULT_BADGE_CORNER;
 	element.hidden = true;
 	element.title = "A save did not write — open the Commander overlay";
 	element.innerHTML = `SAVE FAULT <kbd>${COMMANDER_KEY}</kbd>`;
@@ -127,9 +114,6 @@ export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
 			if (held === shown) return;
 			shown = held;
 			element.hidden = !held;
-		},
-		setCorner: (corner) => {
-			element.dataset.corner = corner;
 		},
 	};
 }
