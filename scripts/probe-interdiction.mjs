@@ -172,7 +172,8 @@ const fired = await page.evaluate(() => {
 	const g = window.__seelite;
 	const I = window.__int;
 	if (!g.encounter || g.encounter.phase !== "duel") {
-		g.forceRaider("ahead", 0.5, 20);
+		// `cruise()` resets the flight, which ends any encounter — so the raider
+		// is forced after it, never before.
 		I.cruise();
 		g.forceRaider("ahead", 0.5, 20);
 		I.steps(4);
@@ -181,10 +182,14 @@ const fired = await page.evaluate(() => {
 	const start = g.encounter?.raider
 		? I.pool(g.encounter.raider.condition)
 		: null;
-	const energyStart = g.condition.energy;
+	// **Heat, not energy, says the gun fired.** A shield recharge draws on the
+	// bank too, so energy falls in a duel whether or not the trigger does
+	// anything; heat only rises on a step the gun fired. Read before the
+	// raider-present guard, so this row tests the trigger and not the fight.
 	let fired = false;
 	g.keys.add(" ");
 	I.steps(20, () => {
+		if (g.condition.heat > 0) fired = true;
 		const r = g.encounter?.raider;
 		if (!r) return;
 		const to = {
@@ -193,7 +198,6 @@ const fired = await page.evaluate(() => {
 			z: r.flight.ship.pos.z - g.world.ship.pos.z,
 		};
 		g.setAttitude(to, g.shipUp());
-		if (g.condition.energy < energyStart) fired = true;
 	});
 	g.keys.delete(" ");
 	return {
