@@ -19,6 +19,7 @@
 import {
 	type CombatEnemyState,
 	type EnemyReadout,
+	playerLaserHit,
 	stepCombatEnemy,
 } from "./combat-enemy";
 import { HULL_SPECS } from "./hull";
@@ -36,6 +37,18 @@ import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
 export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;
+
+/**
+ * Whether a shot along the sightline would land on the raider now — the HUD's
+ * on-target mark (#324 part c). The same beam test and the same hull radius
+ * `stepDuel` hits with, so the mark cannot promise a hit the duel refuses.
+ */
+export const raiderInSights = (
+	aimOrigin: Vec3,
+	aimNose: Vec3,
+	raiderPos: Vec3,
+): boolean =>
+	playerLaserHit(aimOrigin, aimNose, raiderPos, RAIDER_HIT_RADIUS_KM).hit;
 
 export interface Raider {
 	flight: CombatEnemyState;
