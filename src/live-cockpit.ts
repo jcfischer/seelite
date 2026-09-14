@@ -290,6 +290,7 @@ export class LiveCockpit {
 	private lastKey = "";
 	private lastValueKey = "";
 	private lastNavKey = "";
+	private lastLogKey: string | null = null;
 	private readonly navRowsById = new Map<
 		string,
 		{
@@ -860,6 +861,7 @@ export class LiveCockpit {
 			this.lastKey = key;
 			this.lastValueKey = "";
 			this.lastNavKey = "";
+			this.lastLogKey = null;
 			this.navRowsById.clear();
 			this.releaseChartHost();
 			this.root.innerHTML = this.markup(state);
@@ -910,7 +912,17 @@ export class LiveCockpit {
 		// survives; the ring has to be put back.
 		this.applyFocusRing();
 		const duelKey = state.duel ? Object.values(state.duel).join(",") : "";
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}|${state.raiderLog.join("/")}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}`;
+		// #324 part d: the raider lifecycle, a line each, on its own key so a
+		// speed change does not rebuild the list (sage #330). Escaped, although
+		// every line is built from a slot name and a fixed phrase.
+		const logKey = state.raiderLog.join("/");
+		if (elements.raiderLog && logKey !== this.lastLogKey) {
+			this.lastLogKey = logKey;
+			elements.raiderLog.innerHTML = state.raiderLog.length
+				? state.raiderLog.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
+				: "<li>No signals</li>";
+		}
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
 		// The reason can change while the hold stands — a carrier clears the lane
@@ -928,12 +940,6 @@ export class LiveCockpit {
 					: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
 		if (elements.contactCount)
 			elements.contactCount.textContent = String(state.contacts.length);
-		// #324 part d: the raider lifecycle, a line each. Escaped, although every
-		// line is built from a slot name and a fixed phrase.
-		if (elements.raiderLog)
-			elements.raiderLog.innerHTML = state.raiderLog.length
-				? state.raiderLog.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
-				: "<li>No signals</li>";
 		// **These two rendered as labels with nothing beside them.** §5 gives the
 		// Flight console assist and the Drive console the cruise charge, and the
 		// markup has carried both rows since the console was built — with an

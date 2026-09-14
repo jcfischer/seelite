@@ -320,8 +320,10 @@ const PLACERS = {
 						},
 					};
 					g.keys.add(" ");
+					// **Aim, then step.** The step fires along the aim it starts with,
+					// at the raider where the step starts. Aiming after the step shot
+					// at where a fleeing raider had been, and it got away.
 					for (let i = 0; i < 300 && g.encounter; i++) {
-						g.step(dt);
 						const live = g.encounter?.raider;
 						if (live) {
 							const q = g.world.ship.pos;
@@ -331,12 +333,13 @@ const PLACERS = {
 								g.shipUp(),
 							);
 						}
+						g.step(dt);
 						g.render(dt);
 					}
 					g.keys.delete(" ");
-					if (g.encounter)
+					if (g.encounter || !g.lastExit.endsWith("destroyed"))
 						throw new Error(
-							"duel placer: the raider did not die for the aftermath",
+							`duel placer: the raider did not die for the aftermath (${g.lastExit})`,
 						);
 					if (aftermath === "canisters") {
 						const c = g.canisters[0];

@@ -7723,8 +7723,11 @@ class Game {
 				canister.tonnes,
 			);
 			if (!took.accepted) {
-				kept.push(canister);
-				this.lastExit = "hold full: canister left in space";
+				// It keeps drifting, and the notice is said once rather than
+				// rewritten every frame the ship sits beside it (sage #330).
+				kept.push(...stepCanisters([canister], dt, this.world.gameTime));
+				const full = "hold full: canister left in space";
+				if (this.lastExit !== full) this.lastExit = full;
 				continue;
 			}
 			this.commander = took.commander;
@@ -9264,18 +9267,22 @@ class Game {
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
 			// #324 part d: the raider lifecycle on the Communications console,
 			// derived from world state, newest first.
-			raiderLog: raiderLog(
-				this.commerceWorld.galaxies[this.world.system.record.galaxy],
-				this.world.system.record.index,
-				this.world.system.record.government,
-				this.world.gameTime,
-			)
-				.slice(0, 6)
-				.map((line) => {
-					const m = Math.floor(line.at / 60);
-					const s = Math.floor(line.at % 60);
-					return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}  ${line.text}`;
-				}),
+			// Derived only while that console's tab is open (sage #330).
+			raiderLog:
+				this.leftTab === "Communications"
+					? raiderLog(
+							this.commerceWorld.galaxies[this.world.system.record.galaxy],
+							this.world.system.record.index,
+							this.world.system.record.government,
+							this.world.gameTime,
+						)
+							.slice(0, 6)
+							.map((line) => {
+								const m = Math.floor(line.at / 60);
+								const s = Math.floor(line.at % 60);
+								return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}  ${line.text}`;
+							})
+					: [],
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,

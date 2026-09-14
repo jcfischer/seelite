@@ -85,14 +85,17 @@ const kill = await page.evaluate(() => {
 	};
 	const cargoBefore = { ...g.commander.cargo };
 	g.keys.add(" ");
-	for (let i = 0; i < 600 && g.encounter; i++)
-		frame(() => {
-			const r = g.encounter?.raider;
-			if (!r) return;
+	// Aim, then step: the step fires along the aim it starts with. Aiming after
+	// the step shoots where a fleeing raider was, and the capture lost one so.
+	for (let i = 0; i < 600 && g.encounter; i++) {
+		const r = g.encounter?.raider;
+		if (r) {
 			const p = g.world.ship.pos;
 			const t = r.flight.ship.pos;
 			g.setAttitude({ x: t.x - p.x, y: t.y - p.y, z: t.z - p.z }, g.shipUp());
-		});
+		}
+		frame();
+	}
 	g.keys.delete(" ");
 	return {
 		key,
@@ -152,30 +155,43 @@ const glass = await page.evaluate(() => {
 		{ x: c.pos.x - p.x, y: c.pos.y - p.y, z: c.pos.z - p.z },
 		g.shipUp(),
 	);
+	const countGreen = () => {
+		const overlay = document.getElementById("overlay");
+		const ctx = overlay.getContext("2d", { willReadFrequently: true });
+		const data = ctx.getImageData(
+			overlay.width / 2 - 40,
+			overlay.height / 2 - 40,
+			80,
+			80,
+		).data;
+		let green = 0;
+		for (let i = 0; i < data.length; i += 4)
+			if (
+				data[i + 3] > 40 &&
+				data[i + 1] > 200 &&
+				data[i] < 190 &&
+				data[i + 2] < 200
+			)
+				green++;
+		return green;
+	};
 	g.step(dt);
 	g.render(dt);
-	const overlay = document.getElementById("overlay");
-	const ctx = overlay.getContext("2d", { willReadFrequently: true });
-	const data = ctx.getImageData(
-		overlay.width / 2 - 40,
-		overlay.height / 2 - 40,
-		80,
-		80,
-	).data;
-	let green = 0;
-	for (let i = 0; i < data.length; i += 4)
-		if (
-			data[i + 3] > 40 &&
-			data[i + 1] > 200 &&
-			data[i] < 190 &&
-			data[i + 2] < 200
-		)
-			green++;
-	return { green, count: g.canisters.length };
+	const green = countGreen();
+	// **The control.** The prograde marker is green too and can sit in the same
+	// box, so the same frame is drawn again with the canisters taken away, and
+	// the marker must add green of its own (sage #330).
+	const kept = g.canisters;
+	g.canisters = [];
+	g.render(dt);
+	const control = countGreen();
+	g.canisters = kept;
+	g.render(dt);
+	return { green, control, count: g.canisters.length };
 });
 check(
 	"a canister ahead is marked on the glass",
-	glass.count > 0 && glass.green > 0,
+	glass.count > 0 && glass.green > glass.control,
 	JSON.stringify(glass),
 );
 
@@ -220,9 +236,11 @@ const next = await page.evaluate((killedKey) => {
 	};
 }, kill.key);
 check(
-	"a forced raider after the kill never takes the destroyed slot",
-	// A lawful system can hold a single slot, and then there is no raider at all
-	// to force — which is the answer, not a miss.
+	"a forced raider after the kill never takes the destroyed slot (wiring only)",
+	// **Weak here, and said so** (sage #330). In a one-slot system no raider is
+	// fielded, and this passes without testing a choice. The choice itself is
+	// `tests/encounter.test.ts`'s ("a forced raider takes the first operational
+	// slot, or none"); this row holds only that `Game` passes world state in.
 	next.slot !== next.killedKey,
 	JSON.stringify(next),
 );

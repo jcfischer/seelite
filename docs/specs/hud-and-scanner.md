@@ -144,8 +144,10 @@ subtraction and an estimate is an integration of the cruise law per row.
 
 Communications carries clearance requests and replies, hostile/legal
 status, and actionable messages. Since #324 part d it also carries the raider
-log: each kill in this system, when its repair began and when it came back in
-service, with game-clock times, derived from world state
+log: the latest kill of each raider slot in this system, when its repair began
+and when it came back in service, with game-clock times, derived from world
+state. A slot keeps one causal episode, so killing a replaced raider replaces
+the older lines
 (`combat-model.md` §4.1). Flight presents speed, throttle, assist, current
 regime, and relative motion. Drive presents cruise charge, range, regeneration,
 and future equipment state. Developer tuning parameters move to a **Tuning tab**
