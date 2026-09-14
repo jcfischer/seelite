@@ -89,18 +89,26 @@ Xbox pad reads `a`/`b`/`x`/`y` literally.
 | --- | --- | --- |
 | right stick | pitch and yaw, analog | `w`/`s`, `a`/`d` |
 | left stick, X | roll, analog | `q`/`e` |
-| `r2` / `l2` | trim the throttle open and shut, analog | `shift` / `control` |
+| `r1` / `l1` | trim the throttle open and shut | `shift` / `control` |
 | `a` (Cross) | launch, or skip the dock traversal | `Enter` |
 | `b` (Circle) | request docking clearance | `c` |
 | `x` (Square) | flight assist | `x` |
 | `y` (Triangle) | engage or drop cruise | `j` |
-| `l1` / `r1` | previous and next target | `g` / `t` |
+| `l2` | next target | `t` |
+| `r2` | fire the pulse laser, held | `space` / left mouse |
 | `l3` | face the target | `f` |
 | `r3` | cockpit or chase | `v` |
 | `start` (Options) | docking computer | `u` |
 | `select` (Create) | charge the Jump | `` ` `` |
 | d-pad ← / ↑ / → | head-look port, forward, starboard | `1` / `2` / `3` |
 | d-pad ↓ | hand the pad to the frame instrument (Circle gives it back) | — |
+
+**The trim moved to the shoulders in #324, by the principal's ruling, so R2
+could fire.** On a standard pad the shoulders are digital, so the trim is now
+full rate or nothing. The analog pull the triggers gave ("a light pull trims
+slowly") is the price of the fire binding. A pad whose shoulders report a
+partial value still trims by it. The instrument claims the shoulders as tab
+steps, so they do not trim there.
 
 **The throttle is a trim, not a position**, and that is #283's F2. A trigger
 reporting an absolute 0–1 throttle was the obvious alternative and is wrong for
