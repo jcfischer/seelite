@@ -101,7 +101,29 @@ describe("the Game's world writes", () => {
 		// mechanism worked. A debounced write is the one path with no caller to
 		// reject to, and it is the path that does almost all the writing.
 		expect(MAIN).toContain("onWriteFailed:");
-		expect(MAIN).toContain("game.saveFault =");
+		expect(MAIN).toContain("game.saveFault = writeFault(consecutive, error);");
+	});
+
+	test("a failed dock, undock or jump flush reaches the player (§11.5)", () => {
+		// `saveFlush`'s catch only logged for three PRs, so the dock flush — the
+		// write that lays down `lastDocked` — could fail with nothing on the glass.
+		const body = MAIN.split("saveFlush(reason: FlushReason): void")[1] ?? "";
+		expect(body.slice(0, 900)).toContain(
+			"this.saveFault = flushFault(reason, error);",
+		);
+	});
+
+	test("the badge is updated every frame, in both views, from the one predicate", () => {
+		// In `animate` and not in `updateCockpit`, which returns early in chase.
+		const loop = MAIN.split("private animate = () => {")[1] ?? "";
+		const end = loop.indexOf("\n\t};");
+		expect(loop.slice(0, end)).toContain(
+			"this.saveBadge?.update(saveFaultHeld(this.saveStore, this.saveFault));",
+		);
+		// And the overlay the badge opens shows the same fault, by the same rule.
+		expect(MAIN).toContain(
+			"fault: () =>\n\t\t\tsaveFaultHeld(game.saveStore, game.saveFault) ? game.saveFault : null,",
+		);
 	});
 
 	test("the jump flush runs after the arrival finishes", () => {

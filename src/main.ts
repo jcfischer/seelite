@@ -376,6 +376,7 @@ import { type BootMode, bootMode } from "./boot-mode";
 import {
 	attachCommander,
 	CommanderSwitch,
+	flushFault,
 	messageOf,
 	pendingFor,
 	permadeathAtAttach,
@@ -383,12 +384,18 @@ import {
 	randomSeed,
 	withLockFault,
 	withRestoreFault,
+	writeFault,
 } from "./commander-flow";
 import {
 	COMMANDER_KEY,
 	type CommanderOverlayHandle,
 	mountCommanderOverlay,
 } from "./commander-overlay";
+import {
+	mountSaveBadge,
+	type SaveBadgeHandle,
+	saveFaultHeld,
+} from "./save-badge";
 import { marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -1402,6 +1409,8 @@ class Game {
 	clockHeld = false;
 	/** The Commander overlay, once the boot has mounted it (§11). */
 	commanderOverlay: CommanderOverlayHandle | null = null;
+	/** The save-fault badge (`hud-and-scanner.md` §5.3), once mounted. */
+	saveBadge: SaveBadgeHandle | null = null;
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
@@ -8644,6 +8653,9 @@ class Game {
 		this.render(dt);
 		this.updateCockpit();
 		if (this.legacyHud) this.updateHud();
+		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
+		// badge shows in every view.
+		this.saveBadge?.update(saveFaultHeld(this.saveStore, this.saveFault));
 	};
 
 	private readonly chaseOffset = new THREE.Vector3();
@@ -8932,7 +8944,12 @@ class Game {
 		void this.saveStore?.flush(reason).catch((error) => {
 			// D9: a failed write leaves the previous record in place. Stale
 			// rather than broken, and said out loud rather than swallowed.
-			console.error(`save: the ${reason} flush did not land`, error);
+			// **Out loud to the player too (§11.5).** For three PRs this only
+			// logged, so the dock flush — the write that lays down `lastDocked` —
+			// could fail with nothing on the glass. The store holds the kinds; this
+			// is the message the badge's overlay shows.
+			this.saveFault = flushFault(reason, error);
+			console.error(`save: ${this.saveFault}`, error);
 		});
 	}
 
@@ -10325,9 +10342,7 @@ if (query.has("model-viewer")) {
 					// not pass it — so the shipped game still told nobody while a
 					// test proved the mechanism worked.
 					onWriteFailed: (error, consecutive) => {
-						game.saveFault =
-							`the save would not write (${consecutive} in a row): ` +
-							messageOf(error);
+						game.saveFault = writeFault(consecutive, error);
 						if (consecutive === 1 || consecutive >= SAVE_RETRY_LIMIT)
 							console.error(`save: ${game.saveFault}`, error);
 					},
@@ -10400,6 +10415,10 @@ if (query.has("model-viewer")) {
 		},
 		openAtBoot,
 		inPlay: () => attachedSlot,
+		// By the badge's own rule, so the overlay never shows a fault the badge
+		// has already cleared.
+		fault: () =>
+			saveFaultHeld(game.saveStore, game.saveFault) ? game.saveFault : null,
 		onContinue: async (slot) => {
 			const fault = noSave ? null : await attach(slot);
 			if (fault === null) game.clockHeld = false;
@@ -10407,6 +10426,7 @@ if (query.has("model-viewer")) {
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),
 	});
+	game.saveBadge = mountSaveBadge(() => game.commanderOverlay?.open());
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
