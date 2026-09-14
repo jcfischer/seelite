@@ -795,7 +795,11 @@ check(
 // Commerce uses the live console, not the gallery fixture. A completed round
 // trip must change the rendered commander and shelf state, then return cargo
 // to zero through the same DOM action boundary.
-const liveTrade = await page.evaluate(() => {
+/** The Food row's trade control, shared by both trade checks below. */
+const FOOD_ACTION =
+	'[data-live-station-action="%s"][data-live-station-name="Food"]';
+
+const liveTrade = await page.evaluate((foodAction) => {
 	const read = () => ({
 		commander:
 			document.querySelector("[data-live-commander]")?.textContent ?? "",
@@ -804,21 +808,19 @@ const liveTrade = await page.evaluate(() => {
 			"",
 	});
 	const before = read();
-	const buy = document.querySelector(
-		'[data-live-station-action="buy-commodity"][data-live-station-name="Food"]',
-	);
+	const buy = document.querySelector(foodAction.replace("%s", "buy-commodity"));
 	if (!(buy instanceof HTMLElement))
 		return { before, afterBuy: before, afterSell: before, controls: false };
 	buy.click();
 	const afterBuy = read();
 	const sell = document.querySelector(
-		'[data-live-station-action="sell-commodity"][data-live-station-name="Food"]',
+		foodAction.replace("%s", "sell-commodity"),
 	);
 	if (!(sell instanceof HTMLElement))
 		return { before, afterBuy, afterSell: afterBuy, controls: false };
 	sell.click();
 	return { before, afterBuy, afterSell: read(), controls: true };
-});
+}, FOOD_ACTION);
 
 check(
 	"the live station console completes a buy and sell across commander and shelf state",
@@ -828,6 +830,50 @@ check(
 		liveTrade.afterSell.commander.includes("HOLD EMPTY") &&
 		liveTrade.afterSell.food === liveTrade.before.food,
 	JSON.stringify(liveTrade),
+);
+
+// #316, `economy-trade.md` §5.2: a shelf read between trades must be whole.
+// Ten seconds of game time and not minutes: the launch checks below read the
+// grant off the same clock, and a seven-minute jump expired it under them.
+const shelfTrade = await page.evaluate((foodAction) => {
+	const g = window.__seelite;
+	const hold = () =>
+		document.querySelector("[data-live-commander]")?.textContent ?? "";
+	const act = (action) =>
+		document.querySelector(foodAction.replace("%s", action))?.click();
+	// Three and one, not one and one: `readDeficit` reads a mark under one unit
+	// as nothing, so a single unit bought and sold back leaves a whole shelf on
+	// the build this check exists to catch. Three bought, faded and one sold
+	// leaves 1.98 units of mark. The other two are sold after the read, so the
+	// checks below start from an empty hold.
+	for (let i = 0; i < 3; i++) act("buy-commodity");
+	const afterBuys = hold();
+	g.world.gameTime += 10;
+	act("sell-commodity");
+	const afterSell = hold();
+	const cells = [
+		...document.querySelectorAll(
+			'[data-live-market-row][data-live-listed="true"] > span:nth-child(3)',
+		),
+	].map((cell) => cell.firstChild?.textContent ?? "");
+	act("sell-commodity");
+	act("sell-commodity");
+	return { cells, afterBuys, afterSell, afterAll: hold() };
+}, FOOD_ACTION);
+const fractionalShelves = shelfTrade.cells.filter(
+	(text) => !/^\d+ \S+$/.test(text.trim()),
+);
+
+check(
+	"every shelf the console shows after a faded trade is whole units",
+	// The trades must have happened: a refused buy leaves no mark, and a shelf
+	// with no mark is whole on the unfixed build too.
+	/HOLD .*Food 3\b/.test(shelfTrade.afterBuys) &&
+		/HOLD .*Food 2\b/.test(shelfTrade.afterSell) &&
+		shelfTrade.afterAll.includes("HOLD EMPTY") &&
+		shelfTrade.cells.length > 0 &&
+		fractionalShelves.length === 0,
+	`hold ${JSON.stringify([shelfTrade.afterBuys, shelfTrade.afterSell, shelfTrade.afterAll])}, cells=${shelfTrade.cells.length}, not whole=${JSON.stringify(fractionalShelves)}`,
 );
 
 const liveEquipment = await page.evaluate(() => {
@@ -849,6 +895,91 @@ check(
 	`switched=${liveEquipment.switched}, equipment rows=${liveEquipment.rows}`,
 );
 
+// #314: a launch Traffic refuses is held with its reason on every docked
+// console, a retry keeps its first place, and CANCEL gives the turn back.
+// The one way the held-launch and launch rows refuse the lane, defined on its
+// own so either row can run without the other. The warm index is the
+// authority's own gate: zeroing it refuses the lane without inventing a ship.
+await page.evaluate(() => {
+	window.__refuseLaneWhile = (fn) => {
+		const g = window.__seelite;
+		const warmIndex = g.trafficWarmIndex;
+		g.trafficWarmIndex = 0;
+		try {
+			return fn();
+		} finally {
+			g.trafficWarmIndex = warmIndex;
+		}
+	};
+});
+
+const heldLaunch = await page.evaluate((stationId) => {
+	const g = window.__seelite;
+	// `checkVisibility`, not `hidden`: an id rule with `display` beats it.
+	const visibleNotice = () =>
+		[...document.querySelectorAll("[data-live-launch-notice]")].find(
+			(notice) => notice instanceof HTMLElement && notice.checkVisibility(),
+		)?.textContent ?? null;
+	return window.__refuseLaneWhile(() => {
+		g.setHeadLook("right");
+		document.querySelector('[data-live-right-tab="Flight"]')?.click();
+		document.querySelector("[data-live-launch]")?.click();
+		const fromRight = visibleNotice();
+		// Off Flight, where LAUNCH itself is not drawn, and on the left panel.
+		document.querySelector('[data-live-right-tab="Drive"]')?.click();
+		g.updateCockpit();
+		const fromRightDrive = visibleNotice();
+		g.setHeadLook("left");
+		g.updateCockpit();
+		const fromLeft = visibleNotice();
+		g.setHeadLook("right");
+		document.querySelector('[data-live-right-tab="Flight"]')?.click();
+		const firstStamp = g.playerLaneRequests.get(stationId)?.readyAt ?? null;
+		// The retry `stepHeldLaunch` makes, five game seconds on.
+		g.world.gameTime += 5;
+		g.launch();
+		const retryStamp = g.playerLaneRequests.get(stationId)?.readyAt ?? null;
+		g.setHeadLook("forward");
+		g.updateCockpit();
+		const fromForward = visibleNotice();
+		const held = {
+			phase: g.dockPhase,
+			fromRight,
+			fromRightDrive,
+			fromLeft,
+			fromForward,
+			firstStamp,
+			retryStamp,
+		};
+		document.querySelector("[data-live-launch-cancel]")?.click();
+		g.setHeadLook("right");
+		g.updateCockpit();
+		const cancelled = {
+			notice: document.querySelector("[data-live-launch-notice]") !== null,
+			launchBack: document.querySelector("[data-live-launch]") !== null,
+			request: g.playerLaneRequests.get(stationId)?.movement ?? null,
+		};
+		return { held, cancelled };
+	});
+}, slotId);
+
+check(
+	"a launch Traffic refuses is held on every docked console, keeps its place, and cancel gives the turn back",
+	heldLaunch.held.phase === "docked" &&
+		[
+			heldLaunch.held.fromRight,
+			heldLaunch.held.fromRightDrive,
+			heldLaunch.held.fromLeft,
+			heldLaunch.held.fromForward,
+		].every((notice) => /^LAUNCH HELD — /.test(notice ?? "")) &&
+		heldLaunch.held.firstStamp !== null &&
+		heldLaunch.held.retryStamp === heldLaunch.held.firstStamp &&
+		!heldLaunch.cancelled.notice &&
+		heldLaunch.cancelled.launchBack &&
+		heldLaunch.cancelled.request === null,
+	JSON.stringify(heldLaunch),
+);
+
 // The ship is parked in its berth from row 3, so the approach view has to be
 // set up again — deliberately, and after the dock rather than before: putting
 // the ship back outside would leave the session docked while the ship is
@@ -862,7 +993,14 @@ const approach = await page.evaluate((stationId) => {
 	const flight = document.querySelector('[data-live-right-tab="Flight"]');
 	if (flight instanceof HTMLElement) flight.click();
 	const launch = document.querySelector("[data-live-launch]");
-	if (launch instanceof HTMLElement) launch.click();
+	// #314: the press is refused first, so it is held, and the held launch
+	// must leave by itself on the first step the lane is the player's.
+	const heldPhase = window.__refuseLaneWhile(() => {
+		if (launch instanceof HTMLElement) launch.click();
+		return g.dockPhase;
+	});
+	g.step(1 / 60);
+	g.updateCockpit();
 	const consoleGone =
 		document.querySelector("[data-live-station-console]") === null;
 	g.render(0);
@@ -882,6 +1020,7 @@ const approach = await page.evaluate((stationId) => {
 		phase: out.dockPhase,
 		rangeKm,
 		launchControl: launch instanceof HTMLElement,
+		heldPhase,
 		consoleGone,
 		launchingGlass,
 		// Read after the traversal has ended and before anything re-requests.
@@ -892,11 +1031,12 @@ const approach = await page.evaluate((stationId) => {
 check(
 	"the Flight console launch released the ship back into flight",
 	approach.launchControl &&
+		approach.heldPhase === "docked" &&
 		approach.consoleGone &&
 		approach.launchingGlass.phase === "launching" &&
 		approach.launchingGlass.floorHidden &&
 		approach.phase === "flying",
-	`control=${approach.launchControl}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
+	`control=${approach.launchControl}, held=${approach.heldPhase}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
 );
 
 check(

@@ -358,6 +358,18 @@ describe("§3 the type offset", () => {
 		expect(shelfQuantity(40, -10_000)).toBe(QUANTITY_CAP);
 	});
 
+	test("the shelf is whole units under a decayed deficit (#316)", () => {
+		// #316, §5.2: a decayed mark is almost never whole; the shelf is floored.
+		expect(shelfQuantity(40, 10.4)).toBe(29);
+		expect(shelfQuantity(40, -10.4)).toBe(50);
+		for (let minutes = 0; minutes <= 60; minutes += 0.7) {
+			for (const mark of [16, -16, 39.2, -39.2]) {
+				const shelf = shelfQuantity(40, decayDeficit(mark, minutes));
+				expect(Number.isInteger(shelf)).toBe(true);
+			}
+		}
+	});
+
 	test("quantity never exceeds Bell's 63-unit cap", () => {
 		for (const commodity of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)

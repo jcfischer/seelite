@@ -6,7 +6,9 @@ import { HULL_SPECS } from "../src/hull";
 import {
 	clearancePromotion,
 	compareStationTurns,
+	type LaneRequest,
 	laneWinner,
+	playerLaneRefusal,
 	playerWinsLane,
 	materializeTrafficContact,
 	stationTrafficRoster,
@@ -15,6 +17,7 @@ import {
 	trafficScheduleAt,
 } from "../src/station-traffic";
 import { trafficBerths } from "../src/station-interior";
+import type { TrafficRoutePhase } from "../src/station-route";
 import { generateContents } from "../src/system";
 import { enumerateCarriers, WORLD_GENERATOR_VERSION } from "../src/world-state";
 
@@ -242,6 +245,64 @@ describe("shared station arbitration", () => {
 			),
 		).toBe(false);
 		expect(playerWinsLane([], 10, "launch")).toBe(true);
+	});
+
+	describe("a refused launch names its reason (#314)", () => {
+		const STATION = "station-trade";
+		const key = carrierKey(7, "station-trade/traffic-02");
+		const route = (
+			phase: TrafficRoutePhase,
+			laneRequest?: Pick<LaneRequest, "readyAt" | "kind">,
+			terminalStationId = STATION,
+		) => ({ key, terminalStationId, phase, laneRequest });
+		const refusal = (
+			routes: ReturnType<typeof route>[],
+			readyAt = 10,
+			authorityReady = true,
+		) =>
+			playerLaneRefusal({
+				authorityReady,
+				routes,
+				stationId: STATION,
+				readyAt,
+				movement: "launch",
+			});
+
+		test("a clear lane refuses nothing", () => {
+			expect(refusal([])).toBeNull();
+			// Another station's traffic is not this lane's.
+			expect(
+				refusal([route("arriving", undefined, "station-refinery")]),
+			).toBeNull();
+		});
+
+		test("Traffic that has not warmed up refuses first", () => {
+			expect(refusal([], 10, false)).toBe("traffic-starting");
+			// First, not only: a cold authority cannot see what is in the lane, so
+			// a carrier it can see there does not change the reason.
+			expect(refusal([route("arriving")], 10, false)).toBe("traffic-starting");
+		});
+
+		test("a carrier moving through the lane refuses, in either direction", () => {
+			expect(refusal([route("arriving")])).toBe("carrier-in-lane");
+			expect(refusal([route("departing")])).toBe("carrier-in-lane");
+		});
+
+		test("an older queued carrier refuses, and a younger one does not", () => {
+			expect(
+				refusal([route("launch-queued", { readyAt: 9, kind: "launch" })]),
+			).toBe("carrier-queued-ahead");
+			expect(
+				refusal([route("lane-queued", { readyAt: 9, kind: "arrival" })]),
+			).toBe("carrier-queued-ahead");
+			// The ordering a held launch relies on: a request stamped at 10 beats a
+			// carrier that queued at 11. That a retry *keeps* the stamp at 10 is
+			// `Game.launch`'s, and `probe-dock-arrival` checks it
+			// (`retryStamp === firstStamp`); this row cannot see a re-stamp.
+			expect(
+				refusal([route("launch-queued", { readyAt: 11, kind: "launch" })]),
+			).toBeNull();
+		});
 	});
 });
 

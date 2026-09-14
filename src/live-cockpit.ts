@@ -18,6 +18,7 @@ import type {
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
 import { padHintFor } from "./pad-bindings";
+import type { LaneRefusal } from "./station-traffic";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -28,6 +29,18 @@ import {
 } from "./panel-focus";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
+
+/**
+ * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
+ * the keys keep the consequence model's word, and the player reads a ship —
+ * a `carrier` is also a capital hull on the roster. Here rather than beside
+ * `playerLaneRefusal`: Traffic decides the reason, the console words it.
+ */
+export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
+	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
+	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
+	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
+};
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
 
 /**
@@ -86,6 +99,8 @@ export interface LiveCockpitState {
 		/** Changes only when an accepted action replaces the displayed state. */
 		revision: number;
 	} | null;
+	/** A launch Traffic refused and is holding, and why (#314). */
+	launchHold: { refusal: LaneRefusal } | null;
 }
 
 export interface LiveCockpitCallbacks {
@@ -96,6 +111,8 @@ export interface LiveCockpitCallbacks {
 	onStationTab: (tab: StationConsoleTab) => void;
 	onStationAction: (action: StationAction["type"], name: string) => void;
 	onLaunch: () => void;
+	/** Give up a held launch (#314). */
+	onCancelLaunch: () => void;
 	/**
 	 * The Galaxy Map tab's chart host has appeared or gone away.
 	 *
@@ -126,6 +143,8 @@ interface CockpitElements {
 	navList: HTMLElement | null;
 	navQuery: HTMLInputElement | null;
 	arrow: HTMLElement | null;
+	/** One per docked console: a hold is shown wherever the player looks. */
+	launchNotices: HTMLElement[];
 }
 
 const STYLE_ID = "seelite-live-cockpit-style";
@@ -235,6 +254,9 @@ const STYLE = `
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
 .lc-station-commander { margin: 9px 0 0; color: #f5bd78; font-size: 11px; }
 .lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
+.lc-launch-hold { margin-top: 12px; }
+.lc-launch-hold p { margin: 0 0 4px; color: #ff8a73; font-size: 12px; letter-spacing: .08em; }
+.lc-launch-hold .lc-launch { margin-top: 4px; border-color: #ff8a73; background: rgba(190, 48, 30, .28); }
 @media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
@@ -337,6 +359,10 @@ export class LiveCockpit {
 				this.callbacks.onStationTab(value);
 			return;
 		}
+		if (element.closest("[data-live-launch-cancel]")) {
+			this.callbacks.onCancelLaunch();
+			return;
+		}
 		if (element.closest("[data-live-launch]")) {
 			this.callbacks.onLaunch();
 			return;
@@ -391,6 +417,7 @@ export class LiveCockpit {
 	private static readonly OWN_FOCUSABLE = [
 		"[data-live-station-action]",
 		"[data-live-launch]",
+		"[data-live-launch-cancel]",
 		"[data-live-nav-kind]",
 		"[data-live-nav-target]",
 		// **The rail's GALAXY MAP button, which is not a tab.** It carries
@@ -802,7 +829,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.launchHold ? "held" : ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -834,6 +861,11 @@ export class LiveCockpit {
 					"[data-live-nav-query]",
 				),
 				arrow: find(".lc-target-arrow"),
+				launchNotices: [
+					...this.root.querySelectorAll<HTMLElement>(
+						"[data-live-launch-notice]",
+					),
+				],
 			};
 			const host = this.root.querySelector<HTMLElement>(
 				"[data-live-chart-host]",
@@ -854,9 +886,15 @@ export class LiveCockpit {
 		// takes the attribute with it. The cursor is not in the markup, so it
 		// survives; the ring has to be put back.
 		this.applyFocusRing();
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
+		// The reason can change while the hold stands — a carrier clears the lane
+		// and an older one is queued behind it — so it is a value, not structure.
+		for (const notice of elements.launchNotices)
+			notice.textContent = state.launchHold
+				? LAUNCH_HOLD_NOTICE[state.launchHold.refusal]
+				: "";
 		if (elements.leftPanelCopy)
 			elements.leftPanelCopy.textContent = state.target;
 		if (elements.rightPanelCopy)
@@ -980,11 +1018,27 @@ export class LiveCockpit {
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
 		).join("");
+		// A held launch replaces the control with its reason and a way out (#314):
+		// pressing LAUNCH again would only re-ask for a turn it already holds.
+		// **On every docked console, not only Flight.** The hold fires by itself
+		// when the lane clears, so a player who pressed Enter from the station
+		// console, or went back to trading, must still see it (sage round 1).
+		const hold = this.launchHoldBlock(state);
 		const launch =
-			state.dockPhase === "docked" && state.rightTab === "Flight"
-				? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
-				: "";
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+			state.dockPhase !== "docked"
+				? ""
+				: hold ||
+					(state.rightTab === "Flight"
+						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
+						: "");
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+	}
+
+	/** A held launch's reason and its way out, for every docked console (#314). */
+	private launchHoldBlock(state: LiveCockpitState) {
+		return state.dockPhase === "docked" && state.launchHold
+			? '<div class="lc-launch-hold" data-live-launch-hold><p data-live-launch-notice></p><button class="lc-launch" type="button" data-live-launch-cancel>CANCEL LAUNCH</button></div>'
+			: "";
 	}
 
 	private stationConsole(state: LiveCockpitState) {
@@ -1007,7 +1061,7 @@ export class LiveCockpit {
 							capacityLy: stationConsole.fuelCapacityLy,
 						},
 					)
-		}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
+		}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
 	}
 
 	private market(rows: readonly ConsoleMarketRow[]) {

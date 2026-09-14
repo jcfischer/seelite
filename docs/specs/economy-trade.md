@@ -438,11 +438,11 @@ buying  n units at a station:  deficit += n
 selling n units at a station:  deficit −= n
 
 deficit(t)   = deficit₀ × 2^(−(t − t₀) / DEFICIT_HALF_LIFE)
-             clamped to ±DEFICIT_SATURATION_RUNS × holdT
+             clamped to ±max(DEFICIT_SATURATION_RUNS × holdT, DEFICIT_MAX)
 DEFICIT_HALF_LIFE          = 20 min game time
 DEFICIT_SATURATION_RUNS    = DEFICIT_MAX / HOLD_REFERENCE_T = 63 / 20 = 3.15
 
-effectiveQuantity = clamp(generatedQuantity − clamp(deficit, ±63), 0, 63)
+effectiveQuantity = floor(clamp(generatedQuantity − clamp(deficit, ±63), 0, 63))
 priceCr          ×= 1 + PRICE_ELASTICITY
                       × clamp(deficit / holdT, ±DEFICIT_SATURATION_RUNS)
 ```
@@ -501,6 +501,53 @@ cannot be built differently.
 and never reduces a mark already larger than that; otherwise selling a
 freighter, trading once in a courier and buying the freighter back would launder
 a saturated 189 t mark down to 63, which is a brake with an off switch.
+
+**And it never falls below one full shelf (#316).** A draft of this section
+clamped the memory at 3.15 holds and nothing else, which is under 63 units for
+every hold below the baseline's 20 t — and the shelf reads that memory. At 6 t
+the memory saturated at 18.9, the shelf stopped at 44 kg of Gold, and the till
+sold it without end, because Gold skips the hold check and the shelf was the
+only limit left. The floor is `DEFICIT_MAX`.
+
+**At 20 t and above the floor is never the larger term**, so for those hulls
+it changes nothing.
+
+**Below 20 t it moves how long a mark lasts.** A hull that empties a shelf
+leaves a mark of 63 rather than 3.15 holds, so its price stays saturated for
+log₂(63 / (3.15 × holdT)) half-lives longer — about 35 minutes at 6 t — while
+the shelf refills. The floor is symmetric, so a sale moves the same way: the
+mark can reach −63, and the sell price stays depressed for as long. The size
+of each price step does not move, because the response clamps
+`deficit / holdT` on its own.
+
+**A mark read by another hull moves too.** A 6 t hull that empties a shelf now
+leaves a mark near 63 rather than 18.9, so a 40 t hull trading there next reads
+a ratio of 1.575 rather than 0.47. It is the ratchet above seen from the other
+side — a mark belongs to the market, not to the hull that left it.
+
+**A shelf is whole units, floored.** The decay is exponential, so a mark read
+between trades is almost never whole, and the console printed
+`23.95361409160266 t`. The till reads the same figure, so it is floored rather
+than rounded: a shelf of 0.6 shown as 1 is a unit the till would refuse.
+
+**What the two changes do to the measurements.** `measure-market.ts` prints
+byte-identical output across them. `measure-hull-pricing.ts` section D — what
+the market's memory is worth to the greedy trader, which is §12's weak joint
+12 — does not, and the two halves move different rows:
+
+| build | 8 t | 20 t | 60 t | 200 t |
+|---|---|---|---|---|
+| before #316 | 7.19× | 3.39× | 0.78× | 0.46× |
+| cap floor only | 5.61× | 3.39× | | |
+| whole-unit shelf only | 7.18× | 3.35× | | |
+| both (shipped) | 5.58× | 3.35× | 0.78× | 0.46× |
+
+The cap floor is what moves the small hold: a 63-unit mark saturates the price
+on a pump that used to stop at 3.15 holds. The whole-unit shelf moves the rest
+by a unit here and there. Both make the pump smaller, and section D reprints
+the figures on every run. A first draft of this paragraph said both scripts
+were identical; that came from a filtered `diff` that reported identical files
+that differ.
 
 **The upper clamp is not decorative.** A deficit reaches −63 when the player
 dumps cargo, so `generatedQuantity − deficit` reaches 126 — twice Bell's cap —
@@ -1554,7 +1601,8 @@ position, name and station silently.
     It is not an artefact of an instrument — the shipped calculator does it, and
     it predates #182 — but it is what made the hold sweep's first curve run
     *backwards*: with the market's memory on, a **stronger** response makes the
-    greedy trader earn more, 7.19× at an 8 t hold and 3.39× at 20 t, because the
+    greedy trader earn more, 5.58× at an 8 t hold and 3.35× at 20 t (7.19× and
+    3.39× before #316 floored the memory at one shelf, §5.2), because the
     strongest mark is on the sub-tonne goods whose 63-unit stack is twenty holds
     for a small hull. §7.1's curve is therefore measured against a market with
     no memory, and `measure-hull-pricing.ts` section D reports what the memory is
