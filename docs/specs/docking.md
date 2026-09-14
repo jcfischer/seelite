@@ -654,9 +654,27 @@ shipped admits about 164 m at the same switch point. What the measurement shows
 is narrower and it is all that is claimed here: at a 3 km standoff the lag is
 tens of metres, so a corridor met there is a loose one, while the thing the
 approach has to end inside is 35 m. A cone is loose where the lag is and tight
-where the aperture is, and the run-in aims at the slot centre so the lateral
-error closes in proportion to the distance rather than having to be flown out
-first. Whether some intermediate cylinder also works is untested.
+where the aperture is. Whether some intermediate cylinder also works is
+untested.
+
+**The run-in aims at the axis ahead of the ship, not at the slot** (#315). A
+ship flying at a point stays on the line to that point, so its angle off the
+axis never closes, and the orbit swings the axis past it for the whole run-in.
+At a 90 min orbit that angle passed the cone's 3° inside a minute, the ship
+left the corridor near 0.8 km, and the line-up turned it back toward an entry
+point kilometres behind it. Before #315 that line-up lasted one frame and the
+approach survived it; once the line-up held its phase and waited for the nose
+to come round before thrusting, the ship stopped, turned outward and never
+docked. `COMPUTER_RUN_IN_LOOKAHEAD` aims a quarter of the remaining distance
+ahead, so the lateral error closes as the fourth power of the distance and
+the cone, which closes linearly, is not reached. Measured over 9 hulls, three
+steps (1/60, 0.05, 0.1 s), four spins and orbits from fixed to 45 min:
+
+| run-in aim | approaches that failed to dock | worst dock | most corridor exits in one run |
+|---|---|---|---|
+| the slot, before #315 | 4 of 432 (45 min orbit, 0.1 s) | 73 s | 198 |
+| the slot, #315's first build | 36 of 432 | 469 s | 31 |
+| a quarter of the distance ahead | 0 of 432 | 77 s | 0 |
 
 **The run-in aim sits a hair inside the plane, not on it** (implementation
 finding, node #32). The slot centre is *at* the plane, so an aim exactly on it
@@ -666,9 +684,10 @@ row fails a profile whose position is clean. The orbit floor's higher orbital
 speeds made the approach converge a little more tightly, and the browser probe
 measured a **37.4° nose at a 0.2° position**. Aiming `COMPUTER_AIM_INSIDE_KM`
 (0.05 km) inside the plane keeps the commanded direction defined — "straight
-in" — through the crossing. It is still the slot (a 0.12 km aperture), so the
-lateral error still closes in proportion to the distance, and the ship never
-reaches the aim point: `resolveCrossing` disengages the computer at the plane.
+in" — through the crossing. It is still the slot (a 0.12 km aperture), and the
+ship never reaches the aim point: `resolveCrossing` disengages the computer at
+the plane. The lookahead above is never shorter than this distance, so the
+last few hundred metres fly the geometry this paragraph measured.
 
 **It never bypasses a check.** It satisfies §3's six conditions like anything
 else, so it cannot dock at a hostile station, cannot skip §6's clearance, and

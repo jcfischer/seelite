@@ -996,6 +996,22 @@ export const COMPUTER_STANDOFF_KM = 3;
 export const COMPUTER_AIM_INSIDE_KM = 0.05;
 
 /**
+ * How far ahead of the ship the run-in aims, as a fraction of its distance to
+ * the aim point (#315). Never shorter than `COMPUTER_AIM_INSIDE_KM`, so the
+ * last few hundred metres fly the geometry #32 pinned.
+ *
+ * **Aiming at the slot holds the lateral error in proportion to the distance,
+ * and the orbit adds to it.** A ship flying at a point stays on the line to
+ * that point, so its angle off the axis never closes — and §5's axis swings as
+ * the station orbits, so that angle grows for the whole run-in. At a 90 min
+ * orbit it passes the cone's 3° inside a minute, the ship leaves the corridor,
+ * and the line-up turns it back toward an entry point kilometres behind it.
+ * Aiming at the axis a quarter of the remaining distance ahead closes the
+ * error as the fourth power of the distance instead.
+ */
+export const COMPUTER_RUN_IN_LOOKAHEAD = 0.25;
+
+/**
  * The corridor the computer runs in through: a **cone**, not a cylinder.
  *
  * `COMPUTER_CORRIDOR_KM` is its half-width at the aperture plane — a fifth of
@@ -1008,9 +1024,9 @@ export const COMPUTER_AIM_INSIDE_KM = 0.05;
  * lag of a few metres and a fixed 7 m tolerance is never met. Measured in the
  * browser it held 12–33 m off-axis and dithered at the standoff for the whole
  * 600 s grant. A cone is met at range and tightens as the ship closes, which is
- * the shape the approach actually has — and the run-in aims at the slot centre,
- * so the lateral error shrinks in proportion to the distance rather than
- * needing to be flown out first.
+ * the shape the approach actually has — and the run-in aims at the axis ahead
+ * of the ship (`COMPUTER_RUN_IN_LOOKAHEAD`), so the lateral error shrinks
+ * faster than the cone does rather than needing to be flown out first.
  */
 export const COMPUTER_CORRIDOR_KM = 0.007;
 export const COMPUTER_CONE_TAN = Math.tan((3 * Math.PI) / 180);
@@ -1221,13 +1237,26 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 		frame.planeKm - COMPUTER_AIM_INSIDE_KM,
 		frame.planeKm / 2,
 	);
+	// The run-in aims at the axis ahead of the ship, not at the aim point
+	// itself: see `COMPUTER_RUN_IN_LOOKAHEAD` for why a point aim is left
+	// behind by the orbit.
+	const aheadKm = Math.max(
+		COMPUTER_AIM_INSIDE_KM,
+		COMPUTER_RUN_IN_LOOKAHEAD * (axial - aimKm),
+	);
 	const target = lined
-		? scale(frame.axis, aimKm)
+		? scale(frame.axis, Math.max(aimKm, axial - aheadKm))
 		: scale(frame.axis, corridorAxial);
 
 	const toTarget = sub(target, pose.rel);
 	const distKm = length(toTarget);
-	const speedKms = approachSpeed(distKm, lined, input.maxSpeedKms);
+	// The run-in's speed still reads the distance to the aim point. The
+	// lookahead point is a direction, and a speed law read off it would crawl.
+	const speedKms = approachSpeed(
+		lined ? Math.max(distKm, axial - aimKm) : distKm,
+		lined,
+		input.maxSpeedKms,
+	);
 	const nose = distKm === 0 ? pose.nose : unit(toTarget);
 
 	return {
