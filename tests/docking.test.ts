@@ -920,6 +920,10 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 	});
 });
 
+/** The docking axis's swing at the fastest orbit the generator makes, 90 min —
+ *  in the game the axis points at the parent body, so it turns once per orbit. */
+const FASTEST_ORBIT_SWING_RAD_PER_S = (2 * Math.PI) / (90 * 60);
+
 describe("§9.1.11 the docking computer", () => {
 	test.each([0.6, 2.0, 3.0])(
 		"it flies from the vicinity to docked at %f rpm, violating no check",
@@ -946,16 +950,19 @@ describe("§9.1.11 the docking computer", () => {
 	 * swings as the station orbits — at the fastest orbit the generator makes,
 	 * 90 min. Returns the steps from the first run-in on.
 	 */
-	const flyHeldAtCorridor = (limitS: number): ComputerTraceStep[] => {
+	const flyHeldAtCorridor = (
+		limitS: number,
+		dt: number,
+	): ComputerTraceStep[] => {
 		const trace: ComputerTraceStep[] = [];
 		const run = fly({
 			spinRpm: 2,
 			hull: PLAYER_BASELINE_HULL,
 			axis: AXIS,
 			reference: REFERENCE,
-			dt: 1 / 60,
+			dt,
 			holdRunIn: true,
-			axisSwingRadPerS: (2 * Math.PI) / (90 * 60),
+			axisSwingRadPerS: FASTEST_ORBIT_SWING_RAD_PER_S,
 			limitS,
 			trace,
 		});
@@ -966,46 +973,59 @@ describe("§9.1.11 the docking computer", () => {
 		return trace.slice(first);
 	};
 
-	test("waiting at the corridor, it does not flip phase for a frame at a time (#315)", () => {
-		// The recording showed a one-frame jump every ~20 frames, which is a
-		// one-step `line-up` between two `run-in`s: the nose turns by yaw·dt, the
-		// throttle kicks, and the next step turns it back.
-		const hold = flyHeldAtCorridor(180);
-		const segments: { phase: string; steps: number; at: number }[] = [];
-		let start = 0;
-		for (let i = 1; i <= hold.length; i++) {
-			if (i < hold.length && hold[i].phase === hold[start].phase) continue;
-			segments.push({ phase: hold[start].phase, steps: i - start, at: start });
-			start = i;
-		}
-		// Half a second at 60 fps. The last segment is cut by the time limit.
-		const flickers = segments.slice(0, -1).filter((s) => s.steps < 30);
-		expect({ flickers: flickers.length, first: flickers.slice(0, 3) }).toEqual({
-			flickers: 0,
-			first: [],
-		});
-	});
+	test.each([1 / 60, MAX_DT])(
+		"waiting at the corridor, it does not flip phase for a frame at a time, at a %f s step (#315)",
+		(dt) => {
+			// The recording showed a one-frame jump every ~20 frames, which is a
+			// one-step `line-up` between two `run-in`s: the nose turns by yaw·dt, the
+			// throttle kicks, and the next step turns it back.
+			const hold = flyHeldAtCorridor(180, dt);
+			const segments: { phase: string; steps: number; at: number }[] = [];
+			let start = 0;
+			for (let i = 1; i <= hold.length; i++) {
+				if (i < hold.length && hold[i].phase === hold[start].phase) continue;
+				segments.push({
+					phase: hold[start].phase,
+					steps: i - start,
+					at: start,
+				});
+				start = i;
+			}
+			// Half a second, at either step. The last segment is cut by the time limit.
+			const flickers = segments.slice(0, -1).filter((s) => s.steps * dt < 0.5);
+			expect({
+				flickers: flickers.length,
+				first: flickers.slice(0, 3),
+			}).toEqual({
+				flickers: 0,
+				first: [],
+			});
+		},
+	);
 
-	test("waiting at the corridor, the held ship does not walk in past its entry point (#315)", () => {
-		// The flip count above cannot see this: a line-up burst thrusts along the
-		// nose the ship has, and a parked nose points down the axis while the
-		// correction is lateral, so a held ship walks toward the station. PR #318
-		// carries the per-build figures. Moving *to* the entry point is the
-		// line-up's job; moving past it toward the station is the defect.
-		const hold = flyHeldAtCorridor(300);
-		const entryKm = frameFor().planeKm + COMPUTER_STANDOFF_KM;
-		const insideEntryKm = Math.max(
-			...hold.map((step) => entryKm - step.axialKm),
-		);
-		// The line-up fires on leaving the corridor, so the ship crosses its
-		// surface by the few frames a turn takes; a ship that stops being
-		// corrected leaves it by whole multiples.
-		const widestOff = Math.max(
-			...hold.map((step) => step.offAxisKm / step.corridorKm),
-		);
-		expect(insideEntryKm).toBeLessThan(0.05);
-		expect(widestOff).toBeLessThan(1.1);
-	});
+	test.each([1 / 60, MAX_DT])(
+		"waiting at the corridor, the held ship does not walk in past its entry point, at a %f s step (#315)",
+		(dt) => {
+			// The flip count above cannot see this: a line-up burst thrusts along the
+			// nose the ship has, and a parked nose points down the axis while the
+			// correction is lateral, so a held ship walks toward the station. PR #318
+			// carries the per-build figures. Moving *to* the entry point is the
+			// line-up's job; moving past it toward the station is the defect.
+			const hold = flyHeldAtCorridor(300, dt);
+			const entryKm = frameFor().planeKm + COMPUTER_STANDOFF_KM;
+			const insideEntryKm = Math.max(
+				...hold.map((step) => entryKm - step.axialKm),
+			);
+			// The line-up fires on leaving the corridor, so the ship crosses its
+			// surface by the few frames a turn takes; a ship that stops being
+			// corrected leaves it by whole multiples.
+			const widestOff = Math.max(
+				...hold.map((step) => step.offAxisKm / step.corridorKm),
+			);
+			expect(insideEntryKm).toBeLessThan(0.05);
+			expect(widestOff).toBeLessThan(1.1);
+		},
+	);
 
 	test.each([
 		[MAX_DT, 1.14],
@@ -1025,7 +1045,7 @@ describe("§9.1.11 the docking computer", () => {
 				axis: AXIS,
 				reference: REFERENCE,
 				dt,
-				axisSwingRadPerS: (2 * Math.PI) / (90 * 60),
+				axisSwingRadPerS: FASTEST_ORBIT_SWING_RAD_PER_S,
 			});
 			expect({
 				refused: run.refused,

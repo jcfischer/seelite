@@ -51,6 +51,7 @@ import {
 	type StationType,
 } from "../src/station";
 import { berthFits, stationInterior } from "../src/station-interior";
+import { MAX_DT } from "../src/units";
 import { cross, length, scale, v3 } from "../src/vec3";
 import { flyTheComputer } from "./helpers/fly-the-computer";
 
@@ -115,6 +116,33 @@ const spinsFor = (type: StationType): number[] =>
 				SPIN_RPM_RANGE.maxRpm,
 			]
 		: [0];
+
+describe("every hull docks while the orbit swings the axis, at MAX_DT (#315)", () => {
+	// The step the renderer clamps to and the fastest orbit the generator makes.
+	// A point-aimed run-in drifted out of the corridor here and never docked;
+	// the baseline hull alone could not show which hulls were exposed.
+	for (const hull of DOCKABLE_HULL_IDS) {
+		if (!hasBerth(hull, "trade")) continue;
+		test(`${hull} at a trade station`, () => {
+			const rpm = spinsFor("trade")[1];
+			const run = flyTheComputer({
+				hull,
+				type: "trade",
+				spinRpm: rpm,
+				axis: AXIS,
+				reference: REFERENCE,
+				dt: MAX_DT,
+				axisSwingRadPerS: (2 * Math.PI) / (90 * 60),
+			});
+			expect({
+				hull,
+				refused: run.refused,
+				docked: run.docked,
+				failedChecks: failedChecksOf(run),
+			}).toEqual({ hull, refused: null, docked: true, failedChecks: "" });
+		});
+	}
+});
 
 describe("every hull docks at every role it has a berth at", () => {
 	for (const type of STATION_TYPES) {

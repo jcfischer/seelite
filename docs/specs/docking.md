@@ -666,15 +666,26 @@ point kilometres behind it. Before #315 that line-up lasted one frame and the
 approach survived it; once the line-up held its phase and waited for the nose
 to come round before thrusting, the ship stopped, turned outward and never
 docked. `COMPUTER_RUN_IN_LOOKAHEAD` aims a quarter of the remaining distance
-ahead, so the lateral error closes as the fourth power of the distance and
-the cone, which closes linearly, is not reached. Measured over 9 hulls, three
-steps (1/60, 0.05, 0.1 s), four spins and orbits from fixed to 45 min:
+ahead. An offset the ship already has then decays as the fourth power of the
+distance rather than in proportion to it.
+
+**That does not prove the cone is never reached.** The orbit keeps adding a lag,
+about ω × axial × lookahead / speed, and at the run-in's speed floor that lag
+shrinks linearly, as the cone does. So the margin is a measurement over the
+orbits flown, not a law. `scripts/measure-computer-approach.ts` flies every hull
+with a berth at a trade station, at three steps (1/60, 0.05, 0.1 s), four spins
+and orbits from fixed to 45 min (the generator's fastest is 90), and reprints
+the last row below. The first two rows were measured on the builds named, with
+the same sweep:
 
 | run-in aim | approaches that failed to dock | worst dock | most corridor exits in one run |
 |---|---|---|---|
 | the slot, before #315 | 4 of 432 (45 min orbit, 0.1 s) | 73 s | 198 |
 | the slot, #315's first build | 36 of 432 | 469 s | 31 |
 | a quarter of the distance ahead | 0 of 432 | 77 s | 0 |
+
+In that last row the widest run-in came to 0.75 of the corridor's half-width,
+at the 45 min orbit. A faster orbit, or a lower speed floor, spends that margin.
 
 **The run-in aim sits a hair inside the plane, not on it** (implementation
 finding, node #32). The slot centre is *at* the plane, so an aim exactly on it

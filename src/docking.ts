@@ -1006,8 +1006,13 @@ export const COMPUTER_AIM_INSIDE_KM = 0.05;
  * the station orbits, so that angle grows for the whole run-in. At a 90 min
  * orbit it passes the cone's 3° inside a minute, the ship leaves the corridor,
  * and the line-up turns it back toward an entry point kilometres behind it.
- * Aiming at the axis a quarter of the remaining distance ahead closes the
- * error as the fourth power of the distance instead.
+ * Aiming at the axis a quarter of the remaining distance ahead makes an offset
+ * the ship already has decay as the fourth power of the distance instead.
+ *
+ * **That is not a guarantee against the orbit.** The swing keeps adding a lag,
+ * about ω × axial × lookahead / speed, and at the run-in's speed floor that
+ * lag shrinks linearly, as the cone does. So the margin is measured:
+ * `scripts/measure-computer-approach.ts` flies the sweep and prints it.
  */
 export const COMPUTER_RUN_IN_LOOKAHEAD = 0.25;
 
@@ -1130,8 +1135,15 @@ export function insideCorridor(
 ): boolean {
 	const axial = dot(pose.rel, frame.axis);
 	if (axial < frame.planeKm) return false;
-	const offAxisKm = length(sub(pose.rel, scale(frame.axis, axial)));
-	return offAxisKm <= widthFactor * corridorHalfWidthKm(frame, axial);
+	return (
+		offAxisKm(frame, pose.rel) <=
+		widthFactor * corridorHalfWidthKm(frame, axial)
+	);
+}
+
+/** A station-frame position's distance from the docking axis, km. */
+export function offAxisKm(frame: ApertureFrame, rel: Vec3): number {
+	return length(sub(rel, scale(frame.axis, dot(rel, frame.axis))));
 }
 
 /** The corridor's half-width at an axial distance, km — the cone's one law. */

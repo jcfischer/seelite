@@ -29,6 +29,7 @@ import {
 	corridorHalfWidthKm,
 	dockingComputerStep,
 	newDockingState,
+	offAxisKm,
 	orthonormalise,
 	planeCrossing,
 	requestClearance,
@@ -233,7 +234,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 				rel: ship.pos,
 				gameTime,
 				axialKm,
-				offAxisKm: length(add(ship.pos, scale(frame.axis, -axialKm))),
+				offAxisKm: offAxisKm(frame, ship.pos),
 				corridorKm: corridorHalfWidthKm(frame, axialKm),
 			});
 		}

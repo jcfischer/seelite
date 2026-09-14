@@ -262,6 +262,7 @@ import {
 	slotBasis,
 	tickDocking,
 	type ComputerPhase,
+	offAxisKm,
 } from "./docking";
 import { berthCentre, recomposeDirection } from "./arrival";
 import {
@@ -6407,9 +6408,7 @@ class Game {
 			 *  speed while the throttle says zero, which is §1's whole warning. */
 			frameBodyId: this.frameBody?.id ?? null,
 			throttle: this.throttle,
-			offAxisKm: length(
-				sub(pose.rel, scale(frame.axis, dot(pose.rel, frame.axis))),
-			),
+			offAxisKm: offAxisKm(frame, pose.rel),
 			axialKm: dot(pose.rel, frame.axis),
 			planeKm: frame.planeKm,
 			apertureKind: frame.aperture.kind,
