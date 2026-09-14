@@ -68,7 +68,13 @@ import {
 	v3,
 } from "../src/vec3";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
-import { flyTheComputer as fly } from "./helpers/fly-the-computer";
+import { MAX_DT } from "../src/units";
+import {
+	type ComputerTraceStep,
+	flyTheComputer as fly,
+	// Built from the tolerances rather than from hand-typed vectors.
+	rotateAbout,
+} from "./helpers/fly-the-computer";
 
 /**
  * The traffic a clearance request is answered against (§13.2).
@@ -144,20 +150,6 @@ function nominal(
 	};
 }
 
-/** Rotate `v` about `axis` by `rad` (Rodrigues). Used to build the boundary
- *  rows *from* the tolerances rather than from hand-typed vectors. */
-function rotate(v: Vec3, axis: Vec3, rad: number): Vec3 {
-	const k = scale(axis, 1 / length(axis));
-	const c = Math.cos(rad);
-	const s = Math.sin(rad);
-	const kv = v3(
-		k.y * v.z - k.z * v.y,
-		k.z * v.x - k.x * v.z,
-		k.x * v.y - k.y * v.x,
-	);
-	return add(add(scale(v, c), scale(kv, s)), scale(k, dot(k, v) * (1 - c)));
-}
-
 /** Some direction perpendicular to `AXIS`, for tilting things off it. */
 const PERP = ((): Vec3 => {
 	const b = slotBasis(apertureFrame("trade", AXIS, 0, REFERENCE));
@@ -198,7 +190,7 @@ describe("§9.1.1 the six checks", () => {
 		const frame = frameFor();
 		// Position dead on the axis, nose 5° past the tolerance. A purely
 		// positional cone would pass this, which is the hole §3 names.
-		const nose = rotate(
+		const nose = rotateAbout(
 			scale(frame.axis, -1),
 			PERP,
 			(AXIS_TOLERANCE_DEG + 5) * DEG,
@@ -213,8 +205,12 @@ describe("§9.1.1 the six checks", () => {
 
 	test("check 2 boundary: exactly the tolerance passes, a hair past fails", () => {
 		const frame = frameFor();
-		const at = rotate(scale(frame.axis, -1), PERP, AXIS_TOLERANCE_DEG * DEG);
-		const past = rotate(
+		const at = rotateAbout(
+			scale(frame.axis, -1),
+			PERP,
+			AXIS_TOLERANCE_DEG * DEG,
+		);
+		const past = rotateAbout(
 			scale(frame.axis, -1),
 			PERP,
 			(AXIS_TOLERANCE_DEG + 1e-6) * DEG,
@@ -244,8 +240,8 @@ describe("§9.1.1 the six checks", () => {
 	test("check 4 boundary: exactly the roll tolerance passes, a hair past fails", () => {
 		const frame = frameFor();
 		const basis = slotBasis(frame);
-		const at = rotate(basis.up, frame.axis, ROLL_TOLERANCE_DEG * DEG);
-		const past = rotate(
+		const at = rotateAbout(basis.up, frame.axis, ROLL_TOLERANCE_DEG * DEG);
+		const past = rotateAbout(
 			basis.up,
 			frame.axis,
 			(ROLL_TOLERANCE_DEG + 1e-6) * DEG,
@@ -429,7 +425,7 @@ describe("§9.1.4 a failed entry repels and keeps its grant", () => {
 			frame,
 			// Mis-rolled: a piloting error, not a protocol violation.
 			pose: nominal(frame, {
-				up: rotate(slotBasis(frame).up, frame.axis, 90 * DEG),
+				up: rotateAbout(slotBasis(frame).up, frame.axis, 90 * DEG),
 			}),
 			state: granted,
 			gameTime: 10,
@@ -477,7 +473,7 @@ test("§9.1.5 a 90°-mis-rolled entry at 0.01 km/s still costs the floor", () =>
 		frame,
 		pose: nominal(frame, {
 			vRel: scale(frame.axis, -0.01),
-			up: rotate(slotBasis(frame).up, frame.axis, 90 * DEG),
+			up: rotateAbout(slotBasis(frame).up, frame.axis, 90 * DEG),
 		}),
 		state: requestClearance(newDockingState(), {
 			gameTime: 0,
@@ -518,7 +514,7 @@ describe("§9.1.6 the pad is the slot minus check 4", () => {
 		"rolled %i°, the roll row is the only outcome that differs",
 		(deg) => {
 			const pose = nominal(slot, {
-				up: rotate(slotBasis(slot).up, slot.axis, deg * DEG),
+				up: rotateAbout(slotBasis(slot).up, slot.axis, deg * DEG),
 			});
 			const a = evaluateEntry(slot, pose, { hostile: false });
 			const b = evaluateEntry(pad, pose, { hostile: false });
@@ -904,6 +900,7 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 			}),
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase: "run-in",
 		});
 		expect(cmd.engaged).toBe(true);
 		// The commanded nose points inward along the axis, not sideways at the
@@ -914,6 +911,10 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 		expect(noseAngleDeg).toBeLessThan(10);
 	});
 });
+
+/** The docking axis's swing at the fastest orbit the generator makes, 90 min —
+ *  in the game the axis points at the parent body, so it turns once per orbit. */
+const FASTEST_ORBIT_SWING_RAD_PER_S = (2 * Math.PI) / (90 * 60);
 
 describe("§9.1.11 the docking computer", () => {
 	test.each([0.6, 2.0, 3.0])(
@@ -934,6 +935,118 @@ describe("§9.1.11 the docking computer", () => {
 		expect(run.docked).toBe(true);
 		expect(run.violations).toBe(0);
 	});
+
+	/**
+	 * The playtest's shape (#315): a queued request holds the run-in at zero
+	 * speed, so the ship parks where it entered the corridor, and the axis
+	 * swings as the station orbits — at the fastest orbit the generator makes,
+	 * 90 min. Returns the steps from the first run-in on.
+	 */
+	const flyHeldAtCorridor = (
+		limitS: number,
+		dt: number,
+	): ComputerTraceStep[] => {
+		const trace: ComputerTraceStep[] = [];
+		const run = fly({
+			spinRpm: 2,
+			hull: PLAYER_BASELINE_HULL,
+			axis: AXIS,
+			reference: REFERENCE,
+			dt,
+			holdRunIn: true,
+			axisSwingRadPerS: FASTEST_ORBIT_SWING_RAD_PER_S,
+			limitS,
+			trace,
+		});
+		expect(run.refused).toBeNull();
+		const first = trace.findIndex((step) => step.phase === "run-in");
+		// The control: a run that never lined up has nothing to find.
+		expect(first).toBeGreaterThan(0);
+		return trace.slice(first);
+	};
+
+	test.each([1 / 60, MAX_DT])(
+		"waiting at the corridor, it does not flip phase for a frame at a time, at a %f s step (#315)",
+		(dt) => {
+			// The recording showed a one-frame jump every ~20 frames, which is a
+			// one-step `line-up` between two `run-in`s: the nose turns by yaw·dt, the
+			// throttle kicks, and the next step turns it back.
+			const hold = flyHeldAtCorridor(180, dt);
+			const segments: { phase: string; steps: number; at: number }[] = [];
+			let start = 0;
+			for (let i = 1; i <= hold.length; i++) {
+				if (i < hold.length && hold[i].phase === hold[start].phase) continue;
+				segments.push({
+					phase: hold[start].phase,
+					steps: i - start,
+					at: start,
+				});
+				start = i;
+			}
+			// Half a second, at either step. The last segment is cut by the time limit.
+			const flickers = segments.slice(0, -1).filter((s) => s.steps * dt < 0.5);
+			expect({
+				flickers: flickers.length,
+				first: flickers.slice(0, 3),
+			}).toEqual({
+				flickers: 0,
+				first: [],
+			});
+		},
+	);
+
+	test.each([1 / 60, MAX_DT])(
+		"waiting at the corridor, the held ship does not walk in past its entry point, at a %f s step (#315)",
+		(dt) => {
+			// The flip count above cannot see this: a line-up burst thrusts along the
+			// nose the ship has, and a parked nose points down the axis while the
+			// correction is lateral, so a held ship walks toward the station. PR #318
+			// carries the per-build figures. Moving *to* the entry point is the
+			// line-up's job; moving past it toward the station is the defect.
+			const hold = flyHeldAtCorridor(300, dt);
+			const entryKm = frameFor().planeKm + COMPUTER_STANDOFF_KM;
+			const insideEntryKm = Math.max(
+				...hold.map((step) => entryKm - step.axialKm),
+			);
+			// The line-up fires on leaving the corridor, so the ship crosses its
+			// surface by the few frames a turn takes; a ship that stops being
+			// corrected leaves it by whole multiples.
+			const widestOff = Math.max(
+				...hold.map((step) => step.offAxisKm / step.corridorKm),
+			);
+			expect(insideEntryKm).toBeLessThan(0.05);
+			expect(widestOff).toBeLessThan(1.1);
+		},
+	);
+
+	test.each([
+		[MAX_DT, 1.14],
+		[MAX_DT, 3],
+		[1 / 60, 1.14],
+		[1 / 60, 3],
+	])(
+		"it docks while the station's orbit swings the axis, at a %f s step and %f rpm (#315)",
+		(dt, rpm) => {
+			// Every row above flies a fixed axis. In the game the axis follows the
+			// orbit, so the run-in lags it by metres per kilometre; near the plane
+			// that lag leaves a cone that narrows to 7 m. `MAX_DT` is the step the
+			// renderer clamps to and the step `probe-docking` flies at.
+			const run = fly({
+				spinRpm: rpm,
+				hull: PLAYER_BASELINE_HULL,
+				axis: AXIS,
+				reference: REFERENCE,
+				dt,
+				axisSwingRadPerS: FASTEST_ORBIT_SWING_RAD_PER_S,
+			});
+			expect({
+				refused: run.refused,
+				docked: run.docked,
+				violations: run.violations,
+				checks: run.crossing?.evaluation.checks ?? null,
+			}).toMatchObject({ refused: null, docked: true, violations: 0 });
+		},
+	);
 
 	test("it refuses at a hostile station", () => {
 		const run = flyTheComputer({ spinRpm: 1.5, hostile: true });
@@ -959,6 +1072,7 @@ describe("§9.1.11 the docking computer", () => {
 			}),
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase: "idle",
 		});
 		expect(cmd.engaged).toBe(false);
 		expect(cmd.refused).toBe("out-of-range");

@@ -89,6 +89,9 @@ try {
 				state: g.dockingStateOf(station.id),
 				gameTime: g.world.gameTime,
 				maxSpeedKms: g.assistCapKms,
+				// The phase the game is flying (#315): without it the entry side of
+				// the hysteresis is read, and a ship mid-run-in reports `line-up`.
+				previousPhase: g.lastComputerPhase,
 			});
 			const playerLane = g.playerLaneRequests.get(station.id);
 			const queuedTraffic = g.trafficRoutes

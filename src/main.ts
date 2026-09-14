@@ -261,6 +261,8 @@ import {
 	slewToward,
 	slotBasis,
 	tickDocking,
+	type ComputerPhase,
+	offAxisKm,
 } from "./docking";
 import { berthCentre, recomposeDirection } from "./arrival";
 import {
@@ -2022,6 +2024,15 @@ class Game {
 	 */
 	lastComputerRefusal: "no-clearance" | "hostile" | "out-of-range" | null =
 		null;
+
+	/**
+	 * The phase the computer's last step returned at `lastComputerStationId`,
+	 * fed back into the next one (#315). `"idle"` whenever it did not fly on the
+	 * last step or the nearest station changed, so a run-in always starts on
+	 * the tight side of that station's corridor hysteresis.
+	 */
+	private lastComputerPhase: ComputerPhase = "idle";
+	private lastComputerStationId: string | null = null;
 
 	/** The name it is filed under in the equipment table, on the handle so a
 	 *  probe naming it does not restate the string. */
@@ -6409,9 +6420,7 @@ class Game {
 			 *  speed while the throttle says zero, which is §1's whole warning. */
 			frameBodyId: this.frameBody?.id ?? null,
 			throttle: this.throttle,
-			offAxisKm: length(
-				sub(pose.rel, scale(frame.axis, dot(pose.rel, frame.axis))),
-			),
+			offAxisKm: offAxisKm(frame, pose.rel),
 			axialKm: dot(pose.rel, frame.axis),
 			planeKm: frame.planeKm,
 			apertureKind: frame.aperture.kind,
@@ -6482,6 +6491,7 @@ class Game {
 	toggleDockingComputer() {
 		if (!this.hasDockingComputer) return;
 		this.dockingComputerEngaged = !this.dockingComputerEngaged;
+		this.lastComputerPhase = "idle";
 		if (this.dockingComputerEngaged) this.lastComputerRefusal = null;
 		else this.clearPlayerArrivalLaneRequests();
 	}
@@ -6877,11 +6887,21 @@ class Game {
 		dt: number,
 		approaches: Map<string, DockingApproach>,
 	): boolean {
+		// Taken before anything can return. Every early exit leaves the corridor,
+		// so the stored phase is idle unless a step runs and records its own.
+		let previousPhase = this.lastComputerPhase;
+		this.lastComputerPhase = "idle";
 		if (!this.dockingComputerEngaged || this.dockedAt) return false;
 		// The first entry is the nearest station: `dockingApproaches` walks in
 		// range order.
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
 		if (!nearestId || !approach) return false;
+		// A phase belongs to one station's corridor; carried to another it would
+		// start that run-in on the wide side of the hysteresis.
+		if (nearestId !== this.lastComputerStationId) {
+			previousPhase = "idle";
+			this.lastComputerStationId = nearestId;
+		}
 		const { frame } = approach;
 		const stationState = this.dockingStateOf(nearestId);
 		const awaitingBerth = stationState.clearance.kind === "queued";
@@ -6903,7 +6923,9 @@ class Game {
 				: stationState,
 			gameTime: this.world.gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase,
 		});
+		this.lastComputerPhase = command.phase;
 		if (!command.engaged) {
 			// **Silent disengagement is the failure mode here.** §8's HUD cues are
 			// not this node's, so nothing tells the player the autopilot stopped —
