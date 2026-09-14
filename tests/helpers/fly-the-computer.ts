@@ -21,12 +21,12 @@
 
 import {
 	type ApertureFrame,
-	COMPUTER_CONE_TAN,
-	COMPUTER_CORRIDOR_KM,
+	type ComputerPhase,
 	type EntryPose,
 	apertureFrame,
 	attemptEntry,
 	GRANT_WINDOW_S,
+	corridorHalfWidthKm,
 	dockingComputerStep,
 	newDockingState,
 	orthonormalise,
@@ -45,12 +45,12 @@ import {
 import { stationInterior } from "../../src/station-interior";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../../src/vec3";
 
-/** One step of the computer's command, for a caller asking how it flew. */
+/** One step of the computer's flying, for a caller asking how it flew. */
 export interface ComputerTraceStep {
-	phase: "line-up" | "run-in" | "idle";
+	phase: ComputerPhase;
 	nose: Vec3;
 	throttle: number;
-	/** Ship position in the station's frame, km, when the command was taken. */
+	/** Ship position in the station's frame, km, at the start of the step. */
 	rel: Vec3;
 	gameTime: number;
 	/** Distance out along this step's docking axis, km. */
@@ -179,7 +179,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let steps = 0;
 	let crossingOutcome: FlightRun["crossing"] = null;
 	const limitS = opts.limitS ?? GRANT_WINDOW_S;
-	let previousPhase: ComputerTraceStep["phase"] = "idle";
+	let previousPhase: ComputerPhase = "idle";
 
 	const frameAt = (t: number): ApertureFrame =>
 		apertureFrame(
@@ -234,8 +234,7 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 				gameTime,
 				axialKm,
 				offAxisKm: length(add(ship.pos, scale(frame.axis, -axialKm))),
-				corridorKm:
-					COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axialKm - frame.planeKm),
+				corridorKm: corridorHalfWidthKm(frame, axialKm),
 			});
 		}
 

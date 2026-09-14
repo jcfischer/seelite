@@ -1053,8 +1053,11 @@ export interface ComputerInput {
 	 * frames, turned the nose by yaw·dt and kicked the throttle. A default here
 	 * would let a caller that forgot silently get the flicker back.
 	 */
-	previousPhase: "line-up" | "run-in" | "idle";
+	previousPhase: ComputerPhase;
 }
+
+/** Which leg of §7 the computer is flying. One declaration, read everywhere. */
+export type ComputerPhase = "line-up" | "run-in" | "idle";
 
 export interface ComputerCommand {
 	engaged: boolean;
@@ -1066,7 +1069,7 @@ export interface ComputerCommand {
 	up: Vec3;
 	/** Commanded speed in the station's frame, km/s. */
 	speedKms: number;
-	phase: "line-up" | "run-in" | "idle";
+	phase: ComputerPhase;
 }
 
 /**
@@ -1112,11 +1115,15 @@ export function insideCorridor(
 	const axial = dot(pose.rel, frame.axis);
 	if (axial < frame.planeKm) return false;
 	const offAxisKm = length(sub(pose.rel, scale(frame.axis, axial)));
-	return (
-		offAxisKm <=
-		widthFactor *
-			(COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axial - frame.planeKm))
-	);
+	return offAxisKm <= widthFactor * corridorHalfWidthKm(frame, axial);
+}
+
+/** The corridor's half-width at an axial distance, km — the cone's one law. */
+export function corridorHalfWidthKm(
+	frame: ApertureFrame,
+	axialKm: number,
+): number {
+	return COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axialKm - frame.planeKm);
 }
 
 /**
@@ -1131,22 +1138,24 @@ export function insideCorridor(
 export const COMPUTER_ENTRY_WIDTH_FACTOR = 0.5;
 
 /**
- * How far off the commanded direction the nose may be and still thrust at all.
+ * How far the nose may be off the direction the computer aims it and still
+ * thrust at all.
  *
  * **Turn, then burn (#315).** The assist drives the ship along the nose it has,
- * not the nose it was told to have, and a slew is a second or more. A ship
- * parked on the axis whose correction is lateral therefore thrust *down the
- * axis* for every frame the nose took to come round: held at the corridor it
- * walked toward the station, and once inside the entry point — with the target
- * now behind it — ran to 880 m/s. Below this angle the commanded speed is
- * zero, and it ramps linearly to full as the nose comes onto the command.
+ * not the nose it is being turned toward, and a slew is a second or more. A
+ * ship parked on the axis whose correction is lateral therefore thrust *down
+ * the axis* for every frame the nose took to come round: held at the corridor
+ * it walked toward the station, and once inside the entry point — with the
+ * target now behind it — ran away toward it. **Beyond** this angle the speed is
+ * zero; inside it the speed ramps to full as the cosine of the error goes from
+ * cos(20°) to 1.
  */
 export const COMPUTER_THRUST_CONE_RAD = (20 * Math.PI) / 180;
 
-/** The fraction of the commanded speed the current nose may fly (#315). */
-export function thrustAlignment(nose: Vec3, commanded: Vec3): number {
+/** The fraction of its speed the computer may fly on the nose it has (#315). */
+export function thrustAlignment(nose: Vec3, aimed: Vec3): number {
 	const floor = Math.cos(COMPUTER_THRUST_CONE_RAD);
-	return Math.min(1, Math.max(0, (dot(nose, commanded) - floor) / (1 - floor)));
+	return Math.min(1, Math.max(0, (dot(nose, aimed) - floor) / (1 - floor)));
 }
 
 /**

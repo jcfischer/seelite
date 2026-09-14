@@ -261,6 +261,7 @@ import {
 	slewToward,
 	slotBasis,
 	tickDocking,
+	type ComputerPhase,
 } from "./docking";
 import { berthCentre, recomposeDirection } from "./arrival";
 import {
@@ -2020,11 +2021,13 @@ class Game {
 		null;
 
 	/**
-	 * The phase the computer's last step returned, fed back into the next one
-	 * (#315). `"idle"` whenever it is not flying, so an engagement always starts
-	 * on the tight side of the corridor's hysteresis.
+	 * The phase the computer's last step returned at `lastComputerStationId`,
+	 * fed back into the next one (#315). `"idle"` whenever it did not fly on the
+	 * last step or the nearest station changed, so a run-in always starts on
+	 * the tight side of that station's corridor hysteresis.
 	 */
-	private lastComputerPhase: "line-up" | "run-in" | "idle" = "idle";
+	private lastComputerPhase: ComputerPhase = "idle";
+	private lastComputerStationId: string | null = null;
 
 	/** The name it is filed under in the equipment table, on the handle so a
 	 *  probe naming it does not restate the string. */
@@ -6844,11 +6847,23 @@ class Game {
 		dt: number,
 		approaches: Map<string, DockingApproach>,
 	): boolean {
-		if (!this.dockingComputerEngaged || this.dockedAt) return false;
+		if (!this.dockingComputerEngaged || this.dockedAt) {
+			this.lastComputerPhase = "idle";
+			return false;
+		}
 		// The first entry is the nearest station: `dockingApproaches` walks in
 		// range order.
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
-		if (!nearestId || !approach) return false;
+		if (!nearestId || !approach) {
+			this.lastComputerPhase = "idle";
+			return false;
+		}
+		// A phase belongs to one station's corridor; carried to another it would
+		// start that run-in on the wide side of the hysteresis.
+		if (nearestId !== this.lastComputerStationId) {
+			this.lastComputerPhase = "idle";
+			this.lastComputerStationId = nearestId;
+		}
 		const { frame } = approach;
 		const stationState = this.dockingStateOf(nearestId);
 		const awaitingBerth = stationState.clearance.kind === "queued";
