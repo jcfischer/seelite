@@ -32,14 +32,13 @@ const HELD_ORDER: readonly SaveRecordKind[] = ["lastDocked", "live"];
  * **With no store, the boot's fault is the badge.** A direct boot whose attach
  * failed plays on with nothing that will write, and `saveFault` is the only
  * record of why. A boot with nothing wrong, and `?no-save`, have no fault.
+ *
+ * **With a store, `saveFault` is not read.** The one attach fault a store can
+ * carry is `finishNewGame` failing after the new game's first save landed: a
+ * failed save there is the store's (`flush("new-game")` holds it), and what is
+ * left is the pending record, which the next boot's `resolveActive` clears
+ * beside the landed save. It is logged, and nothing the player has is lost.
  */
-/** Whether `heldSaveFault` is not `null`, by the same rule, without building the
- *  words: the frame loop asks it every frame (sage, #311 round 2). */
-export const hasHeldSaveFault = (
-	store: { readonly heldFaults: ReadonlyMap<SaveRecordKind, SaveFault> } | null,
-	bootFault: string | null,
-): boolean => (store === null ? bootFault !== null : store.heldFaults.size > 0);
-
 export function heldSaveFault(
 	store: { readonly heldFaults: ReadonlyMap<SaveRecordKind, SaveFault> } | null,
 	bootFault: string | null,
@@ -52,6 +51,13 @@ export function heldSaveFault(
 	}
 	return texts.size > 0 ? [...texts].join("; ") : null;
 }
+
+/** Whether `heldSaveFault` is not `null`, by the same rule, without building the
+ *  words: the frame loop asks it every frame (sage, #311 round 2). */
+export const hasHeldSaveFault = (
+	store: { readonly heldFaults: ReadonlyMap<SaveRecordKind, SaveFault> } | null,
+	bootFault: string | null,
+): boolean => (store === null ? bootFault !== null : store.heldFaults.size > 0);
 
 export type BadgeCorner =
 	| "top-left"
