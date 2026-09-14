@@ -345,6 +345,12 @@ export class SaveStore {
 	) => void;
 	/** Consecutive debounced-write failures, reset by any write that lands. */
 	private failures = 0;
+	/**
+	 * Set by `revertToLastDocked`. A retired store writes nothing more: the page
+	 * is about to reload into the dock it restored, and `current` still holds
+	 * the ship that died.
+	 */
+	private retired = false;
 
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
@@ -360,6 +366,7 @@ export class SaveStore {
 
 	/** D4's trigger: any change to saved state, coalesced. */
 	markDirty(): void {
+		if (this.retired) return;
 		this.dirty = true;
 		this.cancel?.();
 		this.cancel = this.schedule(() => {
@@ -414,6 +421,7 @@ export class SaveStore {
 		assertSlot(slot);
 		this.cancel?.();
 		this.cancel = null;
+		if (this.retired) return;
 		if (!this.dirty && reason !== "quit" && reason !== "new-game") return;
 		const kinds: SaveRecordKind[] =
 			reason === "dock" ? ["live", "lastDocked"] : ["live"];
@@ -515,6 +523,65 @@ export class SaveStore {
 	): Promise<SaveEnvelope | null> {
 		if (commander.permadeath) return null;
 		return this.load(slot, "lastDocked");
+	}
+
+	/**
+	 * #324's death path (principal's ruling O5, 2026-09-14): copy the last dock
+	 * over `live`, so the reload boots into it, and stop writing.
+	 *
+	 * **A death-time write, on purpose.** #89 left death unflushed, and
+	 * `restoreAfterDeath` above still reads only. This is the separate act the
+	 * ruling asked for, and it is the one write a death makes. A permadeath
+	 * commander gets `null` and nothing is written, so that stance is unchanged.
+	 *
+	 * Order matters, and the first order was wrong (sage round 1's blocker).
+	 * The store first quiets itself — it cancels a debounce and waits out a
+	 * write in flight, either of which could land after the copy and put the
+	 * dead ship back. It then reads and validates the dock record, because D9
+	 * makes a bad `lastDocked` a named error rather than something to
+	 * substitute. **Only a record that validates retires the store**: a
+	 * Commander who died before their first dock has no `lastDocked`, and a
+	 * store that had already retired would have dropped every later write
+	 * while still holding the tab's lock. On that path this throws with the
+	 * store still writing and the lock still held. After the copy it gives the
+	 * lock back, so the one-shot continue and the reload's boot can take the
+	 * Commander.
+	 */
+	async revertToLastDocked(commander: {
+		permadeath: boolean;
+	}): Promise<SaveEnvelope | null> {
+		if (commander.permadeath) return null;
+		const wasDirty = this.dirty;
+		this.quiet();
+		this.dirty = false;
+		await this.settled();
+		let raw: unknown;
+		let restored: SaveEnvelope;
+		try {
+			raw = await this.backend.read(this.slot, "lastDocked");
+			if (raw === null || raw === undefined)
+				fail(`Commander "${this.slot}" has no lastDocked record`);
+			restored = parseSave(raw);
+		} catch (error) {
+			// Not retired, and the save the death interrupted is still owed: quieting
+			// cleared the flag and the debounce, and without this a change made
+			// just before the death would never be written (sage round 2).
+			if (wasDirty) this.markDirty();
+			throw error;
+		}
+		// Validated. From here this store writes nothing more — and a debounce
+		// armed during the awaits above is cancelled with it.
+		this.retired = true;
+		this.quiet();
+		await this.backend.write(this.slot, "live", raw);
+		this.release();
+		return restored;
+	}
+
+	/** Cancels a pending debounced write. */
+	private quiet(): void {
+		this.cancel?.();
+		this.cancel = null;
 	}
 
 	/**

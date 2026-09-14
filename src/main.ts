@@ -269,6 +269,17 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
+import type { PlayerShot } from "./duel";
+import {
+	type Encounter,
+	type EncounterContact,
+	type EncounterEnd,
+	RAIDER_CONTACT_RADIUS_KM,
+	forceEncounter,
+	scheduleEncounter,
+	stepEncounter,
+} from "./encounter";
+import { type EncounterBearing, RAIDER_HULL_ID } from "./raider-slots";
 import { berthCentre, recomposeDirection } from "./arrival";
 import {
 	type DockPhase,
@@ -576,6 +587,36 @@ const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 /** A whole ship of the flown hull. A function, because a condition is mutable
  *  state and every caller needs its own. */
 const playerFullCondition = (): ShipCondition => fullCondition(PLAYER_HULL[0]);
+
+/**
+ * `?raider` puts a raider on every cruise leg, five seconds in (#324).
+ *
+ * A playtest affordance of `?hull=`'s kind: the leg law is a chance, and a
+ * pilot judging the contest should not have to fly legs until one comes. The
+ * bearing cycles through behind, alongside and ahead by leg.
+ */
+const RAIDER_PLAYTEST = new URLSearchParams(window.location.search).has(
+	"raider",
+);
+const PLAYTEST_BEARINGS: readonly EncounterBearing[] = [
+	"behind",
+	"alongside",
+	"ahead",
+];
+
+/** What the cockpit says when an encounter ends. `null` for an end the pilot
+ *  never saw. */
+const ENCOUNTER_END_NOTICE: Record<
+	EncounterEnd,
+	((name: string) => string) | null
+> = {
+	missed: null,
+	lost: null,
+	broken: (name) => `broke ${name}'s lock`,
+	escaped: (name) => `escaped ${name}`,
+	fled: (name) => `${name} fled`,
+	destroyed: (name) => `${name} destroyed`,
+};
 
 /** Shared empty fallback for stations with no player or Traffic berth reservations. */
 const EMPTY_BERTHS: ReadonlySet<string> = new Set<string>();
@@ -1424,6 +1465,14 @@ class Game {
 	 * zero.
 	 */
 	clockHeld = false;
+	/**
+	 * Called once, on the frame the hull reaches zero (#324). The boot sets it:
+	 * it restores the last dock, or opens the Commander overlay when there is
+	 * nothing to restore.
+	 */
+	onDeath: (() => Promise<void>) | null = null;
+	/** Set when the hull reaches zero. The clock holds from then on. */
+	dead = false;
 	/** The Commander overlay, once the boot has mounted it (§11). */
 	commanderOverlay: CommanderOverlayHandle | null = null;
 	/** The save-fault badge (`hud-and-scanner.md` §5.3), once mounted. */
@@ -1534,6 +1583,38 @@ class Game {
 		const at = this.contacts.indexOf(contact);
 		if (at >= 0) this.contacts.splice(at, 1);
 	}
+	/** The raider encounter on this leg, from its draw to its end (#324). */
+	encounter: Encounter | null = null;
+	/** Where the encounter's raider is this frame, for the renderer. */
+	private encounterView: EncounterContact | null = null;
+	/**
+	 * The raider's hull and scanner contact, built once and reused by every
+	 * encounter. Render only moves them, so a new encounter never allocates and
+	 * nothing a leg could inherit is assigned on the display path.
+	 */
+	private readonly raiderMesh = (() => {
+		const root = buildShipMesh(
+			RAIDER_HULL_ID,
+			HULL_SPECS[RAIDER_HULL_ID].variant,
+		).root;
+		root.name = "raider";
+		return root;
+	})();
+	/** Whether `raiderContact` is registered. Kept beside it rather than read
+	 *  off the contact list, which only selection and the scanner read. */
+	private raiderListed = false;
+	private readonly raiderContact: DisplayContact = {
+		id: "",
+		name: "",
+		kind: "ship",
+		pos: v3(),
+		velocity: v3(),
+		radiusKm: RAIDER_CONTACT_RADIUS_KM,
+		color: 0xff6a4a,
+		shipType: RAIDER_HULL_ID,
+		legalStatus: null,
+		scannerClass: "hostile",
+	};
 	/** Current-system Traffic authority is pure; these are disposable presentation caches. */
 	private trafficSystemIndex = -1;
 	private trafficTick = Number.NaN;
@@ -6678,6 +6759,9 @@ class Game {
 			// charge is cancelled rather than frozen, because a frozen one would
 			// resume on launch with a notice from before the dock.
 			this.cancelJumpCharge("docked");
+			// A dock ends any encounter: a station is not a place a raider follows.
+			this.encounter = null;
+			this.encounterView = null;
 			this.dock = enterArrival(
 				id,
 				frame,
@@ -7158,6 +7242,10 @@ class Game {
 		this.closingKms = 0;
 		this.legStartedAtS = null;
 		this.lastLegS = null;
+		// A raider belongs to the leg it was drawn on: a jump or a reset leaves it
+		// behind. Render drops its contact and hull on the next frame.
+		this.encounter = null;
+		this.encounterView = null;
 		this.lastExit = "";
 		this.detour = null;
 		this.frameBody = null;
@@ -7418,6 +7506,13 @@ class Game {
 	takeDamage(amount: number, side: ShieldSide, reason: string) {
 		if (!(amount > 0)) return;
 		this.condition = applyDamage(this.condition, amount, side);
+		// The one place damage lands is the one place a death is noticed.
+		if (!isAlive(this.condition) && !this.dead) {
+			this.dead = true;
+			this.clockHeld = true;
+			this.lastExit = "ship destroyed";
+			void this.onDeath?.();
+		}
 		this.cancelJumpCharge(reason);
 		this.cancelSpoolUp(reason);
 	}
@@ -7434,6 +7529,132 @@ class Game {
 		this.lastExit = reason
 			? `spool-up cancelled — ${reason}`
 			: "spool-up cancelled";
+	}
+
+	/**
+	 * The pilot's trigger: Space or the left mouse button, in flight. Off while
+	 * the `?combat=1` rig runs, which reads the same inputs for its own gun.
+	 */
+	private triggerHeld(): boolean {
+		return (
+			!this.combatRig &&
+			flightLive(this.dock.phase) &&
+			(this.keys.has(" ") || this.mouseFiring)
+		);
+	}
+
+	/**
+	 * One frame of the leg's raider encounter (#324): step it, then do the
+	 * three things only `Game` can — drop the player out of cruise, land the
+	 * raider's fire through `takeDamage`, and say how it ended.
+	 */
+	private stepRaider(dt: number, shot: PlayerShot) {
+		const encounter = this.encounter;
+		if (!encounter) return;
+		const { name } = encounter;
+		const step = stepEncounter(encounter, {
+			gameTime: this.world.gameTime,
+			dt,
+			inCruise: this.regime === "cruise",
+			pilot: {
+				ship: this.world.ship,
+				nose: this.nose(),
+				aimOrigin: this.cameraPos(),
+				aimNose: this.weaponAim(),
+				hull: this.condition.hull,
+			},
+			shot,
+		});
+		this.encounter = step.encounter;
+		this.encounterView = step.contact;
+		if (step.drop) this.dropOut(`interdicted by ${name}`);
+		if (step.raiderHit)
+			this.takeDamage(
+				step.raiderHit.amount,
+				step.raiderHit.side,
+				`fired on by ${name}`,
+			);
+		if (step.encounter.phase === "over") {
+			const notice = step.encounter.end
+				? ENCOUNTER_END_NOTICE[step.encounter.end]
+				: null;
+			if (notice) this.lastExit = notice(name);
+			this.encounter = null;
+		}
+	}
+
+	/** Draw the leg's encounter, if the leg has none running. */
+	private scheduleLegEncounter() {
+		if (this.combatRig) return;
+		if (this.encounter && this.encounter.phase !== "over") return;
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		const leg = Math.floor(now);
+		this.encounter =
+			scheduleEncounter(record.index, record, leg, now) ??
+			(RAIDER_PLAYTEST
+				? forceEncounter(
+						record.index,
+						record.government,
+						PLAYTEST_BEARINGS[leg % PLAYTEST_BEARINGS.length],
+						now + 5,
+						30,
+					)
+				: null);
+	}
+
+	/**
+	 * A raider on demand, `inS` seconds from now — for a probe, or for a pilot
+	 * at the console (`__seelite.forceRaider("ahead")`). The player must be in
+	 * cruise from now until it appears: leaving cruise first ends it as missed.
+	 */
+	forceRaider(bearing: EncounterBearing = "behind", inS = 1, rangeKm = 30) {
+		const record = this.world.system.record;
+		this.encounter = forceEncounter(
+			record.index,
+			record.government,
+			bearing,
+			this.world.gameTime + inS,
+			rangeKm,
+		);
+	}
+
+	/** Place the raider's hull and contact, or take them away. */
+	private updateEncounterPresentation(cameraPos: Vec3) {
+		const view = this.encounterView;
+		const contact = this.raiderContact;
+		if (!view) {
+			if (this.raiderListed) {
+				this.unregisterContact(contact);
+				this.raiderListed = false;
+				this.selectableCache = null;
+				// A target that is no longer in the world would throw in
+				// `velocityOf` on the next cruise frame.
+				if (this.targetId === contact.id) this.targetId = null;
+			}
+			this.raiderMesh.removeFromParent();
+			return;
+		}
+		contact.id = view.key;
+		contact.name = view.name;
+		contact.pos.x = view.pos.x;
+		contact.pos.y = view.pos.y;
+		contact.pos.z = view.pos.z;
+		contact.velocity.x = view.vel.x;
+		contact.velocity.y = view.vel.y;
+		contact.velocity.z = view.vel.z;
+		if (!this.raiderListed) {
+			this.registerContact(contact);
+			this.raiderListed = true;
+			this.selectableCache = null;
+		}
+		if (!this.raiderMesh.parent) this.nearScene.add(this.raiderMesh);
+		this.raiderMesh.position.set(
+			view.pos.x - cameraPos.x,
+			view.pos.y - cameraPos.y,
+			view.pos.z - cameraPos.z,
+		);
+		this.trafficQuaternion(view, this.raiderMesh.quaternion);
 	}
 
 	/**
@@ -7776,9 +7997,11 @@ class Game {
 		// every other phase (#314).
 		this.stepHeldLaunch();
 		// Every phase, docked included: energy regenerates and shields recharge
-		// on the sim clock wherever the ship is. The trigger is not wired until
-		// there is something to shoot (#324 part b).
-		this.condition = stepCondition(this.condition, dt, false).condition;
+		// on the sim clock wherever the ship is. The trigger is the pilot's
+		// (`triggerHeld`), and what the gun delivered is this frame's shot.
+		const gun = stepCondition(this.condition, dt, this.triggerHeld());
+		this.condition = gun.condition;
+		const shot: PlayerShot = { fired: gun.fired, damage: gun.damage };
 		this.updateLocalFrameBody();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
@@ -7830,6 +8053,10 @@ class Game {
 				};
 			}
 		}
+		// The raider reads the player where the frame starts, as the ship and the
+		// world masses are read, and may drop the player out of cruise before the
+		// regime branch below chooses how to fly this frame.
+		this.stepRaider(dt, shot);
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
@@ -8025,6 +8252,8 @@ class Game {
 				this.proximityFrameBodyId = null;
 				this.throttle = 1;
 				this.legStartedAtS = this.world.gameTime;
+				// The leg's draw: whether a raider comes, and when.
+				this.scheduleLegEncounter();
 			}
 		}
 
@@ -8246,6 +8475,7 @@ class Game {
 	render(dt = 0) {
 		const camPos = this.cameraPos();
 		this.updateTrafficPresentation(camPos);
+		this.updateEncounterPresentation(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
 		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
@@ -10517,6 +10747,30 @@ if (query.has("model-viewer")) {
 		if (result.fault !== null) console.warn(`save: ${result.fault}`);
 		return result.attached ? null : result.fault;
 	};
+	// **A death (#324, the principal's ruling O5).** With a store attached and a
+	// commander who is not permadeath, the last dock is copied over `live`, the
+	// one-shot continue names the Commander, and the page reloads into the dock.
+	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
+	// stays destroyed and the Commander overlay opens.
+	game.onDeath = async () => {
+		const store = game.saveStore;
+		const slot = attachedSlot;
+		try {
+			const restored =
+				store && slot
+					? await store.revertToLastDocked(game.commanderRecord())
+					: null;
+			if (restored && slot) {
+				await catalog.chooseCommander(slot);
+				window.location.reload();
+				return;
+			}
+		} catch (error) {
+			console.error("save: the last dock could not be restored", error);
+			game.saveFault = messageOf(error);
+		}
+		game.commanderOverlay?.open();
+	};
 	let openAtBoot = plan.mode === "overlay";
 	if (plan.mode === "direct") {
 		if (!noSave && plan.fault === null) await attach(plan.slot);
@@ -10554,6 +10808,23 @@ if (query.has("model-viewer")) {
 		// The badge's own reader, so the two cannot disagree.
 		fault: () => game.saveFaultText(),
 		onContinue: async (slot) => {
+			// **A dead page never resumes** (#324, sage round 1). After a death
+			// with nothing to restore, Continue reloads and the boot loads the
+			// Commander from its save — unholding the clock here would fly a hull
+			// at zero that can never die again. The store's own lock goes back
+			// first, or the one-shot below is refused by this very tab.
+			if (game.dead) {
+				if (!noSave) {
+					game.saveStore?.release();
+					try {
+						await catalog.chooseCommander(slot);
+					} catch (error) {
+						return messageOf(error);
+					}
+				}
+				window.location.reload();
+				return null;
+			}
 			const fault = noSave ? null : await attach(slot);
 			if (fault === null) game.clockHeld = false;
 			return fault;

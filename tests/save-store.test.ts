@@ -274,6 +274,124 @@ describe("#89's D7 correction — a slot holds two records", () => {
 	});
 });
 
+/**
+ * #324's death path, by the principal's ruling O5 (2026-09-14): a
+ * non-permadeath death copies the last dock over `live` and the page reloads
+ * into it. **This is a death-time write**, and a deliberate change to #89's
+ * no-death-flush stance — it lives in its own method so `restoreAfterDeath`
+ * keeps its never-writes row above.
+ */
+describe("#324 O5 — a death reverts live to the last dock", () => {
+	/** A dock at 100 credits, then a jump at 555: the leg a death loses. */
+	const docked = async (h: ReturnType<typeof harness>) => {
+		h.store.markDirty();
+		await h.store.flush("dock");
+		h.set(555);
+		h.store.markDirty();
+		await h.store.flush("jump");
+	};
+
+	test("live becomes the last dock, byte for byte", async () => {
+		const h = harness();
+		await docked(h);
+		const restored = await h.store.revertToLastDocked(h.commander);
+		expect(restored?.commander.state.credits).toBe(100);
+		expect((await h.store.load("default")).commander.state.credits).toBe(100);
+		expect(await h.backend.raw("default", "live")).toEqual(
+			await h.backend.raw("default", "lastDocked"),
+		);
+	});
+
+	test("a permadeath commander gets nothing back, and nothing is written", async () => {
+		const h = harness({ permadeath: true });
+		await docked(h);
+		const before = h.backend.writes;
+		expect(await h.store.revertToLastDocked(h.commander)).toBeNull();
+		expect(h.backend.writes).toBe(before);
+		expect((await h.store.load("default")).commander.state.credits).toBe(555);
+	});
+
+	test("the store writes nothing after it, not even the quit flush", async () => {
+		// The reload's `pagehide` runs the quit flush, and `current` still holds
+		// the dead ship: without this, the page would write the leg back over the
+		// dock it just restored.
+		const h = harness();
+		await docked(h);
+		await h.store.revertToLastDocked(h.commander);
+		const after = h.backend.writes;
+		h.store.markDirty();
+		if (h.clock.armed) h.clock.fire();
+		await h.store.flush("quit");
+		await h.store.settled();
+		expect(h.backend.writes).toBe(after);
+		expect((await h.store.load("default")).commander.state.credits).toBe(100);
+	});
+
+	test("a debounce armed before the death does not fire after it", async () => {
+		const h = harness();
+		await docked(h);
+		h.set(999);
+		h.store.markDirty();
+		await h.store.revertToLastDocked(h.commander);
+		if (h.clock.armed) h.clock.fire();
+		await h.store.settled();
+		expect((await h.store.load("default")).commander.state.credits).toBe(100);
+	});
+
+	test("no last dock is a named error, and live is left alone", async () => {
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("jump");
+		const before = h.backend.writes;
+		await expect(h.store.revertToLastDocked(h.commander)).rejects.toThrow(
+			/lastDocked/,
+		);
+		expect(h.backend.writes).toBe(before);
+	});
+
+	test("a death before the first dock leaves the store saving and the lock held", async () => {
+		// Sage round 1's blocker. A new game has no `lastDocked`, and the first
+		// build retired the store before it found that out: every later write was
+		// dropped without an error, and the tab kept a lock nothing released.
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("jump");
+		expect(await h.store.hold()).toBe(true);
+		await h.store.revertToLastDocked(h.commander).catch(() => {});
+		const before = h.backend.writes;
+		h.set(777);
+		h.store.markDirty();
+		await h.store.flush("jump");
+		expect(h.backend.writes).toBe(before + 1);
+		expect((await h.store.load("default")).commander.state.credits).toBe(777);
+		// Still this tab's: another attach to the Commander is refused.
+		await expect(h.catalog.chooseCommander("default")).rejects.toThrow();
+	});
+
+	test("a failed revert keeps the save it interrupted", async () => {
+		// Sage round 2: the revert cleared the dirty flag and cancelled the
+		// debounce before it found no dock record, so a change made just before
+		// the death was dropped by the next flush, which saw nothing dirty.
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("jump");
+		h.set(888);
+		h.store.markDirty();
+		await h.store.revertToLastDocked(h.commander).catch(() => {});
+		await h.store.flush("jump");
+		expect((await h.store.load("default")).commander.state.credits).toBe(888);
+	});
+
+	test("it gives the tab's lock back, so the reload's one-shot can name the Commander", async () => {
+		const h = harness();
+		await docked(h);
+		expect(await h.store.hold()).toBe(true);
+		await h.store.revertToLastDocked(h.commander);
+		await h.catalog.chooseCommander("default");
+		expect(await h.catalog.takeOneShot()).toBe("default");
+	});
+});
+
 describe("#89 D6 — slots, export and import", () => {
 	test("a write to one slot changes no other slot's record", async () => {
 		const h = harness();

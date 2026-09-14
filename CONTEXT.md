@@ -68,6 +68,32 @@ are deterministic draws from the station role's compatible pool, including its
 required signature hull, so stations of one role can have different casts.
 _Avoid_: Spawn table, traffic density
 
+**Raider slot**:
+A **Carrier slot** for a raider, belonging to a system rather than to a
+station: one to four per system by government, keyed `raider-00` upward, with no
+parent. Raider hulls stay out of every **Traffic roster**
+(`station-traffic.md` §1); this is where they live instead.
+`src/raider-slots.ts` owns the count and the ids, and
+`persistent-world-state.md` §2 lists them in the namespace.
+_Avoid_: Pirate spawn, random raider
+
+**Encounter**:
+One cruise leg's hostile approach to the player, by one or more raiders, from
+the leg's seeded draw to its end: inbound, contest, duel, and over — missed,
+broken, lost, escaped, fled or destroyed. `combat-model.md` §3's rating-chosen
+composition makes it a group; today's only composition is a single raider
+filling one **Raider slot** (#324, #183 owns the rest). It is not saved
+history; what a destroyed raider leaves in the world is the slot's own
+condition. `src/encounter.ts` owns the phases.
+_Avoid_: Spawn, fight instance
+
+**Interdiction contest**:
+The skill contest that decides an interdiction (`combat-model.md` §3): the
+initiator holds a heading lock through a charge while following at part of its
+turn authority, and the target breaks it by turning away. One function for any
+initiator, player or NPC. `src/interdiction.ts` owns it.
+_Avoid_: Interdiction minigame, pull-over
+
 **Traffic schedule**:
 A Traffic actor's game-clock sequence of parked and away intervals. An away
 interval expresses desired home state rather than an arrival deadline. A
