@@ -14,6 +14,7 @@ import {
 	attachCommander,
 	CommanderSwitch,
 	flushFault,
+	loadFault,
 	lockHeldFault,
 	lockRequestFault,
 	messageOf,
@@ -520,6 +521,41 @@ describe("the overlay's words name the Commander, never the slot (§11.5)", () =
 			expect(`${message}: ${SLOT_WORD.test(message)}`).toBe(
 				`${message}: false`,
 			);
+	});
+});
+
+describe("a fault is a sentence for the player, then its detail (§11.5)", () => {
+	const refused = new Error("save: saveSchemaVersion undefined is not 2");
+
+	test("the storage modules' own `save:` prefix is not the player's", () => {
+		expect(messageOf(refused)).toBe("saveSchemaVersion undefined is not 2");
+		expect(messageOf(new Error("the backend: no"))).toBe("the backend: no");
+	});
+
+	test("each builder's first line is a sentence, and the reason follows on its own line", () => {
+		expect(loadFault("Jameson", refused)).toBe(
+			'Commander "Jameson" would not load. It is left as it is on disk; ' +
+				"Export takes a copy of it.\nsaveSchemaVersion undefined is not 2",
+		);
+		for (const fault of [
+			loadFault("Jameson", refused),
+			restoreFault("Jameson", refused),
+			lockRequestFault("Jameson", refused),
+			flushFault("dock", refused),
+			writeFault(3, refused),
+		]) {
+			const [sentence, detail, ...rest] = fault.split("\n");
+			expect(`${sentence}`).toMatch(/\.$/);
+			expect(sentence).not.toContain("save:");
+			expect(detail).toBe("saveSchemaVersion undefined is not 2");
+			expect(rest).toEqual([]);
+		}
+	});
+
+	test("a reason with no words adds no empty detail line", () => {
+		expect(flushFault("jump", new Error(""))).toBe(
+			"the jump save would not write.",
+		);
 	});
 });
 

@@ -163,10 +163,9 @@ try {
 		JSON.stringify(s),
 	);
 	check(
-		"a fresh profile has nothing to continue, so the cursor is on New game",
+		"a fresh profile offers no Continue, so the cursor is on New game",
 		s.selected?.kind === "new-game" &&
-			(await tabA.getAttribute('[data-kind="continue"]', "aria-disabled")) ===
-				"true",
+			(await tabA.$('[data-kind="continue"]')) === null,
 		JSON.stringify(s.selected),
 	);
 	const settingsMounted = await waitFor(

@@ -49,7 +49,9 @@ export function heldSaveFault(
 		const fault = store.heldFaults.get(kind);
 		if (fault) texts.add(heldFaultText(fault));
 	}
-	return texts.size > 0 ? [...texts].join("; ") : null;
+	// A blank line between faults, because each is a sentence and its detail
+	// (`commander-flow.ts`), and the overlay draws one block per fault.
+	return texts.size > 0 ? [...texts].join("\n\n") : null;
 }
 
 /** Whether `heldSaveFault` is not `null`, by the same rule, without building the

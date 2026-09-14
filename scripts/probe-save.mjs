@@ -450,15 +450,20 @@ try {
 			() => true,
 			() => false,
 		);
-	const shownFault = await page.evaluate(() => ({
-		text: document.querySelector("[data-commander-fault]")?.textContent ?? null,
-	}));
+	const shownFault = await page.evaluate(() => {
+		const el = document.querySelector("[data-commander-fault]");
+		return {
+			sentence: el?.firstChild?.textContent ?? null,
+			detail:
+				el?.querySelector("[data-commander-fault-detail]")?.textContent ?? null,
+		};
+	});
 	check(
-		"clicking the badge opens the Commander overlay with the fault it holds",
+		"clicking the badge opens the Commander overlay with the fault it holds, sentence then detail",
 		opened &&
-			(shownFault.text ?? "").includes(
-				`(${limits.retryLimit} in a row): probe: forced write failure`,
-			),
+			shownFault.sentence ===
+				`the save would not write (${limits.retryLimit} in a row).` &&
+			shownFault.detail === "probe: forced write failure",
 		JSON.stringify(shownFault),
 	);
 	await page.keyboard.press("Escape");
