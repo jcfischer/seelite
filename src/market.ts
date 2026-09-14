@@ -328,13 +328,22 @@ export const decayDeficit = (deficit: number, elapsedMin: number): number =>
  */
 export const DEFICIT_SATURATION_RUNS = DEFICIT_MAX / HOLD_REFERENCE_T;
 
+/**
+ * The cap never falls below one full shelf, `DEFICIT_MAX`: the shelf reads this
+ * memory, and a smaller cap left it unable to empty (#316, `economy-trade.md`
+ * §5.2).
+ */
 export const addDeficit = (
 	deficit: number,
 	units: number,
 	holdT: number,
 ): number => {
 	requirePositiveHold(holdT);
-	const cap = Math.max(DEFICIT_SATURATION_RUNS * holdT, Math.abs(deficit));
+	const cap = Math.max(
+		DEFICIT_SATURATION_RUNS * holdT,
+		DEFICIT_MAX,
+		Math.abs(deficit),
+	);
 	return clamp(deficit + units, -cap, cap);
 };
 
@@ -395,15 +404,20 @@ export const stockResponse = (
  * clamp. Selling into an already-full shelf therefore adds nothing visible,
  * which is right: the cap is a shelf, not an accumulator. The *price* still
  * falls, because §5's response is what carries the effect.
+ *
+ * Whole units, floored, because the console and the till read this one figure
+ * (#316, `economy-trade.md` §5.2).
  */
 export const shelfQuantity = (
 	generatedQuantity: number,
 	deficit: number,
 ): number =>
-	clamp(
-		generatedQuantity - clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX),
-		0,
-		QUANTITY_CAP,
+	Math.floor(
+		clamp(
+			generatedQuantity - clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX),
+			0,
+			QUANTITY_CAP,
+		),
 	);
 
 // ---------------------------------------------------------------------------
