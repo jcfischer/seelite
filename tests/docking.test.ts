@@ -68,6 +68,7 @@ import {
 	v3,
 } from "../src/vec3";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
+import { MAX_DT } from "../src/units";
 import {
 	type ComputerTraceStep,
 	flyTheComputer as fly,
@@ -1005,6 +1006,35 @@ describe("§9.1.11 the docking computer", () => {
 		expect(insideEntryKm).toBeLessThan(0.05);
 		expect(widestOff).toBeLessThan(1.1);
 	});
+
+	test.each([
+		[MAX_DT, 1.14],
+		[MAX_DT, 3],
+		[1 / 60, 1.14],
+		[1 / 60, 3],
+	])(
+		"it docks while the station's orbit swings the axis, at a %f s step and %f rpm (#315)",
+		(dt, rpm) => {
+			// Every row above flies a fixed axis. In the game the axis follows the
+			// orbit, so the run-in lags it by metres per kilometre; near the plane
+			// that lag leaves a cone that narrows to 7 m. `MAX_DT` is the step the
+			// renderer clamps to and the step `probe-docking` flies at.
+			const run = fly({
+				spinRpm: rpm,
+				hull: PLAYER_BASELINE_HULL,
+				axis: AXIS,
+				reference: REFERENCE,
+				dt,
+				axisSwingRadPerS: (2 * Math.PI) / (90 * 60),
+			});
+			expect({
+				refused: run.refused,
+				docked: run.docked,
+				violations: run.violations,
+				checks: run.crossing?.evaluation.checks ?? null,
+			}).toMatchObject({ refused: null, docked: true, violations: 0 });
+		},
+	);
 
 	test("it refuses at a hostile station", () => {
 		const run = flyTheComputer({ spinRpm: 1.5, hostile: true });
