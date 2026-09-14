@@ -72,6 +72,8 @@ import { MAX_DT } from "../src/units";
 import {
 	type ComputerTraceStep,
 	flyTheComputer as fly,
+	// Built from the tolerances rather than from hand-typed vectors.
+	rotateAbout,
 } from "./helpers/fly-the-computer";
 
 /**
@@ -148,20 +150,6 @@ function nominal(
 	};
 }
 
-/** Rotate `v` about `axis` by `rad` (Rodrigues). Used to build the boundary
- *  rows *from* the tolerances rather than from hand-typed vectors. */
-function rotate(v: Vec3, axis: Vec3, rad: number): Vec3 {
-	const k = scale(axis, 1 / length(axis));
-	const c = Math.cos(rad);
-	const s = Math.sin(rad);
-	const kv = v3(
-		k.y * v.z - k.z * v.y,
-		k.z * v.x - k.x * v.z,
-		k.x * v.y - k.y * v.x,
-	);
-	return add(add(scale(v, c), scale(kv, s)), scale(k, dot(k, v) * (1 - c)));
-}
-
 /** Some direction perpendicular to `AXIS`, for tilting things off it. */
 const PERP = ((): Vec3 => {
 	const b = slotBasis(apertureFrame("trade", AXIS, 0, REFERENCE));
@@ -202,7 +190,7 @@ describe("§9.1.1 the six checks", () => {
 		const frame = frameFor();
 		// Position dead on the axis, nose 5° past the tolerance. A purely
 		// positional cone would pass this, which is the hole §3 names.
-		const nose = rotate(
+		const nose = rotateAbout(
 			scale(frame.axis, -1),
 			PERP,
 			(AXIS_TOLERANCE_DEG + 5) * DEG,
@@ -217,8 +205,12 @@ describe("§9.1.1 the six checks", () => {
 
 	test("check 2 boundary: exactly the tolerance passes, a hair past fails", () => {
 		const frame = frameFor();
-		const at = rotate(scale(frame.axis, -1), PERP, AXIS_TOLERANCE_DEG * DEG);
-		const past = rotate(
+		const at = rotateAbout(
+			scale(frame.axis, -1),
+			PERP,
+			AXIS_TOLERANCE_DEG * DEG,
+		);
+		const past = rotateAbout(
 			scale(frame.axis, -1),
 			PERP,
 			(AXIS_TOLERANCE_DEG + 1e-6) * DEG,
@@ -248,8 +240,8 @@ describe("§9.1.1 the six checks", () => {
 	test("check 4 boundary: exactly the roll tolerance passes, a hair past fails", () => {
 		const frame = frameFor();
 		const basis = slotBasis(frame);
-		const at = rotate(basis.up, frame.axis, ROLL_TOLERANCE_DEG * DEG);
-		const past = rotate(
+		const at = rotateAbout(basis.up, frame.axis, ROLL_TOLERANCE_DEG * DEG);
+		const past = rotateAbout(
 			basis.up,
 			frame.axis,
 			(ROLL_TOLERANCE_DEG + 1e-6) * DEG,
@@ -433,7 +425,7 @@ describe("§9.1.4 a failed entry repels and keeps its grant", () => {
 			frame,
 			// Mis-rolled: a piloting error, not a protocol violation.
 			pose: nominal(frame, {
-				up: rotate(slotBasis(frame).up, frame.axis, 90 * DEG),
+				up: rotateAbout(slotBasis(frame).up, frame.axis, 90 * DEG),
 			}),
 			state: granted,
 			gameTime: 10,
@@ -481,7 +473,7 @@ test("§9.1.5 a 90°-mis-rolled entry at 0.01 km/s still costs the floor", () =>
 		frame,
 		pose: nominal(frame, {
 			vRel: scale(frame.axis, -0.01),
-			up: rotate(slotBasis(frame).up, frame.axis, 90 * DEG),
+			up: rotateAbout(slotBasis(frame).up, frame.axis, 90 * DEG),
 		}),
 		state: requestClearance(newDockingState(), {
 			gameTime: 0,
@@ -522,7 +514,7 @@ describe("§9.1.6 the pad is the slot minus check 4", () => {
 		"rolled %i°, the roll row is the only outcome that differs",
 		(deg) => {
 			const pose = nominal(slot, {
-				up: rotate(slotBasis(slot).up, slot.axis, deg * DEG),
+				up: rotateAbout(slotBasis(slot).up, slot.axis, deg * DEG),
 			});
 			const a = evaluateEntry(slot, pose, { hostile: false });
 			const b = evaluateEntry(pad, pose, { hostile: false });

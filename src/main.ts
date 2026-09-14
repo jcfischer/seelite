@@ -6846,21 +6846,19 @@ class Game {
 		dt: number,
 		approaches: Map<string, DockingApproach>,
 	): boolean {
-		if (!this.dockingComputerEngaged || this.dockedAt) {
-			this.lastComputerPhase = "idle";
-			return false;
-		}
+		// Taken before anything can return. Every early exit leaves the corridor,
+		// so the stored phase is idle unless a step runs and records its own.
+		let previousPhase = this.lastComputerPhase;
+		this.lastComputerPhase = "idle";
+		if (!this.dockingComputerEngaged || this.dockedAt) return false;
 		// The first entry is the nearest station: `dockingApproaches` walks in
 		// range order.
 		const [nearestId, approach] = approaches.entries().next().value ?? [];
-		if (!nearestId || !approach) {
-			this.lastComputerPhase = "idle";
-			return false;
-		}
+		if (!nearestId || !approach) return false;
 		// A phase belongs to one station's corridor; carried to another it would
 		// start that run-in on the wide side of the hysteresis.
 		if (nearestId !== this.lastComputerStationId) {
-			this.lastComputerPhase = "idle";
+			previousPhase = "idle";
 			this.lastComputerStationId = nearestId;
 		}
 		const { frame } = approach;
@@ -6884,7 +6882,7 @@ class Game {
 				: stationState,
 			gameTime: this.world.gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
-			previousPhase: this.lastComputerPhase,
+			previousPhase,
 		});
 		this.lastComputerPhase = command.phase;
 		if (!command.engaged) {

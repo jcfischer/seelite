@@ -63,7 +63,7 @@ export interface ComputerTraceStep {
 }
 
 /** Rotate `v` about `pivot` by `rad` (Rodrigues). */
-function rotateAbout(v: Vec3, pivot: Vec3, rad: number): Vec3 {
+export function rotateAbout(v: Vec3, pivot: Vec3, rad: number): Vec3 {
 	const k = scale(pivot, 1 / length(pivot));
 	const c = Math.cos(rad);
 	return add(

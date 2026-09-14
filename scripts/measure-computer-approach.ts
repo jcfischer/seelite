@@ -61,6 +61,7 @@ let failed = 0;
 let worstDockS = 0;
 let mostExits = 0;
 let widestRunIn = 0;
+let widestAt = "";
 let worstNoseDeg = 0;
 let worstRollDeg = 0;
 const failures: string[] = [];
@@ -88,11 +89,11 @@ for (const hull of hulls)
 				for (let i = 1; i < trace.length; i++) {
 					if (trace[i - 1].phase === "run-in" && trace[i].phase === "line-up")
 						exits++;
-					if (trace[i].phase === "run-in")
-						widestRunIn = Math.max(
-							widestRunIn,
-							trace[i].offAxisKm / trace[i].corridorKm,
-						);
+					const ratio = trace[i].offAxisKm / trace[i].corridorKm;
+					if (trace[i].phase === "run-in" && ratio > widestRunIn) {
+						widestRunIn = ratio;
+						widestAt = `${hull}, step ${dt.toFixed(3)} s, ${spinRpm} rpm, ${orbit} orbit`;
+					}
 				}
 				mostExits = Math.max(mostExits, exits);
 				if (!run.docked || run.violations > 0) {
@@ -120,7 +121,7 @@ console.log(`failed to dock: ${failed} of ${runs}`);
 console.log(`worst dock: ${worstDockS.toFixed(0)} s`);
 console.log(`most corridor exits in one run: ${mostExits}`);
 console.log(
-	`widest run-in: ${widestRunIn.toFixed(2)} of the corridor half-width`,
+	`widest run-in: ${widestRunIn.toFixed(2)} of the corridor half-width (${widestAt})`,
 );
 console.log(
 	`worst at the crossing: nose ${worstNoseDeg.toFixed(1)}°, roll ${worstRollDeg.toFixed(1)}°`,
