@@ -705,9 +705,9 @@ export const VIEWS = Object.freeze([
 	},
 	/**
 	 * #324 part (c)'s two frames: the glass and the console, because the
-	 * principal put the duel gauges in both places. They come before the berth
-	 * views, which dock the ship; the placer resets the flight, so what came
-	 * before them does not matter.
+	 * principal put the duel gauges in both places. They come before the views
+	 * that dock the ship; the placer resets the flight, so what came before them
+	 * does not matter.
 	 */
 	{
 		name: "duel-glass",
@@ -718,7 +718,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "duel-console",
 		covers: [324],
-		what: "The same duel, head turned to the right console on its Flight tab. FORE, AFT, HULL, ENERGY and HEAT beside ASSIST and CHARGE.",
+		what: "The same duel, head turned to the right console on its Flight tab. FORE, AFT, HULL, ENERGY BANK and HEAT beside ASSIST and CHARGE.",
 		shot: { kind: "duel", headLook: "right", view: "cockpit" },
 	},
 	/**

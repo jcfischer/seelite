@@ -275,6 +275,7 @@ import {
 	duelConsoleReadout,
 	duelRowCells,
 	duelRowWidest,
+	onTargetMark,
 	raiderCueTone,
 	showDuelRow,
 } from "./duel-hud";
@@ -875,9 +876,13 @@ const GLASS_BOTTOM_FRACTION = 0.66;
  * this number.
  */
 const FLOOR_STRIP_HEIGHT_PX = 26;
+/** The course row's band and the duel row's, counted up from the strip as 1. */
+const COURSE_BAND = 2;
+const DUEL_BAND = 3;
 /**
  * How many bands the floor stacks: §5.1's strip, §8.3's course row above it,
- * and #324's duel row above that.
+ * and #324's duel row above that. **The top band's number, not a count kept
+ * beside it**, so a band declared above the duel row moves the prompt with it.
  *
  * **One height for both, because `floorFont` sizes every glyph on the floor
  * from `FLOOR_STRIP_HEIGHT_PX`.** A course band declared as its own number is a
@@ -893,7 +898,7 @@ const FLOOR_STRIP_HEIGHT_PX = 26;
  * commits to a destination is a worse instrument than one sitting a row higher
  * always.
  */
-const FLOOR_BANDS = 3;
+const FLOOR_BANDS = DUEL_BAND;
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
 /**
@@ -939,9 +944,6 @@ const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
  */
 const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
-/** The course row's band and the duel row's, counted up from the strip. */
-const COURSE_BAND = 2;
-const DUEL_BAND = 3;
 /** The widest reading the duel row can print, for the floor's fit. */
 const DUEL_ROW_WIDEST = duelRowWidest();
 /** Where the baseline sits inside the band, and how big the value type is —
@@ -9858,53 +9860,39 @@ class Game {
 		// label/value/tone grammar, in its own band, rather than a fifth cell
 		// (#117 D1). With no course it is absent, and absence here moves nothing
 		// below it (#117 D2).
-		let courseBox: FloorBox | null = null;
-		if (courseRow !== null) {
-			const run = floorRunWidths(ctx, [courseRow], scale);
-			const courseX = (w - run.total) / 2;
-			courseBox = floorBox(
-				courseRow.label,
-				courseX,
-				run.total,
-				floorBandTopY(h, COURSE_BAND),
-			);
-			const courseBaselineY = courseBox.y;
-			drawFloorCell(
-				ctx,
-				courseRow,
-				{
-					x: courseX,
-					baselineY: courseBaselineY,
-					labelWidth: run.labelWidths[0],
-				},
-				floorType,
-			);
-		}
-		// #324's duel row, in the top band: shield pools and the heat lock, only
-		// while a raider is contesting, dueling or selected. Drawn from the same
-		// run-measuring pass and painter as the strip and the course row.
-		let duelRow: FloorCell[] | null = null;
-		let duelBox: FloorBox | null = null;
-		if (this.duelRowShown()) {
-			duelRow = duelRowCells(this.condition);
-			const run = floorRunWidths(ctx, duelRow, scale);
-			let duelX = (w - run.total) / 2;
-			duelBox = floorBox(
-				DUEL_ROW_LABELS.join(" "),
-				duelX,
-				run.total,
-				floorBandTopY(h, DUEL_BAND),
-			);
-			for (const [i, cell] of duelRow.entries()) {
+		// One painter for every centred row above the strip: measure the run,
+		// centre it, box it in its band, paint each cell. The course row and
+		// #324's duel row were this block twice.
+		const drawBandRow = (
+			rowCells: FloorCell[],
+			label: string,
+			band: number,
+		): FloorBox => {
+			const run = floorRunWidths(ctx, rowCells, scale);
+			let rowX = (w - run.total) / 2;
+			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
+			for (const [i, cell] of rowCells.entries()) {
 				drawFloorCell(
 					ctx,
 					cell,
-					{ x: duelX, baselineY: duelBox.y, labelWidth: run.labelWidths[i] },
+					{ x: rowX, baselineY: box.y, labelWidth: run.labelWidths[i] },
 					floorType,
 				);
-				duelX += run.widths[i] + cellGap;
+				rowX += run.widths[i] + cellGap;
 			}
-		}
+			return box;
+		};
+		const courseBox =
+			courseRow === null
+				? null
+				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
+		// #324's duel row, in the top band: shield pools and the heat lock, only
+		// while a raider is contesting, dueling or selected.
+		const duelRow = this.duelRowShown() ? duelRowCells(this.condition) : null;
+		const duelBox =
+			duelRow === null
+				? null
+				: drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
 		// with a save/restore pair of its own, which read as the closing one —
@@ -10346,15 +10334,24 @@ class Game {
 		// — amber, red while it fires — and an on-target mark when a shot along
 		// the sightline would land now. The laser is a ray, so that is the whole
 		// of a firing solution: there is no lead to draw.
+		//
+		// **Only in the duel.** The raider is selectable from the contest on, but
+		// `stepEncounter` flies `stepDuel` in the duel phase alone, so a mark in
+		// the contest would promise a shot that does nothing.
 		const raiderSelected = selectedBody !== null && this.raiderSelected();
 		const raiderTone = raiderCueTone(this.raiderFiring);
 		const selectedColour = raiderSelected
 			? FLOOR_TONE_FILL[raiderTone]
 			: "rgba(255, 214, 120, 0.95)";
 		const onTarget =
-			raiderSelected && selectedBody !== null
-				? raiderInSights(camPos, this.weaponAim(), selectedBody.pos)
-				: false;
+			raiderSelected &&
+			onTargetMark(
+				this.encounter?.phase ?? null,
+				raiderInSights(camPos, this.weaponAim(), selectedBody.pos),
+			);
+		// Built once, because the declutter reservation and the paint must agree.
+		const selectedLabel = (name: string, km: number) =>
+			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`;
 		if (raiderSelected)
 			this.cueRender = {
 				tone: raiderTone,
@@ -10365,7 +10362,10 @@ class Game {
 		// Its label is never submitted to decluttering, so context can disappear
 		// behind it but it can never disappear behind context.
 		if (selectedBody && selectedAt?.on) {
-			const text = `${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}${onTarget ? "  ON TARGET" : ""}`;
+			const text = selectedLabel(
+				selectedBody.name,
+				length(sub(selectedBody.pos, camPos)),
+			);
 			occupiedLabels.push(
 				labelBounds(selectedAt.x + 20, selectedAt.y + 4, text),
 			);
@@ -10393,11 +10393,7 @@ class Game {
 						ctx.arc(at.x, at.y, 4, 0, Math.PI * 2);
 						ctx.fill();
 					}
-					ctx.fillText(
-						`${body.name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`,
-						at.x + r + 6,
-						at.y + 4,
-					);
+					ctx.fillText(selectedLabel(body.name, km), at.x + r + 6, at.y + 4);
 					continue;
 				}
 				// Corner brackets rather than a box: a closed square over a distant

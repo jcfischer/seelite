@@ -329,7 +329,9 @@ for (const viewport of VIEWPORTS) {
 	);
 	check(
 		`${v}: aimed a quarter turn away, the on-target mark is gone`,
-		duel.offAim === null || duel.offAim.onTarget === false,
+		// A cue must be recorded, which it is only while the raider is selected:
+		// a null here is the encounter gone, and would assert nothing.
+		duel.offAim !== null && duel.offAim.onTarget === false,
 		JSON.stringify(duel.offAim),
 	);
 
@@ -414,6 +416,10 @@ for (const viewport of VIEWPORTS) {
 			afterFloor.cue === null,
 		JSON.stringify({ after, afterConsole, afterFloor }),
 	);
+	// The contest's side of the on-target gate is headless (`onTargetMark` in
+	// `tests/duel-hud.test.ts`). A browser row was built here and removed: the
+	// contest's raider is beyond the laser's range, so it passed with the gate
+	// deleted.
 	await page.close();
 }
 

@@ -258,8 +258,9 @@ const PLACERS = {
 	},
 	duel: async (page, shot) => {
 		// Cruise to the farthest body, force a raider ahead, fly the contest out on
-		// fixed steps so it interdicts, then select it and aim at it. The same
-		// route `probe-duel-hud.mjs` flies, so a frame and a check see one fight.
+		// fixed steps so it interdicts, then select it and aim at it. Close and
+		// ahead, so the raider is near the centre of the frame; the probe forces
+		// its own raider for its own checks.
 		const name = await page.evaluate(async (headLook) => {
 			const g = window.__seelite;
 			const dt = g.units.MAX_DT;
@@ -285,10 +286,21 @@ const PLACERS = {
 				throw new Error(
 					`duel placer: the raider never interdicted (phase ${g.encounter?.phase ?? "none"})`,
 				);
-			for (let i = 0; i < 60; i++) g.step(dt);
+			// **Rendered, not only stepped.** The raider's contact takes its id in
+			// `render`, so a placer that only steps selects whatever id the contact
+			// held before — the first capture of this view had no target at all.
+			for (let i = 0; i < 60; i++) {
+				g.step(dt);
+				g.render(dt);
+			}
 			const raider = g.encounter.raider;
 			if (!raider) throw new Error("duel placer: no raider in the duel");
 			g.targetId = g.raiderContact.id;
+			g.render(dt);
+			if (g.targetBody()?.id !== g.raiderContact.id)
+				throw new Error(
+					`duel placer: the raider is not the selected target (${g.targetId})`,
+				);
 			const p = g.world.ship.pos;
 			const r = raider.flight.ship.pos;
 			g.setAttitude({ x: r.x - p.x, y: r.y - p.y, z: r.z - p.z }, g.shipUp());

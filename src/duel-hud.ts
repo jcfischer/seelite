@@ -4,7 +4,7 @@
  * **Both places, by the principal's ruling (2026-09-14).** A minimal row on the
  * glass floor during a fight — the two readings a pilot needs without looking
  * away, shield pools and the heat lock — and the full detail on the Flight
- * console: fore, aft, hull, energy and heat, each against its capacity. The
+ * console: fore, aft, hull, the energy bank and heat, each against its capacity. The
  * console's heat is the glass cell's own value, so the two cannot describe one
  * gun two ways.
  *
@@ -13,8 +13,9 @@
  * danger; a raider is the first, and becomes the second while it is shooting.
  *
  * The cells use §5.1's floor grammar — a label, a value, a tone — so the glass
- * draws them with the strip's own painter. Only types are imported, so this
- * module drags nothing into the headless tier.
+ * draws them with the strip's own painter. It imports types from `cockpit` and
+ * `encounter` and constants from `ship-condition`; nothing here reaches a
+ * renderer.
  */
 import type { FloorCell, FloorTone } from "./cockpit";
 import type { EncounterPhase } from "./encounter";
@@ -89,7 +90,8 @@ export interface DuelConsoleReadout {
 	fore: string;
 	aft: string;
 	hull: string;
-	energy: string;
+	/** The energy bank (`CONTEXT.md`), never unqualified "energy". */
+	bank: string;
 	heat: string;
 }
 
@@ -99,7 +101,7 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 		fore: `${Math.round(c.fore)} / ${SHIELD_POOL}`,
 		aft: `${Math.round(c.aft)} / ${SHIELD_POOL}`,
 		hull: `${Math.round(c.hull)} / ${c.hullMax}`,
-		energy: `${Math.round(c.energy)} / ${ENERGY_BANK}`,
+		bank: `${Math.round(c.energy)} / ${ENERGY_BANK}`,
 		heat: heatValue(c),
 	};
 }
@@ -107,6 +109,17 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 /** The hostile cue's tone: amber, and red while the raider fires. */
 export const raiderCueTone = (raiderFiring: boolean): FloorTone =>
 	raiderFiring ? "refused" : "action";
+
+/**
+ * Whether the on-target mark is drawn: a shot along the sightline would land
+ * **and** the duel is on. The raider is selectable from the contest, but the
+ * contest flies no duel step, so a shot there does nothing and a mark would
+ * promise one that does.
+ */
+export const onTargetMark = (
+	phase: EncounterPhase | null,
+	inSights: boolean,
+): boolean => phase === "duel" && inSights;
 
 /**
  * Whether the glass combat row shows: while a raider is contesting or

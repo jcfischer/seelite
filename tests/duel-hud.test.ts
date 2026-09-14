@@ -16,6 +16,7 @@ import {
 	DUEL_ROW_LABELS,
 	HEAT_ACTION_FRACTION,
 	duelConsoleReadout,
+	onTargetMark,
 	raiderCueTone,
 	duelRowCells,
 	duelRowWidest,
@@ -111,7 +112,7 @@ describe("the Flight console readout", () => {
 			fore: `72 / ${SHIELD_POOL}`,
 			aft: `12 / ${SHIELD_POOL}`,
 			hull: `65 / ${c.hullMax}`,
-			energy: `42 / ${ENERGY_BANK}`,
+			bank: `42 / ${ENERGY_BANK}`,
 			heat: "37%",
 		});
 	});
@@ -153,5 +154,18 @@ describe("when the combat row shows", () => {
 			expect(showDuelRow({ encounterPhase, targetIsRaider: false })).toBe(
 				false,
 			);
+	});
+});
+
+describe("the on-target mark", () => {
+	test("is drawn in the duel when a shot would land", () => {
+		expect(onTargetMark("duel", true)).toBe(true);
+		expect(onTargetMark("duel", false)).toBe(false);
+	});
+
+	test("is never drawn outside the duel, however well aimed", () => {
+		// The contest flies no duel step, so a shot there does nothing (sage #327).
+		for (const phase of [null, "inbound", "contest", "over"] as const)
+			expect(onTargetMark(phase, true)).toBe(false);
 	});
 });

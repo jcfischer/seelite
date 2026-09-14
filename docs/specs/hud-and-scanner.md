@@ -385,7 +385,8 @@ rather than jumping when a raider appears. `FLOOR_BANDS` is 3.
 | `HEAT` | `63%` of the lock, or `LOCK` | passive; **action** from 75%; **refused** while locked |
 
 The row is drawn while a raider is **contesting, dueling or selected**, and not
-otherwise — absence rather than a dormant slot, for §5.2's reason.
+otherwise — absence rather than an empty row kept on the glass, for §5.2's
+reason.
 
 **The firing cue is the selected target's own marker.** A second aiming
 language on the glass is not added. When the selected target is a raider, its
@@ -393,12 +394,15 @@ ring and its edge arrow take the duel tone: **amber** (§4's action), and **red
 only while the raider fires** on the player. The pulse laser is a ray
 (`combat-model.md` §3), so a firing solution has no lead: the cue marks
 **on target** — a filled centre and `ON TARGET` beside the name — while a shot
-along the sightline would land now. The predicate is `raiderInSights`, which is
-the duel's own beam test at the hull's true radius, so the mark cannot promise a
-hit the duel refuses.
+along the sightline would land now. The predicate is `raiderInSights`: the
+duel's own beam test at the hull's true radius. **It is drawn in the duel phase
+only**, because the contest flies no duel step and a shot there does nothing.
+One difference is left and stated: the draw tests the raider where it is after
+the step, and `stepDuel` tests it where it was at the top of the step, so at the
+edge of the hit sphere the two can disagree for one frame of relative motion.
 
 **The Flight console: five readings beside ASSIST and CHARGE** — `FORE`, `AFT`,
-`HULL`, `ENERGY` and `HEAT`, each against its maximum (`72 / 106`), heat as the
+`HULL`, `ENERGY BANK` and `HEAT`, each against its maximum (`72 / 106`), heat as the
 glass reads it. The block is shown under the same predicate as the glass row and
 hidden in peace, with an inline `display` rather than the `hidden` attribute,
 which loses to `.lc-readout`'s own `display`.
@@ -614,7 +618,10 @@ Headless — `tests/duel-hud.test.ts` and `tests/duel.test.ts`:
 4. **The cue tone is amber, and red only while the raider fires.**
 5. **The row's predicate**: contest, duel or a selected raider, and nothing else.
 6. **The on-target mark agrees with the duel's hit** at the true radius, not the
-   rig's, and follows the sightline rather than the nose.
+   rig's, and follows the sightline rather than the nose. **`onTargetMark` draws
+   it in the duel only**, and in no other phase. This is a headless row, not a
+   browser row: a contest's raider is beyond the laser's range, so a browser
+   check of the gate passes with the gate removed. That was built and seen.
 
 Browser — `scripts/probe-duel-hud.mjs`, at both viewports:
 
@@ -626,8 +633,8 @@ Browser — `scripts/probe-duel-hud.mjs`, at both viewports:
    records.
 10. **The ring's paint**: amber and no red while the raider does not fire, red
     while it does, sampled off the overlay.
-11. **The on-target mark** appears aimed at the raider and goes a quarter turn
-    off it.
+11. **The on-target mark** appears aimed at the raider in the duel and goes a
+    quarter turn off it.
 12. **The Flight console shows the detail in a fight**, read against the
     condition, and **hides it after the encounter ends**, with the row and the
     cue.
