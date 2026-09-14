@@ -830,6 +830,46 @@ check(
 	JSON.stringify(liveTrade),
 );
 
+// #316: a deficit read between trades has decayed, so it is almost never whole,
+// and the console printed `23.95361409160266 t` after a sale. Buy, let ten
+// seconds of game time fade that mark, sell, and read every rendered shelf.
+// Ten seconds and not minutes: the launch checks below read the grant off the
+// same clock, and a seven-minute jump expired it under them.
+const shelfCells = await page.evaluate(() => {
+	const g = window.__seelite;
+	const act = (action) =>
+		document
+			.querySelector(
+				`[data-live-station-action="${action}"][data-live-station-name="Food"]`,
+			)
+			?.click();
+	// Three and one, not one and one: `readDeficit` reads a mark under one unit
+	// as nothing, so a single unit bought and sold back leaves a whole shelf on
+	// the build this check exists to catch. Three bought, faded and one sold
+	// leaves 1.98 units of mark. The other two are sold after the read, so the
+	// checks below start from an empty hold.
+	for (let i = 0; i < 3; i++) act("buy-commodity");
+	g.world.gameTime += 10;
+	act("sell-commodity");
+	const cells = [
+		...document.querySelectorAll(
+			'[data-live-market-row][data-live-listed="true"] > span:nth-child(3)',
+		),
+	].map((cell) => cell.firstChild?.textContent ?? "");
+	act("sell-commodity");
+	act("sell-commodity");
+	return cells;
+});
+const fractionalShelves = shelfCells.filter(
+	(text) => !/^\d+ \S+$/.test(text.trim()),
+);
+
+check(
+	"every shelf the console shows after a faded trade is whole units",
+	shelfCells.length > 0 && fractionalShelves.length === 0,
+	`cells=${shelfCells.length}, not whole=${JSON.stringify(fractionalShelves)}`,
+);
+
 const liveEquipment = await page.evaluate(() => {
 	const tab = document.querySelector('[data-live-station-tab="Equipment"]');
 	if (!(tab instanceof HTMLElement)) return { switched: false, rows: 0 };
