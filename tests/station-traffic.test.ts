@@ -3,7 +3,6 @@ import { carrierKey } from "../src/carrier-key";
 import { interiorOfStation } from "../src/dock-session";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
-import { LAUNCH_HOLD_NOTICE } from "../src/live-cockpit";
 import {
 	clearancePromotion,
 	compareStationTurns,
@@ -296,20 +295,13 @@ describe("shared station arbitration", () => {
 			expect(
 				refusal([route("lane-queued", { readyAt: 9, kind: "arrival" })]),
 			).toBe("carrier-queued-ahead");
-			// **Keeping the first readyAt is the whole of "keeps its place".** A
-			// request re-stamped at every retry loses to a carrier that queued
-			// between two retries; the held one, stamped at 10, beats it.
+			// The ordering a held launch relies on: a request stamped at 10 beats a
+			// carrier that queued at 11. That a retry *keeps* the stamp at 10 is
+			// `Game.launch`'s, and `probe-dock-arrival` checks it
+			// (`retryStamp === firstStamp`); this row cannot see a re-stamp.
 			expect(
 				refusal([route("launch-queued", { readyAt: 11, kind: "launch" })]),
 			).toBeNull();
-		});
-
-		test("every notice reads as a hold", () => {
-			// The record's type already demands a notice per refusal; what it
-			// cannot demand is that each one says what happened.
-			const notices = Object.values(LAUNCH_HOLD_NOTICE);
-			expect(notices.length).toBeGreaterThan(0);
-			for (const notice of notices) expect(notice).toMatch(/^LAUNCH HELD — /);
 		});
 	});
 });

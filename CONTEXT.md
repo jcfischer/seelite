@@ -98,9 +98,12 @@ _Avoid_: Staging point, queue slot, parking berth
 **Held launch**:
 The player's launch request after Traffic refused it, kept with its first
 `readyAt` so it keeps its place in the Transit lane order (#314). It leaves by
-itself on the first step the lane is the player's, and ends on cancel. A state
-of a request, not a place: a **Traffic hold** is a place.
-_Avoid_: Launch queue, launch hold
+itself on the first step the lane is the player's. It ends on cancel, on a
+system change, or on any step the ship is not docked at that station. A state
+of a request, not a place: a **Traffic hold** is a place. The code calls it
+`launchHold` (`Game.launchHold`, `LiveCockpitState.launchHold`,
+`LAUNCH_HOLD_NOTICE`); that name means this state and never a place.
+_Avoid_: Launch queue
 
 **Instance ordinal**:
 The stable sequence number distinguishing the original carrier instance from its replacements. `docs/specs/persistent-world-state.md` §2 owns its allocation rule.

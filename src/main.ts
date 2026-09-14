@@ -322,6 +322,7 @@ import {
 	type TrafficActor,
 	type TrafficProjection,
 	type LaneRefusal,
+	type LaneRequest,
 	playerLaneRefusal,
 } from "./station-traffic";
 import {
@@ -6850,7 +6851,7 @@ class Game {
 	private trafficLaneRefusal(
 		stationId: string,
 		readyAt: number,
-		movement: "arrival" | "launch",
+		movement: LaneRequest["kind"],
 	): LaneRefusal | null {
 		return playerLaneRefusal({
 			authorityReady: this.trafficAuthorityReady(),

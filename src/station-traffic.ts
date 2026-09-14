@@ -333,7 +333,7 @@ export function playerLaneRefusal(input: {
 	routes: readonly LaneRouteView[];
 	stationId: string;
 	readyAt: number;
-	movement: "arrival" | "launch";
+	movement: LaneRequest["kind"];
 }): LaneRefusal | null {
 	if (!input.authorityReady) return "traffic-starting";
 	const here = input.routes.filter(
