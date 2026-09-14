@@ -514,7 +514,9 @@ it is never the larger term, so every figure in this section survives —
 the change. What it does move: a hull under 20 t that empties a shelf leaves a
 mark of 63 rather than 3.15 holds, so its price stays saturated for
 log₂(63 / (3.15 × holdT)) half-lives longer — about 35 minutes at 6 t — while
-the shelf refills.
+the shelf refills. The floor is symmetric, so a sale moves the same way: a hull
+under 20 t can now push a mark down to −63 rather than −3.15 holds, and its
+sell price stays depressed for as long.
 
 **A shelf is whole units, floored.** The decay is exponential, so a mark read
 between trades is almost never whole, and the console printed

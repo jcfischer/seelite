@@ -93,10 +93,7 @@ test("tonne cargo observes the hold while sub-tonne goods bypass it", () => {
 });
 
 test("the till stops selling when the shelf it showed is empty, on every hull (#316)", () => {
-	// Gold skips the hold check, so the shelf is the only thing between a
-	// commander and the station's whole stock. A memory capped at 3.15 runs of
-	// a 6 t hold saturated at 18.9 units and left 44 kg on a shelf that never
-	// emptied: 500 buys out of 500 accepted.
+	// #316, §5.2: Gold skips the hold check, so the shelf is its only limit.
 	const gold = commodity("Gold");
 	const shown = shelfQuantity(marketRow(gold, 3, STATION, 0).quantity, 0);
 	expect(shown).toBeGreaterThan(0);

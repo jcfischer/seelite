@@ -359,10 +359,7 @@ describe("§3 the type offset", () => {
 	});
 
 	test("the shelf is whole units under a decayed deficit (#316)", () => {
-		// The deficit decays exponentially, so a read-time mark is almost never
-		// whole — and the console printed `23.95361409160266 t` after a sale.
-		// Floored, not rounded: a shelf of 0.6 shown as 1 is a unit the till
-		// then refuses.
+		// #316, §5.2: a decayed mark is almost never whole; the shelf is floored.
 		expect(shelfQuantity(40, 10.4)).toBe(29);
 		expect(shelfQuantity(40, -10.4)).toBe(50);
 		for (let minutes = 0; minutes <= 60; minutes += 0.7) {
