@@ -795,7 +795,11 @@ check(
 // Commerce uses the live console, not the gallery fixture. A completed round
 // trip must change the rendered commander and shelf state, then return cargo
 // to zero through the same DOM action boundary.
-const liveTrade = await page.evaluate(() => {
+/** The Food row's trade control, shared by both trade checks below. */
+const FOOD_ACTION =
+	'[data-live-station-action="%s"][data-live-station-name="Food"]';
+
+const liveTrade = await page.evaluate((foodAction) => {
 	const read = () => ({
 		commander:
 			document.querySelector("[data-live-commander]")?.textContent ?? "",
@@ -805,20 +809,20 @@ const liveTrade = await page.evaluate(() => {
 	});
 	const before = read();
 	const buy = document.querySelector(
-		'[data-live-station-action="buy-commodity"][data-live-station-name="Food"]',
+		foodAction.replace("%s", "buy-commodity"),
 	);
 	if (!(buy instanceof HTMLElement))
 		return { before, afterBuy: before, afterSell: before, controls: false };
 	buy.click();
 	const afterBuy = read();
 	const sell = document.querySelector(
-		'[data-live-station-action="sell-commodity"][data-live-station-name="Food"]',
+		foodAction.replace("%s", "sell-commodity"),
 	);
 	if (!(sell instanceof HTMLElement))
 		return { before, afterBuy, afterSell: afterBuy, controls: false };
 	sell.click();
 	return { before, afterBuy, afterSell: read(), controls: true };
-});
+}, FOOD_ACTION);
 
 check(
 	"the live station console completes a buy and sell across commander and shelf state",
@@ -833,16 +837,12 @@ check(
 // #316, `economy-trade.md` §5.2: a shelf read between trades must be whole.
 // Ten seconds of game time and not minutes: the launch checks below read the
 // grant off the same clock, and a seven-minute jump expired it under them.
-const shelfTrade = await page.evaluate(() => {
+const shelfTrade = await page.evaluate((foodAction) => {
 	const g = window.__seelite;
 	const hold = () =>
 		document.querySelector("[data-live-commander]")?.textContent ?? "";
 	const act = (action) =>
-		document
-			.querySelector(
-				`[data-live-station-action="${action}"][data-live-station-name="Food"]`,
-			)
-			?.click();
+		document.querySelector(foodAction.replace("%s", action))?.click();
 	// Three and one, not one and one: `readDeficit` reads a mark under one unit
 	// as nothing, so a single unit bought and sold back leaves a whole shelf on
 	// the build this check exists to catch. Three bought, faded and one sold
@@ -861,7 +861,7 @@ const shelfTrade = await page.evaluate(() => {
 	act("sell-commodity");
 	act("sell-commodity");
 	return { cells, afterBuys, afterSell, afterAll: hold() };
-});
+}, FOOD_ACTION);
 const fractionalShelves = shelfTrade.cells.filter(
 	(text) => !/^\d+ \S+$/.test(text.trim()),
 );

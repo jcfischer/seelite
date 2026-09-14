@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { readDeficit } from "../src/deficits";
+import { type DeficitMap, readDeficit } from "../src/deficits";
 import {
 	DEFICIT_MAX,
 	commodity,
@@ -97,12 +97,13 @@ test("the till stops selling when the shelf it showed is empty, on every hull (#
 	const gold = commodity("Gold");
 	const shown = shelfQuantity(marketRow(gold, 3, STATION, 0).quantity, 0);
 	expect(shown).toBeGreaterThan(0);
+	const buy = { type: "buy-commodity", commodity: "Gold" } as const;
+	const step = (
+		commander: ReturnType<typeof newCommander>,
+		deficits: DeficitMap = {},
+	) => input({ commander, deficits, action: buy });
 	for (const hull of Object.keys(HULL_SPECS) as HullId[]) {
-		const buy = { type: "buy-commodity", commodity: "Gold" } as const;
-		let state = input({
-			commander: { ...newCommander(hull), credits: 1e9 },
-			action: buy,
-		});
+		let state = step({ ...newCommander(hull), credits: 1e9 });
 		let bought = 0;
 		let reason: string | null = null;
 		for (let i = 0; i <= DEFICIT_MAX + 1; i++) {
@@ -112,11 +113,7 @@ test("the till stops selling when the shelf it showed is empty, on every hull (#
 				break;
 			}
 			bought++;
-			state = input({
-				commander: result.commander,
-				deficits: result.deficits,
-				action: buy,
-			});
+			state = step(result.commander, result.deficits);
 		}
 		expect({ hull, bought, reason }).toEqual({
 			hull,

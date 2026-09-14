@@ -507,11 +507,16 @@ clamped the memory at 3.15 holds and nothing else, which is under 63 units for
 every hold below the baseline's 20 t — and the shelf reads that memory. At 6 t
 the memory saturated at 18.9, the shelf stopped at 44 kg of Gold, and the till
 sold it without end, because Gold skips the hold check and the shelf was the
-only limit left. The floor is `DEFICIT_MAX`. It moves no price, since the
-response clamps the ratio `deficit / holdT` on its own, and at 20 t and above
-it is never the larger term, so every figure in this section survives —
-`measure-market.ts` and `measure-hull-pricing.ts` print identical output across
-the change. What it does move: a hull under 20 t that empties a shelf leaves a
+only limit left. The floor is `DEFICIT_MAX`. **For the hull that made the
+mark** it moves no price, since the response clamps the ratio `deficit / holdT`
+on its own, and at 20 t and above it is never the larger term, so every figure
+in this section survives — `measure-market.ts` and `measure-hull-pricing.ts`
+print identical output across the change, because each of their arms flies one
+hull throughout. **A mark read by another hull does move**, and neither script
+can show it: a 6 t hull that empties a shelf now leaves a mark near 63 rather
+than 18.9, so a 40 t hull trading there next reads a ratio of 1.575 rather than
+0.47. It is the ratchet above seen from the other side — a mark belongs to the
+market, not to the hull that left it. What it also moves: a hull under 20 t that empties a shelf leaves a
 mark of 63 rather than 3.15 holds, so its price stays saturated for
 log₂(63 / (3.15 × holdT)) half-lives longer — about 35 minutes at 6 t — while
 the shelf refills. The floor is symmetric, so a sale moves the same way: a hull
