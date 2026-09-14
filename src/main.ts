@@ -290,13 +290,13 @@ import {
 	drawGunTracer,
 	stepGunFeedback,
 } from "./gun-feedback";
-import { raiderLog } from "./raider-log";
+import { formatRaiderLogLine, raiderLog } from "./raider-log";
 import {
 	type Canister,
 	dropCanisters,
 	raiderDestruction,
+	driftCanister,
 	scoops,
-	stepCanisters,
 } from "./raider-wreck";
 import {
 	type Encounter,
@@ -7714,7 +7714,7 @@ class Game {
 		for (const canister of this.canisters) {
 			if (this.world.gameTime >= canister.expiresAt) continue;
 			if (!scoops(canister, this.world.ship)) {
-				kept.push(...stepCanisters([canister], dt, this.world.gameTime));
+				kept.push(driftCanister(canister, dt));
 				continue;
 			}
 			const took = scoopCargo(
@@ -7723,11 +7723,10 @@ class Game {
 				canister.tonnes,
 			);
 			if (!took.accepted) {
-				// It keeps drifting, and the notice is said once rather than
-				// rewritten every frame the ship sits beside it (sage #330).
-				kept.push(...stepCanisters([canister], dt, this.world.gameTime));
-				const full = "hold full: canister left in space";
-				if (this.lastExit !== full) this.lastExit = full;
+				// It keeps drifting (sage #330). The notice stands while the ship
+				// is beside it, and a later notice replaces it as usual.
+				kept.push(driftCanister(canister, dt));
+				this.lastExit = "hold full: canister left in space";
 				continue;
 			}
 			this.commander = took.commander;
@@ -9277,11 +9276,7 @@ class Game {
 							this.world.gameTime,
 						)
 							.slice(0, 6)
-							.map((line) => {
-								const m = Math.floor(line.at / 60);
-								const s = Math.floor(line.at % 60);
-								return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}  ${line.text}`;
-							})
+							.map(formatRaiderLogLine)
 					: [],
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),

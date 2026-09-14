@@ -138,6 +138,12 @@ export function dropCanisters(kill: {
 	});
 }
 
+/** One canister moved one step along its velocity. */
+export const driftCanister = (c: Canister, dt: number): Canister => ({
+	...c,
+	pos: add(c.pos, scale(c.vel, dt)),
+});
+
 /** Drift every canister by one step, and drop those that have expired. */
 export function stepCanisters(
 	canisters: readonly Canister[],
@@ -146,7 +152,7 @@ export function stepCanisters(
 ): Canister[] {
 	return canisters
 		.filter((c) => now < c.expiresAt)
-		.map((c) => ({ ...c, pos: add(c.pos, scale(c.vel, dt)) }));
+		.map((c) => driftCanister(c, dt));
 }
 
 /** Whether a ship scoops the canister now: close, and slow relative to it. */

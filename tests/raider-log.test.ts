@@ -3,7 +3,7 @@
  * repair, back in service, derived from world state.
  */
 import { describe, expect, test } from "bun:test";
-import { raiderLog } from "../src/raider-log";
+import { formatRaiderLogLine, raiderLog } from "../src/raider-log";
 import { raiderSlots } from "../src/raider-slots";
 import {
 	RAIDER_REPAIR_S,
@@ -34,6 +34,18 @@ const killed = (): WorldState =>
 
 const texts = (w: WorldState, t: number) =>
 	raiderLog(w.galaxies[0], SYSTEM, GOV, t).map((l) => l.text);
+
+describe("a printed log line", () => {
+	test("is the game clock as mm:ss, two spaces, then the text", () => {
+		const line = { at: 612.9, key: SLOT.key, text: "Raider 02 under repair" };
+		expect(formatRaiderLogLine(line)).toBe("10:12  Raider 02 under repair");
+	});
+
+	test("does not wrap the minutes at the hour", () => {
+		const line = { at: 3725, key: SLOT.key, text: "x" };
+		expect(formatRaiderLogLine(line)).toBe("62:05  x");
+	});
+});
 
 describe("the raider log", () => {
 	test("a system with no kill has no lines", () => {

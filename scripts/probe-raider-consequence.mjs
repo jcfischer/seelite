@@ -144,7 +144,7 @@ check(
 	`${kill.key} is ${kill.condition}`,
 );
 check(
-	"the wreck drops one to three one-tonne canisters near the kill, expiring in five minutes",
+	"the wreck drops one to three one-tonne canisters within 20 km of the player, expiring in five minutes",
 	kill.canisters.length >= 1 &&
 		kill.canisters.length <= 3 &&
 		kill.canisters.every(

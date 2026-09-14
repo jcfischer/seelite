@@ -66,3 +66,11 @@ export function raiderLog(
 	}
 	return lines.sort((a, b) => b.at - a.at);
 }
+
+/** A log line as the console prints it: the game clock as `mm:ss`, then the
+ *  text. Minutes are not wrapped at the hour. */
+export function formatRaiderLogLine(line: RaiderLogLine): string {
+	const m = Math.floor(line.at / 60);
+	const s = Math.floor(line.at % 60);
+	return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}  ${line.text}`;
+}
