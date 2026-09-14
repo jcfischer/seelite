@@ -11,7 +11,11 @@ import {
 	stepEncounter,
 } from "../src/encounter";
 import { generateGalaxy } from "../src/galaxy";
-import { INTERDICTION_CHARGE_S, cruiseTurnRate } from "../src/interdiction";
+import {
+	INTERDICTION_CHARGE_S,
+	INTERDICTION_RANGE_KM,
+	cruiseTurnRate,
+} from "../src/interdiction";
 import { legEncounter, raiderSlots } from "../src/raider-slots";
 import { PULSE_LASER, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
@@ -181,6 +185,29 @@ describe("the contest in play", () => {
 		const e = forceEncounter(3, 0, "behind", 10, 30);
 		const flown = fly(e, { untilS: 11.2, cruise: (t) => t < 11 });
 		expect(flown.e.phase).toBe("duel");
+	});
+});
+
+describe("an encounter belongs to its leg (sage round 1)", () => {
+	test("a player who leaves cruise before the raider appears has missed it, at once", () => {
+		// Round 1: `missed` was checked only once the appearance time had
+		// passed, so a player who dropped out and spooled again inside the
+		// delay met the old leg's raider — and that leg's own draw was skipped.
+		const e = forceEncounter(3, 0, "behind", 30, 30);
+		const f = { pos: v3(), nose: v3(0, 0, -1), inCruise: false, speedKms: 0 };
+		const step = stepEncounter(e, frame(12, f));
+		expect(step.encounter.phase).toBe("over");
+		expect(step.encounter.end).toBe("missed");
+		expect(step.contact).toBeNull();
+	});
+
+	test("a raider that would appear beyond lock range is lost, and never shows", () => {
+		const e = forceEncounter(3, 0, "behind", 10, INTERDICTION_RANGE_KM + 1);
+		const f = { pos: v3(), nose: v3(0, 0, -1), inCruise: true, speedKms: 500 };
+		const step = stepEncounter(e, frame(10.2, f));
+		expect(step.encounter.phase).toBe("over");
+		expect(step.encounter.end).toBe("lost");
+		expect(step.contact).toBeNull();
 	});
 });
 

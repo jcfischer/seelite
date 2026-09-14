@@ -80,10 +80,14 @@ export interface LegEncounter {
 /**
  * Whether a leg meets a raider, and the encounter if it does.
  *
- * `legOrdinal` identifies the leg; the caller chooses it so that the same leg
- * replayed from the same save draws the same encounter. The stream is the
- * system's own seed split by `DOMAIN.ENCOUNTER` and then by the leg, so no
- * other draw in the system shifts it and no two legs share it.
+ * `legOrdinal` identifies the leg. `Game` passes the whole second of game time
+ * at which the spool completes, so **the chance is per spool, not per route**:
+ * a leg cancelled and spooled again draws again, and a replay reproduces a
+ * draw only if its spool completes in the same second (sage round 1 — an
+ * earlier version of this comment promised a replayed leg the same encounter,
+ * which nothing held). The stream is the system's own seed split by
+ * `DOMAIN.ENCOUNTER` and then by that ordinal, so no other draw in the system
+ * shifts it.
  */
 export function legEncounter(
 	systemSeed: number,

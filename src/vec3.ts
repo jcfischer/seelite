@@ -57,3 +57,15 @@ export const lengthSq = (a: Vec3): number => a.x * a.x + a.y * a.y + a.z * a.z;
  */
 export const cross = (a: Vec3, b: Vec3): Vec3 =>
 	v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+
+/**
+ * `a` scaled to unit length, or `fallback` when `a` has none.
+ *
+ * Here for the reason `cross` is: #324 added three verbatim copies of this
+ * beside two older ones, and a second spelling of a primitive is a second
+ * answer to what a zero vector normalises to.
+ */
+export const normalizeOr = (a: Vec3, fallback: Vec3): Vec3 => {
+	const m = length(a);
+	return m === 0 ? fallback : scale(a, 1 / m);
+};

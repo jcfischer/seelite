@@ -10808,6 +10808,23 @@ if (query.has("model-viewer")) {
 		// The badge's own reader, so the two cannot disagree.
 		fault: () => game.saveFaultText(),
 		onContinue: async (slot) => {
+			// **A dead page never resumes** (#324, sage round 1). After a death
+			// with nothing to restore, Continue reloads and the boot loads the
+			// Commander from its save — unholding the clock here would fly a hull
+			// at zero that can never die again. The store's own lock goes back
+			// first, or the one-shot below is refused by this very tab.
+			if (game.dead) {
+				if (!noSave) {
+					game.saveStore?.release();
+					try {
+						await catalog.chooseCommander(slot);
+					} catch (error) {
+						return messageOf(error);
+					}
+				}
+				window.location.reload();
+				return null;
+			}
 			const fault = noSave ? null : await attach(slot);
 			if (fault === null) game.clockHeld = false;
 			return fault;

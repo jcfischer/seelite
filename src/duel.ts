@@ -31,8 +31,9 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
+import { frameAcross } from "./interdiction";
 import type { Ship } from "./sim";
-import { type Vec3, cross, length, scale, sub, v3 } from "./vec3";
+import { type Vec3, cross, normalizeOr, sub, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
 export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;
@@ -67,11 +68,6 @@ export interface DuelStep {
 	raiderDestroyed: boolean;
 }
 
-const unit = (v: Vec3, fallback: Vec3): Vec3 => {
-	const m = length(v);
-	return m === 0 ? fallback : scale(v, 1 / m);
-};
-
 /**
  * A raider's flight state at the moment a contest drops both ships out of
  * cruise: where the contest left it, moving with the player, nose on them, and
@@ -82,9 +78,8 @@ export function raiderAtDrop(
 	player: Ship,
 	seed: number,
 ): CombatEnemyState {
-	const nose = unit(sub(player.pos, pos), v3(0, 0, -1));
-	const reference = Math.abs(nose.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0);
-	const across = unit(cross(nose, reference), v3(1, 0, 0));
+	const nose = normalizeOr(sub(player.pos, pos), v3(0, 0, -1));
+	const across = frameAcross(nose);
 	return {
 		ship: { pos: { ...pos }, vel: { ...player.vel } },
 		nose,

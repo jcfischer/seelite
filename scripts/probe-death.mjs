@@ -110,7 +110,11 @@ if (reloadSeen) {
 	});
 }
 check(
-	"the reload boots into the last dock: the leg's credits are gone",
+	// **Which record boots, not where the ship is.** The fixture writes the
+	// dock record from flight with `saveFlush("dock")`, so the ship it restores
+	// is in flight too; this row proves the reload loads `lastDocked`'s bytes
+	// (sage round 1). A boot parked at a station is `probe-save.mjs`'s.
+	"the reload boots the last-dock record: the leg's credits are gone",
 	after?.credits === DOCK_CREDITS && after?.liveCredits === DOCK_CREDITS,
 	JSON.stringify(after),
 );

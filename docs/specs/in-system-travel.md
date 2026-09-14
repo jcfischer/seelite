@@ -230,11 +230,14 @@ The contest's own design (what the player does, what skill it tests) was left to
 which holding a lock costs the initiator turn authority; `combat-model.md` §3
 records the ruling and why a bearing lock was rejected. What the player does is
 turn hard, early: a courier that turns at full rate within about a second of the
-lock escapes, and one that waits or turns gently is dropped. `stepContest` in
-`src/interdiction.ts` takes an initiator and a target and nothing that names the
-player, which is §9 row 7's symmetry as a signature. A player-initiated
-interdiction is not built yet; when it is, it calls the same function with the
-roles swapped.
+lock escapes, and one that waits or turns gently is dropped. What every
+initiator shares is in `src/interdiction.ts`: `stepContest`, which takes no
+role, **and** `interdictionTurnRate`, the turn cap an initiator flies under
+while it holds a lock — the half that makes the contest escapable. Only the NPC
+path exists, and it applies that cap. A player-initiated interdiction is not
+built yet; when it is, it must cap the player's own turn with the same function
+while the player holds a lock, and until then §9 row 7 is a requirement on
+that path rather than something the code already holds.
 
 ---
 

@@ -349,6 +349,25 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		expect(h.backend.writes).toBe(before);
 	});
 
+	test("a death before the first dock leaves the store saving and the lock held", async () => {
+		// Sage round 1's blocker. A new game has no `lastDocked`, and the first
+		// build retired the store before it found that out: every later write was
+		// dropped without an error, and the tab kept a lock nothing released.
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("jump");
+		expect(await h.store.hold()).toBe(true);
+		await h.store.revertToLastDocked(h.commander).catch(() => {});
+		const before = h.backend.writes;
+		h.set(777);
+		h.store.markDirty();
+		await h.store.flush("jump");
+		expect(h.backend.writes).toBe(before + 1);
+		expect((await h.store.load("default")).commander.state.credits).toBe(777);
+		// Still this tab's: another attach to the Commander is refused.
+		await expect(h.catalog.chooseCommander("default")).rejects.toThrow();
+	});
+
 	test("it gives the tab's lock back, so the reload's one-shot can name the Commander", async () => {
 		const h = harness();
 		await docked(h);

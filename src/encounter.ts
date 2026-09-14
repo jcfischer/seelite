@@ -17,10 +17,11 @@
  *
  * **Not yet here, by the node's own split:** the world-state `destroy` event
  * and the lifecycle a destroyed slot runs (part d), and a player-initiated
- * interdiction. The contest function is role-free, so the player's path will
- * call `stepContest` with the roles swapped rather than a second function.
+ * interdiction. The raider applies the contest's turn cost here
+ * (`interdictionTurnRate`); a player path must apply the same cost to the
+ * player while the player holds a lock — see `interdiction.ts`.
  */
-import { type CarrierKey } from "./carrier-key";
+import type { CarrierKey } from "./carrier-key";
 import {
 	type DuelPilot,
 	type PlayerShot,
@@ -31,8 +32,10 @@ import {
 import { HULL_SPECS } from "./hull";
 import {
 	type Contest,
+	INTERDICTION_RANGE_KM,
 	beginContest,
 	followHeading,
+	frameAcross,
 	interdictionTurnRate,
 	stepContest,
 } from "./interdiction";
@@ -47,7 +50,16 @@ import { mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
 import { fullCondition } from "./ship-condition";
 import { flightPerformance } from "./sim";
-import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	length,
+	normalizeOr,
+	scale,
+	sub,
+	v3,
+} from "./vec3";
 
 export type EncounterPhase = "inbound" | "contest" | "duel" | "over";
 
@@ -56,7 +68,7 @@ export type EncounterEnd =
 	| "missed"
 	/** The player broke the lock. */
 	| "broken"
-	/** The raider never got a lock. */
+	/** The raider never got a lock, or appeared too far away to try. */
 	| "lost"
 	/** The player was back in cruise during the duel. */
 	| "escaped"
@@ -120,14 +132,8 @@ const RAIDER_LOCK_RATE = interdictionTurnRate(
 	flightPerformance(RAIDER_HULL_ID),
 );
 
-const unit = (v: Vec3, fallback: Vec3): Vec3 => {
-	const m = length(v);
-	return m === 0 ? fallback : scale(v, 1 / m);
-};
-
 function perpendicular(nose: Vec3, rollUnit: number): Vec3 {
-	const reference = Math.abs(nose.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0);
-	const a = unit(cross(nose, reference), v3(1, 0, 0));
+	const a = frameAcross(nose);
 	const b = cross(nose, a);
 	const angle = rollUnit * Math.PI * 2;
 	return add(scale(a, Math.cos(angle)), scale(b, Math.sin(angle)));
@@ -139,7 +145,7 @@ function offsetFor(
 	rangeKm: number,
 	rollUnit: number,
 ): Vec3 {
-	const forward = unit(nose, v3(0, 0, -1));
+	const forward = normalizeOr(nose, v3(0, 0, -1));
 	if (bearing === "ahead") return scale(forward, rangeKm);
 	if (bearing === "behind") return scale(forward, -rangeKm);
 	return scale(perpendicular(forward, rollUnit), rangeKm);
@@ -214,18 +220,18 @@ export function forceEncounter(
 	);
 }
 
-const over = (e: Encounter, end: EncounterEnd): EncounterStep => ({
-	encounter: { ...e, phase: "over", end, raider: null, offset: null },
+/** A frame in which nothing is shown and nothing happens. */
+const idle = (e: Encounter): EncounterStep => ({
+	encounter: e,
 	drop: false,
 	raiderHit: null,
 	contact: null,
 });
 
-function upFor(nose: Vec3): Vec3 {
-	const reference = Math.abs(nose.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0);
-	const across = unit(cross(nose, reference), v3(1, 0, 0));
-	return cross(across, nose);
-}
+const over = (e: Encounter, end: EncounterEnd): EncounterStep =>
+	idle({ ...e, phase: "over", end, raider: null, offset: null });
+
+const upFor = (nose: Vec3): Vec3 => cross(frameAcross(nose), nose);
 
 export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 	const { pilot } = f;
@@ -243,18 +249,20 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		up,
 	});
 
-	if (e.phase === "over")
-		return { encounter: e, drop: false, raiderHit: null, contact: null };
+	if (e.phase === "over") return idle(e);
 
 	if (e.phase === "inbound") {
-		if (f.gameTime < e.appearsAtS)
-			return { encounter: e, drop: false, raiderHit: null, contact: null };
+		// A raider belongs to the leg it was drawn on. The moment that leg ends —
+		// before the raider has appeared or at the frame it would — it is missed,
+		// so it cannot follow the player onto the next leg.
 		if (!f.inCruise) return over(e, "missed");
+		if (f.gameTime < e.appearsAtS) return idle(e);
+		// A contest only runs against a contact near enough to lock.
+		if (e.rangeKm > INTERDICTION_RANGE_KM) return over(e, "lost");
 		const offset = offsetFor(pilot.nose, e.bearing, e.rangeKm, e.rollUnit);
-		const nose = unit(pilot.nose, v3(0, 0, -1));
-		const encounter: Encounter = { ...e, phase: "contest", offset, nose };
+		const nose = normalizeOr(pilot.nose, v3(0, 0, -1));
 		return {
-			encounter,
+			encounter: { ...e, phase: "contest", offset, nose },
 			drop: false,
 			raiderHit: null,
 			contact: contactOf(add(pilot.ship.pos, offset), pilot.ship.vel, nose),
@@ -262,8 +270,9 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 	}
 
 	if (e.phase === "contest") {
-		const offset = e.offset ?? offsetFor(pilot.nose, e.bearing, e.rangeKm, 0);
-		const pos = add(pilot.ship.pos, offset);
+		// The inbound step sets the offset on the frame it enters the contest.
+		if (!e.offset) throw new Error("an encounter in contest has no offset");
+		const pos = add(pilot.ship.pos, e.offset);
 		// A player who drops out mid-contest has submitted: the raider is on
 		// them and the duel starts where the contest left it.
 		if (!f.inCruise)
@@ -329,7 +338,3 @@ export const RAIDER_CONTACT_RADIUS_KM =
 		HULL_SPECS[RAIDER_HULL_ID].env.beamKm,
 		HULL_SPECS[RAIDER_HULL_ID].env.heightKm,
 	) / 2;
-
-/** Whether the encounter is showing a contact this frame. */
-export const encounterVisible = (e: Encounter | null): boolean =>
-	e !== null && (e.phase === "contest" || e.phase === "duel");

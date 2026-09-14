@@ -534,29 +534,43 @@ export class SaveStore {
 	 * ruling asked for, and it is the one write a death makes. A permadeath
 	 * commander gets `null` and nothing is written, so that stance is unchanged.
 	 *
-	 * Order matters. The store retires **first**, cancelling a debounce that
-	 * would otherwise land after the copy and put the dead ship back; it waits
-	 * for a write already in flight for the same reason; it validates the dock
-	 * record before copying, because D9 makes a bad `lastDocked` a named error
-	 * rather than something to substitute; and it gives the tab's lock back last,
-	 * so the one-shot continue and the reload's boot can take the Commander.
+	 * Order matters, and the first order was wrong (sage round 1's blocker).
+	 * The store first quiets itself — it cancels a debounce and waits out a
+	 * write in flight, either of which could land after the copy and put the
+	 * dead ship back. It then reads and validates the dock record, because D9
+	 * makes a bad `lastDocked` a named error rather than something to
+	 * substitute. **Only a record that validates retires the store**: a
+	 * Commander who died before their first dock has no `lastDocked`, and a
+	 * store that had already retired would have dropped every later write
+	 * while still holding the tab's lock. On that path this throws with the
+	 * store still writing and the lock still held. After the copy it gives the
+	 * lock back, so the one-shot continue and the reload's boot can take the
+	 * Commander.
 	 */
 	async revertToLastDocked(commander: {
 		permadeath: boolean;
 	}): Promise<SaveEnvelope | null> {
 		if (commander.permadeath) return null;
-		this.retired = true;
-		this.cancel?.();
-		this.cancel = null;
+		this.quiet();
 		this.dirty = false;
 		await this.settled();
 		const raw = await this.backend.read(this.slot, "lastDocked");
 		if (raw === null || raw === undefined)
 			fail(`Commander "${this.slot}" has no lastDocked record`);
 		const restored = parseSave(raw);
+		// Validated. From here this store writes nothing more — and a debounce
+		// armed during the awaits above is cancelled with it.
+		this.retired = true;
+		this.quiet();
 		await this.backend.write(this.slot, "live", raw);
 		this.release();
 		return restored;
+	}
+
+	/** Cancels a pending debounced write. */
+	private quiet(): void {
+		this.cancel?.();
+		this.cancel = null;
 	}
 
 	/**

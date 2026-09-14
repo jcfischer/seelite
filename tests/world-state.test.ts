@@ -16,6 +16,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { raiderSlotCount } from "../src/raider-slots";
+import { fnv1a } from "../src/world-state";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
@@ -199,6 +200,37 @@ describe("§9.1 namespace and baseline stability", () => {
 		});
 	});
 
+	test("the station and Traffic slots are version 5's, identity and placement", () => {
+		// #324 added raider slots and was to move nothing else. A count cannot
+		// show that — two generators with the same number of slots in different
+		// places agree on it (sage round 1). Hashing the station and Traffic slots
+		// alone, in version 5's line format, against version 5's golden
+		// fingerprints shows identity, type, parent and placement unmoved.
+		//
+		// **The line format is restated here on purpose.** It is pinned to a
+		// version that no longer exists; if `carrierBaselineFingerprint`'s format
+		// changes, these goldens cannot match and the row says so.
+		const V5_GOLDEN = [
+			3533000626, 1070577234, 2722668670, 3149233322, 2273383725, 63070487,
+			656005811, 694742327,
+		];
+		const withoutRaiders = (galaxy: number) => {
+			const parts: string[] = [];
+			for (const c of enumerateCarriers(WORLD, galaxy)) {
+				if (c.kind === "raider") continue;
+				const generatedType =
+					c.kind === "station"
+						? c.stationType
+						: `traffic:${c.homeStationType}:${c.hullId}`;
+				parts.push(
+					`${c.systemIndex}|${c.localCarrierId}|${generatedType}|${c.parentId ?? "-"}|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`,
+				);
+			}
+			return fnv1a(parts.join("\n"));
+		};
+		expect([0, 1, 2, 3, 4, 5, 6, 7].map(withoutRaiders)).toEqual(V5_GOLDEN);
+	});
+
 	test("the carrier baseline fingerprint is pinned per galaxy", () => {
 		// Identity, type, parent and generated placement, hashed. It goes red on
 		// any generator change that moves a station — which is exactly when
@@ -227,7 +259,8 @@ describe("§9.1 namespace and baseline stability", () => {
  *   slot.
  * - 5 → 6: #324 added one to four raider encounter slots to every system, by
  *   the principal's ruling that raiders are enumerated carriers. The station
- *   and Traffic slots did not move — the count row above holds them at 21736.
+ *   and Traffic slots did not move, and the row above holds that against
+ *   version 5's own fingerprints rather than against a count.
  *
  * Version 4 changed all eight hashes because every generated station gained
  * Traffic Carrier slots; version 5 changes all eight again because every one of
@@ -247,8 +280,8 @@ describe("§9.1 namespace and baseline stability", () => {
  * migration, and §2 says so.
  */
 const GOLDEN_FINGERPRINTS = [
-	838257999, 663646173, 2373306951, 957887233, 2147018064, 3527541206,
-	2815733683, 3044912208,
+	1163913307, 3856323717, 2679409367, 1183764877, 1701938284, 3786678530,
+	2605068771, 239491612,
 ];
 
 // ---------------------------------------------------------------------------
