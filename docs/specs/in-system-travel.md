@@ -225,8 +225,16 @@ arrival point and the station — which would make #6's radial danger gradient
 nearly unreachable. The symmetric case is also what makes **piracy a player
 activity**: you cannot rob a trader you cannot stop.
 
-The contest's own design (what the player does, what skill it tests) is left to
-#8, which owns combat mechanics.
+The contest's own design (what the player does, what skill it tests) was left to
+#8, which owns combat mechanics. **#324 settled it** as a heading contest in
+which holding a lock costs the initiator turn authority; `combat-model.md` §3
+records the ruling and why a bearing lock was rejected. What the player does is
+turn hard, early: a courier that turns at full rate within about a second of the
+lock escapes, and one that waits or turns gently is dropped. `stepContest` in
+`src/interdiction.ts` takes an initiator and a target and nothing that names the
+player, which is §9 row 7's symmetry as a signature. A player-initiated
+interdiction is not built yet; when it is, it calls the same function with the
+roles swapped.
 
 ---
 
