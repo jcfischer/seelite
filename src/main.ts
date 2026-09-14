@@ -269,7 +269,16 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import type { PlayerShot } from "./duel";
+import { type PlayerShot, raiderInSights } from "./duel";
+import {
+	DUEL_ROW_LABELS,
+	duelConsoleReadout,
+	duelRowCells,
+	duelRowWidest,
+	onTargetMark,
+	raiderCueTone,
+	showDuelRow,
+} from "./duel-hud";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -867,8 +876,13 @@ const GLASS_BOTTOM_FRACTION = 0.66;
  * this number.
  */
 const FLOOR_STRIP_HEIGHT_PX = 26;
+/** The course row's band and the duel row's, counted up from the strip as 1. */
+const COURSE_BAND = 2;
+const DUEL_BAND = 3;
 /**
- * How many bands the floor stacks: §5.1's strip, and §8.3's course row above it.
+ * How many bands the floor stacks: §5.1's strip, §8.3's course row above it,
+ * and #324's duel row above that. **It is the top band's number, not a count
+ * kept beside it.** A band added above the duel row must become this value.
  *
  * **One height for both, because `floorFont` sizes every glyph on the floor
  * from `FLOOR_STRIP_HEIGHT_PX`.** A course band declared as its own number is a
@@ -884,7 +898,7 @@ const FLOOR_STRIP_HEIGHT_PX = 26;
  * commits to a destination is a worse instrument than one sitting a row higher
  * always.
  */
-const FLOOR_BANDS = 2;
+const FLOOR_BANDS = DUEL_BAND;
 /** A `PROMPT_FONT` line's own band, which both lines below occupy. */
 const PROMPT_LINE_HEIGHT_PX = 18;
 /**
@@ -919,8 +933,19 @@ const CLEARANCE_ABOVE_FLOOR_PX = PROMPT_ABOVE_FLOOR_PX + PROMPT_LINE_HEIGHT_PX;
  * itself from the strip's band. Three sites read this now, and a fourth band
  * is one edit rather than three.
  */
-const floorTopY = (h: number) =>
-	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * FLOOR_BANDS;
+const floorTopY = (h: number) => floorBandTopY(h, FLOOR_BANDS);
+/**
+ * The top of band `band` of the floor, counting up from the strip as 1.
+ *
+ * **The duel row is reserved like the course row** (#324): the band is there
+ * whether or not a fight is on, so the prompt and §3's clearance line sit a
+ * band higher always rather than jumping when a raider appears — the rule the
+ * course band's own comment gives, applied to the third band.
+ */
+const floorBandTopY = (h: number, band: number) =>
+	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
+/** The widest reading the duel row can print, for the floor's fit. */
+const DUEL_ROW_WIDEST = duelRowWidest();
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -1769,6 +1794,10 @@ class Game {
 		 * decides — and the residue is what it decides *with*.
 		 */
 		overflowPx: number;
+		/** #324's duel row as painted, or `null` where no fight is on and the
+		 *  row was deliberately not drawn. */
+		duelRow: FloorCell[] | null;
+		duelBox: FloorBox | null;
 		source: {
 			regime: string;
 			spoolLeftS: number;
@@ -1785,6 +1814,22 @@ class Game {
 	 * pass against a director that was never painted.
 	 */
 	directorRender: DirectorRender | null = null;
+	/**
+	 * Whether the raider fired on the player this frame (#324). The hostile cue
+	 * turns red while it does, by the principal's ruling.
+	 */
+	raiderFiring = false;
+	/**
+	 * The hostile firing cue as drawn this frame, or `null` when no raider is
+	 * the selected target. Written by the draw, like `floorRender`.
+	 */
+	cueRender: {
+		tone: FloorTone;
+		onTarget: boolean;
+		/** The ring's centre on the overlay, or `null` when the edge arrow is
+		 *  drawn instead — so a probe samples the paint, not this record. */
+		at: { x: number; y: number } | null;
+	} | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -6762,6 +6807,7 @@ class Game {
 			// A dock ends any encounter: a station is not a place a raider follows.
 			this.encounter = null;
 			this.encounterView = null;
+			this.raiderFiring = false;
 			this.dock = enterArrival(
 				id,
 				frame,
@@ -7246,6 +7292,7 @@ class Game {
 		// behind. Render drops its contact and hull on the next frame.
 		this.encounter = null;
 		this.encounterView = null;
+		this.raiderFiring = false;
 		this.lastExit = "";
 		this.detour = null;
 		this.frameBody = null;
@@ -7567,6 +7614,7 @@ class Game {
 		});
 		this.encounter = step.encounter;
 		this.encounterView = step.contact;
+		this.raiderFiring = step.raiderHit !== null;
 		if (step.drop) this.dropOut(`interdicted by ${name}`);
 		if (step.raiderHit)
 			this.takeDamage(
@@ -7580,6 +7628,9 @@ class Game {
 				: null;
 			if (notice) this.lastExit = notice(name);
 			this.encounter = null;
+			// A raider that fired on its last step would otherwise leave the cue
+			// red until the next encounter's first step.
+			this.raiderFiring = false;
 		}
 	}
 
@@ -9101,6 +9152,8 @@ class Game {
 			// describe the same two facts differently.
 			assist: floorCellValue(this.floorCells(), "ASSIST"),
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
+			// #324's full duel detail, only while the glass shows the duel row.
+			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
@@ -9683,6 +9736,23 @@ class Game {
 		};
 	}
 
+	/** Whether a raider is the selected target and on the scanner (#324). */
+	private raiderSelected(): boolean {
+		return (
+			this.raiderListed &&
+			this.targetId !== null &&
+			this.targetId === this.raiderContact.id
+		);
+	}
+
+	/** Whether the duel row shows: a raider contesting, dueling or selected. */
+	private duelRowShown(): boolean {
+		return showDuelRow({
+			encounterPhase: this.encounter?.phase ?? null,
+			targetIsRaider: this.raiderSelected(),
+		});
+	}
+
 	private drawFlightFloor(ctx: CanvasRenderingContext2D, w: number, h: number) {
 		const cells = this.floorCells();
 		const courseRow = courseCue(this.courseCueState());
@@ -9716,10 +9786,17 @@ class Game {
 			const widestCourse = [
 				{ label: COURSE_CUE_LABEL, value: this.courseWidest },
 			];
+			// And the duel row (#324), for the same reason: a third run on the
+			// same axis at the same scale.
+			const widestDuel = DUEL_ROW_LABELS.map((label) => ({
+				label,
+				value: DUEL_ROW_WIDEST[label],
+			}));
 			const runAt = (scale: number) =>
 				Math.max(
 					floorRunWidths(ctx, widestCells, scale).total,
 					floorRunWidths(ctx, widestCourse, scale).total,
+					floorRunWidths(ctx, widestDuel, scale).total,
 				);
 			const atOne = runAt(1);
 			const solved = Math.max(
@@ -9786,23 +9863,39 @@ class Game {
 		// label/value/tone grammar, in its own band, rather than a fifth cell
 		// (#117 D1). With no course it is absent, and absence here moves nothing
 		// below it (#117 D2).
-		let courseBox: FloorBox | null = null;
-		if (courseRow !== null) {
-			const run = floorRunWidths(ctx, [courseRow], scale);
-			const courseX = (w - run.total) / 2;
-			courseBox = floorBox(courseRow.label, courseX, run.total, floorTopY(h));
-			const courseBaselineY = courseBox.y;
-			drawFloorCell(
-				ctx,
-				courseRow,
-				{
-					x: courseX,
-					baselineY: courseBaselineY,
-					labelWidth: run.labelWidths[0],
-				},
-				floorType,
-			);
-		}
+		// One painter for every centred row above the strip: measure the run,
+		// centre it, box it in its band, paint each cell. The course row and
+		// #324's duel row were this block twice.
+		const drawBandRow = (
+			rowCells: FloorCell[],
+			label: string,
+			band: number,
+		): FloorBox => {
+			const run = floorRunWidths(ctx, rowCells, scale);
+			let rowX = (w - run.total) / 2;
+			const box = floorBox(label, rowX, run.total, floorBandTopY(h, band));
+			for (const [i, cell] of rowCells.entries()) {
+				drawFloorCell(
+					ctx,
+					cell,
+					{ x: rowX, baselineY: box.y, labelWidth: run.labelWidths[i] },
+					floorType,
+				);
+				rowX += run.widths[i] + cellGap;
+			}
+			return box;
+		};
+		const courseBox =
+			courseRow === null
+				? null
+				: drawBandRow([courseRow], courseRow.label, COURSE_BAND);
+		// #324's duel row, in the top band: shield pools and the heat lock, only
+		// while a raider is contesting, dueling or selected.
+		const duelRow = this.duelRowShown() ? duelRowCells(this.condition) : null;
+		const duelBox =
+			duelRow === null
+				? null
+				: drawBandRow(duelRow, DUEL_ROW_LABELS.join(" "), DUEL_BAND);
 		// **The strip's own save, closed once for both runs.** It was closed at
 		// the end of the cell loop until the course block was pasted in there
 		// with a save/restore pair of its own, which read as the closing one —
@@ -9820,6 +9913,8 @@ class Game {
 			// course row that never landed.
 			courseRow,
 			courseBox,
+			duelRow,
+			duelBox,
 			baselineY,
 			glassBottomY,
 			scale,
@@ -10080,6 +10175,8 @@ class Game {
 		const w = this.overlay.width;
 		const h = this.overlay.height;
 		ctx.clearRect(0, 0, w, h);
+		// Written again below only if a raider is selected and drawn this frame.
+		this.cueRender = null;
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
 		// flight-floor, scanner, director, or attitude marks may leak through it.
@@ -10235,11 +10332,43 @@ class Game {
 		const selectedBody = this.targetBody();
 		const selectedDir = selectedBody && directionTo(camPos, selectedBody.pos);
 		const selectedAt = selectedDir && place(selectedDir);
+		// **#324's firing cue is the selected target's own marker**, not a second
+		// aiming language (§3). A raider's ring and edge arrow take the duel tone
+		// — amber, red while it fires — and an on-target mark when a shot along
+		// the sightline would land now. The laser is a ray, so that is the whole
+		// of a firing solution: there is no lead to draw.
+		//
+		// **Only in the duel.** The raider is selectable from the contest on, but
+		// `stepEncounter` flies `stepDuel` in the duel phase alone, so a mark in
+		// the contest would promise a shot that does nothing.
+		const raiderSelected = selectedBody !== null && this.raiderSelected();
+		const raiderTone = raiderCueTone(this.raiderFiring);
+		const selectedColour = raiderSelected
+			? FLOOR_TONE_FILL[raiderTone]
+			: "rgba(255, 214, 120, 0.95)";
+		const onTarget =
+			raiderSelected &&
+			onTargetMark(
+				this.encounter?.phase ?? null,
+				raiderInSights(camPos, this.weaponAim(), selectedBody.pos),
+			);
+		// Built once, because the declutter reservation and the paint must agree.
+		const selectedLabel = (name: string, km: number) =>
+			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`;
+		if (raiderSelected)
+			this.cueRender = {
+				tone: raiderTone,
+				onTarget,
+				at: selectedAt?.on ? { x: selectedAt.x, y: selectedAt.y } : null,
+			};
 		// Reserve the selected label before the stable station/ship walk below.
 		// Its label is never submitted to decluttering, so context can disappear
 		// behind it but it can never disappear behind context.
 		if (selectedBody && selectedAt?.on) {
-			const text = `${selectedBody.name}  ${range(length(sub(selectedBody.pos, camPos)))}`;
+			const text = selectedLabel(
+				selectedBody.name,
+				length(sub(selectedBody.pos, camPos)),
+			);
 			occupiedLabels.push(
 				labelBounds(selectedAt.x + 20, selectedAt.y + 4, text),
 			);
@@ -10252,7 +10381,7 @@ class Game {
 			if (at?.on) {
 				const r = selected ? 14 : 7;
 				ctx.strokeStyle = selected
-					? "rgba(255, 214, 120, 0.95)"
+					? selectedColour
 					: "rgba(140, 190, 220, 0.4)";
 				ctx.lineWidth = selected ? 1.5 : 1;
 				if (selected) {
@@ -10260,8 +10389,14 @@ class Game {
 					ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
 					ctx.stroke();
 					const km = length(sub(body.pos, camPos));
-					ctx.fillStyle = "rgba(255, 214, 120, 0.95)";
-					ctx.fillText(`${body.name}  ${range(km)}`, at.x + r + 6, at.y + 4);
+					ctx.fillStyle = selectedColour;
+					if (onTarget) {
+						// A filled centre: a shot along the sightline lands now.
+						ctx.beginPath();
+						ctx.arc(at.x, at.y, 4, 0, Math.PI * 2);
+						ctx.fill();
+					}
+					ctx.fillText(selectedLabel(body.name, km), at.x + r + 6, at.y + 4);
 					continue;
 				}
 				// Corner brackets rather than a box: a closed square over a distant
@@ -10307,7 +10442,7 @@ class Game {
 			ctx.save();
 			ctx.translate(p.x, p.y);
 			ctx.rotate(-edge.angleRad);
-			ctx.fillStyle = "rgba(255, 214, 120, 0.95)";
+			ctx.fillStyle = selectedColour;
 			ctx.beginPath();
 			ctx.moveTo(11, 0);
 			ctx.lineTo(-6, 6);

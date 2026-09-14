@@ -140,6 +140,7 @@ export const LEVERS = Object.freeze({
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
 	209: "the gas giant's band tones, its storm's interior, and its limb",
 	300: "every §5 fixture on the surface its own aperture axis looks at",
+	324: "the duel HUD: the shield and heat row, the hostile firing cue, and the Flight console's detail",
 });
 
 /**
@@ -170,6 +171,12 @@ export const LEVERS = Object.freeze({
  *   outpost's interior is a landing pad rather than a bay, so the frame looks
  *   down at a deck rather than in through an opening; the kind's name is the
  *   mechanism — the workbench stage — and not a claim about the subject.
+ * - `duel` — in normal flight against a forced raider, aimed at it and with it
+ *   selected, looking `headLook` (`forward` or `right`, the Flight console).
+ *   #324's HUD exists only in a fight, so no other kind reaches it. **It is not
+ *   a repeatable frame**: the fight runs on the live clock through the settle
+ *   frames, so the raider and both conditions move between runs. Judge the
+ *   instruments' presence, tone and legibility, not a pixel difference.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -177,6 +184,7 @@ export const SHOT_KINDS = Object.freeze([
 	"deep-sky",
 	"berth",
 	"workbench-interior",
+	"duel",
 ]);
 
 /**
@@ -696,6 +704,24 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
+	 * #324 part (c)'s two frames: the glass and the console, because the
+	 * principal put the duel gauges in both places. They come before the views
+	 * that dock the ship; the placer resets the flight, so what came before them
+	 * does not matter.
+	 */
+	{
+		name: "duel-glass",
+		covers: [324],
+		what: "A duel in cockpit view, the raider selected and in the sights. The SHD and HEAT row above the course band, the raider's ring in the duel tone with its on-target mark.",
+		shot: { kind: "duel", headLook: "forward", view: "cockpit" },
+	},
+	{
+		name: "duel-console",
+		covers: [324],
+		what: "The same duel, head turned to the right console on its Flight tab. FORE, AFT, HULL, ENERGY BANK and HEAT beside ASSIST and CHARGE.",
+		shot: { kind: "duel", headLook: "right", view: "cockpit" },
+	},
+	/**
 	 * §13.6's seven-frame acceptance set, as declared views.
 	 *
 	 * The receipt fixes them and they are transcribed rather than reinterpreted:
@@ -886,6 +912,7 @@ const SHOT_REQUIREMENTS = {
 	// missing one is a docked, forward, cockpit frame.
 	berth: (s) => typeof s.station === "string" && typeof s.berth === "string",
 	"workbench-interior": (s) => typeof s.asset === "string" && finite(s.radii),
+	duel: (s) => s.headLook === "forward" || s.headLook === "right",
 };
 
 /**

@@ -9,6 +9,7 @@ import {
 	RAIDER_HIT_RADIUS_KM,
 	type Raider,
 	raiderAtDrop,
+	raiderInSights,
 	stepDuel,
 } from "../src/duel";
 import { HULL_SPECS } from "../src/hull";
@@ -58,6 +59,33 @@ describe("the hit sphere", () => {
 		expect(
 			playerLaserHit(v3(0, 0, 0), FORWARD, enemy, RAIDER_HIT_RADIUS_KM).hit,
 		).toBe(false);
+	});
+});
+
+describe("the HUD's on-target mark (part c)", () => {
+	test("agrees with the duel's own hit at the true radius, not the rig's", () => {
+		// Between the two radii the rig's beam lands and the duel's does not; the
+		// mark must side with the duel, or it promises a hit that never comes.
+		const aside = (RAIDER_HIT_RADIUS_KM + ENEMY_COLLISION_RADIUS_KM) / 2;
+		const between = v3(aside, 0, -3);
+		expect(raiderInSights(v3(0, 0, 0), FORWARD, between)).toBe(false);
+		const r = raiderAhead(3);
+		const off: Raider = {
+			...r,
+			flight: {
+				...r.flight,
+				ship: { ...r.flight.ship, pos: between },
+			},
+		};
+		expect(stepDuel(off, pilot(), SHOT, DT).playerHit).toBe(false);
+		const inside = v3(RAIDER_HIT_RADIUS_KM / 2, 0, -3);
+		expect(raiderInSights(v3(0, 0, 0), FORWARD, inside)).toBe(true);
+	});
+
+	test("reads the sightline, so looking off the nose moves the mark", () => {
+		const ahead = v3(0, 0, -3);
+		expect(raiderInSights(v3(0, 0, 0), FORWARD, ahead)).toBe(true);
+		expect(raiderInSights(v3(0, 0, 0), v3(1, 0, 0), ahead)).toBe(false);
 	});
 });
 

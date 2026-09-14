@@ -143,17 +143,18 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares twenty-two views with unique kebab-case names", () => {
+	test("declares twenty-four views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
 		// `planet-fill`, nineteen since #210 added `ringed-giant`, twenty since
 		// #209 added `giant-fill`, twenty-two since #300 gave the shipyard and
-		// the refinery a frame from their own aperture axis. A literal and not
+		// the refinery a frame from their own aperture axis, twenty-four since
+		// #324 added the duel's glass and console. A literal and not
 		// `VIEWS.length`, which is
 		// the whole point: a view deleted by accident has to be a red run, and a
 		// check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(22);
+		expect(VIEWS.length).toBe(24);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -428,9 +429,9 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — twenty-two since #300 added the shipyard
-		// and refinery axis views.
-		expect(html).toContain("· clock 0.6–9.0s");
+		// many views the set declares — twenty-four since #324 added the duel's
+		// glass and console views.
+		expect(html).toContain("· clock 0.6–9.8s");
 		expect(html).not.toContain("pinned");
 	});
 
