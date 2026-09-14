@@ -362,6 +362,47 @@ drawn while the Commander overlay is open**, which states the fault itself.
 four corners in both states (#311). Both bottom corners sat on the key-hint
 lines, and top-right is where `?fps` and `?perf` mount their instruments.
 
+### 5.4 The duel row, the firing cue and the Flight console detail
+
+Built under [#324](https://github.com/jcfischer/seelite/issues/324) part (c).
+`combat-model.md` §3 owns the condition it reads; `src/duel-hud.ts` owns every
+reading and tone below.
+
+**The gauges are in both places, by the principal's ruling.** The glass carries
+the minimum a pilot needs without turning the head; the Flight console carries
+the whole condition.
+
+**The glass: one row, in a third band above §5.2's course row.** It keeps the
+floor's grammar — label, value, §4 tone, the same run-width pass, centred on the
+same axis — and joins the floor's fit, so the strip, the course row and this row
+share one scale. The band is reserved **whether or not a fight is on**, for
+§5.2's reason: the prompt and §3's clearance line sit one band higher always
+rather than jumping when a raider appears. `FLOOR_BANDS` is 3.
+
+| cell | reads | tone |
+|---|---|---|
+| `SHD` | `F 72 A 106`, each pool rounded | passive; **refused** while either rounded pool is 0 |
+| `HEAT` | `63%` of the lock, or `LOCK` | passive; **action** from 75%; **refused** while locked |
+
+The row is drawn while a raider is **contesting, dueling or selected**, and not
+otherwise — absence rather than a dormant slot, for §5.2's reason.
+
+**The firing cue is the selected target's own marker.** A second aiming
+language on the glass is not added. When the selected target is a raider, its
+ring and its edge arrow take the duel tone: **amber** (§4's action), and **red
+only while the raider fires** on the player. The pulse laser is a ray
+(`combat-model.md` §3), so a firing solution has no lead: the cue marks
+**on target** — a filled centre and `ON TARGET` beside the name — while a shot
+along the sightline would land now. The predicate is `raiderInSights`, which is
+the duel's own beam test at the hull's true radius, so the mark cannot promise a
+hit the duel refuses.
+
+**The Flight console: five readings beside ASSIST and CHARGE** — `FORE`, `AFT`,
+`HULL`, `ENERGY` and `HEAT`, each against its maximum (`72 / 106`), heat as the
+glass reads it. The block is shown under the same predicate as the glass row and
+hidden in peace, with an inline `display` rather than the `hidden` attribute,
+which loses to `.lc-readout`'s own `display`.
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either
@@ -558,6 +599,41 @@ nothing. Each pixel row's control frame reads the **same pixels** and differs
 only in the one thing under test — a sampler keyed off each frame's own record
 never runs on the frames a control needs, and a control that also changed the
 ship's attitude was measuring the attitude reference moving.
+
+### 7.2 The duel HUD
+
+Headless — `tests/duel-hud.test.ts` and `tests/duel.test.ts`:
+
+1. **Each duel-row cell's text and tone against every branch**: a rounded pool at
+   0 refusing, heat passive below 75%, action from it, refused and `LOCK` when
+   locked.
+2. **No reachable reading is wider than `duelRowWidest`**, which the floor's fit
+   is solved for.
+3. **The console readout reads the condition against its maxima**, and the heat
+   reading is the glass's.
+4. **The cue tone is amber, and red only while the raider fires.**
+5. **The row's predicate**: contest, duel or a selected raider, and nothing else.
+6. **The on-target mark agrees with the duel's hit** at the true radius, not the
+   rig's, and follows the sightline rather than the nose.
+
+Browser — `scripts/probe-duel-hud.mjs`, at both viewports:
+
+7. **In peace no row is drawn and no cue is recorded.**
+8. **A contesting raider draws `SHD` and `HEAT`**, inside the glass and its
+   margins.
+9. **The bands stack**: the duel row above the course row, the course row above
+   the strip, and the cruise prompt above the duel row — rectangles, not
+   records.
+10. **The ring's paint**: amber and no red while the raider does not fire, red
+    while it does, sampled off the overlay.
+11. **The on-target mark** appears aimed at the raider and goes a quarter turn
+    off it.
+12. **The Flight console shows the detail in a fight**, read against the
+    condition, and **hides it after the encounter ends**, with the row and the
+    cue.
+
+Visual — `duel-glass` and `duel-console` in the view set, and the principal's
+yes. Neither is a repeatable frame: the fight runs on the live clock.
 
 ## 8. The station console
 

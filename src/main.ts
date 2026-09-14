@@ -1824,7 +1824,9 @@ class Game {
 	cueRender: {
 		tone: FloorTone;
 		onTarget: boolean;
-		onScreen: boolean;
+		/** The ring's centre on the overlay, or `null` when the edge arrow is
+		 *  drawn instead — so a probe samples the paint, not this record. */
+		at: { x: number; y: number } | null;
 	} | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
@@ -10357,7 +10359,7 @@ class Game {
 			this.cueRender = {
 				tone: raiderTone,
 				onTarget,
-				onScreen: selectedAt?.on === true,
+				at: selectedAt?.on ? { x: selectedAt.x, y: selectedAt.y } : null,
 			};
 		// Reserve the selected label before the stable station/ship walk below.
 		// Its label is never submitted to decluttering, so context can disappear
@@ -10375,7 +10377,9 @@ class Game {
 			const at = place(dir);
 			if (at?.on) {
 				const r = selected ? 14 : 7;
-				ctx.strokeStyle = selected ? selectedColour : "rgba(140, 190, 220, 0.4)";
+				ctx.strokeStyle = selected
+					? selectedColour
+					: "rgba(140, 190, 220, 0.4)";
 				ctx.lineWidth = selected ? 1.5 : 1;
 				if (selected) {
 					ctx.beginPath();

@@ -256,6 +256,49 @@ const PLACERS = {
 		);
 		return `workbench · ${shot.asset} ${shot.variant ?? "a"} interior`;
 	},
+	duel: async (page, shot) => {
+		// Cruise to the farthest body, force a raider ahead, fly the contest out on
+		// fixed steps so it interdicts, then select it and aim at it. The same
+		// route `probe-duel-hud.mjs` flies, so a frame and a check see one fight.
+		const name = await page.evaluate(async (headLook) => {
+			const g = window.__seelite;
+			const dt = g.units.MAX_DT;
+			g.resetFlightToStart();
+			const far = g.world.system.bodies
+				.filter((b) => b.kind !== "star")
+				.map((b) => ({
+					b,
+					d: Math.hypot(
+						b.pos.x - g.world.ship.pos.x,
+						b.pos.y - g.world.ship.pos.y,
+						b.pos.z - g.world.ship.pos.z,
+					),
+				}))
+				.sort((a, b) => b.d - a.d)[0].b;
+			g.targetId = far.id;
+			g.faceTarget?.();
+			g.engageCruise();
+			for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
+			g.forceRaider("ahead", 0.5, 12);
+			for (let i = 0; i < 600 && g.encounter?.phase !== "duel"; i++) g.step(dt);
+			if (g.encounter?.phase !== "duel")
+				throw new Error(
+					`duel placer: the raider never interdicted (phase ${g.encounter?.phase ?? "none"})`,
+				);
+			for (let i = 0; i < 60; i++) g.step(dt);
+			const raider = g.encounter.raider;
+			if (!raider) throw new Error("duel placer: no raider in the duel");
+			g.targetId = g.raiderContact.id;
+			const p = g.world.ship.pos;
+			const r = raider.flight.ship.pos;
+			g.setAttitude({ x: r.x - p.x, y: r.y - p.y, z: r.z - p.z }, g.shipUp());
+			g.rightTab = "Flight";
+			g.setHeadLook(headLook);
+			await new Promise((done) => requestAnimationFrame(() => done()));
+			return g.encounter.name;
+		}, shot.headLook);
+		return `duel · ${name} · ${shot.headLook}`;
+	},
 	"deep-sky": async (page) => {
 		// Back to the arrival point first. Turning the camera alone left the ship
 		// wherever the previous view had put it, which made one view of a
