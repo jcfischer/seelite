@@ -5042,20 +5042,28 @@ function buildOutpostCluster(
  * sized from the slot alone and the bay stands out of it. Here the barrel
  * contains the bay's section and its aft cap is behind the bay's back wall, so
  * the spokes, rooted just inside the bearing collars, clear the bay walls.
+ *
+ * **So the rims are sized from the hub.** The first sheet put 0.70 km rims on
+ * that hub and it read as a drum with hoops round it — a quarter of the rim's
+ * radius, where the reference's hub is nearer a sixth. The bay fixes the hub,
+ * so the rims grew instead: 0.95 km puts it under a fifth, and the Assembly
+ * already reaches a kilometre, so a trade form this size is not a new class.
  */
 const WHEEL = Object.freeze({
-	rimOuterKm: 0.7,
-	rimDepthKm: 0.075,
-	rimWidthKm: 0.06,
+	rimOuterKm: 0.95,
+	rimDepthKm: 0.1,
+	rimWidthKm: 0.08,
 	/** Each rim's centre plane, fore at +, aft at −. */
-	wheelZKm: 0.12,
-	hubHalfKm: 0.17,
-	collarHalfKm: 0.19,
+	wheelZKm: 0.16,
+	hubHalfKm: 0.175,
+	collarHalfKm: 0.2,
 	hubFrontKm: 0.26,
-	hubAftKm: -0.21,
-	spokeHalfKm: 0.012,
-	barHalfKm: 0.0045,
-	frameStations: 48,
+	hubAftKm: -0.24,
+	/** A spoke's half-extent along the axis, and across it. */
+	spokeHalfKm: 0.026,
+	spokeTangentKm: 0.02,
+	barHalfKm: 0.006,
+	frameStations: 56,
 	/** Where the unfinished rim is plated, degrees — irregular on purpose. */
 	plateDeg: [0, 50, 115, 170, 235, 290],
 	plateSpanDeg: 15,
@@ -5248,14 +5256,14 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 					{
 						z: WHEEL.hubHalfKm * 0.85,
 						w: WHEEL.spokeHalfKm,
-						h: WHEEL.spokeHalfKm,
+						h: WHEEL.spokeTangentKm,
 						e: 6,
 						hard: true,
 					},
 					{
 						z: inner + bar * 2,
 						w: WHEEL.spokeHalfKm,
-						h: WHEEL.spokeHalfKm,
+						h: WHEEL.spokeTangentKm,
 						e: 6,
 						hard: true,
 					},
@@ -5275,11 +5283,13 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 	// The hub: a barrel with a bearing collar at each wheel and the slot cut into
 	// its front cap.
 	const { hubHalfKm: hub, collarHalfKm: collar } = WHEEL;
+	// `e: 3` — round enough to read as a barrel, square enough to hold the bay's
+	// section at this half-width.
 	const barrel = (z: number, half: number): Ring => ({
 		z,
 		w: half,
 		h: half,
-		e: 4,
+		e: 3,
 		hard: true,
 	});
 	group.add(
@@ -5300,7 +5310,7 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 			],
 			plainMaterial(0x8b95a0, 0.6, 0.5),
 			"hub",
-			16,
+			20,
 			true,
 			apertureCut("trade"),
 		),
@@ -5347,7 +5357,8 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 						const s = Math.sin(theta);
 						// The barrel's own superellipse radius at this angle, so a
 						// piece is placed on the surface rather than inside it.
-						const radius = hub / (c ** 4 + s ** 4) ** 0.25;
+						const radius =
+							hub / (Math.abs(c) ** 3 + Math.abs(s) ** 3) ** (1 / 3);
 						normal.set(c, s, 0);
 						position.set(
 							c * radius,
@@ -5412,9 +5423,9 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			name: "Wheel",
 			thesis:
 				"two box-section rims on one axis — one plated and lit, one still a lattice — on a hub carrying the dock",
-			// The rims' outer corners, `hypot(0.70, 0.15)` = 0.716 km: nothing on
+			// The rims' outer corners, `hypot(0.95, 0.20)` = 0.971 km: nothing on
 			// the hub or the lattice passes them.
-			reachKm: 0.72,
+			reachKm: 0.98,
 			build: buildTradeWheel,
 		},
 	],
