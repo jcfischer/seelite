@@ -50,6 +50,10 @@
  *     wiring pair and only that pair — **6 calls across 10 frames**, and
  *     **125 calls in 2 s** with `rAF` stubbed out against the real tree's 0.
  *
+ * **That run predates #324's rows.** "R1 cycles the target", "Square no longer
+ * toggles the flight assist" and "Square held does not move the throttle" were
+ * not part of it, so "nothing else" above does not speak for them.
+ *
  * Two checks were also wrong before they were right, and both were caught by a
  * red rather than by review. The deadzone check ran *after* the stick arms and
  * read −0.0117 rad/s of the assist's exponential ease-out as a leak, so it runs
@@ -326,13 +330,13 @@ try {
 		await frames(8);
 		await page.evaluate(() => window.__pad.rest());
 		await frames(2);
-		const afterR2 = await page.evaluate(
+		const afterSquare = await page.evaluate(
 			() => window.__seelite.throttleFraction,
 		);
 		check(
 			"Square held does not move the throttle",
-			Math.abs(afterR2 - after) < 1e-9,
-			`throttle ${after.toFixed(4)} → ${afterR2.toFixed(4)}`,
+			Math.abs(afterSquare - after) < 1e-9,
+			`throttle ${after.toFixed(4)} → ${afterSquare.toFixed(4)}`,
 		);
 	}
 
@@ -344,19 +348,19 @@ try {
 		// working the throttle.** That exemption named only the keyboard, so a
 		// left-trigger pull went to 98.3% where `control` leaves 18.3%: braking
 		// accelerated. Sage found it, round 4.
-		const braked = await page.evaluate(async () => {
+		const braked = await page.evaluate(async (l2) => {
 			const g = window.__seelite;
 			g.setThrottle(0.2);
 			// A detour is what makes the branch reachable; the field is the one
 			// the cancel reads.
 			g.detour = { reason: "probe", legs: [] };
-			window.__pad.hold(6, 1); // l2 — throttle down
+			window.__pad.hold(l2, 1);
 			await window.__frames(3);
 			const throttle = g.throttleFraction;
 			window.__pad.rest();
 			await window.__frames(2);
 			return { throttle, detour: g.detour };
-		});
+		}, B.l2);
 		check(
 			"a left-trigger pull that cancels a detour brakes rather than accelerating",
 			braked.throttle < 0.2 && braked.detour === null,

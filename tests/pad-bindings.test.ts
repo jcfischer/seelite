@@ -346,8 +346,8 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// would measure a different frame from the one it exists for. It takes a
 		// console's six buttons and leaves the sticks alone.
 		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
-		// The triggers trim there too; the shoulders are its tab steps, and the
-		// two do not collide (sage #328's worry, answered by the triggers).
+		// The triggers trim there too, and the shoulders are its tab steps, so
+		// the two do not collide.
 		expect(padFlightAxes(trigger("r2", 1), "instrument").throttleTrim).toBe(1);
 		expect(padIntents(press("r1"), "instrument").tabDelta).toBe(1);
 	});
@@ -405,7 +405,11 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 describe("Square is the trigger, and the shoulders the targets (#324)", () => {
 	test("Square held fires in flight, and nothing else does", () => {
 		expect(padFireHeld(press("x"), "flight")).toBe(true);
-		expect(padFireHeld(trigger("r2", 1), "flight")).toBe(false);
+		// Every other button, so a trigger that also read another one would
+		// show here (sage #329).
+		for (const name of STANDARD_BUTTONS)
+			if (name !== "x")
+				expect(padFireHeld(press(name), "flight"), name).toBe(false);
 		expect(padFireHeld(rest, "flight")).toBe(false);
 		expect(padFireHeld(absent, "flight")).toBe(false);
 	});

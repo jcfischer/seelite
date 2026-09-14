@@ -325,8 +325,7 @@ export interface PadFlightAxes {
 	 *
 	 * A trim keeps all three and is still analog, which was the point: a light
 	 * pull trims slowly and a full pull slams, where a key has exactly one
-	 * speed. (#324 moved it to the shoulders for one round, and the principal
-	 * moved it back when fire went to Square.)
+	 * speed.
 	 */
 	readonly throttleTrim: number;
 }
