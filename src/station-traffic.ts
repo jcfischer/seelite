@@ -300,6 +300,74 @@ export function playerWinsLane(
 	return [...turns].sort(compareStationTurns)[0]?.participant.kind === "player";
 }
 
+/** Why Traffic will not give the player the lane yet (#314). */
+export type LaneRefusal =
+	| "traffic-starting"
+	| "carrier-in-lane"
+	| "carrier-queued-ahead";
+
+/**
+ * What the player's lane arbitration reads of a route. Structural, because
+ * `station-route.ts` imports this module and a type import back would close
+ * the cycle.
+ */
+export interface LaneRouteView {
+	key: CarrierKey;
+	terminalStationId: string | null;
+	phase: string;
+	laneRequest?: { readyAt: number; kind: "arrival" | "launch" } | null;
+}
+
+/**
+ * The player's turn at a station's lane, as a reason rather than a yes/no.
+ *
+ * `null` is the lane. The order is the one `Game` used: a Traffic authority
+ * still warming cannot see an actor already committed to the lane, a carrier
+ * moving through it is non-preemptive, and otherwise the oldest ready request
+ * wins by `playerWinsLane`'s total order. **A refused request that keeps its
+ * `readyAt` keeps its place** in that order, which is what a held launch is.
+ */
+export function playerLaneRefusal(input: {
+	authorityReady: boolean;
+	routes: readonly LaneRouteView[];
+	stationId: string;
+	readyAt: number;
+	movement: "arrival" | "launch";
+}): LaneRefusal | null {
+	if (!input.authorityReady) return "traffic-starting";
+	const here = input.routes.filter(
+		(route) => route.terminalStationId === input.stationId,
+	);
+	if (
+		here.some(
+			(route) => route.phase === "departing" || route.phase === "arriving",
+		)
+	)
+		return "carrier-in-lane";
+	const contenders: LaneRequest[] = here.flatMap((route) =>
+		route.laneRequest &&
+		(route.phase === "launch-queued" || route.phase === "lane-queued")
+			? [
+					{
+						participant: { kind: "carrier" as const, key: route.key },
+						readyAt: route.laneRequest.readyAt,
+						kind: route.laneRequest.kind,
+					},
+				]
+			: [],
+	);
+	return playerWinsLane(contenders, input.readyAt, input.movement)
+		? null
+		: "carrier-queued-ahead";
+}
+
+/** The docked Flight console's words for a held launch (#314). */
+export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
+	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
+	"carrier-in-lane": "LAUNCH HELD — A CARRIER IS IN THE LANE",
+	"carrier-queued-ahead": "LAUNCH HELD — A CARRIER IS QUEUED AHEAD",
+};
+
 /** Station-owned local traversal laws used by route composition. */
 export const TRAFFIC_STATION_EXCLUSION_KM = 5;
 /** Prevent the first cruise correction from dipping back inside the boundary. */

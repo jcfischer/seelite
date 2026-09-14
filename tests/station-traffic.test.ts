@@ -6,7 +6,9 @@ import { HULL_SPECS } from "../src/hull";
 import {
 	clearancePromotion,
 	compareStationTurns,
+	LAUNCH_HOLD_NOTICE,
 	laneWinner,
+	playerLaneRefusal,
 	playerWinsLane,
 	materializeTrafficContact,
 	stationTrafficRoster,
@@ -242,6 +244,69 @@ describe("shared station arbitration", () => {
 			),
 		).toBe(false);
 		expect(playerWinsLane([], 10, "launch")).toBe(true);
+	});
+
+	describe("a refused launch names its reason (#314)", () => {
+		const STATION = "station-trade";
+		const key = carrierKey(7, "station-trade/traffic-02");
+		const route = (
+			phase: string,
+			laneRequest?: { readyAt: number; kind: "arrival" | "launch" },
+			terminalStationId = STATION,
+		) => ({ key, terminalStationId, phase, laneRequest });
+		const refusal = (
+			routes: ReturnType<typeof route>[],
+			readyAt = 10,
+			authorityReady = true,
+		) =>
+			playerLaneRefusal({
+				authorityReady,
+				routes,
+				stationId: STATION,
+				readyAt,
+				movement: "launch",
+			});
+
+		test("a clear lane refuses nothing", () => {
+			expect(refusal([])).toBeNull();
+			// Another station's traffic is not this lane's.
+			expect(
+				refusal([route("arriving", undefined, "station-refinery")]),
+			).toBeNull();
+		});
+
+		test("Traffic that has not warmed up refuses first", () => {
+			expect(refusal([], 10, false)).toBe("traffic-starting");
+		});
+
+		test("a carrier moving through the lane refuses, in either direction", () => {
+			expect(refusal([route("arriving")])).toBe("carrier-in-lane");
+			expect(refusal([route("departing")])).toBe("carrier-in-lane");
+		});
+
+		test("an older queued carrier refuses, and a younger one does not", () => {
+			expect(
+				refusal([route("launch-queued", { readyAt: 9, kind: "launch" })]),
+			).toBe("carrier-queued-ahead");
+			expect(
+				refusal([route("lane-queued", { readyAt: 9, kind: "arrival" })]),
+			).toBe("carrier-queued-ahead");
+			// **Keeping the first readyAt is the whole of "keeps its place".** A
+			// request re-stamped at every retry loses to a carrier that queued
+			// between two retries; the held one, stamped at 10, beats it.
+			expect(
+				refusal([route("launch-queued", { readyAt: 11, kind: "launch" })]),
+			).toBeNull();
+		});
+
+		test("every refusal has words for the console", () => {
+			for (const reason of [
+				"traffic-starting",
+				"carrier-in-lane",
+				"carrier-queued-ahead",
+			] as const)
+				expect(LAUNCH_HOLD_NOTICE[reason]).toMatch(/^LAUNCH HELD/);
+		});
 	});
 });
 

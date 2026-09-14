@@ -849,6 +849,46 @@ check(
 	`switched=${liveEquipment.switched}, equipment rows=${liveEquipment.rows}`,
 );
 
+// #314: a launch Traffic refuses is held on the Flight console with its reason,
+// and CANCEL gives the turn back. The warm index is the authority's own gate:
+// zeroing it refuses the lane without inventing a carrier.
+const heldLaunch = await page.evaluate((stationId) => {
+	const g = window.__seelite;
+	g.setHeadLook("right");
+	document.querySelector('[data-live-right-tab="Flight"]')?.click();
+	const warmIndex = g.trafficWarmIndex;
+	g.trafficWarmIndex = 0;
+	document.querySelector("[data-live-launch]")?.click();
+	const notice = document.querySelector("[data-live-launch-notice]");
+	const held = {
+		phase: g.dockPhase,
+		notice: notice?.textContent ?? null,
+		// `checkVisibility`, not `hidden`: an id rule with `display` beats it.
+		visible: notice instanceof HTMLElement && notice.checkVisibility(),
+		request: g.playerLaneRequests.get(stationId)?.movement ?? null,
+	};
+	document.querySelector("[data-live-launch-cancel]")?.click();
+	const cancelled = {
+		notice: document.querySelector("[data-live-launch-notice]") !== null,
+		launchBack: document.querySelector("[data-live-launch]") !== null,
+		request: g.playerLaneRequests.get(stationId)?.movement ?? null,
+	};
+	g.trafficWarmIndex = warmIndex;
+	return { held, cancelled };
+}, slotId);
+
+check(
+	"a launch Traffic refuses is held on the console with its reason, and cancel gives the turn back",
+	heldLaunch.held.phase === "docked" &&
+		/^LAUNCH HELD/.test(heldLaunch.held.notice ?? "") &&
+		heldLaunch.held.visible &&
+		heldLaunch.held.request === "launch" &&
+		!heldLaunch.cancelled.notice &&
+		heldLaunch.cancelled.launchBack &&
+		heldLaunch.cancelled.request === null,
+	JSON.stringify(heldLaunch),
+);
+
 // The ship is parked in its berth from row 3, so the approach view has to be
 // set up again — deliberately, and after the dock rather than before: putting
 // the ship back outside would leave the session docked while the ship is
@@ -862,7 +902,15 @@ const approach = await page.evaluate((stationId) => {
 	const flight = document.querySelector('[data-live-right-tab="Flight"]');
 	if (flight instanceof HTMLElement) flight.click();
 	const launch = document.querySelector("[data-live-launch]");
+	// #314: the press is refused first, so it is held, and the held launch
+	// must leave by itself on the first step the lane is the player's.
+	const warmIndex = g.trafficWarmIndex;
+	g.trafficWarmIndex = 0;
 	if (launch instanceof HTMLElement) launch.click();
+	const heldPhase = g.dockPhase;
+	g.trafficWarmIndex = warmIndex;
+	g.step(1 / 60);
+	g.updateCockpit();
 	const consoleGone =
 		document.querySelector("[data-live-station-console]") === null;
 	g.render(0);
@@ -882,6 +930,7 @@ const approach = await page.evaluate((stationId) => {
 		phase: out.dockPhase,
 		rangeKm,
 		launchControl: launch instanceof HTMLElement,
+		heldPhase,
 		consoleGone,
 		launchingGlass,
 		// Read after the traversal has ended and before anything re-requests.
@@ -892,11 +941,12 @@ const approach = await page.evaluate((stationId) => {
 check(
 	"the Flight console launch released the ship back into flight",
 	approach.launchControl &&
+		approach.heldPhase === "docked" &&
 		approach.consoleGone &&
 		approach.launchingGlass.phase === "launching" &&
 		approach.launchingGlass.floorHidden &&
 		approach.phase === "flying",
-	`control=${approach.launchControl}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
+	`control=${approach.launchControl}, held=${approach.heldPhase}, console gone=${approach.consoleGone}, launching=${approach.launchingGlass.phase}/${approach.launchingGlass.floorHidden}, phase ${approach.phase}`,
 );
 
 check(

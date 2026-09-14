@@ -314,7 +314,6 @@ import {
 	compareStationTurns,
 	materializeTrafficContact,
 	parkedTrafficProjection,
-	playerWinsLane,
 	stationTrafficRoster,
 	TRAFFIC_DEMATERIALIZE_KM,
 	TRAFFIC_MATERIALIZE_KM,
@@ -322,6 +321,9 @@ import {
 	trafficScheduleAt,
 	type TrafficActor,
 	type TrafficProjection,
+	LAUNCH_HOLD_NOTICE,
+	type LaneRefusal,
+	playerLaneRefusal,
 } from "./station-traffic";
 import {
 	projectParkedTrafficActor,
@@ -2622,8 +2624,15 @@ class Game {
 							: { type, commodity: name };
 				this.transactStation(action);
 			},
+			// A refused press holds the launch, and the hold is on the console, so
+			// both outcomes repaint (#314).
 			onLaunch: () => {
-				if (this.launch()) this.updateCockpit();
+				this.launch();
+				this.updateCockpit();
+			},
+			onCancelLaunch: () => {
+				this.cancelLaunch();
+				this.updateCockpit();
 			},
 			onChartHost: (host) => this.setChartHost(host),
 		});
@@ -3809,6 +3818,7 @@ class Game {
 		this.trafficColdActors.clear();
 		this.trafficWarmIndex = 0;
 		this.playerLaneRequests.clear();
+		this.launchHold = null;
 		this.berthOccupancy.clear();
 		this.trafficTick = Number.NaN;
 		this.trafficProjectionAtS = Number.NaN;
@@ -6757,14 +6767,19 @@ class Game {
 			readyAt,
 			movement: "launch",
 		});
-		const canLaunch = this.playerWinsTrafficLane(stationId, readyAt, "launch");
-		if (!canLaunch) {
-			// A button press is an attempt, not an invisible permanent queue entry.
-			// Retaining this request made every later Traffic tick lose forever when
-			// the player abandoned a refused launch.
-			this.playerLaneRequests.delete(stationId);
+		const refusal = this.trafficLaneRefusal(stationId, readyAt, "launch");
+		if (refusal) {
+			// **Held, not dropped (#314).** A refused press used to delete the
+			// request, so nothing on screen said why and every retry went to the
+			// back of the queue. The request keeps its first `readyAt`, which is its
+			// place in `playerWinsLane`'s order, and `stepHeldLaunch` retries it.
+			// The reason the old code deleted it still stands — a request nobody
+			// will act on makes every later Traffic tick lose — so a hold ends on
+			// cancel and on any step the ship is not docked at that station.
+			this.launchHold = { stationId, refusal };
 			return false;
 		}
+		this.launchHold = null;
 		this.playerLaneRequests.delete(stationId);
 		this.dock = requestLaunch(
 			this.dock,
@@ -6787,38 +6802,65 @@ class Game {
 		return this.dock.phase === "launching";
 	}
 
+	/** Give up a held launch (#314). The request goes with it. */
+	cancelLaunch() {
+		const hold = this.launchHold;
+		if (!hold) return;
+		this.launchHold = null;
+		if (this.playerLaneRequests.get(hold.stationId)?.movement === "launch")
+			this.playerLaneRequests.delete(hold.stationId);
+	}
+
+	/**
+	 * Retry a held launch, or end it once there is nothing to launch from (#314).
+	 *
+	 * Every step and every phase: a hold outliving the dock — a restore, a
+	 * reset — would leave a launch request no one acts on, which is the starved
+	 * Traffic the old delete prevented.
+	 */
+	private stepHeldLaunch() {
+		const hold = this.launchHold;
+		if (!hold) return;
+		if (this.dock.phase !== "docked" || this.dock.stationId !== hold.stationId)
+			this.cancelLaunch();
+		else this.launch();
+	}
+
+	/** A launch Traffic refused, waiting for the lane (#314). */
+	private launchHold: { stationId: string; refusal: LaneRefusal } | null = null;
+
 	/** One arbitration rule for the player's two directions through the lane. */
 	private playerWinsTrafficLane(
 		stationId: string,
 		readyAt: number,
 		movement: "arrival" | "launch",
 	): boolean {
-		// Cold parked projections make berth occupancy truthful, but they do not
-		// reconstruct an actor already committed to the shared transit lane.
-		if (!this.trafficAuthorityReady()) return false;
-		const contenders = this.trafficRoutes
-			.filter(
-				(route) =>
-					route.terminalStationId === stationId &&
-					route.laneRequest &&
-					(route.phase === "launch-queued" || route.phase === "lane-queued"),
-			)
-			.map((route) => ({
-				participant: { kind: "carrier" as const, key: route.key },
-				readyAt: route.laneRequest?.readyAt ?? this.world.gameTime,
-				kind: route.laneRequest?.kind ?? "arrival",
-			}));
-		const active = this.trafficRoutes.some(
-			(route) =>
-				route.terminalStationId === stationId &&
-				(route.phase === "departing" || route.phase === "arriving"),
-		);
-		if (active) return false;
-		// A pre-registered computer/launch request is represented in Traffic's
-		// authority timeline, but it still competes here by the same oldest-ready
-		// ordering. Registration prevents later generated turns from overtaking;
-		// it does not grant the player priority over an older queued Carrier.
-		return playerWinsLane(contenders, readyAt, movement);
+		return this.trafficLaneRefusal(stationId, readyAt, movement) === null;
+	}
+
+	/**
+	 * Why the lane is not the player's yet, or `null`.
+	 *
+	 * Cold parked projections make berth occupancy truthful, but they do not
+	 * reconstruct an actor already committed to the shared transit lane — so
+	 * an authority still warming refuses. A pre-registered computer/launch
+	 * request is represented in Traffic's authority timeline, but it still
+	 * competes by the same oldest-ready ordering: registration prevents later
+	 * generated turns from overtaking; it does not grant the player priority
+	 * over an older queued Carrier. The order itself is `playerLaneRefusal`'s.
+	 */
+	private trafficLaneRefusal(
+		stationId: string,
+		readyAt: number,
+		movement: "arrival" | "launch",
+	): LaneRefusal | null {
+		return playerLaneRefusal({
+			authorityReady: this.trafficAuthorityReady(),
+			routes: this.trafficRoutes,
+			stationId,
+			readyAt,
+			movement,
+		});
 	}
 
 	/** Skip the traversal in progress. Unconditional on both sides since §13.3:
@@ -7659,6 +7701,9 @@ class Game {
 	 */
 	step(dt: number) {
 		this.updateTrafficAuthority();
+		// Before the phase branch, so a hold is retried while docked and ended in
+		// every other phase (#314).
+		this.stepHeldLaunch();
 		this.updateLocalFrameBody();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
@@ -8753,6 +8798,9 @@ class Game {
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),
+			launchHold: this.launchHold
+				? { notice: LAUNCH_HOLD_NOTICE[this.launchHold.refusal] }
+				: null,
 		});
 	}
 
