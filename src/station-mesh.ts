@@ -49,6 +49,7 @@
  */
 
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
 	BLINKING_CORE_GAIN,
 	BLINKING_HALO_GAIN,
@@ -1190,8 +1191,8 @@ export interface StationForm {
 	) => BuiltPart;
 }
 
-export type StationFormId = "a" | "b" | "c" | "d";
-export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c", "d"];
+export type StationFormId = "a" | "b" | "c" | "d" | "e";
+export const STATION_FORM_IDS: StationFormId[] = ["a", "b", "c", "d", "e"];
 
 /** One flat-shaded clone per base material, kept. */
 const flatClones = new WeakMap<THREE.Material, THREE.Material>();
@@ -5023,12 +5024,324 @@ function buildOutpostCluster(
 }
 
 /**
+ * Trade E — Wheel (#332). Two rims on one axis, after *2001*'s Space Station V:
+ * one rim finished, plated and lit, and the other still being built.
+ *
+ * **A box section, not the Ring's tube.** The reference's rim is flat-faced, and
+ * the section is what tells the two ring forms apart once both are in the pool;
+ * a second torus would be the Ring drawn twice.
+ *
+ * **The unfinished rim is a lattice all the way round**, with plated sections at
+ * intervals. The whole Wheel spins, and a half-built *arc* would make the
+ * outline depend on the clock, which `station-types.md` §7.2 forbids for a
+ * spinning part. Four continuous rails carry the circle; the cross members and
+ * the plates stand inside it, so every phase shows the same outline.
+ *
+ * **The hub is sized from the bay, not from the slot.** A face at `hubFrontKm`
+ * gives §13.1's bay 0.28 x 0.23 km across and 0.405 km deep; the Ring's hub is
+ * sized from the slot alone and the bay stands out of it. Here the barrel
+ * contains the bay's section and its aft cap is behind the bay's back wall, so
+ * the spokes, rooted just inside the bearing collars, clear the bay walls.
+ */
+const WHEEL = Object.freeze({
+	rimOuterKm: 0.7,
+	rimDepthKm: 0.075,
+	rimWidthKm: 0.06,
+	/** Each rim's centre plane, fore at +, aft at −. */
+	wheelZKm: 0.12,
+	hubHalfKm: 0.17,
+	collarHalfKm: 0.19,
+	hubFrontKm: 0.26,
+	hubAftKm: -0.21,
+	spokeHalfKm: 0.012,
+	barHalfKm: 0.0045,
+	frameStations: 48,
+	/** Where the unfinished rim is plated, degrees — irregular on purpose. */
+	plateDeg: [0, 50, 115, 170, 235, 290],
+	plateSpanDeg: 15,
+});
+
+/** A rectangular-section rim, swept round the axis as an open loft. */
+function wheelRim(innerKm: number, outerKm: number, z: number, widthKm: number) {
+	const station = (radius: number, at: number): Ring => ({
+		z: at,
+		w: radius,
+		h: radius,
+		e: 2,
+		hard: true,
+	});
+	const half = widthKm / 2;
+	// `ship-mesh.ts`'s collar construction: out across the aft face, along the
+	// outer face, in across the fore face and home along the bore, `open` so no
+	// fan is drawn across either end.
+	const geometry = hullLoft(
+		[
+			station(innerKm, z - half),
+			station(outerKm, z - half),
+			station(outerKm, z + half),
+			station(innerKm, z + half),
+			station(innerKm, z - half),
+		],
+		{ segments: 48, subdivisions: 1, open: true },
+	);
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const panelKm = stationPanelKm();
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) / panelKm, uv.getY(i) / panelKm);
+	uv.needsUpdate = true;
+	return geometry;
+}
+
+/** A thin square member between two points, for the unfinished rim's lattice. */
+function frameBar(from: THREE.Vector3, to: THREE.Vector3, halfKm: number) {
+	const geometry = hullLoft(
+		[
+			{ z: 0, w: halfKm, h: halfKm, e: 6, hard: true },
+			{ z: from.distanceTo(to), w: halfKm, h: halfKm, e: 6, hard: true },
+		],
+		{ segments: 4, subdivisions: 1 },
+	);
+	const turn = new THREE.Quaternion().setFromUnitVectors(
+		PLUS_Z,
+		to.clone().sub(from).normalize(),
+	);
+	geometry.applyMatrix4(
+		new THREE.Matrix4().compose(from, turn, new THREE.Vector3(1, 1, 1)),
+	);
+	return geometry;
+}
+
+function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const {
+		rimOuterKm: outer,
+		rimDepthKm: depth,
+		rimWidthKm: width,
+		wheelZKm,
+	} = WHEEL;
+	const inner = outer - depth;
+	const centre = (inner + outer) / 2;
+	const fore = wheelZKm;
+	const aft = -wheelZKm;
+
+	// The finished rim is `core`, as the Ring's rim is: the part the probes look
+	// up by name, and the one the eye reads as the station.
+	const rim = new THREE.Mesh(
+		wheelRim(inner, outer, fore, width),
+		flatCloneOf(hullMaterial(color, "trade")),
+	);
+	rim.name = "core";
+	group.add(rim);
+
+	const frame = new THREE.Group();
+	frame.name = "rim-frame";
+	group.add(frame);
+	const bar = WHEEL.barHalfKm;
+	const railOuter = outer - bar;
+	const railInner = inner + bar;
+	const railFore = aft + width / 2 - bar;
+	const railAft = aft - width / 2 + bar;
+	const frameMaterial = plainMaterial(0x8e7f72, 0.72, 0.42);
+	[
+		[railOuter, railFore],
+		[railOuter, railAft],
+		[railInner, railFore],
+		[railInner, railAft],
+	].forEach(([radius, z], i) => {
+		const rail = new THREE.Mesh(
+			new THREE.TorusGeometry(radius, bar, 6, 96),
+			frameMaterial,
+		);
+		rail.position.z = z;
+		rail.name = `rim-frame-rail-${i}`;
+		frame.add(rail);
+	});
+	const at = (radius: number, theta: number, z: number) =>
+		new THREE.Vector3(Math.cos(theta) * radius, Math.sin(theta) * radius, z);
+	const bars: THREE.BufferGeometry[] = [];
+	for (let k = 0; k < WHEEL.frameStations; k++) {
+		const theta = (k / WHEEL.frameStations) * Math.PI * 2;
+		const next = ((k + 1) / WHEEL.frameStations) * Math.PI * 2;
+		bars.push(
+			frameBar(at(railOuter, theta, railAft), at(railOuter, theta, railFore), bar),
+			frameBar(at(railInner, theta, railAft), at(railInner, theta, railFore), bar),
+			frameBar(at(railInner, theta, railFore), at(railOuter, theta, railFore), bar),
+			frameBar(at(railInner, theta, railAft), at(railOuter, theta, railAft), bar),
+			// One diagonal per bay on the outer face, alternating, which is what
+			// makes the lattice read as a structure rather than a ladder.
+			k % 2 === 0
+				? frameBar(at(railOuter, theta, railAft), at(railOuter, next, railFore), bar)
+				: frameBar(at(railOuter, theta, railFore), at(railOuter, next, railAft), bar),
+		);
+	}
+	const members = new THREE.Mesh(mergeGeometries(bars), frameMaterial);
+	members.name = "rim-frame-members";
+	frame.add(members);
+	// Each plate is a straight chord across its sector, so its corners are
+	// pulled in until they sit inside the outer rail: a plate proud of the rail
+	// at one phase and not another is the clock-dependent outline again.
+	const plateHalf = depth * 0.37;
+	const tangentHalf =
+		centre * Math.sin(((WHEEL.plateSpanDeg / 2) * Math.PI) / 180);
+	WHEEL.plateDeg.forEach((deg, i) => {
+		const arm = new THREE.Group();
+		arm.rotation.z = (deg * Math.PI) / 180;
+		const plate = shell(
+			[
+				{ z: aft - width / 2, w: plateHalf, h: tangentHalf, e: 8, hard: true },
+				{ z: aft + width / 2, w: plateHalf, h: tangentHalf, e: 8, hard: true },
+			],
+			hullMaterial(color, "trade"),
+			`rim-frame-plate-${i}`,
+			8,
+			true,
+		);
+		plate.position.x = centre;
+		arm.add(plate);
+		frame.add(arm);
+	});
+
+	// Four spokes to each wheel, straight and single as the reference's are,
+	// rooted inside the bearing collar and sunk into the rim's bore.
+	const spokeMaterial = plainMaterial(0x8b95a0, 0.62, 0.48);
+	for (const [label, z] of [
+		["fore", fore],
+		["aft", aft],
+	] as const) {
+		for (let i = 0; i < 4; i++) {
+			const arm = new THREE.Group();
+			arm.rotation.z = (i / 4) * Math.PI * 2;
+			arm.position.z = z;
+			arm.name = `spoke-${label}-${i}`;
+			const member = shell(
+				[
+					{
+						z: WHEEL.hubHalfKm * 0.85,
+						w: WHEEL.spokeHalfKm,
+						h: WHEEL.spokeHalfKm,
+						e: 6,
+						hard: true,
+					},
+					{
+						z: inner + bar * 2,
+						w: WHEEL.spokeHalfKm,
+						h: WHEEL.spokeHalfKm,
+						e: 6,
+						hard: true,
+					},
+				],
+				spokeMaterial,
+				`spoke-${label}-${i}-member`,
+				8,
+				true,
+			);
+			// Local +Z to the station's radial, as the Ring's members are turned.
+			member.rotation.y = Math.PI / 2;
+			arm.add(member);
+			group.add(arm);
+		}
+	}
+
+	// The hub: a barrel with a bearing collar at each wheel and the slot cut into
+	// its front cap.
+	const { hubHalfKm: hub, collarHalfKm: collar } = WHEEL;
+	const barrel = (z: number, half: number): Ring => ({
+		z,
+		w: half,
+		h: half,
+		e: 4,
+		hard: true,
+	});
+	group.add(
+		shell(
+			[
+				barrel(WHEEL.hubAftKm, hub * 0.7),
+				barrel(WHEEL.hubAftKm + 0.02, hub),
+				barrel(aft - 0.04, hub),
+				barrel(aft - 0.02, collar),
+				barrel(aft + 0.02, collar),
+				barrel(aft + 0.04, hub),
+				barrel(fore - 0.04, hub),
+				barrel(fore - 0.02, collar),
+				barrel(fore + 0.02, collar),
+				barrel(fore + 0.04, hub),
+				barrel(WHEEL.hubFrontKm - 0.03, hub),
+				barrel(WHEEL.hubFrontKm, hub * 0.91),
+			],
+			plainMaterial(0x8b95a0, 0.6, 0.5),
+			"hub",
+			16,
+			true,
+			apertureCut("trade"),
+		),
+	);
+	group.add(buildAperture("trade", fixtures, WHEEL.hubFrontKm, berthSeed));
+
+	// Paired ports along the finished rim's fore face, the face the approach sees.
+	group.add(
+		portRun("trade", PANE_COUNT, (i, count, position, normal) => {
+			const { theta, side } = ringAt(i, count);
+			normal.set(0, 0, 1);
+			const radius = centre + side * depth * 0.22;
+			position.set(
+				Math.cos(theta) * radius,
+				Math.sin(theta) * radius,
+				fore + width / 2,
+			);
+		}),
+	);
+	// On the same face, on the rim's centre line where no port stands.
+	group.add(
+		strobePair("trade", fixtures, LAMP_POOL_KM.face, (side, position) => {
+			const theta = Math.PI / 4;
+			position.set(
+				side * Math.cos(theta) * centre,
+				side * Math.sin(theta) * centre,
+				fore + width / 2,
+			);
+		}),
+	);
+	// Clutter on the hub barrel between the collars, far inside the outline.
+	group.add(
+		greebleRun(
+			"trade",
+			"trade-e",
+			[
+				{
+					count: 24,
+					sizeKm: 0.018,
+					reliefKm: 0.012,
+					place: (i, count, position, normal) => {
+						const { theta } = ringAt(i, count);
+						const c = Math.cos(theta);
+						const s = Math.sin(theta);
+						// The barrel's own superellipse radius at this angle, so a
+						// piece is placed on the surface rather than inside it.
+						const radius = hub / (c ** 4 + s ** 4) ** 0.25;
+						normal.set(c, s, 0);
+						position.set(
+							c * radius,
+							s * radius,
+							-wheelZKm * 0.5 + ((i % 5) / 4) * wheelZKm,
+						);
+					},
+				},
+			],
+			group,
+		),
+	);
+	return { group, fixtures };
+}
+
+/**
  * Every form, by role.
  *
  * A `Record<StationType, …>` for `station-types.md` §8.5's reason. Three
- * forms a role, and trade a fourth since #202's Assembly: `STATION_FORM_IDS`
- * is the union of ids a role may use and a role's list is not required to
- * fill it — `buildStationForm` refuses an id its role does not carry.
+ * forms a role, a solved fourth on three of them since #202 and #257, and a
+ * fifth on trade since #332's Wheel: `STATION_FORM_IDS` is the union of ids a
+ * role may use and a role's list is not required to fill it —
+ * `buildStationForm` refuses an id its role does not carry.
  */
 export const STATION_FORMS: Record<StationType, StationForm[]> = {
 	trade: [
@@ -5064,6 +5377,16 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// every plan the tests build against it.
 			reachKm: 1.0,
 			build: buildTradeModular,
+		},
+		{
+			id: "e",
+			name: "Wheel",
+			thesis:
+				"two box-section rims on one axis — one plated and lit, one still a lattice — on a hub carrying the dock",
+			// The rims' outer corners, `hypot(0.70, 0.15)` = 0.716 km: nothing on
+			// the hub or the lattice passes them.
+			reachKm: 0.72,
+			build: buildTradeWheel,
 		},
 	],
 	shipyard: [
