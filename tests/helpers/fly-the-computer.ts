@@ -21,6 +21,8 @@
 
 import {
 	type ApertureFrame,
+	COMPUTER_CONE_TAN,
+	COMPUTER_CORRIDOR_KM,
 	type EntryPose,
 	apertureFrame,
 	attemptEntry,
@@ -41,7 +43,33 @@ import {
 	slotPhaseRad,
 } from "../../src/station";
 import { stationInterior } from "../../src/station-interior";
-import { type Vec3, add, scale, v3 } from "../../src/vec3";
+import { type Vec3, add, cross, dot, length, scale, v3 } from "../../src/vec3";
+
+/** One step of the computer's command, for a caller asking how it flew. */
+export interface ComputerTraceStep {
+	phase: "line-up" | "run-in" | "idle";
+	nose: Vec3;
+	throttle: number;
+	/** Ship position in the station's frame, km, when the command was taken. */
+	rel: Vec3;
+	gameTime: number;
+	/** Distance out along this step's docking axis, km. */
+	axialKm: number;
+	/** Distance from that axis, km. */
+	offAxisKm: number;
+	/** The corridor's half-width at this axial distance, km. */
+	corridorKm: number;
+}
+
+/** Rotate `v` about `pivot` by `rad` (Rodrigues). */
+function rotateAbout(v: Vec3, pivot: Vec3, rad: number): Vec3 {
+	const k = scale(pivot, 1 / length(pivot));
+	const c = Math.cos(rad);
+	return add(
+		add(scale(v, c), scale(cross(k, v), Math.sin(rad))),
+		scale(k, dot(k, v) * (1 - c)),
+	);
+}
 
 export interface FlightRun {
 	docked: boolean;
@@ -89,6 +117,22 @@ export interface FlightOptions {
 	 * At the window, running out of grant *is* the timeout and reads as one.
 	 */
 	limitS?: number;
+	/** Seconds per step. 0.05 unless a caller asks for the renderer's cadence. */
+	dt?: number;
+	/**
+	 * Hold the run-in at zero speed, the way `main.ts` does while a request is
+	 * queued or the lane is busy (#315). The computer still lines up; it parks
+	 * wherever it entered the corridor and waits there.
+	 */
+	holdRunIn?: boolean;
+	/**
+	 * Swing the docking axis, rad/s. In the game the axis points at the parent
+	 * body, so it turns once per orbit; a fixed axis cannot move the corridor
+	 * off a parked ship (#315).
+	 */
+	axisSwingRadPerS?: number;
+	/** Filled with one entry per step, when given. */
+	trace?: ComputerTraceStep[];
 }
 
 export function flyTheComputer(opts: FlightOptions): FlightRun {
@@ -96,7 +140,9 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	const { axis, reference } = opts;
 	const perf = flightPerformance(opts.perfHull ?? opts.hull);
 	const envelope = HULL_SPECS[opts.hull].env;
-	const dt = 0.05;
+	const dt = opts.dt ?? 0.05;
+	const swing = opts.axisSwingRadPerS ?? 0;
+	const pivot = cross(axis, reference);
 
 	const interior = stationInterior(
 		type,
@@ -133,9 +179,15 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 	let steps = 0;
 	let crossingOutcome: FlightRun["crossing"] = null;
 	const limitS = opts.limitS ?? GRANT_WINDOW_S;
+	let previousPhase: ComputerTraceStep["phase"] = "idle";
 
 	const frameAt = (t: number): ApertureFrame =>
-		apertureFrame(type, axis, slotPhaseRad(opts.spinRpm, t), reference);
+		apertureFrame(
+			type,
+			rotateAbout(axis, pivot, swing * t),
+			slotPhaseRad(opts.spinRpm, t),
+			rotateAbout(reference, pivot, swing * t),
+		);
 
 	while (gameTime < limitS && !docked) {
 		const frame = frameAt(gameTime);
@@ -146,7 +198,9 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 			state,
 			gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase,
 		});
+		previousPhase = cmd.phase;
 		if (!cmd.engaged) {
 			refused = cmd.refused;
 			break;
@@ -167,13 +221,26 @@ export function flyTheComputer(opts: FlightOptions): FlightRun {
 			up = attitude.up;
 		}
 
+		const speedKms =
+			opts.holdRunIn && cmd.phase === "run-in" ? 0 : cmd.speedKms;
+		const throttle = speedKms / ASSIST_CAP_KMS;
+		if (opts.trace) {
+			const axialKm = dot(ship.pos, frame.axis);
+			opts.trace.push({
+				phase: cmd.phase,
+				nose,
+				throttle,
+				rel: ship.pos,
+				gameTime,
+				axialKm,
+				offAxisKm: length(add(ship.pos, scale(frame.axis, -axialKm))),
+				corridorKm:
+					COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axialKm - frame.planeKm),
+			});
+		}
+
 		const before: EntryPose = { rel: ship.pos, vRel: ship.vel, nose, up };
-		stepFlight(
-			ship,
-			{ nose, throttle: cmd.speedKms / ASSIST_CAP_KMS, assist: true },
-			dt,
-			perf,
-		);
+		stepFlight(ship, { nose, throttle, assist: true }, dt, perf);
 		gameTime += dt;
 		steps++;
 

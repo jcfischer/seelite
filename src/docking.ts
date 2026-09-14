@@ -1043,6 +1043,17 @@ export interface ComputerInput {
 	/** #5's assist cap, passed in rather than imported: `sim.ts` owns the flight
 	 *  model, and a copy of its cap here would be a second place to retune. */
 	maxSpeedKms: number;
+	/**
+	 * The phase the previous step returned — `"idle"` on the first.
+	 *
+	 * **Required, and it is what makes the phase a decision rather than a
+	 * reading (#315).** A ship held at zero run-in speed parks wherever it
+	 * crossed the cone, which is on its surface, and the swinging axis carries
+	 * the cone off it: the phase flipped to `line-up` for one step every ~20
+	 * frames, turned the nose by yaw·dt and kicked the throttle. A default here
+	 * would let a caller that forgot silently get the flicker back.
+	 */
+	previousPhase: "line-up" | "run-in" | "idle";
 }
 
 export interface ComputerCommand {
@@ -1093,14 +1104,49 @@ export interface ComputerCommand {
  * a test can pin without flying anything — the first version was a cylinder and
  * the autopilot never met it.
  */
-export function insideCorridor(frame: ApertureFrame, pose: EntryPose): boolean {
+export function insideCorridor(
+	frame: ApertureFrame,
+	pose: EntryPose,
+	widthFactor = 1,
+): boolean {
 	const axial = dot(pose.rel, frame.axis);
 	if (axial < frame.planeKm) return false;
 	const offAxisKm = length(sub(pose.rel, scale(frame.axis, axial)));
 	return (
 		offAxisKm <=
-		COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axial - frame.planeKm)
+		widthFactor *
+			(COMPUTER_CORRIDOR_KM + COMPUTER_CONE_TAN * (axial - frame.planeKm))
 	);
+}
+
+/**
+ * The fraction of the corridor a ship must be inside to **start** the run-in;
+ * it keeps running in until it leaves the whole corridor (#315).
+ *
+ * Hysteresis, with the tight side on entry: a ship that starts its run-in on
+ * the cone's surface is one swing of the axis from leaving it, so a held run-in
+ * parked there flipped to `line-up` for a frame at a time. Entering at half the
+ * width parks it with half the corridor between it and the edge.
+ */
+export const COMPUTER_ENTRY_WIDTH_FACTOR = 0.5;
+
+/**
+ * How far off the commanded direction the nose may be and still thrust at all.
+ *
+ * **Turn, then burn (#315).** The assist drives the ship along the nose it has,
+ * not the nose it was told to have, and a slew is a second or more. A ship
+ * parked on the axis whose correction is lateral therefore thrust *down the
+ * axis* for every frame the nose took to come round: held at the corridor it
+ * walked toward the station, and once inside the entry point — with the target
+ * now behind it — ran to 880 m/s. Below this angle the commanded speed is
+ * zero, and it ramps linearly to full as the nose comes onto the command.
+ */
+export const COMPUTER_THRUST_CONE_RAD = (20 * Math.PI) / 180;
+
+/** The fraction of the commanded speed the current nose may fly (#315). */
+export function thrustAlignment(nose: Vec3, commanded: Vec3): number {
+	const floor = Math.cos(COMPUTER_THRUST_CONE_RAD);
+	return Math.min(1, Math.max(0, (dot(nose, commanded) - floor) / (1 - floor)));
 }
 
 /**
@@ -1149,7 +1195,11 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	// ship circles a few metres off the axis, closes nothing, and the grant
 	// expires under it. Measured at 2 rpm it held 17 m of offset for the whole
 	// 600 s window. The corridor entry is a place, so the leg to it terminates.
-	const lined = insideCorridor(frame, pose);
+	const lined = insideCorridor(
+		frame,
+		pose,
+		input.previousPhase === "run-in" ? 1 : COMPUTER_ENTRY_WIDTH_FACTOR,
+	);
 	// The run-in aim sits a hair *inside* the plane (COMPUTER_AIM_INSIDE_KM):
 	// an aim exactly on the plane degenerates as the ship closes — target and
 	// position coincide at the crossing, the commanded nose swings, and the
@@ -1169,11 +1219,12 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 	const toTarget = sub(target, pose.rel);
 	const distKm = length(toTarget);
 	const speedKms = approachSpeed(distKm, lined, input.maxSpeedKms);
+	const nose = distKm === 0 ? pose.nose : unit(toTarget);
 
 	return {
 		engaged: true,
 		refused: null,
-		nose: distKm === 0 ? pose.nose : unit(toTarget),
+		nose,
 		// Track the slot's roll throughout, not only on the run-in: §4's spin
 		// makes the roll match a tracking problem, and starting to track only at
 		// the corridor leaves the fastest spinner a turn to make in the last
@@ -1182,7 +1233,7 @@ export function dockingComputerStep(input: ComputerInput): ComputerCommand {
 		// fly at the pose the check accepts or the autopilot is the defect —
 		// #157 was reported as a ship entering the slot at 90°.
 		up: frame.aperture.kind === "slot" ? slotBasis(frame).up : pose.up,
-		speedKms,
+		speedKms: speedKms * thrustAlignment(pose.nose, nose),
 		phase: lined ? "run-in" : "line-up",
 	};
 }

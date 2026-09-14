@@ -68,7 +68,10 @@ import {
 	v3,
 } from "../src/vec3";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
-import { flyTheComputer as fly } from "./helpers/fly-the-computer";
+import {
+	type ComputerTraceStep,
+	flyTheComputer as fly,
+} from "./helpers/fly-the-computer";
 
 /**
  * The traffic a clearance request is answered against (§13.2).
@@ -904,6 +907,7 @@ describe("§7's two tuning surfaces, pinned without flying anything", () => {
 			}),
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase: "run-in",
 		});
 		expect(cmd.engaged).toBe(true);
 		// The commanded nose points inward along the axis, not sideways at the
@@ -935,6 +939,87 @@ describe("§9.1.11 the docking computer", () => {
 		expect(run.violations).toBe(0);
 	});
 
+	test("waiting at the corridor, it does not flip phase for a frame at a time (#315)", () => {
+		// The playtest's shape: a queued request holds the run-in at zero speed,
+		// so the ship parks wherever it entered the cone, and the axis swings as
+		// the station orbits — at the fastest orbit the generator makes, 90 min.
+		// The recording showed a one-frame jump every ~20 frames, which is a
+		// one-step `line-up` between two `run-in`s: the nose turns by yaw·dt, the
+		// throttle kicks, and the next step turns it back.
+		const trace: ComputerTraceStep[] = [];
+		const run = fly({
+			spinRpm: 2,
+			hull: PLAYER_BASELINE_HULL,
+			axis: AXIS,
+			reference: REFERENCE,
+			dt: 1 / 60,
+			holdRunIn: true,
+			axisSwingRadPerS: (2 * Math.PI) / (90 * 60),
+			limitS: 180,
+			trace,
+		});
+		expect(run.refused).toBeNull();
+		const first = trace.findIndex((step) => step.phase === "run-in");
+		// The control: a run that never lined up has no flips to find.
+		expect(first).toBeGreaterThan(0);
+		const segments: { phase: string; steps: number; at: number }[] = [];
+		let start = first;
+		for (let i = first + 1; i <= trace.length; i++) {
+			if (i < trace.length && trace[i].phase === trace[start].phase) continue;
+			segments.push({
+				phase: trace[start].phase,
+				steps: i - start,
+				at: start,
+			});
+			start = i;
+		}
+		// Half a second at 60 fps. The last segment is cut by the time limit.
+		const flickers = segments.slice(0, -1).filter((s) => s.steps < 30);
+		expect({ flickers: flickers.length, first: flickers.slice(0, 3) }).toEqual({
+			flickers: 0,
+			first: [],
+		});
+	});
+
+	test("waiting at the corridor, the held ship does not walk in past its entry point (#315)", () => {
+		// The flip count above cannot see this. A hysteresis that removed 1170 of
+		// 1172 flips also walked the held ship 2.5 km toward the station and ran
+		// it to 880 m/s: a line-up burst thrusts along the nose it has, and a
+		// parked nose points down the axis while the correction is lateral.
+		// `main` walks in too, 570 m past the entry point in three minutes, in
+		// one-frame bursts. Moving *to* the entry point is the line-up's job;
+		// moving past it toward the station is the defect.
+		const swing = (2 * Math.PI) / (90 * 60);
+		const trace: ComputerTraceStep[] = [];
+		const run = fly({
+			spinRpm: 2,
+			hull: PLAYER_BASELINE_HULL,
+			axis: AXIS,
+			reference: REFERENCE,
+			dt: 1 / 60,
+			holdRunIn: true,
+			axisSwingRadPerS: swing,
+			limitS: 300,
+			trace,
+		});
+		expect(run.refused).toBeNull();
+		const first = trace.findIndex((step) => step.phase === "run-in");
+		expect(first).toBeGreaterThan(0);
+		const entryKm = frameFor().planeKm + COMPUTER_STANDOFF_KM;
+		const hold = trace.slice(first);
+		const insideEntryKm = Math.max(
+			...hold.map((step) => entryKm - step.axialKm),
+		);
+		// The line-up fires on leaving the corridor, so the ship crosses its
+		// surface by the few frames a turn takes; a ship that stops being
+		// corrected leaves it by whole multiples.
+		const widestOff = Math.max(
+			...hold.map((step) => step.offAxisKm / step.corridorKm),
+		);
+		expect(insideEntryKm).toBeLessThan(0.05);
+		expect(widestOff).toBeLessThan(1.1);
+	});
+
 	test("it refuses at a hostile station", () => {
 		const run = flyTheComputer({ spinRpm: 1.5, hostile: true });
 		expect(run.docked).toBe(false);
@@ -959,6 +1044,7 @@ describe("§9.1.11 the docking computer", () => {
 			}),
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase: "idle",
 		});
 		expect(cmd.engaged).toBe(false);
 		expect(cmd.refused).toBe("out-of-range");

@@ -359,6 +359,7 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 			},
 			gameTime: 0,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase: "idle",
 		});
 		expect(aimed.engaged).toBe(true);
 		// The control: the pose handed in does *not* satisfy the assertion, so a

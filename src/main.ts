@@ -2019,6 +2019,13 @@ class Game {
 	lastComputerRefusal: "no-clearance" | "hostile" | "out-of-range" | null =
 		null;
 
+	/**
+	 * The phase the computer's last step returned, fed back into the next one
+	 * (#315). `"idle"` whenever it is not flying, so an engagement always starts
+	 * on the tight side of the corridor's hysteresis.
+	 */
+	private lastComputerPhase: "line-up" | "run-in" | "idle" = "idle";
+
 	/** The name it is filed under in the equipment table, on the handle so a
 	 *  probe naming it does not restate the string. */
 	readonly dockingComputerName = DOCKING_COMPUTER;
@@ -6470,6 +6477,7 @@ class Game {
 	toggleDockingComputer() {
 		if (!this.hasDockingComputer) return;
 		this.dockingComputerEngaged = !this.dockingComputerEngaged;
+		this.lastComputerPhase = "idle";
 		if (this.dockingComputerEngaged) this.lastComputerRefusal = null;
 		else this.clearPlayerArrivalLaneRequests();
 	}
@@ -6862,7 +6870,9 @@ class Game {
 				: stationState,
 			gameTime: this.world.gameTime,
 			maxSpeedKms: ASSIST_CAP_KMS,
+			previousPhase: this.lastComputerPhase,
 		});
+		this.lastComputerPhase = command.phase;
 		if (!command.engaged) {
 			// **Silent disengagement is the failure mode here.** §8's HUD cues are
 			// not this node's, so nothing tells the player the autopilot stopped —
