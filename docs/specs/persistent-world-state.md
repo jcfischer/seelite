@@ -380,13 +380,15 @@ fails and raises its own badge rather than blocking the upgrade forever.
   dock, undock or jump flush**. The second half came with the badge: before it,
   `saveFlush` only logged a failed flush (`main.ts`, its `.catch`), so the dock
   flush — the write that lays down `lastDocked` — could fail with no player
-  surface at all. A failed `quit` flush has no frame left to draw it in and
-  stays a log line. The badge opens the overlay, which names the failure still
+  surface at all. A failed `quit` flush on a tab close has no frame left to
+  draw it in and stays a log line; one before a switch refuses the switch
+  (§11.3), play goes on, and the store holds it like any other failed flush.
+  The badge opens the overlay, which names the failure still
   held for each kind (`Game.saveFaultText`) — not the last failure, which may be
   a write that has since landed.
   **With no store attached, a `saveFault` is itself the badge**: a
   `?boot=direct` boot whose attach failed plays on with nothing that will write
-  (`saveFaultHeld`, `src/save-badge.ts`).
+  (`heldSaveFault`, `src/save-badge.ts`).
   **It is held per record kind, and each kind clears only on a write of that
   kind.** A debounced write carries `live` alone; a dock flush writes `live` and
   `lastDocked` in one transaction. So a `live` fault clears on the next write

@@ -188,8 +188,9 @@ export interface CommanderOverlayOptions {
 	inPlay: () => string | null;
 	/**
 	 * The save fault held now, which an open in play shows (§11.5: the badge
-	 * opens the overlay, whose message is `saveFault`). Read at open rather than
-	 * given at mount: a fault raised in flight did not exist at boot.
+	 * opens the overlay, which names the failure still held for each kind,
+	 * `Game.saveFaultText`). Read at open rather than given at mount: a fault
+	 * raised in flight did not exist at boot.
 	 */
 	fault: () => string | null;
 	/**

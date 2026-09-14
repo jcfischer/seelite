@@ -107,16 +107,29 @@ describe("the Game's world writes", () => {
 		// **Not one message field written by every failure.** After a failed dock
 		// flush, a debounced write that failed once and then landed replaced the
 		// dock's words, and the overlay named a write that had landed (#311).
-		expect(MAIN).not.toContain("game.saveFault = writeFault(");
-		expect(MAIN).not.toContain("this.saveFault = flushFault(");
+		// Sliced to each arm and matched on `saveFault =` alone, whatever follows
+		// it: a guard on one spelling passed on the spelling `main` had (round 2).
+		const onWriteFailed =
+			MAIN.split("onWriteFailed: (error, consecutive) => {")[1] ?? "";
+		const writeArm = onWriteFailed.slice(0, onWriteFailed.indexOf("},"));
+		expect(writeArm).toContain("console.error(");
+		expect(writeArm).not.toContain("saveFault =");
+		const flush = MAIN.split("saveFlush(reason: FlushReason): void {")[1] ?? "";
+		const flushBody = flush.slice(0, flush.indexOf("\n\t}\n"));
+		expect(flushBody).toContain(".flush(reason)");
+		expect(flushBody).not.toContain("saveFault =");
 	});
 
-	test("the badge and the overlay it opens use the one reader, every frame in both views", () => {
+	test("the badge and the overlay it opens read the one rule, every frame in both views", () => {
 		// In `animate` and not in `updateCockpit`, which returns early in chase.
 		const loop = MAIN.split("private animate = () => {")[1] ?? "";
 		const end = loop.indexOf("\n\t};");
 		expect(loop.slice(0, end)).toContain(
-			"this.saveBadge?.update(this.saveFaultText() !== null);",
+			"this.saveBadge?.update(this.saveFaultShown());",
+		);
+		const shown = MAIN.split("saveFaultShown(): boolean {")[1] ?? "";
+		expect(shown.slice(0, 120)).toContain(
+			"return hasHeldSaveFault(this.saveStore, this.saveFault);",
 		);
 		expect(MAIN).toContain("fault: () => game.saveFaultText(),");
 	});

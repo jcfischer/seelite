@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { flushFault, writeFault } from "../src/commander-flow";
-import { heldSaveFault } from "../src/save-badge";
+import { hasHeldSaveFault, heldSaveFault } from "../src/save-badge";
 import type { SaveFault, SaveRecordKind } from "../src/save-store";
 
 const quota = new Error("QuotaExceededError");
@@ -46,5 +46,19 @@ describe("heldSaveFault", () => {
 		expect(heldSaveFault(null, lock)).toBe(lock);
 		// `?no-save`, or a boot that has not attached yet with nothing wrong.
 		expect(heldSaveFault(null, null)).toBeNull();
+	});
+
+	test("the frame loop's yes-or-no agrees with the words in every case", () => {
+		const lock = 'Commander "default" is open in another tab';
+		const cases: [ReturnType<typeof store> | null, string | null][] = [
+			[store(["live", capped]), null],
+			[store(["lastDocked", dock]), lock],
+			[store(), null],
+			[store(), lock],
+			[null, lock],
+			[null, null],
+		];
+		for (const [s, boot] of cases)
+			expect(hasHeldSaveFault(s, boot)).toBe(heldSaveFault(s, boot) !== null);
 	});
 });

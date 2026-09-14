@@ -394,6 +394,7 @@ import {
 import {
 	mountSaveBadge,
 	type SaveBadgeHandle,
+	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
@@ -8655,7 +8656,7 @@ class Game {
 		if (this.legacyHud) this.updateHud();
 		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
 		// badge shows in every view.
-		this.saveBadge?.update(this.saveFaultText() !== null);
+		this.saveBadge?.update(this.saveFaultShown());
 	};
 
 	private readonly chaseOffset = new THREE.Vector3();
@@ -8957,6 +8958,12 @@ class Game {
 	 */
 	saveFaultText(): string | null {
 		return heldSaveFault(this.saveStore, this.saveFault);
+	}
+
+	/** Whether the badge shows: `saveFaultText() !== null` without building the
+	 *  words, because the frame loop asks it every frame. */
+	saveFaultShown(): boolean {
+		return hasHeldSaveFault(this.saveStore, this.saveFault);
 	}
 
 	/** Applies a complete commerce result or leaves both owner states untouched. */

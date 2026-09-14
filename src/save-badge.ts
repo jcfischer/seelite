@@ -33,6 +33,13 @@ const HELD_ORDER: readonly SaveRecordKind[] = ["lastDocked", "live"];
  * failed plays on with nothing that will write, and `saveFault` is the only
  * record of why. A boot with nothing wrong, and `?no-save`, have no fault.
  */
+/** Whether `heldSaveFault` is not `null`, by the same rule, without building the
+ *  words: the frame loop asks it every frame (sage, #311 round 2). */
+export const hasHeldSaveFault = (
+	store: { readonly heldFaults: ReadonlyMap<SaveRecordKind, SaveFault> } | null,
+	bootFault: string | null,
+): boolean => (store === null ? bootFault !== null : store.heldFaults.size > 0);
+
 export function heldSaveFault(
 	store: { readonly heldFaults: ReadonlyMap<SaveRecordKind, SaveFault> } | null,
 	bootFault: string | null,
@@ -98,7 +105,7 @@ export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
 	element.dataset.saveBadge = "";
 	element.dataset.corner = DEFAULT_BADGE_CORNER;
 	element.hidden = true;
-	element.title = "The last save did not write — open the Commander overlay";
+	element.title = "A save did not write — open the Commander overlay";
 	element.innerHTML = `SAVE FAULT <kbd>${COMMANDER_KEY}</kbd>`;
 	element.addEventListener("click", (e) => {
 		e.stopPropagation();
