@@ -31,9 +31,8 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import { frameAcross } from "./interdiction";
 import type { Ship } from "./sim";
-import { type Vec3, cross, normalizeOr, sub, v3 } from "./vec3";
+import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
 export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;

@@ -7605,8 +7605,8 @@ class Game {
 
 	/**
 	 * A raider on demand, `inS` seconds from now — for a probe, or for a pilot
-	 * at the console (`__seelite.forceRaider("ahead")`). It still needs the
-	 * player in cruise when it appears.
+	 * at the console (`__seelite.forceRaider("ahead")`). The player must be in
+	 * cruise from now until it appears: leaving cruise first ends it as missed.
 	 */
 	forceRaider(bearing: EncounterBearing = "behind", inS = 1, rangeKm = 30) {
 		const record = this.world.system.record;

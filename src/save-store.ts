@@ -551,13 +551,24 @@ export class SaveStore {
 		permadeath: boolean;
 	}): Promise<SaveEnvelope | null> {
 		if (commander.permadeath) return null;
+		const wasDirty = this.dirty;
 		this.quiet();
 		this.dirty = false;
 		await this.settled();
-		const raw = await this.backend.read(this.slot, "lastDocked");
-		if (raw === null || raw === undefined)
-			fail(`Commander "${this.slot}" has no lastDocked record`);
-		const restored = parseSave(raw);
+		let raw: unknown;
+		let restored: SaveEnvelope;
+		try {
+			raw = await this.backend.read(this.slot, "lastDocked");
+			if (raw === null || raw === undefined)
+				fail(`Commander "${this.slot}" has no lastDocked record`);
+			restored = parseSave(raw);
+		} catch (error) {
+			// Not retired, and the save the death interrupted is still owed: quieting
+			// cleared the flag and the debounce, and without this a change made
+			// just before the death would never be written (sage round 2).
+			if (wasDirty) this.markDirty();
+			throw error;
+		}
 		// Validated. From here this store writes nothing more — and a debounce
 		// armed during the awaits above is cancelled with it.
 		this.retired = true;

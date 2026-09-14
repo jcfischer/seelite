@@ -69,3 +69,19 @@ export const normalizeOr = (a: Vec3, fallback: Vec3): Vec3 => {
 	const m = length(a);
 	return m === 0 ? fallback : scale(a, 1 / m);
 };
+
+/**
+ * A unit vector perpendicular to `nose`, from a reference that is never
+ * parallel to it: world up, or world x within about 32° of the pole.
+ *
+ * One construction for every frame #324 builds around a heading — a roll
+ * reference, a drawn offset, a turn plane that has collapsed — because four
+ * copies of it were four places a change to the pole threshold had to reach.
+ * Here beside `normalizeOr` rather than in `interdiction.ts`, so the duel does
+ * not depend on the contest for a vector primitive (sage round 2).
+ */
+export const frameAcross = (nose: Vec3): Vec3 =>
+	normalizeOr(
+		cross(nose, Math.abs(nose.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0)),
+		v3(1, 0, 0),
+	);

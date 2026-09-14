@@ -368,6 +368,20 @@ describe("#324 O5 — a death reverts live to the last dock", () => {
 		await expect(h.catalog.chooseCommander("default")).rejects.toThrow();
 	});
 
+	test("a failed revert keeps the save it interrupted", async () => {
+		// Sage round 2: the revert cleared the dirty flag and cancelled the
+		// debounce before it found no dock record, so a change made just before
+		// the death was dropped by the next flush, which saw nothing dirty.
+		const h = harness();
+		h.store.markDirty();
+		await h.store.flush("jump");
+		h.set(888);
+		h.store.markDirty();
+		await h.store.revertToLastDocked(h.commander).catch(() => {});
+		await h.store.flush("jump");
+		expect((await h.store.load("default")).commander.state.credits).toBe(888);
+	});
+
 	test("it gives the tab's lock back, so the reload's one-shot can name the Commander", async () => {
 		const h = harness();
 		await docked(h);

@@ -204,8 +204,9 @@ describe("a contest flown between hulls", () => {
 		// `followHeading` take no role, so the contest a courier runs against a
 		// raider is the same arithmetic with the hulls swapped. A raider that
 		// holds course is caught by a courier; one that turns escapes it — the
-		// mirror of the rows above. That the game calls this one function for
-		// both initiators is a wiring question, and the game's own row holds it.
+		// mirror of the rows above. No player-initiated path exists yet, so
+		// nothing holds that the game calls these for both initiators; that is
+		// a requirement on the path when it is built (`interdiction.ts`).
 		expect(fly("courier", "raider", 0, 0).phase).toBe("succeeded");
 		expect(fly("courier", "raider", 1, 0).phase).toBe("broken");
 	});

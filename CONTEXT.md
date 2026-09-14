@@ -78,9 +78,11 @@ parent. Raider hulls stay out of every **Traffic roster**
 _Avoid_: Pirate spawn, random raider
 
 **Encounter**:
-One raider's approach to the player on one cruise leg, from the leg's seeded
-draw to its end: inbound, contest, duel, and over — missed, broken, lost,
-escaped, fled or destroyed. It fills one **Raider slot** and is not saved
+One cruise leg's hostile approach to the player, by one or more raiders, from
+the leg's seeded draw to its end: inbound, contest, duel, and over — missed,
+broken, lost, escaped, fled or destroyed. `combat-model.md` §3's rating-chosen
+composition makes it a group; today's only composition is a single raider
+filling one **Raider slot** (#324, #183 owns the rest). It is not saved
 history; what a destroyed raider leaves in the world is the slot's own
 condition. `src/encounter.ts` owns the phases.
 _Avoid_: Spawn, fight instance

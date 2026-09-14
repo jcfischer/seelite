@@ -35,13 +35,12 @@ import type { FlightPerformance } from "./sim";
 import {
 	type Vec3,
 	add,
-	cross,
 	dot,
+	frameAcross,
 	length,
 	normalizeOr,
 	scale,
 	sub,
-	v3,
 } from "./vec3";
 
 /** The charge a lock must be held through. #48's tuned figure. */
@@ -84,19 +83,6 @@ export const beginContest = (): Contest => ({
 	chargeS: 0,
 	elapsedS: 0,
 });
-
-/**
- * A unit vector perpendicular to `nose`, from a reference that is never
- * parallel to it: world up, or world x within about 32° of the pole.
- *
- * One construction for every frame #324 builds around a heading — a roll
- * reference, a drawn offset, a turn plane that has collapsed — because four
- * copies of it were four places a change to the pole threshold had to reach.
- */
-export function frameAcross(nose: Vec3): Vec3 {
-	const reference = Math.abs(nose.y) < 0.85 ? v3(0, 1, 0) : v3(1, 0, 0);
-	return normalizeOr(cross(nose, reference), v3(1, 0, 0));
-}
 
 /** The separation between two headings, radians. */
 export function headingSeparation(a: Vec3, b: Vec3): number {

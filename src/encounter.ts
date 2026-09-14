@@ -35,7 +35,6 @@ import {
 	INTERDICTION_RANGE_KM,
 	beginContest,
 	followHeading,
-	frameAcross,
 	interdictionTurnRate,
 	stepContest,
 } from "./interdiction";
@@ -54,6 +53,7 @@ import {
 	type Vec3,
 	add,
 	cross,
+	frameAcross,
 	length,
 	normalizeOr,
 	scale,
