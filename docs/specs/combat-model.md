@@ -35,6 +35,27 @@ Legal status is per galaxy, bounded, and visibly presented as **Clean**, **Wante
 
 Shipyards always scan for contraband on approach; police scan after an interception. Trade stations and refineries do not silently scan. A failed scan confiscates illegal cargo, adds heat, and can make arrival hostile. Ejecting before any scan legally abandons contraband, but irretrievably loses all cargo and consumes the escape pod; it cannot clear heat already earned. The existing 1,000 Cr escape-pod insurance model applies: respawn at the last docked station with ship and fitted equipment, while cargo and undocked gains are lost. Death without an escape pod remains owned by the future save/permadeath decision.
 
+### 4.1 As built (#324 part d)
+
+**The lifecycle is ten minutes destroyed and twenty repairing**, the
+principal's split of the thirty above. A kill is a world-state `destroy` with
+the player's provenance (`raider-wreck.ts`). It schedules its own replacement,
+which starts and completes lazily on the game clock (`persistent-world-state.md`
+§4), so a raider killed before the player leaves its system is repairing on
+time wherever the player is. A slot that is destroyed or repairing fields no
+raider. A leg that draws it meets nothing, and the draw does not move to another
+slot. The **Communications** console shows the lifecycle, derived from world
+state, as three lines: destroyed, under repair, and back in service.
+
+**The recoverable cargo is one to three one-tonne canisters.** They are drawn
+from the kill's own stream (`DOMAIN.CARGO_DROP`). Illegal goods weigh
+`(7 − government) / 7` of a legal good, so a Corporate State's raiders carry
+none. The canisters leave on the wreck's velocity and expire five minutes after
+the kill. Any ship scoops one by passing within 50 m at under 0.25 km/s
+relative, with no module, into the hold if it has room. Canisters are flight
+state and are not saved. A reload or a jump loses them, which a five-minute
+lifetime makes a small loss.
+
 ## 5. HUD and verification
 
 The cockpit HUD must show selected-target identity and range, computed laser lead, missile-lock state, incoming-missile warning, fore/aft shields, energy, laser heat, legal status, and the existing attitude/velocity-vector instruments.

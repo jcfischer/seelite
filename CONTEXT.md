@@ -87,6 +87,14 @@ history; what a destroyed raider leaves in the world is the slot's own
 condition. `src/encounter.ts` owns the phases.
 _Avoid_: Spawn, fight instance
 
+**Cargo canister**:
+One tonne of a single good, dropped by a destroyed raider (one to three per
+kill), drifting on the wreck's velocity until scooped or until five game-clock
+minutes pass (`combat-model.md` §4.1). A ship scoops one by passing close and
+slow, with no module, into the hold. Flight state only: it is not saved.
+`src/raider-wreck.ts` owns the drop and the scoop.
+_Avoid_: Loot, salvage drop, jettisoned cargo
+
 **Interdiction contest**:
 The skill contest that decides an interdiction (`combat-model.md` §3): the
 initiator holds a heading lock through a charge while following at part of its
