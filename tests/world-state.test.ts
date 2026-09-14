@@ -885,6 +885,161 @@ describe("§9.4 lazy recovery boundaries", () => {
 		});
 		expect(readKnowledge(w.galaxies[0], KEY)).toBeUndefined();
 	});
+
+	/**
+	 * **A destruction may schedule its own replacement** (#324 part d, the
+	 * principal's ruling). The start materializes lazily at `startsAt`, as the
+	 * completion does at `completesAt`, so a raider killed before the player
+	 * leaves the system starts its repair on time wherever the player is. An
+	 * explicit start could not: `applyTransition` refuses a time before the
+	 * clock.
+	 */
+	describe("a scheduled replacement", () => {
+		const NETWORK: Provenance = {
+			causeKind: "raider-replacement",
+			actorId: "raider-network-3",
+			playerRole: "none",
+		};
+		const destroyed = (): WorldState =>
+			applyTransition(newWorld(WORLD), 0, KEY, {
+				kind: "destroy",
+				occurredAt: 100,
+				cause: PLAYER,
+				schedule: {
+					startsAt: 700,
+					completesAt: 1900,
+					consequenceArea: "system:3",
+					cause: NETWORK,
+				},
+			});
+
+		test("destroyed until `startsAt`, repairing until `completesAt`, then replaced", () => {
+			const env = destroyed().galaxies[0];
+			expect(effectiveCarrier(env, KEY, 699.999).condition).toBe("destroyed");
+			const started = effectiveCarrier(env, KEY, 700);
+			expect(started.condition).toBe("repairing");
+			expect(started.recovery?.kind).toBe("replacement");
+			expect(started.recovery?.startedAt).toBe(700);
+			expect(started.recovery?.completesAt).toBe(1900);
+			expect(started.recovery?.initiatedBy).toEqual(NETWORK);
+			expect(effectiveCarrier(env, KEY, 1899.999).condition).toBe("repairing");
+			const done = effectiveCarrier(env, KEY, 1900);
+			expect(done.condition).toBe("operational");
+			expect(done.instanceOrdinal).toBe(1);
+		});
+
+		test("the process identity is the destruction's episode", () => {
+			const w = destroyed();
+			const ordinal = w.galaxies[0].episodes[KEY]?.ordinal;
+			expect(ordinal).toBeDefined();
+			expect(
+				effectiveCarrier(w.galaxies[0], KEY, 800).recovery?.processId,
+			).toBe(recoveryProcessId(KEY, ordinal ?? -1, "replacement"));
+		});
+
+		test("materializing writes the start and the completion at their own times, in one episode", () => {
+			for (const t of [1900, 50_000]) {
+				const env = advanceTo(destroyed(), t).galaxies[0];
+				const episode = env.episodes[KEY];
+				expect(episode?.initiating.kind).toBe("destroy");
+				expect(episode?.intervention?.kind).toBe("replacement-start");
+				expect(episode?.intervention?.occurredAt).toBe(700);
+				expect(episode?.intervention?.cause).toEqual(NETWORK);
+				expect(episode?.intervention?.episodeOrdinal).toBe(episode?.ordinal);
+				expect(episode?.latest.kind).toBe("replacement-complete");
+				expect(episode?.latest.occurredAt).toBe(1900);
+				expect(episode?.closed).toBe(true);
+				expect(env.objective[KEY]?.instanceOrdinal).toBe(1);
+				expect(env.objective[KEY]?.condition).toBe("operational");
+			}
+			// Between the two: the start is written and the completion is not.
+			const mid = advanceTo(destroyed(), 1000).galaxies[0];
+			expect(mid.objective[KEY]?.condition).toBe("repairing");
+			expect(mid.objective[KEY]?.scheduled).toBeUndefined();
+			expect(mid.episodes[KEY]?.latest.kind).toBe("replacement-start");
+			expect(mid.episodes[KEY]?.closed).toBe(false);
+		});
+
+		test("different access times give identical canonical snapshots", () => {
+			const base = destroyed();
+			const a = canonicalSnapshot(advanceTo(base, 700), 10_000);
+			const b = canonicalSnapshot(
+				advanceTo(advanceTo(base, 1000), 1_900),
+				10_000,
+			);
+			const c = canonicalSnapshot(base, 10_000);
+			expect(a).toBe(b);
+			expect(a).toBe(c);
+			// And before the start, too.
+			expect(canonicalSnapshot(advanceTo(base, 699), 700)).toBe(
+				canonicalSnapshot(base, 700),
+			);
+		});
+
+		test("a lazy start does not update knowledge", () => {
+			// The player saw the kill; the start happened out of sight.
+			const w = advanceTo(destroyed(), 1000);
+			expect(readKnowledge(w.galaxies[0], KEY)?.observedCondition).toBe(
+				"destroyed",
+			);
+		});
+
+		test("an explicit start before `startsAt` replaces the schedule", () => {
+			const w = applyTransition(destroyed(), 0, KEY, {
+				kind: "replacement-start",
+				occurredAt: 300,
+				cause: PIRATE,
+				consequenceArea: "system:3",
+				completesAt: 400,
+			});
+			const env = w.galaxies[0];
+			expect(env.objective[KEY]?.scheduled).toBeUndefined();
+			expect(effectiveCarrier(env, KEY, 350).recovery?.startedAt).toBe(300);
+			expect(effectiveCarrier(env, KEY, 400).instanceOrdinal).toBe(1);
+			// Nothing starts again at 700.
+			expect(effectiveCarrier(env, KEY, 800).condition).toBe("operational");
+			expect(effectiveCarrier(env, KEY, 2000).instanceOrdinal).toBe(1);
+		});
+
+		test("a schedule starts after the destruction and completes after it starts", () => {
+			const at = (startsAt: number, completesAt: number) => () =>
+				applyTransition(newWorld(WORLD), 0, KEY, {
+					kind: "destroy",
+					occurredAt: 100,
+					cause: PLAYER,
+					schedule: {
+						startsAt,
+						completesAt,
+						consequenceArea: "system:3",
+						cause: NETWORK,
+					},
+				});
+			expect(at(100, 200)).toThrow(/starts no later than the destruction/);
+			expect(at(200, 200)).toThrow(/completes no later than it starts/);
+			expect(at(Number.NaN, 200)).toThrow();
+			expect(at(200, 300)).not.toThrow();
+		});
+
+		test("a scheduled row survives the round trip, and compaction keeps it", () => {
+			const before = destroyed();
+			const after = parseWorld(serializeWorld(before));
+			expect(after).toEqual(before);
+			expect(effectiveCarrier(after.galaxies[0], KEY, 700).condition).toBe(
+				"repairing",
+			);
+			expect(compactWorld(before, 100).galaxies[0].objective[KEY]).toEqual(
+				before.galaxies[0].objective[KEY],
+			);
+		});
+
+		test("a schedule on any row but a destroyed one is refused on parse", () => {
+			const raw = serializeWorld(destroyed()) as {
+				galaxies: Array<{ objective: Record<string, Record<string, unknown>> }>;
+			};
+			raw.galaxies[0].objective[KEY].condition = "disabled";
+			expect(() => parseWorld(raw)).toThrow(/schedule/);
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------

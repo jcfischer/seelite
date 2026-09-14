@@ -121,6 +121,25 @@ export interface RecoveryDescriptor {
 	initiatedBy: Provenance;
 }
 
+/**
+ * A replacement a destruction schedules for later (#324 part d, by the
+ * principal's ruling). **Its start materializes lazily at `startsAt`, as a
+ * completion does at `completesAt` (§4)**, so it needs no observer: a raider
+ * killed before the player leaves its system is repairing on time wherever the
+ * player is. An explicit start could not do that, because `applyTransition`
+ * refuses a time before the clock.
+ *
+ * The process identity is fixed at the destruction, from its episode, so the
+ * start it materializes is the same process an explicit start would have been.
+ */
+export interface ScheduledRecovery {
+	processId: string;
+	consequenceArea: string;
+	startsAt: number;
+	completesAt: number;
+	initiatedBy: Provenance;
+}
+
 /** §5's bounded transition fact. */
 export interface TransitionFact {
 	key: CarrierKey;
@@ -155,6 +174,8 @@ export interface ObjectiveDelta {
 	instanceOrdinal: number;
 	condition: OperationalCondition;
 	recovery?: RecoveryDescriptor;
+	/** On a destroyed row only: the replacement its destruction scheduled. */
+	scheduled?: ScheduledRecovery;
 }
 
 /** §3.1's snapshot of a recovery as the player last saw it. Deliberately a
@@ -442,10 +463,53 @@ const materialized = (delta: ObjectiveDelta): ObjectiveDelta => ({
 	condition: "operational",
 });
 
-const isDue = (delta: ObjectiveDelta | undefined, gameTime: number): boolean =>
+/** A scheduled start, applied: the destroyed row becomes the repairing one its
+ *  schedule named. */
+const started = (
+	delta: ObjectiveDelta,
+	s: ScheduledRecovery,
+): ObjectiveDelta => ({
+	instanceOrdinal: delta.instanceOrdinal,
+	condition: "repairing",
+	recovery: {
+		kind: "replacement",
+		processId: s.processId,
+		consequenceArea: s.consequenceArea,
+		startedAt: s.startsAt,
+		completesAt: s.completesAt,
+		initiatedBy: s.initiatedBy,
+	},
+});
+
+const startDue = (
+	delta: ObjectiveDelta | undefined,
+	gameTime: number,
+): delta is ObjectiveDelta & { scheduled: ScheduledRecovery } =>
+	delta?.condition === "destroyed" &&
+	delta.scheduled !== undefined &&
+	gameTime >= delta.scheduled.startsAt;
+
+const completionDue = (
+	delta: ObjectiveDelta | undefined,
+	gameTime: number,
+): boolean =>
 	delta?.condition === "repairing" &&
 	delta.recovery !== undefined &&
 	gameTime >= delta.recovery.completesAt;
+
+const isDue = (delta: ObjectiveDelta | undefined, gameTime: number): boolean =>
+	startDue(delta, gameTime) || completionDue(delta, gameTime);
+
+/** Every lazy step due on one row, in time order: a scheduled start, then the
+ *  completion, which may already be due too. */
+const settle = (delta: ObjectiveDelta, gameTime: number): ObjectiveDelta => {
+	const afterStart = startDue(delta, gameTime)
+		? started(delta, delta.scheduled)
+		: delta;
+	return completionDue(afterStart, gameTime)
+		? materialized(afterStart)
+		: afterStart;
+};
 
 /**
  * §3/§4's read: what the world *is* at `gameTime`, whether or not anybody has
@@ -466,7 +530,7 @@ export const effectiveCarrier = (
 			condition: "operational",
 			recovery: undefined,
 		};
-	const settled = isDue(delta, gameTime) ? materialized(delta) : delta;
+	const settled = settle(delta, gameTime);
 	return {
 		instanceOrdinal: settled.instanceOrdinal,
 		condition: settled.condition,
@@ -493,29 +557,55 @@ export function materializeDue(
 	const objective = { ...env.objective };
 	const episodes = { ...env.episodes };
 	for (const key of due) {
-		const delta = env.objective[key];
-		const recovery = delta.recovery;
-		if (!recovery) continue;
-		const next = materialized(delta);
-		objective[key] = next;
-		const episode = episodes[key];
-		if (episode) {
-			// `occurredAt` is `completesAt`, never the moment somebody looked.
-			// Access time in the save would make one timeline serialize two ways.
-			const fact: TransitionFact = {
-				key,
-				instanceOrdinal: next.instanceOrdinal,
-				episodeOrdinal: episode.ordinal,
-				kind:
-					recovery.kind === "repair"
-						? "repair-complete"
-						: "replacement-complete",
-				occurredAt: recovery.completesAt,
-				cause: recovery.initiatedBy,
-				processId: recovery.processId,
-			};
-			episodes[key] = { ...episode, latest: fact, closed: true };
+		let current = env.objective[key];
+		let episode = episodes[key];
+		// A scheduled start first. It joins the destruction's open episode and
+		// is that episode's intervention, as an explicit start would be (§5).
+		if (startDue(current, gameTime)) {
+			const s = current.scheduled;
+			current = started(current, s);
+			if (episode) {
+				const fact: TransitionFact = {
+					key,
+					instanceOrdinal: current.instanceOrdinal,
+					episodeOrdinal: episode.ordinal,
+					kind: "replacement-start",
+					occurredAt: s.startsAt,
+					cause: s.initiatedBy,
+					processId: s.processId,
+				};
+				episode = {
+					...episode,
+					intervention: episode.intervention ?? fact,
+					latest: fact,
+					closed: false,
+				};
+			}
 		}
+		const recovery = current.recovery;
+		if (completionDue(current, gameTime) && recovery) {
+			const next = materialized(current);
+			if (episode) {
+				// `occurredAt` is `completesAt`, never the moment somebody looked.
+				// Access time in the save would make one timeline serialize two ways.
+				const fact: TransitionFact = {
+					key,
+					instanceOrdinal: next.instanceOrdinal,
+					episodeOrdinal: episode.ordinal,
+					kind:
+						recovery.kind === "repair"
+							? "repair-complete"
+							: "replacement-complete",
+					occurredAt: recovery.completesAt,
+					cause: recovery.initiatedBy,
+					processId: recovery.processId,
+				};
+				episode = { ...episode, latest: fact, closed: true };
+			}
+			current = next;
+		}
+		objective[key] = current;
+		if (episode) episodes[key] = episode;
 	}
 	return { envelope: { ...env, objective, episodes }, order: due };
 }
@@ -541,9 +631,22 @@ export const advanceTo = (world: WorldState, gameTime: number): WorldState => {
 
 export type TransitionEvent =
 	| {
-			kind: "disable" | "destroy" | "restore";
+			kind: "disable" | "restore";
 			occurredAt: number;
 			cause: Provenance;
+	  }
+	| {
+			kind: "destroy";
+			occurredAt: number;
+			cause: Provenance;
+			/** The replacement this destruction schedules, started and completed
+			 *  lazily. `cause` is the actor that does the work, not the destroyer. */
+			schedule?: {
+				startsAt: number;
+				completesAt: number;
+				consequenceArea: string;
+				cause: Provenance;
+			};
 	  }
 	| {
 			kind: "repair-start" | "replacement-start";
@@ -677,9 +780,28 @@ function nextDelta(
 				fail(`cannot destroy a carrier that is ${current.condition}`);
 			opensEpisode = !episodeOpen;
 			episodeOrdinal = nextOrdinal;
+			let scheduled: ScheduledRecovery | undefined;
+			if (event.kind === "destroy" && event.schedule) {
+				const s = event.schedule;
+				// Strictly later on both edges, for the explicit start's reason: a
+				// schedule that starts at the destruction is an explicit start, and
+				// one that completes as it starts is no process at all.
+				if (!Number.isFinite(s.startsAt) || s.startsAt <= event.occurredAt)
+					fail("a scheduled replacement starts no later than the destruction");
+				if (!Number.isFinite(s.completesAt) || s.completesAt <= s.startsAt)
+					fail("a scheduled replacement completes no later than it starts");
+				scheduled = {
+					processId: recoveryProcessId(key, episodeOrdinal, "replacement"),
+					consequenceArea: s.consequenceArea,
+					startsAt: s.startsAt,
+					completesAt: s.completesAt,
+					initiatedBy: s.cause,
+				};
+			}
 			next = {
 				instanceOrdinal: current.instanceOrdinal,
 				condition: event.kind === "disable" ? "disabled" : "destroyed",
+				...(scheduled ? { scheduled } : {}),
 			};
 			break;
 		}
@@ -1157,7 +1279,8 @@ export const compactWorld = (
 				const derivable =
 					delta.condition === "operational" &&
 					delta.instanceOrdinal === 0 &&
-					delta.recovery === undefined;
+					delta.recovery === undefined &&
+					delta.scheduled === undefined;
 				if (!derivable) objective[key] = delta;
 			}
 			return { ...env, objective };
@@ -1193,6 +1316,14 @@ const canonicalRecovery = (r: RecoveryDescriptor) => ({
 	initiatedBy: canonicalProvenance(r.initiatedBy),
 });
 
+const canonicalScheduled = (s: ScheduledRecovery) => ({
+	processId: s.processId,
+	consequenceArea: s.consequenceArea,
+	startsAt: s.startsAt,
+	completesAt: s.completesAt,
+	initiatedBy: canonicalProvenance(s.initiatedBy),
+});
+
 const canonicalFact = (f: TransitionFact) => ({
 	key: f.key,
 	instanceOrdinal: f.instanceOrdinal,
@@ -1209,6 +1340,7 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 		instanceOrdinal: d.instanceOrdinal,
 		condition: d.condition,
 		...(d.recovery ? { recovery: canonicalRecovery(d.recovery) } : {}),
+		...(d.scheduled ? { scheduled: canonicalScheduled(d.scheduled) } : {}),
 	})),
 	episodes: canonicalMap(env.episodes, (e) => ({
 		ordinal: e.ordinal,
@@ -1386,6 +1518,23 @@ const parseRecovery = (raw: unknown, what: string): RecoveryDescriptor => {
 	return { ...shared, initiatedBy: parseProvenance(o.initiatedBy, what) };
 };
 
+const parseScheduled = (raw: unknown, what: string): ScheduledRecovery => {
+	const o = asObject(raw, `${what} schedule`);
+	const startsAt = num(o, "startsAt", what);
+	const completesAt = num(o, "completesAt", what);
+	if (completesAt <= startsAt)
+		fail(
+			`${what}: a schedule completing at ${completesAt} starts at ${startsAt}`,
+		);
+	return {
+		processId: str(o, "processId", what),
+		consequenceArea: str(o, "consequenceArea", what),
+		startsAt,
+		completesAt,
+		initiatedBy: parseProvenance(o.initiatedBy, what),
+	};
+};
+
 const parseFact = (raw: unknown, what: string): TransitionFact => {
 	const o = asObject(raw, `${what} transition`);
 	const kind = str(o, "kind", what);
@@ -1436,7 +1585,14 @@ const parseObjectiveRow = (value: unknown, key: string): ObjectiveDelta => {
 		...(row.recovery === undefined
 			? {}
 			: { recovery: parseRecovery(row.recovery, `objective ${key}`) }),
+		...(row.scheduled === undefined
+			? {}
+			: { scheduled: parseScheduled(row.scheduled, `objective ${key}`) }),
 	};
+	// A schedule is a destruction's. On any other row nothing can start it, and
+	// `settle` would carry it forever.
+	if (delta.scheduled && delta.condition !== "destroyed")
+		fail(`objective ${key}: a schedule on a ${delta.condition} row`);
 	// Both directions. The one-sided check let an `operational` row carry a
 	// live descriptor that `isDue` can never fire and `effectiveCarrier` hands
 	// straight back — an immortal recovery.
