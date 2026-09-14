@@ -18,6 +18,7 @@ import type {
 } from "./station-console";
 import { priceLabel, signedDelta } from "./station-console";
 import { padHintFor } from "./pad-bindings";
+import type { LaneRefusal } from "./station-traffic";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -28,6 +29,18 @@ import {
 } from "./panel-focus";
 
 export type RightTab = "Flight" | "Drive" | "Tuning";
+
+/**
+ * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
+ * the keys keep the consequence model's word, and the player reads a ship —
+ * a `carrier` is also a capital hull on the roster. Here rather than beside
+ * `playerLaneRefusal`: Traffic decides the reason, the console words it.
+ */
+export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
+	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
+	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
+	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
+};
 const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
 
 /**
@@ -86,8 +99,8 @@ export interface LiveCockpitState {
 		/** Changes only when an accepted action replaces the displayed state. */
 		revision: number;
 	} | null;
-	/** A launch Traffic refused and is holding, with the reason in words (#314). */
-	launchHold: { notice: string } | null;
+	/** A launch Traffic refused and is holding, and why (#314). */
+	launchHold: { refusal: LaneRefusal } | null;
 }
 
 export interface LiveCockpitCallbacks {
@@ -873,13 +886,15 @@ export class LiveCockpit {
 		// takes the attribute with it. The cursor is not in the markup, so it
 		// survives; the ring has to be put back.
 		this.applyFocusRing();
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.notice ?? ""}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}`;
 		if (valueKey === this.lastValueKey) return;
 		this.lastValueKey = valueKey;
 		// The reason can change while the hold stands — a carrier clears the lane
 		// and an older one is queued behind it — so it is a value, not structure.
 		for (const notice of elements.launchNotices)
-			notice.textContent = state.launchHold?.notice ?? "";
+			notice.textContent = state.launchHold
+				? LAUNCH_HOLD_NOTICE[state.launchHold.refusal]
+				: "";
 		if (elements.leftPanelCopy)
 			elements.leftPanelCopy.textContent = state.target;
 		if (elements.rightPanelCopy)

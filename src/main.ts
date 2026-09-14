@@ -321,7 +321,6 @@ import {
 	trafficScheduleAt,
 	type TrafficActor,
 	type TrafficProjection,
-	LAUNCH_HOLD_NOTICE,
 	type LaneRefusal,
 	playerLaneRefusal,
 } from "./station-traffic";
@@ -8797,9 +8796,7 @@ class Game {
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),
-			launchHold: this.launchHold
-				? { notice: LAUNCH_HOLD_NOTICE[this.launchHold.refusal] }
-				: null,
+			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
 	}
 

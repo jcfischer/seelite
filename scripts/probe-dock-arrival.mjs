@@ -851,12 +851,12 @@ check(
 
 // #314: a launch Traffic refuses is held with its reason on every docked
 // console, a retry keeps its first place, and CANCEL gives the turn back.
-const heldLaunch = await page.evaluate((stationId) => {
-	const g = window.__seelite;
-	// The one way these checks refuse the lane, shared with the launch row
-	// below. The warm index is the authority's own gate: zeroing it refuses
-	// the lane without inventing a ship.
+// The one way the held-launch and launch rows refuse the lane, defined on its
+// own so either row can run without the other. The warm index is the
+// authority's own gate: zeroing it refuses the lane without inventing a ship.
+await page.evaluate(() => {
 	window.__refuseLaneWhile = (fn) => {
+		const g = window.__seelite;
 		const warmIndex = g.trafficWarmIndex;
 		g.trafficWarmIndex = 0;
 		try {
@@ -865,6 +865,10 @@ const heldLaunch = await page.evaluate((stationId) => {
 			g.trafficWarmIndex = warmIndex;
 		}
 	};
+});
+
+const heldLaunch = await page.evaluate((stationId) => {
+	const g = window.__seelite;
 	// `checkVisibility`, not `hidden`: an id rule with `display` beats it.
 	const visibleNotice = () =>
 		[...document.querySelectorAll("[data-live-launch-notice]")].find(
@@ -875,6 +879,15 @@ const heldLaunch = await page.evaluate((stationId) => {
 		document.querySelector('[data-live-right-tab="Flight"]')?.click();
 		document.querySelector("[data-live-launch]")?.click();
 		const fromRight = visibleNotice();
+		// Off Flight, where LAUNCH itself is not drawn, and on the left panel.
+		document.querySelector('[data-live-right-tab="Drive"]')?.click();
+		g.updateCockpit();
+		const fromRightDrive = visibleNotice();
+		g.setHeadLook("left");
+		g.updateCockpit();
+		const fromLeft = visibleNotice();
+		g.setHeadLook("right");
+		document.querySelector('[data-live-right-tab="Flight"]')?.click();
 		const firstStamp = g.playerLaneRequests.get(stationId)?.readyAt ?? null;
 		// The retry `stepHeldLaunch` makes, five game seconds on.
 		g.world.gameTime += 5;
@@ -886,6 +899,8 @@ const heldLaunch = await page.evaluate((stationId) => {
 		const held = {
 			phase: g.dockPhase,
 			fromRight,
+			fromRightDrive,
+			fromLeft,
 			fromForward,
 			firstStamp,
 			retryStamp,
@@ -905,8 +920,12 @@ const heldLaunch = await page.evaluate((stationId) => {
 check(
 	"a launch Traffic refuses is held on every docked console, keeps its place, and cancel gives the turn back",
 	heldLaunch.held.phase === "docked" &&
-		/^LAUNCH HELD — /.test(heldLaunch.held.fromRight ?? "") &&
-		/^LAUNCH HELD — /.test(heldLaunch.held.fromForward ?? "") &&
+		[
+			heldLaunch.held.fromRight,
+			heldLaunch.held.fromRightDrive,
+			heldLaunch.held.fromLeft,
+			heldLaunch.held.fromForward,
+		].every((notice) => /^LAUNCH HELD — /.test(notice ?? "")) &&
 		heldLaunch.held.firstStamp !== null &&
 		heldLaunch.held.retryStamp === heldLaunch.held.firstStamp &&
 		!heldLaunch.cancelled.notice &&

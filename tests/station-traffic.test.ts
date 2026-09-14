@@ -3,10 +3,11 @@ import { carrierKey } from "../src/carrier-key";
 import { interiorOfStation } from "../src/dock-session";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
+import { LAUNCH_HOLD_NOTICE } from "../src/live-cockpit";
 import {
 	clearancePromotion,
 	compareStationTurns,
-	LAUNCH_HOLD_NOTICE,
+	type LaneRequest,
 	laneWinner,
 	playerLaneRefusal,
 	playerWinsLane,
@@ -252,7 +253,7 @@ describe("shared station arbitration", () => {
 		const key = carrierKey(7, "station-trade/traffic-02");
 		const route = (
 			phase: TrafficRoutePhase,
-			laneRequest?: { readyAt: number; kind: "arrival" | "launch" },
+			laneRequest?: Pick<LaneRequest, "readyAt" | "kind">,
 			terminalStationId = STATION,
 		) => ({ key, terminalStationId, phase, laneRequest });
 		const refusal = (
@@ -278,6 +279,9 @@ describe("shared station arbitration", () => {
 
 		test("Traffic that has not warmed up refuses first", () => {
 			expect(refusal([], 10, false)).toBe("traffic-starting");
+			// First, not only: a cold authority cannot see what is in the lane, so
+			// a carrier it can see there does not change the reason.
+			expect(refusal([route("arriving")], 10, false)).toBe("traffic-starting");
 		});
 
 		test("a carrier moving through the lane refuses, in either direction", () => {

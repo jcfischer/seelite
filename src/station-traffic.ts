@@ -316,7 +316,7 @@ export interface LaneRouteView {
 	key: CarrierKey;
 	terminalStationId: string | null;
 	phase: TrafficRoutePhase;
-	laneRequest?: { readyAt: number; kind: "arrival" | "launch" } | null;
+	laneRequest?: Pick<LaneRequest, "readyAt" | "kind"> | null;
 }
 
 /**
@@ -361,17 +361,6 @@ export function playerLaneRefusal(input: {
 		? null
 		: "carrier-queued-ahead";
 }
-
-/**
- * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
- * the keys keep the consequence model's word, and the player reads a ship —
- * a `carrier` is also a capital hull on the roster.
- */
-export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
-	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
-	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
-	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
-};
 
 /** Station-owned local traversal laws used by route composition. */
 export const TRAFFIC_STATION_EXCLUSION_KM = 5;
