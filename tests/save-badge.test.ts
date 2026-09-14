@@ -32,7 +32,7 @@ describe("heldSaveFault", () => {
 	test("two different causes are both named, the dock checkpoint first", () => {
 		expect(
 			heldSaveFault(store(["live", capped], ["lastDocked", dock]), null),
-		).toBe(`${flushFault("dock", quota)}; ${writeFault(3, quota)}`);
+		).toBe(`${flushFault("dock", quota)}\n\n${writeFault(3, quota)}`);
 	});
 
 	test("an attached store with nothing held hides the badge", () => {

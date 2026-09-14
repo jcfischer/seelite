@@ -26,9 +26,30 @@ import {
 	type SaveStore,
 } from "./save-store";
 
-/** An error's message, or the thrown value as text. */
+/**
+ * An error's message, or the thrown value as text, for the player.
+ *
+ * **Without the storage modules' `save: ` prefix.** `save-store.ts` and
+ * `save-envelope.ts` put it on every error they throw, which names the source
+ * in a console line. In the overlay it read `would not load: save: …`, and the
+ * boot's own `save: ` log prefix doubled it (#306's frames).
+ */
 export const messageOf = (error: unknown): string =>
-	error instanceof Error ? error.message : String(error);
+	(error instanceof Error ? error.message : String(error)).replace(
+		/^save: /,
+		"",
+	);
+
+/**
+ * A fault the overlay shows: a sentence for the player, then the reason on its
+ * own line, which the overlay draws dimmer as the detail. The reason is the
+ * thrown message, and it is often a field name and a value; the sentence is
+ * what the player acts on. No detail line when the reason has no words.
+ */
+const withDetail = (sentence: string, error: unknown): string => {
+	const detail = messageOf(error);
+	return detail ? `${sentence}\n${detail}` : sentence;
+};
 
 // ---------------------------------------------------------------------------
 // The overlay's words (§11.5)
@@ -40,11 +61,17 @@ export const messageOf = (error: unknown): string =>
 
 /** A Commander whose `live` record this build refuses (D9). */
 export const loadFault = (slot: string, error: unknown): string =>
-	`Commander "${slot}" would not load: ${messageOf(error)}`;
+	withDetail(
+		`Commander "${slot}" would not load. It is left as it is on disk; Export takes a copy of it.`,
+		error,
+	);
 
 /** A record that parsed and then would not build a game. */
 export const restoreFault = (slot: string, error: unknown): string =>
-	`Commander "${slot}" would not restore: ${messageOf(error)}`;
+	withDetail(
+		`Commander "${slot}" would not restore. It is left as it is on disk; Export takes a copy of it.`,
+		error,
+	);
 
 /** `?seed`'s set-aside, which only a direct boot applies (§11.6). */
 export const seedSetAsideFault = (
@@ -62,15 +89,15 @@ export const lockHeldFault = (slot: string): string =>
 /** The browser refused the lock request itself, which says nothing about
  *  another tab. */
 export const lockRequestFault = (slot: string, error: unknown): string =>
-	`this tab could not reserve Commander "${slot}": ${messageOf(error)}`;
+	withDetail(`this tab could not reserve Commander "${slot}".`, error);
 
 /** A dock, undock, jump or quit flush that did not land (§11.5). */
 export const flushFault = (reason: FlushReason, error: unknown): string =>
-	`the ${reason} save would not write: ${messageOf(error)}`;
+	withDetail(`the ${reason} save would not write.`, error);
 
 /** A debounced write that did not land, and how many in a row have not. */
 export const writeFault = (consecutive: number, error: unknown): string =>
-	`the save would not write (${consecutive} in a row): ${messageOf(error)}`;
+	withDetail(`the save would not write (${consecutive} in a row).`, error);
 
 /** The words for a fault the store holds (§11.5). */
 export const heldFaultText = (fault: SaveFault): string =>

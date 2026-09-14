@@ -125,7 +125,7 @@ describe("the Game's world writes", () => {
 		const loop = MAIN.split("private animate = () => {")[1] ?? "";
 		const end = loop.indexOf("\n\t};");
 		expect(loop.slice(0, end)).toContain(
-			"this.saveBadge?.update(this.saveFaultShown());",
+			"this.saveBadge?.update(\n\t\t\tthis.saveFaultShown() && !this.commanderOverlay?.isOpen(),\n\t\t);",
 		);
 		const shown = MAIN.split("saveFaultShown(): boolean {")[1] ?? "";
 		expect(shown.slice(0, 120)).toContain(

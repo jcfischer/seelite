@@ -64,6 +64,11 @@ const median = (xs) => {
 /**
  * §11.5's badge as the page draws it. `shown` needs the point at its centre to
  * be the badge, so a console or panel drawn over the corner reads as not shown.
+ *
+ * **Drawn, not attributed.** `checkVisibility` answers from the computed style.
+ * These rows read `el.hidden` for a round, and the badge's own `display: flex`
+ * outranked the browser's `[hidden]` rule: it was drawn on every page with the
+ * attribute set, and every row here passed.
  */
 const badgeOf = (page) =>
 	page.evaluate(() => {
@@ -72,14 +77,16 @@ const badgeOf = (page) =>
 		const kinds = [...(g.saveStore?.faultKinds ?? [])].sort();
 		if (!el)
 			return { mounted: false, shown: false, kinds, fault: g.saveFaultText() };
+		const drawn = el.checkVisibility();
 		const r = el.getBoundingClientRect();
-		const hit = el.hidden
-			? null
-			: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+		const hit = drawn
+			? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+			: null;
 		return {
 			mounted: true,
+			drawn,
 			shown:
-				!el.hidden &&
+				drawn &&
 				r.width > 0 &&
 				r.height > 0 &&
 				(hit === el || el.contains(hit)),
@@ -94,7 +101,7 @@ const badgeBecomes = (page, shown, timeout) =>
 		.waitForFunction(
 			(want) => {
 				const el = document.querySelector("[data-save-badge]");
-				return el !== null && el.hidden === !want;
+				return el !== null && el.checkVisibility() === want;
 			},
 			shown,
 			{ timeout },
@@ -385,14 +392,24 @@ try {
 		retryLimit: window.__seelite.save.retryLimit,
 	}));
 	const badgeWaitMs = limits.debounceMs * (limits.retryLimit + 2) + 10_000;
+	// Nothing has failed yet, so nothing is drawn. The badge was drawn on every
+	// page for a round with its `hidden` attribute set (see `badgeOf`).
+	await twoFrames(page);
+	const quiet = await badgeOf(page);
+	check(
+		"with no save fault held, the badge is not drawn",
+		quiet.mounted && !quiet.drawn && quiet.kinds.length === 0,
+		JSON.stringify(quiet),
+	);
 	// **Watched, not sampled.** A badge raised on the first failure and cleared
 	// when the retry lands would be gone again by any single read afterwards.
+	// Seeded with what is drawn now, so a badge drawn from the start counts.
 	await page.evaluate(() => {
-		window.__probeBadgeEverShown = false;
 		const el = document.querySelector("[data-save-badge]");
+		window.__probeBadgeEverShown = el?.checkVisibility() ?? false;
 		if (!el) return;
 		new MutationObserver(() => {
-			if (!el.hidden) window.__probeBadgeEverShown = true;
+			if (el.checkVisibility()) window.__probeBadgeEverShown = true;
 		}).observe(el, { attributes: true, attributeFilter: ["hidden"] });
 	});
 	await forceWriteFailures(page, limits.retryLimit - 1);
@@ -450,16 +467,30 @@ try {
 			() => true,
 			() => false,
 		);
-	const shownFault = await page.evaluate(() => ({
-		text: document.querySelector("[data-commander-fault]")?.textContent ?? null,
-	}));
+	const shownFault = await page.evaluate(() => {
+		const el = document.querySelector("[data-commander-fault]");
+		return {
+			sentence: el?.firstChild?.textContent ?? null,
+			detail:
+				el?.querySelector("[data-commander-fault-detail]")?.textContent ?? null,
+		};
+	});
 	check(
-		"clicking the badge opens the Commander overlay with the fault it holds",
+		"clicking the badge opens the Commander overlay with the fault it holds, sentence then detail",
 		opened &&
-			(shownFault.text ?? "").includes(
-				`(${limits.retryLimit} in a row): probe: forced write failure`,
-			),
+			shownFault.sentence ===
+				`the save would not write (${limits.retryLimit} in a row).` &&
+			shownFault.detail === "probe: forced write failure",
 		JSON.stringify(shownFault),
+	);
+	// The overlay states the fault, so the badge is not drawn over or behind it
+	// (the principal's call on #313's frames); it is back once the overlay closes.
+	await twoFrames(page);
+	const underOverlay = await badgeOf(page);
+	check(
+		"while the overlay is open the badge is not drawn",
+		opened && underOverlay.mounted && !underOverlay.drawn,
+		JSON.stringify(underOverlay),
 	);
 	await page.keyboard.press("Escape");
 	await page
@@ -468,6 +499,11 @@ try {
 			timeout: 5_000,
 		})
 		.catch(() => {});
+	check(
+		"and it is drawn again once the overlay closes, with the fault still held",
+		await badgeBecomes(page, true, 5_000),
+		JSON.stringify(await badgeOf(page)),
+	);
 
 	await restoreWrites(page);
 	await page.evaluate(() => window.__seelite.saveStore?.markDirty());
@@ -1082,7 +1118,9 @@ try {
 	check(
 		"a version-1 connection left open produces the named blocked fault, a boot, and the same fault on a later call, not a hang",
 		bootedDespiteBlock &&
-			blockedState.fault === saveMeta.blockedMessage &&
+			// The boot's fault is the overlay's words, which drop the storage
+			// modules' `save: ` prefix (`messageOf`); the later call's is raw.
+			blockedState.fault === saveMeta.blockedMessage.replace(/^save: /, "") &&
 			blockedState.store === false &&
 			blockedState.retry === saveMeta.blockedMessage,
 		JSON.stringify({ bootedDespiteBlock, ...blockedState }),

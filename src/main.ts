@@ -8656,7 +8656,11 @@ class Game {
 		if (this.legacyHud) this.updateHud();
 		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
 		// badge shows in every view.
-		this.saveBadge?.update(this.saveFaultShown());
+		// Not while the Commander overlay is open: it states the fault itself, and
+		// the badge showed dimly behind it at a boot fault (the principal's call).
+		this.saveBadge?.update(
+			this.saveFaultShown() && !this.commanderOverlay?.isOpen(),
+		);
 	};
 
 	private readonly chaseOffset = new THREE.Vector3();

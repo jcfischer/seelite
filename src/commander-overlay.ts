@@ -94,8 +94,13 @@ export type MenuRow =
  * instead (#309's note to this part).
  */
 export function commanderMenu(input: MenuInput): MenuRow[] {
-	const rows: MenuRow[] = [
-		{
+	const rows: MenuRow[] = [];
+	// **No Continue row when there is no save to continue.** A fresh profile
+	// showed a disabled "Continue — Commander "default"", naming a Commander that
+	// had no save at all (#306's frames). A save that will not load keeps the
+	// row, disabled, under the fault that says why (§11.2).
+	if (input.inPlay !== null || input.canContinue || input.faultSlot !== null)
+		rows.push({
 			kind: "continue",
 			label:
 				input.inPlay !== null
@@ -104,8 +109,7 @@ export function commanderMenu(input: MenuInput): MenuRow[] {
 						? `Continue — new Commander "${input.pendingName}"`
 						: `Continue — Commander "${input.active}"`,
 			enabled: input.canContinue,
-		},
-	];
+		});
 	if (!input.saving) return rows;
 	if (input.faultSlot !== null)
 		rows.push({
@@ -246,6 +250,8 @@ const STYLE = `
   color: #ffb1a8; background: rgba(255, 107, 94, .08); overflow-wrap: anywhere;
 }
 #seelite-commander .refusal::before { content: "FAULT  "; color: #ff6b5e; font-weight: 600; }
+#seelite-commander .refusal .detail { margin-top: 4px; color: #a8837f; font-size: 11.5px; }
+#seelite-commander .refusal .detail::before { content: "detail: "; }
 #seelite-commander .info { margin: 0 0 12px; color: #9fb7d8; overflow-wrap: anywhere; }
 #seelite-commander .hint { margin-top: 14px; color: #7f97b8; font-size: 11.5px; }
 `;
@@ -270,6 +276,23 @@ const escapeHtml = (text: string) =>
 				c
 			] as string,
 	);
+
+/**
+ * A fault as the overlay draws it: one block per fault (a blank line apart),
+ * each a sentence and, dimmer, the detail on the lines after it
+ * (`commander-flow.ts`'s `withDetail`).
+ */
+const faultHtml = (text: string) =>
+	text
+		.split("\n\n")
+		.map((block) => {
+			const [sentence, ...detail] = block.split("\n");
+			const more = detail.length
+				? `<div class="detail" data-commander-fault-detail>${escapeHtml(detail.join(" "))}</div>`
+				: "";
+			return `<div class="refusal" data-commander-fault>${escapeHtml(sentence ?? "")}${more}</div>`;
+		})
+		.join("");
 
 /** Hands the player a file. A `Blob` link, because nothing here talks to a
  *  server (the map's no-backend constraint). */
@@ -594,7 +617,7 @@ export function mountCommanderOverlay(
 				: "↑↓ choose · type in a field · Enter do it · Esc back";
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Commander" aria-busy="${busy}">
   <h2>Commander</h2>
-  ${refusal ? `<div class="refusal" data-commander-fault>${escapeHtml(refusal)}</div>` : ""}
+  ${refusal ? faultHtml(refusal) : ""}
   ${info ? `<div class="info" data-commander-info>${escapeHtml(info)}</div>` : ""}
   <div role="listbox">${body}</div>
   <div class="hint">${hint}</div>

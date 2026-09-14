@@ -339,8 +339,9 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	const version = o.saveSchemaVersion;
 	if (version !== SAVE_SCHEMA_VERSION)
 		fail(
-			`saveSchemaVersion ${String(version)} is not ${SAVE_SCHEMA_VERSION} — ` +
-				"this save is left as it is; export it rather than loading it",
+			// The reason alone: the player's sentence — left as it is, Export
+			// takes a copy — is `loadFault`'s, which the overlay puts first.
+			`saveSchemaVersion ${String(version)} is not ${SAVE_SCHEMA_VERSION}`,
 		);
 	if (o.world === undefined || o.world === null) fail("world is missing");
 	if (o.commander === undefined || o.commander === null)
@@ -358,8 +359,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		fail(
 			"integrity check failed — this save does not match its own checksum. " +
 				"It was edited, corrupted, or assembled from two saves; the hash " +
-				"cannot say which. It is left as it is — export it rather than " +
-				"loading it.",
+				"cannot say which.",
 		);
 	return { world: parseWorld(o.world), commander: parseCommander(o.commander) };
 }

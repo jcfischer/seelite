@@ -49,7 +49,9 @@ export function heldSaveFault(
 		const fault = store.heldFaults.get(kind);
 		if (fault) texts.add(heldFaultText(fault));
 	}
-	return texts.size > 0 ? [...texts].join("; ") : null;
+	// A blank line between faults, because each is a sentence and its detail
+	// (`commander-flow.ts`), and the overlay draws one block per fault.
+	return texts.size > 0 ? [...texts].join("\n\n") : null;
 }
 
 /** Whether `heldSaveFault` is not `null`, by the same rule, without building the
@@ -79,6 +81,11 @@ const STYLE = `
   background: rgba(40, 6, 4, .88); border: 1px solid #ff6b5e; border-radius: 4px;
   box-shadow: 0 0 14px rgba(255, 107, 94, .35); cursor: pointer;
 }
+/* **The hidden attribute needs its own rule here.** An id selector's display
+   outranks the browser's own [hidden] rule, so with display: flex above, the
+   badge was drawn on every page with no fault held — #311 shipped it that way,
+   and its probe read the attribute rather than what was drawn. */
+#seelite-save-badge[hidden] { display: none; }
 #seelite-save-badge::before { content: "\\25B2"; color: #ff6b5e; }
 #seelite-save-badge kbd {
   font: inherit; color: #ff6b5e; padding: 0 4px;

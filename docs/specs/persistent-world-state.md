@@ -256,8 +256,9 @@ player's own choice on the overlay wrote:
    store" extended to every boot.
 
 **Continue** attaches the store to the active Commander and releases the clock.
-It is selected by default, and unavailable when there is nothing to continue or
-the load failed. Once in play, the overlay opened by key keeps settings' rule:
+It is selected by default. **It is absent when the Commander has no save to
+continue** — a fresh profile — and shown disabled, under the fault that says
+why, when a save exists and will not load. Once in play, the overlay opened by key keeps settings' rule:
 the world runs under it.
 
 ### 11.3 Operations (S3)
@@ -402,6 +403,11 @@ fails and raises its own badge rather than blocking the upgrade forever.
   shows `saveFault`. #306 rewords every `saveFault` message the overlay can
   display, so `CONTEXT.md`'s "the player never sees the word" is true of the
   shipped text and not only of the labels.
+- **A fault reads as a sentence, then its detail.** The sentence is what the
+  player acts on; the thrown reason — often a field name and a value, such as
+  `saveSchemaVersion undefined is not 2` — follows on a dimmer line. The storage
+  modules' own `save: ` error prefix is for the console and is not shown
+  (`messageOf`, `commander-flow.ts`).
 
 ### 11.6 Probes and view capture
 

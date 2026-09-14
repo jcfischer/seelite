@@ -28,8 +28,20 @@ const base: MenuInput = {
 };
 
 describe("commanderMenu", () => {
-	test("a fresh profile cannot continue, and the cursor starts on New game", () => {
+	test("a fresh profile offers no Continue, and the cursor starts on New game", () => {
+		// A disabled "Continue — Commander "default"" named a Commander with no
+		// save at all (#306's frames). There is nothing to continue, so no row.
 		const rows = commanderMenu(base);
+		expect(rows.some((r) => r.kind === "continue")).toBe(false);
+		expect(rows[initialCursor(rows)].kind).toBe("new-game");
+	});
+
+	test("a save that will not load keeps Continue, disabled, under its fault", () => {
+		const rows = commanderMenu({
+			...base,
+			slots: ["default"],
+			faultSlot: "default",
+		});
 		expect(rows[0]).toMatchObject({ kind: "continue", enabled: false });
 		expect(rows[initialCursor(rows)].kind).toBe("new-game");
 	});
