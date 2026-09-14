@@ -110,7 +110,8 @@ pools. Two properties of the shape are fixed **here**, because they are what
 makes D1 true rather than aspirational:
 
 1. **At `v_rel = V_GATE`, a failed entry from full health is survivable with
-   margin** — at most a quarter of the combined shield-and-hull pool. This is
+   margin** — at most a quarter of the head-on pool, the fore shield and the
+   hull (#324; an entry meets the fore shield, see §10). This is
    D1 as a checkable predicate, and #8 inherits it as a bound on
    `DAMAGE_SCALE`, not as advice.
 2. **There is a floor, because pure quadratic scaling makes failure free.** A
@@ -826,7 +827,13 @@ before merge.
   quarter-pool bound at `V_GATE`, not a parameter substituted for it. §9.1.10's
   parameterised test can never fail on the value #8 actually ships, so without
   that obligation D1's survivability guarantee crosses a node boundary with an
-  owner on neither side. #8 also owns replacing §6's interim hostility cooldown;
+  owner on neither side. **#324 (a) discharged the test**: `DOCKING_DAMAGE_SCALE`
+  is asserted in `tests/ship-condition.test.ts` against a quarter of the
+  head-on pool (fore shield and hull) on every hull. **And the principal ruled
+  on the pools (2026-09-14):** shields recharge, hull does not, so a failed
+  entry that stays inside the fore shield costs seconds of lowered shields and
+  nothing lasting; repair of hull damage is still open. #8 also owns replacing
+  §6's interim hostility cooldown;
   the
   legal-status predicate behind §6's shipyard scan and the decay that clears
   station hostility. It inherits §9.1.10 as a test it must satisfy, not author.

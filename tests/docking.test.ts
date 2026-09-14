@@ -24,29 +24,25 @@ import {
 	COMPUTER_STANDOFF_KM,
 	DAMAGE_FLOOR,
 	GRANT_WINDOW_S,
+	DOCKING_DAMAGE_SCALE,
 	HOSTILE_COOLDOWN_S,
-	INTERIM_DAMAGE_SCALE,
 	ROLL_TOLERANCE_DEG,
 	V_GATE_KMS,
 	VICINITY_KM,
 	type ApertureFrame,
 	type EntryPose,
 	apertureFrame,
-	applyDamage,
 	attemptEntry,
 	dockingComputerStep,
 	approachSpeed,
 	entryDamage,
 	evaluateEntry,
-	fullCondition,
 	grantLive,
 	insideCorridor,
-	isAlive,
 	newDockingState,
 	releaseBerth,
 	orthonormalise,
 	planeCrossing,
-	poolOf,
 	repel,
 	requestClearance,
 	slewToward,
@@ -54,6 +50,12 @@ import {
 	tickDocking,
 } from "../src/docking";
 import { ASSIST_CAP_KMS } from "../src/sim";
+import {
+	applyDamage,
+	fullCondition,
+	headOnPool,
+	isAlive,
+} from "../src/ship-condition";
 import { HULL_SPECS } from "../src/hull";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
 import { stationInterior } from "../src/station-interior";
@@ -363,7 +365,9 @@ describe("§9.1.2 the gate is measured in the station's frame", () => {
 		expect(e.speedKms).toBeCloseTo(30, 9);
 		expect(e.checks.closingSpeed).toBe(false);
 		// And the damage it would take is the reckless end of §2.1, not a graze.
-		expect(entryDamage(e.speedKms)).toBeGreaterThan(poolOf(fullCondition()));
+		expect(entryDamage(e.speedKms)).toBeGreaterThan(
+			headOnPool(fullCondition("courier")),
+		);
 	});
 });
 
@@ -484,7 +488,7 @@ test("§9.1.5 a 90°-mis-rolled entry at 0.01 km/s still costs the floor", () =>
 	});
 	expect(outcome.docked).toBe(false);
 	// Pure quadratic scaling would charge 1% of the gate-speed damage here.
-	const quadratic = INTERIM_DAMAGE_SCALE * (0.01 / V_GATE_KMS) ** 2;
+	const quadratic = DOCKING_DAMAGE_SCALE * (0.01 / V_GATE_KMS) ** 2;
 	expect(quadratic / entryDamage(V_GATE_KMS)).toBeCloseTo(0.01, 9);
 	expect(outcome.damage).toBeCloseTo(DAMAGE_FLOOR * entryDamage(V_GATE_KMS), 9);
 	expect(outcome.damage / quadratic).toBeCloseTo(25, 9);
@@ -752,45 +756,41 @@ describe("§9.1.10 the damage predicate", () => {
 	 *
 	 * The bound is the *inequality*, and it is asserted over a swept range of
 	 * candidate scales: a test written against one number would pass on that
-	 * number and say nothing about the one #8 ships. §10 additionally puts the
-	 * obligation to assert the **exported** constant on #8, because a
-	 * parameterised test can never fail on a value it is not given.
+	 * number and say nothing about the one #8 ships. §10's obligation to assert
+	 * the **exported** constant, on every hull, is
+	 * `tests/ship-condition.test.ts`'s, beside the pools it is denominated in.
 	 */
 	test("at V_GATE a failed entry from full health leaves three quarters of the pool", () => {
-		const full = fullCondition();
-		const quarter = poolOf(full) / 4;
+		const full = fullCondition("courier");
+		const quarter = headOnPool(full) / 4;
 		// `damageScale`, not `scale`: `scale` is the vec3 helper every other
 		// fixture in this file uses, and a loop variable shadowing it inside a
 		// test that happens not to need vector arithmetic is a trap for the next
 		// row added here.
 		for (const damageScale of [1, 10, 25, 40, 50]) {
-			const after = applyDamage(full, entryDamage(V_GATE_KMS, damageScale));
-			expect(poolOf(full) - poolOf(after)).toBeLessThanOrEqual(quarter);
+			const after = applyDamage(
+				full,
+				entryDamage(V_GATE_KMS, damageScale),
+				"fore",
+			);
+			expect(headOnPool(full) - headOnPool(after)).toBeLessThanOrEqual(quarter);
 			expect(isAlive(after)).toBe(true);
 		}
-		// The scale this node ships is inside the bound with the margin §2.1 asks
-		// for — and this is the one row that names it, so a retune past the bound
-		// reddens here rather than silently.
-		expect(entryDamage(V_GATE_KMS, INTERIM_DAMAGE_SCALE)).toBeLessThanOrEqual(
-			quarter,
-		);
 	});
 
 	test("recklessness still kills: the assist cap is 400x the gate", () => {
-		// §2.1.3. 2 km/s is 20x the gate, so the quadratic charges 400x.
+		// §2.1.3. 2 km/s is 20x the gate, so the quadratic charges 400x — on every
+		// hull, including the capitals.
 		expect(entryDamage(ASSIST_CAP_KMS) / entryDamage(V_GATE_KMS)).toBeCloseTo(
 			400,
 			6,
 		);
-		expect(
-			isAlive(applyDamage(fullCondition(), entryDamage(ASSIST_CAP_KMS))),
-		).toBe(false);
-	});
-
-	test("damage lands on shields first and hull after", () => {
-		const c = applyDamage(fullCondition(), 120);
-		expect(c.shield).toBe(0);
-		expect(c.hull).toBe(80);
+		for (const id of Object.keys(HULL_SPECS) as (keyof typeof HULL_SPECS)[])
+			expect(
+				isAlive(
+					applyDamage(fullCondition(id), entryDamage(ASSIST_CAP_KMS), "fore"),
+				),
+			).toBe(false);
 	});
 });
 
