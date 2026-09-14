@@ -90,7 +90,7 @@ export type PadContext = "flight" | "console" | "modal" | "instrument";
  * | `b` (Circle) | `c` | request docking clearance |
  * | `x` (Square) | `x` | flight assist |
  * | `y` (Triangle) | `j` | engage or drop cruise |
- * | `l1` / `r1` | `g` / `t` | previous and next target |
+ * | `l2` | `t` | next target |
  * | `l3` | `f` | face the target |
  * | `r3` | `v` | cockpit or chase |
  * | `start` (Options) | `u` | docking computer |
@@ -110,8 +110,7 @@ export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
 	b: "c",
 	x: "x",
 	y: "j",
-	l1: "g",
-	r1: "t",
+	l2: "t",
 	l3: "f",
 	r3: "v",
 	start: "u",
@@ -367,8 +366,26 @@ export function padFlightAxes(
 		yaw: negate(frame.axes.rightX),
 		pitch: negate(frame.axes.rightY),
 		roll: negate(frame.axes.leftX),
-		// `values`, not `held`: rule 3 of the module's header exists for this
-		// line. A trigger read as a switch is a key with extra steps.
-		throttleTrim: frame.values.r2 - frame.values.l2,
+		// **On the shoulders since #324, by the principal's ruling**, so R2 is
+		// free for the trigger. `values`, not `held`, still: a digital bumper
+		// reports 0 or 1, and a pad whose bumpers are analog trims by the pull.
+		throttleTrim: frame.values.r1 - frame.values.l1,
 	};
+}
+
+/**
+ * Whether the pad holds the pulse laser's trigger: R2, past the module's
+ * threshold, in a context that flies the ship (#324, the principal's ruling).
+ * A console suspends it with the sticks, so a trigger held while reading the
+ * market does not fire.
+ */
+export function padFireHeld(
+	frame: PadFrame | null,
+	context: PadContext,
+): boolean {
+	return (
+		frame?.connected === true &&
+		contextFliesShip(context) &&
+		frame.held.has("r2")
+	);
 }

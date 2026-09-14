@@ -16,6 +16,7 @@ import {
 } from "../src/gamepad";
 import {
 	PAD_FLIGHT_KEYS,
+	padFireHeld,
 	padFlightAxes,
 	padIntents,
 } from "../src/pad-bindings";
@@ -93,13 +94,17 @@ describe("the flight table names keys the keyboard already understands", () => {
 
 	test("the flight-critical set from the node is all there", () => {
 		const bound = new Set(Object.values(PAD_FLIGHT_KEYS));
-		// assist, cruise, next/previous target, face, clearance, docking
-		// computer, launch/skip, view, jump, and the three head-look positions.
+		// assist, cruise, next target, face, clearance, docking computer,
+		// launch/skip, view, jump, and the three head-look positions.
+		//
+		// **Previous target left the pad in #324, by the principal's ruling**:
+		// the shoulders took the throttle so R2 could fire, and L2 kept only
+		// next target. `g` stays on the keyboard.
+		expect(bound.has("g")).toBe(false);
 		for (const key of [
 			"x",
 			"j",
 			"t",
-			"g",
 			"f",
 			"c",
 			"u",
@@ -317,8 +322,8 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// The trim is refused, so the throttle keeps whatever value it had and
 		// the ship coasts. Driving it to zero was offered and declined: it
 		// changes your speed without being asked.
-		expect(padFlightAxes(trigger("r2", 1), "console").throttleTrim).toBe(0);
-		expect(padFlightAxes(trigger("l2", 1), "console").throttleTrim).toBe(0);
+		expect(padFlightAxes(press("r1"), "console").throttleTrim).toBe(0);
+		expect(padFlightAxes(press("l1"), "console").throttleTrim).toBe(0);
 	});
 
 	test("a modal panel suspends the sticks, which a key release cannot do", () => {
@@ -343,7 +348,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// would measure a different frame from the one it exists for. It takes a
 		// console's six buttons and leaves the sticks alone.
 		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
-		expect(padFlightAxes(trigger("r2", 1), "instrument").throttleTrim).toBe(1);
+		expect(padFlightAxes(press("r1"), "instrument").throttleTrim).toBe(1);
 	});
 
 	test("the instrument still claims the six a console claims", () => {
@@ -357,15 +362,18 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 });
 
 describe("the throttle is a trim, and the rejected arm is why", () => {
-	test("the right trigger opens it and the left closes it", () => {
-		expect(padFlightAxes(trigger("r2", 1), "flight").throttleTrim).toBe(1);
-		expect(padFlightAxes(trigger("l2", 1), "flight").throttleTrim).toBe(-1);
+	test("the right shoulder opens it and the left closes it (#324)", () => {
+		expect(padFlightAxes(press("r1"), "flight").throttleTrim).toBe(1);
+		expect(padFlightAxes(press("l1"), "flight").throttleTrim).toBe(-1);
 	});
 
-	test("a light pull trims slowly, which the keyboard cannot do", () => {
-		expect(padFlightAxes(trigger("r2", 0.25), "flight").throttleTrim).toBe(
-			0.25,
-		);
+	test("the triggers no longer move it", () => {
+		expect(padFlightAxes(trigger("r2", 1), "flight").throttleTrim).toBe(0);
+		expect(padFlightAxes(trigger("l2", 1), "flight").throttleTrim).toBe(0);
+	});
+
+	test("a shoulder that reports a partial value trims by it", () => {
+		expect(padFlightAxes(press("r1", 0.25), "flight").throttleTrim).toBe(0.25);
 	});
 
 	test("a resting trigger holds the throttle where it is", () => {
@@ -376,11 +384,11 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 		expect(padFlightAxes(rest, "flight").throttleTrim).toBe(0);
 	});
 
-	test("both triggers together cancel out", () => {
+	test("both shoulders together cancel out", () => {
 		const both = readPad(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
-					n === "l2" || n === "r2"
+					n === "l1" || n === "r1"
 						? { pressed: true, value: 1 }
 						: { pressed: false, value: 0 },
 				),
@@ -388,6 +396,26 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 			NOTHING,
 		);
 		expect(padFlightAxes(both, "flight").throttleTrim).toBe(0);
+	});
+});
+
+describe("R2 is the trigger and L2 the next target (#324)", () => {
+	test("R2 held fires in flight, and a light pull below the threshold does not", () => {
+		expect(padFireHeld(trigger("r2", 1), "flight")).toBe(true);
+		expect(padFireHeld(trigger("r2", 0.1), "flight")).toBe(false);
+		expect(padFireHeld(rest, "flight")).toBe(false);
+		expect(padFireHeld(absent, "flight")).toBe(false);
+	});
+
+	test("a console suspends the trigger with the sticks", () => {
+		expect(padFireHeld(trigger("r2", 1), "console")).toBe(false);
+		expect(padFireHeld(trigger("r2", 1), "modal")).toBe(false);
+	});
+
+	test("L2 steps to the next target, and the shoulders no longer do", () => {
+		expect(padIntents(trigger("l2", 1), "flight").keys).toEqual(["t"]);
+		expect(padIntents(press("r1"), "flight").keys).toEqual([]);
+		expect(padIntents(press("l1"), "flight").keys).toEqual([]);
 	});
 });
 

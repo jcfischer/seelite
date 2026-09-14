@@ -89,12 +89,13 @@ Xbox pad reads `a`/`b`/`x`/`y` literally.
 | --- | --- | --- |
 | right stick | pitch and yaw, analog | `w`/`s`, `a`/`d` |
 | left stick, X | roll, analog | `q`/`e` |
-| `r2` / `l2` | trim the throttle open and shut, analog | `shift` / `control` |
+| `r1` / `l1` | trim the throttle open and shut | `shift` / `control` |
 | `a` (Cross) | launch, or skip the dock traversal | `Enter` |
 | `b` (Circle) | request docking clearance | `c` |
 | `x` (Square) | flight assist | `x` |
 | `y` (Triangle) | engage or drop cruise | `j` |
-| `l1` / `r1` | previous and next target | `g` / `t` |
+| `l2` | next target | `t` |
+| `r2` | fire the pulse laser, held | `space` / left mouse |
 | `l3` | face the target | `f` |
 | `r3` | cockpit or chase | `v` |
 | `start` (Options) | docking computer | `u` |
