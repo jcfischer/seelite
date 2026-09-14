@@ -10370,28 +10370,44 @@ class Game {
 		ctx.lineTo(w / 2, h / 2 - 2);
 		ctx.stroke();
 
-		// #324 part d: cargo canisters, a small green diamond each with its good
-		// and range, so a pilot can find them after a kill.
+		// #324 part d: cargo canisters, a small green diamond with the good and
+		// range, so a pilot can find them after a kill. **Canisters that land
+		// within a few pixels of each other share one marker.** A kill drops them
+		// at one point, and at any range their labels printed over each other
+		// into an unreadable smear on the first captured frame.
+		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
+			[];
 		for (const canister of this.canisters) {
 			const dir = directionTo(camPos, canister.pos);
 			const at = dir && place(dir);
 			if (!at?.on) continue;
-			ctx.strokeStyle = "rgba(150, 240, 170, 0.9)";
-			ctx.fillStyle = "rgba(150, 240, 170, 0.9)";
-			ctx.lineWidth = 1.5;
+			const km = length(sub(canister.pos, camPos));
+			const near = cargoMarks.find(
+				(m) => Math.hypot(m.x - at.x, m.y - at.y) < 14,
+			);
+			if (near) {
+				near.goods.push(canister.commodity);
+				near.km = Math.min(near.km, km);
+			} else
+				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
+		}
+		ctx.strokeStyle = "rgba(150, 240, 170, 0.9)";
+		ctx.fillStyle = "rgba(150, 240, 170, 0.9)";
+		ctx.lineWidth = 1.5;
+		ctx.font = "11px ui-monospace, Menlo, monospace";
+		for (const mark of cargoMarks) {
 			ctx.beginPath();
-			ctx.moveTo(at.x, at.y - 6);
-			ctx.lineTo(at.x + 6, at.y);
-			ctx.lineTo(at.x, at.y + 6);
-			ctx.lineTo(at.x - 6, at.y);
+			ctx.moveTo(mark.x, mark.y - 6);
+			ctx.lineTo(mark.x + 6, mark.y);
+			ctx.lineTo(mark.x, mark.y + 6);
+			ctx.lineTo(mark.x - 6, mark.y);
 			ctx.closePath();
 			ctx.stroke();
-			ctx.font = "11px ui-monospace, Menlo, monospace";
-			ctx.fillText(
-				`CARGO ${canister.commodity.toUpperCase()}  ${range(length(sub(canister.pos, camPos)))}`,
-				at.x + 10,
-				at.y + 4,
-			);
+			const what =
+				mark.goods.length === 1
+					? mark.goods[0].toUpperCase()
+					: `×${mark.goods.length}`;
+			ctx.fillText(`CARGO ${what}  ${range(mark.km)}`, mark.x + 10, mark.y + 4);
 		}
 		// The production gun's tracer: on the glass in the cockpit, and over the
 		// whole frame in chase, where there is no glass (sage #328 — a chase view
