@@ -320,9 +320,10 @@ export interface PadFlightAxes {
 	 *    and the detour cancel all *assign* `throttle`; a trigger held at 0.6
 	 *    would re-assert itself against each of them on the very next frame.
 	 *
-	 * A trim keeps all three and is still analog, which was the point: a light
-	 * pull trims slowly and a full pull slams, where a key has exactly one
-	 * speed.
+	 * A trim keeps all three. **Since #324 it is on the shoulders**, so R2 can
+	 * fire. On a standard pad the shoulders are digital, and the trim is full
+	 * rate like a key. Only a shoulder that reports a partial value trims by
+	 * it. The triggers' analog pull was the price of the fire binding.
 	 */
 	readonly throttleTrim: number;
 }

@@ -379,7 +379,7 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 		expect(padFlightAxes(press("r1", 0.25), "flight").throttleTrim).toBe(0.25);
 	});
 
-	test("a resting trigger holds the throttle where it is", () => {
+	test("a resting shoulder holds the throttle where it is", () => {
 		// This is the arm that was chosen. A *position* trigger would send the
 		// throttle to zero the moment the player let go, which is not what a
 		// throttle is — and it would fight three existing writers: the near-

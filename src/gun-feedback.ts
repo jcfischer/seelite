@@ -69,7 +69,9 @@ export const TRACER_PORTS = [
 export const TRACER_AIM = { x: 0.5, y: 0.5 } as const;
 export const TRACER_COLOUR = "rgba(116, 234, 255, 0.98)";
 
-/** Draw the tracer, clipped to the glass so it never crosses the panel. */
+/** Draw the tracer, clipped above `glassBottom` (a fraction of the height).
+ *  The cockpit passes the glass's bottom, so the tracer never crosses the
+ *  panel. Chase has no glass and passes 1, the whole frame. */
 export function drawGunTracer(
 	ctx: CanvasRenderingContext2D,
 	w: number,
