@@ -34,8 +34,12 @@ type DuelRowLabel = (typeof DUEL_ROW_LABELS)[number];
  *  the ceiling that another burst may lock the gun. */
 export const HEAT_ACTION_FRACTION = 0.75;
 
+/** Heat as the glass prints it: a whole percent of the lock. */
+const heatPercent = (c: ShipCondition): number =>
+	Math.round((c.heat / HEAT_LOCK) * 100);
+
 const heatValue = (c: ShipCondition): string =>
-	c.heatLocked ? "LOCK" : `${Math.round((c.heat / HEAT_LOCK) * 100)}%`;
+	c.heatLocked ? "LOCK" : `${heatPercent(c)}%`;
 
 /** The glass combat row: shield pools, then heat. */
 export function duelRowCells(c: ShipCondition): FloorCell[] {
@@ -44,9 +48,10 @@ export function duelRowCells(c: ShipCondition): FloorCell[] {
 	// **The refusal reads the printed value** (§5.1's CHARGE lesson): a pool at
 	// 0.3 prints 0, and a tone keyed on the raw number would go calm beside it.
 	const shieldTone: FloorTone = fore === 0 || aft === 0 ? "refused" : "passive";
+	// The heat tone reads the printed percent too: 74.6% prints 75% and is amber.
 	const heatTone: FloorTone = c.heatLocked
 		? "refused"
-		: c.heat >= HEAT_LOCK * HEAT_ACTION_FRACTION
+		: heatPercent(c) >= HEAT_ACTION_FRACTION * 100
 			? "action"
 			: "passive";
 	return [

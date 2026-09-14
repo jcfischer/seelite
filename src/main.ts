@@ -881,8 +881,8 @@ const COURSE_BAND = 2;
 const DUEL_BAND = 3;
 /**
  * How many bands the floor stacks: §5.1's strip, §8.3's course row above it,
- * and #324's duel row above that. **The top band's number, not a count kept
- * beside it**, so a band declared above the duel row moves the prompt with it.
+ * and #324's duel row above that. **It is the top band's number, not a count
+ * kept beside it.** A band added above the duel row must become this value.
  *
  * **One height for both, because `floorFont` sizes every glyph on the floor
  * from `FLOOR_STRIP_HEIGHT_PX`.** A course band declared as its own number is a
@@ -7628,6 +7628,9 @@ class Game {
 				: null;
 			if (notice) this.lastExit = notice(name);
 			this.encounter = null;
+			// A raider that fired on its last step would otherwise leave the cue
+			// red until the next encounter's first step.
+			this.raiderFiring = false;
 		}
 	}
 

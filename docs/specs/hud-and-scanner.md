@@ -629,8 +629,10 @@ Browser — `scripts/probe-duel-hud.mjs`, at both viewports:
 8. **A contesting raider draws `SHD` and `HEAT`**, inside the glass and its
    margins.
 9. **The bands stack**: the duel row above the course row, the course row above
-   the strip, and the cruise prompt above the duel row — rectangles, not
-   records.
+   the strip, and the jump prompt above the duel row — rectangles, not records.
+   The prompt is read in the duel, because `cruisePrompt` is empty in cruise.
+   §3's clearance line has no browser row here. It is derived a line above the
+   prompt, and `tests/jump-rebuild.test.ts` pins that derivation.
 10. **The ring's paint**: amber and no red while the raider does not fire, red
     while it does, sampled off the overlay.
 11. **The on-target mark** appears aimed at the raider in the duel and goes a

@@ -75,6 +75,10 @@ describe("the glass combat row", () => {
 		const near = HEAT_LOCK * HEAT_ACTION_FRACTION;
 		expect(cell(courier({ heat: near }), "HEAT").tone).toBe("action");
 		expect(cell(courier({ heat: near - 1 }), "HEAT").tone).toBe("passive");
+		// The tone reads the printed percent: 74.6% prints 75% and is amber.
+		const printsAtAction = courier({ heat: HEAT_LOCK * 0.746 });
+		expect(cell(printsAtAction, "HEAT").value).toBe("75%");
+		expect(cell(printsAtAction, "HEAT").tone).toBe("action");
 	});
 
 	test("a locked gun says LOCK, in red", () => {
