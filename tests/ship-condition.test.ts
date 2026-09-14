@@ -19,6 +19,7 @@ import {
 	SHIELD_RECHARGE_DELAY_S,
 	SHIELD_RECHARGE_ENERGY_PER_POINT,
 	SHIELD_RECHARGE_PER_S,
+	type ShipCondition,
 	applyDamage,
 	fullCondition,
 	headOnPool,
@@ -31,11 +32,7 @@ import { v3 } from "../src/vec3";
 const DT = 1 / 60;
 
 /** Step `seconds` of sim time with the trigger held or not. */
-function run(
-	c: ReturnType<typeof fullCondition>,
-	seconds: number,
-	trigger: boolean,
-) {
+function run(c: ShipCondition, seconds: number, trigger: boolean) {
 	let condition = c;
 	let delivered = 0;
 	for (let i = 0; i < Math.round(seconds / DT); i++) {

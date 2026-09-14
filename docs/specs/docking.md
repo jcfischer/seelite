@@ -110,7 +110,8 @@ pools. Two properties of the shape are fixed **here**, because they are what
 makes D1 true rather than aspirational:
 
 1. **At `v_rel = V_GATE`, a failed entry from full health is survivable with
-   margin** — at most a quarter of the combined shield-and-hull pool. This is
+   margin** — at most a quarter of the head-on pool, the fore shield and the
+   hull (#324; an entry meets the fore shield, see §10). This is
    D1 as a checkable predicate, and #8 inherits it as a bound on
    `DAMAGE_SCALE`, not as advice.
 2. **There is a floor, because pure quadratic scaling makes failure free.** A

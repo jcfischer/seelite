@@ -1952,7 +1952,9 @@ class Game {
 	 *
 	 * Three writers: `step` advances it, `resetFlightToStart` refills it, and
 	 * `takeDamage` is the only place damage lands — so every source of damage
-	 * cancels what damage cancels.
+	 * cancels what damage cancels. The one exception is `?combat=1`: the rig
+	 * still damages its own balance model, never this condition, and cancels
+	 * nothing, until #324 (d) moves it onto this module.
 	 *
 	 * **Shields recover and hull does not.** A failed dock at the gate lands
 	 * inside a full fore shield, so it costs a few seconds of lowered shields
@@ -6711,7 +6713,8 @@ class Game {
 		this.takeDamage(
 			outcome.damage,
 			sideStruck(crossing.nose, scale(crossing.rel, -1)),
-			"hull damage",
+			// Not "hull damage": a clip at the gate stays inside the fore shield.
+			"struck the station",
 		);
 		const body = this.world.system.byId.get(id);
 		if (body && outcome.repelled) {

@@ -680,6 +680,8 @@ if (!rolled.entry) for (const line of rolled.trace) console.log(`    ${line}`);
 // Over all three pools, so a hit that landed in the wrong one still counts as
 // lost; the row after `failedEntryUnderGate` says which pool it was.
 const pools = (c) => c.fore + c.aft + c.hull;
+// What a head-on entry can reach, which §2.1's bound and `poolMax` are against.
+const headOn = (c) => c.fore + c.hull;
 const lost = pools(rolled.conditionBefore) - pools(rolled.conditionAfter);
 console.log(
 	`  90° out just under the gate: docked=${rolled.docked}, ` +
@@ -708,8 +710,8 @@ check(
 	// write a field that did not exist, the bound went on passing, and nothing
 	// said the pool it was measured against was the pool the run began with.
 	"the run started from a full pool, so the bound below is per-entry",
-	rolled.conditionBefore.fore + rolled.conditionBefore.hull === rolled.poolMax,
-	`${rolled.conditionBefore.fore + rolled.conditionBefore.hull} of ${rolled.poolMax}`,
+	headOn(rolled.conditionBefore) === rolled.poolMax,
+	`${headOn(rolled.conditionBefore)} of ${rolled.poolMax}`,
 );
 check(
 	"D1: it cost at most a quarter of the pool",
@@ -724,6 +726,26 @@ check(
 check(
 	"a piloting error is not a protocol violation: the grant survived",
 	rolled.grantLive && !rolled.hostile,
+);
+
+// `in-system-travel.md` §4: re-entering cruise is a spool-up **cancelled by
+// damage**. Behavioural rather than a source scan: arm a spool-up, land damage
+// through the game's own funnel, and read the spool back. The condition is
+// restored afterwards so no later row inherits the hit.
+const spool = await page.evaluate(() => {
+	const g = window.__seelite;
+	const saved = structuredClone(g.condition);
+	g.spoolLeftS = 2;
+	g.takeDamage(1, "fore", "probe damage");
+	const after = { spoolLeftS: g.spoolLeftS, lastExit: g.lastExit };
+	g.condition = saved;
+	return after;
+});
+check(
+	"damage cancels a cruise spool-up and says why",
+	spool.spoolLeftS === 0 &&
+		spool.lastExit === "spool-up cancelled — probe damage",
+	JSON.stringify(spool),
 );
 
 // ---------------------------------------------------------------------------

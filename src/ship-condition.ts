@@ -108,12 +108,13 @@ export function applyDamage(
 	amount: number,
 	side: ShieldSide,
 ): ShipCondition {
-	const absorbed = Math.min(c[side], Math.max(0, amount));
+	const hit = Math.max(0, amount);
+	const absorbed = Math.min(c[side], hit);
 	return {
 		...c,
 		[side]: c[side] - absorbed,
-		hull: Math.max(0, c.hull - (Math.max(0, amount) - absorbed)),
-		sinceStruckS: amount > 0 ? 0 : c.sinceStruckS,
+		hull: Math.max(0, c.hull - (hit - absorbed)),
+		sinceStruckS: hit > 0 ? 0 : c.sinceStruckS,
 	};
 }
 
