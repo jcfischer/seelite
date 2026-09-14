@@ -795,7 +795,11 @@ check(
 // Commerce uses the live console, not the gallery fixture. A completed round
 // trip must change the rendered commander and shelf state, then return cargo
 // to zero through the same DOM action boundary.
-const liveTrade = await page.evaluate(() => {
+/** The Food row's trade control, shared by both trade checks below. */
+const FOOD_ACTION =
+	'[data-live-station-action="%s"][data-live-station-name="Food"]';
+
+const liveTrade = await page.evaluate((foodAction) => {
 	const read = () => ({
 		commander:
 			document.querySelector("[data-live-commander]")?.textContent ?? "",
@@ -804,21 +808,19 @@ const liveTrade = await page.evaluate(() => {
 			"",
 	});
 	const before = read();
-	const buy = document.querySelector(
-		'[data-live-station-action="buy-commodity"][data-live-station-name="Food"]',
-	);
+	const buy = document.querySelector(foodAction.replace("%s", "buy-commodity"));
 	if (!(buy instanceof HTMLElement))
 		return { before, afterBuy: before, afterSell: before, controls: false };
 	buy.click();
 	const afterBuy = read();
 	const sell = document.querySelector(
-		'[data-live-station-action="sell-commodity"][data-live-station-name="Food"]',
+		foodAction.replace("%s", "sell-commodity"),
 	);
 	if (!(sell instanceof HTMLElement))
 		return { before, afterBuy, afterSell: afterBuy, controls: false };
 	sell.click();
 	return { before, afterBuy, afterSell: read(), controls: true };
-});
+}, FOOD_ACTION);
 
 check(
 	"the live station console completes a buy and sell across commander and shelf state",
@@ -828,6 +830,50 @@ check(
 		liveTrade.afterSell.commander.includes("HOLD EMPTY") &&
 		liveTrade.afterSell.food === liveTrade.before.food,
 	JSON.stringify(liveTrade),
+);
+
+// #316, `economy-trade.md` §5.2: a shelf read between trades must be whole.
+// Ten seconds of game time and not minutes: the launch checks below read the
+// grant off the same clock, and a seven-minute jump expired it under them.
+const shelfTrade = await page.evaluate((foodAction) => {
+	const g = window.__seelite;
+	const hold = () =>
+		document.querySelector("[data-live-commander]")?.textContent ?? "";
+	const act = (action) =>
+		document.querySelector(foodAction.replace("%s", action))?.click();
+	// Three and one, not one and one: `readDeficit` reads a mark under one unit
+	// as nothing, so a single unit bought and sold back leaves a whole shelf on
+	// the build this check exists to catch. Three bought, faded and one sold
+	// leaves 1.98 units of mark. The other two are sold after the read, so the
+	// checks below start from an empty hold.
+	for (let i = 0; i < 3; i++) act("buy-commodity");
+	const afterBuys = hold();
+	g.world.gameTime += 10;
+	act("sell-commodity");
+	const afterSell = hold();
+	const cells = [
+		...document.querySelectorAll(
+			'[data-live-market-row][data-live-listed="true"] > span:nth-child(3)',
+		),
+	].map((cell) => cell.firstChild?.textContent ?? "");
+	act("sell-commodity");
+	act("sell-commodity");
+	return { cells, afterBuys, afterSell, afterAll: hold() };
+}, FOOD_ACTION);
+const fractionalShelves = shelfTrade.cells.filter(
+	(text) => !/^\d+ \S+$/.test(text.trim()),
+);
+
+check(
+	"every shelf the console shows after a faded trade is whole units",
+	// The trades must have happened: a refused buy leaves no mark, and a shelf
+	// with no mark is whole on the unfixed build too.
+	/HOLD .*Food 3\b/.test(shelfTrade.afterBuys) &&
+		/HOLD .*Food 2\b/.test(shelfTrade.afterSell) &&
+		shelfTrade.afterAll.includes("HOLD EMPTY") &&
+		shelfTrade.cells.length > 0 &&
+		fractionalShelves.length === 0,
+	`hold ${JSON.stringify([shelfTrade.afterBuys, shelfTrade.afterSell, shelfTrade.afterAll])}, cells=${shelfTrade.cells.length}, not whole=${JSON.stringify(fractionalShelves)}`,
 );
 
 const liveEquipment = await page.evaluate(() => {
