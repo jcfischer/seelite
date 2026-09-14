@@ -328,13 +328,25 @@ export const decayDeficit = (deficit: number, elapsedMin: number): number =>
  */
 export const DEFICIT_SATURATION_RUNS = DEFICIT_MAX / HOLD_REFERENCE_T;
 
+/**
+ * **The cap never falls below one full shelf (#316).** The shelf reads this
+ * memory through `shelfQuantity`, whose clamp is Bell's 63 units whatever the
+ * hull, so a memory that saturates below 63 leaves a shelf that cannot empty:
+ * at a 6 t hold the cap was 18.9 and the till sold Gold for ever. The price is
+ * unaffected — `stockResponse` clamps the ratio on its own — and from the
+ * baseline hull's 20 t upward the floor is never the larger term.
+ */
 export const addDeficit = (
 	deficit: number,
 	units: number,
 	holdT: number,
 ): number => {
 	requirePositiveHold(holdT);
-	const cap = Math.max(DEFICIT_SATURATION_RUNS * holdT, Math.abs(deficit));
+	const cap = Math.max(
+		DEFICIT_SATURATION_RUNS * holdT,
+		DEFICIT_MAX,
+		Math.abs(deficit),
+	);
 	return clamp(deficit + units, -cap, cap);
 };
 
@@ -395,15 +407,22 @@ export const stockResponse = (
  * clamp. Selling into an already-full shelf therefore adds nothing visible,
  * which is right: the cap is a shelf, not an accumulator. The *price* still
  * falls, because §5's response is what carries the effect.
+ *
+ * **Whole units, floored (#316).** The deficit decays exponentially, so it is
+ * almost never whole on read, and the console printed `23.95361409160266 t`.
+ * Floored rather than rounded, because the till reads this same figure: a
+ * shelf of 0.6 shown as 1 is a unit the till would then refuse.
  */
 export const shelfQuantity = (
 	generatedQuantity: number,
 	deficit: number,
 ): number =>
-	clamp(
-		generatedQuantity - clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX),
-		0,
-		QUANTITY_CAP,
+	Math.floor(
+		clamp(
+			generatedQuantity - clamp(deficit, -DEFICIT_MAX, DEFICIT_MAX),
+			0,
+			QUANTITY_CAP,
+		),
 	);
 
 // ---------------------------------------------------------------------------

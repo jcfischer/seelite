@@ -438,11 +438,11 @@ buying  n units at a station:  deficit += n
 selling n units at a station:  deficit −= n
 
 deficit(t)   = deficit₀ × 2^(−(t − t₀) / DEFICIT_HALF_LIFE)
-             clamped to ±DEFICIT_SATURATION_RUNS × holdT
+             clamped to ±max(DEFICIT_SATURATION_RUNS × holdT, DEFICIT_MAX)
 DEFICIT_HALF_LIFE          = 20 min game time
 DEFICIT_SATURATION_RUNS    = DEFICIT_MAX / HOLD_REFERENCE_T = 63 / 20 = 3.15
 
-effectiveQuantity = clamp(generatedQuantity − clamp(deficit, ±63), 0, 63)
+effectiveQuantity = floor(clamp(generatedQuantity − clamp(deficit, ±63), 0, 63))
 priceCr          ×= 1 + PRICE_ELASTICITY
                       × clamp(deficit / holdT, ±DEFICIT_SATURATION_RUNS)
 ```
@@ -501,6 +501,25 @@ cannot be built differently.
 and never reduces a mark already larger than that; otherwise selling a
 freighter, trading once in a courier and buying the freighter back would launder
 a saturated 189 t mark down to 63, which is a brake with an off switch.
+
+**And it never falls below one full shelf (#316).** A draft of this section
+clamped the memory at 3.15 holds and nothing else, which is under 63 units for
+every hold below the baseline's 20 t — and the shelf reads that memory. At 6 t
+the memory saturated at 18.9, the shelf stopped at 44 kg of Gold, and the till
+sold it without end, because Gold skips the hold check and the shelf was the
+only limit left. The floor is `DEFICIT_MAX`. It moves no price, since the
+response clamps the ratio `deficit / holdT` on its own, and at 20 t and above
+it is never the larger term, so every figure in this section survives —
+`measure-market.ts` and `measure-hull-pricing.ts` print identical output across
+the change. What it does move: a hull under 20 t that empties a shelf leaves a
+mark of 63 rather than 3.15 holds, so its price stays saturated for
+log₂(63 / (3.15 × holdT)) half-lives longer — about 35 minutes at 6 t — while
+the shelf refills.
+
+**A shelf is whole units, floored.** The decay is exponential, so a mark read
+between trades is almost never whole, and the console printed
+`23.95361409160266 t`. The till reads the same figure, so it is floored rather
+than rounded: a shelf of 0.6 shown as 1 is a unit the till would refuse.
 
 **The upper clamp is not decorative.** A deficit reaches −63 when the player
 dumps cargo, so `generatedQuantity − deficit` reaches 126 — twice Bell's cap —

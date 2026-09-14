@@ -1,8 +1,14 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { readDeficit } from "../src/deficits";
-import { marketStationOf } from "../src/market";
-import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
+import {
+	DEFICIT_MAX,
+	commodity,
+	marketRow,
+	marketStationOf,
+	shelfQuantity,
+} from "../src/market";
+import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "../src/hull";
 import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	STARTING_CREDITS,
@@ -84,6 +90,43 @@ test("tonne cargo observes the hold while sub-tonne goods bypass it", () => {
 			}),
 		).accepted,
 	).toBe(true);
+});
+
+test("the till stops selling when the shelf it showed is empty, on every hull (#316)", () => {
+	// Gold skips the hold check, so the shelf is the only thing between a
+	// commander and the station's whole stock. A memory capped at 3.15 runs of
+	// a 6 t hold saturated at 18.9 units and left 44 kg on a shelf that never
+	// emptied: 500 buys out of 500 accepted.
+	const gold = commodity("Gold");
+	const shown = shelfQuantity(marketRow(gold, 3, STATION, 0).quantity, 0);
+	expect(shown).toBeGreaterThan(0);
+	for (const hull of Object.keys(HULL_SPECS) as HullId[]) {
+		const buy = { type: "buy-commodity", commodity: "Gold" } as const;
+		let state = input({
+			commander: { ...newCommander(hull), credits: 1e9 },
+			action: buy,
+		});
+		let bought = 0;
+		let reason: string | null = null;
+		for (let i = 0; i <= DEFICIT_MAX + 1; i++) {
+			const result = transactAtStation(state);
+			if (!result.accepted) {
+				reason = result.reason;
+				break;
+			}
+			bought++;
+			state = input({
+				commander: result.commander,
+				deficits: result.deficits,
+				action: buy,
+			});
+		}
+		expect({ hull, bought, reason }).toEqual({
+			hull,
+			bought: shown,
+			reason: "insufficient-shelf",
+		});
+	}
 });
 
 test("available equipment is charged once, then becomes owned and unavailable", () => {
