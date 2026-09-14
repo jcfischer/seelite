@@ -242,7 +242,8 @@ describe("the jump itself", () => {
 	test("damage goes through one funnel that cancels the charge and the spool-up", () => {
 		// `in-system-travel.md` §4: re-entering cruise is a spool-up cancelled by
 		// damage, and §8's jump charge is cancelled by damage too. One method owns
-		// both, and it is the only writer of the condition.
+		// both, and it holds the only `applyDamage` call on the condition. `step`
+		// and the reset write the condition too; neither lands damage.
 		const take = methodBody("takeDamage");
 		expect(take).toContain("this.cancelJumpCharge(reason)");
 		expect(take).toContain("this.spoolLeftS = 0");

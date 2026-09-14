@@ -1946,10 +1946,12 @@ class Game {
 	 * The player ship's condition (`ship-condition.ts`, #324): fore and aft
 	 * shields, hull, energy and laser heat, stepped every frame.
 	 *
-	 * Written only through `takeDamage`, so every source of damage cancels what
-	 * damage cancels. **Not saved and never repaired**, as before #324:
-	 * `docking.md` §10 hands "how damage is undone" to the combat node, and that
-	 * is still an open question for the principal rather than a default.
+	 * Three writers: `step` advances it, `resetFlightToStart` refills it, and
+	 * `takeDamage` is the only place damage lands — so every source of damage
+	 * cancels what damage cancels. **Not saved**, as before #324, so a reload
+	 * refills it; nothing else repairs it. `docking.md` §10 hands "how damage is
+	 * undone" to the combat node, and that is still an open question for the
+	 * principal rather than a default.
 	 */
 	condition: ShipCondition = fullCondition(PLAYER_HULL[0]);
 
