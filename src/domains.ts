@@ -65,6 +65,10 @@ export const DOMAIN = {
 	 *  comes, which slot, where and when. Split again by the leg, so a leg's
 	 *  draw moves nothing else in the system and no two legs share one. */
 	ENCOUNTER: 14,
+	/** A destroyed raider's cargo drop (`raider-wreck.ts`, #324 part d): how
+	 *  many canisters and of what. Split again by the carrier and the second
+	 *  of the kill, so no two kills share a draw. */
+	CARGO_DROP: 15,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

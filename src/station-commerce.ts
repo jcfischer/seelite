@@ -138,6 +138,24 @@ const withCargo = (
 	return { ...commander, cargo };
 };
 
+/**
+ * Take a scooped canister into the hold (#324 part d), or refuse it when the
+ * hold cannot take it. Tonne goods only, because a canister is a tonne.
+ */
+export function scoopCargo(
+	commander: CommanderState,
+	commodityName: string,
+	tonnes: number,
+): { accepted: boolean; commander: CommanderState } {
+	const good = commodity(commodityName);
+	if (
+		good.unit !== "t" ||
+		heldTonnes(commander.cargo) + tonnes > holdCapacityT(commander)
+	)
+		return { accepted: false, commander };
+	return { accepted: true, commander: withCargo(commander, good, tonnes) };
+}
+
 const availableEquipment = (
 	input: StationCommerceInput,
 ): readonly UniversalItem[] =>
