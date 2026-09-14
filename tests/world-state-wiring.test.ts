@@ -95,13 +95,43 @@ describe("the Game's world writes", () => {
 		expect(arm.slice(0, 300)).toContain('this.regime = "normal";');
 	});
 
-	test("the boot tells the player when a write fails (#89 D9)", () => {
+	test("a failed write reaches the player through the store's held faults (#89 D9, §11.5)", () => {
 		// The store took an `onWriteFailed` and the boot did not pass it for a
 		// round, so the shipped game still told nobody while a test proved the
-		// mechanism worked. A debounced write is the one path with no caller to
-		// reject to, and it is the path that does almost all the writing.
+		// mechanism worked. It is the log line now; the badge reads the store.
 		expect(MAIN).toContain("onWriteFailed:");
-		expect(MAIN).toContain("game.saveFault =");
+		const reader = MAIN.split("saveFaultText(): string | null {")[1] ?? "";
+		expect(reader.slice(0, 120)).toContain(
+			"return heldSaveFault(this.saveStore, this.saveFault);",
+		);
+		// **Not one message field written by every failure.** After a failed dock
+		// flush, a debounced write that failed once and then landed replaced the
+		// dock's words, and the overlay named a write that had landed (#311).
+		// Sliced to each arm and matched on `saveFault =` alone, whatever follows
+		// it: a guard on one spelling passed on the spelling `main` had (round 2).
+		const onWriteFailed =
+			MAIN.split("onWriteFailed: (error, consecutive) => {")[1] ?? "";
+		const writeArm = onWriteFailed.slice(0, onWriteFailed.indexOf("},"));
+		expect(writeArm).toContain("console.error(");
+		expect(writeArm).not.toContain("saveFault =");
+		const flush = MAIN.split("saveFlush(reason: FlushReason): void {")[1] ?? "";
+		const flushBody = flush.slice(0, flush.indexOf("\n\t}\n"));
+		expect(flushBody).toContain(".flush(reason)");
+		expect(flushBody).not.toContain("saveFault =");
+	});
+
+	test("the badge and the overlay it opens read the one rule, every frame in both views", () => {
+		// In `animate` and not in `updateCockpit`, which returns early in chase.
+		const loop = MAIN.split("private animate = () => {")[1] ?? "";
+		const end = loop.indexOf("\n\t};");
+		expect(loop.slice(0, end)).toContain(
+			"this.saveBadge?.update(this.saveFaultShown());",
+		);
+		const shown = MAIN.split("saveFaultShown(): boolean {")[1] ?? "";
+		expect(shown.slice(0, 120)).toContain(
+			"return hasHeldSaveFault(this.saveStore, this.saveFault);",
+		);
+		expect(MAIN).toContain("fault: () => game.saveFaultText(),");
 	});
 
 	test("the jump flush runs after the arrival finishes", () => {

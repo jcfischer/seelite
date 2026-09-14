@@ -61,6 +61,85 @@ const median = (xs) => {
 	return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 
+/**
+ * §11.5's badge as the page draws it. `shown` needs the point at its centre to
+ * be the badge, so a console or panel drawn over the corner reads as not shown.
+ */
+const badgeOf = (page) =>
+	page.evaluate(() => {
+		const g = window.__seelite;
+		const el = document.querySelector("[data-save-badge]");
+		const kinds = [...(g.saveStore?.faultKinds ?? [])].sort();
+		if (!el)
+			return { mounted: false, shown: false, kinds, fault: g.saveFaultText() };
+		const r = el.getBoundingClientRect();
+		const hit = el.hidden
+			? null
+			: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+		return {
+			mounted: true,
+			shown:
+				!el.hidden &&
+				r.width > 0 &&
+				r.height > 0 &&
+				(hit === el || el.contains(hit)),
+			kinds,
+			fault: g.saveFaultText(),
+		};
+	});
+
+/** Resolves `true` once the badge is shown (or hidden), `false` on timeout. */
+const badgeBecomes = (page, shown, timeout) =>
+	page
+		.waitForFunction(
+			(want) => {
+				const el = document.querySelector("[data-save-badge]");
+				return el !== null && el.hidden === !want;
+			},
+			shown,
+			{ timeout },
+		)
+		.then(
+			() => true,
+			() => false,
+		);
+
+/** Two frames, so the loop's per-frame badge update has run. */
+const twoFrames = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(resolve)),
+			),
+	);
+
+/**
+ * Makes the page's own backend refuse its next `count` writes, or every write
+ * for `null`. The store reads `backend.writeMany` at call time, so patching the
+ * object `__seelite.save.backend` names reaches it. `restoreWrites` undoes it.
+ */
+const forceWriteFailures = (page, count) =>
+	page.evaluate((n) => {
+		const b = window.__seelite.save.backend;
+		window.__probeRealWriteMany ??= b.writeMany;
+		const real = window.__probeRealWriteMany;
+		let left = n === null ? Number.POSITIVE_INFINITY : n;
+		window.__probeForcedWrites = 0;
+		b.writeMany = (...args) => {
+			if (left <= 0) return real.apply(b, args);
+			left--;
+			window.__probeForcedWrites++;
+			return Promise.reject(new Error("probe: forced write failure"));
+		};
+	}, count);
+
+const restoreWrites = (page) =>
+	page.evaluate(() => {
+		const b = window.__seelite.save.backend;
+		if (window.__probeRealWriteMany) b.writeMany = window.__probeRealWriteMany;
+		delete window.__probeRealWriteMany;
+	});
+
 try {
 	// -----------------------------------------------------------------------
 	// D1 and D4: the store, priced in the page
@@ -297,6 +376,110 @@ try {
 	);
 
 	// -----------------------------------------------------------------------
+	// §11.5: the save-fault badge, in flight
+	// -----------------------------------------------------------------------
+	// Forced through the page's own backend, so the store, the frame loop and
+	// the badge are the shipped ones. Constants off the page, as above.
+	const limits = await page.evaluate(() => ({
+		debounceMs: window.__seelite.save.debounceMs,
+		retryLimit: window.__seelite.save.retryLimit,
+	}));
+	const badgeWaitMs = limits.debounceMs * (limits.retryLimit + 2) + 10_000;
+	// **Watched, not sampled.** A badge raised on the first failure and cleared
+	// when the retry lands would be gone again by any single read afterwards.
+	await page.evaluate(() => {
+		window.__probeBadgeEverShown = false;
+		const el = document.querySelector("[data-save-badge]");
+		if (!el) return;
+		new MutationObserver(() => {
+			if (!el.hidden) window.__probeBadgeEverShown = true;
+		}).observe(el, { attributes: true, attributeFilter: ["hidden"] });
+	});
+	await forceWriteFailures(page, limits.retryLimit - 1);
+	await page.evaluate(() => window.__seelite.saveStore?.markDirty());
+	const belowCap = await page
+		.waitForFunction(
+			(n) => window.__probeForcedWrites >= n,
+			limits.retryLimit - 1,
+			{
+				timeout: badgeWaitMs,
+			},
+		)
+		.then(
+			() => true,
+			() => false,
+		);
+	await page.waitForTimeout(limits.debounceMs + 300);
+	await page.evaluate(() => window.__seelite.saveStore?.settled());
+	await twoFrames(page);
+	const belowCapState = await badgeOf(page);
+	const everShown = await page.evaluate(() => window.__probeBadgeEverShown);
+	check(
+		"a debounced write that fails fewer than SAVE_RETRY_LIMIT times in a row never shows the badge",
+		belowCap &&
+			belowCapState.mounted &&
+			!everShown &&
+			belowCapState.kinds.length === 0,
+		JSON.stringify({ belowCap, everShown, ...belowCapState }),
+	);
+
+	await forceWriteFailures(page, null);
+	await page.evaluate(() => window.__seelite.saveStore?.markDirty());
+	const raisedInFlight = await badgeBecomes(page, true, badgeWaitMs);
+	const inFlightState = await badgeOf(page);
+	check(
+		"in flight, a debounced write failing SAVE_RETRY_LIMIT times shows the badge, on top of the glass",
+		raisedInFlight &&
+			inFlightState.shown &&
+			JSON.stringify(inFlightState.kinds) === '["live"]' &&
+			// Raised *at* the cap: a store that raised on the first failure also
+			// shows the badge here, one message earlier.
+			(inFlightState.fault ?? "").includes(`(${limits.retryLimit} in a row)`),
+		JSON.stringify(inFlightState),
+	);
+
+	// The badge opens the overlay, which names the fault the store holds (§11.5).
+	// Checked against the words the forced failure must produce, not against
+	// the page's own reader, which would compare the overlay with itself.
+	const opened = await page
+		.click("[data-save-badge]", { timeout: 5_000 })
+		.then(() =>
+			page.waitForSelector("[data-commander-fault]", { timeout: 5_000 }),
+		)
+		.then(
+			() => true,
+			() => false,
+		);
+	const shownFault = await page.evaluate(() => ({
+		text: document.querySelector("[data-commander-fault]")?.textContent ?? null,
+	}));
+	check(
+		"clicking the badge opens the Commander overlay with the fault it holds",
+		opened &&
+			(shownFault.text ?? "").includes(
+				`(${limits.retryLimit} in a row): probe: forced write failure`,
+			),
+		JSON.stringify(shownFault),
+	);
+	await page.keyboard.press("Escape");
+	await page
+		.waitForSelector("[data-commander-overlay]", {
+			state: "detached",
+			timeout: 5_000,
+		})
+		.catch(() => {});
+
+	await restoreWrites(page);
+	await page.evaluate(() => window.__seelite.saveStore?.markDirty());
+	const clearedInFlight = await badgeBecomes(page, false, badgeWaitMs);
+	const clearedState = await badgeOf(page);
+	check(
+		"and a good debounced write clears it",
+		clearedInFlight && !clearedState.shown && clearedState.kinds.length === 0,
+		JSON.stringify(clearedState),
+	);
+
+	// -----------------------------------------------------------------------
 	// The wire is real: a price that changed survives a reload
 	// -----------------------------------------------------------------------
 	const trade = await page.evaluate(
@@ -503,6 +686,91 @@ try {
 				typeof checkpoint.dockedAt === "string" &&
 				checkpoint.dockedAt.includes(":"),
 			JSON.stringify(checkpoint && { dockedAt: checkpoint.dockedAt }),
+		);
+
+		// -------------------------------------------------------------------
+		// §11.5: the save-fault badge, while docked
+		// -------------------------------------------------------------------
+		// M10 hides the flight floor while docked, and the station console fills
+		// the glass: the badge is in a corner so that neither hides it, and
+		// `badgeOf`'s hit test is what says so.
+		await forceWriteFailures(page, null);
+		await page.evaluate(() => window.__seelite.saveStore?.markDirty());
+		const raisedDocked = await badgeBecomes(page, true, badgeWaitMs);
+		const dockedState = await badgeOf(page);
+		check(
+			"while docked, a debounced write failing SAVE_RETRY_LIMIT times shows the badge over the station console",
+			raisedDocked &&
+				dockedState.shown &&
+				JSON.stringify(dockedState.kinds) === '["live"]' &&
+				(dockedState.fault ?? "").includes(`(${limits.retryLimit} in a row)`),
+			JSON.stringify(dockedState),
+		);
+		await restoreWrites(page);
+		await page.evaluate(() => window.__seelite.saveStore?.markDirty());
+		const clearedDocked = await badgeBecomes(page, false, badgeWaitMs);
+		const clearedDockedState = await badgeOf(page);
+		check(
+			"and a good debounced write clears it while docked",
+			clearedDocked && clearedDockedState.kinds.length === 0,
+			JSON.stringify(clearedDockedState),
+		);
+
+		await forceWriteFailures(page, null);
+		await page.evaluate(() => {
+			const g = window.__seelite;
+			g.saveStore?.markDirty();
+			g.saveFlush("dock");
+		});
+		const raisedByDock = await badgeBecomes(page, true, badgeWaitMs);
+		const dockFaultState = await badgeOf(page);
+		check(
+			"a failed dock flush shows the badge at once, holding both records",
+			raisedByDock &&
+				dockFaultState.shown &&
+				JSON.stringify(dockFaultState.kinds) === '["lastDocked","live"]',
+			JSON.stringify(dockFaultState),
+		);
+		// **One debounced failure, then its retry lands.** The overlay named that
+		// write rather than the dock flush for a round, while the badge stood for
+		// `lastDocked` (sage, #311 round 1).
+		await forceWriteFailures(page, 1);
+		await page.evaluate(() => window.__seelite.saveStore?.markDirty());
+		const liveOnly = await page
+			.waitForFunction(
+				() =>
+					JSON.stringify([
+						...(window.__seelite.saveStore?.faultKinds ?? []),
+					]) === '["lastDocked"]',
+				null,
+				{ timeout: badgeWaitMs },
+			)
+			.then(
+				() => true,
+				() => false,
+			);
+		await twoFrames(page);
+		const afterDebounce = await badgeOf(page);
+		await restoreWrites(page);
+		check(
+			"a debounced write that fails and then lands does not clear a dock-flush fault, nor replace its words",
+			liveOnly &&
+				afterDebounce.shown &&
+				JSON.stringify(afterDebounce.kinds) === '["lastDocked"]' &&
+				(afterDebounce.fault ?? "").startsWith("the dock save would not write"),
+			JSON.stringify(afterDebounce),
+		);
+		await page.evaluate(() => {
+			const g = window.__seelite;
+			g.saveStore?.markDirty();
+			g.saveFlush("dock");
+		});
+		const clearedByDock = await badgeBecomes(page, false, badgeWaitMs);
+		const afterDock = await badgeOf(page);
+		check(
+			"and the next good dock flush does",
+			clearedByDock && !afterDock.shown && afterDock.kinds.length === 0,
+			JSON.stringify(afterDock),
 		);
 
 		// **Close the first page before opening the second.** It is a running

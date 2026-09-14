@@ -187,6 +187,13 @@ export interface CommanderOverlayOptions {
 	/** The Commander this tab has a store attached to. */
 	inPlay: () => string | null;
 	/**
+	 * The save fault held now, which an open in play shows (§11.5: the badge
+	 * opens the overlay, which names the failure still held for each kind,
+	 * `Game.saveFaultText`). Read at open rather than given at mount: a fault
+	 * raised in flight did not exist at boot.
+	 */
+	fault: () => string | null;
+	/**
 	 * Continue at boot: attach the store to `slot` and release the clock.
 	 * Resolves to a fault, or `null` once the game runs.
 	 */
@@ -676,7 +683,7 @@ export function mountCommanderOverlay(
 		document.body.append(root);
 		view = { kind: "menu" };
 		if (running) {
-			refusal = null;
+			refusal = options.fault();
 			info = null;
 		}
 		cursor = initialCursor(menuRows());

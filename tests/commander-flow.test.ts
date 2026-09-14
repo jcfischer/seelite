@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	attachCommander,
 	CommanderSwitch,
+	flushFault,
 	lockHeldFault,
 	lockRequestFault,
 	messageOf,
@@ -23,6 +24,7 @@ import {
 	restoreFault,
 	withLockFault,
 	withRestoreFault,
+	writeFault,
 } from "../src/commander-flow";
 import {
 	newCommanderRecord,
@@ -34,6 +36,7 @@ import {
 	DEFAULT_SLOT,
 	memorySaveBackend,
 	memorySlotLocks,
+	SAVE_RETRY_LIMIT,
 	SaveStore,
 	type SlotLocks,
 } from "../src/save-store";
@@ -457,6 +460,9 @@ describe("the overlay's words name the Commander, never the slot (§11.5)", () =
 			lockHeldFault("Jameson"),
 			lockRequestFault("Jameson", new Error("SecurityError")),
 			restoreFault("Jameson", new Error("bad")),
+			// In play, through the badge (§11.5).
+			flushFault("dock", new Error("QuotaExceededError")),
+			writeFault(SAVE_RETRY_LIMIT, new Error("QuotaExceededError")),
 		];
 		const collect = async (run: () => Promise<unknown>) => {
 			try {
@@ -509,7 +515,7 @@ describe("the overlay's words name the Commander, never the slot (§11.5)", () =
 
 		// Guard the guard: every arm above produced a message.
 		expect(messages.filter((m) => m.length > 0).length).toBe(messages.length);
-		expect(messages.length).toBe(16);
+		expect(messages.length).toBe(18);
 		for (const message of messages)
 			expect(`${message}: ${SLOT_WORD.test(message)}`).toBe(
 				`${message}: false`,

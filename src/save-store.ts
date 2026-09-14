@@ -124,6 +124,20 @@ const noRecordToCopy = (slot: string): never =>
 export type FlushReason = "dock" | "undock" | "jump" | "quit" | "new-game";
 
 /**
+ * Why a record kind is held as a fault (§11.5): the flush that failed, or the
+ * debounced write that reached `SAVE_RETRY_LIMIT`. Kept per kind, because the
+ * overlay has to name the failure that is still held — a later write that
+ * failed and then landed is not it.
+ */
+export type SaveFault =
+	| { readonly reason: FlushReason; readonly error: unknown }
+	| {
+			readonly reason: "debounce";
+			readonly error: unknown;
+			readonly consecutive: number;
+	  };
+
+/**
  * The scheduler the debounce runs on, injected.
  *
  * Returns a cancel. `setTimeout` in the browser; a hand-driven stub in tests.
@@ -298,11 +312,14 @@ export class SaveStore {
 	/** The lock request in flight, shared by overlapping `hold` calls. */
 	private holding: Promise<(() => void) | null> | null = null;
 	/**
-	 * The record kinds whose last write failed (§11.5). A kind clears only on a
-	 * write **of that kind** that lands: a debounced write carries `live` alone,
-	 * so a failed dock flush keeps `lastDocked` held through any number of good
-	 * debounced writes — the checkpoint a non-permadeath death restores is still
-	 * the older one, and the badge must still say so.
+	 * The record kinds held as a fault (§11.5). **Raised** by any flush that
+	 * fails, at once, and by a debounced write only once it has failed
+	 * `SAVE_RETRY_LIMIT` times in a row: a retry that lands a moment later was
+	 * never the player's business. A kind clears only on a write **of that kind**
+	 * that lands: a debounced write carries `live` alone, so a failed dock flush
+	 * keeps `lastDocked` held through any number of good debounced writes — the
+	 * checkpoint a non-permadeath death restores is still the older one, and the
+	 * badge must still say so.
 	 *
 	 * **Per kind, not per Commander, and that is enough.** A store writes one
 	 * Commander for the life of its tab: it holds that Commander's lock, which
@@ -310,7 +327,7 @@ export class SaveStore {
 	 * argument. `flush`'s `slot` parameter is the tests' and the probe's seam. A
 	 * caller that aimed one store at two Commanders would mix their faults here.
 	 */
-	private readonly failed = new Set<SaveRecordKind>();
+	private readonly faultsHeld = new Map<SaveRecordKind, SaveFault>();
 	private readonly schedule: Scheduler;
 	private readonly current: () => SaveEnvelope;
 	private dirty = false;
@@ -360,6 +377,12 @@ export class SaveStore {
 				// all, because `saveFault` is written once at boot.
 				this.failures += 1;
 				this.onWriteFailed?.(error, this.failures);
+				if (this.failures >= SAVE_RETRY_LIMIT)
+					this.faultsHeld.set("live", {
+						reason: "debounce",
+						error,
+						consecutive: this.failures,
+					});
 				// **Capped, and the cap is not a nicety.** Re-arming without one
 				// paid the synchronous `serializeSave` hitch every window
 				// forever against a backend that is simply refusing — a quota,
@@ -394,7 +417,15 @@ export class SaveStore {
 		if (!this.dirty && reason !== "quit" && reason !== "new-game") return;
 		const kinds: SaveRecordKind[] =
 			reason === "dock" ? ["live", "lastDocked"] : ["live"];
-		await this.run(kinds, slot);
+		try {
+			await this.run(kinds, slot);
+		} catch (error) {
+			// A flush is a transition the player made — a dock, an undock, a jump,
+			// a switch — so one failure is a fault, with no retry to wait for.
+			const fault: SaveFault = { reason, error };
+			for (const kind of kinds) this.faultsHeld.set(kind, fault);
+			throw error;
+		}
 	}
 
 	/**
@@ -433,20 +464,25 @@ export class SaveStore {
 		try {
 			await this.inFlight;
 			this.failures = 0;
-			for (const kind of kinds) this.failed.delete(kind);
+			for (const kind of kinds) this.faultsHeld.delete(kind);
 		} catch (error) {
 			// The write did not land, so the save is still dirty. D9: the
-			// previous record is untouched — stale rather than broken.
+			// previous record is untouched — stale rather than broken. Whether
+			// that is a fault yet is the caller's to say (`faultsHeld`).
 			this.dirty = true;
-			for (const kind of kinds) this.failed.add(kind);
 			throw error;
 		}
 	}
 
-	/** The record kinds whose last write failed; §11.5's badge shows while this
-	 *  is not empty. */
-	get failedKinds(): ReadonlySet<SaveRecordKind> {
-		return this.failed;
+	/** The record kinds held as a fault, each with the failure that raised it.
+	 *  §11.5's badge shows while this is not empty (`heldSaveFault`). */
+	get heldFaults(): ReadonlyMap<SaveRecordKind, SaveFault> {
+		return this.faultsHeld;
+	}
+
+	/** The held kinds alone, for the tests and the probe. */
+	get faultKinds(): ReadonlySet<SaveRecordKind> {
+		return new Set(this.faultsHeld.keys());
 	}
 
 	/**

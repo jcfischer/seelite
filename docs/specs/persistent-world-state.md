@@ -215,11 +215,8 @@ This model deliberately does not choose:
 Decided in [#304](https://github.com/jcfischer/seelite/issues/304) (S1–S7), with
 four points #304 left open settled on
 [#305](https://github.com/jcfischer/seelite/issues/305). **Specified here, built
-by [#306](https://github.com/jcfischer/seelite/issues/306)**. The overlay, the boot and
-every operation below are reachable; §11.5's in-play badge is the part still to
-land. Until it does, a failed debounced write is held on `saveFault` and logged,
-and a failed dock, undock or jump flush is only logged; neither has a player
-surface. A **Commander** is what the player
+by [#306](https://github.com/jcfischer/seelite/issues/306)**. The overlay, the boot,
+every operation below and §11.5's in-play badge are reachable. A **Commander** is what the player
 sees of one save slot (`CONTEXT.md`); `SaveStore`'s slot vocabulary is storage
 and does not change.
 
@@ -380,11 +377,18 @@ fails and raises its own badge rather than blocking the upgrade forever.
   `?boot=direct`** (§11.6); without it, `?seed` sets nothing aside.
 - **In play**: the save-fault badge (`hud-and-scanner.md` §5.3) is raised by a
   debounced write that has failed `SAVE_RETRY_LIMIT` times **or by any failed
-  dock, undock or jump flush**. The second half is new: today `saveFlush` only
-  logs a failed flush (`main.ts`, its `.catch`) and sets nothing, so the dock
+  dock, undock or jump flush**. The second half came with the badge: before it,
+  `saveFlush` only logged a failed flush (`main.ts`, its `.catch`), so the dock
   flush — the write that lays down `lastDocked` — could fail with no player
-  surface at all. A failed `quit` flush has no frame left to draw it in and
-  stays a log line. The badge opens the overlay, whose message is `saveFault`.
+  surface at all. A failed `quit` flush on a tab close has no frame left to
+  draw it in and stays a log line; one before a switch refuses the switch
+  (§11.3), play goes on, and the store holds it like any other failed flush.
+  The badge opens the overlay, which names the failure still
+  held for each kind (`Game.saveFaultText`) — not the last failure, which may be
+  a write that has since landed.
+  **With no store attached, a `saveFault` is itself the badge**: a
+  `?boot=direct` boot whose attach failed plays on with nothing that will write
+  (`heldSaveFault`, `src/save-badge.ts`).
   **It is held per record kind, and each kind clears only on a write of that
   kind.** A debounced write carries `live` alone; a dock flush writes `live` and
   `lastDocked` in one transaction. So a `live` fault clears on the next write

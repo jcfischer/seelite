@@ -29,6 +29,7 @@ import {
 	SaveStore,
 	type SlotLocks,
 } from "../src/save-store";
+import { heldSaveFault } from "../src/save-badge";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { newWorld, visit } from "../src/world-state";
 
@@ -877,28 +878,89 @@ describe("§11.5 — faults are held per record kind", () => {
 		h.store.markDirty();
 		h.backend.failNextWrite();
 		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
-		expect([...h.store.failedKinds].sort()).toEqual(["lastDocked", "live"]);
+		expect([...h.store.faultKinds].sort()).toEqual(["lastDocked", "live"]);
 		// A debounced write carries `live` alone.
 		h.store.markDirty();
 		h.clock.fire();
 		await h.store.settled();
-		expect([...h.store.failedKinds]).toEqual(["lastDocked"]);
+		expect([...h.store.faultKinds]).toEqual(["lastDocked"]);
 		h.store.markDirty();
 		await h.store.flush("dock");
-		expect([...h.store.failedKinds]).toEqual([]);
+		expect([...h.store.faultKinds]).toEqual([]);
 	});
 
-	test("a debounced write failing holds a live fault until a write lands", async () => {
+	test("a later failure that lands does not replace a held dock fault's words (#311 round 1)", async () => {
 		const h = harness();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		await expect(h.store.flush("dock")).rejects.toThrow(/backend/);
+		const dockWords = heldSaveFault(h.store, null);
+		expect(dockWords).toContain("the dock save would not write");
+		// One debounced failure below the cap, then its retry lands.
 		h.store.markDirty();
 		h.backend.failNextWrite();
 		h.clock.fire();
 		await h.store.settled();
-		expect([...h.store.failedKinds]).toEqual(["live"]);
 		h.clock.fire();
 		await h.store.settled();
-		expect([...h.store.failedKinds]).toEqual([]);
+		expect([...h.store.faultKinds]).toEqual(["lastDocked"]);
+		expect(heldSaveFault(h.store, null)).toBe(dockWords);
 	});
+
+	test("a debounced write is a fault only once it has failed SAVE_RETRY_LIMIT times in a row", async () => {
+		// §11.5 and `hud-and-scanner.md` §5.3 both say the cap, not the first
+		// failure: a retry that lands a moment later was never the player's
+		// business. The store held `live` on the first failure for a round.
+		const h = harness();
+		h.store.markDirty();
+		for (let i = 1; i < SAVE_RETRY_LIMIT; i++) {
+			h.backend.failNextWrite();
+			h.clock.fire();
+			await h.store.settled();
+			expect(`${i}: ${[...h.store.faultKinds]}`).toBe(`${i}: `);
+		}
+		h.backend.failNextWrite();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.faultKinds]).toEqual(["live"]);
+		// Past the cap the drum has stopped, so the next write is a new mark.
+		h.store.markDirty();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.faultKinds]).toEqual([]);
+	});
+
+	test("a failure below the cap does not count toward it once a write lands", async () => {
+		const h = harness();
+		h.store.markDirty();
+		for (let i = 1; i < SAVE_RETRY_LIMIT; i++) {
+			h.backend.failNextWrite();
+			h.clock.fire();
+			await h.store.settled();
+		}
+		h.clock.fire();
+		await h.store.settled();
+		h.store.markDirty();
+		h.backend.failNextWrite();
+		h.clock.fire();
+		await h.store.settled();
+		expect([...h.store.faultKinds]).toEqual([]);
+	});
+
+	for (const reason of ["undock", "jump"] as const)
+		test(`a failed ${reason} flush is a live fault at once`, async () => {
+			const h = harness();
+			h.store.markDirty();
+			h.backend.failNextWrite();
+			await expect(h.store.flush(reason)).rejects.toThrow(/backend/);
+			expect([...h.store.faultKinds]).toEqual(["live"]);
+			// And a good debounced write clears it: both carry `live` alone. The
+			// flush cancelled the timer, so the write is a new mark.
+			h.store.markDirty();
+			h.clock.fire();
+			await h.store.settled();
+			expect([...h.store.faultKinds]).toEqual([]);
+		});
 });
 
 describe("the store writes what a parser accepts", () => {
