@@ -483,6 +483,15 @@ try {
 			shownFault.detail === "probe: forced write failure",
 		JSON.stringify(shownFault),
 	);
+	// The overlay states the fault, so the badge is not drawn over or behind it
+	// (the principal's call on #313's frames); it is back once the overlay closes.
+	await twoFrames(page);
+	const underOverlay = await badgeOf(page);
+	check(
+		"while the overlay is open the badge is not drawn",
+		opened && underOverlay.mounted && !underOverlay.drawn,
+		JSON.stringify(underOverlay),
+	);
 	await page.keyboard.press("Escape");
 	await page
 		.waitForSelector("[data-commander-overlay]", {
@@ -490,6 +499,11 @@ try {
 			timeout: 5_000,
 		})
 		.catch(() => {});
+	check(
+		"and it is drawn again once the overlay closes, with the fault still held",
+		await badgeBecomes(page, true, 5_000),
+		JSON.stringify(await badgeOf(page)),
+	);
 
 	await restoreWrites(page);
 	await page.evaluate(() => window.__seelite.saveStore?.markDirty());

@@ -355,7 +355,8 @@ tone and a short text label — shape and text as well as colour. It is absent
 while no fault is held; it appears on the faults `persistent-world-state.md`
 §11.5 names — a debounced write failing `SAVE_RETRY_LIMIT` times in a row, or
 any failed dock, undock or jump flush — opens the Commander overlay when
-activated, and clears when §11.5's per-record rule says it does.
+activated, and clears when §11.5's per-record rule says it does. **It is not
+drawn while the Commander overlay is open**, which states the fault itself.
 
 **The corner is top-left**, chosen by the principal on a rendered frame of all
 four corners in both states (#311). Both bottom corners sat on the key-hint
