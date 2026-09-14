@@ -312,10 +312,32 @@ const PLACERS = {
 				// of hull and shot down on fixed steps, then either its canisters
 				// framed on the glass or the Communications log ten minutes on.
 				if (aftermath) {
+					// **Head forward first.** The gun follows the camera's sightline,
+					// and the view captured before this one leaves the head turned to
+					// a console, so every shot went sideways and the raider fled.
+					g.setHeadLook("forward");
+					// **Two kilometres ahead, at the ship's velocity.** At its last
+					// point of hull the raider flees at once, and from the 12 km it
+					// was forced at it leaves the laser's 12 km reach before a shot
+					// lands. The capture lost its kill that way twice.
+					const ahead = g.nose();
+					const shipPos = g.world.ship.pos;
 					g.encounter = {
 						...g.encounter,
 						raider: {
 							...raider,
+							flight: {
+								...raider.flight,
+								ship: {
+									...raider.flight.ship,
+									pos: {
+										x: shipPos.x + ahead.x * 2,
+										y: shipPos.y + ahead.y * 2,
+										z: shipPos.z + ahead.z * 2,
+									},
+									vel: { ...g.world.ship.vel },
+								},
+							},
 							condition: { ...raider.condition, fore: 0, aft: 0, hull: 0.01 },
 						},
 					};
@@ -339,7 +361,7 @@ const PLACERS = {
 					g.keys.delete(" ");
 					if (g.encounter || !g.lastExit.endsWith("destroyed"))
 						throw new Error(
-							`duel placer: the raider did not die for the aftermath (${g.lastExit})`,
+							`duel placer: the raider did not die for the aftermath (${g.lastExit}, head ${g.headLook})`,
 						);
 					if (aftermath === "canisters") {
 						const c = g.canisters[0];

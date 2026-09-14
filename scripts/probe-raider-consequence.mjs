@@ -70,11 +70,27 @@ const kill = await page.evaluate(() => {
 	if (!encounter?.raider) return { error: "no duel", phase: encounter?.phase };
 	const key = encounter.slot.key;
 	const name = encounter.name;
-	// The raider's last point of hull, and every shield spent.
+	// The raider's last point of hull, and every shield spent, two kilometres
+	// ahead at the ship's velocity: at that hull it flees at once, and from
+	// further out it leaves the laser's reach before a shot lands.
+	const ahead = g.nose();
+	const shipPos = g.world.ship.pos;
 	g.encounter = {
 		...encounter,
 		raider: {
 			...encounter.raider,
+			flight: {
+				...encounter.raider.flight,
+				ship: {
+					...encounter.raider.flight.ship,
+					pos: {
+						x: shipPos.x + ahead.x * 2,
+						y: shipPos.y + ahead.y * 2,
+						z: shipPos.z + ahead.z * 2,
+					},
+					vel: { ...g.world.ship.vel },
+				},
+			},
 			condition: {
 				...encounter.raider.condition,
 				fore: 0,
