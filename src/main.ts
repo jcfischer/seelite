@@ -1465,6 +1465,14 @@ class Game {
 	 * zero.
 	 */
 	clockHeld = false;
+	/**
+	 * Called once, on the frame the hull reaches zero (#324). The boot sets it:
+	 * it restores the last dock, or opens the Commander overlay when there is
+	 * nothing to restore.
+	 */
+	onDeath: (() => Promise<void>) | null = null;
+	/** Set when the hull reaches zero. The clock holds from then on. */
+	dead = false;
 	/** The Commander overlay, once the boot has mounted it (§11). */
 	commanderOverlay: CommanderOverlayHandle | null = null;
 	/** The save-fault badge (`hud-and-scanner.md` §5.3), once mounted. */
@@ -7498,6 +7506,13 @@ class Game {
 	takeDamage(amount: number, side: ShieldSide, reason: string) {
 		if (!(amount > 0)) return;
 		this.condition = applyDamage(this.condition, amount, side);
+		// The one place damage lands is the one place a death is noticed.
+		if (!isAlive(this.condition) && !this.dead) {
+			this.dead = true;
+			this.clockHeld = true;
+			this.lastExit = "ship destroyed";
+			void this.onDeath?.();
+		}
 		this.cancelJumpCharge(reason);
 		this.cancelSpoolUp(reason);
 	}
@@ -10731,6 +10746,30 @@ if (query.has("model-viewer")) {
 		game.saveFault = result.fault;
 		if (result.fault !== null) console.warn(`save: ${result.fault}`);
 		return result.attached ? null : result.fault;
+	};
+	// **A death (#324, the principal's ruling O5).** With a store attached and a
+	// commander who is not permadeath, the last dock is copied over `live`, the
+	// one-shot continue names the Commander, and the page reloads into the dock.
+	// Otherwise — permadeath, `?no-save`, or a restore that failed — the ship
+	// stays destroyed and the Commander overlay opens.
+	game.onDeath = async () => {
+		const store = game.saveStore;
+		const slot = attachedSlot;
+		try {
+			const restored =
+				store && slot
+					? await store.revertToLastDocked(game.commanderRecord())
+					: null;
+			if (restored && slot) {
+				await catalog.chooseCommander(slot);
+				window.location.reload();
+				return;
+			}
+		} catch (error) {
+			console.error("save: the last dock could not be restored", error);
+			game.saveFault = messageOf(error);
+		}
+		game.commanderOverlay?.open();
 	};
 	let openAtBoot = plan.mode === "overlay";
 	if (plan.mode === "direct") {

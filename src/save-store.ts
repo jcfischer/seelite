@@ -345,6 +345,12 @@ export class SaveStore {
 	) => void;
 	/** Consecutive debounced-write failures, reset by any write that lands. */
 	private failures = 0;
+	/**
+	 * Set by `revertToLastDocked`. A retired store writes nothing more: the page
+	 * is about to reload into the dock it restored, and `current` still holds
+	 * the ship that died.
+	 */
+	private retired = false;
 
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
@@ -360,6 +366,7 @@ export class SaveStore {
 
 	/** D4's trigger: any change to saved state, coalesced. */
 	markDirty(): void {
+		if (this.retired) return;
 		this.dirty = true;
 		this.cancel?.();
 		this.cancel = this.schedule(() => {
@@ -414,6 +421,7 @@ export class SaveStore {
 		assertSlot(slot);
 		this.cancel?.();
 		this.cancel = null;
+		if (this.retired) return;
 		if (!this.dirty && reason !== "quit" && reason !== "new-game") return;
 		const kinds: SaveRecordKind[] =
 			reason === "dock" ? ["live", "lastDocked"] : ["live"];
@@ -515,6 +523,40 @@ export class SaveStore {
 	): Promise<SaveEnvelope | null> {
 		if (commander.permadeath) return null;
 		return this.load(slot, "lastDocked");
+	}
+
+	/**
+	 * #324's death path (principal's ruling O5, 2026-09-14): copy the last dock
+	 * over `live`, so the reload boots into it, and stop writing.
+	 *
+	 * **A death-time write, on purpose.** #89 left death unflushed, and
+	 * `restoreAfterDeath` above still reads only. This is the separate act the
+	 * ruling asked for, and it is the one write a death makes. A permadeath
+	 * commander gets `null` and nothing is written, so that stance is unchanged.
+	 *
+	 * Order matters. The store retires **first**, cancelling a debounce that
+	 * would otherwise land after the copy and put the dead ship back; it waits
+	 * for a write already in flight for the same reason; it validates the dock
+	 * record before copying, because D9 makes a bad `lastDocked` a named error
+	 * rather than something to substitute; and it gives the tab's lock back last,
+	 * so the one-shot continue and the reload's boot can take the Commander.
+	 */
+	async revertToLastDocked(commander: {
+		permadeath: boolean;
+	}): Promise<SaveEnvelope | null> {
+		if (commander.permadeath) return null;
+		this.retired = true;
+		this.cancel?.();
+		this.cancel = null;
+		this.dirty = false;
+		await this.settled();
+		const raw = await this.backend.read(this.slot, "lastDocked");
+		if (raw === null || raw === undefined)
+			fail(`Commander "${this.slot}" has no lastDocked record`);
+		const restored = parseSave(raw);
+		await this.backend.write(this.slot, "live", raw);
+		this.release();
+		return restored;
 	}
 
 	/**
