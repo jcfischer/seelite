@@ -808,9 +808,7 @@ const liveTrade = await page.evaluate((foodAction) => {
 			"",
 	});
 	const before = read();
-	const buy = document.querySelector(
-		foodAction.replace("%s", "buy-commodity"),
-	);
+	const buy = document.querySelector(foodAction.replace("%s", "buy-commodity"));
 	if (!(buy instanceof HTMLElement))
 		return { before, afterBuy: before, afterSell: before, controls: false };
 	buy.click();
