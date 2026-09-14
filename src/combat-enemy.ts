@@ -34,7 +34,6 @@
  * vector, and at these turn rates it visibly does.
  */
 
-import type { CombatPrototypeState } from "./combat-prototype";
 import { HULL_SPECS, type HullId } from "./hull";
 import { mix, seedFor } from "./rng";
 import {
@@ -137,7 +136,7 @@ const DISENGAGE_KM = 14;
 export const MERGE_BREAK_KM = 1.8;
 /** An extension ends here, whether or not its clock has run out. */
 const EXTEND_TARGET_KM = 5;
-const FLEE_HULL = 20;
+const FLEE_HULL_FRACTION = 0.2;
 /** Twelve degrees. Firing is gated on pointing, and the attack weave below
  *  stays inside it so a weaving gun run still shoots. */
 export const FIRE_COS = Math.cos((12 * Math.PI) / 180);
@@ -256,13 +255,16 @@ export function playerLaserHit(
 	playerPos: Vec3,
 	playerNose: Vec3,
 	enemyPos: Vec3,
+	/** The rig's drawn-3x radius by default; production combat passes the
+	 *  hull's true one, so the raider is no larger to hit than it is (#324). */
+	radiusKm: number = ENEMY_COLLISION_RADIUS_KM,
 ): { hit: boolean; distanceKm: number } {
 	const toEnemy = sub(enemyPos, playerPos);
 	const along = dot(toEnemy, playerNose);
 	if (along < 0 || along > PLAYER_LASER_RANGE_KM)
 		return { hit: false, distanceKm: PLAYER_LASER_RANGE_KM };
 	const perpendicular = sub(toEnemy, scale(playerNose, along));
-	const radiusSq = ENEMY_COLLISION_RADIUS_KM ** 2;
+	const radiusSq = radiusKm ** 2;
 	const perpendicularSq = lengthSq(perpendicular);
 	if (perpendicularSq > radiusSq)
 		return { hit: false, distanceKm: PLAYER_LASER_RANGE_KM };
@@ -417,6 +419,24 @@ export function createCombatEnemy(
 }
 
 /**
+ * What the controller reads of the fight's numbers: its own hull, energy and
+ * heat lock, and whether the player is still alive.
+ *
+ * **Named in the rig's words on purpose.** In `combat-prototype.ts` the enemy
+ * is the player's *target*, so its pools are `target*`; that state satisfies
+ * this shape structurally and the rig passes it unchanged. Production combat
+ * (#324) builds one from two `ShipCondition`s. `targetHullMax` is optional so
+ * the rig, whose hulls are all 100, keeps its threshold exactly.
+ */
+export interface EnemyReadout {
+	targetHull: number;
+	targetHullMax?: number;
+	targetEnergy: number;
+	targetHeatLocked: boolean;
+	playerHull: number;
+}
+
+/**
  * Choose an intent from the geometry, then fly it through the player's own
  * integrator. It never writes a renderer transform or a scheduled damage value.
  */
@@ -424,18 +444,24 @@ export function stepCombatEnemy(
 	state: CombatEnemyState,
 	player: Ship,
 	playerNose: Vec3,
-	combat: CombatPrototypeState,
+	combat: EnemyReadout,
 	playerFiring: boolean,
 	dt: number,
 	laserOrigin: Vec3 = player.pos,
 	laserNose: Vec3 = playerNose,
+	hitRadiusKm: number = ENEMY_COLLISION_RADIUS_KM,
 ): EnemyFlightStep {
 	const step = Math.max(0, dt);
 	const toPlayer = sub(player.pos, state.ship.pos);
 	const range = length(toPlayer);
 	const towardPlayer = unit(toPlayer, state.nose);
 	const awayFromPlayer = scale(towardPlayer, -1);
-	const laser = playerLaserHit(laserOrigin, laserNose, state.ship.pos);
+	const laser = playerLaserHit(
+		laserOrigin,
+		laserNose,
+		state.ship.pos,
+		hitRadiusKm,
+	);
 
 	// How close the player's sight line passes, in kilometres. An angle would
 	// have meant one thing at the merge and another at ten kilometres.
@@ -475,7 +501,9 @@ export function stepCombatEnemy(
 		);
 	};
 
-	if (combat.targetHull <= FLEE_HULL) {
+	// A fraction of the ship's own hull, so a stronger hull runs later in
+	// absolute terms; at the rig's hull of 100 it is the 20 it always was.
+	if (combat.targetHull <= FLEE_HULL_FRACTION * (combat.targetHullMax ?? 100)) {
 		if (phase !== "flee") commit("flee", 30, 30);
 	} else if (underFire && phase !== "evade" && evadeCooldown <= 0) {
 		commit("evade", 1.1, 2.1);
