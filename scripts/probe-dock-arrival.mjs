@@ -849,40 +849,66 @@ check(
 	`switched=${liveEquipment.switched}, equipment rows=${liveEquipment.rows}`,
 );
 
-// #314: a launch Traffic refuses is held on the Flight console with its reason,
-// and CANCEL gives the turn back. The warm index is the authority's own gate:
-// zeroing it refuses the lane without inventing a carrier.
+// #314: a launch Traffic refuses is held with its reason on every docked
+// console, a retry keeps its first place, and CANCEL gives the turn back.
 const heldLaunch = await page.evaluate((stationId) => {
 	const g = window.__seelite;
-	g.setHeadLook("right");
-	document.querySelector('[data-live-right-tab="Flight"]')?.click();
-	const warmIndex = g.trafficWarmIndex;
-	g.trafficWarmIndex = 0;
-	document.querySelector("[data-live-launch]")?.click();
-	const notice = document.querySelector("[data-live-launch-notice]");
-	const held = {
-		phase: g.dockPhase,
-		notice: notice?.textContent ?? null,
-		// `checkVisibility`, not `hidden`: an id rule with `display` beats it.
-		visible: notice instanceof HTMLElement && notice.checkVisibility(),
-		request: g.playerLaneRequests.get(stationId)?.movement ?? null,
+	// The one way these checks refuse the lane, shared with the launch row
+	// below. The warm index is the authority's own gate: zeroing it refuses
+	// the lane without inventing a ship.
+	window.__refuseLaneWhile = (fn) => {
+		const warmIndex = g.trafficWarmIndex;
+		g.trafficWarmIndex = 0;
+		try {
+			return fn();
+		} finally {
+			g.trafficWarmIndex = warmIndex;
+		}
 	};
-	document.querySelector("[data-live-launch-cancel]")?.click();
-	const cancelled = {
-		notice: document.querySelector("[data-live-launch-notice]") !== null,
-		launchBack: document.querySelector("[data-live-launch]") !== null,
-		request: g.playerLaneRequests.get(stationId)?.movement ?? null,
-	};
-	g.trafficWarmIndex = warmIndex;
-	return { held, cancelled };
+	// `checkVisibility`, not `hidden`: an id rule with `display` beats it.
+	const visibleNotice = () =>
+		[...document.querySelectorAll("[data-live-launch-notice]")].find(
+			(notice) => notice instanceof HTMLElement && notice.checkVisibility(),
+		)?.textContent ?? null;
+	return window.__refuseLaneWhile(() => {
+		g.setHeadLook("right");
+		document.querySelector('[data-live-right-tab="Flight"]')?.click();
+		document.querySelector("[data-live-launch]")?.click();
+		const fromRight = visibleNotice();
+		const firstStamp = g.playerLaneRequests.get(stationId)?.readyAt ?? null;
+		// The retry `stepHeldLaunch` makes, five game seconds on.
+		g.world.gameTime += 5;
+		g.launch();
+		const retryStamp = g.playerLaneRequests.get(stationId)?.readyAt ?? null;
+		g.setHeadLook("forward");
+		g.updateCockpit();
+		const fromForward = visibleNotice();
+		const held = {
+			phase: g.dockPhase,
+			fromRight,
+			fromForward,
+			firstStamp,
+			retryStamp,
+		};
+		document.querySelector("[data-live-launch-cancel]")?.click();
+		g.setHeadLook("right");
+		g.updateCockpit();
+		const cancelled = {
+			notice: document.querySelector("[data-live-launch-notice]") !== null,
+			launchBack: document.querySelector("[data-live-launch]") !== null,
+			request: g.playerLaneRequests.get(stationId)?.movement ?? null,
+		};
+		return { held, cancelled };
+	});
 }, slotId);
 
 check(
-	"a launch Traffic refuses is held on the console with its reason, and cancel gives the turn back",
+	"a launch Traffic refuses is held on every docked console, keeps its place, and cancel gives the turn back",
 	heldLaunch.held.phase === "docked" &&
-		/^LAUNCH HELD/.test(heldLaunch.held.notice ?? "") &&
-		heldLaunch.held.visible &&
-		heldLaunch.held.request === "launch" &&
+		/^LAUNCH HELD — /.test(heldLaunch.held.fromRight ?? "") &&
+		/^LAUNCH HELD — /.test(heldLaunch.held.fromForward ?? "") &&
+		heldLaunch.held.firstStamp !== null &&
+		heldLaunch.held.retryStamp === heldLaunch.held.firstStamp &&
 		!heldLaunch.cancelled.notice &&
 		heldLaunch.cancelled.launchBack &&
 		heldLaunch.cancelled.request === null,
@@ -904,11 +930,10 @@ const approach = await page.evaluate((stationId) => {
 	const launch = document.querySelector("[data-live-launch]");
 	// #314: the press is refused first, so it is held, and the held launch
 	// must leave by itself on the first step the lane is the player's.
-	const warmIndex = g.trafficWarmIndex;
-	g.trafficWarmIndex = 0;
-	if (launch instanceof HTMLElement) launch.click();
-	const heldPhase = g.dockPhase;
-	g.trafficWarmIndex = warmIndex;
+	const heldPhase = window.__refuseLaneWhile(() => {
+		if (launch instanceof HTMLElement) launch.click();
+		return g.dockPhase;
+	});
 	g.step(1 / 60);
 	g.updateCockpit();
 	const consoleGone =

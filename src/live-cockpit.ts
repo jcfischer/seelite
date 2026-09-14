@@ -130,7 +130,8 @@ interface CockpitElements {
 	navList: HTMLElement | null;
 	navQuery: HTMLInputElement | null;
 	arrow: HTMLElement | null;
-	launchNotice: HTMLElement | null;
+	/** One per docked console: a hold is shown wherever the player looks. */
+	launchNotices: HTMLElement[];
 }
 
 const STYLE_ID = "seelite-live-cockpit-style";
@@ -847,7 +848,11 @@ export class LiveCockpit {
 					"[data-live-nav-query]",
 				),
 				arrow: find(".lc-target-arrow"),
-				launchNotice: find("[data-live-launch-notice]"),
+				launchNotices: [
+					...this.root.querySelectorAll<HTMLElement>(
+						"[data-live-launch-notice]",
+					),
+				],
 			};
 			const host = this.root.querySelector<HTMLElement>(
 				"[data-live-chart-host]",
@@ -873,8 +878,8 @@ export class LiveCockpit {
 		this.lastValueKey = valueKey;
 		// The reason can change while the hold stands — a carrier clears the lane
 		// and an older one is queued behind it — so it is a value, not structure.
-		if (elements.launchNotice)
-			elements.launchNotice.textContent = state.launchHold?.notice ?? "";
+		for (const notice of elements.launchNotices)
+			notice.textContent = state.launchHold?.notice ?? "";
 		if (elements.leftPanelCopy)
 			elements.leftPanelCopy.textContent = state.target;
 		if (elements.rightPanelCopy)
@@ -1000,13 +1005,25 @@ export class LiveCockpit {
 		).join("");
 		// A held launch replaces the control with its reason and a way out (#314):
 		// pressing LAUNCH again would only re-ask for a turn it already holds.
+		// **On every docked console, not only Flight.** The hold fires by itself
+		// when the lane clears, so a player who pressed Enter from the station
+		// console, or went back to trading, must still see it (sage round 1).
+		const hold = this.launchHoldBlock(state);
 		const launch =
-			state.dockPhase === "docked" && state.rightTab === "Flight"
-				? state.launchHold
-					? '<div class="lc-launch-hold" data-live-launch-hold><p data-live-launch-notice></p><button class="lc-launch" type="button" data-live-launch-cancel>CANCEL LAUNCH</button></div>'
-					: '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
-				: "";
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+			state.dockPhase !== "docked"
+				? ""
+				: hold ||
+					(state.rightTab === "Flight"
+						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
+						: "");
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+	}
+
+	/** A held launch's reason and its way out, for every docked console (#314). */
+	private launchHoldBlock(state: LiveCockpitState) {
+		return state.dockPhase === "docked" && state.launchHold
+			? '<div class="lc-launch-hold" data-live-launch-hold><p data-live-launch-notice></p><button class="lc-launch" type="button" data-live-launch-cancel>CANCEL LAUNCH</button></div>'
+			: "";
 	}
 
 	private stationConsole(state: LiveCockpitState) {
@@ -1029,7 +1046,7 @@ export class LiveCockpit {
 							capacityLy: stationConsole.fuelCapacityLy,
 						},
 					)
-		}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
+		}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
 	}
 
 	private market(rows: readonly ConsoleMarketRow[]) {

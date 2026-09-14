@@ -1564,6 +1564,8 @@ class Game {
 		string,
 		{ readyAt: number; movement: "arrival" | "launch" }
 	>();
+	/** A launch Traffic refused, waiting for the lane (#314). */
+	private launchHold: { stationId: string; refusal: LaneRefusal } | null = null;
 	/** The system a fired wind-up is waiting to move the world to, taken at the
 	 *  end of the frame it fired on. See `takePendingJump` (#187). */
 	private pendingJump: number | null = null;
@@ -6825,9 +6827,6 @@ class Game {
 			this.cancelLaunch();
 		else this.launch();
 	}
-
-	/** A launch Traffic refused, waiting for the lane (#314). */
-	private launchHold: { stationId: string; refusal: LaneRefusal } | null = null;
 
 	/** One arbitration rule for the player's two directions through the lane. */
 	private playerWinsTrafficLane(

@@ -6,6 +6,7 @@
 import { berthCentre, parkedAttitude, recomposeOffset } from "./arrival";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import type { DisplayContact } from "./display-contact";
+import type { TrafficRoutePhase } from "./station-route";
 import { apertureFrame, frameAtPhase, slotBasis, V_GATE_KMS } from "./docking";
 import { HULL_SPECS, type HullEnvelope, type HullId } from "./hull";
 import { bodyVelocity, type System, stationOf, stationPose } from "./sim";
@@ -307,14 +308,14 @@ export type LaneRefusal =
 	| "carrier-queued-ahead";
 
 /**
- * What the player's lane arbitration reads of a route. Structural, because
- * `station-route.ts` imports this module and a type import back would close
- * the cycle.
+ * What the player's lane arbitration reads of a route. `phase` is the route's
+ * own union, through a type-only import: `station-route.ts` imports this
+ * module, and a type import is erased before it could close that cycle.
  */
 export interface LaneRouteView {
 	key: CarrierKey;
 	terminalStationId: string | null;
-	phase: string;
+	phase: TrafficRoutePhase;
 	laneRequest?: { readyAt: number; kind: "arrival" | "launch" } | null;
 }
 
@@ -361,11 +362,15 @@ export function playerLaneRefusal(input: {
 		: "carrier-queued-ahead";
 }
 
-/** The docked Flight console's words for a held launch (#314). */
+/**
+ * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
+ * the keys keep the consequence model's word, and the player reads a ship —
+ * a `carrier` is also a capital hull on the roster.
+ */
 export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
 	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
-	"carrier-in-lane": "LAUNCH HELD — A CARRIER IS IN THE LANE",
-	"carrier-queued-ahead": "LAUNCH HELD — A CARRIER IS QUEUED AHEAD",
+	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
+	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
 };
 
 /** Station-owned local traversal laws used by route composition. */

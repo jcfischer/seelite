@@ -17,6 +17,7 @@ import {
 	trafficScheduleAt,
 } from "../src/station-traffic";
 import { trafficBerths } from "../src/station-interior";
+import type { TrafficRoutePhase } from "../src/station-route";
 import { generateContents } from "../src/system";
 import { enumerateCarriers, WORLD_GENERATOR_VERSION } from "../src/world-state";
 
@@ -250,7 +251,7 @@ describe("shared station arbitration", () => {
 		const STATION = "station-trade";
 		const key = carrierKey(7, "station-trade/traffic-02");
 		const route = (
-			phase: string,
+			phase: TrafficRoutePhase,
 			laneRequest?: { readyAt: number; kind: "arrival" | "launch" },
 			terminalStationId = STATION,
 		) => ({ key, terminalStationId, phase, laneRequest });
@@ -299,13 +300,12 @@ describe("shared station arbitration", () => {
 			).toBeNull();
 		});
 
-		test("every refusal has words for the console", () => {
-			for (const reason of [
-				"traffic-starting",
-				"carrier-in-lane",
-				"carrier-queued-ahead",
-			] as const)
-				expect(LAUNCH_HOLD_NOTICE[reason]).toMatch(/^LAUNCH HELD/);
+		test("every notice reads as a hold", () => {
+			// The record's type already demands a notice per refusal; what it
+			// cannot demand is that each one says what happened.
+			const notices = Object.values(LAUNCH_HOLD_NOTICE);
+			expect(notices.length).toBeGreaterThan(0);
+			for (const notice of notices) expect(notice).toMatch(/^LAUNCH HELD — /);
 		});
 	});
 });
