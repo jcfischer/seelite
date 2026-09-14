@@ -127,23 +127,16 @@ export const TRAVERSAL_SECONDS_NEAR = 6;
 export const TRAVERSAL_SECONDS_DEEP = 9;
 
 /**
- * **#8's constant, standing in.** The absolute damage scale is
- * `docs/specs/docking.md` §10's hand-off to the combat node, because it is
- * denominated in #8's shield and energy pools — which do not exist yet.
+ * The absolute damage scale (§10), denominated in `ship-condition.ts`'s pools
+ * since #324 gave them real figures.
  *
- * Named `INTERIM_` rather than `DAMAGE_SCALE` so that the day #8 exports the
- * real one, the two do not silently coexist under names that read as
- * equivalent. §2.1's bound is what constrains it: at `V_GATE` a failed entry
- * from full health costs at most a quarter of the combined pool. 40 against a
- * 200-point pool is 20%, which is that bound met with the margin §2.1 asks for.
+ * §2.1's bound is what constrains it: at `V_GATE` a failed entry from full
+ * health costs at most a quarter of the head-on pool (`headOnPool`). The
+ * smallest hull's pool is a fore shield and its integrity, and
+ * `tests/ship-condition.test.ts` asserts this exported figure against every
+ * hull row, which is §10's obligation.
  */
-export const INTERIM_DAMAGE_SCALE = 40;
-
-/** #8's pools, standing in for the same reason (§10). Fore/aft shields are the
- *  combat spec's shape; a head-on entry reads one pool, so one is what the
- *  failure model needs and all it declares. */
-export const INTERIM_SHIELD_POOL = 100;
-export const INTERIM_HULL_POOL = 100;
+export const DOCKING_DAMAGE_SCALE = 40;
 
 const DEG = Math.PI / 180;
 const AXIS_COS = Math.cos(AXIS_TOLERANCE_DEG * DEG);
@@ -608,32 +601,10 @@ export function planeCrossing(
  */
 export function entryDamage(
 	speedKms: number,
-	damageScale: number = INTERIM_DAMAGE_SCALE,
+	damageScale: number = DOCKING_DAMAGE_SCALE,
 ): number {
 	const ratio = speedKms / V_GATE_KMS;
 	return damageScale * Math.max(DAMAGE_FLOOR, ratio * ratio);
-}
-
-/** #8's pools, standing in (§10). Shields first, hull after. */
-export interface ShipCondition {
-	shield: number;
-	hull: number;
-}
-
-export const fullCondition = (): ShipCondition => ({
-	shield: INTERIM_SHIELD_POOL,
-	hull: INTERIM_HULL_POOL,
-});
-
-export const poolOf = (c: ShipCondition): number => c.shield + c.hull;
-export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
-
-export function applyDamage(c: ShipCondition, damage: number): ShipCondition {
-	const toShield = Math.min(c.shield, damage);
-	return {
-		shield: c.shield - toShield,
-		hull: Math.max(0, c.hull - (damage - toShield)),
-	};
 }
 
 /**

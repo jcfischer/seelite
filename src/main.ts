@@ -236,7 +236,6 @@ import {
 	type DockingState,
 	type EntryOutcome,
 	type EntryPose,
-	type ShipCondition,
 	TRAVERSAL_SECONDS_DEEP,
 	TRAVERSAL_SECONDS_NEAR,
 	AXIS_TOLERANCE_DEG,
@@ -246,15 +245,11 @@ import {
 	VICINITY_KM,
 	V_GATE_KMS,
 	apertureFrame,
-	applyDamage,
 	attemptEntry,
 	dockingComputerStep,
-	fullCondition,
 	grantLive,
-	isAlive,
 	newDockingState,
 	orthonormalise,
-	poolOf,
 	planeCrossing,
 	releaseBerth,
 	requestClearance,
@@ -264,6 +259,16 @@ import {
 	type ComputerPhase,
 	offAxisKm,
 } from "./docking";
+import {
+	type ShieldSide,
+	type ShipCondition,
+	applyDamage,
+	fullCondition,
+	headOnPool,
+	isAlive,
+	sideStruck,
+	stepCondition,
+} from "./ship-condition";
 import { berthCentre, recomposeDirection } from "./arrival";
 import {
 	type DockPhase,
@@ -768,7 +773,10 @@ interface DockingSnapshot {
 	stationName: string;
 	condition: ShipCondition;
 	alive: boolean;
+	/** The full head-on pool (`headOnPool`), which §2.1's bound is against. */
 	poolMax: number;
+	/** A full condition for the flown hull, for a probe that resets to it. */
+	conditionFull: ShipCondition;
 	lastEntry: EntryOutcome | null;
 }
 
@@ -1935,19 +1943,15 @@ class Game {
 	}
 
 	/**
-	 * #8's shield and hull pools, standing in (`docking.md` §10).
+	 * The player ship's condition (`ship-condition.ts`, #324): fore and aft
+	 * shields, hull, energy and laser heat, stepped every frame.
 	 *
-	 * The whole of what the game does with them today is take docking damage.
-	 * #8 owns the real pools, the real scale, and — §11.6 — whatever undoes the
-	 * damage; until that lands D1's failure model is survivable but not yet
-	 * costly.
-	 *
-	 * **`interim` in the name, matching the `INTERIM_` constants it is built
-	 * from.** A field called `condition` on the game handle is the slot #8's real
-	 * pools would silently inherit, and inheriting a stand-in is how a temporary
-	 * answer stops being visible as one.
+	 * Written only through `takeDamage`, so every source of damage cancels what
+	 * damage cancels. **Not saved and never repaired**, as before #324:
+	 * `docking.md` §10 hands "how damage is undone" to the combat node, and that
+	 * is still an open question for the principal rather than a default.
 	 */
-	interimCondition: ShipCondition = fullCondition();
+	condition: ShipCondition = fullCondition(PLAYER_HULL[0]);
 
 	/**
 	 * §12's dock state machine — arriving, docked, launching, or flying.
@@ -6476,12 +6480,13 @@ class Game {
 			// probe: a probe with its own copy of a rule goes falsely red the day
 			// the rule changes.
 			stationName: this.nameOfStation(target),
-			condition: this.interimCondition,
-			alive: isAlive(this.interimCondition),
-			// The full pool, so a probe asserting §2.1's quarter-pool bound reads
-			// it off the page instead of restating `INTERIM_SHIELD_POOL +
-			// INTERIM_HULL_POOL` — the two constants #8 is going to replace.
-			poolMax: poolOf(fullCondition()),
+			condition: this.condition,
+			alive: isAlive(this.condition),
+			// The full head-on pool and the full condition, so a probe asserting
+			// §2.1's quarter-pool bound — and resetting to full before it — reads
+			// both off the page instead of restating the shield and hull figures.
+			poolMax: headOnPool(fullCondition(PLAYER_HULL[0])),
+			conditionFull: fullCondition(PLAYER_HULL[0]),
 			lastEntry: this.lastEntry,
 		};
 	}
@@ -6691,11 +6696,15 @@ class Game {
 			return;
 		}
 		// §2.0: repelled, damaged, and left outside — never inside the station.
-		this.interimCondition = applyDamage(this.interimCondition, outcome.damage);
-		// §8's interruption. The only source of damage the shipped game has, and
-		// a real one rather than a hook: charge a jump on the way in, clip the
-		// aperture, and the charge goes (#187).
-		if (outcome.damage > 0) this.cancelJumpCharge("hull damage");
+		// The pool is the side facing the station: `crossing.rel` is the ship from
+		// the station's centre, so the station lies along its negation. A nose-first
+		// entry meets it on the fore shield. Through `takeDamage`, so the clip
+		// cancels a jump charge (#187) and a cruise spool-up alike.
+		this.takeDamage(
+			outcome.damage,
+			sideStruck(crossing.nose, scale(crossing.rel, -1)),
+			"hull damage",
+		);
 		const body = this.world.system.byId.get(id);
 		if (body && outcome.repelled) {
 			this.world.ship.pos = add(body.pos, outcome.repelled.rel);
@@ -7179,6 +7188,9 @@ class Game {
 			this.ensureTrafficActors();
 		}
 		this.clearFlightSession();
+		// A reset is a boot, and a boot has a whole ship. Here and not in
+		// `clearFlightSession`, which a jump shares: a jump repairs nothing.
+		this.condition = fullCondition(PLAYER_HULL[0]);
 
 		// **#241's gate goes back to shut, which is where a boot in open space
 		// finds it.** Left open, a reset would draw both passes for the whole
@@ -7384,14 +7396,31 @@ class Game {
 	}
 
 	/**
+	 * The one way the player ship takes damage (#324).
+	 *
+	 * Damage cancels two windows, and a source that wrote the condition itself
+	 * would have to remember both: §8's jump charge (`cancelJumpCharge`) and
+	 * `in-system-travel.md` §4's cruise spool-up, which before #324 only the
+	 * player's own key could cancel. The failed dock calls this today; weapon fire
+	 * will.
+	 */
+	takeDamage(amount: number, side: ShieldSide, reason: string) {
+		if (!(amount > 0)) return;
+		this.condition = applyDamage(this.condition, amount, side);
+		this.cancelJumpCharge(reason);
+		if (this.spoolLeftS > 0) {
+			this.spoolLeftS = 0;
+			this.detour = null;
+			this.lastExit = `spool-up cancelled — ${reason}`;
+		}
+	}
+
+	/**
 	 * §8's interruption: **taking damage cancels the charge.**
 	 *
-	 * One method, called from the one place the shipped game applies damage — a
-	 * failed dock (`docking.md` §2.0). #8's combat is unbuilt, so this is the
-	 * only source today, and it is a real one rather than a hook waiting for a
-	 * caller: charge a jump on the way into an aperture, clip the frame, and the
-	 * charge goes. Anything that damages the ship later inherits the rule by
-	 * calling this instead of remembering it.
+	 * Called from `takeDamage`, so anything that damages the ship inherits the
+	 * rule by going through that instead of remembering this. Also called on a
+	 * dock, which is not damage.
 	 */
 	cancelJumpCharge(reason: string) {
 		// **The pending jump too, and that is the half the blocker turned on.**
@@ -7725,6 +7754,10 @@ class Game {
 		// Before the phase branch, so a hold is retried while docked and ended in
 		// every other phase (#314).
 		this.stepHeldLaunch();
+		// Every phase, docked included: energy regenerates and shields recharge
+		// on the sim clock wherever the ship is. The trigger is not wired until
+		// there is something to shoot (#324 part b).
+		this.condition = stepCondition(this.condition, dt, false).condition;
 		this.updateLocalFrameBody();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all

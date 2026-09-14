@@ -239,6 +239,19 @@ describe("the jump itself", () => {
 		expect(main).toContain("const PROMPT_LINE_HEIGHT_PX = 18;");
 	});
 
+	test("damage goes through one funnel that cancels the charge and the spool-up", () => {
+		// `in-system-travel.md` §4: re-entering cruise is a spool-up cancelled by
+		// damage, and §8's jump charge is cancelled by damage too. One method owns
+		// both, and it is the only writer of the condition.
+		const take = methodBody("takeDamage");
+		expect(take).toContain("this.cancelJumpCharge(reason)");
+		expect(take).toContain("this.spoolLeftS = 0");
+		expect(main.match(/this\.condition = applyDamage\(/g) ?? []).toHaveLength(
+			1,
+		);
+		expect(take).toContain("this.condition = applyDamage(");
+	});
+
 	test("cancelling clears the armed jump, not only the charge", () => {
 		// A charge that has fired is already idle, so a `charging` guard alone
 		// would let damage on the terminal frame report a cancellation and the

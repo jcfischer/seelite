@@ -185,12 +185,14 @@ async function fly(setup) {
 			);
 			D.place(id, start, { x: 0, y: 0, z: 0 });
 			g.targetId = id;
-			// **`interimCondition`, not `condition`.** The field was renamed and
-			// this line was not: it silently created a stray property, no per-run
-			// health reset landed, and §9.2.5's "at most a quarter of the pool"
-			// quietly became a cumulative measurement across every run before it.
-			// A write to a page object cannot fail, which is what made it invisible.
-			g.interimCondition = { shield: setup.shield, hull: setup.hull };
+			// **A per-run reset to the page's own full condition.** An earlier
+			// version wrote a renamed field's old name: it silently created a stray
+			// property, no reset landed, and §9.2.5's "at most a quarter of the
+			// pool" quietly became a cumulative measurement across every run before
+			// it. A write to a page object cannot fail, so the next line throws
+			// when the field it replaces is not there.
+			if (!("condition" in g)) throw new Error("Game has no `condition`");
+			g.condition = structuredClone(g.dockingSnapshot(id).conditionFull);
 			g.lastEntry = null;
 			// **The session, not a `dockedAt` flag.** #77 replaced the nullable id
 			// with §12's state machine, and `dockedAt` is a derived getter now.
@@ -226,7 +228,7 @@ async function fly(setup) {
 
 			let elapsed = 0;
 			const trace = [];
-			const before = { ...g.interimCondition };
+			const before = { ...g.condition };
 			for (let i = 0; i < limitS / dt; i++) {
 				if (g.lastEntry || g.dockedAt) break;
 				if (!setup.computer) D.reaim(id, setup);
@@ -299,7 +301,7 @@ async function fly(setup) {
  * that reached two of them would silently change what the third measures rather
  * than failing.
  */
-const BASE = { standoffKm: 3.2, shield: 100, hull: 100 };
+const BASE = { standoffKm: 3.2 };
 
 const tolerances = await page.evaluate(() => {
 	const g = window.__seelite;
@@ -675,10 +677,10 @@ const rolled = await fly({
 	rollDeg: 90,
 });
 if (!rolled.entry) for (const line of rolled.trace) console.log(`    ${line}`);
-const lost =
-	rolled.conditionBefore.shield +
-	rolled.conditionBefore.hull -
-	(rolled.conditionAfter.shield + rolled.conditionAfter.hull);
+// Over all three pools, so a hit that landed in the wrong one still counts as
+// lost; the row after `failedEntryUnderGate` says which pool it was.
+const pools = (c) => c.fore + c.aft + c.hull;
+const lost = pools(rolled.conditionBefore) - pools(rolled.conditionAfter);
 console.log(
 	`  90° out just under the gate: docked=${rolled.docked}, ` +
 		`pool ${lost.toFixed(1)} lost of ${rolled.poolMax}, alive=${rolled.alive}`,
@@ -690,6 +692,15 @@ check(
 	JSON.stringify(rolled.entry?.evaluation?.checks ?? null),
 );
 check("it cost the ship something", lost > 0, `${lost.toFixed(2)} of the pool`);
+check(
+	// §2: the incoming direction selects the pool. A nose-first entry meets the
+	// station ahead, so it is the fore shield and never the aft.
+	"the entry struck the fore shield, not the aft",
+	rolled.conditionAfter.fore < rolled.conditionBefore.fore &&
+		rolled.conditionAfter.aft === rolled.conditionBefore.aft,
+	`fore ${rolled.conditionBefore.fore}→${rolled.conditionAfter.fore}, ` +
+		`aft ${rolled.conditionBefore.aft}→${rolled.conditionAfter.aft}`,
+);
 check("D1: the ship survived it", rolled.alive);
 check(
 	// The bound is against `poolMax`, so it is only a per-entry bound if the run
@@ -697,9 +708,8 @@ check(
 	// write a field that did not exist, the bound went on passing, and nothing
 	// said the pool it was measured against was the pool the run began with.
 	"the run started from a full pool, so the bound below is per-entry",
-	rolled.conditionBefore.shield + rolled.conditionBefore.hull ===
-		rolled.poolMax,
-	`${rolled.conditionBefore.shield + rolled.conditionBefore.hull} of ${rolled.poolMax}`,
+	rolled.conditionBefore.fore + rolled.conditionBefore.hull === rolled.poolMax,
+	`${rolled.conditionBefore.fore + rolled.conditionBefore.hull} of ${rolled.poolMax}`,
 );
 check(
 	"D1: it cost at most a quarter of the pool",
