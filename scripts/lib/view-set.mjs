@@ -140,7 +140,7 @@ export const LEVERS = Object.freeze({
 	210: "the planet's shadow across its ring, and the ring's back across the planet",
 	209: "the gas giant's band tones, its storm's interior, and its limb",
 	300: "every §5 fixture on the surface its own aperture axis looks at",
-	324: "the duel HUD: the shield and heat row, the hostile firing cue, and the Flight console's detail",
+	324: "the duel HUD, the canister markers after a kill, and the Communications console's raider log",
 });
 
 /**
@@ -172,7 +172,9 @@ export const LEVERS = Object.freeze({
  *   down at a deck rather than in through an opening; the kind's name is the
  *   mechanism — the workbench stage — and not a claim about the subject.
  * - `duel` — in normal flight against a forced raider, aimed at it and with it
- *   selected, looking `headLook` (`forward` or `right`, the Flight console).
+ *   selected, looking `headLook` (`forward`, `right` for the Flight console,
+ *   or `left` for Communications). With `aftermath` it shoots the raider down
+ *   first and frames its `canisters`, or the raider `log` ten minutes on.
  *   #324's HUD exists only in a fight, so no other kind reaches it. **It is not
  *   a repeatable frame**: the fight runs on the live clock through the settle
  *   frames, so the raider and both conditions move between runs. Judge the
@@ -721,6 +723,23 @@ export const VIEWS = Object.freeze([
 		what: "The same duel, head turned to the right console on its Flight tab. FORE, AFT, HULL, ENERGY BANK and HEAT beside ASSIST and CHARGE.",
 		shot: { kind: "duel", headLook: "right", view: "cockpit" },
 	},
+	{
+		name: "raider-canisters",
+		covers: [324],
+		what: "Just after a kill, facing the wreck's cargo: a canister marked on the glass with its good and range (#324 part d).",
+		shot: {
+			kind: "duel",
+			headLook: "forward",
+			aftermath: "canisters",
+			view: "cockpit",
+		},
+	},
+	{
+		name: "raider-log",
+		covers: [324],
+		what: "Ten minutes after a kill, head turned to the Communications console: the raider log's destroyed and under-repair lines (#324 part d).",
+		shot: { kind: "duel", headLook: "left", aftermath: "log", view: "cockpit" },
+	},
 	/**
 	 * §13.6's seven-frame acceptance set, as declared views.
 	 *
@@ -912,7 +931,11 @@ const SHOT_REQUIREMENTS = {
 	// missing one is a docked, forward, cockpit frame.
 	berth: (s) => typeof s.station === "string" && typeof s.berth === "string",
 	"workbench-interior": (s) => typeof s.asset === "string" && finite(s.radii),
-	duel: (s) => s.headLook === "forward" || s.headLook === "right",
+	duel: (s) =>
+		["forward", "right", "left"].includes(s.headLook) &&
+		(s.aftermath === undefined ||
+			s.aftermath === "canisters" ||
+			s.aftermath === "log"),
 };
 
 /**

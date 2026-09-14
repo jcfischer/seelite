@@ -261,55 +261,106 @@ const PLACERS = {
 		// fixed steps so it interdicts, then select it and aim at it. Close and
 		// ahead, so the raider is near the centre of the frame; the probe forces
 		// its own raider for its own checks.
-		const name = await page.evaluate(async (headLook) => {
-			const g = window.__seelite;
-			const dt = g.units.MAX_DT;
-			g.resetFlightToStart();
-			const far = g.world.system.bodies
-				.filter((b) => b.kind !== "star")
-				.map((b) => ({
-					b,
-					d: Math.hypot(
-						b.pos.x - g.world.ship.pos.x,
-						b.pos.y - g.world.ship.pos.y,
-						b.pos.z - g.world.ship.pos.z,
-					),
-				}))
-				.sort((a, b) => b.d - a.d)[0].b;
-			g.targetId = far.id;
-			g.faceTarget?.();
-			g.engageCruise();
-			for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
-			g.forceRaider("ahead", 0.5, 12);
-			for (let i = 0; i < 600 && g.encounter?.phase !== "duel"; i++) g.step(dt);
-			if (g.encounter?.phase !== "duel")
-				throw new Error(
-					`duel placer: the raider never interdicted (phase ${g.encounter?.phase ?? "none"})`,
-				);
-			// **Rendered, not only stepped.** The raider's contact takes its id in
-			// `render`, so a placer that only steps selects whatever id the contact
-			// held before — the first capture of this view had no target at all.
-			for (let i = 0; i < 60; i++) {
-				g.step(dt);
+		const name = await page.evaluate(
+			async ({ headLook, aftermath }) => {
+				const g = window.__seelite;
+				const dt = g.units.MAX_DT;
+				g.resetFlightToStart();
+				const far = g.world.system.bodies
+					.filter((b) => b.kind !== "star")
+					.map((b) => ({
+						b,
+						d: Math.hypot(
+							b.pos.x - g.world.ship.pos.x,
+							b.pos.y - g.world.ship.pos.y,
+							b.pos.z - g.world.ship.pos.z,
+						),
+					}))
+					.sort((a, b) => b.d - a.d)[0].b;
+				g.targetId = far.id;
+				g.faceTarget?.();
+				g.engageCruise();
+				for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
+				g.forceRaider("ahead", 0.5, 12);
+				for (let i = 0; i < 600 && g.encounter?.phase !== "duel"; i++)
+					g.step(dt);
+				if (g.encounter?.phase !== "duel")
+					throw new Error(
+						`duel placer: the raider never interdicted (phase ${g.encounter?.phase ?? "none"})`,
+					);
+				// **Rendered, not only stepped.** The raider's contact takes its id in
+				// `render`, so a placer that only steps selects whatever id the contact
+				// held before — the first capture of this view had no target at all.
+				for (let i = 0; i < 60; i++) {
+					g.step(dt);
+					g.render(dt);
+				}
+				const raider = g.encounter.raider;
+				if (!raider) throw new Error("duel placer: no raider in the duel");
+				g.targetId = g.raiderContact.id;
 				g.render(dt);
-			}
-			const raider = g.encounter.raider;
-			if (!raider) throw new Error("duel placer: no raider in the duel");
-			g.targetId = g.raiderContact.id;
-			g.render(dt);
-			if (g.targetBody()?.id !== g.raiderContact.id)
-				throw new Error(
-					`duel placer: the raider is not the selected target (${g.targetId})`,
-				);
-			const p = g.world.ship.pos;
-			const r = raider.flight.ship.pos;
-			g.setAttitude({ x: r.x - p.x, y: r.y - p.y, z: r.z - p.z }, g.shipUp());
-			g.rightTab = "Flight";
-			g.setHeadLook(headLook);
-			await new Promise((done) => requestAnimationFrame(() => done()));
-			return g.encounter.name;
-		}, shot.headLook);
-		return `duel · ${name} · ${shot.headLook}`;
+				if (g.targetBody()?.id !== g.raiderContact.id)
+					throw new Error(
+						`duel placer: the raider is not the selected target (${g.targetId})`,
+					);
+				const p = g.world.ship.pos;
+				const r = raider.flight.ship.pos;
+				g.setAttitude({ x: r.x - p.x, y: r.y - p.y, z: r.z - p.z }, g.shipUp());
+				const slotName = g.encounter.name;
+				g.rightTab = "Flight";
+				// #324 part d's aftermath views: the raider brought to its last point
+				// of hull and shot down on fixed steps, then either its canisters
+				// framed on the glass or the Communications log ten minutes on.
+				if (aftermath) {
+					g.encounter = {
+						...g.encounter,
+						raider: {
+							...raider,
+							condition: { ...raider.condition, fore: 0, aft: 0, hull: 0.01 },
+						},
+					};
+					g.keys.add(" ");
+					for (let i = 0; i < 300 && g.encounter; i++) {
+						g.step(dt);
+						const live = g.encounter?.raider;
+						if (live) {
+							const q = g.world.ship.pos;
+							const t = live.flight.ship.pos;
+							g.setAttitude(
+								{ x: t.x - q.x, y: t.y - q.y, z: t.z - q.z },
+								g.shipUp(),
+							);
+						}
+						g.render(dt);
+					}
+					g.keys.delete(" ");
+					if (g.encounter)
+						throw new Error(
+							"duel placer: the raider did not die for the aftermath",
+						);
+					if (aftermath === "canisters") {
+						const c = g.canisters[0];
+						if (!c)
+							throw new Error("duel placer: the kill dropped no canister");
+						const q = g.world.ship.pos;
+						g.setAttitude(
+							{ x: c.pos.x - q.x, y: c.pos.y - q.y, z: c.pos.z - q.z },
+							g.shipUp(),
+						);
+					}
+					if (aftermath === "log") {
+						g.world.gameTime += 601;
+						g.leftTab = "Communications";
+					}
+				}
+				g.setHeadLook(headLook);
+				g.render(dt);
+				await new Promise((done) => requestAnimationFrame(() => done()));
+				return slotName;
+			},
+			{ headLook: shot.headLook, aftermath: shot.aftermath ?? null },
+		);
+		return `duel · ${name} · ${shot.headLook}${shot.aftermath ? ` · ${shot.aftermath}` : ""}`;
 	},
 	"deep-sky": async (page) => {
 		// Back to the arrival point first. Turning the camera alone left the ship
