@@ -369,7 +369,14 @@ export function padFlightAxes(
 		// **On the shoulders since #324, by the principal's ruling**, so R2 is
 		// free for the trigger. `values`, not `held`, still: a digital bumper
 		// reports 0 or 1, and a pad whose bumpers are analog trims by the pull.
-		throttleTrim: frame.values.r1 - frame.values.l1,
+		//
+		// **Not in the instrument.** It claims a console's six buttons, the
+		// shoulders among them as tab steps, so a shoulder there must not also
+		// trim (sage #328). On standard pads the shoulders are digital, so this
+		// trim is full rate: the analog pull the triggers gave is the price of R2
+		// firing, which the principal chose.
+		throttleTrim:
+			context === "instrument" ? 0 : frame.values.r1 - frame.values.l1,
 	};
 }
 

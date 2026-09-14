@@ -348,7 +348,10 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// would measure a different frame from the one it exists for. It takes a
 		// console's six buttons and leaves the sticks alone.
 		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
-		expect(padFlightAxes(press("r1"), "instrument").throttleTrim).toBe(1);
+		// The shoulders are the instrument's tab steps, so they do not also trim
+		// there (sage #328): one press, one meaning.
+		expect(padFlightAxes(press("r1"), "instrument").throttleTrim).toBe(0);
+		expect(padIntents(press("r1"), "instrument").tabDelta).toBe(1);
 	});
 
 	test("the instrument still claims the six a console claims", () => {

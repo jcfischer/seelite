@@ -322,6 +322,20 @@ try {
 			before > 0.02 && before < 0.98 && Math.abs(after - before) < 1e-9,
 			`throttle ${before.toFixed(4)} → ${after.toFixed(4)}`,
 		);
+		// **R2 fires now, and must not also trim** (#324). Read from the middle of
+		// the range the check above left, where a trim in either direction shows.
+		await page.evaluate((i) => window.__pad.hold(i, 1), B.r2);
+		await frames(8);
+		await page.evaluate(() => window.__pad.rest());
+		await frames(2);
+		const afterR2 = await page.evaluate(
+			() => window.__seelite.throttleFraction,
+		);
+		check(
+			"R2 no longer moves the throttle",
+			Math.abs(afterR2 - after) < 1e-9,
+			`throttle ${after.toFixed(4)} → ${afterR2.toFixed(4)}`,
+		);
 	}
 
 	// --- braking must not accelerate --------------------------------------

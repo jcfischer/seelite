@@ -9,8 +9,8 @@
  * keyboard, the mouse, or the fake pad the gamepad probes use — and reads what
  * the player gets: tracer pixels on the overlay and the shot sound.
  *
- * It also holds the controller mapping the principal set: L1/R1 trim the
- * throttle, R2 fires, L2 selects the next target.
+ * The controller's other bindings (L1/R1 throttle, L2 target, R2 not trimming)
+ * are `probe-gamepad.mjs`'s, so one remap edits one probe (sage #328).
  */
 import { installFakePad, STANDARD_INDEX } from "./lib/fake-pad.mjs";
 import {
@@ -75,6 +75,14 @@ const setup = await page.evaluate(() => {
 		window.__shots += 1;
 		laser();
 	};
+	// Frames the game actually ran, so the pacing check knows how many sounds
+	// an unpaced gun would have made.
+	window.__frameCount = 0;
+	const count = () => {
+		window.__frameCount += 1;
+		requestAnimationFrame(count);
+	};
+	requestAnimationFrame(count);
 	return { phase: g.encounter?.phase ?? null, view: g.view };
 });
 check(
@@ -85,18 +93,19 @@ check(
 
 /**
  * Tracer pixels, sampled on the tracer's own line halfway from the left port to
- * the sightline, and the state that drew them. Read off the page's constants
- * would be better; the fractions are the module's and are restated once here
- * because the overlay is the thing being judged.
+ * the sightline — both read off the page's `gunTracer`, not restated — and the
+ * state that drew them.
  */
 const sample = () =>
 	page.evaluate(
 		([w, h]) => {
 			const g = window.__seelite;
+			const [port] = g.gunTracer.ports;
+			const aim = g.gunTracer.aim;
 			const overlay = document.getElementById("overlay");
 			const ctx = overlay.getContext("2d", { willReadFrequently: true });
-			const x = Math.round(w * ((0.24 + 0.5) / 2));
-			const y = Math.round(h * ((0.64 + 0.5) / 2));
+			const x = Math.round(w * ((port.x + aim.x) / 2));
+			const y = Math.round(h * ((port.y + aim.y) / 2));
 			const data = ctx.getImageData(x - 6, y - 6, 12, 12).data;
 			let cyan = 0;
 			for (let i = 0; i < data.length; i += 4)
@@ -112,126 +121,115 @@ const sample = () =>
 				tracerLeftS: g.gunFeedback.tracerLeftS,
 				heat: g.condition.heat,
 				shots: window.__shots,
+				gameTime: g.world.gameTime,
+				frames: window.__frameCount,
+				view: g.view,
 			};
 		},
 		[W, H],
 	);
 const settle = (ms) => page.waitForTimeout(ms);
 
+/** Press, hold for `holdMs`, sample; release, let the tracer lapse, sample. */
+const heldAndReleased = async (press, release, holdMs = 350) => {
+	const before = await sample();
+	await press();
+	await settle(holdMs);
+	const held = await sample();
+	await release();
+	await settle(600);
+	return { before, held, released: await sample() };
+};
+
 // ---------------------------------------------------------------------------
-// The keyboard.
+// The keyboard, held long enough to tell a paced sound from one per frame.
 // ---------------------------------------------------------------------------
 await settle(400);
-const quiet = await sample();
-await page.keyboard.down("Space");
-await settle(350);
-const spaceHeld = await sample();
-await page.keyboard.up("Space");
-await settle(600);
-const spaceReleased = await sample();
+const space = await heldAndReleased(
+	() => page.keyboard.down("Space"),
+	() => page.keyboard.up("Space"),
+	900,
+);
 check(
 	"no tracer is drawn before the trigger is pulled",
-	quiet.cyan === 0 && quiet.tracerLeftS === 0,
-	JSON.stringify(quiet),
+	space.before.cyan === 0 && space.before.tracerLeftS === 0,
+	JSON.stringify(space.before),
 );
 check(
 	"a real Space press draws the tracer on the glass",
-	spaceHeld.cyan > 0 && spaceHeld.heat > quiet.heat,
-	JSON.stringify(spaceHeld),
+	space.held.cyan > 0 && space.held.heat > space.before.heat,
+	JSON.stringify(space.held),
 );
-check(
-	"and plays the shot sound, paced rather than once per frame",
-	spaceHeld.shots > quiet.shots && spaceHeld.shots - quiet.shots < 20,
-	`${spaceHeld.shots - quiet.shots} sounds in 350 ms`,
-);
+{
+	const gap = await page.evaluate(() => window.__seelite.gunTracer.soundGapS);
+	const heldS = space.held.gameTime - space.before.gameTime;
+	const sounds = space.held.shots - space.before.shots;
+	const frames = space.held.frames - space.before.frames;
+	// One at once and one per full gap, with one of slack at each sample edge.
+	const pacedBound = Math.floor(heldS / gap) + 2;
+	check(
+		"the shot sound plays, paced rather than once per frame",
+		// The frames must outnumber the bound, or an unpaced gun would pass too.
+		frames > pacedBound && sounds >= 1 && sounds <= pacedBound,
+		`${sounds} sounds over ${heldS.toFixed(2)} s and ${frames} frames; paced bound ${pacedBound}`,
+	);
+}
 check(
 	"releasing Space clears the tracer",
-	spaceReleased.cyan === 0 && spaceReleased.tracerLeftS === 0,
-	JSON.stringify(spaceReleased),
+	space.released.cyan === 0 && space.released.tracerLeftS === 0,
+	JSON.stringify(space.released),
 );
 
 // ---------------------------------------------------------------------------
 // The mouse.
 // ---------------------------------------------------------------------------
 await page.mouse.move(W / 2, H * 0.3);
-await page.mouse.down();
-await settle(350);
-const clickHeld = await sample();
-await page.mouse.up();
-await settle(600);
-const clickReleased = await sample();
+const click = await heldAndReleased(
+	() => page.mouse.down(),
+	() => page.mouse.up(),
+);
 check(
 	"a real left click held on the canvas draws the tracer and sounds",
-	clickHeld.cyan > 0 && clickHeld.shots > spaceReleased.shots,
-	JSON.stringify(clickHeld),
+	click.held.cyan > 0 && click.held.shots > click.before.shots,
+	JSON.stringify(click.held),
 );
 check(
 	"releasing the mouse clears it",
-	clickReleased.cyan === 0,
-	JSON.stringify(clickReleased),
+	click.released.cyan === 0,
+	JSON.stringify(click.released),
 );
 
 // ---------------------------------------------------------------------------
-// The controller: R2 fires, L1/R1 trim the throttle, L2 selects next target.
+// The controller's trigger.
 // ---------------------------------------------------------------------------
-await page.evaluate((i) => window.__pad.hold(i, 1), STANDARD_INDEX.r2);
-await settle(350);
-const padHeld = await sample();
-await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.r2);
-await settle(600);
-const padReleased = await sample();
+const pad = await heldAndReleased(
+	() => page.evaluate((i) => window.__pad.hold(i, 1), STANDARD_INDEX.r2),
+	() => page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.r2),
+);
 check(
 	"R2 held fires the pulse laser, with the tracer and the sound",
-	padHeld.cyan > 0 && padHeld.shots > clickReleased.shots,
-	JSON.stringify(padHeld),
+	pad.held.cyan > 0 && pad.held.shots > pad.before.shots,
+	JSON.stringify(pad.held),
 );
 check(
 	"releasing R2 clears the tracer",
-	padReleased.cyan === 0,
-	JSON.stringify(padReleased),
+	pad.released.cyan === 0,
+	JSON.stringify(pad.released),
 );
 
-const throttleBefore = await page.evaluate(() => window.__seelite.throttle);
-await page.evaluate((i) => window.__pad.hold(i, 1), STANDARD_INDEX.r1);
-await settle(400);
-await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.r1);
-const throttleUp = await page.evaluate(() => window.__seelite.throttle);
-await page.evaluate((i) => window.__pad.hold(i, 1), STANDARD_INDEX.l1);
-await settle(400);
-await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.l1);
-const throttleDown = await page.evaluate(() => window.__seelite.throttle);
-check(
-	"R1 opens the throttle and L1 closes it",
-	throttleUp > throttleBefore && throttleDown < throttleUp,
-	`${throttleBefore.toFixed(3)} → ${throttleUp.toFixed(3)} → ${throttleDown.toFixed(3)}`,
+// ---------------------------------------------------------------------------
+// Chase view: no glass, and the shot must still show (sage #328).
+// ---------------------------------------------------------------------------
+await page.keyboard.press("v");
+await settle(300);
+const chase = await heldAndReleased(
+	() => page.keyboard.down("Space"),
+	() => page.keyboard.up("Space"),
 );
-
-const r2Throttle = await page.evaluate(async (i) => {
-	const before = window.__seelite.throttle;
-	window.__pad.hold(i, 1);
-	await window.__frames(20);
-	window.__pad.release(i);
-	return { before, after: window.__seelite.throttle };
-}, STANDARD_INDEX.r2);
 check(
-	"R2 no longer moves the throttle",
-	Math.abs(r2Throttle.after - r2Throttle.before) < 1e-9,
-	JSON.stringify(r2Throttle),
-);
-
-const target = await page.evaluate(async (i) => {
-	const g = window.__seelite;
-	const before = g.targetId;
-	window.__pad.hold(i, 1);
-	await window.__frames(4);
-	window.__pad.release(i);
-	await window.__frames(4);
-	return { before, after: g.targetId, count: g.selectable().length };
-}, STANDARD_INDEX.l2);
-check(
-	"L2 selects the next target",
-	target.count > 1 && target.after !== target.before,
-	JSON.stringify(target),
+	"in chase view a held trigger still draws the tracer",
+	chase.held.view === "chase" && chase.held.cyan > 0,
+	JSON.stringify(chase.held),
 );
 
 await browser.close();

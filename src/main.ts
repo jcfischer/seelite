@@ -283,6 +283,10 @@ import {
 import {
 	type GunFeedback,
 	QUIET_GUN,
+	SHOT_SOUND_GAP_S,
+	TRACER_AIM,
+	TRACER_HOLD_S,
+	TRACER_PORTS,
 	drawGunTracer,
 	stepGunFeedback,
 } from "./gun-feedback";
@@ -1828,6 +1832,13 @@ class Game {
 	raiderFiring = false;
 	/** The pulse laser's tracer and shot-sound pacing (`gun-feedback.ts`). */
 	gunFeedback: GunFeedback = QUIET_GUN;
+	/** The tracer's geometry and pacing, for a probe to read rather than restate. */
+	readonly gunTracer = {
+		ports: TRACER_PORTS,
+		aim: TRACER_AIM,
+		holdS: TRACER_HOLD_S,
+		soundGapS: SHOT_SOUND_GAP_S,
+	} as const;
 	/**
 	 * The hostile firing cue as drawn this frame, or `null` when no raider is
 	 * the selected target. Written by the draw, like `floorRender`.
@@ -10258,10 +10269,17 @@ class Game {
 		ctx.lineTo(w / 2, h / 2 - 2);
 		ctx.stroke();
 
-		// The production gun's tracer, on the glass in the cockpit. The rig draws
-		// its own below, and with the rig on the trigger never reaches this gun.
-		if (this.view === "cockpit" && this.gunFeedback.tracerLeftS > 0)
-			drawGunTracer(ctx, w, h, GLASS_BOTTOM_FRACTION);
+		// The production gun's tracer: on the glass in the cockpit, and over the
+		// whole frame in chase, where there is no glass (sage #328 — a chase view
+		// with no tracer is the dead-key defect again). The rig draws its own
+		// below, and with the rig on the trigger never reaches this gun.
+		if (this.gunFeedback.tracerLeftS > 0)
+			drawGunTracer(
+				ctx,
+				w,
+				h,
+				this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1,
+			);
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger
 		// being held and incoming fire is not, and a player being shot while not

@@ -103,6 +103,13 @@ Xbox pad reads `a`/`b`/`x`/`y` literally.
 | d-pad ← / ↑ / → | head-look port, forward, starboard | `1` / `2` / `3` |
 | d-pad ↓ | hand the pad to the frame instrument (Circle gives it back) | — |
 
+**The trim moved to the shoulders in #324, by the principal's ruling, so R2
+could fire.** On a standard pad the shoulders are digital, so the trim is now
+full rate or nothing. The analog pull the triggers gave ("a light pull trims
+slowly") is the price of the fire binding. A pad whose shoulders report a
+partial value still trims by it. The instrument claims the shoulders as tab
+steps, so they do not trim there.
+
 **The throttle is a trim, not a position**, and that is #283's F2. A trigger
 reporting an absolute 0–1 throttle was the obvious alternative and is wrong for
 three reasons, the first of which settles it: a throttle you have to hold is not
