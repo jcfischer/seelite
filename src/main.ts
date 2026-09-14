@@ -7707,13 +7707,14 @@ class Game {
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
 		const kept: Canister[] = [];
-		for (const canister of stepCanisters(
-			this.canisters,
-			dt,
-			this.world.gameTime,
-		)) {
+		// **The scoop is tested before the drift.** This runs at the frame's
+		// start, before the ship moves. A canister drifted first was a step ahead
+		// of the ship it was tested against, and at combat speed that step is
+		// wider than the scoop's radius, so a pass right alongside missed.
+		for (const canister of this.canisters) {
+			if (this.world.gameTime >= canister.expiresAt) continue;
 			if (!scoops(canister, this.world.ship)) {
-				kept.push(canister);
+				kept.push(...stepCanisters([canister], dt, this.world.gameTime));
 				continue;
 			}
 			const took = scoopCargo(
