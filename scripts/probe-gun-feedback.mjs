@@ -32,6 +32,12 @@ const H = 620;
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 watch(page);
 await page.addInitScript(installFakePad);
+// A click on the canvas asks for pointer lock, and headless Chromium refuses it
+// with a page error — the environment's, not the game's. Stubbed so the real
+// click stays real and the error count stays the game's own.
+await page.addInitScript(() => {
+	HTMLElement.prototype.requestPointerLock = () => Promise.resolve();
+});
 await page.goto(gameUrl(origin, { seed: 42 }));
 await bootedGame(page);
 
