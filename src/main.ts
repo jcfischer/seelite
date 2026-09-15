@@ -7697,6 +7697,8 @@ class Game {
 				// The gimballed beam, not the boresight (#324).
 				aimNose: this.beamAim(),
 				hull: this.condition.hull,
+				// The raider's assist holds speed in the player's frame (#324).
+				frameVel: this.localFrame(),
 			},
 			shot,
 		});
