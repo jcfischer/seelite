@@ -894,7 +894,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.launchHold ? "held" : ""}|${state.requests?.revision ?? 0}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1115,10 +1115,14 @@ export class LiveCockpit {
 	private markup(state: LiveCockpitState) {
 		const view = cockpitView(state.headLook);
 		const targetName = escapeHtml(state.targetName ?? "NO TARGET SELECTED");
-		const leftTabs = LEFT_TABS.map(
-			(tab) =>
-				`<button class="lc-tab" type="button" data-live-left-tab="${tab}" aria-selected="${state.leftTab === tab}">${tab}</button>`,
-		).join("");
+		const leftTabs = LEFT_TABS.filter(
+			(tab) => tab !== "Requests" || !!state.requests,
+		)
+			.map(
+				(tab) =>
+					`<button class="lc-tab" type="button" data-live-left-tab="${tab}" aria-selected="${state.leftTab === tab}">${tab}</button>`,
+			)
+			.join("");
 		const rightTabs = RIGHT_TABS.map(
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
@@ -1150,6 +1154,7 @@ export class LiveCockpit {
 		const stationConsole = state.stationConsole;
 		if (!stationConsole || state.dockPhase !== "docked") return "";
 		const tabs = (["Market", "Equipment", "Requests"] as const)
+			.filter((tab) => tab !== "Requests" || !!state.requests)
 			.map(
 				(tab) =>
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,

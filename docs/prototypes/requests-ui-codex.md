@@ -7,7 +7,9 @@ Contract: [Requests](../specs/missions-and-requests.md)
 Run `npm run dev -- --port 5343`, then open
 `http://localhost:5343/?boot=direct&seed=42&requests-prototype=1`.
 Dock at any station and choose Requests. In a development build the query enables two authored,
-no-cargo fixture offers at that requester. Existing Market and Equipment stay
+no-cargo fixture offers and the Requests tabs at that requester. Normal Game
+sessions and production builds expose no prototype Requests tabs.
+Existing Market and Equipment stay
 on the same console. In flight, Requests lives on the left console.
 
 Open details, read the terms, and choose Accept explicitly. Accept both offers
@@ -16,7 +18,7 @@ Choose Track manually, launch, and review or cancel work from the flight tab.
 Arrow up/down walks the cursor, Enter activates, and arrow left/right changes
 tabs while Requests is open. Alt plus arrow left/up/right changes head look.
 The controller uses the existing up/down, A, shoulder tabs and Back grammar.
-Normal native Tab and button activation remain available.
+Normal native Tab, Enter and Space button activation remain available.
 
 The merged parent supersedes the older handoff's one-active restriction and
 partial-relay assumption: multiple commitments, one manual cue, relay unbuilt.
@@ -53,8 +55,8 @@ Normal Commander writes retain `SAVE_SCHEMA_VERSION = 2` and the exact
 journal-free wire shape. Schema 2 at main revision `7f1cfd3` is read after its
 original hash is verified, with an empty journal added to the in-memory copy.
 Only envelopes carrying experiment entries use the separately named
-`REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3`. Earlier experimental schema-3
-records remain supported. Schema 2 carrying a journal is refused. World schema
+`REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3`. The loader accepts the bounded
+revision-1 experiment entries. Schema 2 carrying a journal is refused. World schema
 and generator versions are unchanged. Unsupported/corrupt records are refused
 without modifying their input; normal save-store ownership remains in force.
 
@@ -81,11 +83,13 @@ tests/save-envelope.test.ts tests/save-store.test.ts tests/station-console.test.
 covers 111 cases. TypeScript additionally verifies that Requests is valid in
 the live cockpit and refused by the two-tab gallery contract.
 The complete headless suite passed 2,102 tests. The final repairs passed
-the guarded 25-check headed flow, TypeScript,
-build and format gates. The browser probe includes native Tab/Enter and prevents
+the guarded 27-check headed flow, TypeScript,
+build and format gates. The browser probe includes native Tab/Enter/Space and prevents
 a rapid Accept double-click from selecting the newly drawn Track action.
 It also checks release of a flight key after opening Requests, reuse of docked
-offers and preservation of a separate normal Commander catalog across fixture
+offers, native Space reacceptance and absence of prototype tabs in a normal Game.
+Every terms label and its nonempty value has positive viewport bounds and no
+ancestor clipping. It checks a separate normal Commander catalog across fixture
 payment and save/load. The catalog comparison takes read-only snapshots; the
 probe writes no normal save. The production bundle compiles `requestFixtures` to false
 and refuses all experiment actions outside the development trial.

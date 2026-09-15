@@ -383,7 +383,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		fail(
 			// The reason alone: the player's sentence — left as it is, Export
 			// takes a copy — is `loadFault`'s, which the overlay puts first.
-			`saveSchemaVersion ${String(version)} is not ${SAVE_SCHEMA_VERSION}`,
+			`saveSchemaVersion ${String(version)} is unsupported; expected ${SAVE_SCHEMA_VERSION} or ${REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION}`,
 		);
 	if (o.world === undefined || o.world === null) fail("world is missing");
 	if (o.commander === undefined || o.commander === null)

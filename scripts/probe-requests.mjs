@@ -117,8 +117,42 @@ try {
 		"all terms visible before acceptance",
 		await page
 			.locator("[data-live-station-console] [data-live-request-details]")
-			.evaluate((el) =>
-				[
+			.evaluate((el) => {
+				const visible = (field) => {
+					const r = field.getBoundingClientRect();
+					const style = getComputedStyle(field);
+					if (
+						!r.width ||
+						!r.height ||
+						style.display === "none" ||
+						style.visibility !== "visible" ||
+						r.left < 0 ||
+						r.top < 0 ||
+						r.right > innerWidth ||
+						r.bottom > innerHeight
+					)
+						return false;
+					for (
+						let parent = field.parentElement;
+						parent;
+						parent = parent.parentElement
+					) {
+						const p = parent.getBoundingClientRect(),
+							s = getComputedStyle(parent);
+						if (
+							s.overflowX !== "visible" &&
+							(r.left < p.left || r.right > p.right)
+						)
+							return false;
+						if (
+							s.overflowY !== "visible" &&
+							(r.top < p.top || r.bottom > p.bottom)
+						)
+							return false;
+					}
+					return true;
+				};
+				return [
 					"requester",
 					"purpose",
 					"action",
@@ -131,10 +165,15 @@ try {
 					"terms",
 				].every((name) =>
 					[...el.querySelectorAll("dt")].some(
-						(dt) => dt.textContent.toLowerCase() === name,
+						(dt) =>
+							dt.textContent.toLowerCase() === name &&
+							visible(dt) &&
+							dt.nextElementSibling?.tagName === "DD" &&
+							dt.nextElementSibling.textContent.trim().length > 0 &&
+							visible(dt.nextElementSibling),
 					),
-				),
-			),
+				);
+			}),
 	);
 	const ageBefore = await page
 		.locator("[data-live-station-console] [data-live-request-age]")
@@ -167,6 +206,18 @@ try {
 			() =>
 				window.__seelite.commanderRecord().requests.trackedRequestId === null,
 		),
+	);
+	await click("cancel");
+	await page
+		.locator('[data-live-station-console] [data-live-request-action="accept"]')
+		.focus();
+	await page.keyboard.press("Space");
+	check(
+		"native Space reaccepts a focused request without changing tracking",
+		await page.evaluate((i) => {
+			const s = window.__seelite.commanderRecord().requests;
+			return s.byId[i].status === "accepted" && s.trackedRequestId === null;
+		}, id),
 	);
 	await click("track");
 	const target = await page.evaluate(() => window.__seelite.targetId);
@@ -421,6 +472,22 @@ try {
 		),
 	);
 	await page.screenshot({ path: `${out}/06-unavailable.png` });
+	const normalPage = await browser.newPage({
+		viewport: { width: 1440, height: 900 },
+	});
+	await normalPage.goto(gameUrl(origin, { seed: 42, "no-save": true }), {
+		waitUntil: "load",
+	});
+	await bootedGame(normalPage);
+	check(
+		"normal Game exposes no prototype Requests tabs",
+		(await normalPage
+			.locator(
+				'[data-live-station-tab="Requests"], [data-live-left-tab="Requests"]',
+			)
+			.count()) === 0,
+	);
+	await normalPage.close();
 	writeFileSync(
 		`${out}/checks.json`,
 		JSON.stringify(

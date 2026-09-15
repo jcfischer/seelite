@@ -5607,6 +5607,16 @@ class Game {
 		if (!down) this.keys.delete(key);
 		if (
 			this.view === "cockpit" &&
+			this.liveCockpit?.requestsSurfaceOpen() &&
+			key === " " &&
+			e.target instanceof HTMLButtonElement &&
+			e.target.hasAttribute("data-live-request-action")
+		) {
+			// Native buttons activate on Space release. Do not fire or prevent it.
+			return;
+		}
+		if (
+			this.view === "cockpit" &&
 			!e.altKey &&
 			this.liveCockpit?.requestsSurfaceOpen() &&
 			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(key)
@@ -9379,7 +9389,9 @@ class Game {
 							.map(formatRaiderLogLine)
 					: [],
 			tuning: this.tuningSummary(),
-			requests: this.requestsView(dockContext),
+			requests: this.requestFixtures
+				? this.requestsView(dockContext)
+				: undefined,
 			stationConsole: this.stationConsoleState(dockContext),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
