@@ -408,6 +408,12 @@ import {
 } from "./live-cockpit";
 import { readDeficit } from "./deficits";
 import {
+	emptyRequests,
+	fixtureOffers,
+	requestAction,
+} from "./requests-prototype";
+import type { RequestsView } from "./requests-prototype-view";
+import {
 	type CommanderRecord,
 	type SaveEnvelope,
 	newCommanderRecord,
@@ -1500,6 +1506,15 @@ class Game {
 	private leftTab: LeftTab = "Navigation";
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
+	private requests = emptyRequests();
+	private requestSelectedId: string | null = null;
+	private requestMessage = "";
+	private requestRevision = 0;
+	private readonly requestFixtures =
+		import.meta.env.DEV &&
+		new URLSearchParams(window.location.search).has("requests-prototype");
+	private requestOffersCacheKey: string | null = null;
+	private requestOffersCache: ReturnType<typeof fixtureOffers> = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -2434,6 +2449,7 @@ class Game {
 			);
 			this.commerceWorld = save.world;
 			this.commander = save.commander.state;
+			this.requests = save.commander.requests;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			// **A docked save resumes in flight at the arrival point, and that
@@ -2834,6 +2850,7 @@ class Game {
 				this.stationConsoleTab = tab;
 				this.updateCockpit();
 			},
+			onRequestAction: (action, id) => this.actOnRequest(action, id),
 			onStationAction: (type, name) => {
 				const action: StationAction =
 					type === "buy-fuel"
@@ -5586,6 +5603,38 @@ class Game {
 
 	private onKey(e: KeyboardEvent, down: boolean) {
 		const key = e.key.toLowerCase();
+		// Releases must clear flight state even when a panel now owns the key.
+		if (!down) this.keys.delete(key);
+		if (
+			this.view === "cockpit" &&
+			this.liveCockpit?.requestsSurfaceOpen() &&
+			key === " " &&
+			e.target instanceof HTMLButtonElement &&
+			e.target.hasAttribute("data-live-request-action")
+		) {
+			// Native buttons activate on Space release. Do not fire or prevent it.
+			return;
+		}
+		if (
+			this.view === "cockpit" &&
+			!e.altKey &&
+			this.liveCockpit?.requestsSurfaceOpen() &&
+			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(key)
+		) {
+			e.preventDefault();
+			if (down && !e.repeat) {
+				if (key === "enter") this.liveCockpit.activateKeyboardFocus(e.target);
+				else {
+					// Arrow walking hands input back to the shared cursor. A native
+					// button left focused would otherwise steal the following Enter.
+					if (e.target instanceof HTMLElement) e.target.blur();
+					if (key === "arrowleft" || key === "arrowright")
+						this.liveCockpit.stepTab(key === "arrowleft" ? -1 : 1);
+					else this.liveCockpit.stepFocus(key === "arrowup" ? -1 : 1);
+				}
+			}
+			return;
+		}
 		if (down && !e.repeat && e.altKey) {
 			if (this.view !== "cockpit") {
 				e.preventDefault();
@@ -9293,6 +9342,7 @@ class Game {
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
+		const dockContext = this.dockedStationContext();
 		this.liveCockpit.update({
 			visible: true,
 			dockPhase: this.dock.phase,
@@ -9339,7 +9389,10 @@ class Game {
 							.map(formatRaiderLogLine)
 					: [],
 			tuning: this.tuningSummary(),
-			stationConsole: this.stationConsoleState(),
+			requests: this.requestFixtures
+				? this.requestsView(dockContext)
+				: undefined,
+			stationConsole: this.stationConsoleState(dockContext),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
 	}
@@ -9352,8 +9405,70 @@ class Game {
 	 * Deficits come from the current galaxy's persistent envelope, and commander
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
-	private stationConsoleState() {
-		const context = this.dockedStationContext();
+	private requestsView(context = this.dockedStationContext()): RequestsView {
+		if (this.requestFixtures && context) {
+			const key = `${context.galaxyIndex}:${context.stationKey}`;
+			if (key !== this.requestOffersCacheKey) {
+				this.requestOffersCache = fixtureOffers(
+					context.galaxyIndex,
+					context.stationKey,
+					this.nameOfStation(context.station.id),
+					0,
+				);
+				this.requestOffersCacheKey = key;
+			}
+		}
+		return {
+			state: this.requests,
+			offers: this.requestFixtures && context ? this.requestOffersCache : [],
+			selectedId: this.requestSelectedId,
+			message: this.requestMessage,
+			revision: this.requestRevision,
+			now: this.world.gameTime,
+			docked: context
+				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
+				: null,
+			fixtures: this.requestFixtures,
+		};
+	}
+
+	private actOnRequest(action: string, id: string): void {
+		// Every action here belongs to the isolated fixture experiment. Imported
+		// experiment journals must not pay rewards in a normal Commander session.
+		if (!this.requestFixtures) return;
+		const view = this.requestsView();
+		if (action === "details") {
+			if (
+				!view.offers.some((o) => o.id === id) &&
+				!this.requests.byId[id] &&
+				!this.requests.leadsById[id]
+			)
+				return;
+			this.requestSelectedId = id;
+			this.requestMessage = "";
+		} else {
+			const result = requestAction(this.requests, view.offers, action, id, {
+				now: this.world.gameTime,
+				docked: view.docked,
+				armed: this.condition.hull > 0,
+			});
+			this.requestMessage = result.message;
+			if (result.ok) {
+				this.requests = result.state;
+				if (result.rewardCr)
+					this.commander = {
+						...this.commander,
+						credits: this.commander.credits + result.rewardCr,
+					};
+				this.stationConsoleRevision += 1;
+				this.saveDirty();
+			}
+		}
+		this.requestRevision += 1;
+		this.updateCockpit();
+	}
+
+	private stationConsoleState(context = this.dockedStationContext()) {
 		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
@@ -9419,6 +9534,7 @@ class Game {
 		return {
 			...base,
 			state: this.commander,
+			requests: this.requests,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station
@@ -11072,13 +11188,23 @@ if (query.has("model-viewer")) {
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
 	const noSave = query.has("no-save");
-	const saveBackend = indexedDbSaveBackend();
-	const saveLocks = webSlotLocks();
+	// Fixture progress and payments use an entirely separate Commander catalog.
+	// The production build cannot enable fixtures by adding a URL flag.
+	const fixtureTrial = import.meta.env.DEV && query.has("requests-prototype");
+	const saveBackend = indexedDbSaveBackend(
+		indexedDB,
+		fixtureTrial ? "seelite-requests-prototype-saves" : undefined,
+	);
+	const saveLocks = webSlotLocks(
+		navigator.locks,
+		fixtureTrial ? "seelite-requests-prototype:" : undefined,
+	);
 	// Read once: an unusable `?seed` warns as it is read.
 	const askedSeed = querySeed();
 	const catalog = new CommanderCatalog({
 		backend: saveBackend,
 		locks: saveLocks,
+		allowRequestsPrototype: fixtureTrial,
 	});
 	let plan = await planBoot({
 		catalog,
@@ -11126,6 +11252,7 @@ if (query.has("model-viewer")) {
 				new SaveStore({
 					backend: saveBackend,
 					locks: saveLocks,
+					allowRequestsPrototype: fixtureTrial,
 					slot: name,
 					schedule: (fn, ms) => {
 						const id = window.setTimeout(fn, ms);

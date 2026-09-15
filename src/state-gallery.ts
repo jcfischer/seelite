@@ -257,14 +257,14 @@ export const CONSOLE_STATIONS: readonly ConsoleStation[] = [
  *  through the dock the player is. */
 export interface ConsoleView {
 	station: ConsoleStation;
-	tab: StationConsoleTab;
+	tab: Exclude<StationConsoleTab, "Requests">;
 	phase: DockPhase;
 	/** #6's clock in game minutes — the epoch the quote is taken in. */
 	gameTimeMin: number;
 }
 
 /** The two tabs, as values a DOM-sourced string can be checked against. */
-export const CONSOLE_TABS: readonly StationConsoleTab[] = [
+export const CONSOLE_TABS: readonly ConsoleView["tab"][] = [
 	"Market",
 	"Equipment",
 ];

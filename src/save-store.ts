@@ -42,7 +42,12 @@
  * store does not have.
  */
 
-import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
+import {
+	parseSave,
+	REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION,
+	type SaveEnvelope,
+	serializeSave,
+} from "./save-envelope";
 
 /**
  * The debounce window, milliseconds.
@@ -219,6 +224,8 @@ export interface ActiveCommander {
 
 export interface SaveStoreOptions {
 	backend: SaveBackend;
+	/** Only the isolated development trial accepts experiment encoding 3. */
+	allowRequestsPrototype?: boolean;
 	/**
 	 * What `hold` takes this store's Commander lock from. Required, not
 	 * defaulted, for `FlightPerformance`'s reason: a store built without it could
@@ -246,6 +253,19 @@ export interface SaveStoreOptions {
 	 *  its caller; this one has none. */
 	onWriteFailed?: (error: unknown, consecutive: number) => void;
 }
+
+const assertSaveEncoding = (raw: unknown, allowRequestsPrototype: boolean) => {
+	if (
+		!allowRequestsPrototype &&
+		raw !== null &&
+		typeof raw === "object" &&
+		(raw as { saveSchemaVersion?: unknown }).saveSchemaVersion ===
+			REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION
+	)
+		fail(
+			"Requests prototype saves belong to the isolated development trial; this Commander catalog refuses them",
+		);
+};
 
 const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
@@ -307,6 +327,7 @@ const parsePending = (
 export class SaveStore {
 	private readonly backend: SaveBackend;
 	private readonly locks: SlotLocks;
+	private readonly allowRequestsPrototype: boolean;
 	/** The release of this store's own lock, once `hold` has taken it. */
 	private held: (() => void) | null = null;
 	/** The lock request in flight, shared by overlapping `hold` calls. */
@@ -355,6 +376,7 @@ export class SaveStore {
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
 		this.locks = options.locks;
+		this.allowRequestsPrototype = options.allowRequestsPrototype === true;
 		if (options.slot !== undefined) {
 			assertSlot(options.slot);
 			this.slot = options.slot;
@@ -464,6 +486,7 @@ export class SaveStore {
 		// own to report.
 		while (this.inFlight) await this.inFlight.catch(() => {});
 		const blob = serializeSave(this.current());
+		assertSaveEncoding(blob, this.allowRequestsPrototype);
 		this.dirty = false;
 		const work = this.backend.writeMany(slot, kinds, blob);
 		this.inFlight = work.finally(() => {
@@ -507,6 +530,7 @@ export class SaveStore {
 		const raw = await this.backend.read(slot, kind);
 		if (raw === null || raw === undefined)
 			fail(`Commander "${slot}" has no ${kind} record`);
+		assertSaveEncoding(raw, this.allowRequestsPrototype);
 		return parseSave(raw);
 	}
 
@@ -561,6 +585,7 @@ export class SaveStore {
 			raw = await this.backend.read(this.slot, "lastDocked");
 			if (raw === null || raw === undefined)
 				fail(`Commander "${this.slot}" has no lastDocked record`);
+			assertSaveEncoding(raw, this.allowRequestsPrototype);
 			restored = parseSave(raw);
 		} catch (error) {
 			// Not retired, and the save the death interrupted is still owed: quieting
@@ -631,10 +656,22 @@ export class SaveStore {
 export class CommanderCatalog {
 	private readonly backend: SaveBackend;
 	private readonly locks: SlotLocks;
+	private readonly allowRequestsPrototype: boolean;
 
-	constructor(options: { backend: SaveBackend; locks: SlotLocks }) {
+	constructor(options: {
+		backend: SaveBackend;
+		locks: SlotLocks;
+		allowRequestsPrototype?: boolean;
+	}) {
 		this.backend = options.backend;
 		this.locks = options.locks;
+		this.allowRequestsPrototype = options.allowRequestsPrototype === true;
+	}
+
+	/** Boot and import apply the same catalog boundary before parsing. */
+	parseRecord(raw: unknown): SaveEnvelope {
+		assertSaveEncoding(raw, this.allowRequestsPrototype);
+		return parseSave(raw);
 	}
 
 	/**
@@ -660,8 +697,8 @@ export class CommanderCatalog {
 		if (live === null && lastDocked === null)
 			fail("this file is not a save — it holds no record");
 		// Validate first, write second.
-		if (live !== null) parseSave(live);
-		if (lastDocked !== null) parseSave(lastDocked);
+		if (live !== null) this.parseRecord(live);
+		if (lastDocked !== null) this.parseRecord(lastDocked);
 		if (live !== null) await this.backend.write(slot, "live", live);
 		if (lastDocked !== null)
 			await this.backend.write(slot, "lastDocked", lastDocked);
@@ -1083,9 +1120,10 @@ export const SAVE_CLOSED_MESSAGE =
 const openSaveDb = (
 	factory: IDBFactory,
 	onVersionChange: () => void,
+	databaseName: string,
 ): Promise<IDBDatabase> =>
 	new Promise((resolve, reject) => {
-		const request = factory.open(SAVE_DB_NAME, SAVE_DB_VERSION);
+		const request = factory.open(databaseName, SAVE_DB_VERSION);
 		let refused = false;
 		request.onupgradeneeded = () => {
 			const db = request.result;
@@ -1146,6 +1184,7 @@ const transactionDone = (tx: IDBTransaction): Promise<void> =>
 
 export function indexedDbSaveBackend(
 	factory: IDBFactory = indexedDB,
+	databaseName = SAVE_DB_NAME,
 ): SaveBackend {
 	let db: Promise<IDBDatabase> | null = null;
 	let closed = false;
@@ -1159,10 +1198,14 @@ export function indexedDbSaveBackend(
 		// with no `blocked` event of its own, so a retry hung rather than
 		// failing. The message already tells the player to reload.
 		if (blocked) return Promise.reject(new Error(SAVE_BLOCKED_MESSAGE));
-		const opening = (db ??= openSaveDb(factory, () => {
-			closed = true;
-			db = null;
-		}));
+		const opening = (db ??= openSaveDb(
+			factory,
+			() => {
+				closed = true;
+				db = null;
+			},
+			databaseName,
+		));
 		// Any other refused open is not cached: the next caller asks again. This
 		// handler is attached before any caller awaits `opening`, so the flag is
 		// set before a caller's own rejection runs.
@@ -1321,13 +1364,16 @@ const SAVE_LOCK_PREFIX = "seelite-commander:";
  * rejects. The probes run on localhost and the deploy target is HTTPS, so
  * neither meets it.
  */
-export function webSlotLocks(locks: LockManager = navigator.locks): SlotLocks {
+export function webSlotLocks(
+	locks: LockManager = navigator.locks,
+	prefix = SAVE_LOCK_PREFIX,
+): SlotLocks {
 	return {
 		tryHold(slot) {
 			return new Promise((resolve, reject) => {
 				locks
 					.request(
-						`${SAVE_LOCK_PREFIX}${slot}`,
+						`${prefix}${slot}`,
 						{ mode: "exclusive", ifAvailable: true },
 						(lock) => {
 							if (!lock) {

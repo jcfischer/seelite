@@ -2,6 +2,12 @@
 
 import { range } from "./units";
 import {
+	REQUESTS_STYLE,
+	requestCue,
+	requestsBody,
+	type RequestsView,
+} from "./requests-prototype-view";
+import {
 	type HeadLook,
 	NAV_FILTER_KINDS,
 	type NavFilter,
@@ -52,14 +58,20 @@ const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
  * a full-screen mode, not a fifth panel, not an application" — #70's rule that
  * a screen answers *which wall or which tab*, never *which application*.
  */
-export type LeftTab = "Navigation" | "Galaxy Map" | "Communications";
+export type LeftTab =
+	| "Navigation"
+	| "Galaxy Map"
+	| "Communications"
+	| "Requests";
 const LEFT_TABS: readonly LeftTab[] = [
 	"Navigation",
 	"Galaxy Map",
 	"Communications",
+	"Requests",
 ];
 
 export interface LiveCockpitState {
+	requests?: RequestsView;
 	visible: boolean;
 	dockPhase: DockPhase;
 	headLook: HeadLook;
@@ -111,6 +123,7 @@ export interface LiveCockpitState {
 }
 
 export interface LiveCockpitCallbacks {
+	onRequestAction?: (action: string, id: string) => void;
 	onRightTab: (tab: RightTab) => void;
 	onLeftTab: (tab: LeftTab) => void;
 	onNavFilter: (filter: NavFilter) => void;
@@ -141,6 +154,7 @@ export interface LiveCockpitCallbacks {
  * required edit in three unrelated branches that had to agree by inspection.
  */
 interface CockpitElements {
+	requestAges: HTMLElement[];
 	director: HTMLElement | null;
 	leftPanelCopy: HTMLElement | null;
 	rightPanelCopy: HTMLElement | null;
@@ -184,7 +198,7 @@ function navEta(seconds: number | null) {
 	return `${(seconds / 86_400).toFixed(0)}d`;
 }
 
-const STYLE = `
+const STYLE = `${REQUESTS_STYLE}
 #live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
@@ -313,6 +327,10 @@ export class LiveCockpit {
 		// Delegation keeps clicks live after a structural render is replaced.
 		this.root.addEventListener("click", (event) => {
 			const element = event.target as HTMLElement;
+			// Accept replaces itself with Track at the same location. The second
+			// click of a double-click must not activate that newly drawn action.
+			if (event.detail > 1 && element.closest("[data-live-request-action]"))
+				return;
 			// **The id is read before the dispatch and applied after it**, and
 			// both halves are the point. An accepted transaction rebuilds the
 			// market synchronously, so the clicked element is *detached* by the
@@ -337,6 +355,12 @@ export class LiveCockpit {
 					query: (field as HTMLInputElement).value,
 				});
 		});
+		this.root.addEventListener("focusin", (event) => {
+			const element = event.target as HTMLElement;
+			if (!element.matches("[data-live-request-action]")) return;
+			this.syncFocusToPointer(element, () => {});
+			this.applyFocusRing();
+		});
 		document.body.append(this.root);
 	}
 
@@ -353,6 +377,13 @@ export class LiveCockpit {
 	 * is one readable unit the next target has to be placed into deliberately.
 	 */
 	private handleClick(element: HTMLElement) {
+		const request = element.closest<HTMLElement>("[data-live-request-action]");
+		if (request) {
+			const { liveRequestAction, liveRequestId } = request.dataset;
+			if (liveRequestAction && liveRequestId)
+				this.callbacks.onRequestAction?.(liveRequestAction, liveRequestId);
+			return;
+		}
 		const stationTab = element.closest<HTMLElement>("[data-live-station-tab]");
 		const stationAction = element.closest<HTMLElement>(
 			"[data-live-station-action]",
@@ -372,7 +403,7 @@ export class LiveCockpit {
 		}
 		if (stationTab) {
 			const value = stationTab.dataset.liveStationTab;
-			if (value === "Market" || value === "Equipment")
+			if (value === "Market" || value === "Equipment" || value === "Requests")
 				this.callbacks.onStationTab(value);
 			return;
 		}
@@ -432,6 +463,7 @@ export class LiveCockpit {
 	 * way of getting to one.
 	 */
 	private static readonly OWN_FOCUSABLE = [
+		"[data-live-request-action]",
 		"[data-live-station-action]",
 		"[data-live-launch]",
 		"[data-live-launch-cancel]",
@@ -541,6 +573,8 @@ export class LiveCockpit {
 	 * ninth would have been worse. Sage asked, round 2.
 	 */
 	private static focusIdOf(el: HTMLElement): string {
+		if (el.dataset.liveRequestAction)
+			return `request:${el.dataset.liveRequestAction}:${el.dataset.liveRequestId}`;
 		const d = el.dataset;
 		if (d.liveStationAction !== undefined)
 			return `station-action:${d.liveStationAction}:${d.liveStationName}`;
@@ -796,6 +830,20 @@ export class LiveCockpit {
 		if (tab) this.handleClick(tab);
 	}
 
+	requestsSurfaceOpen(): boolean {
+		return !!this.focusScope()?.querySelector("[data-live-requests]");
+	}
+
+	/** Native Tab focus and the pad cursor both activate through the click path. */
+	activateKeyboardFocus(target: EventTarget | null): void {
+		if (
+			target instanceof HTMLButtonElement &&
+			this.focusScope()?.contains(target)
+		)
+			target.click();
+		else this.activateFocus();
+	}
+
 	/**
 	 * Put the cursor where the pointer just acted.
 	 *
@@ -846,7 +894,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.launchHold ? "held" : ""}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -868,6 +916,9 @@ export class LiveCockpit {
 			const find = (selector: string) =>
 				this.root.querySelector<HTMLElement>(selector);
 			this.elements = {
+				requestAges: [
+					...this.root.querySelectorAll<HTMLElement>("[data-live-request-age]"),
+				],
 				director: find("[data-live-director] > strong"),
 				leftPanelCopy: find("[data-live-left-copy]"),
 				rightPanelCopy: find('[data-live-panel="right"] .lc-panel-copy > p'),
@@ -902,6 +953,10 @@ export class LiveCockpit {
 		}
 		const elements = this.elements;
 		if (!elements) return;
+		for (const age of elements.requestAges) {
+			const text = `${Math.max(0, Math.floor((state.requests?.now ?? 0) - Number(age.dataset.liveRequestAge)))}s old`;
+			if (age.textContent !== text) age.textContent = text;
+		}
 		if (elements.director)
 			elements.director.textContent = state.targetName ?? "NO TARGET SELECTED";
 		if (elements.navQuery && elements.navQuery.value !== state.navFilter.query)
@@ -1060,10 +1115,14 @@ export class LiveCockpit {
 	private markup(state: LiveCockpitState) {
 		const view = cockpitView(state.headLook);
 		const targetName = escapeHtml(state.targetName ?? "NO TARGET SELECTED");
-		const leftTabs = LEFT_TABS.map(
-			(tab) =>
-				`<button class="lc-tab" type="button" data-live-left-tab="${tab}" aria-selected="${state.leftTab === tab}">${tab}</button>`,
-		).join("");
+		const leftTabs = LEFT_TABS.filter(
+			(tab) => tab !== "Requests" || !!state.requests,
+		)
+			.map(
+				(tab) =>
+					`<button class="lc-tab" type="button" data-live-left-tab="${tab}" aria-selected="${state.leftTab === tab}">${tab}</button>`,
+			)
+			.join("");
 		const rightTabs = RIGHT_TABS.map(
 			(tab) =>
 				`<button class="lc-tab" type="button" data-live-right-tab="${tab}" aria-selected="${state.rightTab === tab}">${tab}</button>`,
@@ -1081,7 +1140,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
@@ -1094,23 +1153,26 @@ export class LiveCockpit {
 	private stationConsole(state: LiveCockpitState) {
 		const stationConsole = state.stationConsole;
 		if (!stationConsole || state.dockPhase !== "docked") return "";
-		const tabs = (["Market", "Equipment"] as const)
+		const tabs = (["Market", "Equipment", "Requests"] as const)
+			.filter((tab) => tab !== "Requests" || !!state.requests)
 			.map(
 				(tab) =>
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
 		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${
-			stationConsole.tab === "Market"
-				? this.market(stationConsole.market)
-				: this.equipment(
-						stationConsole.equipment,
-						stationConsole.ownedEquipment,
-						{
-							ly: stationConsole.fuelLy,
-							capacityLy: stationConsole.fuelCapacityLy,
-						},
-					)
+			stationConsole.tab === "Requests"
+				? requestsBody(state.requests)
+				: stationConsole.tab === "Market"
+					? this.market(stationConsole.market)
+					: this.equipment(
+							stationConsole.equipment,
+							stationConsole.ownedEquipment,
+							{
+								ly: stationConsole.fuelLy,
+								capacityLy: stationConsole.fuelCapacityLy,
+							},
+						)
 		}${this.launchHoldBlock(state)}<p class="lc-station-commander" data-live-commander>${stationConsole.credits.toFixed(1)} Cr · HOLD ${escapeHtml(stationConsole.cargo.join(", ") || "EMPTY")}</p></section>`;
 	}
 
@@ -1173,6 +1235,7 @@ export class LiveCockpit {
 	}
 
 	private leftBody(state: LiveCockpitState) {
+		if (state.leftTab === "Requests") return requestsBody(state.requests, true);
 		// The chart is the *reading* surface and the list is the *finding* one
 		// (`galaxy-map.md` §5.1), so the map tab gives the chart the full body
 		// rather than squeezing it beside a rail it does not need.
