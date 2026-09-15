@@ -66,6 +66,17 @@ Piracy appears through cruise interdictions, not arbitrary low-speed spawns arou
 
 **Raiders are named, enumerated carrier slots** (principal's ruling, 2026-09-14): one to four per system by government, keyed `raider-00` upward, and a system can hold more than one because several may attack together later. A cruise leg's chance of an encounter falls with law from Anarchy to Corporate State, and a Corporate State keeps a smaller chance rather than none: **60% of legs in an Anarchy, 20% in a Corporate State**, linear between (the principal's ruling, 2026-09-15, raised from 50% and 5%). A new game starts in an orderly system — `startSystem` admits government 5 to 7 — where 5–18% meant a raider on one leg in six to twenty; at 20–31% it is about one leg in three to five. **The ruling flattens the law gradient**: an Anarchy was ten times as dangerous per leg as a Corporate State and is now three times, so lawful space carries a real share of the danger rather than a token one. These are the chances of the **draw**. A leg meets a raider only if the drawn slot is operational, and a government 6 or 7 system has one slot, so after a kill there it meets none for the thirty minutes the slot is destroyed or repairing (§4.1). Raiders are part of normal play and need no flag. `?raider` forces one onto every leg for a playtest, and `?raider=off` draws none, for the probes and captures that cruise to measure something else (arrival, detours, traversals); neither stops `forceRaider`. A raider appears behind, alongside or ahead of the player. `src/raider-slots.ts` owns the slot count, the chance and the draw.
 
+**The pirate relay is a dial on the leg law (#43, prototype).** One relay
+per system watches one station's route (`src/pirate-relay.ts`): a leg whose
+target is that station meets a raider on **every** leg while the relay is
+operational and on **no** leg while it is destroyed or repairing, and every
+other leg keeps the chance above. The dial skips the chance and not the draw.
+Destroying it is the first #41 loop in the game — found by its signal,
+identified inside 150 km, spent by ten seconds of pulse fire, replaced an hour
+later on the clock — and it runs behind `?relay-prototype=1` in development
+builds until the principal has flown it. `docs/prototypes/relay-codex.md`
+carries the decisions taken to build it and what it measures.
+
 System law supplies the baseline danger, cargo value makes a route attractive, and combat rating chooses a fair encounter composition. Rating does not secretly change enemy stats or simply increase spawn frequency. Harder encounters are small role-based groups: interceptors pressure escape, strikers attack, and higher-risk groups may add a missile carrier or tougher leader. Ships break to recharge or flee when outmatched.
 
 ## 4. Consequences, reward, and law
