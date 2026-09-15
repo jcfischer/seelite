@@ -71,12 +71,15 @@ export const TRACER_COLOUR = "rgba(116, 234, 255, 0.98)";
 
 /** Draw the tracer, clipped above `glassBottom` (a fraction of the height).
  *  The cockpit passes the glass's bottom, so the tracer never crosses the
- *  panel. Chase has no glass and passes 1, the whole frame. */
+ *  panel. Chase has no glass and passes 1, the whole frame. `aim` is where the
+ *  beam meets the glass, as fractions of the canvas: the sightline, or the
+ *  gimbal's turned beam (#324). */
 export function drawGunTracer(
 	ctx: CanvasRenderingContext2D,
 	w: number,
 	h: number,
 	glassBottom: number,
+	aim: { readonly x: number; readonly y: number } = TRACER_AIM,
 ): void {
 	ctx.save();
 	ctx.beginPath();
@@ -87,8 +90,74 @@ export function drawGunTracer(
 	ctx.beginPath();
 	for (const port of TRACER_PORTS) {
 		ctx.moveTo(w * port.x, h * port.y);
-		ctx.lineTo(w * TRACER_AIM.x, h * TRACER_AIM.y);
+		ctx.lineTo(w * aim.x, h * aim.y);
 	}
 	ctx.stroke();
+	ctx.restore();
+}
+
+/** How long the canopy rim glows after a hit lands on the player, s. */
+export const STRUCK_FLASH_S = 0.22;
+/** The raider's beam, warm against the player's cyan. */
+export const ENEMY_BEAM_COLOUR = "rgba(255, 140, 90, 0.95)";
+
+/**
+ * The raider's shot, while it fires (#324, found missing in the second
+ * playtest: "his lasers aren't showing up"). A line from the raider's point on
+ * the glass to `to`, where the player sits: the bottom of the glass in the
+ * cockpit, the hull in chase. Clipped above `glassBottom` like the player's
+ * tracer.
+ */
+export function drawEnemyBeam(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	glassBottom: number,
+	from: { readonly x: number; readonly y: number },
+	to: { readonly x: number; readonly y: number },
+): void {
+	ctx.save();
+	ctx.beginPath();
+	ctx.rect(0, 0, w, h * glassBottom);
+	ctx.clip();
+	ctx.strokeStyle = ENEMY_BEAM_COLOUR;
+	ctx.lineWidth = 2.5;
+	ctx.beginPath();
+	ctx.moveTo(from.x, from.y);
+	ctx.lineTo(to.x, to.y);
+	ctx.stroke();
+	ctx.restore();
+}
+
+/**
+ * The canopy rim when a hit lands on the player: a rim and not a wash, so the
+ * view is not taken away (the `?combat=1` rig's lesson, ported). `strength` is
+ * 0..1, the share of the flash left.
+ */
+export function drawStruckRim(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	glassBottom: number,
+	strength: number,
+): void {
+	if (strength <= 0) return;
+	ctx.save();
+	ctx.beginPath();
+	ctx.rect(0, 0, w, h * glassBottom);
+	ctx.clip();
+	const reach = Math.hypot(w, h * glassBottom) * 0.6;
+	const glow = ctx.createRadialGradient(
+		w / 2,
+		h * glassBottom * 0.5,
+		reach * 0.55,
+		w / 2,
+		h * glassBottom * 0.5,
+		reach,
+	);
+	glow.addColorStop(0, "rgba(255, 90, 70, 0)");
+	glow.addColorStop(1, `rgba(255, 90, 70, ${(0.34 * strength).toFixed(3)})`);
+	ctx.fillStyle = glow;
+	ctx.fillRect(0, 0, w, h * glassBottom);
 	ctx.restore();
 }

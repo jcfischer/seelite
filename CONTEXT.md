@@ -87,6 +87,14 @@ history; what a destroyed raider leaves in the world is the slot's own
 condition. `src/encounter.ts` owns the phases.
 _Avoid_: Spawn, fight instance
 
+**Cargo canister**:
+One tonne of a single good, dropped by a destroyed raider (one to three per
+kill), drifting on a fifth of the wreck's velocity until scooped or until five game-clock
+minutes pass (`combat-model.md` §4.1). A ship scoops one by passing close and
+slow, with no module, into the hold. Flight state only: it is not saved.
+`src/raider-wreck.ts` owns the drop and the scoop.
+_Avoid_: Loot, salvage drop, jettisoned cargo
+
 **Interdiction contest**:
 The skill contest that decides an interdiction (`combat-model.md` §3): the
 initiator holds a heading lock through a charge while following at part of its
@@ -173,7 +181,7 @@ _Avoid_: Live galaxy feed, long-range scan
 A named, visible, and interruptible in-world process that repairs a carrier instance or replaces it with a new one.
 _Avoid_: Respawn timer
 
-> **`repairing` is the persisted spelling of "a recovery process is live"** — both kinds, repair and replacement. A carrier awaiting a replacement is `repairing` in `docs/specs/persistent-world-state.md` §3.2's enumeration and in `src/world-state.ts`, which is narrower than this entry reads. The descriptor's own `kind` says which process it is, and §4 makes the kind decide the valid completion. Renaming the condition is a `worldSchemaVersion` bump, so it is a decision rather than a tidy-up.
+> **`repairing` is the persisted spelling of "a recovery process is live"** — both kinds, repair and replacement. A carrier awaiting a replacement is `repairing` in `docs/specs/persistent-world-state.md` §3.2's enumeration and in `src/world-state.ts`, which is narrower than this entry reads. **The exception is a scheduled replacement (#324 part d):** a destroyed row carrying one stays `destroyed` until `startsAt`, and it becomes `repairing` only when the lazy start materializes (§4). The descriptor's own `kind` says which process it is, and §4 makes the kind decide the valid completion. Renaming the condition is a `worldSchemaVersion` bump, so it is a decision rather than a tidy-up.
 
 **Causal episode**:
 The bounded provenance unit for the latest related operational transitions at one carrier slot. `docs/specs/persistent-world-state.md` §5 owns its retained facts and compaction rule.

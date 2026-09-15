@@ -150,11 +150,12 @@ describe("the view set itself", () => {
 		// `planet-fill`, nineteen since #210 added `ringed-giant`, twenty since
 		// #209 added `giant-fill`, twenty-two since #300 gave the shipyard and
 		// the refinery a frame from their own aperture axis, twenty-four since
-		// #324 added the duel's glass and console. A literal and not
+		// #324 added the duel's glass and console, twenty-six since #324 part d
+		// added the canisters and the raider log. A literal and not
 		// `VIEWS.length`, which is
 		// the whole point: a view deleted by accident has to be a red run, and a
 		// check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(24);
+		expect(VIEWS.length).toBe(26);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -429,9 +430,9 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — twenty-four since #324 added the duel's
-		// glass and console views.
-		expect(html).toContain("· clock 0.6–9.8s");
+		// many views the set declares — twenty-six since #324 part d added the
+		// canister and raider-log views.
+		expect(html).toContain("· clock 0.6–10.6s");
 		expect(html).not.toContain("pinned");
 	});
 

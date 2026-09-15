@@ -43,6 +43,7 @@ import {
 	RAIDER_HULL_ID,
 	type RaiderSlot,
 	legEncounter,
+	raiderName,
 	raiderSlots,
 } from "./raider-slots";
 import { mix } from "./rng";
@@ -123,7 +124,14 @@ export interface EncounterStep {
 	/** The raider's fire this frame, for `Game.takeDamage` to land. */
 	raiderHit: { amount: number; side: ShieldSide } | null;
 	contact: EncounterContact | null;
+	/** Where the raider came apart, on the frame it did (#324 part d): the
+	 *  cargo drops from here. `null` on every other frame. */
+	wreck: { pos: Vec3; vel: Vec3 } | null;
 }
+
+/** Whether a raider slot can field a raider now: operational in world state.
+ *  Required, so a caller cannot forget it and respawn a destroyed raider. */
+export type SlotOperational = (key: CarrierKey) => boolean;
 
 /** A fled raider this far from the player has left the fight. */
 export const FLED_KM = 25;
@@ -162,7 +170,7 @@ function makeEncounter(
 ): Encounter {
 	return {
 		slot,
-		name: `Raider ${String(ordinal + 1).padStart(2, "0")}`,
+		name: raiderName(ordinal),
 		bearing,
 		rangeKm,
 		rollUnit,
@@ -182,6 +190,7 @@ function makeEncounter(
  * `startedAtS` is when it began.
  */
 export function scheduleEncounter(
+	operational: SlotOperational,
 	systemIndex: number,
 	record: { seed: number; government: number },
 	legOrdinal: number,
@@ -190,6 +199,10 @@ export function scheduleEncounter(
 	const drawn = legEncounter(record.seed, record.government, legOrdinal);
 	if (!drawn) return null;
 	const slot = raiderSlots(systemIndex, record.government)[drawn.slotIndex];
+	// **The route threat is gone while the carrier is not operational** (#41,
+	// #324 part d). The draw is not moved to another slot: a system that lost a
+	// raider is less dangerous, not equally dangerous with a different name.
+	if (!operational(slot.key)) return null;
 	return makeEncounter(
 		slot,
 		drawn.slotIndex,
@@ -201,17 +214,22 @@ export function scheduleEncounter(
 	);
 }
 
-/** An encounter on demand, for a probe or a playtest: slot 0 of the system. */
+/** An encounter on demand, for a probe or a playtest: the system's first
+ *  operational slot, or `null` when every slot is destroyed or repairing. */
 export function forceEncounter(
+	operational: SlotOperational,
 	systemIndex: number,
 	government: number,
 	bearing: EncounterBearing,
 	appearsAtS: number,
 	rangeKm: number,
-): Encounter {
+): Encounter | null {
+	const slots = raiderSlots(systemIndex, government);
+	const ordinal = slots.findIndex((s) => operational(s.key));
+	if (ordinal < 0) return null;
 	return makeEncounter(
-		raiderSlots(systemIndex, government)[0],
-		0,
+		slots[ordinal],
+		ordinal,
 		bearing,
 		rangeKm,
 		0.25,
@@ -226,6 +244,7 @@ const idle = (e: Encounter): EncounterStep => ({
 	drop: false,
 	raiderHit: null,
 	contact: null,
+	wreck: null,
 });
 
 const over = (e: Encounter, end: EncounterEnd): EncounterStep =>
@@ -266,6 +285,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			drop: false,
 			raiderHit: null,
 			contact: contactOf(add(pilot.ship.pos, offset), pilot.ship.vel, nose),
+			wreck: null,
 		};
 	}
 
@@ -281,6 +301,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 				drop: false,
 				raiderHit: null,
 				contact: contactOf(pos, pilot.ship.vel, e.nose),
+				wreck: null,
 			};
 		const nose = followHeading(e.nose, pilot.nose, RAIDER_LOCK_RATE, f.dt);
 		const contest = stepContest(e.contest, nose, pilot.nose, f.dt);
@@ -297,6 +318,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			drop: succeeded,
 			raiderHit: null,
 			contact: contactOf(pos, pilot.ship.vel, nose),
+			wreck: null,
 		};
 	}
 
@@ -311,7 +333,14 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		condition: fullCondition(RAIDER_HULL_ID),
 	};
 	const step = stepDuel(raider, pilot, f.shot, f.dt);
-	if (step.raiderDestroyed) return over(e, "destroyed");
+	if (step.raiderDestroyed)
+		return {
+			...over(e, "destroyed"),
+			wreck: {
+				pos: step.raider.flight.ship.pos,
+				vel: step.raider.flight.ship.vel,
+			},
+		};
 	const flight = step.raider.flight;
 	if (
 		flight.phase === "flee" &&
@@ -328,6 +357,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			flight.nose,
 			flight.up,
 		),
+		wreck: null,
 	};
 }
 

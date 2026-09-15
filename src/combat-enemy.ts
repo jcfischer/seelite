@@ -375,7 +375,13 @@ function bankedUp(
 					add(scale(level, Math.cos(bank)), scale(inside, Math.sin(bank))),
 					level,
 				);
-	const rolled = slew(level, want, ROLL_RATE_RAD_S * Math.max(0, dt));
+	// Capped at the hull's roll rate, for the nose slew's reason below.
+	const rolled = slew(
+		level,
+		want,
+		Math.min(ROLL_RATE_RAD_S, STRIKER_PERFORMANCE.angularMax.roll) *
+			Math.max(0, dt),
+	);
 	return unit(sub(rolled, scale(nose, dot(rolled, nose))), level);
 }
 
@@ -598,7 +604,15 @@ export function stepCombatEnemy(
 						? unit(add(awayFromPlayer, scale(pullAxis, 0.3)), awayFromPlayer)
 						: attackNose;
 
-	const nose = slew(state.nose, desired, MAX_TURN_RATE_RAD_S * step);
+	// **Capped at the hull's own turn rate.** The controller slewed at its own
+	// 1.2 rad/s, above the raider hull's `angularMax` and far above the
+	// courier's, so it out-turned any ship flying by the same rules
+	// (`combat-model.md` §1). #324's playtest found the raider unhittable.
+	const nose = slew(
+		state.nose,
+		desired,
+		Math.min(MAX_TURN_RATE_RAD_S, STRIKER_PERFORMANCE.angularMax.yaw) * step,
+	);
 	const up = bankedUp(state.nose, nose, state.up, step);
 
 	// Throttle is closure control in the envelope and everything elsewhere: a

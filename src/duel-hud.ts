@@ -111,6 +111,24 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 	};
 }
 
+/**
+ * The selected enemy's condition, as the line under its label on the glass
+ * (#324, the principal's ruling after the second playtest): shield pools and
+ * hull, printed as the duel row prints them. It is refused while either printed
+ * pool is 0, so an open side reads at a glance.
+ */
+export function targetConditionLine(c: ShipCondition): {
+	text: string;
+	tone: FloorTone;
+} {
+	const fore = Math.round(c.fore);
+	const aft = Math.round(c.aft);
+	return {
+		text: `SHD F ${fore} A ${aft}  HULL ${Math.round(c.hull)}`,
+		tone: fore === 0 || aft === 0 ? "refused" : "passive",
+	};
+}
+
 /** The hostile cue's tone: amber, and red while the raider fires. */
 export const raiderCueTone = (raiderFiring: boolean): FloorTone =>
 	raiderFiring ? "refused" : "action";

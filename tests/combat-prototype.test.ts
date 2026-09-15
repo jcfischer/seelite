@@ -13,10 +13,12 @@ import {
 	MAX_TURN_RATE_RAD_S,
 	MERGE_BREAK_KM,
 	PLAYER_LASER_RANGE_KM,
+	STRIKER_HULL_ID,
 	createCombatEnemy,
 	playerLaserHit,
 	stepCombatEnemy,
 } from "../src/combat-enemy";
+import { flightPerformance } from "../src/sim";
 import { type Vec3, dot, length, scale, sub, v3 } from "../src/vec3";
 
 // The cap is far above either pacing window, so both the low and high bounds
@@ -565,10 +567,18 @@ test("fire is gated on the boresight, not on being nearby", () => {
 test("the nose slews at a bounded rate and the ceiling actually binds", () => {
 	const { trace } = flyDuel({ seconds: 40 });
 	const fastest = Math.max(...trace.map((row) => row.turnRate));
-	expect(fastest).toBeLessThanOrEqual(MAX_TURN_RATE_RAD_S + 1e-6);
+	// **The hull's own turn rate caps the controller** (#324): its slew was
+	// 1.2 rad/s, above what the raider hull allows, which out-turned any ship
+	// flying by the same rules.
+	const ceiling = Math.min(
+		MAX_TURN_RATE_RAD_S,
+		flightPerformance(STRIKER_HULL_ID).angularMax.yaw,
+	);
+	expect(ceiling).toBeLessThan(MAX_TURN_RATE_RAD_S);
+	expect(fastest).toBeLessThanOrEqual(ceiling + 1e-6);
 	// Without this the test would pass on a ship that never turns hard, which
 	// is the failure mode a rate limit is supposed to make impossible to hide.
-	expect(fastest).toBeGreaterThan(MAX_TURN_RATE_RAD_S * 0.95);
+	expect(fastest).toBeGreaterThan(ceiling * 0.95);
 });
 
 test("two seeds fly two different fights", () => {

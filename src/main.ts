@@ -278,18 +278,35 @@ import {
 	duelRowWidest,
 	onTargetMark,
 	raiderCueTone,
+	targetConditionLine,
 	showDuelRow,
 } from "./duel-hud";
 import {
 	type GunFeedback,
 	QUIET_GUN,
 	SHOT_SOUND_GAP_S,
+	STRUCK_FLASH_S,
+	drawEnemyBeam,
+	drawStruckRim,
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	TRACER_PORTS,
 	drawGunTracer,
 	stepGunFeedback,
 } from "./gun-feedback";
+import {
+	GIMBAL_CONE_RAD,
+	angleBetween,
+	clampToCone,
+	stepGimbal,
+} from "./gimbal";
+import { formatRaiderLogLine, raiderLog } from "./raider-log";
+import {
+	type Canister,
+	dropCanisters,
+	raiderDestruction,
+	stepCanisters,
+} from "./raider-wreck";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -444,6 +461,7 @@ import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
 	newCommander,
+	scoopCargo,
 	transactAtStation,
 	type StationAction,
 } from "./station-commerce";
@@ -1830,8 +1848,26 @@ class Game {
 	 * turns red while it does, by the principal's ruling.
 	 */
 	raiderFiring = false;
+	/** Seconds of canopy flash left after the raider's fire landed (#324). */
+	struckFor = 0;
+	/** The raider's fire as the last frame drew it: the beam's two ends on the
+	 *  overlay, or `null` without a beam, and the rim's strength — so a probe
+	 *  knows where to sample the paint. */
+	hostileFireRender: {
+		beam: {
+			from: { x: number; y: number };
+			to: { x: number; y: number };
+		} | null;
+		rim: number;
+	} = { beam: null, rim: 0 };
 	/** The pulse laser's tracer and shot-sound pacing (`gun-feedback.ts`). */
 	gunFeedback: GunFeedback = QUIET_GUN;
+	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
+	 *  state: they expire in five minutes and are not saved. */
+	canisters: Canister[] = [];
+	/** The gimballed beam's direction, or `null` before the first step, when it
+	 *  is the boresight (`gimbal.ts`). */
+	gunAim: Vec3 | null = null;
 	/** The tracer's geometry and pacing, for a probe to read rather than restate. */
 	readonly gunTracer = {
 		ports: TRACER_PORTS,
@@ -1846,6 +1882,8 @@ class Game {
 	cueRender: {
 		tone: FloorTone;
 		onTarget: boolean;
+		/** The selected raider's condition line as drawn, or `null` without one. */
+		enemyLine: string | null;
 		/** The ring's centre on the overlay, or `null` when the edge arrow is
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
@@ -6290,6 +6328,29 @@ class Game {
 		return forwardOf(this.cameraRotation());
 	}
 
+	/** Where the gimballed beam points (#324): the boresight turned toward the
+	 *  selected target within the gimbal's cone. */
+	private beamAim(): Vec3 {
+		const bore = this.weaponAim();
+		// **Clamped at every read, not only when stepped.** The gimbal steps at
+		// the frame's start, and the attitude can change later in the same frame;
+		// a stored beam read after that could point outside the new cone. The
+		// duel-hud probe turned the ship a quarter turn between step and render
+		// and still saw ON TARGET.
+		return this.gunAim ? clampToCone(this.gunAim, bore, GIMBAL_CONE_RAD) : bore;
+	}
+
+	/** One step of the gimbal toward the selected target, before the shot. */
+	private stepGunGimbal(dt: number) {
+		const bore = this.weaponAim();
+		// **Only a raider pulls the beam** (sage #330): a station or a planet
+		// selected near the nose would turn it off the boresight, and a raider on
+		// the boresight but not selected would then be missed.
+		const target = this.raiderSelected() ? this.targetBody() : null;
+		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
+		this.gunAim = stepGimbal(this.gunAim ?? bore, bore, targetDir, dt);
+	}
+
 	/** The ship's up-vector in sim space — what `docking.md` §3's roll match is
 	 *  measured against, and the second half of an attitude the flight model
 	 *  deliberately does not hold (`sim.ts` keeps positions, not orientation). */
@@ -7314,6 +7375,9 @@ class Game {
 		this.encounterView = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
+		this.canisters = [];
+		this.gunAim = null;
+		this.struckFor = 0;
 		this.lastExit = "";
 		this.detour = null;
 		this.frameBody = null;
@@ -7630,7 +7694,8 @@ class Game {
 				ship: this.world.ship,
 				nose: this.nose(),
 				aimOrigin: this.cameraPos(),
-				aimNose: this.weaponAim(),
+				// The gimballed beam, not the boresight (#324).
+				aimNose: this.beamAim(),
 				hull: this.condition.hull,
 			},
 			shot,
@@ -7638,6 +7703,7 @@ class Game {
 		this.encounter = step.encounter;
 		this.encounterView = step.contact;
 		this.raiderFiring = step.raiderHit !== null;
+		if (step.raiderHit) this.struckFor = STRUCK_FLASH_S;
 		if (step.drop) this.dropOut(`interdicted by ${name}`);
 		if (step.raiderHit)
 			this.takeDamage(
@@ -7646,6 +7712,29 @@ class Game {
 				`fired on by ${name}`,
 			);
 		if (step.encounter.phase === "over") {
+			// #324 part d: a kill is the slot's world-state destruction, which
+			// schedules its replacement, and the wreck drops its cargo.
+			if (step.encounter.end === "destroyed" && step.wreck) {
+				const record = this.world.system.record;
+				const now = this.world.gameTime;
+				this.applyCarrierTransition(
+					encounter.slot.key,
+					raiderDestruction(record.index, now),
+				);
+				this.canisters = [
+					...this.canisters,
+					...dropCanisters({
+						systemSeed: record.seed,
+						government: record.government,
+						key: encounter.slot.key,
+						killedAt: now,
+						pos: step.wreck.pos,
+						vel: step.wreck.vel,
+						frameVel: this.localFrame(),
+					}),
+				];
+				this.audio.explosion();
+			}
 			const notice = step.encounter.end
 				? ENCOUNTER_END_NOTICE[step.encounter.end]
 				: null;
@@ -7657,6 +7746,46 @@ class Game {
 		}
 	}
 
+	/**
+	 * Whether a raider slot can field a raider now (#324 part d): operational
+	 * in world state at this game time. A destroyed or repairing slot is no
+	 * route threat.
+	 */
+	private readonly slotOperational = (key: CarrierKey): boolean =>
+		this.carrierCondition(key).condition === "operational";
+
+	/**
+	 * Drift the canisters, expire the old ones, and scoop any the ship passes
+	 * close and slow (#324 part d). A full hold leaves the canister in space.
+	 */
+	private stepCargoCanisters(dt: number) {
+		if (this.canisters.length === 0) return;
+		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
+		const step = stepCanisters(
+			this.canisters,
+			this.world.ship,
+			dt,
+			this.world.gameTime,
+			(canister) => {
+				const took = scoopCargo(
+					this.commander,
+					canister.commodity,
+					canister.tonnes,
+				);
+				if (took.accepted) this.commander = took.commander;
+				return took.accepted;
+			},
+		);
+		this.canisters = step.kept;
+		// A refused notice stands while the ship is beside the canister, and a
+		// later notice replaces it as usual.
+		for (const { canister, accepted } of step.scoops)
+			this.lastExit = accepted
+				? `scooped ${canister.tonnes} t ${canister.commodity}`
+				: "hold full: canister left in space";
+		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
+	}
+
 	/** Draw the leg's encounter, if the leg has none running. */
 	private scheduleLegEncounter() {
 		if (this.combatRig) return;
@@ -7665,9 +7794,10 @@ class Game {
 		const now = this.world.gameTime;
 		const leg = Math.floor(now);
 		this.encounter =
-			scheduleEncounter(record.index, record, leg, now) ??
+			scheduleEncounter(this.slotOperational, record.index, record, leg, now) ??
 			(RAIDER_PLAYTEST
 				? forceEncounter(
+						this.slotOperational,
 						record.index,
 						record.government,
 						PLAYTEST_BEARINGS[leg % PLAYTEST_BEARINGS.length],
@@ -7685,6 +7815,7 @@ class Game {
 	forceRaider(bearing: EncounterBearing = "behind", inS = 1, rangeKm = 30) {
 		const record = this.world.system.record;
 		this.encounter = forceEncounter(
+			this.slotOperational,
 			record.index,
 			record.government,
 			bearing,
@@ -8135,7 +8266,10 @@ class Game {
 		// The raider reads the player where the frame starts, as the ship and the
 		// world masses are read, and may drop the player out of cruise before the
 		// regime branch below chooses how to fly this frame.
+		this.struckFor = Math.max(0, this.struckFor - dt);
+		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
+		this.stepCargoCanisters(dt);
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
@@ -9182,6 +9316,20 @@ class Game {
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			// #324's full duel detail, only while the glass shows the duel row.
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
+			// #324 part d: the raider lifecycle on the Communications console,
+			// derived from world state, newest first.
+			// Derived only while that console's tab is open (sage #330).
+			raiderLog:
+				this.leftTab === "Communications"
+					? raiderLog(
+							this.commerceWorld.galaxies[this.world.system.record.galaxy],
+							this.world.system.record.index,
+							this.world.system.record.government,
+							this.world.gameTime,
+						)
+							.slice(0, 6)
+							.map(formatRaiderLogLine)
+					: [],
 			tuning: this.tuningSummary(),
 			stationConsole: this.stationConsoleState(),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
@@ -10205,6 +10353,7 @@ class Game {
 		ctx.clearRect(0, 0, w, h);
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
+		this.hostileFireRender = { beam: null, rim: 0 };
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
 		// flight-floor, scanner, director, or attitude marks may leak through it.
@@ -10269,17 +10418,99 @@ class Game {
 		ctx.lineTo(w / 2, h / 2 - 2);
 		ctx.stroke();
 
+		// #324 part d: cargo canisters, a small green diamond with the good and
+		// range, so a pilot can find them after a kill. **Canisters that land
+		// within a few pixels of each other share one marker.** A kill drops them
+		// at one point, and at any range their labels printed over each other
+		// into an unreadable smear on the first captured frame.
+		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
+			[];
+		for (const canister of this.canisters) {
+			const dir = directionTo(camPos, canister.pos);
+			const at = dir && place(dir);
+			if (!at?.on) continue;
+			const km = length(sub(canister.pos, camPos));
+			const near = cargoMarks.find(
+				(m) => Math.hypot(m.x - at.x, m.y - at.y) < 14,
+			);
+			if (near) {
+				near.goods.push(canister.commodity);
+				near.km = Math.min(near.km, km);
+			} else
+				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
+		}
+		ctx.strokeStyle = "rgba(150, 240, 170, 0.9)";
+		ctx.fillStyle = "rgba(150, 240, 170, 0.9)";
+		ctx.lineWidth = 1.5;
+		ctx.font = "11px ui-monospace, Menlo, monospace";
+		for (const mark of cargoMarks) {
+			ctx.beginPath();
+			ctx.moveTo(mark.x, mark.y - 6);
+			ctx.lineTo(mark.x + 6, mark.y);
+			ctx.lineTo(mark.x, mark.y + 6);
+			ctx.lineTo(mark.x - 6, mark.y);
+			ctx.closePath();
+			ctx.stroke();
+			const what =
+				mark.goods.length === 1
+					? mark.goods[0].toUpperCase()
+					: `×${mark.goods.length}`;
+			ctx.fillText(`CARGO ${what}  ${range(mark.km)}`, mark.x + 10, mark.y + 4);
+		}
 		// The production gun's tracer: on the glass in the cockpit, and over the
 		// whole frame in chase, where there is no glass (sage #328 — a chase view
 		// with no tracer is the dead-key defect again). The rig draws its own
 		// below, and with the rig on the trigger never reaches this gun.
+		// The raider's fire and its hits on the player (#324, found missing in
+		// the second playtest): its beam from its point on the glass while it
+		// fires, and a canopy rim for a moment after a hit lands.
+		const glassBottom = this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1;
+		if (this.raiderFiring && this.raiderListed) {
+			const toRaider = directionTo(camPos, this.raiderContact.pos);
+			const raiderAt = toRaider && place(toRaider);
+			if (raiderAt?.on) {
+				// In the cockpit the player sits below the glass; in chase the hull
+				// is on screen, and the beam ends on it (sage #330).
+				const shipDir =
+					this.view === "cockpit"
+						? null
+						: directionTo(camPos, this.world.ship.pos);
+				const shipAt = shipDir && place(shipDir);
+				const to = shipAt?.on
+					? { x: shipAt.x, y: shipAt.y }
+					: { x: w / 2, y: h * glassBottom };
+				drawEnemyBeam(ctx, w, h, glassBottom, raiderAt, to);
+				this.hostileFireRender.beam = {
+					from: { x: raiderAt.x, y: raiderAt.y },
+					to,
+				};
+			}
+		}
+		if (this.view === "cockpit") {
+			const rim = this.struckFor / STRUCK_FLASH_S;
+			drawStruckRim(ctx, w, h, glassBottom, rim);
+			this.hostileFireRender.rim = Math.max(0, rim);
+		}
+		// The gimballed beam's point on the glass (#324): the tracer ends there,
+		// and while the gimbal has turned the beam off the boresight a small pip
+		// shows where it points.
+		const beam = this.beamAim();
+		const beamAt = place(beam);
+		const beamOnGlass = beamAt?.on
+			? { x: beamAt.x / w, y: beamAt.y / h }
+			: null;
+		if (
+			beamAt?.on &&
+			angleBetween(beam, this.weaponAim()) > 0.2 * (Math.PI / 180)
+		) {
+			ctx.strokeStyle = "rgba(116, 234, 255, 0.9)";
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.arc(beamAt.x, beamAt.y, 5, 0, Math.PI * 2);
+			ctx.stroke();
+		}
 		if (this.gunFeedback.tracerLeftS > 0)
-			drawGunTracer(
-				ctx,
-				w,
-				h,
-				this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1,
-			);
+			drawGunTracer(ctx, w, h, glassBottom, beamOnGlass ?? undefined);
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger
 		// being held and incoming fire is not, and a player being shot while not
@@ -10389,7 +10620,7 @@ class Game {
 			raiderSelected &&
 			onTargetMark(
 				this.encounter?.phase ?? null,
-				raiderInSights(camPos, this.weaponAim(), selectedBody.pos),
+				raiderInSights(camPos, this.beamAim(), selectedBody.pos),
 			);
 		// Built once, because the declutter reservation and the paint must agree.
 		const selectedLabel = (name: string, km: number) =>
@@ -10399,6 +10630,10 @@ class Game {
 				tone: raiderTone,
 				onTarget,
 				at: selectedAt?.on ? { x: selectedAt.x, y: selectedAt.y } : null,
+				enemyLine:
+					selectedAt?.on && this.encounter?.raider
+						? targetConditionLine(this.encounter.raider.condition).text
+						: null,
 			};
 		// Reserve the selected label before the stable station/ship walk below.
 		// Its label is never submitted to decluttering, so context can disappear
@@ -10436,6 +10671,17 @@ class Game {
 						ctx.fill();
 					}
 					ctx.fillText(selectedLabel(body.name, km), at.x + r + 6, at.y + 4);
+					// The selected raider's shields and hull under its name (#324,
+					// the principal's ruling), in the duel row's tones.
+					const enemy = raiderSelected
+						? this.encounter?.raider?.condition
+						: undefined;
+					if (enemy) {
+						const line = targetConditionLine(enemy);
+						ctx.fillStyle = FLOOR_TONE_FILL[line.tone];
+						ctx.fillText(line.text, at.x + r + 6, at.y + 18);
+						ctx.fillStyle = selectedColour;
+					}
 					continue;
 				}
 				// Corner brackets rather than a box: a closed square over a distant

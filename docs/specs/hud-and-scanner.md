@@ -143,7 +143,12 @@ every frame and the estimates on `ETA_INTERVAL_S`, because a range is a
 subtraction and an estimate is an integration of the cruise law per row.
 
 Communications carries clearance requests and replies, hostile/legal
-status, and actionable messages. Flight presents speed, throttle, assist, current
+status, and actionable messages. Since #324 part d it also carries the raider
+log: the latest kill of each raider slot in this system, when its repair began
+and when it came back in service, with game-clock times, derived from world
+state. A slot keeps one causal episode, so killing a replaced raider replaces
+the older lines
+(`combat-model.md` §4.1). Flight presents speed, throttle, assist, current
 regime, and relative motion. Drive presents cruise charge, range, regeneration,
 and future equipment state. Developer tuning parameters move to a **Tuning tab**
 on the right panel: they are available while tuning the prototype, but never
@@ -406,6 +411,20 @@ edge of the hit sphere the two can disagree for one frame of relative motion.
 glass reads it. The block is shown under the same predicate as the glass row and
 hidden in peace, with an inline `display` rather than the `hidden` attribute,
 which loses to `.lc-readout`'s own `display`.
+
+**The cue and the tracer follow the gimballed beam** (`combat-model.md` §2.1).
+The ON TARGET mark tests the beam's direction, not the boresight. The tracer
+ends where the beam meets the glass, and a small ring marks that point while
+the gimbal has turned the beam more than 0.2° off the boresight.
+
+**The enemy's condition and fire are on the glass** (the principal's ruling
+after the second playtest). A second line under the selected raider's name reads
+`SHD F 72 A 106  HULL 81`. It is refused while either printed pool is 0,
+otherwise passive (`targetConditionLine`). While the raider fires, a warm beam
+runs from its point on the glass toward the bottom of the glass, where the
+player sits. After a hit lands on the player, the canopy rim glows red for
+0.22 s: a rim and not a wash, so the view is not taken away. That look is the
+`?combat=1` rig's, ported (`gun-feedback.ts`).
 
 ## 6. Responsive behaviour
 

@@ -18,6 +18,7 @@ import {
 	duelConsoleReadout,
 	onTargetMark,
 	raiderCueTone,
+	targetConditionLine,
 	duelRowCells,
 	duelRowWidest,
 	showDuelRow,
@@ -171,5 +172,26 @@ describe("the on-target mark", () => {
 		// The contest flies no duel step, so a shot there does nothing (sage #327).
 		for (const phase of [null, "inbound", "contest", "over"] as const)
 			expect(onTargetMark(phase, true)).toBe(false);
+	});
+});
+
+describe("the enemy's condition line", () => {
+	const raider = (over: Partial<ShipCondition> = {}): ShipCondition => ({
+		...fullCondition("raider"),
+		...over,
+	});
+
+	test("prints both shield pools and the hull, rounded as the duel row rounds", () => {
+		const line = targetConditionLine(
+			raider({ fore: 71.6, aft: 105.5, hull: 40.4 }),
+		);
+		expect(line.text).toBe("SHD F 72 A 106  HULL 40");
+		expect(line.tone).toBe("passive");
+	});
+
+	test("is refused while either printed pool is 0, and not before", () => {
+		expect(targetConditionLine(raider({ aft: 0.4 })).tone).toBe("refused");
+		expect(targetConditionLine(raider({ fore: 0 })).tone).toBe("refused");
+		expect(targetConditionLine(raider({ fore: 0.6 })).tone).toBe("passive");
 	});
 });

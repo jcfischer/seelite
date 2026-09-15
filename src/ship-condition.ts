@@ -35,10 +35,20 @@ export const PULSE_LASER = {
 export const ENERGY_REGEN_PER_S = 12;
 export const HEAT_COOL_PER_S = 16;
 
-export const SHIELD_RECHARGE_PER_S = 6;
+/**
+ * Shield points recovered per second once the delay below has passed.
+ *
+ * **Two, by the principal's ruling after the second playtest of #324.** It was
+ * #48's 6, equal to the pulse's damage rate, so every hit-free break over the
+ * delay refilled a shield as fast as a pilot could take it down, and duels ran
+ * "extremely long". The rule is every ship's, so the player's shields also come
+ * back slower.
+ */
+export const SHIELD_RECHARGE_PER_S = 2;
 /**
  * How long a struck ship's shields stay down. #48 found it necessary: with
- * recharge equal to the pulse's damage rate, intermittent fire never landed.
+ * recharge then equal to the pulse's damage rate, intermittent fire never
+ * landed.
  */
 export const SHIELD_RECHARGE_DELAY_S = 3;
 /**

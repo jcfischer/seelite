@@ -70,17 +70,26 @@ describe("the Game's world writes", () => {
 		// from a running game", and `toContain("applyCarrierTransition(")` is
 		// satisfied by the method's own declaration — so the row stayed green on
 		// a build where nothing ever called it, which is the state its comment
-		// claimed #90 had fixed. Nothing in the game calls it yet and nothing is
-		// meant to: §4's table has no in-flight producer, and #43's prototype is
-		// the first consumer. What this can hold is that the hook is here and
-		// that it goes through the module's writer rather than editing the
-		// envelope, so a debug caller cannot reach a state a real writer could
-		// not. A source check, for the same reason as the rows above — `Game`
-		// builds a renderer and is not constructible headless.
-		expect(MAIN).toContain("applyCarrierTransition(");
+		// claimed #90 had fixed. **#324 part d is its first in-flight producer**:
+		// a raider kill applies the slot's destruction through it. What this
+		// holds is that the hook goes through the module's writer rather than
+		// editing the envelope, so no caller can reach a state a real writer
+		// could not, and that the kill is what calls it. A source check, for the
+		// same reason as the rows above — `Game` builds a renderer and is not
+		// constructible headless.
+		//
+		// Split on the **declaration**, not the first occurrence: the kill's call
+		// comes earlier in the file than the method, and the first version of this
+		// row read the call site as the body.
+		const declaration =
+			"applyCarrierTransition(key: CarrierKey, event: TransitionEvent)";
+		expect(MAIN).toContain(declaration);
 		expect(MAIN).toContain("carrierCondition(");
-		const body = MAIN.split("applyCarrierTransition(")[1] ?? "";
+		const body = MAIN.split(declaration)[1] ?? "";
 		expect(body.slice(0, 400)).toContain("applyTransition(");
+		const kill = MAIN.split('step.encounter.end === "destroyed"')[1] ?? "";
+		expect(kill.slice(0, 400)).toContain("this.applyCarrierTransition(");
+		expect(kill.slice(0, 400)).toContain("raiderDestruction(");
 	});
 
 	test("a cruise save is not handed its cruise velocity back", () => {
