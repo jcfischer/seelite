@@ -191,7 +191,11 @@ const RAMA_FAMILY: ModelFamily = {
 	// Nothing on it is lit.
 	emissive: () => false,
 	finishes: [
-		{ id: "as-built", name: "As built", thesis: "unpainted, unlit, unplated" },
+		{
+			id: "as-built",
+			name: "As built",
+			thesis: "unpainted, not emissive, unplated",
+		},
 	],
 	finishId: () => "as-built",
 	setFinish: () => {},

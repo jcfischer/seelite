@@ -56,10 +56,10 @@ describe("Rama is drawn to the novel's measure", () => {
 		const second = boxOf(build());
 		expect(first.min.toArray()).toEqual(second.min.toArray());
 		expect(first.max.toArray()).toEqual(second.max.toArray());
-		const reach = Math.max(
-			...first.min.toArray().map(Math.abs),
-			...first.max.toArray().map(Math.abs),
-		);
+		// Distance from the centre, not the largest single coordinate: the
+		// workbench orbits at a radius, and a vertex at (10, 10, 26) is 29.6 km
+		// out while no coordinate of it passes 26 (#336's review).
+		const reach = Math.max(...verticesOf(build()).map((v) => v.length()));
 		expect(reach).toBeLessThanOrEqual(RAMA_REACH_KM * (1 + 1e-6));
 		// Not slack: the workbench frames its orbit from this figure, and one
 		// nothing approaches puts the camera far out in empty space.
@@ -158,7 +158,11 @@ describe("Rama has no role in the simulation yet", () => {
 			join(import.meta.dir, "..", "src", "rama-mesh.ts"),
 			"utf8",
 		);
-		const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
+		// `from "x"`, a bare `import "x"` and a dynamic `import("x")` alike: a
+		// guard that saw only the first form could not fail on the other two.
+		const imports = [
+			...source.matchAll(/(?:from|import)\s*\(?\s*"([^"]+)"/g),
+		].map((m) => m[1]);
 		expect(imports.sort()).toEqual(["./loft", "three"]);
 	});
 });

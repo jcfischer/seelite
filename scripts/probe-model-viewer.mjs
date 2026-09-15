@@ -130,7 +130,7 @@ for (const viewport of VIEWPORTS) {
 		JSON.stringify(beacons),
 	);
 	// #333: the third family mounts, shows its one concept, stays outside
-	// Game, and frames a 50 km subject from outside it — a camera placed at a
+	// Game, and frames a 50 km subject from outside its whole reach (28.2 km, `RAMA_REACH_KM`) — a camera placed at a
 	// ship's orbit would be inside the hull, 10 km from the axis.
 	await page.goto(workbenchUrl(ORIGIN, { "model-viewer": "rama" }), {
 		waitUntil: "load",
@@ -145,7 +145,7 @@ for (const viewport of VIEWPORTS) {
 			rama.variants.length === 1 &&
 			rama.selected === "rama" &&
 			!rama.gameConstructed &&
-			rama.viewer?.distance > 25,
+			rama.viewer?.distance > 28.2,
 		JSON.stringify({
 			assets: rama.assets,
 			variants: rama.variants,

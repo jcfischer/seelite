@@ -10,16 +10,17 @@
  * form would owe it an aperture, a berth catalogue and a market.
  *
  * **Kilometres, like every sim-facing mesh.** A later node that places it
- * inherits the distance-layer rule rather than picking a layer; at 50 km it is
- * far inside `HANDOFF_KM`.
+ * inherits the distance-layer rule rather than picking a layer: its layer will
+ * be its distance from the camera, not its size.
  *
  * **What the novel gives, and what this draws from it.** A cylinder about 50 km
  * long and 20 km across, spinning on its long axis; a hull almost featureless,
  * so its scale reads from its size and from the few things on it; a "north"
  * cap with an axial hub carrying three airlocks; a "south" cap carrying the
  * drive, drawn here as an axial spike ringed by six smaller ones. Nothing on it
- * is lit — no ports, no lamps, no nav lights — because nothing about it was
- * built by anyone who needed them.
+ * emits light — no ports, no lamps, no nav lights — because nothing about it
+ * was built by anyone who needed them. It is still shaded by the scene's star
+ * like every standard material.
  */
 import * as THREE from "three";
 import { type Ring, hullLoft } from "./loft";
@@ -27,10 +28,17 @@ import { type Ring, hullLoft } from "./loft";
 /** The novel's figures, kilometres. North is −Z, south +Z. */
 export const RAMA_DIMENSIONS = Object.freeze({ lengthKm: 50, radiusKm: 10 });
 
+/** How far the south collar stands proud of the polar disc, and how long the
+ *  axial spike on it is, kilometres. */
+const SOUTH_COLLAR_KM = 0.4;
+const SOUTH_SPIKE_LENGTH_KM = 2.8;
+
 /** How far the drawn model reaches from its centre, kilometres — the tip of
  *  the axial south spike, which is the one part that stands past a cap. The
- *  workbench frames its orbit, grid and clip planes from it. */
-export const RAMA_REACH_KM = 28.2;
+ *  workbench frames its orbit, grid and clip planes from it. Derived from the
+ *  figures that build the spike, so the two cannot drift apart. */
+export const RAMA_REACH_KM =
+	RAMA_DIMENSIONS.lengthKm / 2 + SOUTH_COLLAR_KM + SOUTH_SPIKE_LENGTH_KM;
 
 export interface RamaVariant {
 	readonly id: "a";
@@ -48,13 +56,14 @@ export const RAMA_VARIANTS: readonly RamaVariant[] = [
 	},
 ];
 
-/** A hull the colour of old metal that nobody has polished, and never lit. */
-const RAMA_MATERIAL = () =>
-	new THREE.MeshStandardMaterial({
-		color: 0x8c9095,
-		roughness: 0.62,
-		metalness: 0.35,
-	});
+/** A hull the colour of old metal that nobody has polished, and not emissive.
+ *  One material shared by every build, like the hulls' palettes: the
+ *  workbench disposes geometry on a rebuild and not materials. */
+const RAMA_MATERIAL = new THREE.MeshStandardMaterial({
+	color: 0x8c9095,
+	roughness: 0.62,
+	metalness: 0.35,
+});
 
 const round = (z: number, r: number, hard = false): Ring => ({
 	z,
@@ -84,7 +93,7 @@ export function buildRamaMesh(variant: RamaVariant["id"] = "a"): {
 	const root = new THREE.Group();
 	root.name = "rama";
 	root.userData.variant = variant;
-	const material = RAMA_MATERIAL();
+	const material = RAMA_MATERIAL;
 	const half = RAMA_DIMENSIONS.lengthKm / 2;
 	const r = RAMA_DIMENSIONS.radiusKm;
 
@@ -163,14 +172,14 @@ export function buildRamaMesh(variant: RamaVariant["id"] = "a"): {
 	);
 	const spike = (base: number, length: number): Ring[] => [
 		round(half - 0.1, base),
-		round(half + 0.4, base, true),
-		round(half + 0.4 + length * 0.6, base * 0.35),
-		round(half + 0.4 + length, 0.02),
+		round(half + SOUTH_COLLAR_KM, base, true),
+		round(half + SOUTH_COLLAR_KM + length * 0.6, base * 0.35),
+		round(half + SOUTH_COLLAR_KM + length, 0.02),
 	];
 	part(
 		root,
 		"rama-south-spike-0",
-		hullLoft(spike(0.9, 2.8), { segments: 16 }),
+		hullLoft(spike(0.9, SOUTH_SPIKE_LENGTH_KM), { segments: 16 }),
 		material,
 	);
 	for (let i = 0; i < 6; i++) {
