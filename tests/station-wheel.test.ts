@@ -23,6 +23,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { STATION_GEOMETRY } from "../src/station";
+import { stationInterior } from "../src/station-interior";
 import { STATION_FORMS, buildStationForm } from "../src/station-mesh";
 
 const GREY = 0x9aa6b2;
@@ -160,6 +161,54 @@ describe("trade E — the Wheel", () => {
 		expect(plates).toBeGreaterThanOrEqual(3);
 		expect(plates).toBeLessThanOrEqual(12);
 		expect(root.getObjectByName("rim-frame-members")).toBeDefined();
+	});
+
+	test("the hub contains the bay: its section at every depth, and its back wall", () => {
+		// The form's stated reason for its hub's size. No shared row can hold it:
+		// the bay-in-body row runs only for the selected form and reads `core`,
+		// which on the Wheel is the rim. So cast from the axis toward the bay's
+		// corner at depths through the whole bay and require the hub's wall to
+		// be at least that far out. The hub is `FrontSide`, so the cast uses a
+		// double-sided stand-in on the same geometry and transform.
+		const root = wheel();
+		const hub = named(root, "hub") as THREE.Mesh;
+		const mouthKm = boxKm(hub).max.z;
+		const bay = stationInterior("trade", mouthKm, 0);
+		const cornerKm = Math.hypot(bay.halfAcrossKm, bay.halfUpKm);
+		const stand = new THREE.Mesh(
+			hub.geometry,
+			new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+		);
+		stand.matrixWorld.copy(hub.matrixWorld);
+		stand.matrixAutoUpdate = false;
+		const caster = new THREE.Raycaster();
+		const STEPS = 40;
+		for (let n = 0; n <= STEPS; n++) {
+			const zKm =
+				bay.endAxialKm + ((mouthKm - bay.endAxialKm) * n) / STEPS - 1e-4;
+			for (const [sx, sy] of [
+				[1, 1],
+				[-1, 1],
+				[-1, -1],
+				[1, -1],
+			]) {
+				caster.set(
+					new THREE.Vector3(0, 0, zKm / CORE_KM),
+					new THREE.Vector3(
+						sx * bay.halfAcrossKm,
+						sy * bay.halfUpKm,
+						0,
+					).normalize(),
+				);
+				const hit = caster.intersectObject(stand, false)[0];
+				const wallKm = hit ? hit.distance * CORE_KM : 0;
+				expect([zKm.toFixed(3), wallKm >= cornerKm]).toEqual([
+					zKm.toFixed(3),
+					true,
+				]);
+			}
+		}
+		expect(boxKm(hub).min.z).toBeLessThanOrEqual(bay.endAxialKm);
 	});
 
 	test("the dock is on the hub's front cap, ahead of both wheels", () => {

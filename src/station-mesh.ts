@@ -1222,6 +1222,24 @@ function flatCloneOf(material: THREE.Material) {
 export const STATION_PANEL_KM = 0.15;
 
 /**
+ * **A panel size, not a panel count.** `hullLoft` writes its UVs in
+ * kilometres — chord distance round the section and distance along the
+ * sweep — so dividing by one constant gives every part of every station the
+ * same ~19 m plate. Multiplying a normalised 0–1 unwrap by a fixed count,
+ * which is what `shell` once did, gives a 1.5 km keel and a 0.12 km terrace
+ * six bands each: one coarse, the other a smear. One function, so a loft built
+ * outside `shell` (the Wheel's open rim) cannot tile by a second rule.
+ */
+function panelUVs(geometry: THREE.BufferGeometry) {
+	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+	const panelKm = stationPanelKm();
+	for (let i = 0; i < uv.count; i++)
+		uv.setXY(i, uv.getX(i) / panelKm, uv.getY(i) / panelKm);
+	uv.needsUpdate = true;
+	return geometry;
+}
+
+/**
  * The plated shell language every form shares.
  *
  * `hullLoft` is `ship-mesh.ts`'s primitive, moved to `loft.ts` when this node
@@ -1263,18 +1281,7 @@ function shell(
 	 */
 	aperture?: ApertureCut,
 ) {
-	const geometry = hullLoft(controls, { segments, aperture });
-	// **A panel size, not a panel count.** `hullLoft` writes its UVs in
-	// kilometres — chord distance round the section and distance along the
-	// sweep — so dividing by one constant gives every part of every station the
-	// same ~19 m plate. Multiplying a normalised 0–1 unwrap by a fixed count,
-	// which is what this did, gives a 1.5 km keel and a 0.12 km terrace six
-	// bands each: one coarse, the other a smear.
-	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
-	const panelKm = stationPanelKm();
-	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) / panelKm, uv.getY(i) / panelKm);
-	uv.needsUpdate = true;
+	const geometry = panelUVs(hullLoft(controls, { segments, aperture }));
 	// Cached per source material: the forms ask for flat shading dozens of times
 	// per station, and a clone each time gives one station dozens of distinct
 	// materials that can never batch. One clone per base material instead.
@@ -5097,12 +5104,7 @@ function wheelRim(
 		],
 		{ segments: 48, subdivisions: 1, open: true },
 	);
-	const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
-	const panelKm = stationPanelKm();
-	for (let i = 0; i < uv.count; i++)
-		uv.setXY(i, uv.getX(i) / panelKm, uv.getY(i) / panelKm);
-	uv.needsUpdate = true;
-	return geometry;
+	return panelUVs(geometry);
 }
 
 /** A thin square member between two points, for the unfinished rim's lattice. */
@@ -5124,54 +5126,48 @@ function frameBar(from: THREE.Vector3, to: THREE.Vector3, halfKm: number) {
 	return geometry;
 }
 
-function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
-	const group = new THREE.Group();
-	const fixtures: StationFixture[] = [];
-	const {
-		rimOuterKm: outer,
-		rimDepthKm: depth,
-		rimWidthKm: width,
-		wheelZKm,
-	} = WHEEL;
-	const inner = outer - depth;
-	const centre = (inner + outer) / 2;
-	const fore = wheelZKm;
-	const aft = -wheelZKm;
-
-	// The finished rim is `core`, as the Ring's rim is: the part the probes look
-	// up by name, and the one the eye reads as the station.
-	const rim = new THREE.Mesh(
-		wheelRim(inner, outer, fore, width),
-		flatCloneOf(hullMaterial(color, "trade")),
-	);
-	rim.name = "core";
-	group.add(rim);
-
+/**
+ * The unfinished rim: four continuous rails, the cross members and diagonals
+ * merged into one mesh, and plated chords set inside the rails, centred on the
+ * plane `z`.
+ */
+function wheelLattice(
+	inner: number,
+	outer: number,
+	z: number,
+	width: number,
+	color: number,
+) {
 	const frame = new THREE.Group();
 	frame.name = "rim-frame";
-	group.add(frame);
 	const bar = WHEEL.barHalfKm;
+	const depth = outer - inner;
+	const centre = (inner + outer) / 2;
 	const railOuter = outer - bar;
 	const railInner = inner + bar;
-	const railFore = aft + width / 2 - bar;
-	const railAft = aft - width / 2 + bar;
+	const railFore = z + width / 2 - bar;
+	const railAft = z - width / 2 + bar;
 	const frameMaterial = plainMaterial(0x8e7f72, 0.72, 0.42);
 	[
 		[railOuter, railFore],
 		[railOuter, railAft],
 		[railInner, railFore],
 		[railInner, railAft],
-	].forEach(([radius, z], i) => {
+	].forEach(([radius, at], i) => {
 		const rail = new THREE.Mesh(
 			new THREE.TorusGeometry(radius, bar, 6, 96),
 			frameMaterial,
 		);
-		rail.position.z = z;
+		rail.position.z = at;
 		rail.name = `rim-frame-rail-${i}`;
 		frame.add(rail);
 	});
-	const at = (radius: number, theta: number, z: number) =>
-		new THREE.Vector3(Math.cos(theta) * radius, Math.sin(theta) * radius, z);
+	const at = (radius: number, theta: number, depthZ: number) =>
+		new THREE.Vector3(
+			Math.cos(theta) * radius,
+			Math.sin(theta) * radius,
+			depthZ,
+		);
 	const bars: THREE.BufferGeometry[] = [];
 	for (let k = 0; k < WHEEL.frameStations; k++) {
 		const theta = (k / WHEEL.frameStations) * Math.PI * 2;
@@ -5226,8 +5222,8 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 		arm.rotation.z = (deg * Math.PI) / 180;
 		const plate = shell(
 			[
-				{ z: aft - width / 2, w: plateHalf, h: tangentHalf, e: 8, hard: true },
-				{ z: aft + width / 2, w: plateHalf, h: tangentHalf, e: 8, hard: true },
+				{ z: z - width / 2, w: plateHalf, h: tangentHalf, e: 8, hard: true },
+				{ z: z + width / 2, w: plateHalf, h: tangentHalf, e: 8, hard: true },
 			],
 			hullMaterial(color, "trade"),
 			`rim-frame-plate-${i}`,
@@ -5238,10 +5234,49 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 		arm.add(plate);
 		frame.add(arm);
 	});
+	return frame;
+}
+
+function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const {
+		rimOuterKm: outer,
+		rimDepthKm: depth,
+		rimWidthKm: width,
+		wheelZKm,
+	} = WHEEL;
+	const inner = outer - depth;
+	const centre = (inner + outer) / 2;
+	const fore = wheelZKm;
+	const aft = -wheelZKm;
+
+	// The finished rim is `core`, as the Ring's rim is: the part the probes look
+	// up by name, and the one the eye reads as the station.
+	const rim = new THREE.Mesh(
+		wheelRim(inner, outer, fore, width),
+		flatCloneOf(hullMaterial(color, "trade")),
+	);
+	rim.name = "core";
+	group.add(rim);
+
+	group.add(wheelLattice(inner, outer, aft, width, color));
+	const bar = WHEEL.barHalfKm;
 
 	// Four spokes to each wheel, straight and single as the reference's are,
-	// rooted inside the bearing collar and sunk into the rim's bore.
+	// rooted inside the bearing collar. The far end stops half way through the
+	// inner rail's section, `inner + 1.5 bar`: inside the finished rim's box on
+	// the fore wheel, and sunk into the inner rail and its axial member on the
+	// aft one — ending at `inner + 2 bar` only touched that member's outer face
+	// (sage, #334 round 1), and further out it would stand in the open lattice.
 	const spokeMaterial = plainMaterial(0x8b95a0, 0.62, 0.48);
+	const spokeRing = (z: number): Ring => ({
+		z,
+		w: WHEEL.spokeHalfKm,
+		h: WHEEL.spokeTangentKm,
+		e: 6,
+		hard: true,
+	});
 	for (const [label, z] of [
 		["fore", fore],
 		["aft", aft],
@@ -5252,22 +5287,7 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 			arm.position.z = z;
 			arm.name = `spoke-${label}-${i}`;
 			const member = shell(
-				[
-					{
-						z: WHEEL.hubHalfKm * 0.85,
-						w: WHEEL.spokeHalfKm,
-						h: WHEEL.spokeTangentKm,
-						e: 6,
-						hard: true,
-					},
-					{
-						z: inner + bar * 2,
-						w: WHEEL.spokeHalfKm,
-						h: WHEEL.spokeTangentKm,
-						e: 6,
-						hard: true,
-					},
-				],
+				[spokeRing(WHEEL.hubHalfKm * 0.85), spokeRing(inner + bar * 1.5)],
 				spokeMaterial,
 				`spoke-${label}-${i}-member`,
 				8,
@@ -5305,8 +5325,11 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 				barrel(fore - 0.02, collar),
 				barrel(fore + 0.02, collar),
 				barrel(fore + 0.04, hub),
+				// No taper at the cap: the bay runs to the mouth at full section,
+				// and a cap drawn in to 0.91 let its corners out over the last 6 m
+				// (sage, #334 round 1). `the hub contains the bay` holds it.
 				barrel(WHEEL.hubFrontKm - 0.03, hub),
-				barrel(WHEEL.hubFrontKm, hub * 0.91),
+				barrel(WHEEL.hubFrontKm, hub),
 			],
 			plainMaterial(0x8b95a0, 0.6, 0.5),
 			"hub",
