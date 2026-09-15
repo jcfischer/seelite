@@ -222,8 +222,10 @@ check(
 // with the canister's own velocity, which proves the scoop predicate and not
 // that a pilot can reach one. The third playtest could not: a fleeing raider
 // dies at the assist cap, and a canister that kept that velocity held its
-// range for good. The ship flies at the canister through the assist, with the
-// throttle and nose a pilot has, and the raider above died at the cap.
+// range for good. The ship flies at the canister through the assist, from a
+// raider that died at the cap. **It shows reachability, not a pilot's time.**
+// The nose is set each frame rather than turned at the hull's rate, and it
+// steers on the canister's exact velocity, which no readout gives a pilot.
 const scoop = await page.evaluate(() => {
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;

@@ -143,8 +143,36 @@ async function applyCaptureQuality(page) {
  * every boot leaves one behind.
  */
 let currentSeed = null;
+/**
+ * Set by a placer that writes world state — the duel's kill (#324 part d) — so
+ * the next view boots on a world with no save, as the first boot does.
+ *
+ * **A reload alone does not restore the world** (sage #330). The kill's
+ * destroyed slot and its world-state clock live in the IndexedDB save, which
+ * a reload keeps and `pagehide` flushes to. The first fix only reloaded, and
+ * the next kill, on a clock `__startClockAt` had put back to the start, landed
+ * before the saved clock and threw. So the saves are deleted from a workbench
+ * route, which opens no save store, and only then is the game loaded.
+ */
+let worldWritten = false;
 async function ensureSeed(page, seed) {
-	if (currentSeed === seed) return;
+	if (currentSeed === seed && !worldWritten) return;
+	if (worldWritten) {
+		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
+			waitUntil: "load",
+		});
+		await page.evaluate(async () => {
+			for (const { name } of await indexedDB.databases())
+				await new Promise((done, fail) => {
+					const request = indexedDB.deleteDatabase(name);
+					request.onsuccess = () => done();
+					request.onerror = () => fail(request.error);
+					request.onblocked = () =>
+						fail(new Error(`capture: ${name} is still open`));
+				});
+		});
+		worldWritten = false;
+	}
 	await page.goto(gameUrl(SERVING, { seed }), { waitUntil: "load" });
 	await bootedGame(page);
 	await applyCaptureQuality(page);
@@ -257,6 +285,13 @@ const PLACERS = {
 		return `workbench · ${shot.asset} ${shot.variant ?? "a"} interior`;
 	},
 	duel: async (page, shot) => {
+		// **The next view boots on a fresh world** (sage #330). A duel leaves the
+		// page changed — an encounter, a kill with a destroyed slot, and for the
+		// log a clock 601 s ahead — and `ensureSeed` reloaded only on a seed
+		// change, so the same-seed berth views after it ran on that page, 697 to
+		// 1036 s into the clock. Marked before placing, so a placer that throws
+		// still leaves the page marked.
+		worldWritten = true;
 		// Cruise to the farthest body, force a raider ahead, fly the contest out on
 		// fixed steps so it interdicts, then select it and aim at it. Close and
 		// ahead, so the raider is near the centre of the frame; the probe forces
