@@ -60,6 +60,8 @@ const SUBJECTS = {
 	station: (only ?? "trade,shipyard,refinery,outpost")
 		.split(",")
 		.filter(Boolean),
+	// #333: one subject, one concept, one "as-built" finish.
+	rama: (only ?? "rama").split(",").filter(Boolean),
 };
 const VARIANT = process.env.VARIANT ?? "a";
 const FINISHES = (
