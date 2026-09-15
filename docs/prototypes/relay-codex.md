@@ -8,10 +8,31 @@ principal flying the loop and judging it, not on this document or its probe.
 
 ## Replay
 
-```bash
-npm run dev                       # one shell
-open 'http://localhost:5173/?boot=direct&seed=42&relay-prototype=1'
+The branch is `node-43-relay` (PR #350), checked out in the worktree
+`.worktrees/seelite-43`. A dev server for that worktree runs on port 5431 while
+the session that built it is alive:
+
 ```
+http://127.0.0.1:5431/?boot=direct&seed=42&relay-prototype=1
+```
+
+Two other servers listen on this machine — 5330 serves `main` and 5343 the
+merged #343 worktree — and belong to other sessions; leave them. If 5431 is
+gone, start it from the worktree with its own vite cache, because
+`node_modules` is a symlink shared with those servers and two servers
+optimising one cache leave pages that never boot:
+
+```bash
+cd .worktrees/seelite-43
+cat > /tmp/vite-43.config.mjs <<'EOF'
+import base from "/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-43/vite.config.ts";
+export default { ...base, root: "/Users/fischer/work/cyphr/spark/seelite/.worktrees/seelite-43", cacheDir: "/tmp/vite-cache-43" };
+EOF
+node node_modules/vite/bin/vite.js --config /tmp/vite-43.config.mjs --port 5431 --strictPort
+```
+
+Once merged, it is `npm run dev` and
+`http://localhost:5173/?boot=direct&seed=42&relay-prototype=1`.
 
 Seed 42 starts in RAAQU (system 58, government 6, one raider slot), which has
 a trade station and a shipyard on one orbit round its inner planet. The relay
@@ -100,13 +121,14 @@ to station-trade            100.0%       0.0%
 to station-shipyard          25.4%      25.4%
 ```
 
-`scripts/probe-relay.mjs` flies the loop in the running game, 19 checks: the
+`scripts/probe-relay.mjs` flies the loop in the running game, 20 checks: the
 arrival point reads nothing; six legs to the trade station all meet a raider
 and twenty-four to the shipyard meet some and not all; the cue inside the
 signal and the identification inside its range; the kill in exactly 100 steps
 with the player's provenance and the route as its consequence area; six legs
 after meet nothing and the control route is untouched; a forced raider in a
-duel is not nulled; the serialized world parses back destroyed; a jump to
+duel is not nulled; the cue's range agrees with the Target panel's, both
+read at the clock as it stands; the serialized world parses back destroyed; a jump to
 QUARAT and back finds the wreck; hiding the wreck's mesh moves 1,343 pixels;
 the log's three lines on the clock and the replacement drawn lit. On
 SwiftShader.
