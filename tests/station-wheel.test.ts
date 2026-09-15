@@ -107,14 +107,20 @@ describe("trade E — the Wheel", () => {
 
 	test("each wheel is carried on four spokes that reach from the hub to its rim", () => {
 		const root = wheel();
-		const rimOuter = boxKm(named(root, "core")).max.x;
-		const hubHalf = boxKm(named(root, "hub")).max.x;
+		// The rim's bore, which the spoke has to reach *into*: the finished rim's
+		// innermost vertex. A floor at a fraction of the outer radius passed a
+		// spoke 90 m short in open air (sage, #334 round 2).
+		const rimInner = Math.min(...verticesKm(named(root, "core")).map(radial));
+		// The hub box's widest station is a bearing collar; the barrel between
+		// the collars is under nine tenths of it, so a spoke rooted outside the
+		// barrel cannot pass this.
+		const barrelHalf = boxKm(named(root, "hub")).max.x * 0.9;
 		for (const wheelName of ["fore", "aft"]) {
 			for (let i = 0; i < 4; i++) {
 				const spoke = verticesKm(named(root, `spoke-${wheelName}-${i}`));
 				const r = spoke.map(radial);
-				expect(Math.min(...r)).toBeLessThan(hubHalf * 1.05);
-				expect(Math.max(...r)).toBeGreaterThan(rimOuter * 0.8);
+				expect(Math.min(...r)).toBeLessThan(barrelHalf);
+				expect(Math.max(...r)).toBeGreaterThan(rimInner);
 			}
 			expect(root.getObjectByName(`spoke-${wheelName}-4`)).toBeUndefined();
 		}
@@ -160,7 +166,19 @@ describe("trade E — the Wheel", () => {
 		// so many that the lattice is gone.
 		expect(plates).toBeGreaterThanOrEqual(3);
 		expect(plates).toBeLessThanOrEqual(12);
-		expect(root.getObjectByName("rim-frame-members")).toBeDefined();
+		// And the members themselves go all the way round. The outline above is
+		// carried by the rails alone, so it passed cross members built over half
+		// the arc (sage, #334 round 2).
+		const members = verticesKm(named(root, "rim-frame-members"));
+		const covered = new Array<number>(SECTORS).fill(0);
+		for (const v of members)
+			covered[
+				Math.floor(
+					((Math.atan2(v.y, v.x) + Math.PI * 2) % (Math.PI * 2)) /
+						((Math.PI * 2) / SECTORS),
+				) % SECTORS
+			]++;
+		expect(covered.filter((count) => count === 0).length).toBe(0);
 	});
 
 	test("the hub contains the bay: its section at every depth, and its back wall", () => {

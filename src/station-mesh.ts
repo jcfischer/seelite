@@ -5070,7 +5070,12 @@ const WHEEL = Object.freeze({
 	spokeHalfKm: 0.026,
 	spokeTangentKm: 0.02,
 	barHalfKm: 0.006,
+	/** A multiple of four, so a cross member stands at every spoke's angle. */
 	frameStations: 56,
+	/** The hub barrel's superellipse exponent: round enough to read as a barrel,
+	 *  square enough to hold the bay's section at `hubHalfKm`. Read by the loft
+	 *  and by the greebles placed on it, so the two cannot disagree. */
+	hubExponent: 3,
 	/** Where the unfinished rim is plated, degrees — irregular on purpose. */
 	plateDeg: [0, 50, 115, 170, 235, 290],
 	plateSpanDeg: 15,
@@ -5169,43 +5174,20 @@ function wheelLattice(
 			depthZ,
 		);
 	const bars: THREE.BufferGeometry[] = [];
+	const member = (from: THREE.Vector3, to: THREE.Vector3) =>
+		frameBar(from, to, bar);
 	for (let k = 0; k < WHEEL.frameStations; k++) {
 		const theta = (k / WHEEL.frameStations) * Math.PI * 2;
 		const next = ((k + 1) / WHEEL.frameStations) * Math.PI * 2;
+		// One diagonal per bay on the outer face, alternating, which is what
+		// makes the lattice read as a structure rather than a ladder.
+		const [from, to] = k % 2 === 0 ? [railAft, railFore] : [railFore, railAft];
 		bars.push(
-			frameBar(
-				at(railOuter, theta, railAft),
-				at(railOuter, theta, railFore),
-				bar,
-			),
-			frameBar(
-				at(railInner, theta, railAft),
-				at(railInner, theta, railFore),
-				bar,
-			),
-			frameBar(
-				at(railInner, theta, railFore),
-				at(railOuter, theta, railFore),
-				bar,
-			),
-			frameBar(
-				at(railInner, theta, railAft),
-				at(railOuter, theta, railAft),
-				bar,
-			),
-			// One diagonal per bay on the outer face, alternating, which is what
-			// makes the lattice read as a structure rather than a ladder.
-			k % 2 === 0
-				? frameBar(
-						at(railOuter, theta, railAft),
-						at(railOuter, next, railFore),
-						bar,
-					)
-				: frameBar(
-						at(railOuter, theta, railFore),
-						at(railOuter, next, railAft),
-						bar,
-					),
+			member(at(railOuter, theta, railAft), at(railOuter, theta, railFore)),
+			member(at(railInner, theta, railAft), at(railInner, theta, railFore)),
+			member(at(railInner, theta, railFore), at(railOuter, theta, railFore)),
+			member(at(railInner, theta, railAft), at(railOuter, theta, railAft)),
+			member(at(railOuter, theta, from), at(railOuter, next, to)),
 		);
 	}
 	const members = new THREE.Mesh(mergeGeometries(bars), frameMaterial);
@@ -5264,11 +5246,13 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 	const bar = WHEEL.barHalfKm;
 
 	// Four spokes to each wheel, straight and single as the reference's are,
-	// rooted inside the bearing collar. The far end stops half way through the
-	// inner rail's section, `inner + 1.5 bar`: inside the finished rim's box on
-	// the fore wheel, and sunk into the inner rail and its axial member on the
-	// aft one — ending at `inner + 2 bar` only touched that member's outer face
-	// (sage, #334 round 1), and further out it would stand in the open lattice.
+	// rooted inside the bearing collar. The far end is at `inner + 1.5 bar`:
+	// inside the finished rim's box on the fore wheel, and three quarters of the
+	// way through the inner axial member at the spoke's angle on the aft one —
+	// which exists because `frameStations` is a multiple of four. It does not
+	// reach the rails, which stand 2 m beyond the spoke's axial extent. Ending
+	// at `inner + 2 bar` only touched the member's outer face (sage, #334 round
+	// 1), and further out it would stand in the open lattice.
 	const spokeMaterial = plainMaterial(0x8b95a0, 0.62, 0.48);
 	const spokeRing = (z: number): Ring => ({
 		z,
@@ -5302,29 +5286,33 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 
 	// The hub: a barrel with a bearing collar at each wheel and the slot cut into
 	// its front cap.
-	const { hubHalfKm: hub, collarHalfKm: collar } = WHEEL;
-	// `e: 3` — round enough to read as a barrel, square enough to hold the bay's
-	// section at this half-width.
+	const { hubHalfKm: hub, collarHalfKm: collar, hubExponent } = WHEEL;
 	const barrel = (z: number, half: number): Ring => ({
 		z,
 		w: half,
 		h: half,
-		e: 3,
+		e: hubExponent,
 		hard: true,
 	});
+	/** The barrel's own radius at an angle round the axis. */
+	const hubRadiusAt = (theta: number) =>
+		hub /
+		(Math.abs(Math.cos(theta)) ** hubExponent +
+			Math.abs(Math.sin(theta)) ** hubExponent) **
+			(1 / hubExponent);
+	const collarAt = (z: number) => [
+		barrel(z - 0.04, hub),
+		barrel(z - 0.02, collar),
+		barrel(z + 0.02, collar),
+		barrel(z + 0.04, hub),
+	];
 	group.add(
 		shell(
 			[
 				barrel(WHEEL.hubAftKm, hub * 0.7),
 				barrel(WHEEL.hubAftKm + 0.02, hub),
-				barrel(aft - 0.04, hub),
-				barrel(aft - 0.02, collar),
-				barrel(aft + 0.02, collar),
-				barrel(aft + 0.04, hub),
-				barrel(fore - 0.04, hub),
-				barrel(fore - 0.02, collar),
-				barrel(fore + 0.02, collar),
-				barrel(fore + 0.04, hub),
+				...collarAt(aft),
+				...collarAt(fore),
 				// No taper at the cap: the bay runs to the mouth at full section,
 				// and a cap drawn in to 0.91 let its corners out over the last 6 m
 				// (sage, #334 round 1). `the hub contains the bay` holds it.
@@ -5378,10 +5366,8 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
 						const { theta } = ringAt(i, count);
 						const c = Math.cos(theta);
 						const s = Math.sin(theta);
-						// The barrel's own superellipse radius at this angle, so a
-						// piece is placed on the surface rather than inside it.
-						const radius =
-							hub / (Math.abs(c) ** 3 + Math.abs(s) ** 3) ** (1 / 3);
+						// On the surface rather than inside it.
+						const radius = hubRadiusAt(theta);
 						normal.set(c, s, 0);
 						position.set(
 							c * radius,
@@ -5567,6 +5553,13 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
  * says so: that role was not ranked — it was sent back with an instruction —
  * so its three forms are all round two's and none of them has been looked at
  * yet. Pretending otherwise is how a placeholder becomes the shipped answer.
+ *
+ * **Selecting trade E is not one line yet.** The Wheel's `core` is its
+ * finished rim and its slot is cut into `hub`, so the selected-form rows that
+ * measure the bay against `core`'s box would read a rim that ends in front of
+ * the bay. A round that selects it owes those rows the part the slot is cut
+ * into (#334's review); `tests/station-wheel.test.ts` holds the hub against
+ * the bay meanwhile.
  */
 export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	trade: "a",
