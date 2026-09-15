@@ -129,8 +129,10 @@ describe("the cargo drop", () => {
 		const drift = v3(30, 0, -0.2);
 		expect(CANISTER_KEEP_FRACTION).toBe(0.2);
 		let pairs = 0;
+		let threes = 0;
 		for (let s = 0; s < 200; s++) {
 			const drop = kill({ frameVel, vel: v3(30, 0, -1), killedAt: s });
+			if (drop.length === 3) threes++;
 			const ejections = drop.map((c) => sub(c.vel, drift));
 			for (const [i, e] of ejections.entries()) {
 				expect(length(e)).toBeCloseTo(CANISTER_EJECT_KMS, 9);
@@ -146,7 +148,9 @@ describe("the cargo drop", () => {
 				}
 			}
 		}
-		// Drops of two and three were drawn, or the angle asserted nothing.
+		// Drops of three were drawn, or the 120° spacing asserted nothing: two
+		// hundred drops of two alone would give two hundred pairs (sage #346).
+		expect(threes).toBeGreaterThan(20);
 		expect(pairs).toBeGreaterThan(100);
 	});
 
@@ -160,26 +164,23 @@ describe("the cargo drop", () => {
 		const start = relative(c0);
 		const dt = 1 / 60;
 		const far = { pos: v3(1e6, 0, 0), vel: v3() };
-		let c = c0;
+		/** The dropped canister stepped from the kill for `seconds`. */
 		const at = (seconds: number) => {
+			let c = c0;
 			for (let t = 0; t < seconds - 1e-9; t += dt)
 				c = stepCanisters([c], far, dt, 500 + t, () => true).kept[0];
 			return c;
 		};
-		at(5);
-		expect(relative(c) / start).toBeCloseTo(0.5, 6);
-		c = c0;
-		at(10);
-		expect(relative(c)).toBeLessThan(1e-9);
+		expect(relative(at(5)) / start).toBeCloseTo(0.5, 6);
+		const rested = at(10);
+		expect(relative(rested)).toBeLessThan(1e-9);
 		// The distance it covered in its frame is the area under a straight
 		// line: half its starting speed for the whole fade.
 		const covered = length(
-			sub(sub(c.pos, c0.pos), scale(frameVel, CANISTER_FADE_S)),
+			sub(sub(rested.pos, c0.pos), scale(frameVel, CANISTER_FADE_S)),
 		);
 		expect(covered).toBeCloseTo((start * CANISTER_FADE_S) / 2, 6);
-		c = c0;
-		at(15);
-		expect(relative(c)).toBe(0);
+		expect(relative(at(15))).toBe(0);
 	});
 
 	test("a canister from a wreck at the assist cap is closable at the cap", () => {

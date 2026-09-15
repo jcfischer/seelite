@@ -101,9 +101,10 @@ this. A canister kept all the wreck's velocity at first; a fleeing raider dies
 at the 2 km/s assist cap, so its canisters held their range against a ship at
 the same cap, and the third playtest could not reach one. Keeping a fifth
 closed the range but left the canister drifting, and the fourth playtest could
-not match its velocity: "they fly / whizz past on a merge". A pilot flying by
-the marker has no readout of a canister's velocity, so one that never stops
-cannot be scooped. The fade and the spread are the principal's ruling after
+not match its velocity: "they fly / whizz past on a merge". Scooping a
+canister that never stops means matching a velocity no readout shows, which a
+pilot can do only by reading how the marker drifts. The fade and the spread
+are the principal's ruling after
 that playtest; `tests/canister-scoop.test.ts` flies a pilot with only a pilot's
 information to every canister of a kill (`scripts/lib/scoop-pilot.ts`). The
 player's ship scoops one by passing within 50 m at under 0.25 km/s relative,

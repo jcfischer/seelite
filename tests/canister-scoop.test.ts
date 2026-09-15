@@ -3,8 +3,10 @@
  * pilot has, can scoop the cargo of a raider killed at the cap.
  *
  * `scripts/lib/scoop-pilot.ts` owns the pilot and the scenario, and every
- * function it steps is the game's. A canister that keeps drifting cannot be
- * scooped by this pilot; one that comes to rest always can.
+ * function it steps is the game's. This pilot cannot chase a moving canister,
+ * so the row guards the fade to rest: on the rule without it, this pilot
+ * cleared the cargo of none of these 40 kills. With it, every canister of every
+ * one of the 40 was scooped.
  */
 import { expect, test } from "bun:test";
 import { flyToCargo } from "../scripts/lib/scoop-pilot";

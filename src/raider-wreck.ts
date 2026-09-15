@@ -29,8 +29,8 @@ import {
 	type Vec3,
 	add,
 	cross,
+	frameAcross,
 	length,
-	normalizeOr,
 	scale,
 	sub,
 	v3,
@@ -91,12 +91,11 @@ export const CANISTER_SCOOP_SPEED_KMS = 0.25;
 export const CANISTER_EJECT_KMS = 0.15;
 /**
  * How long a canister takes to come to rest in its frame, slowing linearly,
- * by the same ruling. It had kept drifting, and a pilot flying by its marker
- * cannot match a drifting canister's velocity. `tests/canister-scoop.test.ts`
- * flies a pilot who stops, faces and creeps in: on the drifting canisters it
- * cleared the cargo of none of 40 kills, under the same scoop rule, and
- * `scripts/measure-canister-scoop.ts` reprints it scooping every canister of
- * 200 kills with the fade.
+ * by the same ruling. It had kept drifting, so scooping one meant matching a
+ * velocity no readout shows. `scripts/measure-canister-scoop.ts` flies a pilot
+ * who stops, faces and creeps in, with the fade and with it switched off. That
+ * pilot cannot chase a moving canister, so the arm without the fade shows what
+ * the fade is for, not that no pilot could scoop a drifting one.
  */
 export const CANISTER_FADE_S = 10;
 /**
@@ -170,8 +169,7 @@ export function dropCanisters(kill: {
 	const around = rand() * Math.PI * 2;
 	const q = Math.sqrt(1 - z * z);
 	const normal = v3(q * Math.cos(around), q * Math.sin(around), z);
-	const reference = Math.abs(normal.y) < 0.9 ? v3(0, 1, 0) : v3(1, 0, 0);
-	const a = normalizeOr(cross(normal, reference), v3(1, 0, 0));
+	const a = frameAcross(normal);
 	const b = cross(normal, a);
 	const start = rand() * Math.PI * 2;
 	return Array.from({ length: count }, (_, i) => {

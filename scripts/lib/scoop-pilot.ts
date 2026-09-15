@@ -12,13 +12,15 @@
  * - the courier's turn, through `stepAngular` at its hull's limits.
  *
  * It flies **stop, face, creep**: no throttle while the nearest canister is
- * more than 8° off the nose, and otherwise a speed that falls with range. On
- * canisters that kept drifting it cleared the cargo of none of 40 kills; with
- * the fade to rest it scoops every canister (`scripts/measure-canister-scoop.ts`).
- * The two simpler pilots tried while diagnosing — nose on the marker with the
- * throttle falling with range, and a closing speed held off the range readout
- * — mostly never came within the scoop radius, with median closest passes of
- * 140–340 m, so they measured the pilot and not the rule, and are not kept.
+ * more than 8° off the nose, and otherwise a speed that falls with range.
+ *
+ * **It cannot chase** (sage #346). Near a canister it creeps at under
+ * 0.1 km/s, so it never catches one that keeps moving faster than that. That
+ * makes it a check on the fade — a canister has to come to rest for this pilot
+ * to reach it — and not evidence that no pilot can scoop a drifting canister.
+ * While diagnosing, a pilot holding a closing speed off the range readout did
+ * scoop some drifting canisters. `scripts/measure-canister-scoop.ts` reprints
+ * this pilot with the fade and with it switched off (`drifting`).
  *
  * The scenario is the merge: the raider dies at the assist cap, fleeing in a
  * drawn direction, and the player is 1.5 km out at the cap with its nose within
@@ -43,6 +45,7 @@ import {
 	cross,
 	dot,
 	length,
+	normalizeOr,
 	scale,
 	sub,
 	v3,
@@ -53,10 +56,7 @@ const COURIER = flightPerformance("courier");
 /** Past this off-nose angle the pilot cuts the throttle and turns first. */
 const FACE_FIRST_DEG = 8;
 
-const unit = (v: Vec3, fallback: Vec3) => {
-	const m = length(v);
-	return m === 0 ? fallback : scale(v, 1 / m);
-};
+const unit = normalizeOr;
 const rotate = (v: Vec3, axis: Vec3, angle: number) =>
 	add(
 		add(scale(v, Math.cos(angle)), scale(cross(axis, v), Math.sin(angle))),
@@ -87,8 +87,17 @@ export interface CargoRun {
 	allScoopedS: number | null;
 }
 
-/** One kill at the cap and one pilot flying to its cargo for `limitS`. */
-export function flyToCargo(seed: number, limitS = 120): CargoRun {
+/**
+ * One kill at the cap and one pilot flying to its cargo for `limitS`.
+ * `drifting` switches the fade off, for the comparison arm: each canister's
+ * `restsAt` is set so far ahead that the share of its drift left each step is
+ * 1 to float precision.
+ */
+export function flyToCargo(
+	seed: number,
+	limitS = 120,
+	drifting = false,
+): CargoRun {
 	const r = scenarioRandom(seed);
 	const frameVel = v3();
 	const killedAt = 1000 + seed;
@@ -101,6 +110,8 @@ export function flyToCargo(seed: number, limitS = 120): CargoRun {
 		vel: scale(randomUnit(r), ASSIST_CAP_KMS),
 		frameVel,
 	});
+	if (drifting)
+		canisters = canisters.map((c) => ({ ...c, restsAt: Number.MAX_VALUE }));
 	const dropped = canisters.length;
 	const toWreck = randomUnit(r);
 	const aside = randomUnit(r);
