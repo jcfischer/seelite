@@ -39,7 +39,9 @@ full rate in one frame.
 own assist uses (`DuelPilot.frameVel`). It had held speed in the star's frame,
 so beside a body moving 30 km/s the two 2 km/s caps were different speeds. One
 frame for the fight, not a lookup per ship: the player's frame keeps its body
-through a hysteresis band, and two lookups could pick two frames.
+through a hysteresis band, and two lookups could pick two frames. **Not yet in
+the `?combat=1` rig**, which passes no frame and still flies its striker in the
+star's frame; part d2 moves the rig onto production rules.
 
 **Shields recharge at 2 points/s**, after the 3 s delay, by the principal's
 ruling after the second playtest. #48's 6/s equalled the pulse's damage rate:
