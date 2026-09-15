@@ -11,10 +11,12 @@
  *
  * **And cargo.** The wreck drops one to three one-tonne canisters. They are
  * drawn from the kill's own stream, with illegal goods likelier the more
- * lawless the system. They drift on a fifth of the raider's last velocity
- * relative to the local frame, and expire
- * after `CANISTER_LIFETIME_S`. The player's ship (no raider or Traffic actor yet) scoops one by passing close at low
- * relative speed, with no module fitted (the principal's rulings).
+ * lawless the system. They keep a fifth of the raider's last velocity
+ * relative to the local frame, leave the wreck in different directions, come to
+ * rest in that frame over `CANISTER_FADE_S`, and expire after
+ * `CANISTER_LIFETIME_S`. The player's ship (no raider or Traffic actor yet)
+ * scoops one by passing close at low relative speed, with no module fitted (the
+ * principal's rulings).
  *
  * Headless: `Game` draws and applies what this returns.
  */
@@ -23,7 +25,16 @@ import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
 import { mix } from "./rng";
-import { type Vec3, add, length, scale, sub, v3 } from "./vec3";
+import {
+	type Vec3,
+	add,
+	cross,
+	frameAcross,
+	length,
+	scale,
+	sub,
+	v3,
+} from "./vec3";
 import { type Provenance, type TransitionEvent, fnv1a } from "./world-state";
 
 /** How long a destroyed raider stays destroyed before its replacement starts. */
@@ -71,8 +82,22 @@ export const CANISTER_COUNT = { min: 1, max: 3 } as const;
 export const CANISTER_SCOOP_RADIUS_KM = 0.05;
 /** And how slowly, relative to the canister. */
 export const CANISTER_SCOOP_SPEED_KMS = 0.25;
-/** The largest velocity a canister gains on top of the wreck's, per axis. */
-export const CANISTER_SPREAD_KMS = 0.02;
+/**
+ * How fast each canister leaves the wreck, on top of the share of the wreck's
+ * velocity it keeps. The canisters of one drop leave in directions spread
+ * evenly round a drawn circle, so two go opposite ways and three 120° apart
+ * (the principal's ruling after the fourth playtest).
+ */
+export const CANISTER_EJECT_KMS = 0.15;
+/**
+ * How long a canister takes to come to rest in its frame, slowing linearly,
+ * by the same ruling. It had kept drifting, so scooping one meant matching a
+ * velocity no readout shows. `scripts/measure-canister-scoop.ts` flies a pilot
+ * who stops, faces and creeps in, with the fade and with it switched off. That
+ * pilot cannot chase a moving canister, so the arm without the fade shows what
+ * the fade is for, not that no pilot could scoop a drifting one.
+ */
+export const CANISTER_FADE_S = 10;
 /**
  * The share of the wreck's velocity, relative to the local frame, a canister
  * keeps. **A fifth, by the principal's ruling after the third playtest.** It
@@ -86,7 +111,13 @@ export interface Canister {
 	commodity: string;
 	tonnes: number;
 	pos: Vec3;
+	/** Its velocity now, which falls linearly toward `restVel`. */
 	vel: Vec3;
+	/** The velocity of the frame it comes to rest in: the player's local frame
+	 *  at the kill. */
+	restVel: Vec3;
+	/** When it is at rest, game-clock seconds. */
+	restsAt: number;
 	expiresAt: number;
 }
 
@@ -133,8 +164,17 @@ export function dropCanisters(kill: {
 		CANISTER_COUNT.min + Math.min(span - 1, Math.floor(rand() * span));
 	const weights = cargoWeights(kill.government);
 	const total = weights.reduce((sum, w) => sum + w.weight, 0);
-	const spread = () => (rand() * 2 - 1) * CANISTER_SPREAD_KMS;
+	// The circle the canisters leave round: a drawn plane and a drawn start.
+	const z = rand() * 2 - 1;
+	const around = rand() * Math.PI * 2;
+	const q = Math.sqrt(1 - z * z);
+	const normal = v3(q * Math.cos(around), q * Math.sin(around), z);
+	const a = frameAcross(normal);
+	const b = cross(normal, a);
+	const start = rand() * Math.PI * 2;
 	return Array.from({ length: count }, (_, i) => {
+		const angle = start + (2 * Math.PI * i) / count;
+		const out = add(scale(a, Math.cos(angle)), scale(b, Math.sin(angle)));
 		let pick = rand() * total;
 		let good = weights[weights.length - 1].good;
 		for (const w of weights) {
@@ -149,17 +189,32 @@ export function dropCanisters(kill: {
 			commodity: good.name,
 			tonnes: CANISTER_TONNES,
 			pos: kill.pos,
-			vel: add(drift, v3(spread(), spread(), spread())),
+			vel: add(drift, scale(out, CANISTER_EJECT_KMS)),
+			restVel: kill.frameVel,
+			restsAt: kill.killedAt + CANISTER_FADE_S,
 			expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
 		};
 	});
 }
 
-/** One canister moved one step along its velocity. */
-export const driftCanister = (c: Canister, dt: number): Canister => ({
-	...c,
-	pos: add(c.pos, scale(c.vel, dt)),
-});
+/**
+ * One canister moved one step, from game time `now`. Its velocity relative to
+ * `restVel` falls in a straight line to zero at `restsAt`. It moves with
+ * `restVel` for the whole step, and with the fading part on that part's mean
+ * only until it reaches rest, so the step that crosses `restsAt` is exact too
+ * (sage #346: it had moved on the mean for the whole step and overshot).
+ */
+export function driftCanister(c: Canister, dt: number, now: number): Canister {
+	const left = c.restsAt - now;
+	const fading = Math.min(dt, Math.max(0, left));
+	const share = left > 0 ? (left - fading) / left : 0;
+	const relative = sub(c.vel, c.restVel);
+	const pos = add(
+		add(c.pos, scale(c.restVel, dt)),
+		scale(relative, ((1 + share) / 2) * fading),
+	);
+	return { ...c, pos, vel: add(c.restVel, scale(relative, share)) };
+}
 
 /** A scoop tried this step: taken into the hold, or refused by a full one. */
 export interface CanisterScoop {
@@ -194,7 +249,7 @@ export function stepCanisters(
 			tried.push({ canister, accepted });
 			if (accepted) continue;
 		}
-		kept.push(driftCanister(canister, dt));
+		kept.push(driftCanister(canister, dt, now));
 	}
 	return { kept, scoops: tried };
 }

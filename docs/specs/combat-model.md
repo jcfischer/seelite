@@ -94,11 +94,23 @@ state, as three lines: destroyed, under repair, and back in service.
 from the kill's own stream (`DOMAIN.CARGO_DROP`). Illegal goods weigh
 `(7 − government) / 7` of a legal good, so a Corporate State's raiders carry
 none. A canister keeps a fifth of the wreck's velocity relative to the local
-frame, plus a small spread, and expires five minutes after the kill. It kept
-all of it at first. A fleeing raider dies at the 2 km/s assist cap, so its
-canisters held their range against a ship at the same cap, and the third
-playtest could not reach one; the fifth is the principal's ruling. The player's ship scoops one by passing within 50 m at under
-0.25 km/s relative, with no module, into the hold if it has room. No raider or
+frame, leaves the wreck at 0.15 km/s in its own direction (two canisters go
+opposite ways, three go 120° apart), **slows linearly to rest 10 s after the
+kill**, and expires five minutes after it. It rests relative to the local
+frame's velocity as it was at the kill: a snapshot, which an orbiting body's
+frame moves on from over the five minutes. Two playtests shaped
+this. A canister kept all the wreck's velocity at first; a fleeing raider dies
+at the 2 km/s assist cap, so its canisters held their range against a ship at
+the same cap, and the third playtest could not reach one. Keeping a fifth
+closed the range but left the canister drifting, and the fourth playtest could
+not match its velocity: "they fly / whizz past on a merge". Scooping a
+canister that never stops means matching a velocity no readout shows, which a
+pilot can do only by reading how the marker drifts. The fade and the spread
+are the principal's ruling after
+that playtest; `tests/canister-scoop.test.ts` flies a pilot with only a pilot's
+information to every canister of a kill (`scripts/lib/scoop-pilot.ts`). The
+player's ship scoops one by passing within 50 m at under 0.25 km/s relative,
+with no module, into the hold if it has room. No raider or
 Traffic actor scoops yet. Canisters are flight
 state and are not saved. A reload or a jump loses them, which a five-minute
 lifetime makes a small loss.
