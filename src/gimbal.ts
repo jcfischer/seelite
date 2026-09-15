@@ -6,7 +6,7 @@
  * the ruling keeps hits on its true 32 m hull, which is 0.9° across at 2 km. A
  * fixed forward gun on a ship that turns at 0.9 rad/s cannot hold a jinking
  * hull in that. So the beam turns toward the **selected target** while the
- * target is within **±5°** of the boresight. It slews at a finite
+ * target is within **±6°** of the boresight. It slews at a finite
  * **1.5 rad/s**, so a hard jink still breaks the aim for a moment, and it never
  * leaves the cone. Outside the cone, or with no target, it returns to the
  * boresight.
@@ -17,7 +17,7 @@
 import { type Vec3, add, dot, normalizeOr, scale } from "./vec3";
 
 /** The half-angle the beam may turn from the boresight. */
-export const GIMBAL_CONE_RAD = (5 * Math.PI) / 180;
+export const GIMBAL_CONE_RAD = (6 * Math.PI) / 180;
 /** How fast the beam turns, rad/s. */
 export const GIMBAL_SLEW_RAD_S = 1.5;
 

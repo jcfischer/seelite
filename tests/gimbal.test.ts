@@ -1,5 +1,5 @@
 /**
- * The pulse laser's gimbal (#324): it tracks the selected target inside a ±5°
+ * The pulse laser's gimbal (#324): it tracks the selected target inside a ±6°
  * cone at a finite slew, returns to the boresight otherwise, and never leaves
  * the cone.
  */
@@ -32,8 +32,8 @@ function run(
 }
 
 describe("the gimbal", () => {
-	test("the cone is ±5° and the slew 1.5 rad/s, by the principal's ruling", () => {
-		expect(GIMBAL_CONE_RAD).toBeCloseTo(5 * DEG, 12);
+	test("the cone is ±6° and the slew 1.5 rad/s, by the principal's ruling", () => {
+		expect(GIMBAL_CONE_RAD).toBeCloseTo(6 * DEG, 12);
 		expect(GIMBAL_SLEW_RAD_S).toBe(1.5);
 	});
 

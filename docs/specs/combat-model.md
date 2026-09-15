@@ -18,7 +18,7 @@ Every combat ship obeys the same movement, collision, weapon, energy, shield, an
 ### 2.1 The gimbal and the g loads (#324, the principal's rulings)
 
 **The pulse laser is gimballed.** The beam turns toward the **selected target**
-while that target is within **±5°** of the boresight. It slews at **1.5 rad/s**
+while that target is within **±6°** of the boresight. It slews at **1.5 rad/s**
 and never leaves the cone; with no target, or outside the cone, it returns to
 the boresight (`src/gimbal.ts`). A hit is still tested against the target's
 **true hull** (a 32 m sphere for the raider), by ruling. The gimbal is what

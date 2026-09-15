@@ -1,6 +1,6 @@
 /**
  * The pulse laser's gimbal in the running game (#324, the principal's rulings:
- * ±5° cone, selected target, finite slew, true-hull hits).
+ * ±6° cone, selected target, finite slew, true-hull hits).
  *
  * `tests/gimbal.test.ts` owns the arithmetic. What only the page can answer is
  * the wiring: that `Game` steps the gimbal before the shot, that the duel's
@@ -9,7 +9,7 @@
  * **The raider is held at a fixed angle off the boresight** by placing it again
  * before every step, at 2 km, and the ship's attitude is not touched. That
  * isolates the gimbal from the controller's flying. The angles are geometry for
- * this probe: 3° is inside the ruled ±5° cone and 8° outside it.
+ * this probe: 3° is inside the ruled ±6° cone and 8° outside it.
  */
 import {
 	bootedGame,
@@ -154,8 +154,8 @@ check(
 	JSON.stringify(inside),
 );
 check(
-	"the gimballed beam never leaves the ±5° cone",
-	inside.widestDeg <= 5 + 1e-6 && inside.widestDeg > 2,
+	"the gimballed beam never leaves the ±6° cone",
+	inside.widestDeg <= 6 + 1e-6 && inside.widestDeg > 2,
 	`widest ${inside.widestDeg.toFixed(3)}°`,
 );
 check(
