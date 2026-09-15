@@ -176,15 +176,15 @@ Work available from a named requester. `docs/specs/missions-and-requests.md` §1
 _Avoid_: Accepted request (before explicit acceptance)
 
 **Lead**:
-Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` §1 and §5 owns observation, confirmation and refresh rules.
+Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5).
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
 **Accepted request**:
-A job the pilot has explicitly committed to undertaking for a requester. `docs/specs/missions-and-requests.md` D1 and §3 owns concurrent commitments and progress.
+A job the pilot has explicitly committed to undertaking for a requester. `docs/specs/missions-and-requests.md` owns concurrent commitments and progress (D1 and §3).
 _Avoid_: Active mission (when implying a single accepted job)
 
 **Tracked request**:
-The accepted request the pilot has chosen to guide the cockpit next-action cue. `docs/specs/missions-and-requests.md` D2 and §6 owns manual tracking and its interface.
+The accepted request the pilot has chosen to guide the cockpit next-action cue. `docs/specs/missions-and-requests.md` owns manual tracking and its interface (D2 and §6).
 _Avoid_: Active request (when conflating tracking with acceptance)
 
 **Ready to report**:
@@ -192,7 +192,7 @@ An accepted request whose objective has been satisfied but whose result has not 
 _Avoid_: Completed request (before reporting)
 
 **Search region**:
-The bounded area a lead gives the pilot to search before identifying a hidden target. `docs/specs/missions-and-requests.md` D5 and §6 owns region cues and identification boundaries.
+The bounded area a lead gives the pilot to search before identifying a hidden target. `docs/specs/missions-and-requests.md` owns region cues and identification boundaries (D5 and §6).
 _Avoid_: Target position (before identification)
 
 **Entrusted cargo**:

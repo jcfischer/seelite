@@ -52,6 +52,8 @@ Principal evidence, 2026-09-15: the principal answered **“yes”** to that own
 
 A cancelled, unfinished request may be accepted again later. Completed work cannot pay again. Outstanding entrusted cargo from the previous acceptance must be settled before another lot is issued.
 
+Here, unfinished means no successful report settlement, including satisfied objectives awaiting report. Reaccept is offered only for cancelled rows; failed rows remain terminal.
+
 Principal evidence, 2026-09-15: the principal selected **“Allow reacceptance of unfinished work (Recommended)”** after the question expressly included protection against repeated completed-work payment and settlement before another cargo issuance.
 
 ### Clarification — No invented competing intervention
@@ -84,8 +86,8 @@ The following rules complete D1–D8. They are proposed implementation rules unt
 - A **lead** is sourced intelligence, independent of acceptance. It may be unconfirmed or identify a learned object. The pilot may retain leads without accepting their associated offers.
 - Each offer has a stable, world-scoped identity: world seed, galaxy index, requester CarrierKey and authored offer slot. A fixed first-episode offer is not regenerated on docking, tab changes or clock epochs. Display names and list positions never supply identity.
 - An accepted request is keyed by that offer identity and pins its content revision and terms at acceptance. Changing the available offer later cannot change promised payment, penalties or objective conditions for an accepted job.
-- A lead has a stable signal/report identity within the world namespace, source identity, observation time on the authoritative game clock, learned region and optional identified CarrierKey. A newer observation refreshes that lead; UI reads derive its age from the clock. Updating intelligence does not silently accept work or change tracking.
-- Requester and target references include galaxy index as well as CarrierKey: the key is relative to a galaxy, and identical local keys in different galaxies must not collide. Names are display labels only.
+- A lead has a stable signal/report identity within the world namespace, source identity, observation time on the authoritative game clock, learned region and optional identified carrier reference using the full galaxy-scoped identity below. A newer observation refreshes that lead; UI reads derive its age from the clock. Updating intelligence does not silently accept work or change tracking.
+- Requester, target, identified-lead and objective-evidence references reuse the full logical CarrierKey `(galaxyIndex, systemIndex, localCarrierId)` owned by `persistent-world-state.md` §2 and §7. In current code, `src/carrier-key.ts` brands only the envelope-relative `systemIndex:localCarrierId` string. Since this journal is outside a galaxy envelope, serialize each reference as `{ galaxyIndex, carrierKey }`, carrying that unchanged validated string and its explicit galaxy index. This is the existing identity with its containing galaxy restored, not a new key encoding or namespace. Identical local keys in different galaxies must not collide; names are display labels only.
 - The first content set is finite and authored. Multiple offers may be accepted concurrently; there is no implicit single-request limit. Repeating content requires a separately designed episode identity, not clearing the completed row or rerolling the same offer.
 
 ### 2. Required offer details
@@ -121,9 +123,9 @@ The first relay offer has no deadline, exclusivity rule, entrusted cargo or loss
 | Satisfy objective | Authored condition and any required player provenance are met | Store bounded objective evidence; advance stage or mark ready to report; world consequence takes effect when intervention occurs |
 | Report success | Ready to report; docked at the named report station; no prior settlement | Atomically settle committed cargo, pay pinned reward, mark completed, clear tracking if this request is tracked and expose any promised report once |
 | Cancel | Request has accepted or ready-to-report status | Mark cancelled anywhere; clear tracking if this request is tracked; release player-cargo reservations; retain entrusted-cargo return obligations; no success reward |
-| Return entrusted cargo | Docked at its requester; unsettled return obligation | Remove the returned lot and settle that obligation once; do not revive the cancelled job or pay its success reward |
+| Return entrusted cargo | Docked at its requester; unsettled return obligation | Remove returned goods from the hold and mark their lot settled once; retain the lot record until a new issuance supersedes it; do not revive the cancelled job or pay its success reward |
 | Settle lost entrusted cargo | Loss is established; disclosed settlement terms apply | Apply the disclosed fee once and settle the lost portion; cancellation itself does not declare aboard cargo lost |
-| Meet disclosed failure condition | Authored deadline or other explicitly accepted failure condition occurs | Mark failed with a reason, clear tracking if this request is tracked and apply only disclosed terms; retain any unsettled cargo obligations |
+| Meet disclosed failure condition | Request has accepted or ready-to-report status; authored deadline or other explicitly accepted failure condition occurs | Mark failed with a reason; clear tracking if this request is tracked; release player-cargo reservations and apply only disclosed terms; retain any unsettled cargo obligations |
 
 The first relay's authored objective stages are **search → identify → disable**. Satisfying all three moves the request to ready-to-report status; successful reporting moves it to completed status. These are authored objectives, not elapsed scan-button timers. Search detection range and identification mechanics are experiment details owned by the relay prototype; the interface cannot claim discovery from a fixture that already exposes the target.
 
@@ -196,16 +198,16 @@ interface SavedRequest {
   pinnedTerms: AcceptedTerms;      // reward, requirements and disclosed special terms
   evidence: ObjectiveEvidence[];   // bounded by authored stages, not an event log
   reservedPlayerCargo: Record<string, number>;
-  settledAt: number | null;
+  settledAt: number | null;        // successful report time; non-null iff completed
   outcomeReason: string | null;
 }
 ```
 
 `AcceptedTerms` has the required offer facts from §2, requester/report references and authored objective predicates with their revision; accept-time snapshots contain no live target coordinates. `ObjectiveEvidence` records stage identity, observation/intervention time, galaxy and carrier identity, instance/episode identity where applicable, source and qualifying player role. Keep at most the evidence required for each authored stage; do not depend on a world episode summary surviving forever to prove payment eligibility.
 
-`SavedLead` carries stable lead identity, source identity, observed time, known region, confirmation state and an optional identified carrier reference. `SavedEntrustedLot` carries lot/request/requester identity, report/return station, item description, per-unit hold usage, aboard quantity, lost quantity and settlement state. These are finite typed records, not arbitrary JSON extensions. The first relay leaves all cargo maps empty.
+`SavedLead` carries stable lead identity, source identity, observed time, known region, confirmation state and an optional identified carrier reference with explicit galaxy index as in §1. `SavedEntrustedLot` carries lot/request/requester identity, report/return station, item description, per-unit hold usage, aboard quantity, lost quantity and settlement state. These are finite typed records, not arbitrary JSON extensions. The first relay leaves all cargo maps empty.
 
-Validate identities, supported content revisions, enum values, finite nonnegative quantities, clock bounds, acceptance ordinals, region geometry, stage/evidence consistency, reserve totals and lot ownership at load. A tracked ID must refer to an accepted or ready-to-report request. Refuse incompatible or inconsistent saves with a useful reason; do not silently drop requests, obligations or settlement receipts. Loaded ready-to-report requests remain ready; loading does not pay or perform turn-in.
+Validate identities, supported content revisions, enum values, finite nonnegative quantities, clock bounds, acceptance ordinals, region geometry, stage/evidence consistency, reserve totals and lot ownership at load. `settledAt` is non-null exactly when status is completed and is null for every other status; it describes the successful report, not cancellation or outstanding cargo settlement. `reservedPlayerCargo` is empty unless status is accepted or ready-to-report. A tracked ID must refer to an accepted or ready-to-report request. Refuse incompatible or inconsistent saves with a useful reason; do not silently drop requests, obligations or settlement receipts. Loaded ready-to-report requests remain ready; loading does not pay or perform turn-in.
 
 Persist only commitment, learned information, bounded evidence, ownership/settlement and the tracked request identity. Derive list ordering, text, next-action projection, lead age, eligibility, current known-target marker and route from authoritative saved state plus the seeded world. Do not save DOM focus, marker coordinates, route chains or countdown copies.
 
@@ -260,7 +262,7 @@ The UI prototype may use documented fixtures to exercise this sequence. A fixtur
 | Changed target / optional authored repair | No hidden off-screen knowledge refresh; recorded success survives unless pinned offer explicitly says otherwise |
 | Save/load every transition | Commitments, chosen tracking, objective evidence, terminal receipts and cargo obligations round-trip together |
 | Old/unsupported/corrupt save | Valid supported pre-journal migration starts empty; unsupported or corrupt originals remain untouched/exportable; no paid status/credit graft |
-| Stage/status consistency | Objective IDs contain no status values; evidence, first unsatisfied stage and readiness agree; Report/Cancel/failure clear a tracked terminal row atomically |
+| Stage/status consistency | Objective IDs contain no status values; evidence, first unsatisfied stage and readiness agree; Report/Cancel/failure clear a tracked terminal row atomically; report timestamp exists iff completed and inactive rows retain no player-cargo reservation |
 | Input focus and repeated activation | Mouse, keyboard and controller reach list/details/actions; one press opening details cannot accept/report; stable focus survives resorting |
 | Names and galaxy namespaces | Renaming display labels does not orphan work; identical local carrier keys in different galaxies stay distinct |
 | Live relay payoff | Separate relay-node before/after route experiment and principal play judgment; UI fixtures never count as this proof |
