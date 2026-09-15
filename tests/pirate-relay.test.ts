@@ -201,7 +201,7 @@ describe("the lifecycle", () => {
 		expect(RELAY_INTEGRITY / PULSE_LASER.damagePerS).toBeCloseTo(10, 6);
 	});
 	test("a kill is the player's destroy, scheduling a replacement twice the raider's", () => {
-		const event = relayDestruction(9, 500);
+		const event = relayDestruction(9, 500, "station-trade");
 		expect(event.kind).toBe("destroy");
 		expect(event.cause.playerRole).toBe("direct");
 		if (event.kind !== "destroy" || !event.schedule)
@@ -219,7 +219,7 @@ describe("the lifecycle", () => {
 			newWorld(WORLD),
 			0,
 			slot.key,
-			relayDestruction(9, 500),
+			relayDestruction(9, 500, "station-trade"),
 		);
 		const at = (t: number) => effectiveCarrier(w.galaxies[0], slot.key, t);
 		expect(at(500).condition).toBe("destroyed");

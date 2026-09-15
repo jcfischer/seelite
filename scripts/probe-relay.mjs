@@ -584,17 +584,46 @@ check(
 );
 const relit = await page.evaluate(() => {
 	const g = window.__seelite;
+	// A look left and back rebuilds the cockpit; the cue must come back with
+	// it (sage #350: it stayed empty until its key moved).
+	g.setHeadLook("left");
+	window.__relayProbe.frame();
 	g.setHeadLook("forward");
 	window.__relayProbe.placeNear(0.4);
 	g.targetId = "station-trade";
 	return window.__relayProbe.readout();
 });
+await settle();
+const relitCue = await page.evaluate(() => window.__relayProbe.readout());
 check(
-	"the replacement is drawn operational and watches the route again",
+	"the replacement is drawn operational, watches the route again, and the cue is back after a cockpit rebuild",
 	relit.condition === "operational" &&
 		relit.meshCondition === "operational" &&
-		relit.detection === "certain",
-	JSON.stringify(relit),
+		relit.detection === "certain" &&
+		relit.hull === 60 &&
+		relitCue.cueVisible === true &&
+		/IDENTIFIED/.test(relitCue.cueText),
+	JSON.stringify({ relit, relitCue }),
+);
+// The replacement starts whole: one pulse wears it, it does not die (sage
+// #350 — it inherited the wreck's zero hull and fell to the first shot).
+const pulse = await page.evaluate(() => {
+	const g = window.__seelite;
+	window.__relayProbe.placeNear(1.5);
+	g.targetId = g.relayReadout().view.key;
+	const r = g.relayReadout();
+	const p = g.world.ship.pos;
+	const t = r.view.pos;
+	g.setAttitude({ x: t.x - p.x, y: t.y - p.y, z: t.z - p.z }, g.shipUp());
+	g.keys.add(" ");
+	window.__relayProbe.frame();
+	g.keys.delete(" ");
+	return window.__relayProbe.readout();
+});
+check(
+	"one pulse at the replacement wears its hull and leaves it operational",
+	pulse.hull < 60 && pulse.hull > 50 && pulse.condition === "operational",
+	JSON.stringify(pulse),
 );
 await capture("05-replaced");
 

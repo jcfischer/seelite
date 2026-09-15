@@ -38,8 +38,10 @@ Seed 42 starts in RAAQU (system 58, government 6, one raider slot), which has
 a trade station and a shipyard on one orbit round its inner planet. The relay
 watches the **trade station** and stands about 670 km ahead of it along its
 orbit, 120 km below the orbital plane, moving with it. Everything below is
-behind `?relay-prototype=1` and compiles out of a production build; the
-relay's carrier key exists regardless, so a save does not depend on the flag.
+behind `?relay-prototype=1`, which is `false` in a production build so its
+branches fold — the relay modules, the mesh and the cue's aside are still in
+the bundle, inert. The relay's carrier key exists regardless, so a save does
+not depend on the flag.
 
 The loop, as a pilot flies it:
 
@@ -107,7 +109,8 @@ to reverse at the close.
   because `parseWorld` refuses a `worldGeneratorVersion` it does not know and
   a bump refuses every existing save until a migration exists. Enrolment, the
   fingerprint, version 7 and the migration graduate with the node that makes
-  the relay production content. The missions spec gave this node that
+  the relay production content, which is not yet charted (#344 consumes this
+  result and is not that node). The missions spec gave this node that
   decision; this is it, deferred with its reason.
 
 ## What is measured
@@ -124,7 +127,8 @@ to station-shipyard          25.4%      25.4%
 `scripts/probe-relay.mjs` flies the loop in the running game, 20 checks: the
 arrival point reads nothing; six legs to the trade station all meet a raider
 and twenty-four to the shipyard meet some and not all; the cue inside the
-signal and the identification inside its range; the kill in exactly 100 steps
+signal and the identification inside its range; the kill in 100 steps on the
+recorded run, asserted within 90–130,
 with the player's provenance and the route as its consequence area; six legs
 after meet nothing and the control route is untouched; a forced raider in a
 duel is not nulled; the cue's range agrees with the Target panel's, both

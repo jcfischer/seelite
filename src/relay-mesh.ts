@@ -4,6 +4,13 @@
  * km, and the raider's mesh is placed in the same near-layer frame), so a
  * ship-length figure here draws a ship-length object and not a 270 m blob.
  *
+ * **Every dimension is `pirate-relay.ts`'s.** The sim owns the shape and the
+ * hit sphere; this module reads the figures and authors none, the way
+ * `station-interior-mesh.ts` draws `station-interior.ts`'s catalogue. The form
+ * is built with its **midpoint at the root**, so the position the sim places
+ * it at is the hit sphere's centre; `tests/relay-mesh.test.ts` builds it and
+ * holds its box inside `RELAY_HIT_RADIUS_KM`.
+ *
  * Its look follows the slot's objective condition: operational is lit and
  * upright; destroyed and repairing are dark, with the dish knocked over. That
  * is #41's "the relay remains visibly changed" — the wreck is drawn until the
@@ -12,12 +19,13 @@
  * Standard materials, so `scene.environment` lights it as it does a hull.
  */
 import * as THREE from "three";
+import {
+	RELAY_DISH_KM,
+	RELAY_HEIGHT_KM,
+	RELAY_MAST_KM,
+	RELAY_PANEL_REACH_KM,
+} from "./pirate-relay";
 import type { OperationalCondition } from "./world-state";
-
-/** Mast height, km: 80 m. The hit sphere in `pirate-relay.ts` is sized to
- *  this and the dish together. */
-export const RELAY_MAST_KM = 0.08;
-export const RELAY_DISH_KM = 0.03;
 
 const PLATING = 0x8a8f99;
 const WRECK = 0x2f2a28;
@@ -31,6 +39,12 @@ export interface RelayMesh {
 export function buildRelayMesh(): RelayMesh {
 	const root = new THREE.Group();
 	root.name = "pirate-relay";
+	// The form, foot at y = 0, lifted so its midpoint sits on the root.
+	const form = new THREE.Group();
+	form.name = "relay-form";
+	form.position.y = -RELAY_HEIGHT_KM / 2;
+	root.add(form);
+
 	const plating = new THREE.MeshStandardMaterial({
 		color: PLATING,
 		roughness: 0.6,
@@ -53,7 +67,7 @@ export function buildRelayMesh(): RelayMesh {
 	);
 	mast.name = "relay-mast";
 	mast.position.y = RELAY_MAST_KM / 2;
-	root.add(mast);
+	form.add(mast);
 
 	const dish = new THREE.Group();
 	dish.name = "relay-dish";
@@ -75,22 +89,24 @@ export function buildRelayMesh(): RelayMesh {
 	);
 	feed.position.y = RELAY_DISH_KM * 0.1;
 	dish.add(feed);
-	root.add(dish);
+	form.add(dish);
 
+	// Each panel spans from the mast out to the declared reach.
+	const panelWidth = RELAY_PANEL_REACH_KM - 0.01;
 	for (const side of [-1, 1]) {
 		const wing = new THREE.Mesh(
-			new THREE.BoxGeometry(0.05, 0.018, 0.0015),
+			new THREE.BoxGeometry(panelWidth, 0.018, 0.0015),
 			panel,
 		);
 		wing.name = side < 0 ? "relay-panel-port" : "relay-panel-starboard";
-		wing.position.set(side * 0.035, RELAY_MAST_KM * 0.45, 0);
-		root.add(wing);
+		wing.position.set(side * (0.01 + panelWidth / 2), RELAY_MAST_KM * 0.45, 0);
+		form.add(wing);
 	}
 
 	const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.004, 10, 8), lamp);
 	beacon.name = "relay-lamp";
 	beacon.position.y = RELAY_MAST_KM + RELAY_DISH_KM * 0.5;
-	root.add(beacon);
+	form.add(beacon);
 
 	const setCondition = (condition: OperationalCondition) => {
 		const up = condition === "operational";

@@ -18,8 +18,9 @@
  * know, so enrolling the slot bumps the version and refuses every existing
  * save until a migration exists. The prototype writes its rows under this
  * reserved id and leaves enrolment, the fingerprint and the version to the
- * node that makes the relay production content (#344), which is where the
- * missions spec put that decision. The rows round-trip through the save
+ * node that makes the relay production content — not yet charted; #344
+ * consumes this result and is not that node — which is where the missions
+ * spec put that decision. The rows round-trip through the save
  * unchanged either way, because the parser checks a key's shape and not its
  * membership.
  *
@@ -96,8 +97,30 @@ export const RELAY_IDENTIFY_RANGE_KM = 150;
 
 /** Hull points. Ten seconds of pulse fire (`PULSE_LASER.damagePerS` 6). */
 export const RELAY_INTEGRITY = 60;
-/** The hit sphere: a 120 m mast and dish. */
-export const RELAY_HIT_RADIUS_KM = 0.06;
+
+/**
+ * The form's dimensions, km, owned here so the sim owns the shape and
+ * `relay-mesh.ts` authors no figure of its own (the station-interior rule).
+ * An 80 m mast with a 30 m dish on top, and two panels reaching 60 m either
+ * side of it at half height.
+ */
+export const RELAY_MAST_KM = 0.08;
+export const RELAY_DISH_KM = 0.03;
+export const RELAY_PANEL_REACH_KM = 0.06;
+/** The form's height, foot to lamp. */
+export const RELAY_HEIGHT_KM = RELAY_MAST_KM + RELAY_DISH_KM * 0.5 + 0.004;
+/**
+ * The hit sphere, centred on the form's midpoint — the mesh is built with its
+ * midpoint at the root, so `relayPosition` is that centre. It contains the
+ * form's bounding box, corner and all: half the height, the panels' reach and
+ * the dish's radius, one per axis.
+ * `tests/relay-mesh.test.ts` builds the mesh and holds its box inside this.
+ */
+export const RELAY_HIT_RADIUS_KM = Math.hypot(
+	RELAY_HEIGHT_KM / 2,
+	RELAY_PANEL_REACH_KM,
+	RELAY_DISH_KM,
+);
 
 /**
  * Whether a shot along the sightline lands on the relay: the duel's own beam
@@ -249,7 +272,9 @@ export const relayReplacementActor = (systemIndex: number): Provenance => ({
 export function relayDestruction(
 	systemIndex: number,
 	now: number,
-	watchedStationId = "station-trade",
+	/** Required, for `holdT`'s reason: a default would let a caller that
+	 *  forgot the plan persist another station's route as the area. */
+	watchedStationId: string,
 ): TransitionEvent {
 	return {
 		kind: "destroy",

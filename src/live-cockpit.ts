@@ -921,6 +921,9 @@ export class LiveCockpit {
 			this.lastValueKey = "";
 			this.lastNavKey = "";
 			this.lastLogKey = null;
+			// The rebuilt aside is empty; without this the cue stays empty until
+			// its key moves (sage #350).
+			this.lastRelayKey = "";
 			this.navRowsById.clear();
 			this.releaseChartHost();
 			this.root.innerHTML = this.markup(state);

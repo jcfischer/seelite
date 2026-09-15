@@ -675,11 +675,17 @@ const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
  * `?relay-prototype=1`, the way #343's Requests trial is gated. The relay's
  * carrier key exists regardless (`pirate-relay.ts`), so nothing about a save
  * depends on the query string; what the flag turns on is the drawn relay, its
- * signal, its target and its dial on the leg law.
+ * signal, its target and its dial on the leg law. In a production build the
+ * flag is `false` and its branches fold; the relay modules, the mesh and the
+ * cue's aside are still in the bundle, inert.
  */
+const RELAY_PARAM = new URLSearchParams(window.location.search).get(
+	"relay-prototype",
+);
 const RELAY_PROTOTYPE =
 	import.meta.env.DEV &&
-	new URLSearchParams(window.location.search).has("relay-prototype");
+	RELAY_PARAM !== null &&
+	!["off", "0", "false"].includes(RELAY_PARAM);
 
 /** What one frame read of the relay (#43), for the renderer and the glass. */
 interface RelayView {
@@ -1741,6 +1747,9 @@ class Game {
 	/** Hull points left on the relay this visit. Flight state: not saved, and
 	 *  a jump leaves it behind (`clearSystemScopedState`). */
 	relayHull = RELAY_INTEGRITY;
+	/** The instance the hull belongs to: a replacement starts whole (sage
+	 *  #350 — the replacement inherited the wreck's zero and died on one pulse). */
+	private relayHullInstance = 0;
 	private relayListed = false;
 	private readonly relayContact: DisplayContact = {
 		id: "",
@@ -7468,6 +7477,7 @@ class Game {
 		this.relayPlanSystem = -1;
 		this.relayPlanCache = null;
 		this.relayHull = RELAY_INTEGRITY;
+		this.relayHullInstance = 0;
 	}
 
 	/**
@@ -8054,8 +8064,13 @@ class Game {
 			identified = true;
 			this.lastExit = "pirate relay identified";
 		}
+		const carrier = this.carrierCondition(key);
+		if (carrier.instanceOrdinal !== this.relayHullInstance) {
+			this.relayHullInstance = carrier.instanceOrdinal;
+			this.relayHull = RELAY_INTEGRITY;
+		}
 		if (
-			this.carrierCondition(key).condition === "operational" &&
+			carrier.condition === "operational" &&
 			shot.fired &&
 			shot.damage > 0 &&
 			relayInSights(this.cameraPos(), this.beamAim(), pos)
