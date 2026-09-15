@@ -1,12 +1,12 @@
 # Requests cockpit UI experiment
 
 Author: Codex / Ivy · 2026-09-15
-Node: [Prototype the Requests tab and the in-flight active-request cue](https://github.com/jcfischer/seelite/issues/343)
+Node: [Prototype the Requests tab and the in-flight tracked-request cue](https://github.com/jcfischer/seelite/issues/343)
 Contract: [Requests](../specs/missions-and-requests.md)
 
 Run `npm run dev -- --port 5343`, then open
 `http://localhost:5343/?boot=direct&seed=42&requests-prototype=1`.
-Dock at any station and choose Requests. The query enables two authored,
+Dock at any station and choose Requests. In a development build the query enables two authored,
 no-cargo fixture offers at that requester. Existing Market and Equipment stay
 on the same console. In flight, Requests lives on the left console.
 
@@ -55,7 +55,13 @@ copy to an empty journal. Schema 2 carrying a journal is refused. World schema
 and generator versions are unchanged. Unsupported/corrupt records are refused
 without modifying their input; normal save-store ownership remains in force.
 
-The parser checks scoped offer/requester identity against generated stations,
+The development-only trial uses the separate `seelite-requests-prototype-saves`
+database, catalog and Web Locks. Simulated payments never write to the normal
+Commander catalog. Production builds cannot enable fixture controls via the
+query flag. Schema 3 is the experiment's bounded encoding; it does not claim to
+implement §7's future entrusted-cargo or production evidence domains.
+
+The parser checks scoped offer/requester identity and display name against generated stations,
 supported fixture terms, stage/evidence agreement, clock bounds, terminal
 settlement and valid active tracking. This intentionally supports only the two
 authored no-cargo entries; entrusted cargo and a general request engine are
@@ -64,11 +70,15 @@ outside this experiment.
 ## Verification and principal operation
 
 `bun test tests/requests-prototype.test.ts tests/requests-save.test.ts
-tests/save-envelope.test.ts tests/save-store.test.ts` covers 88 cases.
-The complete headless suite passed 2,100 tests. The final native-focus and
-double-click changes then passed the guarded 22-check headed flow, TypeScript,
+tests/save-envelope.test.ts tests/save-store.test.ts` covers 89 cases.
+The complete headless suite passed 2,101 tests. The final repairs passed
+the guarded 25-check headed flow, TypeScript,
 build and format gates. The browser probe includes native Tab/Enter and prevents
 a rapid Accept double-click from selecting the newly drawn Track action.
+It also checks release of a flight key after opening Requests, reuse of docked
+offers and preservation of a separate normal Commander catalog across fixture
+payment and save/load. The production bundle compiles `requestFixtures` to false
+and refuses all experiment actions outside the development trial.
 
 `node scripts/probe-requests.mjs` runs the guarded normal-Game flow with the
 project's shared berth setup fixture, actual keyboard events and the shared
@@ -85,7 +95,9 @@ flight, flight Requests and unavailable-target states at the canonical
 1440×900 viewport. `checks.json` records each observed result and fixture
 boundary. Captures are local review artifacts, not committed binary assets.
 
-Principal usability judgment and merge are pending. Operate the flow and judge
-whether offer terms, commitment, the manually chosen next action and return
-report are clear. Production graduation and checkpoint closure require that
-judgment; automated evidence does not supply it.
+The principal operated the trial and judged it "clear and usable", then asked
+whether requests create new target areas: "Approach region" leaves too much
+empty space to search. This experiment creates no spatial search area. Live
+relay discovery in #43 and the complete request loop in #344 must supply a
+bounded, discoverable region and enough guidance to reach the signal without
+leaking its unlearned exact location. Final Sage review and merge remain pending.

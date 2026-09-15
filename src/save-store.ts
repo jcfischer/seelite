@@ -1083,9 +1083,10 @@ export const SAVE_CLOSED_MESSAGE =
 const openSaveDb = (
 	factory: IDBFactory,
 	onVersionChange: () => void,
+	databaseName: string,
 ): Promise<IDBDatabase> =>
 	new Promise((resolve, reject) => {
-		const request = factory.open(SAVE_DB_NAME, SAVE_DB_VERSION);
+		const request = factory.open(databaseName, SAVE_DB_VERSION);
 		let refused = false;
 		request.onupgradeneeded = () => {
 			const db = request.result;
@@ -1146,6 +1147,7 @@ const transactionDone = (tx: IDBTransaction): Promise<void> =>
 
 export function indexedDbSaveBackend(
 	factory: IDBFactory = indexedDB,
+	databaseName = SAVE_DB_NAME,
 ): SaveBackend {
 	let db: Promise<IDBDatabase> | null = null;
 	let closed = false;
@@ -1159,10 +1161,14 @@ export function indexedDbSaveBackend(
 		// with no `blocked` event of its own, so a retry hung rather than
 		// failing. The message already tells the player to reload.
 		if (blocked) return Promise.reject(new Error(SAVE_BLOCKED_MESSAGE));
-		const opening = (db ??= openSaveDb(factory, () => {
-			closed = true;
-			db = null;
-		}));
+		const opening = (db ??= openSaveDb(
+			factory,
+			() => {
+				closed = true;
+				db = null;
+			},
+			databaseName,
+		));
 		// Any other refused open is not cached: the next caller asks again. This
 		// handler is attached before any caller awaits `opening`, so the flag is
 		// set before a caller's own rejection runs.
@@ -1321,13 +1327,16 @@ const SAVE_LOCK_PREFIX = "seelite-commander:";
  * rejects. The probes run on localhost and the deploy target is HTTPS, so
  * neither meets it.
  */
-export function webSlotLocks(locks: LockManager = navigator.locks): SlotLocks {
+export function webSlotLocks(
+	locks: LockManager = navigator.locks,
+	prefix = SAVE_LOCK_PREFIX,
+): SlotLocks {
 	return {
 		tryHold(slot) {
 			return new Promise((resolve, reject) => {
 				locks
 					.request(
-						`${SAVE_LOCK_PREFIX}${slot}`,
+						`${prefix}${slot}`,
 						{ mode: "exclusive", ifAvailable: true },
 						(lock) => {
 							if (!lock) {

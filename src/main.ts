@@ -1510,9 +1510,11 @@ class Game {
 	private requestSelectedId: string | null = null;
 	private requestMessage = "";
 	private requestRevision = 0;
-	private readonly requestFixtures = new URLSearchParams(
-		window.location.search,
-	).has("requests-prototype");
+	private readonly requestFixtures =
+		import.meta.env.DEV &&
+		new URLSearchParams(window.location.search).has("requests-prototype");
+	private requestOffersCacheKey: string | null = null;
+	private requestOffersCache: ReturnType<typeof fixtureOffers> = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -5601,6 +5603,8 @@ class Game {
 
 	private onKey(e: KeyboardEvent, down: boolean) {
 		const key = e.key.toLowerCase();
+		// Releases must clear flight state even when a panel now owns the key.
+		if (!down) this.keys.delete(key);
 		if (
 			this.view === "cockpit" &&
 			!e.altKey &&
@@ -9328,6 +9332,7 @@ class Game {
 		this.refreshScannerContacts();
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
+		const dockContext = this.dockedStationContext();
 		this.liveCockpit.update({
 			visible: true,
 			dockPhase: this.dock.phase,
@@ -9374,8 +9379,8 @@ class Game {
 							.map(formatRaiderLogLine)
 					: [],
 			tuning: this.tuningSummary(),
-			requests: this.requestsView(),
-			stationConsole: this.stationConsoleState(),
+			requests: this.requestsView(dockContext),
+			stationConsole: this.stationConsoleState(dockContext),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
 	}
@@ -9388,19 +9393,22 @@ class Game {
 	 * Deficits come from the current galaxy's persistent envelope, and commander
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
-	private requestsView(): RequestsView {
-		const context = this.dockedStationContext();
+	private requestsView(context = this.dockedStationContext()): RequestsView {
+		if (this.requestFixtures && context) {
+			const key = `${context.galaxyIndex}:${context.stationKey}`;
+			if (key !== this.requestOffersCacheKey) {
+				this.requestOffersCache = fixtureOffers(
+					context.galaxyIndex,
+					context.stationKey,
+					this.nameOfStation(context.station.id),
+					0,
+				);
+				this.requestOffersCacheKey = key;
+			}
+		}
 		return {
 			state: this.requests,
-			offers:
-				this.requestFixtures && context
-					? fixtureOffers(
-							context.galaxyIndex,
-							context.stationKey,
-							this.nameOfStation(context.station.id),
-							0,
-						)
-					: [],
+			offers: this.requestFixtures && context ? this.requestOffersCache : [],
 			selectedId: this.requestSelectedId,
 			message: this.requestMessage,
 			revision: this.requestRevision,
@@ -9413,6 +9421,9 @@ class Game {
 	}
 
 	private actOnRequest(action: string, id: string): void {
+		// Every action here belongs to the isolated fixture experiment. Imported
+		// experiment journals must not pay rewards in a normal Commander session.
+		if (!this.requestFixtures) return;
 		const view = this.requestsView();
 		if (action === "details") {
 			if (
@@ -9446,8 +9457,7 @@ class Game {
 		this.updateCockpit();
 	}
 
-	private stationConsoleState() {
-		const context = this.dockedStationContext();
+	private stationConsoleState(context = this.dockedStationContext()) {
 		if (!context) {
 			this.stationConsoleCache = null;
 			this.stationConsoleCacheKey = null;
@@ -11167,8 +11177,17 @@ if (query.has("model-viewer")) {
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
 	const noSave = query.has("no-save");
-	const saveBackend = indexedDbSaveBackend();
-	const saveLocks = webSlotLocks();
+	// Fixture progress and payments use an entirely separate Commander catalog.
+	// The production build cannot enable fixtures by adding a URL flag.
+	const fixtureTrial = import.meta.env.DEV && query.has("requests-prototype");
+	const saveBackend = indexedDbSaveBackend(
+		indexedDB,
+		fixtureTrial ? "seelite-requests-prototype-saves" : undefined,
+	);
+	const saveLocks = webSlotLocks(
+		navigator.locks,
+		fixtureTrial ? "seelite-requests-prototype:" : undefined,
+	);
 	// Read once: an unusable `?seed` warns as it is read.
 	const askedSeed = querySeed();
 	const catalog = new CommanderCatalog({

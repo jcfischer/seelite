@@ -405,7 +405,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		...Object.values(commander.requests.byId).map((r) => r.terms),
 		...Object.values(commander.requests.leadsById),
 	];
-	const stationsBySystem = new Map<string, Set<string>>();
+	const stationsBySystem = new Map<string, Map<string, string>>();
 	for (const offer of offers) {
 		const { galaxyIndex, carrierKey: key } = offer.requester;
 		const separator = key.indexOf(":");
@@ -414,15 +414,17 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		const namespace = `${galaxyIndex}:${systemIndex}`;
 		let stations = stationsBySystem.get(namespace);
 		if (!stations) {
-			stations = new Set(
+			stations = new Map(
 				generateContents(
 					generateGalaxy(world.seed, galaxyIndex).systems[systemIndex],
-				).stations.map((s) => s.localCarrierId),
+				).stations.map((s) => [s.localCarrierId, s.name]),
 			);
 			stationsBySystem.set(namespace, stations);
 		}
 		if (!stations.has(localId))
 			fail(`Requests requester ${key} does not exist in galaxy ${galaxyIndex}`);
+		if (stations.get(localId) !== offer.requesterName)
+			fail(`Requests requester ${key} name does not match generated station`);
 	}
 	return { world, commander };
 }

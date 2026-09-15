@@ -41,6 +41,13 @@ try {
 	});
 	await bootedGame(page);
 	console.log("BOOTED");
+	// A normal catalog record at the same origin must stay outside the trial.
+	await page.evaluate(async () => {
+		const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+		await indexedDbSaveBackend().write("Normal commander", "live", {
+			sentinel: "unchanged",
+		});
+	});
 	const station = await page.evaluate(async () => {
 		const g = window.__seelite;
 		const id =
@@ -58,7 +65,20 @@ try {
 		await page.locator('[data-live-station-tab="Requests"]').isVisible(),
 	);
 	await page.screenshot({ path: `${out}/00-before-market.png` });
+	await page.keyboard.down("ArrowUp");
 	await page.locator('[data-live-station-tab="Requests"]').click();
+	await page.keyboard.up("ArrowUp");
+	check(
+		"Requests key release clears a flight key held before opening",
+		await page.evaluate(() => !window.__seelite.keys.has("arrowup")),
+	);
+	check(
+		"unchanged dock reuses authored fixture offers",
+		await page.evaluate(() => {
+			const g = window.__seelite;
+			return g.requestsView().offers === g.requestsView().offers;
+		}),
+	);
 	await page.screenshot({ path: `${out}/01-selection.png` });
 	const rows = page.locator(
 		'[data-live-station-console] [data-live-request-action="details"]',
@@ -280,6 +300,22 @@ try {
 		if (!window.__seelite.saveStore) throw Error("save store not attached");
 		await window.__seelite.saveStore.flush("quit");
 	});
+	check(
+		"fixture journal and payment leave the normal Commander catalog untouched",
+		await page.evaluate(async () => {
+			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+			const normal = indexedDbSaveBackend();
+			return (
+				JSON.stringify(await normal.slots()) ===
+					JSON.stringify(["Normal commander"]) &&
+				JSON.stringify(await normal.read("Normal commander", "live")) ===
+					JSON.stringify({ sentinel: "unchanged" }) &&
+				(await indexedDB.databases()).some(
+					(d) => d.name === "seelite-requests-prototype-saves",
+				)
+			);
+		}),
+	);
 	await page.goto(gameUrl(origin, { "requests-prototype": true }), {
 		waitUntil: "load",
 	});

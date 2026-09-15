@@ -16,7 +16,7 @@ test("Requests and credits round-trip under one hash at every stage", () => {
 	const offers = fixtureOffers(
 		0,
 		carrierKey(0, "station-trade"),
-		"QUERIOR",
+		"USQULAVE",
 		10,
 	);
 	const ctx = { now: 20, docked: offers[0].requester, armed: true };
@@ -89,6 +89,32 @@ test("request journal cannot reference a nonexistent generated requester", () =>
 		"accept",
 		offers[0].id,
 		{ now: 20, armed: true, docked: offers[0].requester },
+	).state;
+	expect(() => parseSave(serializeSave({ world, commander }))).toThrow(
+		"requester",
+	);
+});
+
+test("request journal rejects an invented name for an existing requester", () => {
+	const world = newWorld(42);
+	world.gameTime = 20;
+	const commander = newCommanderRecord("courier");
+	const offers = fixtureOffers(
+		0,
+		carrierKey(0, "station-trade"),
+		"Made up",
+		10,
+	);
+	commander.requests = requestAction(
+		commander.requests,
+		offers,
+		"accept",
+		offers[0].id,
+		{
+			now: 20,
+			armed: true,
+			docked: offers[0].requester,
+		},
 	).state;
 	expect(() => parseSave(serializeSave({ world, commander }))).toThrow(
 		"requester",
