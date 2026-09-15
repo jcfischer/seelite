@@ -9,7 +9,9 @@
  * being on the player, and is the controller's trigger discipline rather than
  * a different weapon. A hit selects the pool facing the shooter on either
  * side, and the raider is hit-tested at its hull's true size rather than the
- * rig's drawn 3x.
+ * rig's drawn 3x. It also flies by the player's flight rules: it turns through
+ * `stepAngular`, and its assist holds speed in the player's local frame
+ * (`DuelPilot.frameVel`), so the 2 km/s cap is one speed for both ships.
  *
  * **What it returns rather than does.** The raider's hit on the player comes
  * back as an amount and a side for `Game.takeDamage` to land, because that is
@@ -19,6 +21,7 @@
 import {
 	type CombatEnemyState,
 	type EnemyReadout,
+	NO_ROTATION,
 	playerLaserHit,
 	stepCombatEnemy,
 } from "./combat-enemy";
@@ -63,6 +66,12 @@ export interface DuelPilot {
 	aimOrigin: Vec3;
 	aimNose: Vec3;
 	hull: number;
+	/** The player's local frame, which the raider's assist holds its speed in
+	 *  too (#324): one frame for the fight, so both caps are the same speed.
+	 *  **Required** (sage #345), for `FlightPerformance`'s reason: a builder
+	 *  that forgot it would silently fly the raider in the star's frame. Pass
+	 *  `v3()` to mean the star's frame. */
+	frameVel: Vec3;
 }
 
 /** The player's gun this step, as `stepCondition` already settled it. */
@@ -96,6 +105,7 @@ export function raiderAtDrop(
 		ship: { pos: { ...pos }, vel: { ...player.vel } },
 		nose,
 		up: cross(across, nose),
+		rates: NO_ROTATION,
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,
@@ -132,6 +142,7 @@ export function stepDuel(
 		pilot.aimOrigin,
 		pilot.aimNose,
 		RAIDER_HIT_RADIUS_KM,
+		pilot.frameVel,
 	);
 
 	let condition = raider.condition;

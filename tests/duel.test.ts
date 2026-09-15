@@ -32,6 +32,7 @@ function pilot(over: Partial<DuelPilot> = {}): DuelPilot {
 		aimOrigin: ship.pos,
 		aimNose: FORWARD,
 		hull: fullCondition("courier").hull,
+		frameVel: v3(0, 0, 0),
 		...over,
 	};
 }

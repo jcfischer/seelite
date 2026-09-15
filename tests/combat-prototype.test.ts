@@ -10,7 +10,6 @@ import {
 	ENEMY_COLLISION_RADIUS_KM,
 	FIRE_COS,
 	GUN_RANGE_KM,
-	MAX_TURN_RATE_RAD_S,
 	MERGE_BREAK_KM,
 	PLAYER_LASER_RANGE_KM,
 	STRIKER_HULL_ID,
@@ -469,6 +468,12 @@ test("the enemy presses the attack instead of holding a standoff orbit", () => {
  * sides. Both arms re-measured on the rebase onto #181, which gave the striker
  * the raider's own 2.690 km/s² in place of the courier's 2.000; the gap held
  * its shape and both bounds moved by under a point.
+ *
+ * **Measured again when the striker began turning through `stepAngular`**
+ * (#324), on seeds 1, 99, 777, 12345 and 2 to 5 at 45 s: **0.296–0.306** on the
+ * slew controller and **0.276–0.316** on `stepAngular`. Seed 777 is the low
+ * one. `scripts/measure-raider-duel.ts` reprints them with the other duel
+ * figures; run it at two refs to compare. The lockout arm was not re-run.
  */
 test("a player who keeps their nose on it cannot suppress its guns", () => {
 	for (const seed of DUEL_SEEDS) {
@@ -564,17 +569,14 @@ test("fire is gated on the boresight, not on being nearby", () => {
 	expect(trace.some((row) => row.firing)).toBe(true);
 });
 
-test("the nose slews at a bounded rate and the ceiling actually binds", () => {
+test("the nose turns no faster than the hull allows and the ceiling actually binds", () => {
 	const { trace } = flyDuel({ seconds: 40 });
 	const fastest = Math.max(...trace.map((row) => row.turnRate));
-	// **The hull's own turn rate caps the controller** (#324): its slew was
-	// 1.2 rad/s, above what the raider hull allows, which out-turned any ship
-	// flying by the same rules.
-	const ceiling = Math.min(
-		MAX_TURN_RATE_RAD_S,
-		flightPerformance(STRIKER_HULL_ID).angularMax.yaw,
-	);
-	expect(ceiling).toBeLessThan(MAX_TURN_RATE_RAD_S);
+	// **The hull's own turn rate caps the controller** (#324), because it turns
+	// through `stepAngular` as the player's ship does. Its own slew had been
+	// 1.2 rad/s, above what the raider hull allows. How the turn builds is
+	// `tests/raider-flight-rules.test.ts`'s question.
+	const ceiling = flightPerformance(STRIKER_HULL_ID).angularMax.yaw;
 	expect(fastest).toBeLessThanOrEqual(ceiling + 1e-6);
 	// Without this the test would pass on a ship that never turns hard, which
 	// is the failure mode a rate limit is supposed to make impossible to hide.

@@ -31,15 +31,20 @@
  * renderer transform, and no scheduled damage. It moves through `stepFlight`,
  * the same assisted integrator the player flies, so its ship obeys the same
  * thrust, speed cap and lateral-damping rules — the nose can lead the velocity
- * vector, and at these turn rates it visibly does.
+ * vector, and at these turn rates it visibly does. Since #324 it also turns
+ * through the player's `stepAngular`, with its hull's rate limits and angular
+ * acceleration, and its assist holds speed in the frame the caller passes, the
+ * player's local frame in a production duel.
  */
 
 import { HULL_SPECS, type HullId } from "./hull";
 import { mix, seedFor } from "./rng";
 import {
 	ASSIST_CAP_KMS,
+	type Angular,
 	flightPerformance,
 	type FlightPerformance,
+	stepAngular,
 	stepFlight,
 	type Ship,
 } from "./sim";
@@ -81,6 +86,12 @@ export interface CombatEnemyState {
 	 * the nose approaches vertical — which this controller now does routinely.
 	 */
 	up: Vec3;
+	/**
+	 * The body rates, rad/s, as `stepAngular` carries the player's (#324): pitch
+	 * about the right axis, yaw about `up`, roll about `nose`. State, because a
+	 * turn has momentum — the nose used to reach its turn rate in one frame.
+	 */
+	rates: Angular;
 	phase: EnemyFlightPhase;
 	phaseSeconds: number;
 	/** How long the current manoeuvre holds before the machine may re-decide.
@@ -143,13 +154,6 @@ export const FIRE_COS = Math.cos((12 * Math.PI) / 180);
 /** The weave's weight against a unit boresight, so `atan(0.1)` ≈ 5.7° of nose
  *  offset: enough that a gun run is not a rail, half the firing cone. */
 const ATTACK_WEAVE = 0.1;
-/** Nose slew ceiling. The velocity vector lags it by `ASSIST_LATERAL_TAU_S`,
- *  so the drawn ship visibly crabs through a hard turn. */
-export const MAX_TURN_RATE_RAD_S = 1.2;
-const ROLL_RATE_RAD_S = 2.6;
-const BANK_MAX_RAD = (72 * Math.PI) / 180;
-/** Bank angle per radian per second of turn rate. */
-const BANK_GAIN = 1.1;
 /** Lead is capped: a long extrapolation against a manoeuvring player aims at
  *  a place nobody is going. */
 const LEAD_CAP_S = 5;
@@ -322,67 +326,94 @@ function rotateAbout(v: Vec3, axis: Vec3, angle: number): Vec3 {
 const reperp = (v: Vec3, dir: Vec3): Vec3 =>
 	unit(sub(v, scale(dir, dot(v, dir))), perpBasis(dir)[0]);
 
-/**
- * Turn `from` toward `to` by at most `maxRadians`.
- *
- * The reason the ship reads as having mass. Without it the commanded nose is
- * whatever the guidance law asks for on that frame, and a state change snaps
- * the model through ninety degrees between two frames.
- */
-function slew(from: Vec3, to: Vec3, maxRadians: number): Vec3 {
-	const c = clamp(dot(from, to), -1, 1);
-	const angle = Math.acos(c);
-	if (!(angle > maxRadians)) return to;
-	// At angle ~ pi the difference vector vanishes and any perpendicular will
-	// do; `perpBasis` supplies one rather than letting the turn stall.
-	const perpendicular = unit(sub(to, scale(from, c)), perpBasis(from)[0]);
-	return unit(
-		add(
-			scale(from, Math.cos(maxRadians)),
-			scale(perpendicular, Math.sin(maxRadians)),
-		),
-		to,
+/** Rates at rest: a new ship's, and the controller's mouse impulse, since it
+ *  commands the stick alone. Frozen, so sharing one object is safe. */
+export const NO_ROTATION: Angular = Object.freeze({
+	pitch: 0,
+	yaw: 0,
+	roll: 0,
+});
+
+/** Body rates as a world-space angular velocity, in the ship's own axes. */
+const bodySpin = (right: Vec3, up: Vec3, nose: Vec3, rates: Angular): Vec3 =>
+	add(
+		add(scale(right, rates.pitch), scale(up, rates.yaw)),
+		scale(nose, rates.roll),
 	);
-}
+/** Closer than this the nose is on its heading and the stick is released, so
+ *  the assist's damping finishes the stop rather than the command hunting. */
+const SETTLED_RAD = 1e-3;
+/** Below this turn rate the ship is not banking into anything. */
+const TURNING_RAD_S = 0.05;
 
 /**
- * Roll the ship into its turn.
- *
- * `cross(previous, next)` is the turn axis and its magnitude is the sine of the
- * angle turned, so it gives both the rate and — crossed back with the nose —
- * the direction of the turn centre. The lift vector leans that way by an angle
- * proportional to the rate, which is the whole of what makes a banking turn
- * look like one.
+ * A stick deflection, 0…1, for an error of `errorRad` on axes of rate `max`:
+ * the fastest rate that can still stop at the heading under `accel`, which is
+ * what brings a turn in without overshooting it.
  */
-function bankedUp(
-	previousNose: Vec3,
-	nose: Vec3,
-	previousUp: Vec3,
+const stoppingStick = (errorRad: number, accel: number, max: number) =>
+	Math.min(1, Math.sqrt(2 * accel * errorRad) / max);
+
+/**
+ * Turn the ship toward `desired` through the player's `stepAngular` (#324).
+ *
+ * The controller decides a heading and a bank; this turns them into a stick,
+ * and the rates, the limits and the angular acceleration are the hull's, by the
+ * same function the player's ship turns through. Pitch and yaw take the
+ * shortest arc to the heading in the body's own axes. Roll lays the up axis
+ * into the turn, which is the bank the old slew drew. `STRIKER_PERFORMANCE`'s
+ * pitch and yaw limits are one figure (`flightPerformance` scales both by one
+ * agility), so one stick scale keeps the arc's direction.
+ */
+function turnToward(
+	state: CombatEnemyState,
+	desired: Vec3,
 	dt: number,
-): Vec3 {
-	const level = unit(
-		sub(previousUp, scale(nose, dot(previousUp, nose))),
-		perpBasis(nose)[1],
+): { nose: Vec3; up: Vec3; rates: Angular } {
+	const perf = STRIKER_PERFORMANCE;
+	const { nose, up } = state;
+	const right = cross(nose, up);
+	const off = Math.acos(clamp(dot(nose, desired), -1, 1));
+	let pitch = 0;
+	let yaw = 0;
+	if (off > SETTLED_RAD) {
+		// Half a turn away the arc's axis vanishes and any perpendicular will do.
+		const arc = unit(cross(nose, desired), perpBasis(nose)[0]);
+		const stick = stoppingStick(off, perf.angularAccel, perf.angularMax.yaw);
+		pitch = dot(arc, right) * stick;
+		yaw = dot(arc, up) * stick;
+	}
+	// The way the nose is swinging now, and the up axis rolled toward it. Roll
+	// spins about the nose and swings nothing, so it drops out of the cross.
+	const swing = cross(bodySpin(right, up, nose, state.rates), nose);
+	let roll = 0;
+	if (length(swing) > TURNING_RAD_S) {
+		const inside = unit(swing, up);
+		const bank = Math.atan2(dot(cross(up, inside), nose), dot(up, inside));
+		if (Math.abs(bank) > SETTLED_RAD)
+			roll =
+				Math.sign(bank) *
+				stoppingStick(Math.abs(bank), perf.angularAccel, perf.angularMax.roll);
+	}
+	const rates = stepAngular(
+		state.rates,
+		{ pitch, yaw, roll },
+		NO_ROTATION,
+		true,
+		dt,
+		perf,
 	);
-	const turn = cross(previousNose, nose);
-	const turned = Math.asin(clamp(length(turn), 0, 1));
-	const inside = unit(cross(turn, nose), v3());
-	const bank = Math.min(BANK_MAX_RAD, (dt > 0 ? turned / dt : 0) * BANK_GAIN);
-	const want =
-		lengthSq(inside) === 0
-			? level
-			: unit(
-					add(scale(level, Math.cos(bank)), scale(inside, Math.sin(bank))),
-					level,
-				);
-	// Capped at the hull's roll rate, for the nose slew's reason below.
-	const rolled = slew(
-		level,
-		want,
-		Math.min(ROLL_RATE_RAD_S, STRIKER_PERFORMANCE.angularMax.roll) *
-			Math.max(0, dt),
+	const spin = bodySpin(right, up, nose, rates);
+	const rate = length(spin);
+	if (rate === 0 || dt <= 0) return { nose, up, rates };
+	const axis = scale(spin, 1 / rate);
+	const nextNose = unit(rotateAbout(nose, axis, rate * dt), nose);
+	const spunUp = rotateAbout(up, axis, rate * dt);
+	const nextUp = unit(
+		sub(spunUp, scale(nextNose, dot(spunUp, nextNose))),
+		perpBasis(nextNose)[1],
 	);
-	return unit(sub(rolled, scale(nose, dot(rolled, nose))), level);
+	return { nose: nextNose, up: nextUp, rates };
 }
 
 /**
@@ -414,6 +445,7 @@ export function createCombatEnemy(
 		ship: { pos, vel: { ...player.vel } },
 		nose,
 		up: unit(sub(v3(0, 1, 0), scale(nose, nose.y)), perpBasis(nose)[1]),
+		rates: NO_ROTATION,
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,
@@ -456,6 +488,10 @@ export function stepCombatEnemy(
 	laserOrigin: Vec3 = player.pos,
 	laserNose: Vec3 = playerNose,
 	hitRadiusKm: number = ENEMY_COLLISION_RADIUS_KM,
+	/** The velocity the assist treats as at rest — the player's local frame
+	 *  (#324), so both ships' 2 km/s cap is the same speed. The star's frame
+	 *  when omitted, as `stepFlight`'s is. */
+	frameVel?: Vec3,
 ): EnemyFlightStep {
 	const step = Math.max(0, dt);
 	const toPlayer = sub(player.pos, state.ship.pos);
@@ -604,16 +640,12 @@ export function stepCombatEnemy(
 						? unit(add(awayFromPlayer, scale(pullAxis, 0.3)), awayFromPlayer)
 						: attackNose;
 
-	// **Capped at the hull's own turn rate.** The controller slewed at its own
-	// 1.2 rad/s, above the raider hull's `angularMax` and far above the
-	// courier's, so it out-turned any ship flying by the same rules
-	// (`combat-model.md` §1). #324's playtest found the raider unhittable.
-	const nose = slew(
-		state.nose,
-		desired,
-		Math.min(MAX_TURN_RATE_RAD_S, STRIKER_PERFORMANCE.angularMax.yaw) * step,
-	);
-	const up = bankedUp(state.nose, nose, state.up, step);
+	// **Turned through the player's own `stepAngular`** (#324): the hull's rate
+	// limits and its angular acceleration, not a slew that reached full rate in
+	// one frame. The slew had first been faster than the hull allows, and the
+	// first playtest found the raider unhittable.
+	const turned = turnToward(state, desired, step);
+	const { nose, up } = turned;
 
 	// Throttle is closure control in the envelope and everything elsewhere: a
 	// gun run at the speed cap flies past before the guns have paid for it.
@@ -627,7 +659,12 @@ export function stepCombatEnemy(
 	const ship = { pos: { ...state.ship.pos }, vel: { ...state.ship.vel } };
 	// `step`, not `dt`: the clamp above is what stops a negative frame delta
 	// running the integrator backwards, and it has to reach the integrator too.
-	stepFlight(ship, { nose, throttle, assist: true }, step, STRIKER_PERFORMANCE);
+	stepFlight(
+		ship,
+		{ nose, throttle, assist: true, frameVel },
+		step,
+		STRIKER_PERFORMANCE,
+	);
 
 	// Firing follows pointing, in any phase but a rout: a snapshot as the nose
 	// sweeps across the player during a break is a shot a pilot would take.
@@ -643,6 +680,7 @@ export function stepCombatEnemy(
 			ship,
 			nose,
 			up,
+			rates: turned.rates,
 			phase,
 			phaseSeconds,
 			maneuverSeconds,

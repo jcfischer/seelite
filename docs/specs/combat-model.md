@@ -27,12 +27,21 @@ hard jink able to break the aim for a moment.
 
 **The raider may out-handle the courier, by the same rules.** Its hull row
 accelerates at 2.69 km/s² against 2.00 and turns at 1.10 rad/s against 0.90. Its
-controller is capped at that hull's own turn and roll limits. It had slewed at
-1.2 rad/s and rolled at 2.6 rad/s, past what its hull allows, and the first
-playtest found it unhittable. **Only the rates are capped.** The controller
-still reaches its turn rate at once, while the player's ship spins up through
-its hull's angular acceleration (3.65 rad/s² on the raider hull). That is not
-yet the same rule, and it is a follow-up.
+controller turns through the player's own `stepAngular`: the hull's rate limits
+(1.10 rad/s pitch and yaw, 1.71 rad/s roll) and its angular acceleration
+(3.65 rad/s²), so a turn builds rather than starting at full rate. The
+controller asks for the fastest rate that can still stop on its heading. It had
+slewed at 1.2 rad/s and rolled at 2.6 rad/s, past what its hull allows, and the
+first playtest found it unhittable; the rate cap that followed still reached
+full rate in one frame.
+
+**Its assist holds speed in the player's local frame**, the frame the player's
+own assist uses (`DuelPilot.frameVel`). It had held speed in the star's frame,
+so beside a body moving 30 km/s the two 2 km/s caps were different speeds. One
+frame for the fight, not a lookup per ship: the player's frame keeps its body
+through a hysteresis band, and two lookups could pick two frames. **Not yet in
+the `?combat=1` rig**, which passes no frame and still flies its striker in the
+star's frame; part d2 moves the rig onto production rules.
 
 **Shields recharge at 2 points/s**, after the 3 s delay, by the principal's
 ruling after the second playtest. #48's 6/s equalled the pulse's damage rate:
