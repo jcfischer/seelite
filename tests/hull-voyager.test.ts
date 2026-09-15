@@ -60,7 +60,9 @@ describe("voyager is an expedition capital", () => {
 		expect(spec.priceCr).toBeNull();
 	});
 
-	test("it has the longest range in the roster, on both drives", () => {
+	test("it declares the largest tankLy and chargeAu in the roster", () => {
+		// Declared, not flown: the router still reads `JUMP_RANGE_LY`, not the
+		// flown hull's tank, until #185 (CONTEXT.md, **Hyperspace tank**).
 		for (const id of HULL_IDS) {
 			if (id === VOYAGER) continue;
 			expect([id, HULL_SPECS[VOYAGER].tankLy > HULL_SPECS[id].tankLy]).toEqual([
@@ -113,7 +115,7 @@ describe("voyager's shape: a sphere forward, a spine behind it, the drive aft", 
 			const sphereDiameter = sphere.max.z - sphere.min.z;
 			expect(size.z / length).toBeGreaterThan(0.5);
 			expect(Math.max(size.x, size.y)).toBeLessThan(sphereDiameter * 0.4);
-			// Behind the sphere, not through it.
+			// Starts behind the sphere's centre, seated in its after half.
 			expect(spine.min.z).toBeGreaterThan(sphere.min.z + sphereDiameter * 0.5);
 		});
 

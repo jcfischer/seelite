@@ -39,7 +39,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { ROLL_TOLERANCE_DEG } from "../src/docking";
-import { HULL_IDS, type HullId } from "../src/hull";
+import { CAPITAL_HULL_IDS, HULL_IDS, type HullId } from "../src/hull";
 import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,
@@ -47,10 +47,11 @@ import {
 	type StationType,
 } from "../src/station";
 
-/** The capital classes. Named rather than detected by size, so a hull that
- *  grows into capital proportions fails the check instead of joining the
- *  exemption. */
-const CAPITALS: HullId[] = ["carrier", "dreadnought", "voyager"];
+/** The capital classes — `hull.ts`'s named list, imported rather than copied,
+ *  so a capital added there reaches this file (#335's review). Named rather
+ *  than detected by size, so a hull that grows into capital proportions fails
+ *  the check instead of joining the exemption. */
+const CAPITALS: readonly HullId[] = CAPITAL_HULL_IDS;
 
 /** The capitals a *section* refuses: wider or taller than every aperture.
  *  `voyager` (#331) is not one of them — at the film's proportions its section

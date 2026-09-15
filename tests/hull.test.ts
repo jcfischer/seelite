@@ -471,7 +471,7 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			]);
 	});
 
-	test("the two capitals have no price, and it is the ceiling that says so", () => {
+	test("the capitals have no price, and it is the ceiling that says so", () => {
 		// Not a hand-maintained exemption list: the law returns `null` above the
 		// ceiling, and the capitals are above it. A capital that shrank into a
 		// dockable hold would get a price from the same rule.
