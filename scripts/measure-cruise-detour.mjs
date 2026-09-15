@@ -19,7 +19,9 @@ watch(page);
 const rows = [];
 const nonEngagingSeeds = [];
 for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed++) {
-	await page.goto(gameUrl(origin, { seed }));
+	// **`raider: "off"`**: this measures detour legs, and at the leg chance #347
+	// set, seed 17's detour leg was interdicted by Raider 01 before it arrived.
+	await page.goto(gameUrl(origin, { seed, raider: "off" }));
 	await bootedGame(page);
 	const row = await page.evaluate((seed) => {
 		const g = window.__seelite;

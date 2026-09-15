@@ -73,9 +73,12 @@ const ORIGIN =
 /** The seed is the fixture: see the header. A different one is a different
  *  claim, so it is not configurable. */
 const SEED = 481;
+/** **`raider: "off"`**, because this measures arrival and a raider ending the
+ *  leg is not an arrival. At the leg chance #347 set, both legs here were
+ *  interdicted by Raider 01 before they arrived. */
 const URL = gameUrl(
 	ORIGIN,
-	{ seed: SEED },
+	{ seed: SEED, raider: "off" },
 	{ override: process.env.PROBE_URL },
 );
 /** Sim seconds a leg is given. Generous against the ~60 s legs both are. */
