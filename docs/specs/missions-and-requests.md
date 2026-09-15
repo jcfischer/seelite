@@ -52,9 +52,7 @@ Principal evidence, 2026-09-15: the principal answered **“yes”** to that own
 
 A cancelled, unfinished request may be accepted again later. Completed work cannot pay again. Outstanding entrusted cargo from the previous acceptance must be settled before another lot is issued.
 
-Here, unfinished means no successful report settlement, including satisfied objectives awaiting report. Reaccept is offered only for cancelled rows; failed rows remain terminal.
-
-Principal evidence, 2026-09-15: the principal selected **“Allow reacceptance of unfinished work (Recommended)”** after the question expressly included protection against repeated completed-work payment and settlement before another cargo issuance.
+Principal evidence, 2026-09-15: asked **“Should a cancelled, unfinished request be available to accept again later?”**, the principal selected **“Allow reacceptance of unfinished work (Recommended)”**. The question expressly included protection against repeated completed-work payment and settlement before another cargo issuance. It did not ask to reopen failed requests.
 
 ### Clarification — No invented competing intervention
 
@@ -84,11 +82,13 @@ The following rules complete D1–D8. They are proposed implementation rules unt
 
 - An **offer** is work available from a named requester. Opening its row shows details; only its explicit Accept action creates an **accepted request**. Reading an offer, rumor or lead does not accept work.
 - A **lead** is sourced intelligence, independent of acceptance. It may be unconfirmed or identify a learned object. The pilot may retain leads without accepting their associated offers.
-- Each offer has a stable, world-scoped identity: world seed, galaxy index, requester CarrierKey and authored offer slot. A fixed first-episode offer is not regenerated on docking, tab changes or clock epochs. Display names and list positions never supply identity.
+- Each offer has a stable identity inside the saved world's namespace: galaxy index, requester CarrierKey and authored offer slot. The existing envelope's seed supplies world scope; it is not duplicated as an object identity. A fixed first-episode offer is not regenerated on docking, tab changes or clock epochs. Display names and list positions never supply identity.
 - An accepted request is keyed by that offer identity and pins its content revision and terms at acceptance. Changing the available offer later cannot change promised payment, penalties or objective conditions for an accepted job.
 - A lead has a stable signal/report identity within the world namespace, source identity, observation time on the authoritative game clock, learned region and optional identified carrier reference using the full galaxy-scoped identity below. A newer observation refreshes that lead; UI reads derive its age from the clock. Updating intelligence does not silently accept work or change tracking.
 - Requester, target, identified-lead and objective-evidence references reuse the full logical CarrierKey `(galaxyIndex, systemIndex, localCarrierId)` owned by `persistent-world-state.md` §2 and §7. In current code, `src/carrier-key.ts` brands only the envelope-relative `systemIndex:localCarrierId` string. Since this journal is outside a galaxy envelope, serialize each reference as `{ galaxyIndex, carrierKey }`, carrying that unchanged validated string and its explicit galaxy index. This is the existing identity with its containing galaxy restored, not a new key encoding or namespace. Identical local keys in different galaxies must not collide; names are display labels only.
 - The first content set is finite and authored. Multiple offers may be accepted concurrently; there is no implicit single-request limit. Repeating content requires a separately designed episode identity, not clearing the completed row or rerolling the same offer.
+
+`OfferId` is a branded canonical string with format `request-v1/<galaxyIndex>/<systemIndex>/<encodedLocalCarrierId>/<encodedAuthoredOfferSlot>`. Numeric components use their canonical decimal form within the existing galaxy/system bounds; the two textual components use canonical `encodeURIComponent` encoding and must decode to an existing carrier identity and supported authored offer entry. Carrier components reuse `carrier-key.ts`; this introduces a request key, not a replacement carrier key. The saved world's namespace supplies the seed. Loading requires each `byId` key to equal its row's `offerId` and all lot/evidence references to resolve consistently.
 
 ### 2. Required offer details
 
@@ -135,6 +135,8 @@ Every accepted request listens for qualifying progress independently of tracking
 
 Completed and failed rows are terminal; a cancelled row may return to accepted or ready-to-report through explicit Reaccept. The fixed first relay offer cannot pay again after success settlement. Reaccept uses the same identity and pinned terms: it does not clone the job, erase success receipts or retroactively record interventions performed while cancelled. Valid evidence earned while previously accepted remains available, so cancelling a ready-to-report relay request does not require inventing a replacement relay to resume it. A future repeatable completed offer must name a new episode and must not pay for evidence already settled under a previous episode.
 
+For reacceptance, unfinished means no successful report settlement, including satisfied objectives awaiting report. Reaccept is offered only for cancelled rows; failed rows remain terminal under these proposed transition rules.
+
 Once a qualifying intervention is recorded after acceptance, its success evidence persists. A later repair does not revoke that success unless the offer explicitly required a condition to remain true at reporting. The first relay offer rewards the disabling intervention; it does not require the relay to remain disabled indefinitely. This rule permits an explicitly designed recovery later without inventing one now.
 
 ### 4. Cargo and reward ownership
@@ -179,16 +181,17 @@ Add a player request journal to `CommanderRecord`, beside its existing commander
 
 ```ts
 type RequestStatus = "accepted" | "ready-to-report" | "completed" | "cancelled" | "failed";
+type OfferId = string & { readonly __offerId: unique symbol };
 
 interface RequestsState {
-  byId: Record<string, SavedRequest>;
+  byId: Record<OfferId, SavedRequest>;
   leadsById: Record<string, SavedLead>;
   entrustedByLotId: Record<string, SavedEntrustedLot>;
   trackedRequestId: string | null;
 }
 
 interface SavedRequest {
-  offerId: string;                 // validated world-scoped authored identity
+  offerId: OfferId;                // canonical §1 identity; equals containing byId key
   contentRevision: number;
   acceptedAt: number;              // authoritative game clock
   lastAcceptedAt: number;
@@ -205,13 +208,15 @@ interface SavedRequest {
 
 `AcceptedTerms` has the required offer facts from §2, requester/report references and authored objective predicates with their revision; accept-time snapshots contain no live target coordinates. `ObjectiveEvidence` records stage identity, observation/intervention time, galaxy and carrier identity, instance/episode identity where applicable, source and qualifying player role. Keep at most the evidence required for each authored stage; do not depend on a world episode summary surviving forever to prove payment eligibility.
 
-`SavedLead` carries stable lead identity, source identity, observed time, known region, confirmation state and an optional identified carrier reference with explicit galaxy index as in §1. `SavedEntrustedLot` carries lot/request/requester identity, report/return station, item description, per-unit hold usage, aboard quantity, lost quantity and settlement state. These are finite typed records, not arbitrary JSON extensions. The first relay leaves all cargo maps empty.
+`SavedLead` carries stable lead identity, source identity, observed time, known region, confirmation state and an optional identified carrier reference with explicit galaxy index as in §1. It is retained report provenance and an opportunity to search, not another last-known carrier-condition row. The per-galaxy knowledge row in `WorldState` remains authoritative for discovery, observed condition and recovery. Identification writes that row through the explicitly authorized observation channel; exact targeting requires its learned identity. A lead's confirmation records whether its report was corroborated and cannot independently grant discovery or refresh condition. System relay updates continue to reach only their existing station knowledge rows; they neither rewrite a broker's dated report nor reveal a pirate sensor relay. Current known-target cues read WorldState knowledge, while the lead preserves its own source/age. Validate every reference against its named world galaxy and carrier even though the journal is outside the galaxy envelope.
+
+`SavedEntrustedLot` carries lot/request/requester identity, report/return station, item description, per-unit hold usage, aboard quantity, lost quantity and settlement state. Settlement must represent `return-required`, `loss-settlement-required`, `both-required` and `settled`, including goods returned while a lost portion remains unpaid and the inverse. Retain bounded returned/loss-settled quantities and the loss-fee receipt so quantity sums and outstanding portions can be validated, and the disclosed fee cannot be charged again for the same lot. Return removes only aboard goods; loss settlement removes no aboard goods. Fully settled means no outstanding return or loss portion. These are finite typed records, not arbitrary JSON extensions. The first relay leaves all cargo maps empty.
 
 Validate identities, supported content revisions, enum values, finite nonnegative quantities, clock bounds, acceptance ordinals, region geometry, stage/evidence consistency, reserve totals and lot ownership at load. `settledAt` is non-null exactly when status is completed and is null for every other status; it describes the successful report, not cancellation or outstanding cargo settlement. `reservedPlayerCargo` is empty unless status is accepted or ready-to-report. A tracked ID must refer to an accepted or ready-to-report request. Refuse incompatible or inconsistent saves with a useful reason; do not silently drop requests, obligations or settlement receipts. Loaded ready-to-report requests remain ready; loading does not pay or perform turn-in.
 
 Persist only commitment, learned information, bounded evidence, ownership/settlement and the tracked request identity. Derive list ordering, text, next-action projection, lead age, eligibility, current known-target marker and route from authoritative saved state plus the seeded world. Do not save DOM focus, marker coordinates, route chains or countdown copies.
 
-**Versioning:** adding `CommanderRecord.requests` requires a `SAVE_SCHEMA_VERSION` bump, with an explicit compatible migration from the pre-journal envelope to an empty journal. The implementation must pin that supported source revision from `src/save-envelope.ts` in its migration and fixtures. Verify the original envelope's checksum before parsing/migrating it; migrate a copy, retain the stored original until the normal complete-envelope save succeeds, and leave unsupported versions untouched and exportable. No permissive default may silently discard request state from a newer unsupported schema.
+**Versioning:** adding `CommanderRecord.requests` requires a `SAVE_SCHEMA_VERSION` bump, with an explicit compatible migration from the pre-journal envelope to an empty journal. The implementation must pin that supported source revision from `src/save-envelope.ts` in its migration and fixtures. Verify the original envelope's hash before parsing/migrating it; migrate a copy, retain the stored original until the normal complete-envelope save succeeds, and leave unsupported versions untouched and exportable. No permissive default may silently discard request state from a newer unsupported schema.
 
 Request journal additions alone do not change `WORLD_SCHEMA_VERSION` or `WORLD_GENERATOR_VERSION`. A newly generated persistent relay carrier will separately require the generator-baseline version/fingerprint decision owned by its prototype; world-state shape changes require a world-schema migration. Do not conflate these boundaries.
 
