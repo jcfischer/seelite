@@ -7728,6 +7728,7 @@ class Game {
 						killedAt: now,
 						pos: step.wreck.pos,
 						vel: step.wreck.vel,
+						frameVel: this.localFrame(),
 					}),
 				];
 				this.audio.explosion();

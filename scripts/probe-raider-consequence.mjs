@@ -88,7 +88,14 @@ const kill = await page.evaluate(() => {
 						y: shipPos.y + ahead.y * 2,
 						z: shipPos.z + ahead.z * 2,
 					},
-					vel: { ...g.world.ship.vel },
+					// Fleeing at the assist cap, as a raider at its last point of
+					// hull does: the case that left the playtest's canisters out
+					// of reach.
+					vel: {
+						x: g.world.ship.vel.x + ahead.x * g.assistCapKms,
+						y: g.world.ship.vel.y + ahead.y * g.assistCapKms,
+						z: g.world.ship.vel.z + ahead.z * g.assistCapKms,
+					},
 				},
 			},
 			condition: {
@@ -211,28 +218,64 @@ check(
 	JSON.stringify(glass),
 );
 
+// **The scoop is flown, not placed.** This row set the ship onto the canister
+// with the canister's own velocity, which proves the scoop predicate and not
+// that a pilot can reach one. The third playtest could not: a fleeing raider
+// dies at the assist cap, and a canister that kept that velocity held its
+// range for good. The ship flies at the canister through the assist, with the
+// throttle and nose a pilot has, and the raider above died at the cap.
 const scoop = await page.evaluate(() => {
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
+	const cap = g.assistCapKms;
+	const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+	const len = (a) => Math.hypot(a.x, a.y, a.z);
 	const before = g.canisters.length;
-	const c = g.canisters[0];
-	const held = g.commander.cargo[c.commodity] ?? 0;
-	g.world.ship.pos = { ...c.pos };
-	g.world.ship.vel = { ...c.vel };
-	g.step(dt);
-	g.render(dt);
+	const c0 = g.canisters[0];
+	const held = g.commander.cargo[c0.commodity] ?? 0;
+	const frameVel = g.localFrame();
+	const startKm = len(sub(c0.pos, g.world.ship.pos));
+	const canisterKms = len(sub(c0.vel, frameVel));
+	let flownS = null;
+	const limit = Math.round(120 / dt);
+	for (let i = 0; i < limit; i++) {
+		const c = g.canisters.find((x) => x.id === c0.id);
+		if (!c) {
+			flownS = i * dt;
+			break;
+		}
+		// Match the canister's drift and close along the line to it, slowing to
+		// scoop speed as the range falls: the velocity a pilot would ask for.
+		const to = sub(c.pos, g.world.ship.pos);
+		const km = len(to);
+		const closing = Math.min(cap, km);
+		const want = {
+			x: c.vel.x - frameVel.x + (to.x / km) * closing,
+			y: c.vel.y - frameVel.y + (to.y / km) * closing,
+			z: c.vel.z - frameVel.z + (to.z / km) * closing,
+		};
+		g.setAttitude(want, g.shipUp());
+		g.throttle = Math.min(1, len(want) / cap);
+		g.step(dt);
+		g.render(dt);
+	}
+	g.throttle = 0;
 	return {
 		before,
 		after: g.canisters.length,
-		commodity: c.commodity,
+		commodity: c0.commodity,
 		held,
-		now: g.commander.cargo[c.commodity] ?? 0,
+		now: g.commander.cargo[c0.commodity] ?? 0,
 		lastExit: g.lastExit,
+		startKm,
+		canisterKms,
+		flownS,
 	};
 });
 check(
-	"a close, slow pass scoops the canister into the hold",
-	scoop.after === scoop.before - 1 &&
+	"a canister from a raider killed at the cap is flown to and scooped into the hold",
+	scoop.flownS !== null &&
+		scoop.after === scoop.before - 1 &&
 		scoop.now === scoop.held + 1 &&
 		scoop.lastExit.startsWith("scooped"),
 	JSON.stringify(scoop),

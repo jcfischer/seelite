@@ -11,7 +11,8 @@
  *
  * **And cargo.** The wreck drops one to three one-tonne canisters. They are
  * drawn from the kill's own stream, with illegal goods likelier the more
- * lawless the system. They drift on the raider's last velocity and expire
+ * lawless the system. They drift on a fifth of the raider's last velocity
+ * relative to the local frame, and expire
  * after `CANISTER_LIFETIME_S`. Any ship scoops one by passing close at low
  * relative speed, with no module fitted (the principal's rulings).
  *
@@ -72,6 +73,13 @@ export const CANISTER_SCOOP_RADIUS_KM = 0.05;
 export const CANISTER_SCOOP_SPEED_KMS = 0.25;
 /** The largest velocity a canister gains on top of the wreck's, per axis. */
 export const CANISTER_SPREAD_KMS = 0.02;
+/**
+ * The share of the wreck's velocity, relative to the local frame, a canister
+ * keeps. **A fifth, by the principal's ruling after the third playtest.** It
+ * kept all of it, and a fleeing raider dies at the assist cap: its canisters
+ * held their range against a ship flying at the same cap, 22 km off for good.
+ */
+export const CANISTER_KEEP_FRACTION = 0.2;
 
 export interface Canister {
 	id: string;
@@ -97,7 +105,11 @@ export function cargoWeights(
 	);
 }
 
-/** The canisters one kill drops. The same kill always drops the same ones. */
+/**
+ * The canisters one kill drops. The same kill always drops the same ones.
+ * `vel` is the wreck's, and `frameVel` the local frame the player's assist
+ * flies in: a canister keeps `CANISTER_KEEP_FRACTION` of the difference.
+ */
 export function dropCanisters(kill: {
 	systemSeed: number;
 	government: number;
@@ -105,7 +117,12 @@ export function dropCanisters(kill: {
 	killedAt: number;
 	pos: Vec3;
 	vel: Vec3;
+	frameVel: Vec3;
 }): Canister[] {
+	const drift = add(
+		kill.frameVel,
+		scale(sub(kill.vel, kill.frameVel), CANISTER_KEEP_FRACTION),
+	);
 	const second = Math.floor(kill.killedAt) >>> 0;
 	const rand = stream(
 		mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
@@ -132,7 +149,7 @@ export function dropCanisters(kill: {
 			commodity: good.name,
 			tonnes: CANISTER_TONNES,
 			pos: kill.pos,
-			vel: add(kill.vel, v3(spread(), spread(), spread())),
+			vel: add(drift, v3(spread(), spread(), spread())),
 			expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
 		};
 	});

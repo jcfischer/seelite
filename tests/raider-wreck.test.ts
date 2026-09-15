@@ -4,11 +4,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { raiderSlots } from "../src/raider-slots";
+import { ASSIST_CAP_KMS } from "../src/sim";
 import {
 	CANISTER_COUNT,
+	CANISTER_KEEP_FRACTION,
 	CANISTER_LIFETIME_S,
 	CANISTER_SCOOP_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
+	CANISTER_SPREAD_KMS,
 	type Canister,
 	PLAYER_KILL,
 	RAIDER_REPAIR_S,
@@ -20,7 +23,7 @@ import {
 	stepCanisters,
 } from "../src/raider-wreck";
 import { newCommander, scoopCargo } from "../src/station-commerce";
-import { v3 } from "../src/vec3";
+import { length, sub, v3 } from "../src/vec3";
 import {
 	applyTransition,
 	effectiveCarrier,
@@ -74,6 +77,7 @@ const kill = (overrides: Partial<Parameters<typeof dropCanisters>[0]> = {}) =>
 		killedAt: 812.4,
 		pos: v3(100, 0, 0),
 		vel: v3(0, 0, -1),
+		frameVel: v3(0, 0, 0),
 		...overrides,
 	});
 
@@ -118,11 +122,30 @@ describe("the cargo drop", () => {
 		).toBe(true);
 	});
 
-	test("canisters leave on the wreck's velocity, spread a little", () => {
-		for (const c of kill()) {
-			expect(Math.abs(c.vel.z - -1)).toBeLessThan(0.05);
+	test("canisters keep a fifth of the wreck's frame velocity, spread a little", () => {
+		// The wreck flies 1 km/s along -z in a frame moving 30 km/s along +x.
+		const frameVel = v3(30, 0, 0);
+		for (const c of kill({ frameVel, vel: v3(30, 0, -1) })) {
+			expect(CANISTER_KEEP_FRACTION).toBe(0.2);
+			expect(Math.abs(c.vel.x - 30)).toBeLessThanOrEqual(CANISTER_SPREAD_KMS);
+			expect(Math.abs(c.vel.z - -0.2)).toBeLessThanOrEqual(CANISTER_SPREAD_KMS);
 			expect(c.pos).toEqual(v3(100, 0, 0));
 		}
+	});
+
+	test("a canister from a wreck at the assist cap is closable at the cap", () => {
+		// The playtest's case: a fleeing raider dies at the cap, and a canister
+		// that kept its velocity held its range against a ship at the cap.
+		const frameVel = v3(0, 0, 0);
+		for (let s = 0; s < 200; s++)
+			for (const c of kill({
+				killedAt: s,
+				frameVel,
+				vel: v3(ASSIST_CAP_KMS, 0, 0),
+			}))
+				expect(length(sub(c.vel, frameVel))).toBeLessThanOrEqual(
+					ASSIST_CAP_KMS / 2,
+				);
 	});
 });
 

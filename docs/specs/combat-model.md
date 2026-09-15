@@ -81,8 +81,11 @@ state, as three lines: destroyed, under repair, and back in service.
 **The recoverable cargo is one to three one-tonne canisters.** They are drawn
 from the kill's own stream (`DOMAIN.CARGO_DROP`). Illegal goods weigh
 `(7 − government) / 7` of a legal good, so a Corporate State's raiders carry
-none. The canisters leave on the wreck's velocity and expire five minutes after
-the kill. The player's ship scoops one by passing within 50 m at under
+none. A canister keeps a fifth of the wreck's velocity relative to the local
+frame, plus a small spread, and expires five minutes after the kill. It kept
+all of it at first. A fleeing raider dies at the 2 km/s assist cap, so its
+canisters held their range against a ship at the same cap, and the third
+playtest could not reach one; the fifth is the principal's ruling. The player's ship scoops one by passing within 50 m at under
 0.25 km/s relative, with no module, into the hold if it has room. No raider or
 Traffic actor scoops yet. Canisters are flight
 state and are not saved. A reload or a jump loses them, which a five-minute
