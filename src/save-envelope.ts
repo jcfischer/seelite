@@ -35,6 +35,7 @@ import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
 import {
 	emptyRequests,
+	fixtureOffers,
 	parseRequests,
 	type RequestsPrototypeState,
 } from "./requests-prototype";
@@ -67,8 +68,9 @@ import {
  * has shipped a version 1 record, and D8's refusal is what a player would meet
  * if one had.
  */
-// 3 adds the node 343 Requests UI experiment. Schema 2 is migrated below.
-export const SAVE_SCHEMA_VERSION = 3;
+export const SAVE_SCHEMA_VERSION = 2;
+/** Only envelopes carrying the isolated experiment journal use this encoding. */
+export const REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3;
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -216,10 +218,16 @@ const canonicalCommander = (record: CommanderRecord) => {
  * report can read.
  */
 export const serializeSave = (save: SaveEnvelope): unknown => {
+	const { requests, ...commander } = canonicalCommander(save.commander);
+	const hasJournal =
+		Object.keys(requests.byId).length > 0 ||
+		Object.keys(requests.leadsById).length > 0;
 	const body = {
-		saveSchemaVersion: SAVE_SCHEMA_VERSION,
+		saveSchemaVersion: hasJournal
+			? REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION
+			: SAVE_SCHEMA_VERSION,
 		world: serializeWorld(save.world),
-		commander: canonicalCommander(save.commander),
+		commander: hasJournal ? { requests, ...commander } : commander,
 	};
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
@@ -368,7 +376,10 @@ const parseCommander = (
 export function parseSave(raw: unknown): SaveEnvelope {
 	const o = asObject(raw, "envelope");
 	const version = o.saveSchemaVersion;
-	if (version !== SAVE_SCHEMA_VERSION && version !== 2)
+	if (
+		version !== SAVE_SCHEMA_VERSION &&
+		version !== REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION
+	)
 		fail(
 			// The reason alone: the player's sentence — left as it is, Export
 			// takes a copy — is `loadFault`'s, which the overlay puts first.
@@ -423,8 +434,17 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		}
 		if (!stations.has(localId))
 			fail(`Requests requester ${key} does not exist in galaxy ${galaxyIndex}`);
-		if (stations.get(localId) !== offer.requesterName)
-			fail(`Requests requester ${key} name does not match generated station`);
+		// Labels are presentation, not identity. Refresh a parsed copy through
+		// the valid CarrierKey; a naming-policy change cannot invalidate a save.
+		const labels = fixtureOffers(
+			galaxyIndex,
+			key,
+			stations.get(localId)!,
+			offer.observedAt,
+		).find((o) => o.slot === offer.slot)!;
+		offer.requesterName = labels.requesterName;
+		offer.region = labels.region;
+		offer.source = labels.source;
 	}
 	return { world, commander };
 }

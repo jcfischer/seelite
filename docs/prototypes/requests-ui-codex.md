@@ -49,9 +49,12 @@ There is no claim of live relay discoverability, intervention or consequence.
 `CommanderRecord.requests` stores the bounded experiment journal with credits
 and flight state under the complete envelope's existing hash and IndexedDB
 transaction. Actions use the existing dirty/debounce and docking/quit flushes.
-Only `SAVE_SCHEMA_VERSION` changes, from 2 to 3. The compatible source is schema
-2 at main revision `7f1cfd3`; its original hash is verified before migrating a
-copy to an empty journal. Schema 2 carrying a journal is refused. World schema
+Normal Commander writes retain `SAVE_SCHEMA_VERSION = 2` and the exact
+journal-free wire shape. Schema 2 at main revision `7f1cfd3` is read after its
+original hash is verified, with an empty journal added to the in-memory copy.
+Only envelopes carrying experiment entries use the separately named
+`REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3`. Earlier experimental schema-3
+records remain supported. Schema 2 carrying a journal is refused. World schema
 and generator versions are unchanged. Unsupported/corrupt records are refused
 without modifying their input; normal save-store ownership remains in force.
 
@@ -61,7 +64,11 @@ Commander catalog. Production builds cannot enable fixture controls via the
 query flag. Schema 3 is the experiment's bounded encoding; it does not claim to
 implement §7's future entrusted-cargo or production evidence domains.
 
-The parser checks scoped offer/requester identity and display name against generated stations,
+The parser checks scoped offer/requester identity against generated stations
+and refreshes copied presentation labels through that valid CarrierKey. A
+station naming-policy change does not invalidate a correctly keyed journal.
+Pinned reward, eligibility, stages, evidence and settlement do not change.
+It also checks
 supported fixture terms, stage/evidence agreement, clock bounds, terminal
 settlement and valid active tracking. This intentionally supports only the two
 authored no-cargo entries; entrusted cargo and a general request engine are
@@ -70,14 +77,17 @@ outside this experiment.
 ## Verification and principal operation
 
 `bun test tests/requests-prototype.test.ts tests/requests-save.test.ts
-tests/save-envelope.test.ts tests/save-store.test.ts` covers 89 cases.
-The complete headless suite passed 2,101 tests. The final repairs passed
+tests/save-envelope.test.ts tests/save-store.test.ts tests/station-console.test.ts`
+covers 111 cases. TypeScript additionally verifies that Requests is valid in
+the live cockpit and refused by the two-tab gallery contract.
+The complete headless suite passed 2,102 tests. The final repairs passed
 the guarded 25-check headed flow, TypeScript,
 build and format gates. The browser probe includes native Tab/Enter and prevents
 a rapid Accept double-click from selecting the newly drawn Track action.
 It also checks release of a flight key after opening Requests, reuse of docked
 offers and preservation of a separate normal Commander catalog across fixture
-payment and save/load. The production bundle compiles `requestFixtures` to false
+payment and save/load. The catalog comparison takes read-only snapshots; the
+probe writes no normal save. The production bundle compiles `requestFixtures` to false
 and refuses all experiment actions outside the development trial.
 
 `node scripts/probe-requests.mjs` runs the guarded normal-Game flow with the

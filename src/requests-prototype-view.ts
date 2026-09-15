@@ -1,6 +1,6 @@
 /** Cockpit projection for the fixture-backed node 343 experiment. */
 import {
-	activeRequest,
+	isAcceptedRequest,
 	nextAction,
 	type PrototypeOffer,
 	type RequestsPrototypeState,
@@ -70,7 +70,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 	for (const lead of Object.values(state.leadsById))
 		if (!flight || !state.byId[lead.id]) entries.set(lead.id, lead);
 	const selected = view.selectedId ? entries.get(view.selectedId) : null;
-	const count = Object.values(state.byId).filter(activeRequest).length;
+	const count = Object.values(state.byId).filter(isAcceptedRequest).length;
 	const rows = [...entries.values()]
 		.map((o) => {
 			const r = state.byId[o.id];
@@ -117,7 +117,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				o.id,
 				r ? "Reaccept request" : "Accept request",
 			);
-		if (r && activeRequest(r)) {
+		if (r && isAcceptedRequest(r)) {
 			actions += button(
 				state.trackedRequestId === o.id ? "untrack" : "track",
 				o.id,
@@ -134,7 +134,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			actions += button("cancel", o.id, "Cancel request · no fee");
 		}
 		let fixtures = "";
-		if (view.fixtures && r && activeRequest(r)) {
+		if (view.fixtures && r && isAcceptedRequest(r)) {
 			const stage =
 				r.status === "accepted" && r.unavailableAt === null
 					? button(
@@ -147,5 +147,5 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		}
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span> · unconfirmed fixture report` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atRequester ? `<p>Report after docking at ${esc(o.requesterName)}. Remote payment is unavailable.</p>` : ""}${fixtures}</div>`;
 	}
-	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · one manual cue · ${flight ? "accepted work and retained leads" : "available offers and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No authored offers here. Use ?requests-prototype=1 to load the UI experiment."}</p>`}</div>${details}</div></div>`;
+	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · one manual cue · ${flight ? "accepted work and retained leads" : "available offers and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No authored offers here."}</p>`}</div>${details}</div></div>`;
 }

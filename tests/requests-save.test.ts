@@ -56,7 +56,7 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 			}),
 		),
 	);
-	expect(SAVE_SCHEMA_VERSION).toBe(3);
+	expect(SAVE_SCHEMA_VERSION).toBe(2);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	delete body.commander.requests;
@@ -95,7 +95,7 @@ test("request journal cannot reference a nonexistent generated requester", () =>
 	);
 });
 
-test("request journal rejects an invented name for an existing requester", () => {
+test("requester labels refresh by CarrierKey without rejecting or changing the stored input", () => {
 	const world = newWorld(42);
 	world.gameTime = 20;
 	const commander = newCommanderRecord("courier");
@@ -116,7 +116,29 @@ test("request journal rejects an invented name for an existing requester", () =>
 			docked: offers[0].requester,
 		},
 	).state;
-	expect(() => parseSave(serializeSave({ world, commander }))).toThrow(
-		"requester",
+	const raw = serializeSave({ world, commander });
+	const before = JSON.stringify(raw);
+	const loaded = parseSave(raw);
+	expect(loaded.commander.requests.byId[offers[0].id].terms.requesterName).toBe(
+		"USQULAVE",
 	);
+	expect(loaded.commander.requests.byId[offers[0].id].terms.requester).toEqual(
+		offers[0].requester,
+	);
+	expect(loaded.commander.requests.byId[offers[0].id].terms.rewardCr).toBe(250);
+	expect(JSON.stringify(raw)).toBe(before);
+});
+
+test("normal Commander writes keep schema 2 and its journal-free wire shape", () => {
+	const save = {
+		world: newWorld(42),
+		commander: newCommanderRecord("courier"),
+	};
+	const raw = serializeSave(save) as {
+		saveSchemaVersion: number;
+		commander: Record<string, unknown>;
+	};
+	expect(raw.saveSchemaVersion).toBe(2);
+	expect(raw.commander.requests).toBeUndefined();
+	expect(parseSave(raw)).toEqual(save);
 });

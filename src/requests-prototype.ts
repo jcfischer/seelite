@@ -91,12 +91,12 @@ export function fixtureOffers(
 				: ["search", "identify"],
 	}));
 }
-export const activeRequest = (r: PrototypeRequest) =>
+export const isAcceptedRequest = (r: PrototypeRequest) =>
 	r.status === "accepted" || r.status === "ready-to-report";
 export function nextAction(r: PrototypeRequest): string {
 	if (r.status === "ready-to-report")
 		return `Return to ${r.terms.requesterName} · dock and Report`;
-	if (!activeRequest(r)) return r.outcomeReason ?? r.status;
+	if (!isAcceptedRequest(r)) return r.outcomeReason ?? r.status;
 	if (r.unavailableAt !== null)
 		return `Observed target unavailable · return to report information, or cancel`;
 	if (r.stageId === "search") return `Search · ${r.terms.region}`;
@@ -168,8 +168,8 @@ export function requestAction(
 			rewardCr: 0,
 		};
 	}
-	if (!existing || !activeRequest(existing))
-		return refuse("Choose an active request first.");
+	if (!existing || !isAcceptedRequest(existing))
+		return refuse("Choose an accepted request first.");
 	if (ctx.now < existing.lastAcceptedAt)
 		return refuse("Action predates acceptance.");
 	if (action === "track" || action === "untrack")
@@ -235,7 +235,7 @@ export function requestAction(
 			...state,
 			byId: { ...state.byId, [id]: r },
 			trackedRequestId:
-				state.trackedRequestId === id && !activeRequest(r)
+				state.trackedRequestId === id && !isAcceptedRequest(r)
 					? null
 					: state.trackedRequestId,
 		},
@@ -390,7 +390,7 @@ export function parseRequests(
 		s.trackedRequestId !== null &&
 		(typeof s.trackedRequestId !== "string" ||
 			!out.byId[s.trackedRequestId] ||
-			!activeRequest(out.byId[s.trackedRequestId]))
+			!isAcceptedRequest(out.byId[s.trackedRequestId]))
 	)
 		bad();
 	out.trackedRequestId = s.trackedRequestId;

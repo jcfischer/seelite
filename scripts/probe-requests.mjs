@@ -41,12 +41,20 @@ try {
 	});
 	await bootedGame(page);
 	console.log("BOOTED");
-	// A normal catalog record at the same origin must stay outside the trial.
-	await page.evaluate(async () => {
+	// Read-only snapshot: the probe never writes to the normal catalog.
+	const normalBefore = await page.evaluate(async () => {
 		const { indexedDbSaveBackend } = await import("/src/save-store.ts");
-		await indexedDbSaveBackend().write("Normal commander", "live", {
-			sentinel: "unchanged",
-		});
+		const normal = indexedDbSaveBackend();
+		const slots = await normal.slots();
+		return JSON.stringify(
+			await Promise.all(
+				slots.map(async (slot) => [
+					slot,
+					await normal.read(slot, "live"),
+					await normal.read(slot, "lastDocked"),
+				]),
+			),
+		);
 	});
 	const station = await page.evaluate(async () => {
 		const g = window.__seelite;
@@ -302,19 +310,26 @@ try {
 	});
 	check(
 		"fixture journal and payment leave the normal Commander catalog untouched",
-		await page.evaluate(async () => {
+		await page.evaluate(async (before) => {
 			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
 			const normal = indexedDbSaveBackend();
+			const slots = await normal.slots();
+			const after = JSON.stringify(
+				await Promise.all(
+					slots.map(async (slot) => [
+						slot,
+						await normal.read(slot, "live"),
+						await normal.read(slot, "lastDocked"),
+					]),
+				),
+			);
 			return (
-				JSON.stringify(await normal.slots()) ===
-					JSON.stringify(["Normal commander"]) &&
-				JSON.stringify(await normal.read("Normal commander", "live")) ===
-					JSON.stringify({ sentinel: "unchanged" }) &&
+				after === before &&
 				(await indexedDB.databases()).some(
 					(d) => d.name === "seelite-requests-prototype-saves",
 				)
 			);
-		}),
+		}, normalBefore),
 	);
 	await page.goto(gameUrl(origin, { "requests-prototype": true }), {
 		waitUntil: "load",
