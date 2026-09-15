@@ -171,6 +171,34 @@ replaced; the row stores only when the fact was learned and from what source,
 never the generated value, which the baseline supplies once a marker exists.
 _Avoid_: Live map state, discovery status
 
+**Offer**:
+Work available from a named requester. `docs/specs/missions-and-requests.md` §1–2 owns offer identity, details and acceptance.
+_Avoid_: Accepted request (before explicit acceptance)
+
+**Lead**:
+Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5).
+_Avoid_: Mission, confirmed target (for unconfirmed intelligence)
+
+**Accepted request**:
+A job the pilot has explicitly committed to undertaking for a requester. `docs/specs/missions-and-requests.md` owns concurrent commitments and progress (D1 and §3).
+_Avoid_: Active mission (when implying a single accepted job)
+
+**Tracked request**:
+The accepted request the pilot has chosen to guide the cockpit next-action cue. `docs/specs/missions-and-requests.md` owns manual tracking and its interface (D2 and §6).
+_Avoid_: Active request (when conflating tracking with acceptance)
+
+**Ready to report**:
+An accepted request whose objective has been satisfied but whose result has not yet been reported to the requester. `docs/specs/missions-and-requests.md` §3–5 owns report eligibility and settlement.
+_Avoid_: Completed request (before reporting)
+
+**Search region**:
+The bounded area a lead gives the pilot to search before identifying a hidden target. `docs/specs/missions-and-requests.md` owns region cues and identification boundaries (D5 and §6).
+_Avoid_: Target position (before identification)
+
+**Entrusted cargo**:
+Requester-owned goods carried in the pilot's hold for a request. `docs/specs/missions-and-requests.md` §4 owns hold usage, sale restrictions and return/loss settlement.
+_Avoid_: Player cargo, reward cargo
+
 **System relay**:
 The public station-condition report received when the initial world is
 established or the player later enters a system (#116). It refreshes Last-known
