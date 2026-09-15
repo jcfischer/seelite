@@ -633,6 +633,17 @@ cannot show the variety a solved form is for), and selected for their roles.
 So a solved form is what the game draws for the refinery now, and every
 refinery in the galaxy is its own plant.
 
+Trade carries a fifth form, **E — Wheel** (#332), a close homage to *2001*'s
+Space Station V requested by the principal: two box-section rims on one axis,
+one plated with its ports lit and the other still a lattice, on a hub whose
+front cap carries the slot. The unfinished rim is lattice **all the way round**
+— four continuous rails with plated sections set inside them — because the
+whole Wheel spins, and a half-built arc would be an outline that depends on the
+clock (§7.2). The section is a box rather than the Ring's tube, which is what
+tells the two ring forms apart. The hub is sized from §13.1's bay rather than
+from the slot, so the bay stands inside it. It entered the pool unselected, for
+a ranking round, as the Assembly did.
+
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are
 **A** because round one ranked their slot first. **Refinery and outpost are D
@@ -675,8 +686,8 @@ resolves at medium range and vanishes at scanner range. #36's visual pass
 (`station-visuals.md`) owns all of it and is keyed on the *role*, so it survived
 this rebuild untouched.
 
-All procedural, per the map constraint: twelve parameterised meshes generated at
-load, no downloaded assets.
+All procedural, per the map constraint: every form is a parameterised mesh
+generated at load, no downloaded assets.
 
 ---
 

@@ -190,7 +190,7 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   against the **slot** forms' `core` box, which is the body their slot is cut
   into. The two pad roles are excluded and the exclusion is moot rather than a
   residue since #165: they have no bay to poke through anything, and what stands
-  in front of their plane is measured by the corridor row over all twelve forms.
+  in front of their plane is measured by the corridor row over every form.
   A ray cast from inside still cannot stand in for the slot roles — a hull mesh
   is `FrontSide` and the ray passes straight through.
 - **A shipyard is a rotating drum with a static spine, and the spine goes aft.**
