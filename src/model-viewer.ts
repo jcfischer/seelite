@@ -3,8 +3,11 @@
  * `Game`: this is a fast visual review surface for render assets, not a second
  * simulation route.
  *
- * **Two families now, one workbench.** `?model-viewer=ship` reviews #35's hull
- * roles and `?model-viewer=station` reviews #56's station forms. The second was
+ * **Three families now, one workbench.** `?model-viewer=ship` reviews #35's hull
+ * roles, `?model-viewer=station` reviews #56's station forms, and
+ * `?model-viewer=rama` shows #333's alien cylinder, which has one concept and
+ * no ranking to do — it is here because the stage frames from a reach and a
+ * 28 km object needs exactly that. The second was
  * nearly a copy of this file — the orbit, the ranking, the draft sliders and the
  * stage are the same apparatus, and only what is being built differs — and two
  * workbenches would have drifted the first time either was improved. So the
@@ -15,6 +18,7 @@ import * as THREE from "three";
 
 import { HULL_IDS, HULL_SPECS, type HullId } from "./hull";
 import { LIGHT_RIG, equirectEnvironment } from "./light-rig";
+import { RAMA_REACH_KM, RAMA_VARIANTS, buildRamaMesh } from "./rama-mesh";
 import {
 	HULL_REACH_KM,
 	HULL_VARIANTS,
@@ -168,7 +172,32 @@ const STATION_FAMILY: ModelFamily = {
 	setFinish: (id) => setStationFinish(id as StationFinishId),
 };
 
-const FAMILIES: ModelFamily[] = [SHIP_FAMILY, STATION_FAMILY];
+/**
+ * #333: Rama, drawn and nothing more. One asset, one concept, and one
+ * "finish" that is the model as built — it has no surface presets because
+ * nothing on it was painted, and a finish axis with nothing to switch would be
+ * a control that does nothing.
+ */
+const RAMA_FAMILY: ModelFamily = {
+	id: "rama",
+	title: "RAMA · REFERENCE MODEL",
+	copy: "The alien cylinder from Clarke's <i>Rendezvous with Rama</i>, 50 km by 20 km. It has no role in the game yet; this is where it is looked at.",
+	assets: ["rama"],
+	variantIds: RAMA_VARIANTS.map((variant) => variant.id),
+	variants: () => RAMA_VARIANTS,
+	reachKm: () => RAMA_REACH_KM,
+	build: (_asset, variant) =>
+		buildRamaMesh(variant as (typeof RAMA_VARIANTS)[number]["id"]).root,
+	// Nothing on it is lit.
+	emissive: () => false,
+	finishes: [
+		{ id: "as-built", name: "As built", thesis: "unpainted, unlit, unplated" },
+	],
+	finishId: () => "as-built",
+	setFinish: () => {},
+};
+
+const FAMILIES: ModelFamily[] = [SHIP_FAMILY, STATION_FAMILY, RAMA_FAMILY];
 
 type ViewerState = {
 	asset: string;
