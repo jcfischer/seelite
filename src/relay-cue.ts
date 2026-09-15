@@ -8,6 +8,7 @@
  * Headless: strings and numbers in, markup out. `live-cockpit.ts` patches it
  * into the glass on its own key, because the bearing moves every frame.
  */
+import type { OperationalCondition } from "./world-state";
 
 export type RelayCuePhase =
 	/** Inside signal range, not yet identified: strength and bearing. */
@@ -30,7 +31,7 @@ export interface RelayCue {
 	watched: string;
 	/** Range in km once identified; null while only the signal is read. */
 	km: number | null;
-	condition: string;
+	condition: OperationalCondition;
 }
 
 export const RELAY_CUE_STYLE = `

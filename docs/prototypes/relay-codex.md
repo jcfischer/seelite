@@ -87,8 +87,8 @@ to reverse at the close.
   relay does not conjure a raider: `certain` still needs an operational slot.
 - **D2 — One relay per system, watching the trade station.** The station
   every player returns to, so the route is the one they fly. Where a system
-  has no trade station the first station is watched; where it has none, there
-  is no relay.
+  has no trade station the next role in order is watched — shipyard, refinery,
+  outpost; where it has none, there is no relay.
 - **D3 — Placement is hundreds of kilometres, not thousands.** 400–800 km
   along the station's orbit, 120 km off its plane, co-moving. Normal flight
   is capped at 2 km/s, so a search is a few minutes and not a commute.
@@ -97,7 +97,7 @@ to reverse at the close.
   contact and a target only inside 150 km, well under scanner range, so the
   scanner cannot find it first.
 - **D5 — The intervention is the pulse laser, and the kill is a destroy.**
-  60 hull points, no shields, against a 60 m hit sphere: ten seconds of fire.
+  60 hull points, no shields, against a hit sphere derived to contain the built form (about 83 m): ten seconds of fire.
   `destroy` rather than `disable` because only a destroy carries a scheduled
   replacement in the world-state model, which is what puts the recovery on
   the game clock and in the log without a new mechanism.
@@ -124,7 +124,7 @@ to station-trade            100.0%       0.0%
 to station-shipyard          25.4%      25.4%
 ```
 
-`scripts/probe-relay.mjs` flies the loop in the running game, 20 checks: the
+`scripts/probe-relay.mjs` flies the loop in the running game, 21 checks: the
 arrival point reads nothing; six legs to the trade station all meet a raider
 and twenty-four to the shipyard meet some and not all; the cue inside the
 signal and the identification inside its range; the kill in 100 steps on the

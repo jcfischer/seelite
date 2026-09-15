@@ -197,8 +197,8 @@ export function scheduleEncounter(
 	legOrdinal: number,
 	startedAtS: number,
 	/** The pirate relay's dial on this leg (#43): `law` unless the leg is on
-	 *  a watched route. */
-	detection: RouteDetection = "law",
+	 *  a watched route. Required, for `holdT`'s reason. */
+	detection: RouteDetection,
 ): Encounter | null {
 	const drawn = legEncounter(
 		record.seed,

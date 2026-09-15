@@ -71,7 +71,7 @@ per system watches one station's route (`src/pirate-relay.ts`): a leg whose
 target is that station meets a raider on **every** leg while the relay is
 operational and on **no** leg while it is destroyed or repairing, and every
 other leg keeps the chance above. The dial skips the chance and not the draw.
-Destroying it is the first #41 loop in the game — found by its signal,
+Destroying it is the first #41 loop on infrastructure in the game (the raider kill above was the first on a ship) — found by its signal,
 identified inside 150 km, spent by ten seconds of pulse fire, replaced an hour
 later on the clock — and it runs behind `?relay-prototype=1` in development
 builds until the principal has flown it. `docs/prototypes/relay-codex.md`

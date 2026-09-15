@@ -20,13 +20,13 @@ import { relayDetection, relayPlan } from "../src/pirate-relay";
 import { raiderLegChance } from "../src/raider-slots";
 import { makeWorld } from "../src/sim";
 
-const seed = Number(process.argv[2] ?? 42);
-const legs = Number(process.argv[3] ?? 2000);
-
 const finite = (n: number, what: string): number => {
 	if (!Number.isFinite(n)) throw new Error(`${what} is ${n}`);
 	return n;
 };
+
+const seed = finite(Number(process.argv[2] ?? 42), "seed");
+const legs = finite(Number(process.argv[3] ?? 2000), "legs");
 
 const world = makeWorld(seed);
 const { record, contents } = world.system;

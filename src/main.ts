@@ -335,7 +335,11 @@ import {
 	scheduleEncounter,
 	stepEncounter,
 } from "./encounter";
-import { type EncounterBearing, RAIDER_HULL_ID } from "./raider-slots";
+import {
+	type EncounterBearing,
+	RAIDER_HULL_ID,
+	type RouteDetection,
+} from "./raider-slots";
 import { berthCentre, recomposeDirection } from "./arrival";
 import {
 	type DockPhase,
@@ -7933,13 +7937,7 @@ class Game {
 		const leg = Math.floor(now);
 		// #43: the relay's dial on this leg — `law` unless the leg's target is the
 		// station the relay watches.
-		const detection = RELAY_PROTOTYPE
-			? relayDetection(
-					this.currentRelayPlan(),
-					this.targetId,
-					this.slotOperational(relaySlot(record.index).key),
-				)
-			: "law";
+		const detection = this.relayDetectionNow();
 		this.encounter =
 			scheduleEncounter(
 				this.slotOperational,
@@ -8101,7 +8099,9 @@ class Game {
 	/** #43: what the glass shows of the relay, or null with nothing to show. */
 	private relayCue(): RelayCue | null {
 		const v = this.relayView;
-		if (!v || (!v.signal && !v.identified)) return null;
+		// Inside the signal's range only, identified or not: an identified relay a
+		// system away is the Navigation list's to find, not a cue to carry.
+		if (!v?.signal) return null;
 		// At the clock as it stands, for `relayNow`'s reason: the cue is what
 		// the pilot steers by, and read from the frame start it put the relay
 		// 0.9 km off at 4.9 km in one capture.
@@ -8207,14 +8207,20 @@ class Game {
 			},
 			hull: this.relayHull,
 			listed: this.relayListed,
-			detection: RELAY_PROTOTYPE
-				? relayDetection(
-						plan,
-						this.targetId,
-						this.slotOperational(relaySlot(record.index).key),
-					)
-				: "law",
+			detection: this.relayDetectionNow(),
 		};
+	}
+
+	/** #43: the relay's dial on a leg to the selected target, as it stands.
+	 *  One expression, read by the scheduler and by the probe readout. */
+	private relayDetectionNow(): RouteDetection {
+		if (!RELAY_PROTOTYPE) return "law";
+		const record = this.world.system.record;
+		return relayDetection(
+			this.currentRelayPlan(),
+			this.targetId,
+			this.slotOperational(relaySlot(record.index).key),
+		);
 	}
 
 	/**

@@ -86,9 +86,14 @@ describe("the plan", () => {
 			stations: contents.stations.filter((s) => s.type !== "trade"),
 		};
 		expect(without.stations.length).toBeGreaterThan(0);
-		expect(relayPlan(without, record.seed)?.watchedStationId).toBe(
-			without.stations[0].id,
-		);
+		// The fallback is a role order, not list order: shipyard before
+		// refinery before outpost, whatever the generator's push order was.
+		const byRole = ["shipyard", "refinery", "outpost"]
+			.map((type) => without.stations.find((s) => s.type === type))
+			.find((s) => s !== undefined);
+		expect(relayPlan(without, record.seed)?.watchedStationId).toBe(byRole?.id);
+		const reversed = { ...without, stations: [...without.stations].reverse() };
+		expect(relayPlan(reversed, record.seed)?.watchedStationId).toBe(byRole?.id);
 		// #23's unreachable systems: no station, so no relay.
 		expect(none).toBeLessThan(5);
 	});

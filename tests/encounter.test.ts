@@ -127,7 +127,7 @@ describe("scheduling", () => {
 		let checked = 0;
 		for (let leg = 0; leg < 200; leg++) {
 			const drawn = legEncounter(record.seed, record.government, leg);
-			const e = scheduleEncounter(ALL_UP, 5, record, leg, 100);
+			const e = scheduleEncounter(ALL_UP, 5, record, leg, 100, "law");
 			if (!drawn) {
 				expect(e).toBeNull();
 				continue;
@@ -153,7 +153,7 @@ describe("scheduling", () => {
 			const down = slots[drawn.slotIndex].key;
 			// Only the drawn slot is down; the others are up, and still unused.
 			expect(
-				scheduleEncounter((k) => k !== down, 5, record, leg, 100),
+				scheduleEncounter((k) => k !== down, 5, record, leg, 100, "law"),
 			).toBeNull();
 			checked++;
 		}
@@ -317,7 +317,7 @@ describe("the relay's dial on the leg (node #43)", () => {
 	});
 	test("the default is the law", () => {
 		for (let leg = 0; leg < 200; leg++)
-			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0)).toEqual(
+			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0, "law")).toEqual(
 				scheduleEncounter(ALL_UP, 5, record, leg, 0, "law"),
 			);
 	});

@@ -157,7 +157,7 @@ export interface RelayPlan {
 }
 
 /** The station a system's relay watches: the trade station where there is
- *  one, otherwise the first. */
+ *  one, otherwise the next role in this order. */
 const WATCH_ORDER = ["trade", "shipyard", "refinery", "outpost"] as const;
 
 export function relayPlan(
@@ -262,7 +262,7 @@ export function relaySignal(shipPos: Vec3, relayPos: Vec3): RelaySignal | null {
 
 /** Who replaces a system's relay. Out of sight, so it updates no knowledge. */
 export const relayReplacementActor = (systemIndex: number): Provenance => ({
-	causeKind: "raider-replacement",
+	causeKind: "relay-replacement",
 	actorId: `raider-network-${systemIndex}`,
 	playerRole: "none",
 });
