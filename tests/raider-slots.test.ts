@@ -5,7 +5,8 @@
  * - raiders are **enumerated** world-state slots, and a system can hold more
  *   than one, because several may attack together later;
  * - a leg's chance of an encounter falls with the system's law, and a
- *   Corporate State keeps a smaller chance rather than none;
+ *   Corporate State keeps a smaller chance rather than none (`combat-model.md`
+ *   §3 owns the figures);
  * - a raider appears behind, alongside or ahead of the player.
  */
 import { describe, expect, test } from "bun:test";
@@ -55,6 +56,12 @@ describe("the leg law", () => {
 			expect(raiderLegChance(g)).toBeLessThan(raiderLegChance(g - 1));
 		expect(raiderLegChance(7)).toBeGreaterThan(0);
 		expect(raiderLegChance(0)).toBeLessThan(1);
+	});
+
+	test("the principal's rate: 60% of legs in an Anarchy, 20% in a Corporate State", () => {
+		// The ruling of 2026-09-15; `combat-model.md` §3 has the reason.
+		expect(raiderLegChance(0)).toBeCloseTo(0.6, 12);
+		expect(raiderLegChance(7)).toBeCloseTo(0.2, 12);
 	});
 
 	test("an encounter is a pure function of system, law and leg", () => {

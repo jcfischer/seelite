@@ -627,15 +627,21 @@ const PLAYER_PERFORMANCE: FlightPerformance = flightPerformance(PLAYER_HULL[0]);
 const playerFullCondition = (): ShipCondition => fullCondition(PLAYER_HULL[0]);
 
 /**
- * `?raider` puts a raider on every cruise leg, five seconds in (#324).
+ * `?raider` puts a raider on every cruise leg, five seconds in (#324), and
+ * `?raider=off` (or `0`, or `false`) puts one on none.
  *
- * A playtest affordance of `?hull=`'s kind: the leg law is a chance, and a
- * pilot judging the contest should not have to fly legs until one comes. The
- * bearing cycles through behind, alongside and ahead by leg.
+ * Both are affordances of `?hull=`'s kind. The leg law is a chance, and a pilot
+ * judging the contest should not have to fly legs until one comes; the bearing
+ * cycles through behind, alongside and ahead by leg. And a probe or a capture
+ * that cruises for another reason — an arrival, a detour, a traversal — should
+ * not have its leg ended by an interdiction it is not about, which the raised
+ * leg chance (`RAIDER_LEG_CHANCE`, combat-model §3) made likely. Neither gates
+ * `forceRaider`. With neither, the leg law runs as a player meets it.
  */
-const RAIDER_PLAYTEST = new URLSearchParams(window.location.search).has(
-	"raider",
-);
+const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
+const RAIDERS_OFF =
+	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
+const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
 const PLAYTEST_BEARINGS: readonly EncounterBearing[] = [
 	"behind",
 	"alongside",
@@ -7790,7 +7796,7 @@ class Game {
 
 	/** Draw the leg's encounter, if the leg has none running. */
 	private scheduleLegEncounter() {
-		if (this.combatRig) return;
+		if (this.combatRig || RAIDERS_OFF) return;
 		if (this.encounter && this.encounter.phase !== "over") return;
 		const record = this.world.system.record;
 		const now = this.world.gameTime;
