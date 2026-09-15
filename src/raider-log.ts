@@ -1,5 +1,6 @@
 /**
- * The Communications log's raider lines (node #324 part d).
+ * The Communications log's lifecycle lines (node #324 part d, and the pirate
+ * relay's in #43).
  *
  * **Shown in the Communications log, by the principal's ruling**, so recovery
  * is visible and caused rather than a silent respawn (#41). Each line is
@@ -23,6 +24,53 @@ export interface RaiderLogLine {
 	text: string;
 }
 
+/**
+ * One carrier's destroyed → under repair → back in service lines at
+ * `gameTime`, oldest first, or none if it was never destroyed. One derivation
+ * for every carrier the log names, so the relay's lines cannot read a
+ * different schedule from the raider's.
+ */
+export function lifecycleLines(
+	env: GalaxyEnvelope,
+	key: CarrierKey,
+	name: string,
+	gameTime: number,
+): RaiderLogLine[] {
+	const episode = env.episodes[key];
+	if (!episode || episode.initiating.kind !== "destroy") return [];
+	const destroyedAt = episode.initiating.occurredAt;
+	if (gameTime < destroyedAt) return [];
+	const delta = env.objective[key];
+	const startsAt =
+		delta?.scheduled?.startsAt ??
+		(episode.intervention?.kind === "replacement-start"
+			? episode.intervention.occurredAt
+			: undefined);
+	const completesAt =
+		delta?.scheduled?.completesAt ??
+		(delta?.recovery?.kind === "replacement"
+			? delta.recovery.completesAt
+			: undefined) ??
+		(episode.latest.kind === "replacement-complete"
+			? episode.latest.occurredAt
+			: undefined);
+	const lines: RaiderLogLine[] = [
+		{ at: destroyedAt, key, text: `${name} destroyed` },
+	];
+	if (startsAt !== undefined && gameTime >= startsAt)
+		lines.push({ at: startsAt, key, text: `${name} under repair` });
+	if (completesAt !== undefined && gameTime >= completesAt)
+		lines.push({ at: completesAt, key, text: `${name} back in service` });
+	return lines;
+}
+
+/** Newest first; a tie keeps the order the lines were given in. */
+export const newestFirst = (lines: RaiderLogLine[]): RaiderLogLine[] =>
+	lines
+		.map((line, i) => ({ line, i }))
+		.sort((a, b) => b.line.at - a.line.at || a.i - b.i)
+		.map(({ line }) => line);
+
 /** The raider lines for one system at `gameTime`, newest first. */
 export function raiderLog(
 	env: GalaxyEnvelope,
@@ -31,40 +79,9 @@ export function raiderLog(
 	gameTime: number,
 ): RaiderLogLine[] {
 	const lines: RaiderLogLine[] = [];
-	for (const [ordinal, slot] of raiderSlots(
-		systemIndex,
-		government,
-	).entries()) {
-		const episode = env.episodes[slot.key];
-		if (!episode || episode.initiating.kind !== "destroy") continue;
-		const destroyedAt = episode.initiating.occurredAt;
-		if (gameTime < destroyedAt) continue;
-		const name = raiderName(ordinal);
-		const delta = env.objective[slot.key];
-		const startsAt =
-			delta?.scheduled?.startsAt ??
-			(episode.intervention?.kind === "replacement-start"
-				? episode.intervention.occurredAt
-				: undefined);
-		const completesAt =
-			delta?.scheduled?.completesAt ??
-			(delta?.recovery?.kind === "replacement"
-				? delta.recovery.completesAt
-				: undefined) ??
-			(episode.latest.kind === "replacement-complete"
-				? episode.latest.occurredAt
-				: undefined);
-		lines.push({ at: destroyedAt, key: slot.key, text: `${name} destroyed` });
-		if (startsAt !== undefined && gameTime >= startsAt)
-			lines.push({ at: startsAt, key: slot.key, text: `${name} under repair` });
-		if (completesAt !== undefined && gameTime >= completesAt)
-			lines.push({
-				at: completesAt,
-				key: slot.key,
-				text: `${name} back in service`,
-			});
-	}
-	return lines.sort((a, b) => b.at - a.at);
+	for (const [ordinal, slot] of raiderSlots(systemIndex, government).entries())
+		lines.push(...lifecycleLines(env, slot.key, raiderName(ordinal), gameTime));
+	return newestFirst(lines);
 }
 
 /** A log line as the console prints it: the game clock as `mm:ss`, then the

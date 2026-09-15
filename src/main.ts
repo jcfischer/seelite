@@ -300,7 +300,26 @@ import {
 	clampToCone,
 	stepGimbal,
 } from "./gimbal";
-import { formatRaiderLogLine, raiderLog } from "./raider-log";
+import { formatRaiderLogLine, newestFirst, raiderLog } from "./raider-log";
+import {
+	RELAY_HIT_RADIUS_KM,
+	RELAY_IDENTIFY_RANGE_KM,
+	RELAY_INTEGRITY,
+	RELAY_NAME,
+	type RelayPlan,
+	type RelaySignal,
+	relayDestruction,
+	relayDetection,
+	relayInSights,
+	relayLog,
+	relayPlan,
+	relayPosition,
+	relaySignal,
+	relaySlot,
+	relayVelocity,
+} from "./pirate-relay";
+import { buildRelayMesh } from "./relay-mesh";
+import type { RelayCue } from "./relay-cue";
 import {
 	type Canister,
 	dropCanisters,
@@ -477,7 +496,10 @@ import {
 	advanceTo,
 	applyTransition,
 	effectiveCarrier,
+	observe,
 	observeSystemRelay,
+	readKnowledge,
+	type OperationalCondition,
 	setDeficits,
 	type TransitionEvent,
 	visit,
@@ -648,6 +670,28 @@ const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
+/**
+ * #43's pirate relay prototype: development builds only, on
+ * `?relay-prototype=1`, the way #343's Requests trial is gated. The relay's
+ * carrier key exists regardless (`pirate-relay.ts`), so nothing about a save
+ * depends on the query string; what the flag turns on is the drawn relay, its
+ * signal, its target and its dial on the leg law.
+ */
+const RELAY_PROTOTYPE =
+	import.meta.env.DEV &&
+	new URLSearchParams(window.location.search).has("relay-prototype");
+
+/** What one frame read of the relay (#43), for the renderer and the glass. */
+interface RelayView {
+	key: CarrierKey;
+	pos: Vec3;
+	vel: Vec3;
+	condition: OperationalCondition;
+	identified: boolean;
+	signal: RelaySignal | null;
+	/** The watched station's display name. */
+	watched: string;
+}
 const PLAYTEST_BEARINGS: readonly EncounterBearing[] = [
 	"behind",
 	"alongside",
@@ -1690,6 +1734,28 @@ class Game {
 		legalStatus: null,
 		scannerClass: "hostile",
 	};
+	/** #43: the pirate relay's plan for the system the ship is in, cached by
+	 *  system index. Pure in the system, so never saved. */
+	private relayPlanCache: RelayPlan | null = null;
+	private relayPlanSystem = -1;
+	/** Hull points left on the relay this visit. Flight state: not saved, and
+	 *  a jump leaves it behind (`clearSystemScopedState`). */
+	relayHull = RELAY_INTEGRITY;
+	private relayListed = false;
+	private readonly relayContact: DisplayContact = {
+		id: "",
+		name: RELAY_NAME.toUpperCase(),
+		kind: "relay",
+		pos: v3(),
+		velocity: v3(),
+		radiusKm: RELAY_HIT_RADIUS_KM,
+		color: 0xff6a4a,
+		legalStatus: null,
+		scannerClass: "hostile",
+	};
+	private readonly relayMesh = buildRelayMesh();
+	/** What this frame read of the relay, for the renderer and the glass. */
+	private relayView: RelayView | null = null;
 	/** Current-system Traffic authority is pure; these are disposable presentation caches. */
 	private trafficSystemIndex = -1;
 	private trafficTick = Number.NaN;
@@ -6112,6 +6178,7 @@ class Game {
 				star: 2,
 				moon: 3,
 				ship: 4,
+				relay: 5,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -7397,6 +7464,10 @@ class Game {
 		this.navEtaAt = Number.NEGATIVE_INFINITY;
 		this.navOrder = [];
 		this.selectableCache = null;
+		// #43: the relay is the system's; its plan and its hull go with the system.
+		this.relayPlanSystem = -1;
+		this.relayPlanCache = null;
+		this.relayHull = RELAY_INTEGRITY;
 	}
 
 	/**
@@ -7850,8 +7921,24 @@ class Game {
 		const record = this.world.system.record;
 		const now = this.world.gameTime;
 		const leg = Math.floor(now);
+		// #43: the relay's dial on this leg — `law` unless the leg's target is the
+		// station the relay watches.
+		const detection = RELAY_PROTOTYPE
+			? relayDetection(
+					this.currentRelayPlan(),
+					this.targetId,
+					this.slotOperational(relaySlot(record.index).key),
+				)
+			: "law";
 		this.encounter =
-			scheduleEncounter(this.slotOperational, record.index, record, leg, now) ??
+			scheduleEncounter(
+				this.slotOperational,
+				record.index,
+				record,
+				leg,
+				now,
+				detection,
+			) ??
 			(RAIDER_PLAYTEST
 				? forceEncounter(
 						this.slotOperational,
@@ -7917,6 +8004,172 @@ class Game {
 			view.pos.z - cameraPos.z,
 		);
 		this.trafficQuaternion(view, this.raiderMesh.quaternion);
+	}
+
+	/** #43: the relay's plan for the system the ship is in, cached by system. */
+	private currentRelayPlan(): RelayPlan | null {
+		const { record, contents } = this.world.system;
+		if (this.relayPlanSystem !== record.index) {
+			this.relayPlanSystem = record.index;
+			this.relayPlanCache = relayPlan(contents, record.seed);
+		}
+		return this.relayPlanCache;
+	}
+
+	/**
+	 * #43: read the relay this frame, identify it inside its range, and land
+	 * the player's shot on it.
+	 *
+	 * Identification is a knowledge write through `observe`, so the row rides
+	 * the save the way a docking report does. The shot is the beam test the
+	 * duel uses (`playerLaserHit`) against the relay's own hull sphere, from
+	 * the gimballed aim the duel fires along. The kill is the slot's `destroy`
+	 * through `applyCarrierTransition`, the one writer every carrier
+	 * transition in the game goes through.
+	 */
+	private stepRelay(shot: PlayerShot) {
+		const plan = RELAY_PROTOTYPE ? this.currentRelayPlan() : null;
+		if (!plan) {
+			this.relayView = null;
+			return;
+		}
+		const { record, contents } = this.world.system;
+		const now = this.world.gameTime;
+		const key = relaySlot(record.index).key;
+		const pos = relayPosition(plan, contents, now);
+		const vel = relayVelocity(plan, contents, now);
+		const signal = relaySignal(this.world.ship.pos, pos);
+		let identified =
+			readKnowledge(this.commerceWorld.galaxies[record.galaxy], key) !==
+			undefined;
+		if (!identified && signal && signal.km <= RELAY_IDENTIFY_RANGE_KM) {
+			this.commerceWorld = observe(
+				this.commerceWorld,
+				record.galaxy,
+				key,
+				now,
+				"identification",
+			);
+			this.saveDirty();
+			identified = true;
+			this.lastExit = "pirate relay identified";
+		}
+		if (
+			this.carrierCondition(key).condition === "operational" &&
+			shot.fired &&
+			shot.damage > 0 &&
+			relayInSights(this.cameraPos(), this.beamAim(), pos)
+		) {
+			this.relayHull = Math.max(0, this.relayHull - shot.damage);
+			if (this.relayHull === 0) {
+				this.applyCarrierTransition(
+					key,
+					relayDestruction(record.index, now, plan.watchedStationId),
+				);
+				this.audio.explosion();
+				this.lastExit = "pirate relay destroyed";
+			}
+		}
+		this.relayView = {
+			key,
+			pos,
+			vel,
+			condition: this.carrierCondition(key).condition,
+			identified,
+			signal,
+			watched:
+				this.world.system.byId.get(plan.watchedStationId)?.name ??
+				plan.watchedStationId,
+		};
+	}
+
+	/** #43: what the glass shows of the relay, or null with nothing to show. */
+	private relayCue(): RelayCue | null {
+		const v = this.relayView;
+		if (!v || (!v.signal && !v.identified)) return null;
+		const dir = directionTo(this.world.ship.pos, v.pos);
+		const offNoseDeg = dir
+			? (angleOffNose(dir, this.nose()) * 180) / Math.PI
+			: 0;
+		return {
+			phase: !v.identified
+				? "signal"
+				: v.condition === "operational"
+					? "identified"
+					: "down",
+			strength: v.signal?.strength ?? 0,
+			offNoseDeg,
+			arrowDeg: targetArrowBearingDeg(
+				this.world.ship.pos,
+				v.pos,
+				this.orientation,
+			),
+			watched: v.watched,
+			km: v.identified ? length(sub(v.pos, this.world.ship.pos)) : null,
+			condition: v.condition,
+		};
+	}
+
+	/** #43: place the relay's mesh and contact, or take them away. The contact
+	 *  is listed only once identified; the mesh is drawn whenever the relay is
+	 *  read, because it is a physical thing whether or not it has been found. */
+	private updateRelayPresentation(cameraPos: Vec3) {
+		const v = this.relayView;
+		const contact = this.relayContact;
+		const delist = () => {
+			if (!this.relayListed) return;
+			this.unregisterContact(contact);
+			this.relayListed = false;
+			this.selectableCache = null;
+			if (this.targetId === contact.id) this.targetId = null;
+		};
+		if (!v) {
+			delist();
+			this.relayMesh.root.removeFromParent();
+			return;
+		}
+		if (!v.identified || contact.id !== v.key) delist();
+		contact.id = v.key;
+		contact.pos.x = v.pos.x;
+		contact.pos.y = v.pos.y;
+		contact.pos.z = v.pos.z;
+		contact.velocity.x = v.vel.x;
+		contact.velocity.y = v.vel.y;
+		contact.velocity.z = v.vel.z;
+		if (v.identified && !this.relayListed) {
+			this.registerContact(contact);
+			this.relayListed = true;
+			this.selectableCache = null;
+		}
+		const root = this.relayMesh.root;
+		if (!root.parent) this.nearScene.add(root);
+		if (root.userData.condition !== v.condition)
+			this.relayMesh.setCondition(v.condition);
+		root.position.set(
+			v.pos.x - cameraPos.x,
+			v.pos.y - cameraPos.y,
+			v.pos.z - cameraPos.z,
+		);
+	}
+
+	/** #43: the relay as a probe reads it. */
+	relayReadout() {
+		const plan = this.currentRelayPlan();
+		const record = this.world.system.record;
+		return {
+			enabled: RELAY_PROTOTYPE,
+			plan,
+			view: this.relayView,
+			hull: this.relayHull,
+			listed: this.relayListed,
+			detection: RELAY_PROTOTYPE
+				? relayDetection(
+						plan,
+						this.targetId,
+						this.slotOperational(relaySlot(record.index).key),
+					)
+				: "law",
+		};
 	}
 
 	/**
@@ -8326,6 +8579,7 @@ class Game {
 		this.struckFor = Math.max(0, this.struckFor - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
+		this.stepRelay(shot);
 		this.stepCargoCanisters(dt);
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
@@ -8746,6 +9000,7 @@ class Game {
 		const camPos = this.cameraPos();
 		this.updateTrafficPresentation(camPos);
 		this.updateEncounterPresentation(camPos);
+		this.updateRelayPresentation(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
 		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
@@ -9379,15 +9634,28 @@ class Game {
 			// Derived only while that console's tab is open (sage #330).
 			raiderLog:
 				this.leftTab === "Communications"
-					? raiderLog(
-							this.commerceWorld.galaxies[this.world.system.record.galaxy],
-							this.world.system.record.index,
-							this.world.system.record.government,
-							this.world.gameTime,
-						)
+					? newestFirst([
+							...raiderLog(
+								this.commerceWorld.galaxies[this.world.system.record.galaxy],
+								this.world.system.record.index,
+								this.world.system.record.government,
+								this.world.gameTime,
+							),
+							// #43: the relay's lifecycle in the same log, same derivation.
+							...(RELAY_PROTOTYPE
+								? relayLog(
+										this.commerceWorld.galaxies[
+											this.world.system.record.galaxy
+										],
+										this.world.system.record.index,
+										this.world.gameTime,
+									)
+								: []),
+						])
 							.slice(0, 6)
 							.map(formatRaiderLogLine)
 					: [],
+			relay: this.relayCue(),
 			tuning: this.tuningSummary(),
 			requests: this.requestFixtures
 				? this.requestsView(dockContext)
@@ -10822,7 +11090,11 @@ class Game {
 					ctx.lineTo(at.x + sx * r - sx * (r * 0.45), at.y + sy * r);
 					ctx.stroke();
 				}
-				if (body.kind === "station" || body.kind === "ship") {
+				if (
+					body.kind === "station" ||
+					body.kind === "ship" ||
+					body.kind === "relay"
+				) {
 					const km = length(sub(body.pos, camPos));
 					const text = `${body.name}  ${range(km)}`;
 					const x = at.x + r + 6;

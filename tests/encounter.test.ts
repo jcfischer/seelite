@@ -296,3 +296,29 @@ describe("the duel in play", () => {
 		expect(flown.e.end).toBe("escaped");
 	});
 });
+
+describe("the relay's dial on the leg (node #43)", () => {
+	const record = generateGalaxy(WORLD, 0).systems[5];
+	test("`certain` schedules a raider on every leg with an operational slot, `none` on no leg", () => {
+		for (let leg = 0; leg < 200; leg++) {
+			expect(
+				scheduleEncounter(ALL_UP, 5, record, leg, 0, "certain"),
+			).not.toBeNull();
+			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0, "none")).toBeNull();
+		}
+	});
+	test("`certain` still sends nobody when the drawn slot is down", () => {
+		// The relay tells the raiders where to look; it does not conjure one.
+		const NONE_UP = () => false;
+		for (let leg = 0; leg < 50; leg++)
+			expect(
+				scheduleEncounter(NONE_UP, 5, record, leg, 0, "certain"),
+			).toBeNull();
+	});
+	test("the default is the law", () => {
+		for (let leg = 0; leg < 200; leg++)
+			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0)).toEqual(
+				scheduleEncounter(ALL_UP, 5, record, leg, 0, "law"),
+			);
+	});
+});

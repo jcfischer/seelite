@@ -75,7 +75,15 @@ import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
  * Includes display ships (#52). The generator retains its narrower
  * `PlacedBody["kind"]`; a display contact never joins the generated body list.
  */
-export type BodyKind = "star" | "planet" | "moon" | "station" | "ship";
+/** `relay` is #43's pirate sensor relay: a contact, never a generated body,
+ *  and a kind of its own so the Target panel and the marker label can name it. */
+export type BodyKind =
+	| "star"
+	| "planet"
+	| "moon"
+	| "station"
+	| "ship"
+	| "relay";
 
 export interface Body {
 	id: string;

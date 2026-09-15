@@ -25,6 +25,10 @@ export function targetDesignation(body: Body | null): string {
 		return body.stationType
 			? `STATION · ${body.stationType.toUpperCase()}`
 			: "STATION";
+	if (body.kind === "relay")
+		return isDisplayContact(body)
+			? `RELAY · ${body.scannerClass.toUpperCase()}`
+			: "RELAY";
 	if (body.kind !== "ship") return body.kind.toUpperCase();
 	if (!isDisplayContact(body)) return "SHIP · UNKNOWN";
 	return ["SHIP", body.shipType?.toUpperCase(), body.scannerClass.toUpperCase()]

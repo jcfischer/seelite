@@ -42,6 +42,7 @@ import {
 	type EncounterBearing,
 	RAIDER_HULL_ID,
 	type RaiderSlot,
+	type RouteDetection,
 	legEncounter,
 	raiderName,
 	raiderSlots,
@@ -195,8 +196,16 @@ export function scheduleEncounter(
 	record: { seed: number; government: number },
 	legOrdinal: number,
 	startedAtS: number,
+	/** The pirate relay's dial on this leg (#43): `law` unless the leg is on
+	 *  a watched route. */
+	detection: RouteDetection = "law",
 ): Encounter | null {
-	const drawn = legEncounter(record.seed, record.government, legOrdinal);
+	const drawn = legEncounter(
+		record.seed,
+		record.government,
+		legOrdinal,
+		detection,
+	);
 	if (!drawn) return null;
 	const slot = raiderSlots(systemIndex, record.government)[drawn.slotIndex];
 	// **The route threat is gone while the carrier is not operational** (#41,

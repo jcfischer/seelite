@@ -69,6 +69,10 @@ export const DOMAIN = {
 	 *  many canisters and of what. Split again by the carrier and the second
 	 *  of the kill, so no two kills share a draw. */
 	CARGO_DROP: 15,
+	/** The pirate sensor relay's placement (`pirate-relay.ts`, #43): which way
+	 *  along the watched station's orbit it stands, how far, and how far off
+	 *  the plane. Its own tag, so a relay draw moves no station or berth. */
+	RELAY: 16,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

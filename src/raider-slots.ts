@@ -71,6 +71,17 @@ export const ENCOUNTER_DELAY_S = [8, 40] as const;
 /** How far from the player it appears, km. Inside the contest's range. */
 export const ENCOUNTER_RANGE_KM = [20, 50] as const;
 
+/**
+ * The pirate relay's dial on the leg law (node #43, `pirate-relay.ts`).
+ *
+ * `law` is the draw above. `certain` is a route the relay watches while it is
+ * operational: the raiders are told about every ship on it, so every leg
+ * meets one (given an operational slot to send). `none` is that route while
+ * the relay is down: the raiders are blind there. Other routes are never
+ * anything but `law`.
+ */
+export type RouteDetection = "law" | "certain" | "none";
+
 export type EncounterBearing = "behind" | "alongside" | "ahead";
 const BEARINGS: readonly EncounterBearing[] = ["behind", "alongside", "ahead"];
 
@@ -100,9 +111,15 @@ export function legEncounter(
 	systemSeed: number,
 	government: number,
 	legOrdinal: number,
+	detection: RouteDetection = "law",
 ): LegEncounter | null {
+	if (detection === "none") return null;
 	const rand = stream(mix(systemSeed, legOrdinal >>> 0), DOMAIN.ENCOUNTER);
-	if (rand() >= raiderLegChance(government)) return null;
+	// The chance is drawn whatever the dial says, so a `certain` leg meets the
+	// same raider the same way the law would have: the dial skips the test and
+	// not the draw.
+	const chance = rand();
+	if (detection === "law" && chance >= raiderLegChance(government)) return null;
 	const count = raiderSlotCount(government);
 	return {
 		slotIndex: Math.min(count - 1, Math.floor(rand() * count)),
