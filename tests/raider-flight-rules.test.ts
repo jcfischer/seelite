@@ -88,10 +88,15 @@ function noseRates(seed: number, seconds: number) {
 	return { rates, enemy };
 }
 
-test("the nose's turn builds at the hull's angular acceleration, and the limit binds", () => {
+/**
+ * **The row that was red on `main`, and all it shows is that the snap is
+ * gone.** Measured in world space, the nose's rate mixes pitch, yaw and the
+ * roll carrying the turn axis round, so its bound is loose: about twice what
+ * one axis at the hull's acceleration would allow (sage #345). The exact rule
+ * is the next row's.
+ */
+test("the nose's turn rate does not snap from one frame to the next", () => {
 	const { angularMax, angularAccel } = RAIDER;
-	// Pitch and yaw each accelerate at `angularAccel`, so their sum at √2 of it;
-	// rolling carries the turn axis round at up to the roll rate.
 	const bound =
 		(Math.SQRT2 * angularAccel + angularMax.yaw * angularMax.roll) * DT * 1.05;
 	let largest = 0;
@@ -100,9 +105,44 @@ test("the nose's turn builds at the hull's angular acceleration, and the limit b
 		for (let i = 1; i < rates.length; i++)
 			largest = Math.max(largest, length(sub(rates[i], rates[i - 1])));
 	}
+	// `main`'s slew read 2.19 rad/s in one frame here.
 	expect(largest).toBeLessThanOrEqual(bound);
-	// A raider that never turned hard would pass the bound on nothing.
-	expect(largest).toBeGreaterThan(0.5 * angularAccel * DT);
+});
+
+/**
+ * The exact rule, on the body rates `stepAngular` carries: **a rate only grows
+ * through a commanded acceleration**, by at most `angularAccel · dt` a step.
+ * The assist's damping and the rate clamp only ever shrink one, so shrinking is
+ * not bounded here — it is faster than the acceleration at full rate, for the
+ * player's ship as well.
+ */
+test("each body rate grows by at most the hull's angular acceleration, and that limit binds", () => {
+	const player = { pos: v3(), vel: v3() };
+	const playerNose = v3(0, 0, -1);
+	const step = RAIDER.angularAccel * DT;
+	let largest = 0;
+	for (const seed of [1, 99, 777, 12345]) {
+		let enemy = createCombatEnemy(player, playerNose, seed);
+		for (let t = 0; t < 40; t += DT) {
+			const before = enemy.rates;
+			enemy = stepCombatEnemy(
+				enemy,
+				player,
+				playerNose,
+				createCombatPrototype(),
+				false,
+				DT,
+			).state;
+			for (const axis of ["pitch", "yaw", "roll"] as const)
+				largest = Math.max(
+					largest,
+					Math.abs(enemy.rates[axis]) - Math.abs(before[axis]),
+				);
+		}
+	}
+	expect(largest).toBeLessThanOrEqual(step + 1e-12);
+	// A raider that never spun up at full acceleration would pass on nothing.
+	expect(largest).toBeGreaterThan(0.9 * step);
 });
 
 test("a turn settles on its heading instead of hunting around it", () => {

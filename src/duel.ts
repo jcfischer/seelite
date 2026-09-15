@@ -21,6 +21,7 @@
 import {
 	type CombatEnemyState,
 	type EnemyReadout,
+	NO_ROTATION,
 	playerLaserHit,
 	stepCombatEnemy,
 } from "./combat-enemy";
@@ -67,8 +68,10 @@ export interface DuelPilot {
 	hull: number;
 	/** The player's local frame, which the raider's assist holds its speed in
 	 *  too (#324): one frame for the fight, so both caps are the same speed.
-	 *  The star's frame when omitted. */
-	frameVel?: Vec3;
+	 *  **Required** (sage #345), for `FlightPerformance`'s reason: a builder
+	 *  that forgot it would silently fly the raider in the star's frame. Pass
+	 *  `v3()` to mean the star's frame. */
+	frameVel: Vec3;
 }
 
 /** The player's gun this step, as `stepCondition` already settled it. */
@@ -102,7 +105,7 @@ export function raiderAtDrop(
 		ship: { pos: { ...pos }, vel: { ...player.vel } },
 		nose,
 		up: cross(across, nose),
-		rates: { pitch: 0, yaw: 0, roll: 0 },
+		rates: NO_ROTATION,
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,

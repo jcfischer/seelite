@@ -472,7 +472,8 @@ test("the enemy presses the attack instead of holding a standoff orbit", () => {
  * **Measured again when the striker began turning through `stepAngular`**
  * (#324), on seeds 1, 99, 777, 12345 and 2 to 5 at 45 s: **0.296–0.306** on the
  * slew controller and **0.276–0.316** on `stepAngular`. Seed 777 is the low
- * one. The lockout arm was not re-run.
+ * one. `scripts/measure-raider-duel.ts` reprints them with the other duel
+ * figures; run it at two refs to compare. The lockout arm was not re-run.
  */
 test("a player who keeps their nose on it cannot suppress its guns", () => {
 	for (const seed of DUEL_SEEDS) {

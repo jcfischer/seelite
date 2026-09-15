@@ -326,8 +326,20 @@ function rotateAbout(v: Vec3, axis: Vec3, angle: number): Vec3 {
 const reperp = (v: Vec3, dir: Vec3): Vec3 =>
 	unit(sub(v, scale(dir, dot(v, dir))), perpBasis(dir)[0]);
 
-/** No mouse: the controller commands the stick alone. */
-const NO_IMPULSE: Angular = { pitch: 0, yaw: 0, roll: 0 };
+/** Rates at rest: a new ship's, and the controller's mouse impulse, since it
+ *  commands the stick alone. Frozen, so sharing one object is safe. */
+export const NO_ROTATION: Angular = Object.freeze({
+	pitch: 0,
+	yaw: 0,
+	roll: 0,
+});
+
+/** Body rates as a world-space angular velocity, in the ship's own axes. */
+const bodySpin = (right: Vec3, up: Vec3, nose: Vec3, rates: Angular): Vec3 =>
+	add(
+		add(scale(right, rates.pitch), scale(up, rates.yaw)),
+		scale(nose, rates.roll),
+	);
 /** Closer than this the nose is on its heading and the stick is released, so
  *  the assist's damping finishes the stop rather than the command hunting. */
 const SETTLED_RAD = 1e-3;
@@ -371,11 +383,9 @@ function turnToward(
 		pitch = dot(arc, right) * stick;
 		yaw = dot(arc, up) * stick;
 	}
-	// The way the nose is swinging now, and the up axis rolled toward it.
-	const swing = cross(
-		add(scale(right, state.rates.pitch), scale(up, state.rates.yaw)),
-		nose,
-	);
+	// The way the nose is swinging now, and the up axis rolled toward it. Roll
+	// spins about the nose and swings nothing, so it drops out of the cross.
+	const swing = cross(bodySpin(right, up, nose, state.rates), nose);
 	let roll = 0;
 	if (length(swing) > TURNING_RAD_S) {
 		const inside = unit(swing, up);
@@ -388,15 +398,12 @@ function turnToward(
 	const rates = stepAngular(
 		state.rates,
 		{ pitch, yaw, roll },
-		NO_IMPULSE,
+		NO_ROTATION,
 		true,
 		dt,
 		perf,
 	);
-	const spin = add(
-		add(scale(right, rates.pitch), scale(up, rates.yaw)),
-		scale(nose, rates.roll),
-	);
+	const spin = bodySpin(right, up, nose, rates);
 	const rate = length(spin);
 	if (rate === 0 || dt <= 0) return { nose, up, rates };
 	const axis = scale(spin, 1 / rate);
@@ -438,7 +445,7 @@ export function createCombatEnemy(
 		ship: { pos, vel: { ...player.vel } },
 		nose,
 		up: unit(sub(v3(0, 1, 0), scale(nose, nose.y)), perpBasis(nose)[1]),
-		rates: { pitch: 0, yaw: 0, roll: 0 },
+		rates: NO_ROTATION,
 		phase: "acquire",
 		phaseSeconds: 0,
 		maneuverSeconds: 30,

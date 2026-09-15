@@ -62,12 +62,16 @@ const duel = await page.evaluate(() => {
 	let fastest = 0;
 	let frames = 0;
 	for (let i = 0; i < Math.round(3 / dt) && g.encounter; i++) {
+		// **The frame the step flew in**, read before it (sage #345): `Game`
+		// reads it at the start of the frame, and after the step the station's
+		// frame has moved on by up to 7.7e-4 km/s, more than this row's margin.
+		const frame = g.localFrame();
 		g.step(dt);
 		g.render(dt);
 		const r = g.encounter?.raider;
 		if (!r) continue;
 		frames++;
-		fastest = Math.max(fastest, len(sub(r.flight.ship.vel, g.localFrame())));
+		fastest = Math.max(fastest, len(sub(r.flight.ship.vel, frame)));
 	}
 	return {
 		regime: g.regime,
