@@ -412,6 +412,11 @@ glass reads it. The block is shown under the same predicate as the glass row and
 hidden in peace, with an inline `display` rather than the `hidden` attribute,
 which loses to `.lc-readout`'s own `display`.
 
+**The cue and the tracer follow the gimballed beam** (`combat-model.md` §2.1).
+The ON TARGET mark tests the beam's direction, not the boresight. The tracer
+ends where the beam meets the glass, and a small ring marks that point while
+the gimbal has turned the beam more than 0.2° off the boresight.
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either

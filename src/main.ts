@@ -290,6 +290,12 @@ import {
 	drawGunTracer,
 	stepGunFeedback,
 } from "./gun-feedback";
+import {
+	GIMBAL_CONE_RAD,
+	angleBetween,
+	clampToCone,
+	stepGimbal,
+} from "./gimbal";
 import { formatRaiderLogLine, raiderLog } from "./raider-log";
 import {
 	type Canister,
@@ -1844,6 +1850,9 @@ class Game {
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
+	/** The gimballed beam's direction, or `null` before the first step, when it
+	 *  is the boresight (`gimbal.ts`). */
+	gunAim: Vec3 | null = null;
 	/** The tracer's geometry and pacing, for a probe to read rather than restate. */
 	readonly gunTracer = {
 		ports: TRACER_PORTS,
@@ -6302,6 +6311,26 @@ class Game {
 		return forwardOf(this.cameraRotation());
 	}
 
+	/** Where the gimballed beam points (#324): the boresight turned toward the
+	 *  selected target within the gimbal's cone. */
+	private beamAim(): Vec3 {
+		const bore = this.weaponAim();
+		// **Clamped at every read, not only when stepped.** The gimbal steps at
+		// the frame's start, and the attitude can change later in the same frame;
+		// a stored beam read after that could point outside the new cone. The
+		// duel-hud probe turned the ship a quarter turn between step and render
+		// and still saw ON TARGET.
+		return this.gunAim ? clampToCone(this.gunAim, bore, GIMBAL_CONE_RAD) : bore;
+	}
+
+	/** One step of the gimbal toward the selected target, before the shot. */
+	private stepGunGimbal(dt: number) {
+		const bore = this.weaponAim();
+		const target = this.targetBody();
+		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
+		this.gunAim = stepGimbal(this.gunAim ?? bore, bore, targetDir, dt);
+	}
+
 	/** The ship's up-vector in sim space — what `docking.md` §3's roll match is
 	 *  measured against, and the second half of an attitude the flight model
 	 *  deliberately does not hold (`sim.ts` keeps positions, not orientation). */
@@ -7327,6 +7356,7 @@ class Game {
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
 		this.canisters = [];
+		this.gunAim = null;
 		this.lastExit = "";
 		this.detour = null;
 		this.frameBody = null;
@@ -7643,7 +7673,8 @@ class Game {
 				ship: this.world.ship,
 				nose: this.nose(),
 				aimOrigin: this.cameraPos(),
-				aimNose: this.weaponAim(),
+				// The gimballed beam, not the boresight (#324).
+				aimNose: this.beamAim(),
 				hull: this.condition.hull,
 			},
 			shot,
@@ -8216,6 +8247,7 @@ class Game {
 		// The raider reads the player where the frame starts, as the ship and the
 		// world masses are read, and may drop the player out of cruise before the
 		// regime branch below chooses how to fly this frame.
+		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
 		this.stepCargoCanisters(dt);
 		// #48 deliberately couples no combat entity to the world yet: this is a
@@ -10408,12 +10440,31 @@ class Game {
 		// whole frame in chase, where there is no glass (sage #328 — a chase view
 		// with no tracer is the dead-key defect again). The rig draws its own
 		// below, and with the rig on the trigger never reaches this gun.
+		// The gimballed beam's point on the glass (#324): the tracer ends there,
+		// and while the gimbal has turned the beam off the boresight a small pip
+		// shows where it points.
+		const beam = this.beamAim();
+		const beamAt = place(beam);
+		const beamOnGlass = beamAt?.on
+			? { x: beamAt.x / w, y: beamAt.y / h }
+			: null;
+		if (
+			beamAt?.on &&
+			angleBetween(beam, this.weaponAim()) > 0.2 * (Math.PI / 180)
+		) {
+			ctx.strokeStyle = "rgba(116, 234, 255, 0.9)";
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.arc(beamAt.x, beamAt.y, 5, 0, Math.PI * 2);
+			ctx.stroke();
+		}
 		if (this.gunFeedback.tracerLeftS > 0)
 			drawGunTracer(
 				ctx,
 				w,
 				h,
 				this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1,
+				beamOnGlass ?? undefined,
 			);
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger
@@ -10524,7 +10575,7 @@ class Game {
 			raiderSelected &&
 			onTargetMark(
 				this.encounter?.phase ?? null,
-				raiderInSights(camPos, this.weaponAim(), selectedBody.pos),
+				raiderInSights(camPos, this.beamAim(), selectedBody.pos),
 			);
 		// Built once, because the declutter reservation and the paint must agree.
 		const selectedLabel = (name: string, km: number) =>

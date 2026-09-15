@@ -15,6 +15,29 @@ Every combat ship obeys the same movement, collision, weapon, energy, shield, an
 - **Missiles:** a target must remain in a forward acquisition cone through a short, uninterrupted lock. Breaking line of sight or cone breaks the lock. Launch warns the target; maneuvering and a consumable ECM provide counterplay. An uncountered missile destroys a standard light combat ship and inflicts a large, but not automatically lethal, hull hit on tougher ships.
 - **Pacing target:** tune a matched starter duel with a prototype: 20–30 seconds of sustained pulse fire destroys an unshielded hull; shields, breaks, and energy decisions make a typical duel 60–90 seconds.
 
+### 2.1 The gimbal and the g loads (#324, the principal's rulings)
+
+**The pulse laser is gimballed.** The beam turns toward the **selected target**
+while that target is within **±5°** of the boresight. It slews at **1.5 rad/s**
+and never leaves the cone; with no target, or outside the cone, it returns to
+the boresight (`src/gimbal.ts`). A hit is still tested against the target's
+**true hull** (a 32 m sphere for the raider), by ruling. The gimbal is what
+makes a nimbler ship hittable, not a larger target. The finite slew keeps a
+hard jink able to break the aim for a moment.
+
+**The raider may out-handle the courier, by the same rules.** Its hull row
+accelerates at 2.69 km/s² against 2.00 and turns at 1.10 rad/s against 0.90. Its
+controller is capped at that hull's own turn and roll limits. It had slewed at
+1.2 rad/s and rolled at 2.6 rad/s, past what its hull allows, and the first
+playtest found it unhittable.
+
+**The g loads are arcade, and stay so.** Thrust is about 204 g for the courier
+and 274 g for the raider, and a turn at the 2 km/s combat speed is about 180 to
+220 g. A trained pilot sustains about 9 g, and a 9 g turn at 2 km/s is 2.5°/s
+over a 45 km radius, so no dogfight could happen at that speed. The fiction is
+an inertial damper, as in Elite (1984). The figures are tuned for how the fight
+feels, not derived from physics (`src/hull.ts`).
+
 ## 3. Interdiction and encounters
 
 Piracy appears through cruise interdictions, not arbitrary low-speed spawns around a docking approach. The initiator holds a heading lock through a brief charge; the target breaks it by changing heading to create angular separation. It is symmetric between player and NPC by rule — the player-initiated path is not built yet (#324) — and success drops both into normal flight. Cruise re-entry retains its existing spool-up and damage-cancellation rule.

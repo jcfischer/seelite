@@ -71,12 +71,15 @@ export const TRACER_COLOUR = "rgba(116, 234, 255, 0.98)";
 
 /** Draw the tracer, clipped above `glassBottom` (a fraction of the height).
  *  The cockpit passes the glass's bottom, so the tracer never crosses the
- *  panel. Chase has no glass and passes 1, the whole frame. */
+ *  panel. Chase has no glass and passes 1, the whole frame. `aim` is where the
+ *  beam meets the glass, as fractions of the canvas: the sightline, or the
+ *  gimbal's turned beam (#324). */
 export function drawGunTracer(
 	ctx: CanvasRenderingContext2D,
 	w: number,
 	h: number,
 	glassBottom: number,
+	aim: { readonly x: number; readonly y: number } = TRACER_AIM,
 ): void {
 	ctx.save();
 	ctx.beginPath();
@@ -87,7 +90,7 @@ export function drawGunTracer(
 	ctx.beginPath();
 	for (const port of TRACER_PORTS) {
 		ctx.moveTo(w * port.x, h * port.y);
-		ctx.lineTo(w * TRACER_AIM.x, h * TRACER_AIM.y);
+		ctx.lineTo(w * aim.x, h * aim.y);
 	}
 	ctx.stroke();
 	ctx.restore();
