@@ -153,7 +153,7 @@ export interface StationInterior {
  * rather than by a rule about outposts.
  *
  * The full cell admits every non-capital hull's **selected variant** at rest and
- * admits neither capital, which `tests/station-interior.test.ts` asserts against
+ * admits no capital, which `tests/station-interior.test.ts` asserts against
  * the roster rather than against these numbers.
  *
  * **It used to be sized from a declaration nothing measured** (#181). The prose

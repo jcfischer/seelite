@@ -449,8 +449,8 @@ export const cleanPlateFactors = () => hullMaps().clean;
  *
  *  **Bounded, and not by eviction.** Nothing is ever removed, and nothing needs
  *  to be: `ship-mesh.ts` caches one palette per hull id for the life of the
- *  process, so this holds four materials per archetype and cannot exceed that —
- *  four per archetype on the roster. A material reaches here only
+ *  process, so this holds four materials per archetype and cannot exceed four times
+ *  `HULL_IDS.length`. A material reaches here only
  *  through `makePalette`, which is the same cache, so a scene being discarded
  *  frees no material this could drop. */
 const plated = new Set<THREE.MeshStandardMaterial>();

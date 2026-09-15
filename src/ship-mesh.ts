@@ -5815,6 +5815,9 @@ function buildDreadnoughtC(root: THREE.Group, p: Palette) {
  */
 const VOYAGER_SPHERE = Object.freeze({ z: -0.084, r: 0.013 });
 
+/** How far every voyager dish is tipped back from its mast, radians. */
+const VOYAGER_DISH_PITCH = -Math.PI / 2.7;
+
 function voyagerSphere(root: THREE.Group, p: Palette) {
 	const { z, r } = VOYAGER_SPHERE;
 	const tower: Ring[] = [12, 30, 50, 70, 90, 110, 130, 150, 168].map((deg) => {
@@ -5938,7 +5941,7 @@ function buildVoyagerA(root: THREE.Group, p: Palette) {
 		p.trim,
 	);
 	dish(root, "voyager-dish", 0.0055, [0, 0.0145, -0.05], p, [
-		-Math.PI / 2.7,
+		VOYAGER_DISH_PITCH,
 		0,
 		0,
 	]);
@@ -5958,7 +5961,7 @@ function buildVoyagerA(root: THREE.Group, p: Palette) {
 			0.0026,
 			[sign * 0.0078, 0.0135, -0.0505],
 			p,
-			[-Math.PI / 2.7, 0, 0],
+			[VOYAGER_DISH_PITCH, 0, 0],
 		);
 }
 
@@ -5989,7 +5992,7 @@ function buildVoyagerB(root: THREE.Group, p: Palette) {
 		p.trim,
 	);
 	dish(root, "voyager-dish", 0.0058, [0.0145, 0.0052, -0.049], p, [
-		-Math.PI / 2.7,
+		VOYAGER_DISH_PITCH,
 		0.35,
 		0,
 	]);
@@ -6049,7 +6052,7 @@ function buildVoyagerC(root: THREE.Group, p: Palette) {
 		p.trim,
 	);
 	dish(root, "voyager-dish", 0.005, [0, 0.0235, -0.045], p, [
-		-Math.PI / 2.7,
+		VOYAGER_DISH_PITCH,
 		0,
 		0,
 	]);

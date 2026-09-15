@@ -463,8 +463,9 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 	// proportions rather than ones compressed into a berth — so it is refused by
 	// its **length**, which no berth admits, and not by its section, which a
 	// slot would pass (`tests/aperture-fit.test.ts` states both halves). Its
-	// hold is above the ceiling for the capitals' reason, and its range is the
-	// longest in the roster, which is what an expedition hull is for.
+	// hold is above the ceiling for the capitals' reason, and its declared
+	// tank and drive charge are the largest in the roster, which is what an
+	// expedition hull is for.
 	voyager: {
 		role: "expedition",
 		variant: "a",

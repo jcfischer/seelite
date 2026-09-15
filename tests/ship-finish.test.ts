@@ -164,9 +164,10 @@ describe("stock is the hull that shipped", () => {
 		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
 		// the whole-roster hash; it may not move any of these (#335's review).
 		setHullFinish("stock");
-		expect(
-			rosterHash(HULL_IDS.filter((id) => id !== "voyager")),
-		).toEqual({ hash: "89b8e0f6", vertices: 192257 });
+		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
+			hash: "89b8e0f6",
+			vertices: 192257,
+		});
 	});
 });
 
