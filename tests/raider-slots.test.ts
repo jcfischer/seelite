@@ -5,7 +5,9 @@
  * - raiders are **enumerated** world-state slots, and a system can hold more
  *   than one, because several may attack together later;
  * - a leg's chance of an encounter falls with the system's law, and a
- *   Corporate State keeps a smaller chance rather than none;
+ *   Corporate State keeps a smaller chance rather than none — raised to 60% in
+ *   an Anarchy and 20% in a Corporate State on 2026-09-15, so a new game's
+ *   lawful start system meets raiders in normal play;
  * - a raider appears behind, alongside or ahead of the player.
  */
 import { describe, expect, test } from "bun:test";
@@ -55,6 +57,14 @@ describe("the leg law", () => {
 			expect(raiderLegChance(g)).toBeLessThan(raiderLegChance(g - 1));
 		expect(raiderLegChance(7)).toBeGreaterThan(0);
 		expect(raiderLegChance(0)).toBeLessThan(1);
+	});
+
+	test("the principal's rate: 60% of legs in an Anarchy, 20% in a Corporate State", () => {
+		// Raised from 50% and 5% (2026-09-15). The start systems are lawful —
+		// government 6 and 7 for seeds 42, 1 and 7 — and at 5–11% a new player
+		// met a raider on one leg in nine to twenty.
+		expect(raiderLegChance(0)).toBeCloseTo(0.6, 12);
+		expect(raiderLegChance(7)).toBeCloseTo(0.2, 12);
 	});
 
 	test("an encounter is a pure function of system, law and leg", () => {
