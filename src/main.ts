@@ -278,12 +278,16 @@ import {
 	duelRowWidest,
 	onTargetMark,
 	raiderCueTone,
+	targetConditionLine,
 	showDuelRow,
 } from "./duel-hud";
 import {
 	type GunFeedback,
 	QUIET_GUN,
 	SHOT_SOUND_GAP_S,
+	STRUCK_FLASH_S,
+	drawEnemyBeam,
+	drawStruckRim,
 	TRACER_AIM,
 	TRACER_HOLD_S,
 	TRACER_PORTS,
@@ -1845,6 +1849,18 @@ class Game {
 	 * turns red while it does, by the principal's ruling.
 	 */
 	raiderFiring = false;
+	/** Seconds of canopy flash left after the raider's fire landed (#324). */
+	struckFor = 0;
+	/** The raider's fire as the last frame drew it: the beam's two ends on the
+	 *  overlay, or `null` without a beam, and the rim's strength — so a probe
+	 *  knows where to sample the paint. */
+	hostileFireRender: {
+		beam: {
+			from: { x: number; y: number };
+			to: { x: number; y: number };
+		} | null;
+		rim: number;
+	} = { beam: null, rim: 0 };
 	/** The pulse laser's tracer and shot-sound pacing (`gun-feedback.ts`). */
 	gunFeedback: GunFeedback = QUIET_GUN;
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
@@ -1867,6 +1883,8 @@ class Game {
 	cueRender: {
 		tone: FloorTone;
 		onTarget: boolean;
+		/** The selected raider's condition line as drawn, or `null` without one. */
+		enemyLine: string | null;
 		/** The ring's centre on the overlay, or `null` when the edge arrow is
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
@@ -7357,6 +7375,7 @@ class Game {
 		this.gunFeedback = QUIET_GUN;
 		this.canisters = [];
 		this.gunAim = null;
+		this.struckFor = 0;
 		this.lastExit = "";
 		this.detour = null;
 		this.frameBody = null;
@@ -7682,6 +7701,7 @@ class Game {
 		this.encounter = step.encounter;
 		this.encounterView = step.contact;
 		this.raiderFiring = step.raiderHit !== null;
+		if (step.raiderHit) this.struckFor = STRUCK_FLASH_S;
 		if (step.drop) this.dropOut(`interdicted by ${name}`);
 		if (step.raiderHit)
 			this.takeDamage(
@@ -8247,6 +8267,7 @@ class Game {
 		// The raider reads the player where the frame starts, as the ship and the
 		// world masses are read, and may drop the player out of cruise before the
 		// regime branch below chooses how to fly this frame.
+		this.struckFor = Math.max(0, this.struckFor - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
 		this.stepCargoCanisters(dt);
@@ -10333,6 +10354,7 @@ class Game {
 		ctx.clearRect(0, 0, w, h);
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
+		this.hostileFireRender = { beam: null, rim: 0 };
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
 		// flight-floor, scanner, director, or attitude marks may leak through it.
@@ -10440,6 +10462,26 @@ class Game {
 		// whole frame in chase, where there is no glass (sage #328 — a chase view
 		// with no tracer is the dead-key defect again). The rig draws its own
 		// below, and with the rig on the trigger never reaches this gun.
+		// The raider's fire and its hits on the player (#324, found missing in
+		// the second playtest): its beam from its point on the glass while it
+		// fires, and a canopy rim for a moment after a hit lands.
+		const glassBottom = this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1;
+		if (this.raiderFiring && this.raiderListed) {
+			const toRaider = directionTo(camPos, this.raiderContact.pos);
+			const raiderAt = toRaider && place(toRaider);
+			if (raiderAt?.on) {
+				drawEnemyBeam(ctx, w, h, glassBottom, raiderAt);
+				this.hostileFireRender.beam = {
+					from: { x: raiderAt.x, y: raiderAt.y },
+					to: { x: w / 2, y: h * glassBottom },
+				};
+			}
+		}
+		if (this.view === "cockpit") {
+			const rim = this.struckFor / STRUCK_FLASH_S;
+			drawStruckRim(ctx, w, h, glassBottom, rim);
+			this.hostileFireRender.rim = Math.max(0, rim);
+		}
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip
 		// shows where it points.
@@ -10585,6 +10627,10 @@ class Game {
 				tone: raiderTone,
 				onTarget,
 				at: selectedAt?.on ? { x: selectedAt.x, y: selectedAt.y } : null,
+				enemyLine:
+					selectedAt?.on && this.encounter?.raider
+						? targetConditionLine(this.encounter.raider.condition).text
+						: null,
 			};
 		// Reserve the selected label before the stable station/ship walk below.
 		// Its label is never submitted to decluttering, so context can disappear
@@ -10622,6 +10668,17 @@ class Game {
 						ctx.fill();
 					}
 					ctx.fillText(selectedLabel(body.name, km), at.x + r + 6, at.y + 4);
+					// The selected raider's shields and hull under its name (#324,
+					// the principal's ruling), in the duel row's tones.
+					const enemy = raiderSelected
+						? this.encounter?.raider?.condition
+						: undefined;
+					if (enemy) {
+						const line = targetConditionLine(enemy);
+						ctx.fillStyle = FLOOR_TONE_FILL[line.tone];
+						ctx.fillText(line.text, at.x + r + 6, at.y + 18);
+						ctx.fillStyle = selectedColour;
+					}
 					continue;
 				}
 				// Corner brackets rather than a box: a closed square over a distant

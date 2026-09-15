@@ -31,6 +31,14 @@ controller is capped at that hull's own turn and roll limits. It had slewed at
 1.2 rad/s and rolled at 2.6 rad/s, past what its hull allows, and the first
 playtest found it unhittable.
 
+**Shields recharge at 2 points/s**, after the 3 s delay, by the principal's
+ruling after the second playtest. #48's 6/s equalled the pulse's damage rate:
+every break in hits longer than the delay refilled a shield as fast as a pilot
+could take it down, and duels ran extremely long. The rule is every ship's,
+the player's included. A kill with every shot landing on one side is about 31 s
+against a raider (106 shield, 81 hull, 6 damage/s); a real duel is longer, by the share
+of time off target.
+
 **The g loads are arcade, and stay so.** Thrust is about 204 g for the courier
 and 274 g for the raider, and a turn at the 2 km/s combat speed is about 180 to
 220 g. A trained pilot sustains about 9 g, and a 9 g turn at 2 km/s is 2.5°/s

@@ -263,6 +263,11 @@ test("the production numbers start where #48 tuned them", () => {
 	expect(PULSE_LASER.heatPerS).toBe(P.pulseHeatPerSecond);
 	expect(ENERGY_REGEN_PER_S).toBe(P.energyRegenPerSecond);
 	expect(HEAT_COOL_PER_S).toBe(P.heatCoolPerSecond);
-	expect(SHIELD_RECHARGE_PER_S).toBe(P.shieldRechargePerSecond);
+	// **The one ruled divergence.** The principal slowed production recharge to
+	// 2/s after the second playtest of #324; the rig keeps its own 6/s until part
+	// d2 moves it onto these rules. Both halves are pinned, so neither side moves
+	// silently.
+	expect(SHIELD_RECHARGE_PER_S).toBe(2);
+	expect(P.shieldRechargePerSecond).toBe(6);
 	expect(SHIELD_RECHARGE_DELAY_S).toBe(P.shieldRechargeDelaySeconds);
 });

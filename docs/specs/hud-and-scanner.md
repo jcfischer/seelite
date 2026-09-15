@@ -417,6 +417,15 @@ The ON TARGET mark tests the beam's direction, not the boresight. The tracer
 ends where the beam meets the glass, and a small ring marks that point while
 the gimbal has turned the beam more than 0.2° off the boresight.
 
+**The enemy's condition and fire are on the glass** (the principal's ruling
+after the second playtest). A second line under the selected raider's name reads
+`SHD F 72 A 106  HULL 81`. It is refused while either printed pool is 0,
+otherwise passive (`targetConditionLine`). While the raider fires, a warm beam
+runs from its point on the glass toward the bottom of the glass, where the
+player sits. After a hit lands on the player, the canopy rim glows red for
+0.22 s: a rim and not a wash, so the view is not taken away. That look is the
+`?combat=1` rig's, ported (`gun-feedback.ts`).
+
 ## 6. Responsive behaviour
 
 On narrow viewports, one side panel at a time becomes a wide overlay. In either

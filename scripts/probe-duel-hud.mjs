@@ -56,6 +56,31 @@ const installHelpers = () => {
 		}
 		return { red, amber };
 	};
+	/** Pixels in a rectangle that pass `keep(r, g, b, a)`. */
+	const countIn = (x, y, width, height, keep) => {
+		const overlay = document.getElementById("overlay");
+		const ctx = overlay.getContext("2d", { willReadFrequently: true });
+		const data = ctx.getImageData(
+			Math.floor(x),
+			Math.floor(y),
+			Math.ceil(width),
+			Math.ceil(height),
+		).data;
+		let n = 0;
+		for (let i = 0; i < data.length; i += 4)
+			if (keep(data[i], data[i + 1], data[i + 2], data[i + 3])) n++;
+		return n;
+	};
+	/** The raider's warm beam colour: strong red, middling green, weak blue. */
+	const warm = (r, gr, b, a) =>
+		a > 120 && r > 200 && gr > 100 && gr < 180 && b < 130;
+	/** The rim's red, at any alpha it is drawn with. */
+	const rimRed = (r, gr, b, a) => a > 12 && r > 200 && gr < 120 && b < 100;
+	/** The passive tone's cyan-white, and nothing else drawn near the label: the
+	 *  tracer's cyan is greener with less red, and a context label is drawn at
+	 *  55% alpha. A plain lit count read 112 here with the line not drawn. */
+	const passive = (r, gr, b, a) =>
+		a > 150 && r >= 140 && r <= 162 && gr >= 194 && gr <= 216 && b >= 228;
 	const aimAt = (pos) => {
 		const p = g.world.ship.pos;
 		g.setAttitude(
@@ -67,6 +92,21 @@ const installHelpers = () => {
 		dt,
 		tonesAround,
 		aimAt,
+		/** Warm beam pixels in a small square at the beam's midpoint. */
+		beamPaint(beam) {
+			const x = (beam.from.x + beam.to.x) / 2;
+			const y = (beam.from.y + beam.to.y) / 2;
+			return countIn(x - 6, y - 6, 12, 12, warm);
+		},
+		/** Rim-red pixels in the glass's top-left corner. */
+		rimPaint() {
+			return countIn(2, 2, 16, 16, rimRed);
+		},
+		/** Lit pixels in the band under the selected label, where the enemy's
+		 *  condition line is drawn. */
+		enemyLinePaint(at) {
+			return countIn(at.x + 20, at.y + 9, 110, 11, passive);
+		},
 		cruise() {
 			g.resetFlightToStart();
 			g.setHeadLook("forward");
@@ -246,12 +286,39 @@ for (const viewport of VIEWPORTS) {
 		// empty in cruise, so the contest has no prompt to stack; the drop to
 		// normal flight with a course set brings the jump line back.
 		let stacked = null;
+		// The raider's fire and condition, each read off the paint with a
+		// control from a frame where the record says nothing is drawn.
+		let beam = null;
+		let beamQuiet = null;
+		let rim = null;
+		let rimQuiet = null;
+		let line = null;
+		let lastBeam = null;
 		for (
 			let i = 0;
-			i < 1800 && (quiet === null || firing === null || stacked === null);
+			i < 1800 &&
+			(quiet === null ||
+				firing === null ||
+				stacked === null ||
+				beam === null ||
+				beamQuiet === null ||
+				rim === null ||
+				rimQuiet === null ||
+				line === null);
 			i++
 		) {
 			D.frame(aimed);
+			const fire = g.hostileFireRender;
+			if (fire.beam && beam === null) {
+				beam = { ...fire.beam, paint: D.beamPaint(fire.beam) };
+				lastBeam = fire.beam;
+			}
+			if (!fire.beam && lastBeam && beamQuiet === null)
+				beamQuiet = { paint: D.beamPaint(lastBeam) };
+			if (fire.rim > 0.5 && rim === null)
+				rim = { strength: fire.rim, view: g.view, paint: D.rimPaint() };
+			if (fire.rim === 0 && rimQuiet === null)
+				rimQuiet = { view: g.view, paint: D.rimPaint() };
 			const duelBox = g.floorRender?.duelBox;
 			if (stacked === null && g.cockpitPrompt.text && duelBox)
 				stacked = {
@@ -261,6 +328,12 @@ for (const viewport of VIEWPORTS) {
 				};
 			const cue = g.cueRender;
 			if (!cue?.at || !g.encounter) continue;
+			if (cue.enemyLine && line === null && g.encounter.raider)
+				line = {
+					text: cue.enemyLine,
+					hull: Math.round(g.encounter.raider.condition.hull),
+					paint: D.enemyLinePaint(cue.at),
+				};
 			if (cue.onTarget && onTarget === null) onTarget = { ...cue };
 			const tones = D.tonesAround(cue.at);
 			if (g.raiderFiring && firing === null)
@@ -288,6 +361,11 @@ for (const viewport of VIEWPORTS) {
 			phase,
 			quiet,
 			firing,
+			beam,
+			beamQuiet,
+			rim,
+			rimQuiet,
+			line,
 			onTarget,
 			offAim,
 			stacked,
@@ -321,6 +399,33 @@ for (const viewport of VIEWPORTS) {
 			duel.firing.tone === "refused" &&
 			duel.firing.red > 20,
 		JSON.stringify(duel.firing),
+	);
+	check(
+		`${v}: the selected raider's shields and hull are drawn under its label`,
+		// The line reads the raider's own hull; `tests/duel-hud.test.ts` owns the
+		// format, so only the hull figure is matched here.
+		duel.line !== null &&
+			duel.line.text.startsWith("SHD F ") &&
+			duel.line.text.endsWith(`HULL ${duel.line.hull}`) &&
+			duel.line.paint > 30,
+		JSON.stringify(duel.line),
+	);
+	check(
+		`${v}: while the raider fires its beam is painted, and not after`,
+		duel.beam !== null &&
+			duel.beam.paint > 10 &&
+			duel.beamQuiet !== null &&
+			duel.beamQuiet.paint === 0,
+		JSON.stringify({ beam: duel.beam, quiet: duel.beamQuiet }),
+	);
+	check(
+		`${v}: a hit on the player glows on the canopy rim, and the rim is clear otherwise`,
+		duel.rim !== null &&
+			duel.rim.view === "cockpit" &&
+			duel.rim.paint > 50 &&
+			duel.rimQuiet !== null &&
+			duel.rimQuiet.paint === 0,
+		JSON.stringify({ rim: duel.rim, quiet: duel.rimQuiet }),
 	);
 	check(
 		`${v}: aimed along the sightline, the cue marks the raider on target`,
