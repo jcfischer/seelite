@@ -8087,7 +8087,11 @@ class Game {
 	private relayCue(): RelayCue | null {
 		const v = this.relayView;
 		if (!v || (!v.signal && !v.identified)) return null;
-		const dir = directionTo(this.world.ship.pos, v.pos);
+		// At the clock as it stands, for `relayNow`'s reason: the cue is what
+		// the pilot steers by, and read from the frame start it put the relay
+		// 0.9 km off at 4.9 km in one capture.
+		const { pos } = this.relayNow(v);
+		const dir = directionTo(this.world.ship.pos, pos);
 		const offNoseDeg = dir
 			? (angleOffNose(dir, this.nose()) * 180) / Math.PI
 			: 0;
@@ -8101,11 +8105,11 @@ class Game {
 			offNoseDeg,
 			arrowDeg: targetArrowBearingDeg(
 				this.world.ship.pos,
-				v.pos,
+				pos,
 				this.orientation,
 			),
 			watched: v.watched,
-			km: v.identified ? length(sub(v.pos, this.world.ship.pos)) : null,
+			km: v.identified ? length(sub(pos, this.world.ship.pos)) : null,
 			condition: v.condition,
 		};
 	}

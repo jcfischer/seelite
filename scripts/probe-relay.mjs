@@ -144,7 +144,14 @@ await page.evaluate(() => {
 				detection: r.detection,
 				targetable: r.view ? g.selectableIds().includes(r.view.key) : false,
 				cueHidden: cue?.hidden ?? null,
+				// The attribute alone is not the state: an id rule with `display`
+				// beats `[hidden]`, and a badge once showed on every page while a
+				// probe reading `el.hidden` passed.
+				cueVisible: cue ? cue.checkVisibility() : null,
 				cueText: cue?.textContent ?? "",
+				targetText:
+					document.querySelector("[data-live-director] > strong")
+						?.textContent ?? "",
 				meshCondition: g.relayMesh.root.userData.condition,
 				meshDrawn: g.relayMesh.root.parent !== null,
 				lastExit: g.lastExit,
@@ -262,6 +269,7 @@ check(
 		!far.listed &&
 		!far.targetable &&
 		far.cueHidden === true &&
+		far.cueVisible === false &&
 		far.condition === "operational",
 	JSON.stringify(far),
 );
@@ -304,6 +312,7 @@ check(
 		!signalled.listed &&
 		!signalled.targetable &&
 		signalled.cueHidden === false &&
+		signalled.cueVisible === true &&
 		/SIGNAL/.test(signalled.cueText) &&
 		/off nose/.test(signalled.cueText) &&
 		!/km/.test(signalled.cueText),
@@ -376,6 +385,28 @@ check(
 		provenance.area === "route:58:station-trade",
 	JSON.stringify(provenance),
 );
+await settle();
+// The cue and the marker read one relay: both are evaluated at the clock as
+// it stands, so their ranges agree to within one step of relative motion. The
+// first capture had them 0.9 km apart at 4.9 km.
+const ranges = await page.evaluate(() => {
+	const g = window.__seelite;
+	window.__relayProbe.placeNear(4.9);
+	g.targetId = g.relayReadout().view.key;
+	window.__relayProbe.frame();
+	const cue =
+		document.querySelector("[data-live-relay-cue]")?.textContent ?? "";
+	const cueKm = Number(/(\d[\d,]*) km/.exec(cue)?.[1]?.replace(",", ""));
+	const targetKm = g.targetRange();
+	return { cueKm, targetKm, cue };
+});
+check(
+	"the cue and the target panel read the relay at the same clock: their ranges agree",
+	Number.isFinite(ranges.cueKm) &&
+		Math.abs(ranges.cueKm - ranges.targetKm) < 0.6,
+	JSON.stringify(ranges),
+);
+await page.evaluate(() => window.__relayProbe.placeNear(4.9));
 await settle();
 await capture("03-wreck-close");
 
