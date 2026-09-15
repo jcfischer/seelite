@@ -14,7 +14,12 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
+import {
+	CAPITAL_HULL_IDS,
+	HULL_IDS,
+	HULL_SPECS,
+	type HullId,
+} from "../src/hull";
 import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
 import {
 	BERTH_CELL,
@@ -30,7 +35,8 @@ import {
 } from "../src/station-interior";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 
-const CAPITALS: HullId[] = ["carrier", "dreadnought"];
+/** `hull.ts`'s list, imported rather than copied (#335's review). */
+const CAPITALS: readonly HullId[] = CAPITAL_HULL_IDS;
 const interiorOf = (type: (typeof STATION_TYPES)[number], seed = 0) =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, seed);
 

@@ -472,14 +472,22 @@ tolerance.
 At 0.12 × 0.07 km the margins are 57.2 m across and 6.6 m up. The height is not
 a dial.
 
-**Neither capital class fits, and is not meant to** (see the map's
-Constraints). Stated in the same terms as the rest of this section, which is
+**Neither the carrier nor the dreadnought fits, and neither is meant to** (see
+the map's Constraints). Stated in the same terms as the rest of this section, which is
 what the slot has to admit rather than what the hull measures square: **rolled
 to 50° the carrier needs 256 × 257 m and the dreadnought 229 × 228 m.** Their
 axis-aligned envelopes are 212 × 181 and 186 × 165, and quoting those here was
 the mistake this section is otherwise about — whoever retunes an aperture would
 read 212 as the bar to stay under when the admit threshold is 256. #26 owes them
 an outfitting route that is not a station.
+
+**The third capital, `voyager` (#331), is refused by length, not by section.**
+At the film's proportions its rolled section passes a slot; what no station
+admits is a 191 m hull in a 90 m berth cell (§13.2), and `berthFits` refuses it
+there. The principal ruled on 2026-09-15 that this is the intended refusal, so
+the capital rule is *no berth admits it* for all three and *no aperture admits
+it* only for the carrier and the dreadnought. `tests/aperture-fit.test.ts`
+states both halves.
 
 Probe fixtures and every form's drawn dock frame read the aperture from the
 geometry constant rather than restating it, so a retune moves one table and no

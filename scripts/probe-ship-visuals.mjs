@@ -200,7 +200,9 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
 	});
 	check(
 		`${viewport.name}: the gate parks every hull ahead of the player`,
-		gated.count === 33 &&
+		// Twelve hulls × three variants since #331; a literal, for the reason
+		// probe-display-contacts gives.
+		gated.count === 36 &&
 			gated.displayOnly &&
 			gated.simBodies === 0 &&
 			gated.allAhead &&

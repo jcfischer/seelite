@@ -39,7 +39,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { ROLL_TOLERANCE_DEG } from "../src/docking";
-import { HULL_IDS, type HullId } from "../src/hull";
+import { CAPITAL_HULL_IDS, HULL_IDS, type HullId } from "../src/hull";
 import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,
@@ -47,10 +47,21 @@ import {
 	type StationType,
 } from "../src/station";
 
-/** The two capital classes. Named rather than detected by size, so a hull that
- *  grows into capital proportions fails the check instead of joining the
- *  exemption. */
-const CAPITALS: HullId[] = ["carrier", "dreadnought"];
+/** The capital classes — `hull.ts`'s named list, imported rather than copied,
+ *  so a capital added there reaches this file (#335's review). Named rather
+ *  than detected by size, so a hull that grows into capital proportions fails
+ *  the check instead of joining the exemption. */
+const CAPITALS: readonly HullId[] = CAPITAL_HULL_IDS;
+
+/** The capitals a *section* refuses: wider or taller than every aperture.
+ *  `voyager` (#331) is not one of them — at the film's proportions its section
+ *  passes a slot, and what refuses it is its length against every berth, which
+ *  `tests/hull.test.ts`' `no berth in the game admits a capital` holds. */
+const WIDER_THAN_EVERY_APERTURE: HullId[] = ["carrier", "dreadnought"];
+
+/** The capitals a berth refuses by length while a slot would pass their
+ *  section. With the list above, every capital is in exactly one tier. */
+const LONGER_THAN_EVERY_BERTH: HullId[] = ["voyager"];
 
 /** Check 4's tolerance, radians (`docking.md` §3.2). Read from the spec's own
  *  figure rather than re-derived: the roll limit is a chosen number, and a
@@ -126,14 +137,14 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		expect(heightMargin).toBeGreaterThan(0);
 	});
 
-	test("neither capital fits any aperture, and that is the intended answer", () => {
+	test("the carrier and the dreadnought fit no aperture, and that is the intended answer", () => {
 		// The separate-class decision, held as an assertion. Both capital classes
 		// need more than every slot and pad in the game and are supposed to;
 		// what #26 owes them is an outfitting route that is not a station. This
 		// fails if an aperture is ever widened enough to admit one, which is the
 		// shape that reversal would take — nobody would write "capitals may dock
 		// now", they would widen a slot for some other reason.
-		for (const id of CAPITALS) {
+		for (const id of WIDER_THAN_EVERY_APERTURE) {
 			const hull = rolled(id);
 			for (const type of STATION_TYPES) {
 				const gap = APERTURE(type);
@@ -147,5 +158,35 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 				`${id}: needs ${hull.across.toFixed(0)}×${hull.up.toFixed(0)} m rolled`,
 			);
 		}
+	});
+
+	test("voyager's section passes a slot, so its refusal is its length and not its section", () => {
+		// Stated rather than left implicit (#331): the claim above used to read
+		// "neither capital fits any aperture", and a third capital at the film's
+		// proportions makes that false. Its refusal is that no berth admits a
+		// 191 m hull, which is a length and not a section. If voyager ever grows
+		// a section no aperture admits, this goes red and the exemption above
+		// should gain it instead.
+		const hull = rolled("voyager");
+		const gap = APERTURE("trade");
+		expect(hull.across).toBeLessThan(gap.width);
+		expect(hull.up).toBeLessThan(gap.height);
+	});
+});
+
+describe("every capital is refused, and by exactly one named rule", () => {
+	test("each capital is in one refusal tier — section or length — and not both", () => {
+		// Two hand-kept lists beside an imported one (#335's review, round 2): a
+		// capital added to `CAPITAL_HULL_IDS` and to neither list would reach no
+		// aperture row at all, and nothing would go red.
+		for (const id of CAPITALS) {
+			const tiers = [
+				WIDER_THAN_EVERY_APERTURE.includes(id),
+				LONGER_THAN_EVERY_BERTH.includes(id),
+			].filter(Boolean).length;
+			expect([id, tiers]).toEqual([id, 1]);
+		}
+		for (const id of [...WIDER_THAN_EVERY_APERTURE, ...LONGER_THAN_EVERY_BERTH])
+			expect([id, CAPITALS.includes(id)]).toEqual([id, true]);
 	});
 });

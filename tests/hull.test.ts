@@ -357,7 +357,7 @@ describe("handling derives from mass and thrust, and nothing else", () => {
 	});
 
 	test("every integrity figure is the law the table states it follows", () => {
-		// Two independent artifacts — a written law and eleven typed numbers — so
+		// Two independent artifacts — a written law and a typed number per hull — so
 		// this is a comparison rather than a tautology: it goes red on a
 		// hand-edited row, which is what makes a deliberate deviation from #8's
 		// balance visible instead of reading as a typo.
@@ -471,7 +471,7 @@ describe("what a hull costs (#182, #26's D4 and D7)", () => {
 			]);
 	});
 
-	test("the two capitals have no price, and it is the ceiling that says so", () => {
+	test("the capitals have no price, and it is the ceiling that says so", () => {
 		// Not a hand-maintained exemption list: the law returns `null` above the
 		// ceiling, and the capitals are above it. A capital that shrank into a
 		// dockable hold would get a price from the same rule.

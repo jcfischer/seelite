@@ -76,9 +76,9 @@ export const SHIP_MAP_SIZE = 256;
 /**
  * The one plating profile every hull shares.
  *
- * One, not eleven. `ship-mesh.ts` caches a palette per hull id and shares it
+ * One, not one per archetype. `ship-mesh.ts` caches a palette per hull id and shares it
  * across every mesh of that archetype; a per-archetype profile would multiply
- * the generated buffers by eleven for a difference no one can see at the range
+ * the generated buffers by the archetype count for a difference no one can see at the range
  * a ship is seen from, and a per-*ship* one would break that cache outright.
  * Archetypes are told apart by silhouette and by livery, which is #35's answer
  * and is not being reopened here.
@@ -449,8 +449,8 @@ export const cleanPlateFactors = () => hullMaps().clean;
  *
  *  **Bounded, and not by eviction.** Nothing is ever removed, and nothing needs
  *  to be: `ship-mesh.ts` caches one palette per hull id for the life of the
- *  process, so this holds four materials per archetype and cannot exceed that —
- *  44 at the eleven archetypes on the roster. A material reaches here only
+ *  process, so this holds four materials per archetype and cannot exceed four times
+ *  `HULL_IDS.length`. A material reaches here only
  *  through `makePalette`, which is the same cache, so a scene being discarded
  *  frees no material this could drop. */
 const plated = new Set<THREE.MeshStandardMaterial>();

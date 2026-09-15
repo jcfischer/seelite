@@ -3,9 +3,9 @@
 ## 1. Purpose and boundary
 
 Issue #35 replaces the player ship's chase-view cube with a readable, asset-free
-procedural hull language. It supplies eleven **visual archetypes** — `courier`,
+procedural hull language. It supplies twelve **visual archetypes** — `courier`,
 `interceptor`, `freighter`, `miner`, `patrol`, `explorer`, `raider`, `carrier`,
-`tug`, `prospector`, and `dreadnought` — rather than a game roster. Issue #26 remains
+`tug`, `prospector`, `dreadnought`, and `voyager` — rather than a game roster. Issue #26 remains
 the only owner of which purchasable or NPC ship selects an archetype; a future
 roster must choose one explicitly and never receive a silent default.
 
@@ -32,6 +32,13 @@ paint/material variation, and Star Citizen/Starfield contribute layered
 industrial construction. Primary mass must remain continuous; secondary panels
 may explain structure but must never return to an assembly of disconnected
 boxes.
+
+**One archetype is the exception, by the principal's ruling (2026-09-14).**
+`voyager` (#331) is a close homage to a specific craft — *Discovery One* from
+*2001: A Space Odyssey* — requested with the reference frame. It is still built
+from this grammar's primitives and finishes, and its `b` and `c` concepts are
+not copies; but the rule above does not describe its `a`, and no later hull
+should read this paragraph's absence as permission for another.
 
 The query-gated `?model-viewer=ship` workbench exposes every candidate
 without constructing `Game`. A designer can orbit each candidate, apply
@@ -149,6 +156,21 @@ fixed columns, which fitted three roles. Eleven overflowed the fieldset and the
 next one came down on top of them, leaving a tab that cannot be clicked. The
 tabs now fit to the available width and the narrow panel is a single column.
 
+Round eleven adds a third capital class rather than a ranking of the pool:
+`voyager`, the expedition hull (#331). All three concepts share a command
+sphere with its glass set low in the bow and a thin vertebral spine behind it
+— the silhouette the homage is of — and spend the layout axes on the rest:
+`Odyssey` is the reference, with paired drives and a dish array on a mast;
+`Wayfarer` balances a port tank bank against a starboard dish; `Lodestar`
+raises the spine, hangs a run of pods under it and stacks its drives. Placed by
+the same arithmetic as round ten: at about half the carrier's reach it is
+compared only with the carrier, and at more than six lengths to its height it
+is far slenderer than either capital, which `tests/hull-voyager.test.ts`
+asserts at half again the slenderer of the two. It docks nowhere by length
+rather than by section — its section would pass a slot — and
+`tests/aperture-fit.test.ts` states that difference rather than leaving
+"capitals fit no aperture" to be read as true of it.
+
 
 ## 2. Rendering contract
 
@@ -198,7 +220,7 @@ kilometre-scale body handoff stays untouched.
 
 `?fleet` parks every model in an avenue the player can fly down, ordered by
 declared reach so the walk runs smallest to largest. It is gated because
-thirty-three hulls is a showroom rather than a star system. Each hull is a
+thirty-six hulls is a showroom rather than a star system. Each hull is a
 targetable `ship` contact, named for its model, with zero velocity, `null` legal
 status and `unknown` scanner classification. Unselected ship markers show the
 model name and range where the label fits without overlapping another label;
@@ -292,8 +314,8 @@ vertex's shading normal and any face meeting there, which is exactly what
 `computeVertexNormals` has just averaged away at a `hard` station or a chine —
 and the hull material patches it into `roughnessFactor` and a small albedo lift.
 The shape it has to have is that edges are a **minority**: a wear term reading
-high everywhere is a wash, not wear. Both ends are checked, over all eleven
-archetypes rather than one — a share of exactly-zero vertices inside 60%–90%,
+high everywhere is a wash, not wear. Both ends are checked, over every
+archetype rather than one — a share of exactly-zero vertices inside 60%–90%,
 and a share above 0.6 inside 0.5%–15%. Each bound alone passes on a constant: a
 term wired to 0 reads 100% zero, one wired to 1 reads none.
 

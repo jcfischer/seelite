@@ -50,8 +50,8 @@ import { hullLoft, uvUnitsOf } from "../src/loft";
 // hull the game no longer ships.
 afterEach(() => setHullFinish(DEFAULT_HULL_FINISH));
 
-/** FNV-1a over every hull's positions and UVs, in roster order. */
-function rosterHash() {
+/** FNV-1a over the given hulls' positions and UVs, in roster order. */
+function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	let h = 0x811c9dc5;
 	let vertices = 0;
 	const fnv = (bytes: Uint8Array) => {
@@ -60,7 +60,7 @@ function rosterHash() {
 			h = Math.imul(h, 0x01000193);
 		}
 	};
-	for (const id of HULL_IDS)
+	for (const id of ids)
 		for (const variant of HULL_VARIANT_IDS) {
 			buildShipMesh(id, variant).root.traverse((object) => {
 				const geometry = (object as THREE.Mesh).geometry;
@@ -151,8 +151,23 @@ describe("stock is the hull that shipped", () => {
 	test("every hull's geometry and UVs hash to the pin taken on main", () => {
 		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices. Under `stock` by
 		// name, now that the default is not stock.
+		//
+		// **Re-pinned for #331's voyager**, which a hash over every hull moves
+		// by construction: 36 hulls, 211,160 vertices. The row below keeps the
+		// old pin, so the claim that the new hulls are the whole of the change
+		// is something a run checks rather than a comment.
 		setHullFinish("stock");
-		expect(rosterHash()).toEqual({ hash: "89b8e0f6", vertices: 192257 });
+		expect(rosterHash()).toEqual({ hash: "f5d052c8", vertices: 211160 });
+	});
+
+	test("the original eleven archetypes still hash to the pin taken on main", () => {
+		// `cbf3f0f`'s pin over the ids that existed then. Adding a hull may move
+		// the whole-roster hash; it may not move any of these (#335's review).
+		setHullFinish("stock");
+		expect(rosterHash(HULL_IDS.filter((id) => id !== "voyager"))).toEqual({
+			hash: "89b8e0f6",
+			vertices: 192257,
+		});
 	});
 });
 

@@ -49,7 +49,10 @@ try {
 				fleetCount: g.fleet.length,
 			};
 		});
-		const expected = (fleet ? 33 : 0) + (combat ? 1 : 0);
+		// Twelve hulls × three variants since #331's voyager. A literal rather
+		// than `fleetCount`: that is the producer's own length, and a count read
+		// off the producer cannot fail when the producer drops a hull.
+		const expected = (fleet ? 36 : 0) + (combat ? 1 : 0);
 		check(
 			`${label}: producer count and neutral metadata`,
 			initial.contacts.length === expected &&

@@ -551,7 +551,7 @@ export function seamNormalTexels(
  * a mint explorer. Under #199's broad light they read as toys, because a
  * painted industrial hull is mostly one dull tone with a stripe. A finish
  * says how much chroma survives and how bright the result is; the hue is
- * kept, so the eleven liveries — and the four station roles' paints — still
+ * kept, so every livery — and the four station roles' paints — still
  * tell each other apart.
  *
  * Toward the colour's own luma rather than a fixed grey, so a dark panel stays
