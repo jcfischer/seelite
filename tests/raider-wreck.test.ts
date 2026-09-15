@@ -7,11 +7,12 @@ import { raiderSlots } from "../src/raider-slots";
 import { ASSIST_CAP_KMS } from "../src/sim";
 import {
 	CANISTER_COUNT,
+	CANISTER_EJECT_KMS,
+	CANISTER_FADE_S,
 	CANISTER_KEEP_FRACTION,
 	CANISTER_LIFETIME_S,
 	CANISTER_SCOOP_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
-	CANISTER_SPREAD_KMS,
 	type Canister,
 	PLAYER_KILL,
 	RAIDER_REPAIR_S,
@@ -23,7 +24,7 @@ import {
 	stepCanisters,
 } from "../src/raider-wreck";
 import { newCommander, scoopCargo } from "../src/station-commerce";
-import { length, sub, v3 } from "../src/vec3";
+import { dot, length, scale, sub, v3 } from "../src/vec3";
 import {
 	applyTransition,
 	effectiveCarrier,
@@ -122,15 +123,63 @@ describe("the cargo drop", () => {
 		).toBe(true);
 	});
 
-	test("canisters keep a fifth of the wreck's frame velocity, spread a little", () => {
+	test("canisters keep a fifth of the wreck's frame velocity and leave it in different directions", () => {
 		// The wreck flies 1 km/s along -z in a frame moving 30 km/s along +x.
 		const frameVel = v3(30, 0, 0);
-		for (const c of kill({ frameVel, vel: v3(30, 0, -1) })) {
-			expect(CANISTER_KEEP_FRACTION).toBe(0.2);
-			expect(Math.abs(c.vel.x - 30)).toBeLessThanOrEqual(CANISTER_SPREAD_KMS);
-			expect(Math.abs(c.vel.z - -0.2)).toBeLessThanOrEqual(CANISTER_SPREAD_KMS);
-			expect(c.pos).toEqual(v3(100, 0, 0));
+		const drift = v3(30, 0, -0.2);
+		expect(CANISTER_KEEP_FRACTION).toBe(0.2);
+		let pairs = 0;
+		for (let s = 0; s < 200; s++) {
+			const drop = kill({ frameVel, vel: v3(30, 0, -1), killedAt: s });
+			const ejections = drop.map((c) => sub(c.vel, drift));
+			for (const [i, e] of ejections.entries()) {
+				expect(length(e)).toBeCloseTo(CANISTER_EJECT_KMS, 9);
+				expect(drop[i].pos).toEqual(v3(100, 0, 0));
+				// **At least 120° from every other canister of the drop**, the
+				// principal's "spread in different directions from the wreck".
+				for (const other of ejections.slice(i + 1)) {
+					pairs++;
+					const cos = dot(e, other) / CANISTER_EJECT_KMS ** 2;
+					expect(cos).toBeLessThanOrEqual(
+						Math.cos((120 * Math.PI) / 180) + 1e-9,
+					);
+				}
+			}
 		}
+		// Drops of two and three were drawn, or the angle asserted nothing.
+		expect(pairs).toBeGreaterThan(100);
+	});
+
+	test("a canister comes to rest in its frame CANISTER_FADE_S after the kill, slowing linearly", () => {
+		const frameVel = v3(30, 0, 0);
+		const [c0] = kill({ frameVel, vel: v3(30, 0, -2), killedAt: 500 });
+		expect(CANISTER_FADE_S).toBe(10);
+		expect(c0.restsAt).toBe(500 + CANISTER_FADE_S);
+		expect(c0.restVel).toEqual(frameVel);
+		const relative = (c: Canister) => length(sub(c.vel, frameVel));
+		const start = relative(c0);
+		const dt = 1 / 60;
+		const far = { pos: v3(1e6, 0, 0), vel: v3() };
+		let c = c0;
+		const at = (seconds: number) => {
+			for (let t = 0; t < seconds - 1e-9; t += dt)
+				c = stepCanisters([c], far, dt, 500 + t, () => true).kept[0];
+			return c;
+		};
+		at(5);
+		expect(relative(c) / start).toBeCloseTo(0.5, 6);
+		c = c0;
+		at(10);
+		expect(relative(c)).toBeLessThan(1e-9);
+		// The distance it covered in its frame is the area under a straight
+		// line: half its starting speed for the whole fade.
+		const covered = length(
+			sub(sub(c.pos, c0.pos), scale(frameVel, CANISTER_FADE_S)),
+		);
+		expect(covered).toBeCloseTo((start * CANISTER_FADE_S) / 2, 6);
+		c = c0;
+		at(15);
+		expect(relative(c)).toBe(0);
 	});
 
 	test("a canister from a wreck at the assist cap is closable at the cap", () => {
@@ -156,6 +205,10 @@ describe("drift, expiry and the scoop", () => {
 		tonnes: 1,
 		pos: v3(0, 0, 0),
 		vel: v3(0.01, 0, 0),
+		// At rest in a frame that moves with it, so these rows see a constant
+		// velocity; the fade is the drop rows' question.
+		restVel: v3(0.01, 0, 0),
+		restsAt: 100,
 		expiresAt: 100,
 	};
 
