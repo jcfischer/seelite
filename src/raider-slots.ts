@@ -53,13 +53,9 @@ export const raiderSlots = (
 export const raiderName = (ordinal: number): string =>
 	`Raider ${String(ordinal + 1).padStart(2, "0")}`;
 
-/**
- * The chance in an Anarchy (government 0) and a Corporate State (7). **Raised
- * from 0.5 and 0.05 by the principal's ruling (2026-09-15)**: a new game starts
- * in a lawful system — government 6 or 7 on seeds 42, 1 and 7 — and at 5–11% a
- * leg a player met a raider on one leg in nine to twenty, so raiders read as a
- * playtest flag rather than normal play. At 20–26% it is one leg in four or five.
- */
+/** The chance in an Anarchy (government 0) and a Corporate State (7). Raised
+ *  from 0.5 and 0.05 by the principal's ruling of 2026-09-15; `combat-model.md`
+ *  §3 gives the reason and what it changes. */
 export const RAIDER_LEG_CHANCE = { anarchy: 0.6, corporate: 0.2 } as const;
 
 /** A cruise leg's chance of an encounter, linear in government between the two
