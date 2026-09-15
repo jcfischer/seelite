@@ -192,5 +192,40 @@ export function buildRamaMesh(variant: RamaVariant["id"] = "a"): {
 			[Math.cos(theta) * 2.1, Math.sin(theta) * 2.1, 0],
 		);
 	}
+	// The scale grid, on the principal's call against the first sheet: a
+	// featureless hull read as a canister with nothing to judge its size by. A
+	// girdle every 5 km round the barrel and a seam every 15° along it — a
+	// 20 km ruler in both directions — each standing under 1% of the radius
+	// proud, so the outline stays the cylinder's.
+	const GIRDLE_PITCH_KM = 5;
+	for (
+		let i = 0, z = -half + 5;
+		z <= half - 5 + 1e-9;
+		i++, z += GIRDLE_PITCH_KM
+	)
+		part(
+			root,
+			`rama-girdle-${i}`,
+			new THREE.TorusGeometry(r + 0.02, 0.05, 6, 160),
+			material,
+			[0, 0, z],
+		);
+	const SEAMS = 24;
+	for (let i = 0; i < SEAMS; i++) {
+		const seam = part(
+			root,
+			`rama-seam-${i}`,
+			hullLoft(
+				[
+					{ z: -(half - 3.5), w: 0.03, h: 0.02, x: r, e: 4 },
+					{ z: half - 3.5, w: 0.03, h: 0.02, x: r, e: 4 },
+				],
+				{ segments: 6, subdivisions: 1 },
+			),
+			material,
+		);
+		seam.rotation.z = (i / SEAMS) * Math.PI * 2;
+	}
+
 	return { root };
 }

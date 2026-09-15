@@ -150,6 +150,40 @@ describe("Rama is drawn to the novel's measure", () => {
 				expect([node.name, material.emissive.getHex()]).toEqual([node.name, 0]);
 		});
 	});
+	test("a faint grid gives the hull a scale, and never changes its outline", () => {
+		// The principal's call on the first sheet: featureless read as a plain
+		// canister with nothing to judge its size by. Girdles at one pitch round
+		// it and seams along it, all standing within 1% of the radius — so the
+		// silhouette is still the cylinder's and nothing on it is lit.
+		const root = build();
+		const { lengthKm, radiusKm } = RAMA_DIMENSIONS;
+		const girdles: THREE.Object3D[] = [];
+		const seams: THREE.Object3D[] = [];
+		root.traverse((node) => {
+			if (node.name.startsWith("rama-girdle-")) girdles.push(node);
+			if (node.name.startsWith("rama-seam-")) seams.push(node);
+		});
+		expect(girdles.length).toBeGreaterThanOrEqual(5);
+		expect(seams.length).toBeGreaterThanOrEqual(12);
+		for (const part of [...girdles, ...seams])
+			for (const v of verticesOf(part))
+				expect([part.name, Math.hypot(v.x, v.y) <= radiusKm * 1.01]).toEqual([
+					part.name,
+					true,
+				]);
+		// One pitch: a ruler with uneven marks is not a ruler.
+		const zs = girdles
+			.map((g) => boxOf(g).getCenter(new THREE.Vector3()).z)
+			.sort((a, b) => a - b);
+		const pitches = zs.slice(1).map((z, i) => z - zs[i]);
+		for (const pitch of pitches)
+			expect(Math.abs(pitch - pitches[0])).toBeLessThan(1e-6);
+		// Seams run most of the body, not a stub.
+		for (const seam of seams) {
+			const size = boxOf(seam).getSize(new THREE.Vector3());
+			expect([seam.name, size.z > lengthKm * 0.8]).toEqual([seam.name, true]);
+		}
+	});
 });
 
 describe("Rama has no role in the simulation yet", () => {
