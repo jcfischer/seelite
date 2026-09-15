@@ -305,8 +305,7 @@ import {
 	type Canister,
 	dropCanisters,
 	raiderDestruction,
-	driftCanister,
-	scoops,
+	stepCanisters,
 } from "./raider-wreck";
 import {
 	type Encounter,
@@ -6344,7 +6343,10 @@ class Game {
 	/** One step of the gimbal toward the selected target, before the shot. */
 	private stepGunGimbal(dt: number) {
 		const bore = this.weaponAim();
-		const target = this.targetBody();
+		// **Only a raider pulls the beam** (sage #330): a station or a planet
+		// selected near the nose would turn it off the boresight, and a raider on
+		// the boresight but not selected would then be missed.
+		const target = this.raiderSelected() ? this.targetBody() : null;
 		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
 		this.gunAim = stepGimbal(this.gunAim ?? bore, bore, targetDir, dt);
 	}
@@ -7758,34 +7760,30 @@ class Game {
 	 */
 	private stepCargoCanisters(dt: number) {
 		if (this.canisters.length === 0) return;
-		const kept: Canister[] = [];
-		// **The scoop is tested before the drift.** This runs at the frame's
-		// start, before the ship moves. A canister drifted first was a step ahead
-		// of the ship it was tested against, and at combat speed that step is
-		// wider than the scoop's radius, so a pass right alongside missed.
-		for (const canister of this.canisters) {
-			if (this.world.gameTime >= canister.expiresAt) continue;
-			if (!scoops(canister, this.world.ship)) {
-				kept.push(driftCanister(canister, dt));
-				continue;
-			}
-			const took = scoopCargo(
-				this.commander,
-				canister.commodity,
-				canister.tonnes,
-			);
-			if (!took.accepted) {
-				// It keeps drifting (sage #330). The notice stands while the ship
-				// is beside it, and a later notice replaces it as usual.
-				kept.push(driftCanister(canister, dt));
-				this.lastExit = "hold full: canister left in space";
-				continue;
-			}
-			this.commander = took.commander;
-			this.lastExit = `scooped ${canister.tonnes} t ${canister.commodity}`;
-			this.saveDirty();
-		}
-		this.canisters = kept;
+		// `stepCanisters` owns the order (scoop, then drift); this owns the hold.
+		const step = stepCanisters(
+			this.canisters,
+			this.world.ship,
+			dt,
+			this.world.gameTime,
+			(canister) => {
+				const took = scoopCargo(
+					this.commander,
+					canister.commodity,
+					canister.tonnes,
+				);
+				if (took.accepted) this.commander = took.commander;
+				return took.accepted;
+			},
+		);
+		this.canisters = step.kept;
+		// A refused notice stands while the ship is beside the canister, and a
+		// later notice replaces it as usual.
+		for (const { canister, accepted } of step.scoops)
+			this.lastExit = accepted
+				? `scooped ${canister.tonnes} t ${canister.commodity}`
+				: "hold full: canister left in space";
+		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
 
 	/** Draw the leg's encounter, if the leg has none running. */
@@ -10471,10 +10469,20 @@ class Game {
 			const toRaider = directionTo(camPos, this.raiderContact.pos);
 			const raiderAt = toRaider && place(toRaider);
 			if (raiderAt?.on) {
-				drawEnemyBeam(ctx, w, h, glassBottom, raiderAt);
+				// In the cockpit the player sits below the glass; in chase the hull
+				// is on screen, and the beam ends on it (sage #330).
+				const shipDir =
+					this.view === "cockpit"
+						? null
+						: directionTo(camPos, this.world.ship.pos);
+				const shipAt = shipDir && place(shipDir);
+				const to = shipAt?.on
+					? { x: shipAt.x, y: shipAt.y }
+					: { x: w / 2, y: h * glassBottom };
+				drawEnemyBeam(ctx, w, h, glassBottom, raiderAt, to);
 				this.hostileFireRender.beam = {
 					from: { x: raiderAt.x, y: raiderAt.y },
-					to: { x: w / 2, y: h * glassBottom },
+					to,
 				};
 			}
 		}
@@ -10502,13 +10510,7 @@ class Game {
 			ctx.stroke();
 		}
 		if (this.gunFeedback.tracerLeftS > 0)
-			drawGunTracer(
-				ctx,
-				w,
-				h,
-				this.view === "cockpit" ? GLASS_BOTTOM_FRACTION : 1,
-				beamOnGlass ?? undefined,
-			);
+			drawGunTracer(ctx, w, h, glassBottom, beamOnGlass ?? undefined);
 		this.combatRig?.drawTracer(ctx, w, h, this.view, GLASS_BOTTOM_FRACTION);
 		// Not folded into the call above: outgoing fire is gated on the trigger
 		// being held and incoming fire is not, and a player being shot while not

@@ -21,7 +21,7 @@ Every combat ship obeys the same movement, collision, weapon, energy, shield, an
 while that target is within **±6°** of the boresight. It slews at **1.5 rad/s**
 and never leaves the cone; with no target, or outside the cone, it returns to
 the boresight (`src/gimbal.ts`). A hit is still tested against the target's
-**true hull** (a 32 m sphere for the raider), by ruling. The gimbal is what
+**true hull** (a sphere of 32 m radius for the raider), by ruling. The gimbal is what
 makes a nimbler ship hittable, not a larger target. The finite slew keeps a
 hard jink able to break the aim for a moment.
 
@@ -29,7 +29,10 @@ hard jink able to break the aim for a moment.
 accelerates at 2.69 km/s² against 2.00 and turns at 1.10 rad/s against 0.90. Its
 controller is capped at that hull's own turn and roll limits. It had slewed at
 1.2 rad/s and rolled at 2.6 rad/s, past what its hull allows, and the first
-playtest found it unhittable.
+playtest found it unhittable. **Only the rates are capped.** The controller
+still reaches its turn rate at once, while the player's ship spins up through
+its hull's angular acceleration (3.65 rad/s² on the raider hull). That is not
+yet the same rule, and it is a follow-up.
 
 **Shields recharge at 2 points/s**, after the 3 s delay, by the principal's
 ruling after the second playtest. #48's 6/s equalled the pulse's damage rate:

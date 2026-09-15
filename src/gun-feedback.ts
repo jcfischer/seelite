@@ -104,8 +104,9 @@ export const ENEMY_BEAM_COLOUR = "rgba(255, 140, 90, 0.95)";
 /**
  * The raider's shot, while it fires (#324, found missing in the second
  * playtest: "his lasers aren't showing up"). A line from the raider's point on
- * the glass toward the bottom of the glass, where the player sits, clipped
- * above `glassBottom` like the player's tracer.
+ * the glass to `to`, where the player sits: the bottom of the glass in the
+ * cockpit, the hull in chase. Clipped above `glassBottom` like the player's
+ * tracer.
  */
 export function drawEnemyBeam(
 	ctx: CanvasRenderingContext2D,
@@ -113,6 +114,7 @@ export function drawEnemyBeam(
 	h: number,
 	glassBottom: number,
 	from: { readonly x: number; readonly y: number },
+	to: { readonly x: number; readonly y: number },
 ): void {
 	ctx.save();
 	ctx.beginPath();
@@ -122,7 +124,7 @@ export function drawEnemyBeam(
 	ctx.lineWidth = 2.5;
 	ctx.beginPath();
 	ctx.moveTo(from.x, from.y);
-	ctx.lineTo(w / 2, h * glassBottom);
+	ctx.lineTo(to.x, to.y);
 	ctx.stroke();
 	ctx.restore();
 }

@@ -177,5 +177,60 @@ check(
 	JSON.stringify(outside),
 );
 
+// A body that is not a raider, selected 3° off the nose: the beam stays on the
+// boresight, or a raider on the boresight would be missed (sage #330).
+const body = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const angle = (u, v) =>
+		(Math.acos(Math.max(-1, Math.min(1, u.x * v.x + u.y * v.y + u.z * v.z))) *
+			180) /
+		Math.PI;
+	const other = g.world.system.bodies.find(
+		(b) => b.kind !== "star" && b.id !== g.raiderContact.id,
+	);
+	g.targetId = other.id;
+	const a = (3 * Math.PI) / 180;
+	let offDeg = 0;
+	for (let i = 0; i < 60; i++) {
+		const cam = g.cameraPos();
+		const d = {
+			x: other.pos.x - cam.x,
+			y: other.pos.y - cam.y,
+			z: other.pos.z - cam.z,
+		};
+		const n = Math.hypot(d.x, d.y, d.z);
+		const to = { x: d.x / n, y: d.y / n, z: d.z / n };
+		const up = g.shipUp();
+		const across = {
+			x: up.y * to.z - up.z * to.y,
+			y: up.z * to.x - up.x * to.z,
+			z: up.x * to.y - up.y * to.x,
+		};
+		const m = Math.hypot(across.x, across.y, across.z);
+		g.setAttitude(
+			{
+				x: to.x * Math.cos(a) + (across.x / m) * Math.sin(a),
+				y: to.y * Math.cos(a) + (across.y / m) * Math.sin(a),
+				z: to.z * Math.cos(a) + (across.z / m) * Math.sin(a),
+			},
+			up,
+		);
+		g.step(dt);
+		g.render(dt);
+		offDeg = angle(to, g.weaponAim());
+	}
+	return {
+		kind: other.kind,
+		offDeg,
+		beamDeg: g.gunAim ? angle(g.gunAim, g.weaponAim()) : 0,
+	};
+});
+check(
+	"a selected body that is not a raider, inside the cone, does not turn the beam",
+	body.offDeg > 1 && body.offDeg < 5 && body.beamDeg < 0.01,
+	JSON.stringify(body),
+);
+
 await browser.close();
 exit();

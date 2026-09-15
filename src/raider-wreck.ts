@@ -13,7 +13,7 @@
  * drawn from the kill's own stream, with illegal goods likelier the more
  * lawless the system. They drift on a fifth of the raider's last velocity
  * relative to the local frame, and expire
- * after `CANISTER_LIFETIME_S`. Any ship scoops one by passing close at low
+ * after `CANISTER_LIFETIME_S`. The player's ship (no raider or Traffic actor yet) scoops one by passing close at low
  * relative speed, with no module fitted (the principal's rulings).
  *
  * Headless: `Game` draws and applies what this returns.
@@ -161,15 +161,42 @@ export const driftCanister = (c: Canister, dt: number): Canister => ({
 	pos: add(c.pos, scale(c.vel, dt)),
 });
 
-/** Drift every canister by one step, and drop those that have expired. */
+/** A scoop tried this step: taken into the hold, or refused by a full one. */
+export interface CanisterScoop {
+	canister: Canister;
+	accepted: boolean;
+}
+
+/**
+ * One step of the canisters in flight: drop the expired ones, let the ship
+ * scoop any it passes close and slow, and drift the rest. `accept` puts a
+ * canister into the hold and says whether it fitted. A refused canister stays
+ * in space and drifts on (sage #330).
+ *
+ * **The scoop is tested before the drift.** `Game` steps this at the frame's
+ * start, before the ship moves. A canister drifted first was a step ahead of
+ * the ship it was tested against, and at combat speed that step is wider than
+ * the scoop's radius, so a pass right alongside missed.
+ */
 export function stepCanisters(
 	canisters: readonly Canister[],
+	ship: { pos: Vec3; vel: Vec3 },
 	dt: number,
 	now: number,
-): Canister[] {
-	return canisters
-		.filter((c) => now < c.expiresAt)
-		.map((c) => driftCanister(c, dt));
+	accept: (canister: Canister) => boolean,
+): { kept: Canister[]; scoops: CanisterScoop[] } {
+	const kept: Canister[] = [];
+	const tried: CanisterScoop[] = [];
+	for (const canister of canisters) {
+		if (now >= canister.expiresAt) continue;
+		if (scoops(canister, ship)) {
+			const accepted = accept(canister);
+			tried.push({ canister, accepted });
+			if (accepted) continue;
+		}
+		kept.push(driftCanister(canister, dt));
+	}
+	return { kept, scoops: tried };
 }
 
 /** Whether a ship scoops the canister now: close, and slow relative to it. */

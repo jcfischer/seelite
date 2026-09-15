@@ -159,11 +159,35 @@ describe("drift, expiry and the scoop", () => {
 		expiresAt: 100,
 	};
 
+	const farShip = { pos: v3(10, 0, 0), vel: v3() };
+	const takeAll = () => true;
+
 	test("a canister drifts on its velocity and is gone at `expiresAt`", () => {
-		const [moved] = stepCanisters([canister], 2, 50);
+		const [moved] = stepCanisters([canister], farShip, 2, 50, takeAll).kept;
 		expect(moved.pos.x).toBeCloseTo(0.02, 12);
-		expect(stepCanisters([canister], 0.1, 99.999)).toHaveLength(1);
-		expect(stepCanisters([canister], 0.1, 100)).toHaveLength(0);
+		expect(
+			stepCanisters([canister], farShip, 0.1, 99.999, takeAll).kept,
+		).toHaveLength(1);
+		expect(
+			stepCanisters([canister], farShip, 0.1, 100, takeAll).kept,
+		).toHaveLength(0);
+	});
+
+	test("the scoop is tested before the drift", () => {
+		// Drifted first, this canister is 0.2 km off the ship and out of reach.
+		const moving = { ...canister, vel: v3(0.2, 0, 0) };
+		const ship = { pos: v3(0, 0, 0), vel: v3() };
+		const step = stepCanisters([moving], ship, 1, 50, takeAll);
+		expect(step.kept).toHaveLength(0);
+		expect(step.scoops).toEqual([{ canister: moving, accepted: true }]);
+	});
+
+	test("a canister the hold refuses stays in space and drifts on", () => {
+		const ship = { pos: v3(0, 0, 0), vel: v3() };
+		const step = stepCanisters([canister], ship, 2, 50, () => false);
+		expect(step.scoops).toEqual([{ canister, accepted: false }]);
+		expect(step.kept).toHaveLength(1);
+		expect(step.kept[0].pos.x).toBeCloseTo(0.02, 12);
 	});
 
 	test("a close, slow pass scoops it; a far or a fast one does not", () => {

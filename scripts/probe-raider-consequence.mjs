@@ -8,7 +8,7 @@
  * answer is the wiring:
  *
  * - a kill writes the slot's destruction into the live world state;
- * - the destroyed slot fields no raider, so a forced one takes the next slot;
+ * - a forced raider never takes the destroyed slot (wiring only);
  * - the wreck drops canisters, which show on the glass;
  * - a close, slow pass scoops one into the hold;
  * - the lifecycle runs on the game clock;

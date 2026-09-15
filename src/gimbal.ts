@@ -3,7 +3,8 @@
  * playtest of the duel).
  *
  * **Why.** A raider flying by the same rules still out-handles the courier, and
- * the ruling keeps hits on its true 32 m hull, which is 0.9° across at 2 km. A
+ * the ruling keeps hits on its true hull, a sphere of 32 m radius, which is
+ * 1.8° across at 2 km. A
  * fixed forward gun on a ship that turns at 0.9 rad/s cannot hold a jinking
  * hull in that. So the beam turns toward the **selected target** while the
  * target is within **±6°** of the boresight. It slews at a finite
