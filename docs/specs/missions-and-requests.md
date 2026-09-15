@@ -1,7 +1,7 @@
-# Missions and requests
+# Requests
 
 Author: Codex / Ivy · 2026-09-15
-Status: complete contract proposal awaiting principal review; D1–D8 are already agreed.
+Status: D1–D8 are agreed. The detailed proposal becomes ratified on principal-approved merge recorded in the linked decision's resolution.
 Decision node: [How a pilot chooses, accepts, tracks and reports a request](https://github.com/jcfischer/seelite/issues/337).
 
 ## Agreed decisions
@@ -70,13 +70,13 @@ Principal evidence, 2026-09-15: after the agent could not locate a dedicated rel
 
 - `src/station-console.ts` defines `StationConsoleTab` as `Market | Equipment`; `src/live-cockpit.ts` renders those two tabs. Requests selection is an extension to this existing docked station console.
 - `src/pad-bindings.ts` provides console row navigation, shoulder-button tab changes, activate and back. `src/panel-focus.ts` owns the reusable focus behavior.
-- `src/save-envelope.ts` carries world and commander in one save envelope with save schema version 2. `src/world-state.ts` separately declares world schema version 2 and generator version 6. A request-state addition must identify which boundary changes rather than bump every version indiscriminately.
+- `src/save-envelope.ts` carries world and commander in one save envelope and owns `SAVE_SCHEMA_VERSION`. `src/world-state.ts` separately owns `WORLD_SCHEMA_VERSION` and `WORLD_GENERATOR_VERSION`. A request-state addition must identify which boundary changes rather than bump every version indiscriminately.
 - `src/world-state.ts` already owns carrier condition, causal episodes, recovery and sourced knowledge. `src/raider-slots.ts` supplies stable raider slots and per-spool encounter draws. These are available reuse foundations; they do not by themselves prove a pirate sensor relay is implemented or linked to a named route.
 - No dedicated pirate sensor relay implementation was located in the inspected main source and local nested worktrees; the principal subsequently clarified it was never built as far as they know. Do not confuse it with `observeSystemRelay`, the existing public station-information channel.
 
 ## Detailed contract proposed for ratification
 
-The following rules complete D1–D8. They are proposed implementation rules until the principal ratifies this document. No relay, Requests UI or mission runtime is delivered by this specification.
+The following rules complete D1–D8. They are proposed implementation rules until the principal ratifies this document through the linked decision. No relay, Requests UI or request runtime is delivered by this specification.
 
 ### 1. Offers, requests and leads
 
@@ -104,7 +104,7 @@ Before acceptance, show all of these fields, with “none” or “unknown” wh
 | Concrete consequence | The local capability the action changes, distinct from the credit reward |
 | Special terms | Deadline, exclusivity, loss fee or other failure penalty; default is none |
 
-Acceptance is an atomic eligibility check. Refuse with a readable reason if requirements, hold capacity, an explicit exclusivity rule or offer availability fail. A refusal changes neither commitment, cargo nor credits. Offer browsing remains available even when acceptance is ineligible.
+Acceptance is an atomic eligibility check. Refuse with a readable reason if requirements, hold capacity, an explicit exclusivity rule or offer availability fail, or the offer already has an accepted, ready-to-report or terminal row. A cancelled row uses Reaccept instead of creating another row. A refusal changes neither commitment, cargo nor credits. Offer browsing remains available even when acceptance is ineligible.
 
 The first relay offer has no deadline, exclusivity rule, entrusted cargo or loss fee. Broader exclusive-report choices belong to the competing-evidence decision, not to an invented multiplayer race. Later special terms require explicit offer text and authored predicates; a missing field never means an undisclosed penalty.
 
@@ -113,19 +113,21 @@ The first relay offer has no deadline, exclusivity rule, entrusted cargo or loss
 | Event | Preconditions | Result |
 | --- | --- | --- |
 | Read offer/lead | Visible known information | Open details or retain a lead; no accepted request, cargo transfer or payment |
-| Accept | Valid available offer; requirements and special terms pass | Create accepted request at its first unsatisfied stage; pin terms; transfer any entrusted cargo once |
+| Accept | Valid available offer; no existing request row; requirements and special terms pass | Create accepted request at its first unsatisfied stage with acceptance ordinal 1; pin terms; transfer any entrusted cargo once |
 | Reaccept cancelled work | Same unfinished offer; requirements pass; prior entrusted-cargo obligations settled before any new issuance | Reactivate the same request identity and pinned terms; increment acceptance ordinal; retain valid non-cargo evidence and re-evaluate cargo stages for the current issuance; do not change tracking |
-| Track | Named accepted request exists | Change the single tracked request; no progress, target discovery or flight-target change |
+| Track | Named request has accepted or ready-to-report status | Change the single tracked request; no progress, target discovery or flight-target change |
 | Untrack | Any request tracked | Clear the tracked cue; commitments remain |
 | Identify | Explicit observation satisfies the authored identification rule | Record sourced knowledge; search stage advances; a known target becomes eligible for exact tracking |
 | Satisfy objective | Authored condition and any required player provenance are met | Store bounded objective evidence; advance stage or mark ready to report; world consequence takes effect when intervention occurs |
-| Report success | Ready to report; docked at the named report station; no prior settlement | Atomically settle committed cargo, pay pinned reward, mark completed and expose any promised report once |
-| Cancel | Nonterminal accepted request | Mark cancelled anywhere; release player-cargo reservations; retain entrusted-cargo return obligations; no success reward |
+| Report success | Ready to report; docked at the named report station; no prior settlement | Atomically settle committed cargo, pay pinned reward, mark completed, clear tracking if this request is tracked and expose any promised report once |
+| Cancel | Request has accepted or ready-to-report status | Mark cancelled anywhere; clear tracking if this request is tracked; release player-cargo reservations; retain entrusted-cargo return obligations; no success reward |
 | Return entrusted cargo | Docked at its requester; unsettled return obligation | Remove the returned lot and settle that obligation once; do not revive the cancelled job or pay its success reward |
 | Settle lost entrusted cargo | Loss is established; disclosed settlement terms apply | Apply the disclosed fee once and settle the lost portion; cancellation itself does not declare aboard cargo lost |
-| Meet disclosed failure condition | Authored deadline or other explicitly accepted failure condition occurs | Mark failed with a reason and apply only disclosed terms; retain any unsettled cargo obligations |
+| Meet disclosed failure condition | Authored deadline or other explicitly accepted failure condition occurs | Mark failed with a reason, clear tracking if this request is tracked and apply only disclosed terms; retain any unsettled cargo obligations |
 
-The first relay stages are **search → identify → disable → ready to report → completed**. These are authored objective stages, not elapsed scan-button timers. Search detection range and identification mechanics are experiment details owned by the relay prototype; the interface cannot claim discovery from a fixture that already exposes the target.
+The first relay's authored objective stages are **search → identify → disable**. Satisfying all three moves the request to ready-to-report status; successful reporting moves it to completed status. These are authored objectives, not elapsed scan-button timers. Search detection range and identification mechanics are experiment details owned by the relay prototype; the interface cannot claim discovery from a fixture that already exposes the target.
+
+`stageId` names the first unsatisfied authored objective, or retains the final objective's ID when all are satisfied; it never contains a request-status value. Bounded evidence determines which objectives are satisfied. The transition boundary updates stage and status together: an ongoing request is accepted while an objective remains, and ready to report when all are satisfied. Completed, cancelled and failed statuses record settlement or disposition and retain their objective evidence. Load validation rejects disagreement with those rules rather than treating stage and readiness as separate authorities. The glossary's Accepted request is the umbrella commitment term; action preconditions use the explicit status values where that distinction matters.
 
 Every accepted request listens for qualifying progress independently of tracking. One action may satisfy several distinct compatible requests, but a particular cargo unit cannot be delivered or reserved twice. Rewards are per distinct authored contract, not per repeated button press.
 
@@ -139,7 +141,9 @@ Entrusted cargo is a separate request-owned lot, linked to its request, requeste
 
 Player-procured cargo remains player-owned until delivery. If the offer explicitly commits quantities, reserve those quantities per request; commerce and other deliveries may use only the unreserved remainder. Cancellation releases those reservations. Offer details distinguish these goods from entrusted cargo before acceptance.
 
-The existing hold capacity and commodity units remain authoritative. Every capacity consumer—purchase, scoop, request acceptance, equipment/hull changes and hold readout—must account for entrusted tonnes without duplicating cargo in `CommanderState.cargo`. The present `station-commerce.ts` helpers count ordinary commodity cargo only, so an implementation must extend their shared boundary before adding mission lots; a display-only hold deduction is insufficient.
+The existing hold capacity and commodity units remain authoritative. Every capacity consumer—purchase, scoop, request acceptance, equipment/hull changes and hold readout—must account for entrusted tonnes without duplicating cargo in `CommanderState.cargo`. The present `station-commerce.ts` helpers count ordinary commodity cargo only, so an implementation must extend their shared boundary before adding entrusted-cargo lots; a display-only hold deduction is insufficient.
+
+A future entrusted-cargo offer must name the implemented event that establishes actual loss and disclose its settlement rule before acceptance. That event moves only the affected units from aboard to lost, retaining issuance identity and provenance; opening Requests or pressing Cancel cannot establish loss. A hull/equipment change that would leave insufficient capacity is refused atomically instead of silently discarding goods. If a disclosed loss fee exceeds available credits, settlement is refused without mutation and the obligation remains; this contract introduces no debt balance. The first relay offer has neither entrusted cargo nor a cargo-loss event.
 
 Success settlement is one state transition spanning request status, credits, cargo obligations and promised report/access evidence. A completed status is the durable receipt for this fixed offer; do not maintain a second, independently mutable “paid” flag. Settled cargo lots also have durable settlement state. Repeated Report, Return or loss settlement is a no-op with an explanatory result. Credits are an authored request reward applied to the commander; no requester balance, commodity-market depletion or faction treasury is invented by this contract.
 
@@ -151,7 +155,9 @@ Do not refresh hidden target state by reading the objective world into the reque
 
 If the pilot knows a target is unavailable before objective satisfaction, retain the job and show the reason plus useful actions: use a known, explicitly scheduled recovery if one exists, return to the requester for clarification, or cancel. The first relay has no established competing actor, autonomous disablement or recovery schedule. Missing content during implementation is an integration fault, not a fictional “someone beat you to it” outcome.
 
-If a completed intervention already has valid evidence, retain ready-to-report state despite later target changes. A lost learned target may leave a last-observed location rather than a live exact-position marker; the UI distinguishes stale intelligence from a current observation. Requester destruction or an inaccessible report station cannot be introduced by this UI contract: the first requesting station remains reachable under the existing station rules.
+If a completed intervention already has valid evidence, retain ready-to-report state despite later target changes. A lost learned target may leave a last-observed location rather than a live exact-position marker; the UI distinguishes stale intelligence from a current observation.
+
+The existing carrier model permits disabled or destroyed stations; this specification grants the requester no exemption. If its report station becomes inaccessible, keep the job and earned evidence, refuse Report while docking is unavailable, and show only learned availability information. Offer the same known recovery or cancellation actions as for an unavailable target. Once docking there becomes available again, explicit return/report can settle the existing evidence; no remote payment, replacement requester, automatic failure or invented recovery schedule is implied. The first prototype begins with an operational ordinary requesting station and must also exercise this unavailable-report path.
 
 ### 6. Interface and focus flow
 
@@ -184,7 +190,7 @@ interface SavedRequest {
   contentRevision: number;
   acceptedAt: number;              // authoritative game clock
   lastAcceptedAt: number;
-  acceptanceOrdinal: number;       // increases only on successful explicit reaccept
+  acceptanceOrdinal: number;       // starts at 1; increases on successful explicit reaccept
   status: RequestStatus;
   stageId: string;
   pinnedTerms: AcceptedTerms;      // reward, requirements and disclosed special terms
@@ -203,11 +209,11 @@ Validate identities, supported content revisions, enum values, finite nonnegativ
 
 Persist only commitment, learned information, bounded evidence, ownership/settlement and the tracked request identity. Derive list ordering, text, next-action projection, lead age, eligibility, current known-target marker and route from authoritative saved state plus the seeded world. Do not save DOM focus, marker coordinates, route chains or countdown copies.
 
-**Versioning:** current `SAVE_SCHEMA_VERSION` is 2. Adding `CommanderRecord.requests` requires an envelope schema bump, with an explicit compatible version-2 migration to an empty journal. Verify the original envelope's checksum before parsing/migrating it; migrate a copy, retain the stored original until the normal complete-envelope save succeeds, and leave unsupported versions untouched and exportable. No permissive default may silently discard request state from a newer unsupported schema.
+**Versioning:** adding `CommanderRecord.requests` requires a `SAVE_SCHEMA_VERSION` bump, with an explicit compatible migration from the pre-journal envelope to an empty journal. The implementation must pin that supported source revision from `src/save-envelope.ts` in its migration and fixtures. Verify the original envelope's checksum before parsing/migrating it; migrate a copy, retain the stored original until the normal complete-envelope save succeeds, and leave unsupported versions untouched and exportable. No permissive default may silently discard request state from a newer unsupported schema.
 
 Request journal additions alone do not change `WORLD_SCHEMA_VERSION` or `WORLD_GENERATOR_VERSION`. A newly generated persistent relay carrier will separately require the generator-baseline version/fingerprint decision owned by its prototype; world-state shape changes require a world-schema migration. Do not conflate these boundaries.
 
-Use the existing debounced dirty-save path and complete `{world, commander}` envelope in one IndexedDB transaction. Acceptance, observation, stage/evidence, tracking, cancellation and cargo/reward settlement mark dirty. Existing docking, undocking, hyperspace arrival and quit flush boundaries remain in force. There is no separate mission storage or per-domain hash. Across a crash before the debounce, the whole earlier envelope may return; request payment and credits must never return from different snapshots.
+Use the existing debounced dirty-save path and complete `{world, commander}` envelope in one IndexedDB transaction. Acceptance, observation, stage/evidence, tracking, cancellation and cargo/reward settlement mark dirty. Existing docking, undocking, jump arrival and quit flush boundaries remain in force. There is no separate request storage or per-domain hash. Across a process crash before the debounce, the whole earlier envelope may return; request payment and credits must never return from different snapshots.
 
 ### 8. First relay-request example
 
@@ -242,32 +248,31 @@ The UI prototype may use documented fixtures to exercise this sequence. A fixtur
 | Identify target | Explicit observation records source/time; exact tracking becomes eligible only then |
 | Qualifying disablement | Headless provenance/stage check; live relay experiment separately proves immediate world consequence |
 | Premature/wrong-station/remote Report | Refused; no money, cargo settlement or outcome report |
+| Report station inaccessible | Keep ready-to-report evidence and manual tracking; no hidden availability refresh or automatic payment/failure; refuse Report until docking is available; cancellation/reacceptance preserves valid evidence |
 | Return and Report twice | One completed row, one credit transfer, one report and no duplicate cargo consumption |
 | Cancel while flying | Cancelled state; no default penalty; no automatic switch to another tracked job |
 | Reaccept cancelled unfinished work | Same offer identity and terms; valid prior non-cargo evidence retained; no duplicate success reward or tracking change |
 | Reaccept after entrusted cargo cancellation | Outstanding old lot blocks new issuance; return/loss settles once; new ordinal rejects old actions and cannot reuse old cargo evidence |
 | Entrusted cargo aboard on cancellation | Still consumes hold, cannot sell; return action settles once at requester |
-| Entrusted partial loss | Aboard and lost quantities remain distinct; only disclosed fee applied once |
+| Entrusted partial loss | Authored implemented loss event establishes affected units and provenance; aboard and lost quantities remain distinct; only disclosed fee applied once; insufficient-credit refusal leaves obligation intact |
 | Committed player cargo across two requests | No double reservation/delivery; cancellation releases only its reservation |
 | Hold consumers | Buy, scoop, request acceptance and load/ship changes agree on total ordinary plus entrusted hold usage |
 | Changed target / optional authored repair | No hidden off-screen knowledge refresh; recorded success survives unless pinned offer explicitly says otherwise |
 | Save/load every transition | Commitments, chosen tracking, objective evidence, terminal receipts and cargo obligations round-trip together |
-| Old/unsupported/corrupt save | Valid v2 migration starts empty; unsupported or corrupt originals remain untouched/exportable; no paid status/credit graft |
+| Old/unsupported/corrupt save | Valid supported pre-journal migration starts empty; unsupported or corrupt originals remain untouched/exportable; no paid status/credit graft |
+| Stage/status consistency | Objective IDs contain no status values; evidence, first unsatisfied stage and readiness agree; Report/Cancel/failure clear a tracked terminal row atomically |
 | Input focus and repeated activation | Mouse, keyboard and controller reach list/details/actions; one press opening details cannot accept/report; stable focus survives resorting |
 | Names and galaxy namespaces | Renaming display labels does not orphan work; identical local carrier keys in different galaxies stay distinct |
 | Live relay payoff | Separate relay-node before/after route experiment and principal play judgment; UI fixtures never count as this proof |
 
 Headless tests verify arithmetic, ownership, transitions, parsing and atomic refusal/settlement. Guarded browser probes verify normal UI reachability and spatial/visible behavior; headed canonical-viewport captures and principal operation judge legibility. No implementation test is claimed as run by this design-only document.
 
-### 10. Handoff and graph corrections
+### 10. Handoff
 
 - [Prototype the Requests tab and the in-flight active-request cue](https://github.com/jcfischer/seelite/issues/343) remains below this decision and blocked by it. Its old one-active-request boundary is superseded by D1/D2: prototype at least two distinct accepted offers to prove concurrency and one manual cue. One relay-related offer may remain the first content example.
 - [Prototype: pirate sensor relay consequence loop](https://github.com/jcfischer/seelite/issues/43) builds the unbuilt relay, its discovery/identification rule and named route capability; it retains the before/after experiment and principal flight judgment.
 - [Prototype one complete relay request whose return report introduces the Rama mystery](https://github.com/jcfischer/seelite/issues/344) consumes those separately delivered results and its story-parent decisions. Its partial-build assumption is superseded by the principal clarification above.
-- The request node's original single-active-request and partly-built-relay assumptions are also superseded. The resolution must point to these explicit corrections where those old claims were made. Do not create duplicate relay or UI nodes to work around stale wording.
-
-Current `soma graph` verbs do not expose a general node-body update operation. Record the changed contract and source-status correction in the request node's resolution and derived map gist; downstream owners must read this linked contract before claiming implementation. Do not use a raw tracker lifecycle/body write to bypass the graph rules.
 
 ## Scope
 
-This document decides the request contract. The UI prototype belongs to its existing follow-up beneath this decision; relay route capability and the before/after flight experiment remain owned by the relay prototype. General mission generation, faction simulation and a full campaign are outside this decision.
+This document decides the request contract. The UI prototype belongs to its existing follow-up beneath this decision; relay route capability and the before/after flight experiment remain owned by the relay prototype. General request generation, faction simulation and a full campaign are outside this decision.

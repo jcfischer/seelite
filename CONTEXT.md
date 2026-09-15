@@ -172,31 +172,31 @@ never the generated value, which the baseline supplies once a marker exists.
 _Avoid_: Live map state, discovery status
 
 **Offer**:
-Work available from a named requester, with its purpose, requirements, payment and special terms presented before acceptance. Reading an offer does not create a commitment.
+Work available from a named requester. `docs/specs/missions-and-requests.md` §1–2 owns offer identity, details and acceptance.
 _Avoid_: Accepted request (before explicit acceptance)
 
 **Lead**:
-Sourced intelligence about an object or search region, with an observation time and confirmation state. Holding a lead does not imply accepting work.
+Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` §1 and §5 owns observation, confirmation and refresh rules.
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
 **Accepted request**:
-A job the pilot has explicitly committed to undertaking for a requester. A pilot may hold several accepted requests at the same time.
+A job the pilot has explicitly committed to undertaking for a requester. `docs/specs/missions-and-requests.md` D1 and §3 owns concurrent commitments and progress.
 _Avoid_: Active mission (when implying a single accepted job)
 
 **Tracked request**:
-The one accepted request the pilot has chosen to guide the cockpit next-action cue. Tracking does not determine whether other accepted requests progress.
+The accepted request the pilot has chosen to guide the cockpit next-action cue. `docs/specs/missions-and-requests.md` D2 and §6 owns manual tracking and its interface.
 _Avoid_: Active request (when conflating tracking with acceptance)
 
 **Ready to report**:
-An accepted request whose objective has been satisfied but whose result has not yet been reported to the requester. For the first relay request, reporting requires returning to the requester.
+An accepted request whose objective has been satisfied but whose result has not yet been reported to the requester. `docs/specs/missions-and-requests.md` §3–5 owns report eligibility and settlement.
 _Avoid_: Completed request (before reporting)
 
 **Search region**:
-The bounded area a lead gives the pilot to search before identifying a hidden target. Knowing the region does not imply knowing the target's exact position.
+The bounded area a lead gives the pilot to search before identifying a hidden target. `docs/specs/missions-and-requests.md` D5 and §6 owns region cues and identification boundaries.
 _Avoid_: Target position (before identification)
 
 **Entrusted cargo**:
-Requester-owned goods carried in the pilot's hold for a request, unavailable for market sale. Cancellation leaves a return obligation rather than transferring ownership.
+Requester-owned goods carried in the pilot's hold for a request. `docs/specs/missions-and-requests.md` §4 owns hold usage, sale restrictions and return/loss settlement.
 _Avoid_: Player cargo, reward cargo
 
 **System relay**:
