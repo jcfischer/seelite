@@ -8129,13 +8129,20 @@ class Game {
 			return;
 		}
 		if (!v.identified || contact.id !== v.key) delist();
+		// **At the clock as it stands now, not at the frame's start.** The step
+		// read the relay before the flight advanced the ship, and a relay on a
+		// station's orbit moves tens of kilometres a second — so a contact and
+		// a mesh placed from that reading sit kilometres behind the relay
+		// beside a ship that has moved on. Bodies are placed the same way, from
+		// the clock, by `advanceSystem`.
+		const { pos, vel } = this.relayNow(v);
 		contact.id = v.key;
-		contact.pos.x = v.pos.x;
-		contact.pos.y = v.pos.y;
-		contact.pos.z = v.pos.z;
-		contact.velocity.x = v.vel.x;
-		contact.velocity.y = v.vel.y;
-		contact.velocity.z = v.vel.z;
+		contact.pos.x = pos.x;
+		contact.pos.y = pos.y;
+		contact.pos.z = pos.z;
+		contact.velocity.x = vel.x;
+		contact.velocity.y = vel.y;
+		contact.velocity.z = vel.z;
 		if (v.identified && !this.relayListed) {
 			this.registerContact(contact);
 			this.relayListed = true;
@@ -8146,10 +8153,23 @@ class Game {
 		if (root.userData.condition !== v.condition)
 			this.relayMesh.setCondition(v.condition);
 		root.position.set(
-			v.pos.x - cameraPos.x,
-			v.pos.y - cameraPos.y,
-			v.pos.z - cameraPos.z,
+			pos.x - cameraPos.x,
+			pos.y - cameraPos.y,
+			pos.z - cameraPos.z,
 		);
+	}
+
+	/** The relay where the clock stands now, or the frame-start reading when
+	 *  the plan is gone (a jump between the step and the render). */
+	private relayNow(v: RelayView): { pos: Vec3; vel: Vec3 } {
+		const plan = this.currentRelayPlan();
+		if (!plan) return { pos: v.pos, vel: v.vel };
+		const { contents } = this.world.system;
+		const now = this.world.gameTime;
+		return {
+			pos: relayPosition(plan, contents, now),
+			vel: relayVelocity(plan, contents, now),
+		};
 	}
 
 	/** #43: the relay as a probe reads it. */
@@ -8159,7 +8179,13 @@ class Game {
 		return {
 			enabled: RELAY_PROTOTYPE,
 			plan,
-			view: this.relayView,
+			// The relay where the clock stands, for the same reason the
+			// presentation reads it there: a probe aiming at the frame-start
+			// reading aims kilometres behind it.
+			view: this.relayView && {
+				...this.relayView,
+				...this.relayNow(this.relayView),
+			},
 			hull: this.relayHull,
 			listed: this.relayListed,
 			detection: RELAY_PROTOTYPE
