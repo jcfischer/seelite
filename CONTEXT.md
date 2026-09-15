@@ -171,6 +171,34 @@ replaced; the row stores only when the fact was learned and from what source,
 never the generated value, which the baseline supplies once a marker exists.
 _Avoid_: Live map state, discovery status
 
+**Offer**:
+Work available from a named requester, with its purpose, requirements, payment and special terms presented before acceptance. Reading an offer does not create a commitment.
+_Avoid_: Accepted request (before explicit acceptance)
+
+**Lead**:
+Sourced intelligence about an object or search region, with an observation time and confirmation state. Holding a lead does not imply accepting work.
+_Avoid_: Mission, confirmed target (for unconfirmed intelligence)
+
+**Accepted request**:
+A job the pilot has explicitly committed to undertaking for a requester. A pilot may hold several accepted requests at the same time.
+_Avoid_: Active mission (when implying a single accepted job)
+
+**Tracked request**:
+The one accepted request the pilot has chosen to guide the cockpit next-action cue. Tracking does not determine whether other accepted requests progress.
+_Avoid_: Active request (when conflating tracking with acceptance)
+
+**Ready to report**:
+An accepted request whose objective has been satisfied but whose result has not yet been reported to the requester. For the first relay request, reporting requires returning to the requester.
+_Avoid_: Completed request (before reporting)
+
+**Search region**:
+The bounded area a lead gives the pilot to search before identifying a hidden target. Knowing the region does not imply knowing the target's exact position.
+_Avoid_: Target position (before identification)
+
+**Entrusted cargo**:
+Requester-owned goods carried in the pilot's hold for a request, unavailable for market sale. Cancellation leaves a return obligation rather than transferring ownership.
+_Avoid_: Player cargo, reward cargo
+
 **System relay**:
 The public station-condition report received when the initial world is
 established or the player later enters a system (#116). It refreshes Last-known
