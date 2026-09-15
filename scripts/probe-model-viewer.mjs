@@ -129,6 +129,29 @@ for (const viewport of VIEWPORTS) {
 			beacons.glowsLit === beacons.glows,
 		JSON.stringify(beacons),
 	);
+	// #333: the third family mounts, shows its one concept, stays outside
+	// Game, and frames a 50 km subject from outside its whole reach (28.2 km, `RAMA_REACH_KM`) — a camera placed at a
+	// ship's orbit would be inside the hull, 10 km from the axis.
+	await page.goto(workbenchUrl(ORIGIN, { "model-viewer": "rama" }), {
+		waitUntil: "load",
+	});
+	await page.waitForSelector("#model-viewer canvas");
+	const rama = await page.evaluate(state);
+	check(
+		`${viewport.name}: the Rama family mounts one concept, outside Game, framed from outside the hull`,
+		rama.root &&
+			rama.canvas &&
+			rama.assets.join(",") === "rama" &&
+			rama.variants.length === 1 &&
+			rama.selected === "rama" &&
+			!rama.gameConstructed &&
+			rama.viewer?.distance > 28.2,
+		JSON.stringify({
+			assets: rama.assets,
+			variants: rama.variants,
+			distance: rama.viewer?.distance,
+		}),
+	);
 	await page.close();
 }
 
