@@ -31,6 +31,13 @@
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import { HULL_IDS, type HullId } from "./hull";
+import { generateGalaxy } from "./galaxy";
+import { generateContents } from "./system";
+import {
+	emptyRequests,
+	parseRequests,
+	type RequestsPrototypeState,
+} from "./requests-prototype";
 import {
 	type CommanderState,
 	newCommander,
@@ -60,7 +67,8 @@ import {
  * has shipped a version 1 record, and D8's refusal is what a player would meet
  * if one had.
  */
-export const SAVE_SCHEMA_VERSION = 2;
+// 3 adds the node 343 Requests UI experiment. Schema 2 is migrated below.
+export const SAVE_SCHEMA_VERSION = 3;
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -89,6 +97,8 @@ export interface SavedFlight {
 
 /** The player half of a save. */
 export interface CommanderRecord {
+	/** Node 343 UI experiment journal; stored atomically with credits. */
+	requests: RequestsPrototypeState;
 	/** Credits, cargo, equipment, tank and hull — `station-commerce.ts`'s own
 	 *  struct, unchanged, because commerce is what writes it. */
 	state: CommanderState;
@@ -134,6 +144,7 @@ export const newCommanderRecord = (
 		chargeAu?: number;
 	} = {},
 ): CommanderRecord => ({
+	requests: emptyRequests(),
 	state: newCommander(hull),
 	galaxyIndex: options.galaxyIndex ?? 0,
 	systemIndex: options.systemIndex ?? 0,
@@ -162,6 +173,19 @@ const canonicalCommander = (record: CommanderRecord) => {
 	for (const name of Object.keys(record.state.cargo).sort())
 		cargo[name] = record.state.cargo[name];
 	return {
+		requests: {
+			byId: Object.fromEntries(
+				Object.entries(record.requests.byId).sort(([a], [b]) =>
+					a.localeCompare(b),
+				),
+			),
+			leadsById: Object.fromEntries(
+				Object.entries(record.requests.leadsById).sort(([a], [b]) =>
+					a.localeCompare(b),
+				),
+			),
+			trackedRequestId: record.requests.trackedRequestId,
+		},
 		state: {
 			credits: record.state.credits,
 			cargo,
@@ -256,8 +280,14 @@ const parseFlight = (raw: unknown): SavedFlight => {
 	};
 };
 
-const parseCommander = (raw: unknown): CommanderRecord => {
+const parseCommander = (
+	raw: unknown,
+	now: number,
+	version: number,
+): CommanderRecord => {
 	const o = asObject(raw, "commander");
+	if (version === 2 && o.requests !== undefined)
+		fail("saveSchemaVersion 2 cannot contain a Requests journal");
 	const state = asObject(o.state, "commander.state");
 	const hull = state.hull;
 	if (
@@ -310,6 +340,7 @@ const parseCommander = (raw: unknown): CommanderRecord => {
 	if (!isSystemIndex(systemIndex))
 		fail(`commander: ${systemIndex} is not a system index`);
 	return {
+		requests: version === 2 ? emptyRequests() : parseRequests(o.requests, now),
 		state: {
 			credits: num(state, "credits", "commander.state"),
 			cargo,
@@ -337,7 +368,7 @@ const parseCommander = (raw: unknown): CommanderRecord => {
 export function parseSave(raw: unknown): SaveEnvelope {
 	const o = asObject(raw, "envelope");
 	const version = o.saveSchemaVersion;
-	if (version !== SAVE_SCHEMA_VERSION)
+	if (version !== SAVE_SCHEMA_VERSION && version !== 2)
 		fail(
 			// The reason alone: the player's sentence — left as it is, Export
 			// takes a copy — is `loadFault`'s, which the overlay puts first.
@@ -361,7 +392,39 @@ export function parseSave(raw: unknown): SaveEnvelope {
 				"It was edited, corrupted, or assembled from two saves; the hash " +
 				"cannot say which.",
 		);
-	return { world: parseWorld(o.world), commander: parseCommander(o.commander) };
+	const world = parseWorld(o.world);
+	// Schema 2 at 7f1cfd3 is the supported pre-journal envelope. Verify its
+	// original hash above, then migrate a copy; the store retains its original
+	// until the normal complete-envelope transaction succeeds.
+	const commander = parseCommander(
+		o.commander,
+		world.gameTime,
+		version as number,
+	);
+	const offers = [
+		...Object.values(commander.requests.byId).map((r) => r.terms),
+		...Object.values(commander.requests.leadsById),
+	];
+	const stationsBySystem = new Map<string, Set<string>>();
+	for (const offer of offers) {
+		const { galaxyIndex, carrierKey: key } = offer.requester;
+		const separator = key.indexOf(":");
+		const systemIndex = Number(key.slice(0, separator));
+		const localId = key.slice(separator + 1);
+		const namespace = `${galaxyIndex}:${systemIndex}`;
+		let stations = stationsBySystem.get(namespace);
+		if (!stations) {
+			stations = new Set(
+				generateContents(
+					generateGalaxy(world.seed, galaxyIndex).systems[systemIndex],
+				).stations.map((s) => s.localCarrierId),
+			);
+			stationsBySystem.set(namespace, stations);
+		}
+		if (!stations.has(localId))
+			fail(`Requests requester ${key} does not exist in galaxy ${galaxyIndex}`);
+	}
+	return { world, commander };
 }
 
 /** The opening credits figure, re-exported so a new-game caller does not have

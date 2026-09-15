@@ -46,7 +46,7 @@ import type { DockPhase } from "./dock-session";
 // ---------------------------------------------------------------------------
 
 /** §8's tabs. M3: later station business takes a third, not a second wall. */
-export type StationConsoleTab = "Market" | "Equipment";
+export type StationConsoleTab = "Market" | "Equipment" | "Requests";
 
 /**
  * Where a dock is, as far as the console is concerned.

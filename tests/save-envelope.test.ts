@@ -103,7 +103,7 @@ describe("#89 D5 — the save envelope", () => {
 			commander: commander(),
 		}) as Record<string, unknown>;
 		const before = structuredClone(raw);
-		const stale = { ...raw, saveSchemaVersion: SAVE_SCHEMA_VERSION - 1 };
+		const stale = { ...raw, saveSchemaVersion: SAVE_SCHEMA_VERSION + 1 };
 		expect(() => parseSave(stale)).toThrow(/saveSchemaVersion/);
 		// **Proven non-destructive, not merely proven to throw** (#89's wording).
 		// The refusal is the only path by which a player can still export the

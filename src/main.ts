@@ -408,6 +408,12 @@ import {
 } from "./live-cockpit";
 import { readDeficit } from "./deficits";
 import {
+	emptyRequests,
+	fixtureOffers,
+	requestAction,
+} from "./requests-prototype";
+import type { RequestsView } from "./requests-prototype-view";
+import {
 	type CommanderRecord,
 	type SaveEnvelope,
 	newCommanderRecord,
@@ -1500,6 +1506,13 @@ class Game {
 	private leftTab: LeftTab = "Navigation";
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
+	private requests = emptyRequests();
+	private requestSelectedId: string | null = null;
+	private requestMessage = "";
+	private requestRevision = 0;
+	private readonly requestFixtures = new URLSearchParams(
+		window.location.search,
+	).has("requests-prototype");
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -2434,6 +2447,7 @@ class Game {
 			);
 			this.commerceWorld = save.world;
 			this.commander = save.commander.state;
+			this.requests = save.commander.requests;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
 			// **A docked save resumes in flight at the arrival point, and that
@@ -2834,6 +2848,7 @@ class Game {
 				this.stationConsoleTab = tab;
 				this.updateCockpit();
 			},
+			onRequestAction: (action, id) => this.actOnRequest(action, id),
 			onStationAction: (type, name) => {
 				const action: StationAction =
 					type === "buy-fuel"
@@ -5586,6 +5601,21 @@ class Game {
 
 	private onKey(e: KeyboardEvent, down: boolean) {
 		const key = e.key.toLowerCase();
+		if (
+			this.view === "cockpit" &&
+			!e.altKey &&
+			this.liveCockpit?.requestsSurfaceOpen() &&
+			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(key)
+		) {
+			e.preventDefault();
+			if (down && !e.repeat) {
+				if (key === "enter") this.liveCockpit.activateFocus();
+				else if (key === "arrowleft" || key === "arrowright")
+					this.liveCockpit.stepTab(key === "arrowleft" ? -1 : 1);
+				else this.liveCockpit.stepFocus(key === "arrowup" ? -1 : 1);
+			}
+			return;
+		}
 		if (down && !e.repeat && e.altKey) {
 			if (this.view !== "cockpit") {
 				e.preventDefault();
@@ -9339,6 +9369,7 @@ class Game {
 							.map(formatRaiderLogLine)
 					: [],
 			tuning: this.tuningSummary(),
+			requests: this.requestsView(),
 			stationConsole: this.stationConsoleState(),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
@@ -9352,6 +9383,64 @@ class Game {
 	 * Deficits come from the current galaxy's persistent envelope, and commander
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
+	private requestsView(): RequestsView {
+		const context = this.dockedStationContext();
+		return {
+			state: this.requests,
+			offers:
+				this.requestFixtures && context
+					? fixtureOffers(
+							context.galaxyIndex,
+							context.stationKey,
+							this.nameOfStation(context.station.id),
+							0,
+						)
+					: [],
+			selectedId: this.requestSelectedId,
+			message: this.requestMessage,
+			revision: this.requestRevision,
+			now: this.world.gameTime,
+			docked: context
+				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
+				: null,
+			fixtures: this.requestFixtures,
+		};
+	}
+
+	private actOnRequest(action: string, id: string): void {
+		const view = this.requestsView();
+		if (action === "details") {
+			if (
+				!view.offers.some((o) => o.id === id) &&
+				!this.requests.byId[id] &&
+				!this.requests.leadsById[id]
+			)
+				return;
+			this.requestSelectedId = id;
+			this.requestMessage = "";
+		} else {
+			if (action.startsWith("fixture-") && !this.requestFixtures) return;
+			const result = requestAction(this.requests, view.offers, action, id, {
+				now: this.world.gameTime,
+				docked: view.docked,
+				armed: this.condition.hull > 0,
+			});
+			this.requestMessage = result.message;
+			if (result.ok) {
+				this.requests = result.state;
+				if (result.rewardCr)
+					this.commander = {
+						...this.commander,
+						credits: this.commander.credits + result.rewardCr,
+					};
+				this.stationConsoleRevision += 1;
+				this.saveDirty();
+			}
+		}
+		this.requestRevision += 1;
+		this.updateCockpit();
+	}
+
 	private stationConsoleState() {
 		const context = this.dockedStationContext();
 		if (!context) {
@@ -9419,6 +9508,7 @@ class Game {
 		return {
 			...base,
 			state: this.commander,
+			requests: this.requests,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
 			dockedAt: station
