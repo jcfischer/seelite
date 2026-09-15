@@ -199,14 +199,21 @@ export function dropCanisters(kill: {
 
 /**
  * One canister moved one step, from game time `now`. Its velocity relative to
- * `restVel` falls in a straight line to zero at `restsAt`, and it moves on the
- * mean of the step's two velocities, which is exact for a straight line.
+ * `restVel` falls in a straight line to zero at `restsAt`. It moves with
+ * `restVel` for the whole step, and with the fading part on that part's mean
+ * only until it reaches rest, so the step that crosses `restsAt` is exact too
+ * (sage #346: it had moved on the mean for the whole step and overshot).
  */
 export function driftCanister(c: Canister, dt: number, now: number): Canister {
 	const left = c.restsAt - now;
-	const share = left > 0 ? Math.max(0, left - dt) / left : 0;
-	const vel = add(c.restVel, scale(sub(c.vel, c.restVel), share));
-	return { ...c, pos: add(c.pos, scale(add(c.vel, vel), dt / 2)), vel };
+	const fading = Math.min(dt, Math.max(0, left));
+	const share = left > 0 ? (left - fading) / left : 0;
+	const relative = sub(c.vel, c.restVel);
+	const pos = add(
+		add(c.pos, scale(c.restVel, dt)),
+		scale(relative, ((1 + share) / 2) * fading),
+	);
+	return { ...c, pos, vel: add(c.restVel, scale(relative, share)) };
 }
 
 /** A scoop tried this step: taken into the hold, or refused by a full one. */

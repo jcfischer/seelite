@@ -19,7 +19,8 @@
  * makes it a check on the fade — a canister has to come to rest for this pilot
  * to reach it — and not evidence that no pilot can scoop a drifting canister.
  * While diagnosing, a pilot holding a closing speed off the range readout did
- * scoop some drifting canisters. `scripts/measure-canister-scoop.ts` reprints
+ * scoop some drifting canisters: 62 of 200, on a scratch harness that is not in
+ * the repo (#346's description), so no instrument here reprints that figure. `scripts/measure-canister-scoop.ts` reprints
  * this pilot with the fade and with it switched off (`drifting`).
  *
  * The scenario is the merge: the raider dies at the assist cap, fleeing in a

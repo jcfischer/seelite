@@ -244,6 +244,20 @@ describe("drift, expiry and the scoop", () => {
 		expect(step.kept[0].pos.x).toBeCloseTo(0.02, 12);
 	});
 
+	test("the step that reaches rest moves the fading part only until rest", () => {
+		// 0.2 km/s in a still frame, at rest 0.1 s into a 0.25 s step: it covers
+		// the area of the triangle up to rest and nothing after (sage #346).
+		const fading = {
+			...canister,
+			vel: v3(0.2, 0, 0),
+			restVel: v3(0, 0, 0),
+			restsAt: 50.1,
+		};
+		const [moved] = stepCanisters([fading], farShip, 0.25, 50, takeAll).kept;
+		expect(moved.pos.x).toBeCloseTo((0.2 * 0.1) / 2, 12);
+		expect(moved.vel).toEqual(v3(0, 0, 0));
+	});
+
 	test("a close, slow pass scoops it; a far or a fast one does not", () => {
 		const slow = { pos: v3(CANISTER_SCOOP_RADIUS_KM * 0.5, 0, 0), vel: v3() };
 		expect(scoops(canister, slow)).toBe(true);

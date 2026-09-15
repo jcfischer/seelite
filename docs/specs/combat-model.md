@@ -95,8 +95,10 @@ from the kill's own stream (`DOMAIN.CARGO_DROP`). Illegal goods weigh
 `(7 − government) / 7` of a legal good, so a Corporate State's raiders carry
 none. A canister keeps a fifth of the wreck's velocity relative to the local
 frame, leaves the wreck at 0.15 km/s in its own direction (two canisters go
-opposite ways, three go 120° apart), **slows linearly to rest in that frame
-10 s after the kill**, and expires five minutes after it. Two playtests shaped
+opposite ways, three go 120° apart), **slows linearly to rest 10 s after the
+kill**, and expires five minutes after it. It rests relative to the local
+frame's velocity as it was at the kill: a snapshot, which an orbiting body's
+frame moves on from over the five minutes. Two playtests shaped
 this. A canister kept all the wreck's velocity at first; a fleeing raider dies
 at the 2 km/s assist cap, so its canisters held their range against a ship at
 the same cap, and the third playtest could not reach one. Keeping a fifth
