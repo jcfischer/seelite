@@ -5,8 +5,8 @@
  * - raiders are **enumerated** world-state slots, and a system can hold more
  *   than one, because several may attack together later;
  * - a leg's chance of an encounter falls with the system's law, and a
- *   Corporate State keeps a smaller chance rather than none — 60% and 20% since
- *   2026-09-15 (`combat-model.md` §3);
+ *   Corporate State keeps a smaller chance rather than none (`combat-model.md`
+ *   §3 owns the figures);
  * - a raider appears behind, alongside or ahead of the player.
  */
 import { describe, expect, test } from "bun:test";
