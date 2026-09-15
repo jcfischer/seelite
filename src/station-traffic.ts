@@ -79,6 +79,7 @@ const SELECTED_MODEL_NAME: Readonly<Record<HullId, string>> = {
 	tug: "Towline",
 	prospector: "Prospector",
 	dreadnought: "Dreadnought",
+	voyager: "Odyssey",
 };
 
 const fnv1a = (text: string): number => {

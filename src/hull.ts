@@ -57,6 +57,7 @@ export const HULL_IDS = [
 	"tug",
 	"prospector",
 	"dreadnought",
+	"voyager",
 ] as const;
 export type HullId = (typeof HULL_IDS)[number];
 
@@ -74,7 +75,8 @@ export type HullRole =
 	| "capital"
 	| "salvage"
 	| "prospect"
-	| "battle-line";
+	| "battle-line"
+	| "expedition";
 
 /**
  * A ship's bounding box, kilometres.
@@ -456,6 +458,29 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
 		chargeAu: 30,
 		priceCr: null,
 	},
+	// **#331, the third capital: an expedition hull after 2001's Discovery One.**
+	// A capital by the principal's ruling (2026-09-14), with the film's
+	// proportions rather than ones compressed into a berth — so it is refused by
+	// its **length**, which no berth admits, and not by its section, which a
+	// slot would pass (`tests/aperture-fit.test.ts` states both halves). Its
+	// hold is above the ceiling for the capitals' reason, and its range is the
+	// longest in the roster, which is what an expedition hull is for.
+	voyager: {
+		role: "expedition",
+		variant: "a",
+		env: { lengthKm: 0.191, beamKm: 0.0295, heightKm: 0.0301 },
+		// 2.24 t per 1,000 m³ of its box: a spine and a sphere enclose little of
+		// the box they span, so the density sits high in the band.
+		massT: 380,
+		// 0.5 km/s², under the carrier's 0.6: an expedition hull is not a warship.
+		thrustMN: 190,
+		holdT: 240,
+		hardpoints: 1,
+		integrity: 303,
+		tankLy: 16,
+		chargeAu: 40,
+		priceCr: null,
+	},
 };
 
 /** The hull the player flies until a shipyard sells another: #26's ratified
@@ -463,12 +488,13 @@ export const HULL_SPECS: Readonly<Record<HullId, HullSpec>> = {
  *  the renderer, which is where it lived. */
 export const PLAYER_BASELINE_HULL: HullId = "courier";
 
-/** The two classes that dock at nothing (#56), named rather than detected by
- *  size so a hull that grows into capital proportions fails a check instead of
- *  joining the exemption. */
+/** The classes that dock at nothing (#56, and `voyager` since #331), named
+ *  rather than detected by size so a hull that grows into capital proportions
+ *  fails a check instead of joining the exemption. */
 export const CAPITAL_HULL_IDS = [
 	"carrier",
 	"dreadnought",
+	"voyager",
 ] as const satisfies readonly HullId[];
 
 /** Membership in the capital classes, as a predicate. The cast is here once

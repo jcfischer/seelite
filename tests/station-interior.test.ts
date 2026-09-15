@@ -30,7 +30,7 @@ import {
 } from "../src/station-interior";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 
-const CAPITALS: HullId[] = ["carrier", "dreadnought"];
+const CAPITALS: HullId[] = ["carrier", "dreadnought", "voyager"];
 const interiorOf = (type: (typeof STATION_TYPES)[number], seed = 0) =>
 	stationInterior(type, STATION_GEOMETRY[type].aperturePlaneKm, seed);
 

@@ -19,6 +19,7 @@ const DISTANCE = {
 	tug: 0.115,
 	prospector: 0.125,
 	dreadnought: 0.8,
+	voyager: 0.42,
 };
 const VIEWS = [
 	{ name: "hero", azimuth: 2.35, elevation: 0.3 },

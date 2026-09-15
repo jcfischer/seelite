@@ -257,6 +257,29 @@ export const HULL_VARIANTS: Record<HullId, readonly HullVariant[]> = {
 			thesis: "gun deck riding a spine above a deep armour keel",
 		},
 	],
+	// #331: a close homage to 2001's Discovery One. `a` is the reference; `b`
+	// and `c` spend the asymmetric and stacked axes every role since round seven
+	// has arrived on, so the pool is not the same ship three times.
+	voyager: [
+		{
+			id: "a",
+			name: "Odyssey",
+			thesis:
+				"command sphere ahead of a long vertebral spine, paired drives aft, dish array on a mast",
+		},
+		{
+			id: "b",
+			name: "Wayfarer",
+			thesis:
+				"command sphere and spine with a port tank bank balancing a starboard dish",
+		},
+		{
+			id: "c",
+			name: "Lodestar",
+			thesis:
+				"command sphere under a raised spine with its pod run hung beneath and the drives stacked",
+		},
+	],
 };
 
 /**
@@ -290,6 +313,9 @@ export const HULL_REACH_KM: Readonly<Record<HullId, number>> = {
 	// Two capital classes only earn their places if they cannot be mistaken for
 	// each other at the range a capital ship is first seen.
 	dreadnought: 0.22,
+	// Half the carrier's reach and far thinner than either capital: a sphere and
+	// a spine, which reads as nothing else in the pool at any range.
+	voyager: 0.1,
 };
 
 export interface ShipMesh {
@@ -316,6 +342,7 @@ const liveries: Record<
 	tug: { hull: 0xb08a4a, panel: 0x5c5340, accent: 0xf2d049 },
 	prospector: { hull: 0x8d9a86, panel: 0x4f5a4b, accent: 0xd8a145 },
 	dreadnought: { hull: 0x7b8288, panel: 0x3c434b, accent: 0xd4553c },
+	voyager: { hull: 0xd2d4ce, panel: 0xb4b8b2, accent: 0xd29a48 },
 };
 
 /** One palette per hull id **per finish**: the maps, the paint and the exhaust
@@ -5781,6 +5808,253 @@ function buildDreadnoughtC(root: THREE.Group, p: Palette) {
 	blister(root, "dreadnought-sensor", 0.0068, [0.02, deck + 0.022, -0.126], p);
 }
 
+/**
+ * #331's command sphere, the part every voyager variant shares: a lofted ball
+ * whose glass is set low in its bow, as Discovery's pod-bay windows are. It is
+ * the `bridge` pair, so the canopy and forward-view rows read it by name.
+ */
+const VOYAGER_SPHERE = Object.freeze({ z: -0.084, r: 0.013 });
+
+function voyagerSphere(root: THREE.Group, p: Palette) {
+	const { z, r } = VOYAGER_SPHERE;
+	const tower: Ring[] = [12, 30, 50, 70, 90, 110, 130, 150, 168].map((deg) => {
+		const phi = (deg * Math.PI) / 180;
+		const radius = r * Math.sin(phi);
+		return { z: z - r * Math.cos(phi), w: radius, h: radius, b: radius, e: 2 };
+	});
+	const glass: Ring[] = [
+		{ z: -0.0975, w: 0.0026, h: 0.0009, b: 0.0009, y: -0.0035, e: 2.4 },
+		{ z: -0.0955, w: 0.0045, h: 0.0016, b: 0.0016, y: -0.0035, e: 2.4 },
+		{ z: -0.0925, w: 0.0038, h: 0.0012, b: 0.0012, y: -0.0035, e: 2.4 },
+	];
+	bridge(root, "voyager", tower, glass, p);
+}
+
+/** The spine and its vertebrae, carried at `y`. Its section differs per
+ *  variant so the three primary masses are three silhouettes. */
+function voyagerSpine(
+	root: THREE.Group,
+	p: Palette,
+	section: { w: number; h: number },
+	y = 0,
+) {
+	const { w, h } = section;
+	add(
+		root,
+		"voyager-fuselage",
+		hullLoft([
+			{ z: -0.076, w: w * 0.8, h: h * 0.8, b: h * 0.8, y, e: 3.2 },
+			{ z: -0.07, w, h, b: h, y, e: 3.2, hard: true },
+			{ z: 0.05, w, h, b: h, y, e: 3.2, hard: true },
+			{ z: 0.058, w: w * 0.88, h: h * 0.88, b: h * 0.88, y, e: 3.2 },
+		]),
+		p.hull,
+	);
+	// Discovery's spine is a run of identical segments, and the count at a fixed
+	// pitch is what tells the eye how long it is.
+	for (let i = 0; i < 8; i += 1) {
+		const cz = -0.056 + i * 0.012;
+		const vw = w + 0.0012;
+		const vh = h + 0.0012;
+		add(
+			root,
+			`voyager-vertebra-${i}`,
+			hullLoft(
+				[
+					{ z: cz - 0.004, w: vw * 0.82, h: vh * 0.82, b: vh * 0.82, y, e: 5 },
+					{ z: cz - 0.0034, w: vw, h: vh, b: vh, y, e: 5, hard: true },
+					{ z: cz + 0.0034, w: vw, h: vh, b: vh, y, e: 5, hard: true },
+					{ z: cz + 0.004, w: vw * 0.82, h: vh * 0.82, b: vh * 0.82, y, e: 5 },
+				],
+				{ segments: 8 },
+			),
+			p.panel,
+		);
+	}
+}
+
+/** The drive block aft, at `y`, with its core bell. */
+function voyagerDriveHull(root: THREE.Group, p: Palette, y = 0) {
+	add(
+		root,
+		"voyager-drive-hull",
+		hullLoft([
+			{ z: 0.054, w: 0.006, h: 0.005, b: 0.005, y, e: 4 },
+			{ z: 0.058, w: 0.0085, h: 0.0068, b: 0.0068, y, e: 5, hard: true },
+			{ z: 0.084, w: 0.0085, h: 0.0068, b: 0.0068, y, e: 5, hard: true },
+			{ z: 0.088, w: 0.0072, h: 0.0058, b: 0.0058, y, e: 4 },
+		]),
+		p.hull,
+	);
+	engineBell(root, "voyager-core", [0, y, 0.0915], 0.0042, 0.0045, p);
+}
+
+/** Two drive pods either side of the drive block, on swept pylons. */
+function voyagerPairedDrives(root: THREE.Group, p: Palette) {
+	for (const [side, sign] of [
+		["starboard", 1],
+		["port", -1],
+	] as const) {
+		add(
+			root,
+			`voyager-nacelle-mount-${side}`,
+			mirroredBlade(
+				[
+					{ z: 0.006, w: 0.0014, h: 0.008, b: 0.008, y: 0.074, e: 3 },
+					{ z: 0.0115, w: 0.0012, h: 0.007, b: 0.007, y: 0.074, e: 3 },
+				],
+				sign,
+			),
+			p.trim,
+		);
+		add(
+			root,
+			`voyager-${side}-nacelle`,
+			hullLoft(pod(0.06, 0.09, 0.0032, { x: sign * 0.0115 })),
+			p.panel,
+		);
+		engineBell(
+			root,
+			`voyager-${side}`,
+			[sign * 0.0115, 0, 0.093],
+			0.0028,
+			0.0032,
+			p,
+		);
+	}
+}
+
+function buildVoyagerA(root: THREE.Group, p: Palette) {
+	voyagerSphere(root, p);
+	voyagerSpine(root, p, { w: 0.0032, h: 0.0032 });
+	voyagerDriveHull(root, p);
+	voyagerPairedDrives(root, p);
+	// The dish array: one large dish and two small ones on a boom, standing on a
+	// mast just aft of the sphere and clear above the pilot's eye line.
+	add(
+		root,
+		"voyager-dish-mast",
+		strut([0, 0.0028, -0.056], [0, 0.0128, -0.051], 0.0012, 0.0009),
+		p.trim,
+	);
+	dish(root, "voyager-dish", 0.0055, [0, 0.0145, -0.05], p, [
+		-Math.PI / 2.7,
+		0,
+		0,
+	]);
+	add(
+		root,
+		"voyager-dish-boom",
+		strut([-0.0078, 0.0128, -0.051], [0.0078, 0.0128, -0.051], 0.0008, 0.0008),
+		p.trim,
+	);
+	for (const [side, sign] of [
+		["starboard", 1],
+		["port", -1],
+	] as const)
+		dish(
+			root,
+			`voyager-dish-${side}`,
+			0.0026,
+			[sign * 0.0078, 0.0135, -0.0505],
+			p,
+			[-Math.PI / 2.7, 0, 0],
+		);
+}
+
+function buildVoyagerB(root: THREE.Group, p: Palette) {
+	voyagerSphere(root, p);
+	voyagerSpine(root, p, { w: 0.0042, h: 0.003 });
+	voyagerDriveHull(root, p);
+	voyagerPairedDrives(root, p);
+	// A long tank bank to port on three stays, balancing the dish to starboard.
+	add(
+		root,
+		"voyager-tank-bank",
+		hullLoft(pod(-0.05, 0.044, 0.0042, { x: -0.0115 })),
+		p.panel,
+	);
+	[-0.035, 0, 0.03].forEach((cz, i) =>
+		add(
+			root,
+			`voyager-tank-stay-${i}`,
+			strut([-0.003, 0, cz], [-0.0085, 0, cz], 0.0009, 0.0009),
+			p.trim,
+		),
+	);
+	add(
+		root,
+		"voyager-dish-mast",
+		strut([0.003, 0.001, -0.052], [0.0115, 0.004, -0.05], 0.0011, 0.0009),
+		p.trim,
+	);
+	dish(root, "voyager-dish", 0.0058, [0.0145, 0.0052, -0.049], p, [
+		-Math.PI / 2.7,
+		0.35,
+		0,
+	]);
+}
+
+function buildVoyagerC(root: THREE.Group, p: Palette) {
+	const spineY = 0.007;
+	const driveY = 0.0035;
+	voyagerSphere(root, p);
+	voyagerSpine(root, p, { w: 0.0028, h: 0.004 }, spineY);
+	// The pod run, hung under the raised spine on short hangers.
+	for (let i = 0; i < 5; i += 1) {
+		const cz = -0.045 + i * 0.02;
+		add(
+			root,
+			`voyager-pod-${i}`,
+			hullLoft(pod(cz - 0.008, cz + 0.008, 0.0036, { y: -0.004 })),
+			p.panel,
+		);
+		add(
+			root,
+			`voyager-pod-hanger-${i}`,
+			strut([0, spineY - 0.003, cz], [0, -0.001, cz], 0.0008, 0.0008),
+			p.trim,
+		);
+	}
+	voyagerDriveHull(root, p, driveY);
+	// Drives stacked above and below the block, on vertical pylons.
+	for (const [tag, sign] of [
+		["dorsal", 1],
+		["ventral", -1],
+	] as const) {
+		const ny = driveY + sign * 0.0105;
+		const up = sign > 0 ? 0.0105 : 0.0005;
+		const down = sign > 0 ? 0.0005 : 0.0105;
+		add(
+			root,
+			`voyager-nacelle-mount-${tag}`,
+			hullLoft([
+				{ z: 0.064, w: 0.0014, h: up, b: down, y: driveY, e: 3 },
+				{ z: 0.084, w: 0.0014, h: up, b: down, y: driveY, e: 3 },
+			]),
+			p.trim,
+		);
+		add(
+			root,
+			`voyager-${tag}-nacelle`,
+			hullLoft(pod(0.06, 0.09, 0.0032, { y: ny })),
+			p.panel,
+		);
+		engineBell(root, `voyager-${tag}`, [0, ny, 0.093], 0.0028, 0.0032, p);
+	}
+	add(
+		root,
+		"voyager-dish-mast",
+		strut([0, spineY + 0.004, -0.05], [0, 0.021, -0.046], 0.0011, 0.0009),
+		p.trim,
+	);
+	dish(root, "voyager-dish", 0.005, [0, 0.0235, -0.045], p, [
+		-Math.PI / 2.7,
+		0,
+		0,
+	]);
+}
+
 export interface FleetSlot {
 	readonly id: HullId;
 	readonly variant: HullVariantId;
@@ -5878,6 +6152,7 @@ const BUILDERS: Record<HullId, Record<HullVariantId, Builder>> = {
 		b: buildDreadnoughtB,
 		c: buildDreadnoughtC,
 	},
+	voyager: { a: buildVoyagerA, b: buildVoyagerB, c: buildVoyagerC },
 };
 
 /**

@@ -47,10 +47,16 @@ import {
 	type StationType,
 } from "../src/station";
 
-/** The two capital classes. Named rather than detected by size, so a hull that
+/** The capital classes. Named rather than detected by size, so a hull that
  *  grows into capital proportions fails the check instead of joining the
  *  exemption. */
-const CAPITALS: HullId[] = ["carrier", "dreadnought"];
+const CAPITALS: HullId[] = ["carrier", "dreadnought", "voyager"];
+
+/** The capitals a *section* refuses: wider or taller than every aperture.
+ *  `voyager` (#331) is not one of them — at the film's proportions its section
+ *  passes a slot, and what refuses it is its length against every berth, which
+ *  `tests/hull.test.ts`' `no berth in the game admits a capital` holds. */
+const WIDER_THAN_EVERY_APERTURE: HullId[] = ["carrier", "dreadnought"];
 
 /** Check 4's tolerance, radians (`docking.md` §3.2). Read from the spec's own
  *  figure rather than re-derived: the roll limit is a chosen number, and a
@@ -126,14 +132,14 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 		expect(heightMargin).toBeGreaterThan(0);
 	});
 
-	test("neither capital fits any aperture, and that is the intended answer", () => {
+	test("the carrier and the dreadnought fit no aperture, and that is the intended answer", () => {
 		// The separate-class decision, held as an assertion. Both capital classes
 		// need more than every slot and pad in the game and are supposed to;
 		// what #26 owes them is an outfitting route that is not a station. This
 		// fails if an aperture is ever widened enough to admit one, which is the
 		// shape that reversal would take — nobody would write "capitals may dock
 		// now", they would widen a slot for some other reason.
-		for (const id of CAPITALS) {
+		for (const id of WIDER_THAN_EVERY_APERTURE) {
 			const hull = rolled(id);
 			for (const type of STATION_TYPES) {
 				const gap = APERTURE(type);
@@ -147,5 +153,17 @@ describe("the aperture admits the hulls that have to fly through it", () => {
 				`${id}: needs ${hull.across.toFixed(0)}×${hull.up.toFixed(0)} m rolled`,
 			);
 		}
+	});
+
+	test("voyager's section passes a slot, so its refusal is its length and not its section", () => {
+		// Stated rather than left implicit (#331): the claim above used to read
+		// "neither capital fits any aperture", and a third capital at the film's
+		// proportions makes that false. Its refusal is that no berth admits a
+		// 200 m hull, which is a length and not a section. If voyager ever grows
+		// a section no aperture admits, this goes red and the exemption above
+		// should gain it instead.
+		const hull = rolled("voyager");
+		const gap = APERTURE("trade");
+		expect(hull.across < gap.width && hull.up < gap.height).toBe(true);
 	});
 });

@@ -151,8 +151,14 @@ describe("stock is the hull that shipped", () => {
 	test("every hull's geometry and UVs hash to the pin taken on main", () => {
 		// Taken at `cbf3f0f`: 33 hulls, 192,257 vertices. Under `stock` by
 		// name, now that the default is not stock.
+		//
+		// **Re-pinned for #331's voyager**, which a hash over every hull moves
+		// by construction: 36 hulls, 211,160 vertices. Before re-pinning, the
+		// same hash taken over the original eleven ids on the new code read
+		// `89b8e0f6` and 192,257 — the old pin exactly — so the three new hulls
+		// are the whole of the change.
 		setHullFinish("stock");
-		expect(rosterHash()).toEqual({ hash: "89b8e0f6", vertices: 192257 });
+		expect(rosterHash()).toEqual({ hash: "f5d052c8", vertices: 211160 });
 	});
 });
 

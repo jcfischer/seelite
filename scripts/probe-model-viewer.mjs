@@ -53,8 +53,8 @@ for (const viewport of VIEWPORTS) {
 		initial.root &&
 			initial.canvas &&
 			initial.assets.join(",") ===
-				"courier,interceptor,freighter,miner,patrol,explorer,raider,carrier,tug,prospector,dreadnought" &&
-			initial.variants.length === 33 &&
+				"courier,interceptor,freighter,miner,patrol,explorer,raider,carrier,tug,prospector,dreadnought,voyager" &&
+			initial.variants.length === 36 &&
 			initial.selected === "courier" &&
 			initial.selectedVariant === "a" &&
 			!initial.gameConstructed,
