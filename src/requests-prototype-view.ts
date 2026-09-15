@@ -143,7 +143,15 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 							`Simulate ${r.stageId} evidence`,
 						)
 					: "";
-			fixtures = `<aside class="lc-request-fixtures"><b>PROTOTYPE CONTROLS · world facts are fixtures</b><p>The relay is unbuilt. These controls exercise UI transitions; they do not discover, disable or change anything in the live world.</p><div class="lc-request-actions">${stage}${button("fixture-unavailable", o.id, "Simulate observed target unavailable")}</div></aside>`;
+			const unavailable =
+				r.unavailableAt === null
+					? button(
+							"fixture-unavailable",
+							o.id,
+							"Simulate observed target unavailable",
+						)
+					: "";
+			fixtures = `<aside class="lc-request-fixtures"><b>PROTOTYPE CONTROLS · world facts are fixtures</b><p>The relay is unbuilt. These controls exercise UI transitions; they do not discover, disable or change anything in the live world.</p><div class="lc-request-actions">${stage}${unavailable}</div></aside>`;
 		}
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span> · unconfirmed fixture report` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atRequester ? `<p>Report after docking at ${esc(o.requesterName)}. Remote payment is unavailable.</p>` : ""}${fixtures}</div>`;
 	}

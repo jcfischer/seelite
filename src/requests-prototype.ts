@@ -207,6 +207,8 @@ export function requestAction(
 		r.outcomeReason = "Reported unavailable target. No reward or penalty.";
 		message = r.outcomeReason;
 	} else if (action === "fixture-unavailable") {
+		if (r.unavailableAt !== null)
+			return refuse("Unavailable-target observation already recorded.");
 		r.unavailableAt = ctx.now;
 		message =
 			"UI fixture: unavailable-target observation recorded; no world condition changed.";

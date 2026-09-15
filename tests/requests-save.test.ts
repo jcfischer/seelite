@@ -8,6 +8,119 @@ import {
 	SAVE_SCHEMA_VERSION,
 } from "../src/save-envelope";
 import { newWorld, fnv1a } from "../src/world-state";
+import {
+	CommanderCatalog,
+	memorySaveBackend,
+	memorySlotLocks,
+	SaveStore,
+} from "../src/save-store";
+
+const paidTrial = () => {
+	const world = newWorld(42);
+	world.gameTime = 20;
+	const commander = newCommanderRecord("courier");
+	const offers = fixtureOffers(
+		0,
+		carrierKey(0, "station-trade"),
+		"USQULAVE",
+		10,
+	);
+	for (const action of [
+		"accept",
+		"fixture-search",
+		"fixture-identify",
+		"fixture-disable",
+		"report",
+	]) {
+		const result = requestAction(
+			commander.requests,
+			offers,
+			action,
+			offers[0].id,
+			{ now: 20, docked: offers[0].requester, armed: true },
+		);
+		commander.requests = result.state;
+		commander.state.credits += result.rewardCr;
+	}
+	return { world, commander };
+};
+
+test("normal catalog refuses trial imports atomically in either record", async () => {
+	const backend = memorySaveBackend();
+	const catalog = new CommanderCatalog({ backend, locks: memorySlotLocks() });
+	const trial = serializeSave(paidTrial());
+	const normal = serializeSave({
+		world: newWorld(42),
+		commander: newCommanderRecord("courier"),
+	});
+	for (const records of [
+		{ live: trial, lastDocked: normal },
+		{ live: normal, lastDocked: trial },
+	]) {
+		await expect(
+			catalog.importSlot("trial", JSON.stringify(records)),
+		).rejects.toThrow("Requests prototype");
+		expect(await catalog.slots()).toEqual([]);
+		expect(backend.writes).toBe(0);
+	}
+});
+
+test("normal store refuses trial reads and writes without changing stored data", async () => {
+	const backend = memorySaveBackend();
+	const normal = serializeSave({
+		world: newWorld(42),
+		commander: newCommanderRecord("courier"),
+	});
+	await backend.write("normal", "live", normal);
+	await backend.write("trial", "live", serializeSave(paidTrial()));
+	const store = new SaveStore({
+		backend,
+		locks: memorySlotLocks(),
+		slot: "normal",
+		schedule: () => () => {},
+		current: paidTrial,
+	});
+	await expect(store.load("trial")).rejects.toThrow("Requests prototype");
+	await expect(store.flush("quit")).rejects.toThrow("Requests prototype");
+	const catalog = new CommanderCatalog({ backend, locks: memorySlotLocks() });
+	expect(() => catalog.parseRecord(serializeSave(paidTrial()))).toThrow(
+		"Requests prototype",
+	);
+	const docked = serializeSave(paidTrial());
+	await backend.write("normal", "lastDocked", docked);
+	await expect(store.revertToLastDocked({ permadeath: false })).rejects.toThrow(
+		"Requests prototype",
+	);
+	expect(await backend.read("normal", "live")).toEqual(normal);
+});
+
+test("explicit trial catalog and store retain paid experiment imports and persistence", async () => {
+	const backend = memorySaveBackend();
+	const locks = memorySlotLocks();
+	const catalog = new CommanderCatalog({
+		backend,
+		locks,
+		allowRequestsPrototype: true,
+	});
+	const save = paidTrial();
+	await catalog.importSlot(
+		"trial",
+		JSON.stringify({ live: serializeSave(save) }),
+	);
+	const store = new SaveStore({
+		backend,
+		locks,
+		slot: "trial",
+		allowRequestsPrototype: true,
+		schedule: () => () => {},
+		current: () => save,
+	});
+	await store.flush("quit");
+	expect(await store.load("trial")).toEqual(save);
+	expect(catalog.parseRecord(await backend.read("trial", "live"))).toEqual(
+		save,
+	);
+});
 
 test("Requests and credits round-trip under one hash at every stage", () => {
 	const commander = newCommanderRecord("courier");

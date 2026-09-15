@@ -433,6 +433,14 @@ try {
 		.click();
 	await click("fixture-unavailable");
 	check(
+		"first unavailability observation removes the repeat fixture action",
+		(await page
+			.locator(
+				'[data-live-station-console] [data-live-request-action="fixture-unavailable"]',
+			)
+			.count()) === 0,
+	);
+	check(
 		"observed unavailable target offers useful report and cancel",
 		(await page
 			.locator(

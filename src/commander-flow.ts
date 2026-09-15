@@ -15,7 +15,7 @@
  */
 
 import type { BootMode } from "./boot-mode";
-import { parseSave, type SaveEnvelope } from "./save-envelope";
+import { type SaveEnvelope } from "./save-envelope";
 import {
 	type CommanderCatalog,
 	DEFAULT_SLOT,
@@ -204,7 +204,7 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 		try {
 			const raw = await backend.read(plan.slot, "live");
 			plan.record = recordText(raw);
-			if (raw !== null) plan.loaded = parseSave(raw);
+			if (raw !== null) plan.loaded = catalog.parseRecord(raw);
 		} catch (error) {
 			plan.fault = loadFault(plan.slot, error);
 			plan.faultSlot = plan.slot;

@@ -55,13 +55,17 @@ Normal Commander writes retain `SAVE_SCHEMA_VERSION = 2` and the exact
 journal-free wire shape. Schema 2 at main revision `7f1cfd3` is read after its
 original hash is verified, with an empty journal added to the in-memory copy.
 Only envelopes carrying experiment entries use the separately named
-`REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3`. The loader accepts the bounded
-revision-1 experiment entries. Schema 2 carrying a journal is refused. World schema
+`REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3`. The isolated trial catalog accepts
+the bounded revision-1 experiment entries. Normal imports, boot loads, store
+reads, death restoration and writes refuse encoding 3 before changing records.
+Both imported records are validated before either is written. Schema 2 carrying
+a journal is refused. World schema
 and generator versions are unchanged. Unsupported/corrupt records are refused
 without modifying their input; normal save-store ownership remains in force.
 
 The development-only trial uses the separate `seelite-requests-prototype-saves`
-database, catalog and Web Locks. Simulated payments never write to the normal
+database, catalog and Web Locks. Simulated payments and exported trial imports
+never write to the normal
 Commander catalog. Production builds cannot enable fixture controls via the
 query flag. Schema 3 is the experiment's bounded encoding; it does not claim to
 implement §7's future entrusted-cargo or production evidence domains.
@@ -79,11 +83,12 @@ outside this experiment.
 ## Verification and principal operation
 
 `bun test tests/requests-prototype.test.ts tests/requests-save.test.ts
-tests/save-envelope.test.ts tests/save-store.test.ts tests/station-console.test.ts`
-covers 111 cases. TypeScript additionally verifies that Requests is valid in
+tests/save-envelope.test.ts tests/save-store.test.ts tests/station-console.test.ts
+tests/commander-flow.test.ts`
+covers 153 cases. TypeScript additionally verifies that Requests is valid in
 the live cockpit and refused by the two-tab gallery contract.
-The complete headless suite passed 2,102 tests. The final repairs passed
-the guarded 27-check headed flow, TypeScript,
+The complete headless suite passed 2,106 tests. The final repairs passed
+the guarded 28-check headed flow, TypeScript,
 build and format gates. The browser probe includes native Tab/Enter/Space and prevents
 a rapid Accept double-click from selecting the newly drawn Track action.
 It also checks release of a flight key after opening Requests, reuse of docked

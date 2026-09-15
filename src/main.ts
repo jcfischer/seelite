@@ -9447,7 +9447,6 @@ class Game {
 			this.requestSelectedId = id;
 			this.requestMessage = "";
 		} else {
-			if (action.startsWith("fixture-") && !this.requestFixtures) return;
 			const result = requestAction(this.requests, view.offers, action, id, {
 				now: this.world.gameTime,
 				docked: view.docked,
@@ -11205,6 +11204,7 @@ if (query.has("model-viewer")) {
 	const catalog = new CommanderCatalog({
 		backend: saveBackend,
 		locks: saveLocks,
+		allowRequestsPrototype: fixtureTrial,
 	});
 	let plan = await planBoot({
 		catalog,
@@ -11252,6 +11252,7 @@ if (query.has("model-viewer")) {
 				new SaveStore({
 					backend: saveBackend,
 					locks: saveLocks,
+					allowRequestsPrototype: fixtureTrial,
 					slot: name,
 					schedule: (fn, ms) => {
 						const id = window.setTimeout(fn, ms);

@@ -115,6 +115,17 @@ describe("bounded Requests UI experiment", () => {
 		ready = act(ready, "fixture-unavailable").state;
 		expect(ready.byId[offers[0].id].status).toBe("ready-to-report");
 	});
+	test("repeated unavailability cannot rewrite the first observation", () => {
+		let s = act(emptyRequests(), "accept").state;
+		s = act(s, "fixture-unavailable").state;
+		const repeated = act(s, "fixture-unavailable", offers[0].id, {
+			...context,
+			now: 30,
+		});
+		expect(repeated.ok).toBe(false);
+		expect(repeated.state).toBe(s);
+		expect(repeated.state.byId[offers[0].id].unavailableAt).toBe(20);
+	});
 	test("load validates stage status tracking identities time and bounded evidence", () => {
 		let s = act(emptyRequests(), "accept").state;
 		s = act(s, "track").state;
