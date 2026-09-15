@@ -65,9 +65,10 @@ outside this experiment.
 
 `bun test tests/requests-prototype.test.ts tests/requests-save.test.ts
 tests/save-envelope.test.ts tests/save-store.test.ts` covers 88 cases.
-The full suite passed 2,098 tests before the additional snapshot/requester
-regressions; the affected tests passed after those changes. Build, TypeScript
-and format gates passed.
+The complete headless suite passed 2,100 tests. The final native-focus and
+double-click changes then passed the guarded 22-check headed flow, TypeScript,
+build and format gates. The browser probe includes native Tab/Enter and prevents
+a rapid Accept double-click from selecting the newly drawn Track action.
 
 `node scripts/probe-requests.mjs` runs the guarded normal-Game flow with the
 project's shared berth setup fixture, actual keyboard events and the shared

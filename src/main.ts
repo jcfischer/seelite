@@ -5609,10 +5609,15 @@ class Game {
 		) {
 			e.preventDefault();
 			if (down && !e.repeat) {
-				if (key === "enter") this.liveCockpit.activateFocus();
-				else if (key === "arrowleft" || key === "arrowright")
-					this.liveCockpit.stepTab(key === "arrowleft" ? -1 : 1);
-				else this.liveCockpit.stepFocus(key === "arrowup" ? -1 : 1);
+				if (key === "enter") this.liveCockpit.activateKeyboardFocus(e.target);
+				else {
+					// Arrow walking hands input back to the shared cursor. A native
+					// button left focused would otherwise steal the following Enter.
+					if (e.target instanceof HTMLElement) e.target.blur();
+					if (key === "arrowleft" || key === "arrowright")
+						this.liveCockpit.stepTab(key === "arrowleft" ? -1 : 1);
+					else this.liveCockpit.stepFocus(key === "arrowup" ? -1 : 1);
+				}
 			}
 			return;
 		}

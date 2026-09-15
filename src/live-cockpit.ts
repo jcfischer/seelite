@@ -327,6 +327,10 @@ export class LiveCockpit {
 		// Delegation keeps clicks live after a structural render is replaced.
 		this.root.addEventListener("click", (event) => {
 			const element = event.target as HTMLElement;
+			// Accept replaces itself with Track at the same location. The second
+			// click of a double-click must not activate that newly drawn action.
+			if (event.detail > 1 && element.closest("[data-live-request-action]"))
+				return;
 			// **The id is read before the dispatch and applied after it**, and
 			// both halves are the point. An accepted transaction rebuilds the
 			// market synchronously, so the clicked element is *detached* by the
@@ -350,6 +354,12 @@ export class LiveCockpit {
 					...this.filter,
 					query: (field as HTMLInputElement).value,
 				});
+		});
+		this.root.addEventListener("focusin", (event) => {
+			const element = event.target as HTMLElement;
+			if (!element.matches("[data-live-request-action]")) return;
+			this.syncFocusToPointer(element, () => {});
+			this.applyFocusRing();
 		});
 		document.body.append(this.root);
 	}
@@ -822,6 +832,16 @@ export class LiveCockpit {
 
 	requestsSurfaceOpen(): boolean {
 		return !!this.focusScope()?.querySelector("[data-live-requests]");
+	}
+
+	/** Native Tab focus and the pad cursor both activate through the click path. */
+	activateKeyboardFocus(target: EventTarget | null): void {
+		if (
+			target instanceof HTMLButtonElement &&
+			this.focusScope()?.contains(target)
+		)
+			target.click();
+		else this.activateFocus();
 	}
 
 	/**

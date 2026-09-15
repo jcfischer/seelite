@@ -73,6 +73,18 @@ try {
 		);
 	await rows.first().click();
 	check("mouse opens details without accepting", (await count()) === 0);
+	await rows.first().focus();
+	await page.keyboard.press("Tab");
+	await page.keyboard.press("Enter");
+	check(
+		"native Tab and Enter open the focused offer without accepting",
+		(await count()) === 0 &&
+			(await page.evaluate(
+				(i) => window.__seelite.requestSelectedId === i,
+				second,
+			)),
+	);
+	await rows.first().click();
 	check(
 		"all terms visible before acceptance",
 		await page
@@ -118,9 +130,11 @@ try {
 			.click();
 	await click("retain");
 	check("retain does not accept", (await count()) === 0);
-	await click("accept");
+	await page
+		.locator('[data-live-station-console] [data-live-request-action="accept"]')
+		.dblclick();
 	check(
-		"explicit acceptance leaves tracking unset",
+		"double-click acceptance cannot also select the new Track action",
 		await page.evaluate(
 			() =>
 				window.__seelite.commanderRecord().requests.trackedRequestId === null,
