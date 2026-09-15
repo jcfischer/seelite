@@ -53,7 +53,7 @@ import {
 	plateUVs,
 } from "./ship-surface";
 
-export const SHIP_DESIGN_ROUND = 10;
+export const SHIP_DESIGN_ROUND = 11;
 
 export interface HullVariant {
 	readonly id: HullVariantId;

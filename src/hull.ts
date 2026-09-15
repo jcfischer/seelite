@@ -157,8 +157,8 @@ export interface HullSpec {
 	 * function, and `tests/hull.test.ts` asserts every row against the law, so a
 	 * hand-edited figure is a deliberate deviation rather than a typo.
 	 *
-	 * **`null` where the law has nothing to say.** The two capitals hold 400 t
-	 * and 200 t, both past `HULL_CEILING_HOLD_T` and outside the hold range the
+	 * **`null` where the law has nothing to say.** The capitals hold 400 t,
+	 * 200 t and 240 t, all past `HULL_CEILING_HOLD_T` and outside the hold range the
 	 * curve was measured over, and #56 rules that they dock at nothing. A number
 	 * there would be an extrapolation wearing a measurement's clothes, which is
 	 * the failure `galaxy-generation.md` §2.1 carried for years. Whether a
@@ -279,7 +279,7 @@ export const hullPriceCr = (holdT: number): number | null => {
  * `patrol` and `raider` read as NPC identities rather than purchases — selling
  * a police hull or a pirate hull makes #8's legal status and #13's fence
  * geography owe rules they do not have — and are gated behind the rating node.
- * The two capitals do not dock at all (#56).
+ * The capitals do not dock at all (#56, and `voyager` since #331).
  */
 export const PURCHASABLE_HULL_IDS = [
 	"courier",
@@ -292,9 +292,9 @@ export const PURCHASABLE_HULL_IDS = [
 ] as const satisfies readonly HullId[];
 
 /**
- * The roster, all eleven.
+ * The roster, all twelve.
  *
- * **Eleven and not the seven**, although only seven are purchasable: the four
+ * **Twelve and not the seven**, although only seven are purchasable: the five
  * others are drawn. `patrol` joins #148's station traffic; `raider` and the
  * capital hulls remain available to #8's encounters. A `Partial` record would
  * make every consumer answer for a hull with no mass, and the hole would be

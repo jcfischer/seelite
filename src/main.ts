@@ -1703,7 +1703,7 @@ class Game {
 	/**
 	 * The parked review fleet, gated on `?fleet`.
 	 *
-	 * Off by default because thirty-three hulls is a showroom, not a star
+	 * Off by default because thirty-six hulls is a showroom, not a star
 	 * system: these targetable, scannable hulls have no behaviour or collision.
 	 * Behind the gate it is honest — a static display arrangement, anchored
 	 * once, with no entry in `sim.ts` and no roster meaning. #26 still owns
@@ -9099,7 +9099,7 @@ class Game {
 	 *
 	 * Laid out along the ship's own axes rather than the world's: the ship does
 	 * not boot facing -Z, it boots facing the station, and an avenue built on
-	 * the world axes put thirty-three hulls out of frame with nothing wrong in
+	 * the world axes put thirty-six hulls out of frame with nothing wrong in
 	 * any of the numbers. Deferred to the first frame because `buildShip` runs
 	 * before that boot facing is settled, so a basis read in the constructor is
 	 * the identity one and quietly wrong.
