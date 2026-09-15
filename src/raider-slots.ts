@@ -53,9 +53,9 @@ export const raiderSlots = (
 export const raiderName = (ordinal: number): string =>
 	`Raider ${String(ordinal + 1).padStart(2, "0")}`;
 
-/** The chance in an Anarchy (government 0) and a Corporate State (7). Raised
- *  from 0.5 and 0.05 by the principal's ruling of 2026-09-15; `combat-model.md`
- *  §3 gives the reason and what it changes. */
+/** The chance in an Anarchy (government 0) and a Corporate State (7), by the
+ *  principal's ruling of 2026-09-15; `combat-model.md` §3 gives the figures it
+ *  replaced, the reason and what it changes. */
 export const RAIDER_LEG_CHANCE = { anarchy: 0.6, corporate: 0.2 } as const;
 
 /** A cruise leg's chance of an encounter, linear in government between the two

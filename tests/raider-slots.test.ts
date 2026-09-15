@@ -59,7 +59,7 @@ describe("the leg law", () => {
 	});
 
 	test("the principal's rate: 60% of legs in an Anarchy, 20% in a Corporate State", () => {
-		// Raised from 50% and 5% (2026-09-15); `combat-model.md` §3 has the reason.
+		// The ruling of 2026-09-15; `combat-model.md` §3 has the reason.
 		expect(raiderLegChance(0)).toBeCloseTo(0.6, 12);
 		expect(raiderLegChance(7)).toBeCloseTo(0.2, 12);
 	});

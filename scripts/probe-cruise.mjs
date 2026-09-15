@@ -58,7 +58,13 @@ import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-const URL = gameUrl(ORIGIN, { seed: 42 }, { override: process.env.PROBE_URL });
+// `raider: "off"`: this measures cruise, and the leg law (`RAIDER_LEG_CHANCE`)
+// can end a leg by interdiction depending on which second the spool completes.
+const URL = gameUrl(
+	ORIGIN,
+	{ seed: 42, raider: "off" },
+	{ override: process.env.PROBE_URL },
+);
 
 /** Sim seconds per stepped frame — the game's own `MAX_DT`, read off the page
  *  below rather than restated here. The run is therefore the worst case for

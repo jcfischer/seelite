@@ -173,7 +173,11 @@ async function ensureSeed(page, seed) {
 		});
 		worldWritten = false;
 	}
-	await page.goto(gameUrl(SERVING, { seed }), { waitUntil: "load" });
+	// `raider: "off"`: traversals cruise, and a leg-law raider would move the
+	// frame. The duel placer forces its own raider, which this does not stop.
+	await page.goto(gameUrl(SERVING, { seed, raider: "off" }), {
+		waitUntil: "load",
+	});
 	await bootedGame(page);
 	await applyCaptureQuality(page);
 	await page.evaluate(() => window.__rememberBootPosition());
@@ -571,7 +575,9 @@ page.on("pageerror", (e) => faulted(`page error: ${e.message}`));
 
 await installViewPlacement(page);
 await installViewFraming(page);
-await page.goto(gameUrl(SERVING, { seed: SEED }), { waitUntil: "load" });
+await page.goto(gameUrl(SERVING, { seed: SEED, raider: "off" }), {
+	waitUntil: "load",
+});
 await bootedGame(page);
 await applyCaptureQuality(page);
 currentSeed = SEED;

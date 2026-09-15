@@ -14,7 +14,8 @@ const browser = await launchChromium();
 const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
 watch(page);
-await page.goto(gameUrl(origin, { seed: 19 }));
+// `raider: "off"`: this measures a detour, not an interdiction.
+await page.goto(gameUrl(origin, { seed: 19, raider: "off" }));
 await bootedGame(page);
 
 const result = await page.evaluate(() => {
