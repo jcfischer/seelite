@@ -98,6 +98,58 @@ export type RollingStatistics = Readonly<{
 	sampleCount: number;
 }>;
 
+/**
+ * What a sampler is for, decided at construction and never changed after.
+ *
+ * `"full"` is #223's diagnostic: a timer-query ring, `renderer.info` capture,
+ * CPU intervals, the lot. `"cadence"` retains **only** the frame marks, issues
+ * no query and touches no GL object beyond the constructor's own reference.
+ *
+ * The split exists because #352's adaptive-resolution controller needs a frame
+ * period on the **default route**, where #223's build contract item 6 forbids
+ * mounting attribution UI or issuing timer queries. A mode is the honest way to
+ * satisfy both: the controller gets one array push per frame, and a player who
+ * never opens `?perf` still gets no queries. `tests/frame-attribution.test.ts`
+ * asserts that by watching the fake context — a cadence sampler must not reach
+ * `getExtension`, `createQuery` or `beginQuery` at all.
+ *
+ * It is a constructor option rather than an argument to `enable()` because a
+ * sampler that changed mode while live would have to answer what happens to the
+ * samples it already holds, and there is no caller who wants that: `?perf`
+ * arriving over a running Auto **replaces** the sampler rather than upgrading
+ * it in place.
+ */
+export type FrameAttributionMode = "full" | "cadence";
+
+/**
+ * The delivered frame period, which is the one statistic both modes carry.
+ *
+ * **This is display cadence, not GPU time**, and #223's opening comment says
+ * why the two are not interchangeable. It is here anyway because #352 measured
+ * the case where it is the only signal available: on ANGLE Metal the GPU timer
+ * is `untrusted` and `medianMs` is `null` (#246), so a controller that steers
+ * on GPU evidence alone never acts on the renderer the principal plays on.
+ *
+ * `minPeriodMs` is the cheapest period seen since the last prime, and it is
+ * what lets a consumer tell *at the panel's cap* from *at its budget*. Those
+ * look identical on one display and are opposite readings: the principal's
+ * external panel at 50% render scale reads 16.67 ms and is pinned by a 60 Hz
+ * cap, while the laptop at the same rung reads 8.33 ms against a 120 Hz one.
+ * A consumer that read only the median would conclude the external had no
+ * headroom, when what it has is nowhere left to spend it.
+ *
+ * The sampler reports the figure and decides nothing. What counts as *stable*,
+ * how close to `minPeriodMs` counts as *capped*, and how many samples are
+ * enough are all policy, and they live in `adaptive-resolution.ts`.
+ */
+export type FrameCadence = RollingStatistics &
+	Readonly<{
+		/** Cheapest delivered period since the last prime; `null` before two marks. */
+		minPeriodMs: number | null;
+		/** Wall span the retained marks cover; `null` before two marks. */
+		spanMs: number | null;
+	}>;
+
 export type RendererFacts = Readonly<{
 	calls: number;
 	triangles: number;
@@ -113,6 +165,9 @@ export type RendererFacts = Readonly<{
 
 export type FrameAttributionSnapshot = Readonly<{
 	enabled: boolean;
+	mode: FrameAttributionMode;
+	/** Delivered frame period. Present in both modes; see `FrameCadence`. */
+	cadence: FrameCadence;
 	cpu: Readonly<Record<CpuInterval, RollingStatistics>>;
 	gpu: RollingStatistics &
 		Readonly<{
@@ -164,6 +219,7 @@ export type FrameAttributionOptions = {
 	gl: TimerQueryContext;
 	contextEvents: Pick<EventTarget, "addEventListener" | "removeEventListener">;
 	rendererFacts: () => RendererFacts;
+	mode?: FrameAttributionMode;
 	now?: () => number;
 	maxQueries?: number;
 	sampleCapacity?: number;
@@ -225,6 +281,23 @@ function frozenFacts(facts: RendererFacts): RendererFacts {
 }
 
 /**
+ * Consecutive differences between frame marks, dropping the non-positive ones.
+ *
+ * Shared by the windowed cadence the `implausible` backstop reads and the
+ * unwindowed one a snapshot carries, so the two cannot disagree about what a
+ * frame period is. A zero or negative gap is two marks at one timestamp or a
+ * clock that went backwards; neither is a frame the consumer wants to average.
+ */
+function frameGaps(marks: readonly number[]): number[] {
+	const gaps: number[] = [];
+	for (let i = 1; i < marks.length; i++) {
+		const gap = marks[i] - marks[i - 1];
+		if (Number.isFinite(gap) && gap > 0) gaps.push(gap);
+	}
+	return gaps;
+}
+
+/**
  * A fixed-size reusable WebGL query ring plus bounded rolling CPU/GPU samples.
  *
  * `beginGpuFrame` polls older entries before starting a new one. It skips a
@@ -237,6 +310,7 @@ export class FrameAttribution {
 	private readonly contextEvents: FrameAttributionOptions["contextEvents"];
 	private readonly rendererFacts: () => RendererFacts;
 	private readonly now: () => number;
+	private readonly mode: FrameAttributionMode;
 	private readonly maxQueries: number;
 	private readonly sampleCapacity: number;
 	private readonly staleAfterMs: number;
@@ -266,6 +340,7 @@ export class FrameAttribution {
 		this.contextEvents = options.contextEvents;
 		this.rendererFacts = options.rendererFacts;
 		this.now = options.now ?? (() => performance.now());
+		this.mode = options.mode ?? "full";
 		this.maxQueries = boundedInteger(options.maxQueries, DEFAULT_MAX_QUERIES);
 		this.sampleCapacity = boundedInteger(
 			options.sampleCapacity,
@@ -291,7 +366,9 @@ export class FrameAttribution {
 			this.onContextRestored,
 		);
 		this.resetSamples();
-		this.allocateQueries();
+		// **Not in cadence mode**, and this is the line #223's item 6 rests on:
+		// `allocateQueries` is the only caller of `getExtension` and `createQuery`.
+		if (this.mode === "full") this.allocateQueries();
 	}
 
 	/** Dispose every query and leave a reusable, fully disabled sampler. */
@@ -322,6 +399,28 @@ export class FrameAttribution {
 	}
 
 	/**
+	 * Record that a frame ran, and nothing else.
+	 *
+	 * **This used to live inside `beginGpuFrame`, and that was a fail-open.**
+	 * The push sat after four early returns, one of them `!this.extension` — so
+	 * on any backend without `EXT_disjoint_timer_query_webgl2` the cadence ring
+	 * stayed empty while the sampler reported itself enabled, and the
+	 * `implausible` backstop that divides by the cadence quietly had nothing to
+	 * divide by. It happened to be harmless there, because the same condition
+	 * makes `supported` false and the backstop never runs. It is not harmless
+	 * for #352: cadence is the controller's only signal, and a controller whose
+	 * signal is empty holds the rung it starts on for ever.
+	 *
+	 * So it is its own method, called once per frame before anything can refuse.
+	 * A frame the query ring skips is still a frame, and the cadence is what the
+	 * *frames* ran at rather than what the timed ones did.
+	 */
+	markFrame(atMs = this.now()): void {
+		if (!this.enabled || this.contextLost) return;
+		this.frameMarks.push(atMs);
+	}
+
+	/**
 	 * Poll ready older entries, then begin a timer query if one is idle.
 	 * Returns false when unsupported, disabled, lost, already active, or full.
 	 */
@@ -333,9 +432,6 @@ export class FrameAttribution {
 			this.activeQuery !== null
 		)
 			return false;
-		// Before the ring is consulted: a frame the ring refuses is still a frame,
-		// and the cadence is what the *frames* ran at.
-		this.frameMarks.push(atMs);
 		if (this.poll(atMs)) return false;
 		for (let offset = 0; offset < this.queries.length; offset++) {
 			const index = (this.nextQuery + offset) % this.queries.length;
@@ -458,6 +554,8 @@ export class FrameAttribution {
 
 		return Object.freeze({
 			enabled: this.enabled,
+			mode: this.mode,
+			cadence: this.cadenceSnapshot(),
 			cpu: Object.freeze(cpu),
 			gpu: Object.freeze({
 				...gpuStats,
@@ -588,16 +686,53 @@ export class FrameAttribution {
 	 * tab restored — is exactly the sample that would otherwise raise the bar
 	 * the implausibility check has to clear.
 	 */
+	/**
+	 * Every retained frame period, as statistics — the whole cadence half of a
+	 * snapshot.
+	 *
+	 * Deliberately **not** windowed, where `frameCadenceMs` below is. That one
+	 * answers "what was the cadence while these GPU samples were taken", so it
+	 * must cover the same stretch of time as the samples it is compared against;
+	 * this one answers "what is the frame period now", and the ring's own
+	 * capacity is the window. Two different questions over one ring, which is
+	 * why they are two methods rather than one with a default argument.
+	 */
+	private cadenceSnapshot(): FrameCadence {
+		const marks = this.frameMarks.ordered();
+		const gaps = frameGaps(marks);
+		const stats = rollingStatistics(gaps);
+		return Object.freeze({
+			...stats,
+			minPeriodMs: gaps.length ? Math.min(...gaps) : null,
+			spanMs: marks.length >= 2 ? marks[marks.length - 1] - marks[0] : null,
+		});
+	}
+
+	/**
+	 * Throw away the retained cadence and start counting again.
+	 *
+	 * For the events after which a frame period describes a world that no longer
+	 * exists: a resize, a move to another display, a tab restored from hidden.
+	 * The hidden tab is the one worth naming — `requestAnimationFrame` stops
+	 * there, so the first mark on restore is separated from the last by however
+	 * long the person was away, and a single 90-second gap poisons a median for
+	 * `sampleCapacity` frames. **Clearing beats filtering that gap out**: a
+	 * filter has to pick a threshold above which a gap is not a frame, and every
+	 * such threshold is also a real slow frame on someone's machine.
+	 *
+	 * The GPU and CPU samples are left alone, because nothing about them is
+	 * wrong — they are per-frame costs, not intervals between frames.
+	 */
+	reprimeCadence(): void {
+		this.frameMarks.clear();
+	}
+
 	private frameCadenceMs(fromMs: number, toMs: number): number | null {
-		const marks = this.frameMarks
-			.ordered()
-			.filter((mark) => mark >= fromMs && mark <= toMs);
-		if (marks.length < 2) return null;
-		const gaps: number[] = [];
-		for (let i = 1; i < marks.length; i++) {
-			const gap = marks[i] - marks[i - 1];
-			if (Number.isFinite(gap) && gap > 0) gaps.push(gap);
-		}
+		const gaps = frameGaps(
+			this.frameMarks
+				.ordered()
+				.filter((mark) => mark >= fromMs && mark <= toMs),
+		);
 		if (!gaps.length) return null;
 		// `rollingStatistics` rather than a local midpoint: `frame-statistics.ts`
 		// exists so the sampler and the headed instrument share one percentile
@@ -676,6 +811,6 @@ export class FrameAttribution {
 		if (!this.enabled) return;
 		this.contextLost = false;
 		this.resetSamples();
-		this.allocateQueries();
+		if (this.mode === "full") this.allocateQueries();
 	};
 }
