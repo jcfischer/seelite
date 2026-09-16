@@ -58,12 +58,16 @@ export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;
  * what the player cannot hit has got away: one figure, derived from the beam,
  * rather than two that drift.
  *
- * Two honest caveats. The beam leaves the cockpit sightline while the encounter
- * measures gap ship to ship, and a raider may not be dead ahead, so a hit can
- * stop being possible a little before this — nothing can land after it. And
- * both differences are metres against twelve kilometres.
+ * **This is the rout's exit, not a statement about the last frame the beam
+ * lands in.** The encounter measures gap ship to ship while the beam leaves the
+ * cockpit sightline, so the two disagree by more than one thing: a raider off
+ * the nose shortens the beam's reach, and a pilot facing a fleeing raider has
+ * that sightline *forward* of the ship, toward it, which lengthens it. So a shot
+ * can still land on either side of this figure, by metres against twelve
+ * kilometres. What the figure is for is that a rout ends, and a frame or two of
+ * a beam at its limit changes nothing about that.
  */
-export const RAIDER_ESCAPE_KM = Math.hypot(
+export const RAIDER_OUT_OF_BEAM_KM = Math.hypot(
 	PLAYER_LASER_RANGE_KM,
 	RAIDER_HIT_RADIUS_KM,
 );
@@ -72,6 +76,13 @@ export const RAIDER_ESCAPE_KM = Math.hypot(
  * Whether a shot along the sightline would land on the raider now — the HUD's
  * on-target mark (#324 part c). The same beam test and the same hull radius
  * `stepDuel` hits with, so the mark cannot promise a hit the duel refuses.
+ *
+ * **It is not a promise about the next frame.** `stepDuel` tests the hit at the
+ * raider's position *before* its own step, while `stepEncounter` reads this
+ * after it; the mark is therefore a second behind the duel by one frame of the
+ * raider's speed, and a shot the mark calls good can land on where the raider
+ * was. That is one frame, and the mark is drawn from the same predicate rather
+ * than a copy of it, which is what keeps the two from drifting apart.
  */
 export const raiderInSights = (
 	aimOrigin: Vec3,

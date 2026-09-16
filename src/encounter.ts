@@ -26,7 +26,7 @@ import {
 	type DuelPilot,
 	type PlayerShot,
 	type Raider,
-	RAIDER_ESCAPE_KM,
+	RAIDER_OUT_OF_BEAM_KM,
 	raiderAtDrop,
 	stepDuel,
 } from "./duel";
@@ -356,7 +356,7 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 	// cannot outstrip the thing it was derived from.
 	if (
 		flight.phase === "flee" &&
-		length(sub(flight.ship.pos, pilot.ship.pos)) > RAIDER_ESCAPE_KM
+		length(sub(flight.ship.pos, pilot.ship.pos)) > RAIDER_OUT_OF_BEAM_KM
 	)
 		return over(e, "fled");
 	return {

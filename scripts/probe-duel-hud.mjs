@@ -573,10 +573,11 @@ for (const viewport of VIEWPORTS) {
 			rout.minHullSeen > 0 &&
 			rout.lastHitGap > 1 &&
 			rout.releaseGap > rout.lastHitGap &&
-			// One frame of the raider's top speed is 0.2 km, so half a kilometre
-			// is the loosest reading that still separates the beam's reach from the
-			// exit this node replaced: measured on the build before #367 the raider
-			// was hit last at 11.83 km and let go at 24.83 km.
+			// One frame of the raider's top speed is 0.2 km, so half a kilometre is
+			// the loosest reading that still says "the beam stopped and the fight
+			// stopped together". On the build before #367 the same script measured
+			// the last hit landing at 11.83 km and the fight ending at 24.83 km —
+			// the old exit, thirteen kilometres past the reach, and the row red.
 			rout.releaseGap - rout.lastHitGap < 0.5,
 		JSON.stringify(rout),
 	);

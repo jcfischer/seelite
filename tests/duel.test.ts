@@ -10,7 +10,7 @@ import {
 } from "../src/combat-enemy";
 import {
 	type DuelPilot,
-	RAIDER_ESCAPE_KM,
+	RAIDER_OUT_OF_BEAM_KM,
 	RAIDER_HIT_RADIUS_KM,
 	type Raider,
 	raiderAtDrop,
@@ -199,29 +199,29 @@ describe("out of the beam is out of the fight (#367 D3)", () => {
 	const straightAt = (km: number) => scale(FORWARD, km);
 
 	test("the escape distance is the beam's reach at the raider's own size", () => {
-		expect(RAIDER_ESCAPE_KM).toBeCloseTo(
+		expect(RAIDER_OUT_OF_BEAM_KM).toBeCloseTo(
 			Math.hypot(PLAYER_LASER_RANGE_KM, RAIDER_HIT_RADIUS_KM),
 			9,
 		);
 	});
 
 	test("it is not the figure it was, which was twice the beam", () => {
-		expect(RAIDER_ESCAPE_KM).toBeLessThan(PLAYER_LASER_RANGE_KM * 1.01);
+		expect(RAIDER_OUT_OF_BEAM_KM).toBeLessThan(PLAYER_LASER_RANGE_KM * 1.01);
 	});
 
 	test("dead ahead, a raider inside it can be hit and one outside it cannot", () => {
 		for (const km of [
-			RAIDER_ESCAPE_KM * 0.5,
-			RAIDER_ESCAPE_KM * 0.9,
-			RAIDER_ESCAPE_KM * 0.9999,
+			RAIDER_OUT_OF_BEAM_KM * 0.5,
+			RAIDER_OUT_OF_BEAM_KM * 0.9,
+			RAIDER_OUT_OF_BEAM_KM * 0.9999,
 		])
 			expect(
 				playerLaserHit(v3(), FORWARD, straightAt(km), RAIDER_HIT_RADIUS_KM).hit,
 			).toBe(true);
 		for (const km of [
-			RAIDER_ESCAPE_KM * 1.0001,
-			RAIDER_ESCAPE_KM * 1.5,
-			RAIDER_ESCAPE_KM * 2,
+			RAIDER_OUT_OF_BEAM_KM * 1.0001,
+			RAIDER_OUT_OF_BEAM_KM * 1.5,
+			RAIDER_OUT_OF_BEAM_KM * 2,
 		])
 			expect(
 				playerLaserHit(v3(), FORWARD, straightAt(km), RAIDER_HIT_RADIUS_KM).hit,
@@ -229,7 +229,7 @@ describe("out of the beam is out of the fight (#367 D3)", () => {
 	});
 
 	test("the mark says the same thing the beam does at that distance", () => {
-		for (const km of [RAIDER_ESCAPE_KM * 0.9, RAIDER_ESCAPE_KM * 1.5])
+		for (const km of [RAIDER_OUT_OF_BEAM_KM * 0.9, RAIDER_OUT_OF_BEAM_KM * 1.5])
 			expect(raiderInSights(v3(), FORWARD, straightAt(km))).toBe(
 				playerLaserHit(v3(), FORWARD, straightAt(km), RAIDER_HIT_RADIUS_KM).hit,
 			);

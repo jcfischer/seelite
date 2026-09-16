@@ -24,15 +24,17 @@ import {
 	showDuelRow,
 } from "../src/duel-hud";
 import { HULL_IDS, type HullId } from "../src/hull";
+import { walkDownToKill, walkDownUnderTheOldLaw } from "./helpers/pulse-walk";
 import {
 	ENERGY_BANK,
 	HEAT_LOCK,
-	PULSE_LASER,
 	SHIELD_POOL,
 	type ShipCondition,
 	applyDamage,
 	fullCondition,
 	isAlive,
+	printHull,
+	HULL_KILL_TOLERANCE,
 } from "../src/ship-condition";
 
 const courier = (over: Partial<ShipCondition> = {}): ShipCondition => ({
@@ -207,46 +209,55 @@ describe("the enemy's condition line", () => {
 // and read dead. These rows are keyed on the **print**, the way the refusal
 // tone above is — the law itself is `ship-condition.test.ts`'s.
 // ---------------------------------------------------------------------------
-const DT = 1 / 60;
-
-/** Every condition the damage funnel hands the glass as a duel walks a hull
- *  down one pulse tick at a time, alive and dead states in order. */
-function walkedDown(id: HullId): ShipCondition[] {
-	const seen: ShipCondition[] = [];
-	let c: ShipCondition = fullCondition(id);
-	while (isAlive(c)) {
-		c = applyDamage(c, PULSE_LASER.damagePerS * DT, "fore");
-		seen.push(c);
-	}
-	return seen;
-}
+/** The glass says a ship is dead. Both readouts, because either one alone would
+ *  let the other keep lying. */
+const printsWithoutADigit = (c: ShipCondition): boolean =>
+	targetConditionLine(c).text.endsWith("HULL 0") ||
+	duelConsoleReadout(c).hull.startsWith("0 /");
 
 describe("HULL 0 on the glass is always a kill (#367 D1)", () => {
 	test("no readout prints a live hull as 0, on any hull", () => {
 		for (const id of HULL_IDS) {
-			for (const c of walkedDown(id)) {
-				if (isAlive(c)) {
-					expect(targetConditionLine(c).text.endsWith("HULL 0")).toBe(false);
-					expect(duelConsoleReadout(c).hull.startsWith("0 /")).toBe(false);
-				}
+			for (const c of walkDownToKill(fullCondition(id))) {
+				if (isAlive(c)) expect(printsWithoutADigit(c)).toBe(false);
+			}
+		}
+	});
+
+	test("the band the new law makes unreachable still prints a digit", () => {
+		// Built outright rather than walked to. #367's law makes a live hull under
+		// the tolerance impossible, so no amount of firing at a ship produces this
+		// state any more — which is precisely why the readouts have to be shown the
+		// state itself. Revert `duel-hud.ts` to a bare `Math.round(hull)` and the
+		// cue prints `HULL 0` here while `isAlive` says true.
+		for (const id of HULL_IDS) {
+			const c = fullCondition(id);
+			for (const hull of [
+				HULL_KILL_TOLERANCE,
+				HULL_KILL_TOLERANCE * 1.4,
+				HULL_KILL_TOLERANCE * 2,
+			]) {
+				const live = { ...c, hull };
+				expect(isAlive(live)).toBe(true);
+				expect(printsWithoutADigit(live)).toBe(false);
 			}
 		}
 	});
 
 	test("the reading the playtest reported belongs to a dead ship", () => {
 		for (const id of HULL_IDS) {
-			for (const c of walkedDown(id)) {
-				const printedZero =
-					targetConditionLine(c).text.endsWith("HULL 0") ||
-					duelConsoleReadout(c).hull.startsWith("0 /");
-				if (printedZero) expect(isAlive(c)).toBe(false);
+			for (const c of walkDownToKill(fullCondition(id))) {
+				if (printsWithoutADigit(c)) expect(isAlive(c)).toBe(false);
 			}
 		}
 	});
 
-	test("and a walk down is not vacuous: the frame before the kill prints 1", () => {
+	test("the walk reaches the band, and the frame before the kill prints 1", () => {
+		// What the walk can show: it ends at a zeroed hull, the frame before the
+		// kill is alive and prints a digit. It cannot show a live hull *under* the
+		// tolerance — see the row after this for why the state is built outright.
 		for (const id of HULL_IDS) {
-			const walk = walkedDown(id);
+			const walk = walkDownToKill(fullCondition(id));
 			const dead = walk.at(-1) as ShipCondition;
 			expect(isAlive(dead)).toBe(false);
 			expect(dead.hull).toBe(0);

@@ -28,10 +28,12 @@ import {
 	headOnPool,
 	isAlive,
 	isCrippled,
+	printHull,
 	sideStruck,
 	stepCondition,
 } from "../src/ship-condition";
 import { v3 } from "../src/vec3";
+import { walkDownToKill } from "./helpers/pulse-walk";
 
 const DT = 1 / 60;
 
@@ -235,7 +237,11 @@ describe("shield recharge", () => {
 });
 
 describe("what a ship has to be to be dead (#367 D1)", () => {
-	test("the tolerance is half the print step, and reads no frame time", () => {
+	test("the print rounds to its step, and the tolerance is half of it", () => {
+		// The helper itself, so a change to it is caught where the law reads it
+		// rather than only where a readout happens to notice.
+		expect(printHull(HULL_PRINT_STEP * 0.6)).toBe(1);
+		expect(printHull(HULL_PRINT_STEP * 0.4)).toBe(0);
 		// A tick-shaped tolerance is `damagePerS × dt`, and #352 made dt move with
 		// frame cost. This one is a property of the glass, not of the step.
 		expect(HULL_KILL_TOLERANCE).toBe(HULL_PRINT_STEP / 2);
@@ -270,15 +276,14 @@ describe("what a ship has to be to be dead (#367 D1)", () => {
 		// The law in one place, so no consumer re-derives a threshold. Driven with
 		// one pulse tick at a time, which is how a duel walks a hull down.
 		for (const id of HULL_IDS) {
-			let c = fullCondition(id);
-			let smallestLive = Infinity;
-			while (isAlive(c)) {
-				c = applyDamage(c, PULSE_LASER.damagePerS * DT, "fore");
-				if (isAlive(c)) smallestLive = Math.min(smallestLive, c.hull);
-			}
+			const walk = walkDownToKill(fullCondition(id));
+			const c = walk.at(-1) as ShipCondition;
+			const smallestLive = Math.min(...walk.filter(isAlive).map((s) => s.hull));
 			expect(c.hull).toBe(0);
 			expect(smallestLive).toBeGreaterThanOrEqual(HULL_KILL_TOLERANCE);
-			expect(Math.round(smallestLive)).toBeGreaterThanOrEqual(1);
+			// The print, not a number: a hull left standing has to be able to show
+			// a digit, which is the whole of D1 in one line.
+			expect(printHull(smallestLive)).toBeGreaterThanOrEqual(1);
 		}
 	});
 });

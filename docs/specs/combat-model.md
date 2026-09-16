@@ -112,17 +112,19 @@ carries the decisions taken to build it and what it measures.
 System law supplies the baseline danger, cargo value makes a route attractive, and combat rating chooses a fair encounter composition. Rating does not secretly change enemy stats or simply increase spawn frequency. Harder encounters are small role-based groups: interceptors pressure escape, strikers attack, and higher-risk groups may add a missile carrier or tougher leader. Ships break to recharge or flee when outmatched.
 
 **Out of the beam is out of the fight (#367).** A rout ends at the beam's own
-reach — `RAIDER_ESCAPE_KM`, the hypotenuse of `PLAYER_LASER_RANGE_KM` and the
+reach — `RAIDER_OUT_OF_BEAM_KM`, the hypotenuse of `PLAYER_LASER_RANGE_KM` and the
 raider's hit radius, so it cannot drift from the thing it is derived from. It
 used to end at a separate `FLED_KM` of 25 km while the beam stopped at 12, and
 because both ships are capped at the 2 km/s assist speed, the band between the
 two was a place a fight could live forever: the playtest raider held 12.34 km for
 two minutes, unhittable and unwilling to leave, its shields climbing two points a
-second. **The kill is not given away by this.** A crippled raider takes about four
-seconds to clear the beam and its own hull has about fifteen points left at the
-nerve, so a pilot who keeps the sight on it lands twenty-four points of pulse and
-finishes it — as §2 now insists. What the ruling changes is that throttling back
-to hold a target in the sights no longer walks into a hang.
+second. **The kill is not given away, and this node claims no arithmetic for it.** The
+ruling is the principal's: letting go of the throttle should not be what finishes a
+fight one is winning. One row measures the near case — a raider crippled six
+kilometres out, tracked at the cap and fired on, dies before it opens the gap. **No
+row measures a raider crippled near the beam's edge, and nothing here promises a
+pilot catches one.** What the ruling changes is the punishment rather than the
+reward: throttling back to hold a target in the sights no longer walks into a hang.
 
 ## 4. Consequences, reward, and law
 

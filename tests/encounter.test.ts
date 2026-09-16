@@ -16,7 +16,7 @@ import {
 	INTERDICTION_RANGE_KM,
 	cruiseTurnRate,
 } from "../src/interdiction";
-import { RAIDER_ESCAPE_KM, raiderAtDrop } from "../src/duel";
+import { RAIDER_OUT_OF_BEAM_KM, raiderAtDrop } from "../src/duel";
 import { HULL_SPECS } from "../src/hull";
 import { legEncounter, raiderSlots } from "../src/raider-slots";
 import { PULSE_LASER, fullCondition } from "../src/ship-condition";
@@ -69,8 +69,15 @@ interface Flight {
 	duelSpeedKms?: number;
 }
 
+/** How fast a frame's pilot is actually moving. The duel's own speed used to be
+ *  spelled in two places — here and in the walk's position update — and they
+ *  would have disagreed silently, moving the pilot at one rate while the frame
+ *  reported another. */
+const flownKms = (f: Flight): number =>
+	f.inCruise ? f.speedKms : (f.duelSpeedKms ?? 0.2);
+
 function frame(t: number, f: Flight, fire = false): EncounterFrame {
-	const flown = f.inCruise ? f.speedKms : (f.duelSpeedKms ?? 0.2);
+	const flown = flownKms(f);
 	const ship = {
 		pos: f.pos,
 		vel: scale(f.nose, flown),
@@ -141,10 +148,7 @@ function fly(
 		f.nose = yaw(f.nose, (opts.turn?.(t) ?? 0) * DT);
 		if (opts.track && e.raider)
 			f.nose = normalizeOr(sub(e.raider.flight.ship.pos, f.pos), f.nose);
-		f.pos = add(
-			f.pos,
-			scale(f.nose, (f.inCruise ? f.speedKms : (f.duelSpeedKms ?? 0.2)) * DT),
-		);
+		f.pos = add(f.pos, scale(f.nose, flownKms(f) * DT));
 		const step = stepEncounter(e, frame(t, f, opts.fire?.(t) ?? false));
 		if (step.drop && dropAt === null) dropAt = t;
 		if (step.raiderHit) hits++;
@@ -374,6 +378,10 @@ describe("the relay's dial on the leg (node #43)", () => {
 // encounter had no exit. The exit is now the beam's own reach.
 // ---------------------------------------------------------------------------
 
+/** The raider's hull just under §2's crippled share, at the game's own scale.
+ *  A share in three rows and a number in one is how a retune passes unnoticed. */
+const CRIPPLED_RAIDER_HULL = 0.19 * HULL_SPECS.raider.integrity;
+
 /** The playtest's state at a chosen gap: shields spent, hull under #53's flee
  *  nerve (a fifth) and under §2's crippled share (a quarter), running away at
  *  the cap beside a pilot at the cap. */
@@ -399,7 +407,7 @@ function crippledAt(
 				...r.condition,
 				fore: 0,
 				aft: 0,
-				hull: 0.19 * HULL_SPECS.raider.integrity,
+				hull: CRIPPLED_RAIDER_HULL,
 			},
 		},
 	};
@@ -407,16 +415,18 @@ function crippledAt(
 
 describe("a rout ends (#367 D3)", () => {
 	test("a raider held past the beam's reach leaves rather than sitting out of reach forever", () => {
-		// Exactly the reported state: both ships at the cap, the gap frozen
-		// outside the beam. Before #367 this ran to `untilS` and stopped for no
-		// reason but the harness's own budget.
+		// The state the playtest reached: both ships at the cap, the gap frozen
+		// outside the beam. Placed a beam-and-a-half out, where the freeze is
+		// starkest; the reported 12.34 km is the same failure nearer the edge.
+		// Before #367 this ran to `untilS` and stopped for no reason but the
+		// harness's own budget.
 		const flown = fly(forceUp(3, 0, "ahead", 10, 30), {
 			untilS: 200,
 			duelSpeedKms: ASSIST_CAP_KMS,
 			fire: () => true,
 			track: true,
 			onDuel: (e, at) =>
-				crippledAt(e, at, RAIDER_ESCAPE_KM * 1.5, ASSIST_CAP_KMS),
+				crippledAt(e, at, RAIDER_OUT_OF_BEAM_KM * 1.5, ASSIST_CAP_KMS),
 		});
 		expect(flown.e.phase).toBe("over");
 		expect(flown.e.end).toBe("fled");
@@ -434,14 +444,17 @@ describe("a rout ends (#367 D3)", () => {
 		expect(flown.e.end).toBe("fled");
 		// One frame of the raider's own top speed is 33 m, so a tight band is
 		// available and a loose one would not separate 12 km from 25.
-		expect(flown.gapAtEnd).toBeLessThan(RAIDER_ESCAPE_KM + 0.05);
-		expect(flown.gapAtEnd).toBeGreaterThan(RAIDER_ESCAPE_KM - 0.1);
+		expect(flown.gapAtEnd).toBeLessThan(RAIDER_OUT_OF_BEAM_KM + 0.05);
+		expect(flown.gapAtEnd).toBeGreaterThan(RAIDER_OUT_OF_BEAM_KM - 0.1);
 	});
 
 	test("a pilot who keeps the sight on a fleeing raider still finishes it", () => {
-		// The four seconds a crippled raider needs to clear the beam are worth
-		// about 24 points of pulse against the 15 it has left. Out of the beam is
-		// out of the fight; out of the sights is the same thing.
+		// What this row measures, stated exactly: a raider crippled six
+		// kilometres out — inside the beam, not near its edge — and tracked at
+		// the cap, dies before it can open the gap. It is not evidence about a
+		// pursuit from the beam's edge, and `combat-model.md` §3 no longer claims
+		// it is. Out of the beam is out of the fight; held inside it, the raider
+		// is finished.
 		const flown = fly(forceUp(3, 0, "ahead", 10, 30), {
 			untilS: 200,
 			duelSpeedKms: ASSIST_CAP_KMS,
@@ -451,7 +464,7 @@ describe("a rout ends (#367 D3)", () => {
 		});
 		expect(flown.e.end).toBe("destroyed");
 		expect(flown.t - (flown.dropAt ?? flown.t)).toBeLessThan(
-			(0.19 * HULL_SPECS.raider.integrity) / PULSE_LASER.damagePerS + 1,
+			CRIPPLED_RAIDER_HULL / PULSE_LASER.damagePerS + 1,
 		);
 	});
 });
