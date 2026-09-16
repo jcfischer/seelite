@@ -173,28 +173,55 @@ export const TRIAL_BACKOFF_FACTOR = 2;
 export const TRIAL_BACKOFF_CAP_MS = 60_000;
 
 /**
- * How long a rung's measured period stays usable as a point on the curve.
+ * How long a rung's measured period stays usable.
  *
- * **It must outlive the back-off, and the first figure here did not.** At ten
- * seconds, tracing the laptop's own curve showed the gate answering `unknown`
- * at every retry: the point for the rung above was taken at the revert, the
- * back-off then waited 1.5 s, 3 s, 6 s, and by the third wait the point that
- * recorded the refusal had aged out. So the gate never fired in the one case it
- * was written for, the back-off was the only thing pacing the flips, and the
- * curve was a term that ran and decided nothing.
+ * **Three figures have stood here and each was wrong for its own reason.**
  *
- * Matched to `TRIAL_BACKOFF_CAP_MS` instead, so the memory of a refusal lasts
- * at least as long as the longest wait between retries.
+ * Ten seconds was first, and it did not outlive the back-off: tracing the
+ * laptop's curve showed the gate answering `unknown` at every retry, because
+ * the point taken at a revert aged out during the 1.5 s, 3 s, 6 s waits that
+ * followed it. The gate never fired in the case it was written for.
  *
- * The cost of the longer window is a stale point refusing an upshift the
- * machine could now hold — and the case that would matter, a scene that got
- * cheap, does not reach it: a cheap rung is pinned at vsync, `atCap` is true,
- * and the gate returns `unknown` before it reads a point at all. What remains
- * is a scene that got *somewhat* cheaper without reaching the cap, where the
- * stale fit is wrong in the same direction as the truth and refuses a rung that
- * is still over budget.
+ * Sixty seconds — `TRIAL_BACKOFF_CAP_MS` — fixed that and bought the defect the
+ * principal flew into: on a panel whose refresh equals the budget, a memory
+ * cannot be contradicted by a frame pinned at vsync, so empty sky stayed at
+ * half resolution for the better part of a minute. Measured, sky after a
+ * planet: **44.1 s to reach 75% and 47.5 s to reach 100%** on a 60 Hz panel,
+ * against 1.5 s and 3.5 s on a 120 Hz one where the frame's real cost is
+ * visible.
+ *
+ * **There are two windows now, and which one applies is decided by whether the
+ * frame's own cost is visible.** A single short window was flown and measured
+ * six flips in 130 seconds over a sustained planet, at a flat sixteen-second
+ * spacing — the window, not the back-off, and one visible blip per cycle for a
+ * scene that was never going to hold the rung above.
+ *
+ * The long window applies while the frame is **not** at the cap. There
+ * `dropImpossibleObservations` can see the real cost and retires a memory the
+ * moment the frame contradicts it, so an expiry is not needed to notice a scene
+ * change and only costs a pointless trial.
+ *
+ * The short one applies at the cap, where the frame reads the display's period
+ * whatever the work cost and the bound is blind. That is the principal's case
+ * on his 60 Hz external, and this is what he chose: recovery in about fifteen
+ * seconds instead of the better part of a minute.
  */
 export const OBSERVATION_TTL_MS = TRIAL_BACKOFF_CAP_MS;
+
+/**
+ * The window that applies while vsync is hiding the frame's own cost.
+ *
+ * Short, because at the cap nothing else can notice that the scene has changed:
+ * the bound needs a real cost and has only the display's period. Measured on a
+ * 60 Hz panel, sky after a planet — **44.1 s to reach 75% and 47.5 s to reach
+ * 100%** under one long window, against 1.5 s and 3.5 s on a 120 Hz panel where
+ * the cost is visible and the bound does the work.
+ *
+ * What it costs is a trial roughly this often over a scene that stays at the
+ * cap and genuinely cannot hold the rung above — paced by the back-off once
+ * that grows past it.
+ */
+export const CAPPED_OBSERVATION_TTL_MS = 15_000;
 
 /**
  * How far a recorded rung may exceed what the current rung's cost allows,
@@ -467,9 +494,21 @@ export class AdaptiveResolution {
 
 		const gate = this.gate(atCap);
 		if (gate.state === "misses") {
-			// Not a revert, so no back-off — nothing was flipped and the player
-			// saw nothing. The counter resets so the next attempt is another
-			// full stretch of headroom away.
+			// Not a revert, so no back-off is earned — nothing was flipped and the
+			// player saw nothing. The counter resets, so the next attempt is
+			// another full stretch of headroom away.
+			//
+			// **The cooldown is rewritten here and it makes no difference**,
+			// which is worth a line because it looks like it should. This branch
+			// is reached only *after* the cooldown check above has passed, so
+			// the value being replaced is already in the past, and the
+			// `UPSHIFT_FRAMES` counter reset on the line above is longer than
+			// `COOLDOWN_MS` at every frame rate this game runs at. Removing it
+			// was flown as a fix for the back-off being discarded and measured
+			// bit-identical on both scenarios that could show it — a sustained
+			// planet with the cost visible, and one pinned at the cap — so it
+			// stays, doing nothing, rather than shipping as a change with a
+			// confident comment and no effect.
 			this.underBudgetFrames = 0;
 			this.cooldownUntilMs = evidence.nowMs + COOLDOWN_MS;
 			return hold(
@@ -687,8 +726,9 @@ export class AdaptiveResolution {
 		 * expiry bought another visible flip, and the sheet showed four in
 		 * twenty-five seconds. Reading the recorded rung settles it after one.
 		 */
+		const ttl = atCap ? CAPPED_OBSERVATION_TTL_MS : OBSERVATION_TTL_MS;
 		const measured = this.observations.get(target);
-		if (measured && nowMs - measured.atMs <= OBSERVATION_TTL_MS)
+		if (measured && nowMs - measured.atMs <= ttl)
 			return {
 				state:
 					measured.periodMs <= ADAPTIVE_BUDGET_MS * UPSHIFT_HEADROOM
@@ -698,9 +738,7 @@ export class AdaptiveResolution {
 			};
 		if (atCap) return { state: "unknown", predictedMs: null };
 		const points = [...this.observations.entries()]
-			.filter(
-				([, observation]) => nowMs - observation.atMs <= OBSERVATION_TTL_MS,
-			)
+			.filter(([, observation]) => nowMs - observation.atMs <= ttl)
 			.map(([scale, observation]) => ({
 				scale,
 				periodMs: observation.periodMs,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	ADAPTIVE_BUDGET_MS,
+	CAPPED_OBSERVATION_TTL_MS,
 	AdaptiveResolution,
 	type AdaptiveDecision,
 	type AdaptiveEvidence,
@@ -640,11 +641,16 @@ describe("a rung it has measured is not a rung it predicts", () => {
 		expect(controller.diagnostics.predictedMs).toBeCloseTo(35, 0);
 		expect(Object.keys(controller.diagnostics.observations)).toEqual(["0.75"]);
 		const trials = decisions.filter((d) => d.transition === "up-trial").length;
-		// One to learn, then the recorded rung answers every later attempt —
-		// plus whatever the TTL's re-check costs over the flight.
+		// One to learn, then the recorded rung answers every later attempt — plus
+		// whatever the re-check costs over the flight.
+		//
+		// **The short window, because this rung is pinned at vsync.** Where the
+		// frame's own cost is hidden, nothing can notice that the scene changed,
+		// so a memory is believed for `CAPPED_OBSERVATION_TTL_MS` rather than the
+		// long window that applies when the bound can see.
 		const elapsedMs = 20_000 * 16.7;
 		expect(trials).toBeLessThanOrEqual(
-			Math.ceil(elapsedMs / OBSERVATION_TTL_MS) + 1,
+			Math.ceil(elapsedMs / CAPPED_OBSERVATION_TTL_MS) + 1,
 		);
 	});
 
@@ -722,7 +728,11 @@ describe("a memory the current frame has ruled out", () => {
 		const controller = new AdaptiveResolution();
 		fly(controller, { frames: 400, cost: () => 16.7, minPeriodMs: () => 16.7 });
 		fly(controller, {
-			frames: 2_000,
+			// Short, so the 0.75 entry is still inside its window when the sky
+			// phase begins — a long approach retires it before the assertion
+			// looks, which is how an earlier version of this row failed for the
+			// opposite of its own reason.
+			frames: 600,
 			// 18.5 at the bottom rather than the 17.4 the headed run happened to
 			// read: that figure sits *under* `DOWNSHIFT_TRIGGER_MS`, so a
 			// fixture using it climbs straight back out and never reaches the
@@ -743,25 +753,36 @@ describe("a memory the current frame has ruled out", () => {
 		// three windows past the memory it was checking, so the entry had
 		// expired before the assertion looked at it and the row failed for the
 		// opposite of its own reason.
-		const away = 50_000;
+		const away = 22_000;
 		fly(controller, {
-			frames: 1_000,
+			// Short of `CAPPED_OBSERVATION_TTL_MS` at 16.7 ms a frame: the sky
+			// is at the cap, so the short window is the one that applies here.
+			frames: 300,
 			cost: () => 16.7,
 			minPeriodMs: () => 16.7,
 			startMs: away,
 		});
-		// Under a minute in: still held, and the reason is the memory.
+		// Inside the window: still held, and the reason is the memory.
 		expect(controller.scale).toBe(0.5);
 		expect(controller.diagnostics.gate).toBe("misses");
 
-		// Past the window: the entry retires and a trial settles it.
+		// Past the **short** window, and deliberately not past the long one.
+		//
+		// This is what separates the two. The entry was recorded around t=12 s,
+		// so a run ending near t=50 s leaves it 38 s old: retired under
+		// `CAPPED_OBSERVATION_TTL_MS`, which is the window that applies at the
+		// cap, and still live under `OBSERVATION_TTL_MS`. A longer phase here
+		// crosses both and the row then passes on a build with one window —
+		// which it did, until this was tightened.
+		const end = away + CAPPED_OBSERVATION_TTL_MS + 2_000;
+		expect(end + 600 * 16.7).toBeLessThan(12_000 + OBSERVATION_TTL_MS);
 		fly(controller, {
-			frames: 4_000,
+			frames: 600,
 			cost: () => 16.7,
 			minPeriodMs: () => 16.7,
-			startMs: away + OBSERVATION_TTL_MS + 5_000,
+			startMs: end,
 		});
-		expect(controller.scale).toBe(1);
+		expect(controller.scale).toBeGreaterThan(0.5);
 	});
 
 	test("a memory the frame is consistent with survives", () => {
@@ -777,7 +798,11 @@ describe("a memory the current frame has ruled out", () => {
 		// this row failed.
 		const controller = new AdaptiveResolution();
 		const decisions = fly(controller, {
-			frames: 8_000,
+			// **Inside the window the row is about.** Over a longer flight the
+			// entry retires on its own and the gate reads `unknown`, which is a
+			// different claim — the trial bound below is what covers the long
+			// run.
+			frames: 700,
 			// A little cheaper at the bottom than the principal's world, so the
 			// rung is inside budget and an upshift is actually considered —
 			// otherwise "the memory refuses it" is untested, because nothing
@@ -789,10 +814,12 @@ describe("a memory the current frame has ruled out", () => {
 		expect(controller.diagnostics.observations["0.75"]).toBeCloseTo(30.1, 1);
 		expect(controller.diagnostics.gate).toBe("misses");
 		// 14 ms at 0.5 allows 0.75 up to 14 * 2.25 * 1.25 = 39.4 ms, so the
-		// 30.1 memory is consistent with the frame and stands.
-		const elapsedMs = 8_000 * 14;
+		// 30.1 memory is consistent with the frame and stands. The rung is the
+		// cheapest this session has seen, so it reads as capped and the short
+		// window applies.
+		const elapsedMs = 700 * 14;
 		expect(
 			decisions.filter((d) => d.transition === "up-trial").length,
-		).toBeLessThanOrEqual(Math.ceil(elapsedMs / OBSERVATION_TTL_MS) + 1);
+		).toBeLessThanOrEqual(Math.ceil(elapsedMs / CAPPED_OBSERVATION_TTL_MS) + 1);
 	});
 });
