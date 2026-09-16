@@ -18,6 +18,7 @@
  * wears a raider down is `probe-interdiction.mjs`'s question, and flying one
  * down here would make this probe a minute long for nothing it checks.
  */
+import { writeFileSync } from "node:fs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -218,6 +219,144 @@ check(
 	JSON.stringify(glass),
 );
 
+// ---------------------------------------------------------------------------
+// A canister is a contact, not only a diamond (#324, the principal's ruling
+// after the fifth playtest): selectable, on the scanner, and carrying range and
+// the scoop gate's own speed **on the instrument in front of the pilot**.
+//
+// The first version of this read `[data-live-left-copy]`, the left console's
+// copy — which lives in an `.lc-panel`, `display: none` unless the pilot turns
+// their head, and which this very block had just turned away from with
+// `setHeadLook("forward")`. So it hid its own subject and then read its text,
+// and passed while the cockpit showed the pilot nothing (sage #353, a blocker).
+//
+// What it reads now is `cockpit.instrumentKey`, which `updateInstruments`
+// writes **only when it repaints** — a record of what was painted rather than a
+// string that was built. The console is still checked, in the state that shows
+// it.
+// ---------------------------------------------------------------------------
+const lock = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+	const len = (a) => Math.hypot(a.x, a.y, a.z);
+	const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+	const cross = (a, b) => ({
+		x: a.y * b.z - a.z * b.y,
+		y: a.z * b.x - a.x * b.z,
+		z: a.x * b.y - a.y * b.x,
+	});
+	const unit = (a) => {
+		const n = len(a);
+		return { x: a.x / n, y: a.y / n, z: a.z / n };
+	};
+	const c = g.canisters[0];
+	const listed = g.selectableIds().includes(c.id);
+	g.targetId = c.id;
+	g.setHeadLook("forward");
+	g.step(dt);
+	g.render(dt);
+	// The canister object is replaced every step (`driftCanister` returns a new
+	// one), so a captured copy goes stale — read it back by id each time.
+	const live = () => g.canisters.find((x) => x.id === c.id) ?? c;
+	// `updateCockpit` and not `render`: the instrument is repainted on the step
+	// path, so a render alone leaves the previous frame's figure on the canvas.
+	const paintedOf = () => {
+		g.updateCockpit();
+		return g.cockpit.instrumentKey ?? "";
+	};
+	const relOf = () => len(sub(g.world.ship.vel, live().vel));
+	const target = g.targetBody();
+	const held = {
+		painted: paintedOf(),
+		rel: relOf(),
+		reads: g.targetRelativeKms(),
+	};
+
+	// **The arm that separates the gate's speed from the rate along the line**
+	// (sage #353): fly at 1 km/s straight across the line to the canister. The
+	// rate along the line is zero there, so the rejected readout showed `0.00`
+	// while the gate was refusing at 0.25. Never stepped: the assist would
+	// rewrite the velocity this arm injects.
+	const u = unit(sub(live().pos, g.world.ship.pos));
+	const axis =
+		Math.abs(u.x) < 0.5 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+	const across = unit(cross(u, axis));
+	const keep = { ...g.world.ship.vel };
+	const at = live().vel;
+	g.world.ship.vel = {
+		x: at.x + across.x,
+		y: at.y + across.y,
+		z: at.z + across.z,
+	};
+	const crossing = {
+		painted: paintedOf(),
+		reads: g.targetRelativeKms(),
+		alongLine: dot(sub(g.world.ship.vel, at), u),
+	};
+	// The instrument as pixels. **A painted figure can still be unreadable** —
+	// the primary row shrinks to fit and this one does not — and no check here
+	// can see that, so the frame goes to a person.
+	const shot = g.cockpit.targetInstrument.ctx.canvas.toDataURL("image/png");
+	g.world.ship.vel = keep;
+	g.render(dt);
+
+	// The console's copy is a real second surface, checked in the state that
+	// shows it rather than the state that hides it.
+	g.setHeadLook("left");
+	g.updateCockpit();
+	g.render(dt);
+	const el = document.querySelector("[data-live-left-copy]");
+	const consolePanel = {
+		text: el?.textContent ?? "",
+		shown: el?.checkVisibility() ?? false,
+	};
+	g.setHeadLook("forward");
+	g.updateCockpit();
+	return {
+		id: c.id,
+		listed,
+		kind: target?.kind ?? null,
+		rangeKm: g.targetRange(),
+		onScanner: g.scannerContacts.some((s) => s.id === c.id),
+		held,
+		crossing,
+		consolePanel,
+		shot,
+	};
+});
+const { shot, ...locked } = lock;
+const relPainted = (key) =>
+	Number(String(key).match(/REL ([\d.]+) km\/s/)?.[1]);
+check(
+	"a canister is selectable, on the scanner, and its relative speed is painted on the cockpit Target instrument",
+	lock.listed &&
+		lock.kind === "cargo" &&
+		lock.onScanner &&
+		lock.rangeKm > 0 &&
+		Math.abs(relPainted(lock.held.painted) - lock.held.rel) <= 0.01,
+	JSON.stringify(locked),
+);
+check(
+	"crossing the line to a canister paints the crossing speed, not the zero along it",
+	Math.abs(lock.crossing.alongLine) <= 1e-6 &&
+		Math.abs(lock.crossing.reads - 1) <= 1e-6 &&
+		Math.abs(relPainted(lock.crossing.painted) - 1) <= 0.01,
+	JSON.stringify(lock.crossing),
+);
+check(
+	"the left console carries the same figure, and is visible with the console open",
+	lock.consolePanel.shown && /REL [\d.]+ km\/s/.test(lock.consolePanel.text),
+	JSON.stringify(lock.consolePanel),
+);
+// `SHOT_DIR=<path>` writes the instrument frame for a person to read. Off by
+// default: a probe that drops a file on every run is noise.
+if (process.env.SHOT_DIR) {
+	const to = `${process.env.SHOT_DIR}/target-instrument.png`;
+	writeFileSync(to, Buffer.from(shot.split(",")[1], "base64"));
+	console.log(`  shot  ${to}`);
+}
+
 // **The scoop is flown, not placed.** This row set the ship onto the canister
 // with the canister's own velocity, which proves the scoop predicate and not
 // that a pilot can reach one. The third playtest could not: a fleeing raider
@@ -281,6 +420,16 @@ check(
 		scoop.now === scoop.held + 1 &&
 		scoop.lastExit.startsWith("scooped"),
 	JSON.stringify(scoop),
+);
+
+const afterScoop = await page.evaluate((id) => {
+	const g = window.__seelite;
+	return { listed: g.selectableIds().includes(id), targetId: g.targetId };
+}, lock.id);
+check(
+	"the scooped canister leaves the selection list and takes the lock with it",
+	!afterScoop.listed && afterScoop.targetId === null,
+	JSON.stringify(afterScoop),
 );
 
 // ---------------------------------------------------------------------------

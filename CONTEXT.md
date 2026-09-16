@@ -19,7 +19,9 @@ A targetable presentation identity outside the generated body list. Its producer
 supplies position, velocity, name, hull type and scanner classification;
 `src/display-contact.ts` owns this shape under work-graph decision #52. A
 contact's display name is a label, with no persistence identity or Carrier slot
-meaning. `ship-visuals.md` §2 owns the review fleet's use of it.
+meaning. `ship-visuals.md` §2 owns the review fleet's use of it; the other
+producers include the raider, Traffic actors, the combat rig, the **Pirate
+relay** and the **Cargo canister**.
 
 **Review fleet slot**:
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
@@ -92,7 +94,12 @@ One tonne of a single good, dropped by a destroyed raider (one to three per
 kill). Each leaves the wreck in its own direction and comes to rest ten
 seconds later, relative to the local frame's velocity at the kill; it stays
 until scooped or until five game-clock minutes pass (`combat-model.md` §4.1). A ship scoops one by passing close and
-slow, with no module, into the hold. Flight state only: it is not saved.
+slow, with no module, into the hold. It is a **selectable contact** of kind
+`cargo` — scanner blip, target lock, and range plus the **relative speed**
+(`REL`) on the cockpit Target instrument, which is the speed the scoop gate
+checks. The green diamond alone gave a range and no speed, and the gate is a
+speed (`hud-and-scanner.md` §3).
+Flight state only: it is not saved.
 `src/raider-wreck.ts` owns the drop and the scoop.
 _Avoid_: Loot, salvage drop, jettisoned cargo
 

@@ -69,12 +69,24 @@ target records therefore belong to the left Navigation panel.
 ## 3. Target and docking director
 
 The right-hand cockpit Target instrument shows a designation between its title
-and target name/range: `STAR`, `PLANET`, `MOON`, `STATION · <TYPE>`, or
+and target name/range: `STAR`, `PLANET`, `MOON`, `CARGO`, `STATION · <TYPE>`, or
 `SHIP · <HULL TYPE> · <SCANNER STATUS>`. The producer supplies a ship's type;
 it is never inferred from the display name. Unclassified review hulls show
 `UNKNOWN`, not a fabricated legal status. The designation updates on target or
 classification changes and leaves the separate ETA line in place (principal
 request during #198).
+
+Its second line carries the ETA and the **relative speed** on the selected
+target, `REL <n> km/s`: the size of the velocity between ship and target, which
+is the quantity #324's scoop gate checks (`combat-model.md` §4.1). It is a
+magnitude with no direction word, and the range above it already shows whether
+the gap is closing. Two forms were rejected on the way. One printed the
+component along the line to the target, which is zero at closest approach
+whatever the crossing speed, so it read `0.00` in exactly the place a pilot
+needed it. The other put the figure only in the left console's copy — an
+`.lc-panel`, `display: none` unless the pilot turns their head — so a scoop
+flown looking forward showed nothing at all (sage #353). A figure a pilot flies
+on belongs on an instrument that is in front of them.
 
 The on-glass director retains the selected target after Navigation chooses it.
 During target acquisition, an amber **target-circle arrow** rotates around the

@@ -18,6 +18,18 @@ export function isDisplayContact(body: Body): body is DisplayContact {
 	return "velocity" in body;
 }
 
+/**
+ * The relative-speed figure: a magnitude, with no direction word beside it.
+ * `hud-and-scanner.md` §3 owns the quantity and the two forms rejected on the
+ * way to it.
+ */
+export function relativeLabel(kms: number | null, separator = " · "): string {
+	if (kms === null) return "";
+	// The separator belongs to the label, so nothing selected leaves no dangling
+	// bullet on the end of the line (sage #353).
+	return `${separator}REL ${kms.toFixed(2)} km/s`;
+}
+
 /** The right cockpit Target panel's designation, independent of its name. */
 export function targetDesignation(body: Body | null): string {
 	if (!body) return "";

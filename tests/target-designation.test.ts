@@ -15,6 +15,9 @@ test("the Target panel distinguishes generated kinds and station roles", () => {
 	expect(targetDesignation(null)).toBe("");
 	for (const kind of ["star", "planet", "moon"] as const)
 		expect(targetDesignation({ ...body, kind })).toBe(kind.toUpperCase());
+	// A canister is a contact of its own kind (#324, the principal's ruling
+	// after the fifth playtest), and the fall-through names it without a branch.
+	expect(targetDesignation({ ...body, kind: "cargo" })).toBe("CARGO");
 	for (const stationType of [
 		"trade",
 		"refinery",

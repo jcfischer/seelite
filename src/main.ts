@@ -321,6 +321,9 @@ import {
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
+	CANISTER_RADIUS_KM,
+	CARGO_CONTACT_COLOUR,
+	CARGO_CONTACT_CSS,
 	type Canister,
 	dropCanisters,
 	raiderDestruction,
@@ -386,6 +389,7 @@ import {
 import {
 	type DisplayContact,
 	isDisplayContact,
+	relativeLabel,
 	targetDesignation,
 } from "./display-contact";
 import {
@@ -1965,6 +1969,10 @@ class Game {
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
+	/** One selectable contact per live canister, by canister id (#324). Kept
+	 *  beside the canisters rather than searched for in the contact list, which
+	 *  only selection and the scanner read. */
+	private readonly cargoContacts = new Map<string, DisplayContact>();
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -5275,12 +5283,23 @@ class Game {
 			? `${target.name}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
+		// REL rides this instrument and not only the left console, which is
+		// hidden unless the pilot turns their head (`hud-and-scanner.md` §3).
+		// **It does add repaints**: it moves with the ship's *or* the target's
+		// velocity, so a canister slowing to rest changes it while `speed`
+		// stands still. `targetSecondary` is in the key below, which is what
+		// keeps the canvas honest — the note under that key is about a figure
+		// no painted pixel depended on, which is not this one.
+		const targetSecondary = `ETA ${eta}${relativeLabel(
+			this.targetRelativeKms(),
+			"  ",
+		)}`;
 		const designation = targetDesignation(target);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
 		// printing it when §5's strip took it, and a key holding a value no
 		// painted pixel depends on repaints two canvas textures on the frame the
 		// drive regenerates a hundredth of an AU — about once a second, forever.
-		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${eta}|${this.throttle}|${this.assist}`;
+		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${targetSecondary}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -5337,7 +5356,7 @@ class Game {
 			// **Charge is gone from here.** It is a second consumable with its own
 			// regeneration (#10) and §5 puts it on the floor; riding the *target*
 			// instrument made it read as a property of the thing being flown to.
-			`ETA ${eta}`,
+			targetSecondary,
 			"#ffd17a",
 			designation,
 		);
@@ -6192,6 +6211,10 @@ class Game {
 				moon: 3,
 				ship: 4,
 				relay: 5,
+				// Contacts are appended after the sort and never reach the
+				// comparator, but the map is indexed by the whole `BodyKind`, so a
+				// kind missing here is a build error rather than a silent NaN.
+				cargo: 6,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -6256,6 +6279,32 @@ class Game {
 	targetRange(): number | null {
 		const target = this.targetBody();
 		return target ? length(sub(target.pos, this.world.ship.pos)) : null;
+	}
+
+	/**
+	 * The speed between the ship and the selected target, in km/s, or `null`
+	 * with nothing selected.
+	 *
+	 * The same quantity `scoops` tests; `hud-and-scanner.md` §3 owns why it is
+	 * this and not a range rate. Public because it is the figure a scoop is
+	 * flown on (#324). Not `closingKms`: that name is taken on `Game` by the
+	 * approach pose.
+	 */
+	targetRelativeKms(): number | null {
+		const target = this.targetBody();
+		if (!target) return null;
+		return length(sub(this.world.ship.vel, this.targetVelocity()));
+	}
+
+	/**
+	 * Whether this body is the selected target.
+	 *
+	 * One predicate, read by both canister draw loops, because they carry
+	 * complementary conditions: if they stop being exact inverses a canister is
+	 * drawn twice or not at all (sage #353).
+	 */
+	private isSelectedTarget(id: string): boolean {
+		return id === this.targetId;
 	}
 
 	/**
@@ -7519,6 +7568,12 @@ class Game {
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
 		this.canisters = [];
+		// And their contacts, now, rather than on the next step: `performJump`
+		// refreshes the scanner before any step runs, so the arrival frame would
+		// otherwise carry the old system's canister blips — and a reset while
+		// docked returns through `stepDockPhase` before the sync, leaving them
+		// selectable until launch (sage #353).
+		this.syncCargoContacts();
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -7929,6 +7984,56 @@ class Game {
 				? `scooped ${canister.tonnes} t ${canister.commodity}`
 				: "hold full: canister left in space";
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
+	}
+
+	/**
+	 * Give every live canister a selectable contact, and take it back when the
+	 * canister is scooped or expires (#324, the principal's ruling after the
+	 * fifth playtest — "targetable, keep 5 min"). A canister was a green diamond
+	 * with a range label and nothing else: it could not be selected, so the
+	 * approach had no range or closing readout to fly by, and the lifetime was
+	 * never the complaint.
+	 *
+	 * Stepped every frame rather than beside the drop, and deliberately **not**
+	 * inside `stepCargoCanisters`, which returns early on an empty list — an
+	 * empty list is exactly when the last contact has to go.
+	 */
+	private syncCargoContacts() {
+		for (const canister of this.canisters) {
+			const known = this.cargoContacts.get(canister.id);
+			if (known) {
+				// `driftCanister` returns a new canister each step, so these are
+				// assignments and not a mutation of a shared vector.
+				known.pos = canister.pos;
+				known.velocity = canister.vel;
+				continue;
+			}
+			const contact: DisplayContact = {
+				id: canister.id,
+				name: canister.commodity.toUpperCase(),
+				kind: "cargo",
+				pos: canister.pos,
+				velocity: canister.vel,
+				radiusKm: CANISTER_RADIUS_KM,
+				color: CARGO_CONTACT_COLOUR,
+				legalStatus: null,
+				scannerClass: "unknown",
+			};
+			this.cargoContacts.set(canister.id, contact);
+			this.registerContact(contact);
+			this.selectableCache = null;
+		}
+		if (this.cargoContacts.size === this.canisters.length) return;
+		const live = new Set(this.canisters.map((canister) => canister.id));
+		for (const [id, contact] of this.cargoContacts) {
+			if (live.has(id)) continue;
+			this.unregisterContact(contact);
+			this.cargoContacts.delete(id);
+			this.selectableCache = null;
+			// A lock on a canister that no longer exists would resolve through
+			// `bodyFor` to nothing and leave the panel naming a gap.
+			if (this.targetId === id) this.targetId = null;
+		}
 	}
 
 	/** Draw the leg's encounter, if the leg has none running. */
@@ -8635,6 +8740,7 @@ class Game {
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot);
 		this.stepCargoCanisters(dt);
+		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
@@ -9665,7 +9771,9 @@ class Game {
 			targetId: target?.id ?? null,
 			targetName: target?.name ?? null,
 			target: target
-				? `${target.name} · ${range(targetKm)}`
+				? `${target.name} · ${range(targetKm)}${relativeLabel(
+						this.targetRelativeKms(),
+					)}`
 				: "NO TARGET SELECTED",
 			targetBearingDeg: target
 				? targetArrowBearingDeg(
@@ -10882,6 +10990,10 @@ class Game {
 		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
 			[];
 		for (const canister of this.canisters) {
+			// The selected canister is drawn by the marker loop below, with the
+			// ring and the label every selected target gets. Drawing it here too
+			// would put a diamond inside that ring.
+			if (this.isSelectedTarget(canister.id)) continue;
 			const dir = directionTo(camPos, canister.pos);
 			const at = dir && place(dir);
 			if (!at?.on) continue;
@@ -10895,8 +11007,8 @@ class Game {
 			} else
 				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
 		}
-		ctx.strokeStyle = "rgba(150, 240, 170, 0.9)";
-		ctx.fillStyle = "rgba(150, 240, 170, 0.9)";
+		ctx.strokeStyle = CARGO_CONTACT_CSS;
+		ctx.fillStyle = CARGO_CONTACT_CSS;
 		ctx.lineWidth = 1.5;
 		ctx.font = "11px ui-monospace, Menlo, monospace";
 		for (const mark of cargoMarks) {
@@ -11111,7 +11223,11 @@ class Game {
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
-			const selected = body.id === this.targetId;
+			const selected = this.isSelectedTarget(body.id);
+			// An unselected canister keeps the clustered green diamond above: a
+			// kill drops them at one point, and brackets on each would be the
+			// smear that clustering was added to stop.
+			if (body.kind === "cargo" && !selected) continue;
 			const at = place(dir);
 			if (at?.on) {
 				const r = selected ? 14 : 7;

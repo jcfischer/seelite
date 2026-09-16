@@ -3,8 +3,18 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
 import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
-import { type DisplayContact, isDisplayContact } from "../src/display-contact";
-import { v3 } from "../src/vec3";
+import {
+	type DisplayContact,
+	isDisplayContact,
+	relativeLabel,
+} from "../src/display-contact";
+import {
+	CANISTER_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+	CARGO_CONTACT_COLOUR,
+	scoops,
+} from "../src/raider-wreck";
+import { length, sub, v3 } from "../src/vec3";
 import { repoPath } from "./lib/source-scan";
 
 // Execute the actual Game methods without constructing WebGL or copying their
@@ -185,6 +195,211 @@ test("target lookup and velocity follow the live contact, while bodies keep orbi
 	subject.targetId = null;
 	expect(subject.targetBody()).toBeNull();
 	expect(subject.targetVelocity()).toEqual(v3());
+});
+
+test("a live canister is a selectable cargo contact, and losing it drops the lock", () => {
+	const canisters = [
+		{ id: "cargo-a", commodity: "food", pos: v3(1, 0, 0), vel: v3(0, 1, 0) },
+		{ id: "cargo-b", commodity: "furs", pos: v3(2, 0, 0), vel: v3(0, 0, 1) },
+	];
+	const subject = Object.assign(
+		Object.create(
+			methods(["syncCargoContacts", "registerContact", "unregisterContact"], {
+				CANISTER_RADIUS_KM,
+				CARGO_CONTACT_COLOUR,
+			}),
+		),
+		{
+			canisters,
+			cargoContacts: new Map(),
+			contacts: [] as DisplayContact[],
+			selectableCache: ["stale"],
+			targetId: null as string | null,
+		},
+	);
+
+	subject.syncCargoContacts();
+	expect(subject.contacts.map((c: DisplayContact) => c.id)).toEqual([
+		"cargo-a",
+		"cargo-b",
+	]);
+	const first = subject.contacts[0];
+	expect(first.kind).toBe("cargo");
+	expect(first.radiusKm).toBe(CANISTER_RADIUS_KM);
+	expect(first.velocity).toEqual(v3(0, 1, 0));
+	// A membership change invalidates the selection cache, or the marker
+	// overlay walks a list the canister is not in.
+	expect(subject.selectableCache).toBeNull();
+
+	// A frame with the same canisters moves them and registers nothing new.
+	subject.selectableCache = ["stale"];
+	canisters[0].pos = v3(5, 0, 0);
+	subject.syncCargoContacts();
+	expect(subject.contacts).toHaveLength(2);
+	expect(subject.contacts[0].pos).toEqual(v3(5, 0, 0));
+	expect(subject.selectableCache).toEqual(["stale"]);
+
+	// Scooped or expired: the contact goes, and so does a lock on it.
+	subject.targetId = "cargo-a";
+	subject.canisters = [canisters[1]];
+	subject.syncCargoContacts();
+	expect(subject.contacts.map((c: DisplayContact) => c.id)).toEqual([
+		"cargo-b",
+	]);
+	expect(subject.targetId).toBeNull();
+	expect(subject.selectableCache).toBeNull();
+});
+
+test("the body-kind union carries cargo, which the selection order is typed against", () => {
+	const declared = readFileSync(repoPath("src/sim.ts"), "utf8").match(
+		/export type BodyKind =([^;]+);/,
+	);
+	// Only the union membership: `order[a.kind]` in `selectable` is indexed by
+	// the whole `BodyKind`, so a kind with no place in that map is a build
+	// error, and a row walking the source for each kind finds nothing tsc does
+	// not already catch while breaking on a reformat (sage #353).
+	expect(declared?.[1]).toContain('"cargo"');
+});
+
+test("the selected target reads the speed the scoop gate checks, not the rate along the line", () => {
+	const world = makeWorld(42);
+	const contact: DisplayContact = {
+		id: "cargo-a",
+		name: "FOOD",
+		kind: "cargo",
+		pos: v3(10, 0, 0),
+		radiusKm: CANISTER_RADIUS_KM,
+		color: 0,
+		velocity: v3(1, 0, 0),
+		legalStatus: null,
+		scannerClass: "unknown",
+	};
+	world.ship.pos = v3();
+	world.ship.vel = v3(3, 0, 0);
+	const subject = Object.assign(
+		Object.create(
+			methods(
+				[
+					"targetRelativeKms",
+					"targetBody",
+					"bodyFor",
+					"velocityOf",
+					"targetVelocity",
+				],
+				{ bodyVelocity, isDisplayContact, v3, length, sub },
+			),
+		),
+		{ world, targetId: contact.id, selectable: () => [contact] },
+	);
+	// Overhauling it along the line: both quantities agree here, which is why
+	// the wrong one survived a round.
+	expect(subject.targetRelativeKms()).toBeCloseTo(2, 10);
+
+	// **The case that tells them apart** (sage #353): flying across the line to
+	// the canister. The rate along the line is zero whatever the crossing speed,
+	// and a panel showing it read `0.00` in the last hundred metres — exactly
+	// where the gate was refusing.
+	contact.velocity = v3();
+	world.ship.vel = v3(0, 2, 0);
+	expect(subject.targetRelativeKms()).toBeCloseTo(2, 10);
+
+	// And it is the gate's own quantity, not merely a magnitude: the readout
+	// and `scoops` turn over at the same speed.
+	const canister = {
+		id: "cargo-a",
+		commodity: "food",
+		tonnes: 1,
+		pos: v3(),
+		vel: v3(),
+		restVel: v3(),
+		restsAt: 0,
+		expiresAt: 0,
+	};
+	world.ship.pos = v3();
+	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS + 0.01, 0);
+	expect(subject.targetRelativeKms()).toBeCloseTo(
+		CANISTER_SCOOP_SPEED_KMS + 0.01,
+		10,
+	);
+	expect(scoops(canister, world.ship)).toBe(false);
+	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS - 0.01, 0);
+	expect(subject.targetRelativeKms()).toBeCloseTo(
+		CANISTER_SCOOP_SPEED_KMS - 0.01,
+		10,
+	);
+	expect(scoops(canister, world.ship)).toBe(true);
+
+	subject.targetId = null;
+	expect(subject.targetRelativeKms()).toBeNull();
+});
+
+test("a jump or a reset takes the cargo contacts with the canisters", () => {
+	const subject = Object.assign(
+		Object.create(
+			methods(
+				[
+					"clearFlightSession",
+					"syncCargoContacts",
+					"registerContact",
+					"unregisterContact",
+				],
+				// `QUIET_GUN` is assigned by the teardown and asserted by nothing
+				// here; this row is about what stays registered.
+				{ CANISTER_RADIUS_KM, CARGO_CONTACT_COLOUR, QUIET_GUN: null },
+			),
+		),
+		{
+			canisters: [
+				{ id: "cargo-a", commodity: "food", pos: v3(1, 0, 0), vel: v3() },
+			],
+			cargoContacts: new Map(),
+			contacts: [] as DisplayContact[],
+			selectableCache: null,
+			targetId: null as string | null,
+		},
+	);
+	subject.syncCargoContacts();
+	subject.targetId = "cargo-a";
+	subject.selectableCache = ["stale"];
+	expect(subject.contacts).toHaveLength(1);
+
+	// **Run the teardown, rather than reading its source order** (sage #353).
+	// The claim is about what a jump or a reset leaves registered, and an
+	// ordering assertion never executes it: `performJump` refreshes the scanner
+	// before any step runs, and a reset while docked returns through
+	// `stepDockPhase` before a step could sync.
+	subject.clearFlightSession();
+	expect(subject.canisters).toEqual([]);
+	expect(subject.contacts).toEqual([]);
+	expect(subject.cargoContacts.size).toBe(0);
+	expect(subject.targetId).toBeNull();
+	expect(subject.selectableCache).toBeNull();
+});
+
+test("the relative-speed label is a magnitude with no direction word", () => {
+	expect(relativeLabel(0.44)).toBe(" · REL 0.44 km/s");
+	expect(relativeLabel(0)).toBe(" · REL 0.00 km/s");
+	// The separator is the label's, so nothing selected leaves no dangling
+	// bullet — and the instrument asks for its own spacing.
+	expect(relativeLabel(null)).toBe("");
+	expect(relativeLabel(0.44, "  ")).toBe("  REL 0.44 km/s");
+});
+
+test("the cockpit target instrument carries REL, not only the hidden console copy", () => {
+	const instruments = method("updateInstruments");
+	// The blocker of sage #353: the figure reached `state.target`, which
+	// live-cockpit writes into an `.lc-panel` that is `display: none` unless the
+	// pilot turns their head to a console. This instrument is painted on every
+	// frame in front of them.
+	expect(instruments).toContain("relativeLabel(");
+	expect(instruments).toContain("this.targetRelativeKms()");
+	// And it is in the repaint key, or the canvas keeps the previous frame's
+	// figure while the number moves.
+	const secondary = instruments.indexOf("const targetSecondary");
+	const key = instruments.indexOf("const key =");
+	expect(secondary).toBeGreaterThanOrEqual(0);
+	expect(key).toBeGreaterThan(secondary);
+	expect(instruments.slice(key)).toContain("${targetSecondary}");
 });
 
 test("cruise snapshots a moving contact before combat integrates the frame", () => {
