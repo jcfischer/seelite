@@ -14,6 +14,20 @@
  * changes what a shadow can remove, and what differs between those three
  * frames is how much of the surrounding hemisphere is hull.
  *
+ * **This instrument does not settle that question, and said for nine rounds
+ * that it did.** The flat column it rested on is the *cockpit* one, and
+ * `fitShadowCamera` fits the box to the cabin alone in cockpit view and
+ * excludes every station — a limitation this file documents two paragraphs
+ * below and then leaned on anyway. Of course it is flat: the subject is the
+ * same cabin at every rung. The *chase* column, which is the one where a
+ * station can receive at all, does not contradict enclosure: it rises
+ * monotonically down the approach, 0.000% to 0.013%, and further inside the
+ * bay.
+ *
+ * What the ladder does establish is narrower and does not need that question
+ * answered: **the shadow is very small everywhere outside a bay, and more light
+ * scales it without changing that.**
+ *
  * **That is three numbers from one frame each, and it is exactly the shape that
  * turned out to be an artefact twice.** #200 published a 144/144 separation
  * that was its own arm ordering. #201 published 0.467% for `station-flank`
@@ -370,7 +384,16 @@ await installViewPlacement(page);
 await installViewFraming(page);
 await page.goto(`${origin}/?seed=${SEED}`);
 await bootedGame(page);
+// **Frozen before the clock is set, and the clock read back afterwards.**
+// `__startClockAt` awaits two animation frames, and with `Game.animate` running
+// those advance the world — the fixture came out at 0.033 or 0.067 seconds
+// rather than the zero this script printed, moving the station's phase between
+// runs with nothing recording it. Freezing first stops that, and the figure
+// below is read rather than assumed, because a printed constant that the run
+// does not actually hold is the failure this whole instrument keeps finding.
+await freeze(page);
 await page.evaluate((clock) => window.__startClockAt(clock), GAME_TIME_S);
+const clockAt = await page.evaluate(() => window.__seelite.world.gameTime);
 
 // **Read off the scene, not off the record.** The ratio that decides what a
 // shadow can remove is the one the renderer is actually using, and #201 has
@@ -409,7 +432,9 @@ const unfreeze = (page) =>
 const ORDER_SEED = Number(process.env.ORDER_SEED ?? 20260905);
 const shuffled = seededShuffler(ORDER_SEED);
 
-console.log(`  seed ${SEED}, clock ${GAME_TIME_S}, ${STATION} / ${BERTH}`);
+console.log(
+	`  seed ${SEED}, clock asked ${GAME_TIME_S} and held ${clockAt.toFixed(4)} s, ${STATION} / ${BERTH}`,
+);
 console.log(
 	`  rig, read off the near scene: sun ${rig.sun}, hemisphere ${rig.hemisphere}, fill ${rig.fill}, environment ${rig.environment}`,
 );
@@ -465,8 +490,6 @@ let traversalSeconds = 0;
 // the traversal fix removed one level up. Every placement helper here works
 // frozen: `__viewAlongAxis` is a teleport and `__parkInBerth` drives its flight
 // with explicit `step(dt)` calls.
-await freeze(page);
-
 for (const rung of RUNGS) {
 	// **Frozen before the placement, not after it.** The freeze sat after
 	// `settleFrames`, and `__parkInBerth` itself awaits two animation frames
