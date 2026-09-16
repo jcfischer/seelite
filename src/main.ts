@@ -5373,13 +5373,10 @@ class Game {
 				};
 			}),
 			legal: {
-				...this.commerceWorld.galaxies[record.galaxy].legalStatus,
+				...this.legalStatus(),
 				// The stored pair is at its stamp; `heatNow` is decayed to the clock,
 				// which is what the standing reads.
-				heatNow: heatAt(
-					this.commerceWorld.galaxies[record.galaxy].legalStatus,
-					now,
-				),
+				heatNow: heatAt(this.legalStatus(), now),
 				standing: this.legalStanding(),
 			},
 			authorityReady: this.trafficAuthorityReady(),
@@ -5398,12 +5395,15 @@ class Game {
 		);
 	}
 
+	/** This galaxy's saved legal status, the pair at its stamp. */
+	private legalStatus() {
+		return this.commerceWorld.galaxies[this.world.system.record.galaxy]
+			.legalStatus;
+	}
+
 	/** The player's standing now, from the galaxy's heat (H4, H7). */
 	legalStanding() {
-		return legalStandingAt(
-			this.commerceWorld.galaxies[this.world.system.record.galaxy].legalStatus,
-			this.world.gameTime,
-		);
+		return legalStandingAt(this.legalStatus(), this.world.gameTime);
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */

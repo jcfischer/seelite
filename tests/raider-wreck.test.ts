@@ -3,6 +3,7 @@
  * the game clock, and the cargo canisters the player can scoop.
  */
 import { describe, expect, test } from "bun:test";
+import { HULL_SPECS } from "../src/hull";
 import { raiderSlots } from "../src/raider-slots";
 import { ASSIST_CAP_KMS } from "../src/sim";
 import {
@@ -466,7 +467,7 @@ describe("a scoop takes what fits (civilian-combat.md H11)", () => {
 
 	test("scoopCargo takes the whole tonnes the hold has room for", () => {
 		const commander = newCommander("courier");
-		const room = 20 - 0;
+		const room = HULL_SPECS.courier.holdT;
 		const took = scoopCargo(commander, "Food", 30);
 		expect(took.accepted).toBe(true);
 		expect(took.tonnes).toBe(room);

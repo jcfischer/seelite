@@ -180,9 +180,12 @@ produce duplicate meshes or contacts.
 A visible Traffic route adds no combat physics of its own, and mere visibility
 does not hand authority over. Two decisions do. #75 made Traffic collidable (the
 map's Constraints). #362 made it fireable (`civilian-combat.md` H2, H3): a shot
-that lands hands the carrier from its projection to flight at the pose it is
-drawn in, and a destroyed carrier flies no route and holds no berth until its
-replacement is operational (H1). A repairing carrier diverted by a strike is
+that lands flies the carrier from the pose it is drawn in, and a destroyed
+carrier flies no route and holds no berth until its replacement is operational
+(H1). **The handoff is presentation only in #362's first change**: an engaged
+carrier that survives still has its projection in authority, so its route keeps
+taking part in lane and berth arbitration while it flees, and it rejoins that
+route when the engagement ends. #365's diversion is where a survivor leaves it. A repairing carrier diverted by a strike is
 #365's to draw (H3c). Authority readiness counts the
 carriers that fly, not the roster.
 

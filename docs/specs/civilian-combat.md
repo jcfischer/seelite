@@ -112,9 +112,9 @@ shield pool, and chose this. The two alternatives each amend `combat-model.md`
 §1, which this node is told not to reopen.
 
 Time on target, one shield side, no recharge, pulse laser, is derived from the
-constants; `tests/traffic-engagement.test.ts` pins it per hull and is its only
-copy. The figure the principal was shown for a Porter was about 45 s. A real
-chase is longer by the time off target.
+constants; `tests/traffic-engagement.test.ts` pins it for four hulls
+(freighter, miner, courier, patrol). The figures shown to the principal while choosing are
+in that test. A real chase is longer by the time off target.
 
 ### H3 — The reaction is per role
 
@@ -355,7 +355,7 @@ Each is amended in the change that builds it, not ahead of it.
 | "Traffic actors do not add collision or combat physics in #148" | `station-traffic.md` §3.1 | Same (1) |
 | Standing and manifest keyed on the slot | `carrier-identity.md` §2, §3 | `instanceOrdinal` in both signatures, and the voyage is `flownVoyageOrdinal` (F11, §3, §5) (1) |
 | §7's "Nothing writes heat" and §11's handoff | `carrier-identity.md` §7, §11 | Discharged, pointing here (1) |
-| Offences and thresholds named without figures | `combat-model.md` §4 | A pointer to H4 and H7 as built (1, 3) |
+| Offences and thresholds named without figures | `combat-model.md` §4 | §4.2: a pointer to H4 and H7, plus H1, H2 and H11 as built — the replacement, the combat condition, and a canister's tonnage as a field with a scoop that takes what fits, the exception to §4.1's one-tonne canister (1, 3) |
 | The interim 600 s hostility cooldown awaiting #8 | `docking.md` §6 | Replaced by H5 for an offence beside a station (3) |
 | `LegalStatus` is `{ heat, updatedAt }` | `persistent-world-state.md` §7 | Gains `witnesses` (3) |
 
