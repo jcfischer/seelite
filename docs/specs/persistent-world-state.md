@@ -32,6 +32,13 @@ A recovery process gets a deterministic identity from its carrier key, causal-ep
 
 ### 3.1 Player knowledge
 
+> **Changed by `carrier-identity.md` (node #359), not yet implemented.** Its §5
+> adds a **scan** observation source alongside `docking`, `system-relay` and
+> `intervention`, and needs a row reachable for a Traffic actor that has no
+> condition observation — which today's required fields do not allow. Its §8
+> lists the change; the shape and any `WORLD_SCHEMA_VERSION` bump are the
+> implementation's to settle.
+
 Knowledge and physical condition are independent.
 
 - No knowledge row means **undiscovered**.

@@ -218,8 +218,11 @@ rotated quickly, a ship scanned Wanted could read Clean by the time it died, and
 the kill would be an offence the pilot could not have avoided — F7's protection
 would be worthless and F11's own rule ("must not change between the scan and the
 kill, or the reveal is a lie") would be violated on the other axis. So **the
-rotation period must be long compared with an encounter**, and the instrument §2
-requires must show it. This is a requirement on the clock term, not a new
+rotation period must be long against the time from a completed scan to the
+kill**, and the instrument §2 requires must show it. The interval is named
+directly rather than as "an encounter", which CONTEXT.md reserves for a raider's
+cruise-leg approach — the target here is ordinary traffic, so that term's
+duration does not bound this window. This is a requirement on the clock term, not a new
 decision: it constrains how F2 is implemented rather than reopening it.
 
 It adds no vocabulary to a law model this node is told to consume rather than
@@ -248,8 +251,10 @@ and a reading without its age invites a pilot to act on an hour-old answer.
 
 ### F9 — The result is recorded on the knowledge row
 
-A completed scan writes an observation — what was read, when, and that a scan was
-its source — into the existing per-carrier knowledge row.
+A completed scan writes **when it was read, and that a scan was its source**.
+What was read is *not* stored: it is re-derived from the pure functions at
+display time. §5 owns that contract and the row's shape, and neither is as
+cheap as this decision first assumed.
 
 The principal was offered this and an ephemeral result, and chose this.
 
@@ -319,17 +324,19 @@ Every carrier has:
 | `name` | the drawn proper name | a new `DOMAIN` tag, drawn per carrier key |
 | `registry` | the composed designation | model name, role code and ordinal, as `station-traffic.ts:172` already builds |
 
-The name is drawn with **`mix(mix(systemSeed, galaxyIndex), fnv1a(carrierKey))`**
-under its own `DOMAIN` tag, not from a stream consumed in roster order.
+The name is drawn with **`mix(systemSeed, fnv1a(carrierKey))`** under its own
+`DOMAIN` tag, not from a stream consumed in roster order.
 
-**The galaxy component is not optional, and leaving it out is the easy mistake.**
-`CarrierKey` is `${systemIndex}:${localCarrierId}` and is *envelope-relative*
-(`src/carrier-key.ts:26-33`) — the galaxy comes from the save envelope, not from
-the key. A draw seeded on the key alone gives system 5's `station-trade` Porter
-the same name, the same standing timeline and the same hold in all eight
-galaxies. The shipped precedent seeds from `kill.systemSeed`
-(`raider-wreck.ts:185-188`) and does not have this problem. Every function in §2
-and §3 carries the same component for the same reason.
+**Never seed on the carrier key alone — the system seed is what carries the
+galaxy.** `CarrierKey` is `${systemIndex}:${localCarrierId}` and is
+*envelope-relative* (`src/carrier-key.ts:26-33`): the galaxy comes from the save
+envelope, not from the key. A draw seeded on the key alone would give system 5's
+`station-trade` Porter the same name, standing timeline and hold in all eight
+galaxies. `systemSeedFor` is `mix(layoutSeed(worldSeed, galaxy, attempt), index)`
+and `layoutSeed` folds in the galaxy (`src/galaxy.ts:208-220`), so passing the
+system seed settles it and a separate galaxy parameter adds nothing. That is
+precisely why the shipped precedent — `mix(mix(kill.systemSeed, fnv1a(key)), …)`
+in `raider-wreck.ts:185-188` — does not have the problem.
 
 Roster size is
 conditional — on the berth catalogue, on government, on which station types a
@@ -343,13 +350,17 @@ disambiguates two ships that draw the same name, and a redraw loop would
 reintroduce the ordered pass the per-key draw exists to avoid.
 
 Raiders take their name from the same scheme. `raiderName`'s `Raider 01` becomes
-the registry half, and the drawn name is new. One owner for both halves, as
-`raider-slots.ts` is the owner today.
+the registry half, and the drawn name is new.
+
+**One module owns both halves for every carrier**, and it is a new leaf beside
+`station-name.ts` — call it `carrier-name.ts`. Naming is split across
+`station-traffic.ts:172` and `raider-slots.ts` today, and a shared drawn name
+left in either one makes that module the owner of the other's identity.
 
 ### 2. Standing, as a derived function
 
 ```
-carrierStanding(systemSeed, galaxyIndex, carrierKey, gameTime)
+carrierStanding(systemSeed, carrierKey, gameTime)
   -> "clean" | "wanted" | "fugitive"
 ```
 
@@ -371,9 +382,21 @@ without deciding it: the instrument comes first.
 ### 3. The manifest, as a derived function
 
 ```
-carrierManifest(systemSeed, galaxyIndex, carrierKey, voyageOrdinal)
+carrierManifest(systemSeed, carrierKey, voyageOrdinal)
   -> readonly { good: string; tonnes: number }[]
 ```
+
+**These are keyed on the carrier *slot*, not on the instance occupying it**, and
+that is a decision handed onward rather than an oversight. CONTEXT.md's *Carrier
+slot* survives the destruction and replacement of its occupant, so once F6's
+child makes traffic destructible, the replacement for a killed Wanted Porter
+inherits its predecessor's name and standing timeline and can draw the same hold
+again. CONTEXT.md's *Last-known state* records the precedent cutting both ways:
+a private facility fact is deliberately "scoped to the carrier's persisted
+identity rather than to the instance", while an observed condition is not.
+**F6's child decides whether a replacement is a new ship or the same one**, and
+adds `instanceOrdinal` to both signatures if it rules the former. Nothing here
+is built on a replacement existing, because nothing can yet destroy one.
 
 Pure, deterministic, never persisted, its own `DOMAIN` tag. `voyageOrdinal` is
 `trafficScheduleAt`'s `awayOrdinal`, which makes F11's per-voyage rule free.
@@ -500,13 +523,19 @@ Two pieces of debt are recorded rather than discharged:
 Pointing at an owner is right for a figure this spec *uses*. It is wrong for a
 rule this spec *changes*.
 
-**None of these rules is rewritten here, and each owner is told so in this same
-change.** A rewrite would put unbuilt behaviour into specs that describe what
-ships — the sibling damage spec made the same call for `station-types.md` §4.1's
-hull mention. What this change does instead is add one pointer line to each
-owner naming this section, so a reader of a ratified spec cannot meet a rule
-this document contradicts without being told. The rewrites land with the
-implementation node:
+**None of these rules is rewritten here, and every *spec* owner is told so in
+this same change.** A rewrite would put unbuilt behaviour into specs that
+describe what ships — the sibling damage spec made the same call for
+`station-types.md` §4.1's hull mention. What this change does instead is add one
+pointer line to each spec owner naming this section, so a reader of a ratified
+spec cannot meet a rule this document contradicts without being told. The
+rewrites land with the implementation node.
+
+**The two source files below carry no pointer**, and that is deliberate rather
+than an exception quietly taken: a doc-only change that edited a comment in
+`display-contact.ts` would be prose landing ahead of the code it describes. They
+are changed by the implementation, at which point the comment and the field move
+together.
 
 | Rule | Owner | What changes |
 | --- | --- | --- |
@@ -514,7 +543,9 @@ implementation node:
 | "Unclassified review hulls show `UNKNOWN`, not a fabricated legal status" | `hud-and-scanner.md` §3 | Still true, and now `UNKNOWN` also means unscanned |
 | The type-exclusive table | `station-types.md` §4.1 | The shipyard column gains the scanner module |
 | The equipment list and its prices | `economy-trade.md` §7 | One row added, `newToSeelite` |
-| `legalStatus` is "null means no legal identity has been given" | `src/display-contact.ts` | The field takes `CarrierStanding` |
+| The knowledge row's shape, and its set of observation sources | `persistent-world-state.md` §3.1 | A scan is a new source, and the row must be reachable for a carrier with no condition observation |
+| *Last-known state* holds "an observed operational condition" | `CONTEXT.md` §Language | A scan record carries neither an instance ordinal nor a condition |
+| `legalStatus` is "null means no legal identity has been given" | `src/display-contact.ts` | The field is **renamed `standing`** and typed `CarrierStanding \| null` |
 | Traffic callsigns "may change in a future generator version without becoming persistence keys" | `station-traffic.md` §1.1 | Still true, and now a drawn name sits beside the callsign |
 
 Unchanged, and listed so a reader does not assume otherwise: `combat-model.md`
@@ -535,8 +566,8 @@ What its implementation owes:
 | Identity never becomes a name | Headless: every save, key and lookup path still reads `localCarrierId`; a name change orphans no market memory |
 | Standing is deterministic at a clock | Headless: same seed, key and time give the same standing twice |
 | Standing rotates, both ways | Headless: over a clock range, a wanted carrier reads clean and a clean one reads wanted |
-| Standing is stable within an encounter | Headless: the rotation period is long against an encounter's duration, so a scan holds until the kill |
-| A key draws independently per galaxy | Headless: the same carrier key in two galaxies gives different name, standing and hold |
+| Standing holds from scan to kill | Headless: the rotation period is long against that interval, so a scan is still true when the shot lands |
+| A key draws independently per galaxy | Headless: the same carrier key in two galaxies gives different name, standing and hold — which the system seed already secures, and this row is what proves the seed was not bypassed |
 | The standing distribution | A committed instrument printing wanted and fugitive shares across seeds and galaxies, with the spread |
 | A manifest holds for a voyage | Headless: every clock inside one away interval gives the same hold; the next interval may differ |
 | A scan needs the module | Headless: unequipped, the verb refuses with a readable reason |
