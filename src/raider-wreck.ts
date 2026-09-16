@@ -123,11 +123,25 @@ export interface Canister {
 	commodity: string;
 	tonnes: number;
 	pos: Vec3;
-	/** Its velocity now, which falls linearly toward `restVel`. */
+	/** Its velocity now, which falls linearly toward the velocity of its own
+	 *  frame body (`frameBodyId`), as that frame stands each step. Not "the
+	 *  local frame": this repo uses that for `localFrame()`, the *observer's*,
+	 *  which is what `frameBodyId` exists to rule out. It held the frame's
+	 *  velocity *at the kill* until the sixth playtest: a station's frame keeps
+	 *  turning, so a canister that froze one flew off the curve the pilot's
+	 *  assist holds them on, and never came to rest beside them. */
 	vel: Vec3;
-	/** The velocity of the frame it comes to rest in: the player's local frame
-	 *  at the kill. */
-	restVel: Vec3;
+	/**
+	 * The body whose frame this canister comes to rest in — the one the kill
+	 * happened beside — or `null` for the star frame.
+	 *
+	 * **Its own, not the observer's** (sage #355). Resting in the *player's*
+	 * local frame works only while the player stays beside the same body: fly
+	 * past `NEAR_FAR_KM` and that frame becomes the star's, so every canister
+	 * left at the station would snap from ~29 km/s to rest and be gone long
+	 * before the five minutes are up.
+	 */
+	frameBodyId: string | null;
 	/** When it is at rest, game-clock seconds. */
 	restsAt: number;
 	expiresAt: number;
@@ -161,6 +175,8 @@ export function dropCanisters(kill: {
 	pos: Vec3;
 	vel: Vec3;
 	frameVel: Vec3;
+	/** The body the kill happened beside, whose frame the canisters rest in. */
+	frameBodyId: string | null;
 }): Canister[] {
 	const drift = add(
 		kill.frameVel,
@@ -202,7 +218,7 @@ export function dropCanisters(kill: {
 			tonnes: CANISTER_TONNES,
 			pos: kill.pos,
 			vel: add(drift, scale(out, CANISTER_EJECT_KMS)),
-			restVel: kill.frameVel,
+			frameBodyId: kill.frameBodyId,
 			restsAt: kill.killedAt + CANISTER_FADE_S,
 			expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
 		};
@@ -211,21 +227,39 @@ export function dropCanisters(kill: {
 
 /**
  * One canister moved one step, from game time `now`. Its velocity relative to
- * `restVel` falls in a straight line to zero at `restsAt`. It moves with
- * `restVel` for the whole step, and with the fading part on that part's mean
+ * `frameVel` falls in a straight line to zero at `restsAt`. It moves with
+ * `frameVel` for the whole step, and with the fading part on that part's mean
  * only until it reaches rest, so the step that crosses `restsAt` is exact too
  * (sage #346: it had moved on the mean for the whole step and overshot).
+ *
+ * **`frameVel` is the canister's own frame — the body in `frameBodyId` — as it
+ * stands: not a snapshot taken at the kill, and not the observer's
+ * `localFrame()`.** A canister carried its own copy of the kill's frame until the sixth
+ * playtest reported cargo "on trajectories much longer than 10s". It was: the
+ * fade finished on time, but beside a station the frame keeps turning, so the
+ * frozen straight line peeled away from the curve the pilot's assist parks
+ * them on — 55 km out and still opening at 0.94 km/s two minutes after resting
+ * on a **synthesized** drop beside a station
+ * (`scripts/measure-canister-drift.mjs`). A flown kill cannot reach that case:
+ * interdictions happen on cruise legs, 1e8 km from anything, where both rules
+ * give the star frame. See `combat-model.md` §4.1 on what this does and does
+ * not explain.
  */
-export function driftCanister(c: Canister, dt: number, now: number): Canister {
+export function driftCanister(
+	c: Canister,
+	dt: number,
+	now: number,
+	frameVel: Vec3,
+): Canister {
 	const left = c.restsAt - now;
 	const fading = Math.min(dt, Math.max(0, left));
 	const share = left > 0 ? (left - fading) / left : 0;
-	const relative = sub(c.vel, c.restVel);
+	const relative = sub(c.vel, frameVel);
 	const pos = add(
-		add(c.pos, scale(c.restVel, dt)),
+		add(c.pos, scale(frameVel, dt)),
 		scale(relative, ((1 + share) / 2) * fading),
 	);
-	return { ...c, pos, vel: add(c.restVel, scale(relative, share)) };
+	return { ...c, pos, vel: add(frameVel, scale(relative, share)) };
 }
 
 /** A scoop tried this step: taken into the hold, or refused by a full one. */
@@ -251,6 +285,14 @@ export function stepCanisters(
 	dt: number,
 	now: number,
 	accept: (canister: Canister) => boolean,
+	/**
+	 * The frame **this canister** comes to rest in, this step. Per canister and
+	 * not one vector for all of them: the frame belongs to the body the kill
+	 * happened beside, and the observer may be anywhere (sage #355). Required
+	 * for `FlightPerformance`'s reason — a caller that forgot would silently
+	 * bring every canister to rest in star coordinates.
+	 */
+	frameVelFor: (canister: Canister) => Vec3,
 ): { kept: Canister[]; scoops: CanisterScoop[] } {
 	const kept: Canister[] = [];
 	const tried: CanisterScoop[] = [];
@@ -261,7 +303,7 @@ export function stepCanisters(
 			tried.push({ canister, accepted });
 			if (accepted) continue;
 		}
-		kept.push(driftCanister(canister, dt, now));
+		kept.push(driftCanister(canister, dt, now, frameVelFor(canister)));
 	}
 	return { kept, scoops: tried };
 }
