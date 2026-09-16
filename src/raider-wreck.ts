@@ -21,6 +21,7 @@
  * Headless: `Game` draws and applies what this returns.
  */
 import type { CarrierKey } from "./carrier-key";
+import { carrierKeySeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
@@ -223,7 +224,7 @@ function dropStream(kill: {
 	return {
 		second,
 		rand: stream(
-			mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
+			mix(carrierKeySeed(kill.systemSeed, kill.key), second),
 			DOMAIN.CARGO_DROP,
 		),
 	};

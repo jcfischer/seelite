@@ -290,13 +290,14 @@ import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import {
 	type Engagement,
 	engage,
+	fliesItsRoute,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	stepEngagement,
 	trafficDestruction,
 	trafficInSights,
 } from "./traffic-engagement";
-import { carrierStanding } from "./carrier-standing";
+import { carrierKeySeed, carrierStanding } from "./carrier-standing";
 import { carrierManifest } from "./carrier-manifest";
 import { legalStandingAt, offenceHeat, withOffence } from "./legal";
 import {
@@ -360,7 +361,12 @@ import {
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
-import { SCOOP_NOTICE_S, scoopExit, scoopNotice } from "./cargo-notice";
+import {
+	SCOOP_NOTICE_S,
+	type ScoopNotice,
+	nextScoopNotice,
+	scoopExit,
+} from "./cargo-notice";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -536,7 +542,6 @@ import {
 	advanceTo,
 	applyTransition,
 	effectiveCarrier,
-	fnv1a,
 	observe,
 	observeSystemRelay,
 	readKnowledge,
@@ -563,7 +568,6 @@ import {
 	sub,
 	v3,
 } from "./vec3";
-import { mix } from "./rng";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
 // one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
 // spellings of the same constant — the two-public-paths pattern this branch
@@ -2062,10 +2066,11 @@ class Game {
 	 *  say why. One object rather than three fields, so a jump clears it in one
 	 *  assignment and the field does not share a name with the function that
 	 *  builds its text (sage #355). */
-	scoop: { text: string; left: number; accepted: boolean } = {
+	scoop: ScoopNotice = {
 		text: "",
 		left: 0,
 		accepted: true,
+		canisterId: null,
 	};
 	/** What the notice drew this frame, for a probe to read rather than
 	 *  restate: the text, its alpha and its outcome, or null when nothing
@@ -2094,6 +2099,13 @@ class Game {
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
 	} | null = null;
+	/**
+	 * The selected target's label as painted this frame, or `null` when none was
+	 * painted. Written by the draw, like `cueRender`, so a probe reads the mark a
+	 * pilot sees rather than re-deriving it (sage #368: a civilian's ON TARGET had
+	 * no record at all).
+	 */
+	selectedRender: { id: string; text: string; onTarget: boolean } | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -5108,7 +5120,7 @@ class Game {
 	}
 
 	private trafficOperational(key: CarrierKey): boolean {
-		return this.carrierCondition(key).condition === "operational";
+		return fliesItsRoute(this.carrierCondition(key));
 	}
 
 	/**
@@ -5169,7 +5181,7 @@ class Game {
 						up: route?.up ?? null,
 						voyageOrdinal: this.trafficVoyage(actor),
 					},
-					mix(record.seed, fnv1a(key)),
+					carrierKeySeed(record.seed, key),
 				),
 			);
 		}
@@ -8208,7 +8220,7 @@ class Game {
 		// And the scoop's acknowledgement: a notice about cargo taken on the last
 		// leg has nothing to say after a jump or a reset, and `leg-reset-coverage`
 		// is the row that insists on it.
-		this.scoop = { text: "", left: 0, accepted: true };
+		this.scoop = { text: "", left: 0, accepted: true, canisterId: null };
 		this.scoopRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
@@ -8631,38 +8643,24 @@ class Game {
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
 		for (const { canister, accepted, tonnes } of step.scoops) {
+			// A refusal reports the canister's tonnes; a take what it took and,
+			// when the hold could not take it all, what is left (H11).
 			const event = {
+				canisterId: canister.id,
 				commodity: canister.commodity,
 				tonnes: accepted ? tonnes : canister.tonnes,
 				accepted,
+				leftT: accepted ? canister.tonnes - tonnes : undefined,
 			};
-			this.lastExit = scoopExit(event);
-			// And on the glass, where a pilot is looking, with a sound: the
-			// canister disappearing is what expiring and flying past also look
-			// like, so the event needs to say which of the three it was.
-			const text = scoopNotice(event);
-			// **The sound only when the words change.** `scoops` holds while the
-			// ship sits close and slow, so `accept` runs every frame — a full
-			// hold parked beside a canister restarted the alert tone at frame
-			// rate (sage #355). The notice itself is re-armed deliberately: a
-			// refusal stands while the ship is still beside the canister.
-			// **Only a refusal can repeat.** An accepted scoop takes its canister
-			// out of the world, or fills the hold and leaves the rest in it (H11),
-			// so the next attempt on that canister is a refusal. Gating both
-			// silenced the second of two scoops of the same good inside the
-			// notice's life,
-			// which is the opposite of "three scoops read as three events"
-			// (sage #355).
-			const refusalStanding = this.scoop.left > 0 && !this.scoop.accepted;
-			this.scoop = { text, left: SCOOP_NOTICE_S, accepted };
-			// An accepted scoop always sounds: it cannot repeat, for the reason
-			// above. A refusal sounds only when none was already
-			// standing — comparing the *words* instead let two canisters of
-			// different goods in reach of a full hold alternate the text and
-			// restart the tone every frame, which is the bug the gate is for
-			// (sage #355).
-			if (accepted) this.audio.scoop();
-			else if (!refusalStanding) this.audio.alert();
+			// The exit line and the glass: the canister disappearing is what
+			// expiring and flying past also look like, so the event needs to say
+			// which of the three it was. `nextScoopNotice` owns when a notice
+			// stands, re-arms or sounds.
+			const next = nextScoopNotice(this.scoop, event);
+			if (next.notice !== this.scoop) this.lastExit = scoopExit(event);
+			this.scoop = next.notice;
+			if (next.sound === "scoop") this.audio.scoop();
+			else if (next.sound === "alert") this.audio.alert();
 		}
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
@@ -11616,6 +11614,7 @@ class Game {
 		ctx.clearRect(0, 0, w, h);
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
+		this.selectedRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
@@ -11969,7 +11968,9 @@ class Game {
 						ctx.arc(at.x, at.y, 4, 0, Math.PI * 2);
 						ctx.fill();
 					}
-					ctx.fillText(selectedLabel(body.name, km), at.x + r + 6, at.y + 4);
+					const label = selectedLabel(body.name, km);
+					ctx.fillText(label, at.x + r + 6, at.y + 4);
+					this.selectedRender = { id: body.id, text: label, onTarget };
 					// The selected raider's shields and hull under its name (#324,
 					// the principal's ruling), in the duel row's tones.
 					const enemy = raiderSelected

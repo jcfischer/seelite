@@ -76,6 +76,10 @@ function chaser(
 
 const SHOT = { fired: true, damage: PULSE_LASER.damagePerS * DT };
 
+/** One shield side and the hull at the pulse's rate, no recharge (H2). */
+const secondsOnTarget = (hull: HullId) =>
+	(SHIELD_POOL + HULL_SPECS[hull].integrity) / PULSE_LASER.damagePerS;
+
 describe("H2: the shared condition model", () => {
 	test("an engaged carrier starts at its hull's full condition", () => {
 		expect(ROSTER_HULLS.length).toBeGreaterThanOrEqual(8);
@@ -111,10 +115,15 @@ describe("H2: the shared condition model", () => {
 			if (step.destroyed) break;
 		}
 		const seconds = frames * DT;
-		const expected =
-			(SHIELD_POOL + HULL_SPECS.courier.integrity) / PULSE_LASER.damagePerS;
-		expect(seconds).toBeGreaterThan(expected - 1);
-		expect(seconds).toBeLessThan(expected + 1);
+		expect(seconds).toBeGreaterThan(secondsOnTarget("courier") - 1);
+		expect(seconds).toBeLessThan(secondsOnTarget("courier") + 1);
+	});
+
+	test("a Porter is about 45 s on target, a miner 54, a courier 34, a patrol 32", () => {
+		expect(Math.round(secondsOnTarget("freighter"))).toBe(45);
+		expect(Math.round(secondsOnTarget("miner"))).toBe(54);
+		expect(Math.round(secondsOnTarget("courier"))).toBe(34);
+		expect(Math.round(secondsOnTarget("patrol"))).toBe(32);
 	});
 });
 

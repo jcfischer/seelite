@@ -1,6 +1,11 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { SCOOP_NOTICE_S, scoopExit, scoopNotice } from "../src/cargo-notice";
+import {
+	SCOOP_NOTICE_S,
+	nextScoopNotice,
+	scoopExit,
+	scoopNotice,
+} from "../src/cargo-notice";
 import { repoPath } from "./lib/source-scan";
 
 test("a scoop names the tonnage and the good, and a refusal says why", () => {
@@ -32,4 +37,91 @@ test("the notice does not go to the element the page hides", () => {
 	const markup = readFileSync(repoPath("index.html"), "utf8");
 	const hud = markup.slice(markup.indexOf("#hud {"));
 	expect(hud.slice(0, hud.indexOf("}"))).toContain("clip: rect(0 0 0 0)");
+});
+
+describe("a partial take (civilian-combat H11)", () => {
+	const quiet = { text: "", left: 0, accepted: true, canisterId: null };
+
+	test("names what it took and what it left", () => {
+		expect(
+			scoopNotice({ commodity: "Food", tonnes: 5, accepted: true, leftT: 7 }),
+		).toBe("SCOOPED  5 t FOOD  7 t LEFT");
+		expect(
+			scoopExit({ commodity: "Food", tonnes: 5, accepted: true, leftT: 7 }),
+		).toBe("scooped 5 t Food, 7 t left in the canister");
+	});
+
+	test("the refusal of the same canister next frame does not replace it, and sounds nothing", () => {
+		const took = nextScoopNotice(quiet, {
+			canisterId: "c1",
+			commodity: "Food",
+			tonnes: 5,
+			accepted: true,
+			leftT: 7,
+		});
+		expect(took.sound).toBe("scoop");
+		const refused = nextScoopNotice(took.notice, {
+			canisterId: "c1",
+			commodity: "Food",
+			tonnes: 7,
+			accepted: false,
+		});
+		expect(refused.notice).toBe(took.notice);
+		expect(refused.sound).toBe(null);
+	});
+
+	test("a different canister's refusal still replaces it, with the alert", () => {
+		const took = nextScoopNotice(quiet, {
+			canisterId: "c1",
+			commodity: "Food",
+			tonnes: 5,
+			accepted: true,
+			leftT: 7,
+		});
+		const other = nextScoopNotice(took.notice, {
+			canisterId: "c2",
+			commodity: "Furs",
+			tonnes: 3,
+			accepted: false,
+		});
+		expect(other.notice.text).toBe("HOLD FULL  FURS LEFT IN SPACE");
+		expect(other.sound).toBe("alert");
+	});
+
+	test("a standing refusal re-arms without restarting the tone (sage #355)", () => {
+		const first = nextScoopNotice(quiet, {
+			canisterId: "c1",
+			commodity: "Furs",
+			tonnes: 1,
+			accepted: false,
+		});
+		expect(first.sound).toBe("alert");
+		const again = nextScoopNotice(first.notice, {
+			canisterId: "c2",
+			commodity: "Food",
+			tonnes: 1,
+			accepted: false,
+		});
+		expect(again.sound).toBe(null);
+		expect(again.notice.left).toBe(SCOOP_NOTICE_S);
+	});
+
+	test("once the partial take's notice has lapsed, the refusal shows", () => {
+		const took = nextScoopNotice(quiet, {
+			canisterId: "c1",
+			commodity: "Food",
+			tonnes: 5,
+			accepted: true,
+			leftT: 7,
+		});
+		const lapsed = { ...took.notice, left: 0 };
+		const refused = nextScoopNotice(lapsed, {
+			canisterId: "c1",
+			commodity: "Food",
+			tonnes: 7,
+			accepted: false,
+		});
+		expect(refused.notice.accepted).toBe(false);
+		expect(refused.sound).toBe("alert");
+	});
 });

@@ -123,11 +123,6 @@ export function engage(
 
 export interface EngagementStep {
 	engagement: Engagement;
-	/** Whether the player's shot this step struck it. */
-	playerHit: boolean;
-	/** Whether that shot reached hull points rather than stopping in a shield —
-	 *  the strike #365 diverts on (H3d). */
-	hullStruck: boolean;
 	/** An armed hull's fire this step, for `Game.takeDamage`, or null. */
 	returnFire: { amount: number; side: ShieldSide } | null;
 	destroyed: boolean;
@@ -150,10 +145,6 @@ export function stepEngagement(
 			flight: step.flight,
 			condition: step.condition,
 		},
-		playerHit: step.playerHit,
-		// Hull lost this step can only be the player's shot: its own gun spends
-		// energy bank and heat, never hull.
-		hullStruck: step.condition.hull < engagement.condition.hull,
 		returnFire: step.returnFire,
 		destroyed: step.destroyed,
 	};
@@ -161,7 +152,7 @@ export function stepEngagement(
 
 /** Who replaces a destroyed ordinary carrier: its home station. Out of sight,
  *  so it updates no knowledge. */
-export const trafficReplacementActor = (
+const trafficReplacementActor = (
 	systemIndex: number,
 	homeStationId: string,
 ): Provenance => ({
@@ -206,4 +197,8 @@ export function trafficDestruction(
 export const flyingTrafficActors = <T extends { key: CarrierKey }>(
 	actors: readonly T[],
 	conditionOf: (key: CarrierKey) => { condition: string },
-): T[] => actors.filter((a) => conditionOf(a.key).condition === "operational");
+): T[] => actors.filter((a) => fliesItsRoute(conditionOf(a.key)));
+
+/** The one rule for who flies a route: an operational carrier. */
+export const fliesItsRoute = (carrier: { condition: string }): boolean =>
+	carrier.condition === "operational";

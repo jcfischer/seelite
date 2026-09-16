@@ -30,13 +30,19 @@ import { fnv1a } from "./world-state";
 export const STANDING_SHARES = { wanted: 0.12, fugitive: 0.03 } as const;
 export const STANDING_ROTATION_S = 6 * 3600;
 
+/** One carrier's seed in its system: the system seed carries the galaxy, the
+ *  key the carrier. The root every per-carrier draw splits from — the hold,
+ *  the standing, a kill's drop and an engagement's flight. */
+export const carrierKeySeed = (systemSeed: number, key: CarrierKey): number =>
+	mix(systemSeed, fnv1a(key));
+
 /** One instance's own seed: the system, the key, the ordinal (H1). */
 export const carrierInstanceSeed = (
 	systemSeed: number,
 	key: CarrierKey,
 	instanceOrdinal: number,
 	domain: number,
-): number => mix(mix(mix(systemSeed, fnv1a(key)), instanceOrdinal), domain);
+): number => mix(mix(carrierKeySeed(systemSeed, key), instanceOrdinal), domain);
 
 export function carrierStanding(
 	systemSeed: number,

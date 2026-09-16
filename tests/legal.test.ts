@@ -1,5 +1,5 @@
 /**
- * The player's legal heat (`civilian-combat.md` H4, H9): what an offence
+ * The player's legal heat (`civilian-combat.md` H4): what an offence
  * costs, how it decays, and which standing it reads as.
  */
 import { describe, expect, test } from "bun:test";
@@ -15,8 +15,6 @@ import {
 	offenceHeat,
 	withOffence,
 } from "../src/legal";
-import { PULSE_LASER, SHIELD_POOL } from "../src/ship-condition";
-import { HULL_SPECS } from "../src/hull";
 import { newWorld } from "../src/world-state";
 
 const MIN = 60;
@@ -122,18 +120,5 @@ describe("the write", () => {
 		const world = withOffence(newWorld(7), 3, 40, 0);
 		expect(world.galaxies[3].legalStatus.heat).toBe(40);
 		expect(world.galaxies[0].legalStatus.heat).toBe(0);
-	});
-});
-
-describe("H2: a civilian is a combat ship, and a kill takes this long", () => {
-	/** One shield side and the hull, at the pulse's rate, no recharge. */
-	const secondsOnTarget = (hull: keyof typeof HULL_SPECS) =>
-		(SHIELD_POOL + HULL_SPECS[hull].integrity) / PULSE_LASER.damagePerS;
-
-	test("a Porter is about 45 s, a miner 54, a courier 34, a patrol 32", () => {
-		expect(Math.round(secondsOnTarget("freighter"))).toBe(45);
-		expect(Math.round(secondsOnTarget("miner"))).toBe(54);
-		expect(Math.round(secondsOnTarget("courier"))).toBe(34);
-		expect(Math.round(secondsOnTarget("patrol"))).toBe(32);
 	});
 });

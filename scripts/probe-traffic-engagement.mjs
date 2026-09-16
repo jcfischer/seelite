@@ -171,8 +171,13 @@ try {
 		p.tether(target.key, 1.2, off);
 		p.frame();
 		g.targetId = target.key;
-		// Held 3° off the nose, inside the gimbal's 6° cone, not firing.
+		// First 12° off, outside the gimbal's 6° cone: the mark must not show.
+		const outside = (12 * Math.PI) / 180;
+		for (let i = 0; i < 20; i++) p.follow(target.key, false, outside);
+		const markOutside = g.selectedRender && { ...g.selectedRender };
+		// Then held 3° off the nose, inside the cone, not firing.
 		for (let i = 0; i < 20; i++) p.follow(target.key, false, off);
+		const mark = g.selectedRender && { ...g.selectedRender };
 		const contact = g.trafficContacts.get(target.key);
 		const readout = g
 			.trafficReadout()
@@ -198,6 +203,8 @@ try {
 					target.actor.hullId,
 				),
 			readout,
+			mark,
+			markOutside,
 		};
 	});
 	check(
@@ -209,6 +216,16 @@ try {
 		"selecting it pulls the gimballed beam onto a hull the boresight misses (#43's third target)",
 		found.boresightHits === false && found.beamHits === true,
 		JSON.stringify({ bore: found.boresightHits, beam: found.beamHits }),
+	);
+	check(
+		"the painted label says ON TARGET inside the gimbal's cone and not outside it",
+		found.mark?.id === found.target?.key &&
+			found.mark.onTarget === true &&
+			found.mark.text.includes("ON TARGET") &&
+			found.markOutside?.id === found.target?.key &&
+			found.markOutside.onTarget === false &&
+			!found.markOutside.text.includes("ON TARGET"),
+		JSON.stringify({ mark: found.mark, outside: found.markOutside }),
 	);
 	if (!found.target) throw new Error("no target to fight");
 	const key = found.target.key;

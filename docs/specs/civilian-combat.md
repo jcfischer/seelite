@@ -4,7 +4,8 @@ Author: Ivy · 2026-09-16
 Status: H0–H12 are agreed with the principal (grilled one at a time on
 2026-09-16). The checkpoint also needs the principal to confirm the reaction
 model and the cost of a Clean kill **having flown it**, so this document is
-agreed, not yet ratified.
+agreed, not yet ratified. It becomes ratified when #362 closes after all three
+changes are flown, recorded in that node's resolution.
 Decision node: [What it takes to shoot an ordinary ship, and what the world
 does about it](https://github.com/jcfischer/seelite/issues/362).
 
@@ -110,10 +111,10 @@ The principal was offered this, hull points without shields, and a per-hull
 shield pool, and chose this. The two alternatives each amend `combat-model.md`
 §1, which this node is told not to reopen.
 
-Time on target, one shield side, no recharge, pulse laser — **derived from the
-constants, and asserted by a headless test rather than restated**: about 45 s
-for a Porter (freighter), 54 s for a miner, 34 s for a courier, 32 s for a
-patrol. A real chase is longer by the time off target.
+Time on target, one shield side, no recharge, pulse laser, is derived from the
+constants; `tests/traffic-engagement.test.ts` pins it per hull and is its only
+copy. The figure the principal was shown for a Porter was about 45 s. A real
+chase is longer by the time off target.
 
 ### H3 — The reaction is per role
 
@@ -291,8 +292,9 @@ when all three are flown. #359's remaining build is
 
 A destroyed ordinary carrier drops one canister per line of its manifest, and
 each canister holds that line's tonnes. A manifest has one to four lines and
-never more tonnes than the hull's `holdT`, so a kill drops what a raider's does
-in count and a freighter's hold in weight. Scooping takes what fits the
+never more tonnes than the hull's `holdT`, so a kill drops about as many
+canisters as a raider's — one to four against one to three — and a freighter's
+hold in weight. Scooping takes what fits the
 player's free hold and leaves the rest in the canister.
 
 The principal was offered this, one one-tonne canister per tonne — sixty for a

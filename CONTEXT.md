@@ -107,6 +107,29 @@ Flight state only: it is not saved.
 `src/raider-wreck.ts` owns the drop and the scoop.
 _Avoid_: Loot, salvage drop, jettisoned cargo
 
+**Standing**:
+Whether an ordinary carrier instance is Clean, Wanted or Fugitive at a game
+time — derived, never saved, rotating on a clock term, and the true value the
+law judges a shot against whether or not it was scanned. The player's own
+standing is read off **Legal heat** in the same three words.
+`carrier-identity.md` §2 owns the carrier's; `civilian-combat.md` H4 the
+player's.
+_Avoid_: Legal status (for a carrier), reputation, bounty flag
+
+**Manifest**:
+What an ordinary carrier instance carries on one voyage: one to four lines, each
+a tonne good and its tonnes, derived and never saved. What a scan shows and what
+a kill drops, one **Cargo canister** per line. `carrier-identity.md` §3 owns
+it; `civilian-combat.md` H11 the drop.
+_Avoid_: Cargo list, loot table, hold contents
+
+**Legal heat**:
+The player's per-galaxy offence score: an offence adds to it, it decays lazily
+on a 30-minute half-life, and it reads as Clean, Wanted or Fugitive at its
+thresholds. Saved as `LegalStatus`; the reading is derived. `combat-model.md`
+§4 owns the semantics, `civilian-combat.md` H4 the figures.
+_Avoid_: Bounty, notoriety, wanted level
+
 **Pirate relay**:
 The first infrastructure **Carrier** (#43, prototype): one **Carrier slot** per
 system, `relay-00`, standing a few hundred kilometres off one station's
