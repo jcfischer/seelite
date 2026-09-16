@@ -6478,10 +6478,13 @@ class Game {
 	/** One step of the gimbal toward the selected target, before the shot. */
 	private stepGunGimbal(dt: number) {
 		const bore = this.weaponAim();
-		// **Only a raider pulls the beam** (sage #330): a station or a planet
-		// selected near the nose would turn it off the boresight, and a raider on
-		// the boresight but not selected would then be missed.
-		const target = this.raiderSelected() ? this.targetBody() : null;
+		// **Only a combat target pulls the beam** (sage #330): a station or a
+		// planet selected near the nose would turn it off the boresight, and a
+		// raider on the boresight but not selected would then be missed. The
+		// relay is one (#43): the principal flew the first build with the beam
+		// held on the boresight and could not hit it beside a planet.
+		const target =
+			this.raiderSelected() || this.relaySelected() ? this.targetBody() : null;
 		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
 		this.gunAim = stepGimbal(this.gunAim ?? bore, bore, targetDir, dt);
 	}
@@ -10364,6 +10367,16 @@ class Game {
 		);
 	}
 
+	/** Whether the pirate relay is the selected target (#43): it pulls the
+	 *  gimbal and earns the on-target mark as a raider does. */
+	private relaySelected(): boolean {
+		return (
+			this.relayListed &&
+			this.targetId !== null &&
+			this.targetId === this.relayContact.id
+		);
+	}
+
 	/** Whether the duel row shows: a raider contesting, dueling or selected. */
 	private duelRowShown(): boolean {
 		return showDuelRow({
@@ -11059,12 +11072,17 @@ class Game {
 		const selectedColour = raiderSelected
 			? FLOOR_TONE_FILL[raiderTone]
 			: "rgba(255, 214, 120, 0.95)";
+		// The relay earns the mark whenever a shot would land (#43): it has no
+		// phases, and `stepRelay` lands the shot in every one of them.
+		const relaySelected = selectedBody !== null && this.relaySelected();
 		const onTarget =
-			raiderSelected &&
-			onTargetMark(
-				this.encounter?.phase ?? null,
-				raiderInSights(camPos, this.beamAim(), selectedBody.pos),
-			);
+			(raiderSelected &&
+				onTargetMark(
+					this.encounter?.phase ?? null,
+					raiderInSights(camPos, this.beamAim(), selectedBody.pos),
+				)) ||
+			(relaySelected &&
+				relayInSights(camPos, this.beamAim(), selectedBody.pos));
 		// Built once, because the declutter reservation and the paint must agree.
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`;

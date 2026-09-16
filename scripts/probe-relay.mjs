@@ -515,6 +515,54 @@ check(
 	JSON.stringify({ back: trip.back, returned }),
 );
 
+// The gimbal pulls the beam toward a selected relay as it does toward a
+// raider (the principal flew the first build with the beam on the boresight
+// and could not hit it). Three degrees off the nose, the beam sits on it.
+const gimbal = await page.evaluate(() => {
+	const g = window.__seelite;
+	window.__relayProbe.placeNear(2);
+	g.targetId = g.relayReadout().view.key;
+	const r = g.relayReadout();
+	const p = g.world.ship.pos;
+	const t = r.view.pos;
+	const to = { x: t.x - p.x, y: t.y - p.y, z: t.z - p.z };
+	const len = Math.hypot(to.x, to.y, to.z);
+	// Turn 3° off the relay about the vertical.
+	const a = (3 * Math.PI) / 180;
+	const off = {
+		x: to.x * Math.cos(a) + to.z * Math.sin(a),
+		y: to.y,
+		z: -to.x * Math.sin(a) + to.z * Math.cos(a),
+	};
+	// Rotation has momentum (`stepAngular`); an earlier segment's rates would
+	// carry the nose off the bearing set here.
+	g.rates = { pitch: 0, yaw: 0, roll: 0 };
+	g.setAttitude(off, g.shipUp());
+	for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+	const deg = (u, v) =>
+		(Math.acos(
+			(u.x * v.x + u.y * v.y + u.z * v.z) /
+				(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
+		) *
+			180) /
+		Math.PI;
+	const rr = g.relayReadout().view.pos;
+	const q = g.world.ship.pos;
+	const dir = { x: rr.x - q.x, y: rr.y - q.y, z: rr.z - q.z };
+	return {
+		noseOffDeg: deg(g.nose(), dir),
+		beamOffDeg: deg(g.beamAim(), dir),
+		km: len,
+	};
+});
+check(
+	"a selected relay pulls the gimbal: three degrees off the nose, the beam is on it",
+	// The beam aims from the camera, 8 m off the ship's position the row measures
+	// from: a quarter of a degree at 2 km, against a hit sphere 2.4° wide there.
+	gimbal.noseOffDeg > 2.5 && gimbal.noseOffDeg < 3.5 && gimbal.beamOffDeg < 1,
+	JSON.stringify(gimbal),
+);
+
 // The wreck is on the screen: pixels move when its mesh is hidden.
 const wreckPixels = async () => {
 	await page.evaluate(() => window.__relayProbe.frame());
