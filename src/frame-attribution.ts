@@ -81,6 +81,16 @@ export const SUMMING_TIMER_BACKENDS: readonly Readonly<{
 export const IMPLAUSIBLE_CADENCE_FACTOR = 1.25;
 
 /**
+ * Which quantile of the retained periods stands for the display's floor.
+ *
+ * Low enough to sit at the refresh interval while frames are being delivered on
+ * time, high enough that a few sub-interval jitter gaps cannot drag it under.
+ * At the default ring of 120 it is the 12th shortest period, so it takes eleven
+ * anomalies to move — where a minimum takes one.
+ */
+export const CADENCE_FLOOR_QUANTILE = 0.1;
+
+/**
  * How many GPU samples the window needs before a cadence contradiction counts.
  *
  * The physical argument — a GPU cannot spend longer per frame than the interval
@@ -144,7 +154,23 @@ export type FrameAttributionMode = "full" | "cadence";
  */
 export type FrameCadence = RollingStatistics &
 	Readonly<{
-		/** Cheapest delivered period since the last prime; `null` before two marks. */
+		/**
+		 * A robust floor on the delivered period: the `CADENCE_FLOOR_QUANTILE`
+		 * quantile since the last prime. `null` before two marks.
+		 *
+		 * **Not the minimum, and that was the first version.** A strict minimum
+		 * is not a floor, because `requestAnimationFrame` jitter delivers gaps
+		 * *shorter* than the refresh interval — two callbacks landing close
+		 * together after a hitch. Measured headed on ANGLE Metal at a 60 Hz
+		 * panel with every rung pinned at vsync: median 16.70 ms against a
+		 * cheapest frame of 15.30, which is 9.2% below the interval. A consumer
+		 * comparing the median to that minimum concluded the frame was *not*
+		 * capped, recorded 16.70 ms as each rung's true cost, and fitted the
+		 * degenerate curve `16.70 + 0.00 * s^2` through three identical points.
+		 *
+		 * A low quantile absorbs a handful of such gaps and still tracks the
+		 * refresh interval, which is what the caller is really asking for.
+		 */
 		minPeriodMs: number | null;
 		/** Wall span the retained marks cover; `null` before two marks. */
 		spanMs: number | null;
@@ -288,6 +314,25 @@ function frozenFacts(facts: RendererFacts): RendererFacts {
  * frame period is. A zero or negative gap is two marks at one timestamp or a
  * clock that went backwards; neither is a frame the consumer wants to average.
  */
+/**
+ * Nearest-rank quantile over finite values, `null` when there are none.
+ *
+ * Nearest-rank rather than interpolated, to match `frame-statistics.js`'s p95 —
+ * two percentile policies in one snapshot is the thing that module exists to
+ * prevent. It is here rather than there because it is the *cadence's* floor and
+ * has no reader among the CPU or GPU statistics.
+ */
+function quantile(values: readonly number[], fraction: number): number | null {
+	const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+	if (!sorted.length) return null;
+	return sorted[
+		Math.min(
+			sorted.length - 1,
+			Math.max(0, Math.ceil(sorted.length * fraction) - 1),
+		)
+	];
+}
+
 function frameGaps(marks: readonly number[]): number[] {
 	const gaps: number[] = [];
 	for (let i = 1; i < marks.length; i++) {
@@ -708,7 +753,7 @@ export class FrameAttribution {
 		const stats = rollingStatistics(gaps);
 		return Object.freeze({
 			...stats,
-			minPeriodMs: gaps.length ? Math.min(...gaps) : null,
+			minPeriodMs: quantile(gaps, CADENCE_FLOOR_QUANTILE),
 			spanMs: marks.length >= 2 ? marks[marks.length - 1] - marks[0] : null,
 		});
 	}

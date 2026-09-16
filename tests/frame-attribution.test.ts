@@ -928,7 +928,7 @@ describe("cadence mode: a frame period with no query ring", () => {
 		expect(attribution.snapshot(80).cadence.medianMs).toBe(10);
 	});
 
-	test("minPeriodMs is the cheapest frame, not the typical one", () => {
+	test("minPeriodMs is a low quantile, not the typical period", () => {
 		// The statistic that tells a panel's cap from a frame budget. The
 		// principal's two displays read 8.33 ms and 16.67 ms on a cheap frame;
 		// without this, a consumer cannot tell the second from a 60 fps budget
@@ -943,9 +943,37 @@ describe("cadence mode: a frame period with no query ring", () => {
 			attribution.markFrame(at);
 		}
 		const cadence = attribution.snapshot(at).cadence;
+		// Five gaps, so the 0.1 quantile is the shortest of them — the same
+		// answer a minimum gives, which is why the row below exists as well.
 		expect(cadence.minPeriodMs).toBeCloseTo(8.3, 5);
 		expect(cadence.medianMs).toBeCloseTo(16.7, 5);
 		expect(cadence.spanMs).toBeCloseTo(91.8, 5);
+	});
+
+	test("a handful of sub-refresh jitter gaps do not drag the floor under", () => {
+		// **The defect this replaced, measured rather than imagined.** Headed on
+		// ANGLE Metal at a 60 Hz panel with every rung pinned at vsync, the
+		// sampler reported a median of 16.70 ms and a cheapest frame of 15.30 —
+		// 9.2% under the refresh interval, from `requestAnimationFrame`
+		// delivering two callbacks close together after a hitch. A consumer
+		// comparing the median against that minimum read the frame as *not*
+		// capped and fitted a degenerate curve through three identical points.
+		//
+		// A hundred honest 16.70s and four jitter gaps: a minimum answers 15.30
+		// and the quantile answers the refresh interval.
+		const { attribution } = fixture();
+		attribution.enable();
+		const periods = [...Array(100).fill(16.7), 15.3, 15.4, 15.3, 15.5];
+		let at = 0;
+		attribution.markFrame(at);
+		for (const period of periods) {
+			at += period;
+			attribution.markFrame(at);
+		}
+		const cadence = attribution.snapshot(at).cadence;
+		expect(Math.min(...periods)).toBeCloseTo(15.3, 5);
+		expect(cadence.minPeriodMs).toBeCloseTo(16.7, 5);
+		expect(cadence.medianMs).toBeCloseTo(16.7, 5);
 	});
 
 	test("no marks at all is null rather than zero", () => {

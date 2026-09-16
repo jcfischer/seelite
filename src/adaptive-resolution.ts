@@ -144,7 +144,7 @@ export const DOWNSHIFT_TRIGGER_MS = ADAPTIVE_BUDGET_MS * 1.05;
  */
 export const UPSHIFT_HEADROOM = 0.85;
 
-/** A median within this fraction of the cheapest period is pinned by vsync. */
+/** A median within this fraction of the refresh interval is pinned by vsync. */
 export const CAP_TOLERANCE = 0.05;
 
 /**
@@ -231,6 +231,8 @@ export type AdaptiveDiagnostics = Readonly<{
 	budgetMs: number;
 	periodMedianMs: number | null;
 	minPeriodMs: number | null;
+	/** The display's refresh interval as estimated across rungs; see the field. */
+	refreshFloorMs: number | null;
 	sampleAgeFrames: number;
 	atCap: boolean;
 	gate: UpshiftGate;
@@ -272,9 +274,49 @@ export class AdaptiveResolution {
 	private trialBackoffMs = 0;
 	private trial: { fromIndex: number; startedAtMs: number } | null = null;
 	private reason = "primed";
-	private lastGate: UpshiftGate = "unknown";
-	private lastPredictedMs: number | null = null;
 	private lastEvidence: AdaptiveEvidence | null = null;
+	/**
+	 * The display's refresh interval, estimated as the cheapest robust floor
+	 * seen **since the last prime** — across rungs, not within one.
+	 *
+	 * **This is the fix for a defect that survived the headless tier and was
+	 * caught headed.** The evidence's own floor comes from the sampler's period
+	 * ring, and that ring is reprimed on every accepted rung change, because the
+	 * periods in it were delivered at the previous rung. So a per-rung floor is
+	 * re-estimated from scratch each time — while the thing it is estimating,
+	 * the panel's refresh interval, has not changed at all.
+	 *
+	 * What that cost: measured headed on ANGLE Metal over an airless world at
+	 * 2880x1800, the bottom rung read a median of 16.60 ms pinned at a 60 Hz
+	 * panel, and was recorded as a *genuine cost* of 16.60 ms because its own
+	 * freshly-primed ring had not yet settled. The curve then ran through a
+	 * censored point — a capped rung costs at most what it appears to — and the
+	 * fit was wrong in the direction that refuses upshifts.
+	 *
+	 * Keeping it across rungs also fixes a case the per-rung version could not
+	 * decide at all: a tight distribution at 20 ms on a 60 Hz panel is not
+	 * capped, and is indistinguishable from a capped one when the only
+	 * comparison available is the rung's own spread. Against a refresh interval
+	 * established while some rung *was* cheap, it separates cleanly.
+	 *
+	 * **It is the smallest *median*, not the smallest floor, and that is the
+	 * second correction.** Taking the cheapest of the per-rung floors inherits
+	 * the contamination one level up: under load `requestAnimationFrame` emits
+	 * occasional short gaps, so an *expensive* rung's own floor can sit below
+	 * the refresh interval. Measured headed over an airless world on a 60 Hz
+	 * panel, that estimator read **13.40 ms** — a jitter gap from the 75% rung —
+	 * and the bottom rung's honest 16.80 ms then failed to read as capped. A
+	 * median cannot do that: a capped rung's median *is* the refresh interval,
+	 * and an uncapped rung's median is above it.
+	 *
+	 * **It is a heuristic, and its failure is bounded by design.** A session
+	 * that never once reaches the cap estimates the interval as its cheapest
+	 * rung's real cost, so that rung reads as capped and contributes no curve
+	 * point. Both errors — a censored cost fitted, or an honest one dropped —
+	 * cost at most one trial-and-revert, because a prediction here gates a trial
+	 * and never promotes a rung.
+	 */
+	private refreshFloorMs: number | null = null;
 	/**
 	 * One below-cap period per rung, keyed by the rung itself.
 	 *
@@ -321,9 +363,10 @@ export class AdaptiveResolution {
 		this.trialBackoffMs = 0;
 		this.trial = null;
 		this.observations.clear();
-		this.lastGate = "unknown";
-		this.lastPredictedMs = null;
 		this.lastEvidence = null;
+		// **Here and nowhere else.** A resize or a move to another display can
+		// change the refresh interval; a rung change cannot.
+		this.refreshFloorMs = null;
 		this.reason = reason;
 	}
 
@@ -355,7 +398,9 @@ export class AdaptiveResolution {
 		if (evidence.sampleCount < MIN_SAMPLES)
 			return hold(`priming (${evidence.sampleCount}/${MIN_SAMPLES} frames)`);
 
-		const atCap = this.atCap(median, evidence.minPeriodMs);
+		if (this.refreshFloorMs === null || median < this.refreshFloorMs)
+			this.refreshFloorMs = median;
+		const atCap = this.atCap(median, this.refreshFloorMs);
 		if (!atCap)
 			this.observations.set(this.scale, {
 				periodMs: median,
@@ -399,8 +444,6 @@ export class AdaptiveResolution {
 			);
 
 		const gate = this.gate(atCap);
-		this.lastGate = gate.state;
-		this.lastPredictedMs = gate.predictedMs;
 		if (gate.state === "misses") {
 			// Not a revert, so no back-off — nothing was flipped and the player
 			// saw nothing. The counter resets so the next attempt is another
@@ -436,10 +479,24 @@ export class AdaptiveResolution {
 			sampleAgeFrames: this.lastEvidence?.sampleCount ?? 0,
 			atCap: this.atCap(
 				this.lastEvidence?.periodMedianMs ?? null,
-				this.lastEvidence?.minPeriodMs ?? null,
+				this.refreshFloorMs,
 			),
-			gate: this.lastGate,
-			predictedMs: this.lastPredictedMs,
+			refreshFloorMs: this.refreshFloorMs,
+			// **Computed fresh, not the last value `step` happened to store.**
+			// `step` only consults the gate on the upshift path after the
+			// consecutive-frame count and the cooldown are satisfied, so a
+			// stored answer is stale for most of a session — a panel showing it
+			// reports what the controller thought minutes ago about a rung it
+			// may no longer be on.
+			...(() => {
+				const live = this.gate(
+					this.atCap(
+						this.lastEvidence?.periodMedianMs ?? null,
+						this.refreshFloorMs,
+					),
+				);
+				return { gate: live.state, predictedMs: live.predictedMs };
+			})(),
 			reason: this.trial ? `trialling: ${this.reason}` : this.reason,
 			cooldownRemainingMs: Math.max(
 				0,
@@ -458,10 +515,9 @@ export class AdaptiveResolution {
 	 * `null` evidence reads as not-at-cap, which is the safe direction: it makes
 	 * the gate fall through to the fit, and the fit refuses when it has nothing.
 	 */
-	private atCap(medianMs: number | null, minPeriodMs: number | null): boolean {
-		if (medianMs === null || minPeriodMs === null || minPeriodMs <= 0)
-			return false;
-		return medianMs <= minPeriodMs * (1 + CAP_TOLERANCE);
+	private atCap(medianMs: number | null, refreshMs: number | null): boolean {
+		if (medianMs === null || refreshMs === null || refreshMs <= 0) return false;
+		return medianMs <= refreshMs * (1 + CAP_TOLERANCE);
 	}
 
 	private resolveTrial(
@@ -533,8 +589,41 @@ export class AdaptiveResolution {
 		state: UpshiftGate;
 		predictedMs: number | null;
 	} {
-		if (atCap) return { state: "unknown", predictedMs: null };
 		const nowMs = this.lastEvidence?.nowMs ?? 0;
+		const target = RENDER_SCALE_LADDER[this.index - 1];
+		/**
+		 * **A measurement of the target beats a prediction about it, and it is
+		 * read before the cap is consulted.**
+		 *
+		 * If the controller has stood on the rung above within the window, its
+		 * cost is not something to infer — it is recorded. Fitting a curve
+		 * through two points to predict a third that is already one of them is
+		 * arithmetic standing in front of evidence.
+		 *
+		 * The `atCap` guard below protects the *fit*, which needs the current
+		 * rung's honest cost and cannot have it while vsync is hiding the
+		 * frame. It has nothing to say about a different rung that was measured
+		 * when it was not capped, and putting it first was a real defect: the
+		 * recorded rung was skipped on exactly the frames where the current one
+		 * was pinned, which is every frame of the case below.
+		 *
+		 * That case, measured headed over an airless world at 2880x1800: the
+		 * bottom rung is pinned at vsync so it contributes no curve point, and
+		 * the rung above is over budget. A fit needs two points and there is
+		 * only ever one, so the gate answered `unknown` for ever, every back-off
+		 * expiry bought another visible flip, and the sheet showed four in
+		 * twenty-five seconds. Reading the recorded rung settles it after one.
+		 */
+		const measured = this.observations.get(target);
+		if (measured && nowMs - measured.atMs <= OBSERVATION_TTL_MS)
+			return {
+				state:
+					measured.periodMs <= ADAPTIVE_BUDGET_MS * UPSHIFT_HEADROOM
+						? "fits"
+						: "misses",
+				predictedMs: measured.periodMs,
+			};
+		if (atCap) return { state: "unknown", predictedMs: null };
 		const points = [...this.observations.entries()]
 			.filter(
 				([, observation]) => nowMs - observation.atMs <= OBSERVATION_TTL_MS,
@@ -553,7 +642,6 @@ export class AdaptiveResolution {
 			return { state: "unknown", predictedMs: null };
 		const fill = (high.periodMs - low.periodMs) / denominator;
 		const fixed = low.periodMs - fill * low.scale ** 2;
-		const target = RENDER_SCALE_LADDER[this.index - 1];
 		const predictedMs = fixed + fill * target ** 2;
 		if (!Number.isFinite(predictedMs))
 			return { state: "unknown", predictedMs: null };

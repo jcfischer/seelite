@@ -396,18 +396,41 @@ describe("the prediction gate", () => {
 describe("at the cap", () => {
 	test("16.67 ms is at cap on a 60 Hz panel and headroom on a 120 Hz one", () => {
 		// The single most confusable pair of readings in this design: one rung,
-		// one number, opposite meanings.
+		// one number, opposite meanings. What separates them is **having seen
+		// the panel run cheap**, which is the ordinary case — a player spends
+		// most of a session in empty sky — and which the controller cannot
+		// manufacture.
 		const sixty = new AdaptiveResolution({ initialScale: 0.5 });
 		fly(sixty, { frames: 200, cost: () => 16.67, minPeriodMs: () => 16.67 });
 		expect(sixty.diagnostics.atCap).toBe(true);
 
 		const oneTwenty = new AdaptiveResolution({ initialScale: 0.5 });
+		// Empty sky first, at the 120 Hz panel's own rate.
+		fly(oneTwenty, { frames: 200, cost: () => 8.33, minPeriodMs: () => 8.33 });
 		fly(oneTwenty, {
 			frames: 200,
 			cost: () => 16.67,
 			minPeriodMs: () => 8.33,
+			startMs: 50_000,
 		});
 		expect(oneTwenty.diagnostics.atCap).toBe(false);
+	});
+
+	test("without a cheap frame it cannot tell them apart, and that is bounded", () => {
+		// The documented failure of the estimator, asserted rather than left to
+		// the header. A 120 Hz panel whose every observed frame cost 16.67 ms is
+		// indistinguishable from a 60 Hz panel pinned at vsync: nothing the
+		// controller has seen is cheaper than 16.67, so 16.67 is its best
+		// estimate of the interval.
+		//
+		// The cost of being wrong here is one curve point, not a wrong steady
+		// state — the rung is skipped, the gate answers `unknown`, and an
+		// upshift is settled by a trial that reverts if it misses.
+		const blind = new AdaptiveResolution({ initialScale: 0.5 });
+		fly(blind, { frames: 400, cost: () => 16.67, minPeriodMs: () => 8.33 });
+		expect(blind.diagnostics.atCap).toBe(true);
+		expect(blind.diagnostics.observations).toEqual({});
+		expect(blind.diagnostics.gate).toBe("unknown");
 	});
 
 	test("the tolerance is a band, not an equality", () => {
@@ -432,6 +455,80 @@ describe("at the cap", () => {
 		expect(decisions.some((d) => d.transition === "up-trial")).toBe(true);
 		// And it settles where the measurement says it should: 75% costs 20 ms.
 		expect(controller.scale).toBe(0.5);
+	});
+});
+
+/**
+ * The refresh interval is the display's, not the rung's — found headed.
+ */
+describe("the refresh estimate outlives a rung change", () => {
+	test("it survives a step down, where the rung's own floor cannot", () => {
+		// The sampler's period ring is reprimed on every accepted rung change,
+		// because the periods in it were delivered at the previous rung. So the
+		// floor arriving in `step` is re-estimated from scratch each time, while
+		// the thing it estimates has not changed at all.
+		const controller = new AdaptiveResolution();
+		// Cheap first: the panel's 8.33 ms is on the table.
+		fly(controller, {
+			frames: 200,
+			cost: () => 8.33,
+			minPeriodMs: () => 8.33,
+		});
+		expect(controller.diagnostics.refreshFloorMs).toBeCloseTo(8.33, 5);
+		// Then a planet, and the rung steps down. Each rung's freshly primed ring
+		// reports a floor of its own cost, nowhere near the refresh interval.
+		fly(controller, {
+			frames: 2_000,
+			cost: LAPTOP,
+			minPeriodMs: (scale) => LAPTOP(scale) * 0.98,
+			startMs: 20_000,
+		});
+		expect(controller.diagnostics.refreshFloorMs).toBeCloseTo(8.33, 5);
+		// And the decision followed it: every rung the controller stood on was
+		// priced, because none of them was within tolerance of 8.33 ms.
+		expect(
+			Object.keys(controller.diagnostics.observations).length,
+		).toBeGreaterThan(0);
+	});
+
+	test("a tight distribution below the cap still becomes a curve point", () => {
+		// 20 ms on a 60 Hz panel is 50 fps and is not capped — but every frame
+		// agrees, so against the rung's *own* spread it is indistinguishable
+		// from a rung pinned at vsync. Against a refresh interval established
+		// while some rung was cheap, it separates.
+		//
+		// **Asserted through `observations` and not through `diagnostics.atCap`.**
+		// The first version of this row read the diagnostic, which computes the
+		// cap from the retained estimate whatever `step` decided — so pointing
+		// `step` back at the rung's own floor left the row green. What the
+		// decision actually controls is whether the rung is recorded as a cost,
+		// and a capped rung must not be, because its true cost is at most what
+		// it appeared to be.
+		const controller = new AdaptiveResolution({ initialScale: 0.5 });
+		fly(controller, {
+			frames: 200,
+			cost: () => 16.67,
+			minPeriodMs: () => 16.67,
+		});
+		expect(controller.diagnostics.observations).toEqual({});
+
+		fly(controller, {
+			frames: 400,
+			cost: () => 20,
+			// The rung's own floor is its own cost, which is the defect's input.
+			minPeriodMs: () => 19.9,
+			startMs: 100_000,
+		});
+		expect(controller.diagnostics.refreshFloorMs).toBeCloseTo(16.67, 5);
+		expect(controller.diagnostics.observations["0.50"]).toBeCloseTo(20, 5);
+	});
+
+	test("a prime forgets it, because a display change can move it", () => {
+		const controller = new AdaptiveResolution();
+		fly(controller, { frames: 200, cost: () => 8.33, minPeriodMs: () => 8.33 });
+		expect(controller.diagnostics.refreshFloorMs).toBeCloseTo(8.33, 5);
+		controller.prime("moved to the external display");
+		expect(controller.diagnostics.refreshFloorMs).toBeNull();
 	});
 });
 
@@ -514,5 +611,55 @@ describe("a scripted pressure sequence settles without oscillating", () => {
 		// Eleven thousand frames and a handful of moves: down once, up once,
 		// with whatever trials the two required. The number is the claim.
 		expect(transitions.length).toBeLessThanOrEqual(6);
+	});
+});
+
+/**
+ * The case a fitted curve cannot reach, found headed.
+ */
+describe("a rung it has measured is not a rung it predicts", () => {
+	test("one trial settles a rung the curve could never refuse", () => {
+		// Measured headed over an airless world at 2880x1800: the bottom rung is
+		// pinned at vsync so it contributes no curve point, and the rung above
+		// is over budget. A fit needs two points and there is only ever one, so
+		// the gate answered `unknown` for ever and every back-off expiry bought
+		// another visible flip — four in twenty-five seconds on the sheet.
+		//
+		// The rung above has been *stood on*, so its cost is recorded rather
+		// than inferred. Reading it settles the question after one trial.
+		const controller = new AdaptiveResolution({ initialScale: 0.5 });
+		const decisions = fly(controller, {
+			frames: 20_000,
+			// 0.5 sits exactly on the 60 Hz panel; 0.75 is far over budget.
+			cost: (scale) => (scale === 0.5 ? 16.7 : 35),
+			minPeriodMs: () => 16.7,
+		});
+		expect(controller.scale).toBe(0.5);
+		expect(controller.diagnostics.gate).toBe("misses");
+		// The recorded cost, not a curve's guess about it.
+		expect(controller.diagnostics.predictedMs).toBeCloseTo(35, 0);
+		expect(Object.keys(controller.diagnostics.observations)).toEqual(["0.75"]);
+		const trials = decisions.filter((d) => d.transition === "up-trial").length;
+		// One to learn, then the recorded rung answers every later attempt —
+		// plus whatever the TTL's re-check costs over the flight.
+		const elapsedMs = 20_000 * 16.7;
+		expect(trials).toBeLessThanOrEqual(
+			Math.ceil(elapsedMs / OBSERVATION_TTL_MS) + 1,
+		);
+	});
+
+	test("a measured rung inside budget still only earns a trial", () => {
+		// The other direction: a recorded cost that fits does not promote the
+		// rung by itself. Nothing here promotes except rendering at the rung.
+		const controller = new AdaptiveResolution({ initialScale: 0.5 });
+		const decisions = fly(controller, {
+			frames: 3_000,
+			cost: () => 10,
+			minPeriodMs: () => 8.33,
+		});
+		const order = decisions
+			.map((d) => d.transition)
+			.filter((t) => t !== "none");
+		expect(order[0]).toBe("up-trial");
 	});
 });
