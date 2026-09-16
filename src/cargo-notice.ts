@@ -18,11 +18,6 @@
  *  three events rather than one wall of text. */
 export const SCOOP_NOTICE_S = 2.4;
 
-/**
- * The line for one scoop attempt. A refusal is not a failure to say something:
- * a full hold leaves the canister in space, and a pilot who is not told that
- * watches it sit there and reads the scoop as broken.
- */
 /** One scoop attempt, as both lines below and the call site describe it. */
 export interface ScoopEvent {
 	commodity: string;
@@ -30,6 +25,11 @@ export interface ScoopEvent {
 	accepted: boolean;
 }
 
+/**
+ * The line for one scoop attempt. A refusal is not a failure to say something:
+ * a full hold leaves the canister in space, and a pilot who is not told that
+ * watches it sit there and reads the scoop as broken.
+ */
 export function scoopNotice(input: ScoopEvent): string {
 	const good = input.commodity.toUpperCase();
 	return input.accepted

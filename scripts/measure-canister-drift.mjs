@@ -148,8 +148,11 @@ const run = await page.evaluate(() => {
 			commodity: "Food",
 			tonnes: 1,
 			pos: add(g.world.ship.pos, scale(ahead, 2)),
-			// The wreck at rest in the frame, so only the eject term is left: the
-			// gentlest drop there is. If this one slides, every real one does.
+			// **Hand-built, not a drop.** `dropCanisters` needs a kill, and no
+			// forced duel lands near a body, so this is the eject term alone:
+			// no fifth of a wreck's velocity and no spread. The gentlest case
+			// there is — if this one slides, every real one does — but the
+			// figures below are this canister's, not a drop the game produced.
 			vel: { x: frame0.x + 0.15, y: frame0.y, z: frame0.z },
 			// Its own frame is the station's, which is what the game resolves per
 			// canister rather than from wherever the pilot happens to be.
@@ -244,13 +247,15 @@ const table = (title, arm) => {
 	);
 	console.log(`   nearest body        ${h.nearestKm.toFixed(0)} km`);
 	console.log(
-		"      t   vs frame now      vs ship      range  frozen range  frozen vs f  frame drift",
+		"      t  vs snapshot  vs frame now     vs ship     range  frozen range  frozen vs f  frame drift",
 	);
 	for (const r of arm.rows) {
-		const n = (v, p = 4) =>
-			v === null || v === undefined ? "      gone" : v.toFixed(p).padStart(10);
+		const n = (v, p = 4, w = 9) =>
+			v === null || v === undefined
+				? "     gone".padStart(w)
+				: v.toFixed(p).padStart(w);
 		console.log(
-			`${String(r.t).padStart(5)}s ${n(r.vsFrameNow)} ${n(r.vsShip)} ${n(r.rangeKm, 1)} ${n(r.frozenKm, 1)} ${n(r.frozenVsFrameNow)}  ${n(r.frameDrift)}`,
+			`${String(r.t).padStart(5)}s ${n(r.vsSnapshot)} ${n(r.vsFrameNow, 4, 13)} ${n(r.vsShip, 4, 11)} ${n(r.rangeKm, 1, 9)} ${n(r.frozenKm, 1, 13)} ${n(r.frozenVsFrameNow, 4, 12)} ${n(r.frameDrift, 4, 12)}`,
 		);
 	}
 };

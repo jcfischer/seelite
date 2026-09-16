@@ -8050,12 +8050,16 @@ class Game {
 			// second of two scoops of the same good inside the notice's life,
 			// which is the opposite of "three scoops read as three events"
 			// (sage #355).
-			const fresh =
-				accepted || this.scoop.left === 0 || this.scoop.text !== text;
+			const refusalStanding = this.scoop.left > 0 && !this.scoop.accepted;
 			this.scoop = { text, left: SCOOP_NOTICE_S, accepted };
-			if (!fresh) continue;
+			// An accepted scoop always sounds: it removes its canister, so it
+			// cannot repeat. A refusal sounds only when none was already
+			// standing — comparing the *words* instead let two canisters of
+			// different goods in reach of a full hold alternate the text and
+			// restart the tone every frame, which is the bug the gate is for
+			// (sage #355).
 			if (accepted) this.audio.scoop();
-			else this.audio.alert();
+			else if (!refusalStanding) this.audio.alert();
 		}
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}

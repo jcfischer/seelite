@@ -110,15 +110,22 @@ opposite ways, three go 120° apart), **slows linearly to rest 10 s after the
 kill**, and expires five minutes after it. **It comes to rest in the frame of
 the body the kill happened beside, as that frame stands each step** — its own
 frame, carried as `frameBodyId`, and not a snapshot taken at the kill nor the
-observer's. The snapshot was ratified here and flown for two playtests before
-the sixth found it: the fade finished on time, but a station's frame keeps
-turning, so a canister holding the kill's velocity peeled away from the curve
-the pilot's assist parks them on. Beside a station moving 29.3 km/s,
+observer's. The fade finishes on time either way; what a snapshot cannot follow
+is a frame that keeps turning, so beside a body a canister holding the kill's
+velocity peels away from the curve the pilot's assist parks them on. On a
+synthesized drop beside a station moving 29.3 km/s,
 `scripts/measure-canister-drift.mjs` reads **55.0 km and still opening at
-0.94 km/s** two minutes after resting against **2.3 km and 0.0008 km/s** — both
-in one run, because every row carries a frozen twin integrated with the old
-rule. Deep space hid it, because the star frame does not move and every flown
-duel lands there.
+0.94 km/s** two minutes after resting, against **2.3 km and 0.0008 km/s** —
+both in one run, because every row carries a frozen twin advanced by the
+shipped fade against the kill's frame.
+
+**This is not shown to be what the sixth playtest hit, and the spec said so
+for a round.** A raider interdicts on a cruise leg, which lands on the order of
+1e8 km from any body — far outside `NEAR_FAR_KM`, where the frozen frame and
+the live one are both the star's and identical. The instrument's deep-space arm
+measures a flown kill coming to rest on time and staying there, before and
+after. So the drift above is a real defect found while investigating a report,
+not a diagnosis of it; what the principal saw on that playtest is still open.
 
 The frame is resolved **per canister** rather than from the player's
 `localFrame()`: that follows the ship, so a pilot who kills beside a station

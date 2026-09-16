@@ -239,8 +239,11 @@ export function dropCanisters(kill: {
  * fade finished on time, but beside a station the frame keeps turning, so the
  * frozen straight line peeled away from the curve the pilot's assist parks
  * them on — 55 km out and still opening at 0.94 km/s two minutes after resting
- * (`scripts/measure-canister-drift.mjs`). Deep space hid it, because the star
- * frame does not move and every flown duel lands there.
+ * on a **synthesized** drop beside a station
+ * (`scripts/measure-canister-drift.mjs`). A flown kill cannot reach that case:
+ * interdictions happen on cruise legs, 1e8 km from anything, where both rules
+ * give the star frame. See `combat-model.md` §4.1 on what this does and does
+ * not explain.
  */
 export function driftCanister(
 	c: Canister,
