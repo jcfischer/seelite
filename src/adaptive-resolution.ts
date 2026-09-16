@@ -94,6 +94,23 @@ export const RENDER_SCALE_LADDER = [1, 0.75, 0.5] as const;
 export type RenderScaleRung = (typeof RENDER_SCALE_LADDER)[number];
 
 /**
+ * The rung closest to an arbitrary multiplier.
+ *
+ * For the one caller that has a number which *should* be a rung and cannot
+ * prove it: the applied render scale, which came from a settings row that an
+ * older build may have written. `settings.ts` validates the row against its own
+ * allowed set, so the value is a rung in every path that exists today — and
+ * `initialScale` throws on anything else, which would turn a stored oddity into
+ * a boot failure rather than a soft picture.
+ */
+export function nearestRung(scale: number): RenderScaleRung {
+	let best: RenderScaleRung = RENDER_SCALE_LADDER[0];
+	for (const rung of RENDER_SCALE_LADDER)
+		if (Math.abs(rung - scale) < Math.abs(best - scale)) best = rung;
+	return best;
+}
+
+/**
  * The declared floor, in frames per second.
  *
  * **Declared, and deliberately not the panel's cadence.** A budget derived from

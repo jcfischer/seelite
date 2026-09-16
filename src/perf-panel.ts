@@ -38,6 +38,7 @@
  * every jump, and this cannot go stale.
  */
 import type * as THREE from "three";
+import type { AdaptiveDiagnostics } from "./adaptive-resolution";
 import type { FrameAttribution } from "./frame-attribution";
 
 /** What a switch does to the frame, and the key that flips it. */
@@ -571,6 +572,16 @@ export type PerfTargets = {
 		open: boolean;
 		enclosureRad: number;
 	};
+	/**
+	 * #352's Auto controller, or null while the resolution row is a number.
+	 *
+	 * A getter for the same reason as `occlusion`: a controller decides per
+	 * frame, and the player can switch Auto on and off while this panel is up.
+	 * **Null is a state to print rather than a row to hide** — "manual" is the
+	 * answer to why the rung is not moving, and a panel that showed nothing
+	 * would leave the reader to guess between manual and broken.
+	 */
+	adaptive: () => AdaptiveDiagnostics | null;
 };
 
 function metric(value: number | null): string {
@@ -775,6 +786,7 @@ export function mountPerfPanel(targets: PerfTargets): PerfPanelHandle | null {
 	const draw = () => {
 		const attribution = targets.attribution.snapshot();
 		const occlusion = targets.occlusion();
+		const adaptive = targets.adaptive();
 		panel.dataset.attributionEnabled = String(attribution.enabled);
 		panel.dataset.gpuStatus = attribution.gpu.status;
 		panel.dataset.perfPadFocus = String(padFocused);
@@ -816,7 +828,22 @@ occlusion gate              ${occlusion.open ? "open" : "shut"}${occlusion.pinne
 occlusion asked / drawn     ${occlusion.wanted.shadows ? "shadow" : "—"} ${occlusion.wanted.ao ? "ao" : "—"} / ${occlusion.wanted.shadows && (occlusion.open || occlusion.pinned) ? "shadow" : "—"} ${occlusion.wanted.ao && (occlusion.open || occlusion.pinned) ? "ao" : "—"}
 enclosure                   ${occlusion.enclosureRad.toFixed(3)} rad
 renderer                    ${identity(attribution.renderer.api)}
-rasterizer                  ${identity(attribution.renderer.rasterizer)}`;
+rasterizer                  ${identity(attribution.renderer.rasterizer)}
+
+ADAPTIVE RESOLUTION
+mode / rung                 ${adaptive ? `auto / ${adaptive.scale.toFixed(2)}` : "manual"}
+budget / period             ${adaptive ? `${adaptive.budgetMs.toFixed(2)} ms / ${metric(adaptive.periodMedianMs)}` : "—"}
+cheapest period / at cap    ${adaptive ? `${metric(adaptive.minPeriodMs)} / ${adaptive.atCap ? "yes" : "no"}` : "—"}
+upshift gate / predicted    ${adaptive ? `${adaptive.gate} / ${metric(adaptive.predictedMs)}` : "—"}
+cooldown / back-off         ${adaptive ? `${adaptive.cooldownRemainingMs.toFixed(0)} ms / ${adaptive.trialBackoffMs.toFixed(0)} ms` : "—"}
+curve points                ${
+			adaptive
+				? Object.entries(adaptive.observations)
+						.map(([rung, ms]) => `${rung}:${ms.toFixed(1)}`)
+						.join("  ") || "—"
+				: "—"
+		}
+reason                      ${adaptive ? escapeHtml(adaptive.reason) : "—"}`;
 	};
 
 	/**

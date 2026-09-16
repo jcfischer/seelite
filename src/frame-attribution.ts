@@ -390,6 +390,11 @@ export class FrameAttribution {
 		this.resetSamples();
 	}
 
+	/** What this sampler was built for; see `FrameAttributionMode`. */
+	get snapshotMode(): FrameAttributionMode {
+		return this.mode;
+	}
+
 	/** Record one named CPU wall interval. Disabled samplers retain nothing. */
 	recordCpu(name: CpuInterval, durationMs: number): void {
 		if (!this.enabled || !Number.isFinite(durationMs) || durationMs < 0) return;

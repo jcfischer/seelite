@@ -162,7 +162,10 @@ describe("the store tells its listeners, once", () => {
 
 	test("a change notifies", () => {
 		const store = new SettingsStore({ ...DEFAULT_SETTINGS, renderScale: 1 });
-		const seen: number[] = [];
+		// `number | "auto"` since #352: the row carries a mode as well as a
+		// multiplier, and a listener typed to the numbers alone would not
+		// compile against the value it is actually handed.
+		const seen: (number | "auto")[] = [];
 		store.subscribe((s) => seen.push(s.renderScale));
 		store.set("renderScale", 0.5);
 		expect(seen).toEqual([0.5]);

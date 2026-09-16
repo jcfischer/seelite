@@ -103,8 +103,23 @@ import {
 	subjectOf,
 } from "./occlusion-mesh";
 import { SettingsStore } from "./settings";
+/**
+ * Static, unlike `frame-attribution` below.
+ *
+ * The controller is a few hundred bytes of arithmetic with no Three.js and no
+ * WebGL, and the settings row that switches it on has to be answerable on the
+ * frame it is read. The sampler stays dynamic because *it* is the thing #223's
+ * item 6 keeps off the default route.
+ */
+import {
+	type AdaptiveDiagnostics,
+	AdaptiveResolution,
+	nearestRung,
+	RENDER_SCALE_LADDER,
+} from "./adaptive-resolution";
 import type {
 	FrameAttribution,
+	FrameAttributionMode,
 	FrameAttributionSnapshot,
 } from "./frame-attribution";
 import { AudioFX } from "./audio";
@@ -1532,6 +1547,24 @@ class Game {
 	private frameAttributionEnable: Promise<FrameAttribution | null> | null =
 		null;
 	private frameAttributionGeneration = 0;
+	/**
+	 * #352's Auto controller, constructed only while the row says `"auto"`.
+	 *
+	 * Null is the manual case, and it is the *whole* of the manual case: with no
+	 * controller there is nothing to step, nothing to ask, and
+	 * `effectiveRenderScale` returns the number the player chose. A controller
+	 * that existed and was ignored would be a second opinion about the drawing
+	 * buffer waiting for someone to read it by mistake.
+	 */
+	private adaptive: AdaptiveResolution | null = null;
+	/**
+	 * The multiplier the drawing buffer was last built with.
+	 *
+	 * Read when Auto starts, so switching it on over a planet begins at the rung
+	 * the player is already looking at rather than jumping to 100%, stuttering,
+	 * and climbing back down through every rung to where it began.
+	 */
+	private appliedRenderScale = 1;
 	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX();
 	/**
@@ -2040,7 +2073,14 @@ class Game {
 	 * not evaluate the sampler module, allocate queries, or change renderer.info.
 	 * A later adaptive controller can call this same method without mounting DOM.
 	 */
-	async enableFrameAttribution(): Promise<FrameAttribution | null> {
+	async enableFrameAttribution(
+		mode: FrameAttributionMode = "full",
+	): Promise<FrameAttribution | null> {
+		// **Whichever arrives first wins, and there is never a second.** Two
+		// samplers on one context would each mark every frame into their own
+		// ring, and the one the controller reads would not be the one `?perf`
+		// prints. A `cadence` sampler already running under Auto is what `?perf`
+		// then shows, with an empty GPU half and `mode: "cadence"` saying why.
 		if (this.frameAttribution) return this.frameAttribution;
 		if (this.frameAttributionEnable) return this.frameAttributionEnable;
 		const generation = this.frameAttributionGeneration;
@@ -2050,6 +2090,7 @@ class Game {
 			// A second caller may have completed while this import was pending.
 			if (this.frameAttribution) return this.frameAttribution;
 			const attribution = new FrameAttribution({
+				mode,
 				gl: this.renderer.getContext() as WebGL2RenderingContext,
 				contextEvents: this.renderer.domElement,
 				rendererFacts: () => ({
@@ -2061,14 +2102,25 @@ class Game {
 					drawingBufferWidth: this.renderer.domElement.width,
 					drawingBufferHeight: this.renderer.domElement.height,
 					effectivePixelRatio: this.renderer.getPixelRatio(),
-					renderScale: this.settings.value.renderScale,
+					// The rung, never the row: `"auto"` is not a number, and a
+					// diagnostic that printed it would be describing the
+					// player's choice rather than the frame that was drawn.
+					renderScale: this.effectiveRenderScale(),
 					composerPassCount: this.composer.passes.filter((pass) => pass.enabled)
 						.length,
 				}),
 			});
 			attribution.enable();
-			this.rendererInfoAutoReset = this.renderer.info.autoReset;
-			this.renderer.info.autoReset = false;
+			// **Only a `full` sampler takes Three's counters over.** A cadence
+			// sampler reports no `renderer.info` figure, and flipping
+			// `autoReset` for it would put a default-route side effect on the
+			// renderer in exchange for nothing — the sort of thing that is
+			// invisible until something else reads a counter and finds it
+			// accumulating.
+			if (mode === "full") {
+				this.rendererInfoAutoReset = this.renderer.info.autoReset;
+				this.renderer.info.autoReset = false;
+			}
 			this.frameAttribution = attribution;
 			return attribution;
 		})();
@@ -2098,6 +2150,114 @@ class Game {
 	/** Probe/diagnostic access to the immutable sampler-owned snapshot. */
 	attributionSnapshot(): FrameAttributionSnapshot | null {
 		return this.frameAttribution?.snapshot() ?? null;
+	}
+
+	/**
+	 * The one answer to "what is the drawing buffer multiplied by".
+	 *
+	 * Every consumer goes through here — `onResize`, which applies it, and the
+	 * attribution facts, which report it. **There is no second multiplier**: in
+	 * Auto the player's row is `"auto"` and carries no number at all, so the
+	 * controller's rung is the only factor there is, and in manual the
+	 * controller does not exist. That is deliberate rather than incidental;
+	 * `light-rig.ts` records the round in which the perf panel and the settings
+	 * screen each applied half of this value, and an adaptive second factor
+	 * would be that again with one half invisible in a diff.
+	 */
+	effectiveRenderScale(): number {
+		const chosen = this.settings.value.renderScale;
+		if (chosen !== "auto") return chosen;
+		return this.adaptive?.scale ?? RENDER_SCALE_LADDER[0];
+	}
+
+	/** What Auto is doing, for `?perf` and the settings row. Null in manual. */
+	adaptiveDiagnostics(): AdaptiveDiagnostics | null {
+		return this.adaptive?.diagnostics ?? null;
+	}
+
+	/**
+	 * Ask the controller once per frame, and apply a rung it accepts.
+	 *
+	 * **The resize is the only application path**, which is what keeps one owner
+	 * of the drawing buffer: the controller changes a number, `onResize` reads
+	 * `effectiveRenderScale` and rebuilds, and every transition — trial, revert
+	 * and accept alike — goes through that same line. A trial is a real buffer
+	 * change rather than a pretend one; there is no way to learn what a rung
+	 * costs except to render at it.
+	 *
+	 * **A rung change invalidates the cadence**, so the sampler is reprimed on
+	 * the controller's say-so. The periods still in the ring were delivered at
+	 * the previous rung; left to blend out, a 33 ms history would hold a
+	 * freshly-halved frame over the downshift trigger and step it down again.
+	 *
+	 * ## The event this cannot listen for
+	 *
+	 * Item 7 of the node asks for a re-prime on a display change, and on the
+	 * principal's two displays **there is no such event**. `?perf` reports an
+	 * effective pixel ratio of 2.00 on both, so moving the window between them
+	 * changes nothing the page can observe — no `resize`, no
+	 * `devicePixelRatio`, no media query — while the cost per pixel changes by
+	 * 2.02x. What recovers it is the controller's own re-measurement:
+	 * `OBSERVATION_TTL_MS` retires the curve's points, and the frame period it
+	 * steers on is measured fresh either way. A listener is not available; a
+	 * measurement is.
+	 */
+	/**
+	 * Throw away what Auto has measured, keeping the rung it is on.
+	 *
+	 * Both halves have to be primed or neither is: the controller holds the
+	 * curve and the sampler holds the periods, and clearing one leaves the other
+	 * answering about a world that is gone. The rung itself is kept — dropping
+	 * to 100% on every window drag would give the player a stutter per pixel of
+	 * mouse movement, and the rung that was right a moment ago is still the best
+	 * guess available.
+	 */
+	private primeAdaptive(reason: string): void {
+		this.adaptive?.prime(reason);
+		this.frameAttribution?.reprimeCadence();
+	}
+
+	private stepAdaptiveResolution(): void {
+		const controller = this.adaptive;
+		const attribution = this.frameAttribution;
+		if (!controller || !attribution) return;
+		const snapshot = attribution.snapshot();
+		const decision = controller.step({
+			nowMs: performance.now(),
+			periodMedianMs: snapshot.cadence.medianMs,
+			minPeriodMs: snapshot.cadence.minPeriodMs,
+			sampleCount: snapshot.cadence.sampleCount,
+			hidden: document.visibilityState === "hidden",
+		});
+		if (decision.transition === "none") return;
+		if (decision.reprime) attribution.reprimeCadence();
+		this.onResize();
+	}
+
+	/**
+	 * Start or stop Auto to match the row, and tell the sampler what it needs.
+	 *
+	 * Auto needs a frame period on the **default route**, where #223's build
+	 * contract item 6 forbids issuing timer queries — so it asks for a
+	 * `"cadence"` sampler, which allocates no query ring at all. `?perf` asks
+	 * for a `"full"` one; whichever arrives first wins, and the second caller
+	 * gets the sampler that exists rather than a second one, because two
+	 * samplers on one context would each mark every frame into their own ring.
+	 */
+	private async applyResolutionMode(): Promise<void> {
+		const auto = this.settings.value.renderScale === "auto";
+		if (!auto) {
+			this.adaptive = null;
+			return;
+		}
+		if (this.adaptive) return;
+		this.adaptive = new AdaptiveResolution({
+			// Start from the rung the player last had applied rather than from
+			// the top: switching to Auto over a planet would otherwise jump to
+			// 100%, stutter, and climb back down through every rung.
+			initialScale: nearestRung(this.appliedRenderScale),
+		});
+		await this.enableFrameAttribution("cadence");
 	}
 
 	/**
@@ -2989,7 +3149,13 @@ class Game {
 			},
 			onChartHost: (host) => this.setChartHost(host),
 		});
-		window.addEventListener("resize", () => this.onResize());
+		window.addEventListener("resize", () => {
+			// A different window size is a different number of pixels, so every
+			// period in the ring and every point on the curve was measured
+			// against a frame that no longer exists.
+			this.primeAdaptive("resized");
+			this.onResize();
+		});
 		// A resolution setting is a change to the drawing buffer, so it lands the
 		// same way a window resize does.
 		//
@@ -3000,7 +3166,14 @@ class Game {
 		// the frame the player flipped a switch to *look* at something.
 		let applied = this.settings.value;
 		this.settings.subscribe((next) => {
-			if (next.renderScale !== applied.renderScale) this.onResize();
+			if (next.renderScale !== applied.renderScale) {
+				// Leaving Auto is synchronous: the player's number is already
+				// in hand, and only *entering* needs the sampler that
+				// `applyResolutionMode` awaits.
+				if (next.renderScale !== "auto") this.adaptive = null;
+				void this.applyResolutionMode();
+				this.onResize();
+			}
 			if (next.quality !== applied.quality) this.applyQuality();
 			// #200's three rows. The sample count reallocates both composer
 			// buffers, so it is guarded by the same comparison and for the same
@@ -3035,6 +3208,7 @@ class Game {
 			);
 			const once = () => {
 				q.removeEventListener("change", once);
+				this.primeAdaptive("pixel ratio changed");
 				this.onResize();
 				this.combatRig?.onResize();
 				watchRatio();
@@ -3045,6 +3219,20 @@ class Game {
 		// Once at boot, so the renderer and the composer cannot be given a ratio
 		// in only one place.
 		this.onResize();
+		// A hidden tab is already a non-action inside the controller; this is
+		// the other half, which is that the frame period spanning the absence is
+		// not a frame period at all. Its first mark on return is separated from
+		// its last by however long the person was away.
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "visible")
+				this.primeAdaptive("tab restored");
+		});
+		this.renderer.domElement.addEventListener("webglcontextrestored", () =>
+			this.primeAdaptive("context restored"),
+		);
+		// The saved row may already say `"auto"`, and nothing else starts it:
+		// the subscription above only fires on a change.
+		void this.applyResolutionMode();
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
@@ -9600,8 +9788,12 @@ class Game {
 		);
 
 		const attribution = this.frameAttribution;
-		if (attribution) this.renderer.info.reset();
+		if (attribution?.snapshotMode === "full") this.renderer.info.reset();
 		const renderStartedAt = attribution ? performance.now() : 0;
+		// **Before `beginGpuFrame`, and unconditionally.** The mark is what the
+		// cadence is built from and a frame the query ring skips is still a
+		// frame; #352 split the two for exactly this call site.
+		attribution?.markFrame(renderStartedAt);
 		attribution?.beginGpuFrame(renderStartedAt);
 		try {
 			this.composer.render();
@@ -9765,6 +9957,7 @@ class Game {
 				"simulation/step",
 				performance.now() - updateStartedAt,
 			);
+		this.stepAdaptiveResolution();
 		this.render(dt);
 		this.updateCockpit();
 		if (this.legacyHud) this.updateHud();
@@ -11489,8 +11682,9 @@ class Game {
 		const w = window.innerWidth;
 		const h = window.innerHeight;
 		this.sizeOverlay();
-		const ratio =
-			Math.min(window.devicePixelRatio, 2) * this.settings.value.renderScale;
+		const scale = this.effectiveRenderScale();
+		this.appliedRenderScale = scale;
+		const ratio = Math.min(window.devicePixelRatio, 2) * scale;
 		this.renderer.setPixelRatio(ratio);
 		this.composer.setPixelRatio(ratio);
 		for (const cam of [
@@ -12018,6 +12212,16 @@ if (query.has("model-viewer")) {
 			// lies about itself — and the clamp exists precisely because the
 			// alternative to granting less is a black frame.
 			(key, value) => {
+				// #352's Auto shares this column with #200's antialiasing, and
+				// for the same reason: a row that says "Auto" and nothing else
+				// is a setting that will not tell the player what it did. The
+				// rung is the answer to the question they are asking when they
+				// open this screen over a planet.
+				if (key === "renderScale" && value === "auto") {
+					const diagnostics = game.adaptiveDiagnostics();
+					if (!diagnostics) return null;
+					return `${Math.round(diagnostics.scale * 100)}% now`;
+				}
 				if (key !== "antialias" || value === 0) return null;
 				const got = grantedSamples(game.renderer, value as number);
 				return got === value
@@ -12038,6 +12242,7 @@ if (query.has("model-viewer")) {
 				bloom: game.bloom,
 				attribution,
 				occlusion: () => game.occlusionState,
+				adaptive: () => game.adaptiveDiagnostics(),
 			});
 			if (!perf) return;
 			// Held on the game so d-pad down can hand the pad to the instrument
