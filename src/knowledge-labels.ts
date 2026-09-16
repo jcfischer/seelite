@@ -223,6 +223,8 @@ const SOURCE_LABELS: Record<string, string> = {
 	"system-relay": "RELAY REPORT",
 	docking: "DOCKED HERE",
 	intervention: "YOUR DOING",
+	// #43: the pirate relay, identified from the cockpit inside its range.
+	identification: "IDENTIFIED",
 };
 
 /** The exact age behind the finder row's coarse one — `1M 08S AGO`, `3D 04H

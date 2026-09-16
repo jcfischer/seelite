@@ -118,3 +118,38 @@ describe("the leg law", () => {
 		expect(sequence(5)).not.toBe(sequence(6));
 	});
 });
+
+describe("route detection (node #43)", () => {
+	// The pirate relay's dial on the leg law: a watched route is `certain`
+	// while the relay is up and `none` while it is down; every other route is
+	// `law`, the draw above.
+	test("`law` is the default and the same draw", () => {
+		const record = generateGalaxy(WORLD, 0).systems[5];
+		for (let leg = 0; leg < 200; leg++)
+			expect(legEncounter(record.seed, 3, leg, "law")).toEqual(
+				legEncounter(record.seed, 3, leg),
+			);
+	});
+
+	test("`certain` meets a raider on every leg, `none` on no leg", () => {
+		const record = generateGalaxy(WORLD, 0).systems[5];
+		for (let leg = 0; leg < 500; leg++) {
+			expect(legEncounter(record.seed, 7, leg, "certain")).not.toBeNull();
+			expect(legEncounter(record.seed, 0, leg, "none")).toBeNull();
+		}
+	});
+
+	test("`certain` keeps the draw's own slot, bearing, delay and range", () => {
+		// The dial skips the chance and nothing else, so a leg the law would
+		// have met anyway meets the same raider the same way.
+		const record = generateGalaxy(WORLD, 0).systems[5];
+		let compared = 0;
+		for (let leg = 0; leg < 500; leg++) {
+			const law = legEncounter(record.seed, 0, leg);
+			if (!law) continue;
+			expect(legEncounter(record.seed, 0, leg, "certain")).toEqual(law);
+			compared++;
+		}
+		expect(compared).toBeGreaterThan(100);
+	});
+});

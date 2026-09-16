@@ -127,7 +127,7 @@ describe("scheduling", () => {
 		let checked = 0;
 		for (let leg = 0; leg < 200; leg++) {
 			const drawn = legEncounter(record.seed, record.government, leg);
-			const e = scheduleEncounter(ALL_UP, 5, record, leg, 100);
+			const e = scheduleEncounter(ALL_UP, 5, record, leg, 100, "law");
 			if (!drawn) {
 				expect(e).toBeNull();
 				continue;
@@ -153,7 +153,7 @@ describe("scheduling", () => {
 			const down = slots[drawn.slotIndex].key;
 			// Only the drawn slot is down; the others are up, and still unused.
 			expect(
-				scheduleEncounter((k) => k !== down, 5, record, leg, 100),
+				scheduleEncounter((k) => k !== down, 5, record, leg, 100, "law"),
 			).toBeNull();
 			checked++;
 		}
@@ -294,5 +294,31 @@ describe("the duel in play", () => {
 		});
 		expect(flown.e.phase).toBe("over");
 		expect(flown.e.end).toBe("escaped");
+	});
+});
+
+describe("the relay's dial on the leg (node #43)", () => {
+	const record = generateGalaxy(WORLD, 0).systems[5];
+	test("`certain` schedules a raider on every leg with an operational slot, `none` on no leg", () => {
+		for (let leg = 0; leg < 200; leg++) {
+			expect(
+				scheduleEncounter(ALL_UP, 5, record, leg, 0, "certain"),
+			).not.toBeNull();
+			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0, "none")).toBeNull();
+		}
+	});
+	test("`certain` still sends nobody when the drawn slot is down", () => {
+		// The relay tells the raiders where to look; it does not conjure one.
+		const NONE_UP = () => false;
+		for (let leg = 0; leg < 50; leg++)
+			expect(
+				scheduleEncounter(NONE_UP, 5, record, leg, 0, "certain"),
+			).toBeNull();
+	});
+	test("the default is the law", () => {
+		for (let leg = 0; leg < 200; leg++)
+			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0, "law")).toEqual(
+				scheduleEncounter(ALL_UP, 5, record, leg, 0, "law"),
+			);
 	});
 });

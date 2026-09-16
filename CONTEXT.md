@@ -96,6 +96,26 @@ slow, with no module, into the hold. Flight state only: it is not saved.
 `src/raider-wreck.ts` owns the drop and the scoop.
 _Avoid_: Loot, salvage drop, jettisoned cargo
 
+**Pirate relay**:
+The first infrastructure **Carrier** (#43, prototype): one **Carrier slot** per
+system, `relay-00`, standing a few hundred kilometres off one station's
+approach and moving with it. Its capability is **Route detection**: the
+system's raiders find every ship on the route to the station it watches. It
+is found by its signal, identified inside its own range, destroyed by the
+pulse laser, and replaced on the game clock. `src/pirate-relay.ts` owns it;
+`docs/prototypes/relay-codex.md` records the decisions taken as proposals.
+Not to be confused with the **System relay**, which is an information channel.
+_Avoid_: Pirate base, sensor buoy, beacon
+
+**Route detection**:
+The pirate relay's dial on the leg law (`raider-slots.ts`' `RouteDetection`):
+`law` is the ordinary draw; `certain` is a watched route while the relay is
+operational, where every leg meets a raider given an operational **Raider
+slot** to send; `none` is that route while the relay is down. The dial skips
+the chance and not the draw, so a `certain` leg meets the raider the law would
+have sent. `combat-model.md` §3 states it beside the law.
+_Avoid_: Encounter modifier, danger bonus
+
 **Interdiction contest**:
 The skill contest that decides an interdiction (`combat-model.md` §3): the
 initiator holds a heading lock through a charge while following at part of its
