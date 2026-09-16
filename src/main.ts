@@ -326,6 +326,7 @@ import {
 	CARGO_CONTACT_COLOUR,
 	CARGO_CONTACT_CSS,
 	type Canister,
+	driftCanister,
 	dropCanisters,
 	raiderDestruction,
 	stepCanisters,
@@ -1971,6 +1972,17 @@ class Game {
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
+	/**
+	 * The canister fade itself, reachable from a measurement.
+	 *
+	 * On the same admission test as the ray arithmetic above: a pure function
+	 * already exported, whose rule an instrument would otherwise restate.
+	 * `scripts/measure-canister-drift.mjs` has to run the **old** rule beside
+	 * the new one to print a "before", and a hand copy of the arithmetic there
+	 * would keep measuring the fade this module used to have on the day this
+	 * one changes (sage #355).
+	 */
+	readonly canisterFade = driftCanister;
 	/** One selectable contact per live canister, by canister id (#324). Kept
 	 *  beside the canisters rather than searched for in the contact list, which
 	 *  only selection and the scanner read. */
@@ -8033,7 +8045,13 @@ class Game {
 			// hold parked beside a canister restarted the alert tone at frame
 			// rate (sage #355). The notice itself is re-armed deliberately: a
 			// refusal stands while the ship is still beside the canister.
-			const fresh = this.scoop.left === 0 || this.scoop.text !== text;
+			// **Only a refusal can repeat.** An accepted scoop takes its canister
+			// out of the world, so it cannot fire twice; gating both silenced the
+			// second of two scoops of the same good inside the notice's life,
+			// which is the opposite of "three scoops read as three events"
+			// (sage #355).
+			const fresh =
+				accepted || this.scoop.left === 0 || this.scoop.text !== text;
 			this.scoop = { text, left: SCOOP_NOTICE_S, accepted };
 			if (!fresh) continue;
 			if (accepted) this.audio.scoop();
@@ -11125,15 +11143,11 @@ class Game {
 			const alpha = Math.min(1, this.scoop.left / (SCOOP_NOTICE_S * 0.4));
 			// §4's grammar: green confirms, red refuses. A full hold drawn in the
 			// cargo green read as a successful scoop (sage #355).
-			drawScoopNotice(
-				ctx,
-				w,
-				h,
-				glassBottom,
-				this.scoop.text,
+			drawScoopNotice(ctx, w, h, glassBottom, {
+				text: this.scoop.text,
 				alpha,
-				this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
-			);
+				fill: this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
+			});
 			this.scoopRender = {
 				text: this.scoop.text,
 				alpha,

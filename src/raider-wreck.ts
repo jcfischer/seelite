@@ -123,11 +123,13 @@ export interface Canister {
 	commodity: string;
 	tonnes: number;
 	pos: Vec3;
-	/** Its velocity now, which falls linearly toward the local frame's — the
-	 *  frame as it stands each step, which the stepper is handed. It held the
-	 *  frame's velocity *at the kill* until the sixth playtest: a station's
-	 *  frame keeps turning, so a canister that froze one flew off the curve the
-	 *  pilot's assist holds them on, and never came to rest beside them. */
+	/** Its velocity now, which falls linearly toward the velocity of its own
+	 *  frame body (`frameBodyId`), as that frame stands each step. Not "the
+	 *  local frame": this repo uses that for `localFrame()`, the *observer's*,
+	 *  which is what `frameBodyId` exists to rule out. It held the frame's
+	 *  velocity *at the kill* until the sixth playtest: a station's frame keeps
+	 *  turning, so a canister that froze one flew off the curve the pilot's
+	 *  assist holds them on, and never came to rest beside them. */
 	vel: Vec3;
 	/**
 	 * The body whose frame this canister comes to rest in — the one the kill
@@ -230,8 +232,9 @@ export function dropCanisters(kill: {
  * only until it reaches rest, so the step that crosses `restsAt` is exact too
  * (sage #346: it had moved on the mean for the whole step and overshot).
  *
- * **`frameVel` is the local frame as it stands, not a snapshot taken at the
- * kill.** A canister carried its own copy of the kill's frame until the sixth
+ * **`frameVel` is the canister's own frame — the body in `frameBodyId` — as it
+ * stands: not a snapshot taken at the kill, and not the observer's
+ * `localFrame()`.** A canister carried its own copy of the kill's frame until the sixth
  * playtest reported cargo "on trajectories much longer than 10s". It was: the
  * fade finished on time, but beside a station the frame keeps turning, so the
  * frozen straight line peeled away from the curve the pilot's assist parks

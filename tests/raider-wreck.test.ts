@@ -84,6 +84,13 @@ const kill = (overrides: Partial<Parameters<typeof dropCanisters>[0]> = {}) =>
 	});
 
 describe("the cargo drop", () => {
+	/** A ship far enough away to scoop nothing, for rows about the drift. */
+	const far = { pos: v3(1e6, 0, 0), vel: v3() };
+	/** A frame that turns, as an orbit does. One copy: two rows had their own
+	 *  and a change to one would have left them measuring different orbits. */
+	const frameAt = (t: number) =>
+		v3(30 * Math.cos(t / 100), 30 * Math.sin(t / 100), 0);
+
 	test("the same kill drops the same canisters", () => {
 		expect(kill()).toEqual(kill());
 	});
@@ -163,7 +170,6 @@ describe("the cargo drop", () => {
 		const relative = (c: Canister) => length(sub(c.vel, frameVel));
 		const start = relative(c0);
 		const dt = 1 / 60;
-		const far = { pos: v3(1e6, 0, 0), vel: v3() };
 		/** The dropped canister stepped from the kill for `seconds`. */
 		const at = (seconds: number) => {
 			let c = c0;
@@ -201,10 +207,6 @@ describe("the cargo drop", () => {
 		const atKill = v3(30, 0, 0);
 		const [c0] = kill({ frameVel: atKill, vel: v3(30, 0, -2), killedAt: 500 });
 		const dt = 1 / 60;
-		const far = { pos: v3(1e6, 0, 0), vel: v3() };
-		// A frame that turns, as an orbit does.
-		const frameAt = (t: number) =>
-			v3(30 * Math.cos(t / 100), 30 * Math.sin(t / 100), 0);
 		let c = c0;
 		let last = atKill;
 		for (let t = 0; t < 15 - 1e-9; t += dt) {
@@ -229,14 +231,11 @@ describe("the cargo drop", () => {
 		// point carried by the frame and asks how far the canister is from it
 		// (sage #355).
 		const dt = 1 / 60;
-		const frameAt = (t: number) =>
-			v3(30 * Math.cos(t / 100), 30 * Math.sin(t / 100), 0);
 		const [c0] = kill({
 			frameVel: frameAt(0),
 			vel: v3(30, 0, -2),
 			killedAt: 500,
 		});
-		const far = { pos: v3(1e6, 0, 0), vel: v3() };
 		let c = c0;
 		// A mark dropped at the canister's position, carried by the frame.
 		let mark = c0.pos;
@@ -281,7 +280,6 @@ describe("the cargo drop", () => {
 		const station = v3(0, 29, 0);
 		const [near] = kill({ frameVel: station, frameBodyId: "58:station-0" });
 		const [away] = kill({ frameVel: v3(), frameBodyId: null, killedAt: 900 });
-		const far = { pos: v3(1e6, 0, 0), vel: v3() };
 		const frames: Record<string, ReturnType<typeof v3>> = {
 			"58:station-0": station,
 		};

@@ -23,11 +23,14 @@ export const SCOOP_NOTICE_S = 2.4;
  * a full hold leaves the canister in space, and a pilot who is not told that
  * watches it sit there and reads the scoop as broken.
  */
-export function scoopNotice(input: {
+/** One scoop attempt, as both lines below and the call site describe it. */
+export interface ScoopEvent {
 	commodity: string;
 	tonnes: number;
 	accepted: boolean;
-}): string {
+}
+
+export function scoopNotice(input: ScoopEvent): string {
 	const good = input.commodity.toUpperCase();
 	return input.accepted
 		? `SCOOPED  ${input.tonnes} t ${good}`
@@ -41,11 +44,7 @@ export function scoopNotice(input: {
  * module exists so the arithmetic tier holds the words, and half of them
  * staying in `main.ts` would have left the tier holding half a claim.
  */
-export function scoopExit(input: {
-	commodity: string;
-	tonnes: number;
-	accepted: boolean;
-}): string {
+export function scoopExit(input: ScoopEvent): string {
 	return input.accepted
 		? `scooped ${input.tonnes} t ${input.commodity}`
 		: "hold full: canister left in space";

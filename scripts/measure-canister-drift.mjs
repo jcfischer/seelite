@@ -35,6 +35,8 @@
  *   vs ship      — canister against the ship.
  *   range        — canister to ship.
  *   frozen range — the twin to ship: the range the old build gave.
+ *   frozen vs f  — the twin's own speed against the live frame: the old build's
+ *                  velocity, measured on the twin rather than inferred.
  *   frame drift  — how far the live frame has moved from the kill's.
  */
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
@@ -60,22 +62,11 @@ const run = await page.evaluate(() => {
 		g.render(dt);
 	};
 
-	/** `driftCanister`'s arithmetic, against a frame that never moves: the
-	 *  build this fix replaced. */
-	const stepFrozen = (c, dt, now, frameVel) => {
-		const left = c.restsAt - now;
-		const fading = Math.min(dt, Math.max(0, left));
-		const share = left > 0 ? (left - fading) / left : 0;
-		const rel = sub(c.vel, frameVel);
-		return {
-			...c,
-			pos: add(
-				add(c.pos, scale(frameVel, dt)),
-				scale(rel, ((1 + share) / 2) * fading),
-			),
-			vel: add(frameVel, scale(rel, share)),
-		};
-	};
+	/** The **shipped** fade, run against a frame that never moves: the rule this
+	 *  fix replaced. Called through the page rather than copied here, so the
+	 *  "before" column cannot drift onto arithmetic the game no longer has. */
+	const stepFrozen = (c, dt, now, frameVel) =>
+		g.canisterFade(c, dt, now, frameVel);
 
 	const nearestKm = () => {
 		let best = Infinity;
@@ -111,6 +102,10 @@ const run = await page.evaluate(() => {
 				vsShip: c ? len(sub(c.vel, g.world.ship.vel)) : null,
 				rangeKm: c ? len(sub(c.pos, g.world.ship.pos)) : null,
 				frozenKm: len(sub(twin.pos, g.world.ship.pos)),
+				// The twin's **own** speed against the live frame, so the "before"
+				// velocity is the twin's rather than a figure read off the tracked
+				// canister that only matches it once both have rested (sage #355).
+				frozenVsFrameNow: len(sub(twin.vel, liveFrame)),
 				frameDrift: len(sub(liveFrame, frame0)),
 			});
 			const until = g.world.gameTime + 5;
@@ -249,13 +244,13 @@ const table = (title, arm) => {
 	);
 	console.log(`   nearest body        ${h.nearestKm.toFixed(0)} km`);
 	console.log(
-		"      t   vs snapshot  vs frame now      vs ship      range  frozen range  frame drift",
+		"      t   vs frame now      vs ship      range  frozen range  frozen vs f  frame drift",
 	);
 	for (const r of arm.rows) {
 		const n = (v, p = 4) =>
 			v === null || v === undefined ? "      gone" : v.toFixed(p).padStart(10);
 		console.log(
-			`${String(r.t).padStart(5)}s ${n(r.vsSnapshot)} ${n(r.vsFrameNow)} ${n(r.vsShip)} ${n(r.rangeKm, 1)} ${n(r.frozenKm, 1)}   ${n(r.frameDrift)}`,
+			`${String(r.t).padStart(5)}s ${n(r.vsFrameNow)} ${n(r.vsShip)} ${n(r.rangeKm, 1)} ${n(r.frozenKm, 1)} ${n(r.frozenVsFrameNow)}  ${n(r.frameDrift)}`,
 		);
 	}
 };

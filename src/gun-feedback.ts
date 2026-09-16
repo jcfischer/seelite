@@ -113,16 +113,14 @@ export function drawScoopNotice(
 	w: number,
 	h: number,
 	glassBottom: number,
-	text: string,
-	alpha: number,
-	fill: string,
+	notice: { text: string; alpha: number; fill: string },
 ) {
 	ctx.save();
-	ctx.globalAlpha = alpha;
-	ctx.fillStyle = fill;
+	ctx.globalAlpha = notice.alpha;
+	ctx.fillStyle = notice.fill;
 	ctx.font = "16px ui-monospace, Menlo, monospace";
 	ctx.textAlign = "center";
-	ctx.fillText(text, w / 2, h * glassBottom - 28);
+	ctx.fillText(notice.text, w / 2, h * glassBottom - 28);
 	ctx.restore();
 }
 /** The raider's beam, warm against the player's cyan. */

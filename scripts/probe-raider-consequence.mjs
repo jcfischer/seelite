@@ -422,14 +422,23 @@ const scoop = await page.evaluate(() => {
 			if (data[i + 3] > 40 && (data[i] > 150 || data[i + 1] > 150)) lit++;
 		return lit;
 	};
+	/** A reading, and the same reading with the notice suppressed. Both view
+	 *  arms below need the pair, and writing the save/restore out twice is how
+	 *  one of them ends up subtly different (sage #355). */
+	const againstControl = (measure) => {
+		const shown = measure();
+		const kept = g.scoop.left;
+		g.scoop.left = 0;
+		g.render(dt);
+		const control = measure();
+		g.scoop.left = kept;
+		g.render(dt);
+		return { shown, control };
+	};
 	const noticeAt = g.scoopRender ? { ...g.scoopRender } : null;
-	const lit = band(0.62);
-	const kept = g.scoop.left;
-	g.scoop.left = 0;
-	g.render(dt);
-	const control = band(0.62);
-	g.scoop.left = kept;
-	g.render(dt);
+	const cockpit = againstControl(() => band(0.62));
+	const lit = cockpit.shown;
+	const control = cockpit.control;
 
 	// **Every view, not only the one this probe sits in** (sage #355). The
 	// cockpit band cannot see the chase draw, which sits further down the glass,
@@ -437,13 +446,12 @@ const scoop = await page.evaluate(() => {
 	const wasView = g.view;
 	g.view = "chase";
 	g.render(dt);
-	const chase = { render: g.scoopRender ? { ...g.scoopRender } : null };
-	chase.lit = band(1);
-	const keptChase = g.scoop.left;
-	g.scoop.left = 0;
-	g.render(dt);
-	chase.control = band(1);
-	g.scoop.left = keptChase;
+	const chaseCounts = againstControl(() => band(1));
+	const chase = {
+		render: g.scoopRender ? { ...g.scoopRender } : null,
+		lit: chaseCounts.shown,
+		control: chaseCounts.control,
+	};
 	g.view = wasView;
 	g.render(dt);
 	// And it clears: a notice that never goes away is not an event.
@@ -532,7 +540,12 @@ const refusal = await page.evaluate(() => {
 	const tone = () => {
 		const overlay = document.getElementById("overlay");
 		const c2d = overlay.getContext("2d", { willReadFrequently: true });
-		const y = Math.max(0, Math.round(overlay.height * 0.62) - 60);
+		// The same clamp the other readback has: this copy had lost it, which is
+		// the drift sage's dedupe finding was pointing at.
+		const y = Math.max(
+			0,
+			Math.min(overlay.height - 90, Math.round(overlay.height * 0.62) - 60),
+		);
 		const data = c2d.getImageData(0, y, overlay.width, 90).data;
 		let red = 0;
 		let green = 0;
@@ -580,6 +593,101 @@ check(
 	"the scooped canister leaves the selection list and takes the lock with it",
 	!afterScoop.listed && afterScoop.targetId === null,
 	JSON.stringify(afterScoop),
+);
+
+// ---------------------------------------------------------------------------
+// A canister keeps its own body's frame after the pilot leaves it.
+//
+// **The case every other check agrees on** (sage #355). The headless row hands
+// the stepper its own frame table, and the near-body measurement parks the ship
+// beside the station — where `localFrame()` *equals* the station's frame, so a
+// build that resolved the observer's frame for every canister passes both. The
+// two answers only separate once the ship is past `NEAR_FAR_KM`, where the
+// observer's frame becomes the star's and a borrowed frame would drop the
+// canister to rest in star coordinates.
+// ---------------------------------------------------------------------------
+const leaves = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+	const scale = (a, k) => ({ x: a.x * k, y: a.y * k, z: a.z * k });
+	const len = (a) => Math.hypot(a.x, a.y, a.z);
+	g.resetFlightToStart();
+	for (let i = 0; i < 20; i++) g.step(dt);
+	const station =
+		g.world.system.bodies.find((b) => b.kind === "station") ??
+		g.world.system.bodies.find((b) => b.kind === "planet");
+	// The body's velocity from two steps, as the sim itself has it.
+	const was = { ...station.pos };
+	const t0 = g.world.gameTime;
+	g.step(dt);
+	const moved = g.world.system.byId.get(station.id) ?? station;
+	const stationVel = scale(sub(moved.pos, was), 1 / (g.world.gameTime - t0));
+
+	// Park beside it and leave a canister already at rest in its frame.
+	g.world.ship.pos = { x: moved.pos.x + 200, y: moved.pos.y, z: moved.pos.z };
+	g.world.ship.vel = { ...stationVel };
+	g.throttle = 0;
+	for (let i = 0; i < 10; i++) g.step(dt);
+	const now = g.world.gameTime;
+	g.canisters = [
+		{
+			id: "leaves#0",
+			commodity: "Food",
+			tonnes: 1,
+			pos: {
+				x: g.world.ship.pos.x + 1,
+				y: g.world.ship.pos.y,
+				z: g.world.ship.pos.z,
+			},
+			vel: { ...g.localFrame() },
+			frameBodyId: station.id,
+			restsAt: now - 1,
+			expiresAt: now + 300,
+		},
+	];
+	// The game's own analytic frame for that body, which is what the canister is
+	// brought to rest in. `stationVel` above is a finite difference over one
+	// step and is only good to a few m/s, so it sizes the arm rather than
+	// bounding it.
+	const frameBeside = { ...g.localFrame() };
+	for (let i = 0; i < 10; i++) g.step(dt);
+	const beside = len(sub(g.canisters[0].vel, frameBeside));
+
+	// **Now leave.** Far enough that the observer's frame is the star's.
+	g.world.ship.pos = {
+		x: moved.pos.x + 5e5,
+		y: moved.pos.y,
+		z: moved.pos.z,
+	};
+	g.world.ship.vel = { x: 0, y: 0, z: 0 };
+	for (let i = 0; i < 10; i++) g.step(dt);
+	return {
+		stationKms: len(stationVel),
+		observerFrameKms: len(g.localFrame()),
+		beside,
+		away: len(sub(g.canisters[0].vel, frameBeside)),
+		// The figure that separates the two answers: still carried by the
+		// station, or dropped to rest in star coordinates.
+		speedKms: len(g.canisters[0].vel),
+		left: g.canisters.length,
+	};
+});
+check(
+	"a canister keeps its own body's frame after the pilot leaves it",
+	// The arm is only meaningful if the two frames really did separate: a moving
+	// station, and an observer whose frame is now the star's.
+	leaves.stationKms > 20 &&
+		leaves.observerFrameKms < 1e-9 &&
+		leaves.left === 1 &&
+		// Still in the station's frame to within a tenth of a km/s, and still
+		// carried at its speed. A borrowed observer frame would read `away` at
+		// the full 29 km/s and `speedKms` at nothing: the two answers are three
+		// hundred times apart, so the bound does not need to be tight.
+		leaves.beside < 0.1 &&
+		leaves.away < 0.1 &&
+		leaves.speedKms > 20,
+	JSON.stringify(leaves),
 );
 
 // ---------------------------------------------------------------------------
