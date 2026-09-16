@@ -386,9 +386,10 @@ import {
 } from "./ship-mesh";
 import {
 	CARGO_CONTACT_COLOUR,
+	CARGO_CONTACT_CSS,
 	type DisplayContact,
-	closingLabel,
 	isDisplayContact,
+	relativeLabel,
 	targetDesignation,
 } from "./display-contact";
 import {
@@ -6270,23 +6271,21 @@ class Game {
 	}
 
 	/**
-	 * How fast the range to the selected target is shrinking, in km/s, or `null`
-	 * with nothing selected. Positive closes.
+	 * The speed between the ship and the selected target, in km/s, or `null`
+	 * with nothing selected.
 	 *
-	 * Public because it is the figure a scoop is flown on (#324): the gate is a
-	 * relative speed, and a pilot with only a range cannot see whether they are
-	 * still overhauling the thing they are creeping up on.
+	 * Public because it is the figure a scoop is flown on (#324), and it is
+	 * **the same quantity `scoops` tests** — `length(sub(canister.vel,
+	 * ship.vel))` against 0.25 km/s. It returned the component along the line
+	 * instead for one round, which goes to zero at closest approach whatever
+	 * the crossing speed, so the panel read 0.00 exactly where the gate was
+	 * failing (sage #353). Not `closingKms`: that name is taken on `Game` by
+	 * the approach pose.
 	 */
-	targetClosingKms(): number | null {
+	targetRelativeKms(): number | null {
 		const target = this.targetBody();
 		if (!target) return null;
-		const away = sub(target.pos, this.world.ship.pos);
-		const km = length(away);
-		if (km === 0) return 0;
-		return dot(
-			sub(this.world.ship.vel, this.targetVelocity()),
-			scale(away, 1 / km),
-		);
+		return length(sub(this.world.ship.vel, this.targetVelocity()));
 	}
 
 	/**
@@ -7550,6 +7549,12 @@ class Game {
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
 		this.canisters = [];
+		// And their contacts, now, rather than on the next step: `performJump`
+		// refreshes the scanner before any step runs, so the arrival frame would
+		// otherwise carry the old system's canister blips — and a reset while
+		// docked returns through `stepDockPhase` before the sync, leaving them
+		// selectable until launch (sage #353).
+		this.syncCargoContacts();
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -9747,8 +9752,8 @@ class Game {
 			targetId: target?.id ?? null,
 			targetName: target?.name ?? null,
 			target: target
-				? `${target.name} · ${range(targetKm)} · ${closingLabel(
-						this.targetClosingKms(),
+				? `${target.name} · ${range(targetKm)} · ${relativeLabel(
+						this.targetRelativeKms(),
 					)}`
 				: "NO TARGET SELECTED",
 			targetBearingDeg: target
@@ -10983,8 +10988,8 @@ class Game {
 			} else
 				cargoMarks.push({ x: at.x, y: at.y, goods: [canister.commodity], km });
 		}
-		ctx.strokeStyle = "rgba(150, 240, 170, 0.9)";
-		ctx.fillStyle = "rgba(150, 240, 170, 0.9)";
+		ctx.strokeStyle = CARGO_CONTACT_CSS;
+		ctx.fillStyle = CARGO_CONTACT_CSS;
 		ctx.lineWidth = 1.5;
 		ctx.font = "11px ui-monospace, Menlo, monospace";
 		for (const mark of cargoMarks) {

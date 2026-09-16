@@ -20,15 +20,26 @@ export function isDisplayContact(body: Body): body is DisplayContact {
 
 /** The green a canister is drawn and listed in, as one number (#324). */
 export const CARGO_CONTACT_COLOUR = 0x96f0aa;
+/** The same green for the 2D overlay, derived rather than written out again:
+ *  the diamond and the contact must not be able to drift apart (sage #353). */
+export const CARGO_CONTACT_CSS = `rgba(${(CARGO_CONTACT_COLOUR >> 16) & 255}, ${
+	(CARGO_CONTACT_COLOUR >> 8) & 255
+}, ${CARGO_CONTACT_COLOUR & 255}, 0.9)`;
 
 /**
- * The Target panel's closing figure. Positive closes, and the words carry the
- * sign because a bare minus on a moving number is easy to miss at the moment
- * it matters — the last hundred metres of a scoop, where the gate is 0.25 km/s.
+ * The Target panel's relative-speed figure: the size of the velocity between
+ * ship and target, which is the quantity `scoops` gates on (0.25 km/s).
+ *
+ * **A magnitude, with no direction word beside it** (sage #353). This printed
+ * the speed *along the line* to the target under a `CLO`/`OPN` label, which is
+ * a different number: at closest approach the speed along the line is zero by
+ * definition, so a canister crossing at any speed read `CLO 0.00` and a pilot
+ * who trusted it failed the scoop with no warning. The range beside it already
+ * shows whether the gap is closing.
  */
-export function closingLabel(kms: number | null): string {
+export function relativeLabel(kms: number | null): string {
 	if (kms === null) return "";
-	return `${kms >= 0 ? "CLO" : "OPN"} ${Math.abs(kms).toFixed(2)} km/s`;
+	return `REL ${kms.toFixed(2)} km/s`;
 }
 
 /** The right cockpit Target panel's designation, independent of its name. */

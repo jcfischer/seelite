@@ -127,9 +127,11 @@ Traffic actor scoops yet.
 **A canister is a selectable contact** of its own kind, `cargo`: one per live
 canister, registered while it exists and taken back when it is scooped or
 expires, which also drops a lock on it. So it carries a scanner blip, a target
-lock, and the Target panel's range and **closing speed** — positive closes,
-printed `CLO`/`OPN` because a bare minus is easy to miss in the last hundred
-metres. The fifth playtest reported the cargo disappearing before it could be
+lock, and the Target panel's range and **relative speed** (`REL`) — the same
+closing speed the scoop gate checks, `length(sub(canister.vel, ship.vel))`
+against 0.25 km/s, rather than the speed along the line to it, which is zero at
+closest approach however fast the canister is crossing.
+The fifth playtest reported the cargo disappearing before it could be
 salvaged; the principal's ruling left the five minutes alone and made the
 canister targetable, because the scoop gate is a *relative speed* and a marker
 with a range label shows neither the speed nor whether it is falling. An

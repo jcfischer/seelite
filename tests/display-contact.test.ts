@@ -3,9 +3,18 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
 import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
-import { type DisplayContact, isDisplayContact } from "../src/display-contact";
-import { CANISTER_RADIUS_KM } from "../src/raider-wreck";
-import { dot, length, scale, sub, v3 } from "../src/vec3";
+import {
+	CARGO_CONTACT_COLOUR,
+	type DisplayContact,
+	isDisplayContact,
+	relativeLabel,
+} from "../src/display-contact";
+import {
+	CANISTER_RADIUS_KM,
+	CANISTER_SCOOP_SPEED_KMS,
+	scoops,
+} from "../src/raider-wreck";
+import { length, sub, v3 } from "../src/vec3";
 import { repoPath } from "./lib/source-scan";
 
 // Execute the actual Game methods without constructing WebGL or copying their
@@ -197,7 +206,7 @@ test("a live canister is a selectable cargo contact, and losing it drops the loc
 		Object.create(
 			methods(["syncCargoContacts", "registerContact", "unregisterContact"], {
 				CANISTER_RADIUS_KM,
-				CARGO_CONTACT_COLOUR: 0x96f0aa,
+				CARGO_CONTACT_COLOUR,
 			}),
 		),
 		{
@@ -241,21 +250,18 @@ test("a live canister is a selectable cargo contact, and losing it drops the loc
 	expect(subject.selectableCache).toBeNull();
 });
 
-test("every body kind has a place in the selection order, cargo included", () => {
+test("the body-kind union carries cargo, which the selection order is typed against", () => {
 	const declared = readFileSync(repoPath("src/sim.ts"), "utf8").match(
 		/export type BodyKind =([^;]+);/,
 	);
-	const kinds = (declared?.[1].match(/"[a-z]+"/g) ?? []).map((quoted) =>
-		quoted.slice(1, -1),
-	);
-	expect(kinds).toContain("cargo");
-	// `order[a.kind]` is typed, so a missing key is a build error rather than a
-	// comparator returning NaN — this row says which kinds that covers.
-	const selectable = method("selectable");
-	for (const kind of kinds) expect(selectable).toContain(`${kind}: `);
+	// Only the union membership: `order[a.kind]` in `selectable` is indexed by
+	// the whole `BodyKind`, so a kind with no place in that map is a build
+	// error, and a row walking the source for each kind finds nothing tsc does
+	// not already catch while breaking on a reformat (sage #353).
+	expect(declared?.[1]).toContain('"cargo"');
 });
 
-test("the selected target carries a closing speed, positive while the range shrinks", () => {
+test("the selected target reads the speed the scoop gate checks, not the rate along the line", () => {
 	const world = makeWorld(42);
 	const contact: DisplayContact = {
 		id: "cargo-a",
@@ -274,23 +280,76 @@ test("the selected target carries a closing speed, positive while the range shri
 		Object.create(
 			methods(
 				[
-					"targetClosingKms",
+					"targetRelativeKms",
 					"targetBody",
 					"bodyFor",
 					"velocityOf",
 					"targetVelocity",
 				],
-				{ bodyVelocity, isDisplayContact, v3, dot, length, scale, sub },
+				{ bodyVelocity, isDisplayContact, v3, length, sub },
 			),
 		),
 		{ world, targetId: contact.id, selectable: () => [contact] },
 	);
-	// Overhauling it by 2 km/s closes; drifting slower than it opens.
-	expect(subject.targetClosingKms()).toBeCloseTo(2, 10);
-	world.ship.vel = v3(-1, 0, 0);
-	expect(subject.targetClosingKms()).toBeCloseTo(-2, 10);
+	// Overhauling it along the line: both quantities agree here, which is why
+	// the wrong one survived a round.
+	expect(subject.targetRelativeKms()).toBeCloseTo(2, 10);
+
+	// **The case that tells them apart** (sage #353): flying across the line to
+	// the canister. The rate along the line is zero whatever the crossing speed,
+	// and a panel showing it read `0.00` in the last hundred metres — exactly
+	// where the gate was refusing.
+	contact.velocity = v3();
+	world.ship.vel = v3(0, 2, 0);
+	expect(subject.targetRelativeKms()).toBeCloseTo(2, 10);
+
+	// And it is the gate's own quantity, not merely a magnitude: the readout
+	// and `scoops` turn over at the same speed.
+	const canister = {
+		id: "cargo-a",
+		commodity: "food",
+		tonnes: 1,
+		pos: v3(),
+		vel: v3(),
+		restVel: v3(),
+		restsAt: 0,
+		expiresAt: 0,
+	};
+	world.ship.pos = v3();
+	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS + 0.01, 0);
+	expect(subject.targetRelativeKms()).toBeCloseTo(
+		CANISTER_SCOOP_SPEED_KMS + 0.01,
+		10,
+	);
+	expect(scoops(canister, world.ship)).toBe(false);
+	world.ship.vel = v3(0, CANISTER_SCOOP_SPEED_KMS - 0.01, 0);
+	expect(subject.targetRelativeKms()).toBeCloseTo(
+		CANISTER_SCOOP_SPEED_KMS - 0.01,
+		10,
+	);
+	expect(scoops(canister, world.ship)).toBe(true);
+
 	subject.targetId = null;
-	expect(subject.targetClosingKms()).toBeNull();
+	expect(subject.targetRelativeKms()).toBeNull();
+});
+
+test("a jump or a reset takes the cargo contacts with the canisters", () => {
+	const clear = method("clearFlightSession");
+	const dropped = clear.indexOf("this.canisters = [];");
+	const synced = clear.indexOf("this.syncCargoContacts();");
+	expect(dropped).toBeGreaterThanOrEqual(0);
+	// After the list is emptied, so the sync sees no canisters and unregisters
+	// every contact — and here rather than on the next step, because
+	// `performJump` refreshes the scanner before any step runs, and a reset
+	// while docked returns through `stepDockPhase` before the sync would run
+	// (sage #353).
+	expect(synced).toBeGreaterThan(dropped);
+});
+
+test("the relative-speed label is a magnitude with no direction word", () => {
+	expect(relativeLabel(0.44)).toBe("REL 0.44 km/s");
+	expect(relativeLabel(0)).toBe("REL 0.00 km/s");
+	expect(relativeLabel(null)).toBe("");
 });
 
 test("cruise snapshots a moving contact before combat integrates the frame", () => {

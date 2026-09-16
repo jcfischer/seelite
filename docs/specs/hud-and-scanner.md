@@ -76,12 +76,14 @@ it is never inferred from the display name. Unclassified review hulls show
 classification changes and leaves the separate ETA line in place (principal
 request during #198).
 
-The name/range line ends with the **closing speed** on the selected target,
-`CLO` while the range falls and `OPN` while it grows. The words carry the sign
-because a bare minus on a moving number is easy to miss at the moment it
-matters, and a range alone cannot say whether it is still being overhauled —
-which is what #324's fifth playtest needed to scoop a canister, where the gate
-is a relative speed of 0.25 km/s (`combat-model.md` §4.1).
+The name/range line ends with the **relative speed** on the selected target,
+`REL <n> km/s`: the size of the velocity between ship and target, which is the
+closing speed in `CONTEXT.md`'s sense and the quantity #324's scoop gate checks
+(`combat-model.md` §4.1). It is a magnitude with no direction word, and the
+range beside it already shows whether the gap is closing. The rejected form
+printed the component along the line to the target, which is zero at closest
+approach whatever the crossing speed — so it read `0.00` in exactly the place a
+pilot needed it (sage #353).
 
 The on-glass director retains the selected target after Navigation chooses it.
 During target acquisition, an amber **target-circle arrow** rotates around the

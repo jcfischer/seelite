@@ -221,7 +221,7 @@ check(
 // ---------------------------------------------------------------------------
 // A canister is a contact, not only a diamond (#324, the principal's ruling
 // after the fifth playtest): selectable, on the scanner, and carrying range and
-// closing speed on the glass — the figures a scoop is flown on.
+// the scoop gate's own speed on the glass — the figures a scoop is flown on.
 // ---------------------------------------------------------------------------
 const lock = await page.evaluate(() => {
 	const g = window.__seelite;
@@ -232,26 +232,87 @@ const lock = await page.evaluate(() => {
 	g.setHeadLook("forward");
 	g.step(dt);
 	g.render(dt);
+	// The canister object is replaced every step (`driftCanister` returns a new
+	// one), so a captured copy goes stale — read it back by id each time.
+	const live = () => g.canisters.find((x) => x.id === c.id) ?? c;
+	// **`updateCockpit` and not `render`.** The panel string is composed on the
+	// step path, so a render alone leaves the previous frame's text in the DOM —
+	// which is what this row read first, the same figure in both arms.
+	const panelOf = () => {
+		g.updateCockpit();
+		return document.querySelector("[data-live-left-copy]")?.textContent ?? "";
+	};
+	const relOf = () => {
+		const v = g.world.ship.vel;
+		const w = live().vel;
+		return Math.hypot(v.x - w.x, v.y - w.y, v.z - w.z);
+	};
 	const target = g.targetBody();
+	const held = { panel: panelOf(), rel: relOf(), reads: g.targetRelativeKms() };
+
+	// **The arm that separates the gate's speed from the rate along the line**
+	// (sage #353): fly at 1 km/s straight across the line to the canister. The
+	// rate along the line is zero there, so the rejected readout showed `0.00`
+	// while the gate was refusing at 0.25. Never stepped: the assist would
+	// rewrite the velocity this arm injects.
+	const to = {
+		x: live().pos.x - g.world.ship.pos.x,
+		y: live().pos.y - g.world.ship.pos.y,
+		z: live().pos.z - g.world.ship.pos.z,
+	};
+	const km = Math.hypot(to.x, to.y, to.z);
+	const u = { x: to.x / km, y: to.y / km, z: to.z / km };
+	const axis =
+		Math.abs(u.x) < 0.5 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+	const across = {
+		x: u.y * axis.z - u.z * axis.y,
+		y: u.z * axis.x - u.x * axis.z,
+		z: u.x * axis.y - u.y * axis.x,
+	};
+	const n = Math.hypot(across.x, across.y, across.z);
+	const keep = { ...g.world.ship.vel };
+	const at = live().vel;
+	g.world.ship.vel = {
+		x: at.x + across.x / n,
+		y: at.y + across.y / n,
+		z: at.z + across.z / n,
+	};
+	const crossing = {
+		panel: panelOf(),
+		reads: g.targetRelativeKms(),
+		alongLine:
+			(g.world.ship.vel.x - at.x) * u.x +
+			(g.world.ship.vel.y - at.y) * u.y +
+			(g.world.ship.vel.z - at.z) * u.z,
+	};
+	g.world.ship.vel = keep;
+	g.render(dt);
 	return {
 		id: c.id,
 		listed,
 		kind: target?.kind ?? null,
 		rangeKm: g.targetRange(),
-		closingKms: g.targetClosingKms(),
 		onScanner: g.scannerContacts.some((s) => s.id === c.id),
-		panel: document.querySelector("[data-live-left-copy]")?.textContent ?? "",
+		held,
+		crossing,
 	};
 });
+const relOnGlass = (panel) => Number(panel.match(/REL ([\d.]+) km\/s/)?.[1]);
 check(
-	"a canister can be selected, shows on the scanner, and reads range and closing speed on the glass",
+	"a canister can be selected, shows on the scanner, and reads the gate's own speed on the glass",
 	lock.listed &&
 		lock.kind === "cargo" &&
 		lock.onScanner &&
 		lock.rangeKm > 0 &&
-		Number.isFinite(lock.closingKms) &&
-		/(CLO|OPN) /.test(lock.panel),
+		Math.abs(relOnGlass(lock.held.panel) - lock.held.rel) <= 0.01,
 	JSON.stringify(lock),
+);
+check(
+	"crossing the line to a canister reads the crossing speed, not the zero along it",
+	Math.abs(lock.crossing.alongLine) <= 1e-6 &&
+		Math.abs(lock.crossing.reads - 1) <= 1e-6 &&
+		Math.abs(relOnGlass(lock.crossing.panel) - 1) <= 0.01,
+	JSON.stringify(lock.crossing),
 );
 
 // **The scoop is flown, not placed.** This row set the ship onto the canister
