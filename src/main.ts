@@ -5283,14 +5283,13 @@ class Game {
 			? `${target.name}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
-		// **REL belongs on this instrument and not only in the console** (sage
-		// #353, a blocker). The console's copy lives in an `.lc-panel`, which is
-		// `display: none` unless the pilot turns their head to it — so a scoop
-		// flown looking forward had no readout at all, while the check that was
-		// supposed to prove otherwise read the hidden element's text. This
-		// instrument is in front of the pilot on every frame. It adds no repaint
-		// class: the figure moves with the ship's speed, which is already in the
-		// key below.
+		// REL rides this instrument and not only the left console, which is
+		// hidden unless the pilot turns their head (`hud-and-scanner.md` §3).
+		// **It does add repaints**: it moves with the ship's *or* the target's
+		// velocity, so a canister slowing to rest changes it while `speed`
+		// stands still. `targetSecondary` is in the key below, which is what
+		// keeps the canvas honest — the note under that key is about a figure
+		// no painted pixel depended on, which is not this one.
 		const targetSecondary = `ETA ${eta}${relativeLabel(
 			this.targetRelativeKms(),
 			"  ",
@@ -6286,13 +6285,10 @@ class Game {
 	 * The speed between the ship and the selected target, in km/s, or `null`
 	 * with nothing selected.
 	 *
-	 * Public because it is the figure a scoop is flown on (#324), and it is
-	 * **the same quantity `scoops` tests** — `length(sub(canister.vel,
-	 * ship.vel))` against 0.25 km/s. It returned the component along the line
-	 * instead for one round, which goes to zero at closest approach whatever
-	 * the crossing speed, so the panel read 0.00 exactly where the gate was
-	 * failing (sage #353). Not `closingKms`: that name is taken on `Game` by
-	 * the approach pose.
+	 * The same quantity `scoops` tests; `hud-and-scanner.md` §3 owns why it is
+	 * this and not a range rate. Public because it is the figure a scoop is
+	 * flown on (#324). Not `closingKms`: that name is taken on `Game` by the
+	 * approach pose.
 	 */
 	targetRelativeKms(): number | null {
 		const target = this.targetBody();
@@ -6301,14 +6297,13 @@ class Game {
 	}
 
 	/**
-	 * Whether this canister is drawn by the selected-target marker rather than
-	 * as one of the clustered green diamonds.
+	 * Whether this body is the selected target.
 	 *
-	 * One predicate read by both loops, because they carry complementary
-	 * conditions: if they stop being exact inverses a canister is drawn twice or
-	 * not at all (sage #353).
+	 * One predicate, read by both canister draw loops, because they carry
+	 * complementary conditions: if they stop being exact inverses a canister is
+	 * drawn twice or not at all (sage #353).
 	 */
-	private cargoDrawnAsTarget(id: string): boolean {
+	private isSelectedTarget(id: string): boolean {
 		return id === this.targetId;
 	}
 
@@ -10998,7 +10993,7 @@ class Game {
 			// The selected canister is drawn by the marker loop below, with the
 			// ring and the label every selected target gets. Drawing it here too
 			// would put a diamond inside that ring.
-			if (this.cargoDrawnAsTarget(canister.id)) continue;
+			if (this.isSelectedTarget(canister.id)) continue;
 			const dir = directionTo(camPos, canister.pos);
 			const at = dir && place(dir);
 			if (!at?.on) continue;
@@ -11228,11 +11223,11 @@ class Game {
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
-			const selected = body.id === this.targetId;
+			const selected = this.isSelectedTarget(body.id);
 			// An unselected canister keeps the clustered green diamond above: a
 			// kill drops them at one point, and brackets on each would be the
 			// smear that clustering was added to stop.
-			if (body.kind === "cargo" && !this.cargoDrawnAsTarget(body.id)) continue;
+			if (body.kind === "cargo" && !selected) continue;
 			const at = place(dir);
 			if (at?.on) {
 				const r = selected ? 14 : 7;

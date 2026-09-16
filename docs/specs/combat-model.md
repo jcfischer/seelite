@@ -128,10 +128,9 @@ Traffic actor scoops yet.
 canister, registered while it exists and taken back when it is scooped or
 expires, which also drops a lock on it. So it carries a scanner blip, a target
 lock, and the cockpit Target instrument's range and **relative speed** (`REL`) —
-the speed the scoop gate checks, `length(sub(canister.vel, ship.vel))` against
-0.25 km/s, rather than the speed along the line to it, which is zero at closest
-approach however fast the canister is crossing. It is on that instrument and not
-only in the left console, which is hidden unless the pilot turns their head.
+the speed this section's gate checks, `length(sub(canister.vel, ship.vel))`
+against 0.25 km/s. `hud-and-scanner.md` §3 owns that readout, where it sits and
+the two forms rejected on the way to it.
 The fifth playtest reported the cargo disappearing before it could be
 salvaged; the principal's ruling left the five minutes alone and made the
 canister targetable, because the scoop gate is a *relative speed* and a marker

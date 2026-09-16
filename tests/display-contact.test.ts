@@ -334,16 +334,46 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 });
 
 test("a jump or a reset takes the cargo contacts with the canisters", () => {
-	const clear = method("clearFlightSession");
-	const dropped = clear.indexOf("this.canisters = [];");
-	const synced = clear.indexOf("this.syncCargoContacts();");
-	expect(dropped).toBeGreaterThanOrEqual(0);
-	// After the list is emptied, so the sync sees no canisters and unregisters
-	// every contact — and here rather than on the next step, because
-	// `performJump` refreshes the scanner before any step runs, and a reset
-	// while docked returns through `stepDockPhase` before the sync would run
-	// (sage #353).
-	expect(synced).toBeGreaterThan(dropped);
+	const subject = Object.assign(
+		Object.create(
+			methods(
+				[
+					"clearFlightSession",
+					"syncCargoContacts",
+					"registerContact",
+					"unregisterContact",
+				],
+				// `QUIET_GUN` is assigned by the teardown and asserted by nothing
+				// here; this row is about what stays registered.
+				{ CANISTER_RADIUS_KM, CARGO_CONTACT_COLOUR, QUIET_GUN: null },
+			),
+		),
+		{
+			canisters: [
+				{ id: "cargo-a", commodity: "food", pos: v3(1, 0, 0), vel: v3() },
+			],
+			cargoContacts: new Map(),
+			contacts: [] as DisplayContact[],
+			selectableCache: null,
+			targetId: null as string | null,
+		},
+	);
+	subject.syncCargoContacts();
+	subject.targetId = "cargo-a";
+	subject.selectableCache = ["stale"];
+	expect(subject.contacts).toHaveLength(1);
+
+	// **Run the teardown, rather than reading its source order** (sage #353).
+	// The claim is about what a jump or a reset leaves registered, and an
+	// ordering assertion never executes it: `performJump` refreshes the scanner
+	// before any step runs, and a reset while docked returns through
+	// `stepDockPhase` before a step could sync.
+	subject.clearFlightSession();
+	expect(subject.canisters).toEqual([]);
+	expect(subject.contacts).toEqual([]);
+	expect(subject.cargoContacts.size).toBe(0);
+	expect(subject.targetId).toBeNull();
+	expect(subject.selectableCache).toBeNull();
 });
 
 test("the relative-speed label is a magnitude with no direction word", () => {

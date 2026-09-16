@@ -19,15 +19,9 @@ export function isDisplayContact(body: Body): body is DisplayContact {
 }
 
 /**
- * The Target panel's relative-speed figure: the size of the velocity between
- * ship and target, which is the quantity `scoops` gates on (0.25 km/s).
- *
- * **A magnitude, with no direction word beside it** (sage #353). This printed
- * the speed *along the line* to the target under a `CLO`/`OPN` label, which is
- * a different number: at closest approach the speed along the line is zero by
- * definition, so a canister crossing at any speed read `CLO 0.00` and a pilot
- * who trusted it failed the scoop with no warning. The range beside it already
- * shows whether the gap is closing.
+ * The relative-speed figure: a magnitude, with no direction word beside it.
+ * `hud-and-scanner.md` §3 owns the quantity and the two forms rejected on the
+ * way to it.
  */
 export function relativeLabel(kms: number | null, separator = " · "): string {
 	if (kms === null) return "";
