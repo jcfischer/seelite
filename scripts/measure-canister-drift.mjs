@@ -4,26 +4,38 @@
  * trajectories much longer than 10s").
  *
  * `CANISTER_FADE_S` is 10 and `driftCanister` decays the canister's velocity
- * linearly to the local frame's. **This instrument is what changed that frame
- * from a snapshot taken at the kill into the frame as it stands.** A kill in
- * deep space rests in the star frame, which is zero and never moves; a kill on
- * a leg rests in a *body's* frame, and that body keeps orbiting, so a frozen
- * copy peels away from the frame the player's assist parks them in. Run it
- * against a build with the snapshot restored and the `vs frame now` column
- * climbs without bound; here it must go to zero and stay.
+ * linearly to its frame's. **This instrument is what changed that frame from a
+ * snapshot taken at the kill into the frame as it stands, resolved per
+ * canister.** A kill in deep space rests in the star frame, which is zero and
+ * never moves; a kill on a leg rests in a *body's* frame, and that body keeps
+ * orbiting, so a frozen copy peels away from the frame the pilot's assist parks
+ * them in.
  *
- * Two scenarios, because the first run of this instrument only measured the
+ * **The "before" is measured here, not remembered.** An earlier version said to
+ * run this against a build with the snapshot restored, which it cannot do — a
+ * canister no longer carries one, and the old code would throw on it. Instead
+ * every row carries a **frozen twin**: the same canister integrated in this
+ * script with the same linear fade against a frame fixed at the kill, which is
+ * exactly what the old build did. The twin's range is the "before" column and
+ * the real canister's is the "after", from one run of the shipped game.
+ *
+ * Two scenarios, because the first version of this instrument only measured the
  * first and found nothing:
- *   - `deep space`: the kill taken far from any body (star frame).
- *   - `near a body`: the kill taken at the start position, beside the station.
+ *   - `deep space`: a flown kill, far from any body (star frame).
+ *   - `near a body`: a canister placed beside the station and run through the
+ *     shipped step. Synthesized, because a forced raider only reaches the duel
+ *     phase on a cruise leg and cruising carries the ship 1.5e8 km out.
  *
  * Columns, with the ship parked at throttle 0 so its own motion cannot be
  * mistaken for the canister's:
- *   vs snapshot  — canister against `restVel`; this is what the fade promises,
- *                  and it must reach 0 at 10 s.
- *   vs frame now — canister against `localFrame()` as it stands; this is what a
- *                  parked pilot actually sees, and the report is about this.
+ *   vs snapshot  — canister against the local frame this instrument copied at
+ *                  the kill. Climbs once the fix is in, and should.
+ *   vs frame now — canister against `localFrame()` as it stands. This is what a
+ *                  parked pilot sees, and the report is about this column.
  *   vs ship      — canister against the ship.
+ *   range        — canister to ship.
+ *   frozen range — the twin to ship: the range the old build gave.
+ *   frame drift  — how far the live frame has moved from the kill's.
  */
 import { bootedGame, guardedOrigin, launchChromium } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -40,29 +52,87 @@ const run = await page.evaluate(() => {
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
 	const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+	const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+	const scale = (a, k) => ({ x: a.x * k, y: a.y * k, z: a.z * k });
 	const len = (a) => Math.hypot(a.x, a.y, a.z);
 	const frame = () => {
 		g.step(dt);
 		g.render(dt);
 	};
 
-	/**
-	 * A canister placed beside the start station, built the way `dropCanisters`
-	 * builds one: at rest in the local frame as it stands now, plus the eject
-	 * speed. **Synthesized, not flown** — a forced raider only reaches the duel
-	 * phase on a cruise leg, and cruising carries the ship 1.5e8 km out, so no
-	 * duel this instrument can stage happens near a body. What runs it is the
-	 * shipped step: `stepCargoCanisters` → `driftCanister`.
-	 */
+	/** `driftCanister`'s arithmetic, against a frame that never moves: the
+	 *  build this fix replaced. */
+	const stepFrozen = (c, dt, now, frameVel) => {
+		const left = c.restsAt - now;
+		const fading = Math.min(dt, Math.max(0, left));
+		const share = left > 0 ? (left - fading) / left : 0;
+		const rel = sub(c.vel, frameVel);
+		return {
+			...c,
+			pos: add(
+				add(c.pos, scale(frameVel, dt)),
+				scale(rel, ((1 + share) / 2) * fading),
+			),
+			vel: add(frameVel, scale(rel, share)),
+		};
+	};
+
+	const nearestKm = () => {
+		let best = Infinity;
+		for (const b of g.world.system.bodies)
+			if (b.kind !== "star")
+				best = Math.min(best, len(sub(b.pos, g.world.ship.pos)));
+		return best;
+	};
+
+	const headFor = (first, frame0, killedAt) => ({
+		id: first.id,
+		restsAtFromKill: first.restsAt - killedAt,
+		frameAtKillKms: len(frame0),
+		frameBody: g.frameBody?.name ?? "star",
+		frameBodyId: first.frameBodyId ?? "(star)",
+		nearestKm: nearestKm(),
+	});
+
+	/** Both arms sample the same way, or the tables cannot be read together —
+	 *  the first version duplicated this and only one copy grew a column. */
+	const sampleRows = (id, frame0) => {
+		g.throttle = 0;
+		const rows = [];
+		const start = g.world.gameTime;
+		let twin = { ...g.canisters.find((x) => x.id === id) };
+		for (let s = 0; s <= 24; s++) {
+			const c = g.canisters.find((x) => x.id === id);
+			const liveFrame = g.localFrame();
+			rows.push({
+				t: Math.round(g.world.gameTime - start),
+				vsSnapshot: c ? len(sub(c.vel, frame0)) : null,
+				vsFrameNow: c ? len(sub(c.vel, liveFrame)) : null,
+				vsShip: c ? len(sub(c.vel, g.world.ship.vel)) : null,
+				rangeKm: c ? len(sub(c.pos, g.world.ship.pos)) : null,
+				frozenKm: len(sub(twin.pos, g.world.ship.pos)),
+				frameDrift: len(sub(liveFrame, frame0)),
+			});
+			const until = g.world.gameTime + 5;
+			while (g.world.gameTime < until) {
+				const now = g.world.gameTime;
+				g.step(dt);
+				// The twin advances on the same clock, against the kill's frame.
+				twin = stepFrozen(twin, g.world.gameTime - now, now, frame0);
+			}
+		}
+		return rows;
+	};
+
+	/** A canister beside the start station, built the way `dropCanisters`
+	 *  builds one and run through the shipped step. */
 	const nearBody = () => {
 		g.resetFlightToStart();
 		for (let i = 0; i < 30; i++) frame();
-		// **Put the ship beside a station.** The first version of this arm just
-		// reset and measured, and `resetFlightToStart` leaves the ship 1.7e8 km
-		// from anything — so it read the star frame a second time and changed
-		// nothing. A body's velocity is taken from two steps rather than a
-		// private accessor: the generator moves bodies, so this is the velocity
-		// the sim itself is using.
+		// **Put the ship beside a station.** `resetFlightToStart` leaves it 1.7e8
+		// km from anything, so an arm that only resets measures the star frame a
+		// second time and changes nothing. The body's velocity comes from two
+		// steps rather than a private accessor.
 		const station =
 			g.world.system.bodies.find((b) => b.kind === "station") ??
 			g.world.system.bodies.find((b) => b.kind === "planet");
@@ -71,16 +141,8 @@ const run = await page.evaluate(() => {
 		g.step(dt);
 		const moved = g.world.system.byId.get(station.id) ?? station;
 		const span = g.world.gameTime - t0;
-		const bodyVel = {
-			x: (moved.pos.x - was.x) / span,
-			y: (moved.pos.y - was.y) / span,
-			z: (moved.pos.z - was.z) / span,
-		};
-		g.world.ship.pos = {
-			x: moved.pos.x + 200,
-			y: moved.pos.y,
-			z: moved.pos.z,
-		};
+		const bodyVel = scale(sub(moved.pos, was), 1 / span);
+		g.world.ship.pos = { x: moved.pos.x + 200, y: moved.pos.y, z: moved.pos.z };
 		g.world.ship.vel = { ...bodyVel };
 		for (let i = 0; i < 10; i++) frame();
 		const now = g.world.gameTime;
@@ -90,71 +152,39 @@ const run = await page.evaluate(() => {
 			id: "measured#canister-0",
 			commodity: "Food",
 			tonnes: 1,
-			pos: {
-				x: g.world.ship.pos.x + ahead.x * 2,
-				y: g.world.ship.pos.y + ahead.y * 2,
-				z: g.world.ship.pos.z + ahead.z * 2,
-			},
+			pos: add(g.world.ship.pos, scale(ahead, 2)),
 			// The wreck at rest in the frame, so only the eject term is left: the
 			// gentlest drop there is. If this one slides, every real one does.
 			vel: { x: frame0.x + 0.15, y: frame0.y, z: frame0.z },
+			// Its own frame is the station's, which is what the game resolves per
+			// canister rather than from wherever the pilot happens to be.
+			frameBodyId: station.id,
 			restsAt: now + 10,
 			expiresAt: now + 300,
 		};
 		g.canisters = [first];
-		const head = {
-			id: first.id,
-			restsAtFromKill: first.restsAt - now,
-			snapshotKms: len(frame0),
-			frameAtKillKms: len(frame0),
-			frameBody: g.frameBody?.name ?? "star",
-			nearestKm: (() => {
-				let best = Infinity;
-				for (const b of g.world.system.bodies)
-					if (b.kind !== "star")
-						best = Math.min(best, len(sub(b.pos, g.world.ship.pos)));
-				return best;
-			})(),
+		return {
+			head: headFor(first, frame0, now),
+			rows: sampleRows(first.id, frame0),
 		};
-		g.throttle = 0;
-		const rows = [];
-		const start = g.world.gameTime;
-		for (let s = 0; s <= 24; s++) {
-			const c = g.canisters.find((x) => x.id === first.id);
-			const liveFrame = g.localFrame();
-			rows.push({
-				t: Math.round(g.world.gameTime - start),
-				vsSnapshot: c ? len(sub(c.vel, frame0)) : null,
-				vsFrameNow: c ? len(sub(c.vel, liveFrame)) : null,
-				vsShip: c ? len(sub(c.vel, g.world.ship.vel)) : null,
-				rangeKm: c ? len(sub(c.pos, g.world.ship.pos)) : null,
-				// How far the frame the pilot is parked in has moved from the one
-				// the canister froze. This is the hypothesis, as a number.
-				frameDrift: len(sub(liveFrame, frame0)),
-			});
-			const until = g.world.gameTime + 5;
-			while (g.world.gameTime < until) g.step(dt);
-		}
-		return { head, rows };
 	};
 
-	const scenario = (flyOut) => {
+	/** A flown kill, which always lands in deep space. */
+	const deepSpace = () => {
 		g.resetFlightToStart();
-		if (flyOut) {
-			let far = null;
-			let farKm = 0;
-			for (const b of g.world.system.bodies) {
-				const d = len(sub(b.pos, g.world.ship.pos));
-				if (b.kind !== "star" && d > farKm) {
-					far = b;
-					farKm = d;
-				}
+		let far = null;
+		let farKm = 0;
+		for (const b of g.world.system.bodies) {
+			const d = len(sub(b.pos, g.world.ship.pos));
+			if (b.kind !== "star" && d > farKm) {
+				far = b;
+				farKm = d;
 			}
-			g.targetId = far.id;
-			g.faceTarget?.();
-			g.engageCruise();
-			for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
 		}
+		g.targetId = far.id;
+		g.faceTarget?.();
+		g.engageCruise();
+		for (let i = 0; i < 100 && g.regime !== "cruise"; i++) g.step(dt);
 		g.forceRaider("ahead", 0.5, 12);
 		for (let i = 0; i < 900 && g.encounter?.phase !== "duel"; i++) frame();
 		for (let i = 0; i < 30 && !g.encounter?.raider; i++) frame();
@@ -170,16 +200,8 @@ const run = await page.evaluate(() => {
 					...encounter.raider.flight,
 					ship: {
 						...encounter.raider.flight.ship,
-						pos: {
-							x: shipPos.x + ahead.x * 2,
-							y: shipPos.y + ahead.y * 2,
-							z: shipPos.z + ahead.z * 2,
-						},
-						vel: {
-							x: g.world.ship.vel.x + ahead.x * g.assistCapKms,
-							y: g.world.ship.vel.y + ahead.y * g.assistCapKms,
-							z: g.world.ship.vel.z + ahead.z * g.assistCapKms,
-						},
+						pos: add(shipPos, scale(ahead, 2)),
+						vel: add(g.world.ship.vel, scale(ahead, g.assistCapKms)),
 					},
 				},
 				condition: {
@@ -193,60 +215,22 @@ const run = await page.evaluate(() => {
 		g.keys.add(" ");
 		for (let i = 0; i < 600 && g.encounter; i++) {
 			const r = g.encounter?.raider;
-			if (r) {
-				const p = g.world.ship.pos;
-				const t = r.flight.ship.pos;
-				g.setAttitude({ x: t.x - p.x, y: t.y - p.y, z: t.z - p.z }, g.shipUp());
-			}
+			if (r)
+				g.setAttitude(sub(r.flight.ship.pos, g.world.ship.pos), g.shipUp());
 			frame();
 		}
 		g.keys.delete(" ");
 		if (!g.canisters.length) return { error: "no canisters" };
-
 		const first = g.canisters[0];
 		const killedAt = g.world.gameTime;
-		// The frame at the kill, kept by this instrument rather than by the
-		// canister: the canister no longer carries one, which is the fix.
-		const snapshot = { ...g.localFrame() };
-		const head = {
-			id: first.id,
-			restsAtFromKill: first.restsAt - killedAt,
-			snapshotKms: len(snapshot),
-			frameAtKillKms: len(g.localFrame()),
-			frameBody: g.frameBody?.name ?? "star",
-			nearestKm: (() => {
-				let best = Infinity;
-				for (const b of g.world.system.bodies)
-					if (b.kind !== "star")
-						best = Math.min(best, len(sub(b.pos, g.world.ship.pos)));
-				return best;
-			})(),
+		const frame0 = { ...g.localFrame() };
+		return {
+			head: headFor(first, frame0, killedAt),
+			rows: sampleRows(first.id, frame0),
 		};
-
-		// Park the ship: throttle off, assist on. This is the state the principal
-		// flew — "I had to stop completely" — so it is the state to measure.
-		g.throttle = 0;
-		const rows = [];
-		const start = g.world.gameTime;
-		for (let s = 0; s <= 24; s++) {
-			const c = g.canisters.find((x) => x.id === first.id);
-			const now = g.localFrame();
-			rows.push({
-				t: Math.round(g.world.gameTime - start),
-				vsSnapshot: c ? len(sub(c.vel, snapshot)) : null,
-				vsFrameNow: c ? len(sub(c.vel, now)) : null,
-				vsShip: c ? len(sub(c.vel, g.world.ship.vel)) : null,
-				rangeKm: c ? len(sub(c.pos, g.world.ship.pos)) : null,
-			});
-			const until = g.world.gameTime + 5;
-			// Stepped without rendering: this is a physics question and 120 s of
-			// frames is the slow half.
-			while (g.world.gameTime < until) g.step(dt);
-		}
-		return { head, rows };
 	};
 
-	return { deep: scenario(true), near: nearBody() };
+	return { deep: deepSpace(), near: nearBody() };
 });
 
 const table = (title, arm) => {
@@ -261,17 +245,17 @@ const table = (title, arm) => {
 		`   rests               ${h.restsAtFromKill.toFixed(1)} s after the kill`,
 	);
 	console.log(
-		`   local frame at kill ${h.frameBody}, moving ${h.frameAtKillKms.toFixed(3)} km/s`,
+		`   frame at the kill   ${h.frameBody} (${h.frameBodyId}), moving ${h.frameAtKillKms.toFixed(3)} km/s`,
 	);
 	console.log(`   nearest body        ${h.nearestKm.toFixed(0)} km`);
 	console.log(
-		"      t   vs snapshot  vs frame now      vs ship     range  frame drift",
+		"      t   vs snapshot  vs frame now      vs ship      range  frozen range  frame drift",
 	);
 	for (const r of arm.rows) {
 		const n = (v, p = 4) =>
 			v === null || v === undefined ? "      gone" : v.toFixed(p).padStart(10);
 		console.log(
-			`${String(r.t).padStart(5)}s ${n(r.vsSnapshot)} ${n(r.vsFrameNow)} ${n(r.vsShip)} ${n(r.rangeKm, 1)} ${n(r.frameDrift)}`,
+			`${String(r.t).padStart(5)}s ${n(r.vsSnapshot)} ${n(r.vsFrameNow)} ${n(r.vsShip)} ${n(r.rangeKm, 1)} ${n(r.frozenKm, 1)}   ${n(r.frameDrift)}`,
 		);
 	}
 };

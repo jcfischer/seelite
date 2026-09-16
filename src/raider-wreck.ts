@@ -129,6 +129,17 @@ export interface Canister {
 	 *  frame keeps turning, so a canister that froze one flew off the curve the
 	 *  pilot's assist holds them on, and never came to rest beside them. */
 	vel: Vec3;
+	/**
+	 * The body whose frame this canister comes to rest in — the one the kill
+	 * happened beside — or `null` for the star frame.
+	 *
+	 * **Its own, not the observer's** (sage #355). Resting in the *player's*
+	 * local frame works only while the player stays beside the same body: fly
+	 * past `NEAR_FAR_KM` and that frame becomes the star's, so every canister
+	 * left at the station would snap from ~29 km/s to rest and be gone long
+	 * before the five minutes are up.
+	 */
+	frameBodyId: string | null;
 	/** When it is at rest, game-clock seconds. */
 	restsAt: number;
 	expiresAt: number;
@@ -162,6 +173,8 @@ export function dropCanisters(kill: {
 	pos: Vec3;
 	vel: Vec3;
 	frameVel: Vec3;
+	/** The body the kill happened beside, whose frame the canisters rest in. */
+	frameBodyId: string | null;
 }): Canister[] {
 	const drift = add(
 		kill.frameVel,
@@ -203,6 +216,7 @@ export function dropCanisters(kill: {
 			tonnes: CANISTER_TONNES,
 			pos: kill.pos,
 			vel: add(drift, scale(out, CANISTER_EJECT_KMS)),
+			frameBodyId: kill.frameBodyId,
 			restsAt: kill.killedAt + CANISTER_FADE_S,
 			expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
 		};
@@ -265,10 +279,14 @@ export function stepCanisters(
 	dt: number,
 	now: number,
 	accept: (canister: Canister) => boolean,
-	/** The local frame this step, which the canisters come to rest in. Required
-	 *  for `FlightPerformance`'s reason: a caller that forgot would silently
-	 *  bring every canister to rest in star coordinates. */
-	frameVel: Vec3,
+	/**
+	 * The frame **this canister** comes to rest in, this step. Per canister and
+	 * not one vector for all of them: the frame belongs to the body the kill
+	 * happened beside, and the observer may be anywhere (sage #355). Required
+	 * for `FlightPerformance`'s reason — a caller that forgot would silently
+	 * bring every canister to rest in star coordinates.
+	 */
+	frameVelFor: (canister: Canister) => Vec3,
 ): { kept: Canister[]; scoops: CanisterScoop[] } {
 	const kept: Canister[] = [];
 	const tried: CanisterScoop[] = [];
@@ -279,7 +297,7 @@ export function stepCanisters(
 			tried.push({ canister, accepted });
 			if (accepted) continue;
 		}
-		kept.push(driftCanister(canister, dt, now, frameVel));
+		kept.push(driftCanister(canister, dt, now, frameVelFor(canister)));
 	}
 	return { kept, scoops: tried };
 }

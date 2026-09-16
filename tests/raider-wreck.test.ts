@@ -24,7 +24,7 @@ import {
 	stepCanisters,
 } from "../src/raider-wreck";
 import { newCommander, scoopCargo } from "../src/station-commerce";
-import { dot, length, scale, sub, v3 } from "../src/vec3";
+import { add, dot, length, scale, sub, v3 } from "../src/vec3";
 import {
 	applyTransition,
 	effectiveCarrier,
@@ -80,6 +80,7 @@ const kill = (overrides: Partial<Parameters<typeof dropCanisters>[0]> = {}) =>
 		vel: v3(0, 0, -1),
 		frameVel: v3(0, 0, 0),
 		...overrides,
+		frameBodyId: overrides.frameBodyId ?? null,
 	});
 
 describe("the cargo drop", () => {
@@ -167,7 +168,14 @@ describe("the cargo drop", () => {
 		const at = (seconds: number) => {
 			let c = c0;
 			for (let t = 0; t < seconds - 1e-9; t += dt)
-				c = stepCanisters([c], far, dt, 500 + t, () => true, frameVel).kept[0];
+				c = stepCanisters(
+					[c],
+					far,
+					dt,
+					500 + t,
+					() => true,
+					() => frameVel,
+				).kept[0];
 			return c;
 		};
 		expect(relative(at(5)) / start).toBeCloseTo(0.5, 6);
@@ -201,11 +209,98 @@ describe("the cargo drop", () => {
 		let last = atKill;
 		for (let t = 0; t < 15 - 1e-9; t += dt) {
 			last = frameAt(t);
-			c = stepCanisters([c], far, dt, 500 + t, () => true, last).kept[0];
+			c = stepCanisters(
+				[c],
+				far,
+				dt,
+				500 + t,
+				() => true,
+				() => last,
+			).kept[0];
 		}
 		expect(length(sub(c.vel, last))).toBeLessThan(1e-9);
 		// And it is not the kill's frame: that is the drift the playtest flew.
 		expect(length(sub(c.vel, atKill))).toBeGreaterThan(0.1);
+	});
+
+	test("a canister keeps station with a turning frame, which is what the playtest saw", () => {
+		// The velocity row above holds by construction once `share` is 0. The
+		// symptom was **range** — 55 km and opening — so this one integrates a
+		// point carried by the frame and asks how far the canister is from it
+		// (sage #355).
+		const dt = 1 / 60;
+		const frameAt = (t: number) =>
+			v3(30 * Math.cos(t / 100), 30 * Math.sin(t / 100), 0);
+		const [c0] = kill({
+			frameVel: frameAt(0),
+			vel: v3(30, 0, -2),
+			killedAt: 500,
+		});
+		const far = { pos: v3(1e6, 0, 0), vel: v3() };
+		let c = c0;
+		// A mark dropped at the canister's position, carried by the frame.
+		let mark = c0.pos;
+		for (let t = 0; t < 120 - 1e-9; t += dt) {
+			const frame = frameAt(t);
+			c = stepCanisters(
+				[c],
+				far,
+				dt,
+				500 + t,
+				() => true,
+				() => frame,
+			).kept[0];
+			mark = add(mark, scale(frame, dt));
+		}
+		// The same run, against a canister that froze the kill's frame — the
+		// build this replaced. **A comparative claim, measured here**: the first
+		// version of this row asserted an absolute bound derived from the fade's
+		// geometry, which the tracked canister misses by 5x. What the playtest
+		// reported is one of these staying and the other leaving.
+		let frozen = c0;
+		for (let t = 0; t < 120 - 1e-9; t += dt)
+			frozen = stepCanisters(
+				[frozen],
+				far,
+				dt,
+				500 + t,
+				() => true,
+				() => frameAt(0),
+			).kept[0];
+		const tracked = length(sub(c.pos, mark));
+		const stranded = length(sub(frozen.pos, mark));
+		expect(stranded).toBeGreaterThan(20);
+		expect(tracked).toBeLessThan(stranded / 10);
+	});
+
+	test("a canister rests in its own body's frame, not the observer's", () => {
+		// `localFrame()` follows the *ship*: a pilot who kills beside a station
+		// and flies past NEAR_FAR_KM would drop every canister there to star
+		// rest and lose them inside their five minutes (sage #355). The stepper
+		// resolves a frame per canister, from the body the kill happened beside.
+		const station = v3(0, 29, 0);
+		const [near] = kill({ frameVel: station, frameBodyId: "58:station-0" });
+		const [away] = kill({ frameVel: v3(), frameBodyId: null, killedAt: 900 });
+		const far = { pos: v3(1e6, 0, 0), vel: v3() };
+		const frames: Record<string, ReturnType<typeof v3>> = {
+			"58:station-0": station,
+		};
+		const frameFor = (c: Canister) =>
+			c.frameBodyId ? frames[c.frameBodyId] : v3();
+		let pair = [near, away];
+		for (let t = 0; t < 12; t += 1 / 60)
+			pair = stepCanisters(
+				pair,
+				far,
+				1 / 60,
+				950 + t,
+				() => true,
+				frameFor,
+			).kept;
+		// One rests with its station, the other in star coordinates — from one
+		// step, with the observer nowhere near either.
+		expect(length(sub(pair[0].vel, station))).toBeLessThan(1e-9);
+		expect(length(pair[1].vel)).toBeLessThan(1e-9);
 	});
 
 	test("a canister from a wreck at the assist cap is closable at the cap", () => {
@@ -231,16 +326,18 @@ describe("drift, expiry and the scoop", () => {
 		tonnes: 1,
 		pos: v3(0, 0, 0),
 		vel: v3(0.01, 0, 0),
+		frameBodyId: null,
 		restsAt: 100,
 		expiresAt: 100,
 	};
 
 	const farShip = { pos: v3(10, 0, 0), vel: v3() };
 	const takeAll = () => true;
-	// The frame these rows step in. At rest in it, so they see a constant
-	// velocity; the fade is the drop rows' question.
-	const carried = v3(0.01, 0, 0);
-	const still = v3();
+	// The frame these rows step in, as the resolver the stepper takes. At rest
+	// in it, so they see a constant velocity; the fade is the drop rows'
+	// question.
+	const carried = () => v3(0.01, 0, 0);
+	const still = () => v3();
 
 	test("a canister drifts on its velocity and is gone at `expiresAt`", () => {
 		const [moved] = stepCanisters(

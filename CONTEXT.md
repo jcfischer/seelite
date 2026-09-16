@@ -92,8 +92,9 @@ _Avoid_: Spawn, fight instance
 **Cargo canister**:
 One tonne of a single good, dropped by a destroyed raider (one to three per
 kill). Each leaves the wreck in its own direction and comes to rest ten
-seconds later, in the local frame **as it stands** rather than as it was at the
-kill (`combat-model.md` §4.1); it stays
+seconds later, in the frame of **the body the kill happened beside** as that
+frame stands — its own, not a snapshot and not the observer's
+(`combat-model.md` §4.1); it stays
 until scooped or until five game-clock minutes pass (`combat-model.md` §4.1). A ship scoops one by passing close and
 slow, with no module, into the hold. It is a **selectable contact** of kind
 `cargo` — scanner blip, target lock, and range plus the **relative speed**

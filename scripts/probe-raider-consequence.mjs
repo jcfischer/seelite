@@ -407,23 +407,44 @@ const scoop = await page.evaluate(() => {
 	// record of painting — and the pixels are counted beside it against a
 	// control frame with the notice suppressed, because a record alone cannot
 	// show the text was lit.
-	const band = () => {
+	// Any lit text, not only green: the refusal is drawn in §4's red, and a
+	// filter tuned to the cargo green would call that "nothing drawn".
+	const band = (fraction) => {
 		const overlay = document.getElementById("overlay");
 		const c2d = overlay.getContext("2d", { willReadFrequently: true });
-		const y = Math.max(0, Math.round(overlay.height * 0.62) - 60);
+		const y = Math.max(
+			0,
+			Math.min(overlay.height - 90, Math.round(overlay.height * fraction) - 60),
+		);
 		const data = c2d.getImageData(0, y, overlay.width, 90).data;
 		let lit = 0;
 		for (let i = 0; i < data.length; i += 4)
-			if (data[i + 3] > 40 && data[i + 1] > 180 && data[i] < 200) lit++;
+			if (data[i + 3] > 40 && (data[i] > 150 || data[i + 1] > 150)) lit++;
 		return lit;
 	};
 	const noticeAt = g.scoopRender ? { ...g.scoopRender } : null;
-	const lit = band();
-	const kept = g.scoopFor;
-	g.scoopFor = 0;
+	const lit = band(0.62);
+	const kept = g.scoop.left;
+	g.scoop.left = 0;
 	g.render(dt);
-	const control = band();
-	g.scoopFor = kept;
+	const control = band(0.62);
+	g.scoop.left = kept;
+	g.render(dt);
+
+	// **Every view, not only the one this probe sits in** (sage #355). The
+	// cockpit band cannot see the chase draw, which sits further down the glass,
+	// so the claim needed its own arm.
+	const wasView = g.view;
+	g.view = "chase";
+	g.render(dt);
+	const chase = { render: g.scoopRender ? { ...g.scoopRender } : null };
+	chase.lit = band(1);
+	const keptChase = g.scoop.left;
+	g.scoop.left = 0;
+	g.render(dt);
+	chase.control = band(1);
+	g.scoop.left = keptChase;
+	g.view = wasView;
 	g.render(dt);
 	// And it clears: a notice that never goes away is not an event.
 	for (let t = 0; t < 4; t += dt) {
@@ -435,6 +456,7 @@ const scoop = await page.evaluate(() => {
 		noticeAt,
 		lit,
 		control,
+		chase,
 		noticeAfter,
 		before,
 		after: g.canisters.length,
@@ -470,6 +492,84 @@ check(
 		control: scoop.control,
 		after: scoop.noticeAfter,
 	}),
+);
+check(
+	"the notice is on the glass in chase as well as the cockpit",
+	scoop.chase.render !== null && scoop.chase.lit > scoop.chase.control,
+	JSON.stringify(scoop.chase),
+);
+
+// ---------------------------------------------------------------------------
+// A full hold refuses, and says so in the refusal's own colour.
+// ---------------------------------------------------------------------------
+const refusal = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	// Fill the hold, then put a canister on the ship at matching velocity so the
+	// scoop gate opens and `scoopCargo` refuses. **Driven, not flown**: what is
+	// under test is the refusal's notice, not the approach, which the row above
+	// already flies.
+	g.commander = { ...g.commander, cargo: { Food: 10000 } };
+	const now = g.world.gameTime;
+	g.canisters = [
+		{
+			id: "refusal#0",
+			commodity: "Food",
+			tonnes: 1,
+			pos: { ...g.world.ship.pos },
+			vel: { ...g.world.ship.vel },
+			frameBodyId: null,
+			restsAt: now,
+			expiresAt: now + 300,
+		},
+	];
+	g.step(dt);
+	g.render(dt);
+	// **§4 owns red for refusal, so count the colour** rather than infer it.
+	// `accepted === false` only proves the state the draw branches on; against a
+	// control frame with the notice suppressed, this shows what reached the
+	// canvas and which hue it added.
+	const tone = () => {
+		const overlay = document.getElementById("overlay");
+		const c2d = overlay.getContext("2d", { willReadFrequently: true });
+		const y = Math.max(0, Math.round(overlay.height * 0.62) - 60);
+		const data = c2d.getImageData(0, y, overlay.width, 90).data;
+		let red = 0;
+		let green = 0;
+		for (let i = 0; i < data.length; i += 4) {
+			if (data[i + 3] < 40) continue;
+			if (data[i] > 150 && data[i + 1] < 140) red++;
+			else if (data[i + 1] > 150 && data[i] < 200) green++;
+		}
+		return { red, green };
+	};
+	const shown = tone();
+	const kept = g.scoop.left;
+	g.scoop.left = 0;
+	g.render(dt);
+	const control = tone();
+	g.scoop.left = kept;
+	g.render(dt);
+	return {
+		render: g.scoopRender ? { ...g.scoopRender } : null,
+		lastExit: g.lastExit,
+		left: g.canisters.length,
+		addedRed: shown.red - control.red,
+		addedGreen: shown.green - control.green,
+	};
+});
+check(
+	"a full hold says so, in the refusal's colour, and leaves the canister in space",
+	refusal.render !== null &&
+		refusal.render.accepted === false &&
+		/^HOLD FULL/.test(refusal.render.text) &&
+		refusal.left === 1 &&
+		refusal.lastExit.startsWith("hold full") &&
+		// What it added to the frame is red, not the cargo green a confirmed
+		// scoop draws.
+		refusal.addedRed > 0 &&
+		refusal.addedRed > refusal.addedGreen,
+	JSON.stringify(refusal),
 );
 
 const afterScoop = await page.evaluate((id) => {

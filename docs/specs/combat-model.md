@@ -107,15 +107,23 @@ from the kill's own stream (`DOMAIN.CARGO_DROP`). Illegal goods weigh
 none. A canister keeps a fifth of the wreck's velocity relative to the local
 frame, leaves the wreck at 0.15 km/s in its own direction (two canisters go
 opposite ways, three go 120° apart), **slows linearly to rest 10 s after the
-kill**, and expires five minutes after it. **It comes to rest in the local
-frame as it stands each step, not in a snapshot of that frame taken at the
-kill.** The snapshot was ratified here and flown for two playtests before the
-sixth found it: the fade finished on time, but a station's frame keeps turning,
-so a canister holding the kill's velocity peeled away from the curve the
-pilot's assist parks them on — measured at 55 km out and still opening at
-0.94 km/s two minutes after resting, beside a station moving 29.3 km/s. Deep
-space hid it, because the star frame does not move and every flown duel lands
-there (`scripts/measure-canister-drift.mjs` prints both). Two playtests shaped
+kill**, and expires five minutes after it. **It comes to rest in the frame of
+the body the kill happened beside, as that frame stands each step** — its own
+frame, carried as `frameBodyId`, and not a snapshot taken at the kill nor the
+observer's. The snapshot was ratified here and flown for two playtests before
+the sixth found it: the fade finished on time, but a station's frame keeps
+turning, so a canister holding the kill's velocity peeled away from the curve
+the pilot's assist parks them on. Beside a station moving 29.3 km/s,
+`scripts/measure-canister-drift.mjs` reads **55.0 km and still opening at
+0.94 km/s** two minutes after resting against **2.3 km and 0.0008 km/s** — both
+in one run, because every row carries a frozen twin integrated with the old
+rule. Deep space hid it, because the star frame does not move and every flown
+duel lands there.
+
+The frame is resolved **per canister** rather than from the player's
+`localFrame()`: that follows the ship, so a pilot who kills beside a station
+and flies past `NEAR_FAR_KM` would drop every canister left there to star rest
+and lose them well inside their five minutes. Two playtests shaped
 this. A canister kept all the wreck's velocity at first; a fleeing raider dies
 at the 2 km/s assist cap, so its canisters held their range against a ship at
 the same cap, and the third playtest could not reach one. Keeping a fifth

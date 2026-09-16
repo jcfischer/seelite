@@ -110,6 +110,8 @@ export function flyToCargo(
 		pos: v3(),
 		vel: scale(randomUnit(r), ASSIST_CAP_KMS),
 		frameVel,
+		// This pilot flies in one still frame, so there is no body to key on.
+		frameBodyId: null,
 	});
 	if (drifting)
 		canisters = canisters.map((c) => ({ ...c, restsAt: Number.MAX_VALUE }));
@@ -139,7 +141,7 @@ export function flyToCargo(
 			PILOT_DT,
 			now,
 			() => true,
-			frameVel,
+			() => frameVel,
 		);
 		scooped += step.scoops.filter((s) => s.accepted).length;
 		canisters = step.kept;

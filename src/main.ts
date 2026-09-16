@@ -286,6 +286,7 @@ import {
 	QUIET_GUN,
 	SHOT_SOUND_GAP_S,
 	STRUCK_FLASH_S,
+	drawScoopNotice,
 	drawEnemyBeam,
 	drawStruckRim,
 	TRACER_AIM,
@@ -329,7 +330,7 @@ import {
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
-import { SCOOP_NOTICE_S, scoopNotice } from "./cargo-notice";
+import { SCOOP_NOTICE_S, scoopExit, scoopNotice } from "./cargo-notice";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -1974,15 +1975,22 @@ class Game {
 	 *  beside the canisters rather than searched for in the contact list, which
 	 *  only selection and the scanner read. */
 	private readonly cargoContacts = new Map<string, DisplayContact>();
-	/** The scoop's acknowledgement and what is left of its time on the glass
-	 *  (#324). A scoop wrote `lastExit` and nothing else, and every `lastExit`
-	 *  goes to `#hud`, which the page clips to one pixel — so the sixth
-	 *  playtest saw a canister vanish and nothing say why. */
-	scoopNotice = "";
-	scoopFor = 0;
+	/** The scoop's acknowledgement: its words, what is left of its time on the
+	 *  glass, and which outcome it is (#324). A scoop wrote `lastExit` and
+	 *  nothing else, and every `lastExit` goes to `#hud`, which the page clips
+	 *  to one pixel — so the sixth playtest saw a canister vanish and nothing
+	 *  say why. One object rather than three fields, so a jump clears it in one
+	 *  assignment and the field does not share a name with the function that
+	 *  builds its text (sage #355). */
+	scoop: { text: string; left: number; accepted: boolean } = {
+		text: "",
+		left: 0,
+		accepted: true,
+	};
 	/** What the notice drew this frame, for a probe to read rather than
-	 *  restate: the text and its alpha, or null when nothing is up. */
-	scoopRender: { text: string; alpha: number } | null = null;
+	 *  restate: the text, its alpha and its outcome, or null when nothing
+	 *  is up. */
+	scoopRender: { text: string; alpha: number; accepted: boolean } | null = null;
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -7587,8 +7595,7 @@ class Game {
 		// And the scoop's acknowledgement: a notice about cargo taken on the last
 		// leg has nothing to say after a jump or a reset, and `leg-reset-coverage`
 		// is the row that insists on it.
-		this.scoopNotice = "";
-		this.scoopFor = 0;
+		this.scoop = { text: "", left: 0, accepted: true };
 		this.scoopRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
@@ -7947,6 +7954,9 @@ class Game {
 						pos: step.wreck.pos,
 						vel: step.wreck.vel,
 						frameVel: this.localFrame(),
+						// The body the kill happened beside owns the frame these rest
+						// in, so they keep station with it after the player leaves.
+						frameBodyId: this.frameBody?.id ?? null,
 					}),
 				];
 				this.audio.explosion();
@@ -7991,25 +8001,41 @@ class Game {
 				if (took.accepted) this.commander = took.commander;
 				return took.accepted;
 			},
-			// The frame as it stands, not the one the kill froze (#324).
-			this.localFrame(),
+			// Each canister's own frame, as it stands (#324). Not `localFrame()`:
+			// that is the *observer's* nearest body, so a pilot who flies past
+			// `NEAR_FAR_KM` would drop every canister at the station to star rest
+			// and lose them inside their five minutes (sage #355).
+			(canister) =>
+				canister.frameBodyId
+					? bodyVelocity(
+							this.world.system,
+							canister.frameBodyId,
+							this.world.gameTime,
+						)
+					: v3(),
 		);
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
 		for (const { canister, accepted } of step.scoops) {
-			this.lastExit = accepted
-				? `scooped ${canister.tonnes} t ${canister.commodity}`
-				: "hold full: canister left in space";
-			// And on the glass, where a pilot is looking, with a sound: the
-			// canister disappearing is what expiring and flying past also look
-			// like, so the event needs to say which of the three it was.
-			this.scoopNotice = scoopNotice({
+			const event = {
 				commodity: canister.commodity,
 				tonnes: canister.tonnes,
 				accepted,
-			});
-			this.scoopFor = SCOOP_NOTICE_S;
+			};
+			this.lastExit = scoopExit(event);
+			// And on the glass, where a pilot is looking, with a sound: the
+			// canister disappearing is what expiring and flying past also look
+			// like, so the event needs to say which of the three it was.
+			const text = scoopNotice(event);
+			// **The sound only when the words change.** `scoops` holds while the
+			// ship sits close and slow, so `accept` runs every frame — a full
+			// hold parked beside a canister restarted the alert tone at frame
+			// rate (sage #355). The notice itself is re-armed deliberately: a
+			// refusal stands while the ship is still beside the canister.
+			const fresh = this.scoop.left === 0 || this.scoop.text !== text;
+			this.scoop = { text, left: SCOOP_NOTICE_S, accepted };
+			if (!fresh) continue;
 			if (accepted) this.audio.scoop();
 			else this.audio.alert();
 		}
@@ -8766,7 +8792,7 @@ class Game {
 		// world masses are read, and may drop the player out of cruise before the
 		// regime branch below chooses how to fly this frame.
 		this.struckFor = Math.max(0, this.struckFor - dt);
-		this.scoopFor = Math.max(0, this.scoopFor - dt);
+		this.scoop.left = Math.max(0, this.scoop.left - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot);
@@ -11095,16 +11121,24 @@ class Game {
 		// removes it has to be answered in both. It fades over its last stretch
 		// rather than cutting, so a scoop reads as one event even when three
 		// land within a few seconds of each other.
-		if (this.scoopFor > 0 && this.scoopNotice) {
-			const alpha = Math.min(1, this.scoopFor / (SCOOP_NOTICE_S * 0.4));
-			ctx.save();
-			ctx.globalAlpha = alpha;
-			ctx.fillStyle = CARGO_CONTACT_CSS;
-			ctx.font = "16px ui-monospace, Menlo, monospace";
-			ctx.textAlign = "center";
-			ctx.fillText(this.scoopNotice, w / 2, h * glassBottom - 28);
-			ctx.restore();
-			this.scoopRender = { text: this.scoopNotice, alpha };
+		if (this.scoop.left > 0 && this.scoop.text) {
+			const alpha = Math.min(1, this.scoop.left / (SCOOP_NOTICE_S * 0.4));
+			// §4's grammar: green confirms, red refuses. A full hold drawn in the
+			// cargo green read as a successful scoop (sage #355).
+			drawScoopNotice(
+				ctx,
+				w,
+				h,
+				glassBottom,
+				this.scoop.text,
+				alpha,
+				this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
+			);
+			this.scoopRender = {
+				text: this.scoop.text,
+				alpha,
+				accepted: this.scoop.accepted,
+			};
 		} else this.scoopRender = null;
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip

@@ -98,6 +98,33 @@ export function drawGunTracer(
 
 /** How long the canopy rim glows after a hit lands on the player, s. */
 export const STRUCK_FLASH_S = 0.22;
+
+/**
+ * The scoop's notice on the glass (#324): centred under the reticle, just above
+ * the glass line, in whatever colour the outcome earned — `hud-and-scanner.md`
+ * §4 owns green for a confirmed state and red for a refusal, so the caller
+ * passes the fill rather than this deciding.
+ *
+ * Here beside the other overlay effects rather than inline in `render`, which
+ * is already very large (sage #355).
+ */
+export function drawScoopNotice(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	glassBottom: number,
+	text: string,
+	alpha: number,
+	fill: string,
+) {
+	ctx.save();
+	ctx.globalAlpha = alpha;
+	ctx.fillStyle = fill;
+	ctx.font = "16px ui-monospace, Menlo, monospace";
+	ctx.textAlign = "center";
+	ctx.fillText(text, w / 2, h * glassBottom - 28);
+	ctx.restore();
+}
 /** The raider's beam, warm against the player's cyan. */
 export const ENEMY_BEAM_COLOUR = "rgba(255, 140, 90, 0.95)";
 

@@ -33,3 +33,20 @@ export function scoopNotice(input: {
 		? `SCOOPED  ${input.tonnes} t ${good}`
 		: `HOLD FULL  ${good} LEFT IN SPACE`;
 }
+
+/**
+ * The same event in the exit line's voice, for `#hud` and anything reading it.
+ *
+ * Here beside the notice rather than inline at the call site (sage #355): this
+ * module exists so the arithmetic tier holds the words, and half of them
+ * staying in `main.ts` would have left the tier holding half a claim.
+ */
+export function scoopExit(input: {
+	commodity: string;
+	tonnes: number;
+	accepted: boolean;
+}): string {
+	return input.accepted
+		? `scooped ${input.tonnes} t ${input.commodity}`
+		: "hold full: canister left in space";
+}
