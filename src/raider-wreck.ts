@@ -178,10 +178,6 @@ export function dropCanisters(kill: {
 	/** The body the kill happened beside, whose frame the canisters rest in. */
 	frameBodyId: string | null;
 }): Canister[] {
-	const drift = add(
-		kill.frameVel,
-		scale(sub(kill.vel, kill.frameVel), CANISTER_KEEP_FRACTION),
-	);
 	const second = Math.floor(kill.killedAt) >>> 0;
 	const rand = stream(
 		mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
@@ -192,6 +188,70 @@ export function dropCanisters(kill: {
 		CANISTER_COUNT.min + Math.min(span - 1, Math.floor(rand() * span));
 	const weights = cargoWeights(kill.government);
 	const total = weights.reduce((sum, w) => sum + w.weight, 0);
+	const eject = ejectionRing(kill, rand, count);
+	return eject.map((vel, i) => {
+		let pick = rand() * total;
+		let good = weights[weights.length - 1].good;
+		for (const w of weights) {
+			if (pick < w.weight) {
+				good = w.good;
+				break;
+			}
+			pick -= w.weight;
+		}
+		return canisterAt(kill, second, i, good.name, CANISTER_TONNES, vel);
+	});
+}
+
+/**
+ * What a destroyed **ordinary** carrier drops (`civilian-combat.md` H11): one
+ * canister per line of the manifest a scan would have shown, each holding its
+ * line's tonnes. The goods are not drawn here — `carrierManifest` is the one
+ * draw of a hold, so what drops cannot differ from what was scanned. Only the
+ * ejection is drawn, on the kill's own stream as a raider's is.
+ */
+export function dropManifestCanisters(kill: {
+	systemSeed: number;
+	key: CarrierKey;
+	manifest: readonly { good: string; tonnes: number }[];
+	killedAt: number;
+	pos: Vec3;
+	vel: Vec3;
+	frameVel: Vec3;
+	frameBodyId: string | null;
+}): Canister[] {
+	if (kill.manifest.length === 0) return [];
+	const second = Math.floor(kill.killedAt) >>> 0;
+	const rand = stream(
+		mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
+		DOMAIN.CARGO_DROP,
+	);
+	return ejectionRing(kill, rand, kill.manifest.length).map((vel, i) =>
+		canisterAt(
+			kill,
+			second,
+			i,
+			kill.manifest[i].good,
+			kill.manifest[i].tonnes,
+			vel,
+		),
+	);
+}
+
+/**
+ * Each canister's velocity leaving the wreck: the frame's, plus
+ * `CANISTER_KEEP_FRACTION` of the wreck's own relative to it, plus
+ * `CANISTER_EJECT_KMS` out round a drawn circle, evenly spaced.
+ */
+function ejectionRing(
+	kill: { vel: Vec3; frameVel: Vec3 },
+	rand: () => number,
+	count: number,
+): Vec3[] {
+	const drift = add(
+		kill.frameVel,
+		scale(sub(kill.vel, kill.frameVel), CANISTER_KEEP_FRACTION),
+	);
 	// The circle the canisters leave round: a drawn plane and a drawn start.
 	const z = rand() * 2 - 1;
 	const around = rand() * Math.PI * 2;
@@ -203,27 +263,32 @@ export function dropCanisters(kill: {
 	return Array.from({ length: count }, (_, i) => {
 		const angle = start + (2 * Math.PI * i) / count;
 		const out = add(scale(a, Math.cos(angle)), scale(b, Math.sin(angle)));
-		let pick = rand() * total;
-		let good = weights[weights.length - 1].good;
-		for (const w of weights) {
-			if (pick < w.weight) {
-				good = w.good;
-				break;
-			}
-			pick -= w.weight;
-		}
-		return {
-			id: `${kill.key}#canister-${second}-${i}`,
-			commodity: good.name,
-			tonnes: CANISTER_TONNES,
-			pos: kill.pos,
-			vel: add(drift, scale(out, CANISTER_EJECT_KMS)),
-			frameBodyId: kill.frameBodyId,
-			restsAt: kill.killedAt + CANISTER_FADE_S,
-			expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
-		};
+		return add(drift, scale(out, CANISTER_EJECT_KMS));
 	});
 }
+
+const canisterAt = (
+	kill: {
+		key: CarrierKey;
+		killedAt: number;
+		pos: Vec3;
+		frameBodyId: string | null;
+	},
+	second: number,
+	i: number,
+	commodity: string,
+	tonnes: number,
+	vel: Vec3,
+): Canister => ({
+	id: `${kill.key}#canister-${second}-${i}`,
+	commodity,
+	tonnes,
+	pos: kill.pos,
+	vel,
+	frameBodyId: kill.frameBodyId,
+	restsAt: kill.killedAt + CANISTER_FADE_S,
+	expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
+});
 
 /**
  * One canister moved one step, from game time `now`. Its velocity relative to
@@ -266,13 +331,17 @@ export function driftCanister(
 export interface CanisterScoop {
 	canister: Canister;
 	accepted: boolean;
+	/** Tonnes taken. Less than the canister holds when the hold had less room
+	 *  (`civilian-combat.md` H11), and the rest stays in the canister. */
+	tonnes: number;
 }
 
 /**
  * One step of the canisters in flight: drop the expired ones, let the ship
- * scoop any it passes close and slow, and drift the rest. `accept` puts a
- * canister into the hold and says whether it fitted. A refused canister stays
- * in space and drifts on (sage #330).
+ * scoop any it passes close and slow, and drift the rest. `accept` puts what
+ * fits of a canister into the hold and returns the tonnes it took. A refused
+ * canister stays in space and drifts on (sage #330), and so does what is left
+ * of one the hold could only partly take (H11).
  *
  * **The scoop is tested before the drift.** `Game` steps this at the frame's
  * start, before the ship moves. A canister drifted first was a step ahead of
@@ -284,7 +353,7 @@ export function stepCanisters(
 	ship: { pos: Vec3; vel: Vec3 },
 	dt: number,
 	now: number,
-	accept: (canister: Canister) => boolean,
+	accept: (canister: Canister) => number,
 	/**
 	 * The frame **this canister** comes to rest in, this step. Per canister and
 	 * not one vector for all of them: the frame belongs to the body the kill
@@ -298,12 +367,14 @@ export function stepCanisters(
 	const tried: CanisterScoop[] = [];
 	for (const canister of canisters) {
 		if (now >= canister.expiresAt) continue;
+		let left = canister;
 		if (scoops(canister, ship)) {
-			const accepted = accept(canister);
-			tried.push({ canister, accepted });
-			if (accepted) continue;
+			const tonnes = Math.max(0, Math.min(canister.tonnes, accept(canister)));
+			tried.push({ canister, accepted: tonnes > 0, tonnes });
+			if (tonnes >= canister.tonnes) continue;
+			if (tonnes > 0) left = { ...canister, tonnes: canister.tonnes - tonnes };
 		}
-		kept.push(driftCanister(canister, dt, now, frameVelFor(canister)));
+		kept.push(driftCanister(left, dt, now, frameVelFor(canister)));
 	}
 	return { kept, scoops: tried };
 }

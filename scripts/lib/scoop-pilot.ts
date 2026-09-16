@@ -140,7 +140,7 @@ export function flyToCargo(
 			ship,
 			PILOT_DT,
 			now,
-			() => true,
+			(c) => c.tonnes,
 			() => frameVel,
 		);
 		scooped += step.scoops.filter((s) => s.accepted).length;

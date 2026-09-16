@@ -8272,7 +8272,7 @@ class Game {
 					canister.tonnes,
 				);
 				if (took.accepted) this.commander = took.commander;
-				return took.accepted;
+				return took.tonnes;
 			},
 			// Each canister's own frame, as it stands (#324). Not `localFrame()`:
 			// that is the *observer's* nearest body, so a pilot who flies past
@@ -8290,10 +8290,10 @@ class Game {
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
-		for (const { canister, accepted } of step.scoops) {
+		for (const { canister, accepted, tonnes } of step.scoops) {
 			const event = {
 				commodity: canister.commodity,
-				tonnes: canister.tonnes,
+				tonnes: accepted ? tonnes : canister.tonnes,
 				accepted,
 			};
 			this.lastExit = scoopExit(event);
@@ -8307,7 +8307,8 @@ class Game {
 			// rate (sage #355). The notice itself is re-armed deliberately: a
 			// refusal stands while the ship is still beside the canister.
 			// **Only a refusal can repeat.** An accepted scoop takes its canister
-			// out of the world, so it cannot fire twice; gating both silenced the
+			// out of the world, or fills the hold leaving the rest in it (H11), so the
+			// next attempt on it is a refusal: it cannot fire twice; gating both silenced the
 			// second of two scoops of the same good inside the notice's life,
 			// which is the opposite of "three scoops read as three events"
 			// (sage #355).

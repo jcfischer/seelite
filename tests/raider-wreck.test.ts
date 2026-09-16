@@ -19,6 +19,7 @@ import {
 	RAIDER_WRECK_S,
 	cargoWeights,
 	dropCanisters,
+	dropManifestCanisters,
 	raiderDestruction,
 	scoops,
 	stepCanisters,
@@ -179,7 +180,7 @@ describe("the cargo drop", () => {
 					far,
 					dt,
 					500 + t,
-					() => true,
+					(c: Canister) => c.tonnes,
 					() => frameVel,
 				).kept[0];
 			return c;
@@ -216,7 +217,7 @@ describe("the cargo drop", () => {
 				far,
 				dt,
 				500 + t,
-				() => true,
+				(c: Canister) => c.tonnes,
 				() => last,
 			).kept[0];
 		}
@@ -246,7 +247,7 @@ describe("the cargo drop", () => {
 				far,
 				dt,
 				500 + t,
-				() => true,
+				(c: Canister) => c.tonnes,
 				() => frame,
 			).kept[0];
 			mark = add(mark, scale(frame, dt));
@@ -263,7 +264,7 @@ describe("the cargo drop", () => {
 				far,
 				dt,
 				500 + t,
-				() => true,
+				(c: Canister) => c.tonnes,
 				() => frameAt(0),
 			).kept[0];
 		const tracked = length(sub(c.pos, mark));
@@ -292,7 +293,7 @@ describe("the cargo drop", () => {
 				far,
 				1 / 60,
 				950 + t,
-				() => true,
+				(c: Canister) => c.tonnes,
 				frameFor,
 			).kept;
 		// One rests with its station, the other in star coordinates — from one
@@ -330,7 +331,7 @@ describe("drift, expiry and the scoop", () => {
 	};
 
 	const farShip = { pos: v3(10, 0, 0), vel: v3() };
-	const takeAll = () => true;
+	const takeAll = (c: Canister) => c.tonnes;
 	// The frame these rows step in, as the resolver the stepper takes. At rest
 	// in it, so they see a constant velocity; the fade is the drop rows'
 	// question.
@@ -361,13 +362,15 @@ describe("drift, expiry and the scoop", () => {
 		const ship = { pos: v3(0, 0, 0), vel: v3() };
 		const step = stepCanisters([moving], ship, 1, 50, takeAll, still);
 		expect(step.kept).toHaveLength(0);
-		expect(step.scoops).toEqual([{ canister: moving, accepted: true }]);
+		expect(step.scoops).toEqual([
+			{ canister: moving, accepted: true, tonnes: 1 },
+		]);
 	});
 
 	test("a canister the hold refuses stays in space and drifts on", () => {
 		const ship = { pos: v3(0, 0, 0), vel: v3() };
-		const step = stepCanisters([canister], ship, 2, 50, () => false, carried);
-		expect(step.scoops).toEqual([{ canister, accepted: false }]);
+		const step = stepCanisters([canister], ship, 2, 50, () => 0, carried);
+		expect(step.scoops).toEqual([{ canister, accepted: false, tonnes: 0 }]);
 		expect(step.kept).toHaveLength(1);
 		expect(step.kept[0].pos.x).toBeCloseTo(0.02, 12);
 	});
@@ -418,5 +421,111 @@ describe("drift, expiry and the scoop", () => {
 		const refused = scoopCargo(full, "Food", 1);
 		expect(refused.accepted).toBe(false);
 		expect(refused.commander).toBe(full);
+	});
+});
+
+describe("a scoop takes what fits (civilian-combat.md H11)", () => {
+	const lot: Canister = {
+		id: "lot",
+		commodity: "Food",
+		tonnes: 12,
+		pos: v3(0, 0, 0),
+		vel: v3(),
+		frameBodyId: null,
+		restsAt: 0,
+		expiresAt: 1000,
+	};
+	const beside = { pos: v3(0, 0, 0), vel: v3() };
+
+	test("a partial take leaves the rest in the canister", () => {
+		const step = stepCanisters(
+			[lot],
+			beside,
+			0.1,
+			10,
+			() => 5,
+			() => v3(),
+		);
+		expect(step.scoops).toEqual([{ canister: lot, accepted: true, tonnes: 5 }]);
+		expect(step.kept).toHaveLength(1);
+		expect(step.kept[0].tonnes).toBe(7);
+		expect(step.kept[0].id).toBe("lot");
+	});
+
+	test("a whole take removes it", () => {
+		const step = stepCanisters(
+			[lot],
+			beside,
+			0.1,
+			10,
+			(c) => c.tonnes,
+			() => v3(),
+		);
+		expect(step.kept).toHaveLength(0);
+	});
+
+	test("scoopCargo takes the whole tonnes the hold has room for", () => {
+		const commander = newCommander("courier");
+		const room = 20 - 0;
+		const took = scoopCargo(commander, "Food", 30);
+		expect(took.accepted).toBe(true);
+		expect(took.tonnes).toBe(room);
+		expect(took.commander.cargo.Food).toBe(room);
+		const again = scoopCargo(took.commander, "Food", 10);
+		expect(again).toMatchObject({ accepted: false, tonnes: 0 });
+		expect(again.commander).toBe(took.commander);
+	});
+});
+
+describe("a manifest drop (civilian-combat.md H11)", () => {
+	const manifest = [
+		{ good: "Food", tonnes: 22 },
+		{ good: "Computers", tonnes: 9 },
+		{ good: "Narcotics", tonnes: 3 },
+	];
+	const drop = (killedAt = 900) =>
+		dropManifestCanisters({
+			systemSeed: 0x1234,
+			key: SLOT.key,
+			manifest,
+			killedAt,
+			pos: v3(5, 0, 0),
+			vel: v3(0, 0, -1),
+			frameVel: v3(),
+			frameBodyId: "station-trade",
+		});
+
+	test("is one canister per line, each holding its line's tonnes", () => {
+		const canisters = drop();
+		expect(
+			canisters.map((c) => ({ good: c.commodity, tonnes: c.tonnes })),
+		).toEqual(manifest);
+		for (const c of canisters) {
+			expect(c.frameBodyId).toBe("station-trade");
+			expect(c.expiresAt).toBe(900 + CANISTER_LIFETIME_S);
+			expect(
+				length(sub(c.vel, scale(v3(0, 0, -1), CANISTER_KEEP_FRACTION))),
+			).toBeCloseTo(CANISTER_EJECT_KMS, 9);
+		}
+		expect(new Set(canisters.map((c) => c.id)).size).toBe(manifest.length);
+	});
+
+	test("is the same drop for the same kill", () => {
+		expect(drop()).toEqual(drop());
+	});
+
+	test("an empty manifest drops nothing", () => {
+		expect(
+			dropManifestCanisters({
+				systemSeed: 1,
+				key: SLOT.key,
+				manifest: [],
+				killedAt: 1,
+				pos: v3(),
+				vel: v3(),
+				frameVel: v3(),
+				frameBodyId: null,
+			}),
+		).toEqual([]);
 	});
 });

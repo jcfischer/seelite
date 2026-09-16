@@ -139,21 +139,29 @@ const withCargo = (
 };
 
 /**
- * Take a scooped canister into the hold (#324 part d), or refuse it when the
- * hold cannot take it. Tonne goods only, because a canister is a tonne.
+ * Take what fits of a scooped canister into the hold (#324 part d), or refuse
+ * it when the hold has no room. Tonne goods only. A raider's canister is a
+ * tonne; an ordinary carrier's holds a whole manifest line (civilian-combat H11),
+ * so this takes whole tonnes up to the room left and returns how many.
  */
 export function scoopCargo(
 	commander: CommanderState,
 	commodityName: string,
 	tonnes: number,
-): { accepted: boolean; commander: CommanderState } {
+): { accepted: boolean; tonnes: number; commander: CommanderState } {
 	const good = commodity(commodityName);
-	if (
-		good.unit !== "t" ||
-		heldTonnes(commander.cargo) + tonnes > holdCapacityT(commander)
-	)
-		return { accepted: false, commander };
-	return { accepted: true, commander: withCargo(commander, good, tonnes) };
+	// What fits, in whole tonnes: a canister of a manifest line can hold more
+	// than the hold has room for, and the rest stays in it (civilian-combat H11).
+	const room = Math.floor(
+		holdCapacityT(commander) - heldTonnes(commander.cargo),
+	);
+	const took = good.unit === "t" ? Math.max(0, Math.min(tonnes, room)) : 0;
+	if (took <= 0) return { accepted: false, tonnes: 0, commander };
+	return {
+		accepted: true,
+		tonnes: took,
+		commander: withCargo(commander, good, took),
+	};
 }
 
 const availableEquipment = (
