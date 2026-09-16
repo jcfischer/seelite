@@ -114,6 +114,7 @@ import { SettingsStore } from "./settings";
 import {
 	type AdaptiveDiagnostics,
 	AdaptiveResolution,
+	displaySignature,
 	nearestRung,
 	RENDER_SCALE_LADDER,
 } from "./adaptive-resolution";
@@ -1565,6 +1566,8 @@ class Game {
 	 * and climbing back down through every rung to where it began.
 	 */
 	private appliedRenderScale = 1;
+	/** The display the controller's measurements were taken on; see `displaySignature`. */
+	private adaptiveDisplay: string | null = null;
 	private rendererInfoAutoReset: boolean | null = null;
 	readonly audio = new AudioFX();
 	/**
@@ -2076,12 +2079,31 @@ class Game {
 	async enableFrameAttribution(
 		mode: FrameAttributionMode = "full",
 	): Promise<FrameAttribution | null> {
-		// **Whichever arrives first wins, and there is never a second.** Two
-		// samplers on one context would each mark every frame into their own
-		// ring, and the one the controller reads would not be the one `?perf`
-		// prints. A `cadence` sampler already running under Auto is what `?perf`
-		// then shows, with an empty GPU half and `mode: "cadence"` saying why.
-		if (this.frameAttribution) return this.frameAttribution;
+		// **There is never a second sampler.** Two on one context would each
+		// mark every frame into their own ring, and the one the controller reads
+		// would not be the one `?perf` prints.
+		//
+		// **But a `full` request is not satisfied by a `cadence` sampler**, and
+		// this line used to say it was: whichever arrived first won. A saved
+		// Auto row starts its cadence sampler at boot, before `?perf` mounts, so
+		// a player with Auto on got a diagnostic with no GPU timer and no
+		// counters — #223's instrument quietly depending on a settings row.
+		// Sage found it.
+		//
+		// So the cadence sampler is **replaced**, which is the word
+		// `FrameAttributionMode` already used while the code did otherwise. A
+		// full sampler marks frames too, so this costs Auto nothing but its
+		// retained periods: the controller reads `this.frameAttribution` on every
+		// step and finds the new one there, empty, and primes up from it the way
+		// it does after any rung change. The old one is disabled first, which
+		// bumps the generation, so a slow import cannot land it back.
+		//
+		// The other direction is left alone: Auto asking for `cadence` over a
+		// running `full` sampler already has its signal.
+		const existing = this.frameAttribution;
+		if (existing && !(mode === "full" && existing.snapshotMode === "cadence"))
+			return existing;
+		if (existing) this.disableFrameAttribution();
 		if (this.frameAttributionEnable) return this.frameAttributionEnable;
 		const generation = this.frameAttributionGeneration;
 		const pending = (async () => {
@@ -2147,6 +2169,21 @@ class Game {
 		attribution.disable();
 	}
 
+	/**
+	 * Empty the sampler's frame-period ring, for an instrument changing a rung.
+	 *
+	 * Public because `measure-adaptive-resolution.mjs` needs each row to hold
+	 * only its own rung's frames, and its first version believed it had that:
+	 * it called `attributionSnapshot()` and `enableFrameAttribution()` under a
+	 * comment saying "reprimed first". Neither clears anything — a snapshot is
+	 * a read and an enable returns the running sampler — so every row carried
+	 * the previous rung's periods, which moves a p95 below about 46 fps and a
+	 * median below about 24. Sage found it.
+	 */
+	reprimeFrameCadence(): void {
+		this.frameAttribution?.reprimeCadence();
+	}
+
 	/** Probe/diagnostic access to the immutable sampler-owned snapshot. */
 	attributionSnapshot(): FrameAttributionSnapshot | null {
 		return this.frameAttribution?.snapshot() ?? null;
@@ -2190,17 +2227,22 @@ class Game {
 	 * the previous rung; left to blend out, a 33 ms history would hold a
 	 * freshly-halved frame over the downshift trigger and step it down again.
 	 *
-	 * ## The event this cannot listen for
+	 * ## A display move is compared for, not listened for
 	 *
-	 * Item 7 of the node asks for a re-prime on a display change, and on the
-	 * principal's two displays **there is no such event**. `?perf` reports an
-	 * effective pixel ratio of 2.00 on both, so moving the window between them
-	 * changes nothing the page can observe — no `resize`, no
-	 * `devicePixelRatio`, no media query — while the cost per pixel changes by
-	 * 2.02x. What recovers it is the controller's own re-measurement:
-	 * `OBSERVATION_TTL_MS` retires the curve's points, and the frame period it
-	 * steers on is measured fresh either way. A listener is not available; a
-	 * measurement is.
+	 * Item 7 of the node asks for a re-prime on a display change. On the
+	 * principal's two displays no event carries one: `?perf` reports an
+	 * effective pixel ratio of 2.00 on both, so neither `resize` nor the
+	 * pixel-ratio media query fires, while the cost per pixel changes by 2.02x.
+	 *
+	 * **This comment used to conclude that re-measurement would recover it, and
+	 * that was wrong.** `refreshFloorMs` only goes down and only `prime` resets
+	 * it, so once the 120 Hz laptop set it to 8.33 ms the 60 Hz external's
+	 * vsync-pinned 16.67 ms frames never read as capped again and the 44-second
+	 * recovery came back. Sage caught it.
+	 *
+	 * So the screen's geometry is compared on every step — a handful of property
+	 * reads — and a change primes. `displaySignature` says what is compared and
+	 * what has not been verified.
 	 */
 	/**
 	 * Throw away what Auto has measured, keeping the rung it is on.
@@ -2221,6 +2263,12 @@ class Game {
 		const controller = this.adaptive;
 		const attribution = this.frameAttribution;
 		if (!controller || !attribution) return;
+		const display = displaySignature(window.screen, window.devicePixelRatio);
+		// `null` is the first step after Auto starts, which has nothing to
+		// compare against and nothing measured to throw away.
+		if (this.adaptiveDisplay !== null && display !== this.adaptiveDisplay)
+			this.primeAdaptive("display changed");
+		this.adaptiveDisplay = display;
 		const snapshot = attribution.snapshot();
 		const decision = controller.step({
 			nowMs: performance.now(),
@@ -2251,6 +2299,11 @@ class Game {
 			return;
 		}
 		if (this.adaptive) return;
+		// A new controller has measured nothing, so it has no display to compare
+		// against. Left over from a previous Auto session, the old signature
+		// would prime the new controller on its first step for a move that
+		// happened while it did not exist.
+		this.adaptiveDisplay = null;
 		this.adaptive = new AdaptiveResolution({
 			// Start from the rung the player last had applied rather than from
 			// the top: switching to Auto over a planet would otherwise jump to

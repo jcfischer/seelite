@@ -9,6 +9,7 @@ import {
 	COOLDOWN_MS,
 	DOWNSHIFT_FRAMES,
 	DOWNSHIFT_TRIGGER_MS,
+	displaySignature,
 	MIN_SAMPLES,
 	OBSERVATION_TTL_MS,
 	RENDER_SCALE_LADDER,
@@ -821,5 +822,78 @@ describe("a memory the current frame has ruled out", () => {
 		expect(
 			decisions.filter((d) => d.transition === "up-trial").length,
 		).toBeLessThanOrEqual(Math.ceil(elapsedMs / CAPPED_OBSERVATION_TTL_MS) + 1);
+	});
+});
+
+/**
+ * I1 of sage's first round on PR #354: a display move reaches the controller.
+ */
+describe("the display a measurement was taken on", () => {
+	const laptop = { width: 1728, height: 1117, availLeft: 0, availTop: 0 };
+
+	test("the same display gives the same signature", () => {
+		expect(displaySignature(laptop, 2)).toBe(
+			displaySignature({ ...laptop }, 2),
+		);
+	});
+
+	test("a display of another size is another display", () => {
+		expect(displaySignature(laptop, 2)).not.toBe(
+			displaySignature({ ...laptop, width: 2560, height: 1440 }, 2),
+		);
+	});
+
+	test("two displays of one size are separated by their origin", () => {
+		// The case the size alone cannot tell apart: a 60 Hz and a 120 Hz panel
+		// of identical resolution, side by side in the virtual desktop.
+		expect(displaySignature(laptop, 2)).not.toBe(
+			displaySignature({ ...laptop, availLeft: 1728 }, 2),
+		);
+	});
+
+	test("the principal's case: both displays at ratio 2.00", () => {
+		// Neither `resize` nor the pixel-ratio media query fires here, which is
+		// why this comparison exists at all.
+		const external = {
+			width: 2560,
+			height: 1440,
+			availLeft: 1728,
+			availTop: 0,
+		};
+		expect(displaySignature(laptop, 2)).not.toBe(displaySignature(external, 2));
+	});
+
+	test("a browser without the non-standard origin still separates sizes", () => {
+		expect(displaySignature({ width: 1728, height: 1117 }, 2)).not.toBe(
+			displaySignature({ width: 2560, height: 1440 }, 2),
+		);
+	});
+
+	test("a prime after the move clears the floor the old panel set", () => {
+		// The defect itself, at the controller: after the 120 Hz laptop has set
+		// the floor to 8.33 ms, the 60 Hz external's pinned 16.67 ms must read
+		// as capped — and it can only once the floor has been forgotten.
+		const controller = new AdaptiveResolution({ initialScale: 0.5 });
+		fly(controller, { frames: 200, cost: () => 8.33, minPeriodMs: () => 8.33 });
+		expect(controller.diagnostics.refreshFloorMs).toBeCloseTo(8.33, 5);
+
+		fly(controller, {
+			frames: 200,
+			cost: () => 16.67,
+			minPeriodMs: () => 16.67,
+			startMs: 10_000,
+		});
+		// Without a prime the old floor stands and a pinned frame is not capped.
+		expect(controller.diagnostics.atCap).toBe(false);
+
+		controller.prime("display changed");
+		fly(controller, {
+			frames: 200,
+			cost: () => 16.67,
+			minPeriodMs: () => 16.67,
+			startMs: 20_000,
+		});
+		expect(controller.diagnostics.refreshFloorMs).toBeCloseTo(16.67, 5);
+		expect(controller.diagnostics.atCap).toBe(true);
 	});
 });

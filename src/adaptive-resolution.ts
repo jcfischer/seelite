@@ -244,6 +244,48 @@ export const CAPPED_OBSERVATION_TTL_MS = 15_000;
  */
 export const STALE_OBSERVATION_SLACK = 1.25;
 
+/**
+ * A string that changes when the window moves to another display.
+ *
+ * **This is how a display move reaches the controller, and the previous answer
+ * was that nothing could.** The page reported an effective pixel ratio of 2.00
+ * on both of the principal's displays, so neither `resize` nor the
+ * `devicePixelRatio` media query fires on a move between them — and a comment in
+ * `main.ts` concluded from that there was no event at all, and that a fresh
+ * measurement would recover instead. Sage found that it does not:
+ * `refreshFloorMs` only ever goes down and is reset only by `prime`, so after
+ * the 120 Hz laptop sets it to 8.33 ms, the 60 Hz external's vsync-pinned
+ * 16.67 ms never reads as capped again, and the 44-second recovery the short
+ * window was added to fix comes straight back.
+ *
+ * What *does* change on a move is the geometry of the screen the window is on.
+ * Its size identifies a display, and its origin in the virtual desktop
+ * separates two displays that happen to share a size. The pixel ratio is
+ * included so this one string answers the whole question, although a ratio
+ * change also primes through its own media query.
+ *
+ * Takes plain numbers rather than reading `window.screen`, so this module stays
+ * free of the DOM and the comparison stays testable headless. `availLeft` and
+ * `availTop` are optional because they are non-standard; a browser without them
+ * still distinguishes displays of different sizes.
+ *
+ * **Not verified against a physical move.** Every browser this repo can drive
+ * is Playwright's, which emulates a 1280x720 screen at ratio 1 whatever the
+ * machine has. The wiring is probed with a stubbed screen; the move itself is
+ * the principal's to confirm.
+ */
+export function displaySignature(
+	screen: Readonly<{
+		width: number;
+		height: number;
+		availLeft?: number;
+		availTop?: number;
+	}>,
+	pixelRatio: number,
+): string {
+	return `${screen.width}x${screen.height}@${screen.availLeft ?? "?"},${screen.availTop ?? "?"}*${pixelRatio}`;
+}
+
 /** What `step` is told about the frame. Every field comes from the caller. */
 export type AdaptiveEvidence = Readonly<{
 	nowMs: number;

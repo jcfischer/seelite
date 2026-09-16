@@ -13,7 +13,8 @@
  * - the drawing buffer follows the rung while the DOM cockpit and the 2D
  *   overlay stay at native CSS resolution, which is the whole of item 8;
  * - Auto runs on the default route **without issuing a timer query**, which is
- *   #223's build contract item 6 surviving a consumer that is not `?perf`;
+ *   #223's build contract item 6 surviving a consumer that is not the perf
+ *   panel;
  * - the mode is non-destructive in both directions — a saved manual number is
  *   still that number after Auto has been on, and leaving Auto applies it at
  *   once;
@@ -165,6 +166,19 @@ t.check(
 );
 
 // ── Auto is a mode, and it runs without a timer query ───────────────────────
+//
+// **Back to 100% first, so Auto starts at the top.** A controller starts from
+// the rung last applied, and the manual loop above ends at 50% — so in the
+// first version Auto *began* on the bottom rung, and the row that was meant to
+// show it stepping down read `scale < 1` as true before the controller had done
+// anything. Sage found that neither steering row could go red on a build whose
+// controller never moved.
+await page.evaluate(() => {
+	window.__seelite.settings.set("renderScale", 1);
+});
+await page.evaluate(
+	() => new Promise((resolve) => requestAnimationFrame(() => resolve())),
+);
 await page.evaluate(() => {
 	window.__seelite.settings.set("renderScale", "auto");
 });
@@ -222,46 +236,113 @@ t.check(
 // SwiftShader at 1280x720 the frame runs far over budget and Auto walks down
 // the ladder; on a rasteriser that held 60 fps it would sit at the top and
 // still be working. What must be true either way is that a period arrives.
-await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 6_000)));
-const steered = await page.evaluate(() => {
+const steered = await page.evaluate(async () => {
 	const game = window.__seelite;
+	/**
+	 * **A trace, not an instant.** Both versions of these rows before this one
+	 * read the controller once, at the end of the window, and that instant is
+	 * as likely as any other to fall just after a rung change — which reprimes
+	 * the ring and reads `no frame period` for a moment. Running the I2 red
+	 * build turned both rows red for exactly that reason, with nothing wrong in
+	 * the controller. So every sample is kept and the rows ask what happened
+	 * across the window.
+	 */
+	const trace = [];
+	const until = performance.now() + 6_000;
+	while (performance.now() < until) {
+		const d = game.adaptiveDiagnostics();
+		if (d) trace.push({ scale: d.scale, periodMs: d.periodMedianMs });
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+	const rungs = [];
+	for (const { scale } of trace)
+		if (rungs[rungs.length - 1] !== scale) rungs.push(scale);
 	return {
-		cadence: game.attributionSnapshot()?.cadence ?? null,
+		trace,
+		rungs,
 		mode: game.attributionSnapshot()?.mode ?? null,
-		diagnostics: game.adaptiveDiagnostics(),
+		budgetMs: game.adaptiveDiagnostics()?.budgetMs ?? null,
 	};
 });
+const periods = steered.trace
+	.map((sample) => sample.periodMs)
+	.filter((ms) => typeof ms === "number" && ms > 0);
+// Over budget *at the top rung*, which is the only state a descent is owed by.
+const overBudgetAtTop = steered.trace.some(
+	(sample) =>
+		sample.scale === 1 &&
+		typeof sample.periodMs === "number" &&
+		sample.periodMs > 1000 / 60,
+);
 
 t.check(
 	"the frame period reaches the controller",
-	steered.mode === "cadence" &&
-		steered.diagnostics !== null &&
-		typeof steered.diagnostics.periodMedianMs === "number" &&
-		steered.diagnostics.periodMedianMs > 0 &&
-		steered.diagnostics.sampleAgeFrames > 0,
-	JSON.stringify(steered),
+	steered.mode === "cadence" && periods.length > 0,
+	JSON.stringify({
+		mode: steered.mode,
+		samples: steered.trace.length,
+		periods: periods.length,
+	}),
 );
 
 t.check(
 	"a period over budget has moved the rung down",
-	// **`typeof` first, and that is not defensive noise.** Written as
-	// `periodMedianMs <= 1000 / 60` this row stayed *green* on the build with
-	// `markFrame` disconnected, because `null <= 16.67` is true in JavaScript —
-	// so the check that exists to catch a missing signal was satisfied by the
-	// missing signal. Caught by running that build rather than by reading it.
-	typeof steered.diagnostics.periodMedianMs === "number" &&
-		(steered.diagnostics.periodMedianMs <= 1000 / 60 ||
-			steered.diagnostics.scale < 1 ||
-			// The one honest exception: it may still be counting toward the step.
-			steered.diagnostics.reason.startsWith("over budget")),
-	JSON.stringify(steered.diagnostics),
+	// **No escape clause, and the last two versions each had one.** The first
+	// accepted `scale < 1`, true from the start because Auto began on the
+	// bottom rung. The second accepted a reason beginning "over budget" — which
+	// is *always* the reason of a controller stuck over budget, so the build
+	// whose controller never stepped stayed green. Sage found the first; the
+	// red build found the second.
+	//
+	// None is needed. Over budget at the top rung, a step is owed within
+	// `MIN_SAMPLES + DOWNSHIFT_FRAMES` frames, and a six-second window holds
+	// several times that on this rasteriser. On one fast enough never to be
+	// over budget at the top, nothing is owed and the row holds vacuously —
+	// which is the implication, stated once rather than smuggled in as an "or".
+	steered.rungs[0] === 1 &&
+		(!overBudgetAtTop || steered.rungs.some((rung) => rung < 1)),
+	JSON.stringify({ rungs: steered.rungs, overBudgetAtTop }),
 );
 
+// **No row asserts a curve point here, and one used to.** It passed through
+// `|| atCap`, which is true on this machine for a reason unrelated to the
+// controller working: SwiftShader never runs a cheap frame, so each rung Auto
+// reaches is the cheapest this session has seen, the refresh estimate is that
+// rung's own median, and every rung reads as capped and records nothing. A row
+// that can only pass on its escape clause is not a check. Recording is covered
+// headless, where the refresh interval can be established first.
+
+// ── a display move reprimes, where no event says it happened ────────────────
+//
+// I1 of sage's first round. Moving the window between the principal's two
+// displays fires no `resize` and no pixel-ratio media query, because both
+// report a ratio of 2.00; the refresh floor the first panel set then outlives
+// the move. `stepAdaptiveResolution` compares the screen's geometry instead.
+//
+// **The move is stubbed**, because Playwright emulates a 1280x720 screen and
+// cannot put a window on another display. So this row proves the wiring — a
+// changed geometry primes — and not that a real browser changes it on a real
+// move, which is the principal's to confirm.
+//
+// A prime is read off `refreshFloorMs`. It goes back to `null` and stays there
+// until `MIN_SAMPLES` frames have arrived, which is seconds on this rasteriser,
+// so a reading two frames later can only be `null` if a prime happened.
+const beforeMove = await page.evaluate(
+	() => window.__seelite.adaptiveDiagnostics()?.refreshFloorMs ?? null,
+);
+const afterMove = await page.evaluate(async () => {
+	Object.defineProperty(window.screen, "availLeft", {
+		configurable: true,
+		get: () => 1728,
+	});
+	for (let i = 0; i < 2; i++)
+		await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+	return window.__seelite.adaptiveDiagnostics()?.refreshFloorMs ?? null;
+});
 t.check(
-	"a rung it has stood on becomes a point on the curve",
-	Object.keys(steered.diagnostics.observations).length > 0 ||
-		steered.diagnostics.atCap,
-	JSON.stringify(steered.diagnostics.observations),
+	"moving to another display forgets the refresh interval",
+	typeof beforeMove === "number" && afterMove === null,
+	JSON.stringify({ beforeMove, afterMove }),
 );
 
 // ── a resize reprimes rather than carrying a stale curve ────────────────────
@@ -283,6 +364,58 @@ t.check(
 		after: afterResize.diagnostics?.reason,
 		observations: afterResize.diagnostics?.observations,
 	}),
+);
+
+// ── the perf panel over a running Auto gets the diagnostic it asked for ─────
+//
+// I2 of sage's first round. A saved Auto row starts a cadence sampler at boot,
+// before the perf panel mounts, and `enableFrameAttribution` used to hand that sampler
+// back to a caller asking for `full` — no GPU timer, no counters, and a panel
+// that looked like the instrument was broken. Asked for here the way the panel
+// asks, over a live cadence sampler.
+//
+// **Asked for through `enableFrameAttribution` and never through the route.**
+// The route mounts the panel, whose window key listener would see this probe's
+// keystrokes, and `check-launcher-wiring.mjs` refuses it in any probe that has
+// not argued its way onto its owner list. What the panel does to the sampler is
+// one call, and the call is what is under test.
+//
+// Last before leaving Auto on purpose: a full sampler issues timer queries, and
+// the row above that asserts Auto issues none has to have run already.
+const upgraded = await page.evaluate(async () => {
+	const game = window.__seelite;
+	const before = game.attributionSnapshot()?.mode ?? null;
+	const extensionReadsBefore = window.__adaptiveCalls.timerExtensionReads;
+	await game.enableFrameAttribution("full");
+	const after = game.attributionSnapshot()?.mode ?? null;
+	const extensionReadsAfter = window.__adaptiveCalls.timerExtensionReads;
+	// And Auto still has its signal once the new ring has filled.
+	const until = performance.now() + 5_000;
+	let period = null;
+	while (performance.now() < until) {
+		period = game.adaptiveDiagnostics()?.periodMedianMs ?? null;
+		if (typeof period === "number") break;
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	return {
+		before,
+		after,
+		extensionReadsBefore,
+		extensionReadsAfter,
+		period,
+	};
+});
+t.check(
+	"a full request replaces a running cadence sampler",
+	upgraded.before === "cadence" &&
+		upgraded.after === "full" &&
+		upgraded.extensionReadsAfter > upgraded.extensionReadsBefore,
+	JSON.stringify(upgraded),
+);
+t.check(
+	"and Auto keeps steering off the full sampler",
+	typeof upgraded.period === "number" && upgraded.period > 0,
+	JSON.stringify(upgraded),
 );
 
 // ── leaving Auto is non-destructive, and immediate ──────────────────────────

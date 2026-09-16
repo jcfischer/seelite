@@ -203,14 +203,35 @@ const read = async () =>
 		};
 	});
 
+/**
+ * Hold the current rung for `ms`, reading only its own frames.
+ *
+ * **The ring is emptied here, and the first version only said it was.** It
+ * called `attributionSnapshot()` and `enableFrameAttribution("cadence")` under a
+ * comment reading "reprimed first" — a snapshot is a read and an enable returns
+ * the running sampler, so neither clears a thing, and each row carried the
+ * previous rung's periods. Sage found it.
+ *
+ * One frame is waited for first, so the resize the rung change asked for has
+ * landed and the frame that pays for the buffer rebuild falls before the prime
+ * rather than inside the window.
+ */
 const hold = async (ms) => {
-	// Reprimed first, so the window that is read contains only this rung's
-	// frames. Without it the median at 50% still carries the 100% frames the
-	// ring was holding when the buffer was rebuilt.
-	await page.evaluate(() => {
-		window.__seelite.attributionSnapshot();
-		window.__seelite.enableFrameAttribution("cadence");
+	await page.evaluate(
+		() => new Promise((resolve) => requestAnimationFrame(() => resolve())),
+	);
+	const left = await page.evaluate(() => {
+		const game = window.__seelite;
+		game.reprimeFrameCadence();
+		return game.attributionSnapshot()?.cadence.sampleCount ?? null;
 	});
+	// A prime that did not empty the ring is the failure this replaces, so it
+	// refuses rather than printing a row that mixes two rungs.
+	if (left !== 0)
+		throw new Error(
+			`the cadence ring still holds ${left} periods after a reprime — every ` +
+				"row below would mix this rung's frames with the previous one's",
+		);
 	await page.evaluate(
 		(waitMs) => new Promise((resolve) => setTimeout(resolve, waitMs)),
 		ms,
@@ -221,10 +242,7 @@ const hold = async (ms) => {
 const rows = [];
 for (const rung of RENDER_SCALE_LADDER) {
 	await page.evaluate((value) => {
-		const game = window.__seelite;
-		game.settings.set("renderScale", value);
-		// The rung change leaves the previous rung's periods in the ring.
-		game.attributionSnapshot();
+		window.__seelite.settings.set("renderScale", value);
 	}, rung);
 	await hold(SETTLE_MS);
 	const sample = await read();
