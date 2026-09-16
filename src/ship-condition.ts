@@ -60,6 +60,48 @@ export const SHIELD_RECHARGE_DELAY_S = 3;
  */
 export const SHIELD_RECHARGE_ENERGY_PER_POINT = 1;
 
+/**
+ * The step both combat readouts print hull in (`duel-hud.ts`: `Math.round`).
+ */
+export const HULL_PRINT_STEP = 1;
+
+/**
+ * A hull too small to print a digit is gone.
+ *
+ * **Half the print step, by the principal's ruling (#367 D1).** The playtest of
+ * 2026-09-16 reported `HULL 0` on a raider that was alive and rebuilding: the
+ * kill was `hull > 0` and the glass was `Math.round(hull)`, so every hull under
+ * half a point was alive and read dead — a band five frames wide at the pulse's
+ * rate, and the last fraction of a duel was harder than the start of it.
+ *
+ * It is a share of the *print*, not of a tick. The tick is `damagePerS × dt`, so
+ * a tick-shaped tolerance would move with the frame time, and #352 made the
+ * frame time adaptive. Half the print step reads no `dt` at all, and it is what
+ * makes the glass agree with the law rather than merely usually agree with it.
+ *
+ * It belongs here rather than at each readout so that every consumer — the cue,
+ * the console, the duel, the docking bound — agrees without re-deriving it.
+ */
+export const HULL_KILL_TOLERANCE = HULL_PRINT_STEP / 2;
+
+/**
+ * Below this share of a ship's own hull, its energy bank stops buying shields.
+ *
+ * **A quarter, by the principal's ruling (#367 D2).** Recharge used to be gated
+ * on time alone, so a raider at a third of a point of hull, left unhit for the
+ * delay, came back to a whole shield on both pools — one pulse tick is 0.1 hull,
+ * and 3 s of nothing returns 6 points of *shield* in front of the fraction left.
+ * A crippled ship rebuilds its shields and the last fraction of a fight is
+ * harder than the beginning.
+ *
+ * It is every ship's law, so the player's shields stop coming back at the same
+ * share. **It is not `FLEE_HULL_FRACTION`, and does not share it**: that is the
+ * controller's nerve for when to run, this is the repair law for what a running
+ * ship can still repair. Giving them one constant is a coupling neither asked
+ * for, and one retune would silently move the other.
+ */
+export const CRIPPLED_HULL_FRACTION = 0.25;
+
 export type ShieldSide = "fore" | "aft";
 
 export interface ShipCondition {
@@ -94,6 +136,15 @@ export function fullCondition(hull: HullId): ShipCondition {
 export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
 
 /**
+ * Whether this hull is too broken for the bank to buy shields with.
+ *
+ * Read off `hullMax`, not off an absolute, so it is the same law for a courier's
+ * 100 and a dreadnought's 2402.
+ */
+export const isCrippled = (c: ShipCondition): boolean =>
+	c.hull < CRIPPLED_HULL_FRACTION * c.hullMax;
+
+/**
  * What a head-on hit can reach: the fore shield and the hull.
  *
  * `docking.md` §2.1 bounds a failed entry by "a quarter of the combined pool",
@@ -112,7 +163,12 @@ export function sideStruck(nose: Vec3, toSource: Vec3): ShieldSide {
 	return dot(nose, toSource) >= 0 ? "fore" : "aft";
 }
 
-/** Damage into one pool; what the pool cannot absorb goes to hull. */
+/**
+ * Damage into one pool; what the pool cannot absorb goes to hull.
+ *
+ * The one place hull is spent, and so the one place that decides a ship is
+ * finished — see `HULL_KILL_TOLERANCE`.
+ */
 export function applyDamage(
 	c: ShipCondition,
 	amount: number,
@@ -120,10 +176,11 @@ export function applyDamage(
 ): ShipCondition {
 	const hit = Math.max(0, amount);
 	const absorbed = Math.min(c[side], hit);
+	const hull = c.hull - (hit - absorbed);
 	return {
 		...c,
 		[side]: c[side] - absorbed,
-		hull: Math.max(0, c.hull - (hit - absorbed)),
+		hull: hull < HULL_KILL_TOLERANCE ? 0 : hull,
 		sinceStruckS: hit > 0 ? 0 : c.sinceStruckS,
 	};
 }
@@ -144,6 +201,10 @@ const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
  * Order: the shield recharge draws first, then the gun fires from what is
  * left, then an idle gun cools and the bank regenerates. So a ship that holds
  * the trigger while recovering pays for both, which is §2's competition.
+ *
+ * A crippled ship is the exception to the first of those: its bank does not buy
+ * shields at all (`CRIPPLED_HULL_FRACTION`). Its gun still fires, still spends
+ * the bank and still cools — the gate is on recovery, not on the fight.
  */
 export function stepCondition(
 	c: ShipCondition,
@@ -153,7 +214,7 @@ export function stepCondition(
 	const step = Math.max(0, dt);
 	const next = { ...c, sinceStruckS: c.sinceStruckS + step };
 
-	if (c.sinceStruckS >= SHIELD_RECHARGE_DELAY_S) {
+	if (c.sinceStruckS >= SHIELD_RECHARGE_DELAY_S && !isCrippled(c)) {
 		const lower: ShieldSide = next.fore <= next.aft ? "fore" : "aft";
 		const wanted = Math.min(
 			SHIELD_RECHARGE_PER_S * step,

@@ -3,9 +3,14 @@
  * one condition model, one pulse laser and #53's controller.
  */
 import { describe, expect, test } from "bun:test";
-import { ENEMY_COLLISION_RADIUS_KM, playerLaserHit } from "../src/combat-enemy";
+import {
+	ENEMY_COLLISION_RADIUS_KM,
+	PLAYER_LASER_RANGE_KM,
+	playerLaserHit,
+} from "../src/combat-enemy";
 import {
 	type DuelPilot,
+	RAIDER_ESCAPE_KM,
 	RAIDER_HIT_RADIUS_KM,
 	type Raider,
 	raiderAtDrop,
@@ -19,7 +24,7 @@ import {
 	fullCondition,
 	stepCondition,
 } from "../src/ship-condition";
-import { v3 } from "../src/vec3";
+import { type Vec3, scale, v3 } from "../src/vec3";
 
 const DT = 1 / 60;
 const FORWARD = v3(0, 0, -1);
@@ -182,6 +187,52 @@ describe("the raider's fire", () => {
 			expect(step.raiderHit).toBeNull();
 			raider = step.raider;
 		}
+	});
+});
+
+/**
+ * #367 D3. `FLED_KM` was 25 km against a beam that stops at 12, and both ships
+ * are capped at 2 km/s, so a raider in that band could neither be hit nor
+ * leave. The exit is now one figure derived from the beam's own reach.
+ */
+describe("out of the beam is out of the fight (#367 D3)", () => {
+	const straightAt = (km: number) => scale(FORWARD, km);
+
+	test("the escape distance is the beam's reach at the raider's own size", () => {
+		expect(RAIDER_ESCAPE_KM).toBeCloseTo(
+			Math.hypot(PLAYER_LASER_RANGE_KM, RAIDER_HIT_RADIUS_KM),
+			9,
+		);
+	});
+
+	test("it is not the figure it was, which was twice the beam", () => {
+		expect(RAIDER_ESCAPE_KM).toBeLessThan(PLAYER_LASER_RANGE_KM * 1.01);
+	});
+
+	test("dead ahead, a raider inside it can be hit and one outside it cannot", () => {
+		for (const km of [
+			RAIDER_ESCAPE_KM * 0.5,
+			RAIDER_ESCAPE_KM * 0.9,
+			RAIDER_ESCAPE_KM * 0.9999,
+		])
+			expect(
+				playerLaserHit(v3(), FORWARD, straightAt(km), RAIDER_HIT_RADIUS_KM).hit,
+			).toBe(true);
+		for (const km of [
+			RAIDER_ESCAPE_KM * 1.0001,
+			RAIDER_ESCAPE_KM * 1.5,
+			RAIDER_ESCAPE_KM * 2,
+		])
+			expect(
+				playerLaserHit(v3(), FORWARD, straightAt(km), RAIDER_HIT_RADIUS_KM).hit,
+			).toBe(false);
+	});
+
+	test("the mark says the same thing the beam does at that distance", () => {
+		for (const km of [RAIDER_ESCAPE_KM * 0.9, RAIDER_ESCAPE_KM * 1.5])
+			expect(raiderInSights(v3(), FORWARD, straightAt(km))).toBe(
+				playerLaserHit(v3(), FORWARD, straightAt(km), RAIDER_HIT_RADIUS_KM).hit,
+			);
 	});
 });
 

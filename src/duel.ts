@@ -23,6 +23,7 @@ import {
 	type EnemyIntent,
 	type EnemyReadout,
 	NO_ROTATION,
+	PLAYER_LASER_RANGE_KM,
 	playerLaserHit,
 	stepEnemyShip,
 } from "./combat-enemy";
@@ -41,6 +42,31 @@ import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
 export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;
+
+/**
+ * Past this gap a raider has got away (#367 D3).
+ *
+ * **Derived, not declared.** The duel used to end a rout at `FLED_KM`, a
+ * separate 25 km, while the beam stops at `PLAYER_LASER_RANGE_KM`'s 12 — and
+ * both ships are capped at 2 km/s, so a raider in the band between the two
+ * could neither be hit nor leave. The playtest of 2026-09-16 sat at a frozen
+ * 12.34 km for two minutes with its shields climbing.
+ *
+ * The furthest centre the beam can reach is the hypotenuse of its range and the
+ * target's radius, because `playerLaserHit` admits a hit on the projection
+ * along the sightline and the offset across it. Past here no shot can land, so
+ * what the player cannot hit has got away: one figure, derived from the beam,
+ * rather than two that drift.
+ *
+ * Two honest caveats. The beam leaves the cockpit sightline while the encounter
+ * measures gap ship to ship, and a raider may not be dead ahead, so a hit can
+ * stop being possible a little before this — nothing can land after it. And
+ * both differences are metres against twelve kilometres.
+ */
+export const RAIDER_ESCAPE_KM = Math.hypot(
+	PLAYER_LASER_RANGE_KM,
+	RAIDER_HIT_RADIUS_KM,
+);
 
 /**
  * Whether a shot along the sightline would land on the raider now — the HUD's

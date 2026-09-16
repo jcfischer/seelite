@@ -489,6 +489,109 @@ for (const viewport of VIEWPORTS) {
 		);
 
 	// -------------------------------------------------------------------------
+	// #367. Whether a crippled raider is let go at the range the beam stops
+	// reaching rather than at twice it. Measured rather than asserted against a
+	// constant — the probe has no page surface for either figure and should not
+	// need one, because the claim is that the two ranges are the one range.
+	//
+	// **The fight must end by letting go, not by a kill.** A kill writes the
+	// raider's slot to world state, and `resetFlightToStart` rewinds the game
+	// clock while world-state keeps its own high-water mark, so a kill after a
+	// long scripted run dies on `world-state: destroy … is before the clock`.
+	// The raider's hull is held above zero for that reason as well as to keep the
+	// rout running.
+	//
+	// **The trigger is pulled after the cruise reset, not before it.** That reset
+	// clears the pressed-key set, and a key held across it is neither released nor
+	// re-pressed: the gun sits silent while every other reading looks normal.
+	// -------------------------------------------------------------------------
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.resetFlightToStart();
+		window.__duel.cruise();
+		g.forceRaider("ahead", 0.5, 6);
+	});
+	await page.keyboard.down("Space");
+	const rout = await page.evaluate(() => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		/** A fifth of its hull: under #53's nerve, so it runs, and under §2's
+		 *  crippled share, so nothing it rebuilds is paid for by a bank that has
+		 *  stopped buying shields. Held here every frame, so a kill is impossible
+		 *  and the only way this fight can end is by letting go. */
+		const PINNED_HULL = 15;
+		let shaped = false;
+		let lastGap = null;
+		let lastHitGap = null;
+		let releaseGap = null;
+		let minHullSeen = Infinity;
+		const gap = () => {
+			const p = g.world.ship.pos;
+			const q = g.encounter.raider.flight.ship.pos;
+			return Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+		};
+		D.steps(30, () => {
+			const r = g.encounter?.raider;
+			if (!r) {
+				if (shaped && releaseGap === null) releaseGap = lastGap;
+				return;
+			}
+			if (!shaped) {
+				shaped = true;
+				r.condition = { ...r.condition, fore: 0, aft: 0, hull: PINNED_HULL };
+			}
+			const id = g.raiderContact?.id;
+			if (id) g.targetId = id;
+			D.aimAt(r.flight.ship.pos);
+			const after = gap();
+			const struck = r.condition.hull;
+			// Read before the pin, so the minimum is what the fight was actually
+			// carrying and not what the probe handed it.
+			if (struck < minHullSeen) minHullSeen = struck;
+			// `steps` runs this after `g.step`, so a hull below the pin is this
+			// frame's damage, and `lastGap` is the gap that shot was aimed at.
+			if (struck < PINNED_HULL) lastHitGap = lastGap ?? after;
+			r.condition = { ...r.condition, hull: PINNED_HULL };
+			lastGap = after;
+		});
+		return {
+			lastHitGap,
+			releaseGap,
+			minHullSeen,
+			released: g.encounter === null,
+		};
+	});
+	await page.keyboard.up("Space");
+	check(
+		`${v}: a crippled raider is let go at the range the beam stops reaching`,
+		rout.released &&
+			rout.lastHitGap !== null &&
+			rout.releaseGap !== null &&
+			// Alive in every frame the fight was live, so this is a release and
+			// not a kill wearing its clothes; and hit first, or "the beam stopped
+			// landing" would be where the fight started.
+			rout.minHullSeen > 0 &&
+			rout.lastHitGap > 1 &&
+			rout.releaseGap > rout.lastHitGap &&
+			// One frame of the raider's top speed is 0.2 km, so half a kilometre
+			// is the loosest reading that still separates the beam's reach from the
+			// exit this node replaced: measured on the build before #367 the raider
+			// was hit last at 11.83 km and let go at 24.83 km.
+			rout.releaseGap - rout.lastHitGap < 0.5,
+		JSON.stringify(rout),
+	);
+	// **D1's glass half has no browser row, and one was built, flown and
+	// removed.** It pinned the raider at 2.5 hull, read `cueRender.enemyLine`
+	// down through the walk, and asserted no live ship printed 0. Flown against
+	// the build before #367 it stayed green: the walk stops at 0.7 either way,
+	// because the sub-half-point band is exactly what the new law makes
+	// unreachable, so a page can only show it by surviving a strike that the old
+	// rounding would have printed as 0 — and surviving it is the thing the law
+	// forbids. A row that cannot go red is not evidence. `HULL 0 on the glass` is
+	// held headlessly by `tests/duel-hud.test.ts`, keyed on the print, and those
+	// rows were seen red against the old `applyDamage`.
+
+	// -------------------------------------------------------------------------
 	// Peace again: the reset ends the encounter, and every surface goes.
 	// -------------------------------------------------------------------------
 	const after = await page.evaluate(() => {

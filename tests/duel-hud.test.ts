@@ -23,12 +23,16 @@ import {
 	duelRowWidest,
 	showDuelRow,
 } from "../src/duel-hud";
+import { HULL_IDS, type HullId } from "../src/hull";
 import {
 	ENERGY_BANK,
 	HEAT_LOCK,
+	PULSE_LASER,
 	SHIELD_POOL,
 	type ShipCondition,
+	applyDamage,
 	fullCondition,
+	isAlive,
 } from "../src/ship-condition";
 
 const courier = (over: Partial<ShipCondition> = {}): ShipCondition => ({
@@ -193,5 +197,62 @@ describe("the enemy's condition line", () => {
 		expect(targetConditionLine(raider({ aft: 0.4 })).tone).toBe("refused");
 		expect(targetConditionLine(raider({ fore: 0 })).tone).toBe("refused");
 		expect(targetConditionLine(raider({ fore: 0.6 })).tone).toBe("passive");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// #367 D1. The playtest of 2026-09-16 reported `SHD F 22 A 22  HULL 0` on a
+// raider that was alive and rebuilding: `isAlive` is `hull > 0` and both
+// readouts print `Math.round(hull)`, so the band under half a point was alive
+// and read dead. These rows are keyed on the **print**, the way the refusal
+// tone above is — the law itself is `ship-condition.test.ts`'s.
+// ---------------------------------------------------------------------------
+const DT = 1 / 60;
+
+/** Every condition the damage funnel hands the glass as a duel walks a hull
+ *  down one pulse tick at a time, alive and dead states in order. */
+function walkedDown(id: HullId): ShipCondition[] {
+	const seen: ShipCondition[] = [];
+	let c: ShipCondition = fullCondition(id);
+	while (isAlive(c)) {
+		c = applyDamage(c, PULSE_LASER.damagePerS * DT, "fore");
+		seen.push(c);
+	}
+	return seen;
+}
+
+describe("HULL 0 on the glass is always a kill (#367 D1)", () => {
+	test("no readout prints a live hull as 0, on any hull", () => {
+		for (const id of HULL_IDS) {
+			for (const c of walkedDown(id)) {
+				if (isAlive(c)) {
+					expect(targetConditionLine(c).text.endsWith("HULL 0")).toBe(false);
+					expect(duelConsoleReadout(c).hull.startsWith("0 /")).toBe(false);
+				}
+			}
+		}
+	});
+
+	test("the reading the playtest reported belongs to a dead ship", () => {
+		for (const id of HULL_IDS) {
+			for (const c of walkedDown(id)) {
+				const printedZero =
+					targetConditionLine(c).text.endsWith("HULL 0") ||
+					duelConsoleReadout(c).hull.startsWith("0 /");
+				if (printedZero) expect(isAlive(c)).toBe(false);
+			}
+		}
+	});
+
+	test("and a walk down is not vacuous: the frame before the kill prints 1", () => {
+		for (const id of HULL_IDS) {
+			const walk = walkedDown(id);
+			const dead = walk.at(-1) as ShipCondition;
+			expect(isAlive(dead)).toBe(false);
+			expect(dead.hull).toBe(0);
+			const lastAlive = walk.at(-2) as ShipCondition;
+			expect(isAlive(lastAlive)).toBe(true);
+			expect(targetConditionLine(lastAlive).text.endsWith("HULL 1")).toBe(true);
+		}
 	});
 });
