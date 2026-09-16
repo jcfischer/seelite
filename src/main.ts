@@ -300,7 +300,7 @@ import {
 import { carrierInstanceSeed, carrierStanding } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
-import { legalStandingAt, offenceHeat, withOffence } from "./legal";
+import { heatAt, legalStandingAt, offenceHeat, withOffence } from "./legal";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
@@ -5165,7 +5165,7 @@ class Game {
 				)
 			)
 				continue;
-			const route = this.trafficRoutes.find((r) => r.key === key);
+			const route = this.trafficRouteByKey(key);
 			// Its drawn attitude, or failing that the way it is moving.
 			const nose =
 				route?.nose ??
@@ -5228,13 +5228,17 @@ class Game {
 		return this.trafficActors.find((a) => a.key === key);
 	}
 
+	private trafficRouteByKey(key: CarrierKey) {
+		return this.trafficRoutes.find((r) => r.key === key);
+	}
+
 	/** The voyage a carrier flies now: its engagement's, fixed when the fight
 	 *  began, or else its route's (`flownVoyageOrdinal`). */
 	private trafficVoyage(actor: TrafficActor): number {
 		return (
 			this.trafficEngagements.get(actor.key)?.voyageOrdinal ??
 			flownVoyageOrdinal(
-				this.trafficRoutes.find((r) => r.key === actor.key),
+				this.trafficRouteByKey(actor.key),
 				trafficScheduleAt(actor, this.world.gameTime).awayOrdinal,
 			)
 		);
@@ -5320,6 +5324,11 @@ class Game {
 			this.trafficContacts.delete(actor.key);
 			this.selectableCache = null;
 		}
+		// The lock goes with the ship, as the raider's, relay's and canister's
+		// do. The replacement comes back under the same key (H1), and a lock left
+		// here would hand it back already selected with the gimbal on it
+		// (sage #368).
+		if (this.targetId === actor.key) this.targetId = null;
 		this.trafficMeshes.get(actor.key)?.removeFromParent();
 	}
 
@@ -5365,6 +5374,12 @@ class Game {
 			}),
 			legal: {
 				...this.commerceWorld.galaxies[record.galaxy].legalStatus,
+				// The stored pair is at its stamp; `heatNow` is decayed to the clock,
+				// which is what the standing reads.
+				heatNow: heatAt(
+					this.commerceWorld.galaxies[record.galaxy].legalStatus,
+					now,
+				),
 				standing: this.legalStanding(),
 			},
 			authorityReady: this.trafficAuthorityReady(),

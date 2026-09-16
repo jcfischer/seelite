@@ -73,9 +73,13 @@ describe("standing", () => {
 					flips++;
 				n++;
 			}
-		// A flip needs a boundary inside the window *and* a different draw, so
-		// it is at most 120 / 6 h ≈ 0.56 % of windows.
-		expect(flips / n).toBeLessThan(120 / STANDING_ROTATION_S);
+		// A fixed bound, not one derived from the period: a bound that scales
+		// with STANDING_ROTATION_S passes at any period (sage #368). A window
+		// flips at (120 s / period) × P(a redraw differs), and with 85/12/3 %
+		// shares that probability is 1 − (0.85² + 0.12² + 0.03²) ≈ 0.262: about
+		// 0.15 % at 6 h. The bound goes red at a period of about 2.9 h, and the
+		// ~35,000 windows here put sampling noise near 0.02 %.
+		expect(flips / n).toBeLessThan(0.003);
 	});
 
 	test("a replacement draws its own timeline (H1)", () => {

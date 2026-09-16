@@ -5,9 +5,11 @@
  * **Derived, never saved**, under its own `DOMAIN` tag, and fixed for one
  * voyage. The caller passes the voyage the carrier is **flying**
  * (`flownVoyageOrdinal`: its route's visit, the schedule's ordinal only without
- * a route), and a fight fixes it on the engagement when it starts, so a hold
- * cannot change between a scan and a kill. The schedule's own ordinal is not
- * enough: a return running late is still the previous visit (sage #368).
+ * a route), and a fight fixes it on the engagement **at the first shot that
+ * lands**. The schedule's own ordinal is not enough: a return running late is
+ * still the previous visit (sage #368). **Between a scan and that first shot
+ * the visit can still turn over**, so a scan must fix the voyage it read when
+ * it reads it; that is #364's to build, and `carrier-identity.md` §5 says so.
  *
  * **What a scan shows is what drops** (F6). A kill drops one canister per line
  * here, each holding its line's tonnes (H11), so this function is the whole of

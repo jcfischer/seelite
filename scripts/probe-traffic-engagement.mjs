@@ -150,6 +150,7 @@ try {
 				);
 			},
 			offenceHeat: legalMod.OFFENCE_HEAT.destroyed,
+			heatAt: legalMod.heatAt,
 			gimbalConeRad: gimbalMod.GIMBAL_CONE_RAD,
 			lifecycleS: wreckMod.RAIDER_WRECK_S + wreckMod.RAIDER_REPAIR_S,
 			advanceTo(t) {
@@ -257,7 +258,8 @@ try {
 	const killed = await page.evaluate((key) => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
-		const heatBefore = g.trafficReadout().legal.heat;
+		const { heat, updatedAt } = g.trafficReadout().legal;
+		const statusBefore = { heat, updatedAt };
 		let steps = 0;
 		for (; steps < 2000 && g.trafficContacts.has(key); steps++)
 			p.follow(key, true);
@@ -285,7 +287,11 @@ try {
 			canisters: g.canisters
 				.filter((c) => c.id.startsWith(`${key}#`))
 				.map((c) => ({ good: c.commodity, tonnes: c.tonnes })),
-			heatBefore,
+			// The write stores the earlier heat decayed to the kill plus the
+			// offence, stamped then; so the offence written is the stored figure
+			// less the earlier heat decayed to that stamp. Correct for any heat
+			// the pilot already had, not only for zero (sage #368).
+			heatBefore: p.heatAt(statusBefore, readout.legal.updatedAt),
 			legal: readout.legal,
 			legalText,
 			legalVisible,
@@ -293,6 +299,7 @@ try {
 			navVisible,
 			authorityReady: readout.authorityReady,
 			offenceHeat: p.offenceHeat,
+			targetAfter: g.targetId,
 			lastExit: g.lastExit,
 			killedAt: now,
 		};
@@ -301,7 +308,9 @@ try {
 		"held in the beam it dies, and the kill is a world-state destroy",
 		killed.condition === "destroyed" &&
 			killed.contactGone &&
-			!killed.selectable,
+			!killed.selectable &&
+			// The lock goes with it: the replacement reuses the key (H1).
+			killed.targetAfter !== key,
 		JSON.stringify(killed),
 	);
 	check(

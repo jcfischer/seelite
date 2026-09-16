@@ -20,6 +20,7 @@ import {
 	PLAYER_KILL,
 	RAIDER_REPAIR_S,
 	RAIDER_WRECK_S,
+	dropManifestCanisters,
 } from "../src/raider-wreck";
 import {
 	applyTransition,
@@ -32,7 +33,6 @@ import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { carrierManifest } from "../src/carrier-manifest";
-import { dropManifestCanisters } from "../src/raider-wreck";
 
 /** Every hull any station roster flies, so a row is not a hand-picked subset. */
 const ROSTER_HULLS = [

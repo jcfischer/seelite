@@ -282,6 +282,11 @@ hold to decide. Nothing in #324 changes.
 A carrier's manifest is drawn per **voyage**, keyed on the schedule's existing
 voyage index, and redrawn on the next departure.
 
+*Amended by #362*: the voyage is the one the carrier is **flying** —
+`flownVoyageOrdinal`, the route's visit and the schedule's ordinal only without
+a route — because a return running late is projected as the previous visit
+while the schedule has moved on (`civilian-combat.md`).
+
 The principal was offered this and a hold fixed for the life of the world, and
 chose this.
 
@@ -408,8 +413,9 @@ identity rather than to the instance", while an observed condition is not.
 adds `instanceOrdinal` to both signatures if it rules the former. Nothing here
 is built on a replacement existing, because nothing can yet destroy one.
 
-Pure, deterministic, never persisted, its own `DOMAIN` tag. `voyageOrdinal` is
-`trafficScheduleAt`'s `awayOrdinal`, which makes F11's per-voyage rule free.
+Pure, deterministic, never persisted, its own `DOMAIN` tag. `voyageOrdinal` was
+`trafficScheduleAt`'s `awayOrdinal`; #362 made it `flownVoyageOrdinal` (F11's
+amendment), fixed on an engagement at the first shot that lands.
 
 The commodity draw reads `economy-trade.md` §2's table, which already flags
 Slaves, Narcotics and Firearms `illegal: true`. Weighting contraband by
@@ -460,6 +466,10 @@ remains generated baseline data", and CONTEXT.md's *Last-known state* says the
 row holds never the generated value. Standing and the manifest are pure
 functions, so the reading is re-derived at display time as
 `carrierStanding(…, observedAt)` and `carrierManifest(…, voyageOrdinalAt(observedAt))`.
+**#362 makes `voyageOrdinalAt(observedAt)` not derivable after the fact**: the
+flown voyage depends on the route as it stood, not on the clock alone. So the
+record owes the voyage it read (and the instance), or a scan read before a late
+return and a kill after it disagree, which breaks F6. #364 settles which.
 A stored copy would duplicate derivable state inside a versioned save.
 
 **What this spec cannot settle, and must not pretend to.** A Traffic actor has
