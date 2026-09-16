@@ -759,6 +759,27 @@ export class FrameAttribution {
 	}
 
 	/**
+	 * The delivered frame period and nothing else — what a per-frame consumer
+	 * should call.
+	 *
+	 * **Not `snapshot().cadence`, and the controller used to call exactly that.**
+	 * A snapshot polls the query ring, sorts every CPU and GPU ring, builds the
+	 * renderer facts (a `composer.passes.filter`), reads `gl.RENDERER` through
+	 * `getParameter`, runs the trust classification and freezes about eight
+	 * objects. `stepAdaptiveResolution` runs once a frame and read three fields
+	 * of it, so a player with Auto on paid a GL call and tens of allocations per
+	 * frame on the default route — and the collection pauses those allocations
+	 * cause land inside the very frame period the controller is timing. Sage
+	 * found it.
+	 *
+	 * Deliberately **not** a disabled-sampler guard either: a disabled sampler
+	 * holds no marks, so its cadence is already the empty statistics.
+	 */
+	cadence(): FrameCadence {
+		return this.cadenceSnapshot();
+	}
+
+	/**
 	 * Throw away the retained cadence and start counting again.
 	 *
 	 * For the events after which a frame period describes a world that no longer

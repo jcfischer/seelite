@@ -1011,6 +1011,40 @@ describe("cadence mode: a frame period with no query ring", () => {
 		expect(cadence.medianMs).toBeCloseTo(16.7, 5);
 	});
 
+	test("cadence() reads the ring and touches nothing else", () => {
+		// R1 of sage's second round. The controller calls this once a frame, so
+		// it must not reach the GL context or the renderer facts: a full
+		// snapshot did both, on the default route, every frame.
+		let factsCalls = 0;
+		const gl = new FakeGl();
+		const attribution = new FrameAttribution({
+			gl: gl as unknown as TimerQueryContext,
+			contextEvents: new EventTarget(),
+			rendererFacts: () => {
+				factsCalls++;
+				return facts();
+			},
+			mode: "cadence",
+			now: () => 0,
+		});
+		attribution.enable();
+		for (let frame = 0; frame < 10; frame++) attribution.markFrame(frame * 20);
+		let parameterReads = 0;
+		const getParameter = gl.getParameter.bind(gl);
+		gl.getParameter = (parameter: number) => {
+			parameterReads++;
+			return getParameter(parameter);
+		};
+		const cadence = attribution.cadence();
+		expect(cadence.medianMs).toBe(20);
+		expect(factsCalls).toBe(0);
+		expect(parameterReads).toBe(0);
+		// And it is the same figure the snapshot carries, which does both.
+		expect(attribution.snapshot(180).cadence).toEqual(cadence);
+		expect(factsCalls).toBeGreaterThan(0);
+		expect(parameterReads).toBeGreaterThan(0);
+	});
+
 	test("reprime leaves the CPU samples alone", () => {
 		// They are per-frame costs rather than intervals, so nothing about them
 		// is wrong after a display change.

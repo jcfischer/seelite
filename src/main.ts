@@ -1547,6 +1547,8 @@ class Game {
 	private frameAttribution: FrameAttribution | null = null;
 	private frameAttributionEnable: Promise<FrameAttribution | null> | null =
 		null;
+	/** The mode `frameAttributionEnable` is building; see the replacement rule. */
+	private frameAttributionEnableMode: FrameAttributionMode | null = null;
 	private frameAttributionGeneration = 0;
 	/**
 	 * #352's Auto controller, constructed only while the row says `"auto"`.
@@ -2104,7 +2106,19 @@ class Game {
 		if (existing && !(mode === "full" && existing.snapshotMode === "cadence"))
 			return existing;
 		if (existing) this.disableFrameAttribution();
-		if (this.frameAttributionEnable) return this.frameAttributionEnable;
+		if (this.frameAttributionEnable) {
+			// **The same rule for a sampler still being built**, and the
+			// replacement above missed it. A saved Auto row starts a `cadence`
+			// enable at boot whose import may not have resolved when the perf
+			// panel asks for `full`, and this line handed that pending promise
+			// straight back — so the panel still got a cadence sampler, by a race
+			// rather than by order. Sage's second round found it. Waiting for the
+			// pending one and asking again lands on the replacement path.
+			if (mode !== "full" || this.frameAttributionEnableMode !== "cadence")
+				return this.frameAttributionEnable;
+			await this.frameAttributionEnable;
+			return this.enableFrameAttribution("full");
+		}
 		const generation = this.frameAttributionGeneration;
 		const pending = (async () => {
 			const { FrameAttribution } = await import("./frame-attribution");
@@ -2147,11 +2161,14 @@ class Game {
 			return attribution;
 		})();
 		this.frameAttributionEnable = pending;
+		this.frameAttributionEnableMode = mode;
 		try {
 			return await pending;
 		} finally {
-			if (this.frameAttributionEnable === pending)
+			if (this.frameAttributionEnable === pending) {
 				this.frameAttributionEnable = null;
+				this.frameAttributionEnableMode = null;
+			}
 		}
 	}
 
@@ -2159,6 +2176,7 @@ class Game {
 	disableFrameAttribution(): void {
 		this.frameAttributionGeneration++;
 		this.frameAttributionEnable = null;
+		this.frameAttributionEnableMode = null;
 		const attribution = this.frameAttribution;
 		if (!attribution) return;
 		this.frameAttribution = null;
@@ -2269,12 +2287,14 @@ class Game {
 		if (this.adaptiveDisplay !== null && display !== this.adaptiveDisplay)
 			this.primeAdaptive("display changed");
 		this.adaptiveDisplay = display;
-		const snapshot = attribution.snapshot();
+		// `cadence()`, not `snapshot().cadence`: see the accessor for what the
+		// full snapshot cost once a frame.
+		const cadence = attribution.cadence();
 		const decision = controller.step({
 			nowMs: performance.now(),
-			periodMedianMs: snapshot.cadence.medianMs,
-			minPeriodMs: snapshot.cadence.minPeriodMs,
-			sampleCount: snapshot.cadence.sampleCount,
+			periodMedianMs: cadence.medianMs,
+			minPeriodMs: cadence.minPeriodMs,
+			sampleCount: cadence.sampleCount,
 			hidden: document.visibilityState === "hidden",
 		});
 		if (decision.transition === "none") return;

@@ -36,7 +36,12 @@ const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
 /** Count timer-query traffic, the way `probe-frame-attribution` does. */
 const WATCH_QUERIES = () => {
-	const calls = { beginQuery: 0, endQuery: 0, timerExtensionReads: 0 };
+	const calls = {
+		beginQuery: 0,
+		endQuery: 0,
+		timerExtensionReads: 0,
+		rendererReads: 0,
+	};
 	window.__adaptiveCalls = calls;
 	const proto = globalThis.WebGL2RenderingContext?.prototype;
 	if (!proto) return;
@@ -51,6 +56,14 @@ const WATCH_QUERIES = () => {
 			return Reflect.apply(original, this, args);
 		};
 	}
+	// `gl.RENDERER` (0x1f01) is read by a full attribution snapshot and by
+	// nothing else once the page is running, so its count is a clean signal of
+	// whether the controller is building one per frame.
+	const getParameter = proto.getParameter;
+	proto.getParameter = function (...args) {
+		if (args[0] === 0x1f01) calls.rendererReads++;
+		return Reflect.apply(getParameter, this, args);
+	};
 	const getExtension = proto.getExtension;
 	proto.getExtension = function (...args) {
 		if (args[0] === "EXT_disjoint_timer_query_webgl2")
@@ -304,6 +317,31 @@ t.check(
 	JSON.stringify({ rungs: steered.rungs, overBudgetAtTop }),
 );
 
+// ── the controller reads the cadence, not a whole snapshot ──────────────────
+//
+// R1 of sage's second round. `stepAdaptiveResolution` built the full attribution
+// snapshot every frame to read three cadence fields, which on the default route
+// meant a `gl.getParameter(RENDERER)` and tens of allocations per frame — with
+// the collection pauses landing in the frame period being timed. Counted over a
+// window with Auto running, the read should all but vanish.
+const rendererReads = await page.evaluate(async () => {
+	const before = window.__adaptiveCalls.rendererReads;
+	let frames = 0;
+	const until = performance.now() + 2_000;
+	while (performance.now() < until) {
+		await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+		frames++;
+	}
+	return { reads: window.__adaptiveCalls.rendererReads - before, frames };
+});
+t.check(
+	"Auto does not build an attribution snapshot every frame",
+	// Fewer reads than a quarter of the frames. Zero is expected; the slack is
+	// for any other reader, and a snapshot per frame reads once per frame.
+	rendererReads.frames > 4 && rendererReads.reads < rendererReads.frames / 4,
+	JSON.stringify(rendererReads),
+);
+
 // **No row asserts a curve point here, and one used to.** It passed through
 // `|| atCap`, which is true on this machine for a reason unrelated to the
 // controller working: SwiftShader never runs a cheap frame, so each rung Auto
@@ -441,6 +479,31 @@ t.check(
 	"a manual mode has no controller to consult",
 	left.diagnostics === null,
 	JSON.stringify(left.diagnostics),
+);
+
+// ── a full request made while a cadence enable is still in flight ──────────
+//
+// R2 of sage's second round: the replacement above only covered a sampler that
+// had already landed. A saved Auto row's boot-time enable can still be waiting on
+// its import when the perf panel asks, and `enableFrameAttribution` returned that
+// pending promise to the `full` caller.
+//
+// Made deterministic here rather than left to import timing: both calls are
+// issued in one turn, so the second one always sees the first still pending.
+// Last in the probe because it leaves a full sampler running.
+const raced = await page.evaluate(async () => {
+	const game = window.__seelite;
+	game.disableFrameAttribution();
+	const cadence = game.enableFrameAttribution("cadence");
+	const full = game.enableFrameAttribution("full");
+	await cadence;
+	await full;
+	return { mode: game.attributionSnapshot()?.mode ?? null };
+});
+t.check(
+	"a full request issued while a cadence enable is pending still gets full",
+	raced.mode === "full",
+	JSON.stringify(raced),
 );
 
 console.log(`\nrung under Auto: ${auto.diagnostics?.scale}`);
