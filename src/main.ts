@@ -290,6 +290,7 @@ import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import {
 	type Engagement,
 	engage,
+	flownVoyageOrdinal,
 	flyingTrafficActors,
 	stepEngagement,
 	trafficDestruction,
@@ -5160,6 +5161,7 @@ class Game {
 							vel: contact.velocity,
 							nose,
 							up: route?.up ?? null,
+							voyageOrdinal: this.trafficVoyage(actor),
 						},
 						mix(record.seed, fnv1a(key)),
 					),
@@ -5197,6 +5199,38 @@ class Game {
 		return this.trafficActors.find((a) => a.key === key);
 	}
 
+	/** The voyage a carrier flies now: its engagement's, fixed when the fight
+	 *  began, or else its route's (`flownVoyageOrdinal`). */
+	private trafficVoyage(actor: TrafficActor): number {
+		return (
+			this.trafficEngagements.get(actor.key)?.voyageOrdinal ??
+			flownVoyageOrdinal(
+				this.trafficRoutes.find((r) => r.key === actor.key),
+				trafficScheduleAt(actor, this.world.gameTime).awayOrdinal,
+			)
+		);
+	}
+
+	/** One carrier's hold for one voyage — the one expression the kill drops and
+	 *  a probe reads, so the two cannot drift apart (sage #368). */
+	private trafficHold(
+		actor: TrafficActor,
+		instanceOrdinal: number,
+		voyageOrdinal: number,
+	) {
+		const record = this.world.system.record;
+		return carrierManifest(
+			record.seed,
+			actor.key,
+			instanceOrdinal,
+			voyageOrdinal,
+			{
+				holdT: HULL_SPECS[actor.hullId].holdT,
+				government: record.government,
+			},
+		);
+	}
+
 	/**
 	 * A kill (`civilian-combat.md` H1, H4, H11): the carrier's destroy with its
 	 * scheduled replacement, the manifest a scan would have shown dropped as
@@ -5213,12 +5247,10 @@ class Game {
 			instanceOrdinal,
 			now,
 		);
-		const manifest = carrierManifest(
-			record.seed,
-			actor.key,
+		const manifest = this.trafficHold(
+			actor,
 			instanceOrdinal,
-			trafficScheduleAt(actor, now).awayOrdinal,
-			{ holdT: HULL_SPECS[actor.hullId].holdT, government: record.government },
+			engagement.voyageOrdinal,
 		);
 		this.applyCarrierTransition(
 			actor.key,
@@ -5291,15 +5323,10 @@ class Game {
 						now,
 					),
 					manifest: actor
-						? carrierManifest(
-								record.seed,
-								key,
+						? this.trafficHold(
+								actor,
 								carrier.instanceOrdinal,
-								trafficScheduleAt(actor, now).awayOrdinal,
-								{
-									holdT: HULL_SPECS[actor.hullId].holdT,
-									government: record.government,
-								},
+								this.trafficVoyage(actor),
 							)
 						: [],
 					engaged: engagement !== undefined,

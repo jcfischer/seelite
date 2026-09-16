@@ -178,29 +178,51 @@ export function dropCanisters(kill: {
 	/** The body the kill happened beside, whose frame the canisters rest in. */
 	frameBodyId: string | null;
 }): Canister[] {
-	const second = Math.floor(kill.killedAt) >>> 0;
-	const rand = stream(
-		mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
-		DOMAIN.CARGO_DROP,
-	);
+	const { second, rand } = dropStream(kill);
 	const span = CANISTER_COUNT.max - CANISTER_COUNT.min + 1;
 	const count =
 		CANISTER_COUNT.min + Math.min(span - 1, Math.floor(rand() * span));
 	const weights = cargoWeights(kill.government);
-	const total = weights.reduce((sum, w) => sum + w.weight, 0);
 	const eject = ejectionRing(kill, rand, count);
 	return eject.map((vel, i) => {
-		let pick = rand() * total;
-		let good = weights[weights.length - 1].good;
-		for (const w of weights) {
-			if (pick < w.weight) {
-				good = w.good;
-				break;
-			}
-			pick -= w.weight;
-		}
+		const good = weights[pickWeightedIndex(weights, rand)].good;
 		return canisterAt(kill, second, i, good.name, CANISTER_TONNES, vel);
 	});
+}
+
+/**
+ * One weighted draw: the index whose weight the draw lands in, the last when
+ * rounding leaves it past the end. One draw from `rand`. Shared by a raider's
+ * drop and an ordinary carrier's manifest, which both pick over `cargoWeights`.
+ */
+export function pickWeightedIndex(
+	weights: readonly { weight: number }[],
+	rand: () => number,
+): number {
+	const total = weights.reduce((sum, w) => sum + w.weight, 0);
+	let pick = rand() * total;
+	for (let i = 0; i < weights.length; i++) {
+		if (pick < weights[i].weight) return i;
+		pick -= weights[i].weight;
+	}
+	return weights.length - 1;
+}
+
+/** A kill's own stream, split by the carrier and the second of the kill, so no
+ *  two kills share a draw. */
+function dropStream(kill: {
+	systemSeed: number;
+	key: CarrierKey;
+	killedAt: number;
+}): { second: number; rand: () => number } {
+	const second = Math.floor(kill.killedAt) >>> 0;
+	return {
+		second,
+		rand: stream(
+			mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
+			DOMAIN.CARGO_DROP,
+		),
+	};
 }
 
 /**
@@ -221,11 +243,7 @@ export function dropManifestCanisters(kill: {
 	frameBodyId: string | null;
 }): Canister[] {
 	if (kill.manifest.length === 0) return [];
-	const second = Math.floor(kill.killedAt) >>> 0;
-	const rand = stream(
-		mix(mix(kill.systemSeed, fnv1a(kill.key)), second),
-		DOMAIN.CARGO_DROP,
-	);
+	const { second, rand } = dropStream(kill);
 	return ejectionRing(kill, rand, kill.manifest.length).map((vel, i) =>
 		canisterAt(
 			kill,

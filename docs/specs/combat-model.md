@@ -168,8 +168,10 @@ lifetime makes a small loss.
 §4 names offences, thresholds and heat without figures; `civilian-combat.md`
 owns them — what an offence against a Clean carrier costs, where Wanted and
 Fugitive begin, and the cap (H4). An ordinary carrier is a combat ship under
-§1's rules on its own hull (H2), a destroyed one follows this section's
-lifecycle on the raider's figures (H1), and its drop is the manifest
+§1's rules on its own hull (H2), a destroyed one goes destroyed → repairing →
+replaced on the raider's figures (`RAIDER_WRECK_S`, `RAIDER_REPAIR_S`, reused
+by `trafficDestruction`; no H decision sets them) and returns as a new instance
+(H1), and its drop is the manifest
 `carrier-identity.md` §3 derives, one canister per line holding that line's
 tonnes (H11) — so a canister's tonnage is a field, and a scoop takes what fits.
 The cockpit's left console shows the player's standing (H7).

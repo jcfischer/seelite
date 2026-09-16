@@ -23,7 +23,7 @@ grilling order, so `H3b` is the second question under `H3`.
 
 | Fact | Owner |
 | --- | --- |
-| Shield pool, energy bank, recharge, laser damage, the shared-rules doctrine | `combat-model.md` §1–§2, `src/ship-condition.ts` |
+| Shield pool, **Energy bank**, recharge, laser damage, the shared-rules doctrine | `combat-model.md` §1–§2, `src/ship-condition.ts` |
 | Legal status semantics: per galaxy, bounded, Clean/Wanted/Fugitive, 30-minute half-life | `combat-model.md` §4 |
 | Carrier conditions, transitions, recovery descriptors, provenance, compaction | `persistent-world-state.md` §3–§6 |
 | Standing and manifest terms, the naming scheme, the scan verb, the knowledge record | `carrier-identity.md` |
@@ -71,7 +71,7 @@ Verified on `main` at `295320a`, 2026-09-16.
 ### H0 — This node builds standing and the manifest, and nothing else of #359
 
 `carrierStanding` and `carrierManifest` are built here, because a kill cannot
-be judged or looted without them. The scan verb, the knowledge record, the
+be judged, or its cargo canisters dropped, without them. The scan verb, the knowledge record, the
 Target panel's standing cell and the name draw get their own node beneath #359
 and do not block this one.
 
@@ -274,7 +274,7 @@ The principal was offered this and summing, and chose this.
 
 ### H10 — Three changes, not one
 
-1. **Destroy, loot, heat.** H0, H1, H2, H3; the projection gating on condition;
+1. **Destroy, drop the manifest, heat.** H0, H1, H2, H3; the projection gating on condition;
    H4's kill write and the decaying reader; the rail (H7's first half); the
    targeting arm; the canisters drawn from `carrierManifest`.
    **A survivor is transient in this change** — H3b is the next one.

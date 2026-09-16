@@ -1,13 +1,13 @@
 /**
- * The player's legal heat (`civilian-combat.md` H4, H9).
+ * The player's legal heat (`civilian-combat.md` H4).
  *
  * **The semantics are `combat-model.md` §4's and the figures are this node's.**
  * §4 rules legal status per galaxy, bounded, read as Clean, Wanted or
  * Fugitive, decaying lazily on a 30-minute half-life. It named no offence cost
  * and no threshold, and #362 set them with the principal: a Clean kill is 40,
- * a strike 15, Wanted at 10, Fugitive at 60, capped at 100. The scale is
- * Elite's legal value in shape — an offender band, and a fugitive band that one
- * incident does not reach.
+ * a strike 15 (written by #365, with H9's supersession), Wanted at 10,
+ * Fugitive at 60, capped at 100. The scale is Elite's legal value in shape — an
+ * offender band, and a fugitive band that one incident does not reach.
  *
  * **What is saved is `LegalStatus`'s pair and nothing else.** A standing label
  * is a §8 projection, derived here on read (`persistent-world-state.md` §7),

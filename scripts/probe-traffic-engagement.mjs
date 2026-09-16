@@ -52,6 +52,9 @@ try {
 		const sim = await import("/src/sim.ts");
 		const standingMod = await import("/src/carrier-standing.ts");
 		const engagementMod = await import("/src/traffic-engagement.ts");
+		// Constants read off the page, never restated here (CLAUDE.md).
+		const legalMod = await import("/src/legal.ts");
+		const wreckMod = await import("/src/raider-wreck.ts");
 		const dt = g.units.MAX_DT;
 		const frame = () => {
 			g.step(dt);
@@ -114,15 +117,7 @@ try {
 				g.world.ship.pos = add(pos, window.__engagementProbe.offset);
 				g.world.ship.vel = { ...vel };
 				g.throttle = 0;
-				const toward = unit(sub(pos, g.world.ship.pos));
-				const aside = unit({ x: -toward.z, y: 0, z: toward.x });
-				const nose = unit(
-					add(
-						scale(toward, Math.cos(offNoseRad)),
-						scale(aside, Math.sin(offNoseRad)),
-					),
-				);
-				g.setAttitude(nose, g.shipUp());
+				window.__engagementProbe.aimAt(pos, offNoseRad);
 				g.setHeadLook("forward");
 			},
 			/** One tethered frame: hold the offset, nose on the target or
@@ -132,7 +127,16 @@ try {
 				if (!contact) return false;
 				g.world.ship.pos = add(contact.pos, window.__engagementProbe.offset);
 				g.world.ship.vel = { ...contact.velocity };
-				const toward = unit(sub(contact.pos, g.world.ship.pos));
+				window.__engagementProbe.aimAt(contact.pos, offNoseRad);
+				if (firing) g.keys.add(" ");
+				else g.keys.delete(" ");
+				frame();
+				g.keys.delete(" ");
+				return true;
+			},
+			/** Nose on `pos`, or `offNoseRad` beside it in the horizontal. */
+			aimAt(pos, offNoseRad = 0) {
+				const toward = unit(sub(pos, g.world.ship.pos));
 				const aside = unit({ x: -toward.z, y: 0, z: toward.x });
 				g.setAttitude(
 					unit(
@@ -143,12 +147,9 @@ try {
 					),
 					g.shipUp(),
 				);
-				if (firing) g.keys.add(" ");
-				else g.keys.delete(" ");
-				frame();
-				g.keys.delete(" ");
-				return true;
 			},
+			offenceHeat: legalMod.OFFENCE_HEAT.destroyed,
+			lifecycleS: wreckMod.RAIDER_WRECK_S + wreckMod.RAIDER_REPAIR_S,
 			advanceTo(t) {
 				g.world.gameTime = t;
 				sim.advanceSystem(g.world.system, t);
@@ -261,6 +262,7 @@ try {
 			legalText: legalEl?.textContent ?? null,
 			legalVisible: legalEl ? legalEl.checkVisibility() : null,
 			authorityReady: readout.authorityReady,
+			offenceHeat: p.offenceHeat,
 			lastExit: g.lastExit,
 			killedAt: now,
 		};
@@ -279,8 +281,9 @@ try {
 		JSON.stringify({ canisters: killed.canisters, manifest }),
 	);
 	check(
-		"a Clean kill writes 40 heat, reads Wanted, and the cockpit says so (H4, H7)",
-		Math.abs(killed.legal.heat - killed.heatBefore - 40) < 1e-6 &&
+		"a Clean kill writes its offence heat, reads Wanted, and the cockpit says so (H4, H7)",
+		Math.abs(killed.legal.heat - killed.heatBefore - killed.offenceHeat) <
+			1e-6 &&
 			killed.legal.standing === "wanted" &&
 			killed.legalText === "WANTED" &&
 			killed.legalVisible === true,
@@ -304,7 +307,7 @@ try {
 		({ key, killedAt }) => {
 			const p = window.__engagementProbe;
 			const g = window.__seelite;
-			p.advanceTo(killedAt + 30 * 60 + 1);
+			p.advanceTo(killedAt + p.lifecycleS + 1);
 			for (let i = 0; i < 5; i++) p.frame();
 			const carrier = g.carrierCondition(key);
 			return {
@@ -317,7 +320,7 @@ try {
 		{ key, killedAt: killed.killedAt },
 	);
 	check(
-		"thirty minutes on, the replacement flies its route at the next instance (H1)",
+		"once the wreck and repair have run, the replacement flies its route at the next instance (H1)",
 		replaced.condition === "operational" &&
 			replaced.instanceOrdinal === 1 &&
 			replaced.routed &&
@@ -341,19 +344,7 @@ try {
 		let returned = false;
 		for (let i = 0; i < 600 && g.trafficContacts.has(target.key); i++) {
 			// Hold still and cease fire: an armed hull, struck, comes to the pilot.
-			const contact = g.trafficContacts.get(target.key);
-			g.setAttitude(
-				(() => {
-					const d = {
-						x: contact.pos.x - g.world.ship.pos.x,
-						y: contact.pos.y - g.world.ship.pos.y,
-						z: contact.pos.z - g.world.ship.pos.z,
-					};
-					const l = Math.hypot(d.x, d.y, d.z) || 1;
-					return { x: d.x / l, y: d.y / l, z: d.z / l };
-				})(),
-				g.shipUp(),
-			);
+			p.aimAt(g.trafficContacts.get(target.key).pos);
 			p.frame();
 			if (
 				g.condition.fore + g.condition.aft + g.condition.hull <

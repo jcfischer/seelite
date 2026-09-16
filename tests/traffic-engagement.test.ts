@@ -8,6 +8,7 @@ import {
 	ARMED_TRAFFIC_HULLS,
 	type Engagement,
 	engage,
+	flownVoyageOrdinal,
 	flyingTrafficActors,
 	stepEngagement,
 	trafficDestruction,
@@ -26,6 +27,14 @@ import {
 	newWorld,
 } from "../src/world-state";
 import { HULL_SPECS, type HullId } from "../src/hull";
+import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
+
+/** Every hull any station roster flies, so a row is not a hand-picked subset. */
+const ROSTER_HULLS = [
+	...new Set(Object.values(TRAFFIC_HULL_POOLS).flat()),
+].sort();
+const CIVILIAN_HULLS = ROSTER_HULLS.filter((h) => !ARMED_TRAFFIC_HULLS.has(h));
+const ARMED_HULLS = ROSTER_HULLS.filter((h) => ARMED_TRAFFIC_HULLS.has(h));
 import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
@@ -43,6 +52,7 @@ function ahead(hullId: HullId, km: number, seed = 5): Engagement {
 			vel: v3(),
 			nose: v3(0, 0, -1),
 			up: v3(0, 1, 0),
+			voyageOrdinal: 0,
 		},
 		seed,
 	);
@@ -68,7 +78,8 @@ const SHOT = { fired: true, damage: PULSE_LASER.damagePerS * DT };
 
 describe("H2: the shared condition model", () => {
 	test("an engaged carrier starts at its hull's full condition", () => {
-		for (const hull of ["freighter", "miner", "courier", "patrol"] as const)
+		expect(ROSTER_HULLS.length).toBeGreaterThanOrEqual(8);
+		for (const hull of ROSTER_HULLS)
 			expect(ahead(hull, 2).condition).toEqual(fullCondition(hull));
 	});
 
@@ -134,7 +145,8 @@ describe("H3: the reaction per role", () => {
 	}
 
 	test("a civilian hull only evades and flees, and never fires", () => {
-		for (const hull of ["freighter", "miner", "courier", "tug"] as const) {
+		expect(CIVILIAN_HULLS.length).toBeGreaterThanOrEqual(6);
+		for (const hull of CIVILIAN_HULLS) {
 			// Held under fire the whole time, which is when an attacker would
 			// shoot back.
 			const run = fly(hull, 30, 30);
@@ -144,10 +156,13 @@ describe("H3: the reaction per role", () => {
 		}
 	});
 
-	test("an armed hull fights back", () => {
-		const run = fly("patrol", 30);
-		expect(run.fired).toBe(true);
-		expect(run.phases.has("attack")).toBe(true);
+	test("every armed hull fights back", () => {
+		expect(ARMED_HULLS).toEqual(["interceptor", "patrol"]);
+		for (const hull of ARMED_HULLS) {
+			const run = fly(hull, 30);
+			expect(run.fired).toBe(true);
+			expect(run.phases.has("attack")).toBe(true);
+		}
 	});
 
 	test("flies on its own hull's thrust, not the raider's", () => {
@@ -236,6 +251,7 @@ describe("a fight beside a station is flown in its frame", () => {
 					vel: frame,
 					nose: v3(0, 0, -1),
 					up: v3(0, 1, 0),
+					voyageOrdinal: 0,
 				},
 				3,
 			);
@@ -265,5 +281,42 @@ describe("a fight beside a station is flown in its frame", () => {
 		const moving = closest(frameVel);
 		expect(atRest).toBeLessThan(3);
 		expect(moving).toBeLessThan(3);
+	});
+});
+
+describe("the voyage a hold is drawn for (carrier-identity F11)", () => {
+	test("is the visit the route projects, not the schedule's next one", () => {
+		// A return running late is projected as the previous visit while the
+		// schedule has moved on; the hold is the flown visit's (sage #368).
+		expect(flownVoyageOrdinal({ visitAwayOrdinal: 6 }, 7)).toBe(6);
+	});
+
+	test("falls back to the schedule only without a route", () => {
+		expect(flownVoyageOrdinal(undefined, 7)).toBe(7);
+		expect(flownVoyageOrdinal({}, 7)).toBe(7);
+	});
+
+	test("is fixed on the engagement, whatever the schedule does during the fight", () => {
+		const e = engage(
+			{
+				key: KEY,
+				hullId: "freighter",
+				pos: v3(0, 0, -2),
+				vel: v3(),
+				nose: v3(0, 0, -1),
+				up: v3(0, 1, 0),
+				voyageOrdinal: 4,
+			},
+			1,
+		);
+		let stepped = e;
+		for (let i = 0; i < 600; i++)
+			stepped = stepEngagement(
+				stepped,
+				chaser(stepped, { pos: v3() }),
+				SHOT,
+				DT,
+			).engagement;
+		expect(stepped.voyageOrdinal).toBe(4);
 	});
 });

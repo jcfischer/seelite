@@ -21,25 +21,19 @@
 import type { CarrierKey } from "./carrier-key";
 import {
 	type CombatEnemyState,
-	type EnemyReadout,
 	NO_ROTATION,
 	playerLaserHit,
-	stepEnemyShip,
 } from "./combat-enemy";
-import type { DuelPilot, PlayerShot } from "./duel";
+import { type DuelPilot, type PlayerShot, stepCombatShip } from "./duel";
 import { HULL_SPECS, type HullId } from "./hull";
 import {
 	type ShieldSide,
 	type ShipCondition,
-	applyDamage,
 	fullCondition,
-	isAlive,
-	sideStruck,
-	stepCondition,
 } from "./ship-condition";
 import { PLAYER_KILL, RAIDER_REPAIR_S, RAIDER_WRECK_S } from "./raider-wreck";
 import { flightPerformance } from "./sim";
-import { type Vec3, frameAcross, sub } from "./vec3";
+import { type Vec3, frameAcross } from "./vec3";
 import type { Provenance, TransitionEvent } from "./world-state";
 
 /** The roles that fight back when struck (H3). */
@@ -68,7 +62,25 @@ export interface Engagement {
 	armed: boolean;
 	flight: CombatEnemyState;
 	condition: ShipCondition;
+	/**
+	 * The voyage its hold is drawn for, **fixed when the fight starts**. An
+	 * engaged carrier no longer flies its schedule, so the schedule's ordinal at
+	 * the kill tick is not the voyage it was on: a fight crossing a departure
+	 * boundary would drop a different hold from the one shown (sage #368).
+	 */
+	voyageOrdinal: number;
 }
+
+/**
+ * The voyage a carrier is flying now (`carrier-identity.md` F11): the visit its
+ * route projects, and the schedule's ordinal only when there is no route. A
+ * return running late is projected as the *previous* visit
+ * (`station-route.ts`), while the schedule has already moved to the next.
+ */
+export const flownVoyageOrdinal = (
+	route: { visitAwayOrdinal?: number } | undefined,
+	scheduleOrdinal: number,
+): number => route?.visitAwayOrdinal ?? scheduleOrdinal;
 
 /**
  * Hand a carrier from its projection to flight at the pose it was drawn in.
@@ -82,6 +94,7 @@ export function engage(
 		vel: Vec3;
 		nose: Vec3;
 		up: Vec3 | null;
+		voyageOrdinal: number;
 	},
 	seed: number,
 ): Engagement {
@@ -91,6 +104,7 @@ export function engage(
 		hullId: target.hullId,
 		armed,
 		condition: fullCondition(target.hullId),
+		voyageOrdinal: target.voyageOrdinal,
 		flight: {
 			ship: { pos: { ...target.pos }, vel: { ...target.vel } },
 			nose: target.nose,
@@ -125,59 +139,23 @@ export function stepEngagement(
 	shot: PlayerShot,
 	dt: number,
 ): EngagementStep {
-	const { condition: before } = engagement;
-	const readout: EnemyReadout = {
-		targetHull: before.hull,
-		targetHullMax: before.hullMax,
-		targetEnergy: before.energy,
-		targetHeatLocked: before.heatLocked,
-		playerHull: pilot.hull,
-	};
-	const at = engagement.flight.ship.pos;
-	const flown = stepEnemyShip(
-		engagement.flight,
-		pilot.ship,
-		pilot.nose,
-		readout,
-		shot.fired,
-		dt,
-		{
-			laserOrigin: pilot.aimOrigin,
-			laserNose: pilot.aimNose,
-			hitRadiusKm: trafficHitRadiusKm(engagement.hullId),
-			frameVel: pilot.frameVel,
-			performance: flightPerformance(engagement.hullId),
-			intent: engagement.armed ? "attacker" : "civilian",
-		},
-	);
-	let condition = before;
-	const playerHit = shot.fired && shot.damage > 0 && flown.targetInCone;
-	if (playerHit)
-		condition = applyDamage(
-			condition,
-			shot.damage,
-			sideStruck(engagement.flight.nose, sub(pilot.ship.pos, at)),
-		);
-	const hullStruck = condition.hull < before.hull;
-	const gun = stepCondition(
-		condition,
-		dt,
-		isAlive(condition) && flown.enemyFiring,
-	);
-	condition = gun.condition;
-	const returnFire =
-		gun.fired && gun.damage > 0 && pilot.hull > 0
-			? {
-					amount: gun.damage,
-					side: sideStruck(pilot.nose, sub(at, pilot.ship.pos)),
-				}
-			: null;
+	const step = stepCombatShip(engagement, pilot, shot, dt, {
+		hitRadiusKm: trafficHitRadiusKm(engagement.hullId),
+		performance: flightPerformance(engagement.hullId),
+		intent: engagement.armed ? "attacker" : "civilian",
+	});
 	return {
-		engagement: { ...engagement, flight: flown.state, condition },
-		playerHit,
-		hullStruck,
-		returnFire,
-		destroyed: !isAlive(condition),
+		engagement: {
+			...engagement,
+			flight: step.flight,
+			condition: step.condition,
+		},
+		playerHit: step.playerHit,
+		// Hull lost this step can only be the player's shot: its own gun spends
+		// energy bank and heat, never hull.
+		hullStruck: step.condition.hull < engagement.condition.hull,
+		returnFire: step.returnFire,
+		destroyed: step.destroyed,
 	};
 }
 
@@ -194,10 +172,11 @@ export const trafficReplacementActor = (
 
 /**
  * The world-state transition a player's kill applies to an ordinary carrier:
- * `combat-model.md` §4's named-carrier lifecycle, on the raider's figures —
- * destroyed for `RAIDER_WRECK_S`, repairing for `RAIDER_REPAIR_S`, then a
- * replacement at the next `instanceOrdinal`, which draws its own standing and
- * hold (H1).
+ * `combat-model.md` §4's destroyed → repairing → replaced transitions, on the
+ * raider's figures — destroyed for `RAIDER_WRECK_S`, repairing for
+ * `RAIDER_REPAIR_S` — and a replacement at the next `instanceOrdinal`, which
+ * draws its own standing and hold (H1). No H decision sets the durations; they
+ * are `raider-wreck.ts`'s, reused.
  */
 export function trafficDestruction(
 	systemIndex: number,
@@ -219,8 +198,10 @@ export function trafficDestruction(
 
 /**
  * The actors that fly their projection now: the operational ones. A destroyed
- * or repairing carrier is absent from its route and holds no berth, which is
- * what makes a kill visible and a replacement come back.
+ * carrier is absent from its route and holds no berth until its replacement is
+ * operational, which is what makes a kill visible and a replacement come back.
+ * A repairing carrier is filtered too, which is right for a replacement under
+ * construction; a *diverted* one parked at home is #365's (H3c) to draw.
  */
 export const flyingTrafficActors = <T extends { key: CarrierKey }>(
 	actors: readonly T[],

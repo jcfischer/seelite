@@ -90,13 +90,15 @@ condition. `src/encounter.ts` owns the phases.
 _Avoid_: Spawn, fight instance
 
 **Cargo canister**:
-One tonne of a single good, dropped by a destroyed raider (one to three per
-kill). Each leaves the wreck in its own direction and comes to rest ten
+A quantity of a single good dropped by a destroyed ship: one tonne from a
+raider (one to three per kill), or one manifest line's tonnes from an ordinary
+carrier (`civilian-combat.md` H11). Each leaves the wreck in its own direction and comes to rest ten
 seconds later, in the frame of **the body the kill happened beside** as that
 frame stands — its own, not a snapshot and not the observer's
 (`combat-model.md` §4.1); it stays
 until scooped or until five game-clock minutes pass (`combat-model.md` §4.1). A ship scoops one by passing close and
-slow, with no module, into the hold. It is a **selectable contact** of kind
+slow, with no module, taking what fits into the hold and leaving the rest in
+the canister. It is a **selectable contact** of kind
 `cargo` — scanner blip, target lock, and range plus the **relative speed**
 (`REL`) on the cockpit Target instrument, which is the speed the scoop gate
 checks. The green diamond alone gave a range and no speed, and the gate is a

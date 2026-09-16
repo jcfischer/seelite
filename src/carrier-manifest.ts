@@ -16,7 +16,7 @@
 import type { CarrierKey } from "./carrier-key";
 import { carrierInstanceSeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
-import { cargoWeights } from "./raider-wreck";
+import { cargoWeights, pickWeightedIndex } from "./raider-wreck";
 import { mix, seededRand } from "./rng";
 
 export const MANIFEST_LINES = { min: 1, max: 4 } as const;
@@ -60,16 +60,7 @@ export function carrierManifest(
 	const pool = cargoWeights(hold.government).filter((w) => w.weight > 0);
 	const goods: string[] = [];
 	for (let i = 0; i < count && pool.length > 0; i++) {
-		const total = pool.reduce((sum, w) => sum + w.weight, 0);
-		let pick = rand() * total;
-		let at = pool.length - 1;
-		for (let j = 0; j < pool.length; j++) {
-			if (pick < pool[j].weight) {
-				at = j;
-				break;
-			}
-			pick -= pool[j].weight;
-		}
+		const at = pickWeightedIndex(pool, rand);
 		goods.push(pool[at].good.name);
 		pool.splice(at, 1);
 	}

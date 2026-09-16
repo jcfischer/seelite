@@ -181,8 +181,9 @@ A visible Traffic route adds no combat physics of its own, and mere visibility
 does not hand authority over. Two decisions do. #75 made Traffic collidable (the
 map's Constraints). #362 made it fireable (`civilian-combat.md` H2, H3): a shot
 that lands hands the carrier from its projection to flight at the pose it is
-drawn in, and a destroyed or repairing carrier flies no route and holds no berth
-until its replacement is operational (H1). Authority readiness counts the
+drawn in, and a destroyed carrier flies no route and holds no berth until its
+replacement is operational (H1). A repairing carrier diverted by a strike is
+#365's to draw (H3c). Authority readiness counts the
 carriers that fly, not the roster.
 
 ## 6. Drive charge

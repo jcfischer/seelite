@@ -20,10 +20,11 @@
  */
 import {
 	type CombatEnemyState,
+	type EnemyIntent,
 	type EnemyReadout,
 	NO_ROTATION,
 	playerLaserHit,
-	stepCombatEnemy,
+	stepEnemyShip,
 } from "./combat-enemy";
 import { HULL_SPECS } from "./hull";
 import { RAIDER_HULL_ID } from "./raider-slots";
@@ -35,7 +36,7 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import type { Ship } from "./sim";
+import { type FlightPerformance, type Ship, flightPerformance } from "./sim";
 import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
@@ -116,53 +117,102 @@ export function raiderAtDrop(
 	};
 }
 
+const RAIDER_PERFORMANCE: FlightPerformance = flightPerformance(RAIDER_HULL_ID);
+
 export function stepDuel(
 	raider: Raider,
 	pilot: DuelPilot,
 	shot: PlayerShot,
 	dt: number,
 ): DuelStep {
+	const step = stepCombatShip(raider, pilot, shot, dt, {
+		hitRadiusKm: RAIDER_HIT_RADIUS_KM,
+		performance: RAIDER_PERFORMANCE,
+		intent: "attacker",
+	});
+	return {
+		raider: { flight: step.flight, condition: step.condition },
+		playerHit: step.playerHit,
+		raiderHit: step.returnFire,
+		raiderDestroyed: step.destroyed,
+	};
+}
+
+/** What one ship in a fight with the player is flown as. */
+export interface CombatShipRules {
+	hitRadiusKm: number;
+	/** **Required**, for `FlightPerformance`'s reason. */
+	performance: FlightPerformance;
+	intent: EnemyIntent;
+}
+
+export interface CombatShipStep {
+	flight: CombatEnemyState;
+	condition: ShipCondition;
+	playerHit: boolean;
+	returnFire: { amount: number; side: ShieldSide } | null;
+	destroyed: boolean;
+}
+
+/**
+ * One step of any ship fighting the player under §1's shared rules: its
+ * controller, the player's shot landing on the pool facing the shooter, and its
+ * own gun through `stepCondition`. The raider's duel and a Traffic engagement
+ * (#362) are both this step, so a change to hit sides or return fire is made
+ * once.
+ */
+export function stepCombatShip(
+	ship: { flight: CombatEnemyState; condition: ShipCondition },
+	pilot: DuelPilot,
+	shot: PlayerShot,
+	dt: number,
+	rules: CombatShipRules,
+): CombatShipStep {
 	const readout: EnemyReadout = {
-		targetHull: raider.condition.hull,
-		targetHullMax: raider.condition.hullMax,
-		targetEnergy: raider.condition.energy,
-		targetHeatLocked: raider.condition.heatLocked,
+		targetHull: ship.condition.hull,
+		targetHullMax: ship.condition.hullMax,
+		targetEnergy: ship.condition.energy,
+		targetHeatLocked: ship.condition.heatLocked,
 		playerHull: pilot.hull,
 	};
-	// The hit test inside the controller is against the raider's position at
-	// the top of the step, which is where the player aimed.
-	const before = raider.flight.ship.pos;
-	const flown = stepCombatEnemy(
-		raider.flight,
+	// The hit test inside the controller is against the ship's position at the
+	// top of the step, which is where the player aimed.
+	const before = ship.flight.ship.pos;
+	const flown = stepEnemyShip(
+		ship.flight,
 		pilot.ship,
 		pilot.nose,
 		readout,
 		shot.fired,
 		dt,
-		pilot.aimOrigin,
-		pilot.aimNose,
-		RAIDER_HIT_RADIUS_KM,
-		pilot.frameVel,
+		{
+			laserOrigin: pilot.aimOrigin,
+			laserNose: pilot.aimNose,
+			hitRadiusKm: rules.hitRadiusKm,
+			frameVel: pilot.frameVel,
+			performance: rules.performance,
+			intent: rules.intent,
+		},
 	);
 
-	let condition = raider.condition;
+	let condition = ship.condition;
 	const playerHit = shot.fired && shot.damage > 0 && flown.targetInCone;
 	if (playerHit)
 		condition = applyDamage(
 			condition,
 			shot.damage,
-			sideStruck(raider.flight.nose, sub(pilot.ship.pos, before)),
+			sideStruck(ship.flight.nose, sub(pilot.ship.pos, before)),
 		);
 
-	// Its own gun, through the same step the player's goes through. A dead
-	// raider pulls no trigger.
+	// Its own gun, through the same step the player's goes through. A dead ship
+	// pulls no trigger.
 	const gun = stepCondition(
 		condition,
 		dt,
 		isAlive(condition) && flown.enemyFiring,
 	);
 	condition = gun.condition;
-	const raiderHit =
+	const returnFire =
 		gun.fired && gun.damage > 0 && pilot.hull > 0
 			? {
 					amount: gun.damage,
@@ -171,9 +221,10 @@ export function stepDuel(
 			: null;
 
 	return {
-		raider: { flight: flown.state, condition },
+		flight: flown.state,
+		condition,
 		playerHit,
-		raiderHit,
-		raiderDestroyed: !isAlive(condition),
+		returnFire,
+		destroyed: !isAlive(condition),
 	};
 }
