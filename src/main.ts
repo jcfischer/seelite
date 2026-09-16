@@ -329,6 +329,7 @@ import {
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
+import { SCOOP_NOTICE_S, scoopNotice } from "./cargo-notice";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -1973,6 +1974,15 @@ class Game {
 	 *  beside the canisters rather than searched for in the contact list, which
 	 *  only selection and the scanner read. */
 	private readonly cargoContacts = new Map<string, DisplayContact>();
+	/** The scoop's acknowledgement and what is left of its time on the glass
+	 *  (#324). A scoop wrote `lastExit` and nothing else, and every `lastExit`
+	 *  goes to `#hud`, which the page clips to one pixel — so the sixth
+	 *  playtest saw a canister vanish and nothing say why. */
+	scoopNotice = "";
+	scoopFor = 0;
+	/** What the notice drew this frame, for a probe to read rather than
+	 *  restate: the text and its alpha, or null when nothing is up. */
+	scoopRender: { text: string; alpha: number } | null = null;
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -7574,6 +7584,12 @@ class Game {
 		// docked returns through `stepDockPhase` before the sync, leaving them
 		// selectable until launch (sage #353).
 		this.syncCargoContacts();
+		// And the scoop's acknowledgement: a notice about cargo taken on the last
+		// leg has nothing to say after a jump or a reset, and `leg-reset-coverage`
+		// is the row that insists on it.
+		this.scoopNotice = "";
+		this.scoopFor = 0;
+		this.scoopRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -7975,14 +7991,28 @@ class Game {
 				if (took.accepted) this.commander = took.commander;
 				return took.accepted;
 			},
+			// The frame as it stands, not the one the kill froze (#324).
+			this.localFrame(),
 		);
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
-		for (const { canister, accepted } of step.scoops)
+		for (const { canister, accepted } of step.scoops) {
 			this.lastExit = accepted
 				? `scooped ${canister.tonnes} t ${canister.commodity}`
 				: "hold full: canister left in space";
+			// And on the glass, where a pilot is looking, with a sound: the
+			// canister disappearing is what expiring and flying past also look
+			// like, so the event needs to say which of the three it was.
+			this.scoopNotice = scoopNotice({
+				commodity: canister.commodity,
+				tonnes: canister.tonnes,
+				accepted,
+			});
+			this.scoopFor = SCOOP_NOTICE_S;
+			if (accepted) this.audio.scoop();
+			else this.audio.alert();
+		}
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
 
@@ -8736,6 +8766,7 @@ class Game {
 		// world masses are read, and may drop the player out of cruise before the
 		// regime branch below chooses how to fly this frame.
 		this.struckFor = Math.max(0, this.struckFor - dt);
+		this.scoopFor = Math.max(0, this.scoopFor - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot);
@@ -11059,6 +11090,22 @@ class Game {
 			drawStruckRim(ctx, w, h, glassBottom, rim);
 			this.hostileFireRender.rim = Math.max(0, rim);
 		}
+		// The scoop's acknowledgement (#324). In **every** view, not only the
+		// cockpit: the canister marker is drawn in both, so the event that
+		// removes it has to be answered in both. It fades over its last stretch
+		// rather than cutting, so a scoop reads as one event even when three
+		// land within a few seconds of each other.
+		if (this.scoopFor > 0 && this.scoopNotice) {
+			const alpha = Math.min(1, this.scoopFor / (SCOOP_NOTICE_S * 0.4));
+			ctx.save();
+			ctx.globalAlpha = alpha;
+			ctx.fillStyle = CARGO_CONTACT_CSS;
+			ctx.font = "16px ui-monospace, Menlo, monospace";
+			ctx.textAlign = "center";
+			ctx.fillText(this.scoopNotice, w / 2, h * glassBottom - 28);
+			ctx.restore();
+			this.scoopRender = { text: this.scoopNotice, alpha };
+		} else this.scoopRender = null;
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip
 		// shows where it points.

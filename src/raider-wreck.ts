@@ -123,11 +123,12 @@ export interface Canister {
 	commodity: string;
 	tonnes: number;
 	pos: Vec3;
-	/** Its velocity now, which falls linearly toward `restVel`. */
+	/** Its velocity now, which falls linearly toward the local frame's — the
+	 *  frame as it stands each step, which the stepper is handed. It held the
+	 *  frame's velocity *at the kill* until the sixth playtest: a station's
+	 *  frame keeps turning, so a canister that froze one flew off the curve the
+	 *  pilot's assist holds them on, and never came to rest beside them. */
 	vel: Vec3;
-	/** The velocity of the frame it comes to rest in: the player's local frame
-	 *  at the kill. */
-	restVel: Vec3;
 	/** When it is at rest, game-clock seconds. */
 	restsAt: number;
 	expiresAt: number;
@@ -202,7 +203,6 @@ export function dropCanisters(kill: {
 			tonnes: CANISTER_TONNES,
 			pos: kill.pos,
 			vel: add(drift, scale(out, CANISTER_EJECT_KMS)),
-			restVel: kill.frameVel,
 			restsAt: kill.killedAt + CANISTER_FADE_S,
 			expiresAt: kill.killedAt + CANISTER_LIFETIME_S,
 		};
@@ -211,21 +211,35 @@ export function dropCanisters(kill: {
 
 /**
  * One canister moved one step, from game time `now`. Its velocity relative to
- * `restVel` falls in a straight line to zero at `restsAt`. It moves with
- * `restVel` for the whole step, and with the fading part on that part's mean
+ * `frameVel` falls in a straight line to zero at `restsAt`. It moves with
+ * `frameVel` for the whole step, and with the fading part on that part's mean
  * only until it reaches rest, so the step that crosses `restsAt` is exact too
  * (sage #346: it had moved on the mean for the whole step and overshot).
+ *
+ * **`frameVel` is the local frame as it stands, not a snapshot taken at the
+ * kill.** A canister carried its own copy of the kill's frame until the sixth
+ * playtest reported cargo "on trajectories much longer than 10s". It was: the
+ * fade finished on time, but beside a station the frame keeps turning, so the
+ * frozen straight line peeled away from the curve the pilot's assist parks
+ * them on — 55 km out and still opening at 0.94 km/s two minutes after resting
+ * (`scripts/measure-canister-drift.mjs`). Deep space hid it, because the star
+ * frame does not move and every flown duel lands there.
  */
-export function driftCanister(c: Canister, dt: number, now: number): Canister {
+export function driftCanister(
+	c: Canister,
+	dt: number,
+	now: number,
+	frameVel: Vec3,
+): Canister {
 	const left = c.restsAt - now;
 	const fading = Math.min(dt, Math.max(0, left));
 	const share = left > 0 ? (left - fading) / left : 0;
-	const relative = sub(c.vel, c.restVel);
+	const relative = sub(c.vel, frameVel);
 	const pos = add(
-		add(c.pos, scale(c.restVel, dt)),
+		add(c.pos, scale(frameVel, dt)),
 		scale(relative, ((1 + share) / 2) * fading),
 	);
-	return { ...c, pos, vel: add(c.restVel, scale(relative, share)) };
+	return { ...c, pos, vel: add(frameVel, scale(relative, share)) };
 }
 
 /** A scoop tried this step: taken into the hold, or refused by a full one. */
@@ -251,6 +265,10 @@ export function stepCanisters(
 	dt: number,
 	now: number,
 	accept: (canister: Canister) => boolean,
+	/** The local frame this step, which the canisters come to rest in. Required
+	 *  for `FlightPerformance`'s reason: a caller that forgot would silently
+	 *  bring every canister to rest in star coordinates. */
+	frameVel: Vec3,
 ): { kept: Canister[]; scoops: CanisterScoop[] } {
 	const kept: Canister[] = [];
 	const tried: CanisterScoop[] = [];
@@ -261,7 +279,7 @@ export function stepCanisters(
 			tried.push({ canister, accepted });
 			if (accepted) continue;
 		}
-		kept.push(driftCanister(canister, dt, now));
+		kept.push(driftCanister(canister, dt, now, frameVel));
 	}
 	return { kept, scoops: tried };
 }

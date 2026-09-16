@@ -311,7 +311,6 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 		tonnes: 1,
 		pos: v3(),
 		vel: v3(),
-		restVel: v3(),
 		restsAt: 0,
 		expiresAt: 0,
 	};

@@ -401,7 +401,41 @@ const scoop = await page.evaluate(() => {
 		g.render(dt);
 	}
 	g.throttle = 0;
+	g.render(dt);
+	// **The scoop says so on the glass** (#324, the sixth playtest: it "just
+	// disappears"). `scoopRender` is written inside the draw itself, so it is a
+	// record of painting — and the pixels are counted beside it against a
+	// control frame with the notice suppressed, because a record alone cannot
+	// show the text was lit.
+	const band = () => {
+		const overlay = document.getElementById("overlay");
+		const c2d = overlay.getContext("2d", { willReadFrequently: true });
+		const y = Math.max(0, Math.round(overlay.height * 0.62) - 60);
+		const data = c2d.getImageData(0, y, overlay.width, 90).data;
+		let lit = 0;
+		for (let i = 0; i < data.length; i += 4)
+			if (data[i + 3] > 40 && data[i + 1] > 180 && data[i] < 200) lit++;
+		return lit;
+	};
+	const noticeAt = g.scoopRender ? { ...g.scoopRender } : null;
+	const lit = band();
+	const kept = g.scoopFor;
+	g.scoopFor = 0;
+	g.render(dt);
+	const control = band();
+	g.scoopFor = kept;
+	g.render(dt);
+	// And it clears: a notice that never goes away is not an event.
+	for (let t = 0; t < 4; t += dt) {
+		g.step(dt);
+		g.render(dt);
+	}
+	const noticeAfter = g.scoopRender ? { ...g.scoopRender } : null;
 	return {
+		noticeAt,
+		lit,
+		control,
+		noticeAfter,
 		before,
 		after: g.canisters.length,
 		commodity: c0.commodity,
@@ -420,6 +454,22 @@ check(
 		scoop.now === scoop.held + 1 &&
 		scoop.lastExit.startsWith("scooped"),
 	JSON.stringify(scoop),
+);
+check(
+	"the scoop says so on the glass, and the notice clears",
+	scoop.noticeAt !== null &&
+		/^SCOOPED {2}1 t /.test(scoop.noticeAt.text) &&
+		scoop.noticeAt.alpha > 0 &&
+		// Lit against the same frame with the notice suppressed, because the
+		// record alone cannot show the text reached the canvas.
+		scoop.lit > scoop.control &&
+		scoop.noticeAfter === null,
+	JSON.stringify({
+		at: scoop.noticeAt,
+		lit: scoop.lit,
+		control: scoop.control,
+		after: scoop.noticeAfter,
+	}),
 );
 
 const afterScoop = await page.evaluate((id) => {

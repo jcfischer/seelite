@@ -159,7 +159,6 @@ describe("the cargo drop", () => {
 		const [c0] = kill({ frameVel, vel: v3(30, 0, -2), killedAt: 500 });
 		expect(CANISTER_FADE_S).toBe(10);
 		expect(c0.restsAt).toBe(500 + CANISTER_FADE_S);
-		expect(c0.restVel).toEqual(frameVel);
 		const relative = (c: Canister) => length(sub(c.vel, frameVel));
 		const start = relative(c0);
 		const dt = 1 / 60;
@@ -168,7 +167,7 @@ describe("the cargo drop", () => {
 		const at = (seconds: number) => {
 			let c = c0;
 			for (let t = 0; t < seconds - 1e-9; t += dt)
-				c = stepCanisters([c], far, dt, 500 + t, () => true).kept[0];
+				c = stepCanisters([c], far, dt, 500 + t, () => true, frameVel).kept[0];
 			return c;
 		};
 		expect(relative(at(5)) / start).toBeCloseTo(0.5, 6);
@@ -181,6 +180,32 @@ describe("the cargo drop", () => {
 		);
 		expect(covered).toBeCloseTo((start * CANISTER_FADE_S) / 2, 6);
 		expect(relative(at(15))).toBe(0);
+	});
+
+	test("a canister comes to rest in the frame as it stands, not the frame at the kill", () => {
+		// The sixth playtest: "it felt like they were on trajectories much longer
+		// than 10s". `scripts/measure-canister-drift.mjs` parked beside a station
+		// read the canister 55 km out and still opening at 0.94 km/s two minutes
+		// after it had come to rest — because a station's frame keeps turning
+		// while a frozen velocity does not, and the pilot's assist flies the
+		// frame as it stands. Deep space hid it: that frame is the star's and
+		// never moves, and every flown duel lands there.
+		const atKill = v3(30, 0, 0);
+		const [c0] = kill({ frameVel: atKill, vel: v3(30, 0, -2), killedAt: 500 });
+		const dt = 1 / 60;
+		const far = { pos: v3(1e6, 0, 0), vel: v3() };
+		// A frame that turns, as an orbit does.
+		const frameAt = (t: number) =>
+			v3(30 * Math.cos(t / 100), 30 * Math.sin(t / 100), 0);
+		let c = c0;
+		let last = atKill;
+		for (let t = 0; t < 15 - 1e-9; t += dt) {
+			last = frameAt(t);
+			c = stepCanisters([c], far, dt, 500 + t, () => true, last).kept[0];
+		}
+		expect(length(sub(c.vel, last))).toBeLessThan(1e-9);
+		// And it is not the kill's frame: that is the drift the playtest flew.
+		expect(length(sub(c.vel, atKill))).toBeGreaterThan(0.1);
 	});
 
 	test("a canister from a wreck at the assist cap is closable at the cap", () => {
@@ -206,24 +231,32 @@ describe("drift, expiry and the scoop", () => {
 		tonnes: 1,
 		pos: v3(0, 0, 0),
 		vel: v3(0.01, 0, 0),
-		// At rest in a frame that moves with it, so these rows see a constant
-		// velocity; the fade is the drop rows' question.
-		restVel: v3(0.01, 0, 0),
 		restsAt: 100,
 		expiresAt: 100,
 	};
 
 	const farShip = { pos: v3(10, 0, 0), vel: v3() };
 	const takeAll = () => true;
+	// The frame these rows step in. At rest in it, so they see a constant
+	// velocity; the fade is the drop rows' question.
+	const carried = v3(0.01, 0, 0);
+	const still = v3();
 
 	test("a canister drifts on its velocity and is gone at `expiresAt`", () => {
-		const [moved] = stepCanisters([canister], farShip, 2, 50, takeAll).kept;
+		const [moved] = stepCanisters(
+			[canister],
+			farShip,
+			2,
+			50,
+			takeAll,
+			carried,
+		).kept;
 		expect(moved.pos.x).toBeCloseTo(0.02, 12);
 		expect(
-			stepCanisters([canister], farShip, 0.1, 99.999, takeAll).kept,
+			stepCanisters([canister], farShip, 0.1, 99.999, takeAll, carried).kept,
 		).toHaveLength(1);
 		expect(
-			stepCanisters([canister], farShip, 0.1, 100, takeAll).kept,
+			stepCanisters([canister], farShip, 0.1, 100, takeAll, carried).kept,
 		).toHaveLength(0);
 	});
 
@@ -231,14 +264,14 @@ describe("drift, expiry and the scoop", () => {
 		// Drifted first, this canister is 0.2 km off the ship and out of reach.
 		const moving = { ...canister, vel: v3(0.2, 0, 0) };
 		const ship = { pos: v3(0, 0, 0), vel: v3() };
-		const step = stepCanisters([moving], ship, 1, 50, takeAll);
+		const step = stepCanisters([moving], ship, 1, 50, takeAll, still);
 		expect(step.kept).toHaveLength(0);
 		expect(step.scoops).toEqual([{ canister: moving, accepted: true }]);
 	});
 
 	test("a canister the hold refuses stays in space and drifts on", () => {
 		const ship = { pos: v3(0, 0, 0), vel: v3() };
-		const step = stepCanisters([canister], ship, 2, 50, () => false);
+		const step = stepCanisters([canister], ship, 2, 50, () => false, carried);
 		expect(step.scoops).toEqual([{ canister, accepted: false }]);
 		expect(step.kept).toHaveLength(1);
 		expect(step.kept[0].pos.x).toBeCloseTo(0.02, 12);
@@ -250,10 +283,16 @@ describe("drift, expiry and the scoop", () => {
 		const fading = {
 			...canister,
 			vel: v3(0.2, 0, 0),
-			restVel: v3(0, 0, 0),
 			restsAt: 50.1,
 		};
-		const [moved] = stepCanisters([fading], farShip, 0.25, 50, takeAll).kept;
+		const [moved] = stepCanisters(
+			[fading],
+			farShip,
+			0.25,
+			50,
+			takeAll,
+			still,
+		).kept;
 		expect(moved.pos.x).toBeCloseTo((0.2 * 0.1) / 2, 12);
 		expect(moved.vel).toEqual(v3(0, 0, 0));
 	});

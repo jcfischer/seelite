@@ -247,6 +247,12 @@ export class AudioFX {
 		this.tone(660, 0.12, "square", 0.16);
 		this.tone(440, 0.12, "square", 0.16);
 	}
+	/** A canister taken into the hold: a short rising chime, so a scoop is heard
+	 *  as a gain rather than as the thud of something hitting the hull. */
+	scoop() {
+		this.tone(320, 0.1, "triangle", 0.16, 720);
+		this.tone(720, 0.12, "sine", 0.1, 960);
+	}
 	/** A button, a menu, a market row. */
 	ui() {
 		this.tone(520, 0.06, "square", 0.12);

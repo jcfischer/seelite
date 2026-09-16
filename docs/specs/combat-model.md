@@ -107,9 +107,15 @@ from the kill's own stream (`DOMAIN.CARGO_DROP`). Illegal goods weigh
 none. A canister keeps a fifth of the wreck's velocity relative to the local
 frame, leaves the wreck at 0.15 km/s in its own direction (two canisters go
 opposite ways, three go 120° apart), **slows linearly to rest 10 s after the
-kill**, and expires five minutes after it. It rests relative to the local
-frame's velocity as it was at the kill: a snapshot, which an orbiting body's
-frame moves on from over the five minutes. Two playtests shaped
+kill**, and expires five minutes after it. **It comes to rest in the local
+frame as it stands each step, not in a snapshot of that frame taken at the
+kill.** The snapshot was ratified here and flown for two playtests before the
+sixth found it: the fade finished on time, but a station's frame keeps turning,
+so a canister holding the kill's velocity peeled away from the curve the
+pilot's assist parks them on — measured at 55 km out and still opening at
+0.94 km/s two minutes after resting, beside a station moving 29.3 km/s. Deep
+space hid it, because the star frame does not move and every flown duel lands
+there (`scripts/measure-canister-drift.mjs` prints both). Two playtests shaped
 this. A canister kept all the wreck's velocity at first; a fleeing raider dies
 at the 2 km/s assist cap, so its canisters held their range against a ship at
 the same cap, and the third playtest could not reach one. Keeping a fifth
