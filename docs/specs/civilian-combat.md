@@ -1,7 +1,7 @@
 # Civilian combat and its legal consequence
 
 Author: Ivy · 2026-09-16
-Status: H0–H10 are agreed with the principal (grilled one at a time on
+Status: H0–H12 are agreed with the principal (grilled one at a time on
 2026-09-16). The checkpoint also needs the principal to confirm the reaction
 model and the cost of a Clean kill **having flown it**, so this document is
 agreed, not yet ratified.
@@ -88,8 +88,10 @@ carrier, instance and voyage. When the scan lands it reads the same function.
 
 ```
 carrierStanding(systemSeed, carrierKey, instanceOrdinal, gameTime)
-carrierManifest(systemSeed, carrierKey, instanceOrdinal, voyageOrdinal)
+carrierManifest(systemSeed, carrierKey, instanceOrdinal, voyageOrdinal, …)
 ```
+
+H11 adds the hold and government the manifest reads.
 
 The name draw takes it too when it is built. A replacement draws a fresh
 standing timeline and hold, so a killed Wanted Porter does not come back Wanted
