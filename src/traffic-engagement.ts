@@ -31,7 +31,7 @@ import {
 	type ShipCondition,
 	fullCondition,
 } from "./ship-condition";
-import { PLAYER_KILL, RAIDER_REPAIR_S, RAIDER_WRECK_S } from "./raider-wreck";
+import { playerKillDestruction } from "./raider-wreck";
 import { flightPerformance } from "./sim";
 import { type Vec3, frameAcross } from "./vec3";
 import type { Provenance, TransitionEvent } from "./world-state";
@@ -169,23 +169,16 @@ const trafficReplacementActor = (
  * draws its own standing and hold (H1). No H decision sets the durations; they
  * are `raider-wreck.ts`'s, reused.
  */
-export function trafficDestruction(
+export const trafficDestruction = (
 	systemIndex: number,
 	homeStationId: string,
 	now: number,
-): TransitionEvent {
-	return {
-		kind: "destroy",
-		occurredAt: now,
-		cause: PLAYER_KILL,
-		schedule: {
-			startsAt: now + RAIDER_WRECK_S,
-			completesAt: now + RAIDER_WRECK_S + RAIDER_REPAIR_S,
-			consequenceArea: `system:${systemIndex}`,
-			cause: trafficReplacementActor(systemIndex, homeStationId),
-		},
-	};
-}
+): TransitionEvent =>
+	playerKillDestruction(
+		systemIndex,
+		now,
+		trafficReplacementActor(systemIndex, homeStationId),
+	);
 
 /**
  * The actors that fly their projection now: the operational ones. A destroyed

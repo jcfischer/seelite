@@ -58,9 +58,22 @@ export const raiderReplacementActor = (systemIndex: number): Provenance => ({
 });
 
 /** The world-state transition a player's kill applies to the raider's slot. */
-export function raiderDestruction(
+export const raiderDestruction = (
 	systemIndex: number,
 	now: number,
+): TransitionEvent =>
+	playerKillDestruction(systemIndex, now, raiderReplacementActor(systemIndex));
+
+/**
+ * A player's kill of any carrier (`combat-model.md` §4): destroyed for
+ * `RAIDER_WRECK_S`, repairing for `RAIDER_REPAIR_S`, then replaced by
+ * `replacedBy`. The raider and ordinary traffic (#362) differ only in who
+ * does the replacing, so the lifecycle figures live here once.
+ */
+export function playerKillDestruction(
+	systemIndex: number,
+	now: number,
+	replacedBy: Provenance,
 ): TransitionEvent {
 	return {
 		kind: "destroy",
@@ -70,7 +83,7 @@ export function raiderDestruction(
 			startsAt: now + RAIDER_WRECK_S,
 			completesAt: now + RAIDER_WRECK_S + RAIDER_REPAIR_S,
 			consequenceArea: `system:${systemIndex}`,
-			cause: raiderReplacementActor(systemIndex),
+			cause: replacedBy,
 		},
 	};
 }

@@ -28,6 +28,11 @@ import {
 } from "../src/world-state";
 import { HULL_SPECS, type HullId } from "../src/hull";
 import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
+import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
+import { flightPerformance } from "../src/sim";
+import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
+import { carrierManifest } from "../src/carrier-manifest";
+import { dropManifestCanisters } from "../src/raider-wreck";
 
 /** Every hull any station roster flies, so a row is not a hand-picked subset. */
 const ROSTER_HULLS = [
@@ -35,9 +40,6 @@ const ROSTER_HULLS = [
 ].sort();
 const CIVILIAN_HULLS = ROSTER_HULLS.filter((h) => !ARMED_TRAFFIC_HULLS.has(h));
 const ARMED_HULLS = ROSTER_HULLS.filter((h) => ARMED_TRAFFIC_HULLS.has(h));
-import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
-import { flightPerformance } from "../src/sim";
-import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 
 const DT = 1 / 60;
 const KEY = carrierKey(12, "station-trade/traffic-02");
@@ -327,5 +329,30 @@ describe("the voyage a hold is drawn for (carrier-identity F11)", () => {
 				DT,
 			).engagement;
 		expect(stepped.voyageOrdinal).toBe(4);
+	});
+});
+
+describe("a kill drops the manifest a scan would show (F6, H11)", () => {
+	test("the canisters are carrierManifest's lines, one each, for every roster hull", () => {
+		for (const hullId of ROSTER_HULLS)
+			for (let voyage = 0; voyage < 6; voyage++) {
+				const manifest = carrierManifest(0x5ee11e, KEY, 1, voyage, {
+					holdT: HULL_SPECS[hullId].holdT,
+					government: voyage % 8,
+				});
+				const drop = dropManifestCanisters({
+					systemSeed: 0x5ee11e,
+					key: KEY,
+					manifest,
+					killedAt: 100 + voyage,
+					pos: v3(),
+					vel: v3(),
+					frameVel: v3(),
+					frameBodyId: null,
+				});
+				expect(
+					drop.map((c) => ({ good: c.commodity, tonnes: c.tonnes })),
+				).toEqual([...manifest]);
+			}
 	});
 });

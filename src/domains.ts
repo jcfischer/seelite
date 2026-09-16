@@ -80,6 +80,10 @@ export const DOMAIN = {
 	/** An ordinary carrier's hold (`carrier-identity.md` §3, #362): what it
 	 *  carries on one voyage. Split by the key, the instance and the voyage. */
 	CARRIER_MANIFEST: 18,
+	/** An engaged carrier's flight (#362): the draws its combat controller makes
+	 *  for manoeuvre durations and pull axes. Split by the key and the instance,
+	 *  so a replacement does not fly its predecessor's evasion. */
+	TRAFFIC_ENGAGEMENT: 19,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

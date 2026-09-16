@@ -297,7 +297,8 @@ import {
 	trafficDestruction,
 	trafficInSights,
 } from "./traffic-engagement";
-import { carrierKeySeed, carrierStanding } from "./carrier-standing";
+import { carrierInstanceSeed, carrierStanding } from "./carrier-standing";
+import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
 import { legalStandingAt, offenceHeat, withOffence } from "./legal";
 import {
@@ -5181,7 +5182,12 @@ class Game {
 						up: route?.up ?? null,
 						voyageOrdinal: this.trafficVoyage(actor),
 					},
-					carrierKeySeed(record.seed, key),
+					carrierInstanceSeed(
+						record.seed,
+						key,
+						this.carrierCondition(key).instanceOrdinal,
+						DOMAIN.TRAFFIC_ENGAGEMENT,
+					),
 				),
 			);
 		}
@@ -5234,9 +5240,9 @@ class Game {
 		);
 	}
 
-	/** One carrier's hold for one voyage — the one expression the kill drops and
-	 *  a probe reads, so the two cannot drift apart (sage #368). */
-	private trafficHold(
+	/** One carrier's manifest for one voyage — the one expression the kill drops
+	 *  and a probe reads, so the two cannot drift apart (sage #368). */
+	private trafficManifest(
 		actor: TrafficActor,
 		instanceOrdinal: number,
 		voyageOrdinal: number,
@@ -5270,7 +5276,7 @@ class Game {
 			instanceOrdinal,
 			now,
 		);
-		const manifest = this.trafficHold(
+		const manifest = this.trafficManifest(
 			actor,
 			instanceOrdinal,
 			engagement.voyageOrdinal,
@@ -5346,7 +5352,7 @@ class Game {
 						now,
 					),
 					manifest: actor
-						? this.trafficHold(
+						? this.trafficManifest(
 								actor,
 								carrier.instanceOrdinal,
 								this.trafficVoyage(actor),

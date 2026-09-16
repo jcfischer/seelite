@@ -265,12 +265,13 @@ describe("§5.1 the market is independent of draw order elsewhere", () => {
 			RELAY: 16,
 			CARRIER_STANDING: 17,
 			CARRIER_MANIFEST: 18,
+			TRAFFIC_ENGAGEMENT: 19,
 		});
 		// And a *new* tag is safe only when it is larger than every existing one,
 		// which is the operation this table was designed for.
 		const tags: number[] = Object.values(DOMAIN);
 		expect(tags.length).toBe(new Set(tags).size);
-		expect(DOMAIN.CARRIER_MANIFEST as number).toBe(Math.max(...tags));
+		expect(DOMAIN.TRAFFIC_ENGAGEMENT as number).toBe(Math.max(...tags));
 	});
 
 	test("the market seed is a function of the system seed alone", () => {

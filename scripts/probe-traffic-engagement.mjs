@@ -54,6 +54,7 @@ try {
 		const engagementMod = await import("/src/traffic-engagement.ts");
 		// Constants read off the page, never restated here (CLAUDE.md).
 		const legalMod = await import("/src/legal.ts");
+		const gimbalMod = await import("/src/gimbal.ts");
 		const wreckMod = await import("/src/raider-wreck.ts");
 		const dt = g.units.MAX_DT;
 		const frame = () => {
@@ -149,6 +150,7 @@ try {
 				);
 			},
 			offenceHeat: legalMod.OFFENCE_HEAT.destroyed,
+			gimbalConeRad: gimbalMod.GIMBAL_CONE_RAD,
 			lifecycleS: wreckMod.RAIDER_WRECK_S + wreckMod.RAIDER_REPAIR_S,
 			advanceTo(t) {
 				g.world.gameTime = t;
@@ -167,15 +169,16 @@ try {
 		const { trafficInSights } = await import("/src/traffic-engagement.ts");
 		const target = p.seek({ armed: false, standing: "clean" }, 900);
 		if (!target) return { target: null };
-		const off = (3 * Math.PI) / 180;
+		// Inside and outside the gimbal's cone, read off the page.
+		const off = p.gimbalConeRad / 2;
 		p.tether(target.key, 1.2, off);
 		p.frame();
 		g.targetId = target.key;
-		// First 12° off, outside the gimbal's 6° cone: the mark must not show.
-		const outside = (12 * Math.PI) / 180;
+		// First twice the cone off the nose: the mark must not show.
+		const outside = p.gimbalConeRad * 2;
 		for (let i = 0; i < 20; i++) p.follow(target.key, false, outside);
 		const markOutside = g.selectedRender && { ...g.selectedRender };
-		// Then held 3° off the nose, inside the cone, not firing.
+		// Then half the cone off the nose, inside it, not firing.
 		for (let i = 0; i < 20; i++) p.follow(target.key, false, off);
 		const mark = g.selectedRender && { ...g.selectedRender };
 		const contact = g.trafficContacts.get(target.key);
@@ -264,6 +267,14 @@ try {
 		g.setHeadLook("left");
 		p.frame();
 		const legalEl = document.querySelector("[data-live-legal-status]");
+		const legalText = legalEl?.textContent ?? null;
+		const legalVisible = legalEl ? legalEl.checkVisibility() : null;
+		// H7 puts the readout on both left tabs: read the Navigation one too.
+		g.leftTab = "Navigation";
+		p.frame();
+		const navEl = document.querySelector("[data-live-legal-status]");
+		const navText = navEl?.textContent ?? null;
+		const navVisible = navEl ? navEl.checkVisibility() : null;
 		const readout = g.trafficReadout();
 		return {
 			steps,
@@ -276,8 +287,10 @@ try {
 				.map((c) => ({ good: c.commodity, tonnes: c.tonnes })),
 			heatBefore,
 			legal: readout.legal,
-			legalText: legalEl?.textContent ?? null,
-			legalVisible: legalEl ? legalEl.checkVisibility() : null,
+			legalText,
+			legalVisible,
+			navText,
+			navVisible,
 			authorityReady: readout.authorityReady,
 			offenceHeat: p.offenceHeat,
 			lastExit: g.lastExit,
@@ -303,12 +316,16 @@ try {
 			1e-6 &&
 			killed.legal.standing === "wanted" &&
 			killed.legalText === "WANTED" &&
-			killed.legalVisible === true,
+			killed.legalVisible === true &&
+			killed.navText === "WANTED" &&
+			killed.navVisible === true,
 		JSON.stringify({
 			legal: killed.legal,
 			before: killed.heatBefore,
 			text: killed.legalText,
 			visible: killed.legalVisible,
+			navText: killed.navText,
+			navVisible: killed.navVisible,
 		}),
 	);
 	check(
