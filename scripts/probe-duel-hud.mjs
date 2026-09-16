@@ -495,7 +495,7 @@ for (const viewport of VIEWPORTS) {
 	// need one, because the claim is that the two ranges are the one range.
 	//
 	// **The fight must end by letting go, not by a kill.** A kill writes the
-	// raider's slot to world state, and `resetFlightToStart` rewinds the game
+	// raider's destruction to world state, and `resetFlightToStart` rewinds the game
 	// clock while world-state keeps its own high-water mark, so a kill after a
 	// long scripted run dies on `world-state: destroy … is before the clock`.
 	// The raider's hull is held above zero for that reason as well as to keep the

@@ -100,7 +100,7 @@ export const printHull = (hull: number): number =>
 export const HULL_KILL_TOLERANCE = HULL_PRINT_STEP / 2;
 
 /**
- * Below this share of a ship's own hull, its energy bank stops buying shields.
+ * Below this share of a ship's own hull, its Energy bank stops buying shields.
  *
  * **A quarter, by the principal's ruling (#367 D2).** Recharge used to be gated
  * on time alone, so a raider at a third of a point of hull, left unhit for the
