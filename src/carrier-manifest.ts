@@ -3,8 +3,11 @@
  * under `civilian-combat.md` H0, H1 and H11).
  *
  * **Derived, never saved**, under its own `DOMAIN` tag, and fixed for one
- * voyage: `voyageOrdinal` is `trafficScheduleAt`'s `awayOrdinal`, stable across
- * the whole interval, so a hold cannot change between a scan and a kill.
+ * voyage. The caller passes the voyage the carrier is **flying**
+ * (`flownVoyageOrdinal`: its route's visit, the schedule's ordinal only without
+ * a route), and a fight fixes it on the engagement when it starts, so a hold
+ * cannot change between a scan and a kill. The schedule's own ordinal is not
+ * enough: a return running late is still the previous visit (sage #368).
  *
  * **What a scan shows is what drops** (F6). A kill drops one canister per line
  * here, each holding its line's tonnes (H11), so this function is the whole of

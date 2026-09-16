@@ -248,8 +248,8 @@ bump**: a version mismatch refuses the whole save (`persistent-world-state.md`
 
 ### H7 — The HUD shows standing, and shipyards refuse Wanted
 
-The `LEGAL STATUS` rail shows Clean, Wanted or Fugitive, stepping back as heat
-decays. Every shipyard denies docking with the reason `hostile` while heat is
+The left console's readout shows LEGAL STATUS as Clean, Wanted or Fugitive,
+stepping back as heat decays, on both left tabs. The rail keeps its label. Every shipyard denies docking with the reason `hostile` while heat is
 Wanted or above, which is `combat-model.md` §4's "thresholds determine … shipyard
 hostility". Trade stations and refineries become hostile only through H5.
 
@@ -370,7 +370,7 @@ Each is amended in the change that builds it, not ahead of it.
 | The drop is the manifest | Headless: canisters equal `carrierManifest(key, ordinal, voyage)` | 1 |
 | Heat by true standing, decay, cap | Headless: Clean kill +40, Wanted 0; half-life; H4's durations | 1 |
 | The laser takes a civilian | Browser probe: ON TARGET on a selected Traffic contact | 1 |
-| The rail shows standing | View set plus the principal's yes | 1 |
+| The left console's readout shows standing | View set (`raider-log` frames it) plus the principal's yes | 1 |
 | The kill and its cost feel right | The principal flying it | 1 |
 | A survivor diverts and returns | Headless: disable + repair-start at the strike; parked at home; same ordinal on completion | 2 |
 | Strike then kill costs 40 | Headless | 2 |

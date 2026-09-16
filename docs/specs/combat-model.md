@@ -174,7 +174,7 @@ by `trafficDestruction`; no H decision sets them) and returns as a new instance
 (H1), and its drop is the manifest
 `carrier-identity.md` §3 derives, one canister per line holding that line's
 tonnes (H11) — so a canister's tonnage is a field, and a scoop takes what fits.
-The cockpit's left console shows the player's standing (H7).
+The left console's readout shows the player's standing (H7).
 
 ## 5. HUD and verification
 

@@ -5123,7 +5123,6 @@ class Game {
 	 * and the carrier goes back to its projection. The diversion is #365's.
 	 */
 	private stepTrafficEngagements(dt: number, shot: PlayerShot) {
-		const record = this.world.system.record;
 		const pilot: DuelPilot = {
 			ship: this.world.ship,
 			nose: this.nose(),
@@ -5132,41 +5131,53 @@ class Game {
 			hull: this.condition.hull,
 			frameVel: this.localFrame(),
 		};
-		if (shot.fired && shot.damage > 0)
-			for (const [key, contact] of this.trafficContacts) {
-				if (this.trafficEngagements.has(key)) continue;
-				const actor = this.trafficActorByKey(key);
-				if (!actor) continue;
-				if (
-					!trafficInSights(
-						pilot.aimOrigin,
-						pilot.aimNose,
-						contact.pos,
-						actor.hullId,
-					)
+		if (shot.fired && shot.damage > 0) this.engageStruckTraffic(pilot);
+		this.stepEngagedTraffic(pilot, shot, dt);
+	}
+
+	/** Hand every projected carrier the beam lands on to flight at the pose it
+	 *  is drawn in; the same frame's step then lands the shot. */
+	private engageStruckTraffic(pilot: DuelPilot) {
+		const record = this.world.system.record;
+		for (const [key, contact] of this.trafficContacts) {
+			if (this.trafficEngagements.has(key)) continue;
+			const actor = this.trafficActorByKey(key);
+			if (!actor) continue;
+			if (
+				!trafficInSights(
+					pilot.aimOrigin,
+					pilot.aimNose,
+					contact.pos,
+					actor.hullId,
 				)
-					continue;
-				const route = this.trafficRoutes.find((r) => r.key === key);
-				// Its drawn attitude, or failing that the way it is moving.
-				const nose =
-					route?.nose ??
-					normalizeOr(sub(contact.velocity, pilot.frameVel), v3(0, 0, -1));
-				this.trafficEngagements.set(
-					key,
-					engage(
-						{
-							key,
-							hullId: actor.hullId,
-							pos: contact.pos,
-							vel: contact.velocity,
-							nose,
-							up: route?.up ?? null,
-							voyageOrdinal: this.trafficVoyage(actor),
-						},
-						mix(record.seed, fnv1a(key)),
-					),
-				);
-			}
+			)
+				continue;
+			const route = this.trafficRoutes.find((r) => r.key === key);
+			// Its drawn attitude, or failing that the way it is moving.
+			const nose =
+				route?.nose ??
+				normalizeOr(sub(contact.velocity, pilot.frameVel), v3(0, 0, -1));
+			this.trafficEngagements.set(
+				key,
+				engage(
+					{
+						key,
+						hullId: actor.hullId,
+						pos: contact.pos,
+						vel: contact.velocity,
+						nose,
+						up: route?.up ?? null,
+						voyageOrdinal: this.trafficVoyage(actor),
+					},
+					mix(record.seed, fnv1a(key)),
+				),
+			);
+		}
+	}
+
+	/** Step the engaged carriers: return fire, a kill, or out of range back to
+	 *  the projection (a survivor is transient in this change, H10). */
+	private stepEngagedTraffic(pilot: DuelPilot, shot: PlayerShot, dt: number) {
 		for (const [key, engagement] of this.trafficEngagements) {
 			const actor = this.trafficActorByKey(key);
 			if (!actor) {
@@ -5340,6 +5351,18 @@ class Game {
 			},
 			authorityReady: this.trafficAuthorityReady(),
 		};
+	}
+
+	/** Whether a shot along the beam lands on the selected ordinary carrier now.
+	 *  No actor, no mark — as `engageStruckTraffic` lands no shot without one,
+	 *  rather than a hit radius from a hull nobody named (sage #368). */
+	private trafficOnTarget(camPos: Vec3, selected: Body): boolean {
+		if (!this.trafficSelected()) return false;
+		const actor = this.trafficActorByKey(selected.id as CarrierKey);
+		return (
+			actor !== undefined &&
+			trafficInSights(camPos, this.beamAim(), selected.pos, actor.hullId)
+		);
 	}
 
 	/** The player's standing now, from the galaxy's heat (H4, H7). */
@@ -8624,15 +8647,16 @@ class Game {
 			// rate (sage #355). The notice itself is re-armed deliberately: a
 			// refusal stands while the ship is still beside the canister.
 			// **Only a refusal can repeat.** An accepted scoop takes its canister
-			// out of the world, or fills the hold leaving the rest in it (H11), so the
-			// next attempt on it is a refusal: it cannot fire twice; gating both silenced the
-			// second of two scoops of the same good inside the notice's life,
+			// out of the world, or fills the hold and leaves the rest in it (H11),
+			// so the next attempt on that canister is a refusal. Gating both
+			// silenced the second of two scoops of the same good inside the
+			// notice's life,
 			// which is the opposite of "three scoops read as three events"
 			// (sage #355).
 			const refusalStanding = this.scoop.left > 0 && !this.scoop.accepted;
 			this.scoop = { text, left: SCOOP_NOTICE_S, accepted };
-			// An accepted scoop always sounds: it removes its canister, so it
-			// cannot repeat. A refusal sounds only when none was already
+			// An accepted scoop always sounds: it cannot repeat, for the reason
+			// above. A refusal sounds only when none was already
 			// standing — comparing the *words* instead let two canisters of
 			// different goods in reach of a full hold alternate the text and
 			// restart the tone every frame, which is the bug the gate is for
@@ -11892,15 +11916,7 @@ class Game {
 				relayInSights(camPos, this.beamAim(), selectedBody.pos)) ||
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
-			(selectedBody !== null &&
-				this.trafficSelected() &&
-				trafficInSights(
-					camPos,
-					this.beamAim(),
-					selectedBody.pos,
-					this.trafficActorByKey(selectedBody.id as CarrierKey)?.hullId ??
-						"courier",
-				));
+			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));
 		// Built once, because the declutter reservation and the paint must agree.
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`;

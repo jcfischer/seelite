@@ -186,7 +186,11 @@ export function dropCanisters(kill: {
 	const eject = ejectionRing(kill, rand, count);
 	return eject.map((vel, i) => {
 		const good = weights[pickWeightedIndex(weights, rand)].good;
-		return canisterAt(kill, second, i, good.name, CANISTER_TONNES, vel);
+		return canisterAt(kill, second, i, {
+			commodity: good.name,
+			tonnes: CANISTER_TONNES,
+			vel,
+		});
 	});
 }
 
@@ -245,14 +249,11 @@ export function dropManifestCanisters(kill: {
 	if (kill.manifest.length === 0) return [];
 	const { second, rand } = dropStream(kill);
 	return ejectionRing(kill, rand, kill.manifest.length).map((vel, i) =>
-		canisterAt(
-			kill,
-			second,
-			i,
-			kill.manifest[i].good,
-			kill.manifest[i].tonnes,
+		canisterAt(kill, second, i, {
+			commodity: kill.manifest[i].good,
+			tonnes: kill.manifest[i].tonnes,
 			vel,
-		),
+		}),
 	);
 }
 
@@ -294,9 +295,7 @@ const canisterAt = (
 	},
 	second: number,
 	i: number,
-	commodity: string,
-	tonnes: number,
-	vel: Vec3,
+	{ commodity, tonnes, vel }: { commodity: string; tonnes: number; vel: Vec3 },
 ): Canister => ({
 	id: `${kill.key}#canister-${second}-${i}`,
 	commodity,
