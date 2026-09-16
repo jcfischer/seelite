@@ -208,6 +208,62 @@ t.check(
 	JSON.stringify({ overlay: auto.overlay, css: auto.cssBuffer }),
 );
 
+// ── the signal reaches the controller, and the controller acts on it ────────
+//
+// **The check the rest of this probe cannot make.** Every row above passes on a
+// build where `markFrame` is never called: the ladder is still the ladder, the
+// budget is still 60 fps, and a controller with an empty cadence ring reports a
+// perfectly good rung — the one it started on, for ever. The first version of
+// this probe waited 250 ms, collected one frame, read "no frame period" and
+// called that green.
+//
+// It is written as an implication rather than an assertion about the rung,
+// because the second half is a fact about this machine and the first is not. On
+// SwiftShader at 1280x720 the frame runs far over budget and Auto walks down
+// the ladder; on a rasteriser that held 60 fps it would sit at the top and
+// still be working. What must be true either way is that a period arrives.
+await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 6_000)));
+const steered = await page.evaluate(() => {
+	const game = window.__seelite;
+	return {
+		cadence: game.attributionSnapshot()?.cadence ?? null,
+		mode: game.attributionSnapshot()?.mode ?? null,
+		diagnostics: game.adaptiveDiagnostics(),
+	};
+});
+
+t.check(
+	"the frame period reaches the controller",
+	steered.mode === "cadence" &&
+		steered.diagnostics !== null &&
+		typeof steered.diagnostics.periodMedianMs === "number" &&
+		steered.diagnostics.periodMedianMs > 0 &&
+		steered.diagnostics.sampleAgeFrames > 0,
+	JSON.stringify(steered),
+);
+
+t.check(
+	"a period over budget has moved the rung down",
+	// **`typeof` first, and that is not defensive noise.** Written as
+	// `periodMedianMs <= 1000 / 60` this row stayed *green* on the build with
+	// `markFrame` disconnected, because `null <= 16.67` is true in JavaScript —
+	// so the check that exists to catch a missing signal was satisfied by the
+	// missing signal. Caught by running that build rather than by reading it.
+	typeof steered.diagnostics.periodMedianMs === "number" &&
+		(steered.diagnostics.periodMedianMs <= 1000 / 60 ||
+			steered.diagnostics.scale < 1 ||
+			// The one honest exception: it may still be counting toward the step.
+			steered.diagnostics.reason.startsWith("over budget")),
+	JSON.stringify(steered.diagnostics),
+);
+
+t.check(
+	"a rung it has stood on becomes a point on the curve",
+	Object.keys(steered.diagnostics.observations).length > 0 ||
+		steered.diagnostics.atCap,
+	JSON.stringify(steered.diagnostics.observations),
+);
+
 // ── a resize reprimes rather than carrying a stale curve ────────────────────
 const beforeResize = await page.evaluate(
 	() => window.__seelite.adaptiveDiagnostics().reason,
