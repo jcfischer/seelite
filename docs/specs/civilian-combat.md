@@ -280,7 +280,45 @@ The principal was offered this and summing, and chose this.
 3. **Witnesses and shipyards.** H5, H6 and H7's second half.
 
 The principal chose this over one change. The second and third are child nodes
-of #362, and #362 closes when all three are flown.
+of #362 — [#365](https://github.com/jcfischer/seelite/issues/365) and
+[#366](https://github.com/jcfischer/seelite/issues/366) — and #362 closes
+when all three are flown. #359's remaining build is
+[#364](https://github.com/jcfischer/seelite/issues/364).
+
+### H11 — One canister per manifest line
+
+A destroyed ordinary carrier drops one canister per line of its manifest, and
+each canister holds that line's tonnes. A manifest has one to four lines and
+never more tonnes than the hull's `holdT`, so a kill drops what a raider's does
+in count and a freighter's hold in weight. Scooping takes what fits the
+player's free hold and leaves the rest in the canister.
+
+The principal was offered this, one one-tonne canister per tonne — sixty for a
+full Porter — and small manifests in one-tonne canisters, and chose this. It
+makes a canister's tonnage a field rather than `CANISTER_TONNES`, which raider
+drops keep.
+
+`carrierManifest` therefore reads the hull's hold and the system's government,
+which `carrier-identity.md` §3's signature did not name:
+
+```
+carrierManifest(systemSeed, carrierKey, instanceOrdinal, voyageOrdinal,
+                { holdT, government })
+```
+
+The contraband weighting is `cargoWeights(government)`, as §3 asked.
+
+### H12 — Starting standing forms
+
+Wanted 12 %, Fugitive 3 %, and a rotation period of 6 h of game time with a
+phase drawn per carrier instance. **These are starting forms, not measured
+figures**: the committed instrument prints the shares across seeds and
+galaxies, and the principal tunes them after flying. At 6 h a two-minute
+interval from scan to kill spans a rotation boundary about 0.6 % of the time,
+which is F7's "long against" in figures.
+
+The principal was offered these, shares scaled by government, and rarer
+standing on a 12 h rotation, and chose these.
 
 ## Rules this makes false, and where they are amended
 
