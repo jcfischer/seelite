@@ -33,24 +33,51 @@ const TOGGLE = ["on", "off"] as const;
  *  when they are written separately. */
 const SCHEMA = {
 	/**
-	 * A multiplier on the device pixel ratio.
+	 * A multiplier on the device pixel ratio, or `"auto"` to let the game pick.
 	 *
 	 * The renderer is fill-rate bound, so this is the largest single lever on
 	 * frame time: halving it in each axis quarters the work, and that part is
 	 * arithmetic rather than measurement.
 	 *
-	 * The observation behind it — 17 fps on a retina laptop panel against 70 on
-	 * an external display, over a venusian filling the view — is consistent
-	 * with the 4:1 pixel ratio and is not a controlled test of it. `main.ts`
-	 * carries what that does and does not license.
+	 * **What the measurement says**, taken headed on ANGLE Metal / M1 Pro over
+	 * a venusian filling the view, 2026-09-16, reading `?fps` at each rung:
+	 *
+	 * | display | 100% | 75% | 50% |
+	 * |---|---|---|---|
+	 * | external, 60 Hz, 2319x1376 CSS | 30 fps | 50 fps | 60 fps (capped) |
+	 * | laptop, 120 Hz, 2592x1555 CSS | 47-59 fps | 90-100 fps | 120 fps (capped) |
+	 *
+	 * Fitting `t(s) = fixed + fill * s^2` to the top two rungs of each puts the
+	 * fill share at **91.4%** and **101.1%**, which agrees with #242's 97.5%
+	 * measured a different way. So the lever works, and 60 fps over a full
+	 * planet is reachable at 50% on both displays — which is what makes `"auto"`
+	 * a convenience rather than the only way to hit the target.
+	 *
+	 * **An earlier note here read the two displays as a 4:1 pixel ratio, and
+	 * that is now known to be wrong twice over.** It rested on an uncontrolled
+	 * 17 fps against 70 fps; under a controlled read the two swapped, 47-59 on
+	 * the laptop against 30 on the external. And `?perf` reports an effective
+	 * pixel ratio of **2.00 on both**, so there is no ratio between them to
+	 * explain anything with. What the numbers above do say is that the external
+	 * costs **2.02x per pixel** while drawing 0.79x as many — unexplained, and
+	 * deliberately not chased by #352, which measures live and never needs it.
 	 */
 	renderScale: {
+		/**
+		 * **Not `"auto"`**, and that is load-bearing rather than conservative.
+		 * #352 makes Auto an explicit choice, and every probe, view-set capture
+		 * and cost instrument in this repo drives this row to get a
+		 * deterministic buffer. A default of `"auto"` would let a controller
+		 * change resolution inside a measurement cell, which is the one thing
+		 * the node's boundaries forbid outright.
+		 */
 		fallback: 1,
-		allowed: [1, 0.75, 0.5] as const,
+		allowed: ["auto", 1, 0.75, 0.5] as const,
 		label: "Resolution",
-		describe: (v: number) => `${Math.round(v * 100)}%`,
+		describe: (v: number | "auto") =>
+			v === "auto" ? "Auto" : `${Math.round(v * 100)}%`,
 		/** Why someone would move it, in the words of what they would see. */
-		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold.",
+		note: "Lower is faster and softer. Below 100% the cockpit's glow thins: bloom's own chain is a fixed size, but it reads a smaller frame, so fine highlights are averaged away before they can pass its brightness threshold. Auto holds 60 fps by picking a step for you, and shows which one it is using.",
 	},
 	/**
 	 * Which lighting terms the frame gets — #98's quality key, and #99's answer

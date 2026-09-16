@@ -162,7 +162,10 @@ describe("the store tells its listeners, once", () => {
 
 	test("a change notifies", () => {
 		const store = new SettingsStore({ ...DEFAULT_SETTINGS, renderScale: 1 });
-		const seen: number[] = [];
+		// `number | "auto"` since #352: the row carries a mode as well as a
+		// multiplier, and a listener typed to the numbers alone would not
+		// compile against the value it is actually handed.
+		const seen: (number | "auto")[] = [];
 		store.subscribe((s) => seen.push(s.renderScale));
 		store.set("renderScale", 0.5);
 		expect(seen).toEqual([0.5]);
@@ -241,5 +244,48 @@ describe("the store tells its listeners, once", () => {
 		off();
 		store.set("renderScale", 0.75);
 		expect(calls).toBe(0);
+	});
+});
+
+/**
+ * #352. The resolution row carries a mode as well as a multiplier.
+ */
+describe("Auto is a choice, not a default", () => {
+	beforeEach(() => installStorage());
+	afterEach(restoreWindow);
+
+	test("the fallback is 100%, and that is what keeps a capture deterministic", () => {
+		// **A literal, not `RENDER_SCALE_LADDER[0]`.** Every probe, view-set
+		// capture and cost instrument in this repo drives this row to get a
+		// fixed drawing buffer, and they are pinned by construction only while
+		// the default is a number: with no controller there is nothing that
+		// could change resolution inside a measurement cell. A default of
+		// `"auto"` would silently un-pin all of them, and a test written against
+		// the ladder's first entry would follow it there without a word.
+		expect(DEFAULT_SETTINGS.renderScale).toBe(1);
+	});
+
+	test("`auto` survives a save and a reload", () => {
+		saveSettings({ ...DEFAULT_SETTINGS, renderScale: "auto" });
+		expect(loadSettings().renderScale).toBe("auto");
+	});
+
+	test("a saved manual number is not migrated to auto", () => {
+		// Non-destructive in the direction that matters: someone who chose 50%
+		// on a slow machine must still get 50% after the build that added Auto.
+		saveSettings({ ...DEFAULT_SETTINGS, renderScale: 0.5 });
+		expect(loadSettings().renderScale).toBe(0.5);
+	});
+
+	test("a near-miss string is still refused", () => {
+		// Adding a string to the allowed set is the moment a validator that
+		// tested `typeof value === "number"` would have started letting `"0.5"`
+		// through. Membership is the whole check, so it does not.
+		installStorage({
+			[KEY]: `{"renderScale":"0.5"}`,
+		});
+		expect(loadSettings().renderScale).toBe(DEFAULT_SETTINGS.renderScale);
+		installStorage({ [KEY]: `{"renderScale":"AUTO"}` });
+		expect(loadSettings().renderScale).toBe(DEFAULT_SETTINGS.renderScale);
 	});
 });

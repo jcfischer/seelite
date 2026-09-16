@@ -139,6 +139,10 @@ const EXEMPT = new Map([
 		"#142's headed boot instrument; it prints a timing and asserts nothing, so there are no checks for a watch to report into — it refuses a software renderer rather than gating on a figure",
 	],
 	[
+		"measure-adaptive-resolution.mjs",
+		"#352's headed resolution table; like #99's and #206's it gates on nothing — the output is a table for a receipt, not a threshold, because the figures are a property of the machine it is run on. Its refusals — a software rasteriser, and a cadence ring still empty after the settle — throw out of the run rather than counting a failed check",
+	],
+	[
 		"measure-planet-cost.mjs",
 		"#206's headed planet-cost sweep; like #99's it gates on nothing — the output is a table for a receipt, not a threshold — so there are no checks for a watch to report into. Its refusals — an unreadable meter line, a flat run, a column inside the body — throw out of the run rather than counting a failed check",
 	],

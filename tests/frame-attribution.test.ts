@@ -39,7 +39,17 @@ class FakeGl {
 	rasterizer: string | null = "Fake Rasterizer (test)";
 	private nextId = 1;
 
+	/**
+	 * Extension lookups, kept apart from `calls`.
+	 *
+	 * A second ledger rather than another entry in the first, because several
+	 * tests below assert the exact contents of `calls` and an extra line in it
+	 * would retype those as tests of this one.
+	 */
+	readonly extensionQueries: string[] = [];
+
 	getExtension(name: string): unknown {
+		this.extensionQueries.push(name);
 		if (name === "EXT_disjoint_timer_query_webgl2")
 			return this.supported
 				? {
@@ -110,6 +120,7 @@ function fixture(
 		sampleCapacity?: number;
 		staleAfterMs?: number;
 		rasterizer?: string | null;
+		mode?: "full" | "cadence";
 	} = {},
 ) {
 	let now = 0;
@@ -121,6 +132,7 @@ function fixture(
 		gl: gl as unknown as TimerQueryContext,
 		contextEvents: events,
 		rendererFacts: facts,
+		mode: options.mode,
 		now: () => now,
 		maxQueries: options.maxQueries,
 		sampleCapacity: options.sampleCapacity,
@@ -402,6 +414,10 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		}: { frames: number; cadenceMs: number; ns: number },
 	) => {
 		for (let frame = 0; frame < frames; frame++) {
+			// `markFrame` beside `beginGpuFrame`, the way `Game.render` calls
+			// them: since #352 the mark is its own step, so a fixture that only
+			// begins a query leaves the cadence ring empty.
+			f.attribution.markFrame(frame * cadenceMs);
 			f.attribution.beginGpuFrame(frame * cadenceMs);
 			f.attribution.endGpuFrame();
 		}
@@ -731,10 +747,13 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		gl.available.clear();
 		// The marks advance at 16 ms while no new result lands.
 		for (let frame = 0; frame < 12; frame++) {
+			attribution.markFrame(320 + frame * 16);
 			attribution.beginGpuFrame(320 + frame * 16);
-			// Without this the first frame holds `activeQuery` and every later
-			// one returns before it marks — the fixture then measures nothing,
-			// which is how the first version of this test passed either way.
+			// Kept: without it the first frame holds `activeQuery` and every
+			// later `beginGpuFrame` returns early, so the fixture would take one
+			// sample rather than twelve. It no longer governs the *marks* — the
+			// reason it was added, before #352 split them — and the line above
+			// is what covers those now.
 			attribution.endGpuFrame();
 		}
 		setNow(512);
@@ -812,9 +831,10 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		 * The alternation is the point. A cadence built from the timed frames
 		 * reads **32 ms**, and a 30 ms median sits under 32 x 1.25, so the naive
 		 * implementation returns `supported` here. Built from every frame it
-		 * reads 16 ms, and 30 is over 16 x 1.25. Reverting `beginGpuFrame` to
-		 * mark only the frames that got a query turns this test red, which a
-		 * fixture where nothing is skipped — or where everything is — does not.
+		 * reads 16 ms, and 30 is over 16 x 1.25. Moving the mark back inside
+		 * `beginGpuFrame`'s guarded path — where it lived until #352 gave it its
+		 * own method — turns this test red, which a fixture where nothing is
+		 * skipped, or where everything is, does not.
 		 */
 		/**
 		 * `gl.available` is a set the fake never empties, so a result added once
@@ -825,11 +845,14 @@ describe("a GPU reading that cannot be trusted says so", () => {
 		// Twenty frames so the timed half clears `IMPLAUSIBLE_MIN_SAMPLES`.
 		for (let frame = 0; frame < 20; frame += 2) {
 			// Resolves the previous result, then takes the only entry.
+			attribution.markFrame(frame * 16);
 			attribution.beginGpuFrame(frame * 16);
 			gl.available.clear();
 			attribution.endGpuFrame();
 			// The entry is pending and no result is available: this frame is
-			// skipped, and `endGpuFrame` has no active query to end.
+			// skipped, and `endGpuFrame` has no active query to end. It is
+			// marked anyway, which is the whole claim.
+			attribution.markFrame((frame + 1) * 16);
 			attribution.beginGpuFrame((frame + 1) * 16);
 			attribution.endGpuFrame();
 			gl.available.add(1);
@@ -840,5 +863,196 @@ describe("a GPU reading that cannot be trusted says so", () => {
 
 		// It is over the 16 ms cadence the frames actually ran at.
 		expect(attribution.snapshot(320).gpu.status).toBe("implausible");
+	});
+});
+
+/**
+ * #352. The controller's signal, and the contract that lets it run by default.
+ *
+ * Two separate claims live here and they fail for different reasons. The first
+ * is that a cadence sampler **touches no GL object** — that is #223's build
+ * contract item 6 ("the default route must not ... issue timer queries")
+ * surviving the arrival of a consumer that runs without `?perf`. The second is
+ * that the frame period is recorded **whether or not a query was taken**, which
+ * is the fail-open `markFrame` was extracted to close.
+ */
+describe("cadence mode: a frame period with no query ring", () => {
+	test("a cadence sampler asks for no extension and creates no query", () => {
+		const { gl, attribution } = fixture({ mode: "cadence" });
+		attribution.enable();
+		for (let frame = 0; frame < 10; frame++) {
+			attribution.markFrame(frame * 16.7);
+			// Called anyway, the way a render loop that does not know the mode
+			// would call it. It must refuse quietly rather than allocate.
+			attribution.beginGpuFrame(frame * 16.7);
+			attribution.endGpuFrame();
+		}
+		expect(gl.extensionQueries).toEqual([]);
+		expect(gl.calls).toEqual([]);
+		expect(attribution.snapshot(170).mode).toBe("cadence");
+	});
+
+	test("a full sampler still allocates, so the check above can fail", () => {
+		const { gl, attribution } = fixture();
+		attribution.enable();
+		expect(gl.extensionQueries).toContain("EXT_disjoint_timer_query_webgl2");
+		expect(gl.calls.some((call) => call.startsWith("create:"))).toBe(true);
+	});
+
+	test("the period is recorded on a backend with no timer extension", () => {
+		// The fail-open this replaced: `beginGpuFrame` returned before its push
+		// when `getExtension` gave null, so an unsupported backend reported an
+		// enabled sampler with an empty cadence ring.
+		const { attribution } = fixture({ supported: false });
+		attribution.enable();
+		for (let frame = 0; frame < 6; frame++) {
+			attribution.markFrame(frame * 20);
+			attribution.beginGpuFrame(frame * 20);
+		}
+		const snapshot = attribution.snapshot(100);
+		expect(snapshot.gpu.status).toBe("unavailable");
+		expect(snapshot.cadence.medianMs).toBe(20);
+		expect(snapshot.cadence.sampleCount).toBe(5);
+	});
+
+	test("a frame the query ring skips still counts as a frame", () => {
+		// One query, so every frame after the first is refused by the ring while
+		// its result is pending. The cadence must not become the interval
+		// between *timed* frames, which is what it measured before the split.
+		const { attribution } = fixture({ maxQueries: 1 });
+		attribution.enable();
+		for (let frame = 0; frame < 8; frame++) {
+			attribution.markFrame(frame * 10);
+			attribution.beginGpuFrame(frame * 10);
+		}
+		expect(attribution.snapshot(80).cadence.medianMs).toBe(10);
+	});
+
+	test("minPeriodMs is a low quantile, not the typical period", () => {
+		// The statistic that tells a panel's cap from a frame budget. The
+		// principal's two displays read 8.33 ms and 16.67 ms on a cheap frame;
+		// without this, a consumer cannot tell the second from a 60 fps budget
+		// that happens to be exactly met.
+		const { attribution } = fixture();
+		attribution.enable();
+		const periods = [16.7, 16.7, 8.3, 33.4, 16.7];
+		let at = 0;
+		attribution.markFrame(at);
+		for (const period of periods) {
+			at += period;
+			attribution.markFrame(at);
+		}
+		const cadence = attribution.snapshot(at).cadence;
+		// Five gaps, so the 0.1 quantile is the shortest of them — the same
+		// answer a minimum gives, which is why the row below exists as well.
+		expect(cadence.minPeriodMs).toBeCloseTo(8.3, 5);
+		expect(cadence.medianMs).toBeCloseTo(16.7, 5);
+		expect(cadence.spanMs).toBeCloseTo(91.8, 5);
+	});
+
+	test("a handful of sub-refresh jitter gaps do not drag the floor under", () => {
+		// **The defect this replaced, measured rather than imagined.** Headed on
+		// ANGLE Metal at a 60 Hz panel with every rung pinned at vsync, the
+		// sampler reported a median of 16.70 ms and a cheapest frame of 15.30 —
+		// 9.2% under the refresh interval, from `requestAnimationFrame`
+		// delivering two callbacks close together after a hitch. A consumer
+		// comparing the median against that minimum read the frame as *not*
+		// capped and fitted a degenerate curve through three identical points.
+		//
+		// A hundred honest 16.70s and four jitter gaps: a minimum answers 15.30
+		// and the quantile answers the refresh interval.
+		const { attribution } = fixture();
+		attribution.enable();
+		const periods = [...Array(100).fill(16.7), 15.3, 15.4, 15.3, 15.5];
+		let at = 0;
+		attribution.markFrame(at);
+		for (const period of periods) {
+			at += period;
+			attribution.markFrame(at);
+		}
+		const cadence = attribution.snapshot(at).cadence;
+		expect(Math.min(...periods)).toBeCloseTo(15.3, 5);
+		expect(cadence.minPeriodMs).toBeCloseTo(16.7, 5);
+		expect(cadence.medianMs).toBeCloseTo(16.7, 5);
+	});
+
+	test("no marks at all is null rather than zero", () => {
+		const { attribution } = fixture();
+		attribution.enable();
+		const cadence = attribution.snapshot(0).cadence;
+		expect(cadence.medianMs).toBeNull();
+		expect(cadence.minPeriodMs).toBeNull();
+		expect(cadence.spanMs).toBeNull();
+		expect(cadence.sampleCount).toBe(0);
+	});
+
+	test("a disabled sampler records nothing", () => {
+		const { attribution } = fixture({ mode: "cadence" });
+		attribution.markFrame(0);
+		attribution.markFrame(16);
+		expect(attribution.snapshot(16).cadence.sampleCount).toBe(0);
+	});
+
+	test("reprime drops the hidden tab's gap without filtering for it", () => {
+		// A tab away for 90 seconds returns one enormous period. Clearing is the
+		// answer rather than rejecting the gap, because every threshold that
+		// rejects it also rejects a real slow frame on someone's machine.
+		const { attribution } = fixture();
+		attribution.enable();
+		attribution.markFrame(0);
+		attribution.markFrame(16.7);
+		attribution.markFrame(33.4);
+		attribution.reprimeCadence();
+		attribution.markFrame(90_000);
+		attribution.markFrame(90_016.7);
+		attribution.markFrame(90_033.4);
+		const cadence = attribution.snapshot(90_033.4).cadence;
+		expect(cadence.sampleCount).toBe(2);
+		expect(cadence.medianMs).toBeCloseTo(16.7, 5);
+	});
+
+	test("cadence() reads the ring and touches nothing else", () => {
+		// R1 of sage's second round. The controller calls this once a frame, so
+		// it must not reach the GL context or the renderer facts: a full
+		// snapshot did both, on the default route, every frame.
+		let factsCalls = 0;
+		const gl = new FakeGl();
+		const attribution = new FrameAttribution({
+			gl: gl as unknown as TimerQueryContext,
+			contextEvents: new EventTarget(),
+			rendererFacts: () => {
+				factsCalls++;
+				return facts();
+			},
+			mode: "cadence",
+			now: () => 0,
+		});
+		attribution.enable();
+		for (let frame = 0; frame < 10; frame++) attribution.markFrame(frame * 20);
+		let parameterReads = 0;
+		const getParameter = gl.getParameter.bind(gl);
+		gl.getParameter = (parameter: number) => {
+			parameterReads++;
+			return getParameter(parameter);
+		};
+		const cadence = attribution.cadence();
+		expect(cadence.medianMs).toBe(20);
+		expect(factsCalls).toBe(0);
+		expect(parameterReads).toBe(0);
+		// And it is the same figure the snapshot carries, which does both.
+		expect(attribution.snapshot(180).cadence).toEqual(cadence);
+		expect(factsCalls).toBeGreaterThan(0);
+		expect(parameterReads).toBeGreaterThan(0);
+	});
+
+	test("reprime leaves the CPU samples alone", () => {
+		// They are per-frame costs rather than intervals, so nothing about them
+		// is wrong after a display change.
+		const { attribution } = fixture();
+		attribution.enable();
+		attribution.recordCpu("simulation/step", 4);
+		attribution.recordCpu("simulation/step", 6);
+		attribution.reprimeCadence();
+		expect(attribution.snapshot(0).cpu["simulation/step"].sampleCount).toBe(2);
 	});
 });
