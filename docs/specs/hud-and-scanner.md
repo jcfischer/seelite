@@ -68,6 +68,12 @@ target records therefore belong to the left Navigation panel.
 
 ## 3. Target and docking director
 
+> **Changed by `carrier-identity.md` (node #359), not yet implemented.** That
+> spec's §6 replaces this section's third designation cell with the target's
+> scanned standing and the age of the reading, and makes `UNKNOWN` mean
+> *unscanned* as well as *unclassified*. Its §8 lists the change; the rewrite of
+> the text below lands with the implementation.
+
 The right-hand cockpit Target instrument shows a designation between its title
 and target name/range: `STAR`, `PLANET`, `MOON`, `CARGO`, `STATION · <TYPE>`, or
 `SHIP · <HULL TYPE> · <SCANNER STATUS>`. The producer supplies a ship's type;

@@ -301,6 +301,11 @@ universal**:
 
 ¹ Not in Elite's 12 — new to seelite, and priced by #7 alongside the rest.
 
+> **Changed by `carrier-identity.md` (node #359), not yet implemented.** Its F12
+> adds a scanner module to the **shipyard** exclusive column. It deliberately
+> takes an exclusive rather than an eleventh universal item, because the
+> universal count is ten and §4.2's saturation argument rests on it.
+
 Fuel scoops go to the refinery because scooping is the mining trade's tool, and
 the extra energy unit to the shipyard because it is the heaviest hull-work
 upgrade on the list. Every other item is available anywhere the system's tech

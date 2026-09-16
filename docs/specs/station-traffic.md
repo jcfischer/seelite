@@ -46,6 +46,11 @@ such as `station-trade/traffic-00`. The station-qualified ordinal is the actor's
 stable Carrier-slot identity; hull type, variant and callsign may all change in
 a future generator version without becoming persistence keys.
 
+> **Extended by `carrier-identity.md` (node #359), not yet implemented.** Its F3
+> puts a drawn proper name beside the callsign, so an actor carries both a name
+> and a registry. The rule above is unchanged: neither string is a persistence
+> key.
+
 Traffic slots join `enumerateCarriers()` so exceptional objective condition can
 use the existing sparse world-state domains. Adding those generated carriers
 changes the pinned baseline and therefore requires the implementation to bump
