@@ -22,7 +22,7 @@ spec's E, so no code means two things across the three documents.
 | Job families, offer derivation, the courier floor, what each job's mark is | `ordinary-requests.md` (node #356) |
 | What breaks at a station, the damage floor, the capability projection | `station-damage.md` (node #358) |
 | Legal status semantics, heat, thresholds, contraband scans of the player, bounty legitimacy | `combat-model.md` §4 |
-| Raider slots, their counts, lifecycle, leg chance and their kill-time cargo drop | `combat-model.md` §3 and §4.1 |
+| Raider slots, their counts, operational condition, leg chance and their kill-time cargo drop | `combat-model.md` §3 and §4.1 |
 | Per-carrier state bounds, transitions, knowledge rows, provenance, the six galaxy domains | `persistent-world-state.md` §2–§8 |
 | The commodity table and which goods are illegal | `economy-trade.md` §2 |
 | Traffic rosters, schedules, hull pools and the carrier namespace | `station-traffic.md` §1 |
@@ -39,8 +39,9 @@ decision rather than decorating it.
 
 - **`DisplayContact.legalStatus` is typed as literally `null`**
   (`src/display-contact.ts:13`), with the comment that legal vocabulary belongs
-  to the combat node. Five producers set it null. The field was reserved for
-  exactly this.
+  to the combat node. **Six** producers set it null — `station-traffic.ts:482`,
+  `combat-rig.ts:378` and `main.ts` at 1789, 1811, 5058 and 8358. The field was
+  reserved for exactly this.
 - **`scannerClass` already renders in the Target panel.**
   `targetDesignation` (`src/display-contact.ts:46`) prints
   `SHIP · <HULL> · <CLASS>` from `unknown | civilian | hostile | station`.
@@ -89,7 +90,7 @@ The principal was offered this, an instrument that withholds hull type and class
 from every contact until scanned, and both together, and chose this.
 
 The alternative is rejected on a verified cost rather than taste: withholding
-hull type would change all five `DisplayContact` producers and make the passive
+hull type would change all six `DisplayContact` producers and make the passive
 scanner less informative than it is today, to answer a question the silhouette
 answers anyway.
 
@@ -212,6 +213,15 @@ from their own mistake, not from the law.**
 The principal was offered this, a rule making any unscanned kill an offence, and
 no legal weight on NPC kills at all, and chose this.
 
+**F2's clock term constrains this, and the constraint is binding.** If standing
+rotated quickly, a ship scanned Wanted could read Clean by the time it died, and
+the kill would be an offence the pilot could not have avoided — F7's protection
+would be worthless and F11's own rule ("must not change between the scan and the
+kill, or the reveal is a lie") would be violated on the other axis. So **the
+rotation period must be long compared with an encounter**, and the instrument §2
+requires must show it. This is a requirement on the clock term, not a new
+decision: it constrains how F2 is implemented rather than reopening it.
+
 It adds no vocabulary to a law model this node is told to consume rather than
 reopen. Requiring a scan before firing would have been a genuinely new rule in
 it, and would make the F4 module mandatory for all combat rather than for the
@@ -232,8 +242,9 @@ today's display with the result on a separate line, and chose this.
 
 The separate line was rejected because `CIVILIAN` would then mean *not a raider*
 while the line meant *not wanted* — two words for standing on one instrument.
-Ageing is load-bearing rather than decorative: standing decays under F2, so a
-reading without its age invites a pilot to act on an hour-old answer.
+Ageing is load-bearing rather than decorative: standing **rotates** under F2 —
+in both directions, so a clean ship can become wanted as well as the reverse —
+and a reading without its age invites a pilot to act on an hour-old answer.
 
 ### F9 — The result is recorded on the knowledge row
 
@@ -308,8 +319,19 @@ Every carrier has:
 | `name` | the drawn proper name | a new `DOMAIN` tag, drawn per carrier key |
 | `registry` | the composed designation | model name, role code and ordinal, as `station-traffic.ts:172` already builds |
 
-The name is drawn with **`mix(worldSeed, fnv1a(carrierKey))`** under its own
-`DOMAIN` tag, not from a stream consumed in roster order. Roster size is
+The name is drawn with **`mix(mix(systemSeed, galaxyIndex), fnv1a(carrierKey))`**
+under its own `DOMAIN` tag, not from a stream consumed in roster order.
+
+**The galaxy component is not optional, and leaving it out is the easy mistake.**
+`CarrierKey` is `${systemIndex}:${localCarrierId}` and is *envelope-relative*
+(`src/carrier-key.ts:26-33`) — the galaxy comes from the save envelope, not from
+the key. A draw seeded on the key alone gives system 5's `station-trade` Porter
+the same name, the same standing timeline and the same hold in all eight
+galaxies. The shipped precedent seeds from `kill.systemSeed`
+(`raider-wreck.ts:185-188`) and does not have this problem. Every function in §2
+and §3 carries the same component for the same reason.
+
+Roster size is
 conditional — on the berth catalogue, on government, on which station types a
 system generated — so an ordered pass lets a conditional carrier shift every
 later name. This is `domains.ts`'s own recorded hazard, and `STATION_NAME`'s
@@ -327,7 +349,7 @@ the registry half, and the drawn name is new. One owner for both halves, as
 ### 2. Standing, as a derived function
 
 ```
-carrierStanding(worldSeed, carrierKey, gameTime)
+carrierStanding(systemSeed, galaxyIndex, carrierKey, gameTime)
   -> "clean" | "wanted" | "fugitive"
 ```
 
@@ -349,7 +371,7 @@ without deciding it: the instrument comes first.
 ### 3. The manifest, as a derived function
 
 ```
-carrierManifest(worldSeed, carrierKey, voyageOrdinal)
+carrierManifest(systemSeed, galaxyIndex, carrierKey, voyageOrdinal)
   -> readonly { good: string; tonnes: number }[]
 ```
 
@@ -394,20 +416,32 @@ cannot afford in a fight or a chase.
 
 ### 5. The knowledge record
 
-A completed scan writes, on the target's existing knowledge row:
+A completed scan writes **`{ observedAt, source }`** and nothing else. The
+source is a new value alongside §3.1's `docking`, `system-relay` and
+`intervention`.
 
-- the standing read;
-- the manifest read;
-- `observedAt`;
-- the source, a new value alongside §3.1's `docking`, `system-relay` and
-  `intervention`.
+**It does not store what was read, and that is the idiom rather than an
+omission.** `persistent-world-state.md` §3.1 says the black-market marker
+"stores only `learnedAt` and its report source. The black-market value itself
+remains generated baseline data", and CONTEXT.md's *Last-known state* says the
+row holds never the generated value. Standing and the manifest are pure
+functions, so the reading is re-derived at display time as
+`carrierStanding(…, observedAt)` and `carrierManifest(…, voyageOrdinalAt(observedAt))`.
+A stored copy would duplicate derivable state inside a versioned save.
 
-It follows the `knownPrivateFacts` shape: an optional member in a plural
-container, so a later learned fact needs no migration of this one — the exact
-correction `world-state.ts:201-206` records having already paid for once.
+**What this spec cannot settle, and must not pretend to.** A Traffic actor has
+no knowledge row today — rows are written for stations, by `system-relay`,
+`docking` and `intervention` — and `KnowledgeRow` requires
+`observedInstanceOrdinal`, `observedCondition` and a top-level `source`, none of
+which a scan observes. `parseKnowledgeRow` also rebuilds `knownPrivateFacts`
+with `blackMarket` alone, so a new member added naively is **dropped on load**.
+So the implementation must decide one of two shapes — a scan that also records a
+condition observation, or a container that can exist without one — and settle
+the `WORLD_SCHEMA_VERSION` question that follows. **This document withdraws any
+claim that the record is free.**
 
-It is **last-known intelligence, not a live reference**. Standing decays under F2
-and the hold is redrawn each voyage under F11, so a row goes stale by design, and
+It is **last-known intelligence, not a live reference**. Standing rotates under
+F2 and the hold is redrawn each voyage under F11, so a row goes stale by design, and
 §3.1's rule that objective events outside the player's channels do not update
 knowledge is what makes that correct rather than a bug.
 
@@ -426,9 +460,12 @@ answers *is this a pirate*; standing answers *is this wanted*. The cell reads
 `HOSTILE` when `scannerClass === "hostile"`, and otherwise the recorded standing,
 or `UNKNOWN` when no scan has been recorded.
 
-`DisplayContact.legalStatus` stops being typed `null` and takes a new
+`DisplayContact.legalStatus` is **renamed `standing`** and takes a new
 **`CarrierStanding`** type — `"clean" | "wanted" | "fugitive"` — or `null` for
-never scanned. **It must not take `LegalStatus`**, which is
+never scanned. The rename rides the retype rather than following it: a field
+still called `legalStatus` sitting beside the player's `LegalStatus` type is
+the very name collision this paragraph warns about. **It must not take
+`LegalStatus`**, which is
 `world-state.ts:223`'s `{ heat, updatedAt }` pair and is the *player's*. Two
 meanings under one name in one field is the collision `CarrierKey`'s brand exists
 to prevent.
@@ -461,8 +498,15 @@ Two pieces of debt are recorded rather than discharged:
 ### 8. Rules this makes false, and where they are amended
 
 Pointing at an owner is right for a figure this spec *uses*. It is wrong for a
-rule this spec *changes*. Each of these is amended in the same change, or carried
-as named debt:
+rule this spec *changes*.
+
+**None of these rules is rewritten here, and each owner is told so in this same
+change.** A rewrite would put unbuilt behaviour into specs that describe what
+ships — the sibling damage spec made the same call for `station-types.md` §4.1's
+hull mention. What this change does instead is add one pointer line to each
+owner naming this section, so a reader of a ratified spec cannot meet a rule
+this document contradicts without being told. The rewrites land with the
+implementation node:
 
 | Rule | Owner | What changes |
 | --- | --- | --- |
@@ -490,7 +534,9 @@ What its implementation owes:
 | A name draw is independent | Headless: a system's conditional carrier count does not change any other carrier's name |
 | Identity never becomes a name | Headless: every save, key and lookup path still reads `localCarrierId`; a name change orphans no market memory |
 | Standing is deterministic at a clock | Headless: same seed, key and time give the same standing twice |
-| Standing decays | Headless: a wanted carrier read at a later clock can read clean |
+| Standing rotates, both ways | Headless: over a clock range, a wanted carrier reads clean and a clean one reads wanted |
+| Standing is stable within an encounter | Headless: the rotation period is long against an encounter's duration, so a scan holds until the kill |
+| A key draws independently per galaxy | Headless: the same carrier key in two galaxies gives different name, standing and hold |
 | The standing distribution | A committed instrument printing wanted and fugitive shares across seeds and galaxies, with the spread |
 | A manifest holds for a voyage | Headless: every clock inside one away interval gives the same hold; the next interval may differ |
 | A scan needs the module | Headless: unequipped, the verb refuses with a readable reason |
@@ -508,12 +554,18 @@ not to this merge.
 
 ### 10. Saved state
 
-**One optional member on an existing row.** F9's observation joins
-`knownPrivateFacts`, whose plural container was built to take exactly this
-without a migration. Standing and manifest are derived and are never written.
-No new state domain, no generator bump, and a schema bump only if the parser's
-treatment of the new member requires one — which the container's shape was
-corrected once to avoid.
+**The objective values are never written**: standing and the manifest are
+derived on read, so no state domain holds them and no generator bump is owed —
+`carrierBaselineFingerprint` hashes identity, type, parent and placement, and
+this adds a property to none of them.
+
+**The observation is not free, and §5 says why.** A scan of a Traffic actor has
+no knowledge row to extend, `KnowledgeRow`'s required fields describe a
+condition observation a scan does not make, and `parseKnowledgeRow` drops an
+unrecognised member of `knownPrivateFacts` on load. So a
+`WORLD_SCHEMA_VERSION` bump is **likely and is not ruled out here**; the
+implementation settles it along with the row's shape. An earlier draft of this
+section claimed one optional member and no migration, which the parser refutes.
 
 ### 11. Handoff
 

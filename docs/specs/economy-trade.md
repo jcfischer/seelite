@@ -891,6 +891,10 @@ refill on docking with passive regeneration. Nothing in the economy prices it.
 
 ## 7. Equipment and hulls
 
+> **Changed by `carrier-identity.md` (node #359), not yet implemented.** Its F12
+> adds one shipyard-exclusive row to this section's equipment list — a scanner
+> module, `newToSeelite`, priced with the E.C.M.
+
 **Prices are Elite's PRXS table, flat everywhere**, and they live in
 `src/market.ts` as data rather than only in the table below — this was the one
 number block in the spec with no re-derivation path, which is exactly what §6.1
