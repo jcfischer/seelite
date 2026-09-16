@@ -653,17 +653,26 @@ export function stepEnemyShip(
 	// Lead collision: where the player will be when this ship can reach them.
 	// Two fixed-point iterations is plenty at these closing speeds, and the cap
 	// stops a long extrapolation aiming at a place nobody is going.
+	//
+	// **In the frame, not in star coordinates** (#362). Both ships' assists
+	// hold them in `frameVel`, so the frame's own motion carries both and moves
+	// neither relative to the other; only the player's velocity *relative to
+	// it* is a place to lead. Beside a station the frame moves ~30 km/s (#104),
+	// and leading on the absolute velocity aimed a patrol up to 150 km along
+	// the orbit, which it then flew toward and away from the fight. In the star
+	// frame, where every raider duel so far has been fought, the two are equal.
+	const playerRelVel = frameVel ? sub(player.vel, frameVel) : player.vel;
 	let lead = range / ASSIST_CAP_KMS;
 	for (let i = 0; i < 2; i++) {
 		const predicted = add(
 			player.pos,
-			scale(player.vel, Math.min(lead, LEAD_CAP_S)),
+			scale(playerRelVel, Math.min(lead, LEAD_CAP_S)),
 		);
 		lead = length(sub(predicted, state.ship.pos)) / ASSIST_CAP_KMS;
 	}
 	const interceptPoint = add(
 		player.pos,
-		scale(player.vel, Math.min(lead, LEAD_CAP_S)),
+		scale(playerRelVel, Math.min(lead, LEAD_CAP_S)),
 	);
 	const pursuitNose = unit(sub(interceptPoint, state.ship.pos), towardPlayer);
 

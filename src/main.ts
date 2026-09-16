@@ -2526,7 +2526,11 @@ class Game {
 		return (
 			Number.isFinite(this.trafficTick) &&
 			this.trafficWarmIndex >= this.trafficActors.length &&
-			this.trafficRoutes.length === this.trafficActors.length
+			// **The flying actors, not the roster** (civilian-combat H1): a
+			// destroyed or repairing carrier has no route, so against the roster
+			// a kill left authority "warming" until the replacement completed, and
+			// every lane request in the system was refused for half an hour.
+			this.trafficRoutes.length === this.flyingTraffic().length
 		);
 	}
 
@@ -5256,6 +5260,59 @@ class Game {
 			this.selectableCache = null;
 		}
 		this.trafficMeshes.get(actor.key)?.removeFromParent();
+	}
+
+	/**
+	 * What a probe reads of ordinary traffic under fire: each materialized
+	 * carrier with its condition, true standing and hold now, whether it is
+	 * engaged, and the player's legal status. Derived on read, as the game
+	 * derives them, so a probe restates none of it.
+	 */
+	trafficReadout() {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		return {
+			contacts: [...this.trafficContacts].map(([key, contact]) => {
+				const actor = this.trafficActorByKey(key);
+				const carrier = this.carrierCondition(key);
+				const engagement = this.trafficEngagements.get(key);
+				return {
+					key,
+					callsign: actor?.callsign ?? null,
+					hullId: actor?.hullId ?? null,
+					pos: { ...contact.pos },
+					vel: { ...contact.velocity },
+					condition: carrier.condition,
+					instanceOrdinal: carrier.instanceOrdinal,
+					standing: carrierStanding(
+						record.seed,
+						key,
+						carrier.instanceOrdinal,
+						now,
+					),
+					manifest: actor
+						? carrierManifest(
+								record.seed,
+								key,
+								carrier.instanceOrdinal,
+								trafficScheduleAt(actor, now).awayOrdinal,
+								{
+									holdT: HULL_SPECS[actor.hullId].holdT,
+									government: record.government,
+								},
+							)
+						: [],
+					engaged: engagement !== undefined,
+					phase: engagement?.flight.phase ?? null,
+					hull: engagement?.condition.hull ?? null,
+				};
+			}),
+			legal: {
+				...this.commerceWorld.galaxies[record.galaxy].legalStatus,
+				standing: this.legalStanding(),
+			},
+			authorityReady: this.trafficAuthorityReady(),
+		};
 	}
 
 	/** The player's standing now, from the galaxy's heat (H4, H7). */

@@ -28,7 +28,7 @@ import {
 import { HULL_SPECS, type HullId } from "../src/hull";
 import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
-import { length, normalizeOr, sub, v3 } from "../src/vec3";
+import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 
 const DT = 1 / 60;
 const KEY = carrierKey(12, "station-trade/traffic-02");
@@ -218,5 +218,52 @@ describe("a kill is the carrier's destroy, and the slot is replaced", () => {
 		expect(
 			effectiveCarrier(world.galaxies[0], KEY, replaced).instanceOrdinal,
 		).toBe(1);
+	});
+});
+
+describe("a fight beside a station is flown in its frame", () => {
+	test("an armed hull closes on a pilot co-moving with a fast frame, as it would at rest", () => {
+		// A station's frame moves ~30 km/s (#104). The lead point was built from
+		// the player's *absolute* velocity, so beside a station it aimed tens of
+		// kilometres along the orbit and the patrol ran away from the fight.
+		const frameVel = v3(30, -20, 0);
+		const closest = (frame: ReturnType<typeof v3>) => {
+			let e = engage(
+				{
+					key: KEY,
+					hullId: "patrol",
+					pos: v3(0, 0, -7),
+					vel: frame,
+					nose: v3(0, 0, -1),
+					up: v3(0, 1, 0),
+				},
+				3,
+			);
+			let player = v3();
+			let nearest = Number.POSITIVE_INFINITY;
+			for (let t = 0; t < 20; t += DT) {
+				const pilot: DuelPilot = {
+					ship: { pos: player, vel: frame },
+					nose: v3(0, 0, -1),
+					aimOrigin: player,
+					aimNose: v3(0, 0, -1),
+					hull: 100,
+					frameVel: frame,
+				};
+				e = stepEngagement(
+					e,
+					pilot,
+					{ fired: false, damage: 0 },
+					DT,
+				).engagement;
+				player = add(player, scale(frame, DT));
+				nearest = Math.min(nearest, length(sub(e.flight.ship.pos, player)));
+			}
+			return nearest;
+		};
+		const atRest = closest(v3());
+		const moving = closest(frameVel);
+		expect(atRest).toBeLessThan(3);
+		expect(moving).toBeLessThan(3);
 	});
 });
