@@ -663,3 +663,136 @@ describe("a rung it has measured is not a rung it predicts", () => {
 		expect(order[0]).toBe("up-trial");
 	});
 });
+
+/**
+ * The bug the principal flew into, with the figures off his screen.
+ */
+describe("a memory the current frame has ruled out", () => {
+	test("empty sky at 8.30 ms does not stay soft on a 30.10 ms memory", () => {
+		// Recorded from `?perf` at t+20 s of a screen capture, 2026-09-16:
+		//
+		//   mode / rung              auto / 0.50
+		//   budget / period          16.67 ms / 8.30 ms
+		//   cheapest period / at cap  7.10 ms / yes
+		//   upshift gate / predicted  misses / 30.10 ms
+		//   curve points             1.00:33.1  0.75:30.1  0.50:8.8
+		//
+		// 120 fps in empty sky, held at half resolution by a 75% entry measured
+		// over a planet that was no longer on screen. The entry is not merely
+		// old: 8.30 ms at 0.5 bounds 0.75 at 8.30 * 2.25 = 18.7 ms, so 30.10
+		// cannot be true of the frame being drawn.
+		const controller = new AdaptiveResolution();
+		// **Sky first, as the session actually went.** The refresh interval is
+		// estimated as the smallest median seen, so a controller that has never
+		// run cheap reads each newly-reached rung as the cheapest yet and
+		// therefore as capped — and records nothing. The principal's session
+		// established 8.30 ms long before the planet filled the view, which is
+		// why his curve points exist at all.
+		fly(controller, { frames: 400, cost: () => 8.3, minPeriodMs: () => 7.1 });
+		// Then the planet, at the costs his curve points record.
+		fly(controller, {
+			frames: 3_000,
+			cost: (scale) => (scale === 1 ? 33.1 : scale === 0.75 ? 30.1 : 20.7),
+			minPeriodMs: () => 7.1,
+			startMs: 10_000,
+		});
+		expect(controller.scale).toBe(0.5);
+		expect(controller.diagnostics.observations["0.75"]).toBeCloseTo(30.1, 1);
+
+		// Flown away. Every rung is now inside the panel's own 8.30 ms.
+		fly(controller, {
+			frames: 2_000,
+			cost: () => 8.3,
+			minPeriodMs: () => 7.1,
+			startMs: 100_000,
+		});
+		expect(controller.diagnostics.observations["0.75"]).toBeUndefined();
+		expect(controller.scale).toBe(1);
+	});
+
+	test("a 60 Hz panel recovers on the window, since the bound cannot fire", () => {
+		// The asymmetry the module's comment claims, asserted rather than left
+		// as prose. At the cap on a 60 Hz panel the frame reads 16.70 ms
+		// whether the work took five milliseconds or fifteen, so 16.70 permits
+		// the same 30.10 and nothing can rule the memory out. Recovery waits for
+		// `OBSERVATION_TTL_MS` to retire it.
+		//
+		// Reproduced headed and the run is in the PR: rung 0.5, `misses
+		// (33.9 ms)`, unchanged at +6 s, +15 s and +30 s past the planet.
+		const controller = new AdaptiveResolution();
+		fly(controller, { frames: 400, cost: () => 16.7, minPeriodMs: () => 16.7 });
+		fly(controller, {
+			frames: 2_000,
+			// 18.5 at the bottom rather than the 17.4 the headed run happened to
+			// read: that figure sits *under* `DOWNSHIFT_TRIGGER_MS`, so a
+			// fixture using it climbs straight back out and never reaches the
+			// state this row is about. The live median fluctuated either side of
+			// the trigger; a fixture has to pick one.
+			cost: (scale) => (scale === 1 ? 47 : scale === 0.75 ? 33.9 : 18.5),
+			minPeriodMs: () => 16.7,
+			startMs: 10_000,
+		});
+		expect(controller.scale).toBe(0.5);
+		expect(controller.diagnostics.observations["0.75"]).toBeCloseTo(33.9, 1);
+
+		// Flown away. Every rung is pinned at the panel, so the frame's own cost
+		// is invisible and the memory is not contradicted.
+		//
+		// **The clock has to continue, not jump.** `fly` restarts it at
+		// `startMs`, and the first version of this row used 200_000 — already
+		// three windows past the memory it was checking, so the entry had
+		// expired before the assertion looked at it and the row failed for the
+		// opposite of its own reason.
+		const away = 50_000;
+		fly(controller, {
+			frames: 1_000,
+			cost: () => 16.7,
+			minPeriodMs: () => 16.7,
+			startMs: away,
+		});
+		// Under a minute in: still held, and the reason is the memory.
+		expect(controller.scale).toBe(0.5);
+		expect(controller.diagnostics.gate).toBe("misses");
+
+		// Past the window: the entry retires and a trial settles it.
+		fly(controller, {
+			frames: 4_000,
+			cost: () => 16.7,
+			minPeriodMs: () => 16.7,
+			startMs: away + OBSERVATION_TTL_MS + 5_000,
+		});
+		expect(controller.scale).toBe(1);
+	});
+
+	test("a memory the frame is consistent with survives", () => {
+		// The other half, and the reason this is a bound rather than a timer.
+		// Over a planet a 50% rung at 20.7 ms allows 75% up to 46.6 ms, so a
+		// 30.1 ms memory stands — which is what keeps the flip-flop fixed.
+		// **Started at the top, because that is where the memory comes from.**
+		// A rung is recorded whenever the controller stands on it, and over a
+		// planet it stands on each one on the way *down* — which is where the
+		// principal's `1.00:33.1` and `0.75:30.1` came from. A fixture that
+		// starts at the bottom with a frame already over budget never trials
+		// upward and records nothing at all, which is how the first version of
+		// this row failed.
+		const controller = new AdaptiveResolution();
+		const decisions = fly(controller, {
+			frames: 8_000,
+			// A little cheaper at the bottom than the principal's world, so the
+			// rung is inside budget and an upshift is actually considered —
+			// otherwise "the memory refuses it" is untested, because nothing
+			// asks.
+			cost: (scale) => (scale === 1 ? 33.1 : scale === 0.75 ? 30.1 : 14),
+			minPeriodMs: () => 7.1,
+		});
+		expect(controller.scale).toBe(0.5);
+		expect(controller.diagnostics.observations["0.75"]).toBeCloseTo(30.1, 1);
+		expect(controller.diagnostics.gate).toBe("misses");
+		// 14 ms at 0.5 allows 0.75 up to 14 * 2.25 * 1.25 = 39.4 ms, so the
+		// 30.1 memory is consistent with the frame and stands.
+		const elapsedMs = 8_000 * 14;
+		expect(
+			decisions.filter((d) => d.transition === "up-trial").length,
+		).toBeLessThanOrEqual(Math.ceil(elapsedMs / OBSERVATION_TTL_MS) + 1);
+	});
+});

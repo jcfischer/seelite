@@ -196,6 +196,27 @@ export const TRIAL_BACKOFF_CAP_MS = 60_000;
  */
 export const OBSERVATION_TTL_MS = TRIAL_BACKOFF_CAP_MS;
 
+/**
+ * How far a recorded rung may exceed what the current rung's cost allows,
+ * before it is treated as a measurement of a scene that is gone.
+ *
+ * **The bound is the model's own, not a tuning figure.** Under
+ * `t(s) = fixed + fill * s^2` with a non-negative fixed cost, a rung measured at
+ * `t_c` on scale `s_c` puts a ceiling on every larger scale:
+ *
+ *     t(s) <= t_c * (s / s_c)^2
+ *
+ * because `fixed >= 0` forces `fill <= t_c / s_c^2`. A recorded cost above that
+ * ceiling cannot be true of the frame being drawn now, whatever the scene was
+ * when it was taken.
+ *
+ * Only this slack factor is a judgement, and it is deliberately generous: the
+ * two figures are medians from different windows, and discarding a *correct*
+ * memory costs a trial-and-revert while keeping a wrong one costs the player a
+ * soft picture for the whole TTL.
+ */
+export const STALE_OBSERVATION_SLACK = 1.25;
+
 /** What `step` is told about the frame. Every field comes from the caller. */
 export type AdaptiveEvidence = Readonly<{
 	nowMs: number;
@@ -401,6 +422,7 @@ export class AdaptiveResolution {
 		if (this.refreshFloorMs === null || median < this.refreshFloorMs)
 			this.refreshFloorMs = median;
 		const atCap = this.atCap(median, this.refreshFloorMs);
+		this.dropImpossibleObservations(median);
 		if (!atCap)
 			this.observations.set(this.scale, {
 				periodMs: median,
@@ -507,6 +529,57 @@ export class AdaptiveResolution {
 			trialBackoffMs: this.trialBackoffMs,
 			observations: Object.freeze(observations),
 		});
+	}
+
+	/**
+	 * Forget any rung whose recorded cost the current frame has ruled out.
+	 *
+	 * **This is what stops a memory outliving its scene**, and it is the defect
+	 * the principal flew into. Reading a rung's *measured* cost rather than
+	 * predicting it — which is right, and settles the flip-flop a fitted curve
+	 * could not reach — turns a stale entry into a hard refusal for the whole
+	 * `OBSERVATION_TTL_MS`. Recorded from the screen: empty sky at 120 fps, the
+	 * frame costing **8.30 ms** at the 50% rung, and the gate answering
+	 * `misses / 30.10 ms` off a 75% entry taken over a planet the player had
+	 * long since left. A minute of a soft picture with the machine idle.
+	 *
+	 * The entry is not merely old, it is **impossible**: 8.30 ms at 0.5 bounds
+	 * 0.75 at `8.30 * (0.75 / 0.5)^2 = 18.7 ms`, and 30.10 is above it. So the
+	 * model refuses to contradict itself, and no staleness heuristic, scene
+	 * detector or shortened window is needed for the case that matters.
+	 *
+	 * What this deliberately does **not** do is discard an entry the current
+	 * frame is consistent with. Over a planet, a 50% rung costing 20.7 ms allows
+	 * 75% up to 46.6 ms, so a 30.1 ms memory stands and the flip-flop stays
+	 * fixed. Consistency is itself information, and it runs both ways: a
+	 * surviving memory of 30.1 ms at 0.75 says the 0.5 rung cannot be costing
+	 * less than about 13 ms, whatever the display is showing.
+	 *
+	 * **How long recovery takes depends on the panel, and one of the two is
+	 * slow.** The bound needs the frame's real cost, which vsync hides. On the
+	 * principal's 120 Hz laptop empty sky delivers 8.30 ms and the ceiling is
+	 * 18.7 ms, so a 30.10 ms memory goes immediately and the rung climbs within
+	 * a second. On his 60 Hz external the frame reads 16.70 ms whether the work
+	 * took five milliseconds or fifteen, 16.70 permits the same 30.10, and
+	 * nothing here can tell the two apart — recovery waits for
+	 * `OBSERVATION_TTL_MS` to retire the entry, up to a minute.
+	 *
+	 * That asymmetry is accepted rather than engineered around. A tail test was
+	 * flown for it — a frame with room delivers a tight p95, one only just
+	 * holding 60 drags a long one — and it is the wrong instrument: it throws
+	 * away a memory that is consistent with the frame, which is a memory that
+	 * still constrains it. At the cap on a 60 Hz panel the player is already
+	 * getting the 60 fps the budget asks for; what a slow recovery costs is
+	 * sharpness, for at most the window.
+	 */
+	private dropImpossibleObservations(currentMs: number): void {
+		const current = this.scale;
+		for (const [scale, observation] of [...this.observations]) {
+			if (scale <= current) continue;
+			const ceiling =
+				currentMs * (scale / current) ** 2 * STALE_OBSERVATION_SLACK;
+			if (observation.periodMs > ceiling) this.observations.delete(scale);
+		}
 	}
 
 	/**
