@@ -8,11 +8,23 @@ import {
 	ARMED_TRAFFIC_HULLS,
 	type Engagement,
 	engage,
+	flyingTrafficActors,
 	stepEngagement,
+	trafficDestruction,
 	trafficHitRadiusKm,
 	trafficInSights,
-} from "../src/civilian-combat";
+} from "../src/traffic-engagement";
 import type { DuelPilot } from "../src/duel";
+import {
+	PLAYER_KILL,
+	RAIDER_REPAIR_S,
+	RAIDER_WRECK_S,
+} from "../src/raider-wreck";
+import {
+	applyTransition,
+	effectiveCarrier,
+	newWorld,
+} from "../src/world-state";
 import { HULL_SPECS, type HullId } from "../src/hull";
 import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
@@ -160,5 +172,51 @@ describe("H3: the reaction per role", () => {
 		expect(speed).toBeLessThan(
 			flightPerformance("raider").thrustKms2 * steps * DT,
 		);
+	});
+});
+
+describe("a kill is the carrier's destroy, and the slot is replaced", () => {
+	test("with the player's provenance, a scheduled replacement by the home station", () => {
+		const event = trafficDestruction(12, "station-trade", 500);
+		expect(event.kind).toBe("destroy");
+		expect(event.cause).toEqual(PLAYER_KILL);
+		if (event.kind !== "destroy" || !event.schedule)
+			throw new Error("no schedule");
+		expect(event.schedule.startsAt).toBe(500 + RAIDER_WRECK_S);
+		expect(event.schedule.completesAt).toBe(
+			500 + RAIDER_WRECK_S + RAIDER_REPAIR_S,
+		);
+		expect(event.schedule.cause).toEqual({
+			causeKind: "traffic-replacement",
+			actorId: "12:station-trade",
+			playerRole: "none",
+		});
+	});
+
+	test("only an operational carrier flies its projection, and its replacement flies again", () => {
+		const actors = [
+			{ key: KEY },
+			{ key: carrierKey(12, "station-trade/traffic-03") },
+		];
+		let world = newWorld(1);
+		world = applyTransition(
+			world,
+			0,
+			KEY,
+			trafficDestruction(12, "station-trade", 100),
+		);
+		const at = (t: number) =>
+			flyingTrafficActors(actors, (key) =>
+				effectiveCarrier(world.galaxies[0], key, t),
+			);
+		expect(at(100).map((a) => a.key)).toEqual([actors[1].key]);
+		expect(at(100 + RAIDER_WRECK_S + 1).map((a) => a.key)).toEqual([
+			actors[1].key,
+		]);
+		const replaced = 100 + RAIDER_WRECK_S + RAIDER_REPAIR_S;
+		expect(at(replaced).map((a) => a.key)).toEqual(actors.map((a) => a.key));
+		expect(
+			effectiveCarrier(world.galaxies[0], KEY, replaced).instanceOrdinal,
+		).toBe(1);
 	});
 });

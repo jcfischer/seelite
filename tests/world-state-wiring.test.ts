@@ -36,6 +36,9 @@ const WRITERS = [
 	"observeSystemRelay",
 	"setDeficits",
 	"setLegalHeat",
+	// `legal.ts`'s offence write: the decayed heat plus the offence, through
+	// `setLegalHeat` (civilian-combat H4). A writer by composition, not a new one.
+	"withOffence",
 	"visit",
 ];
 

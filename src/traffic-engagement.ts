@@ -37,8 +37,10 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
+import { PLAYER_KILL, RAIDER_REPAIR_S, RAIDER_WRECK_S } from "./raider-wreck";
 import { flightPerformance } from "./sim";
 import { type Vec3, frameAcross, sub } from "./vec3";
+import type { Provenance, TransitionEvent } from "./world-state";
 
 /** The roles that fight back when struck (H3). */
 export const ARMED_TRAFFIC_HULLS: ReadonlySet<HullId> = new Set<HullId>([
@@ -178,3 +180,49 @@ export function stepEngagement(
 		destroyed: !isAlive(condition),
 	};
 }
+
+/** Who replaces a destroyed ordinary carrier: its home station. Out of sight,
+ *  so it updates no knowledge. */
+export const trafficReplacementActor = (
+	systemIndex: number,
+	homeStationId: string,
+): Provenance => ({
+	causeKind: "traffic-replacement",
+	actorId: `${systemIndex}:${homeStationId}`,
+	playerRole: "none",
+});
+
+/**
+ * The world-state transition a player's kill applies to an ordinary carrier:
+ * `combat-model.md` §4's named-carrier lifecycle, on the raider's figures —
+ * destroyed for `RAIDER_WRECK_S`, repairing for `RAIDER_REPAIR_S`, then a
+ * replacement at the next `instanceOrdinal`, which draws its own standing and
+ * hold (H1).
+ */
+export function trafficDestruction(
+	systemIndex: number,
+	homeStationId: string,
+	now: number,
+): TransitionEvent {
+	return {
+		kind: "destroy",
+		occurredAt: now,
+		cause: PLAYER_KILL,
+		schedule: {
+			startsAt: now + RAIDER_WRECK_S,
+			completesAt: now + RAIDER_WRECK_S + RAIDER_REPAIR_S,
+			consequenceArea: `system:${systemIndex}`,
+			cause: trafficReplacementActor(systemIndex, homeStationId),
+		},
+	};
+}
+
+/**
+ * The actors that fly their projection now: the operational ones. A destroyed
+ * or repairing carrier is absent from its route and holds no berth, which is
+ * what makes a kill visible and a replacement come back.
+ */
+export const flyingTrafficActors = <T extends { key: CarrierKey }>(
+	actors: readonly T[],
+	conditionOf: (key: CarrierKey) => { condition: string },
+): T[] => actors.filter((a) => conditionOf(a.key).condition === "operational");
