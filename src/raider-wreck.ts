@@ -83,6 +83,15 @@ export const CANISTER_SCOOP_RADIUS_KM = 0.05;
 /** How big one is: a two-metre drum. This is the contact's display size and
  *  never the scoop gate, which is a distance a ship has to close to. */
 export const CANISTER_RADIUS_KM = 0.002;
+/** The green a canister is drawn and listed in, as one number, and the same
+ *  green for the 2D overlay — derived rather than written out again, so the
+ *  diamond and the contact cannot drift apart. Here beside the canister rather
+ *  than in `display-contact.ts`, which owns the shared *shape* and not one
+ *  producer's presentation (sage #353); a string keeps this module Three-free. */
+export const CARGO_CONTACT_COLOUR = 0x96f0aa;
+export const CARGO_CONTACT_CSS = `rgba(${(CARGO_CONTACT_COLOUR >> 16) & 255}, ${
+	(CARGO_CONTACT_COLOUR >> 8) & 255
+}, ${CARGO_CONTACT_COLOUR & 255}, 0.9)`;
 /** And how slowly, relative to the canister. */
 export const CANISTER_SCOOP_SPEED_KMS = 0.25;
 /**

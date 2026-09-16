@@ -76,14 +76,17 @@ it is never inferred from the display name. Unclassified review hulls show
 classification changes and leaves the separate ETA line in place (principal
 request during #198).
 
-The name/range line ends with the **relative speed** on the selected target,
-`REL <n> km/s`: the size of the velocity between ship and target, which is the
-closing speed in `CONTEXT.md`'s sense and the quantity #324's scoop gate checks
-(`combat-model.md` §4.1). It is a magnitude with no direction word, and the
-range beside it already shows whether the gap is closing. The rejected form
-printed the component along the line to the target, which is zero at closest
-approach whatever the crossing speed — so it read `0.00` in exactly the place a
-pilot needed it (sage #353).
+Its second line carries the ETA and the **relative speed** on the selected
+target, `REL <n> km/s`: the size of the velocity between ship and target, which
+is the quantity #324's scoop gate checks (`combat-model.md` §4.1). It is a
+magnitude with no direction word, and the range above it already shows whether
+the gap is closing. Two forms were rejected on the way. One printed the
+component along the line to the target, which is zero at closest approach
+whatever the crossing speed, so it read `0.00` in exactly the place a pilot
+needed it. The other put the figure only in the left console's copy — an
+`.lc-panel`, `display: none` unless the pilot turns their head — so a scoop
+flown looking forward showed nothing at all (sage #353). A figure a pilot flies
+on belongs on an instrument that is in front of them.
 
 The on-glass director retains the selected target after Navigation chooses it.
 During target acquisition, an amber **target-circle arrow** rotates around the

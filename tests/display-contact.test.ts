@@ -4,7 +4,6 @@ import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
 import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
 import {
-	CARGO_CONTACT_COLOUR,
 	type DisplayContact,
 	isDisplayContact,
 	relativeLabel,
@@ -12,6 +11,7 @@ import {
 import {
 	CANISTER_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
+	CARGO_CONTACT_COLOUR,
 	scoops,
 } from "../src/raider-wreck";
 import { length, sub, v3 } from "../src/vec3";
@@ -347,9 +347,29 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 });
 
 test("the relative-speed label is a magnitude with no direction word", () => {
-	expect(relativeLabel(0.44)).toBe("REL 0.44 km/s");
-	expect(relativeLabel(0)).toBe("REL 0.00 km/s");
+	expect(relativeLabel(0.44)).toBe(" · REL 0.44 km/s");
+	expect(relativeLabel(0)).toBe(" · REL 0.00 km/s");
+	// The separator is the label's, so nothing selected leaves no dangling
+	// bullet — and the instrument asks for its own spacing.
 	expect(relativeLabel(null)).toBe("");
+	expect(relativeLabel(0.44, "  ")).toBe("  REL 0.44 km/s");
+});
+
+test("the cockpit target instrument carries REL, not only the hidden console copy", () => {
+	const instruments = method("updateInstruments");
+	// The blocker of sage #353: the figure reached `state.target`, which
+	// live-cockpit writes into an `.lc-panel` that is `display: none` unless the
+	// pilot turns their head to a console. This instrument is painted on every
+	// frame in front of them.
+	expect(instruments).toContain("relativeLabel(");
+	expect(instruments).toContain("this.targetRelativeKms()");
+	// And it is in the repaint key, or the canvas keeps the previous frame's
+	// figure while the number moves.
+	const secondary = instruments.indexOf("const targetSecondary");
+	const key = instruments.indexOf("const key =");
+	expect(secondary).toBeGreaterThanOrEqual(0);
+	expect(key).toBeGreaterThan(secondary);
+	expect(instruments.slice(key)).toContain("${targetSecondary}");
 });
 
 test("cruise snapshots a moving contact before combat integrates the frame", () => {

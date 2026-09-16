@@ -322,6 +322,8 @@ import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
 	CANISTER_RADIUS_KM,
+	CARGO_CONTACT_COLOUR,
+	CARGO_CONTACT_CSS,
 	type Canister,
 	dropCanisters,
 	raiderDestruction,
@@ -385,8 +387,6 @@ import {
 	fleetLayout,
 } from "./ship-mesh";
 import {
-	CARGO_CONTACT_COLOUR,
-	CARGO_CONTACT_CSS,
 	type DisplayContact,
 	isDisplayContact,
 	relativeLabel,
@@ -5283,12 +5283,24 @@ class Game {
 			? `${target.name}  ${range(targetKm)}`
 			: "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
+		// **REL belongs on this instrument and not only in the console** (sage
+		// #353, a blocker). The console's copy lives in an `.lc-panel`, which is
+		// `display: none` unless the pilot turns their head to it — so a scoop
+		// flown looking forward had no readout at all, while the check that was
+		// supposed to prove otherwise read the hidden element's text. This
+		// instrument is in front of the pilot on every frame. It adds no repaint
+		// class: the figure moves with the ship's speed, which is already in the
+		// key below.
+		const targetSecondary = `ETA ${eta}${relativeLabel(
+			this.targetRelativeKms(),
+			"  ",
+		)}`;
 		const designation = targetDesignation(target);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
 		// printing it when §5's strip took it, and a key holding a value no
 		// painted pixel depends on repaints two canvas textures on the frame the
 		// drive regenerates a hundredth of an AU — about once a second, forever.
-		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${eta}|${this.throttle}|${this.assist}`;
+		const key = `${speed}|${velocity.context}|${targetText}|${designation}|${targetSecondary}|${this.throttle}|${this.assist}`;
 		if (key === this.cockpit.instrumentKey) return;
 		this.cockpit.instrumentKey = key;
 		const paint = (
@@ -5345,7 +5357,7 @@ class Game {
 			// **Charge is gone from here.** It is a second consumable with its own
 			// regeneration (#10) and §5 puts it on the floor; riding the *target*
 			// instrument made it read as a property of the thing being flown to.
-			`ETA ${eta}`,
+			targetSecondary,
 			"#ffd17a",
 			designation,
 		);
@@ -6286,6 +6298,18 @@ class Game {
 		const target = this.targetBody();
 		if (!target) return null;
 		return length(sub(this.world.ship.vel, this.targetVelocity()));
+	}
+
+	/**
+	 * Whether this canister is drawn by the selected-target marker rather than
+	 * as one of the clustered green diamonds.
+	 *
+	 * One predicate read by both loops, because they carry complementary
+	 * conditions: if they stop being exact inverses a canister is drawn twice or
+	 * not at all (sage #353).
+	 */
+	private cargoDrawnAsTarget(id: string): boolean {
+		return id === this.targetId;
 	}
 
 	/**
@@ -9752,7 +9776,7 @@ class Game {
 			targetId: target?.id ?? null,
 			targetName: target?.name ?? null,
 			target: target
-				? `${target.name} · ${range(targetKm)} · ${relativeLabel(
+				? `${target.name} · ${range(targetKm)}${relativeLabel(
 						this.targetRelativeKms(),
 					)}`
 				: "NO TARGET SELECTED",
@@ -10974,7 +10998,7 @@ class Game {
 			// The selected canister is drawn by the marker loop below, with the
 			// ring and the label every selected target gets. Drawing it here too
 			// would put a diamond inside that ring.
-			if (canister.id === this.targetId) continue;
+			if (this.cargoDrawnAsTarget(canister.id)) continue;
 			const dir = directionTo(camPos, canister.pos);
 			const at = dir && place(dir);
 			if (!at?.on) continue;
@@ -11208,7 +11232,7 @@ class Game {
 			// An unselected canister keeps the clustered green diamond above: a
 			// kill drops them at one point, and brackets on each would be the
 			// smear that clustering was added to stop.
-			if (body.kind === "cargo" && !selected) continue;
+			if (body.kind === "cargo" && !this.cargoDrawnAsTarget(body.id)) continue;
 			const at = place(dir);
 			if (at?.on) {
 				const r = selected ? 14 : 7;

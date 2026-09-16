@@ -124,13 +124,14 @@ player's ship scoops one by passing within 50 m at under 0.25 km/s relative,
 with no module, into the hold if it has room. No raider or
 Traffic actor scoops yet.
 
-**A canister is a selectable contact** of its own kind, `cargo`: one per live
+**A canister is a Display contact** of its own kind, `cargo`: one per live
 canister, registered while it exists and taken back when it is scooped or
 expires, which also drops a lock on it. So it carries a scanner blip, a target
-lock, and the Target panel's range and **relative speed** (`REL`) — the same
-closing speed the scoop gate checks, `length(sub(canister.vel, ship.vel))`
-against 0.25 km/s, rather than the speed along the line to it, which is zero at
-closest approach however fast the canister is crossing.
+lock, and the cockpit Target instrument's range and **relative speed** (`REL`) —
+the speed the scoop gate checks, `length(sub(canister.vel, ship.vel))` against
+0.25 km/s, rather than the speed along the line to it, which is zero at closest
+approach however fast the canister is crossing. It is on that instrument and not
+only in the left console, which is hidden unless the pilot turns their head.
 The fifth playtest reported the cargo disappearing before it could be
 salvaged; the principal's ruling left the five minutes alone and made the
 canister targetable, because the scoop gate is a *relative speed* and a marker

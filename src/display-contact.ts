@@ -18,14 +18,6 @@ export function isDisplayContact(body: Body): body is DisplayContact {
 	return "velocity" in body;
 }
 
-/** The green a canister is drawn and listed in, as one number (#324). */
-export const CARGO_CONTACT_COLOUR = 0x96f0aa;
-/** The same green for the 2D overlay, derived rather than written out again:
- *  the diamond and the contact must not be able to drift apart (sage #353). */
-export const CARGO_CONTACT_CSS = `rgba(${(CARGO_CONTACT_COLOUR >> 16) & 255}, ${
-	(CARGO_CONTACT_COLOUR >> 8) & 255
-}, ${CARGO_CONTACT_COLOUR & 255}, 0.9)`;
-
 /**
  * The Target panel's relative-speed figure: the size of the velocity between
  * ship and target, which is the quantity `scoops` gates on (0.25 km/s).
@@ -37,9 +29,11 @@ export const CARGO_CONTACT_CSS = `rgba(${(CARGO_CONTACT_COLOUR >> 16) & 255}, ${
  * who trusted it failed the scoop with no warning. The range beside it already
  * shows whether the gap is closing.
  */
-export function relativeLabel(kms: number | null): string {
+export function relativeLabel(kms: number | null, separator = " · "): string {
 	if (kms === null) return "";
-	return `REL ${kms.toFixed(2)} km/s`;
+	// The separator belongs to the label, so nothing selected leaves no dangling
+	// bullet on the end of the line (sage #353).
+	return `${separator}REL ${kms.toFixed(2)} km/s`;
 }
 
 /** The right cockpit Target panel's designation, independent of its name. */
