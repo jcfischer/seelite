@@ -18,6 +18,19 @@ export function isDisplayContact(body: Body): body is DisplayContact {
 	return "velocity" in body;
 }
 
+/** The green a canister is drawn and listed in, as one number (#324). */
+export const CARGO_CONTACT_COLOUR = 0x96f0aa;
+
+/**
+ * The Target panel's closing figure. Positive closes, and the words carry the
+ * sign because a bare minus on a moving number is easy to miss at the moment
+ * it matters — the last hundred metres of a scoop, where the gate is 0.25 km/s.
+ */
+export function closingLabel(kms: number | null): string {
+	if (kms === null) return "";
+	return `${kms >= 0 ? "CLO" : "OPN"} ${Math.abs(kms).toFixed(2)} km/s`;
+}
+
 /** The right cockpit Target panel's designation, independent of its name. */
 export function targetDesignation(body: Body | null): string {
 	if (!body) return "";

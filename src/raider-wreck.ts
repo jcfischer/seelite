@@ -80,6 +80,9 @@ export const CANISTER_TONNES = 1;
 export const CANISTER_COUNT = { min: 1, max: 3 } as const;
 /** How close a ship must pass to scoop one. */
 export const CANISTER_SCOOP_RADIUS_KM = 0.05;
+/** How big one is: a two-metre drum. This is the contact's display size and
+ *  never the scoop gate, which is a distance a ship has to close to. */
+export const CANISTER_RADIUS_KM = 0.002;
 /** And how slowly, relative to the canister. */
 export const CANISTER_SCOOP_SPEED_KMS = 0.25;
 /**

@@ -69,12 +69,19 @@ target records therefore belong to the left Navigation panel.
 ## 3. Target and docking director
 
 The right-hand cockpit Target instrument shows a designation between its title
-and target name/range: `STAR`, `PLANET`, `MOON`, `STATION · <TYPE>`, or
+and target name/range: `STAR`, `PLANET`, `MOON`, `CARGO`, `STATION · <TYPE>`, or
 `SHIP · <HULL TYPE> · <SCANNER STATUS>`. The producer supplies a ship's type;
 it is never inferred from the display name. Unclassified review hulls show
 `UNKNOWN`, not a fabricated legal status. The designation updates on target or
 classification changes and leaves the separate ETA line in place (principal
 request during #198).
+
+The name/range line ends with the **closing speed** on the selected target,
+`CLO` while the range falls and `OPN` while it grows. The words carry the sign
+because a bare minus on a moving number is easy to miss at the moment it
+matters, and a range alone cannot say whether it is still being overhauled —
+which is what #324's fifth playtest needed to scoop a canister, where the gate
+is a relative speed of 0.25 km/s (`combat-model.md` §4.1).
 
 The on-glass director retains the selected target after Navigation chooses it.
 During target acquisition, an amber **target-circle arrow** rotates around the

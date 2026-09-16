@@ -321,6 +321,7 @@ import {
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
+	CANISTER_RADIUS_KM,
 	type Canister,
 	dropCanisters,
 	raiderDestruction,
@@ -384,7 +385,9 @@ import {
 	fleetLayout,
 } from "./ship-mesh";
 import {
+	CARGO_CONTACT_COLOUR,
 	type DisplayContact,
+	closingLabel,
 	isDisplayContact,
 	targetDesignation,
 } from "./display-contact";
@@ -1965,6 +1968,10 @@ class Game {
 	/** A destroyed raider's cargo canisters in flight (#324 part d). Session
 	 *  state: they expire in five minutes and are not saved. */
 	canisters: Canister[] = [];
+	/** One selectable contact per live canister, by canister id (#324). Kept
+	 *  beside the canisters rather than searched for in the contact list, which
+	 *  only selection and the scanner read. */
+	private readonly cargoContacts = new Map<string, DisplayContact>();
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -6192,6 +6199,10 @@ class Game {
 				moon: 3,
 				ship: 4,
 				relay: 5,
+				// Contacts are appended after the sort and never reach the
+				// comparator, but the map is indexed by the whole `BodyKind`, so a
+				// kind missing here is a build error rather than a silent NaN.
+				cargo: 6,
 			} as const;
 			this.selectableCache = this.world.system.bodies
 				.filter((b) => b.kind !== "moon")
@@ -6256,6 +6267,26 @@ class Game {
 	targetRange(): number | null {
 		const target = this.targetBody();
 		return target ? length(sub(target.pos, this.world.ship.pos)) : null;
+	}
+
+	/**
+	 * How fast the range to the selected target is shrinking, in km/s, or `null`
+	 * with nothing selected. Positive closes.
+	 *
+	 * Public because it is the figure a scoop is flown on (#324): the gate is a
+	 * relative speed, and a pilot with only a range cannot see whether they are
+	 * still overhauling the thing they are creeping up on.
+	 */
+	targetClosingKms(): number | null {
+		const target = this.targetBody();
+		if (!target) return null;
+		const away = sub(target.pos, this.world.ship.pos);
+		const km = length(away);
+		if (km === 0) return 0;
+		return dot(
+			sub(this.world.ship.vel, this.targetVelocity()),
+			scale(away, 1 / km),
+		);
 	}
 
 	/**
@@ -7931,6 +7962,56 @@ class Game {
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
 
+	/**
+	 * Give every live canister a selectable contact, and take it back when the
+	 * canister is scooped or expires (#324, the principal's ruling after the
+	 * fifth playtest — "targetable, keep 5 min"). A canister was a green diamond
+	 * with a range label and nothing else: it could not be selected, so the
+	 * approach had no range or closing readout to fly by, and the lifetime was
+	 * never the complaint.
+	 *
+	 * Stepped every frame rather than beside the drop, and deliberately **not**
+	 * inside `stepCargoCanisters`, which returns early on an empty list — an
+	 * empty list is exactly when the last contact has to go.
+	 */
+	private syncCargoContacts() {
+		for (const canister of this.canisters) {
+			const known = this.cargoContacts.get(canister.id);
+			if (known) {
+				// `driftCanister` returns a new canister each step, so these are
+				// assignments and not a mutation of a shared vector.
+				known.pos = canister.pos;
+				known.velocity = canister.vel;
+				continue;
+			}
+			const contact: DisplayContact = {
+				id: canister.id,
+				name: canister.commodity.toUpperCase(),
+				kind: "cargo",
+				pos: canister.pos,
+				velocity: canister.vel,
+				radiusKm: CANISTER_RADIUS_KM,
+				color: CARGO_CONTACT_COLOUR,
+				legalStatus: null,
+				scannerClass: "unknown",
+			};
+			this.cargoContacts.set(canister.id, contact);
+			this.registerContact(contact);
+			this.selectableCache = null;
+		}
+		if (this.cargoContacts.size === this.canisters.length) return;
+		const live = new Set(this.canisters.map((canister) => canister.id));
+		for (const [id, contact] of this.cargoContacts) {
+			if (live.has(id)) continue;
+			this.unregisterContact(contact);
+			this.cargoContacts.delete(id);
+			this.selectableCache = null;
+			// A lock on a canister that no longer exists would resolve through
+			// `bodyFor` to nothing and leave the panel naming a gap.
+			if (this.targetId === id) this.targetId = null;
+		}
+	}
+
 	/** Draw the leg's encounter, if the leg has none running. */
 	private scheduleLegEncounter() {
 		if (this.combatRig || RAIDERS_OFF) return;
@@ -8635,6 +8716,7 @@ class Game {
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot);
 		this.stepCargoCanisters(dt);
+		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
 		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
@@ -9665,7 +9747,9 @@ class Game {
 			targetId: target?.id ?? null,
 			targetName: target?.name ?? null,
 			target: target
-				? `${target.name} · ${range(targetKm)}`
+				? `${target.name} · ${range(targetKm)} · ${closingLabel(
+						this.targetClosingKms(),
+					)}`
 				: "NO TARGET SELECTED",
 			targetBearingDeg: target
 				? targetArrowBearingDeg(
@@ -10882,6 +10966,10 @@ class Game {
 		const cargoMarks: { x: number; y: number; goods: string[]; km: number }[] =
 			[];
 		for (const canister of this.canisters) {
+			// The selected canister is drawn by the marker loop below, with the
+			// ring and the label every selected target gets. Drawing it here too
+			// would put a diamond inside that ring.
+			if (canister.id === this.targetId) continue;
 			const dir = directionTo(camPos, canister.pos);
 			const at = dir && place(dir);
 			if (!at?.on) continue;
@@ -11112,6 +11200,10 @@ class Game {
 			const dir = directionTo(camPos, body.pos);
 			if (!dir) continue;
 			const selected = body.id === this.targetId;
+			// An unselected canister keeps the clustered green diamond above: a
+			// kill drops them at one point, and brackets on each would be the
+			// smear that clustering was added to stop.
+			if (body.kind === "cargo" && !selected) continue;
 			const at = place(dir);
 			if (at?.on) {
 				const r = selected ? 14 : 7;

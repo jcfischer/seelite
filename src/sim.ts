@@ -76,14 +76,18 @@ import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
  * `PlacedBody["kind"]`; a display contact never joins the generated body list.
  */
 /** `relay` is #43's pirate sensor relay: a contact, never a generated body,
- *  and a kind of its own so the Target panel and the marker label can name it. */
+ *  and a kind of its own so the Target panel and the marker label can name it.
+ *  `cargo` is #324's canister, on the same footing for the same reason — the
+ *  principal's ruling after the fifth playtest, when a canister was a HUD
+ *  diamond that could not be selected and so had no readout to fly by. */
 export type BodyKind =
 	| "star"
 	| "planet"
 	| "moon"
 	| "station"
 	| "ship"
-	| "relay";
+	| "relay"
+	| "cargo";
 
 export interface Body {
 	id: string;

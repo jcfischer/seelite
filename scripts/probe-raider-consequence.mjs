@@ -218,6 +218,42 @@ check(
 	JSON.stringify(glass),
 );
 
+// ---------------------------------------------------------------------------
+// A canister is a contact, not only a diamond (#324, the principal's ruling
+// after the fifth playtest): selectable, on the scanner, and carrying range and
+// closing speed on the glass — the figures a scoop is flown on.
+// ---------------------------------------------------------------------------
+const lock = await page.evaluate(() => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const c = g.canisters[0];
+	const listed = g.selectableIds().includes(c.id);
+	g.targetId = c.id;
+	g.setHeadLook("forward");
+	g.step(dt);
+	g.render(dt);
+	const target = g.targetBody();
+	return {
+		id: c.id,
+		listed,
+		kind: target?.kind ?? null,
+		rangeKm: g.targetRange(),
+		closingKms: g.targetClosingKms(),
+		onScanner: g.scannerContacts.some((s) => s.id === c.id),
+		panel: document.querySelector("[data-live-left-copy]")?.textContent ?? "",
+	};
+});
+check(
+	"a canister can be selected, shows on the scanner, and reads range and closing speed on the glass",
+	lock.listed &&
+		lock.kind === "cargo" &&
+		lock.onScanner &&
+		lock.rangeKm > 0 &&
+		Number.isFinite(lock.closingKms) &&
+		/(CLO|OPN) /.test(lock.panel),
+	JSON.stringify(lock),
+);
+
 // **The scoop is flown, not placed.** This row set the ship onto the canister
 // with the canister's own velocity, which proves the scoop predicate and not
 // that a pilot can reach one. The third playtest could not: a fleeing raider
@@ -281,6 +317,16 @@ check(
 		scoop.now === scoop.held + 1 &&
 		scoop.lastExit.startsWith("scooped"),
 	JSON.stringify(scoop),
+);
+
+const afterScoop = await page.evaluate((id) => {
+	const g = window.__seelite;
+	return { listed: g.selectableIds().includes(id), targetId: g.targetId };
+}, lock.id);
+check(
+	"the scooped canister leaves the selection list and takes the lock with it",
+	!afterScoop.listed && afterScoop.targetId === null,
+	JSON.stringify(afterScoop),
 );
 
 // ---------------------------------------------------------------------------

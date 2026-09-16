@@ -122,7 +122,21 @@ that playtest; `tests/canister-scoop.test.ts` flies a pilot with only a pilot's
 information to every canister of a kill (`scripts/lib/scoop-pilot.ts`). The
 player's ship scoops one by passing within 50 m at under 0.25 km/s relative,
 with no module, into the hold if it has room. No raider or
-Traffic actor scoops yet. Canisters are flight
+Traffic actor scoops yet.
+
+**A canister is a selectable contact** of its own kind, `cargo`: one per live
+canister, registered while it exists and taken back when it is scooped or
+expires, which also drops a lock on it. So it carries a scanner blip, a target
+lock, and the Target panel's range and **closing speed** — positive closes,
+printed `CLO`/`OPN` because a bare minus is easy to miss in the last hundred
+metres. The fifth playtest reported the cargo disappearing before it could be
+salvaged; the principal's ruling left the five minutes alone and made the
+canister targetable, because the scoop gate is a *relative speed* and a marker
+with a range label shows neither the speed nor whether it is falling. An
+unselected canister keeps the clustered green diamond — a kill drops them at one
+point, and brackets on each are the smear the clustering exists to stop.
+
+Canisters are flight
 state and are not saved. A reload or a jump loses them, which a five-minute
 lifetime makes a small loss.
 
