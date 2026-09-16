@@ -322,6 +322,27 @@ which is F7's "long against" in figures.
 The principal was offered these, shares scaled by government, and rarer
 standing on a 12 h rotation, and chose these.
 
+## What building the first change found
+
+Recorded because each would have shipped green without the browser tier.
+
+- **A fight beside a station was aimed in star coordinates.** `combat-enemy.ts`
+  led its pursuit on the player's absolute velocity. Every raider duel is fought
+  on a cruise leg, where the frame is the star's and the two agree; beside a
+  station the frame moves ~30 km/s, and a struck patrol led up to 150 km along
+  the orbit and flew away from the fight. The lead is taken relative to the
+  frame now, which changes nothing in the star frame.
+  `tests/traffic-engagement.test.ts` holds it, and the probe's armed row was red
+  before it.
+- **Authority readiness counted the roster.** `trafficAuthorityReady` compared
+  routes with actors, and a destroyed carrier has no route, so a kill left the
+  system's authority "warming" until the replacement — and every lane request
+  there refused. It counts the flying carriers; the probe row was built red
+  against the roster comparison.
+- **The module is `traffic-engagement.ts`, not `civilian-combat.ts`.**
+  `tests/combat-rig-boundary.test.ts` bans the word *combat* from `main.ts` to
+  keep the prototype rig unthreaded, and an import specifier counts.
+
 ## Rules this makes false, and where they are amended
 
 Each is amended in the change that builds it, not ahead of it.
