@@ -7,13 +7,16 @@
 import { describe, expect, test } from "bun:test";
 import { COMBAT_PROTOTYPE_DEFAULTS } from "../src/combat-prototype";
 import { DOCKING_DAMAGE_SCALE, V_GATE_KMS, entryDamage } from "../src/docking";
-import { HULL_IDS, HULL_SPECS } from "../src/hull";
+import { HULL_IDS, type HullId, HULL_SPECS } from "../src/hull";
 import {
+	CRIPPLED_HULL_FRACTION,
 	ENERGY_BANK,
 	ENERGY_REGEN_PER_S,
 	HEAT_COOL_PER_S,
 	HEAT_LOCK,
 	HEAT_RELEASE,
+	HULL_KILL_TOLERANCE,
+	HULL_PRINT_STEP,
 	PULSE_LASER,
 	SHIELD_POOL,
 	SHIELD_RECHARGE_DELAY_S,
@@ -24,10 +27,13 @@ import {
 	fullCondition,
 	headOnPool,
 	isAlive,
+	isCrippled,
+	printHull,
 	sideStruck,
 	stepCondition,
 } from "../src/ship-condition";
 import { v3 } from "../src/vec3";
+import { walkDownToKill } from "./helpers/pulse-walk";
 
 const DT = 1 / 60;
 
@@ -227,6 +233,122 @@ describe("shield recharge", () => {
 	test("never recharges hull", () => {
 		const c = applyDamage(fullCondition("courier"), SHIELD_POOL + 30, "fore");
 		expect(run(c, 120, false).condition.hull).toBe(c.hull);
+	});
+});
+
+describe("what a ship has to be to be dead (#367 D1)", () => {
+	test("the print rounds to its step, and the tolerance is half of it", () => {
+		// The helper itself, so a change to it is caught where the law reads it
+		// rather than only where a readout happens to notice.
+		expect(printHull(HULL_PRINT_STEP * 0.6)).toBe(1);
+		expect(printHull(HULL_PRINT_STEP * 0.4)).toBe(0);
+		// A tick-shaped tolerance is `damagePerS × dt`, and #352 made dt move with
+		// frame cost. This one is a property of the glass, not of the step.
+		expect(HULL_KILL_TOLERANCE).toBe(HULL_PRINT_STEP / 2);
+	});
+
+	test("a strike leaving less than half the print step finishes the ship", () => {
+		const wounded = {
+			...fullCondition("courier"),
+			fore: 0,
+			aft: 0,
+			hull: HULL_KILL_TOLERANCE + 0.1,
+		};
+		const after = applyDamage(wounded, 0.2, "fore");
+		expect(after.hull).toBe(0);
+		expect(isAlive(after)).toBe(false);
+	});
+
+	test("a hull left exactly at the tolerance is alive, and prints a digit", () => {
+		const wounded = {
+			...fullCondition("courier"),
+			fore: 0,
+			aft: 0,
+			hull: HULL_KILL_TOLERANCE * 2,
+		};
+		const after = applyDamage(wounded, HULL_KILL_TOLERANCE, "fore");
+		expect(after.hull).toBe(HULL_KILL_TOLERANCE);
+		expect(isAlive(after)).toBe(true);
+		expect(Math.round(after.hull)).toBeGreaterThanOrEqual(1);
+	});
+
+	test("no hull the funnel leaves standing is small enough to print 0, on every hull", () => {
+		// The law in one place, so no consumer re-derives a threshold. Driven with
+		// one pulse tick at a time, which is how a duel walks a hull down.
+		for (const id of HULL_IDS) {
+			const walk = walkDownToKill(fullCondition(id));
+			const c = walk.at(-1) as ShipCondition;
+			const smallestLive = Math.min(...walk.filter(isAlive).map((s) => s.hull));
+			expect(c.hull).toBe(0);
+			expect(smallestLive).toBeGreaterThanOrEqual(HULL_KILL_TOLERANCE);
+			// The print, not a number: a hull left standing has to be able to show
+			// a digit, which is the whole of D1 in one line.
+			expect(printHull(smallestLive)).toBeGreaterThanOrEqual(1);
+		}
+	});
+});
+
+describe("a crippled ship does not rebuild shields (#367 D2)", () => {
+	const crippled = (id: HullId, over: Partial<ShipCondition> = {}) => ({
+		...fullCondition(id),
+		fore: 10,
+		aft: 10,
+		hull: CRIPPLED_HULL_FRACTION * HULL_SPECS[id].integrity - 0.1,
+		// Past the delay, so the delay is not what is being measured.
+		sinceStruckS: SHIELD_RECHARGE_DELAY_S,
+		...over,
+	});
+
+	test("the share is the principal's figure, and its own", () => {
+		// Not `FLEE_HULL_FRACTION`: that is the controller's nerve, this is the
+		// repair law. A literal here because a retune is a ruling, not a drift.
+		expect(CRIPPLED_HULL_FRACTION).toBe(0.25);
+	});
+
+	test("below the share the bank buys no shields, and just above it still does", () => {
+		expect(isCrippled(crippled("courier"))).toBe(true);
+		expect(run(crippled("courier"), 5, false).condition.fore).toBe(10);
+		const sound = crippled("courier", {
+			hull: CRIPPLED_HULL_FRACTION * HULL_SPECS.courier.integrity + 0.1,
+		});
+		expect(isCrippled(sound)).toBe(false);
+		expect(run(sound, 5, false).condition.fore).toBeGreaterThan(10);
+	});
+
+	test("it is every hull's law at that hull's own scale", () => {
+		for (const id of HULL_IDS) {
+			const c = crippled(id, { fore: 0, aft: 0 });
+			expect(isCrippled(c)).toBe(true);
+			const after = run(c, 10, false).condition;
+			expect(after.fore).toBe(0);
+			expect(after.aft).toBe(0);
+		}
+	});
+
+	test("the raider of the playtest stops rebuilding at 20.25 of its 81", () => {
+		// The reported reading was `SHD F 22 A 22 HULL 0` — 22 points recovered on
+		// each pool out of a hull that should not have had a bank at all.
+		expect(CRIPPLED_HULL_FRACTION * HULL_SPECS.raider.integrity).toBeCloseTo(
+			20.25,
+			9,
+		);
+		expect(run(crippled("raider"), 22, false).condition.fore).toBe(10);
+	});
+
+	test("a crippled ship still shoots, still spends the bank and still cools", () => {
+		// The gate is on recovery, not on the fight. A crippled ship that could not
+		// fire is a ship that cannot leave, and #367 is about those.
+		const c = crippled("courier", { fore: 0, aft: 0 });
+		const { condition, delivered } = run(c, 1, true);
+		expect(delivered).toBeGreaterThan(0);
+		expect(condition.heat).toBeGreaterThan(0);
+		expect(condition.energy).toBeLessThan(ENERGY_BANK);
+	});
+
+	test("being crippled does not stop damage landing", () => {
+		const c = crippled("courier", { fore: 0, aft: 0 });
+		const after = applyDamage(c, 5, "fore");
+		expect(after.hull).toBeCloseTo(c.hull - 5, 9);
 	});
 });
 

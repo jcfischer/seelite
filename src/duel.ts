@@ -23,6 +23,7 @@ import {
 	type EnemyIntent,
 	type EnemyReadout,
 	NO_ROTATION,
+	PLAYER_LASER_RANGE_KM,
 	playerLaserHit,
 	stepEnemyShip,
 } from "./combat-enemy";
@@ -43,9 +44,45 @@ import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
 export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;
 
 /**
+ * Past this gap a raider has got away (#367 D3).
+ *
+ * **Derived, not declared.** The duel used to end a rout at `FLED_KM`, a
+ * separate 25 km, while the beam stops at `PLAYER_LASER_RANGE_KM`'s 12 — and
+ * both ships are capped at 2 km/s, so a raider in the band between the two
+ * could neither be hit nor leave. The playtest of 2026-09-16 sat at a frozen
+ * 12.34 km for two minutes with its shields climbing.
+ *
+ * The furthest centre the beam can reach is the hypotenuse of its range and the
+ * target's radius, because `playerLaserHit` admits a hit on the projection
+ * along the sightline and the offset across it. Past here no shot can land, so
+ * what the player cannot hit has got away: one figure, derived from the beam,
+ * rather than two that drift.
+ *
+ * **This is the rout's exit, not a statement about the last frame the beam
+ * lands in.** The encounter measures gap ship to ship while the beam leaves the
+ * cockpit sightline, so the two disagree by more than one thing: a raider off
+ * the nose shortens the beam's reach, and a pilot facing a fleeing raider has
+ * that sightline *forward* of the ship, toward it, which lengthens it. So a shot
+ * can still land on either side of this figure, by metres against twelve
+ * kilometres. What the figure is for is that a rout ends, and a frame or two of
+ * a beam at its limit changes nothing about that.
+ */
+export const RAIDER_OUT_OF_BEAM_KM = Math.hypot(
+	PLAYER_LASER_RANGE_KM,
+	RAIDER_HIT_RADIUS_KM,
+);
+
+/**
  * Whether a shot along the sightline would land on the raider now — the HUD's
  * on-target mark (#324 part c). The same beam test and the same hull radius
  * `stepDuel` hits with, so the mark cannot promise a hit the duel refuses.
+ *
+ * **It is not a promise about the next frame.** `stepDuel` tests the hit at the
+ * raider's position *before* its own step, while `stepEncounter` reads this
+ * after it; the mark is therefore a second behind the duel by one frame of the
+ * raider's speed, and a shot the mark calls good can land on where the raider
+ * was. That is one frame, and the mark is drawn from the same predicate rather
+ * than a copy of it, which is what keeps the two from drifting apart.
  */
 export const raiderInSights = (
 	aimOrigin: Vec3,

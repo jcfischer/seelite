@@ -26,6 +26,7 @@ import {
 	type DuelPilot,
 	type PlayerShot,
 	type Raider,
+	RAIDER_OUT_OF_BEAM_KM,
 	raiderAtDrop,
 	stepDuel,
 } from "./duel";
@@ -133,9 +134,6 @@ export interface EncounterStep {
 /** Whether a raider slot can field a raider now: operational in world state.
  *  Required, so a caller cannot forget it and respawn a destroyed raider. */
 export type SlotOperational = (key: CarrierKey) => boolean;
-
-/** A fled raider this far from the player has left the fight. */
-export const FLED_KM = 25;
 
 const RAIDER_LOCK_RATE = interdictionTurnRate(
 	flightPerformance(RAIDER_HULL_ID),
@@ -351,9 +349,14 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			},
 		};
 	const flight = step.raider.flight;
+	// **Out of the beam is out of the fight (#367 D3).** `FLED_KM` was a figure of
+	// the encounter's own — 25 km, past a beam that stops at 12 — and with both
+	// ships capped at 2 km/s the band between the two was a place a rout could
+	// live forever. The exit is the beam's reach at the raider's size now, so it
+	// cannot outstrip the thing it was derived from.
 	if (
 		flight.phase === "flee" &&
-		length(sub(flight.ship.pos, pilot.ship.pos)) > FLED_KM
+		length(sub(flight.ship.pos, pilot.ship.pos)) > RAIDER_OUT_OF_BEAM_KM
 	)
 		return over(e, "fled");
 	return {

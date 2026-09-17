@@ -489,6 +489,109 @@ for (const viewport of VIEWPORTS) {
 		);
 
 	// -------------------------------------------------------------------------
+	// #367. Whether a crippled raider is let go at the range the beam stops
+	// reaching rather than at twice it. Measured rather than asserted against a
+	// constant — the probe has no page surface for either figure and should not
+	// need one, because the claim is that the two ranges are the one range.
+	//
+	// **The fight must end by letting go, not by a kill.** A kill writes the
+	// raider's destruction to world state, and `resetFlightToStart` rewinds the game
+	// clock while world-state keeps its own high-water mark, so a kill after a
+	// long scripted run dies on `world-state: destroy … is before the clock`.
+	// The raider's hull is held above zero for that reason as well as to keep the
+	// rout running.
+	//
+	// **The trigger is pulled after the cruise reset, not before it.** That reset
+	// clears the pressed-key set, and a key held across it is neither released nor
+	// re-pressed: the gun sits silent while every other reading looks normal.
+	// -------------------------------------------------------------------------
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.resetFlightToStart();
+		window.__duel.cruise();
+		g.forceRaider("ahead", 0.5, 6);
+	});
+	await page.keyboard.down("Space");
+	const rout = await page.evaluate(() => {
+		const g = window.__seelite;
+		const D = window.__duel;
+		/** A fifth of its hull, held there every frame: below #53's nerve the
+		 *  raider turns and runs, and below §2's share its bank stops buying
+		 *  shields, which is the crippled state the playtest reached. A kill is
+		 *  impossible from here, so the only way this fight can end is letting go.
+		 */
+		const PINNED_HULL = 15;
+		let shaped = false;
+		let lastGap = null;
+		let lastHitGap = null;
+		let releaseGap = null;
+		let minHullSeen = Infinity;
+		const gap = () => {
+			const p = g.world.ship.pos;
+			const q = g.encounter.raider.flight.ship.pos;
+			return Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+		};
+		D.steps(30, () => {
+			const r = g.encounter?.raider;
+			if (!r) {
+				if (shaped && releaseGap === null) releaseGap = lastGap;
+				return;
+			}
+			if (!shaped) {
+				shaped = true;
+				r.condition = { ...r.condition, fore: 0, aft: 0, hull: PINNED_HULL };
+			}
+			const id = g.raiderContact?.id;
+			if (id) g.targetId = id;
+			D.aimAt(r.flight.ship.pos);
+			const after = gap();
+			const struck = r.condition.hull;
+			// Read before the pin, so the minimum is what the fight was actually
+			// carrying and not what the probe handed it.
+			if (struck < minHullSeen) minHullSeen = struck;
+			// `steps` runs this after `g.step`, so a hull below the pin is this
+			// frame's damage, and `lastGap` is the gap that shot was aimed at.
+			if (struck < PINNED_HULL) lastHitGap = lastGap ?? after;
+			r.condition = { ...r.condition, hull: PINNED_HULL };
+			lastGap = after;
+		});
+		return {
+			lastHitGap,
+			releaseGap,
+			minHullSeen,
+			released: g.encounter === null,
+		};
+	});
+	await page.keyboard.up("Space");
+	check(
+		`${v}: a crippled raider is let go at the range the beam stops reaching`,
+		rout.released &&
+			// **One comparison carries the row: the beam stopped landing and the
+			// fight stopped, at the same range.** `lastHitGap > 1` is the bound that
+			// does the work — it is false when the raider was let go before the beam
+			// ever connected, which is what an exit forced to one kilometre produced
+			// when measured, and a bare `releaseGap > lastHitGap` would have read
+			// that `null` as zero and called it a pass. `releaseGap` is the range it
+			// was let go at, so the difference below is the whole claim.
+			//
+			// `minHullSeen` is printed, not asserted: the hull is re-pinned every
+			// frame, so it cannot reach zero and a guard on it would be a guard on
+			// the probe's own arithmetic. That this is a release and not a kill is
+			// held by construction — a kill needs a strike through `applyDamage`, and
+			// there is none — and `tests/encounter.test.ts` reads `end` directly.
+			rout.lastHitGap > 1 &&
+			rout.releaseGap !== null &&
+			rout.releaseGap > rout.lastHitGap &&
+			// One frame of the raider's top speed is 0.2 km, so half a kilometre is
+			// the loosest reading that still says "the beam stopped and the fight
+			// stopped together". On the build before #367 the same script measured
+			// the last hit at 11.83 km and the end at 24.83 km, and this row was red.
+			rout.releaseGap - rout.lastHitGap < 0.5,
+		JSON.stringify(rout),
+	);
+	// **D1 has no browser row.** Its state — a live hull that prints 0 — is one
+
+	// -------------------------------------------------------------------------
 	// Peace again: the reset ends the encounter, and every surface goes.
 	// -------------------------------------------------------------------------
 	const after = await page.evaluate(() => {

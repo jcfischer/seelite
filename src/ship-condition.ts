@@ -60,6 +60,73 @@ export const SHIELD_RECHARGE_DELAY_S = 3;
  */
 export const SHIELD_RECHARGE_ENERGY_PER_POINT = 1;
 
+/**
+ * The step both combat readouts print hull in (`duel-hud.ts`: `Math.round`).
+ */
+export const HULL_PRINT_STEP = 1;
+
+/**
+ * The hull as the glass shows it: the print step, rounded.
+ *
+ * **Every readout of a hull goes through this.** #367's defect was exactly a
+ * hull printed here and a kill decided elsewhere: the cue showed `Math.round`
+ * while `isAlive` asked for more than nothing, so a ship at a third of a point
+ * was alive and read dead. The kill tolerance below is half the step this
+ * function rounds to, so a hull that can print no digit cannot survive a frame.
+ * **Not by construction** — the two still ask different questions, one rounds and
+ * one compares — and what holds them together is that neither does its own
+ * arithmetic. Give either one its own number and the reading comes back.
+ */
+export const printHull = (hull: number): number =>
+	Math.round(hull / HULL_PRINT_STEP) * HULL_PRINT_STEP;
+
+/**
+ * A hull too small to print a digit is gone.
+ *
+ * **Half the print step, by the principal's ruling (#367 D1).** The playtest of
+ * 2026-09-16 reported `HULL 0` on a raider that was alive and rebuilding: the
+ * kill was `hull > 0` and the glass was `Math.round(hull)`, so every hull under
+ * half a point was alive and read dead — a band five frames wide at the pulse's
+ * rate, and the last fraction of a duel was harder than the start of it.
+ *
+ * It is a share of the *print*, not of a tick. The tick is `damagePerS × dt`, so
+ * a tick-shaped tolerance would move with the frame time, and #352 made the
+ * frame time adaptive. Half the print step reads no `dt` at all, and it is what
+ * makes the glass agree with the law rather than merely usually agree with it.
+ *
+ * It belongs here rather than at each readout so that every consumer — the cue,
+ * the console, the duel, the docking bound — agrees without re-deriving it.
+ *
+ * **Honest bound: the tolerance is in the writer, not in the predicate.**
+ * `isAlive` is still `hull > 0`, so the glass and the law are joined for every
+ * state that comes out of `applyDamage`, which is every state the game itself
+ * reaches. A script that hand-builds a condition at `hull: 0.01` — three of them
+ * do, to stand a raider on its last point — is alive and prints `HULL 0`. Moving
+ * the tolerance into `isAlive` would close that too and would move those three
+ * scripts' fixture above the line with it; that is a node of its own, not a line
+ * in this one.
+ */
+export const HULL_KILL_TOLERANCE = HULL_PRINT_STEP / 2;
+
+/**
+ * Below this share of a ship's own hull, its Energy bank stops buying shields.
+ *
+ * **A quarter, by the principal's ruling (#367 D2).** Recharge used to be gated
+ * on time alone, so a raider at a third of a point of hull, left unhit for the
+ * delay, was rebuilding shields at all — the reading the playtest reported had 22
+ * of 106 coming back on each pool. One pulse tick spends 0.1 of a hull, and 3 s
+ * without a hit returns 6 points of *shield* — which is why the defect showed on
+ * a raider the pilot had stopped landing shots on, and why it made the last
+ * fraction of a fight harder than the beginning rather than merely longer.
+ *
+ * It is every ship's law, so the player's shields stop coming back at the same
+ * share. **It is not `FLEE_HULL_FRACTION`, and does not share it**: that is the
+ * controller's nerve for when to run, this is the shield-recharge law, which says
+ * what a running ship can still recover. Giving them one constant is a coupling neither asked
+ * for, and one retune would silently move the other.
+ */
+export const CRIPPLED_HULL_FRACTION = 0.25;
+
 export type ShieldSide = "fore" | "aft";
 
 export interface ShipCondition {
@@ -94,6 +161,15 @@ export function fullCondition(hull: HullId): ShipCondition {
 export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
 
 /**
+ * Whether this hull is too broken for the bank to buy shields with.
+ *
+ * Read off `hullMax`, not off an absolute, so it is the same law for a courier's
+ * 100 and a dreadnought's 2402.
+ */
+export const isCrippled = (c: ShipCondition): boolean =>
+	c.hull < CRIPPLED_HULL_FRACTION * c.hullMax;
+
+/**
  * What a head-on hit can reach: the fore shield and the hull.
  *
  * `docking.md` §2.1 bounds a failed entry by "a quarter of the combined pool",
@@ -112,7 +188,12 @@ export function sideStruck(nose: Vec3, toSource: Vec3): ShieldSide {
 	return dot(nose, toSource) >= 0 ? "fore" : "aft";
 }
 
-/** Damage into one pool; what the pool cannot absorb goes to hull. */
+/**
+ * Damage into one pool; what the pool cannot absorb goes to hull.
+ *
+ * The one place hull is spent, and so the one place that decides a ship is
+ * finished — see `HULL_KILL_TOLERANCE`.
+ */
 export function applyDamage(
 	c: ShipCondition,
 	amount: number,
@@ -120,10 +201,11 @@ export function applyDamage(
 ): ShipCondition {
 	const hit = Math.max(0, amount);
 	const absorbed = Math.min(c[side], hit);
+	const hull = c.hull - (hit - absorbed);
 	return {
 		...c,
 		[side]: c[side] - absorbed,
-		hull: Math.max(0, c.hull - (hit - absorbed)),
+		hull: hull < HULL_KILL_TOLERANCE ? 0 : hull,
 		sinceStruckS: hit > 0 ? 0 : c.sinceStruckS,
 	};
 }
@@ -144,6 +226,10 @@ const clamp = (value: number, max: number) => Math.max(0, Math.min(max, value));
  * Order: the shield recharge draws first, then the gun fires from what is
  * left, then an idle gun cools and the bank regenerates. So a ship that holds
  * the trigger while recovering pays for both, which is §2's competition.
+ *
+ * A crippled ship is the exception to the first of those: its bank does not buy
+ * shields at all (`CRIPPLED_HULL_FRACTION`). Its gun still fires, still spends
+ * the bank and still cools — the gate is on recovery, not on the fight.
  */
 export function stepCondition(
 	c: ShipCondition,
@@ -153,7 +239,7 @@ export function stepCondition(
 	const step = Math.max(0, dt);
 	const next = { ...c, sinceStruckS: c.sinceStruckS + step };
 
-	if (c.sinceStruckS >= SHIELD_RECHARGE_DELAY_S) {
+	if (c.sinceStruckS >= SHIELD_RECHARGE_DELAY_S && !isCrippled(c)) {
 		const lower: ShieldSide = next.fore <= next.aft ? "fore" : "aft";
 		const wanted = Math.min(
 			SHIELD_RECHARGE_PER_S * step,

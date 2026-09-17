@@ -22,6 +22,7 @@ import type { EncounterPhase } from "./encounter";
 import {
 	ENERGY_BANK,
 	HEAT_LOCK,
+	printHull,
 	SHIELD_POOL,
 	type ShipCondition,
 } from "./ship-condition";
@@ -105,7 +106,7 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
 	return {
 		fore: `${Math.round(c.fore)} / ${SHIELD_POOL}`,
 		aft: `${Math.round(c.aft)} / ${SHIELD_POOL}`,
-		hull: `${Math.round(c.hull)} / ${c.hullMax}`,
+		hull: `${printHull(c.hull)} / ${c.hullMax}`,
 		bank: `${Math.round(c.energy)} / ${ENERGY_BANK}`,
 		heat: heatValue(c),
 	};
@@ -124,7 +125,7 @@ export function targetConditionLine(c: ShipCondition): {
 	const fore = Math.round(c.fore);
 	const aft = Math.round(c.aft);
 	return {
-		text: `SHD F ${fore} A ${aft}  HULL ${Math.round(c.hull)}`,
+		text: `SHD F ${fore} A ${aft}  HULL ${printHull(c.hull)}`,
 		tone: fore === 0 || aft === 0 ? "refused" : "passive",
 	};
 }

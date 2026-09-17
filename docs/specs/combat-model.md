@@ -58,6 +58,56 @@ over a 45 km radius, so no dogfight could happen at that speed. The fiction is
 an inertial damper, as in Elite (1984). The figures are tuned for how the fight
 feels, not derived from physics (`src/hull.ts`).
 
+### 2.2 What a hull has to be to be gone, and the quarter of it below which a bank buys no shield (#367)
+
+**`HULL 0` on the glass is always a kill.** A strike that leaves a hull under
+**half the print step** — half a point, since both readouts print a whole number
+— finishes the ship, and it is decided in `applyDamage`, the one place hull is
+spent. No consumer re-derives a threshold.
+
+It was not, and the sixth playtest of #324 read it: the kill was `hull > 0` and
+the glass was `Math.round(hull)`, so a hull of 0.4 was alive and printed
+**`SHD F 22 A 22  HULL 0`**. The band was five frames wide at the pulse's rate,
+and the same rounding lied about the player's own hull. The law and the glass
+disagreeing is the report; the report was not a rendering bug.
+
+**Half the print step rather than one tick, deliberately.** A tick is
+`damagePerS × dt`, so a tick-shaped tolerance is frame-dependent, and #352 made
+the frame time adaptive. Half the print step reads no `dt`, and it is what makes
+the reading right rather than usually right: *a hull too small to print a digit
+is gone.* `tests/duel-hud.test.ts` holds it as a presentation row keyed on the
+print, the way the refusal tone is.
+
+**Below a quarter of its hull, a ship's bank buys no shields.** What stops is the
+bank's purchase of *shield* only: hull never recovers in a fight and the heat lock
+and the bank itself keep cooling and recharging on their own rules. The gate was the
+3 s delay and nothing else — time, not damage — so a raider at a third of a point
+of hull, unhit for the delay, was rebuilding shields at all, on both pools, in
+front of the fraction of hull left under it. The reported reading had **22 of 106**
+coming back on each pool while its hull was 0.33. **A quarter** is the principal's figure
+(20.25 of a raider's 81, 25 of a courier's 100). It is every ship's law, so the
+player's shields stop coming back at the same share.
+
+**It is not `FLEE_HULL_FRACTION` and does not share it.** That is the
+controller's nerve for when to run; this is the shield-recharge law, which says what a
+running ship can still recover. The two numbers happen to sit near each other, and one
+constant for both is a coupling neither of them asked for.
+
+**Out of the beam is out of the fight (#367).** A rout ends at the beam's own
+reach — `RAIDER_OUT_OF_BEAM_KM`, the hypotenuse of `PLAYER_LASER_RANGE_KM` and the
+raider's hit radius, so it cannot drift from the thing it is derived from. It
+used to end at a separate `FLED_KM` of 25 km while the beam stopped at 12, and
+because both ships are capped at the 2 km/s assist speed, the band between the
+two was a place a fight could live forever: the playtest raider held 12.34 km for
+two minutes, unhittable and unwilling to leave, its shields climbing two points a
+second. **The kill is not given away, and this node claims no arithmetic for it.** The
+ruling is the principal's: letting go of the throttle should not be what finishes a
+fight one is winning. One row measures the near case — a raider crippled six
+kilometres out, tracked at the cap and fired on, dies before it opens the gap. **No
+row measures a raider crippled near the beam's edge, and nothing here promises a
+pilot catches one.** What the ruling changes is the punishment rather than the
+reward: throttling back to hold a target in the sights no longer walks into a hang.
+
 ## 3. Interdiction and encounters
 
 Piracy appears through cruise interdictions, not arbitrary low-speed spawns around a docking approach. The initiator holds a heading lock through a brief charge; the target breaks it by changing heading to create angular separation. It is symmetric between player and NPC by rule — the player-initiated path is not built yet (#324) — and success drops both into normal flight. Cruise re-entry retains its existing spool-up and damage-cancellation rule.
@@ -78,6 +128,9 @@ builds until the principal has flown it. `docs/prototypes/relay-codex.md`
 carries the decisions taken to build it and what it measures.
 
 System law supplies the baseline danger, cargo value makes a route attractive, and combat rating chooses a fair encounter composition. Rating does not secretly change enemy stats or simply increase spawn frequency. Harder encounters are small role-based groups: interceptors pressure escape, strikers attack, and higher-risk groups may add a missile carrier or tougher leader. Ships break to recharge or flee when outmatched.
+
+**Out of the beam is out of the fight** is §2.2's routing rule, not a duel rule: the
+encounter, not `stepDuel`, decides it.
 
 ## 4. Consequences, reward, and law
 

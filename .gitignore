@@ -30,6 +30,5 @@ view-set/
 # Claude Code: the shared allowlist is tracked so a fresh worktree gets it;
 # per-machine preferences are not.
 .claude/settings.local.json
-
 # Swift Package Manager cache a tool leaves in a checkout (sage #368).
 .build/
