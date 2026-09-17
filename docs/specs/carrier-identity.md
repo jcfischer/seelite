@@ -34,6 +34,17 @@ owner rather than copying it**. §8 is the separate list of rules this spec make
 
 ## The state of the code this is written against
 
+> **A dated snapshot, kept as written, and this is the drift since it was
+> taken.** #364 built this contract, so four of the facts below are now history:
+> `legalStatus` is **`standing`** and typed `CarrierStanding | null`;
+> `station-traffic.ts` no longer composes the callsign (`carrier-name.ts`'s
+> `trafficRegistry` does, beside the draw); the knowledge row carries a scan
+> observation and a row may hold one with no condition observation at all; and
+> `WORLD_SCHEMA_VERSION` is 3, with no migration table (§9.6's ruling, §9.10's
+> precedent). The line numbers are the ones this spec read on the day it was
+> written. Do not "fix" them — a snapshot that is quietly rewritten stops being
+> evidence about what was known when.
+
 Verified on `main` at `2a80e14`, 2026-09-16. Four of these findings changed a
 decision rather than decorating it.
 

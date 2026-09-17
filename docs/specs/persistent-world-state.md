@@ -32,17 +32,26 @@ A recovery process gets a deterministic identity from its carrier key, causal-ep
 
 ### 3.1 Player knowledge
 
-> **Changed by `carrier-identity.md` (node #359), not yet implemented.** Its §5
-> adds a **scan** observation source alongside `docking`, `system-relay` and
-> `intervention`, and needs a row reachable for a Traffic actor that has no
-> condition observation — which today's required fields do not allow. Its §8
-> lists the change; the shape and any `WORLD_SCHEMA_VERSION` bump are the
-> implementation's to settle.
-
 Knowledge and physical condition are independent.
 
 - No knowledge row means **undiscovered**.
-- A knowledge row means **known** and stores the observed instance ordinal, observed operational condition, `observedAt`, and the observation or report source.
+- A knowledge row means **known**, and carries one or both of two observations.
+  A **condition observation** is the observed instance ordinal and the observed
+  operational condition; they describe one reading and travel together, so a row
+  that carries half of one is refused rather than repaired. A **scan
+  observation** (#364, `carrier-identity.md` §5) is `observedAt`, its source, and
+  the instance and voyage ordinals the reading was taken at. Alongside them the
+  row carries the row's own `observedAt` and source: its **last contact**, by
+  whichever channel wrote it last.
+- **A row may carry a scan and no condition at all**, which is what makes a
+  Traffic actor knowable: an ordinary carrier that has been scanned is known, and
+  nothing about the scan read its hull. Writing `operational` because a ship is
+  visibly flying would put knowledge on the galaxy map that no verb granted, so
+  the fields relaxed rather than a value being invented.
+- A `scan` observation **records no condition and no recovery snapshot**, and
+  never clears either: a carrier docked at in repair stays known to be in repair
+  however it is later scanned, and a scanned carrier that is then docked at keeps
+  its scan. Re-scanning replaces the scan observation; a row holds one of each.
 - When the observed condition is repairing, the row also snapshots `observedRecovery`: process identity, kind, consequence area, `startedAt`, and `completesAt`. It is last-known intelligence, not a live reference to the objective recovery descriptor.
 - Objective events outside the player's information channels do not update knowledge or `observedRecovery` automatically.
 - A player-caused explicit transition updates knowledge immediately. A lazily materialized completion changes objective condition only, even when the player initiated its recovery; the player knew the schedule, not its successful outcome. Otherwise a revisit, report, relay, or later explicit intelligence mechanic updates knowledge.
@@ -53,7 +62,16 @@ Knowledge and physical condition are independent.
   source. The black-market value itself remains generated baseline data: once
   the marker exists, the generated refinery flag supplies known-present or
   known-absent; without it, the fact is unchecked. The marker is invalid for a
-  non-refinery carrier.
+  non-refinery carrier. A row is legal with none of the three — a condition
+  observation, a scan, and a private-fact marker are independent members, and the
+  parser admits each one only when it is there, which is also what stopped an
+  empty private-facts container from being serialized with a member invented
+  inside it and then refused by its own reader.
+- The scan observation's **voyage ordinal may be Traffic's own "no flown voyage
+  yet" sentinel**, because that is what the verb was shown for a carrier that has
+  not departed, and `carrierManifest` is asked with the same value on the Flight
+  console. Storing what was read rather than a count that was not read is what
+  keeps the record and the console one answer.
 - A `system-relay` observation, received on initial world establishment and
   every later system entry, refreshes condition intelligence for every station
   in that system while preserving learned private-fact markers. A `docking`

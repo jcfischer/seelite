@@ -46,10 +46,14 @@ such as `station-trade/traffic-00`. The station-qualified ordinal is the actor's
 stable Carrier-slot identity; hull type, variant and callsign may all change in
 a future generator version without becoming persistence keys.
 
-> **Extended by `carrier-identity.md` (node #359), not yet implemented.** Its F3
-> puts a drawn proper name beside the callsign, so an actor carries both a name
-> and a registry. The rule above is unchanged: neither string is a persistence
-> key.
+> **Both strings are here since #364.** Every carrier now carries a **drawn
+> proper name** and the composed **registry** — F3's pair, so a bounty target is a
+> ship a pilot can remember and the registration number keeps saying where it
+> belongs. `carrier-name.ts` owns both halves: it draws the name from its own
+> `DOMAIN.CARRIER_NAME` stream and composes the registry the Traffic roster used
+> to compose itself. **The rule above is unchanged and is what the module is
+> built around**: neither string keys, saves or looks anything up, so a name
+> re-drawn by a later generator orphans no market memory.
 
 Traffic slots join `enumerateCarriers()` so exceptional objective condition can
 use the existing sparse world-state domains. Adding those generated carriers
@@ -174,8 +178,10 @@ restarting it.
 A Traffic actor's Carrier identity deterministically selects its hull variant
 without consuming a mutable generator stream. Its visible station-local
 callsign combines that model name, a station-role code and roster ordinal, for
-example `Kestrel TR-03`. The callsign is presentation; the Carrier key remains
-the persistence and arbitration identity.
+example `Kestrel TR-03` — composed by `carrier-name.ts`'s `trafficRegistry` since
+#364 gathered both display strings into one module, which is what stopped the
+roster and the raider path composing the same shape two ways. The callsign is
+presentation; the Carrier key remains the persistence and arbitration identity.
 
 Every materialized actor is a normal targetable `DisplayContact` carrying its
 actual pose, velocity and hull type. Routine hulls report `CIVILIAN`; Patrol

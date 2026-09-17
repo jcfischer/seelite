@@ -74,7 +74,8 @@ Verified on `main` at `295320a`, 2026-09-16.
 `carrierStanding` and `carrierManifest` are built here, because a kill cannot
 be judged, or its cargo canisters dropped, without them. The scan verb, the knowledge record, the
 Target panel's standing cell and the name draw get their own node beneath #359
-and do not block this one.
+and do not block this one. **That node is #364, and it has landed** — read the
+list above as a boundary this node kept, not as work still owed.
 
 The principal was offered this, a sibling node blocking this one, and this node
 building the whole of #359, and chose this.
@@ -384,5 +385,6 @@ Each is amended in the change that builds it, not ahead of it.
 
 This builds civilian combat and its legal consequence. It does not build police
 AI, faction simulation, bounty economics, the job catalogue, the scan verb or the
-name draw. It does not reopen the request contract, the law model, the combat
-model or `carrier-identity.md`'s F1–F12, the lootable manifest included.
+name draw — the last two are #364's, shipped beside this node's standing rather
+than inside it. It does not reopen the request contract, the law model, the
+combat model or `carrier-identity.md`'s F1–F12, the lootable manifest included.

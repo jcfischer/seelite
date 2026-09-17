@@ -68,19 +68,25 @@ target records therefore belong to the left Navigation panel.
 
 ## 3. Target and docking director
 
-> **Changed by `carrier-identity.md` (node #359), not yet implemented.** That
-> spec's §6 replaces this section's third designation cell with the target's
-> scanned standing and the age of the reading, and makes `UNKNOWN` mean
-> *unscanned* as well as *unclassified*. Its §8 lists the change; the rewrite of
-> the text below lands with the implementation.
+> **Standing is what the third cell reads since #364, and it carries the age of
+> the reading with it.** `carrier-identity.md` §6 owns that ruling and its
+> before-and-after table, and this section does not argue for it a second time;
+> what is described below is what the instrument does. The reading too wide for
+> this line is §5.4's.
 
 The right-hand cockpit Target instrument shows a designation between its title
 and target name/range: `STAR`, `PLANET`, `MOON`, `CARGO`, `STATION · <TYPE>`, or
-`SHIP · <HULL TYPE> · <SCANNER STATUS>`. The producer supplies a ship's type;
-it is never inferred from the display name. Unclassified review hulls show
-`UNKNOWN`, not a fabricated legal status. The designation updates on target or
-classification changes and leaves the separate ETA line in place (principal
-request during #198).
+`SHIP · <HULL TYPE> · <STANDING>`. The producer supplies a ship's type; it is
+never inferred from the display name. **Two axes share that last cell, and one
+of them wins it.** `scannerClass` answers *is this a pirate* and standing
+answers *is this wanted*, so a pirate reads `HOSTILE` whichever way its
+standing turns out, and every other ship reads the scan: `NO SCANNER` while the
+module is missing, `SCANNING <n>%` while a charge is running, the recorded
+standing once there is one, and `UNKNOWN` before any of it. Unclassified review
+hulls therefore show `UNKNOWN` for two reasons now — never classified, and
+never scanned — and neither is a fabricated legal status. The designation
+updates on target or classification changes and leaves the separate ETA line in
+place (principal request during #198).
 
 Its second line carries the ETA and the **relative speed** on the selected
 target, `REL <n> km/s`: the size of the velocity between ship and target, which
@@ -93,6 +99,21 @@ needed it. The other put the figure only in the left console's copy — an
 `.lc-panel`, `display: none` unless the pilot turns their head — so a scoop
 flown looking forward showed nothing at all (sage #353). A figure a pilot flies
 on belongs on an instrument that is in front of them.
+
+**The reading's age goes on the glass under that same rule (#364)**, beside the
+standing it qualifies: one unit, no words, `4m` rather than the record card's
+`1M 08S AGO`, because it is a staleness warning and not a stopwatch and the cell
+has a width to keep (`targetAgeLabel`). Standing rotates
+(`carrier-identity.md` F2), so a standing without its age is an hour-old answer
+shown as a fresh one — and this instrument, not the console's copy, is where a
+pilot decides what to do with it.
+
+**The name line carries a drawn name, for an ordinary carrier**
+(`carrier-identity.md` F3 and §1): `Kestrel TR-03` is a registration number, and
+a bounty worth hunting is a name a pilot can remember. The composed registry
+stays where *where it belongs* is read, on the console (§5.4), and everything
+that was never a Traffic actor — the review fleet, a raider, a relay, a body —
+is named exactly as it was.
 
 The on-glass director retains the selected target after Navigation chooses it.
 During target acquisition, an amber **target-circle arrow** rotates around the
@@ -429,6 +450,13 @@ edge of the hit sphere the two can disagree for one frame of relative motion.
 glass reads it. The block is shown under the same predicate as the glass row and
 hidden in peace, with an inline `display` rather than the `hidden` attribute,
 which loses to `.lc-readout`'s own `display`.
+
+**A second block sits beside it since #364, and it is not a duel's.** `NAME`,
+`REGISTRY`, `STANDING`, `HELD` and `READ`: the whole carrier reading, including
+the manifest this line has no room for, which is `carrier-identity.md` §6's
+reason the console and not the glass carries it. It stands for any carrier the
+scan can answer for, scanned or not — F8's `UNKNOWN` is a reading — and follows
+the inline-`display` rule above for the reason above it.
 
 **The cue and the tracer follow the gimballed beam** (`combat-model.md` §2.1).
 The ON TARGET mark tests the beam's direction, not the boresight. The tracer

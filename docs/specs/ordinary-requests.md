@@ -169,8 +169,11 @@ comment that legal vocabulary belongs to the combat node, and
 `TrafficActor` carries a `callsign` and raiders have `raiderName`, so the work
 is unifying two schemes rather than inventing one.
 
-What does **not** exist: any scan verb. The shipped scanner is a passive
-display.
+What did **not** exist when this was decided: any scan verb. The shipped scanner
+was a passive display. **#364 has since built the verb this section deferred** —
+its range, charge and equipment cost are owned by `carrier-scan.ts`, and the
+record it writes by `carrier-identity.md` §5 — which retires the diagnosis and
+leaves the decision standing: the verb landed in its own node, not here.
 
 ### D11 — Carrier identity and the scan are their own node
 
