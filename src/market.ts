@@ -445,8 +445,11 @@ export const DISPLAY_TL_MAX = 15;
  * `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` = 0.315, on the argument that the
  * cut must exceed the deepest mark §5.2's memory can move a price, since §12's
  * round trip harvests exactly that swing. The argument was sound and the figure
- * is still right — `tests/market.test.ts` §5.6 sweeps the ladder and no cut
- * below 0.315 leaves *every* cycle a loss.
+ * is still right: the closure ladder in `scripts/measure-greedy-trader.ts` bisects
+ * for the smallest cut with no profitable *tonnage* cycle and lands between 0.2 and
+ * 0.315, and the row in `tests/market.test.ts` §5.6 that pins the 0.315 swing is
+ * what makes that ladder falsifiable — the mark is a derived quantity, not a
+ * constant, so a law that named it here would be the third copy §5.6 forbids.
  *
  * **And 0.315 is not shippable, which is #196's finding.** The §5.6 section of
  * `scripts/measure-greedy-trader.ts` runs the honest trade loop — a trader that
@@ -465,8 +468,9 @@ export const DISPLAY_TL_MAX = 15;
  * `PRICE_ELASTICITY × (holdT / holdT)` — that is, `PRICE_ELASTICITY`, exact at
  * every hull in the roster, because no trade can move the deficit by more than
  * the hold it was made in. A round trip at one console in Food, Textiles or
- * Machines, goods whose units *are* tonnes, is then a loss at any station, any
- * hull, in either order. `tests/market.test.ts` §5.6 counts those rows and
+ * Machines, goods whose units *are* tonnes, is then never a profit at any station,
+ * any hull, in either order — a loss away from the rim, and exactly nothing at it,
+ * which is what "no profitable cycle" means to the ladder. `tests/market.test.ts` §5.6 counts those rows and
  * `tests/station-commerce.test.ts` §5.6 walks the tonnage roster through the
  * shipped calculator, so the claim is the till's and not the comment's.
  *
@@ -496,10 +500,17 @@ export const BID_CUT_FLOOR = PRICE_ELASTICITY;
  * the mean, so the two tables hold the same multiset of cuts in the other order
  * and a difference between them is the direction rather than the level.
  *
- * **The direction held at every mean the sweep ran, 0.10 through 0.20, and the
- * figures belong to that report rather than to this comment.** They moved twice
- * while the law was being settled, and a table pasted here is a second copy
- * bought to age. What survives a rerun is the shape, and the shape is:
+ * **Both predictions in #191 D4 were tested, and only one of them held.** The
+ * sweep runs matched-mean pairs at 0.10, 0.15, 0.20 and 0.30; the figures belong to
+ * that report, which reprints them beside a fresh run, and they moved twice while
+ * the law was being settled — a table pasted here is a second copy bought to age.
+ * What is stable enough to state is the *shape* and the two verdicts, and one of
+ * those verdicts is a refutation: #191 D4 worried that shipping a spread wide at
+ * high tech level hands a new commander at the frontier the worst rates in the
+ * game, and the sweep says the opposite. The shipped arm is the faster one in
+ * every matched pair, and it is the *other* arm whose traders stop finding a
+ * profitable hop at all. The route-mix prediction — that dear-at-the-rim pulls
+ * trade core-ward — held in every pair. §10.3 and §5.6 carry both readings.
  *
  * Radius is the generator's normalised galactic distance, averaged over the
  * systems a trader docked at, so 0 is the core and 1 the rim: narrow-at-the-rim
@@ -568,33 +579,7 @@ export const bidCutAtTl = (displayTL: number): number =>
 		((requireDisplayTl(displayTL) - DISPLAY_TL_MIN) /
 			(DISPLAY_TL_MAX - DISPLAY_TL_MIN));
 
-/**
- * The two prices one market quotes for one good, and the only place the spread
- * is applied.
- *
- * **The ask is the mid, unchanged.** That asymmetry is #191 D1 read as it was
- * written — *a station buys lower than it sells* — and it is also the cheapest
- * closure available, because a round trip crosses the wedge once whichever end it
- * starts at and so pays the *sum* of the two sides. Measured in
- * `scripts/measure-greedy-trader.ts` §5.6: a cut of 0.100 on the bid alone closes
- * every tonnage round trip at one console, while splitting the same closure needs
- * 0.053 a side — a total wedge of 0.105 — and buys the extra half-point by taking
- * money out of what the player *pays*, which #191 D1 declined to do. Keeping
- * `buyCr === midCr` is also what lets §3's floor and M6's delta arrow keep
- * describing a price the player is actually charged, rather than a mid nobody
- * trades at.
- *
- * **Floored after the cut, not before.** §3's floor is a rule about the price a
- * player pays, and the cut changes that price; a row the floor already pins at
- * one price step cannot be cut further. That erasure is real and counted —
- * `tests/market.test.ts` pins how many domain rows lose their cut to it, and
- * that none of them still carries a pump, because the floor swallows the
- * deficit's mark on the way through `stockResponse` too.
- *
- * **Injectable at both call sites for one reason**: #7's no-wedge law was
- * ratified and has to stay runnable to be measurable, the way `BELL_WRAP` and
- * `fixedReferenceResponse` are. The game never passes anything but this.
- */
+/** The two figures one market quotes for one good, one per end of the wedge. */
 export interface MarketQuote {
 	/** What the commander pays this station for one unit. */
 	buyCr: number;
@@ -604,18 +589,6 @@ export interface MarketQuote {
 
 export type QuoteFn = (midCr: number, displayTL: number) => MarketQuote;
 
-/**
- * The one place the wedge's shape is written, so an arm of a sweep is a *cut
- * schedule* rather than a second implementation of the quote.
- *
- * Every alternative in `scripts/measure-greedy-trader.ts` — flat, graded either
- * way, one-sided against split — goes through here, because an arm that re-types
- * `Math.max(PRICE_STEP_CR, mid * (1 - cut))` can differ from the shipped law in
- * anything except the dial its name advertises, and then a report is comparing two
- * implementations rather than two spreads. The split wedge is the one shape this
- * factory cannot express, since it moves the *ask* too; it is `quoteSplitting`,
- * and the report guards both against `marketQuote` before printing.
- */
 /**
  * The precision a quote is expressed in: **one tenth of a credit**, because that is
  * the finest figure the console can print.
@@ -644,6 +617,17 @@ export const quantizeToDisplayStepCr = (cr: number): number => {
 };
 
 /**
+ * The one place the wedge's shape is written, so an arm of a sweep is a *cut
+ * schedule* rather than a second implementation of the quote.
+ *
+ * Every alternative in `scripts/measure-greedy-trader.ts` — flat, graded either
+ * way, one-sided against split — goes through here, because an arm that re-types
+ * `Math.max(PRICE_STEP_CR, mid * (1 - cut))` can differ from the shipped law in
+ * anything except the dial its name advertises, and then a report is comparing two
+ * implementations rather than two spreads. The split wedge is the one shape this
+ * factory cannot express, since it moves the *ask* too; it is `quoteSplitting`,
+ * and the report guards both against `marketQuote` before printing.
+ *
  * @param quantize Turn the tenth-credit quote step off, which only an instrument
  *   has a reason to do: `tests/helpers/console-cycle.ts` needs to tell a cycle the
  *   law closed apart from a cycle the *rounding* closed, and it cannot do that with
@@ -662,7 +646,33 @@ export const quoteWithCut = (
 	});
 };
 
-/** The shipped law: ask at the mid, bid cut by `bidCutAtTl`. */
+/**
+ * The shipped law: ask at the mid, bid cut by `bidCutAtTl`, and the only place
+ * the spread is applied.
+ *
+ * **The ask is the mid, unchanged.** That asymmetry is #191 D1 read as it was
+ * written — *a station buys lower than it sells* — and it is also the cheapest
+ * closure available, because a round trip crosses the wedge once whichever end it
+ * starts at and so pays the *sum* of the two sides. Measured in
+ * `scripts/measure-greedy-trader.ts` §5.6: a cut of 0.100 on the bid alone closes
+ * every tonnage round trip at one console, while splitting the same closure needs
+ * 0.053 a side — a total wedge of 0.105 — and buys the extra half-point by taking
+ * money out of what the player *pays*, which #191 D1 declined to do. Keeping
+ * `buyCr === midCr` is also what lets §3's floor and M6's delta arrow keep
+ * describing a price the player is actually charged, rather than a mid nobody
+ * trades at.
+ *
+ * **Floored after the cut, not before.** §3's floor is a rule about the price a
+ * player pays, and the cut changes that price; a row the floor already pins at
+ * one price step cannot be cut further. That erasure is real and counted —
+ * `tests/market.test.ts` pins how many domain rows lose their cut to it, and
+ * that none of them still carries a pump, because the floor swallows the
+ * deficit's mark on the way through `stockResponse` too.
+ *
+ * **Injectable at both call sites for one reason**: #7's no-wedge law was
+ * ratified and has to stay runnable to be measurable, the way `BELL_WRAP` and
+ * `fixedReferenceResponse` are. The game never passes anything but this.
+ */
 export const marketQuote: QuoteFn = quoteWithCut(bidCutAtTl);
 
 // ---------------------------------------------------------------------------

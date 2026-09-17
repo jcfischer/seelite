@@ -1,4 +1,4 @@
-import { PRICE_STEP_CR, bidCutAtTl } from "./market";
+import { PRICE_STEP_CR } from "./market";
 
 /**
  * The spread's law, put somewhere a browser probe can read it.
@@ -26,8 +26,8 @@ export const exposeMarketLaw = (): void => {
 	// would be a cast that asserts the thing the function exists to do.
 	const host = window as unknown as { __seelite?: Record<string, unknown> };
 	host.__seelite ??= {};
-	host.__seelite.marketLaw = {
-		priceStepCr: PRICE_STEP_CR,
-		bidCutAtTl,
-	};
+	// Only the step. `bidCutAtTl` was here for a check that turned out not to need it,
+	// and a page handle is surface: every entry on it is something a later probe can
+	// lean on and a later change has to keep.
+	host.__seelite.marketLaw = { priceStepCr: PRICE_STEP_CR };
 };

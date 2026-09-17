@@ -957,25 +957,25 @@ tables hold the same multiset of cuts in the other order and any difference is t
 direction rather than the level — against a flat spread at the same mean:
 
 ```
-  arm                kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
-  no wedge (control) 52-82 min          291-430    25/59/16                  0.595
-  flat 0.10          56-92 min          228-351    33/56/11                  0.631
-  narrow at rim 0.10 47-72 min          309-425    50/42/8                   0.694
-  wide at rim 0.10   70-96 min          225-308    31/57/13                  0.612
-  flat 0.15          62-93 min          214-318    38/51/11                  0.658
-  narrow at rim 0.15 47-86 min          235-518    55/36/9                   0.735
-  wide at rim 0.15   68-119 min         163-286    19/63/18                  0.585
-  flat 0.20          68-88 min          222-289    29/47/24                  0.537
-  narrow at rim 0.20 50-96 min          200-681    88/12/0                   0.911
-  wide at rim 0.20   2/4 in cap         8-242      15/39/47                  0.465  stalled 2/4
-  flat 0.30          1/4 in cap         0-198      26/52/22                  0.539  stalled 2/4
-  narrow at rim 0.30 63-127 min         325-691    93/7/0                    0.922
-  wide at rim 0.30   1/4 in cap         0-174      1/53/46                   0.509  stalled 2/4
-  shipped table      51-103 min         206-399    42/47/11                  0.676
+  arm                    kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
+  no wedge (control)       52-82 min          291-430    25/59/16                  0.595
+  flat 0.10                56-92 min          228-351    33/56/11                  0.631
+  wide at high TL 0.10     47-72 min          309-425    50/42/8                   0.694
+  narrow at high TL 0.10   70-96 min          225-308    31/57/13                  0.612
+  flat 0.15                62-93 min          214-318    38/51/11                  0.658
+  wide at high TL 0.15     47-86 min          235-518    55/36/9                   0.735
+  narrow at high TL 0.15   68-119 min         163-286    19/63/18                  0.585
+  flat 0.20                68-88 min          222-289    29/47/24                  0.537
+  wide at high TL 0.20     50-96 min          200-681    88/12/0                   0.911
+  narrow at high TL 0.20   2/4 in cap         8-242      15/39/47                  0.465   stalled 2/4
+  flat 0.30                1/4 in cap         0-198      26/52/22                  0.539   stalled 2/4
+  wide at high TL 0.30     63-127 min         325-691    93/7/0                    0.922
+  narrow at high TL 0.30   1/4 in cap         0-174      1/53/46                   0.509   stalled 2/4
+  shipped table            51-103 min         206-399    42/47/11                  0.676
 ```
 
 Four galaxies per arm, so the range is four draws and not one sample; the
-instrument prints them per galaxy as well (`kit by galaxy (narrow/wide)`), because
+instrument prints them per galaxy as well (`kit by galaxy (narrow / SHIPPED)`), because
 a range over four sessions is exactly the figure that hides one stalled session
 inside a healthy-looking span. The rung each pair is matched at is printed beside
 it as a guard — `mean cut of the graded table at this rung` against the target —
@@ -983,17 +983,26 @@ and reaches the target to four digits only because the ladder's endpoints sit on
 the constants; at the old `+1` offset the graded table's mean was 1/15 of a cut
 above the flat arm it was being compared to.
 
-`narrow at rim` *is* wide-at-high-TL, the arm that shipped; radius is the
-generator's normalised galactic distance averaged over the systems a trader
-docked at, so 0 is the core and 1 the rim. **Both of #196's predictions held**,
-which is not what an earlier run of this instrument reported. The route-mix
-prediction held: narrow-at-high-TL pulls trade inward (mean dock radius 0.612 →
-0.509 as the level rises, and at 0.30 **46% of its docks land in the TL 11-15
-band**), while the shipped direction pushes it outward (0.694 → 0.922, with 93% of
-docks in TL 1-5 by the widest rung). **And the rate prediction held too**, against
-the first reading: the shipped arm is the faster one in every matched pair (309-425
-against 225-308 Cr/min at the narrowest rung), and at the widest two levels it is
-the *wide* arm that stalls, 2 of 4 sessions each against the shipped arm's none.
+**Say which arm is which before reading the verdicts.** A table that is cheap at the
+rim and dear in the core *is* wide at high tech level, and the two phrasings crossed
+once in this node's prose — which is why the instrument now names its arms
+`wide at high TL (shipped)` and `narrow at high TL` instead of by where they happen
+to be thin. Radius is the generator's normalised galactic distance averaged over the
+systems a trader docked at, so 0 is the core and 1 the rim.
+
+**#191 D4 made two predictions and only one of them survived.** The route-mix one
+held: dear-at-the-rim — narrow-at-high-TL, the arm that did *not* ship — pulls trade
+inward, mean dock radius 0.612 → 0.509 as the level rises, with **46% of its docks
+landing in the TL 11-15 band at the widest rung**, while the shipped direction pushes
+it outward (0.694 → 0.922, 93% of docks in TL 1-5 by the widest rung). **The rate
+prediction did not hold, and that is the finding that matters for the choice.** D4
+worried that a spread wide at high tech level hands a new commander — who starts
+somewhere developed, at the rim — the worst rates in the game. The sweep says the
+opposite: the shipped arm is the faster one in every matched pair (309-425 against
+225-308 Cr/min at the narrowest rung), and at the two widest levels it is the *other*
+arm that stalls, 2 of 4 sessions each against the shipped arm's none. The concern
+that kept the direction open in D4 is refuted by the arm that shipped, not answered
+by it.
 
 **That reversal was the instrument's arithmetic, not the world's.** The first
 version of this sweep compared a graded table against a flat one at the same
@@ -1448,9 +1457,11 @@ stale again before this node arrived** — the file ran 42 on `main` while this
 heading said 38 — and #196 takes it to **53**, eleven rows in §5.6: the two dials
 re-derived from the response rather than quoted, the swing the floor does not
 reach, the domain's two ends, the ask's identity, the erased rows flown for a
-pump, and the quote's own precision. Eleven rows joined `station-commerce.test.ts`
-(13 → 22 on `main`) and four `station-console.test.ts` (21 → 25), which this heading
-has never counted; §10.3 says what they are for.
+pump, and the quote's own precision. Nine rows joined `station-commerce.test.ts`
+(13 → 22 on `main`) and three `station-console.test.ts` (21 → 24), which this heading
+has never counted; §10.3 says what they are for. The arithmetic is stated because
+this heading got it wrong the first time — it said eleven where the file gained nine,
+and a count that does not add up is the same third-copy drift in a new place.
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -1722,12 +1733,16 @@ the game is a function of those integers and renumbering one moves every
 position, name and station silently.
 
 **#196 delivered §5.6, and what it went looking for came back twice: once wrong,
-and once right for a reason worth keeping.** The brief predicted that
-narrow-at-high-TL would reinforce a core-ward pull and that the wide arm would show
-a new player the worst rates. **Both halves held** — the shipped arm reaches a mean
-dock radius of 0.922 against the wide arm's 0.509 and is the faster of each matched
-pair (309-425 Cr/min against 225-308 at the narrowest rung), and at the two widest
-rungs it is the *wide* arm that stalls, 2 of 4 sessions each.
+and once as a refutation.** The brief predicted that dear-at-the-rim would reinforce
+a core-ward pull, and that the arm shipping wide at high tech level would show a new
+commander at the rim the worst rates in the game. **Only the first half held.** The
+route-mix prediction is there in the sweep (§10.3): the arm that did not ship pulls
+trade inward as its level rises, 0.612 → 0.509 mean dock radius, while the shipped
+arm pushes outward to 0.922. **The rate prediction was refuted, and by the arm that
+shipped** — it is the faster of every matched pair (309-425 Cr/min against 225-308 at
+the narrowest rung), and at the two widest rungs it is the *other* arm that stalls,
+2 of 4 sessions each. What D4 left open out of caution is closed by measurement, not
+by a judgment call in the same direction.
 
 **But the first run of that sweep reported the opposite on the rate half**, and the
 reason was in the instrument rather than the world: the two graded arms were
@@ -2005,6 +2020,14 @@ settled it.
     cut shipped at the tonnage closure, 0.10, and this joint now carries a surviving
     pump rather than only an asymmetry: 12,073 profitable cycles in the corpus,
     1,064.70 Cr on the binding one. That reframes what re-anchoring it would buy. It
-    is not tidiness and it is not #182's D6 revisited for its own sake; it is the one
-    lever in the economy that closes the metals cycle without paying for it in trade,
-    because the cycle's size *is* this unit error. §11 opened the node.
+    is not tidiness and it is not #182's D6 revisited for its own sake; on this node's
+    reading it is the *cheapest* lever that could close the metals cycle, because the
+    cycle's size *is* this unit error rather than a price the spread is badly set on.
+    **That is an argument, not a measurement, and it is stated as one because
+    nothing in this PR measures the alternative.** No arm here re-anchors the deficit
+    unit and re-runs the corpus, and #182's D6, which the paragraph above cites,
+    recorded what re-anchoring costs: it re-opens §5.4's farm calibration. So the
+    claim this node is entitled to is the ordering — a cut that closes metals costs
+    §8's time-to-kit, and a unit change costs a recalibration whose size is not
+    known — not a proven saving. The node §11 opened owes that measurement before it
+    ships anything.

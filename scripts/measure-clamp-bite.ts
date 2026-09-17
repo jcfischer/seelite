@@ -42,7 +42,7 @@
  * swallows the deficit's mark on the way through `stockResponse` — the row in
  * `tests/market.test.ts` §5.6 flies that on every row of the whole table and finds
  * no pump surviving on an erased row. And the realized rate agrees with the
- * whole-table rate the test pins (0.54% of 1,566,720 cells against 0.5% of these
+ * whole-table rate the test pins (0.56% of 1,566,720 (8,760 cells) cells against 0.5% of these
  * 1.8M rows), from two populations that share only the mechanism.
  *
  *   bun run scripts/measure-clamp-bite.ts [worldCount]
@@ -174,24 +174,28 @@ interface SpreadAcc {
 	spreadSum: number;
 }
 
+/** The one place an empty bucket is written. `SpreadAcc` has four dials; a literal
+ *  copied into two places is the drift the comment below warns about. */
+const emptyAcc = (): SpreadAcc => ({
+	rows: 0,
+	spreadless: 0,
+	pinnedAtStep: 0,
+	spreadSum: 0,
+});
+
 const cutByTl = new Map<number, SpreadAcc>();
 const cutByType = new Map<string, SpreadAcc>();
 /** The grand totals, as the same accumulator the buckets use. Three scalars here
  *  re-implemented the bucket update one field at a time, which is how a total and
  *  its buckets stop agreeing: add a fourth dial to `SpreadAcc` and the totals go
  *  quietly missing rather than loudly wrong. */
-const cutTotal: SpreadAcc = {
-	rows: 0,
-	spreadless: 0,
-	pinnedAtStep: 0,
-	spreadSum: 0,
-};
+const cutTotal: SpreadAcc = emptyAcc();
 // Generic over the key, because the two tables are keyed by TL and by station type
 // and the old signature took `number | string` and cast the key back on the way in.
 const accFor = <K>(table: Map<K, SpreadAcc>, key: K): SpreadAcc => {
 	let acc = table.get(key);
 	if (!acc) {
-		acc = { rows: 0, spreadless: 0, pinnedAtStep: 0, spreadSum: 0 };
+		acc = emptyAcc();
 		table.set(key, acc);
 	}
 	return acc;

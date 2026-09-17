@@ -619,36 +619,8 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 			}
 	});
 
-	test("the screen and the till agree on both columns, at every tech level", () => {
-		// **The pair #193 was about.** The screen's quote and the figure the till
-		// charges are one function called with one set of arguments; this is the
-		// row that goes red if either side grows its own arithmetic.
-		for (const displayTL of [DISPLAY_TL_MIN, 8, DISPLAY_TL_MAX]) {
-			const commander = {
-				...newCommander(PLAYER_BASELINE_HULL),
-				credits: 1_000,
-				cargo: { Food: 5 },
-			};
-			const sold = transactAtStation({
-				commander,
-				deficits: {},
-				station: TRADE,
-				stationKey: carrierKey(0, "station-trade"),
-				economy: ECONOMY,
-				gameTimeMin: 0,
-				displayTL,
-				action: { type: "sell-commodity", commodity: "Food" },
-			});
-			expect(sold.accepted).toBe(true);
-			// The *delta* is the printed column, not the balance, and the precision
-			// is what a subtraction off a capital leaves: the till arrives at 3.51 by
-			// subtracting from 1,000 Cr and the screen by multiplying, and those two
-			// routes differ in the eleventh digit. A tighter pin here would be a pin
-			// on IEEE-754, and a looser one would let a real drift through.
-			expect(sold.commander.credits - commander.credits).toBeCloseTo(
-				rowAt("Food", displayTL).sellCr as number,
-				9,
-			);
-		}
-	});
+	// The screen-vs-till contract is held in `station-commerce.test.ts` §5.6, at the
+	// console where the deficit and the printed label are checked beside the till. It
+	// lived here too, as a second copy of the same three-tech-level round trip, and a
+	// change to that contract meant editing two files.
 });

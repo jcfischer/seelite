@@ -330,34 +330,52 @@ const quoteSplitting =
  * otherwise the report's "shipped" row could quietly be a re-implementation,
  * which is §4's scope note's whole objection to an instrument with its own rules.
  */
+/**
+ * The cut an arm of this family states it applies, from its own two dials: `base` at
+ * the rim, `+grade` at the core, or the mirror when `wideAtHighTl`.
+ *
+ * **One copy of the offset, on purpose.** Three things used to hold it — `bidCutAtTl`,
+ * `spreadArm`'s inner `position`, and a `ladderCut` written for the guard — and a guard
+ * that compares one copy of a formula against a second copy of the same formula proves
+ * only that the copies agree. What the guard checks now is the shipped table against
+ * the law, which are two real implementations.
+ */
+const ladderCut =
+	(base: number, grade: number, wideAtHighTl: boolean) =>
+	(tl: number): number =>
+		base +
+		grade *
+			((wideAtHighTl ? DISPLAY_TL_MAX - tl : tl - DISPLAY_TL_MIN) /
+				(TL_SPAN - 1));
+
+/**
+ * The shipped law's shape with two dials, built through the same `quoteWithCut` the
+ * game uses, so an arm cannot have a different quote step from the law it is flown
+ * against.
+ *
+ * The shipped table is `spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false)`, and the row
+ * below checks exactly that against `bidCutAtTl` before any arm is flown — otherwise
+ * the report's "shipped" row could quietly be a re-implementation, which is §4's scope
+ * note's whole objection to an instrument with its own rules.
+ */
 const spreadArm = (
 	base: number,
 	grade: number,
-	wideAtRim: boolean,
-): QuoteFn => {
-	// The same offset `bidCutAtTl` uses — 0 at the rim, 1 at the core — because the
-	// "shipped" row below has to *be* the shipped table, and the guard under this
-	// function is what says whether it is. It used to be one-based over the span,
-	// which is what left `BID_CUT_FLOOR` naming a cut no market pays; the mirror
-	// takes the complementary offset, which is the same multiset of cuts in the
-	// other order, so a difference between the two rows is the direction and not the
-	// level.
-	const position = (tl: number) =>
-		(wideAtRim ? DISPLAY_TL_MAX - tl : tl - DISPLAY_TL_MIN) / (TL_SPAN - 1);
-	return quoteWithCut((tl) => base + grade * position(tl));
-};
+	wideAtHighTl: boolean,
+): QuoteFn => quoteWithCut(ladderCut(base, grade, wideAtHighTl));
 
 /**
- * Every arm this report flies, checked against the figure it claims to be, and the
- * run stops on a mismatch.
+ * The arm names, spelled the way the *decision* is phrased.
  *
- * The first version checked the shipped arm only and printed a *warning* before the
- * rows anyway, so "both arms are guarded" described a guard that let an unguarded
- * arm through and then published its output. An instrument whose arms silently stop
- * agreeing with the law is worse than none: the rows keep looking like measurements.
- * `MID_PROBE` sits well above §3's floor so a mismatch is about the wedge and not
- * about a row the floor pins at one price step either way.
+ * "Narrow at rim" and "wide at rim" describe where the table is thin, which is the
+ * inverse of the #191 D4 question — "does the spread widen or narrow with tech level" —
+ * and the two phrasings got crossed in prose this node shipped once already. A spread
+ * that is cheap at the rim and dear in the core is **wide at high TL**, and that is the
+ * arm the game ships.
  */
+const SHIPPED_ARM = "wide at high TL (shipped)";
+const OPPOSING_ARM = "narrow at high TL";
+
 const MID_PROBE = 100;
 /**
  * The three expectations one arm has to meet at one tech level: the two columns it
@@ -393,13 +411,6 @@ const bidArmFactors = (cut: (tl: number) => number) => (tl: number) => ({
 	buy: 1,
 	sell: 1 - cut(tl),
 });
-/** The cut an arm of this family *states* it applies, from its own two dials. */
-const ladderCut =
-	(base: number, grade: number, wideAtRim: boolean) =>
-	(tl: number): number =>
-		base +
-		grade *
-			((wideAtRim ? DISPLAY_TL_MAX - tl : tl - DISPLAY_TL_MIN) / (TL_SPAN - 1));
 const assertFlownArms = () => {
 	assertArm("shipped law", marketQuote, bidArmFactors(bidCutAtTl));
 	// The narrow arm twice over: once against the parameters it was built from, which
@@ -407,26 +418,27 @@ const assertFlownArms = () => {
 	// what makes the report's "shipped" row the shipped table rather than a close
 	// relative of it.
 	assertArm(
-		"narrow at rim",
+		SHIPPED_ARM,
 		spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false),
 		bidArmFactors(ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)),
 	);
-	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
-		if (
-			Math.abs(
-				ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)(tl) - bidCutAtTl(tl),
-			) > 1e-12
-		)
-			throw new Error(
-				`the report's narrow arm is not the shipped law at TL ${tl}: ` +
-					`${ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)(tl).toFixed(6)} ` +
-					`against ${bidCutAtTl(tl).toFixed(6)}`,
-			);
+	{
+		const shippedLadder = ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false);
+		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+			const viaLadder = shippedLadder(tl);
+			const viaLaw = bidCutAtTl(tl);
+			if (Math.abs(viaLadder - viaLaw) > 1e-12)
+				throw new Error(
+					`the report's ${SHIPPED_ARM} arm is not the shipped law at TL ${tl}: ` +
+						`${viaLadder.toFixed(6)} against ${viaLaw.toFixed(6)}`,
+				);
+		}
+	}
 	// The mirrored arm, checked against its own stated dials. Graded rungs scale the
 	// mirror by their own mean; `routeRow` checks each one as it is flown, since a
 	// check at the shipped depth cannot cover a dial the loop turns later.
 	assertArm(
-		"wide at rim",
+		OPPOSING_ARM,
 		spreadArm(0, BID_CUT_GRADE, true),
 		bidArmFactors(ladderCut(0, BID_CUT_GRADE, true)),
 	);
@@ -489,6 +501,10 @@ console.log(
 		`the tenth-credit quote step (best ` +
 		`${shippedSurvey.zeroOffFloor.rescuedByRounding.worstCr.toFixed(2)} Cr).`,
 );
+// The rows behind that count, a few of them. A number said in the abstract is a
+// number nobody can check; these are the cycles a reader can go and fly.
+for (const row of shippedSurvey.zeroOffFloor.rescuedByRounding.rows.slice(0, 3))
+	console.log(`      ${row}`);
 
 /**
  * The smallest cut with no profitable tonnage cycle, by bisection.
@@ -573,7 +589,7 @@ const armStats = (quote: QuoteFn) => {
 	// **One entry per galaxy, including the galaxies that never got there.** A
 	// previous revision dropped the nulls and let the printer index by galaxy, so on
 	// exactly the stalled rungs this table exists to show, every later galaxy's figure
-	// moved one slot left and the dash landed on the wrong session.
+	// moved one place left and the dash landed on the wrong session.
 	const kits = milestone.map((r) => r.kitAffordableAtMinutes);
 	const achieved = kits.filter((k): k is number => k !== null);
 	const rates = rateRuns.map((r) => r.earnedCr / Math.max(r.minutes, 1e-9));
@@ -621,7 +637,7 @@ const formatArmStats = (s: ArmStats): string =>
 /** The direction table's printer: the arm's name, then everything measured. */
 const routeRow = (name: string, quote: QuoteFn): ArmStats => {
 	const s = armStats(quote);
-	console.log(`  ${name}`.padEnd(21) + formatArmStats(s));
+	console.log(`  ${name}`.padEnd(27) + formatArmStats(s));
 	return s;
 };
 routeRow("no wedge (control)", NO_WEDGE);
@@ -659,22 +675,22 @@ for (const mean of [0.1, 0.15, 0.2, 0.3]) {
 	// print, so "the arms it flies are checked" is true of every row in this table and
 	// not only of the shipped one.
 	assertArm(
-		`narrow at rim ${mean.toFixed(2)}`,
+		`wide at high TL ${mean.toFixed(2)}`,
 		spreadArm(0, gradeAt(mean), false),
 		bidArmFactors(ladderCut(0, gradeAt(mean), false)),
 	);
 	assertArm(
-		`wide at rim ${mean.toFixed(2)}`,
+		`narrow at high TL ${mean.toFixed(2)}`,
 		spreadArm(0, gradeAt(mean), true),
 		bidArmFactors(ladderCut(0, gradeAt(mean), true)),
 	);
 	routeRow(`flat ${mean.toFixed(2)}`, uniformCut(mean));
 	const narrow = routeRow(
-		`narrow at rim ${mean.toFixed(2)}`,
+		`wide at high TL ${mean.toFixed(2)}`,
 		spreadArm(0, gradeAt(mean), false),
 	);
 	const wide = routeRow(
-		`wide at rim ${mean.toFixed(2)}`,
+		`narrow at high TL ${mean.toFixed(2)}`,
 		spreadArm(0, gradeAt(mean), true),
 	);
 	PAIRS.push([mean, narrow, wide]);

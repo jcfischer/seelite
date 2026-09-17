@@ -317,21 +317,12 @@ export interface WorstCycle extends CycleOutcome {
 }
 
 /**
- * What the zeros off §3's price floor turn out to be when each one is walked.
- *
- * Three readings, because there are three reasons a cycle can net nothing and only
- * one of them is a hole in the law:
- *
- * - **`tonnageAtRim`** is the wash §5.6's floor is *supposed* to leave. At
- *   `DISPLAY_TL_MIN` the cut equals the mark one full hold of tonnage moves a
- *   price, so the second leg costs exactly what the first earned. That is closed in
- *   the only sense the node asked for — nothing nets a credit — and it is a
- *   consequence of the rim sitting on the mark, not an escape from it.
- * - **`crossings`** are rows where the cut and the mark cancel at one tech level
- *   and one only: the neighbour below profits, the neighbour above loses.
- * - **`unexplained`** is everything else, and it is the figure a test asserts is
- *   zero. `tonnageElsewhere` is the same alarm stated the other way: a *tonnage*
- *   zero away from the rim would mean the closure stopped holding.
+ * **Every zero off §3's price floor, sorted by what closed it.** Each one is flown a
+ * second time with the tenth-credit quote step taken off, which is the only reading
+ * that separates a zero the law leaves from a zero the display precision leaves. The
+ * three fields below are that reading; an earlier version of this interface sorted by
+ * whether the two legs printed the same figure and by whether the good was a tonne
+ * good, and left 279 rows it could not explain.
  */
 export interface ZeroWalk {
 	count: number;
