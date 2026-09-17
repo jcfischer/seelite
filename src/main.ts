@@ -179,6 +179,7 @@ import {
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
+	pointerLockMove,
 } from "./pad-bindings";
 import type { PerfPanelHandle } from "./perf-panel";
 import type { SettingsPanelHandle } from "./settings-panel";
@@ -3391,13 +3392,40 @@ class Game {
 		// and the only way to get relative mouse deltas that do not stop at the
 		// edge of the window. Keyboard steering stays live throughout, so a
 		// player who never clicks can still fly.
+		//
+		// **And only where the mouse flies the ship** (#371): `pointerLockMove`'s
+		// answer, asked of the surface read afresh rather than through the cached
+		// one, because a click can land in the same frame that drew the console it
+		// was aimed at and the cached answer is the frame's.
 		this.renderer.domElement.addEventListener("click", () => {
-			if (document.pointerLockElement !== this.renderer.domElement) {
-				this.renderer.domElement.requestPointerLock();
-			}
+			const consoleDrawn = this.consoleIsDrawn();
+			if (
+				pointerLockMove(
+					this.readPadContext(consoleDrawn),
+					consoleDrawn,
+					this.canvasHoldsLock(),
+				) !== "capture"
+			)
+				return;
+			// **A refusal is read, not thrown** — it is the ordinary case, not the
+			// exceptional one: Chrome holds out after the player's own Escape and
+			// past a rate limit whatever the reason, a window that is not the key
+			// window cannot be locked at all, and Safari refuses outright without a
+			// gesture it may or may not have just seen. Dropping the promise made
+			// every refused click an unhandled rejection, which surfaces as a page
+			// error — which is why `probe-gun-feedback.mjs` had to stub this call
+			// out to keep its own click real. **And the promise is not assumed:**
+			// the returning form of this call is not universal, and on an engine
+			// that hands back `undefined` a `.catch` taken straight off it is the
+			// very uncaught error this line exists to remove. TypeScript cannot see
+			// that, because its own `lib.dom` declares the Promise. The retry is the
+			// next click, which is where we are standing.
+			void Promise.resolve(this.renderer.domElement.requestPointerLock()).catch(
+				() => {},
+			);
 		});
 		window.addEventListener("mousemove", (e) => {
-			if (document.pointerLockElement !== this.renderer.domElement) return;
+			if (!this.canvasHoldsLock()) return;
 			this.mouseDx += e.movementX;
 			this.mouseDy += e.movementY;
 		});
@@ -6086,6 +6114,10 @@ class Game {
 	 * than dressed up. Sage found both the stale claim and the inversion.
 	 */
 	private padContextThisFrame: PadContext = "flight";
+	// The drawn console beside it, for the same reason and with the same caveat: the
+	// pointer's rule wants this fact whether or not it owns the pad, and asking twice
+	// a frame would make a rendered-DOM read a per-frame cost twice.
+	private consoleDrawnThisFrame = false;
 
 	private padContext(): PadContext {
 		// Before the first poll there is no cached answer, so read the truth
@@ -6097,7 +6129,20 @@ class Game {
 			: this.padContextThisFrame;
 	}
 
-	private readPadContext(): PadContext {
+	/**
+	 * Whether a console is **drawn** — which is not the same question as which
+	 * context owns the pad, and the difference is the whole of #371's instrument
+	 * case: `readPadContext` answers `instrument` before it ever asks this.
+	 *
+	 * `hasFocusScope` reads the rendered DOM, so this cannot claim a console the
+	 * player is not looking at. One owner for both callers: the context below, and
+	 * `pointerLockMove`'s answer about the pointer.
+	 */
+	private consoleIsDrawn() {
+		return this.view === "cockpit" && this.liveCockpit.hasFocusScope();
+	}
+
+	private readPadContext(consoleDrawn = this.consoleIsDrawn()): PadContext {
 		if (this.commanderOverlay?.isOpen() || this.settingsPanel?.isOpen())
 			return "modal";
 		// The instrument takes what a side console takes — six controls — and
@@ -6112,9 +6157,48 @@ class Game {
 		// the forward wall and is the only thing on it. `hasFocusScope` reads
 		// the rendered DOM, so this cannot claim a console the player is not
 		// looking at.
-		return this.view === "cockpit" && this.liveCockpit.hasFocusScope()
-			? "console"
-			: "flight";
+		return consoleDrawn ? "console" : "flight";
+	}
+
+	/**
+	 * Whether the pointer belongs to the glass right now.
+	 *
+	 * `document.pointerLockElement` is the only answer to that, so nothing here
+	 * keeps a shadow copy of it. Three callers ask, and all three ask it the same
+	 * way from one place: which element holds the lock is a question about the
+	 * browser's state, and a comparison written out at each call site is one more
+	 * place to be wrong about which element the glass is.
+	 */
+	private canvasHoldsLock() {
+		return document.pointerLockElement === this.renderer.domElement;
+	}
+
+	/**
+	 * Hand the pointer back whenever the drawn surface stops being one the mouse
+	 * flies (#371) — the frame's door onto `pointerLockMove`, which owns why.
+	 *
+	 * It reads the two answers `pollPad` took a moment earlier of the rendered DOM —
+	 * the context and the drawn console — so this costs no query of its own and
+	 * covers every surface that has or gets a console rather than the four call sites
+	 * that draw one.
+	 *
+	 * **The Commander's overlay keeps its own release beside it, and that is not the
+	 * third copy this repo fights**: one rule, and this is the only place it is
+	 * written. The overlay's line is the same answer taken a different moment,
+	 * because that screen opens on a keystroke and does not wait for a frame — and a
+	 * probe is allowed to cancel the frame loop, on which path nothing here runs.
+	 * `tests/pad-bindings.test.ts` pins both release sites by name, so a third has to
+	 * be said out loud to land.
+	 */
+	private reconcilePointerLock() {
+		if (
+			pointerLockMove(
+				this.padContextThisFrame,
+				this.consoleDrawnThisFrame,
+				this.canvasHoldsLock(),
+			) === "release"
+		)
+			document.exitPointerLock();
 	}
 
 	/**
@@ -6310,7 +6394,8 @@ class Game {
 		// Read once, here, even with no pad attached: `step` and
 		// `hasControlInput` read the cached value, and a stale one would answer
 		// for a panel that has since closed.
-		this.padContextThisFrame = this.readPadContext();
+		this.consoleDrawnThisFrame = this.consoleIsDrawn();
+		this.padContextThisFrame = this.readPadContext(this.consoleDrawnThisFrame);
 		// **Told, not guessed, and told *after* the read.** The console cannot
 		// see which context owns the pad — `readPadContext` answers `instrument`
 		// and `modal` before it ever asks whether a console is drawn — so a panel
@@ -6744,7 +6829,17 @@ class Game {
 		);
 	}
 
-	/** A camera pan only: flight controls and the ship's nose stay live. */
+	/**
+	 * Turn the head to a side console, or back to forward.
+	 *
+	 * **A camera pan, and not only one.** Flight controls and the ship's nose stay
+	 * live — that half is #283's ruling, and a key still flies the ship while the
+	 * head is turned. What the turn also does is end the pointer lock's claim on the
+	 * mouse, **by drawing a console rather than by anything said here**: the next
+	 * frame's `reconcilePointerLock` reads the surface this rendered (#371). Nothing
+	 * here releases the pointer, and that is the point: the release belongs to the
+	 * drawn surface, so any way a console gets drawn gets it.
+	 */
 	setHeadLook(headLook: HeadLook) {
 		this.headLook = headLook;
 		this.updateCockpit();
@@ -10374,6 +10469,10 @@ class Game {
 		// frame. Exactly one caller: `poll` computes its edges against the
 		// previous call, so a second one in the same frame reports no presses.
 		this.pollPad();
+		// #371: the pointer goes with the surface `pollPad` just read. Why it is
+		// taken here and not at the screens that draw a console is
+		// `reconcilePointerLock`'s to say, and this line is not a second copy.
+		this.reconcilePointerLock();
 		const now = performance.now();
 		const dt = this.lastTime
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)

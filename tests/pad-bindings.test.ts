@@ -7,7 +7,7 @@
  * load — and a table nothing can load is a table nothing checks.
  */
 import { describe, expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
 import {
 	type PadButtonName,
 	type RawPad,
@@ -15,10 +15,14 @@ import {
 	readPad,
 } from "../src/gamepad";
 import {
+	type PadContext,
+	type PointerLockMove,
 	PAD_FLIGHT_KEYS,
+	contextFliesShip,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
+	pointerLockMove,
 } from "../src/pad-bindings";
 
 const NOTHING: ReadonlySet<PadButtonName> = new Set();
@@ -501,5 +505,129 @@ describe("the audio unlock keeps its listeners until it has worked", () => {
 		expect(body.indexOf("if (this.audio.silent) return;")).toBeLessThan(
 			body.indexOf('removeEventListener("keydown"'),
 		);
+	});
+});
+
+describe("the pointer goes with the mouse, not with the camera (#371)", () => {
+	// **The whole of #371, headless.** `pointerLockMove` owns the rule and the
+	// argument; `probe-pointer-lock.mjs` measures the consequence in a browser.
+	// This holds the decision itself, because the consequence is only measurable
+	// where the browser will grant a lock at all — which is not every Chromium, and
+	// not this repo's default launcher. A table that survives the harness is the
+	// reason the rule is a function in this module rather than two conditions in
+	// `main.ts`, which nothing here can load.
+	//
+	// **Keyed by `PadContext`, not listing it.** A plain array of rows would go on
+	// passing, green, the day a fifth context joins that union, and the row below
+	// only has to walk the object it is given.
+	const CELLS: Record<
+		PadContext,
+		{
+			clear: { notHeld: PointerLockMove; held: PointerLockMove };
+			drawn: { notHeld: PointerLockMove; held: PointerLockMove };
+		}
+	> = {
+		// A click may take the lock here, and while it is held nothing gives it
+		// back: the forward view and the instrument, which keeps the lock for the
+		// reason it keeps the sticks — its panel is `pointer-events: none`, so a
+		// frame that exists to be measured while flown is still being flown.
+		flight: {
+			clear: { notHeld: "capture", held: "keep" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		// **`instrument` + a drawn console is the cell round 5 found.**
+		// `readPadContext` answers `instrument` before it ever tests for a console, so
+		// the instrument can be focused over a console — the pad's `down` focuses it
+		// and its d-pad still turns the head, and `main.ts`'s chart comment records
+		// that combination as reachable. The overlay's own reason for keeping the
+		// mouse is that nothing on it can be clicked; behind it the console can, so
+		// the console wins. That is the principal's ruling on this node, and before it
+		// this cell read `keep` and left the console unclickable.
+		instrument: {
+			clear: { notHeld: "capture", held: "keep" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		// And here the pointer comes back, which is the whole of #371. Why the
+		// release is edge-triggered on `held` is `pointerLockMove`'s to say. Both
+		// branches answer the same because the context already fails the flight test:
+		// `readPadContext` derives `console` from the drawn console, so `clear` is
+		// unreachable from the game's own reads — kept because the *rule* still has to
+		// answer it, and a table that only holds reachable cells cannot say that.
+		console: {
+			clear: { notHeld: "at-rest", held: "release" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		modal: {
+			clear: { notHeld: "at-rest", held: "release" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+	};
+
+	test("every context, drawn or clear, held or not — and the flight rule's own answer", () => {
+		for (const [context, byDrawn] of Object.entries(CELLS) as [
+			PadContext,
+			(typeof CELLS)[PadContext],
+		][]) {
+			for (const drawn of [false, true]) {
+				const cells = drawn ? byDrawn.drawn : byDrawn.clear;
+				expect(pointerLockMove(context, drawn, false)).toBe(cells.notHeld);
+				expect(pointerLockMove(context, drawn, true)).toBe(cells.held);
+				// The delegation is the claim, not an implementation detail: a new
+				// context that flies the ship and withholds the pointer, or the other
+				// way about, is the drift `contextFliesShip` was extracted to stop. A
+				// drawn console is the one thing that overrules it, and that is the
+				// whole of the `&& !drawn` below.
+				expect(pointerLockMove(context, drawn, false) === "capture").toBe(
+					contextFliesShip(context) && !drawn,
+				);
+			}
+		}
+	});
+
+	test("the gamepad's head turn arrives at the same door the keyboard's does", () => {
+		// `probe-pointer-lock.mjs` turns the head with a held d-pad and reads the
+		// pointer come back, and the reason that row is about a *door* rather than a
+		// second copy of the keyboard row is this mapping: the d-pad's three
+		// horizontal positions are the `1`/`2`/`3` commands, which is why the probe
+		// can say "the gamepad door" and mean `command`, not a binding of its own.
+		expect(PAD_FLIGHT_KEYS.left).toBe("1");
+		expect(PAD_FLIGHT_KEYS.up).toBe("2");
+		expect(PAD_FLIGHT_KEYS.right).toBe("3");
+	});
+
+	test("the lock is asked for at one door, and given up at two that are named", () => {
+		// **A count, and it is standing in for a predicate — so read what it
+		// guards.** The defect class is not "the wrong condition" but "a second place
+		// that takes the lock without asking", which is how a release came to be
+		// written beside one screen before this rule had an owner. Why that release
+		// stays and a third would not is `reconcilePointerLock`'s comment; what the
+		// lists below do is make a new one a decision rather than an accident.
+		const doors = (call: RegExp): string[] => {
+			const found: string[] = [];
+			for (const file of srcFiles())
+				for (const _ of codeOf(file).matchAll(call)) found.push(file);
+			return found;
+		};
+		expect(doors(/requestPointerLock\s*\(/g)).toEqual(["src/main.ts"]);
+		expect(doors(/exitPointerLock\s*\(/g).sort()).toEqual([
+			"src/commander-overlay.ts",
+			"src/main.ts",
+		]);
+		// And the one door asks the rule **and obeys it**: the answer has to be
+		// tested and returned from, not merely computed and dropped on the way to
+		// the browser. `toContain("pointerLockMove(")` alone would pass a handler
+		// that asks and ignores — which is what sage, round 2, read out of it.
+		const asked = codeOf("src/main.ts");
+		const door = asked.slice(
+			asked.indexOf('addEventListener("click"'),
+			asked.indexOf("requestPointerLock"),
+		);
+		expect(door).toContain("pointerLockMove(");
+		// **The gate's meaning, not the formatter's layout.** Sage, round 3, on the
+		// first version of this line: it required a newline before the `return`, so
+		// Biome reflowing the statement — or someone adding braces — would have gone
+		// red with the rule untouched. Braces and reflows are allowed here; an answer
+		// that is computed and dropped is not.
+		expect(door).toMatch(/!==\s*"capture"[\s\S]{0,24}?return\b/);
 	});
 });

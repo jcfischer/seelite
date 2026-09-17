@@ -32,12 +32,14 @@ const H = 620;
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 watch(page);
 await page.addInitScript(installFakePad);
-// A click on the canvas asks for pointer lock, and headless Chromium refuses it
-// with a page error — the environment's, not the game's. Stubbed so the real
-// click stays real and the error count stays the game's own.
-await page.addInitScript(() => {
-	HTMLElement.prototype.requestPointerLock = () => Promise.resolve();
-});
+// This file used to carry `HTMLElement.prototype.requestPointerLock = () =>
+// Promise.resolve()` here, on the stated ground that headless Chromium refuses
+// the lock and the refusal reached the run as a page error. That was true, and it
+// was the game's error rather than the environment's: the click handler dropped
+// the promise, so every refused lock was an unhandled rejection. #371 reads the
+// refusal, so the stub is gone — and this probe clicking a real canvas with a
+// real pointer-lock request still standing, with `watch` reporting nothing, is
+// where that is checked. `probe-pointer-lock.mjs` counts the refusals directly.
 await page.goto(gameUrl(origin, { seed: 42 }));
 await bootedGame(page);
 

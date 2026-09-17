@@ -1,6 +1,13 @@
 /**
  * What a pad button *means* in this game (#283).
  *
+ * **And what one surface owns.** `PadContext` — the names come from the gamepad,
+ * the thing is the drawn surface — is this module's answer to which surface the
+ * sticks, the triggers **and the pointer** belong to. `pointerLockMove` below is
+ * the mouse's half of that answer (#371), and it lives here because it is the same
+ * predicate as `contextFliesShip` asked by the other half of the mouse, not because
+ * a gamepad button is anywhere in it.
+ *
  * ## Why the table is here and not in either of the two obvious places
  *
  * Not in `src/gamepad.ts`, because that module is a **copy** — seekolous wrote
@@ -359,6 +366,60 @@ const negate = (value: number) => (value === 0 ? 0 : -value);
 export function contextFliesShip(context: PadContext): boolean {
 	return context === "flight" || context === "instrument";
 }
+
+/**
+ * What to do with the pointer lock, given the context, whether a console is drawn,
+ * and whether the canvas already holds the pointer. **This is the argument; the
+ * call sites point here.**
+ *
+ * **The same rule as `contextFliesShip`, asked by the other half of the mouse
+ * (#371).** A captured pointer does not only carry relative deltas: while the lock
+ * is held the browser delivers *every* mouse event — the click included — to the
+ * locked element, wherever over the page the cursor was. So a console that
+ * suspends the mouse and keeps the capture suspends nothing the player can feel
+ * and takes something they need: the panel paints, highlights, and answers
+ * nothing, because the click aimed at its tab was delivered to the glass
+ * underneath. That is #283's ruling one level down — the surface that says the
+ * mouse does not fly the ship also says the pointer is not its own to hold.
+ *
+ * Same predicate, not a second table, for the reason `contextFliesShip` itself
+ * exists: this rule was written nowhere at all, so there was nothing to drift,
+ * and the one place that did release the pointer — `commander-overlay.ts`, for its
+ * own screen — was a habit rather than a rule.
+ *
+ * **And a drawn console wins, whatever the context says** (`consoleDrawn`, the
+ * principal's ruling on this node, asked because `readPadContext` answers
+ * `instrument` before it ever tests for a console). `instrument` keeps the mouse for
+ * one reason: its panel is `pointer-events: none`, so there is nothing on it for a
+ * click to reach. That reason runs out the moment a console is drawn under the
+ * overlay — the pad's `down` focuses the instrument and the d-pad's `1`/`2`/`3` still
+ * turn the head, so the combination is one a player reaches, and `main.ts`'s own
+ * chart comment records it. Then the overlay is transparent and the console behind it
+ * is not, and the click belongs to the console. Sticks aside: this is the pointer's
+ * rule only, so #283's instrument exception is untouched.
+ *
+ * **`capture` is permission for a click, not an instruction to make one.** The
+ * browser grants a lock only from an activation-triggering event or after a
+ * page-initiated exit, and it rate-limits being asked at all:
+ * `scripts/probe-pointer-lock.mjs` measures that window against its own click
+ * sequence and paces itself by it, and it — not this comment — owns the figures.
+ * So nothing downstream should read this name as licence to ask every frame. `release` is the only effect the game takes on its own, and it
+ * is edge-triggered by `held`: once the pointer is back the row reads `at-rest`,
+ * which is what keeps a frame loop from pounding the browser with an exit it has
+ * already carried out — and covers the player's own Escape for free, whose release
+ * leaves nothing here to release.
+ */
+export function pointerLockMove(
+	context: PadContext,
+	consoleDrawn: boolean,
+	held: boolean,
+): PointerLockMove {
+	if (!contextFliesShip(context) || consoleDrawn)
+		return held ? "release" : "at-rest";
+	return held ? "keep" : "capture";
+}
+
+export type PointerLockMove = "capture" | "release" | "keep" | "at-rest";
 
 export function padFlightAxes(
 	frame: PadFrame | null,

@@ -62,6 +62,16 @@ round, which is the third-copy drift `CLAUDE.md` warns about. What is worth
 knowing without opening it: the footer is a claim about the *world*, not the
 controls, and the throttle is **held** rather than zeroed, so you coast.
 
+**One consequence of that suspension went unshipped until #371.** A console that
+suspends the mouse while the pointer is still captured suspends nothing the player can
+feel: `pointerLockMove` in that same module owns that rule and the argument for it.
+What is worth knowing here is the one thing the rule adds at this level — **the release
+belongs to the drawn surface, not to the head turn** — because the station console
+arrives on the forward wall with the head still forward, through `hasFocusScope()`,
+which is the same answer `padContext` already takes. That surface is reasoned and not
+measured; `probe-pointer-lock.mjs` says why, and its rows are the head turn and the
+settings screen.
+
 **`instrument`** is the frame overlay behind `?perf`, and it is the one
 exception. It takes a console's six buttons and leaves the sticks alone, because
 it exists to measure a frame *while it is flown* — a mode that stopped the ship
