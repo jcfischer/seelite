@@ -96,7 +96,6 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT: HOLD_REFERENCE_T,
-
 				displayTL: SCREEN_TL,
 			},
 			(commodity, economy, s, gameTimeMin) => {
@@ -128,7 +127,6 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
 			holdT: HOLD_REFERENCE_T,
-
 			displayTL: SCREEN_TL,
 		});
 		expect(rows.length).toBe(COMMODITIES.length);
@@ -173,7 +171,6 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 		gameTimeMin: 0,
 		deficitOf: moved(good.name, 12),
 		holdT: HOLD_REFERENCE_T,
-
 		displayTL: SCREEN_TL,
 	});
 	const movedRow = rows.find((r) => r.commodity.name === good.name);
@@ -205,7 +202,6 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			gameTimeMin,
 			deficitOf: moved(good.name, 12),
 			holdT: HOLD_REFERENCE_T,
-
 			displayTL: SCREEN_TL,
 		});
 		const row = rows.find((r) => r.commodity.name === good.name);

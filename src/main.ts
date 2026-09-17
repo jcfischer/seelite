@@ -526,7 +526,7 @@ import {
 	hasHeldSaveFault,
 	heldSaveFault,
 } from "./save-badge";
-import { marketStationOf } from "./market";
+import { PRICE_STEP_CR, bidCutAtTl, marketStationOf } from "./market";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
 import { disposeSubtree } from "./gpu-teardown";
@@ -12620,6 +12620,17 @@ if (query.has("model-viewer")) {
 		// big save" method to `Game` would be production state existing for one
 		// caller.
 		serialize: serializeSave,
+	};
+	// The spread's own law, read off the page by `probe-station-console.mjs`.
+	// The probe has to tell a row whose bid the cut removed from a row whose bid §3's
+	// price floor removed, and a probe with its own copy of the step goes falsely red
+	// the day the module moves it — which is the standing objection to restating a
+	// constant in a probe, and the reason this hook sits beside `boot` and `save`.
+	(
+		window as unknown as { __seelite: { marketLaw: Record<string, unknown> } }
+	).__seelite.marketLaw = {
+		priceStepCr: PRICE_STEP_CR,
+		bidCutAtTl,
 	};
 	// The boot mode this page read (#306, `persistent-world-state.md` §11.6).
 	// Exposed so `probe-boot.mjs` can show that `gameUrl`'s `?boot=direct`

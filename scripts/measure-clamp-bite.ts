@@ -176,21 +176,26 @@ interface SpreadAcc {
 
 const cutByTl = new Map<number, SpreadAcc>();
 const cutByType = new Map<string, SpreadAcc>();
-const accFor = (
-	table: Map<number | string, SpreadAcc>,
-	key: number | string,
-): SpreadAcc => {
+/** The grand totals, as the same accumulator the buckets use. Three scalars here
+ *  re-implemented the bucket update one field at a time, which is how a total and
+ *  its buckets stop agreeing: add a fourth dial to `SpreadAcc` and the totals go
+ *  quietly missing rather than loudly wrong. */
+const cutTotal: SpreadAcc = {
+	rows: 0,
+	spreadless: 0,
+	pinnedAtStep: 0,
+	spreadSum: 0,
+};
+// Generic over the key, because the two tables are keyed by TL and by station type
+// and the old signature took `number | string` and cast the key back on the way in.
+const accFor = <K>(table: Map<K, SpreadAcc>, key: K): SpreadAcc => {
 	let acc = table.get(key);
 	if (!acc) {
 		acc = { rows: 0, spreadless: 0, pinnedAtStep: 0, spreadSum: 0 };
-		table.set(key as number, acc);
+		table.set(key, acc);
 	}
 	return acc;
 };
-
-let cutRows = 0;
-let cutSpreadless = 0;
-let cutPinned = 0;
 
 for (const world of worlds) {
 	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
@@ -210,15 +215,12 @@ for (const world of worlds) {
 				const quote = marketQuote(mid, record.displayTL);
 				const byTl = accFor(cutByTl, record.displayTL);
 				const byType = accFor(cutByType, station.type);
-				for (const acc of [byTl, byType]) {
+				for (const acc of [byTl, byType, cutTotal]) {
 					acc.rows++;
 					acc.spreadSum += 1 - quote.sellCr / quote.buyCr;
 					if (quote.sellCr === quote.buyCr) acc.spreadless++;
 					if (quote.sellCr === PRICE_STEP_CR) acc.pinnedAtStep++;
 				}
-				cutRows++;
-				if (quote.sellCr === quote.buyCr) cutSpreadless++;
-				if (quote.sellCr === PRICE_STEP_CR) cutPinned++;
 			}
 		}
 	});
@@ -226,7 +228,7 @@ for (const world of worlds) {
 
 console.log("\n§5.6 — where the bid cut dies, over realized rows");
 console.log(
-	`  rows priced ${cutRows.toLocaleString()}   no spread at all ${pct(cutSpreadless, cutRows)}   pinned at one price step ${pct(cutPinned, cutRows)}`,
+	`  rows priced ${cutTotal.rows.toLocaleString()}   no spread at all ${pct(cutTotal.spreadless, cutTotal.rows)}   pinned at one price step ${pct(cutTotal.pinnedAtStep, cutTotal.rows)}`,
 );
 console.log(
 	`  table's own endpoints: cut ${BID_CUT_FLOOR.toFixed(3)} at TL${DISPLAY_TL_MIN}, ${(BID_CUT_FLOOR + BID_CUT_GRADE).toFixed(3)} at TL${DISPLAY_TL_MAX}`,

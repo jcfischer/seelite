@@ -868,6 +868,16 @@ reversed here:
   exponent and it survives unchanged; #196 did not touch the marginal unit inside
   a trade.
 
+**The one-sided form is the cheaper closure, and the claim holds in both quote
+modes.** Closing the round trip costs 0.100 of wedge placed on the bid alone,
+against 0.053 a side — **0.105 total** — spread across both columns, and the split
+form raises what the BUY column charges besides, which #191's D1 declined. The
+first version of that comparison gave the two arms different quote precision, which
+matters because the survey counts cycles the tenth-credit step alone closes; the
+instrument now runs the pair with the step off *both* arms and prints the shipped,
+quantized pair beside it. Both read 0.100 against 0.105, so the ruling does not rest
+on the rounding — and it would not have been checkable until someone asked.
+
 **The floor is `PRICE_ELASTICITY`, and the number it first shipped as is the
 finding of this node.** The obvious derivation is the far end of the response's
 range — `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` = 0.315 — on the argument
@@ -878,9 +888,9 @@ is also not shippable.** The §5.6 section of
 `scripts/measure-greedy-trader.ts` flies the honest trade loop — a trader that
 never visits a console twice, so it is neither the pump nor rigged — against the
 cut ladder, and at a mean cut of 0.30 — where the closure lives — that trader
-reaches the Combat Engine in **2 of 4 galaxies** inside a four-hour session, in
+reaches the Combat Engine in **1 of 4 galaxies** inside a four-hour session, in
 two more it stops finding a profitable hop at all, and its best rate falls from
-291–430 Cr/min to 0–152. A spread that closes the pump by making ordinary trading
+291–430 Cr/min to 0–198. A spread that closes the pump by making ordinary trading
 unprofitable has not repaired the economy; it has cancelled it, and §8's
 time-to-kit goes the wrong way with it. The `flat 0.30` row of the table below is
 that rung, printed by the same instrument, at the same width as the rows above it.
@@ -946,7 +956,6 @@ arms were flown at **matched mean cut** — a grade of twice the mean, so the tw
 tables hold the same multiset of cuts in the other order and any difference is the
 direction rather than the level — against a flat spread at the same mean:
 
-```
 ```
   arm                kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
   no wedge (control) 52-82 min          291-430    25/59/16                  0.595
@@ -1712,17 +1721,24 @@ are distinct and that `MARKET` is the largest — which a build that renumbered
 the game is a function of those integers and renumbering one moves every
 position, name and station silently.
 
-**#196 delivered §5.6, and the two things it went looking for did not both come
-back as expected.** The direction sweep is the honest case: the brief predicted
-that narrow-at-high-TL would reinforce a core-ward pull and that the wide arm
-would show a new player the worst rates. The route-mix half of that held and the
-rate half did not — the wide arm reached the kit sooner in every matched pair,
-and at the widest rungs the narrow arm is the one that stops trading. Had the
-sweep been built to answer the story rather than to price it, the row that
-contradicts the story would not have been there to read: both arms fly at
-*matched mean cut*, so neither could be handed a lighter overall bite than the
-other, which is #25's "could the losing arm have been given what the winning arm
-had" applied to a direction rather than to a clock.
+**#196 delivered §5.6, and what it went looking for came back twice: once wrong,
+and once right for a reason worth keeping.** The brief predicted that
+narrow-at-high-TL would reinforce a core-ward pull and that the wide arm would show
+a new player the worst rates. **Both halves held** — the shipped arm reaches a mean
+dock radius of 0.922 against the wide arm's 0.509 and is the faster of each matched
+pair (309-425 Cr/min against 225-308 at the narrowest rung), and at the two widest
+rungs it is the *wide* arm that stalls, 2 of 4 sessions each.
+
+**But the first run of that sweep reported the opposite on the rate half**, and the
+reason was in the instrument rather than the world: the two graded arms were
+compared against a flat control at the same *floor* and called matched, while their
+means sat 1/15 of a grade apart — sage caught that on review, and the fix moved the
+ladder's endpoints onto `BID_CUT_FLOOR` and `BID_CUT_GRADE`, which makes a graded
+table's mean equal the flat arm's figure by construction. The sweep prints the mean
+it reached beside every rung now, so the pairing is checkable off the output rather
+than trusted from this paragraph. What survives becoming a matched comparison is
+worth more than what only survived being run, and the direction ruling rests on the
+matched figure.
 
 The other finding is the one this node was told to report rather than resolve.
 The closure figure that follows from §5.2's range — 0.315 — closes the pump and
@@ -1984,7 +2000,7 @@ settled it.
     **#196 measured what this joint is worth, and it is worth more than anyone has
     been charging for it.** The obvious way to close the pump joint 12 describes is a
     spread, and a spread that closes it has to exceed the swing this joint creates —
-    0.315 — which §5.6 found taking the honest trade loop down to 2 of 4 galaxies
+    0.315 — which §5.6 found taking the honest trade loop down to 1 of 4 galaxies
     reaching a Combat Engine in four hours, 2 of 4 sessions stalling outright. So the
     cut shipped at the tonnage closure, 0.10, and this joint now carries a surviving
     pump rather than only an asymmetry: 12,073 profitable cycles in the corpus,

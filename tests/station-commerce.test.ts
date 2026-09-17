@@ -27,6 +27,7 @@ import {
 import { priceLabel, stationMarketScreen } from "../src/station-console";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";
 import {
+	type CycleSurvey,
 	NO_WEDGE,
 	flyConsoleCycle,
 	surveyConsoleCycles,
@@ -265,6 +266,19 @@ test("a fractional shortfall can be bought back, so the tank reaches 7.0 again",
 });
 
 describe("§5.6 the bid cut, charged by the till", () => {
+	// **One sweep per arm, shared by the rows that read it.** Each call flies 98,685
+	// cycles through `transactAtStation` and re-flies every zero off the floor, and
+	// five rows here wanted the same two figures; the suite is gated, so that was
+	// ~0.6 s of arithmetic repeated inside one run for no new information. Memoized
+	// rather than computed at collection time so a filtered run of one row pays for
+	// one row.
+	let shippedCache: CycleSurvey | null = null;
+	const shipped = (): CycleSurvey =>
+		shippedCache ?? (shippedCache = surveyConsoleCycles());
+	let controlCache: CycleSurvey | null = null;
+	const control = (): CycleSurvey =>
+		controlCache ?? (controlCache = surveyConsoleCycles(NO_WEDGE));
+
 	/** The mid the till is working from, derived the way the till derives it. */
 	const midOf = (name: string): number => {
 		const base = marketRow(commodity(name), 3, STATION, 0);
@@ -354,7 +368,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// maximum of "only 3 Cr a cycle instead of 400" is exactly the reading that
 		// let a pump live this long. `tonnage` is how many of those cycles still
 		// print money.
-		const s = surveyConsoleCycles();
+		const s = shipped();
 		// 9 dockable hulls × 16 goods the table sells × 3 priced station types × 8
 		// economies × 15 tech levels × both orders, less the buy legs whose shelf is
 		// empty and so are not transactions that exist. Pinned, because a sweep
@@ -371,7 +385,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// the trade loop survives. This is #182's weak joint 14, asserted as a *present
 		// fact with a figure*: a node that re-anchors the sub-tonne mark turns this row
 		// red and reads the number it just changed.
-		const s = surveyConsoleCycles();
+		const s = shipped();
 		// 12,073 of 98,685 rows — 12.2% — and every positive row in the corpus is a
 		// sub-tonne one, which is what the row above is for.
 		expect(s.positiveByTonnage.subTonnes).toBe(12_073);
@@ -397,9 +411,9 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// The control, without which the figure above is unfalsifiable: on #7's
 		// one-price law the same corpus is almost entirely profitable and the binding row
 		// nets half again as much. The cut took a third of the pump and left the pump.
-		const control = surveyConsoleCycles(NO_WEDGE);
-		expect(control.positiveRows).toBeGreaterThan(90_000);
-		expect(control.worst.netCr).toBeCloseTo(1_563.79, 1);
+		const controlSurvey = control();
+		expect(controlSurvey.positiveRows).toBeGreaterThan(90_000);
+		expect(controlSurvey.worst.netCr).toBeCloseTo(1_563.79, 1);
 	});
 
 	test("every zero off the price floor is attributed, not counted", () => {
@@ -417,7 +431,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// 1,064.70 Cr the row above reports, and stated rather than folded into the
 		// closure count, because a closure whose weakest rung is the number of digits on
 		// the glass should be known to have one.
-		const s = surveyConsoleCycles();
+		const s = shipped();
 		const walk = s.zeroOffFloor;
 		expect(walk.count).toBe(3_472);
 		expect(walk.lawCloses).toBe(2_799);
@@ -436,18 +450,12 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		const zero = s.firstZeroOffTheFloor;
 		if (zero === null) throw new Error("the sweep found no zero off the floor");
 		expect(zero.cycle.displayTL).toBe(DISPLAY_TL_MIN);
-		const { good, hull, economy, type, arm, gameTimeMin } = zero.cycle;
+		// Spread rather than rebuilt field by field: a row that names every field of a
+		// cycle by hand keeps a stale one when the record grows, and reads as if the
+		// one tech level in were a different cycle.
 		expect(
 			flyConsoleCycle(
-				{
-					good,
-					hull,
-					economy,
-					type,
-					displayTL: DISPLAY_TL_MIN + 1,
-					arm,
-					gameTimeMin,
-				},
+				{ ...zero.cycle, displayTL: DISPLAY_TL_MIN + 1 },
 				marketQuote,
 			).netCr,
 		).toBeLessThan(0);
@@ -520,13 +528,13 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// question inverted: *could the losing arm have been given what the winning
 		// arm had* — both arms get the same sweep, the same generated cases and the
 		// same calculator, and differ in the one law.
-		const control = surveyConsoleCycles(NO_WEDGE);
-		expect(control.rows).toBe(98_685);
-		expect(control.positiveRows).toBeGreaterThan(20_000);
+		const controlSurvey = control();
+		expect(controlSurvey.rows).toBe(98_685);
+		expect(controlSurvey.positiveRows).toBeGreaterThan(20_000);
 		// The shape is worth naming: the binding row is a sub-tonne good in a small
 		// hull, which is #182's weak joint 14 arriving from the other side.
-		expect(control.worst.netCr).toBeGreaterThan(1_000);
-		expect(control.worst.cycle.good.unit).not.toBe("t");
+		expect(controlSurvey.worst.netCr).toBeGreaterThan(1_000);
+		expect(controlSurvey.worst.cycle.good.unit).not.toBe("t");
 	});
 
 	test("§12.12's six cycles take credits away rather than printing them", () => {

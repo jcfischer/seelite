@@ -254,7 +254,11 @@ export function forEachConsoleCycle(
 
 const TYPES: readonly StationTypeKey[] = ["trade", "refinery", "shipyard"];
 const ALL_EIGHT: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7];
-const ALL_TL: readonly number[] = Array.from({ length: 15 }, (_, i) => i + 1);
+/** The domain the module imports, not a literal restatement of it. */
+const ALL_TL: readonly number[] = Array.from(
+	{ length: DISPLAY_TL_MAX - DISPLAY_TL_MIN + 1 },
+	(_, i) => DISPLAY_TL_MIN + i,
+);
 
 /**
  * What a cycle has to net to count as a profit.
@@ -284,12 +288,12 @@ export interface CycleSurvey {
 	 *  survey reports what they are rather than leaving them inside a zero. */
 	zeroRows: number;
 	/** Of those, the ones that are *not* a row §3's floor pins at one price step,
-	 *  **walked rather than counted**. Each one is flown again at one tech level
-	 *  either side, because a bare count of zeros says only that the arithmetic
-	 *  cancelled and cannot say *why*; a walk says whether the row is a boundary the
-	 *  law expects, with a profit below it and a loss above, or something nobody has
-	 *  explained. Claiming the second reading for every row off the sample is exactly
-	 *  what a previous revision of this survey did with one row and a count. */
+	 *  **walked rather than counted**. A bare count of zeros says only that the
+	 *  arithmetic cancelled and cannot say *why*, so every one of these is flown a
+	 *  second time with the tenth-credit quote step taken off, and sorted by which law
+	 *  closed it — see `ZeroWalk`. Claiming the second reading for rows off a sample is
+	 *  what a previous revision of this survey did with one row and a count of 74, and
+	 *  the true count was 3,472 with three mechanisms underneath it. */
 	zeroOffFloor: ZeroWalk;
 	/** One of those zeros, named, so a red run prints a row rather than a count. */
 	firstZeroOffTheFloor: WorstCycle | null;
@@ -359,36 +363,6 @@ export interface ZeroWalk {
 export const UNQUANTIZED_CUT: QuoteFn = quoteWithCut(bidCutAtTl, {
 	quantize: false,
 });
-
-/**
- * Whether a cycle nets nothing only because the quote is quantized.
- *
- * The predicate is a second flight rather than an inequality about tenths: what is
- * being distinguished is *which law* closed the row, and the only honest way to ask
- * is to take the quantization off and see whether the cycle goes back to losing.
- */
-const isRoundedToWash = (cycle: ConsoleCycle): boolean =>
-	flyConsoleCycle(cycle, UNQUANTIZED_CUT).netCr < -CYCLE_EPSILON_CR;
-
-/**
- * Whether a zero row is the point where the cut and the mark cancel.
- *
- * The walk is the test: one tech level down the same cycle must net a credit, one
- * up it must lose one. A row with no lower neighbour — the rim, where the cut is at
- * its floor — has nothing below it to profit at, and is not a crossing; the caller
- * classifies those as the wash rather than as unexplained.
- */
-const isCycleCrossing = (cycle: ConsoleCycle, quote: QuoteFn): boolean => {
-	const below =
-		cycle.displayTL > DISPLAY_TL_MIN &&
-		flyConsoleCycle({ ...cycle, displayTL: cycle.displayTL - 1 }, quote).netCr >
-			CYCLE_EPSILON_CR;
-	const above =
-		cycle.displayTL < DISPLAY_TL_MAX &&
-		flyConsoleCycle({ ...cycle, displayTL: cycle.displayTL + 1 }, quote).netCr <
-			-CYCLE_EPSILON_CR;
-	return below && above;
-};
 
 /**
  * Fly every cycle the game can put a commander in front of, and count what nets.

@@ -36,6 +36,7 @@ import {
 	DISPLAY_TL_MIN,
 	PRICE_STEP_CR,
 	type QuoteFn,
+	quantizeToDisplayStepCr,
 	bidCutAtTl,
 	HOLD_REFERENCE_T,
 	marketQuote,
@@ -304,11 +305,21 @@ const uniformCut = (cut: number): QuoteFn => quoteWithCut(() => cut);
  * row in this report once quietly was.
  */
 const quoteSplitting =
-	(eachSide: number): QuoteFn =>
-	(mid, tl) => ({
-		buyCr: mid * (1 + eachSide),
-		sellCr: Math.max(PRICE_STEP_CR, mid * (1 - eachSide)),
-	});
+	(
+		eachSide: number,
+		{ quantize = true }: { quantize?: boolean } = {},
+	): QuoteFn =>
+	(mid, tl) => {
+		// The same step `quoteWithCut` applies — or its absence, on both sides of a
+		// comparison, never one arm with it and the other without. The survey counts
+		// cycles that only the tenth-credit quote closes, so a wedge comparison that
+		// gives one arm the rounding and not the other is measuring the rounding.
+		const step = (cr: number) => (quantize ? quantizeToDisplayStepCr(cr) : cr);
+		return {
+			buyCr: step(mid * (1 + eachSide)),
+			sellCr: step(Math.max(PRICE_STEP_CR, mid * (1 - eachSide))),
+		};
+	};
 
 /**
  * The shipped law's shape with two dials: `base` at the rim, `+grade` at the
@@ -336,14 +347,100 @@ const spreadArm = (
 	return quoteWithCut((tl) => base + grade * position(tl));
 };
 
-const shippedMatchesTheLaw = (): boolean => {
-	const arm = spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false);
+/**
+ * Every arm this report flies, checked against the figure it claims to be, and the
+ * run stops on a mismatch.
+ *
+ * The first version checked the shipped arm only and printed a *warning* before the
+ * rows anyway, so "both arms are guarded" described a guard that let an unguarded
+ * arm through and then published its output. An instrument whose arms silently stop
+ * agreeing with the law is worse than none: the rows keep looking like measurements.
+ * `MID_PROBE` sits well above §3's floor so a mismatch is about the wedge and not
+ * about a row the floor pins at one price step either way.
+ */
+const MID_PROBE = 100;
+/**
+ * The three expectations one arm has to meet at one tech level: the two columns it
+ * quotes, each through the tenth-credit step the shipped law applies.
+ *
+ * Comparing a *realized* spread against a declared cut is the mistake this guard
+ * caught on its first run — at TL 2 the shipped law spreads 0.1110 where
+ * `bidCutAtTl` says 0.1107, because 88.9286 Cr becomes 88.9 Cr on the way out. That
+ * difference is the quote step and not a drift, so the guard asks the question the
+ * law actually answers: given the factor this arm means to apply, what figure comes
+ * off the quote?
+ */
+const assertArm = (
+	name: string,
+	quote: QuoteFn,
+	factors: (tl: number) => { buy: number; sell: number },
+) => {
 	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-		const viaArm = arm(100, tl).sellCr;
-		const viaLaw = marketQuote(100, tl).sellCr;
-		if (Math.abs(viaArm - viaLaw) > 1e-12) return false;
+		const q = quote(MID_PROBE, tl);
+		const want = factors(tl);
+		const wantBuy = quantizeToDisplayStepCr(MID_PROBE * want.buy);
+		const wantSell = quantizeToDisplayStepCr(
+			Math.max(PRICE_STEP_CR, MID_PROBE * want.sell),
+		);
+		if (q.buyCr !== wantBuy || q.sellCr !== wantSell)
+			throw new Error(
+				`arm "${name}" is not the law at TL ${tl}: it quotes ` +
+					`${q.buyCr}/${q.sellCr} against ${wantBuy}/${wantSell}`,
+			);
 	}
-	return true;
+};
+const bidArmFactors = (cut: (tl: number) => number) => (tl: number) => ({
+	buy: 1,
+	sell: 1 - cut(tl),
+});
+/** The cut an arm of this family *states* it applies, from its own two dials. */
+const ladderCut =
+	(base: number, grade: number, wideAtRim: boolean) =>
+	(tl: number): number =>
+		base +
+		grade *
+			((wideAtRim ? DISPLAY_TL_MAX - tl : tl - DISPLAY_TL_MIN) / (TL_SPAN - 1));
+const assertFlownArms = () => {
+	assertArm("shipped law", marketQuote, bidArmFactors(bidCutAtTl));
+	// The narrow arm twice over: once against the parameters it was built from, which
+	// catches a mis-typed `spreadArm`, and once against `bidCutAtTl` itself, which is
+	// what makes the report's "shipped" row the shipped table rather than a close
+	// relative of it.
+	assertArm(
+		"narrow at rim",
+		spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false),
+		bidArmFactors(ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)),
+	);
+	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
+		if (
+			Math.abs(
+				ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)(tl) - bidCutAtTl(tl),
+			) > 1e-12
+		)
+			throw new Error(
+				`the report's narrow arm is not the shipped law at TL ${tl}: ` +
+					`${ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)(tl).toFixed(6)} ` +
+					`against ${bidCutAtTl(tl).toFixed(6)}`,
+			);
+	// The mirrored arm, checked against its own stated dials. Graded rungs scale the
+	// mirror by their own mean; `routeRow` checks each one as it is flown, since a
+	// check at the shipped depth cannot cover a dial the loop turns later.
+	assertArm(
+		"wide at rim",
+		spreadArm(0, BID_CUT_GRADE, true),
+		bidArmFactors(ladderCut(0, BID_CUT_GRADE, true)),
+	);
+	assertArm(
+		"flat 0.10",
+		uniformCut(0.1),
+		bidArmFactors(() => 0.1),
+	);
+	// The split wedge moves both columns, so its ask is above the mid and a guard that
+	// assumed the mid on that side would be wrong in the same way twice.
+	assertArm("split 0.05", quoteSplitting(0.05), () => ({
+		buy: 1.05,
+		sell: 0.95,
+	}));
 };
 
 const bindingRow = (row: WorstCycle): string =>
@@ -352,11 +449,7 @@ const bindingRow = (row: WorstCycle): string =>
 	`(${row.units} u @ ${row.midCr.toFixed(2)} Cr)`;
 
 console.log("\n§5.6 — the console round trip, cut swept");
-if (!shippedMatchesTheLaw())
-	console.log(
-		"  ** the report's arms no longer agree with `marketQuote` — the rows below " +
-			"measure a spread the game does not ship. **",
-	);
+assertFlownArms();
 console.log(
 	"  cut     tonnage cycles open   sub-tonne cycles open   best surviving cycle",
 );
@@ -422,8 +515,20 @@ const closingCut = (
 };
 
 console.log("\n§5.6 — what closure costs, one-sided against split");
-const oneSidedClosing = closingCut((x) => uniformCut(x));
-const splitClosing = closingCut(quoteSplitting);
+// **Both arms unquantized, because the question is about the wedge's shape.** The
+// shipped ladder above runs on the law as it ships, tenth-credit step included. This
+// one asks how much margin a split wedge costs for the same closure, and the survey
+// counts cycles that only the quote's precision closes — so giving one arm the
+// rounding and the other arm none measures the rounding. The two rows below are a
+// matched pair in that respect, and the line says which mode it ran in.
+const oneSidedClosing = closingCut((x) =>
+	quoteWithCut(() => x, { quantize: false }),
+);
+const splitClosing = closingCut((x) => quoteSplitting(x, { quantize: false }));
+console.log(
+	"  (both arms with the tenth-credit quote step off, so the difference is the shape " +
+		"of the wedge and not its precision)",
+);
 console.log(
 	`  one-sided, cut on the bid alone: closes at ${oneSidedClosing.cr.toFixed(3)} ` +
 		`(±${oneSidedClosing.width.toFixed(3)}) — total wedge ${oneSidedClosing.cr.toFixed(3)}`,
@@ -431,6 +536,15 @@ console.log(
 console.log(
 	`  split across both columns: closes at ${splitClosing.cr.toFixed(3)} each side ` +
 		`(±${splitClosing.width.toFixed(3)}) — total wedge ${(2 * splitClosing.cr).toFixed(3)}`,
+);
+// The shipped, quantized pair, printed beside it rather than merged into it: the
+// rounded arm is the law the game runs, and where the two differ is the quote step's
+// own contribution to closure.
+const oneSidedShipped = closingCut((x) => uniformCut(x));
+const splitShipped = closingCut((x) => quoteSplitting(x));
+console.log(
+	`  as shipped, with both columns quantized: one-sided ${oneSidedShipped.cr.toFixed(3)} ` +
+		`against split ${(2 * splitShipped.cr).toFixed(3)} total`,
 );
 console.log(
 	"  so the split form costs more of the player's margin for the same closure, and it " +
@@ -456,9 +570,12 @@ const armStats = (quote: QuoteFn) => {
 	const rateRuns = WORLDS.map(({ world }) =>
 		run(world, hours, { quote, stopAtKit: false }),
 	);
-	const kits = milestone
-		.map((r) => r.kitAffordableAtMinutes)
-		.filter((k): k is number => k !== null);
+	// **One entry per galaxy, including the galaxies that never got there.** A
+	// previous revision dropped the nulls and let the printer index by galaxy, so on
+	// exactly the stalled rungs this table exists to show, every later galaxy's figure
+	// moved one slot left and the dash landed on the wrong session.
+	const kits = milestone.map((r) => r.kitAffordableAtMinutes);
+	const achieved = kits.filter((k): k is number => k !== null);
 	const rates = rateRuns.map((r) => r.earnedCr / Math.max(r.minutes, 1e-9));
 	const bands = [0, 0, 0];
 	let docks = 0;
@@ -477,9 +594,9 @@ const armStats = (quote: QuoteFn) => {
 	return {
 		kits,
 		kitLabel:
-			kits.length === WORLDS.length
-				? `${Math.min(...kits).toFixed(0)}-${Math.max(...kits).toFixed(0)} min`
-				: `${kits.length}/${WORLDS.length} in cap`,
+			achieved.length === WORLDS.length
+				? `${Math.min(...achieved).toFixed(0)}-${Math.max(...achieved).toFixed(0)} min`
+				: `${achieved.length}/${WORLDS.length} in cap`,
 		rateLabel: `${Math.min(...rates).toFixed(0)}-${Math.max(...rates).toFixed(
 			0,
 		)}`,
@@ -493,17 +610,18 @@ const armStats = (quote: QuoteFn) => {
 
 type ArmStats = ReturnType<typeof armStats>;
 
+/** The columns every arm row prints, in the one place they are specified. */
+const formatArmStats = (s: ArmStats): string =>
+	s.kitLabel.padEnd(19) +
+	s.rateLabel.padEnd(11) +
+	s.bandLabel.padEnd(26) +
+	s.radius.toFixed(3) +
+	(s.stalled ? `   stalled ${s.stalled}/${WORLDS.length}` : "");
+
 /** The direction table's printer: the arm's name, then everything measured. */
 const routeRow = (name: string, quote: QuoteFn): ArmStats => {
 	const s = armStats(quote);
-	console.log(
-		`  ${name}`.padEnd(21) +
-			s.kitLabel.padEnd(19) +
-			s.rateLabel.padEnd(11) +
-			s.bandLabel.padEnd(26) +
-			s.radius.toFixed(3) +
-			(s.stalled ? `   stalled ${s.stalled}/${WORLDS.length}` : ""),
-	);
+	console.log(`  ${name}`.padEnd(21) + formatArmStats(s));
 	return s;
 };
 routeRow("no wedge (control)", NO_WEDGE);
@@ -537,6 +655,19 @@ const gradedMeanCheck = (mean: number): string => {
 /** Per-galaxy kit for the two graded arms at each rung, kept for the pair table. */
 const PAIRS: [number, ArmStats, ArmStats][] = [];
 for (const mean of [0.1, 0.15, 0.2, 0.3]) {
+	// Both graded arms are guarded against the dials they are built from before they
+	// print, so "the arms it flies are checked" is true of every row in this table and
+	// not only of the shipped one.
+	assertArm(
+		`narrow at rim ${mean.toFixed(2)}`,
+		spreadArm(0, gradeAt(mean), false),
+		bidArmFactors(ladderCut(0, gradeAt(mean), false)),
+	);
+	assertArm(
+		`wide at rim ${mean.toFixed(2)}`,
+		spreadArm(0, gradeAt(mean), true),
+		bidArmFactors(ladderCut(0, gradeAt(mean), true)),
+	);
 	routeRow(`flat ${mean.toFixed(2)}`, uniformCut(mean));
 	const narrow = routeRow(
 		`narrow at rim ${mean.toFixed(2)}`,
@@ -555,6 +686,9 @@ for (const mean of [0.1, 0.15, 0.2, 0.3]) {
 	);
 }
 routeRow("shipped table", marketQuote);
+/** A session that never reached the kit is `null`, and the dash is the report's claim. */
+const kit = (minutes: number | null): string =>
+	minutes === null ? "—" : minutes.toFixed(0);
 console.log(
 	"  per galaxy, narrow against wide, so four draws cannot be read as one range:",
 );
@@ -564,7 +698,7 @@ for (const [mean, narrow, wide] of PAIRS) {
 			WORLDS.map(({ g }, i) => {
 				const n = narrow.kits[i];
 				const w = wide.kits[i];
-				return `${g} ${n === undefined ? "—" : n.toFixed(0)}/${w === undefined ? "—" : w.toFixed(0)}`;
+				return `${g} ${kit(n)}/${kit(w)}`;
 			}).join("   "),
 	);
 }
@@ -600,11 +734,10 @@ for (const grade of [0, 0.05, 0.1, 0.15, 0.2, 0.25]) {
 			`${bidCutAtTl(DISPLAY_TL_MIN).toFixed(3)} → ${(BID_CUT_FLOOR + grade).toFixed(3)}`.padEnd(
 				15,
 			) +
-			g.kitLabel.padEnd(19) +
-			g.rateLabel.padEnd(11) +
-			g.bandLabel.padEnd(26) +
-			g.radius.toFixed(3) +
-			(g.stalled ? `   stalled ${g.stalled}/${WORLDS.length}` : ""),
+			// The same printer the direction table uses. This tail was a second copy of
+			// those columns, which is how two tables that are supposed to be comparable
+			// quietly stop lining up: a column change had to be made in both.
+			formatArmStats(g),
 	);
 }
 console.log(

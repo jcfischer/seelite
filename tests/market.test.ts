@@ -42,6 +42,7 @@ import {
 	PRICE_ELASTICITY,
 	PRICE_DISPLAY_STEP_CR,
 	PRICE_STEP_CR,
+	type MarketQuote,
 	quantizeToDisplayStepCr,
 	QUANTITY_CAP,
 	SATURATE,
@@ -795,8 +796,11 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// whatever the market's memory can move a price. That figure is still the
 		// closure requirement, and the sweep below still measures it — what changed
 		// is that 0.315 cannot be shipped: `scripts/measure-greedy-trader.ts` §5.6
-		// finds the honest trade loop failing to reach the Combat Engine in six
-		// galaxies of eight at a mean cut of 0.3.
+		// finds the honest trade loop reaching the Combat Engine in **1 of 4
+		// galaxies** at a flat mean cut of 0.30, with 2 of the 4 stalling out of
+		// trading altogether. Four galaxies is what the instrument sweeps; an
+		// earlier draft of this comment said "six of eight", a figure from a run the
+		// instrument no longer makes.
 		//
 		// What ships is the mark **a trade can actually leave in ordinary goods**: a
 		// hold-full of tonnage, which is `PRICE_ELASTICITY × (holdT / holdT)`, which
@@ -936,6 +940,37 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		expect(hi).toBe(DISPLAY_TL_MAX);
 	});
 
+	/**
+	 * Every cell of the priced domain, walked once rather than written out four times.
+	 *
+	 * `marketRowAt` then `marketQuote` over `(good, economy, fluct, station, TL)` is the
+	 * same five-deep nest in four §5.6 rows, and only the TL step and the body differ. A
+	 * domain that is stated four places is a domain that gets walked three of them after
+	 * someone changes one, and a sweep that silently shrank still reports a clean zero.
+	 *
+	 * `tlStep` is a parameter because two of the four rows sample the ladder rather than
+	 * walking it: the identity rows can afford every tech level, the 1.5-million-row
+	 * count cannot.
+	 */
+	const forEachQuoteCell = (
+		tlStep: number,
+		visit: (
+			good: (typeof COMMODITIES)[number],
+			row: ReturnType<typeof marketRowAt>,
+			quote: MarketQuote,
+			displayTL: number,
+		) => void,
+	) => {
+		for (const good of COMMODITIES)
+			for (const economy of ALL_ECONOMIES)
+				for (const fluct of ALL_FLUCT)
+					for (const station of ALL_STATIONS)
+						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += tlStep) {
+							const row = marketRowAt(good, economy, fluct, station);
+							visit(good, row, marketQuote(row.priceCr, tl), tl);
+						}
+	};
+
 	test("the ask is the market price, and the cut falls on the bid alone", () => {
 		// **#7's law, reversed on one side only.** #191 D1 read as written — *a
 		// station buys lower than it sells* — and it is also the cheapest closure:
@@ -948,15 +983,9 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// itself, moved only by the tenth-credit quote step §5.6 quantizes to. That
 		// quantization is not cosmetic — it is what makes the number the console
 		// prints the number the till charges — and the row below is where it is held.
-		for (const good of COMMODITIES)
-			for (const economy of ALL_ECONOMIES)
-				for (const fluct of ALL_FLUCT)
-					for (const station of ALL_STATIONS)
-						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 3) {
-							const row = marketRowAt(good, economy, fluct, station);
-							const q = marketQuote(row.priceCr, tl);
-							expect(q.buyCr).toBe(quantizeToDisplayStepCr(row.priceCr));
-						}
+		forEachQuoteCell(3, (_good, row, q) => {
+			expect(q.buyCr).toBe(quantizeToDisplayStepCr(row.priceCr));
+		});
 	});
 
 	test("a quote is expressed to the precision the console prints, both columns", () => {
@@ -971,18 +1000,12 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// only shows on a mid whose second decimal is not zero — which is most of
 		// them, since a responded price is a multiple of nothing.
 		let unquantized = 0;
-		for (const good of COMMODITIES)
-			for (const economy of ALL_ECONOMIES)
-				for (const fluct of ALL_FLUCT)
-					for (const station of ALL_STATIONS)
-						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 2) {
-							const row = marketRowAt(good, economy, fluct, station);
-							const q = marketQuote(row.priceCr, tl);
-							for (const cr of [q.buyCr, q.sellCr]) {
-								const tenths = cr / PRICE_DISPLAY_STEP_CR;
-								if (Math.abs(tenths - Math.round(tenths)) > 1e-9) unquantized++;
-							}
-						}
+		forEachQuoteCell(2, (_good, _row, q) => {
+			for (const cr of [q.buyCr, q.sellCr]) {
+				const tenths = cr / PRICE_DISPLAY_STEP_CR;
+				if (Math.abs(tenths - Math.round(tenths)) > 1e-9) unquantized++;
+			}
+		});
 		expect(unquantized).toBe(0);
 		// And the label is the quote rather than an approximation of it, which is the
 		// direction the old failure ran in.
@@ -997,22 +1020,16 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// eats the spread there. That erasure is the clamp this node owes a collapse
 		// rate for, and the next test counts it rather than arguing it away.
 		let belowFloor = 0;
-		for (const good of COMMODITIES)
-			for (const economy of ALL_ECONOMIES)
-				for (const fluct of ALL_FLUCT)
-					for (const station of ALL_STATIONS)
-						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-							const row = marketRowAt(good, economy, fluct, station);
-							const q = marketQuote(row.priceCr, tl);
-							if (q.sellCr < PRICE_STEP_CR) belowFloor++;
-							expect(q.sellCr).toBeGreaterThanOrEqual(PRICE_STEP_CR);
-							expect(q.sellCr).toBeLessThanOrEqual(q.buyCr);
-							expect(q.sellCr).toBe(
-								quantizeToDisplayStepCr(
-									Math.max(PRICE_STEP_CR, row.priceCr * (1 - bidCutAtTl(tl))),
-								),
-							);
-						}
+		forEachQuoteCell(1, (_good, row, q, tl) => {
+			if (q.sellCr < PRICE_STEP_CR) belowFloor++;
+			expect(q.sellCr).toBeGreaterThanOrEqual(PRICE_STEP_CR);
+			expect(q.sellCr).toBeLessThanOrEqual(q.buyCr);
+			expect(q.sellCr).toBe(
+				quantizeToDisplayStepCr(
+					Math.max(PRICE_STEP_CR, row.priceCr * (1 - bidCutAtTl(tl))),
+				),
+			);
+		});
 		expect(belowFloor).toBe(0);
 	});
 
@@ -1030,28 +1047,25 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// it exists to prevent dies with it.
 		let erased = 0;
 		let erasedWithAPump = 0;
-		for (const good of COMMODITIES)
-			for (const economy of ALL_ECONOMIES)
-				for (const fluct of ALL_FLUCT)
-					for (const station of ALL_STATIONS)
-						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-							const row = marketRowAt(good, economy, fluct, station);
-							const q = marketQuote(row.priceCr, tl);
-							if (q.sellCr !== q.buyCr) continue;
-							erased++;
-							// Sell a hold into it, buy the same hold back at the same
-							// console: the two-step cycle §12.12 measured.
-							const after = stockResponse(
-								row.priceCr,
-								good.unit === "t" ? -HOLD_REFERENCE_T : -DEFICIT_MAX,
-								HOLD_REFERENCE_T,
-							);
-							if (q.sellCr - marketQuote(after, tl).buyCr > 0)
-								erasedWithAPump++;
-						}
+		forEachQuoteCell(1, (good, row, q, tl) => {
+			if (q.sellCr !== q.buyCr) return;
+			erased++;
+			// Sell a hold into it, buy the same hold back at the same console: the
+			// two-step cycle §12.12 measured.
+			const after = stockResponse(
+				row.priceCr,
+				good.unit === "t" ? -HOLD_REFERENCE_T : -DEFICIT_MAX,
+				HOLD_REFERENCE_T,
+			);
+			if (q.sellCr - marketQuote(after, tl).buyCr > 0) erasedWithAPump++;
+		});
 		expect(erased).toBe(ERASED_CUT_ROWS);
 		expect(erasedWithAPump).toBe(0);
-		// 8,400 of 1,566,720 is 0.54%, and the claim in prose is "a minority".
+		// 8,760 of 1,566,720 is 0.56%, and the claim in prose is "a minority". The
+		// denominator is the domain's own size — 17 goods × 8 economies × 256 fluct
+		// × 3 station types × 15 tech levels — so this also fails if the walk above
+		// stops visiting something it used to visit.
+		expect(17 * 8 * 256 * 3 * 15).toBe(1_566_720);
 		expect(erased / 1_566_720).toBeLessThan(0.1);
 	});
 });

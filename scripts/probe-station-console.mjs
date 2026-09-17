@@ -268,18 +268,32 @@ for (const station of ["trade", "fence", "yard"]) {
 	// invisibly somewhere in the arithmetic.
 	const priced = measured.rows.filter((row) => row.listed);
 	const cr = (text) => Number.parseFloat(text ?? "");
-	const under = priced.filter((row) => cr(row.sell) < cr(row.buy));
-	const margins = priced.map((row) => 1 - cr(row.sell) / cr(row.buy));
+	// **A row whose bid the floor removed is not a row whose bid the cut removed**, and
+	// the probe has to tell them apart or it fails on correct behaviour: §5.6's own
+	// instrument measures 2.5% of TL 1 rows coming back with no spread at all, because
+	// §3's price step had already pinned both columns at it. The step is read off the
+	// page rather than typed here, and the floored rows are counted in the label — a
+	// check that quietly excluded them would also pass a build where the wedge had
+	// vanished on every cheap good.
+	const law = await page.evaluate(
+		() => /** @type {{ priceStepCr: number }} */ (window.__seelite.marketLaw),
+	);
+	const floored = priced.filter((row) => cr(row.buy) <= law.priceStepCr + 1e-9);
+	const spreadRows = priced.filter(
+		(row) => cr(row.buy) > law.priceStepCr + 1e-9,
+	);
+	const under = spreadRows.filter((row) => cr(row.sell) < cr(row.buy));
+	const margins = spreadRows.map((row) => 1 - cr(row.sell) / cr(row.buy));
 	check(
 		`§5.6: ${station} shows every listed row's bid below its ask`,
 		priced.length > 0 &&
-			under.length === priced.length &&
+			spreadRows.length > 0 &&
+			under.length === spreadRows.length &&
 			priced.every((row) => cr(row.sell) > 0),
-		// The spread *range* is printed, not just the count, because a row whose bid
-		// has been cut down to §3's price step has no spread left at all — and a check
-		// that only counts rows with the bid under the ask would pass a build where
-		// the wedge had vanished on every cheap good.
-		`${under.length}/${priced.length} with the bid under the ask, spread ` +
+		// The spread *range* is printed, not just the count, because a count of rows
+		// with the bid under the ask says nothing about how far below it is.
+		`${under.length}/${spreadRows.length} with the bid under the ask, ` +
+			`${floored.length} pinned at the price step, spread ` +
 			`${(100 * Math.min(...margins)).toFixed(1)}–${(100 * Math.max(...margins)).toFixed(1)}%`,
 	);
 }
