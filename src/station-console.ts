@@ -234,8 +234,11 @@ export function stationMarketScreen(
 			quantity,
 			// Against *this* epoch's base, which is what `base` is: it was derived
 			// from the station's identity and the clock a line ago rather than
-			// remembered from the last visit.
-			priceDeltaCr: midCr - base.priceCr,
+			// remembered from the last visit. And measured on the column it is drawn
+			// beside, not on the mid before the quote quantized it — an arrow whose
+			// arithmetic starts from a figure the row does not print is a #193 drift
+			// with an arrow on it.
+			priceDeltaCr: buyCr - base.priceCr,
 			quantityDelta: quantity - base.quantity,
 		};
 	});

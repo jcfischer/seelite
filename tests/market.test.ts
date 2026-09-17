@@ -40,7 +40,9 @@ import {
 	MIN_STOCK_RESPONSE_FACTOR,
 	NARCOTICS_RETUNE,
 	PRICE_ELASTICITY,
+	PRICE_DISPLAY_STEP_CR,
 	PRICE_STEP_CR,
+	quantizeToDisplayStepCr,
 	QUANTITY_CAP,
 	SATURATE,
 	TYPE_OFFSET,
@@ -779,7 +781,12 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 	 * guard rather than a bound: a retune that moves the table moves this number
 	 * and this line together, or the suite goes red.
 	 */
-	const ERASED_CUT_ROWS = 8_400;
+	// Re-pinned from 8,400 to a measured 8,760 when the cut's endpoints moved onto
+	// `BID_CUT_FLOOR` and `BID_CUT_GRADE` themselves: the rim's cut went from 0.110
+	// to 0.100, which is closer to what the floor swallows, so three more tech
+	// levels' markets joined the erased set. The figure is the row's own output; a
+	// transcription that stops matching is the point of the row.
+	const ERASED_CUT_ROWS = 8_760;
 	test("the floor is the mark one full hold of tonnage leaves", () => {
 		// **The node in one equation, and the equation is not the one this row was
 		// written with.** The first version asked for
@@ -809,40 +816,70 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 
 	test("the swing the floor does *not* reach is the sub-tonne one, and is named", () => {
 		// **The residue, encoded as a row rather than as a paragraph.** §5.2's memory
-		// counts *units*, so 63 units of Gold — 0.2 t of cargo — saturates a hull of
-		// 20 t or less in a single purchase and moves the price by the far end of the
-		// response's range. A cut has to exceed that to close the cycle, which is why
-		// `tests/station-commerce.test.ts` §5.6 finds Gold cycles still netting at the
-		// shipped floor.
+		// counts *units*, so one purchase of the shelf cap in Platinum — 63 units,
+		// 0.2 t of cargo — saturates a hull of 20 t or less and moves the price by the
+		// far end of the response's range. A cut has to exceed that to close the cycle,
+		// which is why `tests/station-commerce.test.ts` §5.6 finds metal cycles still
+		// netting at the shipped floor.
 		//
-		// This row is written to go red. A node that re-anchors the sub-tonne mark —
-		// #182's weak joint 14, which is the cheap lever because it costs no trade
-		// loop anything — will move `DEFICIT_SATURATION_RUNS` or the unit the deficit
-		// is counted in, and this equation stops holding. That is the point: the
-		// residue is a fact about the arithmetic, and the suite notices when it stops
-		// being one.
-		const saturationSwing = PRICE_ELASTICITY * DEFICIT_SATURATION_RUNS;
-		expect(saturationSwing).toBeCloseTo(1 - MIN_STOCK_RESPONSE_FACTOR, 15);
-		expect(saturationSwing).toBeGreaterThan(BID_CUT_FLOOR);
-		// And the ratio between the two is the sub-tonne goods' unit-to-tonne
-		// inversion, which is 63 / 20 at the baseline hull: the number of 63-unit
-		// stacks that would weigh a full hold.
-		expect(saturationSwing / BID_CUT_FLOOR).toBeCloseTo(
-			DEFICIT_SATURATION_RUNS,
-			12,
-		);
+		// Platinum rather than Gold or Gems because it is the cheapest of the three and
+		// therefore the last metal a cut prices out; the binding row in the closure
+		// corpus is a Platinum cycle, and a row that named a different metal would be
+		// describing a pump that is already closed.
+		// **Measured off the shipped response, not off the formula that produces it.**
+		// `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` is an identity: it holds at
+		// whatever value those two constants take, so a row written that way cannot go
+		// red for the re-anchor it claims to watch. This is one purchase of 63 units of
+		// Platinum through `stockResponse` at the hull the game starts a player on, and
+		// the answer is pinned as a literal.
+		// **The pump's own direction, not its mirror.** A sale of the cap is a
+		// *negative* deficit — the station is now holding 63 units the player shoved at
+		// it — and the price it moves to is the one the second leg buys back at. A
+		// purchase of the same size moves the price up by the same magnitude, so a row
+		// written with `+63` would pass for the wrong reason.
+		const saturationSwing =
+			1 - stockResponse(100, -QUANTITY_CAP, HOLD_REFERENCE_T) / 100;
+		// The cap is the 63 that the 0.315 is made of, so it is asserted as a number
+		// here rather than trusted from its own module.
+		expect(QUANTITY_CAP).toBe(63);
+		expect(saturationSwing).toBeCloseTo(0.315, 12);
+		// The ratio between the swing and the shipped floor is the sub-tonne goods'
+		// unit-to-tonne inversion — 63 / 20 at the baseline hull, the number of
+		// 63-unit stacks that would weigh a full hold — and it is written as the
+		// literal so that retuning either constant is a deliberate act.
+		expect(saturationSwing / BID_CUT_FLOOR).toBeCloseTo(63 / 20, 12);
 	});
 
-	test("every market in the generator's tech range pays strictly above the floor", () => {
-		// *Strictly*, because at the floor the binding cycle nets exactly zero — no
-		// profit, but no cost either. The table never reaches its own floor, so no
-		// station in the game is the one place the pump breaks even.
+	test("the cut is strictly increasing, and its ends *are* the two constants", () => {
+		// **Both ends, not the top one.** The first version of this law put the rim at
+		// floor + grade/15 = 0.110 and left `BID_CUT_FLOOR` naming a cut no market in
+		// the game pays. A row asserting only the core end passed while three sentences
+		// in three files said the rim was 0.10, which is this repo's own third-copy
+		// drift and was caught by reading the shipped function at TL 1 rather than by
+		// anything that was red.
+		expect(bidCutAtTl(DISPLAY_TL_MIN)).toBe(BID_CUT_FLOOR);
+		expect(bidCutAtTl(DISPLAY_TL_MAX)).toBeCloseTo(
+			BID_CUT_FLOOR + BID_CUT_GRADE,
+			12,
+		);
 		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-			expect(bidCutAtTl(tl)).toBeGreaterThan(BID_CUT_FLOOR);
-			// And a bid is never zero or negative: the cut is a haircut, not a
+			// A bid is never zero or negative: the cut is a haircut, not a
 			// repudiation, at either end of the tech range.
 			expect(bidCutAtTl(tl)).toBeLessThan(1);
+			if (tl > DISPLAY_TL_MIN)
+				expect(bidCutAtTl(tl)).toBeGreaterThan(bidCutAtTl(tl - 1));
 		}
+	});
+
+	test("the rim market sits on the closure mark, so a tonnage trip nets zero there", () => {
+		// The consequence of the row above, and the reason the rim is allowed to reach
+		// the floor rather than start above it. At TL 1 a full hold of tonnage sold
+		// and bought back nets *exactly* nothing, and what the closure ladder counts is
+		// cycles netting more than nothing — so the cheapest market in the game is
+		// closed exactly rather than strictly, and the rung below the floor is the one
+		// that is not closed at all. `station-commerce.test.ts` §5.6 counts the rows;
+		// this row only fixes which mark the rim is supposed to land on.
+		expect(bidCutAtTl(DISPLAY_TL_MIN)).toBeCloseTo(PRICE_ELASTICITY, 12);
 	});
 
 	test("the shipped direction is narrow at the rim and wide at the core", () => {
@@ -851,16 +888,13 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// `BID_CUT_GRADE` re-derives the row instead of rewriting this row; the
 		// figure the spec quotes is pinned by the count test below.
 		expect(bidCutAtTl(DISPLAY_TL_MIN)).toBeLessThan(bidCutAtTl(DISPLAY_TL_MAX));
-		// The grade is what the *core* end pays above the floor, and the cheapest
-		// market in the game sits a fifteenth of a grade above it — asserted rather
-		// than left to the docstring, because a reader of `BID_CUT_GRADE` should not
-		// have to evaluate the function to know what the constant is worth.
-		expect(bidCutAtTl(DISPLAY_TL_MAX) - BID_CUT_FLOOR).toBeCloseTo(
+		// The grade is the whole span, so it is what the core end pays *above* the
+		// rim's cut — asserted rather than left to the docstring, because a reader of
+		// `BID_CUT_GRADE` should not have to evaluate the function to know what the
+		// constant is worth. It used to be `GRADE / 15` at the rim end, which is the
+		// offset the row above exists to catch.
+		expect(bidCutAtTl(DISPLAY_TL_MAX) - bidCutAtTl(DISPLAY_TL_MIN)).toBeCloseTo(
 			BID_CUT_GRADE,
-			15,
-		);
-		expect(bidCutAtTl(DISPLAY_TL_MIN) - BID_CUT_FLOOR).toBeCloseTo(
-			BID_CUT_GRADE / (DISPLAY_TL_MAX - DISPLAY_TL_MIN + 1),
 			15,
 		);
 		for (let tl = DISPLAY_TL_MIN; tl < DISPLAY_TL_MAX; tl++)
@@ -910,9 +944,10 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// Measured (§5.6's closure rows): a split wedge needs 0.053 a side — 0.105
 		// of total wedge — to close what 0.100 on the bid alone closes.
 		//
-		// The consequence worth pinning: the BUY column *is* `stockResponse`'s
-		// figure, unchanged, which is what makes §3's floor and M6's delta arrow
-		// describe a price the player is actually charged.
+		// The consequence worth pinning: the BUY column is `stockResponse`'s figure
+		// itself, moved only by the tenth-credit quote step §5.6 quantizes to. That
+		// quantization is not cosmetic — it is what makes the number the console
+		// prints the number the till charges — and the row below is where it is held.
 		for (const good of COMMODITIES)
 			for (const economy of ALL_ECONOMIES)
 				for (const fluct of ALL_FLUCT)
@@ -920,8 +955,40 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 3) {
 							const row = marketRowAt(good, economy, fluct, station);
 							const q = marketQuote(row.priceCr, tl);
-							expect(q.buyCr).toBe(row.priceCr);
+							expect(q.buyCr).toBe(quantizeToDisplayStepCr(row.priceCr));
 						}
+	});
+
+	test("a quote is expressed to the precision the console prints, both columns", () => {
+		// **#193's rule, taken to the decimal place it did not reach.** The glass
+		// renders a price with `toFixed(1)`; until this row, the till charged the
+		// unquoted figure behind it, so a commander reading 3.5 Cr was paid 3.51 and
+		// nothing on the screen said the two were different numbers. A quote is
+		// therefore a whole number of tenths, which makes the label a lossless
+		// rendering rather than a rounding.
+		//
+		// Asserted across the domain rather than on an example, because the defect
+		// only shows on a mid whose second decimal is not zero — which is most of
+		// them, since a responded price is a multiple of nothing.
+		let unquantized = 0;
+		for (const good of COMMODITIES)
+			for (const economy of ALL_ECONOMIES)
+				for (const fluct of ALL_FLUCT)
+					for (const station of ALL_STATIONS)
+						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 2) {
+							const row = marketRowAt(good, economy, fluct, station);
+							const q = marketQuote(row.priceCr, tl);
+							for (const cr of [q.buyCr, q.sellCr]) {
+								const tenths = cr / PRICE_DISPLAY_STEP_CR;
+								if (Math.abs(tenths - Math.round(tenths)) > 1e-9) unquantized++;
+							}
+						}
+		expect(unquantized).toBe(0);
+		// And the label is the quote rather than an approximation of it, which is the
+		// direction the old failure ran in.
+		const q = marketQuote(3.504_9, DISPLAY_TL_MIN);
+		expect(Number(q.sellCr.toFixed(1))).toBe(q.sellCr);
+		expect(Number(q.buyCr.toFixed(1))).toBe(q.buyCr);
 	});
 
 	test("the bid is the mid less the cut, and never under one price step", () => {
@@ -941,7 +1008,9 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 							expect(q.sellCr).toBeGreaterThanOrEqual(PRICE_STEP_CR);
 							expect(q.sellCr).toBeLessThanOrEqual(q.buyCr);
 							expect(q.sellCr).toBe(
-								Math.max(PRICE_STEP_CR, row.priceCr * (1 - bidCutAtTl(tl))),
+								quantizeToDisplayStepCr(
+									Math.max(PRICE_STEP_CR, row.priceCr * (1 - bidCutAtTl(tl))),
+								),
 							);
 						}
 		expect(belowFloor).toBe(0);
@@ -956,7 +1025,7 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// **The erasure is not a hole**, and the row below is what says so rather
 		// than a sentence: on exactly those rows the round trip nets nothing either,
 		// because the floor that swallows the spread swallows the deficit's mark on
-		// the way through `stockResponse`. #13's warning is that a modifier dies
+		// the way through `stockResponse`. #13's warning is that an offset dies
 		// where the type lives; here it dies where the *floor* lives, and the thing
 		// it exists to prevent dies with it.
 		let erased = 0;

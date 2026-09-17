@@ -291,6 +291,12 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-station-market { flex: 1; overflow: auto; margin-top: 8px; padding-right: 6px; }
 .lc-station-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr auto; gap: 10px; align-items: baseline; padding: 3px 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
 .lc-station-row[data-live-listed="false"] { color: #8d7057; }
+/* §5.6 gave the market a fifth cell — GOOD, BUY, SELL, SHELF, ACTION — and the
+ * shared four-column rule above is what the equipment list still wants. Without
+ * this the ACTION button wrapped onto a second grid line in every listed row and
+ * in the header, which no probe sees because a wrapped button is still a button:
+ * the check is on the computed column count against the row's own child count. */
+.lc-station-market .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 1fr auto; }
 .lc-station-head { position: sticky; top: 0; color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; background: #150a03; }
 .lc-station-cell { text-align: right; }
 .lc-station-delta { margin-left: 5px; color: #f0b05e; }
@@ -304,7 +310,7 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-launch-hold { margin-top: 12px; }
 .lc-launch-hold p { margin: 0 0 4px; color: #ff8a73; font-size: 12px; letter-spacing: .08em; }
 .lc-launch-hold .lc-launch { margin-top: 4px; border-color: #ff8a73; background: rgba(190, 48, 30, .28); }
-@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } }
+@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } .lc-station-market .lc-station-row { grid-template-columns: minmax(84px, 1.3fr) .9fr .9fr .7fr auto; } }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
 

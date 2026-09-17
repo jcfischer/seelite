@@ -46,7 +46,10 @@ priceCr   = max(PRICE_STEP_CR,                                 // §5.3's floor 
 // it. A purchase pays the ask, which is the mid; a sale is paid the bid.
 askCr = mid
 bidCr = max(PRICE_STEP_CR, mid × (1 − BID_CUT_FLOOR
-                                    − BID_CUT_GRADE × displayTL / 15))
+             − BID_CUT_GRADE × (displayTL − DISPLAY_TL_MIN)
+                                  / (DISPLAY_TL_MAX − DISPLAY_TL_MIN)))
+// …and both edges are then quantized to PRICE_DISPLAY_STEP_CR, because the
+//   console prints a tenth of a credit and the till charges what the glass shows.
 
 quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
                           + max(0, −typeOffset × gradient),    // §3.2
@@ -70,6 +73,7 @@ quantity  = clamp(clamp(clamp(baseQuantity + changing − product, 0, 63)
 | `HULL_CEILING_HOLD_T` | 197 t | §7.2 |
 | `BID_CUT_FLOOR` | 0.10 — `PRICE_ELASTICITY`, the mark one full hold leaves | §5.6 |
 | `BID_CUT_GRADE` | 0.15 wider from rim to core | §5.6 |
+| `PRICE_DISPLAY_STEP_CR` | 0.1 Cr — the quote's own precision | §5.6 |
 
 The executable copy is **`src/market.ts`**, where
 [#25](https://github.com/jcfischer/seelite/issues/25) moved it. There is one
@@ -833,11 +837,19 @@ the §1 pipeline's figure, and the figure that used to be *the* price is the mid
 ```
 askCr = midCr
 bidCr = max(PRICE_STEP_CR, midCr × (1 − bidCutAtTl(displayTL)))
-bidCutAtTl(tl) = BID_CUT_FLOOR + BID_CUT_GRADE × tl / (DISPLAY_TL_MAX − DISPLAY_TL_MIN + 1)
+bidCutAtTl(tl) = BID_CUT_FLOOR
+               + BID_CUT_GRADE × (tl − DISPLAY_TL_MIN) / (DISPLAY_TL_MAX − DISPLAY_TL_MIN)
 ```
 
-Shipped at `BID_CUT_FLOOR` 0.10 and `BID_CUT_GRADE` 0.15: the cheapest market in
-the game cuts a bid 10.1% off the mid, the dearest 25.0%. `marketQuote`
+Shipped at `BID_CUT_FLOOR` 0.10 and `BID_CUT_GRADE` 0.15: **the cheapest market in
+the game cuts a bid exactly 10.0% off the mid and the dearest exactly 25.0%** —
+the two endpoints *are* the two constants, which they were not for a round. The
+first version of this ladder added 1 to the numerator's offset and divided by the
+range plus one, so the rim sat at 0.110 and `BID_CUT_FLOOR` named a cut no market
+in the game pays: a constant read as the closure requirement, and the floor of the
+whole node, was a figure one tech level away from the cheapest market. `tests/
+market.test.ts` §5.6 now asserts the endpoints *equal* the constants rather than
+standing above them. `marketQuote`
 (`src/market.ts`) is the one implementation, and `stationMarketScreen`, the till
 and `scripts/lib/greedy-trader.ts` all price through it, so no arm of any sweep
 in §10.2 can be given the wedge on one leg and not another.
@@ -883,11 +895,11 @@ bun run scripts/measure-greedy-trader.ts            # §5.6, three sections
 
 ```
   cut     tonnage cycles open   sub-tonne cycles open   best surviving cycle
-  0.090                    66120                  16680   Platinum/courier e0 shipyard TL1 …
-  0.100                        0                  15945   Platinum/courier e0 shipyard TL1 …
+  0.090                    48450                  16650   Platinum/courier e0 shipyard TL1 …
+  0.100                        0                  15915   Platinum/courier e0 shipyard TL1 …
   0.150                        0                  13905   Platinum/courier e0 shipyard TL1 …
   0.315                        0                      0   —
-  shipped                      0                  11784   Platinum/courier e0 shipyard TL1 …
+  shipped                      0                  12073   Platinum/courier e0 shipyard TL1 …
 ```
 
 98,685 cycles, every dockable hull × every good the table sells × three priced
@@ -895,17 +907,31 @@ station types × eight economies × fifteen tech levels × both orders, flown th
 `transactAtStation` with a refused leg throwing rather than netting a quiet zero
 (`tests/helpers/console-cycle.ts`). **Closed means measured-at-zero, not
 smaller-than-before**, which is why the figure is a count of cycles that still
-print money and not a maximum.
+print money and not a maximum. Note the cliff: 48,450 tonnage cycles are open at
+0.090 and none survive 0.100, so the floor is not merely *a* cut that helps, it is
+the step.
+
+**A quote is a whole number of tenths, and that is a law rather than a rendering
+choice.** `priceLabel` prints `toFixed(1)`, so while the till charged the
+unquantized figure a commander reading `5.3 Cr` was being paid 5.31 — #193's defect
+class, arrived at from the other side. So `marketQuote` quantizes *both* columns
+through `quantizeToDisplayStepCr` and the till charges the quoted figure;
+`tests/station-commerce.test.ts` holds the console's own printed SELL column
+against what one unit actually cost the station, at three tech levels. One
+consequence is worth having: `stockResponse`'s output is not a multiple of a tenth
+(5.6000000000000005), so the quote comes out *tidier* than the mid it was computed
+from, and the ask side became exact where it had only been exact after a
+subtraction no row should have trusted.
 
 **What that leaves open is the sub-tonne case, and it is reported rather than left
 out of the headline.** §5.2's memory counts *units*, so 63 units of Platinum is
 0.2 t of cargo and one purchase saturates a hull of 20 t or less — the swing is
 the whole 0.315, which is more than any cut the trade loop survives. At the shipped
-law **11,784 of 98,685 cycles still net a credit and every one of them is a
+law **12,073 of 98,685 cycles still net a credit and every one of them is a
 metal**; the binding row is 63 units of Platinum at a courier in an e0 shipyard at
-TL 1, sell-first, netting **1,017.70 Cr on 4,964 Cr of working capital** — a fifth
+TL 1, sell-first, netting **1,064.70 Cr on 4,964 Cr of working capital** — a fifth
 of it per cycle, at one console, for a click. The same corpus on #7's one-price law
-nets 1,563.79 Cr on that row and is profitable in 90% of its rows, so the cut took
+nets 1,563.79 Cr on that row and is profitable in 99.9% of its rows, so the cut took
 a third of the pump and left the pump standing. That residue is #182's weak joint
 14 — the metals saturating at a single purchase, which #182's D6 chose to preserve
 rather than re-anchor §5.4's calibration on — and the cheap lever on it is the unit
@@ -921,34 +947,53 @@ tables hold the same multiset of cuts in the other order and any difference is t
 direction rather than the level — against a flat spread at the same mean:
 
 ```
+```
   arm                kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
   no wedge (control) 52-82 min          291-430    25/59/16                  0.595
-  flat 0.10          61-79 min          255-338    31/61/8                   0.595
-  narrow at rim 0.10 50-77 min          257-409    44/44/13                  0.683
-  wide at rim 0.10   70-79 min          259-295    28/54/18                  0.573
-  flat 0.15          55-128 min         160-353    36/50/14                  0.657
-  narrow at rim 0.15 51-84 min          227-496    63/29/8                   0.784
-  wide at rim 0.15   82-93 min          216-257    13/57/30                  0.463
-  flat 0.20          66-101 min         200-295    36/44/20                  0.587
-  narrow at rim 0.20 61-115 min         221-366    79/21/0                   0.800
-  wide at rim 0.20   2/4 in cap          7-224     20/61/19                  0.631  stalled 2/4
-  flat 0.30          2/4 in cap          0-152     24/52/24                  0.529  stalled 2/4
-  narrow at rim 0.30 3/4 in cap         22-389     84/16/1                   0.896
-  wide at rim 0.30   1/4 in cap          0-131      0/46/54                  0.447  stalled 3/4
-  shipped table      63-86 min          225-320    41/48/11                  0.623
+  flat 0.10          56-92 min          228-351    33/56/11                  0.631
+  narrow at rim 0.10 47-72 min          309-425    50/42/8                   0.694
+  wide at rim 0.10   70-96 min          225-308    31/57/13                  0.612
+  flat 0.15          62-93 min          214-318    38/51/11                  0.658
+  narrow at rim 0.15 47-86 min          235-518    55/36/9                   0.735
+  wide at rim 0.15   68-119 min         163-286    19/63/18                  0.585
+  flat 0.20          68-88 min          222-289    29/47/24                  0.537
+  narrow at rim 0.20 50-96 min          200-681    88/12/0                   0.911
+  wide at rim 0.20   2/4 in cap         8-242      15/39/47                  0.465  stalled 2/4
+  flat 0.30          1/4 in cap         0-198      26/52/22                  0.539  stalled 2/4
+  narrow at rim 0.30 63-127 min         325-691    93/7/0                    0.922
+  wide at rim 0.30   1/4 in cap         0-174      1/53/46                   0.509  stalled 2/4
+  shipped table      51-103 min         206-399    42/47/11                  0.676
 ```
+
+Four galaxies per arm, so the range is four draws and not one sample; the
+instrument prints them per galaxy as well (`kit by galaxy (narrow/wide)`), because
+a range over four sessions is exactly the figure that hides one stalled session
+inside a healthy-looking span. The rung each pair is matched at is printed beside
+it as a guard — `mean cut of the graded table at this rung` against the target —
+and reaches the target to four digits only because the ladder's endpoints sit on
+the constants; at the old `+1` offset the graded table's mean was 1/15 of a cut
+above the flat arm it was being compared to.
 
 `narrow at rim` *is* wide-at-high-TL, the arm that shipped; radius is the
 generator's normalised galactic distance averaged over the systems a trader
-docked at, so 0 is the core and 1 the rim. **The route-mix prediction held:**
-narrow-at-high-TL pulls trade inward (mean dock radius
-0.573 → 0.447 as the level rises, and at 0.30 **54% of its docks land in the TL
-11-15 band**), while the shipped direction pushes it outward (0.683 → 0.896, and
-84% of docks in TL 1-5 by the widest rung). **The rate prediction did not:** the
-wide arm is the faster one in every matched pair, and at the widest levels it is
-the narrow arm that stops trading — `wide at rim 0.30` stalls 3 of 4 sessions
-against `narrow at rim 0.30`'s none. A cheap frontier market is where the wedge costs fewest absolute
-credits, and that turns out to outweigh the story about a new player's rates.
+docked at, so 0 is the core and 1 the rim. **Both of #196's predictions held**,
+which is not what an earlier run of this instrument reported. The route-mix
+prediction held: narrow-at-high-TL pulls trade inward (mean dock radius 0.612 →
+0.509 as the level rises, and at 0.30 **46% of its docks land in the TL 11-15
+band**), while the shipped direction pushes it outward (0.694 → 0.922, with 93% of
+docks in TL 1-5 by the widest rung). **And the rate prediction held too**, against
+the first reading: the shipped arm is the faster one in every matched pair (309-425
+against 225-308 Cr/min at the narrowest rung), and at the widest two levels it is
+the *wide* arm that stalls, 2 of 4 sessions each against the shipped arm's none.
+
+**That reversal was the instrument's arithmetic, not the world's.** The first
+version of this sweep compared a graded table against a flat one at the same
+*floor* and called it matched, which left the two arms' means apart; once the
+endpoints moved onto `BID_CUT_FLOOR` and `BID_CUT_GRADE`, the multiset of cuts in a
+graded table became the flat arm's figure twice over in the right order, the means
+became equal by construction, and the printed guard is there so the next reader can
+check the pairing rather than trust this sentence. A finding that survives becoming
+a matched comparison is worth more than one that only survived being run.
 
 An independent argument points the same way and is not about the destination's
 third verb. §4 already loads the frontier with price *risk* — a TL 1 market's
@@ -967,9 +1012,28 @@ at a single price step — the two populations are identical to the row — and 
 the round trip nets nothing either, because the floor that swallows the spread
 swallows the deficit's mark on the way through `stockResponse`.
 `scripts/measure-clamp-bite.ts` reprints the realized rate per tech level and per
-station type; `tests/market.test.ts` §5.6 pins the whole-table figure at **8,400 of
-1,566,720 rows (0.54%)** and flies the cycle on every one of them to show no pump
-survives there.
+station type; `tests/market.test.ts` §5.6 pins the whole-table figure at **8,760 of
+1,566,720 rows (0.56%)** and flies the cycle on every one of them to show no pump
+survives there. It moved from 8,400 when the cut's endpoints moved onto the
+constants, because the rim's cut came down from 0.110 to 0.100 and joined the set
+the floor swallows.
+
+**Every zero off that floor is attributed, and one category is not a success.** A
+previous version of this row counted 74 zeros, called them boundaries, and walked
+one of the 74 to prove it. Walking *all* of them — 3,472, since the count itself
+was wrong — found three mechanisms instead of one, and `tests/helpers/
+console-cycle.ts` now classifies each zero by re-flying it with the tenth-credit
+quote step taken off. **2,799 the law closes outright**: the rim, where the cut
+equals the mark a full hold leaves, plus the buy-first metals near the core that
+wash because a purchase's mark and the cut cancel, `(1 + 0.315) × (1 − 0.239) ≈ 1`
+— a mark of the law no comparison of the two leg figures can see, which is how the
+first taxonomy lost 279 rows. **392 the law loses and the quote step washes to
+nothing**, a wash for the player rather than a leak. And **281 would profit** — by
+up to **5.54 Cr** — if the quote were not a whole number of tenths, which means the
+precision rule above closes cycles §5.6's cut does not. Trivial against the
+1,064.70 Cr the residue row reports, and stated because a closure whose weakest
+rung is the number of digits on the glass should be known to have one. The three
+categories sum to the count, and a test holds that sum.
 
 **What the player sees, and what the till charges.** The market row carries BUY and
 SELL as two columns rather than one price with a cut folded into the arithmetic —
@@ -991,9 +1055,10 @@ station is the display rounding and not the law.
 **Figures in this section are transcribed output.** Re-derive them with
 `bun run scripts/measure-greedy-trader.ts`, `bun run
 scripts/measure-clamp-bite.ts`, and `npm run probe:one station-console` before
-quoting any of them at a retune — `BID_CUT_GRADE` in particular is a chosen
-figure, not a measured one, and the only thing that would make it wrong is a
-change to what a margin is worth.
+quoting any of them at a retune. `BID_CUT_GRADE` is the rung of a swept ladder
+(`§5.6 — the grade alone`, floor held at its shipped value): 0.20 is the first rung
+that stalls a galaxy and 0.15 the widest that costs nothing, so what would make 0.15
+wrong is a change to what a margin is worth, not a retune of the floor.
 
 ---
 
@@ -1359,7 +1424,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite — `market.test.ts` 51, `market-state.test.ts` 16, `deficits.test.ts` 15
+### 10.1 Suite — `market.test.ts` 53, `market-state.test.ts` 16, `deficits.test.ts` 15
 
 `market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
 domain — and is listed below. §5's two properties are not about a formula and
@@ -1371,12 +1436,12 @@ read "`market-state.test.ts` 24" while the file ran 28 —
 [#67](https://github.com/jcfischer/seelite/issues/67). A count in prose is a
 claim like any other; these three were read off a run. **The first of them was
 stale again before this node arrived** — the file ran 42 on `main` while this
-heading said 38 — and #196 takes it to **51**, nine rows in §5.6: the two dials
+heading said 38 — and #196 takes it to **53**, eleven rows in §5.6: the two dials
 re-derived from the response rather than quoted, the swing the floor does not
-reach, the domain's two ends, the ask's identity, and the erased rows flown for a
-pump. Eight rows joined `station-commerce.test.ts` and four
-`station-console.test.ts`, which this heading has never counted; §10.3 says what
-they are for.
+reach, the domain's two ends, the ask's identity, the erased rows flown for a
+pump, and the quote's own precision. Eleven rows joined `station-commerce.test.ts`
+(13 → 22 on `main`) and four `station-console.test.ts` (21 → 25), which this heading
+has never counted; §10.3 says what they are for.
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -1661,9 +1726,9 @@ had" applied to a direction rather than to a clock.
 
 The other finding is the one this node was told to report rather than resolve.
 The closure figure that follows from §5.2's range — 0.315 — closes the pump and
-takes the honest trade loop with it (`flat 0.30`: 2 of 4 galaxies reach the kit,
+takes the honest trade loop with it (`flat 0.30`: 1 of 4 galaxies reaches the kit,
 2 of 4 stall), so the shipped floor sits at the mark one hold of *tonnage*
-leaves and the metals cycle stays open at 1,017.70 Cr a run. Every correction
+leaves and the metals cycle stays open at 1,064.70 Cr a run. Every correction
 during the work moved in one direction — a deeper floor closes more pump and
 pays for it in loop — which is #25's tell that the axis being swept is the wrong
 one. The lever that does not trade those two against each other is the unit §5.2
@@ -1724,7 +1789,7 @@ settled it.
   63 units of Platinum moves the market as though it were 63 *tonnes*, because
   `addDeficit` adds units while `stockResponse` divides by a hold measured in
   tonnes. That is why one purchase of a metal saturates a small hull (§12 joint
-  14), why the round trip at one console survives §5.6 at 1,017.70 Cr a cycle (§12
+  14), why the round trip at one console survives §5.6 at 1,064.70 Cr a cycle (§12
   joint 12), and why closing it with the spread instead costs the trade loop the
   run above. Re-anchoring it re-opens every figure §5.4 was ratified on, which is
   #182's D6 in one sentence, and that is why this is a node and not a patch.
@@ -1892,8 +1957,8 @@ settled it.
     Platinum is 0.2 t of cargo, §5.2's memory counts units, and one purchase
     saturates a hull of 20 t or less — the swing is 0.315, the whole range of the
     response and more than any cut the trade loop survives. Joint 14 is the
-    mechanism; §11 carries the node. So **11,784 of the same 98,685 cycles still net
-    a credit, all of them metals, the best at 1,017.70 Cr a cycle on 4,964 Cr of
+    mechanism; §11 carries the node. So **12,073 of the same 98,685 cycles still net
+    a credit, all of them metals, the best at 1,064.70 Cr a cycle on 4,964 Cr of
     working capital** against 1,563.79 Cr with no spread at all.
     `tests/station-commerce.test.ts` §5.6 pins that figure with the row that produces
     it, and `tests/market.test.ts` §5.6 pins the ratio between the shipped floor and
@@ -1922,8 +1987,8 @@ settled it.
     0.315 — which §5.6 found taking the honest trade loop down to 2 of 4 galaxies
     reaching a Combat Engine in four hours, 2 of 4 sessions stalling outright. So the
     cut shipped at the tonnage closure, 0.10, and this joint now carries a surviving
-    pump rather than only an asymmetry: 11,784 profitable cycles in the corpus,
-    1,017.70 Cr on the binding one. That reframes what re-anchoring it would buy. It
+    pump rather than only an asymmetry: 12,073 profitable cycles in the corpus,
+    1,064.70 Cr on the binding one. That reframes what re-anchoring it would buy. It
     is not tidiness and it is not #182's D6 revisited for its own sake; it is the one
     lever in the economy that closes the metals cycle without paying for it in trade,
     because the cycle's size *is* this unit error. §11 opened the node.

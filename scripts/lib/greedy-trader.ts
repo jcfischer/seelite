@@ -537,11 +537,11 @@ export interface Result {
 	 * this one — it reports the option pools, not the economy. A spread that moves
 	 * trade toward the frontier or away from it shows in *which* systems got the
 	 * docks, so that is what gets counted: tech level because §5.6's cut is a
-	 * function of it, and profile radius because that is the geography the
+	 * function of it, and galactic radius because that is the geography the
 	 * destination's third verb is about.
 	 */
 	dockTl: number[];
-	dockProfileT: number[];
+	dockRadius: number[];
 	/**
 	 * True when the session ended because no option paid rather than because the
 	 * clock ran out. An economy where a trader *stops* is a different finding from
@@ -1048,7 +1048,7 @@ export function run(
 	let jumpMinutes = 0;
 	let dockMinutes = 0;
 	const dockTl: number[] = [];
-	const dockProfileT: number[] = [];
+	const dockRadius: number[] = [];
 	let stalled = false;
 	const waitRatios: number[] = [];
 	const tally = { truncated: 0, enumerations: 0 };
@@ -1134,7 +1134,7 @@ export function run(
 		}
 		here = hop.to;
 		dockTl.push(here.record.displayTL);
-		dockProfileT.push(here.record.t);
+		dockRadius.push(here.record.t);
 		hops++;
 		if (hop.kind === "jump") jumps++;
 		else intra++;
@@ -1169,7 +1169,7 @@ export function run(
 		tonnesLifted,
 		ladenHops,
 		dockTl,
-		dockProfileT,
+		dockRadius,
 		stalled,
 		neighbourLimit,
 	};

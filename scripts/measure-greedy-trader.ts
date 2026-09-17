@@ -39,6 +39,7 @@ import {
 	bidCutAtTl,
 	HOLD_REFERENCE_T,
 	marketQuote,
+	quoteWithCut,
 } from "../src/market";
 import {
 	type WorstCycle,
@@ -290,11 +291,23 @@ console.log(
 const TL_SPAN = DISPLAY_TL_MAX - DISPLAY_TL_MIN + 1;
 
 /** One-sided, uniform in tech level: the shape the closure ladder needs. */
-const uniformCut =
-	(cut: number): QuoteFn =>
-	(mid) => ({
-		buyCr: mid,
-		sellCr: Math.max(PRICE_STEP_CR, mid * (1 - cut)),
+const uniformCut = (cut: number): QuoteFn => quoteWithCut(() => cut);
+
+/**
+ * The wedge split across both columns, which is the one shape `quoteWithCut`
+ * cannot express because it moves the *ask* as well as the bid.
+ *
+ * It lives here rather than in `market.ts` for that reason: the game does not ship
+ * it, #191 D1 declined it, and the only thing it is good for is saying what the
+ * shipped one-sided law costs against it. Both arms are still guarded against
+ * `marketQuote` below, since an unguarded re-implementation is what the "shipped"
+ * row in this report once quietly was.
+ */
+const quoteSplitting =
+	(eachSide: number): QuoteFn =>
+	(mid, tl) => ({
+		buyCr: mid * (1 + eachSide),
+		sellCr: Math.max(PRICE_STEP_CR, mid * (1 - eachSide)),
 	});
 
 /**
@@ -311,18 +324,16 @@ const spreadArm = (
 	grade: number,
 	wideAtRim: boolean,
 ): QuoteFn => {
-	// The same offset `bidCutAtTl` uses — one-based over the span — because the
+	// The same offset `bidCutAtTl` uses — 0 at the rim, 1 at the core — because the
 	// "shipped" row below has to *be* the shipped table, and the guard under this
-	// function is what says whether it is. The mirror takes the complementary
-	// offset, which is the same multiset of cuts in the other order: matched mean by
-	// construction, so a difference between the two rows is the direction and not
-	// the level.
+	// function is what says whether it is. It used to be one-based over the span,
+	// which is what left `BID_CUT_FLOOR` naming a cut no market pays; the mirror
+	// takes the complementary offset, which is the same multiset of cuts in the
+	// other order, so a difference between the two rows is the direction and not the
+	// level.
 	const position = (tl: number) =>
-		(wideAtRim ? DISPLAY_TL_MAX - tl + 1 : tl - DISPLAY_TL_MIN + 1) / TL_SPAN;
-	return (mid, tl) => ({
-		buyCr: mid,
-		sellCr: Math.max(PRICE_STEP_CR, mid * (1 - base - grade * position(tl))),
-	});
+		(wideAtRim ? DISPLAY_TL_MAX - tl : tl - DISPLAY_TL_MIN) / (TL_SPAN - 1);
+	return quoteWithCut((tl) => base + grade * position(tl));
 };
 
 const shippedMatchesTheLaw = (): boolean => {
@@ -366,14 +377,24 @@ console.log(
 		`   ${shippedSurvey.positiveRows === 0 ? "—" : bindingRow(shippedSurvey.worst)}`,
 );
 console.log(
-	`  cut at the rim ${BID_CUT_FLOOR.toFixed(3)}, at the core ${bidCutAtTl(DISPLAY_TL_MAX).toFixed(3)}; ` +
+	// Read off the shipped function at the domain's ends, not off the constants: the
+	// first version of this line printed `BID_CUT_FLOOR` as the rim cut while the
+	// table's rim cut was 0.110, and the report reprinted the wrong figure for a
+	// round.
+	`  cut at the rim ${bidCutAtTl(DISPLAY_TL_MIN).toFixed(3)}, at the core ${bidCutAtTl(DISPLAY_TL_MAX).toFixed(3)}; ` +
 		`rows flown ${shippedSurvey.rows.toLocaleString()}; ` +
-		// A zero off §3's floor is the row where the cut and the mark cancel at exactly
-		// one tech level — a crossing rather than an error. Named with its count
-		// because a bare zero count cannot tell the two apart, and 270 of these 344 are
-		// floored rows where §3 swallows the cut whole.
+		// Each of these is flown again with the quote step taken off, which is the only
+		// reading that says *what* closed it. The last figure is the one to watch: a
+		// zero the display precision closes is the weakest closure there is, and it
+		// belongs in the open rather than folded into the count above it.
 		`${shippedSurvey.zeroRows} net nothing, of which ` +
-		`${shippedSurvey.zeroRowsOffTheFloor} are not on a row §3's floor pins.`,
+		`${shippedSurvey.zeroOffFloor.count} are not on a row §3's floor pins: ` +
+		`${shippedSurvey.zeroOffFloor.lawCloses} closed by the law outright, ` +
+		`${shippedSurvey.zeroOffFloor.quantizedToZero} the law loses and the quote ` +
+		`step washes, ` +
+		`${shippedSurvey.zeroOffFloor.rescuedByRounding.count} would profit without ` +
+		`the tenth-credit quote step (best ` +
+		`${shippedSurvey.zeroOffFloor.rescuedByRounding.worstCr.toFixed(2)} Cr).`,
 );
 
 /**
@@ -402,10 +423,7 @@ const closingCut = (
 
 console.log("\n§5.6 — what closure costs, one-sided against split");
 const oneSidedClosing = closingCut((x) => uniformCut(x));
-const splitClosing = closingCut((x) => (mid) => ({
-	buyCr: mid * (1 + x),
-	sellCr: Math.max(PRICE_STEP_CR, mid * (1 - x)),
-}));
+const splitClosing = closingCut(quoteSplitting);
 console.log(
 	`  one-sided, cut on the bid alone: closes at ${oneSidedClosing.cr.toFixed(3)} ` +
 		`(±${oneSidedClosing.width.toFixed(3)}) — total wedge ${oneSidedClosing.cr.toFixed(3)}`,
@@ -423,7 +441,17 @@ console.log("\n§5.6 — direction, at matched mean cut");
 console.log(
 	"  arm                kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",
 );
-const routeRow = (name: string, quote: QuoteFn): void => {
+/**
+ * What an arm costs, in the four readings the direction question is decided on.
+ *
+ * **One measurement, two printers**, because the direction table and the grade
+ * ladder are the same run wearing a different dial on the left, and two copies of
+ * an accumulator is how a report ends up with rows that look comparable and are
+ * not. `kits` stays per-galaxy rather than collapsing into the range, because the
+ * claim §5.6 makes is about *each* pairing, and a min–max across four draws cannot
+ * show whether they agreed.
+ */
+const armStats = (quote: QuoteFn) => {
 	const milestone = WORLDS.map(({ world }) => run(world, hours, { quote }));
 	const rateRuns = WORLDS.map(({ world }) =>
 		run(world, hours, { quote, stopAtKit: false }),
@@ -441,26 +469,42 @@ const routeRow = (name: string, quote: QuoteFn): void => {
 			bands[tl <= 5 ? 0 : tl <= 10 ? 1 : 2]++;
 			docks++;
 		}
-		for (const t of r.dockProfileT) radius += t;
+		for (const t of r.dockRadius) radius += t;
 		// A run that stops hunting has stopped trading, and its share of the mix
 		// below is a claim about a halt rather than about an economy.
 		if (r.stalled) stalled++;
 	}
+	return {
+		kits,
+		kitLabel:
+			kits.length === WORLDS.length
+				? `${Math.min(...kits).toFixed(0)}-${Math.max(...kits).toFixed(0)} min`
+				: `${kits.length}/${WORLDS.length} in cap`,
+		rateLabel: `${Math.min(...rates).toFixed(0)}-${Math.max(...rates).toFixed(
+			0,
+		)}`,
+		bandLabel: bands
+			.map((n) => ((100 * n) / Math.max(docks, 1)).toFixed(0))
+			.join("/"),
+		radius: radius / Math.max(docks, 1),
+		stalled,
+	};
+};
+
+type ArmStats = ReturnType<typeof armStats>;
+
+/** The direction table's printer: the arm's name, then everything measured. */
+const routeRow = (name: string, quote: QuoteFn): ArmStats => {
+	const s = armStats(quote);
 	console.log(
 		`  ${name}`.padEnd(21) +
-			(kits.length === WORLDS.length
-				? `${Math.min(...kits).toFixed(0)}-${Math.max(...kits).toFixed(0)} min`
-				: `${kits.length}/${WORLDS.length} in cap`
-			).padEnd(19) +
-			`${Math.min(...rates).toFixed(0)}-${Math.max(...rates).toFixed(0)}`.padEnd(
-				11,
-			) +
-			`${bands.map((n) => ((100 * n) / Math.max(docks, 1)).toFixed(0)).join("/")}`.padEnd(
-				26,
-			) +
-			`${(radius / Math.max(docks, 1)).toFixed(3)}` +
-			(stalled ? `   stalled ${stalled}/${WORLDS.length}` : ""),
+			s.kitLabel.padEnd(19) +
+			s.rateLabel.padEnd(11) +
+			s.bandLabel.padEnd(26) +
+			s.radius.toFixed(3) +
+			(s.stalled ? `   stalled ${s.stalled}/${WORLDS.length}` : ""),
 	);
+	return s;
 };
 routeRow("no wedge (control)", NO_WEDGE);
 // The ladder runs to 0.30 rather than stopping at the shipped mean because the
@@ -469,14 +513,61 @@ routeRow("no wedge (control)", NO_WEDGE);
 // deeper floor is affordable. It is printed at the same matched-mean width as the
 // rest, so the last rung is comparable to the rows above it and not a separate
 // claim.
+const gradeAt = (mean: number): number => {
+	// **The mean of the graded table, computed rather than asserted.** With the
+	// offset running 0…1 the average of `position` over the domain is 1/2, so a grade
+	// of twice the target mean puts the graded table's average cut at that mean —
+	// which is what makes the two graded rows the same *level* of spread in opposite
+	// directions. It was not exact while the offset was one-based: the average of
+	// 1/15…15/15 is 8/15, so every "matched" pair ran 6.7% hot against its own flat
+	// control, and the row that said "same mean" did not mean it.
+	const meanPosition =
+		Array.from({ length: TL_SPAN }, (_, i) => i / (TL_SPAN - 1)).reduce(
+			(a, b) => a + b,
+			0,
+		) / TL_SPAN;
+	return mean / meanPosition;
+};
+const gradedMeanCheck = (mean: number): string => {
+	let total = 0;
+	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
+		total += spreadArm(0, gradeAt(mean), false)(100, tl).sellCr;
+	return (1 - total / (100 * TL_SPAN)).toFixed(4);
+};
+/** Per-galaxy kit for the two graded arms at each rung, kept for the pair table. */
+const PAIRS: [number, ArmStats, ArmStats][] = [];
 for (const mean of [0.1, 0.15, 0.2, 0.3]) {
 	routeRow(`flat ${mean.toFixed(2)}`, uniformCut(mean));
-	// A grade of `2 × mean` puts the *average* of the graded table at `mean`, so
-	// narrow and wide differ in direction and not in how much they take.
-	routeRow(`narrow at rim ${mean.toFixed(2)}`, spreadArm(0, 2 * mean, false));
-	routeRow(`wide at rim ${mean.toFixed(2)}`, spreadArm(0, 2 * mean, true));
+	const narrow = routeRow(
+		`narrow at rim ${mean.toFixed(2)}`,
+		spreadArm(0, gradeAt(mean), false),
+	);
+	const wide = routeRow(
+		`wide at rim ${mean.toFixed(2)}`,
+		spreadArm(0, gradeAt(mean), true),
+	);
+	PAIRS.push([mean, narrow, wide]);
+	// Printed beside the rows it guards, because "matched mean" is an arithmetic
+	// claim and arithmetic that is only asserted in a comment goes wrong.
+	console.log(
+		`      (mean cut of the graded table at this rung: ${gradedMeanCheck(mean)}, ` +
+			`target ${mean.toFixed(2)})`,
+	);
 }
 routeRow("shipped table", marketQuote);
+console.log(
+	"  per galaxy, narrow against wide, so four draws cannot be read as one range:",
+);
+for (const [mean, narrow, wide] of PAIRS) {
+	console.log(
+		`      mean ${mean.toFixed(2)}  kit by galaxy (narrow/wide)  ` +
+			WORLDS.map(({ g }, i) => {
+				const n = narrow.kits[i];
+				const w = wide.kits[i];
+				return `${g} ${n === undefined ? "—" : n.toFixed(0)}/${w === undefined ? "—" : w.toFixed(0)}`;
+			}).join("   "),
+	);
+}
 console.log(
 	"  radius is the generator's normalised galactic distance — 0 is the core, 1 the rim — " +
 		"averaged over the systems a trader actually docked at.",
@@ -484,4 +575,39 @@ console.log(
 console.log(
 	"  #191 D4's direction is decided off these rows: the mix is the reading, and the hop " +
 		"ratio is not (§10.3 — it reports the option pools, not the economy).",
+);
+
+/**
+ * The grade alone, at the shipped floor.
+ *
+ * **Why this is a separate ladder and not one more rung of the one above.** Every
+ * arm of the matched-mean sweep changes the rim and the core together, so nothing
+ * there can attribute anything to the *difference* between them: raising the grade
+ * raises the mean with it, and the matched arm re-balances by lowering the base.
+ * Holding `BID_CUT_FLOOR` where the game ships it and sweeping only the grade is
+ * the one ladder that answers the question `BID_CUT_GRADE`'s docstring asks — what
+ * does a wider rim-to-core spread cost a commander who has not been to the core
+ * yet — because that commander trades at the rim end, where the floor holds still.
+ */
+console.log("\n§5.6 — the grade alone, floor held at its shipped value");
+console.log(
+	"  grade  rim → core      kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",
+);
+for (const grade of [0, 0.05, 0.1, 0.15, 0.2, 0.25]) {
+	const g = armStats(spreadArm(BID_CUT_FLOOR, grade, false));
+	console.log(
+		`  ${grade.toFixed(2)}`.padEnd(9) +
+			`${bidCutAtTl(DISPLAY_TL_MIN).toFixed(3)} → ${(BID_CUT_FLOOR + grade).toFixed(3)}`.padEnd(
+				15,
+			) +
+			g.kitLabel.padEnd(19) +
+			g.rateLabel.padEnd(11) +
+			g.bandLabel.padEnd(26) +
+			g.radius.toFixed(3) +
+			(g.stalled ? `   stalled ${g.stalled}/${WORLDS.length}` : ""),
+	);
+}
+console.log(
+	"  the shipped rung is 0.15. Every row here trades at the same rim end, so what " +
+		"moves down the column is only how much a core market takes off a seller.",
 );

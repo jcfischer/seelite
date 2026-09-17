@@ -429,7 +429,7 @@ export const shelfQuantity = (
  * over a generated corpus in `tests/market.test.ts` — exactly that in practice,
  * hitting both ends. The bounds are declared rather than derived because a
  * *table* needs its domain named, and because the alternative is a clamp: #13's
- * warning is that a modifier on a bounded index gets clamped away where that
+ * warning is that an offset on a bounded index gets clamped away where that
  * type lives, and a clamped `displayTL` would hand a station a cut no table
  * declares. So the domain is checked and throws, and the corpus row is what
  * makes the throw unreachable in play rather than merely asserted.
@@ -451,12 +451,15 @@ export const DISPLAY_TL_MAX = 15;
  * **And 0.315 is not shippable, which is #196's finding.** The §5.6 section of
  * `scripts/measure-greedy-trader.ts` runs the honest trade loop — a trader that
  * never visits a console twice in a row, so it is neither the pump nor rigged —
- * against the cut ladder. At a mean cut of 0.3 that trader fails to reach the
- * Combat Engine inside a four-hour session in six galaxies of eight, and stops
- * finding a profitable hop at all in six of eight; at 0.15 it reaches it in every
- * one. A spread that closes the pump by making ordinary trading unprofitable has
- * not repaired the economy, it has cancelled it, and §8's time-to-kit goes the
- * wrong way with it.
+ * against the cut ladder, and at the wide rungs that loop stops reaching the
+ * Combat Engine inside a four-hour session and stops finding a profitable hop at
+ * all. **The figures are not transcribed here**: that report is their only owner,
+ * it reprints them beside whatever a fresh run derives, and this paragraph carried
+ * a count that had already gone stale against the table fifteen lines above it —
+ * `economy-trade.md` §5.6's rule about third copies, applied to this file. What
+ * the shape says, and what no rerun has moved: a spread which closes the pump by
+ * making ordinary trading unprofitable has not repaired the economy, it has
+ * cancelled it, and §8's time-to-kit goes the wrong way with it.
  *
  * **So the floor is the mark one full hold of ordinary tonnage leaves**, which is
  * `PRICE_ELASTICITY × (holdT / holdT)` — that is, `PRICE_ELASTICITY`, exact at
@@ -468,10 +471,12 @@ export const DISPLAY_TL_MAX = 15;
  * shipped calculator, so the claim is the till's and not the comment's.
  *
  * **What that leaves open is the sub-tonne case, and it is reported rather than
- * hidden.** Sixty-three **units** of Gold is 0.2 t of cargo, and §5.2's memory is
- * written in units: one purchase saturates a hull of 20 t or less, the swing is
- * the full 0.315, and a Gold cycle still clears about a fifth of its working
- * capital per click above this floor. That residue is #182's weak joint 14 — the
+ * hidden.** Sixty-three **units** of Platinum is 0.2 t of cargo — Platinum
+ * because it is the cheapest of the three metals and so the last one a cut prices
+ * out — and §5.2's memory is written in units: one purchase saturates a hull of
+ * 20 t or less, the swing is the full 0.315, and the binding cycle still clears a
+ * fifth of its working capital per click above this floor. That residue is #182's
+ * weak joint 14 — the
  * sub-tonne goods saturating at a single purchase, which #182's D6 chose to
  * preserve rather than re-anchor §5.4's farm calibration on. Closing it from the
  * spread side costs the trade loop the figure above, so the cheaper lever is the
@@ -489,14 +494,12 @@ export const BID_CUT_FLOOR = PRICE_ELASTICITY;
  * argued in that node and neither won, so both arms were flown in
  * `scripts/measure-greedy-trader.ts` at *matched mean cut* — a grade of twice
  * the mean, so the two tables hold the same multiset of cuts in the other order
- * and a difference between them is the direction rather than the level. Three
- * readings agree, at every mean from 0.10 to 0.20:
+ * and a difference between them is the direction rather than the level.
  *
- * | mean cut | kit, narrow at rim | kit, wide at rim | mean dock radius |
- * |---|---|---|---|
- * | 0.10 | 50–77 min | 70–79 min | 0.683 vs 0.573 |
- * | 0.15 | 51–84 min | 82–93 min | 0.784 vs 0.463 |
- * | 0.20 | 61–115 min | 2 of 4 never | 0.800 vs 0.631 |
+ * **The direction held at every mean the sweep ran, 0.10 through 0.20, and the
+ * figures belong to that report rather than to this comment.** They moved twice
+ * while the law was being settled, and a table pasted here is a second copy
+ * bought to age. What survives a rerun is the shape, and the shape is:
  *
  * Radius is the generator's normalised galactic distance, averaged over the
  * systems a trader docked at, so 0 is the core and 1 the rim: narrow-at-the-rim
@@ -514,13 +517,14 @@ export const BID_CUT_FLOOR = PRICE_ELASTICITY;
  * range is narrow and the book is thick, is where a marginal tonne is worth
  * least to the station buying it.
  *
- * **The grade itself is 0.15, which is the widest figure that costs the milestone
- * nothing.** At 0.15 the shipped table takes the Combat Engine to 63–86 minutes
- * across four galaxies against 52–82 with no spread at all, and no session
- * stalls; the core end then pays 0.250 against the rim's 0.100, so a rim hop is
- * still the cheap place to trade and a core hop still has to beat a margin worth
- * having. It is a chosen figure — the direction above is measured, the span is
- * not — and §12 carries the retune as §8's obligation, because the only thing
+ * **The grade itself is 0.15, chosen and then swept at the shipped floor.** A
+ * matched-mean direction sweep is the wrong instrument for a *span*: raising the
+ * grade raises the mean with it, so an arm matched on the mean attributes to the
+ * rim-to-core difference what a wider average paid for. So §5.6's third section
+ * holds `BID_CUT_FLOOR` at its shipped 0.10 and runs the grade alone, which is the
+ * only ladder that can say what a wider difference costs a new commander. Read the
+ * rung beside 0.15 there rather than trusting this sentence — the grade is a chosen
+ * figure, and §12 carries its retune as §8's obligation, because the only thing
  * that would make it wrong is a change to what a margin is worth.
  */
 export const BID_CUT_GRADE = 0.15;
@@ -540,14 +544,20 @@ export const requireDisplayTl = (displayTL: number): number => {
 };
 
 /**
- * A station's bid cut at one tech level, strictly above `BID_CUT_FLOOR` at
- * every point of the domain.
+ * A station's bid cut at one tech level. **The domain's ends are the two
+ * constants**: TL 1 pays exactly `BID_CUT_FLOOR` and TL 15 pays
+ * `BID_CUT_FLOOR + BID_CUT_GRADE`, so the span of the law is its declaration
+ * rather than a figure that appears somewhere else. The numerator runs from 0
+ * rather than 1 because a `+ 1` there put the cheapest market at floor + grade/15
+ * = 0.110 and left `BID_CUT_FLOOR` naming a cut no market in the game pays — this
+ * repo's third-copy drift, caught by reading the shipped function at TL 1 instead
+ * of reading the constant, and it had already been copied into three files.
  *
- * Strictly, because *at* the floor the binding cycle nets exactly zero — no
- * profit, but no cost either — and a market that pays the floor is a place the
- * pump breaks even rather than loses. The `+ 1` in the numerator is what keeps
- * the core end off it: the cheapest market in the game pays the floor plus
- * `BID_CUT_GRADE / 15`, and the dearest pays the floor plus a whole grade.
+ * **At the rim that puts a tonnage round trip at exactly zero**, a wash rather
+ * than a loss, and that is what the closure is measured as: the ladder in
+ * `scripts/measure-greedy-trader.ts` counts cycles netting *more* than nothing, so
+ * a rung whose binding rows break even closes the pump and the rung below it does
+ * not.
  *
  * **It is a cut on the *bid* and nothing else, which is a ruling rather than a
  * default** — see `marketQuote`.
@@ -555,8 +565,8 @@ export const requireDisplayTl = (displayTL: number): number => {
 export const bidCutAtTl = (displayTL: number): number =>
 	BID_CUT_FLOOR +
 	BID_CUT_GRADE *
-		((requireDisplayTl(displayTL) - DISPLAY_TL_MIN + 1) /
-			(DISPLAY_TL_MAX - DISPLAY_TL_MIN + 1));
+		((requireDisplayTl(displayTL) - DISPLAY_TL_MIN) /
+			(DISPLAY_TL_MAX - DISPLAY_TL_MIN));
 
 /**
  * The two prices one market quotes for one good, and the only place the spread
@@ -594,10 +604,66 @@ export interface MarketQuote {
 
 export type QuoteFn = (midCr: number, displayTL: number) => MarketQuote;
 
-export const marketQuote: QuoteFn = (midCr, displayTL) => ({
-	buyCr: midCr,
-	sellCr: Math.max(PRICE_STEP_CR, midCr * (1 - bidCutAtTl(displayTL))),
-});
+/**
+ * The one place the wedge's shape is written, so an arm of a sweep is a *cut
+ * schedule* rather than a second implementation of the quote.
+ *
+ * Every alternative in `scripts/measure-greedy-trader.ts` — flat, graded either
+ * way, one-sided against split — goes through here, because an arm that re-types
+ * `Math.max(PRICE_STEP_CR, mid * (1 - cut))` can differ from the shipped law in
+ * anything except the dial its name advertises, and then a report is comparing two
+ * implementations rather than two spreads. The split wedge is the one shape this
+ * factory cannot express, since it moves the *ask* too; it is `quoteSplitting`,
+ * and the report guards both against `marketQuote` before printing.
+ */
+/**
+ * The precision a quote is expressed in: **one tenth of a credit**, because that is
+ * the finest figure the console can print.
+ *
+ * **This is #193's rule, applied to the second decimal place it did not reach.**
+ * `priceLabel` renders `toFixed(1)`, and the rule that made it do so was that a
+ * rounded price is a figure the till will not honour — the defect that let a Food
+ * row print `0 Cr` while the transaction charged 2.2 Cr. Quantizing the quote to
+ * what the glass prints is that rule taken to its conclusion: an unquoted cent is
+ * worse than a coarse one, because the player reads 3.5, the till pays 3.51, and
+ * nothing on the screen says the two are different numbers. Both columns go through
+ * it, so the spread the commander reads is the spread charged, to the last digit
+ * shown.
+ */
+export const PRICE_DISPLAY_STEP_CR = 0.1;
+
+/** The quote's own rounding, applied before any caller sees a number. */
+export const quantizeToDisplayStepCr = (cr: number): number => {
+	// Divide on the way back down rather than multiply. `53 × 0.1` is
+	// 5.300000000000001, which prints as `5.3` and is not `5.3` — the exact defect
+	// this function exists to remove, re-introduced by the arithmetic that removes
+	// it. `1 / 0.1` is 10 exactly, so `53 / 10` is the nearest double to 5.3, which
+	// is the number `priceLabel` prints and `Number` reads back.
+	const steps = 1 / PRICE_DISPLAY_STEP_CR;
+	return Math.round(cr * steps) / steps;
+};
+
+/**
+ * @param quantize Turn the tenth-credit quote step off, which only an instrument
+ *   has a reason to do: `tests/helpers/console-cycle.ts` needs to tell a cycle the
+ *   law closed apart from a cycle the *rounding* closed, and it cannot do that with
+ *   the same factory that did the rounding. A false here is an arm of a sweep, not a
+ *   build setting — nothing the player runs takes it.
+ */
+export const quoteWithCut = (
+	cutAtTl: (displayTL: number) => number,
+	{ quantize = true }: { quantize?: boolean } = {},
+): QuoteFn => {
+	const step = (cr: number): number =>
+		quantize ? quantizeToDisplayStepCr(cr) : cr;
+	return (midCr, displayTL) => ({
+		buyCr: step(midCr),
+		sellCr: step(Math.max(PRICE_STEP_CR, midCr * (1 - cutAtTl(displayTL)))),
+	});
+};
+
+/** The shipped law: ask at the mid, bid cut by `bidCutAtTl`. */
+export const marketQuote: QuoteFn = quoteWithCut(bidCutAtTl);
 
 // ---------------------------------------------------------------------------
 // §5.1 — station identity, and the market it derives

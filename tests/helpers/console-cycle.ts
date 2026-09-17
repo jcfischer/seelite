@@ -22,7 +22,12 @@ import type { DeficitMap } from "../../src/deficits";
 import {
 	type Commodity,
 	COMMODITIES,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
 	PRICE_STEP_CR,
+	bidCutAtTl,
+	quoteWithCut,
+	stockResponse,
 	type QuoteFn,
 	type StationTypeKey,
 	marketQuote,
@@ -101,6 +106,17 @@ export interface CycleOutcome {
 	 *  printed net can be read as a yield rather than as a bare number. */
 	units: number;
 	midCr: number;
+	/**
+	 * What each leg was actually quoted at, and so what the till moved.
+	 *
+	 * The survey classifies its zeros against **these** rather than against the mid.
+	 * A quote is quantized to a tenth of a credit and floored at one price step, so a
+	 * row whose *mid* sits above §3's floor can still have both legs pinned at it —
+	 * and calling that "a zero off the price floor" would be describing a row §3 has
+	 * already swallowed as though it were an open question.
+	 */
+	sellCr: number;
+	buyCr: number;
 }
 
 /**
@@ -173,6 +189,22 @@ export function flyConsoleCycle(
 
 	const first = arm === "sell-first" ? "sell" : "buy";
 	const second = arm === "sell-first" ? "buy" : "sell";
+	// **The sign of the mark is the direction of the trade that left it.** A
+	// purchase is a positive deficit and raises a price; a sale is negative and
+	// lowers one — the asymmetry §5.2 is built on and the reason a *sale* first is
+	// the deeper pump. Getting this backwards is not cosmetic: it reports the
+	// buy-back as dearer than the untouched mid, and every zero this file
+	// classifies then sits in the wrong bucket.
+	const markAfterFirstLeg = first === "sell" ? -units : units;
+	const quoted = (kind: "buy" | "sell"): number =>
+		quote(
+			stockResponse(
+				marketRow(good, economy, station, gameTimeMin).priceCr,
+				kind === first ? 0 : markAfterFirstLeg,
+				holdT,
+			),
+			displayTL,
+		)[kind === "buy" ? "buyCr" : "sellCr"];
 	side(first);
 	side(second);
 	const midCr = marketRow(good, economy, station, gameTimeMin).priceCr;
@@ -180,6 +212,8 @@ export function flyConsoleCycle(
 		netCr: commander.credits - startCr,
 		units,
 		midCr,
+		sellCr: quoted("sell"),
+		buyCr: quoted("buy"),
 	};
 }
 
@@ -249,19 +283,16 @@ export interface CycleSurvey {
 	 *  place where the market's arithmetic cancelled instead of charging, so the
 	 *  survey reports what they are rather than leaving them inside a zero. */
 	zeroRows: number;
-	/** Of those, the ones that are *not* a row §3's floor pins at one price step.
-	 *  **Every one of them is a boundary rather than a bug**: the row where the cut
-	 *  and the mark happen to cancel at that one tech level, with a profit on one
-	 *  side of it and a loss on the other. `firstZeroOffTheFloor` carries the row so
-	 *  a test can walk to the neighbouring tech levels and check that, rather than
-	 *  leaving the count to be read as an unexplained zero. */
-	zeroRowsOffTheFloor: number;
-	/** The first zero off §3's floor, if any. */
+	/** Of those, the ones that are *not* a row §3's floor pins at one price step,
+	 *  **walked rather than counted**. Each one is flown again at one tech level
+	 *  either side, because a bare count of zeros says only that the arithmetic
+	 *  cancelled and cannot say *why*; a walk says whether the row is a boundary the
+	 *  law expects, with a profit below it and a loss above, or something nobody has
+	 *  explained. Claiming the second reading for every row off the sample is exactly
+	 *  what a previous revision of this survey did with one row and a count. */
+	zeroOffFloor: ZeroWalk;
+	/** One of those zeros, named, so a red run prints a row rather than a count. */
 	firstZeroOffTheFloor: WorstCycle | null;
-	/** **True when every zero off §3's floor is a sub-tonne row.** A *tonnage* row
-	 *  off the floor must be strictly negative: there the mark cannot reach the cut,
-	 *  so a zero would mean the closure had stopped holding. */
-	zeroRowsOffTheFloorAllSubTonnes: boolean;
 	/** **The split that decides what the shipped floor actually closes.**
 	 *  `tonnage` counts cycles in goods whose units *are* tonnes, where a trade
 	 *  cannot move the deficit by more than the hold it was made in; `subTonnes`
@@ -282,6 +313,84 @@ export interface WorstCycle extends CycleOutcome {
 }
 
 /**
+ * What the zeros off §3's price floor turn out to be when each one is walked.
+ *
+ * Three readings, because there are three reasons a cycle can net nothing and only
+ * one of them is a hole in the law:
+ *
+ * - **`tonnageAtRim`** is the wash §5.6's floor is *supposed* to leave. At
+ *   `DISPLAY_TL_MIN` the cut equals the mark one full hold of tonnage moves a
+ *   price, so the second leg costs exactly what the first earned. That is closed in
+ *   the only sense the node asked for — nothing nets a credit — and it is a
+ *   consequence of the rim sitting on the mark, not an escape from it.
+ * - **`crossings`** are rows where the cut and the mark cancel at one tech level
+ *   and one only: the neighbour below profits, the neighbour above loses.
+ * - **`unexplained`** is everything else, and it is the figure a test asserts is
+ *   zero. `tonnageElsewhere` is the same alarm stated the other way: a *tonnage*
+ *   zero away from the rim would mean the closure stopped holding.
+ */
+export interface ZeroWalk {
+	count: number;
+	/**
+	 * Zeros the **law** leaves. Flown again with the quantization taken off, the same
+	 * cycle still nets nothing: this is closure, not a rounding artefact. At the rim
+	 * the cut equals the mark one full hold of tonnage moves a price, so a
+	 * sell-and-buy-back nets exactly nothing; nearer the core a buy-first metal cycle
+	 * can sit on the *other* mark, where a purchase lifts the price by the factor the
+	 * cut then removes — `(1 + mark) × (1 − cut)` at 1 is a wash, and the shipped
+	 * grade passes through that value within two tech levels of TL 15.
+	 */
+	lawCloses: number;
+	/** Zeros where the unquantized cycle loses and the shipped one nets nothing. A
+	 *  wash for the player rather than a leak; counted so a zero is attributed. */
+	quantizedToZero: number;
+	/**
+	 * Zeros where the unquantized cycle **profits** and only the tenth-credit quote
+	 * step stops it. The category that would matter: a pump the law does not close and
+	 * the display precision does, which is the weakest reason a closure can have.
+	 * `worstCr` sizes what it rescues, so the figure a retune makes large is a red run
+	 * rather than a slow slide.
+	 */
+	rescuedByRounding: { count: number; worstCr: number; rows: string[] };
+}
+
+/** The shipped cut schedule with its quantization taken back off, which is what
+ *  separates a cycle the law closes from a cycle the quote step rounds closed. */
+export const UNQUANTIZED_CUT: QuoteFn = quoteWithCut(bidCutAtTl, {
+	quantize: false,
+});
+
+/**
+ * Whether a cycle nets nothing only because the quote is quantized.
+ *
+ * The predicate is a second flight rather than an inequality about tenths: what is
+ * being distinguished is *which law* closed the row, and the only honest way to ask
+ * is to take the quantization off and see whether the cycle goes back to losing.
+ */
+const isRoundedToWash = (cycle: ConsoleCycle): boolean =>
+	flyConsoleCycle(cycle, UNQUANTIZED_CUT).netCr < -CYCLE_EPSILON_CR;
+
+/**
+ * Whether a zero row is the point where the cut and the mark cancel.
+ *
+ * The walk is the test: one tech level down the same cycle must net a credit, one
+ * up it must lose one. A row with no lower neighbour — the rim, where the cut is at
+ * its floor — has nothing below it to profit at, and is not a crossing; the caller
+ * classifies those as the wash rather than as unexplained.
+ */
+const isCycleCrossing = (cycle: ConsoleCycle, quote: QuoteFn): boolean => {
+	const below =
+		cycle.displayTL > DISPLAY_TL_MIN &&
+		flyConsoleCycle({ ...cycle, displayTL: cycle.displayTL - 1 }, quote).netCr >
+			CYCLE_EPSILON_CR;
+	const above =
+		cycle.displayTL < DISPLAY_TL_MAX &&
+		flyConsoleCycle({ ...cycle, displayTL: cycle.displayTL + 1 }, quote).netCr <
+			-CYCLE_EPSILON_CR;
+	return below && above;
+};
+
+/**
  * Fly every cycle the game can put a commander in front of, and count what nets.
  *
  * **The whole domain, not a sample.** §12.12's pump was found by a hold sweep,
@@ -296,13 +405,17 @@ export function surveyConsoleCycles(
 	let rows = 0;
 	let positiveRows = 0;
 	let zeroRows = 0;
-	let zeroRowsOffTheFloor = 0;
 	let tonnage = 0;
 	let subTonnes = 0;
 	let worst: WorstCycle | null = null;
 	let bestSubTonnes: WorstCycle | null = null;
 	let firstZeroOffTheFloor: WorstCycle | null = null;
-	let zeroOffTonnage = 0;
+	const zeroWalk: ZeroWalk = {
+		count: 0,
+		lawCloses: 0,
+		quantizedToZero: 0,
+		rescuedByRounding: { count: 0, worstCr: 0, rows: [] },
+	};
 	forEachConsoleCycle((cycle) => {
 		const out = flyConsoleCycle(cycle, quote);
 		rows++;
@@ -312,12 +425,44 @@ export function surveyConsoleCycles(
 			else subTonnes++;
 		} else if (out.netCr > -CYCLE_EPSILON_CR) {
 			zeroRows++;
-			if (out.midCr > PRICE_STEP_CR + CYCLE_EPSILON_CR) {
-				zeroRowsOffTheFloor++;
-				if (cycle.good.unit === "t") zeroOffTonnage++;
-				else if (firstZeroOffTheFloor === null)
-					firstZeroOffTheFloor = { ...out, cycle };
-			}
+			// Off §3's price floor means off for **both** legs: a quote is floored at
+			// one price step and quantized to a tenth, so a row whose mid stands above
+			// the floor can still have both legs pinned at it, and counting that as an
+			// open question would be describing a row §3 already swallowed.
+			if (
+				out.sellCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR ||
+				out.buyCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR
+			)
+				return;
+			zeroWalk.count++;
+			if (firstZeroOffTheFloor === null)
+				firstZeroOffTheFloor = { ...out, cycle };
+			// **Every zero, not a sample of them**, and each one asked the same question:
+			// would this cycle still net nothing with the tenth-credit quote step taken
+			// off? That is the only reading that separates a zero the law leaves from a
+			// zero the display precision leaves, and the second is a closure nobody should
+			// want — a pump stopped by the number of digits on the glass.
+			//
+			// An earlier revision classified these by whether the two legs printed the
+			// same figure and whether the good was a tonne good, and it ended up with 279
+			// rows it could not explain: Gold and Platinum buy-first cycles near the core,
+			// which wash because a purchase's mark and the cut cancel —
+			// `(1 + 0.315) × (1 − 0.239) ≈ 1` — a mark no leg comparison can see.
+			const raw = flyConsoleCycle(cycle, UNQUANTIZED_CUT).netCr;
+			if (raw > CYCLE_EPSILON_CR) {
+				zeroWalk.rescuedByRounding.count++;
+				zeroWalk.rescuedByRounding.worstCr = Math.max(
+					zeroWalk.rescuedByRounding.worstCr,
+					raw,
+				);
+				zeroWalk.rescuedByRounding.rows.push(
+					`${cycle.good.name} ${cycle.hull} e${cycle.economy} ` +
+						`${cycle.type} TL${cycle.displayTL} ${cycle.arm}: ` +
+						`unquantized +${raw.toFixed(4)} Cr against shipped ` +
+						`${out.netCr.toFixed(4)}`,
+				);
+			} else if (raw < -CYCLE_EPSILON_CR) zeroWalk.quantizedToZero++;
+			else zeroWalk.lawCloses++;
 		}
 		if (worst === null || out.netCr > worst.netCr) worst = { ...out, cycle };
 		if (
@@ -332,10 +477,9 @@ export function surveyConsoleCycles(
 		rows,
 		positiveRows,
 		zeroRows,
-		zeroRowsOffTheFloor,
+		zeroOffFloor: zeroWalk,
+		firstZeroOffTheFloor,
 		positiveByTonnage: { tonnage, subTonnes },
 		bestSubTonnes,
-		firstZeroOffTheFloor,
-		zeroRowsOffTheFloorAllSubTonnes: zeroOffTonnage === 0,
 	};
 }

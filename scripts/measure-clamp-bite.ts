@@ -15,8 +15,8 @@
  *
  * §5.6's third column on this page: where does the *bid cut* die?
  *
- * #13's warning is that a modifier expressed on a bounded index gets clamped away
- * where that index's population lives, and §5.6's cut is such a modifier — a
+ * #13's warning is that an offset placed on a bounded index gets clamped away
+ * where that index's population lives, and §5.6's cut is such an offset — a
  * grade spread across `displayTL`. So the same question gets the same instrument
  * rather than a sentence: over the rows the generator actually prices, what share
  * of them end up with no spread at all, and does the share climb at one end of the
@@ -45,7 +45,6 @@
  * whole-table rate the test pins (0.54% of 1,566,720 cells against 0.5% of these
  * 1.8M rows), from two populations that share only the mechanism.
  *
- *   bun run scripts/measure-clamp-bite.ts [worldCount]
  *   bun run scripts/measure-clamp-bite.ts [worldCount]
  */
 

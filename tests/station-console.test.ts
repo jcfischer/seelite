@@ -27,6 +27,7 @@ import {
 	type MarketStation,
 	PRICE_STEP_CR,
 	MARKET_PERIOD_MIN,
+	quantizeToDisplayStepCr,
 	UNIVERSAL_GATE_CAP,
 	UNIVERSAL_ITEMS,
 	bidCutAtTl,
@@ -210,11 +211,19 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 		const row = rows.find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
 		expect(row.buyCr).toBeCloseTo(
-			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			quantizeToDisplayStepCr(
+				stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			),
 			9,
 		);
+		// The delta the commander reads is between two *quoted* prices, since a
+		// quote is the only figure the console has. The obligation this row exists
+		// for — which epoch's base the delta is measured against — is untouched by
+		// that; only the domain both terms live in moved.
 		expect(row.priceDeltaCr as number).toBeCloseTo(
-			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T) - base.priceCr,
+			quantizeToDisplayStepCr(
+				stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			) - quantizeToDisplayStepCr(base.priceCr),
 			9,
 		);
 		expect(row.quantity).toBe(shelfQuantity(base.quantity, 12));
@@ -573,9 +582,14 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 		const mid = marketRow(good, ECONOMY, TRADE, 0).priceCr;
 		// The buy column is the market's own figure, unchanged — #191 D1's
 		// asymmetry, and the cheapest closure measured.
-		expect(row.buyCr).toBe(mid);
+		// Both sides of the pair are quotes, and the row says so rather than
+		// asserting the product: a quote is the figure on the glass, so the expected
+		// number has to pass through the same tenth-credit step the law applies.
+		expect(row.buyCr).toBe(quantizeToDisplayStepCr(mid));
 		expect(row.sellCr).toBe(
-			Math.max(PRICE_STEP_CR, mid * (1 - bidCutAtTl(SCREEN_TL))),
+			quantizeToDisplayStepCr(
+				Math.max(PRICE_STEP_CR, mid * (1 - bidCutAtTl(SCREEN_TL))),
+			),
 		);
 		// And they are two numbers rather than one printed twice, which is what
 		// makes the spread a thing the commander reads (#191 D3).
