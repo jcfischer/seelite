@@ -13,6 +13,7 @@ import {
 	marketEpoch,
 	marketStationOf,
 } from "./market";
+import { exposeMarketLaw } from "./market-probe-hook";
 import {
 	type ConsoleMarketRow,
 	type DockPhase,
@@ -1046,6 +1047,10 @@ export function mountStateGallery(): void {
 		"hud-gallery",
 	);
 	if (requested === null) return;
+	// The same page hook `main.ts` assigns, because this route is where a probe can
+	// name a station of each type and price its market; the hook existing on one
+	// entry only is what made `probe-station-console.mjs` read `undefined`.
+	exposeMarketLaw();
 	const style = document.createElement("style");
 	style.textContent = STYLE;
 	document.head.append(style);
