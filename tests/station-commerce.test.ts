@@ -576,7 +576,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// `PRICE_ELASTICITY`, because a trade cannot move the deficit by more than the
 		// hold it was made in — and pays the mid less the cut; the buy-back is quoted
 		// against that mark. So one cycle costs the row's value times
-		// `cut − PRICE_ELASTICITY`, which at TL 8 is 8% of it rather than the 10% the
+		// `cut − PRICE_ELASTICITY`, which at TL 8 is 7.5% of it rather than the 10% the
 		// cycle used to print. A transcribed balance would go stale on any retune of
 		// the fluct byte; this goes red if either term stops holding.
 		// **Read through the quote, because the quote is what the till charges.**

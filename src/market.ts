@@ -445,11 +445,14 @@ export const DISPLAY_TL_MAX = 15;
  * `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` = 0.315, on the argument that the
  * cut must exceed the deepest mark §5.2's memory can move a price, since §12's
  * round trip harvests exactly that swing. The argument was sound and the figure
- * is still right: the closure ladder in `scripts/measure-greedy-trader.ts` bisects
- * for the smallest cut with no profitable *tonnage* cycle and lands between 0.2 and
- * 0.315, and the row in `tests/market.test.ts` §5.6 that pins the 0.315 swing is
- * what makes that ladder falsifiable — the mark is a derived quantity, not a
- * constant, so a law that named it here would be the third copy §5.6 forbids.
+ * is still right, and the two rungs it lives between are worth keeping apart: the
+ * closure ladder in `scripts/measure-greedy-trader.ts` reports **no profitable
+ * tonnage cycle from 0.100 up**, and its bisection for the smallest cut that leaves
+ * *every* cycle a loss — the sub-tonne rows included — lands between 0.2 and 0.315.
+ * **0.315 closes the pump completely and costs the trade loop; 0.100 closes the
+ * tonnage half and does not.** The row in `tests/market.test.ts` §5.6 that pins the
+ * 0.315 swing is what makes that ladder falsifiable: the mark is a derived quantity,
+ * not a constant, so a law that named it here would be the third copy §5.6 forbids.
  *
  * **And 0.315 is not shippable, which is #196's finding.** The §5.6 section of
  * `scripts/measure-greedy-trader.ts` runs the honest trade loop — a trader that
@@ -573,11 +576,50 @@ export const requireDisplayTl = (displayTL: number): number => {
  * **It is a cut on the *bid* and nothing else, which is a ruling rather than a
  * default** — see `marketQuote`.
  */
-export const bidCutAtTl = (displayTL: number): number =>
-	BID_CUT_FLOOR +
-	BID_CUT_GRADE *
-		((requireDisplayTl(displayTL) - DISPLAY_TL_MIN) /
-			(DISPLAY_TL_MAX - DISPLAY_TL_MIN));
+/**
+ * A bid cut from its two dials, in either direction.
+ *
+ * `bidCutAtTl` below is this with the shipped constants, and
+ * `scripts/measure-greedy-trader.ts` builds every graded arm of its sweep from it
+ * rather than re-typing the offset. That is not tidiness: the instrument had its own
+ * copy of `(tl − MIN) / (MAX − MIN)`, and a guard that compares one copy of a formula
+ * against a second copy proves only that the copies agree. With the law's own
+ * parametric form exported, the guard's two sides are the quote builder and the
+ * table, which are the two things that can actually disagree.
+ *
+ * @param wideAtHighTl Mirror the table, so the core pays the rim's cut. This is the
+ *   arm #191 D4 decided against, kept buildable because the decision is a comparison
+ *   and a comparison needs both sides runnable.
+ */
+export const bidCutLadder = (
+	floor: number,
+	grade: number,
+	{ wideAtHighTl = false }: { wideAtHighTl?: boolean } = {},
+): ((displayTL: number) => number) => {
+	const span = DISPLAY_TL_MAX - DISPLAY_TL_MIN;
+	// **Checked on both arms, not just the mirrored one.** An earlier revision of this
+	// function validated inside the `wideAtHighTl` branch only, and the row that says a
+	// tech level outside the generator's range throws rather than clamps went red —
+	// which is the useful property of a throw being in a shared law rather than in one
+	// branch of it.
+	return (rawTL: number): number => {
+		const displayTL = requireDisplayTl(rawTL);
+		return (
+			floor +
+			grade *
+				((wideAtHighTl
+					? DISPLAY_TL_MAX - displayTL
+					: displayTL - DISPLAY_TL_MIN) /
+					span)
+		);
+	};
+};
+
+/** The shipped law: `BID_CUT_FLOOR` at the rim, `+BID_CUT_GRADE` at the core. */
+export const bidCutAtTl: (displayTL: number) => number = bidCutLadder(
+	BID_CUT_FLOOR,
+	BID_CUT_GRADE,
+);
 
 /** The two figures one market quotes for one good, one per end of the wedge. */
 export interface MarketQuote {

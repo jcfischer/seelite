@@ -826,10 +826,9 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// which is why `tests/station-commerce.test.ts` §5.6 finds metal cycles still
 		// netting at the shipped floor.
 		//
-		// Platinum rather than Gold or Gems because it is the cheapest of the three and
-		// therefore the last metal a cut prices out; the binding row in the closure
-		// corpus is a Platinum cycle, and a row that named a different metal would be
-		// describing a pump that is already closed.
+		// Platinum because it is the cheapest of the three metals and therefore the last
+		// one a cut prices out; the binding row in the closure corpus is a Platinum
+		// cycle, and naming a different metal would describe a pump already closed.
 		// **Measured off the shipped response, not off the formula that produces it.**
 		// `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` is an identity: it holds at
 		// whatever value those two constants take, so a row written that way cannot go
@@ -847,10 +846,15 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// here rather than trusted from its own module.
 		expect(QUANTITY_CAP).toBe(63);
 		expect(saturationSwing).toBeCloseTo(0.315, 12);
-		// The ratio between the swing and the shipped floor is the sub-tonne goods'
-		// unit-to-tonne inversion — 63 / 20 at the baseline hull, the number of
-		// 63-unit stacks that would weigh a full hold — and it is written as the
-		// literal so that retuning either constant is a deliberate act.
+		// **What this row can and cannot see, said plainly.** `swing / floor` reduces to
+		// `DEFICIT_SATURATION_RUNS`, so the literal below pins one thing: the cap-to-hold
+		// relation, that 3.15 stacks of 63 units weigh the baseline hold. It is a scale
+		// check and not a watch on the re-anchor, because the units are counted in
+		// `addDeficit` and `recordTrade`, neither of which this row calls. The row that
+		// *does* go red when the sub-tonne mark moves is the metals row in
+		// `tests/station-commerce.test.ts` §5.6, which flies a Platinum cycle through
+		// `transactAtStation` and pins the surviving credit — that is the falsifier §12's
+		// weak joint 12 points at, and it is worth reading before this one.
 		expect(saturationSwing / BID_CUT_FLOOR).toBeCloseTo(63 / 20, 12);
 	});
 
@@ -1014,21 +1018,33 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// a row the floor already pins at 0.4 Cr cannot be cut further, so the floor
 		// eats the spread there. That erasure is the clamp this node owes a collapse
 		// rate for, and the next test counts it rather than arguing it away.
+		// **Counted, not asserted per cell.** 1,566,720 cells x three `expect` calls is
+		// 4.7M assertions, which measured 335 ms of a 2.4 s pair of files — an eighth of
+		// the gated suite for a row whose whole answer is "none of them". A counter gives
+		// the same verdict, and the failure message names all three counts rather than
+		// stopping at the first cell like a per-cell expect does.
 		let belowFloor = 0;
+		let inverted = 0;
+		let offFormula = 0;
 		forEachPriceRow((_good, row, quoteAt) => {
 			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
 				const q = quoteAt(tl);
 				if (q.sellCr < PRICE_STEP_CR) belowFloor++;
-				expect(q.sellCr).toBeGreaterThanOrEqual(PRICE_STEP_CR);
-				expect(q.sellCr).toBeLessThanOrEqual(q.buyCr);
-				expect(q.sellCr).toBe(
+				if (q.sellCr > q.buyCr) inverted++;
+				if (
+					q.sellCr !==
 					quantizeToDisplayStepCr(
 						Math.max(PRICE_STEP_CR, row.priceCr * (1 - bidCutAtTl(tl))),
-					),
-				);
+					)
+				)
+					offFormula++;
 			}
 		});
-		expect(belowFloor).toBe(0);
+		expect({ belowFloor, inverted, offFormula }).toEqual({
+			belowFloor: 0,
+			inverted: 0,
+			offFormula: 0,
+		});
 	});
 
 	test("the number of rows whose cut the floor erases is a counted figure", () => {

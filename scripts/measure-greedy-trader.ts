@@ -32,6 +32,7 @@
 import {
 	BID_CUT_FLOOR,
 	BID_CUT_GRADE,
+	bidCutLadder,
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	PRICE_STEP_CR,
@@ -322,56 +323,30 @@ const quoteSplitting =
 	};
 
 /**
- * The shipped law's shape with two dials: `base` at the rim, `+grade` at the
- * core, or mirrored when `wideAtRim`.
+ * An arm of the graded family: the **law's own** parametric ladder, through the
+ * **law's own** quote builder.
  *
- * The shipped table is `spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false)`, and the
- * row below checks exactly that against `bidCutAtTl` before any arm is flown —
- * otherwise the report's "shipped" row could quietly be a re-implementation,
- * which is §4's scope note's whole objection to an instrument with its own rules.
- */
-/**
- * The cut an arm of this family states it applies, from its own two dials: `base` at
- * the rim, `+grade` at the core, or the mirror when `wideAtHighTl`.
- *
- * **One copy of the offset, on purpose.** Three things used to hold it — `bidCutAtTl`,
- * `spreadArm`'s inner `position`, and a `ladderCut` written for the guard — and a guard
- * that compares one copy of a formula against a second copy of the same formula proves
- * only that the copies agree. What the guard checks now is the shipped table against
- * the law, which are two real implementations.
- */
-const ladderCut =
-	(base: number, grade: number, wideAtHighTl: boolean) =>
-	(tl: number): number =>
-		base +
-		grade *
-			((wideAtHighTl ? DISPLAY_TL_MAX - tl : tl - DISPLAY_TL_MIN) /
-				(TL_SPAN - 1));
-
-/**
- * The shipped law's shape with two dials, built through the same `quoteWithCut` the
- * game uses, so an arm cannot have a different quote step from the law it is flown
- * against.
- *
- * The shipped table is `spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false)`, and the row
- * below checks exactly that against `bidCutAtTl` before any arm is flown — otherwise
- * the report's "shipped" row could quietly be a re-implementation, which is §4's scope
- * note's whole objection to an instrument with its own rules.
+ * Both halves matter. The offset used to be re-typed here, which made the guard that
+ * checks an arm against "the law" a comparison of two copies of one formula; and an
+ * arm that built its own quote could differ from the shipped law in anything except
+ * the dial its name advertises, which turns a report into a comparison of two
+ * implementations rather than two spreads.
  */
 const spreadArm = (
 	base: number,
 	grade: number,
 	wideAtHighTl: boolean,
-): QuoteFn => quoteWithCut(ladderCut(base, grade, wideAtHighTl));
+): QuoteFn => quoteWithCut(bidCutLadder(base, grade, { wideAtHighTl }));
 
 /**
  * The arm names, spelled the way the *decision* is phrased.
  *
  * "Narrow at rim" and "wide at rim" describe where the table is thin, which is the
  * inverse of the #191 D4 question — "does the spread widen or narrow with tech level" —
- * and the two phrasings got crossed in prose this node shipped once already. A spread
- * that is cheap at the rim and dear in the core is **wide at high TL**, and that is the
- * arm the game ships.
+ * and the two phrasings got crossed in prose, and then again in a variable name, in the
+ * space of two rounds of this node. A spread that is cheap at the rim and dear in the
+ * core is **wide at high TL**, and that is the arm the game ships. Nothing in this file
+ * is allowed to say `narrow` or `wide` about an arm except through these two names.
  */
 const SHIPPED_ARM = "wide at high TL (shipped)";
 const OPPOSING_ARM = "narrow at high TL";
@@ -411,19 +386,37 @@ const bidArmFactors = (cut: (tl: number) => number) => (tl: number) => ({
 	buy: 1,
 	sell: 1 - cut(tl),
 });
+/**
+ * Fly an arm, and prove the arm the report *names* is the arm it *flies*.
+ *
+ * Written once because the call was copied four times with its dials typed twice each
+ * — and a copy that gets one argument mismatched checks a different arm from the one
+ * the table prints, which is the failure this guard exists to catch.
+ */
+const assertLadderArm = (
+	name: string,
+	base: number,
+	grade: number,
+	wideAtHighTl: boolean,
+) =>
+	assertArm(
+		name,
+		spreadArm(base, grade, wideAtHighTl),
+		bidArmFactors(bidCutLadder(base, grade, { wideAtHighTl })),
+	);
+
 const assertFlownArms = () => {
 	assertArm("shipped law", marketQuote, bidArmFactors(bidCutAtTl));
-	// The narrow arm twice over: once against the parameters it was built from, which
+	// The shipped arm, checked twice over: once against the parameters it was built from, which
 	// catches a mis-typed `spreadArm`, and once against `bidCutAtTl` itself, which is
 	// what makes the report's "shipped" row the shipped table rather than a close
 	// relative of it.
-	assertArm(
-		SHIPPED_ARM,
-		spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false),
-		bidArmFactors(ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false)),
-	);
+	assertLadderArm(SHIPPED_ARM, BID_CUT_FLOOR, BID_CUT_GRADE, false);
 	{
-		const shippedLadder = ladderCut(BID_CUT_FLOOR, BID_CUT_GRADE, false);
+		// **The one guard that compares two different implementations:** the parametric
+		// law evaluated at its shipped dials, against the constant function the game
+		// calls. Everything else in this section compares an arm to itself.
+		const shippedLadder = bidCutLadder(BID_CUT_FLOOR, BID_CUT_GRADE);
 		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
 			const viaLadder = shippedLadder(tl);
 			const viaLaw = bidCutAtTl(tl);
@@ -437,11 +430,7 @@ const assertFlownArms = () => {
 	// The mirrored arm, checked against its own stated dials. Graded rungs scale the
 	// mirror by their own mean; `routeRow` checks each one as it is flown, since a
 	// check at the shipped depth cannot cover a dial the loop turns later.
-	assertArm(
-		OPPOSING_ARM,
-		spreadArm(0, BID_CUT_GRADE, true),
-		bidArmFactors(ladderCut(0, BID_CUT_GRADE, true)),
-	);
+	assertLadderArm(OPPOSING_ARM, 0, BID_CUT_GRADE, true);
 	assertArm(
 		"flat 0.10",
 		uniformCut(0.1),
@@ -582,7 +571,10 @@ console.log(
  * show whether they agreed.
  */
 const armStats = (quote: QuoteFn) => {
-	const milestone = WORLDS.map(({ world }) => run(world, hours, { quote }));
+	// **One run per galaxy, not two.** `kitAffordableAtMinutes` is latched the first
+	// time the balance crosses the kit, so the run that stops there records the same
+	// minute as the one that keeps flying to measure a rate — and the duplicate was
+	// forty extra sessions per report for a figure already in hand.
 	const rateRuns = WORLDS.map(({ world }) =>
 		run(world, hours, { quote, stopAtKit: false }),
 	);
@@ -590,7 +582,7 @@ const armStats = (quote: QuoteFn) => {
 	// previous revision dropped the nulls and let the printer index by galaxy, so on
 	// exactly the stalled rungs this table exists to show, every later galaxy's figure
 	// moved one place left and the dash landed on the wrong session.
-	const kits = milestone.map((r) => r.kitAffordableAtMinutes);
+	const kits = rateRuns.map((r) => r.kitAffordableAtMinutes);
 	const achieved = kits.filter((k): k is number => k !== null);
 	const rates = rateRuns.map((r) => r.earnedCr / Math.max(r.minutes, 1e-9));
 	const bands = [0, 0, 0];
@@ -674,26 +666,34 @@ for (const mean of [0.1, 0.15, 0.2, 0.3]) {
 	// Both graded arms are guarded against the dials they are built from before they
 	// print, so "the arms it flies are checked" is true of every row in this table and
 	// not only of the shipped one.
-	assertArm(
+	assertLadderArm(
 		`wide at high TL ${mean.toFixed(2)}`,
-		spreadArm(0, gradeAt(mean), false),
-		bidArmFactors(ladderCut(0, gradeAt(mean), false)),
+		0,
+		gradeAt(mean),
+		false,
 	);
-	assertArm(
+	assertLadderArm(
 		`narrow at high TL ${mean.toFixed(2)}`,
-		spreadArm(0, gradeAt(mean), true),
-		bidArmFactors(ladderCut(0, gradeAt(mean), true)),
+		0,
+		gradeAt(mean),
+		true,
 	);
 	routeRow(`flat ${mean.toFixed(2)}`, uniformCut(mean));
-	const narrow = routeRow(
-		`wide at high TL ${mean.toFixed(2)}`,
+	// **Named by arm, not by where they are thin.** These two bindings are the reason
+	// this file has constants for the names: a previous revision bound the wide arm to
+	// `const narrow` and the narrow arm to `const wide`, and the per-galaxy table below
+	// printed each galaxy's shipped figure under the other arm's label. Nothing in the
+	// type system notices, and the prose that read the table said the opposite of the
+	// sweep.
+	const shipped = routeRow(
+		SHIPPED_ARM + ` ${mean.toFixed(2)}`,
 		spreadArm(0, gradeAt(mean), false),
 	);
-	const wide = routeRow(
-		`narrow at high TL ${mean.toFixed(2)}`,
+	const opposing = routeRow(
+		OPPOSING_ARM + ` ${mean.toFixed(2)}`,
 		spreadArm(0, gradeAt(mean), true),
 	);
-	PAIRS.push([mean, narrow, wide]);
+	PAIRS.push([mean, shipped, opposing]);
 	// Printed beside the rows it guards, because "matched mean" is an arithmetic
 	// claim and arithmetic that is only asserted in a comment goes wrong.
 	console.log(
@@ -706,15 +706,15 @@ routeRow("shipped table", marketQuote);
 const kit = (minutes: number | null): string =>
 	minutes === null ? "—" : minutes.toFixed(0);
 console.log(
-	"  per galaxy, narrow against wide, so four draws cannot be read as one range:",
+	`  per galaxy, ${SHIPPED_ARM} first, so four draws cannot be read as one range:`,
 );
-for (const [mean, narrow, wide] of PAIRS) {
+for (const [mean, shipped, opposing] of PAIRS) {
 	console.log(
-		`      mean ${mean.toFixed(2)}  kit by galaxy (narrow/wide)  ` +
+		`      mean ${mean.toFixed(2)}  kit by galaxy (${SHIPPED_ARM} / ${OPPOSING_ARM})  ` +
 			WORLDS.map(({ g }, i) => {
-				const n = narrow.kits[i];
-				const w = wide.kits[i];
-				return `${g} ${kit(n)}/${kit(w)}`;
+				const a = shipped.kits[i];
+				const b = opposing.kits[i];
+				return `${g} ${kit(a)}/${kit(b)}`;
 			}).join("   "),
 	);
 }

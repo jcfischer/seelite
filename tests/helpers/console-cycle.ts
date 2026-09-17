@@ -196,18 +196,24 @@ export function flyConsoleCycle(
 	// buy-back as dearer than the untouched mid, and every zero this file
 	// classifies then sits in the wrong bucket.
 	const markAfterFirstLeg = first === "sell" ? -units : units;
+	// **One priced row, read twice.** `marketRow` is pure and cheap, but calling it in
+	// both places meant the mid the cycle reports and the mid its legs were quoted off
+	// could in principle be two draws. One binding makes that unrepresentable.
+	const midCr = marketRow(good, economy, station, gameTimeMin).priceCr;
+	// **This is the one place in the helper that quotes rather than transacts, and it
+	// has to stay that way**: the caller's `quote` may be an arm the till never ships
+	// (`UNQUANTIZED_CUT`, whose whole job is to be the flight the till will not make),
+	// and the leg figures are what the zero classifier compares *against* the till's
+	// own net. So they come from the same `QuoteFn` the till would inject by default,
+	// applied to the same response — not read back out of the credit delta, which
+	// cannot answer a question about an arm that was never flown.
 	const quoted = (kind: "buy" | "sell"): number =>
 		quote(
-			stockResponse(
-				marketRow(good, economy, station, gameTimeMin).priceCr,
-				kind === first ? 0 : markAfterFirstLeg,
-				holdT,
-			),
+			stockResponse(midCr, kind === first ? 0 : markAfterFirstLeg, holdT),
 			displayTL,
 		)[kind === "buy" ? "buyCr" : "sellCr"];
 	side(first);
 	side(second);
-	const midCr = marketRow(good, economy, station, gameTimeMin).priceCr;
 	return {
 		netCr: commander.credits - startCr,
 		units,
@@ -381,6 +387,61 @@ export function surveyConsoleCycles(
 		quantizedToZero: 0,
 		rescuedByRounding: { count: 0, worstCr: 0, rows: [] },
 	};
+	/**
+	 * What closed a cycle that netted nothing, sorted into the three things it can be.
+	 *
+	 * **Called for every zero, and it must not skip the row.** An earlier revision
+	 * returned early when both legs stood at §3's price floor, which also skipped the
+	 * `worst` and `bestSubTonnes` tracking in the caller — so on a build where nothing
+	 * profits, "the most profitable cycle the sweep flew" could report a loss while a
+	 * 0 Cr cycle sat in the same corpus. The floor check is a reason not to *classify*,
+	 * not a reason not to *count*.
+	 *
+	 * **Off the price floor means off for both legs.** A quote is floored at one price
+	 * step and quantized to a tenth, so a row whose mid stands above the floor can still
+	 * have both legs pinned at it; classifying that as an open question would be
+	 * describing a row §3 already swallowed.
+	 *
+	 * **Every zero is flown a second time**, and each one is asked the same question:
+	 * would this cycle still net nothing with the tenth-credit quote step taken off? That
+	 * is the only reading that separates a zero the law leaves from a zero the display
+	 * precision leaves — and the second is a closure nobody should want, a pump stopped by
+	 * the number of digits on the glass. An earlier revision classified these by whether
+	 * the two legs printed the same figure and by whether the good was a tonne good, and
+	 * it ended up with 279 rows it could not explain: Gold and Platinum buy-first cycles
+	 * near the core, which wash because a purchase's mark and the cut cancel —
+	 * `(1 + 0.315) × (1 − 0.239) ≈ 1` — a mark no leg comparison can see.
+	 */
+	const classifyZero = (
+		cycle: ConsoleCycle,
+		out: CycleOutcome,
+		walk: ZeroWalk,
+		first: (z: CycleOutcome & { cycle: ConsoleCycle }) => void,
+	) => {
+		if (
+			out.sellCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR ||
+			out.buyCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR
+		)
+			return;
+		walk.count++;
+		first({ ...out, cycle });
+		const raw = flyConsoleCycle(cycle, UNQUANTIZED_CUT).netCr;
+		if (raw > CYCLE_EPSILON_CR) {
+			walk.rescuedByRounding.count++;
+			walk.rescuedByRounding.worstCr = Math.max(
+				walk.rescuedByRounding.worstCr,
+				raw,
+			);
+			walk.rescuedByRounding.rows.push(
+				`${cycle.good.name} ${cycle.hull} e${cycle.economy} ` +
+					`${cycle.type} TL${cycle.displayTL} ${cycle.arm}: ` +
+					`unquantized +${raw.toFixed(4)} Cr against shipped ` +
+					`${out.netCr.toFixed(4)}`,
+			);
+		} else if (raw < -CYCLE_EPSILON_CR) walk.quantizedToZero++;
+		else walk.lawCloses++;
+	};
+
 	forEachConsoleCycle((cycle) => {
 		const out = flyConsoleCycle(cycle, quote);
 		rows++;
@@ -390,44 +451,9 @@ export function surveyConsoleCycles(
 			else subTonnes++;
 		} else if (out.netCr > -CYCLE_EPSILON_CR) {
 			zeroRows++;
-			// Off §3's price floor means off for **both** legs: a quote is floored at
-			// one price step and quantized to a tenth, so a row whose mid stands above
-			// the floor can still have both legs pinned at it, and counting that as an
-			// open question would be describing a row §3 already swallowed.
-			if (
-				out.sellCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR ||
-				out.buyCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR
-			)
-				return;
-			zeroWalk.count++;
-			if (firstZeroOffTheFloor === null)
-				firstZeroOffTheFloor = { ...out, cycle };
-			// **Every zero, not a sample of them**, and each one asked the same question:
-			// would this cycle still net nothing with the tenth-credit quote step taken
-			// off? That is the only reading that separates a zero the law leaves from a
-			// zero the display precision leaves, and the second is a closure nobody should
-			// want — a pump stopped by the number of digits on the glass.
-			//
-			// An earlier revision classified these by whether the two legs printed the
-			// same figure and whether the good was a tonne good, and it ended up with 279
-			// rows it could not explain: Gold and Platinum buy-first cycles near the core,
-			// which wash because a purchase's mark and the cut cancel —
-			// `(1 + 0.315) × (1 − 0.239) ≈ 1` — a mark no leg comparison can see.
-			const raw = flyConsoleCycle(cycle, UNQUANTIZED_CUT).netCr;
-			if (raw > CYCLE_EPSILON_CR) {
-				zeroWalk.rescuedByRounding.count++;
-				zeroWalk.rescuedByRounding.worstCr = Math.max(
-					zeroWalk.rescuedByRounding.worstCr,
-					raw,
-				);
-				zeroWalk.rescuedByRounding.rows.push(
-					`${cycle.good.name} ${cycle.hull} e${cycle.economy} ` +
-						`${cycle.type} TL${cycle.displayTL} ${cycle.arm}: ` +
-						`unquantized +${raw.toFixed(4)} Cr against shipped ` +
-						`${out.netCr.toFixed(4)}`,
-				);
-			} else if (raw < -CYCLE_EPSILON_CR) zeroWalk.quantizedToZero++;
-			else zeroWalk.lawCloses++;
+			classifyZero(cycle, out, zeroWalk, (z) => {
+				if (firstZeroOffTheFloor === null) firstZeroOffTheFloor = z;
+			});
 		}
 		if (worst === null || out.netCr > worst.netCr) worst = { ...out, cycle };
 		if (

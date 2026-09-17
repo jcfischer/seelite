@@ -953,8 +953,19 @@ narrow-at-high-TL against wide-at-high-TL undecided, and #196's brief predicted
 that narrow "reinforces a core-ward pull that shipyards already create" while wide
 "gives exploring an economic reason but shows a new player the worst rates". Both
 arms were flown at **matched mean cut** — a grade of twice the mean, so the two
-tables hold the same multiset of cuts in the other order and any difference is the
-direction rather than the level — against a flat spread at the same mean:
+tables hold the same multiset of cuts in the other order — against a flat spread at
+the same mean.
+
+**Matched over the tech-level index, not over where traders actually dock, and that
+is a limit on what the pairing can say.** A trader does not visit the ladder evenly:
+the control row's own mix is 25/59/16 across TL 1-5/6-10/11-15, weighted to the rim.
+The shipped arm is cheap at those rim levels, so the *realized* mean bite its traders
+meet is lighter than the opposing arm's at the same declared mean. Part of the gap
+below is therefore not direction alone but direction times where the traders went —
+which is also what the route-mix reading is measuring, so the two readings are not
+independent of each other. What the pairing removes is the level, not the visit mix,
+and the direction was chosen on §4's double-charge argument and #191 D1's reading as
+well as on these rows:
 
 ```
   arm                    kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
@@ -975,7 +986,8 @@ direction rather than the level — against a flat spread at the same mean:
 ```
 
 Four galaxies per arm, so the range is four draws and not one sample; the
-instrument prints them per galaxy as well (`kit by galaxy (narrow / SHIPPED)`), because
+instrument prints them per galaxy as well, shipped arm first
+(`kit by galaxy (wide at high TL (shipped) / narrow at high TL)`), because
 a range over four sessions is exactly the figure that hides one stalled session
 inside a healthy-looking span. The rung each pair is matched at is printed beside
 it as a guard — `mean cut of the graded table at this rung` against the target —
@@ -998,9 +1010,14 @@ it outward (0.694 → 0.922, 93% of docks in TL 1-5 by the widest rung). **The r
 prediction did not hold, and that is the finding that matters for the choice.** D4
 worried that a spread wide at high tech level hands a new commander — who starts
 somewhere developed, at the rim — the worst rates in the game. The sweep says the
-opposite: the shipped arm is the faster one in every matched pair (309-425 against
-225-308 Cr/min at the narrowest rung), and at the two widest levels it is the *other*
-arm that stalls, 2 of 4 sessions each against the shipped arm's none. The concern
+opposite. The shipped arm's kit range is shorter on all four rungs (309-425 against
+225-308 Cr/min at the narrowest rung), and counting the four galaxies separately —
+which the report prints per galaxy for exactly this reason — it reaches the kit first
+in **15 of the 16 draws**. The exception is on the run rather than in the pairing: at
+mean 0.15 galaxy 0 takes 86 min under the shipped arm against 68 under the opposing
+one, while the other three galaxies of that same pair run 64/119, 51/103 and 47/71. At
+the two widest levels it is the *other* arm that stalls, 2 of 4 sessions each against
+the shipped arm's none. The concern
 that kept the direction open in D4 is refuted by the arm that shipped, not answered
 by it.
 
@@ -1061,19 +1078,27 @@ is not, so a whole-credit rendering of the bid would be a lie the player is
 charged against, and `tests/station-console.test.ts` checks both columns print a
 fraction. M6's delta arrow rides the ask column, which is the price §5.2's
 response actually moved. And the screen and the till are one function called with
-one set of arguments — `tests/station-console.test.ts` §5.6 walks both at three
-tech levels and compares the printed column to the credit delta through a float
-tolerance, which is the pair #193 was about.
+one set of arguments: the row that holds that lives in
+`tests/station-commerce.test.ts` §5.6, at the console where the deficit and the
+printed label are checked beside the credit delta through a float tolerance, which is
+the pair #193 was about. It was written in `tests/station-console.test.ts` too, as a
+second copy of the same three-tech-level round trip, and one copy was deleted rather
+than kept in two files.
 
-`npm run probe:one station-console` prices a row iff the station lists the good,
-on both columns now, and prints the spread the glass shows — 13.7–14.3% at a trade
-station, 16.7–25.0% at a fence, 20.8–21.4% at a yard, where the range inside one
-station is the display rounding and not the law.
+The station-console probe prices a row iff the station lists the good, on both
+columns now, and prints the spread the glass shows beside the count of rows where the
+bid sits under the ask and the count pinned at the price step. **Run it with
+`node scripts/probe-all.mjs --only station-console`, not `npm run probe:one`:** the npm
+script runs `check:wiring` first, which is red on `main` for two probes unrelated to
+this node (PR body R1), so it exits before the probe that answers this question starts.
+What the check line prints is the owner of that spread figure — it is not transcribed
+here, because a range quoted in prose is a range that goes stale against a display step,
+which is the rounding that produced the figures this paragraph replaced.
 
 **Figures in this section are transcribed output.** Re-derive them with
 `bun run scripts/measure-greedy-trader.ts`, `bun run
-scripts/measure-clamp-bite.ts`, and `npm run probe:one station-console` before
-quoting any of them at a retune. `BID_CUT_GRADE` is the rung of a swept ladder
+scripts/measure-clamp-bite.ts`, and the probe above before quoting any of them at a
+retune. `BID_CUT_GRADE` is the rung of a swept ladder
 (`§5.6 — the grade alone`, floor held at its shipped value): 0.20 is the first rung
 that stalls a galaxy and 0.15 the widest that costs nothing, so what would make 0.15
 wrong is a change to what a margin is worth, not a retune of the floor.
@@ -1739,9 +1764,10 @@ commander at the rim the worst rates in the game. **Only the first half held.** 
 route-mix prediction is there in the sweep (§10.3): the arm that did not ship pulls
 trade inward as its level rises, 0.612 → 0.509 mean dock radius, while the shipped
 arm pushes outward to 0.922. **The rate prediction was refuted, and by the arm that
-shipped** — it is the faster of every matched pair (309-425 Cr/min against 225-308 at
-the narrowest rung), and at the two widest rungs it is the *other* arm that stalls,
-2 of 4 sessions each. What D4 left open out of caution is closed by measurement, not
+shipped** — its kit range is shorter on all four rungs and it reaches the kit first in
+**15 of the 16 per-galaxy draws** (the exception is galaxy 0 at mean 0.15, 86 min
+against 68), and at the two widest rungs it is the *other* arm that stalls, 2 of 4
+sessions each. What D4 left open out of caution is closed by measurement, not
 by a judgment call in the same direction.
 
 **But the first run of that sweep reported the opposite on the rate half**, and the
@@ -1978,7 +2004,8 @@ settled it.
     against — one commander, one console, 20 t of Food out and the same 20 t back,
     six times — no longer prints money at all: a cycle now *costs* the row's mid
     value times `cut − PRICE_ELASTICITY`, the cut less the mark the sale itself
-    leaves, which at `displayTL` 8 is 8% of the row.
+    leaves, which at `displayTL` 8 is 7.5% of the row — `bidCutAtTl(8)` is 0.175, and
+    the 8% this line carried was the one-based offset the ladder was rebased off.
     `tests/station-commerce.test.ts` pins that as a formula rather than a transcribed
     balance, so the six trips that turned 100,000 Cr into 100,024 are covered by the
     law and not by a figure that goes stale on a retune.
@@ -1992,9 +2019,12 @@ settled it.
     a credit, all of them metals, the best at 1,064.70 Cr a cycle on 4,964 Cr of
     working capital** against 1,563.79 Cr with no spread at all.
     `tests/station-commerce.test.ts` §5.6 pins that figure with the row that produces
-    it, and `tests/market.test.ts` §5.6 pins the ratio between the shipped floor and
-    the closure it does not reach: a node that re-anchors the sub-tonne mark turns
-    both rows red and reads the number it just changed.
+    it — **and that row is the falsifier for a re-anchor, not `tests/market.test.ts`'s
+    swing row.** The units are counted in `addDeficit` and `recordTrade`; a row written
+    against `stockResponse` alone cannot see either, and said it could until this
+    paragraph was checked. What the swing row does pin is the mark's size and the
+    cap-to-hold scale. A node that re-anchors the sub-tonne unit should read the till
+    row first: it is the one that breaks.
 13. **§7.1's price *level* is a choice, and only its shape is measured.** The
     law's exponent is fitted; its baseline is a rate from a trader opening at
     `fullKitCr()` times a window from one opening at §6's 100 Cr. Both arms fly
