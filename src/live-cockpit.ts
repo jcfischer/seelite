@@ -295,10 +295,12 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
  * shared four-column rule above is what the equipment list still wants. Without
  * this the ACTION button wrapped onto a second grid line in every listed row and
  * in the header, which no probe sees because a wrapped button is still a button:
- * The check that does exist is tests/station-console.test.ts's row-shape row: it reads
- * this rule back as five tracks and the fragment as five cells. A sixth cell beside four
- * tracks would wrap the price into the name's column. (No backticks in this comment: it
- * lives inside the stylesheet's template literal.) */
+ * The check that does exist is tests/live-cockpit.test.ts's row-arity row: it reads this
+ * rule back as five tracks and the row templates as five spans, and holds the shared rule
+ * at four. A sixth cell beside four tracks would wrap the price into the name's column,
+ * and a wrapped button is still a button, so no probe would see it. (No backticks here:
+ * this comment lives inside the stylesheet's template literal.) 
+*/
 .lc-station-market .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 1fr auto; }
 .lc-station-head { position: sticky; top: 0; color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; background: #150a03; }
 .lc-station-cell { text-align: right; }

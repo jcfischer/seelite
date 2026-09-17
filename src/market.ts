@@ -461,10 +461,14 @@ export const DISPLAY_TL_MAX = 15;
  * never visits a console twice in a row, so it is neither the pump nor rigged —
  * against the cut ladder, and at the wide rungs that loop stops reaching the
  * Combat Engine inside a four-hour session and stops finding a profitable hop at
- * all. **The figures are not transcribed here**: that report is their only owner,
- * it reprints them beside whatever a fresh run derives, and this paragraph carried
- * a count that had already gone stale against the table fifteen lines above it —
- * `economy-trade.md` §5.6's rule about third copies, applied to this file. What
+ * all. **The sweep's figures are not transcribed here**: that report is their only
+ * owner, it reprints them beside whatever a fresh run derives, and this paragraph
+ * carried a count that had already gone stale against the table fifteen lines above
+ * it — `economy-trade.md` §5.6's rule about third copies, applied to this file. The
+ * two counts further down this comment are the deliberate exception: they are this
+ * comment's own claim about a specific experiment, and `tests/station-commerce.test.ts`
+ * pins all three of its numbers, so moving them reddens a row rather than leaving a
+ * sentence as a rumour. What
  * the shape says, and what no rerun has moved: a spread which closes the pump by
  * making ordinary trading unprofitable has not repaired the economy, it has
  * cancelled it, and §8's time-to-kit goes the wrong way with it.
@@ -530,13 +534,15 @@ export const BID_CUT_FLOOR = PRICE_ELASTICITY;
  * reach the question.
  *
  * **The pair that does reach it is in §5.6: the shipped law against the same two
- * constants with the ends swapped.** Its verdict is that **D4 was right about the
- * level and wrong about the loop** — a core market takes `BID_CUT_FLOOR +
- * BID_CUT_GRADE` off a sale against the floor alone under the mirror, so a commander
- * who stays in developed space does pay the wider cut; and traders move to where the
- * cut is cheap, so the shipped arm still out-earns the mirror and reaches the kit
- * first in three of four galaxies. The direction was bought with a real charge on the
- * core end. §5.6 and §10.3 own that ruling, and a retune of either dial has to reopen
+ * constants with the ends swapped, flown from an arbitrary start and from the galaxy's
+ * highest-tech berth.** Its verdict is that **D4 was right about the level** — a core
+ * market takes `BID_CUT_FLOOR + BID_CUT_GRADE` off a sale against the floor alone under
+ * the mirror, so a commander who stays in developed space does pay the wider cut — and
+ * that **the loop question is bounded rather than settled**: four galaxies move the same
+ * arm's rate band further by changing where the trader is dropped than either direction
+ * does, so what survives is a paired ordering (kit first in 6 of 8 draws) and §4's
+ * double-charge argument, not a rate claim. The direction is bought with a real charge on
+ * the core end. §5.6 and §10.3 own that ruling, and a retune of either dial has to reopen
  * it there rather than here.
  *
  * Radius is the generator's normalised galactic distance, averaged over the

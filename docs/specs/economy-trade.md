@@ -1058,21 +1058,55 @@ grade held, direction reversed; `MIRRORED_SHIPPED` in `tests/helpers/console-cyc
 beside `NO_WEDGE` where the repo keeps the rejected laws. Same mean by construction,
 same quote step, same four worlds, same trader.
 
+Every row below is flown from a start the instrument names. `run()` used to drop every
+arm at the first multi-station system the generator listed, whatever its tech level — so
+neither arm flew D4's commander, and a review round said so. `startPolicy` now takes
+`first`, `developed` (the highest-tech berth in the galaxy) or `rim`.
+
+**At the arbitrary start:**
+
 | arm | kit affordable | Cr/min | docks TL 1-5/6-10/11-15 | mean radius | kit by galaxy |
 |---|---|---|---|---|---|
 | shipped (wide at high TL) | 51-103 min | 206-399 | 42/47/11 | 0.676 | 98 / 103 / 51 / 63 |
 | mirror of the shipped dials | 65-112 min | 176-298 | 34/56/10 | 0.648 | 80 / 112 / 65 / 75 |
 
-**D4 was right about the level and wrong about the loop.** The level is arithmetic, not
-measurement: **a core market takes 25.0% of a sale under the shipped law against 10.0%
-under the mirror**, and the rim is the other way round, so a commander who never leaves a
-developed world does pay the wider cut — this spec should say that rather than imply the
-opposite. What the flown pair adds is that traders do not stay where they were dropped:
-the shipped arm still out-earns the mirror and reaches the kit first in **3 of the 4
-galaxies** (galaxy 0 is the exception, 98 min against 80), and neither arm stalls a
-session. The direction was bought with a real charge on the core end, and the case for
-paying it is the argument below, not a claim that the core end is cheaper.
+**At the developed start, which is the one D4 asked about:**
 
+| arm | kit affordable | Cr/min | docks TL 1-5/6-10/11-15 | mean radius | kit by galaxy |
+|---|---|---|---|---|---|
+| shipped | 55-100 min | 182-360 | 32/39/29 | 0.412 | 69 / 55 / 69 / 100 |
+| mirror | **3/4 in cap** | 167-253 | 20/44/36 | 0.416 | 82 / — / 79 / 87 |
+
+**D4 was right about the level, and the loop claim is now stated at the width the
+instrument can hold.** The level is arithmetic, not measurement: **a core market takes
+25.0% of a sale under the shipped law against 10.0% under the mirror**, and the rim is the
+other way round, so a commander who never leaves a developed world does pay the wider cut
+— this spec says that rather than implying the opposite, which an earlier revision did.
+
+**And four galaxies cannot settle a rate, because the drop point moves the rate more than
+the law does.** The same shipped arm, same worlds, same clock, from each start rule:
+
+| start | kit affordable | Cr/min | docks TL 1-5/6-10/11-15 | mean radius |
+|---|---|---|---|---|
+| `first` | 51-103 min | 206-399 | 42/47/11 | 0.676 |
+| `developed` | 55-100 min | 182-360 | 32/39/29 | 0.412 |
+| `rim` | 67-161 min | 121-298 | 49/46/6 | 0.800 |
+
+The band between those rows is wider than the shipped-versus-mirror gap in either of the
+tables above. **So the rate figures are not the evidence.** What survives is the *paired*
+ordering — eight draws, four worlds at two starts, kit reached first by the shipped arm in
+**6 of 8** (the exceptions: galaxy 0 at the arbitrary start, 98 against 80, and galaxy 3 at
+the developed start, 100 against 87) — and one stalled session, the mirror's, at the
+developed start. A 6-of-8 sign is not a proof either; it is what four worlds can say, and
+the section says that.
+
+**What the direction is actually bought with is §4's own table, not this ordering.** A TL 1
+market's whole historical range is 3.3× its base against 1.92× at TL 15, so the frontier
+already carries price *risk*; a spread is the price of immediacy, a second charge, and
+putting both on the same markets double-charges the one thing they are already paying for.
+The route mix here is consistent with that (the shipped arm's mean dock radius is 0.676
+against the mirror's 0.648 at the arbitrary start), but **the radius also moves 0.412 →
+0.800 with the start alone**, so the mix is read as agreement, never as the argument.
 **That reversal was the instrument's arithmetic, not the world's.** The first
 version of this sweep compared a graded table against a flat one at the same
 *floor* and called it matched, which left the two arms' means apart. What fixed it is
@@ -1880,14 +1914,18 @@ it.** The matched-mean arms sit at floor 0, so both charge nothing at the rim �
 50-93% of the shipped arm's docks land — and D4's question is about the developed (core)
 end. A node reported that as the concern not holding, and it was reporting two free rims.
 **What reaches the question is the pair at the shipped dials** (`MIRRORED_SHIPPED`: same
-floor, same grade, ends swapped), and what it says is that **D4 was right about the level
-and wrong about the loop**. The level is arithmetic — a core market takes **25.0%** of a
-sale under the shipped law against **10.0%** under the mirror, so a commander who stays
-in developed space does pay the wider cut, and §5.6's summary should not be read to say
-otherwise. The loop is a measurement: traders move to where the cut is cheap, and the
-shipped arm still out-earns the mirror (206-399 against 176-298 Cr/min) and reaches the
-kit first in **3 of 4 galaxies**. The direction was bought with a real charge on the core
-end; §10.3 carries the argument for paying it.
+floor, same grade, ends swapped), flown from **both** an arbitrary start and the galaxy's
+highest-tech berth, and what it says is that **D4 was right about the level, and the loop
+claim is weaker than this section first wrote it**. The level is arithmetic — a core market
+takes **25.0%** of a sale under the shipped law against **10.0%** under the mirror, so a
+commander who stays in developed space does pay the wider cut, and §5.6's summary does not
+get to imply otherwise. The loop is a measurement, and four galaxies bound it: the same
+shipped arm's rate band moves **206-399 → 182-360 → 121-298 Cr/min** across the three start
+rules alone, a wider swing than either arm's gap, so the **rates are not the evidence**.
+What is left is the paired ordering — the shipped arm reaches the kit first in **6 of the 8
+draws** (four worlds, two starts), with one stalled session on the mirror's side — which is
+what four worlds can say and no more. **The direction is bought with §4's double-charge
+argument and a real 25%-at-the-core cost, not with a rate claim.**
 
 **But the first run of that sweep reported the opposite on the rate half**, and the
 reason was in the instrument rather than the world: the two graded arms were

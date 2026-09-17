@@ -1083,8 +1083,14 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// so this is a floor population, not a rim one. §10.3 owns that correction.
 		let erased = 0;
 		let erasedWithAPump = 0;
+		// **The denominator is counted, not assumed.** An earlier version of the last
+		// assertion put `17 × 8 × 256 × 3 × 15` beside `1,566,720` — arithmetic on two
+		// literals, which can only catch a typo and cannot see a walk that stopped
+		// visiting part of the domain. This is how many rows the loop actually visited.
+		let visited = 0;
 		forEachPriceRow((good, row, quoteAt) => {
 			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+				visited++;
 				const q = quoteAt(tl);
 				if (q.sellCr !== q.buyCr) continue;
 				erased++;
@@ -1104,8 +1110,11 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// denominator is the domain's own size — 17 goods × 8 economies × 256 fluct
 		// × 3 station types × 15 tech levels — so this also fails if the walk above
 		// stops visiting something it used to visit.
-		expect(17 * 8 * 256 * 3 * 15).toBe(1_566_720);
-		expect(erased / 1_566_720).toBeLessThan(0.1);
+		// Domain size asserted against what the walk reached, and the rate against the
+		// same counted figure.
+		expect(visited).toBe(17 * 8 * 256 * 3 * 15);
+		expect(ERASED_CUT_ROWS).toBe(erased);
+		expect(erased / visited).toBeLessThan(0.1);
 	});
 });
 

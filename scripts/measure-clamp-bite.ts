@@ -62,6 +62,8 @@ import {
 	DISPLAY_TL_MIN,
 	listsCommodity,
 	marketQuote,
+	quoteWithCut,
+	type QuoteFn,
 	PRICE_STEP_CR,
 	marketRow,
 	marketStationOf,
@@ -163,18 +165,21 @@ console.log(
 /**
  * Per-tech-level accumulator for the cut's own bite.
  *
- * **`spreadless` and `pinnedAtStep` are one population printed as two.** A bid can
- * come back equal to the ask only where §3's floor has already pinned the mid, so
- * the two columns agree to the row and always will. They are kept apart because they
- * answer different questions — "did the spread survive?" and "was this row already
- * at the floor?" — and a reader of the first alone cannot tell a swallowed cut from
- * an uncuttable row. Should they ever disagree, that equality is the thing that
- * broke.
+ * **`spreadless` and `pinnedAtStep` answer different questions and are not
+ * guaranteed to agree.** "Did the spread survive?" and "was this row already pinned at
+ * the floor?" come apart wherever a mid *above* the floor loses its spread to the
+ * tenth-credit quote step instead — §10.3 counts 360 such rows over the whole priced
+ * domain. Over the realized rows this script walks the two percentages happen to land
+ * together, and printing both is how that stays visible; asserting they must be equal
+ * would be wrong, and an earlier comment here asserted it.
  */
 interface SpreadAcc {
 	rows: number;
 	spreadless: number;
 	pinnedAtStep: number;
+	/** Rows the **flat** control cut erases, counted in the same walk — the column that
+	 *  says whether the tech-level grade decides any of the erasure. */
+	flatSpreadless: number;
 	/** Sum of `(ask − bid) / ask`, so a printed mean spread is a mean of realized
 	 *  rows rather than of the table's declared endpoints. */
 	spreadSum: number;
@@ -186,8 +191,18 @@ const emptyAcc = (): SpreadAcc => ({
 	rows: 0,
 	spreadless: 0,
 	pinnedAtStep: 0,
+	flatSpreadless: 0,
 	spreadSum: 0,
 });
+
+/**
+ * The control the conclusion needs: the same total bite, no tech-level grade.
+ *
+ * **`BID_CUT_FLOOR + BID_CUT_GRADE / 2` is the graded ladder's own mean**, which is what
+ * makes this a control rather than a third arm: same level of spread on average, none of
+ * the rim-to-core difference. If the erased set is unchanged, the grade decided none of it.
+ */
+const flatCut: QuoteFn = quoteWithCut(() => BID_CUT_FLOOR + BID_CUT_GRADE / 2);
 
 const cutByTl = new Map<number, SpreadAcc>();
 const cutByType = new Map<string, SpreadAcc>();
@@ -223,6 +238,13 @@ for (const world of worlds) {
 				// is the population §3's floor is a rule about.
 				const mid = marketRow(good, record.economy, market, 0).priceCr;
 				const quote = marketQuote(mid, record.displayTL);
+				// **The flat control, flown in the same walk.** The claim under this table
+				// is that the cut's tech-level grade decides none of the erasure — that a
+				// flat cut at the ladder's own mean erases the same rows. That is a
+				// measurement and not a mood, so the control runs here and its count is
+				// printed beside the graded one. A conclusion that quotes a figure this
+				// script never computed is what the last two review rounds were about.
+				const flatQuote = flatCut(mid, record.displayTL);
 				const byTl = accFor(cutByTl, record.displayTL);
 				const byType = accFor(cutByType, station.type);
 				for (const acc of [byTl, byType, cutTotal]) {
@@ -230,6 +252,7 @@ for (const world of worlds) {
 					acc.spreadSum += 1 - quote.sellCr / quote.buyCr;
 					if (quote.sellCr === quote.buyCr) acc.spreadless++;
 					if (quote.sellCr === PRICE_STEP_CR) acc.pinnedAtStep++;
+					if (flatQuote.sellCr === flatQuote.buyCr) acc.flatSpreadless++;
 				}
 			}
 		}
@@ -265,26 +288,24 @@ for (const [type, acc] of [...cutByType.entries()].sort())
 			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(20),
 	);
 console.log(
-	"  read the TL column as a mix, not as a grade: the cut dies at §3's floor, and a",
+	`  the FLAT control erases ${cutTotal.flatSpreadless.toLocaleString()} rows against the graded ` +
+		`${cutTotal.spreadless.toLocaleString()} — ${cutTotal.flatSpreadless === cutTotal.spreadless ? "the same set, so the tech-level grade decides none of the erasure" : "DIFFERENT sets, so the grade does decide some of it"}.`,
 );
 console.log(
-	"  FLAT cut of any rung erases the same rows (8,760 either way, 584 at every tech level,",
+	"  Read the TL column as a mix, not as a grade: the cut dies at §3's price floor, where",
 );
 console.log(
-	"  every one pinned at one price step). What the per-type table does show is #13's",
+	"  any cut collides. The axis #13's warning was about is the station-type table above —",
 );
 console.log(
-	"  shape — a per-type offset dying where the type lives — at a fiftieth of its size:",
+	"  a per-type offset dying where the type lives — at a fiftieth of its size here.",
 );
 console.log(
-	"  1.9% of a refinery's rows against 0.0% at a trade station and 0.0% at a shipyard.",
+	"  On an erased row the round trip nets nothing either, because the floor swallows the",
 );
 console.log(
-	"  On every erased row the round trip nets nothing either, because the floor swallows",
+	"  deficit's mark on the way through `stockResponse`; tests/market.test.ts §5.6 checks",
 );
 console.log(
-	"  the deficit's mark on the way through `stockResponse` — which `tests/market.test.ts`",
-);
-console.log(
-	"  §5.6 checks row by row, at the sell-first order and the baseline hold.",
+	"  that per erased row, at the shipped quantization and the sell-first order.",
 );

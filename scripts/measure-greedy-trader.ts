@@ -36,6 +36,7 @@ import {
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	PRICE_STEP_CR,
+	type MarketQuote,
 	type QuoteFn,
 	quantizeToDisplayStepCr,
 	bidCutAtTl,
@@ -366,8 +367,17 @@ const OPPOSING_ARM = "narrow at high TL";
 const armRung = (floor: number, grade: number): string =>
 	` @ ${floor.toFixed(3)}/${grade.toFixed(3)}`;
 
+/** The suffix the developed-start rows append to an arm's name. One owner, because the
+ *  column width has to account for it or the label runs into the count. */
+const DEVELOPED_SUFFIX = " from a developed start";
+
 const ARM_LABEL_COL =
-	Math.max(SHIPPED_ARM.length, OPPOSING_ARM.length) +
+	Math.max(
+		SHIPPED_ARM.length,
+		OPPOSING_ARM.length,
+		SHIPPED_ARM.length + DEVELOPED_SUFFIX.length,
+		OPPOSING_ARM.length + DEVELOPED_SUFFIX.length,
+	) +
 	armRung(0, 0.20047).length + // the suffix the graded rows append
 	2 + // the two-space indent
 	2; // slack, so no label ever touches the count
@@ -384,25 +394,50 @@ const MID_PROBE = 100;
  * law actually answers: given the factor this arm means to apply, what figure comes
  * off the quote?
  */
+/**
+ * The one quote-equality guard every arm check goes through.
+ *
+ * **Both directions and both sides, in one place.** Three guards used to spell the same
+ * `quantizeToDisplayStepCr(Math.max(PRICE_STEP_CR, mid × factor))` expression
+ * independently, and a guard that drifts from the law it guards is worse than no guard —
+ * it reports an arm as shipped when only the guard changed. `want` says what a mid *must*
+ * be quoted as; everything else here is plumbing.
+ */
+const assertQuote = (
+	name: string,
+	quote: QuoteFn,
+	want: (midCr: number, tl: number) => MarketQuote,
+	mids: readonly number[] = [MID_PROBE],
+): void => {
+	for (const midCr of mids)
+		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+			const got = quote(midCr, tl);
+			const wantQ = want(midCr, tl);
+			if (got.buyCr !== wantQ.buyCr || got.sellCr !== wantQ.sellCr)
+				throw new Error(
+					`arm "${name}" is not the law at ${midCr} TL ${tl}: it quotes ` +
+						`${got.buyCr}/${got.sellCr} against ${wantQ.buyCr}/${wantQ.sellCr}`,
+				);
+		}
+};
+
+/** The floor-and-step law applied to a factor per side — what every arm claims. */
+const quoteOf =
+	(factors: (tl: number) => { buy: number; sell: number }) =>
+	(midCr: number, tl: number): MarketQuote => ({
+		buyCr: quantizeToDisplayStepCr(
+			Math.max(PRICE_STEP_CR, midCr * factors(tl).buy),
+		),
+		sellCr: quantizeToDisplayStepCr(
+			Math.max(PRICE_STEP_CR, midCr * factors(tl).sell),
+		),
+	});
+
 const assertArm = (
 	name: string,
 	quote: QuoteFn,
 	factors: (tl: number) => { buy: number; sell: number },
-) => {
-	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-		const q = quote(MID_PROBE, tl);
-		const want = factors(tl);
-		const wantBuy = quantizeToDisplayStepCr(MID_PROBE * want.buy);
-		const wantSell = quantizeToDisplayStepCr(
-			Math.max(PRICE_STEP_CR, MID_PROBE * want.sell),
-		);
-		if (q.buyCr !== wantBuy || q.sellCr !== wantSell)
-			throw new Error(
-				`arm "${name}" is not the law at TL ${tl}: it quotes ` +
-					`${q.buyCr}/${q.sellCr} against ${wantBuy}/${wantSell}`,
-			);
-	}
-};
+): void => assertQuote(name, quote, quoteOf(factors));
 const bidArmFactors = (cut: (tl: number) => number) => (tl: number) => ({
 	buy: 1,
 	sell: 1 - cut(tl),
@@ -441,30 +476,21 @@ const assertFlownArms = () => {
 	// check that would have caught round 4, where the arm named `wide at high TL` was
 	// built from the mirrored table. The game's own `marketQuote` is the oracle, so the
 	// comparison is against what ships rather than against a copy of a formula.
-	for (const mid of [1.4, 12, 100, 786])
-		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-			const viaArm = spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE)(mid, tl);
-			const viaLaw = marketQuote(mid, tl);
-			if (viaArm.buyCr !== viaLaw.buyCr || viaArm.sellCr !== viaLaw.sellCr)
-				throw new Error(
-					`the report's ${SHIPPED_ARM} arm is not the shipped quote at ` +
-						`mid ${mid} TL ${tl}: ${viaArm.buyCr}/${viaArm.sellCr} against ` +
-						`${viaLaw.buyCr}/${viaLaw.sellCr}`,
-				);
-		}
+	assertQuote(
+		`report's ${SHIPPED_ARM} arm`,
+		spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false),
+		marketQuote,
+		[1.4, 12, 100, 786],
+	);
 	// **And the rejected direction is the mirror of the shipped dials, at the same two
 	// constants.** Checked against `marketQuote` reflected on the tech level, because the
 	// arm's whole claim is that its dear end is where the shipped law's cheap end is.
-	for (const mid of [12, 100])
-		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-			const mirror = MIRRORED_SHIPPED(mid, tl);
-			const shipped = marketQuote(mid, DISPLAY_TL_MAX + DISPLAY_TL_MIN - tl);
-			if (mirror.sellCr !== shipped.sellCr)
-				throw new Error(
-					`MIRRORED_SHIPPED is not the shipped law reflected at mid ${mid} ` +
-						`TL ${tl}: ${mirror.sellCr} against ${shipped.sellCr}`,
-				);
-		}
+	assertQuote(
+		"MIRRORED_SHIPPED as the shipped law reflected",
+		MIRRORED_SHIPPED,
+		(midCr, tl) => marketQuote(midCr, DISPLAY_TL_MAX + DISPLAY_TL_MIN - tl),
+		[12, 100],
+	);
 	// The mirrored arm, checked against its own stated dials. Graded rungs scale the
 	// mirror by their own mean; `routeRow` checks each one as it is flown, since a
 	// check at the shipped depth cannot cover a dial the loop turns later.
@@ -482,32 +508,24 @@ const assertFlownArms = () => {
 	}));
 };
 /**
- * The same claim as `assertLadderArm`, on the quote the trader will actually fly.
+ * The claim that the quote the trader *flies* is the cut the row *claims*, in the one
+ * quote-equality guard every other arm check also goes through.
  *
- * `assertLadderArm` rebuilds an arm from the dials its caller already holds, which can
- * only ever agree with itself. This checks a `QuoteFn` against a cut function: at every
- * tech level the quote's sell must equal `mid × (1 − cut(tl))`, floored and quantized.
+ * The arm-rebuilding guards (`assertLadderArm`) compare a formula to itself, which can
+ * only agree; this compares a `QuoteFn` against a cut function at four mids and all
+ * fifteen tech levels, and it is what round 4's crossed bindings would have tripped.
  */
 const assertFlownArmCut = (
 	name: string,
 	quote: QuoteFn,
 	cut: (tl: number) => number,
-): void => {
-	for (const midCr of [1, 2.37, 100, 632.4]) {
-		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-			// The step itself, not a transcription: a guard that copies `× 10 / 10` keeps
-			// passing when the display step changes and the arm it guards goes wrong.
-			const want = quantizeToDisplayStepCr(
-				Math.max(PRICE_STEP_CR, midCr * (1 - cut(tl))),
-			);
-			if (quote(midCr, tl).sellCr !== want)
-				throw new Error(
-					`arm "${name}" sells ${midCr.toFixed(2)} at TL ${tl} for ` +
-						`${quote(midCr, tl).sellCr.toFixed(2)}; the cut it claims says ${want.toFixed(2)}`,
-				);
-		}
-	}
-};
+): void =>
+	assertQuote(
+		name,
+		quote,
+		quoteOf((tl) => ({ buy: 1, sell: 1 - cut(tl) })),
+		[1, 2.37, 100, 632.4],
+	);
 
 const bindingRow = (row: WorstCycle): string =>
 	`${row.cycle.good.name}/${row.cycle.hull} e${row.cycle.economy} ` +
@@ -647,13 +665,16 @@ console.log(
  * claim §5.6 makes is about *each* pairing, and a min–max across four draws cannot
  * show whether they agreed.
  */
-const armStats = (quote: QuoteFn) => {
+const armStats = (
+	quote: QuoteFn,
+	startPolicy: "first" | "developed" | "rim" = "first",
+) => {
 	// **One run per galaxy, not two.** `kitAffordableAtMinutes` is latched the first
 	// time the balance crosses the kit, so the run that stops there records the same
 	// minute as the one that keeps flying to measure a rate — and the duplicate was
 	// forty extra sessions per report for a figure already in hand.
 	const rateRuns = WORLDS.map(({ world }) =>
-		run(world, hours, { quote, stopAtKit: false }),
+		run(world, hours, { quote, stopAtKit: false, startPolicy }),
 	);
 	// **One entry per galaxy, including the galaxies that never got there.** A
 	// previous revision dropped the nulls and let the printer index by galaxy, so on
@@ -722,7 +743,12 @@ const armFor = (floor: number, grade: number, mirrored: boolean) => ({
 	cut: mirrored ? mirroredBidCut(floor, grade) : bidCutLadder(floor, grade),
 });
 
-type Arm = { name: string; quote: QuoteFn; cut?: (tl: number) => number };
+type Arm = {
+	name: string;
+	quote: QuoteFn;
+	cut?: (tl: number) => number;
+	startPolicy?: "first" | "developed" | "rim";
+};
 
 /** The direction table's printer. With an `armFor` arm, its two claims are checked. */
 const routeRow = (arm: Arm, labelWidth = ARM_LABEL_COL): ArmStats => {
@@ -735,7 +761,7 @@ const routeRow = (arm: Arm, labelWidth = ARM_LABEL_COL): ArmStats => {
 			throw new Error(
 				`arm "${arm.name}" is not one-sided: it charges ${arm.quote(100, tl).buyCr.toFixed(2)} at TL ${tl}`,
 			);
-	const s = armStats(arm.quote);
+	const s = armStats(arm.quote, arm.startPolicy ?? "first");
 	console.log(`  ${arm.name}`.padEnd(labelWidth) + formatArmStats(s));
 	return s;
 };
@@ -795,17 +821,29 @@ routeRow({ name: "shipped table", quote: marketQuote, cut: bidCutAtTl });
 /** A session that never reached the kit is `null`, and the dash is the report's claim. */
 const kit = (minutes: number | null): string =>
 	minutes === null ? "—" : minutes.toFixed(0);
+
+/**
+ * One galaxy per column, the two arms' kit times paired.
+ *
+ * Written once because the same loop was being pasted a third time for the developed-start
+ * rows, and a formatter copied per table is a figure that can be re-ordered in one table
+ * without the others noticing.
+ */
+const kitPairLine = (prefix: string, left: ArmStats, right: ArmStats): string =>
+	prefix +
+	WORLDS.map(
+		({ g }, i) => `${g} ${kit(left.kits[i])}/${kit(right.kits[i])}`,
+	).join("   ");
 console.log(
 	`  per galaxy, ${SHIPPED_ARM} first, so four draws cannot be read as one range:`,
 );
 for (const [mean, shipped, opposing] of PAIRS) {
 	console.log(
-		`      mean ${mean.toFixed(2)}  kit by galaxy (${SHIPPED_ARM} / ${OPPOSING_ARM})  ` +
-			WORLDS.map(({ g }, i) => {
-				const a = shipped.kits[i];
-				const b = opposing.kits[i];
-				return `${g} ${kit(a)}/${kit(b)}`;
-			}).join("   "),
+		kitPairLine(
+			`      mean ${mean.toFixed(2)}  kit by galaxy (${SHIPPED_ARM} / ${OPPOSING_ARM})  `,
+			shipped,
+			opposing,
+		),
 	);
 }
 console.log(
@@ -849,14 +887,49 @@ console.log(
 			`at TL ${(DISPLAY_TL_MIN + DISPLAY_TL_MAX) / 2} either way`,
 	);
 	console.log(
-		"  kit by galaxy (" +
-			arms.map(([name]) => name).join(" / ") +
-			")  " +
-			WORLDS.map(({ g }, i) => {
-				const [a, b] = stats;
-				return `${g} ${kit(a.kits[i])}/${kit(b.kits[i])}`;
-			}).join("   "),
+		kitPairLine(
+			`  kit by galaxy (${arms.map(([name]) => name).join(" / ")})  `,
+			stats[0],
+			stats[1],
+		),
 	);
+	// **The start is a variable, and #191 D4's concern was about it.** Every row above
+	// drops the trader at the first multi-station system the generator lists, whatever its
+	// tech level — so none of them flew "a commander who starts somewhere developed". Both
+	// arms are flown again from the galaxy's **highest-tech** berth, identical in every
+	// other respect, and then the *same* arm is flown from each of the three start rules so
+	// the start's own contribution is visible as a spread rather than smuggled into the
+	// arms as a constant.
+	console.log(
+		"  the same pair from a DEVELOPED start (highest-tech berth), which is the start " +
+			"D4's concern was actually about:",
+	);
+	const devShipped = routeRow({
+		name: `${SHIPPED_ARM}${DEVELOPED_SUFFIX}`,
+		quote: marketQuote,
+		startPolicy: "developed",
+	});
+	const devMirror = routeRow({
+		name: `${OPPOSING_ARM}${DEVELOPED_SUFFIX}`,
+		quote: MIRRORED_SHIPPED,
+		startPolicy: "developed",
+	});
+	console.log(
+		kitPairLine(
+			`  kit by galaxy, developed start (${SHIPPED_ARM} / ${OPPOSING_ARM})  `,
+			devShipped,
+			devMirror,
+		),
+	);
+	console.log(
+		"  how much of any of this is the start rather than the law — the shipped arm alone, " +
+			"from each start rule:",
+	);
+	for (const startPolicy of ["first", "developed", "rim"] as const)
+		console.log(
+			`      start ${startPolicy}`.padEnd(22) +
+				formatArmStats(armStats(marketQuote, startPolicy)),
+		);
 	console.log(
 		"  what a commander who starts somewhere developed pays for one hop: the core end " +
 			`costs ${((BID_CUT_FLOOR + BID_CUT_GRADE) * 100).toFixed(1)}% of a sale under the shipped law, ` +

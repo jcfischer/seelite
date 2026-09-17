@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { LAUNCH_HOLD_NOTICE } from "../src/live-cockpit";
 
 test("every held-launch notice reads as a hold (#314)", () => {
@@ -7,4 +8,57 @@ test("every held-launch notice reads as a hold (#314)", () => {
 	const notices = Object.values(LAUNCH_HOLD_NOTICE);
 	expect(notices.length).toBeGreaterThan(0);
 	for (const notice of notices) expect(notice).toMatch(/^LAUNCH HELD — /);
+});
+
+test("the market row's five cells and the market grid's five tracks agree (#196)", () => {
+	// **Why this reads the source instead of a browser.** §5.6 gave the market a fifth
+	// cell — GOOD, BUY, SELL, SHELF, ACTION — and the four-column rule the equipment list
+	// still wants is what made the ACTION button wrap onto a second grid line in every
+	// listed row. A wrapped button is still a button, so the browser probe cannot see it,
+	// and `src/live-cockpit.ts`'s CSS comment claims a check exists. This is that check.
+	//
+	// It is a text read because the stylesheet and the template live in one module
+	// (repo precedent: `hud-scanner-spec.test.ts`, `source-bytes.test.ts`), and what it
+	// asserts is the pairing, not either count alone: five tracks beside five cells, and
+	// four tracks for the list that still draws four.
+	const src = readFileSync("src/live-cockpit.ts", "utf8");
+	/** Track count of the first stylesheet line whose selector is exactly `selector`. */
+	const tracks = (selector: string): number => {
+		const line = src
+			.split("\n")
+			.find(
+				(l) => l.startsWith(selector) && l.includes("grid-template-columns"),
+			);
+		if (!line) throw new Error(`no grid rule for selector ${selector}`);
+		const decl = /grid-template-columns: ([^;]+);/.exec(line);
+		if (!decl) throw new Error(`no declaration in ${line.slice(0, 60)}`);
+		// Count top-level track expressions: commas only ever appear inside minmax().
+		return decl[1]
+			.replace(/minmax\([^)]*\)/g, "T")
+			.split(/\s+/)
+			.filter(Boolean).length;
+	};
+	const cells = (marker: string): number => {
+		// The row *templates*, not the CSS selector that also mentions the attribute.
+		const line = src
+			.split("\n")
+			.find((l) => l.includes("<div") && l.includes(marker));
+		if (!line) throw new Error(`no row template matched ${marker}`);
+		return (line.match(/<span/g) ?? []).length;
+	};
+	// The listed row and the header carry the grid's arity; an unlisted row is one cell
+	// short (there is no ACTION column to draw) and a grid leaves that track empty,
+	// which is why the assertion is "at most", not "equal".
+	const marketTracks = tracks(".lc-station-market .lc-station-row {");
+	expect(marketTracks).toBe(5);
+	expect(cells('data-live-listed="true"')).toBe(marketTracks);
+	expect(cells('data-live-listed="false"')).toBeLessThan(marketTracks);
+	const head = src
+		.split("\n")
+		.find((l) => l.includes("<div") && l.includes("lc-station-head"));
+	if (!head) throw new Error("no market header template");
+	expect((head.match(/<span/g) ?? []).length).toBe(marketTracks);
+	// The shared rule keeps four tracks, which is what the override rule exists for: the
+	// equipment list draws four cells and the market five.
+	expect(tracks(".lc-station-row { display")).toBe(4);
 });

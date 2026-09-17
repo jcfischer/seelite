@@ -986,6 +986,24 @@ export interface RunOptions {
 	 * is the pre-#196 law and is what the control arm of any of these rows uses.
 	 */
 	quote?: QuoteFn;
+	/**
+	 * Which multi-station system the trader is dropped at.
+	 *
+	 * **Default `"first"`, which is the historic behaviour** — the first system the
+	 * generator happens to list with two or more stations. That default is what let a
+	 * review round say "#191 D4's concern about starting somewhere developed is never
+	 * flown": every arm of the direction sweep began at the same arbitrary system,
+	 * whatever its tech level, so the pair answered a question about a dropped
+	 * somewhere-random commander.
+	 *
+	 * `"developed"` starts at the **highest-tech** multi-station system in the galaxy and
+	 * `"rim"` at the lowest. Two consequences worth stating before anyone uses them: the
+	 * arms are still identical to each other in every respect (same start, same clock,
+	 * same trader), and the start is itself a **confound to be measured, not a control to
+	 * be assumed** — which is why the report flies the same arm from several starts and
+	 * prints the spread, rather than treating one start as the answer.
+	 */
+	startPolicy?: "first" | "developed" | "rim";
 }
 
 export function run(
@@ -1000,14 +1018,24 @@ export function run(
 	const remembers = opts.remembers ?? true;
 	const neighbourLimit = opts.neighbourLimit ?? DEFAULT_NEIGHBOUR_LIMIT;
 	const quoteLaw = opts.quote ?? marketQuote;
+	const startPolicy = opts.startPolicy ?? "first";
 	const capitalCapCr = opts.capitalCapCr ?? Number.POSITIVE_INFINITY;
 	// The cache is keyed on a clock value, and every run replays the clock from
 	// zero — so it is cleared per run rather than kept, or run N would read run
 	// N−1's placements at the same instant.
 	clearPlacements();
-	const start = world.systems.find(
+	const berthable = world.systems.filter(
 		(r) => world.contentsFor(r).stations.length >= 2,
 	);
+	if (berthable.length === 0)
+		throw new Error("no multi-station system in this galaxy");
+	const byTl = [...berthable].sort((a, b) => b.displayTL - a.displayTL);
+	const start =
+		startPolicy === "developed"
+			? byTl[0]
+			: startPolicy === "rim"
+				? byTl[byTl.length - 1]
+				: berthable[0];
 	if (!start) throw new Error("no multi-station system in this galaxy");
 
 	let here = portsOf(start, world.contentsFor(start))[0];

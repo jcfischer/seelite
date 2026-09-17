@@ -27,6 +27,7 @@ import {
 	transactAtStation,
 } from "../src/station-commerce";
 import { priceLabel, stationMarketScreen } from "../src/station-console";
+import { ALL_ECONOMIES as MARKET_ECONOMIES } from "./helpers/market-math";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";
 import {
 	type CycleSurvey,
@@ -37,13 +38,24 @@ import {
 } from "./helpers/console-cycle";
 
 /** The eight economy indices, 0 through 7 as §3 numbers them. */
-const ALL_ECONOMIES = [0, 1, 2, 3, 4, 5, 6, 7];
+/**
+ * §5's eight economies, taken from the helper that already owns them.
+ *
+ * This file used to declare its own copy. A copy of a domain list is how a widening of
+ * §5's table turns a sweep into a smaller claim that still prints a clean number.
+ */
+const ALL_ECONOMIES = MARKET_ECONOMIES;
 
 const STATION = marketStationOf(
 	{ type: "trade", localCarrierId: "station-trade", blackMarket: false },
 	0x51a7_10,
 );
 const KEY = carrierKey(0, "station-trade");
+
+/** One seed for every console in the residue rows, so they measure one station. */
+const PRIOR_MARK_SEED = 0x51a7_10;
+/** The three priced berth types §5.6's closure claim covers. */
+type BerthType = "trade" | "refinery" | "shipyard";
 
 const input = (
 	overrides: Partial<Parameters<typeof transactAtStation>[0]> = {},
@@ -58,6 +70,36 @@ const input = (
 	action: { type: "buy-commodity", commodity: "Food" } as const,
 	...overrides,
 });
+
+/** What one leg of a cycle carries forward: what the till returned, not what it refused. */
+interface CycleState {
+	commander: Parameters<typeof transactAtStation>[0]["commander"];
+	deficits: DeficitMap;
+}
+
+/**
+ * One priced leg of a cycle, flown as the till would fly it.
+ *
+ * **Written once because the legs in the two residue rows below are the same call with a
+ * different action.** Four copies is four chances to hand the next leg the *original*
+ * deficits instead of the ones the last leg returned — which is exactly the mistake that
+ * made the first draft of those rows measure nothing, and a shared runner cannot make it.
+ */
+const leg = (
+	state: CycleState,
+	overrides: Partial<Parameters<typeof transactAtStation>[0]>,
+): CycleState | null => {
+	const out = transactAtStation(
+		input({
+			commander: state.commander,
+			deficits: state.deficits,
+			...overrides,
+		}),
+	);
+	return out.accepted
+		? { commander: out.commander, deficits: out.deficits }
+		: null;
+};
 
 test("a commodity buy atomically moves credits, cargo, and this station's deficit", () => {
 	const before = input();
@@ -316,8 +358,12 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		const before = input();
 		const bought = transactAtStation(before);
 		expect(bought.accepted).toBe(true);
+		// **Against the quote, not the mid.** The till charges `q.buyCr`, so comparing
+		// the charge to `mid` measures the quantization as though it were the price: it
+		// passes here only because this mid happens to round to itself, and a good whose
+		// mid carried a hundredths digit would fail for the wrong reason.
 		expect(before.commander.credits - bought.commander.credits).toBeCloseTo(
-			mid,
+			marketQuote(mid, 8).buyCr,
 			12,
 		);
 	});
@@ -402,86 +448,85 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// over this same domain (measured; §10.3 carries the comparison). So the dial's cost
 		// of closing this door is known, which is what makes the residue a decision rather
 		// than a surprise.
+		// The console under test, at one seed, built by the same helper both residue rows
+		// use — a per-test rebuild is where the two rows could quietly disagree about which
+		// station they measured.
+		const consoleAt = (type: BerthType) => {
+			const station = marketStationOf(
+				{ type, localCarrierId: `p-${type}`, blackMarket: true },
+				PRIOR_MARK_SEED,
+			);
+			return { station, key: carrierKey(0, `p-${type}`) };
+		};
+		/**
+		 * Throw `prior` holds into one console without buying them back, then fly one
+		 * sell-then-buy cycle, and report what it netted. `null` is a leg that cannot be
+		 * booked, not a cycle that netted nothing.
+		 */
 		const priorMarked = (
-			type: "trade" | "refinery" | "shipyard",
+			type: BerthType,
 			good: (typeof COMMODITIES)[number],
 			economy: number,
 			tl: number,
 			prior: number,
 			qty: number,
 		): number | null => {
-			const station = marketStationOf(
-				{ type, localCarrierId: `p-${type}`, blackMarket: true },
-				0x51a7_10,
-			);
-			const key = carrierKey(0, `p-${type}`);
-			let commander = {
-				...newCommander(PLAYER_BASELINE_HULL),
-				credits: 10_000_000,
-				cargo: {},
+			const { station, key } = consoleAt(type);
+			const at = (
+				action: "buy-commodity" | "sell-commodity",
+				quantity: number,
+			) => ({
+				station,
+				stationKey: key,
+				economy,
+				displayTL: tl,
+				action: { type: action, commodity: good.name, quantity },
+			});
+			// Cargo is injected rather than bought: the *prior* legs are a dump, and a
+			// trader who bought them first would be measuring the cycle instead.
+			let state: CycleState = {
+				commander: {
+					...newCommander(PLAYER_BASELINE_HULL),
+					credits: 10_000_000,
+					cargo: {},
+				},
+				deficits: {},
 			};
-			let deficits: DeficitMap = {};
 			for (let i = 0; i < prior; i++) {
-				const out = transactAtStation(
-					input({
-						commander: { ...commander, cargo: { [good.name]: qty } },
-						deficits,
-						station,
-						stationKey: key,
-						economy,
-						displayTL: tl,
-						action: {
-							type: "sell-commodity",
-							commodity: good.name,
-							quantity: qty,
-						},
-					}),
-				);
-				if (!out.accepted) return null;
-				commander = { ...out.commander, cargo: {} };
-				deficits = out.deficits;
+				const out = leg(state, {
+					commander: { ...state.commander, cargo: { [good.name]: qty } },
+					...at("sell-commodity", qty),
+				});
+				if (!out) return null;
+				state = {
+					commander: { ...out.commander, cargo: {} },
+					deficits: out.deficits,
+				};
 			}
+			// **The shelf is read as the till reads it** — base quantity plus the deficit
+			// the dump just made. Reading the base alone asks the last leg to buy units the
+			// console no longer has, which returns `rejected` and shrinks the row's own
+			// count without saying so.
 			const buyQty = Math.min(
 				qty,
 				shelfQuantity(
 					marketRow(good, economy, station, 0).quantity,
-					readDeficit(deficits, key, good.name, 0),
+					readDeficit(state.deficits, key, good.name, 0),
 				),
 			);
 			if (buyQty <= 0) return null;
-			const start = commander.credits;
-			const sold = transactAtStation(
-				input({
-					commander: { ...commander, cargo: { [good.name]: buyQty } },
-					deficits,
-					station,
-					stationKey: key,
-					economy,
-					displayTL: tl,
-					action: {
-						type: "sell-commodity",
-						commodity: good.name,
-						quantity: buyQty,
-					},
-				}),
-			);
-			if (!sold.accepted) return null;
-			const back = transactAtStation(
-				input({
-					commander: sold.commander,
-					deficits: sold.deficits,
-					station,
-					stationKey: key,
-					economy,
-					displayTL: tl,
-					action: {
-						type: "buy-commodity",
-						commodity: good.name,
-						quantity: buyQty,
-					},
-				}),
-			);
-			if (!back.accepted) return null;
+			const start = state.commander.credits;
+			// Cargo is injected here too, exactly as the dump legs do it. A leg that
+			// carries no cargo is *refused*, and a row that refuses every leg reports a
+			// clean zero — which is how this helper's first refactor draft passed by
+			// measuring nothing. `flown` is pinned below against exactly that.
+			const sold = leg(state, {
+				commander: { ...state.commander, cargo: { [good.name]: buyQty } },
+				...at("sell-commodity", buyQty),
+			});
+			if (!sold) return null;
+			const back = leg(sold, at("buy-commodity", buyQty));
+			if (!back) return null;
 			return back.commander.credits - start;
 		};
 		let flown = 0;
@@ -492,10 +537,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			for (const good of COMMODITIES) {
 				if (good.unit !== "t") continue;
 				for (const economy of ALL_ECONOMIES) {
-					const station = marketStationOf(
-						{ type, localCarrierId: `p-${type}`, blackMarket: true },
-						0x51a7_10,
-					);
+					const { station } = consoleAt(type);
 					const qty = Math.min(
 						HOLD_REFERENCE_T,
 						shelfQuantity(marketRow(good, economy, station, 0).quantity, 0),
