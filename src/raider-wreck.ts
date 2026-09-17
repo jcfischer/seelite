@@ -25,7 +25,7 @@ import { carrierKeySeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
-import { mix } from "./rng";
+import { fnv1a, mix } from "./rng";
 import {
 	type Vec3,
 	add,
@@ -36,7 +36,7 @@ import {
 	sub,
 	v3,
 } from "./vec3";
-import { type Provenance, type TransitionEvent, fnv1a } from "./world-state";
+import { type Provenance, type TransitionEvent } from "./world-state";
 
 /** How long a destroyed raider stays destroyed before its replacement starts. */
 export const RAIDER_WRECK_S = 600;

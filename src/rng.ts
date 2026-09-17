@@ -143,3 +143,26 @@ export function seedFor(worldSeed: number, system: StreamName): number {
 export function mix(a: number, b: number): number {
 	return avalanche((a ^ Math.imul(b, 0x9e3779b9)) >>> 0);
 }
+
+/**
+ * FNV-1a, 32-bit — the hash every text-keyed draw and the save's integrity
+ * field are built from. A hash, not a checksum with any cryptographic claim:
+ * what it has to do is change when its input does.
+ *
+ * **It is here rather than in the save model that first used it, and the reason
+ * is a cycle.** `world-state.ts` exported it and `station-traffic.ts` carried a
+ * private copy; meanwhile a naming or standing module that seeds from a carrier
+ * key needs it, and the model imports the roster module — which composes
+ * carrier identity — so importing the hash back from the model closes a cycle
+ * through it. A leaf has no such edge. Both former homes read this one now, and
+ * `tests/carrier-name.test.ts` pins the values so a change to the hash is a
+ * deliberate act rather than an edit that quietly re-names every carrier.
+ */
+export const fnv1a = (text: string): number => {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) {
+		h ^= text.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h >>> 0;
+};

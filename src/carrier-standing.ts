@@ -24,8 +24,7 @@
 import type { CarrierKey } from "./carrier-key";
 import { DOMAIN } from "./domains";
 import type { Standing } from "./legal";
-import { mix, seededRand } from "./rng";
-import { fnv1a } from "./world-state";
+import { fnv1a, mix, seededRand } from "./rng";
 
 export const STANDING_SHARES = { wanted: 0.12, fugitive: 0.03 } as const;
 export const STANDING_ROTATION_S = 6 * 3600;

@@ -16,7 +16,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { raiderSlotCount } from "../src/raider-slots";
-import { fnv1a } from "../src/world-state";
+import { fnv1a } from "../src/rng";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";

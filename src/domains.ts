@@ -84,6 +84,12 @@ export const DOMAIN = {
 	 *  for manoeuvre durations and pull axes. Split by the key and the instance,
 	 *  so a replacement does not fly its predecessor's evasion. */
 	TRAFFIC_ENGAGEMENT: 19,
+	/** An ordinary carrier's drawn name (`carrier-identity.md` §1, #364): the
+	 *  proper name beside the registry. Its own tag rather than a draw inside
+	 *  `CARRIER_STANDING`, for that table's own reason — a name taken from the
+	 *  standing's stream would move whenever the standing's rotation was
+	 *  retuned, and a name a pilot remembers cannot move under them. */
+	CARRIER_NAME: 20,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

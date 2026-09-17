@@ -40,6 +40,7 @@ import {
 import { type DeficitMap, parseDeficits } from "./deficits";
 import { generateGalaxy } from "./galaxy";
 import type { HullId } from "./hull";
+import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
 import type { StationType } from "./station";
 import { stationTrafficRoster } from "./station-traffic";
@@ -381,20 +382,6 @@ export function* enumerateCarriers(
 			};
 	}
 }
-
-/** FNV-1a, 32-bit. A hash, not a checksum with any cryptographic claim: what
- *  it has to do is change when its input does. */
-/** Exported for `save-envelope.ts`, which hashes `{ world, commander }` with
- *  it. A second copy in that module would be a second answer to "is this the
- *  same save", which is the question the hash exists to settle. */
-export const fnv1a = (text: string): number => {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < text.length; i++) {
-		h ^= text.charCodeAt(i);
-		h = Math.imul(h, 0x01000193) >>> 0;
-	}
-	return h >>> 0;
-};
 
 /**
  * §9.1's baseline fingerprint: identity, type, parent and generated placement

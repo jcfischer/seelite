@@ -44,8 +44,8 @@ import {
 	newCommander,
 	STARTING_CREDITS,
 } from "./station-commerce";
+import { fnv1a } from "./rng";
 import {
-	fnv1a,
 	GALAXY_COUNT,
 	isSystemIndex,
 	parseWorld,

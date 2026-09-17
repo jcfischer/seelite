@@ -7,7 +7,8 @@ import {
 	serializeSave,
 	SAVE_SCHEMA_VERSION,
 } from "../src/save-envelope";
-import { newWorld, fnv1a } from "../src/world-state";
+import { newWorld } from "../src/world-state";
+import { fnv1a } from "../src/rng";
 import {
 	CommanderCatalog,
 	memorySaveBackend,

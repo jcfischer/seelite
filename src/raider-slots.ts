@@ -48,11 +48,6 @@ export const raiderSlots = (
 		return { localCarrierId, key: carrierKey(systemIndex, localCarrierId) };
 	});
 
-/** A slot's display name, from its ordinal: `Raider 01` upward. One owner, for
- *  the encounter and the Communications log. */
-export const raiderName = (ordinal: number): string =>
-	`Raider ${String(ordinal + 1).padStart(2, "0")}`;
-
 /** The chance in an Anarchy (government 0) and a Corporate State (7), by the
  *  principal's ruling of 2026-09-15; `combat-model.md` §3 gives the figures it
  *  replaced, the reason and what it changes. */
