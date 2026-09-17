@@ -81,7 +81,9 @@ export function raiderLog(
 ): RaiderLogLine[] {
 	const lines: RaiderLogLine[] = [];
 	for (const [ordinal, slot] of raiderSlots(systemIndex, government).entries())
-		lines.push(...lifecycleLines(env, slot.key, raiderRegistry(ordinal), gameTime));
+		lines.push(
+			...lifecycleLines(env, slot.key, raiderRegistry(ordinal), gameTime),
+		);
 	return newestFirst(lines);
 }
 
