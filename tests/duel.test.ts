@@ -205,8 +205,40 @@ describe("out of the beam is out of the fight (#367 D3)", () => {
 		);
 	});
 
-	test("it is not the figure it was, which was twice the beam", () => {
-		expect(RAIDER_OUT_OF_BEAM_KM).toBeLessThan(PLAYER_LASER_RANGE_KM * 1.01);
+	test("it is under the beam's reach plus a hull, and that is the whole figure", () => {
+		// A statement about the constant, not about the exit — the exit is what
+		// `tests/encounter.test.ts`'s "a rout ends" rows fly, because only the
+		// encounter can be shown using or not using it.
+		expect(RAIDER_OUT_OF_BEAM_KM).toBeLessThan(
+			PLAYER_LASER_RANGE_KM + RAIDER_HIT_RADIUS_KM,
+		);
+	});
+
+	test("off the nose it is the hypotenuse that admits the shot, not the range", () => {
+		// Dead ahead the lateral offset is nothing, so every case above would also
+		// pass with the exit set to a bare `PLAYER_LASER_RANGE_KM` — the band here
+		// is wider than the corner the derivation exists for. A raider a hull's
+		// radius off the sightline at the beam's own range is inside the cylinder
+		// and out of a plain range reading, which is the case being added.
+		// §Language: ahead is −z, so a positive `along` here is behind the nose.
+		const offNose = (alongKm: number, lateralKm: number) =>
+			v3(lateralKm, 0, -alongKm);
+		expect(
+			playerLaserHit(
+				v3(),
+				FORWARD,
+				offNose(PLAYER_LASER_RANGE_KM, RAIDER_HIT_RADIUS_KM * 0.99),
+				RAIDER_HIT_RADIUS_KM,
+			).hit,
+		).toBe(true);
+		expect(
+			playerLaserHit(
+				v3(),
+				FORWARD,
+				offNose(RAIDER_OUT_OF_BEAM_KM * 1.0001, 0),
+				RAIDER_HIT_RADIUS_KM,
+			).hit,
+		).toBe(false);
 	});
 
 	test("dead ahead, a raider inside it can be hit and one outside it cannot", () => {

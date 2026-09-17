@@ -104,10 +104,11 @@ export const HULL_KILL_TOLERANCE = HULL_PRINT_STEP / 2;
  *
  * **A quarter, by the principal's ruling (#367 D2).** Recharge used to be gated
  * on time alone, so a raider at a third of a point of hull, left unhit for the
- * delay, came back to a whole shield on both pools — one pulse tick spends 0.1
- * of a hull, and every 3 s past the delay returns 6 points of *shield* on top of
- * whatever fraction is left. A crippled ship rebuilds its shields and the last
- * fraction of a fight is harder than the beginning.
+ * delay, was rebuilding shields at all — the reading the playtest reported had 22
+ * of 106 coming back on each pool. One pulse tick spends 0.1 of a hull and every
+ * 3 s past the delay returns 6 points of *shield*, so a crippled ship repairs
+ * itself faster than a pilot can finish it, and the last fraction of a fight is
+ * harder than the beginning.
  *
  * It is every ship's law, so the player's shields stop coming back at the same
  * share. **It is not `FLEE_HULL_FRACTION`, and does not share it**: that is the

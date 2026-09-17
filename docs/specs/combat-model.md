@@ -80,8 +80,9 @@ print, the way the refusal tone is.
 
 **Below a quarter of its hull, a ship's bank buys no shields.** The gate was the
 3 s delay and nothing else — time, not damage — so a raider at a third of a point
-of hull, unhit for the delay, came back to a whole shield on both pools, in front
-of the fraction of hull left under it. **A quarter** is the principal's figure
+of hull, unhit for the delay, was rebuilding shields at all, on both pools, in
+front of the fraction of hull left under it. The reported reading had **22 of 106**
+coming back on each pool while its hull was 0.33. **A quarter** is the principal's figure
 (20.25 of a raider's 81, 25 of a courier's 100). It is every ship's law, so the
 player's shields stop coming back at the same share.
 

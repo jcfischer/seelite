@@ -213,29 +213,34 @@ const printsWithoutADigit = (c: ShipCondition): boolean =>
 	targetConditionLine(c).text.endsWith("HULL 0") ||
 	duelConsoleReadout(c).hull.startsWith("0 /");
 
+/** One walk per hull, read by every row below. The capitals are twenty-four
+ *  hundred points at a tenth of a point a frame, so a walk is some twenty-five
+ *  thousand states, and rebuilding one per row made the suite do it three times
+ *  over for the same states. */
+const WALKS = new Map(
+	HULL_IDS.map((id) => [id, walkDownToKill(fullCondition(id))] as const),
+);
+
 describe("HULL 0 on the glass is always a kill (#367 D1)", () => {
-	test("no readout prints a live hull as 0, on any hull", () => {
+	test("no readout prints a live hull as 0, and no dead one is stepped past", () => {
+		// One direction, not two: the contrapositive ("what prints 0 is dead") is
+		// the same condition stated backwards over the same states, and it was a
+		// second row that could not fail without this one failing first.
 		for (const id of HULL_IDS) {
-			for (const c of walkDownToKill(fullCondition(id))) {
+			for (const c of WALKS.get(id) as ShipCondition[]) {
 				if (isAlive(c)) expect(printsWithoutADigit(c)).toBe(false);
 			}
 		}
 	});
 
-	test("the reading the playtest reported belongs to a dead ship", () => {
-		for (const id of HULL_IDS) {
-			for (const c of walkDownToKill(fullCondition(id))) {
-				if (printsWithoutADigit(c)) expect(isAlive(c)).toBe(false);
-			}
-		}
-	});
-
 	test("the walk reaches the band, and the frame before the kill prints 1", () => {
-		// What the walk can show: it ends at a zeroed hull, the frame before the
-		// kill is alive and prints a digit. It cannot show a live hull *under* the
-		// tolerance — see the row after this for why the state is built outright.
+		// What a walk can show, and no more. It cannot put a live hull *under* the
+		// tolerance in front of the glass: that state is what the law forbids, and
+		// `applyDamage` is the thing that refuses to produce it — so a row claiming
+		// to reach it by firing would be claiming something the funnel declines.
+		// `tests/ship-condition.test.ts` measures the band at the funnel instead.
 		for (const id of HULL_IDS) {
-			const walk = walkDownToKill(fullCondition(id));
+			const walk = WALKS.get(id) as ShipCondition[];
 			const dead = walk.at(-1) as ShipCondition;
 			expect(isAlive(dead)).toBe(false);
 			expect(dead.hull).toBe(0);
