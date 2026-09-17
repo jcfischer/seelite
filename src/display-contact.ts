@@ -1,16 +1,33 @@
+import type { CarrierStanding } from "./carrier-standing";
+import type { ScanRefusal } from "./carrier-scan";
 import type { Body } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { HullId } from "./hull";
 
 /** Presentation identity for a target outside the generated body list (#52).
  * Producers own position and velocity; the scene graph never supplies either.
- * Legal vocabulary belongs to #8: null means no legal identity has been given.
+ * Legal vocabulary belongs to #8: null means no reading has been recorded.
  */
 export interface DisplayContact extends Body {
 	/** A producer declares the hull type; never inferred from the display name. */
 	shipType?: HullId;
 	velocity: Vec3;
-	legalStatus: null;
+	/**
+	 * What a completed scan recorded about this carrier, or `null` for one that
+	 * has never been scanned (§6, F8).
+	 *
+	 * **Renamed from `legalStatus` as it was retyped**, and the rename is not
+	 * decoration: `world-state.ts`'s `LegalStatus` is `{ heat, updatedAt }` and
+	 * belongs to the *player*, and one field carrying both meanings is the
+	 * collision `CarrierKey`'s brand exists to prevent. It takes
+	 * `CarrierStanding` — §2's three words — and never that pair.
+	 *
+	 * **It is a reading, not a live value.** The producer that sets it derives it
+	 * from the knowledge row's own clock, so it goes stale on the glass beside
+	 * its age rather than being quietly refreshed by a world the pilot has not
+	 * looked at.
+	 */
+	standing: CarrierStanding | null;
 	scannerClass: "unknown" | "civilian" | "hostile" | "station";
 }
 
@@ -30,8 +47,54 @@ export function relativeLabel(kms: number | null, separator = " · "): string {
 	return `${separator}REL ${kms.toFixed(2)} km/s`;
 }
 
-/** The right cockpit Target panel's designation, independent of its name. */
-export function targetDesignation(body: Body | null): string {
+/**
+ * What the scan channel has to say about the target, if anything.
+ *
+ * Kept out of `DisplayContact` because it is not a fact about the ship: a charge
+ * in progress is a fact about the pilot's aim this second, and an age is a fact
+ * about the clock. Both belong to the frame, and the panel is the only reader.
+ */
+export interface DesignationScan {
+	/** 0…1 of a charge running now. */
+	progress?: number;
+	/** How long ago the recorded reading was taken, seconds. */
+	ageS?: number;
+	/** Why nothing is happening, in the one case the pilot can act on. */
+	refusal?: ScanRefusal;
+}
+
+/**
+ * The reading's age, in one unit: `4m`, `3h`, `12d`.
+ *
+ * **Why a third age formatter, when two exist.** `hud.ts`'s `duration` is the
+ * instrument's general figure and prints `4.2min` beside a `—` for a value it
+ * has none of; `knowledge-labels.ts`'s `exactAge` is the record card's precise
+ * `1M 08S AGO`. This line is a designation with a width, and a staleness warning
+ * needs one unit and no words — two units here would push `SHIP · PROSPECTOR ·
+ * FUGITIVE` off the instrument.
+ */
+export const targetAgeLabel = (ageS: number): string => {
+	const s = Math.max(0, Math.floor(ageS));
+	if (s < 60) return `${s}s`;
+	if (s < 3_600) return `${Math.floor(s / 60)}m`;
+	if (s < 86_400) return `${Math.floor(s / 3_600)}h`;
+	return `${Math.floor(s / 86_400)}d`;
+};
+
+/**
+ * The right cockpit Target panel's designation, independent of its name.
+ *
+ * **Two axes share the last cell, and §6 says which wins.** `scannerClass`
+ * answers *is this a pirate*; standing answers *is this wanted*. A pirate reads
+ * `HOSTILE` whatever its standing turns out to be (F1, F10 — the raider's own
+ * draw is kill-time and §6 leaves its line alone), and otherwise the cell is the
+ * scan's: the charge while it runs, the recorded standing with its age once
+ * there is one, and `UNKNOWN` before that.
+ */
+export function targetDesignation(
+	body: Body | null,
+	scan: DesignationScan = {},
+): string {
 	if (!body) return "";
 	if (body.kind === "station")
 		return body.stationType
@@ -43,7 +106,20 @@ export function targetDesignation(body: Body | null): string {
 			: "RELAY";
 	if (body.kind !== "ship") return body.kind.toUpperCase();
 	if (!isDisplayContact(body)) return "SHIP · UNKNOWN";
-	return ["SHIP", body.shipType?.toUpperCase(), body.scannerClass.toUpperCase()]
-		.filter(Boolean)
-		.join(" · ");
+	const identity = ["SHIP", body.shipType?.toUpperCase()].filter(Boolean);
+	if (body.scannerClass === "hostile")
+		return [...identity, "HOSTILE"].join(" · ");
+	if (scan.refusal) return [...identity, "NO SCANNER"].join(" · ");
+	if (scan.progress !== undefined && scan.progress < 1)
+		return [...identity, `SCANNING ${Math.round(scan.progress * 100)}%`].join(
+			" · ",
+		);
+	if (!body.standing) return [...identity, "UNKNOWN"].join(" · ");
+	const standing = body.standing.toUpperCase();
+	return [
+		...identity,
+		scan.ageS === undefined
+			? standing
+			: `${standing} · ${targetAgeLabel(scan.ageS)}`,
+	].join(" · ");
 }

@@ -104,6 +104,8 @@ export const scanInRange = (rangeKm: number): boolean =>
  * module is bought, the whole Bounty family is unavailable, and this is where
  * that becomes visible.
  */
+export type ScanRefusal = "no-module" | null;
+
 export const scanRefusal = (
 	fitted: boolean,
 	targetScannable: boolean,
@@ -118,7 +120,7 @@ export const scanRefusal = (
  * says the absence rather than the purchase. The console has room and prints
  * `SCAN_MODULE` itself.
  */
-export const SCAN_REFUSAL_LABELS: Record<"no-module", string> = {
+export const SCAN_REFUSAL_LABELS: Record<NonNullable<ScanRefusal>, string> = {
 	"no-module": "NO SCANNER",
 };
 
@@ -174,6 +176,24 @@ export const scanProgress = (hold: ScanHold): number =>
  *
  * `null` is the answer for a row that carries no scan: F8's `UNKNOWN`.
  */
+/**
+ * The Flight console's reading block (§6), as the console prints it.
+ *
+ * Strings, not figures: the console compares these to nothing, and a pilot
+ * reading `NOT READ` beside `UNKNOWN` is reading the same fact the glass shows.
+ */
+export interface ScanConsoleReadout {
+	/** The drawn proper name — F3's quarry. */
+	name: string;
+	/** The composed registry — F3's where-it-belongs. */
+	registry: string;
+	standing: string;
+	/** The recorded voyage's hold, or why there is none to print. */
+	hold: string;
+	/** The reading's age, or `NEVER`. */
+	age: string;
+}
+
 export interface CarrierReading {
 	standing: CarrierStanding;
 	manifest: readonly { good: string; tonnes: number }[];

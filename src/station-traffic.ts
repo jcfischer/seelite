@@ -462,7 +462,7 @@ export function materializeTrafficContact(
 		radiusKm: Math.max(env.lengthKm, env.beamKm, env.heightKm) / 2,
 		color: actor.hullId === "patrol" ? 0x80b8ff : 0xb8c4cc,
 		shipType: actor.hullId,
-		legalStatus: null,
+		standing: null,
 		scannerClass: actor.hullId === "patrol" ? "unknown" : "civilian",
 	};
 }

@@ -58,7 +58,7 @@ test("Navigation evaluates ETA for a selectable contact absent from the generate
 		radiusKm: 0.02,
 		color: 0,
 		velocity: v3(),
-		legalStatus: null,
+		standing: null,
 		scannerClass: "unknown",
 	};
 	const subject = Object.assign(
@@ -96,7 +96,7 @@ test("selection includes contacts without putting them in generated bodies or ma
 		radiusKm: 0.02,
 		color: 0,
 		velocity: v3(),
-		legalStatus: null,
+		standing: null,
 		scannerClass: "unknown",
 	};
 	const subject = Object.assign(
@@ -167,7 +167,7 @@ test("target lookup and velocity follow the live contact, while bodies keep orbi
 		radiusKm: 0.02,
 		color: 0,
 		velocity: v3(1, 2, 3),
-		legalStatus: null,
+		standing: null,
 		scannerClass: "unknown",
 	};
 	const subject = Object.assign(
@@ -271,7 +271,7 @@ test("the selected target reads the speed the scoop gate checks, not the rate al
 		radiusKm: CANISTER_RADIUS_KM,
 		color: 0,
 		velocity: v3(1, 0, 0),
-		legalStatus: null,
+		standing: null,
 		scannerClass: "unknown",
 	};
 	world.ship.pos = v3();
