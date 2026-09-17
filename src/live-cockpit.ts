@@ -291,6 +291,17 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-station-market { flex: 1; overflow: auto; margin-top: 8px; padding-right: 6px; }
 .lc-station-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr auto; gap: 10px; align-items: baseline; padding: 3px 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
 .lc-station-row[data-live-listed="false"] { color: #8d7057; }
+/* §5.6 gave the market a fifth cell — GOOD, BUY, SELL, SHELF, ACTION — and the
+ * shared four-column rule above is what the equipment list still wants. Without
+ * this the ACTION button wrapped onto a second grid line in every listed row and
+ * in the header, which no probe sees because a wrapped button is still a button:
+ * The check that does exist is tests/live-cockpit.test.ts's row-arity row: it reads this
+ * rule back as five tracks and the row templates as five spans, and holds the shared rule
+ * at four. A sixth cell beside four tracks would wrap the price into the name's column,
+ * and a wrapped button is still a button, so no probe would see it. (No backticks here:
+ * this comment lives inside the stylesheet's template literal.) 
+*/
+.lc-station-market .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 1fr auto; }
 .lc-station-head { position: sticky; top: 0; color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; background: #150a03; }
 .lc-station-cell { text-align: right; }
 .lc-station-delta { margin-left: 5px; color: #f0b05e; }
@@ -304,7 +315,7 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-launch-hold { margin-top: 12px; }
 .lc-launch-hold p { margin: 0 0 4px; color: #ff8a73; font-size: 12px; letter-spacing: .08em; }
 .lc-launch-hold .lc-launch { margin-top: 4px; border-color: #ff8a73; background: rgba(190, 48, 30, .28); }
-@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } }
+@media (max-width: 600px) { .lc-station-console { inset: 8px; padding: 13px; } .lc-station-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr auto; gap: 6px; font-size: 10px; } .lc-station-market .lc-station-row { grid-template-columns: minmax(84px, 1.3fr) .9fr .9fr .7fr auto; } }
 @media (max-width: 600px) { .lc-panel { inset: 8px; padding: 13px; clip-path: none; } .lc-panel h2 { font-size: 14px; } .lc-panel-body { grid-template-columns: .45fr 1fr; gap: 8px; min-height: 0; } .lc-rail, .lc-panel-copy { padding-top: 7px; } .lc-panel-copy p { font-size: 11px; line-height: 1.4; } .lc-readout { display: none; } .lc-nav-list { max-height: 148px; } .lc-chart-host { min-height: 190px; } }
 `;
 
@@ -1217,8 +1228,16 @@ export class LiveCockpit {
 		const row = (entry: ConsoleMarketRow) => {
 			const name = escapeHtml(entry.commodity.name);
 			if (!entry.listed)
-				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
-			const price = priceLabel(entry.priceCr ?? 0);
+				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
+			// **Two prices, both through `priceLabel`** (§5.6, #191 D3). The BUY
+			// column is the market's own figure and the SELL column is that less the
+			// station's cut, so the spread is something the commander reads rather
+			// than discovers in the ledger. #193's rule covers both: a base price is a
+			// multiple of `PRICE_STEP_CR` and a responded one is a multiple of
+			// nothing, so either one rounded to whole credits is a number the till
+			// will not honour.
+			const buy = priceLabel(entry.buyCr ?? 0);
+			const sell = priceLabel(entry.sellCr ?? 0);
 			const stock = `${entry.quantity ?? 0} ${escapeHtml(entry.commodity.unit)}`;
 			const priceDelta =
 				entry.priceDeltaCr === undefined
@@ -1231,9 +1250,9 @@ export class LiveCockpit {
 			const actions = entry.commodity.sellOnly
 				? `<button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`
 				: `<button class="lc-station-action" type="button" data-live-station-action="buy-commodity" data-live-station-name="${name}">BUY</button><button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`;
-			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell">${price}${priceDelta}</span><span class="lc-station-cell">${stock}${stockDelta}</span><span>${actions}</span></div>`;
+			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell" data-live-buy>${buy}${priceDelta}</span><span class="lc-station-cell lc-station-bid" data-live-sell>${sell}</span><span class="lc-station-cell" data-live-shelf>${stock}${stockDelta}</span><span>${actions}</span></div>`;
 		};
-		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
+		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">BUY</span><span class="lc-station-cell">SELL</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
 	}
 
 	private equipment(

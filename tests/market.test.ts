@@ -23,11 +23,15 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	BID_CUT_FLOOR,
+	BID_CUT_GRADE,
 	COMMODITIES,
 	type Commodity,
 	DEFICIT_HALF_LIFE_MIN,
 	DEFICIT_MAX,
 	DEFICIT_SATURATION_RUNS,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
 	FUEL_TANK_LY,
@@ -36,15 +40,20 @@ import {
 	MIN_STOCK_RESPONSE_FACTOR,
 	NARCOTICS_RETUNE,
 	PRICE_ELASTICITY,
+	PRICE_DISPLAY_STEP_CR,
 	PRICE_STEP_CR,
+	type MarketQuote,
+	quantizeToDisplayStepCr,
 	QUANTITY_CAP,
 	SATURATE,
 	TYPE_OFFSET,
 	addDeficit,
+	bidCutAtTl,
 	commodity,
 	decayDeficit,
 	fullKitCr,
 	marketEpoch,
+	marketQuote,
 	marketRowAt,
 	shelfQuantity,
 	stockResponse,
@@ -77,6 +86,8 @@ import {
 	surveyResiduals,
 	sweepDomain,
 } from "./helpers/market-math";
+import { generateGalaxy } from "../src/galaxy";
+import { ALL_GALAXIES, worldSeeds } from "./helpers/station-rows";
 
 /** The file's short local name; the lookup itself is shared, not copied. */
 const byName = commodity;
@@ -762,6 +773,350 @@ describe("§5 the stock deficit", () => {
 		// rows exceed the closable ratio, which is why the residual is the bound.
 		expect(worstRatio.ratio).toBeGreaterThan(CLOSABLE_RATIO);
 		expect(unclosableRows / rows).toBeLessThan(0.05);
+	});
+});
+
+describe("§5.6 the bid cut closes the round trip at one console", () => {
+	/**
+	 * The counted figure, read off a run of the row below. It is a transcription
+	 * guard rather than a bound: a retune that moves the table moves this number
+	 * and this line together, or the suite goes red.
+	 */
+	// **8,400 → 8,760 was the quote step, not the ladder's endpoints, and this comment
+	// said the endpoints for a round.** §10.3's check of the erased population found it
+	// is a floor bite — 584 rows at *every* tech level, all of them markets already pinned
+	// at one price step — and a flat cut of any rung erases the same rows, so nothing about
+	// the grade decides it. What moved the count was the tenth-credit quantization arriving:
+	// with the step off, both directions erase 8,400. The figure is the row's own output; a
+	// transcription that stops matching is the point of the row.
+	const ERASED_CUT_ROWS = 8_760;
+	test("the floor is the mark one full hold of tonnage leaves", () => {
+		// **The node in one equation, and the equation is not the one this row was
+		// written with.** The first version asked for
+		// `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` = 0.315, the far end of
+		// `stockResponse`'s whole range, on the argument that the cut must exceed
+		// whatever the market's memory can move a price. That figure is still the
+		// closure requirement, and the sweep below still measures it — what changed
+		// is that 0.315 cannot be shipped: `scripts/measure-greedy-trader.ts` §5.6
+		// finds the honest trade loop reaching the Combat Engine in **1 of 4
+		// galaxies** at a flat mean cut of 0.30, with 2 of the 4 stalling out of
+		// trading altogether. Four galaxies is what the instrument sweeps; an
+		// earlier draft of this comment said "six of eight", a figure from a run the
+		// instrument no longer makes.
+		//
+		// What ships is the mark **a trade can actually leave in ordinary goods**: a
+		// hold-full of tonnage, which is `PRICE_ELASTICITY × (holdT / holdT)`, which
+		// is `PRICE_ELASTICITY` at every hull in the roster. Derived, not tabulated,
+		// so a retune of the elasticity moves the floor with it and cannot silently
+		// re-open the tonnage cycle.
+		expect(BID_CUT_FLOOR).toBe(PRICE_ELASTICITY);
+		// One full hold of a good whose units are tonnes moves the deficit by
+		// exactly `holdT` units, and the response is linear in that ratio: this is
+		// the swing the floor has to exceed, recomputed from the function rather
+		// than quoted from here.
+		const oneHoldSwing =
+			stockResponse(100, HOLD_REFERENCE_T, HOLD_REFERENCE_T) / 100 -
+			stockResponse(100, 0, HOLD_REFERENCE_T) / 100;
+		expect(oneHoldSwing).toBeCloseTo(BID_CUT_FLOOR, 15);
+	});
+
+	test("the swing the floor does *not* reach is the sub-tonne one, and is named", () => {
+		// **The residue, encoded as a row rather than as a paragraph.** §5.2's memory
+		// counts *units*, so one purchase of the shelf cap in Platinum — 63 units,
+		// 0.2 t of cargo — saturates a hull of 20 t or less and moves the price by the
+		// far end of the response's range. A cut has to exceed that to close the cycle,
+		// which is why `tests/station-commerce.test.ts` §5.6 finds metal cycles still
+		// netting at the shipped floor.
+		//
+		// Platinum because it is the cheapest of the three metals and therefore the last
+		// one a cut prices out; the binding row in the closure corpus is a Platinum
+		// cycle, and naming a different metal would describe a pump already closed.
+		// **Measured off the shipped response, not off the formula that produces it.**
+		// `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` is an identity: it holds at
+		// whatever value those two constants take, so a row written that way cannot go
+		// red for the re-anchor it claims to watch. This is one purchase of 63 units of
+		// Platinum through `stockResponse` at the hull the game starts a player on, and
+		// the answer is pinned as a literal.
+		// **The pump's own direction, not its mirror.** A sale of the cap is a
+		// *negative* deficit — the station is now holding 63 units the player shoved at
+		// it — and the price it moves to is the one the second leg buys back at. A
+		// purchase of the same size moves the price up by the same magnitude, so a row
+		// written with `+63` would pass for the wrong reason.
+		const saturationSwing =
+			1 - stockResponse(100, -QUANTITY_CAP, HOLD_REFERENCE_T) / 100;
+		// The cap is the 63 that the 0.315 is made of, so it is asserted as a number
+		// here rather than trusted from its own module.
+		expect(QUANTITY_CAP).toBe(63);
+		expect(saturationSwing).toBeCloseTo(0.315, 12);
+		// **What this row can and cannot see, said plainly.** `swing / floor` reduces to
+		// `DEFICIT_SATURATION_RUNS`, so the literal below pins one thing: the cap-to-hold
+		// relation, that 3.15 stacks of 63 units weigh the baseline hold. It is a scale
+		// check and not a watch on the re-anchor, because the units are counted in
+		// `addDeficit` and `recordTrade`, neither of which this row calls. The row that
+		// *does* go red when the sub-tonne mark moves is the metals row in
+		// `tests/station-commerce.test.ts` §5.6, which flies a Platinum cycle through
+		// `transactAtStation` and pins the surviving credit — that is the falsifier §12's
+		// weak joint 12 points at, and it is worth reading before this one.
+		expect(saturationSwing / BID_CUT_FLOOR).toBeCloseTo(63 / 20, 12);
+	});
+
+	test(
+		"the cut is strictly increasing, its ends are the two constants, and the rim " +
+			"is therefore on the closure mark",
+		() => {
+			// **#191 D4, ruled on the sweep** in `scripts/measure-greedy-trader.ts`: cheap
+			// at the rim, dear in the core — which is the same table said the other way as
+			// *wide at high tech level*. The monotonicity is asserted rather than the figure,
+			// so a retune of `BID_CUT_GRADE` re-derives this row instead of rewriting it; the
+			// figure the spec quotes is pinned by the count row below.
+			//
+			// **Both ends, not the top one.** The first version of this law put the rim at
+			// floor + grade/15 = 0.110 and left `BID_CUT_FLOOR` naming a cut no market in
+			// the game pays. A row asserting only the core end passed while three sentences
+			// in three files said the rim was 0.10, which is this repo's own third-copy
+			// drift and was caught by reading the shipped function at TL 1 rather than by
+			// anything that was red.
+			//
+			// Because the rim end *is* `BID_CUT_FLOOR`, and `BID_CUT_FLOOR` *is*
+			// `PRICE_ELASTICITY` (asserted below), the cheapest market in the game sits
+			// exactly on the mark one full hold of tonnage moves a price. A tonnage trip
+			// sold and bought back there nets exactly nothing, and the closure ladder counts
+			// cycles netting *more* than nothing — so the rim is closed exactly rather than
+			// strictly, and the rung below the floor is the one that is not closed at all.
+			// `station-commerce.test.ts` §5.6 counts the rows; this one fixes which mark the
+			// rim is supposed to land on.
+			expect(bidCutAtTl(DISPLAY_TL_MIN)).toBe(BID_CUT_FLOOR);
+			expect(bidCutAtTl(DISPLAY_TL_MAX)).toBeCloseTo(
+				BID_CUT_FLOOR + BID_CUT_GRADE,
+				12,
+			);
+			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+				// A bid is never zero or negative: the cut is a haircut, not a
+				// repudiation, at either end of the tech range.
+				expect(bidCutAtTl(tl)).toBeLessThan(1);
+				if (tl > DISPLAY_TL_MIN)
+					expect(bidCutAtTl(tl)).toBeGreaterThan(bidCutAtTl(tl - 1));
+			}
+		},
+	);
+
+	test("a tech level outside the generator's range throws rather than clamps", () => {
+		// #13's clamp warning, applied to this index: an offset on a bounded index
+		// gets clamped away where that type lives, and a silently clamped `displayTL`
+		// would hand a station a cut no table declares. The generator's own range is
+		// measured by `tests/galaxy.test.ts`, so this throw is the loud half of that
+		// pair rather than a guard against an impossible input.
+		expect(() => bidCutAtTl(DISPLAY_TL_MIN - 1)).toThrow();
+		expect(() => bidCutAtTl(DISPLAY_TL_MAX + 1)).toThrow();
+		expect(() => bidCutAtTl(7.5)).toThrow();
+	});
+
+	test("the generator never leaves the table's domain, and reaches both ends", () => {
+		// The throw in `bidCutAtTl` is only safe because this is true, and it is the
+		// half #13's warning actually asks for: not "the index is clamped", but "the
+		// index cannot leave the range the table was authored over". Both ends are
+		// asserted because a declared domain wider than the generator's reach is the
+		// same drift in the other direction — a grade spread over values nobody
+		// occupies is a table whose real span is a fiction.
+		//
+		// `generateGalaxy` alone, not `forEachSystem`: tech level is a property of
+		// the record, and generating contents for 16,384 systems to read a field the
+		// record already holds is a slower row for the same claim.
+		const CORPUS_WORLDS = 6;
+		let lo = Number.POSITIVE_INFINITY;
+		let hi = Number.NEGATIVE_INFINITY;
+		for (const world of worldSeeds(CORPUS_WORLDS))
+			for (const g of ALL_GALAXIES)
+				for (const s of generateGalaxy(world, g).systems) {
+					lo = Math.min(lo, s.displayTL);
+					hi = Math.max(hi, s.displayTL);
+				}
+		expect(lo).toBe(DISPLAY_TL_MIN);
+		expect(hi).toBe(DISPLAY_TL_MAX);
+	});
+
+	/**
+	 * Every priced row of the domain, walked once rather than written out four times.
+	 *
+	 * `marketRowAt` then `marketQuote` over `(good, economy, fluct, station, TL)` is the
+	 * same five-deep nest in four §5.6 rows, and only the body differed. A domain stated
+	 * four places is a domain that gets walked three of them after someone changes one,
+	 * and a sweep that silently shrank still reports a clean zero.
+	 *
+	 * **The row is computed outside the tech level, because a base price does not depend
+	 * on one.** The first version of this helper took a `tlStep` and called `marketRowAt`
+	 * inside the loop, which asked the generator 1,566,720 questions to make 104,448 of
+	 * them — fifteen times the work, in a gated suite. Each visit gets its row once and a
+	 * `quoteAt` for the tech levels it wants, so a row that samples the ladder and a row
+	 * that walks it are both reading one priced cell.
+	 */
+	const forEachPriceRow = (
+		visit: (
+			good: (typeof COMMODITIES)[number],
+			row: ReturnType<typeof marketRowAt>,
+			quoteAt: (displayTL: number) => MarketQuote,
+		) => void,
+	) => {
+		for (const good of COMMODITIES)
+			for (const economy of ALL_ECONOMIES)
+				for (const fluct of ALL_FLUCT)
+					for (const station of ALL_STATIONS) {
+						const row = marketRowAt(good, economy, fluct, station);
+						visit(good, row, (displayTL) =>
+							marketQuote(row.priceCr, displayTL),
+						);
+					}
+	};
+
+	test("the ask is the market price, and the cut falls on the bid alone", () => {
+		// **#7's law, reversed on one side only.** #191 D1 read as written — *a
+		// station buys lower than it sells* — and it is also the cheapest closure:
+		// a round trip crosses the wedge once whichever way it is arranged, so a
+		// symmetric spread needs `r/(1 − r/2)`… where a one-sided one needs `r`.
+		// Measured (§5.6's closure rows): a split wedge needs 0.053 a side — 0.105
+		// of total wedge — to close what 0.100 on the bid alone closes.
+		//
+		// The consequence worth pinning: the BUY column is `stockResponse`'s figure
+		// itself, moved only by the tenth-credit quote step §5.6 quantizes to. That
+		// quantization is not cosmetic — it is what makes the number the console
+		// prints the number the till charges — and the row below is where it is held.
+		// Counted rather than asserted per cell, for the reason the row below gives: this
+		// walk makes 522,000 `expect` calls, which is most of this file's runtime. The
+		// denominator is asserted beside the zero, so a walk that quietly shrank reads as
+		// a shrunken denominator rather than as a clean pass.
+		let askOffMid = 0;
+		let askCells = 0;
+		forEachPriceRow((_good, row, quoteAt) => {
+			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 3) {
+				askCells++;
+				if (quoteAt(tl).buyCr !== quantizeToDisplayStepCr(row.priceCr))
+					askOffMid++;
+			}
+		});
+		expect({ askOffMid, askCells }).toEqual({
+			askOffMid: 0,
+			// Five of the fifteen tech levels, every good/economy/fluct/station cell.
+			askCells: COMMODITIES.length * 8 * 256 * 3 * 5,
+		});
+	});
+
+	test("a quote is expressed to the precision the console prints, both columns", () => {
+		// **#193's rule, taken to the decimal place it did not reach.** The glass
+		// renders a price with `toFixed(1)`; until this row, the till charged the
+		// unquoted figure behind it, so a commander reading 3.5 Cr was paid 3.51 and
+		// nothing on the screen said the two were different numbers. A quote is
+		// therefore a whole number of tenths, which makes the label a lossless
+		// rendering rather than a rounding.
+		//
+		// Asserted across the domain rather than on an example, because the defect
+		// only shows on a mid whose second decimal is not zero — which is most of
+		// them, since a responded price is a multiple of nothing.
+		let unquantized = 0;
+		forEachPriceRow((_good, _row, quoteAt) => {
+			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 2) {
+				const q = quoteAt(tl);
+				for (const cr of [q.buyCr, q.sellCr]) {
+					const tenths = cr / PRICE_DISPLAY_STEP_CR;
+					if (Math.abs(tenths - Math.round(tenths)) > 1e-9) unquantized++;
+				}
+			}
+		});
+		expect(unquantized).toBe(0);
+		// And the label is the quote rather than an approximation of it, which is the
+		// direction the old failure ran in.
+		const q = marketQuote(3.504_9, DISPLAY_TL_MIN);
+		expect(Number(q.sellCr.toFixed(1))).toBe(q.sellCr);
+		expect(Number(q.buyCr.toFixed(1))).toBe(q.buyCr);
+	});
+
+	test("the bid is the mid less the cut, and never under one price step", () => {
+		// §3's floor is re-asserted *after* the cut, which is the order that bites:
+		// a row the floor already pins at 0.4 Cr cannot be cut further, so the floor
+		// eats the spread there. That erasure is the clamp this node owes a collapse
+		// rate for, and the next test counts it rather than arguing it away.
+		// **Counted, not asserted per cell.** 1,566,720 cells x three `expect` calls is
+		// 4.7M assertions, which measured 335 ms of a 2.4 s pair of files — an eighth of
+		// the gated suite for a row whose whole answer is "none of them". A counter gives
+		// the same verdict, and the failure message names all three counts rather than
+		// stopping at the first cell like a per-cell expect does.
+		let belowFloor = 0;
+		let inverted = 0;
+		let offFormula = 0;
+		forEachPriceRow((_good, row, quoteAt) => {
+			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+				const q = quoteAt(tl);
+				if (q.sellCr < PRICE_STEP_CR) belowFloor++;
+				if (q.sellCr > q.buyCr) inverted++;
+				if (
+					q.sellCr !==
+					quantizeToDisplayStepCr(
+						Math.max(PRICE_STEP_CR, row.priceCr * (1 - bidCutAtTl(tl))),
+					)
+				)
+					offFormula++;
+			}
+		});
+		expect({ belowFloor, inverted, offFormula }).toEqual({
+			belowFloor: 0,
+			inverted: 0,
+			offFormula: 0,
+		});
+	});
+
+	test("the number of rows whose cut the floor erases is a counted figure", () => {
+		// **A threshold is not a measurement (#25), and this one is quoted in the
+		// spec.** Over the whole `(good, economy, fluct, type, TL)` domain —
+		// 17 × 8 × 256 × 3 × 15 = 1,566,720 rows — this is how many carry no cut at
+		// all because §3's floor already pins the mid at one price step.
+		//
+		// **The erasure is not a hole**, and the row below is what says so rather
+		// than a sentence: on exactly those rows the round trip nets nothing either,
+		// because the floor that swallows the spread swallows the deficit's mark on
+		// the way through `stockResponse`.
+		//
+		// **What this row does not show**, since an earlier revision claimed more than
+		// it does: it walks the sell-first order at one hold, and it is arithmetic on
+		// the quote rather than a `transactAtStation` call. The pump question at full
+		// width — every realized dock, both orders, the hold the trader actually flies —
+		// is the greedy sweep's, and §10.3 now says so at that width.
+		//
+		// **And the grade decides none of this count.** A flat cut erases the same
+		// 8,760 rows — 584 at every tech level, every one pinned at `PRICE_STEP_CR` —
+		// so this is a floor population, not a rim one. §10.3 owns that correction.
+		let erased = 0;
+		let erasedWithAPump = 0;
+		// **The denominator is counted, not assumed.** An earlier version of the last
+		// assertion put `17 × 8 × 256 × 3 × 15` beside `1,566,720` — arithmetic on two
+		// literals, which can only catch a typo and cannot see a walk that stopped
+		// visiting part of the domain. This is how many rows the loop actually visited.
+		let visited = 0;
+		forEachPriceRow((good, row, quoteAt) => {
+			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+				visited++;
+				const q = quoteAt(tl);
+				if (q.sellCr !== q.buyCr) continue;
+				erased++;
+				// Sell a hold into it, buy the same hold back at the same console: the
+				// two-step cycle §12.12 measured.
+				const after = stockResponse(
+					row.priceCr,
+					good.unit === "t" ? -HOLD_REFERENCE_T : -DEFICIT_MAX,
+					HOLD_REFERENCE_T,
+				);
+				if (q.sellCr - marketQuote(after, tl).buyCr > 0) erasedWithAPump++;
+			}
+		});
+		expect(erased).toBe(ERASED_CUT_ROWS);
+		expect(erasedWithAPump).toBe(0);
+		// 8,760 of 1,566,720 is 0.56%, and the claim in prose is "a minority". The
+		// denominator is the domain's own size — 17 goods × 8 economies × 256 fluct
+		// × 3 station types × 15 tech levels — so this also fails if the walk above
+		// stops visiting something it used to visit.
+		// Domain size asserted against what the walk reached, and the rate against the
+		// same counted figure.
+		expect(visited).toBe(17 * 8 * 256 * 3 * 15);
+		expect(ERASED_CUT_ROWS).toBe(erased);
+		expect(erased / visited).toBeLessThan(0.1);
 	});
 });
 

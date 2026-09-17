@@ -13,11 +13,13 @@ import {
 	marketEpoch,
 	marketStationOf,
 } from "./market";
+import { exposeMarketLaw } from "./market-probe-hook";
 import {
 	type ConsoleMarketRow,
 	type DockPhase,
 	type StationConsoleTab,
 	flightFloorVisible,
+	priceLabel,
 	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
@@ -296,15 +298,13 @@ const esc = (value: string): string =>
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
 
-const CR = (value: number): string => `${value.toFixed(1)} Cr`;
-
 function renderMarketRow(row: ConsoleMarketRow): string {
 	const marker = row.commodity.illegal
 		? '<b class="sg-illegal" data-gallery-illegal title="restricted">⚠</b>'
 		: "";
 	const name = `<span class="sg-good">${esc(row.commodity.name)}${marker}</span>`;
 	if (!row.listed)
-		return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="false">${name}<span class="sg-cell sg-absent">—</span><span class="sg-cell sg-absent">—</span></div>`;
+		return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="false">${name}<span class="sg-cell sg-absent">—</span><span class="sg-cell sg-absent">—</span><span class="sg-cell sg-absent">—</span></div>`;
 	const priceDelta =
 		row.priceDeltaCr === undefined
 			? ""
@@ -313,7 +313,11 @@ function renderMarketRow(row: ConsoleMarketRow): string {
 		row.quantityDelta === undefined
 			? ""
 			: `<em class="sg-delta" data-gallery-shelf-delta>${signedDelta(row.quantityDelta, 0)}</em>`;
-	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-price>${CR(row.priceCr as number)}</span>${priceDelta}</span><span class="sg-cell"><span data-gallery-shelf>${row.quantity} ${esc(row.commodity.unit)}</span>${shelfDelta}</span></div>`;
+	// **Two price columns, one formatter.** `priceLabel` is the module's own
+	// (#193), and the gallery had a local `CR` that said the same thing in its
+	// own words — two formatters for one rule is how a screen starts printing a
+	// price the till will not honour.
+	return `<div class="sg-market-row" data-gallery-market-row="${esc(row.commodity.name)}" data-gallery-listed="true">${name}<span class="sg-cell"><span data-gallery-buy>${priceLabel(row.buyCr as number)}</span>${priceDelta}</span><span class="sg-cell sg-bid"><span data-gallery-sell>${priceLabel(row.sellCr as number)}</span></span><span class="sg-cell" data-gallery-shelf-cell><span data-gallery-shelf>${row.quantity} ${esc(row.commodity.unit)}</span>${shelfDelta}</span></div>`;
 }
 
 function renderMarketTab(view: ConsoleView): string {
@@ -327,6 +331,10 @@ function renderMarketTab(view: ConsoleView): string {
 		// here, rather than adding a second spelling of one figure to a
 		// renderer-side module.
 		holdT: HOLD_REFERENCE_T,
+		// The same tech level the Equipment tab is gated by, from the same view —
+		// §5.6's cut is a function of it, and a gallery drawing one grade while the
+		// till charged another is the #193 defect in a new costume.
+		displayTL: view.station.displayTL,
 	});
 	const traded = rows.filter((row) => row.listed);
 	const absent = rows.filter((row) => !row.listed);
@@ -336,7 +344,7 @@ function renderMarketTab(view: ConsoleView): string {
 		absent.length === 0
 			? ""
 			: `<h4 class="sg-block-head" data-gallery-not-traded>NOT TRADED HERE</h4>${absent.map(renderMarketRow).join("")}`;
-	return `<div class="sg-market" data-gallery-market><div class="sg-market-row sg-market-head"><span class="sg-good">GOOD</span><span class="sg-cell">PRICE</span><span class="sg-cell">SHELF</span></div>${traded.map(renderMarketRow).join("")}${absentBlock}</div>`;
+	return `<div class="sg-market" data-gallery-market><div class="sg-market-row sg-market-head"><span class="sg-good">GOOD</span><span class="sg-cell">BUY</span><span class="sg-cell">SELL</span><span class="sg-cell">SHELF</span></div>${traded.map(renderMarketRow).join("")}${absentBlock}</div>`;
 }
 
 /**
@@ -813,11 +821,15 @@ const STYLE = `
 .sg-cockpit[data-gallery-head-look="left"] .sg-station-console,
 .sg-cockpit[data-gallery-head-look="right"] .sg-station-console { display: none; }
 .sg-market { flex: 1; overflow: auto; margin-top: 8px; padding-right: 6px; }
-.sg-market-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr; gap: 10px; align-items: baseline; padding: 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
+.sg-market-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 1fr; gap: 10px; align-items: baseline; padding: 2px; border-bottom: 1px solid rgba(229, 170, 82, .22); font-size: 11px; }
 .sg-station-console h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
 .sg-market-head { color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; position: sticky; top: 0; background: #150a03; }
 .sg-good { color: #fff0c9; }
 .sg-cell { display: flex; justify-content: flex-start; gap: 8px; color: #f5bd78; }
+/* §5.6: the station's bid, one column to the right of what it asks. Dimmer on
+ * purpose — the BUY column is the market's figure and this one is that figure
+ * after the cut, so the two should not read as the same claim. */
+.sg-bid { color: #c9955c; }
 .sg-delta { color: #ffe0a2; font-style: normal; }
 .sg-absent { color: #a97a4a; }
 .sg-illegal { margin-left: 6px; color: #ff9c8e; }
@@ -851,7 +863,7 @@ const STYLE = `
 	   scrolls its own rows, rather than growing the page under it. */
 	.sg-glass-docked { inset: 12px 10px 12px; min-height: 0; }
 	.sg-station-console { padding: 10px 12px; }
-	.sg-market-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr; gap: 6px; font-size: 10px; }
+	.sg-market-row { grid-template-columns: minmax(90px, 1.3fr) 1fr .8fr .8fr; gap: 6px; font-size: 10px; }
 	.sg-scanner { width: min(330px, calc(100% - 24px)); bottom: 65px; }
 	.sg-floor { bottom: 12px; font-size: 10px; flex-direction: column; gap: 3px; }
 }
@@ -1035,6 +1047,10 @@ export function mountStateGallery(): void {
 		"hud-gallery",
 	);
 	if (requested === null) return;
+	// The same page hook `main.ts` assigns, because this route is where a probe can
+	// name a station of each type and price its market; the hook existing on one
+	// entry only is what made `probe-station-console.mjs` read `undefined`.
+	exposeMarketLaw();
 	const style = document.createElement("style");
 	style.textContent = STYLE;
 	document.head.append(style);

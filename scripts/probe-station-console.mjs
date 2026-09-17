@@ -68,8 +68,13 @@ function measureConsole() {
 			name: row.getAttribute("data-gallery-market-row"),
 			listed: row.getAttribute("data-gallery-listed") === "true",
 			illegal: Boolean(row.querySelector("[data-gallery-illegal]")),
-			price:
-				row.querySelector("[data-gallery-price]")?.textContent?.trim() ?? null,
+			// **Two prices, not one.** #191 D3 ruled the spread visible rather than
+			// folded into a midpoint, so the row that used to carry a single
+			// `data-gallery-price` now carries both columns — and a probe reading one
+			// figure would be reading a build that quietly went back to one.
+			buy: row.querySelector("[data-gallery-buy]")?.textContent?.trim() ?? null,
+			sell:
+				row.querySelector("[data-gallery-sell]")?.textContent?.trim() ?? null,
 			priceDelta:
 				row.querySelector("[data-gallery-price-delta]")?.textContent?.trim() ??
 				null,
@@ -237,13 +242,15 @@ for (const station of ["trade", "fence", "yard"]) {
 		measured.rows.every(
 			(row) =>
 				row.listed === expectListed(row) &&
-				(row.price !== null) === expectListed(row),
+				(row.buy !== null) === expectListed(row) &&
+				(row.sell !== null) === expectListed(row),
 		),
 		measured.rows
 			.filter(
 				(row) =>
 					row.listed !== expectListed(row) ||
-					(row.price !== null) !== expectListed(row),
+					(row.buy !== null) !== expectListed(row) ||
+					(row.sell !== null) !== expectListed(row),
 			)
 			.map((row) => row.name)
 			.join(", "),
@@ -251,6 +258,55 @@ for (const station of ["trade", "fence", "yard"]) {
 	check(
 		`2: ${station} ${station === "fence" ? "needs no" : "names its"} not-traded block`,
 		measured.notTradedHead === (station !== "fence"),
+	);
+	// **#191 D3's browser-tier half, in the loop that already visits every station.**
+	// Here rather than in a pass of its own because this loop is what leaves the page
+	// on a named station, and a second pass of clicks would hand obligation 12 a
+	// console for a station it does not expect. And in the *browser* tier because no
+	// headless row can see a second column: what is asserted is that a player at a
+	// market screen is shown two prices, rather than a midpoint with the wedge taken
+	// invisibly somewhere in the arithmetic.
+	const priced = measured.rows.filter((row) => row.listed);
+	const cr = (text) => Number.parseFloat(text ?? "");
+	// **A row whose bid the floor removed is not a row whose bid the cut removed**, and
+	// the probe has to tell them apart or it fails on correct behaviour: §5.6's own
+	// instrument measures 2.5% of TL 1 rows coming back with no spread at all, because
+	// §3's price step had already pinned both columns at it. The step is read off the
+	// page rather than typed here, and the floored rows are counted in the label — a
+	// check that quietly excluded them would also pass a build where the wedge had
+	// vanished on every cheap good.
+	const law = await page.evaluate(
+		() => /** @type {{ priceStepCr: number }} */ (window.__seelite.marketLaw),
+	);
+	// **Three populations, because the law has two ways to show one number.** A row can
+	// come back flat because §3's price floor pinned the mid at one step, or because the
+	// ask sits above a step and the cut bid *rounds back onto it* — §5.6 counts 360 of the
+	// latter across the whole table. Sorting them together, or sorting only the first,
+	// fails this check on a build that is behaving exactly as the law says.
+	const flat = (row) => Math.abs(cr(row.buy) - cr(row.sell)) < 1e-9;
+	const floored = priced.filter(
+		(row) => cr(row.buy) <= law.priceStepCr + 1e-9 && flat(row),
+	);
+	const stepped = priced.filter(
+		(row) => cr(row.buy) > law.priceStepCr + 1e-9 && flat(row),
+	);
+	const spreadRows = priced.filter((row) => !flat(row));
+	const under = spreadRows.filter((row) => cr(row.sell) < cr(row.buy));
+	const over = priced.filter((row) => cr(row.sell) > cr(row.buy) + 1e-9);
+	const margins = spreadRows.map((row) => 1 - cr(row.sell) / cr(row.buy));
+	check(
+		`§5.6: ${station} shows every listed row's bid at or below its ask, and never above`,
+		priced.length > 0 &&
+			spreadRows.length > 0 &&
+			under.length === spreadRows.length &&
+			over.length === 0 &&
+			priced.every((row) => cr(row.sell) > 0),
+		// The spread *range* is printed, not just the count, because a count of rows
+		// with the bid under the ask says nothing about how far below it is.
+		`${under.length}/${spreadRows.length} with the bid under the ask, ` +
+			`${floored.length} flat at the price step, ${stepped.length} flat where the ` +
+			`cut rounded back onto the ask, spread ` +
+			`${(100 * Math.min(...margins)).toFixed(1)}–${(100 * Math.max(...margins)).toFixed(1)}%`,
 	);
 }
 

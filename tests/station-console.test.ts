@@ -18,14 +18,18 @@ import { readFileSync } from "node:fs";
 import {
 	COMMODITIES,
 	type Commodity,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
 	HOLD_REFERENCE_T,
 	type MarketStation,
 	PRICE_STEP_CR,
 	MARKET_PERIOD_MIN,
+	quantizeToDisplayStepCr,
 	UNIVERSAL_GATE_CAP,
 	UNIVERSAL_ITEMS,
+	bidCutAtTl,
 	listsCommodity,
 	marketRow,
 	marketStationOf,
@@ -51,6 +55,14 @@ import {
 } from "../src/station-console";
 
 const ECONOMY = 3;
+/**
+ * The tech level this file draws its screens at.
+ *
+ * Named rather than inlined at six call sites because §5.6's cut is a function of
+ * it, and a test that quotes a price and a test that quotes a cut have to agree
+ * on which market they are talking about.
+ */
+const SCREEN_TL = 8;
 
 const stationOf = (
 	type: "trade" | "refinery" | "shipyard",
@@ -82,6 +94,7 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT: HOLD_REFERENCE_T,
+				displayTL: SCREEN_TL,
 			},
 			(commodity, economy, s, gameTimeMin) => {
 				asked.push(commodity.name);
@@ -112,6 +125,7 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
 			holdT: HOLD_REFERENCE_T,
+			displayTL: SCREEN_TL,
 		});
 		expect(rows.length).toBe(COMMODITIES.length);
 		expect(rows.map((r) => r.commodity.name)).toEqual(
@@ -120,7 +134,8 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 		for (const row of rows) {
 			// The biconditional §8.6 obligation 2 asks for, not the constant 14.
 			expect(row.listed).toBe(listsCommodity(row.commodity, station));
-			expect(row.priceCr !== undefined).toBe(row.listed);
+			expect(row.buyCr !== undefined).toBe(row.listed);
+			expect(row.sellCr !== undefined).toBe(row.listed);
 			expect(row.quantity !== undefined).toBe(row.listed);
 		}
 	}
@@ -154,6 +169,7 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 		gameTimeMin: 0,
 		deficitOf: moved(good.name, 12),
 		holdT: HOLD_REFERENCE_T,
+		displayTL: SCREEN_TL,
 	});
 	const movedRow = rows.find((r) => r.commodity.name === good.name);
 	if (!movedRow) throw new Error("the moved good is not on the screen");
@@ -184,15 +200,24 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			gameTimeMin,
 			deficitOf: moved(good.name, 12),
 			holdT: HOLD_REFERENCE_T,
+			displayTL: SCREEN_TL,
 		});
 		const row = rows.find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
-		expect(row.priceCr).toBeCloseTo(
-			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+		expect(row.buyCr).toBeCloseTo(
+			quantizeToDisplayStepCr(
+				stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			),
 			9,
 		);
+		// The delta the commander reads is between two *quoted* prices, since a
+		// quote is the only figure the console has. The obligation this row exists
+		// for — which epoch's base the delta is measured against — is untouched by
+		// that; only the domain both terms live in moved.
 		expect(row.priceDeltaCr as number).toBeCloseTo(
-			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T) - base.priceCr,
+			quantizeToDisplayStepCr(
+				stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
+			) - quantizeToDisplayStepCr(base.priceCr),
 			9,
 		);
 		expect(row.quantity).toBe(shelfQuantity(base.quantity, 12));
@@ -451,9 +476,10 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 			gameTimeMin: 0,
 			deficitOf: moved(good.name, 12),
 			holdT,
+			displayTL: SCREEN_TL,
 		}).find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
-		return row.priceCr as number;
+		return row.buyCr as number;
 	};
 	// A bigger hold divides the same mark by more, so the same 12 t deficit moves
 	// the price less — the response is scale-free in the hold since #182.
@@ -470,8 +496,9 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT,
-			}).find((r) => r.commodity.name === good.name) as { priceCr: number }
-		).priceCr;
+				displayTL: SCREEN_TL,
+			}).find((r) => r.commodity.name === good.name) as { buyCr: number }
+		).buyCr;
 	expect(unmarked(20)).toBe(unmarked(60));
 });
 
@@ -521,4 +548,77 @@ describe("the price column says what the player is charged", () => {
 		expect(priceLabel(12.6)).toBe("12.6 Cr");
 		expect(signedDelta(0.4, 1)).toBe("↑0.4");
 	});
+});
+
+// ---------------------------------------------------------------------------
+// §5.6 — the row carries two prices, and the cut is the tech level's
+// ---------------------------------------------------------------------------
+
+describe("§5.6 the market row shows what the station pays as well as what it asks", () => {
+	/** One row, at one tech level, with no mark on the market. */
+	const rowAt = (name: string, displayTL: number, station = TRADE) => {
+		const rows = stationMarketScreen({
+			station,
+			economy: ECONOMY,
+			gameTimeMin: 0,
+			deficitOf: noDeficit,
+			holdT: HOLD_REFERENCE_T,
+			displayTL,
+		});
+		const row = rows.find((r) => r.commodity.name === name);
+		if (!row) throw new Error(`${name} is not on the screen`);
+		return row;
+	};
+
+	test("the two columns are the market price and that price less the cut", () => {
+		const good = priceyGood(TRADE);
+		const row = rowAt(good.name, SCREEN_TL);
+		const mid = marketRow(good, ECONOMY, TRADE, 0).priceCr;
+		// The buy column is the market's own figure, unchanged — #191 D1's
+		// asymmetry, and the cheapest closure measured.
+		// Both sides of the pair are quotes, and the row says so rather than
+		// asserting the product: a quote is the figure on the glass, so the expected
+		// number has to pass through the same tenth-credit step the law applies.
+		expect(row.buyCr).toBe(quantizeToDisplayStepCr(mid));
+		expect(row.sellCr).toBe(
+			quantizeToDisplayStepCr(
+				Math.max(PRICE_STEP_CR, mid * (1 - bidCutAtTl(SCREEN_TL))),
+			),
+		);
+		// And they are two numbers rather than one printed twice, which is what
+		// makes the spread a thing the commander reads (#191 D3).
+		expect(row.sellCr).toBeLessThan(row.buyCr as number);
+	});
+
+	test("a frontier station cuts less than a core one, at the same console", () => {
+		// The direction #191 D4 handed to a measurement, asserted where the player
+		// sees it. A row the floor pins would read equal in both, so this uses the
+		// good `priceyGood` exists to find.
+		const good = priceyGood(TRADE);
+		expect(rowAt(good.name, DISPLAY_TL_MIN).sellCr).toBeGreaterThan(
+			rowAt(good.name, DISPLAY_TL_MAX).sellCr as number,
+		);
+	});
+
+	test("both columns survive the floor as numbers, never as a rounded whole", () => {
+		// #193's obligation, widened to the column it did not cover: a base price
+		// is a multiple of `PRICE_STEP_CR` and a cut of one is a multiple of
+		// nothing, so the SELL column is the one most likely to be rendered as a
+		// tidy figure that no till would honour.
+		for (const displayTL of [DISPLAY_TL_MIN, SCREEN_TL, DISPLAY_TL_MAX])
+			for (const good of COMMODITIES) {
+				if (!listsCommodity(good, FENCE)) continue;
+				const row = rowAt(good.name, displayTL, FENCE);
+				for (const value of [row.buyCr, row.sellCr]) {
+					if (value === undefined) continue;
+					expect(value).toBeGreaterThanOrEqual(PRICE_STEP_CR);
+					expect(priceLabel(value)).toMatch(/\d\.\d Cr$/);
+				}
+			}
+	});
+
+	// The screen-vs-till contract is held in `station-commerce.test.ts` §5.6, at the
+	// console where the deficit and the printed label are checked beside the till. It
+	// lived here too, as a second copy of the same three-tech-level round trip, and a
+	// change to that contract meant editing two files.
 });

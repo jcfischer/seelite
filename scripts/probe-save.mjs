@@ -595,12 +595,14 @@ try {
 				frames,
 				bought,
 				station: g.dockedAt,
+				// §5.6 left this row reading `priceCr`, which the market row no
+				// longer carries: the check silently became `undefined > undefined`,
+				// which is false, and a probe that fails forever is a probe that
+				// proves nothing. The buy column is the figure that moved.
 				before: before
-					? { priceCr: before.priceCr, quantity: before.quantity }
+					? { buyCr: before.buyCr, quantity: before.quantity }
 					: null,
-				after: after
-					? { priceCr: after.priceCr, quantity: after.quantity }
-					: null,
+				after: after ? { buyCr: after.buyCr, quantity: after.quantity } : null,
 				credits: g.commanderRecord().state.credits,
 				cargo: g.commanderRecord().state.cargo,
 			};
@@ -619,7 +621,7 @@ try {
 			"buying moves the price on the same visit",
 			trade.before !== null &&
 				trade.after !== null &&
-				trade.after.priceCr > trade.before.priceCr,
+				trade.after.buyCr > trade.before.buyCr,
 			`${JSON.stringify(trade.before)} → ${JSON.stringify(trade.after)} after ${trade.bought} buys`,
 		);
 

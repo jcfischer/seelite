@@ -70,8 +70,10 @@ import {
 	MARKET_PERIOD_MIN,
 	type MarketStation,
 	marketEpoch,
+	marketQuote,
 	marketRow,
 	marketStationOf,
+	type QuoteFn,
 	shelfQuantity,
 	stockResponse,
 } from "../../src/market";
@@ -271,23 +273,38 @@ const tradable = (good: Commodity, port: Port): boolean =>
  * gap. Two identical fields would have read as a spread that does not exist.
  */
 interface Quote {
-	priceCr: number;
+	/** What the trader pays for one unit here. */
+	buyCr: number;
+	/** What this port pays for one unit. */
+	sellCr: number;
 	units: number;
 }
 
-/** One good at one port, with the station's remembered deficit applied to both
- *  halves — §5.2's coupling, price and quantity moving opposite. */
+/**
+ * One good at one port, with the station's remembered deficit applied to both
+ * halves — §5.2's coupling, price and quantity moving opposite — and §5.6's
+ * spread applied to what is left.
+ *
+ * **There were two prices here once, and they were the same number.** Elite
+ * quotes one figure per good and you trade against it both ways; #196 closed
+ * §12's round-trip pump by splitting it, and the split arrives through the
+ * game's own `marketQuote` rather than a local arithmetic, for the reason §4's
+ * scope note gives: a rule that lives in the instrument and not in the game
+ * measures an economy the game does not have.
+ */
 function quote(
 	good: Commodity,
 	port: Port,
 	deficits: DeficitMap,
 	gameTimeMin: number,
 	holdT: number,
+	q: QuoteFn,
 ): Quote {
 	const row = marketRow(good, port.record.economy, port.market, gameTimeMin);
 	const deficit = readDeficit(deficits, port.key, good.name, gameTimeMin);
-	const priced = stockResponse(row.priceCr, deficit, holdT);
-	return { priceCr: priced, units: shelfQuantity(row.quantity, deficit) };
+	const mid = stockResponse(row.priceCr, deficit, holdT);
+	const { buyCr, sellCr } = q(mid, port.record.displayTL);
+	return { buyCr, sellCr, units: shelfQuantity(row.quantity, deficit) };
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +358,7 @@ function basket(
 	// `deficits`, `credits - fuelCr` and `holdT` out of a struct that already
 	// holds all three, and #182 made it five; a caller with a `Stance` in hand
 	// should not have to know which of its fields a basket reads.
-	const { deficits, credits: capitalCr, holdT } = st;
+	const { deficits, credits: capitalCr, holdT, quote: q } = st;
 	const cargo: { good: Commodity; units: number }[] = [];
 	let spend = capitalCr;
 	let profit = 0;
@@ -354,9 +371,12 @@ function basket(
 		(g) => !g.sellOnly && tradable(g, from) && tradable(g, to),
 	)
 		.map((g) => {
-			const here = quote(g, from, deficits, buyMin, holdT);
-			const there = quote(g, to, deficits, sellMin, holdT);
-			return { good: g, here, there, margin: there.priceCr - here.priceCr };
+			const here = quote(g, from, deficits, buyMin, holdT, q);
+			const there = quote(g, to, deficits, sellMin, holdT, q);
+			// **The margin crosses the spread**, and that is the wedge's whole
+			// effect on a haul: buy at the origin's ask, sell at the destination's
+			// bid. Nothing here "adds a fee" — the two ends are simply two prices.
+			return { good: g, here, there, margin: there.sellCr - here.buyCr };
 		})
 		.filter((c) => c.margin > 0 && c.here.units > 0)
 		.sort((a, b) => {
@@ -369,10 +389,10 @@ function basket(
 	for (const c of candidates) {
 		const sub = SUB_TONNE.has(c.good.name);
 		const byHold = sub ? c.here.units : Math.min(holdLeft, c.here.units);
-		const byCapital = Math.floor(spend / c.here.priceCr);
+		const byCapital = Math.floor(spend / c.here.buyCr);
 		const units = Math.min(byHold, byCapital);
 		if (units <= 0) continue;
-		spend -= units * c.here.priceCr;
+		spend -= units * c.here.buyCr;
 		profit += units * c.margin;
 		if (!sub) holdLeft -= units;
 		cargo.push({ good: c.good, units });
@@ -507,6 +527,27 @@ export interface Result {
 	 */
 	tonnesLifted: number;
 	ladenHops: number;
+	/**
+	 * Where the trader actually docked, by system tech level and by galactic
+	 * radius — one entry per hop's arrival, so the arrays are `hops` long.
+	 *
+	 * **#191 D4 asked for the route mix, and §10.3 disqualifies the hop ratio as
+	 * its answer.** `intra : jump` is 27 : 118 because `jumpOptions` enumerates
+	 * eight systems and `intraOptions` enumerates the one or two other stations in
+	 * this one — it reports the option pools, not the economy. A spread that moves
+	 * trade toward the frontier or away from it shows in *which* systems got the
+	 * docks, so that is what gets counted: tech level because §5.6's cut is a
+	 * function of it, and galactic radius because that is the geography the
+	 * destination's third verb is about.
+	 */
+	dockTl: number[];
+	dockRadius: number[];
+	/**
+	 * True when the session ended because no option paid rather than because the
+	 * clock ran out. An economy where a trader *stops* is a different finding from
+	 * one where it is merely slow, and the difference is invisible in `hops`.
+	 */
+	stalled: boolean;
 }
 
 /**
@@ -521,6 +562,17 @@ interface Stance {
 	credits: number;
 	holdT: number;
 	deficits: DeficitMap;
+	/**
+	 * The law that turns one market's mid into the two prices it quotes.
+	 *
+	 * Carried on the stance rather than read from a module-level default, because
+	 * this interface is the trader's whole knowledge at a decision point and a
+	 * sweep that varies the spread has to vary it *here* to vary it everywhere.
+	 * `basket`, `intraOptions` and `jumpOptions` all price through it, so no arm
+	 * can be given the wedge on one leg and not another — which is #25's fault
+	 * three, arrived at from the quoting side.
+	 */
+	quote: QuoteFn;
 	dockSeconds: number;
 	/** How far this stance looks for a jump target. */
 	neighbourLimit: number;
@@ -813,6 +865,17 @@ function shop(port: Port, led: Ledger, tMin: number, buys: boolean): void {
  * losing side have been given what the winning side had* has a mechanical
  * answer rather than an argued one.
  */
+/**
+ * Where a run drops the trader. **One union, exported**, because the instrument names
+ * these in its arm rows and a copy of the union in two files is how a fourth rule gets
+ * added in one place and silently not the other.
+ *
+ * - `first` — the first multi-station system the generator lists. The arbitrary start.
+ * - `developed` — the system with the highest displayed tech level in the galaxy.
+ * - `rim` — the lowest, which in this generator is also the most galactic-edge.
+ */
+export type StartPolicy = "first" | "developed" | "rim";
+
 export interface RunOptions {
 	/** The dock-and-market stop, seconds. §10.3's swept modelled number. */
 	dockSeconds?: number;
@@ -923,6 +986,35 @@ export interface RunOptions {
 	 * now share this engine.
 	 */
 	neighbourLimit?: number;
+	/**
+	 * The law that turns a market's mid into its two quoted prices — §5.6, and
+	 * **the field a spread sweep sweeps**.
+	 *
+	 * An arm is a function rather than a number, so a comparison cannot quietly
+	 * differ in *how* the spread is applied: both arms quote through the same call
+	 * in the same `quote()` on the same leg, and the only thing that can differ is
+	 * what that function returns. `NO_WEDGE` in `tests/helpers/console-cycle.ts`
+	 * is the pre-#196 law and is what the control arm of any of these rows uses.
+	 */
+	quote?: QuoteFn;
+	/**
+	 * Which multi-station system the trader is dropped at.
+	 *
+	 * **Default `"first"`, which is the historic behaviour** — the first system the
+	 * generator happens to list with two or more stations. That default is what let a
+	 * review round say "#191 D4's concern about starting somewhere developed is never
+	 * flown": every arm of the direction sweep began at the same arbitrary system,
+	 * whatever its tech level, so the pair answered a question about a dropped
+	 * somewhere-random commander.
+	 *
+	 * `"developed"` starts at the **highest-tech** multi-station system in the galaxy and
+	 * `"rim"` at the lowest. Two consequences worth stating before anyone uses them: the
+	 * arms are still identical to each other in every respect (same start, same clock,
+	 * same trader), and the start is itself a **confound to be measured, not a control to
+	 * be assumed** — which is why the report flies the same arm from several starts and
+	 * prints the spread, rather than treating one start as the answer.
+	 */
+	startPolicy?: StartPolicy;
 }
 
 export function run(
@@ -936,14 +1028,25 @@ export function run(
 	const buysEquipment = opts.shop ?? true;
 	const remembers = opts.remembers ?? true;
 	const neighbourLimit = opts.neighbourLimit ?? DEFAULT_NEIGHBOUR_LIMIT;
+	const quoteLaw = opts.quote ?? marketQuote;
+	const startPolicy = opts.startPolicy ?? "first";
 	const capitalCapCr = opts.capitalCapCr ?? Number.POSITIVE_INFINITY;
 	// The cache is keyed on a clock value, and every run replays the clock from
 	// zero — so it is cleared per run rather than kept, or run N would read run
 	// N−1's placements at the same instant.
 	clearPlacements();
-	const start = world.systems.find(
+	const berthable = world.systems.filter(
 		(r) => world.contentsFor(r).stations.length >= 2,
 	);
+	if (berthable.length === 0)
+		throw new Error("no multi-station system in this galaxy");
+	const byTl = [...berthable].sort((a, b) => b.displayTL - a.displayTL);
+	const start =
+		startPolicy === "developed"
+			? byTl[0]
+			: startPolicy === "rim"
+				? byTl[byTl.length - 1]
+				: berthable[0];
 	if (!start) throw new Error("no multi-station system in this galaxy");
 
 	let here = portsOf(start, world.contentsFor(start))[0];
@@ -983,6 +1086,9 @@ export function run(
 	let ladenHops = 0;
 	let jumpMinutes = 0;
 	let dockMinutes = 0;
+	const dockTl: number[] = [];
+	const dockRadius: number[] = [];
+	let stalled = false;
 	const waitRatios: number[] = [];
 	const tally = { truncated: 0, enumerations: 0 };
 
@@ -994,6 +1100,7 @@ export function run(
 			credits: Math.min(led.credits, capitalCapCr),
 			holdT: led.holdT,
 			deficits,
+			quote: quoteLaw,
 			dockSeconds,
 			neighbourLimit,
 			tally,
@@ -1008,7 +1115,14 @@ export function run(
 			.map((o) => ({ o, rate: (o.profitCr - o.fuelCr) / (o.seconds / 60) }))
 			.sort((a, b) => b.rate - a.rate);
 		const best = rated[0];
-		if (!best || best.rate <= 0) break;
+		if (!best || best.rate <= 0) {
+			// The loop ended because nothing paid, not because the clock ran out.
+			// Reported rather than left inside a small `hops`, because a route mix
+			// drawn from a halted run is a claim about a halt, and #28's rule is that
+			// the binding bucket gets named rather than averaged.
+			stalled = true;
+			break;
+		}
 
 		// §5.5's question, answered by comparison rather than by assertion: how
 		// much better is the best *waiting* option than the best *flying* one?
@@ -1058,6 +1172,8 @@ export function run(
 			ladenHops++;
 		}
 		here = hop.to;
+		dockTl.push(here.record.displayTL);
+		dockRadius.push(here.record.t);
 		hops++;
 		if (hop.kind === "jump") jumps++;
 		else intra++;
@@ -1091,6 +1207,9 @@ export function run(
 		waitRatios,
 		tonnesLifted,
 		ladenHops,
+		dockTl,
+		dockRadius,
+		stalled,
 		neighbourLimit,
 	};
 }
