@@ -971,6 +971,24 @@ export interface Equipment {
 	newToSeelite?: boolean;
 }
 
+/**
+ * The carrier identity scanner, by name (`carrier-identity.md` F12).
+ *
+ * **Named here, beside the row it buys.** A behaviour gate, a console line and a
+ * shipyard's list all have to mean the same purchase, and `station-commerce.ts`
+ * still reads `"Large Cargo Bay"` as a literal because no module ever named that
+ * one — the second copy is the bug, not the string.
+ *
+ * **A shipyard exclusive, at the E.C.M.'s figure**, which is F12's ruling rather
+ * than a derivation: the eleven-universal slot is closed (§4.1's table holds
+ * exactly ten and §4.2's saturation argument counts them), and a refinery
+ * exclusive was rejected on fiction. The consequence is stated there too: no
+ * shipyard, no scanner, so the Bounty family waits for a reason to travel.
+ */
+export const SCAN_MODULE = "Identity Scanner";
+/** E.C.M.'s price, per F12. */
+export const SCAN_MODULE_PRICE_CR = 600;
+
 export const EQUIPMENT: readonly Equipment[] = [
 	{ name: "Missile", priceCr: 30, scope: "universal" },
 	{ name: "Large Cargo Bay", priceCr: 400, scope: "universal" },
@@ -987,6 +1005,12 @@ export const EQUIPMENT: readonly Equipment[] = [
 	{
 		name: "Military Laser",
 		priceCr: 6000,
+		scope: "shipyard",
+		newToSeelite: true,
+	},
+	{
+		name: SCAN_MODULE,
+		priceCr: SCAN_MODULE_PRICE_CR,
 		scope: "shipyard",
 		newToSeelite: true,
 	},

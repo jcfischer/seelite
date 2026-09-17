@@ -297,18 +297,22 @@ universal**:
 
 | Universal — `min(displayTL + 3, 10)` | Type-exclusive |
 |---|---|
-| fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam laser, escape pod, energy bomb, docking computer, galactic hyperdrive | **refinery:** fuel scoops, mining laser¹ · **shipyard:** extra energy unit, military laser¹, **hulls** |
+| fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam laser, escape pod, energy bomb, docking computer, galactic hyperdrive | **refinery:** fuel scoops, mining laser¹ · **shipyard:** extra energy unit, military laser¹, identity scanner¹, **hulls** |
 
 ¹ Not in Elite's 12 — new to seelite, and priced by #7 alongside the rest.
 
-> **Changed by `carrier-identity.md` (node #359), not yet implemented.** Its F12
-> adds a scanner module to the **shipyard** exclusive column. It deliberately
-> takes an exclusive rather than an eleventh universal item, because the
-> universal count is ten and §4.2's saturation argument rests on it.
+> **The scanner module is here since #364, as a shipyard exclusive.** It takes
+> an exclusive rather than an eleventh universal item, and this section does not
+> argue for that a second time: the universal count is ten and §4.2's saturation
+> argument rests on it, which is F12's own reason along with the two options it
+> rejected. What follows is unchanged — the exclusive is *why* the module is
+> worth travelling for.
 
 Fuel scoops go to the refinery because scooping is the mining trade's tool, and
 the extra energy unit to the shipyard because it is the heaviest hull-work
-upgrade on the list. Every other item is available anywhere the system's tech
+upgrade on the list. The identity scanner joins the shipyard column on the same
+kind of ground — reading a hull's identity is a shipyard's craft, not a miner's,
+and `carrier-identity.md` F12 records the ruling, its price and its consequence. Every other item is available anywhere the system's tech
 level reaches it.
 
 ### 4.2 Why type does not shift the tech level

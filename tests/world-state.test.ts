@@ -20,6 +20,7 @@ import { fnv1a } from "../src/rng";
 import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
 import { type DeficitMap, recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
+import { carrierStanding } from "../src/carrier-standing";
 import { HOLD_REFERENCE_T } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
@@ -32,10 +33,12 @@ import {
 	effectiveCarrier,
 	enumerateCarriers,
 	type GalaxyEnvelope,
+	type KnowledgeRow,
 	materializeDue,
 	newWorld,
 	observe,
 	observeDocking,
+	observeScan,
 	observeSystemRelay,
 	type Provenance,
 	parseWorld,
@@ -1361,6 +1364,237 @@ describe("§9.10 facility knowledge", () => {
 
 // ---------------------------------------------------------------------------
 
+describe("§3.1 the scan record", () => {
+	/** A Traffic-scale reading: the scan fixes the instance and the voyage it
+	 *  looked at, which is all §5 allows the row to hold. */
+	const scan = (world: WorldState, at: number, voyage = 4): WorldState =>
+		observeScan(world, 0, OTHER, at, {
+			instanceOrdinal: 1,
+			voyageOrdinal: voyage,
+		});
+
+	test("a scan writes when, from where, and the two ordinals — nothing else", () => {
+		const row = readKnowledge(scan(newWorld(WORLD), 100).galaxies[0], OTHER);
+		expect(row).toEqual({
+			observedAt: 100,
+			source: "scan",
+			scan: {
+				observedAt: 100,
+				source: "scan",
+				observedInstanceOrdinal: 1,
+				observedVoyageOrdinal: 4,
+			},
+		});
+		// **No condition, and that is the row's whole shape.** §5's other option
+		// was a scan that also recorded a condition observation; F5 does not
+		// reveal one, so writing `operational` because the ship is visibly
+		// flying would put knowledge on the galaxy map the verb never granted.
+		expect(row?.observedCondition).toBeUndefined();
+		expect(row?.observedRecovery).toBeUndefined();
+	});
+
+	test("a scanned carrier is known, which is what the row was unreachable for", () => {
+		// §3.1's "no row means undiscovered" is the predicate a scan has to flip,
+		// and the required condition fields are what stopped a Traffic actor ever
+		// having a row at all.
+		const before = newWorld(WORLD);
+		expect(readKnowledge(before.galaxies[0], OTHER)).toBeUndefined();
+		expect(
+			readKnowledge(scan(before, 100).galaxies[0], OTHER)?.observedAt,
+		).toBe(100);
+	});
+
+	test("a scan keeps a condition observation, and a condition keeps the scan", () => {
+		// Two observations, one row, in either order. A pilot who docked at a
+		// carrier in repair does not un-know it because they later scanned it,
+		// and a scanned carrier they then docked at has not been un-scanned.
+		const docked = scan(newWorld(WORLD), 100);
+		const after = observeDocking(docked, 0, OTHER, 200, false);
+		const row = readKnowledge(after.galaxies[0], OTHER);
+		expect(row?.observedCondition).toBeDefined();
+		expect(row?.observedAt).toBe(200);
+		expect(row?.source).toBe("docking");
+		expect(row?.scan?.observedAt).toBe(100);
+
+		const rescanned = scan(
+			observe(newWorld(WORLD), 0, OTHER, 50, "system-relay"),
+			120,
+		);
+		const back = readKnowledge(rescanned.galaxies[0], OTHER);
+		expect(back?.observedCondition).toBeDefined();
+		expect(back?.observedInstanceOrdinal).toBeDefined();
+		// The row's own stamp is the *last contact*, which is what the record
+		// card prints beside the condition; the condition's age is not stored
+		// separately, and never was.
+		expect(back?.observedAt).toBe(120);
+		expect(back?.source).toBe("scan");
+		expect(back?.scan?.observedAt).toBe(120);
+	});
+
+	test("a re-scan replaces the reading rather than adding a second one", () => {
+		// §6's one row per carrier, and the reason a stale reading cannot
+		// accumulate behind a fresher one.
+		const twice = scan(scan(newWorld(WORLD), 100, 4), 300, 5);
+		expect(readKnowledge(twice.galaxies[0], OTHER)?.scan).toEqual({
+			observedAt: 300,
+			source: "scan",
+			observedInstanceOrdinal: 1,
+			observedVoyageOrdinal: 5,
+		});
+	});
+
+	test("the record ages and does not repair itself", () => {
+		const row = readKnowledge(
+			advanceTo(scan(newWorld(WORLD), 100), 6_000).galaxies[0],
+			OTHER,
+		);
+		expect(row?.scan?.observedAt).toBe(100);
+		// §3.1: objective events outside the player's channels update nothing,
+		// so the world moving on is exactly what makes a reading go stale.
+		expect(6_000 - (row?.observedAt ?? 0)).toBe(5_900);
+	});
+
+	test("the record survives a save", () => {
+		const before = scan(newWorld(WORLD), 100);
+		const raw = serializeWorld(before) as {
+			galaxies: Array<{ knowledge: Record<string, Record<string, unknown>> }>;
+		};
+		expect(raw.galaxies[0].knowledge[OTHER].scan).toEqual({
+			observedAt: 100,
+			source: "scan",
+			observedInstanceOrdinal: 1,
+			observedVoyageOrdinal: 4,
+		});
+		expect(parseWorld(serializeWorld(before))).toEqual(before);
+	});
+
+	test("the reading a row points at does not move when the world does", () => {
+		// §5's display rule: standing is re-derived from the row's own terms, so
+		// what the pilot was shown stays what they were shown while the carrier
+		// rotates under F2. The age is what changes.
+		const scanRow = readKnowledge(
+			scan(newWorld(WORLD), 100).galaxies[0],
+			OTHER,
+		)?.scan;
+		if (!scanRow) throw new Error("the scan wrote no record");
+		// The row's terms are the whole input, so the answer cannot drift as the
+		// session runs. This is what the display has to pass — the row's clock,
+		// never `gameTime`.
+		const at = (t: number) =>
+			carrierStanding(0x5ee11e, OTHER, scanRow.observedInstanceOrdinal, t);
+		expect(at(scanRow.observedAt)).toBe(
+			carrierStanding(0x5ee11e, OTHER, 1, scanRow.observedAt),
+		);
+		// And the two clocks do answer differently for some carrier. The shares
+		// and the rotation are #362's own rows; this one only needs the fact that
+		// they move, which is what makes an ageing reading load-bearing rather
+		// than decorative.
+		let moved = false;
+		for (let i = 0; i < 400 && !moved; i++) {
+			const key = carrierKey(
+				3,
+				`station-trade/traffic-${String(i).padStart(3, "0")}`,
+			);
+			const atClock = (t: number) => carrierStanding(0x5ee11e, key, 0, t);
+			if (atClock(100) !== atClock(100 + 40 * 3600)) moved = true;
+		}
+		expect(moved).toBe(true);
+	});
+
+	test("a snapshot from before the scan member refuses, not reinterprets", () => {
+		// §9.6's rule and §9.10's precedent: the shape changed, so a v2 body is
+		// refused with the migration named rather than read as though no carrier
+		// had ever been scanned.
+		const raw = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
+		raw.worldSchemaVersion = 2;
+		expect(() => parseWorld(raw)).toThrow(
+			/worldSchemaVersion 2 needs a migration/,
+		);
+	});
+
+	test("half an observation is refused by name", () => {
+		const body = (knowledge: unknown) => {
+			const raw = serializeWorld(scan(newWorld(WORLD), 100)) as {
+				galaxies: Record<string, unknown>[];
+			};
+			raw.galaxies[0].knowledge = { [OTHER]: knowledge };
+			return raw;
+		};
+		expect(() => parseWorld(body({ observedAt: 1, source: "scan" }))).toThrow(
+			/carries a condition observation, a scan, or both/,
+		);
+		expect(() =>
+			parseWorld(
+				body({
+					observedAt: 1,
+					source: "scan",
+					observedCondition: "operational",
+				}),
+			),
+		).toThrow(/are one observation; one was absent/);
+		expect(() =>
+			parseWorld(
+				body({
+					observedAt: 1,
+					source: "scan",
+					observedRecovery: {
+						processId: "p",
+						kind: "repair",
+						consequenceArea: "system:3",
+						startedAt: 1,
+						completesAt: 2,
+					},
+				}),
+			),
+		).toThrow(/observedRecovery belongs to a condition observation/);
+	});
+
+	test("the serializer emits no member that is not there", () => {
+		// A row whose private-facts container was empty serialized as
+		// `{"blackMarket":{}}` and then failed its own parser on the missing
+		// `learnedAt`: a shape the model calls legal that could not be loaded.
+		// The scan record makes a half-filled row ordinary, so the rule is
+		// checked at the boundary rather than left to the next hand-edited save.
+		const empty = newWorld(WORLD);
+		const record: KnowledgeRow = {
+			observedAt: 100,
+			source: "scan",
+			scan: {
+				observedAt: 100,
+				source: "scan",
+				observedInstanceOrdinal: 1,
+				observedVoyageOrdinal: 4,
+			},
+			knownPrivateFacts: {},
+		};
+		const half: WorldState = {
+			...empty,
+			galaxies: empty.galaxies.map((g, i) =>
+				i === 0 ? { ...g, knowledge: { [OTHER]: record } } : g,
+			),
+		};
+		const raw = serializeWorld(half) as {
+			galaxies: Array<{ knowledge: Record<string, Record<string, unknown>> }>;
+		};
+		expect(Object.keys(raw.galaxies[0].knowledge[OTHER]).sort()).toEqual([
+			"observedAt",
+			"scan",
+			"source",
+		]);
+		// **An empty container carries no information, so it is not written**: the
+		// parsed row is the same row with the member absent, which is exactly the
+		// meaning `learnedAt` and a source are there to carry. The defect this row
+		// is about was the opposite — the container was serialized *with a member
+		// invented inside it* and then refused by its own parser, so a row the
+		// model called legal could not be loaded back.
+		const parsed: KnowledgeRow = parseWorld(serializeWorld(half)).galaxies[0]
+			.knowledge[OTHER];
+		expect(parsed.knownPrivateFacts).toBeUndefined();
+		const rebuilt: KnowledgeRow = { ...parsed, knownPrivateFacts: {} };
+		expect(rebuilt).toEqual(record);
+	});
+});
+
 describe("§9.7 compaction equivalence", () => {
 	test("compaction changes no effective capability or attribution", () => {
 		const before = populated();
@@ -1750,23 +1984,27 @@ describe("§9.9 atomicity and integrity", () => {
 		const raw = serializeWorld(newWorld(WORLD)) as Record<string, unknown> & {
 			galaxies: Record<string, unknown>[];
 		};
-		// A v3 save adds a domain. Checking the shape first made it die as
-		// "factionInfluence is not a declared state domain", which tells the
-		// save/load node nothing about what to run.
-		raw.worldSchemaVersion = 3;
+		// A *later* save adds a domain — the next version number rather than a
+		// literal one, because #364's scan record moved this constant to 3 and a
+		// fixture hardcoding "the future" goes stale the moment the shape does.
+		// Checking the shape first made it die as "factionInfluence is not a
+		// declared state domain", which tells the save/load node nothing about
+		// what to run.
+		const next = WORLD_SCHEMA_VERSION + 1;
+		raw.worldSchemaVersion = next;
 		raw.galaxies[0].factionInfluence = { "3": 0.4 };
 		expect(() => parseWorld(raw)).toThrow(
-			/worldSchemaVersion 3 needs a migration/,
+			new RegExp(`worldSchemaVersion ${next} needs a migration`),
 		);
 		// **And at the top level.** The first fix moved the version read ahead of
 		// the *envelope* loops only, leaving the declared-field loop in front of
 		// it — so a v3 save adding a top-level field still died with exactly the
 		// error the move was meant to stop. This is the case that check missed.
 		const topLevel = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
-		topLevel.worldSchemaVersion = 3;
+		topLevel.worldSchemaVersion = next;
 		topLevel.shipLog = [];
 		expect(() => parseWorld(topLevel)).toThrow(
-			/worldSchemaVersion 3 needs a migration/,
+			new RegExp(`worldSchemaVersion ${next} needs a migration`),
 		);
 		const older = serializeWorld(newWorld(WORLD)) as Record<string, unknown>;
 		older.worldGeneratorVersion = 0;

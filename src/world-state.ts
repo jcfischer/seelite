@@ -52,8 +52,15 @@ import { generateContents } from "./system";
 /**
  * The mutable-state schema version (§2). Bump when the shape of anything in a
  * `GalaxyEnvelope` changes; the save/load node owns migration and rejection.
+ *
+ * **3 is #364's scan record.** A `KnowledgeRow` gained a `scan` member and
+ * relaxed its condition triple from required to optional, and §9.6's rule is
+ * that a mismatch refuses with a named message and leaves the record on disk
+ * rather than reading an old body as though the new member had always been
+ * there — which is how §9.10 handled the black-market marker's arrival, and the
+ * reason a v2 save is refused here rather than interpreted.
  */
-export const WORLD_SCHEMA_VERSION = 2;
+export const WORLD_SCHEMA_VERSION = 3;
 
 /**
  * The seeded-baseline version (§2). Bump on **any** generator change that can
@@ -179,6 +186,12 @@ export interface ObjectiveDelta {
 	scheduled?: ScheduledRecovery;
 }
 
+/** §3.1's report vocabulary gains one channel (`carrier-identity.md` §5). Named
+ *  here because it is written twice in one row — the row's last-contact stamp
+ *  and the scan's own record — and a third copy in the display tier is where a
+ *  label and its channel part company. */
+export const SCAN_SOURCE = "scan";
+
 /** §3.1's snapshot of a recovery as the player last saw it. Deliberately a
  *  copy, not a reference: it is intelligence, and it goes stale. */
 export interface ObservedRecovery {
@@ -189,13 +202,65 @@ export interface ObservedRecovery {
 	completesAt: number;
 }
 
-/** §3.1's last-known row. No row at all means undiscovered. */
-export interface KnowledgeRow {
+/**
+ * `carrier-identity.md` §5's scan observation, and nothing else.
+ *
+ * **What was read is not stored.** Standing and the hold are pure functions, so
+ * the reading is re-derived from these four terms at display time — the same
+ * idiom `knownPrivateFacts.blackMarket` two lines below is built on, and for the
+ * same reason: a stored copy would duplicate derivable state inside a versioned
+ * save.
+ *
+ * **The two ordinals are here because #362 made them unrecoverable.** The
+ * instance the reading was taken on, and the voyage it was taken during, are
+ * what `carrierStanding` and `carrierManifest` need as arguments; the voyage is
+ * `flownVoyageOrdinal`, which depends on the route as it stood at that moment
+ * and cannot be recomputed from the clock. A row that stored only the clock
+ * would re-derive a *different* hold than the one the pilot was shown, which is
+ * the disagreement §5 refuses to ship.
+ *
+ * **A condition observation is not here, and that is the shape's whole point.**
+ * F5 grants a scan its standing and its hold, not its hull condition: writing
+ * `operational` because the ship is visibly flying would be knowledge the verb
+ * did not earn, shown on the galaxy map as though the pilot had checked.
+ */
+export interface CarrierScanObservation {
+	observedAt: number;
+	source: string;
 	observedInstanceOrdinal: number;
-	observedCondition: OperationalCondition;
+	observedVoyageOrdinal: number;
+}
+
+/**
+ * §3.1's last-known row. No row at all means undiscovered.
+ *
+ * **One row, up to two observations.** The condition triple — instance,
+ * condition, and the `observedRecovery` snapshot that only means something
+ * beside a condition — is one observation, and `scan` is another. Each carries
+ * its own clock and channel, because a pilot can scan a carrier they docked at
+ * and a carrier they docked at can be scanned, in either order, and neither
+ * fact may overwrite the other.
+ *
+ * **The condition triple is optional since #364, as a group.** A scanned
+ * ordinary carrier is *known* and has never had its condition observed, and
+ * §5's alternative — a scan that also records a condition observation — would
+ * fabricate the one thing F5 does not reveal. The parser enforces the grouping:
+ * a row carries both or neither, and carries at least one observation.
+ *
+ * `observedAt` and `source` are the row's **last contact** stamp: when this
+ * carrier was last heard of by any channel, and which. That is what the record
+ * card prints beside the condition, and it is the reading a two-observation row
+ * has to have; the condition's own age is not stored separately, which is true
+ * of the single-observation row too.
+ */
+export interface KnowledgeRow {
+	observedInstanceOrdinal?: number;
+	observedCondition?: OperationalCondition;
 	observedAt: number;
 	source: string;
 	observedRecovery?: ObservedRecovery;
+	/** The last completed scan of this carrier, and none of what it read. */
+	scan?: CarrierScanObservation;
 	/**
 	 * Private facility facts, each known only after an explicit docking report.
 	 *
@@ -1057,6 +1122,9 @@ const knowledgeRowFor = (
 					},
 				}
 			: {}),
+		// A condition observation says nothing about a scan and must not drop
+		// one, exactly as it must not drop a learned private fact.
+		...(prior?.scan ? { scan: prior.scan } : {}),
 		...(prior?.knownPrivateFacts
 			? { knownPrivateFacts: prior.knownPrivateFacts }
 			: {}),
@@ -1172,6 +1240,59 @@ export const observeDocking = (
 		},
 	};
 	return { ...observed, galaxies };
+};
+
+/**
+ * A completed scan writes the record `carrier-identity.md` §5 defines: when it
+ * was read, that a scan was its source, and the two ordinals the reading was
+ * taken at. Nothing of what it read.
+ *
+ * **It writes no condition, and it does not clear one.** A scan reveals standing
+ * and a hold (F5), not a hull: writing `operational` because the carrier is
+ * visibly flying would be knowledge the verb did not grant, shown afterwards on
+ * the galaxy map as though the pilot had checked. Equally, a pilot who docked at
+ * a carrier in repair does not un-know it because they later scanned it, so a
+ * condition observation already on the row is carried forward untouched — the
+ * same preservation rule `knownPrivateFacts` runs on.
+ *
+ * **The caller fixes the voyage when it reads.** `flownVoyageOrdinal` depends on
+ * the route as it stood at that instant (§3's amendment by #362), so it cannot
+ * be recovered here from the clock, and a row that stored only the clock would
+ * re-derive a different hold from the one the pilot was shown.
+ */
+export const observeScan = (
+	world: WorldState,
+	galaxyIndex: number,
+	key: CarrierKey,
+	gameTime: number,
+	reading: { instanceOrdinal: number; voyageOrdinal: number },
+): WorldState => {
+	assertCarrierKey(key);
+	return withEnvelope(world, galaxyIndex, gameTime, (env) => {
+		const prior = env.knowledge[key];
+		return withKnowledgeRow(env, key, {
+			...(prior?.observedCondition === undefined
+				? {}
+				: {
+						observedInstanceOrdinal: prior.observedInstanceOrdinal,
+						observedCondition: prior.observedCondition,
+						...(prior.observedRecovery
+							? { observedRecovery: prior.observedRecovery }
+							: {}),
+					}),
+			observedAt: gameTime,
+			source: SCAN_SOURCE,
+			scan: {
+				observedAt: gameTime,
+				source: SCAN_SOURCE,
+				observedInstanceOrdinal: reading.instanceOrdinal,
+				observedVoyageOrdinal: reading.voyageOrdinal,
+			},
+			...(prior?.knownPrivateFacts
+				? { knownPrivateFacts: prior.knownPrivateFacts }
+				: {}),
+		});
+	});
 };
 
 /** §7's visited-flag domain. Sorted and unique, so insertion order cannot
@@ -1337,14 +1458,25 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 		closed: e.closed,
 	})),
 	knowledge: canonicalMap(env.knowledge, (k) => ({
-		observedInstanceOrdinal: k.observedInstanceOrdinal,
-		observedCondition: k.observedCondition,
+		// **Each member is emitted only when it is there.** Spreading a missing
+		// one out of an optional container used to write `blackMarket: {}`, which
+		// the parser then rejected as a marker with no `learnedAt` — a row the
+		// model calls legal that could not be loaded back. §5's scan record makes
+		// half-filled rows the normal case rather than a hand-edited curiosity,
+		// so the rule is spelled out per member now.
+		...(k.observedInstanceOrdinal === undefined
+			? {}
+			: { observedInstanceOrdinal: k.observedInstanceOrdinal }),
+		...(k.observedCondition === undefined
+			? {}
+			: { observedCondition: k.observedCondition }),
 		observedAt: k.observedAt,
 		source: k.source,
 		...(k.observedRecovery
 			? { observedRecovery: { ...k.observedRecovery } }
 			: {}),
-		...(k.knownPrivateFacts
+		...(k.scan ? { scan: { ...k.scan } } : {}),
+		...(k.knownPrivateFacts?.blackMarket
 			? {
 					knownPrivateFacts: {
 						blackMarket: { ...k.knownPrivateFacts.blackMarket },
@@ -1610,10 +1742,53 @@ const parseEpisodeRow = (value: unknown, key: string): CausalEpisode => {
 	};
 };
 
+/** One scan observation, as §5 defines it: a clock, a channel, and the two
+ *  ordinals the reading was taken at. */
+const parseScan = (raw: unknown, key: string): CarrierScanObservation => {
+	const o = asObject(raw, `knowledge ${key} scan`);
+	return {
+		observedAt: num(o, "observedAt", `knowledge ${key} scan`),
+		source: str(o, "source", `knowledge ${key} scan`),
+		observedInstanceOrdinal: ordinal(
+			o,
+			"observedInstanceOrdinal",
+			`knowledge ${key} scan`,
+		),
+		observedVoyageOrdinal: ordinal(
+			o,
+			"observedVoyageOrdinal",
+			`knowledge ${key} scan`,
+		),
+	};
+};
+
 const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 	const row = asObject(value, `knowledge row ${key}`);
-	const condition = str(row, "observedCondition", `knowledge ${key}`);
-	if (!CONDITIONS.has(condition))
+	// **The condition triple is one observation, and a row may carry none of
+	// it** (§3.1 as amended by #364): the only thing known about a scanned
+	// ordinary carrier is its scan. Half a triple is not a row anything can
+	// write, and a row carrying no observation is a row that knows nothing, so
+	// both are refused by name — the pair of checks that keeps the model's
+	// legality and the parser's the same claim.
+	const hasCondition = row.observedCondition !== undefined;
+	const hasInstance = row.observedInstanceOrdinal !== undefined;
+	if (hasCondition !== hasInstance)
+		fail(
+			`knowledge ${key}: observedCondition and observedInstanceOrdinal are one observation; one was absent`,
+		);
+	if (row.observedRecovery !== undefined && !hasCondition)
+		fail(
+			`knowledge ${key}: observedRecovery belongs to a condition observation`,
+		);
+	const scan = row.scan === undefined ? undefined : parseScan(row.scan, key);
+	if (!hasCondition && scan === undefined)
+		fail(
+			`knowledge ${key}: a row carries a condition observation, a scan, or both`,
+		);
+	const condition = hasCondition
+		? str(row, "observedCondition", `knowledge ${key}`)
+		: undefined;
+	if (condition !== undefined && !CONDITIONS.has(condition))
 		fail(`knowledge ${key}: observedCondition ${condition} is unknown`);
 	const observedRecovery =
 		row.observedRecovery === undefined
@@ -1645,15 +1820,20 @@ const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {
 		}
 	}
 	return {
-		observedInstanceOrdinal: ordinal(
-			row,
-			"observedInstanceOrdinal",
-			`knowledge ${key}`,
-		),
-		observedCondition: condition as OperationalCondition,
+		...(hasCondition
+			? {
+					observedInstanceOrdinal: ordinal(
+						row,
+						"observedInstanceOrdinal",
+						`knowledge ${key}`,
+					),
+					observedCondition: condition as OperationalCondition,
+				}
+			: {}),
 		observedAt: num(row, "observedAt", `knowledge ${key}`),
 		source: str(row, "source", `knowledge ${key}`),
 		...(observedRecovery ? { observedRecovery } : {}),
+		...(scan ? { scan } : {}),
 		...(knownPrivateFacts ? { knownPrivateFacts } : {}),
 	};
 };

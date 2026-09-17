@@ -26,6 +26,20 @@ import { DOMAIN } from "./domains";
 import type { Standing } from "./legal";
 import { fnv1a, mix, seededRand } from "./rng";
 
+/**
+ * A carrier's standing, in §2's three words.
+ *
+ * **An alias, and the name is the whole reason for it.** `legal.ts` calls the
+ * same three words `Standing` and spends them on the *player's* heat-derived
+ * status (`legalStandingOf`), and `carrier-identity.md` §6 refuses to let one
+ * display field carry both meanings — a pilot's wanted level and a stranger's
+ * wanted status are different facts that happen to share a vocabulary. Naming it
+ * here rather than re-writing the union keeps one owner for the three words,
+ * which is what lets `offenceHeat` take either: F7's rule is that the offence is
+ * judged on the target's true standing, so the two must be the same type.
+ */
+export type CarrierStanding = Standing;
+
 export const STANDING_SHARES = { wanted: 0.12, fugitive: 0.03 } as const;
 export const STANDING_ROTATION_S = 6 * 3600;
 
@@ -48,7 +62,7 @@ export function carrierStanding(
 	key: CarrierKey,
 	instanceOrdinal: number,
 	gameTime: number,
-): Standing {
+): CarrierStanding {
 	const seed = carrierInstanceSeed(
 		systemSeed,
 		key,
