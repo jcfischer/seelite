@@ -286,8 +286,10 @@ The principal was offered this and summing, and chose this.
 The principal chose this over one change. The second and third are child nodes
 of #362 — [#365](https://github.com/jcfischer/seelite/issues/365) and
 [#366](https://github.com/jcfischer/seelite/issues/366) — and #362 closes
-when all three are flown. #359's remaining build is
-[#364](https://github.com/jcfischer/seelite/issues/364).
+when all three are flown. #359's remaining build was
+[#364](https://github.com/jcfischer/seelite/issues/364), the scan itself, which
+lands beside this spec's standing rather than inside it — and what #359 still
+leaves owed is recorded on the map, not here.
 
 ### H11 — One canister per manifest line
 
