@@ -179,6 +179,7 @@ import {
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
+	pointerLockMove,
 } from "./pad-bindings";
 import type { PerfPanelHandle } from "./perf-panel";
 import type { SettingsPanelHandle } from "./settings-panel";
@@ -3391,10 +3392,34 @@ class Game {
 		// and the only way to get relative mouse deltas that do not stop at the
 		// edge of the window. Keyboard steering stays live throughout, so a
 		// player who never clicks can still fly.
+		//
+		// **And only where the mouse flies the ship** (#371). A click is the one
+		// input a locked canvas still receives, so taking the lock from a click
+		// made beside a drawn console re-arms the state that console exists to
+		// leave: while the lock is held the browser routes every mouse event to
+		// this element, and the panel the player is reading stops answering them.
+		// `readPadContext` is asked afresh rather than through `padContext()`,
+		// because a click can land in the same frame that drew the console it was
+		// aimed at, and the cached answer is the frame's.
 		this.renderer.domElement.addEventListener("click", () => {
-			if (document.pointerLockElement !== this.renderer.domElement) {
-				this.renderer.domElement.requestPointerLock();
-			}
+			if (
+				pointerLockMove(
+					this.readPadContext(),
+					document.pointerLockElement === this.renderer.domElement,
+				) !== "capture"
+			)
+				return;
+			// **A refusal is read, not thrown.** It is the ordinary case rather
+			// than the exceptional one: Chrome holds out for 1.25 s after the
+			// player's own Escape and for a tenth request inside two seconds
+			// regardless of who asked, a window that is not the key window cannot
+			// be locked at all, and Safari refuses outright without a gesture it
+			// may or may not have just seen. Dropping the promise made every
+			// refused click an unhandled rejection, which surfaces as a page
+			// error — which is why `probe-gun-feedback.mjs` had to stub this call
+			// out to keep its own click real. The retry is the next click, which
+			// is where we are standing.
+			this.renderer.domElement.requestPointerLock().catch(() => {});
 		});
 		window.addEventListener("mousemove", (e) => {
 			if (document.pointerLockElement !== this.renderer.domElement) return;
@@ -6118,6 +6143,36 @@ class Game {
 	}
 
 	/**
+	 * Hand the pointer back whenever the drawn surface stops being one the mouse
+	 * flies (#371).
+	 *
+	 * **One rule, two doors, one owner.** The canvas click handler asks
+	 * `pointerLockMove` whether a click may take the lock; this asks the same
+	 * function whether the frame must give it back. Both read the context, which
+	 * is the only place this repo answers "which surface is drawn" — a third copy
+	 * written to service the pointer is how #283's mouse rule had three disagreeing
+	 * answers before it was gathered into `contextFliesShip`.
+	 *
+	 * **Guarded by the browser's own state, so it is edge-triggered by construction
+	 * and cannot pound.** `pointerLockElement` is the truth about who holds the
+	 * pointer, so the exit is asked for only while it is held: once released the
+	 * read says "not held" and the row goes quiet for the rest of the console
+	 * session. That matters beyond tidiness — Blink refuses a tenth lock request
+	 * inside two seconds whatever the reason, so a loop that asked rather than
+	 * reconciled would spend the player's next legitimate click. It also covers the
+	 * player's own Escape for free: their release leaves nothing here to release.
+	 */
+	private reconcilePointerLock() {
+		if (
+			pointerLockMove(
+				this.padContextThisFrame,
+				document.pointerLockElement === this.renderer.domElement,
+			) === "release"
+		)
+			document.exitPointerLock();
+	}
+
+	/**
 	 * The settings screen, once it has been mounted.
 	 *
 	 * Held so the pad can drive the cursor the screen already has. The screen
@@ -6744,7 +6799,20 @@ class Game {
 		);
 	}
 
-	/** A camera pan only: flight controls and the ship's nose stay live. */
+	/**
+	 * Turn the head to a side console, or back to forward.
+	 *
+	 * **A camera pan, and not only one.** Flight controls and the ship's nose stay
+	 * live — that half is #283's ruling, and a key still flies the ship while the
+	 * head is turned. What the turn also does, by drawing a console rather than by
+	 * anything said here, is end the pointer lock's claim on the mouse: the next
+	 * frame's `reconcilePointerLock` reads the surface this rendered and hands the
+	 * pointer back, because a captured pointer routes every click to the canvas and
+	 * would leave the panel painting under a cursor that cannot act on it (#371).
+	 * Nothing here releases it directly, which is the point — the docked station
+	 * console arrives with the head still forward and needs the same thing, and a
+	 * rule held by the surface instead of by the turn is one rule.
+	 */
 	setHeadLook(headLook: HeadLook) {
 		this.headLook = headLook;
 		this.updateCockpit();
@@ -10374,6 +10442,22 @@ class Game {
 		// frame. Exactly one caller: `poll` computes its edges against the
 		// previous call, so a second one in the same frame reports no presses.
 		this.pollPad();
+		// #371 — the pointer belongs to the glass only while the mouse flies the
+		// ship, so the surface that just took the mouse also hands the pointer
+		// back. Here rather than at the sites that change the surface, because
+		// there are four of them already — `setHeadLook`, a dock arrival putting
+		// the station console on the forward wall, the settings screen, the
+		// Commander's overlay — and a release that has to be remembered at each is
+		// one the fifth surface forgets. `pollPad` has already asked which surface
+		// is drawn, and asked it of the rendered DOM, so this reads that answer
+		// instead of paying for it again: no extra `querySelector` on the flight
+		// path, which is the cost that made `padContext()` cache it. What that
+		// buys in coverage is paid for in a frame of latency — the release lands
+		// one frame after the keystroke that turned the head. The click path reads
+		// the surface afresh, so nothing a player *clicks* is ever answered from a
+		// stale surface, and one frame is a frame the console has been up and the
+		// player has not yet been refused.
+		this.reconcilePointerLock();
 		const now = performance.now();
 		const dt = this.lastTime
 			? Math.min(MAX_DT, (now - this.lastTime) / 1000)

@@ -7,7 +7,7 @@
  * load — and a table nothing can load is a table nothing checks.
  */
 import { describe, expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
 import {
 	type PadButtonName,
 	type RawPad,
@@ -15,10 +15,14 @@ import {
 	readPad,
 } from "../src/gamepad";
 import {
+	type PadContext,
+	type PointerLockMove,
 	PAD_FLIGHT_KEYS,
+	contextFliesShip,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
+	pointerLockMove,
 } from "../src/pad-bindings";
 
 const NOTHING: ReadonlySet<PadButtonName> = new Set();
@@ -501,5 +505,89 @@ describe("the audio unlock keeps its listeners until it has worked", () => {
 		expect(body.indexOf("if (this.audio.silent) return;")).toBeLessThan(
 			body.indexOf('removeEventListener("keydown"'),
 		);
+	});
+});
+
+describe("the pointer goes with the mouse, not with the camera (#371)", () => {
+	// **The whole of #371, headless.** Mouse-look runs on pointer lock and a
+	// captured pointer sends every mouse event — the click included — to the
+	// locked element, so the console that suspends the mouse has to give up the
+	// capture or it suspends nothing the player feels while taking the one thing
+	// they need. `probe-pointer-lock.mjs` measures the consequence in a browser;
+	// this holds the decision, because the consequence is only measurable where
+	// the browser will grant a lock at all — which is not every Chromium, and not
+	// this repo's default launcher. A table that survives the harness is the
+	// reason the rule is a function in this module rather than two conditions in
+	// `main.ts`, which nothing here can load.
+	const CELLS: [PadContext, boolean, PointerLockMove][] = [
+		["flight", false, "capture"],
+		["flight", true, "keep"],
+		["instrument", false, "capture"],
+		["instrument", true, "keep"],
+		["console", false, "at-rest"],
+		["console", true, "release"],
+		["modal", false, "at-rest"],
+		["modal", true, "release"],
+	];
+
+	test("all eight cells: context × whether the canvas already holds it", () => {
+		for (const [context, held, expected] of CELLS)
+			expect(pointerLockMove(context, held)).toBe(expected);
+	});
+
+	test("the instrument keeps the lock for the reason it keeps the sticks", () => {
+		// The one context where a panel is on screen and the mouse still flies.
+		// Anything that reads "a DOM overlay is up" instead of "the mouse is
+		// suspended" gets this cell wrong, and `?perf` becomes an overlay the
+		// player has to click through — which is the drift `contextFliesShip` was
+		// extracted to stop.
+		expect(pointerLockMove("instrument", true)).toBe("keep");
+		expect(pointerLockMove("instrument", false)).toBe("capture");
+	});
+
+	test("a fifth context joins on the flight rule, not on its own answer", () => {
+		// The type makes the union closed, so this row is about the day it is not:
+		// the lock's answer is required to be `contextFliesShip`'s answer, which is
+		// the whole claim, and a new context that flies the ship without taking
+		// this row's shape is the drift this file exists to catch.
+		for (const context of ["flight", "instrument", "console", "modal"] as const)
+			expect(pointerLockMove(context, false) === "capture").toBe(
+				contextFliesShip(context),
+			);
+	});
+
+	test("the release is the frame's answer, not the browser's", () => {
+		// `release` only while it is held. A loop that exited unconditionally would
+		// be asking for nothing sixty times a second, and would report wrongly the
+		// moment the player pressed Escape — whose release leaves nothing to
+		// release. Blink's ten-requests-per-two-seconds limiter is the sharp end of
+		// why the *request* side gets the same treatment.
+		expect(pointerLockMove("console", true)).toBe("release");
+		expect(pointerLockMove("console", false)).toBe("at-rest");
+	});
+
+	test("and the lock is asked for at one door in src/", () => {
+		// **A count, and it is standing in for a predicate — so read what it is
+		// guarding.** The defect class is not "the wrong condition" but "a second
+		// place that takes the lock without asking", which is how
+		// `commander-overlay.ts` came to hold its own release: a rule with no owner
+		// grows copies. One call site means one place for the context test to sit.
+		// What it cannot see is a call built out of a variable, or a second door in
+		// a file this scan does not read; `codeOf` covers the comments, and
+		// `srcFiles` is recursive so a new module is in the set the day it lands.
+		const doors: string[] = [];
+		for (const file of srcFiles()) {
+			const code = codeOf(file);
+			for (const _ of code.matchAll(/requestPointerLock\s*\(/g))
+				doors.push(file);
+		}
+		expect(doors).toEqual(["src/main.ts"]);
+		// And the one door asks the rule before it asks the browser.
+		const asked = codeOf("src/main.ts");
+		const door = asked.slice(
+			asked.indexOf('addEventListener("click"'),
+			asked.indexOf("requestPointerLock"),
+		);
+		expect(door).toContain("pointerLockMove(");
 	});
 });
