@@ -72,7 +72,10 @@ the glass underneath. `pointerLockMove` in that same module owns this rule and t
 argument for it, as it owns the one above; what is worth knowing here is only
 **that the release belongs to the drawn surface rather than to the head turn**,
 because the station console arrives on the forward wall with the head still forward
-and needs exactly the same thing.
+and needs exactly the same thing — through `liveCockpit`'s `hasFocusScope()`, which
+is the same answer `padContext` already takes. That one is **reasoned and not
+measured**: `probe-pointer-lock.mjs` says why, and its rows are the head turn and the
+settings screen.
 
 **`instrument`** is the frame overlay behind `?perf`, and it is the one
 exception. It takes a console's six buttons and leaves the sticks alone, because

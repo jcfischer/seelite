@@ -3394,15 +3394,13 @@ class Game {
 		// player who never clicks can still fly.
 		//
 		// **And only where the mouse flies the ship** (#371): `pointerLockMove`'s
-		// answer, asked of the surface read afresh rather than through
-		// `padContext()`, because a click can land in the same frame that drew the
-		// console it was aimed at and the cached answer is the frame's.
+		// answer, asked of the surface read afresh rather than through the cached
+		// one, because a click can land in the same frame that drew the console it
+		// was aimed at and the cached answer is the frame's.
 		this.renderer.domElement.addEventListener("click", () => {
 			if (
-				pointerLockMove(
-					this.readPadContext(),
-					document.pointerLockElement === this.renderer.domElement,
-				) !== "capture"
+				pointerLockMove(this.readPadContext(), this.canvasHoldsLock()) !==
+				"capture"
 			)
 				return;
 			// **A refusal is read, not thrown** — it is the ordinary case, not the
@@ -3423,7 +3421,7 @@ class Game {
 			);
 		});
 		window.addEventListener("mousemove", (e) => {
-			if (document.pointerLockElement !== this.renderer.domElement) return;
+			if (!this.canvasHoldsLock()) return;
 			this.mouseDx += e.movementX;
 			this.mouseDy += e.movementY;
 		});
@@ -6144,24 +6142,38 @@ class Game {
 	}
 
 	/**
+	 * Whether the pointer belongs to the glass right now.
+	 *
+	 * `document.pointerLockElement` is the only answer to that, so nothing here
+	 * keeps a shadow copy of it. Three callers ask, and all three ask it the same
+	 * way from one place: which element holds the lock is a question about the
+	 * browser's state, and a comparison written out at each call site is one more
+	 * place to be wrong about which element the glass is.
+	 */
+	private canvasHoldsLock() {
+		return document.pointerLockElement === this.renderer.domElement;
+	}
+
+	/**
 	 * Hand the pointer back whenever the drawn surface stops being one the mouse
 	 * flies (#371) — the frame's door onto `pointerLockMove`, which owns why.
 	 *
 	 * It reads `padContextThisFrame`, the answer `pollPad` took a moment earlier of
 	 * the rendered DOM, so this costs no query of its own and covers every surface
 	 * that has or gets a console rather than the four call sites that draw one.
-	 * **The Commander's overlay keeps its own release beside it**, which is not the
-	 * third copy this repo fights: that screen opens on a keystroke and does not
-	 * wait for a frame, and `padContext`'s comment records that a probe can cancel
-	 * the loop — on that path the reconciliation below never runs.
-	 * `tests/pad-bindings.test.ts` pins both release sites by name.
+	 *
+	 * **The Commander's overlay keeps its own release beside it, and that is not the
+	 * third copy this repo fights**: one rule, and this is the only place it is
+	 * written. The overlay's line is the same answer taken a different moment,
+	 * because that screen opens on a keystroke and does not wait for a frame — and a
+	 * probe is allowed to cancel the frame loop, on which path nothing here runs.
+	 * `tests/pad-bindings.test.ts` pins both release sites by name, so a third has to
+	 * be said out loud to land.
 	 */
 	private reconcilePointerLock() {
 		if (
-			pointerLockMove(
-				this.padContextThisFrame,
-				document.pointerLockElement === this.renderer.domElement,
-			) === "release"
+			pointerLockMove(this.padContextThisFrame, this.canvasHoldsLock()) ===
+			"release"
 		)
 			document.exitPointerLock();
 	}
@@ -10433,12 +10445,9 @@ class Game {
 		// frame. Exactly one caller: `poll` computes its edges against the
 		// previous call, so a second one in the same frame reports no presses.
 		this.pollPad();
-		// #371 — the pointer belongs to the glass only while the mouse flies the
-		// ship. Beside `pollPad` because that has just read which surface is drawn,
-		// of the rendered DOM, so this costs nothing and one site covers every
-		// surface that draws a console instead of the four that do. What that buys
-		// in coverage is paid for in a frame of latency, which the click path does
-		// not inherit: it reads the surface afresh.
+		// #371: the pointer goes with the surface `pollPad` just read. Why it is
+		// taken here and not at the screens that draw a console is
+		// `reconcilePointerLock`'s to say, and this line is not a second copy.
 		this.reconcilePointerLock();
 		const now = performance.now();
 		const dt = this.lastTime

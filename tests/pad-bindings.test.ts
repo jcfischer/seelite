@@ -591,6 +591,11 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 			asked.indexOf("requestPointerLock"),
 		);
 		expect(door).toContain("pointerLockMove(");
-		expect(door).toMatch(/!==\s*"capture"\s*\)\s*\n\s*return;/);
+		// **The gate's meaning, not the formatter's layout.** Sage, round 3, on the
+		// first version of this line: it required a newline before the `return`, so
+		// Biome reflowing the statement — or someone adding braces — would have gone
+		// red with the rule untouched. Braces and reflows are allowed here; an answer
+		// that is computed and dropped is not.
+		expect(door).toMatch(/!==\s*"capture"[\s\S]{0,24}?return\b/);
 	});
 });

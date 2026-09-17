@@ -57,9 +57,15 @@
  * this one is that the *decision* is held in a function the headless tier can
  * reach, and the surface that answers for it is the one the probe already reads.
  *
- * **About the word "pad" in this file:** it is the gamepad — `installFakePad`,
- * `PAD_FLIGHT_KEYS`, `padContext` — and not the `Berth` sense `CONTEXT.md` retires
- * the alias for. Nothing here is about landing.
+ * **About three words here that the alias rule in `CONTEXT.md` catches.** They are
+ * ordinary English and identifiers, not synonyms for the canonical terms, and the
+ * file says so itself: the game controller is the **fourth sense of "pad"** that is
+ * not a berth ("a controller is what every player calls a pad", and a reviewer
+ * flagging one "has found the alias rule firing on an English word"); **`Command`
+ * is scoped to a player act on a carrier**, and `Game.command(key)` is named in that
+ * entry's own scope note as dispatching a keypress and needing no renaming; and
+ * **`Berth` is the canonical term**, used here only to say which sense of "pad" this
+ * file is not. Renaming any of the three would make a canonical term mean two things.
  *
  * **And why the last section uses the default launcher.** The lock the game *asks
  * for* is refused on any machine without a lockable view, which is ordinary rather
@@ -164,6 +170,17 @@ const relockForward = async (target) => {
 	await target.keyboard.press("2");
 	await settle(target);
 	await clickGlass(target);
+	if (await canvasLock(target)) return true;
+	// **Wait out the browser's own window, and do not pretend it is the game's.**
+	// Measured here: the fifth lock request inside about 1.3 s is refused with
+	// `pointerlockerror`, it stays refused while the fast asking continues, one
+	// second is not enough to clear it and 2.1 s is. A row that turns the head,
+	// re-takes the glass and turns again is knocking at the door far faster than a
+	// player ever does — this is the same limiter the release is edge-triggered
+	// against, arriving on the probe instead of on the game. The retry is once, with
+	// its answer read, so a row still cannot start from a state it did not take.
+	await target.waitForTimeout(2200);
+	await clickGlass(target);
 	return canvasLock(target);
 };
 
@@ -175,24 +192,24 @@ const relockForward = async (target) => {
  * exactly how the first version of this file's left-turn row passed against the
  * broken build.
  */
-const turnSurrenders = async (door, look, label) => {
-	if (!(await canvasLock(page))) {
+const turnSurrenders = async (target, door, look, label) => {
+	if (!(await canvasLock(target))) {
 		check(label, false, "the glass was not locked before the turn");
 		return;
 	}
-	await door();
-	await settle(page);
-	const lock = await lockHolder(page);
-	const head = await headLook(page);
+	await door(target);
+	await settle(target);
+	const lock = await lockHolder(target);
+	const head = await headLook(target);
 	check(label, lock === null && head === look, `lock=${lock} headLook=${head}`);
 };
 
 /** Press a gamepad button across a poll, which is the only way the game sees it. */
-const pressPad = async (name) => {
-	await page.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX[name]);
-	await settle(page);
-	await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX[name]);
-	await settle(page);
+const pressPad = async (target, name) => {
+	await target.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX[name]);
+	await settle(target);
+	await target.evaluate((i) => window.__pad.release(i), STANDARD_INDEX[name]);
+	await settle(target);
 };
 
 const browser = await launchChromium({ channel: "chromium" });
@@ -273,7 +290,8 @@ check(
 );
 
 await turnSurrenders(
-	() => page.keyboard.press("3"),
+	page,
+	(target) => target.keyboard.press("3"),
 	"right",
 	"turning the head right surrenders the lock, read off `document.pointerLockElement`",
 );
@@ -307,14 +325,16 @@ check(
 );
 
 await turnSurrenders(
-	() => page.keyboard.press("Alt+ArrowRight"),
+	page,
+	(target) => target.keyboard.press("Alt+ArrowRight"),
 	"right",
 	"the `Alt`+arrow chord surrenders it too, bypassing `command`",
 );
 
 await relockForward(page);
 await turnSurrenders(
-	() => page.keyboard.press("1"),
+	page,
+	(target) => target.keyboard.press("1"),
 	"left",
 	"and so does the turn to the left console",
 );
@@ -326,7 +346,8 @@ check(
 
 await relockForward(page);
 await turnSurrenders(
-	() => pressPad("right"),
+	page,
+	(target) => pressPad(target, "right"),
 	"right",
 	"and the d-pad's turn surrenders it from the gamepad door",
 );
@@ -337,13 +358,17 @@ await turnSurrenders(
 // overlay keeps its own release is `reconcilePointerLock`'s to say; the row in
 // `tests/pad-bindings.test.ts` is what keeps a third from arriving unremarked.
 // ---------------------------------------------------------------------------
-await relockForward(page);
+// The same premise as every surrender row: a screen opened on an unlocked page
+// surrenders nothing, so the relock's own answer is part of the row.
+const beforeSettings = await relockForward(page);
 await page.keyboard.press("z");
 await settle(page);
 check(
 	"opening the settings screen surrenders the lock as well",
-	(await lockHolder(page)) === null && (await surface(page)) === "modal",
-	`lock=${await lockHolder(page)} surface=${await surface(page)}`,
+	beforeSettings &&
+		(await lockHolder(page)) === null &&
+		(await surface(page)) === "modal",
+	`locked-before=${beforeSettings} lock=${await lockHolder(page)} surface=${await surface(page)}`,
 );
 
 // The first row, which is the render scale — a real control whose value changes
