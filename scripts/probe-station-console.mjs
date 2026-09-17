@@ -278,22 +278,34 @@ for (const station of ["trade", "fence", "yard"]) {
 	const law = await page.evaluate(
 		() => /** @type {{ priceStepCr: number }} */ (window.__seelite.marketLaw),
 	);
-	const floored = priced.filter((row) => cr(row.buy) <= law.priceStepCr + 1e-9);
-	const spreadRows = priced.filter(
-		(row) => cr(row.buy) > law.priceStepCr + 1e-9,
+	// **Three populations, because the law has two ways to show one number.** A row can
+	// come back flat because §3's price floor pinned the mid at one step, or because the
+	// ask sits above a step and the cut bid *rounds back onto it* — §5.6 counts 360 of the
+	// latter across the whole table. Sorting them together, or sorting only the first,
+	// fails this check on a build that is behaving exactly as the law says.
+	const flat = (row) => Math.abs(cr(row.buy) - cr(row.sell)) < 1e-9;
+	const floored = priced.filter(
+		(row) => cr(row.buy) <= law.priceStepCr + 1e-9 && flat(row),
 	);
+	const stepped = priced.filter(
+		(row) => cr(row.buy) > law.priceStepCr + 1e-9 && flat(row),
+	);
+	const spreadRows = priced.filter((row) => !flat(row));
 	const under = spreadRows.filter((row) => cr(row.sell) < cr(row.buy));
+	const over = priced.filter((row) => cr(row.sell) > cr(row.buy) + 1e-9);
 	const margins = spreadRows.map((row) => 1 - cr(row.sell) / cr(row.buy));
 	check(
-		`§5.6: ${station} shows every listed row's bid below its ask`,
+		`§5.6: ${station} shows every listed row's bid at or below its ask, and never above`,
 		priced.length > 0 &&
 			spreadRows.length > 0 &&
 			under.length === spreadRows.length &&
+			over.length === 0 &&
 			priced.every((row) => cr(row.sell) > 0),
 		// The spread *range* is printed, not just the count, because a count of rows
 		// with the bid under the ask says nothing about how far below it is.
 		`${under.length}/${spreadRows.length} with the bid under the ask, ` +
-			`${floored.length} pinned at the price step, spread ` +
+			`${floored.length} flat at the price step, ${stepped.length} flat where the ` +
+			`cut rounded back onto the ask, spread ` +
 			`${(100 * Math.min(...margins)).toFixed(1)}–${(100 * Math.max(...margins)).toFixed(1)}%`,
 	);
 }

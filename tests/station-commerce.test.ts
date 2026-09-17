@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "../src/deficits";
 import {
+	COMMODITIES,
 	DEFICIT_MAX,
+	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	quantizeToDisplayStepCr,
 	PRICE_ELASTICITY,
@@ -30,8 +32,12 @@ import {
 	type CycleSurvey,
 	NO_WEDGE,
 	flyConsoleCycle,
+	shelfOf,
 	surveyConsoleCycles,
 } from "./helpers/console-cycle";
+
+/** The eight economy indices, 0 through 7 as §3 numbers them. */
+const ALL_ECONOMIES = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const STATION = marketStationOf(
 	{ type: "trade", localCarrierId: "station-trade", blackMarket: false },
@@ -375,6 +381,323 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		// whose domain silently shrank still reports a clean zero for this row.
 		expect(s.rows).toBe(98_685);
 		expect(s.positiveByTonnage.tonnage).toBe(0);
+	});
+
+	test("a market already sold into: 737 of 20,925 tonnage cycles clear, by ≤40.00 Cr", () => {
+		// **The closure the constant claims is about a market the trader has not already
+		// moved**, and a review round found the sentence wider than the survey. Chained
+		// cycles hand the mark straight back and stay shut (the row below). A *dump* does
+		// not: sell two holds in without buying them back, and the console is 40 units short
+		// of a price; a hold sold into that depression is quoted off it, while the buy-back
+		// is the same depression with no cut on it. So the cycle clears.
+		//
+		// **Pinned as three figures, not a mood**: how many rows clear, out of how many
+		// flown, and the worst one named with its station type, economy, tech level and how
+		// deep the dump was. A claim like "the residue is small" that is not pinned is how
+		// a leak gets described away — this node has been told that three rounds running
+		// about other people's numbers, and this one is its own.
+		//
+		// **The floor that closes it is already priced and declined.** A flat 0.315 — the
+		// rung §5.6 records as closing the pump and costing the trade loop — gives 0 positive
+		// over this same domain (measured; §10.3 carries the comparison). So the dial's cost
+		// of closing this door is known, which is what makes the residue a decision rather
+		// than a surprise.
+		const priorMarked = (
+			type: "trade" | "refinery" | "shipyard",
+			good: (typeof COMMODITIES)[number],
+			economy: number,
+			tl: number,
+			prior: number,
+			qty: number,
+		): number | null => {
+			const station = marketStationOf(
+				{ type, localCarrierId: `p-${type}`, blackMarket: true },
+				0x51a7_10,
+			);
+			const key = carrierKey(0, `p-${type}`);
+			let commander = {
+				...newCommander(PLAYER_BASELINE_HULL),
+				credits: 10_000_000,
+				cargo: {},
+			};
+			let deficits: DeficitMap = {};
+			for (let i = 0; i < prior; i++) {
+				const out = transactAtStation(
+					input({
+						commander: { ...commander, cargo: { [good.name]: qty } },
+						deficits,
+						station,
+						stationKey: key,
+						economy,
+						displayTL: tl,
+						action: {
+							type: "sell-commodity",
+							commodity: good.name,
+							quantity: qty,
+						},
+					}),
+				);
+				if (!out.accepted) return null;
+				commander = { ...out.commander, cargo: {} };
+				deficits = out.deficits;
+			}
+			const buyQty = Math.min(
+				qty,
+				shelfQuantity(
+					marketRow(good, economy, station, 0).quantity,
+					readDeficit(deficits, key, good.name, 0),
+				),
+			);
+			if (buyQty <= 0) return null;
+			const start = commander.credits;
+			const sold = transactAtStation(
+				input({
+					commander: { ...commander, cargo: { [good.name]: buyQty } },
+					deficits,
+					station,
+					stationKey: key,
+					economy,
+					displayTL: tl,
+					action: {
+						type: "sell-commodity",
+						commodity: good.name,
+						quantity: buyQty,
+					},
+				}),
+			);
+			if (!sold.accepted) return null;
+			const back = transactAtStation(
+				input({
+					commander: sold.commander,
+					deficits: sold.deficits,
+					station,
+					stationKey: key,
+					economy,
+					displayTL: tl,
+					action: {
+						type: "buy-commodity",
+						commodity: good.name,
+						quantity: buyQty,
+					},
+				}),
+			);
+			if (!back.accepted) return null;
+			return back.commander.credits - start;
+		};
+		let flown = 0;
+		let cleared = 0;
+		let worstCr = 0;
+		let worstRow = "";
+		for (const type of ["trade", "refinery", "shipyard"] as const) {
+			for (const good of COMMODITIES) {
+				if (good.unit !== "t") continue;
+				for (const economy of ALL_ECONOMIES) {
+					const station = marketStationOf(
+						{ type, localCarrierId: `p-${type}`, blackMarket: true },
+						0x51a7_10,
+					);
+					const qty = Math.min(
+						HOLD_REFERENCE_T,
+						shelfQuantity(marketRow(good, economy, station, 0).quantity, 0),
+					);
+					if (qty <= 0) continue;
+					for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
+						for (const prior of [0, 1, 2, 3, 5]) {
+							const net = priorMarked(type, good, economy, tl, prior, qty);
+							if (net === null) continue;
+							flown++;
+							if (net > 0.0001) {
+								cleared++;
+								if (net > worstCr) {
+									worstCr = net;
+									worstRow = `${good.name} ${type} e${economy} TL${tl} after ${prior}`;
+								}
+							}
+						}
+				}
+			}
+		}
+		expect({ flown, cleared, worstRow, worstCr: worstCr.toFixed(2) }).toEqual({
+			flown: 20_925,
+			cleared: 737,
+			worstRow: "Luxuries refinery e3 TL1 after 2",
+			worstCr: "40.00",
+		});
+	});
+
+	test("four chained cycles on ONE deficit map: tonnage stays shut, units do not", () => {
+		// **The corpus seeds a fresh map per cycle** and says so — every realized dock is
+		// its own epoch, so a survey asks each console once and measures at zero. A review
+		// round asked the question that leaves open: does a *chain* — sell into a market,
+		// buy back, sell into the mark you just made — reopen the pump once the station
+		// already carries it? Four cycles deep, one shared map, every station type, good,
+		// economy and tech level a shelf admits.
+		//
+		// **It does not reopen the one the law claims.** Over **4,410 tonnage chains**
+		// (§12.12's population: goods whose units *are* tonnes, a full hold per leg) not one
+		// nets a credit. The claim in `market.ts` is scoped to those goods, and it survives
+		// chaining.
+		//
+		// **And the answer for the units is that they were never shut**, which this row now
+		// states instead of hiding behind a `positive: []` it could not earn. A sub-tonne
+		// good is quoted up to 63 units while the deficit normalizes by the flown hull's
+		// hold, so one sell-leg moves that market by more than a hold-equivalent and the
+		// rebound pays for the cut and then some: **720 of 1,080 unit chains are positive,
+		// the worst +4,410.00 Cr over four cycles (Platinum, shipyard, economy 0, TL 1)**.
+		// It is not a chain effect — a single cycle at an untouched market is positive too,
+		// and §10.3's residue section already owns that population. Pinning the count here
+		// is what keeps the residue from being read as closed by a row that quietly skipped
+		// the goods it could not close.
+		//
+		// Three mechanics keep the row honest. **Cargo is booked, not conjured**: one load
+		// carried in, sold and bought back, so the chain ends where it began (injecting a
+		// fresh load per cycle — an earlier draft — discards the previous purchase and
+		// biases every net negative). **Both legs carry an explicit `quantity`**: omitting it
+		// sells one unit, which is not the round trip §5.6 closes. **The shelf is read as
+		// the till reads it**, `readDeficit` then `shelfQuantity`; capping a buy-back at the
+		// untouched epoch shelf refused 2,280 of 2,520 legs, and skipping refusals would
+		// have manufactured closure out of a bug in this row.
+		const liveShelf = (
+			good: (typeof COMMODITIES)[number],
+			economy: number,
+			station: ReturnType<typeof marketStationOf>,
+			stationKey: ReturnType<typeof carrierKey>,
+			deficits: DeficitMap,
+		): number =>
+			shelfQuantity(
+				marketRow(good, economy, station, 0).quantity,
+				readDeficit(deficits, stationKey, good.name, 0),
+			);
+		const CHAIN = 4;
+		let tonnageFlown = 0;
+		let unitFlown = 0;
+		const refusals: string[] = [];
+		const tonnagePositive: string[] = [];
+		let unitPositive = 0;
+		let worstUnit = "";
+		let worstUnitCr = 0;
+		for (const type of ["trade", "refinery", "shipyard"] as const) {
+			const station = marketStationOf(
+				{ type, localCarrierId: `chain-${type}`, blackMarket: true },
+				0x51a7_10,
+			);
+			const key = carrierKey(0, `chain-${type}`);
+			for (const good of COMMODITIES) {
+				for (const economy of ALL_ECONOMIES) {
+					const openShelf = liveShelf(good, economy, station, key, {});
+					if (openShelf <= 0) continue;
+					for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+						const qty = Math.min(
+							good.unit === "t" ? HOLD_REFERENCE_T : 63,
+							openShelf,
+						);
+						if (qty <= 0) continue;
+						let commander = {
+							...newCommander(PLAYER_BASELINE_HULL),
+							credits: 10_000_000,
+							cargo: { [good.name]: qty },
+						};
+						let deficits: DeficitMap = {};
+						let totalCr = 0;
+						let complete = true;
+						for (let c = 0; c < CHAIN && complete; c++) {
+							const start = commander.credits;
+							const sold = transactAtStation(
+								input({
+									commander,
+									deficits,
+									station,
+									stationKey: key,
+									economy,
+									displayTL: tl,
+									// **Explicit on both legs.** Without a quantity a sale
+									// takes one unit, and "sell a hold, buy a hold" becomes
+									// "sell one, buy a hold back" — a different trade, whose
+									// net would look closed for the wrong reason.
+									action: {
+										type: "sell-commodity",
+										commodity: good.name,
+										quantity: qty,
+									},
+								}),
+							);
+							if (!sold.accepted) {
+								refusals.push(
+									`${good.name} ${type} e${economy} TL${tl} sell: ${sold.reason}`,
+								);
+								complete = false;
+								break;
+							}
+							const back = transactAtStation(
+								input({
+									commander: sold.commander,
+									deficits: sold.deficits,
+									station,
+									stationKey: key,
+									economy,
+									displayTL: tl,
+									action: {
+										type: "buy-commodity",
+										commodity: good.name,
+										quantity: qty,
+									},
+								}),
+							);
+							if (!back.accepted) {
+								refusals.push(
+									`${good.name} ${type} e${economy} TL${tl} buy: ${back.reason}`,
+								);
+								complete = false;
+								break;
+							}
+							totalCr += back.commander.credits - start;
+							commander = back.commander;
+							deficits = back.deficits;
+						}
+						if (!complete) continue;
+						// Cargo in equals cargo out, or the net is not a round trip.
+						expect(commander.cargo[good.name]).toBe(qty);
+						const label = `${good.name} ${type} e${economy} TL${tl}`;
+						if (good.unit === "t") {
+							tonnageFlown++;
+							if (totalCr > 0.0001)
+								tonnagePositive.push(
+									`${label}: +${totalCr.toFixed(2)} Cr over ${CHAIN} chained cycles`,
+								);
+						} else {
+							unitFlown++;
+							if (totalCr > 0.0001) {
+								unitPositive++;
+								if (totalCr > worstUnitCr) {
+									worstUnitCr = totalCr;
+									worstUnit = label;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		expect({ tonnageFlown, refusals, tonnagePositive }).toEqual({
+			// Pinned, so a shrink in coverage is a red run and an empty `positive` cannot
+			// be the empty result of flying nothing.
+			tonnageFlown: 4_410,
+			refusals: [],
+			tonnagePositive: [],
+		});
+		// **The residue is a figure, not a shrug.** Pinned because it is a claim in §10.3,
+		// and a claim that moves silently is how a leak gets called a residue.
+		expect({
+			unitFlown,
+			unitPositive,
+			worstUnit,
+			worstUnitCr: worstUnitCr.toFixed(2),
+		}).toEqual({
+			unitFlown: 1_080,
+			unitPositive: 720,
+			worstUnit: "Platinum shipyard e0 TL1",
+			worstUnitCr: "4410.00",
+		});
 	});
 
 	test("the metals cycle survives the floor, by 1,064.70 Cr, and is named", () => {

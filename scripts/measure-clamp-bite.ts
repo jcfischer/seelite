@@ -31,13 +31,19 @@
  * separately and printed separately; the row's own denominator is the number of
  * rows priced, so neither figure is ever a share of the other's population.
  *
- * **The shape #13 warned about is there, at a fiftieth of the magnitude, and the
- * table says where.** Over 40 worlds the cut dies on 0.5% of priced rows, and the
- * share is *not* flat: 2.5% at TL 1, 0.7% at TL 5, nothing at all from TL 8 up. So
- * the bite is concentrated at the rim — where the cheap markets are, which is where
- * §3's floor already pins a mid — exactly the "dies where that type lives" shape
- * that cost #13 forty-six percent of a shipyard population. Two things make it
- * tolerable rather than merely small. The population it dies in is the one where the
+ * **What this table is evidence about, and what it is not.** Over 40 worlds the cut
+ * dies on 0.5% of priced rows. The per-tech-level share is not flat (2.5% at TL 1, 0.7%
+ * at TL 5, nothing from TL 8 up), and that slope used to be read here as the cut's grade
+ * biting the rim. **It is not.** A flat cut erases the same 8,760 rows as the graded one
+ * — 584 at every tech level, every one pinned at one price step — so the TL column here
+ * reports *which markets exist at which tech level*, not how hard the ladder bites. The
+ * claim this instrument does carry is the per-**type** table: 1.9% of a refinery's rows
+ * against 0.0% at a trade station and 0.0% at a shipyard, which is #13's shape (a
+ * per-type offset dying where the type lives) at a fiftieth of its size. An earlier
+ * revision printed the rim reading as the conclusion at the bottom of its own output;
+ * the spec withdrew it and this file did not, which is how a retracted claim survives in
+ * the place a reader trusts most. Two things make the residue tolerable rather than
+ * merely small. The population it dies in is the one where the
  * round trip nets nothing anyway, because the floor that swallows the spread
  * swallows the deficit's mark on the way through `stockResponse` — the row in
  * `tests/market.test.ts` §5.6 flies that on every row of the whole table and finds
@@ -259,14 +265,26 @@ for (const [type, acc] of [...cutByType.entries()].sort())
 			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(20),
 	);
 console.log(
-	"  the bite is a rim bite, not a flat one: #13's shape, at a fiftieth of its size. Every",
+	"  read the TL column as a mix, not as a grade: the cut dies at §3's floor, and a",
 );
 console.log(
-	"  row it bites is one §3 already pinned at one price step, and on those the round trip",
+	"  FLAT cut of any rung erases the same rows (8,760 either way, 584 at every tech level,",
 );
 console.log(
-	"  nets nothing either — the floor swallows the deficit's mark on the way through",
+	"  every one pinned at one price step). What the per-type table does show is #13's",
 );
 console.log(
-	"`stockResponse` — which `tests/market.test.ts` §5.6 flies row by row.",
+	"  shape — a per-type offset dying where the type lives — at a fiftieth of its size:",
+);
+console.log(
+	"  1.9% of a refinery's rows against 0.0% at a trade station and 0.0% at a shipyard.",
+);
+console.log(
+	"  On every erased row the round trip nets nothing either, because the floor swallows",
+);
+console.log(
+	"  the deficit's mark on the way through `stockResponse` — which `tests/market.test.ts`",
+);
+console.log(
+	"  §5.6 checks row by row, at the sell-first order and the baseline hold.",
 );

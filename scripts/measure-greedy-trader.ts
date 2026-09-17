@@ -495,8 +495,11 @@ const assertFlownArmCut = (
 ): void => {
 	for (const midCr of [1, 2.37, 100, 632.4]) {
 		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-			const want =
-				Math.round(Math.max(PRICE_STEP_CR, midCr * (1 - cut(tl))) * 10) / 10;
+			// The step itself, not a transcription: a guard that copies `× 10 / 10` keeps
+			// passing when the display step changes and the arm it guards goes wrong.
+			const want = quantizeToDisplayStepCr(
+				Math.max(PRICE_STEP_CR, midCr * (1 - cut(tl))),
+			);
 			if (quote(midCr, tl).sellCr !== want)
 				throw new Error(
 					`arm "${name}" sells ${midCr.toFixed(2)} at TL ${tl} for ` +
@@ -767,21 +770,10 @@ const gradedMeanCheck = (mean: number): string => {
 /** Per-galaxy kit for the two graded arms at each rung, kept for the pair table. */
 const PAIRS: [number, ArmStats, ArmStats][] = [];
 for (const mean of [0.1, 0.15, 0.2, 0.3]) {
-	// Both graded arms are guarded against the dials they are built from before they
-	// print, so "the arms it flies are checked" is true of every row in this table and
-	// not only of the shipped one.
-	assertLadderArm(
-		`wide at high TL ${mean.toFixed(2)}`,
-		0,
-		gradeAt(mean),
-		false,
-	);
-	assertLadderArm(
-		`narrow at high TL ${mean.toFixed(2)}`,
-		0,
-		gradeAt(mean),
-		true,
-	);
+	// Both graded arms are guarded by `routeRow` on the quote they actually fly — the
+	// cut it claims at every tech level, and the one-sided ask. A second check built
+	// from the same dials would compare a formula to itself, so it is not here twice.
+
 	routeRow({ name: `flat ${mean.toFixed(2)}`, quote: uniformCut(mean) });
 	// **Named by arm, not by where they are thin.** These two bindings are the reason
 	// this file has constants for the names: a previous revision bound the wide arm to
@@ -825,18 +817,6 @@ console.log(
 		"ratio is not (§10.3 — it reports the option pools, not the economy).",
 );
 
-/**
- * The grade alone, at the shipped floor.
- *
- * **Why this is a separate ladder and not one more rung of the one above.** Every
- * arm of the matched-mean sweep changes the rim and the core together, so nothing
- * there can attribute anything to the *difference* between them: raising the grade
- * raises the mean with it, and the matched arm re-balances by lowering the base.
- * Holding `BID_CUT_FLOOR` where the game ships it and sweeping only the grade is
- * the one ladder that answers the question `BID_CUT_GRADE`'s docstring asks — what
- * does a wider rim-to-core spread cost a commander who has not been to the core
- * yet — because that commander trades at the rim end, where the floor holds still.
- */
 /**
  * **D4's question, at the level the game actually runs at.**
  *
@@ -888,6 +868,18 @@ console.log(
 	);
 }
 
+/**
+ * The grade alone, at the shipped floor.
+ *
+ * **Why this is a separate ladder and not one more rung of the one above.** Every
+ * arm of the matched-mean sweep changes the rim and the core together, so nothing
+ * there can attribute anything to the *difference* between them: raising the grade
+ * raises the mean with it, and the matched arm re-balances by lowering the base.
+ * Holding `BID_CUT_FLOOR` where the game ships it and sweeping only the grade is
+ * the one ladder that answers the question `BID_CUT_GRADE`'s docstring asks — what
+ * does a wider rim-to-core spread cost a commander who has not been to the core
+ * yet — because that commander trades at the rim end, where the floor holds still.
+ */
 console.log("\n§5.6 — the grade alone, floor held at its shipped value");
 console.log(
 	"  grade  rim → core      kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",

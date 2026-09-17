@@ -479,6 +479,19 @@ export const DISPLAY_TL_MAX = 15;
  * `tests/station-commerce.test.ts` §5.6 walks the tonnage roster through the
  * shipped calculator, so the claim is the till's and not the comment's.
  *
+ * **And the sentence is true of a market the trader has not already moved.** Chained
+ * cycles at one console stay shut (4,410 chains of four, none positive), because a cycle
+ * hands the mark straight back. But a *dump* first — sell two holds in without buying
+ * them back, then cycle — leaves the console 40 units short of a price, and a hold sold
+ * into a depressed market is quoted off that depression while the buy-back is the same
+ * depression with no cut on it. Measured: **737 of 20,925 such cycles clear, the worst by
+ * +40.00 Cr** (Luxuries, a refinery, economy 3, TL 1, two holds thrown first). The floor
+ * that closes that door is the 0.315 one §5.6 already prices and declines for costing the
+ * trade loop, so this is a residue with a known price on it, not an unknown one, and
+ * `tests/station-commerce.test.ts` pins all three figures. Throwing two holds away is not
+ * free — that is why 40 Cr is a residue and not a living — but the claim a comment makes
+ * has to be the claim the instrument measured.
+ *
  * **What that leaves open is the sub-tonne case, and it is reported rather than
  * hidden.** Sixty-three **units** of Platinum is 0.2 t of cargo — Platinum
  * because it is the cheapest of the three metals and so the last one a cut prices
@@ -677,6 +690,12 @@ export const quantizeToDisplayStepCr = (cr: number): number => {
  */
 export const quoteWithCut = (
 	cutAtTl: (displayTL: number) => number,
+	// **The knob is the law's own precision rule, which §10.3's taxonomy re-flies
+	// without it.** A reviewer asked for it out of the shipped API, and the alternative is
+	// a helper that rebuilds this body — the floor and the step — which is exactly how a
+	// test starts disagreeing with the law it means to vary (round 6 caught one of those).
+	// One optional dial, whose default *is* the shipped quote, keeps the comparison honest
+	// and the law single-sourced.
 	{ quantize = true }: { quantize?: boolean } = {},
 ): QuoteFn => {
 	const step = (cr: number): number =>

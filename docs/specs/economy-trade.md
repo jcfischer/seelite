@@ -921,6 +921,37 @@ print money and not a maximum. Note the cliff: 48,450 tonnage cycles are open at
 0.090 and none survive 0.100, so the floor is not merely *a* cut that helps, it is
 the step.
 
+**Two markets the survey above does not visit, and what each one turns out to do.** The
+corpus seeds a fresh deficit map per cycle — every realized dock is its own epoch — which
+leaves two questions a review round was right to call unmeasured. Both are now measured
+through `transactAtStation` on **one shared map**, in `tests/station-commerce.test.ts`:
+
+| the situation | flown | clear | worst |
+| --- | --- | --- | --- |
+| four chained cycles, mark handed back each cycle — **tonnage** | 4,410 | **0** | — |
+| the same over **sub-tonne** goods | 1,080 | **720** | Platinum, shipyard, e 0, TL 1: +4,410.00 Cr over four cycles |
+| one cycle on a market already sold into (2 holds thrown first) — **tonnage** | 20,925 | **737** | Luxuries, refinery, e 3, TL 1: **+40.00 Cr** |
+
+**Chaining does not reopen the tonnage pump.** A cycle hands the mark straight back — sell
+a hold, buy it back, and the station is where it started — so the fourth cycle faces the
+same market as the first, and 4,410 of them net nothing. **A dump does.** Sell two holds in
+and keep them sold, and the console sits 40 units short of a price; a third hold sold into
+that depression is quoted off it, while the buy-back is the same depression with no cut on
+it. 737 such cycles clear, worst by **+40.00 Cr**. The floor that shuts that door is the
+**flat 0.315** rung §5.6 already prices as "closes the pump completely and costs the trade
+loop": the identical sweep gives **0 positive** there. So the price of closing this residue
+is known and declined for a stated reason, which makes it a decision rather than a surprise,
+and `market.ts` now says the closure it claims is closure **at a market the trader has not
+already moved**.
+
+**And 40 Cr is a residue rather than a living because the dump is not free.** Throwing two
+holds away means selling them into a falling market at the depression you are paying to
+create; the figures above are the cycle's net alone, which is the narrower and more
+favourable reading, and the section states them as that. Against the ordinary loop's
+206-399 Cr/min it is small, and against the named 1,064.70 Cr residue above it is the same
+family — an exploit that costs cargo to open. What makes it worth a paragraph is that the
+constant's sentence was wider than the survey, not that 40 Cr threatens the economy.
+
 **A quote is a whole number of tenths, and that is a law rather than a rendering
 choice.** `priceLabel` prints `toFixed(1)`, so while the till charged the
 unquantized figure a commander reading `5.3 Cr` was being paid 5.31 — #193's defect
