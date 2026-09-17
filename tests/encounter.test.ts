@@ -17,9 +17,14 @@ import {
 	cruiseTurnRate,
 } from "../src/interdiction";
 import { RAIDER_OUT_OF_BEAM_KM, raiderAtDrop } from "../src/duel";
+import { FLEE_HULL_FRACTION } from "../src/combat-enemy";
 import { HULL_SPECS } from "../src/hull";
 import { legEncounter, raiderSlots } from "../src/raider-slots";
-import { PULSE_LASER, fullCondition } from "../src/ship-condition";
+import {
+	CRIPPLED_HULL_FRACTION,
+	PULSE_LASER,
+	fullCondition,
+} from "../src/ship-condition";
 import { ASSIST_CAP_KMS, flightPerformance } from "../src/sim";
 import {
 	type Vec3,
@@ -378,9 +383,15 @@ describe("the relay's dial on the leg (node #43)", () => {
 // encounter had no exit. The exit is now the beam's own reach.
 // ---------------------------------------------------------------------------
 
-/** The raider's hull just under §2's crippled share, at the game's own scale.
- *  A share in three rows and a number in one is how a retune passes unnoticed. */
-const CRIPPLED_RAIDER_HULL = 0.19 * HULL_SPECS.raider.integrity;
+/** The raider's hull for the rout rows: below both shares that matter, derived
+ *  from the exports rather than spelled as a number. A literal would stay green
+ *  through a retune of either share while quietly stopping to test a crippled
+ *  raider fleeing. `FLEE_HULL_FRACTION` is the sim's nerve for turning to run and
+ *  `CRIPPLED_HULL_FRACTION` §2's shield-recharge gate; past both. */
+const CRIPPLED_RAIDER_HULL =
+	0.95 *
+	Math.min(CRIPPLED_HULL_FRACTION, FLEE_HULL_FRACTION) *
+	HULL_SPECS.raider.integrity;
 
 /** The playtest's state at a chosen gap: shields spent, hull under #53's flee
  *  nerve (a fifth) and under §2's crippled share (a quarter), running away at

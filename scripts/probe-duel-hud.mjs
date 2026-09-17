@@ -515,10 +515,11 @@ for (const viewport of VIEWPORTS) {
 	const rout = await page.evaluate(() => {
 		const g = window.__seelite;
 		const D = window.__duel;
-		/** A fifth of its hull: under #53's nerve, so it runs, and under §2's
-		 *  crippled share, so nothing it rebuilds is paid for by a bank that has
-		 *  stopped buying shields. Held here every frame, so a kill is impossible
-		 *  and the only way this fight can end is by letting go. */
+		/** A fifth of its hull, held there every frame: below #53's nerve the
+		 *  raider turns and runs, and below §2's share its bank stops buying
+		 *  shields, which is the crippled state the playtest reached. A kill is
+		 *  impossible from here, so the only way this fight can end is letting go.
+		 */
 		const PINNED_HULL = 15;
 		let shaped = false;
 		let lastGap = null;
@@ -567,10 +568,13 @@ for (const viewport of VIEWPORTS) {
 		rout.released &&
 			rout.lastHitGap !== null &&
 			rout.releaseGap !== null &&
-			// Alive in every frame the fight was live, so this is a release and
-			// not a kill wearing its clothes; and hit first, or "the beam stopped
-			// landing" would be where the fight started.
-			rout.minHullSeen > 0 &&
+			// Hit first, or "the beam stopped landing" would be where the fight
+			// started. `minHullSeen` is printed and not asserted: the hull is
+			// re-pinned every frame, so it cannot reach zero and a guard on it
+			// would be a guard on the probe's own arithmetic. That the fight
+			// ended by letting go rather than by a kill is held by construction —
+			// a kill needs a strike through `applyDamage`, and there is none — and
+			// the headless row in `tests/encounter.test.ts` reads `end` directly.
 			rout.lastHitGap > 1 &&
 			rout.releaseGap > rout.lastHitGap &&
 			// One frame of the raider's top speed is 0.2 km, so half a kilometre is
@@ -581,16 +585,7 @@ for (const viewport of VIEWPORTS) {
 			rout.releaseGap - rout.lastHitGap < 0.5,
 		JSON.stringify(rout),
 	);
-	// **D1's glass half has no browser row, and one was built, flown and
-	// removed.** It pinned the raider at 2.5 hull, read `cueRender.enemyLine`
-	// down through the walk, and asserted no live ship printed 0. Flown against
-	// the build before #367 it stayed green: the walk stops at 0.7 either way,
-	// because the sub-half-point band is exactly what the new law makes
-	// unreachable, so a page can only show it by surviving a strike that the old
-	// rounding would have printed as 0 — and surviving it is the thing the law
-	// forbids. A row that cannot go red is not evidence. `HULL 0 on the glass` is
-	// held headlessly by `tests/duel-hud.test.ts`, keyed on the print, and those
-	// rows were seen red against the old `applyDamage`.
+	// **D1 has no browser row.** Its state — a live hull that prints 0 — is one
 
 	// -------------------------------------------------------------------------
 	// Peace again: the reset ends the encounter, and every surface goes.

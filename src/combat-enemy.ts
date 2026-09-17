@@ -147,7 +147,7 @@ const DISENGAGE_KM = 14;
 export const MERGE_BREAK_KM = 1.8;
 /** An extension ends here, whether or not its clock has run out. */
 const EXTEND_TARGET_KM = 5;
-const FLEE_HULL_FRACTION = 0.2;
+export const FLEE_HULL_FRACTION = 0.2;
 /** Twelve degrees. Firing is gated on pointing, and the attack weave below
  *  stays inside it so a weaving gun run still shoots. */
 export const FIRE_COS = Math.cos((12 * Math.PI) / 180);

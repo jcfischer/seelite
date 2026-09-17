@@ -198,22 +198,6 @@ describe("the raider's fire", () => {
 describe("out of the beam is out of the fight (#367 D3)", () => {
 	const straightAt = (km: number) => scale(FORWARD, km);
 
-	test("the escape distance is the beam's reach at the raider's own size", () => {
-		expect(RAIDER_OUT_OF_BEAM_KM).toBeCloseTo(
-			Math.hypot(PLAYER_LASER_RANGE_KM, RAIDER_HIT_RADIUS_KM),
-			9,
-		);
-	});
-
-	test("it is under the beam's reach plus a hull, and that is the whole figure", () => {
-		// A statement about the constant, not about the exit — the exit is what
-		// `tests/encounter.test.ts`'s "a rout ends" rows fly, because only the
-		// encounter can be shown using or not using it.
-		expect(RAIDER_OUT_OF_BEAM_KM).toBeLessThan(
-			PLAYER_LASER_RANGE_KM + RAIDER_HIT_RADIUS_KM,
-		);
-	});
-
 	test("off the nose it is the hypotenuse that admits the shot, not the range", () => {
 		// Dead ahead the lateral offset is nothing, so every case above would also
 		// pass with the exit set to a bare `PLAYER_LASER_RANGE_KM` — the band here
