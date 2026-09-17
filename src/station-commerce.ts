@@ -4,6 +4,11 @@
  * Rendering supplies actions; `Game` owns applying an accepted result.  This
  * module only calculates a complete next state, so a refusal cannot leave
  * credits, cargo, or the station's deficit half-updated.
+ *
+ * **It is where §5.6's bid cut is charged.** The screen prints a quote and the
+ * till spends one, and both call the same `marketQuote` — the defect this split
+ * invites (#193's `0 Cr` Food row) is a screen formatting a figure the till
+ * never agreed to, so the two go through one function rather than one rule each.
  */
 import type { CarrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
@@ -13,9 +18,11 @@ import {
 	FUEL_CR_PER_LY,
 	type Commodity,
 	type MarketStation,
+	type QuoteFn,
 	type UniversalItem,
 	commodity,
 	listsCommodity,
+	marketQuote,
 	marketRow,
 	shelfQuantity,
 	stockResponse,
@@ -172,9 +179,21 @@ const availableEquipment = (
 		displayTL: input.displayTL,
 	}).available.filter((item) => item.per === "unit");
 
-/** Returns either untouched input references or one complete replacement. */
+/**
+ * One transaction at one console, priced end to end. Returns either untouched
+ * input references or one complete replacement.
+ *
+ * **`quote` is the second parameter and the game never passes it**, for the same
+ * reason `marketRowAt` takes a `ByteClose` and §8.6's screen takes a `MarketRowFn`:
+ * the law #7 ratified — no wedge, one price, both directions — was *ratified*, and
+ * a rejected arm that cannot be flown is a claim rather than a measurement. The
+ * control row in `tests/station-commerce.test.ts` flies this same sweep with
+ * `NO_WEDGE` and must still net a profit, or the closure row above it reports the
+ * shape of its own instrument.
+ */
 export function transactAtStation(
 	input: StationCommerceInput,
+	quote: QuoteFn = marketQuote,
 ): StationCommerceResult {
 	const { action } = input;
 	if (action.type === "buy-fuel") {
@@ -243,7 +262,12 @@ export function transactAtStation(
 		input.gameTimeMin,
 	);
 	const holdT = holdCapacityT(input.commander);
-	const priceCr = stockResponse(base.priceCr, deficit, holdT);
+	const midCr = stockResponse(base.priceCr, deficit, holdT);
+	// **The two directions are two prices now**, and picking between them here —
+	// rather than letting each branch read the figure it wants — is what keeps a
+	// sale from being charged the ask by a caller that took the wrong field.
+	const q = quote(midCr, input.displayTL);
+	const priceCr = action.type === "buy-commodity" ? q.buyCr : q.sellCr;
 	const shelf = shelfQuantity(base.quantity, deficit);
 	if (action.type === "buy-commodity") {
 		if (good.sellOnly) return rejected(input, "commodity-sell-only");

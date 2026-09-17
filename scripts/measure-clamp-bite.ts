@@ -13,9 +13,54 @@
  * `src/system.ts`'s comment, and the committed test sweeps eight worlds where
  * the quoted number is forty. One sweep, both numbers, reproducible.
  *
+ * §5.6's third column on this page: where does the *bid cut* die?
+ *
+ * #13's warning is that a modifier expressed on a bounded index gets clamped away
+ * where that index's population lives, and §5.6's cut is such a modifier — a
+ * grade spread across `displayTL`. So the same question gets the same instrument
+ * rather than a sentence: over the rows the generator actually prices, what share
+ * of them end up with no spread at all, and does the share climb at one end of the
+ * index?
+ *
+ * **The population is a realized row, not a table cell**: one good, at one
+ * station, in one system, at game time zero. `spreadless` counts the rows where
+ * `marketQuote` returns two equal columns, which happens when §3's price floor has
+ * already pinned the mid at one price step — `max(PRICE_STEP_CR, mid × (1 − cut))`
+ * then returns the mid itself and the cut has nothing to bite. That is a different
+ * thing from §3.2's offset being swallowed by a clamp, and the two are counted
+ * separately and printed separately; the row's own denominator is the number of
+ * rows priced, so neither figure is ever a share of the other's population.
+ *
+ * **The shape #13 warned about is there, at a fiftieth of the magnitude, and the
+ * table says where.** Over 40 worlds the cut dies on 0.5% of priced rows, and the
+ * share is *not* flat: 2.5% at TL 1, 0.7% at TL 5, nothing at all from TL 8 up. So
+ * the bite is concentrated at the rim — where the cheap markets are, which is where
+ * §3's floor already pins a mid — exactly the "dies where that type lives" shape
+ * that cost #13 forty-six percent of a shipyard population. Two things make it
+ * tolerable rather than merely small. The population it dies in is the one where the
+ * round trip nets nothing anyway, because the floor that swallows the spread
+ * swallows the deficit's mark on the way through `stockResponse` — the row in
+ * `tests/market.test.ts` §5.6 flies that on every row of the whole table and finds
+ * no pump surviving on an erased row. And the realized rate agrees with the
+ * whole-table rate the test pins (0.54% of 1,566,720 cells against 0.5% of these
+ * 1.8M rows), from two populations that share only the mechanism.
+ *
+ *   bun run scripts/measure-clamp-bite.ts [worldCount]
  *   bun run scripts/measure-clamp-bite.ts [worldCount]
  */
 
+import {
+	BID_CUT_FLOOR,
+	BID_CUT_GRADE,
+	COMMODITIES,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
+	listsCommodity,
+	marketQuote,
+	PRICE_STEP_CR,
+	marketRow,
+	marketStationOf,
+} from "../src/market";
 import {
 	ALL_GALAXIES,
 	forEachSystem,
@@ -103,4 +148,122 @@ console.log(
 		.sort((a, b) => a[0] - b[0])
 		.map(([e, n]) => `${e}: ${n}`)
 		.join(" · ")}`,
+);
+
+// --- §5.6 — the bid cut's own bite ------------------------------------------
+// The paragraph that explains this section is in the module docstring above,
+// because it is about what the two populations on this page are, not about the
+// rows below.
+
+/**
+ * Per-tech-level accumulator for the cut's own bite.
+ *
+ * **`spreadless` and `pinnedAtStep` are one population printed as two.** A bid can
+ * come back equal to the ask only where §3's floor has already pinned the mid, so
+ * the two columns agree to the row and always will. They are kept apart because they
+ * answer different questions — "did the spread survive?" and "was this row already
+ * at the floor?" — and a reader of the first alone cannot tell a swallowed cut from
+ * an uncuttable row. Should they ever disagree, that equality is the thing that
+ * broke.
+ */
+interface SpreadAcc {
+	rows: number;
+	spreadless: number;
+	pinnedAtStep: number;
+	/** Sum of `(ask − bid) / ask`, so a printed mean spread is a mean of realized
+	 *  rows rather than of the table's declared endpoints. */
+	spreadSum: number;
+}
+
+const cutByTl = new Map<number, SpreadAcc>();
+const cutByType = new Map<string, SpreadAcc>();
+const accFor = (
+	table: Map<number | string, SpreadAcc>,
+	key: number | string,
+): SpreadAcc => {
+	let acc = table.get(key);
+	if (!acc) {
+		acc = { rows: 0, spreadless: 0, pinnedAtStep: 0, spreadSum: 0 };
+		table.set(key as number, acc);
+	}
+	return acc;
+};
+
+let cutRows = 0;
+let cutSpreadless = 0;
+let cutPinned = 0;
+
+for (const world of worlds) {
+	forEachSystem(world, ALL_GALAXIES, (record, contents) => {
+		for (const station of contents.stations) {
+			const market = marketStationOf(station, record.seed);
+			for (const good of COMMODITIES) {
+				// §4's legality is a law about the shelf, and `marketRow` throws rather
+				// than price a good the station does not carry. A row that cannot be
+				// quoted is not a row where the cut died, so it is skipped rather than
+				// counted — and the denominator stays "rows priced".
+				if (!listsCommodity(good, market)) continue;
+				// Game time zero, the same instant every other row in this file is
+				// scored at. The fluctuation byte has not rolled, so this is the
+				// population of *base* prices rather than of one later epoch — which
+				// is the population §3's floor is a rule about.
+				const mid = marketRow(good, record.economy, market, 0).priceCr;
+				const quote = marketQuote(mid, record.displayTL);
+				const byTl = accFor(cutByTl, record.displayTL);
+				const byType = accFor(cutByType, station.type);
+				for (const acc of [byTl, byType]) {
+					acc.rows++;
+					acc.spreadSum += 1 - quote.sellCr / quote.buyCr;
+					if (quote.sellCr === quote.buyCr) acc.spreadless++;
+					if (quote.sellCr === PRICE_STEP_CR) acc.pinnedAtStep++;
+				}
+				cutRows++;
+				if (quote.sellCr === quote.buyCr) cutSpreadless++;
+				if (quote.sellCr === PRICE_STEP_CR) cutPinned++;
+			}
+		}
+	});
+}
+
+console.log("\n§5.6 — where the bid cut dies, over realized rows");
+console.log(
+	`  rows priced ${cutRows.toLocaleString()}   no spread at all ${pct(cutSpreadless, cutRows)}   pinned at one price step ${pct(cutPinned, cutRows)}`,
+);
+console.log(
+	`  table's own endpoints: cut ${BID_CUT_FLOOR.toFixed(3)} at TL${DISPLAY_TL_MIN}, ${(BID_CUT_FLOOR + BID_CUT_GRADE).toFixed(3)} at TL${DISPLAY_TL_MAX}`,
+);
+console.log(
+	"  TL   rows        no spread   pinned at step   mean realized spread",
+);
+for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+	const acc = cutByTl.get(tl);
+	if (!acc || acc.rows === 0) continue;
+	console.log(
+		`${String(tl).padStart(3)}   ${(acc.rows as number).toLocaleString()}`.padEnd(
+			16,
+		) +
+			`${pct(acc.spreadless, acc.rows)}`.padStart(13) +
+			`${pct(acc.pinnedAtStep, acc.rows)}`.padStart(16) +
+			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(23),
+	);
+}
+console.log("  by station type (the axis #13's warning was actually about):");
+for (const [type, acc] of [...cutByType.entries()].sort())
+	console.log(
+		`  ${type}`.padEnd(14) +
+			`${acc.rows.toLocaleString()}`.padStart(11) +
+			`${pct(acc.spreadless, acc.rows)}`.padStart(14) +
+			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(20),
+	);
+console.log(
+	"  the bite is a rim bite, not a flat one: #13's shape, at a fiftieth of its size. Every",
+);
+console.log(
+	"  row it bites is one §3 already pinned at one price step, and on those the round trip",
+);
+console.log(
+	"  nets nothing either — the floor swallows the deficit's mark on the way through",
+);
+console.log(
+	"`stockResponse` — which `tests/market.test.ts` §5.6 flies row by row.",
 );

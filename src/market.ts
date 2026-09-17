@@ -420,6 +420,185 @@ export const shelfQuantity = (
 		),
 	);
 
+/**
+ * The tech range the bid table is authored over, and the only reason
+ * `displayTL` is bounded anywhere in this module.
+ *
+ * `galaxy.ts` derives tech level as `techBonus + (economy ^ 7) + (government >>
+ * 1) + (government & 1) + 1`, which spans 1…15 arithmetically and — measured
+ * over a generated corpus in `tests/market.test.ts` — exactly that in practice,
+ * hitting both ends. The bounds are declared rather than derived because a
+ * *table* needs its domain named, and because the alternative is a clamp: #13's
+ * warning is that a modifier on a bounded index gets clamped away where that
+ * type lives, and a clamped `displayTL` would hand a station a cut no table
+ * declares. So the domain is checked and throws, and the corpus row is what
+ * makes the throw unreachable in play rather than merely asserted.
+ */
+export const DISPLAY_TL_MIN = 1;
+export const DISPLAY_TL_MAX = 15;
+
+/**
+ * §5.6: the floor of the bid cut, which the rim carries.
+ *
+ * **It is `PRICE_ELASTICITY`, and the road to that figure runs through a number
+ * this module used to carry instead.** The first version was
+ * `PRICE_ELASTICITY × DEFICIT_SATURATION_RUNS` = 0.315, on the argument that the
+ * cut must exceed the deepest mark §5.2's memory can move a price, since §12's
+ * round trip harvests exactly that swing. The argument was sound and the figure
+ * is still right — `tests/market.test.ts` §5.6 sweeps the ladder and no cut
+ * below 0.315 leaves *every* cycle a loss.
+ *
+ * **And 0.315 is not shippable, which is #196's finding.** The §5.6 section of
+ * `scripts/measure-greedy-trader.ts` runs the honest trade loop — a trader that
+ * never visits a console twice in a row, so it is neither the pump nor rigged —
+ * against the cut ladder. At a mean cut of 0.3 that trader fails to reach the
+ * Combat Engine inside a four-hour session in six galaxies of eight, and stops
+ * finding a profitable hop at all in six of eight; at 0.15 it reaches it in every
+ * one. A spread that closes the pump by making ordinary trading unprofitable has
+ * not repaired the economy, it has cancelled it, and §8's time-to-kit goes the
+ * wrong way with it.
+ *
+ * **So the floor is the mark one full hold of ordinary tonnage leaves**, which is
+ * `PRICE_ELASTICITY × (holdT / holdT)` — that is, `PRICE_ELASTICITY`, exact at
+ * every hull in the roster, because no trade can move the deficit by more than
+ * the hold it was made in. A round trip at one console in Food, Textiles or
+ * Machines, goods whose units *are* tonnes, is then a loss at any station, any
+ * hull, in either order. `tests/market.test.ts` §5.6 counts those rows and
+ * `tests/station-commerce.test.ts` §5.6 walks the tonnage roster through the
+ * shipped calculator, so the claim is the till's and not the comment's.
+ *
+ * **What that leaves open is the sub-tonne case, and it is reported rather than
+ * hidden.** Sixty-three **units** of Gold is 0.2 t of cargo, and §5.2's memory is
+ * written in units: one purchase saturates a hull of 20 t or less, the swing is
+ * the full 0.315, and a Gold cycle still clears about a fifth of its working
+ * capital per click above this floor. That residue is #182's weak joint 14 — the
+ * sub-tonne goods saturating at a single purchase, which #182's D6 chose to
+ * preserve rather than re-anchor §5.4's farm calibration on. Closing it from the
+ * spread side costs the trade loop the figure above, so the cheaper lever is the
+ * unit the deficit is counted in, and §12 carries the joint.
+ * `tests/market.test.ts` §5.6 and `tests/station-commerce.test.ts` §5.6 both
+ * name the surviving rows, so a node that re-anchors the sub-tonne mark finds
+ * those rows red and knows what it closed.
+ */
+export const BID_CUT_FLOOR = PRICE_ELASTICITY;
+
+/**
+ * §5.6: how much wider a core market's cut is than a frontier one, in cut.
+ *
+ * **The direction is #191 D4's, and it was a measurement.** Both directions were
+ * argued in that node and neither won, so both arms were flown in
+ * `scripts/measure-greedy-trader.ts` at *matched mean cut* — a grade of twice
+ * the mean, so the two tables hold the same multiset of cuts in the other order
+ * and a difference between them is the direction rather than the level. Three
+ * readings agree, at every mean from 0.10 to 0.20:
+ *
+ * | mean cut | kit, narrow at rim | kit, wide at rim | mean dock radius |
+ * |---|---|---|---|
+ * | 0.10 | 50–77 min | 70–79 min | 0.683 vs 0.573 |
+ * | 0.15 | 51–84 min | 82–93 min | 0.784 vs 0.463 |
+ * | 0.20 | 61–115 min | 2 of 4 never | 0.800 vs 0.631 |
+ *
+ * Radius is the generator's normalised galactic distance, averaged over the
+ * systems a trader docked at, so 0 is the core and 1 the rim: narrow-at-the-rim
+ * pulls trade *outward*, and #191 D4 said the reading that decides is the route
+ * mix, not the hop ratio. §10.3 disqualifies the ratio — it reports the option
+ * pools, and `jumpOptions` enumerates eight systems while `intraOptions`
+ * enumerates one or two.
+ *
+ * **The independent argument points the same way, and it is not the destination's
+ * third verb.** §4's own table already loads the frontier with price *risk*: a
+ * TL 1 market's whole historical range is 3.3× its base against 1.92× at TL 15,
+ * which is why §4 exists as its own section. A spread is the other charge — the
+ * price of immediacy, not of movement — and loading the same markets with both
+ * double-charges the one thing they are already paying for. The core, where the
+ * range is narrow and the book is thick, is where a marginal tonne is worth
+ * least to the station buying it.
+ *
+ * **The grade itself is 0.15, which is the widest figure that costs the milestone
+ * nothing.** At 0.15 the shipped table takes the Combat Engine to 63–86 minutes
+ * across four galaxies against 52–82 with no spread at all, and no session
+ * stalls; the core end then pays 0.250 against the rim's 0.100, so a rim hop is
+ * still the cheap place to trade and a core hop still has to beat a margin worth
+ * having. It is a chosen figure — the direction above is measured, the span is
+ * not — and §12 carries the retune as §8's obligation, because the only thing
+ * that would make it wrong is a change to what a margin is worth.
+ */
+export const BID_CUT_GRADE = 0.15;
+
+/** Loud rather than clamped — see `DISPLAY_TL_MIN`'s header for why. */
+export const requireDisplayTl = (displayTL: number): number => {
+	if (
+		!Number.isInteger(displayTL) ||
+		displayTL < DISPLAY_TL_MIN ||
+		displayTL > DISPLAY_TL_MAX
+	)
+		throw new Error(
+			`displayTL ${displayTL} is outside the spread table's domain ` +
+				`(${DISPLAY_TL_MIN}…${DISPLAY_TL_MAX}, economy-trade.md §5.6)`,
+		);
+	return displayTL;
+};
+
+/**
+ * A station's bid cut at one tech level, strictly above `BID_CUT_FLOOR` at
+ * every point of the domain.
+ *
+ * Strictly, because *at* the floor the binding cycle nets exactly zero — no
+ * profit, but no cost either — and a market that pays the floor is a place the
+ * pump breaks even rather than loses. The `+ 1` in the numerator is what keeps
+ * the core end off it: the cheapest market in the game pays the floor plus
+ * `BID_CUT_GRADE / 15`, and the dearest pays the floor plus a whole grade.
+ *
+ * **It is a cut on the *bid* and nothing else, which is a ruling rather than a
+ * default** — see `marketQuote`.
+ */
+export const bidCutAtTl = (displayTL: number): number =>
+	BID_CUT_FLOOR +
+	BID_CUT_GRADE *
+		((requireDisplayTl(displayTL) - DISPLAY_TL_MIN + 1) /
+			(DISPLAY_TL_MAX - DISPLAY_TL_MIN + 1));
+
+/**
+ * The two prices one market quotes for one good, and the only place the spread
+ * is applied.
+ *
+ * **The ask is the mid, unchanged.** That asymmetry is #191 D1 read as it was
+ * written — *a station buys lower than it sells* — and it is also the cheapest
+ * closure available, because a round trip crosses the wedge once whichever end it
+ * starts at and so pays the *sum* of the two sides. Measured in
+ * `scripts/measure-greedy-trader.ts` §5.6: a cut of 0.100 on the bid alone closes
+ * every tonnage round trip at one console, while splitting the same closure needs
+ * 0.053 a side — a total wedge of 0.105 — and buys the extra half-point by taking
+ * money out of what the player *pays*, which #191 D1 declined to do. Keeping
+ * `buyCr === midCr` is also what lets §3's floor and M6's delta arrow keep
+ * describing a price the player is actually charged, rather than a mid nobody
+ * trades at.
+ *
+ * **Floored after the cut, not before.** §3's floor is a rule about the price a
+ * player pays, and the cut changes that price; a row the floor already pins at
+ * one price step cannot be cut further. That erasure is real and counted —
+ * `tests/market.test.ts` pins how many domain rows lose their cut to it, and
+ * that none of them still carries a pump, because the floor swallows the
+ * deficit's mark on the way through `stockResponse` too.
+ *
+ * **Injectable at both call sites for one reason**: #7's no-wedge law was
+ * ratified and has to stay runnable to be measurable, the way `BELL_WRAP` and
+ * `fixedReferenceResponse` are. The game never passes anything but this.
+ */
+export interface MarketQuote {
+	/** What the commander pays this station for one unit. */
+	buyCr: number;
+	/** What this station pays the commander for one unit. */
+	sellCr: number;
+}
+
+export type QuoteFn = (midCr: number, displayTL: number) => MarketQuote;
+
+export const marketQuote: QuoteFn = (midCr, displayTL) => ({
+	buyCr: midCr,
+	sellCr: Math.max(PRICE_STEP_CR, midCr * (1 - bidCutAtTl(displayTL))),
+});
+
 // ---------------------------------------------------------------------------
 // §5.1 — station identity, and the market it derives
 // ---------------------------------------------------------------------------

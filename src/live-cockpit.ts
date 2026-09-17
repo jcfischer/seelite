@@ -1217,8 +1217,16 @@ export class LiveCockpit {
 		const row = (entry: ConsoleMarketRow) => {
 			const name = escapeHtml(entry.commodity.name);
 			if (!entry.listed)
-				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
-			const price = priceLabel(entry.priceCr ?? 0);
+				return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="false"><span>${name}</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span><span class="lc-station-cell">—</span></div>`;
+			// **Two prices, both through `priceLabel`** (§5.6, #191 D3). The BUY
+			// column is the market's own figure and the SELL column is that less the
+			// station's cut, so the spread is something the commander reads rather
+			// than discovers in the ledger. #193's rule covers both: a base price is a
+			// multiple of `PRICE_STEP_CR` and a responded one is a multiple of
+			// nothing, so either one rounded to whole credits is a number the till
+			// will not honour.
+			const buy = priceLabel(entry.buyCr ?? 0);
+			const sell = priceLabel(entry.sellCr ?? 0);
 			const stock = `${entry.quantity ?? 0} ${escapeHtml(entry.commodity.unit)}`;
 			const priceDelta =
 				entry.priceDeltaCr === undefined
@@ -1231,9 +1239,9 @@ export class LiveCockpit {
 			const actions = entry.commodity.sellOnly
 				? `<button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`
 				: `<button class="lc-station-action" type="button" data-live-station-action="buy-commodity" data-live-station-name="${name}">BUY</button><button class="lc-station-action" type="button" data-live-station-action="sell-commodity" data-live-station-name="${name}">SELL</button>`;
-			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell">${price}${priceDelta}</span><span class="lc-station-cell">${stock}${stockDelta}</span><span>${actions}</span></div>`;
+			return `<div class="lc-station-row" data-live-market-row="${name}" data-live-listed="true"><span>${name}</span><span class="lc-station-cell" data-live-buy>${buy}${priceDelta}</span><span class="lc-station-cell lc-station-bid" data-live-sell>${sell}</span><span class="lc-station-cell" data-live-shelf>${stock}${stockDelta}</span><span>${actions}</span></div>`;
 		};
-		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">PRICE</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
+		return `<div class="lc-station-market" data-live-station-market><div class="lc-station-row lc-station-head"><span>GOOD</span><span class="lc-station-cell">BUY</span><span class="lc-station-cell">SELL</span><span class="lc-station-cell">SHELF</span><span>ACTION</span></div>${rows.map(row).join("")}</div>`;
 	}
 
 	private equipment(

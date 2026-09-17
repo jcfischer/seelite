@@ -15,9 +15,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { carrierKey } from "../src/carrier-key";
 import {
 	COMMODITIES,
 	type Commodity,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
 	HOLD_REFERENCE_T,
@@ -26,6 +29,7 @@ import {
 	MARKET_PERIOD_MIN,
 	UNIVERSAL_GATE_CAP,
 	UNIVERSAL_ITEMS,
+	bidCutAtTl,
 	listsCommodity,
 	marketRow,
 	marketStationOf,
@@ -38,6 +42,7 @@ import {
 	LARGE_CARGO_BAY_BONUS_T,
 	commanderHold,
 	newCommander,
+	transactAtStation,
 } from "../src/station-commerce";
 import {
 	flightFloorVisible,
@@ -51,6 +56,14 @@ import {
 } from "../src/station-console";
 
 const ECONOMY = 3;
+/**
+ * The tech level this file draws its screens at.
+ *
+ * Named rather than inlined at six call sites because §5.6's cut is a function of
+ * it, and a test that quotes a price and a test that quotes a cut have to agree
+ * on which market they are talking about.
+ */
+const SCREEN_TL = 8;
 
 const stationOf = (
 	type: "trade" | "refinery" | "shipyard",
@@ -82,6 +95,8 @@ test("obligation 3: the builder calls marketRow only where listsCommodity is tru
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT: HOLD_REFERENCE_T,
+
+				displayTL: SCREEN_TL,
 			},
 			(commodity, economy, s, gameTimeMin) => {
 				asked.push(commodity.name);
@@ -112,6 +127,8 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 			gameTimeMin: 0,
 			deficitOf: noDeficit,
 			holdT: HOLD_REFERENCE_T,
+
+			displayTL: SCREEN_TL,
 		});
 		expect(rows.length).toBe(COMMODITIES.length);
 		expect(rows.map((r) => r.commodity.name)).toEqual(
@@ -120,7 +137,8 @@ test("M5: seventeen rows at every station, priced iff the station lists the good
 		for (const row of rows) {
 			// The biconditional §8.6 obligation 2 asks for, not the constant 14.
 			expect(row.listed).toBe(listsCommodity(row.commodity, station));
-			expect(row.priceCr !== undefined).toBe(row.listed);
+			expect(row.buyCr !== undefined).toBe(row.listed);
+			expect(row.sellCr !== undefined).toBe(row.listed);
 			expect(row.quantity !== undefined).toBe(row.listed);
 		}
 	}
@@ -154,6 +172,8 @@ test("obligation 4: a non-zero deficit carries a signed delta, a zero one carrie
 		gameTimeMin: 0,
 		deficitOf: moved(good.name, 12),
 		holdT: HOLD_REFERENCE_T,
+
+		displayTL: SCREEN_TL,
 	});
 	const movedRow = rows.find((r) => r.commodity.name === good.name);
 	if (!movedRow) throw new Error("the moved good is not on the screen");
@@ -184,10 +204,12 @@ test("obligation 4: the delta is measured against this epoch's base, not the las
 			gameTimeMin,
 			deficitOf: moved(good.name, 12),
 			holdT: HOLD_REFERENCE_T,
+
+			displayTL: SCREEN_TL,
 		});
 		const row = rows.find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
-		expect(row.priceCr).toBeCloseTo(
+		expect(row.buyCr).toBeCloseTo(
 			stockResponse(base.priceCr, 12, HOLD_REFERENCE_T),
 			9,
 		);
@@ -451,9 +473,10 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 			gameTimeMin: 0,
 			deficitOf: moved(good.name, 12),
 			holdT,
+			displayTL: SCREEN_TL,
 		}).find((r) => r.commodity.name === good.name);
 		if (!row) throw new Error("the moved good is not on the screen");
-		return row.priceCr as number;
+		return row.buyCr as number;
 	};
 	// A bigger hold divides the same mark by more, so the same 12 t deficit moves
 	// the price less — the response is scale-free in the hold since #182.
@@ -470,8 +493,9 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 				gameTimeMin: 0,
 				deficitOf: noDeficit,
 				holdT,
-			}).find((r) => r.commodity.name === good.name) as { priceCr: number }
-		).priceCr;
+				displayTL: SCREEN_TL,
+			}).find((r) => r.commodity.name === good.name) as { buyCr: number }
+		).buyCr;
 	expect(unmarked(20)).toBe(unmarked(60));
 });
 
@@ -520,5 +544,101 @@ describe("the price column says what the player is charged", () => {
 		// delta that did not.
 		expect(priceLabel(12.6)).toBe("12.6 Cr");
 		expect(signedDelta(0.4, 1)).toBe("↑0.4");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// §5.6 — the row carries two prices, and the cut is the tech level's
+// ---------------------------------------------------------------------------
+
+describe("§5.6 the market row shows what the station pays as well as what it asks", () => {
+	/** One row, at one tech level, with no mark on the market. */
+	const rowAt = (name: string, displayTL: number, station = TRADE) => {
+		const rows = stationMarketScreen({
+			station,
+			economy: ECONOMY,
+			gameTimeMin: 0,
+			deficitOf: noDeficit,
+			holdT: HOLD_REFERENCE_T,
+			displayTL,
+		});
+		const row = rows.find((r) => r.commodity.name === name);
+		if (!row) throw new Error(`${name} is not on the screen`);
+		return row;
+	};
+
+	test("the two columns are the market price and that price less the cut", () => {
+		const good = priceyGood(TRADE);
+		const row = rowAt(good.name, SCREEN_TL);
+		const mid = marketRow(good, ECONOMY, TRADE, 0).priceCr;
+		// The buy column is the market's own figure, unchanged — #191 D1's
+		// asymmetry, and the cheapest closure measured.
+		expect(row.buyCr).toBe(mid);
+		expect(row.sellCr).toBe(
+			Math.max(PRICE_STEP_CR, mid * (1 - bidCutAtTl(SCREEN_TL))),
+		);
+		// And they are two numbers rather than one printed twice, which is what
+		// makes the spread a thing the commander reads (#191 D3).
+		expect(row.sellCr).toBeLessThan(row.buyCr as number);
+	});
+
+	test("a frontier station cuts less than a core one, at the same console", () => {
+		// The direction #191 D4 handed to a measurement, asserted where the player
+		// sees it. A row the floor pins would read equal in both, so this uses the
+		// good `priceyGood` exists to find.
+		const good = priceyGood(TRADE);
+		expect(rowAt(good.name, DISPLAY_TL_MIN).sellCr).toBeGreaterThan(
+			rowAt(good.name, DISPLAY_TL_MAX).sellCr as number,
+		);
+	});
+
+	test("both columns survive the floor as numbers, never as a rounded whole", () => {
+		// #193's obligation, widened to the column it did not cover: a base price
+		// is a multiple of `PRICE_STEP_CR` and a cut of one is a multiple of
+		// nothing, so the SELL column is the one most likely to be rendered as a
+		// tidy figure that no till would honour.
+		for (const displayTL of [DISPLAY_TL_MIN, SCREEN_TL, DISPLAY_TL_MAX])
+			for (const good of COMMODITIES) {
+				if (!listsCommodity(good, FENCE)) continue;
+				const row = rowAt(good.name, displayTL, FENCE);
+				for (const value of [row.buyCr, row.sellCr]) {
+					if (value === undefined) continue;
+					expect(value).toBeGreaterThanOrEqual(PRICE_STEP_CR);
+					expect(priceLabel(value)).toMatch(/\d\.\d Cr$/);
+				}
+			}
+	});
+
+	test("the screen and the till agree on both columns, at every tech level", () => {
+		// **The pair #193 was about.** The screen's quote and the figure the till
+		// charges are one function called with one set of arguments; this is the
+		// row that goes red if either side grows its own arithmetic.
+		for (const displayTL of [DISPLAY_TL_MIN, 8, DISPLAY_TL_MAX]) {
+			const commander = {
+				...newCommander(PLAYER_BASELINE_HULL),
+				credits: 1_000,
+				cargo: { Food: 5 },
+			};
+			const sold = transactAtStation({
+				commander,
+				deficits: {},
+				station: TRADE,
+				stationKey: carrierKey(0, "station-trade"),
+				economy: ECONOMY,
+				gameTimeMin: 0,
+				displayTL,
+				action: { type: "sell-commodity", commodity: "Food" },
+			});
+			expect(sold.accepted).toBe(true);
+			// The *delta* is the printed column, not the balance, and the precision
+			// is what a subtraction off a capital leaves: the till arrives at 3.51 by
+			// subtracting from 1,000 Cr and the screen by multiplying, and those two
+			// routes differ in the eleventh digit. A tighter pin here would be a pin
+			// on IEEE-754, and a looser one would let a real drift through.
+			expect(sold.commander.credits - commander.credits).toBeCloseTo(
+				rowAt("Food", displayTL).sellCr as number,
+				9,
+			);
+		}
 	});
 });

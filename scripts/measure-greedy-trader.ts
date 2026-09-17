@@ -29,7 +29,22 @@
  * sweep incapable of differing in the way #25's three riggings did.
  */
 
-import { HOLD_REFERENCE_T } from "../src/market";
+import {
+	BID_CUT_FLOOR,
+	BID_CUT_GRADE,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
+	PRICE_STEP_CR,
+	type QuoteFn,
+	bidCutAtTl,
+	HOLD_REFERENCE_T,
+	marketQuote,
+} from "../src/market";
+import {
+	type WorstCycle,
+	NO_WEDGE,
+	surveyConsoleCycles,
+} from "../tests/helpers/console-cycle";
 import {
 	DOCK_SECONDS,
 	finite,
@@ -249,4 +264,224 @@ const modelled = results.reduce(
 console.log(
 	`\nmodelled time as a share of the total: ${((100 * modelled) / Math.max(totalMin, 1e-9)).toFixed(1)}% ` +
 		"— the rest is the generator's own geometry, estimated by `legSeconds`.",
+);
+
+// ---------------------------------------------------------------------------
+// §5.6 — the bid cut: what it closes, and what it costs to close it
+// ---------------------------------------------------------------------------
+
+/**
+ * **This section exists because #196 asked for both ends and not one.** *Closed
+ * has to mean measured-at-zero rather than smaller-than-before* — that is the
+ * closure ladder below, flown through the game's own `transactAtStation`. And a
+ * cut that closes a pump is only worth shipping if the honest trade loop still
+ * runs, which is the direction sweep under it. One engine holds both, so the
+ * figure that closes the hole cannot be quoted without the figure that prices it.
+ *
+ * **Determinism, stated once.** Every arm here is a pure function of the world
+ * seed and its own parameters, so a same-build control is bit-identical and a
+ * "noise floor" would be theatre. The comparisons that mean something are
+ * therefore against *matched* arms: the no-wedge law for "did the spread change
+ * anything", and a flat spread at the same mean cut for "was it the direction or
+ * merely the level". What is *not* controlled is the sample — four galaxies is
+ * four draws, and the spread across them is printed as a range rather than
+ * smoothed into a mean so the thinness stays visible.
+ */
+const TL_SPAN = DISPLAY_TL_MAX - DISPLAY_TL_MIN + 1;
+
+/** One-sided, uniform in tech level: the shape the closure ladder needs. */
+const uniformCut =
+	(cut: number): QuoteFn =>
+	(mid) => ({
+		buyCr: mid,
+		sellCr: Math.max(PRICE_STEP_CR, mid * (1 - cut)),
+	});
+
+/**
+ * The shipped law's shape with two dials: `base` at the rim, `+grade` at the
+ * core, or mirrored when `wideAtRim`.
+ *
+ * The shipped table is `spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false)`, and the
+ * row below checks exactly that against `bidCutAtTl` before any arm is flown —
+ * otherwise the report's "shipped" row could quietly be a re-implementation,
+ * which is §4's scope note's whole objection to an instrument with its own rules.
+ */
+const spreadArm = (
+	base: number,
+	grade: number,
+	wideAtRim: boolean,
+): QuoteFn => {
+	// The same offset `bidCutAtTl` uses — one-based over the span — because the
+	// "shipped" row below has to *be* the shipped table, and the guard under this
+	// function is what says whether it is. The mirror takes the complementary
+	// offset, which is the same multiset of cuts in the other order: matched mean by
+	// construction, so a difference between the two rows is the direction and not
+	// the level.
+	const position = (tl: number) =>
+		(wideAtRim ? DISPLAY_TL_MAX - tl + 1 : tl - DISPLAY_TL_MIN + 1) / TL_SPAN;
+	return (mid, tl) => ({
+		buyCr: mid,
+		sellCr: Math.max(PRICE_STEP_CR, mid * (1 - base - grade * position(tl))),
+	});
+};
+
+const shippedMatchesTheLaw = (): boolean => {
+	const arm = spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE, false);
+	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+		const viaArm = arm(100, tl).sellCr;
+		const viaLaw = marketQuote(100, tl).sellCr;
+		if (Math.abs(viaArm - viaLaw) > 1e-12) return false;
+	}
+	return true;
+};
+
+const bindingRow = (row: WorstCycle): string =>
+	`${row.cycle.good.name}/${row.cycle.hull} e${row.cycle.economy} ` +
+	`${row.cycle.type} TL${row.cycle.displayTL} ${row.cycle.arm} ` +
+	`(${row.units} u @ ${row.midCr.toFixed(2)} Cr)`;
+
+console.log("\n§5.6 — the console round trip, cut swept");
+if (!shippedMatchesTheLaw())
+	console.log(
+		"  ** the report's arms no longer agree with `marketQuote` — the rows below " +
+			"measure a spread the game does not ship. **",
+	);
+console.log(
+	"  cut     tonnage cycles open   sub-tonne cycles open   best surviving cycle",
+);
+for (const cut of [0, 0.05, 0.075, 0.09, 0.1, 0.15, 0.2, 0.315]) {
+	const s = surveyConsoleCycles(uniformCut(cut));
+	console.log(
+		`${cut.toFixed(3).padStart(7)}   ` +
+			`${s.positiveByTonnage.tonnage}`.padStart(22) +
+			`${s.positiveByTonnage.subTonnes}`.padStart(23) +
+			`   ${s.positiveRows === 0 ? "—" : bindingRow(s.worst)}`,
+	);
+}
+const shippedSurvey = surveyConsoleCycles(marketQuote);
+console.log(
+	`  shipped  ` +
+		`${shippedSurvey.positiveByTonnage.tonnage}`.padStart(21) +
+		`${shippedSurvey.positiveByTonnage.subTonnes}`.padStart(23) +
+		`   ${shippedSurvey.positiveRows === 0 ? "—" : bindingRow(shippedSurvey.worst)}`,
+);
+console.log(
+	`  cut at the rim ${BID_CUT_FLOOR.toFixed(3)}, at the core ${bidCutAtTl(DISPLAY_TL_MAX).toFixed(3)}; ` +
+		`rows flown ${shippedSurvey.rows.toLocaleString()}; ` +
+		// A zero off §3's floor is the row where the cut and the mark cancel at exactly
+		// one tech level — a crossing rather than an error. Named with its count
+		// because a bare zero count cannot tell the two apart, and 270 of these 344 are
+		// floored rows where §3 swallows the cut whole.
+		`${shippedSurvey.zeroRows} net nothing, of which ` +
+		`${shippedSurvey.zeroRowsOffTheFloor} are not on a row §3's floor pins.`,
+);
+
+/**
+ * The smallest cut with no profitable tonnage cycle, by bisection.
+ *
+ * Bisection rather than a ladder because the answer is a *step* in a monotone
+ * predicate and a ladder reports the last rung it tried. The bracket is printed
+ * with the figure so the resolution is part of the claim: `<= 1e-3` is the width
+ * the search was allowed to leave, not a claim about the constants.
+ */
+const closingCut = (
+	arm: (x: number) => QuoteFn,
+): { cr: number; width: number } => {
+	const closes = (x: number): boolean =>
+		surveyConsoleCycles(arm(x)).positiveByTonnage.tonnage === 0;
+	let lo = 0;
+	let hi = 0.6;
+	if (!closes(hi)) return { cr: Number.NaN, width: Number.NaN };
+	while (hi - lo > 1e-3) {
+		const mid = (lo + hi) / 2;
+		if (closes(mid)) hi = mid;
+		else lo = mid;
+	}
+	return { cr: hi, width: hi - lo };
+};
+
+console.log("\n§5.6 — what closure costs, one-sided against split");
+const oneSidedClosing = closingCut((x) => uniformCut(x));
+const splitClosing = closingCut((x) => (mid) => ({
+	buyCr: mid * (1 + x),
+	sellCr: Math.max(PRICE_STEP_CR, mid * (1 - x)),
+}));
+console.log(
+	`  one-sided, cut on the bid alone: closes at ${oneSidedClosing.cr.toFixed(3)} ` +
+		`(±${oneSidedClosing.width.toFixed(3)}) — total wedge ${oneSidedClosing.cr.toFixed(3)}`,
+);
+console.log(
+	`  split across both columns: closes at ${splitClosing.cr.toFixed(3)} each side ` +
+		`(±${splitClosing.width.toFixed(3)}) — total wedge ${(2 * splitClosing.cr).toFixed(3)}`,
+);
+console.log(
+	"  so the split form costs more of the player's margin for the same closure, and it " +
+		"raises what the BUY column charges, which #191 D1 declined to do.",
+);
+
+console.log("\n§5.6 — direction, at matched mean cut");
+console.log(
+	"  arm                kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",
+);
+const routeRow = (name: string, quote: QuoteFn): void => {
+	const milestone = WORLDS.map(({ world }) => run(world, hours, { quote }));
+	const rateRuns = WORLDS.map(({ world }) =>
+		run(world, hours, { quote, stopAtKit: false }),
+	);
+	const kits = milestone
+		.map((r) => r.kitAffordableAtMinutes)
+		.filter((k): k is number => k !== null);
+	const rates = rateRuns.map((r) => r.earnedCr / Math.max(r.minutes, 1e-9));
+	const bands = [0, 0, 0];
+	let docks = 0;
+	let radius = 0;
+	let stalled = 0;
+	for (const r of rateRuns) {
+		for (const tl of r.dockTl) {
+			bands[tl <= 5 ? 0 : tl <= 10 ? 1 : 2]++;
+			docks++;
+		}
+		for (const t of r.dockProfileT) radius += t;
+		// A run that stops hunting has stopped trading, and its share of the mix
+		// below is a claim about a halt rather than about an economy.
+		if (r.stalled) stalled++;
+	}
+	console.log(
+		`  ${name}`.padEnd(21) +
+			(kits.length === WORLDS.length
+				? `${Math.min(...kits).toFixed(0)}-${Math.max(...kits).toFixed(0)} min`
+				: `${kits.length}/${WORLDS.length} in cap`
+			).padEnd(19) +
+			`${Math.min(...rates).toFixed(0)}-${Math.max(...rates).toFixed(0)}`.padEnd(
+				11,
+			) +
+			`${bands.map((n) => ((100 * n) / Math.max(docks, 1)).toFixed(0)).join("/")}`.padEnd(
+				26,
+			) +
+			`${(radius / Math.max(docks, 1)).toFixed(3)}` +
+			(stalled ? `   stalled ${stalled}/${WORLDS.length}` : ""),
+	);
+};
+routeRow("no wedge (control)", NO_WEDGE);
+// The ladder runs to 0.30 rather than stopping at the shipped mean because the
+// question this section answers is not only "which direction" but "at what level
+// does the honest loop stop being an economy" — the number that decides whether a
+// deeper floor is affordable. It is printed at the same matched-mean width as the
+// rest, so the last rung is comparable to the rows above it and not a separate
+// claim.
+for (const mean of [0.1, 0.15, 0.2, 0.3]) {
+	routeRow(`flat ${mean.toFixed(2)}`, uniformCut(mean));
+	// A grade of `2 × mean` puts the *average* of the graded table at `mean`, so
+	// narrow and wide differ in direction and not in how much they take.
+	routeRow(`narrow at rim ${mean.toFixed(2)}`, spreadArm(0, 2 * mean, false));
+	routeRow(`wide at rim ${mean.toFixed(2)}`, spreadArm(0, 2 * mean, true));
+}
+routeRow("shipped table", marketQuote);
+console.log(
+	"  radius is the generator's normalised galactic distance — 0 is the core, 1 the rim — " +
+		"averaged over the systems a trader actually docked at.",
+);
+console.log(
+	"  #191 D4's direction is decided off these rows: the mix is the reading, and the hop " +
+		"ratio is not (§10.3 — it reports the option pools, not the economy).",
 );

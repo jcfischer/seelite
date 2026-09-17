@@ -68,8 +68,13 @@ function measureConsole() {
 			name: row.getAttribute("data-gallery-market-row"),
 			listed: row.getAttribute("data-gallery-listed") === "true",
 			illegal: Boolean(row.querySelector("[data-gallery-illegal]")),
-			price:
-				row.querySelector("[data-gallery-price]")?.textContent?.trim() ?? null,
+			// **Two prices, not one.** #191 D3 ruled the spread visible rather than
+			// folded into a midpoint, so the row that used to carry a single
+			// `data-gallery-price` now carries both columns — and a probe reading one
+			// figure would be reading a build that quietly went back to one.
+			buy: row.querySelector("[data-gallery-buy]")?.textContent?.trim() ?? null,
+			sell:
+				row.querySelector("[data-gallery-sell]")?.textContent?.trim() ?? null,
 			priceDelta:
 				row.querySelector("[data-gallery-price-delta]")?.textContent?.trim() ??
 				null,
@@ -237,13 +242,15 @@ for (const station of ["trade", "fence", "yard"]) {
 		measured.rows.every(
 			(row) =>
 				row.listed === expectListed(row) &&
-				(row.price !== null) === expectListed(row),
+				(row.buy !== null) === expectListed(row) &&
+				(row.sell !== null) === expectListed(row),
 		),
 		measured.rows
 			.filter(
 				(row) =>
 					row.listed !== expectListed(row) ||
-					(row.price !== null) !== expectListed(row),
+					(row.buy !== null) !== expectListed(row) ||
+					(row.sell !== null) !== expectListed(row),
 			)
 			.map((row) => row.name)
 			.join(", "),
@@ -251,6 +258,29 @@ for (const station of ["trade", "fence", "yard"]) {
 	check(
 		`2: ${station} ${station === "fence" ? "needs no" : "names its"} not-traded block`,
 		measured.notTradedHead === (station !== "fence"),
+	);
+	// **#191 D3's browser-tier half, in the loop that already visits every station.**
+	// Here rather than in a pass of its own because this loop is what leaves the page
+	// on a named station, and a second pass of clicks would hand obligation 12 a
+	// console for a station it does not expect. And in the *browser* tier because no
+	// headless row can see a second column: what is asserted is that a player at a
+	// market screen is shown two prices, rather than a midpoint with the wedge taken
+	// invisibly somewhere in the arithmetic.
+	const priced = measured.rows.filter((row) => row.listed);
+	const cr = (text) => Number.parseFloat(text ?? "");
+	const under = priced.filter((row) => cr(row.sell) < cr(row.buy));
+	const margins = priced.map((row) => 1 - cr(row.sell) / cr(row.buy));
+	check(
+		`§5.6: ${station} shows every listed row's bid below its ask`,
+		priced.length > 0 &&
+			under.length === priced.length &&
+			priced.every((row) => cr(row.sell) > 0),
+		// The spread *range* is printed, not just the count, because a row whose bid
+		// has been cut down to §3's price step has no spread left at all — and a check
+		// that only counts rows with the bid under the ask would pass a build where
+		// the wedge had vanished on every cheap good.
+		`${under.length}/${priced.length} with the bid under the ask, spread ` +
+			`${(100 * Math.min(...margins)).toFixed(1)}–${(100 * Math.max(...margins)).toFixed(1)}%`,
 	);
 }
 

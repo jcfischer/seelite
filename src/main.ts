@@ -10631,6 +10631,10 @@ class Game {
 				// roster so the screen and the till cannot disagree about whether
 				// a Large Cargo Bay counts.
 				holdT: commanderHold(this.commander).capacityT,
+				// The system's tech level, which is what §5.6's cut is a function
+				// of. Read from the same record the transaction reads it from, so
+				// the quote on the glass is the quote the till charges.
+				displayTL: this.world.system.record.displayTL,
 			}),
 			equipment: stationEquipmentScreen({
 				type: market.type,

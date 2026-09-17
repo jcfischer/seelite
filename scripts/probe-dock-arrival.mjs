@@ -853,7 +853,12 @@ const shelfTrade = await page.evaluate((foodAction) => {
 	const afterSell = hold();
 	const cells = [
 		...document.querySelectorAll(
-			'[data-live-market-row][data-live-listed="true"] > span:nth-child(3)',
+			// The shelf cell by hook, not by position. This was
+			// `> span:nth-child(3)`, and #196's second price column moved the shelf to
+			// fourth — a probe that counts cells reads whichever column happens to land
+			// on the number it was written against, which is how this line would go red
+			// on a build whose shelves are perfectly whole.
+			'[data-live-market-row][data-live-listed="true"] [data-live-shelf]',
 		),
 	].map((cell) => cell.firstChild?.textContent ?? "");
 	act("sell-commodity");

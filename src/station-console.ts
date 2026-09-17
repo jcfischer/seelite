@@ -35,7 +35,9 @@ import {
 	UNIVERSAL_ITEMS,
 	type UniversalItem,
 	listsCommodity,
+	marketQuote,
 	marketRow,
+	type QuoteFn,
 	shelfQuantity,
 	stockResponse,
 } from "./market";
@@ -96,19 +98,42 @@ export const flightFloorVisible = (phase: DockPhase): boolean =>
  * **exactly** where it is true. §8.6's obligation 2 is that biconditional, and
  * it is written that way rather than as the constant fourteen so a station type
  * that later drops a legal good fails on the rule instead of on a count.
+ *
+ * **The row carries two prices, because there are two.** §5.6's bid cut means a
+ * station's buying price and selling price are different numbers, and #191 D3
+ * ruled that the player reads both rather than one price with a hidden
+ * commission. The mid `stockResponse` scales is not one of these fields: it is
+ * not a price anyone is charged, and a row that carried it beside the two that
+ * are would be a third figure for a renderer to reconcile.
  */
 export interface ConsoleMarketRow {
 	commodity: Commodity;
 	/** `listsCommodity`. False rows are M5's **not traded here** block. */
 	listed: boolean;
-	/** Credits per unit *after* §5's stock response. Present iff `listed`. */
+	/** What the commander pays one unit, after §5's stock response. Present iff
+	 *  `listed`. §5.6's cut falls on the *bid* alone, so this is the market's own
+	 *  figure and M6's arrow describes the column it sits on. */
+	buyCr?: number;
 	priceCr?: number;
 	/** Units on the shelf after the deficit. Present iff `listed`. */
 	quantity?: number;
 	/**
+	 * What this station pays the commander for one unit — the buy column less
+	 * §5.6's cut. Present iff `listed`.
+	 *
+	 * **Both columns render through `priceLabel`**, which is #193's obligation
+	 * rather than a style note: every base price is a multiple of `PRICE_STEP_CR`
+	 * and a responded price is a multiple of nothing, so rounding either to whole
+	 * credits prints a lie the till then charges the player against. That defect
+	 * survived because every test read the number and none read the string.
+	 */
+	sellCr?: number;
+	/**
 	 * **M6:** the signed distance from what this station would otherwise quote
-	 * this epoch. Present iff the deficit is non-zero — an absent field is a row
-	 * the player has never moved, which is what makes the arrow mean something.
+	 * this epoch, measured on the market's own figure — the number the buy column
+	 * shows, since the ask is the mid by §5.6's ruling. Present iff the deficit
+	 * is non-zero — an absent field is a row the player has never moved, which is
+	 * what makes the arrow mean something.
 	 *
 	 * **It can be `0`, and so can the shelf delta beside it.** §3's floor pins
 	 * the cheapest rows at `PRICE_STEP_CR` and applies to the responded price
@@ -142,6 +167,16 @@ export interface StationMarketScreenInput {
 	/** #6's clock, in game minutes. */
 	gameTimeMin: number;
 	/**
+	 * The system's tech level, which is what §5.6's cut is a function of.
+	 *
+	 * **Required and not defaulted**, the way `holdT` on this same input is: a
+	 * screen that defaulted it would draw one grade of cut at every station in the
+	 * galaxy, and the whole point of the table is that a frontier quote and a core
+	 * quote differ. `StationCommerceInput.displayTL` is the same argument at the
+	 * till, and the till is the half that has to agree with what this drew.
+	 */
+	displayTL: number;
+	/**
 	 * §5.2's signed units for one good at this station, already decayed.
 	 *
 	 * A reader rather than the map itself, because the screen does not care how
@@ -173,8 +208,9 @@ export interface StationMarketScreenInput {
 export function stationMarketScreen(
 	input: StationMarketScreenInput,
 	row: MarketRowFn = marketRow,
+	quote: QuoteFn = marketQuote,
 ): readonly ConsoleMarketRow[] {
-	const { station, economy, gameTimeMin, deficitOf, holdT } = input;
+	const { station, economy, gameTimeMin, deficitOf, holdT, displayTL } = input;
 	return COMMODITIES.map((commodity): ConsoleMarketRow => {
 		// §8.5.1: the test comes first. Asking for a price so the row can be
 		// greyed out throws at every non-fence station in the galaxy.
@@ -182,18 +218,25 @@ export function stationMarketScreen(
 			return { commodity, listed: false };
 		const base = row(commodity, economy, station, gameTimeMin);
 		const deficit = deficitOf(commodity.name);
-		const priceCr = stockResponse(base.priceCr, deficit, holdT);
+		const midCr = stockResponse(base.priceCr, deficit, holdT);
+		// **One call, two columns.** The till calls the same function with the same
+		// two arguments, which is the only thing that keeps this screen from being
+		// the #193 defect again: a quote the player reads and a figure the till
+		// charges, drifting apart.
+		const { buyCr, sellCr } = quote(midCr, displayTL);
 		const quantity = shelfQuantity(base.quantity, deficit);
-		if (deficit === 0) return { commodity, listed: true, priceCr, quantity };
+		if (deficit === 0)
+			return { commodity, listed: true, buyCr, sellCr, quantity };
 		return {
 			commodity,
 			listed: true,
-			priceCr,
+			buyCr,
+			sellCr,
 			quantity,
 			// Against *this* epoch's base, which is what `base` is: it was derived
 			// from the station's identity and the clock a line ago rather than
 			// remembered from the last visit.
-			priceDeltaCr: priceCr - base.priceCr,
+			priceDeltaCr: midCr - base.priceCr,
 			quantityDelta: quantity - base.quantity,
 		};
 	});
@@ -211,7 +254,7 @@ export function stationMarketScreen(
  * to an already-empty shelf.
  */
 /**
- * A shelf price as the player reads it.
+ * A quoted price as the player reads it — either column of the market row.
  *
  * **One decimal, and that is not a style choice.** `PRICE_STEP_CR` is 0.4 and a
  * base price is `closedPrice × PRICE_STEP_CR + offset × gradient ×
