@@ -522,33 +522,65 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 	// only has to walk the object it is given.
 	const CELLS: Record<
 		PadContext,
-		{ notHeld: PointerLockMove; held: PointerLockMove }
+		{
+			clear: { notHeld: PointerLockMove; held: PointerLockMove };
+			drawn: { notHeld: PointerLockMove; held: PointerLockMove };
+		}
 	> = {
 		// A click may take the lock here, and while it is held nothing gives it
 		// back: the forward view and the instrument, which keeps the lock for the
 		// reason it keeps the sticks — its panel is `pointer-events: none`, so a
 		// frame that exists to be measured while flown is still being flown.
-		flight: { notHeld: "capture", held: "keep" },
-		instrument: { notHeld: "capture", held: "keep" },
+		flight: {
+			clear: { notHeld: "capture", held: "keep" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		// **`instrument` + a drawn console is the cell round 5 found.**
+		// `readPadContext` answers `instrument` before it ever tests for a console, so
+		// the instrument can be focused over a console — the pad's `down` focuses it
+		// and its d-pad still turns the head, and `main.ts`'s chart comment records
+		// that combination as reachable. The overlay's own reason for keeping the
+		// mouse is that nothing on it can be clicked; behind it the console can, so
+		// the console wins. That is the principal's ruling on this node, and before it
+		// this cell read `keep` and left the console unclickable.
+		instrument: {
+			clear: { notHeld: "capture", held: "keep" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
 		// And here the pointer comes back, which is the whole of #371. Why the
-		// release is edge-triggered on `held` is `pointerLockMove`'s to say.
-		console: { notHeld: "at-rest", held: "release" },
-		modal: { notHeld: "at-rest", held: "release" },
+		// release is edge-triggered on `held` is `pointerLockMove`'s to say. Both
+		// branches answer the same because the context already fails the flight test:
+		// `readPadContext` derives `console` from the drawn console, so `clear` is
+		// unreachable from the game's own reads — kept because the *rule* still has to
+		// answer it, and a table that only holds reachable cells cannot say that.
+		console: {
+			clear: { notHeld: "at-rest", held: "release" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		modal: {
+			clear: { notHeld: "at-rest", held: "release" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
 	};
 
-	test("every context, held and not, and the same answer the flight rule gives", () => {
-		for (const [context, cells] of Object.entries(CELLS) as [
+	test("every context, drawn or clear, held or not — and the flight rule's own answer", () => {
+		for (const [context, byDrawn] of Object.entries(CELLS) as [
 			PadContext,
 			(typeof CELLS)[PadContext],
 		][]) {
-			expect(pointerLockMove(context, false)).toBe(cells.notHeld);
-			expect(pointerLockMove(context, true)).toBe(cells.held);
-			// The delegation is the claim, not an implementation detail: a new
-			// context that flies the ship and withholds the pointer, or the other
-			// way about, is the drift `contextFliesShip` was extracted to stop.
-			expect(pointerLockMove(context, false) === "capture").toBe(
-				contextFliesShip(context),
-			);
+			for (const drawn of [false, true]) {
+				const cells = drawn ? byDrawn.drawn : byDrawn.clear;
+				expect(pointerLockMove(context, drawn, false)).toBe(cells.notHeld);
+				expect(pointerLockMove(context, drawn, true)).toBe(cells.held);
+				// The delegation is the claim, not an implementation detail: a new
+				// context that flies the ship and withholds the pointer, or the other
+				// way about, is the drift `contextFliesShip` was extracted to stop. A
+				// drawn console is the one thing that overrules it, and that is the
+				// whole of the `&& !drawn` below.
+				expect(pointerLockMove(context, drawn, false) === "capture").toBe(
+					contextFliesShip(context) && !drawn,
+				);
+			}
 		}
 	});
 

@@ -368,8 +368,9 @@ export function contextFliesShip(context: PadContext): boolean {
 }
 
 /**
- * What to do with the pointer lock, given the context and whether the canvas
- * already holds it. **This is the argument; the call sites point here.**
+ * What to do with the pointer lock, given the context, whether a console is drawn,
+ * and whether the canvas already holds the pointer. **This is the argument; the
+ * call sites point here.**
  *
  * **The same rule as `contextFliesShip`, asked by the other half of the mouse
  * (#371).** A captured pointer does not only carry relative deltas: while the lock
@@ -384,18 +385,25 @@ export function contextFliesShip(context: PadContext): boolean {
  * Same predicate, not a second table, for the reason `contextFliesShip` itself
  * exists: this rule was written nowhere at all, so there was nothing to drift,
  * and the one place that did release the pointer — `commander-overlay.ts`, for its
- * own screen — was a habit rather than a rule. `instrument` keeps the lock for the
- * reason it keeps the sticks: its panel is `pointer-events: none`, so there is
- * nothing on it for a click to reach, and the frame it exists to measure is a
- * frame still being flown.
+ * own screen — was a habit rather than a rule.
+ *
+ * **And a drawn console wins, whatever the context says** (`consoleDrawn`, the
+ * principal's ruling on this node, asked because `readPadContext` answers
+ * `instrument` before it ever tests for a console). `instrument` keeps the mouse for
+ * one reason: its panel is `pointer-events: none`, so there is nothing on it for a
+ * click to reach. That reason runs out the moment a console is drawn under the
+ * overlay — the pad's `down` focuses the instrument and the d-pad's `1`/`2`/`3` still
+ * turn the head, so the combination is one a player reaches, and `main.ts`'s own
+ * chart comment records it. Then the overlay is transparent and the console behind it
+ * is not, and the click belongs to the console. Sticks aside: this is the pointer's
+ * rule only, so #283's instrument exception is untouched.
  *
  * **`capture` is permission for a click, not an instruction to make one.** The
  * browser grants a lock only from an activation-triggering event or after a
- * page-initiated exit, and it will not tolerate being asked on every frame:
- * measured on this repo's harness, **the fifth request inside about 1.3 seconds is
- * refused**, and the window outlasts one second though not 2.1 — see
- * `scripts/probe-pointer-lock.mjs`, which paces itself against exactly that. So
- * nothing downstream should read this name as licence to ask every frame. `release` is the only effect the game takes on its own, and it
+ * page-initiated exit, and it rate-limits being asked at all:
+ * `scripts/probe-pointer-lock.mjs` measures that window against its own click
+ * sequence and paces itself by it, and it — not this comment — owns the figures.
+ * So nothing downstream should read this name as licence to ask every frame. `release` is the only effect the game takes on its own, and it
  * is edge-triggered by `held`: once the pointer is back the row reads `at-rest`,
  * which is what keeps a frame loop from pounding the browser with an exit it has
  * already carried out — and covers the player's own Escape for free, whose release
@@ -403,9 +411,11 @@ export function contextFliesShip(context: PadContext): boolean {
  */
 export function pointerLockMove(
 	context: PadContext,
+	consoleDrawn: boolean,
 	held: boolean,
 ): PointerLockMove {
-	if (!contextFliesShip(context)) return held ? "release" : "at-rest";
+	if (!contextFliesShip(context) || consoleDrawn)
+		return held ? "release" : "at-rest";
 	return held ? "keep" : "capture";
 }
 

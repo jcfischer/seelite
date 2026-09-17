@@ -393,6 +393,42 @@ check(
 	`hit=${settingsRow?.hit} control=${settingsRow?.control} "${rowBefore}" → "${rowAfter}"`,
 );
 
+// ---------------------------------------------------------------------------
+// **The instrument over a console** — the case where the context says the mouse
+// flies the ship and a console is drawn anyway. `readPadContext` answers
+// `instrument` before it tests for a console, so this is not a hypothetical: the
+// pad's `down` focuses the frame instrument and its `1`/`2`/`3` still turn the
+// head. Sage, round 5, found that the shipped rule let the overlay keep a pointer
+// the console behind it needed, and the principal ruled that a drawn console wins.
+// On its own page with `?perf`, so the overlay touches nothing else measured here.
+// ---------------------------------------------------------------------------
+const inst = await browser.newPage({ viewport: { width: W, height: H } });
+watch(inst, "the instrument over a console");
+await inst.addInitScript(installFakePad);
+await inst.goto(gameUrl(origin, { seed: SEED, perf: "1" }), {
+	waitUntil: "load",
+});
+await bootedGame(inst);
+await clickGlass(inst);
+await pressPad(inst, "down");
+check(
+	"the d-pad's `down` puts the frame instrument in focus, which flies the ship",
+	(await surface(inst)) === "instrument" && (await canvasLock(inst)),
+	`ctx=${await surface(inst)} lock=${await lockHolder(inst)}`,
+);
+await inst.keyboard.press("3");
+await settle(inst);
+const over = await inst.evaluate(() => ({
+	ctx: window.__seelite.padContext(),
+	head: window.__seelite.headLook,
+	lock: document.pointerLockElement?.tagName ?? null,
+}));
+check(
+	"and the console drawn under that overlay still owns the pointer",
+	over.lock === null && over.ctx === "instrument" && over.head === "right",
+	`lock=${over.lock} ctx=${over.ctx} head=${over.head}`,
+);
+
 await browser.close();
 
 // ---------------------------------------------------------------------------

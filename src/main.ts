@@ -3398,9 +3398,13 @@ class Game {
 		// one, because a click can land in the same frame that drew the console it
 		// was aimed at and the cached answer is the frame's.
 		this.renderer.domElement.addEventListener("click", () => {
+			const consoleDrawn = this.consoleIsDrawn();
 			if (
-				pointerLockMove(this.readPadContext(), this.canvasHoldsLock()) !==
-				"capture"
+				pointerLockMove(
+					this.readPadContext(consoleDrawn),
+					consoleDrawn,
+					this.canvasHoldsLock(),
+				) !== "capture"
 			)
 				return;
 			// **A refusal is read, not thrown** — it is the ordinary case, not the
@@ -6110,6 +6114,10 @@ class Game {
 	 * than dressed up. Sage found both the stale claim and the inversion.
 	 */
 	private padContextThisFrame: PadContext = "flight";
+	// The drawn console beside it, for the same reason and with the same caveat: the
+	// pointer's rule wants this fact whether or not it owns the pad, and asking twice
+	// a frame would make a rendered-DOM read a per-frame cost twice.
+	private consoleDrawnThisFrame = false;
 
 	private padContext(): PadContext {
 		// Before the first poll there is no cached answer, so read the truth
@@ -6121,7 +6129,20 @@ class Game {
 			: this.padContextThisFrame;
 	}
 
-	private readPadContext(): PadContext {
+	/**
+	 * Whether a console is **drawn** — which is not the same question as which
+	 * context owns the pad, and the difference is the whole of #371's instrument
+	 * case: `readPadContext` answers `instrument` before it ever asks this.
+	 *
+	 * `hasFocusScope` reads the rendered DOM, so this cannot claim a console the
+	 * player is not looking at. One owner for both callers: the context below, and
+	 * `pointerLockMove`'s answer about the pointer.
+	 */
+	private consoleIsDrawn() {
+		return this.view === "cockpit" && this.liveCockpit.hasFocusScope();
+	}
+
+	private readPadContext(consoleDrawn = this.consoleIsDrawn()): PadContext {
 		if (this.commanderOverlay?.isOpen() || this.settingsPanel?.isOpen())
 			return "modal";
 		// The instrument takes what a side console takes — six controls — and
@@ -6136,9 +6157,7 @@ class Game {
 		// the forward wall and is the only thing on it. `hasFocusScope` reads
 		// the rendered DOM, so this cannot claim a console the player is not
 		// looking at.
-		return this.view === "cockpit" && this.liveCockpit.hasFocusScope()
-			? "console"
-			: "flight";
+		return consoleDrawn ? "console" : "flight";
 	}
 
 	/**
@@ -6158,9 +6177,10 @@ class Game {
 	 * Hand the pointer back whenever the drawn surface stops being one the mouse
 	 * flies (#371) — the frame's door onto `pointerLockMove`, which owns why.
 	 *
-	 * It reads `padContextThisFrame`, the answer `pollPad` took a moment earlier of
-	 * the rendered DOM, so this costs no query of its own and covers every surface
-	 * that has or gets a console rather than the four call sites that draw one.
+	 * It reads the two answers `pollPad` took a moment earlier of the rendered DOM —
+	 * the context and the drawn console — so this costs no query of its own and
+	 * covers every surface that has or gets a console rather than the four call sites
+	 * that draw one.
 	 *
 	 * **The Commander's overlay keeps its own release beside it, and that is not the
 	 * third copy this repo fights**: one rule, and this is the only place it is
@@ -6172,8 +6192,11 @@ class Game {
 	 */
 	private reconcilePointerLock() {
 		if (
-			pointerLockMove(this.padContextThisFrame, this.canvasHoldsLock()) ===
-			"release"
+			pointerLockMove(
+				this.padContextThisFrame,
+				this.consoleDrawnThisFrame,
+				this.canvasHoldsLock(),
+			) === "release"
 		)
 			document.exitPointerLock();
 	}
@@ -6371,7 +6394,8 @@ class Game {
 		// Read once, here, even with no pad attached: `step` and
 		// `hasControlInput` read the cached value, and a stale one would answer
 		// for a panel that has since closed.
-		this.padContextThisFrame = this.readPadContext();
+		this.consoleDrawnThisFrame = this.consoleIsDrawn();
+		this.padContextThisFrame = this.readPadContext(this.consoleDrawnThisFrame);
 		// **Told, not guessed, and told *after* the read.** The console cannot
 		// see which context owns the pad — `readPadContext` answers `instrument`
 		// and `modal` before it ever asks whether a console is drawn — so a panel
