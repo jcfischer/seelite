@@ -772,6 +772,12 @@ routeRow({ name: "no wedge (control)", quote: NO_WEDGE });
 // deeper floor is affordable. It is printed at the same matched-mean width as the
 // rest, so the last rung is comparable to the rows above it and not a separate
 // claim.
+// **The ladder holds the start fixed, on purpose.** Sweeping `startPolicy` alongside
+// every rung would give each row two moving dials at once, and this ladder's whole claim
+// is a comparison across rungs — which is the comparison that took three review rounds to
+// make honest. The start is swept where the start *is* the question, in §5.6's D4 section,
+// and the band that sweep prints is quoted there as the reason the rate columns anywhere
+// else in this file are read as agreement rather than as proof.
 const gradeAt = (mean: number): number => {
 	// **The mean of the graded table, computed rather than asserted.** With the
 	// offset running 0…1 the average of `position` over the domain is 1/2, so a grade
