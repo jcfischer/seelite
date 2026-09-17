@@ -257,6 +257,17 @@ export function stationMarketScreen(
  * to an already-empty shelf.
  */
 /**
+ * How many digits the glass can show, derived from the quote's own step.
+ *
+ * `PRICE_DISPLAY_STEP_CR` is the finest figure a quote can carry, and this is the
+ * finest figure the screen can print. They were two owners of one fact — a `toFixed(1)`
+ * here and a constant in `market.ts` — which is the #193 defect class waiting to be
+ * reinstated by someone changing one of them: at a hundredth-credit quote the console
+ * would print 3.5 while charging 3.51 again, and only a round-trip row would notice.
+ */
+const PRICE_LABEL_DIGITS = Math.round(-Math.log10(PRICE_DISPLAY_STEP_CR));
+
+/**
  * A quoted price as the player reads it — either column of the market row.
  *
  * **One decimal, and that is not a style choice.** `PRICE_STEP_CR` is 0.4 and a
@@ -277,18 +288,10 @@ export function stationMarketScreen(
  * this is one of §3's rules, both screens draw it, and the defect survived
  * because every test read `priceCr` and none read the string. A formatter in a
  * module that needs a DOM is a formatter no headless tier can hold.
- */
-/**
- * How many digits the glass can show, derived from the quote's own step.
  *
- * `PRICE_DISPLAY_STEP_CR` is the finest figure a quote can carry, and this is the
- * finest figure the screen can print. They were two owners of one fact — a `toFixed(1)`
- * here and a constant in `market.ts` — which is the #193 defect class waiting to be
- * reinstated by someone changing one of them: at a hundredth-credit quote the console
- * would print 3.5 while charging 3.51 again, and only a round-trip row would notice.
+ * **The digits are `PRICE_LABEL_DIGITS`, derived from the quote's own step, so the
+ * glass and the till cannot be set apart by a change to either.**
  */
-const PRICE_LABEL_DIGITS = Math.round(-Math.log10(PRICE_DISPLAY_STEP_CR));
-
 export const priceLabel = (priceCr: number): string =>
 	`${priceCr.toFixed(PRICE_LABEL_DIGITS)} Cr`;
 

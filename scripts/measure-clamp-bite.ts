@@ -42,7 +42,7 @@
  * swallows the deficit's mark on the way through `stockResponse` — the row in
  * `tests/market.test.ts` §5.6 flies that on every row of the whole table and finds
  * no pump surviving on an erased row. And the realized rate agrees with the
- * whole-table rate the test pins (0.56% of 1,566,720 (8,760 cells) cells against 0.5% of these
+ * whole-table rate the test pins (8,760 of 1,566,720 cells, 0.56%, against 0.5% of these
  * 1.8M rows), from two populations that share only the mechanism.
  *
  *   bun run scripts/measure-clamp-bite.ts [worldCount]

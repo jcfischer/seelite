@@ -362,9 +362,13 @@ const OPPOSING_ARM = "narrow at high TL";
  * the name. A width taken from the names cannot go stale when a name grows, which is
  * the same reason the names are constants.
  */
+/** The rung an arm's label carries. One owner, because the column width reads it. */
+const armRung = (floor: number, grade: number): string =>
+	` @ ${floor.toFixed(3)}/${grade.toFixed(3)}`;
+
 const ARM_LABEL_COL =
 	Math.max(SHIPPED_ARM.length, OPPOSING_ARM.length) +
-	" 0.00".length + // the rung suffix the graded rows append
+	armRung(0, 0.20047).length + // the suffix the graded rows append
 	2 + // the two-space indent
 	2; // slack, so no label ever touches the count
 
@@ -430,7 +434,6 @@ const assertFlownArms = () => {
 	// catches a mis-typed `spreadArm`, and once against `bidCutAtTl` itself, which is
 	// what makes the report's "shipped" row the shipped table rather than a close
 	// relative of it.
-	assertLadderArm(SHIPPED_ARM, BID_CUT_FLOOR, BID_CUT_GRADE, false);
 	// **The guard that can actually fail, and what it is for.** `bidCutAtTl` *is*
 	// `bidCutLadder` at the shipped constants, so a loop comparing those two could not
 	// throw and a comment calling it the one independent check was wrong — sage caught it,
@@ -477,6 +480,30 @@ const assertFlownArms = () => {
 		buy: 1.05,
 		sell: 0.95,
 	}));
+};
+/**
+ * The same claim as `assertLadderArm`, on the quote the trader will actually fly.
+ *
+ * `assertLadderArm` rebuilds an arm from the dials its caller already holds, which can
+ * only ever agree with itself. This checks a `QuoteFn` against a cut function: at every
+ * tech level the quote's sell must equal `mid × (1 − cut(tl))`, floored and quantized.
+ */
+const assertFlownArmCut = (
+	name: string,
+	quote: QuoteFn,
+	cut: (tl: number) => number,
+): void => {
+	for (const midCr of [1, 2.37, 100, 632.4]) {
+		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+			const want =
+				Math.round(Math.max(PRICE_STEP_CR, midCr * (1 - cut(tl))) * 10) / 10;
+			if (quote(midCr, tl).sellCr !== want)
+				throw new Error(
+					`arm "${name}" sells ${midCr.toFixed(2)} at TL ${tl} for ` +
+						`${quote(midCr, tl).sellCr.toFixed(2)}; the cut it claims says ${want.toFixed(2)}`,
+				);
+		}
+	}
 };
 
 const bindingRow = (row: WorstCycle): string =>
@@ -673,17 +700,43 @@ const formatArmStats = (s: ArmStats): string =>
 	s.radius.toFixed(3) +
 	(s.stalled ? `   stalled ${s.stalled}/${WORLDS.length}` : "");
 
-/** The direction table's printer: the arm's name, then everything measured. */
-const routeRow = (
-	name: string,
-	quote: QuoteFn,
-	pad = ARM_LABEL_COL,
-): ArmStats => {
-	const s = armStats(quote);
-	console.log(`  ${name}`.padEnd(pad) + formatArmStats(s));
+/**
+ * One arm, named and flown from the same three dials.
+ *
+ * **The name is derived, not typed.** Every directional row in this report used to be
+ * written as `routeRow("wide at high TL (shipped)", spreadArm(f, g, mirrored))`, where
+ * those two arguments were independent — so flipping `mirrored` changed what the trader
+ * experienced while leaving the row claiming the other law. Rounds 3, 4 and 5 each
+ * caught a variant of that. Here the label comes out of the flag that builds the quote,
+ * so the same flip *renames* the row: a mislabelled arm stops being a silent defect.
+ *
+ * The row also carries the cut it claims, so the guard below checks the quote the trader
+ * will actually fly rather than a fresh arm built from the numbers the guard already has.
+ */
+const armFor = (floor: number, grade: number, mirrored: boolean) => ({
+	name: `${mirrored ? OPPOSING_ARM : SHIPPED_ARM}${armRung(floor, grade)}`,
+	quote: spreadArm(floor, grade, mirrored),
+	cut: mirrored ? mirroredBidCut(floor, grade) : bidCutLadder(floor, grade),
+});
+
+type Arm = { name: string; quote: QuoteFn; cut?: (tl: number) => number };
+
+/** The direction table's printer. With an `armFor` arm, its two claims are checked. */
+const routeRow = (arm: Arm, labelWidth = ARM_LABEL_COL): ArmStats => {
+	// **Checked on the object being flown.** Where the arm carries a cut, the quote's bid
+	// has to land on it at every tech level; and every arm here is one-sided, which in
+	// this repo's names means `buyCr` — what the station charges — stays at the mid.
+	if (arm.cut) assertFlownArmCut(arm.name, arm.quote, arm.cut);
+	for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
+		if (Math.abs(arm.quote(100, tl).buyCr - 100) > 1e-9)
+			throw new Error(
+				`arm "${arm.name}" is not one-sided: it charges ${arm.quote(100, tl).buyCr.toFixed(2)} at TL ${tl}`,
+			);
+	const s = armStats(arm.quote);
+	console.log(`  ${arm.name}`.padEnd(labelWidth) + formatArmStats(s));
 	return s;
 };
-routeRow("no wedge (control)", NO_WEDGE);
+routeRow({ name: "no wedge (control)", quote: NO_WEDGE });
 // The ladder runs to 0.30 rather than stopping at the shipped mean because the
 // question this section answers is not only "which direction" but "at what level
 // does the honest loop stop being an economy" — the number that decides whether a
@@ -729,21 +782,15 @@ for (const mean of [0.1, 0.15, 0.2, 0.3]) {
 		gradeAt(mean),
 		true,
 	);
-	routeRow(`flat ${mean.toFixed(2)}`, uniformCut(mean));
+	routeRow({ name: `flat ${mean.toFixed(2)}`, quote: uniformCut(mean) });
 	// **Named by arm, not by where they are thin.** These two bindings are the reason
 	// this file has constants for the names: a previous revision bound the wide arm to
 	// `const narrow` and the narrow arm to `const wide`, and the per-galaxy table below
 	// printed each galaxy's shipped figure under the other arm's label. Nothing in the
 	// type system notices, and the prose that read the table said the opposite of the
 	// sweep.
-	const shipped = routeRow(
-		SHIPPED_ARM + ` ${mean.toFixed(2)}`,
-		spreadArm(0, gradeAt(mean), false),
-	);
-	const opposing = routeRow(
-		OPPOSING_ARM + ` ${mean.toFixed(2)}`,
-		spreadArm(0, gradeAt(mean), true),
-	);
+	const shipped = routeRow(armFor(0, gradeAt(mean), false));
+	const opposing = routeRow(armFor(0, gradeAt(mean), true));
 	PAIRS.push([mean, shipped, opposing]);
 	// Printed beside the rows it guards, because "matched mean" is an arithmetic
 	// claim and arithmetic that is only asserted in a comment goes wrong.
@@ -752,7 +799,7 @@ for (const mean of [0.1, 0.15, 0.2, 0.3]) {
 			`target ${mean.toFixed(2)})`,
 	);
 }
-routeRow("shipped table", marketQuote);
+routeRow({ name: "shipped table", quote: marketQuote, cut: bidCutAtTl });
 /** A session that never reached the kit is `null`, and the dash is the report's claim. */
 const kit = (minutes: number | null): string =>
 	minutes === null ? "—" : minutes.toFixed(0);
@@ -815,7 +862,7 @@ console.log(
 		[SHIPPED_ARM, marketQuote],
 		["mirror of the shipped dials", MIRRORED_SHIPPED],
 	];
-	const stats = arms.map(([name, quote]) => routeRow(name, quote));
+	const stats = arms.map(([name, quote]) => routeRow({ name, quote }));
 	console.log(
 		"  same floor and grade, ends swapped, so the mean is identical by construction: " +
 			`shipped pays ${(BID_CUT_FLOOR + BID_CUT_GRADE / 2).toFixed(3)} ` +

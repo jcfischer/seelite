@@ -968,29 +968,33 @@ and the direction was chosen on §4's double-charge argument and #191 D1's readi
 well as on these rows:
 
 ```
-  arm                            kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
-  no wedge (control)              52-82 min          291-430    25/59/16                  0.595
-  flat 0.10                       56-92 min          228-351    33/56/11                  0.631
-  wide at high TL (shipped) 0.10  47-72 min          309-425    50/42/8                   0.694
-  narrow at high TL 0.10          70-96 min          225-308    31/57/13                  0.612
-  flat 0.15                       62-93 min          214-318    38/51/11                  0.658
-  wide at high TL (shipped) 0.15  47-86 min          235-518    55/36/9                   0.735
-  narrow at high TL 0.15          68-119 min         163-286    19/63/18                  0.585
-  flat 0.20                       68-88 min          222-289    29/47/24                  0.537
-  wide at high TL (shipped) 0.20  50-96 min          200-681    88/12/0                   0.911
-  narrow at high TL 0.20          2/4 in cap         8-242      15/39/47                  0.465   stalled 2/4
-  flat 0.30                       1/4 in cap         0-198      26/52/22                  0.539   stalled 2/4
-  wide at high TL (shipped) 0.30  63-127 min         325-691    93/7/0                    0.922
-  narrow at high TL 0.30          1/4 in cap         0-174      1/53/46                   0.509   stalled 2/4
-  shipped table                   51-103 min         206-399    42/47/11                  0.676
+  arm                                      kit affordable     Cr/min   docks by TL 1-5-6-10-11-15   mean radius
+  no wedge (control)                       52-82 min          291-430    25/59/16                  0.595
+  flat 0.10                                56-92 min          228-351    33/56/11                  0.631
+  wide at high TL (shipped) @ 0.000/0.200  47-72 min          309-425    50/42/8                   0.694
+  narrow at high TL @ 0.000/0.200          70-96 min          225-308    31/57/13                  0.612
+  flat 0.15                                62-93 min          214-318    38/51/11                  0.658
+  wide at high TL (shipped) @ 0.000/0.300  47-86 min          235-518    55/36/9                   0.735
+  narrow at high TL @ 0.000/0.300          68-119 min         163-286    19/63/18                  0.585
+  flat 0.20                                68-88 min          222-289    29/47/24                  0.537
+  wide at high TL (shipped) @ 0.000/0.400  50-96 min          200-681    88/12/0                   0.911
+  narrow at high TL @ 0.000/0.400          2/4 in cap         8-242      15/39/47                  0.465   stalled 2/4
+  flat 0.30                                1/4 in cap         0-198      26/52/22                  0.539   stalled 2/4
+  wide at high TL (shipped) @ 0.000/0.600  63-127 min         325-691    93/7/0                    0.922
+  narrow at high TL @ 0.000/0.600          1/4 in cap         0-174      1/53/46                   0.509   stalled 2/4
+  shipped table                            51-103 min         206-399    42/47/11                  0.676
 ```
 
 Four galaxies per arm, so the range is four draws and not one sample; the
 instrument prints them per galaxy as well, shipped arm first
 (`kit by galaxy (wide at high TL (shipped) / narrow at high TL)`), because
 a range over four sessions is exactly the figure that hides one stalled session
-inside a healthy-looking span. The rung each pair is matched at is printed beside
-it as a guard — `mean cut of the graded table at this rung` against the target —
+inside a healthy-looking span. **Each graded row's label carries the two dials it
+flies** — floor and grade — because the label used to be a string the caller typed
+next to the arm it meant, and three review rounds each caught a variant of those two
+arguments disagreeing; now the name comes out of the flag that builds the quote, so
+flipping the direction renames the row. The rung each pair is matched at is printed
+beside it as a guard — `mean cut of the graded table at this rung` against the target —
 and reaches the target to four digits only because the ladder's endpoints sit on
 the constants; at the old `+1` offset the graded table's mean was 1/15 of a cut
 above the flat arm it was being compared to.
@@ -1029,7 +1033,7 @@ same quote step, same four worlds, same trader.
 | mirror of the shipped dials | 65-112 min | 176-298 | 34/56/10 | 0.648 | 80 / 112 / 65 / 75 |
 
 **D4 was right about the level and wrong about the loop.** The level is arithmetic, not
-measurement: **a core berth takes 25.0% of a sale under the shipped law against 10.0%
+measurement: **a core market takes 25.0% of a sale under the shipped law against 10.0%
 under the mirror**, and the rim is the other way round, so a commander who never leaves a
 developed world does pay the wider cut — this spec should say that rather than imply the
 opposite. What the flown pair adds is that traders do not stay where they were dropped:
@@ -1056,14 +1060,22 @@ not of movement. Loading the same markets with both double-charges the one thing
 they are already paying for; the core, where the range is narrow and the book is
 thick, is where a marginal tonne is worth least to the station buying it.
 
-**Where the cut dies, which #13 told this node to check before believing an index
-shift works.** The bite is a rim bite, at a fiftieth of the size that cost #13
-forty-six percent of a shipyard population: over 40 worlds **0.5% of priced rows
-come back with no spread at all**, 2.5% at TL 1, 0.7% at TL 5, and **none at all
-from TL 8 up** — **and the loss is not spread over the station types: 1.9% of a
-refinery's** priced rows come back flat against **0.0% at a trade station and 0.0% at a
-shipyard**, which is the axis #13's warning was actually about and the reason an average
-is the wrong thing to quote.
+**Where the cut dies — and where it does not, which is the half this section first got
+wrong.** #13 told this node to check whether an index shift bites where the index lives.
+It does not. **The spread is lost at §3's price floor, not at the rim**, and the
+measurement is a control rather than an argument: over the whole priced domain a
+**flat** cut erases exactly the same rows as the graded one — 8,760 either way — because
+every erased row is one whose mid already stands at one price step, where any cut
+collides with the floor. Counted per tech level the set is **584 rows at TL 1, 584 at
+TL 2, … 584 at TL 15**: flat across the ladder, exactly as flat-cut arithmetic says it
+should be. An earlier revision of this section called it "a rim bite, #13's shape", which
+was a realized-data artefact — see the control below.
+
+What *is* shaped like #13's finding is the **station-type** axis, over realized rows
+across 40 worlds: **0.5% of priced rows come back with no spread at all, 1.9% of a
+refinery's against 0.0% at a trade station and 0.0% at a shipyard**. That is the axis
+#13's warning was about — a per-type offset dying where the type lives — and it is the
+reason an average over station types is the wrong thing to quote.
 
 **And the concentration is §3's own arithmetic, named rather than guessed.** Walking the
 domain by good and type, the rows that reach the floor are **Food at the refinery (384),
@@ -1073,16 +1085,29 @@ economy-equivalent steps *down***; Narcotics is +13, which the shipyard's −2 p
 hard enough to reach the floor at the top of the range. §3's offset and §3's floor are the
 same lever read twice: any station type whose offset points the way a gradient runs will
 pin some good's rows at one price step, and a cut applied after the floor has nothing left
-to cut. A node that widens an offset inherits this table. Every one of those rows is one §3's price floor had already pinned
-at a single price step — the two populations are identical to the row — and on them
-the round trip nets nothing either, because the floor that swallows the spread
-swallows the deficit's mark on the way through `stockResponse`.
-`scripts/measure-clamp-bite.ts` reprints the realized rate per tech level and per
-station type; `tests/market.test.ts` §5.6 pins the whole-table figure at **8,760 of
-1,566,720 rows (0.56%)** and flies the cycle on every one of them to show no pump
-survives there. It moved from 8,400 when the cut's endpoints moved onto the
-constants, because the rim's cut came down from 0.110 to 0.100 and joined the set
-the floor swallows.
+to cut. A node that widens an offset inherits this table.
+
+**Two populations, and the sentence that conflated them.** Over realized rows the rate
+slopes with tech level — 2.5% at TL 1, 0.7% at TL 5, none from TL 8 up — and over the
+synthetic domain it does not, because the realized slope is *which markets exist at which
+tech level*, not how hard the cut bites there. Both are the same mechanism, and quoting
+one as evidence about the other is the error a reviewer caught: `tests/market.test.ts`
+§5.6 pins **8,760 of 1,566,720 rows (0.56%)**, `measure-clamp-bite.ts` reprints the
+realized rate per tech level and per type, and neither figure says anything about where
+on the tech ladder the loss sits.
+
+**What the 8,760 is made of, since it is not the grade.** 8,400 of them are rows §3's
+floor pins at one price step outright. The other **360 are the quote step's**: a mid near
+the floor whose sell, expressed in tenths, lands back on the ask. Turn the quantization
+off and the count is 8,400 under either direction and either endpoint — which is also why
+this figure did not move when the ladder's endpoints were rebased onto the constants,
+contrary to what an earlier revision of this paragraph claimed.
+
+**And the erasure is not a hole.** On every erased row the round trip nets nothing either,
+because the floor that swallows the spread swallows the deficit's mark on the way through
+`stockResponse`. `tests/market.test.ts` §5.6 checks that per erased row, at the shipped
+quantization, in the sell-first order at the baseline hold — a narrower claim than
+"flying the cycle", and stated at its real width.
 
 **Every zero off that floor is attributed, and one category is not a success.** A
 previous version of this row counted 74 zeros, called them boundaries, and walked
@@ -1129,10 +1154,30 @@ which is the rounding that produced the figures this paragraph replaced.
 **Figures in this section are transcribed output.** Re-derive them with
 `bun run scripts/measure-greedy-trader.ts`, `bun run
 scripts/measure-clamp-bite.ts`, and the probe above before quoting any of them at a
-retune. `BID_CUT_GRADE` is the rung of a swept ladder
-(`§5.6 — the grade alone`, floor held at its shipped value): 0.20 is the first rung
-that stalls a galaxy and 0.15 the widest that costs nothing, so what would make 0.15
-wrong is a change to what a margin is worth, not a retune of the floor.
+retune.
+
+**`BID_CUT_GRADE` is a rung on a ladder, transcribed rather than summarized** — floor
+held at its shipped 0.10 so the only dial that moves is the rim-to-core difference:
+
+```
+  grade  rim → core      kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
+  0.00   0.100 → 0.100  56-92 min          228-351    33/56/11                  0.631
+  0.05   0.100 → 0.150  60-76 min          273-334    40/48/12                  0.684
+  0.10   0.100 → 0.200  50-81 min          269-393    36/47/16                  0.641
+  0.15   0.100 → 0.250  51-103 min         206-399    42/47/11                  0.676
+  0.20   0.100 → 0.300  3/4 in cap         144-312    45/47/9                   0.676   stalled 1/4
+  0.25   0.100 → 0.350  69-123 min         161-268    57/41/2                   0.762
+```
+
+**0.20 is the first rung that stalls a session (1 of 4) and the first whose kit range
+cannot be stated as a span — 3 of 4 galaxies do not reach it in the cap.** 0.15 is the
+widest rung that stalls nothing, **not a rung that costs nothing**: against the no-wedge
+control's 52-82 min, the shipped 0.15 takes 51-103 and its floor of the rate band is the
+worst of any rung above 0.05. The grade is bought, like the direction, against §8's time
+to kit; what §5.6 can say is where the next rung stops being a trade-off and starts being
+a stall. What would make 0.15 wrong is a change to what a margin is worth, not a retune of
+the floor — and the rungs between 0.15 and 0.20 are not flown, so a dial inside that gap
+is a claim this table does not cover.
 
 ---
 
@@ -1805,7 +1850,7 @@ it.** The matched-mean arms sit at floor 0, so both charge nothing at the rim �
 end. A node reported that as the concern not holding, and it was reporting two free rims.
 **What reaches the question is the pair at the shipped dials** (`MIRRORED_SHIPPED`: same
 floor, same grade, ends swapped), and what it says is that **D4 was right about the level
-and wrong about the loop**. The level is arithmetic — a core berth takes **25.0%** of a
+and wrong about the loop**. The level is arithmetic — a core market takes **25.0%** of a
 sale under the shipped law against **10.0%** under the mirror, so a commander who stays
 in developed space does pay the wider cut, and §5.6's summary should not be read to say
 otherwise. The loop is a measurement: traders move to where the cut is cheap, and the

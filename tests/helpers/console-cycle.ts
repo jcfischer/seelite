@@ -20,6 +20,16 @@ import type { CarrierKey } from "../../src/carrier-key";
 import { carrierKey } from "../../src/carrier-key";
 import type { DeficitMap } from "../../src/deficits";
 import {
+	marketRow,
+	shelfQuantity,
+	marketQuote,
+	marketStationOf,
+	bidCutAtTl,
+	bidCutLadder,
+	quoteWithCut,
+	stockResponse,
+	type QuoteFn,
+	type StationTypeKey,
 	type Commodity,
 	COMMODITIES,
 	DISPLAY_TL_MAX,
@@ -27,16 +37,6 @@ import {
 	PRICE_STEP_CR,
 	BID_CUT_FLOOR,
 	BID_CUT_GRADE,
-	bidCutAtTl,
-	bidCutLadder,
-	quoteWithCut,
-	stockResponse,
-	type QuoteFn,
-	type StationTypeKey,
-	marketQuote,
-	marketStationOf,
-	marketRow,
-	shelfQuantity,
 } from "../../src/market";
 import { DOCKABLE_HULL_IDS, type HullId, HULL_SPECS } from "../../src/hull";
 import {
@@ -77,16 +77,36 @@ const stationOf = (type: StationTypeKey) => {
  *  sweep that *builds* a row and the flight that *flies* it have to agree on
  *  how many units a buy leg can hold — two copies would drift into a sweep that
  *  visits rows its flights then refuse. */
+const shelfCache = new Map<string, number>();
+
+/**
+ * The shelf the console would show, memoized by `(good, type, economy, epoch)`.
+ *
+ * **A call inside a `for (tl)` loop is the common case in the instruments** — the
+ * direction ladder asks the same shelf at all fifteen tech levels and the answer does not
+ * depend on the tech level, so a survey was re-running the ninety-minute epoch walk
+ * behind `marketRow` fifteen times per row. The game path never loops here, so this
+ * changes nothing about what a dock sees.
+ */
 export const shelfOf = (
 	good: Commodity,
 	type: StationTypeKey,
 	economy: number,
 	gameTimeMin: number,
-): number =>
-	shelfQuantity(
+): number => {
+	// Keyed on the clock itself, not on an epoch: the shelf below reads `gameTimeMin`
+	// through the deficit's history, and a coarser key would be a correctness question
+	// this cache has no business asking. The loop this exists for repeats the exact value.
+	const key = `${good.name}/${type}/${economy}/${gameTimeMin}`;
+	const hit = shelfCache.get(key);
+	if (hit !== undefined) return hit;
+	const q = shelfQuantity(
 		marketRow(good, economy, stationOf(type), gameTimeMin).quantity,
 		0,
 	);
+	shelfCache.set(key, q);
+	return q;
+};
 
 /**
  * #7's ratified law, kept runnable — the way `BELL_WRAP` keeps Bell's byte
@@ -424,7 +444,7 @@ export const mirroredBidCut =
 
 /**
  * The rejected direction **at the shipped dials**: the same floor and the same grade,
- * with the ends swapped, so a rim berth pays 0.25 and a core one 0.10.
+ * with the ends swapped, so a rim market pays 0.25 and a core one 0.10.
  *
  * **This is the arm #191 D4's own question needs and the sweep did not fly.** The
  * matched-mean rungs are built at floor 0 so their multiset of cuts can equal a flat

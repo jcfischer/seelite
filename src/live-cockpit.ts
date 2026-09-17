@@ -295,7 +295,10 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
  * shared four-column rule above is what the equipment list still wants. Without
  * this the ACTION button wrapped onto a second grid line in every listed row and
  * in the header, which no probe sees because a wrapped button is still a button:
- * the check is on the computed column count against the row's own child count. */
+ * The check that does exist is tests/station-console.test.ts's row-shape row: it reads
+ * this rule back as five tracks and the fragment as five cells. A sixth cell beside four
+ * tracks would wrap the price into the name's column. (No backticks in this comment: it
+ * lives inside the stylesheet's template literal.) */
 .lc-station-market .lc-station-row { grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr 1fr auto; }
 .lc-station-head { position: sticky; top: 0; color: #d8833b; border-bottom-width: 2px; letter-spacing: .08em; background: #150a03; }
 .lc-station-cell { text-align: right; }

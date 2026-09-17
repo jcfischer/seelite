@@ -447,8 +447,10 @@ export const DISPLAY_TL_MAX = 15;
  * round trip harvests exactly that swing. The argument was sound and the figure
  * is still right, and the two rungs it lives between are worth keeping apart: the
  * closure ladder in `scripts/measure-greedy-trader.ts` reports **no profitable
- * tonnage cycle from 0.100 up**, and its bisection for the smallest cut that leaves
- * *every* cycle a loss — the sub-tonne rows included — lands between 0.2 and 0.315.
+ * tonnage cycle from 0.100 up**, and its rungs at 0.20 and 0.315 bracket the cut that
+ * closes the sub-tonne rows too — 11,895 of them still clear at 0.200, none at 0.315.
+ * (The bisected figure in `closingCut` is the tonnage one; it runs on the tonnage rows
+ * alone, so do not read a sub-tonne bracket off it.)
  * **0.315 closes the pump completely and costs the trade loop; 0.100 closes the
  * tonnage half and does not.** The row in `tests/market.test.ts` §5.6 that pins the
  * 0.315 swing is what makes that ladder falsifiable: the mark is a derived quantity,
@@ -503,17 +505,26 @@ export const BID_CUT_FLOOR = PRICE_ELASTICITY;
  * the mean, so the two tables hold the same multiset of cuts in the other order
  * and a difference between them is the direction rather than the level.
  *
- * **Both predictions in #191 D4 were tested, and only one of them held.** The
- * sweep runs matched-mean pairs at 0.10, 0.15, 0.20 and 0.30; the figures belong to
- * that report, which reprints them beside a fresh run, and they moved twice while
- * the law was being settled — a table pasted here is a second copy bought to age.
- * What is stable enough to state is the *shape* and the two verdicts, and one of
- * those verdicts is a refutation: #191 D4 worried that shipping a spread wide at
- * high tech level hands a new commander at the frontier the worst rates in the
- * game, and the sweep says the opposite. The shipped arm is the faster one in
- * every matched pair, and it is the *other* arm whose traders stop finding a
- * profitable hop at all. The route-mix prediction — that dear-at-the-rim pulls
- * trade core-ward — held in every pair. §10.3 and §5.6 carry both readings.
+ * **#191 D4's direction was measured, and one reading of that measurement had to
+ * be withdrawn.** What holds: the arm that charges the rim more pulls trade inward
+ * as its level rises, and the shipped direction pushes it outward (§10.3 has the
+ * radius figures and the caveat that matching is over the tech-level index, not over
+ * realized dock visits). What was withdrawn: an earlier revision of this comment
+ * reported D4's other concern — that a spread dear at high tech level charges a
+ * commander who starts somewhere developed, which in this generator is the **core** —
+ * as refuted, on a matched-mean sweep whose arms were built at floor 0 and so charged
+ * nothing at the rim where most of their own docks sat. That comparison could not
+ * reach the question.
+ *
+ * **The pair that does reach it is in §5.6: the shipped law against the same two
+ * constants with the ends swapped.** Its verdict is that **D4 was right about the
+ * level and wrong about the loop** — a core market takes `BID_CUT_FLOOR +
+ * BID_CUT_GRADE` off a sale against the floor alone under the mirror, so a commander
+ * who stays in developed space does pay the wider cut; and traders move to where the
+ * cut is cheap, so the shipped arm still out-earns the mirror and reaches the kit
+ * first in three of four galaxies. The direction was bought with a real charge on the
+ * core end. §5.6 and §10.3 own that ruling, and a retune of either dial has to reopen
+ * it there rather than here.
  *
  * Radius is the generator's normalised galactic distance, averaged over the
  * systems a trader docked at, so 0 is the core and 1 the rim: narrow-at-the-rim
@@ -558,25 +569,6 @@ export const requireDisplayTl = (displayTL: number): number => {
 };
 
 /**
- * A station's bid cut at one tech level. **The domain's ends are the two
- * constants**: TL 1 pays exactly `BID_CUT_FLOOR` and TL 15 pays
- * `BID_CUT_FLOOR + BID_CUT_GRADE`, so the span of the law is its declaration
- * rather than a figure that appears somewhere else. The numerator runs from 0
- * rather than 1 because a `+ 1` there put the cheapest market at floor + grade/15
- * = 0.110 and left `BID_CUT_FLOOR` naming a cut no market in the game pays — this
- * repo's third-copy drift, caught by reading the shipped function at TL 1 instead
- * of reading the constant, and it had already been copied into three files.
- *
- * **At the rim that puts a tonnage round trip at exactly zero**, a wash rather
- * than a loss, and that is what the closure is measured as: the ladder in
- * `scripts/measure-greedy-trader.ts` counts cycles netting *more* than nothing, so
- * a rung whose binding rows break even closes the pump and the rung below it does
- * not.
- *
- * **It is a cut on the *bid* and nothing else, which is a ruling rather than a
- * default** — see `marketQuote`.
- */
-/**
  * A bid cut from its two dials, in the shipped direction: `floor` at the rim,
  * `floor + grade` at the core.
  *
@@ -602,7 +594,27 @@ export const bidCutLadder = (floor: number, grade: number) => {
 	};
 };
 
-/** The shipped law: `BID_CUT_FLOOR` at the rim, `+BID_CUT_GRADE` at the core. */
+/**
+ * A station's bid cut at one tech level. **The domain's ends are the two
+ * constants**: TL 1 pays exactly `BID_CUT_FLOOR` and TL 15 pays
+ * `BID_CUT_FLOOR + BID_CUT_GRADE`, so the span of the law is its declaration
+ * rather than a figure that appears somewhere else. The numerator runs from 0
+ * rather than 1 because a `+ 1` there put the cheapest market at floor + grade/15
+ * = 0.110 and left `BID_CUT_FLOOR` naming a cut no market in the game pays — this
+ * repo's third-copy drift, caught by reading the shipped function at TL 1 instead
+ * of reading the constant, and it had already been copied into three files.
+ *
+ * **At the rim that puts a tonnage round trip at exactly zero**, a wash rather
+ * than a loss, and that is what the closure is measured as: the ladder in
+ * `scripts/measure-greedy-trader.ts` counts cycles netting *more* than nothing, so
+ * a rung whose binding rows break even closes the pump and the rung below it does
+ * not.
+ *
+ * **It is a cut on the *bid* and nothing else, which is a ruling rather than a
+ * default** — see `marketQuote`.
+ *
+ * **The shipped instance of `bidCutLadder`, and the function the game calls.**
+ */
 export const bidCutAtTl: (displayTL: number) => number = bidCutLadder(
 	BID_CUT_FLOOR,
 	BID_CUT_GRADE,
@@ -665,13 +677,25 @@ export const quantizeToDisplayStepCr = (cr: number): number => {
  */
 export const quoteWithCut = (
 	cutAtTl: (displayTL: number) => number,
-	{ quantize = true }: { quantize?: boolean } = {},
+	{
+		quantize = true,
+		// **The ask is a parameter for the same reason the bid is one.** A test that
+		// wanted a symmetric wedge used to rebuild this body — the floor, the step, both
+		// `Math.max` calls — and a helper carrying its own copy of the rounding is how a
+		// test starts disagreeing with the law it means to vary. Identity by default,
+		// which is the shipped one-sided wedge.
+		askAtTl = (midCr: number): number => midCr,
+	}: {
+		quantize?: boolean;
+		askAtTl?: (midCr: number, displayTL: number) => number;
+	} = {},
 ): QuoteFn => {
 	const step = (cr: number): number =>
 		quantize ? quantizeToDisplayStepCr(cr) : cr;
+	const side = (cr: number): number => step(Math.max(PRICE_STEP_CR, cr));
 	return (midCr, displayTL) => ({
-		buyCr: step(midCr),
-		sellCr: step(Math.max(PRICE_STEP_CR, midCr * (1 - cutAtTl(displayTL)))),
+		buyCr: side(askAtTl(midCr, displayTL)),
+		sellCr: side(midCr * (1 - cutAtTl(displayTL))),
 	});
 };
 

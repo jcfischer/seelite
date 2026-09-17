@@ -1070,9 +1070,17 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// **The erasure is not a hole**, and the row below is what says so rather
 		// than a sentence: on exactly those rows the round trip nets nothing either,
 		// because the floor that swallows the spread swallows the deficit's mark on
-		// the way through `stockResponse`. #13's warning is that an offset dies
-		// where the type lives; here it dies where the *floor* lives, and the thing
-		// it exists to prevent dies with it.
+		// the way through `stockResponse`.
+		//
+		// **What this row does not show**, since an earlier revision claimed more than
+		// it does: it walks the sell-first order at one hold, and it is arithmetic on
+		// the quote rather than a `transactAtStation` call. The pump question at full
+		// width — every realized dock, both orders, the hold the trader actually flies —
+		// is the greedy sweep's, and §10.3 now says so at that width.
+		//
+		// **And the grade decides none of this count.** A flat cut erases the same
+		// 8,760 rows — 584 at every tech level, every one pinned at `PRICE_STEP_CR` —
+		// so this is a floor population, not a rim one. §10.3 owns that correction.
 		let erased = 0;
 		let erasedWithAPump = 0;
 		forEachPriceRow((good, row, quoteAt) => {
