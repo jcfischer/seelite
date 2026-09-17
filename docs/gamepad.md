@@ -63,17 +63,16 @@ knowing without opening it: the footer is a claim about the *world*, not the
 controls, and the throttle is **held** rather than zeroed, so you coast.
 
 **One consequence of that suspension went unshipped until #371.** The mouse is
-not only the delta. Mouse-look runs on pointer lock, and while the lock is held
-the browser delivers *every* mouse event — the click included — to the locked
-element, wherever over the page the cursor was. A console that suspends the mouse
-and keeps the capture therefore suspends nothing the player can feel and takes the
-one thing they need: the panel paints, highlights, and answers no click, and the
-click aimed at its tab re-took the lock from the glass underneath. It is the same
-`contextFliesShip` answer read one level down, which is where `pointerLockMove` in
-that same module now states it — and **the release belongs to the drawn surface
-rather than to the head turn**, because the station console arrives on the forward
-wall with the head still forward and needs exactly the same thing. A rule the
-surface holds is one rule; a rule the turn holds is two.
+not only the delta: mouse-look runs on pointer lock, and while the lock is held the
+browser delivers every mouse event — the click included — to the locked element. A
+console that suspends the mouse and keeps the capture therefore suspends nothing
+the player can feel and takes the one thing they need: the panel paints,
+highlights, and answers nothing, because the click aimed at its tab is delivered to
+the glass underneath. `pointerLockMove` in that same module owns this rule and the
+argument for it, as it owns the one above; what is worth knowing here is only
+**that the release belongs to the drawn surface rather than to the head turn**,
+because the station console arrives on the forward wall with the head still forward
+and needs exactly the same thing.
 
 **`instrument`** is the frame overlay behind `?perf`, and it is the one
 exception. It takes a console's six buttons and leaves the sticks alone, because

@@ -362,34 +362,35 @@ export function contextFliesShip(context: PadContext): boolean {
 
 /**
  * What to do with the pointer lock, given the context and whether the canvas
- * already holds it.
+ * already holds it. **This is the argument; the call sites point here.**
  *
  * **The same rule as `contextFliesShip`, asked by the other half of the mouse
- * (#371).** A captured pointer does not only carry relative deltas: while the
- * lock is held the browser delivers *every* mouse event — the click included —
- * to the locked element, wherever over the page the cursor was. So a console
- * that suspends the mouse and keeps the capture suspends nothing the player can
- * feel and takes something they need. The panel paints, highlights, and answers
- * no click; the click aimed at its tab went to the glass, which took the lock
- * again. That is #283's ruling standing one level down: the surface that says
- * the mouse does not fly the ship also says the pointer is not its own to hold.
+ * (#371).** A captured pointer does not only carry relative deltas: while the lock
+ * is held the browser delivers *every* mouse event — the click included — to the
+ * locked element, wherever over the page the cursor was. So a console that
+ * suspends the mouse and keeps the capture suspends nothing the player can feel
+ * and takes something they need: the panel paints, highlights, and answers
+ * nothing, because the click aimed at its tab was delivered to the glass
+ * underneath. That is #283's ruling one level down — the surface that says the
+ * mouse does not fly the ship also says the pointer is not its own to hold.
  *
  * Same predicate, not a second table, for the reason `contextFliesShip` itself
- * exists: this rule was written nowhere at all, so there was nothing to drift —
- * and `commander-overlay.ts` had already written its own release, which is what
- * a rule with no owner grows. `instrument` keeps the lock for the reason it keeps
- * the sticks: the instrument's panel is `pointer-events: none`, so there is
+ * exists: this rule was written nowhere at all, so there was nothing to drift,
+ * and the one place that did release the pointer — `commander-overlay.ts`, for its
+ * own screen — was a habit rather than a rule. `instrument` keeps the lock for the
+ * reason it keeps the sticks: its panel is `pointer-events: none`, so there is
  * nothing on it for a click to reach, and the frame it exists to measure is a
  * frame still being flown.
  *
  * **`capture` is permission for a click, not an instruction to make one.** The
  * browser grants a lock only from an activation-triggering event or after a
  * page-initiated exit, and Blink refuses a tenth request inside two seconds
- * (`kMaxLocksInWindow`), so nothing downstream should read this name as licence
- * to ask every frame. `release` is the only effect the game takes on its own, and
- * it is edge-triggered by `held`: once the pointer is back the row reads
- * `at-rest`, which is what keeps a frame loop from pounding the browser with an
- * exit it has already carried out.
+ * (`kMaxLocksInWindow`), so nothing downstream should read this name as licence to
+ * ask every frame. `release` is the only effect the game takes on its own, and it
+ * is edge-triggered by `held`: once the pointer is back the row reads `at-rest`,
+ * which is what keeps a frame loop from pounding the browser with an exit it has
+ * already carried out — and covers the player's own Escape for free, whose release
+ * leaves nothing here to release.
  */
 export function pointerLockMove(
 	context: PadContext,
