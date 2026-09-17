@@ -930,27 +930,36 @@ through `transactAtStation` on **one shared map**, in `tests/station-commerce.te
 | --- | --- | --- | --- |
 | four chained cycles, mark handed back each cycle — **tonnage** | 4,410 | **0** | — |
 | the same over **sub-tonne** goods | 1,080 | **720** | Platinum, shipyard, e 0, TL 1: +4,410.00 Cr over four cycles |
-| one cycle on a market already sold into (2 holds thrown first) — **tonnage** | 20,925 | **737** | Luxuries, refinery, e 3, TL 1: **+40.00 Cr** |
+| one cycle on a market already sold into (2 holds thrown first), **every dockable hull** | 188,325 | **6,327** | Luxuries, shipyard, e 0, TL 1, at the 60 t hauler: **+90.00 Cr** |
+| the same dump sweep at the flat **0.315** floor | 188,325 | **0** | — |
 
 **Chaining does not reopen the tonnage pump.** A cycle hands the mark straight back — sell
 a hold, buy it back, and the station is where it started — so the fourth cycle faces the
 same market as the first, and 4,410 of them net nothing. **A dump does.** Sell two holds in
 and keep them sold, and the console sits 40 units short of a price; a third hold sold into
 that depression is quoted off it, while the buy-back is the same depression with no cut on
-it. 737 such cycles clear, worst by **+40.00 Cr**. The floor that shuts that door is the
-**flat 0.315** rung §5.6 already prices as "closes the pump completely and costs the trade
-loop": the identical sweep gives **0 positive** there. So the price of closing this residue
-is known and declined for a stated reason, which makes it a decision rather than a surprise,
-and `market.ts` now says the closure it claims is closure **at a market the trader has not
-already moved**.
+it.
 
-**And 40 Cr is a residue rather than a living because the dump is not free.** Throwing two
-holds away means selling them into a falling market at the depression you are paying to
+**The dump's size is the hull's, and this row was first flown at one hull.** §182 made the
+mark scale with the *flown* hold, so the relative depression is hull-invariant and the
+profit is not: at the baseline 20 t courier the worst cycle clears **+40.00 Cr**, and at
+the 60 t hauler the same sweep clears **+90.00 Cr**. Every dockable hull is therefore in the
+domain, and the row is titled with the worst it finds.
+
+**The floor that shuts that door is the flat 0.315 rung, and that arm is flown in the same
+walk rather than asserted beside it** — 188,325 legs, **0 clear**. §5.6 already prices that
+rung as "closes the pump completely and costs the trade loop", so the price of closing this
+residue is known and declined for a stated reason, which makes it a decision rather than a
+surprise, and `market.ts` says the closure it claims is closure **at a market the trader has
+not already moved**.
+
+**And +90.00 Cr is a residue rather than a living because the dump is not free.** Throwing
+two holds away means selling them into a falling market at the depression you are paying to
 create; the figures above are the cycle's net alone, which is the narrower and more
 favourable reading, and the section states them as that. Against the ordinary loop's
 206-399 Cr/min it is small, and against the named 1,064.70 Cr residue above it is the same
 family — an exploit that costs cargo to open. What makes it worth a paragraph is that the
-constant's sentence was wider than the survey, not that 40 Cr threatens the economy.
+constant's sentence was wider than the survey, not that 90 Cr threatens the economy.
 
 **A quote is a whole number of tenths, and that is a law rather than a rendering
 choice.** `priceLabel` prints `toFixed(1)`, so while the till charged the
@@ -1061,7 +1070,7 @@ same quote step, same four worlds, same trader.
 Every row below is flown from a start the instrument names. `run()` used to drop every
 arm at the first multi-station system the generator listed, whatever its tech level — so
 neither arm flew D4's commander, and a review round said so. `startPolicy` now takes
-`first`, `developed` (the highest-tech berth in the galaxy) or `rim`.
+`first`, `developed` (the system with the highest-tech market in the galaxy) or `rim`.
 
 **At the arbitrary start:**
 
@@ -1100,10 +1109,13 @@ the developed start, 100 against 87) — and one stalled session, the mirror's, 
 developed start. A 6-of-8 sign is not a proof either; it is what four worlds can say, and
 the section says that.
 
-**What the direction is actually bought with is §4's own table, not this ordering.** A TL 1
-market's whole historical range is 3.3× its base against 1.92× at TL 15, so the frontier
-already carries price *risk*; a spread is the price of immediacy, a second charge, and
-putting both on the same markets double-charges the one thing they are already paying for.
+**What the direction is actually bought with is §4's own table, not this ordering — and
+this is the argument, stated once here and pointed at from §10.3 rather than repeated.** §4
+already loads the frontier with price *risk*: a TL 1 market's whole historical range is 3.3×
+its base against 1.92× at TL 15, which is why §4 exists as its own section. A spread is the
+*other* charge — the price of immediacy, not of movement — and the core, where the range is
+narrow and the book is thick, is where a marginal tonne is worth least to the station buying
+it. Loading the same markets with both double-charges the one thing they already pay for.
 The route mix here is consistent with that (the shipped arm's mean dock radius is 0.676
 against the mirror's 0.648 at the arbitrary start), but **the radius also moves 0.412 →
 0.800 with the start alone**, so the mix is read as agreement, never as the argument.
@@ -1116,14 +1128,6 @@ levels holds the flat arm's figure as its mean, in each direction's own order. T
 printed guard (`mean cut of the graded table at this rung`, against the target) is there
 so the next reader checks the pairing rather than trusts this sentence. A finding that survives becoming
 a matched comparison is worth more than one that only survived being run.
-
-An independent argument points the same way and is not about the destination's
-third verb. §4 already loads the frontier with price *risk* — a TL 1 market's
-whole historical range is 3.3× its base against 1.92× at TL 15, which is why §4
-exists as its own section. A spread is the other charge: the price of immediacy,
-not of movement. Loading the same markets with both double-charges the one thing
-they are already paying for; the core, where the range is narrow and the book is
-thick, is where a marginal tonne is worth least to the station buying it.
 
 **Where the cut dies — and where it does not, which is the half this section first got
 wrong.** #13 told this node to check whether an index shift bites where the index lives.
@@ -1234,8 +1238,10 @@ held at its shipped 0.10 so the only dial that moves is the rim-to-core differen
   0.25   0.100 → 0.350  69-123 min         161-268    57/41/2                   0.762
 ```
 
-**0.20 is the first rung that stalls a session (1 of 4) and the first whose kit range
-cannot be stated as a span — 3 of 4 galaxies do not reach it in the cap.** 0.15 is the
+**0.20 is the first rung that stalls a session (1 of 4) and the first whose kit figure is
+not a span: the report prints `3/4 in cap`, which is three galaxies reaching it inside the
+four-hour cap and one not reaching it at all** — a range printed over the sessions that
+finished would hide which sessions those are, so the count is the claim. 0.15 is the
 widest rung that stalls nothing, **not a rung that costs nothing**: against the no-wedge
 control's 52-82 min, the shipped 0.15 takes 51-103 and its floor of the rate band is the
 worst of any rung above 0.05. The grade is bought, like the direction, against §8's time
@@ -1626,11 +1632,14 @@ reach, the domain's two ends, the ask's identity, the erased rows flown for a
 pump, and the quote's own precision. **The heading said 53 and eleven for a round**,
 because two of those rows restated assertions the rows before them already made and were
 merged in review — a count transcribed from intent rather than from a run is the drift
-this paragraph is about, one file and one node later. Nine rows joined `station-commerce.test.ts`
-(13 → 22 on `main`) and three `station-console.test.ts` (21 → 24), which this heading
-has never counted; §10.3 says what they are for. The arithmetic is stated because
-this heading got it wrong the first time — it said eleven where the file gained nine,
-and a count that does not add up is the same third-copy drift in a new place.
+this paragraph is about, one file and one node later. **The counts below were counted off
+`git show`, not remembered:** `market.test.ts` gained 9 rows (42 → 51),
+`station-commerce.test.ts` 11 (13 → 24), `station-console.test.ts` 3 (21 → 24), and
+`live-cockpit.test.ts` 1 (1 → 2) — the row-arity check §5.6's CSS comment cites. §10.3 says
+what they are for. The arithmetic is stated because this heading got it wrong twice: once
+eleven where the file gained nine, and once a set of three totals transcribed from intent
+after the residue rows grew. A count that does not add up is the same third-copy drift in a
+new place, and the fix each time was to run the count rather than recall it.
 
 1. **Table integrity** — 17 goods; `baseQuantity` signed for all five negative
    rows; exactly three illegal; the sub-tonne set is Gold/Platinum/Gem-Stones
@@ -1915,7 +1924,7 @@ it.** The matched-mean arms sit at floor 0, so both charge nothing at the rim �
 end. A node reported that as the concern not holding, and it was reporting two free rims.
 **What reaches the question is the pair at the shipped dials** (`MIRRORED_SHIPPED`: same
 floor, same grade, ends swapped), flown from **both** an arbitrary start and the galaxy's
-highest-tech berth, and what it says is that **D4 was right about the level, and the loop
+highest-tech market, and what it says is that **D4 was right about the level, and the loop
 claim is weaker than this section first wrote it**. The level is arithmetic — a core market
 takes **25.0%** of a sale under the shipped law against **10.0%** under the mirror, so a
 commander who stays in developed space does pay the wider cut, and §5.6's summary does not

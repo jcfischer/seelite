@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { carrierKey } from "../src/carrier-key";
+import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "../src/deficits";
 import {
 	COMMODITIES,
@@ -11,6 +11,8 @@ import {
 	PRICE_STEP_CR,
 	bidCutAtTl,
 	marketQuote,
+	quoteWithCut,
+	DEFICIT_SATURATION_RUNS,
 	commodity,
 	marketRow,
 	marketStationOf,
@@ -18,7 +20,12 @@ import {
 	stockResponse,
 	HOLD_REFERENCE_T,
 } from "../src/market";
-import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "../src/hull";
+import {
+	DOCKABLE_HULL_IDS,
+	HULL_SPECS,
+	type HullId,
+	PLAYER_BASELINE_HULL,
+} from "../src/hull";
 import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	type CommanderState,
@@ -27,30 +34,36 @@ import {
 	transactAtStation,
 } from "../src/station-commerce";
 import { priceLabel, stationMarketScreen } from "../src/station-console";
-import { ALL_ECONOMIES as MARKET_ECONOMIES } from "./helpers/market-math";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";
+// **§5's eight economies, imported from the helper that already owns them.** This file
+// used to declare its own copy; a copy of a domain list is how a widening of the table
+// turns a sweep into a smaller claim that still prints a clean number.
+import { ALL_ECONOMIES } from "./helpers/market-math";
 import {
 	type CycleSurvey,
 	NO_WEDGE,
 	flyConsoleCycle,
-	shelfOf,
 	surveyConsoleCycles,
 } from "./helpers/console-cycle";
-
-/** The eight economy indices, 0 through 7 as §3 numbers them. */
-/**
- * §5's eight economies, taken from the helper that already owns them.
- *
- * This file used to declare its own copy. A copy of a domain list is how a widening of
- * §5's table turns a sweep into a smaller claim that still prints a clean number.
- */
-const ALL_ECONOMIES = MARKET_ECONOMIES;
 
 const STATION = marketStationOf(
 	{ type: "trade", localCarrierId: "station-trade", blackMarket: false },
 	0x51a7_10,
 );
 const KEY = carrierKey(0, "station-trade");
+
+/**
+ * The flat floor §5.6 records as closing the pump — `PRICE_ELASTICITY ×
+ * DEFICIT_SATURATION_RUNS`, derived from the two constants that own it rather than typed,
+ * because a rung pinned by a literal is a rung nobody can move.
+ */
+/**
+ * The closing rung as a quote, built once. Constructing it inside 188,325 legs measured
+ * the factory rather than the law.
+ */
+const CLOSING_FLOOR = quoteWithCut(
+	() => PRICE_ELASTICITY * DEFICIT_SATURATION_RUNS,
+);
 
 /** One seed for every console in the residue rows, so they measure one station. */
 const PRIOR_MARK_SEED = 0x51a7_10;
@@ -80,25 +93,36 @@ interface CycleState {
 /**
  * One priced leg of a cycle, flown as the till would fly it.
  *
- * **Written once because the legs in the two residue rows below are the same call with a
- * different action.** Four copies is four chances to hand the next leg the *original*
- * deficits instead of the ones the last leg returned — which is exactly the mistake that
- * made the first draft of those rows measure nothing, and a shared runner cannot make it.
+ * **Written once because every cycle in this file is the same call with a different
+ * action.** Copies are how a leg hands the next leg the *original* deficits rather than the
+ * ones the last leg returned — the mistake that made the first draft of the residue rows
+ * measure nothing. A refusal comes back as `{ accepted: false, reason }` rather than `null`
+ * because the chained-cycle row reports *why* a leg could not be booked; a runner that
+ * threw the reason away would only move the duplication somewhere else.
  */
+type LegResult =
+	| { accepted: true; state: CycleState }
+	| { accepted: false; reason: string | null };
+
 const leg = (
 	state: CycleState,
 	overrides: Partial<Parameters<typeof transactAtStation>[0]>,
-): CycleState | null => {
+	quote?: Parameters<typeof transactAtStation>[1],
+): LegResult => {
 	const out = transactAtStation(
 		input({
 			commander: state.commander,
 			deficits: state.deficits,
 			...overrides,
 		}),
+		quote,
 	);
 	return out.accepted
-		? { commander: out.commander, deficits: out.deficits }
-		: null;
+		? {
+				accepted: true,
+				state: { commander: out.commander, deficits: out.deficits },
+			}
+		: { accepted: false, reason: out.reason };
 };
 
 test("a commodity buy atomically moves credits, cargo, and this station's deficit", () => {
@@ -429,7 +453,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		expect(s.positiveByTonnage.tonnage).toBe(0);
 	});
 
-	test("a market already sold into: 737 of 20,925 tonnage cycles clear, by ≤40.00 Cr", () => {
+	test("a market already sold into: 6,327 of 188,325 cycles clear over every dockable hull, by ≤90.00 Cr", () => {
 		// **The closure the constant claims is about a market the trader has not already
 		// moved**, and a review round found the sentence wider than the survey. Chained
 		// cycles hand the mark straight back and stay shut (the row below). A *dump* does
@@ -464,14 +488,25 @@ describe("§5.6 the bid cut, charged by the till", () => {
 		 * booked, not a cycle that netted nothing.
 		 */
 		const priorMarked = (
-			type: BerthType,
+			conso: { station: ReturnType<typeof marketStationOf>; key: CarrierKey },
 			good: (typeof COMMODITIES)[number],
 			economy: number,
 			tl: number,
 			prior: number,
 			qty: number,
+			hull: HullId,
+			// The quote is a parameter because the row's second arm is a *different law*
+			// over the same domain. A control that is asserted rather than flown is the
+			// thing this node's last two review rounds kept catching.
+			quote: (
+				midCr: number,
+				displayTL: number,
+			) => {
+				buyCr: number;
+				sellCr: number;
+			} = marketQuote,
 		): number | null => {
-			const { station, key } = consoleAt(type);
+			const { station, key } = conso;
 			const at = (
 				action: "buy-commodity" | "sell-commodity",
 				quantity: number,
@@ -486,21 +521,25 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			// trader who bought them first would be measuring the cycle instead.
 			let state: CycleState = {
 				commander: {
-					...newCommander(PLAYER_BASELINE_HULL),
-					credits: 10_000_000,
+					...newCommander(hull),
+					credits: 50_000_000,
 					cargo: {},
 				},
 				deficits: {},
 			};
 			for (let i = 0; i < prior; i++) {
-				const out = leg(state, {
-					commander: { ...state.commander, cargo: { [good.name]: qty } },
-					...at("sell-commodity", qty),
-				});
-				if (!out) return null;
+				const out = leg(
+					state,
+					{
+						commander: { ...state.commander, cargo: { [good.name]: qty } },
+						...at("sell-commodity", qty),
+					},
+					quote,
+				);
+				if (!out.accepted) return null;
 				state = {
-					commander: { ...out.commander, cargo: {} },
-					deficits: out.deficits,
+					commander: { ...out.state.commander, cargo: {} },
+					deficits: out.state.deficits,
 				};
 			}
 			// **The shelf is read as the till reads it** — base quantity plus the deficit
@@ -520,50 +559,110 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			// carries no cargo is *refused*, and a row that refuses every leg reports a
 			// clean zero — which is how this helper's first refactor draft passed by
 			// measuring nothing. `flown` is pinned below against exactly that.
-			const sold = leg(state, {
-				commander: { ...state.commander, cargo: { [good.name]: buyQty } },
-				...at("sell-commodity", buyQty),
-			});
-			if (!sold) return null;
-			const back = leg(sold, at("buy-commodity", buyQty));
-			if (!back) return null;
-			return back.commander.credits - start;
+			const sold = leg(
+				state,
+				{
+					commander: { ...state.commander, cargo: { [good.name]: buyQty } },
+					...at("sell-commodity", buyQty),
+				},
+				quote,
+			);
+			if (!sold.accepted) return null;
+			const back = leg(sold.state, at("buy-commodity", buyQty), quote);
+			if (!back.accepted) return null;
+			return back.state.commander.credits - start;
 		};
+		// **The hull is part of the domain, and an earlier draft of this row left it
+		// out.** §182 made the deficit mark scale with the *flown* hold, so a 60 t hauler
+		// throws three times the tonnes at the same console for the same relative
+		// depression: the residue is not one hull's 40 Cr, it is whatever the biggest
+		// berth admits. Every dockable hull is flown here for that reason.
 		let flown = 0;
 		let cleared = 0;
 		let worstCr = 0;
 		let worstRow = "";
-		for (const type of ["trade", "refinery", "shipyard"] as const) {
-			for (const good of COMMODITIES) {
-				if (good.unit !== "t") continue;
-				for (const economy of ALL_ECONOMIES) {
-					const { station } = consoleAt(type);
-					const qty = Math.min(
-						HOLD_REFERENCE_T,
-						shelfQuantity(marketRow(good, economy, station, 0).quantity, 0),
-					);
-					if (qty <= 0) continue;
-					for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
-						for (const prior of [0, 1, 2, 3, 5]) {
-							const net = priorMarked(type, good, economy, tl, prior, qty);
-							if (net === null) continue;
-							flown++;
-							if (net > 0.0001) {
-								cleared++;
-								if (net > worstCr) {
-									worstCr = net;
-									worstRow = `${good.name} ${type} e${economy} TL${tl} after ${prior}`;
+		// **The same walk, with the closing rung's quote.** The claim "the floor that
+		// closes this door is already priced" is a measurement, and the only way it means
+		// anything is if the arm that prices it is flown over the same domain rather than
+		// asserted beside it.
+		let flownAtClosingFloor = 0;
+		let clearedAtClosingFloor = 0;
+		// The three consoles are built once each, outside every loop. `consoleAt` is a
+		// pure derivation from a constant seed, so rebuilding it 188,325 times measured
+		// nothing and made the row's own cost look like the station generator's.
+		const consoles = {
+			trade: consoleAt("trade"),
+			refinery: consoleAt("refinery"),
+			shipyard: consoleAt("shipyard"),
+		};
+		for (const hull of DOCKABLE_HULL_IDS) {
+			const holdT = HULL_SPECS[hull].holdT;
+			for (const type of ["trade", "refinery", "shipyard"] as const) {
+				const conso = consoles[type];
+				const { station } = conso;
+				for (const good of COMMODITIES) {
+					if (good.unit !== "t") continue;
+					for (const economy of ALL_ECONOMIES) {
+						const qty = Math.min(
+							holdT,
+							shelfQuantity(marketRow(good, economy, station, 0).quantity, 0),
+						);
+						if (qty <= 0) continue;
+						for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++)
+							for (const prior of [0, 1, 2, 3, 5]) {
+								const net = priorMarked(
+									conso,
+									good,
+									economy,
+									tl,
+									prior,
+									qty,
+									hull,
+								);
+								if (net !== null) {
+									flown++;
+									if (net > 0.0001) {
+										cleared++;
+										if (net > worstCr) {
+											worstCr = net;
+											worstRow = `${good.name} ${type} e${economy} TL${tl} after ${prior} @ ${holdT}t`;
+										}
+									}
 								}
+								const closing = priorMarked(
+									conso,
+									good,
+									economy,
+									tl,
+									prior,
+									qty,
+									hull,
+									CLOSING_FLOOR,
+								);
+								if (closing === null) continue;
+								flownAtClosingFloor++;
+								if (closing > 0.0001) clearedAtClosingFloor++;
 							}
-						}
+					}
 				}
 			}
 		}
 		expect({ flown, cleared, worstRow, worstCr: worstCr.toFixed(2) }).toEqual({
-			flown: 20_925,
-			cleared: 737,
-			worstRow: "Luxuries refinery e3 TL1 after 2",
-			worstCr: "40.00",
+			flown: 188_325,
+			cleared: 6_327,
+			worstRow: "Luxuries shipyard e0 TL1 after 2 @ 60t",
+			worstCr: "90.00",
+		});
+		// **And the rung that closes it does close it, over the same legs.**
+		// This is the price of the residue, measured rather than quoted: 0 cycles clear
+		// once the floor is `CLOSING_CUT` flat — which is the rung §5.6 declines because
+		// it also cancels the trade loop.
+		expect({
+			flownAtClosingFloor,
+			clearedAtClosingFloor,
+		}).toEqual({
+			flownAtClosingFloor: 188_325,
+			clearedAtClosingFloor: 0,
 		});
 	});
 
@@ -644,25 +743,22 @@ describe("§5.6 the bid cut, charged by the till", () => {
 						let complete = true;
 						for (let c = 0; c < CHAIN && complete; c++) {
 							const start = commander.credits;
-							const sold = transactAtStation(
-								input({
-									commander,
-									deficits,
-									station,
-									stationKey: key,
-									economy,
-									displayTL: tl,
-									// **Explicit on both legs.** Without a quantity a sale
-									// takes one unit, and "sell a hold, buy a hold" becomes
-									// "sell one, buy a hold back" — a different trade, whose
-									// net would look closed for the wrong reason.
-									action: {
-										type: "sell-commodity",
-										commodity: good.name,
-										quantity: qty,
-									},
-								}),
-							);
+							// **Explicit quantity on both legs.** Without one a sale takes a
+							// single unit, and "sell a hold, buy a hold" becomes "sell one,
+							// buy a hold back" — a different trade whose net would look
+							// closed for the wrong reason.
+							const at = (action: "buy-commodity" | "sell-commodity") => ({
+								station,
+								stationKey: key,
+								economy,
+								displayTL: tl,
+								action: {
+									type: action,
+									commodity: good.name,
+									quantity: qty,
+								},
+							});
+							const sold = leg({ commander, deficits }, at("sell-commodity"));
 							if (!sold.accepted) {
 								refusals.push(
 									`${good.name} ${type} e${economy} TL${tl} sell: ${sold.reason}`,
@@ -670,21 +766,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 								complete = false;
 								break;
 							}
-							const back = transactAtStation(
-								input({
-									commander: sold.commander,
-									deficits: sold.deficits,
-									station,
-									stationKey: key,
-									economy,
-									displayTL: tl,
-									action: {
-										type: "buy-commodity",
-										commodity: good.name,
-										quantity: qty,
-									},
-								}),
-							);
+							const back = leg(sold.state, at("buy-commodity"));
 							if (!back.accepted) {
 								refusals.push(
 									`${good.name} ${type} e${economy} TL${tl} buy: ${back.reason}`,
@@ -692,9 +774,9 @@ describe("§5.6 the bid cut, charged by the till", () => {
 								complete = false;
 								break;
 							}
-							totalCr += back.commander.credits - start;
-							commander = back.commander;
-							deficits = back.deficits;
+							totalCr += back.state.commander.credits - start;
+							commander = back.state.commander;
+							deficits = back.state.deficits;
 						}
 						if (!complete) continue;
 						// Cargo in equals cargo out, or the net is not a round trip.

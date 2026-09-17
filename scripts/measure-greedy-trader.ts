@@ -60,6 +60,7 @@ import {
 	type Result,
 	run,
 	START_CR,
+	type StartPolicy,
 	WORKING_FLOAT_CR,
 	worldFor,
 } from "./lib/greedy-trader";
@@ -665,10 +666,7 @@ console.log(
  * claim §5.6 makes is about *each* pairing, and a min–max across four draws cannot
  * show whether they agreed.
  */
-const armStats = (
-	quote: QuoteFn,
-	startPolicy: "first" | "developed" | "rim" = "first",
-) => {
+const armStats = (quote: QuoteFn, startPolicy: StartPolicy = "first") => {
 	// **One run per galaxy, not two.** `kitAffordableAtMinutes` is latched the first
 	// time the balance crosses the kit, so the run that stops there records the same
 	// minute as the one that keeps flying to measure a rate — and the duplicate was
@@ -747,7 +745,7 @@ type Arm = {
 	name: string;
 	quote: QuoteFn;
 	cut?: (tl: number) => number;
-	startPolicy?: "first" | "developed" | "rim";
+	startPolicy?: StartPolicy;
 };
 
 /** The direction table's printer. With an `armFor` arm, its two claims are checked. */
@@ -902,12 +900,12 @@ console.log(
 	// **The start is a variable, and #191 D4's concern was about it.** Every row above
 	// drops the trader at the first multi-station system the generator lists, whatever its
 	// tech level — so none of them flew "a commander who starts somewhere developed". Both
-	// arms are flown again from the galaxy's **highest-tech** berth, identical in every
+	// arms are flown again from the galaxy's **highest-tech market**, identical in every
 	// other respect, and then the *same* arm is flown from each of the three start rules so
 	// the start's own contribution is visible as a spread rather than smuggled into the
 	// arms as a constant.
 	console.log(
-		"  the same pair from a DEVELOPED start (highest-tech berth), which is the start " +
+		"  the same pair from a DEVELOPED start (highest-tech market), which is the start " +
 			"D4's concern was actually about:",
 	);
 	const devShipped = routeRow({

@@ -865,6 +865,17 @@ function shop(port: Port, led: Ledger, tMin: number, buys: boolean): void {
  * losing side have been given what the winning side had* has a mechanical
  * answer rather than an argued one.
  */
+/**
+ * Where a run drops the trader. **One union, exported**, because the instrument names
+ * these in its arm rows and a copy of the union in two files is how a fourth rule gets
+ * added in one place and silently not the other.
+ *
+ * - `first` — the first multi-station system the generator lists. The arbitrary start.
+ * - `developed` — the system with the highest displayed tech level in the galaxy.
+ * - `rim` — the lowest, which in this generator is also the most galactic-edge.
+ */
+export type StartPolicy = "first" | "developed" | "rim";
+
 export interface RunOptions {
 	/** The dock-and-market stop, seconds. §10.3's swept modelled number. */
 	dockSeconds?: number;
@@ -1003,7 +1014,7 @@ export interface RunOptions {
 	 * be assumed** — which is why the report flies the same arm from several starts and
 	 * prints the spread, rather than treating one start as the answer.
 	 */
-	startPolicy?: "first" | "developed" | "rim";
+	startPolicy?: StartPolicy;
 }
 
 export function run(

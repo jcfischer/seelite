@@ -467,8 +467,8 @@ export const DISPLAY_TL_MAX = 15;
  * it — `economy-trade.md` §5.6's rule about third copies, applied to this file. The
  * two counts further down this comment are the deliberate exception: they are this
  * comment's own claim about a specific experiment, and `tests/station-commerce.test.ts`
- * pins all three of its numbers, so moving them reddens a row rather than leaving a
- * sentence as a rumour. What
+ * pins every one of them, so moving a figure reddens a row rather than leaving a sentence
+ * as a rumour. What
  * the shape says, and what no rerun has moved: a spread which closes the pump by
  * making ordinary trading unprofitable has not repaired the economy, it has
  * cancelled it, and §8's time-to-kit goes the wrong way with it.
@@ -488,13 +488,16 @@ export const DISPLAY_TL_MAX = 15;
  * hands the mark straight back. But a *dump* first — sell two holds in without buying
  * them back, then cycle — leaves the console 40 units short of a price, and a hold sold
  * into a depressed market is quoted off that depression while the buy-back is the same
- * depression with no cut on it. Measured: **737 of 20,925 such cycles clear, the worst by
- * +40.00 Cr** (Luxuries, a refinery, economy 3, TL 1, two holds thrown first). The floor
- * that closes that door is the 0.315 one §5.6 already prices and declines for costing the
- * trade loop, so this is a residue with a known price on it, not an unknown one, and
- * `tests/station-commerce.test.ts` pins all three figures. Throwing two holds away is not
- * free — that is why 40 Cr is a residue and not a living — but the claim a comment makes
- * has to be the claim the instrument measured.
+ * depression with no cut on it. Measured over **every dockable hull**, because §182 made
+ * the mark scale with the flown hold and the dump's size is the hull's: **6,327 of 188,325
+ * such cycles clear, the worst by +90.00 Cr** (Luxuries, a shipyard, economy 0, TL 1, two
+ * holds thrown first, at the 60 t hauler — +40.00 Cr at the 20 t baseline). The floor that
+ * closes that door is the 0.315 one §5.6 already prices and declines for costing the trade
+ * loop, and that arm is flown in the same sweep rather than asserted beside it: same
+ * 188,325 legs, **0 clear**. So this is a residue with a measured price on it, and
+ * `tests/station-commerce.test.ts` pins every figure in this sentence. Throwing two holds
+ * away is not free — that is why 90 Cr is a residue and not a living — but the claim a
+ * comment makes has to be the claim the instrument measured.
  *
  * **What that leaves open is the sub-tonne case, and it is reported rather than
  * hidden.** Sixty-three **units** of Platinum is 0.2 t of cargo — Platinum
@@ -535,7 +538,7 @@ export const BID_CUT_FLOOR = PRICE_ELASTICITY;
  *
  * **The pair that does reach it is in §5.6: the shipped law against the same two
  * constants with the ends swapped, flown from an arbitrary start and from the galaxy's
- * highest-tech berth.** Its verdict is that **D4 was right about the level** — a core
+ * highest-tech market.** Its verdict is that **D4 was right about the level** — a core
  * market takes `BID_CUT_FLOOR + BID_CUT_GRADE` off a sale against the floor alone under
  * the mirror, so a commander who stays in developed space does pay the wider cut — and
  * that **the loop question is bounded rather than settled**: four galaxies move the same

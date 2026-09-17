@@ -782,10 +782,12 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 	 * guard rather than a bound: a retune that moves the table moves this number
 	 * and this line together, or the suite goes red.
 	 */
-	// Re-pinned from 8,400 to a measured 8,760 when the cut's endpoints moved onto
-	// `BID_CUT_FLOOR` and `BID_CUT_GRADE` themselves: the rim's cut went from 0.110
-	// to 0.100, which is closer to what the floor swallows, so three more tech
-	// levels' markets joined the erased set. The figure is the row's own output; a
+	// **8,400 → 8,760 was the quote step, not the ladder's endpoints, and this comment
+	// said the endpoints for a round.** §10.3's check of the erased population found it
+	// is a floor bite — 584 rows at *every* tech level, all of them markets already pinned
+	// at one price step — and a flat cut of any rung erases the same rows, so nothing about
+	// the grade decides it. What moved the count was the tenth-credit quantization arriving:
+	// with the step off, both directions erase 8,400. The figure is the row's own output; a
 	// transcription that stops matching is the point of the row.
 	const ERASED_CUT_ROWS = 8_760;
 	test("the floor is the mark one full hold of tonnage leaves", () => {

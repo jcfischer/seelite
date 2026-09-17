@@ -177,8 +177,9 @@ interface SpreadAcc {
 	rows: number;
 	spreadless: number;
 	pinnedAtStep: number;
-	/** Rows the **flat** control cut erases, counted in the same walk — the column that
-	 *  says whether the tech-level grade decides any of the erasure. */
+	/** Rows the **flat** control cut erases, counted in the same walk. Printed per
+	 *  station type as well as in the total: the total answers "does the grade decide the
+	 *  erasure?" and a per-type column is what shows a type where it does. */
 	flatSpreadless: number;
 	/** Sum of `(ask − bid) / ask`, so a printed mean spread is a mean of realized
 	 *  rows rather than of the table's declared endpoints. */
@@ -279,12 +280,18 @@ for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
 			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(23),
 	);
 }
-console.log("  by station type (the axis #13's warning was actually about):");
+console.log(
+	"  by station type (the axis #13's warning was actually about), graded and flat:",
+);
+console.log(
+	"      type            rows      no spread     flat too   mean spread",
+);
 for (const [type, acc] of [...cutByType.entries()].sort())
 	console.log(
 		`  ${type}`.padEnd(14) +
 			`${acc.rows.toLocaleString()}`.padStart(11) +
 			`${pct(acc.spreadless, acc.rows)}`.padStart(14) +
+			`${pct(acc.flatSpreadless, acc.rows)}`.padStart(14) +
 			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(20),
 	);
 console.log(
