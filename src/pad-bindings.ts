@@ -1,6 +1,13 @@
 /**
  * What a pad button *means* in this game (#283).
  *
+ * **And what one surface owns.** `PadContext` — the names come from the gamepad,
+ * the thing is the drawn surface — is this module's answer to which surface the
+ * sticks, the triggers **and the pointer** belong to. `pointerLockMove` below is
+ * the mouse's half of that answer (#371), and it lives here because it is the same
+ * predicate as `contextFliesShip` asked by the other half of the mouse, not because
+ * a gamepad button is anywhere in it.
+ *
  * ## Why the table is here and not in either of the two obvious places
  *
  * Not in `src/gamepad.ts`, because that module is a **copy** — seekolous wrote
@@ -384,9 +391,11 @@ export function contextFliesShip(context: PadContext): boolean {
  *
  * **`capture` is permission for a click, not an instruction to make one.** The
  * browser grants a lock only from an activation-triggering event or after a
- * page-initiated exit, and Blink refuses a tenth request inside two seconds
- * (`kMaxLocksInWindow`), so nothing downstream should read this name as licence to
- * ask every frame. `release` is the only effect the game takes on its own, and it
+ * page-initiated exit, and it will not tolerate being asked on every frame:
+ * measured on this repo's harness, **the fifth request inside about 1.3 seconds is
+ * refused**, and the window outlasts one second though not 2.1 — see
+ * `scripts/probe-pointer-lock.mjs`, which paces itself against exactly that. So
+ * nothing downstream should read this name as licence to ask every frame. `release` is the only effect the game takes on its own, and it
  * is edge-triggered by `held`: once the pointer is back the row reads `at-rest`,
  * which is what keeps a frame loop from pounding the browser with an exit it has
  * already carried out — and covers the player's own Escape for free, whose release

@@ -6813,8 +6813,8 @@ class Game {
 	 * head is turned. What the turn also does is end the pointer lock's claim on the
 	 * mouse, **by drawing a console rather than by anything said here**: the next
 	 * frame's `reconcilePointerLock` reads the surface this rendered (#371). Nothing
-	 * here releases the pointer, which is the point — the docked station console
-	 * arrives with the head still forward and needs the same thing.
+	 * here releases the pointer, and that is the point: the release belongs to the
+	 * drawn surface, so any way a console gets drawn gets it.
 	 */
 	setHeadLook(headLook: HeadLook) {
 		this.headLook = headLook;

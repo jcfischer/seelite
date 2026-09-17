@@ -62,19 +62,14 @@ round, which is the third-copy drift `CLAUDE.md` warns about. What is worth
 knowing without opening it: the footer is a claim about the *world*, not the
 controls, and the throttle is **held** rather than zeroed, so you coast.
 
-**One consequence of that suspension went unshipped until #371.** The mouse is
-not only the delta: mouse-look runs on pointer lock, and while the lock is held the
-browser delivers every mouse event — the click included — to the locked element. A
-console that suspends the mouse and keeps the capture therefore suspends nothing
-the player can feel and takes the one thing they need: the panel paints,
-highlights, and answers nothing, because the click aimed at its tab is delivered to
-the glass underneath. `pointerLockMove` in that same module owns this rule and the
-argument for it, as it owns the one above; what is worth knowing here is only
-**that the release belongs to the drawn surface rather than to the head turn**,
-because the station console arrives on the forward wall with the head still forward
-and needs exactly the same thing — through `liveCockpit`'s `hasFocusScope()`, which
-is the same answer `padContext` already takes. That one is **reasoned and not
-measured**: `probe-pointer-lock.mjs` says why, and its rows are the head turn and the
+**One consequence of that suspension went unshipped until #371.** A console that
+suspends the mouse while the pointer is still captured suspends nothing the player can
+feel: `pointerLockMove` in that same module owns that rule and the argument for it.
+What is worth knowing here is the one thing the rule adds at this level — **the release
+belongs to the drawn surface, not to the head turn** — because the station console
+arrives on the forward wall with the head still forward, through `hasFocusScope()`,
+which is the same answer `padContext` already takes. That surface is reasoned and not
+measured; `probe-pointer-lock.mjs` says why, and its rows are the head turn and the
 settings screen.
 
 **`instrument`** is the frame overlay behind `?perf`, and it is the one

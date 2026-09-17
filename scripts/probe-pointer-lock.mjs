@@ -152,6 +152,18 @@ const clickAt = async (page, selector) => {
  *  player makes when they can see the canvas and reach for it. It answers with the
  *  hit test, so a row that needed bare glass can say so rather than assuming it. */
 const clickGlass = async (page) => {
+	// **The harness paces itself, so that the click a row makes is the click that
+	// row is about.** Measured here: the fifth pointer-lock request inside about
+	// 1.3 s is refused with `pointerlockerror`, one second does not clear that
+	// window and 2.1 seconds does — the same limiter this change edge-triggers the
+	// release against, arriving on the probe's own fast click sequence. The first
+	// answer was to retry after a refusal, and Sage read what that cost, round 4: a
+	// row named for *the next click* was being satisfied by a later one, which is the
+	// half of the principal's ruling that row exists to hold. So the wait goes
+	// **before** the click and there is exactly one click per row: the row measures
+	// the click a player would make, and the harness's own speed is not allowed to
+	// decide whether a premise held.
+	await page.waitForTimeout(2200);
 	const at = await page.evaluate(() => {
 		const r = window.__seelite.renderer.domElement.getBoundingClientRect();
 		const x = Math.round(r.left + r.width * 0.03);
@@ -169,17 +181,9 @@ const clickGlass = async (page) => {
 const relockForward = async (target) => {
 	await target.keyboard.press("2");
 	await settle(target);
-	await clickGlass(target);
-	if (await canvasLock(target)) return true;
-	// **Wait out the browser's own window, and do not pretend it is the game's.**
-	// Measured here: the fifth lock request inside about 1.3 s is refused with
-	// `pointerlockerror`, it stays refused while the fast asking continues, one
-	// second is not enough to clear it and 2.1 s is. A row that turns the head,
-	// re-takes the glass and turns again is knocking at the door far faster than a
-	// player ever does — this is the same limiter the release is edge-triggered
-	// against, arriving on the probe instead of on the game. The retry is once, with
-	// its answer read, so a row still cannot start from a state it did not take.
-	await target.waitForTimeout(2200);
+	// One click, and its answer is the row's premise. `clickGlass` has already
+	// waited out the browser's lock window, so this is the next click and not a
+	// later one.
 	await clickGlass(target);
 	return canvasLock(target);
 };
@@ -424,6 +428,9 @@ const centre = await plain.evaluate(
 			Math.round(innerHeight * 0.5),
 		)?.tagName ?? null,
 );
+// Five clicks at the default launcher, where no lock is grantable at all: the
+// game asks every time and must swallow every refusal. `mouse.click` here, not
+// `clickGlass` — this page is the launcher, not the glass the rows above use.
 for (let click = 0; click < 5; click++) {
 	await plain.mouse.click(Math.round(W * 0.5), Math.round(H * 0.5));
 	await plain.waitForTimeout(120);
