@@ -57,6 +57,10 @@
  * this one is that the *decision* is held in a function the headless tier can
  * reach, and the surface that answers for it is the one the probe already reads.
  *
+ * **About the word "pad" in this file:** it is the gamepad — `installFakePad`,
+ * `PAD_FLIGHT_KEYS`, `padContext` — and not the `Berth` sense `CONTEXT.md` retires
+ * the alias for. Nothing here is about landing.
+ *
  * **And why the last section uses the default launcher.** The lock the game *asks
  * for* is refused on any machine without a lockable view, which is ordinary rather
  * than a defect — and it must not reach the page as an unhandled rejection. That
@@ -71,6 +75,7 @@ import {
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
+import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -152,19 +157,42 @@ const clickGlass = async (page) => {
 	return at;
 };
 
-/** Turn the head and read what the pointer did, on a page whose glass is locked
- *  before the turn — a turn taken while the pointer is already free proves
- *  nothing about a surrender. */
-const turnSurrenders = async (page, key, look, label) => {
+/** Back to forward and take the glass again, answering whether it was taken. The
+ *  rows after a turn all need a locked page, and a row that starts from a state it
+ *  did not establish is how a green run stops meaning anything. */
+const relockForward = async (target) => {
+	await target.keyboard.press("2");
+	await settle(target);
+	await clickGlass(target);
+	return canvasLock(target);
+};
+
+/**
+ * Turn the head by one of the doors that has a row, and read what the pointer did.
+ *
+ * **Every door starts from a locked glass or says it did not get one**: a turn taken
+ * while the pointer is already free proves nothing about a surrender, which is
+ * exactly how the first version of this file's left-turn row passed against the
+ * broken build.
+ */
+const turnSurrenders = async (door, look, label) => {
 	if (!(await canvasLock(page))) {
-		check(label, false, `the glass was not locked before ${key}`);
+		check(label, false, "the glass was not locked before the turn");
 		return;
 	}
-	await page.keyboard.press(key);
+	await door();
 	await settle(page);
 	const lock = await lockHolder(page);
 	const head = await headLook(page);
 	check(label, lock === null && head === look, `lock=${lock} headLook=${head}`);
+};
+
+/** Press a gamepad button across a poll, which is the only way the game sees it. */
+const pressPad = async (name) => {
+	await page.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX[name]);
+	await settle(page);
+	await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX[name]);
+	await settle(page);
 };
 
 const browser = await launchChromium({ channel: "chromium" });
@@ -175,6 +203,10 @@ const browser = await launchChromium({ channel: "chromium" });
 // ---------------------------------------------------------------------------
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 watch(page);
+// Installed before the load, because the browser hides a connected controller
+// until a button is pressed and the game's first poll has to find one there. The
+// pad is at rest for every row but the one that turns the head with it.
+await page.addInitScript(installFakePad);
 await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(page);
 
@@ -227,9 +259,11 @@ check(
 
 // ---------------------------------------------------------------------------
 // The defect, and the rule that fixes it: the head turns to a console and the
-// pointer comes back. Three call sites turn the head — the `1`/`2`/`3` keys, the
-// `Alt`+arrow chord, and the gamepad's — and the release is not written at any of
-// them, so all three are covered by one row apiece rather than one row total.
+// pointer comes back. Two doors turn it — `command`'s `1`/`2`/`3` switch, which the
+// gamepad's d-pad reaches through `PAD_FLIGHT_KEYS`, and the `Alt`+arrow chord that
+// bypasses `command` entirely — and the release is written at neither, so the rows
+// below read the doors rather than the sites that draw a console. The gamepad gets
+// its own row because it is the door no other probe here pairs with a pointer.
 // ---------------------------------------------------------------------------
 await clickGlass(page);
 check(
@@ -239,8 +273,7 @@ check(
 );
 
 await turnSurrenders(
-	page,
-	"3",
+	() => page.keyboard.press("3"),
 	"right",
 	"turning the head right surrenders the lock, read off `document.pointerLockElement`",
 );
@@ -267,28 +300,21 @@ check(
 	`hit=${beside.hit} lock=${await lockHolder(page)} surface=${await surface(page)}`,
 );
 
-await page.keyboard.press("2");
-await settle(page);
-await clickGlass(page);
 check(
 	"with the head back to forward the next click on the glass takes it again",
-	(await canvasLock(page)) && (await headLook(page)) === "forward",
+	(await relockForward(page)) && (await headLook(page)) === "forward",
 	`lock=${await lockHolder(page)} headLook=${await headLook(page)}`,
 );
 
 await turnSurrenders(
-	page,
-	"Alt+ArrowRight",
+	() => page.keyboard.press("Alt+ArrowRight"),
 	"right",
-	"the `Alt`+arrow turn surrenders it too",
+	"the `Alt`+arrow chord surrenders it too, bypassing `command`",
 );
 
-await page.keyboard.press("2");
-await settle(page);
-await clickGlass(page);
+await relockForward(page);
 await turnSurrenders(
-	page,
-	"1",
+	() => page.keyboard.press("1"),
 	"left",
 	"and so does the turn to the left console",
 );
@@ -298,17 +324,20 @@ check(
 	await surface(page),
 );
 
+await relockForward(page);
+await turnSurrenders(
+	() => pressPad("right"),
+	"right",
+	"and the d-pad's turn surrenders it from the gamepad door",
+);
+
 // ---------------------------------------------------------------------------
 // The same rule one surface up. The settings screen never released the lock at
-// all, so the screen every player opens had the same dead rows. The Commander
-// overlay keeps its own release: it opens on a keystroke and does not wait for a
-// frame, and `padContext`'s own comment records that a probe can cancel the loop —
-// on that path the frame's reconciliation never runs. `tests/pad-bindings.test.ts`
-// pins both release sites by name so a third cannot arrive unremarked.
+// all, so the screen every player opens had the same dead rows. Why the Commander
+// overlay keeps its own release is `reconcilePointerLock`'s to say; the row in
+// `tests/pad-bindings.test.ts` is what keeps a third from arriving unremarked.
 // ---------------------------------------------------------------------------
-await page.keyboard.press("2");
-await settle(page);
-await clickGlass(page);
+await relockForward(page);
 await page.keyboard.press("z");
 await settle(page);
 check(
@@ -350,17 +379,42 @@ await plain.addInitScript(() => {
 	window.addEventListener("unhandledrejection", (event) =>
 		window.__refusals.push(String(event.reason?.name ?? event.reason)),
 	);
+	// **Count the asks, and hand back the real promise.** A row that only asserts
+	// "nothing leaked" passes on the game never having asked at all, which is what
+	// this one did until sage, round 2. Counting is not stubbing: the call below is
+	// the browser's own, so a refusal still rejects exactly as it would unobserved.
+	const ask = HTMLElement.prototype.requestPointerLock;
+	window.__asks = 0;
+	HTMLElement.prototype.requestPointerLock = function requestPointerLock() {
+		window.__asks++;
+		return ask.call(this);
+	};
 });
 await plain.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(plain);
+const centre = await plain.evaluate(
+	() =>
+		document.elementFromPoint(
+			Math.round(innerWidth * 0.5),
+			Math.round(innerHeight * 0.5),
+		)?.tagName ?? null,
+);
 for (let click = 0; click < 5; click++) {
 	await plain.mouse.click(Math.round(W * 0.5), Math.round(H * 0.5));
 	await plain.waitForTimeout(120);
 }
-const refusals = await plain.evaluate(() => window.__refusals);
+const [refusals, asks] = await plain.evaluate(() => [
+	window.__refusals,
+	window.__asks,
+]);
 check(
-	"a lock the browser refuses is read by the game, not thrown to the page",
-	refusals.length === 0,
+	"the game does ask for the lock out here, so the row below has something to refuse",
+	centre === "CANVAS" && asks >= 1,
+	`hit=${centre} asks=${asks}`,
+);
+check(
+	"and a refusal is read by the game, not thrown to the page",
+	asks >= 1 && refusals.length === 0,
 	refusals.length ? `${refusals.length} × ${refusals[0]}` : "",
 );
 await shell.close();

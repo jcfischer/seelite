@@ -518,9 +518,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 	// `main.ts`, which nothing here can load.
 	//
 	// **Keyed by `PadContext`, not listing it.** A plain array of rows would go on
-	// passing, green, the day a fifth context is added to that union — which is the
-	// exact drift this file exists to catch, and an array cannot see it. A
-	// `Record` over the union makes omitting one a type error, so the row below
+	// passing, green, the day a fifth context joins that union, and the row below
 	// only has to walk the object it is given.
 	const CELLS: Record<
 		PadContext,
@@ -532,10 +530,8 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// frame that exists to be measured while flown is still being flown.
 		flight: { notHeld: "capture", held: "keep" },
 		instrument: { notHeld: "capture", held: "keep" },
-		// And here the pointer comes back. `release` only while it is held: a loop
-		// that exited unconditionally would ask for nothing sixty times a second,
-		// and would report wrongly the moment the player pressed Escape, whose own
-		// release leaves nothing to release.
+		// And here the pointer comes back, which is the whole of #371. Why the
+		// release is edge-triggered on `held` is `pointerLockMove`'s to say.
 		console: { notHeld: "at-rest", held: "release" },
 		modal: { notHeld: "at-rest", held: "release" },
 	};
@@ -556,15 +552,24 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		}
 	});
 
+	test("the gamepad's head turn arrives at the same door the keyboard's does", () => {
+		// `probe-pointer-lock.mjs` turns the head with a held d-pad and reads the
+		// pointer come back, and the reason that row is about a *door* rather than a
+		// second copy of the keyboard row is this mapping: the d-pad's three
+		// horizontal positions are the `1`/`2`/`3` commands, which is why the probe
+		// can say "the gamepad door" and mean `command`, not a binding of its own.
+		expect(PAD_FLIGHT_KEYS.left).toBe("1");
+		expect(PAD_FLIGHT_KEYS.up).toBe("2");
+		expect(PAD_FLIGHT_KEYS.right).toBe("3");
+	});
+
 	test("the lock is asked for at one door, and given up at two that are named", () => {
 		// **A count, and it is standing in for a predicate — so read what it
-		// guards.** The defect class is not "the wrong condition" but "a second
-		// place that takes the lock without asking", which is how a release came to
-		// be written beside one screen before this rule had an owner. One request
-		// door means one place for the context test to sit. The two releases are
-		// named rather than counted as one: the frame's, and the Commander's, which
-		// opens on a keystroke and does not wait for a frame that a probe may have
-		// cancelled. A third of either kind has to come through here and be said.
+		// guards.** The defect class is not "the wrong condition" but "a second place
+		// that takes the lock without asking", which is how a release came to be
+		// written beside one screen before this rule had an owner. Why that release
+		// stays and a third would not is `reconcilePointerLock`'s comment; what the
+		// lists below do is make a new one a decision rather than an accident.
 		const doors = (call: RegExp): string[] => {
 			const found: string[] = [];
 			for (const file of srcFiles())
@@ -576,12 +581,16 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 			"src/commander-overlay.ts",
 			"src/main.ts",
 		]);
-		// And the one door asks the rule before it asks the browser.
+		// And the one door asks the rule **and obeys it**: the answer has to be
+		// tested and returned from, not merely computed and dropped on the way to
+		// the browser. `toContain("pointerLockMove(")` alone would pass a handler
+		// that asks and ignores — which is what sage, round 2, read out of it.
 		const asked = codeOf("src/main.ts");
 		const door = asked.slice(
 			asked.indexOf('addEventListener("click"'),
 			asked.indexOf("requestPointerLock"),
 		);
 		expect(door).toContain("pointerLockMove(");
+		expect(door).toMatch(/!==\s*"capture"\s*\)\s*\n\s*return;/);
 	});
 });
