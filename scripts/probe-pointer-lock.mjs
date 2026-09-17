@@ -181,11 +181,21 @@ const clickGlass = async (page) => {
 const relockForward = async (target) => {
 	await target.keyboard.press("2");
 	await settle(target);
+	// **Read the pointer before asking for it back.** The ruling is that the next
+	// click, and nothing else, restores the pointer — so a build that re-took the
+	// lock on its own way home has to fail something, and without this read every
+	// row here would pass on it: each premise below asks only that the glass ends up
+	// locked, which an auto re-lock satisfies as well as a click does. Sage, round 5,
+	// on the version that clicked straight away.
+	const autoLockedOnReturn = await canvasLock(target);
 	// One click, and its answer is the row's premise. `clickGlass` has already
 	// waited out the browser's lock window, so this is the next click and not a
 	// later one.
 	await clickGlass(target);
-	return canvasLock(target);
+	return {
+		took: await canvasLock(target),
+		autoLockedOnReturn: !!autoLockedOnReturn,
+	};
 };
 
 /**
@@ -322,10 +332,13 @@ check(
 	`hit=${beside.hit} lock=${await lockHolder(page)} surface=${await surface(page)}`,
 );
 
+const relock = await relockForward(page);
 check(
-	"with the head back to forward the next click on the glass takes it again",
-	(await relockForward(page)) && (await headLook(page)) === "forward",
-	`lock=${await lockHolder(page)} headLook=${await headLook(page)}`,
+	"nothing takes the pointer back on the way home, and the click does",
+	!relock.autoLockedOnReturn &&
+		relock.took &&
+		(await headLook(page)) === "forward",
+	`auto=${relock.autoLockedOnReturn} took=${relock.took} headLook=${await headLook(page)}`,
 );
 
 await turnSurrenders(
@@ -364,7 +377,7 @@ await turnSurrenders(
 // ---------------------------------------------------------------------------
 // The same premise as every surrender row: a screen opened on an unlocked page
 // surrenders nothing, so the relock's own answer is part of the row.
-const beforeSettings = await relockForward(page);
+const beforeSettings = (await relockForward(page)).took;
 await page.keyboard.press("z");
 await settle(page);
 check(
