@@ -677,25 +677,20 @@ export const quantizeToDisplayStepCr = (cr: number): number => {
  */
 export const quoteWithCut = (
 	cutAtTl: (displayTL: number) => number,
-	{
-		quantize = true,
-		// **The ask is a parameter for the same reason the bid is one.** A test that
-		// wanted a symmetric wedge used to rebuild this body — the floor, the step, both
-		// `Math.max` calls — and a helper carrying its own copy of the rounding is how a
-		// test starts disagreeing with the law it means to vary. Identity by default,
-		// which is the shipped one-sided wedge.
-		askAtTl = (midCr: number): number => midCr,
-	}: {
-		quantize?: boolean;
-		askAtTl?: (midCr: number, displayTL: number) => number;
-	} = {},
+	{ quantize = true }: { quantize?: boolean } = {},
 ): QuoteFn => {
 	const step = (cr: number): number =>
 		quantize ? quantizeToDisplayStepCr(cr) : cr;
-	const side = (cr: number): number => step(Math.max(PRICE_STEP_CR, cr));
+	// **The ask is not a parameter, and that is the law rather than an omission.** #191 D1
+	// declined the symmetric wedge, so the only shipped builder lifts one side; the
+	// rejected arm is flown as an arm (`quoteSplitting` in the greedy instrument), the way
+	// `NO_WEDGE` and `fixedReferenceResponse` are flown. An `askAtTl` here was tried in
+	// review round 6 and removed: it would have had no caller in the game, and routing the
+	// declined arm through it moved that arm's arithmetic, because a shared builder floors
+	// both sides.
 	return (midCr, displayTL) => ({
-		buyCr: side(askAtTl(midCr, displayTL)),
-		sellCr: side(midCr * (1 - cutAtTl(displayTL))),
+		buyCr: step(midCr),
+		sellCr: step(Math.max(PRICE_STEP_CR, midCr * (1 - cutAtTl(displayTL)))),
 	});
 };
 
