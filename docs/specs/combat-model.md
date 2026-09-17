@@ -163,6 +163,19 @@ Canisters are flight
 state and are not saved. A reload or a jump loses them, which a five-minute
 lifetime makes a small loss.
 
+### 4.2 Ordinary traffic, and the figures §4 left open (#362)
+
+§4 names offences, thresholds and heat without figures; `civilian-combat.md`
+owns them — what an offence against a Clean carrier costs, where Wanted and
+Fugitive begin, and the cap (H4). An ordinary carrier is a combat ship under
+§1's rules on its own hull (H2), a destroyed one goes destroyed → repairing →
+replaced on the raider's figures (`RAIDER_WRECK_S`, `RAIDER_REPAIR_S`, reused
+by `trafficDestruction`; no H decision sets them) and returns as a new instance
+(H1), and its drop is the manifest
+`carrier-identity.md` §3 derives, one canister per line holding that line's
+tonnes (H11) — so a canister's tonnage is a field, and a scoop takes what fits.
+The left console's readout shows the player's standing (H7).
+
 ## 5. HUD and verification
 
 The cockpit HUD must show selected-target identity and range, computed laser lead, missile-lock state, incoming-missile warning, fore/aft shields, energy, laser heat, legal status, and the existing attitude/velocity-vector instruments.

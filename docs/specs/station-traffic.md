@@ -162,7 +162,8 @@ before it begins prevents a Traffic actor and the player from converging on the
 single aperture together, while still keeping external holds distinct from
 interior lane occupancy.
 
-Traffic actors do not add collision or combat physics in #148. A materialized
+Traffic actors added no collision or combat physics in #148; #75 and #362 have
+since added both (`in-system-route-traffic.md` §5, `civilian-combat.md`). A materialized
 actor's pose and velocity come from the station frame and the same traversal
 law as the player's; deriving progress from `gameTime` means an actor first
 seen midway through a movement appears at the correct point rather than

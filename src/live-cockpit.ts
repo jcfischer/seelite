@@ -101,6 +101,9 @@ export interface LiveCockpitState {
 	assist: string;
 	/** §5 gives the Drive console the cruise charge. Same story. */
 	charge: string;
+	/** The player's standing, CLEAN, WANTED or FUGITIVE (#8, civilian-combat
+	 *  H7), stepping back as heat decays. */
+	legalStatus: string;
 	/** #324's duel detail for the Flight console — fore, aft, hull, energy bank and
 	 *  heat — or `null` in peace. */
 	duel: DuelConsoleReadout | null;
@@ -129,6 +132,9 @@ export interface LiveCockpitState {
 	/** A launch Traffic refused and is holding, and why (#314). */
 	launchHold: { refusal: LaneRefusal } | null;
 }
+
+/** Both left tabs' readout block, one copy so the two cannot drift apart. */
+const LEFT_READOUT = `<div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span><span><b>LEGAL STATUS</b><em data-live-legal-status></em></span></div>`;
 
 export interface LiveCockpitCallbacks {
 	onRequestAction?: (action: string, id: string) => void;
@@ -167,6 +173,7 @@ interface CockpitElements {
 	leftPanelCopy: HTMLElement | null;
 	rightPanelCopy: HTMLElement | null;
 	contactCount: HTMLElement | null;
+	legalStatus: HTMLElement | null;
 	assistReadout: HTMLElement | null;
 	chargeReadout: HTMLElement | null;
 	/** #324's duel detail block and its five readings. */
@@ -937,6 +944,7 @@ export class LiveCockpit {
 				leftPanelCopy: find("[data-live-left-copy]"),
 				rightPanelCopy: find('[data-live-panel="right"] .lc-panel-copy > p'),
 				contactCount: find("[data-live-contact-count]"),
+				legalStatus: find("[data-live-legal-status]"),
 				assistReadout: find("[data-live-assist]"),
 				chargeReadout: find("[data-live-charge]"),
 				duel: find("[data-live-duel]"),
@@ -1022,6 +1030,8 @@ export class LiveCockpit {
 					: `${state.mode} · ${state.speed} · throttle ${state.throttle}`;
 		if (elements.contactCount)
 			elements.contactCount.textContent = String(state.contacts.length);
+		if (elements.legalStatus)
+			elements.legalStatus.textContent = state.legalStatus;
 		// **These two rendered as labels with nothing beside them.** §5 gives the
 		// Flight console assist and the Drive console the cruise charge, and the
 		// markup has carried both rows since the console was built — with an
@@ -1269,11 +1279,11 @@ export class LiveCockpit {
 		if (state.leftTab === "Galaxy Map")
 			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
-			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span></div></div></div>`;
+			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>
 				`<button class="lc-chip" type="button" data-live-nav-kind="${kind}" aria-pressed="${state.navFilter.kinds.includes(kind)}">${kind.toUpperCase()}</button>`,
 		).join("");
-		return `<div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>${escapeHtml(state.systemName.toUpperCase())}</span><button type="button" data-live-left-tab="Galaxy Map">GALAXY MAP</button><span>SYSTEM MAP</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><div class="lc-nav-filters">${chips}<input class="lc-nav-query" type="search" data-live-nav-query placeholder="FILTER" aria-label="filter navigation targets" value="${escapeHtml(state.navFilter.query)}"></div><ul class="lc-nav-list" data-live-nav-list></ul><div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span></div></div></div>`;
+		return `<div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>${escapeHtml(state.systemName.toUpperCase())}</span><button type="button" data-live-left-tab="Galaxy Map">GALAXY MAP</button><span>SYSTEM MAP</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><div class="lc-nav-filters">${chips}<input class="lc-nav-query" type="search" data-live-nav-query placeholder="FILTER" aria-label="filter navigation targets" value="${escapeHtml(state.navFilter.query)}"></div><ul class="lc-nav-list" data-live-nav-list></ul>${LEFT_READOUT}</div></div>`;
 	}
 }

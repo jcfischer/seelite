@@ -286,7 +286,21 @@ import {
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import { type PlayerShot, raiderInSights } from "./duel";
+import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
+import {
+	type Engagement,
+	engage,
+	fliesItsRoute,
+	flownVoyageOrdinal,
+	flyingTrafficActors,
+	stepEngagement,
+	trafficDestruction,
+	trafficInSights,
+} from "./traffic-engagement";
+import { carrierInstanceSeed, carrierStanding } from "./carrier-standing";
+import { DOMAIN } from "./domains";
+import { carrierManifest } from "./carrier-manifest";
+import { heatAt, legalStandingAt, offenceHeat, withOffence } from "./legal";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
@@ -344,10 +358,16 @@ import {
 	type Canister,
 	driftCanister,
 	dropCanisters,
+	dropManifestCanisters,
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
-import { SCOOP_NOTICE_S, scoopExit, scoopNotice } from "./cargo-notice";
+import {
+	SCOOP_NOTICE_S,
+	type ScoopNotice,
+	nextScoopNotice,
+	scoopExit,
+} from "./cargo-notice";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -539,7 +559,16 @@ import {
 } from "./station-console";
 import type { GalaxyChart } from "./galaxy-map";
 import { type WarpField, warpField } from "./warp";
-import { type Vec3, add, dot, length, scale, sub, v3 } from "./vec3";
+import {
+	type Vec3,
+	add,
+	dot,
+	length,
+	normalizeOr,
+	scale,
+	sub,
+	v3,
+} from "./vec3";
 // One path to `./units`, deliberately. Keeping a namespace import beside a named
 // one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
 // spellings of the same constant — the two-public-paths pattern this branch
@@ -1828,6 +1857,12 @@ class Game {
 	private trafficActors: TrafficActor[] = [];
 	private readonly trafficContacts = new Map<CarrierKey, DisplayContact>();
 	private readonly trafficMeshes = new Map<CarrierKey, THREE.Group>();
+	/**
+	 * Ordinary carriers the player has fired on (`civilian-combat.md` H2, H3):
+	 * flown rather than projected while engaged. An engagement ends in a kill
+	 * or, in this change, when the ship leaves the materialization band.
+	 */
+	private readonly trafficEngagements = new Map<CarrierKey, Engagement>();
 	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
 	private readonly trafficNose = new THREE.Vector3();
 	private readonly trafficUp = new THREE.Vector3();
@@ -2032,10 +2067,11 @@ class Game {
 	 *  say why. One object rather than three fields, so a jump clears it in one
 	 *  assignment and the field does not share a name with the function that
 	 *  builds its text (sage #355). */
-	scoop: { text: string; left: number; accepted: boolean } = {
+	scoop: ScoopNotice = {
 		text: "",
 		left: 0,
 		accepted: true,
+		canisterId: null,
 	};
 	/** What the notice drew this frame, for a probe to read rather than
 	 *  restate: the text, its alpha and its outcome, or null when nothing
@@ -2064,6 +2100,13 @@ class Game {
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
 	} | null = null;
+	/**
+	 * The selected target's label as painted this frame, or `null` when none was
+	 * painted. Written by the draw, like `cueRender`, so a probe reads the mark a
+	 * pilot sees rather than re-deriving it (sage #368: a civilian's ON TARGET had
+	 * no record at all).
+	 */
+	selectedRender: { id: string; text: string; onTarget: boolean } | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -2497,7 +2540,11 @@ class Game {
 		return (
 			Number.isFinite(this.trafficTick) &&
 			this.trafficWarmIndex >= this.trafficActors.length &&
-			this.trafficRoutes.length === this.trafficActors.length
+			// **The flying actors, not the roster** (civilian-combat H1): a
+			// destroyed or repairing carrier has no route, so against the roster
+			// a kill left authority "warming" until the replacement completed, and
+			// every lane request in the system was refused for half an hour.
+			this.trafficRoutes.length === this.flyingTraffic().length
 		);
 	}
 
@@ -4424,6 +4471,7 @@ class Game {
 	/** Reset presentation and transient authority when its system changes. */
 	private clearTrafficPresentation() {
 		this.disposeTrafficPresentation();
+		this.trafficEngagements.clear();
 		this.trafficRoutes.length = 0;
 		this.trafficPlayerTimeline.length = 0;
 		this.trafficCarrierTimeline.length = 0;
@@ -4470,7 +4518,7 @@ class Game {
 		this.trafficProjectionAtS = gameTime;
 		const system =
 			projectionSystem ?? makeSystem(this.world.system.record, gameTime);
-		for (const actor of this.trafficActors) {
+		for (const actor of this.flyingTraffic()) {
 			if (!this.trafficColdActors.has(actor.key)) continue;
 			const projection = projectParkedTrafficActor({
 				actor,
@@ -4624,7 +4672,7 @@ class Game {
 						}
 					: undefined;
 			};
-			const baselines = this.trafficActors.map((actor) => ({
+			const baselines = this.flyingTraffic().map((actor) => ({
 				actor,
 				projection: projectSystemTrafficAuthority({
 					record: this.world.system.record,
@@ -4905,6 +4953,13 @@ class Game {
 				(candidate) => candidate.key === projection.key,
 			);
 			if (!actor) continue;
+			// Flown, not projected, while engaged; and a carrier killed since the
+			// last authority tick is not drawn from its stale route.
+			if (
+				this.trafficEngagements.has(actor.key) ||
+				!this.trafficOperational(actor.key)
+			)
+				continue;
 			const previous = this.trafficContacts.get(actor.key);
 			const settled =
 				projection.phase === "parked-home" ||
@@ -5014,6 +5069,7 @@ class Game {
 		}
 
 		for (const projection of this.trafficRoutes) {
+			if (this.trafficEngagements.has(projection.key)) continue;
 			const contact = this.trafficContacts.get(projection.key);
 			const mesh = this.trafficMeshes.get(projection.key);
 			if (!contact || !mesh || !mesh.parent) continue;
@@ -5033,6 +5089,321 @@ class Game {
 				mesh.quaternion.copy(this.trafficFromQuaternion);
 			} else mesh.quaternion.copy(this.trafficToQuaternion);
 		}
+
+		// Engaged carriers are drawn from their flight (civilian-combat H3).
+		for (const [key, engagement] of this.trafficEngagements) {
+			const contact = this.trafficContacts.get(key);
+			const mesh = this.trafficMeshes.get(key);
+			if (!contact || !mesh) continue;
+			const { ship, nose, up } = engagement.flight;
+			contact.pos.x = ship.pos.x;
+			contact.pos.y = ship.pos.y;
+			contact.pos.z = ship.pos.z;
+			contact.velocity.x = ship.vel.x;
+			contact.velocity.y = ship.vel.y;
+			contact.velocity.z = ship.vel.z;
+			if (!mesh.parent) this.nearScene.add(mesh);
+			mesh.position.set(
+				ship.pos.x - cameraPos.x,
+				ship.pos.y - cameraPos.y,
+				ship.pos.z - cameraPos.z,
+			);
+			if (this.trafficQuaternion({ nose, up }, this.trafficToQuaternion))
+				mesh.quaternion.copy(this.trafficToQuaternion);
+		}
+	}
+
+	/** The Traffic actors flying their projection now: the operational ones. */
+	private flyingTraffic(): TrafficActor[] {
+		return flyingTrafficActors(this.trafficActors, (key) =>
+			this.carrierCondition(key),
+		);
+	}
+
+	private trafficOperational(key: CarrierKey): boolean {
+		return fliesItsRoute(this.carrierCondition(key));
+	}
+
+	/**
+	 * One frame of civilian combat (`civilian-combat.md` H2, H3).
+	 *
+	 * **A shot that lands on a projected carrier engages it**: the carrier is
+	 * handed from its projection to flight at the pose it is drawn in, and the
+	 * same step then lands the shot. An engaged carrier is stepped through the
+	 * shared condition model on its own hull; an armed one's return fire goes
+	 * through `takeDamage` like the raider's. **A survivor is transient in this
+	 * change** (H10): past the dematerialization range the engagement is dropped
+	 * and the carrier goes back to its projection. The diversion is #365's.
+	 */
+	private stepTrafficEngagements(dt: number, shot: PlayerShot) {
+		const pilot: DuelPilot = {
+			ship: this.world.ship,
+			nose: this.nose(),
+			aimOrigin: this.cameraPos(),
+			aimNose: this.beamAim(),
+			hull: this.condition.hull,
+			frameVel: this.localFrame(),
+		};
+		if (shot.fired && shot.damage > 0) this.engageStruckTraffic(pilot);
+		this.stepEngagedTraffic(pilot, shot, dt);
+	}
+
+	/** Hand every projected carrier the beam lands on to flight at the pose it
+	 *  is drawn in; the same frame's step then lands the shot. */
+	private engageStruckTraffic(pilot: DuelPilot) {
+		const record = this.world.system.record;
+		for (const [key, contact] of this.trafficContacts) {
+			if (this.trafficEngagements.has(key)) continue;
+			const actor = this.trafficActorByKey(key);
+			if (!actor) continue;
+			if (
+				!trafficInSights(
+					pilot.aimOrigin,
+					pilot.aimNose,
+					contact.pos,
+					actor.hullId,
+				)
+			)
+				continue;
+			const route = this.trafficRouteByKey(key);
+			// Its drawn attitude, or failing that the way it is moving.
+			const nose =
+				route?.nose ??
+				normalizeOr(sub(contact.velocity, pilot.frameVel), v3(0, 0, -1));
+			this.trafficEngagements.set(
+				key,
+				engage(
+					{
+						key,
+						hullId: actor.hullId,
+						pos: contact.pos,
+						vel: contact.velocity,
+						nose,
+						up: route?.up ?? null,
+						voyageOrdinal: this.trafficVoyage(actor),
+					},
+					carrierInstanceSeed(
+						record.seed,
+						key,
+						this.carrierCondition(key).instanceOrdinal,
+						DOMAIN.TRAFFIC_ENGAGEMENT,
+					),
+				),
+			);
+		}
+	}
+
+	/** Step the engaged carriers: return fire, a kill, or out of range back to
+	 *  the projection (a survivor is transient in this change, H10). */
+	private stepEngagedTraffic(pilot: DuelPilot, shot: PlayerShot, dt: number) {
+		for (const [key, engagement] of this.trafficEngagements) {
+			const actor = this.trafficActorByKey(key);
+			if (!actor) {
+				this.trafficEngagements.delete(key);
+				continue;
+			}
+			const step = stepEngagement(engagement, pilot, shot, dt);
+			if (step.returnFire)
+				this.takeDamage(
+					step.returnFire.amount,
+					step.returnFire.side,
+					`fired on by ${actor.callsign}`,
+				);
+			if (step.destroyed) {
+				this.destroyTrafficCarrier(actor, step.engagement);
+				continue;
+			}
+			const rangeKm = length(
+				sub(step.engagement.flight.ship.pos, this.world.ship.pos),
+			);
+			if (rangeKm > TRAFFIC_DEMATERIALIZE_KM) {
+				this.trafficEngagements.delete(key);
+				continue;
+			}
+			this.trafficEngagements.set(key, step.engagement);
+		}
+	}
+
+	private trafficActorByKey(key: CarrierKey): TrafficActor | undefined {
+		return this.trafficActors.find((a) => a.key === key);
+	}
+
+	private trafficRouteByKey(key: CarrierKey) {
+		return this.trafficRoutes.find((r) => r.key === key);
+	}
+
+	/** The voyage a carrier flies now: its engagement's, fixed when the fight
+	 *  began, or else its route's (`flownVoyageOrdinal`). */
+	private trafficVoyage(actor: TrafficActor): number {
+		return (
+			this.trafficEngagements.get(actor.key)?.voyageOrdinal ??
+			flownVoyageOrdinal(
+				this.trafficRouteByKey(actor.key),
+				trafficScheduleAt(actor, this.world.gameTime).awayOrdinal,
+			)
+		);
+	}
+
+	/** One carrier's manifest for one voyage — the one expression the kill drops
+	 *  and a probe reads, so the two cannot drift apart (sage #368). */
+	private trafficManifest(
+		actor: TrafficActor,
+		instanceOrdinal: number,
+		voyageOrdinal: number,
+	) {
+		const record = this.world.system.record;
+		return carrierManifest(
+			record.seed,
+			actor.key,
+			instanceOrdinal,
+			voyageOrdinal,
+			{
+				holdT: HULL_SPECS[actor.hullId].holdT,
+				government: record.government,
+			},
+		);
+	}
+
+	/**
+	 * A kill (`civilian-combat.md` H1, H4, H11): the carrier's destroy with its
+	 * scheduled replacement, the manifest a scan would have shown dropped as
+	 * canisters, and the offence judged on its true standing and written.
+	 */
+	private destroyTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		const { instanceOrdinal } = this.carrierCondition(actor.key);
+		// Read before the destroy, at the instance that died.
+		const standing = carrierStanding(
+			record.seed,
+			actor.key,
+			instanceOrdinal,
+			now,
+		);
+		const manifest = this.trafficManifest(
+			actor,
+			instanceOrdinal,
+			engagement.voyageOrdinal,
+		);
+		this.applyCarrierTransition(
+			actor.key,
+			trafficDestruction(record.index, actor.homeStationId, now),
+		);
+		this.canisters = [
+			...this.canisters,
+			...dropManifestCanisters({
+				systemSeed: record.seed,
+				key: actor.key,
+				manifest,
+				killedAt: now,
+				pos: engagement.flight.ship.pos,
+				vel: engagement.flight.ship.vel,
+				frameVel: this.localFrame(),
+				frameBodyId: this.frameBody?.id ?? null,
+			}),
+		];
+		const heat = offenceHeat(standing, "destroyed");
+		if (heat > 0) {
+			this.commerceWorld = withOffence(
+				this.commerceWorld,
+				record.galaxy,
+				heat,
+				now,
+			);
+			this.saveDirty();
+		}
+		this.audio.explosion();
+		this.lastExit =
+			heat > 0
+				? `${actor.callsign} destroyed — an offence`
+				: `${actor.callsign} destroyed`;
+		this.trafficEngagements.delete(actor.key);
+		const contact = this.trafficContacts.get(actor.key);
+		if (contact) {
+			this.unregisterContact(contact);
+			this.trafficContacts.delete(actor.key);
+			this.selectableCache = null;
+		}
+		// The lock goes with the ship, as the raider's, relay's and canister's
+		// do. The replacement comes back under the same key (H1), and a lock left
+		// here would hand it back already selected with the gimbal on it
+		// (sage #368).
+		if (this.targetId === actor.key) this.targetId = null;
+		this.trafficMeshes.get(actor.key)?.removeFromParent();
+	}
+
+	/**
+	 * What a probe reads of ordinary traffic under fire: each materialized
+	 * carrier with its condition, true standing and hold now, whether it is
+	 * engaged, and the player's legal status. Derived on read, as the game
+	 * derives them, so a probe restates none of it.
+	 */
+	trafficReadout() {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		return {
+			contacts: [...this.trafficContacts].map(([key, contact]) => {
+				const actor = this.trafficActorByKey(key);
+				const carrier = this.carrierCondition(key);
+				const engagement = this.trafficEngagements.get(key);
+				return {
+					key,
+					callsign: actor?.callsign ?? null,
+					hullId: actor?.hullId ?? null,
+					pos: { ...contact.pos },
+					vel: { ...contact.velocity },
+					condition: carrier.condition,
+					instanceOrdinal: carrier.instanceOrdinal,
+					standing: carrierStanding(
+						record.seed,
+						key,
+						carrier.instanceOrdinal,
+						now,
+					),
+					manifest: actor
+						? this.trafficManifest(
+								actor,
+								carrier.instanceOrdinal,
+								this.trafficVoyage(actor),
+							)
+						: [],
+					engaged: engagement !== undefined,
+					phase: engagement?.flight.phase ?? null,
+					hull: engagement?.condition.hull ?? null,
+				};
+			}),
+			legal: {
+				...this.legalStatus(),
+				// The stored pair is at its stamp; `heatNow` is decayed to the clock,
+				// which is what the standing reads.
+				heatNow: heatAt(this.legalStatus(), now),
+				standing: this.legalStanding(),
+			},
+			authorityReady: this.trafficAuthorityReady(),
+		};
+	}
+
+	/** Whether a shot along the beam lands on the selected ordinary carrier now.
+	 *  No actor, no mark — as `engageStruckTraffic` lands no shot without one,
+	 *  rather than a hit radius from a hull nobody named (sage #368). */
+	private trafficOnTarget(camPos: Vec3, selected: Body): boolean {
+		if (!this.trafficSelected()) return false;
+		const actor = this.trafficActorByKey(selected.id as CarrierKey);
+		return (
+			actor !== undefined &&
+			trafficInSights(camPos, this.beamAim(), selected.pos, actor.hullId)
+		);
+	}
+
+	/** This galaxy's saved legal status, the pair at its stamp. */
+	private legalStatus() {
+		return this.commerceWorld.galaxies[this.world.system.record.galaxy]
+			.legalStatus;
+	}
+
+	/** The player's standing now, from the galaxy's heat (H4, H7). */
+	legalStanding() {
+		return legalStandingAt(this.legalStatus(), this.world.gameTime);
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */
@@ -6824,7 +7195,9 @@ class Game {
 		// relay is one (#43): the principal flew the first build with the beam
 		// held on the boresight and could not hit it beside a planet.
 		const target =
-			this.raiderSelected() || this.relaySelected() ? this.targetBody() : null;
+			this.raiderSelected() || this.relaySelected() || this.trafficSelected()
+				? this.targetBody()
+				: null;
 		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
 		this.gunAim = stepGimbal(this.gunAim ?? bore, bore, targetDir, dt);
 	}
@@ -7868,7 +8241,7 @@ class Game {
 		// And the scoop's acknowledgement: a notice about cargo taken on the last
 		// leg has nothing to say after a jump or a reset, and `leg-reset-coverage`
 		// is the row that insists on it.
-		this.scoop = { text: "", left: 0, accepted: true };
+		this.scoop = { text: "", left: 0, accepted: true, canisterId: null };
 		this.scoopRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
@@ -8272,7 +8645,7 @@ class Game {
 					canister.tonnes,
 				);
 				if (took.accepted) this.commander = took.commander;
-				return took.accepted;
+				return took.tonnes;
 			},
 			// Each canister's own frame, as it stands (#324). Not `localFrame()`:
 			// that is the *observer's* nearest body, so a pilot who flies past
@@ -8290,37 +8663,25 @@ class Game {
 		this.canisters = step.kept;
 		// A refused notice stands while the ship is beside the canister, and a
 		// later notice replaces it as usual.
-		for (const { canister, accepted } of step.scoops) {
+		for (const { canister, accepted, tonnes } of step.scoops) {
+			// A refusal reports the canister's tonnes; a take what it took and,
+			// when the hold could not take it all, what is left (H11).
 			const event = {
+				canisterId: canister.id,
 				commodity: canister.commodity,
-				tonnes: canister.tonnes,
+				tonnes: accepted ? tonnes : canister.tonnes,
 				accepted,
+				leftT: accepted ? canister.tonnes - tonnes : undefined,
 			};
-			this.lastExit = scoopExit(event);
-			// And on the glass, where a pilot is looking, with a sound: the
-			// canister disappearing is what expiring and flying past also look
-			// like, so the event needs to say which of the three it was.
-			const text = scoopNotice(event);
-			// **The sound only when the words change.** `scoops` holds while the
-			// ship sits close and slow, so `accept` runs every frame — a full
-			// hold parked beside a canister restarted the alert tone at frame
-			// rate (sage #355). The notice itself is re-armed deliberately: a
-			// refusal stands while the ship is still beside the canister.
-			// **Only a refusal can repeat.** An accepted scoop takes its canister
-			// out of the world, so it cannot fire twice; gating both silenced the
-			// second of two scoops of the same good inside the notice's life,
-			// which is the opposite of "three scoops read as three events"
-			// (sage #355).
-			const refusalStanding = this.scoop.left > 0 && !this.scoop.accepted;
-			this.scoop = { text, left: SCOOP_NOTICE_S, accepted };
-			// An accepted scoop always sounds: it removes its canister, so it
-			// cannot repeat. A refusal sounds only when none was already
-			// standing — comparing the *words* instead let two canisters of
-			// different goods in reach of a full hold alternate the text and
-			// restart the tone every frame, which is the bug the gate is for
-			// (sage #355).
-			if (accepted) this.audio.scoop();
-			else if (!refusalStanding) this.audio.alert();
+			// The exit line and the glass: the canister disappearing is what
+			// expiring and flying past also look like, so the event needs to say
+			// which of the three it was. `nextScoopNotice` owns when a notice
+			// stands, re-arms or sounds.
+			const next = nextScoopNotice(this.scoop, event);
+			if (next.notice !== this.scoop) this.lastExit = scoopExit(event);
+			this.scoop = next.notice;
+			if (next.sound === "scoop") this.audio.scoop();
+			else if (next.sound === "alert") this.audio.alert();
 		}
 		if (step.scoops.some((s) => s.accepted)) this.saveDirty();
 	}
@@ -9079,6 +9440,7 @@ class Game {
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot);
+		this.stepTrafficEngagements(dt, shot);
 		this.stepCargoCanisters(dt);
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
@@ -10133,6 +10495,7 @@ class Game {
 			// The floor strip's own words, so the console and the floor cannot
 			// describe the same two facts differently.
 			assist: floorCellValue(this.floorCells(), "ASSIST"),
+			legalStatus: this.legalStanding().toUpperCase(),
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			// #324's full duel detail, only while the glass shows the duel row.
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
@@ -10830,6 +11193,16 @@ class Game {
 		);
 	}
 
+	/** Whether an ordinary carrier is the selected target (civilian-combat H3):
+	 *  the third combat target #43's rule names, so it pulls the gimbal and
+	 *  earns the on-target mark. */
+	private trafficSelected(): boolean {
+		return (
+			this.targetId !== null &&
+			this.trafficContacts.has(this.targetId as CarrierKey)
+		);
+	}
+
 	/** Whether the duel row shows: a raider contesting, dueling or selected. */
 	private duelRowShown(): boolean {
 		return showDuelRow({
@@ -11262,6 +11635,7 @@ class Game {
 		ctx.clearRect(0, 0, w, h);
 		// Written again below only if a raider is selected and drawn this frame.
 		this.cueRender = null;
+		this.selectedRender = null;
 		this.hostileFireRender = { beam: null, rim: 0 };
 		// §8 M4/M10: arrival and launch are scripted, and a docked ship is not
 		// flyable. The forward station console owns the docked glass; no stale
@@ -11559,7 +11933,10 @@ class Game {
 					raiderInSights(camPos, this.beamAim(), selectedBody.pos),
 				)) ||
 			(relaySelected &&
-				relayInSights(camPos, this.beamAim(), selectedBody.pos));
+				relayInSights(camPos, this.beamAim(), selectedBody.pos)) ||
+			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
+			// `stepTrafficEngagements` lands a shot whenever this test passes.
+			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));
 		// Built once, because the declutter reservation and the paint must agree.
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`;
@@ -11612,7 +11989,9 @@ class Game {
 						ctx.arc(at.x, at.y, 4, 0, Math.PI * 2);
 						ctx.fill();
 					}
-					ctx.fillText(selectedLabel(body.name, km), at.x + r + 6, at.y + 4);
+					const label = selectedLabel(body.name, km);
+					ctx.fillText(label, at.x + r + 6, at.y + 4);
+					this.selectedRender = { id: body.id, text: label, onTarget };
 					// The selected raider's shields and hull under its name (#324,
 					// the principal's ruling), in the duel row's tones.
 					const enemy = raiderSelected

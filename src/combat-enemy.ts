@@ -369,8 +369,8 @@ function turnToward(
 	state: CombatEnemyState,
 	desired: Vec3,
 	dt: number,
+	perf: FlightPerformance,
 ): { nose: Vec3; up: Vec3; rates: Angular } {
-	const perf = STRIKER_PERFORMANCE;
 	const { nose, up } = state;
 	const right = cross(nose, up);
 	const off = Math.acos(clamp(dot(nose, desired), -1, 1));
@@ -477,6 +477,9 @@ export interface EnemyReadout {
 /**
  * Choose an intent from the geometry, then fly it through the player's own
  * integrator. It never writes a renderer transform or a scheduled damage value.
+ *
+ * The striker: the raider's hull and the attacker's intent. A ship of any other
+ * hull goes through `stepEnemyShip`, which takes both and defaults neither.
  */
 export function stepCombatEnemy(
 	state: CombatEnemyState,
@@ -493,6 +496,49 @@ export function stepCombatEnemy(
 	 *  when omitted, as `stepFlight`'s is. */
 	frameVel?: Vec3,
 ): EnemyFlightStep {
+	return stepEnemyShip(state, player, playerNose, combat, playerFiring, dt, {
+		laserOrigin,
+		laserNose,
+		hitRadiusKm,
+		frameVel,
+		performance: STRIKER_PERFORMANCE,
+		intent: "attacker",
+	});
+}
+
+/**
+ * What a ship does with a fight (`civilian-combat.md` H3). An **attacker** is
+ * #53's machine: it closes, runs, breaks and extends, and flees only when its
+ * hull is critical. A **civilian** never closes and never fires: it spirals
+ * out of the sight line while it is being hit and runs the rest of the time.
+ * Choosing an intent is not a handling advantage (`combat-model.md` §1): both
+ * fly the same integrator on their own hull's figures.
+ */
+export type EnemyIntent = "attacker" | "civilian";
+
+export interface EnemyShipOptions {
+	laserOrigin: Vec3;
+	laserNose: Vec3;
+	hitRadiusKm: number;
+	frameVel: Vec3 | undefined;
+	/** **Required**, for `FlightPerformance`'s reason: a caller that forgot to
+	 *  name a hull would silently fly a freighter as a raider. */
+	performance: FlightPerformance;
+	intent: EnemyIntent;
+}
+
+/** `stepCombatEnemy` for any hull and either intent. */
+export function stepEnemyShip(
+	state: CombatEnemyState,
+	player: Ship,
+	playerNose: Vec3,
+	combat: EnemyReadout,
+	playerFiring: boolean,
+	dt: number,
+	options: EnemyShipOptions,
+): EnemyFlightStep {
+	const { laserOrigin, laserNose, hitRadiusKm, frameVel, performance, intent } =
+		options;
 	const step = Math.max(0, dt);
 	const toPlayer = sub(player.pos, state.ship.pos);
 	const range = length(toPlayer);
@@ -545,7 +591,20 @@ export function stepCombatEnemy(
 
 	// A fraction of the ship's own hull, so a stronger hull runs later in
 	// absolute terms; at the rig's hull of 100 it is the 20 it always was.
-	if (combat.targetHull <= FLEE_HULL_FRACTION * (combat.targetHullMax ?? 100)) {
+	if (intent === "civilian") {
+		// Spiral out of the sight line while hit, run the rest of the time.
+		if (underFire && phase !== "evade" && evadeCooldown <= 0) {
+			commit("evade", 1.1, 2.1);
+			evadeCooldown = HIT_EVADE_COOLDOWN_S;
+		} else if (
+			phase !== "flee" &&
+			(phase !== "evade" || (phaseSeconds >= maneuverSeconds && !underFire))
+		)
+			commit("flee", 30, 30);
+	} else if (
+		combat.targetHull <=
+		FLEE_HULL_FRACTION * (combat.targetHullMax ?? 100)
+	) {
 		if (phase !== "flee") commit("flee", 30, 30);
 	} else if (underFire && phase !== "evade" && evadeCooldown <= 0) {
 		commit("evade", 1.1, 2.1);
@@ -594,17 +653,26 @@ export function stepCombatEnemy(
 	// Lead collision: where the player will be when this ship can reach them.
 	// Two fixed-point iterations is plenty at these closing speeds, and the cap
 	// stops a long extrapolation aiming at a place nobody is going.
+	//
+	// **In the frame, not in star coordinates** (#362). Both ships' assists
+	// hold them in `frameVel`, so the frame's own motion carries both and moves
+	// neither relative to the other; only the player's velocity *relative to
+	// it* is a place to lead. Beside a station the frame moves ~30 km/s (#104),
+	// and leading on the absolute velocity aimed a patrol up to 150 km along
+	// the orbit, which it then flew toward and away from the fight. In the star
+	// frame, where every raider duel so far has been fought, the two are equal.
+	const playerRelVel = frameVel ? sub(player.vel, frameVel) : player.vel;
 	let lead = range / ASSIST_CAP_KMS;
 	for (let i = 0; i < 2; i++) {
 		const predicted = add(
 			player.pos,
-			scale(player.vel, Math.min(lead, LEAD_CAP_S)),
+			scale(playerRelVel, Math.min(lead, LEAD_CAP_S)),
 		);
 		lead = length(sub(predicted, state.ship.pos)) / ASSIST_CAP_KMS;
 	}
 	const interceptPoint = add(
 		player.pos,
-		scale(player.vel, Math.min(lead, LEAD_CAP_S)),
+		scale(playerRelVel, Math.min(lead, LEAD_CAP_S)),
 	);
 	const pursuitNose = unit(sub(interceptPoint, state.ship.pos), towardPlayer);
 
@@ -644,7 +712,7 @@ export function stepCombatEnemy(
 	// limits and its angular acceleration, not a slew that reached full rate in
 	// one frame. The slew had first been faster than the hull allows, and the
 	// first playtest found the raider unhittable.
-	const turned = turnToward(state, desired, step);
+	const turned = turnToward(state, desired, step, performance);
 	const { nose, up } = turned;
 
 	// Throttle is closure control in the envelope and everything elsewhere: a
@@ -663,12 +731,13 @@ export function stepCombatEnemy(
 		ship,
 		{ nose, throttle, assist: true, frameVel },
 		step,
-		STRIKER_PERFORMANCE,
+		performance,
 	);
 
 	// Firing follows pointing, in any phase but a rout: a snapshot as the nose
 	// sweeps across the player during a break is a shot a pilot would take.
 	const enemyFiring =
+		intent === "attacker" &&
 		phase !== "flee" &&
 		range <= GUN_RANGE_KM &&
 		dot(nose, towardPlayer) >= FIRE_COS &&

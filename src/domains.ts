@@ -73,6 +73,17 @@ export const DOMAIN = {
 	 *  along the watched station's orbit it stands, how far, and how far off
 	 *  the plane. Its own tag, so a relay draw moves no station or berth. */
 	RELAY: 16,
+	/** An ordinary carrier's standing (`carrier-identity.md` §2, #362): its
+	 *  rotation phase and the draw per rotation. Split by the carrier key and
+	 *  the instance, so a replacement draws its own timeline (H1). */
+	CARRIER_STANDING: 17,
+	/** An ordinary carrier's hold (`carrier-identity.md` §3, #362): what it
+	 *  carries on one voyage. Split by the key, the instance and the voyage. */
+	CARRIER_MANIFEST: 18,
+	/** An engaged carrier's flight (#362): the draws its combat controller makes
+	 *  for manoeuvre durations and pull axes. Split by the key and the instance,
+	 *  so a replacement does not fly its predecessor's evasion. */
+	TRAFFIC_ENGAGEMENT: 19,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

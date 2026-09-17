@@ -282,6 +282,11 @@ hold to decide. Nothing in #324 changes.
 A carrier's manifest is drawn per **voyage**, keyed on the schedule's existing
 voyage index, and redrawn on the next departure.
 
+*Amended by #362*: the voyage is the one the carrier is **flying** —
+`flownVoyageOrdinal`, the route's visit and the schedule's ordinal only without
+a route — because a return running late is projected as the previous visit
+while the schedule has moved on (`civilian-combat.md`).
+
 The principal was offered this and a hold fixed for the life of the world, and
 chose this.
 
@@ -360,9 +365,13 @@ left in either one makes that module the owner of the other's identity.
 ### 2. Standing, as a derived function
 
 ```
-carrierStanding(systemSeed, carrierKey, gameTime)
+carrierStanding(systemSeed, carrierKey, instanceOrdinal, gameTime)
   -> "clean" | "wanted" | "fugitive"
 ```
+
+Built by #362 in `src/carrier-standing.ts`, with `instanceOrdinal` added by
+`civilian-combat.md` H1 and starting forms by H12.
+`scripts/measure-carrier-standing.ts` is the instrument this section asks for.
 
 Pure, deterministic, **never persisted**, recomputed on read. Its own `DOMAIN`
 tag, drawn per carrier key so no carrier's standing moves another's.
@@ -382,12 +391,18 @@ without deciding it: the instrument comes first.
 ### 3. The manifest, as a derived function
 
 ```
-carrierManifest(systemSeed, carrierKey, voyageOrdinal)
+carrierManifest(systemSeed, carrierKey, instanceOrdinal, voyageOrdinal,
+                { holdT, government })
   -> readonly { good: string; tonnes: number }[]
 ```
 
-**These are keyed on the carrier *slot*, not on the instance occupying it**, and
-that is a decision handed onward rather than an oversight. CONTEXT.md's *Carrier
+Built by #362 in `src/carrier-manifest.ts`. **The slot keying below is
+superseded**: `civilian-combat.md` H1 ruled a replacement a new ship, so both
+functions take `instanceOrdinal`, and H11 added the hold and government a hold
+is drawn against. The paragraph is kept as the question #362 answered.
+
+These were keyed on the carrier *slot*, not on the instance occupying it, and
+that was a decision handed onward rather than an oversight. CONTEXT.md's *Carrier
 slot* survives the destruction and replacement of its occupant, so once F6's
 child makes traffic destructible, the replacement for a killed Wanted Porter
 inherits its predecessor's name and standing timeline and can draw the same hold
@@ -398,8 +413,9 @@ identity rather than to the instance", while an observed condition is not.
 adds `instanceOrdinal` to both signatures if it rules the former. Nothing here
 is built on a replacement existing, because nothing can yet destroy one.
 
-Pure, deterministic, never persisted, its own `DOMAIN` tag. `voyageOrdinal` is
-`trafficScheduleAt`'s `awayOrdinal`, which makes F11's per-voyage rule free.
+Pure, deterministic, never persisted, its own `DOMAIN` tag. `voyageOrdinal` was
+`trafficScheduleAt`'s `awayOrdinal`; #362 made it `flownVoyageOrdinal` (F11's
+amendment), fixed on an engagement at the first shot that lands.
 
 The commodity draw reads `economy-trade.md` §2's table, which already flags
 Slaves, Narcotics and Firearms `illegal: true`. Weighting contraband by
@@ -450,6 +466,10 @@ remains generated baseline data", and CONTEXT.md's *Last-known state* says the
 row holds never the generated value. Standing and the manifest are pure
 functions, so the reading is re-derived at display time as
 `carrierStanding(…, observedAt)` and `carrierManifest(…, voyageOrdinalAt(observedAt))`.
+**#362 makes `voyageOrdinalAt(observedAt)` not derivable after the fact**: the
+flown voyage depends on the route as it stood, not on the clock alone. So the
+record owes the voyage it read (and the instance), or a scan read before a late
+return and a kill after it disagree, which breaks F6. #364 settles which.
 A stored copy would duplicate derivable state inside a versioned save.
 
 **What this spec cannot settle, and must not pretend to.** A Traffic actor has
@@ -510,9 +530,8 @@ the player knew.**
 
 Two pieces of debt are recorded rather than discharged:
 
-- **Nothing writes heat.** `setLegalHeat` is called only from tests. The
-  offence-to-heat write lands in the F6 child node, because that is where a
-  Clean kill first becomes possible.
+- **Nothing writes heat.** *Discharged by #362*: `src/legal.ts` writes a Clean
+  kill's heat on the target's true standing (`civilian-combat.md` H4).
 - **A lawful kill's reward is not decided here.** `combat-model.md` §4 already
   rules there are lawful bounties only for sanctioned targets and no universal
   cash bounty; the Bounty family's payment is `ordinary-requests.md`'s, through
@@ -599,6 +618,9 @@ implementation settles it along with the row's shape. An earlier draft of this
 section claimed one optional member and no migration, which the parser refutes.
 
 ### 11. Handoff
+
+*Discharged for the lootable half*: #362 built it (`civilian-combat.md`), and
+the rest of this spec's build is #364. The handoff as written:
 
 One child node carries what F6 decided and this spec deliberately does not
 build: **destructible ordinary traffic** — hull, shields and damage for a

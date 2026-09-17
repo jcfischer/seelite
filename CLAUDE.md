@@ -154,6 +154,14 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   fly the courier, and the two are indistinguishable in a diff. The assist cap
   is deliberately *not* per hull: 2 km/s is the game's one combat speed and two
   other nodes are written against it.
+- **A fight beside a body is flown in that body's frame, and so is its aim.**
+  Every ship's assist holds speed relative to `frameVel`, which beside a
+  station moves ~30 km/s (#104). Anything a combat controller *predicts* — a
+  lead, an intercept — must use velocities relative to that frame; #362 found
+  `combat-enemy.ts` leading on absolute velocity, invisible for every raider
+  duel because cruise legs are fought in the star frame. And Traffic authority
+  is ready when every *flying* carrier has a route (`flyingTraffic`): a
+  destroyed one never gets one.
 - **`src/sim.ts` must not import Three.js.** The authoritative world is float64
   kilometres outside the scene graph; the scene graph is display only, and
   nothing reads a position back out of an `Object3D`.
