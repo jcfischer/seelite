@@ -15,7 +15,6 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { carrierKey } from "../src/carrier-key";
 import {
 	COMMODITIES,
 	type Commodity,
@@ -43,7 +42,6 @@ import {
 	LARGE_CARGO_BAY_BONUS_T,
 	commanderHold,
 	newCommander,
-	transactAtStation,
 } from "../src/station-commerce";
 import {
 	flightFloorVisible,

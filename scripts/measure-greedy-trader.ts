@@ -45,7 +45,10 @@ import {
 } from "../src/market";
 import {
 	type WorstCycle,
+	type CycleSurvey,
+	MIRRORED_SHIPPED,
 	NO_WEDGE,
+	mirroredBidCut,
 	surveyConsoleCycles,
 } from "../tests/helpers/console-cycle";
 import {
@@ -332,11 +335,10 @@ const quoteSplitting =
  * the dial its name advertises, which turns a report into a comparison of two
  * implementations rather than two spreads.
  */
-const spreadArm = (
-	base: number,
-	grade: number,
-	wideAtHighTl: boolean,
-): QuoteFn => quoteWithCut(bidCutLadder(base, grade, { wideAtHighTl }));
+const spreadArm = (base: number, grade: number, mirrored = false): QuoteFn =>
+	quoteWithCut(
+		mirrored ? mirroredBidCut(base, grade) : bidCutLadder(base, grade),
+	);
 
 /**
  * The arm names, spelled the way the *decision* is phrased.
@@ -350,6 +352,21 @@ const spreadArm = (
  */
 const SHIPPED_ARM = "wide at high TL (shipped)";
 const OPPOSING_ARM = "narrow at high TL";
+
+/**
+ * The label column's width, derived from the longest label the report can print.
+ *
+ * **Not a literal, and that has been the bug twice.** The column was 27 characters
+ * until the arms were renamed to spell the decision out; the shipped arm's row — name
+ * plus its rung — then ran four characters past it and printed the kit figure against
+ * the name. A width taken from the names cannot go stale when a name grows, which is
+ * the same reason the names are constants.
+ */
+const ARM_LABEL_COL =
+	Math.max(SHIPPED_ARM.length, OPPOSING_ARM.length) +
+	" 0.00".length + // the rung suffix the graded rows append
+	2 + // the two-space indent
+	2; // slack, so no label ever touches the count
 
 const MID_PROBE = 100;
 /**
@@ -397,12 +414,14 @@ const assertLadderArm = (
 	name: string,
 	base: number,
 	grade: number,
-	wideAtHighTl: boolean,
+	mirrored = false,
 ) =>
 	assertArm(
 		name,
-		spreadArm(base, grade, wideAtHighTl),
-		bidArmFactors(bidCutLadder(base, grade, { wideAtHighTl })),
+		spreadArm(base, grade, mirrored),
+		bidArmFactors(
+			mirrored ? mirroredBidCut(base, grade) : bidCutLadder(base, grade),
+		),
 	);
 
 const assertFlownArms = () => {
@@ -412,21 +431,37 @@ const assertFlownArms = () => {
 	// what makes the report's "shipped" row the shipped table rather than a close
 	// relative of it.
 	assertLadderArm(SHIPPED_ARM, BID_CUT_FLOOR, BID_CUT_GRADE, false);
-	{
-		// **The one guard that compares two different implementations:** the parametric
-		// law evaluated at its shipped dials, against the constant function the game
-		// calls. Everything else in this section compares an arm to itself.
-		const shippedLadder = bidCutLadder(BID_CUT_FLOOR, BID_CUT_GRADE);
+	// **The guard that can actually fail, and what it is for.** `bidCutAtTl` *is*
+	// `bidCutLadder` at the shipped constants, so a loop comparing those two could not
+	// throw and a comment calling it the one independent check was wrong — sage caught it,
+	// and it caught nothing for two rounds. What can fail is the *direction*: this is the
+	// check that would have caught round 4, where the arm named `wide at high TL` was
+	// built from the mirrored table. The game's own `marketQuote` is the oracle, so the
+	// comparison is against what ships rather than against a copy of a formula.
+	for (const mid of [1.4, 12, 100, 786])
 		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
-			const viaLadder = shippedLadder(tl);
-			const viaLaw = bidCutAtTl(tl);
-			if (Math.abs(viaLadder - viaLaw) > 1e-12)
+			const viaArm = spreadArm(BID_CUT_FLOOR, BID_CUT_GRADE)(mid, tl);
+			const viaLaw = marketQuote(mid, tl);
+			if (viaArm.buyCr !== viaLaw.buyCr || viaArm.sellCr !== viaLaw.sellCr)
 				throw new Error(
-					`the report's ${SHIPPED_ARM} arm is not the shipped law at TL ${tl}: ` +
-						`${viaLadder.toFixed(6)} against ${viaLaw.toFixed(6)}`,
+					`the report's ${SHIPPED_ARM} arm is not the shipped quote at ` +
+						`mid ${mid} TL ${tl}: ${viaArm.buyCr}/${viaArm.sellCr} against ` +
+						`${viaLaw.buyCr}/${viaLaw.sellCr}`,
 				);
 		}
-	}
+	// **And the rejected direction is the mirror of the shipped dials, at the same two
+	// constants.** Checked against `marketQuote` reflected on the tech level, because the
+	// arm's whole claim is that its dear end is where the shipped law's cheap end is.
+	for (const mid of [12, 100])
+		for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
+			const mirror = MIRRORED_SHIPPED(mid, tl);
+			const shipped = marketQuote(mid, DISPLAY_TL_MAX + DISPLAY_TL_MIN - tl);
+			if (mirror.sellCr !== shipped.sellCr)
+				throw new Error(
+					`MIRRORED_SHIPPED is not the shipped law reflected at mid ${mid} ` +
+						`TL ${tl}: ${mirror.sellCr} against ${shipped.sellCr}`,
+				);
+		}
 	// The mirrored arm, checked against its own stated dials. Graded rungs scale the
 	// mirror by their own mean; `routeRow` checks each one as it is flown, since a
 	// check at the shipped depth cannot cover a dial the loop turns later.
@@ -449,27 +484,29 @@ const bindingRow = (row: WorstCycle): string =>
 	`${row.cycle.type} TL${row.cycle.displayTL} ${row.cycle.arm} ` +
 	`(${row.units} u @ ${row.midCr.toFixed(2)} Cr)`;
 
+/**
+ * One row of the closure ladder.
+ *
+ * **Written once because the shipped row was a copy of the loop row with different
+ * padding** — `padStart(22)` against `padStart(21)` — which put the shipped row's counts
+ * one column left of the header's. Same file, same table, and the fix `formatArmStats`
+ * was extracted for in the first place.
+ */
+const ladderRow = (label: string, survey: CycleSurvey): string =>
+	`${label}`.padStart(7) +
+	`${survey.positiveByTonnage.tonnage}`.padStart(22) +
+	`${survey.positiveByTonnage.subTonnes}`.padStart(23) +
+	`   ${survey.positiveRows === 0 ? "—" : bindingRow(survey.worst)}`;
+
 console.log("\n§5.6 — the console round trip, cut swept");
 assertFlownArms();
 console.log(
 	"  cut     tonnage cycles open   sub-tonne cycles open   best surviving cycle",
 );
-for (const cut of [0, 0.05, 0.075, 0.09, 0.1, 0.15, 0.2, 0.315]) {
-	const s = surveyConsoleCycles(uniformCut(cut));
-	console.log(
-		`${cut.toFixed(3).padStart(7)}   ` +
-			`${s.positiveByTonnage.tonnage}`.padStart(22) +
-			`${s.positiveByTonnage.subTonnes}`.padStart(23) +
-			`   ${s.positiveRows === 0 ? "—" : bindingRow(s.worst)}`,
-	);
-}
+for (const cut of [0, 0.05, 0.075, 0.09, 0.1, 0.15, 0.2, 0.315])
+	console.log(ladderRow(cut.toFixed(3), surveyConsoleCycles(uniformCut(cut))));
 const shippedSurvey = surveyConsoleCycles(marketQuote);
-console.log(
-	`  shipped  ` +
-		`${shippedSurvey.positiveByTonnage.tonnage}`.padStart(21) +
-		`${shippedSurvey.positiveByTonnage.subTonnes}`.padStart(23) +
-		`   ${shippedSurvey.positiveRows === 0 ? "—" : bindingRow(shippedSurvey.worst)}`,
-);
+console.log(ladderRow("shipped", shippedSurvey));
 console.log(
 	// Read off the shipped function at the domain's ends, not off the constants: the
 	// first version of this line printed `BID_CUT_FLOOR` as the rim cut while the
@@ -506,8 +543,15 @@ for (const row of shippedSurvey.zeroOffFloor.rescuedByRounding.rows.slice(0, 3))
 const closingCut = (
 	arm: (x: number) => QuoteFn,
 ): { cr: number; width: number } => {
+	// **Tonnage only, and no zero classification.** This predicate reads one counter,
+	// and it is called about forty-four times per report. Flying the metals and re-flying
+	// every netting-nothing cycle unquantized — which is what the attribution needs and
+	// a boolean does not — bought nothing here.
 	const closes = (x: number): boolean =>
-		surveyConsoleCycles(arm(x)).positiveByTonnage.tonnage === 0;
+		surveyConsoleCycles(arm(x), {
+			tonnageOnly: true,
+			classifyZeros: false,
+		}).positiveByTonnage.tonnage === 0;
 	let lo = 0;
 	let hi = 0.6;
 	if (!closes(hi)) return { cr: Number.NaN, width: Number.NaN };
@@ -558,7 +602,10 @@ console.log(
 
 console.log("\n§5.6 — direction, at matched mean cut");
 console.log(
-	"  arm                kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",
+	// Built at the same width the rows are printed at, so the header cannot sit over
+	// the wrong column when a name changes length.
+	`  ${"arm"}`.padEnd(ARM_LABEL_COL) +
+		"kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",
 );
 /**
  * What an arm costs, in the four readings the direction question is decided on.
@@ -627,9 +674,13 @@ const formatArmStats = (s: ArmStats): string =>
 	(s.stalled ? `   stalled ${s.stalled}/${WORLDS.length}` : "");
 
 /** The direction table's printer: the arm's name, then everything measured. */
-const routeRow = (name: string, quote: QuoteFn): ArmStats => {
+const routeRow = (
+	name: string,
+	quote: QuoteFn,
+	pad = ARM_LABEL_COL,
+): ArmStats => {
 	const s = armStats(quote);
-	console.log(`  ${name}`.padEnd(27) + formatArmStats(s));
+	console.log(`  ${name}`.padEnd(pad) + formatArmStats(s));
 	return s;
 };
 routeRow("no wedge (control)", NO_WEDGE);
@@ -739,6 +790,57 @@ console.log(
  * does a wider rim-to-core spread cost a commander who has not been to the core
  * yet — because that commander trades at the rim end, where the floor holds still.
  */
+/**
+ * **D4's question, at the level the game actually runs at.**
+ *
+ * The matched-mean sweep above cannot answer it. Its graded arms are built at floor 0
+ * so that their multiset of cuts can equal a flat arm's, which leaves *both* of them
+ * charging nothing at the rim — and 50-93% of the shipped arm's docks are at the rim.
+ * #191 D4 asked what a commander who starts somewhere developed pays, and an arm with a
+ * free rim has no developed market to pay it in. Reporting that sweep as a refutation of
+ * D4's concern was answering a question the concern did not ask, and it took a review
+ * round to notice.
+ *
+ * **These two arms have the same two dials.** Shipped: `BID_CUT_FLOOR` at the rim,
+ * `+BID_CUT_GRADE` at the core. Mirrored: the same floor and grade with the ends
+ * swapped. Same mean, same spread between the ends, same quote step, same trader, same
+ * worlds — so the only difference is which end of the galaxy is dear, which is exactly
+ * the axis D4 left open.
+ */
+console.log(
+	"\n§5.6 — D4's question at the shipped dials: the law, and the same two constants mirrored",
+);
+{
+	const arms: [string, QuoteFn][] = [
+		[SHIPPED_ARM, marketQuote],
+		["mirror of the shipped dials", MIRRORED_SHIPPED],
+	];
+	const stats = arms.map(([name, quote]) => routeRow(name, quote));
+	console.log(
+		"  same floor and grade, ends swapped, so the mean is identical by construction: " +
+			`shipped pays ${(BID_CUT_FLOOR + BID_CUT_GRADE / 2).toFixed(3)} ` +
+			`at TL ${(DISPLAY_TL_MIN + DISPLAY_TL_MAX) / 2} either way`,
+	);
+	console.log(
+		"  kit by galaxy (" +
+			arms.map(([name]) => name).join(" / ") +
+			")  " +
+			WORLDS.map(({ g }, i) => {
+				const [a, b] = stats;
+				return `${g} ${kit(a.kits[i])}/${kit(b.kits[i])}`;
+			}).join("   "),
+	);
+	console.log(
+		"  what a commander who starts somewhere developed pays for one hop: the core end " +
+			`costs ${((BID_CUT_FLOOR + BID_CUT_GRADE) * 100).toFixed(1)}% of a sale under the shipped law, ` +
+			`${(BID_CUT_FLOOR * 100).toFixed(1)}% under the mirror; the rim end is the other way round.`,
+	);
+	console.log(
+		"  D4's concern was the core end, and that much of the answer is in the constants, " +
+			"not in the sweep: shipping this direction charges a developed start the wider cut.",
+	);
+}
+
 console.log("\n§5.6 — the grade alone, floor held at its shipped value");
 console.log(
 	"  grade  rim → core      kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius",

@@ -968,21 +968,21 @@ and the direction was chosen on §4's double-charge argument and #191 D1's readi
 well as on these rows:
 
 ```
-  arm                    kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
-  no wedge (control)       52-82 min          291-430    25/59/16                  0.595
-  flat 0.10                56-92 min          228-351    33/56/11                  0.631
-  wide at high TL 0.10     47-72 min          309-425    50/42/8                   0.694
-  narrow at high TL 0.10   70-96 min          225-308    31/57/13                  0.612
-  flat 0.15                62-93 min          214-318    38/51/11                  0.658
-  wide at high TL 0.15     47-86 min          235-518    55/36/9                   0.735
-  narrow at high TL 0.15   68-119 min         163-286    19/63/18                  0.585
-  flat 0.20                68-88 min          222-289    29/47/24                  0.537
-  wide at high TL 0.20     50-96 min          200-681    88/12/0                   0.911
-  narrow at high TL 0.20   2/4 in cap         8-242      15/39/47                  0.465   stalled 2/4
-  flat 0.30                1/4 in cap         0-198      26/52/22                  0.539   stalled 2/4
-  wide at high TL 0.30     63-127 min         325-691    93/7/0                    0.922
-  narrow at high TL 0.30   1/4 in cap         0-174      1/53/46                   0.509   stalled 2/4
-  shipped table            51-103 min         206-399    42/47/11                  0.676
+  arm                            kit affordable     Cr/min   docks by TL 1-5/6-10/11-15   mean radius
+  no wedge (control)              52-82 min          291-430    25/59/16                  0.595
+  flat 0.10                       56-92 min          228-351    33/56/11                  0.631
+  wide at high TL (shipped) 0.10  47-72 min          309-425    50/42/8                   0.694
+  narrow at high TL 0.10          70-96 min          225-308    31/57/13                  0.612
+  flat 0.15                       62-93 min          214-318    38/51/11                  0.658
+  wide at high TL (shipped) 0.15  47-86 min          235-518    55/36/9                   0.735
+  narrow at high TL 0.15          68-119 min         163-286    19/63/18                  0.585
+  flat 0.20                       68-88 min          222-289    29/47/24                  0.537
+  wide at high TL (shipped) 0.20  50-96 min          200-681    88/12/0                   0.911
+  narrow at high TL 0.20          2/4 in cap         8-242      15/39/47                  0.465   stalled 2/4
+  flat 0.30                       1/4 in cap         0-198      26/52/22                  0.539   stalled 2/4
+  wide at high TL (shipped) 0.30  63-127 min         325-691    93/7/0                    0.922
+  narrow at high TL 0.30          1/4 in cap         0-174      1/53/46                   0.509   stalled 2/4
+  shipped table                   51-103 min         206-399    42/47/11                  0.676
 ```
 
 Four galaxies per arm, so the range is four draws and not one sample; the
@@ -1006,28 +1006,46 @@ systems a trader docked at, so 0 is the core and 1 the rim.
 held: dear-at-the-rim — narrow-at-high-TL, the arm that did *not* ship — pulls trade
 inward, mean dock radius 0.612 → 0.509 as the level rises, with **46% of its docks
 landing in the TL 11-15 band at the widest rung**, while the shipped direction pushes
-it outward (0.694 → 0.922, 93% of docks in TL 1-5 by the widest rung). **The rate
-prediction did not hold, and that is the finding that matters for the choice.** D4
-worried that a spread wide at high tech level hands a new commander — who starts
-somewhere developed, at the rim — the worst rates in the game. The sweep says the
-opposite. The shipped arm's kit range is shorter on all four rungs (309-425 against
-225-308 Cr/min at the narrowest rung), and counting the four galaxies separately —
-which the report prints per galaxy for exactly this reason — it reaches the kit first
-in **15 of the 16 draws**. The exception is on the run rather than in the pairing: at
-mean 0.15 galaxy 0 takes 86 min under the shipped arm against 68 under the opposing
-one, while the other three galaxies of that same pair run 64/119, 51/103 and 47/71. At
-the two widest levels it is the *other* arm that stalls, 2 of 4 sessions each against
-the shipped arm's none. The concern
-that kept the direction open in D4 is refuted by the arm that shipped, not answered
-by it.
+it outward (0.694 → 0.922, 93% of docks in TL 1-5 by the widest rung).
+
+**The other half is a question this node first answered with the wrong experiment.**
+D4's worry was that a spread dear at high tech level charges a commander who starts
+*somewhere developed* — which in this generator is the **core**, not the rim; an earlier
+revision of this section wrote "developed, at the rim" and then tested something else.
+The matched-mean sweep cannot reach the question: its graded arms are built at **floor
+0**, so their cuts can be matched against a flat arm's, which leaves both of them
+charging nothing at the rim — where 50-93% of the shipped arm's docks land. Reporting
+that sweep as a refutation was reporting a comparison of two free rims.
+
+**So the instrument flies the pair that does answer it: the shipped law, and the same
+two constants with the ends swapped** — `BID_CUT_FLOOR` and `BID_CUT_GRADE`, floor held,
+grade held, direction reversed; `MIRRORED_SHIPPED` in `tests/helpers/console-cycle.ts`,
+beside `NO_WEDGE` where the repo keeps the rejected laws. Same mean by construction,
+same quote step, same four worlds, same trader.
+
+| arm | kit affordable | Cr/min | docks TL 1-5/6-10/11-15 | mean radius | kit by galaxy |
+|---|---|---|---|---|---|
+| shipped (wide at high TL) | 51-103 min | 206-399 | 42/47/11 | 0.676 | 98 / 103 / 51 / 63 |
+| mirror of the shipped dials | 65-112 min | 176-298 | 34/56/10 | 0.648 | 80 / 112 / 65 / 75 |
+
+**D4 was right about the level and wrong about the loop.** The level is arithmetic, not
+measurement: **a core berth takes 25.0% of a sale under the shipped law against 10.0%
+under the mirror**, and the rim is the other way round, so a commander who never leaves a
+developed world does pay the wider cut — this spec should say that rather than imply the
+opposite. What the flown pair adds is that traders do not stay where they were dropped:
+the shipped arm still out-earns the mirror and reaches the kit first in **3 of the 4
+galaxies** (galaxy 0 is the exception, 98 min against 80), and neither arm stalls a
+session. The direction was bought with a real charge on the core end, and the case for
+paying it is the argument below, not a claim that the core end is cheaper.
 
 **That reversal was the instrument's arithmetic, not the world's.** The first
 version of this sweep compared a graded table against a flat one at the same
-*floor* and called it matched, which left the two arms' means apart; once the
-endpoints moved onto `BID_CUT_FLOOR` and `BID_CUT_GRADE`, the multiset of cuts in a
-graded table became the flat arm's figure twice over in the right order, the means
-became equal by construction, and the printed guard is there so the next reader can
-check the pairing rather than trust this sentence. A finding that survives becoming
+*floor* and called it matched, which left the two arms' means apart. What fixed it is
+the pairing's own arithmetic and not the shipped constants — the graded arms are built
+at floor 0 with `grade = 2 × target mean`, so a table walking 0 → 2·mean across the tech
+levels holds the flat arm's figure as its mean, in each direction's own order. The
+printed guard (`mean cut of the graded table at this rung`, against the target) is there
+so the next reader checks the pairing rather than trusts this sentence. A finding that survives becoming
 a matched comparison is worth more than one that only survived being run.
 
 An independent argument points the same way and is not about the destination's
@@ -1042,7 +1060,20 @@ thick, is where a marginal tonne is worth least to the station buying it.
 shift works.** The bite is a rim bite, at a fiftieth of the size that cost #13
 forty-six percent of a shipyard population: over 40 worlds **0.5% of priced rows
 come back with no spread at all**, 2.5% at TL 1, 0.7% at TL 5, and **none at all
-from TL 8 up**. Every one of those rows is one §3's price floor had already pinned
+from TL 8 up** — **and the loss is not spread over the station types: 1.9% of a
+refinery's** priced rows come back flat against **0.0% at a trade station and 0.0% at a
+shipyard**, which is the axis #13's warning was actually about and the reason an average
+is the wrong thing to quote.
+
+**And the concentration is §3's own arithmetic, named rather than guessed.** Walking the
+domain by good and type, the rows that reach the floor are **Food at the refinery (384),
+Slaves at the refinery (168), Narcotics at the shipyard (32)** — nothing else. Food is
+gradient −2 and Slaves −5, so `TYPE_OFFSET`'s **+3 at a refinery moves them three
+economy-equivalent steps *down***; Narcotics is +13, which the shipyard's −2 pushes down
+hard enough to reach the floor at the top of the range. §3's offset and §3's floor are the
+same lever read twice: any station type whose offset points the way a gradient runs will
+pin some good's rows at one price step, and a cut applied after the floor has nothing left
+to cut. A node that widens an offset inherits this table. Every one of those rows is one §3's price floor had already pinned
 at a single price step — the two populations are identical to the row — and on them
 the round trip nets nothing either, because the floor that swallows the spread
 swallows the deficit's mark on the way through `stockResponse`.
@@ -1467,7 +1498,7 @@ question, still fog on the map, and it reaches far past the economy.
 
 All headless `bun` — none of §1–§9 may require a browser, per #7's own framing.
 
-### 10.1 Suite — `market.test.ts` 53, `market-state.test.ts` 16, `deficits.test.ts` 15
+### 10.1 Suite — `market.test.ts` 51, `market-state.test.ts` 16, `deficits.test.ts` 15
 
 `market.test.ts` owns §2–§4 and §6–§7 — the arithmetic, swept over its whole
 domain — and is listed below. §5's two properties are not about a formula and
@@ -1479,10 +1510,13 @@ read "`market-state.test.ts` 24" while the file ran 28 —
 [#67](https://github.com/jcfischer/seelite/issues/67). A count in prose is a
 claim like any other; these three were read off a run. **The first of them was
 stale again before this node arrived** — the file ran 42 on `main` while this
-heading said 38 — and #196 takes it to **53**, eleven rows in §5.6: the two dials
+heading said 38 — and #196 takes it to **51**, nine rows in §5.6: the two dials
 re-derived from the response rather than quoted, the swing the floor does not
 reach, the domain's two ends, the ask's identity, the erased rows flown for a
-pump, and the quote's own precision. Nine rows joined `station-commerce.test.ts`
+pump, and the quote's own precision. **The heading said 53 and eleven for a round**,
+because two of those rows restated assertions the rows before them already made and were
+merged in review — a count transcribed from intent rather than from a run is the drift
+this paragraph is about, one file and one node later. Nine rows joined `station-commerce.test.ts`
 (13 → 22 on `main`) and three `station-console.test.ts` (21 → 24), which this heading
 has never counted; §10.3 says what they are for. The arithmetic is stated because
 this heading got it wrong the first time — it said eleven where the file gained nine,
@@ -1757,18 +1791,27 @@ are distinct and that `MARKET` is the largest — which a build that renumbered
 the game is a function of those integers and renumbering one moves every
 position, name and station silently.
 
-**#196 delivered §5.6, and what it went looking for came back twice: once wrong,
-and once as a refutation.** The brief predicted that dear-at-the-rim would reinforce
-a core-ward pull, and that the arm shipping wide at high tech level would show a new
-commander at the rim the worst rates in the game. **Only the first half held.** The
-route-mix prediction is there in the sweep (§10.3): the arm that did not ship pulls
-trade inward as its level rises, 0.612 → 0.509 mean dock radius, while the shipped
-arm pushes outward to 0.922. **The rate prediction was refuted, and by the arm that
-shipped** — its kit range is shorter on all four rungs and it reaches the kit first in
-**15 of the 16 per-galaxy draws** (the exception is galaxy 0 at mean 0.15, 86 min
-against 68), and at the two widest rungs it is the *other* arm that stalls, 2 of 4
-sessions each. What D4 left open out of caution is closed by measurement, not
-by a judgment call in the same direction.
+**#196 delivered §5.6, and what it went looking for came back three times: once
+wrong, once answering a question that was not asked, and once as an answer.** The brief
+predicted that dear-at-the-rim would reinforce a core-ward pull, and that a spread dear
+at high tech level would charge a commander who starts somewhere developed the worst
+rates in the game. The route-mix prediction is there in the sweep (§10.3): the arm that
+did not ship pulls trade inward as its level rises, 0.612 → 0.509 mean dock radius,
+while the shipped arm pushes outward to 0.922.
+
+**The second prediction was first reported as refuted on an experiment that cannot reach
+it.** The matched-mean arms sit at floor 0, so both charge nothing at the rim — where
+50-93% of the shipped arm's docks land — and D4's question is about the developed (core)
+end. A node reported that as the concern not holding, and it was reporting two free rims.
+**What reaches the question is the pair at the shipped dials** (`MIRRORED_SHIPPED`: same
+floor, same grade, ends swapped), and what it says is that **D4 was right about the level
+and wrong about the loop**. The level is arithmetic — a core berth takes **25.0%** of a
+sale under the shipped law against **10.0%** under the mirror, so a commander who stays
+in developed space does pay the wider cut, and §5.6's summary should not be read to say
+otherwise. The loop is a measurement: traders move to where the cut is cheap, and the
+shipped arm still out-earns the mirror (206-399 against 176-298 Cr/min) and reaches the
+kit first in **3 of 4 galaxies**. The direction was bought with a real charge on the core
+end; §10.3 carries the argument for paying it.
 
 **But the first run of that sweep reported the opposite on the rate half**, and the
 reason was in the instrument rather than the world: the two graded arms were

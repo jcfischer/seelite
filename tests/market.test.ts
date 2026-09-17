@@ -978,9 +978,23 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 		// itself, moved only by the tenth-credit quote step §5.6 quantizes to. That
 		// quantization is not cosmetic — it is what makes the number the console
 		// prints the number the till charges — and the row below is where it is held.
+		// Counted rather than asserted per cell, for the reason the row below gives: this
+		// walk makes 522,000 `expect` calls, which is most of this file's runtime. The
+		// denominator is asserted beside the zero, so a walk that quietly shrank reads as
+		// a shrunken denominator rather than as a clean pass.
+		let askOffMid = 0;
+		let askCells = 0;
 		forEachPriceRow((_good, row, quoteAt) => {
-			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 3)
-				expect(quoteAt(tl).buyCr).toBe(quantizeToDisplayStepCr(row.priceCr));
+			for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl += 3) {
+				askCells++;
+				if (quoteAt(tl).buyCr !== quantizeToDisplayStepCr(row.priceCr))
+					askOffMid++;
+			}
+		});
+		expect({ askOffMid, askCells }).toEqual({
+			askOffMid: 0,
+			// Five of the fifteen tech levels, every good/economy/fluct/station cell.
+			askCells: COMMODITIES.length * 8 * 256 * 3 * 5,
 		});
 	});
 

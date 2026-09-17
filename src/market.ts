@@ -577,41 +577,28 @@ export const requireDisplayTl = (displayTL: number): number => {
  * default** — see `marketQuote`.
  */
 /**
- * A bid cut from its two dials, in either direction.
+ * A bid cut from its two dials, in the shipped direction: `floor` at the rim,
+ * `floor + grade` at the core.
  *
- * `bidCutAtTl` below is this with the shipped constants, and
- * `scripts/measure-greedy-trader.ts` builds every graded arm of its sweep from it
- * rather than re-typing the offset. That is not tidiness: the instrument had its own
- * copy of `(tl − MIN) / (MAX − MIN)`, and a guard that compares one copy of a formula
- * against a second copy proves only that the copies agree. With the law's own
- * parametric form exported, the guard's two sides are the quote builder and the
- * table, which are the two things that can actually disagree.
+ * **The direction is not a parameter here.** #191 D4's rejected arm is the mirror of
+ * this table, and a mirror is an *arm*: it belongs beside `NO_WEDGE` in
+ * `tests/helpers/console-cycle.ts`, which is where the repo keeps the rejected laws
+ * (`BELL_WRAP`, `fixedReferenceResponse`), not in the module that states what ships.
+ * It also cannot be named honestly as an option: `{ wideAtHighTl: true }` builds the
+ * arm that is *narrow* at high TL, and that inversion cost this node a review round.
  *
- * @param wideAtHighTl Mirror the table, so the core pays the rim's cut. This is the
- *   arm #191 D4 decided against, kept buildable because the decision is a comparison
- *   and a comparison needs both sides runnable.
+ * **One copy of the offset.** `scripts/measure-greedy-trader.ts` used to re-type
+ * `(tl − MIN) / (MAX − MIN)` for its guard, so the check that "compares an arm to the
+ * law" compared two copies of one formula and proved only that the copies agree.
  */
-export const bidCutLadder = (
-	floor: number,
-	grade: number,
-	{ wideAtHighTl = false }: { wideAtHighTl?: boolean } = {},
-): ((displayTL: number) => number) => {
+export const bidCutLadder = (floor: number, grade: number) => {
 	const span = DISPLAY_TL_MAX - DISPLAY_TL_MIN;
-	// **Checked on both arms, not just the mirrored one.** An earlier revision of this
-	// function validated inside the `wideAtHighTl` branch only, and the row that says a
-	// tech level outside the generator's range throws rather than clamps went red —
-	// which is the useful property of a throw being in a shared law rather than in one
-	// branch of it.
+	// **Checked, not clamped** — see `DISPLAY_TL_MIN`'s header. The check sits here
+	// rather than in each branch because the row that says an out-of-range tech level
+	// throws went red the first time it lived on one side of a ternary.
 	return (rawTL: number): number => {
 		const displayTL = requireDisplayTl(rawTL);
-		return (
-			floor +
-			grade *
-				((wideAtHighTl
-					? DISPLAY_TL_MAX - displayTL
-					: displayTL - DISPLAY_TL_MIN) /
-					span)
-		);
+		return floor + (grade * (displayTL - DISPLAY_TL_MIN)) / span;
 	};
 };
 

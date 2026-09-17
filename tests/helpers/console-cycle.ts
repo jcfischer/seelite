@@ -25,7 +25,10 @@ import {
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	PRICE_STEP_CR,
+	BID_CUT_FLOOR,
+	BID_CUT_GRADE,
 	bidCutAtTl,
+	bidCutLadder,
 	quoteWithCut,
 	stockResponse,
 	type QuoteFn,
@@ -46,11 +49,29 @@ import {
  *  of the carrier id, so a fresh one per row would be a different station. */
 const STATION_SEED = 0x51a7_10;
 
-const stationOf = (type: StationTypeKey) =>
-	marketStationOf(
-		{ type, localCarrierId: `pump-${type}`, blackMarket: true },
-		STATION_SEED,
-	);
+/**
+ * The three consoles, built on first ask rather than per row.
+ *
+ * **The comment above always said "built once" and never did.** `marketStationOf` is a
+ * seed hash and a record, and `flyConsoleCycle` asked for a station twice while
+ * `forEachConsoleCycle` asked a third time for the shelf — so every survey rebuilt the
+ * same three stations a couple of hundred thousand times. Memoized because the claim is
+ * now true as written, and because a survey that closes and reopens a console on every
+ * leg is one refactor away from being a survey of three different stations.
+ */
+const STATIONS = new Map<StationTypeKey, ReturnType<typeof marketStationOf>>();
+
+const stationOf = (type: StationTypeKey) => {
+	let station = STATIONS.get(type);
+	if (station === undefined) {
+		station = marketStationOf(
+			{ type, localCarrierId: `pump-${type}`, blackMarket: true },
+			STATION_SEED,
+		);
+		STATIONS.set(type, station);
+	}
+	return station;
+};
 
 /** What the shelf offers at an untouched market. One function, because the
  *  sweep that *builds* a row and the flight that *flies* it have to agree on
@@ -225,15 +246,35 @@ export function flyConsoleCycle(
 
 /** Every hull, good, station type and economy the game can put a commander in
  *  front of, in both orders. `displayTLs` defaults to the whole table. */
+export interface CycleOptions {
+	displayTLs?: readonly number[];
+	economies?: readonly number[];
+	/**
+	 * Skip the sub-tonne goods, which a caller that reads only `positiveByTonnage` does
+	 * not need: the metals are 40% of the corpus and the whole reason the survey re-flies
+	 * a row unquantized. `scripts/measure-greedy-trader.ts`'s bisection asks a tonnage
+	 * question about forty-four times per report and was paying for all of it.
+	 */
+	tonnageOnly?: boolean;
+	/**
+	 * Skip the zero classification, which is the survey's most expensive step: it flies
+	 * every netting-nothing cycle a second time with the quote step off. A caller that
+	 * only reads the positive counters — the bisection's predicate — learns nothing from
+	 * it, and the attribution is still made in full on the surveys that report it.
+	 */
+	classifyZeros?: boolean;
+}
+
 export function forEachConsoleCycle(
 	visit: (cycle: ConsoleCycle) => void,
-	opts: { displayTLs?: readonly number[]; economies?: readonly number[] } = {},
+	opts: CycleOptions = {},
 ): void {
 	const economies = opts.economies ?? ALL_EIGHT;
 	const tls = opts.displayTLs ?? ALL_TL;
 	for (const hull of DOCKABLE_HULL_IDS)
 		for (const good of COMMODITIES) {
 			if (good.sellOnly) continue;
+			if (opts.tonnageOnly && good.unit !== "t") continue;
 			for (const type of TYPES)
 				for (const economy of economies)
 					for (const displayTL of tls)
@@ -362,6 +403,42 @@ export const UNQUANTIZED_CUT: QuoteFn = quoteWithCut(bidCutAtTl, {
 });
 
 /**
+ * #191 D4's rejected arm, held here beside `NO_WEDGE` rather than as a dial on the
+ * shipped law.
+ *
+ * **A mirror is an arm, not a flag.** `src/market.ts` states what ships, and the repo
+ * keeps the rejected laws next to the tests that fly them — `BELL_WRAP` and
+ * `fixedReferenceResponse` in `market-math.ts`, `NO_WEDGE` three lines above. Naming it
+ * as an option also cannot be done honestly: `{ wideAtHighTl: true }` builds the arm
+ * that is *narrow* at high TL, because mirroring the position is exactly what swaps the
+ * ends. That inversion cost this node a review round in which the sweep printed one
+ * arm under the other arm's name.
+ *
+ * **Reflected on the tech level rather than re-derived from the offset**, so the
+ * position arithmetic still has one home and it is the law's.
+ */
+export const mirroredBidCut =
+	(floor: number, grade: number) =>
+	(displayTL: number): number =>
+		bidCutLadder(floor, grade)(DISPLAY_TL_MAX + DISPLAY_TL_MIN - displayTL);
+
+/**
+ * The rejected direction **at the shipped dials**: the same floor and the same grade,
+ * with the ends swapped, so a rim berth pays 0.25 and a core one 0.10.
+ *
+ * **This is the arm #191 D4's own question needs and the sweep did not fly.** The
+ * matched-mean rungs are built at floor 0 so their multiset of cuts can equal a flat
+ * arm's, which leaves both of them charging nothing at the rim — where 50-93% of the
+ * shipped arm's docks land. Comparing those two says nothing about what D4 asked,
+ * because D4 asked what a commander who starts somewhere developed pays, and neither
+ * arm has a developed market to pay it in. Flown against `marketQuote` at the same two
+ * constants, the comparison is the one the decision was actually made on.
+ */
+export const MIRRORED_SHIPPED: QuoteFn = quoteWithCut(
+	mirroredBidCut(BID_CUT_FLOOR, BID_CUT_GRADE),
+);
+
+/**
  * Fly every cycle the game can put a commander in front of, and count what nets.
  *
  * **The whole domain, not a sample.** §12.12's pump was found by a hold sweep,
@@ -371,7 +448,7 @@ export const UNQUANTIZED_CUT: QuoteFn = quoteWithCut(bidCutAtTl, {
  */
 export function surveyConsoleCycles(
 	quote: QuoteFn = marketQuote,
-	opts: { displayTLs?: readonly number[]; economies?: readonly number[] } = {},
+	opts: CycleOptions = {},
 ): CycleSurvey {
 	let rows = 0;
 	let positiveRows = 0;
@@ -412,34 +489,33 @@ export function surveyConsoleCycles(
 	 * near the core, which wash because a purchase's mark and the cut cancel —
 	 * `(1 + 0.315) × (1 − 0.239) ≈ 1` — a mark no leg comparison can see.
 	 */
-	const classifyZero = (
-		cycle: ConsoleCycle,
-		out: CycleOutcome,
-		walk: ZeroWalk,
-		first: (z: CycleOutcome & { cycle: ConsoleCycle }) => void,
-	) => {
+	// **Closes over the survey's own accumulators.** `zeroWalk` and
+	// `firstZeroOffTheFloor` are already in this scope, so taking them as parameters —
+	// and taking a setter callback whose only job was to assign one of them — was
+	// ceremony around an assignment the function could make directly.
+	const classifyZero = (cycle: ConsoleCycle, out: CycleOutcome) => {
 		if (
 			out.sellCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR ||
 			out.buyCr <= PRICE_STEP_CR + CYCLE_EPSILON_CR
 		)
 			return;
-		walk.count++;
-		first({ ...out, cycle });
+		zeroWalk.count++;
+		if (firstZeroOffTheFloor === null) firstZeroOffTheFloor = { ...out, cycle };
 		const raw = flyConsoleCycle(cycle, UNQUANTIZED_CUT).netCr;
 		if (raw > CYCLE_EPSILON_CR) {
-			walk.rescuedByRounding.count++;
-			walk.rescuedByRounding.worstCr = Math.max(
-				walk.rescuedByRounding.worstCr,
+			zeroWalk.rescuedByRounding.count++;
+			zeroWalk.rescuedByRounding.worstCr = Math.max(
+				zeroWalk.rescuedByRounding.worstCr,
 				raw,
 			);
-			walk.rescuedByRounding.rows.push(
+			zeroWalk.rescuedByRounding.rows.push(
 				`${cycle.good.name} ${cycle.hull} e${cycle.economy} ` +
 					`${cycle.type} TL${cycle.displayTL} ${cycle.arm}: ` +
 					`unquantized +${raw.toFixed(4)} Cr against shipped ` +
 					`${out.netCr.toFixed(4)}`,
 			);
-		} else if (raw < -CYCLE_EPSILON_CR) walk.quantizedToZero++;
-		else walk.lawCloses++;
+		} else if (raw < -CYCLE_EPSILON_CR) zeroWalk.quantizedToZero++;
+		else zeroWalk.lawCloses++;
 	};
 
 	forEachConsoleCycle((cycle) => {
@@ -451,9 +527,7 @@ export function surveyConsoleCycles(
 			else subTonnes++;
 		} else if (out.netCr > -CYCLE_EPSILON_CR) {
 			zeroRows++;
-			classifyZero(cycle, out, zeroWalk, (z) => {
-				if (firstZeroOffTheFloor === null) firstZeroOffTheFloor = z;
-			});
+			if (opts.classifyZeros !== false) classifyZero(cycle, out);
 		}
 		if (worst === null || out.netCr > worst.netCr) worst = { ...out, cycle };
 		if (

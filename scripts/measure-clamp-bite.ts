@@ -244,9 +244,7 @@ for (let tl = DISPLAY_TL_MIN; tl <= DISPLAY_TL_MAX; tl++) {
 	const acc = cutByTl.get(tl);
 	if (!acc || acc.rows === 0) continue;
 	console.log(
-		`${String(tl).padStart(3)}   ${(acc.rows as number).toLocaleString()}`.padEnd(
-			16,
-		) +
+		`${String(tl).padStart(3)}   ${acc.rows.toLocaleString()}`.padEnd(16) +
 			`${pct(acc.spreadless, acc.rows)}`.padStart(13) +
 			`${pct(acc.pinnedAtStep, acc.rows)}`.padStart(16) +
 			`${((100 * acc.spreadSum) / acc.rows).toFixed(2)}%`.padStart(23),
