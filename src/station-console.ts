@@ -114,7 +114,6 @@ export interface ConsoleMarketRow {
 	 *  `listed`. §5.6's cut falls on the *bid* alone, so this is the market's own
 	 *  figure and M6's arrow describes the column it sits on. */
 	buyCr?: number;
-	priceCr?: number;
 	/** Units on the shelf after the deficit. Present iff `listed`. */
 	quantity?: number;
 	/**
