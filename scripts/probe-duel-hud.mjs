@@ -566,22 +566,26 @@ for (const viewport of VIEWPORTS) {
 	check(
 		`${v}: a crippled raider is let go at the range the beam stops reaching`,
 		rout.released &&
-			rout.lastHitGap !== null &&
-			rout.releaseGap !== null &&
-			// Hit first, or "the beam stopped landing" would be where the fight
-			// started. `minHullSeen` is printed and not asserted: the hull is
-			// re-pinned every frame, so it cannot reach zero and a guard on it
-			// would be a guard on the probe's own arithmetic. That the fight
-			// ended by letting go rather than by a kill is held by construction —
-			// a kill needs a strike through `applyDamage`, and there is none — and
-			// the headless row in `tests/encounter.test.ts` reads `end` directly.
+			// **One comparison carries the row: the beam stopped landing and the
+			// fight stopped, at the same range.** `lastHitGap > 1` is the bound that
+			// does the work — it is false when the raider was let go before the beam
+			// ever connected, which is what an exit forced to one kilometre produced
+			// when measured, and a bare `releaseGap > lastHitGap` would have read
+			// that `null` as zero and called it a pass. `releaseGap` is the range it
+			// was let go at, so the difference below is the whole claim.
+			//
+			// `minHullSeen` is printed, not asserted: the hull is re-pinned every
+			// frame, so it cannot reach zero and a guard on it would be a guard on
+			// the probe's own arithmetic. That this is a release and not a kill is
+			// held by construction — a kill needs a strike through `applyDamage`, and
+			// there is none — and `tests/encounter.test.ts` reads `end` directly.
 			rout.lastHitGap > 1 &&
+			rout.releaseGap !== null &&
 			rout.releaseGap > rout.lastHitGap &&
 			// One frame of the raider's top speed is 0.2 km, so half a kilometre is
 			// the loosest reading that still says "the beam stopped and the fight
 			// stopped together". On the build before #367 the same script measured
-			// the last hit landing at 11.83 km and the fight ending at 24.83 km —
-			// the old exit, thirteen kilometres past the reach, and the row red.
+			// the last hit at 11.83 km and the end at 24.83 km, and this row was red.
 			rout.releaseGap - rout.lastHitGap < 0.5,
 		JSON.stringify(rout),
 	);
