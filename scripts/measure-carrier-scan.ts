@@ -57,6 +57,7 @@ const DRIFT = ASSIST_CAP_KMS * CHARGE;
 /** B and C's start range: the ladder's mid rung, not the boundary rung. */
 const MID = RANGE / 2;
 const BASE = flightPerformance(PLAYER_BASELINE_HULL);
+const say = (...lines: string[]) => console.log(lines.join("\n"));
 const f = (v: number, dp = 1) => v.toFixed(dp);
 const col = (v: number, n: number, dp = 1) => f(v, dp).padStart(n);
 const mult = (v: number) => `${v < 1 ? f(v, 3) : f(v)}x`;
@@ -117,13 +118,13 @@ const span = (pick: (r: (typeof RUNS)[number]) => number) =>
 	`${f(Math.min(...RUNS.map(pick)))}–${f(Math.max(...RUNS.map(pick)))}`;
 const EDGE = flyStraight(RANGE, ASSIST_CAP_KMS);
 
-console.log(
+say(
 	"carrier scan — the three figures `src/carrier-scan.ts` owns, beside what they mean in play",
 	`  shipped: range ${RANGE} km · cone ${CONE}° · charge ${CHARGE} s  (CARRIER_SCAN_FIGURES — that module owns all three)`,
 	`  interdiction: lock ${INTERDICTION_LOCK_DEG}° · charge ${INTERDICTION_CHARGE_S} s · contest range ${INTERDICTION_RANGE_KM} km`,
 );
 
-console.log(
+say(
 	"\n== A. the room the cone admits ==",
 	"  Full width is 2·R·tan(cone): how far off the nose a target may be and still be scannable. Room in hand is how long a target crossing at the assist cap may run before its bearing leaves the cone.",
 	"  range km   full width km   room in hand s",
@@ -133,7 +134,7 @@ for (const r of [
 	...[2, 3, 4, 6, 8].map((k) => (RANGE * k) / 8),
 	SCANNER_RANGE_KM,
 ])
-	console.log(
+	say(
 		`${col(r, 7)} km${col(roomKm(r), 14)}${col(roomS(r, ASSIST_CAP_KMS), 14)} s` +
 			(scanInRange(r) ? "" : "   refused: outside the scan range"),
 	);
@@ -141,24 +142,24 @@ console.log(
 	`  At the ceiling the cone is ${f(ROOM_TOP)} km across, ${f(ROOM_TOP / 2)} km either side, and one charge of straight flying at the cap crosses ${f(DRIFT)} km of that: ${f(ROOM_TOP / 2 / DRIFT)}x the room the drift needs, using ${f(USED_DEG, 2)}° of the ${CONE}° — not a hair trigger at distance.`,
 );
 
-console.log(
+say(
 	"\n== B. is a scan completable while flying? one charge per hull ==",
 	"  Speed is the hull's own — thrustMN/massT pushed from rest for one charge, capped at ASSIST_CAP_KMS — and the hold is flown through the module's own predicates, nose held on the opening sightline, from half the ceiling.",
 	`  hull          km/s²  to cap s   km/s   scan charge km   contest charge km   flown, from half the ceiling`,
 );
 for (const r of RUNS)
-	console.log(
+	say(
 		`  ${r.id.padEnd(13)}${col(r.a, 6, 2)}${col(ASSIST_CAP_KMS / r.a, 10)}${col(r.scan.kms, 7)}` +
 			`${col(r.scan.km, 17)}${col(r.contestKm, 19)}  ` +
 			`${r.broke ? `breaks at ${f(r.broke.t)} s, ${r.broke.why}` : "completes"}`,
 	);
-console.log(
+say(
 	`  Straight flying is not what breaks a scan: ${DONE} of ${RUNS.length} hulls complete the charge, with ${f(roomS(MID, ASSIST_CAP_KMS), 0)} s of room in hand against a ${CHARGE} s charge at the mid rung — the same for every hull, because the whole roster is at the cap inside one charge (${span((r) => ASSIST_CAP_KMS / r.a)} s to get there). What differs is the ground covered getting there: ${span((r) => r.scan.km)} km of scan charge, ${span((r) => r.contestKm)} km of contest charge.`,
 	`  What does break a scan is closeness: at combat speed the cone runs out at ${f(CLOSE_KM, 0)} km, inside interdiction's own contest range of ${INTERDICTION_RANGE_KM} km — where a scan would be flown during a fight, which is F4's point. And a scan refused for range is refused ${f(SCANNER_RANGE_KM / RANGE, 0)}x short of what the passive display admits (${SCANNER_RANGE_KM} km), §4's bound.`,
 	`  The ceiling itself is a different arm: flown from exactly ${RANGE} km the hold breaks at ${f(EDGE?.t ?? 0)} s on ${EDGE?.why}, a crossing target adding hypotenuse to its slant range while the range is checked every frame here. The ${f(ROOM_TOP / 2)} km of room is a target's *inside* the ceiling, not at it.`,
 );
 
-console.log(
+say(
 	"\n== C. the same charge paid at cruise ==",
 	"  Range is checked every frame here, where a contest checks it once — so cruise is the arm that decides when the verb is available at all. Same hold, same arm, flown from half the ceiling.",
 	"  arm                              km/s   drift in a charge km   x scan range   straight flight",
@@ -170,7 +171,7 @@ for (const [label, kms] of [
 	["the assist cap (§1's exit)", ASSIST_CAP_KMS],
 ] as const) {
 	const broke = flyStraight(MID, kms);
-	console.log(
+	say(
 		`  ${label.padEnd(32)}${col(kms, 10)}${col(kms * CHARGE, 23)}` +
 			`${mult((kms * CHARGE) / RANGE).padStart(15)}  ` +
 			`${broke ? `breaks at ${f(broke.t)} s, ${broke.why}` : "completes"}`,
@@ -180,15 +181,16 @@ console.log(
 	`  Only the last arm is scannable, and it is the one §1's exit drops a ship into: at cruise a target crosses ${f((CRUISE * CHARGE) / RANGE)} whole scan ranges while the charge runs, and even cruise's own safety floor outruns the ceiling. Dropping out is not courtesy to the instrument — it is the price of the verb.`,
 );
 
-console.log(
+say(
 	"\n== D. the two holds, read side by side ==",
-	`  scan          cone ${CONE}° · charge ${CHARGE} s · range ${RANGE} km\n  interdiction  lock ${INTERDICTION_LOCK_DEG}° · charge ${INTERDICTION_CHARGE_S} s · contest range ${INTERDICTION_RANGE_KM} km`,
+	`  scan          cone ${CONE}° · charge ${CHARGE} s · range ${RANGE} km`,
+	`  interdiction  lock ${INTERDICTION_LOCK_DEG}° · charge ${INTERDICTION_CHARGE_S} s · contest range ${INTERDICTION_RANGE_KM} km`,
 	`  The scan bills ${mult(CHARGE / INTERDICTION_CHARGE_S)} the seconds at ${mult(RANGE / INTERDICTION_RANGE_KM)} the distance: ${f(DRIFT)} km of crossing against ${f(CONTEST_DRIFT)} km — §4's same unbroken attention, bought from a verb with no opponent in it.`,
 	`  The angles are not the same kind of angle. A contest's ${INTERDICTION_LOCK_DEG}° is a *heading* separation (O1), so it buys no lateral width; what it bills is turn authority — ${f(INTERDICTION_TURN_FACTOR * 100, 0)}% of it, so the baseline hull keeps ${f(interdictionTurnRate(BASE))} rad/s of its ${f(cruiseTurnRate(BASE))} while a lock is held.`,
 	`  A scan bills none of that authority, and nothing in the module touches it: holding the nose on a target crossing at the cap asks ${f(ASK, 3)}°/s against the baseline hull's ${f(HOLD)}°/s — ${f((ASK / HOLD) * 100, 2)}% of it. The geometry never refuses a pilot who chooses to track.`,
 );
 
-console.log(
+say(
 	"\n== E. how to tune this ==",
 	`  charge — the attention bill, and linear in it: the drift a pilot holds against is ${f(DRIFT)} km today and halves with the dial, while the room in hand per hull doubles beside it. It sets what a scan costs, never what it admits.`,
 	`  cone — the room, and the only dial that answers whether the lock is a hair trigger: ${f(ROOM_TOP)} km across at the ceiling, with a ${f(USED_DEG, 2)}° crossing inside it today. Widening it admits targets the nose is *not* on, which is the sightline F4's cost is about.`,
@@ -196,7 +198,7 @@ console.log(
 	"\n  All three belong to `src/carrier-scan.ts`. They are reprinted here, not owned here: neither this file nor a spec restates them, and tuning means changing the module and re-running this.",
 );
 
-console.log(
+say(
 	"\n== F. what this instrument cannot show ==",
 	`  None of the above shows whether the hold *feels* like a cost, and none of it can. The figure that looks most like an answer — that ${f((ASK / HOLD) * 100, 2)}% of authority — is the shape of the gap and not its size: the verb's price is attention, the nose not on the vector you are flying and the fight you are not in. §9's "The scan's feel" row is the principal flying it, and no printout stands in for that.`,
 );
