@@ -1501,6 +1501,48 @@ describe("§3.1 the scan record", () => {
 		expect(moved).toBe(true);
 	});
 
+	test("a carrier that has not flown yet is recorded as such, and loads back", () => {
+		// `trafficVoyage` answers -1 for a carrier that has not departed, and
+		// `carrierManifest` is already asked with it on the Flight console. The
+		// record stores what was read rather than a 0 that was never read —
+		// otherwise the console and the glass would be two answers to one
+		// question — and the parser admits that one value below zero and no other.
+		const never = observeScan(newWorld(WORLD), 0, OTHER, 100, {
+			instanceOrdinal: 0,
+			voyageOrdinal: -1,
+		});
+		expect(readKnowledge(never.galaxies[0], OTHER)?.scan).toMatchObject({
+			observedInstanceOrdinal: 0,
+			observedVoyageOrdinal: -1,
+		});
+		expect(parseWorld(serializeWorld(never))).toEqual(never);
+		const raw = serializeWorld(never) as {
+			galaxies: Array<{ knowledge: Record<string, Record<string, unknown>> }>;
+		};
+		const scan = raw.galaxies[0].knowledge[OTHER].scan as Record<
+			string,
+			unknown
+		>;
+		expect(() =>
+			parseWorld({
+				...raw,
+				galaxies: raw.galaxies.map((g, i) =>
+					i === 0
+						? {
+								...g,
+								knowledge: {
+									[OTHER]: {
+										...raw.galaxies[0].knowledge[OTHER],
+										scan: { ...scan, observedVoyageOrdinal: -2 },
+									},
+								},
+							}
+						: g,
+				),
+			}),
+		).toThrow(/neither a voyage count nor the sentinel/);
+	});
+
 	test("a snapshot from before the scan member refuses, not reinterprets", () => {
 		// §9.6's rule and §9.10's precedent: the shape changed, so a v2 body is
 		// refused with the migration named rather than read as though no carrier

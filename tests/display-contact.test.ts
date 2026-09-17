@@ -414,3 +414,15 @@ test("cruise snapshots a moving contact before combat integrates the frame", () 
 		"contactTargetAtFrameStart?.id === target.id",
 	);
 });
+
+test("a scan that has not started does not announce a scan in progress", () => {
+	// The wiring's own row, because the instrument cannot tell the two apart:
+	// `SCANNING 0%` and `UNKNOWN` are both painted at the same slot in the same
+	// font, and a canvas that says a scan is running when the nose is simply not
+	// on the target teaches a pilot to distrust the cell.
+	const readout = method("scanReadout");
+	expect(readout).toContain("this.scanHold.chargeS > 0");
+	// And a completed charge must not sit on the glass at 100 either: the cell
+	// gives the standing back, which is what keeps the age moving.
+	expect(readout).toContain("this.scanHold.chargeS < SCAN_CHARGE_S");
+});

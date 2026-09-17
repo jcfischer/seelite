@@ -282,7 +282,7 @@ function designationFrames() {
 		...base,
 		kind: "ship",
 		shipType: "interceptor",
-		legalStatus: null,
+		standing: null,
 		velocity: { x: 0, y: 0, z: 0 },
 	};
 	const cases = [

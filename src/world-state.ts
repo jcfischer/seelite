@@ -228,6 +228,14 @@ export interface CarrierScanObservation {
 	observedAt: number;
 	source: string;
 	observedInstanceOrdinal: number;
+	/**
+	 * The voyage whose hold was read (F11). **It may hold Traffic's `no flown
+	 *  voyage yet` sentinel, -1**, which is what `trafficVoyage` answers for a
+	 *  carrier that has not departed and is the value `carrierManifest` is already
+	 *  asked for on the Flight console. Storing what was read, rather than a 0
+	 *  that was never read, is what keeps the record and the console from being
+	 *  two answers to one question.
+	 */
 	observedVoyageOrdinal: number;
 }
 
@@ -1754,12 +1762,32 @@ const parseScan = (raw: unknown, key: string): CarrierScanObservation => {
 			"observedInstanceOrdinal",
 			`knowledge ${key} scan`,
 		),
-		observedVoyageOrdinal: ordinal(
+		observedVoyageOrdinal: voyageOrdinal(
 			o,
 			"observedVoyageOrdinal",
 			`knowledge ${key} scan`,
 		),
 	};
+};
+
+/**
+ * A voyage ordinal, or Traffic's `-1` for a carrier that has not flown yet.
+ *
+ * Separate from `ordinal` because this member is allowed the sentinel and
+ * nothing else below zero: a voyage count is a count, and the one value that is
+ * not a count is the one the writer can legitimately hand over.
+ */
+const voyageOrdinal = (
+	raw: Record<string, unknown>,
+	field: string,
+	what: string,
+): number => {
+	const value = num(raw, field, what);
+	if (!Number.isInteger(value) || value < -1)
+		fail(
+			`${what}: ${field} ${value} is neither a voyage count nor the sentinel`,
+		);
+	return value;
 };
 
 const parseKnowledgeRow = (value: unknown, key: string): KnowledgeRow => {

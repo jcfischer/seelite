@@ -5517,8 +5517,15 @@ class Game {
 		// A completed charge sits at the ceiling, so the progress is only a
 		// charge while it is still running: after that the cell shows the
 		// standing the pilot earned, not a number stuck at 100.
+		// **`chargeS > 0` is load-bearing.** A hold at zero has not started, and
+		// printing its progress reads as `SCANNING 0%` on a ship nobody is
+		// scanning — which is worse than `UNKNOWN`, because it tells the pilot a
+		// scan is underway when the nose is simply not on the target.
 		const progress =
-			!refusal && scannable && this.scanHold.chargeS < SCAN_CHARGE_S
+			!refusal &&
+			scannable &&
+			this.scanHold.chargeS > 0 &&
+			this.scanHold.chargeS < SCAN_CHARGE_S
 				? scanProgress(this.scanHold)
 				: undefined;
 		return {
