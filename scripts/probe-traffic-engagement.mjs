@@ -347,7 +347,7 @@ try {
 			strike,
 			steps,
 			seconds: steps * g.units.MAX_DT,
-			framesFired: p.framesFired * g.units.MAX_DT,
+			secondsFired: p.framesFired * g.units.MAX_DT,
 			shieldSeconds: p.shieldSeconds,
 			repairS: wreck.RAIDER_REPAIR_S,
 			parked,
@@ -373,7 +373,7 @@ try {
 			diverted.strike.carrier.condition === "repairing" &&
 			diverted.strike.hullWas === diverted.strike.hullFull &&
 			diverted.strike.hullNow < diverted.strike.hullFull,
-		// How long the beam was open (`framesFired` s) against the bound one
+		// How long the beam was open (`secondsFired` s) against the bound one
 		// shield side puts up with (`shieldSeconds` s): shown, not asserted,
 		// because which side of the carrier the beam found is a matter of how it
 		// fled. `tests/traffic-engagement.test.ts` holds the arithmetic on a rig
@@ -593,15 +593,20 @@ try {
 		}),
 	);
 	check(
-		"a strike and the kill that follows it cost one episode's heat, not two (H9)",
+		"a strike and the kill that follows it cost one incident's heat, not two (H9)",
 		killed.struck !== null &&
 			// The strike's write, then the kill's, each measured against the
 			// status that stood before it. Summing two offences — which is what a
-			// write that ignores the episode does — would put the pair at 55.
+			// write that ignores the incident does — would put the pair at 55.
+			// Each figure is read as a delta of the saved heat across one write,
+			// so the pair is held to the ruling's figure within a tolerance: an
+			// exact `===` on floats that came through `2 ** (-elapsed /
+			// HEAT_HALF_LIFE_S)` can come apart by an ulp with nothing wrong.
 			Math.abs(killed.strikeWrite - killed.strikeOffence) < 1e-6 &&
 			Math.abs(killed.killWrite - (killed.offenceHeat - killed.strikeOffence)) <
 				1e-6 &&
-			killed.strikeWrite + killed.killWrite === killed.offenceHeat,
+			Math.abs(killed.strikeWrite + killed.killWrite - killed.offenceHeat) <
+				1e-6,
 		JSON.stringify({
 			strike: killed.struck,
 			strikeWrite: killed.strikeWrite,

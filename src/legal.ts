@@ -9,7 +9,7 @@
  * legal value in shape — an offender band, and a fugitive band that one incident
  * does not reach. **One incident is the unit**, and that is `marginalOffenceHeat`
  * (H9): the two figures are what an offence costs on its own, not what it adds
- * to an episode that already carries one.
+ * to an incident that already carries one.
  *
  * **What is saved is `LegalStatus`'s pair and nothing else.** A standing label
  * is a §8 projection, derived here on read (`persistent-world-state.md` §7),
@@ -40,7 +40,7 @@ export const offenceHeat = (target: Standing, offence: Offence): number =>
 	target === "clean" ? OFFENCE_HEAT[offence] : 0;
 
 /**
- * H9: what one offence **adds** when the same carrier's episode already
+ * H9: what one offence **adds** when the same carrier's incident already
  * carries a bigger one.
  *
  * A kill supersedes the strike that preceded it, so strike-then-kill costs 40
@@ -50,8 +50,10 @@ export const offenceHeat = (target: Standing, offence: Offence): number =>
  * ruling chose.
  *
  * `already` is read off the world (`traffic-engagement.ts`'s `chargedOffence`),
- * never off a counter — an episode outlives a session, and the ledger is the
- * only copy that survives the reload.
+ * never off a counter — an incident outlives the session that opened it, and the
+ * carrier's **row** is the copy that survives the reload. Not the episode ledger:
+ * §4 keeps only the latest episode, and the kill's `interrupt` closes the
+ * strike's before its `destroy` opens one that replaces it.
  */
 export const marginalOffenceHeat = (
 	target: Standing,

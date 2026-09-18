@@ -362,6 +362,7 @@ point. A traversal is non-preemptive; the oldest ready arrival or launch goes
 next, with a simultaneous launch first because it releases a Berth. A Traffic
 arrival reserves it before leaving its Traffic hold.
 _Avoid_: Berth, Clearance queue, approach corridor
+**Scope note (#365):** this line says a lane is not a **Berth**. Read as a ban on the word *berth* it forbids the one distinction an interior is made of — which occupancy a ship is waiting for — and the entry's own body refutes it two ways: a launch *releases a Berth*, and a Traffic arrival reserves the lane before leaving its hold. The two occupancies are separate facts the modules keep separate (`dockingStates` for the lane, the berth catalogue for the berth), so any sentence about a ship that has stopped flying has to name both. `docs/specs/station-traffic.md` §2.1 does exactly that. A reviewer or a checker flagging `berth` in that company has the alias rule firing in the wrong direction, which is the same mistake **Berth**'s entry already carries a note about.
 
 **Station interior**:
 What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`, and drawn in exactly one, `src/station-interior-mesh.ts`; `docs/specs/docking.md` §13.1 owns the topology of both.

@@ -32,7 +32,7 @@ import {
 } from "./combat-enemy";
 import { type DuelPilot, type PlayerShot, stepCombatShip } from "./duel";
 import { HULL_SPECS, type HullId } from "./hull";
-import type { Offence } from "./legal";
+import { type Offence, type Standing, offenceHeat } from "./legal";
 import {
 	PLAYER_KILL,
 	RAIDER_REPAIR_S,
@@ -52,6 +52,7 @@ import { type Vec3, frameAcross } from "./vec3";
 import type {
 	OperationalCondition,
 	Provenance,
+	RecoveryKind,
 	TransitionEvent,
 } from "./world-state";
 
@@ -214,11 +215,13 @@ const trafficRepairActor = (
  * `RAIDER_REPAIR_S`, and H3c has the ship rejoin "at the next departure after"
  * its completion — so the repair is booked to the first departure at or after
  * `now + T`, and the row turns operational exactly when the schedule takes it
- * away from the berth. The alternative was tested and rejected: booked to
- * `now + T` alone, a carrier whose repair ends inside its own away-leg re-enters
- * a leg it never flew, and a ship repaired under the player's eyes jumps out of
+ * away from the berth. The principal was offered `now + T` exactly and chose the
+ * rounding; what the rounding buys is that the two clocks never disagree about
+ * where the ship is. Booked to `now + T` alone, a repair that ends inside the
+ * carrier's own away-leg would leave it written operational on a leg it never
+ * flew, and a ship repaired under the player's eyes would have to jump out of
  * its berth into the middle of it. So `T` is a floor on the absence, never
- * shorter than it, and never longer than a cycle more.
+ * shorter than it, and never longer than one cycle more.
  *
  * **`PLAYER_KILL` is the provenance of the player's own gun**, not of a
  * destruction: §5's cause names the actor and the weapon, and it is the
@@ -286,8 +289,8 @@ export type TrafficPresence = "flying" | "parked-home" | "absent";
  * `repairing` row its meaning.
  */
 export interface CarrierConditionRow {
-	condition: string;
-	recovery?: { kind: string } | undefined;
+	condition: OperationalCondition;
+	recovery?: { kind: RecoveryKind } | undefined;
 }
 
 /**
@@ -315,14 +318,42 @@ export const trafficPresence = (
 
 /** H9: the offence this carrier's row says the pilot has already paid for.
  *
- *  The divert *is* the strike's episode: `disable` opened it, the repair is
+ *  The divert *is* the strike's incident: `disable` opened it, the repair is
  *  running, and the kill that interrupts it closes it. So a carrier sitting in
  *  its home berth under a repair the player's own fire caused has already cost
  *  them H4's strike heat, and the kill that finishes it owes the difference and
  *  not a second offence. Read off the row rather than a counter, because the
- *  episode outlives the session that opened it. */
-export const chargedOffence = (carrier: CarrierConditionRow): Offence | null =>
-	trafficPresence(carrier) === "parked-home" ? "struck" : null;
+ *  incident outlives the session that opened it.
+ *
+ *  **`standingAtStrike` is not decoration, and `null` does not mean "clean".**
+ *  Only an offence against a Clean carrier costs anything (H4), so a strike on a
+ *  carrier that was Wanted charged nothing, and the kill that follows it is
+ *  worth its full 40 even if the rotation has since made the target Clean again
+ *  — the rotation runs six hours and the repair 1200 s plus up to a cycle, so
+ *  those two clocks do disagree sometimes. The row carries the strike's own clock
+ *  (`recovery.startedAt`), and standing is a pure derivation from a clock, so a
+ *  caller can hand over the standing the strike was judged on. `null` says that
+ *  cannot be established, and the answer to that is that nothing has been paid:
+ *  the safe direction, because the alternative is a discount for a hit the
+ *  player was never charged for.
+ *
+ *  **This reads presence, not provenance.** `recovery.initiatedBy` is the home
+ *  station's — a `disable` names the shooter and a `repair-start` cannot carry
+ *  two causes — so nothing on the row says the strike was the player's doing.
+ *  Today the player's own fire is the only thing that diverts a carrier. The day
+ *  another actor can (a raider, station fire), this rule has to read that
+ *  provenance instead, or it hands the player a discount on a fight they did not
+ *  start.
+ */
+export const chargedOffence = (
+	carrier: CarrierConditionRow,
+	standingAtStrike: Standing | null,
+): Offence | null =>
+	trafficPresence(carrier) === "parked-home" &&
+	standingAtStrike !== null &&
+	offenceHeat(standingAtStrike, "struck") > 0
+		? "struck"
+		: null;
 
 /** The actors standing in a home berth instead of flying a route (H3b): the
  *  struck ones, drawn where the world says they are. */

@@ -329,6 +329,7 @@ import {
 	stepScanHold,
 } from "./carrier-scan";
 import {
+	type Offence,
 	heatAt,
 	legalStandingAt,
 	marginalOffenceHeat,
@@ -581,6 +582,7 @@ import {
 	advanceTo,
 	applyTransition,
 	effectiveCarrier,
+	type EffectiveCarrier,
 	observe,
 	observeSystemRelay,
 	readKnowledge,
@@ -2597,7 +2599,7 @@ class Game {
 	 * player reservations. It remains writable so controlled probes can force the
 	 * queued branch through the same allocator the game uses.
 	 */
-	readonly berthOccupancy = new Map<string, ReadonlySet<string>>();
+	readonly berthOccupancy = new Map<string, Set<string>>();
 
 	/** The player and Traffic berth holds at one station (§13.2). */
 	private occupiedAt(id: string): ReadonlySet<string> {
@@ -4638,15 +4640,29 @@ class Game {
 		}
 	}
 
-	/** One projection's berth, held at the station it is standing at. */
-	private holdBerth(projection: SystemTrafficProjection): void {
+	/** One projection's berth, held at the station it is standing at, named for
+	 *  whoever has to remember it.
+	 *
+	 *  `into` is the map the caller is dealing berths from: the saved one, or the
+	 *  one a live authority tick is working through. There is one rule because
+	 *  there is one fact — the berth a carrier is *drawn* in is the berth it
+	 *  *holds* — and a rule dealt out of two copies is a rule that drifts. */
+	private holdBerth(
+		projection: SystemTrafficProjection,
+		into: Map<string, Set<string>> = this.berthOccupancy,
+	): string | null {
 		const stationId = projection.terminalStationId;
-		if (!projection.berthId || !stationId) return;
-		const occupied = new Set(
-			this.berthOccupancy.get(stationId) ?? EMPTY_BERTHS,
-		);
-		occupied.add(projection.berthId);
-		this.berthOccupancy.set(stationId, occupied);
+		if (!projection.berthId || !stationId) return null;
+		const held = new Set(into.get(stationId) ?? EMPTY_BERTHS);
+		held.add(projection.berthId);
+		into.set(stationId, held);
+		return this.berthHoldKey(stationId, projection.berthId);
+	}
+
+	/** A berth named by the station it is in. Two holders of one berth have to
+	 *  be able to say so, and the name is how a set answers that. */
+	private berthHoldKey(stationId: string, berthId: string): string {
+		return `${stationId}/${berthId}`;
 	}
 
 	/** Advance generated Traffic authority at the simulation boundary. */
@@ -4718,10 +4734,19 @@ class Game {
 					berthId: route.berthId,
 				});
 			}
+			// Berths a diverted carrier is standing in, named so that nothing
+			// dealing berths this tick can hand one out again. They are seeded into
+			// `occupied` below, and a flying actor's own-berth cleanup must not
+			// empty one: the struck ship's schedule still says it is away, so on
+			// the tick of the strike the only thing marking that berth as held is
+			// this seed, and a visitor already parked there would otherwise be
+			// dealt it again with the struck hull drawn in it (sage #387).
+			const divertedBerths = new Set<string>();
 			const berthHeldByOther = (
 				actorKey: CarrierKey,
 				own: { stationId: string; berthId: string },
 			) =>
+				divertedBerths.has(this.berthHoldKey(own.stationId, own.berthId)) ||
 				this.dockingStates.get(own.stationId)?.berthId === own.berthId ||
 				[...previousBerthByActor].some(
 					([key, candidate]) =>
@@ -4790,8 +4815,8 @@ class Game {
 			// one.** Its schedule still says it is away on the leg it was pulled
 			// off, so the flying actors would otherwise be handed berths from a
 			// catalogue that does not know a ship is standing in one — and one
-			// tick of that is two hulls drawn on one pad, with the lower-priority
-			// one deleted a frame later. Seeded from the same projection it is
+			// tick of that is two hulls drawn in one berth, with the
+			// lower-priority one deleted a frame later. Seeded from the same projection it is
 			// drawn with, so the berth it holds and the berth it is seen in are
 			// one fact rather than two that have to agree.
 			for (const projection of this.divertedProjections(
@@ -4799,11 +4824,8 @@ class Game {
 				projectionSystem,
 			)) {
 				this.trafficRoutes.push(projection);
-				if (!projection.berthId || !projection.terminalStationId) continue;
-				const held =
-					occupied.get(projection.terminalStationId) ?? new Set<string>();
-				held.add(projection.berthId);
-				occupied.set(projection.terminalStationId, held);
+				const held = this.holdBerth(projection, occupied);
+				if (held) divertedBerths.add(held);
 			}
 			const baselines = this.flyingTraffic().map((actor) => ({
 				actor,
@@ -5401,7 +5423,7 @@ class Game {
 				// the pose it would have had. **A diverted one has nowhere to go
 				// back to** — its projection is a berth, and the berth is not where
 				// the pilot is standing. Leaving the contact alive would snap the
-				// ship from the sky onto its pad the frame the fight ends.
+				// ship from the sky onto its berth the frame the fight ends.
 				if (!this.trafficOperational(key)) this.forgetTrafficContact(key);
 				continue;
 			}
@@ -5477,23 +5499,42 @@ class Game {
 	 * its own hull (H3), and the pilot keeps the lock: what changes is where the
 	 * world says it will be afterwards.
 	 */
-	private divertTrafficCarrier(actor: TrafficActor) {
-		const record = this.world.system.record;
-		const now = this.world.gameTime;
-		const carrier = this.carrierCondition(actor.key);
-		if (carrier.condition !== "operational") return;
-		const standing = carrierStanding(
-			record.seed,
-			actor.key,
-			carrier.instanceOrdinal,
-			now,
-		);
-		for (const event of trafficDiversion(record.index, actor, now))
-			this.applyCarrierTransition(actor.key, event);
+	/**
+	 * What one offence against one carrier costs the pilot, written (H4, H9).
+	 *
+	 * `before` is the carrier's row as it stood **before** the offence was
+	 * applied. That ordering is the rule, not a preference: the divert books its
+	 * own repair in the same tick as the disable, so a row read afterwards
+	 * already describes a struck carrier and the strike would credit itself its
+	 * own charge.
+	 *
+	 * **The standing the strike was judged on is re-derived, not remembered.**
+	 * Standing is never saved — it is a pure derivation from the instance and the
+	 * clock — and the repair's `startedAt` *is* the strike's clock, because H3c
+	 * writes both in one tick. So the kill can ask what the earlier hit actually
+	 * cost: a strike on a carrier that was Wanted then charged nothing (H4), and
+	 * the kill that finishes it is worth its full 40 even if the six-hour
+	 * rotation has since turned the target Clean. Standing off the row's own clock
+	 * is how that is known without adding a field to the save.
+	 */
+	private chargeTrafficOffence(
+		record: SystemRecord,
+		actor: TrafficActor,
+		before: EffectiveCarrier,
+		offence: Offence,
+		now: number,
+	): number {
+		const standingOf = (atS: number) =>
+			carrierStanding(record.seed, actor.key, before.instanceOrdinal, atS);
 		const heat = marginalOffenceHeat(
-			standing,
-			"struck",
-			chargedOffence(carrier),
+			standingOf(now),
+			offence,
+			chargedOffence(
+				before,
+				before.recovery === undefined
+					? null
+					: standingOf(before.recovery.startedAt),
+			),
 		);
 		if (heat > 0) {
 			this.commerceWorld = withOffence(
@@ -5504,6 +5545,23 @@ class Game {
 			);
 			this.saveDirty();
 		}
+		return heat;
+	}
+
+	private divertTrafficCarrier(actor: TrafficActor) {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		const carrier = this.carrierCondition(actor.key);
+		if (carrier.condition !== "operational") return;
+		for (const event of trafficDiversion(record.index, actor, now))
+			this.applyCarrierTransition(actor.key, event);
+		const heat = this.chargeTrafficOffence(
+			record,
+			actor,
+			carrier,
+			"struck",
+			now,
+		);
 		this.lastExit =
 			heat > 0
 				? `${actor.callsign} disabled — running home, and that is an offence`
@@ -5555,20 +5613,13 @@ class Game {
 				frameBodyId: this.frameBody?.id ?? null,
 			}),
 		];
-		const heat = marginalOffenceHeat(
-			standing,
+		const heat = this.chargeTrafficOffence(
+			record,
+			actor,
+			carrier,
 			"destroyed",
-			chargedOffence(carrier),
+			now,
 		);
-		if (heat > 0) {
-			this.commerceWorld = withOffence(
-				this.commerceWorld,
-				record.galaxy,
-				heat,
-				now,
-			);
-			this.saveDirty();
-		}
 		this.audio.explosion();
 		this.lastExit =
 			heat > 0

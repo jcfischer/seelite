@@ -280,10 +280,27 @@ bounty job reads. Nothing here pays cash (`combat-model.md` §4,
 
 ### H9 — A kill supersedes the strike that preceded it
 
-The heat for one instance in one causal episode is the largest offence in it,
-not the sum. A strike followed by a kill costs 40, not 55, so H4's durations are
-the ones a pilot meets. The episode is `persistent-world-state.md` §4's: the
-`disable` opens it, and the kill that interrupts the repair closes it.
+The heat for one **incident** is the largest offence in it, not the sum. A strike
+followed by a kill costs 40, not 55, so H4's durations are the ones a pilot
+meets.
+
+**An incident is not §4's causal episode, and the difference is load-bearing.**
+The `disable` opens an episode and the kill's `interrupt` closes it, so the
+strike and the kill are *two* episodes by §4's definition — and the second
+replaces the first's summary in `episodes[key]` wholesale, so nothing in the
+ledger still says a strike happened. The charge is therefore carried by the
+**carrier's row**: what the ship's condition says has already been paid for. H9
+prices the incident (the strike and the kill that ends its repair); §4 prices
+episodes, which is why one cannot be read out of the other.
+
+**And the row says the ship was struck, not who struck it.** The `disable` names
+the shooter, but a `repair-start` cannot carry two causes, so the recovery
+standing in the berth is the home station's. This ruling therefore holds while
+the player's own fire is the only thing that diverts a carrier — which it is, and
+what H3d's trigger is made of. Should another source ever divert one, the credit
+here would be a discount on a fight the player did not start, and H9 would have
+to be amended to read provenance rather than presence. That is a change to this
+ruling, not a detail inside it.
 
 The principal was offered this and summing, and chose this.
 
@@ -376,9 +393,14 @@ The same rule, on the diversion.
   new one which replaces `episodes[key]` wholesale — H9's supersession is not
   recoverable from it, and a read taken before the write can be stale besides.
   So the charge is read off the carrier's own row: `chargedOffence` asks where
-  the ship is, which also makes it correct straight after a reload with no
-  engagement flag to carry across a save. `tests/legal.test.ts` and the ledger
-  row in `tests/traffic-engagement.test.ts` hold the two halves.
+  the ship is *and what the strike it is standing for cost* — which it can answer
+  because the row keeps the strike's clock (`recovery.startedAt`) and standing is
+  a pure derivation from a clock. A strike on a carrier that was Wanted then
+  charged nothing, and the kill after it is a full 40; the rule is right straight
+  after a reload with no engagement flag carried across a save.
+  `tests/legal.test.ts` holds the arithmetic, and the row of
+  `tests/traffic-engagement.test.ts` named for the ledger holds the reason the
+  ledger cannot answer it.
 - **A kill on the way home interrupts to `disabled`, not to `destroyed`.** The
   tempting shortcut — `interrupt` with `resulting: "destroyed"` — leaves a
   carrier already written as destroyed, and `destroy` is illegal from
@@ -387,8 +409,8 @@ The same rule, on the diversion.
 - **A diverted carrier's contact leaves with the engagement.** Out of the band a
   survivor used to hand back to the route it was struck on and keep its contact;
   a struck one has no route to hand back to — its projection is a berth 12,000 km
-  from the player — so the contact stayed live and the ship was standing on its
-  pad the frame the fight stopped. `trafficShown` is the presentation's gate and
+  from the player — so the contact stayed live and the ship was standing in its
+  berth the frame the fight stopped. `trafficShown` is the presentation's gate and
   the engagement drops the contact with it.
 - **The browser tier cannot time a shield side, and that is not a defect in the
   divert.** Which side of a fleeing carrier the beam finds is a matter of how it

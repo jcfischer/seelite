@@ -34,6 +34,7 @@ import {
 	newWorld,
 	parseWorld,
 	serializeWorld,
+	WORLD_SCHEMA_VERSION,
 } from "../src/world-state";
 import { HULL_SPECS, type HullId } from "../src/hull";
 import {
@@ -396,6 +397,15 @@ function divertOne(world: ReturnType<typeof newWorld>, at = DIVERT_AT) {
 	return world;
 }
 
+/** The `repair-start` of one divert at `at`, narrowed once. Rows that assert the
+ *  pair itself build the events by hand; this is for the ones that only need the
+ *  booking. */
+function divertStart(at = DIVERT_AT) {
+	const start = trafficDiversion(DIVERT_RECORD.index, DIVERT_ACTOR, at)[1];
+	if (start.kind !== "repair-start") throw new Error("no repair start");
+	return start;
+}
+
 describe("H3c: the diverting hit is a disable, then a repair, in one tick", () => {
 	test("the player disables it and its home station books the repair", () => {
 		const events = trafficDiversion(
@@ -425,12 +435,7 @@ describe("H3c: the diverting hit is a disable, then a repair, in one tick", () =
 	});
 
 	test("the absence is the shipped repair duration, never shorter, and ends on a departure", () => {
-		const start = trafficDiversion(
-			DIVERT_RECORD.index,
-			DIVERT_ACTOR,
-			DIVERT_AT,
-		)[1];
-		if (start.kind !== "repair-start") throw new Error("no repair start");
+		const start = divertStart();
 		// H3d's T is a floor: the principal ruled the rejoin lands on a departure,
 		// because a carrier whose repair ends mid-leg re-enters a schedule it
 		// never flew and pops out of its berth into the middle of a leg.
@@ -469,12 +474,7 @@ describe("H3c: the diverting hit is a disable, then a repair, in one tick", () =
 
 	test("it comes back at the same ordinal, and that is where its schedule departs", () => {
 		const world = divertOne(newWorld(1));
-		const start = trafficDiversion(
-			DIVERT_RECORD.index,
-			DIVERT_ACTOR,
-			DIVERT_AT,
-		)[1];
-		if (start.kind !== "repair-start") throw new Error("no repair start");
+		const start = divertStart();
 		const back = (t: number) =>
 			effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, t);
 		expect(back(start.completesAt - 0.01).condition).toBe("repairing");
@@ -485,8 +485,8 @@ describe("H3c: the diverting hit is a disable, then a repair, in one tick", () =
 
 	test("a second strike cannot divert it twice", () => {
 		// `main.ts` gates the write on `operational`, and the gate is real: the
-		// module throws rather than no-oping, so a repeat would be a crash in
-		// flight, not a missed transition.
+		// module throws rather than no-oping, so a repeat would take the frame
+		// down with it rather than quietly miss a transition.
 		const world = divertOne(newWorld(1));
 		const again = trafficDiversion(
 			DIVERT_RECORD.index,
@@ -514,8 +514,12 @@ describe("H3c: the diverting hit is a disable, then a repair, in one tick", () =
 			parkedTrafficActors([DIVERT_ACTOR], () => row).map((a) => a.key),
 		).toEqual([DIVERT_ACTOR.key]);
 		// And no new field was needed to get there: the divert is one row and one
-		// episode, both of which the save already knew how to carry.
-		expect(restored.worldSchemaVersion).toBe(world.worldSchemaVersion);
+		// incident, both of which the save already knew how to carry. Pinned to
+		// the shipped version rather than to the world it came out of — a row
+		// that reads the version off both sides of a round trip is a row that
+		// cannot see the version move, which is the only way this claim could be
+		// broken.
+		expect(restored.worldSchemaVersion).toBe(WORLD_SCHEMA_VERSION);
 	});
 });
 
@@ -597,12 +601,7 @@ describe("H3b: where a diverted carrier is while it repairs", () => {
 			parkedTrafficActors(actors, conditionOf(DIVERT_AT)).map((a) => a.key),
 		).toEqual([struck]);
 		// And at the completion it flies again, which is its next departure.
-		const start = trafficDiversion(
-			DIVERT_RECORD.index,
-			DIVERT_ACTOR,
-			DIVERT_AT,
-		)[1];
-		if (start.kind !== "repair-start") throw new Error("no repair start");
+		const start = divertStart();
 		expect(at(start.completesAt).condition).toBe("operational");
 		expect(
 			flyingTrafficActors(actors, conditionOf(start.completesAt)).map(
@@ -678,7 +677,7 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 			marginalOffenceHeat(
 				"clean",
 				"struck",
-				chargedOffence({ condition: "operational" }),
+				chargedOffence({ condition: "operational" }, "clean"),
 			),
 		).toBe(15);
 	});
@@ -687,44 +686,64 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		const world = divertOne(newWorld(1));
 		const first = marginalOffenceHeat("clean", "struck", null);
 		// The kill lands while the divert is still running, which is what makes it
-		// the same episode rather than a second offence.
-		expect(chargedOffence(rowAt(world, DIVERT_AT + 10))).toBe("struck");
+		// the same incident rather than a second offence.
+		expect(chargedOffence(rowAt(world, DIVERT_AT + 10), "clean")).toBe(
+			"struck",
+		);
 		const second = marginalOffenceHeat(
 			"clean",
 			"destroyed",
-			chargedOffence(rowAt(world, DIVERT_AT + 10)),
+			chargedOffence(rowAt(world, DIVERT_AT + 10), "clean"),
 		);
 		expect(first).toBe(15);
 		expect(second).toBe(25);
 		expect(first + second).toBe(offenceHeat("clean", "destroyed"));
 	});
 
-	test("a second strike in the same episode adds nothing", () => {
+	test("a strike that cost nothing is not credited to the kill that follows it", () => {
+		const world = divertOne(newWorld(1));
+		const repairing = rowAt(world, DIVERT_AT + 10);
+		expect(trafficPresence(repairing)).toBe("parked-home");
+		// H4 writes no heat for an offence against a Wanted carrier, so a strike
+		// that landed while the target was Wanted charged nothing — and the kill
+		// is worth its full 40 even though the row still shows the divert
+		// standing. The standing the strike was judged on comes from the strike's
+		// own clock, which the row carries: `startedAt` is the `repair-start`'s
+		// `occurredAt`, which is the `disable`'s, because H3c writes both in one
+		// tick. Standing is never saved, so that clock is the whole record.
+		expect(repairing.recovery?.startedAt).toBe(DIVERT_AT);
+		expect(chargedOffence(repairing, "wanted")).toBe(null);
+		expect(
+			marginalOffenceHeat(
+				"clean",
+				"destroyed",
+				chargedOffence(repairing, "wanted"),
+			),
+		).toBe(40);
+		// And a clock that cannot be named charges nothing as paid either.
+		expect(chargedOffence(repairing, null)).toBe(null);
+	});
+
+	test("a second strike in the same incident adds nothing", () => {
 		const world = divertOne(newWorld(1));
 		expect(
 			marginalOffenceHeat(
 				"clean",
 				"struck",
-				chargedOffence(rowAt(world, DIVERT_AT + 10)),
+				chargedOffence(rowAt(world, DIVERT_AT + 10), "clean"),
 			),
 		).toBe(0);
 	});
 
-	test("once the repair has completed, the next offence is a new episode and pays in full", () => {
+	test("once the repair has completed, the next offence is a new incident and pays in full", () => {
 		const world = divertOne(newWorld(1));
-		const start = trafficDiversion(
-			DIVERT_RECORD.index,
-			DIVERT_ACTOR,
-			DIVERT_AT,
-		)[1];
-		if (start.kind !== "repair-start") throw new Error("no repair start");
-		// The completion closes the episode lazily, on the read — and a kill
+		// The completion closes the incident lazily, on the read — and a kill
 		// against the ship that came back is a fresh 40, not a 25 top-up.
-		const back = rowAt(world, start.completesAt);
+		const back = rowAt(world, divertStart().completesAt);
 		expect(back.condition).toBe("operational");
-		expect(chargedOffence(back)).toBe(null);
+		expect(chargedOffence(back, "clean")).toBe(null);
 		expect(
-			marginalOffenceHeat("clean", "destroyed", chargedOffence(back)),
+			marginalOffenceHeat("clean", "destroyed", chargedOffence(back, "clean")),
 		).toBe(40);
 	});
 
