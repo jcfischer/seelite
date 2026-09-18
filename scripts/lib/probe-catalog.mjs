@@ -108,7 +108,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-docking-traffic.mjs",
-			"Checks that an cleared docking computer progresses while live Traffic uses the same station.",
+			"Checks that a cleared docking computer progresses while live Traffic uses the same station.",
 			["docking computer", "Traffic", "clearance", "berth arbitration"],
 		),
 		entry(

@@ -25,13 +25,14 @@ The selector is a development tool. It makes no runtime network request from the
 game, and `TYPESAFE_API_KEY` is read only from the process environment and
 removed before Vite, Chromium, or a probe child starts.
 
-By default TypeSafe receives the PR title, body, and changed-file names. These
-are normally already public PR metadata. It does **not** receive source diff
-contents unless `--include-diff` is explicitly given; use that option only when
-the diff is safe to send to an external service. The selector labels PR text as
-untrusted evidence, but that prompt instruction is best-effort rather than a
-security boundary. Filtered runs are refused in CI, and a merge receipt still
-requires the repository's full browser tier.
+TypeSafe is an external service. Every semantic selection sends changed-file
+names. A PR title or body is sent only when explicitly supplied with `--title`
+or `--body`; ambient `PR_TITLE` and `PR_BODY` variables are ignored. Source diff
+contents are sent only when `--include-diff` is explicitly given. Review all of
+that evidence for repository confidentiality before running the selector. The
+selector labels PR text as untrusted evidence, but that prompt instruction is
+best-effort rather than a security boundary. Filtered runs are refused in CI,
+and a merge receipt still requires the repository's full browser tier.
 
 The request uses TypeSafe's documented [`jev-latest`
 alias](https://docs.typesafe.ai/models.md) and reports the exact resolved model

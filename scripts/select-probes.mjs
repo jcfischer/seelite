@@ -21,8 +21,8 @@ function parseArgs(argv) {
 	const out = {
 		base: "origin/main",
 		head: "HEAD",
-		title: process.env.PR_TITLE ?? "",
-		body: process.env.PR_BODY ?? "",
+		title: "",
+		body: "",
 		changedFiles: [],
 		json: false,
 		run: false,

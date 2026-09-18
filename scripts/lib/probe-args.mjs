@@ -111,17 +111,23 @@ function resolveExactProbeFiles(args, env, available, gating, inCI) {
 				`Available: ${available.join(", ")}`,
 		};
 	const probes = available.filter((file) => requested.includes(file));
-	if (!probes.some(gating))
-		return {
-			refusal:
-				"PROBE_FILES selected only report-only or quarantined probes, so the run would assert nothing.",
-		};
+	const ungated = refuseIfUngated(probes, gating, "PROBE_FILES");
+	if (ungated) return ungated;
 	return {
 		only: requested.join(","),
 		probes,
 		source: "PROBE_FILES",
 	};
 }
+
+const refuseIfUngated = (probes, gating, label) =>
+	probes.some(gating)
+		? null
+		: {
+				refusal:
+					`${label} selected ${probes.length} probe(s), all report-only or quarantined. ` +
+					"Their exit codes are not verdicts, so the run would assert nothing and still exit 0.",
+			};
 
 /**
  * Resolve the filter and everything that can refuse it, in one place.
@@ -202,12 +208,7 @@ export function resolveOnly(args, env, available, gating = () => true) {
 		return {
 			refusal: `${source} ${only} matched none of:\n  ${available.join("\n  ")}`,
 		};
-	if (!probes.some(gating))
-		return {
-			refusal:
-				`${source} ${only} selected ${probes.length} probe(s), all report-only or ` +
-				`quarantined. Their exit codes are not verdicts, so the run would assert ` +
-				`nothing and still exit 0.`,
-		};
+	const ungated = refuseIfUngated(probes, gating, `${source} ${only}`);
+	if (ungated) return ungated;
 	return { only, probes, source };
 }
