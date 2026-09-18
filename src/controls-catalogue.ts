@@ -28,6 +28,7 @@
  */
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import { COMMANDER_KEY } from "./commander-overlay";
+import { ALT_CHORDS } from "./key-dispatch";
 import {
 	type PadContext,
 	type PadIntents,
@@ -80,6 +81,9 @@ export type Trigger =
 			/** `KeyboardEvent.key`, lowercased — what `onKey` compares. */
 			readonly key: string;
 			readonly alt?: true;
+			/** An Alt chord's physical key (`KeyboardEvent.code`), which is what the
+			 *  chord table is keyed on (#377). `key` is then only how it prints. */
+			readonly code?: string;
 			/** Held rather than pressed. */
 			readonly hold?: true;
 			/** Named when only one surface takes the key. */
@@ -246,6 +250,9 @@ interface Authored {
 	/** Triggers that are not keys, or pad triggers not reached through a key. */
 	more?: Trigger[];
 	intent?: PanelIntent;
+	/** Acts in chase view only, so no Alt chord reaches it: a chord runs its
+	 *  key's command in the cockpit and nowhere else (#377). */
+	chase?: true;
 }
 
 const PERF = "perf panel, behind ?perf";
@@ -388,31 +395,32 @@ const AUTHORED: readonly Authored[] = [
 		id: "head-left",
 		name: "Head to port console",
 		group: "view",
-		keys: ["1", { key: "arrowleft", alt: true }],
+		keys: ["1"],
 	},
 	{
 		id: "head-forward",
 		name: "Head forward",
 		group: "view",
-		keys: ["2", { key: "arrowup", alt: true }],
+		keys: ["2"],
 	},
 	{
 		id: "head-right",
 		name: "Head to starboard console",
 		group: "view",
-		keys: ["3", { key: "arrowright", alt: true }],
+		keys: ["3"],
 	},
 	{
 		id: "controls-reference",
 		name: "This reference: open or close",
 		group: "view",
-		keys: ["?"],
+		keys: ["?", "f1"],
 	},
 	{ id: "view", name: "Cockpit or chase view", group: "view", keys: ["v"] },
 	{
 		id: "chase-orbit",
 		name: "Orbit the chase camera (chase view)",
 		group: "view",
+		chase: true,
 		keys: [
 			{ key: "1", hold: true },
 			{ key: "3", hold: true },
@@ -422,6 +430,7 @@ const AUTHORED: readonly Authored[] = [
 		id: "chase-centre",
 		name: "Centre the chase camera (chase view)",
 		group: "view",
+		chase: true,
 		keys: ["2"],
 	},
 	// system
@@ -572,6 +581,29 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 	return out;
 }
 
+/** How a physical key prints: the arrows by the key they send, and the rest
+ *  by the character on a US keyboard's key cap. */
+const codeKey = (code: string) =>
+	code.startsWith("Key") || code.startsWith("Digit")
+		? code.slice(code.startsWith("Key") ? 3 : 5).toLowerCase()
+		: code.toLowerCase();
+
+/**
+ * The Alt chords that stand for one of this command's pressed keys — derived
+ * from `ALT_CHORDS`, the table the dispatch reads, so a chord added there gets
+ * its row here with no edit to this file (#377).
+ */
+function chordsFor(keys: readonly Trigger[]): Trigger[] {
+	const pressed = new Set(
+		keys.flatMap((t) =>
+			t.kind === "key" && !t.hold && !t.alt && !t.surface ? [t.key] : [],
+		),
+	);
+	return Object.entries(ALT_CHORDS)
+		.filter(([, key]) => pressed.has(key))
+		.map(([code]) => ({ kind: "key", key: codeKey(code), alt: true, code }));
+}
+
 function padIntentTriggers(intent: PanelIntent): Trigger[] {
 	return [...(PRESSES.intents.get(intent) ?? [])].map(([button, contexts]) => ({
 		kind: "pad-intent" as const,
@@ -592,6 +624,7 @@ function build(a: Authored): ControlCommand {
 	const keys = (a.keys ?? []).map(keyTrigger);
 	const triggers: Trigger[] = [
 		...keys,
+		...(a.chase ? [] : chordsFor(keys)),
 		...padButtonsFor(keys),
 		...(a.more ?? []),
 		...(a.intent ? padIntentTriggers(a.intent) : []),

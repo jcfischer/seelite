@@ -22,6 +22,7 @@ import {
 	type Trigger,
 } from "../src/controls-catalogue";
 import { STANDARD_BUTTONS } from "../src/gamepad";
+import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
@@ -105,14 +106,25 @@ describe("the catalogue is complete against the source", () => {
 			pressed.has("v"),
 			pressed.has(","),
 			held.has("shift"),
-			main.chorded.has("arrowleft"),
+			Object.keys(ALT_CHORDS).length > 0,
 			main.requests.has("enter"),
 		]).toEqual([true, true, true, true, true]);
 		for (const c of CONTROLS.commands)
 			for (const t of c.currentTriggers) {
 				if (t.kind !== "key") continue;
+				// A chord is bound when the dispatch's table holds its physical key
+				// and that entry stands for a key this row presses (#377).
+				const chordOk =
+					t.code !== undefined &&
+					ALT_CHORDS[t.code] !== undefined &&
+					c.currentTriggers.some(
+						(o) =>
+							o.kind === "key" &&
+							!o.alt &&
+							o.key === ALT_CHORDS[t.code as string],
+					);
 				const [shape, set] = t.alt
-					? ["alt", main.chorded]
+					? ["alt", new Set(chordOk ? [t.key] : [])]
 					: t.surface
 						? ["requests", main.requests]
 						: t.hold
@@ -141,7 +153,11 @@ describe("the catalogue is complete against the source", () => {
 		const caseBody = (key: string) => {
 			const at = main.indexOf(`case ${JSON.stringify(key)}:`);
 			if (at === -1) return null;
-			const rest = main.slice(at + 1);
+			// Labels that fall through share the body below them: `case "f1":`
+			// stands on `case "?":` (#377), so every stacked label is skipped first.
+			const rest = main
+				.slice(at)
+				.replace(/^(\s*case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:)+/, "");
 			return rest.slice(0, rest.search(/\n\t*(case |default:)/));
 		};
 		const dial = (field: string, table: string, extra = "") => ({
@@ -169,7 +185,7 @@ describe("the catalogue is complete against the source", () => {
 			"head-left": { "1": 'this.setHeadLook("left")' },
 			"head-forward": { "2": 'this.setHeadLook("forward")' },
 			"head-right": { "3": 'this.setHeadLook("right")' },
-			"controls-reference": { "?": "controlsKeyMove(" },
+			"controls-reference": { "?": "controlsKeyMove(", f1: "controlsKeyMove(" },
 			view: { v: 'this.view === "cockpit" ? "chase" : "cockpit"' },
 			"chase-centre": { "2": "this.chaseYaw = 0" },
 			"dial-reset": { "0": "DEFAULT_CRUISE" },
