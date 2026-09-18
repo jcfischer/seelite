@@ -30,9 +30,11 @@ names. A PR title or body is sent only when explicitly supplied with `--title`
 or `--body`; ambient `PR_TITLE` and `PR_BODY` variables are ignored. Source diff
 contents are sent only when `--include-diff` is explicitly given. Review all of
 that evidence for repository confidentiality before running the selector. The
-selector labels PR text as untrusted evidence, but that prompt instruction is
-best-effort rather than a security boundary. Filtered runs are refused in CI,
-and a merge receipt still requires the repository's full browser tier.
+selector places all PR input under a dedicated `state.untrusted_evidence`
+object, and every question's direction references that boundary. Model
+instructions remain best-effort rather than a security boundary. Filtered runs
+are refused in CI, and a merge receipt still requires the repository's full
+browser tier.
 
 The request uses TypeSafe's documented [`jev-latest`
 alias](https://docs.typesafe.ai/models.md) and reports the exact resolved model
@@ -60,6 +62,10 @@ Run the selected probes through one shared dev server:
 ```sh
 npm run probe:pr -- --base origin/main --head HEAD --title "PR title"
 ```
+
+The selector itself runs `check:wiring` immediately before any browser launch;
+this cannot be bypassed by invoking `probe:select -- --run` or the Node entrypoint
+directly.
 
 For an experiment or a not-yet-committed file list, repeat `--changed-file`:
 

@@ -109,13 +109,23 @@ describe("the semantic branch", () => {
 				body: "Change moving-body avoidance and arrival handoff.",
 				diff: "+ sweep the moving host before advancing the cruise leg",
 			},
-			async ({ questions }) => ({
-				answers: probabilities({
-					probe_cruise: 0.99,
-					probe_arrival: PROBE_EXCLUSION_MAX + 0.01,
-				}),
-				questionCount: Object.keys(questions).length,
-			}),
+			async ({ questions, state }) => {
+				expect(state).toEqual({
+					untrusted_evidence: {
+						title: "Keep a cruise route clear of a moving host planet",
+						body: "Change moving-body avoidance and arrival handoff.",
+						changed_files: ["src/cruise.ts"],
+						diff: "+ sweep the moving host before advancing the cruise leg",
+					},
+				});
+				return {
+					answers: probabilities({
+						probe_cruise: 0.99,
+						probe_arrival: PROBE_EXCLUSION_MAX + 0.01,
+					}),
+					questionCount: Object.keys(questions).length,
+				};
+			},
 		);
 
 		expect(result.mode).toBe("semantic");

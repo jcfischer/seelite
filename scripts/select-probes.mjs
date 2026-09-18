@@ -8,6 +8,9 @@ import { selectProbes } from "./lib/probe-selection.mjs";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PROBE_RUNNER = fileURLToPath(new URL("./probe-all.mjs", import.meta.url));
+const WIRING_CHECK = fileURLToPath(
+	new URL("./check-launcher-wiring.mjs", import.meta.url),
+);
 
 const VALUE_FLAGS = new Set([
 	"--base",
@@ -90,10 +93,25 @@ function runSelectedProbes(result) {
 		return;
 	}
 	const selected = result.mode === "all" ? undefined : result.probes;
+	const childEnv = probeRunnerEnvironment(process.env, selected);
+	const wiring = spawnSync(process.execPath, [WIRING_CHECK], {
+		cwd: PROJECT_ROOT,
+		stdio: "inherit",
+		env: childEnv,
+	});
+	if (wiring.error) {
+		console.error(`could not start wiring check: ${wiring.error.message}`);
+		process.exitCode = 1;
+		return;
+	}
+	if (wiring.status !== 0) {
+		process.exitCode = wiring.status ?? 1;
+		return;
+	}
 	const child = spawnSync(process.execPath, [PROBE_RUNNER], {
 		cwd: PROJECT_ROOT,
 		stdio: "inherit",
-		env: probeRunnerEnvironment(process.env, selected),
+		env: childEnv,
 	});
 	if (child.error)
 		console.error(`could not start probe runner: ${child.error.message}`);
