@@ -250,8 +250,9 @@ export function boundKeys(source: string): Set<string> {
 /**
  * The same bindings split by the shape a key is read in (#372): a `case` of a
  * switch, a comparison `key === "…")`, a held key (`keys.has` or an `axis`
- * list), the Alt chord that turns the head, and the list the Requests surface
- * claims. The controls catalogue prints a key as one of these, and a key bound
+ * list), and the list the Requests surface claims. The Alt chords are not a
+ * shape of `main.ts` any more: `src/key-dispatch.ts`'s `ALT_CHORDS` holds them
+ * (#377), and a test reads that table directly. The controls catalogue prints a key as one of these, and a key bound
  * in another shape does not make the printed one true.
  */
 export function keysByShape(source: string) {
@@ -276,9 +277,10 @@ export function keysByShape(source: string) {
 			...all(/keys\.has\(("[^"]+"|[A-Za-z_$][\w$]*)\)/g),
 			...axisLists.map(resolve).filter((k): k is string => !!k),
 		]),
-		chorded: all(/key === ("[^"]+")\) this\.setHeadLook\(/g),
 		requests: all(
-			/requestsSurfaceOpen\(\)\s*&&\s*\[([^\]]*)\]\.includes\(key\)/g,
+			// The one list `onKey` checks a key route against before walking the
+			// Requests surface (#377 moved it behind `keyDispatch`).
+			/\[([^\]]*)\]\.includes\(\s*route\.key\s*,?\s*\)/g,
 			true,
 		),
 	};

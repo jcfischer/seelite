@@ -510,6 +510,7 @@ import {
 	type RightTab,
 } from "./live-cockpit";
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
+import { keyDispatch } from "./key-dispatch";
 import { readDeficit } from "./deficits";
 import {
 	emptyRequests,
@@ -7011,13 +7012,37 @@ class Game {
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {
-		const key = e.key.toLowerCase();
-		// Releases must clear flight state even when a panel now owns the key.
-		if (!down) this.keys.delete(key);
+		// #377's law: `keyDispatch` owns what an event may reach — releases,
+		// the Ctrl and Meta rules, Alt chords on the physical key, and which
+		// defaults the browser keeps — and it is asked first, so the Requests
+		// surface below acts on its answer rather than on a copy of it.
+		const route = keyDispatch({
+			key: e.key,
+			code: e.code,
+			down,
+			repeat: e.repeat,
+			altKey: e.altKey,
+			ctrlKey: e.ctrlKey,
+			metaKey: e.metaKey,
+		});
+		// An `if` chain and not a `switch`: `tests/lib/source-scan.ts` reads every
+		// `case "…":` in this file as a key binding, and the route kinds are not
+		// keys.
+		if (route.kind === "release") {
+			// Releases must clear flight state even when a panel now owns the key.
+			this.keys.delete(route.key);
+			return;
+		}
+		if (route.kind === "swallow") {
+			if (route.prevent) e.preventDefault();
+			return;
+		}
+		const requests =
+			this.view === "cockpit" && this.liveCockpit?.requestsSurfaceOpen();
 		if (
-			this.view === "cockpit" &&
-			this.liveCockpit?.requestsSurfaceOpen() &&
-			key === " " &&
+			requests &&
+			route.kind === "key" &&
+			route.key === " " &&
 			e.target instanceof HTMLButtonElement &&
 			e.target.hasAttribute("data-live-request-action")
 		) {
@@ -7025,46 +7050,46 @@ class Game {
 			return;
 		}
 		if (
-			this.view === "cockpit" &&
-			!e.altKey &&
-			this.liveCockpit?.requestsSurfaceOpen() &&
-			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(key)
+			requests &&
+			this.liveCockpit &&
+			route.kind === "key" &&
+			// Walking the surface is a command, so a key held under Ctrl flies
+			// instead, as it does everywhere else (#377).
+			route.commands &&
+			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(
+				route.key,
+			)
 		) {
 			e.preventDefault();
-			if (down && !e.repeat) {
-				if (key === "enter") this.liveCockpit.activateKeyboardFocus(e.target);
+			if (route.oneShot) {
+				if (route.key === "enter")
+					this.liveCockpit.activateKeyboardFocus(e.target);
 				else {
 					// Arrow walking hands input back to the shared cursor. A native
 					// button left focused would otherwise steal the following Enter.
 					if (e.target instanceof HTMLElement) e.target.blur();
-					if (key === "arrowleft" || key === "arrowright")
-						this.liveCockpit.stepTab(key === "arrowleft" ? -1 : 1);
-					else this.liveCockpit.stepFocus(key === "arrowup" ? -1 : 1);
+					if (route.key === "arrowleft" || route.key === "arrowright")
+						this.liveCockpit.stepTab(route.key === "arrowleft" ? -1 : 1);
+					else this.liveCockpit.stepFocus(route.key === "arrowup" ? -1 : 1);
 				}
 			}
 			return;
 		}
-		if (down && !e.repeat && e.altKey) {
-			if (this.view !== "cockpit") {
-				e.preventDefault();
-				return;
-			}
-			if (key === "arrowleft") this.setHeadLook("left");
-			else if (key === "arrowright") this.setHeadLook("right");
-			else if (key === "arrowup") this.setHeadLook("forward");
-			else return;
+		if (route.kind === "chord") {
+			// A chord stands for a key — today the three head-look keys — and
+			// runs that key's command, in the cockpit only: head-look is a
+			// cockpit mechanism, and in chase `2` would recentre the camera,
+			// which the Alt chord never did.
 			e.preventDefault();
+			if (this.view === "cockpit") this.command(route.key);
 			return;
 		}
-		if (down) this.keys.add(key);
-		else this.keys.delete(key);
+		this.keys.add(route.key);
 		// One-shot commands fire on the press, not on the held state: engaging
 		// cruise and stepping a dial are events, and reading them out of `keys`
 		// each frame would repeat them sixty times a second.
-		if (down && !e.repeat) this.command(key);
-		// Arrow keys and space scroll the page otherwise, which under a
-		// full-viewport canvas looks like the controls simply not working.
-		if (key.startsWith("arrow") || key === " ") e.preventDefault();
+		if (route.oneShot) this.command(route.key);
+		if (route.prevent) e.preventDefault();
 	}
 
 	/**
@@ -7104,6 +7129,9 @@ class Game {
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
 				return;
+			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
+			// Shift in it, so it does not move the throttle on the way in.
+			case "f1":
 			case "?": {
 				// #370 D3: the Controls tab, by head-look. `controlsKeyMove` owns the
 				// law, including the abstentions: silent outside the cockpit view,

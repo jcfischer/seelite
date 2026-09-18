@@ -47,6 +47,7 @@ const HEADLESS = [
 	"hud",
 	"hull",
 	"hyperspace",
+	"key-dispatch",
 	"names",
 	"noise",
 	"pad-bindings",
@@ -101,6 +102,7 @@ test("no module has been quietly dropped from the list", () => {
 		"hud",
 		"hull",
 		"hyperspace",
+		"key-dispatch",
 		"names",
 		"noise",
 		"pad-bindings",
@@ -281,6 +283,13 @@ test("src/gamepad.ts is a leaf, which is what makes it copyable", () => {
 	// table would have to name a station, a target or a regime, and every one of
 	// those names lives behind an import.
 	expect(importsIn("gamepad.ts")).toEqual([]);
+});
+
+test("src/key-dispatch.ts is a leaf, which is what lets the unit tier run the key law", () => {
+	// #377: `main.ts` cannot load headless, so the dispatch law lives here and
+	// `main.ts` acts on its answer. The controls catalogue derives its Alt rows
+	// from `ALT_CHORDS`; an import from here toward the game would pull it in.
+	expect(importsIn("key-dispatch.ts")).toEqual([]);
 });
 
 test("src/boot-mode.ts is a leaf, which is what keeps its test headless", () => {
