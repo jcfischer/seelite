@@ -10,6 +10,6 @@ export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 	delete childEnv.TYPESAFE_API_KEY;
 	delete childEnv.PROBE_FILES;
 	delete childEnv.PROBE_ONLY;
-	if (selectedProbes) childEnv.PROBE_FILES = selectedProbes.join(",");
+	if (selectedProbes?.length) childEnv.PROBE_FILES = selectedProbes.join(",");
 	return childEnv;
 }

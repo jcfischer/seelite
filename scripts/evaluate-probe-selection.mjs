@@ -70,21 +70,40 @@ const cases = [
 const judge = createTypeSafeProbeJudge({
 	apiKey: process.env.TYPESAFE_API_KEY,
 });
-for (const item of cases) {
-	const started = performance.now();
-	const result = await selectProbes(item.input, judge);
-	const missing = item.expected.filter((file) => !result.probes.includes(file));
-	console.log(
-		JSON.stringify({
+const rows = await Promise.all(
+	cases.map(async (item) => {
+		const started = performance.now();
+		const result = await selectProbes(item.input, judge);
+		const conclusive =
+			result.mode === "semantic" &&
+			!result.fallback &&
+			Array.isArray(result.decisions);
+		const missing = conclusive
+			? item.expected.filter((file) => !result.probes.includes(file))
+			: null;
+		return {
 			name: item.name,
-			model: result.model,
+			status: !conclusive
+				? "inconclusive"
+				: missing.length
+					? "failed"
+					: "passed",
+			mode: result.mode,
+			fallback: result.fallback,
+			reason: result.reason,
+			model: result.model ?? null,
 			selected: result.probes.length,
-			total: result.decisions?.length,
+			total: result.decisions?.length ?? null,
 			latencyMs: Math.round(performance.now() - started),
 			expected: item.expected.length,
-			present: item.expected.length - missing.length,
+			present: missing ? item.expected.length - missing.length : null,
 			missing,
-			usage: result.usage,
-		}),
-	);
+			usage: result.usage ?? null,
+		};
+	}),
+);
+
+for (const row of rows) {
+	console.log(JSON.stringify(row));
+	if (row.status !== "passed") process.exitCode = 1;
 }

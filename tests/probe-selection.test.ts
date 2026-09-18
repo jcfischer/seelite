@@ -232,6 +232,7 @@ describe("the TypeSafe transport", () => {
 			KEEP_ME: "yes",
 		};
 		expect(probeRunnerEnvironment(parent)).toEqual({ KEEP_ME: "yes" });
+		expect(probeRunnerEnvironment(parent, [])).toEqual({ KEEP_ME: "yes" });
 		expect(probeRunnerEnvironment(parent, ["probe-cruise.mjs"])).toEqual({
 			KEEP_ME: "yes",
 			PROBE_FILES: "probe-cruise.mjs",

@@ -40,10 +40,12 @@ The request names `jev-latest` and reports the exact model that the response
 resolved (for example `jev-1.13.0`). Re-run the evaluation cases after a
 resolved-model change before adjusting the exclusion threshold.
 
-The catalog parity test proves that every runnable browser gate has an entry; it
-cannot prove that an entry still describes what the gate verifies. Whenever a
-probe's behavior, assertions, or evidence header changes, review and update its
-catalog `contract` and `evidence` fields in the same PR.
+The catalog parity test proves that the catalog matches the sequential runner's
+discovered inventory. It cannot discover a measurement script that should have
+been promoted into that inventory, or prove that an entry still describes what
+its gate verifies. Whenever a probe's behavior, assertions, or evidence header
+changes, review and update its catalog `contract` and `evidence` fields in the
+same PR.
 
 ## Use it
 
