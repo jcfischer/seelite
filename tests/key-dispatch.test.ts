@@ -67,10 +67,32 @@ describe("the chord table is keyed on the physical key", () => {
 	});
 });
 
-describe("Ctrl and Meta never reach the ship", () => {
-	test("Ctrl+W and Ctrl+J are swallowed", () => {
-		expect(press("w", "KeyW", { ctrlKey: true })).toEqual({ kind: "swallow" });
-		expect(press("j", "KeyJ", { ctrlKey: true })).toEqual({ kind: "swallow" });
+describe("Ctrl runs no command, and Meta reaches nothing", () => {
+	test("Ctrl+J is held but runs no command — cruise does not start", () => {
+		expect(press("j", "KeyJ", { ctrlKey: true })).toEqual({
+			kind: "key",
+			key: "j",
+			commands: false,
+			oneShot: false,
+			prevent: false,
+		});
+	});
+
+	test("keys pressed while braking on Ctrl still fly and fire", () => {
+		// Ctrl is THROTTLE_DOWN: the principal's refinement of ruling 3 on
+		// #377 keeps steering and the trigger alive while it is held.
+		for (const [key, code] of [
+			["w", "KeyW"],
+			["d", "KeyD"],
+			["ArrowLeft", "ArrowLeft"],
+			[" ", "Space"],
+		])
+			expect(press(key, code, { ctrlKey: true })).toMatchObject({
+				kind: "key",
+				key: key.toLowerCase(),
+				commands: false,
+				oneShot: false,
+			});
 	});
 
 	test("Meta+R is swallowed", () => {
@@ -82,12 +104,14 @@ describe("Ctrl and Meta never reach the ship", () => {
 		expect(press("control", "ControlLeft", { ctrlKey: true })).toEqual({
 			kind: "key",
 			key: "control",
+			commands: true,
 			oneShot: true,
 			prevent: false,
 		});
 		expect(hold("control", "ControlLeft", { ctrlKey: true })).toEqual({
 			kind: "key",
 			key: "control",
+			commands: true,
 			oneShot: false,
 			prevent: false,
 		});
@@ -99,12 +123,14 @@ describe("the ordinary path", () => {
 		expect(press("w", "KeyW")).toEqual({
 			kind: "key",
 			key: "w",
+			commands: true,
 			oneShot: true,
 			prevent: false,
 		});
 		expect(hold("w", "KeyW")).toEqual({
 			kind: "key",
 			key: "w",
+			commands: true,
 			oneShot: false,
 			prevent: false,
 		});
@@ -114,6 +140,7 @@ describe("the ordinary path", () => {
 		expect(press("?", "Slash")).toEqual({
 			kind: "key",
 			key: "?",
+			commands: true,
 			oneShot: true,
 			prevent: false,
 		});
@@ -123,6 +150,7 @@ describe("the ordinary path", () => {
 		expect(press("F1", "F1")).toEqual({
 			kind: "key",
 			key: "f1",
+			commands: true,
 			oneShot: true,
 			prevent: true,
 		});
@@ -133,7 +161,10 @@ describe("the ordinary path", () => {
 		expect(press(" ", "Space")).toMatchObject({ prevent: true });
 	});
 
-	test("a release always clears, whatever is held with it", () => {
+	test("a release clears the key it names, whatever is held with it", () => {
+		// What it cannot do is clear a key whose release names another
+		// character: on macOS a key released under Option reports that
+		// character (`∂` for D), and `d` stays held. That is #390.
 		for (const mods of [
 			NONE,
 			{ ...NONE, altKey: true },

@@ -278,7 +278,9 @@ export function keysByShape(source: string) {
 			...axisLists.map(resolve).filter((k): k is string => !!k),
 		]),
 		requests: all(
-			/requestsSurfaceOpen\(\)\s*&&\s*\[([^\]]*)\]\.includes\(key\)/g,
+			// The one list `onKey` checks a key route against before walking the
+			// Requests surface (#377 moved it behind `keyDispatch`).
+			/\[([^\]]*)\]\.includes\(\s*route\.key\s*,?\s*\)/g,
 			true,
 		),
 	};

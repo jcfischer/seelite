@@ -5,13 +5,18 @@
  * set or `Game.command`, and acts on the answer. The law is the principal's four
  * rulings on #377, in the order they are applied:
  *
- * 1. **A release always clears.** Whatever is held with it, a keyup takes its key
- *    out of the held set — a flight key stuck down is worse than any modifier
- *    rule.
- * 2. **Ctrl and Meta never reach the ship.** A key pressed with either down is
- *    swallowed, which is what the three panel listeners already did and
- *    `main.ts` did not: `Ctrl`+letter fired the letter's command *and*
- *    throttled down. The Control key pressed alone is still `THROTTLE_DOWN`.
+ * 1. **A release clears the key it names.** Whatever is held with it, a keyup
+ *    takes its key out of the held set — a flight key stuck down is worse than
+ *    any modifier rule. The limit is the *name*: on macOS a key released under
+ *    Option reports the Option character (`∂` for D), and the key it was
+ *    pressed as stays held. That is #390, and it is older than this module.
+ * 2. **Ctrl runs no command, and Meta reaches nothing.** `Ctrl`+letter fired
+ *    the letter's command *and* throttled down, so `Ctrl+J` started cruise.
+ *    Now a key pressed with Ctrl down is held but runs no command: Ctrl is
+ *    `THROTTLE_DOWN`, and a pilot braking on it must still be able to start a
+ *    turn and pull the trigger (the principal's refinement of ruling 3, from
+ *    sage round 2 on #391). Meta is not a flight key, and with it down nothing
+ *    reaches the game, as the three panel listeners already did.
  * 3. **Alt is the chord prefix, and a chord is one-shot.** Any press with Alt
  *    down takes the chord path, repeat or not, and nothing on it reaches the
  *    held set. The old guard was `down && !e.repeat && e.altKey`, so the first
@@ -65,6 +70,9 @@ export type KeyRoute =
 	| {
 			readonly kind: "key";
 			readonly key: string;
+			/** Whether this key may run a command at all: false under Ctrl. */
+			readonly commands: boolean;
+			/** Run the command now: a first press that may run one. */
 			readonly oneShot: boolean;
 			readonly prevent: boolean;
 	  };
@@ -80,7 +88,7 @@ const preventsDefault = (key: string) =>
 export function keyDispatch(e: KeyEventFacts): KeyRoute {
 	const key = e.key.toLowerCase();
 	if (!e.down) return { kind: "release", key };
-	if (e.metaKey || (e.ctrlKey && key !== "control")) return { kind: "swallow" };
+	if (e.metaKey) return { kind: "swallow" };
 	if (e.altKey) {
 		const chord = ALT_CHORDS[e.code];
 		if (chord === undefined) return { kind: "swallow" };
@@ -88,10 +96,14 @@ export function keyDispatch(e: KeyEventFacts): KeyRoute {
 			? { kind: "swallow", prevent: true }
 			: { kind: "chord", key: chord };
 	}
+	// The Control key itself is the throttle, and its own keydown carries
+	// ctrlKey; everything else pressed under Ctrl is held and runs nothing.
+	const commands = !e.ctrlKey || key === "control";
 	return {
 		kind: "key",
 		key,
-		oneShot: !e.repeat,
+		commands,
+		oneShot: !e.repeat && commands,
 		prevent: preventsDefault(key),
 	};
 }

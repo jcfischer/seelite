@@ -131,24 +131,31 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// Ctrl+J engages nothing, and Ctrl alone is still the throttle.
+// Ctrl+J runs no command, keys pressed while braking on Ctrl still fly, and
+// Ctrl alone is still the throttle (ruling 3 as refined on #377).
 // ---------------------------------------------------------------------------
 const beforeCtrl = await state();
 await keyEvent("rawKeyDown", "Control", "ControlLeft", CTRL);
 await keyEvent("rawKeyDown", "j", "KeyJ", CTRL);
+await keyEvent("rawKeyDown", "d", "KeyD", CTRL);
 await settle(page);
 const ctrlHeld = await held("control");
-const jHeld = await held("j");
+const dHeld = await held("d");
 const afterCtrl = await state();
+await keyEvent("keyUp", "d", "KeyD", CTRL);
 await keyEvent("keyUp", "j", "KeyJ", CTRL);
 await keyEvent("keyUp", "Control", "ControlLeft", 0);
 await settle(page);
 check(
-	"Ctrl+J neither holds J nor starts the cruise spool",
-	jHeld === false &&
-		afterCtrl.spool === beforeCtrl.spool &&
+	"Ctrl+J does not start the cruise spool",
+	afterCtrl.spool === beforeCtrl.spool &&
 		afterCtrl.regime === beforeCtrl.regime,
-	`j held ${jHeld}, spool ${beforeCtrl.spool} -> ${afterCtrl.spool}, regime ${afterCtrl.regime}`,
+	`spool ${beforeCtrl.spool} -> ${afterCtrl.spool}, regime ${afterCtrl.regime}`,
+);
+check(
+	"and D pressed while braking on Ctrl is held, so the ship can still turn",
+	dHeld === true,
+	`keys.has("d") under Ctrl: ${dHeld}`,
 );
 check(
 	"and the Control key itself is held, which is THROTTLE_DOWN",

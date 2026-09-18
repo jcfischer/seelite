@@ -7012,46 +7012,10 @@ class Game {
 	}
 
 	private onKey(e: KeyboardEvent, down: boolean) {
-		const key = e.key.toLowerCase();
-		// Releases must clear flight state even when a panel now owns the key.
-		if (!down) this.keys.delete(key);
-		if (
-			this.view === "cockpit" &&
-			this.liveCockpit?.requestsSurfaceOpen() &&
-			key === " " &&
-			e.target instanceof HTMLButtonElement &&
-			e.target.hasAttribute("data-live-request-action")
-		) {
-			// Native buttons activate on Space release. Do not fire or prevent it.
-			return;
-		}
-		if (
-			this.view === "cockpit" &&
-			// #377: the Ctrl/Meta bail reaches this surface too, so the law holds
-			// for every event rather than for the ones that get past this branch.
-			!e.altKey &&
-			!e.ctrlKey &&
-			!e.metaKey &&
-			this.liveCockpit?.requestsSurfaceOpen() &&
-			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(key)
-		) {
-			e.preventDefault();
-			if (down && !e.repeat) {
-				if (key === "enter") this.liveCockpit.activateKeyboardFocus(e.target);
-				else {
-					// Arrow walking hands input back to the shared cursor. A native
-					// button left focused would otherwise steal the following Enter.
-					if (e.target instanceof HTMLElement) e.target.blur();
-					if (key === "arrowleft" || key === "arrowright")
-						this.liveCockpit.stepTab(key === "arrowleft" ? -1 : 1);
-					else this.liveCockpit.stepFocus(key === "arrowup" ? -1 : 1);
-				}
-			}
-			return;
-		}
 		// #377's law: `keyDispatch` owns what an event may reach — releases,
-		// the Ctrl/Meta bail, Alt chords on the physical key, and which defaults
-		// the browser keeps. This only acts on its answer.
+		// the Ctrl and Meta rules, Alt chords on the physical key, and which
+		// defaults the browser keeps — and it is asked first, so the Requests
+		// surface below acts on its answer rather than on a copy of it.
 		const route = keyDispatch({
 			key: e.key,
 			code: e.code,
@@ -7065,11 +7029,50 @@ class Game {
 		// `case "…":` in this file as a key binding, and the route kinds are not
 		// keys.
 		if (route.kind === "release") {
+			// Releases must clear flight state even when a panel now owns the key.
 			this.keys.delete(route.key);
 			return;
 		}
 		if (route.kind === "swallow") {
 			if (route.prevent) e.preventDefault();
+			return;
+		}
+		const requests =
+			this.view === "cockpit" && this.liveCockpit?.requestsSurfaceOpen();
+		if (
+			requests &&
+			route.kind === "key" &&
+			route.key === " " &&
+			e.target instanceof HTMLButtonElement &&
+			e.target.hasAttribute("data-live-request-action")
+		) {
+			// Native buttons activate on Space release. Do not fire or prevent it.
+			return;
+		}
+		if (
+			requests &&
+			this.liveCockpit &&
+			route.kind === "key" &&
+			// Walking the surface is a command, so a key held under Ctrl flies
+			// instead, as it does everywhere else (#377).
+			route.commands &&
+			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(
+				route.key,
+			)
+		) {
+			e.preventDefault();
+			if (route.oneShot) {
+				if (route.key === "enter")
+					this.liveCockpit.activateKeyboardFocus(e.target);
+				else {
+					// Arrow walking hands input back to the shared cursor. A native
+					// button left focused would otherwise steal the following Enter.
+					if (e.target instanceof HTMLElement) e.target.blur();
+					if (route.key === "arrowleft" || route.key === "arrowright")
+						this.liveCockpit.stepTab(route.key === "arrowleft" ? -1 : 1);
+					else this.liveCockpit.stepFocus(route.key === "arrowup" ? -1 : 1);
+				}
+			}
 			return;
 		}
 		if (route.kind === "chord") {
