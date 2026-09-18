@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { PROBE_CATALOG } from "../scripts/lib/probe-catalog.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
 import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
@@ -87,6 +88,7 @@ describe("the deterministic branches", () => {
 			"src/main.ts",
 			"scripts/probe-guard.mjs",
 			"scripts/select-probes.mjs",
+			"scripts/future-shared-harness.mjs",
 			".github/workflows/deploy.yml",
 			"vite.config.ts",
 		]) {
@@ -170,6 +172,7 @@ describe("the semantic branch", () => {
 			changedFiles: ["src/cruise.ts"],
 		});
 		expect(unavailable.mode).toBe("all");
+		expect(unavailable.probes).toEqual(discovered);
 		expect(unavailable.fallback).toBe(true);
 
 		const failed = await selectProbes(
@@ -194,6 +197,38 @@ describe("the semantic branch", () => {
 });
 
 describe("the TypeSafe transport", () => {
+	test("the CLI fails loudly when its git range is invalid", () => {
+		const child = spawnSync(
+			process.execPath,
+			[
+				"scripts/select-probes.mjs",
+				"--base",
+				"definitely-not-a-ref",
+				"--head",
+				"HEAD",
+			],
+			{ encoding: "utf8" },
+		);
+		expect(child.status).toBe(1);
+		expect(child.stderr).toContain(
+			"could not read git diff definitely-not-a-ref...HEAD",
+		);
+		expect(child.stdout).not.toContain("probe selection:");
+	});
+
+	test("the evaluator refuses a missing key without a stack trace", () => {
+		const { TYPESAFE_API_KEY: _key, ...env } = process.env;
+		const child = spawnSync(
+			process.execPath,
+			["scripts/evaluate-probe-selection.mjs"],
+			{ encoding: "utf8", env },
+		);
+		expect(child.status).toBe(1);
+		expect(child.stderr.trim()).toBe(
+			"TYPESAFE_API_KEY is not set; load it before running probe:evaluate.",
+		);
+	});
+
 	test("keeps the credential in the authorization header and out of the body", async () => {
 		const apiKey = "test-key-that-must-not-enter-state";
 		let authorization = "";

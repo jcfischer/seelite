@@ -22,8 +22,9 @@ still takes one explicit substring.
    verdict.
 
 The selector is a development tool. It makes no runtime network request from the
-game, and `TYPESAFE_API_KEY` is read only from the process environment and
-removed before Vite, Chromium, or a probe child starts.
+game. When the selector launches probes, `TYPESAFE_API_KEY` is read only from
+its process environment and removed before Vite, Chromium, or a probe child
+starts. A separately invoked `npm run probe` does not perform that scrubbing.
 
 TypeSafe is an external service. A semantic selection sends changed-file names
 and, only when supplied, one reviewer-authored `--intent` sentence. It never

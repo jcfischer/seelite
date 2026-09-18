@@ -9,6 +9,12 @@ const receiptPath =
 	receiptFlag === -1 ? undefined : process.argv[receiptFlag + 1];
 if (receiptFlag !== -1 && !receiptPath)
 	throw new Error("--receipt requires an output path");
+if (!process.env.TYPESAFE_API_KEY) {
+	console.error(
+		"TYPESAFE_API_KEY is not set; load it before running probe:evaluate.",
+	);
+	process.exit(1);
+}
 
 const cases = [
 	{

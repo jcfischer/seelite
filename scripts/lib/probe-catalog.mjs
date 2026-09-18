@@ -321,7 +321,3 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 	].sort((a, b) => a.file.localeCompare(b.file)),
 );
-
-export const ALL_PROBE_FILES = Object.freeze(
-	PROBE_CATALOG.map(({ file }) => file),
-);

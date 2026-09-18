@@ -93,7 +93,7 @@ async function main() {
 		try {
 			gitEvidence = readGitEvidence(args.base, args.head);
 		} catch (error) {
-			console.error(
+			throw new Error(
 				`could not read git diff ${args.base}...${args.head}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}

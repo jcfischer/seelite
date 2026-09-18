@@ -1,4 +1,5 @@
-import { ALL_PROBE_FILES, PROBE_CATALOG } from "./probe-catalog.mjs";
+import { PROBE_CATALOG } from "./probe-catalog.mjs";
+import { discoverProbeFiles } from "./probe-inventory.mjs";
 
 /** A Noul must be at or below this probability to exclude a probe. */
 export const PROBE_EXCLUSION_MAX = 0.25;
@@ -15,15 +16,28 @@ const GLOBAL_RISK_FILES = new Set([
 	"vite.config.ts",
 	"src/main.ts",
 	"src/sim.ts",
-	"scripts/probe-all.mjs",
-	"scripts/probe-guard.mjs",
-	"scripts/select-probes.mjs",
-	"scripts/check-launcher-wiring.mjs",
 ]);
+
+const RUNNER_PROBE_FILES = Object.freeze(
+	discoverProbeFiles(new URL("../", import.meta.url)),
+);
+const CATALOG_PROBE_FILES = Object.freeze(
+	PROBE_CATALOG.map(({ file }) => file),
+);
+const catalogMatchesRunner =
+	RUNNER_PROBE_FILES.length === CATALOG_PROBE_FILES.length &&
+	RUNNER_PROBE_FILES.every(
+		(file, index) => file === CATALOG_PROBE_FILES[index],
+	);
+
+const directProbe = (file) =>
+	file.startsWith("scripts/")
+		? RUNNER_PROBE_FILES.find((probe) => `scripts/${probe}` === file)
+		: undefined;
 
 const isGlobalRisk = (file) =>
 	GLOBAL_RISK_FILES.has(file) ||
-	file.startsWith("scripts/lib/") ||
+	(file.startsWith("scripts/") && !directProbe(file)) ||
 	file.startsWith(".github/");
 
 const isNonRuntime = (file) =>
@@ -31,11 +45,6 @@ const isNonRuntime = (file) =>
 	file.startsWith("tests/") ||
 	file.endsWith(".md") ||
 	file === "biome.jsonc";
-
-const directProbe = (file) =>
-	file.startsWith("scripts/")
-		? ALL_PROBE_FILES.find((probe) => `scripts/${probe}` === file)
-		: undefined;
 
 const directlyChangedProbes = (changedFiles) =>
 	changedFiles.map(directProbe).filter(Boolean).sort();
@@ -49,7 +58,7 @@ const result = (mode, probes, reason, fallback = false) => ({
 });
 
 const all = (reason, fallback = false) =>
-	result("all", [...ALL_PROBE_FILES], reason, fallback);
+	result("all", [...RUNNER_PROBE_FILES], reason, fallback);
 
 const isValidNoulAnswer = (answer) =>
 	answer?.type === "noul" &&
@@ -208,6 +217,11 @@ async function selectSemantic(input, judge, forcedProbes) {
  * @param {((request: {state: object, questions: object}) => Promise<object>) | undefined} judge
  */
 export async function selectProbes(input, judge = undefined) {
+	if (!catalogMatchesRunner)
+		return all(
+			"Probe catalog differs from the runner inventory; semantic selection is unsafe.",
+			true,
+		);
 	const changedFiles = [...new Set(input.changedFiles ?? [])].sort();
 	const forcedProbes = directlyChangedProbes(changedFiles);
 	const deterministic = selectDeterministic(changedFiles, forcedProbes);
