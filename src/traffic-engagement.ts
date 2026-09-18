@@ -357,7 +357,7 @@ export const chargedOffence = (
 
 /** The actors standing in a home berth instead of flying a route (H3b): the
  *  struck ones, drawn where the world says they are. */
-export const parkedTrafficActors = <T extends { key: CarrierKey }>(
+export const parkedHomeTrafficActors = <T extends { key: CarrierKey }>(
 	actors: readonly T[],
 	conditionOf: (key: CarrierKey) => CarrierConditionRow,
 ): T[] =>
@@ -399,7 +399,7 @@ export const trafficDestruction = (
  * A destroyed carrier is absent from its route and holds no berth until its
  * replacement is operational, which is what makes a kill visible and a
  * replacement come back. A diverted one holds its route for the same reason —
- * it is not flying it — and `parkedTrafficActors` is where it is drawn instead.
+ * it is not flying it — and `parkedHomeTrafficActors` is where it is drawn instead.
  */
 export const flyingTrafficActors = <T extends { key: CarrierKey }>(
 	actors: readonly T[],

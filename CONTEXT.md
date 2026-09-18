@@ -239,7 +239,7 @@ carrier is, and `trafficPresence` names which of `flying`, `parked-home` or
 kill, with its replacement schedule. `docs/specs/civilian-combat.md` H3b, H3c and
 H3d own the decision, and `in-system-route-traffic.md` §5 what it does to the
 projection.
-_Avoid_: Recall, tow, recall-to-base, disable (a transition, not a place), wound
+_Avoid_: Recall, tow, recall-to-base, wound
 
 **Held launch**:
 The player's launch request after Traffic refused it, kept with its first
@@ -330,6 +330,9 @@ _Avoid_: Respawn timer
 The bounded provenance unit for the latest related operational transitions at one carrier slot. `docs/specs/persistent-world-state.md` §5 owns its retained facts and compaction rule.
 _Avoid_: Full event log
 
+**Incident**:
+The unit an offence is *priced* on: one strike on a carrier and the kill that ends that strike's repair, charged as the largest offence in it rather than as their sum — 15 then 25, 40 together, never 55. It is not a **Causal episode**, and the difference is not a matter of taste: the kill's `interrupt` closes the strike's episode and its `destroy` opens one that replaces `episodes[key]` wholesale, so a strike and the kill that follows are *two* episodes and the ledger keeps no memory of the first. What carries the charge instead is the carrier's own row — `trafficPresence` says whether the ship is standing in its home berth, and the repair's `startedAt` is the clock the standing the strike was judged on derives from, standing being never saved. `docs/specs/civilian-combat.md` H9 owns the ruling; `chargedOffence` reads the row and `marginalOffenceHeat` does the arithmetic. **No _Avoid_ line, deliberately:** the word to avoid naming this unit with is "episode", and **Causal episode** is canonical two lines above, so an alias line here would misfire on correct prose — as the one under **Transit lane** did.
+
 **Causal-episode ordinal**:
 The stable sequence number distinguishing successive causal episodes at one carrier slot. `docs/specs/persistent-world-state.md` §4 owns allocation; §5 owns retention and compaction.
 
@@ -361,8 +364,18 @@ The one-ship path through a Station interior between its aperture and staging
 point. A traversal is non-preemptive; the oldest ready arrival or launch goes
 next, with a simultaneous launch first because it releases a Berth. A Traffic
 arrival reserves it before leaving its Traffic hold.
-_Avoid_: Berth, Clearance queue, approach corridor
-**Scope note (#365):** this line says a lane is not a **Berth**. Read as a ban on the word *berth* it forbids the one distinction an interior is made of — which occupancy a ship is waiting for — and the entry's own body refutes it two ways: a launch *releases a Berth*, and a Traffic arrival reserves the lane before leaving its hold. The two occupancies are separate facts the modules keep separate (`dockingStates` for the lane, the berth catalogue for the berth), so any sentence about a ship that has stopped flying has to name both. `docs/specs/station-traffic.md` §2.1 does exactly that. A reviewer or a checker flagging `berth` in that company has the alias rule firing in the wrong direction, which is the same mistake **Berth**'s entry already carries a note about.
+
+**A lane is not a Berth — and this entry no longer lists Berth under _Avoid_.**
+That listing was read as a ban on the word, and a ban on the word forbids the one
+distinction an interior is made of — which occupancy a ship is waiting for. The
+body above names both in one breath, which is the honest way to keep them apart: a
+launch releases a Berth, and a Traffic arrival reserves the lane before leaving its
+hold. An _Avoid_ line that names a canonical term misfires on every correct use of
+it — #365's first review round spent 54 findings on the word *berth* for exactly
+this — so only words that are canonical nowhere belong here. `Clearance queue` and
+`approach corridor` do; **Berth** does not, and neither does the `disable` that
+#365's **Diversion** first listed beside its own aliases. **Berth** carries the
+matching note about its own four senses of "pad".
 
 **Station interior**:
 What lies at a station's aperture, in one of two **presentations** decided by `aperture.kind` (#165). Computed in exactly one place, `src/station-interior.ts`, and drawn in exactly one, `src/station-interior-mesh.ts`; `docs/specs/docking.md` §13.1 owns the topology of both.

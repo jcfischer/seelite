@@ -295,7 +295,7 @@ import {
 	fliesItsRoute,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
-	parkedTrafficActors,
+	parkedHomeTrafficActors,
 	stepEngagement,
 	trafficDiversion,
 	trafficInSights,
@@ -2599,7 +2599,7 @@ class Game {
 	 * player reservations. It remains writable so controlled probes can force the
 	 * queued branch through the same allocator the game uses.
 	 */
-	readonly berthOccupancy = new Map<string, Set<string>>();
+	readonly berthOccupancy = new Map<string, ReadonlySet<string>>();
 
 	/** The player and Traffic berth holds at one station (§13.2). */
 	private occupiedAt(id: string): ReadonlySet<string> {
@@ -4649,7 +4649,7 @@ class Game {
 	 *  *holds* — and a rule dealt out of two copies is a rule that drifts. */
 	private holdBerth(
 		projection: SystemTrafficProjection,
-		into: Map<string, Set<string>> = this.berthOccupancy,
+		into: Map<string, ReadonlySet<string>> = this.berthOccupancy,
 	): string | null {
 		const stationId = projection.terminalStationId;
 		if (!projection.berthId || !stationId) return null;
@@ -5294,7 +5294,7 @@ class Game {
 	 * what makes the divert need no new form of its own.
 	 */
 	private divertedTraffic(): TrafficActor[] {
-		return parkedTrafficActors(this.trafficActors, (key) =>
+		return parkedHomeTrafficActors(this.trafficActors, (key) =>
 			this.carrierCondition(key),
 		);
 	}
@@ -5329,7 +5329,7 @@ class Game {
 	 * H3c): the frame that spends hull points writes its `disable` and its
 	 * repair, and the pilot keeps flying the ship that runs — until it is out of
 	 * the band, where it stops being flown and starts being a carrier parked at
-	 * home (`parkedTrafficActors`).
+	 * home (`parkedHomeTrafficActors`).
 	 */
 	private stepTrafficEngagements(dt: number, shot: PlayerShot) {
 		const pilot: DuelPilot = {
@@ -5483,23 +5483,6 @@ class Game {
 	}
 
 	/**
-	 * A hull strike (`civilian-combat.md` H3b, H3c, H3d): the carrier is disabled
-	 * by the player's own fire and booked into its home berth in the same tick,
-	 * and the strike is an offence.
-	 *
-	 * **Gated on `operational`, and the gate is load-bearing.** `disable` is
-	 * legal from an `operational` carrier only — `world-state.ts` throws rather
-	 * than no-oping — and a fight lasts dozens of frames after the hull gives
-	 * way. The gate reads the world rather than a flag on the engagement,
-	 * because the divert outlives the session that caused it: reload into a
-	 * fight with a carrier already heading home and no engagement remembers
-	 * having struck it.
-	 *
-	 * **Nothing here ends the fight.** The ship that survives keeps fleeing on
-	 * its own hull (H3), and the pilot keeps the lock: what changes is where the
-	 * world says it will be afterwards.
-	 */
-	/**
 	 * What one offence against one carrier costs the pilot, written (H4, H9).
 	 *
 	 * `before` is the carrier's row as it stood **before** the offence was
@@ -5548,6 +5531,23 @@ class Game {
 		return heat;
 	}
 
+	/**
+	 * A hull strike (`civilian-combat.md` H3b, H3c, H3d): the carrier is disabled
+	 * by the player's own fire and booked into its home berth in the same tick,
+	 * and the strike is an offence.
+	 *
+	 * **Gated on `operational`, and the gate is load-bearing.** `disable` is
+	 * legal from an `operational` carrier only — `world-state.ts` throws rather
+	 * than no-oping — and a fight lasts dozens of frames after the hull gives
+	 * way. The gate reads the world rather than a flag on the engagement,
+	 * because the divert outlives the session that caused it: reload into a
+	 * fight with a carrier already heading home and no engagement remembers
+	 * having struck it.
+	 *
+	 * **Nothing here ends the fight.** The ship that survives keeps fleeing on
+	 * its own hull (H3), and the pilot keeps the lock: what changes is where the
+	 * world says it will be afterwards.
+	 */
 	private divertTrafficCarrier(actor: TrafficActor) {
 		const record = this.world.system.record;
 		const now = this.world.gameTime;

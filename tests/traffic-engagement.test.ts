@@ -11,7 +11,7 @@ import {
 	engage,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
-	parkedTrafficActors,
+	parkedHomeTrafficActors,
 	stepEngagement,
 	trafficDestruction,
 	trafficDiversion,
@@ -34,7 +34,6 @@ import {
 	newWorld,
 	parseWorld,
 	serializeWorld,
-	WORLD_SCHEMA_VERSION,
 } from "../src/world-state";
 import { HULL_SPECS, type HullId } from "../src/hull";
 import {
@@ -511,15 +510,15 @@ describe("H3c: the diverting hit is a disable, then a repair, in one tick", () =
 		);
 		expect(trafficPresence(row)).toBe("parked-home");
 		expect(
-			parkedTrafficActors([DIVERT_ACTOR], () => row).map((a) => a.key),
+			parkedHomeTrafficActors([DIVERT_ACTOR], () => row).map((a) => a.key),
 		).toEqual([DIVERT_ACTOR.key]);
 		// And no new field was needed to get there: the divert is one row and one
-		// incident, both of which the save already knew how to carry. Pinned to
-		// the shipped version rather than to the world it came out of — a row
-		// that reads the version off both sides of a round trip is a row that
-		// cannot see the version move, which is the only way this claim could be
-		// broken.
-		expect(restored.worldSchemaVersion).toBe(WORLD_SCHEMA_VERSION);
+		// episode, both of which the save already knew how to carry. That claim
+		// rides on the two assertions above — the row and the projection survive a
+		// serialize/parse with the divert still standing — and not on a version
+		// check, because there is no version check that could hold it: `parseWorld`
+		// refuses any `worldSchemaVersion` but the shipped one, so a row comparing
+		// the round-tripped version with the constant is a row that cannot fail.
 	});
 });
 
@@ -598,7 +597,7 @@ describe("H3b: where a diverted carrier is while it repairs", () => {
 		expect(flying).not.toContain(struck);
 		// The destroyed one is neither flying nor parked: it is not drawn at all.
 		expect(
-			parkedTrafficActors(actors, conditionOf(DIVERT_AT)).map((a) => a.key),
+			parkedHomeTrafficActors(actors, conditionOf(DIVERT_AT)).map((a) => a.key),
 		).toEqual([struck]);
 		// And at the completion it flies again, which is its next departure.
 		const start = divertStart();
@@ -608,9 +607,9 @@ describe("H3b: where a diverted carrier is while it repairs", () => {
 				(a) => a.key,
 			),
 		).toContain(struck);
-		expect(parkedTrafficActors(actors, conditionOf(start.completesAt))).toEqual(
-			[],
-		);
+		expect(
+			parkedHomeTrafficActors(actors, conditionOf(start.completesAt)),
+		).toEqual([]);
 	});
 });
 

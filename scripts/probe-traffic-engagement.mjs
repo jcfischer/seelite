@@ -133,6 +133,18 @@ try {
 				window.__engagementProbe.aimAt(pos, offNoseRad);
 				g.setHeadLook("forward");
 			},
+			/** The offence pair a write is measured against: the status as it
+			 *  stands now, and the status before the write decayed to this frame.
+			 *  The divert and the kill both need exactly this, and two copies that
+			 *  call the halves different things (`beforeHeat`, `before`) is how a
+			 *  probe's arithmetic and the game's drift apart. */
+			snapshotLegal(before) {
+				const { heat, updatedAt } = window.__seelite.trafficReadout().legal;
+				return {
+					legal: { heat, updatedAt },
+					before: this.heatAt(before, updatedAt),
+				};
+			},
 			/** One tethered frame: hold the offset, nose on the target or
 			 *  `offNoseRad` beside it. `framesFired` counts the frames this rig has
 			 *  held the beam open, across every target — the shield-side bound the
@@ -307,12 +319,10 @@ try {
 			// write can be measured against the status that stood before it —
 			// decayed to the same clock, and exactly, with no decay law restated
 			// here.
-			const legal = g.trafficReadout().legal;
 			const carrier = g.carrierCondition(key);
 			strike = {
 				at: g.world.gameTime,
-				legal: { heat: legal.heat, updatedAt: legal.updatedAt },
-				beforeHeat: p.heatAt(before, legal.updatedAt),
+				...p.snapshotLegal(before),
 				carrier,
 				// The row, not the contact row: presence reads a repairing
 				// carrier's recovery kind to tell a divert from a wreck.
@@ -395,7 +405,7 @@ try {
 		"the strike is an offence of its own, and the ship under fire keeps running (H3, H4)",
 		Math.abs(
 			diverted.strike.legal.heat -
-				diverted.strike.beforeHeat -
+				diverted.strike.before -
 				diverted.strike.strikeOffence,
 		) < 1e-6 &&
 			diverted.stillEngaged &&
@@ -500,12 +510,8 @@ try {
 		let struck = null;
 		for (; steps < 6000 && g.trafficContacts.has(key); steps++) {
 			p.follow(key, true);
-			const legal = g.trafficReadout().legal;
 			if (!struck && g.carrierCondition(key).condition !== "operational")
-				struck = {
-					legal: { heat: legal.heat, updatedAt: legal.updatedAt },
-					before: p.heatAt(statusBefore, legal.updatedAt),
-				};
+				struck = p.snapshotLegal(statusBefore);
 		}
 		const now = g.world.gameTime;
 		for (let i = 0; i < 3; i++) p.frame();
@@ -536,12 +542,15 @@ try {
 			// had, not only for zero (sage #368), and it separates the strike's
 			// 15 from the kill's 25 rather than reading their sum.
 			struck,
-			strikeWrite: struck
-				? struck.legal.heat - struck.before
-				: readout.legal.heat - p.heatAt(statusBefore, readout.legal.updatedAt),
+			// `null`, not a fallback, when no strike was ever captured: the only
+			// thing a fallback here could produce is a pair of numbers that read
+			// as a decomposition of a strike that did not happen, and the row's
+			// red would name the wrong cause. `struck: null` in the payload is
+			// the real failure — the divert never landed.
+			strikeWrite: struck ? struck.legal.heat - struck.before : null,
 			killWrite: struck
 				? readout.legal.heat - p.heatAt(struck.legal, readout.legal.updatedAt)
-				: readout.legal.heat - p.heatAt(statusBefore, readout.legal.updatedAt),
+				: null,
 			legal: readout.legal,
 			legalText,
 			legalVisible,
@@ -572,11 +581,12 @@ try {
 	);
 	check(
 		"a Clean kill reads Wanted on both left tabs, and the cockpit says so (H4, H7)",
-		// The episode's whole cost, not the kill's own write: this one was struck
-		// first, so the kill wrote what was still owed. The row below holds that
-		// split.
-		Math.abs(killed.strikeWrite + killed.killWrite - killed.offenceHeat) <
-			1e-6 &&
+		killed.struck !== null &&
+			// The incident's whole cost, not the kill's own write: this one was
+			// struck first, so the kill wrote what was still owed. The row below
+			// holds that split.
+			Math.abs(killed.strikeWrite + killed.killWrite - killed.offenceHeat) <
+				1e-6 &&
 			killed.legal.standing === "wanted" &&
 			killed.legalText === "WANTED" &&
 			killed.legalVisible === true &&
