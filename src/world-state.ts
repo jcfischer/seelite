@@ -286,16 +286,28 @@ export interface KnowledgeRow {
 /**
  * §7's per-galaxy legal-status slot.
  *
- * The *semantics* — thresholds, decay, what counts as an offence — belong to
- * the combat node, not here. What §7 requires of this model is that the domain
- * has a typed home inside the envelope and survives a round trip, so this is
- * the persisted pair and nothing more. Anything derived from it (a Clean /
- * Wanted / Fugitive label, a police response) is a §8 projection and must not
- * be saved.
+ * The *semantics* — thresholds, decay, what counts as an offence, which station
+ * this makes hostile — belong to the law (`legal.ts`), not here. What §7
+ * requires of this model is that the domain has a typed home inside the
+ * envelope and survives a round trip. Anything derived from it (a Clean /
+ * Wanted / Fugitive label, a station's hostility, a police response) is a §8
+ * projection and must not be saved.
+ *
+ * **`witnesses` is the third member, and it is saved rather than derived
+ * because nothing it can be derived from is saved** (#366 H6). The frame body an
+ * offence happened beside is where the pilot was at one instant of a session;
+ * session-only hostility lets a reload or a jump out and back clear what decay
+ * is meant to clear. It holds each station at most once — `legal.ts`'s write
+ * keeps it so — and it is empty far more often than not, which is why
+ * `canonicalEnvelope` omits it when it is: writing `"witnesses": []` onto every
+ * row would change the bytes every save ever taken hashes to, and the integrity
+ * check would then refuse an old save as corrupt rather than migrating it.
  */
 export interface LegalStatus {
 	heat: number;
 	updatedAt: number;
+	/** The stations that saw an offence, in `compareCarrierKeys` order. */
+	witnesses: CarrierKey[];
 }
 
 /**
@@ -357,7 +369,7 @@ export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	knowledge: {},
 	deficits: {},
 	visited: [],
-	legalStatus: { heat: 0, updatedAt: 0 },
+	legalStatus: { heat: 0, updatedAt: 0, witnesses: [] },
 });
 
 export const newWorld = (seed: number): WorldState => ({
@@ -1367,8 +1379,18 @@ export const setDeficits = (
 ): WorldState =>
 	withEnvelope(world, galaxyIndex, at, (env) => ({ ...env, deficits }));
 
-/** §7's legal-status domain. The persisted pair only — the label and the
- *  police response are §8 projections. */
+/**
+ * §7's legal-status domain: the heat and its stamp. The standing label and the
+ * police response are §8 projections.
+ *
+ * **It carries `witnesses` through untouched, and that is the whole reason it
+ * reads the old row instead of building one.** Heat and the witness list are two
+ * halves of one saved row, and an offence may change either alone: a lawful kill
+ * beside a station writes the list with no heat, and decay-and-heat writes the
+ * heat with no new list. A writer that rebuilt `{ heat, updatedAt }` from
+ * nothing would empty the list on the second offence — quietly, in the one case
+ * a pilot has offended twice.
+ */
 export const setLegalHeat = (
 	world: WorldState,
 	galaxyIndex: number,
@@ -1379,7 +1401,48 @@ export const setLegalHeat = (
 		fail(`setLegalHeat: ${heat} is not a finite heat`);
 	return withEnvelope(world, galaxyIndex, updatedAt, (env) => ({
 		...env,
-		legalStatus: { heat, updatedAt },
+		legalStatus: { ...env.legalStatus, heat, updatedAt },
+	}));
+};
+
+/**
+ * §7's legal-status domain: the stations that saw an offence (`legal.ts` H6).
+ *
+ * **It does not touch `updatedAt`, and it must not.** That stamp is the heat's,
+ * and decay is read from it — restamping it to write a witness would decay a
+ * pilot's existing heat from now and hold them Wanted past the duration H4
+ * set, on an act that costs nothing. `at` here is the *world* clock, which is
+ * what `withEnvelope` bounds a write against.
+ *
+ * The list is the law's to build; this checks its shape the way every other
+ * writer checks its input, because a `Station.id` in here would read as this
+ * system's station in every system in the galaxy.
+ *
+ * **And it stores them in canonical order, not the order they were witnessed
+ * in.** `canonicalEnvelope` has to write canonical bytes, and a model whose row
+ * came out in offence order would be a model that does not equal its own save —
+ * which is the §9.6 round trip, not a tidiness. Sorting here is what lets the
+ * envelope omit rather than re-derive.
+ */
+export const setLegalWitnesses = (
+	world: WorldState,
+	galaxyIndex: number,
+	witnesses: readonly CarrierKey[],
+	at: number,
+): WorldState => {
+	const seen = new Set<string>();
+	for (const key of witnesses) {
+		assertCarrierKey(key);
+		if (seen.has(key))
+			fail(`setLegalWitnesses: ${key} is witnessed twice in one row`);
+		seen.add(key);
+	}
+	return withEnvelope(world, galaxyIndex, at, (env) => ({
+		...env,
+		legalStatus: {
+			...env.legalStatus,
+			witnesses: [...witnesses].sort(compareCarrierKeys),
+		},
 	}));
 };
 
@@ -1520,6 +1583,19 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 	legalStatus: {
 		heat: env.legalStatus.heat,
 		updatedAt: env.legalStatus.updatedAt,
+		// **Omitted when empty, as `knownPrivateFacts` above is.** The hash is
+		// over these bytes, so a `"witnesses": []` written onto every row would
+		// change the integrity of every save taken before #366 and have
+		// `parseWorld` refuse it as corrupt. Absent means empty, which is what the
+		// parser reads too.
+		//
+		// Canonical order, not the order the offences happened in: two pilots who
+		// offended in opposite orders have to write the same bytes.
+		...(env.legalStatus.witnesses.length
+			? {
+					witnesses: [...env.legalStatus.witnesses].sort(compareCarrierKeys),
+				}
+			: {}),
 	},
 });
 
@@ -1906,6 +1982,40 @@ const parseVisited = (raw: unknown, slot: number): number[] => {
 	});
 };
 
+/**
+ * H6's witness list, and **an absent member is the empty list**.
+ *
+ * This is what lets `witnesses` arrive with no `WORLD_SCHEMA_VERSION` bump. A
+ * version mismatch refuses the whole save (§9), and an optional member with a
+ * default needs no version — so a save written before #366 loads, and reads as
+ * no station having seen anything. `canonicalEnvelope` is what makes that
+ * honest: it omits an empty list, so the bytes an old save hashes to are the
+ * bytes it was written with.
+ *
+ * The shape checks are `parseVisited`'s, for the same reason: a `Station.id`
+ * that is not a carrier key would read as this system's station in every system,
+ * and a list the canonicaliser could not have written means a writer stopped
+ * holding each station once.
+ */
+const parseWitnesses = (raw: unknown, slot: number): CarrierKey[] => {
+	if (raw === undefined) return [];
+	if (!Array.isArray(raw)) fail(`galaxy ${slot}: witnesses is not an array`);
+	const seen = new Set<string>();
+	let previous: string | undefined;
+	return (raw as unknown[]).map((v) => {
+		if (typeof v !== "string" || !isCarrierKey(v))
+			fail(`galaxy ${slot}: ${String(v)} is not a witnessed carrier key`);
+		const key = v as CarrierKey;
+		if (seen.has(key))
+			fail(`galaxy ${slot}: witnessed carrier ${key} is listed twice`);
+		if (previous !== undefined && compareCarrierKeys(previous, key) > 0)
+			fail(`galaxy ${slot}: witnesses are not in canonical order`);
+		previous = key;
+		seen.add(key);
+		return key;
+	});
+};
+
 /** One envelope: the declared-field check, then six named domain parsers, then
  *  the one invariant that spans two of them. */
 const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
@@ -1954,6 +2064,7 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 		legalStatus: {
 			heat: num(legal, "heat", `galaxy ${slot}`),
 			updatedAt: num(legal, "updatedAt", `galaxy ${slot}`),
+			witnesses: parseWitnesses(legal.witnesses, slot),
 		},
 	};
 };

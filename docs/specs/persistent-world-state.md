@@ -157,6 +157,32 @@ Each galaxy owns separate typed domains for:
 
 The galaxy envelope supplies `galaxyIndex`. Every station-keyed domain stores the envelope-relative pair `(systemIndex, localCarrierId)`; combining it with the containing `galaxyIndex` reconstructs the full `CarrierKey`. `economy-trade.md` §5.5 records the same pair without inventing a second key name. A bare `Station.id` is not persistent identity. Any serialized embedded galaxy index must match its containing envelope or fail loudly. Sparse absence is meaningful, so the save format must carry domain integrity validation and reject a truncated or partially written snapshot atomically; the model must not reinterpret corruption as an untouched healthy carrier.
 
+**The legal-status domain grew a member after #89 fixed this format, and it grew
+without a schema bump** (`civilian-combat.md` H6, built by #366). A per-galaxy
+list of witness `CarrierKey`s now sits beside the heat pair it shares a clock
+with, holding the stations that have seen this pilot commit an offence. It cannot
+be recovered from seed and clock, so it belongs here. A lawful pilot's list is
+empty, and `canonicalEnvelope` **omits an empty list** rather than writing
+`witnesses: []`, so the bytes of every save written before the member existed are
+still the bytes that save hashes to, and `parseWorld` reads an absent list as the
+empty one.
+
+**The omission is the whole of what makes no-bump honest, not the member's
+optionality.** Writing `witnesses: []` on every envelope would have changed the
+hash of every pre-existing save, and a hash that no longer matches is an
+*integrity* failure — a message telling the player their save is corrupt, when
+what changed was the game. §9.10 is the contrast and not the precedent: the
+private-fact marker had to bump `WORLD_SCHEMA_VERSION` because a knowledge row
+with the field missing means something *different* from one with it false, which
+is exactly the ambiguity a version exists to refuse. An absent witness list means
+precisely what an empty one means, so there is nothing for a version to
+disambiguate.
+
+The list holds a full `CarrierKey` per station — a berth saw the offence, and a
+`Station.id` is not persistent identity — and at most one entry per station per
+galaxy. `measure-save-size.ts` carries that bound through the ceiling tiers, so
+what it costs is reprinted by a run rather than quoted from here.
+
 The domains share the galaxy namespace and authoritative game clock but not a generic lowest-common-denominator event schema. Capabilities and UI projections may read multiple domains; they do not save duplicate capability projections.
 
 The eventual save system must snapshot `worldSchemaVersion`, `worldGeneratorVersion`, world seed, `gameTime`, current location/player state, and all eight galaxy envelopes atomically. Slots, autosave cadence and permadeath were decided by node #89 and implemented by #90; see §10. **Rollback was decided and is not yet reached**: #89's correction makes a non-permadeath death restore the last dock, `SaveStore.restoreAfterDeath` implements it, and nothing calls it because the game has no death path — #90 wired the flag and the record, not the death. Stated here rather than left to read as shipped, which is the class of false assertion §10 was corrected for. Any later policy may retain, rewind, or delete a whole snapshot, but may not selectively reset carrier consequences while retaining the rest of that timeline.
@@ -176,7 +202,7 @@ The implementation node owes headless tests proving:
 3. **Transition table:** every allowed transition works, every invalid transition fails loudly, knowledge combines independently with every objective condition, repeated destroy/replace cycles preserve instance ordinals, and repeated interrupt/restart cycles produce distinct recovery-process identities. The sequence destroyed → repairing → assisted or rescheduled → replacement complete retains one episode ordinal and the original player attribution through completion.
 4. **Lazy recovery boundaries:** immediately before, exactly at, and after `completesAt` produce the specified condition and replacement ordinal without a tick loop. A due completion first materialized at different later access times always records `occurredAt = completesAt` and produces identical canonical snapshots.
 5. **Order independence:** the same seed, snapshot, and `gameTime` yield the same effective state and canonical sorted projection regardless of map insertion order, access order, or which systems were visited first; same-timestamp completions resolve in canonical `CarrierKey` order.
-6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. #275 extends this guarantee to learned private-fact markers. Byte-format compatibility and migration policy were the save-format decision, taken in #89: a version mismatch refuses with a named message and leaves the record untouched on disk, and the migration table becomes mandatory from the v1.0 public release.
+6. **Round trip:** model serialization and deserialization preserve `worldSchemaVersion`, `worldGeneratorVersion`, objective state, last-known state including `observedRecovery`, recovery descriptors, provenance, market deficits, visited flags, legal status, and all eight galaxy namespaces. #275 extends this guarantee to learned private-fact markers. #366 extends it in the other direction, to a snapshot that *predates* a member: an envelope holding no witnesses must serialize to the bytes it arrived with, which is what §7's omit-when-empty rule exists to buy. Byte-format compatibility and migration policy were the save-format decision, taken in #89: a version mismatch refuses with a named message and leaves the record untouched on disk, and the migration table becomes mandatory from the v1.0 public release.
 7. **Compaction equivalence:** compacting transitions cannot change effective capabilities, scheduled recovery, latest attribution, or last-known information including `observedRecovery`.
 8. **Hard bounds:** active objective rows, causal summaries, and knowledge rows never exceed one each per generated carrier; repeated destroy/replace and interrupt/restart cycles do not increase that bound.
 9. **Atomicity and integrity:** a round trip cannot combine `gameTime` or one galaxy envelope from one snapshot with state from another, and truncated or partially written typed domains fail validation rather than reading as absent rows.

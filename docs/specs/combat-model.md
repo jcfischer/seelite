@@ -227,7 +227,11 @@ by `trafficDestruction`; no H decision sets them) and returns as a new instance
 (H1), and its drop is the manifest
 `carrier-identity.md` §3 derives, one canister per line holding that line's
 tonnes (H11) — so a canister's tonnage is a field, and a scoop takes what fits.
-The left console's readout shows the player's standing (H7).
+The left console's readout shows the player's standing (H7), and §4's
+"thresholds determine … shipyard hostility" is discharged by the same decision's
+second half: every shipyard denies docking with the reason `hostile` while heat
+is Wanted or above. A trade station or refinery turns hostile only over an
+offence it saw (H5).
 
 ## 5. HUD and verification
 

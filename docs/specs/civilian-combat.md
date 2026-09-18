@@ -261,6 +261,18 @@ bump**: a version mismatch refuses the whole save (`persistent-world-state.md`
 §9, #89), and an optional member with a default needs none.
 `scripts/measure-save-size.ts` re-measures the ceiling.
 
+**Built, this needed one more condition than it reads as needing** (#366). The
+empty list is *omitted* by `canonicalEnvelope` rather than written as `[]`,
+because the envelope's `integrity` is a hash over its own canonical bytes: a
+member added to every envelope changes every hash, and a save whose hash no
+longer matches its body is reported as corrupt — worse than the version bump it
+was avoiding, because that message is a lie about the player's save. So
+"optional with a default" is the parse half, and "absent on the wire when empty"
+is the write half of the same no-bump decision. `witnesses` is also stored in
+canonical `CarrierKey` order for the same reason: a model that wrote them in
+offence order would not equal its own save. `persistent-world-state.md` §7 holds
+the full account, beside §9.10's opposite case.
+
 ### H7 — The HUD shows standing, and shipyards refuse Wanted
 
 The left console's readout shows LEGAL STATUS as Clean, Wanted or Fugitive,
@@ -432,7 +444,7 @@ Each is amended in the change that builds it, not ahead of it.
 | Standing and manifest keyed on the slot | `carrier-identity.md` §2, §3 | `instanceOrdinal` in both signatures, and the voyage is `flownVoyageOrdinal` (F11, §3, §5) (1) |
 | §7's "Nothing writes heat" and §11's handoff | `carrier-identity.md` §7, §11 | Discharged, pointing here (1) |
 | Offences and thresholds named without figures | `combat-model.md` §4 | §4.2: a pointer to H4 and H7, plus H1, H2 and H11 as built — the replacement, the combat condition, and a canister's tonnage as a field with a scoop that takes what fits, the exception to §4.1's one-tonne canister (1, 3) |
-| The interim 600 s hostility cooldown awaiting #8 | `docking.md` §6 | Replaced by H5 for an offence beside a station (3) |
+| The interim 600 s hostility cooldown awaiting #8 | `docking.md` §6 | Kept, and narrowed to what it always was: the barge flip's exit. H5 adds a **second**, derived hostility beside it whose exit is heat decay — two fields, because they have two exits (3) |
 | `LegalStatus` is `{ heat, updatedAt }` | `persistent-world-state.md` §7 | Gains `witnesses` (3) |
 
 ## Verification obligations

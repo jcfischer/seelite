@@ -177,9 +177,20 @@ export function dockingDirector(input: {
 	pose: EntryPose;
 	state: DockingState;
 	gameTime: number;
+	/** Whether the law refuses this pilot here (`legal.ts`, H5 and H7's second
+	 *  half). Same distinction as `ClearanceRequest.refusedByLaw`: this is not
+	 *  `state.hostile`, which is §6's timed flip.
+	 *
+	 *  **Marking it is the point of passing it at all.** A station that saw the
+	 *  offence is the one thing the pilot cannot see, and `directorEngaged` shows
+	 *  a director whose block is hostile without any request having been made —
+	 *  so the mark arrives before the denial does, rather than after a run the
+	 *  pilot could not have known to abort. */
+	refusedByLaw?: boolean;
 }): DirectorState {
 	const { stationId, stationPos, frame, pose, state, gameTime } = input;
-	const evaluation = evaluateEntry(frame, pose, { hostile: state.hostile });
+	const hostile = state.hostile || input.refusedByLaw === true;
+	const evaluation = evaluateEntry(frame, pose, { hostile });
 	const live = grantLive(state, gameTime);
 	const rangeKm = length(pose.rel);
 
@@ -192,7 +203,7 @@ export function dockingDirector(input: {
 			live && state.clearance.kind === "granted"
 				? state.clearance.expiresAtS - gameTime
 				: null,
-		blocking: blockingOf(state, live),
+		blocking: blockingOf(state, live, hostile),
 		axis: {
 			position: cue(evaluation.positionAngleDeg, AXIS_TOLERANCE_DEG),
 			nose: cue(evaluation.noseAngleDeg, AXIS_TOLERANCE_DEG),
@@ -238,9 +249,17 @@ const cue = (deg: number, toleranceDeg: number): DirectorCue => ({
  * danger and a denial is paperwork, so a station shooting at the pilot must not
  * report why the forms were refused. It mirrors the map's `grantLive && !hostile`
  * constraint from the other side — the grant never suppresses the hostile mark.
+ *
+ * `hostile` arrives from the caller rather than being read off `state` because
+ * there are two reasons for it, §6's timed flip and #366's law, and only the
+ * caller holding the pilot's legal status knows whether the second one is true.
  */
-function blockingOf(state: DockingState, live: boolean): DirectorBlock | null {
-	if (state.hostile)
+function blockingOf(
+	state: DockingState,
+	live: boolean,
+	hostile: boolean,
+): DirectorBlock | null {
+	if (hostile)
 		return {
 			kind: "hostile",
 			text: "DO NOT ENTER · station hostile · leave the approach",
