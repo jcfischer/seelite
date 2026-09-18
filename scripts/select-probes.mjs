@@ -94,28 +94,23 @@ function runSelectedProbes(result) {
 	}
 	const selected = result.mode === "all" ? undefined : result.probes;
 	const childEnv = probeRunnerEnvironment(process.env, selected);
-	const wiring = spawnSync(process.execPath, [WIRING_CHECK], {
-		cwd: PROJECT_ROOT,
-		stdio: "inherit",
-		env: childEnv,
-	});
-	if (wiring.error) {
-		console.error(`could not start wiring check: ${wiring.error.message}`);
-		process.exitCode = 1;
+	const wiringStatus = runChild(WIRING_CHECK, "wiring check", childEnv);
+	if (wiringStatus !== 0) {
+		process.exitCode = wiringStatus;
 		return;
 	}
-	if (wiring.status !== 0) {
-		process.exitCode = wiring.status ?? 1;
-		return;
-	}
-	const child = spawnSync(process.execPath, [PROBE_RUNNER], {
+	process.exitCode = runChild(PROBE_RUNNER, "probe runner", childEnv);
+}
+
+function runChild(scriptPath, label, env) {
+	const child = spawnSync(process.execPath, [scriptPath], {
 		cwd: PROJECT_ROOT,
 		stdio: "inherit",
-		env: childEnv,
+		env,
 	});
 	if (child.error)
-		console.error(`could not start probe runner: ${child.error.message}`);
-	process.exitCode = child.status ?? 1;
+		console.error(`could not start ${label}: ${child.error.message}`);
+	return child.error ? 1 : (child.status ?? 1);
 }
 
 async function main() {

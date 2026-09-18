@@ -132,8 +132,11 @@ describe("resolveOnly", () => {
 	describe("the environment", () => {
 		test("PROBE_FILES selects several exact gates in runner order", () => {
 			expect(
-				selected([], { PROBE_FILES: "probe-beta.mjs,probe-alpha.mjs" }).probes,
-			).toEqual(["probe-alpha.mjs", "probe-beta.mjs"]);
+				selected([], { PROBE_FILES: "probe-beta.mjs,probe-alpha.mjs" }),
+			).toMatchObject({
+				only: "probe-alpha.mjs,probe-beta.mjs",
+				probes: ["probe-alpha.mjs", "probe-beta.mjs"],
+			});
 		});
 
 		test("PROBE_FILES refuses unknown, empty, or conflicting selections", () => {

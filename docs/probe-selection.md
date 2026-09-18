@@ -2,7 +2,7 @@
 
 The browser tier is intentionally sequential, so a full run is expensive. The
 PR selector reduces local feedback time without changing what `npm run probe`
-means: the unfiltered command still runs every gate, and `npm run probe:one`
+means: the unfiltered invocation still runs every gate, and `npm run probe:one`
 still takes one explicit substring.
 
 ## Decision tree
@@ -33,13 +33,12 @@ that evidence for repository confidentiality before running the selector. The
 selector places all PR input under a dedicated `state.untrusted_evidence`
 object, and every question's direction references that boundary. Model
 instructions remain best-effort rather than a security boundary. Filtered runs
-are refused in CI, and a merge receipt still requires the repository's full
-browser tier.
+are refused when `CI` is set. A selected run is partial evidence and does not
+replace a full browser-tier receipt.
 
-The request uses TypeSafe's documented [`jev-latest`
-alias](https://docs.typesafe.ai/models.md) and reports the exact resolved model
-(for example `jev-1.13.0`) with every result. Re-run the evaluation cases after
-a resolved-model change before adjusting the exclusion threshold.
+The request names `jev-latest` and reports the exact model that the response
+resolved (for example `jev-1.13.0`). Re-run the evaluation cases after a
+resolved-model change before adjusting the exclusion threshold.
 
 The catalog parity test proves that every runnable browser gate has an entry; it
 cannot prove that an entry still describes what the gate verifies. Whenever a
@@ -86,8 +85,8 @@ npm run probe:select -- --base origin/main --head HEAD \
 
 `PROBE_FILES` is the selector's exact-name handoff to `probe-all.mjs`. It is
 refused in CI, cannot be combined with `--only` or `PROBE_ONLY`, and every
-partial-run banner names that it is partial. A merge receipt still needs the
-repository's normal full browser-tier evidence.
+partial-run banner names that it is partial. Treat that result as local feedback,
+not as a full browser-tier receipt.
 
 The calibration cases and named expected probes are recorded in
 [`probe-selection-evaluation.md`](./probe-selection-evaluation.md).

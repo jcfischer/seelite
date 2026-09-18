@@ -114,7 +114,7 @@ function resolveExactProbeFiles(args, env, available, gating, inCI) {
 	const ungated = refuseIfUngated(probes, gating, "PROBE_FILES");
 	if (ungated) return ungated;
 	return {
-		only: requested.join(","),
+		only: probes.join(","),
 		probes,
 		source: "PROBE_FILES",
 	};

@@ -85,7 +85,7 @@ export const PROBE_CATALOG = Object.freeze(
 			"Flies the normal cruise regime through charge, travel, layer handoff, exit, and arrival behavior.",
 			[
 				"cruise",
-				"cruise drive charge",
+				"cruise 12 AU reserve",
 				"layer handoff",
 				"arrival",
 				"flight regime",
@@ -143,7 +143,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-gun-feedback.mjs",
-			"Fires the pulse laser through real keyboard, mouse, and pad inputs and checks visible and audible feedback.",
+			"Fires the pulse laser through real keyboard, mouse, and gamepad inputs and checks visible and audible feedback.",
 			["weapon input", "laser", "sound", "muzzle feedback", "heat"],
 		),
 		entry(
@@ -163,10 +163,10 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-key-dispatch.mjs",
-			"Checks the browser keyboard dispatch law for held chords, modifier routing, head look, flight controls, and F1 Controls access.",
+			"Checks the browser keyboard dispatch law for held chords, Alt/Ctrl/Meta routing, head look, flight controls, and F1 Controls access.",
 			[
 				"keyboard dispatch",
-				"modifier keys",
+				"Alt Ctrl Meta",
 				"held chords",
 				"head look",
 				"Controls tab",
@@ -240,7 +240,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-raider-consequence.mjs",
-			"Checks live persistence and presentation after a raider kill, including slot state, wreck, scoop, and revisit.",
+			"Checks live persistence and presentation after a raider kill, including lifecycle state, wreck, scoop, and revisit.",
 			["raider kill", "world state", "wreck", "cargo scoop", "revisit"],
 		),
 		entry(

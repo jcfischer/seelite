@@ -1,10 +1,10 @@
 import { readdirSync } from "node:fs";
 
 /** Naming matches which must never be counted as executable gates. */
-export const NOT_PROBES = new Set(["probe-all.mjs", "probe-guard.mjs"]);
+const NOT_PROBES = new Set(["probe-all.mjs", "probe-guard.mjs"]);
 
 /** Gating checks whose measurement-oriented names deliberately lack `probe-`. */
-export const ADDITIONAL_GATES = Object.freeze(["measure-cruise-detour.mjs"]);
+const ADDITIONAL_GATES = Object.freeze(["measure-cruise-detour.mjs"]);
 
 /** The one inventory rule shared by the runner and catalog-parity test. */
 export function discoverProbeFiles(directory) {
