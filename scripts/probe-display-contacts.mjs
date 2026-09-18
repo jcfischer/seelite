@@ -40,7 +40,14 @@ try {
 					name: c.name,
 					kind: c.kind,
 					velocity: c.velocity,
-					legalStatus: c.legalStatus,
+					// `standing`, not `legalStatus`: #364 renamed and retyped the
+					// member, and a page-side read of a member that no longer
+					// exists is not a type error — it is `undefined`, and
+					// `undefined === null` is false, so the check below went red on
+					// the framings that have ship contacts and stayed green on the
+					// one that has none. A rename that crosses the page boundary
+					// has to be followed here as well as in `src/`.
+					standing: c.standing,
 					scannerClass: c.scannerClass,
 				})),
 				bodyIds: g.world.system.bodies.map((b) => b.id),
@@ -60,7 +67,7 @@ try {
 					(c) =>
 						c.kind === "ship" &&
 						c.name &&
-						c.legalStatus === null &&
+						c.standing === null &&
 						c.scannerClass === "unknown" &&
 						Object.values(c.velocity).every(Number.isFinite),
 				),
