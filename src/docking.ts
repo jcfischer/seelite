@@ -730,7 +730,9 @@ export interface ClearanceRequest {
 	 *
 	 * Optional as `scanFails` is, for the same reason: a caller testing the
 	 * geometry has no law to apply. `main.ts` is the caller that does, and its
-	 * wire is held by `tests/docking-wiring.test.ts`.
+	 * wire is held by the #366 rows in `tests/world-state-wiring.test.ts` — the
+	 * one file here that reads `main.ts`'s source, and it has to: the wire is
+	 * three call sites, and a module test cannot see whether they pass it.
 	 */
 	refusedByLaw?: boolean;
 }
