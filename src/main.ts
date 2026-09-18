@@ -509,6 +509,7 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
+import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { readDeficit } from "./deficits";
 import {
 	emptyRequests,
@@ -1695,6 +1696,9 @@ class Game {
 	/** View-local head direction. It does not change the ship's orientation. */
 	headLook: HeadLook = "forward";
 	private rightTab: RightTab = "Flight";
+	/** The right tab `?` replaced when it opened the Controls tab, restored when
+	 *  it closes it (#370 D3). `null` when there is nothing to restore. */
+	private controlsRestoreTab: RightTab | null = null;
 	private leftTab: LeftTab = "Navigation";
 	/** The forward station console keeps its tab across a head turn while docked. */
 	private stationConsoleTab: StationConsoleTab = "Market";
@@ -3294,6 +3298,12 @@ class Game {
 		this.hud = document.getElementById("hud") as HTMLElement;
 		this.liveCockpit = new LiveCockpit({
 			onRightTab: (tab) => {
+				// A tab picked by hand moves what `?` will restore (#372).
+				this.controlsRestoreTab = restoreOnTabPick(
+					this.rightTab,
+					tab,
+					this.controlsRestoreTab,
+				);
 				this.rightTab = tab;
 				this.updateCockpit();
 			},
@@ -7094,6 +7104,26 @@ class Game {
 			case "3":
 				if (this.view === "cockpit") this.setHeadLook("right");
 				return;
+			case "?": {
+				// #370 D3: the Controls tab, by head-look. `controlsKeyMove` owns the
+				// law, including the abstentions: silent outside the cockpit view,
+				// which `1` and `3` share, and silent while docked, which they do
+				// not. **That docked asymmetry is deliberate** — head-look still
+				// works docked and `3` still turns the head, but the station console
+				// on the forward wall owns the docked screen (§8, M2).
+				const move = controlsKeyMove({
+					view: this.view,
+					dockPhase: this.dock.phase,
+					headLook: this.headLook,
+					rightTab: this.rightTab,
+					restoreTab: this.controlsRestoreTab,
+				});
+				if (!move) return;
+				this.rightTab = move.rightTab;
+				this.controlsRestoreTab = move.restoreTab;
+				this.setHeadLook(move.headLook);
+				return;
+			}
 			case "/":
 				if (this.combatRig?.command("/")) return;
 				break;

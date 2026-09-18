@@ -443,6 +443,71 @@ const PLACERS = {
 		});
 		return "arrival point, empty sky";
 	},
+	controls: async (page, shot) => {
+		// The arrival point and a forward head, then `?` through the keyboard —
+		// the key the player presses rather than a field assignment, so the
+		// frame is the tab the game opens. Every group is opened before the
+		// declared ones are folded, because the fold is kept beside the tab and
+		// would otherwise carry over from the view before.
+		await page.evaluate(async () => {
+			await window.__returnToBootPosition();
+			window.__seelite.setHeadLook("forward");
+		});
+		await page.keyboard.press("Shift+Slash");
+		// **A build without the tab is captured, not refused.** The `before` of
+		// #372 is a build where `?` does nothing, and that frame — the forward
+		// view, unchanged — is the honest before. The subject line says which
+		// one the sheet is showing, so the absence cannot pass for a regression.
+		const opened = await page
+			.waitForFunction(
+				() =>
+					window.__seelite.headLook === "right" &&
+					!!document.querySelector("[data-live-controls-body]"),
+				undefined,
+				{ timeout: 2000 },
+			)
+			.then(
+				() => true,
+				() => false,
+			);
+		if (!opened) return "? opened no Controls tab on this build";
+		await page.evaluate((folded) => {
+			// Queried again each pass: a fold redraws the tree, so a list taken
+			// once holds detached headers after the first click (sage round 1).
+			// Bounded, and it throws: a build whose click does not toggle would
+			// otherwise spin here and hang the run with no message (sage round 3).
+			const closed = '[data-live-controls-group][aria-expanded="false"]';
+			for (let pass = 0; pass < 12; pass++) {
+				const header = document.querySelector(closed);
+				if (!header) break;
+				header.click();
+			}
+			if (document.querySelector(closed))
+				throw new Error("controls placer: a folded group would not open");
+			for (const group of folded)
+				document
+					.querySelector(`[data-live-controls-group="${group}"]`)
+					?.click();
+		}, shot.folded ?? []);
+		// **Read back, not assumed** (sage round 2): a misspelt group clicks
+		// nothing, and a label naming a fold that did not happen reads exactly
+		// like one that did.
+		const unfolded = await page.evaluate(
+			(folded) =>
+				folded.filter(
+					(group) =>
+						document
+							.querySelector(`[data-live-controls-group="${group}"]`)
+							?.getAttribute("aria-expanded") !== "false",
+				),
+			shot.folded ?? [],
+		);
+		if (unfolded.length > 0)
+			throw new Error(
+				`controls placer: ${unfolded.join(", ")} did not fold — no such group, or the fold was lost`,
+			);
+		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
+	},
 };
 assertPlacersCover(PLACERS);
 

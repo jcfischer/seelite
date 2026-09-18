@@ -143,7 +143,7 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares twenty-four views with unique kebab-case names", () => {
+	test("declares twenty-eight views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
@@ -151,11 +151,12 @@ describe("the view set itself", () => {
 		// #209 added `giant-fill`, twenty-two since #300 gave the shipyard and
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
-		// added the canisters and the raider log. A literal and not
+		// added the canisters and the raider log, twenty-eight since #372 added
+		// the Controls tab open and folded. A literal and not
 		// `VIEWS.length`, which is
 		// the whole point: a view deleted by accident has to be a red run, and a
 		// check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(26);
+		expect(VIEWS.length).toBe(28);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -430,9 +431,9 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — twenty-six since #324 part d added the
-		// canister and raider-log views.
-		expect(html).toContain("· clock 0.6–10.6s");
+		// many views the set declares — twenty-eight since #372 added the two
+		// Controls tab views.
+		expect(html).toContain("· clock 0.6–11.4s");
 		expect(html).not.toContain("pinned");
 	});
 

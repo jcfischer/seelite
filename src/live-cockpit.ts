@@ -22,6 +22,15 @@ import {
 	cockpitView,
 } from "./cockpit";
 import type { DockPhase } from "./dock-session";
+import { CONTROLS, type TaskGroup } from "./controls-catalogue";
+import {
+	controlsBody,
+	controlsTreeMarkup,
+	focusAfterFold,
+	groupFocusId,
+	rowFocusId,
+	toggleGroup,
+} from "./controls-reference";
 import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
@@ -42,7 +51,7 @@ import {
 	setFocus,
 } from "./panel-focus";
 
-export type RightTab = "Flight" | "Drive" | "Tuning";
+export type RightTab = "Flight" | "Drive" | "Controls" | "Tuning";
 
 /**
  * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
@@ -55,7 +64,14 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
 	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
 	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
 };
-const RIGHT_TABS: readonly RightTab[] = ["Flight", "Drive", "Tuning"];
+// #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
+// on this console that is not fiction.
+const RIGHT_TABS: readonly RightTab[] = [
+	"Flight",
+	"Drive",
+	"Controls",
+	"Tuning",
+];
 
 /**
  * The left console's tabs.
@@ -260,6 +276,21 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-panel-copy p { max-width: 48ch; color: #ffdcb0; line-height: 1.6; }
 .lc-readout { display: grid; gap: 6px; color: #f5bd78; font-size: 11px; }
 .lc-readout span { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 4px; border-bottom: 1px solid rgba(229, 170, 82, .34); }
+/* The Controls tab (#372): a header line, then a two-level tree of task groups.
+   The body is replaced wholesale, so these rules own the whole panel width. */
+.lc-panel-body.lc-controls { display: flex; flex-direction: column; gap: 10px; }
+.lc-controls-head { display: flex; flex-wrap: wrap; gap: 4px 16px; color: #f5bd78; font-size: 11px; }
+.lc-controls-head b { color: #ffe1a9; letter-spacing: .08em; }
+.lc-controls-tree { display: grid; gap: 1px; }
+.lc-controls-group { display: flex; justify-content: space-between; width: 100%; margin-top: 8px; padding: 5px 6px; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .55); background: rgba(223, 122, 20, .12); color: #ffe1a9; cursor: pointer; font: inherit; letter-spacing: .1em; text-align: left; }
+.lc-controls-group:hover { color: #fff0c9; }
+.lc-controls-group small { color: #cb8c51; }
+.lc-controls-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr); gap: 2px 14px; align-items: baseline; padding: 3px 6px; border-bottom: 1px solid rgba(229, 170, 82, .18); font-size: 11px; }
+.lc-controls-name { color: #ffdcb0; }
+.lc-controls-keys { display: flex; flex-wrap: wrap; gap: 4px; }
+.lc-controls-keys kbd, .lc-controls-keys em { padding: 0 5px; border: 1px solid rgba(229, 170, 82, .6); border-radius: 3px; color: #fff0c9; font: inherit; font-style: normal; }
+.lc-controls-note { color: #cb8c51; font-size: 10px; }
+@media (max-width: 600px) { .lc-controls-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); font-size: 10px; } .lc-controls-note { grid-column: 1 / -1; } }
 .lc-nav-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .lc-chip { border: 1px solid rgba(229, 170, 82, .5); border-radius: 3px; padding: 4px 9px; background: transparent; color: #d49352; cursor: pointer; font: inherit; font-size: 10px; letter-spacing: .08em; }
 .lc-chip[aria-pressed="true"] { border-color: #ffe0a2; background: rgba(223, 122, 20, .26); color: #fff0c9; }
@@ -359,6 +390,11 @@ export class LiveCockpit {
 	private elements: CockpitElements | null = null;
 	/** The element handed to `onChartHost`, so it is handed back exactly once. */
 	private chartHost: HTMLElement | null = null;
+	/**
+	 * The Controls tab's folded groups (#370 D9): one set beside the tab, not
+	 * the DOM, so a structural rebuild draws the tree as the player left it.
+	 */
+	private controlsCollapsed: ReadonlySet<TaskGroup> = new Set();
 
 	constructor(private readonly callbacks: LiveCockpitCallbacks) {
 		installStyle();
@@ -456,11 +492,20 @@ export class LiveCockpit {
 			this.callbacks.onLaunch();
 			return;
 		}
+		const group = element.closest<HTMLElement>("[data-live-controls-group]");
+		if (group) {
+			this.foldControlsGroup(group.dataset.liveControlsGroup as TaskGroup);
+			return;
+		}
+		// A reference row does nothing when selected; it is in the walk so the
+		// ring can scroll to it, and a click on one must not fall through to a
+		// branch below.
+		if (element.closest("[data-live-controls-row]")) return;
 		const right = element.closest<HTMLElement>("[data-live-right-tab]");
 		if (right) {
 			const value = right.dataset.liveRightTab;
-			if (value === "Flight" || value === "Drive" || value === "Tuning")
-				this.callbacks.onRightTab(value);
+			if (RIGHT_TABS.includes(value as RightTab))
+				this.callbacks.onRightTab(value as RightTab);
 			return;
 		}
 		const left = element.closest<HTMLElement>("[data-live-left-tab]");
@@ -517,6 +562,14 @@ export class LiveCockpit {
 		// "never lands on a tab" check could see. Sage found it. The `:not`
 		// keeps the tab row out while leaving the button in.
 		"[data-live-left-tab]:not(.lc-tab)",
+		// The Controls tab (#372). A header folds on `A` through the click path;
+		// a row is walked so the ring can bring the bottom of a long group into
+		// view, and selecting one does nothing. Left and right are not a fold:
+		// on a console they fall through to head-look (`padIntents`), which is
+		// how the pad moves between consoles, and taking them here would
+		// reverse #283 — the principal's ruling on this node.
+		"[data-live-controls-group]",
+		"[data-live-controls-row]",
 	].join(",");
 
 	/**
@@ -626,6 +679,9 @@ export class LiveCockpit {
 		if (d.liveLeftTab !== undefined) return `left-tab:${d.liveLeftTab}`;
 		if (d.liveNavKind !== undefined) return `nav-kind:${d.liveNavKind}`;
 		if (d.liveNavTarget !== undefined) return `nav-target:${d.liveNavTarget}`;
+		if (d.liveControlsGroup !== undefined)
+			return groupFocusId(d.liveControlsGroup as TaskGroup);
+		if (d.liveControlsRow !== undefined) return rowFocusId(d.liveControlsRow);
 		return LiveCockpit.foreignFocusId(el);
 	}
 
@@ -869,6 +925,26 @@ export class LiveCockpit {
 		const next = (((from + delta) % tabs.length) + tabs.length) % tabs.length;
 		const tab = tabs[next];
 		if (tab) this.handleClick(tab);
+	}
+
+	/**
+	 * Fold or open one of the Controls tab's groups (#370 D9).
+	 *
+	 * Redraws the tree and nothing else: the fold is not in the structural key,
+	 * so the panel's tabs, header and readouts are left standing. Then the
+	 * cursor goes to the header that folded — `focusAfterFold` says why — and
+	 * the ring is put back on the rebuilt element.
+	 */
+	private foldControlsGroup(group: TaskGroup) {
+		this.controlsCollapsed = toggleGroup(this.controlsCollapsed, group);
+		const tree = this.root.querySelector<HTMLElement>(
+			"[data-live-controls-tree]",
+		);
+		if (!tree) return;
+		tree.innerHTML = controlsTreeMarkup(CONTROLS, this.controlsCollapsed);
+		const ids = this.focusIds(this.focusElements()).map((id) => ({ id }));
+		this.focusCursor = focusAfterFold(ids, this.focusCursor, group);
+		this.applyFocusRing(true);
 	}
 
 	requestsSurfaceOpen(): boolean {
@@ -1222,7 +1298,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
@@ -1322,6 +1398,17 @@ export class LiveCockpit {
 			)
 			.join("");
 		return `<div class="lc-station-equipment" data-live-station-equipment><h3 class="lc-station-section">AVAILABLE</h3>${available}<h3 class="lc-station-section">UNAVAILABLE HERE</h3>${unavailable}</div>`;
+	}
+
+	/**
+	 * The right console's body. `Controls` replaces it wholesale (#370 D6), on
+	 * the Galaxy Map's `[data-live-chart-body]` precedent: the rail-and-copy grid
+	 * would put the tree in a 48-character column.
+	 */
+	private rightBody(state: LiveCockpitState) {
+		if (state.rightTab === "Controls")
+			return controlsBody(CONTROLS, this.controlsCollapsed);
+		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {

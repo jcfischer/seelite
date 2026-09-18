@@ -141,6 +141,7 @@ export const LEVERS = Object.freeze({
 	209: "the gas giant's band tones, its storm's interior, and its limb",
 	300: "every §5 fixture on the surface its own aperture axis looks at",
 	324: "the duel HUD, the canister markers after a kill, and the Communications console's raider log",
+	372: "the Controls tab: every control as a folding tree of task groups",
 });
 
 /**
@@ -179,6 +180,10 @@ export const LEVERS = Object.freeze({
  *   a repeatable frame**: the fight runs on the live clock through the settle
  *   frames, so the raider and both conditions move between runs. Judge the
  *   instruments' presence, tone and legibility, not a pixel difference.
+ * - `controls` — at the arrival point, `?` pressed through the keyboard, so the
+ *   head is turned to the right console on its Controls tab (#372). `folded`
+ *   names the task groups closed first. The frame is the tab's layout and is
+ *   judged as one: #370's §1 risk — a wall of text — is what no probe fails on.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -187,6 +192,7 @@ export const SHOT_KINDS = Object.freeze([
 	"berth",
 	"workbench-interior",
 	"duel",
+	"controls",
 ]);
 
 /**
@@ -706,6 +712,27 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
+	 * #372's two frames: the tree as `?` first opens it, and with four groups
+	 * folded, so the sheet shows both what a fold does and the lower groups an
+	 * open tree pushes below the panel.
+	 */
+	{
+		name: "controls-open",
+		covers: [372],
+		what: "`?` pressed in flight: the head on the right console's Controls tab, every group open. The owner line, the chord, and FLY, FIGHT and DOCK from the top.",
+		shot: { kind: "controls", view: "cockpit" },
+	},
+	{
+		name: "controls-folded",
+		covers: [372],
+		what: "The same tab with FLY, FIGHT, DOCK and TRADE folded: four closed headers, then VIEW and SYSTEM open below them.",
+		shot: {
+			kind: "controls",
+			view: "cockpit",
+			folded: ["fly", "fight", "dock", "trade"],
+		},
+	},
+	/**
 	 * #324 part (c)'s two frames: the glass and the console, because the
 	 * principal put the duel gauges in both places. They come before the views
 	 * that dock the ship; the placer resets the flight, so what came before them
@@ -931,6 +958,9 @@ const SHOT_REQUIREMENTS = {
 	// missing one is a docked, forward, cockpit frame.
 	berth: (s) => typeof s.station === "string" && typeof s.berth === "string",
 	"workbench-interior": (s) => typeof s.asset === "string" && finite(s.radii),
+	controls: (s) =>
+		s.folded === undefined ||
+		(Array.isArray(s.folded) && s.folded.every((g) => typeof g === "string")),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||
