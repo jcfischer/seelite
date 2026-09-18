@@ -30,6 +30,7 @@ import {
 	scanInRange,
 	stepScanHold,
 } from "../src/carrier-scan";
+import { carrierKey } from "../src/carrier-key";
 import { HULL_IDS, type HullId, PLAYER_BASELINE_HULL } from "../src/hull";
 import {
 	INTERDICTION_CHARGE_S,
@@ -57,6 +58,10 @@ const DRIFT = ASSIST_CAP_KMS * CHARGE;
 /** B and C's start range: the ladder's mid rung, not the boundary rung. */
 const MID = RANGE / 2;
 const BASE = flightPerformance(PLAYER_BASELINE_HULL);
+/** The hold now carries the ship it belongs to, so an arm that flies one has to
+ *  name one — one synthetic subject for every arm in this file, since no arm
+ *  here ever changes target. */
+const TARGET = carrierKey(0, "measure/traffic-000");
 const say = (...lines: string[]) => console.log(lines.join("\n"));
 const f = (v: number, dp = 1) => v.toFixed(dp);
 const col = (v: number, n: number, dp = 1) => f(v, dp).padStart(n);
@@ -88,7 +93,7 @@ function flyStraight(
 		if (!scanConeHeld(v3(0, 0, -1), v3(cross, 0, -r)))
 			return { t, why: "the cone" };
 		if (!scanInRange(Math.hypot(r, cross))) return { t, why: "the range" };
-		hold = stepScanHold(hold, true, DT);
+		hold = stepScanHold(hold, { key: TARGET }, DT);
 		if (hold.chargeS >= CHARGE) return null;
 	}
 	return null;

@@ -11,12 +11,12 @@
 import { describe, expect, test } from "bun:test";
 import { carrierKey, type CarrierKey } from "../src/carrier-key";
 import { carrierManifest } from "../src/carrier-manifest";
+import type { ScanSubject } from "../src/carrier-scan";
 import {
 	CARRIER_SCAN_FIGURES,
 	SCAN_CHARGE_S,
 	SCAN_CONE_DEG,
 	SCAN_RANGE_KM,
-	SCAN_REFUSAL_LABELS,
 	beginScanHold,
 	scanFitted,
 	carrierReading,
@@ -27,6 +27,7 @@ import {
 	scanRefusal,
 	stepScanHold,
 } from "../src/carrier-scan";
+import { SCAN_REFUSAL_LABELS } from "../src/display-contact";
 import { CarrierStanding, carrierStanding } from "../src/carrier-standing";
 import { SCAN_MODULE } from "../src/market";
 import { SCAN_SOURCE, type KnowledgeRow } from "../src/world-state";
@@ -110,6 +111,29 @@ describe("the hold", () => {
 		expect(scanConeHeld(AHEAD, v3(0, 0, 1))).toBe(false);
 	});
 
+	/** Two carriers, because a hold that does not name one cannot be tested
+	 *  against a second. */
+	const A: ScanSubject = { key: carrierKey(3, "station-trade/traffic-000") };
+	const B: ScanSubject = { key: carrierKey(3, "station-trade/traffic-001") };
+
+	test("the charge belongs to one ship, and a second target starts from nothing", () => {
+		// §4's "unbroken attention" is attention to *one* carrier. The first
+		// version of the hold was a number with nobody attached to it, so four
+		// seconds on one ship and one second on another completed a scan of the
+		// second — which is exactly what sweeping the nose across a traffic queue
+		// does (sage #384 round 1, the PR's blocker).
+		let hold = beginScanHold();
+		for (let i = 0; i < 4; i++) hold = stepScanHold(hold, A, 1);
+		expect(scanProgress(hold)).toBeCloseTo(4 / SCAN_CHARGE_S);
+		const swung = stepScanHold(hold, B, 1);
+		expect(swung.key).toBe(B.key);
+		expect(swung.chargeS).toBe(1);
+		expect(scanCompleted(hold, swung)).toBe(false);
+		// And it does not come back: returning to A pays its own five seconds.
+		const back = stepScanHold(swung, A, SCAN_CHARGE_S - 1);
+		expect(back.chargeS).toBe(SCAN_CHARGE_S - 1);
+	});
+
 	test("range is a ceiling, and it is read every frame", () => {
 		expect(scanInRange(0)).toBe(true);
 		expect(scanInRange(SCAN_RANGE_KM)).toBe(true);
@@ -117,8 +141,8 @@ describe("the hold", () => {
 		// Interdiction checks range once because a contest runs in cruise on a
 		// pinned offset; a scan is flown, so driving out breaks it.
 		let hold = beginScanHold();
-		hold = stepScanHold(hold, true, 2);
-		hold = stepScanHold(hold, scanInRange(SCAN_RANGE_KM * 2), 1);
+		hold = stepScanHold(hold, A, 2);
+		hold = stepScanHold(hold, scanInRange(SCAN_RANGE_KM * 2) ? A : null, 1);
 		expect(hold.chargeS).toBe(0);
 	});
 
@@ -126,11 +150,12 @@ describe("the hold", () => {
 		// §4's own words. Five seconds of *attention* completes a scan; five
 		// seconds spread across a broken hold does not.
 		let hold = beginScanHold();
-		hold = stepScanHold(hold, true, SCAN_CHARGE_S - 1);
+		hold = stepScanHold(hold, A, SCAN_CHARGE_S - 1);
 		expect(scanProgress(hold)).toBeCloseTo((SCAN_CHARGE_S - 1) / SCAN_CHARGE_S);
-		const broken = stepScanHold(hold, false, 0.1);
+		const broken = stepScanHold(hold, null, 0.1);
 		expect(broken.chargeS).toBe(0);
-		const again = stepScanHold(broken, true, SCAN_CHARGE_S - 1);
+		expect(broken.key).toBeNull();
+		const again = stepScanHold(broken, A, SCAN_CHARGE_S - 1);
 		expect(scanCompleted(broken, again)).toBe(false);
 	});
 
@@ -143,24 +168,24 @@ describe("the hold", () => {
 		const run = () => {
 			let hold = beginScanHold();
 			for (let i = 0; i < 40; i++)
-				hold = stepScanHold(hold, i % 7 !== 3, 1 / 60);
+				hold = stepScanHold(hold, i % 7 !== 3 ? A : null, 1 / 60);
 			return hold.chargeS;
 		};
 		expect(run()).toBe(run());
 	});
 
 	test("one completed scan per hold, and the age survives a long lock", () => {
-		let hold = stepScanHold(beginScanHold(), true, SCAN_CHARGE_S);
-		expect(scanCompleted({ chargeS: 0 }, hold)).toBe(true);
+		let hold = stepScanHold(beginScanHold(), A, SCAN_CHARGE_S);
+		expect(scanCompleted(beginScanHold(), hold)).toBe(true);
 		expect(scanProgress(hold)).toBe(1);
 		// Holding it longer writes nothing further, so `observedAt` stays where
 		// it was and the reading keeps ageing on the glass.
-		const later = stepScanHold(hold, true, 600);
+		const later = stepScanHold(hold, A, 600);
 		expect(later.chargeS).toBe(SCAN_CHARGE_S);
 		expect(scanCompleted(hold, later)).toBe(false);
 		// Breaking and re-acquiring is the deliberate refresh.
-		const broken = stepScanHold(later, false, 0.5);
-		const refilled = stepScanHold(broken, true, SCAN_CHARGE_S);
+		const broken = stepScanHold(later, null, 0.5);
+		const refilled = stepScanHold(broken, A, SCAN_CHARGE_S);
 		expect(scanCompleted(broken, refilled)).toBe(true);
 	});
 });
@@ -185,6 +210,29 @@ describe("the reading", () => {
 		}
 		throw new Error("no rotating carrier in the corpus");
 	};
+
+	test("a reading belongs to the instance it was taken on", () => {
+		// The sharper case than a stale clock: the carrier has been replaced, so a
+		// different instance is flying and the reading on the glass is the one
+		// taken of the ship it succeeded. That is last-known state working as
+		// designed, not a leak — the pilot is shown what they recorded, and the
+		// age beside it is the warning — and what makes it provable rather than
+		// argued is that `carrierReading` is handed no live instance to consult:
+		// the only instance in its input is the scan's own recorded ordinal.
+		// Sage #384 round 1 asked which ship a replaced carrier is wearing; this
+		// is the answer, pinned, not a comment claiming it.
+		const { key } = rotating();
+		const reading = carrierReading({
+			systemSeed: SEED,
+			key,
+			row: scanRow(100, 1),
+			holdT: 20,
+			government: 4,
+			gameTime: 100 + 40 * 3600,
+		});
+		expect(reading?.standing).toBe(carrierStanding(SEED, key, 1, 100));
+		expect(reading?.ageS).toBe(40 * 3600);
+	});
 
 	test("the standing is the one at the recorded clock, not the live one", () => {
 		const { key, then, now } = rotating();

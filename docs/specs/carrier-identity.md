@@ -248,7 +248,10 @@ first becomes possible, so it is where that write lands.
 
 ### F8 — `UNKNOWN` before the scan, an ageing reading after
 
-An unscanned ship reads `SHIP · PORTER · UNKNOWN`. A scanned one reads its
+An unscanned ship reads `SHIP · FREIGHTER · UNKNOWN` — the middle cell is the
+hull **id** the producer supplies, never a model name, which is §3's rule that a
+type is never inferred from a display string, and why `Porter` (what a freighter
+is called) never reaches this cell. A scanned one reads its
 standing, **with the age of the reading beside it**.
 
 The principal was offered this, the same substitution without ageing, and keeping
@@ -506,7 +509,7 @@ knowledge is what makes that correct rather than a bug.
 | Contact | Before a scan | After a scan |
 | --- | --- | --- |
 | Raider | `SHIP · MARAUDER · HOSTILE` | unchanged — F1 |
-| Ordinary ship | `SHIP · PORTER · UNKNOWN` | `SHIP · PORTER · WANTED · 4m` |
+| Ordinary ship | `SHIP · FREIGHTER · UNKNOWN` | `SHIP · FREIGHTER · WANTED · 4m` |
 | Station | unchanged | unchanged |
 
 **The display rule, because two axes now share one cell.** `scannerClass` still

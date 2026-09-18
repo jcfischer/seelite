@@ -345,7 +345,15 @@ test("a jump or a reset takes the cargo contacts with the canisters", () => {
 				],
 				// `QUIET_GUN` is assigned by the teardown and asserted by nothing
 				// here; this row is about what stays registered.
-				{ CANISTER_RADIUS_KM, CARGO_CONTACT_COLOUR, QUIET_GUN: null },
+				// `beginScanHold` for the same reason: the teardown clears the scan
+				// charge with it, and an extracted method runs on this list of
+				// globals and nothing else.
+				{
+					CANISTER_RADIUS_KM,
+					CARGO_CONTACT_COLOUR,
+					QUIET_GUN: null,
+					beginScanHold: () => ({ key: null, chargeS: 0 }),
+				},
 			),
 		),
 		{
@@ -420,9 +428,41 @@ test("a scan that has not started does not announce a scan in progress", () => {
 	// `SCANNING 0%` and `UNKNOWN` are both painted at the same slot in the same
 	// font, and a canvas that says a scan is running when the nose is simply not
 	// on the target teaches a pilot to distrust the cell.
-	const readout = method("scanReadout");
+	const readout = method("computeScanFacts");
 	expect(readout).toContain("this.scanHold.chargeS > 0");
 	// And a completed charge must not sit on the glass at 100 either: the cell
 	// gives the standing back, which is what keeps the age moving.
 	expect(readout).toContain("this.scanHold.chargeS < SCAN_CHARGE_S");
+});
+
+test("the charge is broken by leaving flight, not paused by it", () => {
+	// §4's rule is the module's, and the module keeps it; what the module cannot
+	// say is where the game stops feeding it frames. `stepScan` runs on the
+	// normal-flight tail only, so every route off that tail has to break the hold
+	// explicitly — otherwise a pilot who started a five-second count, went to
+	// cruise or docked, and came back with the nose on the same ship would find
+	// the charge banked across a gap in which no attention was paid at all.
+	expect(method("engageCruise")).toContain("beginScanHold()");
+	// The docked branch of `step` is the other way off the tail, and it is the
+	// same failure the pointer delta in that branch was fixed for.
+	const step = method("step");
+	expect(step).toContain("this.scanHold = beginScanHold()");
+});
+
+test("one place names a carrier, and one place derives what the loop needs", () => {
+	// The drawn name is a function of a seed and an instance ordinal; two call
+	// sites spelling that out is one refactor away from the glass and the console
+	// drawing different ships. And the per-actor presentation loop must not pay
+	// for a manifest it never prints.
+	expect(method("drawnName")).toContain("carrierName(");
+	expect(method("updateInstruments")).toContain("this.drawnName(scan.actor)");
+	expect(method("scanConsoleRow")).toContain("this.drawnName(actor)");
+	expect(method("updateTrafficPresentation")).toContain(
+		"this.recordedStanding(actor)",
+	);
+	expect(method("recordedStanding")).not.toContain("carrierReading(");
+	// The glass and the console share one frame's derivation, because the
+	// manifest is an RNG draw and they ask for the same one every frame.
+	expect(method("scanConsoleRow")).toContain("scan: ScanFacts");
+	expect(method("scanReadout")).toContain("this.scanFacts");
 });

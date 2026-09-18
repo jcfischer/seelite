@@ -171,3 +171,15 @@ test("the field is called standing, and the old name is gone from every producer
 	);
 	expect(stillNamingIt).toEqual([]);
 });
+
+test("the progress cell never claims a completed scan", () => {
+	// Under a rounding, the last frames of a five-second charge read 100% on a
+	// record that has not been written yet — the one lie this cell can tell,
+	// because it says the pilot has learned something they have not.
+	expect(targetDesignation(carrier({}), { progress: 0.999 })).toBe(
+		"SHIP · FREIGHTER · SCANNING 99%",
+	);
+	expect(targetDesignation(carrier({}), { progress: 0.625 })).toBe(
+		"SHIP · FREIGHTER · SCANNING 62%",
+	);
+});

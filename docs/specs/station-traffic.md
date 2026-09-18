@@ -47,9 +47,13 @@ stable Carrier-slot identity; hull type, variant and callsign may all change in
 a future generator version without becoming persistence keys.
 
 > **Both strings are here since #364.** Every carrier now carries a **drawn
-> proper name** and the composed **registry** — F3's pair, so a bounty target is a
-> ship a pilot can remember and the registration number keeps saying where it
-> belongs. `carrier-name.ts` owns both halves: it draws the name from its own
+> proper name** and the composed **registry**, and the cockpit reads them by
+> where they are read: the Target instrument names its target with the drawn
+> name, the Flight console shows both. **What does not read the drawn name yet**
+> is the kill feed and the raider log, which still cite the registry — a bounty
+> is filed against a registration number, and retaking that display is a node of
+> its own, recorded on the map rather than quietly taken here.
+> `carrier-name.ts` owns both halves: it draws the name from its own
 > `DOMAIN.CARRIER_NAME` stream and composes the registry the Traffic roster used
 > to compose itself. **The rule above is unchanged and is what the module is
 > built around**: neither string keys, saves or looks anything up, so a name

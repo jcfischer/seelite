@@ -299,13 +299,18 @@ import {
 	trafficInSights,
 } from "./traffic-engagement";
 import { carrierName } from "./carrier-name";
-import { carrierInstanceSeed, carrierStanding } from "./carrier-standing";
+import {
+	type CarrierStanding,
+	carrierInstanceSeed,
+	carrierStanding,
+} from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
 import {
 	type CarrierReading,
 	type ScanConsoleReadout,
 	type ScanHold,
+	type ScanSubject,
 	SCAN_CHARGE_S,
 	SCAN_RANGE_KM,
 	beginScanHold,
@@ -1381,6 +1386,29 @@ function forwardOf(q: THREE.Quaternion): Vec3 {
 	return v3(f.x, f.y, f.z);
 }
 
+/**
+ * The scan facts one frame shares between the Target instrument and the Flight
+ * console: the cell's own inputs, the actor behind the selection, and the
+ * reading the pilot's knowledge row holds. A frame's value, not a fact about the
+ * world — everything in it is re-derived from the row beside the live world, and
+ * the memo below is only what stops that derivation running twice for one ship.
+ */
+interface ScanFacts {
+	designation: DesignationScan;
+	actor: TrafficActor | undefined;
+	reading: CarrierReading | null;
+}
+
+/** A memoised answer, with everything it was true about. */
+interface ScanFrame {
+	target: Body | null;
+	gameTime: number;
+	chargeS: number;
+	fitted: boolean;
+	stamp: number;
+	facts: ScanFacts;
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -1844,6 +1872,11 @@ class Game {
 	 *  half-held is not a fact about the world, and saving it would let a pilot
 	 *  bank a charge by reloading (#364, §4). */
 	private scanHold: ScanHold = beginScanHold();
+
+	/** One frame's memoised scan answer. Session state like the hold beside it,
+	 *  and for the same reason: it pictures this frame, and saving it would hand a
+	 *  loaded game a reading its pilot never earned. */
+	private scanFacts: ScanFrame | null = null;
 	/** #43: the pirate relay's plan for the system the ship is in, cached by
 	 *  system index. Pure in the system, so never saved. */
 	private relayPlanCache: RelayPlan | null = null;
@@ -5117,8 +5150,7 @@ class Game {
 			// carrier the pilot has never scanned reads UNKNOWN however the galaxy
 			// happens to feel about it today (F8, §6).
 			const contact = previous ?? this.trafficContacts.get(actor.key);
-			if (contact)
-				contact.standing = this.recordedReading(actor)?.standing ?? null;
+			if (contact) contact.standing = this.recordedStanding(actor);
 			let mesh = this.trafficMeshes.get(actor.key);
 			if (!mesh) {
 				mesh = buildShipMesh(actor.hullId, actor.variant).root;
@@ -5464,7 +5496,12 @@ class Game {
 		const target = this.targetBody();
 		const actor = this.scanSubject(target);
 		const fitted = scanFitted(this.commander.ownedEquipment);
-		const held =
+		// **A subject, not a boolean.** Five seconds spent with the nose swinging
+		// across three carriers is five seconds on none of them, and a charge that
+		// does not record whose it is cannot say when to start over — the blocker
+		// sage #384 round 1 found, where one long lock could bank a charge on one
+		// ship and spend it on another.
+		const held: ScanSubject | null =
 			actor !== undefined &&
 			fitted &&
 			target !== null &&
@@ -5472,7 +5509,9 @@ class Game {
 			scanConeHeld(
 				this.nose(),
 				normalizeOr(sub(target.pos, this.world.ship.pos), this.nose()),
-			);
+			)
+				? { key: actor.key }
+				: null;
 		const before = this.scanHold;
 		this.scanHold = stepScanHold(before, held, dt);
 		if (!actor || !scanCompleted(before, this.scanHold)) return;
@@ -5501,12 +5540,83 @@ class Game {
 		});
 	}
 
-	/** The scan facts the designation cell and the console share. */
-	private scanReadout(target: Body | null): {
-		designation: DesignationScan;
-		actor: TrafficActor | undefined;
-		reading: CarrierReading | null;
-	} {
+	/** The standing the pilot recorded for this carrier, and nothing else.
+	 *
+	 *  **The presentation loop asks for the standing alone.** It runs over every
+	 *  carrier in the system each frame, and the full reading also derives the
+	 *  manifest — an RNG draw over the hold for a string this loop never prints
+	 *  (sage #384 round 1). The reading the panel wants stays `recordedReading`.
+	 */
+	private recordedStanding(actor: TrafficActor): CarrierStanding | null {
+		const record = this.world.system.record;
+		const row = readKnowledge(
+			this.commerceWorld.galaxies[record.galaxy],
+			actor.key,
+		);
+		const scan = row?.scan;
+		if (!scan) return null;
+		return carrierStanding(
+			record.seed,
+			actor.key,
+			scan.observedInstanceOrdinal,
+			scan.observedAt,
+		);
+	}
+
+	/** The scan facts the designation cell and the console share.
+	 *
+	 *  **Memoised per frame, keyed on every input.** Both surfaces want the same
+	 *  standing, manifest and drawn name every frame, and the manifest is an RNG
+	 *  draw: deriving it twice for one target bought a second draw of the same
+	 *  figures (sage #384 round 1). The key is the target's identity, the world
+	 *  clock, the charge, whether the module is fitted, and the recorded row's
+	 *  stamp — so a memo cannot outlive the frame it was true in, and a caller
+	 *  handing over a different body, which is what a probe does with a synthetic
+	 *  contact, recomputes instead of inheriting the selected ship's reading.
+	 *  `fitted` is in the key because the probe that fits and un-fits the module
+	 *  between two reads on one frozen clock found it missing, and printed
+	 *  `NO SCANNER` at a pilot who had just bought one.
+	 */
+	private scanReadout(target: Body | null): ScanFacts {
+		const stamp = this.scanStamp(target);
+		const fitted = scanFitted(this.commander.ownedEquipment);
+		const memo = this.scanFacts;
+		if (
+			memo !== null &&
+			memo.target === target &&
+			memo.gameTime === this.world.gameTime &&
+			memo.chargeS === this.scanHold.chargeS &&
+			memo.fitted === fitted &&
+			memo.stamp === stamp
+		)
+			return memo.facts;
+		const facts = this.computeScanFacts(target);
+		this.scanFacts = {
+			target,
+			gameTime: this.world.gameTime,
+			chargeS: this.scanHold.chargeS,
+			fitted,
+			stamp,
+			facts,
+		};
+		return facts;
+	}
+
+	/** The recorded scan row's stamp for this target, or -1. A map lookup, paid
+	 *  once per frame the memo is consulted, which is what makes the memo's key
+	 *  cheap enough to be honest about. */
+	private scanStamp(target: Body | null): number {
+		const actor = this.scanSubject(target);
+		if (!actor) return -1;
+		return (
+			readKnowledge(
+				this.commerceWorld.galaxies[this.world.system.record.galaxy],
+				actor.key,
+			)?.scan?.observedAt ?? -1
+		);
+	}
+
+	private computeScanFacts(target: Body | null): ScanFacts {
 		const actor = this.scanSubject(target);
 		const reading = actor ? this.recordedReading(actor) : null;
 		const scannable = actor !== undefined;
@@ -5552,22 +5662,36 @@ class Game {
 	 *  a reading, and a block that appears only after a scan teaches a pilot that
 	 *  the console has nothing to say about a ship they have never looked at.
 	 */
-	private scanConsoleRow(target: Body | null): ScanConsoleReadout | null {
-		const { actor, reading } = this.scanReadout(target);
+	private scanConsoleRow(scan: ScanFacts): ScanConsoleReadout | null {
+		const { actor, reading } = scan;
 		if (!actor) return null;
-		const record = this.world.system.record;
-		const { instanceOrdinal } = this.carrierCondition(actor.key);
 		return {
-			name: carrierName(record.seed, actor.key, instanceOrdinal),
+			name: this.drawnName(actor),
 			registry: actor.callsign,
 			standing: (reading?.standing ?? "unknown").toUpperCase(),
-			hold: reading
+			// The manifest has no empty arm: an empty hold is an empty list, and
+			// `MANIFEST` over nothing is the truth. `BALAST` would have been a
+			// fourth spelling of absence beside `NOT READ` and `NEVER`, each with
+			// its own meaning for the pilot to learn (sage #384 round 1).
+			manifest: reading
 				? reading.manifest
 						.map((row) => `${row.good.toUpperCase()} ${row.tonnes}t`)
-						.join(" · ") || "BALAST"
+						.join(" · ")
 				: "NOT READ",
 			age: reading ? targetAgeLabel(reading.ageS) : "NEVER",
 		};
+	}
+
+	/** The name the glass and the console give a carrier: F3's drawn name, at the
+	 *  instance flying now. **One function because it is one question** — a seed
+	 *  and an instance ordinal spelled out at two call sites is one refactor away
+	 *  from the instrument and the console naming different ships. */
+	private drawnName(actor: TrafficActor): string {
+		return carrierName(
+			this.world.system.record.seed,
+			actor.key,
+			this.carrierCondition(actor.key).instanceOrdinal,
+		);
 	}
 
 	/** Whether a shot along the beam lands on the selected ordinary carrier now.
@@ -6138,11 +6262,7 @@ class Game {
 		const drawn =
 			scan.actor === undefined
 				? (target?.name ?? "")
-				: carrierName(
-						this.world.system.record.seed,
-						scan.actor.key,
-						this.carrierCondition(scan.actor.key).instanceOrdinal,
-					);
+				: this.drawnName(scan.actor);
 		const targetText = target ? `${drawn}  ${range(targetKm)}` : "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		// REL rides this instrument and not only the left console, which is
@@ -8496,6 +8616,14 @@ class Game {
 		// behind. Render drops its contact and hull on the next frame.
 		this.encounter = null;
 		this.encounterView = null;
+		// A charge belongs to the leg it was held on, exactly as a raider does.
+		// Without this, five seconds spent on a carrier in one system would arrive
+		// part-way banked in the next, where a stranger's scan finishes under the
+		// pilot's nose — the rule cruise and docking already keep, which `stepScan`
+		// cannot reach because it runs on the flight tail. `tests/leg-reset-coverage`
+		// asked for both fields the moment they were assigned on the flight path.
+		this.scanHold = beginScanHold();
+		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
 		this.canisters = [];
@@ -9545,6 +9673,10 @@ class Game {
 			return;
 		}
 		this.detour = null;
+		// **Cruise breaks the charge, it does not pause it.** A scan is attention
+		// paid to a ship in front of the canopy; five seconds of it cannot include
+		// a jump leg, and the nose is nowhere during one.
+		this.scanHold = beginScanHold();
 		const target = this.targetBody();
 		const targetParentId = this.targetParentId();
 		if (target && targetParentId) {
@@ -9677,6 +9809,11 @@ class Game {
 			// delta was consumed. Sage found it.
 			this.mouseDx = 0;
 			this.mouseDy = 0;
+			// Same reason as the delta above: `stepScan` runs on the flight tail,
+			// so this branch is a way off it. A charge banked before docking would
+			// otherwise wait out the whole visit and complete on the first frame
+			// back in the seat, with no attention paid in between.
+			this.scanHold = beginScanHold();
 			this.stepDockPhase(dt);
 			return;
 		}
@@ -10775,7 +10912,7 @@ class Game {
 			// #324's full duel detail, only while the glass shows the duel row.
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
 			// #364: what the scan channel has recorded about what is selected.
-			scan: this.scanConsoleRow(target),
+			scan: this.scanConsoleRow(this.scanReadout(target)),
 			// #324 part d: the raider lifecycle on the Communications console,
 			// derived from world state, newest first.
 			// Derived only while that console's tab is open (sage #330).

@@ -119,10 +119,10 @@ _Avoid_: Legal status (for a carrier), reputation, bounty flag
 
 **Scan record**:
 What the player keeps after pointing an Identity Scanner at an ordinary carrier
-and holding it there: the **Standing**, the **Traffic hold**, and the **Carrier
+and holding it there: the **Standing**, the **Manifest**, and the **Carrier
 instance** and voyage the reading was taken on, stamped with when. A member of
 that carrier's knowledge row, so it is the player's, not the ship's — the
-standing and the hold themselves stay derived and unsaved. Its increasing age is
+standing and the manifest themselves stay derived and unsaved. Its increasing age is
 the point rather than a defect: an old record is an honest record of a ship that
 may since have changed its cargo or its luck. A scan records **no** operational
 condition; nothing about identifying a carrier's hold says anything about whether
@@ -155,7 +155,11 @@ and for the same reason: neither is a persistence key. Composed by
 What an ordinary carrier instance carries on one voyage: one to four lines, each
 a tonne good and its tonnes, derived and never saved. What a scan shows and what
 a kill drops, one **Cargo canister** per line. `carrier-identity.md` §3 owns
-it; `civilian-combat.md` H11 the drop.
+it; `civilian-combat.md` H11 the drop. The Flight console prints this under the
+word `HELD`, which is ordinary speech for what a ship is carrying, while the
+field behind it is named `manifest` — because **Traffic hold** is a place a
+carrier waits and `ScanHold` is a charge, and one identifier cannot serve all
+three.
 _Avoid_: Cargo list, loot table, hold contents
 
 **Legal heat**:

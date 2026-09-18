@@ -25,7 +25,7 @@ import { carrierKeySeed } from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
-import { fnv1a, mix } from "./rng";
+import { mix } from "./rng";
 import {
 	type Vec3,
 	add,

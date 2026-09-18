@@ -170,6 +170,17 @@ export interface TrafficScheduleState {
 }
 
 /** Locate the current base interval arithmetically; epoch age is irrelevant. */
+/**
+ * What a carrier's voyage ordinal answers **before its first departure**: no
+ * voyage has been flown yet, so there is no count to give. Traffic produces this
+ * value; `world-state.ts`'s scan reader is the one place below zero that a saved
+ * record admits, and it reads this constant rather than agreeing with Traffic on
+ * a literal by hand (sage #384 round 1). `carrierManifest` is already asked with
+ * it for a carrier that has not left its station, and answers with the hold it
+ * would fly.
+ */
+export const NO_FLOWN_VOYAGE = -1;
+
 export function trafficScheduleAt(
 	actor: TrafficActor,
 	gameTime: number,
@@ -184,6 +195,8 @@ export function trafficScheduleAt(
 	return {
 		desired: "parked",
 		boundaryS: elapsed < 0 ? arrival - cycleS : arrival,
+		// `cycle` is never negative, so `cycle - 1` bottoms out at exactly
+		// `NO_FLOWN_VOYAGE` on the first cycle before the first departure.
 		awayOrdinal: elapsed < 0 ? cycle - 1 : cycle,
 	};
 }

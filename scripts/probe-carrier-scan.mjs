@@ -50,41 +50,80 @@ try {
 		const verb = await import("/src/carrier-scan.ts");
 		const naming = await import("/src/carrier-name.ts");
 		const market = await import("/src/market.ts");
+		const contacts = await import("/src/display-contact.ts");
 		const hull = await import("/src/hull.ts");
 		const world = await import("/src/world-state.ts");
 
-		/** The designation and the name slot **as painted**, by hooking the
-		 *  instrument's own canvas. `y === 78` is the designation slot and
-		 *  `y === 128` the primary one, both fixed in `updateInstruments`. */
-		const paint = (target) => {
-			const instrument = g.cockpit.targetInstrument;
-			const ctx = instrument.ctx;
+		/** **What the instrument painted**, by hooking its own canvas and keeping
+		 *  every string with where it was drawn and how wide it was at the font it
+		 *  was drawn with.
+		 *
+		 *  **No slot coordinate is restated here.** The first version matched
+		 *  `y === 78` and `y === 128`, which is a copy of a layout figure the
+		 *  instrument owns — the exact thing the probe rule exists to prevent, and
+		 *  it would have gone falsely red the day the paint moved. Instead the
+		 *  probe asks `display-contact.ts` what the designation should say for the
+		 *  state the game itself reports, and finds that string among the calls. */
+		const painted = (target) => {
+			const ctx = g.cockpit.targetInstrument.ctx;
 			const fillText = ctx.fillText.bind(ctx);
-			let designation = null;
-			let primary = null;
-			let fits = false;
+			const calls = [];
 			ctx.fillText = (text, x, y, ...rest) => {
-				if (y === 78) {
-					designation = String(text);
-					fits =
-						x + ctx.measureText(String(text)).width <= ctx.canvas.width - 28;
-				}
-				if (y === 128) primary = String(text);
+				calls.push({
+					text: String(text),
+					x,
+					y,
+					width: ctx.measureText(String(text)).width,
+					// Recorded at the call, because the instrument sets its own font per
+					// slot: this is the font the designation was painted in, read
+					// off the canvas rather than copied into the probe.
+					font: ctx.font,
+				});
 				return fillText(text, x, y, ...rest);
 			};
 			g.cockpit.instrumentKey = "";
 			g.updateInstruments(target, 120, g.velocityReadout());
 			ctx.fillText = fillText;
-			return { designation, primary, fits };
+			return calls;
 		};
 		/** **Fly the frame, then read the glass.** A contact's standing is written
 		 *  by the traffic pass that materializes it, so painting without it would
 		 *  read the instrument against a stale contact — the same false red as a
 		 *  probe measuring its own assignment. */
-		const paintNow = () => {
+		const paintNow = (target = g.targetBody()) => {
 			place();
-			return paint(g.targetBody());
+			const body = g.targetBody();
+			const calls = painted(target ?? body);
+			const want = contacts.targetDesignation(
+				target ?? body,
+				g.scanReadout(target ?? body).designation,
+			);
+			const line = calls.find((c) => c.text === want);
+			const named = calls.find(
+				(c) => c !== line && c.text.startsWith(glassName()),
+			);
+			return {
+				designation: line?.text ?? null,
+				named: named?.text ?? null,
+				font: line?.font ?? null,
+				x: line?.x ?? null,
+				// The instrument's own right margin is its business; what the probe
+				// asks is whether the painted string ran off the canvas at all.
+				fits: line === undefined ? false : line.x + line.width <= ctxWidth(),
+				paintedTexts: calls.map((c) => c.text),
+			};
 		};
+		const ctxWidth = () => g.cockpit.targetInstrument.ctx.canvas.width - 8;
+		/** The name the glass is supposed to carry for the selected carrier: the
+		 *  drawn name, from the module that draws it, at the instance live now. */
+		const glassName = () =>
+			g.scanSubject(g.targetBody()) === undefined
+				? (g.targetBody()?.name ?? "")
+				: naming.carrierName(
+						g.world.system.record.seed,
+						key,
+						g.carrierCondition(key).instanceOrdinal,
+					);
 
 		// Traffic authority on, then the first *flying* carrier by key — first by
 		// key, not first found, so two runs cannot pick different subjects and
@@ -131,21 +170,24 @@ try {
 
 		// 1. Unequipped, on a carrier the verb would otherwise accept.
 		fitted(false);
-		g.scanHold = { chargeS: 0 };
+		g.scanHold = verb.beginScanHold();
 		const gate = paintNow();
 
 		// 2. Equipped, never scanned.
 		fitted(true);
-		g.scanHold = { chargeS: 0 };
+		g.scanHold = verb.beginScanHold();
 		const before = paintNow();
 
 		// 3. A charge part-way through, read as the glass shows it.
-		g.scanHold = { chargeS: verb.SCAN_CHARGE_S * 0.62 };
+		g.scanHold = {
+			key,
+			chargeS: verb.SCAN_CHARGE_S * 0.62,
+		};
 		const charging = paintNow();
 
 		// 4. Flown for real: the nose on it until the charge completes, through
 		//    the game's own `stepScan`, with nothing written by hand.
-		g.scanHold = { chargeS: 0 };
+		g.scanHold = verb.beginScanHold();
 		let frames = 0;
 		while (!rowOf()?.scan && frames < 4_000) {
 			place();
@@ -161,28 +203,48 @@ try {
 		const aged = paintNow();
 		const stampAfterJump = rowOf()?.scan?.observedAt ?? null;
 
-		// 6. A pirate's line is not this line.
-		const raider = g.scannerContacts.find(
-			(c) => c.kind === "ship" && c.scannerClass === "hostile",
+		// 6. **A pirate's line is not this line**, and the row is worth doing on
+		//    the carrier this probe already has rather than on a raider it would
+		//    have to summon. Summoning one needs the frame loop this probe cancels
+		//    (`forceRaider` materializes an encounter in cruise, seconds later),
+		//    and `probe-display-contacts.mjs` already puts a hostile contact on the
+		//    glass. What is #364's own question is whether the standing the pilot
+		//    just earned takes over a pirate's cell — so flip the selected
+		//    carrier's `scannerClass` on the live contact and repaint.
+		const pirate = g.targetBody();
+		const ownClass = pirate.scannerClass;
+		pirate.scannerClass = "hostile";
+		const pirateCalls = painted(pirate);
+		const pirateLine = pirateCalls.find(
+			(c) =>
+				c.text ===
+				contacts.targetDesignation(pirate, g.scanReadout(pirate).designation),
 		);
-		let hostile = null;
-		if (raider) {
-			g.targetId = raider.id;
-			hostile = paint(g.targetBody()).designation;
-		}
-		g.targetId = key;
+		const hostile = pirateLine?.text ?? null;
+		const hostileFits =
+			pirateLine === undefined
+				? false
+				: pirateLine.x + pirateLine.width <= ctxWidth();
+		pirate.scannerClass = ownClass;
 
 		// 7. The widest reading the cell can be asked to print, measured at the
 		//    font it is painted with. Built from the roster and the three words,
 		//    not from a string the probe invented.
 		const instrument = g.cockpit.targetInstrument;
 		const ctx = instrument.ctx;
-		const hullWidths = Object.keys(hull.HULL_SPECS).map(
-			(id) => ctx.measureText(`SHIP · ${id.toUpperCase()} · `).width,
+		// Measured at the font and left margin a real designation was painted
+		// with, both read off the recorded call above — the probe owns no layout
+		// figure, so it cannot go falsely red when the instrument's move.
+		ctx.save();
+		if (after.font) ctx.font = after.font;
+		const widest = Math.max(
+			...Object.keys(hull.HULL_SPECS).map(
+				(id) => ctx.measureText(`SHIP · ${id.toUpperCase()} · `).width,
+			),
 		);
-		const widest = Math.max(...hullWidths);
 		const tail = ctx.measureText("FUGITIVE · 365d").width;
-		const widestFits = 28 + widest + tail <= ctx.canvas.width - 28;
+		const widestFits = (after.x ?? 0) + widest + tail <= ctxWidth();
+		ctx.restore();
 
 		// 8. The console's reading block, with both of the name strings.
 		g.headLook = "right";
@@ -196,7 +258,7 @@ try {
 			name: read("[data-live-scan-name]"),
 			registry: read("[data-live-scan-registry]"),
 			standing: read("[data-live-scan-standing]"),
-			hold: read("[data-live-scan-hold]"),
+			manifest: read("[data-live-scan-manifest]"),
 			age: read("[data-live-scan-age]"),
 		};
 		const row = rowOf();
@@ -225,6 +287,7 @@ try {
 			aged,
 			afterRow,
 			hostile,
+			hostileFits,
 			stampAfterJump,
 			widestFits,
 			console: console_,
@@ -238,6 +301,20 @@ try {
 		check("a scannable carrier is present to read", false, scan.error);
 	} else {
 		const standing = "(CLEAN|WANTED|FUGITIVE)";
+		// Named first because every shape check below reads a string this probe
+		// locates rather than restates: if the instrument painted something other
+		// than what `display-contact.ts` computes for the game's own state, that
+		// is the finding, and it should say so instead of failing five rows.
+		check(
+			"the instrument paints the designation the module computes",
+			[scan.gate, scan.before, scan.charging, scan.after, scan.aged].every(
+				(p) => typeof p.designation === "string",
+			),
+			JSON.stringify({
+				after: scan.after?.designation,
+				painted: scan.after?.paintedTexts,
+			}),
+		);
 		check(
 			"an unequipped pilot is refused, in a word that names an absence",
 			scan.gate.designation?.endsWith("· NO SCANNER") === true,
@@ -281,9 +358,16 @@ try {
 			}),
 		);
 		check(
-			"a pirate still reads HOSTILE, whichever way standing turns out",
-			scan.hostile === null || /· HOSTILE$/.test(scan.hostile),
-			JSON.stringify(scan.hostile),
+			"a pirate reads HOSTILE beside a carrier that reads a standing",
+			typeof scan.hostile === "string" &&
+				// The whole cell, with no standing and no age: F1 and F10, on the
+				// instrument, after a scan has really been written on that ship.
+				/^SHIP · \w+ · HOSTILE$/.test(scan.hostile) &&
+				scan.hostileFits,
+			JSON.stringify({
+				hostile: scan.hostile,
+				fits: scan.hostileFits,
+			}),
 		);
 		check(
 			"every designation the panel painted fits the instrument",
@@ -294,10 +378,11 @@ try {
 		);
 		check(
 			"the glass carries the drawn name, not the registration number",
-			(scan.after.primary ?? "").startsWith(scan.drawnName) &&
-				!(scan.after.primary ?? "").includes(scan.callsign),
+			(scan.after.named ?? "").startsWith(scan.drawnName) &&
+				!(scan.after.named ?? "").includes(scan.callsign),
 			JSON.stringify({
-				primary: scan.after.primary,
+				named: scan.after.named,
+				painted: scan.after.paintedTexts,
 				drawnName: scan.drawnName,
 				registry: scan.callsign,
 			}),
@@ -308,7 +393,7 @@ try {
 				scan.console.name === scan.drawnName &&
 				scan.console.registry === scan.callsign &&
 				new RegExp(`^${standing}$`).test(scan.console.standing) &&
-				scan.console.hold.length > 0 &&
+				scan.console.manifest.length > 0 &&
 				/^\d+[smhd]$/.test(scan.console.age),
 			JSON.stringify({ console: scan.console, drawn: scan.drawnName }),
 		);

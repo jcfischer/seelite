@@ -1,5 +1,5 @@
 import type { CarrierStanding } from "./carrier-standing";
-import type { ScanRefusal } from "./carrier-scan";
+import { SCAN_MODULE } from "./market";
 import type { Body } from "./sim";
 import type { Vec3 } from "./vec3";
 import type { HullId } from "./hull";
@@ -60,7 +60,7 @@ export interface DesignationScan {
 	/** How long ago the recorded reading was taken, seconds. */
 	ageS?: number;
 	/** Why nothing is happening, in the one case the pilot can act on. */
-	refusal?: ScanRefusal;
+	refusal?: ScanRefusal | null;
 }
 
 /**
@@ -79,6 +79,19 @@ export const targetAgeLabel = (ageS: number): string => {
 	if (s < 3_600) return `${Math.floor(s / 60)}m`;
 	if (s < 86_400) return `${Math.floor(s / 3_600)}h`;
 	return `${Math.floor(s / 86_400)}d`;
+};
+
+/** Why a scan is not happening, in the one case the pilot can act on.
+ *
+ *  Moved here from `carrier-scan.ts` (#384's round 1) because **the module that
+ *  paints a word owns the word**: while the table lived beside the predicate and
+ *  the printer wrote its own literal, the declared owner was dead code and a
+ *  relabel would have landed in one of the two copies at random.
+ */
+export type ScanRefusal = "no-module";
+
+export const SCAN_REFUSAL_LABELS: Record<ScanRefusal, string> = {
+	"no-module": "NO SCANNER",
 };
 
 /**
@@ -109,9 +122,14 @@ export function targetDesignation(
 	const identity = ["SHIP", body.shipType?.toUpperCase()].filter(Boolean);
 	if (body.scannerClass === "hostile")
 		return [...identity, "HOSTILE"].join(" · ");
-	if (scan.refusal) return [...identity, "NO SCANNER"].join(" · ");
+	if (scan.refusal)
+		return [...identity, SCAN_REFUSAL_LABELS[scan.refusal]].join(" · ");
 	if (scan.progress !== undefined && scan.progress < 1)
-		return [...identity, `SCANNING ${Math.round(scan.progress * 100)}%`].join(
+		// **Floored, not rounded.** Under a rounding `SCANNING 99.6%` prints
+		// `100%` for the last three frames of a five-second charge, on a scan
+		// that has not written its record yet — the one moment where the cell
+		// would lie about what has happened.
+		return [...identity, `SCANNING ${Math.floor(scan.progress * 100)}%`].join(
 			" · ",
 		);
 	if (!body.standing) return [...identity, "UNKNOWN"].join(" · ");

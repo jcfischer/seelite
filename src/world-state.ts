@@ -43,7 +43,7 @@ import type { HullId } from "./hull";
 import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
 import type { StationType } from "./station";
-import { stationTrafficRoster } from "./station-traffic";
+import { NO_FLOWN_VOYAGE, stationTrafficRoster } from "./station-traffic";
 import { generateContents } from "./system";
 
 // **Not re-exported.** `carrier-key.ts` is the one owner; a second path to the
@@ -229,8 +229,8 @@ export interface CarrierScanObservation {
 	source: string;
 	observedInstanceOrdinal: number;
 	/**
-	 * The voyage whose hold was read (F11). **It may hold Traffic's `no flown
-	 *  voyage yet` sentinel, -1**, which is what `trafficVoyage` answers for a
+	 * The voyage whose hold was read (F11). **It may hold Traffic's
+	 *  `NO_FLOWN_VOYAGE` sentinel**, which is what `trafficVoyage` answers for a
 	 *  carrier that has not departed and is the value `carrierManifest` is already
 	 *  asked for on the Flight console. Storing what was read, rather than a 0
 	 *  that was never read, is what keeps the record and the console from being
@@ -1130,15 +1130,41 @@ const knowledgeRowFor = (
 					},
 				}
 			: {}),
-		// A condition observation says nothing about a scan and must not drop
-		// one, exactly as it must not drop a learned private fact.
-		...(prior?.scan ? { scan: prior.scan } : {}),
-		...(prior?.knownPrivateFacts
-			? { knownPrivateFacts: prior.knownPrivateFacts }
-			: {}),
+		// Everything this channel did not read survives, from the one list.
+		...carriedForward(prior, "condition"),
 	};
 	return row;
 };
+
+/**
+ * The members a new observation carries forward from the row it replaces.
+ *
+ * **One list rather than one per writer.** Each writer used to enumerate its own
+ *  carry-forward, which meant that adding a fifth member to `KnowledgeRow`
+ *  required remembering every writer — and a writer that forgot did not fail, it
+ *  quietly deleted a player's knowledge on the next unrelated observation
+ *  (sage #384 round 1). `refreshed` names the one channel this write is speaking
+ *  for; everything else in the row is somebody else's intelligence and survives
+ *  by default.
+ */
+const carriedForward = (
+	prior: KnowledgeRow | undefined,
+	refreshed: "condition" | "scan",
+): Partial<KnowledgeRow> => ({
+	...(refreshed === "condition" || prior?.observedCondition === undefined
+		? {}
+		: {
+				observedInstanceOrdinal: prior.observedInstanceOrdinal,
+				observedCondition: prior.observedCondition,
+				...(prior.observedRecovery
+					? { observedRecovery: prior.observedRecovery }
+					: {}),
+			}),
+	...(refreshed === "scan" || !prior?.scan ? {} : { scan: prior.scan }),
+	...(prior?.knownPrivateFacts
+		? { knownPrivateFacts: prior.knownPrivateFacts }
+		: {}),
+});
 
 /** One row into an envelope. */
 const withKnowledgeRow = (
@@ -1279,15 +1305,10 @@ export const observeScan = (
 	return withEnvelope(world, galaxyIndex, gameTime, (env) => {
 		const prior = env.knowledge[key];
 		return withKnowledgeRow(env, key, {
-			...(prior?.observedCondition === undefined
-				? {}
-				: {
-						observedInstanceOrdinal: prior.observedInstanceOrdinal,
-						observedCondition: prior.observedCondition,
-						...(prior.observedRecovery
-							? { observedRecovery: prior.observedRecovery }
-							: {}),
-					}),
+			// Everything this channel did not read survives, from the one list: a
+			// scan says nothing about the hull, so the condition triple and any
+			// learned private fact carry forward exactly as they did.
+			...carriedForward(prior, "scan"),
 			observedAt: gameTime,
 			source: SCAN_SOURCE,
 			scan: {
@@ -1296,9 +1317,6 @@ export const observeScan = (
 				observedInstanceOrdinal: reading.instanceOrdinal,
 				observedVoyageOrdinal: reading.voyageOrdinal,
 			},
-			...(prior?.knownPrivateFacts
-				? { knownPrivateFacts: prior.knownPrivateFacts }
-				: {}),
 		});
 	});
 };
@@ -1783,7 +1801,9 @@ const voyageOrdinal = (
 	what: string,
 ): number => {
 	const value = num(raw, field, what);
-	if (!Number.isInteger(value) || value < -1)
+	// `NO_FLOWN_VOYAGE`, not a literal: this is the persistence half of a value
+	// the traffic layer defines, and two copies of -1 agree only by luck.
+	if (!Number.isInteger(value) || value < NO_FLOWN_VOYAGE)
 		fail(
 			`${what}: ${field} ${value} is neither a voyage count nor the sentinel`,
 		);

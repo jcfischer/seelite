@@ -52,6 +52,7 @@ import type { CarrierStanding } from "./carrier-standing";
 import { carrierStanding } from "./carrier-standing";
 import { dot, normalizeOr, type Vec3 } from "./vec3";
 import { SCAN_MODULE } from "./market";
+import type { ScanRefusal } from "./display-contact";
 import type { KnowledgeRow } from "./world-state";
 
 /** How close a carrier has to be to answer. Well inside `SCANNER_RANGE_KM`'s
@@ -101,52 +102,58 @@ export const scanInRange = (rangeKm: number): boolean =>
  * the figures the Target panel already carries, and a red word beside every
  * station and raider selected would be noise that also trains the pilot to
  * ignore the word that matters. F4 states the cost of its own gate: until the
- * module is bought, the whole Bounty family is unavailable, and this is where
- * that becomes visible.
+ * module is bought, every bounty job that would read a scan record is
+ * unavailable, and this is where that becomes visible.
  */
-export type ScanRefusal = "no-module" | null;
-
 export const scanRefusal = (
 	fitted: boolean,
 	targetScannable: boolean,
-): "no-module" | null => (!targetScannable || fitted ? null : "no-module");
+): ScanRefusal | null => (!targetScannable || fitted ? null : "no-module");
 
-/**
- * `scanRefusal` as the Target instrument prints it.
- *
- * **Short, and deliberately not the module's name.** `market.ts` owns that
- * ("Identity Scanner", the row a shipyard sells), and the designation cell has
- * to hold `SHIP · PROSPECTOR · …` inside a 512-pixel instrument, so the cell
- * says the absence rather than the purchase. The console has room and prints
- * `SCAN_MODULE` itself.
- */
-export const SCAN_REFUSAL_LABELS: Record<NonNullable<ScanRefusal>, string> = {
-	"no-module": "NO SCANNER",
-};
+/** What a charge is being accumulated against. Its whole content is the key,
+ *  and that is the point: a subject is not a detail of the hold, it is what the
+ *  hold is *of*. */
+export interface ScanSubject {
+	key: CarrierKey;
+}
 
 /** A scan in progress. Session state, never saved: like the jump charge, it is
  *  a thing happening to the pilot right now, not a fact about the world. */
 export interface ScanHold {
+	/** What it is being held on, or `null` for no charge at all. */
+	key: CarrierKey | null;
 	/** Seconds of unbroken hold so far. */
 	chargeS: number;
 }
 
-export const beginScanHold = (): ScanHold => ({ chargeS: 0 });
+export const beginScanHold = (): ScanHold => ({ key: null, chargeS: 0 });
 
 /**
  * One frame of the hold. Breaking it zeroes the charge — §4: "a break in the
  * hold does not pause the charge, it resets it" — and a completed charge sits at
  * the ceiling until the hold breaks, so a long lock cannot keep the record's
  * clock current.
+ *
+ * **The subject travels with the charge, and changing it breaks the hold.**
+ *  §4's "unbroken attention" is attention to *one ship*: a charge that survived a
+ *  change of target would hand a record to a pilot who never held a nose on that
+ *  ship for five seconds, and four seconds on one carrier plus one second on
+ *  another is exactly what a sweep across a traffic queue looks like from the
+ *  cockpit. (#384's round 1 found the first version doing just that, because the
+ *  hold was a number with nobody attached to it.)
  */
 export function stepScanHold(
 	hold: ScanHold,
-	held: boolean,
+	held: ScanSubject | null,
 	dt: number,
 ): ScanHold {
-	if (!held) return hold.chargeS === 0 ? hold : { chargeS: 0 };
-	const chargeS = Math.min(SCAN_CHARGE_S, hold.chargeS + Math.max(0, dt));
-	return chargeS === hold.chargeS ? hold : { chargeS };
+	if (held === null)
+		return hold.chargeS === 0 && hold.key === null ? hold : beginScanHold();
+	const step = Math.max(0, dt);
+	if (held.key !== hold.key)
+		return { key: held.key, chargeS: Math.min(SCAN_CHARGE_S, step) };
+	const chargeS = Math.min(SCAN_CHARGE_S, hold.chargeS + step);
+	return chargeS === hold.chargeS ? hold : { key: held.key, chargeS };
 }
 
 /** Did this frame complete a charge the previous frame had not? The one moment
@@ -157,6 +164,39 @@ export const scanCompleted = (before: ScanHold, after: ScanHold): boolean =>
 /** 0…1 of the way through the charge, for the instrument's progress cell. */
 export const scanProgress = (hold: ScanHold): number =>
 	Math.min(1, hold.chargeS / SCAN_CHARGE_S);
+
+/**
+ * The Flight console's reading block (§6), as the console prints it.
+ *
+ * Strings, not figures: the console compares these to nothing, and a pilot
+ * reading `NOT READ` beside `UNKNOWN` is reading the same fact the glass shows.
+ */
+export interface ScanConsoleReadout {
+	/** The drawn proper name — F3's quarry. */
+	name: string;
+	/** The composed registry — F3's where-it-belongs. */
+	registry: string;
+	standing: string;
+	/**
+	 * The recorded voyage's **Manifest**, one line per good, or why there is none
+	 *  to print. Named for what it is rather than `hold`: the console prints it
+	 *  under the word `HELD`, which is ordinary speech for what a ship is
+	 *  carrying, while **Traffic hold** in `CONTEXT.md` is a place a carrier waits
+	 *  and `ScanHold` in this module is the charge (sage #384 round 1). A field
+	 *  cannot be three things even where a glass can get away with one word.
+	 */
+	manifest: string;
+	/** The reading's age, or `NEVER`. */
+	age: string;
+}
+
+export interface CarrierReading {
+	standing: CarrierStanding;
+	manifest: readonly { good: string; tonnes: number }[];
+	/** Seconds since the reading was taken. */
+	ageS: number;
+	observedAt: number;
+}
 
 /**
  * What a knowledge row's scan means now: the standing and the hold that were
@@ -176,31 +216,6 @@ export const scanProgress = (hold: ScanHold): number =>
  *
  * `null` is the answer for a row that carries no scan: F8's `UNKNOWN`.
  */
-/**
- * The Flight console's reading block (§6), as the console prints it.
- *
- * Strings, not figures: the console compares these to nothing, and a pilot
- * reading `NOT READ` beside `UNKNOWN` is reading the same fact the glass shows.
- */
-export interface ScanConsoleReadout {
-	/** The drawn proper name — F3's quarry. */
-	name: string;
-	/** The composed registry — F3's where-it-belongs. */
-	registry: string;
-	standing: string;
-	/** The recorded voyage's hold, or why there is none to print. */
-	hold: string;
-	/** The reading's age, or `NEVER`. */
-	age: string;
-}
-
-export interface CarrierReading {
-	standing: CarrierStanding;
-	manifest: readonly { good: string; tonnes: number }[];
-	/** Seconds since the reading was taken. */
-	ageS: number;
-	observedAt: number;
-}
 
 export function carrierReading(args: {
 	systemSeed: number;
