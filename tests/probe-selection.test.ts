@@ -224,6 +224,18 @@ describe("the TypeSafe transport", () => {
 		expect(JSON.parse(body).model).toBe("jev-latest");
 	});
 
+	test("keeps a bounded API error detail for fallback diagnosis", async () => {
+		const judge = createTypeSafeProbeJudge({
+			apiKey: "test-key",
+			fetchImpl: async () =>
+				new Response(`  rate limited\n${"x".repeat(240)}  `, { status: 429 }),
+		});
+
+		expect(judge({ state: {}, questions: {} })).rejects.toThrow(
+			/^HTTP 429: rate limited x{187}$/,
+		);
+	});
+
 	test("scrubs credentials and stale filters before browser children", () => {
 		const parent = {
 			TYPESAFE_API_KEY: "secret",

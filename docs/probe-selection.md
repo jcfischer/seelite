@@ -35,6 +35,9 @@ object, and every question's direction references that boundary. Model
 instructions remain best-effort rather than a security boundary. The runner
 refuses its internal `PROBE_FILES` subset handoff when `CI` is set. A selected
 run is partial evidence and does not replace a full browser-tier receipt.
+For an untrusted PR, keep the default filename-only evidence. Supplying title,
+body, or diff is a local trust decision because crafted prose can bias a model;
+never enable those opt-ins automatically for contributions you have not read.
 
 The request names `jev-latest` and reports the exact model that the response
 resolved (for example `jev-1.13.0`). Re-run the evaluation cases after a
@@ -92,4 +95,6 @@ not as a full browser-tier receipt.
 
 The calibration cases and named expected probes are recorded in
 [`probe-selection-evaluation.md`](./probe-selection-evaluation.md) and can be
-rerun with `npm run probe:evaluate` after loading the API key.
+rerun with `npm run probe:evaluate` after loading the API key. To retain a
+machine-readable receipt with every probability, add
+`--receipt docs/probe-selection-evaluation.jsonl`.

@@ -23,3 +23,7 @@ Across the four cases, all 21 named expectations were present. This is a small
 calibration corpus, not a general accuracy claim. Keep the raw probabilities
 visible, expand these cases with real PR outcomes, and raise coverage rather
 than lowering it when a false negative appears.
+
+The attached [`probe-selection-evaluation.jsonl`](./probe-selection-evaluation.jsonl)
+is the machine-readable receipt from this run, including every returned
+probability, action, resolved model, usage count, and fallback status.

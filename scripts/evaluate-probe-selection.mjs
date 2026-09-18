@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
+import { writeFileSync } from "node:fs";
 import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
+
+const receiptFlag = process.argv.indexOf("--receipt");
+const receiptPath =
+	receiptFlag === -1 ? undefined : process.argv[receiptFlag + 1];
+if (receiptFlag !== -1 && !receiptPath)
+	throw new Error("--receipt requires an output path");
 
 const cases = [
 	{
@@ -99,11 +106,14 @@ const rows = await Promise.all(
 			present: missing ? item.expected.length - missing.length : null,
 			missing,
 			usage: result.usage ?? null,
+			decisions: result.decisions ?? null,
 		};
 	}),
 );
 
+const output = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`;
+process.stdout.write(output);
+if (receiptPath) writeFileSync(receiptPath, output);
 for (const row of rows) {
-	console.log(JSON.stringify(row));
 	if (row.status !== "passed") process.exitCode = 1;
 }

@@ -19,7 +19,11 @@ export function createTypeSafeProbeJudge({ apiKey, fetchImpl = fetch }) {
 			signal: AbortSignal.timeout(30_000),
 		});
 		if (!response.ok) {
-			throw new Error(`HTTP ${response.status}`);
+			const detail = (await response.text().catch(() => ""))
+				.replace(/\s+/g, " ")
+				.trim()
+				.slice(0, 200);
+			throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
 		}
 		return response.json();
 	};
