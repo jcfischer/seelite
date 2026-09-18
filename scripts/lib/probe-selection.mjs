@@ -17,16 +17,18 @@ const GLOBAL_RISK_FILES = new Set([
 	"src/sim.ts",
 	"scripts/probe-all.mjs",
 	"scripts/probe-guard.mjs",
+	"scripts/select-probes.mjs",
 	"scripts/check-launcher-wiring.mjs",
 ]);
 
 const isGlobalRisk = (file) =>
-	GLOBAL_RISK_FILES.has(file) || file.startsWith("scripts/lib/");
+	GLOBAL_RISK_FILES.has(file) ||
+	file.startsWith("scripts/lib/") ||
+	file.startsWith(".github/");
 
 const isNonRuntime = (file) =>
 	file.startsWith("docs/") ||
 	file.startsWith("tests/") ||
-	file.startsWith(".github/") ||
 	file.endsWith(".md") ||
 	file === "biome.jsonc";
 
@@ -34,6 +36,9 @@ const directProbe = (file) =>
 	file.startsWith("scripts/")
 		? PROBE_FILES.find((probe) => `scripts/${probe}` === file)
 		: undefined;
+
+const directlyChangedProbes = (changedFiles) =>
+	changedFiles.map(directProbe).filter(Boolean).sort();
 
 const result = (mode, probes, reason, fallback = false) => ({
 	mode,
@@ -84,7 +89,7 @@ export function buildProbeQuestions() {
  *
  * @param {string[]} changedFiles
  */
-function selectDeterministic(changedFiles) {
+function selectDeterministic(changedFiles, directlyChanged) {
 	if (!changedFiles.length)
 		return all(
 			"No changed-file evidence was available, so relevance is unknown.",
@@ -97,7 +102,6 @@ function selectDeterministic(changedFiles) {
 			`${globalFile} is shared runtime, build, or probe-harness infrastructure.`,
 		);
 
-	const directlyChanged = changedFiles.map(directProbe).filter(Boolean).sort();
 	const onlyDirectOrNonRuntime = changedFiles.every(
 		(file) => directProbe(file) || isNonRuntime(file),
 	);
@@ -198,8 +202,8 @@ async function selectSemantic(input, judge, forcedProbes) {
  */
 export async function selectProbes(input, judge = undefined) {
 	const changedFiles = [...new Set(input.changedFiles ?? [])].sort();
-	const forcedProbes = changedFiles.map(directProbe).filter(Boolean).sort();
-	const deterministic = selectDeterministic(changedFiles);
+	const forcedProbes = directlyChangedProbes(changedFiles);
+	const deterministic = selectDeterministic(changedFiles, forcedProbes);
 	if (deterministic) return deterministic;
 	if (!judge)
 		return all(

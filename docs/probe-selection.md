@@ -8,6 +8,8 @@ still takes one explicit substring.
 ## Decision tree
 
 1. Shared runtime, build, or probe-harness files run every probe.
+   CI workflow changes are global-risk because they can change how the tier is
+   invoked.
 2. Documentation and headless-test-only changes run no browser probe.
 3. Directly edited probe scripts are always included. When the change is
    confined to named probe scripts, those probes run exactly.
@@ -71,6 +73,9 @@ To include source context after reviewing it for secrets, opt in explicitly:
 npm run probe:select -- --base origin/main --head HEAD \
   --title "PR title" --include-diff
 ```
+
+`--include-diff` applies to a base/head git range. It is ignored with explicit
+`--changed-file` evidence, and the CLI warns when both are supplied.
 
 `PROBE_FILES` is the selector's exact-name handoff to `probe-all.mjs`. It is
 refused in CI, cannot be combined with `--only` or `PROBE_ONLY`, and every

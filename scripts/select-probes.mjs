@@ -103,6 +103,10 @@ function runSelectedProbes(result) {
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
 	let gitEvidence = { changedFiles: args.changedFiles, diff: "" };
+	if (args.changedFiles.length && args.includeDiff)
+		console.error(
+			"--include-diff is ignored with explicit --changed-file evidence; omit --changed-file to read the base/head diff.",
+		);
 	if (!args.changedFiles.length) {
 		try {
 			gitEvidence = readGitEvidence(args.base, args.head, args.includeDiff);

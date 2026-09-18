@@ -88,6 +88,8 @@ describe("the deterministic branches", () => {
 		for (const file of [
 			"src/main.ts",
 			"scripts/probe-guard.mjs",
+			"scripts/select-probes.mjs",
+			".github/workflows/deploy.yml",
 			"vite.config.ts",
 		]) {
 			const result = await selectProbes({ changedFiles: [file], title: file });
