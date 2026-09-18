@@ -469,6 +469,16 @@ nothing is recorded, the cell adds the reason to `UNKNOWN`: `· TOO FAR` or
 to it. `UNKNOWN` survives — that you have never read this ship and that you are not
 holding it now are two facts.
 
+**A cruise leg is not a hold.** `step` returns inside `if (this.regime ===
+"cruise")` before the scan is stepped, and `engageCruise` breaks a part-built
+charge, so a five-second count can never include a jump leg and a leg's middle is
+not attention paid to anything. The principal ruled on this after flying it: cruise
+scans nothing, by design — not an oversight of where the step happens to return.
+**A pilot gets no cue about it**, which is deliberate and worth naming: the cue in
+the cell answers *why is the scan not holding what I am trying to scan*, and during
+a leg there is no such attempt; #385's trigger makes that explicit by making the
+attempt something the pilot does.
+
 Breaking the cone resets the charge. The idiom is `src/interdiction.ts`'s
 contest — a lock held through a charge, broken by heading separation — and the
 implementation should read its shape rather than invent a second one.
