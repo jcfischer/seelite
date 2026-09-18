@@ -190,7 +190,7 @@ presentation; the Carrier key remains the persistence and arbitration identity.
 Every materialized actor is a normal targetable `DisplayContact` carrying its
 actual pose, velocity and hull type. Routine hulls report `CIVILIAN`; Patrol
 reports `UNKNOWN` until `combat-model.md` defines a security or legal scanner
-classification. All Traffic contacts keep `legalStatus: null` in #148.
+classification. Traffic contacts carried `legalStatus: null` in #148; #364 renamed the member `standing` and it now holds the reading the pilot recorded, or `null` for a carrier never scanned.
 
 ## 4. Clearance queue
 

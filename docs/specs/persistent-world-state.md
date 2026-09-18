@@ -62,9 +62,9 @@ Knowledge and physical condition are independent.
   source. The black-market value itself remains generated baseline data: once
   the marker exists, the generated refinery flag supplies known-present or
   known-absent; without it, the fact is unchecked. The marker is invalid for a
-  non-refinery carrier. A row is legal with none of the three — a condition
-  observation, a scan, and a private-fact marker are independent members, and the
-  parser admits each one only when it is there, which is also what stopped an
+  non-refinery carrier. **A row is not legal with none of the three**: the three
+  are independent members, and the parser admits each one only when it is there,
+  which is also what stopped an
   empty private-facts container from being serialized with a member invented
   inside it and then refused by its own reader.
 - The scan observation's **voyage ordinal may be Traffic's own "no flown voyage
@@ -196,11 +196,13 @@ All arithmetic and state-machine checks are headless. A later carrier's visible 
 
 **The pre-#116 portions of obligations 1–9 are implemented in
 `src/world-state.ts` and the leaf `src/carrier-key.ts`, checked by
-`tests/world-state.test.ts`.** That file has ten `describe` blocks: nine titled
-`§9.1` … `§9.9`, one for each implemented obligation above, plus `§7 the
-envelope's writers` — what §7 asks of the write path rather than of the model,
+`tests/world-state.test.ts`.** Its `describe` blocks are titled after this list:
+nine titled `§9.1` … `§9.9`, one for each implemented obligation above, plus `§7
+the envelope's writers` — what §7 asks of the write path rather than of the model,
 titled so that counting blocks against this list does not read as a mismatch.
-#275 must add §9.10 and the learned-private-fact extension to §9.6. The
+**The count is not written down here**, because it has been wrong in this
+paragraph before: #275 added §9.10, #364 added §3.1, and `tests/headless.test.ts`
+and the file itself are where the blocks actually are. The
 legal-status domain is present as the typed per-galaxy field §7 requires and
 nothing more — thresholds, decay and the Clean/Wanted/Fugitive label belong to
 the combat node, and being derived, the label is a §8 projection that must not

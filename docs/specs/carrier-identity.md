@@ -328,9 +328,9 @@ rarer station.
 one, so the Bounty family waits until they reach one. That is a reason to travel
 rather than a gap.
 
-## Detailed contract proposed for ratification
+## The detailed contract as ratified, and as built
 
-The following completes F1–F12. No runtime, content or UI is delivered by this
+The following completes F1–F12. This document delivered no runtime, content or UI
 document.
 
 ### 1. The naming scheme and its stream
@@ -469,9 +469,15 @@ cannot afford in a fight or a chase.
 
 ### 5. The knowledge record
 
-A completed scan writes **`{ observedAt, source }`** and nothing else. The
-source is a new value alongside §3.1's `docking`, `system-relay` and
-`intervention`.
+A completed scan writes **`{ observedAt, source, observedInstanceOrdinal,
+observedVoyageOrdinal }`** and nothing else. The source is a new value alongside
+§3.1's `docking`, `system-relay` and `intervention`.
+
+**What it owes beyond the stamp was the open question, and #364 settled it by
+storing both ordinals.** The two below are kept as the argument that decided it,
+not as a question still open: F11's flown voyage depends on the route as it stood
+when the carrier left, so it cannot be recovered from the clock afterwards, and a
+scan taken before a late return and a kill after it would otherwise disagree.
 
 **It does not store what was read, and that is the idiom rather than an
 omission.** `persistent-world-state.md` §3.1 says the black-market marker
@@ -480,10 +486,11 @@ remains generated baseline data", and CONTEXT.md's *Last-known state* says the
 row holds never the generated value. Standing and the manifest are pure
 functions, so the reading is re-derived at display time as
 `carrierStanding(…, observedAt)` and `carrierManifest(…, voyageOrdinalAt(observedAt))`.
-**#362 makes `voyageOrdinalAt(observedAt)` not derivable after the fact**: the
+**#362 made `voyageOrdinalAt(observedAt)` not derivable after the fact**: the
 flown voyage depends on the route as it stood, not on the clock alone. So the
 record owes the voyage it read (and the instance), or a scan read before a late
-return and a kill after it disagree, which breaks F6. #364 settles which.
+return and a kill after it disagree, which breaks F6. **#364 stored both**, and
+`world-state.ts`'s `CarrierScanObservation` is the shape that came out.
 A stored copy would duplicate derivable state inside a versioned save.
 
 **What this spec cannot settle, and must not pretend to.** A Traffic actor has
@@ -577,7 +584,7 @@ together.
 | The type-exclusive table | `station-types.md` §4.1 | The shipyard column gains the scanner module |
 | The equipment list and its prices | `economy-trade.md` §7 | One row added, `newToSeelite` |
 | The knowledge row's shape, and its set of observation sources | `persistent-world-state.md` §3.1 | A scan is a new source, and the row must be reachable for a carrier with no condition observation |
-| *Last-known state* holds "an observed operational condition" | `CONTEXT.md` §Language | A scan record carries neither an instance ordinal nor a condition |
+| *Last-known state* holds "an observed operational condition" | `CONTEXT.md` §Language | A scan record carries neither an instance ordinal nor a condition — **answered by #364: it carries an instance ordinal and a voyage ordinal, and still no condition**, because a scan sees no hull |
 | `legalStatus` is "null means no legal identity has been given" | `src/display-contact.ts` | The field is **renamed `standing`** and typed `CarrierStanding \| null` |
 | Traffic callsigns "may change in a future generator version without becoming persistence keys" | `station-traffic.md` §1.1 | Still true, and now a drawn name sits beside the callsign |
 
@@ -634,7 +641,7 @@ section claimed one optional member and no migration, which the parser refutes.
 ### 11. Handoff
 
 *Discharged for the lootable half*: #362 built it (`civilian-combat.md`), and
-the rest of this spec's build is #364. The handoff as written:
+the rest of this spec's build was #364, which landed it. The handoff as written, kept as the brief it was:
 
 One child node carries what F6 decided and this spec deliberately does not
 build: **destructible ordinary traffic** — hull, shields and damage for a

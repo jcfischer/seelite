@@ -80,9 +80,13 @@ and target name/range: `STAR`, `PLANET`, `MOON`, `CARGO`, `STATION · <TYPE>`, o
 never inferred from the display name. **Two axes share that last cell, and one
 of them wins it.** `scannerClass` answers *is this a pirate* and standing
 answers *is this wanted*, so a pirate reads `HOSTILE` whichever way its
-standing turns out, and every other ship reads the scan: `NO SCANNER` while the
-module is missing, `SCANNING <n>%` while a charge is running, the recorded
-standing once there is one, and `UNKNOWN` before any of it. Unclassified review
+standing turns out. **What the refusal is for is a scannable carrier, and nothing
+else**: a review hull, a relay or a body has no reading to withhold, so an
+unfitted pilot reads `UNKNOWN` beside those and `NO SCANNER` beside an ordinary
+carrier — which is the difference between a tool you do not own and a question
+that has no answer. For a carrier the cell reads `NO SCANNER` while the module is
+missing, `SCANNING <n>%` while a charge is running, the recorded standing once
+there is one, and `UNKNOWN` before any of it. Unclassified review
 hulls therefore show `UNKNOWN` for two reasons now — never classified, and
 never scanned — and neither is a fabricated legal status. The designation
 updates on target or classification changes and leaves the separate ETA line in

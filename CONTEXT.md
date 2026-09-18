@@ -138,14 +138,18 @@ hull is called something new. What the cockpit names a target with, and what a
 pilot remembers a ship by. **Display only, entirely**: it keys nothing, saves
 nothing, looks nothing up, and `localCarrierId` remains the identity, which is
 what makes renaming a carrier in a later generator cost nothing. `carrier-name.ts`
-owns the alphabet and the draw; `carrier-identity.md` §1 the rule.
+owns the **draw** — the domain, the instance seeding, the shape of a name; the
+digram alphabet it draws from is `names.ts`'s, shared with every other name in the
+galaxy. `carrier-identity.md` §1 the rule.
 _Avoid_: Ship name (that is a hull's model — a `Porter` is a make, `RAANAR` a
 name), callsign, label
 
 **Registry**:
 A carrier's registration designation — `Kestrel TR-03` — composed from its hull
-model, its home station's role code and its roster ordinal. What a kill feed, a
-bounty and a police report cite, because it says which station a ship belongs to.
+model, its home station's role code and its roster ordinal. What a filing cites,
+because it says which station a ship belongs to: read today it is the Flight
+console's `REGISTRY` row and the raider log's line, and the kill feed a later node
+writes will cite this rather than the drawn name.
 The `TrafficActor` field is named `callsign`; the term is Registry because a
 callsign is spoken and a registry is filed. Presentation, like the **Drawn name**,
 and for the same reason: neither is a persistence key. Composed by
