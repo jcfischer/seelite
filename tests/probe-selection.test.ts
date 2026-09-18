@@ -229,6 +229,16 @@ describe("the TypeSafe transport", () => {
 		);
 	});
 
+	test("the evaluator refuses a missing receipt path without a stack trace", () => {
+		const child = spawnSync(
+			process.execPath,
+			["scripts/evaluate-probe-selection.mjs", "--receipt"],
+			{ encoding: "utf8" },
+		);
+		expect(child.status).toBe(1);
+		expect(child.stderr.trim()).toBe("--receipt requires an output path");
+	});
+
 	test("keeps the credential in the authorization header and out of the body", async () => {
 		const apiKey = "test-key-that-must-not-enter-state";
 		let authorization = "";

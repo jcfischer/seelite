@@ -1,9 +1,10 @@
 # Selecting browser probes for a pull request
 
 The browser tier is intentionally sequential, so a full run is expensive. The
-PR selector reduces local feedback time without changing what `npm run probe`
-means: the unfiltered invocation still runs every gate, and `npm run probe:one`
-still takes one explicit substring.
+PR selector chooses a smaller local feedback subset without changing what
+`npm run probe` means: the unfiltered invocation still runs every gate, and
+`npm run probe:one` still takes one explicit substring. Calibration measures
+selected counts and recall, not end-to-end browser time saved.
 
 ## Decision tree
 

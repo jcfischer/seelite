@@ -144,11 +144,7 @@ function selectDeterministic(changedFiles, directlyChanged) {
 	);
 	if (!onlyDirectOrNonRuntime) return null;
 	if (!directlyChanged.length)
-		return result(
-			"none",
-			[],
-			"Only documentation, workflow metadata, or headless tests changed.",
-		);
+		return result("none", [], "Only documentation or headless tests changed.");
 	return result(
 		"exact",
 		directlyChanged,

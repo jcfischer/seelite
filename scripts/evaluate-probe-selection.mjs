@@ -7,8 +7,10 @@ import { selectProbes } from "./lib/probe-selection.mjs";
 const receiptFlag = process.argv.indexOf("--receipt");
 const receiptPath =
 	receiptFlag === -1 ? undefined : process.argv[receiptFlag + 1];
-if (receiptFlag !== -1 && !receiptPath)
-	throw new Error("--receipt requires an output path");
+if (receiptFlag !== -1 && !receiptPath) {
+	console.error("--receipt requires an output path");
+	process.exit(1);
+}
 if (!process.env.TYPESAFE_API_KEY) {
 	console.error(
 		"TYPESAFE_API_KEY is not set; load it before running probe:evaluate.",
