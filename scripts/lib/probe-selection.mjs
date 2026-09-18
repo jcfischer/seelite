@@ -46,6 +46,13 @@ const result = (mode, probes, reason, fallback = false) => ({
 const all = (reason, fallback = false) =>
 	result("all", [...PROBE_FILES], reason, fallback);
 
+const isValidNoulAnswer = (answer) =>
+	answer?.type === "noul" &&
+	typeof answer.noul === "number" &&
+	Number.isFinite(answer.noul) &&
+	answer.noul >= 0 &&
+	answer.noul <= 1;
+
 export function buildProbeQuestions() {
 	return Object.fromEntries(
 		PROBE_CATALOG.map(({ id, file, contract, evidence }) => [
@@ -111,8 +118,9 @@ function selectDeterministic(changedFiles) {
 /**
  * @param {{changedFiles: string[], title?: string, body?: string, diff?: string}} input
  * @param {(request: {state: object, questions: object}) => Promise<object>} judge
+ * @param {string[]} forcedProbes
  */
-async function selectSemantic(input, judge) {
+async function selectSemantic(input, judge, forcedProbes) {
 	const questions = buildProbeQuestions();
 	let response;
 	try {
@@ -139,22 +147,22 @@ async function selectSemantic(input, judge) {
 		return all("TypeSafe returned no answer map.", true);
 
 	const decisions = [];
+	const forced = new Set(forcedProbes);
 	for (const probe of PROBE_CATALOG) {
 		const answer = answers[probe.id];
-		if (
-			answer?.type !== "noul" ||
-			typeof answer.noul !== "number" ||
-			!Number.isFinite(answer.noul) ||
-			answer.noul < 0 ||
-			answer.noul > 1
-		)
+		if (!isValidNoulAnswer(answer))
 			return all(`TypeSafe answer ${probe.id} was missing or malformed.`, true);
 
+		const forceInclude = forced.has(probe.file);
 		decisions.push({
 			id: probe.id,
 			file: probe.file,
 			probability: answer.noul,
-			action: answer.noul > PROBE_EXCLUSION_MAX ? "include" : "exclude",
+			action:
+				forceInclude || answer.noul > PROBE_EXCLUSION_MAX
+					? "include"
+					: "exclude",
+			forced: forceInclude,
 		});
 	}
 	const selected = decisions
@@ -190,6 +198,7 @@ async function selectSemantic(input, judge) {
  */
 export async function selectProbes(input, judge = undefined) {
 	const changedFiles = [...new Set(input.changedFiles ?? [])].sort();
+	const forcedProbes = changedFiles.map(directProbe).filter(Boolean).sort();
 	const deterministic = selectDeterministic(changedFiles);
 	if (deterministic) return deterministic;
 	if (!judge)
@@ -197,5 +206,5 @@ export async function selectProbes(input, judge = undefined) {
 			"TypeSafe was unavailable for an ambiguous production change.",
 			true,
 		);
-	return selectSemantic({ ...input, changedFiles }, judge);
+	return selectSemantic({ ...input, changedFiles }, judge, forcedProbes);
 }

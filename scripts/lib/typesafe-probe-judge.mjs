@@ -1,12 +1,5 @@
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 
-/** Do not expose the selection credential to Vite, Chromium, or probe scripts. */
-export function withoutTypeSafeCredential(env) {
-	const childEnv = { ...env };
-	delete childEnv.TYPESAFE_API_KEY;
-	return childEnv;
-}
-
 /**
  * Create the one server-side TypeSafe call used by the selector.
  * The key stays in the Authorization header and is never returned or logged.

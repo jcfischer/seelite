@@ -9,7 +9,8 @@ still takes one explicit substring.
 
 1. Shared runtime, build, or probe-harness files run every probe.
 2. Documentation and headless-test-only changes run no browser probe.
-3. Changes confined to named probe scripts run those probes exactly.
+3. Directly edited probe scripts are always included. When the change is
+   confined to named probe scripts, those probes run exactly.
 4. Other production changes send the PR state and all probe contracts to
    TypeSafe as one batch of independent Noul questions.
 5. Only a probability at or below `0.25` is a strong enough **no** to exclude a
@@ -30,9 +31,15 @@ untrusted evidence, but that prompt instruction is best-effort rather than a
 security boundary. Filtered runs are refused in CI, and a merge receipt still
 requires the repository's full browser tier.
 
-The request uses TypeSafe's documented `jev-latest` alias and reports the exact
-resolved model (for example `jev-1.13.0`) with every result. Re-run the evaluation
-cases after a resolved-model change before adjusting the exclusion threshold.
+The request uses TypeSafe's documented [`jev-latest`
+alias](https://docs.typesafe.ai/models.md) and reports the exact resolved model
+(for example `jev-1.13.0`) with every result. Re-run the evaluation cases after
+a resolved-model change before adjusting the exclusion threshold.
+
+The catalog parity test proves that every runnable browser gate has an entry; it
+cannot prove that an entry still describes what the gate verifies. Whenever a
+probe's behavior, assertions, or evidence header changes, review and update its
+catalog `contract` and `evidence` fields in the same PR.
 
 ## Use it
 

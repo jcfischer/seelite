@@ -2,10 +2,8 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import {
-	createTypeSafeProbeJudge,
-	withoutTypeSafeCredential,
-} from "./lib/typesafe-probe-judge.mjs";
+import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
+import { probeRunnerEnvironment } from "./lib/probe-runner-env.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -86,6 +84,22 @@ const renderText = (result) => {
 	console.log(`decision latency: ${result.latencyMs} ms`);
 };
 
+function runSelectedProbes(result) {
+	if (!result.probes.length) {
+		console.log("No browser probes selected; nothing to run.");
+		return;
+	}
+	const selected = result.mode === "all" ? undefined : result.probes;
+	const child = spawnSync(process.execPath, [PROBE_RUNNER], {
+		cwd: PROJECT_ROOT,
+		stdio: "inherit",
+		env: probeRunnerEnvironment(process.env, selected),
+	});
+	if (child.error)
+		console.error(`could not start probe runner: ${child.error.message}`);
+	process.exitCode = child.status ?? 1;
+}
+
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
 	let gitEvidence = { changedFiles: args.changedFiles, diff: "" };
@@ -124,23 +138,7 @@ async function main() {
 	if (args.json) console.log(JSON.stringify(output, null, 2));
 	else renderText(output);
 
-	if (!args.run) return;
-	if (!result.probes.length) {
-		console.log("No browser probes selected; nothing to run.");
-		return;
-	}
-	const full = result.mode === "all";
-	const childEnv = withoutTypeSafeCredential(process.env);
-	const child = spawnSync(process.execPath, [PROBE_RUNNER], {
-		cwd: PROJECT_ROOT,
-		stdio: "inherit",
-		env: full
-			? childEnv
-			: { ...childEnv, PROBE_FILES: result.probes.join(",") },
-	});
-	if (child.error)
-		console.error(`could not start probe runner: ${child.error.message}`);
-	process.exitCode = child.status ?? 1;
+	if (args.run) runSelectedProbes(result);
 }
 
 main().catch((error) => {

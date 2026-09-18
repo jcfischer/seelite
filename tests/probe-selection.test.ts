@@ -6,10 +6,8 @@ import {
 	PROBE_EXCLUSION_MAX,
 	selectProbes,
 } from "../scripts/lib/probe-selection.mjs";
-import {
-	createTypeSafeProbeJudge,
-	withoutTypeSafeCredential,
-} from "../scripts/lib/typesafe-probe-judge.mjs";
+import { createTypeSafeProbeJudge } from "../scripts/lib/typesafe-probe-judge.mjs";
+import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 
 const discovered = discoverProbeFiles(new URL("../scripts", import.meta.url));
 
@@ -130,6 +128,23 @@ describe("the semantic branch", () => {
 		});
 	});
 
+	test("force-includes an edited probe in a mixed production change", async () => {
+		const result = await selectProbes(
+			{
+				changedFiles: ["scripts/probe-cruise.mjs", "src/cruise.ts"],
+				title: "Change cruise and its browser evidence",
+			},
+			async () => ({ answers: probabilities() }),
+		);
+		expect(result.mode).toBe("semantic");
+		expect(result.probes).toEqual(["probe-cruise.mjs"]);
+		expect(
+			result.decisions?.find(
+				(row: { id: string }) => row.id === "probe_cruise",
+			),
+		).toMatchObject({ action: "include", forced: true, probability: 0.01 });
+	});
+
 	test("falls back to all probes when an answer is missing or malformed", async () => {
 		for (const answers of [
 			{},
@@ -197,9 +212,18 @@ describe("the TypeSafe transport", () => {
 		expect(JSON.parse(body).model).toBe("jev-latest");
 	});
 
-	test("removes the credential before browser-probe children are spawned", () => {
-		const parent = { TYPESAFE_API_KEY: "secret", KEEP_ME: "yes" };
-		expect(withoutTypeSafeCredential(parent)).toEqual({ KEEP_ME: "yes" });
+	test("scrubs credentials and stale filters before browser children", () => {
+		const parent = {
+			TYPESAFE_API_KEY: "secret",
+			PROBE_FILES: "probe-boot.mjs",
+			PROBE_ONLY: "boot",
+			KEEP_ME: "yes",
+		};
+		expect(probeRunnerEnvironment(parent)).toEqual({ KEEP_ME: "yes" });
+		expect(probeRunnerEnvironment(parent, ["probe-cruise.mjs"])).toEqual({
+			KEEP_ME: "yes",
+			PROBE_FILES: "probe-cruise.mjs",
+		});
 		expect(parent.TYPESAFE_API_KEY).toBe("secret");
 	});
 });
