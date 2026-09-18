@@ -7,13 +7,18 @@ import { carrierKey } from "../src/carrier-key";
 import {
 	ARMED_TRAFFIC_HULLS,
 	type Engagement,
+	chargedOffence,
 	engage,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
+	parkedTrafficActors,
 	stepEngagement,
 	trafficDestruction,
+	trafficDiversion,
 	trafficHitRadiusKm,
 	trafficInSights,
+	trafficKillTransitions,
+	trafficPresence,
 } from "../src/traffic-engagement";
 import type { DuelPilot } from "../src/duel";
 import {
@@ -23,16 +28,27 @@ import {
 	dropManifestCanisters,
 } from "../src/raider-wreck";
 import {
+	advanceTo,
 	applyTransition,
 	effectiveCarrier,
 	newWorld,
+	parseWorld,
+	serializeWorld,
 } from "../src/world-state";
 import { HULL_SPECS, type HullId } from "../src/hull";
-import { TRAFFIC_HULL_POOLS } from "../src/station-traffic";
+import {
+	TRAFFIC_HULL_POOLS,
+	nextTrafficDepartureAtS,
+	stationTrafficRoster,
+	trafficScheduleAt,
+} from "../src/station-traffic";
 import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
 import { flightPerformance } from "../src/sim";
 import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { carrierManifest } from "../src/carrier-manifest";
+import { generateGalaxy } from "../src/galaxy";
+import { generateContents } from "../src/system";
+import { marginalOffenceHeat, offenceHeat } from "../src/legal";
 
 /** Every hull any station roster flies, so a row is not a hand-picked subset. */
 const ROSTER_HULLS = [
@@ -354,5 +370,385 @@ describe("a kill drops the manifest a scan would show (F6, H11)", () => {
 					drop.map((c) => ({ good: c.commodity, tonnes: c.tonnes })),
 				).toEqual([...manifest]);
 			}
+	});
+});
+
+/**
+ * A real roster actor, because the divert's clock is its **home schedule's**
+ * departure clock (`civilian-combat.md` H3c) and a hand-built schedule would be
+ * a second copy of the roster law rather than a test of it.
+ */
+const DIVERT_RECORD = (() => {
+	const found = generateGalaxy(0x5ee11e, 0).systems.find(
+		(candidate) => generateContents(candidate).stations.length >= 2,
+	);
+	if (!found) throw new Error("multi-station fixture");
+	return found;
+})();
+const DIVERT_HOME = generateContents(DIVERT_RECORD).stations[0];
+const DIVERT_ACTOR = stationTrafficRoster(DIVERT_RECORD.index, DIVERT_HOME)[0];
+const DIVERT_AT = 5_000;
+
+/** Every transition #365 writes at one strike, applied in one tick. */
+function divertOne(world: ReturnType<typeof newWorld>, at = DIVERT_AT) {
+	for (const event of trafficDiversion(DIVERT_RECORD.index, DIVERT_ACTOR, at))
+		world = applyTransition(world, 0, DIVERT_ACTOR.key, event);
+	return world;
+}
+
+describe("H3c: the diverting hit is a disable, then a repair, in one tick", () => {
+	test("the player disables it and its home station books the repair", () => {
+		const events = trafficDiversion(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			DIVERT_AT,
+		);
+		expect(events.map((e) => e.kind)).toEqual(["disable", "repair-start"]);
+		// One tick, not two: H3c's pair is one act, and `applyTransition` refuses
+		// a write before the clock the first one moved.
+		for (const event of events) expect(event.occurredAt).toBe(DIVERT_AT);
+		expect(events[0].cause).toEqual(PLAYER_KILL);
+
+		const start = events[1];
+		if (start.kind !== "repair-start") throw new Error("no repair start");
+		// The work is the berth's, not the offender's — so it writes no knowledge.
+		expect(start.cause.playerRole).toBe("none");
+		expect(start.cause.actorId).toBe(
+			`${DIVERT_RECORD.index}:${DIVERT_ACTOR.homeStationId}`,
+		);
+		expect(start.completesAt).toBe(
+			nextTrafficDepartureAtS(
+				DIVERT_ACTOR.schedule,
+				DIVERT_AT + RAIDER_REPAIR_S,
+			),
+		);
+	});
+
+	test("the absence is the shipped repair duration, never shorter, and ends on a departure", () => {
+		const start = trafficDiversion(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			DIVERT_AT,
+		)[1];
+		if (start.kind !== "repair-start") throw new Error("no repair start");
+		// H3d's T is a floor: the principal ruled the rejoin lands on a departure,
+		// because a carrier whose repair ends mid-leg re-enters a schedule it
+		// never flew and pops out of its berth into the middle of a leg.
+		expect(start.completesAt).toBeGreaterThanOrEqual(
+			DIVERT_AT + RAIDER_REPAIR_S,
+		);
+		expect(start.completesAt - (DIVERT_AT + RAIDER_REPAIR_S)).toBeLessThan(
+			DIVERT_ACTOR.schedule.cycleS,
+		);
+		expect(
+			nextTrafficDepartureAtS(DIVERT_ACTOR.schedule, start.completesAt),
+		).toBe(start.completesAt);
+		expect(
+			trafficScheduleAt(DIVERT_ACTOR, start.completesAt + 0.01).desired,
+		).toBe("away");
+	});
+
+	test("applied, it is repairing at its own ordinal, inside the episode the strike opened", () => {
+		const world = divertOne(newWorld(1));
+		const carrier = effectiveCarrier(
+			world.galaxies[0],
+			DIVERT_ACTOR.key,
+			DIVERT_AT,
+		);
+		expect(carrier.condition).toBe("repairing");
+		// H3c: the same ship. Only a replacement ever moves the ordinal.
+		expect(carrier.instanceOrdinal).toBe(0);
+		expect(carrier.recovery?.kind).toBe("repair");
+
+		const episode = world.galaxies[0].episodes[DIVERT_ACTOR.key];
+		expect(episode.closed).toBe(false);
+		expect(episode.initiating.kind).toBe("disable");
+		expect(episode.initiating.cause).toEqual(PLAYER_KILL);
+		expect(episode.intervention?.kind).toBe("repair-start");
+	});
+
+	test("it comes back at the same ordinal, and that is where its schedule departs", () => {
+		const world = divertOne(newWorld(1));
+		const start = trafficDiversion(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			DIVERT_AT,
+		)[1];
+		if (start.kind !== "repair-start") throw new Error("no repair start");
+		const back = (t: number) =>
+			effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, t);
+		expect(back(start.completesAt - 0.01).condition).toBe("repairing");
+		const operational = back(start.completesAt);
+		expect(operational.condition).toBe("operational");
+		expect(operational.instanceOrdinal).toBe(0);
+	});
+
+	test("a second strike cannot divert it twice", () => {
+		// `main.ts` gates the write on `operational`, and the gate is real: the
+		// module throws rather than no-oping, so a repeat would be a crash in
+		// flight, not a missed transition.
+		const world = divertOne(newWorld(1));
+		const again = trafficDiversion(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			DIVERT_AT + 10,
+		)[0];
+		expect(() => applyTransition(world, 0, DIVERT_ACTOR.key, again)).toThrow(
+			"cannot disable a carrier that is repairing",
+		);
+	});
+
+	test("it is gone from its route across the save, not just across the frame", () => {
+		// The checkpoint's "across a save" row. `saveEnvelope` is what writes the
+		// world, and it advances the clock first — so the round trip is taken the
+		// way the store takes it, not the way a test would.
+		const world = advanceTo(divertOne(newWorld(1)), DIVERT_AT + 60);
+		const restored = parseWorld(serializeWorld(world));
+		const row = effectiveCarrier(
+			restored.galaxies[0],
+			DIVERT_ACTOR.key,
+			DIVERT_AT + 60,
+		);
+		expect(trafficPresence(row)).toBe("parked-home");
+		expect(
+			parkedTrafficActors([DIVERT_ACTOR], () => row).map((a) => a.key),
+		).toEqual([DIVERT_ACTOR.key]);
+		// And no new field was needed to get there: the divert is one row and one
+		// episode, both of which the save already knew how to carry.
+		expect(restored.worldSchemaVersion).toBe(world.worldSchemaVersion);
+	});
+});
+
+describe("H3d: the trigger is a hit that reaches hull points", () => {
+	test("shields alone move nothing; the first frame that spends hull points diverts", () => {
+		// Held in the beam, pinned, so the row is about the arithmetic and not
+		// the chase — the same rig H2's time-on-target row is built on.
+		let e = ahead("courier", 1);
+		let firstHullFrame = -1;
+		let hullFrames = 0;
+		for (let frame = 0; frame < 60 * 120; frame++) {
+			e = {
+				...e,
+				flight: { ...e.flight, ship: { pos: v3(0, 0, -1), vel: v3() } },
+			};
+			const step = stepEngagement(e, chaser(e, { pos: v3() }), SHOT, DT);
+			if (step.hullStruck) {
+				if (firstHullFrame < 0) firstHullFrame = frame;
+				hullFrames++;
+			}
+			e = step.engagement;
+			if (step.destroyed) break;
+		}
+		const shieldsGone = SHIELD_POOL / PULSE_LASER.damagePerS;
+		// Nothing before the shield side is off: a pilot who only strips shields
+		// changes nothing in the world, and shields recharge (H3d).
+		expect(firstHullFrame * DT).toBeGreaterThanOrEqual(shieldsGone);
+		expect(firstHullFrame * DT).toBeLessThan(shieldsGone + DT * 2);
+		// Every frame after that spends hull points too, up to the kill.
+		expect(hullFrames).toBeGreaterThan(1);
+	});
+});
+
+describe("H3b: where a diverted carrier is while it repairs", () => {
+	const carrierAt = (world: ReturnType<typeof newWorld>, t: number) =>
+		effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, t);
+
+	test("a divert is parked at home; a replacement under construction is absent", () => {
+		expect(trafficPresence({ condition: "operational" })).toBe("flying");
+		// The one state that is not absent: the world remembers it is sitting in
+		// its own berth, so it is drawn there rather than nowhere.
+		expect(
+			trafficPresence({ condition: "repairing", recovery: { kind: "repair" } }),
+		).toBe("parked-home");
+		// A replacement is a ship that does not exist yet. Drawing it in a berth
+		// would be drawing the carrier the player killed.
+		expect(
+			trafficPresence({
+				condition: "repairing",
+				recovery: { kind: "replacement" },
+			}),
+		).toBe("absent");
+		expect(trafficPresence({ condition: "destroyed" })).toBe("absent");
+	});
+
+	test("the struck one leaves the flying set and joins the parked one", () => {
+		const other = stationTrafficRoster(DIVERT_RECORD.index, DIVERT_HOME)[1];
+		const actors = [DIVERT_ACTOR, other];
+		let world = newWorld(1);
+		world = applyTransition(
+			world,
+			0,
+			other.key,
+			trafficDestruction(DIVERT_RECORD.index, other.homeStationId, DIVERT_AT),
+		);
+		world = divertOne(world);
+		const at = (t: number) =>
+			effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, t);
+		const conditionOf = (t: number) => (key: typeof KEY) =>
+			effectiveCarrier(world.galaxies[0], key, t);
+
+		const struck = DIVERT_ACTOR.key;
+		const flying = flyingTrafficActors(actors, conditionOf(DIVERT_AT)).map(
+			(a) => a.key,
+		);
+		expect(flying).not.toContain(struck);
+		// The destroyed one is neither flying nor parked: it is not drawn at all.
+		expect(
+			parkedTrafficActors(actors, conditionOf(DIVERT_AT)).map((a) => a.key),
+		).toEqual([struck]);
+		// And at the completion it flies again, which is its next departure.
+		const start = trafficDiversion(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			DIVERT_AT,
+		)[1];
+		if (start.kind !== "repair-start") throw new Error("no repair start");
+		expect(at(start.completesAt).condition).toBe("operational");
+		expect(
+			flyingTrafficActors(actors, conditionOf(start.completesAt)).map(
+				(a) => a.key,
+			),
+		).toContain(struck);
+		expect(parkedTrafficActors(actors, conditionOf(start.completesAt))).toEqual(
+			[],
+		);
+	});
+});
+
+describe("a kill on the way home stays reachable (H3c)", () => {
+	test("of an operational carrier it is still the one destroy change 1 shipped", () => {
+		expect(
+			trafficKillTransitions(
+				DIVERT_RECORD.index,
+				DIVERT_ACTOR,
+				"operational",
+				DIVERT_AT,
+			),
+		).toEqual([
+			trafficDestruction(
+				DIVERT_RECORD.index,
+				DIVERT_ACTOR.homeStationId,
+				DIVERT_AT,
+			),
+		]);
+	});
+
+	test("of a repairing one it interrupts the repair, then destroys it with its replacement", () => {
+		// `destroy` is legal from `operational` and `disabled` only, so the kill
+		// of a repairing carrier is two facts — and the schedule only a `destroy`
+		// can carry.
+		const struckAt = 100;
+		const killedAt = struckAt + RAIDER_REPAIR_S / 2;
+		const events = trafficKillTransitions(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			"repairing",
+			killedAt,
+		);
+		expect(events.map((e) => e.kind)).toEqual(["interrupt", "destroy"]);
+		expect(events[0].cause).toEqual(PLAYER_KILL);
+
+		let world = divertOne(newWorld(1), struckAt);
+		// The kill has to land while the repair is still running — which is the
+		// whole point of the row, and the reason the clock is picked from it.
+		expect(
+			effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, killedAt).condition,
+		).toBe("repairing");
+		for (const event of events)
+			world = applyTransition(world, 0, DIVERT_ACTOR.key, event);
+		const at = (t: number) =>
+			effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, t);
+		expect(at(killedAt).condition).toBe("destroyed");
+		expect(at(killedAt + RAIDER_WRECK_S).recovery?.kind).toBe("replacement");
+		const replaced = killedAt + RAIDER_WRECK_S + RAIDER_REPAIR_S;
+		expect(at(replaced).condition).toBe("operational");
+		// H1: it died, so what comes back is a new ship.
+		expect(at(replaced).instanceOrdinal).toBe(1);
+	});
+});
+
+describe("H9: a kill supersedes the strike that preceded it", () => {
+	/** The row the pilot's offence is judged against: read at the clock the
+	 *  offence lands, exactly as `main.ts` reads it. */
+	const rowAt = (world: ReturnType<typeof newWorld>, at: number) =>
+		effectiveCarrier(world.galaxies[0], DIVERT_ACTOR.key, at);
+
+	test("a strike on a carrier nobody has fired on yet costs the whole 15", () => {
+		expect(
+			marginalOffenceHeat(
+				"clean",
+				"struck",
+				chargedOffence({ condition: "operational" }),
+			),
+		).toBe(15);
+	});
+
+	test("strike then kill on one Clean carrier costs 40, not 55", () => {
+		const world = divertOne(newWorld(1));
+		const first = marginalOffenceHeat("clean", "struck", null);
+		// The kill lands while the divert is still running, which is what makes it
+		// the same episode rather than a second offence.
+		expect(chargedOffence(rowAt(world, DIVERT_AT + 10))).toBe("struck");
+		const second = marginalOffenceHeat(
+			"clean",
+			"destroyed",
+			chargedOffence(rowAt(world, DIVERT_AT + 10)),
+		);
+		expect(first).toBe(15);
+		expect(second).toBe(25);
+		expect(first + second).toBe(offenceHeat("clean", "destroyed"));
+	});
+
+	test("a second strike in the same episode adds nothing", () => {
+		const world = divertOne(newWorld(1));
+		expect(
+			marginalOffenceHeat(
+				"clean",
+				"struck",
+				chargedOffence(rowAt(world, DIVERT_AT + 10)),
+			),
+		).toBe(0);
+	});
+
+	test("once the repair has completed, the next offence is a new episode and pays in full", () => {
+		const world = divertOne(newWorld(1));
+		const start = trafficDiversion(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			DIVERT_AT,
+		)[1];
+		if (start.kind !== "repair-start") throw new Error("no repair start");
+		// The completion closes the episode lazily, on the read — and a kill
+		// against the ship that came back is a fresh 40, not a 25 top-up.
+		const back = rowAt(world, start.completesAt);
+		expect(back.condition).toBe("operational");
+		expect(chargedOffence(back)).toBe(null);
+		expect(
+			marginalOffenceHeat("clean", "destroyed", chargedOffence(back)),
+		).toBe(40);
+	});
+
+	test("the strike is read off the carrier's row, because the ledger keeps only the latest episode", () => {
+		let world = divertOne(newWorld(1));
+		const strike = world.galaxies[0].episodes[DIVERT_ACTOR.key];
+		expect(strike.closed).toBe(false);
+		expect(strike.initiating.kind).toBe("disable");
+
+		const events = trafficKillTransitions(
+			DIVERT_RECORD.index,
+			DIVERT_ACTOR,
+			"repairing",
+			DIVERT_AT + 10,
+		);
+		for (const event of events)
+			world = applyTransition(world, 0, DIVERT_ACTOR.key, event);
+		// §5's accepted cost of the bound: the kill's own episode replaces the
+		// strike's summary wholesale. Nothing in `episodes` still says a strike
+		// happened — which is why H9's supersession is read from the carrier's
+		// condition (`chargedOffence`), where the divert is still standing, and
+		// not from the episode ledger.
+		expect(world.galaxies[0].episodes[DIVERT_ACTOR.key].initiating.kind).toBe(
+			"destroy",
+		);
 	});
 });

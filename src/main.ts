@@ -290,13 +290,17 @@ import {
 import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
 import {
 	type Engagement,
+	chargedOffence,
 	engage,
 	fliesItsRoute,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
+	parkedTrafficActors,
 	stepEngagement,
-	trafficDestruction,
+	trafficDiversion,
 	trafficInSights,
+	trafficKillTransitions,
+	trafficPresence,
 } from "./traffic-engagement";
 import { carrierName } from "./carrier-name";
 import {
@@ -324,7 +328,12 @@ import {
 	scanRefusal,
 	stepScanHold,
 } from "./carrier-scan";
-import { heatAt, legalStandingAt, offenceHeat, withOffence } from "./legal";
+import {
+	heatAt,
+	legalStandingAt,
+	marginalOffenceHeat,
+	withOffence,
+} from "./legal";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
@@ -2602,11 +2611,15 @@ class Game {
 		return (
 			Number.isFinite(this.trafficTick) &&
 			this.trafficWarmIndex >= this.trafficActors.length &&
-			// **The flying actors, not the roster** (civilian-combat H1): a
-			// destroyed or repairing carrier has no route, so against the roster
-			// a kill left authority "warming" until the replacement completed, and
-			// every lane request in the system was refused for half an hour.
-			this.trafficRoutes.length === this.flyingTraffic().length
+			// **The carriers Traffic draws, not the roster** (civilian-combat H1,
+			// H3b). A destroyed carrier has no route, so against the roster a kill
+			// left authority "warming" until the replacement completed, and every
+			// lane request in the system was refused for half an hour. A diverted
+			// one is on the other side of that line: it holds a route Traffic has
+			// to answer, and it never asks for a lane. So the equality is over who
+			// is drawn, and a strike must not be able to close the lanes behind it.
+			this.trafficRoutes.length ===
+				this.flyingTraffic().length + this.divertedTraffic().length
 		);
 	}
 
@@ -4598,7 +4611,8 @@ class Game {
 		this.refreshColdTraffic(this.world.gameTime);
 	}
 
-	/** Keep cold parked ships attached to their moving stations until hand-off. */
+	/** Keep parked ships attached to their moving stations until hand-off: the
+	 *  roster's cold carriers, and the diverted ones sitting out their repairs. */
 	private refreshColdTraffic(gameTime: number, projectionSystem?: System) {
 		this.trafficRoutes.length = 0;
 		this.berthOccupancy.clear();
@@ -4607,6 +4621,10 @@ class Game {
 		this.trafficProjectionAtS = gameTime;
 		const system =
 			projectionSystem ?? makeSystem(this.world.system.record, gameTime);
+		for (const projection of this.divertedProjections(gameTime, system)) {
+			this.trafficRoutes.push(projection);
+			this.holdBerth(projection);
+		}
 		for (const actor of this.flyingTraffic()) {
 			if (!this.trafficColdActors.has(actor.key)) continue;
 			const projection = projectParkedTrafficActor({
@@ -4616,12 +4634,19 @@ class Game {
 			});
 			if (!projection.berthId) continue;
 			this.trafficRoutes.push(projection);
-			const occupied = new Set(
-				this.berthOccupancy.get(actor.homeStationId) ?? EMPTY_BERTHS,
-			);
-			occupied.add(projection.berthId);
-			this.berthOccupancy.set(actor.homeStationId, occupied);
+			this.holdBerth(projection);
 		}
+	}
+
+	/** One projection's berth, held at the station it is standing at. */
+	private holdBerth(projection: SystemTrafficProjection): void {
+		const stationId = projection.terminalStationId;
+		if (!projection.berthId || !stationId) return;
+		const occupied = new Set(
+			this.berthOccupancy.get(stationId) ?? EMPTY_BERTHS,
+		);
+		occupied.add(projection.berthId);
+		this.berthOccupancy.set(stationId, occupied);
 	}
 
 	/** Advance generated Traffic authority at the simulation boundary. */
@@ -4761,6 +4786,25 @@ class Game {
 						}
 					: undefined;
 			};
+			// **A diverted carrier holds its berth before anyone else is dealt
+			// one.** Its schedule still says it is away on the leg it was pulled
+			// off, so the flying actors would otherwise be handed berths from a
+			// catalogue that does not know a ship is standing in one — and one
+			// tick of that is two hulls drawn on one pad, with the lower-priority
+			// one deleted a frame later. Seeded from the same projection it is
+			// drawn with, so the berth it holds and the berth it is seen in are
+			// one fact rather than two that have to agree.
+			for (const projection of this.divertedProjections(
+				tick / 10,
+				projectionSystem,
+			)) {
+				this.trafficRoutes.push(projection);
+				if (!projection.berthId || !projection.terminalStationId) continue;
+				const held =
+					occupied.get(projection.terminalStationId) ?? new Set<string>();
+				held.add(projection.berthId);
+				occupied.set(projection.terminalStationId, held);
+			}
 			const baselines = this.flyingTraffic().map((actor) => ({
 				actor,
 				projection: projectSystemTrafficAuthority({
@@ -5042,11 +5086,13 @@ class Game {
 				(candidate) => candidate.key === projection.key,
 			);
 			if (!actor) continue;
-			// Flown, not projected, while engaged; and a carrier killed since the
-			// last authority tick is not drawn from its stale route.
+			// Flown, not projected, while engaged; and a carrier that is not in the
+			// world any more — destroyed, or a replacement still being built — is
+			// not drawn from its stale route. **A diverted one is**, and from its
+			// berth: `parked-home` is a place to be, not an absence.
 			if (
 				this.trafficEngagements.has(actor.key) ||
-				!this.trafficOperational(actor.key)
+				!this.trafficShown(actor.key)
 			)
 				continue;
 			const previous = this.trafficContacts.get(actor.key);
@@ -5215,20 +5261,53 @@ class Game {
 		);
 	}
 
+	/**
+	 * The diverted carriers, drawn standing in their home berths (H3b).
+	 *
+	 * Not `projectSystemTrafficAuthority`: a struck carrier is not arbitrating
+	 * for a lane, has no visit to hold, and its schedule's current term is the
+	 * leg it was pulled off mid-way. The one projection that answers "where does
+	 * this carrier stand in its own berth" is the parked one — the same
+	 * projection a carrier before its first departure is drawn with, which is
+	 * what makes the divert need no new form of its own.
+	 */
+	private divertedTraffic(): TrafficActor[] {
+		return parkedTrafficActors(this.trafficActors, (key) =>
+			this.carrierCondition(key),
+		);
+	}
+
+	private divertedProjections(
+		gameTime: number,
+		projectionSystem: System,
+	): SystemTrafficProjection[] {
+		return this.divertedTraffic().map((actor) =>
+			projectParkedTrafficActor({ actor, gameTime, projectionSystem }),
+		);
+	}
+
 	private trafficOperational(key: CarrierKey): boolean {
 		return fliesItsRoute(this.carrierCondition(key));
 	}
 
+	/** Drawn at all? A diverted carrier is, in its berth; a destroyed one and a
+	 *  replacement under construction are not. */
+	private trafficShown(key: CarrierKey): boolean {
+		return trafficPresence(this.carrierCondition(key)) !== "absent";
+	}
+
 	/**
-	 * One frame of civilian combat (`civilian-combat.md` H2, H3).
+	 * One frame of civilian combat (`civilian-combat.md` H2, H3, H10).
 	 *
 	 * **A shot that lands on a projected carrier engages it**: the carrier is
 	 * handed from its projection to flight at the pose it is drawn in, and the
 	 * same step then lands the shot. An engaged carrier is stepped through the
 	 * shared condition model on its own hull; an armed one's return fire goes
-	 * through `takeDamage` like the raider's. **A survivor is transient in this
-	 * change** (H10): past the dematerialization range the engagement is dropped
-	 * and the carrier goes back to its projection. The diversion is #365's.
+	 * through `takeDamage` like the raider's. **A survivor is diverted** (H3b,
+	 * H3c): the frame that spends hull points writes its `disable` and its
+	 * repair, and the pilot keeps flying the ship that runs — until it is out of
+	 * the band, where it stops being flown and starts being a carrier parked at
+	 * home (`parkedTrafficActors`).
 	 */
 	private stepTrafficEngagements(dt: number, shot: PlayerShot) {
 		const pilot: DuelPilot = {
@@ -5288,8 +5367,8 @@ class Game {
 		}
 	}
 
-	/** Step the engaged carriers: return fire, a kill, or out of range back to
-	 *  the projection (a survivor is transient in this change, H10). */
+	/** Step the engaged carriers: return fire, a kill, a divert, or out of range
+	 *  back to the projection. */
 	private stepEngagedTraffic(pilot: DuelPilot, shot: PlayerShot, dt: number) {
 		for (const [key, engagement] of this.trafficEngagements) {
 			const actor = this.trafficActorByKey(key);
@@ -5308,11 +5387,22 @@ class Game {
 				this.destroyTrafficCarrier(actor, step.engagement);
 				continue;
 			}
+			// The strike is written the frame the hull gives way, and the fight
+			// carries on: H3's intent does not stop because the world has decided
+			// where this ship sleeps tonight.
+			if (step.hullStruck) this.divertTrafficCarrier(actor);
 			const rangeKm = length(
 				sub(step.engagement.flight.ship.pos, this.world.ship.pos),
 			);
 			if (rangeKm > TRAFFIC_DEMATERIALIZE_KM) {
 				this.trafficEngagements.delete(key);
+				// A survivor the pilot merely outran goes back to the projection it
+				// was struck in, and keeps its contact: the next frame draws it at
+				// the pose it would have had. **A diverted one has nowhere to go
+				// back to** — its projection is a berth, and the berth is not where
+				// the pilot is standing. Leaving the contact alive would snap the
+				// ship from the sky onto its pad the frame the fight ends.
+				if (!this.trafficOperational(key)) this.forgetTrafficContact(key);
 				continue;
 			}
 			this.trafficEngagements.set(key, step.engagement);
@@ -5321,6 +5411,17 @@ class Game {
 
 	private trafficActorByKey(key: CarrierKey): TrafficActor | undefined {
 		return this.trafficActors.find((a) => a.key === key);
+	}
+
+	/** Take one carrier out of what the player can look at: the scanner's list,
+	 *  the selectable set. Not the lock — a diverted carrier is still out there
+	 *  with a lock worth keeping, and only the kill drops that with the ship. */
+	private forgetTrafficContact(key: CarrierKey): void {
+		const contact = this.trafficContacts.get(key);
+		if (!contact) return;
+		this.unregisterContact(contact);
+		this.trafficContacts.delete(key);
+		this.selectableCache = null;
 	}
 
 	private trafficRouteByKey(key: CarrierKey) {
@@ -5360,15 +5461,69 @@ class Game {
 	}
 
 	/**
-	 * A kill (`civilian-combat.md` H1, H4, H11): the carrier's destroy with its
-	 * scheduled replacement, the manifest a scan would have shown dropped as
+	 * A hull strike (`civilian-combat.md` H3b, H3c, H3d): the carrier is disabled
+	 * by the player's own fire and booked into its home berth in the same tick,
+	 * and the strike is an offence.
+	 *
+	 * **Gated on `operational`, and the gate is load-bearing.** `disable` is
+	 * legal from an `operational` carrier only — `world-state.ts` throws rather
+	 * than no-oping — and a fight lasts dozens of frames after the hull gives
+	 * way. The gate reads the world rather than a flag on the engagement,
+	 * because the divert outlives the session that caused it: reload into a
+	 * fight with a carrier already heading home and no engagement remembers
+	 * having struck it.
+	 *
+	 * **Nothing here ends the fight.** The ship that survives keeps fleeing on
+	 * its own hull (H3), and the pilot keeps the lock: what changes is where the
+	 * world says it will be afterwards.
+	 */
+	private divertTrafficCarrier(actor: TrafficActor) {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		const carrier = this.carrierCondition(actor.key);
+		if (carrier.condition !== "operational") return;
+		const standing = carrierStanding(
+			record.seed,
+			actor.key,
+			carrier.instanceOrdinal,
+			now,
+		);
+		for (const event of trafficDiversion(record.index, actor, now))
+			this.applyCarrierTransition(actor.key, event);
+		const heat = marginalOffenceHeat(
+			standing,
+			"struck",
+			chargedOffence(carrier),
+		);
+		if (heat > 0) {
+			this.commerceWorld = withOffence(
+				this.commerceWorld,
+				record.galaxy,
+				heat,
+				now,
+			);
+			this.saveDirty();
+		}
+		this.lastExit =
+			heat > 0
+				? `${actor.callsign} disabled — running home, and that is an offence`
+				: `${actor.callsign} disabled — running home`;
+	}
+
+	/**
+	 * A kill (`civilian-combat.md` H1, H4, H9, H11): the carrier's destroy with
+	 * its scheduled replacement, the manifest a scan would have shown dropped as
 	 * canisters, and the offence judged on its true standing and written.
 	 */
 	private destroyTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
 		const record = this.world.system.record;
 		const now = this.world.gameTime;
-		const { instanceOrdinal } = this.carrierCondition(actor.key);
-		// Read before the destroy, at the instance that died.
+		// Read once, before anything is written: the instance that is about to
+		// die, the condition the kill has to be legal from, and — if the pilot
+		// finished off a carrier they had already struck — the offence this
+		// episode has already cost them (H9).
+		const carrier = this.carrierCondition(actor.key);
+		const { instanceOrdinal } = carrier;
 		const standing = carrierStanding(
 			record.seed,
 			actor.key,
@@ -5380,10 +5535,13 @@ class Game {
 			instanceOrdinal,
 			engagement.voyageOrdinal,
 		);
-		this.applyCarrierTransition(
-			actor.key,
-			trafficDestruction(record.index, actor.homeStationId, now),
-		);
+		for (const event of trafficKillTransitions(
+			record.index,
+			actor,
+			carrier.condition,
+			now,
+		))
+			this.applyCarrierTransition(actor.key, event);
 		this.canisters = [
 			...this.canisters,
 			...dropManifestCanisters({
@@ -5397,7 +5555,11 @@ class Game {
 				frameBodyId: this.frameBody?.id ?? null,
 			}),
 		];
-		const heat = offenceHeat(standing, "destroyed");
+		const heat = marginalOffenceHeat(
+			standing,
+			"destroyed",
+			chargedOffence(carrier),
+		);
 		if (heat > 0) {
 			this.commerceWorld = withOffence(
 				this.commerceWorld,
@@ -5413,12 +5575,7 @@ class Game {
 				? `${actor.callsign} destroyed — an offence`
 				: `${actor.callsign} destroyed`;
 		this.trafficEngagements.delete(actor.key);
-		const contact = this.trafficContacts.get(actor.key);
-		if (contact) {
-			this.unregisterContact(contact);
-			this.trafficContacts.delete(actor.key);
-			this.selectableCache = null;
-		}
+		this.forgetTrafficContact(actor.key);
 		// The lock goes with the ship, as the raider's, relay's and canister's
 		// do. The replacement comes back under the same key (H1), and a lock left
 		// here would hand it back already selected with the gimbal on it
@@ -5449,6 +5606,10 @@ class Game {
 					vel: { ...contact.velocity },
 					condition: carrier.condition,
 					instanceOrdinal: carrier.instanceOrdinal,
+					// Where the row leaves it, as Traffic draws it: on a route, in a
+					// berth, or not at all.
+					presence: trafficPresence(carrier),
+					repairCompletesAt: carrier.recovery?.completesAt ?? null,
 					standing: carrierStanding(
 						record.seed,
 						key,
@@ -5474,6 +5635,16 @@ class Game {
 				heatNow: heatAt(this.legalStatus(), now),
 				standing: this.legalStanding(),
 			},
+			// Every carrier Traffic is holding at a berth rather than on a route,
+			// and the clock it rejoins its schedule at — read off the roster rather
+			// than the materialized set, because a probe checking that a struck
+			// carrier has left its route is standing somewhere else when it asks.
+			parkedHome: this.divertedTraffic().map((actor) => ({
+				key: actor.key,
+				callsign: actor.callsign,
+				homeStationId: actor.homeStationId,
+				backAtS: this.carrierCondition(actor.key).recovery?.completesAt ?? null,
+			})),
 			authorityReady: this.trafficAuthorityReady(),
 		};
 	}

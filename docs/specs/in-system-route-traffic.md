@@ -182,12 +182,28 @@ does not hand authority over. Two decisions do. #75 made Traffic collidable (the
 map's Constraints). #362 made it fireable (`civilian-combat.md` H2, H3): a shot
 that lands flies the carrier from the pose it is drawn in, and a destroyed
 carrier flies no route and holds no berth until its replacement is operational
-(H1). **The handoff is presentation only in #362's first change**: an engaged
-carrier that survives still has its projection in authority, so its route keeps
-taking part in lane and berth arbitration while it flees, and it rejoins that
-route when the engagement ends. #365's diversion is where a survivor leaves it. A repairing carrier diverted by a strike is
-#365's to draw (H3c). Authority readiness counts the
-carriers that fly, not the roster.
+(H1) — and a replacement under construction is not drawn in the dead ship's
+place either, which is why the *kind* of a `repairing` row's recovery decides
+where it is and the bare condition cannot.
+
+**A survivor is diverted, and that is where it leaves its projection**
+(`civilian-combat.md` H3b, H3c, #365). The frame that spends hull points books
+the carrier's home berth against it until its repair completes, and the
+completion is the first departure its own schedule makes at or after H3d's `T` —
+so the berth empties exactly when the schedule takes the ship away from it, and
+the ship that comes back is the same `instanceOrdinal`. While it is held there
+it is arbitrating for no lane and holding no visit, and it is drawn by the same
+parked projection a carrier before its first departure is drawn with: the divert
+is a place a carrier is, not a new kind of route. Its schedule keeps running
+underneath, so the leg it was pulled off is not the leg it resumes — the next
+one is.
+
+**Authority readiness counts the carriers Traffic draws, not the roster and not
+only the flying ones.** A destroyed carrier is owed no projection, so counting it
+would refuse every lane in the system for the length of a replacement; a diverted
+one is owed one, and it holds its berth against the flying actors' berth
+catalogue before any of them is dealt a pod. A strike must not be able to close
+the lanes behind it.
 
 ## 6. Drive charge
 

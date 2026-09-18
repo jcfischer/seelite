@@ -150,12 +150,25 @@ who came back finds the ship they attacked gone from its route.
 At the diverting hit, two transitions in one tick:
 
 1. `disable`, with the player's provenance;
-2. `repair-start`, with the home station's provenance, `completesAt = now + T`.
+2. `repair-start`, with the home station's provenance, and `completesAt` at the
+   **first departure that carrier's own schedule makes at or after `now + T`**.
+
+`T` is a floor on the absence, not the booked figure. The principal was offered
+`completesAt = now + T` exactly, which is what this section first said, and the
+rounding to a departure instead: it adds no saved field and no schema term, and
+a repair that finishes mid-leg would otherwise leave the ship written as
+operational somewhere it is not drawn until its schedule comes round anyway —
+so the berth empties on the frame the schedule takes it away, and the row is
+`REPAIRING` through the tail rather than sitting one tick out of step with the
+lane it cannot yet enter.
 
 `repair-complete` returns it to operational with its `instanceOrdinal`
 unchanged — the same ship, which H1 does not contradict because nothing was
 replaced. `repairing → destroyed` is a shipped transition, so the ship stays
-killable on its way home.
+killable on its way home: a kill there interrupts the repair to `disabled` and
+then destroys, because a carrier already written as destroyed cannot be
+destroyed again, and the shorter route would leave a wreck with no replacement
+schedule and a berth nobody returns to.
 
 The principal was offered this and widening the model so a `disable` carries its
 own schedule, and chose this. The widening is what `station-damage.md` E4
@@ -342,11 +355,49 @@ Recorded because each would have shipped green without the browser tier.
 - **Authority readiness counted the roster.** `trafficAuthorityReady` compared
   routes with actors, and a destroyed carrier has no route, so a kill left the
   system's authority "warming" until the replacement — and every lane request
-  there refused. It counts the flying carriers; the probe row was built red
-  against the roster comparison.
+  there refused. It counts the carriers Traffic draws, flying and diverted; the
+  probe row was built red against the roster comparison.
 - **The module is `traffic-engagement.ts`, not `civilian-combat.ts`.**
   `tests/combat-rig-boundary.test.ts` bans the word *combat* from `main.ts` to
   keep the prototype rig unthreaded, and an import specifier counts.
+
+## What building the second change found
+
+The same rule, on the diversion.
+
+- **The tick a carrier is struck is the tick its berth could be dealt twice.**
+  A divert books the home berth while the carrier's *schedule* still says it is
+  away, so the flying actors' berth catalogue still held a term for the ship
+  that had just come in, and it was the one the struck hull was standing in. The
+  parked projection goes into `occupied` before any flying actor is dealt a pod.
+  The probe scans the berths Traffic is holding for a second hull on each.
+- **What an incident has already cost is not in the episode ledger.** An
+  `interrupt` closes the strike's episode and the `destroy` that follows opens a
+  new one which replaces `episodes[key]` wholesale — H9's supersession is not
+  recoverable from it, and a read taken before the write can be stale besides.
+  So the charge is read off the carrier's own row: `chargedOffence` asks where
+  the ship is, which also makes it correct straight after a reload with no
+  engagement flag to carry across a save. `tests/legal.test.ts` and the ledger
+  row in `tests/traffic-engagement.test.ts` hold the two halves.
+- **A kill on the way home interrupts to `disabled`, not to `destroyed`.** The
+  tempting shortcut — `interrupt` with `resulting: "destroyed"` — leaves a
+  carrier already written as destroyed, and `destroy` is illegal from
+  `destroyed`: no destroy event, so no replacement schedule, and a berth nobody
+  ever empties.
+- **A diverted carrier's contact leaves with the engagement.** Out of the band a
+  survivor used to hand back to the route it was struck on and keep its contact;
+  a struck one has no route to hand back to — its projection is a berth 12,000 km
+  from the player — so the contact stayed live and the ship was standing on its
+  pad the frame the fight stopped. `trafficShown` is the presentation's gate and
+  the engagement drops the contact with it.
+- **The browser tier cannot time a shield side, and that is not a defect in the
+  divert.** Which side of a fleeing carrier the beam finds is a matter of how it
+  fled, so the seconds a hull took to open is not a fact about H3d. What the
+  probe holds is the frame-precise one — the hull was whole on the frame before
+  the row turned, and points were spent on the frame it did — and the arithmetic
+  against `SHIELD_POOL / PULSE_LASER.damagePerS` stays where the geometry is
+  pinned, in the headless rig. A row that asserted the seconds was falsely red
+  here before it was rewritten.
 
 ## Rules this makes false, and where they are amended
 

@@ -12,6 +12,7 @@ import {
 	heatAt,
 	legalStandingAt,
 	legalStandingOf,
+	marginalOffenceHeat,
 	offenceHeat,
 	withOffence,
 } from "../src/legal";
@@ -52,6 +53,34 @@ describe("an offence is judged on the target's true standing (F7)", () => {
 			expect(offenceHeat(standing, "destroyed")).toBe(0);
 			expect(offenceHeat(standing, "struck")).toBe(0);
 		}
+	});
+});
+
+describe("H9: one episode costs its largest offence, not their sum", () => {
+	test("a kill after a strike adds the difference and no more", () => {
+		expect(marginalOffenceHeat("clean", "struck", null)).toBe(15);
+		expect(marginalOffenceHeat("clean", "destroyed", null)).toBe(40);
+		expect(marginalOffenceHeat("clean", "destroyed", "struck")).toBe(25);
+		// Strike then kill is one incident at 40. Summing them — which is what a
+		// write that ignores the episode does — is 55.
+		expect(
+			marginalOffenceHeat("clean", "struck", null) +
+				marginalOffenceHeat("clean", "destroyed", "struck"),
+		).toBe(40);
+	});
+
+	test("an offence already covered by the episode adds nothing", () => {
+		expect(marginalOffenceHeat("clean", "struck", "struck")).toBe(0);
+		// A second hit on a carrier already diverted by the first is the common
+		// case, not the odd one: the pilot keeps firing at the ship running away.
+		expect(marginalOffenceHeat("clean", "struck", "destroyed")).toBe(0);
+	});
+
+	test("a lawful target costs nothing whatever the episode carries", () => {
+		for (const standing of ["wanted", "fugitive"] as const)
+			for (const offence of ["struck", "destroyed"] as const)
+				for (const already of [null, "struck", "destroyed"] as const)
+					expect(marginalOffenceHeat(standing, offence, already)).toBe(0);
 	});
 });
 

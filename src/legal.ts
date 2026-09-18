@@ -5,9 +5,11 @@
  * §4 rules legal status per galaxy, bounded, read as Clean, Wanted or
  * Fugitive, decaying lazily on a 30-minute half-life. It named no offence cost
  * and no threshold, and #362 set them with the principal: a Clean kill is 40,
- * a strike 15 (written by #365, with H9's supersession), Wanted at 10,
- * Fugitive at 60, capped at 100. The scale is Elite's legal value in shape — an
- * offender band, and a fugitive band that one incident does not reach.
+ * a strike 15, Wanted at 10, Fugitive at 60, capped at 100. The scale is Elite's
+ * legal value in shape — an offender band, and a fugitive band that one incident
+ * does not reach. **One incident is the unit**, and that is `marginalOffenceHeat`
+ * (H9): the two figures are what an offence costs on its own, not what it adds
+ * to an episode that already carries one.
  *
  * **What is saved is `LegalStatus`'s pair and nothing else.** A standing label
  * is a §8 projection, derived here on read (`persistent-world-state.md` §7),
@@ -36,6 +38,30 @@ export type Standing = "clean" | "wanted" | "fugitive";
 /** H4 read through F7: a Wanted or Fugitive target is lawful to fire on. */
 export const offenceHeat = (target: Standing, offence: Offence): number =>
 	target === "clean" ? OFFENCE_HEAT[offence] : 0;
+
+/**
+ * H9: what one offence **adds** when the same carrier's episode already
+ * carries a bigger one.
+ *
+ * A kill supersedes the strike that preceded it, so strike-then-kill costs 40
+ * and not 55 — one incident, one charge, read as the worst thing done in it.
+ * Summing is what the naive write does, and it is not a rounding difference: it
+ * puts the pilot 15 heat and fifteen-odd minutes deeper into Wanted than the
+ * ruling chose.
+ *
+ * `already` is read off the world (`traffic-engagement.ts`'s `chargedOffence`),
+ * never off a counter — an episode outlives a session, and the ledger is the
+ * only copy that survives the reload.
+ */
+export const marginalOffenceHeat = (
+	target: Standing,
+	offence: Offence,
+	already: Offence | null,
+): number =>
+	Math.max(
+		0,
+		offenceHeat(target, offence) - (already ? offenceHeat(target, already) : 0),
+	);
 
 /** The stored heat decayed to `gameTime`. A clock before the stamp reads the
  *  stamp's figure: decay never runs backwards. */
