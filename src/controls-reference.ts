@@ -334,5 +334,5 @@ export function controlsBody(
 ): string {
 	const owner =
 		catalogue.layout === "default" ? "DEFAULT LAYOUT" : "PLAYER LAYOUT";
-	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>${CONTROLS_CHORD} opens and closes this tab</span><span>Keys print as a US keyboard types them</span></header><div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
+	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header><div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
 }

@@ -132,7 +132,9 @@ describe("the catalogue is complete against the source", () => {
 	 * the call this table names for that row.
 	 *
 	 * The table is a restatement, deliberately: it is the one place the row's
-	 * *meaning* meets the code, and a row added without an entry is a red run.
+	 * *meaning* meets the code. A row whose pressed key has a `case` in `main.ts`
+	 * and no entry here is a red run; a key with no `case` there — a panel's own —
+	 * is not checked by this row, and the shape row above is what holds it.
 	 */
 	test("every pressed key's case does what its row says", () => {
 		const main = codeOf("src/main.ts");

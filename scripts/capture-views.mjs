@@ -474,16 +474,16 @@ const PLACERS = {
 		await page.evaluate((folded) => {
 			// Queried again each pass: a fold redraws the tree, so a list taken
 			// once holds detached headers after the first click (sage round 1).
-			for (
-				let header = document.querySelector(
-					'[data-live-controls-group][aria-expanded="false"]',
-				);
-				header;
-				header = document.querySelector(
-					'[data-live-controls-group][aria-expanded="false"]',
-				)
-			)
+			// Bounded, and it throws: a build whose click does not toggle would
+			// otherwise spin here and hang the run with no message (sage round 3).
+			const closed = '[data-live-controls-group][aria-expanded="false"]';
+			for (let pass = 0; pass < 12; pass++) {
+				const header = document.querySelector(closed);
+				if (!header) break;
 				header.click();
+			}
+			if (document.querySelector(closed))
+				throw new Error("controls placer: a folded group would not open");
 			for (const group of folded)
 				document
 					.querySelector(`[data-live-controls-group="${group}"]`)
