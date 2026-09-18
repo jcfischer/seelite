@@ -107,6 +107,15 @@ The base schedule supplies an actor's desired `parked` or `away` state at any
 actor holds one pending movement intent with the original scheduled boundary as
 its `readyAt` time. That timestamp remains its place in the shared queues.
 
+A carrier struck mid-leg is the one case where the schedule and the row disagree
+on purpose, and the disagreement is settled by the overlay rather than here
+(`civilian-combat.md` H3b, #365): the ship is held at its home berth while the
+repair runs, whatever this section's clock says it should be doing. It holds no
+pending intent and accumulates no backlog for the absence, because the repair is
+booked to complete at the **first departure the schedule makes at or after its
+floor** — so the berth empties on the frame the schedule takes the ship away, and
+the leg it flies is the next one rather than the one it was pulled off mid-way.
+
 Later schedule changes coalesce into the actor's current desired state; they do
 not accumulate a movement backlog. Once a traversal finishes, that actor cannot
 move again until the next station movement opportunity. Clearing congestion

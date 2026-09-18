@@ -160,8 +160,10 @@ GitHub proves the browser tier was run. That check is yours, before you merge.
   lead, an intercept — must use velocities relative to that frame; #362 found
   `combat-enemy.ts` leading on absolute velocity, invisible for every raider
   duel because cruise legs are fought in the star frame. And Traffic authority
-  is ready when every *flying* carrier has a route (`flyingTraffic`): a
-  destroyed one never gets one.
+  is ready when every carrier Traffic **draws** has a route — the flying ones
+  (`flyingTraffic`) and the diverted ones standing in their home berths
+  (`divertedTraffic`): a destroyed carrier is owed neither and a struck one is
+  owed exactly one, so neither a kill nor a strike closes the system's lanes.
 - **`src/sim.ts` must not import Three.js.** The authoritative world is float64
   kilometres outside the scene graph; the scene graph is display only, and
   nothing reads a position back out of an `Object3D`.

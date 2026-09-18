@@ -201,6 +201,32 @@ export function trafficScheduleAt(
 	};
 }
 
+/**
+ * The first departure **at or after** `atLeastS`.
+ *
+ * `trafficScheduleAt` answers where the cycle is now; a carrier that has to wait
+ * for a departure needs the next term forward, and nothing here asks for one
+ * yet — every other consumer takes the current term or the one behind it. The
+ * terms are an arithmetic progression, so this is closed form and materializes
+ * no list.
+ *
+ * **The tolerance is a clock's, not a fudge.** `departureAtS + n·cycleS` fed
+ * back through this same division is `n` to within a float's memory of the
+ * multiply, and a bare `ceil` would turn that into the *following* departure —
+ * so asking when the next departure after a departure is would move the answer
+ * by a whole cycle. 10 Hz is the finest anything reads a schedule at (the
+ * authority tick), and a term within a billionth of a cycle of the clock asked
+ * is that term.
+ */
+export function nextTrafficDepartureAtS(
+	schedule: TrafficSchedule,
+	atLeastS: number,
+): number {
+	const { cycleS, departureAtS } = schedule;
+	const cycles = Math.ceil((atLeastS - departureAtS) / cycleS - 1e-9);
+	return departureAtS + cycles * cycleS;
+}
+
 /** Identity used only while ordering a station turn; it is never persisted. */
 export type StationParticipant =
 	| { kind: "carrier"; key: CarrierKey }
