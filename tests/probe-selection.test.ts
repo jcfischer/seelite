@@ -50,7 +50,6 @@ describe("the deterministic branches", () => {
 		const result = await selectProbes(
 			{
 				changedFiles: ["docs/specs/docking.md", "tests/docking.test.ts"],
-				title: "Clarify and test docking arithmetic",
 			},
 			async () => {
 				called = true;
@@ -71,7 +70,6 @@ describe("the deterministic branches", () => {
 					"scripts/probe-galaxy-map.mjs",
 					"tests/galaxy-route.test.ts",
 				],
-				title: "Tighten galaxy-map picking evidence",
 			},
 			async () => {
 				called = true;
@@ -92,7 +90,7 @@ describe("the deterministic branches", () => {
 			".github/workflows/deploy.yml",
 			"vite.config.ts",
 		]) {
-			const result = await selectProbes({ changedFiles: [file], title: file });
+			const result = await selectProbes({ changedFiles: [file] });
 			expect(result.mode).toBe("all");
 			expect(result.probes).toEqual(discovered);
 			expect(result.reason).toContain(file);
@@ -105,17 +103,11 @@ describe("the semantic branch", () => {
 		const result = await selectProbes(
 			{
 				changedFiles: ["src/cruise.ts"],
-				title: "Keep a cruise route clear of a moving host planet",
-				body: "Change moving-body avoidance and arrival handoff.",
-				diff: "+ sweep the moving host before advancing the cruise leg",
 			},
 			async ({ questions, state }) => {
 				expect(state).toEqual({
 					untrusted_evidence: {
-						title: "Keep a cruise route clear of a moving host planet",
-						body: "Change moving-body avoidance and arrival handoff.",
 						changed_files: ["src/cruise.ts"],
-						diff: "+ sweep the moving host before advancing the cruise leg",
 					},
 				});
 				return {
@@ -144,7 +136,6 @@ describe("the semantic branch", () => {
 		const result = await selectProbes(
 			{
 				changedFiles: ["scripts/probe-cruise.mjs", "src/cruise.ts"],
-				title: "Change cruise and its browser evidence",
 			},
 			async () => ({ answers: probabilities() }),
 		);
@@ -164,7 +155,7 @@ describe("the semantic branch", () => {
 			{ ...probabilities(), probe_cruise: { type: "noul", noul: 2 } },
 		]) {
 			const result = await selectProbes(
-				{ changedFiles: ["src/cruise.ts"], title: "Cruise" },
+				{ changedFiles: ["src/cruise.ts"] },
 				async () => ({ answers }),
 			);
 			expect(result.mode).toBe("all");
@@ -175,13 +166,12 @@ describe("the semantic branch", () => {
 	test("falls back to all probes when TypeSafe is unavailable", async () => {
 		const unavailable = await selectProbes({
 			changedFiles: ["src/cruise.ts"],
-			title: "Cruise",
 		});
 		expect(unavailable.mode).toBe("all");
 		expect(unavailable.fallback).toBe(true);
 
 		const failed = await selectProbes(
-			{ changedFiles: ["src/cruise.ts"], title: "Cruise" },
+			{ changedFiles: ["src/cruise.ts"] },
 			async () => {
 				throw new Error("service unavailable");
 			},
@@ -192,7 +182,7 @@ describe("the semantic branch", () => {
 
 	test("refuses an empty semantic run for a production change", async () => {
 		const result = await selectProbes(
-			{ changedFiles: ["src/cruise.ts"], title: "Cruise" },
+			{ changedFiles: ["src/cruise.ts"] },
 			async () => ({ answers: probabilities() }),
 		);
 		expect(result.mode).toBe("all");
@@ -218,7 +208,7 @@ describe("the TypeSafe transport", () => {
 			},
 		});
 
-		await judge({ state: { title: "safe" }, questions: {} });
+		await judge({ state: { changed_files: ["src/safe.ts"] }, questions: {} });
 		expect(authorization).toBe(`Bearer ${apiKey}`);
 		expect(body).not.toContain(apiKey);
 		expect(JSON.parse(body).model).toBe("jev-latest");

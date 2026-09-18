@@ -8,33 +8,20 @@ import { selectProbes } from "./lib/probe-selection.mjs";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
-const VALUE_FLAGS = new Set([
-	"--base",
-	"--head",
-	"--title",
-	"--body",
-	"--changed-file",
-]);
+const VALUE_FLAGS = new Set(["--base", "--head", "--changed-file"]);
 
 function parseArgs(argv) {
 	const out = {
 		base: "origin/main",
 		head: "HEAD",
-		title: "",
-		body: "",
 		changedFiles: [],
 		json: false,
 		run: false,
-		includeDiff: false,
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const flag = argv[i];
 		if (flag === "--json" || flag === "--run") {
 			out[flag.slice(2)] = true;
-			continue;
-		}
-		if (flag === "--include-diff") {
-			out.includeDiff = true;
 			continue;
 		}
 		if (!VALUE_FLAGS.has(flag) || argv[i + 1] === undefined)
@@ -53,16 +40,13 @@ const git = (args) =>
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 
-function readGitEvidence(base, head, includeDiff) {
+function readGitEvidence(base, head) {
 	const range = `${base}...${head}`;
 	return {
 		changedFiles: git(["diff", "--name-only", range])
 			.split("\n")
 			.map((line) => line.trim())
 			.filter(Boolean),
-		diff: includeDiff
-			? git(["diff", "--no-ext-diff", "--unified=2", range]).slice(0, 40_000)
-			: "",
 	};
 }
 
@@ -103,14 +87,10 @@ function runSelectedProbes(result) {
 
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
-	let gitEvidence = { changedFiles: args.changedFiles, diff: "" };
-	if (args.changedFiles.length && args.includeDiff)
-		console.error(
-			"--include-diff is ignored with explicit --changed-file evidence; omit --changed-file to read the base/head diff.",
-		);
+	let gitEvidence = { changedFiles: args.changedFiles };
 	if (!args.changedFiles.length) {
 		try {
-			gitEvidence = readGitEvidence(args.base, args.head, args.includeDiff);
+			gitEvidence = readGitEvidence(args.base, args.head);
 		} catch (error) {
 			console.error(
 				`could not read git diff ${args.base}...${args.head}: ${error instanceof Error ? error.message : String(error)}`,
@@ -121,18 +101,9 @@ async function main() {
 	const judge = process.env.TYPESAFE_API_KEY
 		? createTypeSafeProbeJudge({ apiKey: process.env.TYPESAFE_API_KEY })
 		: undefined;
-	if (gitEvidence.diff)
-		console.error(
-			"TypeSafe selection includes up to 40,000 characters of the git diff because --include-diff was set.",
-		);
 	const started = performance.now();
 	const result = await selectProbes(
-		{
-			changedFiles: gitEvidence.changedFiles,
-			title: args.title,
-			body: args.body,
-			diff: gitEvidence.diff,
-		},
+		{ changedFiles: gitEvidence.changedFiles },
 		judge,
 	);
 	const output = {

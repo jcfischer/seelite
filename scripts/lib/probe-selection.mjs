@@ -148,7 +148,7 @@ function selectDeterministic(changedFiles, directlyChanged) {
 }
 
 /**
- * @param {{changedFiles: string[], title?: string, body?: string, diff?: string}} input
+ * @param {{changedFiles: string[]}} input
  * @param {(request: {state: object, questions: object}) => Promise<object>} judge
  * @param {string[]} forcedProbes
  */
@@ -159,10 +159,7 @@ async function selectSemantic(input, judge, forcedProbes) {
 		response = await judge({
 			state: {
 				untrusted_evidence: {
-					title: input.title ?? "",
-					body: input.body ?? "",
 					changed_files: input.changedFiles,
-					diff: input.diff ?? "",
 				},
 			},
 			questions,
@@ -206,7 +203,7 @@ async function selectSemantic(input, judge, forcedProbes) {
  * `judge` is injected so the policy remains testable without a network. It
  * receives one state and all independent Noul questions in one batch.
  *
- * @param {{changedFiles: string[], title?: string, body?: string, diff?: string}} input
+ * @param {{changedFiles: string[]}} input
  * @param {((request: {state: object, questions: object}) => Promise<object>) | undefined} judge
  */
 export async function selectProbes(input, judge = undefined) {

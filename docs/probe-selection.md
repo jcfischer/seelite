@@ -25,19 +25,14 @@ The selector is a development tool. It makes no runtime network request from the
 game, and `TYPESAFE_API_KEY` is read only from the process environment and
 removed before Vite, Chromium, or a probe child starts.
 
-TypeSafe is an external service. Every semantic selection sends changed-file
-names. A PR title or body is sent only when explicitly supplied with `--title`
-or `--body`; ambient `PR_TITLE` and `PR_BODY` variables are ignored. Source diff
-contents are sent only when `--include-diff` is explicitly given. Review all of
-that evidence for repository confidentiality before running the selector. The
-selector places all PR input under a dedicated `state.untrusted_evidence`
-object, and every question's direction references that boundary. Model
-instructions remain best-effort rather than a security boundary. The runner
-refuses its internal `PROBE_FILES` subset handoff when `CI` is set. A selected
-run is partial evidence and does not replace a full browser-tier receipt.
-For an untrusted PR, keep the default filename-only evidence. Supplying title,
-body, or diff is a local trust decision because crafted prose can bias a model;
-never enable those opt-ins automatically for contributions you have not read.
+TypeSafe is an external service. A semantic selection sends only changed-file
+names, never the PR title, body, or source diff. The selector places those names
+under a dedicated `state.untrusted_evidence` object, and every question's
+direction references that boundary. Filenames can still be attacker-controlled,
+so model instructions remain best-effort rather than a security boundary. The
+runner refuses its internal `PROBE_FILES` subset handoff when `CI` is set. A
+selected run is partial evidence and does not replace a full browser-tier
+receipt.
 
 The request names `jev-latest` and reports the exact model that the response
 resolved (for example `jev-1.13.0`). Re-run the evaluation cases after a
@@ -58,13 +53,13 @@ Load the key into the shell, then inspect the plan without launching Chromium:
 set -a
 source ~/.env
 set +a
-npm run probe:select -- --base origin/main --head HEAD --title "PR title"
+npm run probe:select -- --base origin/main --head HEAD
 ```
 
 Run the selected probes through one shared dev server:
 
 ```sh
-npm run probe:pr -- --base origin/main --head HEAD --title "PR title"
+npm run probe:pr -- --base origin/main --head HEAD
 ```
 
 The selector launches the canonical `npm run probe` sequence, which owns
@@ -75,18 +70,8 @@ For an experiment or a not-yet-committed file list, repeat `--changed-file`:
 
 ```sh
 npm run probe:select -- --changed-file src/cruise.ts \
-  --title "Keep cruise clear of moving host planets" --json
+  --json
 ```
-
-To include source context after reviewing it for secrets, opt in explicitly:
-
-```sh
-npm run probe:select -- --base origin/main --head HEAD \
-  --title "PR title" --include-diff
-```
-
-`--include-diff` applies to a base/head git range. It is ignored with explicit
-`--changed-file` evidence, and the CLI warns when both are supplied.
 
 `PROBE_FILES` is the selector's exact-name handoff to `probe-all.mjs`. It is
 refused in CI, cannot be combined with `--only` or `PROBE_ONLY`, and every
