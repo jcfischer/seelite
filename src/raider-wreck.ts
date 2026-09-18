@@ -36,7 +36,7 @@ import {
 	sub,
 	v3,
 } from "./vec3";
-import { type Provenance, type TransitionEvent, fnv1a } from "./world-state";
+import { type Provenance, type TransitionEvent } from "./world-state";
 
 /** How long a destroyed raider stays destroyed before its replacement starts. */
 export const RAIDER_WRECK_S = 600;

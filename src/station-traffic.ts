@@ -5,9 +5,11 @@
 
 import { berthCentre, parkedAttitude, recomposeOffset } from "./arrival";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import { trafficRegistry } from "./carrier-name";
 import type { DisplayContact } from "./display-contact";
 import type { TrafficRoutePhase } from "./station-route";
 import { apertureFrame, frameAtPhase, slotBasis, V_GATE_KMS } from "./docking";
+import { fnv1a } from "./rng";
 import { HULL_SPECS, type HullEnvelope, type HullId } from "./hull";
 import { bodyVelocity, type System, stationOf, stationPose } from "./sim";
 import { STATION_GEOMETRY, type StationType } from "./station";
@@ -67,29 +69,10 @@ export const TRAFFIC_ROLE: Readonly<
 	},
 };
 
-const SELECTED_MODEL_NAME: Readonly<Record<HullId, string>> = {
-	courier: "Kestrel",
-	interceptor: "Lance",
-	freighter: "Porter",
-	miner: "Longwall",
-	patrol: "Warden",
-	explorer: "Pilgrim",
-	raider: "Marauder",
-	carrier: "Carrier",
-	tug: "Towline",
-	prospector: "Prospector",
-	dreadnought: "Dreadnought",
-	voyager: "Odyssey",
-};
-
-const fnv1a = (text: string): number => {
-	let h = 0x811c9dc5;
-	for (let i = 0; i < text.length; i++) {
-		h ^= text.charCodeAt(i);
-		h = Math.imul(h, 0x01000193) >>> 0;
-	}
-	return h >>> 0;
-};
+/* The registry half of a Traffic actor's identity is `carrier-name.ts`'s (§1:
+ * one module owns both naming halves for every carrier). The role code is
+ * passed in there because it is this module's fact — `TRAFFIC_ROLE` — not a
+ * naming one. */
 
 const unit = (text: string): number => fnv1a(text) / 0x1_0000_0000;
 const lerp = (band: readonly [number, number], u: number): number =>
@@ -169,7 +152,7 @@ export function stationTrafficRoster(
 			ordinal,
 			hullId,
 			variant: HULL_SPECS[hullId].variant,
-			callsign: `${SELECTED_MODEL_NAME[hullId]} ${role.code}-${String(ordinal + 1).padStart(2, "0")}`,
+			callsign: trafficRegistry(hullId, role.code, ordinal),
 			schedule: {
 				cycleS,
 				departureAtS: (sharedPhase + ordinal * 2 * cadence) % cycleS,
@@ -187,6 +170,17 @@ export interface TrafficScheduleState {
 }
 
 /** Locate the current base interval arithmetically; epoch age is irrelevant. */
+/**
+ * What a carrier's voyage ordinal answers **before its first departure**: no
+ * voyage has been flown yet, so there is no count to give. Traffic produces this
+ * value; `world-state.ts`'s scan reader is the one place below zero that a saved
+ * record admits, and it reads this constant rather than agreeing with Traffic on
+ * a literal by hand (sage #384 round 1). `carrierManifest` is already asked with
+ * it for a carrier that has not left its station, and answers with the hold it
+ * would fly.
+ */
+export const NO_FLOWN_VOYAGE = -1;
+
 export function trafficScheduleAt(
 	actor: TrafficActor,
 	gameTime: number,
@@ -201,6 +195,8 @@ export function trafficScheduleAt(
 	return {
 		desired: "parked",
 		boundaryS: elapsed < 0 ? arrival - cycleS : arrival,
+		// `cycle` is never negative, so `cycle - 1` bottoms out at exactly
+		// `NO_FLOWN_VOYAGE` on the first cycle before the first departure.
 		awayOrdinal: elapsed < 0 ? cycle - 1 : cycle,
 	};
 }
@@ -479,7 +475,7 @@ export function materializeTrafficContact(
 		radiusKm: Math.max(env.lengthKm, env.beamKm, env.heightKm) / 2,
 		color: actor.hullId === "patrol" ? 0x80b8ff : 0xb8c4cc,
 		shipType: actor.hullId,
-		legalStatus: null,
+		standing: null,
 		scannerClass: actor.hullId === "patrol" ? "unknown" : "civilian",
 	};
 }

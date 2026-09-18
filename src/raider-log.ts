@@ -15,7 +15,8 @@
  * times.
  */
 import type { CarrierKey } from "./carrier-key";
-import { raiderName, raiderSlots } from "./raider-slots";
+import { raiderRegistry } from "./carrier-name";
+import { raiderSlots } from "./raider-slots";
 import type { GalaxyEnvelope } from "./world-state";
 
 export interface RaiderLogLine {
@@ -80,7 +81,9 @@ export function raiderLog(
 ): RaiderLogLine[] {
 	const lines: RaiderLogLine[] = [];
 	for (const [ordinal, slot] of raiderSlots(systemIndex, government).entries())
-		lines.push(...lifecycleLines(env, slot.key, raiderName(ordinal), gameTime));
+		lines.push(
+			...lifecycleLines(env, slot.key, raiderRegistry(ordinal), gameTime),
+		);
 	return newestFirst(lines);
 }
 

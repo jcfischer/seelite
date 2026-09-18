@@ -74,7 +74,8 @@ Verified on `main` at `295320a`, 2026-09-16.
 `carrierStanding` and `carrierManifest` are built here, because a kill cannot
 be judged, or its cargo canisters dropped, without them. The scan verb, the knowledge record, the
 Target panel's standing cell and the name draw get their own node beneath #359
-and do not block this one.
+and do not block this one. **That node is #364, and it has landed** — read the
+list above as a boundary this node kept, not as work still owed.
 
 The principal was offered this, a sibling node blocking this one, and this node
 building the whole of #359, and chose this.
@@ -285,8 +286,10 @@ The principal was offered this and summing, and chose this.
 The principal chose this over one change. The second and third are child nodes
 of #362 — [#365](https://github.com/jcfischer/seelite/issues/365) and
 [#366](https://github.com/jcfischer/seelite/issues/366) — and #362 closes
-when all three are flown. #359's remaining build is
-[#364](https://github.com/jcfischer/seelite/issues/364).
+when all three are flown. #359's remaining build was
+[#364](https://github.com/jcfischer/seelite/issues/364), the scan itself, which
+lands beside this spec's standing rather than inside it — and what #359 still
+leaves owed is recorded on the map, not here.
 
 ### H11 — One canister per manifest line
 
@@ -384,5 +387,6 @@ Each is amended in the change that builds it, not ahead of it.
 
 This builds civilian combat and its legal consequence. It does not build police
 AI, faction simulation, bounty economics, the job catalogue, the scan verb or the
-name draw. It does not reopen the request contract, the law model, the combat
-model or `carrier-identity.md`'s F1–F12, the lootable manifest included.
+name draw — the last two are #364's, shipped beside this node's standing rather
+than inside it. It does not reopen the request contract, the law model, the
+combat model or `carrier-identity.md`'s F1–F12, the lootable manifest included.

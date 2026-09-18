@@ -22,6 +22,7 @@
  * player while the player holds a lock — see `interdiction.ts`.
  */
 import type { CarrierKey } from "./carrier-key";
+import { raiderRegistry } from "./carrier-name";
 import {
 	type DuelPilot,
 	type PlayerShot,
@@ -45,7 +46,6 @@ import {
 	type RaiderSlot,
 	type RouteDetection,
 	legEncounter,
-	raiderName,
 	raiderSlots,
 } from "./raider-slots";
 import { mix } from "./rng";
@@ -169,7 +169,9 @@ function makeEncounter(
 ): Encounter {
 	return {
 		slot,
-		name: raiderName(ordinal),
+		// The registry, not the drawn name: `carrier-identity.md` §6 keeps a raider
+		// reading as it does today, and the log reports on the slot.
+		name: raiderRegistry(ordinal),
 		bearing,
 		rangeKm,
 		rollUnit,

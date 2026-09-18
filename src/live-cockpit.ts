@@ -22,6 +22,7 @@ import {
 	cockpitView,
 } from "./cockpit";
 import type { DockPhase } from "./dock-session";
+import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
 import type {
@@ -107,6 +108,10 @@ export interface LiveCockpitState {
 	/** #324's duel detail for the Flight console — fore, aft, hull, energy bank and
 	 *  heat — or `null` in peace. */
 	duel: DuelConsoleReadout | null;
+	/** #364: what the scan channel has recorded about the selected carrier, or
+	 *  `null` when the target is not a carrier a scan can answer for. §6 puts the
+	 *  manifest here rather than on the designation line. */
+	scan: ScanConsoleReadout | null;
 	/** #324 part d: the Communications console's raider lifecycle lines,
 	 *  newest first, each with its game-clock time. */
 	raiderLog: readonly string[];
@@ -183,6 +188,13 @@ interface CockpitElements {
 	duelHull: HTMLElement | null;
 	duelBank: HTMLElement | null;
 	duelHeat: HTMLElement | null;
+	/** #364's reading block and its five readings. */
+	scanReadout: HTMLElement | null;
+	scanName: HTMLElement | null;
+	scanRegistry: HTMLElement | null;
+	scanStanding: HTMLElement | null;
+	scanManifest: HTMLElement | null;
+	scanAge: HTMLElement | null;
 	/** #324 part d: the Communications console's raider log list. */
 	raiderLog: HTMLElement | null;
 	/** #43: the relay signal cue, patched per frame. */
@@ -964,6 +976,12 @@ export class LiveCockpit {
 				duelHull: find("[data-live-duel-hull]"),
 				duelBank: find("[data-live-duel-bank]"),
 				duelHeat: find("[data-live-duel-heat]"),
+				scanReadout: find("[data-live-scan]"),
+				scanName: find("[data-live-scan-name]"),
+				scanRegistry: find("[data-live-scan-registry]"),
+				scanStanding: find("[data-live-scan-standing]"),
+				scanManifest: find("[data-live-scan-manifest]"),
+				scanAge: find("[data-live-scan-age]"),
 				raiderLog: find("[data-live-raider-log]"),
 				relayCue: find("[data-live-relay-cue]"),
 				navList: find("[data-live-nav-list]"),
@@ -1064,6 +1082,22 @@ export class LiveCockpit {
 				if (elements.duelHull) elements.duelHull.textContent = duel.hull;
 				if (elements.duelBank) elements.duelBank.textContent = duel.bank;
 				if (elements.duelHeat) elements.duelHeat.textContent = duel.heat;
+			}
+		}
+		// #364's reading. Same inline-`display` rule as the duel block above:
+		// `.lc-readout` sets its own display, so the `hidden` attribute would lose.
+		if (elements.scanReadout) {
+			elements.scanReadout.style.display = state.scan ? "" : "none";
+			const scan = state.scan;
+			if (scan) {
+				if (elements.scanName) elements.scanName.textContent = scan.name;
+				if (elements.scanRegistry)
+					elements.scanRegistry.textContent = scan.registry;
+				if (elements.scanStanding)
+					elements.scanStanding.textContent = scan.standing;
+				if (elements.scanManifest)
+					elements.scanManifest.textContent = scan.manifest;
+				if (elements.scanAge) elements.scanAge.textContent = scan.age;
 			}
 		}
 		if (elements.arrow) {
@@ -1188,7 +1222,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav><div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */

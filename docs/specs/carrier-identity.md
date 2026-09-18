@@ -34,6 +34,17 @@ owner rather than copying it**. §8 is the separate list of rules this spec make
 
 ## The state of the code this is written against
 
+> **A dated snapshot, kept as written, and this is the drift since it was
+> taken.** #364 built this contract, so four of the facts below are now history:
+> `legalStatus` is **`standing`** and typed `CarrierStanding | null`;
+> `station-traffic.ts` no longer composes the callsign (`carrier-name.ts`'s
+> `trafficRegistry` does, beside the draw); the knowledge row carries a scan
+> observation and a row may hold one with no condition observation at all; and
+> `WORLD_SCHEMA_VERSION` is 3, with no migration table (§9.6's ruling, §9.10's
+> precedent). The line numbers are the ones this spec read on the day it was
+> written. Do not "fix" them — a snapshot that is quietly rewritten stops being
+> evidence about what was known when.
+
 Verified on `main` at `2a80e14`, 2026-09-16. Four of these findings changed a
 decision rather than decorating it.
 
@@ -237,7 +248,10 @@ first becomes possible, so it is where that write lands.
 
 ### F8 — `UNKNOWN` before the scan, an ageing reading after
 
-An unscanned ship reads `SHIP · PORTER · UNKNOWN`. A scanned one reads its
+An unscanned ship reads `SHIP · FREIGHTER · UNKNOWN` — the middle cell is the
+hull **id** the producer supplies, never a model name, which is §3's rule that a
+type is never inferred from a display string, and why `Porter` (what a freighter
+is called) never reaches this cell. A scanned one reads its
 standing, **with the age of the reading beside it**.
 
 The principal was offered this, the same substitution without ageing, and keeping
@@ -314,9 +328,9 @@ rarer station.
 one, so the Bounty family waits until they reach one. That is a reason to travel
 rather than a gap.
 
-## Detailed contract proposed for ratification
+## The detailed contract as ratified, and as built
 
-The following completes F1–F12. No runtime, content or UI is delivered by this
+The following completes F1–F12. This document delivered no runtime, content or UI
 document.
 
 ### 1. The naming scheme and its stream
@@ -437,6 +451,34 @@ A scan needs, all at once:
 - that target inside a scan range, **well under** `SCANNER_RANGE_KM`'s 10,000 km;
 - the cone held, unbroken, for a charge interval.
 
+**Which axis the cone is on is not a detail: it is the sightline, not the hull's
+nose.** `nose()` is the ship's rotation and `weaponAim()` is the camera's, and
+`main.ts` says beside `forwardOf` that they "differ whenever the pilot looks off the
+nose". The guns fire along the reticle, so in this game *where I am pointing* is the
+camera's axis, and the scan measures its cone from that one. It did not: it measured
+from the hull, and a pilot aiming a carrier dead centre under the reticle was
+refused a scan they could see they were aimed at — the hold only began when the ship
+was put far down the cockpit screen, off the sight and onto the hull. Found by
+flying it. No headless row and no probe could see it, because every one of them
+places the nose and the sight on one ray, which makes them the same vector by
+construction.
+
+When the module is fitted, the target is a scannable carrier, nothing is charging and
+nothing is recorded, the cell adds the reason to `UNKNOWN`: `· TOO FAR` or
+`· OFF AXIS`, range answered first because distance is the fact with a verb attached
+to it. `UNKNOWN` survives — that you have never read this ship and that you are not
+holding it now are two facts.
+
+**A cruise leg is not a hold.** `step` returns inside `if (this.regime ===
+"cruise")` before the scan is stepped, and `engageCruise` breaks a part-built
+charge, so a five-second count can never include a jump leg and a leg's middle is
+not attention paid to anything. The principal ruled on this after flying it: cruise
+scans nothing, by design — not an oversight of where the step happens to return.
+**A pilot gets no cue about it**, which is deliberate and worth naming: the cue in
+the cell answers *why is the scan not holding what I am trying to scan*, and during
+a leg there is no such attempt; #385's trigger makes that explicit by making the
+attempt something the pilot does.
+
 Breaking the cone resets the charge. The idiom is `src/interdiction.ts`'s
 contest — a lock held through a charge, broken by heading separation — and the
 implementation should read its shape rather than invent a second one.
@@ -455,9 +497,15 @@ cannot afford in a fight or a chase.
 
 ### 5. The knowledge record
 
-A completed scan writes **`{ observedAt, source }`** and nothing else. The
-source is a new value alongside §3.1's `docking`, `system-relay` and
-`intervention`.
+A completed scan writes **`{ observedAt, source, observedInstanceOrdinal,
+observedVoyageOrdinal }`** and nothing else. The source is a new value alongside
+§3.1's `docking`, `system-relay` and `intervention`.
+
+**What it owes beyond the stamp was the open question, and #364 settled it by
+storing both ordinals.** The two below are kept as the argument that decided it,
+not as a question still open: F11's flown voyage depends on the route as it stood
+when the carrier left, so it cannot be recovered from the clock afterwards, and a
+scan taken before a late return and a kill after it would otherwise disagree.
 
 **It does not store what was read, and that is the idiom rather than an
 omission.** `persistent-world-state.md` §3.1 says the black-market marker
@@ -466,10 +514,11 @@ remains generated baseline data", and CONTEXT.md's *Last-known state* says the
 row holds never the generated value. Standing and the manifest are pure
 functions, so the reading is re-derived at display time as
 `carrierStanding(…, observedAt)` and `carrierManifest(…, voyageOrdinalAt(observedAt))`.
-**#362 makes `voyageOrdinalAt(observedAt)` not derivable after the fact**: the
+**#362 made `voyageOrdinalAt(observedAt)` not derivable after the fact**: the
 flown voyage depends on the route as it stood, not on the clock alone. So the
 record owes the voyage it read (and the instance), or a scan read before a late
-return and a kill after it disagree, which breaks F6. #364 settles which.
+return and a kill after it disagree, which breaks F6. **#364 stored both**, and
+`world-state.ts`'s `CarrierScanObservation` is the shape that came out.
 A stored copy would duplicate derivable state inside a versioned save.
 
 **What this spec cannot settle, and must not pretend to.** A Traffic actor has
@@ -495,7 +544,7 @@ knowledge is what makes that correct rather than a bug.
 | Contact | Before a scan | After a scan |
 | --- | --- | --- |
 | Raider | `SHIP · MARAUDER · HOSTILE` | unchanged — F1 |
-| Ordinary ship | `SHIP · PORTER · UNKNOWN` | `SHIP · PORTER · WANTED · 4m` |
+| Ordinary ship | `SHIP · FREIGHTER · UNKNOWN` | `SHIP · FREIGHTER · WANTED · 4m` |
 | Station | unchanged | unchanged |
 
 **The display rule, because two axes now share one cell.** `scannerClass` still
@@ -563,7 +612,7 @@ together.
 | The type-exclusive table | `station-types.md` §4.1 | The shipyard column gains the scanner module |
 | The equipment list and its prices | `economy-trade.md` §7 | One row added, `newToSeelite` |
 | The knowledge row's shape, and its set of observation sources | `persistent-world-state.md` §3.1 | A scan is a new source, and the row must be reachable for a carrier with no condition observation |
-| *Last-known state* holds "an observed operational condition" | `CONTEXT.md` §Language | A scan record carries neither an instance ordinal nor a condition |
+| *Last-known state* holds "an observed operational condition" | `CONTEXT.md` §Language | A scan record carries neither an instance ordinal nor a condition — **answered by #364: it carries an instance ordinal and a voyage ordinal, and still no condition**, because a scan sees no hull |
 | `legalStatus` is "null means no legal identity has been given" | `src/display-contact.ts` | The field is **renamed `standing`** and typed `CarrierStanding \| null` |
 | Traffic callsigns "may change in a future generator version without becoming persistence keys" | `station-traffic.md` §1.1 | Still true, and now a drawn name sits beside the callsign |
 
@@ -620,7 +669,7 @@ section claimed one optional member and no migration, which the parser refutes.
 ### 11. Handoff
 
 *Discharged for the lootable half*: #362 built it (`civilian-combat.md`), and
-the rest of this spec's build is #364. The handoff as written:
+the rest of this spec's build was #364, which landed it. The handoff as written, kept as the brief it was:
 
 One child node carries what F6 decided and this spec deliberately does not
 build: **destructible ordinary traffic** — hull, shields and damage for a

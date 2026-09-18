@@ -374,6 +374,7 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 		...ECONOMY_TRADE_7,
 		"Extra Energy Unit",
 		"Military Laser",
+		"Identity Scanner",
 	]);
 	expect(
 		shipyard.unavailable.filter((e) => e.reason.startsWith("requires TL")),

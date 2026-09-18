@@ -375,7 +375,7 @@ export class CombatPrototypeRig {
 			shipType: STRIKER_HULL_ID,
 			pos: this.enemy.ship.pos,
 			velocity: this.enemy.ship.vel,
-			legalStatus: null,
+			standing: null,
 			scannerClass: "unknown",
 			// The hit sphere, not a blip size. This is what `timeToBody` reads as
 			// the cruise drop radius, and 0.75 km told the panel a ship eight

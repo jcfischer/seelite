@@ -1121,25 +1121,28 @@ describe("§5.6 the bid cut closes the round trip at one console", () => {
 });
 
 describe("§7/§8 equipment prices and the fitting-out total", () => {
-	test("the price list is station-types.md §4.1's scope, and the two new items", () => {
+	test("the price list is station-types.md §4.1's scope, and the items the cassette never had", () => {
 		// The one number block that used to live only in prose. §6.1 is what an
 		// unpinned transcribed constant costs.
 		expect(EQUIPMENT.filter((e) => e.scope === "universal").length).toBe(9);
 		expect(EQUIPMENT.filter((e) => e.scope === "refinery").length).toBe(2);
-		expect(EQUIPMENT.filter((e) => e.scope === "shipyard").length).toBe(2);
+		// Three, since #364's identity scanner joined the column. The universal
+		// nine is the count §4.1's saturation argument counts (Fuel is the tenth,
+		// priced per LY below), and it is the one an eleventh item would move.
+		expect(EQUIPMENT.filter((e) => e.scope === "shipyard").length).toBe(3);
 		// Fuel is the tenth universal item; it is priced per LY, not per unit,
 		// so it lives in its own constants rather than in the list.
 		expect(FUEL_CR_PER_LY * FUEL_TANK_LY).toBe(14);
-		// The two items Elite's cassette never had.
+		// The items Elite's cassette never had.
 		expect(
 			EQUIPMENT.filter((e) => e.newToSeelite)
 				.map((e) => e.name)
 				.sort(),
-		).toEqual(["Military Laser", "Mining Laser"]);
+		).toEqual(["Identity Scanner", "Military Laser", "Mining Laser"]);
 	});
 
 	test("§8's fitting-out total is derived from the list", () => {
-		expect(fullKitCr()).toBe(19125);
-		expect(fullKitCr({ withMissiles: true })).toBe(19245);
+		expect(fullKitCr()).toBe(19725);
+		expect(fullKitCr({ withMissiles: true })).toBe(19845);
 	});
 });

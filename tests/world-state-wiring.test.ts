@@ -33,6 +33,7 @@ const WRITERS = [
 	"materializeDue",
 	"observe",
 	"observeDocking",
+	"observeScan",
 	"observeSystemRelay",
 	"setDeficits",
 	"setLegalHeat",

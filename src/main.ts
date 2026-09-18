@@ -298,9 +298,32 @@ import {
 	trafficDestruction,
 	trafficInSights,
 } from "./traffic-engagement";
-import { carrierInstanceSeed, carrierStanding } from "./carrier-standing";
+import { carrierName } from "./carrier-name";
+import {
+	type CarrierStanding,
+	carrierInstanceSeed,
+	carrierStanding,
+} from "./carrier-standing";
 import { DOMAIN } from "./domains";
 import { carrierManifest } from "./carrier-manifest";
+import {
+	type CarrierReading,
+	type ScanConsoleReadout,
+	type ScanHold,
+	type ScanSubject,
+	SCAN_CHARGE_S,
+	SCAN_RANGE_KM,
+	beginScanHold,
+	carrierReading,
+	scanCompleted,
+	scanConeHeld,
+	scanFitted,
+	scanInRange,
+	scanProgress,
+	scanStandoff,
+	scanRefusal,
+	stepScanHold,
+} from "./carrier-scan";
 import { heatAt, legalStandingAt, offenceHeat, withOffence } from "./legal";
 import {
 	DUEL_ROW_LABELS,
@@ -427,9 +450,12 @@ import {
 	fleetLayout,
 } from "./ship-mesh";
 import {
+	type DesignationScan,
+	type ScanStandoff,
 	type DisplayContact,
 	isDisplayContact,
 	relativeLabel,
+	targetAgeLabel,
 	targetDesignation,
 } from "./display-contact";
 import {
@@ -542,6 +568,7 @@ import {
 import {
 	newWorld as newPersistentWorld,
 	observeDocking,
+	observeScan,
 	advanceTo,
 	applyTransition,
 	effectiveCarrier,
@@ -1361,6 +1388,30 @@ function forwardOf(q: THREE.Quaternion): Vec3 {
 	return v3(f.x, f.y, f.z);
 }
 
+/**
+ * The scan facts one frame shares between the Target instrument and the Flight
+ * console: the cell's own inputs, the actor behind the selection, and the
+ * reading the pilot's knowledge row holds. A frame's value, not a fact about the
+ * world — everything in it is re-derived from the row beside the live world, and
+ * the memo below is only what stops that derivation running twice for one ship.
+ */
+interface ScanFacts {
+	designation: DesignationScan;
+	actor: TrafficActor | undefined;
+	reading: CarrierReading | null;
+}
+
+/** A memoised answer, with everything it was true about. */
+interface ScanFrame {
+	target: Body | null;
+	gameTime: number;
+	chargeS: number;
+	fitted: boolean;
+	standoff: ScanStandoff | null;
+	stamp: number;
+	facts: ScanFacts;
+}
+
 class Game {
 	readonly world: World;
 	readonly renderer: THREE.WebGLRenderer;
@@ -1817,9 +1868,18 @@ class Game {
 		radiusKm: RAIDER_CONTACT_RADIUS_KM,
 		color: 0xff6a4a,
 		shipType: RAIDER_HULL_ID,
-		legalStatus: null,
+		standing: null,
 		scannerClass: "hostile",
 	};
+	/** The scan charge, in progress. Session state like the jump charge: a scan
+	 *  half-held is not a fact about the world, and saving it would let a pilot
+	 *  bank a charge by reloading (#364, §4). */
+	private scanHold: ScanHold = beginScanHold();
+
+	/** One frame's memoised scan answer. Session state like the hold beside it,
+	 *  and for the same reason: it pictures this frame, and saving it would hand a
+	 *  loaded game a reading its pilot never earned. */
+	private scanFacts: ScanFrame | null = null;
 	/** #43: the pirate relay's plan for the system the ship is in, cached by
 	 *  system index. Pure in the system, so never saved. */
 	private relayPlanCache: RelayPlan | null = null;
@@ -1839,7 +1899,7 @@ class Game {
 		velocity: v3(),
 		radiusKm: RELAY_HIT_RADIUS_KM,
 		color: 0xff6a4a,
-		legalStatus: null,
+		standing: null,
 		scannerClass: "hostile",
 	};
 	private readonly relayMesh = buildRelayMesh();
@@ -5088,6 +5148,12 @@ class Game {
 				this.registerContact(shown);
 				this.selectableCache = null;
 			}
+			// The contact's standing is **what the pilot has recorded**, re-derived
+			// from the knowledge row's own clock, not the rotation running now: a
+			// carrier the pilot has never scanned reads UNKNOWN however the galaxy
+			// happens to feel about it today (F8, §6).
+			const contact = previous ?? this.trafficContacts.get(actor.key);
+			if (contact) contact.standing = this.recordedStanding(actor);
 			let mesh = this.trafficMeshes.get(actor.key);
 			if (!mesh) {
 				mesh = buildShipMesh(actor.hullId, actor.variant).root;
@@ -5412,6 +5478,262 @@ class Game {
 		};
 	}
 
+	/** The selected ordinary carrier, or `undefined` for anything else — a
+	 *  station, a relay, a canister, a pirate (F10: raiders keep their kill-time
+	 *  draw and are not this verb's subject). */
+	private scanSubject(target: Body | null): TrafficActor | undefined {
+		if (!target || !isDisplayContact(target)) return undefined;
+		return this.trafficActorByKey(target.id as CarrierKey);
+	}
+
+	/**
+	 * One frame of the scan (§4).
+	 *
+	 * **Automatic on the hold, with no key bound to it** — the principal's
+	 *  ruling, and every letter on the flight deck is taken. The charge builds
+	 *  while the nose holds a scannable carrier inside the cone and the range,
+	 *  and the writing of the record is the one transition, so a long lock ages
+	 *  the reading instead of renewing it.
+	 */
+	private stepScan(dt: number) {
+		const target = this.targetBody();
+		const actor = this.scanSubject(target);
+		const fitted = scanFitted(this.commander.ownedEquipment);
+		// **A subject, not a boolean.** Five seconds spent with the nose swinging
+		// across three carriers is five seconds on none of them, and a charge that
+		// does not record whose it is cannot say when to start over — the blocker
+		// sage #384 round 1 found, where one long lock could bank a charge on one
+		// ship and spend it on another.
+		// **The cone is on the sightline, not on the hull.** `nose()` is the
+		// ship's rotation and `weaponAim()` is the camera's, and `main.ts`'s own
+		// note beside `forwardOf` says they "differ whenever the pilot looks off
+		// the nose". The guns already settled which one "where I am pointing"
+		// means in this game: they fire along `weaponAim()`. Measuring the scan
+		// from the hull meant a pilot had to put a carrier far down the cockpit
+		// screen — off the reticle, onto the hull — to start a scan they could see
+		// they were aimed at. Found by flying it, not by any test of mine: every
+		// row and probe places the nose and the sight on one ray, which makes them
+		// the same vector by construction and cannot see this at all.
+		const aim = this.weaponAim();
+		const held: ScanSubject | null =
+			actor !== undefined &&
+			fitted &&
+			target !== null &&
+			scanInRange(length(sub(target.pos, this.world.ship.pos))) &&
+			scanConeHeld(aim, normalizeOr(sub(target.pos, this.world.ship.pos), aim))
+				? { key: actor.key }
+				: null;
+		const before = this.scanHold;
+		this.scanHold = stepScanHold(before, held, dt);
+		if (!actor || !scanCompleted(before, this.scanHold)) return;
+		const { instanceOrdinal } = this.carrierCondition(actor.key);
+		this.commerceWorld = observeScan(
+			this.commerceWorld,
+			this.world.system.record.galaxy,
+			actor.key,
+			this.world.gameTime,
+			{ instanceOrdinal, voyageOrdinal: this.trafficVoyage(actor) },
+		);
+		this.saveDirty();
+	}
+
+	/** What the pilot has recorded about this carrier, re-derived from the row's
+	 *  own clock and voyage. `null` is F8's `UNKNOWN`. */
+	private recordedReading(actor: TrafficActor): CarrierReading | null {
+		const record = this.world.system.record;
+		return carrierReading({
+			systemSeed: record.seed,
+			key: actor.key,
+			row: readKnowledge(this.commerceWorld.galaxies[record.galaxy], actor.key),
+			holdT: HULL_SPECS[actor.hullId].holdT,
+			government: record.government,
+			gameTime: this.world.gameTime,
+		});
+	}
+
+	/** The standing the pilot recorded for this carrier, and nothing else.
+	 *
+	 *  **The presentation loop asks for the standing alone.** It runs over every
+	 *  carrier in the system each frame, and the full reading also derives the
+	 *  manifest — an RNG draw over the hold for a string this loop never prints
+	 *  (sage #384 round 1). The reading the panel wants stays `recordedReading`.
+	 */
+	private recordedStanding(actor: TrafficActor): CarrierStanding | null {
+		const record = this.world.system.record;
+		const row = readKnowledge(
+			this.commerceWorld.galaxies[record.galaxy],
+			actor.key,
+		);
+		const scan = row?.scan;
+		if (!scan) return null;
+		return carrierStanding(
+			record.seed,
+			actor.key,
+			scan.observedInstanceOrdinal,
+			scan.observedAt,
+		);
+	}
+
+	/** The scan facts the designation cell and the console share.
+	 *
+	 *  **Memoised per frame, keyed on every input.** Both surfaces want the same
+	 *  standing, manifest and drawn name every frame, and the manifest is an RNG
+	 *  draw: deriving it twice for one target bought a second draw of the same
+	 *  figures (sage #384 round 1). The key is the target's identity, the world
+	 *  clock, the charge, whether the module is fitted, and the recorded row's
+	 *  stamp — so a memo cannot outlive the frame it was true in, and a caller
+	 *  handing over a different body, which is what a probe does with a synthetic
+	 *  contact, recomputes instead of inheriting the selected ship's reading.
+	 *  `fitted` is in the key because the probe that fits and un-fits the module
+	 *  between two reads on one frozen clock found it missing, and printed
+	 *  `NO SCANNER` at a pilot who had just bought one.
+	 */
+	private scanReadout(target: Body | null): ScanFacts {
+		const stamp = this.scanStamp(target);
+		const fitted = scanFitted(this.commander.ownedEquipment);
+		// Computed before the memo is consulted, and part of its key: the cue is
+		// the one input that moves with the ship rather than with the clock, so a
+		// frame that turned the sight off a carrier without the clock moving must
+		// not be served the reading taken while it was on.
+		const standoff = this.scanStandoffNow(target);
+		const memo = this.scanFacts;
+		if (
+			memo !== null &&
+			memo.target === target &&
+			memo.gameTime === this.world.gameTime &&
+			memo.chargeS === this.scanHold.chargeS &&
+			memo.fitted === fitted &&
+			memo.standoff === standoff &&
+			memo.stamp === stamp
+		)
+			return memo.facts;
+		const facts = this.computeScanFacts(target, standoff);
+		this.scanFacts = {
+			target,
+			gameTime: this.world.gameTime,
+			chargeS: this.scanHold.chargeS,
+			fitted,
+			standoff,
+			stamp,
+			facts,
+		};
+		return facts;
+	}
+
+	/** Why the sight is not holding this carrier, in geometry alone. The cell
+	 *  decides whether to show it; this answers the question without deciding
+	 *  anything about the target being scannable, so it cannot drift out of step
+	 *  with the predicate `stepScan` uses — both call the same two functions. */
+	private scanStandoffNow(target: Body | null): ScanStandoff | null {
+		if (!target || !isDisplayContact(target)) return null;
+		const aim = this.weaponAim();
+		const toTarget = sub(target.pos, this.world.ship.pos);
+		return scanStandoff(length(toTarget), aim, normalizeOr(toTarget, aim));
+	}
+
+	/** The recorded scan row's stamp for this target, or -1. A map lookup, paid
+	 *  once per frame the memo is consulted, which is what makes the memo's key
+	 *  cheap enough to be honest about. */
+	private scanStamp(target: Body | null): number {
+		const actor = this.scanSubject(target);
+		if (!actor) return -1;
+		return (
+			readKnowledge(
+				this.commerceWorld.galaxies[this.world.system.record.galaxy],
+				actor.key,
+			)?.scan?.observedAt ?? -1
+		);
+	}
+
+	private computeScanFacts(
+		target: Body | null,
+		standoff: ScanStandoff | null,
+	): ScanFacts {
+		const actor = this.scanSubject(target);
+		const reading = actor ? this.recordedReading(actor) : null;
+		const scannable = actor !== undefined;
+		const refusal = scanRefusal(
+			scanFitted(this.commander.ownedEquipment),
+			scannable,
+		);
+		// A completed charge sits at the ceiling, so the progress is only a
+		// charge while it is still running: after that the cell shows the
+		// standing the pilot earned, not a number stuck at 100.
+		// **`chargeS > 0` is load-bearing.** A hold at zero has not started, and
+		// printing its progress reads as `SCANNING 0%` on a ship nobody is
+		// scanning — which is worse than `UNKNOWN`, because it tells the pilot a
+		// scan is underway when the nose is simply not on the target.
+		const progress =
+			!refusal &&
+			scannable &&
+			this.scanHold.chargeS > 0 &&
+			this.scanHold.chargeS < SCAN_CHARGE_S
+				? scanProgress(this.scanHold)
+				: undefined;
+		return {
+			designation: {
+				ageS: reading?.ageS,
+				progress,
+				refusal,
+				// Only where it means something: a pirate's cell and a station's are
+				// not this verb's, a refusal already names the actionable absence,
+				// and a carrier with a reading is being read. So: fitted, scannable,
+				// nothing running, nothing recorded.
+				standoff:
+					!refusal && scannable && reading === null && progress === undefined
+						? standoff
+						: null,
+			},
+			actor,
+			reading,
+		};
+	}
+
+	/**
+	 * The Flight console's reading block (§6: the manifest does not fit the
+	 * designation line, so the glass carries the minimum and this console the
+	 * whole reading).
+	 *
+	 * **Both of F3's strings, because they answer different questions**: the
+	 *  drawn name is the quarry a pilot remembers, the composed registry is the
+	 *  where-it-belongs fact a drawn name loses.
+	 *
+	 * **It shows for any scannable carrier, scanned or not** — F8's `UNKNOWN` is
+	 *  a reading, and a block that appears only after a scan teaches a pilot that
+	 *  the console has nothing to say about a ship they have never looked at.
+	 */
+	private scanConsoleRow(scan: ScanFacts): ScanConsoleReadout | null {
+		const { actor, reading } = scan;
+		if (!actor) return null;
+		return {
+			name: this.drawnName(actor),
+			registry: actor.callsign,
+			standing: (reading?.standing ?? "unknown").toUpperCase(),
+			// The manifest has no empty arm: an empty hold is an empty list, and
+			// `MANIFEST` over nothing is the truth. `BALAST` would have been a
+			// fourth spelling of absence beside `NOT READ` and `NEVER`, each with
+			// its own meaning for the pilot to learn (sage #384 round 1).
+			manifest: reading
+				? reading.manifest
+						.map((row) => `${row.good.toUpperCase()} ${row.tonnes}t`)
+						.join(" · ")
+				: "NOT READ",
+			age: reading ? targetAgeLabel(reading.ageS) : "NEVER",
+		};
+	}
+
+	/** The name the glass and the console give a carrier: F3's drawn name, at the
+	 *  instance flying now. **One function because it is one question** — a seed
+	 *  and an instance ordinal spelled out at two call sites is one refactor away
+	 *  from the instrument and the console naming different ships. */
+	private drawnName(actor: TrafficActor): string {
+		return carrierName(
+			this.world.system.record.seed,
+			actor.key,
+			this.carrierCondition(actor.key).instanceOrdinal,
+		);
+	}
+
 	/** Whether a shot along the beam lands on the selected ordinary carrier now.
 	 *  No actor, no mark — as `engageStruckTraffic` lands no shot without one,
 	 *  rather than a hit radius from a hull nobody named (sage #368). */
@@ -5455,7 +5777,7 @@ class Game {
 				velocity: v3(),
 				radiusKm: HULL_REACH_KM[slot.id],
 				color: 0x8cbedc,
-				legalStatus: null,
+				standing: null,
 				scannerClass: "unknown",
 			};
 			this.fleet.push({ mesh: hull, slot, contact });
@@ -5970,9 +6292,18 @@ class Game {
 		velocity: ReturnType<Game["velocityReadout"]>,
 	) {
 		const speed = velocity.speed;
-		const targetText = target
-			? `${target.name}  ${range(targetKm)}`
-			: "NO TARGET";
+		const scan = this.scanReadout(target);
+		// **F3's two strings, split by where they are read.** The glass carries
+		// the drawn name — `Kestrel TR-03` is a registration number, and the
+		// whole reason §1 draws a name is so a bounty target is a ship a pilot can
+		// remember — while the composed registry stays on the console, which is
+		// where *where it belongs* is read. Everything else on the glass keeps the
+		// name it always had.
+		const drawn =
+			scan.actor === undefined
+				? (target?.name ?? "")
+				: this.drawnName(scan.actor);
+		const targetText = target ? `${drawn}  ${range(targetKm)}` : "NO TARGET";
 		const eta = this.etaCache === null ? "CALC" : duration(this.etaCache);
 		// REL rides this instrument and not only the left console, which is
 		// hidden unless the pilot turns their head (`hud-and-scanner.md` §3).
@@ -5985,7 +6316,7 @@ class Game {
 			this.targetRelativeKms(),
 			"  ",
 		)}`;
-		const designation = targetDesignation(target);
+		const designation = targetDesignation(target, scan.designation);
 		// `chargeAu` is **not** in this key any more: the target instrument stopped
 		// printing it when §5's strip took it, and a key holding a value no
 		// painted pixel depends on repaints two canvas textures on the frame the
@@ -8325,6 +8656,14 @@ class Game {
 		// behind. Render drops its contact and hull on the next frame.
 		this.encounter = null;
 		this.encounterView = null;
+		// A charge belongs to the leg it was held on, exactly as a raider does.
+		// Without this, five seconds spent on a carrier in one system would arrive
+		// part-way banked in the next, where a stranger's scan finishes under the
+		// pilot's nose — the rule cruise and docking already keep, which `stepScan`
+		// cannot reach because it runs on the flight tail. `tests/leg-reset-coverage`
+		// asked for both fields the moment they were assigned on the flight path.
+		this.scanHold = beginScanHold();
+		this.scanFacts = null;
 		this.raiderFiring = false;
 		this.gunFeedback = QUIET_GUN;
 		this.canisters = [];
@@ -8812,7 +9151,7 @@ class Game {
 				velocity: canister.vel,
 				radiusKm: CANISTER_RADIUS_KM,
 				color: CARGO_CONTACT_COLOUR,
-				legalStatus: null,
+				standing: null,
 				scannerClass: "unknown",
 			};
 			this.cargoContacts.set(canister.id, contact);
@@ -9374,6 +9713,10 @@ class Game {
 			return;
 		}
 		this.detour = null;
+		// **Cruise breaks the charge, it does not pause it.** A scan is attention
+		// paid to a ship in front of the canopy; five seconds of it cannot include
+		// a jump leg, and the nose is nowhere during one.
+		this.scanHold = beginScanHold();
 		const target = this.targetBody();
 		const targetParentId = this.targetParentId();
 		if (target && targetParentId) {
@@ -9506,6 +9849,11 @@ class Game {
 			// delta was consumed. Sage found it.
 			this.mouseDx = 0;
 			this.mouseDy = 0;
+			// Same reason as the delta above: `stepScan` runs on the flight tail,
+			// so this branch is a way off it. A charge banked before docking would
+			// otherwise wait out the whole visit and complete on the first frame
+			// back in the seat, with no attention paid in between.
+			this.scanHold = beginScanHold();
 			this.stepDockPhase(dt);
 			return;
 		}
@@ -9767,6 +10115,10 @@ class Game {
 		// are on orbits driven by the same clock. Stepping the ship alone would
 		// freeze the system around it, which is the state the scaffold was in.
 		stepWorld(this.world, this.control(), dt, PLAYER_PERFORMANCE);
+		// After the world moved, because the hold is measured against where the
+		// target *is* this frame: a carrier that drove out of range mid-charge
+		// breaks it, and reading the old position would hold it forever.
+		this.stepScan(dt);
 		// §7: the tank refills passively in normal flight, and that is the
 		// anti-stranding rule rather than a convenience.
 		this.chargeAu = chargeAfterRegen(this.chargeAu, dt);
@@ -10599,6 +10951,8 @@ class Game {
 			charge: floorCellValue(this.floorCells(), "CHARGE"),
 			// #324's full duel detail, only while the glass shows the duel row.
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
+			// #364: what the scan channel has recorded about what is selected.
+			scan: this.scanConsoleRow(this.scanReadout(target)),
 			// #324 part d: the raider lifecycle on the Communications console,
 			// derived from world state, newest first.
 			// Derived only while that console's tab is open (sage #330).

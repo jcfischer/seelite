@@ -225,6 +225,8 @@ const SOURCE_LABELS: Record<string, string> = {
 	intervention: "YOUR DOING",
 	// #43: the pirate relay, identified from the cockpit inside its range.
 	identification: "IDENTIFIED",
+	// #364: a completed scan, `carrier-identity.md` §5's new channel.
+	scan: "SCANNED",
 };
 
 /** The exact age behind the finder row's coarse one — `1M 08S AGO`, `3D 04H
@@ -268,8 +270,14 @@ export function stationRosterLine(
 	// mid-phrase and a continuation began `· RELAY REPORT`. What the station
 	// *is* goes on the first line; what is *known* about it goes on the second,
 	// indented, so an entry reads as one thing at any width.
+	// **A row can carry no condition observation** (#364): the only thing known
+	// about a scanned ordinary carrier is its scan, and the card has to say the
+	// condition is unknown while still reporting the contact. Same words as the
+	// no-row case, because to the pilot these are the same reading.
 	const head = `${station.name} — ${station.type.toUpperCase()} · ${
-		known ? known.observedCondition.toUpperCase() : "STATUS UNKNOWN"
+		known?.observedCondition
+			? known.observedCondition.toUpperCase()
+			: "STATUS UNKNOWN"
 	}`;
 	const reading = [
 		known ? (SOURCE_LABELS[known.source] ?? known.source) : null,

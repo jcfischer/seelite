@@ -496,7 +496,8 @@ export interface Result {
 	 *
 	 * **This, and not the purchase list, is what §8 is about.** "About fifteen
 	 * clean runs" is a claim about the pump: how long the economy takes to yield
-	 * 19,125 Cr. *Buying* everything also needs the trader to stand at a
+	 * `fullKitCr()` — not a number restated here, which is one that went stale
+	 * the week the scanner module's row landed. *Buying* everything also needs the trader to stand at a
 	 * refinery for the mining laser and a shipyard for the military one
 	 * (`station-types.md` §4.1), and this trader does not route — it maximises
 	 * credits per minute and docks wherever that leads. So a fit-out time from

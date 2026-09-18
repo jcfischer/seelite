@@ -46,10 +46,18 @@ such as `station-trade/traffic-00`. The station-qualified ordinal is the actor's
 stable Carrier-slot identity; hull type, variant and callsign may all change in
 a future generator version without becoming persistence keys.
 
-> **Extended by `carrier-identity.md` (node #359), not yet implemented.** Its F3
-> puts a drawn proper name beside the callsign, so an actor carries both a name
-> and a registry. The rule above is unchanged: neither string is a persistence
-> key.
+> **Both strings are here since #364.** Every carrier now carries a **drawn
+> proper name** and the composed **registry**, and the cockpit reads them by
+> where they are read: the Target instrument names its target with the drawn
+> name, the Flight console shows both. **What does not read the drawn name yet**
+> is the kill feed and the raider log, which still cite the registry — a bounty
+> is filed against a registration number, and retaking that display is a node of
+> its own, recorded on the map rather than quietly taken here.
+> `carrier-name.ts` owns both halves: it draws the name from its own
+> `DOMAIN.CARRIER_NAME` stream and composes the registry the Traffic roster used
+> to compose itself. **The rule above is unchanged and is what the module is
+> built around**: neither string keys, saves or looks anything up, so a name
+> re-drawn by a later generator orphans no market memory.
 
 Traffic slots join `enumerateCarriers()` so exceptional objective condition can
 use the existing sparse world-state domains. Adding those generated carriers
@@ -174,13 +182,15 @@ restarting it.
 A Traffic actor's Carrier identity deterministically selects its hull variant
 without consuming a mutable generator stream. Its visible station-local
 callsign combines that model name, a station-role code and roster ordinal, for
-example `Kestrel TR-03`. The callsign is presentation; the Carrier key remains
-the persistence and arbitration identity.
+example `Kestrel TR-03` — composed by `carrier-name.ts`'s `trafficRegistry` since
+#364 gathered both display strings into one module, which is what stopped the
+roster and the raider path composing the same shape two ways. The callsign is
+presentation; the Carrier key remains the persistence and arbitration identity.
 
 Every materialized actor is a normal targetable `DisplayContact` carrying its
 actual pose, velocity and hull type. Routine hulls report `CIVILIAN`; Patrol
 reports `UNKNOWN` until `combat-model.md` defines a security or legal scanner
-classification. All Traffic contacts keep `legalStatus: null` in #148.
+classification. Traffic contacts carried `legalStatus: null` in #148; #364 renamed the member `standing` and it now holds the reading the pilot recorded, or `null` for a carrier never scanned.
 
 ## 4. Clearance queue
 

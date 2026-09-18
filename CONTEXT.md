@@ -113,14 +113,57 @@ time — derived, never saved, rotating on a clock term, and the true value the
 law judges a shot against whether or not it was scanned. The player's own
 standing is read off **Legal heat** in the same three words.
 `carrier-identity.md` §2 owns the carrier's; `civilian-combat.md` H4 the
-player's.
+player's. A **Scan record** stores a reading of it, taken at a moment; it is not
+it.
 _Avoid_: Legal status (for a carrier), reputation, bounty flag
+
+**Scan record**:
+What the player keeps after pointing an Identity Scanner at an ordinary carrier
+and holding it there: the **Standing**, the **Manifest**, and the **Carrier
+instance** and voyage the reading was taken on, stamped with when. A member of
+that carrier's knowledge row, so it is the player's, not the ship's — the
+standing and the manifest themselves stay derived and unsaved. Its increasing age is
+the point rather than a defect: an old record is an honest record of a ship that
+may since have changed its cargo or its luck. A scan records **no** operational
+condition; nothing about identifying a carrier's hold says anything about whether
+its hull is sound. #364; `carrier-identity.md` §5 owns the semantics,
+`world-state.ts`'s `CarrierScanObservation` the shape.
+_Avoid_: Dossier, intel, scan (as a noun for the record — the scan is the act,
+the record is what it leaves)
+
+**Drawn name**:
+A carrier's proper name — `RAANAR` — rolled from its Carrier key and the instance
+it is, so the same ship is called the same thing in two sessions and a replaced
+hull is called something new. What the cockpit names a target with, and what a
+pilot remembers a ship by. **Display only, entirely**: it keys nothing, saves
+nothing, looks nothing up, and `localCarrierId` remains the identity, which is
+what makes renaming a carrier in a later generator cost nothing. `carrier-name.ts`
+owns the **draw** — the domain, the instance seeding, the shape of a name; the
+digram alphabet it draws from is `names.ts`'s, shared with every other name in the
+galaxy. `carrier-identity.md` §1 the rule.
+_Avoid_: Ship name (that is a hull's model — a `Porter` is a make, `RAANAR` a
+name), callsign, label
+
+**Registry**:
+A carrier's registration designation — `Kestrel TR-03` — composed from its hull
+model, its home station's role code and its roster ordinal. What a filing cites,
+because it says which station a ship belongs to: read today it is the Flight
+console's `REGISTRY` row and the raider log's line, and the kill feed a later node
+writes will cite this rather than the drawn name.
+The `TrafficActor` field is named `callsign`; the term is Registry because a
+callsign is spoken and a registry is filed. Presentation, like the **Drawn name**,
+and for the same reason: neither is a persistence key. Composed by
+`carrier-name.ts`'s `trafficRegistry` since #364; `station-traffic.md` §3.2.
 
 **Manifest**:
 What an ordinary carrier instance carries on one voyage: one to four lines, each
 a tonne good and its tonnes, derived and never saved. What a scan shows and what
 a kill drops, one **Cargo canister** per line. `carrier-identity.md` §3 owns
-it; `civilian-combat.md` H11 the drop.
+it; `civilian-combat.md` H11 the drop. The Flight console prints this under the
+word `HELD`, which is ordinary speech for what a ship is carrying, while the
+field behind it is named `manifest` — because **Traffic hold** is a place a
+carrier waits and `ScanHold` is a charge, and one identifier cannot serve all
+three.
 _Avoid_: Cargo list, loot table, hold contents
 
 **Legal heat**:
@@ -212,10 +255,13 @@ A carrier instance's objective physical condition. `docs/specs/persistent-world-
 _Avoid_: Status flag, lifecycle
 
 **Last-known state**:
-The player's timestamped knowledge of a carrier instance and its observed
-operational condition. It may differ from the objective condition when events
-happen out of sight. It never expires; its increasing age carries the
-uncertainty until an approved information channel refreshes it.
+The player's timestamped knowledge of a carrier, from one approved information
+channel or several. It holds a **Scan record**, an observed operational
+condition, or both — a carrier that has been scanned and never docked at is
+known, and knows nothing about its hull — plus any private facility facts. It may
+differ from the objective condition when events happen out of sight. It never
+expires; its increasing age carries the uncertainty until an approved information
+channel refreshes it.
 
 The same row also holds any **private facility facts** the player has checked —
 black-market presence at a refinery is the only one in v1 (#275). Those are
