@@ -284,11 +284,11 @@ try {
 			 * first pass here held the ship 1 km off the target on a fixed axis and
 			 * held the trigger for ninety seconds of game time without ever landing
 			 * a hit. The diagnostics say why in one field: the energy bank fell the
-			 * whole way (so the gun fired) and the painted mark read
+			 * whole way (so the pulse laser was firing) and the painted mark read
 			 * `onTarget: false` on every frame — the gimbal's own statement that
-			 * the beam is not where the nose is. That rig has landed a beam on a
-			 * Clean civilian before, so it is copied rather than reinvented, and the
-			 * mark is reported below so the next failure says the same sentence.
+			 * the pulse laser is not where the nose is. That rig has landed one on
+			 * a Clean civilian before, so it is copied rather than reinvented, and
+			 * the mark is reported below so the next failure says the same.
 			 */
 			tether(key, km) {
 				const contact = g.trafficContacts.get(key);
@@ -376,7 +376,7 @@ try {
 			/**
 			 * One leg, through the shipped course and charge.
 			 *
-			 * The fuel is topped up because a jump that fails for want of fuel
+			 * The tank is topped up because a jump that fails for want of it
 			 * would report as a witness that did not survive the trip — the exact
 			 * false red this row must not have.
 			 */

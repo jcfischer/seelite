@@ -252,7 +252,7 @@ const cue = (deg: number, toleranceDeg: number): DirectorCue => ({
  *
  * `hostile` arrives from the caller rather than being read off `state` because
  * there are two reasons for it, §6's timed flip and #366's law, and only the
- * caller holding the pilot's legal status knows whether the second one is true.
+ * caller holding the pilot's `LegalStatus` row knows whether the second is true.
  */
 function blockingOf(
 	state: DockingState,

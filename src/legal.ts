@@ -108,8 +108,8 @@ export const legalStandingAt = (
 ): Standing => legalStandingOf(heatAt(status, gameTime));
 
 /**
- * Add `heat` to a galaxy's legal status at `gameTime`, and record the station the
- * offence happened beside (H5, H6).
+ * Add `heat` to a galaxy's `LegalStatus` at `gameTime`, and record the station
+ * the offence happened beside (H5, H6).
  *
  * `witnessed` is required and `null` is an answer: it means the frame body was
  * not a station, which is every fight on a cruise leg. A default of `null` would
@@ -165,6 +165,16 @@ export const withOffence = (
  * reads the list, and 20,000 km is not a second witness radius hiding in a
  * predicate.
  */
+/**
+ * H5's hostility: this station saw an offence, and the heat that made it matter
+ * has not decayed below Wanted.
+ *
+ * It is the witness half of `dockingRefusedByLaw`, which is its only production
+ * caller — a berth's refusal is this plus the shipyard's standing rule. Kept
+ * separate because it is what the HUD will one day need on its own (a station
+ * hostile because it watched, against a shipyard hostile on standing), and
+ * because two copies of the witness-and-decay test are two answers to it.
+ */
 export const stationHostile = (
 	status: LegalStatus,
 	station: CarrierKey,
@@ -190,10 +200,13 @@ export const dockingRefusedByLaw = (
 	status: LegalStatus,
 	station: { key: CarrierKey; type: StationType },
 	gameTime: number,
-): boolean => {
-	if (heatAt(status, gameTime) < WANTED_HEAT) return false;
-	return station.type === "shipyard" || status.witnesses.includes(station.key);
-};
+): boolean =>
+	station.type === "shipyard"
+		? heatAt(status, gameTime) >= WANTED_HEAT
+		: // The witness half is `stationHostile`'s, called rather than restated:
+			// the two are one rule, and a berth that drifts from the other would
+			// refuse for a reason nothing else in the file agrees to.
+			stationHostile(status, station.key, gameTime);
 
 /**
  * H6: drop the witness list once heat has decayed below Wanted.
