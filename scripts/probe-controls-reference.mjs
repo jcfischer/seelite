@@ -337,8 +337,14 @@ const layout = await narrow.evaluate(() => {
 	const overflowing = rows
 		.filter((row) => row.scrollWidth > row.clientWidth + 1)
 		.map((row) => row.dataset.liveControlsRow);
+	// Every element in the tree, not the rows alone: the notes and the key caps
+	// set their own sizes (sage round 1).
 	const smallest = Math.min(
-		...rows.map((row) => Number.parseFloat(getComputedStyle(row).fontSize)),
+		...[
+			...document.querySelectorAll(
+				"[data-live-controls-tree], [data-live-controls-tree] *",
+			),
+		].map((el) => Number.parseFloat(getComputedStyle(el).fontSize)),
 	);
 	return {
 		panelOverflowX: panel ? panel.scrollWidth > panel.clientWidth + 1 : null,
@@ -355,7 +361,7 @@ check(
 	JSON.stringify(layout),
 );
 check(
-	"and the text is no smaller than the rest of the console's at that width",
+	"and no text in the tree is set below 10 px, the size the station console's rows take at this width",
 	layout.smallest >= 10,
 	`smallest=${layout.smallest}px`,
 );

@@ -472,9 +472,17 @@ const PLACERS = {
 			);
 		if (!opened) return "? opened no Controls tab on this build";
 		await page.evaluate((folded) => {
-			for (const header of document.querySelectorAll(
-				'[data-live-controls-group][aria-expanded="false"]',
-			))
+			// Queried again each pass: a fold redraws the tree, so a list taken
+			// once holds detached headers after the first click (sage round 1).
+			for (
+				let header = document.querySelector(
+					'[data-live-controls-group][aria-expanded="false"]',
+				);
+				header;
+				header = document.querySelector(
+					'[data-live-controls-group][aria-expanded="false"]',
+				)
+			)
 				header.click();
 			for (const group of folded)
 				document
