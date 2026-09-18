@@ -178,3 +178,60 @@ export function callsWithArgument(source: string, names: string[]): boolean {
 	const head = new RegExp(`\\b(?:${names.join("|")})\\s*\\(`, "g");
 	return callArguments(source, head).some((call) => call.args.length > 1);
 }
+
+/**
+ * Every key `main.ts` reacts to.
+ *
+ * Two shapes, because the game reads keys two ways: `case "x":` for one-shot
+ * commands in the key handler's switch, and `this.keys.has("x")` / `axis([...])`
+ * for keys held across frames. Missing the second kind is how a movement key
+ * looks free.
+ *
+ * Moved here unchanged from `tests/perf-panel-keys.test.ts` (#372), so the
+ * controls catalogue's completeness row reads the bindings with the same
+ * scanner the partition test uses rather than a second one that could disagree
+ * with it.
+ */
+export function boundKeys(source: string): Set<string> {
+	const out = new Set<string>();
+
+	/**
+	 * Keys bound through a named constant, not only through a literal.
+	 *
+	 * The docking model landed on `main` with `const THROTTLE_UP = "shift"` and
+	 * `keys.has(THROTTLE_UP)`, and this scan — which only read literals — stopped
+	 * seeing the throttle. A guard that goes quietly blind is worse than no
+	 * guard, because the panel could then take a key that is bound behind a
+	 * name. So single-character and key-shaped string constants are resolved
+	 * first, and an identifier in a key position counts as its value.
+	 */
+	const consts = new Map<string, string>();
+	for (const m of source.matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*=\s*"([^"]+)"/g))
+		consts.set(m[1], m[2]);
+	const resolve = (raw: string) => {
+		// Trimmed first: the axis lists are split on commas, so every token
+		// after the first arrives with a leading space and would miss a literal
+		// anchored to the start of the string.
+		const token = raw.trim();
+		const literal = token.match(/^"([^"]+)"$/);
+		return literal ? literal[1] : consts.get(token);
+	};
+	const add = (token: string) => {
+		const key = resolve(token);
+		if (key) out.add(key);
+	};
+
+	for (const m of source.matchAll(/case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:/g))
+		add(m[1]);
+	for (const m of source.matchAll(/keys\.has\(("[^"]+"|[A-Za-z_$][\w$]*)\)/g))
+		add(m[1]);
+	for (const m of source.matchAll(/key === ("[^"]+"|[A-Z][A-Z0-9_]*)/g))
+		add(m[1]);
+	// `axis(["arrowright", "d"], ["arrowleft", "a"])` — every entry in either
+	// list is a held key, literal or named.
+	for (const m of source.matchAll(/axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g))
+		for (const list of [m[1], m[2]])
+			for (const token of list.split(",")) add(token);
+	return out;
+}
+
