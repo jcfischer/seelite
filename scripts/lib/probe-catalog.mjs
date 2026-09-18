@@ -162,6 +162,17 @@ export const PROBE_CATALOG = Object.freeze(
 			["interdiction", "cruise", "raider", "damage", "combat transition"],
 		),
 		entry(
+			"probe-key-dispatch.mjs",
+			"Checks the browser keyboard dispatch law for held chords, modifier routing, head look, flight controls, and F1 Controls access.",
+			[
+				"keyboard dispatch",
+				"modifier keys",
+				"held chords",
+				"head look",
+				"Controls tab",
+			],
+		),
+		entry(
 			"probe-light-rig.mjs",
 			"Checks live baked-environment orientation, star lighting, material response, and light-rig exposure.",
 			[
