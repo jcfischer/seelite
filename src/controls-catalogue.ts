@@ -240,6 +240,16 @@ function fireButtons(): Trigger[] {
 // The commands
 // ---------------------------------------------------------------------------
 
+/**
+ * A key the player *presses*, as opposed to holds, chords or presses on one
+ * surface: what a pad button and an Alt chord can stand for, and what the
+ * mapping test looks up in `main.ts`'s switch. One predicate for all three.
+ */
+export const isPressedKey = (
+	t: Trigger,
+): t is Extract<Trigger, { kind: "key" }> =>
+	t.kind === "key" && !t.hold && !t.alt && !t.surface;
+
 type KeySpec = string | Omit<Extract<Trigger, { kind: "key" }>, "kind">;
 
 interface Authored {
@@ -574,19 +584,18 @@ const keyTrigger = (spec: KeySpec): Trigger =>
 function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 	const out: Trigger[] = [];
 	for (const t of keys) {
-		if (t.kind !== "key" || t.hold || t.alt || t.surface) continue;
+		if (!isPressedKey(t)) continue;
 		for (const [button, contexts] of PRESSES.keys.get(t.key) ?? [])
 			out.push({ kind: "pad-button", button, contexts });
 	}
 	return out;
 }
 
-/** How a physical key prints: the arrows by the key they send, and the rest
- *  by the character on a US keyboard's key cap. */
+/** How a physical key prints: a letter or digit key by its character, an
+ *  arrow by the key it sends. Punctuation codes (`Slash`, `Comma`) would print
+ *  as their code names; no chord uses one, and #381 owns that table. */
 const codeKey = (code: string) =>
-	code.startsWith("Key") || code.startsWith("Digit")
-		? code.slice(code.startsWith("Key") ? 3 : 5).toLowerCase()
-		: code.toLowerCase();
+	code.replace(/^(Key|Digit)/, "").toLowerCase();
 
 /**
  * The Alt chords that stand for one of this command's pressed keys — derived
@@ -595,9 +604,7 @@ const codeKey = (code: string) =>
  */
 function chordsFor(keys: readonly Trigger[]): Trigger[] {
 	const pressed = new Set(
-		keys.flatMap((t) =>
-			t.kind === "key" && !t.hold && !t.alt && !t.surface ? [t.key] : [],
-		),
+		keys.flatMap((t) => (isPressedKey(t) ? [t.key] : [])),
 	);
 	return Object.entries(ALT_CHORDS)
 		.filter(([, key]) => pressed.has(key))

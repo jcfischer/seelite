@@ -16,6 +16,7 @@ import { describe, expect, test } from "bun:test";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
 	CONTROLS,
+	isPressedKey,
 	PANEL_INTENTS,
 	type PanelIntent,
 	TASK_GROUPS,
@@ -199,7 +200,7 @@ describe("the catalogue is complete against the source", () => {
 		let checked = 0;
 		for (const c of CONTROLS.commands)
 			for (const t of c.currentTriggers) {
-				if (t.kind !== "key" || t.hold || t.alt || t.surface) continue;
+				if (!isPressedKey(t)) continue;
 				const body = caseBody(t.key);
 				if (body === null) continue; // a panel's own key, held above
 				const want = EFFECTS[c.id]?.[t.key];

@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ALT_CHORDS, keyDispatch } from "../src/key-dispatch";
+import { codeOf } from "./lib/source-scan";
 
 const press = (key: string, code: string, mods: Partial<KeyMods> = {}) =>
 	keyDispatch({ key, code, down: true, repeat: false, ...NONE, ...mods });
@@ -147,5 +148,42 @@ describe("the ordinary path", () => {
 					...mods,
 				}),
 			).toEqual({ kind: "release", key: "d" });
+	});
+});
+
+/**
+ * The wiring, read off the source (sage round 1 on #391).
+ *
+ * The catalogue derives its Alt rows from `ALT_CHORDS`, so a check that those
+ * rows are in the table holds by construction. What can break is `main.ts`
+ * acting on the route — and `main.ts` cannot load headless — so its branches
+ * are read as text. The browser probe holds the behaviour; this row makes a
+ * dropped call a red `npm test`, which CI runs and the probe does not.
+ */
+describe("main.ts acts on the route", () => {
+	const main = codeOf("src/main.ts");
+	const branch = (kind: string) => {
+		const at = main.indexOf(`if (route.kind === "${kind}") {`);
+		if (at === -1) return null;
+		return main.slice(at, main.indexOf("\n\t\t}", at));
+	};
+
+	test("onKey asks the law", () => {
+		expect(main).toContain("keyDispatch({");
+	});
+
+	test("a chord runs its key's command, in the cockpit", () => {
+		const chord = branch("chord");
+		expect(chord).toContain(
+			'if (this.view === "cockpit") this.command(route.key);',
+		);
+		expect(chord).toContain("e.preventDefault();");
+	});
+
+	test("a release deletes the key, and a swallow reaches nothing", () => {
+		expect(branch("release")).toContain("this.keys.delete(route.key);");
+		const swallow = branch("swallow") ?? "";
+		expect(swallow).not.toContain("this.keys.add");
+		expect(swallow).not.toContain("this.command(");
 	});
 });

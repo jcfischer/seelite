@@ -7027,7 +7027,11 @@ class Game {
 		}
 		if (
 			this.view === "cockpit" &&
+			// #377: the Ctrl/Meta bail reaches this surface too, so the law holds
+			// for every event rather than for the ones that get past this branch.
 			!e.altKey &&
+			!e.ctrlKey &&
+			!e.metaKey &&
 			this.liveCockpit?.requestsSurfaceOpen() &&
 			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(key)
 		) {
