@@ -14,6 +14,7 @@
 		"probe": "npm run check:wiring && node scripts/probe-all.mjs",
 		"probe:one": "npm run check:wiring && node scripts/probe-all.mjs --only",
 		"probe:select": "node scripts/select-probes.mjs",
+		"probe:evaluate": "node scripts/evaluate-probe-selection.mjs",
 		"probe:pr": "node scripts/select-probes.mjs --run",
 		"views": "node scripts/capture-views.mjs",
 		"views:diff": "node scripts/diff-view-set.mjs",

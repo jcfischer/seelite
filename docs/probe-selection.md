@@ -32,9 +32,9 @@ contents are sent only when `--include-diff` is explicitly given. Review all of
 that evidence for repository confidentiality before running the selector. The
 selector places all PR input under a dedicated `state.untrusted_evidence`
 object, and every question's direction references that boundary. Model
-instructions remain best-effort rather than a security boundary. Filtered runs
-are refused when `CI` is set. A selected run is partial evidence and does not
-replace a full browser-tier receipt.
+instructions remain best-effort rather than a security boundary. The runner
+refuses its internal `PROBE_FILES` subset handoff when `CI` is set. A selected
+run is partial evidence and does not replace a full browser-tier receipt.
 
 The request names `jev-latest` and reports the exact model that the response
 resolved (for example `jev-1.13.0`). Re-run the evaluation cases after a
@@ -62,9 +62,9 @@ Run the selected probes through one shared dev server:
 npm run probe:pr -- --base origin/main --head HEAD --title "PR title"
 ```
 
-The selector itself runs `check:wiring` immediately before any browser launch;
-this cannot be bypassed by invoking `probe:select -- --run` or the Node entrypoint
-directly.
+The selector launches the canonical `npm run probe` sequence, which owns
+`check:wiring` and the browser runner. Invoking `probe:select -- --run` or the
+Node entrypoint directly therefore uses the same preflight as a full run.
 
 For an experiment or a not-yet-committed file list, repeat `--changed-file`:
 
@@ -89,4 +89,5 @@ partial-run banner names that it is partial. Treat that result as local feedback
 not as a full browser-tier receipt.
 
 The calibration cases and named expected probes are recorded in
-[`probe-selection-evaluation.md`](./probe-selection-evaluation.md).
+[`probe-selection-evaluation.md`](./probe-selection-evaluation.md) and can be
+rerun with `npm run probe:evaluate` after loading the API key.

@@ -7,10 +7,6 @@ import { probeRunnerEnvironment } from "./lib/probe-runner-env.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
-const PROBE_RUNNER = fileURLToPath(new URL("./probe-all.mjs", import.meta.url));
-const WIRING_CHECK = fileURLToPath(
-	new URL("./check-launcher-wiring.mjs", import.meta.url),
-);
 
 const VALUE_FLAGS = new Set([
 	"--base",
@@ -94,23 +90,15 @@ function runSelectedProbes(result) {
 	}
 	const selected = result.mode === "all" ? undefined : result.probes;
 	const childEnv = probeRunnerEnvironment(process.env, selected);
-	const wiringStatus = runChild(WIRING_CHECK, "wiring check", childEnv);
-	if (wiringStatus !== 0) {
-		process.exitCode = wiringStatus;
-		return;
-	}
-	process.exitCode = runChild(PROBE_RUNNER, "probe runner", childEnv);
-}
-
-function runChild(scriptPath, label, env) {
-	const child = spawnSync(process.execPath, [scriptPath], {
+	const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+	const child = spawnSync(npm, ["run", "probe"], {
 		cwd: PROJECT_ROOT,
 		stdio: "inherit",
-		env,
+		env: childEnv,
 	});
 	if (child.error)
-		console.error(`could not start ${label}: ${child.error.message}`);
-	return child.error ? 1 : (child.status ?? 1);
+		console.error(`could not start npm run probe: ${child.error.message}`);
+	process.exitCode = child.error ? 1 : (child.status ?? 1);
 }
 
 async function main() {

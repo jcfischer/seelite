@@ -240,7 +240,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-raider-consequence.mjs",
-			"Checks live persistence and presentation after a raider kill, including lifecycle state, wreck, scoop, and revisit.",
+			"Checks live persistence and presentation after a raider kill, including operational condition, wreck, scoop, and revisit.",
 			["raider kill", "world state", "wreck", "cargo scoop", "revisit"],
 		),
 		entry(

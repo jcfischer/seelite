@@ -1,0 +1,90 @@
+#!/usr/bin/env node
+
+import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
+import { selectProbes } from "./lib/probe-selection.mjs";
+
+const cases = [
+	{
+		name: "Moving-body cruise route",
+		input: {
+			changedFiles: ["src/cruise.ts"],
+			title: "Keep a cruise route clear of a moving host planet",
+			body: "Change moving-body avoidance and arrival handoff.",
+		},
+		expected: [
+			"measure-cruise-detour.mjs",
+			"probe-approach-handoff.mjs",
+			"probe-arrival.mjs",
+			"probe-cruise-detour.mjs",
+			"probe-cruise.mjs",
+			"probe-handoff.mjs",
+			"probe-moving-guard.mjs",
+		],
+	},
+	{
+		name: "Controls tab and gamepad folding",
+		input: {
+			changedFiles: ["src/controls-reference.ts", "src/controls-catalogue.ts"],
+			title: "Fold Controls groups for keyboard and gamepad users",
+			body: "Change Controls tab grouping, focus, and gamepad activation.",
+		},
+		expected: [
+			"probe-controls-reference.mjs",
+			"probe-key-dispatch.mjs",
+			"probe-pad-panels.mjs",
+		],
+	},
+	{
+		name: "Final output-stage dithering",
+		input: {
+			changedFiles: ["src/output-stage.ts", "src/planet-surfaces.ts"],
+			title: "Retune final output-stage dithering",
+			body: "Change final encoding, vignette, and surface output behavior.",
+		},
+		expected: [
+			"probe-output-stage.mjs",
+			"probe-frame-attribution.mjs",
+			"probe-planet-surfaces.mjs",
+			"probe-planets.mjs",
+			"probe-station-visuals.mjs",
+			"probe-traffic-mouth.mjs",
+		],
+	},
+	{
+		name: "Carrier-knowledge save migration",
+		input: {
+			changedFiles: ["src/save-store.ts", "src/persistent-world.ts"],
+			title: "Migrate carrier knowledge in Commander saves",
+			body: "Change saved carrier knowledge, migration, and recovery behavior.",
+		},
+		expected: [
+			"probe-save.mjs",
+			"probe-carrier-scan.mjs",
+			"probe-commander.mjs",
+			"probe-death.mjs",
+			"probe-relay.mjs",
+		],
+	},
+];
+
+const judge = createTypeSafeProbeJudge({
+	apiKey: process.env.TYPESAFE_API_KEY,
+});
+for (const item of cases) {
+	const started = performance.now();
+	const result = await selectProbes(item.input, judge);
+	const missing = item.expected.filter((file) => !result.probes.includes(file));
+	console.log(
+		JSON.stringify({
+			name: item.name,
+			model: result.model,
+			selected: result.probes.length,
+			total: result.decisions?.length,
+			latencyMs: Math.round(performance.now() - started),
+			expected: item.expected.length,
+			present: item.expected.length - missing.length,
+			missing,
+			usage: result.usage,
+		}),
+	);
+}
