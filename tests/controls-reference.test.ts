@@ -18,15 +18,35 @@ import {
 	focusAfterFold,
 	groupFocusId,
 	rowFocusId,
+	restoreOnTabPick,
 	toggleGroup,
-	treeFocusIds,
 	triggerLabel,
 } from "../src/controls-reference";
-import { NO_FOCUS, focusedItem, setFocus } from "../src/panel-focus";
+import type { TreeItem } from "../src/controls-reference";
+import type { DockPhase } from "../src/dock-session";
+import {
+	type FocusItem,
+	NO_FOCUS,
+	focusedItem,
+	setFocus,
+} from "../src/panel-focus";
+
+/**
+ * The cursor's names for a tree, in the order the markup draws it. The game
+ * reads the same names off the DOM (`focusIdOf`), and the DOM is drawn from
+ * this same `controlsTree`; here so the hand-off can be tested headless.
+ */
+const treeFocusIds = (items: readonly TreeItem[]): FocusItem[] =>
+	items.map((item) => ({
+		id:
+			item.kind === "header"
+				? groupFocusId(item.group)
+				: rowFocusId(item.command.id),
+	}));
 
 const cockpit = {
 	view: "cockpit" as const,
-	dockPhase: "flying",
+	dockPhase: "flying" as DockPhase,
 	headLook: "forward" as const,
 	rightTab: "Drive",
 	restoreTab: null,
@@ -102,7 +122,7 @@ describe("the law of ?", () => {
 		expect(controlsKeyMove({ ...cockpit, dockPhase: "docked" })).toBeNull();
 	});
 
-	test("not silent in the bay traversals, where the head still turns", () => {
+	test("not silent in the traversals, where the head still turns", () => {
 		expect(
 			controlsKeyMove({ ...cockpit, dockPhase: "arriving" }),
 		).not.toBeNull();
@@ -270,5 +290,36 @@ describe("the body the tab prints", () => {
 		const html = controlsBody(CONTROLS, new Set());
 		expect(html.startsWith('<div class="lc-panel-body')).toBe(true);
 		expect(html).not.toContain("lc-panel-copy");
+	});
+});
+
+describe("a tab picked by hand", () => {
+	test("picking Controls by hand remembers the tab it replaced", () => {
+		expect(restoreOnTabPick("Flight", CONTROLS_TAB, "Drive")).toBe("Flight");
+	});
+
+	test("picking another tab by hand forgets what ? remembered", () => {
+		// Open with ? from Drive, then click Flight: Drive is no longer the tab
+		// the player was reading.
+		expect(restoreOnTabPick(CONTROLS_TAB, "Flight", "Drive")).toBeNull();
+	});
+
+	test("the sage round 1 sequence closes on the last tab read", () => {
+		// ? from Drive, click Flight, click Controls, ? — Flight comes back.
+		let restore = controlsKeyMove(cockpit)?.restoreTab ?? null;
+		restore = restoreOnTabPick(CONTROLS_TAB, "Flight", restore);
+		restore = restoreOnTabPick("Flight", CONTROLS_TAB, restore);
+		expect(
+			controlsKeyMove({
+				...cockpit,
+				headLook: "right",
+				rightTab: CONTROLS_TAB,
+				restoreTab: restore,
+			})?.rightTab,
+		).toBe("Flight");
+	});
+
+	test("clicking Controls while already on it keeps the memory", () => {
+		expect(restoreOnTabPick(CONTROLS_TAB, CONTROLS_TAB, "Drive")).toBe("Drive");
 	});
 });

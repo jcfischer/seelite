@@ -5,7 +5,8 @@
  * binding is worse than none: the player trusts it and never finds the control.
  * So the catalogue is checked **against the source**, both ways — every key the
  * partition test's own scanner finds bound must be in it, and every key it
- * prints must be bound somewhere. The first direction is #370's completeness
+ * prints must be bound in the shape it is printed as — pressed, held, chorded
+ * or on the one surface that claims it. The first direction is #370's completeness
  * row; the second stops a row outliving the binding it names.
  *
  * This is the interface's test, not the interim module's. When #369's registry
@@ -60,6 +61,19 @@ const sourceKeys = () =>
 		...beamKeys(),
 	]);
 
+/** A key token as `boundKeys` resolves it: a literal, or a `const` of the file. */
+const resolved = (source: string, raw: string): string[] => {
+	const token = raw.trim();
+	const literal = token.match(/^"([^"]+)"$/);
+	if (literal) return [literal[1]];
+	const named = source.match(new RegExp(`const\\s+${token}\\s*=\\s*"([^"]+)"`));
+	return named ? [named[1]] : [];
+};
+
+/** Every key `re`'s first group names in `source`, constants resolved. */
+const keysIn = (source: string, re: RegExp): string[] =>
+	[...source.matchAll(re)].flatMap((m) => resolved(source, m[1]));
+
 describe("the catalogue is complete against the source", () => {
 	test("the scans find what they are supposed to find", () => {
 		// Guarding the guard, as the partition test does: an empty scan would
@@ -79,12 +93,63 @@ describe("the catalogue is complete against the source", () => {
 			);
 	});
 
-	test("every key the catalogue prints is bound", () => {
-		const bound = sourceKeys();
-		for (const key of catalogueKeys())
-			expect(`${JSON.stringify(key)}: ${bound.has(key)}`).toBe(
-				`${JSON.stringify(key)}: true`,
-			);
+	/**
+	 * **Per shape, not per key string** (sage round 1). A bare-key check passes a
+	 * printed `Alt + ←` for as long as *anything* binds `arrowleft` — and yaw
+	 * does — so removing the Alt head-look would leave the row printed and this
+	 * test green. Each trigger is looked for where its own shape is read: a press
+	 * in a `case` (or a panel's own key), a held key in `keys.has`/`axis`, a
+	 * chord in the Alt branch's `setHeadLook`, a Requests key in the list that
+	 * surface claims.
+	 */
+	test("every key the catalogue prints is bound in the shape it is printed as", () => {
+		const main = codeOf("src/main.ts");
+		const rig = codeOf("src/combat-rig.ts");
+		const pressed = new Set([
+			...keysIn(main, /case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:/g),
+			...keysIn(rig, /key === ("[^"]+")\)/g),
+			...PERF_KEYS,
+			RESTORE_KEY,
+			SETTINGS_KEY,
+			COMMANDER_KEY,
+		]);
+		const held = new Set([
+			...keysIn(main, /keys\.has\(("[^"]+"|[A-Z][A-Z0-9_]*)\)/g),
+			...keysIn(rig, /keys\.has\(("[^"]+"|[A-Z][A-Z0-9_]*)\)/g),
+			...[...main.matchAll(/axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g)].flatMap(
+				(m) => `${m[1]},${m[2]}`.split(",").flatMap((t) => resolved(main, t)),
+			),
+		]);
+		const chorded = new Set(
+			keysIn(main, /key === ("[^"]+")\) this\.setHeadLook\(/g),
+		);
+		const requests = new Set(
+			[
+				...main.matchAll(
+					/requestsSurfaceOpen\(\)\s*&&\s*\[([^\]]*)\]\.includes\(key\)/g,
+				),
+			].flatMap((m) => m[1].split(",").flatMap((t) => resolved(main, t))),
+		);
+		// Guard the guard: every shape's scan finds something it must.
+		expect([
+			pressed.has("v"),
+			held.has("shift"),
+			chorded.has("arrowleft"),
+		]).toEqual([true, true, true]);
+		expect(requests.has("enter")).toBe(true);
+		for (const c of CONTROLS.commands)
+			for (const t of c.currentTriggers) {
+				if (t.kind !== "key") continue;
+				const [shape, set] = t.alt
+					? ["alt", chorded]
+					: t.surface
+						? ["requests", requests]
+						: t.hold
+							? ["held", held]
+							: ["pressed", pressed];
+				const at = `${c.id}: ${JSON.stringify(t.key)} ${shape}`;
+				expect(`${at}: ${set.has(t.key)}`).toBe(`${at}: true`);
+			}
 	});
 
 	test("the six panel intents each have a row", () => {

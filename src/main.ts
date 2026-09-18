@@ -509,7 +509,7 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
-import { controlsKeyMove } from "./controls-reference";
+import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { readDeficit } from "./deficits";
 import {
 	emptyRequests,
@@ -3298,6 +3298,12 @@ class Game {
 		this.hud = document.getElementById("hud") as HTMLElement;
 		this.liveCockpit = new LiveCockpit({
 			onRightTab: (tab) => {
+				// A tab picked by hand moves what `?` will restore (#372).
+				this.controlsRestoreTab = restoreOnTabPick(
+					this.rightTab,
+					tab,
+					this.controlsRestoreTab,
+				);
 				this.rightTab = tab;
 				this.updateCockpit();
 			},

@@ -319,7 +319,7 @@ const AUTHORED: readonly Authored[] = [
 		group: "fly",
 		keys: ["j"],
 	},
-	{ id: "jump", name: "Charge the jump", group: "fly", keys: ["`"] },
+	{ id: "jump", name: "Wind up the jump", group: "fly", keys: ["`"] },
 	{
 		// #371: a console gives the pointer up, and nothing takes it back but
 		// the next click on the glass.
@@ -371,7 +371,7 @@ const AUTHORED: readonly Authored[] = [
 	},
 	{
 		id: "launch",
-		name: "Launch, or skip the bay traversal",
+		name: "Launch, or skip the traversal",
 		group: "dock",
 		keys: ["enter"],
 	},

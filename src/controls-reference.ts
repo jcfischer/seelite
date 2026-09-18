@@ -16,6 +16,7 @@ import type {
 	Trigger,
 } from "./controls-catalogue";
 import { PAD_CONTEXTS, TASK_GROUPS } from "./controls-catalogue";
+import type { DockPhase } from "./dock-session";
 import type { FocusCursor, FocusItem } from "./panel-focus";
 import { setFocus } from "./panel-focus";
 import type { PadContext } from "./pad-bindings";
@@ -36,7 +37,7 @@ export const CONTROLS_CHORD = "Shift + /";
 
 export interface ControlsKeyState<T extends string> {
 	view: "cockpit" | "chase";
-	dockPhase: string;
+	dockPhase: DockPhase;
 	headLook: "forward" | "left" | "right";
 	rightTab: T;
 	/** The right tab `?` found when it opened, or null. */
@@ -60,7 +61,7 @@ export type ControlsKeyMove<T extends string> = Pick<
  * **Silent while docked, and that asymmetry is deliberate.** Head-look itself
  * still works docked and `3` still turns the head; only `?` abstains, because
  * §8's M2 puts the station console on the forward wall and it owns the docked
- * screen. The bay traversals are not docked — the head turns there, so `?`
+ * screen. The traversals are not docked — the head turns there, so `?`
  * does too.
  */
 export function controlsKeyMove<T extends string>(
@@ -79,6 +80,23 @@ export function controlsKeyMove<T extends string>(
 		restoreTab:
 			state.rightTab === CONTROLS_TAB ? state.restoreTab : state.rightTab,
 	};
+}
+
+/**
+ * The memory `?` keeps when the player picks a right tab by hand.
+ *
+ * Picking `Controls` remembers the tab it replaced, the way `?` does; picking
+ * any other tab forgets, because the tab `?` remembered is no longer the one the
+ * player was reading. Without this, `?` from Drive, a click on Flight, a click
+ * back on Controls and `?` again restored Drive — sage round 1.
+ */
+export function restoreOnTabPick<T extends string>(
+	previous: T | typeof CONTROLS_TAB,
+	next: T | typeof CONTROLS_TAB,
+	restore: T | typeof CONTROLS_TAB | null,
+): T | typeof CONTROLS_TAB | null {
+	if (next !== CONTROLS_TAB) return null;
+	return previous === CONTROLS_TAB ? restore : previous;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,14 +139,6 @@ export function toggleGroup(
 /** The cursor's names for the tree's items, as `live-cockpit.ts` reads them off the DOM. */
 export const groupFocusId = (group: TaskGroup) => `controls-group:${group}`;
 export const rowFocusId = (id: string) => `controls-row:${id}`;
-
-export const treeFocusIds = (items: readonly TreeItem[]): FocusItem[] =>
-	items.map((item) => ({
-		id:
-			item.kind === "header"
-				? groupFocusId(item.group)
-				: rowFocusId(item.command.id),
-	}));
 
 /**
  * D9: a fold hands the cursor to the header that folded.
@@ -211,6 +221,39 @@ type PadPress = Extract<Trigger, { kind: "pad-button" | "pad-intent" }>;
 const isPadPress = (t: Trigger): t is PadPress =>
 	t.kind === "pad-button" || t.kind === "pad-intent";
 
+/** The contexts a list names, in the order a note prints them, in the player's words. */
+const where = (contexts: readonly PadContext[]) =>
+	PAD_CONTEXTS.filter((c) => contexts.includes(c))
+		.map((c) => CONTEXT_WORDS[c])
+		.join(", ");
+
+/**
+ * Every other command `press`'s button reaches, by name, with the contexts in
+ * which it reaches it — those where it does not mean `command`. A held button
+ * is the fire trigger, a different act from a press, and is left out.
+ */
+function meaningsElsewhere(
+	catalogue: ControlsCatalogue,
+	command: ControlCommand,
+	press: PadPress,
+): Map<string, PadContext[]> {
+	const elsewhere = new Map<string, PadContext[]>();
+	for (const other of catalogue.commands) {
+		if (other.id === command.id) continue;
+		for (const o of other.currentTriggers) {
+			if (!isPadPress(o) || o.button !== press.button) continue;
+			if ("hold" in o && o.hold) continue;
+			const outside = o.contexts.filter((c) => !press.contexts.includes(c));
+			if (outside.length > 0)
+				elsewhere.set(other.name, [
+					...(elsewhere.get(other.name) ?? []),
+					...outside,
+				]);
+		}
+	}
+	return elsewhere;
+}
+
 /**
  * D4: the context note, derived.
  *
@@ -228,29 +271,16 @@ export function contextNote(
 	for (const t of command.currentTriggers) {
 		if (!isPadPress(t) || seen.has(t.button)) continue;
 		seen.add(t.button);
-		// Every command this button reaches, by context.
-		const elsewhere = new Map<string, PadContext[]>();
-		for (const other of catalogue.commands) {
-			if (other.id === command.id) continue;
-			for (const o of other.currentTriggers)
-				if (isPadPress(o) && o.button === t.button && !("hold" in o && o.hold))
-					for (const c of o.contexts)
-						if (!t.contexts.includes(c))
-							elsewhere.set(other.name, [
-								...(elsewhere.get(other.name) ?? []),
-								c,
-							]);
-		}
+		const elsewhere = meaningsElsewhere(catalogue, command, t);
 		if (elsewhere.size === 0) continue;
-		const where = (cs: readonly PadContext[]) =>
-			PAD_CONTEXTS.filter((c) => cs.includes(c))
-				.map((c) => CONTEXT_WORDS[c])
-				.join(", ");
 		// Two commands the button reaches in the same contexts share one clause:
 		// `A` in a console is the market row *and* the generic select.
 		const byWhere = new Map<string, string[]>();
-		for (const [name, cs] of elsewhere)
-			byWhere.set(where(cs), [...(byWhere.get(where(cs)) ?? []), name]);
+		for (const [name, contexts] of elsewhere)
+			byWhere.set(where(contexts), [
+				...(byWhere.get(where(contexts)) ?? []),
+				name,
+			]);
 		const others = [...byWhere]
 			.map(([at, names]) => `in ${at}: ${names.join(" / ")}`)
 			.join(" · ");
@@ -265,15 +295,6 @@ const escapeHtml = (value: string) =>
 		.replaceAll("<", "&lt;")
 		.replaceAll(">", "&gt;")
 		.replaceAll('"', "&quot;");
-
-const GROUP_WORDS: Readonly<Record<TaskGroup, string>> = {
-	fly: "FLY",
-	fight: "FIGHT",
-	dock: "DOCK",
-	trade: "TRADE",
-	view: "VIEW",
-	system: "SYSTEM",
-};
 
 function rowMarkup(catalogue: ControlsCatalogue, command: ControlCommand) {
 	const triggers = command.currentTriggers.length
@@ -293,7 +314,7 @@ export function controlsTreeMarkup(
 	return controlsTree(catalogue, collapsed)
 		.map((item) =>
 			item.kind === "header"
-				? `<button class="lc-controls-group" type="button" data-live-controls-group="${item.group}" aria-expanded="${!collapsed.has(item.group)}"><span>${collapsed.has(item.group) ? "▸" : "▾"} ${GROUP_WORDS[item.group]}</span><small>${item.count}</small></button>`
+				? `<button class="lc-controls-group" type="button" data-live-controls-group="${item.group}" aria-expanded="${!collapsed.has(item.group)}"><span>${collapsed.has(item.group) ? "▸" : "▾"} ${item.group.toUpperCase()}</span><small>${item.count}</small></button>`
 				: rowMarkup(catalogue, item.command),
 		)
 		.join("");
