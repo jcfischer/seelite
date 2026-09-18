@@ -443,6 +443,36 @@ const PLACERS = {
 		});
 		return "arrival point, empty sky";
 	},
+	controls: async (page, shot) => {
+		// The arrival point and a forward head, then `?` through the keyboard —
+		// the key the player presses rather than a field assignment, so the
+		// frame is the tab the game opens. Every group is opened before the
+		// declared ones are folded, because the fold is kept beside the tab and
+		// would otherwise carry over from the view before.
+		await page.evaluate(async () => {
+			await window.__returnToBootPosition();
+			window.__seelite.setHeadLook("forward");
+		});
+		await page.keyboard.press("Shift+Slash");
+		await page.waitForFunction(
+			() =>
+				window.__seelite.headLook === "right" &&
+				!!document.querySelector("[data-live-controls-body]"),
+			undefined,
+			{ timeout: 2000 },
+		);
+		await page.evaluate((folded) => {
+			for (const header of document.querySelectorAll(
+				'[data-live-controls-group][aria-expanded="false"]',
+			))
+				header.click();
+			for (const group of folded)
+				document
+					.querySelector(`[data-live-controls-group="${group}"]`)
+					?.click();
+		}, shot.folded ?? []);
+		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
+	},
 };
 assertPlacersCover(PLACERS);
 
