@@ -15,6 +15,8 @@ const cases = [
 		name: "Moving-body cruise route",
 		input: {
 			changedFiles: ["src/cruise.ts"],
+			intent:
+				"Keep a cruise route clear of a moving host planet through arrival handoff.",
 		},
 		expected: [
 			"measure-cruise-detour.mjs",
@@ -30,6 +32,7 @@ const cases = [
 		name: "Controls tab and gamepad folding",
 		input: {
 			changedFiles: ["src/controls-reference.ts", "src/controls-catalogue.ts"],
+			intent: "Fold Controls groups for keyboard and gamepad users.",
 		},
 		expected: [
 			"probe-controls-reference.mjs",
@@ -41,6 +44,7 @@ const cases = [
 		name: "Final output-stage dithering",
 		input: {
 			changedFiles: ["src/output-stage.ts", "src/planet-surfaces.ts"],
+			intent: "Retune final output-stage encoding, vignette, and dithering.",
 		},
 		expected: [
 			"probe-output-stage.mjs",
@@ -55,6 +59,8 @@ const cases = [
 		name: "Carrier-knowledge save migration",
 		input: {
 			changedFiles: ["src/save-store.ts", "src/persistent-world.ts"],
+			intent:
+				"Migrate carrier knowledge and recovery state in Commander saves.",
 		},
 		expected: [
 			"probe-save.mjs",

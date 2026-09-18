@@ -8,13 +8,14 @@ import { selectProbes } from "./lib/probe-selection.mjs";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
-const VALUE_FLAGS = new Set(["--base", "--head", "--changed-file"]);
+const VALUE_FLAGS = new Set(["--base", "--head", "--changed-file", "--intent"]);
 
 function parseArgs(argv) {
 	const out = {
 		base: "origin/main",
 		head: "HEAD",
 		changedFiles: [],
+		intent: "",
 		json: false,
 		run: false,
 	};
@@ -103,7 +104,7 @@ async function main() {
 		: undefined;
 	const started = performance.now();
 	const result = await selectProbes(
-		{ changedFiles: gitEvidence.changedFiles },
+		{ changedFiles: gitEvidence.changedFiles, intent: args.intent },
 		judge,
 	);
 	const output = {

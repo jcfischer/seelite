@@ -103,9 +103,11 @@ describe("the semantic branch", () => {
 		const result = await selectProbes(
 			{
 				changedFiles: ["src/cruise.ts"],
+				intent: "Keep a cruise route clear of a moving host planet.",
 			},
 			async ({ questions, state }) => {
 				expect(state).toEqual({
+					reviewer_intent: "Keep a cruise route clear of a moving host planet.",
 					untrusted_evidence: {
 						changed_files: ["src/cruise.ts"],
 					},

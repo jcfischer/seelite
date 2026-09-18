@@ -25,14 +25,15 @@ The selector is a development tool. It makes no runtime network request from the
 game, and `TYPESAFE_API_KEY` is read only from the process environment and
 removed before Vite, Chromium, or a probe child starts.
 
-TypeSafe is an external service. A semantic selection sends only changed-file
-names, never the PR title, body, or source diff. The selector places those names
-under a dedicated `state.untrusted_evidence` object, and every question's
-direction references that boundary. Filenames can still be attacker-controlled,
-so model instructions remain best-effort rather than a security boundary. The
-runner refuses its internal `PROBE_FILES` subset handoff when `CI` is set. A
-selected run is partial evidence and does not replace a full browser-tier
-receipt.
+TypeSafe is an external service. A semantic selection sends changed-file names
+and, only when supplied, one reviewer-authored `--intent` sentence. It never
+sends the PR title, body, or source diff. The selector places filenames under
+`state.untrusted_evidence` and keeps `state.reviewer_intent` separate. Filenames
+can still be attacker-controlled, so model instructions remain best-effort
+rather than a security boundary. Write the intent yourself after reading the
+change; do not paste contributor-controlled prose into it. The runner refuses
+its internal `PROBE_FILES` subset handoff when `CI` is set. A selected run is
+partial evidence and does not replace a full browser-tier receipt.
 
 The request names `jev-latest` and reports the exact model that the response
 resolved (for example `jev-1.13.0`). Re-run the evaluation cases after a
@@ -53,13 +54,15 @@ Load the key into the shell, then inspect the plan without launching Chromium:
 set -a
 source ~/.env
 set +a
-npm run probe:select -- --base origin/main --head HEAD
+npm run probe:select -- --base origin/main --head HEAD \
+  --intent "Describe the intended behavior change in one sentence"
 ```
 
 Run the selected probes through one shared dev server:
 
 ```sh
-npm run probe:pr -- --base origin/main --head HEAD
+npm run probe:pr -- --base origin/main --head HEAD \
+  --intent "Describe the intended behavior change in one sentence"
 ```
 
 The selector launches the canonical `npm run probe` sequence, which owns
@@ -70,7 +73,7 @@ For an experiment or a not-yet-committed file list, repeat `--changed-file`:
 
 ```sh
 npm run probe:select -- --changed-file src/cruise.ts \
-  --json
+  --intent "Keep cruise clear of moving host planets" --json
 ```
 
 `PROBE_FILES` is the selector's exact-name handoff to `probe-all.mjs`. It is
