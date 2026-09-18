@@ -183,3 +183,36 @@ test("the progress cell never claims a completed scan", () => {
 		"SHIP · FREIGHTER · SCANNING 62%",
 	);
 });
+
+test("an unscanned carrier says why the scan is not holding it", () => {
+	// #384's flight test: a pilot who cannot start a scan and is shown `UNKNOWN`
+	// has no way to tell too-far from off-axis from broken, so they report broken.
+	expect(targetDesignation(carrier({}), { standoff: "too-far" })).toBe(
+		"SHIP · FREIGHTER · UNKNOWN · TOO FAR",
+	);
+	expect(targetDesignation(carrier({}), { standoff: "off-axis" })).toBe(
+		"SHIP · FREIGHTER · UNKNOWN · OFF AXIS",
+	);
+	// `UNKNOWN` survives: that you have never read this ship and that you are not
+	// holding it now are different facts, and the cell loses one if the second
+	// overwrites the first.
+	expect(targetDesignation(carrier({}), {})).toBe("SHIP · FREIGHTER · UNKNOWN");
+	// Once there is a reading the cue is gone — the scan worked, and a standing
+	// with an age is the answer.
+	expect(
+		targetDesignation(carrier({ standing: "clean" }), {
+			ageS: 240,
+			standoff: "off-axis",
+		}),
+	).toBe("SHIP · FREIGHTER · CLEAN · 4m");
+	// Nor while a charge is running: the percentage is already the live answer.
+	expect(
+		targetDesignation(carrier({}), { progress: 0.4, standoff: "too-far" }),
+	).toBe("SHIP · FREIGHTER · SCANNING 40%");
+	// And never on a pirate's line, which is not this verb's cell.
+	expect(
+		targetDesignation(carrier({ scannerClass: "hostile" }), {
+			standoff: "off-axis",
+		}),
+	).toBe("SHIP · FREIGHTER · HOSTILE");
+});

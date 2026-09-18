@@ -52,7 +52,7 @@ import type { CarrierStanding } from "./carrier-standing";
 import { carrierStanding } from "./carrier-standing";
 import { dot, normalizeOr, type Vec3 } from "./vec3";
 import { SCAN_MODULE } from "./market";
-import type { ScanRefusal } from "./display-contact";
+import type { ScanRefusal, ScanStandoff } from "./display-contact";
 import type { KnowledgeRow } from "./world-state";
 
 /** How close a carrier has to be to answer. Well inside `SCANNER_RANGE_KM`'s
@@ -93,6 +93,31 @@ export const scanConeHeld = (nose: Vec3, towardTarget: Vec3): boolean =>
 /** Is the target inside scan range? */
 export const scanInRange = (rangeKm: number): boolean =>
 	rangeKm >= 0 && rangeKm <= SCAN_RANGE_KM;
+
+/**
+ * Which geometric reason the hold is not being satisfied, or `null` when the
+ * geometry is satisfied and the charge is merely unfinished — which the cell
+ * already says with `SCANNING`.
+ *
+ * **Range is answered first.** A carrier 900 km out is off axis at most angles
+ * too, and the fact with a verb attached to it is distance: fly closer.
+ *
+ * Both terms are read from the axis the **sight** uses, never the hull's. The
+ * hull's nose and the cockpit reticle are different rotations — `main.ts` says so
+ * beside `forwardOf`, and the guns fire along the reticle — and measuring the cone
+ * from the hull is the defect this cue was found through: a pilot aimed dead
+ * centre at a carrier, was refused, and found the scan by aiming well below it.
+ */
+export const scanStandoff = (
+	rangeKm: number,
+	aim: Vec3,
+	towardTarget: Vec3,
+): ScanStandoff | null =>
+	!scanInRange(rangeKm)
+		? "too-far"
+		: scanConeHeld(aim, towardTarget)
+			? null
+			: "off-axis";
 
 /**
  * Why no scan is happening, in the one case the pilot can act on.

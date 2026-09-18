@@ -25,6 +25,7 @@ import {
 	scanInRange,
 	scanProgress,
 	scanRefusal,
+	scanStandoff,
 	stepScanHold,
 } from "../src/carrier-scan";
 import { SCAN_REFUSAL_LABELS } from "../src/display-contact";
@@ -315,4 +316,21 @@ describe("the reading", () => {
 		expect(read(560)).toBe(60);
 		expect(read(400)).toBe(0);
 	});
+});
+
+test("the reason a hold is not satisfied names the one fact to act on", () => {
+	const ahead = { x: 0, y: 0, z: -1 };
+	const on = { x: 0, y: 0, z: -1 };
+	// 17° to one side of the sightline — outside a cone whose half-angle is 12°,
+	// at a distance that is perfectly fine.
+	const side = { x: 0.3, y: 0, z: -0.95 };
+	expect(scanStandoff(120, ahead, on)).toBeNull();
+	expect(scanStandoff(120, ahead, side)).toBe("off-axis");
+	expect(scanStandoff(900, ahead, on)).toBe("too-far");
+	// Range is answered first, deliberately: a carrier 900 km out is off axis at
+	// most angles too, and the fact with a verb attached to it is distance.
+	expect(scanStandoff(900, ahead, side)).toBe("too-far");
+	// The ceiling is inclusive, and the frame past it is already refused.
+	expect(scanStandoff(400, ahead, on)).toBeNull();
+	expect(scanStandoff(401, ahead, on)).toBe("too-far");
 });

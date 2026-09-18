@@ -61,6 +61,11 @@ export interface DesignationScan {
 	ageS?: number;
 	/** Why nothing is happening, in the one case the pilot can act on. */
 	refusal?: ScanRefusal | null;
+	/** Why the hold is not satisfied, for a carrier the pilot could scan. Printed
+	 *  beside `UNKNOWN` rather than in place of it: that you have not read this
+	 *  ship and that you are not holding it now are two facts, and the cell loses
+	 *  one of them if the second overwrites the first. */
+	standoff?: ScanStandoff | null;
 }
 
 /**
@@ -92,6 +97,20 @@ export type ScanRefusal = "no-module";
 
 export const SCAN_REFUSAL_LABELS: Record<ScanRefusal, string> = {
 	"no-module": "NO SCANNER",
+};
+
+/**
+ * Why the charge is not building on a carrier the pilot **can** scan, when they
+ * are fitted and pointing at it. `#384`'s flight test is the reason this exists:
+ * a pilot who cannot start a scan and is shown `UNKNOWN` has no way to tell
+ * "too far" from "not on the sightline" from "the verb is broken", and reports
+ * the last one.
+ */
+export type ScanStandoff = "too-far" | "off-axis";
+
+export const SCAN_STANDOFF_LABELS: Record<ScanStandoff, string> = {
+	"too-far": "TOO FAR",
+	"off-axis": "OFF AXIS",
 };
 
 /**
@@ -132,7 +151,12 @@ export function targetDesignation(
 		return [...identity, `SCANNING ${Math.floor(scan.progress * 100)}%`].join(
 			" · ",
 		);
-	if (!body.standing) return [...identity, "UNKNOWN"].join(" · ");
+	if (!body.standing)
+		return [
+			...identity,
+			"UNKNOWN",
+			...(scan.standoff ? [SCAN_STANDOFF_LABELS[scan.standoff]] : []),
+		].join(" · ");
 	const standing = body.standing.toUpperCase();
 	return [
 		...identity,

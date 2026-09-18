@@ -451,6 +451,24 @@ A scan needs, all at once:
 - that target inside a scan range, **well under** `SCANNER_RANGE_KM`'s 10,000 km;
 - the cone held, unbroken, for a charge interval.
 
+**Which axis the cone is on is not a detail: it is the sightline, not the hull's
+nose.** `nose()` is the ship's rotation and `weaponAim()` is the camera's, and
+`main.ts` says beside `forwardOf` that they "differ whenever the pilot looks off the
+nose". The guns fire along the reticle, so in this game *where I am pointing* is the
+camera's axis, and the scan measures its cone from that one. It did not: it measured
+from the hull, and a pilot aiming a carrier dead centre under the reticle was
+refused a scan they could see they were aimed at — the hold only began when the ship
+was put far down the cockpit screen, off the sight and onto the hull. Found by
+flying it. No headless row and no probe could see it, because every one of them
+places the nose and the sight on one ray, which makes them the same vector by
+construction.
+
+When the module is fitted, the target is a scannable carrier, nothing is charging and
+nothing is recorded, the cell adds the reason to `UNKNOWN`: `· TOO FAR` or
+`· OFF AXIS`, range answered first because distance is the fact with a verb attached
+to it. `UNKNOWN` survives — that you have never read this ship and that you are not
+holding it now are two facts.
+
 Breaking the cone resets the charge. The idiom is `src/interdiction.ts`'s
 contest — a lock held through a charge, broken by heading separation — and the
 implementation should read its shape rather than invent a second one.

@@ -86,7 +86,10 @@ unfitted pilot reads `UNKNOWN` beside those and `NO SCANNER` beside an ordinary
 carrier — which is the difference between a tool you do not own and a question
 that has no answer. For a carrier the cell reads `NO SCANNER` while the module is
 missing, `SCANNING <n>%` while a charge is running, the recorded standing once
-there is one, and `UNKNOWN` before any of it. Unclassified review
+there is one, and `UNKNOWN` before any of it — which gains a reason when nothing is
+charging and nothing is recorded: `UNKNOWN · TOO FAR`, `UNKNOWN · OFF AXIS`. The cone
+is measured from the sightline the reticle draws, which is what the guns fire along,
+and not from the hull's nose. Unclassified review
 hulls therefore show `UNKNOWN` for two reasons now — never classified, and
 never scanned — and neither is a fabricated legal status. The designation
 updates on target or classification changes and leaves the separate ETA line in

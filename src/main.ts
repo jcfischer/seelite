@@ -320,6 +320,7 @@ import {
 	scanFitted,
 	scanInRange,
 	scanProgress,
+	scanStandoff,
 	scanRefusal,
 	stepScanHold,
 } from "./carrier-scan";
@@ -450,6 +451,7 @@ import {
 } from "./ship-mesh";
 import {
 	type DesignationScan,
+	type ScanStandoff,
 	type DisplayContact,
 	isDisplayContact,
 	relativeLabel,
@@ -1405,6 +1407,7 @@ interface ScanFrame {
 	gameTime: number;
 	chargeS: number;
 	fitted: boolean;
+	standoff: ScanStandoff | null;
 	stamp: number;
 	facts: ScanFacts;
 }
@@ -5501,15 +5504,23 @@ class Game {
 		// does not record whose it is cannot say when to start over — the blocker
 		// sage #384 round 1 found, where one long lock could bank a charge on one
 		// ship and spend it on another.
+		// **The cone is on the sightline, not on the hull.** `nose()` is the
+		// ship's rotation and `weaponAim()` is the camera's, and `main.ts`'s own
+		// note beside `forwardOf` says they "differ whenever the pilot looks off
+		// the nose". The guns already settled which one "where I am pointing"
+		// means in this game: they fire along `weaponAim()`. Measuring the scan
+		// from the hull meant a pilot had to put a carrier far down the cockpit
+		// screen — off the reticle, onto the hull — to start a scan they could see
+		// they were aimed at. Found by flying it, not by any test of mine: every
+		// row and probe places the nose and the sight on one ray, which makes them
+		// the same vector by construction and cannot see this at all.
+		const aim = this.weaponAim();
 		const held: ScanSubject | null =
 			actor !== undefined &&
 			fitted &&
 			target !== null &&
 			scanInRange(length(sub(target.pos, this.world.ship.pos))) &&
-			scanConeHeld(
-				this.nose(),
-				normalizeOr(sub(target.pos, this.world.ship.pos), this.nose()),
-			)
+			scanConeHeld(aim, normalizeOr(sub(target.pos, this.world.ship.pos), aim))
 				? { key: actor.key }
 				: null;
 		const before = this.scanHold;
@@ -5580,6 +5591,11 @@ class Game {
 	private scanReadout(target: Body | null): ScanFacts {
 		const stamp = this.scanStamp(target);
 		const fitted = scanFitted(this.commander.ownedEquipment);
+		// Computed before the memo is consulted, and part of its key: the cue is
+		// the one input that moves with the ship rather than with the clock, so a
+		// frame that turned the sight off a carrier without the clock moving must
+		// not be served the reading taken while it was on.
+		const standoff = this.scanStandoffNow(target);
 		const memo = this.scanFacts;
 		if (
 			memo !== null &&
@@ -5587,19 +5603,32 @@ class Game {
 			memo.gameTime === this.world.gameTime &&
 			memo.chargeS === this.scanHold.chargeS &&
 			memo.fitted === fitted &&
+			memo.standoff === standoff &&
 			memo.stamp === stamp
 		)
 			return memo.facts;
-		const facts = this.computeScanFacts(target);
+		const facts = this.computeScanFacts(target, standoff);
 		this.scanFacts = {
 			target,
 			gameTime: this.world.gameTime,
 			chargeS: this.scanHold.chargeS,
 			fitted,
+			standoff,
 			stamp,
 			facts,
 		};
 		return facts;
+	}
+
+	/** Why the sight is not holding this carrier, in geometry alone. The cell
+	 *  decides whether to show it; this answers the question without deciding
+	 *  anything about the target being scannable, so it cannot drift out of step
+	 *  with the predicate `stepScan` uses — both call the same two functions. */
+	private scanStandoffNow(target: Body | null): ScanStandoff | null {
+		if (!target || !isDisplayContact(target)) return null;
+		const aim = this.weaponAim();
+		const toTarget = sub(target.pos, this.world.ship.pos);
+		return scanStandoff(length(toTarget), aim, normalizeOr(toTarget, aim));
 	}
 
 	/** The recorded scan row's stamp for this target, or -1. A map lookup, paid
@@ -5616,7 +5645,10 @@ class Game {
 		);
 	}
 
-	private computeScanFacts(target: Body | null): ScanFacts {
+	private computeScanFacts(
+		target: Body | null,
+		standoff: ScanStandoff | null,
+	): ScanFacts {
 		const actor = this.scanSubject(target);
 		const reading = actor ? this.recordedReading(actor) : null;
 		const scannable = actor !== undefined;
@@ -5643,6 +5675,14 @@ class Game {
 				ageS: reading?.ageS,
 				progress,
 				refusal,
+				// Only where it means something: a pirate's cell and a station's are
+				// not this verb's, a refusal already names the actionable absence,
+				// and a carrier with a reading is being read. So: fitted, scannable,
+				// nothing running, nothing recorded.
+				standoff:
+					!refusal && scannable && reading === null && progress === undefined
+						? standoff
+						: null,
 			},
 			actor,
 			reading,

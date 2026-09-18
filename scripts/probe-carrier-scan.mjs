@@ -178,6 +178,44 @@ try {
 		g.scanHold = verb.beginScanHold();
 		const before = paintNow();
 
+		// 2b. **Why is the scan not holding?** The flight test's whole finding: a
+		//    pilot shown `UNKNOWN` cannot tell too-far from off-sight from broken,
+		//    and reports broken. And the axis the cone is measured on is the
+		//    sightline, not the hull — which the head-look arm can show, because
+		//    turning the head moves the sight and leaves the hull pointing where it
+		//    was. A cone on the hull would stay satisfied here and read nothing.
+		const cell = () => {
+			const body = g.targetBody();
+			const calls = painted(body);
+			const want = contacts.targetDesignation(
+				body,
+				g.scanReadout(body).designation,
+			);
+			return calls.find((c) => c.text === want)?.text ?? calls[1]?.text ?? null;
+		};
+		const cue = { ahead: null, far: null, looked: null, sightMoved: false };
+		place();
+		cue.ahead = cell();
+		// 600 km dead astern of it, still dead on: past the ceiling, inside the
+		// cone. `place()` would put the ship back inside, so the offset is explicit.
+		const home = g.trafficRouteByKey(actor.key)?.pos;
+		Object.assign(g.world.ship.pos, {
+			x: home.x,
+			y: home.y,
+			z: home.z + 600,
+		});
+		g.setAttitude({ x: 0, y: 0, z: -1 }, g.shipUp());
+		g.updateTrafficPresentation(g.world.ship.pos);
+		cue.far = cell();
+		place();
+		const sightBefore = g.weaponAim().z;
+		g.headLook = "left";
+		g.updateTrafficPresentation(g.world.ship.pos);
+		cue.looked = cell();
+		cue.sightMoved = Math.abs(g.weaponAim().z - sightBefore) > 0.5;
+		g.headLook = "forward";
+		place();
+
 		// 3. A charge part-way through, read as the glass shows it.
 		g.scanHold = {
 			key,
@@ -288,6 +326,7 @@ try {
 			afterRow,
 			hostile,
 			hostileFits,
+			cue,
 			stampAfterJump,
 			widestFits,
 			console: console_,
@@ -368,6 +407,26 @@ try {
 				hostile: scan.hostile,
 				fits: scan.hostileFits,
 			}),
+		);
+		check(
+			"an unscanned carrier says why the scan is not holding it",
+			// Dead ahead and in range reads plain `UNKNOWN` with no cue: the cue is
+			// for a scan that is not happening, and this one is.
+			typeof scan.cue.ahead === "string" &&
+				!scan.cue.ahead.includes("TOO FAR") &&
+				!scan.cue.ahead.includes("OFF AXIS") &&
+				typeof scan.cue.far === "string" &&
+				scan.cue.far.endsWith(" · TOO FAR") &&
+				typeof scan.cue.looked === "string" &&
+				scan.cue.looked.endsWith(" · OFF AXIS"),
+			JSON.stringify(scan.cue),
+		);
+		check(
+			"the cone follows the sightline the pilot aims with, not the hull",
+			scan.cue.sightMoved === true,
+			// If turning the head did not move `weaponAim`, this row measured
+			// nothing about the axis and must not be read as passing.
+			JSON.stringify(scan.cue),
 		);
 		check(
 			"every designation the panel painted fits the instrument",

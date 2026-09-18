@@ -466,3 +466,18 @@ test("one place names a carrier, and one place derives what the loop needs", () 
 	expect(method("scanConsoleRow")).toContain("scan: ScanFacts");
 	expect(method("scanReadout")).toContain("this.scanFacts");
 });
+
+test("the scan cone is measured on the sightline the pilot aims with", () => {
+	// `nose()` is the ship's rotation and `weaponAim()` the camera's; the repo
+	// says so beside `forwardOf`, and the guns already fire along the camera's.
+	// The scan shipped measuring the cone from the hull, and the only way to find
+	// it was to sit in the cockpit and aim at something.
+	const step = method("stepScan");
+	expect(step).toContain("this.weaponAim()");
+	expect(step).not.toContain("scanConeHeld(\n\t\t\t\tthis.nose()");
+	expect(step).not.toContain("this.nose(),\n\t\t\t\tnormalizeOr");
+	// And the cue reads the same two predicates the hold does, through the module,
+	// so the two cannot drift apart.
+	expect(method("scanStandoffNow")).toContain("scanStandoff(");
+	expect(method("scanStandoffNow")).toContain("this.weaponAim()");
+});
