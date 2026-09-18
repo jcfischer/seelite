@@ -252,9 +252,9 @@ export function contextNote(
 		for (const [name, cs] of elsewhere)
 			byWhere.set(where(cs), [...(byWhere.get(where(cs)) ?? []), name]);
 		const others = [...byWhere]
-			.map(([at, names]) => `${at}: ${names.join(" / ")}`)
+			.map(([at, names]) => `in ${at}: ${names.join(" / ")}`)
 			.join(" · ");
-		parts.push(`${padButton(t.button)} — ${where(t.contexts)} · ${others}`);
+		parts.push(`${padButton(t.button)} in ${where(t.contexts)} · ${others}`);
 	}
 	return parts.join("; ");
 }

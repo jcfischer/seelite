@@ -229,7 +229,8 @@ describe("the context note", () => {
 		// #370 D4's example: ↑ is head-forward in flight and the cursor in a
 		// console, and the row says so.
 		const note = contextNote(CONTROLS, row("head-forward"));
-		expect(note).toContain("d-pad ↑");
+		expect(note).toContain("d-pad ↑ in flight");
+		expect(note).toContain("in instrument, console, menu:");
 		expect(note).toContain("flight");
 		expect(note).toContain("console");
 		expect(note).toContain(row("console-cursor").name);
