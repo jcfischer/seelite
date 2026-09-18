@@ -130,6 +130,30 @@ describe("resolveOnly", () => {
 	});
 
 	describe("the environment", () => {
+		test("PROBE_FILES selects several exact gates in runner order", () => {
+			expect(
+				selected([], { PROBE_FILES: "probe-beta.mjs,probe-alpha.mjs" }).probes,
+			).toEqual(["probe-alpha.mjs", "probe-beta.mjs"]);
+		});
+
+		test("PROBE_FILES refuses unknown, empty, or conflicting selections", () => {
+			expect(resolve([], { PROBE_FILES: "probe-missing.mjs" }).refusal).toMatch(
+				/not available/,
+			);
+			expect(resolve([], { PROBE_FILES: "," }).refusal).toMatch(
+				/no probe names/,
+			);
+			expect(
+				resolve(["--only", "alpha"], { PROBE_FILES: "probe-beta.mjs" }).refusal,
+			).toMatch(/cannot be combined/);
+		});
+
+		test("PROBE_FILES gets the same CI refusal as --only", () => {
+			expect(
+				resolve([], { CI: "true", PROBE_FILES: "probe-alpha.mjs" }).refusal,
+			).toContain("CI");
+		});
+
 		test("PROBE_ONLY filters when no flag is given", () => {
 			expect(selected([], { PROBE_ONLY: "alpha" }).probes).toEqual([
 				"probe-alpha.mjs",

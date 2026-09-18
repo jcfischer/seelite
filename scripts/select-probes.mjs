@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+	createTypeSafeProbeJudge,
+	withoutTypeSafeCredential,
+} from "./lib/typesafe-probe-judge.mjs";
+import { selectProbes } from "./lib/probe-selection.mjs";
+
+const VALUE_FLAGS = new Set([
+	"--base",
+	"--head",
+	"--title",
+	"--body",
+	"--changed-file",
+]);
+
+function parseArgs(argv) {
+	const out = {
+		base: "origin/main",
+		head: "HEAD",
+		title: process.env.PR_TITLE ?? "",
+		body: process.env.PR_BODY ?? "",
+		changedFiles: [],
+		json: false,
+		run: false,
+	};
+	for (let i = 0; i < argv.length; i++) {
+		const flag = argv[i];
+		if (flag === "--json" || flag === "--run") {
+			out[flag.slice(2)] = true;
+			continue;
+		}
+		if (!VALUE_FLAGS.has(flag) || argv[i + 1] === undefined)
+			throw new Error(`unknown or incomplete argument: ${flag}`);
+		const value = argv[++i];
+		if (flag === "--changed-file") out.changedFiles.push(value);
+		else out[flag.slice(2)] = value;
+	}
+	return out;
+}
+
+const git = (args) =>
+	execFileSync("git", args, {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+
+function readGitEvidence(base, head) {
+	const range = `${base}...${head}`;
+	return {
+		changedFiles: git(["diff", "--name-only", range])
+			.split("\n")
+			.map((line) => line.trim())
+			.filter(Boolean),
+		diff: git(["diff", "--no-ext-diff", "--unified=2", range]).slice(0, 40_000),
+	};
+}
+
+const renderText = (result) => {
+	console.log(`probe selection: ${result.mode}`);
+	console.log(`reason: ${result.reason}`);
+	console.log(`selected: ${result.probes.length}`);
+	for (const file of result.probes) {
+		const decision = result.decisions?.find((row) => row.file === file);
+		console.log(
+			`  ${file}${decision ? ` (p=${decision.probability.toFixed(3)})` : ""}`,
+		);
+	}
+	if (result.usage)
+		console.log(
+			`TypeSafe: ${result.model ?? "unknown model"}, ${result.usage.input_tokens} input + ${result.usage.output_tokens} output tokens`,
+		);
+	console.log(`decision latency: ${result.latencyMs} ms`);
+};
+
+async function main() {
+	const args = parseArgs(process.argv.slice(2));
+	let gitEvidence = { changedFiles: args.changedFiles, diff: "" };
+	if (!args.changedFiles.length) {
+		try {
+			gitEvidence = readGitEvidence(args.base, args.head);
+		} catch (error) {
+			console.error(
+				`could not read git diff ${args.base}...${args.head}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	const judge = process.env.TYPESAFE_API_KEY
+		? createTypeSafeProbeJudge({ apiKey: process.env.TYPESAFE_API_KEY })
+		: undefined;
+	const started = performance.now();
+	const result = await selectProbes(
+		{
+			changedFiles: gitEvidence.changedFiles,
+			title: args.title,
+			body: args.body,
+			diff: gitEvidence.diff,
+		},
+		judge,
+	);
+	const output = {
+		...result,
+		changedFiles: gitEvidence.changedFiles,
+		latencyMs: Math.round(performance.now() - started),
+	};
+	if (args.json) console.log(JSON.stringify(output, null, 2));
+	else renderText(output);
+
+	if (!args.run) return;
+	if (!result.probes.length) {
+		console.log("No browser probes selected; nothing to run.");
+		return;
+	}
+	const full = result.mode === "all";
+	const childEnv = withoutTypeSafeCredential(process.env);
+	const child = spawnSync(process.execPath, ["scripts/probe-all.mjs"], {
+		stdio: "inherit",
+		env: full
+			? childEnv
+			: { ...childEnv, PROBE_FILES: result.probes.join(",") },
+	});
+	process.exitCode = child.status ?? 1;
+}
+
+main().catch((error) => {
+	console.error(error instanceof Error ? error.message : String(error));
+	process.exitCode = 1;
+});

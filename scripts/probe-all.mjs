@@ -63,6 +63,9 @@
  * Usage:
  *   npm run probe                                      # serve, probe
  *   node scripts/probe-all.mjs http://localhost:5173   # probe a running one
+ *
+ * `PROBE_FILES` is an internal exact-name handoff from `select-probes.mjs`.
+ * Like `--only`, it is a visibly partial local run and is refused in CI.
  */
 import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
