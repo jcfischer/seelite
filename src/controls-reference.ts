@@ -170,8 +170,7 @@ const PAD_WORDS: Readonly<Record<string, string>> = {
 	home: "Home",
 };
 
-const padButton = (button: string) =>
-	PAD_WORDS[button] ?? button.toUpperCase();
+const padButton = (button: string) => PAD_WORDS[button] ?? button.toUpperCase();
 
 /** The player's word for a pad context. `modal` is a menu on screen. */
 const CONTEXT_WORDS: Readonly<Record<PadContext, string>> = {
@@ -312,6 +311,7 @@ export function controlsBody(
 	catalogue: ControlsCatalogue,
 	collapsed: ReadonlySet<TaskGroup>,
 ): string {
-	const owner = catalogue.layout === "default" ? "DEFAULT LAYOUT" : "PLAYER LAYOUT";
+	const owner =
+		catalogue.layout === "default" ? "DEFAULT LAYOUT" : "PLAYER LAYOUT";
 	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>${CONTROLS_CHORD} opens and closes this tab</span><span>Keys print as a US keyboard types them</span></header><div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
 }

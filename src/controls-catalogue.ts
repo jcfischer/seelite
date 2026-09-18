@@ -211,7 +211,8 @@ function triggerFor(sign: 1 | -1): Trigger[] {
 	return (["l2", "r2"] as const).flatMap((trigger) => {
 		const values = { ...ZERO_VALUES, [trigger]: 1 };
 		const contexts = liveIn(
-			(c) => Math.sign(padFlightAxes(frame({ values }), c).throttleTrim) === sign,
+			(c) =>
+				Math.sign(padFlightAxes(frame({ values }), c).throttleTrim) === sign,
 		);
 		return contexts.length > 0
 			? [{ kind: "pad-trigger" as const, trigger, contexts }]
@@ -336,7 +337,12 @@ const AUTHORED: readonly Authored[] = [
 		more: [{ kind: "mouse-button", action: "hold" }, ...fireButtons()],
 	},
 	{ id: "target-next", name: "Next target", group: "fight", keys: ["t"] },
-	{ id: "target-previous", name: "Previous target", group: "fight", keys: ["g"] },
+	{
+		id: "target-previous",
+		name: "Previous target",
+		group: "fight",
+		keys: ["g"],
+	},
 	{ id: "face-target", name: "Face the target", group: "fight", keys: ["f"] },
 	{
 		id: "rig-incoming",
@@ -577,7 +583,8 @@ function padIntentTriggers(intent: PanelIntent): Trigger[] {
 
 const contextsOf = (triggers: readonly Trigger[]): PadContext[] => {
 	const live = new Set<PadContext>();
-	for (const t of triggers) if ("contexts" in t) for (const c of t.contexts) live.add(c);
+	for (const t of triggers)
+		if ("contexts" in t) for (const c of t.contexts) live.add(c);
 	return PAD_CONTEXTS.filter((c) => live.has(c));
 };
 

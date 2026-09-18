@@ -16,6 +16,7 @@ import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
 	CONTROLS,
 	PANEL_INTENTS,
+	type PanelIntent,
 	TASK_GROUPS,
 	type Trigger,
 } from "../src/controls-catalogue";
@@ -30,9 +31,7 @@ const triggers = (): Trigger[] =>
 
 /** Every character key the catalogue prints, whatever it is printed for. */
 const catalogueKeys = () =>
-	new Set(
-		triggers().flatMap((t) => (t.kind === "key" ? [t.key] : [])),
-	);
+	new Set(triggers().flatMap((t) => (t.kind === "key" ? [t.key] : [])));
 
 /**
  * What the scanner finds that a keyboard can deliver.
@@ -93,13 +92,14 @@ describe("the catalogue is complete against the source", () => {
 		// here: a seventh field added to `PadIntents` is a red run.
 		const fields = Object.keys(padIntents(null, "flight")).filter(
 			(k) => k !== "keys",
-		);
+		) as PanelIntent[];
 		expect(fields.length).toBe(6);
 		expect([...PANEL_INTENTS].sort()).toEqual([...fields].sort());
 		const printed = new Set(
 			triggers().flatMap((t) => (t.kind === "pad-intent" ? [t.intent] : [])),
 		);
-		for (const field of fields) expect(`${field}: ${printed.has(field)}`).toBe(`${field}: true`);
+		for (const field of fields)
+			expect(`${field}: ${printed.has(field)}`).toBe(`${field}: true`);
 	});
 
 	test("every pad button the flight table binds is on the row that owns its key", () => {
@@ -123,9 +123,7 @@ describe("the catalogue is complete against the source", () => {
 			),
 		);
 		const sticksAndTriggers = new Set(
-			triggers().flatMap((t) =>
-				t.kind === "pad-trigger" ? [t.trigger] : [],
-			),
+			triggers().flatMap((t) => (t.kind === "pad-trigger" ? [t.trigger] : [])),
 		);
 		const missing = STANDARD_BUTTONS.filter(
 			(b) => !printed.has(b) && !sticksAndTriggers.has(b as "l2" | "r2"),

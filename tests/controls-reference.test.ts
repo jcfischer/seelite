@@ -7,11 +7,7 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import {
-	CONTROLS,
-	TASK_GROUPS,
-	type Trigger,
-} from "../src/controls-catalogue";
+import { CONTROLS, TASK_GROUPS, type Trigger } from "../src/controls-catalogue";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,
@@ -58,7 +54,11 @@ describe("the law of ?", () => {
 	test("head already to starboard on another tab: selects Controls, remembers that tab", () => {
 		expect(
 			controlsKeyMove({ ...cockpit, headLook: "right", rightTab: "Tuning" }),
-		).toEqual({ headLook: "right", rightTab: CONTROLS_TAB, restoreTab: "Tuning" });
+		).toEqual({
+			headLook: "right",
+			rightTab: CONTROLS_TAB,
+			restoreTab: "Tuning",
+		});
 	});
 
 	test("head to port: turns to starboard, the left console is not the one that opens", () => {
@@ -76,13 +76,25 @@ describe("the law of ?", () => {
 				rightTab: CONTROLS_TAB,
 				restoreTab: "Flight",
 			}),
-		).toEqual({ headLook: "right", rightTab: CONTROLS_TAB, restoreTab: "Flight" });
+		).toEqual({
+			headLook: "right",
+			rightTab: CONTROLS_TAB,
+			restoreTab: "Flight",
+		});
 	});
 
 	test("closing with nothing remembered leaves the tab alone", () => {
 		expect(
-			controlsKeyMove({ ...cockpit, headLook: "right", rightTab: CONTROLS_TAB }),
-		).toEqual({ headLook: "forward", rightTab: CONTROLS_TAB, restoreTab: null });
+			controlsKeyMove({
+				...cockpit,
+				headLook: "right",
+				rightTab: CONTROLS_TAB,
+			}),
+		).toEqual({
+			headLook: "forward",
+			rightTab: CONTROLS_TAB,
+			restoreTab: null,
+		});
 	});
 
 	test("silent in chase view and while docked", () => {
@@ -91,8 +103,12 @@ describe("the law of ?", () => {
 	});
 
 	test("not silent in the bay traversals, where the head still turns", () => {
-		expect(controlsKeyMove({ ...cockpit, dockPhase: "arriving" })).not.toBeNull();
-		expect(controlsKeyMove({ ...cockpit, dockPhase: "launching" })).not.toBeNull();
+		expect(
+			controlsKeyMove({ ...cockpit, dockPhase: "arriving" }),
+		).not.toBeNull();
+		expect(
+			controlsKeyMove({ ...cockpit, dockPhase: "launching" }),
+		).not.toBeNull();
 	});
 });
 
@@ -106,17 +122,19 @@ describe("the folding tree", () => {
 		const rows = items.filter((i) => i.kind === "row");
 		expect(rows.length).toBe(CONTROLS.commands.length);
 		// A row follows its own header.
-		let group = "";
+		let group: string = "";
 		for (const item of items) {
 			if (item.kind === "header") group = item.group;
-			else expect(item.command.group).toBe(group);
+			else expect(item.command.group as string).toBe(group);
 		}
 	});
 
 	test("a folded group keeps its header and loses its rows", () => {
 		const folded = toggleGroup(new Set(), "fly");
 		const items = controlsTree(CONTROLS, folded);
-		expect(items.some((i) => i.kind === "header" && i.group === "fly")).toBe(true);
+		expect(items.some((i) => i.kind === "header" && i.group === "fly")).toBe(
+			true,
+		);
 		expect(
 			items.some((i) => i.kind === "row" && i.command.group === "fly"),
 		).toBe(false);
@@ -176,7 +194,11 @@ describe("how a binding prints", () => {
 			}),
 		).toMatch(/left stick/);
 		expect(
-			triggerLabel({ kind: "pad-trigger", trigger: "r2", contexts: ["flight"] }),
+			triggerLabel({
+				kind: "pad-trigger",
+				trigger: "r2",
+				contexts: ["flight"],
+			}),
 		).toBe("R2");
 		expect(
 			triggerLabel({
