@@ -83,7 +83,13 @@ export const PROBE_CATALOG = Object.freeze(
 		entry(
 			"probe-cruise.mjs",
 			"Flies the normal cruise regime through charge, travel, layer handoff, exit, and arrival behavior.",
-			["cruise", "drive charge", "layer handoff", "arrival", "flight regime"],
+			[
+				"cruise",
+				"cruise drive charge",
+				"layer handoff",
+				"arrival",
+				"flight regime",
+			],
 		),
 		entry(
 			"probe-death.mjs",
@@ -97,7 +103,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-dock-arrival.mjs",
-			"Checks successful dock arrival geometry, berth pads, bay visibility, and approach/interior shields.",
+			"Checks successful dock arrival geometry, berth surfaces, bay visibility, and approach/interior shields.",
 			["docking arrival", "station interior", "berth", "bay", "name shield"],
 		),
 		entry(
@@ -245,7 +251,7 @@ export const PROBE_CATALOG = Object.freeze(
 		entry(
 			"probe-requests.mjs",
 			"Exercises Requests-tab accept, track, cancel, report, and cockpit cue flows through real inputs.",
-			["requests", "mission UI", "tracking", "cockpit cue", "panel focus"],
+			["requests", "Requests UI", "tracking", "cockpit cue", "panel focus"],
 		),
 		entry(
 			"probe-save.mjs",

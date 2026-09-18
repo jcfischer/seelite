@@ -72,6 +72,58 @@ export function parseArgs(argv) {
 }
 
 /**
+ * Resolve the selector's exact-name handoff, or return null when it is absent.
+ *
+ * @param {ProbeArgs} args
+ * @param {Record<string, string | undefined>} env
+ * @param {string[]} available
+ * @param {(file: string) => boolean} gating
+ * @param {boolean} inCI
+ * @returns {Selection | null}
+ */
+function resolveExactProbeFiles(args, env, available, gating, inCI) {
+	if (env.PROBE_FILES === undefined) return null;
+	if (args.onlySeen || env.PROBE_ONLY)
+		return {
+			refusal: "PROBE_FILES cannot be combined with --only or PROBE_ONLY.",
+		};
+	if (inCI)
+		return {
+			refusal:
+				"refusing filtered PROBE_FILES in CI — CI must run the whole suite",
+		};
+
+	const requested = [
+		...new Set(
+			(env.PROBE_FILES ?? "")
+				.split(",")
+				.map((file) => file.trim())
+				.filter(Boolean),
+		),
+	];
+	if (!requested.length)
+		return { refusal: "PROBE_FILES contained no probe names." };
+	const unknown = requested.filter((file) => !available.includes(file));
+	if (unknown.length)
+		return {
+			refusal:
+				`PROBE_FILES named probe(s) that are not available: ${unknown.join(", ")}. ` +
+				`Available: ${available.join(", ")}`,
+		};
+	const probes = available.filter((file) => requested.includes(file));
+	if (!probes.some(gating))
+		return {
+			refusal:
+				"PROBE_FILES selected only report-only or quarantined probes, so the run would assert nothing.",
+		};
+	return {
+		only: requested.join(","),
+		probes,
+		source: "PROBE_FILES",
+	};
+}
+
+/**
  * Resolve the filter and everything that can refuse it, in one place.
  *
  * Returns either a refusal or a selection, so the caller has one exit.
@@ -94,47 +146,8 @@ export function parseArgs(argv) {
  */
 export function resolveOnly(args, env, available, gating = () => true) {
 	const inCI = !!env.CI && env.CI !== "false" && env.CI !== "0";
-	const exactSeen = env.PROBE_FILES !== undefined;
-	if (exactSeen) {
-		if (args.onlySeen || env.PROBE_ONLY)
-			return {
-				refusal: "PROBE_FILES cannot be combined with --only or PROBE_ONLY.",
-			};
-		if (inCI)
-			return {
-				refusal:
-					"refusing filtered PROBE_FILES in CI — CI must run the whole suite",
-			};
-
-		const requested = [
-			...new Set(
-				(env.PROBE_FILES ?? "")
-					.split(",")
-					.map((file) => file.trim())
-					.filter(Boolean),
-			),
-		];
-		if (!requested.length)
-			return { refusal: "PROBE_FILES contained no probe names." };
-		const unknown = requested.filter((file) => !available.includes(file));
-		if (unknown.length)
-			return {
-				refusal:
-					`PROBE_FILES named probe(s) that are not available: ${unknown.join(", ")}. ` +
-					`Available: ${available.join(", ")}`,
-			};
-		const probes = available.filter((file) => requested.includes(file));
-		if (!probes.some(gating))
-			return {
-				refusal:
-					"PROBE_FILES selected only report-only or quarantined probes, so the run would assert nothing.",
-			};
-		return {
-			only: requested.join(","),
-			probes,
-			source: "PROBE_FILES",
-		};
-	}
+	const exact = resolveExactProbeFiles(args, env, available, gating, inCI);
+	if (exact) return exact;
 	// Argv wins over the environment, and settles the question either way: a bare
 	// `--only` is an error even with `PROBE_ONLY` set, because the caller asked
 	// for a filter in this invocation and did not say which.

@@ -35,13 +35,16 @@ const directProbe = (file) =>
 		? PROBE_FILES.find((probe) => `scripts/${probe}` === file)
 		: undefined;
 
-const all = (reason, fallback = false) => ({
-	mode: "all",
-	probes: [...PROBE_FILES],
+const result = (mode, probes, reason, fallback = false) => ({
+	mode,
+	probes,
 	reason,
 	fallback,
 	decisions: undefined,
 });
+
+const all = (reason, fallback = false) =>
+	result("all", [...PROBE_FILES], reason, fallback);
 
 export function buildProbeQuestions() {
 	return Object.fromEntries(
@@ -69,16 +72,12 @@ export function buildProbeQuestions() {
 }
 
 /**
- * Select browser probes for one PR.
+ * Return a complete deterministic result, or null when semantic judgment is
+ * required.
  *
- * `judge` is injected so the policy remains testable without a network. It
- * receives one state and all independent Noul questions in one batch.
- *
- * @param {{changedFiles: string[], title?: string, body?: string, diff?: string}} input
- * @param {((request: {state: object, questions: object}) => Promise<object>) | undefined} judge
+ * @param {string[]} changedFiles
  */
-export async function selectProbes(input, judge = undefined) {
-	const changedFiles = [...new Set(input.changedFiles ?? [])].sort();
+function selectDeterministic(changedFiles) {
 	if (!changedFiles.length)
 		return all(
 			"No changed-file evidence was available, so relevance is unknown.",
@@ -95,32 +94,25 @@ export async function selectProbes(input, judge = undefined) {
 	const onlyDirectOrNonRuntime = changedFiles.every(
 		(file) => directProbe(file) || isNonRuntime(file),
 	);
-	if (onlyDirectOrNonRuntime) {
-		if (!directlyChanged.length)
-			return {
-				mode: "none",
-				probes: [],
-				reason:
-					"Only documentation, workflow metadata, or headless tests changed.",
-				fallback: false,
-				decisions: undefined,
-			};
-		return {
-			mode: "exact",
-			probes: directlyChanged,
-			reason:
-				"Only explicitly named probe scripts and non-runtime evidence changed.",
-			fallback: false,
-			decisions: undefined,
-		};
-	}
-
-	if (!judge)
-		return all(
-			"TypeSafe was unavailable for an ambiguous production change.",
-			true,
+	if (!onlyDirectOrNonRuntime) return null;
+	if (!directlyChanged.length)
+		return result(
+			"none",
+			[],
+			"Only documentation, workflow metadata, or headless tests changed.",
 		);
+	return result(
+		"exact",
+		directlyChanged,
+		"Only explicitly named probe scripts and non-runtime evidence changed.",
+	);
+}
 
+/**
+ * @param {{changedFiles: string[], title?: string, body?: string, diff?: string}} input
+ * @param {(request: {state: object, questions: object}) => Promise<object>} judge
+ */
+async function selectSemantic(input, judge) {
 	const questions = buildProbeQuestions();
 	let response;
 	try {
@@ -129,7 +121,7 @@ export async function selectProbes(input, judge = undefined) {
 				pull_request: {
 					title: input.title ?? "",
 					body: input.body ?? "",
-					changed_files: changedFiles,
+					changed_files: input.changedFiles,
 					diff: input.diff ?? "",
 				},
 			},
@@ -175,14 +167,35 @@ export async function selectProbes(input, judge = undefined) {
 		);
 
 	return {
-		mode: "semantic",
-		probes: selected,
-		reason:
+		...result(
+			"semantic",
+			selected,
 			`TypeSafe evaluated ${decisions.length} independent probe contracts; ` +
-			`only probabilities at or below ${PROBE_EXCLUSION_MAX} were excluded.`,
-		fallback: false,
+				`only probabilities at or below ${PROBE_EXCLUSION_MAX} were excluded.`,
+		),
 		decisions,
 		model: response.model,
 		usage: response.usage,
 	};
+}
+
+/**
+ * Select browser probes for one PR.
+ *
+ * `judge` is injected so the policy remains testable without a network. It
+ * receives one state and all independent Noul questions in one batch.
+ *
+ * @param {{changedFiles: string[], title?: string, body?: string, diff?: string}} input
+ * @param {((request: {state: object, questions: object}) => Promise<object>) | undefined} judge
+ */
+export async function selectProbes(input, judge = undefined) {
+	const changedFiles = [...new Set(input.changedFiles ?? [])].sort();
+	const deterministic = selectDeterministic(changedFiles);
+	if (deterministic) return deterministic;
+	if (!judge)
+		return all(
+			"TypeSafe was unavailable for an ambiguous production change.",
+			true,
+		);
+	return selectSemantic({ ...input, changedFiles }, judge);
 }

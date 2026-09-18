@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
 import { PROBE_CATALOG } from "../scripts/lib/probe-catalog.mjs";
+import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
+import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
 import {
 	PROBE_EXCLUSION_MAX,
 	selectProbes,
@@ -10,16 +11,7 @@ import {
 	withoutTypeSafeCredential,
 } from "../scripts/lib/typesafe-probe-judge.mjs";
 
-const discovered = readdirSync(new URL("../scripts", import.meta.url))
-	.filter(
-		(file) =>
-			file.startsWith("probe-") &&
-			file.endsWith(".mjs") &&
-			file !== "probe-all.mjs" &&
-			file !== "probe-guard.mjs",
-	)
-	.concat("measure-cruise-detour.mjs")
-	.sort();
+const discovered = discoverProbeFiles(new URL("../scripts", import.meta.url));
 
 const probabilities = (overrides: Record<string, number> = {}) =>
 	Object.fromEntries(
@@ -39,6 +31,18 @@ describe("the probe catalog", () => {
 			expect(entry.contract.length).toBeGreaterThan(24);
 			expect(entry.evidence.length).toBeGreaterThan(0);
 		}
+	});
+
+	test("hands the measurement-named cruise gate to the exact runner path", () => {
+		const selection = resolveOnly(
+			parseArgs([]),
+			{ PROBE_FILES: "measure-cruise-detour.mjs" },
+			discovered,
+		);
+		expect(selection).toMatchObject({
+			probes: ["measure-cruise-detour.mjs"],
+			source: "PROBE_FILES",
+		});
 	});
 });
 
@@ -190,6 +194,7 @@ describe("the TypeSafe transport", () => {
 		await judge({ state: { title: "safe" }, questions: {} });
 		expect(authorization).toBe(`Bearer ${apiKey}`);
 		expect(body).not.toContain(apiKey);
+		expect(JSON.parse(body).model).toBe("jev-latest");
 	});
 
 	test("removes the credential before browser-probe children are spawned", () => {

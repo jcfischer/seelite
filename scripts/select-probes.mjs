@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
 	createTypeSafeProbeJudge,
 	withoutTypeSafeCredential,
 } from "./lib/typesafe-probe-judge.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
+
+const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
+const PROBE_RUNNER = fileURLToPath(new URL("./probe-all.mjs", import.meta.url));
 
 const VALUE_FLAGS = new Set([
 	"--base",
@@ -24,11 +28,16 @@ function parseArgs(argv) {
 		changedFiles: [],
 		json: false,
 		run: false,
+		includeDiff: false,
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const flag = argv[i];
 		if (flag === "--json" || flag === "--run") {
 			out[flag.slice(2)] = true;
+			continue;
+		}
+		if (flag === "--include-diff") {
+			out.includeDiff = true;
 			continue;
 		}
 		if (!VALUE_FLAGS.has(flag) || argv[i + 1] === undefined)
@@ -42,18 +51,21 @@ function parseArgs(argv) {
 
 const git = (args) =>
 	execFileSync("git", args, {
+		cwd: PROJECT_ROOT,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 
-function readGitEvidence(base, head) {
+function readGitEvidence(base, head, includeDiff) {
 	const range = `${base}...${head}`;
 	return {
 		changedFiles: git(["diff", "--name-only", range])
 			.split("\n")
 			.map((line) => line.trim())
 			.filter(Boolean),
-		diff: git(["diff", "--no-ext-diff", "--unified=2", range]).slice(0, 40_000),
+		diff: includeDiff
+			? git(["diff", "--no-ext-diff", "--unified=2", range]).slice(0, 40_000)
+			: "",
 	};
 }
 
@@ -79,7 +91,7 @@ async function main() {
 	let gitEvidence = { changedFiles: args.changedFiles, diff: "" };
 	if (!args.changedFiles.length) {
 		try {
-			gitEvidence = readGitEvidence(args.base, args.head);
+			gitEvidence = readGitEvidence(args.base, args.head, args.includeDiff);
 		} catch (error) {
 			console.error(
 				`could not read git diff ${args.base}...${args.head}: ${error instanceof Error ? error.message : String(error)}`,
@@ -90,6 +102,10 @@ async function main() {
 	const judge = process.env.TYPESAFE_API_KEY
 		? createTypeSafeProbeJudge({ apiKey: process.env.TYPESAFE_API_KEY })
 		: undefined;
+	if (gitEvidence.diff)
+		console.error(
+			"TypeSafe selection includes up to 40,000 characters of the git diff because --include-diff was set.",
+		);
 	const started = performance.now();
 	const result = await selectProbes(
 		{
@@ -115,12 +131,15 @@ async function main() {
 	}
 	const full = result.mode === "all";
 	const childEnv = withoutTypeSafeCredential(process.env);
-	const child = spawnSync(process.execPath, ["scripts/probe-all.mjs"], {
+	const child = spawnSync(process.execPath, [PROBE_RUNNER], {
+		cwd: PROJECT_ROOT,
 		stdio: "inherit",
 		env: full
 			? childEnv
 			: { ...childEnv, PROBE_FILES: result.probes.join(",") },
 	});
+	if (child.error)
+		console.error(`could not start probe runner: ${child.error.message}`);
 	process.exitCode = child.status ?? 1;
 }
 
