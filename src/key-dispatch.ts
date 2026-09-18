@@ -91,7 +91,9 @@ export function keyDispatch(e: KeyEventFacts): KeyRoute {
 	if (e.metaKey) return { kind: "swallow" };
 	if (e.altKey) {
 		const chord = ALT_CHORDS[e.code];
-		if (chord === undefined) return { kind: "swallow" };
+		// Unbound, it is still kept from the browser: on Windows and Linux Alt+D
+		// focuses the address bar and Alt+F opens a menu (sage round 3 on #391).
+		if (chord === undefined) return { kind: "swallow", prevent: true };
 		return e.repeat
 			? { kind: "swallow", prevent: true }
 			: { kind: "chord", key: chord };
@@ -104,6 +106,10 @@ export function keyDispatch(e: KeyEventFacts): KeyRoute {
 		key,
 		commands,
 		oneShot: !e.repeat && commands,
-		prevent: preventsDefault(key),
+		// A key pressed while braking on Ctrl is kept from the browser as well:
+		// Ctrl+D is the bookmark dialog, Ctrl+S the save dialog. Chrome reserves
+		// Ctrl+W, Ctrl+T and Ctrl+N and lets no page cancel them, so braking on
+		// Ctrl while pitching on W still closes the tab there (sage round 3).
+		prevent: preventsDefault(key) || !commands,
 	};
 }

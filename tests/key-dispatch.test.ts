@@ -24,11 +24,11 @@ const ALT = { altKey: true };
 
 describe("a chord is one-shot, and never a held key", () => {
 	test("a pressed Alt+D is swallowed", () => {
-		expect(press("d", "KeyD", ALT)).toEqual({ kind: "swallow" });
+		expect(press("d", "KeyD", ALT)).toEqual({ kind: "swallow", prevent: true });
 	});
 
 	test("a held Alt+D is swallowed too — the repeat that yawed the ship", () => {
-		expect(hold("d", "KeyD", ALT)).toEqual({ kind: "swallow" });
+		expect(hold("d", "KeyD", ALT)).toEqual({ kind: "swallow", prevent: true });
 	});
 
 	test("a bound chord acts on its first press", () => {
@@ -51,7 +51,9 @@ describe("a chord is one-shot, and never a held key", () => {
 describe("the chord table is keyed on the physical key", () => {
 	test("macOS Option changes the character and not the code", () => {
 		// Option+D types ∂. A table on `e.key` would never see `d` there.
-		expect(press("∂", "KeyD", ALT)).toEqual({ kind: "swallow" });
+		// An unbound chord is kept from the browser too: on Windows and Linux
+		// Alt+D focuses the address bar (sage round 3 on #391).
+		expect(press("∂", "KeyD", ALT)).toEqual({ kind: "swallow", prevent: true });
 		expect(press("arrowright", "ArrowRight", ALT)).toEqual({
 			kind: "chord",
 			key: ALT_CHORDS.ArrowRight,
@@ -74,13 +76,15 @@ describe("Ctrl runs no command, and Meta reaches nothing", () => {
 			key: "j",
 			commands: false,
 			oneShot: false,
-			prevent: false,
+			prevent: true,
 		});
 	});
 
 	test("keys pressed while braking on Ctrl still fly and fire", () => {
 		// Ctrl is THROTTLE_DOWN: the principal's refinement of ruling 3 on
 		// #377 keeps steering and the trigger alive while it is held.
+		// And each is kept from the browser: Ctrl+D is the bookmark dialog and
+		// Ctrl+S the save dialog (sage round 3 on #391).
 		for (const [key, code] of [
 			["w", "KeyW"],
 			["d", "KeyD"],
@@ -92,6 +96,7 @@ describe("Ctrl runs no command, and Meta reaches nothing", () => {
 				key: key.toLowerCase(),
 				commands: false,
 				oneShot: false,
+				prevent: true,
 			});
 	});
 
