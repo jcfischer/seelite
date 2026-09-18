@@ -112,6 +112,9 @@ await keyEvent("rawKeyDown", "Alt", "AltLeft", ALT);
 await keyEvent("rawKeyDown", "ArrowRight", "ArrowRight", ALT);
 await settle(page);
 const chord = await state();
+// Read while the chord is still down: after the release every key is clear,
+// so a read there could never fail (sage round 1).
+const arrowHeld = await held("arrowright");
 await keyEvent("keyUp", "ArrowRight", "ArrowRight", ALT);
 await keyEvent("keyUp", "Alt", "AltLeft", 0);
 await page.keyboard.press("2");
@@ -122,9 +125,9 @@ check(
 	`head=${chord.head}`,
 );
 check(
-	"and does not leave the arrow held as yaw",
-	(await held("arrowright")) === false,
-	`keys.has("arrowright"): ${await held("arrowright")}`,
+	"and does not hold the arrow as yaw while the chord is down",
+	arrowHeld === false,
+	`keys.has("arrowright") during the chord: ${arrowHeld}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -174,9 +177,19 @@ await page.evaluate(() => {
 		if (e.key === "F1") window.__f1Prevented = e.defaultPrevented;
 	});
 });
+/**
+ * A key pressed at a hand's pace: down, a beat, up. `press()` sends both in
+ * one task, and a row that measures what happens *between* them — the throttle
+ * — has to leave frames there (sage round 1).
+ */
+const pacedPress = async (key) => {
+	await page.keyboard.down(key);
+	await page.waitForTimeout(120);
+	await page.keyboard.up(key);
+	await settle(page);
+};
 const beforeF1 = await state();
-await page.keyboard.press("F1");
-await settle(page);
+await pacedPress("F1");
 const openF1 = await state();
 check(
 	"F1 turns the head to starboard and selects Controls",
@@ -193,13 +206,27 @@ check(
 	(await page.evaluate(() => window.__f1Prevented)) === true,
 	`defaultPrevented: ${await page.evaluate(() => window.__f1Prevented)}`,
 );
-await page.keyboard.press("F1");
-await settle(page);
+await pacedPress("F1");
 const closedF1 = await state();
 check(
 	"F1 again turns the head forward and gives the tab back",
 	closedF1.head === "forward" && closedF1.tab === beforeF1.tab,
 	`${JSON.stringify(beforeF1)} -> ${JSON.stringify(closedF1)}`,
+);
+
+// Guard: the same paced measurement does see the Shift blip on `?`, so the
+// F1 throttle row above can fail. Last, because it leaves the throttle raised.
+const beforeQuestion = await state();
+await page.keyboard.down("Shift");
+await page.waitForTimeout(120);
+await page.keyboard.press("Slash");
+await page.keyboard.up("Shift");
+await settle(page);
+const afterQuestion = await state();
+check(
+	"and a paced ? does move it, so the F1 throttle row can fail",
+	afterQuestion.throttle > beforeQuestion.throttle,
+	`${beforeQuestion.throttle} -> ${afterQuestion.throttle}`,
 );
 
 await browser.close();
