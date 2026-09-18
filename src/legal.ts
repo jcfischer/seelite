@@ -164,10 +164,6 @@ export const withOffence = (
  * and it is applied where the offence is charged (`main.ts`), not here: this
  * reads the list, and 20,000 km is not a second witness radius hiding in a
  * predicate.
- */
-/**
- * H5's hostility: this station saw an offence, and the heat that made it matter
- * has not decayed below Wanted.
  *
  * It is the witness half of `dockingRefusedByLaw`, which is its only production
  * caller — a berth's refusal is this plus the shipyard's standing rule. Kept

@@ -505,6 +505,7 @@ import {
 } from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
+import type { Station } from "./system";
 import {
 	LiveCockpit,
 	type LeftTab,
@@ -5713,7 +5714,7 @@ class Game {
 				.filter((body) => body.kind === "station")
 				.map((body) => {
 					const station = stationOf(this.world.system, body.id);
-					const key = this.stationKey(body.id);
+					const key = this.stationKey(station);
 					return {
 						id: body.id,
 						key,
@@ -6032,7 +6033,7 @@ class Game {
 	private frameStationKey(): CarrierKey | null {
 		const body = this.frameBody;
 		if (!body || body.kind !== "station") return null;
-		return this.stationKey(body.id);
+		return this.stationKey(stationOf(this.world.system, body.id));
 	}
 
 	/**
@@ -6052,11 +6053,8 @@ class Game {
 	 * themselves, and a derivation written seven times is seven answers to which
 	 * carrier a station is.
 	 */
-	private stationKey(stationId: string): CarrierKey {
-		return carrierKey(
-			this.world.system.record.index,
-			stationOf(this.world.system, stationId).localCarrierId,
-		);
+	private stationKey(station: Station): CarrierKey {
+		return carrierKey(this.world.system.record.index, station.localCarrierId);
 	}
 
 	private refusedByLaw(stationId: string): boolean {
@@ -6064,7 +6062,7 @@ class Game {
 		return dockingRefusedByLaw(
 			this.legalStatus(),
 			{
-				key: this.stationKey(stationId),
+				key: this.stationKey(station),
 				type: station.type,
 			},
 			this.world.gameTime,
@@ -8484,7 +8482,7 @@ class Game {
 			this.commerceWorld = observeDocking(
 				this.commerceWorld,
 				this.world.system.record.galaxy,
-				this.stationKey(station.id),
+				this.stationKey(station),
 				this.world.gameTime,
 				station.type === "refinery",
 			);
@@ -9967,7 +9965,7 @@ class Game {
 		this.commerceWorld = observeSystemRelay(
 			this.commerceWorld,
 			record.galaxy,
-			contents.stations.map((station) => this.stationKey(station.id)),
+			contents.stations.map((station) => this.stationKey(station)),
 			this.world.gameTime,
 		);
 		this.saveDirty();
@@ -11478,7 +11476,7 @@ class Game {
 			requests: this.requests,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
-			dockedAt: station ? this.stationKey(station.id) : null,
+			dockedAt: station ? this.stationKey(station) : null,
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			flight: {
@@ -11657,7 +11655,7 @@ class Game {
 			station,
 			market: marketStationOf(station, this.world.seed),
 			envelope: this.commerceWorld.galaxies[galaxyIndex],
-			stationKey: this.stationKey(station.id),
+			stationKey: this.stationKey(station),
 			galaxyIndex,
 			economy: this.world.system.record.economy,
 			gameTimeMin: this.world.gameTime / 60,

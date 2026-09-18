@@ -1997,19 +1997,19 @@ const parseVisited = (raw: unknown, slot: number): number[] => {
  * and a list the canonicaliser could not have written means a writer stopped
  * holding each station once.
  */
-const parseWitnesses = (raw: unknown, slot: number): CarrierKey[] => {
+const parseWitnesses = (raw: unknown, galaxy: number): CarrierKey[] => {
 	if (raw === undefined) return [];
-	if (!Array.isArray(raw)) fail(`galaxy ${slot}: witnesses is not an array`);
+	if (!Array.isArray(raw)) fail(`galaxy ${galaxy}: witnesses is not an array`);
 	const seen = new Set<string>();
 	let previous: string | undefined;
 	return (raw as unknown[]).map((v) => {
 		if (typeof v !== "string" || !isCarrierKey(v))
-			fail(`galaxy ${slot}: ${String(v)} is not a witnessed carrier key`);
+			fail(`galaxy ${galaxy}: ${String(v)} is not a witnessed carrier key`);
 		const key = v as CarrierKey;
 		if (seen.has(key))
-			fail(`galaxy ${slot}: witnessed carrier ${key} is listed twice`);
+			fail(`galaxy ${galaxy}: witnessed carrier ${key} is listed twice`);
 		if (previous !== undefined && compareCarrierKeys(previous, key) > 0)
-			fail(`galaxy ${slot}: witnesses are not in canonical order`);
+			fail(`galaxy ${galaxy}: witnesses are not in canonical order`);
 		previous = key;
 		seen.add(key);
 		return key;
@@ -2064,7 +2064,7 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 		legalStatus: {
 			heat: num(legal, "heat", `galaxy ${slot}`),
 			updatedAt: num(legal, "updatedAt", `galaxy ${slot}`),
-			witnesses: parseWitnesses(legal.witnesses, slot),
+			witnesses: parseWitnesses(legal.witnesses, galaxyIndex),
 		},
 	};
 };

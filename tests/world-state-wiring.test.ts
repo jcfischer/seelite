@@ -115,7 +115,7 @@ describe("the Game's world writes", () => {
 		expect(frameKey.slice(0, 400)).toContain('body.kind !== "station"');
 		// The key comes from the one derivation of it, not a spelling of it.
 		expect(frameKey.slice(0, 400)).toContain("this.stationKey(");
-		expect(MAIN).toContain("private stationKey(stationId: string): CarrierKey");
+		expect(MAIN).toContain("private stationKey(station: Station): CarrierKey");
 
 		// Three consumers, each named by the call it has to feed. A count over the
 		// file was the first version and it is the wrong shape: it moves when a
