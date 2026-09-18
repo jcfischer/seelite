@@ -489,6 +489,23 @@ const PLACERS = {
 					.querySelector(`[data-live-controls-group="${group}"]`)
 					?.click();
 		}, shot.folded ?? []);
+		// **Read back, not assumed** (sage round 2): a misspelt group clicks
+		// nothing, and a label naming a fold that did not happen reads exactly
+		// like one that did.
+		const unfolded = await page.evaluate(
+			(folded) =>
+				folded.filter(
+					(group) =>
+						document
+							.querySelector(`[data-live-controls-group="${group}"]`)
+							?.getAttribute("aria-expanded") !== "false",
+				),
+			shot.folded ?? [],
+		);
+		if (unfolded.length > 0)
+			throw new Error(
+				`controls placer: ${unfolded.join(", ")} did not fold — no such group, or the fold was lost`,
+			);
 		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
 	},
 };
