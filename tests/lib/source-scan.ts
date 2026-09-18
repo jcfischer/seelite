@@ -180,6 +180,39 @@ export function callsWithArgument(source: string, names: string[]): boolean {
 }
 
 /**
+ * A key token as the scanners read it: a literal, or a `const` of the same file.
+ *
+ * One resolver for {@link boundKeys} and {@link keysByShape} (#372, sage round
+ * 2): two scanners of one file that resolve names differently are two answers
+ * to "what does this bind".
+ */
+export function keyResolver(
+	source: string,
+): (raw: string) => string | undefined {
+	/**
+	 * Keys bound through a named constant, not only through a literal.
+	 *
+	 * The docking model landed on `main` with `const THROTTLE_UP = "shift"` and
+	 * `keys.has(THROTTLE_UP)`, and this scan — which only read literals — stopped
+	 * seeing the throttle. A guard that goes quietly blind is worse than no
+	 * guard, because the panel could then take a key that is bound behind a
+	 * name. So single-character and key-shaped string constants are resolved
+	 * first, and an identifier in a key position counts as its value.
+	 */
+	const consts = new Map<string, string>();
+	for (const m of source.matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*=\s*"([^"]+)"/g))
+		consts.set(m[1], m[2]);
+	return (raw: string) => {
+		// Trimmed first: the axis lists are split on commas, so every token
+		// after the first arrives with a leading space and would miss a literal
+		// anchored to the start of the string.
+		const token = raw.trim();
+		const literal = token.match(/^"([^"]+)"$/);
+		return literal ? literal[1] : consts.get(token);
+	};
+}
+
+/**
  * Every key `main.ts` reacts to.
  *
  * Two shapes, because the game reads keys two ways: `case "x":` for one-shot
@@ -194,28 +227,7 @@ export function callsWithArgument(source: string, names: string[]): boolean {
  */
 export function boundKeys(source: string): Set<string> {
 	const out = new Set<string>();
-
-	/**
-	 * Keys bound through a named constant, not only through a literal.
-	 *
-	 * The docking model landed on `main` with `const THROTTLE_UP = "shift"` and
-	 * `keys.has(THROTTLE_UP)`, and this scan — which only read literals — stopped
-	 * seeing the throttle. A guard that goes quietly blind is worse than no
-	 * guard, because the panel could then take a key that is bound behind a
-	 * name. So single-character and key-shaped string constants are resolved
-	 * first, and an identifier in a key position counts as its value.
-	 */
-	const consts = new Map<string, string>();
-	for (const m of source.matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*=\s*"([^"]+)"/g))
-		consts.set(m[1], m[2]);
-	const resolve = (raw: string) => {
-		// Trimmed first: the axis lists are split on commas, so every token
-		// after the first arrives with a leading space and would miss a literal
-		// anchored to the start of the string.
-		const token = raw.trim();
-		const literal = token.match(/^"([^"]+)"$/);
-		return literal ? literal[1] : consts.get(token);
-	};
+	const resolve = keyResolver(source);
 	const add = (token: string) => {
 		const key = resolve(token);
 		if (key) out.add(key);
@@ -233,4 +245,41 @@ export function boundKeys(source: string): Set<string> {
 		for (const list of [m[1], m[2]])
 			for (const token of list.split(",")) add(token);
 	return out;
+}
+
+/**
+ * The same bindings split by the shape a key is read in (#372): a `case` of a
+ * switch, a comparison `key === "…")`, a held key (`keys.has` or an `axis`
+ * list), the Alt chord that turns the head, and the list the Requests surface
+ * claims. The controls catalogue prints a key as one of these, and a key bound
+ * in another shape does not make the printed one true.
+ */
+export function keysByShape(source: string) {
+	const resolve = keyResolver(source);
+	// Only a list is split on commas: `case ",":` is one token, and splitting it
+	// would lose the key.
+	const all = (re: RegExp, list = false) =>
+		new Set(
+			[...source.matchAll(re)].flatMap((m) =>
+				(list ? m[1].split(",") : [m[1]])
+					.map(resolve)
+					.filter((k): k is string => !!k),
+			),
+		);
+	const axisLists = [
+		...source.matchAll(/axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g),
+	].flatMap((m) => `${m[1]},${m[2]}`.split(","));
+	return {
+		cases: all(/case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:/g),
+		compared: all(/key === ("[^"]+"|[A-Z][A-Z0-9_]*)\)/g),
+		held: new Set([
+			...all(/keys\.has\(("[^"]+"|[A-Za-z_$][\w$]*)\)/g),
+			...axisLists.map(resolve).filter((k): k is string => !!k),
+		]),
+		chorded: all(/key === ("[^"]+")\) this\.setHeadLook\(/g),
+		requests: all(
+			/requestsSurfaceOpen\(\)\s*&&\s*\[([^\]]*)\]\.includes\(key\)/g,
+			true,
+		),
+	};
 }

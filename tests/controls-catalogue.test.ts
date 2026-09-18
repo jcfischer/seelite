@@ -25,7 +25,7 @@ import { STANDARD_BUTTONS } from "../src/gamepad";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { boundKeys, codeOf } from "./lib/source-scan";
+import { boundKeys, codeOf, keysByShape } from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
 	CONTROLS.commands.flatMap((command) => [...command.currentTriggers]);
@@ -61,19 +61,6 @@ const sourceKeys = () =>
 		...beamKeys(),
 	]);
 
-/** A key token as `boundKeys` resolves it: a literal, or a `const` of the file. */
-const resolved = (source: string, raw: string): string[] => {
-	const token = raw.trim();
-	const literal = token.match(/^"([^"]+)"$/);
-	if (literal) return [literal[1]];
-	const named = source.match(new RegExp(`const\\s+${token}\\s*=\\s*"([^"]+)"`));
-	return named ? [named[1]] : [];
-};
-
-/** Every key `re`'s first group names in `source`, constants resolved. */
-const keysIn = (source: string, re: RegExp): string[] =>
-	[...source.matchAll(re)].flatMap((m) => resolved(source, m[1]));
-
 describe("the catalogue is complete against the source", () => {
 	test("the scans find what they are supposed to find", () => {
 		// Guarding the guard, as the partition test does: an empty scan would
@@ -97,59 +84,116 @@ describe("the catalogue is complete against the source", () => {
 	 * **Per shape, not per key string** (sage round 1). A bare-key check passes a
 	 * printed `Alt + ←` for as long as *anything* binds `arrowleft` — and yaw
 	 * does — so removing the Alt head-look would leave the row printed and this
-	 * test green. Each trigger is looked for where its own shape is read: a press
-	 * in a `case` (or a panel's own key), a held key in `keys.has`/`axis`, a
-	 * chord in the Alt branch's `setHeadLook`, a Requests key in the list that
-	 * surface claims.
+	 * test green. Each trigger is looked for where its own shape is read, by
+	 * `keysByShape`, which shares `boundKeys`' resolver (sage round 2).
 	 */
 	test("every key the catalogue prints is bound in the shape it is printed as", () => {
-		const main = codeOf("src/main.ts");
-		const rig = codeOf("src/combat-rig.ts");
+		const main = keysByShape(codeOf("src/main.ts"));
+		const rig = keysByShape(codeOf("src/combat-rig.ts"));
 		const pressed = new Set([
-			...keysIn(main, /case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:/g),
-			...keysIn(rig, /key === ("[^"]+")\)/g),
+			...main.cases,
+			...rig.compared,
 			...PERF_KEYS,
 			RESTORE_KEY,
 			SETTINGS_KEY,
 			COMMANDER_KEY,
 		]);
-		const held = new Set([
-			...keysIn(main, /keys\.has\(("[^"]+"|[A-Z][A-Z0-9_]*)\)/g),
-			...keysIn(rig, /keys\.has\(("[^"]+"|[A-Z][A-Z0-9_]*)\)/g),
-			...[...main.matchAll(/axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g)].flatMap(
-				(m) => `${m[1]},${m[2]}`.split(",").flatMap((t) => resolved(main, t)),
-			),
-		]);
-		const chorded = new Set(
-			keysIn(main, /key === ("[^"]+")\) this\.setHeadLook\(/g),
-		);
-		const requests = new Set(
-			[
-				...main.matchAll(
-					/requestsSurfaceOpen\(\)\s*&&\s*\[([^\]]*)\]\.includes\(key\)/g,
-				),
-			].flatMap((m) => m[1].split(",").flatMap((t) => resolved(main, t))),
-		);
-		// Guard the guard: every shape's scan finds something it must.
+		const held = new Set([...main.held, ...rig.held]);
+		// Guard the guard: every shape's scan finds something it must, and `,`
+		// is the one a comma-splitting scan would lose.
 		expect([
 			pressed.has("v"),
+			pressed.has(","),
 			held.has("shift"),
-			chorded.has("arrowleft"),
-		]).toEqual([true, true, true]);
-		expect(requests.has("enter")).toBe(true);
+			main.chorded.has("arrowleft"),
+			main.requests.has("enter"),
+		]).toEqual([true, true, true, true, true]);
 		for (const c of CONTROLS.commands)
 			for (const t of c.currentTriggers) {
 				if (t.kind !== "key") continue;
 				const [shape, set] = t.alt
-					? ["alt", chorded]
+					? ["alt", main.chorded]
 					: t.surface
-						? ["requests", requests]
+						? ["requests", main.requests]
 						: t.hold
 							? ["held", held]
 							: ["pressed", pressed];
 				const at = `${c.id}: ${JSON.stringify(t.key)} ${shape}`;
 				expect(`${at}: ${set.has(t.key)}`).toBe(`${at}: true`);
 			}
+	});
+
+	/**
+	 * **A key on the right row, not only a bound key** (sage round 2). The two
+	 * checks above hold key *sets*: swap the bodies of `case "t":` and
+	 * `case "g":` and both stay green while the tab prints "Next target" against
+	 * the key that now selects the previous one. So every pressed key a row
+	 * prints is looked up in `main.ts`'s switch, and its `case` body must make
+	 * the call this table names for that row.
+	 *
+	 * The table is a restatement, deliberately: it is the one place the row's
+	 * *meaning* meets the code, and a row added without an entry is a red run.
+	 */
+	test("every pressed key's case does what its row says", () => {
+		const main = codeOf("src/main.ts");
+		const caseBody = (key: string) => {
+			const at = main.indexOf(`case ${JSON.stringify(key)}:`);
+			if (at === -1) return null;
+			const rest = main.slice(at + 1);
+			return rest.slice(0, rest.search(/\n\t*(case |default:)/));
+		};
+		const dial = (field: string, table: string, extra = "") => ({
+			up: `this.dial("${field}", ${table}, 1${extra}`,
+			down: `this.dial("${field}", ${table}, -1${extra}`,
+		});
+		const exponent = dial("exponent", "EXPONENT_DIAL");
+		const vmax = dial("vMaxKms", "V_MAX_DIAL_C", ", IN_C");
+		const radius = dial("dropRadiusKm", "DROP_RADIUS_DIAL_KM");
+		const speed = dial("dropSpeedKms", "DROP_SPEED_DIAL_KMS");
+		const vicinity = dial("vicinityKm", "VICINITY_DIAL_KM");
+		const lead = dial("approachLeadS", "APPROACH_LEAD_DIAL_S");
+		const EFFECTS: Record<string, Record<string, string>> = {
+			"assist-or-beam": { x: "this.assist = !this.assist" },
+			cruise: { j: "this.engageCruise()" },
+			jump: { "`": "this.chargeJump()" },
+			"target-next": { t: "this.cycleTarget(1)" },
+			"target-previous": { g: "this.cycleTarget(-1)" },
+			"face-target": { f: "this.faceTarget()" },
+			"rig-incoming": { "/": 'this.combatRig?.command("/")' },
+			"rig-ecm": { q: 'this.combatRig?.command("q")' },
+			clearance: { c: "this.requestDockingClearance()" },
+			"docking-computer": { u: "this.toggleDockingComputer()" },
+			launch: { enter: "this.launch()" },
+			"head-left": { "1": 'this.setHeadLook("left")' },
+			"head-forward": { "2": 'this.setHeadLook("forward")' },
+			"head-right": { "3": 'this.setHeadLook("right")' },
+			"controls-reference": { "?": "controlsKeyMove(" },
+			view: { v: 'this.view === "cockpit" ? "chase" : "cockpit"' },
+			"chase-centre": { "2": "this.chaseYaw = 0" },
+			"dial-reset": { "0": "DEFAULT_CRUISE" },
+			"dial-exponent": { "]": exponent.up, "[": exponent.down },
+			"dial-vmax": { "=": vmax.up, "-": vmax.down },
+			"dial-drop-radius": { "'": radius.up, ";": radius.down },
+			"dial-drop-speed": { ".": speed.up, ",": speed.down },
+			"dial-vicinity": { m: vicinity.up, n: vicinity.down },
+			"dial-approach-lead": { l: lead.up, k: lead.down },
+		};
+		let checked = 0;
+		for (const c of CONTROLS.commands)
+			for (const t of c.currentTriggers) {
+				if (t.kind !== "key" || t.hold || t.alt || t.surface) continue;
+				const body = caseBody(t.key);
+				if (body === null) continue; // a panel's own key, held above
+				const want = EFFECTS[c.id]?.[t.key];
+				const at = `${c.id}: ${JSON.stringify(t.key)}`;
+				expect(`${at} → ${want !== undefined && body.includes(want)}`).toBe(
+					`${at} → true`,
+				);
+				checked++;
+			}
+		// Every entry was used: a row renamed away from its entry is red too.
+		const entries = Object.values(EFFECTS).flatMap((e) => Object.keys(e));
+		expect(checked).toBe(entries.length);
 	});
 
 	test("the six panel intents each have a row", () => {
