@@ -454,13 +454,23 @@ const PLACERS = {
 			window.__seelite.setHeadLook("forward");
 		});
 		await page.keyboard.press("Shift+Slash");
-		await page.waitForFunction(
-			() =>
-				window.__seelite.headLook === "right" &&
-				!!document.querySelector("[data-live-controls-body]"),
-			undefined,
-			{ timeout: 2000 },
-		);
+		// **A build without the tab is captured, not refused.** The `before` of
+		// #372 is a build where `?` does nothing, and that frame — the forward
+		// view, unchanged — is the honest before. The subject line says which
+		// one the sheet is showing, so the absence cannot pass for a regression.
+		const opened = await page
+			.waitForFunction(
+				() =>
+					window.__seelite.headLook === "right" &&
+					!!document.querySelector("[data-live-controls-body]"),
+				undefined,
+				{ timeout: 2000 },
+			)
+			.then(
+				() => true,
+				() => false,
+			);
+		if (!opened) return "? opened no Controls tab on this build";
 		await page.evaluate((folded) => {
 			for (const header of document.querySelectorAll(
 				'[data-live-controls-group][aria-expanded="false"]',
