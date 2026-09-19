@@ -76,8 +76,8 @@ test("the lint tier fails on an undeclared name in scripts/", () => {
 test("the lint tier accepts the Bun global, and the rule is scoped to scripts/", () => {
 	for (const path of ["scripts/x.mjs", "scripts/x.ts"])
 		expect(lintAs(path, "export const x = Bun.argv;\n").status).toBe(0);
-	// Outside `scripts/` the rule is off: `src/` and `tests/` are checked by
-	// `tsc` and bun, and this tier does not claim them.
+	// Outside `scripts/` the rule is off: `src/` and `tests/` are type-checked
+	// by `tsc`, and this tier does not claim them.
 	expect(
 		lintAs("src/x.ts", "export const x = neverDeclared(1);\n").status,
 	).toBe(0);
