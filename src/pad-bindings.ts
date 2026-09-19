@@ -454,3 +454,40 @@ export function padFireHeld(
 		frame.held.has("x")
 	);
 }
+
+/**
+ * Whether the left mouse button holds the pulse laser's trigger (#378).
+ *
+ * **The principal's ruling on #378: the mouse's trigger is on the suspended
+ * side.** #283 put the sticks, the triggers and the mouse there, and #371 moved
+ * the mouse's delta and its pointer over. The button was the last part of the
+ * mouse still flying, so a click on the glass beside an open console fired the
+ * gun while the pad's Square, held in the same place, did not.
+ *
+ * **The pointer's rule, not the pad's.** A button is part of the pointer, so it
+ * fires only where `pointerLockMove` would let a click take the lock: a context
+ * that flies the ship, with no console drawn. That differs from `padFireHeld`,
+ * which reads only the context, wherever a console is drawn in a context that
+ * flies. `readPadContext` answers `console` for a drawn console unless a modal
+ * is open (which does not fly) or the instrument is focused, so the one such cell
+ * the game reaches is the instrument focused over a drawn console. There this
+ * follows #371's ruling for the pointer, that the click belongs to the console.
+ * That cell is this change's reading of the principal's ruling on #378, which
+ * did not name it, and the pad's Square still fires there.
+ *
+ * **Asked at the press as well as each frame.** `main.ts` asks it when the button
+ * goes down, so a press made where the mouse is suspended never becomes a trigger
+ * and does not fire when the head comes back with it still held (sage round 1
+ * on #378).
+ *
+ * `Space` is not in this and stays live: the keyboard is deliberately not
+ * suspended over a console, which is the principal's earlier ruling recorded at
+ * the mouse-look gate in `main.ts`, and not this node's to reopen.
+ */
+export function mouseFireHeld(
+	held: boolean,
+	context: PadContext,
+	consoleDrawn: boolean,
+): boolean {
+	return held && pointerLockMove(context, consoleDrawn, false) === "capture";
+}

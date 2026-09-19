@@ -176,6 +176,7 @@ import {
 	type PadContext,
 	type PadIntents,
 	contextFliesShip,
+	mouseFireHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
@@ -3449,7 +3450,15 @@ class Game {
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
 		this.renderer.domElement.addEventListener("pointerdown", (e) => {
-			if (e.button === 0) this.mouseFiring = true;
+			// A press made where the mouse is suspended is not a pull of the trigger,
+			// and it does not become one when the head comes back with the button
+			// still down (#378, sage round 1): the next press is what fires.
+			if (e.button === 0)
+				this.mouseFiring = mouseFireHeld(
+					true,
+					this.padContext(),
+					this.consoleDrawnThisFrame,
+				);
 		});
 		window.addEventListener("pointerup", (e) => {
 			if (e.button === 0) this.mouseFiring = false;
@@ -9366,15 +9375,21 @@ class Game {
 	}
 
 	/**
-	 * The pilot's trigger: Space or the left mouse button, in flight. Off while
-	 * the `?combat=1` rig runs, which reads the same inputs for its own gun.
+	 * The pilot's trigger: Space, the left mouse button or the pad's Square, in
+	 * flight. Off while the `?combat=1` rig runs, which reads the same inputs for
+	 * its own gun. The mouse and the pad each stop where their rule says, and
+	 * Space does not (#378): `mouseFireHeld` and `padFireHeld` own where.
 	 */
 	private triggerHeld(): boolean {
 		return (
 			!this.combatRig &&
 			flightLive(this.dock.phase) &&
 			(this.keys.has(" ") ||
-				this.mouseFiring ||
+				mouseFireHeld(
+					this.mouseFiring,
+					this.padContext(),
+					this.consoleDrawnThisFrame,
+				) ||
 				padFireHeld(this.padFrame, this.padContext()))
 		);
 	}
