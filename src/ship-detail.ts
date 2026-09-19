@@ -13,6 +13,8 @@ export type ShipSurface = "dorsal" | "ventral" | "port" | "starboard";
 /** One explicitly chosen patch of one variant's plated structure. */
 export interface ShipDetailZone {
 	readonly name: string;
+	/** Optional stable seed retained across terminology-only zone renames. */
+	readonly seed?: number;
 	readonly part: string;
 	readonly surface: ShipSurface;
 	/** Longitudinal interval on the named part, from nose (0) to tail (1). */
@@ -210,6 +212,12 @@ export function buildShipDetails(
 	reachKm: number,
 ): void {
 	const matrices: THREE.Matrix4[][] = PRIMITIVES.map(() => []);
+	const emissiveZone = plan.zones[0];
+	if (!emissiveZone)
+		throw new Error(
+			`ship detail plan ${id}/${variant} needs at least one zone`,
+		);
+	let emissiveMount: ReturnType<typeof mounter> | undefined;
 	for (const zone of plan.zones) {
 		const target = root.getObjectByName(zone.part) as THREE.Mesh | undefined;
 		if (!target?.geometry || uvUnitsOf(target.geometry) !== "plate")
@@ -217,9 +225,13 @@ export function buildShipDetails(
 				`ship detail zone ${id}/${variant}:${zone.name} needs plated part ${zone.part}`,
 			);
 		const random = seededRand(
-			mix(DOMAIN.SHIP_GREEBLES, fnv1a(`${id}/${variant}/${zone.name}`)),
+			mix(
+				DOMAIN.SHIP_GREEBLES,
+				zone.seed ?? fnv1a(`${id}/${variant}/${zone.name}`),
+			),
 		);
 		const mount = mounter(target, zone, reachKm);
+		if (zone === emissiveZone) emissiveMount = mount;
 		for (let i = 0; i < zone.count; i++) {
 			const at = mount(
 				(i + 0.25 + random() * 0.5) / zone.count,
@@ -249,8 +261,10 @@ export function buildShipDetails(
 				),
 			);
 		}
-		addEmissives(root, id, zone, mount, reachKm);
 	}
+	if (!emissiveMount)
+		throw new Error(`ship detail plan ${id}/${variant} has no emissive mount`);
+	addEmissives(root, id, emissiveZone, emissiveMount, reachKm);
 
 	const greebles = PRIMITIVES.map((geometry, kind) => {
 		const mesh = new THREE.InstancedMesh(

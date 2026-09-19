@@ -391,11 +391,12 @@ interval where machinery belongs. The fill is generated from
 `DOMAIN.SHIP_GREEBLES`, split again by hull, variant and zone name. This is not a
 scatter over whatever triangles happen to exist: the declaration says where
 machinery belongs, and every generated crate, tank or fin is ray-mounted back
-onto that named plated mesh. A structural check holds the result inside the
-hull's existing reach, so generated clutter never becomes the ship's outline.
+onto that named plated mesh. A structural check keeps that machinery smaller
+than the base hull's reach; the headed view set owns the stronger judgement that
+it remains subordinate to the local contour and never reads as a new outline.
 
-Every hull also carries one steady cool service strip. The existing four-point
-red/green/white/amber navigation fixture is the beacon inventory; it remains a
+Every hull also carries one paired set of steady cool service rails. The
+existing four-point red/green/white/amber navigation-light fixture remains a
 non-semantic aspect cue and does not acquire docking, hostility or damage
 meaning. Lit habitation panes belong only to the extant hull classes with the
 volume the original #102 ruling named: freighter, carrier and dreadnought. The

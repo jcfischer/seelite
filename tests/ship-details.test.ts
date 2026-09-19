@@ -12,6 +12,7 @@ import { DETAIL_RADII, detailLevel } from "../src/detail-level";
 import { DOMAIN } from "../src/domains";
 import { HULL_IDS, HULL_VARIANT_IDS, type HullId } from "../src/hull";
 import { uvUnitsOf } from "../src/loft";
+import { buildShipDetails } from "../src/ship-detail";
 import {
 	HABITABLE_HULLS,
 	SHIP_DETAIL_PLANS,
@@ -88,14 +89,16 @@ describe("authored ship machinery regions", () => {
 		}
 	});
 
-	test("generated clutter never carries a hull silhouette", () => {
+	test("generated clutter stays subordinate to the base hull reach", () => {
 		for (const { id, variant } of variants) {
 			const root = buildShipMesh(id, variant).root;
 			const clutter = meshesNamed(root, "ship-greebles-");
 			const structure = root.children.filter(
 				(object) =>
 					!object.name.startsWith("ship-greebles") &&
-					object.name !== "ship-detail",
+					object.name !== "ship-strip" &&
+					object.name !== "ship-windows" &&
+					object.name !== "nav-lights",
 			);
 			expect([id, variant, clutter.length]).toEqual([id, variant, 3]);
 			expect([id, variant, reach(clutter) < reach(structure)]).toEqual([
@@ -108,6 +111,38 @@ describe("authored ship machinery regions", () => {
 });
 
 describe("ship emissive inventory", () => {
+	test("multiple machinery zones still add one hull-wide emissive set", () => {
+		const root = buildShipMesh("freighter", "a").root;
+		buildShipDetails(
+			root,
+			"freighter",
+			"a",
+			{
+				zones: [
+					{
+						name: "test-forward",
+						part: "freighter-fuselage",
+						surface: "dorsal",
+						from: 0.38,
+						to: 0.5,
+						count: 1,
+					},
+					{
+						name: "test-aft",
+						part: "freighter-fuselage",
+						surface: "dorsal",
+						from: 0.55,
+						to: 0.7,
+						count: 1,
+					},
+				],
+			},
+			root.userData.shipSilhouetteKm as number,
+		);
+		expect(meshesNamed(root, "ship-strip")).toHaveLength(4);
+		expect(meshesNamed(root, "ship-windows")).toHaveLength(2);
+	});
+
 	test("Derrick's paired rails touch the plated gantry hull", () => {
 		const root = buildShipMesh("freighter", "a").root;
 		const target = root.getObjectByName("freighter-fuselage") as THREE.Mesh;
@@ -126,7 +161,7 @@ describe("ship emissive inventory", () => {
 		}
 	});
 
-	test("every variant has paired strips and a beacon; only inhabited hulls have windows", () => {
+	test("every variant has paired strips and navigation lights; only inhabited hulls have windows", () => {
 		const inhabited = new Set<HullId>(HABITABLE_HULLS);
 		expect([...inhabited]).toEqual(["freighter", "carrier", "dreadnought"]);
 		for (const { id, variant } of variants) {
