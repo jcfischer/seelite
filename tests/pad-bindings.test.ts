@@ -602,6 +602,10 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// loop above cannot pass by agreeing with a wrong `pointerLockMove`.
 		expect(mouseFireHeld(true, "flight", false)).toBe(true);
 		expect(mouseFireHeld(true, "console", true)).toBe(false);
+		// And the one cell where it parts from `padFireHeld`: the instrument focused
+		// over a drawn console, where the click belongs to the console (#371).
+		expect(mouseFireHeld(true, "instrument", true)).toBe(false);
+		expect(mouseFireHeld(true, "instrument", false)).toBe(true);
 	});
 
 	test("and triggerHeld asks it, rather than reading the button bare", () => {

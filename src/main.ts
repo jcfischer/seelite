@@ -176,6 +176,7 @@ import {
 	type PadContext,
 	type PadIntents,
 	contextFliesShip,
+	mouseFireHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
@@ -9366,15 +9367,21 @@ class Game {
 	}
 
 	/**
-	 * The pilot's trigger: Space or the left mouse button, in flight. Off while
-	 * the `?combat=1` rig runs, which reads the same inputs for its own gun.
+	 * The pilot's trigger: Space, the left mouse button or the pad's Square, in
+	 * flight. Off while the `?combat=1` rig runs, which reads the same inputs for
+	 * its own gun. The mouse and the pad each stop where their rule says, and
+	 * Space does not (#378): `mouseFireHeld` and `padFireHeld` own where.
 	 */
 	private triggerHeld(): boolean {
 		return (
 			!this.combatRig &&
 			flightLive(this.dock.phase) &&
 			(this.keys.has(" ") ||
-				this.mouseFiring ||
+				mouseFireHeld(
+					this.mouseFiring,
+					this.padContext(),
+					this.consoleDrawnThisFrame,
+				) ||
 				padFireHeld(this.padFrame, this.padContext()))
 		);
 	}

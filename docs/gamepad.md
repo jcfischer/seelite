@@ -141,7 +141,7 @@ agrees with the mouse: push right, the nose goes right.
 | `a` (Cross) | act on the ringed row |
 | `b` (Circle) | back out — to the forward view, out of a modal, or out of the instrument |
 | `l1` / `r1` | previous and next tab |
-| sticks, triggers, mouse | **suspended** — the ship coasts |
+| sticks, triggers, mouse — its look, its pointer and its button | **suspended** — the ship coasts, and a click on the glass beside the console does not fire (#378) |
 | the keyboard | still flies — the principal's ruling; a key has to be *held* |
 | every other button | still acts on the ship |
 
