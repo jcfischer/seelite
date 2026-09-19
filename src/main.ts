@@ -513,6 +513,7 @@ import {
 	type RightTab,
 } from "./live-cockpit";
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
+import { isEditable } from "./editable-target";
 import { keyDispatch } from "./key-dispatch";
 import { readDeficit } from "./deficits";
 import {
@@ -7130,6 +7131,8 @@ class Game {
 			altKey: e.altKey,
 			ctrlKey: e.ctrlKey,
 			metaKey: e.metaKey,
+			// #380: typing into the Navigation filter or FIND SYSTEM is not flying.
+			editable: isEditable(e.target),
 		});
 		// An `if` chain and not a `switch`: `tests/lib/source-scan.ts` reads every
 		// `case "…":` in this file as a key binding, and the route kinds are not

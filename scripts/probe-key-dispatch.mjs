@@ -221,6 +221,78 @@ check(
 	`${JSON.stringify(beforeF1)} -> ${JSON.stringify(closedF1)}`,
 );
 
+// ---------------------------------------------------------------------------
+// A word typed into the Navigation filter flies nothing (#380).
+//
+// Read off the simulation, not the field: the target the game holds, the keys
+// it holds, and where the head is turned. `g` in `cargo` is `cycleTarget(-1)`,
+// and `1`/`3` turn the head off the console the field is on.
+// ---------------------------------------------------------------------------
+await page.keyboard.press("1");
+await settle(page);
+const filter = page.locator("[data-live-nav-query]");
+await filter.click();
+const sim = () =>
+	page.evaluate(() => ({
+		target: window.__seelite.targetId,
+		head: window.__seelite.headLook,
+		keys: [...window.__seelite.keys],
+	}));
+const beforeTyping = await sim();
+await page.keyboard.type("cargo 13");
+const typedValue = await filter.inputValue();
+// A held flight key in the field, read while it is still down.
+await page.keyboard.down("e");
+await page.keyboard.down("e");
+await settle(page);
+const whileHeld = await sim();
+await page.keyboard.up("e");
+await settle(page);
+const afterTyping = await sim();
+const stillFocused = await filter.evaluate(
+	(el) => el === document.activeElement,
+);
+check(
+	"typing `cargo 13` into the Navigation filter leaves the target where it was",
+	afterTyping.target === beforeTyping.target,
+	`target ${beforeTyping.target} -> ${afterTyping.target}`,
+);
+check(
+	"and the head on the port console, with the field still focused",
+	afterTyping.head === "left" && stillFocused,
+	`head ${afterTyping.head}, focused ${stillFocused}`,
+);
+check(
+	"and a flight key held in the field is not held by the game",
+	whileHeld.keys.length === 0 && afterTyping.keys.length === 0,
+	`held while down: [${whileHeld.keys}], after: [${afterTyping.keys}]`,
+);
+check(
+	"and the field keeps every character, Space included",
+	typedValue === "cargo 13",
+	`value ${JSON.stringify(typedValue)}`,
+);
+
+// Guard: the same `g` with the field blurred does cycle the target, so the
+// target row above can fail.
+// Cleared through the page rather than `fill`: on a build that leaks, `3`
+// turned the head and the field is hidden, and `fill` would wait on it.
+await filter.evaluate((el) => {
+	el.value = "";
+	el.dispatchEvent(new Event("input", { bubbles: true }));
+	el.blur();
+});
+await page.keyboard.press("g");
+await settle(page);
+const outside = await sim();
+check(
+	"and a `g` outside the field does cycle the target, so the row can fail",
+	outside.target !== afterTyping.target,
+	`target ${afterTyping.target} -> ${outside.target}`,
+);
+await page.keyboard.press("2");
+await settle(page);
+
 // Guard: the same paced measurement does see the Shift blip on `?`, so the
 // F1 throttle row above can fail. Last, because it leaves the throttle raised.
 const beforeQuestion = await state();
