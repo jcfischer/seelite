@@ -26,6 +26,8 @@ export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 		"PLAYWRIGHT_DIR",
 		"PLAYWRIGHT_MODULE",
 		"HEADED",
+		"DISPLAY",
+		"WAYLAND_DISPLAY",
 		"REQUESTS_EVIDENCE",
 		"RELAY_EVIDENCE",
 		"SHOT_DIR",

@@ -339,21 +339,33 @@ describe("the TypeSafe transport", () => {
 			PROBE_ONLY: "boot",
 			PROBE_TIMEOUT_MS: "1234",
 			PATH: "/bin",
+			HEADED: "1",
+			DISPLAY: ":99",
+			WAYLAND_DISPLAY: "wayland-0",
 			KEEP_ME: "yes",
 		};
 		expect(probeRunnerEnvironment(parent)).toEqual({
+			DISPLAY: ":99",
+			HEADED: "1",
 			PATH: "/bin",
 			PROBE_TIMEOUT_MS: "1234",
+			WAYLAND_DISPLAY: "wayland-0",
 		});
 		expect(probeRunnerEnvironment(parent, [])).toEqual({
+			DISPLAY: ":99",
+			HEADED: "1",
 			PATH: "/bin",
 			PROBE_TIMEOUT_MS: "1234",
+			WAYLAND_DISPLAY: "wayland-0",
 		});
 		expect(probeRunnerEnvironment(parent, ["probe-cruise.mjs"])).toEqual({
+			DISPLAY: ":99",
+			HEADED: "1",
 			PATH: "/bin",
 			PROBE_FILES: "probe-cruise.mjs",
 			PROBE_SELECTION: "1",
 			PROBE_TIMEOUT_MS: "1234",
+			WAYLAND_DISPLAY: "wayland-0",
 		});
 		expect(parent.TYPESAFE_API_KEY).toBe("secret");
 	});
