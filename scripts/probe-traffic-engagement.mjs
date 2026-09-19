@@ -374,7 +374,19 @@ try {
 	// the glass correctly — the sim was right and the glass was silent.
 	// -------------------------------------------------------------------------
 	check(
-		// **Both halves, on the civilian rather than the raider.** The record half is
+		// **Both halves, on the civilian rather than the raider.** What the pixel
+		// half proves is narrow and stated as narrow: ink is on the overlay at the
+		// coordinates the draw reported. It does **not** prove the line is unclipped,
+		// uncrowded or readable at a glance — a 150 x 16 window counting alpha above a
+		// floor cannot see a glyph cut off at its edge, and no threshold on that count
+		// can, because a half-drawn string still clears any count a whole one clears
+		// minus a few pixels. Proving legibility is the principal's flight, which is
+		// why this node has a checkpoint and not just a probe. What the row does kill
+		// is the failure mode it was written for: a record that says a line was drawn
+		// while the canvas has nothing there, or ink landing somewhere other than
+		// where the frame claims it went.
+		//
+		// The record half
 		// the wire this node was opened for: the sim had been right for twenty seconds
 		// of beam and the handoff to the label was not there. The pixel half is what
 		// a record cannot say — that ink reached the canvas where a pilot reads it —
@@ -579,13 +591,18 @@ try {
 		diverted.atMark !== null &&
 			diverted.atMark.id === key &&
 			diverted.atMark.text.includes(diverted.divertLabel) &&
-			// A distance the pilot could fly, not a `HOME 0.0 km` or a `HOME NaN
-			// km`. Zero is excluded on purpose: it is the one reading that contradicts
-			// the word beside it, and `trafficDivertCue` is written to return the word
-			// alone rather than that pair.
+			// A figure that parses to a real distance — and **zero is one of them.**
+			// This clause used to say `> 0`, on an earlier reading of the cue in which
+			// a zero contradicted the word beside it. That reading is gone, and the
+			// polarity went with it: a pilot beside their own station when the divert
+			// lands is tens of metres from the body, `HOME 0.0 km` is the answer to
+			// their question, and the word alone now means something narrower — *there
+			// is no station to point at*. So a missing figure is what fails here, and
+			// the row is deliberately on the side that goes red if anything ever
+			// suppresses the zero again.
 			diverted.homeKm !== null &&
 			Number.isFinite(diverted.homeKm) &&
-			diverted.homeKm > 0,
+			diverted.homeKm >= 0,
 		JSON.stringify(diverted.atMark),
 	);
 	check(

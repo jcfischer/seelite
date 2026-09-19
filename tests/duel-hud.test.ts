@@ -264,13 +264,25 @@ describe("the widest line a selected target can print", () => {
 		// ceiling that `printHullPercent`'s own row says is deliberate, reached
 		// through an invariant the sim cannot break. A bound on reachable readings is
 		// allowed to assume the invariant; what it may not do is assume the clamp.
+		// One assertion over the whole sweep, carrying the worst case it saw. The
+		// first version called `expect` 316k times, which is both slow and the wrong
+		// shape: on a failure the runner reports the first mismatch and the rest of
+		// the grid never gets read, so the number actually worth having — how far
+		// over, at which reading — is the one thing it would not print.
+		let over: { text: string; fore: number; aft: number; hull: number } | null =
+			null;
 		for (const fore of figures)
 			for (const aft of figures)
 				for (const hullMax of [1, 85, 215, 2635])
-					for (const hull of [1, 2, 50, hullMax].filter((h) => h <= hullMax))
-						expect(
-							targetConditionLine({ fore, aft, hull, hullMax }).text.length,
-						).toBeLessThanOrEqual(widest.length);
+					for (const hull of [1, 2, 50, hullMax].filter((h) => h <= hullMax)) {
+						const text = targetConditionLine({ fore, aft, hull, hullMax }).text;
+						if (text.length > widest.length && over === null)
+							over = { text, fore, aft, hull };
+					}
+		expect({ width: widest.length, over }).toEqual({
+			width: widest.length,
+			over: null,
+		});
 	});
 
 	test("it is attained, so it is a bound and not a guess with room in it", () => {
