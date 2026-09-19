@@ -1,0 +1,219 @@
+:root {
+	color-scheme: dark;
+}
+body.public-site {
+	min-height: 100%;
+	overflow: auto;
+	color: #dbe5e9;
+	background:
+		radial-gradient(ellipse at 72% 16%, #1a3d4f 0, transparent 28rem),
+		radial-gradient(ellipse at 23% 68%, #20263d 0, transparent 36rem), #070b10;
+	font:
+		16px / 1.6 ui-monospace,
+		"SF Mono",
+		Menlo,
+		Consolas,
+		monospace;
+}
+.public-site #overlay,
+.public-site #hud,
+.public-site #keys {
+	display: none;
+}
+.site-shell {
+	box-sizing: border-box;
+	display: grid;
+	min-height: 100vh;
+	max-width: 1200px;
+	margin: 0 auto;
+	padding: 2rem clamp(1.25rem, 5vw, 5rem);
+	grid-template-rows: auto 1fr auto;
+}
+.site-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 2rem;
+	border-bottom: 1px solid #4b6774;
+	padding-bottom: 1.35rem;
+}
+.wordmark {
+	color: #f0ca76;
+	font:
+		700 clamp(1rem, 2vw, 1.35rem) / 0.95 ui-sans-serif,
+		system-ui,
+		sans-serif;
+	letter-spacing: 0.12em;
+	text-decoration: none;
+}
+.site-header nav {
+	display: flex;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 0.3rem 1.1rem;
+	max-width: 48rem;
+}
+.site-header nav a,
+footer a {
+	color: #a9c4cd;
+	text-decoration: none;
+	font-size: 0.72rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.site-header nav a:hover,
+.site-header nav a[aria-current="page"],
+footer a:hover {
+	color: #f0ca76;
+}
+.page {
+	align-self: center;
+	max-width: 49rem;
+	padding: clamp(4rem, 14vh, 9rem) 0;
+}
+.page--home {
+	max-width: 59rem;
+}
+.eyebrow {
+	color: #75d5c4;
+	font-size: 0.74rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+h1 {
+	max-width: 12ch;
+	margin: 0.35rem 0 1.4rem;
+	color: #f1f4ef;
+	font:
+		500 clamp(2.7rem, 7vw, 6.5rem) / 0.96 Georgia,
+		"Times New Roman",
+		serif;
+	letter-spacing: -0.045em;
+}
+.page--home h1 {
+	max-width: 10ch;
+}
+.dek {
+	max-width: 40rem;
+	color: #b6c8ce;
+	font:
+		400 clamp(1.1rem, 2vw, 1.45rem) / 1.45 Georgia,
+		"Times New Roman",
+		serif;
+}
+.page-content {
+	max-width: 42rem;
+	margin-top: 2.7rem;
+}
+.page-content p {
+	margin: 0 0 1.2rem;
+}
+.page-content h2 {
+	margin: 2.2rem 0 0.25rem;
+	color: #f0ca76;
+	font:
+		600 1rem / 1.3 ui-monospace,
+		monospace;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.threshold-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+}
+.button {
+	display: inline-flex;
+	align-items: center;
+	gap: 1.25rem;
+	box-sizing: border-box;
+	min-height: 3rem;
+	padding: 0.7rem 1.05rem;
+	border: 1px solid #7aaeb7;
+	color: #dceff1;
+	font:
+		600 0.78rem / 1 ui-monospace,
+		monospace;
+	letter-spacing: 0.11em;
+	text-decoration: none;
+	text-transform: uppercase;
+}
+.button--primary {
+	border-color: #f0ca76;
+	background: #f0ca76;
+	color: #172027;
+}
+.button:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 0 1.5rem #75d5c455;
+}
+.threshold-note {
+	margin: 2.8rem 0 1.6rem;
+	color: #8aa8b2;
+	font-size: 0.78rem;
+}
+.instrument {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem 1.25rem;
+	padding-top: 1rem;
+	border-top: 1px solid #35505c;
+	color: #75d5c4;
+	font-size: 0.68rem;
+	letter-spacing: 0.08em;
+}
+.promise {
+	margin: 0 0 1.8rem;
+	padding: 0;
+	list-style: none;
+}
+.promise li {
+	margin: 0.7rem 0;
+	padding-left: 1.6rem;
+}
+.promise li::before {
+	content: "✓";
+	position: absolute;
+	margin-left: -1.6rem;
+	color: #75d5c4;
+}
+.manual-search {
+	display: grid;
+	gap: 0.5rem;
+	color: #75d5c4;
+	font-size: 0.78rem;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+}
+.manual-search input {
+	width: min(100%, 30rem);
+	box-sizing: border-box;
+	padding: 0.8rem;
+	border: 1px solid #527280;
+	border-radius: 0;
+	background: #0c151c;
+	color: #f1f4ef;
+	font: inherit;
+}
+footer {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem 1.4rem;
+	padding-top: 1.25rem;
+	border-top: 1px solid #4b6774;
+	color: #66818d;
+	font-size: 0.66rem;
+	letter-spacing: 0.08em;
+}
+@media (max-width: 720px) {
+	.site-header {
+		display: grid;
+		gap: 1.6rem;
+	}
+	.site-header nav {
+		justify-content: flex-start;
+	}
+	h1 {
+		font-size: clamp(2.8rem, 15vw, 4.5rem);
+	}
+}

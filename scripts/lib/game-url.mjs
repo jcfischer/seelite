@@ -33,6 +33,23 @@ export const WORKBENCH_ROUTES = Object.freeze([
 	"planet-prototype",
 ]);
 
+/** The static, public pages. These routes never boot the game. */
+export const PUBLIC_ROUTES = Object.freeze([
+	"",
+	"about",
+	"field-notes",
+	"manual",
+	"trust",
+	"credits",
+]);
+
+/** A static public-page URL, refusing an accidental game or workbench query. */
+export function publicUrl(origin, route = "") {
+	if (!PUBLIC_ROUTES.includes(route))
+		throw new Error(`publicUrl: unknown public route "${route}"`);
+	return new globalThis.URL(route === "" ? "/" : `/${route}/`, origin).href;
+}
+
 /**
  * @typedef {string | number | boolean | undefined | null} ParamValue
  * @typedef {Record<string, ParamValue>} Params
