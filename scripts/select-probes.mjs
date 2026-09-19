@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
 import { probeRunnerEnvironment } from "./lib/probe-runner-env.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
+import { readTypeSafeApiKey } from "./lib/typesafe-key.mjs";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
@@ -99,9 +100,8 @@ async function main() {
 		}
 	}
 
-	const judge = process.env.TYPESAFE_API_KEY
-		? createTypeSafeProbeJudge({ apiKey: process.env.TYPESAFE_API_KEY })
-		: undefined;
+	const apiKey = readTypeSafeApiKey();
+	const judge = apiKey ? createTypeSafeProbeJudge({ apiKey }) : undefined;
 	const started = performance.now();
 	const result = await selectProbes(
 		{ changedFiles: gitEvidence.changedFiles, intent: args.intent },

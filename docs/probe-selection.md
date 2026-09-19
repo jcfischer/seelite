@@ -23,12 +23,13 @@ selected counts and recall, not end-to-end browser time saved.
    verdict.
 
 The selector is a development tool. It makes no runtime network request from the
-game. When the selector launches probes, `TYPESAFE_API_KEY` is read only from
-its process environment and removed before Vite, Chromium, or a probe child
-starts. A separately invoked `npm run probe` does not perform that scrubbing.
+game. It reads only `TYPESAFE_API_KEY` from its process environment or
+`~/.env`, then launches probes with an allow-listed environment that excludes
+the key and unrelated ambient secrets. A separately invoked `npm run probe`
+does not perform that scrubbing.
 
 TypeSafe is an external service. A semantic selection sends changed-file names
-and, only when supplied, one reviewer-authored `--intent` sentence. It never
+and one required reviewer-authored `--intent` sentence. It never
 sends the PR title, body, or source diff. The selector places filenames under
 `state.untrusted_evidence` and keeps `state.reviewer_intent` separate. Filenames
 can still be attacker-controlled, so model instructions remain best-effort
@@ -50,12 +51,10 @@ same PR.
 
 ## Use it
 
-Load the key into the shell, then inspect the plan without launching Chromium:
+Inspect the plan without launching Chromium. The selector reads only
+`TYPESAFE_API_KEY` from the process or `~/.env`; do not source the whole file:
 
 ```sh
-set -a
-source ~/.env
-set +a
 npm run probe:select -- --base origin/main --head HEAD \
   --intent "Describe the intended behavior change in one sentence"
 ```
@@ -78,10 +77,12 @@ npm run probe:select -- --changed-file src/cruise.ts \
   --intent "Keep cruise clear of moving host planets" --json
 ```
 
-`PROBE_FILES` is the selector's exact-name handoff to `probe-all.mjs`. It is
-refused in CI, cannot be combined with `--only` or `PROBE_ONLY`, and every
-partial-run banner names that it is partial. Treat that result as local feedback,
-not as a full browser-tier receipt.
+`PROBE_FILES` together with `PROBE_SELECTION=1` is the selector's exact-name
+handoff to `probe-all.mjs`. Without that marker, an ambient `PROBE_FILES` value
+cannot narrow a normal full-suite run. The handoff is refused in CI, cannot be
+combined with `--only` or `PROBE_ONLY`, and every partial-run banner names that
+it is partial. Treat that result as local feedback, not as a full browser-tier
+receipt.
 
 The calibration cases and named expected probes are recorded in
 [`probe-selection-evaluation.md`](./probe-selection-evaluation.md) and can be

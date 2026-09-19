@@ -3,6 +3,7 @@
 import { writeFileSync } from "node:fs";
 import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
+import { readTypeSafeApiKey } from "./lib/typesafe-key.mjs";
 
 const receiptFlag = process.argv.indexOf("--receipt");
 const receiptPath =
@@ -11,7 +12,8 @@ if (receiptFlag !== -1 && !receiptPath) {
 	console.error("--receipt requires an output path");
 	process.exit(1);
 }
-if (!process.env.TYPESAFE_API_KEY) {
+const apiKey = readTypeSafeApiKey();
+if (!apiKey) {
 	console.error(
 		"TYPESAFE_API_KEY is not set; load it before running probe:evaluate.",
 	);
@@ -81,7 +83,7 @@ const cases = [
 ];
 
 const judge = createTypeSafeProbeJudge({
-	apiKey: process.env.TYPESAFE_API_KEY,
+	apiKey,
 });
 const rows = await Promise.all(
 	cases.map(async (item) => {

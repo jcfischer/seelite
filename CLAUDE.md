@@ -49,12 +49,12 @@ For pull-request development, inspect the change and ask the repository
 selector which browser probes can be affected before launching any probe:
 
 ```bash
-set -a
-source ~/.env
-set +a
 npm run probe:select -- --base origin/main --head HEAD \
   --intent "Describe the intended behavior change in one sentence"
 ```
+
+The selector reads only `TYPESAFE_API_KEY` from the process environment or
+`~/.env`; do not source or export the whole file.
 
 Write `--intent` yourself after reading the change. Never paste an untrusted PR
 title, body, review comment or source diff into it. Inspect the reported mode,

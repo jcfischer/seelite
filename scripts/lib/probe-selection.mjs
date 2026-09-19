@@ -3,6 +3,18 @@ import { discoverProbeFiles } from "./probe-inventory.mjs";
 
 /** A Noul must be at or below this probability to exclude a probe. */
 export const PROBE_EXCLUSION_MAX = 0.25;
+const MAX_CHANGED_FILES = 500;
+const MAX_CHANGED_FILE_LENGTH = 200;
+const MAX_INTENT_LENGTH = 500;
+const SAFE_CHANGED_FILE = /^[A-Za-z0-9_@+./-]+$/;
+
+const isSafeChangedFile = (file) =>
+	typeof file === "string" &&
+	file.length > 0 &&
+	file.length <= MAX_CHANGED_FILE_LENGTH &&
+	!file.startsWith("/") &&
+	SAFE_CHANGED_FILE.test(file) &&
+	file.split("/").every((part) => part && part !== "." && part !== "..");
 
 const GLOBAL_RISK_FILES = new Set([
 	"index.html",
@@ -26,9 +38,7 @@ const CATALOG_PROBE_FILES = Object.freeze(
 );
 const catalogMatchesRunner =
 	RUNNER_PROBE_FILES.length === CATALOG_PROBE_FILES.length &&
-	RUNNER_PROBE_FILES.every(
-		(file, index) => file === CATALOG_PROBE_FILES[index],
-	);
+	RUNNER_PROBE_FILES.every((file) => CATALOG_PROBE_FILES.includes(file));
 
 const directProbe = (file) =>
 	file.startsWith("scripts/")
@@ -218,14 +228,30 @@ export async function selectProbes(input, judge = undefined) {
 			"Probe catalog differs from the runner inventory; semantic selection is unsafe.",
 			true,
 		);
-	const changedFiles = [...new Set(input.changedFiles ?? [])].sort();
+	const rawChangedFiles = input.changedFiles ?? [];
+	if (
+		!Array.isArray(rawChangedFiles) ||
+		rawChangedFiles.length > MAX_CHANGED_FILES ||
+		rawChangedFiles.some((file) => !isSafeChangedFile(file))
+	)
+		return all(
+			"Changed-file evidence exceeded the bounded safe path format.",
+			true,
+		);
+	const changedFiles = [...new Set(rawChangedFiles)].sort();
 	const forcedProbes = directlyChangedProbes(changedFiles);
 	const deterministic = selectDeterministic(changedFiles, forcedProbes);
 	if (deterministic) return deterministic;
+	const intent = typeof input.intent === "string" ? input.intent.trim() : "";
+	if (!intent || intent.length > MAX_INTENT_LENGTH)
+		return all(
+			"Ambiguous production changes require a reviewer-authored intent of 1-500 characters.",
+			true,
+		);
 	if (!judge)
 		return all(
 			"TypeSafe was unavailable for an ambiguous production change.",
 			true,
 		);
-	return selectSemantic({ ...input, changedFiles }, judge, forcedProbes);
+	return selectSemantic({ changedFiles, intent }, judge, forcedProbes);
 }

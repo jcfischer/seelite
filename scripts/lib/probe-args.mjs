@@ -82,7 +82,9 @@ export function parseArgs(argv) {
  * @returns {Selection | null}
  */
 function resolveExactProbeFiles(args, env, available, gating, inCI) {
-	if (env.PROBE_FILES === undefined) return null;
+	if (env.PROBE_SELECTION !== "1") return null;
+	if (env.PROBE_FILES === undefined)
+		return { refusal: "PROBE_SELECTION=1 requires PROBE_FILES." };
 	if (args.onlySeen || env.PROBE_ONLY)
 		return {
 			refusal: "PROBE_FILES cannot be combined with --only or PROBE_ONLY.",
@@ -95,8 +97,7 @@ function resolveExactProbeFiles(args, env, available, gating, inCI) {
 
 	const requested = [
 		...new Set(
-			(env.PROBE_FILES ?? "")
-				.split(",")
+			env.PROBE_FILES.split(",")
 				.map((file) => file.trim())
 				.filter(Boolean),
 		),
