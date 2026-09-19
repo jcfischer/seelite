@@ -351,10 +351,49 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// would measure a different frame from the one it exists for. It takes a
 		// console's six buttons and leaves the sticks alone.
 		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
-		// The triggers trim there too, and the shoulders are its tab steps, so
-		// the two do not collide.
+		// The triggers trim there too.
 		expect(padFlightAxes(trigger("r2", 1), "instrument").throttleTrim).toBe(1);
-		expect(padIntents(press("r1"), "instrument").tabDelta).toBe(1);
+	});
+
+	test("the shoulders step no tab in the instrument, and fly nothing either (#379)", () => {
+		// The instrument is the perf panel, a list of switches with no tabs, so
+		// nothing there reads a tab step (the principal's ruling on #379). The
+		// shoulders stay claimed: falling through to the flight table would turn
+		// them into `t`/`g` and cycle the target while the panel has the pad.
+		for (const name of ["l1", "r1"] as const) {
+			expect(padIntents(press(name), "instrument").tabDelta, name).toBe(0);
+			expect(padIntents(press(name), "instrument").keys, name).toEqual([]);
+		}
+		// A console still steps its tabs with them.
+		expect(padIntents(press("r1"), "console").tabDelta).toBe(1);
+	});
+
+	test("every intent the instrument emits, the instrument branch reads (#379)", () => {
+		// The class, not the instance: `tabDelta` was emitted here while nothing
+		// read it, and a row asserting the emitted value was green on that
+		// defect. So every field a press yields in `instrument` must appear in
+		// `main.ts`'s instrument branch.
+		const emitted = new Set<string>();
+		for (const name of STANDARD_BUTTONS) {
+			const intents = padIntents(press(name), "instrument");
+			if (intents.keys.length > 0) emitted.add("keys");
+			for (const field of [
+				"focusDelta",
+				"tabDelta",
+				"valueDelta",
+				"activate",
+				"back",
+				"instrument",
+			] as const)
+				if (intents[field]) emitted.add(field);
+		}
+		const main = codeOf("src/main.ts");
+		const at = main.indexOf("if (perf?.isFocused()) {");
+		expect(at).toBeGreaterThan(-1);
+		const branch = main.slice(at, main.indexOf("\n\t\t\treturn;\n\t\t}", at));
+		expect(emitted.size).toBeGreaterThan(0);
+		for (const field of emitted)
+			expect(branch, `instrument emits ${field}`).toContain(`intents.${field}`);
 	});
 
 	test("the instrument still claims the six a console claims", () => {
