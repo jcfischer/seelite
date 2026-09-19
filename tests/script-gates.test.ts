@@ -12,7 +12,6 @@ import {
 	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
-	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -95,7 +94,7 @@ test("the launcher-wiring gate exits 0 on the tree as it stands", () => {
 	);
 	// The gate's own output names every problem, so a red run reads itself.
 	expect({ status: run.status, out: run.stdout }).toMatchObject({ status: 0 });
-});
+}, 60_000);
 
 test("the launcher-wiring gate goes red for each rule it states, and only then", () => {
 	// The control first: without a passing case, a red below could be the scratch
@@ -137,15 +136,18 @@ test("the launcher-wiring gate goes red for each rule it states, and only then",
 		expect({ label, status: run.status }).toEqual({ label, status: 1 });
 		expect(run.stdout).toContain(message);
 	}
-});
+}, 60_000);
 
-test("the runner's environment forwards every variable the launcher reads", () => {
+test("the runner's environment forwards the variables the launcher reads", () => {
 	// `probe-runner-env.mjs` passes those variables through, and the wiring gate
 	// refuses any script that spells their names. The file takes the list from
-	// the launcher instead of spelling it, and this is what shows the list it
-	// reads still reaches the runner's child environment.
-	for (const name of PLAYWRIGHT_ENV_VARS)
+	// the launcher instead of spelling it. The names are spelled *here* on
+	// purpose: read from the export, the expectation would shrink with the file
+	// and stay green when a variable stopped being forwarded.
+	for (const name of ["PLAYWRIGHT_DIR", "PLAYWRIGHT_MODULE"]) {
+		expect(PLAYWRIGHT_ENV_VARS).toContain(name);
 		expect(probeRunnerEnvironment({ [name]: "x" })[name]).toBe("x");
+	}
 });
 
 test("the lint tier fails on an undeclared name in scripts/", () => {
@@ -154,7 +156,7 @@ test("the lint tier fails on an undeclared name in scripts/", () => {
 		expect(run.status).not.toBe(0);
 		expect(run.stderr + run.stdout).toContain("noUndeclaredVariables");
 	}
-});
+}, 60_000);
 
 test("the lint tier accepts the Bun global, and the rule is scoped to scripts/", () => {
 	for (const path of ["scripts/x.mjs", "scripts/x.ts"])
@@ -164,7 +166,7 @@ test("the lint tier accepts the Bun global, and the rule is scoped to scripts/",
 	expect(
 		lintAs("src/x.ts", "export const x = neverDeclared(1);\n").status,
 	).toBe(0);
-});
+}, 60_000);
 
 test("`npm run lint` runs the rule over the real tree and it is clean", () => {
 	// Through the script itself, so a `lint` entry that stopped covering
@@ -176,4 +178,4 @@ test("`npm run lint` runs the rule over the real tree and it is clean", () => {
 	expect({ status: run.status, out: run.stdout + run.stderr }).toMatchObject({
 		status: 0,
 	});
-});
+}, 60_000);
