@@ -8,6 +8,7 @@
  */
 export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 	const passThrough = new Set([
+		"CI",
 		"PATH",
 		"HOME",
 		"USER",
@@ -31,16 +32,17 @@ export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 		"REQUESTS_EVIDENCE",
 		"RELAY_EVIDENCE",
 		"SHOT_DIR",
+		"PROBE_CONCURRENCY",
+		"PROBE_TIMEOUT_MS",
+		"PROBE_URL",
+		"PROBE_NEUTRAL_URL",
+		"PROBE_RING_BODY",
+		"PROBE_RING_URL",
+		"PROBE_SCREENSHOT",
 	]);
 	const childEnv = Object.fromEntries(
 		Object.entries(env).filter(
-			([key, value]) =>
-				value !== undefined &&
-				(passThrough.has(key) ||
-					(key.startsWith("PROBE_") &&
-						key !== "PROBE_FILES" &&
-						key !== "PROBE_ONLY" &&
-						key !== "PROBE_SELECTION")),
+			([key, value]) => value !== undefined && passThrough.has(key),
 		),
 	);
 	if (selectedProbes?.length) {

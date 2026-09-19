@@ -77,7 +77,7 @@ const isValidNoulAnswer = (answer) =>
 	answer.noul >= 0 &&
 	answer.noul <= 1;
 
-export function buildProbeQuestions() {
+function buildProbeQuestions() {
 	return Object.fromEntries(
 		PROBE_CATALOG.map(({ id, file, contract, evidence }) => [
 			id,

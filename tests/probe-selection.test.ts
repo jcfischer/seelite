@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+	mkdirSync,
+	mkdtempSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PROBE_CATALOG } from "../scripts/lib/probe-catalog.mjs";
+import { readGitEvidence } from "../scripts/lib/probe-git-evidence.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
 import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
 import {
@@ -112,6 +122,7 @@ describe("the semantic branch", () => {
 				intent: "Keep a cruise route clear of a moving host planet.",
 			},
 			async ({ questions, state }) => {
+				expect(Object.keys(questions)).toHaveLength(PROBE_CATALOG.length);
 				expect(state).toEqual({
 					reviewer_intent: "Keep a cruise route clear of a moving host planet.",
 					untrusted_evidence: {
@@ -123,7 +134,6 @@ describe("the semantic branch", () => {
 						probe_cruise: 0.99,
 						probe_arrival: PROBE_EXCLUSION_MAX + 0.01,
 					}),
-					questionCount: Object.keys(questions).length,
 				};
 			},
 		);
@@ -241,6 +251,41 @@ describe("the semantic branch", () => {
 });
 
 describe("the TypeSafe transport", () => {
+	test("git evidence keeps both sides of a runtime-to-docs rename", () => {
+		const root = mkdtempSync(join(tmpdir(), "seelite-probe-git-"));
+		const git = (args: string[], encoding?: BufferEncoding) =>
+			execFileSync("git", args, {
+				cwd: root,
+				encoding,
+				stdio: encoding ? ["ignore", "pipe", "pipe"] : "ignore",
+			});
+		try {
+			git(["init"]);
+			git(["config", "core.hooksPath", "/dev/null"]);
+			git(["config", "user.name", "Probe selector test"]);
+			git(["config", "user.email", "probe-selector@example.invalid"]);
+			mkdirSync(join(root, "src"));
+			writeFileSync(
+				join(root, "src/runtime.ts"),
+				"export const live = true;\n",
+			);
+			git(["add", "."]);
+			git(["commit", "-m", "base"]);
+			const base = String(git(["rev-parse", "HEAD"], "utf8")).trim();
+			mkdirSync(join(root, "docs"));
+			renameSync(join(root, "src/runtime.ts"), join(root, "docs/runtime.md"));
+			git(["add", "-A"]);
+			git(["commit", "-m", "rename"]);
+			const head = String(git(["rev-parse", "HEAD"], "utf8")).trim();
+
+			expect(new Set(readGitEvidence(base, head, root).changedFiles)).toEqual(
+				new Set(["src/runtime.ts", "docs/runtime.md"]),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("the CLI fails loudly when its git range is invalid", () => {
 		const child = spawnSync(
 			process.execPath,
@@ -347,6 +392,7 @@ describe("the TypeSafe transport", () => {
 
 	test("scrubs credentials and stale filters before browser children", () => {
 		const parent = {
+			CI: "true",
 			TYPESAFE_API_KEY: "secret",
 			PROBE_FILES: "probe-boot.mjs",
 			PROBE_ONLY: "boot",
@@ -355,9 +401,11 @@ describe("the TypeSafe transport", () => {
 			HEADED: "1",
 			DISPLAY: ":99",
 			WAYLAND_DISPLAY: "wayland-0",
+			PROBE_SECRET: "must-not-cross",
 			KEEP_ME: "yes",
 		};
 		expect(probeRunnerEnvironment(parent)).toEqual({
+			CI: "true",
 			DISPLAY: ":99",
 			HEADED: "1",
 			PATH: "/bin",
@@ -365,13 +413,16 @@ describe("the TypeSafe transport", () => {
 			WAYLAND_DISPLAY: "wayland-0",
 		});
 		expect(probeRunnerEnvironment(parent, [])).toEqual({
+			CI: "true",
 			DISPLAY: ":99",
 			HEADED: "1",
 			PATH: "/bin",
 			PROBE_TIMEOUT_MS: "1234",
 			WAYLAND_DISPLAY: "wayland-0",
 		});
-		expect(probeRunnerEnvironment(parent, ["probe-cruise.mjs"])).toEqual({
+		const selectedEnv = probeRunnerEnvironment(parent, ["probe-cruise.mjs"]);
+		expect(selectedEnv).toEqual({
+			CI: "true",
 			DISPLAY: ":99",
 			HEADED: "1",
 			PATH: "/bin",
@@ -380,6 +431,9 @@ describe("the TypeSafe transport", () => {
 			PROBE_TIMEOUT_MS: "1234",
 			WAYLAND_DISPLAY: "wayland-0",
 		});
+		expect(
+			resolveOnly(parseArgs([]), selectedEnv, discovered).refusal,
+		).toContain("CI");
 		expect(parent.TYPESAFE_API_KEY).toBe("secret");
 	});
 });

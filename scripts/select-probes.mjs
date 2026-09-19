@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readGitEvidence } from "./lib/probe-git-evidence.mjs";
 import { createTypeSafeProbeJudge } from "./lib/typesafe-probe-judge.mjs";
 import { probeRunnerEnvironment } from "./lib/probe-runner-env.mjs";
 import { selectProbes } from "./lib/probe-selection.mjs";
@@ -33,23 +34,6 @@ function parseArgs(argv) {
 		else out[flag.slice(2)] = value;
 	}
 	return out;
-}
-
-const git = (args) =>
-	execFileSync("git", args, {
-		cwd: PROJECT_ROOT,
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-
-function readGitEvidence(base, head) {
-	const range = `${base}...${head}`;
-	return {
-		changedFiles: git(["diff", "--name-only", range])
-			.split("\n")
-			.map((line) => line.trim())
-			.filter(Boolean),
-	};
 }
 
 const renderText = (result) => {
@@ -92,7 +76,7 @@ async function main() {
 	let gitEvidence = { changedFiles: args.changedFiles };
 	if (!args.changedFiles.length) {
 		try {
-			gitEvidence = readGitEvidence(args.base, args.head);
+			gitEvidence = readGitEvidence(args.base, args.head, PROJECT_ROOT);
 		} catch (error) {
 			throw new Error(
 				`could not read git diff ${args.base}...${args.head}: ${error instanceof Error ? error.message : String(error)}`,
