@@ -539,7 +539,7 @@ export const VIEWS = Object.freeze([
 	},
 	{
 		name: "hull-chase",
-		covers: [208, 199, 101, 99, 200, 201, 207, 203],
+		covers: [208, 199, 102, 101, 99, 200, 201, 207, 203],
 		what: "The player's own hull, mostly backlit, against the system's largest planet. Flat plate shows here first.",
 		shot: {
 			kind: "body-offset",

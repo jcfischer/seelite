@@ -461,6 +461,7 @@ import {
 	HULL_VARIANTS,
 	buildShipMesh,
 	fleetLayout,
+	updateShipVisuals,
 } from "./ship-mesh";
 import {
 	type DesignationScan,
@@ -11051,6 +11052,32 @@ class Game {
 				parked.contact.pos.x - camPos.x,
 				parked.contact.pos.y - camPos.y,
 				parked.contact.pos.z - camPos.z,
+			);
+		// #130's ship half of the shared apparent-size band. Like stations, the
+		// quality rides every frame so a traffic hull materialised after a setting
+		// change is correct immediately; only generated clutter is gated, never an
+		// emissive. All near-layer positions are camera-relative, so their length
+		// is the exact distance the band asks for.
+		const shipQuality = this.settings.value.quality;
+		updateShipVisuals(
+			this.shipMesh,
+			this.shipMesh.position.length(),
+			shipQuality,
+		);
+		if (this.raiderMesh.parent)
+			updateShipVisuals(
+				this.raiderMesh,
+				this.raiderMesh.position.length(),
+				shipQuality,
+			);
+		for (const mesh of this.trafficMeshes.values())
+			if (mesh.parent)
+				updateShipVisuals(mesh, mesh.position.length(), shipQuality);
+		for (const parked of this.fleet)
+			updateShipVisuals(
+				parked.mesh,
+				parked.mesh.position.length(),
+				shipQuality,
 			);
 		// The hull is the camera in cockpit view, and drawing a cube around the
 		// near plane fills the screen with its inside faces.

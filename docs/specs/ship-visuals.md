@@ -383,6 +383,36 @@ it: `setHullFinish` exists for the workbench, and a test that sets one must
 restore the default. `scripts/shot-finishes.mjs` is the sheet's instrument and
 refuses a software rasteriser, for `capture-views.mjs`'s reason.
 
+### 3.2 Authored machinery regions, emissives and the shared detail band (#130)
+
+Each of the thirty-six current variants declares a named surface patch beside
+its builder entry: the exact plated part, the face of it, and the longitudinal
+interval where machinery belongs. The fill is generated from
+`DOMAIN.SHIP_GREEBLES`, split again by hull, variant and zone name. This is not a
+scatter over whatever triangles happen to exist: the declaration says where
+machinery belongs, and every generated crate, tank or fin is ray-mounted back
+onto that named plated mesh. A structural check keeps that machinery smaller
+than the base hull's reach; the headed view set owns the stronger judgement that
+it remains subordinate to the local contour and never reads as a new outline.
+
+Every hull also carries one paired set of steady cool service rails. The
+existing four-point red/green/white/amber navigation-light fixture remains a
+non-semantic aspect cue and does not acquire docking, hostility or damage
+meaning. Lit habitation panes belong only to the extant hull classes with the
+volume the original #102 ruling named: freighter, carrier and dreadnought. The
+liner from that ruling was cut in round nine and is not silently replaced by a
+different role. Voyager post-dates #102 and still receives an explicit authored
+machinery zone and strip rather than inheriting a default.
+
+`detail-level.ts` owns the one directional full/reduced/outline state machine
+used by stations and ships. The ship renderer draws generated clutter only at
+`full`; steady strips, habitation panes and navigation beacons remain visible
+at every band. The independent quality gate has the same boundary: `low` drops
+all generated greeble instances and keeps every emissive. The player, raider,
+ordinary traffic and fleet-review hulls all receive the gate from their actual
+camera-relative range each frame, including ships materialised after a setting
+change.
+
 ## 4. Verification contract
 
 Headless tests assert every candidate has stable hull and variant identity,

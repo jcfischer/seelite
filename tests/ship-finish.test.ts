@@ -63,6 +63,17 @@ function rosterHash(ids: readonly HullId[] = HULL_IDS) {
 	for (const id of ids)
 		for (const variant of HULL_VARIANT_IDS) {
 			buildShipMesh(id, variant).root.traverse((object) => {
+				// #130's generated detail is a finish layered onto the hull, not a
+				// change to the stock hull this pin protects. It has its own deterministic
+				// matrix contract in `ship-details.test.ts`; keep this hash on the
+				// pre-existing structure so moving a fuselage cannot hide in an expected
+				// detail addition.
+				if (
+					object.name.startsWith("ship-greebles-") ||
+					object.name === "ship-strip" ||
+					object.name === "ship-windows"
+				)
+					return;
 				const geometry = (object as THREE.Mesh).geometry;
 				const position = geometry?.getAttribute?.("position") as
 					| THREE.BufferAttribute

@@ -52,6 +52,17 @@ import {
 	plate,
 	plateUVs,
 } from "./ship-surface";
+export {
+	HABITABLE_HULLS,
+	SHIP_QUALITY,
+	setShipDetail,
+	updateShipVisuals,
+} from "./ship-detail";
+import {
+	type ShipDetailPlan,
+	type ShipSurface,
+	buildShipDetails,
+} from "./ship-detail";
 
 export const SHIP_DESIGN_ROUND = 11;
 
@@ -6122,6 +6133,24 @@ export function fleetLayout(): FleetSlot[] {
 }
 
 type Builder = (root: THREE.Group, palette: Palette) => void;
+interface BuilderPlan extends ShipDetailPlan {
+	readonly build: Builder;
+}
+
+/** One authored machinery patch beside each builder, never a hull-wide scatter. */
+const planned = (
+	build: Builder,
+	part: string,
+	name: string,
+	surface: ShipSurface,
+	count = 18,
+	options: { readonly seed?: number } = {},
+): BuilderPlan => ({
+	build,
+	zones: [
+		{ name, seed: options.seed, part, surface, from: 0.38, to: 0.72, count },
+	],
+});
 
 /**
  * One entry per model.
@@ -6131,31 +6160,202 @@ type Builder = (root: THREE.Group, palette: Palette) => void;
  * role's shape rather than failing, which is exactly the silent default the
  * spec forbids.
  */
-const BUILDERS: Record<HullId, Record<HullVariantId, Builder>> = {
-	courier: { a: buildCourierA, b: buildCourierB, c: buildCourierC },
-	interceptor: {
-		a: buildInterceptorA,
-		b: buildInterceptorB,
-		c: buildInterceptorC,
+export const SHIP_DETAIL_PLANS: Record<
+	HullId,
+	Record<HullVariantId, BuilderPlan>
+> = {
+	courier: {
+		a: planned(
+			buildCourierA,
+			"courier-dorsal-hull",
+			"dorsal-service",
+			"dorsal",
+		),
+		b: planned(buildCourierB, "courier-fuselage", "port-utility", "port"),
+		c: planned(buildCourierC, "courier-fuselage", "belly-machinery", "ventral"),
 	},
-	freighter: { a: buildFreighterA, b: buildFreighterB, c: buildFreighterC },
-	miner: { a: buildMinerA, b: buildMinerB, c: buildMinerC },
-	patrol: { a: buildPatrolA, b: buildPatrolB, c: buildPatrolC },
-	explorer: { a: buildExplorerA, b: buildExplorerB, c: buildExplorerC },
-	raider: { a: buildRaiderA, b: buildRaiderB, c: buildRaiderC },
-	carrier: { a: buildCarrierA, b: buildCarrierB, c: buildCarrierC },
-	tug: { a: buildTugA, b: buildTugB, c: buildTugC },
+	interceptor: {
+		a: planned(
+			buildInterceptorA,
+			"interceptor-fuselage",
+			"spine-service",
+			"dorsal",
+		),
+		b: planned(
+			buildInterceptorB,
+			"interceptor-fuselage",
+			"drive-shoulder",
+			"starboard",
+		),
+		c: planned(
+			buildInterceptorC,
+			"interceptor-fuselage",
+			"ventral-access",
+			"ventral",
+		),
+	},
+	freighter: {
+		a: planned(
+			buildFreighterA,
+			"freighter-fuselage",
+			"gantry-spine",
+			"dorsal",
+			24,
+		),
+		b: planned(
+			buildFreighterB,
+			"freighter-fuselage",
+			"bridge-flank",
+			"starboard",
+			24,
+			{ seed: 140222523 },
+		),
+		c: planned(
+			buildFreighterC,
+			"freighter-fuselage",
+			"keel-services",
+			"ventral",
+			24,
+		),
+	},
+	miner: {
+		a: planned(buildMinerA, "miner-fuselage", "ore-service", "dorsal", 22),
+		b: planned(buildMinerB, "miner-fuselage", "skip-flank", "starboard", 22),
+		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
+	},
+	patrol: {
+		a: planned(buildPatrolA, "patrol-fuselage", "sensor-spine", "dorsal"),
+		b: planned(buildPatrolB, "patrol-fuselage", "boarding-flank", "starboard"),
+		c: planned(buildPatrolC, "patrol-fuselage", "interdictor-keel", "ventral"),
+	},
+	explorer: {
+		a: planned(
+			buildExplorerA,
+			"explorer-fuselage",
+			"habitat-spine",
+			"dorsal",
+			22,
+		),
+		b: planned(
+			buildExplorerB,
+			"explorer-fuselage",
+			"survey-flank",
+			"starboard",
+			22,
+		),
+		c: planned(
+			buildExplorerC,
+			"explorer-fuselage",
+			"stores-keel",
+			"ventral",
+			22,
+		),
+	},
+	raider: {
+		a: planned(buildRaiderA, "raider-fuselage", "breach-spine", "dorsal"),
+		b: planned(buildRaiderB, "raider-fuselage", "prize-flank", "starboard"),
+		c: planned(buildRaiderC, "raider-fuselage", "grapple-keel", "ventral"),
+	},
+	carrier: {
+		a: planned(
+			buildCarrierA,
+			"carrier-fuselage",
+			"flight-services",
+			"dorsal",
+			36,
+		),
+		b: planned(
+			buildCarrierB,
+			"carrier-fuselage",
+			"flightdeck-flank",
+			"starboard",
+			36,
+			{ seed: 1072900095 },
+		),
+		c: planned(
+			buildCarrierC,
+			"carrier-fuselage",
+			"flightdeck-keel",
+			"ventral",
+			36,
+			{ seed: 3542260001 },
+		),
+	},
+	tug: {
+		a: planned(buildTugA, "tug-fuselage", "tractor-spine", "dorsal", 18, {
+			seed: 3451922096,
+		}),
+		b: planned(buildTugB, "tug-fuselage", "crane-flank", "starboard"),
+		c: planned(buildTugC, "tug-fuselage", "tractor-keel", "ventral", 18, {
+			seed: 399698058,
+		}),
+	},
 	prospector: {
-		a: buildProspectorA,
-		b: buildProspectorB,
-		c: buildProspectorC,
+		a: planned(
+			buildProspectorA,
+			"prospector-fuselage",
+			"assay-spine",
+			"dorsal",
+		),
+		b: planned(
+			buildProspectorB,
+			"prospector-fuselage",
+			"lab-flank",
+			"starboard",
+		),
+		c: planned(
+			buildProspectorC,
+			"prospector-fuselage",
+			"drill-keel",
+			"ventral",
+		),
 	},
 	dreadnought: {
-		a: buildDreadnoughtA,
-		b: buildDreadnoughtB,
-		c: buildDreadnoughtC,
+		a: planned(
+			buildDreadnoughtA,
+			"dreadnought-fuselage",
+			"gun-services",
+			"dorsal",
+			40,
+		),
+		b: planned(
+			buildDreadnoughtB,
+			"dreadnought-fuselage",
+			"armour-flank",
+			"starboard",
+			40,
+		),
+		c: planned(
+			buildDreadnoughtC,
+			"dreadnought-fuselage",
+			"armour-keel",
+			"ventral",
+			40,
+		),
 	},
-	voyager: { a: buildVoyagerA, b: buildVoyagerB, c: buildVoyagerC },
+	voyager: {
+		a: planned(
+			buildVoyagerA,
+			"voyager-fuselage",
+			"spine-machinery",
+			"dorsal",
+			18,
+		),
+		b: planned(
+			buildVoyagerB,
+			"voyager-fuselage",
+			"tank-services",
+			"starboard",
+			18,
+		),
+		c: planned(
+			buildVoyagerC,
+			"voyager-fuselage",
+			"pod-services",
+			"ventral",
+			18,
+		),
+	},
 };
 
 /**
@@ -6406,9 +6606,11 @@ export function buildShipMesh(
 	root.userData.role = HULL_SPECS[id].role;
 	root.userData.variant = variant;
 	root.userData.designRound = SHIP_DESIGN_ROUND;
-	BUILDERS[id][variant](root, makePalette(id));
+	const plan = SHIP_DETAIL_PLANS[id][variant];
+	plan.build(root, makePalette(id));
 	// Last, and it has to be: the lights are placed from the built hull's own
 	// bounding box, so they cannot be added before there is a hull to measure.
 	addNavLights(root);
+	buildShipDetails(root, id, variant, plan, HULL_REACH_KM[id]);
 	return { root };
 }

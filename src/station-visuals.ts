@@ -12,14 +12,16 @@
  *
  * **The texels themselves moved to `surface.ts` in #101**, which gave the
  * generators a second and a third consumer. What is left here is the station's
- * half: `STATION_VISUALS`, the detail bands, the waveforms, and two thin
+ * half: `STATION_VISUALS`, the waveforms, and two thin
  * wrappers that pass a role's profile to the shared generator with the role as
- * its hash tag. `PLATE_TEXTURE_SIZE` and `PlatingProfile` are **not** re-exported
+ * its hash tag. The directional detail state machine moved to
+ * `detail-level.ts` when ships became its second consumer; this module keeps
+ * compatibility re-exports rather than a second implementation.
+ * `PLATE_TEXTURE_SIZE` and `PlatingProfile` are **not** re-exported
  * from here: two importable paths for one canonical name is how new code picks
  * the wrong one, and the handful of importers were repointed at `surface.ts`
  * instead. What this module owns is `STATION_VISUALS`, the per-role figures
- * `docs/specs/station-visuals.md` §4 describes, the detail bands and the
- * waveforms.
+ * `docs/specs/station-visuals.md` §4 describes, and the waveforms.
  *
  * **The plating is a `DataTexture`, never a `CanvasTexture`** (§4). This module
  * is reached from `tests/`, which has no `document`. A canvas would force a
@@ -43,7 +45,11 @@ import {
 	seamNormalTexels,
 	wearTexels,
 } from "./surface";
-import { HANDOFF_HYSTERESIS } from "./units";
+export {
+	DETAIL_RADII,
+	detailLevel as stationDetailLevel,
+} from "./detail-level";
+export type { DetailLevel as StationDetailLevel } from "./detail-level";
 
 /**
  * A station **finish** (#202): everything about a station's surface and
@@ -259,8 +265,6 @@ export const stationMapSize = () =>
  * `full` is a station you are flying at, `reduced` one in the same volume of
  * space, `outline` a lit shape among the planets.
  */
-export type StationDetailLevel = "full" | "reduced" | "outline";
-
 /** What kind of light a fixture is, which is what decides its waveform. Here
  *  rather than in `station-mesh.ts` because `fixtureIntensity` below is the
  *  function that answers for every member. */
@@ -327,32 +331,6 @@ export const SPEC_FIXTURE_NAMES: Readonly<
  * 1.5 km frame of detail that is still legible. `distanceKm / silhouetteKm` is
  * the same question asked of every type.
  */
-export const DETAIL_RADII = { full: 40, reduced: 400 } as const;
-
-/**
- * Which level to draw, given the current one.
- *
- * The same state machine as `layerFor` (`units.ts`) and reading the same
- * `HANDOFF_HYSTERESIS`, so the two bands cannot drift apart: a station already
- * at a level is held there until it is 5% past the threshold. Without the
- * directional band a station parked on an edge switches its whole detail set
- * every frame, which is far more visible than any detail it is choosing
- * between.
- *
- * `current` is `undefined` for a station not yet placed, which resolves as the
- * undirected reading.
- */
-export function stationDetailLevel(
-	current: StationDetailLevel | undefined,
-	apparentRadii: number,
-): StationDetailLevel {
-	const held = (threshold: number, level: StationDetailLevel) =>
-		current === level ? threshold * HANDOFF_HYSTERESIS : threshold;
-	if (apparentRadii <= held(DETAIL_RADII.full, "full")) return "full";
-	if (apparentRadii <= held(DETAIL_RADII.reduced, "reduced")) return "reduced";
-	return "outline";
-}
-
 /** The one emissive signature and the one motion a role carries (§5). */
 export interface ActivityProfile {
 	/** Strobe flash period, seconds. Zero for a role with no strobes. */

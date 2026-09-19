@@ -56,7 +56,8 @@ import { revolve } from "./loft";
 import { castOntoStructure } from "./station-greebles";
 import { STATION_GEOMETRY, type StationType } from "./station";
 import type { StationFormId, StationFixture } from "./station-mesh";
-import type { StationDetailLevel, StationFixtureKind } from "./station-visuals";
+import type { DetailLevel } from "./detail-level";
+import type { StationFixtureKind } from "./station-visuals";
 import { STATION_VISUALS } from "./station-visuals";
 
 /** The unit box and the unit tube every member is an instance of. Built once
@@ -185,7 +186,7 @@ export class Pools {
 	 * fixtures, whose members are sub-pixel past forty radii; none for the
 	 * Assembly's own structure, which is the station and never hides.
 	 */
-	emit(into: THREE.Group, prefix: string, detail?: StationDetailLevel) {
+	emit(into: THREE.Group, prefix: string, detail?: DetailLevel) {
 		for (const list of this.lists.values()) {
 			const mesh = new THREE.InstancedMesh(
 				list.geometry,
@@ -613,7 +614,7 @@ export function buildMacroFixtures(site: FixtureSite): THREE.Group {
 	// `detail()` is `station-mesh.ts`'s, and this module cannot import it
 	// without a cycle; the tag is the same field it writes, and
 	// `buildStationForm` collects on the field.
-	group.userData.minDetail = "reduced" satisfies StationDetailLevel;
+	group.userData.minDetail = "reduced" satisfies DetailLevel;
 	const pools = new Pools();
 	const mount = mounter(site.structure, site.type);
 	const visuals = STATION_VISUALS[site.type];
