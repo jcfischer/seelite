@@ -508,10 +508,23 @@ test("a carrier off its schedule carries the word and how far its station is", (
 });
 
 test("with no station to point at it says the fact and no figure", () => {
-	// A missing station position is a `null`, not a 0. Printing `HOME 0.0 km`
-	// would tell the pilot the station is beside them, which is the opposite of
-	// not knowing where it is.
+	// A missing station position is a `null`, not a 0.
 	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
+});
+
+test("and a station so close the figure prints as zero says the fact alone too", () => {
+	// The case the `null` guard cannot see, and the common one: the divert lands
+	// while the pilot is beside the station, and the body is a few dozen metres
+	// off. `range` renders 40 m as `0.0 km`, and `DIVERTING · HOME 0.0 km` is the
+	// sentence the cue's own contract forbids — the figure says the station is
+	// right here, the word says the ship has gone somewhere, and only one of those
+	// is a fact the pilot can act on. So the promise is about the **printed**
+	// reading, not about the number being exactly zero, because the number is
+	// essentially never zero and the reading is.
+	expect(trafficDivertCue("parked-home", 0.04)).toBe(DIVERT_LABEL);
+	expect(trafficDivertCue("parked-home", 0)).toBe(DIVERT_LABEL);
+	// And the figure comes back the moment it can say anything.
+	expect(trafficDivertCue("parked-home", 0.1)).toContain("HOME 0.1 km");
 });
 
 /**

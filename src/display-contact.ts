@@ -205,9 +205,20 @@ export const DIVERT_LABEL = "DIVERTING";
 export const trafficDivertCue = (
 	presence: TrafficPresence,
 	homeKm: number | null,
-): string | null =>
-	presence === "parked-home"
-		? homeKm === null
-			? DIVERT_LABEL
-			: `${DIVERT_LABEL} · HOME ${range(homeKm)}`
-		: null;
+): string | null => {
+	if (presence !== "parked-home") return null;
+	if (homeKm === null) return DIVERT_LABEL;
+	const printed = range(homeKm);
+	// **Suppressed on what the pilot would read, not on the arithmetic.** A `null`
+	// is the case of no station to point at, and guarding only that leaves the
+	// common one: a pilot standing beside the station when the divert lands is a
+	// few dozen metres from the body, and `range` renders that as `0.0 km` — the
+	// one figure this function's own contract rules out, saying the station is
+	// right here while the word beside it says the ship is somewhere else. Tested
+	// against `range(0)` rather than the string `"0.0 km"` so it is the format
+	// doing the deciding: if `range` gains a rung or changes its decimals, the
+	// suppression follows it instead of quietly going stale on a literal.
+	return printed === range(0)
+		? DIVERT_LABEL
+		: `${DIVERT_LABEL} · HOME ${printed}`;
+};

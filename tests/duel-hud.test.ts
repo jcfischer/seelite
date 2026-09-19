@@ -245,6 +245,34 @@ describe("the widest line a selected target can print", () => {
 				);
 	});
 
+	test("a sweep over every pool figure bounds it, not only the walks", () => {
+		// The walks above are what the game actually produces. They are not the
+		// whole argument that this is the widest reading: the doc's claim is that
+		// one case covers the roster because both facings are clamped to
+		// `SHIELD_POOL` and a live hull's percent tops out at 100, and a claim about
+		// a clamp wants the sweep that matches it rather than a sample that happens
+		// to agree. So: every pool figure the form can print, both facings, crossed.
+		// A pool that could print a fourth character, or a percent that could print
+		// four, puts this red at the number that does it instead of on a glass.
+		const widest = targetConditionWidest();
+		const figures: number[] = [];
+		for (let n = 0; n <= SHIELD_POOL; n++) figures.push(n);
+		// `hull <= hullMax`, and that limit is doing real work rather than tidying
+		// the sweep: the first version crossed every hull against every capacity and
+		// went red at 27 characters, because a 2635-point hull over a 1-point capacity
+		// prints `HULL 263500%`. That is not a bound failing — it is the unclamped
+		// ceiling that `printHullPercent`'s own row says is deliberate, reached
+		// through an invariant the sim cannot break. A bound on reachable readings is
+		// allowed to assume the invariant; what it may not do is assume the clamp.
+		for (const fore of figures)
+			for (const aft of figures)
+				for (const hullMax of [1, 85, 215, 2635])
+					for (const hull of [1, 2, 50, hullMax].filter((h) => h <= hullMax))
+						expect(
+							targetConditionLine({ fore, aft, hull, hullMax }).text.length,
+						).toBeLessThanOrEqual(widest.length);
+	});
+
 	test("it is attained, so it is a bound and not a guess with room in it", () => {
 		const widest = targetConditionWidest();
 		const lengths = new Set<string>();
