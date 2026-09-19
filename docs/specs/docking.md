@@ -562,6 +562,27 @@ it without supplying another exit. There is no fine, no soft path,
 and no new economic object: one rule, Elite's own (shoot near the station and
 you cannot dock there), reached by a different route.
 
+**#366 arrived at that sentence, and kept it.** There are now two reasons a
+station will not admit this pilot, and they are two rules with two exits, not one
+rule with two names:
+
+| | Why | Where it lives | Its exit |
+| --- | --- | --- | --- |
+| **the flip** | barged without a grant, or failed #13 §5.1.1's scan | `DockingState.hostile`, session state | `HOSTILE_COOLDOWN_S`, unchanged, still 600 s |
+| **the law** | it saw an offence (H5), or it is a shipyard and the pilot is Wanted (H7) | derived from the saved `LegalStatus` on read (`legal.ts`) | heat decaying below Wanted |
+
+The interim cooldown is the flip's exit and nothing else. **It is not the law's,
+and that is a correctness point rather than a tidy one**: the two arrive at the
+same denial (`reason: "hostile"`) through different fields, and a law refusal
+written into `hostile` would inherit a 600 s countdown — which both punishes a
+pilot who never barged and keeps the station hostile for ten minutes after the
+reason for it has gone. `ClearanceRequest.refusedByLaw` and its twin on
+`attemptEntry` are the law's door; they are checked *before* the scan branch,
+because a station that will not admit this pilot conducts no scan of their hold.
+
+The barge-without-clearance flip keeps its own 600 s cooldown for the reason
+above: it is a different offence from the one H5 witnesses.
+
 The protocol is where #13 §5.1.1's **shipyard contraband scan** lands. #13
 required the scan and gave it no moment; requesting clearance is that moment, so
 a hostile arrival is something the player *asked for an answer about* rather
@@ -841,10 +862,13 @@ before merge.
   on the pools (2026-09-14):** shields recharge, hull does not, so a failed
   entry that stays inside the fore shield costs seconds of lowered shields and
   nothing lasting; repair of hull damage is still open. #8 also owns replacing
-  §6's interim hostility cooldown;
+  §6's interim **flip** cooldown;
   the
-  legal-status predicate behind §6's shipyard scan and the decay that clears
-  station hostility. It inherits §9.1.10 as a test it must satisfy, not author.
+  legal-status predicate behind §6's shipyard scan. What is *not* #8's to build
+  any more: the decay that clears a station's hostility arrived with #362's third
+  change (`civilian-combat.md` H5, H6, H7 — witnesses on the saved
+  `LegalStatus`, and the shipyard's refusal of a Wanted pilot), and it is a
+  second, derived hostility rather than a replacement of the flip. It inherits §9.1.10 as a test it must satisfy, not author.
 - **#148 (station traffic)** — owns the Traffic actors and replaces §6.1's
   injected occupancy with real berth and Transit-lane queues.
 - **The HUD node** — inherits §8's two cues.
@@ -867,10 +891,14 @@ before merge.
 4. **Three numbers are chosen, not flown** — the 0.10 km/s gate
    (§3.1), and check 2's 35° and check 4's 50° (§3.2). They are where this spec
    is most likely to be wrong, and §9.2's probes are where that shows up.
-5. **Station hostility exits on an interim timer this node invented** (§6). The
-   flip ships now and its real exit — legal-status decay — is #8's. A 600 s
+5. **The flip's hostility exits on an interim timer this node invented** (§6).
+   The flip ships now and its real exit — legal-status decay — is #8's. A 600 s
    cooldown stands in, because without one a lapsed grant plus one barge would
-   lock a player out of a system's only station permanently.
+   lock a player out of a system's only station permanently. **The second
+   hostility, the law's, is no longer in that position**: #366 built it with its
+   real exit from the start (heat decaying below Wanted, `civilian-combat.md` H5
+   and H7), and it is a separate field for exactly that reason. What is still
+   interim is the flip alone.
 6. **A grant can be taken from further away than it can be flown from**
    (implementation finding, 2026-08-27). §6 grants anywhere inside
    `VICINITY_KM` = 10,000 km, and defends the 600 s window with an arrival

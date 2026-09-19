@@ -47,6 +47,7 @@ import {
 	serializeWorld,
 	setDeficits,
 	setLegalHeat,
+	setLegalWitnesses,
 	visit,
 	WORLD_GENERATOR_VERSION,
 	WORLD_SCHEMA_VERSION,
@@ -1207,7 +1208,11 @@ describe("§9.6 round trip", () => {
 		for (const g of [1, 2, 4, 5, 6, 7])
 			expect(Object.keys(after.galaxies[g].objective)).toEqual([]);
 		expect(after.galaxies[0].visited).toEqual([3, 11]);
-		expect(after.galaxies[0].legalStatus).toEqual({ heat: 42, updatedAt: 20 });
+		expect(after.galaxies[0].legalStatus).toEqual({
+			heat: 42,
+			updatedAt: 20,
+			witnesses: [],
+		});
 		expect(after.galaxies[3].visited).toEqual([]);
 	});
 
@@ -1215,6 +1220,97 @@ describe("§9.6 round trip", () => {
 		const after = parseWorld(serializeWorld(populated()));
 		expect(after.galaxies[0].deficits[KEY]?.goods.Food).toBe(12);
 		expect(after.galaxies[0].deficits[KEY]?.updatedAt).toBe(20);
+	});
+});
+
+describe("#366 H6: `witnesses` across the save boundary", () => {
+	/** Re-hash a hand-edited body, which is the only way to speak as an older
+	 *  build did: the integrity field covers the canonical body, so a save whose
+	 *  `legalStatus` never held a `witnesses` member has to be *hashed* without
+	 *  one to be the artefact a player actually has. */
+	const rehash = (raw: unknown): unknown => {
+		const body = { ...(raw as Record<string, unknown>) };
+		delete body.integrity;
+		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+	};
+
+	const legalOf = (raw: unknown, galaxy = 0) =>
+		(raw as { galaxies: Array<{ legalStatus: Record<string, unknown> }> })
+			.galaxies[galaxy].legalStatus;
+
+	test("an empty list is not written at all", () => {
+		// `knownPrivateFacts` is omitted when absent for the same reason. Written
+		// as `"witnesses": []` on every row, the canonical body changes bytes for
+		// every save the game has ever taken — and the FNV-1a over that body then
+		// refuses a save written before the field existed. That is a worse
+		// failure than the schema bump H6 declined, because it says "integrity".
+		const before = setLegalHeat(newWorld(WORLD), 0, 42, 20);
+		const raw = serializeWorld(before);
+		expect(legalOf(raw)).not.toHaveProperty("witnesses");
+		expect(parseWorld(raw)).toEqual(before);
+	});
+
+	test("a save written before the field existed parses to an empty list", () => {
+		// Stripped and re-hashed: the bytes the previous build actually wrote.
+		const raw = rehash(serializeWorld(setLegalHeat(newWorld(WORLD), 2, 40, 5)));
+		delete legalOf(raw, 2).witnesses;
+		expect(parseWorld(raw).galaxies[2].legalStatus).toEqual({
+			heat: 40,
+			updatedAt: 5,
+			witnesses: [],
+		});
+	});
+
+	test("a witnessed list round-trips, in the canonical carrier order", () => {
+		let world = setLegalHeat(newWorld(WORLD), 0, 40, 0);
+		world = setLegalWitnesses(world, 0, [OTHER, KEY], 0);
+		const raw = serializeWorld(world);
+		// Canonical order, not the order the offences happened in: two pilots who
+		// offended in opposite orders write the same bytes.
+		expect(legalOf(raw).witnesses).toEqual(
+			[KEY, OTHER].sort(compareCarrierKeys),
+		);
+		expect(parseWorld(raw)).toEqual(world);
+	});
+
+	test("a witness that is not a carrier key is refused, not quietly dropped", () => {
+		// A bare `Station.id` in this list would read as "this system's station"
+		// in every system, which is the corruption the `CarrierKey` brand exists
+		// to stop — and a parse that filtered it would pass the save through with
+		// the wrong station cleared.
+		let world = setLegalHeat(newWorld(WORLD), 0, 40, 0);
+		world = setLegalWitnesses(world, 0, [KEY], 0);
+		const raw = rehash(serializeWorld(world));
+		legalOf(raw).witnesses = ["station-trade"];
+		expect(() => parseWorld(raw)).toThrow(/witness/i);
+	});
+
+	test("a duplicated witness is refused at the write and at the parse", () => {
+		// The writer holds each station once and says so; a parse that folded a
+		// duplicate would hide a writer that had stopped holding them, which is
+		// H6's bound on the list's size and the reason it can be bounded at all.
+		const world = setLegalHeat(newWorld(WORLD), 0, 40, 0);
+		expect(() => setLegalWitnesses(world, 0, [KEY, KEY], 0)).toThrow(
+			/witness/i,
+		);
+		const raw = rehash(serializeWorld(setLegalWitnesses(world, 0, [KEY], 0)));
+		legalOf(raw).witnesses = [KEY, KEY];
+		expect(() => parseWorld(raw)).toThrow(/witness/i);
+	});
+
+	test("a witness list out of canonical order is refused, not re-sorted", () => {
+		// The order is the writer's to establish. A parse that quietly sorted
+		// would accept a body the canonicaliser could never have produced, and
+		// the save would then re-hash to different bytes than it arrived with.
+		const world = setLegalWitnesses(
+			setLegalHeat(newWorld(WORLD), 0, 40, 0),
+			0,
+			[KEY, OTHER],
+			0,
+		);
+		const raw = rehash(serializeWorld(world));
+		legalOf(raw).witnesses = [OTHER, KEY];
+		expect(() => parseWorld(raw)).toThrow(/witness/i);
 	});
 });
 

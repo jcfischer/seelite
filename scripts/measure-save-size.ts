@@ -54,6 +54,18 @@ interface Tier {
 	knowledge: boolean;
 	objective: boolean;
 	deficitGoods: number;
+	/**
+	 * Whether this tier holds the **witness bound** (H6): every station in the
+	 * galaxy listed as having seen an offence.
+	 *
+	 * That is the list's entire possible size — it holds each station once per
+	 * galaxy, so nothing a pilot does can lengthen it past that. The saturated
+	 * tiers carry it because they are ceilings. The play tiers carry none, and
+	 * that is not an omission: `canonicalEnvelope` drops an empty list, so a
+	 * pilot who has not offended beside a station pays **nothing** for the member
+	 * existing. `witnessCost` below is what prices the difference.
+	 */
+	witnesses: boolean;
 }
 
 const TIERS: Tier[] = [
@@ -65,6 +77,7 @@ const TIERS: Tier[] = [
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
+		witnesses: true,
 	},
 	{
 		name: "T2 stations only, all 8 galaxies saturated",
@@ -74,6 +87,7 @@ const TIERS: Tier[] = [
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
+		witnesses: true,
 	},
 	{
 		name: "T3 one galaxy saturated incl. Traffic",
@@ -83,6 +97,7 @@ const TIERS: Tier[] = [
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
+		witnesses: true,
 	},
 	{
 		name: "T4 one galaxy, stations only, saturated",
@@ -92,6 +107,7 @@ const TIERS: Tier[] = [
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
+		witnesses: true,
 	},
 	{
 		name: "T5 heavy play: 200 systems, stations, knowledge+deficits",
@@ -101,6 +117,7 @@ const TIERS: Tier[] = [
 		knowledge: true,
 		objective: false,
 		deficitGoods: 6,
+		witnesses: false,
 	},
 	{
 		name: "T6 typical: 50 systems, stations, knowledge+deficits",
@@ -110,6 +127,7 @@ const TIERS: Tier[] = [
 		knowledge: true,
 		objective: false,
 		deficitGoods: 4,
+		witnesses: false,
 	},
 ];
 
@@ -124,6 +142,8 @@ const finite = (what: string, value: number): number => {
 interface Row {
 	name: string;
 	carriers: number;
+	bytes: number;
+	witnesses: number;
 	kibUtf16: number;
 	kibUtf8: number;
 	writeMs: number;
@@ -133,17 +153,23 @@ interface Row {
 function build(tier: Tier): Row {
 	const world: WorldState = newWorld(SEED);
 	let carriers = 0;
+	let witnesses = 0;
 	for (let g = 0; g < tier.galaxies && g < GALAXY_COUNT; g++) {
 		const galaxy = generateGalaxy(SEED, g);
 		const env: GalaxyEnvelope = world.galaxies[g];
 		const records = galaxy.systems.slice(0, tier.systems);
 		let inGalaxy = 0;
 		env.visited = records.map((_, i) => i);
+		// Every berth in the galaxy, for the witness bound. Traffic carriers are
+		// not in it: H6 lists the *station* an offence happened beside.
+		const berths: ReturnType<typeof carrierKey>[] = [];
 		for (const record of records) {
 			const contents = generateContents(record);
 			const keys: string[] = [];
 			for (const station of contents.stations) {
-				keys.push(carrierKey(record.index, station.localCarrierId));
+				const berth = carrierKey(record.index, station.localCarrierId);
+				keys.push(berth);
+				berths.push(berth);
 				if (tier.traffic)
 					for (const actor of stationTrafficRoster(record.index, station))
 						keys.push(actor.key);
@@ -222,6 +248,19 @@ function build(tier: Tier): Row {
 		if (tier.knowledge) check("knowledge", Object.keys(env.knowledge).length);
 		if (tier.deficitGoods > 0)
 			check("deficit", Object.keys(env.deficits).length);
+		if (tier.witnesses) {
+			// The same collision check the domains get: a repeated berth would
+			// understate the ceiling, and `parseWorld` refuses a duplicate — so a
+			// silent one here would take the whole run down far from its cause.
+			if (new Set(berths).size !== berths.length)
+				throw new Error(`galaxy ${g}: ${berths.length} berths collide`);
+			env.legalStatus = {
+				heat: 100,
+				updatedAt: 123456.789,
+				witnesses: berths,
+			};
+			witnesses += berths.length;
+		}
 	}
 	const t0 = performance.now();
 	const json = JSON.stringify(serializeWorld(world));
@@ -231,6 +270,8 @@ function build(tier: Tier): Row {
 	return {
 		name: tier.name,
 		carriers: finite("carriers", carriers),
+		bytes: finite("bytes", json.length),
+		witnesses: finite("witnesses", witnesses),
 		kibUtf16: finite("kibUtf16", Math.round((json.length * 2) / 1024)),
 		kibUtf8: finite(
 			"kibUtf8",
@@ -243,10 +284,32 @@ function build(tier: Tier): Row {
 
 const rows = TIERS.map(build);
 console.log(
-	"| Tier | Carriers | KiB UTF-16 | KiB UTF-8 | write ms | read ms |",
+	"| Tier | Carriers | Witnessed | KiB UTF-16 | KiB UTF-8 | write ms | read ms |",
 );
-console.log("|---|---|---|---|---|---|");
+console.log("|---|---|---|---|---|---|---|");
 for (const row of rows)
 	console.log(
-		`| ${row.name} | ${row.carriers} | ${row.kibUtf16} | ${row.kibUtf8} | ${row.writeMs} | ${row.readMs} |`,
+		`| ${row.name} | ${row.carriers} | ${row.witnesses} | ${row.kibUtf16} | ${row.kibUtf8} | ${row.writeMs} | ${row.readMs} |`,
 	);
+
+// **What the witness list costs, priced by difference rather than asserted.**
+// H6 claims the list is bounded and that an empty one is free; the first half is
+// the `Witnessed` column and this is the second. T4 is the one-galaxy tier, so
+// the list here is at exactly the bound H6 states — every berth in one galaxy —
+// and the two builds differ by that flag and nothing else.
+const BOUND_TIER = TIERS.findIndex((t) => t.name.startsWith("T4"));
+if (BOUND_TIER >= 0) {
+	const withWitnesses = rows[BOUND_TIER];
+	const bare = build({ ...TIERS[BOUND_TIER], witnesses: false });
+	const added = withWitnesses.bytes - bare.bytes;
+	console.log(
+		`\nWitness list at H6's bound (T4, one galaxy, every berth): ` +
+			`${withWitnesses.witnesses} berths add ${added} UTF-16 code units ` +
+			`(${added * 2} bytes) on top of the same tier's ${bare.bytes} — ` +
+			`${((added * 2) / withWitnesses.witnesses).toFixed(1)} bytes per berth held.`,
+	);
+	console.log(
+		"An unwitnessed row adds nothing: `canonicalEnvelope` omits an empty list, " +
+			"which is also what keeps a save taken before #366 hashing to what it was written with.",
+	);
+}
