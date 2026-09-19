@@ -45,16 +45,16 @@ const PRIMITIVES = [box, shared(tank), shared(fin)] as const;
 
 const machinery = shared(
 	new THREE.MeshStandardMaterial({
-		color: 0x59656e,
-		roughness: 0.58,
-		metalness: 0.52,
+		color: 0x8296a3,
+		roughness: 0.5,
+		metalness: 0.46,
 	}),
 );
 const stripMaterial = shared(
 	new THREE.MeshStandardMaterial({
-		color: 0x89bbd0,
-		emissive: 0x5ba5c8,
-		emissiveIntensity: 0.42,
+		color: 0x8fdbf5,
+		emissive: 0x36bff8,
+		emissiveIntensity: 0.72,
 		roughness: 0.34,
 		metalness: 0.12,
 	}),
@@ -157,19 +157,24 @@ function addEmissives(
 	mount: ReturnType<typeof mounter>,
 	reachKm: number,
 ) {
-	const centre = mount(0.5, 0.5);
-	const strip = new THREE.Mesh(box, stripMaterial);
-	strip.name = "ship-strip";
-	strip.position
-		.copy(centre.point)
-		.addScaledVector(centre.normal, reachKm * 0.0015);
-	strip.quaternion.copy(basis(centre.normal));
-	strip.scale.set(
-		reachKm * 0.012,
-		reachKm * Math.max(0.12, (zone.to - zone.from) * 0.45),
-		reachKm * 0.003,
-	);
-	root.add(strip);
+	// A paired rail reads at the canonical chase range where one sub-pixel strip
+	// disappeared into the plate. It is repeated on every hull and therefore
+	// remains illumination, never a semantic status code.
+	for (const across of [0.36, 0.64]) {
+		const centre = mount(0.5, across);
+		const strip = new THREE.Mesh(box, stripMaterial);
+		strip.name = "ship-strip";
+		strip.position
+			.copy(centre.point)
+			.addScaledVector(centre.normal, reachKm * 0.003);
+		strip.quaternion.copy(basis(centre.normal));
+		strip.scale.set(
+			reachKm * 0.014,
+			reachKm * Math.max(0.12, (zone.to - zone.from) * 0.45),
+			reachKm * 0.004,
+		);
+		root.add(strip);
+	}
 
 	if (!(HABITABLE_HULLS as readonly HullId[]).includes(id)) return;
 	const count = reachKm > 0.1 ? 24 : 8;
@@ -224,10 +229,10 @@ export function buildShipDetails(
 				PRIMITIVES.length - 1,
 				Math.floor(random() * PRIMITIVES.length),
 			);
-			const height = reachKm * (0.008 + random() * 0.008);
+			const height = reachKm * (0.01 + random() * 0.01);
 			const scale = new THREE.Vector3(
-				reachKm * (0.012 + random() * 0.018),
-				reachKm * (0.012 + random() * 0.025),
+				reachKm * (0.016 + random() * 0.024),
+				reachKm * (0.018 + random() * 0.032),
 				height,
 			);
 			const rotation = basis(at.normal).multiply(

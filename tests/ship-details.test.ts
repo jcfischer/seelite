@@ -108,7 +108,7 @@ describe("authored ship machinery regions", () => {
 });
 
 describe("ship emissive inventory", () => {
-	test("every variant has a strip and beacon; only inhabited hulls have windows", () => {
+	test("every variant has paired strips and a beacon; only inhabited hulls have windows", () => {
 		const inhabited = new Set<HullId>(HABITABLE_HULLS);
 		expect([...inhabited]).toEqual(["freighter", "carrier", "dreadnought"]);
 		for (const { id, variant } of variants) {
@@ -116,7 +116,7 @@ describe("ship emissive inventory", () => {
 			expect([id, variant, meshesNamed(root, "ship-strip").length]).toEqual([
 				id,
 				variant,
-				1,
+				2,
 			]);
 			expect(root.getObjectByName("nav-lights")).toBeDefined();
 			expect([id, variant, meshesNamed(root, "ship-windows").length]).toEqual([

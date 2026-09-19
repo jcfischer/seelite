@@ -6143,7 +6143,7 @@ const planned = (
 	part: string,
 	name: string,
 	surface: ShipSurface,
-	count = 7,
+	count = 18,
 ): BuilderPlan => ({
 	build,
 	zones: [{ name, part, surface, from: 0.38, to: 0.72, count }],
@@ -6162,7 +6162,12 @@ export const SHIP_DETAIL_PLANS: Record<
 	Record<HullVariantId, BuilderPlan>
 > = {
 	courier: {
-		a: planned(buildCourierA, "courier-fuselage", "dorsal-service", "dorsal"),
+		a: planned(
+			buildCourierA,
+			"courier-dorsal-hull",
+			"dorsal-service",
+			"dorsal",
+		),
 		b: planned(buildCourierB, "courier-fuselage", "port-utility", "port"),
 		c: planned(buildCourierC, "courier-fuselage", "belly-machinery", "ventral"),
 	},
@@ -6192,27 +6197,27 @@ export const SHIP_DETAIL_PLANS: Record<
 			"freighter-fuselage",
 			"gantry-spine",
 			"dorsal",
-			10,
+			24,
 		),
 		b: planned(
 			buildFreighterB,
 			"freighter-fuselage",
 			"command-flank",
 			"starboard",
-			10,
+			24,
 		),
 		c: planned(
 			buildFreighterC,
 			"freighter-fuselage",
 			"keel-services",
 			"ventral",
-			10,
+			24,
 		),
 	},
 	miner: {
-		a: planned(buildMinerA, "miner-fuselage", "ore-service", "dorsal", 9),
-		b: planned(buildMinerB, "miner-fuselage", "skip-flank", "starboard", 9),
-		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 9),
+		a: planned(buildMinerA, "miner-fuselage", "ore-service", "dorsal", 22),
+		b: planned(buildMinerB, "miner-fuselage", "skip-flank", "starboard", 22),
+		c: planned(buildMinerC, "miner-fuselage", "refinery-spine", "dorsal", 22),
 	},
 	patrol: {
 		a: planned(buildPatrolA, "patrol-fuselage", "sensor-spine", "dorsal"),
@@ -6225,21 +6230,21 @@ export const SHIP_DETAIL_PLANS: Record<
 			"explorer-fuselage",
 			"habitat-spine",
 			"dorsal",
-			9,
+			22,
 		),
 		b: planned(
 			buildExplorerB,
 			"explorer-fuselage",
 			"survey-flank",
 			"starboard",
-			9,
+			22,
 		),
 		c: planned(
 			buildExplorerC,
 			"explorer-fuselage",
 			"stores-keel",
 			"ventral",
-			9,
+			22,
 		),
 	},
 	raider: {
