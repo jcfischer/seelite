@@ -173,7 +173,7 @@ async function selectSemantic(input, judge, forcedProbes) {
 	try {
 		response = await judge({
 			state: {
-				reviewer_intent: input.intent ?? "",
+				reviewer_intent: input.intent,
 				untrusted_evidence: {
 					changed_files: input.changedFiles,
 				},

@@ -2,14 +2,11 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const unquote = (value) => {
+const parseDotEnvValue = (value) => {
 	const trimmed = value.trim();
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'"))
-	)
-		return trimmed.slice(1, -1);
-	return trimmed;
+	const quoted = trimmed.match(/^(["'])(.*)\1(?:\s+#.*)?$/);
+	if (quoted) return quoted[2];
+	return trimmed.replace(/\s+#.*$/, "").trim();
 };
 
 /**
@@ -35,7 +32,7 @@ export function readTypeSafeApiKey({
 			/^\s*(?:export\s+)?TYPESAFE_API_KEY\s*=\s*(.*?)\s*$/,
 		);
 		if (!match) continue;
-		const value = unquote(match[1]);
+		const value = parseDotEnvValue(match[1]);
 		if (value) return value;
 	}
 	return undefined;

@@ -71,6 +71,15 @@ export function parseArgs(argv) {
 	return out;
 }
 
+const refuseIfUngated = (probes, gating, label) =>
+	probes.some(gating)
+		? null
+		: {
+				refusal:
+					`${label} selected ${probes.length} probe(s), all report-only or quarantined. ` +
+					"Their exit codes are not verdicts, so the run would assert nothing and still exit 0.",
+			};
+
 /**
  * Resolve the selector's exact-name handoff, or return null when it is absent.
  *
@@ -120,15 +129,6 @@ function resolveExactProbeFiles(args, env, available, gating, inCI) {
 		source: "PROBE_FILES",
 	};
 }
-
-const refuseIfUngated = (probes, gating, label) =>
-	probes.some(gating)
-		? null
-		: {
-				refusal:
-					`${label} selected ${probes.length} probe(s), all report-only or quarantined. ` +
-					"Their exit codes are not verdicts, so the run would assert nothing and still exit 0.",
-			};
 
 /**
  * Resolve the filter and everything that can refuse it, in one place.

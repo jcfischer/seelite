@@ -286,6 +286,19 @@ describe("the TypeSafe transport", () => {
 				readFile: () => 'OTHER_SECRET=nope\nTYPESAFE_API_KEY="file-key"',
 			}),
 		).toBe("file-key");
+		expect(
+			readTypeSafeApiKey({
+				env: {},
+				readFile: () =>
+					"TYPESAFE_API_KEY=unquoted-key # local note\nOTHER_SECRET=nope",
+			}),
+		).toBe("unquoted-key");
+		expect(
+			readTypeSafeApiKey({
+				env: {},
+				readFile: () => 'TYPESAFE_API_KEY="quoted#key" # local note',
+			}),
+		).toBe("quoted#key");
 	});
 
 	test("the evaluator refuses a missing receipt path without a stack trace", () => {
