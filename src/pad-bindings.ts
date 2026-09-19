@@ -256,12 +256,16 @@ export function padIntents(
 				focusDelta += 1;
 				continue;
 			}
+			// The shoulders step tabs on a console. The instrument is a list of
+			// switches with no tabs, so there they are claimed and do nothing
+			// (#379): a tab step nothing reads is a claim with no consumer, and
+			// letting them fall through would cycle the target under the panel.
 			if (name === "l1") {
-				tabDelta -= 1;
+				if (context === "console") tabDelta -= 1;
 				continue;
 			}
 			if (name === "r1") {
-				tabDelta += 1;
+				if (context === "console") tabDelta += 1;
 				continue;
 			}
 			if (name === "a") {
@@ -431,9 +435,7 @@ export function padFlightAxes(
 		pitch: negate(frame.axes.rightY),
 		roll: negate(frame.axes.leftX),
 		// `values`, not `held`: rule 3 of the module's header exists for this
-		// line. A trigger read as a switch is a key with extra steps. The
-		// instrument's tab steps are the shoulders, so the triggers do not
-		// collide with them there.
+		// line. A trigger read as a switch is a key with extra steps.
 		throttleTrim: frame.values.r2 - frame.values.l2,
 	};
 }

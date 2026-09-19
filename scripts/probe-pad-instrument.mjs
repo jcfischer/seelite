@@ -84,6 +84,43 @@ try {
 		`bloom ${before} → ${after}`,
 	);
 
+	// **The shoulders do nothing here (#379).** The instrument is a list of
+	// switches with no tabs, so L1 and R1 step no tab and — because they stay
+	// claimed — cycle no target either. A guard rather than a red row: on the
+	// build that emitted a tab step nothing read, nothing moved either, and the
+	// headless rows in `tests/pad-bindings.test.ts` are what went red there. This
+	// one would go red if the shoulders fell through to the flight table.
+	const instrumentState = () =>
+		perf.evaluate(() => ({
+			focus: document.querySelector("[data-perf-focus]")?.textContent ?? null,
+			target: window.__seelite.targetId,
+			leftTab: window.__seelite.leftTab,
+			rightTab: window.__seelite.rightTab,
+			held:
+				document.querySelector("[data-perf-panel]")?.dataset.perfPadFocus ??
+				null,
+		}));
+	const beforeShoulders = await instrumentState();
+	await tap(B.l1);
+	await tap(B.r1);
+	await tap(B.r1);
+	const afterShoulders = await instrumentState();
+	check(
+		"L1 and R1 in the instrument move neither its cursor, the target nor a tab",
+		afterShoulders.held === "true" &&
+			afterShoulders.focus !== null &&
+			JSON.stringify(afterShoulders) === JSON.stringify(beforeShoulders),
+		`${JSON.stringify(beforeShoulders)} → ${JSON.stringify(afterShoulders)}`,
+	);
+	// Guard: the same read does see the cursor move, so the row above can fail.
+	await tap(B.down);
+	const walked = await instrumentState();
+	check(
+		"…and d-pad down does walk the cursor, so that read can see a move",
+		walked.focus !== null && walked.focus !== afterShoulders.focus,
+		`${JSON.stringify(afterShoulders.focus)} → ${JSON.stringify(walked.focus)}`,
+	);
+
 	// **Circle gives it back, not down again.** While the instrument holds the
 	// pad the context is a console's, so down walks its rows — which is what the
 	// cursor is for. Written the other way this check went red, and the branch it
