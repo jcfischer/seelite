@@ -44,6 +44,47 @@ const lintAs = (path: string, source: string) => {
 	}
 };
 
+/**
+ * Run the wiring gate over a scratch `scripts/` holding copies of the gate, the
+ * launcher and its one import, plus `files`. The gate scans its own directory,
+ * so this is what lets a case be built to make it fail without touching the
+ * real tree.
+ */
+const wiringOver = (files: Record<string, string>) => {
+	const root = mkdtempSync(join(tmpdir(), "seelite-wiring-"));
+	try {
+		for (const rel of [
+			"check-launcher-wiring.mjs",
+			"probe-guard.mjs",
+			"lib/tree-declaration.mjs",
+		]) {
+			mkdirSync(dirname(join(root, "scripts", rel)), { recursive: true });
+			copyFileSync(repoPath(`scripts/${rel}`), join(root, "scripts", rel));
+		}
+		for (const [rel, source] of Object.entries(files)) {
+			mkdirSync(dirname(join(root, "scripts", rel)), { recursive: true });
+			writeFileSync(join(root, "scripts", rel), source);
+		}
+		return spawnSync(
+			"node",
+			[join(root, "scripts/check-launcher-wiring.mjs")],
+			{
+				encoding: "utf8",
+			},
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+};
+
+/** A probe that satisfies every rule, and the base each red case breaks once. */
+const GOOD_PROBE = `import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+const t = tally();
+const browser = await launchChromium();
+const page = await browser.newPage();
+t.watch(page);
+`;
+
 test("the launcher-wiring gate exits 0 on the tree as it stands", () => {
 	const run = spawnSync(
 		"node",
@@ -54,6 +95,48 @@ test("the launcher-wiring gate exits 0 on the tree as it stands", () => {
 	);
 	// The gate's own output names every problem, so a red run reads itself.
 	expect({ status: run.status, out: run.stdout }).toMatchObject({ status: 0 });
+});
+
+test("the launcher-wiring gate goes red for each rule it states, and only then", () => {
+	// The control first: without a passing case, a red below could be the scratch
+	// tree failing for a reason of its own.
+	expect(wiringOver({ "probe-x.mjs": GOOD_PROBE }).status).toBe(0);
+
+	const cases: Array<[string, Record<string, string>, string]> = [
+		[
+			"a page opened with no tally()",
+			{
+				"probe-x.mjs": GOOD_PROBE.replace("const t = tally();\n", "").replace(
+					"t.watch(page);\n",
+					"",
+				),
+			},
+			"calls no tally()",
+		],
+		[
+			"a tally() whose watch never reaches the page",
+			{ "probe-x.mjs": GOOD_PROBE.replace("t.watch(page);\n", "") },
+			"no watch within",
+		],
+		[
+			"a probe that mounts ?perf",
+			{ "probe-x.mjs": `${GOOD_PROBE}const opts = { perf: "1" };\n` },
+			"?perf",
+		],
+		[
+			"a helper that resolves Playwright itself",
+			{
+				"probe-x.mjs": GOOD_PROBE,
+				"lib/env.mjs": "export const d = process.env.PLAYWRIGHT_DIR;\n",
+			},
+			"still resolves Playwright itself",
+		],
+	];
+	for (const [label, files, message] of cases) {
+		const run = wiringOver(files);
+		expect({ label, status: run.status }).toEqual({ label, status: 1 });
+		expect(run.stdout).toContain(message);
+	}
 });
 
 test("the runner's environment forwards every variable the launcher reads", () => {
@@ -83,7 +166,14 @@ test("the lint tier accepts the Bun global, and the rule is scoped to scripts/",
 	).toBe(0);
 });
 
-test("the lint script exists and covers scripts/", () => {
-	const pkg = JSON.parse(readFileSync(repoPath("package.json"), "utf8"));
-	expect(pkg.scripts.lint).toMatch(/\bbiome lint\b.*\bscripts\b/);
+test("`npm run lint` runs the rule over the real tree and it is clean", () => {
+	// Through the script itself, so a `lint` entry that stopped covering
+	// `scripts/` — or stopped existing — is red here rather than green by text.
+	const run = spawnSync("npm", ["run", "lint"], {
+		cwd: repoPath("."),
+		encoding: "utf8",
+	});
+	expect({ status: run.status, out: run.stdout + run.stderr }).toMatchObject({
+		status: 0,
+	});
 });

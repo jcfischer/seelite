@@ -36,6 +36,11 @@
 // script ran. It is scoped
 // rather than tree-wide because widening it is a different decision: turning on
 // `recommended` reports the whole tree. Run it: `npm run lint`.
+//
+// What it cannot see: Biome counts the browser globals as declared, so `window`
+// or `document` written in a probe's Node scope — outside `page.evaluate` —
+// passes. It catches a misspelt or missing import, not a name that exists in
+// the wrong runtime.
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
 	"formatter": {

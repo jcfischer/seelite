@@ -53,11 +53,8 @@ jobs:
       # format` re-applies it). This gate fails the job if a PR drifts.
       - run: npm run format:check
 
-      # One rule, over `scripts/` only: a call to a name nothing declares. `tsc`
-      # type-checks the `.ts` scripts but only parses the `.mjs` ones (`allowJs`,
-      # no `checkJs`), and nothing loads a probe without a browser, so for those
-      # this is the only check that would see it before the day the script runs
-      # (#402).
+      # Undeclared names in `scripts/`; what it covers and what it cannot see is
+      # written in biome.jsonc (#402).
       - run: npm run lint
 
       # The headless tier: seeded generation, the float64 sim, the module

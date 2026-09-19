@@ -25,6 +25,8 @@ const browser = await launchChromium({ headless: !headed });
 // `pageerror` handler, which is a reporting choice worth keeping, and takes
 // the one thing `tally()` adds that they do not — a shader that fails to link
 // is a `console.error`, not a page error, so nothing here would have seen it.
+// The listener only counts; `check` below is what turns that count into a
+// failure, so pass/fail is still decided in one place.
 const t = tally();
 const checks = [];
 const check = (name, ok, detail = "") => {
@@ -504,6 +506,7 @@ try {
 			.count()) === 0,
 	);
 	await normalPage.close();
+	check("no shader failed to compile or link on either page", t.failures === 0);
 	writeFileSync(
 		`${out}/checks.json`,
 		JSON.stringify(
@@ -521,5 +524,3 @@ try {
 } finally {
 	await browser.close();
 }
-// `watchShaders` counts a failure and prints it; it cannot end the run.
-if (t.failures) process.exit(1);
