@@ -444,6 +444,8 @@ try {
 			// can be stated exactly. A browser row cannot pin an arithmetic it cannot
 			// name the inputs to, and pretending otherwise is the false-constant
 			// failure in the other direction.
+			const printed = atMark?.text?.match(/HOME (\d+(?:\.\d+)?) km$/);
+			homeKmAt = printed ? Number(printed[1]) : null;
 			// Snapshot the legal pair on the frame the divert wrote it, so each
 			// write can be measured against the status that stood before it —
 			// decayed to the same clock, and exactly, with no decay law restated
