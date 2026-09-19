@@ -397,14 +397,16 @@ try {
 				continue;
 			}
 			atMark = g.selectedRender && { ...g.selectedRender };
-			const berth = g.world.system.bodies.find(
+			// The station **body**, which is what the mark's range is measured
+			// to. A berth is a parking place inside it, and this is not that.
+			const home = g.world.system.bodies.find(
 				(b) => b.kind === "station" && b.id === actor.homeStationId,
 			);
-			homeKmAt = berth
+			homeKmAt = home
 				? Math.hypot(
-						berth.pos.x - g.world.ship.pos.x,
-						berth.pos.y - g.world.ship.pos.y,
-						berth.pos.z - g.world.ship.pos.z,
+						home.pos.x - g.world.ship.pos.x,
+						home.pos.y - g.world.ship.pos.y,
+						home.pos.z - g.world.ship.pos.z,
 					)
 				: null;
 			// Snapshot the legal pair on the frame the divert wrote it, so each
@@ -453,7 +455,7 @@ try {
 			shieldSeconds: p.shieldSeconds,
 			repairS: wreck.RAIDER_REPAIR_S,
 			parked,
-			// The mark either side of the strike, and the berth's range read the
+			// The mark either side of the strike, and the home station's range read
 			// same way the label reads it — off `units.range`, not restated here.
 			beforeMark,
 			atMark,
@@ -502,7 +504,7 @@ try {
 		JSON.stringify(diverted.beforeMark),
 	);
 	check(
-		"the frame the hull gives way puts the word and the berth's range on the name line",
+		"the frame the hull gives way puts the word and the home station range on the name line",
 		diverted.atMark !== null &&
 			diverted.atMark.id === key &&
 			diverted.atMark.text.includes(diverted.divertLabel) &&

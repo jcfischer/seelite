@@ -189,7 +189,7 @@ export const DIVERT_LABEL = "DIVERTING";
 
 /**
  * The name line's clause for a carrier that is off its schedule and being flown,
- * with how far its home berth is from the pilot.
+ * with how far its home station is from the pilot.
  *
  * **The range is the pilot's own, not the carrier's remaining distance.** The
  * label it hangs on already reads a range from the pilot to the carrier; a second
@@ -200,7 +200,7 @@ export const DIVERT_LABEL = "DIVERTING";
  *
  * **`homeKm === null` says the game does not know, and says only that.** A
  * missing station position printed as `HOME 0.0 km` would tell the pilot the
- * berth is beside them, which is the far end of wrong from the truth.
+ * station is beside them, which is the far end of wrong from the truth.
  */
 export const trafficDivertCue = (
 	presence: TrafficPresence,

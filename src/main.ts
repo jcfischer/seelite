@@ -12150,9 +12150,16 @@ class Game {
 		return null;
 	}
 
-	/** How far the carrier's home berth is from the pilot, or `null` when the
-	 *  game cannot say. A `null`, never a 0: see `trafficDivertCue`. */
-	private homeBerthKm(key: CarrierKey): number | null {
+	/** How far the carrier's **home station** is from the pilot, or `null` when
+	 *  the game cannot say. A `null`, never a 0: see `trafficDivertCue`.
+	 *
+	 *  **The station, not its berth.** A berth is a parking place inside a
+	 *  station's interior — `CONTEXT.md`, and `docking.md` §13.2 owns the
+	 *  catalogue — and this is the range to the body the berths are inside. The
+	 *  glass prints `HOME`, which is the star-side word for the place and names no
+	 *  interior slot; the berth the diverted carrier is booked into is H3c's, and
+	 *  is a different fact about the same station. */
+	private homeStationKm(key: CarrierKey): number | null {
 		const actor = this.trafficActorByKey(key);
 		if (!actor) return null;
 		// The live body, not a cached one. A station is carried around its star at
@@ -12171,8 +12178,9 @@ class Game {
 	 * that pair and not one is `trafficDivertCue`'s to explain, beside the word
 	 * itself; repeating it here is how it goes stale.
 	 *
-	 * **Presence is checked before the berth is looked for**, and not for tidiness:
-	 * the berth lookup is a `bodies.find` and a vector allocation, and the word it
+	 * **Presence is checked before the station is looked for**, and not for
+	 * tidiness: the station lookup is a `bodies.find` and a vector allocation, and
+	 * the word it
 	 * builds is discarded on every one of the ~17 s of shield-stripping a carrier
 	 * spends with its schedule still its own.
 	 */
@@ -12182,7 +12190,7 @@ class Game {
 		if (!this.trafficEngagements.has(key)) return null;
 		const presence = trafficPresence(this.carrierCondition(key));
 		if (presence !== "parked-home") return null;
-		return trafficDivertCue(presence, this.homeBerthKm(key));
+		return trafficDivertCue(presence, this.homeStationKm(key));
 	}
 
 	/** Whether the duel row shows: a raider contesting, dueling or selected. */

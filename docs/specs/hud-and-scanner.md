@@ -497,14 +497,20 @@ writes the divert — and not while the pilot is only stripping shields, because
 H3d says a shield-stripped carrier has not left its schedule. So the word
 arriving is that trigger becoming visible, and its absence is the on-time
 reading rather than a decoration that is always there. The range is the pilot's
-own to the home berth, the same measure the label already prints to the carrier;
+own to the carrier's **home station**, the same measure the label already prints
+to the carrier;
 how far the carrier has left to go is a figure the pilot cannot fly. **The word is
-the promise and the figure rides with it only when the game can locate the berth**
+the promise and the figure rides with it only when the game can locate the
+station**
 — `DIVERTING · HOME 412.0 km` when it can, `DIVERTING` alone when it cannot. A
-`null`, never `HOME 0.0 km`: a zero would tell the pilot the berth is beside them,
-which is the opposite of the one thing the word is there to say. A carrier that
-has already reached that berth is drawn standing in it and says nothing here: it
-has arrived, and that half is `civilian-combat.md` H3b's.
+`null`, never `HOME 0.0 km`: a zero would tell the pilot the station is beside
+them,
+which is the opposite of the one thing the word is there to say. **The range is to
+the station body, not to a berth** — a berth is a parking place inside a station
+(`CONTEXT.md`, `docking.md` §13.2), and the glass says `HOME` rather than naming
+an interior slot. A carrier that has already reached its home station is drawn
+standing in its berth and says nothing here: it has arrived, and that half is
+`civilian-combat.md` H3b's.
 
 The line reserves its own space in §3's declutter pass, against
 `targetConditionWidest` rather than the live reading — every pool on it moves
@@ -763,8 +769,8 @@ reading `HULL 100%` because H3d spends hull points only once a facing is gone;
 held in the beam both facings print and one comes down; the frame the hull gives
 way puts `DIVERTING · HOME <range>` on the name line where the frame before it
 carried nothing; and on that frame the facing that ran out prints 0. **The browser
-tier can only ever show the arm with a berth in it** — a tethered pilot beside a
-live station has one — so the `DIVERTING`-alone arm and the rest of the gate are
+tier can only ever show the arm with a station in it** — a tethered pilot
+beside a live one has it — so the `DIVERTING`-alone arm and the rest of the gate are
 headless: `tests/display-contact.test.ts`, which runs the gate out of `Game`'s own
 method text.
 

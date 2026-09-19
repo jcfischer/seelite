@@ -501,15 +501,15 @@ test("a carrier flying its route on time carries no state word at all", () => {
 	expect(trafficDivertCue("absent", 40)).toBe(null);
 });
 
-test("a carrier off its schedule carries the word and how far its berth is", () => {
+test("a carrier off its schedule carries the word and how far its station is", () => {
 	const cue = trafficDivertCue("parked-home", 40.25);
 	expect(cue).toContain(DIVERT_LABEL);
 	expect(cue).toContain(range(40.25));
 });
 
-test("with no berth to point at it says the fact and no figure", () => {
+test("with no station to point at it says the fact and no figure", () => {
 	// A missing station position is a `null`, not a 0. Printing `HOME 0.0 km`
-	// would tell the pilot the berth is beside them, which is the opposite of
+	// would tell the pilot the station is beside them, which is the opposite of
 	// not knowing where it is.
 	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
 });
@@ -519,7 +519,7 @@ function divertCueOf(over: Record<string, unknown> = {}) {
 	const key = "7:trade:3";
 	const subject = Object.assign(
 		Object.create(
-			methods(["selectedDivertCue", "homeBerthKm"], {
+			methods(["selectedDivertCue", "homeStationKm"], {
 				trafficDivertCue,
 				trafficPresence,
 				length,
@@ -578,7 +578,7 @@ test("nothing on the glass but an ordinary carrier gets the word", () => {
 	).toBe(null);
 });
 
-test("the berth distance is the pilot's own, off the station's live position", () => {
+test("the home-station distance is the pilot's own, off the body's live position", () => {
 	const cue = divertCueOf();
 	expect(cue).toContain("40.0 km");
 	// A station that is not in the system cannot be pointed at.
