@@ -27,8 +27,8 @@ function parseArgs(argv) {
 			out[flag.slice(2)] = true;
 			continue;
 		}
-		if (!VALUE_FLAGS.has(flag) || argv[i + 1] === undefined)
-			throw new Error(`unknown or incomplete argument: ${flag}`);
+		if (!VALUE_FLAGS.has(flag)) throw new Error(`unknown argument: ${flag}`);
+		if (argv[i + 1] === undefined) throw new Error(`${flag} requires a value`);
 		const value = argv[++i];
 		if (flag === "--changed-file") out.changedFiles.push(value);
 		else out[flag.slice(2)] = value;

@@ -305,6 +305,24 @@ describe("the TypeSafe transport", () => {
 		expect(child.stdout).not.toContain("probe selection:");
 	});
 
+	test("the CLI distinguishes unknown flags from missing values", () => {
+		const unknown = spawnSync(
+			process.execPath,
+			["scripts/select-probes.mjs", "--mystery"],
+			{ encoding: "utf8" },
+		);
+		expect(unknown.status).toBe(1);
+		expect(unknown.stderr.trim()).toBe("unknown argument: --mystery");
+
+		const incomplete = spawnSync(
+			process.execPath,
+			["scripts/select-probes.mjs", "--base"],
+			{ encoding: "utf8" },
+		);
+		expect(incomplete.status).toBe(1);
+		expect(incomplete.stderr.trim()).toBe("--base requires a value");
+	});
+
 	test("the evaluator refuses a missing key without a stack trace", () => {
 		const { TYPESAFE_API_KEY: _key, ...env } = process.env;
 		const child = spawnSync(
