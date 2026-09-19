@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { resolve } from "node:path";
 import { treeDeclaration } from "./scripts/lib/tree-declaration.mjs";
 
 export default defineConfig({
@@ -28,5 +29,15 @@ export default defineConfig({
 	},
 	build: {
 		target: "es2022",
+		rollupOptions: {
+			input: {
+				home: resolve(import.meta.dirname, "index.html"),
+				about: resolve(import.meta.dirname, "about/index.html"),
+				fieldNotes: resolve(import.meta.dirname, "field-notes/index.html"),
+				manual: resolve(import.meta.dirname, "manual/index.html"),
+				trust: resolve(import.meta.dirname, "trust/index.html"),
+				credits: resolve(import.meta.dirname, "credits/index.html"),
+			},
+		},
 	},
 });

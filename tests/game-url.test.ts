@@ -25,6 +25,8 @@ import {
 	BOOT_DIRECT,
 	BOOT_PARAM,
 	gameUrl,
+	PUBLIC_ROUTES,
+	publicUrl,
 	WORKBENCH_ROUTES,
 	workbenchUrl,
 } from "../scripts/lib/game-url.mjs";
@@ -43,7 +45,7 @@ import {
 
 const ORIGIN = "http://127.0.0.1:5199";
 
-const BUILDERS = ["gameUrl", "workbenchUrl"];
+const BUILDERS = ["gameUrl", "workbenchUrl", "publicUrl"];
 
 /**
  * Every `.goto(` in a script source whose URL is not visibly a builder's.
@@ -193,6 +195,17 @@ describe("gameUrl", () => {
 				{ override: `${ORIGIN}/?model-viewer=ship` },
 			),
 		).toThrow(/workbench/);
+	});
+});
+
+describe("publicUrl", () => {
+	test("builds only the declared static public routes", () => {
+		for (const route of PUBLIC_ROUTES) {
+			const url = new URL(publicUrl(ORIGIN, route));
+			expect(url.search).toBe("");
+			expect(url.pathname).toBe(route === "" ? "/" : `/${route}/`);
+		}
+		expect(() => publicUrl(ORIGIN, "play")).toThrow(/unknown public route/);
 	});
 });
 

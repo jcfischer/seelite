@@ -239,6 +239,17 @@ export const PROBE_CATALOG = Object.freeze(
 			["pointer lock", "head look", "console interaction", "mouse input"],
 		),
 		entry(
+			"probe-public-site.mjs",
+			"Checks every static public page for its route, privacy promise, navigation, and Play-now handoff without booting the game.",
+			[
+				"public site",
+				"static routes",
+				"privacy promise",
+				"Play now",
+				"no tracking",
+			],
+		),
+		entry(
 			"probe-raider-consequence.mjs",
 			"Checks live persistence and presentation after a raider kill, including operational condition, wreck, scoop, and revisit.",
 			["raider kill", "world state", "wreck", "cargo scoop", "revisit"],
