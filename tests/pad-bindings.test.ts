@@ -16,6 +16,7 @@ import {
 } from "../src/gamepad";
 import {
 	type PadContext,
+	type PadIntents,
 	type PointerLockMove,
 	PAD_FLIGHT_KEYS,
 	contextFliesShip,
@@ -371,29 +372,45 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 	test("every intent the instrument emits, the instrument branch reads (#379)", () => {
 		// The class, not the instance: `tabDelta` was emitted here while nothing
 		// read it, and a row asserting the emitted value was green on that
-		// defect. So every field a press yields in `instrument` must appear in
+		// defect. So every field a press yields in `instrument` must be read in
 		// `main.ts`'s instrument branch.
-		const emitted = new Set<string>();
+		//
+		// **Keyed by `PadIntents`, so a new field is a type error here** rather
+		// than a field this row silently skips (sage round 1 on #379).
+		const FIELDS: Record<keyof PadIntents, true> = {
+			keys: true,
+			focusDelta: true,
+			tabDelta: true,
+			valueDelta: true,
+			activate: true,
+			back: true,
+			instrument: true,
+		};
+		const emitted = new Set<keyof PadIntents>();
 		for (const name of STANDARD_BUTTONS) {
 			const intents = padIntents(press(name), "instrument");
-			if (intents.keys.length > 0) emitted.add("keys");
-			for (const field of [
-				"focusDelta",
-				"tabDelta",
-				"valueDelta",
-				"activate",
-				"back",
-				"instrument",
-			] as const)
-				if (intents[field]) emitted.add(field);
+			for (const field of Object.keys(FIELDS) as (keyof PadIntents)[]) {
+				const value = intents[field];
+				if (Array.isArray(value) ? value.length > 0 : value) emitted.add(field);
+			}
 		}
+		expect(emitted.size).toBeGreaterThan(0);
+		// **Fail closed on the slice.** Both markers must be found, or a missing
+		// end would run the slice to the end of the file and pick up the console
+		// branch's own `intents.tabDelta` — green on the defect again.
 		const main = codeOf("src/main.ts");
 		const at = main.indexOf("if (perf?.isFocused()) {");
 		expect(at).toBeGreaterThan(-1);
-		const branch = main.slice(at, main.indexOf("\n\t\t\treturn;\n\t\t}", at));
-		expect(emitted.size).toBeGreaterThan(0);
+		const end = main.indexOf("\n\t\t\treturn;\n\t\t}", at);
+		expect(end).toBeGreaterThan(at);
+		const branch = main.slice(at, end);
+		expect(branch).not.toContain("liveCockpit");
+		// Read means acted on: an `if` on the field or a loop over it, not a
+		// mention in a comment (the comments are already blanked by `codeOf`).
 		for (const field of emitted)
-			expect(branch, `instrument emits ${field}`).toContain(`intents.${field}`);
+			expect(branch, `instrument emits ${field}`).toMatch(
+				new RegExp(`(if \\(intents\\.${field}\\b|of intents\\.${field}\\))`),
+			);
 	});
 
 	test("the instrument still claims the six a console claims", () => {

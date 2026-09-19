@@ -73,7 +73,8 @@ measured; `probe-pointer-lock.mjs` says why, and its rows are the head turn and 
 settings screen.
 
 **`instrument`** is the frame overlay behind `?perf`, and it is the one
-exception. It takes a console's six buttons and leaves the sticks alone, because
+exception. It takes a console's six buttons, of which the shoulders do nothing
+there because it has no tabs, and leaves the sticks alone, because
 it exists to measure a frame *while it is flown* — a mode that stopped the ship
 would measure a different frame from the one it is there for.
 
