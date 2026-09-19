@@ -613,14 +613,14 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		const at = main.indexOf("private triggerHeld(): boolean {");
 		expect(at).toBeGreaterThan(-1);
 		const body = main.slice(at, main.indexOf("\n\t}", at));
-		// The button is read once, and only as the rule's argument (sage round 1:
+		// The button is read once, and only as the rule's argument (sage round 1 on #378:
 		// a bare read at either end of the `||` chain passed the first version).
 		expect(body.match(/this\.mouseFiring/g) ?? []).toHaveLength(1);
 		expect(body).toMatch(/mouseFireHeld\(\s*this\.mouseFiring,/);
 	});
 
 	test("and a press made where the mouse is suspended never becomes a trigger", () => {
-		// Sage round 1: gating only the read let a press made beside a console
+		// Sage round 1 on #378: gating only the read let a press made beside a console
 		// latch, and fire once the head came back with the button still held.
 		const main = codeOf("src/main.ts");
 		const at = main.indexOf('domElement.addEventListener("pointerdown"');

@@ -343,22 +343,18 @@ check(
 const heat = (target) => target.evaluate(() => window.__seelite.condition.heat);
 const trigger = (target) =>
 	target.evaluate(() => window.__seelite.triggerHeld());
-/** Hold the left button down for a few hundred milliseconds of frames, and read
- *  the gun: its heat before and after, and whether the trigger is held. The
- *  button stays down; the caller releases it. */
-const pressAndRead = async (target) => {
-	const cool = await heat(target);
-	await target.mouse.down();
-	await target.waitForTimeout(300);
-	await settle(target);
-	return { cool, trigger: await trigger(target), heat: await heat(target) };
-};
-/** A few hundred milliseconds more of the button held, read the same way. */
+/** A few hundred milliseconds of frames with the button as it is, and the gun
+ *  read across them: its heat before and after, and whether the trigger is held. */
 const keepAndRead = async (target) => {
 	const cool = await heat(target);
 	await target.waitForTimeout(300);
 	await settle(target);
 	return { cool, trigger: await trigger(target), heat: await heat(target) };
+};
+/** The same, from a new press. The button stays down; the caller releases it. */
+const pressAndRead = async (target) => {
+	await target.mouse.down();
+	return keepAndRead(target);
 };
 const besideAt = await page.evaluate(() => {
 	const r = window.__seelite.renderer.domElement.getBoundingClientRect();
@@ -374,7 +370,7 @@ check(
 		heldBeside.heat <= heldBeside.cool,
 	`surface=${besideSurface} trigger=${heldBeside.trigger} heat ${heldBeside.cool} -> ${heldBeside.heat}`,
 );
-// **And that press never becomes a trigger (sage round 1).** Still holding it,
+// **And that press never becomes a trigger (sage round 1 on #378).** Still holding it,
 // the head comes back to flight. A press made where the mouse is suspended is
 // not a pull of the trigger, so the gun stays quiet until a new press — the
 // pointer's own rule, where the next click and nothing else takes the lock.
