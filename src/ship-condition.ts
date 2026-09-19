@@ -161,7 +161,26 @@ export function fullCondition(hull: HullId): ShipCondition {
 	};
 }
 
-export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
+/**
+ * What a print is allowed to look at, and the narrowest type that says so.
+ *
+ * These are `Pick`s of `ShipCondition` rather than `ShipCondition` itself. The
+ * reason is not tidiness: a formatter typed against the whole condition has to be
+ * *handed* the whole condition, so every caller — and every test that wants one
+ * printed figure — invents fields it never reads, and a field added to the
+ * condition for some unrelated reason reaches into every place that only knows how
+ * to print. A full `ShipCondition` is still assignable to these, so nothing that
+ * holds a real one has to change.
+ */
+export type HullReading = Pick<ShipCondition, "hull" | "hullMax">;
+
+/** A reading that shows both facings as well as the hull. */
+export type ConditionPrint = Pick<
+	ShipCondition,
+	"fore" | "aft" | "hull" | "hullMax"
+>;
+
+export const isAlive = (c: HullReading): boolean => c.hull > 0;
 
 /**
  * The hull as a share of its own capacity, in whole percent.
@@ -191,7 +210,7 @@ export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
  * the ruling describes: a miner at 214.6 points reads 100%, whole as far as the
  * glass can tell. Only the 0 end carries a law.
  */
-export const printHullPercent = (c: ShipCondition): number =>
+export const printHullPercent = (c: HullReading): number =>
 	isAlive(c) ? Math.max(1, Math.round((c.hull / c.hullMax) * 100)) : 0;
 
 /**

@@ -298,9 +298,27 @@ describe("what a ship has to be to be dead (#367 D1)", () => {
 // half a percent reads 1% and is alive, and 0% means dead.
 // ---------------------------------------------------------------------------
 describe("a hull printed as a share of its own hull (#395)", () => {
-	test("a whole hull is 100% on every hull, and nothing prints more", () => {
+	test("a whole hull is 100% on every hull in the roster", () => {
 		for (const id of HULL_IDS)
 			expect(printHullPercent(fullCondition(id))).toBe(100);
+	});
+
+	test("a share is not clamped at the top, and that is the loud direction", () => {
+		// The title used to claim nothing prints more than 100% and only ever
+		// measured hulls at exactly capacity, which is a claim about a case it never
+		// built. There is **no** upper clamp, and the honesty of that is the point:
+		// a `hull` above `hullMax` is a broken invariant, not a display case, and
+		// `HULL 104%` is the symptom reaching the glass where a pilot can see it.
+		// Clamping here would be a formatter quietly covering for whatever wrote the
+		// figure, which is the silence `printHullPercent` exists to avoid. Nothing in
+		// the game reaches this: `applyDamage` is the writer and cannot raise a hull
+		// past its capacity.
+		expect(
+			printHullPercent({
+				...fullCondition("raider"),
+				hull: fullCondition("raider").hullMax * 1.04,
+			}),
+		).toBe(104);
 	});
 
 	test("the share is of its own hull, not of the largest one in the game", () => {

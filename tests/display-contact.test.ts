@@ -514,8 +514,17 @@ test("with no station to point at it says the fact and no figure", () => {
 	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
 });
 
-/** The gate, run from `Game`'s own method text rather than a copy of it. */
-function divertCueOf(over: Record<string, unknown> = {}) {
+/**
+ * The gate, run from `Game`'s own method text rather than a copy of it.
+ *
+ * `from` is the origin the label's ranges are measured from, which the method now
+ * takes as an argument instead of reading `world.ship.pos`: on the glass it is
+ * `camPos`, so that a mark's name-range and its `HOME` figure answer to one point
+ * and cannot round apart in chase view. A test that hands it a position is therefore
+ * testing the rule the browser cannot — the probe has no honest way to name the
+ * camera in world kilometres, so the exact arithmetic lives here.
+ */
+function divertCueOf(over: Record<string, unknown> = {}, from = v3()) {
 	const key = "7:trade:3";
 	const subject = Object.assign(
 		Object.create(
@@ -544,7 +553,7 @@ function divertCueOf(over: Record<string, unknown> = {}) {
 			...over,
 		},
 	);
-	return (subject as any).selectedDivertCue();
+	return (subject as any).selectedDivertCue(from);
 }
 
 test("the word reads the row's presence, and an operational row carries no word", () => {
@@ -598,9 +607,16 @@ test("nothing on the glass but an ordinary carrier gets the word", () => {
 	).toBe(null);
 });
 
-test("the home-station distance is the pilot's own, off the body's live position", () => {
-	const cue = divertCueOf();
-	expect(cue).toContain("40.0 km");
+test("the home-station distance is measured from where the label is drawn, not from the hull", () => {
+	// The station sits at 40 on one axis; the pilot's eye is a hundred metres up it.
+	// Read from the ship this says `40.0 km`; read from the label's own origin it
+	// says `39.9`. Only the second agrees with the range printed beside it, which is
+	// the whole reason `homeStationKm` takes the origin instead of reaching for the
+	// ship: two figures on one label, answering two questions, is a reading a pilot
+	// cannot tell apart.
+	const cue = divertCueOf({}, v3(0, 0.1, 0));
+	expect(cue).toContain("HOME 39.9 km");
+	expect(cue).not.toContain("HOME 40.0 km");
 	// A station that is not in the system cannot be pointed at.
 	expect(
 		divertCueOf({

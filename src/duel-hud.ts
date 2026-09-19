@@ -25,6 +25,7 @@ import {
 	printHull,
 	printHullPercent,
 	SHIELD_POOL,
+	type ConditionPrint,
 	type ShipCondition,
 } from "./ship-condition";
 
@@ -128,7 +129,7 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
  * hull is a share rather than a point figure — `hud-and-scanner.md` §5.4 says
  * why, and `printHullPercent` owns the law that a live hull never prints 0.
  */
-export function targetConditionLine(c: ShipCondition): {
+export function targetConditionLine(c: ConditionPrint): {
 	text: string;
 	tone: FloorTone;
 } {
@@ -159,15 +160,15 @@ export function targetConditionLine(c: ShipCondition): {
  * row goes red instead of a callsign losing its last character on the glass.
  */
 export function targetConditionWidest(): string {
-	const base: ShipCondition = {
+	// Typed as the print's own `ConditionPrint`, not as a whole `ShipCondition`:
+	// the widest reading is a question about four figures, and building a full
+	// condition to ask it meant naming an energy bank, a heat state and a strike
+	// clock that this function cannot see and does not vary.
+	const base: ConditionPrint = {
 		fore: SHIELD_POOL,
 		aft: SHIELD_POOL,
 		hull: 1,
 		hullMax: 1,
-		energy: ENERGY_BANK,
-		heat: 0,
-		heatLocked: false,
-		sinceStruckS: 0,
 	};
 	// One case, not a sweep, and the reason is in each of the three figures: both
 	// pools are clamped to `SHIELD_POOL` by `stepCondition`, and the hull is a

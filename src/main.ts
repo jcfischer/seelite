@@ -12158,8 +12158,15 @@ class Game {
 	 *  catalogue — and this is the range to the body the berths are inside. The
 	 *  glass prints `HOME`, which is the star-side word for the place and names no
 	 *  parking position inside it; the berth the diverted carrier is booked into is
-	 *  H3c's, and is a different fact about the same station. */
-	private homeStationKm(key: CarrierKey): number | null {
+	 *  H3c's, and is a different fact about the same station.
+	 *
+	 *  **Measured from `from`, which is the camera the label is drawn from, and not
+	 *  from the ship.** The name line beside this figure already prints a range
+	 *  taken at `camPos`; in chase view the camera sits some hundreds of metres off
+	 *  the hull, so a second figure built on `world.ship.pos` would put two ranges
+	 *  on one label that answer slightly different questions and round apart at the
+	 *  digits the pilot is reading. One label, one origin. */
+	private homeStationKm(key: CarrierKey, from: Vec3): number | null {
 		const actor = this.trafficActorByKey(key);
 		if (!actor) return null;
 		// The live body, not a cached one. A station is carried around its star at
@@ -12167,7 +12174,7 @@ class Game {
 		const home = this.world.system.bodies.find(
 			(b) => b.kind === "station" && b.id === actor.homeStationId,
 		);
-		return home ? length(sub(home.pos, this.world.ship.pos)) : null;
+		return home ? length(sub(home.pos, from)) : null;
 	}
 
 	/**
@@ -12183,14 +12190,18 @@ class Game {
 	 * the word it
 	 * builds is discarded on every one of the ~17 s of shield-stripping a carrier
 	 * spends with its schedule still its own.
+	 *
+	 *  `from` is the label's own origin — pass the camera position the mark was
+	 *  projected against, so the word's figure and the range beside it are measured
+	 *  from the same place. See `homeStationKm`.
 	 */
-	private selectedDivertCue(): string | null {
+	private selectedDivertCue(from: Vec3): string | null {
 		if (!this.trafficSelected()) return null;
 		const key = this.targetId as CarrierKey;
 		if (!this.trafficEngagements.has(key)) return null;
 		const presence = trafficPresence(this.carrierCondition(key));
 		if (presence !== "parked-home") return null;
-		return trafficDivertCue(presence, this.homeStationKm(key));
+		return trafficDivertCue(presence, this.homeStationKm(key, from));
 	}
 
 	/** Whether the duel row shows: a raider contesting, dueling or selected. */
@@ -12940,7 +12951,7 @@ class Game {
 		// owes no work to a label that is not drawn.
 		const markOnGlass = selectedAt?.on === true;
 		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
-		const divertCue = markOnGlass ? this.selectedDivertCue() : null;
+		const divertCue = markOnGlass ? this.selectedDivertCue(camPos) : null;
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""

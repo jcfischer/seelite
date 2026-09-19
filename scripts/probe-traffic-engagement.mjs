@@ -57,10 +57,20 @@ const { check, watch, exit } = tally();
  * condition into those numbers — that is `targetConditionLine`'s, and a probe
  * carrying a copy of it would keep passing after it was retuned.
  */
+/**
+ * **A predicate that throws aborts the run; one that returns `null` lets the row
+ * fail and the rest of the probe keep reporting.** The first version threw here,
+ * which is the wrong shape twice over: a check's whole job is to say what it saw,
+ * and a `TypeError` partway through a `check(...)` argument prints no payload and
+ * forfeits every row after it. Callers therefore test the result.
+ *
+ * `null` rather than `[]`: `[].every(…)` is vacuously true and `Math.min(...[])`
+ * is `Infinity`, so an empty array would turn a line it could not read into a row
+ * that passes.
+ */
 function pools(line) {
 	const m = /^SHD F (\d+) A (\d+)\s/.exec(line);
-	if (!m) throw new Error(`condition line does not print two facings: ${line}`);
-	return [Number(m[1]), Number(m[2])];
+	return m ? [Number(m[1]), Number(m[2])] : null;
 }
 
 try {
@@ -334,7 +344,16 @@ try {
 	// the glass correctly — the sim was right and the glass was silent.
 	// -------------------------------------------------------------------------
 	check(
-		"the frame the fight begins draws the condition under the mark, and it is the line the sim's own formatter prints",
+		// **What this row can and cannot say.** It reads the record the draw hands
+		// the painter and compares it to the formatter's own output, so it proves
+		// the game computed this line for this frame and offered it to the label —
+		// which is the wire this node was opened for, because the sim had been right
+		// and this handoff had been missing for twenty seconds of beam. It does
+		// **not** prove ink reached the canvas: a row that can be satisfied by a
+		// record cannot see text that is clipped, mispositioned, or drawn in a
+		// colour nobody can read. The pixels are `probe-duel-hud.mjs`'s, which
+		// counts them in the band this line is painted in and fails at `paint > 30`.
+		"the frame the fight begins offers the condition line to the mark, and it is the line the sim's own formatter prints",
 		// **Test the record for, do not optional-chain past it.** `first?.x !== null`
 		// is true when `first` is null — the chain yields `undefined`, which is not
 		// `null` — and the next clause then dereferences the null and the run dies
@@ -360,8 +379,14 @@ try {
 			engaged.mark.conditionLine !== null &&
 			engaged.mark.conditionLine === engaged.mark.expected &&
 			engaged.mark.conditionLine !== engaged.first.conditionLine &&
-			pools(engaged.mark.conditionLine).every((n) => n <= engaged.shieldPool) &&
-			Math.min(...pools(engaged.mark.conditionLine)) < engaged.shieldPool,
+			(() => {
+				const p = pools(engaged.mark.conditionLine);
+				return (
+					p !== null &&
+					p.every((n) => n <= engaged.shieldPool) &&
+					Math.min(...p) < engaged.shieldPool
+				);
+			})(),
 		JSON.stringify({ first: engaged.first, mark: engaged.mark }),
 	);
 
@@ -375,7 +400,6 @@ try {
 		const presenceMod = await import("/src/traffic-engagement.ts");
 		const conditionMod = await import("/src/ship-condition.ts");
 		const wreck = await import("/src/raider-wreck.ts");
-		const units = await import("/src/units.ts");
 		const contactMod = await import("/src/display-contact.ts");
 		const before = g.trafficReadout().legal;
 		const actor = g.trafficActors.find((a) => a.key === key);
@@ -405,13 +429,21 @@ try {
 				continue;
 			}
 			atMark = g.selectedRender && { ...g.selectedRender };
-			// **Read through production's own lookup rather than re-deriving it.**
-			// The first draft measured `Math.hypot` over the station body here, which
-			// is a second copy of a distance definition — and a probe holding its own
-			// copy keeps asserting the old rule after the rule moves, which is
-			// CLAUDE.md's reason for reading figures off the page. What the row still
-			// proves is the wire: that the painted label carries *this* figure.
-			homeKmAt = g.homeStationKm(key);
+			// **The figure is read off the painted label and not re-derived here.**
+			// Two drafts were wrong before this one. The first measured `Math.hypot`
+			// over the station body: a second copy of a distance definition, which
+			// keeps asserting the old rule after the rule moves. The second called
+			// production's own `homeStationKm`, which is closer and still not right —
+			// that range is measured from the camera the label is projected against,
+			// and a probe cannot honestly name that point, because the Three camera
+			// works in layer units and not world kilometres. So the browser tier asks
+			// the question it is actually for: on the frame the divert wrote, does the
+			// name line carry the word, and a `HOME` figure that is a real distance?
+			// **That the figure is the pilot's own range to the station body is
+			// `tests/display-contact.test.ts`'s**, where the origin is an argument and
+			// can be stated exactly. A browser row cannot pin an arithmetic it cannot
+			// name the inputs to, and pretending otherwise is the false-constant
+			// failure in the other direction.
 			// Snapshot the legal pair on the frame the divert wrote it, so each
 			// write can be measured against the status that stood before it —
 			// decayed to the same clock, and exactly, with no decay law restated
@@ -458,11 +490,11 @@ try {
 			shieldSeconds: p.shieldSeconds,
 			repairS: wreck.RAIDER_REPAIR_S,
 			parked,
-			// The mark either side of the strike, and the home station's range read
-			// same way the label reads it — off `units.range`, not restated here.
+			// The mark either side of the strike, and the home station's range as
+			// the label itself printed it, in kilometres.
 			beforeMark,
 			atMark,
-			homeLabel: homeKmAt === null ? null : units.range(homeKmAt),
+			homeKm: homeKmAt,
 			divertLabel: contactMod.DIVERT_LABEL,
 			// Booked to the next departure its own schedule makes after T —
 			// recomputed from the instant the divert wrote, not from the frame the
@@ -507,11 +539,17 @@ try {
 		JSON.stringify(diverted.beforeMark),
 	);
 	check(
-		"the frame the hull gives way puts the word and the home station range on the name line",
+		"the frame the hull gives way puts the word and a home station figure on the name line",
 		diverted.atMark !== null &&
 			diverted.atMark.id === key &&
 			diverted.atMark.text.includes(diverted.divertLabel) &&
-			diverted.atMark.text.includes(`HOME ${diverted.homeLabel}`),
+			// A distance the pilot could fly, not a `HOME 0.0 km` or a `HOME NaN
+			// km`. Zero is excluded on purpose: it is the one reading that contradicts
+			// the word beside it, and `trafficDivertCue` is written to return the word
+			// alone rather than that pair.
+			diverted.homeKm !== null &&
+			Number.isFinite(diverted.homeKm) &&
+			diverted.homeKm > 0,
 		JSON.stringify(diverted.atMark),
 	);
 	check(
@@ -524,7 +562,10 @@ try {
 			// `pools` throws on a line that does not print two facings, and a throw
 			// here would end the run instead of reporting the row.
 			diverted.atMark.conditionLine !== null &&
-			Math.min(...pools(diverted.atMark.conditionLine)) === 0 &&
+			(() => {
+				const p = pools(diverted.atMark.conditionLine);
+				return p !== null && Math.min(...p) === 0;
+			})() &&
 			/HULL (?!0%)\d+%$/.test(diverted.atMark.conditionLine),
 		JSON.stringify(diverted.atMark),
 	);

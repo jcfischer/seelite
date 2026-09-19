@@ -102,10 +102,17 @@ const installHelpers = () => {
 		rimPaint() {
 			return countIn(2, 2, 16, 16, rimRed);
 		},
-		/** Lit pixels in the band under the selected label, where the enemy's
-		 *  condition line is drawn. */
+		/** Lit pixels in the band the condition line under the selected label is
+		 *  painted in.
+		 *
+		 *  **Centred on the baseline, because the overlay draws with
+		 *  `textBaseline = "middle"`.** This read `at.y + 9` for a line painted at
+		 *  `at.y + TARGET_CONDITION_DY`, which is 18 — a band sitting nine pixels
+		 *  high of the ink, catching its bottom two rows out of eleven. It passed,
+		 *  because the name line above it leaks into the same box, which is the
+		 *  reason a check like this has to be centred rather than merely nonzero. */
 		enemyLinePaint(at) {
-			return countIn(at.x + 20, at.y + 9, 110, 11, passive);
+			return countIn(at.x + 20, at.y + 12, 110, 12, passive);
 		},
 		cruise() {
 			g.resetFlightToStart();
