@@ -54,6 +54,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		dek: "A short reference for the moments when you want an answer without leaving the game behind.",
 		content: `<label class="manual-search">Search this page <input type="search" placeholder="Try “dock” or “cruise”" autocomplete="off" /></label>
 			<section data-topic><h2>Fly</h2><p>Pitch, yaw, roll and throttle are on the flight controls. Flight assist keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
+			<section data-topic><h2>Panels and controls</h2><p>Press ? to open the Controls tab and see the complete, remappable control reference. 1 opens the left panel, 2 faces the forward panel, and 3 opens the right panel. Press the same key again to return your view to flight.</p></section>
 			<section data-topic><h2>Travel</h2><p>Select a station, face it, and engage cruise for the long leg. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
 			<section data-topic><h2>Dock</h2><p>Ask for clearance before entering the aperture. Follow the director, align with the slot, and fly gently through the mouth.</p></section>
 			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory.</p></section>

@@ -29,4 +29,12 @@ describe("the quiet public threshold", () => {
 		expect(source).toContain("No runtime network calls.");
 		expect(source).not.toMatch(/\bfetch\s*\(|WebSocket|EventSource/);
 	});
+
+	test("gives a new pilot the controls needed to reach every cockpit panel", () => {
+		const source = readFileSync(repoPath("src/public-site.ts"), "utf8");
+		expect(source).toContain("Press ? to open the Controls tab");
+		expect(source).toContain(
+			"1 opens the left panel, 2 faces the forward panel, and 3 opens the right panel",
+		);
+	});
 });
