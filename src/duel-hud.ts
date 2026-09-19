@@ -173,12 +173,14 @@ export function targetConditionWidest(): string {
 		heatLocked: false,
 		sinceStruckS: 0,
 	};
-	let widest = "";
-	for (const c of [base, { ...base, fore: 0, aft: 0 }]) {
-		const { text } = targetConditionLine(c);
-		if (text.length > widest.length) widest = text;
-	}
-	return widest;
+	// One case, not a sweep, and the reason is in each of the three figures: both
+	// pools are clamped to `SHIELD_POOL` by `stepCondition`, and the hull is a
+	// percent that reads 100 at both ends of the roster. A zeroed pool is therefore
+	// never wider than this one — `0` is one character and `106` is three. It still
+	// goes through the formatter rather than being spelled out, so the fit cannot
+	// drift from the print, and `tests/duel-hud.test.ts` holds that this string is
+	// actually attained rather than a guess with room in it.
+	return targetConditionLine(base).text;
 }
 
 /** The hostile cue's tone: amber, and red while the raider fires. */

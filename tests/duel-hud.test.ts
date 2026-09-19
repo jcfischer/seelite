@@ -255,9 +255,16 @@ describe("the widest line a selected target can print", () => {
 		const widest = targetConditionWidest();
 		const whole = fullCondition("miner");
 		expect(whole.hullMax).toBeGreaterThan(HULL_SPECS.raider.integrity);
-		expect(targetConditionLine(whole).text).toBe(
-			targetConditionLine(fullCondition("raider")).text,
-		);
+		// Over every hull, not between two of them: this is the claim the label's
+		// reservation rests on, and a pair of hulls that happen to agree is not it.
+		for (const id of HULL_IDS) {
+			expect(targetConditionLine(fullCondition(id)).text).toHaveLength(
+				widest.length,
+			);
+			// A whole hull reads 100% whatever its capacity — the one thing the
+			// share form can say across a roster that a point form cannot.
+			expect(targetConditionLine(fullCondition(id)).text).toMatch(/HULL 100%$/);
+		}
 		expect(widest).toBe(targetConditionLine(whole).text);
 	});
 });

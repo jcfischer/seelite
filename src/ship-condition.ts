@@ -178,12 +178,17 @@ export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
  * same as 0.5 points in terms of how the game works"*. So the floor on a live
  * hull is one percent, exactly as it is one point, and `0%` means dead.
  *
- * **The share is the better reading of D1 than the point form was, not merely a
- * different one.** `HULL_KILL_TOLERANCE` is half a *point*, which on a 2635-point
- * capital is a band 0.019% wide: a live capital can stand there and `printHull`
- * shows 0, which the note above records as the point form's honest limit. A
- * percent floors itself at the resolution it prints at, so no hull is large
- * enough to outrun its own reading.
+ * **Where the floor sits moved, which is the whole of the difference — and it is
+ * a difference in dependency, not in what a pilot is ever shown.** `printHull`
+ * cannot print 0 for a live ship *because `applyDamage` is the one writer and it
+ * zeroes hull below `HULL_KILL_TOLERANCE`*: the guarantee lives in the writer,
+ * not in the print, and the note above records what that costs — a condition
+ * hand-built under the tolerance is a live ship printing `HULL 0`. The game does
+ * not reach that state and nothing here claims it does. What the share changes is
+ * that the floor stops being borrowed: it asks `isAlive` and floors at the
+ * resolution it prints at, so it holds across a roster whose capacities run 85 to
+ * 2635 without resting on a tolerance measured in points, which on a capital is a
+ * 0.019% band the print has no digit to express.
  *
  * Rounding is to nearest at both ends, which is what `printHull` does and what
  * the ruling describes: a miner at 214.6 points reads 100%, whole as far as the

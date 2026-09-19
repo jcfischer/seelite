@@ -487,10 +487,8 @@ every time, because meeting a carrier from ahead and from behind are different
 fights and the line has to say which one is being had. The hull went from points
 to a percent because points were sound only while one hull could be shot at: a
 raider is always 81, and the eight hulls Traffic flies run from a patrol's 85 to
-a miner's 215, so `HULL 215` is whole on one and cannot occur on another. A share
-carries #367 D1 with it (`printHullPercent`): a live hull never prints 0%, which
-is a tighter reading of that ruling than the point form managed, whose tolerance
-is in points and so leaves a capital's last 0.019% alive and reading dead.
+a miner's 215, so `HULL 215` is whole on one and cannot occur on another. A share carries #367 D1 with it — a live hull never prints 0% — and where
+that floor comes from is `printHullPercent`'s to explain, not a second copy here.
 
 **A struck civilian carries a word on the name line, and an on-time one carries
 nothing** (`DIVERT_LABEL`, `trafficDivertCue`). `DIVERTING · HOME 412.0 km`

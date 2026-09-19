@@ -1148,6 +1148,12 @@ const DUEL_ROW_WIDEST = duelRowWidest();
  *  then nothing else was ever selected and shot at, and a Traffic hull's figures
  *  are not the raider's. */
 const TARGET_CONDITION_WIDEST = targetConditionWidest();
+/** How far under the selected target's name its condition line sits.
+ *  **Named because two places must agree on it and they are far apart:** the
+ *  declutter reservation reads it, and the paint twenty lines later does, and a
+ *  pair of matching literals that drift is a label reserving a rectangle it then
+ *  paints somewhere else. */
+const TARGET_CONDITION_DY = 18;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -12160,26 +12166,23 @@ class Game {
 	/**
 	 * The state word the selected carrier's name line carries, or `null`.
 	 *
-	 * Two predicates, and both are load-bearing:
+	 * Two predicates, and both are load-bearing: **off its schedule**
+	 * (`trafficPresence`) and **still being flown** (`trafficEngagements`). Why
+	 * that pair and not one is `trafficDivertCue`'s to explain, beside the word
+	 * itself; repeating it here is how it goes stale.
 	 *
-	 * - **off its schedule** (`trafficPresence`). H3c writes the divert in the
-	 *   same tick as the hull strike, so this is the frame the trigger lands on.
-	 *   A pilot who has only stripped shields — seventeen seconds of unbroken
-	 *   beam on a freighter — sees no word, because H3d says that carrier has not
-	 *   left its schedule. The word arriving *is* H3d becoming visible.
-	 * - **still being flown** (`trafficEngagements`). A struck carrier that has
-	 *   already reached its berth stands there with no engagement behind it, and
-	 *   it is not running: it has arrived. `HOME 0.0 km` beside it would describe
-	 *   a journey nobody is on. That half is #365's drawn surface, not this line's.
+	 * **Presence is checked before the berth is looked for**, and not for tidiness:
+	 * the berth lookup is a `bodies.find` and a vector allocation, and the word it
+	 * builds is discarded on every one of the ~17 s of shield-stripping a carrier
+	 * spends with its schedule still its own.
 	 */
 	private selectedDivertCue(): string | null {
 		if (!this.trafficSelected()) return null;
 		const key = this.targetId as CarrierKey;
 		if (!this.trafficEngagements.has(key)) return null;
-		return trafficDivertCue(
-			trafficPresence(this.carrierCondition(key)),
-			this.homeBerthKm(key),
-		);
+		const presence = trafficPresence(this.carrierCondition(key));
+		if (presence !== "parked-home") return null;
+		return trafficDivertCue(presence, this.homeBerthKm(key));
 	}
 
 	/** Whether the duel row shows: a raider contesting, dueling or selected. */
@@ -12916,12 +12919,10 @@ class Game {
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
 			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));
-		// Built once, because the declutter reservation and the paint must agree.
-		//
-		// Both of these are read once for the frame rather than at each of the two
-		// places that need them: the divert word turns on a world row that can
-		// change underneath a frame, and a reservation built from one reading of it
-		// with the paint built from another reserves a word it then does not draw.
+		// Read once for the frame, not at each of the two places that needs them.
+		// The declutter reservation and the paint have to agree about what is drawn
+		// here, and deriving the same string twice across a hundred lines of draw
+		// code is the way they stop agreeing.
 		const targetCondition = selectedBody
 			? this.selectedTargetCondition()
 			: null;
@@ -12958,7 +12959,7 @@ class Game {
 				occupiedLabels.push(
 					labelBounds(
 						selectedAt.x + 20,
-						selectedAt.y + 18,
+						selectedAt.y + TARGET_CONDITION_DY,
 						TARGET_CONDITION_WIDEST,
 					),
 				);
@@ -13001,7 +13002,7 @@ class Game {
 						: null;
 					if (line) {
 						ctx.fillStyle = FLOOR_TONE_FILL[line.tone];
-						ctx.fillText(line.text, at.x + r + 6, at.y + 18);
+						ctx.fillText(line.text, at.x + r + 6, at.y + TARGET_CONDITION_DY);
 						ctx.fillStyle = selectedColour;
 					}
 					this.selectedRender = {

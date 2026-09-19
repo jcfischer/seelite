@@ -547,10 +547,15 @@ function divertCueOf(over: Record<string, unknown> = {}) {
 	return (subject as any).selectedDivertCue();
 }
 
-test("the word appears on the frame the hull gives way, and not before", () => {
-	// The strike and the divert are one tick (H3c), so the word landing is the
-	// trigger becoming visible: a pilot who has only stripped shields sees no
-	// word, because that carrier is still flying its schedule.
+test("the word reads the row's presence, and an operational row carries no word", () => {
+	// **What this row can hold and what it cannot.** It holds the glass's rule: the
+	// word follows `trafficPresence` and nothing else. That the presence turns on
+	// the same tick the hull gives way is H3c, and it is `stepEngagement`'s — held
+	// in `tests/traffic-engagement.test.ts` on a rig that runs the strike, and in
+	// the browser by `probe-traffic-engagement.mjs`, which reads the mark on the
+	// frame before the divert and on the frame of it. A stub that flips a
+	// `condition` here would not notice those two ticks coming apart, so this row
+	// does not pretend to watch them.
 	expect(divertCueOf()).toContain(DIVERT_LABEL);
 	expect(
 		divertCueOf({ carrierCondition: () => ({ condition: "operational" }) }),

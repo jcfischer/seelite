@@ -291,15 +291,31 @@ try {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
 		const conditionMod = await import("/src/ship-condition.ts");
-		// The mark as painted on the frame the fight begins, before the beam has
-		// taken anything off a shield: the line has to be there reading full, not
-		// only once something has gone.
-		const whole = g.selectedRender && { ...g.selectedRender };
-		for (let i = 0; i < 10; i++) p.follow(key, true);
+		const hud = await import("/src/duel-hud.ts");
+		// The painted mark, plus **what the formatter itself says this condition
+		// prints**. The row's whole question is whether the glass and the sim agree,
+		// and a probe carrying its own copy of the form could keep passing while the
+		// two disagreed — which is CLAUDE.md's reason for reading off the page.
+		const painted = () => {
+			const record = g.selectedRender;
+			if (!record) return null;
+			const fight = g.trafficEngagements?.get(key);
+			return {
+				...record,
+				expected: fight ? hud.targetConditionLine(fight.condition).text : null,
+			};
+		};
+		// **The first shot, on its own frame.** A carrier nobody has fired on has no
+		// condition to read — it is a schedule projection, not a flown ship — so
+		// this is the earliest frame the line can exist on, and a snapshot taken
+		// before it measures the absence of a thing that was never due.
+		p.follow(key, true);
+		const first = painted();
+		for (let i = 0; i < 9; i++) p.follow(key, true);
 		return {
 			contact: g.trafficReadout().contacts.find((c) => c.key === key),
-			whole,
-			mark: g.selectedRender && { ...g.selectedRender },
+			first,
+			mark: painted(),
 			// Off the module, never restated here (CLAUDE.md).
 			shieldPool: conditionMod.SHIELD_POOL,
 		};
@@ -318,13 +334,13 @@ try {
 	// the glass correctly — the sim was right and the glass was silent.
 	// -------------------------------------------------------------------------
 	check(
-		"the moment it is a fight the mark carries its condition, at full and before anything is spent",
-		// A carrier nobody has fired on has no condition to read — it is a
-		// schedule, not a flown ship — so the line arriving with the fight is the
-		// whole of the wire, and it arrives reading whole rather than empty.
-		engaged.whole?.conditionLine ===
-			`SHD F ${engaged.shieldPool} A ${engaged.shieldPool}  HULL 100%`,
-		JSON.stringify(engaged.whole),
+		"the frame the fight begins draws the condition under the mark, and it is the line the sim's own formatter prints",
+		engaged.first?.conditionLine !== null &&
+			engaged.first.conditionLine === engaged.first.expected &&
+			// The one figure on the line known before it is read: H3d spends hull
+			// points only once a facing is gone, so on this frame the hull is whole.
+			engaged.first.conditionLine.endsWith("HULL 100%"),
+		JSON.stringify(engaged.first),
 	);
 	check(
 		"held in the beam, both facings print and the one it is taking comes down",
@@ -334,11 +350,11 @@ try {
 		// asks only that the line names both and one has fallen. Pairing a pinned
 		// geometry to a named facing is `tests/duel-hud.test.ts`'s.
 		engaged.mark?.conditionLine !== null &&
-			engaged.mark.conditionLine !== engaged.whole.conditionLine &&
+			engaged.mark.conditionLine === engaged.mark.expected &&
+			engaged.mark.conditionLine !== engaged.first.conditionLine &&
 			pools(engaged.mark.conditionLine).every((n) => n <= engaged.shieldPool) &&
-			Math.min(...pools(engaged.mark.conditionLine)) < engaged.shieldPool &&
-			/HULL \d+%$/.test(engaged.mark.conditionLine),
-		JSON.stringify({ whole: engaged.whole, mark: engaged.mark }),
+			Math.min(...pools(engaged.mark.conditionLine)) < engaged.shieldPool,
+		JSON.stringify({ first: engaged.first, mark: engaged.mark }),
 	);
 
 	// -------------------------------------------------------------------------
