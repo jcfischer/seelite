@@ -498,9 +498,13 @@ H3d says a shield-stripped carrier has not left its schedule. So the word
 arriving is that trigger becoming visible, and its absence is the on-time
 reading rather than a decoration that is always there. The range is the pilot's
 own to the home berth, the same measure the label already prints to the carrier;
-how far the carrier has left to go is a figure the pilot cannot fly. A carrier
-that has already reached that berth is drawn standing in it and says nothing
-here: it has arrived, and that half is `civilian-combat.md` H3b's.
+how far the carrier has left to go is a figure the pilot cannot fly. **The word is
+the promise and the figure rides with it only when the game can locate the berth**
+— `DIVERTING · HOME 412.0 km` when it can, `DIVERTING` alone when it cannot. A
+`null`, never `HOME 0.0 km`: a zero would tell the pilot the berth is beside them,
+which is the opposite of the one thing the word is there to say. A carrier that
+has already reached that berth is drawn standing in it and says nothing here: it
+has arrived, and that half is `civilian-combat.md` H3b's.
 
 The line reserves its own space in §3's declutter pass, against
 `targetConditionWidest` rather than the live reading — every pool on it moves
@@ -752,13 +756,17 @@ yes. Neither is a repeatable frame: the fight runs on the live clock.
 
 **The line for a target that is not a raider is checked in
 `scripts/probe-traffic-engagement.mjs`, not here** (#395). Four rows, on the
-ordinary carrier that rig already tethers to: the mark carries the condition on
-the frame the fight begins and before anything is spent; held in the beam both
-facings print and one comes down; the frame the hull gives way puts
-`DIVERTING · HOME <range>` on the name line where the frame before it carried
-nothing; and on that frame the facing that ran out prints 0. The headless half is
-`tests/display-contact.test.ts`, which runs the gate out of `Game`'s own method
-text.
+ordinary carrier that rig already tethers to: on the frame the first shot lands
+the mark carries the condition, and it is the string `targetConditionLine` itself
+prints for the live engagement — which is the whole of the wire, and arrives
+reading `HULL 100%` because H3d spends hull points only once a facing is gone;
+held in the beam both facings print and one comes down; the frame the hull gives
+way puts `DIVERTING · HOME <range>` on the name line where the frame before it
+carried nothing; and on that frame the facing that ran out prints 0. **The browser
+tier can only ever show the arm with a berth in it** — a tethered pilot beside a
+live station has one — so the `DIVERTING`-alone arm and the rest of the gate are
+headless: `tests/display-contact.test.ts`, which runs the gate out of `Game`'s own
+method text.
 
 ## 8. The station console
 
