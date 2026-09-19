@@ -16,6 +16,7 @@ import {
 } from "../src/gamepad";
 import {
 	type PadContext,
+	type PadIntents,
 	type PointerLockMove,
 	PAD_FLIGHT_KEYS,
 	contextFliesShip,
@@ -351,10 +352,66 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// would measure a different frame from the one it exists for. It takes a
 		// console's six buttons and leaves the sticks alone.
 		expect(padFlightAxes(sticks([0, 0, 1, 0]), "instrument").yaw).toBe(-1);
-		// The triggers trim there too, and the shoulders are its tab steps, so
-		// the two do not collide.
+		// The triggers trim there too.
 		expect(padFlightAxes(trigger("r2", 1), "instrument").throttleTrim).toBe(1);
-		expect(padIntents(press("r1"), "instrument").tabDelta).toBe(1);
+	});
+
+	test("the shoulders step no tab in the instrument, and fly nothing either (#379)", () => {
+		// The instrument is the perf panel, a list of switches with no tabs, so
+		// nothing there reads a tab step (the principal's ruling on #379). The
+		// shoulders stay claimed: falling through to the flight table would turn
+		// them into `t`/`g` and cycle the target while the panel has the pad.
+		for (const name of ["l1", "r1"] as const) {
+			expect(padIntents(press(name), "instrument").tabDelta, name).toBe(0);
+			expect(padIntents(press(name), "instrument").keys, name).toEqual([]);
+		}
+		// A console still steps its tabs with them.
+		expect(padIntents(press("r1"), "console").tabDelta).toBe(1);
+	});
+
+	test("every intent the instrument emits, the instrument branch reads (#379)", () => {
+		// The class, not the instance: `tabDelta` was emitted here while nothing
+		// read it, and a row asserting the emitted value was green on that
+		// defect. So every field a press yields in `instrument` must be read in
+		// `main.ts`'s instrument branch.
+		//
+		// **Keyed by `PadIntents`, so a new field is a type error here** rather
+		// than a field this row silently skips (sage round 1 on #379).
+		const FIELDS: Record<keyof PadIntents, true> = {
+			keys: true,
+			focusDelta: true,
+			tabDelta: true,
+			valueDelta: true,
+			activate: true,
+			back: true,
+			instrument: true,
+		};
+		const emitted = new Set<keyof PadIntents>();
+		for (const name of STANDARD_BUTTONS) {
+			const intents = padIntents(press(name), "instrument");
+			for (const field of Object.keys(FIELDS) as (keyof PadIntents)[]) {
+				const value = intents[field];
+				if (Array.isArray(value) ? value.length > 0 : value) emitted.add(field);
+			}
+		}
+		expect(emitted.size).toBeGreaterThan(0);
+		// **Fail closed on the slice.** Both markers must be found, or a missing
+		// end would run the slice to the end of the file and pick up the console
+		// branch's own `intents.tabDelta` — green on the defect again.
+		const main = codeOf("src/main.ts");
+		const at = main.indexOf("if (perf?.isFocused()) {");
+		expect(at).toBeGreaterThan(-1);
+		const end = main.indexOf("\n\t\t\treturn;\n\t\t}", at);
+		expect(end).toBeGreaterThan(at);
+		const branch = main.slice(at, end);
+		expect(branch).not.toContain("liveCockpit");
+		// A read here is an `if` on the field or a loop over it, which is what a
+		// source scan can see. It cannot see what that branch then does: whether
+		// the read acts is the browser tier's (`probe-pad-instrument.mjs`).
+		for (const field of emitted)
+			expect(branch, `instrument emits ${field}`).toMatch(
+				new RegExp(`(if \\(intents\\.${field}\\b|of intents\\.${field}\\))`),
+			);
 	});
 
 	test("the instrument still claims the six a console claims", () => {

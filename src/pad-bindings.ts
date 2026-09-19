@@ -56,7 +56,8 @@
  *
  * `instrument` is the frame overlay behind `?perf`, and it is the one exception
  * to that suspension rather than an inconsistency in it. It takes a console's
- * six buttons and **leaves the sticks alone**, because it exists to measure a
+ * six buttons, of which the shoulders do nothing there because it has no tabs
+ * (#379), and **leaves the sticks alone**, because it exists to measure a
  * frame *while it is flown* — a mode that stopped the ship would be measuring a
  * different frame from the one it is there for. The reversal above is about the
  * panels a player reads; this is an instrument a developer watches.
@@ -256,12 +257,12 @@ export function padIntents(
 				focusDelta += 1;
 				continue;
 			}
-			if (name === "l1") {
-				tabDelta -= 1;
-				continue;
-			}
-			if (name === "r1") {
-				tabDelta += 1;
+			// The shoulders step tabs on a console. The instrument is a list of
+			// switches with no tabs, so there they are claimed and do nothing
+			// (#379): a tab step nothing reads is a claim with no consumer, and
+			// letting them fall through would cycle the target under the panel.
+			if (name === "l1" || name === "r1") {
+				if (context === "console") tabDelta += name === "r1" ? 1 : -1;
 				continue;
 			}
 			if (name === "a") {
@@ -431,9 +432,7 @@ export function padFlightAxes(
 		pitch: negate(frame.axes.rightY),
 		roll: negate(frame.axes.leftX),
 		// `values`, not `held`: rule 3 of the module's header exists for this
-		// line. A trigger read as a switch is a key with extra steps. The
-		// instrument's tab steps are the shoulders, so the triggers do not
-		// collide with them there.
+		// line. A trigger read as a switch is a key with extra steps.
 		throttleTrim: frame.values.r2 - frame.values.l2,
 	};
 }
