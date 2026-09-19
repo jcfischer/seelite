@@ -293,6 +293,51 @@ check(
 await page.keyboard.press("2");
 await settle(page);
 
+// ---------------------------------------------------------------------------
+// And the chart's FIND SYSTEM field, the second of the two (#380, sage
+// round 1): the gate is `isEditable`, not a selector for one field, and this
+// row is what shows it reaches the other.
+// ---------------------------------------------------------------------------
+const leftTab = (name) =>
+	page.evaluate((tab) => {
+		const el = document.querySelector(`[data-live-left-tab="${tab}"]`);
+		if (!(el instanceof HTMLElement)) throw new Error(`no ${tab} tab`);
+		el.click();
+	}, name);
+await page.keyboard.press("1");
+await settle(page);
+await leftTab("Galaxy Map");
+await page.waitForFunction(() => Boolean(window.__seeliteGalaxyMap));
+const finder = page.locator("[data-map-finder-query]");
+await finder.click();
+const beforeFinder = await sim();
+await page.keyboard.type("g 13");
+await settle(page);
+const afterFinder = await sim();
+const finderValue = await finder.inputValue();
+check(
+	"typing `g 13` into FIND SYSTEM leaves the target and the head where they were",
+	afterFinder.target === beforeFinder.target &&
+		afterFinder.head === "left" &&
+		afterFinder.keys.length === 0,
+	`target ${beforeFinder.target} -> ${afterFinder.target}, head ${afterFinder.head}, keys [${afterFinder.keys}]`,
+);
+check(
+	"and FIND SYSTEM keeps every character",
+	finderValue === "g 13",
+	`value ${JSON.stringify(finderValue)}`,
+);
+await finder.evaluate((el) => {
+	el.value = "";
+	el.dispatchEvent(new Event("input", { bubbles: true }));
+	el.blur();
+});
+await page.keyboard.press("1");
+await settle(page);
+await leftTab("Navigation");
+await page.keyboard.press("2");
+await settle(page);
+
 // Guard: the same paced measurement does see the Shift blip on `?`, so the
 // F1 throttle row above can fail. Last, because it leaves the throttle raised.
 const beforeQuestion = await state();

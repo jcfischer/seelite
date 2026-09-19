@@ -13,6 +13,8 @@ const press = (key: string, code: string, mods: Partial<KeyMods> = {}) =>
 	keyDispatch({ key, code, down: true, repeat: false, ...NONE, ...mods });
 const hold = (key: string, code: string, mods: Partial<KeyMods> = {}) =>
 	keyDispatch({ key, code, down: true, repeat: true, ...NONE, ...mods });
+const release = (key: string, code: string, mods: Partial<KeyMods> = {}) =>
+	keyDispatch({ key, code, down: false, repeat: false, ...NONE, ...mods });
 
 interface KeyMods {
 	altKey: boolean;
@@ -232,16 +234,7 @@ describe("a key typed into a field reaches only the field", () => {
 	});
 
 	test("a held key in a field is swallowed too, repeat after repeat", () => {
-		expect(
-			keyDispatch({
-				key: "e",
-				code: "KeyE",
-				down: true,
-				repeat: true,
-				...NONE,
-				editable: true,
-			}),
-		).toEqual({ kind: "swallow" });
+		expect(hold("e", "KeyE", { editable: true })).toEqual({ kind: "swallow" });
 	});
 
 	test("a chord or a Ctrl key in a field reaches nothing either", () => {
@@ -261,16 +254,10 @@ describe("a key typed into a field reaches only the field", () => {
 	test("a release in a field still clears the key it names", () => {
 		// A key held in flight and released after a click into the field must
 		// not stay held: ruling 1 comes first.
-		expect(
-			keyDispatch({
-				key: "d",
-				code: "KeyD",
-				down: false,
-				repeat: false,
-				...NONE,
-				editable: true,
-			}),
-		).toEqual({ kind: "release", key: "d" });
+		expect(release("d", "KeyD", { editable: true })).toEqual({
+			kind: "release",
+			key: "d",
+		});
 	});
 
 	test("and the same keys outside a field still fly — the row above can fail", () => {

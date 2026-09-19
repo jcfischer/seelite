@@ -10,13 +10,15 @@
  *    any modifier rule. The limit is the *name*: on macOS a key released under
  *    Option reports the Option character (`∂` for D), and the key it was
  *    pressed as stays held. That is #390, and it is older than this module.
- *    **Then a key typed into a field is the field's** (#380), which is not one
- *    of #377's four and so takes no number. The cockpit holds two live text
- *    fields, the Navigation filter and the chart's FIND SYSTEM, and typing
- *    `cargo` into one requested clearance on `c` and cycled the target on `g`.
- *    A press there reaches nothing and is not prevented, so the field keeps the
- *    character. It comes after the release, which still clears a key held in
- *    flight before the click into the field.
+ *
+ * Between rulings 1 and 2 sits #380's gate, which is not one of #377's four and
+ * so takes no number: **a key typed into a field is the field's.** The cockpit
+ * holds two live text fields, the Navigation filter and the chart's FIND
+ * SYSTEM, and typing `cargo` into one requested clearance on `c` and cycled the
+ * target on `g`. A press there reaches nothing and is not prevented, so the
+ * field keeps the character. It comes after the release, which still clears a
+ * key held in flight before the click into the field.
+ *
  * 2. **Ctrl runs no command, and Meta reaches nothing.** `Ctrl`+letter fired
  *    the letter's command *and* throttled down, so `Ctrl+J` started cruise.
  *    Now a key pressed with Ctrl down is held but runs no command: Ctrl is
