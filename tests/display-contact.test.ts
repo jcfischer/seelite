@@ -569,6 +569,26 @@ test("a carrier already standing in its berth is not running", () => {
 	expect(divertCueOf({ trafficEngagements: new Map() })).toBe(null);
 });
 
+test("the word is the carrier's state, not this engagement's event", () => {
+	// A pilot who lost a struck carrier over the horizon, reacquired it, and fired
+	// again meets it on its way home with its shields whole. The word has to be
+	// there for them, because the ship is off its schedule — which is a fact about
+	// the carrier, not a report on what the last trigger did. So the gate reads
+	// presence and the engagement and **nothing about a hull at all**: the same
+	// word, whether the row's hull is spent or untouched.
+	const offSchedule = (hull: number, hullMax: number) =>
+		divertCueOf({
+			carrierCondition: () => ({
+				condition: "repairing",
+				recovery: { kind: "repair" },
+				hull,
+				hullMax,
+			}),
+		});
+	expect(offSchedule(1, 215)).toContain(DIVERT_LABEL);
+	expect(offSchedule(215, 215)).toContain(DIVERT_LABEL);
+});
+
 test("nothing on the glass but an ordinary carrier gets the word", () => {
 	expect(
 		divertCueOf({

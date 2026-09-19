@@ -397,18 +397,13 @@ try {
 				continue;
 			}
 			atMark = g.selectedRender && { ...g.selectedRender };
-			// The station **body**, which is what the mark's range is measured
-			// to. A berth is a parking place inside it, and this is not that.
-			const home = g.world.system.bodies.find(
-				(b) => b.kind === "station" && b.id === actor.homeStationId,
-			);
-			homeKmAt = home
-				? Math.hypot(
-						home.pos.x - g.world.ship.pos.x,
-						home.pos.y - g.world.ship.pos.y,
-						home.pos.z - g.world.ship.pos.z,
-					)
-				: null;
+			// **Read through production's own lookup rather than re-deriving it.**
+			// The first draft measured `Math.hypot` over the station body here, which
+			// is a second copy of a distance definition — and a probe holding its own
+			// copy keeps asserting the old rule after the rule moves, which is
+			// CLAUDE.md's reason for reading figures off the page. What the row still
+			// proves is the wire: that the painted label carries *this* figure.
+			homeKmAt = g.homeStationKm(key);
 			// Snapshot the legal pair on the frame the divert wrote it, so each
 			// write can be measured against the status that stood before it —
 			// decayed to the same clock, and exactly, with no decay law restated

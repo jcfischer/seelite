@@ -491,26 +491,33 @@ a miner's 215, so `HULL 215` is whole on one and cannot occur on another. A shar
 that floor comes from is `printHullPercent`'s to explain, not a second copy here.
 
 **A struck civilian carries a word on the name line, and an on-time one carries
-nothing** (`DIVERT_LABEL`, `trafficDivertCue`). `DIVERTING · HOME 412.0 km`
-appears on the frame the hull gives way — the frame `civilian-combat.md` H3c
-writes the divert — and not while the pilot is only stripping shields, because
-H3d says a shield-stripped carrier has not left its schedule. So the word
-arriving is that trigger becoming visible, and its absence is the on-time
-reading rather than a decoration that is always there. The range is the pilot's
-own to the carrier's **home station**, the same measure the label already prints
-to the carrier;
-how far the carrier has left to go is a figure the pilot cannot fly. **The word is
-the promise and the figure rides with it only when the game can locate the
-station**
-— `DIVERTING · HOME 412.0 km` when it can, `DIVERTING` alone when it cannot. A
-`null`, never `HOME 0.0 km`: a zero would tell the pilot the station is beside
-them,
-which is the opposite of the one thing the word is there to say. **The range is to
-the station body, not to a berth** — a berth is a parking place inside a station
-(`CONTEXT.md`, `docking.md` §13.2), and the glass says `HOME` rather than naming
-an interior slot. A carrier that has already reached its home station is drawn
-standing in its berth and says nothing here: it has arrived, and that half is
-`civilian-combat.md` H3b's.
+nothing** (`DIVERT_LABEL`, `trafficDivertCue`). **The word is a state and not this
+fight's event**: it reads off `trafficPresence`, so it says *this carrier is off
+its schedule*, which is what `civilian-combat.md` H3c writes on the frame the hull
+gives way and what stays true for every frame of the flight home afterwards. H3d
+is the other half — a pilot who has only stripped shields sees no word, because a
+shield-stripped carrier has not left its schedule. So the word arriving is that
+trigger becoming visible, and its absence is the on-time reading rather than a
+decoration that is always there.
+
+**Which is why a fresh engagement on a carrier already running home shows the word
+on its first frame, at a whole hull, and that is right rather than a leak.** The
+pilot who lost it over the horizon, reacquired, and fired again is looking at a
+ship that is not on its schedule and knows it. The word reports the carrier's
+state, not what the last trigger did, and the game's own toast on the strike frame
+says the same thing: *"disabled — running home"*.
+
+The range is the pilot's own to the carrier's **home station** — the same measure
+the label already prints to the carrier, and how far the carrier has left to go is
+a figure the pilot cannot fly. It is a range to the **station body**: a berth is a
+parking place inside a station (`CONTEXT.md`, `docking.md` §13.2), and the glass
+prints `HOME`, which names the place and no parking position within it. **The word
+is the promise; the figure rides with it only when the game can locate the
+station** — `DIVERTING · HOME 412.0 km` when it can, `DIVERTING` alone when it
+cannot, and never `HOME 0.0 km`, because a zero would tell the pilot the station is
+beside them, which is the far end of wrong from the truth. A carrier that has
+already arrived is drawn standing in its berth and says nothing on this line: the
+word needs it still being flown, and that half is `civilian-combat.md` H3b's.
 
 The line reserves its own space in §3's declutter pass, against
 `targetConditionWidest` rather than the live reading — every pool on it moves

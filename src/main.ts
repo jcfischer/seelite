@@ -12157,8 +12157,8 @@ class Game {
 	 *  station's interior — `CONTEXT.md`, and `docking.md` §13.2 owns the
 	 *  catalogue — and this is the range to the body the berths are inside. The
 	 *  glass prints `HOME`, which is the star-side word for the place and names no
-	 *  interior slot; the berth the diverted carrier is booked into is H3c's, and
-	 *  is a different fact about the same station. */
+	 *  parking position inside it; the berth the diverted carrier is booked into is
+	 *  H3c's, and is a different fact about the same station. */
 	private homeStationKm(key: CarrierKey): number | null {
 		const actor = this.trafficActorByKey(key);
 		if (!actor) return null;
