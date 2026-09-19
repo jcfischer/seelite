@@ -90,6 +90,9 @@ export const DOMAIN = {
 	 *  standing's stream would move whenever the standing's rotation was
 	 *  retuned, and a name a pilot remembers cannot move under them. */
 	CARRIER_NAME: 20,
+	/** Display-only mechanical fill on authored ship regions (#130). Its own
+	 * tag keeps a hull's clutter independent of every world and gameplay draw. */
+	SHIP_GREEBLES: 21,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

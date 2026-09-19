@@ -115,19 +115,18 @@ import {
 	STATION_QUALITY,
 	STATION_VISUALS,
 	type StationQuality,
-	type StationDetailLevel,
 	type StationFixtureKind,
 	currentStationFinish,
 	fixtureIntensity,
 	flickerIntensity,
 	platingTexels,
 	seamTexels,
-	stationDetailLevel,
 	stationFinishId,
 	stationMapSize,
 	stationPlating,
 	surfaceTexels,
 } from "./station-visuals";
+import { type DetailLevel, detailLevel } from "./detail-level";
 import {
 	NAMEPLATE_NAME,
 	buildStationInterior,
@@ -203,7 +202,7 @@ export interface StationMesh {
 	/** The detail level currently drawn. Held on the handle rather than
 	 *  recomputed, because `stationDetailLevel` is directional — the previous
 	 *  level is half of its input (`station-visuals.ts` §3). */
-	detail: StationDetailLevel;
+	detail: DetailLevel;
 	/**
 	 * The materials the clock drives (`station-visuals.md` §5).
 	 *
@@ -738,7 +737,7 @@ function buildWindowGrid(
  */
 function detail<T extends THREE.Object3D>(
 	object: T,
-	minLevel: Exclude<StationDetailLevel, "outline">,
+	minLevel: Exclude<DetailLevel, "outline">,
 ): T {
 	object.userData.minDetail = minLevel;
 	return object;
@@ -5727,13 +5726,10 @@ export function buildStationMesh(
  * a detail level may not change the outline — checkable as an equality on the
  * mesh's reach rather than argued about.
  */
-export function setStationDetail(
-	mesh: StationMesh,
-	level: StationDetailLevel,
-): void {
+export function setStationDetail(mesh: StationMesh, level: DetailLevel): void {
 	mesh.detail = level;
 	for (const object of mesh.accessories) {
-		const min = object.userData.minDetail as StationDetailLevel;
+		const min = object.userData.minDetail as DetailLevel;
 		object.visible = min === "full" ? level === "full" : level !== "outline";
 	}
 }
@@ -5771,7 +5767,7 @@ export function updateStationVisuals(
 	 */
 	quality: StationQuality,
 ): void {
-	const level = stationDetailLevel(
+	const level = detailLevel(
 		mesh.detail,
 		distanceKm / STATION_SILHOUETTE_KM[mesh.type],
 	);
