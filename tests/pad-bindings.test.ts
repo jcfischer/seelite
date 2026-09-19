@@ -613,8 +613,21 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		const at = main.indexOf("private triggerHeld(): boolean {");
 		expect(at).toBeGreaterThan(-1);
 		const body = main.slice(at, main.indexOf("\n\t}", at));
-		expect(body).toContain("mouseFireHeld(");
-		expect(body).not.toMatch(/\|\|\s*this\.mouseFiring\s*\|\|/);
+		// The button is read once, and only as the rule's argument (sage round 1:
+		// a bare read at either end of the `||` chain passed the first version).
+		expect(body.match(/this\.mouseFiring/g) ?? []).toHaveLength(1);
+		expect(body).toMatch(/mouseFireHeld\(\s*this\.mouseFiring,/);
+	});
+
+	test("and a press made where the mouse is suspended never becomes a trigger", () => {
+		// Sage round 1: gating only the read let a press made beside a console
+		// latch, and fire once the head came back with the button still held.
+		const main = codeOf("src/main.ts");
+		const at = main.indexOf('domElement.addEventListener("pointerdown"');
+		expect(at).toBeGreaterThan(-1);
+		const handler = main.slice(at, main.indexOf("});", at));
+		expect(handler).toContain("mouseFireHeld(");
+		expect(handler).not.toContain("this.mouseFiring = true");
 	});
 
 	test("the gamepad's head turn arrives at the same door the keyboard's does", () => {

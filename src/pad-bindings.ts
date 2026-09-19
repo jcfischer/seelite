@@ -467,8 +467,14 @@ export function padFireHeld(
  * **The pointer's rule, not the pad's.** A button is part of the pointer, so it
  * fires only where `pointerLockMove` would let a click take the lock: a context
  * that flies the ship, with no console drawn. That differs from `padFireHeld` in
- * one cell, the instrument focused over a drawn console, and there the click
- * belongs to the console, which is #371's ruling for the same cell.
+ * one cell, the instrument focused over a drawn console. There this follows
+ * #371's ruling for the pointer, that the click belongs to the console. That
+ * cell is this change's reading of the principal's ruling on #378, which did not
+ * name it, and the pad's Square still fires there.
+ *
+ * **Asked at the press as well as each frame.** `main.ts` asks it when the button
+ * goes down, so a press made where the mouse is suspended never becomes a trigger
+ * and does not fire when the head comes back with it still held (sage round 1).
  *
  * `Space` is not in this and stays live: the keyboard is deliberately not
  * suspended over a console, which is the principal's earlier ruling recorded at

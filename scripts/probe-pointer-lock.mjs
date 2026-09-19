@@ -343,33 +343,58 @@ check(
 const heat = (target) => target.evaluate(() => window.__seelite.condition.heat);
 const trigger = (target) =>
 	target.evaluate(() => window.__seelite.triggerHeld());
-/** Hold the left button down for a few hundred milliseconds of frames. */
-const holdButton = async (target) => {
+/** Hold the left button down for a few hundred milliseconds of frames, and read
+ *  the gun: its heat before and after, and whether the trigger is held. The
+ *  button stays down; the caller releases it. */
+const pressAndRead = async (target) => {
+	const cool = await heat(target);
 	await target.mouse.down();
 	await target.waitForTimeout(300);
 	await settle(target);
+	return { cool, trigger: await trigger(target), heat: await heat(target) };
+};
+/** A few hundred milliseconds more of the button held, read the same way. */
+const keepAndRead = async (target) => {
+	const cool = await heat(target);
+	await target.waitForTimeout(300);
+	await settle(target);
+	return { cool, trigger: await trigger(target), heat: await heat(target) };
 };
 const besideAt = await page.evaluate(() => {
 	const r = window.__seelite.renderer.domElement.getBoundingClientRect();
 	return { x: r.left + r.width * 0.03, y: r.top + r.height * 0.5 };
 });
 await page.mouse.move(besideAt.x, besideAt.y);
-const coolBeside = await heat(page);
-await holdButton(page);
-const heldBeside = {
-	surface: await surface(page),
-	trigger: await trigger(page),
-	heat: await heat(page),
-};
-await page.mouse.up();
-await settle(page);
+const heldBeside = await pressAndRead(page);
+const besideSurface = await surface(page);
 check(
 	"a press held on the glass beside that console does not fire (#378)",
-	heldBeside.surface === "console" &&
+	besideSurface === "console" &&
 		!heldBeside.trigger &&
-		heldBeside.heat <= coolBeside,
-	`surface=${heldBeside.surface} trigger=${heldBeside.trigger} heat ${coolBeside} -> ${heldBeside.heat}`,
+		heldBeside.heat <= heldBeside.cool,
+	`surface=${besideSurface} trigger=${heldBeside.trigger} heat ${heldBeside.cool} -> ${heldBeside.heat}`,
 );
+// **And that press never becomes a trigger (sage round 1).** Still holding it,
+// the head comes back to flight. A press made where the mouse is suspended is
+// not a pull of the trigger, so the gun stays quiet until a new press — the
+// pointer's own rule, where the next click and nothing else takes the lock.
+await page.keyboard.press("2");
+await settle(page);
+const carried = await keepAndRead(page);
+check(
+	"and holding that press while the head comes forward does not fire either",
+	(await headLook(page)) === "forward" &&
+		!carried.trigger &&
+		carried.heat <= carried.cool,
+	`head=${await headLook(page)} trigger=${carried.trigger} heat ${carried.cool} -> ${carried.heat}`,
+);
+// The release lands on the glass in flight, and a click there asks for the
+// lock. Turning back to the console gives it up again, so the row below still
+// starts from a pointer nothing has taken.
+await page.mouse.up();
+await settle(page);
+await page.keyboard.press("3");
+await settle(page);
 
 const relock = await relockForward(page);
 check(
@@ -413,17 +438,15 @@ await turnSurrenders(
 // The button goes down in flight, the head turns with it held, and it comes up
 // over the console's tab — where the pointer now is. `pointerup` is on `window`,
 // so the game has to hear it there, or the gun fires the moment the head is back.
-// The first check is the guard for the row above: the same press held in flight
-// does fire, so a build whose trigger never fires cannot pass it.
+// The first check guards the two beside-the-console rows: the same press held in
+// flight does fire, so a build whose trigger never fires cannot pass them.
 // ---------------------------------------------------------------------------
 const homeForFire = await relockForward(page);
-const coolFlight = await heat(page);
-await holdButton(page);
-const heldFlight = { trigger: await trigger(page), heat: await heat(page) };
+const heldFlight = await pressAndRead(page);
 check(
-	"and the same press held in flight does fire, so the row above can fail",
-	homeForFire.took && heldFlight.trigger && heldFlight.heat > coolFlight,
-	`locked=${homeForFire.took} trigger=${heldFlight.trigger} heat ${coolFlight} -> ${heldFlight.heat}`,
+	"and the same press held in flight does fire, so the beside-the-console rows can fail",
+	homeForFire.took && heldFlight.trigger && heldFlight.heat > heldFlight.cool,
+	`locked=${homeForFire.took} trigger=${heldFlight.trigger} heat ${heldFlight.cool} -> ${heldFlight.heat}`,
 );
 await page.keyboard.press("3");
 await settle(page);
@@ -441,7 +464,7 @@ await page.mouse.move(tabAt.x, tabAt.y);
 await page.mouse.up();
 await settle(page);
 const releasedOn = await page.evaluate(
-	({ x, y }) => document.elementFromPoint(x, y)?.closest(".lc-tab") !== null,
+	({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest(".lc-tab")),
 	tabAt,
 );
 await page.keyboard.press("2");

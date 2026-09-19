@@ -3450,7 +3450,15 @@ class Game {
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
 		this.renderer.domElement.addEventListener("pointerdown", (e) => {
-			if (e.button === 0) this.mouseFiring = true;
+			// A press made where the mouse is suspended is not a pull of the trigger,
+			// and it does not become one when the head comes back with the button
+			// still down (#378, sage round 1): the next press is what fires.
+			if (e.button === 0)
+				this.mouseFiring = mouseFireHeld(
+					true,
+					this.padContext(),
+					this.consoleDrawnThisFrame,
+				);
 		});
 		window.addEventListener("pointerup", (e) => {
 			if (e.button === 0) this.mouseFiring = false;
