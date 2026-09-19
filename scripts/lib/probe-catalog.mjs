@@ -1,0 +1,335 @@
+/**
+ * Behavioral contracts for every gating browser probe.
+ *
+ * The runner still discovers executable files from disk. This catalog is the
+ * semantic half of that inventory: the TypeSafe selector needs to know what a
+ * probe proves, not merely what its filename is. `tests/probe-selection.test.ts`
+ * holds both halves together so adding or removing a gate cannot silently leave
+ * the selector behind.
+ */
+
+const entry = (file, contract, evidence) =>
+	Object.freeze({
+		file,
+		id: file.replace(/\.mjs$/, "").replaceAll("-", "_"),
+		contract,
+		evidence: Object.freeze(evidence),
+	});
+
+export const PROBE_CATALOG = Object.freeze(
+	[
+		entry(
+			"measure-cruise-detour.mjs",
+			"Runs the corpus gate for automatic cruise detours through the real Game steering loop.",
+			["cruise routing", "detour geometry", "Game steering"],
+		),
+		entry(
+			"probe-adaptive-resolution.mjs",
+			"Proves the live browser wiring and render-target effects of automatic resolution scaling.",
+			["adaptive resolution", "render scale", "frame pressure", "composer"],
+		),
+		entry(
+			"probe-approach-handoff.mjs",
+			"Checks the spatial handoff from long-range approach into the local station flight frame.",
+			["approach", "station handoff", "local frame", "render layers"],
+		),
+		entry(
+			"probe-arrival.mjs",
+			"Flies cruise arrivals to stations beside or behind host planets and checks reachable geometry.",
+			["cruise arrival", "host planet", "moving body", "station reachability"],
+		),
+		entry(
+			"probe-boot.mjs",
+			"Checks that the normal page boots cleanly and exposes the renderer, world, and deterministic seed contract.",
+			["application boot", "renderer", "seed", "window handle", "page errors"],
+		),
+		entry(
+			"probe-carrier-scan.mjs",
+			"Exercises the cockpit carrier scan and Target-panel transition from unknown to identified standing.",
+			[
+				"carrier identity",
+				"scanner",
+				"Target panel",
+				"standing",
+				"last-known state",
+			],
+		),
+		entry(
+			"probe-cockpit-surface.mjs",
+			"Verifies live cockpit surface geometry, plating materials, and reversible renderer controls.",
+			["cockpit", "surface", "plating", "materials", "scene graph"],
+		),
+		entry(
+			"probe-commander.mjs",
+			"Exercises the Commander overlay, new/load choices, held game clock, and store attachment in a page.",
+			["Commander", "new game", "load", "save store", "overlay", "game clock"],
+		),
+		entry(
+			"probe-controls-reference.mjs",
+			"Checks the Controls tab through keyboard, pointer, and gamepad interactions at desktop and narrow sizes.",
+			[
+				"controls reference",
+				"console tab",
+				"keyboard",
+				"gamepad",
+				"responsive layout",
+			],
+		),
+		entry(
+			"probe-cruise-detour.mjs",
+			"Flies a bounded automatic station detour through the live Game loop and checks route progress.",
+			["cruise", "automatic detour", "station target", "route progress"],
+		),
+		entry(
+			"probe-cruise.mjs",
+			"Flies the normal cruise regime through charge, travel, layer handoff, exit, and arrival behavior.",
+			[
+				"cruise",
+				"cruise 12 AU reserve",
+				"layer handoff",
+				"arrival",
+				"flight regime",
+			],
+		),
+		entry(
+			"probe-death.mjs",
+			"Exercises live death handling for saved recovery and permadeath retirement paths.",
+			["ship death", "save recovery", "permadeath", "reload", "world state"],
+		),
+		entry(
+			"probe-display-contacts.mjs",
+			"Checks that contact producers feed live target selection, Navigation, and scanner presentation.",
+			["display contacts", "target selection", "Navigation", "scanner"],
+		),
+		entry(
+			"probe-dock-arrival.mjs",
+			"Checks successful dock arrival geometry, berth surfaces, bay visibility, and approach/interior shields.",
+			["docking arrival", "station interior", "berth", "bay", "name shield"],
+		),
+		entry(
+			"probe-docking-traffic.mjs",
+			"Checks that a cleared docking computer progresses while live Traffic uses the same station.",
+			["docking computer", "Traffic", "clearance", "berth arbitration"],
+		),
+		entry(
+			"probe-docking.mjs",
+			"Flies successful and refused docking approaches through clearance, alignment, containment, and crossing checks.",
+			["docking", "clearance", "aperture", "alignment", "containment"],
+		),
+		entry(
+			"probe-duel-hud.mjs",
+			"Checks the live raider-duel HUD, selected-hostile styling, warnings, and on-target sightline.",
+			["duel", "combat HUD", "raider", "target ring", "on target"],
+		),
+		entry(
+			"probe-frame-attribution.mjs",
+			"Checks query-gated frame-attribution labels, renderer facts, timer states, and default-route isolation.",
+			["frame attribution", "GPU timer", "performance panel", "render passes"],
+		),
+		entry(
+			"probe-galaxy-map.mjs",
+			"Exercises orbiting, picking, reading, and routing on the projected three-dimensional galaxy map.",
+			["galaxy map", "projection", "picking", "route", "navigation"],
+		),
+		entry(
+			"probe-gamepad.mjs",
+			"Checks that the browser gamepad API reaches the frame loop and drives analog ship controls.",
+			["gamepad", "navigator.getGamepads", "analog input", "flight controls"],
+		),
+		entry(
+			"probe-gimbal.mjs",
+			"Checks live pulse-laser gimbal slew, cone limits, selected-target tracking, and true-hull hits.",
+			["laser gimbal", "combat", "targeting", "beam", "hull hit"],
+		),
+		entry(
+			"probe-gun-feedback.mjs",
+			"Fires the pulse laser through real keyboard, mouse, and gamepad inputs and checks visible and audible feedback.",
+			["weapon input", "laser", "sound", "muzzle feedback", "heat"],
+		),
+		entry(
+			"probe-handoff.mjs",
+			"Measures apparent-size continuity as bodies cross between far and near render layers.",
+			["render layer", "handoff", "apparent size", "camera distance"],
+		),
+		entry(
+			"probe-hud.mjs",
+			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
+			["HUD", "projection", "canvas resize", "markers", "cockpit"],
+		),
+		entry(
+			"probe-interdiction.mjs",
+			"Exercises a live cruise interdiction, normal-flight drop, hostile contact, damage, and duel transition.",
+			["interdiction", "cruise", "raider", "damage", "combat transition"],
+		),
+		entry(
+			"probe-key-dispatch.mjs",
+			"Checks the browser keyboard dispatch law for held chords, Alt/Ctrl/Meta routing, head look, flight controls, and F1 Controls access.",
+			[
+				"keyboard dispatch",
+				"Alt Ctrl Meta",
+				"held chords",
+				"head look",
+				"Controls tab",
+			],
+		),
+		entry(
+			"probe-light-rig.mjs",
+			"Checks live baked-environment orientation, star lighting, material response, and light-rig exposure.",
+			[
+				"light rig",
+				"environment map",
+				"star direction",
+				"materials",
+				"exposure",
+			],
+		),
+		entry(
+			"probe-live-cockpit.mjs",
+			"Checks the normal cockpit route with the real renderer, world contacts, target cues, and head-look states.",
+			["live cockpit", "contacts", "target cues", "head look", "renderer"],
+		),
+		entry(
+			"probe-model-viewer.mjs",
+			"Checks that the procedural model workbench renders models while remaining isolated from Game.",
+			["model viewer", "workbench", "procedural models", "Game isolation"],
+		),
+		entry(
+			"probe-moving-guard.mjs",
+			"Checks the moving-body cruise stop and the handoff into the correct local flight frame.",
+			["moving body", "cruise guard", "local frame", "collision avoidance"],
+		),
+		entry(
+			"probe-navigation-console.mjs",
+			"Exercises the cockpit Navigation list and chart as distinct finding and spatial-reading surfaces.",
+			["Navigation console", "system list", "galaxy chart", "cockpit panels"],
+		),
+		entry(
+			"probe-occlusion.mjs",
+			"Checks near-layer sun shadows and screen-space ambient occlusion before bloom in the live renderer.",
+			["shadows", "SSAO", "occlusion", "render pass", "bloom"],
+		),
+		entry(
+			"probe-output-stage.mjs",
+			"Uses paired live renders to check antialiasing, encoding, vignette, dithering, and final-pass order.",
+			["output stage", "antialiasing", "encoding", "vignette", "dither"],
+		),
+		entry(
+			"probe-pad-instrument.mjs",
+			"Checks that gamepad controls operate the frame instrument without making the instrument modal.",
+			["gamepad", "frame instrument", "performance panel", "focus"],
+		),
+		entry(
+			"probe-pad-panels.mjs",
+			"Checks gamepad focus and activation across every cockpit panel using observable actions.",
+			["gamepad", "panel focus", "cockpit consoles", "activation"],
+		),
+		entry(
+			"probe-planet-surfaces.mjs",
+			"Checks generated planet classes, live shader surfaces, terminators, bands, rings, and handoff behavior.",
+			["planet surface", "shader", "planet class", "rings", "atmosphere"],
+		),
+		entry(
+			"probe-planets.mjs",
+			"Checks that gallery planet classes render as visually distinct, spherical, and star-lit bodies.",
+			["planet gallery", "planet classes", "lighting", "pixels"],
+		),
+		entry(
+			"probe-pointer-lock.mjs",
+			"Checks that head-turning to a console releases pointer lock so real panel clicks can land.",
+			["pointer lock", "head look", "console interaction", "mouse input"],
+		),
+		entry(
+			"probe-raider-consequence.mjs",
+			"Checks live persistence and presentation after a raider kill, including operational condition, wreck, scoop, and revisit.",
+			["raider kill", "world state", "wreck", "cargo scoop", "revisit"],
+		),
+		entry(
+			"probe-raider-frame.mjs",
+			"Checks that raider flight assist uses the player's local moving frame during a live duel.",
+			["raider flight", "local frame", "flight assist", "duel"],
+		),
+		entry(
+			"probe-relay.mjs",
+			"Exercises the pirate relay discovery, targeting, intervention, persistence, and revisit loop.",
+			[
+				"pirate relay",
+				"discovery",
+				"intervention",
+				"persistence",
+				"raider rate",
+			],
+		),
+		entry(
+			"probe-requests.mjs",
+			"Exercises Requests-tab accept, track, cancel, report, and cockpit cue flows through real inputs.",
+			["requests", "Requests UI", "tracking", "cockpit cue", "panel focus"],
+		),
+		entry(
+			"probe-save.mjs",
+			"Checks browser IndexedDB save/load, transaction failure, migration, autosave, and storage-scale behavior.",
+			["save", "IndexedDB", "migration", "autosave", "storage failure"],
+		),
+		entry(
+			"probe-ship-visuals.mjs",
+			"Checks procedural hull identity in the live chase renderer while keeping cockpit flight instrument-first.",
+			["ship visuals", "hull mesh", "chase view", "cockpit view"],
+		),
+		entry(
+			"probe-state-gallery.mjs",
+			"Checks every fixed HUD design-gallery state for legibility at desktop and narrow viewports.",
+			["state gallery", "HUD states", "responsive layout", "workbench"],
+		),
+		entry(
+			"probe-station-console.mjs",
+			"Checks docked station-console tabs, market and service interactions, negatives, and docked gallery state.",
+			["station console", "docked UI", "market", "services", "cockpit panels"],
+		),
+		entry(
+			"probe-station-mouth.mjs",
+			"Checks adjacent frames at turning station mouths for coplanar geometry flicker and one-frame disappearance.",
+			["station mouth", "flicker", "coplanar geometry", "aperture", "interior"],
+		),
+		entry(
+			"probe-station-route-traffic.mjs",
+			"Checks that one live Traffic carrier retains its route and presentation identity around a station.",
+			["Traffic", "station route", "carrier identity", "presentation"],
+		),
+		entry(
+			"probe-station-visuals.mjs",
+			"Checks live station-role signatures, fixtures, plating, wear, motion, and detail-level presentation.",
+			["station visuals", "station roles", "lights", "plating", "detail"],
+		),
+		entry(
+			"probe-station.mjs",
+			"Measures station silhouettes, drawn reach, aperture geometry, docking fit, and repeatable framing.",
+			["station geometry", "silhouette", "aperture", "docking fit", "framing"],
+		),
+		entry(
+			"probe-traffic-continuity.mjs",
+			"Checks that live multi-carrier arbitration does not rewrite an existing Traffic trip.",
+			["Traffic", "route continuity", "multi-carrier", "arbitration"],
+		),
+		entry(
+			"probe-traffic-engagement.mjs",
+			"Fires on ordinary Traffic and checks visible condition, reaction, diversion, destruction, law, and cargo effects.",
+			["civilian combat", "Traffic", "damage", "legal heat", "manifest"],
+		),
+		entry(
+			"probe-traffic-mouth.mjs",
+			"Checks a departing live Traffic hull as it crosses and occludes the station mouth, including bloom.",
+			["Traffic", "station mouth", "departure", "occlusion", "bloom"],
+		),
+		entry(
+			"probe-witnesses.mjs",
+			"Exercises the live station-witness legal loop: offence attribution, Wanted refusals, persistence across jumps, and heat-decay clearance.",
+			[
+				"station witness",
+				"legal heat",
+				"Wanted refusal",
+				"shipyard",
+				"persistence",
+				"jump",
+			],
+		),
+	].sort((a, b) => a.file.localeCompare(b.file)),
+);

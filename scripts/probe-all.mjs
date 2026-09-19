@@ -63,14 +63,17 @@
  * Usage:
  *   npm run probe                                      # serve, probe
  *   node scripts/probe-all.mjs http://localhost:5173   # probe a running one
+ *
+ * `PROBE_FILES` is an internal exact-name handoff from `select-probes.mjs`.
+ * Like `--only`, it is a visibly partial local run and is refused in CI.
  */
 import { spawn } from "node:child_process";
-import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
+import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -139,32 +142,11 @@ const TIMEOUT_MS = Number(process.env.PROBE_TIMEOUT_MS ?? 600_000);
  */
 const CONCURRENCY = Number(process.env.PROBE_CONCURRENCY ?? 1);
 
-/**
- * Files that match the naming convention but are not probes.
- *
- * `probe-all` is this runner. `probe-guard` is the shared launcher and
- * tree-declaration check that every probe imports — a module, with nothing at top
- * level. Left in, it is spawned as a probe, does nothing, exits 0, and is
- * counted as a **passing gate**. That is the exact failure the reporter and
- * quarantine bookkeeping above exists to prevent: a suite reading as covering
- * more than it does. Seekolous's copy of this runner has the same hole; it is
- * closed here.
- */
-const NOT_PROBES = new Set(["probe-all.mjs", "probe-guard.mjs"]);
-
-/**
- * Gating browser checks whose names describe their measurement, not their
- * verdict. They stay explicit so the `probe-` convention remains useful while
- * this suite cannot accidentally omit a release gate.
- */
-const ADDITIONAL_GATES = ["measure-cruise-detour.mjs"];
-
 // Which probes to run: everything here, or the subset `resolveOnly` selects.
-const allProbes = readdirSync(HERE)
-	.filter((f) => f.startsWith("probe-") && f.endsWith(".mjs"))
-	.filter((f) => !NOT_PROBES.has(f))
-	.concat(ADDITIONAL_GATES)
-	.sort();
+// `probe-inventory.mjs` owns exclusions such as this runner and `probe-guard`,
+// plus measurement-named gates that deliberately lack the `probe-` prefix. The
+// catalog-parity test calls this same function, so its inventory cannot drift.
+const allProbes = discoverProbeFiles(HERE);
 
 /** A probe whose exit code is a verdict — not a reporter, not quarantined. */
 const gates = (file) => !REPORTERS.has(file) && !QUARANTINED.has(file);

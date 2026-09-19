@@ -71,6 +71,65 @@ export function parseArgs(argv) {
 	return out;
 }
 
+const refuseIfUngated = (probes, gating, label) =>
+	probes.some(gating)
+		? null
+		: {
+				refusal:
+					`${label} selected ${probes.length} probe(s), all report-only or quarantined. ` +
+					"Their exit codes are not verdicts, so the run would assert nothing and still exit 0.",
+			};
+
+/**
+ * Resolve the selector's exact-name handoff, or return null when it is absent.
+ *
+ * @param {ProbeArgs} args
+ * @param {Record<string, string | undefined>} env
+ * @param {string[]} available
+ * @param {(file: string) => boolean} gating
+ * @param {boolean} inCI
+ * @returns {Selection | null}
+ */
+function resolveExactProbeFiles(args, env, available, gating, inCI) {
+	if (env.PROBE_SELECTION !== "1") return null;
+	if (env.PROBE_FILES === undefined)
+		return { refusal: "PROBE_SELECTION=1 requires PROBE_FILES." };
+	if (args.onlySeen || env.PROBE_ONLY)
+		return {
+			refusal: "PROBE_FILES cannot be combined with --only or PROBE_ONLY.",
+		};
+	if (inCI)
+		return {
+			refusal:
+				"refusing filtered PROBE_FILES in CI — CI must run the whole suite",
+		};
+
+	const requested = [
+		...new Set(
+			env.PROBE_FILES.split(",")
+				.map((file) => file.trim())
+				.filter(Boolean),
+		),
+	];
+	if (!requested.length)
+		return { refusal: "PROBE_FILES contained no probe names." };
+	const unknown = requested.filter((file) => !available.includes(file));
+	if (unknown.length)
+		return {
+			refusal:
+				`PROBE_FILES named probe(s) that are not available: ${unknown.join(", ")}. ` +
+				`Available: ${available.join(", ")}`,
+		};
+	const probes = available.filter((file) => requested.includes(file));
+	const ungated = refuseIfUngated(probes, gating, "PROBE_FILES");
+	if (ungated) return ungated;
+	return {
+		only: probes.join(","),
+		probes,
+		source: "PROBE_FILES",
+	};
+}
+
 /**
  * Resolve the filter and everything that can refuse it, in one place.
  *
@@ -94,6 +153,8 @@ export function parseArgs(argv) {
  */
 export function resolveOnly(args, env, available, gating = () => true) {
 	const inCI = !!env.CI && env.CI !== "false" && env.CI !== "0";
+	const exact = resolveExactProbeFiles(args, env, available, gating, inCI);
+	if (exact) return exact;
 	// Argv wins over the environment, and settles the question either way: a bare
 	// `--only` is an error even with `PROBE_ONLY` set, because the caller asked
 	// for a filter in this invocation and did not say which.
@@ -148,12 +209,7 @@ export function resolveOnly(args, env, available, gating = () => true) {
 		return {
 			refusal: `${source} ${only} matched none of:\n  ${available.join("\n  ")}`,
 		};
-	if (!probes.some(gating))
-		return {
-			refusal:
-				`${source} ${only} selected ${probes.length} probe(s), all report-only or ` +
-				`quarantined. Their exit codes are not verdicts, so the run would assert ` +
-				`nothing and still exit 0.`,
-		};
+	const ungated = refuseIfUngated(probes, gating, `${source} ${only}`);
+	if (ungated) return ungated;
 	return { only, probes, source };
 }

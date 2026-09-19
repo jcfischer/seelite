@@ -130,6 +130,48 @@ describe("resolveOnly", () => {
 	});
 
 	describe("the environment", () => {
+		const selectedEnv = (files: string) => ({
+			PROBE_SELECTION: "1",
+			PROBE_FILES: files,
+		});
+
+		test("PROBE_FILES selects several exact gates in runner order", () => {
+			expect(
+				selected([], selectedEnv("probe-beta.mjs,probe-alpha.mjs")),
+			).toMatchObject({
+				only: "probe-alpha.mjs,probe-beta.mjs",
+				probes: ["probe-alpha.mjs", "probe-beta.mjs"],
+			});
+		});
+
+		test("PROBE_FILES refuses unknown, empty, or conflicting selections", () => {
+			expect(resolve([], selectedEnv("probe-missing.mjs")).refusal).toMatch(
+				/not available/,
+			);
+			expect(resolve([], selectedEnv(",")).refusal).toMatch(/no probe names/);
+			expect(
+				resolve(["--only", "alpha"], selectedEnv("probe-beta.mjs")).refusal,
+			).toMatch(/cannot be combined/);
+		});
+
+		test("PROBE_FILES gets the same CI refusal as --only", () => {
+			expect(
+				resolve([], {
+					CI: "true",
+					...selectedEnv("probe-alpha.mjs"),
+				}).refusal,
+			).toContain("CI");
+		});
+
+		test("ambient PROBE_FILES cannot narrow a plain full-suite run", () => {
+			expect(selected([], { PROBE_FILES: "probe-alpha.mjs" }).probes).toEqual(
+				ALL,
+			);
+			expect(resolve([], { PROBE_SELECTION: "1" }).refusal).toContain(
+				"requires PROBE_FILES",
+			);
+		});
+
 		test("PROBE_ONLY filters when no flag is given", () => {
 			expect(selected([], { PROBE_ONLY: "alpha" }).probes).toEqual([
 				"probe-alpha.mjs",
