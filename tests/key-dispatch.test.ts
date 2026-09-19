@@ -18,8 +18,14 @@ interface KeyMods {
 	altKey: boolean;
 	ctrlKey: boolean;
 	metaKey: boolean;
+	editable: boolean;
 }
-const NONE: KeyMods = { altKey: false, ctrlKey: false, metaKey: false };
+const NONE: KeyMods = {
+	altKey: false,
+	ctrlKey: false,
+	metaKey: false,
+	editable: false,
+};
 const ALT = { altKey: true };
 
 describe("a chord is one-shot, and never a held key", () => {
@@ -188,6 +194,92 @@ describe("the ordinary path", () => {
 });
 
 /**
+ * A key typed into a field is the field's (#380).
+ *
+ * The cockpit holds two live text fields — the Navigation filter and the
+ * chart's FIND SYSTEM — and a keyboard is the only thing that can type in
+ * either, because the pad's cursor walks past both. So typing `cargo` must not
+ * request clearance on `c`, cycle the target on `g`, or hold `a` as roll.
+ */
+describe("a key typed into a field reaches only the field", () => {
+	const typed = (key: string, code: string, mods: Partial<KeyMods> = {}) =>
+		press(key, code, { editable: true, ...mods });
+
+	test("every letter of a word is swallowed, and left to the field", () => {
+		// Not prevented: the field has to receive the character.
+		for (const [key, code] of [
+			["c", "KeyC"],
+			["a", "KeyA"],
+			["r", "KeyR"],
+			["g", "KeyG"],
+			["o", "KeyO"],
+		])
+			expect(typed(key, code)).toEqual({ kind: "swallow" });
+	});
+
+	test("so are Space, the digits and the arrows, which the field edits with", () => {
+		// Space would fire and the arrows would fly; `1`–`3` would turn the head
+		// away from the very console the field is on.
+		for (const [key, code] of [
+			[" ", "Space"],
+			["1", "Digit1"],
+			["3", "Digit3"],
+			["ArrowLeft", "ArrowLeft"],
+			["ArrowUp", "ArrowUp"],
+			["F1", "F1"],
+		])
+			expect(typed(key, code)).toEqual({ kind: "swallow" });
+	});
+
+	test("a held key in a field is swallowed too, repeat after repeat", () => {
+		expect(
+			keyDispatch({
+				key: "e",
+				code: "KeyE",
+				down: true,
+				repeat: true,
+				...NONE,
+				editable: true,
+			}),
+		).toEqual({ kind: "swallow" });
+	});
+
+	test("a chord or a Ctrl key in a field reaches nothing either", () => {
+		// The field's own shortcuts — Alt+← by word, Ctrl+A to select — are the
+		// browser's there, so none of them is prevented.
+		expect(typed("ArrowLeft", "ArrowLeft", { altKey: true })).toEqual({
+			kind: "swallow",
+		});
+		expect(typed("a", "KeyA", { ctrlKey: true })).toEqual({
+			kind: "swallow",
+		});
+		expect(typed("control", "ControlLeft", { ctrlKey: true })).toEqual({
+			kind: "swallow",
+		});
+	});
+
+	test("a release in a field still clears the key it names", () => {
+		// A key held in flight and released after a click into the field must
+		// not stay held: ruling 1 comes first.
+		expect(
+			keyDispatch({
+				key: "d",
+				code: "KeyD",
+				down: false,
+				repeat: false,
+				...NONE,
+				editable: true,
+			}),
+		).toEqual({ kind: "release", key: "d" });
+	});
+
+	test("and the same keys outside a field still fly — the row above can fail", () => {
+		expect(press("g", "KeyG")).toMatchObject({ kind: "key", oneShot: true });
+		expect(press(" ", "Space")).toMatchObject({ kind: "key", prevent: true });
+	});
+});
+
+/**
  * The wiring, read off the source (sage round 1 on #391).
  *
  * The catalogue derives its Alt rows from `ALT_CHORDS`, so a check that those
@@ -206,6 +298,10 @@ describe("main.ts acts on the route", () => {
 
 	test("onKey asks the law", () => {
 		expect(main).toContain("keyDispatch({");
+	});
+
+	test("and tells it whether the key was typed into a field (#380)", () => {
+		expect(main).toContain("editable: isEditable(e.target),");
 	});
 
 	test("a chord runs its key's command, in the cockpit", () => {
