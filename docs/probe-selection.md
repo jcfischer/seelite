@@ -84,6 +84,9 @@ combined with `--only` or `PROBE_ONLY`, and every partial-run banner names that
 it is partial. Treat that result as local feedback, not as a full browser-tier
 receipt.
 
+The checked-in [`probe-selection-runner-receipt.md`](./probe-selection-runner-receipt.md)
+captures a real two-probe handoff through the shared dev-server/browser runner.
+
 The calibration cases and named expected probes are recorded in
 [`probe-selection-evaluation.md`](./probe-selection-evaluation.md) and can be
 rerun with `npm run probe:evaluate` after loading the API key. To retain a
