@@ -53,6 +53,10 @@ jobs:
       # format` re-applies it). This gate fails the job if a PR drifts.
       - run: npm run format:check
 
+      # Undeclared names in `scripts/`; what it covers and what it cannot see is
+      # written in biome.jsonc (#402).
+      - run: npm run lint
+
       # The headless tier: seeded generation, the float64 sim, the module
       # boundary that keeps Three.js out of it. Seconds, no browser.
       - uses: oven-sh/setup-bun@v2

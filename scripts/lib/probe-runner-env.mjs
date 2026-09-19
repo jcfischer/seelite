@@ -1,3 +1,5 @@
+import { PLAYWRIGHT_ENV_VARS } from "../probe-guard.mjs";
+
 /**
  * Build the environment for the browser runner from a completed selection.
  * Only runtime necessities and documented probe controls cross into the PR's
@@ -24,8 +26,10 @@ export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 		"COLORTERM",
 		"NO_COLOR",
 		"FORCE_COLOR",
-		"PLAYWRIGHT_DIR",
-		"PLAYWRIGHT_MODULE",
+		// The launcher owns these names. Reading them from it keeps this list from
+		// being a second copy, and keeps the wiring gate's "nothing else resolves
+		// Playwright" rule true of this file rather than exempted for it.
+		...PLAYWRIGHT_ENV_VARS,
 		"HEADED",
 		"DISPLAY",
 		"WAYLAND_DISPLAY",

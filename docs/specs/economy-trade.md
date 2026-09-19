@@ -1213,9 +1213,7 @@ than kept in two files.
 The station-console probe prices a row iff the station lists the good, on both
 columns now, and prints the spread the glass shows beside the count of rows where the
 bid sits under the ask and the count pinned at the price step. **Run it with
-`node scripts/probe-all.mjs --only station-console`, not `npm run probe:one`:** the npm
-script runs `check:wiring` first, which is red on `main` for two probes unrelated to
-this node (PR body R1), so it exits before the probe that answers this question starts.
+`npm run probe:one station-console`.**
 What the check line prints is the owner of that spread figure — it is not transcribed
 here, because a range quoted in prose is a range that goes stale against a display step,
 which is the rounding that produced the figures this paragraph replaced.

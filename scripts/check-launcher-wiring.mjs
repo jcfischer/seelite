@@ -163,6 +163,10 @@ const EXEMPT = new Map([
 		"#242's headed bay-frame instrument; a sibling of #99's and #201's and exempt for the same reason — it prints per-subject arms, a mask fraction and a separation count for a receipt and gates on nothing, because #98 settled that there is no frame-time floor in this game. It refuses a software rasteriser, which throws out of the run rather than counting a failed check. Missing since #244, where it landed with no entry: CI does not run the probes (#14), so `npm run probe` has been red on `main` since that merge",
 	],
 	[
+		"measure-canister-drift.mjs",
+		"#324's canister-drift instrument; it prints two tables of ranges and speeds against a frozen twin for a receipt and asserts nothing, so there are no checks for a watch to report into. It reads simulation state through one `page.evaluate` rather than pixels, so a shader failure cannot change what it prints; a boot that never completes, or an evaluate that throws, fails the run rather than counting a failed check",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],
@@ -249,9 +253,20 @@ for (const path of scripts(DIR).sort()) {
 	// at all — every input it makes is a pad button, which that key listener
 	// cannot see. The list stays a list of names so the suite-wide refusal holds
 	// for every probe that has not argued its way onto it.
+	// `probe-pointer-lock.mjs` joins it on a different footing (#402): it *does*
+	// send a key with the panel mounted — `3`, to turn the head under the
+	// overlay — and `3` is not one of the panel's keys (`PERF_KEYS` and
+	// `RESTORE_KEY`, held against the flight bindings by
+	// `tests/perf-panel-keys.test.ts`). The instrument over a console is that
+	// row's subject: `padContext()` answers `instrument` only while the panel is
+	// focused (`main.ts`), so dropping the flag would delete the row rather than
+	// isolate it. The exception is per file, not per page: the probe's other pages
+	// carry no `perf` and this cannot tell them apart, so a key added to *this*
+	// page is what to check against that test's list.
 	const PERF_OWNERS = new Set([
 		"probe-frame-attribution.mjs",
 		"probe-pad-instrument.mjs",
+		"probe-pointer-lock.mjs",
 	]);
 	// Both spellings (#306). A probe's URL is `gameUrl(origin, { perf: 1 })`
 	// now, which has no `?perf` in it — so the query form alone would pass every

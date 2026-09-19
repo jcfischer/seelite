@@ -27,6 +27,20 @@
 //   pinned here as the declared convention.
 //
 // Run it: npx @biomejs/biome format --write .
+//
+// Lint (#402): `recommended` is off and one rule is on, `noUndeclaredVariables`,
+// for `scripts/**` only, with `Bun` declared as a global there. `tsc` covers
+// the `.ts` scripts (#7) but not the `.mjs` ones: `allowJs` without `checkJs`
+// parses them and never resolves a name, and nothing loads a probe without a
+// browser, so a call to a name nothing declares sat there until the day the
+// script ran. It is scoped
+// rather than tree-wide because widening it is a different decision: turning on
+// `recommended` reports the whole tree. Run it: `npm run lint`.
+//
+// What it cannot see: Biome counts the browser globals as declared, so `window`
+// or `document` written in a probe's Node scope — outside `page.evaluate` —
+// passes. It catches a misspelt or missing import, not a name that exists in
+// the wrong runtime.
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
 	"formatter": {
@@ -40,5 +54,25 @@
 			"semicolons": "always",
 			"trailingCommas": "all"
 		}
-	}
+	},
+	"linter": {
+		"rules": {
+			"recommended": false
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["scripts/**"],
+			"javascript": {
+				"globals": ["Bun"]
+			},
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUndeclaredVariables": "error"
+					}
+				}
+			}
+		}
+	]
 }

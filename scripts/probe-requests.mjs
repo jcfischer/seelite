@@ -9,6 +9,7 @@ import {
 	launchChromium,
 	bootedGame,
 	installViewPlacement,
+	tally,
 } from "./probe-guard.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 import { installFakePad, STANDARD_INDEX as B } from "./lib/fake-pad.mjs";
@@ -20,6 +21,13 @@ const headed = process.env.HEADED === "1";
 mkdirSync(out, { recursive: true });
 await guardedOrigin(origin);
 const browser = await launchChromium({ headless: !headed });
+// Only for the shader listener: this probe keeps its own throwing `check` and
+// `pageerror` handler, which is a reporting choice worth keeping, and takes
+// the one thing `tally()` adds that they do not — a shader that fails to link
+// is a `console.error`, not a page error, so nothing here would have seen it.
+// The listener only counts; `check` below is what turns that count into a
+// failure, so pass/fail is still decided in one place.
+const t = tally();
 const checks = [];
 const check = (name, ok, detail = "") => {
 	checks.push({ name, ok: !!ok, detail });
@@ -30,6 +38,7 @@ try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
 	});
+	t.watchShaders(page, "requests");
 	page.on("pageerror", (e) => {
 		throw e;
 	});
@@ -483,6 +492,7 @@ try {
 	const normalPage = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
 	});
+	t.watchShaders(normalPage, "normal Game");
 	await normalPage.goto(gameUrl(origin, { seed: 42, "no-save": true }), {
 		waitUntil: "load",
 	});
@@ -496,6 +506,7 @@ try {
 			.count()) === 0,
 	);
 	await normalPage.close();
+	check("no shader failed to compile or link on either page", t.failures === 0);
 	writeFileSync(
 		`${out}/checks.json`,
 		JSON.stringify(
