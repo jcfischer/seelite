@@ -405,8 +405,9 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		expect(end).toBeGreaterThan(at);
 		const branch = main.slice(at, end);
 		expect(branch).not.toContain("liveCockpit");
-		// Read means acted on: an `if` on the field or a loop over it, not a
-		// mention in a comment (the comments are already blanked by `codeOf`).
+		// A read here is an `if` on the field or a loop over it, which is what a
+		// source scan can see. It cannot see what that branch then does: whether
+		// the read acts is the browser tier's (`probe-pad-instrument.mjs`).
 		for (const field of emitted)
 			expect(branch, `instrument emits ${field}`).toMatch(
 				new RegExp(`(if \\(intents\\.${field}\\b|of intents\\.${field}\\))`),
