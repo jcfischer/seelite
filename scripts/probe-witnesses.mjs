@@ -111,18 +111,29 @@ try {
 			 * the station's own frame that makes holding there one act rather than
 			 * a fight with the assist.
 			 */
+			/**
+			 * Put the ship at `at`, at rest with it, nose on `toward`.
+			 *
+			 * The berth hold and the carrier tether both need it, and where the
+			 * ship is *is* this file's subject — H5's witness goes to the body the
+			 * flight assist says the ship is at — so it is one function rather than
+			 * two spellings that could disagree about what "parked" means.
+			 */
+			parkShip(at, toward, vel) {
+				g.world.ship.pos = at;
+				g.world.ship.vel = vel;
+				g.throttle = 0;
+				window.__witnessProbe.aimAt(toward);
+				g.setHeadLook("forward");
+			},
 			holdBeside(stationId, km) {
 				const body = g.world.system.byId.get(stationId);
 				if (!body) return { held: false, frameBodyId: null };
-				g.world.ship.pos = add(body.pos, { x: 0, y: 0, z: km });
-				g.world.ship.vel = sim.bodyVelocity(
-					g.world.system,
-					body.id,
-					g.world.gameTime,
+				window.__witnessProbe.parkShip(
+					add(body.pos, { x: 0, y: 0, z: km }),
+					body.pos,
+					sim.bodyVelocity(g.world.system, body.id, g.world.gameTime),
 				);
-				g.throttle = 0;
-				window.__witnessProbe.aimAt(body.pos);
-				g.setHeadLook("forward");
 				frame();
 				return { held: true, frameBodyId: g.frameBody?.id ?? null };
 			},
@@ -298,21 +309,27 @@ try {
 					route?.nose ? scale(route.nose, -1) : { x: 0, y: 0, z: 1 },
 				);
 				window.__witnessProbe.offset = scale(back, km);
-				g.world.ship.pos = add(contact.pos, window.__witnessProbe.offset);
-				g.world.ship.vel = { ...contact.velocity };
-				g.throttle = 0;
 				g.targetId = key;
-				window.__witnessProbe.aimAt(contact.pos);
-				g.setHeadLook("forward");
+				window.__witnessProbe.parkShip(
+					add(contact.pos, window.__witnessProbe.offset),
+					contact.pos,
+					{ ...contact.velocity },
+				);
 				return true;
 			},
 			/** One tethered frame with the trigger held. */
 			followFiring(key) {
 				const contact = g.trafficContacts.get(key);
 				if (!contact) return false;
-				g.world.ship.pos = add(contact.pos, window.__witnessProbe.offset);
-				g.world.ship.vel = { ...contact.velocity };
-				window.__witnessProbe.aimAt(contact.pos);
+				// The ship travels with the carrier it is shooting at, which the
+				// tether's offset says it should: what is being tested is whether a
+				// beam kept on target diverts a civilian, not whether a pilot can
+				// keep up with one.
+				window.__witnessProbe.parkShip(
+					add(contact.pos, window.__witnessProbe.offset),
+					contact.pos,
+					{ ...contact.velocity },
+				);
 				g.keys.add(" ");
 				window.__witnessProbe.framesFired++;
 				frame();
