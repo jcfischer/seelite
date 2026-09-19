@@ -1,10 +1,10 @@
 /**
- * The keyboard's dispatch law, in the page (#377).
+ * The keyboard's dispatch law, in the page (#377, #380).
  *
  * `tests/key-dispatch.test.ts` holds the law itself; `main.ts` cannot load
  * headless, so this probe holds the wiring: that `onKey` acts on the law's
- * answer. Each row is one of the principal's four rulings, read off the game's
- * own state.
+ * answer. Each row is one of the principal's four rulings on #377 or #380's
+ * field gate, read off the game's own state.
  *
  * **Keys go in through CDP's `Input.dispatchKeyEvent`, not `page.keyboard`.**
  * The row that matters most is a *held* chord, and Playwright's keyboard never
@@ -220,6 +220,123 @@ check(
 	closedF1.head === "forward" && closedF1.tab === beforeF1.tab,
 	`${JSON.stringify(beforeF1)} -> ${JSON.stringify(closedF1)}`,
 );
+
+// ---------------------------------------------------------------------------
+// A word typed into the Navigation filter flies nothing (#380).
+//
+// Read off the simulation, not the field: the target the game holds, the keys
+// it holds, and where the head is turned. `g` in `cargo` is `cycleTarget(-1)`,
+// and `1`/`3` turn the head off the console the field is on.
+// ---------------------------------------------------------------------------
+await page.keyboard.press("1");
+await settle(page);
+const filter = page.locator("[data-live-nav-query]");
+await filter.click();
+const sim = () =>
+	page.evaluate(() => ({
+		target: window.__seelite.targetId,
+		head: window.__seelite.headLook,
+		keys: [...window.__seelite.keys],
+	}));
+const beforeTyping = await sim();
+await page.keyboard.type("cargo 13");
+const typedValue = await filter.inputValue();
+// A held flight key in the field, read while it is still down.
+await page.keyboard.down("e");
+await page.keyboard.down("e");
+await settle(page);
+const whileHeld = await sim();
+await page.keyboard.up("e");
+await settle(page);
+const afterTyping = await sim();
+const stillFocused = await filter.evaluate(
+	(el) => el === document.activeElement,
+);
+check(
+	"typing `cargo 13` into the Navigation filter leaves the target where it was",
+	afterTyping.target === beforeTyping.target,
+	`target ${beforeTyping.target} -> ${afterTyping.target}`,
+);
+check(
+	"and the head on the port console, with the field still focused",
+	afterTyping.head === "left" && stillFocused,
+	`head ${afterTyping.head}, focused ${stillFocused}`,
+);
+check(
+	"and a flight key held in the field is not held by the game",
+	whileHeld.keys.length === 0 && afterTyping.keys.length === 0,
+	`held while down: [${whileHeld.keys}], after: [${afterTyping.keys}]`,
+);
+check(
+	"and the field keeps every character, Space included",
+	typedValue === "cargo 13",
+	`value ${JSON.stringify(typedValue)}`,
+);
+
+// Guard: the same `g` with the field blurred does cycle the target, so the
+// target row above can fail.
+// Cleared through the page rather than `fill`: on a build that leaks, `3`
+// turned the head and the field is hidden, and `fill` would wait on it.
+await filter.evaluate((el) => {
+	el.value = "";
+	el.dispatchEvent(new Event("input", { bubbles: true }));
+	el.blur();
+});
+await page.keyboard.press("g");
+await settle(page);
+const outside = await sim();
+check(
+	"and a `g` outside the field does cycle the target, so the row can fail",
+	outside.target !== afterTyping.target,
+	`target ${afterTyping.target} -> ${outside.target}`,
+);
+await page.keyboard.press("2");
+await settle(page);
+
+// ---------------------------------------------------------------------------
+// And the chart's FIND SYSTEM field, the second of the two (#380, sage
+// round 1): the gate is `isEditable`, not a selector for one field, and this
+// row is what shows it reaches the other.
+// ---------------------------------------------------------------------------
+const leftTab = (name) =>
+	page.evaluate((tab) => {
+		const el = document.querySelector(`[data-live-left-tab="${tab}"]`);
+		if (!(el instanceof HTMLElement)) throw new Error(`no ${tab} tab`);
+		el.click();
+	}, name);
+await page.keyboard.press("1");
+await settle(page);
+await leftTab("Galaxy Map");
+await page.waitForFunction(() => Boolean(window.__seeliteGalaxyMap));
+const finder = page.locator("[data-map-finder-query]");
+await finder.click();
+const beforeFinder = await sim();
+await page.keyboard.type("g 13");
+await settle(page);
+const afterFinder = await sim();
+const finderValue = await finder.inputValue();
+check(
+	"typing `g 13` into FIND SYSTEM leaves the target and the head where they were",
+	afterFinder.target === beforeFinder.target &&
+		afterFinder.head === "left" &&
+		afterFinder.keys.length === 0,
+	`target ${beforeFinder.target} -> ${afterFinder.target}, head ${afterFinder.head}, keys [${afterFinder.keys}]`,
+);
+check(
+	"and FIND SYSTEM keeps every character",
+	finderValue === "g 13",
+	`value ${JSON.stringify(finderValue)}`,
+);
+await finder.evaluate((el) => {
+	el.value = "";
+	el.dispatchEvent(new Event("input", { bubbles: true }));
+	el.blur();
+});
+await page.keyboard.press("1");
+await settle(page);
+await leftTab("Navigation");
+await page.keyboard.press("2");
+await settle(page);
 
 // Guard: the same paced measurement does see the Shift blip on `?`, so the
 // F1 throttle row above can fail. Last, because it leaves the throttle raised.

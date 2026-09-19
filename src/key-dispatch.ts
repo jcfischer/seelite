@@ -3,13 +3,22 @@
  *
  * `main.ts` hands every keydown and keyup here before it touches the held-key
  * set or `Game.command`, and acts on the answer. The law is the principal's four
- * rulings on #377, in the order they are applied:
+ * rulings on #377 and #380's field gate, in the order they are applied:
  *
  * 1. **A release clears the key it names.** Whatever is held with it, a keyup
  *    takes its key out of the held set — a flight key stuck down is worse than
  *    any modifier rule. The limit is the *name*: on macOS a key released under
  *    Option reports the Option character (`∂` for D), and the key it was
  *    pressed as stays held. That is #390, and it is older than this module.
+ *
+ * Between rulings 1 and 2 sits #380's gate, which is not one of #377's four and
+ * so takes no number: **a key typed into a field is the field's.** The cockpit
+ * holds two live text fields, the Navigation filter and the chart's FIND
+ * SYSTEM, and typing `cargo` into one requested clearance on `c` and cycled the
+ * target on `g`. A press there reaches nothing and is not prevented, so the
+ * field keeps the character. It comes after the release, which still clears a
+ * key held in flight before the click into the field.
+ *
  * 2. **Ctrl runs no command, and Meta reaches nothing.** `Ctrl`+letter fired
  *    the letter's command *and* throttled down, so `Ctrl+J` started cruise.
  *    Now a key pressed with Ctrl down is held but runs no command: Ctrl is
@@ -57,6 +66,8 @@ export interface KeyEventFacts {
 	readonly altKey: boolean;
 	readonly ctrlKey: boolean;
 	readonly metaKey: boolean;
+	/** Whether the target is a text field (`isEditable`). */
+	readonly editable: boolean;
 }
 
 export type KeyRoute =
@@ -88,6 +99,7 @@ const preventsDefault = (key: string) =>
 export function keyDispatch(e: KeyEventFacts): KeyRoute {
 	const key = e.key.toLowerCase();
 	if (!e.down) return { kind: "release", key };
+	if (e.editable) return { kind: "swallow" };
 	if (e.metaKey) return { kind: "swallow" };
 	if (e.altKey) {
 		const chord = ALT_CHORDS[e.code];
