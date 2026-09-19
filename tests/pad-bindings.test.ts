@@ -19,6 +19,7 @@ import {
 	type PointerLockMove,
 	PAD_FLIGHT_KEYS,
 	contextFliesShip,
+	mouseFireHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
@@ -582,6 +583,34 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 				);
 			}
 		}
+	});
+
+	test("the mouse's trigger goes with its pointer (#378)", () => {
+		// The principal's ruling on #378: the mouse is the device #283 put on the
+		// suspended side, so its button fires only where the pointer may be held.
+		// A click on the glass beside a drawn console does not fire. Space still
+		// does: the keyboard's ruling is not this node's.
+		for (const context of Object.keys(CELLS) as PadContext[])
+			for (const drawn of [false, true]) {
+				const admits = pointerLockMove(context, drawn, false) === "capture";
+				expect(mouseFireHeld(true, context, drawn), `${context}/${drawn}`).toBe(
+					admits,
+				);
+				expect(mouseFireHeld(false, context, drawn)).toBe(false);
+			}
+		// The two cells a player reaches with the button down, spelled out so the
+		// loop above cannot pass by agreeing with a wrong `pointerLockMove`.
+		expect(mouseFireHeld(true, "flight", false)).toBe(true);
+		expect(mouseFireHeld(true, "console", true)).toBe(false);
+	});
+
+	test("and triggerHeld asks it, rather than reading the button bare", () => {
+		const main = codeOf("src/main.ts");
+		const at = main.indexOf("private triggerHeld(): boolean {");
+		expect(at).toBeGreaterThan(-1);
+		const body = main.slice(at, main.indexOf("\n\t}", at));
+		expect(body).toContain("mouseFireHeld(");
+		expect(body).not.toMatch(/\|\|\s*this\.mouseFiring\s*\|\|/);
 	});
 
 	test("the gamepad's head turn arrives at the same door the keyboard's does", () => {

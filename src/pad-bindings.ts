@@ -454,3 +454,12 @@ export function padFireHeld(
 		frame.held.has("x")
 	);
 }
+
+/** Red stub (#378): today's behaviour, the mouse button fires everywhere. */
+export function mouseFireHeld(
+	held: boolean,
+	_context: PadContext,
+	_consoleDrawn: boolean,
+): boolean {
+	return held;
+}
