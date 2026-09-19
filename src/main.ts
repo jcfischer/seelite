@@ -2227,6 +2227,21 @@ class Game {
 		onTarget: boolean;
 		/** The condition line drawn under `text` this frame, or `null`. */
 		conditionLine: string | null;
+		/**
+		 * The point the condition line's baseline was set to this frame, or `null`
+		 * when no line was drawn.
+		 *
+		 * **A record of what was painted is not the painting.** `conditionLine` says
+		 * what the game handed the painter; whether ink reached the canvas where a
+		 * pilot can read it is only answerable from the canvas. And the one thing a
+		 * probe must not be left to guess is *where* — the mark moves with the camera,
+		 * and a probe that recomputed the position would be a second projection to
+		 * keep in step, while one that restated `TARGET_CONDITION_DX`/`_DY` would
+		 * drift the day the label's layout moves. So the frame that draws the line
+		 * reports the same coordinates it passed to `fillText`, and
+		 * `probe-traffic-engagement.mjs` samples the overlay around those.
+		 */
+		conditionPaint: { x: number; y: number } | null;
 	} | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
@@ -13051,6 +13066,12 @@ class Game {
 						text: label,
 						onTarget,
 						conditionLine: line?.text ?? null,
+						conditionPaint: line
+							? {
+									x: at.x + TARGET_CONDITION_DX,
+									y: at.y + TARGET_CONDITION_DY,
+								}
+							: null,
 					};
 					continue;
 				}

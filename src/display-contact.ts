@@ -207,18 +207,17 @@ export const trafficDivertCue = (
 	homeKm: number | null,
 ): string | null => {
 	if (presence !== "parked-home") return null;
-	if (homeKm === null) return DIVERT_LABEL;
-	const printed = range(homeKm);
-	// **Suppressed on what the pilot would read, not on the arithmetic.** A `null`
-	// is the case of no station to point at, and guarding only that leaves the
-	// common one: a pilot standing beside the station when the divert lands is a
-	// few dozen metres from the body, and `range` renders that as `0.0 km` — the
-	// one figure this function's own contract rules out, saying the station is
-	// right here while the word beside it says the ship is somewhere else. Tested
-	// against `range(0)` rather than the string `"0.0 km"` so it is the format
-	// doing the deciding: if `range` gains a rung or changes its decimals, the
-	// suppression follows it instead of quietly going stale on a literal.
-	return printed === range(0)
+	// **`null` is the only suppression, and a reading that renders `0.0 km` is not
+	// it.** An earlier round suppressed that too, on a sentence in §5.4 that said a
+	// zero contradicts the word beside it. The sentence was wrong, and the wrongness
+	// is worth keeping here because it is the kind that reads as care: a pilot who
+	// is beside their station when the divert lands is a few dozen metres from the
+	// body, and for them `HOME 0.0 km` is not a contradiction, it is the answer —
+	// the ship they shot is in the parking place down the road. Suppress it and
+	// `here` becomes indistinguishable from `the game cannot locate the station`,
+	// which is the one conflation this line genuinely cannot survive. So: the word
+	// alone means *there is no station to point at*, and nothing else means that.
+	return homeKm === null
 		? DIVERT_LABEL
-		: `${DIVERT_LABEL} · HOME ${printed}`;
+		: `${DIVERT_LABEL} · HOME ${range(homeKm)}`;
 };

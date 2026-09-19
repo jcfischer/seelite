@@ -306,12 +306,42 @@ try {
 		// prints**. The row's whole question is whether the glass and the sim agree,
 		// and a probe carrying its own copy of the form could keep passing while the
 		// two disagreed — which is CLAUDE.md's reason for reading off the page.
+		/**
+		 * Lit pixels in the band a condition line was painted in.
+		 *
+		 * **This is the half the record cannot answer.** `conditionLine` says what
+		 * the game handed the painter; it stays identical whether the glyphs landed
+		 * where a pilot can read them, landed under the mark's own brackets, or were
+		 * never stroked at all. The band is taken from `conditionPaint`, the
+		 * coordinates the frame passed to `fillText`, so this probe neither
+		 * recomputes the projection nor restates the label's layout offsets — and the
+		 * window is centred on the baseline rather than starting at it, because the
+		 * overlay draws with `textBaseline = "middle"`. Sampling from the baseline
+		 * downward is how the duel HUD's band spent rounds passing on the name line's
+		 * pixels above it.
+		 */
+		const inkIn = (at) => {
+			const overlay = document.getElementById("overlay");
+			const ctx = overlay.getContext("2d", { willReadFrequently: true });
+			const data = ctx.getImageData(
+				Math.floor(at.x),
+				Math.floor(at.y) - 8,
+				150,
+				16,
+			).data;
+			let n = 0;
+			for (let i = 3; i < data.length; i += 4) if (data[i] > 40) n++;
+			return n;
+		};
 		const painted = () => {
 			const record = g.selectedRender;
 			if (!record) return null;
 			const fight = g.trafficEngagements?.get(key);
 			return {
 				...record,
+				// Counted before anything else is read, so it is the frame that
+				// carried `conditionLine` and not a later one that shares its text.
+				paint: record.conditionPaint ? inkIn(record.conditionPaint) : null,
 				expected: fight ? hud.targetConditionLine(fight.condition).text : null,
 			};
 		};
@@ -344,16 +374,15 @@ try {
 	// the glass correctly — the sim was right and the glass was silent.
 	// -------------------------------------------------------------------------
 	check(
-		// **What this row can and cannot say.** It reads the record the draw hands
-		// the painter and compares it to the formatter's own output, so it proves
-		// the game computed this line for this frame and offered it to the label —
-		// which is the wire this node was opened for, because the sim had been right
-		// and this handoff had been missing for twenty seconds of beam. It does
-		// **not** prove ink reached the canvas: a row that can be satisfied by a
-		// record cannot see text that is clipped, mispositioned, or drawn in a
-		// colour nobody can read. The pixels are `probe-duel-hud.mjs`'s, which
-		// counts them in the band this line is painted in and fails at `paint > 30`.
-		"the frame the fight begins offers the condition line to the mark, and it is the line the sim's own formatter prints",
+		// **Both halves, on the civilian rather than the raider.** The record half is
+		// the wire this node was opened for: the sim had been right for twenty seconds
+		// of beam and the handoff to the label was not there. The pixel half is what
+		// a record cannot say — that ink reached the canvas where a pilot reads it —
+		// and an earlier round answered that by pointing at `probe-duel-hud.mjs`.
+		// Pointing was not doing it: that probe frames a **raider**, so a civilian's
+		// line had its text checked and its pixels never. Which is the whole defect
+		// this node exists to close, reproduced in its own verification.
+		"the frame the fight begins paints the condition under the mark, and it is the line the sim's own formatter prints",
 		// **Test the record for, do not optional-chain past it.** `first?.x !== null`
 		// is true when `first` is null — the chain yields `undefined`, which is not
 		// `null` — and the next clause then dereferences the null and the run dies
@@ -361,6 +390,11 @@ try {
 		// that throws cannot say what it saw, which is the only thing it is for.
 		engaged.first !== null &&
 			engaged.first.conditionLine !== null &&
+			// Ink on the canvas, not only a string in a record. The threshold is the
+			// duel HUD's own for the same form at the same size: enough glyph pixels
+			// that a clipped, offset or unstroked line cannot reach it by accident.
+			engaged.first.paint !== null &&
+			engaged.first.paint > 30 &&
 			engaged.first.conditionLine === engaged.first.expected &&
 			// The one figure on the line known before it is read: H3d spends hull
 			// points only once a facing is gone, so on this frame the hull is whole.

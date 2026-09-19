@@ -512,19 +512,23 @@ test("with no station to point at it says the fact and no figure", () => {
 	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
 });
 
-test("and a station so close the figure prints as zero says the fact alone too", () => {
-	// The case the `null` guard cannot see, and the common one: the divert lands
-	// while the pilot is beside the station, and the body is a few dozen metres
-	// off. `range` renders 40 m as `0.0 km`, and `DIVERTING · HOME 0.0 km` is the
-	// sentence the cue's own contract forbids — the figure says the station is
-	// right here, the word says the ship has gone somewhere, and only one of those
-	// is a fact the pilot can act on. So the promise is about the **printed**
-	// reading, not about the number being exactly zero, because the number is
-	// essentially never zero and the reading is.
-	expect(trafficDivertCue("parked-home", 0.04)).toBe(DIVERT_LABEL);
-	expect(trafficDivertCue("parked-home", 0)).toBe(DIVERT_LABEL);
-	// And the figure comes back the moment it can say anything.
-	expect(trafficDivertCue("parked-home", 0.1)).toContain("HOME 0.1 km");
+test("a station beside the pilot prints zero, because zero is the reading", () => {
+	// This row exists because the round before it got this backwards. §5.4 said the
+	// cue must never print `HOME 0.0 km`, a guard was written to match, and the
+	// reasoning sounded careful: a zero says the station is right here while the word
+	// says the ship is gone. It is only true if the pilot is nowhere near the
+	// station — and the ordinary divert happens *at* a station, where the body is
+	// tens of metres off and `range` renders that as `0.0 km`. For that pilot it is
+	// not a contradiction, it is the answer.
+	//
+	// Suppressing it costs more than a figure: `DIVERTING` alone already means *there
+	// is no station to point at*, so a suppressed zero would wear the same face as a
+	// missing station, and the glass has no other way to separate `here` from
+	// `unlocatable`. One string, one meaning.
+	expect(trafficDivertCue("parked-home", 0.04)).toContain("HOME 0.0 km");
+	expect(trafficDivertCue("parked-home", 0)).toContain("HOME 0.0 km");
+	// And `null` — the actual unknown — is still the word alone.
+	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
 });
 
 /**

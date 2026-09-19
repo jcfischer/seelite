@@ -514,8 +514,14 @@ parking place inside a station (`CONTEXT.md`, `docking.md` §13.2), and the glas
 prints `HOME`, which names the place and no parking position within it. **The word
 is the promise; the figure rides with it only when the game can locate the
 station** — `DIVERTING · HOME 412.0 km` when it can, `DIVERTING` alone when it
-cannot, and never `HOME 0.0 km`, because a zero would tell the pilot the station is
-beside them, which is the far end of wrong from the truth. A carrier that has
+cannot. **The word alone means one thing only: there is no station to point at.** It
+is not the spelling for *the station is close*. A pilot beside their own station when
+the divert lands is tens of metres from the body, and `HOME 0.0 km` is then the
+correct answer rather than a contradiction of the word beside it — the ship they shot
+is in the parking place down the road. Suppressing that reading, which an earlier
+round of this node did on the strength of the sentence this one replaces, makes `here`
+and `unlocatable` the same string, and the glass has no other way to tell them apart.
+A carrier that has
 already arrived is drawn standing in its berth and says nothing on this line: the
 word needs it still being flown, and that half is `civilian-combat.md` H3b's.
 
