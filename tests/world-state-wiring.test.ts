@@ -40,6 +40,9 @@ const WRITERS = [
 	// `legal.ts`'s offence write: the decayed heat plus the offence, through
 	// `setLegalHeat` (civilian-combat H4). A writer by composition, not a new one.
 	"withOffence",
+	// `legal.ts`'s witness write and its lazy clear (H6), through
+	// `setLegalWitnesses`. Also a writer by composition.
+	"settleWitnesses",
 	"visit",
 ];
 
@@ -94,6 +97,47 @@ describe("the Game's world writes", () => {
 		const kill = MAIN.split('step.encounter.end === "destroyed"')[1] ?? "";
 		expect(kill.slice(0, 400)).toContain("this.applyCarrierTransition(");
 		expect(kill.slice(0, 400)).toContain("raiderDestruction(");
+	});
+
+	test("#366: an offence names the station beside it, and every berth asks the law", () => {
+		// `Game` builds a renderer, so this is a source check — the same reason
+		// the rows above are. What it is guarding is the two ways this node could
+		// ship green and do nothing: an offence that charges heat and never names
+		// a witness (H5 unwritten), and a `refusedByLaw` computed by a helper
+		// nobody calls (H5 and H7 unread).
+		const charge = MAIN.split("private chargeTrafficOffence(")[1] ?? "";
+		const chargeBody = charge.slice(0, 1200);
+		expect(chargeBody).toContain("this.frameStationKey()");
+		expect(chargeBody).toContain("withOffence(");
+		// H5's reach is the frame body's, so the witness must come from there and
+		// not from a distance this module decided for itself.
+		const frameKey = MAIN.split("private frameStationKey()")[1] ?? "";
+		expect(frameKey.slice(0, 400)).toContain('body.kind !== "station"');
+		// The key comes from the one derivation of it, not a spelling of it.
+		expect(frameKey.slice(0, 400)).toContain("this.stationKey(");
+		expect(MAIN).toContain("private stationKey(station: Station): CarrierKey");
+
+		// Three consumers, each named by the call it has to feed. A count over the
+		// file was the first version and it is the wrong shape: it moves when a
+		// fourth *reader* is added — the probe readout is exactly that fourth —
+		// while saying nothing about whether the protocol's three doors are open.
+		const feeds = (call: string) =>
+			(MAIN.split(call)[1] ?? "")
+				.slice(0, 900)
+				// The value is named, not just the key. Sage's round one caught
+				// the difference: a call site passing `refusedByLaw: false`
+				// satisfies a key-only check exactly as the real one does, and
+				// that is precisely the regression — H5 and H7 computed by a
+				// helper nobody feeds — this row exists to refuse.
+				.includes("refusedByLaw: this.refusedByLaw(");
+		expect(feeds("const next = requestClearance(")).toBe(true);
+		expect(feeds("const outcome = attemptEntry({")).toBe(true);
+		expect(feeds("const director = dockingDirector({")).toBe(true);
+		expect(MAIN).toContain("dockingRefusedByLaw(");
+		// And the helper they feed is the one that asks the law, not a field.
+		expect(MAIN).toContain("private refusedByLaw(");
+		// H6's clear has to run, not exist. One call, on the flight step.
+		expect(MAIN.match(/this\.settleWitnessList\(\);/g) ?? []).toHaveLength(1);
 	});
 
 	test("a cruise save is not handed its cruise velocity back", () => {

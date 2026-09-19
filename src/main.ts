@@ -330,9 +330,11 @@ import {
 } from "./carrier-scan";
 import {
 	type Offence,
+	dockingRefusedByLaw,
 	heatAt,
 	legalStandingAt,
 	marginalOffenceHeat,
+	settleWitnesses,
 	withOffence,
 } from "./legal";
 import {
@@ -503,6 +505,7 @@ import {
 } from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
+import type { Station } from "./system";
 import {
 	LiveCockpit,
 	type LeftTab,
@@ -5494,7 +5497,8 @@ class Game {
 	}
 
 	/**
-	 * What one offence against one carrier costs the pilot, written (H4, H9).
+	 * What one offence against one carrier costs the pilot, and which station saw
+	 * it, written (H4, H5, H9).
 	 *
 	 * `before` is the carrier's row as it stood **before** the offence was
 	 * applied. That ordering is the rule, not a preference: the divert books its
@@ -5530,15 +5534,22 @@ class Game {
 					: standingOf(before.recovery.startedAt),
 			),
 		);
-		if (heat > 0) {
-			this.commerceWorld = withOffence(
-				this.commerceWorld,
-				record.galaxy,
-				heat,
-				now,
-			);
-			this.saveDirty();
-		}
+		// **The witness is written whether or not the offence cost heat.** A kill
+		// of a Wanted carrier is lawful and free (F7) and a station watching one
+		// saw it; H6's hostility is the list *and* Wanted heat, so filing it can
+		// no more make a Clean pilot hostile than the kill did. Gating the whole
+		// write on `heat > 0` is what a first pass did and it silently drops the
+		// third of H5 that is not about heat.
+		const witnessed = this.frameStationKey();
+		const worldBefore = this.commerceWorld;
+		this.commerceWorld = withOffence(
+			this.commerceWorld,
+			record.galaxy,
+			heat,
+			now,
+			witnessed,
+		);
+		if (this.commerceWorld !== worldBefore) this.saveDirty();
 		return heat;
 	}
 
@@ -5693,10 +5704,36 @@ class Game {
 			legal: {
 				...this.legalStatus(),
 				// The stored pair is at its stamp; `heatNow` is decayed to the clock,
-				// which is what the standing reads.
+				// which is what the standing reads. `witnesses` rides along on the
+				// spread — H6's list is part of the saved status, so a probe reads
+				// the law's memory rather than a copy of it.
 				heatNow: heatAt(this.legalStatus(), now),
 				standing: this.legalStanding(),
 			},
+			/**
+			 * Every station in this system and the law's answer about its berth
+			 * (H5's witness, H7's shipyard standing).
+			 *
+			 * **Both halves, not just the answer.** `refusedByLaw` is what the
+			 * protocol will do; `witnessed` is why. A probe that could only read
+			 * the composed one could not tell H5's refusal from H7's, which is the
+			 * distinction the whole change is about — a shipyard refusing at Wanted
+			 * is not a witness, and a trade station that saw a kill is not a
+			 * shipyard.
+			 */
+			stations: this.world.system.bodies
+				.filter((body) => body.kind === "station")
+				.map((body) => {
+					const station = stationOf(this.world.system, body.id);
+					const key = this.stationKey(station);
+					return {
+						id: body.id,
+						key,
+						type: station.type,
+						witnessed: this.legalStatus().witnesses.includes(key),
+						refusedByLaw: this.refusedByLaw(body.id),
+					};
+				}),
 			// Every carrier Traffic is holding at a berth rather than on a route,
 			// and the clock it rejoins its schedule at — read off the roster rather
 			// than the materialized set, because a probe checking that a struck
@@ -5988,6 +6025,75 @@ class Game {
 	/** The player's standing now, from the galaxy's heat (H4, H7). */
 	legalStanding() {
 		return legalStandingAt(this.legalStatus(), this.world.gameTime);
+	}
+
+	/**
+	 * The station the ship is *at*, as the key the law files a witness under
+	 * (`civilian-combat.md` H5, H6), or `null` when it is at no station.
+	 *
+	 * **The frame body is the reach, and it is not this node's to set.**
+	 * `updateLocalFrameBody` already answered "beside": nearest body inside
+	 * `NEAR_FAR_KM`, 20,000 km, the distance at which a body is a place the ship
+	 * is at rather than a light in the distance. H5 names that rule precisely so
+	 * nobody reads it as a separate witness radius, and a second threshold here
+	 * would be a second answer to "where was the ship when it fired".
+	 *
+	 * The star is never a witness. Neither is a planet: H5 is about the station
+	 * whose Traffic watched.
+	 */
+	private frameStationKey(): CarrierKey | null {
+		const body = this.frameBody;
+		if (!body || body.kind !== "station") return null;
+		return this.stationKey(stationOf(this.world.system, body.id));
+	}
+
+	/**
+	 * Whether this station's berth refuses this pilot **by law** — it saw an
+	 * offence (H5), or it is a shipyard and the pilot is Wanted (H7).
+	 *
+	 * Distinct from `DockingState.hostile`, which is §6's flip and has a cooldown.
+	 * Feeding one into the other would give a legal refusal a timer it must not
+	 * have, and a flip a reason it did not have. See `ClearanceRequest.refusedByLaw`
+	 * for why the difference is load-bearing.
+	 */
+	/**
+	 * The `CarrierKey` a station of this system is known by in the persistent
+	 * world — its law, its markets, its docking record and its traffic all name
+	 * the same carrier. The derivation is spelled out here and nowhere else:
+	 * seven call sites used to write `carrierKey(record.index, localCarrierId)`
+	 * themselves, and a derivation written seven times is seven answers to which
+	 * carrier a station is.
+	 */
+	private stationKey(station: Station): CarrierKey {
+		return carrierKey(this.world.system.record.index, station.localCarrierId);
+	}
+
+	private refusedByLaw(stationId: string): boolean {
+		const station = stationOf(this.world.system, stationId);
+		return dockingRefusedByLaw(
+			this.legalStatus(),
+			{
+				key: this.stationKey(station),
+				type: station.type,
+			},
+			this.world.gameTime,
+		);
+	}
+
+	/**
+	 * H6's lazy clear, run from the flight step.
+	 *
+	 * **Cheap by construction.** `settleWitnesses` hands back the same world when
+	 * the list is empty — which is every frame of a lawful pilot's every session —
+	 * so the copy and the dirty-mark happen only on the one frame a Wanted period
+	 * finally decays out of. Nothing else reads the list below Wanted, so nothing
+	 * waits on this: it is H6's bound on the list's size, not a behaviour.
+	 */
+	private settleWitnessList() {
+		const galaxy = this.world.system.record.galaxy;
+		const before = this.commerceWorld;
+		this.commerceWorld = settleWitnesses(before, galaxy, this.world.gameTime);
+		if (this.commerceWorld !== before) this.saveDirty();
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */
@@ -8074,6 +8180,11 @@ class Game {
 			// unbuilt, so nothing fails one yet — the *moment* is what this node
 			// owes, and it is here.
 			scanFails: false,
+			// #366: the station saw an offence, or it is a shipyard and the pilot
+			// is Wanted. Read per request rather than latched into the state, so
+			// H5's exit — heat decaying below Wanted — reopens the berth on the
+			// next request with nothing to time out first.
+			refusedByLaw: this.refusedByLaw(chosen.id),
 		});
 		this.dockingStates.set(chosen.id, next);
 		if (next.clearance.kind === "queued")
@@ -8125,6 +8236,7 @@ class Game {
 				pose,
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
+				refusedByLaw: this.refusedByLaw(id),
 			});
 			return directorEngaged(director) ? director : null;
 		};
@@ -8391,6 +8503,11 @@ class Game {
 					: this.world.gameTime,
 				"arrival",
 			),
+			// The crossing is refused for the same reason a request would be, and
+			// through check 1 rather than as a missing grant: a pilot cleared
+			// before the offence did not barge, and must not be given the flip's
+			// cooldown for someone else's act.
+			refusedByLaw: this.refusedByLaw(id),
 		});
 		if (arrivalRequest?.movement === "arrival")
 			this.playerLaneRequests.delete(id);
@@ -8423,7 +8540,7 @@ class Game {
 			this.commerceWorld = observeDocking(
 				this.commerceWorld,
 				this.world.system.record.galaxy,
-				carrierKey(this.world.system.record.index, station.localCarrierId),
+				this.stationKey(station),
 				this.world.gameTime,
 				station.type === "refinery",
 			);
@@ -9906,9 +10023,7 @@ class Game {
 		this.commerceWorld = observeSystemRelay(
 			this.commerceWorld,
 			record.galaxy,
-			contents.stations.map((station) =>
-				carrierKey(record.index, station.localCarrierId),
-			),
+			contents.stations.map((station) => this.stationKey(station)),
 			this.world.gameTime,
 		);
 		this.saveDirty();
@@ -10101,6 +10216,12 @@ class Game {
 		this.gunFeedback = feedback.feedback;
 		if (feedback.playSound) this.audio.laser();
 		this.updateLocalFrameBody();
+		// H6's lazy clear of the witness list, on the one clock that matters. This
+		// line runs on every flight step including §12's docked and arriving
+		// states, which come after it and return — so the clear happens whether or
+		// not the pilot is flying, and it costs one array length on the frames
+		// where there is nothing to clear.
+		this.settleWitnessList();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
 		// inert, so none of the input handling below runs — and neither does
@@ -11413,9 +11534,7 @@ class Game {
 			requests: this.requests,
 			galaxyIndex: this.world.system.record.galaxy,
 			systemIndex: this.world.system.record.index,
-			dockedAt: station
-				? carrierKey(this.world.system.record.index, station.localCarrierId)
-				: null,
+			dockedAt: station ? this.stationKey(station) : null,
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
 			flight: {
@@ -11594,10 +11713,7 @@ class Game {
 			station,
 			market: marketStationOf(station, this.world.seed),
 			envelope: this.commerceWorld.galaxies[galaxyIndex],
-			stationKey: carrierKey(
-				this.world.system.record.index,
-				station.localCarrierId,
-			),
+			stationKey: this.stationKey(station),
 			galaxyIndex,
 			economy: this.world.system.record.economy,
 			gameTimeMin: this.world.gameTime / 60,

@@ -737,6 +737,104 @@ describe("§9.1.9 the clearance state machine", () => {
 });
 
 // ---------------------------------------------------------------------------
+// #366 H5, H7 — the law refuses a berth, and the protocol does not own that
+// ---------------------------------------------------------------------------
+
+describe("a station the law refuses", () => {
+	/**
+	 * The two refusals are one answer at the gate and two different kinds of
+	 * thing behind it. §6's flip is a **timed** state the protocol owns — it is
+	 * `DockingState.hostile` with `hostileUntilS`, and `tickDocking` ends it. The
+	 * law's is **derived** from the pilot's saved heat, so it has no timer to
+	 * count down and nothing to clear: the moment the caller stops saying the
+	 * pilot is Wanted, the station is open. Every row below is about keeping
+	 * those two from being confused for one another.
+	 */
+	const LAW = { refusedByLaw: true };
+	const REQ = { gameTime: 0, rangeKm: 500, ...TRAFFIC };
+
+	test("a law-refused station denies the request, with no cooldown attached", () => {
+		const denied = requestClearance(newDockingState(), { ...REQ, ...LAW });
+		expect(denied.clearance).toEqual({ kind: "denied", reason: "hostile" });
+		// The flip's own fields stay untouched. Stamping `hostileUntilS` here
+		// would hand a Wanted pilot a 600 s lock-out that outlives the reason —
+		// and, worse, a station that stays hostile for ten minutes after heat
+		// decays below Wanted, which is the lock-out §6 refuses.
+		expect(denied.hostile).toBe(false);
+		expect(denied.hostileUntilS).toBeNull();
+	});
+
+	test("a law-refused station refuses entry on a live grant, and it is not a barge", () => {
+		// The grant is live: §6's entry condition is `grantLive && !hostile`, and
+		// the second half is now true by law rather than by the flip. `barged`
+		// must stay false — a pilot who was cleared before the offence did not
+		// arrive without clearance, and the flip would otherwise give them a
+		// cooldown they never earned.
+		const frame = frameFor();
+		const granted = requestClearance(newDockingState(), REQ);
+		expect(grantLive(granted, 1)).toBe(true);
+		const outcome = attemptEntry({
+			frame,
+			pose: nominal(frame),
+			state: granted,
+			gameTime: 1,
+			...LAW,
+		});
+		expect(outcome.docked).toBe(false);
+		expect(outcome.barged).toBe(false);
+		expect(outcome.evaluation.checks.notHostile).toBe(false);
+		// §2.0 still holds: a failed entry keeps its clearance. The grant is not
+		// the thing that went wrong.
+		expect(outcome.state.berthId).toBe(granted.berthId);
+	});
+
+	test("once the caller stops refusing, the same station admits again at once", () => {
+		// The whole of H5's exit: heat decayed below Wanted, the caller derives
+		// `false`, and there is nothing latched to decay out of the state.
+		const denied = requestClearance(newDockingState(), { ...REQ, ...LAW });
+		expect(denied.clearance.kind).toBe("denied");
+		expect(
+			requestClearance(denied, { ...REQ, gameTime: 30 }).clearance.kind,
+		).toBe("granted");
+	});
+
+	test("the flip's cooldown and the law's refusal are cleared independently", () => {
+		// A barge while Wanted, then the cooldown expires while the pilot is still
+		// Wanted: `tickDocking` ends the flip and the law still refuses. And the
+		// other way round — the law decays first — the flip keeps refusing until
+		// its own 600 s are up. Neither may end the other.
+		const frame = frameFor();
+		const flipped = attemptEntry({
+			frame,
+			pose: nominal(frame),
+			state: newDockingState(),
+			gameTime: 100,
+			...LAW,
+		}).state;
+		expect(flipped.hostile).toBe(true);
+		expect(flipped.hostileUntilS).toBe(100 + HOSTILE_COOLDOWN_S);
+
+		const afterFlip = tickDocking(flipped, 100 + HOSTILE_COOLDOWN_S, TRAFFIC);
+		expect(afterFlip.hostile).toBe(false);
+		expect(
+			requestClearance(afterFlip, {
+				...REQ,
+				gameTime: 100 + HOSTILE_COOLDOWN_S,
+				...LAW,
+			}).clearance,
+		).toEqual({ kind: "denied", reason: "hostile" });
+
+		// The law let go first, and the flip has its own clock to finish.
+		expect(
+			requestClearance(flipped, {
+				...REQ,
+				gameTime: 100 + HOSTILE_COOLDOWN_S - 1,
+			}).clearance,
+		).toEqual({ kind: "denied", reason: "hostile" });
+	});
+});
+
+// ---------------------------------------------------------------------------
 // §9.1.10 — the damage predicate
 // ---------------------------------------------------------------------------
 

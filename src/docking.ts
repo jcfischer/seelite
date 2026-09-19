@@ -712,6 +712,29 @@ export interface ClearanceRequest {
 	/** #13 §5.1.1's shipyard contraband scan. The predicate behind it is #8's;
 	 *  requesting clearance is the moment it lands (§6). */
 	scanFails?: boolean;
+	/**
+	 * Whether the **law**, not this protocol, refuses the pilot at this station
+	 * (`civilian-combat.md` H5's witness and H7's shipyard standing, which is
+	 * `legal.ts`'s `dockingRefusedByLaw`).
+	 *
+	 * **Kept out of `state.hostile` on purpose, because the two have different
+	 * exits.** That field is §6's flip: a timed state with `hostileUntilS`, which
+	 * `tickDocking` ends. A legal refusal has no timer to end it — its exit is
+	 * heat decaying below Wanted — so writing it into the flip would hand the
+	 * pilot a 600 s lock-out they never earned, and would keep the station hostile
+	 * for ten minutes after the reason for it had gone.
+	 *
+	 * **Checked before the scan, and not merely first among equals.** A station
+	 * that will not admit this pilot conducts no scan of their hold, and the scan
+	 * branch is the one that starts a cooldown.
+	 *
+	 * Optional as `scanFails` is, for the same reason: a caller testing the
+	 * geometry has no law to apply. `main.ts` is the caller that does, and its
+	 * wire is held by the #366 rows in `tests/world-state-wiring.test.ts` — the
+	 * one file here that reads `main.ts`'s source, and it has to: the wire is
+	 * three call sites, and a module test cannot see whether they pass it.
+	 */
+	refusedByLaw?: boolean;
 }
 
 /**
@@ -727,7 +750,10 @@ export function requestClearance(
 ): DockingState {
 	const interior = req.interior;
 	if (req.rangeKm > VICINITY_KM) return state;
-	if (state.hostile)
+	// Either reason answers the same way, and neither may write the other: the
+	// flip is `state.hostile` with a cooldown, the law is `refusedByLaw` with
+	// none. See `ClearanceRequest.refusedByLaw`.
+	if (state.hostile || req.refusedByLaw)
 		return { ...state, clearance: { kind: "denied", reason: "hostile" } };
 	if (req.scanFails)
 		return {
@@ -891,6 +917,10 @@ export function attemptEntry(input: {
 	/** Shared station-lane arbitration. Omitted by pure docking callers. */
 	laneAvailable?: boolean;
 	damageScale?: number;
+	/** The law's refusal, same input and same reason as on `ClearanceRequest`:
+	 *  it belongs to the pilot and the station, not to this session's state, and
+	 *  it must not be written into `state.hostile`. */
+	refusedByLaw?: boolean;
 }): EntryOutcome {
 	const { frame, pose, gameTime } = input;
 	const barged = !grantLive(input.state, gameTime);
@@ -903,7 +933,13 @@ export function attemptEntry(input: {
 			}
 		: input.state;
 
-	const evaluation = evaluateEntry(frame, pose, { hostile: state.hostile });
+	// **The law's refusal is a hostile check, not a barge.** A pilot cleared
+	// before the offence has a live grant and did not arrive without one; what
+	// changed is the station's reason for admitting them. So `barged` stays false
+	// — and the flip, with its cooldown, is not started for them.
+	const evaluation = evaluateEntry(frame, pose, {
+		hostile: state.hostile || input.refusedByLaw === true,
+	});
 	// A barge is a failed entry whatever the geometry says: the checks are
 	// evaluated so the diagnostics are complete, and the verdict is not theirs.
 	const docked = !barged && !laneBlocked && evaluation.passed;
