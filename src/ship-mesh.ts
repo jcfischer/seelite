@@ -6144,10 +6144,12 @@ const planned = (
 	name: string,
 	surface: ShipSurface,
 	count = 18,
-	seed?: number,
+	options: { readonly seed?: number } = {},
 ): BuilderPlan => ({
 	build,
-	zones: [{ name, seed, part, surface, from: 0.38, to: 0.72, count }],
+	zones: [
+		{ name, seed: options.seed, part, surface, from: 0.38, to: 0.72, count },
+	],
 });
 
 /**
@@ -6206,7 +6208,7 @@ export const SHIP_DETAIL_PLANS: Record<
 			"bridge-flank",
 			"starboard",
 			24,
-			140222523,
+			{ seed: 140222523 },
 		),
 		c: planned(
 			buildFreighterC,
@@ -6268,7 +6270,7 @@ export const SHIP_DETAIL_PLANS: Record<
 			"flightdeck-flank",
 			"starboard",
 			36,
-			1072900095,
+			{ seed: 1072900095 },
 		),
 		c: planned(
 			buildCarrierC,
@@ -6276,27 +6278,17 @@ export const SHIP_DETAIL_PLANS: Record<
 			"flightdeck-keel",
 			"ventral",
 			36,
-			3542260001,
+			{ seed: 3542260001 },
 		),
 	},
 	tug: {
-		a: planned(
-			buildTugA,
-			"tug-fuselage",
-			"tractor-spine",
-			"dorsal",
-			18,
-			3451922096,
-		),
+		a: planned(buildTugA, "tug-fuselage", "tractor-spine", "dorsal", 18, {
+			seed: 3451922096,
+		}),
 		b: planned(buildTugB, "tug-fuselage", "crane-flank", "starboard"),
-		c: planned(
-			buildTugC,
-			"tug-fuselage",
-			"tractor-keel",
-			"ventral",
-			18,
-			399698058,
-		),
+		c: planned(buildTugC, "tug-fuselage", "tractor-keel", "ventral", 18, {
+			seed: 399698058,
+		}),
 	},
 	prospector: {
 		a: planned(

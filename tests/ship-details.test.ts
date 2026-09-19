@@ -89,7 +89,7 @@ describe("authored ship machinery regions", () => {
 		}
 	});
 
-	test("generated clutter stays subordinate to the base hull reach", () => {
+	test("generated clutter is smaller than the base hull's maximum reach", () => {
 		for (const { id, variant } of variants) {
 			const root = buildShipMesh(id, variant).root;
 			const clutter = meshesNamed(root, "ship-greebles-");
