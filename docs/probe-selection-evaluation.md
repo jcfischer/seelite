@@ -8,17 +8,17 @@ the safety check if any named probe is absent; extra probes are conservative
 cost, not a false negative.
 
 Run date: 2026-09-19. Selector/catalog head:
-`5925db136a042d547344d8acebea94deea01f6e7`. Requested model: `jev-latest`.
+`b8ccc781a22cf0d59fe6172d6572ba9ecc642b67`. Requested model: `jev-latest`.
 Resolved model: `jev-1.13.0`. Exclusion rule: `p <= 0.25`. Each request asked
 all 53 independent Noul questions in one batch, used a reviewer-authored intent
 sentence, and sent no PR title, body, or source diff.
 
 | Case | Expected contracts | Observed selection | Latency | Result |
 | --- | --- | ---: | ---: | --- |
-| Moving-body cruise route | `measure-cruise-detour`, `probe-approach-handoff`, `probe-arrival`, `probe-cruise-detour`, `probe-cruise`, `probe-handoff`, `probe-moving-guard` | 24/53 | 962 ms | 7/7 present |
-| Controls tab and gamepad folding | `probe-controls-reference`, `probe-key-dispatch`, `probe-pad-panels` | 7/53 | 938 ms | 3/3 present |
-| Final output-stage dithering | `probe-output-stage`, `probe-frame-attribution`, `probe-planet-surfaces`, `probe-planets`, `probe-station-visuals`, `probe-traffic-mouth` | 25/53 | 914 ms | 6/6 present |
-| Carrier-knowledge save migration | `probe-save`, `probe-carrier-scan`, `probe-commander`, `probe-death`, `probe-relay` | 29/53 | 915 ms | 5/5 present |
+| Moving-body cruise route | `measure-cruise-detour`, `probe-approach-handoff`, `probe-arrival`, `probe-cruise-detour`, `probe-cruise`, `probe-handoff`, `probe-moving-guard` | 24/53 | 964 ms | 7/7 present |
+| Controls tab and gamepad folding | `probe-controls-reference`, `probe-key-dispatch`, `probe-pad-panels` | 7/53 | 951 ms | 3/3 present |
+| Final output-stage dithering | `probe-output-stage`, `probe-frame-attribution`, `probe-planet-surfaces`, `probe-planets`, `probe-station-visuals`, `probe-traffic-mouth` | 26/53 | 1084 ms | 6/6 present |
+| Carrier-knowledge save migration | `probe-save`, `probe-carrier-scan`, `probe-commander`, `probe-death`, `probe-relay` | 29/53 | 949 ms | 5/5 present |
 
 Across the four cases, all 21 named expectations were present. This is a small
 calibration corpus, not a general accuracy claim. Keep the raw probabilities
