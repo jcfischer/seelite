@@ -124,13 +124,9 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
  * are different fights, and a reading that named one pool could not tell them
  * apart. #395's measurement is what found the question had never been asked.
  *
- * **Every selected combat target, not the raider alone** — since #395 an
- * ordinary carrier under fire is read by this line too, and that is why the hull
- * is a share. A raider's capacity is the one figure every raider shares, so
- * printing it in points cost the pilot nothing to read; Traffic's eight ordinary
- * hulls run from 85 to 215, so `HULL 215` is a whole hull on one of them and a
- * figure that cannot occur on another, and the line never said which it was
- * looking at. `printHullPercent` owns the law that a live hull never prints 0.
+ * **Every selected combat target, not the raider alone** (since #395), and its
+ * hull is a share rather than a point figure — `hud-and-scanner.md` §5.4 says
+ * why, and `printHullPercent` owns the law that a live hull never prints 0.
  */
 export function targetConditionLine(c: ShipCondition): {
 	text: string;

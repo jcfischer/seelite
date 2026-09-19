@@ -454,22 +454,18 @@ agreed, and the trigger question is its own node.
   carrier has not left its schedule, and the absence of the word is the reading
   of that. Which is why the word is absent for a carrier flying on time rather
   than always present: a state word that never leaves is a decoration.
-- **A law written in points cannot cover a fleet.** A raider's capacity is the
-  one figure every raider shares, so `HULL 81` means the same thing on all of
-  them; the eight ordinary hulls run from a patrol's 85 to a miner's 215, so a
-  printed `HULL 215` is whole on one and a figure that cannot occur on another,
-  and the line never said which it was looking at. Printing a share says it, and
-  one widest reading then covers every hull — which is also what makes the
-  label's reservation one case rather than a table lookup. #367 D1 travels with
-  the ruling: a live hull never prints 0%. Where that floor is *anchored* is the
-  part worth recording, because the point form's was not its own — `printHull`
+- **A law written in points cannot cover a fleet**, and the fix is a share of the
+  target's own capacity. `hud-and-scanner.md` §5.4 owns the reason and
+  `printHullPercent` owns the law, so what is recorded here is only the part that
+  is this document's: #367 D1 travels with the ruling, and **where its floor is
+  anchored changed**, because the point form's was never its own — `printHull`
   cannot print 0 for a live ship only because `applyDamage`, the one writer,
-  zeroes hull below a tolerance measured in points. The game does not reach a
-  live hull printing 0 and this is not a claim that it does; what the share buys
-  is that the floor stops being borrowed from the writer and sits at the
-  resolution the print has, which is the property a roster of nine capacities
-  needs. `printHullPercent` owns the reasoning. The point form stays on the
-  Flight console, where the capacity is printed beside the figure.
+  zeroes hull below a tolerance measured in points. The game does not reach a live
+  hull printing 0 and this is not a claim that it does; what the share buys is
+  that the floor stops being borrowed from the writer and sits at the resolution
+  the print has, which is the property a roster of nine capacities needs. The
+  point form stays on the Flight console, where the capacity is printed beside the
+  figure.
 - **A record of a painted label parked on a raider's firing cue.** The condition
   line was `cueRender.enemyLine`, beside the field that carries the duel's tone —
   amber, red while the raider fires. That is why a civilian under fire had no

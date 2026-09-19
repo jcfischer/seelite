@@ -167,12 +167,9 @@ export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
  * The hull as a share of its own capacity, in whole percent.
  *
  * **The share form of #367 D1, which is why it asks `isAlive` rather than doing
- * its own arithmetic.** A target's hull is printed on the glass beside its name,
- * and until #395 that print was in points — sound for a raider, whose capacity
- * is the one figure every raider shares, and unreadable for anything else. The
- * eight ordinary hulls Traffic flies run from a patrol's 85 to a miner's 215, so
- * `HULL 215` is a whole hull on one of them and a figure that cannot occur on
- * another, and the line never said which it was looking at.
+ * its own arithmetic.** Why the glass prints a share at all is
+ * `hud-and-scanner.md` §5.4's, and this module is not a second copy of it: the
+ * invariant that lives *here* is that a live hull never prints 0%.
  *
  * The principal's ruling carries D1 across with it: *"anything below 0.5% is the
  * same as 0.5 points in terms of how the game works"*. So the floor on a live

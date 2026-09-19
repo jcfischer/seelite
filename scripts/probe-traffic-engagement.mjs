@@ -335,7 +335,13 @@ try {
 	// -------------------------------------------------------------------------
 	check(
 		"the frame the fight begins draws the condition under the mark, and it is the line the sim's own formatter prints",
-		engaged.first?.conditionLine !== null &&
+		// **Test the record for, do not optional-chain past it.** `first?.x !== null`
+		// is true when `first` is null — the chain yields `undefined`, which is not
+		// `null` — and the next clause then dereferences the null and the run dies
+		// on a TypeError instead of reporting a failed row with its payload. A check
+		// that throws cannot say what it saw, which is the only thing it is for.
+		engaged.first !== null &&
+			engaged.first.conditionLine !== null &&
 			engaged.first.conditionLine === engaged.first.expected &&
 			// The one figure on the line known before it is read: H3d spends hull
 			// points only once a facing is gone, so on this frame the hull is whole.
@@ -349,7 +355,9 @@ try {
 		// fights. Which of the two the beam finds depends on how it fled, so this
 		// asks only that the line names both and one has fallen. Pairing a pinned
 		// geometry to a named facing is `tests/duel-hud.test.ts`'s.
-		engaged.mark?.conditionLine !== null &&
+		engaged.first !== null &&
+			engaged.mark !== null &&
+			engaged.mark.conditionLine !== null &&
 			engaged.mark.conditionLine === engaged.mark.expected &&
 			engaged.mark.conditionLine !== engaged.first.conditionLine &&
 			pools(engaged.mark.conditionLine).every((n) => n <= engaged.shieldPool) &&
@@ -513,6 +521,9 @@ try {
 		// the frame the line goes red. What the *other* facing has left depends on
 		// the flight, which is not something to pin from a tethered pilot.
 		diverted.atMark !== null &&
+			// `pools` throws on a line that does not print two facings, and a throw
+			// here would end the run instead of reporting the row.
+			diverted.atMark.conditionLine !== null &&
 			Math.min(...pools(diverted.atMark.conditionLine)) === 0 &&
 			/HULL (?!0%)\d+%$/.test(diverted.atMark.conditionLine),
 		JSON.stringify(diverted.atMark),

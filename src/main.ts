@@ -12931,10 +12931,16 @@ class Game {
 		// The declutter reservation and the paint have to agree about what is drawn
 		// here, and deriving the same string twice across a hundred lines of draw
 		// code is the way they stop agreeing.
-		const targetCondition = selectedBody
-			? this.selectedTargetCondition()
-			: null;
-		const divertCue = selectedBody ? this.selectedDivertCue() : null;
+		//
+		// **And read only when the mark is actually on the glass.** Both of these
+		// are consumed solely by the reservation and the paint, each of which is
+		// already gated on the projection landing inside the overlay, and the divert
+		// cue in particular walks the system's bodies for the home station. A target
+		// behind the camera is selected just as surely as one in front of it, and
+		// owes no work to a label that is not drawn.
+		const markOnGlass = selectedAt?.on === true;
+		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
+		const divertCue = markOnGlass ? this.selectedDivertCue() : null;
 		const selectedLabel = (name: string, km: number) =>
 			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
 				divertCue ? `  ${divertCue}` : ""
