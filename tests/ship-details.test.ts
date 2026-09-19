@@ -108,6 +108,24 @@ describe("authored ship machinery regions", () => {
 });
 
 describe("ship emissive inventory", () => {
+	test("Derrick's paired rails touch the plated gantry hull", () => {
+		const root = buildShipMesh("freighter", "a").root;
+		const target = root.getObjectByName("freighter-fuselage") as THREE.Mesh;
+		for (const object of meshesNamed(root, "ship-strip")) {
+			const strip = object as THREE.Mesh;
+			const hit = new THREE.Raycaster(
+				strip.position,
+				new THREE.Vector3(0, -1, 0),
+			).intersectObject(target, false)[0];
+			expect(hit).toBeDefined();
+			// The centre-to-surface distance must be no larger than half the rail's
+			// normal thickness. Anything larger leaves a visible air gap.
+			expect(strip.position.distanceTo(hit.point)).toBeLessThanOrEqual(
+				strip.scale.z / 2 + 1e-9,
+			);
+		}
+	});
+
 	test("every variant has paired strips and a beacon; only inhabited hulls have windows", () => {
 		const inhabited = new Set<HullId>(HABITABLE_HULLS);
 		expect([...inhabited]).toEqual(["freighter", "carrier", "dreadnought"]);

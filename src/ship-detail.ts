@@ -166,7 +166,7 @@ function addEmissives(
 		strip.name = "ship-strip";
 		strip.position
 			.copy(centre.point)
-			.addScaledVector(centre.normal, reachKm * 0.003);
+			.addScaledVector(centre.normal, reachKm * 0.0015);
 		strip.quaternion.copy(basis(centre.normal));
 		strip.scale.set(
 			reachKm * 0.014,
