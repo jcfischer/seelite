@@ -433,6 +433,42 @@ The same rule, on the diversion.
   pinned, in the headless rig. A row that asserted the seconds was falsely red
   here before it was rewritten.
 
+## What reading a struck civilian found (#395)
+
+Found by the principal flying H5's checkpoint, not by a row. Nothing below moves
+a threshold in this document: H3, H3b, H3c, H3d and H4's rules and figures are as
+agreed, and the trigger question is its own node.
+
+- **The sim was right for twenty seconds and the glass said nothing.** An engaged
+  carrier has had a `ShipCondition` since H2, the beam was landing, the carrier
+  was fleeing from the first frame it did — and the line under a selected
+  target's name was gated `raiderSelected ? … : undefined`, so none of it was
+  drawn. The pilot's report was "nothing happened", and reading the glass was the
+  correct way to reach that conclusion. A target a rule hands a condition is a
+  target the glass has to read; the wire, not the state, was the gap.
+- **The word "DIVERTING" arriving *is* H3d becoming visible.** The divert is
+  written in the same tick as the hull strike (H3c), so a pilot who has spent
+  seventeen seconds stripping one facing of a freighter's shields sees no word
+  beside its name the whole time — and sees one on the frame the first hull point
+  lands. That is the ruling, not a presentational choice: a shield-stripped
+  carrier has not left its schedule, and the absence of the word is the reading
+  of that. Which is why the word is absent for a carrier flying on time rather
+  than always present: a state word that never leaves is a decoration.
+- **A law written in points cannot cover a fleet.** #367 D1's kill tolerance is
+  half a *point*, which is exact while one hull can be shot at and a lie at
+  either end of a roster: on a 2635-point capital the band it leaves is 0.019%
+  wide, and a live ship standing in it prints `HULL 0`. Printing a share moves the
+  floor onto the resolution the print itself has, and one widest reading then
+  covers every hull — which is also what makes the label's reservation one case
+  rather than a table lookup. The point form stays on the Flight console, where
+  the capacity is printed beside the figure.
+- **A record of a painted label parked on a raider's firing cue.** The condition
+  line was `cueRender.enemyLine`, beside the field that carries the duel's tone —
+  amber, red while the raider fires. That is why a civilian under fire had no
+  record of the line it was not drawing either, and why the field could not grow
+  one without a tone it did not have. It is `selectedRender.conditionLine` now,
+  where the painted label already lived.
+
 ## Rules this makes false, and where they are amended
 
 Each is amended in the change that builds it, not ahead of it.

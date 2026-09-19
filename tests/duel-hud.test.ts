@@ -19,11 +19,12 @@ import {
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
+	targetConditionWidest,
 	duelRowCells,
 	duelRowWidest,
 	showDuelRow,
 } from "../src/duel-hud";
-import { HULL_IDS, type HullId } from "../src/hull";
+import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
 import { walkDownToKill } from "./helpers/pulse-walk";
 import {
 	ENERGY_BANK,
@@ -185,11 +186,11 @@ describe("the enemy's condition line", () => {
 		...over,
 	});
 
-	test("prints both shield pools and the hull, rounded as the duel row rounds", () => {
+	test("prints both shield pools and the hull as a share of its own", () => {
 		const line = targetConditionLine(
 			raider({ fore: 71.6, aft: 105.5, hull: 40.4 }),
 		);
-		expect(line.text).toBe("SHD F 72 A 106  HULL 40");
+		expect(line.text).toBe("SHD F 72 A 106  HULL 50%");
 		expect(line.tone).toBe("passive");
 	});
 
@@ -197,6 +198,67 @@ describe("the enemy's condition line", () => {
 		expect(targetConditionLine(raider({ aft: 0.4 })).tone).toBe("refused");
 		expect(targetConditionLine(raider({ fore: 0 })).tone).toBe("refused");
 		expect(targetConditionLine(raider({ fore: 0.6 })).tone).toBe("passive");
+	});
+
+	test("both faces print, so which one is going is on the glass (#395)", () => {
+		// The measurement #395 was opened with had `fore` untouched at 106 while
+		// `aft` fell to 0. Approaching from ahead and from behind are different
+		// fights, and a reading that named one pool would not tell them apart.
+		const fromBehind = targetConditionLine(
+			raider({ fore: SHIELD_POOL, aft: 0 }),
+		).text;
+		const fromAhead = targetConditionLine(
+			raider({ fore: 0, aft: SHIELD_POOL }),
+		).text;
+		expect(fromBehind).not.toBe(fromAhead);
+		expect(fromBehind).toBe(`SHD F ${SHIELD_POOL} A 0  HULL 100%`);
+		expect(fromAhead).toBe(`SHD F 0 A ${SHIELD_POOL}  HULL 100%`);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// #395. The fit. `duelRowWidest` bounds the floor's duel row and always has; the
+// line under a selected target's name had no widest case of its own, and a
+// Traffic reading is not the raider's — its hull capacity is a different figure
+// per hull, eight different ordinary hulls running 85 to 215 points. Printing a
+// share is what makes one widest case cover them all, and these rows are what
+// keeps it that way: a hull figure put back on this line puts the hull table into
+// the fit again, and the row goes red rather than clipping a callsign.
+// ---------------------------------------------------------------------------
+describe("the widest line a selected target can print", () => {
+	test("bounds every reading every hull can reach, walked to its kill", () => {
+		const widest = targetConditionWidest();
+		for (const id of HULL_IDS)
+			for (const c of WALKS.get(id) as ShipCondition[])
+				expect(targetConditionLine(c).text.length).toBeLessThanOrEqual(
+					widest.length,
+				);
+	});
+
+	test("it is attained, so it is a bound and not a guess with room in it", () => {
+		const widest = targetConditionWidest();
+		const lengths = new Set<string>();
+		for (const id of HULL_IDS)
+			for (const c of WALKS.get(id) as ShipCondition[]) {
+				const text = targetConditionLine(c).text;
+				if (text.length === widest.length) lengths.add(text);
+			}
+		expect(lengths.has(widest)).toBe(true);
+	});
+
+	test("no hull's reading is wider than any other's, which is what the share buys", () => {
+		// The row the node asked for, stated as the thing it actually has to hold.
+		// Every hull the game can put under the beam — the eight Traffic hulls,
+		// the raider, and the two capitals that never dock — reads its hull within
+		// the same width. Under a point figure a miner's 215 is three digits and a
+		// raider's 81 is two, and the fit holds the raider's reading only.
+		const widest = targetConditionWidest();
+		const whole = fullCondition("miner");
+		expect(whole.hullMax).toBeGreaterThan(HULL_SPECS.raider.integrity);
+		expect(targetConditionLine(whole).text).toBe(
+			targetConditionLine(fullCondition("raider")).text,
+		);
+		expect(widest).toBe(targetConditionLine(whole).text);
 	});
 });
 
@@ -210,7 +272,7 @@ describe("the enemy's condition line", () => {
 /** The glass says a ship is dead. Both readouts, because either one alone would
  *  let the other keep lying. */
 const printsWithoutADigit = (c: ShipCondition): boolean =>
-	targetConditionLine(c).text.endsWith("HULL 0") ||
+	targetConditionLine(c).text.endsWith("HULL 0%") ||
 	duelConsoleReadout(c).hull.startsWith("0 /");
 
 /** One walk per hull, read by every row below. The capitals are twenty-four
@@ -246,7 +308,13 @@ describe("HULL 0 on the glass is always a kill (#367 D1)", () => {
 			expect(dead.hull).toBe(0);
 			const lastAlive = walk.at(-2) as ShipCondition;
 			expect(isAlive(lastAlive)).toBe(true);
-			expect(targetConditionLine(lastAlive).text.endsWith("HULL 1")).toBe(true);
+			// Both readouts, both forms: the console still prints the point figure
+			// it has always printed, the glass a share since #395. One is not
+			// allowed to heal by rounding what the other has declared dead.
+			expect(targetConditionLine(lastAlive).text.endsWith("HULL 1%")).toBe(
+				true,
+			);
+			expect(duelConsoleReadout(lastAlive).hull.startsWith("1 /")).toBe(true);
 		}
 	});
 });

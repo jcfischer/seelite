@@ -1,6 +1,8 @@
 import type { CarrierStanding } from "./carrier-standing";
 import { SCAN_MODULE } from "./market";
 import type { Body } from "./sim";
+import type { TrafficPresence } from "./traffic-engagement";
+import { range } from "./units";
 import type { Vec3 } from "./vec3";
 import type { HullId } from "./hull";
 
@@ -165,3 +167,47 @@ export function targetDesignation(
 			: `${standing} · ${targetAgeLabel(scan.ageS)}`,
 	].join(" · ");
 }
+
+/**
+ * The word a struck civilian carries beside its name.
+ *
+ * `civilian-combat.md` H3b and H3d: the first hit that reaches hull points ends
+ * that carrier's leg in one tick, and it goes home. The sim has done it since
+ * #365 and the glass has never once said so — the principal fired on ordinary
+ * traffic for twenty or thirty seconds on #366's checkpoint and reported that
+ * nothing happened, and nothing on screen was wrong: the carrier *was* running,
+ * and its standing *was* written, and the pilot was shown neither.
+ *
+ * **Absence is the on-time reading.** A carrier flying its schedule carries no
+ * word, so this one cannot be a decoration that is always there and means
+ * nothing. That is also what makes the word's arrival the moment H3d's trigger
+ * becomes visible: a pilot who has only stripped shields sees nothing beside the
+ * name, because a shield-stripped carrier has not left its schedule — that is
+ * the ruling's whole point, and the glass is where it shows.
+ */
+export const DIVERT_LABEL = "DIVERTING";
+
+/**
+ * The name line's clause for a carrier that is off its schedule and being flown,
+ * with how far its home berth is from the pilot.
+ *
+ * **The range is the pilot's own, not the carrier's remaining distance.** The
+ * label it hangs on already reads a range from the pilot to the carrier; a second
+ * figure on that line measured from anywhere else would be a second convention
+ * wearing the first one's clothes. And it is the actionable one — the figure that
+ * answers *can I get there*, and the one that means something once the ship has
+ * left the materialization band and the mark has gone with it.
+ *
+ * **`homeKm === null` says the game does not know, and says only that.** A
+ * missing station position printed as `HOME 0.0 km` would tell the pilot the
+ * berth is beside them, which is the far end of wrong from the truth.
+ */
+export const trafficDivertCue = (
+	presence: TrafficPresence,
+	homeKm: number | null,
+): string | null =>
+	presence === "parked-home"
+		? homeKm === null
+			? DIVERT_LABEL
+			: `${DIVERT_LABEL} · HOME ${range(homeKm)}`
+		: null;

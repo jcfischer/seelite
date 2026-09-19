@@ -29,6 +29,7 @@ import {
 	isAlive,
 	isCrippled,
 	printHull,
+	printHullPercent,
 	sideStruck,
 	stepCondition,
 } from "../src/ship-condition";
@@ -284,6 +285,78 @@ describe("what a ship has to be to be dead (#367 D1)", () => {
 			// The print, not a number: a hull left standing has to be able to show
 			// a digit, which is the whole of D1 in one line.
 			expect(printHull(smallestLive)).toBeGreaterThanOrEqual(1);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// #395. The selected target's line prints a hull as a share of its own capacity,
+// because a bare 215 is whole on a miner and impossible on a freighter and the
+// glass never says which hull it is looking at. The principal's ruling is that
+// the percentage carries #367 D1 with it: "anything below 0.5% is the same as
+// 0.5 points in terms of how the game works", so a hull that would round under
+// half a percent reads 1% and is alive, and 0% means dead.
+// ---------------------------------------------------------------------------
+describe("a hull printed as a share of its own hull (#395)", () => {
+	test("a whole hull is 100% on every hull, and nothing prints more", () => {
+		for (const id of HULL_IDS)
+			expect(printHullPercent(fullCondition(id))).toBe(100);
+	});
+
+	test("the share is of its own hull, not of the largest one in the game", () => {
+		// The whole point of the form: two hulls two and a half thousand points
+		// apart, at the same share, read the same. `carrier` at 2635 against
+		// `courier` at 100 is the case that would read 4% if the denominator were
+		// a constant.
+		const half = (id: HullId): number =>
+			printHullPercent({
+				...fullCondition(id),
+				hull: HULL_SPECS[id].integrity / 2,
+			});
+		expect(half("courier")).toBe(50);
+		expect(half("carrier")).toBe(50);
+		expect(half("miner")).toBe(50);
+	});
+
+	test("a dead hull prints 0%, and no hull the funnel leaves standing does", () => {
+		for (const id of HULL_IDS) {
+			const walk = walkDownToKill(fullCondition(id));
+			const dead = walk.at(-1) as ShipCondition;
+			expect(isAlive(dead)).toBe(false);
+			expect(printHullPercent(dead)).toBe(0);
+			// Every live state on the walk, not just the smallest: the band is
+			// where this law lives, and the walk is what puts states inside it.
+			for (const c of walk.filter(isAlive))
+				expect(printHullPercent(c)).toBeGreaterThanOrEqual(1);
+		}
+	});
+
+	test("under half a percent a hull still standing reads 1%, not 0%", () => {
+		// Hand-built, because the funnel cannot put a live hull this low: it
+		// zeroes anything under half a *point*, which on a 2635-point capital
+		// leaves a band 0.019% wide that the print must survive on its own.
+		// This is the case the point form cannot make honest — `printHull`'s floor
+		// is in points, so a live capital at 0.4 points prints 0. A share is a
+		// strictly better reading of D1 than a point figure ever was, and it holds
+		// for a fixture the shipped tolerance deliberately does not reach.
+		const band = (id: HullId): number =>
+			printHullPercent({
+				...fullCondition(id),
+				hull: HULL_SPECS[id].integrity * 0.004,
+			});
+		for (const id of HULL_IDS) expect(band(id)).toBe(1);
+	});
+
+	test("it is monotone in hull, so the glass cannot heal by rounding", () => {
+		// A reading that fell and then rose again while the hull only ever went
+		// down would be a new lie of the same shape as D1's.
+		for (const id of HULL_IDS) {
+			let last = 101;
+			for (const c of walkDownToKill(fullCondition(id))) {
+				const printed = printHullPercent(c);
+				expect(printed).toBeLessThanOrEqual(last);
+				last = printed;
+			}
 		}
 	});
 });

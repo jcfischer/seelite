@@ -5,9 +5,13 @@ import { projectNavTargets } from "../src/cockpit";
 import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
 import {
 	type DisplayContact,
+	DIVERT_LABEL,
 	isDisplayContact,
 	relativeLabel,
+	trafficDivertCue,
 } from "../src/display-contact";
+import { trafficPresence } from "../src/traffic-engagement";
+import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
@@ -480,4 +484,102 @@ test("the scan cone is measured on the sightline the pilot aims with", () => {
 	// so the two cannot drift apart.
 	expect(method("scanStandoffNow")).toContain("scanStandoff(");
 	expect(method("scanStandoffNow")).toContain("this.weaponAim()");
+});
+
+// ---------------------------------------------------------------------------
+// #395. A struck civilian is off its schedule, and nothing anywhere said so. The
+// sim was right — H3 has it fleeing from the first frame the beam lands, and H3d
+// diverts it the frame the hull gives way — and the glass was silent. Two rows
+// own that: the word the mark carries, and the one predicate that decides whether
+// it carries it at all.
+// ---------------------------------------------------------------------------
+test("a carrier flying its route on time carries no state word at all", () => {
+	// Absence is the reading. A traffic contact that has been left alone shows
+	// nothing beside its name, so the word cannot be a decoration that is always
+	// there and means nothing.
+	expect(trafficDivertCue("flying", 40)).toBe(null);
+	expect(trafficDivertCue("absent", 40)).toBe(null);
+});
+
+test("a carrier off its schedule carries the word and how far its berth is", () => {
+	const cue = trafficDivertCue("parked-home", 40.25);
+	expect(cue).toContain(DIVERT_LABEL);
+	expect(cue).toContain(range(40.25));
+});
+
+test("with no berth to point at it says the fact and no figure", () => {
+	// A missing station position is a `null`, not a 0. Printing `HOME 0.0 km`
+	// would tell the pilot the berth is beside them, which is the opposite of
+	// not knowing where it is.
+	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
+});
+
+/** The gate, run from `Game`'s own method text rather than a copy of it. */
+function divertCueOf(over: Record<string, unknown> = {}) {
+	const key = "7:trade:3";
+	const subject = Object.assign(
+		Object.create(
+			methods(["selectedDivertCue", "homeBerthKm"], {
+				trafficDivertCue,
+				trafficPresence,
+				length,
+				sub,
+			}),
+		),
+		{
+			targetId: key,
+			trafficSelected: () => true,
+			trafficEngagements: new Map([[key, {}]]),
+			carrierCondition: () => ({
+				condition: "repairing",
+				recovery: { kind: "repair" },
+			}),
+			trafficActorByKey: () => ({ homeStationId: "S1" }),
+			world: {
+				system: {
+					bodies: [{ kind: "station", id: "S1", pos: v3(0, 40, 0) }],
+				},
+				ship: { pos: v3() },
+			},
+			...over,
+		},
+	);
+	return (subject as any).selectedDivertCue();
+}
+
+test("the word appears on the frame the hull gives way, and not before", () => {
+	// The strike and the divert are one tick (H3c), so the word landing is the
+	// trigger becoming visible: a pilot who has only stripped shields sees no
+	// word, because that carrier is still flying its schedule.
+	expect(divertCueOf()).toContain(DIVERT_LABEL);
+	expect(
+		divertCueOf({ carrierCondition: () => ({ condition: "operational" }) }),
+	).toBe(null);
+});
+
+test("a carrier already standing in its berth is not running", () => {
+	// No engagement means it is not being flown. Drawn in the berth, it is found,
+	// not fleeing — and `HOME 0.0 km` beside it would be a lie about a distance
+	// nobody is travelling. That half is #365's surface, not this line's.
+	expect(divertCueOf({ trafficEngagements: new Map() })).toBe(null);
+});
+
+test("nothing on the glass but an ordinary carrier gets the word", () => {
+	expect(
+		divertCueOf({
+			trafficSelected: () => false,
+			trafficEngagements: new Map([["raider", {}]]),
+		}),
+	).toBe(null);
+});
+
+test("the berth distance is the pilot's own, off the station's live position", () => {
+	const cue = divertCueOf();
+	expect(cue).toContain("40.0 km");
+	// A station that is not in the system cannot be pointed at.
+	expect(
+		divertCueOf({
+			world: { system: { bodies: [] }, ship: { pos: v3() } },
+		}),
+	).toBe(DIVERT_LABEL);
 });

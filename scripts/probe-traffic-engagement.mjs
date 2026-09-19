@@ -49,6 +49,20 @@ const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+/**
+ * The two printed shield facings, read back out of the line as painted.
+ *
+ * Parsing what the glass printed is not restating a constant: the numbers come
+ * from the page. What is deliberately *not* here is any rule for turning a
+ * condition into those numbers — that is `targetConditionLine`'s, and a probe
+ * carrying a copy of it would keep passing after it was retuned.
+ */
+function pools(line) {
+	const m = /^SHD F (\d+) A (\d+)\s/.exec(line);
+	if (!m) throw new Error(`condition line does not print two facings: ${line}`);
+	return [Number(m[1]), Number(m[2])];
+}
+
 try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
@@ -273,18 +287,58 @@ try {
 	// -------------------------------------------------------------------------
 	// The first shot engages; the civilian runs.
 	// -------------------------------------------------------------------------
-	const engaged = await page.evaluate((key) => {
+	const engaged = await page.evaluate(async (key) => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
+		const conditionMod = await import("/src/ship-condition.ts");
+		// The mark as painted on the frame the fight begins, before the beam has
+		// taken anything off a shield: the line has to be there reading full, not
+		// only once something has gone.
+		const whole = g.selectedRender && { ...g.selectedRender };
 		for (let i = 0; i < 10; i++) p.follow(key, true);
-		return g.trafficReadout().contacts.find((c) => c.key === key);
+		return {
+			contact: g.trafficReadout().contacts.find((c) => c.key === key),
+			whole,
+			mark: g.selectedRender && { ...g.selectedRender },
+			// Off the module, never restated here (CLAUDE.md).
+			shieldPool: conditionMod.SHIELD_POOL,
+		};
 	}, key);
 	check(
 		"the first shot hands it from its projection to flight, and it runs rather than fights",
-		engaged?.engaged === true &&
-			["flee", "evade"].includes(engaged.phase) &&
-			engaged.condition === "operational",
-		JSON.stringify(engaged),
+		engaged.contact?.engaged === true &&
+			["flee", "evade"].includes(engaged.contact.phase) &&
+			engaged.contact.condition === "operational",
+		JSON.stringify(engaged.contact),
+	);
+	// -------------------------------------------------------------------------
+	// The glass says what the sim has been saying since #362 (#395). This is the
+	// half that was missing: the principal fired on ordinary traffic for twenty
+	// to thirty seconds and reported that nothing happened, and they were reading
+	// the glass correctly — the sim was right and the glass was silent.
+	// -------------------------------------------------------------------------
+	check(
+		"the moment it is a fight the mark carries its condition, at full and before anything is spent",
+		// A carrier nobody has fired on has no condition to read — it is a
+		// schedule, not a flown ship — so the line arriving with the fight is the
+		// whole of the wire, and it arrives reading whole rather than empty.
+		engaged.whole?.conditionLine ===
+			`SHD F ${engaged.shieldPool} A ${engaged.shieldPool}  HULL 100%`,
+		JSON.stringify(engaged.whole),
+	);
+	check(
+		"held in the beam, both facings print and the one it is taking comes down",
+		// Both facings print, every time, which is what makes *which* one is going
+		// readable: meeting a carrier from ahead and from behind are different
+		// fights. Which of the two the beam finds depends on how it fled, so this
+		// asks only that the line names both and one has fallen. Pairing a pinned
+		// geometry to a named facing is `tests/duel-hud.test.ts`'s.
+		engaged.mark?.conditionLine !== null &&
+			engaged.mark.conditionLine !== engaged.whole.conditionLine &&
+			pools(engaged.mark.conditionLine).every((n) => n <= engaged.shieldPool) &&
+			Math.min(...pools(engaged.mark.conditionLine)) < engaged.shieldPool &&
+			/HULL \d+%$/.test(engaged.mark.conditionLine),
+		JSON.stringify({ whole: engaged.whole, mark: engaged.mark }),
 	);
 
 	// -------------------------------------------------------------------------
@@ -297,6 +351,8 @@ try {
 		const presenceMod = await import("/src/traffic-engagement.ts");
 		const conditionMod = await import("/src/ship-condition.ts");
 		const wreck = await import("/src/raider-wreck.ts");
+		const units = await import("/src/units.ts");
+		const contactMod = await import("/src/display-contact.ts");
 		const before = g.trafficReadout().legal;
 		const actor = g.trafficActors.find((a) => a.key === key);
 		const hullFull = conditionMod.fullCondition(actor.hullId).hull;
@@ -307,14 +363,34 @@ try {
 		// shields took — which depends on which side of them the beam found — but
 		// that the hull was whole until the frame the row turned.
 		let hullWas = hullFull;
+		// **The mark one frame before the divert, and the mark on it.** The word
+		// has to arrive on the strike rather than have been there already: a pilot
+		// who has only stripped shields is looking at a carrier still flying its
+		// schedule (H3d), and a word that never left the name would say nothing
+		// about what their shot had just done.
+		let beforeMark = null;
+		let atMark = null;
+		let homeKmAt = null;
 		for (; steps < 6000; steps++) {
 			if (!p.follow(key, true)) break;
 			const row = g.trafficReadout().contacts.find((c) => c.key === key);
 			if (row === undefined) continue;
 			if (row.condition === "operational") {
 				hullWas = row.hull ?? hullWas;
+				beforeMark = g.selectedRender && { ...g.selectedRender };
 				continue;
 			}
+			atMark = g.selectedRender && { ...g.selectedRender };
+			const berth = g.world.system.bodies.find(
+				(b) => b.kind === "station" && b.id === actor.homeStationId,
+			);
+			homeKmAt = berth
+				? Math.hypot(
+						berth.pos.x - g.world.ship.pos.x,
+						berth.pos.y - g.world.ship.pos.y,
+						berth.pos.z - g.world.ship.pos.z,
+					)
+				: null;
 			// Snapshot the legal pair on the frame the divert wrote it, so each
 			// write can be measured against the status that stood before it —
 			// decayed to the same clock, and exactly, with no decay law restated
@@ -361,6 +437,12 @@ try {
 			shieldSeconds: p.shieldSeconds,
 			repairS: wreck.RAIDER_REPAIR_S,
 			parked,
+			// The mark either side of the strike, and the berth's range read the
+			// same way the label reads it — off `units.range`, not restated here.
+			beforeMark,
+			atMark,
+			homeLabel: homeKmAt === null ? null : units.range(homeKmAt),
+			divertLabel: contactMod.DIVERT_LABEL,
 			// Booked to the next departure its own schedule makes after T —
 			// recomputed from the instant the divert wrote, not from the frame the
 			// probe happened to read it on.
@@ -389,6 +471,38 @@ try {
 		// fled. `tests/traffic-engagement.test.ts` holds the arithmetic on a rig
 		// where the geometry is pinned.
 		JSON.stringify(diverted),
+	);
+	// -------------------------------------------------------------------------
+	// The other half of what the principal could not see: that the carrier has
+	// left its schedule, and roughly how far away that is. The word arrives on
+	// the frame the hull gives way — the same frame H3c writes the divert and H4
+	// charges the strike — so cause and consequence land together on the glass
+	// rather than only in the world state.
+	// -------------------------------------------------------------------------
+	check(
+		"a carrier still flying its schedule carries no state word beside its name",
+		diverted.beforeMark !== null &&
+			!diverted.beforeMark.text.includes(diverted.divertLabel),
+		JSON.stringify(diverted.beforeMark),
+	);
+	check(
+		"the frame the hull gives way puts the word and the berth's range on the name line",
+		diverted.atMark !== null &&
+			diverted.atMark.id === key &&
+			diverted.atMark.text.includes(diverted.divertLabel) &&
+			diverted.atMark.text.includes(`HOME ${diverted.homeLabel}`),
+		JSON.stringify(diverted.atMark),
+	);
+	check(
+		"and it is still being read as a fight: the facing that ran out prints 0",
+		// `min === 0` is what the model guarantees on this frame — a hull point is
+		// reached only once the facing the beam is on has nothing left — and it is
+		// the frame the line goes red. What the *other* facing has left depends on
+		// the flight, which is not something to pin from a tethered pilot.
+		diverted.atMark !== null &&
+			Math.min(...pools(diverted.atMark.conditionLine)) === 0 &&
+			/HULL (?!0%)\d+%$/.test(diverted.atMark.conditionLine),
+		JSON.stringify(diverted.atMark),
 	);
 	check(
 		"the divert is the ship's own ordinal, and its home berth is booked to the next departure after H3d's T (H3c)",

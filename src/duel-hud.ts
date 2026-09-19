@@ -23,6 +23,7 @@ import {
 	ENERGY_BANK,
 	HEAT_LOCK,
 	printHull,
+	printHullPercent,
 	SHIELD_POOL,
 	type ShipCondition,
 } from "./ship-condition";
@@ -117,6 +118,19 @@ export function duelConsoleReadout(c: ShipCondition): DuelConsoleReadout {
  * (#324, the principal's ruling after the second playtest): shield pools and
  * hull, printed as the duel row prints them. It is refused while either printed
  * pool is 0, so an open side reads at a glance.
+ *
+ * **Both pools print, every time.** A carrier cut off from behind loses `aft`
+ * while `fore` stands at 106, and one met from ahead the other way round; those
+ * are different fights, and a reading that named one pool could not tell them
+ * apart. #395's measurement is what found the question had never been asked.
+ *
+ * **Every selected combat target, not the raider alone** — since #395 an
+ * ordinary carrier under fire is read by this line too, and that is why the hull
+ * is a share. A raider's capacity is the one figure every raider shares, so
+ * printing it in points cost the pilot nothing to read; Traffic's eight ordinary
+ * hulls run from 85 to 215, so `HULL 215` is a whole hull on one of them and a
+ * figure that cannot occur on another, and the line never said which it was
+ * looking at. `printHullPercent` owns the law that a live hull never prints 0.
  */
 export function targetConditionLine(c: ShipCondition): {
 	text: string;
@@ -125,9 +139,46 @@ export function targetConditionLine(c: ShipCondition): {
 	const fore = Math.round(c.fore);
 	const aft = Math.round(c.aft);
 	return {
-		text: `SHD F ${fore} A ${aft}  HULL ${printHull(c.hull)}`,
+		text: `SHD F ${fore} A ${aft}  HULL ${printHullPercent(c)}%`,
 		tone: fore === 0 || aft === 0 ? "refused" : "passive",
 	};
+}
+
+/**
+ * The widest reading the line under a selected target's name can take.
+ *
+ * `duelRowWidest` bounds the floor's duel row; the sky label has its own
+ * reservation, so this is the second one. Found the same way — by asking the
+ * formatter over the worst cases rather than restating its output, so the fit and
+ * the print have one owner.
+ *
+ * **One case covers every hull in the game, and that is the whole reason the hull
+ * on this line is a share.** In points a raider's 81 is two digits and a miner's
+ * 215 three, so a fit built on the raider's reading clips a Traffic line — and
+ * the fit *was* built on the raider's reading, because until #395 nothing else
+ * was ever selected and shot at. A percent is three digits and a sign at both
+ * ends of the roster, from a patrol's 85 to a capital's 2635, so the widest case
+ * does not read the hull table at all. `tests/duel-hud.test.ts` holds that over
+ * every hull's walk to its kill: put a point figure back on this line and that
+ * row goes red instead of a callsign losing its last character on the glass.
+ */
+export function targetConditionWidest(): string {
+	const base: ShipCondition = {
+		fore: SHIELD_POOL,
+		aft: SHIELD_POOL,
+		hull: 1,
+		hullMax: 1,
+		energy: ENERGY_BANK,
+		heat: 0,
+		heatLocked: false,
+		sinceStruckS: 0,
+	};
+	let widest = "";
+	for (const c of [base, { ...base, fore: 0, aft: 0 }]) {
+		const { text } = targetConditionLine(c);
+		if (text.length > widest.length) widest = text;
+	}
+	return widest;
 }
 
 /** The hostile cue's tone: amber, and red while the raider fires. */

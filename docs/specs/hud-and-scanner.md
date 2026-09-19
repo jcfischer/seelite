@@ -471,13 +471,45 @@ ends where the beam meets the glass, and a small ring marks that point while
 the gimbal has turned the beam more than 0.2° off the boresight.
 
 **The enemy's condition and fire are on the glass** (the principal's ruling
-after the second playtest). A second line under the selected raider's name reads
-`SHD F 72 A 106  HULL 81`. It is refused while either printed pool is 0,
+after the second playtest). A second line under the selected target's name reads
+`SHD F 72 A 106  HULL 50%`. It is refused while either printed pool is 0,
 otherwise passive (`targetConditionLine`). While the raider fires, a warm beam
 runs from its point on the glass toward the bottom of the glass, where the
 player sits. After a hit lands on the player, the canopy rim glows red for
 0.22 s: a rim and not a wash, so the view is not taken away. That look is the
 `?combat=1` rig's, ported (`gun-feedback.ts`).
+
+**Since #395 that line is every combat target's, and its hull is a share.** It
+used to be drawn only `raiderSelected ? … : undefined`, so an ordinary carrier
+under fire — which has had a `ShipCondition` since `civilian-combat.md` H2 — was
+stripped of a shield facing on screen showing nothing at all. Both facings print
+every time, because meeting a carrier from ahead and from behind are different
+fights and the line has to say which one is being had. The hull went from points
+to a percent because points were sound only while one hull could be shot at: a
+raider is always 81, and the eight hulls Traffic flies run from a patrol's 85 to
+a miner's 215, so `HULL 215` is whole on one and cannot occur on another. A share
+carries #367 D1 with it (`printHullPercent`): a live hull never prints 0%, which
+is a tighter reading of that ruling than the point form managed, whose tolerance
+is in points and so leaves a capital's last 0.019% alive and reading dead.
+
+**A struck civilian carries a word on the name line, and an on-time one carries
+nothing** (`DIVERT_LABEL`, `trafficDivertCue`). `DIVERTING · HOME 412.0 km`
+appears on the frame the hull gives way — the frame `civilian-combat.md` H3c
+writes the divert — and not while the pilot is only stripping shields, because
+H3d says a shield-stripped carrier has not left its schedule. So the word
+arriving is that trigger becoming visible, and its absence is the on-time
+reading rather than a decoration that is always there. The range is the pilot's
+own to the home berth, the same measure the label already prints to the carrier;
+how far the carrier has left to go is a figure the pilot cannot fly. A carrier
+that has already reached that berth is drawn standing in it and says nothing
+here: it has arrived, and that half is `civilian-combat.md` H3b's.
+
+The line reserves its own space in §3's declutter pass, against
+`targetConditionWidest` rather than the live reading — every pool on it moves
+while the beam is on, and a reservation keyed to the digits would let a
+neighbour's label in and out as they ran down. Under the share form one widest
+case covers the whole roster, which is the thing the percentage bought for the
+fit; `tests/duel-hud.test.ts` holds it over every hull's walk to its kill.
 
 ## 6. Responsive behaviour
 
@@ -684,7 +716,11 @@ Headless — `tests/duel-hud.test.ts` and `tests/duel.test.ts`:
    0 refusing, heat passive below 75%, action from it, refused and `LOCK` when
    locked.
 2. **No reachable reading is wider than `duelRowWidest`**, which the floor's fit
-   is solved for.
+   is solved for — and no reachable reading of the line under a selected target's
+   name is wider than `targetConditionWidest`, which its label's reservation is
+   solved for. That second one is over **every** hull walked to its kill, not the
+   raider's alone: the fit held the raider's reading until #395 because nothing
+   else could be shot at.
 3. **The console readout reads the condition against its maxima**, and the heat
    reading is the glass's.
 4. **The cue tone is amber, and red only while the raider fires.**
@@ -715,6 +751,16 @@ Browser — `scripts/probe-duel-hud.mjs`, at both viewports:
 
 Visual — `duel-glass` and `duel-console` in the view set, and the principal's
 yes. Neither is a repeatable frame: the fight runs on the live clock.
+
+**The line for a target that is not a raider is checked in
+`scripts/probe-traffic-engagement.mjs`, not here** (#395). Four rows, on the
+ordinary carrier that rig already tethers to: the mark carries the condition on
+the frame the fight begins and before anything is spent; held in the beam both
+facings print and one comes down; the frame the hull gives way puts
+`DIVERTING · HOME <range>` on the name line where the frame before it carried
+nothing; and on that frame the facing that ran out prints 0. The headless half is
+`tests/display-contact.test.ts`, which runs the gate out of `Game`'s own method
+text.
 
 ## 8. The station console
 
