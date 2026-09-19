@@ -319,5 +319,17 @@ export const PROBE_CATALOG = Object.freeze(
 			"Checks a departing live Traffic hull as it crosses and occludes the station mouth, including bloom.",
 			["Traffic", "station mouth", "departure", "occlusion", "bloom"],
 		),
+		entry(
+			"probe-witnesses.mjs",
+			"Exercises the live station-witness legal loop: offence attribution, Wanted refusals, persistence across jumps, and heat-decay clearance.",
+			[
+				"station witness",
+				"legal heat",
+				"Wanted refusal",
+				"shipyard",
+				"persistence",
+				"jump",
+			],
+		),
 	].sort((a, b) => a.file.localeCompare(b.file)),
 );
