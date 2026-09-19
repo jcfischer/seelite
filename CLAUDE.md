@@ -40,6 +40,8 @@ npm run probe                   # starts a dev server, runs every browser probe
 npm run probe:one <name>        # one probe
 npx tsc --noEmit                # no errors
 rtk lint npm run format:check   # biome, no fixes applied
+rtk lint npm run lint           # biome: undeclared names in scripts/
+node scripts/check-launcher-wiring.mjs  # exit 0; `npm run probe` runs it first
 rtk err npm run build           # tsc + vite build
 ```
 

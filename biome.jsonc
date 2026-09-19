@@ -27,6 +27,13 @@
 //   pinned here as the declared convention.
 //
 // Run it: npx @biomejs/biome format --write .
+//
+// Lint (#402): `recommended` is off and one rule is on, `noUndeclaredVariables`,
+// for `scripts/**` only, with `Bun` declared as a global there. `tsc` covers
+// `src/`, and nothing loads most of `scripts/` without a browser, so a call to
+// a name nothing declares sat there until the day the script ran. It is scoped
+// rather than tree-wide because widening it is a different decision: turning on
+// `recommended` reports the whole tree. Run it: `npm run lint`.
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
 	"formatter": {
@@ -40,5 +47,25 @@
 			"semicolons": "always",
 			"trailingCommas": "all"
 		}
-	}
+	},
+	"linter": {
+		"rules": {
+			"recommended": false
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["scripts/**"],
+			"javascript": {
+				"globals": ["Bun"]
+			},
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUndeclaredVariables": "error"
+					}
+				}
+			}
+		}
+	]
 }
