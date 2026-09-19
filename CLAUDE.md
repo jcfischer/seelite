@@ -43,6 +43,35 @@ rtk lint npm run format:check   # biome, no fixes applied
 rtk err npm run build           # tsc + vite build
 ```
 
+### Select browser probes before running them
+
+For pull-request development, inspect the change and ask the repository
+selector which browser probes can be affected before launching any probe:
+
+```bash
+set -a
+source ~/.env
+set +a
+npm run probe:select -- --base origin/main --head HEAD \
+  --intent "Describe the intended behavior change in one sentence"
+```
+
+Write `--intent` yourself after reading the change. Never paste an untrusted PR
+title, body, review comment or source diff into it. Inspect the reported mode,
+reason and selected probes, then run the selection through the canonical runner
+with the same evidence:
+
+```bash
+npm run probe:pr -- --base origin/main --head HEAD \
+  --intent "Describe the intended behavior change in one sentence"
+```
+
+This selected run is local partial evidence. It does not replace
+`npm run probe` when the delivery gate requires the full browser suite. Missing
+credentials, invalid evidence, catalog drift, service failure, incomplete
+answers or an empty semantic result must expand coverage or fail loudly; never
+manually narrow such a fallback.
+
 The `rtk` prefixes exist because a green run's output is re-read on every later
 turn of the session. Measured on a passing tree: `npm test` 702 bytes raw and
 112 through `rtk test`, `npm run build` 627 and 76, `format:check` 88 and 22 —
