@@ -1153,6 +1153,18 @@ const TARGET_CONDITION_WIDEST = targetConditionWidest();
  *  declutter reservation reads it, and the paint twenty lines later does, and a
  *  pair of matching literals that drift is a label reserving a rectangle it then
  *  paints somewhere else. */
+/**
+ * Where the line under a selected target's name starts, on the overlay.
+ *
+ * One constant for the reservation and the paint, which used to be `+20` in one
+ * and `at.x + r + 6` in the other. They agreed because the radius on the only path
+ * that draws this line is 14, and 14 + 6 is 20 — an agreement between two spellings
+ * of a number in two places four hundred lines apart, which is the kind that outlives
+ * the radius that made it true. The reservation would then be protecting a strip the
+ * text is not in: decluttering would move a neighbour off empty glass and let it
+ * land on the reading.
+ */
+const TARGET_CONDITION_DX = 20;
 const TARGET_CONDITION_DY = 18;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
@@ -12983,7 +12995,7 @@ class Game {
 			if (targetCondition) {
 				occupiedLabels.push(
 					labelBounds(
-						selectedAt.x + 20,
+						selectedAt.x + TARGET_CONDITION_DX,
 						selectedAt.y + TARGET_CONDITION_DY,
 						TARGET_CONDITION_WIDEST,
 					),
@@ -13027,7 +13039,11 @@ class Game {
 						: null;
 					if (line) {
 						ctx.fillStyle = FLOOR_TONE_FILL[line.tone];
-						ctx.fillText(line.text, at.x + r + 6, at.y + TARGET_CONDITION_DY);
+						ctx.fillText(
+							line.text,
+							at.x + TARGET_CONDITION_DX,
+							at.y + TARGET_CONDITION_DY,
+						);
 						ctx.fillStyle = selectedColour;
 					}
 					this.selectedRender = {

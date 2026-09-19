@@ -224,9 +224,19 @@ describe("the enemy's condition line", () => {
 // share is what makes one widest case cover them all, and these rows are what
 // keeps it that way: a hull figure put back on this line puts the hull table into
 // the fit again, and the row goes red rather than clipping a callsign.
+// **What these rows bound, and what they do not.** They compare *character
+// counts*, and a character count reaches the glass as a width through one
+// assumption, made far away in `main.ts`: the sky label is drawn in
+// `ui-monospace, Menlo, monospace`, and `labelBounds` asks `ctx.measureText` for
+// the box. Under a uniform advance, more characters is the only way to be wider,
+// so this is a pixel bound. Under a proportional face it stops being one — `111`
+// and `106` are equal length and unequal width — and no row here could see it,
+// because the headless tier has no canvas to ask. Changing that font is the change
+// that would need a browser row over `measureText` on the reachable lines, not a
+// longer comment; this note is the tripwire, not the guarantee.
 // ---------------------------------------------------------------------------
 describe("the widest line a selected target can print", () => {
-	test("bounds every reading every hull can reach, walked to its kill", () => {
+	test("no reading any hull can reach prints more characters than the widest", () => {
 		const widest = targetConditionWidest();
 		for (const id of HULL_IDS)
 			for (const c of WALKS.get(id) as ShipCondition[])

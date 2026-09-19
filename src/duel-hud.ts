@@ -162,8 +162,8 @@ export function targetConditionLine(c: ConditionPrint): {
 export function targetConditionWidest(): string {
 	// Typed as the print's own `ConditionPrint`, not as a whole `ShipCondition`:
 	// the widest reading is a question about four figures, and building a full
-	// condition to ask it meant naming an energy bank, a heat state and a strike
-	// clock that this function cannot see and does not vary.
+	// condition to ask it meant naming three fields this function can neither see
+	// nor vary, and giving each of them a value it is not entitled to choose.
 	const base: ConditionPrint = {
 		fore: SHIELD_POOL,
 		aft: SHIELD_POOL,

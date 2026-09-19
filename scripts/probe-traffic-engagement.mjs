@@ -561,8 +561,9 @@ try {
 		// the frame the line goes red. What the *other* facing has left depends on
 		// the flight, which is not something to pin from a tethered pilot.
 		diverted.atMark !== null &&
-			// `pools` throws on a line that does not print two facings, and a throw
-			// here would end the run instead of reporting the row.
+			// `pools` returns `null` for a line that prints no two facings, so the
+			// result is tested before it is spread — `Math.min(...null)` would end the
+			// run instead of reporting the row.
 			diverted.atMark.conditionLine !== null &&
 			(() => {
 				const p = pools(diverted.atMark.conditionLine);
