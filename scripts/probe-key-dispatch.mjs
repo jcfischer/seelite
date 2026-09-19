@@ -1,10 +1,10 @@
 /**
- * The keyboard's dispatch law, in the page (#377).
+ * The keyboard's dispatch law, in the page (#377, #380).
  *
  * `tests/key-dispatch.test.ts` holds the law itself; `main.ts` cannot load
  * headless, so this probe holds the wiring: that `onKey` acts on the law's
- * answer. Each row is one of the principal's four rulings, read off the game's
- * own state.
+ * answer. Each row is one of the principal's four rulings on #377 or #380's
+ * field gate, read off the game's own state.
  *
  * **Keys go in through CDP's `Input.dispatchKeyEvent`, not `page.keyboard`.**
  * The row that matters most is a *held* chord, and Playwright's keyboard never
