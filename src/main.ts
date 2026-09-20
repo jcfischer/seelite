@@ -6398,9 +6398,21 @@ class Game {
 		// a charge — and a guard keyed to the write would then outlive the
 		// incident by the rest of the session, refusing that carrier's second hail
 		// while the law had long since stopped caring. So this asks the same
-		// question the law asks, on the same clock, and clears the galaxy.
-		if (legalStandingAt(this.legalStatus(), this.world.gameTime) === "clean")
-			this.hailed.delete(galaxy);
+		// question the law asks, on the same clock — **and asks it of every bucket,
+		// not only the one this galaxy owns.** A guard left in a galaxy the pilot
+		// jumped out of is not inert: come back to it later, when its heat has long
+		// since decayed below Wanted and the law has stopped caring, and the carrier
+		// they shot first still will not hail. Every galaxy is asked because the
+		// map holds only galaxies where somebody has actually been shot at, so the
+		// sweep is at most one `heatAt` per galaxy that has ever mattered.
+		for (const guarded of this.hailed.keys())
+			if (
+				legalStandingAt(
+					this.commerceWorld.galaxies[guarded].legalStatus,
+					this.world.gameTime,
+				) === "clean"
+			)
+				this.hailed.delete(guarded);
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */
