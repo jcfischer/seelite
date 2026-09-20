@@ -11,7 +11,12 @@ import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
-import { boardAt, firstOffer, stationKeyOf } from "./helpers/job-board";
+import {
+	boardAt,
+	firstOffer,
+	postingStations,
+	stationKeyOf,
+} from "./helpers/job-board";
 import { recordTrade } from "../src/deficits";
 import {
 	type RequestsState,
@@ -396,6 +401,92 @@ describe("§3 — a reaccept cannot restore a satisfied objective", () => {
 		expect(reaccepted.ok).toBe(true);
 		expect(Object.values(reaccepted.state.entrustedByLotId).length).toBe(1);
 		expect(entrustedTonnesAboard(reaccepted.state)).toBe(courier.tonnes);
+	});
+});
+
+describe("a procurement job settles against the pilot's own hold", () => {
+	// **The host's ordering, flown rather than assumed.** `settlementMessage`
+	// reads the remainder off `ctx.cargo`, and the claim that the delivery's
+	// delta has already landed by then was checked only on the entrusted arm,
+	// where `cargoDelta` is empty and the ordering cannot fail. This runs the
+	// procurement arm the way `main.ts` runs it: deliver, apply the delta,
+	// report with the cargo that is left.
+	const board = (() => {
+		for (const record of SYSTEMS)
+			for (const station of postingStations(record)) {
+				const deficits = recordTrade({}, stationKeyOf(record, station), {
+					goodName: "Food",
+					units: 20,
+					gameTimeMin: 120,
+					holdT: 20,
+				});
+				const all = boardAt(SYSTEMS, record, station, {
+					deficits,
+					gameTimeMin: 120,
+				});
+				const offer = all.find((o) => o.family === "procurement");
+				if (offer) return { offers: all, offer };
+			}
+		throw new Error("no procurement offer could be bound");
+	})();
+
+	const apply = (
+		cargo: Record<string, number>,
+		delta: Readonly<Record<string, number>>,
+	) => {
+		const next = { ...cargo };
+		for (const [good, amount] of Object.entries(delta)) {
+			const left = (next[good] ?? 0) + amount;
+			if (left <= 0) delete next[good];
+			else next[good] = left;
+		}
+		return next;
+	};
+
+	test("the remainder is what is left after the delivery, not before it", () => {
+		const { offers: board3, offer } = board;
+		const here = {
+			galaxyIndex: offer.requester.galaxyIndex,
+			carrierKey: offer.requester.carrierKey,
+		};
+		const ctx = (cargo: Record<string, number>) => ({
+			now: 120 * 60,
+			docked: here,
+			cargo,
+			holdRoomT: 20,
+		});
+		// Two tonnes more than the job needs, so the remainder is a figure and
+		// not a zero — a zero would pass under either ordering.
+		let cargo = { [offer.goodName]: offer.tonnes + 2 };
+		const accepted = requestAction(
+			emptyRequests(),
+			board3,
+			"accept",
+			offer.id,
+			ctx(cargo),
+		);
+		expect(accepted.ok).toBe(true);
+		const delivered = requestAction(
+			accepted.state,
+			board3,
+			"deliver",
+			offer.id,
+			ctx(cargo),
+		);
+		expect(delivered.ok).toBe(true);
+		expect(delivered.cargoDelta).toEqual({ [offer.goodName]: -offer.tonnes });
+		cargo = apply(cargo, delivered.cargoDelta);
+		const reported = requestAction(
+			delivered.state,
+			board3,
+			"report",
+			offer.id,
+			ctx(cargo),
+		);
+		expect(reported.ok).toBe(true);
+		expect(reported.message).toBe(
+			`Reported · ${offer.tonnes} t ${offer.goodName} delivered from your hold, ${offer.rewardCr} Cr paid · 2 t ${offer.goodName} still aboard, yours.`,
+		);
 	});
 });
 

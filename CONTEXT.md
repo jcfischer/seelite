@@ -325,14 +325,20 @@ _Avoid_: Target position (before identification)
 **Entrusted cargo**:
 Requester-owned goods carried in the pilot's hold for a request. `docs/specs/missions-and-requests.md` §4 owns hold usage, sale restrictions and return/loss settlement.
 
-**The pilot *hands over* a consignment; they *deliver* goods of their own.**
-In this game **Deliver** is an instruction to supply something, so a control
-reading `Deliver 8 t Food` over cargo the pilot is already carrying sent one
-shopping (#446) — `deliverAction` in `src/requests-view.ts` owns both labels
-and `tests/requests-view.test.ts` holds the entrusted one against
-`/deliver/i`. The same distinction runs through the in-flight cue (*carried*
-against *sourced*) and the settlement.
-_Avoid_: Player cargo, reward cargo, Deliver (of a consignment already aboard)
+**Scope note, not an _Avoid_ line.** The pilot *hands over* a consignment;
+they *deliver* goods of their own. **Deliver** stays canonical — it is the
+action id, the DOM attribute and the right word for a procurement job — so it
+does not belong on the list below, which is for words canonical nowhere. What
+the rule bans is the narrower thing: `Deliver N t X` as the **label over cargo
+already aboard**, where it reads as an instruction to supply something. #446
+found a pilot buying 8 t of Food they were already carrying; the details pane
+read *entrusted* at the time, so what the two together show is that the label
+on the control is what gets acted on, not that the label alone caused it.
+`deliverAction` in `src/requests-view.ts` owns both labels and
+`tests/requests-view.test.ts` holds the entrusted one against `/deliver/i`. The
+same distinction runs through the in-flight cue (*carried* against *sourced*)
+and the settlement.
+_Avoid_: Player cargo, reward cargo
 
 **System relay**:
 The public station-condition report received when the initial world is

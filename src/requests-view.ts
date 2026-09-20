@@ -43,26 +43,28 @@ export function deliverAction(
 	aboardT: number,
 ): DeliverAction {
 	const short = aboardT < offer.tonnes;
-	if (offer.entrusted)
-		return {
-			// **Never "Deliver".** In this game that word is an instruction to
-			// supply something, and supplying is exactly what a consignment does
-			// not need.
-			label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
-			hint: short
-				? aboardT > 0
-					? `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`
-					: "the consignment is not aboard"
-				: "aboard since you accepted — the requester's",
-			enabled: !short,
-		};
-	return {
-		label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
-		hint: short
-			? `${aboardT} t of ${offer.tonnes} aboard`
-			: `${offer.tonnes} t aboard, yours to hand over`,
-		enabled: !short,
-	};
+	// Only the words differ by family; the enablement is one rule, and it was
+	// written twice.
+	const words = offer.entrusted
+		? {
+				// **Never "Deliver" for a consignment.** In this game that word
+				// is an instruction to supply something, and supplying is
+				// exactly what a consignment does not need (CONTEXT.md
+				// §Language, **Entrusted cargo**).
+				label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
+				hint: short
+					? aboardT > 0
+						? `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`
+						: "the consignment is not aboard"
+					: "aboard since you accepted — the requester's",
+			}
+		: {
+				label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
+				hint: short
+					? `${aboardT} t of ${offer.tonnes} aboard`
+					: `${offer.tonnes} t aboard, yours to hand over`,
+			};
+	return { ...words, enabled: !short };
 }
 
 export interface RequestsView {
@@ -77,12 +79,11 @@ export interface RequestsView {
 	 * What is aboard — #443's projection, and the only input this screen takes
 	 * about the commander.
 	 *
-	 * **A number per offer would have done**, and was considered: `aboardFor`
-	 * is the one reader. The summary is passed instead because both arms of it
-	 * need one — the requester's lot for a consignment and the pilot's own
-	 * tonnage for a procurement job — and threading two numbers per rendered
-	 * offer through the descriptor is the second authority this is here to
-	 * avoid. No credits, no prices, no market: those stay out.
+	 * The whole summary rather than a tonnage per offer, because both arms of
+	 * `aboardFor` need one — the requester's lot for a consignment, the pilot's
+	 * own tonnage for a procurement job — and threading two numbers per
+	 * rendered offer through the descriptor is the second authority this is
+	 * here to avoid. No credits, no prices, no market: those stay out.
 	 *
 	 * `null` where no hold was supplied, which reads as nothing aboard.
 	 */
@@ -103,7 +104,7 @@ const button = (
 	extra: { hint?: string; enabled?: boolean } = {},
 ) => {
 	// `action` is escaped too. Every caller passes a literal today, so nothing
-	// is reachable; an unescaped attribute slot beside three escaped ones is a
+	// is reachable; an unescaped attribute position beside three escaped ones is a
 	// footgun for the next caller, and `esc` covers `"` and `'`.
 	const disabled = extra.enabled === false ? " disabled" : "";
 	const title = extra.hint ? ` title="${esc(extra.hint)}"` : "";
@@ -116,15 +117,14 @@ const button = (
 /**
  * How much of this job's good is aboard, for the job's own sense of aboard.
  *
- * **Both arms read `hold`, which is the point.** The first pass aggregated
- * `state.entrustedByLotId` here for the entrusted case, which made the claim
- * that the button and the till answer from one projection true of half of it:
- * `hold.ts` owns the entrusted share (CONTEXT.md §Language, **Hold**), and a
- * second sum in the view is a second authority on what is aboard.
+ * **Both arms read `hold` and neither re-sums the journal.** `hold.ts` owns
+ * the entrusted share (CONTEXT.md §Language, **Hold**); a second sum here
+ * would be a second authority on what is aboard, and the button would be able
+ * to disagree with the till about it.
  *
- * `null` where no hold was supplied, which reads as nothing aboard and leaves
- * the control disabled with a hint that says how short — the safe direction,
- * and the reason `tests/requests-view.test.ts` flies it.
+ * `null` reads as nothing aboard, which leaves the control disabled with a
+ * hint that says how short — the safe direction, and the reason
+ * `tests/requests-view.test.ts` flies it.
  */
 export const aboardFor = (
 	view: Pick<RequestsView, "hold">,
