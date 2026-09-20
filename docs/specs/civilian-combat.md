@@ -223,11 +223,14 @@ is a red run rather than a quiet change in what the law is.
 unbroken beam takes to open one facing of a freighter — a figure with an
 instrument behind it rather than a remembered one. `probe-witnesses.mjs` holds
 exactly that beam and carries both durations in its strike row: `landedFireAtDivert`
-is the one this clock counts, and `secondsToDivert` is wall clock. The run that
-shipped this read **17.6 s of clock against 17.7 s of landed fire**, which agree
-because a probe tethered 1.2 km off a target's quarter misses nothing; a share
-taken across the two quantities would be a share between unlike things, so the
-landed figure is the denominator. #395's receipt reached the same number from the
+is the one this clock counts, and `secondsToDivert` is wall clock. **The wall
+bounds the landed figure by construction** — a frame adds to the landed clock only
+if the fight's clock is running too — so an unbroken beam reads the same number on
+both arms to within the frame each is sampled at, and the run that shipped printed
+17.6 s of clock against 17.7 s landed. The pair is a check on the instrument, not
+two measurements confirming each other, and it is why both are printed: **a share
+taken across the two quantities is a share between unlike things**, so the landed
+figure is the denominator. #395's receipt reached the same number from the
 other side. So the charge lands with the better part of the facing's armour still
 between the pilot and the hull: the pilot is charged for what they did to a
 citizen, not for how long it took the gun to get through the armour. The clock **holds across
@@ -444,9 +447,13 @@ that is not untidiness.** The strike and the kill are read off the carrier's row
 because the row is the copy that survives a reload — the §4 episode ledger keeps
 only the latest episode, and the kill's `interrupt` erases the strike from it.
 The assault has nothing on the row to read (H6), so it is read from
-`LegalStatus.assaulted`. A resumed fight therefore gets its clock seeded from
-the world rather than from zero, and `engage`'s third argument is required for
-`FlightPerformance`'s reason: a caller that omitted it would charge a pilot a
+`LegalStatus.assaulted`. **What a resumed fight inherits from the world is the
+latch and not the clock**: `engage` seeds `assaultCharged` from the saved list and
+starts `landedFireS` at zero, which `tests/traffic-engagement.test.ts` pins. A
+reload in the middle of an unserved five seconds therefore costs the pilot those
+partial seconds and no more — the clock has to be earned again, and what cannot
+happen twice is the *charge*, which is the only thing the law writes.
+`engage`'s third argument is required for `FlightPerformance`'s reason: a caller that omitted it would charge a pilot a
 second time for the five seconds they have already served, and nothing about the
 missing argument looks wrong in a diff.
 

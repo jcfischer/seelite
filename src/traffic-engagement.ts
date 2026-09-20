@@ -87,11 +87,15 @@ export const trafficInSights = (
  * the better part of the facing's armour still between the pilot and the hull.
  * **That figure has an instrument** — `probe-witnesses.mjs` tethers exactly that
  * beam and carries both durations in its strike row: `landedFireAtDivert`, which
- * is what this clock counts, and `secondsToDivert`, which is wall clock. The run
- * that shipped this read 17.6 s of clock and 17.7 s of landed fire, the two
- * agreeing because a tethered probe misses nothing; **a share quoted across the
- * pair is a share between unlike quantities**, so the landed one is the one this
- * fraction is taken of. Anyone retuning the dial re-measures it the same way
+ * is what this clock counts, and `secondsToDivert`, which is wall clock. **The
+ * second bounds the first**, and not by measurement: landed fire adds `dt` only
+ * on frames the same clock is already counting, so no beam can land more seconds
+ * than the fight ran for, and a run that opens a facing without ever losing the
+ * target reads the same number on both arms to within the frame each is sampled
+ * at — 17.6 s of clock against 17.7 s of landed fire on the run that shipped.
+ * That is a consistency check on the instrument, and it is why the pair is
+ * printed rather than one of them: **a share quoted across the two is a share
+ * between unlike quantities**, so this fraction is taken of the landed one. Anyone retuning the dial re-measures it the same way
  * (`PROBE_ORIGIN=… node scripts/probe-witnesses.mjs` prints both lines) rather
  * than reading a number out of a comment, which is why the figure is quoted with
  * its instrument rather than from the author's memory.

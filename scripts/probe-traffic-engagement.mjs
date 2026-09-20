@@ -196,7 +196,7 @@ try {
 			legWatcher() {
 				const rig = this;
 				const legs = [];
-				let prior = { ...window.__seelite.trafficReadout().legal };
+				let prior = { ...window.__seelite.legalRow() };
 				return {
 					legs,
 					observe(after) {
@@ -527,7 +527,9 @@ try {
 		for (; steps < 6000; steps++) {
 			if (!p.follow(key, true)) break;
 			const readout = g.trafficReadout();
-			watch.observe(readout.legal);
+			// The row, not the report: this loop runs up to 6 000 frames, and the
+			// readout builds every contact and berth to answer one question.
+			watch.observe(g.legalRow());
 			const row = readout.contacts.find((c) => c.key === key);
 			if (row === undefined) continue;
 			if (row.condition === "operational") {
@@ -806,7 +808,7 @@ try {
 	const killed = await page.evaluate((key) => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
-		const { heat, updatedAt } = g.trafficReadout().legal;
+		const { heat, updatedAt } = g.legalRow();
 		const statusBefore = { heat, updatedAt };
 		let steps = 0;
 		// The divert's own write, captured on the frame it lands: H9's whole
@@ -820,7 +822,7 @@ try {
 		const watch = p.legWatcher();
 		for (; steps < 6000 && g.trafficContacts.has(key); steps++) {
 			p.follow(key, true);
-			watch.observe(g.trafficReadout().legal);
+			watch.observe(g.legalRow());
 			if (!struck && g.carrierCondition(key).condition !== "operational")
 				struck = p.snapshotLegal(statusBefore);
 		}

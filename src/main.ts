@@ -6313,6 +6313,17 @@ class Game {
 			.legalStatus;
 	}
 
+	/** The galaxy's legal row itself, for a reader that wants the row.
+	 *
+	 *  **The row, not a report.** `trafficReadout()` is the console's whole
+	 *  Communications picture — every contact's manifest, every berth's refusal,
+	 *  the hail store — and a caller walking a fight frame by frame to watch one
+	 *  `updatedAt` stamp pays for all of it to read one field. Same data, no
+	 *  report: the readout is built from this. */
+	legalRow() {
+		return this.legalStatus();
+	}
+
 	/** The player's standing now, from the galaxy's heat (H4, H7). */
 	legalStanding() {
 		return legalStandingAt(this.legalStatus(), this.world.gameTime);

@@ -614,18 +614,29 @@ try {
 			 */
 			earshot(from) {
 				const origins = this.originsOf(from);
-				const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-				const km = (st) => Math.min(...origins.map((o) => apart(st.pos, o)));
-				return g.trafficReadout().stations.map((st) => ({
-					id: st.id,
-					type: st.type,
-					witnessed: st.witnessed,
-					km: km(st),
-					inEarshot: km(st) <= distressMod.DISTRESS_RANGE_KM,
-					// The arm the amendment is for: a berth the frame body's rule
-					// could never have reached, sitting inside the transmission's.
-					pastFrameReach: km(st) > g.units.NEAR_FAR_KM,
-				}));
+				return g.trafficReadout().stations.map((st) => {
+					const d = Math.min(...origins.map((o) => this.apartKm(st.pos, o)));
+					return {
+						id: st.id,
+						// The filed list holds keys, not ids, and a row that compares
+						// an id against a key is red for a reason that has nothing to
+						// do with the law.
+						key: st.key,
+						type: st.type,
+						witnessed: st.witnessed,
+						km: d,
+						inEarshot: d <= distressMod.DISTRESS_RANGE_KM,
+						// What the rule #396 retired could reach from the same place.
+						// It measured from the *attacker*, and the tether keeps the ship
+						// within a few kilometres of the carrier it is shooting, so the
+						// two rules can only part over a berth standing past
+						// `NEAR_FAR_KM` of the victim. Where no berth does — this
+						// system's case, its two berths 1.4 km apart — they file the
+						// same set, and the row below says that rather than implying it
+						// proved the amendment.
+						oldRuleReaches: d <= g.units.NEAR_FAR_KM,
+					};
+				});
 			},
 			/**
 			 * What counts as a position to measure from, in one place.
@@ -634,6 +645,16 @@ try {
 			 * for accepting it has to be one rule: two copies would let the reach be
 			 * computed over a set the drift figure did not see.
 			 */
+			/**
+			 * Kilometres between two world positions.
+			 *
+			 * Every distance in this file is this arithmetic, and it was written four
+			 * times: two copies of a `hypot` differ the way two copies of a constant
+			 * do — by a `.z` nobody meant to drop.
+			 */
+			apartKm(a, b) {
+				return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+			},
 			originsOf(from) {
 				return (Array.isArray(from) ? from : [from]).filter(
 					(o) => o && Number.isFinite(o.x),
@@ -643,17 +664,8 @@ try {
 			driftKm(from) {
 				const origins = this.originsOf(from);
 				if (origins.length < 2) return 0;
-				return Math.max(
-					...origins
-						.slice(1)
-						.map((o) =>
-							Math.hypot(
-								o.x - origins[0].x,
-								o.y - origins[0].y,
-								o.z - origins[0].z,
-							),
-						),
-				);
+				const apart = (a, b) => this.apartKm(a, b);
+				return Math.max(...origins.slice(1).map((o) => apart(o, origins[0])));
 			},
 			distressRangeKm: distressMod.DISTRESS_RANGE_KM,
 			/** The shipped reach, as the build carries it — not this file's copy. */
@@ -767,11 +779,30 @@ try {
 			heard.stations.length >= 2 &&
 			heard.stations.every((st) => st.witnessed === st.inEarshot) &&
 			struck.after?.legal.witnesses.length ===
-				heard.stations.filter((st) => st.inEarshot).length,
+				heard.stations.filter((st) => st.inEarshot).length &&
+			// The wider reach is a widening and not a different set: everything the
+			// retired rule would have filed is filed, from the same two instants.
+			struck.after !== null &&
+			heard.stations
+				.filter((st) => st.oldRuleReaches)
+				.every((st) => struck.after.legal.witnesses.includes(st.key)),
 		JSON.stringify({
 			heard,
 			witnesses: struck.after?.legal.witnesses,
 			victim: struck.strike?.victim,
+			// **The honest limit of this row.** Where the two rules' answers are the
+			// same list, this row proves the game files from the victim and nothing
+			// about how wide the reach is — and in this system the answers *are* the
+			// same list, because the two berths stand 1.4 km apart and any place
+			// inside one horizon is inside the other. `rulesDifferHere` is printed so
+			// a reader sees that rather than assuming it. The geometry where the two
+			// part is constructed, in `tests/distress.test.ts`.
+			oldRuleWouldFile: heard.stations
+				.filter((st) => st.oldRuleReaches)
+				.map((st) => st.key),
+			rulesDifferHere:
+				heard.stations.filter((st) => st.oldRuleReaches).length !==
+				heard.stations.filter((st) => st.inEarshot).length,
 		}),
 	);
 	// -------------------------------------------------------------------------
@@ -791,7 +822,7 @@ try {
 			.trafficReadout()
 			.stations.map((st) => ({ key: st.id, pos: st.pos }));
 		if (berths.length < 2) return { enough: false, berths: berths.length };
-		const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+		const apart = (a, b) => p.apartKm(a, b);
 		// A stand-off that is a frame body and a half from the nearest berth: too
 		// far for the rule H5 had, a third of the way into the one it has now.
 		const origin = {
@@ -821,7 +852,7 @@ try {
 		};
 	});
 	check(
-		"the reach the build carries is strictly wider than the frame body's at a geometry where the two rules disagree (#396's amendment measured, not named)",
+		"the served build's reach is three frame bodies wide, at a stand-off where the two rules answer differently (evidence about the constant in the bundle — the filing path is the row above, and the discriminating geometry is constructed in tests/distress.test.ts)",
 		wider.enough === true &&
 			wider.heard >= 1 &&
 			wider.heard > wider.frameBody &&
@@ -981,11 +1012,7 @@ try {
 			engaged: true,
 			keys,
 			during,
-			rangeKm: Math.hypot(
-				g.world.ship.pos.x - (carrier?.pos ?? flight).x,
-				g.world.ship.pos.y - (carrier?.pos ?? flight).y,
-				g.world.ship.pos.z - (carrier?.pos ?? flight).z,
-			),
+			rangeKm: p.apartKm(g.world.ship.pos, carrier?.pos ?? flight),
 			dematerializeKm: p.dematerializeKm,
 			after: p.comms(),
 			gone: !g.trafficEngagements.has(key),
@@ -1014,8 +1041,7 @@ try {
 		const p = window.__witnessProbe;
 		const g = window.__seelite;
 		const here = g.world.system.record;
-		const d = (a, b) =>
-			Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
+		const d = (a, b) => p.apartKm(a.pos, b.pos);
 		const near = g.world.galaxy.systems
 			.filter((s) => s.index !== here.index)
 			.sort((a, b) => d(a, here) - d(b, here))[0];

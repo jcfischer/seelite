@@ -96,13 +96,16 @@ export const HEAT_HALF_LIFE_S = 30 * 60;
  * it. The figure itself is a **declared starting form** (H12's precedent), and
  * what it buys is derived rather than remembered: heat halves every
  * `HEAT_HALF_LIFE_S`, so a charge of `h` reads below Wanted after
- * `log2(h / WANTED_HEAT)` half-lives — **about ten minutes** at 13, against the
- * strike's seventeen and a half. Read that way the interval is a span of legal
- * life from nothing at all (at 10 the row is Wanted for no time) to the strike's
- * own seventeen and a half (at 15), so the rung sits near the short end of what
- * it could buy and the ladder keeps its ordering. **That is a span of minutes,
- * and `ASSAULT_FIRE_S` is five seconds of fire** — two quantities, and the
- * distance between them is not an argument for moving either.
+ * `log2(h / WANTED_HEAT)` half-lives — **11.4 minutes** at 13, the figure H4
+ * quotes, against the strike's 17.5 at 15. Two things follow from the shape of
+ * that mapping, and both are worth knowing before touching the dial. The first is
+ * that the interval's heat is not its legal life: 13 stands three-fifths of the
+ * way up the 10 … 15 it may not leave, and buys sixty-five percent of the time
+ * the top of that interval would buy, because the conversion is a logarithm and
+ * its middle is not the middle. The second is that **this is a span of minutes
+ * while `ASSAULT_FIRE_S` is five seconds of fire** — the price and the act are
+ * different quantities, and the distance between them is not an argument for
+ * moving either one.
  */
 export const OFFENCE_HEAT = { assault: 13, struck: 15, destroyed: 40 } as const;
 
