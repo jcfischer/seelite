@@ -94,7 +94,7 @@ describe("the capacity is the till's, not the screen's", () => {
 		expect(summary.usedT).toBe(0);
 		const gold = summary.lines.find((line) => line.goodName === "Gold");
 		expect(gold?.unit).toBe("kg");
-		expect(gold?.tonnes).toBe(40);
+		expect(gold?.amount).toBe(40);
 	});
 
 	test("free tonnage is not floored at zero", () => {
@@ -115,8 +115,8 @@ describe("ownership is the thing the screen could not say", () => {
 		const theirs = summary.lines.filter((line) => line.owner === "requester");
 		expect(mine).toHaveLength(1);
 		expect(theirs).toHaveLength(1);
-		expect(mine[0].tonnes).toBe(3);
-		expect(theirs[0].tonnes).toBe(courier.tonnes);
+		expect(mine[0].amount).toBe(3);
+		expect(theirs[0].amount).toBe(courier.tonnes);
 		// The same good, and the two are not merged: one can be sold and one
 		// cannot, which is the whole of #411 §4.
 		expect(mine[0].goodName).toBe(theirs[0].goodName);

@@ -118,8 +118,11 @@ export interface StationCommerceInput {
  * fails to compile there rather than shipping silently.
  *
  * `tests/station-console.test.ts` reads this module's own `rejected(` calls
- * back off the source, because the union cannot stop a new literal being passed
- * that nobody added to it.
+ * back off the source. **Not because a stray literal could get past `tsc`** —
+ * `rejected` takes a `CommerceRefusal`, so it could not, and that half of the
+ * scan is redundant with the typechecker. What the scan adds is the *other*
+ * direction: a member of the union that nothing here can produce is a sentence
+ * nobody will ever read, and no type says so.
  */
 export type CommerceRefusal =
 	| "fuel-full"
@@ -134,18 +137,35 @@ export type CommerceRefusal =
 	| "cargo-full"
 	| "cargo-missing";
 
-export interface StationCommerceResult {
-	accepted: boolean;
-	reason: CommerceRefusal | null;
-	commander: CommanderState;
-	deficits: DeficitMap;
-}
+/**
+ * One transaction's outcome, **discriminated on `accepted`** (#443).
+ *
+ * It was `{ accepted: boolean; reason: CommerceRefusal | null }`, where nothing
+ * tied the two fields together — so the caller that finally read the reason had
+ * to invent a value for the null the type permitted, and the first version of
+ * that fallback printed *"That is not a quantity."* over a full hold. A refusal
+ * carries a reason and an acceptance carries none, which is what was true all
+ * along and is now what the type says.
+ */
+export type StationCommerceResult =
+	| {
+			accepted: true;
+			reason: null;
+			commander: CommanderState;
+			deficits: DeficitMap;
+	  }
+	| {
+			accepted: false;
+			reason: CommerceRefusal;
+			commander: CommanderState;
+			deficits: DeficitMap;
+	  };
 
 const rejected = (
 	input: StationCommerceInput,
 	reason: CommerceRefusal,
 ): StationCommerceResult => ({
-	accepted: false,
+	accepted: false as const,
 	reason,
 	commander: input.commander,
 	deficits: input.deficits,

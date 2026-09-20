@@ -630,12 +630,13 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 /**
  * #443 — the refusals the till computed and the screen dropped.
  *
- * The union makes the sentence map exhaustive at compile time; nothing in the
- * type system stops a *new literal* being handed to `rejected(` that nobody
- * added to the union, so the first row reads this module's own source back.
+ * The union makes the sentence map exhaustive at compile time, and `rejected`
+ * takes a `CommerceRefusal`, so a stray literal is already a type error. What
+ * the source scan below adds is the direction no type can see: a member with no
+ * caller is a sentence nobody will ever read.
  */
 describe("#443 — every refusal has a sentence", () => {
-	test("every reason the till passes to `rejected` is a member of the union", () => {
+	test("no member of the union is a sentence nothing can reach", () => {
 		const source = codeOf("src/station-commerce.ts");
 		const passed = [
 			...source.matchAll(/rejected\(\s*input\s*,\s*"([^"]+)"/g),
@@ -643,9 +644,13 @@ describe("#443 — every refusal has a sentence", () => {
 		// The control: a scan that found nothing would agree with any build.
 		expect(passed.length).toBeGreaterThan(8);
 		const listed = new Set<string>(REFUSAL_REASONS);
+		// The forward direction is `tsc`'s — `rejected` takes a
+		// `CommerceRefusal` — and it is asserted anyway so a failure of the
+		// scan itself shows up as a mismatch rather than as silence.
 		for (const reason of passed) expect(listed.has(reason), reason).toBe(true);
-		// And the other direction, so a reason that stops being reachable is
-		// noticed rather than left as a sentence nothing can print.
+		// **This is the half no type can hold.** A member nothing passes is a
+		// sentence that cannot be printed, and the compiler is perfectly happy
+		// with one.
 		expect([...new Set(passed)].sort()).toEqual([...listed].sort());
 	});
 

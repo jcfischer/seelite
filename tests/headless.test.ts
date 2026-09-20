@@ -326,14 +326,19 @@ test("src/pad-bindings.ts names the pad module only as a type", () => {
 	expect(source.match(/\brequire\s*\(/g)).toBeNull();
 });
 
-test("nothing imports src/hold.ts, which is what keeps it a projection", () => {
+test("station-commerce, requests and market do not import src/hold.ts", () => {
 	// #443's hold summary reads `station-commerce.ts` for the capacity rule and
 	// `requests.ts` for the entrusted lots. Both of those are read by the till,
 	// so an import back the other way would make the hold's *screen* a
 	// dependency of the hold's *rules* — and the till would then be able to
 	// refuse against a figure the screen had composed.
 	//
-	// Asserted on the source of the two modules it reads, rather than on a
+	// **Only those three.** Modules *above* the projection read it freely —
+	// `main.ts` calls `holdSummary` and `live-cockpit.ts` names `HoldSummary`
+	// as a type — and this row said "nothing imports it" for one review round
+	// while the same diff added two such imports.
+	//
+	// Asserted on the source of the three modules it reads, rather than on a
 	// module graph, for the reason every check in this file is: the failure is a
 	// line someone writes.
 	for (const file of ["station-commerce.ts", "requests.ts", "market.ts"])

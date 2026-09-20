@@ -16,10 +16,13 @@
  * count would be the #193 defect one module along: a figure the player reads
  * and a figure the till charges, drifting apart.
  *
- * **Nothing may import this.** It reads `station-commerce` and `requests`, and
- * both of those are read by the till; an import back the other way would make
- * the hold's *screen* a dependency of the hold's *rules*.
- * `tests/headless.test.ts` holds that direction.
+ * **Nothing it reads may import it back.** It reads `station-commerce`,
+ * `requests` and `market`, and the first two are read by the till; an import
+ * the other way would make the hold's *screen* a dependency of the hold's
+ * *rules*. `tests/headless.test.ts` names those three and scans them. Modules
+ * *above* it read it freely — `main.ts` calls `holdSummary` and
+ * `live-cockpit.ts` names `HoldSummary` as a type — which is the direction the
+ * projection exists for.
  *
  * No DOM and no Three.js: what is aboard is arithmetic and text.
  */
@@ -36,11 +39,16 @@ export interface HoldLine {
 	/**
 	 * The amount aboard in the good's **native** unit — tonnes for fourteen of
 	 * the seventeen, kilogrammes for Gold and Platinum, grammes for
-	 * Gem-Stones. The field is named for the common case and `unit` is what a
-	 * renderer prints beside it; the three exceptions take no room at all,
-	 * which is why `usedT` does not move for them.
+	 * Gem-Stones.
+	 *
+	 * **`amount` and not `tonnes`, which is what it was called for one review
+	 * round.** Three of the seventeen goods are not tonnes and take no room at
+	 * all, so a field with a `t` in its name invites a consumer to sum the
+	 * column for a hold figure and be silently wrong by however much Gold is
+	 * aboard. The tonne figures carry the suffix — `usedT`, `capacityT`,
+	 * `freeT`, `entrustedT` — and this one travels with its `unit`.
 	 */
-	tonnes: number;
+	amount: number;
 	unit: CommodityUnit;
 	owner: HoldOwner;
 	/** Requester lines only: the job, and where the goods must reach or return. */
@@ -66,11 +74,22 @@ export interface HoldSummary {
 	lines: readonly HoldLine[];
 }
 
-/** Pilot lines first, then alphabetical, then by job — a stable render order. */
+/**
+ * Pilot lines first, then alphabetical, then by job — a stable render order.
+ *
+ * **Three-way at every step, including the last.** The offer arm returned `1`
+ * for both `(a, b)` and `(b, a)` when the ids matched, which is an inconsistent
+ * comparator: unreachable today, because a pilot's goods are unique keys and
+ * one job issues one lot, and wrong the moment a requester carries two lots of
+ * one good.
+ */
 const compareLines = (a: HoldLine, b: HoldLine): number => {
 	if (a.owner !== b.owner) return a.owner === "pilot" ? -1 : 1;
 	if (a.goodName !== b.goodName) return a.goodName < b.goodName ? -1 : 1;
-	return (a.offerId ?? "") < (b.offerId ?? "") ? -1 : 1;
+	const left = a.offerId ?? "";
+	const right = b.offerId ?? "";
+	if (left === right) return 0;
+	return left < right ? -1 : 1;
 };
 
 /**
@@ -92,7 +111,7 @@ export function holdSummary(
 		if (amount <= 0) continue;
 		lines.push({
 			goodName,
-			tonnes: amount,
+			amount,
 			unit: commodity(goodName).unit,
 			owner: "pilot",
 		});
@@ -103,13 +122,20 @@ export function holdSummary(
 		// written by one verb, so a lot without its request means one of the two
 		// was restored without the other. Drawing a nameless line would put a
 		// hold on the glass that no journal backs.
+		//
+		// **And this runs on every console update, so the throw takes the docked
+		// screen with it rather than degrading one line.** That is the intended
+		// severity — `requests.ts` validates a save's shape at load and refuses a
+		// journal it cannot reconcile, so reaching here means the refusal was
+		// bypassed, and a cockpit drawing a hold nobody can account for is worse
+		// than one that stops.
 		if (!request)
 			throw new Error(
 				`hold: entrusted lot ${lot.lotId} has no request ${lot.offerId} (#443)`,
 			);
 		lines.push({
 			goodName: lot.goodName,
-			tonnes: lot.aboardT,
+			amount: lot.aboardT,
 			unit: commodity(lot.goodName).unit,
 			owner: "requester",
 			offerId: lot.offerId,

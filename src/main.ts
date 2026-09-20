@@ -11959,13 +11959,25 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}`;
+		// One projection for the whole console (#443). The hold line, the
+		// commander footer's manifest and `cargo-full`'s sentence all read it,
+		// so the three cannot disagree about what is aboard.
+		//
+		// **Built before the key, because the key reads it.** The cached value
+		// depends on `this.requests` now, and it did not before; keying on
+		// `stationConsoleRevision` alone would have made the hold line correct
+		// only for as long as every verb that moves the journal remembered to
+		// bump that counter. The key carries the projection's own content
+		// instead, which cannot be forgotten — and the scan it costs is over the
+		// cargo map and the accepted lots, against seventeen priced market rows
+		// it saves.
+		const hold = holdSummary(this.commander, this.requests);
+		const manifest = hold.lines
+			.map((line) => `${line.owner}:${line.goodName}:${line.amount}`)
+			.join(",");
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${manifest}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
-		// One projection for the whole console (#443). The hold line, the
-		// commander footer's cargo list and `cargo-full`'s sentence all read it,
-		// so the three cannot disagree about what is aboard.
-		const hold = holdSummary(this.commander, this.requests);
 		this.stationConsoleCache = {
 			label: this.nameOfStation(station.id),
 			tab: this.stationConsoleTab,
@@ -11996,12 +12008,12 @@ class Game {
 			hold,
 			message: this.stationConsoleMessage,
 			// The pilot's own goods, off the same projection rather than off
-			// `commander.cargo` a second time. The footer says what can be sold;
-			// the hold line above it says what the ship is carrying, and an
-			// entrusted lot is in one and not the other.
+			// `commander.cargo` a second time. The footer's manifest says what
+			// can be sold; the hold line above it says what the ship is
+			// carrying, and an entrusted lot is in one and not the other.
 			cargo: hold.lines
 				.filter((line) => line.owner === "pilot")
-				.map((line) => `${line.goodName} ${line.tonnes}`),
+				.map((line) => `${line.goodName} ${line.amount}`),
 			ownedEquipment: this.commander.ownedEquipment,
 			fuelLy: this.commander.fuelLy,
 			fuelCapacityLy: this.fuelCapacityLy,
@@ -12196,15 +12208,17 @@ class Game {
 			// player cannot see is indistinguishable from one that is wrong. The
 			// revision bump is what repaints: the console's cache key and the
 			// cockpit's markup key both read it.
+			// `result.reason` is not nullable on this arm: the result is
+			// discriminated on `accepted`, so a refusal carries a reason. The
+			// `?? "invalid-quantity"` this replaced was a default arm in all but
+			// name — it would have printed "That is not a quantity." over a full
+			// hold, which is #443's own failure one turn later.
 			const hold = holdSummary(this.commander, this.requests);
-			this.stationConsoleMessage = refusalSentence(
-				result.reason ?? "invalid-quantity",
-				{
-					freeT: hold.freeT,
-					capacityT: hold.capacityT,
-					entrustedT: hold.entrustedT,
-				},
-			);
+			this.stationConsoleMessage = refusalSentence(result.reason, {
+				freeT: hold.freeT,
+				capacityT: hold.capacityT,
+				entrustedT: hold.entrustedT,
+			});
 			this.stationConsoleRevision += 1;
 			this.updateCockpit();
 			return;
