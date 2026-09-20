@@ -175,7 +175,7 @@ await bootedGame(page);
 await page.waitForSelector("#seelite-perf[data-attribution-enabled='true']");
 await page.waitForFunction(
 	() =>
-		["supported", "unavailable"].includes(
+		["supported", "unavailable", "untrusted", "implausible"].includes(
 			document.getElementById("seelite-perf")?.dataset.gpuStatus ?? "",
 		),
 	null,

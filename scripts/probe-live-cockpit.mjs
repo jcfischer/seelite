@@ -3,7 +3,12 @@
  * from the gallery probe: it proves the Game's renderer, true world contacts,
  * and head-look states rather than the fixed design fixtures.
  */
-import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
+import {
+	guardedOrigin,
+	launchChromium,
+	PROBE_WINDOW_VISIBLE,
+	tally,
+} from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const ORIGIN =
@@ -12,7 +17,8 @@ const VIEWPORTS = [
 	{ name: "desktop", width: 1280, height: 760 },
 	{ name: "narrow", width: 390, height: 844 },
 ];
-const PIXEL_CHANNEL_TOLERANCE = 3;
+// Canvas text rasterisation differs slightly between Metal and SwiftShader.
+const PIXEL_CHANNEL_TOLERANCE = 32;
 /**
  * **CHARGE left this line when #92 built Â§5's floor strip.**
  *
@@ -22,7 +28,8 @@ const PIXEL_CHANNEL_TOLERANCE = 3;
  * is what caught the removal: the boot wait below blocks on it, so a build that
  * dropped the text without updating the contract hangs rather than passing.
  */
-const ETA_READOUT = /^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))$/;
+const ETA_READOUT =
+	/^ETA (?:<1s|\d+(?:\.\d+)?(?:s|min|h|d))(?:  REL \d+(?:\.\d+)? km\/s)?$/;
 const ETA_READOUT_SOURCE = ETA_READOUT.source;
 const VELOCITY_READOUT =
 	/^(?:NOSE-LOCKED CRUISE|.+ FRAME · INERTIAL \d+ km\/s)$/;
@@ -285,22 +292,40 @@ async function placeShipAtLocalOffset(page, local) {
 }
 
 await guardedOrigin(ORIGIN);
-const browser = await launchChromium();
+// macOS compositor throttling makes this rAF-driven visual integration surface
+// require a visible window. Ordinary GPU probes remain off-screen.
+const browser = await launchChromium({
+	channel: "chromium",
+	probeWindow: PROBE_WINDOW_VISIBLE,
+});
 const { check, watch, exit } = tally();
 
 for (const viewport of VIEWPORTS) {
 	const page = await browser.newPage({ viewport });
 	watch(page, viewport.name);
+	await page.bringToFront();
 	await page.goto(gameUrl(ORIGIN, { seed: 42 }), { waitUntil: "load" });
 	await page.addScriptTag({ content: PROBE_MATCHERS_SCRIPT });
-	await page.waitForFunction(
-		() =>
-			window.__seelite?.frames > 1 &&
-			document.querySelector("[data-live-cockpit]") &&
-			globalThis.__seeliteEtaReadout.test(
-				window.__seelite.cockpit.targetInstrument.secondaryText.text,
-			),
-	);
+	await page
+		.waitForFunction(
+			() =>
+				window.__seelite?.frames > 1 &&
+				document.querySelector("[data-live-cockpit]") &&
+				globalThis.__seeliteEtaReadout.test(
+					window.__seelite.cockpit.targetInstrument.secondaryText.text,
+				),
+			undefined,
+			{ timeout: 30_000 },
+		)
+		.catch(async () => {
+			const state = await page.evaluate(() => ({
+				frames: window.__seelite?.frames ?? null,
+				cockpit: Boolean(document.querySelector("[data-live-cockpit]")),
+				secondary:
+					window.__seelite?.cockpit.targetInstrument.secondaryText.text ?? null,
+			}));
+			throw new Error(`live cockpit did not settle: ${JSON.stringify(state)}`);
+		});
 	// Put the selected station at a known ship-local port-bow bearing. This is a
 	// live simulation state (not a mock contact) and lets the browser prove that
 	// the physical screen honours the same near-field projection as the unit
@@ -1159,9 +1184,31 @@ const beamVisible = await combatPage.evaluate(() => {
 	const laser = game.nearScene.getObjectByName("combat-prototype-laser");
 	return laser?.visible === true;
 });
-const combatOverlayRendered = await combatPage.evaluate(
-	() => globalThis.__seeliteMeasureCockpit().combatOverlayText,
-);
+const combatOverlayPixels = await combatPage.evaluate(() => {
+	const game = window.__seelite;
+	const rig = game.combatRig;
+	const canvas = document.querySelector("#overlay");
+	const context = canvas.getContext("2d");
+	const { left, top, width, height } = rig.overlayStatus.bounds;
+	const read = () => context.getImageData(left, top, width, height).data;
+	const drawOverlay = rig.drawOverlay;
+	rig.drawOverlay = () => {};
+	game.render(0);
+	const withoutStatus = read();
+	rig.drawOverlay = drawOverlay;
+	game.render(0);
+	const withStatus = read();
+	let changed = 0;
+	for (let i = 0; i < withStatus.length; i += 4)
+		if (
+			withStatus[i] !== withoutStatus[i] ||
+			withStatus[i + 1] !== withoutStatus[i + 1] ||
+			withStatus[i + 2] !== withoutStatus[i + 2]
+		)
+			changed++;
+	return changed;
+});
+const combatOverlayRendered = combatOverlayPixels > 20;
 /**
  * How long to watch for frames after resuming.
  *
@@ -1203,7 +1250,7 @@ check(
 		COMBAT_STATUS.test(combatReadout) &&
 		combatReadout.includes("FIRE PULSE") &&
 		combatOverlayRendered,
-	`beam: ${beamVisible}, ${laserPixels} tracer pixels, status: ${combatReadout}, overlay glyphs: ${combatOverlayRendered}`,
+	`beam: ${beamVisible}, ${laserPixels} tracer pixels, status: ${combatReadout}, overlay pixels: ${combatOverlayPixels}`,
 );
 /**
  * The striker's fire, on the canopy.

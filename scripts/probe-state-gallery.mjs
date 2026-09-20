@@ -77,7 +77,10 @@ function measureGalleryState() {
 		floorVisible: isVisible("[data-gallery-floor]"),
 		galleryRendererCount: document.querySelectorAll("canvas:not(#overlay)")
 			.length,
-		liveGameRunning: Boolean(window.__seelite),
+		// The gallery exposes market law through the same top-level hook used by
+		// the live game, so the hook's presence alone is not evidence of a second
+		// renderer or frame loop. A connected game renderer is.
+		liveGameRunning: Boolean(window.__seelite?.renderer?.domElement),
 		panels: [
 			...document.querySelectorAll('[data-gallery-panel][data-active="true"]'),
 		],

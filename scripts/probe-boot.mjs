@@ -39,6 +39,7 @@ import {
 	guardedOrigin,
 	installCamSim,
 	launchChromium,
+	PROBE_WINDOW_VISIBLE,
 	tally,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
@@ -62,7 +63,9 @@ const OTHER_SEED = 20260818;
 const RELATIVE_EPS = 1e-3;
 
 await guardedOrigin(ORIGIN);
-const browser = await launchChromium();
+// The Settings gate proves a real keyboard shortcut; offscreen macOS windows
+// cannot reliably receive that shortcut after another probe's compositor work.
+const browser = await launchChromium({ probeWindow: PROBE_WINDOW_VISIBLE });
 
 const { check, watch, exit } = tally();
 
@@ -787,6 +790,7 @@ async function settingsGate() {
 	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {
 		timeout: 5000,
 	});
+	await page.bringToFront();
 	await page.keyboard.press("z");
 	const opened = await page.waitForSelector("[data-settings-panel]", {
 		timeout: 5000,

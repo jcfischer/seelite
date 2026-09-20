@@ -231,10 +231,13 @@ try {
 	 */
 	const yawArm = async (deflection) => {
 		await page.evaluate((d) => window.__pad.axes(0, 0, d, 0), deflection);
-		await frames(FRAMES);
+		await frames(FRAMES * 6);
 		const rate = await page.evaluate(() => window.__seelite.rates.yaw);
 		await page.evaluate(() => window.__pad.rest());
-		await frames(3);
+		// The next arm must begin at rest. Three frames happened to be enough on
+		// SwiftShader, but Metal reaches the full-rate arm sooner and carries
+		// easing momentum into the partial arm.
+		await frames(FRAMES);
 		return rate;
 	};
 

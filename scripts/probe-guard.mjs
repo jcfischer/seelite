@@ -60,9 +60,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
 import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
 
-/** The opt-in local probe mode that requires the same renderer as a player. */
+/** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
 export const HARDWARE_RENDERER = "hardware";
+/** Keep headed hardware Chromium out of the developer's working area. */
+export const OFFSCREEN_WINDOW_POSITION = "--window-position=-32000,-32000";
+export const OFFSCREEN_WINDOW_RUNTIME_FLAGS = [
+	"--disable-backgrounding-occluded-windows",
+	"--disable-renderer-backgrounding",
+	"--disable-background-timer-throttling",
+];
+export const PROBE_WINDOW_VISIBLE = "visible";
 
 /**
  * Read the requested probe renderer mode. The unset default deliberately keeps
@@ -78,9 +86,27 @@ export function probeRendererMode(env = process.env) {
 	return mode;
 }
 
-/** Launch options for the requested renderer mode, without mutating a caller. */
+/**
+ * Launch options for the requested renderer mode, without mutating a caller.
+ *
+ * @param {{ args?: string[]; probeWindow?: string; [key: string]: unknown }} options
+ * @param {string | null} [mode=probeRendererMode()]
+ */
 export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
-	return mode === HARDWARE_RENDERER ? { ...options, headless: false } : options;
+	if (mode !== HARDWARE_RENDERER) return options;
+	const { probeWindow, ...chromiumOptions } = options;
+	return {
+		...chromiumOptions,
+		headless: false,
+		args:
+			probeWindow === PROBE_WINDOW_VISIBLE
+				? [...(chromiumOptions.args ?? [])]
+				: [
+						...(chromiumOptions.args ?? []),
+						OFFSCREEN_WINDOW_POSITION,
+						...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+					],
+	};
 }
 
 /**

@@ -5,6 +5,9 @@ import {
 } from "../scripts/lib/players-renderer.mjs";
 import {
 	HARDWARE_RENDERER,
+	OFFSCREEN_WINDOW_POSITION,
+	OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+	PROBE_WINDOW_VISIBLE,
 	probeLaunchOptions,
 	probeRendererMode,
 	PROBE_RENDERER_ENV,
@@ -45,5 +48,19 @@ test("the hardware mode is opt-in and forces headed Chromium", () => {
 	expect(probeLaunchOptions(defaults, null)).toBe(defaults);
 	expect(probeLaunchOptions({ headless: true }, HARDWARE_RENDERER)).toEqual({
 		headless: false,
+		args: [OFFSCREEN_WINDOW_POSITION, ...OFFSCREEN_WINDOW_RUNTIME_FLAGS],
 	});
+	expect(
+		probeLaunchOptions({ args: ["--example"] }, HARDWARE_RENDERER).args,
+	).toEqual([
+		"--example",
+		OFFSCREEN_WINDOW_POSITION,
+		...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+	]);
+	expect(
+		probeLaunchOptions(
+			{ args: ["--example"], probeWindow: PROBE_WINDOW_VISIBLE },
+			HARDWARE_RENDERER,
+		),
+	).toEqual({ headless: false, args: ["--example"] });
 });

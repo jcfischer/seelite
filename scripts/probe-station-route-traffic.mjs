@@ -981,6 +981,7 @@ try {
 					launched,
 					dockPhase: g.dock.phase,
 					requestCount: g.playerLaneRequests.size,
+					holding: Boolean(g.launchHold),
 				};
 				g.berthOccupancy.set(stationId, new Set([berthId]));
 				g.clearTrafficPresentation();
@@ -1298,10 +1299,11 @@ try {
 		JSON.stringify(result.playerArrivalGuard),
 	);
 	check(
-		"a refused player launch leaves no request that can starve Traffic",
+		"a refused player launch keeps one actionable lane request",
 		result.refusedLaunch.launched === false &&
 			result.refusedLaunch.dockPhase === "docked" &&
-			result.refusedLaunch.requestCount === 0,
+			result.refusedLaunch.requestCount === 1 &&
+			result.refusedLaunch.holding === true,
 		JSON.stringify(result.refusedLaunch),
 	);
 	check(

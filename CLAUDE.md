@@ -92,7 +92,7 @@ so anything reading that exit code would treat a passing repo as broken. And
 `npm run probe` is the local development default. It delegates to the GPU lane,
 which forces headed Chromium and refuses to start unless a fresh WebGL canvas
 identifies a non-software renderer; every child probe repeats that check.
-`npm run probe:cpu` preserves the former headless/SwiftShader command for a
+`npm run probe:cpu` preserves the former renderer-unasserted command for a
 displayless or portability check.
 
 ### Visual work has a third tier, and it is a person

@@ -79,6 +79,7 @@ import {
 	bootedGame,
 	guardedOrigin,
 	launchChromium,
+	PROBE_WINDOW_VISIBLE,
 	tally,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
@@ -163,7 +164,12 @@ const clickGlass = async (page) => {
 	// **before** the click and there is exactly one click per row: the row measures
 	// the click a player would make, and the harness's own speed is not allowed to
 	// decide whether a premise held.
-	await page.waitForTimeout(2200);
+	await page.waitForTimeout(3000);
+	// Headed macOS Chromium grants a lock only to its key view. A prior console
+	// interaction can leave the tab visible but not key; bring this exact page
+	// forward before measuring the one real click below.
+	await page.bringToFront();
+	await page.waitForFunction(() => document.hasFocus());
 	const at = await page.evaluate(() => {
 		const r = window.__seelite.renderer.domElement.getBoundingClientRect();
 		const x = Math.round(r.left + r.width * 0.03);
@@ -226,7 +232,12 @@ const pressPad = async (target, name) => {
 	await settle(target);
 };
 
-const browser = await launchChromium({ channel: "chromium" });
+// macOS grants real pointer lock only to a key, visible view. The normal GPU
+// lane is off-screen; this interaction probe is the intentional exception.
+const browser = await launchChromium({
+	channel: "chromium",
+	probeWindow: PROBE_WINDOW_VISIBLE,
+});
 
 // ---------------------------------------------------------------------------
 // The premise, asserted: this harness can hold a pointer lock. Every row after

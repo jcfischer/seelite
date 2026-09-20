@@ -376,7 +376,15 @@ try {
 					walkable: document.querySelectorAll(
 						'[data-live-panel="left"] [data-live-nav-target],' +
 							'[data-live-panel="left"] [data-live-nav-kind],' +
-							'[data-live-panel="left"] [data-live-left-tab]:not(.lc-tab)',
+							'[data-live-panel="left"] [data-live-left-tab]:not(.lc-tab),' +
+							'[data-live-panel="left"] [data-map-haze],' +
+							'[data-live-panel="left"] [data-map-course],' +
+							'[data-live-panel="left"] [data-map-clear],' +
+							'[data-live-panel="left"] [data-map-finder-economy],' +
+							'[data-live-panel="left"] [data-map-finder-budget-down],' +
+							'[data-live-panel="left"] [data-map-finder-budget-up],' +
+							'[data-live-panel="left"] [data-map-finder-row],' +
+							'[data-live-panel="left"] [data-map-finder-centre]',
 					).length,
 				}));
 				perTab.push(seen);
