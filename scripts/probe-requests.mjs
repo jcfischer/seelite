@@ -482,6 +482,10 @@ try {
 		viewport: { width: 1440, height: 900 },
 	});
 	t.watchShaders(normalPage, "normal Game");
+	// `__parkInBerth` is an init script, so it goes on before the navigation —
+	// this arm docks now and the helper is not installed page-wide.
+	await installViewPlacement(normalPage);
+	await installViewFraming(normalPage);
 	await normalPage.goto(gameUrl(origin, { seed: 42, "no-save": true }), {
 		waitUntil: "load",
 	});
