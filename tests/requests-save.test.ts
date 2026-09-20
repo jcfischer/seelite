@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { fixtureOffers, requestAction } from "../src/requests-prototype";
+import { type JobOffer, bindJobs, deliveryCandidates } from "../src/jobs";
+import { requestAction } from "../src/requests";
+import { generateGalaxy } from "../src/galaxy";
+import { generateContents } from "../src/system";
 import {
 	newCommanderRecord,
 	parseSave,
@@ -16,33 +19,78 @@ import {
 	SaveStore,
 } from "../src/save-store";
 
+/**
+ * A live courier offer, bound at a real station of world 42's first galaxy.
+ *
+ * The save validates that a requester exists in the generated galaxy, so a
+ * journal built on an invented station is refused — which is a row below
+ * rather than an obstacle here.
+ */
+const SAVE_SYSTEMS = generateGalaxy(42, 0).systems;
+const liveCourier = (): { offers: JobOffer[]; courier: JobOffer } => {
+	for (const system of SAVE_SYSTEMS) {
+		const station = generateContents(system).stations.find(
+			(s) => s.type !== "outpost",
+		);
+		if (!station) continue;
+		const offers = bindJobs({
+			galaxyIndex: 0,
+			system,
+			station,
+			destinations: deliveryCandidates(
+				SAVE_SYSTEMS,
+				system,
+				generateContents,
+				carrierKey(system.index, station.localCarrierId),
+			),
+			deficits: {},
+			gameTimeMin: 0,
+			settled: {},
+		});
+		const courier = offers.find((o) => o.family === "courier");
+		if (courier) return { offers, courier };
+	}
+	throw new Error("no courier offer in world 42");
+};
+const LIVE = liveCourier();
+const requestCtx = (docked: JobOffer["requester"]) => ({
+	now: 20,
+	docked,
+	armed: true,
+	cargo: {} as Readonly<Record<string, number>>,
+	holdRoomT: 35,
+});
+
+/** Accept, fly, deliver and report one courier run — a settled journal. */
+const flyCourier = (requests: Parameters<typeof requestAction>[0]) => {
+	let state = requests;
+	let paidCr = 0;
+	for (const [action, where] of [
+		["accept", LIVE.courier.requester],
+		["deliver", LIVE.courier.reportAt],
+		["report", LIVE.courier.reportAt],
+	] as const) {
+		const result = requestAction(
+			state,
+			LIVE.offers,
+			action,
+			LIVE.courier.id,
+			requestCtx(where),
+		);
+		if (!result.ok) throw new Error(`${action}: ${result.message}`);
+		state = result.state;
+		paidCr += result.rewardCr;
+	}
+	return { state, paidCr };
+};
+
 const paidTrial = () => {
 	const world = newWorld(42);
 	world.gameTime = 20;
 	const commander = newCommanderRecord("courier");
-	const offers = fixtureOffers(
-		0,
-		carrierKey(0, "station-trade"),
-		"USQULAVE",
-		10,
-	);
-	for (const action of [
-		"accept",
-		"fixture-search",
-		"fixture-identify",
-		"fixture-disable",
-		"report",
-	]) {
-		const result = requestAction(
-			commander.requests,
-			offers,
-			action,
-			offers[0].id,
-			{ now: 20, docked: offers[0].requester, armed: true },
-		);
-		commander.requests = result.state;
-		commander.state.credits += result.rewardCr;
-	}
+	const flown = flyCourier(commander.requests);
+	commander.requests = flown.state;
+	commander.state.credits += flown.paidCr;
 	return { world, commander };
 };
 
@@ -124,28 +172,20 @@ test("Requests and credits round-trip under one hash at every stage", () => {
 	const commander = newCommanderRecord("courier");
 	const world = newWorld(42);
 	world.gameTime = 20;
-	const offers = fixtureOffers(
-		0,
-		carrierKey(0, "station-trade"),
-		"USQULAVE",
-		10,
-	);
-	const ctx = { now: 20, docked: offers[0].requester, armed: true };
-	for (const action of [
-		"accept",
-		"track",
-		"fixture-search",
-		"fixture-identify",
-		"fixture-disable",
-		"report",
-	]) {
+	for (const [action, where] of [
+		["accept", LIVE.courier.requester],
+		["track", LIVE.courier.requester],
+		["deliver", LIVE.courier.reportAt],
+		["report", LIVE.courier.reportAt],
+	] as const) {
 		const result = requestAction(
 			commander.requests,
-			offers,
+			LIVE.offers,
 			action,
-			offers[0].id,
-			ctx,
+			LIVE.courier.id,
+			requestCtx(where),
 		);
+		expect(result.ok).toBe(true);
 		commander.requests = result.state;
 		commander.state.credits += result.rewardCr;
 		expect(parseSave(serializeSave({ world, commander }))).toEqual({
@@ -188,18 +228,21 @@ test("request journal cannot reference a nonexistent generated requester", () =>
 	const world = newWorld(42);
 	world.gameTime = 20;
 	const commander = newCommanderRecord("courier");
-	const offers = fixtureOffers(
-		0,
-		carrierKey(0, "station-invented"),
-		"Made up",
-		10,
-	);
+	// A bound offer with its requester swapped for a station the generator
+	// never made: identity is validated against the galaxy, not the journal.
+	const invented = {
+		...structuredClone(LIVE.courier),
+		requester: {
+			galaxyIndex: 0,
+			carrierKey: carrierKey(0, "station-invented"),
+		},
+	};
 	commander.requests = requestAction(
 		commander.requests,
-		offers,
+		[invented],
 		"accept",
-		offers[0].id,
-		{ now: 20, armed: true, docked: offers[0].requester },
+		invented.id,
+		requestCtx(invented.requester),
 	).state;
 	expect(() => parseSave(serializeSave({ world, commander }))).toThrow(
 		"requester",
@@ -210,33 +253,25 @@ test("requester labels refresh by CarrierKey without rejecting or changing the s
 	const world = newWorld(42);
 	world.gameTime = 20;
 	const commander = newCommanderRecord("courier");
-	const offers = fixtureOffers(
-		0,
-		carrierKey(0, "station-trade"),
-		"Made up",
-		10,
-	);
+	const renamed = {
+		...structuredClone(LIVE.courier),
+		requesterName: "Made up",
+	};
 	commander.requests = requestAction(
 		commander.requests,
-		offers,
+		[renamed],
 		"accept",
-		offers[0].id,
-		{
-			now: 20,
-			armed: true,
-			docked: offers[0].requester,
-		},
+		renamed.id,
+		requestCtx(renamed.requester),
 	).state;
 	const raw = serializeSave({ world, commander });
 	const before = JSON.stringify(raw);
 	const loaded = parseSave(raw);
-	expect(loaded.commander.requests.byId[offers[0].id].terms.requesterName).toBe(
-		"USQULAVE",
-	);
-	expect(loaded.commander.requests.byId[offers[0].id].terms.requester).toEqual(
-		offers[0].requester,
-	);
-	expect(loaded.commander.requests.byId[offers[0].id].terms.rewardCr).toBe(250);
+	const restored = loaded.commander.requests.byId[renamed.id].terms;
+	// The name comes back from the generator; the pinned terms do not move.
+	expect(restored.requesterName).toBe(LIVE.courier.requesterName);
+	expect(restored.requester).toEqual(LIVE.courier.requester);
+	expect(restored.rewardCr).toBe(LIVE.courier.rewardCr);
 	expect(JSON.stringify(raw)).toBe(before);
 });
 
@@ -256,6 +291,7 @@ test("every Commander write is schema 3 and carries its journal", () => {
 	expect(raw.commander.requests).toEqual({
 		byId: {},
 		leadsById: {},
+		entrustedByLotId: {},
 		trackedRequestId: null,
 	});
 	expect(parseSave(raw)).toEqual(save);

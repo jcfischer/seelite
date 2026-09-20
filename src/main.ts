@@ -511,7 +511,7 @@ import {
 } from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
-import type { Station } from "./system";
+import { type Station, generateContents } from "./system";
 import {
 	LiveCockpit,
 	type LeftTab,
@@ -521,14 +521,15 @@ import {
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { isEditable } from "./editable-target";
 import { keyDispatch } from "./key-dispatch";
-import { readDeficit } from "./deficits";
+import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
-	fixtureOffers,
-	requestAction,
 	entrustedTonnesAboard,
-} from "./requests-prototype";
-import type { RequestsView } from "./requests-prototype-view";
+	requestAction,
+	settledAt,
+} from "./requests";
+import { type JobOffer, bindJobs, deliveryCandidates } from "./jobs";
+import type { RequestsView } from "./requests-view";
 import {
 	type CommanderRecord,
 	type SaveEnvelope,
@@ -1741,11 +1742,8 @@ class Game {
 	private requestSelectedId: string | null = null;
 	private requestMessage = "";
 	private requestRevision = 0;
-	private readonly requestFixtures =
-		import.meta.env.DEV &&
-		new URLSearchParams(window.location.search).has("requests-prototype");
 	private requestOffersCacheKey: string | null = null;
-	private requestOffersCache: ReturnType<typeof fixtureOffers> = [];
+	private requestOffersCache: JobOffer[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -11491,9 +11489,7 @@ class Game {
 					: [],
 			relay: this.relayCue(),
 			tuning: this.tuningSummary(),
-			requests: this.requestFixtures
-				? this.requestsView(dockContext)
-				: undefined,
+			requests: this.requestsView(dockContext),
 			stationConsole: this.stationConsoleState(dockContext),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
@@ -11508,21 +11504,37 @@ class Game {
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
 	private requestsView(context = this.dockedStationContext()): RequestsView {
-		if (this.requestFixtures && context) {
-			const key = `${context.galaxyIndex}:${context.stationKey}`;
+		if (context) {
+			// **Bound once per visit, not per frame.** A binder is pure, so a
+			// board recomputed every frame would be identical and wasted; it is
+			// keyed on the station, the requester's settled episodes and the
+			// console revision, which is what changes when the pilot acts.
+			const settled = settledAt(this.requests, {
+				galaxyIndex: context.galaxyIndex,
+				carrierKey: context.stationKey,
+			});
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}`;
 			if (key !== this.requestOffersCacheKey) {
-				this.requestOffersCache = fixtureOffers(
-					context.galaxyIndex,
-					context.stationKey,
-					this.nameOfStation(context.station.id),
-					0,
-				);
+				this.requestOffersCache = bindJobs({
+					galaxyIndex: context.galaxyIndex,
+					system: this.world.system.record,
+					station: context.station,
+					destinations: deliveryCandidates(
+						this.world.galaxy.systems,
+						this.world.system.record,
+						(record) => generateContents(record),
+						context.stationKey,
+					),
+					deficits: context.envelope.deficits,
+					gameTimeMin: context.gameTimeMin,
+					settled,
+				});
 				this.requestOffersCacheKey = key;
 			}
 		}
 		return {
 			state: this.requests,
-			offers: this.requestFixtures && context ? this.requestOffersCache : [],
+			offers: context ? this.requestOffersCache : [],
 			selectedId: this.requestSelectedId,
 			message: this.requestMessage,
 			revision: this.requestRevision,
@@ -11530,14 +11542,18 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
-			fixtures: this.requestFixtures,
+			holdRoomT: Math.max(
+				0,
+				commanderHold(this.commander, entrustedTonnesAboard(this.requests))
+					.capacityT -
+					commanderHold(this.commander, entrustedTonnesAboard(this.requests))
+						.usedT,
+			),
+			cargo: this.commander.cargo,
 		};
 	}
 
 	private actOnRequest(action: string, id: string): void {
-		// Every action here belongs to the isolated fixture experiment. Imported
-		// experiment journals must not pay rewards in a normal Commander session.
-		if (!this.requestFixtures) return;
 		const view = this.requestsView();
 		if (action === "details") {
 			if (
@@ -11553,6 +11569,8 @@ class Game {
 				now: this.world.gameTime,
 				docked: view.docked,
 				armed: this.condition.hull > 0,
+				cargo: this.commander.cargo,
+				holdRoomT: view.holdRoomT,
 			});
 			this.requestMessage = result.message;
 			if (result.ok) {
@@ -11562,6 +11580,38 @@ class Game {
 						...this.commander,
 						credits: this.commander.credits + result.rewardCr,
 					};
+				for (const [good, delta] of Object.entries(result.cargoDelta)) {
+					const amount = (this.commander.cargo[good] ?? 0) + delta;
+					const cargo = { ...this.commander.cargo };
+					if (amount <= 0) delete cargo[good];
+					else cargo[good] = amount;
+					this.commander = { ...this.commander, cargo };
+				}
+				if (result.mark) {
+					// §4's mark, through the module's own writer and with the
+					// **flown** hull's hold (#182) — the same figure the till uses.
+					const galaxyIndex = this.world.system.record.galaxy;
+					this.commerceWorld = setDeficits(
+						this.commerceWorld,
+						galaxyIndex,
+						recordTrade(
+							this.commerceWorld.galaxies[galaxyIndex].deficits,
+							result.mark.key,
+							{
+								...result.mark.trade,
+								gameTimeMin: this.world.gameTime / 60,
+								holdT: commanderHold(
+									this.commander,
+									entrustedTonnesAboard(this.requests),
+								).capacityT,
+							},
+						),
+						this.world.gameTime,
+					);
+				}
+				// A settled job changes what this requester posts next, so the
+				// cached board is no longer the board.
+				this.requestOffersCacheKey = null;
 				this.stationConsoleRevision += 1;
 				this.saveDirty();
 			}
@@ -13468,21 +13518,15 @@ if (query.has("model-viewer")) {
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
 	const noSave = query.has("no-save");
-	// **One Commander catalog since #437.** The fixture trial used to get its
-	// own IndexedDB database and lock prefix, on top of a save encoding the
-	// normal catalog refused.
+	// **One Commander catalog since #437**, and one offer source since #411.
+	// The fixture trial used to get its own IndexedDB database and lock prefix
+	// on top of a save encoding the normal catalog refused; both are gone.
 	//
-	// **A flagged DEV session now shares a developer's own Commander.** It can
-	// read that save and it can write to it: a fixture-paid journal and its
-	// credits land in the ordinary catalog. What tells them apart afterwards is
-	// the journal itself — every fixture stage records
-	// `evidence[].source === "ui-fixture"` — and the flag is an explicit
-	// opt-in. It ends when #411 replaces the fixtures with live content.
-	//
-	// What protects a **player** is unchanged and was never storage:
-	// `requestFixtures` gates the offer source and `actOnRequest` returns early
-	// without it, so a production build has nothing to accept and pays no
-	// fixture reward.
+	// The flagged trial is retired with the fixtures it gated, so there is no
+	// longer a session that can pay a fixture reward into an ordinary
+	// Commander. A DEV journal written while it existed carries
+	// `evidence[].source === "ui-fixture"` and is refused by name on load
+	// (`requests.ts`), rather than being dropped.
 	const saveBackend = indexedDbSaveBackend(indexedDB);
 	const saveLocks = webSlotLocks(navigator.locks);
 	// Read once: an unusable `?seed` warns as it is read.

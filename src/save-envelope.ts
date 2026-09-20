@@ -33,12 +33,7 @@ import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import { HULL_IDS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
-import {
-	emptyRequests,
-	fixtureOffers,
-	parseRequests,
-	type RequestsPrototypeState,
-} from "./requests-prototype";
+import { emptyRequests, parseRequests, type RequestsState } from "./requests";
 import {
 	type CommanderState,
 	newCommander,
@@ -75,9 +70,9 @@ import {
  * made the wire shape depend on whether the player had accepted anything,
  * which is the dependency that needed two versions in the first place. There
  * is one version now and an empty journal is written like any other empty
- * field. What is still gated is the *content* — `main.ts`'s `requestFixtures`
- * decides whether any offer exists to accept — so a production record carries
- * an empty journal rather than no journal.
+ * field. The content was gated behind a DEV flag for one node more; #411
+ * replaced the fixtures with `jobs.ts`'s bound offers and retired the flag, so
+ * a production record's journal is empty only until the pilot accepts work.
  */
 export const SAVE_SCHEMA_VERSION = 3;
 /**
@@ -132,7 +127,7 @@ export interface SavedFlight {
 /** The player half of a save. */
 export interface CommanderRecord {
 	/** Node 343 UI experiment journal; stored atomically with credits. */
-	requests: RequestsPrototypeState;
+	requests: RequestsState;
 	/** Credits, cargo, equipment, tank and hull — `station-commerce.ts`'s own
 	 *  struct, unchanged, because commerce is what writes it. */
 	state: CommanderState;
@@ -215,6 +210,14 @@ const canonicalCommander = (record: CommanderRecord) => {
 			),
 			leadsById: Object.fromEntries(
 				Object.entries(record.requests.leadsById).sort(([a], [b]) =>
+					a.localeCompare(b),
+				),
+			),
+			// The entrusted lots are the cargo obligation, and §4 forbids
+			// settling one by losing it: a serializer that dropped them would
+			// hand the pilot the requester's goods across a reload.
+			entrustedByLotId: Object.fromEntries(
+				Object.entries(record.requests.entrustedByLotId).sort(([a], [b]) =>
 					a.localeCompare(b),
 				),
 			),
@@ -477,17 +480,13 @@ export function parseSave(raw: unknown): SaveEnvelope {
 		}
 		if (!stations.has(localId))
 			fail(`Requests requester ${key} does not exist in galaxy ${galaxyIndex}`);
-		// Labels are presentation, not identity. Refresh a parsed copy through
-		// the valid CarrierKey; a naming-policy change cannot invalidate a save.
-		const labels = fixtureOffers(
-			galaxyIndex,
-			key,
-			stations.get(localId)!,
-			offer.observedAt,
-		).find((o) => o.slot === offer.slot)!;
-		offer.requesterName = labels.requesterName;
-		offer.region = labels.region;
-		offer.source = labels.source;
+		// Labels are presentation, not identity. Refresh the requester's name
+		// through the valid CarrierKey, so a naming-policy change cannot
+		// invalidate a save. **The rest of the offer is not refreshed**: its
+		// operands were bound from world state at offer time and pinned at
+		// acceptance (`missions-and-requests.md` §1), so re-deriving them here
+		// would rewrite the terms the pilot agreed to.
+		offer.requesterName = stations.get(localId) ?? offer.requesterName;
 	}
 	return { world, commander };
 }
