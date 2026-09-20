@@ -2,26 +2,15 @@
  * A script may only drive the settings key once the settings screen exists, and
  * it may only claim that it waited by *using* what the wait answered.
  *
- * `main.ts` mounts the screen from a deferred `import("./settings-panel")`, so
- * its key listener is not on the window at the first drawn frame — it arrives
- * some time after it. `bootedGame` answers at the first frame. A gate that
- * presses `z` in between is pressing a key at nothing, and what it reports is
- * the *game* refusing to open settings: #418's row in `probe-boot.mjs` timed out
- * on `[data-settings-panel]` three runs in three on `main`, and read as a broken
- * settings screen rather than as a probe that arrived early.
+ * The timing that makes that a rule — the deferred mount, and what it costs
+ * after the first drawn frame — belongs to `waitForSettingsPanel` in
+ * `probe-guard.mjs` and is not restated here. What lives here is the check that
+ * the rule holds across `scripts/`, in the one tier CI runs: a press counts as
+ * covered only by a readiness call whose answer the file reads. An answer that
+ * can be ignored will be — #418's own first commit dropped it in two scripts and
+ * this scan stayed green on the defect until sage round 1 said otherwise.
  *
- * `waitForSettingsPanel` answers `false` rather than throwing, so that a gate can
- * put the mount in a named row instead of dying on a timeout three rows short of
- * the diagnosis. That choice is only sound if the answer is read: a call whose
- * result is dropped waits, ignores the answer, and presses anyway — the same
- * early press with a wait in front of it, which is what #418's own first version
- * did in two scripts before sage caught it. So the invariant this file holds is
- * about the *use* of the wait, not its presence.
- *
- * The rule is held here, in the headless tier, because that is the only tier
- * that runs unattended: the probes do not run in CI, so a rule stated only
- * inside a probe is a rule nothing enforces the next time a script learns to
- * press the key. It is the same shape as `game-url.test.ts`'s navigation scan —
+ * It is the same shape as `game-url.test.ts`'s navigation scan —
  * a textual scan over `scripts/`, through the suite's one comment stripper, with
  * the same limit: it reads text, not scope. A consumed readiness call anywhere
  * in the file before the press satisfies it, which is sound for one page because

@@ -381,15 +381,18 @@ export async function bootedGame(page, timeout = 20000) {
  * so the handle being present is the same fact as the key being live, not a
  * proxy for it.
  *
- * Answers whether it landed rather than throwing, so the caller can put the
- * answer in a named row: a gate that dies on a wait prints a timeout and never
- * reaches the row that would have named the surface it was waiting for. That
- * makes reading the answer part of the contract, not an option — a call standing
- * alone as a statement waits, ignores what it learned, and lets the key go down
- * anyway, which is the early press this exists to prevent with a wait in front of
- * it. `tests/probe-settings-key.test.ts` holds that in the headless tier, because
- * the probes do not run in CI and a rule stated only in a comment is a rule
- * nobody enforces the next time a script learns to press the key.
+ * Answers `false` when the mount does not land in time, rather than throwing, so
+ * the caller can put the answer in a named row: a gate that dies on a wait prints
+ * a timeout and never reaches the row that would have named the surface it was
+ * waiting for. A timeout is the only failure it converts — a crashed page, a
+ * closed target or a throwing predicate is rethrown as itself, because a row that
+ * blames the mount for a page that died is this same misreading pointed the wrong
+ * way. That answer being read is part of the contract, not an option: a call
+ * standing alone as a statement waits, ignores what it learned, and lets the key
+ * go down anyway, which is the early press this exists to prevent with a wait in
+ * front of it. `tests/probe-settings-key.test.ts` holds that in the headless tier,
+ * because the probes do not run in CI and a rule stated only in a comment is a
+ * rule nobody enforces the next time a script learns to press the key.
  */
 export async function waitForSettingsPanel(page, timeout = 20000) {
 	return page
@@ -399,7 +402,16 @@ export async function waitForSettingsPanel(page, timeout = 20000) {
 			{ timeout },
 		)
 		.then(() => true)
-		.catch(() => false);
+		.catch((error) => {
+			// "It did not land in time" is the only failure this helper is
+			// entitled to answer with `false`. A crashed page, a closed target or
+			// a throwing predicate is not evidence about the settings screen, and
+			// folding one into `false` would hand the caller a row that blames
+			// the mount for something else entirely — the same misreading this
+			// exists to prevent, pointed the wrong way.
+			if (error instanceof Error && error.name === "TimeoutError") return false;
+			throw error;
+		});
 }
 
 /**

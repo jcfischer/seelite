@@ -169,9 +169,16 @@ try {
 			(await tabA.$('[data-kind="continue"]')) === null,
 		JSON.stringify(s.selected),
 	);
+	// The row below asks whether the settings key opens the screen *over the boot
+	// overlay*, and that question only exists once the screen exists: an
+	// unmounted screen never opens, and the row would credit the overlay guard
+	// with the mount's own absence. So the press waits for the answer, and the
+	// answer rides in the row.
 	const settingsMounted = await waitForSettingsPanel(tabA);
-	await tabA.keyboard.press("z");
-	await tabA.waitForTimeout(500);
+	if (settingsMounted) {
+		await tabA.keyboard.press("z");
+		await tabA.waitForTimeout(500);
+	}
 	// **Read before Escape.** Escape closes a settings screen that opened over
 	// the overlay, so a check after it passed on a build with no guard at all.
 	const settingsOpened = Boolean(await tabA.$("[data-settings-panel]"));
