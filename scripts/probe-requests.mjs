@@ -358,11 +358,8 @@ try {
 		if (!window.__seelite.saveStore) throw Error("save store not attached");
 		await window.__seelite.saveStore.flush("quit");
 	});
-	// #437 inverted this row. It used to assert the opposite — that the journal
-	// stayed out of the Commander catalog and inside a second database of its
-	// own. There is one catalog and one encoding now, so the property worth
-	// checking is that the journal arrives in it, and that the trial's database
-	// is not recreated beside it.
+	// One catalog and one encoding: the journal must arrive in the Commander
+	// catalog, and the trial's own database must not be recreated beside it.
 	check(
 		"the fixture journal lands in the one Commander catalog",
 		await page.evaluate(async () => {

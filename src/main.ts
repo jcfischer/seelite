@@ -13466,14 +13466,12 @@ if (query.has("model-viewer")) {
 	// own IndexedDB database and lock prefix, on top of a save encoding the
 	// normal catalog refused.
 	//
-	// Two things went with it, and the first draft of this comment claimed
-	// there was only one. A developer's flagged session can now reach their own
-	// unflagged save — that is the convenience that was lost. It can also now
-	// *write to it*: a fixture-paid journal and its credits land in the
-	// ordinary catalog and are read back by an unflagged build, where before
-	// the encoding refusal made that impossible. That is a DEV-only
-	// consequence of an explicit opt-in flag, and it ends when #411 replaces
-	// the fixtures with live content.
+	// **A flagged DEV session now shares a developer's own Commander.** It can
+	// read that save and it can write to it: a fixture-paid journal and its
+	// credits land in the ordinary catalog. What tells them apart afterwards is
+	// the journal itself — every fixture stage records
+	// `evidence[].source === "ui-fixture"` — and the flag is an explicit
+	// opt-in. It ends when #411 replaces the fixtures with live content.
 	//
 	// What protects a **player** is unchanged and was never storage:
 	// `requestFixtures` gates the offer source and `actOnRequest` returns early

@@ -101,8 +101,8 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2] as const;
  * answer the same question rather than inheriting readability alone.
  */
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
-	Record<(typeof LEGACY_SAVE_SCHEMA_VERSIONS)[number], "requests">
-> = { 2: "requests" };
+	Partial<Record<number, readonly string[]>>
+> = { 2: ["requests"] };
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -320,12 +320,14 @@ const parseCommander = (
 	version: number,
 ): CommanderRecord => {
 	const o = asObject(raw, "commander");
-	const forbidden =
-		LEGACY_SCHEMA_FORBIDS[
-			version as (typeof LEGACY_SAVE_SCHEMA_VERSIONS)[number]
-		];
-	if (forbidden !== undefined && o[forbidden] !== undefined)
-		fail(`saveSchemaVersion ${version} cannot contain a Requests journal`);
+	// `Partial` is what makes the `undefined` arm real to the compiler: typed as
+	// a total record it reads as dead code, and the next cleanup to trust the
+	// type would refuse every current-version record.
+	for (const key of LEGACY_SCHEMA_FORBIDS[version] ?? [])
+		if (o[key] !== undefined)
+			// The key is interpolated rather than named in prose: a second entry
+			// in the table would otherwise print a sentence about the first.
+			fail(`saveSchemaVersion ${version} cannot contain "${key}"`);
 	const state = asObject(o.state, "commander.state");
 	const hull = state.hull;
 	if (

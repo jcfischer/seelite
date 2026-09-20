@@ -275,7 +275,7 @@ test("a schema 2 record carrying a requests key is refused, empty or not", () =>
 		body.saveSchemaVersion = 2;
 		const grafted = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 		expect(() => parseSave(grafted)).toThrow(
-			"saveSchemaVersion 2 cannot contain a Requests journal",
+			'saveSchemaVersion 2 cannot contain "requests"',
 		);
 	}
 });
