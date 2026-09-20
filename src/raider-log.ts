@@ -16,10 +16,12 @@
  *
  * ## The hail is the exception, and it is kept here anyway (#396)
  *
- * **One line in this log is not a derivation.** A struck Clean carrier's
- * transmission — `distress.ts`'s `hailText`, filed by `main.ts` into a
- * session-only list and merged with the lines below — has no world row behind
- * it, because there is nothing to read it from: a carrier that was merely shot
+ * **One line drawn beside these is not a derivation, and this module does not
+ * build it.** A struck Clean carrier's transmission is authored by `distress.ts`'s
+ * `hailText` and kept in `main.ts`'s own session-only list; the Communications
+ * log draws it above these lines. It is named here because a reader of the rule
+ * above should meet the exception rather than infer it. It has no world row
+ * behind it, because there is nothing to read it from: a carrier that was merely shot
  * at, with its shields still up and its schedule still its own, is written
  * nowhere in §4's model. Adding one would be a new state domain for a line of
  * console text, and #396 chose the loss on a reload over that: a forgotten hail

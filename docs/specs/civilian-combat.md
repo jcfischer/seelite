@@ -222,12 +222,13 @@ is a red run rather than a quiet change in what the law is.
 **Why five seconds.** `ASSAULT_FIRE_S` is 28% of the **17.7 s of landed fire** an
 unbroken beam takes to open one facing of a freighter — a figure with an
 instrument behind it rather than a remembered one. `probe-witnesses.mjs` holds
-exactly that beam and carries both durations in its strike row: `landedFireAtDivert`
-is the one this clock counts, and `secondsToDivert` is wall clock. **The wall
-bounds the landed figure by construction** — a frame adds to the landed clock only
-if the fight's clock is running too — so an unbroken beam reads the same number on
-both arms to within the frame each is sampled at, and the run that shipped printed
-17.6 s of clock against 17.7 s landed. The pair is a check on the instrument, not
+exactly that beam and carries both durations in its strike row, both read off
+`world.gameTime`: `landedFireAtDivert` is the seconds this clock counted and
+`secondsToDivert` the seconds the fight ran. **The fight's clock bounds the landed
+figure by construction** — a frame adds to the landed clock only if the fight's
+clock is running too — so an unbroken beam reads the same number on both arms to
+within the frame each is sampled at, and the run that shipped printed 17.6 s of
+fight against 17.7 s landed. The pair is a check on the instrument, not
 two measurements confirming each other, and it is why both are printed: **a share
 taken across the two quantities is a share between unlike things**, so the landed
 figure is the denominator. #395's receipt reached the same number from the
@@ -352,9 +353,12 @@ reload, and a reload into a lawful act has nothing to carry.
 incident" needs an ending, and the law's only ending is decay: clearing the
 witnesses and not the charges would pardon a carrier forever, and the other way
 round would leave a pilot re-chargeable inside an incident they are still Wanted
-for. That is what makes the mark safe to write whatever the charge cost: a free
-charge — a target whose rotation had turned it Wanted at the tick, F7 — is spent
-and forgotten together, on the next read that comes in below Wanted.
+for. **The clear is what bounds a mark that was written; the price is what decides
+whether one is written at all.** A free charge (F7's rotation, a target already
+Wanted at the tick) leaves nothing to clear, because nothing was filed — and what
+the clear does bound is the paid mark: it ends on the next read that comes in
+below Wanted, so a carrier the pilot let out of its incident is not pardoned
+forever by a mark the save kept.
 
 The principal was offered this, an "offence witnessed" episode on the station's
 own world-state row, and session-only hostility, and chose this. Session-only

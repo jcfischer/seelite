@@ -214,7 +214,14 @@ export const withOffence = (
 	heardBy: readonly CarrierKey[],
 ): WorldState => {
 	const before = world.galaxies[galaxyIndex].legalStatus;
-	const fresh = heardBy.filter((key) => !before.witnesses.includes(key));
+	// **The caller's list is taken as a set.** A hearer is a fact about a berth,
+	// not a line in a save, and nothing upstream guarantees the caller's own
+	// list has no repeats in it — a berth written twice is a saved row that says
+	// one station heard the offence twice, and the size instrument would price
+	// that as the law's cost.
+	const fresh = [
+		...new Set(heardBy.filter((key) => !before.witnesses.includes(key))),
+	];
 	const witnesses = fresh.length ? [...before.witnesses, ...fresh] : null;
 	if (!(heat > 0) && witnesses === null) return world;
 	let next = world;

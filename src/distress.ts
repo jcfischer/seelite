@@ -2,13 +2,10 @@
  * Who heard a civilian being shot at, and what the victim said (`#396` §§3–4,
  * amending `civilian-combat.md` H5).
  *
- * **The reach is the victim's transmission, not where the pilot was.** H5 used
- * to inherit the frame body's `NEAR_FAR_KM` and so filed exactly one witness —
- * the berth the flight assist happened to call the ship *at* — and missed every
- * station it could have heard. That rule is about which body a ship is standing
- * next to, and it is a poor answer to "who was within earshot": beside a busy
- * berth the frame body is chosen by distance alone, so a carrier gunned down in
- * the middle of a system indicted one berth and let the rest of them advertise.
+ * **The reach is the victim's transmission, not where the pilot was.** That is
+ * H5's ruling since #396, and `civilian-combat.md` owns its reasoning and its
+ * history in one place. What this module owns is the dial and what the dial may
+ * not do, which is the rest of this comment.
  *
  * `DISTRESS_RANGE_KM` is therefore its own dial, declared at three times the
  * frame body's reach for two reasons. Past `NEAR_FAR_KM` the change is realised

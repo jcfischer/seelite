@@ -86,8 +86,9 @@ export const trafficInSights = (
  * open its facing, so five seconds is 28% of that beam and the charge lands with
  * the better part of the facing's armour still between the pilot and the hull.
  * **That figure has an instrument** — `probe-witnesses.mjs` tethers exactly that
- * beam and carries both durations in its strike row: `landedFireAtDivert`, which
- * is what this clock counts, and `secondsToDivert`, which is wall clock. **The
+ * beam and carries both durations in its strike row, both read off the world's
+ * own clock: `landedFireAtDivert` is what this clock counted and `secondsToDivert`
+ * is how long the fight ran. **The
  * second bounds the first**, and not by measurement: landed fire adds `dt` only
  * on frames the same clock is already counting, so no beam can land more seconds
  * than the fight ran for, and a run that opens a facing without ever losing the

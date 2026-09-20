@@ -1009,7 +1009,18 @@ describe("H4's sustained-fire clock (#396)", () => {
 		expect(chargedOffence(row, "clean", true)).toBe("struck");
 		expect(marginalOffenceHeat("clean", "struck", "assault")).toBe(2);
 		expect(marginalOffenceHeat("clean", "destroyed", "assault")).toBe(27);
-		// And the whole ladder, in the order a pilot actually does it: 13, 2, 25.
-		expect(13 + 2 + 25).toBe(OFFENCE_HEAT.destroyed);
+		// **And the whole ladder, as three legs a pilot actually walks.** The legs
+		// are taken *through* the pricing function rather than written as literals:
+		// a sum of literals next to a constant is an arithmetic identity that only
+		// moves when the constant moves, and the whole claim here is that the
+		// marginals add up to the kill's own rung. Retune any one of the three and
+		// this is red on the sum as well as on the leg.
+		const legs = [
+			marginalOffenceHeat("clean", "assault", null),
+			marginalOffenceHeat("clean", "struck", "assault"),
+			marginalOffenceHeat("clean", "destroyed", "struck"),
+		];
+		expect(legs).toEqual([13, 2, 25]);
+		expect(legs.reduce((a, b) => a + b, 0)).toBe(OFFENCE_HEAT.destroyed);
 	});
 });

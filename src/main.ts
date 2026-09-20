@@ -5802,6 +5802,15 @@ class Game {
 		});
 		// Bounded by the log's own length: a long session with a trigger held
 		// cannot grow this past a screenful of hails.
+		//
+		// **Flat, where the guard above is bucketed by galaxy, and the two are
+		// different questions.** The guard asks "has this carrier already been
+		// heard from", and a `CarrierKey` only means something inside a galaxy, so
+		// its scope has to be one. This asks "what has the pilot been told this
+		// session, most recent last" — a history the Communications log draws as
+		// one list, and the bound that keeps it a screenful is the count itself.
+		// Bucketing it would keep a screenful *per galaxy* and make the rail's
+		// history a different length depending on how many systems were flown.
 		if (this.hails.length > HAIL_LOG_KEEP) this.hails.shift();
 		this.audio.alert();
 	}
@@ -6319,8 +6328,13 @@ class Game {
 	 *  Communications picture — every contact's manifest, every berth's refusal,
 	 *  the hail store — and a caller walking a fight frame by frame to watch one
 	 *  `updatedAt` stamp pays for all of it to read one field. Same data, no
-	 *  report: the readout is built from this. */
-	legalRow() {
+	 *  report: the readout is built from this.
+	 *
+	 *  **`Readonly`, and that is the whole guard.** This is the live row and not a
+	 *  copy — a copy every frame is the cost the method exists to remove. A caller
+	 *  that wants to change it is asking for a write, and writes go through
+	 *  `world-state.ts`, which is where the envelope's integrity is kept. */
+	legalRow(): Readonly<ReturnType<Game["legalStatus"]>> {
 		return this.legalStatus();
 	}
 

@@ -401,6 +401,9 @@ try {
 				// there, and a row that only reads it afterwards cannot tell that from
 				// a row that has always said nothing.
 				const commsBefore = p.comms();
+				// The fight's own clock at the first frame, so the strike's duration
+				// is read off the world rather than counted from this loop.
+				const t0 = g.world.gameTime;
 				const hail = {
 					frame: -1,
 					comms: null,
@@ -412,6 +415,12 @@ try {
 					lastExit: null,
 					heat: null,
 					landedFireS: null,
+					// **The frame body on the frame the offence was charged.** The rule
+					// #396 retired filed the frame body — one berth, the one the flight
+					// assist happened to call the ship *at* — so this is the retired
+					// rule's own answer, read off the game instead of modelled here as
+					// a radius around the victim.
+					at: null,
 					// Where the carrier stood on *its* frame. The one position read
 					// at the divert is not where the assault was charged, and a set
 					// filed at two instants cannot be checked against a reach measured
@@ -454,6 +463,7 @@ try {
 						g.trafficEngagements.get(key)?.assaultCharged === true
 					) {
 						charge.frame = i;
+						charge.at = g.frameBody?.id ?? null;
 						charge.lastExit = g.lastExit;
 						charge.landedFireS =
 							g.trafficEngagements.get(key)?.landedFireS ?? null;
@@ -474,12 +484,17 @@ try {
 							// is declared as a share of this figure, so the run that
 							// measures the share prints it and a retuner re-reads the
 							// denominator here instead of trusting a comment.
-							secondsToDivert: i * dt,
-							// **The same duration in the units the clock counts.** The
-							// figure above is wall-clock frames; `ASSAULT_FIRE_S` is
-							// seconds of *landed* fire, and a ratio between the two is a
-							// ratio between unlike things. Both are printed, so the share
-							// the constant cites is stated in the units it is measured in.
+							// **Read off the world's clock, not counted from the
+							// loop.** `i * dt` is the same number while the stepper is
+							// the rig's own, and a different one the moment a frame
+							// steps anything else — a duration this file models rather
+							// than a duration the game had.
+							secondsToDivert: g.world.gameTime - t0,
+							// **The same duration in the units the clock counts.** Both
+							// figures are the fight's clock; this one counts only the
+							// frames something landed, which is what `ASSAULT_FIRE_S`
+							// is a share of. Both are printed so the share the constant
+							// cites is stated in the units it was measured in.
 							landedFireAtDivert:
 								g.trafficEngagements.get(key)?.landedFireS ?? null,
 							// Where the carrier stood on that frame, which is what #396's
@@ -626,25 +641,15 @@ try {
 						witnessed: st.witnessed,
 						km: d,
 						inEarshot: d <= distressMod.DISTRESS_RANGE_KM,
-						// What the rule #396 retired could reach from the same place.
-						// It measured from the *attacker*, and the tether keeps the ship
-						// within a few kilometres of the carrier it is shooting, so the
-						// two rules can only part over a berth standing past
-						// `NEAR_FAR_KM` of the victim. Where no berth does — this
-						// system's case, its two berths 1.4 km apart — they file the
-						// same set, and the row below says that rather than implying it
-						// proved the amendment.
-						oldRuleReaches: d <= g.units.NEAR_FAR_KM,
+						// A berth the *frame body's* rule could never have filed: the
+						// retired rule named one berth, the one the assist called the
+						// ship at, so anything else it could not reach at all. Printed
+						// for the shape of the scene — the row's own comparison uses the
+						// frame body recorded on the charge frame, not this arm.
+						beyondFrameBodyReach: d > g.units.NEAR_FAR_KM,
 					};
 				});
 			},
-			/**
-			 * What counts as a position to measure from, in one place.
-			 *
-			 * `earshot` and `driftKm` are always handed the same argument, so the rule
-			 * for accepting it has to be one rule: two copies would let the reach be
-			 * computed over a set the drift figure did not see.
-			 */
 			/**
 			 * Kilometres between two world positions.
 			 *
@@ -655,6 +660,13 @@ try {
 			apartKm(a, b) {
 				return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 			},
+			/**
+			 * What counts as a position to measure from, in one place.
+			 *
+			 * `earshot` and `driftKm` are always handed the same argument, so the rule
+			 * for accepting it has to be one rule: two copies would let the reach be
+			 * computed over a set the drift figure did not see.
+			 */
 			originsOf(from) {
 				return (Array.isArray(from) ? from : [from]).filter(
 					(o) => o && Number.isFinite(o.x),
@@ -773,36 +785,46 @@ try {
 	// system rather than a name.
 	// -------------------------------------------------------------------------
 	const heard = struck.heard;
+	// The retired rule's own answer, mapped through this system's berths: it
+	// filed the frame body, and it filed nobody when the ship had none — which is
+	// what the fight's tether does to a carrier shot at out in the system.
+	const oldRuleFiled = (struck.charge?.at ? [struck.charge.at] : []).flatMap(
+		(id) => {
+			const st = heard?.stations.find((s) => s.id === id);
+			return st ? [st.key] : [];
+		},
+	);
 	check(
-		"every berth within earshot of the carrier is filed and no berth outside it is (#396, amending H5)",
+		"every berth within earshot of the carrier is filed and no berth outside it is, and the filed set holds whatever the frame body's rule would have filed (#396, amending H5)",
 		heard !== null &&
 			heard.stations.length >= 2 &&
 			heard.stations.every((st) => st.witnessed === st.inEarshot) &&
 			struck.after?.legal.witnesses.length ===
 				heard.stations.filter((st) => st.inEarshot).length &&
-			// The wider reach is a widening and not a different set: everything the
-			// retired rule would have filed is filed, from the same two instants.
+			// The transmission's reach is a widening of the frame body's and not a
+			// different set: whatever the retired rule filed, the filed set holds.
 			struck.after !== null &&
-			heard.stations
-				.filter((st) => st.oldRuleReaches)
-				.every((st) => struck.after.legal.witnesses.includes(st.key)),
+			oldRuleFiled.every((key) => struck.after.legal.witnesses.includes(key)),
 		JSON.stringify({
 			heard,
 			witnesses: struck.after?.legal.witnesses,
 			victim: struck.strike?.victim,
-			// **The honest limit of this row.** Where the two rules' answers are the
-			// same list, this row proves the game files from the victim and nothing
-			// about how wide the reach is — and in this system the answers *are* the
-			// same list, because the two berths stand 1.4 km apart and any place
-			// inside one horizon is inside the other. `rulesDifferHere` is printed so
-			// a reader sees that rather than assuming it. The geometry where the two
-			// part is constructed, in `tests/distress.test.ts`.
-			oldRuleWouldFile: heard.stations
-				.filter((st) => st.oldRuleReaches)
-				.map((st) => st.key),
+			// **What the retired rule would have filed, read off the game.** H5's old
+			// reach was not a radius around the pilot — it named the **frame body**,
+			// the one berth the flight assist happened to call the ship *at*, which
+			// beside a busy station is chosen by distance alone. So the retired rule's
+			// answer is that body or nobody, taken from `g.frameBody` on the frame the
+			// offence was charged, and not modelled from a distance here.
+			frameBodyAtCharge: struck.charge?.at ?? null,
+			oldRuleWouldFile: oldRuleFiled,
+			// True where the amendment actually changed this system's answer. Printed
+			// either way: a row that quietly passes on the agreement and a row that
+			// proves the difference are different claims, and this file has called the
+			// first one the second. The geometry where the two rules must part is
+			// constructed in `tests/distress.test.ts`.
 			rulesDifferHere:
-				heard.stations.filter((st) => st.oldRuleReaches).length !==
-				heard.stations.filter((st) => st.inEarshot).length,
+				JSON.stringify([...oldRuleFiled].sort()) !==
+				JSON.stringify([...(struck.after?.legal.witnesses ?? [])].sort()),
 		}),
 	);
 	// -------------------------------------------------------------------------
@@ -959,15 +981,15 @@ try {
 	// is declared as a share of how long this scene's tethered beam takes to open a
 	// freighter's facing, and a figure a shipped constant is derived from has to be
 	// re-readable without a red row to unlock it. Both durations are printed because
-	// they are not the same quantity: the loop counts frames of wall clock, the
-	// constant counts seconds of *landed* fire, and the share the spec quotes is the
-	// landed pair.
+	// they are not the same quantity: one is every second the fight ran, the other
+	// only the seconds in which something landed, and the share the spec quotes is
+	// of the landed pair.
 	{
 		const f = (x) => (typeof x === "number" ? x.toFixed(1) : "n/a");
-		const wall = struck.strike?.secondsToDivert;
+		const fight = struck.strike?.secondsToDivert;
 		const landed = struck.strike?.landedFireAtDivert;
 		console.log(
-			`  the strike's beam: ${f(wall)} s of wall clock to open the facing, ` +
+			`  the strike's beam: ${f(fight)} s of fight to open the facing, ` +
 				`${f(landed)} s of it landed — ${
 					struck.assaultFireS
 				} s of landed fire is ${
@@ -1185,7 +1207,11 @@ try {
 			{ armed: false, standing: "not-clean" },
 			1800,
 		);
-		if (!found?.key) return { found: null, search: found.tally };
+		// The guard answers with the tally it does have. `found.tally` on the
+		// object it just refused is a TypeError, which reports a search that came
+		// back empty as a crash in the script rather than as the empty answer the
+		// row is written to report.
+		if (!found?.key) return { found: null, search: found?.tally ?? null };
 		return {
 			found: { key: found.key, km: found.km },
 			search: found.tally,
