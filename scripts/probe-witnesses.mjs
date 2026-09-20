@@ -505,7 +505,14 @@ try {
 				// than assumed, the way `probe-carrier-scan.mjs` drives the view.
 				g.view = "cockpit";
 				g.leftTab = "Communications";
+				// **`updateCockpit` is called by the rAF loop and not by `render`,**
+				// and this probe runs the loop by hand: `cancelAnimationFrame` is in
+				// the boot block, so a frame built here would leave the glass showing
+				// whatever the last real frame painted. A rail read without this is a
+				// read of the previous moment, which is how "the hail did not reach
+				// the rail" got reported once already.
 				frame();
+				g.updateCockpit();
 				const rail = document.querySelector("[data-live-hails]");
 				const log = document.querySelector("[data-live-raider-log]");
 				return {
@@ -666,7 +673,10 @@ try {
 		struck.strike?.commsBefore?.railPresent === true &&
 			struck.strike?.commsBefore?.rail === "NONE" &&
 			struck.strike?.commsBefore?.alerts === 0 &&
-			struck.strike?.commsBefore?.store.length === 0,
+			struck.strike?.commsBefore?.store.length === 0 &&
+			!struck.strike?.commsBefore?.logLines?.some((l) =>
+				l.includes("cease fire"),
+			),
 		JSON.stringify({ commsBefore: struck.strike?.commsBefore }),
 	);
 	check(

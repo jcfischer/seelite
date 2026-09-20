@@ -1105,7 +1105,16 @@ export class LiveCockpit {
 		// survives; the ring has to be put back.
 		this.applyFocusRing();
 		const duelKey = state.duel ? Object.values(state.duel).join(",") : "";
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}`;
+		// **`legalStatus` and `hails` are in this key because both rows are bound
+		// below the gate, and a row bound inside a key it is not in only refreshes
+		// when something else moves.** Neither was in it when #396 put a value on
+		// the HAILS row, and the browser row caught it: the carrier had hailed, the
+		// store held the line, and the rail still read `NONE`. In flight that is
+		// invisible — speed and charge are never still long enough to see the lag —
+		// and the probe's frozen loop is the first caller that ever stood still. A
+		// row whose value can move while the pilot holds the stick still is a row
+		// this key has to name.
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}|${state.legalStatus}|${state.hails}`;
 		// #324 part d: the raider lifecycle, a line each, on its own key so a
 		// speed change does not rebuild the list (sage #330). Escaped, although
 		// every line is built from a slot name and a fixed phrase.

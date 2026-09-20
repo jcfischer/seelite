@@ -2003,8 +2003,19 @@ class Game {
 	 * of console text.
 	 */
 	private readonly hails: { line: RaiderLogLine; callsign: string }[] = [];
-	/** Which carriers have already hailed this session. One per carrier per incident. */
-	private readonly hailed = new Set<CarrierKey>();
+	/**
+	 * Which carriers have already hailed, and **which galaxy's law** that hail
+	 * was spent inside.
+	 *
+	 * The galaxy is carried here because the guard's expiry is the law's clock
+	 * and nothing else's: `settleWitnesses` ends an incident when heat reads
+	 * below Wanted, and this forgets on the same read, in the same galaxy, so a
+	 * carrier the pilot let out of its incident hails them again the next time
+	 * they are shot at. A guard that only a reload cleared would leave the rail
+	 * showing a stale speaker — the row is present tense, and a present-tense
+	 * instrument that cannot be silent is a decoration.
+	 */
+	private readonly hailed = new Map<CarrierKey, number>();
 	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
 	private readonly trafficNose = new THREE.Vector3();
 	private readonly trafficUp = new THREE.Vector3();
@@ -5755,7 +5766,7 @@ class Game {
 		)
 			return;
 		if (this.hailed.has(actor.key)) return;
-		this.hailed.add(actor.key);
+		this.hailed.set(actor.key, record.galaxy);
 		this.hails.push({
 			line: {
 				at: this.world.gameTime,
@@ -6321,7 +6332,15 @@ class Game {
 		const galaxy = this.world.system.record.galaxy;
 		const before = this.commerceWorld;
 		this.commerceWorld = settleWitnesses(before, galaxy, this.world.gameTime);
-		if (this.commerceWorld !== before) this.saveDirty();
+		if (this.commerceWorld === before) return;
+		this.saveDirty();
+		// **The write is the incident's ending, and the hail guard ends with it.**
+		// `settleWitnesses` cleared that galaxy's hearers and its charged
+		// carriers; a session that went on refusing the same carrier's hail after
+		// the law had let the incident go would be a session keeping a record the
+		// world has already dropped, on a rail that reads as present tense.
+		for (const [key, hailedGalaxy] of this.hailed)
+			if (hailedGalaxy === galaxy) this.hailed.delete(key);
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */
