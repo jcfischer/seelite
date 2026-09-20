@@ -8,11 +8,15 @@
  * page can answer is whether any of it is **reachable**, which is a different
  * question and the one a node like this fails most often:
  *
- * - the reach is the frame body's. The station has to be the body the flight
- *   assist is already treating as at rest, and not a distance this script
- *   measured — which is a real question, not a formality: a system's berths
- *   drift apart as they orbit, and a traffic lane can run past the wrong one;
- * - the offence a pilot commits there is filed **there**, and nowhere else;
+ * - the reach is a station's earshot of the **victim**, and every berth in the
+ *   system is asked. It used to be the frame body's — the body the flight assist
+ *   was already treating as at rest — and the search below still wants a
+ *   carrier near a berth, because an unreachable carrier cannot be shot at, but
+ *   the berth the offence is filed against is no longer chosen by where the
+ *   *pilot* happens to be standing (#396 amended this, and the row that reads it
+ *   is the earshot row rather than the reach row);
+ * - the offence a pilot commits there is filed against **every berth that heard
+ *   it**, and against none that did not;
  * - a shipyard refuses a Wanted pilot it never saw, on standing alone, and the
  *   station that saw the offence is a different station refusing for a different
  *   reason;
@@ -33,6 +37,15 @@
  * **The pilot is tethered.** The strike is placed, not flown — the principal
  * flying an offence beside a station and being refused is this node's third
  * tier, and no probe stands in for it.
+ *
+ * **#396's hail rows are here, in this scene, rather than in a file of their
+ * own.** A Clean carrier, tethered and under fire, is what both rulings are
+ * observed on, and finding one is the expensive part of this probe: the search
+ * below runs the game's own Traffic rosters forward across up to half an hour of
+ * system clock, and a second probe doing it again would spend the whole
+ * `probe-all` ceiling to re-derive what this one already has. What is *not*
+ * shared is the assertion: the hail rows read the rail, the log and the alert,
+ * which nothing above reads, and they fail under their own names.
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import {
@@ -64,7 +77,17 @@ try {
 		const legalMod = await import("/src/legal.ts");
 		const engagementMod = await import("/src/traffic-engagement.ts");
 		const standingMod = await import("/src/carrier-standing.ts");
+		const distressMod = await import("/src/distress.ts");
 		const dt = g.units.MAX_DT;
+		// **Spied, not stubbed:** the alert is `AudioFX.alert`, and the question is
+		// whether the game's own hail path reaches it. Wrapping the shipped method
+		// keeps the sound the shipped one and counts the calls the game makes.
+		const shippedAlert = g.audio.alert.bind(g.audio);
+		g.alertCount = 0;
+		g.audio.alert = () => {
+			g.alertCount++;
+			return shippedAlert();
+		};
 		const SLOW = new Set(["local-departure", "local-approach"]);
 		const frame = () => {
 			g.step(dt);
@@ -359,6 +382,23 @@ try {
 				const p = window.__witnessProbe;
 				if (!p.tether(key, 1.2)) return { tethered: false, seen: [] };
 				const seen = [];
+				// **The console before a single frame is fired**, so the hail has a
+				// "before" to be read against: the rail's `NONE` is a value #396 put
+				// there, and a row that only reads it afterwards cannot tell that from
+				// a row that has always said nothing.
+				const commsBefore = p.comms();
+				const hail = {
+					frame: -1,
+					comms: null,
+					landedFireS: null,
+					callsign: null,
+				};
+				const charge = {
+					frame: -1,
+					lastExit: null,
+					heat: null,
+					landedFireS: null,
+				};
 				for (let i = 0; i < maxFrames; i++) {
 					if (!p.followFiring(key))
 						return {
@@ -368,6 +408,31 @@ try {
 							frames: i,
 							seen,
 						};
+					// **The hail, frame by frame, from the session's own store.** Read off
+					// `trafficReadout` rather than off the console: the store is what the
+					// console is rendered from, and the frame that matters is the frame the
+					// line went in, not the frame this script happened to look at.
+					if (hail.frame < 0 && g.trafficReadout().hails.length > 0) {
+						hail.frame = i;
+						hail.comms = p.comms();
+						hail.landedFireS =
+							g.trafficEngagements.get(key)?.landedFireS ?? null;
+						hail.callsign = g.trafficReadout().hails.at(-1)?.callsign ?? null;
+					}
+					// **And the charge**, on the frame its clock crossed. The flight report
+					// was that nothing was said at that moment, so this records what is said
+					// now, in the pilot's own words, off the line the divert and the kill
+					// already use.
+					if (
+						charge.frame < 0 &&
+						g.trafficEngagements.get(key)?.assaultCharged === true
+					) {
+						charge.frame = i;
+						charge.lastExit = g.lastExit;
+						charge.landedFireS =
+							g.trafficEngagements.get(key)?.landedFireS ?? null;
+						charge.heat = g.trafficReadout().legal.heatNow;
+					}
 					if (g.carrierCondition(key).condition === "repairing")
 						return {
 							tethered: true,
@@ -378,6 +443,13 @@ try {
 							// charged, read off the game, not off this file.
 							at: g.frameBody?.id ?? null,
 							seen,
+							// Where the carrier stood on that frame, which is what #396's
+							// earshot is measured from — not where the pilot was.
+							victim: { ...(g.trafficContacts.get(key)?.pos ?? {}) },
+							commsBefore,
+							hail,
+							charge,
+							commsAfter: p.comms(),
 						};
 					if (i === 10 || i === 60 || i === maxFrames - 1)
 						seen.push({ frames: i, ...p.aimReport(key) });
@@ -387,6 +459,9 @@ try {
 					diverted: false,
 					reason: "frame cap",
 					frames: maxFrames,
+					commsBefore,
+					hail,
+					charge,
 					seen,
 				};
 			},
@@ -418,6 +493,50 @@ try {
 				sim.advanceSystem(g.world.system, t);
 				frame();
 			},
+			/**
+			 * The Communications console, as the player would have it open, and what
+			 * it is showing. The tab is a private field and this drives it the way
+			 * the pad binding does, because the rail and the log are both built per
+			 * tab and neither exists in the DOM until the tab is up.
+			 */
+			comms() {
+				// The console is only built while the cockpit is the view, and the
+				// rail only while this tab is up — so both are driven here rather
+				// than assumed, the way `probe-carrier-scan.mjs` drives the view.
+				g.view = "cockpit";
+				g.leftTab = "Communications";
+				frame();
+				const rail = document.querySelector("[data-live-hails]");
+				const log = document.querySelector("[data-live-raider-log]");
+				return {
+					rail: rail ? (rail.textContent ?? "") : null,
+					railPresent: rail !== null,
+					logLines: log
+						? [...log.querySelectorAll("li")].map((li) => li.textContent ?? "")
+						: null,
+					store: g.trafficReadout().hails,
+					alerts: g.alertCount,
+					noneRail: rail?.textContent === "NONE",
+				};
+			},
+			/** Every berth in this system, measured from where the carrier stood. */
+			earshot(from) {
+				const km = (st) =>
+					Math.hypot(st.pos.x - from.x, st.pos.y - from.y, st.pos.z - from.z);
+				return g.trafficReadout().stations.map((st) => ({
+					id: st.id,
+					type: st.type,
+					witnessed: st.witnessed,
+					km: km(st),
+					inEarshot: km(st) <= distressMod.DISTRESS_RANGE_KM,
+					// The arm the amendment is for: a berth the frame body's rule
+					// could never have reached, sitting inside the transmission's.
+					pastFrameReach: km(st) > g.units.NEAR_FAR_KM,
+				}));
+			},
+			distressRangeKm: distressMod.DISTRESS_RANGE_KM,
+			nearFarKm: g.units.NEAR_FAR_KM,
+			assaultFireS: engagementMod.ASSAULT_FIRE_S,
 			heatAt: legalMod.heatAt,
 			wantedHeat: legalMod.WANTED_HEAT,
 			strikeOffence: legalMod.OFFENCE_HEAT.struck,
@@ -438,11 +557,27 @@ try {
 		const before = p.lawReadout();
 		const strike = p.strikeUntilDiverted(found.key, 900);
 		const after = p.lawReadout();
+		// The whole system measured from where the carrier stood, taken on the
+		// frame the hull gave way. The berths drift over the ninety seconds of a
+		// strike, but against a reach of `distressRangeKm` the drift is some
+		// hundreds of km, and the row asks a question with that much slack in it.
+		const heard = strike?.victim
+			? {
+					range: p.distressRangeKm,
+					nearFar: p.nearFarKm,
+					victim: strike.victim,
+					stations: p.earshot(strike.victim),
+				}
+			: null;
 		return {
 			beside,
 			found: { key: found.key, stationId: found.stationId, km: found.km },
 			search: found.tally,
 			strike,
+			range: p.distressRangeKm,
+			nearFar: p.nearFarKm,
+			assaultFireS: p.assaultFireS,
+			heard,
 			before,
 			after,
 			heatWrite: after.legal.heat - p.heatAt(before.legal, before.gameTime),
@@ -467,20 +602,19 @@ try {
 		}),
 	);
 	check(
-		"the offence committed beside a berth is filed against the berth the shot was fired at, and nowhere else (#366 H5, H6)",
+		"the berth the shot was fired at is filed, and the pilot is Wanted for it (#366 H5, H6)",
 		struck.strike?.diverted === true &&
 			// A fleeing carrier can be dragged out to another berth, and then the
-			// witness belongs to that one — so the berth is the one the game named
-			// on the frame the hull gave way, not the one the tether chose.
+			// hearer is that one — so the berth named is the one the game called
+			// the frame body on the frame the hull gave way, not the one the
+			// tether chose, and it is inside the earshot by construction.
 			struck.besideStation !== null &&
 			struck.strike?.at === struck.beside &&
 			struck.heatWrite >= struck.after.wantedHeat &&
 			struck.besideBefore?.witnessed === false &&
 			struck.besideBefore?.refusedByLaw === false &&
 			struck.besideStation?.witnessed === true &&
-			struck.besideStation?.refusedByLaw === true &&
-			struck.after.legal.witnesses.length === 1 &&
-			struck.other?.every((st) => st.witnessed === false),
+			struck.besideStation?.refusedByLaw === true,
 		JSON.stringify({
 			beside: struck.beside,
 			at: struck.strike?.at,
@@ -490,6 +624,95 @@ try {
 			legal: struck.after?.legal,
 			other: struck.other,
 		}),
+	);
+	// -------------------------------------------------------------------------
+	// #396 amended which berths H5 files. The rule to read in the running game
+	// is not "the one the pilot was standing next to" but "every berth the
+	// victim's transmission reached", so the row is a comparison over the whole
+	// system rather than a name.
+	// -------------------------------------------------------------------------
+	const heard = struck.heard;
+	check(
+		"every berth within earshot of the carrier is filed and no berth outside it is (#396, amending H5)",
+		heard !== null &&
+			heard.stations.length >= 2 &&
+			heard.stations.every((st) => st.witnessed === st.inEarshot) &&
+			struck.after?.legal.witnesses.length ===
+				heard.stations.filter((st) => st.inEarshot).length,
+		JSON.stringify({
+			heard,
+			witnesses: struck.after?.legal.witnesses,
+			victim: struck.strike?.victim,
+		}),
+	);
+	check(
+		"the filed set contains at least the berth the frame body's rule reached, so the amendment only widens H5 (#396)",
+		// The old rule's answer has to be a subset of the new one's, or the
+		// amendment would be a narrowing that reads as a widening: the frame
+		// body's reach is `nearFar`, the transmission's is `range`, and `km`
+		// here is measured from the victim.
+		heard !== null &&
+			heard.stations
+				.filter((st) => st.km <= heard.nearFar)
+				.every((st) => st.witnessed === true),
+		JSON.stringify({ heard }),
+	);
+	// -------------------------------------------------------------------------
+	// #396 §3: the victim's hail, and the charge that the flight report said
+	// was invisible. All three channels, on the frame the first hit landed.
+	// -------------------------------------------------------------------------
+	check(
+		"the rail's HAILS row reads NONE before a single frame is fired (#396: a label that carries a value)",
+		struck.strike?.commsBefore?.railPresent === true &&
+			struck.strike?.commsBefore?.rail === "NONE" &&
+			struck.strike?.commsBefore?.alerts === 0 &&
+			struck.strike?.commsBefore?.store.length === 0,
+		JSON.stringify({ commsBefore: struck.strike?.commsBefore }),
+	);
+	check(
+		"a Clean carrier hit for the first time hails: the rail names it, the log carries it, and the alert sounds (#396 §3)",
+		struck.strike?.hail?.frame >= 0 &&
+			struck.strike?.hail?.comms?.rail === struck.strike?.hail?.callsign &&
+			struck.strike?.hail?.comms?.logLines?.some((l) =>
+				l.includes("cease fire"),
+			) === true &&
+			struck.strike?.hail?.comms?.alerts === 1 &&
+			// Before the charge. The hail is not an accusation: the clock that
+			// convicts is still running on this frame, and a victim that announced
+			// a charge which has not been made tells the pilot the wrong thing.
+			struck.strike?.hail?.landedFireS !== null &&
+			struck.strike?.hail?.landedFireS < struck.assaultFireS &&
+			struck.strike?.charge?.frame > struck.strike?.hail?.frame,
+		JSON.stringify({
+			hail: struck.strike?.hail,
+			charge: struck.strike?.charge,
+			assaultFireS: struck.assaultFireS,
+		}),
+	);
+	check(
+		"the sustained-fire charge is said in the pilot's own line, and it costs Wanted (#396 §2)",
+		struck.strike?.charge?.frame >= 0 &&
+			typeof struck.strike?.charge?.lastExit === "string" &&
+			struck.strike?.charge?.lastExit.includes("sustained fire") &&
+			struck.strike?.charge?.heat >= struck.after?.wantedHeat &&
+			struck.strike?.charge?.landedFireS >= struck.assaultFireS &&
+			// And the whole thing happens before the divert: this is the part of
+			// the flight report that was missing, the interval in which the pilot
+			// could still have stopped.
+			struck.strike?.charge?.frame < struck.strike?.frames,
+		JSON.stringify({
+			charge: struck.strike?.charge,
+			frames: struck.strike?.frames,
+			assaultFireS: struck.assaultFireS,
+			wanted: struck.after?.wantedHeat,
+		}),
+	);
+	check(
+		"the hail is one line per carrier, not one per hit (#396: the rail says who, not how often)",
+		struck.strike?.commsAfter?.store.length === 1 &&
+			struck.strike?.commsAfter?.alerts === 1 &&
+			struck.strike?.commsAfter?.rail === struck.strike?.hail?.callsign,
+		JSON.stringify({ commsAfter: struck.strike?.commsAfter }),
 	);
 	check(
 		"the refusal tracks the readout: at Wanted the shipyard refuses whether or not it saw the offence (#366 H7)",

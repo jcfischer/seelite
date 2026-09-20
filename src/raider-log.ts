@@ -13,6 +13,24 @@
  * steps yet. Before materialization the destroyed row still carries its
  * schedule, and after it the episode carries the facts. Both give the same
  * times.
+ *
+ * ## The hail is the exception, and it is kept here anyway (#396)
+ *
+ * **One line in this log is not a derivation.** A struck Clean carrier's
+ * transmission — `distress.ts`'s `hailText`, filed by `main.ts` into a
+ * session-only list and merged with the lines below — has no world row behind
+ * it, because there is nothing to read it from: a carrier that was merely shot
+ * at, with its shields still up and its schedule still its own, is written
+ * nowhere in §4's model. Adding one would be a new state domain for a line of
+ * console text, and #396 chose the loss on a reload over that: a forgotten hail
+ * costs a pilot the memory of one warning inside a 30-minute decay, while a
+ * saved one would be a fact the world has to stay consistent about forever.
+ *
+ * It is merged *here* rather than drawn beside the log because it is the same
+ * kind of thing on the same rail, in the same order, printed by
+ * `formatRaiderLogLine` like the rest — and because a reader of this file should
+ * meet the exception rather than infer it from a log that quietly started
+ * carrying lines no derivation produced.
  */
 import type { CarrierKey } from "./carrier-key";
 import { raiderRegistry } from "./carrier-name";

@@ -306,8 +306,25 @@ export interface KnowledgeRow {
 export interface LegalStatus {
 	heat: number;
 	updatedAt: number;
-	/** The stations that saw an offence, in `compareCarrierKeys` order. */
+	/** The stations that heard an offence, in `compareCarrierKeys` order. */
 	witnesses: CarrierKey[];
+	/**
+	 * The ordinary carriers whose **sustained-fire charge** this pilot has
+	 * already paid, in `compareCarrierKeys` order (#396, `legal.ts`).
+	 *
+	 * The fourth member, arriving by the same door as the third and for the same
+	 * two reasons: absent on the wire when empty, so the integrity hash of every
+	 * save taken before #396 still matches its own body, and no
+	 * `WORLD_SCHEMA_VERSION` bump — which would refuse the whole save rather than
+	 * migrate one member.
+	 *
+	 * It is a list of carriers and not a field on each carrier's row because an
+	 * assault is the one offence that leaves no mark on the ship: H3d's `disable`
+	 * is the only transition a civilian under fire ever gets, and the rung exists
+	 * precisely to charge a pilot *before* the hull gives way. `legal.ts`'s header
+	 * owns that argument; this is where the fact is kept.
+	 */
+	assaulted: CarrierKey[];
 }
 
 /**
@@ -369,7 +386,7 @@ export const emptyEnvelope = (galaxyIndex: number): GalaxyEnvelope => ({
 	knowledge: {},
 	deficits: {},
 	visited: [],
-	legalStatus: { heat: 0, updatedAt: 0, witnesses: [] },
+	legalStatus: { heat: 0, updatedAt: 0, witnesses: [], assaulted: [] },
 });
 
 export const newWorld = (seed: number): WorldState => ({
@@ -1406,7 +1423,7 @@ export const setLegalHeat = (
 };
 
 /**
- * §7's legal-status domain: the stations that saw an offence (`legal.ts` H6).
+ * The one writer for `LegalStatus`'s two carrier-key lists.
  *
  * **It does not touch `updatedAt`, and it must not.** That stamp is the heat's,
  * and decay is read from it — restamping it to write a witness would decay a
@@ -1418,33 +1435,65 @@ export const setLegalHeat = (
  * writer checks its input, because a `Station.id` in here would read as this
  * system's station in every system in the galaxy.
  *
- * **And it stores them in canonical order, not the order they were witnessed
+ * **And it stores them in canonical order, not the order they were written
  * in.** `canonicalEnvelope` has to write canonical bytes, and a model whose row
  * came out in offence order would be a model that does not equal its own save —
  * which is the §9.6 round trip, not a tidiness. Sorting here is what lets the
  * envelope omit rather than re-derive.
+ *
+ * **One implementation, two names, because the two lists must never drift.**
+ * They are the same shape, they are omitted from the envelope under the same
+ * condition, they are parsed by the same rules, and they are cleared together by
+ * the same read of the heat. A second copy of this check — with, say, one of the
+ * two orders forgotten — is a save that round-trips into a different model.
  */
-export const setLegalWitnesses = (
+const setLegalCarrierList = (
 	world: WorldState,
 	galaxyIndex: number,
-	witnesses: readonly CarrierKey[],
+	field: "witnesses" | "assaulted",
+	keys: readonly CarrierKey[],
 	at: number,
 ): WorldState => {
 	const seen = new Set<string>();
-	for (const key of witnesses) {
+	for (const key of keys) {
 		assertCarrierKey(key);
 		if (seen.has(key))
-			fail(`setLegalWitnesses: ${key} is witnessed twice in one row`);
+			fail(`setLegal${field}: ${key} is listed twice in one row`);
 		seen.add(key);
 	}
 	return withEnvelope(world, galaxyIndex, at, (env) => ({
 		...env,
 		legalStatus: {
 			...env.legalStatus,
-			witnesses: [...witnesses].sort(compareCarrierKeys),
+			[field]: [...keys].sort(compareCarrierKeys),
 		},
 	}));
 };
+
+/**
+ * §7's legal-status domain: the stations that heard an offence (`legal.ts` H6,
+ * and #396's amendment — heard, not seen).
+ */
+export const setLegalWitnesses = (
+	world: WorldState,
+	galaxyIndex: number,
+	witnesses: readonly CarrierKey[],
+	at: number,
+): WorldState =>
+	setLegalCarrierList(world, galaxyIndex, "witnesses", witnesses, at);
+
+/**
+ * §7's legal-status domain: the ordinary carriers whose sustained-fire charge
+ * this pilot has already paid (#396, `legal.ts`). Same clock rule as
+ * `setLegalWitnesses` above — it does not touch `updatedAt`.
+ */
+export const setLegalAssaulted = (
+	world: WorldState,
+	galaxyIndex: number,
+	assaulted: readonly CarrierKey[],
+	at: number,
+): WorldState =>
+	setLegalCarrierList(world, galaxyIndex, "assaulted", assaulted, at);
 
 // ---------------------------------------------------------------------------
 // §6 — compaction
@@ -1594,6 +1643,14 @@ const canonicalEnvelope = (env: GalaxyEnvelope) => ({
 		...(env.legalStatus.witnesses.length
 			? {
 					witnesses: [...env.legalStatus.witnesses].sort(compareCarrierKeys),
+				}
+			: {}),
+		// The same rule for #396's second list, for the same reason: an
+		// `"assaulted": []` on every row would move the hash of every save taken
+		// before it, and the integrity check would call that corruption.
+		...(env.legalStatus.assaulted.length
+			? {
+					assaulted: [...env.legalStatus.assaulted].sort(compareCarrierKeys),
 				}
 			: {}),
 	},
@@ -1983,33 +2040,38 @@ const parseVisited = (raw: unknown, slot: number): number[] => {
 };
 
 /**
- * H6's witness list, and **an absent member is the empty list**.
+ * One of `LegalStatus`'s two carrier-key lists, and **an absent member is the
+ * empty list**.
  *
- * This is what lets `witnesses` arrive with no `WORLD_SCHEMA_VERSION` bump. A
- * version mismatch refuses the whole save (§9), and an optional member with a
- * default needs no version — so a save written before #366 loads, and reads as
- * no station having seen anything. `canonicalEnvelope` is what makes that
- * honest: it omits an empty list, so the bytes an old save hashes to are the
- * bytes it was written with.
+ * This is what lets `witnesses` (#366) and `assaulted` (#396) each arrive with no
+ * `WORLD_SCHEMA_VERSION` bump. A version mismatch refuses the whole save (§9), and
+ * an optional member with a default needs no version — so a save written before
+ * either landed loads, and reads as nothing having been witnessed and nobody yet
+ * charged. `canonicalEnvelope` is what makes that honest: it omits an empty list,
+ * so the bytes an old save hashes to are the bytes it was written with.
  *
  * The shape checks are `parseVisited`'s, for the same reason: a `Station.id`
  * that is not a carrier key would read as this system's station in every system,
  * and a list the canonicaliser could not have written means a writer stopped
- * holding each station once.
+ * holding each entry once.
  */
-const parseWitnesses = (raw: unknown, galaxy: number): CarrierKey[] => {
+const parseLegalKeyList = (
+	raw: unknown,
+	galaxy: number,
+	field: "witnesses" | "assaulted",
+): CarrierKey[] => {
 	if (raw === undefined) return [];
-	if (!Array.isArray(raw)) fail(`galaxy ${galaxy}: witnesses is not an array`);
+	if (!Array.isArray(raw)) fail(`galaxy ${galaxy}: ${field} is not an array`);
 	const seen = new Set<string>();
 	let previous: string | undefined;
 	return (raw as unknown[]).map((v) => {
 		if (typeof v !== "string" || !isCarrierKey(v))
-			fail(`galaxy ${galaxy}: ${String(v)} is not a witnessed carrier key`);
+			fail(`galaxy ${galaxy}: ${String(v)} is not a ${field} carrier key`);
 		const key = v as CarrierKey;
 		if (seen.has(key))
-			fail(`galaxy ${galaxy}: witnessed carrier ${key} is listed twice`);
+			fail(`galaxy ${galaxy}: ${field} carrier ${key} is listed twice`);
 		if (previous !== undefined && compareCarrierKeys(previous, key) > 0)
-			fail(`galaxy ${galaxy}: witnesses are not in canonical order`);
+			fail(`galaxy ${galaxy}: ${field} are not in canonical order`);
 		previous = key;
 		seen.add(key);
 		return key;
@@ -2064,7 +2126,8 @@ const parseEnvelope = (raw: unknown, slot: number): GalaxyEnvelope => {
 		legalStatus: {
 			heat: num(legal, "heat", `galaxy ${slot}`),
 			updatedAt: num(legal, "updatedAt", `galaxy ${slot}`),
-			witnesses: parseWitnesses(legal.witnesses, galaxyIndex),
+			witnesses: parseLegalKeyList(legal.witnesses, galaxyIndex, "witnesses"),
+			assaulted: parseLegalKeyList(legal.assaulted, galaxyIndex, "assaulted"),
 		},
 	};
 };

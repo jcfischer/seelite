@@ -13,6 +13,8 @@ import {
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
 	stepEngagement,
+	type EngagementStep,
+	ASSAULT_FIRE_S,
 	trafficDestruction,
 	trafficDiversion,
 	trafficHitRadiusKm,
@@ -48,7 +50,7 @@ import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import { carrierManifest } from "../src/carrier-manifest";
 import { generateGalaxy } from "../src/galaxy";
 import { generateContents } from "../src/system";
-import { marginalOffenceHeat, offenceHeat } from "../src/legal";
+import { marginalOffenceHeat, offenceHeat, OFFENCE_HEAT } from "../src/legal";
 
 /** Every hull any station roster flies, so a row is not a hand-picked subset. */
 const ROSTER_HULLS = [
@@ -73,6 +75,7 @@ function ahead(hullId: HullId, km: number, seed = 5): Engagement {
 			voyageOrdinal: 0,
 		},
 		seed,
+		{ assaultAlreadyCharged: false },
 	);
 }
 
@@ -281,6 +284,7 @@ describe("a fight beside a station is flown in its frame", () => {
 					voyageOrdinal: 0,
 				},
 				3,
+				{ assaultAlreadyCharged: false },
 			);
 			let player = v3();
 			let nearest = Number.POSITIVE_INFINITY;
@@ -335,6 +339,7 @@ describe("the voyage a hold is drawn for (carrier-identity F11)", () => {
 				voyageOrdinal: 4,
 			},
 			1,
+			{ assaultAlreadyCharged: false },
 		);
 		let stepped = e;
 		for (let i = 0; i < 600; i++)
@@ -676,7 +681,7 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 			marginalOffenceHeat(
 				"clean",
 				"struck",
-				chargedOffence({ condition: "operational" }, "clean"),
+				chargedOffence({ condition: "operational" }, "clean", false),
 			),
 		).toBe(15);
 	});
@@ -686,13 +691,13 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		const first = marginalOffenceHeat("clean", "struck", null);
 		// The kill lands while the divert is still running, which is what makes it
 		// the same incident rather than a second offence.
-		expect(chargedOffence(rowAt(world, DIVERT_AT + 10), "clean")).toBe(
+		expect(chargedOffence(rowAt(world, DIVERT_AT + 10), "clean", false)).toBe(
 			"struck",
 		);
 		const second = marginalOffenceHeat(
 			"clean",
 			"destroyed",
-			chargedOffence(rowAt(world, DIVERT_AT + 10), "clean"),
+			chargedOffence(rowAt(world, DIVERT_AT + 10), "clean", false),
 		);
 		expect(first).toBe(15);
 		expect(second).toBe(25);
@@ -711,16 +716,16 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		// `occurredAt`, which is the `disable`'s, because H3c writes both in one
 		// tick. Standing is never saved, so that clock is the whole record.
 		expect(repairing.recovery?.startedAt).toBe(DIVERT_AT);
-		expect(chargedOffence(repairing, "wanted")).toBe(null);
+		expect(chargedOffence(repairing, "wanted", false)).toBe(null);
 		expect(
 			marginalOffenceHeat(
 				"clean",
 				"destroyed",
-				chargedOffence(repairing, "wanted"),
+				chargedOffence(repairing, "wanted", false),
 			),
 		).toBe(40);
 		// And a clock that cannot be named charges nothing as paid either.
-		expect(chargedOffence(repairing, null)).toBe(null);
+		expect(chargedOffence(repairing, null, false)).toBe(null);
 	});
 
 	test("a second strike in the same incident adds nothing", () => {
@@ -729,7 +734,7 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 			marginalOffenceHeat(
 				"clean",
 				"struck",
-				chargedOffence(rowAt(world, DIVERT_AT + 10), "clean"),
+				chargedOffence(rowAt(world, DIVERT_AT + 10), "clean", false),
 			),
 		).toBe(0);
 	});
@@ -740,9 +745,13 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		// against the ship that came back is a fresh 40, not a 25 top-up.
 		const back = rowAt(world, divertStart().completesAt);
 		expect(back.condition).toBe("operational");
-		expect(chargedOffence(back, "clean")).toBe(null);
+		expect(chargedOffence(back, "clean", false)).toBe(null);
 		expect(
-			marginalOffenceHeat("clean", "destroyed", chargedOffence(back, "clean")),
+			marginalOffenceHeat(
+				"clean",
+				"destroyed",
+				chargedOffence(back, "clean", false),
+			),
 		).toBe(40);
 	});
 
@@ -768,5 +777,216 @@ describe("H9: a kill supersedes the strike that preceded it", () => {
 		expect(world.galaxies[0].episodes[DIVERT_ACTOR.key].initiating.kind).toBe(
 			"destroy",
 		);
+	});
+});
+
+describe("H4's sustained-fire clock (#396)", () => {
+	/**
+	 * Aimed fire from a pilot who keeps the nose on the target, `frames` of it,
+	 * reporting each step. A civilian flees, so the beam does not land on every
+	 * frame — which is the point of `landedFireS` and the reason every row below
+	 * is written around *seconds that landed* rather than frames elapsed.
+	 */
+	function holdFire(
+		start: Engagement,
+		frames: number,
+		each: (step: EngagementStep, index: number) => void = () => {},
+		firing: boolean | ((index: number) => boolean) = true,
+	): Engagement {
+		let e = start;
+		for (let i = 0; i < frames; i++) {
+			const on = typeof firing === "boolean" ? firing : firing(i);
+			const step = stepEngagement(
+				e,
+				chaser(e, { pos: v3() }),
+				on ? SHOT : { fired: false, damage: 0 },
+				DT,
+			);
+			e = step.engagement;
+			each(step, i);
+		}
+		return e;
+	}
+
+	/**
+	 * A pilot who never lets the range open: re-seated two kilometres along the
+	 * line to the target every frame. The fleeing ship outruns a stationary
+	 * marksman's cone within a few seconds, and a row about a clock that has to
+	 * survive the gaps cannot be written against a target that simply escapes.
+	 */
+	function tracker(target: Engagement): DuelPilot {
+		const dir = normalizeOr(sub(target.flight.ship.pos, v3()), v3(0, 0, -1));
+		const pos = sub(target.flight.ship.pos, scale(dir, 2));
+		return {
+			ship: { pos, vel: v3() },
+			nose: dir,
+			aimOrigin: pos,
+			aimNose: dir,
+			hull: 100,
+			frameVel: v3(),
+		};
+	}
+
+	test("the first landed hit is reported once, on the frame it lands", () => {
+		let said = 0;
+		const e = holdFire(ahead("freighter", 2), 60, (s) => {
+			if (s.firstHit) said++;
+		});
+		expect(said).toBe(1);
+		// One hit, and nothing charged for it: the hail is not an accusation, and
+		// a pilot who grazed a citizen on the way past is not yet an offender.
+		expect(e.assaultCharged).toBe(false);
+		expect(chargedOffence({ condition: "operational" }, null, false)).toBe(
+			null,
+		);
+	});
+
+	test("it charges at the seconds it declares, and not a frame sooner", () => {
+		const declared = ASSAULT_FIRE_S / DT;
+		let crossed = -1;
+		const { engagement } = (() => {
+			let e = ahead("freighter", 2);
+			let i = 0;
+			while (i < 6000) {
+				const step = stepEngagement(e, chaser(e, { pos: v3() }), SHOT, DT);
+				e = step.engagement;
+				if (step.assaultCharged) {
+					crossed = i;
+					break;
+				}
+				i++;
+			}
+			return { engagement: e };
+		})();
+		expect(crossed).toBeGreaterThan(0);
+		// Within a frame of the declared figure. `landedFireS` sums a third of a
+		// millisecond sixty times a second, so the crossing is not exactly on it;
+		// what the row refuses is a clock that runs short or never crosses at all.
+		expect(Math.abs(crossed - declared)).toBeLessThanOrEqual(1);
+		expect(engagement.landedFireS).toBeGreaterThanOrEqual(ASSAULT_FIRE_S);
+		expect(engagement.assaultCharged).toBe(true);
+	});
+
+	test("once it has charged it charges no more, however long the fight runs", () => {
+		let charges = 0;
+		const e = holdFire(ahead("freighter", 2), 900, (s) => {
+			if (s.assaultCharged) charges++;
+		});
+		expect(charges).toBe(1);
+		expect(e.assaultCharged).toBe(true);
+		expect(e.landedFireS).toBeGreaterThan(ASSAULT_FIRE_S);
+	});
+
+	test("the clock holds across the gaps between hits", () => {
+		// Two seconds of fire, five seconds of coasting to line up again, then as
+		// much more as the fleeing target allows. A clock that reset between hits
+		// would make the charge a marksmanship test and hand one who jinks a
+		// discount on the same act.
+		let e = ahead("freighter", 2);
+		let charged = 0;
+		const fire = (from: Engagement, frames: number, on: boolean) => {
+			let cur = from;
+			for (let i = 0; i < frames; i++) {
+				const step = stepEngagement(
+					cur,
+					tracker(cur),
+					on ? SHOT : { fired: false, damage: 0 },
+					DT,
+				);
+				cur = step.engagement;
+				if (step.assaultCharged) charged++;
+			}
+			return cur;
+		};
+		e = fire(e, 120, true);
+		const held = e.landedFireS;
+		expect(held).toBeGreaterThan(0);
+		expect(held).toBeLessThan(ASSAULT_FIRE_S);
+		// Coasting neither adds to the clock nor takes anything off it.
+		const coasted = fire(e, 300, false);
+		expect(coasted.landedFireS).toBe(held);
+		expect(charged).toBe(0);
+		// Back on for two more seconds — two seconds, because the charge arrives
+		// whenever the held seconds pass the figure and no earlier.
+		const back = fire(coasted, 120, true);
+		expect(back.landedFireS).toBeGreaterThan(held);
+		expect(charged).toBe(back.landedFireS >= ASSAULT_FIRE_S ? 1 : 0);
+		const finished = fire(back, 600, true);
+		expect(charged).toBe(1);
+		expect(finished.assaultCharged).toBe(true);
+	});
+
+	test("a stray hit under the threshold hails and files nobody", () => {
+		// Both halves of the free-shot case at once: half a second of a laser that
+		// grazed a hull on the way past is not a deliberate act, so nothing is
+		// charged and no station is filed as a hearer — and yet the victim said
+		// something to the pilot who hit it, on that first frame.
+		let hailed = 0;
+		let charged = 0;
+		const e = holdFire(ahead("freighter", 2), 30, (s) => {
+			if (s.firstHit) hailed++;
+			if (s.assaultCharged) charged++;
+		});
+		expect(hailed).toBe(1);
+		expect(charged).toBe(0);
+		expect(e.landedFireS).toBeLessThan(ASSAULT_FIRE_S);
+		expect(
+			chargedOffence({ condition: "operational" }, null, e.assaultCharged),
+		).toBe(null);
+	});
+
+	test("a fight resumed after a reload is the same incident, not a fresh clock", () => {
+		// The double charge #396 rules out by name. Reload into a fight whose
+		// assault the world says is paid and the engagement starts latched: the
+		// clock never crosses again, because it never started.
+		const resumed = engage(
+			{
+				key: KEY,
+				hullId: "freighter",
+				pos: v3(0, 0, -2),
+				vel: v3(),
+				nose: v3(0, 0, -1),
+				up: v3(0, 1, 0),
+				voyageOrdinal: 0,
+			},
+			5,
+			{ assaultAlreadyCharged: true },
+		);
+		expect(resumed.landedFireS).toBe(0);
+		expect(resumed.assaultCharged).toBe(true);
+		let charged = 0;
+		const e = holdFire(resumed, 900, (s) => {
+			if (s.assaultCharged) charged++;
+		});
+		expect(charged).toBe(0);
+		// The seconds still accumulate — the law does not need them, but a reader
+		// of the readout should see the fight, not a clock frozen at zero.
+		expect(e.landedFireS).toBeGreaterThan(ASSAULT_FIRE_S);
+		// And the law reads it as paid, whatever the carrier's own row says. Its
+		// row has nothing to say: it is an operational ship under fire.
+		expect(
+			chargedOffence(
+				{ condition: "operational" },
+				null,
+				resumed.assaultCharged,
+			),
+		).toBe("assault");
+	});
+
+	test("a strike on top of a paid assault is charged the difference", () => {
+		// The lattice the other way round: an ordinary carrier struck while the
+		// assault is already paid is `parked-home`, and `chargedOffence` reports
+		// the worse of the two so the divert costs 2 and the kill costs the rest.
+		const world = divertOne(newWorld(1));
+		const row = effectiveCarrier(
+			world.galaxies[0],
+			DIVERT_ACTOR.key,
+			DIVERT_AT + 10,
+		);
+		expect(chargedOffence(row, "clean", true)).toBe("struck");
+		expect(marginalOffenceHeat("clean", "struck", "assault")).toBe(2);
+		expect(marginalOffenceHeat("clean", "destroyed", "assault")).toBe(27);
+		// And the whole ladder, in the order a pilot actually does it: 13, 2, 25.
+		expect(13 + 2 + 25).toBe(OFFENCE_HEAT.destroyed);
 	});
 });

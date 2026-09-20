@@ -46,6 +46,7 @@ import {
 	recoveryProcessId,
 	serializeWorld,
 	setDeficits,
+	setLegalAssaulted,
 	setLegalHeat,
 	setLegalWitnesses,
 	visit,
@@ -1212,6 +1213,7 @@ describe("§9.6 round trip", () => {
 			heat: 42,
 			updatedAt: 20,
 			witnesses: [],
+			assaulted: [],
 		});
 		expect(after.galaxies[3].visited).toEqual([]);
 	});
@@ -1254,10 +1256,12 @@ describe("#366 H6: `witnesses` across the save boundary", () => {
 		// Stripped and re-hashed: the bytes the previous build actually wrote.
 		const raw = rehash(serializeWorld(setLegalHeat(newWorld(WORLD), 2, 40, 5)));
 		delete legalOf(raw, 2).witnesses;
+		delete legalOf(raw, 2).assaulted;
 		expect(parseWorld(raw).galaxies[2].legalStatus).toEqual({
 			heat: 40,
 			updatedAt: 5,
 			witnesses: [],
+			assaulted: [],
 		});
 	});
 
@@ -1455,6 +1459,108 @@ describe("§9.10 facility knowledge", () => {
 		expect(() => parseWorld(raw)).toThrow(
 			/worldSchemaVersion 1 needs a migration/,
 		);
+	});
+});
+describe("#396: the sustained-fire charge across the save boundary", () => {
+	/** The `witnesses` rows above are the model for everything here, and the
+	 *  second list is held to every one of them. It is a *second* list rather
+	 *  than a field on the carrier's row because an assault has no transition to
+	 *  write — H3c's `disable` is the only mark a traffic carrier ever gets from
+	 *  the player's fire, and the charge lands before the hull gives way. */
+
+	const rehash = (raw: unknown): unknown => {
+		const body = { ...(raw as Record<string, unknown>) };
+		delete body.integrity;
+		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+	};
+
+	const legalOf = (raw: unknown, galaxy = 0) =>
+		(raw as { galaxies: Array<{ legalStatus: Record<string, unknown> }> })
+			.galaxies[galaxy].legalStatus;
+
+	test("an empty charge list is not written at all", () => {
+		// Same reason as the witnesses, and it is the reason the schema version
+		// did not move: an unwitnessed, uncharged row writes the bytes it wrote
+		// before either member existed, and the integrity hash over them still
+		// matches a save the game has been taking for months.
+		expect(
+			legalOf(serializeWorld(setLegalHeat(newWorld(WORLD), 0, 42, 20))),
+		).not.toHaveProperty("assaulted");
+	});
+
+	test("a save from before either list existed parses to two empty lists", () => {
+		const raw = rehash(serializeWorld(setLegalHeat(newWorld(WORLD), 2, 40, 5)));
+		delete legalOf(raw, 2).witnesses;
+		delete legalOf(raw, 2).assaulted;
+		expect(parseWorld(raw).galaxies[2].legalStatus).toEqual({
+			heat: 40,
+			updatedAt: 5,
+			witnesses: [],
+			assaulted: [],
+		});
+	});
+
+	test("a charge list round-trips, in the canonical carrier order", () => {
+		let world = setLegalHeat(newWorld(WORLD), 0, 13, 0);
+		world = setLegalAssaulted(world, 0, [OTHER, KEY], 0);
+		const raw = serializeWorld(world);
+		expect(legalOf(raw).assaulted).toEqual(
+			[KEY, OTHER].sort(compareCarrierKeys),
+		);
+		expect(parseWorld(raw)).toEqual(world);
+	});
+
+	test("the two lists are written independently of each other", () => {
+		// A charge filed with no hearers, and a killing heard with nothing
+		// charged: both are ordinary (H5 files hearers whatever the offence
+		// cost; a target Wanted at the tick makes the charge free). A writer
+		// that stored them as one row could not express either.
+		let heard = setLegalHeat(newWorld(WORLD), 0, 13, 0);
+		heard = setLegalWitnesses(heard, 0, [KEY], 0);
+		expect(legalOf(serializeWorld(heard))).not.toHaveProperty("assaulted");
+		expect(legalOf(serializeWorld(heard)).witnesses).toEqual([KEY]);
+		let charged = setLegalHeat(newWorld(WORLD), 0, 13, 0);
+		charged = setLegalAssaulted(charged, 0, [KEY], 0);
+		expect(legalOf(serializeWorld(charged))).not.toHaveProperty("witnesses");
+		expect(legalOf(serializeWorld(charged)).assaulted).toEqual([KEY]);
+	});
+
+	test("a charge that is not a carrier key is refused, not quietly dropped", () => {
+		let world = setLegalAssaulted(
+			setLegalHeat(newWorld(WORLD), 0, 13, 0),
+			0,
+			[KEY],
+			0,
+		);
+		const raw = rehash(serializeWorld(world));
+		legalOf(raw).assaulted = ["station-trade"];
+		expect(() => parseWorld(raw)).toThrow(/assaulted/i);
+	});
+
+	test("a duplicated charge is refused at the write and at the parse", () => {
+		const world = setLegalHeat(newWorld(WORLD), 0, 13, 0);
+		expect(() => setLegalAssaulted(world, 0, [KEY, KEY], 0)).toThrow(
+			/assaulted/i,
+		);
+		const raw = rehash(serializeWorld(setLegalAssaulted(world, 0, [KEY], 0)));
+		legalOf(raw).assaulted = [KEY, KEY];
+		expect(() => parseWorld(raw)).toThrow(/assaulted/i);
+	});
+
+	test("a charge cleared across a save stays cleared", () => {
+		// The incident ends when the heat decays below Wanted, and a list that
+		// came back from a save it was cleared out of would re-pardon a carrier
+		// whose incident the law has already closed.
+		let world = setLegalAssaulted(
+			setLegalHeat(newWorld(WORLD), 0, 13, 0),
+			0,
+			[KEY],
+			0,
+		);
+		world = setLegalAssaulted(world, 0, [], 1e6);
+		expect(
+			parseWorld(serializeWorld(world)).galaxies[0].legalStatus.assaulted,
+		).toEqual([]);
 	});
 });
 

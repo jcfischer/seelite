@@ -189,12 +189,43 @@ duration the game ships.
 The principal was offered this, the shipped 20% flee threshold, and a
 shields-down trigger with a 600 s absence, and chose this.
 
+**What this trigger governs is the divert, and only the divert** (#396, built by
+#429). Read as *the* trigger for anything, it made the hull strike the first
+charge an engaged civilian ever drew — which is what the flight report that
+became #396 was about: a pilot who held a beam on a Clean carrier reached the
+divert, and therefore Wanted, and therefore a closed berth, with nothing said in
+between. H4's sustained-fire rung now charges inside that silence, five seconds
+of landed fire, while the shields are still two-thirds up. It does not divert,
+does not shorten T, and writes no transition: an ordinary carrier under fire
+still gets exactly one, this one.
+
 ### H4 — The heat an offence costs
 
 | Offence against a **Clean** carrier | Heat |
 | --- | --- |
 | Destroyed | 40 |
 | Struck (the H3d hit) | 15 |
+| Sustained fire (`ASSAULT_FIRE_S` of landed fire) | 13 |
+
+**The third rung is #396's, and its figure has somewhere it may not go.** The
+charge's whole legal life is the open interval between `WANTED_HEAT` and the
+strike's 15, and neither end is a rounding. At 10 the charge crosses Wanted and
+un-crosses it on the frame after it is written, because decay starts the instant
+the write is stamped: the offence becomes a flash no berth and no responder can
+act on, which is the invisibility the flight report was about. At 15 the lattice
+ties, and two rungs the law has to order become one figure — a strike after an
+assault then reports as costing nothing, having forgotten which of the two it is
+looking at. `tests/legal.test.ts` holds the interval, so a retune that leaves it
+is a red run rather than a quiet change in what the law is.
+
+**Why five seconds.** `ASSAULT_FIRE_S` is 29 % of the 17.5 s an unbroken beam
+takes to open one facing of a freighter, so the charge lands while the shields
+are still two-thirds up: the pilot is charged for what they did to a citizen, not
+for how long it took the gun to get through the armour. The clock **holds across
+the gaps** — it counts fire that *landed*, and a pilot who breaks off to line up
+again has not un-done the seconds already spent. A clock that reset between hits
+would make the charge a marksmanship test and hand one who jinks a discount on
+the same act. Both figures are declared starting forms (H12's precedent).
 
 An offence against a Wanted or Fugitive carrier costs nothing. The offence is
 judged on the target's **true** standing at the tick it happens
@@ -218,24 +249,56 @@ not reach.
 What that means in play, **derived rather than measured, and asserted by a
 headless test**: one Clean kill is about 60 minutes Wanted; two in quick
 succession are about 12 minutes Fugitive and 90 minutes before Clean; a strike
-alone is about 17 minutes Wanted.
+alone is about 17 minutes Wanted, and the sustained-fire charge on its own about
+11 minutes — the shortest Wanted interval the game can produce, and the reason
+H4's third rung is the one that teaches the law rather than the one that ends a
+career.
 
-### H5 — The station the offence happened beside turns hostile
+### H5 — The stations that heard the offence turn hostile
 
-If an offence's frame body is a station, that station turns hostile, and stays
-hostile while the player's heat is Wanted or above. For one Clean kill that is
-about 60 minutes.
+Every station within earshot of an offence turns hostile, and stays hostile
+while the player's heat is Wanted or above. For one Clean kill that is about 60
+minutes. (This clause read "If an offence's frame body is a station, that
+station turns hostile" until #396 amended it; what follows records both.)
 
 The principal was offered this, the same with the shipped 600 s cooldown, the
 victim's home station noticing too, and no station noticing, and chose this.
 
 This is the replacement `docking.md` §6 reserved for #8 ("#8 replaces it with
 legal-status decay"), and its condition holds: the exit is decay, so no save can
-be locked out of its only station. **The reach is `NEAR_FAR_KM`, 20,000 km**,
-because that is the frame body's rule and the place a pilot is *at*; it is
-stated here so nobody reads it as a separate witness radius. The
+be locked out of its only station. The
 barge-without-clearance flip keeps its 600 s cooldown — that is a different
 offence and not this node's.
+
+**The reach was the frame body's, and #396 amended that.** As written, the rule
+inherited `NEAR_FAR_KM` — 20,000 km, the distance at which a body is a place the
+ship is *at* rather than a light in the distance — and so it filed exactly one
+witness per offence, whichever berth the flight assist happened to have chosen.
+That rule answers "where is this ship standing", and it is a poor answer to "who
+was within earshot": beside a busy berth the frame body is picked by distance
+alone, so a carrier gunned down in the middle of a system indicted one station
+and let the rest of them advertise. A pilot who shot a Clean carrier down in a
+berth's visual range, from a point the assist had assigned to another, was
+unknown to the station that could see the muzzle.
+
+It is now a transmission with a range and a sender. **`DISTRESS_RANGE_KM` is
+three times `NEAR_FAR_KM`**, declared in `src/distress.ts`, and the measure is
+taken from the **victim**, not the pilot: every station in the system is asked
+the same straight-line question, and a system with four berths can produce four
+hearers or none. Three and not one, because at `NEAR_FAR_KM` the amendment picks
+the same witness the old rule did and is a no-op dressed as a change; three and
+not ten, because at ten times it a shot near a system's middle indicts every
+berth in it, which turns H5's per-station judgement into a per-system one and
+leaves decay as the only thing left of the rule. Straight-line, with no
+occlusion: nothing in this world attenuates a radio, and a station behind the
+star would be a second model rather than a second figure.
+
+**An empty hearer set is a computed answer.** `withOffence` takes it as a
+mandatory positional argument — `[]` means "looked, nobody was in earshot" and
+there is no third spelling — because the difference between "nobody heard" and
+"the caller never looked" is the one `witnessed: CarrierKey | null` was originally
+required to keep, and an optional argument erases it in the direction that reads
+as the law working.
 
 ### H6 — Witnesses are saved on `LegalStatus`
 
@@ -243,14 +306,37 @@ offence and not this node's.
 interface LegalStatus {
   heat: number;
   updatedAt: number;
-  witnesses: CarrierKey[];   // stations that saw an offence
+  witnesses: CarrierKey[];   // stations that heard an offence
+  assaulted: CarrierKey[];   // carriers already charged with sustained fire
 }
 ```
 
 A station is hostile when it is in `witnesses` and heat is Wanted or above. The
 list is cleared lazily when heat is read below Wanted. It holds each station at
-most once per galaxy, so what reaches its bound is offending beside every
-station in a galaxy inside one Wanted interval.
+most once per galaxy, so what reaches its bound is offending within earshot of
+every station in a galaxy inside one Wanted interval.
+
+**`assaulted` is #396's second list, and it is here rather than on the carrier's
+row because an assault has nowhere else to be written.** A traffic carrier under
+fire gets exactly one transition from the player, H3c's `disable`, and the
+sustained-fire charge lands *before* the hull point that earns it: a Clean ship
+with two-thirds of its shields left has no row to point at that says it was
+assaulted. The alternative the ruling named — a field on the carrier's own row —
+would have to invent a state that row cannot hold. So the fact sits beside the
+witnesses, arrives by the same door, is omitted by `canonicalEnvelope` when empty
+for the same hash reason as the witnesses, is cleared by the same read below
+Wanted, and holds each carrier at most once per galaxy. Its bound is the
+galaxy's Traffic rather than its berths, which is a longer list, and
+`measure-save-size.ts` prices that in its ceiling tiers rather than leaving it
+argued.
+
+**One clear ends the incident, and it takes both lists.** "Once per carrier per
+incident" needs an ending, and the law's only ending is decay: clearing the
+witnesses and not the charges would pardon a carrier forever, and the other way
+round would leave a pilot re-chargeable inside an incident they are still Wanted
+for. That is what makes the mark safe to write whatever the charge cost: a free
+charge — a target whose rotation had turned it Wanted at the tick, F7 — is spent
+and forgotten together, on the next read that comes in below Wanted.
 
 The principal was offered this, an "offence witnessed" episode on the station's
 own world-state row, and session-only hostility, and chose this. Session-only
@@ -276,7 +362,32 @@ the full account, beside §9.10's opposite case.
 ### H7 — The HUD shows standing, and shipyards refuse Wanted
 
 The left console's readout shows LEGAL STATUS as Clean, Wanted or Fugitive,
-stepping back as heat decays, on both left tabs. The rail keeps its label. Every shipyard denies docking with the reason `hostile` while heat is
+stepping back as heat decays, on both left tabs. The rail keeps its labels, and **one of them carries a value for the first
+time** (#396): the Signals rail's `HAILS` row has been authored in
+`live-cockpit.ts` since the console was built and has never had anything beside
+it. It now holds the callsign transmitting, or `NONE` — and `NONE` rather than
+blank, because a label that shows nothing when nothing has happened is a label a
+pilot cannot tell apart from a console that was never wired, which is what this
+one was for three hundred lines of its life.
+
+**The struck Clean carrier's hail is drawn on the first landed hit**, through the
+three channels every other emergency in this game uses: the rail's value, a line
+on the Communications log, and `audio.alert()`. It is Clean-only by F7's
+judgement and not the pilot's — a Wanted carrier being shot at is an outlaw being
+stopped, and it does not get to report a crime the pilot is entitled to commit.
+And it says `cease fire` and nothing about a charge, because the hail is on the
+frame the first hit lands and the sustained-fire clock is still running: a victim
+that announces a charge which has not been made tells the pilot the wrong thing
+on the one surface that is honest about the moment.
+
+**The hail line is session-only**, which is #396's ruling rather than an
+omission: there is no world row that says "this carrier hailed at T", because
+nothing about the victim changed at T, and a saved one would be a §7 state domain
+for a line of console text. `raider-log.ts` derives every other line in the log
+from world state and keeps no store, and its header carries this line as the
+exception and says why it is merged there anyway.
+
+Every shipyard denies docking with the reason `hostile` while heat is
 Wanted or above, which is `combat-model.md` §4's "thresholds determine … shipyard
 hostility". Trade stations and refineries become hostile only through H5.
 
@@ -290,11 +401,30 @@ the manifest, and the `destroy` with the player's provenance is the evidence a
 bounty job reads. Nothing here pays cash (`combat-model.md` §4,
 `ordinary-requests.md`).
 
-### H9 — A kill supersedes the strike that preceded it
+### H9 — The worst offence in an incident supersedes the ones before it
 
 The heat for one **incident** is the largest offence in it, not the sum. A strike
 followed by a kill costs 40, not 55, so H4's durations are the ones a pilot
 meets.
+
+**The ladder is three deep since #396, and it orders by rung rather than by
+figure**: `assault < struck < destroyed`, and each pair costs the larger one's
+figure and no more — assault then strike is 13 + 2, assault then kill is 13 + 27,
+and every pair in either order lands on the larger rung. `marginalOffenceHeat`
+therefore compares `offenceRank`, not the two heats: comparing figures works
+while the rungs happen to be spaced and silently stops working the moment two are
+level, which is the failure the interval in H4 exists to refuse.
+
+**What each rung reads itself as already-paid comes from a different place, and
+that is not untidiness.** The strike and the kill are read off the carrier's row,
+because the row is the copy that survives a reload — the §4 episode ledger keeps
+only the latest episode, and the kill's `interrupt` erases the strike from it.
+The assault has nothing on the row to read (H6), so it is read from
+`LegalStatus.assaulted`. A resumed fight therefore gets its clock seeded from
+the world rather than from zero, and `engage`'s third argument is required for
+`FlightPerformance`'s reason: a caller that omitted it would charge a pilot a
+second time for the five seconds they have already served, and nothing about the
+missing argument looks wrong in a diff.
 
 **An incident is not §4's causal episode, and the difference is load-bearing.**
 The `disable` opens an episode and the kill's `interrupt` closes it, so the
@@ -316,7 +446,7 @@ ruling, not a detail inside it.
 
 The principal was offered this and summing, and chose this.
 
-### H10 — Three changes, not one
+### H10 — Three changes, not one (then four)
 
 1. **Destroy, drop the manifest, heat.** H0, H1, H2, H3; the projection gating on condition;
    H4's kill write and the decaying reader; the rail (H7's first half); the
@@ -324,6 +454,14 @@ The principal was offered this and summing, and chose this.
    **A survivor is transient in this change** — H3b is the next one.
 2. **The diversion.** H3b, H3c, H3d, H4's strike heat, and H9.
 3. **Witnesses and shipyards.** H5, H6 and H7's second half.
+4. **The sustained-fire offence, the victim's hail, and earshot.** H3d narrowed,
+   H4's third rung, H5's reach, H6's second list, H7's rail value, H9's three-rung
+   lattice. Ruled by
+   [#396](https://github.com/jcfischer/seelite/issues/396) off the flight report
+   that was [#395](https://github.com/jcfischer/seelite/issues/395), built by
+   [#429](https://github.com/jcfischer/seelite/issues/429), and not a child of
+   #362: it amends three ratified H-clauses and adds a rung rather than landing a
+   piece that was always owed.
 
 The principal chose this over one change. The second and third are child nodes
 of #362 — [#365](https://github.com/jcfischer/seelite/issues/365) and
@@ -484,8 +622,10 @@ Each is amended in the change that builds it, not ahead of it.
 | Standing and manifest keyed on the slot | `carrier-identity.md` §2, §3 | `instanceOrdinal` in both signatures, and the voyage is `flownVoyageOrdinal` (F11, §3, §5) (1) |
 | §7's "Nothing writes heat" and §11's handoff | `carrier-identity.md` §7, §11 | Discharged, pointing here (1) |
 | Offences and thresholds named without figures | `combat-model.md` §4 | §4.2: a pointer to H4 and H7, plus H1, H2 and H11 as built — the replacement, the combat condition, and a canister's tonnage as a field with a scoop that takes what fits, the exception to §4.1's one-tonne canister (1, 3) |
+| "the frame body is the witness" — H5 as ratified | this spec's H5, H6 | Amended by #396, built by #429: the reach is `DISTRESS_RANGE_KM`, measured from the victim, and the hearer set is computed rather than inherited from the flight assist |
+| Sustained fire is not an offence, and a hail is nowhere drawn | this spec's H3d, H4, H7, H9 | Amended by #396, built by #429: the third rung, the `assaulted` list, and the rail's `HAILS` value |
 | The interim 600 s hostility cooldown awaiting #8 | `docking.md` §6 | Kept, and narrowed to what it always was: the barge flip's exit. H5 adds a **second**, derived hostility beside it whose exit is heat decay — two fields, because they have two exits (3) |
-| `LegalStatus` is `{ heat, updatedAt }` | `persistent-world-state.md` §7 | Gains `witnesses` (3) |
+| `LegalStatus` is `{ heat, updatedAt }` | `persistent-world-state.md` §7 | Gains `witnesses` (3) and `assaulted` (4) |
 
 ## Verification obligations
 
@@ -507,11 +647,33 @@ Each is amended in the change that builds it, not ahead of it.
 | A witness is hostile until heat decays | Headless: offence beside a station, hostile at Wanted, open below it, across a save | 3 |
 | Shipyards refuse Wanted | Headless: denial reason `hostile` | 3 |
 | Old saves load | Headless: a save without `witnesses` parses to `[]` | 3 |
+| The sustained-fire rung is legally alive | Headless: its heat sits inside the 10 … 15 interval, crosses Wanted and stays there for the interval decay gives it | 4 |
+| The ladder cannot tie | Headless: every ordered pair of the three rungs, in both orders, costs the larger rung and no more | 4 |
+| The clock charges at the seconds it declares | Headless: to the frame and not a frame early; holds across the gaps between hits; a stray hit under the threshold charges nothing and files nobody | 4 |
+| One charge per carrier per incident | Headless: latched once however long the fight runs; a fight resumed after a reload starts latched and never re-crosses; the mark clears with the heat | 4 |
+| Earshot is the victim's | Headless: a berth past `NEAR_FAR_KM` but inside `DISTRESS_RANGE_KM` is filed; every station in earshot is filed and not the nearest; `[]` is a computed answer | 4 |
+| Both lists survive the save boundary | Headless: `assaulted` round-trips in canonical order, is omitted when empty, and a save predating either list parses to two empty ones | 4 |
+| The hail is drawn | Browser probe: the rail's `HAILS` value, a line on the Communications log, and the alert, on the frame the first hit lands against a Clean carrier — and none of the three for a Wanted one | 4 |
+| What the pilot was charged for is legible | **The principal flying it**: held fire long enough to be charged, saw the hail and the rail value and the log line, and could say afterwards what the five seconds cost them | 4 |
 
 ## Scope
 
-This builds civilian combat and its legal consequence. It does not build police
-AI, faction simulation, bounty economics, the job catalogue, the scan verb or the
+This builds civilian combat and its legal consequence. It does not build
+faction simulation, bounty economics, the job catalogue, the scan verb or the
 name draw — the last two are #364's, shipped beside this node's standing rather
 than inside it. It does not reopen the request contract, the law model, the
 combat model or `carrier-identity.md`'s F1–F12, the lootable manifest included.
+
+**"It does not build police AI" is retired** (#396, discharged by #429). That
+exclusion was written while nothing in the game could hear an offence: with no
+witness, no responder and no consequence beyond heat, building a police hull
+meant inventing the thing the law was supposed to justify. H5 now files every
+station within earshot, the sustained-fire charge means a distress call has a
+moment to be made at, and [#428](https://github.com/jcfischer/seelite/issues/428)
+owns the question of who answers one. Nothing here builds the responder — #429
+was written against a map that still said police AI was out of scope, and its
+own exclusion is the line above being deleted — but it is no longer a thing this
+spec refuses, and #428's answer is what will decide its shape. What #429 did
+discharge is the *legibility* half of what the exclusion was standing in for: a
+pilot is now told, by the victim, by the rail, by the log, and by the charge's
+own line, before any responder exists to be surprised by.

@@ -23,6 +23,36 @@
  * F7), whether or not the pilot scanned it. So `offenceHeat` takes a standing,
  * not what the pilot knew.
  *
+ * **The ladder has three rungs since #396, and they are ordered by rung.** A
+ * kill is 40, a hull strike 15, and five seconds of landed fire on one ordinary
+ * carrier 13 — `OFFENCE_LADDER` carries that order and `offenceRank` reads it,
+ * because `marginalOffenceHeat` has to compare *which act* the incident already
+ * carries rather than which figure is larger. Comparing the figures works for as
+ * long as nobody retunes one into another, and the interval that keeps them
+ * apart is `tests/legal.test.ts`'s, not this module's.
+ *
+ * ## Why the assault charge is remembered here and not on the carrier's row
+ *
+ * H9 reads an incident off the carrier's own row — `trafficPresence` says a
+ * struck carrier is standing in its home berth, and that is what tells a kill it
+ * is superseding a strike. **An assault has no such fact to read.** A traffic
+ * carrier under fire receives exactly one transition from the player, H3c's
+ * `disable`, and it is the hull strike that writes it; the sustained-fire charge
+ * lands *before* the first hull point is spent, while the target is still an
+ * operational Clean ship with nothing on its row saying anything happened to it.
+ * A field on that row would have to describe a state the row's own enumeration
+ * cannot hold, and `world-state.ts` refuses writes it has not been told about.
+ *
+ * So the charge is a second saved list beside `witnesses`, which is #396's
+ * stated preference and the same door the witnesses came in by: omitted by
+ * `canonicalEnvelope` when empty, so an old save keeps the bytes and the hash it
+ * was written with, parsed to `[]` when absent, and cleared by `settleWitnesses`
+ * on the same read below Wanted. **The clear is what makes it safe to write the
+ * mark whatever the charge cost**: an incident ends when its heat decays below
+ * Wanted, and a free charge — a target whose rotation had turned it Wanted at
+ * the tick (F7) — is spent and forgotten on the next such read rather than
+ * sitting in the row pardoning a carrier indefinitely.
+ *
  * ## The two refusals, and why they are not one field
  *
  * A station stops admitting this pilot for two unrelated reasons, and the code
@@ -48,6 +78,7 @@ import {
 	type WorldState,
 	setLegalHeat,
 	setLegalWitnesses,
+	setLegalAssaulted,
 } from "./world-state";
 
 export const WANTED_HEAT = 10;
@@ -55,10 +86,34 @@ export const FUGITIVE_HEAT = 60;
 export const HEAT_CAP = 100;
 export const HEAT_HALF_LIFE_S = 30 * 60;
 
-/** What an offence against a **Clean** carrier costs. */
-export const OFFENCE_HEAT = { destroyed: 40, struck: 15 } as const;
+/**
+ * What an offence against a **Clean** carrier costs.
+ *
+ * **`assault` sits in an interval it may not leave, and the interval is not a
+ * dial.** At or below `WANTED_HEAT` the charge crosses Wanted and un-crosses it
+ * on the next frame, so the offence is a flash nothing can act on; at or above
+ * the strike's 15 the lattice below ties and two rungs the law has to order
+ * become one. Its whole legal life is the open interval 10 … 15, which is why
+ * `tests/legal.test.ts` pins the figure against both bounds rather than quoting
+ * it. The figure itself is a **declared starting form** (H12's precedent): 13 is
+ * eleven minutes Wanted, of the four to fourteen minutes the interval buys.
+ */
+export const OFFENCE_HEAT = { assault: 13, struck: 15, destroyed: 40 } as const;
 
 export type Offence = keyof typeof OFFENCE_HEAT;
+
+/**
+ * The three rungs, least to most serious. **H9's lattice is this order and not
+ * an ordering of the figures above** — the figures are dials and the order is
+ * the law, so `marginalOffenceHeat` compares ranks. Read the two together: the
+ * ordering is what the figures must never be allowed to contradict, and the test
+ * that holds one is the test that holds the other.
+ */
+export const OFFENCE_LADDER = ["assault", "struck", "destroyed"] as const;
+
+/** How serious one offence is, as its position on the ladder. */
+export const offenceRank = (offence: Offence): number =>
+	OFFENCE_LADDER.indexOf(offence);
 /** One vocabulary for the player and for a carrier (`combat-model.md` §4). */
 export type Standing = "clean" | "wanted" | "fugitive";
 
@@ -76,21 +131,34 @@ export const offenceHeat = (target: Standing, offence: Offence): number =>
  * puts the pilot 15 heat and fifteen-odd minutes deeper into Wanted than the
  * ruling chose.
  *
+ * **The comparison is by rank, not by heat, and #396's third rung is why.** A
+ * `Math.max` over the two figures orders the lattice by price, which was sound
+ * while the ladder had two rungs and their prices could not be argued about.
+ * With three, and with every one of the three declared as a tunable starting
+ * form, a retune that priced `assault` above `struck` would silently re-order
+ * the law — an assault would supersede a strike — without a single row of this
+ * file changing. Ordering by `OFFENCE_LADDER` makes that a contradiction between
+ * two things in one module rather than a quiet behaviour.
+ *
  * `already` is read off the world (`traffic-engagement.ts`'s `chargedOffence`),
- * never off a counter — an incident outlives the session that opened it, and the
- * carrier's **row** is the copy that survives the reload. Not the episode ledger:
- * §4 keeps only the latest episode, and the kill's `interrupt` closes the
+ * never off a counter — an incident outlives the session that opened it. The
+ * strike and the kill come from the carrier's **row**, which is the copy that
+ * survives the reload; the assault comes from this module's own list, for the
+ * reason given under "Why the assault charge is remembered here". Not the episode
+ * ledger: §4 keeps only the latest episode, and the kill's `interrupt` closes the
  * strike's before its `destroy` opens one that replaces it.
  */
 export const marginalOffenceHeat = (
 	target: Standing,
 	offence: Offence,
 	already: Offence | null,
-): number =>
-	Math.max(
-		0,
-		offenceHeat(target, offence) - (already ? offenceHeat(target, already) : 0),
-	);
+): number => {
+	const cost = offenceHeat(target, offence);
+	if (already === null || cost === 0) return cost;
+	return offenceRank(already) >= offenceRank(offence)
+		? 0
+		: cost - offenceHeat(target, already);
+};
 
 /** The stored heat decayed to `gameTime`. A clock before the stamp reads the
  *  stamp's figure: decay never runs backwards. */
@@ -108,13 +176,16 @@ export const legalStandingAt = (
 ): Standing => legalStandingOf(heatAt(status, gameTime));
 
 /**
- * Add `heat` to a galaxy's `LegalStatus` at `gameTime`, and record the station
- * the offence happened beside (H5, H6).
+ * Add `heat` to a galaxy's `LegalStatus` at `gameTime`, and file every station
+ * that heard it (H5, H6, as amended by #396).
  *
- * `witnessed` is required and `null` is an answer: it means the frame body was
- * not a station, which is every fight on a cruise leg. A default of `null` would
- * let a caller that never looked at its own frame body write a heat-only row and
- * look exactly like one that had nothing to witness.
+ * `heardBy` is **required, and an empty list is an answer**: it means the caller
+ * computed the earshot and nobody was in it. A default of `[]` would put back the
+ * ambiguity that `witnessed: CarrierKey | null` was originally required to keep —
+ * "nobody heard" against "the caller never looked" — and the caller that never
+ * looked is the one that gets H5's refusal wrong in the direction that reads as
+ * the law working. `distress.ts`'s `stationsInEarshot` is the computation, and it
+ * returns `[]` honestly.
  *
  * **The two halves are written separately, and neither may write the other.**
  * Heat is written decayed-and-stamped; the list is written without touching the
@@ -131,13 +202,11 @@ export const withOffence = (
 	galaxyIndex: number,
 	heat: number,
 	gameTime: number,
-	witnessed: CarrierKey | null,
+	heardBy: readonly CarrierKey[],
 ): WorldState => {
 	const before = world.galaxies[galaxyIndex].legalStatus;
-	const witnesses =
-		witnessed === null || before.witnesses.includes(witnessed)
-			? null
-			: [...before.witnesses, witnessed];
+	const fresh = heardBy.filter((key) => !before.witnesses.includes(key));
+	const witnesses = fresh.length ? [...before.witnesses, ...fresh] : null;
 	if (!(heat > 0) && witnesses === null) return world;
 	let next = world;
 	if (heat > 0) {
@@ -153,6 +222,46 @@ export const withOffence = (
 		next = setLegalWitnesses(next, galaxyIndex, witnesses, gameTime);
 	return next;
 };
+
+/**
+ * Record that this carrier's **sustained-fire charge** has been paid, so a reload
+ * into the same fight cannot charge it again (#396 §2's binding obligation).
+ *
+ * Called by whoever fires the charge, whatever it cost — including the case where
+ * the target's true standing made it free (F7). The rung is once per carrier per
+ * incident and the clock is one clock; a charge judged lawful at its tick has
+ * been spent, and re-running it because the six-hour rotation happened to turn the
+ * target Clean would be a second judgement on the same five seconds of fire.
+ *
+ * **It is written with the heat and never restamps it.** `setLegalAssaulted`
+ * touches the list only, for `withOffence`'s reason: a 0-heat lawful assault that
+ * restamped the row would hold a pilot Wanted past the duration the last real
+ * offence set. And since the list is cleared with the witnesses when heat reads
+ * below Wanted, an assault that cost nothing leaves a mark that the next frame's
+ * settle clears — which is exactly right. The incident lives as long as the heat
+ * it cost, so a mark with nothing to protect has nothing to be for.
+ */
+export const markAssaultCharged = (
+	world: WorldState,
+	galaxyIndex: number,
+	carrier: CarrierKey,
+	gameTime: number,
+): WorldState => {
+	const before = world.galaxies[galaxyIndex].legalStatus;
+	if (before.assaulted.includes(carrier)) return world;
+	return setLegalAssaulted(
+		world,
+		galaxyIndex,
+		[...before.assaulted, carrier],
+		gameTime,
+	);
+};
+
+/** Whether this carrier's sustained-fire charge is already paid. */
+export const assaultCharged = (
+	status: LegalStatus,
+	carrier: CarrierKey,
+): boolean => status.assaulted.includes(carrier);
 
 /**
  * H5: the station an offence happened beside, seen.
@@ -205,14 +314,22 @@ export const dockingRefusedByLaw = (
 			stationHostile(status, station.key, gameTime);
 
 /**
- * H6: drop the witness list once heat has decayed below Wanted.
+ * H6: drop the saved offence memory once heat has decayed below Wanted — the
+ * stations that heard, and the carriers whose sustained-fire charge is spent.
  *
  * **Lazy, on read, and it returns the same world when there is nothing to
  * drop.** The caller is `main.ts`'s flight step, which runs on every frame a
  * session is alive; a clear that copied eight galaxy envelopes each time would
- * mark the save dirty for a pilot who has never fired on anyone. The list is
- * inert below Wanted — nothing reads it there — so this is H6's bound on its
+ * mark the save dirty for a pilot who has never fired on anyone. The lists are
+ * inert below Wanted — nothing reads them there — so this is H6's bound on their
  * size, not a behaviour.
+ *
+ * **Both lists, in one clear, because both incidents are bounded by the same
+ * clock.** #396's "once per carrier per incident" needs an ending, and this is
+ * the only ending the law has: an incident lasts exactly as long as the heat it
+ * cost. Clearing one and not the other would either pardon a carrier forever or
+ * hold a station hostile past its own decay, and both of those are the permanent
+ * lock-out the header refuses.
  */
 export const settleWitnesses = (
 	world: WorldState,
@@ -220,7 +337,13 @@ export const settleWitnesses = (
 	gameTime: number,
 ): WorldState => {
 	const status = world.galaxies[galaxyIndex].legalStatus;
-	if (status.witnesses.length === 0) return world;
+	if (status.witnesses.length === 0 && status.assaulted.length === 0)
+		return world;
 	if (heatAt(status, gameTime) >= WANTED_HEAT) return world;
-	return setLegalWitnesses(world, galaxyIndex, [], gameTime);
+	let next = world;
+	if (status.witnesses.length)
+		next = setLegalWitnesses(next, galaxyIndex, [], gameTime);
+	if (next.galaxies[galaxyIndex].legalStatus.assaulted.length)
+		next = setLegalAssaulted(next, galaxyIndex, [], gameTime);
+	return next;
 };

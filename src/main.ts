@@ -338,7 +338,12 @@ import {
 	marginalOffenceHeat,
 	settleWitnesses,
 	withOffence,
+	assaultCharged,
+	markAssaultCharged,
 } from "./legal";
+// #396: who heard it, and what the victim said. Its own module because the
+// question is the victim's, and `legal.ts` is the law's.
+import { type EarshotStation, hailText, stationsInEarshot } from "./distress";
 import {
 	DUEL_ROW_LABELS,
 	duelConsoleReadout,
@@ -370,7 +375,16 @@ import {
 	clampToCone,
 	stepGimbal,
 } from "./gimbal";
-import { formatRaiderLogLine, newestFirst, raiderLog } from "./raider-log";
+import {
+	formatRaiderLogLine,
+	newestFirst,
+	raiderLog,
+	type RaiderLogLine,
+} from "./raider-log";
+
+/** How many hails the session keeps. The console shows six; the store holds two
+ *  screens, and no more, however long the trigger is held. */
+const HAIL_LOG_KEEP = 12;
 import {
 	RELAY_HIT_RADIUS_KM,
 	RELAY_IDENTIFY_RANGE_KM,
@@ -1974,6 +1988,23 @@ class Game {
 	 * or, in this change, when the ship leaves the materialization band.
 	 */
 	private readonly trafficEngagements = new Map<CarrierKey, Engagement>();
+	/**
+	 * The hails this session has heard (`#396` §3), newest last, capped at
+	 * `HAIL_LOG_KEEP`.
+	 *
+	 * **Session state, deliberately, and the one line in the Communications log
+	 * that is not a derivation.** `raider-log.ts` keeps no store and derives
+	 * every line from world state; a hail is an event that happened to this
+	 * pilot, and there is no world row that says "this carrier hailed at T"
+	 * because nothing about the victim changed at T — a struck Clean carrier that
+	 * was merely shot at, shields still up, is written nowhere. #396 chose the
+	 * loss on reload over a saved fact: the 30-minute decay makes a forgotten
+	 * hail a small loss, and a saved one would be a §7 state domain for a line
+	 * of console text.
+	 */
+	private readonly hails: { line: RaiderLogLine; callsign: string }[] = [];
+	/** Which carriers have already hailed this session. One per carrier per incident. */
+	private readonly hailed = new Set<CarrierKey>();
 	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
 	private readonly trafficNose = new THREE.Vector3();
 	private readonly trafficUp = new THREE.Vector3();
@@ -5463,6 +5494,12 @@ class Game {
 						this.carrierCondition(key).instanceOrdinal,
 						DOMAIN.TRAFFIC_ENGAGEMENT,
 					),
+					// The clock starts where the **world** left it, not at zero: a
+					// fight resumed after a reload is the same incident, and a fresh
+					// engagement would otherwise be a fresh five seconds.
+					{
+						assaultAlreadyCharged: assaultCharged(this.legalStatus(), key),
+					},
 				),
 			);
 		}
@@ -5484,6 +5521,14 @@ class Game {
 					step.returnFire.side,
 					`fired on by ${actor.callsign}`,
 				);
+			// **The hail first, and before anything is written.** The victim
+			// transmits on the frame the first hit lands, and it does so whether
+			// or not the frame also ends the fight — a carrier that dies inside
+			// five seconds of fire still said it, and #396's legibility rule is
+			// about the pilot being told, not about the charge landing.
+			if (step.firstHit) this.hailTrafficCarrier(actor);
+			if (step.assaultCharged)
+				this.assaultTrafficCarrier(actor, step.engagement);
 			if (step.destroyed) {
 				this.destroyTrafficCarrier(actor, step.engagement);
 				continue;
@@ -5491,7 +5536,7 @@ class Game {
 			// The strike is written the frame the hull gives way, and the fight
 			// carries on: H3's intent does not stop because the world has decided
 			// where this ship sleeps tonight.
-			if (step.hullStruck) this.divertTrafficCarrier(actor);
+			if (step.hullStruck) this.divertTrafficCarrier(actor, step.engagement);
 			const rangeKm = length(
 				sub(step.engagement.flight.ship.pos, this.world.ship.pos),
 			);
@@ -5561,15 +5606,32 @@ class Game {
 		);
 	}
 
+	/** Every berth in this system as the earshot question wants it. Stations
+	 *  only: a planet and the star do not answer a distress call. */
+	private earshotStations(): EarshotStation[] {
+		return this.world.system.bodies
+			.filter((body) => body.kind === "station")
+			.map((body) => ({
+				key: this.stationKey(stationOf(this.world.system, body.id)),
+				pos: body.pos,
+			}));
+	}
+
 	/**
-	 * What one offence against one carrier costs the pilot, and which station saw
-	 * it, written (H4, H5, H9).
+	 * What one offence against one carrier costs the pilot, and which stations
+	 * heard it, written (H4, H5, H9, and #396's amendment of H5's reach).
 	 *
 	 * `before` is the carrier's row as it stood **before** the offence was
 	 * applied. That ordering is the rule, not a preference: the divert books its
 	 * own repair in the same tick as the disable, so a row read afterwards
 	 * already describes a struck carrier and the strike would credit itself its
 	 * own charge.
+	 *
+	 * `victim` is where the **carrier** stood, and the earshot is measured from
+	 * it and not from the player. That is the whole of #396's amendment to H5:
+	 * the transmission is the victim's, so a berth that was 5 km from the pilot
+	 * and 70 km from the victim hears nothing, and one 50 km from the victim and
+	 * out past the frame body's reach hears everything.
 	 *
 	 * **The standing the strike was judged on is re-derived, not remembered.**
 	 * Standing is never saved — it is a pure derivation from the instance and the
@@ -5578,7 +5640,9 @@ class Game {
 	 * cost: a strike on a carrier that was Wanted then charged nothing (H4), and
 	 * the kill that finishes it is worth its full 40 even if the six-hour
 	 * rotation has since turned the target Clean. Standing off the row's own clock
-	 * is how that is known without adding a field to the save.
+	 * is how that is known without adding a field to the save. The assault charge
+	 * needs no clock of its own because it is only ever written when it cost
+	 * heat, and heat means the target was Clean at the tick it was judged.
 	 */
 	private chargeTrafficOffence(
 		record: SystemRecord,
@@ -5586,6 +5650,7 @@ class Game {
 		before: EffectiveCarrier,
 		offence: Offence,
 		now: number,
+		victim: Vec3,
 	): number {
 		const standingOf = (atS: number) =>
 			carrierStanding(record.seed, actor.key, before.instanceOrdinal, atS);
@@ -5597,25 +5662,127 @@ class Game {
 				before.recovery === undefined
 					? null
 					: standingOf(before.recovery.startedAt),
+				assaultCharged(this.legalStatus(), actor.key),
 			),
 		);
-		// **The witness is written whether or not the offence cost heat.** A kill
-		// of a Wanted carrier is lawful and free (F7) and a station watching one
-		// saw it; H6's hostility is the list *and* Wanted heat, so filing it can
+		// **The hearers are filed whether or not the offence cost heat.** A kill
+		// of a Wanted carrier is lawful and free (F7) and a station hearing one
+		// heard it; H6's hostility is the list *and* Wanted heat, so filing it can
 		// no more make a Clean pilot hostile than the kill did. Gating the whole
-		// write on `heat > 0` is what a first pass did and it silently drops the
-		// third of H5 that is not about heat.
-		const witnessed = this.frameStationKey();
+		// write on `heat > 0` is what #366's first pass did and it silently drops
+		// the third of H5 that is not about heat.
+		const heardBy = stationsInEarshot(this.earshotStations(), victim);
 		const worldBefore = this.commerceWorld;
 		this.commerceWorld = withOffence(
 			this.commerceWorld,
 			record.galaxy,
 			heat,
 			now,
-			witnessed,
+			heardBy,
 		);
 		if (this.commerceWorld !== worldBefore) this.saveDirty();
 		return heat;
+	}
+
+	/**
+	 * The sustained-fire charge (`civilian-combat.md` H4's third rung, #396): the
+	 * pilot's fire has landed on this ordinary carrier for `ASSAULT_FIRE_S`, and
+	 * that is an offence before a single hull point has been spent.
+	 *
+	 * **This is the frame the flight report was about.** A pilot who held a beam
+	 * on a Clean miner reached the divert — and therefore Wanted, and therefore a
+	 * closed berth — with nothing said at any point in between. Here the clock
+	 * crosses while the shields are still two-thirds up, the rail says who is
+	 * transmitting, and `lastExit` says what it cost, which is the same form the
+	 * divert and the kill already use.
+	 *
+	 * **The charge is marked whatever it cost** (`legal.ts`'s reason). A target
+	 * whose rotation had turned it Wanted made it free, and a free charge spent is
+	 * still spent: re-running the clock because a six-hour rotation happened to
+	 * turn the citizen Clean afterwards would judge the same five seconds twice.
+	 */
+	private assaultTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		const carrier = this.carrierCondition(actor.key);
+		const heat = this.chargeTrafficOffence(
+			record,
+			actor,
+			carrier,
+			"assault",
+			now,
+			engagement.flight.ship.pos,
+		);
+		this.commerceWorld = markAssaultCharged(
+			this.commerceWorld,
+			record.galaxy,
+			actor.key,
+			now,
+		);
+		this.saveDirty();
+		this.lastExit =
+			heat > 0
+				? `${actor.callsign} — sustained fire on a citizen, and that is an offence`
+				: `${actor.callsign} — sustained fire`;
+	}
+
+	/**
+	 * A struck Clean carrier's transmission (#396 §3): the victim telling the
+	 * pilot to stop, on the frame the first hit lands.
+	 *
+	 * **Session-only, and that is the ruling rather than an omission.** #396
+	 * offered a saved fact and a canister-like loss on reload, and chose the
+	 * loss: a hail is an event that happened to *this* session's pilot, and the
+	 * 30-minute decay makes forgetting one a small loss. `raider-log.ts` derives
+	 * its lines from world state and keeps no store, and this line is the
+	 * exception — the module's header says why.
+	 *
+	 * **Clean only, by F7's judgement and not the pilot's knowledge.** A Wanted
+	 * carrier being shot at is an outlaw being stopped, and it does not get to
+	 * report a crime the pilot is entitled to commit; hailing then would make the
+	 * rail's first value a lie about who is the victim.
+	 */
+	private hailTrafficCarrier(actor: TrafficActor) {
+		const record = this.world.system.record;
+		const carrier = this.carrierCondition(actor.key);
+		if (
+			carrierStanding(
+				record.seed,
+				actor.key,
+				carrier.instanceOrdinal,
+				this.world.gameTime,
+			) !== "clean"
+		)
+			return;
+		if (this.hailed.has(actor.key)) return;
+		this.hailed.add(actor.key);
+		this.hails.push({
+			line: {
+				at: this.world.gameTime,
+				key: actor.key,
+				text: hailText(actor.callsign),
+			},
+			callsign: actor.callsign,
+		});
+		// Bounded by the log's own length: a long session with a trigger held
+		// cannot grow this past a screenful of hails.
+		if (this.hails.length > HAIL_LOG_KEEP) this.hails.shift();
+		this.audio.alert();
+	}
+
+	/**
+	 * What the Signals rail's `HAILS` label carries: the carrier transmitting
+	 * now, or `NONE`.
+	 *
+	 * **`NONE` and not blank.** A label that shows nothing when nothing has
+	 * happened is a label a pilot cannot distinguish from a console that has not
+	 * been wired up — which is exactly what this one was for three hundred lines
+	 * of its life, and the reason #396 asked for a value rather than for a
+	 * brighter alarm.
+	 */
+	private hailRailValue(): string {
+		const last = this.hails.at(-1);
+		return last ? last.callsign : "NONE";
 	}
 
 	/**
@@ -5635,7 +5802,7 @@ class Game {
 	 * its own hull (H3), and the pilot keeps the lock: what changes is where the
 	 * world says it will be afterwards.
 	 */
-	private divertTrafficCarrier(actor: TrafficActor) {
+	private divertTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
 		const record = this.world.system.record;
 		const now = this.world.gameTime;
 		const carrier = this.carrierCondition(actor.key);
@@ -5648,6 +5815,7 @@ class Game {
 			carrier,
 			"struck",
 			now,
+			engagement.flight.ship.pos,
 		);
 		this.lastExit =
 			heat > 0
@@ -5706,6 +5874,7 @@ class Game {
 			carrier,
 			"destroyed",
 			now,
+			engagement.flight.ship.pos,
 		);
 		this.audio.explosion();
 		this.lastExit =
@@ -5764,8 +5933,17 @@ class Game {
 					engaged: engagement !== undefined,
 					phase: engagement?.flight.phase ?? null,
 					hull: engagement?.condition.hull ?? null,
+					// #396: the sustained-fire clock, read off the engagement
+					// rather than restated — a probe checking that the charge
+					// arrives at the declared seconds reads the same figure the
+					// step compares against.
+					landedFireS: engagement?.landedFireS ?? null,
+					assaultCharged: engagement?.assaultCharged ?? null,
 				};
 			}),
+			// The hails this session has heard. Session state, so this is the
+			// store and not a derivation of it.
+			hails: this.hails.map((h) => ({ ...h.line, callsign: h.callsign })),
 			legal: {
 				...this.legalStatus(),
 				// The stored pair is at its stamp; `heatNow` is decayed to the clock,
@@ -5795,6 +5973,11 @@ class Game {
 						id: body.id,
 						key,
 						type: station.type,
+						// Where the berth is, because #396's reach is a distance from
+						// the **victim** and a probe checking it has to measure the
+						// same thing the game measured rather than re-derive it from
+						// a body list it would have to assemble itself.
+						pos: body.pos,
 						witnessed: this.legalStatus().witnesses.includes(key),
 						refusedByLaw: this.refusedByLaw(body.id),
 					};
@@ -6090,26 +6273,6 @@ class Game {
 	/** The player's standing now, from the galaxy's heat (H4, H7). */
 	legalStanding() {
 		return legalStandingAt(this.legalStatus(), this.world.gameTime);
-	}
-
-	/**
-	 * The station the ship is *at*, as the key the law files a witness under
-	 * (`civilian-combat.md` H5, H6), or `null` when it is at no station.
-	 *
-	 * **The frame body is the reach, and it is not this node's to set.**
-	 * `updateLocalFrameBody` already answered "beside": nearest body inside
-	 * `NEAR_FAR_KM`, 20,000 km, the distance at which a body is a place the ship
-	 * is at rather than a light in the distance. H5 names that rule precisely so
-	 * nobody reads it as a separate witness radius, and a second threshold here
-	 * would be a second answer to "where was the ship when it fired".
-	 *
-	 * The star is never a witness. Neither is a planet: H5 is about the station
-	 * whose Traffic watched.
-	 */
-	private frameStationKey(): CarrierKey | null {
-		const body = this.frameBody;
-		if (!body || body.kind !== "station") return null;
-		return this.stationKey(stationOf(this.world.system, body.id));
 	}
 
 	/**
@@ -11461,6 +11624,10 @@ class Game {
 			duel: this.duelRowShown() ? duelConsoleReadout(this.condition) : null,
 			// #364: what the scan channel has recorded about what is selected.
 			scan: this.scanConsoleRow(this.scanReadout(target)),
+			// The Signals rail's HAILS value: who is transmitting. The label has
+			// been a static word since `live-cockpit.ts` authored it, and #396
+			// made it carry something for the first time.
+			hails: this.hailRailValue(),
 			// #324 part d: the raider lifecycle on the Communications console,
 			// derived from world state, newest first.
 			// Derived only while that console's tab is open (sage #330).
@@ -11483,6 +11650,9 @@ class Game {
 										this.world.gameTime,
 									)
 								: []),
+							// #396: the struck carrier's hail. Not a derivation, and
+							// the one line here that is not — see `this.hails`.
+							...this.hails.map((h) => h.line),
 						])
 							.slice(0, 6)
 							.map(formatRaiderLogLine)

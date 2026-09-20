@@ -43,6 +43,9 @@ const WRITERS = [
 	// `legal.ts`'s witness write and its lazy clear (H6), through
 	// `setLegalWitnesses`. Also a writer by composition.
 	"settleWitnesses",
+	// `legal.ts`'s sustained-fire charge (#396), through `setLegalAssaulted`.
+	// A third writer by composition, and the one that had no row until this one.
+	"markAssaultCharged",
 	"visit",
 ];
 
@@ -99,23 +102,33 @@ describe("the Game's world writes", () => {
 		expect(kill.slice(0, 400)).toContain("raiderDestruction(");
 	});
 
-	test("#366: an offence names the station beside it, and every berth asks the law", () => {
+	test("#366 and #396: an offence names every station that heard it, and every berth asks the law", () => {
 		// `Game` builds a renderer, so this is a source check — the same reason
 		// the rows above are. What it is guarding is the two ways this node could
 		// ship green and do nothing: an offence that charges heat and never names
 		// a witness (H5 unwritten), and a `refusedByLaw` computed by a helper
 		// nobody calls (H5 and H7 unread).
 		const charge = MAIN.split("private chargeTrafficOffence(")[1] ?? "";
-		const chargeBody = charge.slice(0, 1200);
-		expect(chargeBody).toContain("this.frameStationKey()");
+		const chargeBody = charge.slice(0, 1600);
+		expect(chargeBody).toContain("stationsInEarshot(");
 		expect(chargeBody).toContain("withOffence(");
-		// H5's reach is the frame body's, so the witness must come from there and
-		// not from a distance this module decided for itself.
-		const frameKey = MAIN.split("private frameStationKey()")[1] ?? "";
-		expect(frameKey.slice(0, 400)).toContain('body.kind !== "station"');
+		// **#396 amended which end the reach is measured from**, and these two
+		// assertions are that amendment rather than the frame body's rule it
+		// replaced: the candidates are this system's stations, and the position
+		// the distance is taken from is the victim's — passed in as a required
+		// argument, so no call site can quietly measure from the player again.
+		const earshot = MAIN.split("private earshotStations()")[1] ?? "";
+		expect(earshot.slice(0, 400)).toContain('body.kind === "station"');
 		// The key comes from the one derivation of it, not a spelling of it.
-		expect(frameKey.slice(0, 400)).toContain("this.stationKey(");
+		expect(earshot.slice(0, 400)).toContain("this.stationKey(");
 		expect(MAIN).toContain("private stationKey(station: Station): CarrierKey");
+		// Every charge names where the carrier stood. A default, or a call site
+		// that passed the player's own position, is the amendment quietly undone.
+		expect(MAIN.match(/this\.chargeTrafficOffence\(/g) ?? []).toHaveLength(3);
+		expect(charge.slice(0, 900)).toContain("victim: Vec3");
+		// And the sustained-fire charge is marked written, not only priced.
+		const assault = MAIN.split("private assaultTrafficCarrier(")[1] ?? "";
+		expect(assault.slice(0, 900)).toContain("markAssaultCharged(");
 
 		// Three consumers, each named by the call it has to feed. A count over the
 		// file was the first version and it is the wrong shape: it moves when a
