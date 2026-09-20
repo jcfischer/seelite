@@ -325,7 +325,7 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-nav-empty { padding: 10px 6px; color: #cb8c51; font-size: 11px; }
 .lc-chart-host[data-live-chart-error]::after { content: "CHART UNAVAILABLE — reload"; position: absolute; inset: 0; display: grid; place-content: center; color: #ffb0a2; letter-spacing: .08em; }
 .lc-chart-host { position: relative; min-height: 300px; height: 100%; border: 1px solid rgba(229, 170, 82, .34); border-radius: 4px; overflow: hidden; background: #05080d; }
-.lc-station-console { display: none; position: absolute; inset: 7% 8% 12%; overflow: auto; padding: 20px 30px; border: 1px solid rgba(229, 170, 82, .9); border-radius: 8px; background: linear-gradient(104deg, rgba(46, 18, 5, .98), rgba(12, 8, 6, .96)); box-shadow: inset 0 0 68px rgba(231, 123, 31, .17), 0 0 28px rgba(227, 133, 39, .15); color: #ffd48c; pointer-events: auto; }
+.lc-station-console { display: none; position: absolute; inset: 0; overflow: auto; padding: 20px 30px; background: linear-gradient(104deg, #2e1205, #0c0806); box-shadow: inset 0 0 68px rgba(231, 123, 31, .17); color: #ffd48c; pointer-events: auto; }
 #live-cockpit[data-live-docked="true"][data-live-head-look="forward"] .lc-station-console { display: flex; flex-direction: column; }
 #live-cockpit[data-live-docked="true"] .lc-director { display: none; }
 .lc-station-console header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 11px; border-bottom: 2px solid #e5aa52; }

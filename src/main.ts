@@ -146,6 +146,7 @@ import {
 	projectScannerContacts,
 	targetArrowBearingDeg,
 } from "./cockpit";
+import { sceneRenderEligible } from "./render-eligibility";
 import {
 	CHARGE_CAPACITY_AU,
 	CHARGE_REGEN_AU_PER_S,
@@ -11343,7 +11344,7 @@ class Game {
 				performance.now() - updateStartedAt,
 			);
 		this.stepAdaptiveResolution();
-		this.render(dt);
+		if (this.sceneRenderEligible()) this.render(dt);
 		this.updateCockpit();
 		if (this.legacyHud) this.updateHud();
 		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
@@ -11354,6 +11355,14 @@ class Game {
 			this.saveFaultShown() && !this.commanderOverlay?.isOpen(),
 		);
 	};
+
+	private sceneRenderEligible() {
+		return sceneRenderEligible({
+			dockPhase: this.dock.phase,
+			view: this.view,
+			headLook: this.headLook,
+		});
+	}
 
 	private readonly chaseOffset = new THREE.Vector3();
 

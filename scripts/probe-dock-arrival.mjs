@@ -771,6 +771,7 @@ const liveConsole = await page.evaluate(() => {
 	g.render(0);
 	const consoleEl = document.querySelector("[data-live-station-console]");
 	const style = consoleEl ? getComputedStyle(consoleEl) : null;
+	const box = consoleEl?.getBoundingClientRect();
 	return {
 		phase: g.dockPhase,
 		present: consoleEl !== null,
@@ -779,6 +780,13 @@ const liveConsole = await page.evaluate(() => {
 			(consoleEl?.getBoundingClientRect().width ?? 0) > innerWidth * 0.5,
 		marketRows: document.querySelectorAll("[data-live-market-row]").length,
 		floorHidden: g.floorRender === null,
+		canvasCovering:
+			box?.left === 0 &&
+			box?.top === 0 &&
+			box?.width === innerWidth &&
+			box?.height === innerHeight &&
+			style?.backgroundImage !== "none",
+		renderEligible: g.sceneRenderEligible(),
 	};
 });
 
@@ -788,8 +796,10 @@ check(
 		liveConsole.present &&
 		liveConsole.visible &&
 		liveConsole.marketRows === 17 &&
-		liveConsole.floorHidden,
-	`phase ${liveConsole.phase}, console=${liveConsole.present}/${liveConsole.visible}, rows=${liveConsole.marketRows}, floor hidden=${liveConsole.floorHidden}`,
+		liveConsole.floorHidden &&
+		liveConsole.canvasCovering &&
+		!liveConsole.renderEligible,
+	`phase ${liveConsole.phase}, console=${liveConsole.present}/${liveConsole.visible}, rows=${liveConsole.marketRows}, floor hidden=${liveConsole.floorHidden}, cover=${liveConsole.canvasCovering}, render=${liveConsole.renderEligible}`,
 );
 
 // Commerce uses the live console, not the gallery fixture. A completed round
