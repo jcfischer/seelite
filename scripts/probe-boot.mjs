@@ -40,6 +40,7 @@ import {
 	installCamSim,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
 
@@ -781,7 +782,32 @@ await fpsGate();
  * that motivates both.
  */
 async function settingsGate() {
-	const page = await open();
+	// `checkBoot` because every row below is about normal flight, and #418 was
+	// diagnosed by hand for want of it: the whole gate rests on no Commander
+	// overlay standing between the key and the screen, and until the gate said
+	// which boot it took that premise was an assumption rather than a row.
+	const page = await open({ checkBoot: true });
+	// The screen is mounted from a deferred import, so at the first drawn frame
+	// its key has no listener yet (`waitForSettingsPanel`). #418 pressed `z`
+	// before the mount landed and timed out on `[data-settings-panel]`, which
+	// reads as the game refusing to open settings and is the probe arriving early.
+	const mounted = await waitForSettingsPanel(page);
+	check(
+		"the settings screen is mounted before its key is driven",
+		mounted,
+		mounted
+			? undefined
+			: "the gate stops here: no key is driven at a screen that is not there",
+	);
+	if (!mounted) {
+		// Every row below is about what the screen does with a key, and none of
+		// it is measurable without the screen. Pressing anyway produced #418's
+		// own misreading — a timeout two rows later that reads as the game
+		// refusing to open settings — and a red row nobody acts on is worse than
+		// one that stops the gate.
+		await page.close();
+		return;
+	}
 	// Hold throttle, then open the screen while it is still down.
 	await page.keyboard.down("Shift");
 	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {

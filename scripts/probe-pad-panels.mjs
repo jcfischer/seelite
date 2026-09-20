@@ -59,6 +59,7 @@ import {
 	guardedOrigin,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -436,25 +437,41 @@ try {
 			// holding anything — so it went on saying "the d-pad walks me" while
 			// `modal` had the lot. Sage called this half of the blocker, with
 			// this exact repro; neither context had a probe.
-			await page.keyboard.press("z");
+			//
+			// The mount is what makes the key live, so the answer is a row and the
+			// press is conditional on it: driving `z` at a screen that never
+			// arrived reports a console that claims the pad, which is #418's
+			// misreading in this file's clothes. What the wait measures is
+			// `waitForSettingsPanel`'s to say.
+			const settingsMounted = await waitForSettingsPanel(page);
+			check(
+				"the settings screen is mounted before its key is driven",
+				settingsMounted,
+			);
+			if (settingsMounted) {
+				await page.keyboard.press("z");
+			}
 			await frames(3);
 			const underModal = await page.evaluate(() => ({
 				settings: Boolean(document.querySelector("[data-settings-panel]")),
 				marked: document.querySelector('[data-live-pad-scope="true"]') !== null,
 				hint: document.querySelector("[data-live-pad-hint]") !== null,
 			}));
-			await page.keyboard.press("z");
+			if (underModal.settings) {
+				await page.keyboard.press("z");
+			}
 			await frames(3);
 			const afterClose = await page.evaluate(
 				() => document.querySelector('[data-live-pad-scope="true"]') !== null,
 			);
 			check(
 				"a console does not claim the pad while the settings screen holds it",
-				underModal.settings === true &&
+				settingsMounted &&
+					underModal.settings === true &&
 					underModal.marked === false &&
 					underModal.hint === false &&
 					afterClose === true,
-				`settings open ${underModal.settings}: marked ${underModal.marked}, hint ${underModal.hint}; marked again after closing ${afterClose}`,
+				`mounted ${settingsMounted}: settings open ${underModal.settings}; marked ${underModal.marked}, hint ${underModal.hint}; marked again after closing ${afterClose}`,
 			);
 		}
 

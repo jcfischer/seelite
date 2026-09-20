@@ -362,6 +362,59 @@ export async function bootedGame(page, timeout = 20000) {
 }
 
 /**
+ * Wait until the settings screen exists, so a script can drive its key.
+ *
+ * **The first drawn frame is not that moment.** `main.ts` mounts the screen from
+ * a deferred `import("./settings-panel")`, and that handle lands some time
+ * *after* the frame `bootedGame` answers on. Measured here, six sequential boots
+ * of one build against one dev server: 325 ms with a cold transform cache, and
+ * 410-424 ms for the five warm ones after it — so the wait is not paying a
+ * compile, and it does not shorten when the machine has seen the module before.
+ * A gate that presses the settings key straight after `bootedGame` is pressing
+ * it at a window listener that is not installed yet: the screen opens if the
+ * chunk happens to land first and never opens if it does not. #418's row in
+ * `probe-boot.mjs` failed three runs in three that way, and reported the game
+ * refusing to open settings rather than the probe arriving early.
+ *
+ * The predicate is the handle the mount itself publishes (`Game.settingsPanel`),
+ * assigned inside `mountSettingsPanel` after its key listener is on the window —
+ * so the handle being present is the same fact as the key being live, not a
+ * proxy for it.
+ *
+ * Answers `false` when the mount does not land in time, rather than throwing, so
+ * the caller can put the answer in a named row: a gate that dies on a wait prints
+ * a timeout and never reaches the row that would have named the surface it was
+ * waiting for. A timeout is the only failure it converts — a crashed page, a
+ * closed target or a throwing predicate is rethrown as itself, because a row that
+ * blames the mount for a page that died is this same misreading pointed the wrong
+ * way. That answer being read is part of the contract, not an option: a call
+ * standing alone as a statement waits, ignores what it learned, and lets the key
+ * go down anyway, which is the early press this exists to prevent with a wait in
+ * front of it. `tests/probe-settings-key.test.ts` holds that in the headless tier,
+ * because the probes do not run in CI and a rule stated only in a comment is a
+ * rule nobody enforces the next time a script learns to press the key.
+ */
+export async function waitForSettingsPanel(page, timeout = 20000) {
+	return page
+		.waitForFunction(
+			() => window.__seelite && window.__seelite.settingsPanel !== null,
+			null,
+			{ timeout },
+		)
+		.then(() => true)
+		.catch((error) => {
+			// "It did not land in time" is the only failure this helper is
+			// entitled to answer with `false`. A crashed page, a closed target or
+			// a throwing predicate is not evidence about the settings screen, and
+			// folding one into `false` would hand the caller a row that blames
+			// the mount for something else entirely — the same misreading this
+			// exists to prevent, pointed the wrong way.
+			if (error instanceof Error && error.name === "TimeoutError") return false;
+			throw error;
+		});
+}
+
+/**
  * The check counter, the reporter and the exit summary, in one object.
  *
  * Every probe needs the same three things and the second one copied them
