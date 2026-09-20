@@ -42,12 +42,7 @@
  * store does not have.
  */
 
-import {
-	parseSave,
-	REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION,
-	type SaveEnvelope,
-	serializeSave,
-} from "./save-envelope";
+import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
 
 /**
  * The debounce window, milliseconds.
@@ -224,8 +219,6 @@ export interface ActiveCommander {
 
 export interface SaveStoreOptions {
 	backend: SaveBackend;
-	/** Only the isolated development trial accepts experiment encoding 3. */
-	allowRequestsPrototype?: boolean;
 	/**
 	 * What `hold` takes this store's Commander lock from. Required, not
 	 * defaulted, for `FlightPerformance`'s reason: a store built without it could
@@ -253,19 +246,6 @@ export interface SaveStoreOptions {
 	 *  its caller; this one has none. */
 	onWriteFailed?: (error: unknown, consecutive: number) => void;
 }
-
-const assertSaveEncoding = (raw: unknown, allowRequestsPrototype: boolean) => {
-	if (
-		!allowRequestsPrototype &&
-		raw !== null &&
-		typeof raw === "object" &&
-		(raw as { saveSchemaVersion?: unknown }).saveSchemaVersion ===
-			REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION
-	)
-		fail(
-			"Requests prototype saves belong to the isolated development trial; this Commander catalog refuses them",
-		);
-};
 
 const fail = (message: string): never => {
 	throw new Error(`save: ${message}`);
@@ -327,7 +307,6 @@ const parsePending = (
 export class SaveStore {
 	private readonly backend: SaveBackend;
 	private readonly locks: SlotLocks;
-	private readonly allowRequestsPrototype: boolean;
 	/** The release of this store's own lock, once `hold` has taken it. */
 	private held: (() => void) | null = null;
 	/** The lock request in flight, shared by overlapping `hold` calls. */
@@ -376,7 +355,6 @@ export class SaveStore {
 	constructor(options: SaveStoreOptions) {
 		this.backend = options.backend;
 		this.locks = options.locks;
-		this.allowRequestsPrototype = options.allowRequestsPrototype === true;
 		if (options.slot !== undefined) {
 			assertSlot(options.slot);
 			this.slot = options.slot;
@@ -486,7 +464,6 @@ export class SaveStore {
 		// own to report.
 		while (this.inFlight) await this.inFlight.catch(() => {});
 		const blob = serializeSave(this.current());
-		assertSaveEncoding(blob, this.allowRequestsPrototype);
 		this.dirty = false;
 		const work = this.backend.writeMany(slot, kinds, blob);
 		this.inFlight = work.finally(() => {
@@ -530,7 +507,6 @@ export class SaveStore {
 		const raw = await this.backend.read(slot, kind);
 		if (raw === null || raw === undefined)
 			fail(`Commander "${slot}" has no ${kind} record`);
-		assertSaveEncoding(raw, this.allowRequestsPrototype);
 		return parseSave(raw);
 	}
 
@@ -585,7 +561,6 @@ export class SaveStore {
 			raw = await this.backend.read(this.slot, "lastDocked");
 			if (raw === null || raw === undefined)
 				fail(`Commander "${this.slot}" has no lastDocked record`);
-			assertSaveEncoding(raw, this.allowRequestsPrototype);
 			restored = parseSave(raw);
 		} catch (error) {
 			// Not retired, and the save the death interrupted is still owed: quieting
@@ -656,21 +631,15 @@ export class SaveStore {
 export class CommanderCatalog {
 	private readonly backend: SaveBackend;
 	private readonly locks: SlotLocks;
-	private readonly allowRequestsPrototype: boolean;
 
-	constructor(options: {
-		backend: SaveBackend;
-		locks: SlotLocks;
-		allowRequestsPrototype?: boolean;
-	}) {
+	constructor(options: { backend: SaveBackend; locks: SlotLocks }) {
 		this.backend = options.backend;
 		this.locks = options.locks;
-		this.allowRequestsPrototype = options.allowRequestsPrototype === true;
 	}
 
-	/** Boot and import apply the same catalog boundary before parsing. */
+	/** Boot and import parse through one seam; #437 left it with no policy of
+	 *  its own beyond `parseSave`. */
 	parseRecord(raw: unknown): SaveEnvelope {
-		assertSaveEncoding(raw, this.allowRequestsPrototype);
 		return parseSave(raw);
 	}
 

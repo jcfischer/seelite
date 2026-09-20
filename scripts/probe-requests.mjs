@@ -50,33 +50,23 @@ try {
 	});
 	await bootedGame(page);
 	console.log("BOOTED");
-	// Read-only snapshot: the probe never writes to the normal catalog.
-	const normalBefore = await page.evaluate(async () => {
-		const { indexedDbSaveBackend } = await import("/src/save-store.ts");
-		const normal = indexedDbSaveBackend();
-		const slots = await normal.slots();
-		return JSON.stringify(
-			await Promise.all(
-				slots.map(async (slot) => [
-					slot,
-					await normal.read(slot, "live"),
-					await normal.read(slot, "lastDocked"),
-				]),
-			),
-		);
-	});
-	const station = await page.evaluate(async () => {
-		const g = window.__seelite;
-		const id =
-			g.world.system.bodies.find(
-				(b) => b.kind === "station" && b.stationType === "trade",
-			)?.id ?? g.world.system.bodies.find((b) => b.kind === "station")?.id;
-		if (!id) throw Error("no station");
-		await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
-		g.setHeadLook("forward");
-		g.updateCockpit();
-		return id;
-	});
+	// One docking preamble for both arms: the flagged page below and the
+	// unflagged control at the end park the same way, and a change to how a
+	// probe parks should not have to be found twice in one file.
+	const dockAtAStation = (target) =>
+		target.evaluate(async () => {
+			const g = window.__seelite;
+			const id =
+				g.world.system.bodies.find(
+					(b) => b.kind === "station" && b.stationType === "trade",
+				)?.id ?? g.world.system.bodies.find((b) => b.kind === "station")?.id;
+			if (!id) throw Error("no station");
+			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
+			g.setHeadLook("forward");
+			g.updateCockpit();
+			return id;
+		});
+	const station = await dockAtAStation(page);
 	check(
 		"normal docked Game has Requests beside Market and Equipment",
 		await page.locator('[data-live-station-tab="Requests"]').isVisible(),
@@ -368,28 +358,33 @@ try {
 		if (!window.__seelite.saveStore) throw Error("save store not attached");
 		await window.__seelite.saveStore.flush("quit");
 	});
+	// One catalog and one encoding: the journal must arrive in the Commander
+	// catalog, and the trial's own database must not be recreated beside it.
 	check(
-		"fixture journal and payment leave the normal Commander catalog untouched",
-		await page.evaluate(async (before) => {
+		"the fixture journal lands in the one Commander catalog",
+		await page.evaluate(async () => {
 			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+			// The current version is read off the module. Pinning the literal
+			// would turn this row red on the next bump for a reason that has
+			// nothing to do with Requests.
+			const { SAVE_SCHEMA_VERSION } = await import("/src/save-envelope.ts");
 			const normal = indexedDbSaveBackend();
-			const slots = await normal.slots();
-			const after = JSON.stringify(
-				await Promise.all(
-					slots.map(async (slot) => [
-						slot,
-						await normal.read(slot, "live"),
-						await normal.read(slot, "lastDocked"),
-					]),
-				),
+			const records = await Promise.all(
+				(await normal.slots()).map((slot) => normal.read(slot, "live")),
 			);
+			const carrying = records.filter(
+				(r) => Object.keys(r?.commander?.requests?.byId ?? {}).length > 0,
+			);
+			const versions = new Set(carrying.map((r) => r.saveSchemaVersion));
 			return (
-				after === before &&
-				(await indexedDB.databases()).some(
+				carrying.length > 0 &&
+				versions.size === 1 &&
+				versions.has(SAVE_SCHEMA_VERSION) &&
+				!(await indexedDB.databases()).some(
 					(d) => d.name === "seelite-requests-prototype-saves",
 				)
 			);
-		}, normalBefore),
+		}),
 	);
 	await page.goto(gameUrl(origin, { "requests-prototype": true }), {
 		waitUntil: "load",
@@ -493,17 +488,35 @@ try {
 		viewport: { width: 1440, height: 900 },
 	});
 	t.watchShaders(normalPage, "normal Game");
+	// `__parkInBerth` is an init script, so it goes on before the navigation —
+	// this arm docks now and the helper is not installed page-wide.
+	await installViewPlacement(normalPage);
+	await installViewFraming(normalPage);
 	await normalPage.goto(gameUrl(origin, { seed: 42, "no-save": true }), {
 		waitUntil: "load",
 	});
 	await bootedGame(normalPage);
+	// **Docked, which the row above it was not (#437).** An undocked Game shows
+	// no station console at all, so a tab count of zero there is true whether
+	// or not the fixtures are gated — the check could not fail. This arm parks
+	// in a berth and turns the head forward, exactly as the flagged arm does
+	// before asserting the tab is present.
+	await dockAtAStation(normalPage);
 	check(
-		"normal Game exposes no prototype Requests tabs",
+		"a docked Game without the fixture flag exposes no Requests tab",
 		(await normalPage
 			.locator(
 				'[data-live-station-tab="Requests"], [data-live-left-tab="Requests"]',
 			)
-			.count()) === 0,
+			.count()) === 0 &&
+			(await normalPage.locator("[data-live-station-console]").count()) > 0,
+	);
+	check(
+		"and its offer source is empty, which is why the tab is absent",
+		await normalPage.evaluate(() => {
+			const view = window.__seelite.requestsView();
+			return view.fixtures === false && view.offers.length === 0;
+		}),
 	);
 	await normalPage.close();
 	check("no shader failed to compile or link on either page", t.failures === 0);
