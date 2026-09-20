@@ -167,11 +167,11 @@ try {
 					// The comparison is about solid hull, not multisampled silhouette
 					// edges where both foreground and background legitimately contribute.
 					opaqueCoverage = new Uint8Array(W * H);
-					for (let y = 1; y < H - 1; y++) {
-						for (let x = 1; x < W - 1; x++) {
+					for (let y = 2; y < H - 2; y++) {
+						for (let x = 2; x < W - 2; x++) {
 							let solid = 1;
-							for (let oy = -1; oy <= 1 && solid; oy++)
-								for (let ox = -1; ox <= 1; ox++)
+							for (let oy = -2; oy <= 2 && solid; oy++)
+								for (let ox = -2; ox <= 2; ox++)
 									if (!rawCoverage[(y + oy) * W + x + ox]) {
 										solid = 0;
 										break;

@@ -319,6 +319,7 @@ export type AdaptiveTransition =
 export type AdaptiveDiagnostics = Readonly<{
 	scale: number;
 	budgetMs: number;
+	downshiftTriggerMs: number;
 	periodMedianMs: number | null;
 	minPeriodMs: number | null;
 	/** The display's refresh interval as estimated across rungs; see the field. */
@@ -577,6 +578,7 @@ export class AdaptiveResolution {
 		return Object.freeze({
 			scale: this.scale,
 			budgetMs: ADAPTIVE_BUDGET_MS,
+			downshiftTriggerMs: DOWNSHIFT_TRIGGER_MS,
 			periodMedianMs: this.lastEvidence?.periodMedianMs ?? null,
 			minPeriodMs: this.lastEvidence?.minPeriodMs ?? null,
 			sampleAgeFrames: this.lastEvidence?.sampleCount ?? 0,

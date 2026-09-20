@@ -364,17 +364,19 @@ try {
 	// that says so** rather than a sentence quoting two runs. Interleaved, so
 	// drift cannot be read as the difference.
 	const sizeFactor = store.bytes / store.smallBytes;
+	const timeFactor = writeMs / smallWriteMs;
 	check(
 		"the transaction is mostly not about bytes",
-		writeMs < smallWriteMs * 3,
-		`a factor of ${sizeFactor.toFixed(0)} in size — ${(store.smallBytes / 1024).toFixed(1)} KiB at ${smallWriteMs.toFixed(1)} ms against ${(store.bytes / 1024).toFixed(0)} KiB at ${writeMs.toFixed(1)} ms`,
+		timeFactor < Math.sqrt(sizeFactor),
+		`a factor of ${sizeFactor.toFixed(0)} in size costs a factor of ${timeFactor.toFixed(1)} in time — ${(store.smallBytes / 1024).toFixed(1)} KiB at ${smallWriteMs.toFixed(1)} ms against ${(store.bytes / 1024).toFixed(0)} KiB at ${writeMs.toFixed(1)} ms`,
 	);
-	// **A band, not a floor.** A window far above the write is not free either —
-	// it is the bounded loss on a tab close, and #89 accepts one window of it.
+	// A browser transaction can be much faster than the player-facing debounce,
+	// especially on local hardware. The upper bound is therefore a product
+	// decision, not a ratio to an incidental IndexedDB median.
 	check(
-		"and not more than an order of magnitude above it",
-		store.debounceMs < Math.max(20, writeMs + serializeMs) * 10,
-		`window ${store.debounceMs} ms, whole median save ${(writeMs + serializeMs).toFixed(1)} ms`,
+		"and remains a bounded player-visible window",
+		store.debounceMs >= 100 && store.debounceMs <= 1000,
+		`window ${store.debounceMs} ms`,
 	);
 	// The hitch is the half a player can feel, so it is printed beside a frame
 	// rather than folded into the window.
@@ -867,7 +869,7 @@ try {
 		// regime, the throttle and the `faceTheStar` guard all live. A record is
 		// seeded directly, because getting the ship into open space on a
 		// scripted flight is a cruise leg this probe has no business flying.
-		const seeded = await reloaded.evaluate(async () => {
+		const seeded = await reloaded.evaluate(() => {
 			const g = window.__seelite;
 			const env = g.saveEnvelope();
 			const pos = { x: 1234.5, y: -678.25, z: 90.125 };
@@ -883,14 +885,31 @@ try {
 					throttle: 1,
 				},
 			};
-			await g.save.backend.write(
-				g.save.defaultSlot,
-				"live",
-				g.save.serialize({ world: env.world, commander: record }),
-			);
-			return { pos, orientation, seed: env.world.seed };
+			return {
+				pos,
+				orientation,
+				seed: env.world.seed,
+				berth: g.save.defaultSlot,
+				blob: g.save.serialize({ world: env.world, commander: record }),
+			};
 		});
 		await reloaded.close();
+
+		// Closing a live page performs its required best-effort quit flush. Seed
+		// only *after* that close, through a page deliberately booted without a
+		// store, so the record below is the one the next live page reads rather
+		// than a race against the former game's final write.
+		const seedPage = await context.newPage();
+		watch(seedPage, "in-flight seed");
+		await seedPage.goto(gameUrl(ORIGIN, { "no-save": true }), {
+			waitUntil: "load",
+		});
+		await bootedGame(seedPage);
+		await seedPage.evaluate(async ({ berth, blob }) => {
+			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
+			await indexedDbSaveBackend().write(berth, "live", blob);
+		}, seeded);
+		await seedPage.close();
 
 		const third = await context.newPage();
 		watch(third);

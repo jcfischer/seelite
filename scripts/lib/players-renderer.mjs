@@ -1,13 +1,12 @@
 /**
  * "Is this the renderer the player has?", and the refusal when it is not.
  *
- * #98 settled that every browser script in this repo renders through
- * **SwiftShader** — `launchChromium` passes plain defaults and no GPU flags —
- * and that the same scene measures 16.8 fps headless against 371 fps headed on
- * an M1 Pro. Two scripts deliberately break that: `capture-views.mjs`, whose
- * output is judged by eye, and `measure-light-cost.mjs` (#99), whose output is
- * a frame cost. Both launch headed, and headed is a *request* — a machine with
- * no display is a real thing — so both have to check what they actually got.
+ * #98 settled that the former headless default rendered through **SwiftShader**
+ * and that the same scene measured 16.8 fps headless against 371 fps headed on
+ * an M1 Pro. `npm run probe` now selects the headed hardware lane; `probe:cpu`
+ * retains that software path for portability checks. Headed is still a request
+ * — a machine with no display is a real thing — so every hardware lane has to
+ * check what it actually got.
  *
  * It lives here because it was written twice. `measure-light-cost.mjs` first
  * carried its own copy of the regex and the refusal, with a comment conceding
@@ -22,6 +21,41 @@
 
 /** Renderers that are not the player's. */
 export const SOFTWARE = /swiftshader|llvmpipe|software|mesa offscreen/i;
+
+/**
+ * Turn a WebGL identity reading into either a proven player renderer or a
+ * refusal. Keeping this pure lets both a game's renderer and a blank browser
+ * preflight use exactly the same standard of proof.
+ */
+export function assertHardwareRenderer(gpu, what) {
+	const renderer = gpu.unmasked ?? gpu.generic;
+	const refusal = !gpu.unmasked
+		? `cannot read the real renderer — WEBGL_debug_renderer_info is unavailable, and "${gpu.generic}" does not say what is drawing`
+		: SOFTWARE.test(renderer)
+			? `this is a software rasteriser (${renderer})`
+			: null;
+	if (refusal)
+		throw new Error(
+			`refusing to ${what}: ${refusal}.\n` +
+				"Run this on a machine with a display; there is deliberately no\n" +
+				"headless mode.",
+		);
+	return renderer;
+}
+
+/** Read the renderer from a fresh WebGL canvas, before any game has booted. */
+export async function assertBrowserRenderer(page, what) {
+	const gpu = await page.evaluate(() => {
+		const canvas = document.createElement("canvas");
+		const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+		const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+		return {
+			unmasked: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
+			generic: gl?.getParameter(gl.RENDERER) ?? null,
+		};
+	});
+	return assertHardwareRenderer(gpu, what);
+}
 
 /**
  * The renderer's name, or a throw naming why it cannot be trusted.
@@ -53,17 +87,5 @@ export async function assertPlayersRenderer(
 			generic: gl.getParameter(gl.RENDERER),
 		};
 	}, global);
-	const renderer = gpu.unmasked ?? gpu.generic;
-	const refusal = !gpu.unmasked
-		? `cannot read the real renderer — WEBGL_debug_renderer_info is unavailable, and "${gpu.generic}" does not say what is drawing`
-		: SOFTWARE.test(renderer)
-			? `this is a software rasteriser (${renderer})`
-			: null;
-	if (refusal)
-		throw new Error(
-			`refusing to ${what}: ${refusal}.\n` +
-				"Run this on a machine with a display; there is deliberately no\n" +
-				"headless mode.",
-		);
-	return renderer;
+	return assertHardwareRenderer(gpu, what);
 }

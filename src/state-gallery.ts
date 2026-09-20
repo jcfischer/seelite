@@ -843,7 +843,7 @@ const STYLE = `
 	.sg-head { align-items: flex-start; }
 	.sg-states { display: grid; grid-template-columns: 1fr 1fr; }
 	.sg-shell,
-	.sg-cockpit { min-height: 500px; height: 500px; }
+	.sg-cockpit { min-height: 480px; height: 480px; }
 	.sg-canopy { border-width: 16px; border-bottom-width: 48px; }
 	.sg-panel { inset: 8px; max-height: 190px; padding: 12px; clip-path: none; }
 	.sg-console-top { padding-bottom: 7px; font-size: 13px; }
@@ -858,7 +858,7 @@ const STYLE = `
 	   leaves LAUNCH on a console saying nothing about why it is the only live
 	   thing on it. */
 	.sg-console-list[data-gallery-inert] { display: grid; }
-	.sg-glass { inset: 18px 12px 0; min-height: 480px; clip-path: none; }
+	.sg-glass { inset: 18px 12px 0; min-height: 0; clip-path: none; }
 	/* The docked glass is a table, not a window: it fits the cockpit shell and
 	   scrolls its own rows, rather than growing the page under it. */
 	.sg-glass-docked { inset: 12px 10px 12px; min-height: 0; }

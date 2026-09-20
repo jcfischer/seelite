@@ -1,4 +1,4 @@
-import { PLAYWRIGHT_ENV_VARS } from "../probe-guard.mjs";
+import { PLAYWRIGHT_ENV_VARS, PROBE_RENDERER_ENV } from "../probe-guard.mjs";
 
 /**
  * Build the environment for the browser runner from a completed selection.
@@ -30,6 +30,7 @@ export function probeRunnerEnvironment(env, selectedProbes = undefined) {
 		// being a second copy, and keeps the wiring gate's "nothing else resolves
 		// Playwright" rule true of this file rather than exempted for it.
 		...PLAYWRIGHT_ENV_VARS,
+		PROBE_RENDERER_ENV,
 		"HEADED",
 		"DISPLAY",
 		"WAYLAND_DISPLAY",

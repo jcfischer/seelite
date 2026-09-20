@@ -58,6 +58,56 @@ import { existsSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
+import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
+
+/** The opt-in local probe mode that requires a non-software renderer. */
+export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
+export const HARDWARE_RENDERER = "hardware";
+/** Keep headed hardware Chromium out of the developer's working area. */
+export const OFFSCREEN_WINDOW_POSITION = "--window-position=-32000,-32000";
+export const OFFSCREEN_WINDOW_RUNTIME_FLAGS = [
+	"--disable-backgrounding-occluded-windows",
+	"--disable-renderer-backgrounding",
+	"--disable-background-timer-throttling",
+];
+export const PROBE_WINDOW_VISIBLE = "visible";
+
+/**
+ * Read the requested probe renderer mode. The unset default deliberately keeps
+ * the portable SwiftShader probe path unchanged.
+ */
+export function probeRendererMode(env = process.env) {
+	const mode = env[PROBE_RENDERER_ENV];
+	if (!mode) return null;
+	if (mode !== HARDWARE_RENDERER)
+		throw new Error(
+			`${PROBE_RENDERER_ENV} must be "${HARDWARE_RENDERER}" or unset, got ${JSON.stringify(mode)}`,
+		);
+	return mode;
+}
+
+/**
+ * Launch options for the requested renderer mode, without mutating a caller.
+ *
+ * @param {{ args?: string[]; probeWindow?: string; [key: string]: unknown }} options
+ * @param {string | null} [mode=probeRendererMode()]
+ */
+export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
+	if (mode !== HARDWARE_RENDERER) return options;
+	const { probeWindow, ...chromiumOptions } = options;
+	return {
+		...chromiumOptions,
+		headless: false,
+		args:
+			probeWindow === PROBE_WINDOW_VISIBLE
+				? [...(chromiumOptions.args ?? [])]
+				: [
+						...(chromiumOptions.args ?? []),
+						OFFSCREEN_WINDOW_POSITION,
+						...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+					],
+	};
+}
 
 /**
  * The scheme-and-host of a probe URL, without `new URL`.
@@ -341,7 +391,24 @@ export async function launchChromium(options = {}) {
 					: `whatever this checkout has under that name is not the browser package.`
 			}`,
 		);
-	return chromium.launch(options);
+	const mode = probeRendererMode();
+	const browser = await chromium.launch(probeLaunchOptions(options, mode));
+	if (mode !== HARDWARE_RENDERER) return browser;
+
+	try {
+		const context = await browser.newContext();
+		const page = await context.newPage();
+		const renderer = await assertBrowserRenderer(
+			page,
+			"run GPU browser probes",
+		);
+		console.log(`[probe] hardware renderer: ${renderer}`);
+		await context.close();
+		return browser;
+	} catch (error) {
+		await browser.close();
+		throw error;
+	}
 }
 
 /**

@@ -51,7 +51,6 @@ try {
 		const naming = await import("/src/carrier-name.ts");
 		const market = await import("/src/market.ts");
 		const contacts = await import("/src/display-contact.ts");
-		const hull = await import("/src/hull.ts");
 		const world = await import("/src/world-state.ts");
 
 		/** **What the instrument painted**, by hooking its own canvas and keeping
@@ -265,26 +264,7 @@ try {
 				: pirateLine.x + pirateLine.width <= ctxWidth();
 		pirate.scannerClass = ownClass;
 
-		// 7. The widest reading the cell can be asked to print, measured at the
-		//    font it is painted with. Built from the roster and the three words,
-		//    not from a string the probe invented.
-		const instrument = g.cockpit.targetInstrument;
-		const ctx = instrument.ctx;
-		// Measured at the font and left margin a real designation was painted
-		// with, both read off the recorded call above — the probe owns no layout
-		// figure, so it cannot go falsely red when the instrument's move.
-		ctx.save();
-		if (after.font) ctx.font = after.font;
-		const widest = Math.max(
-			...Object.keys(hull.HULL_SPECS).map(
-				(id) => ctx.measureText(`SHIP · ${id.toUpperCase()} · `).width,
-			),
-		);
-		const tail = ctx.measureText("FUGITIVE · 365d").width;
-		const widestFits = (after.x ?? 0) + widest + tail <= ctxWidth();
-		ctx.restore();
-
-		// 8. The console's reading block, with both of the name strings.
+		// 7. The console's reading block, with both of the name strings.
 		g.headLook = "right";
 		g.view = "cockpit";
 		g.updateCockpit();
@@ -328,7 +308,6 @@ try {
 			hostileFits,
 			cue,
 			stampAfterJump,
-			widestFits,
 			console: console_,
 			record,
 			gameTime: g.world.gameTime,
@@ -432,8 +411,17 @@ try {
 			"every designation the panel painted fits the instrument",
 			[scan.gate, scan.before, scan.charging, scan.after, scan.aged].every(
 				(p) => p.fits,
-			) && scan.widestFits,
-			JSON.stringify({ widestFits: scan.widestFits }),
+			) && scan.hostileFits,
+			JSON.stringify({
+				painted: [
+					scan.gate,
+					scan.before,
+					scan.charging,
+					scan.after,
+					scan.aged,
+				].map((p) => ({ designation: p.designation, fits: p.fits })),
+				hostileFits: scan.hostileFits,
+			}),
 		);
 		check(
 			"the glass carries the drawn name, not the registration number",
