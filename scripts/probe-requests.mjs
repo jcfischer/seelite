@@ -350,10 +350,23 @@ try {
 	// probe already parks a ship and `probe-death` already sets credits. What
 	// is being measured is the screen after a real DOM click, not the setup.
 	// -----------------------------------------------------------------------
-	await page.locator('[data-live-station-tab="Market"]').click();
 	const holdText = () => page.locator("[data-live-station-hold]").innerText();
 	const messageText = () =>
 		page.locator("[data-live-station-message]").innerText();
+
+	// **A control, not a build assertion, and it was measured as one.** It is
+	// the before-reading of the before/after pair the refusal check completes,
+	// so the sentence that appears there is attributable to the click. Seeding
+	// `stationConsoleMessage` at construction leaves it green either side of
+	// the Market click, because the Requests tab was already opened further up
+	// and a tab change retires a refusal — there is no build this row can go
+	// red on. Read before the Market click anyway: that is the tightest the
+	// control gets.
+	check(
+		"nothing has been refused yet, so the live region is empty",
+		(await messageText()) === "",
+	);
+	await page.locator('[data-live-station-tab="Market"]').click();
 
 	const entrustedT = await page.evaluate(() =>
 		Object.values(
@@ -369,10 +382,6 @@ try {
 		line.includes(`${entrustedT} t entrusted`) &&
 			/HOLD \d+ \/ \d+ t · -?\d+ t free/.test(line),
 		`${entrustedT} t entrusted · ${line}`,
-	);
-	check(
-		"nothing has been refused yet, so the live region is empty",
-		(await messageText()) === "",
 	);
 	await page.screenshot({ path: `${out}/40-hold-line.png` });
 
