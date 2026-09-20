@@ -341,32 +341,19 @@ for (const row of rows)
  * quoting: one galaxy's berths, one galaxy's Traffic, or every galaxy in the
  * save. Those are three different ceilings, and conflating two of them is the
  * mistake this version exists to stop.
- */
-/**
- * The same tier with one list switched off, remembered.
- *
- * The bare arm exists only to be subtracted from the priced one, and building it
- * is the cost of this whole script: T1 saturates all eight galaxies, and the
- * charge list is priced at both T3 and T1, so an uncached version builds the
- * heaviest world in the file twice for a subtraction.
- */
-const bareTiers = new Map<string, Row>();
-const bareOf = (at: number, flag: "witnesses" | "charges"): Row => {
-	const key = `${at}|${flag}`;
-	const held = bareTiers.get(key);
-	if (held) return held;
-	const built = build({ ...TIERS[at], [flag]: false });
-	bareTiers.set(key, built);
-	return built;
-};
-
-/**
- * What one saved list costs at one tier's bound.
  *
  * **The list is named once** (`list`), as both the flag that turns it off in the
  * comparison arm and the column that counts what the priced arm holds. It was
  * two parameters holding the same string, which is a function that lets a
  * caller price the witness list by subtracting the charge list from it.
+ *
+ * **Each line builds its tier twice, and that is the price of the difference.**
+ * A memo over the bare arm was tried and is inert — every line prices a
+ * different tier, so no key ever repeated — and the arm cannot be derived from
+ * the priced row by subtraction, because then the number being measured would be
+ * the thing being measured. The full script is two seconds and belongs to no
+ * probe lane; the tier being built twice here has never been what made a suite
+ * red.
  */
 const priceList = (
 	tier: string,
@@ -377,7 +364,7 @@ const priceList = (
 	const at = TIERS.findIndex((t) => t.name.startsWith(tier));
 	if (at < 0) return;
 	const full = rows[at];
-	const bare = bareOf(at, list);
+	const bare = build({ ...TIERS[at], [list]: false });
 	const added = full.bytes - bare.bytes;
 	const held = full[list];
 	console.log(

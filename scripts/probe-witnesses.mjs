@@ -613,9 +613,7 @@ try {
 			 * the slack between those positions on the page instead of in a comment.
 			 */
 			earshot(from) {
-				const origins = (Array.isArray(from) ? from : [from]).filter(
-					(o) => o && Number.isFinite(o.x),
-				);
+				const origins = this.originsOf(from);
 				const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 				const km = (st) => Math.min(...origins.map((o) => apart(st.pos, o)));
 				return g.trafficReadout().stations.map((st) => ({
@@ -629,11 +627,21 @@ try {
 					pastFrameReach: km(st) > g.units.NEAR_FAR_KM,
 				}));
 			},
-			/** How far the victim moved between the two instants it was filed at. */
-			driftKm(from) {
-				const origins = (Array.isArray(from) ? from : [from]).filter(
+			/**
+			 * What counts as a position to measure from, in one place.
+			 *
+			 * `earshot` and `driftKm` are always handed the same argument, so the rule
+			 * for accepting it has to be one rule: two copies would let the reach be
+			 * computed over a set the drift figure did not see.
+			 */
+			originsOf(from) {
+				return (Array.isArray(from) ? from : [from]).filter(
 					(o) => o && Number.isFinite(o.x),
 				);
+			},
+			/** How far the victim moved between the two instants it was filed at. */
+			driftKm(from) {
+				const origins = this.originsOf(from);
 				if (origins.length < 2) return 0;
 				return Math.max(
 					...origins
@@ -648,6 +656,8 @@ try {
 				);
 			},
 			distressRangeKm: distressMod.DISTRESS_RANGE_KM,
+			/** The shipped reach, as the build carries it — not this file's copy. */
+			stationsInEarshot: distressMod.stationsInEarshot,
 			nearFarKm: g.units.NEAR_FAR_KM,
 			dematerializeKm: trafficMod.TRAFFIC_DEMATERIALIZE_KM,
 			assaultFireS: engagementMod.ASSAULT_FIRE_S,
@@ -763,6 +773,63 @@ try {
 			witnesses: struck.after?.legal.witnesses,
 			victim: struck.strike?.victim,
 		}),
+	);
+	// -------------------------------------------------------------------------
+	// **The amendment, measured against the rule it replaces.** The row above
+	// holds the game to the module, and a berth set that happens to sit inside
+	// *both* reaches satisfies it: the frame body's rule and the transmission's
+	// would agree there, and a row that cannot tell them apart is not evidence
+	// for the one that changed. So the shipped reach is stood up at a geometry
+	// where the two disagree — a victim beyond `NEAR_FAR_KM` of the nearest berth
+	// and well inside `DISTRESS_RANGE_KM` — and the claim is a strict widening,
+	// which the old rule cannot produce at any geometry.
+	// -------------------------------------------------------------------------
+	const wider = await page.evaluate(() => {
+		const p = window.__witnessProbe;
+		const g = window.__seelite;
+		const berths = g
+			.trafficReadout()
+			.stations.map((st) => ({ key: st.id, pos: st.pos }));
+		if (berths.length < 2) return { enough: false, berths: berths.length };
+		const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+		// A stand-off that is a frame body and a half from the nearest berth: too
+		// far for the rule H5 had, a third of the way into the one it has now.
+		const origin = {
+			x: berths[0].pos.x + p.nearFarKm * 1.5,
+			y: berths[0].pos.y,
+			z: berths[0].pos.z,
+		};
+		const heard = p.stationsInEarshot(berths, origin);
+		const within = berths.filter(
+			(st) => apart(st.pos, origin) <= p.distressRangeKm,
+		);
+		return {
+			enough: true,
+			berths: berths.length,
+			heard: heard.length,
+			// What the rule #396 retired would have filed from the same place.
+			frameBody: berths.filter((st) => apart(st.pos, origin) <= p.nearFarKm)
+				.length,
+			withinRange: within.length,
+			// The same answer as the geometry, in the same order — the function is
+			// the reach and nothing else.
+			matchesGeometry:
+				JSON.stringify(heard) === JSON.stringify(within.map((st) => st.key)),
+			nearFarKm: p.nearFarKm,
+			distressRangeKm: p.distressRangeKm,
+			nearestBerthKm: Math.round(apart(berths[0].pos, origin)),
+		};
+	});
+	check(
+		"the reach the build carries is strictly wider than the frame body's at a geometry where the two rules disagree (#396's amendment measured, not named)",
+		wider.enough === true &&
+			wider.heard >= 1 &&
+			wider.heard > wider.frameBody &&
+			wider.matchesGeometry === true &&
+			wider.heard === wider.withinRange &&
+			wider.nearestBerthKm > wider.nearFarKm &&
+			wider.nearestBerthKm < wider.distressRangeKm,
+		JSON.stringify(wider),
 	);
 	// -------------------------------------------------------------------------
 	// #396 §3: the victim's hail, and the charge that the flight report said

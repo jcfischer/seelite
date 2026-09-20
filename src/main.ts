@@ -5656,10 +5656,13 @@ class Game {
 	 * the kill that finishes it is worth its full 40 even if the six-hour
 	 * rotation has since turned the target Clean. Standing off the row's own clock
 	 * is how that is known without adding a field to the save. The assault charge
-	 * needs no clock of its own: `assaultCharged` says whether the five seconds
-	 * were served, and the mark is written whatever it cost — a charge that came
-	 * free because the rotation had turned the target Wanted is still spent, and
-	 * what bounds it is the clear, not the figure it stamped.
+	 * needs no clock of its own, because the fight keeps one: `assaultCharged`
+	 * says whether the five seconds have been crossed, and `markAssaultCharged`
+	 * records the crossing **only when it cost heat**. The two are different
+	 * claims and the asymmetry is the rule — an uncharged five seconds is
+	 * lawfully spent and must not come back later as a discount on a strike
+	 * against the same carrier. So the premise priced below is exact: if the list
+	 * names this carrier, 13 was paid.
 	 */
 	private chargeTrafficOffence(
 		actor: TrafficActor,

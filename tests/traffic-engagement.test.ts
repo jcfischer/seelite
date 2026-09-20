@@ -787,9 +787,23 @@ describe("H4's sustained-fire clock (#396)", () => {
 	 * frame — which is the point of `landedFireS` and the reason every row below
 	 * is written around *seconds that landed* rather than frames elapsed.
 	 */
+	/** The marksman who stays where he is: parked at the origin, nose on target. */
+	const seated = (e: Engagement) => chaser(e, { pos: v3() });
+
+	/**
+	 * Hold the trigger for `frames`, naming the marksman who shoots.
+	 *
+	 * **The pilot is a parameter and not a copy of this loop.** A civilian flees,
+	 * so whether a frame lands anything is a fact about where the shooter is
+	 * standing, and a rig that hardcodes one pilot grows a hand-rolled second
+	 * loop the moment a row needs the other — which is how a file ends up with
+	 * four copies of the same flight, each free to differ from the others in a
+	 * detail nobody meant to vary.
+	 */
 	function holdFire(
 		start: Engagement,
 		frames: number,
+		pilot: (e: Engagement) => DuelPilot,
 		each: (step: EngagementStep, index: number) => void = () => {},
 		firing: boolean | ((index: number) => boolean) = true,
 		/** Stop on the first step this answers true, after `each` has seen it. A
@@ -804,7 +818,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 			const on = typeof firing === "boolean" ? firing : firing(i);
 			const step = stepEngagement(
 				e,
-				chaser(e, { pos: v3() }),
+				pilot(e),
 				on ? SHOT : { fired: false, damage: 0 },
 				DT,
 			);
@@ -836,7 +850,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 
 	test("the first landed hit is reported once, on the frame it lands", () => {
 		let said = 0;
-		const e = holdFire(ahead("freighter", 2), 60, (s) => {
+		const e = holdFire(ahead("freighter", 2), 60, seated, (s) => {
 			if (s.firstHit) said++;
 		});
 		expect(said).toBe(1);
@@ -854,6 +868,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 		const engagement = holdFire(
 			ahead("freighter", 2),
 			6000,
+			seated,
 			(s, i) => {
 				if (s.assaultCrossed && crossed < 0) crossed = i;
 			},
@@ -871,7 +886,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 
 	test("once it has charged it charges no more, however long the fight runs", () => {
 		let charges = 0;
-		const e = holdFire(ahead("freighter", 2), 900, (s) => {
+		const e = holdFire(ahead("freighter", 2), 900, seated, (s) => {
 			if (s.assaultCrossed) charges++;
 		});
 		expect(charges).toBe(1);
@@ -886,20 +901,17 @@ describe("H4's sustained-fire clock (#396)", () => {
 		// discount on the same act.
 		let e = ahead("freighter", 2);
 		let charged = 0;
-		const fire = (from: Engagement, frames: number, on: boolean) => {
-			let cur = from;
-			for (let i = 0; i < frames; i++) {
-				const step = stepEngagement(
-					cur,
-					tracker(cur),
-					on ? SHOT : { fired: false, damage: 0 },
-					DT,
-				);
-				cur = step.engagement;
-				if (step.assaultCrossed) charged++;
-			}
-			return cur;
-		};
+		/** One leg of the fight: the tracking pilot, the trigger in or off. */
+		const fire = (from: Engagement, frames: number, on: boolean) =>
+			holdFire(
+				from,
+				frames,
+				tracker,
+				(step) => {
+					if (step.assaultCrossed) charged++;
+				},
+				on,
+			);
 		e = fire(e, 120, true);
 		const held = e.landedFireS;
 		expect(held).toBeGreaterThan(0);
@@ -925,7 +937,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 		// something to the pilot who hit it, on that first frame.
 		let hailed = 0;
 		let charged = 0;
-		const e = holdFire(ahead("freighter", 2), 30, (s) => {
+		const e = holdFire(ahead("freighter", 2), 30, seated, (s) => {
 			if (s.firstHit) hailed++;
 			if (s.assaultCrossed) charged++;
 		});
@@ -957,7 +969,7 @@ describe("H4's sustained-fire clock (#396)", () => {
 		expect(resumed.landedFireS).toBe(0);
 		expect(resumed.assaultCharged).toBe(true);
 		let charged = 0;
-		const e = holdFire(resumed, 900, (s) => {
+		const e = holdFire(resumed, 900, seated, (s) => {
 			if (s.assaultCrossed) charged++;
 		});
 		expect(charged).toBe(0);

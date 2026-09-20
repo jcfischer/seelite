@@ -574,20 +574,11 @@ describe("H4's sustained-fire rung (#396)", () => {
 		);
 		expect(settled.galaxies[0].legalStatus.witnesses).toEqual([]);
 		expect(settled.galaxies[0].legalStatus.assaulted).toEqual([]);
-	});
-
-	test("the clear that ends an incident takes the charge list with it", () => {
-		// A written mark and a written hearer list end on the same read: the
-		// incident has one ending, decay, and a charge memory that outlived it
-		// would be a pardon for a five-second act whose heat is gone.
-		let world = withOffence(newWorld(7), 0, OFFENCE_HEAT.assault, 0, [TRADE]);
-		world = markAssaultCharged(world, 0, MINER, OFFENCE_HEAT.assault, 0);
-		world = settleIncident(
-			world,
-			0,
-			minutesAbove(OFFENCE_HEAT.assault, WANTED_HEAT) * MIN,
-		);
-		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(false);
+		// **And the law stops reading the carrier as charged**, which is the same
+		// emptiness from the side a caller stands on: `assaultCharged` is what
+		// `chargedOffence` prices from, so a list cleared while the read still
+		// answered true would go on pardoning a carrier whose heat is gone.
+		expect(assaultCharged(settled.galaxies[0].legalStatus, MINER)).toBe(false);
 	});
 });
 

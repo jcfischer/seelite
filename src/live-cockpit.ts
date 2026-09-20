@@ -1443,6 +1443,13 @@ export class LiveCockpit {
 		if (state.leftTab === "Galaxy Map")
 			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
+			// **`LEGAL STATUS` is an alias of the canonical Standing** (`CONTEXT.md`
+			// §Language) and it stays, deliberately: it is shipped console copy that
+			// predates #366, and this line was edited to give `HAILS` a value, not to
+			// rename what the pilot reads. Prose in `docs/specs/` and `CONTEXT.md`
+			// uses Standing throughout. Moving the label is console copy's own node's
+			// call — renaming it from a legal-change PR is a UI change no node asked
+			// for, which the repo's own constraint on this node names.
 			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS<em data-live-hails></em></span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>

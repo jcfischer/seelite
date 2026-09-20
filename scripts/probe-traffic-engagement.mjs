@@ -183,6 +183,32 @@ try {
 			leg(prior, after) {
 				return after.heat - this.heatAt(prior, after.updatedAt);
 			},
+			/**
+			 * A watch that turns a fight's frames into its legs.
+			 *
+			 * Hand it the legal row once per frame and it appends a leg whenever the
+			 * stamp moves. **The rule for what counts as a write lives here and nowhere
+			 * else.** The divert walk and the kill walk both need it, and two copies of
+			 * a stamp comparison are two places a fix can land in — the one left behind
+			 * would not throw, it would simply stop seeing a rung while its row went on
+			 * printing a plausible pair of numbers.
+			 */
+			legWatcher() {
+				const rig = this;
+				const legs = [];
+				let prior = { ...window.__seelite.trafficReadout().legal };
+				return {
+					legs,
+					observe(after) {
+						if (after.updatedAt !== prior.updatedAt)
+							legs.push({
+								at: window.__seelite.world.gameTime,
+								added: rig.leg(prior, after),
+							});
+						prior = after;
+					},
+				};
+			},
 			/** One tethered frame: hold the offset, nose on the target or
 			 *  `offNoseRad` beside it. `framesFired` counts the frames this rig has
 			 *  held the beam open, across every target — the shield-side bound the
@@ -497,15 +523,11 @@ try {
 		// Every heat write of this fight, in the order they landed. The divert used
 		// to be the only one; #396 put a rung before it, so the loop watches for
 		// writes rather than assuming the last row it sees is the whole offence.
-		const legs = [];
-		let priorLegal = { ...g.trafficReadout().legal };
+		const watch = p.legWatcher();
 		for (; steps < 6000; steps++) {
 			if (!p.follow(key, true)) break;
 			const readout = g.trafficReadout();
-			const after = readout.legal;
-			if (after.updatedAt !== priorLegal.updatedAt)
-				legs.push({ at: g.world.gameTime, added: p.leg(priorLegal, after) });
-			priorLegal = after;
+			watch.observe(readout.legal);
 			const row = readout.contacts.find((c) => c.key === key);
 			if (row === undefined) continue;
 			if (row.condition === "operational") {
@@ -542,7 +564,7 @@ try {
 				// The strike's own leg — the write that opened the facing, against
 				// the row that stood before it, which since #396 may already carry
 				// the sustained-fire rung.
-				legs,
+				legs: watch.legs,
 				carrier,
 				// The row, not the contact row: presence reads a repairing
 				// carrier's recovery kind to tell a divert from a wreck.
@@ -795,14 +817,10 @@ try {
 		// The fight that ends in this kill charges the sustained-fire rung on the
 		// way, so the strike's own write is 2 and not 15, and reading it from the
 		// fight's opening row would hide that.
-		const legs = [];
-		let priorLegal = { ...statusBefore };
+		const watch = p.legWatcher();
 		for (; steps < 6000 && g.trafficContacts.has(key); steps++) {
 			p.follow(key, true);
-			const after = g.trafficReadout().legal;
-			if (after.updatedAt !== priorLegal.updatedAt)
-				legs.push({ at: g.world.gameTime, added: p.leg(priorLegal, after) });
-			priorLegal = after;
+			watch.observe(g.trafficReadout().legal);
 			if (!struck && g.carrierCondition(key).condition !== "operational")
 				struck = p.snapshotLegal(statusBefore);
 		}
@@ -835,7 +853,7 @@ try {
 			// had, not only for zero (sage #368), and it separates the strike's
 			// 15 from the kill's 25 rather than reading their sum.
 			struck,
-			legs,
+			legs: watch.legs,
 			// `null`, not a fallback, when no strike was ever captured: the only
 			// thing a fallback here could produce is a pair of numbers that read
 			// as a decomposition of a strike that did not happen, and the row's
@@ -849,9 +867,9 @@ try {
 			// measured against the row the kill itself wrote and reads as zero —
 			// which is exactly what it did before this line moved. `legs.length
 			// === 3` below is what makes the three positions mean three rungs.
-			assaultWrite: legs[0]?.added ?? null,
-			strikeWrite: legs[1]?.added ?? null,
-			killWrite: legs[2]?.added ?? null,
+			assaultWrite: watch.legs[0]?.added ?? null,
+			strikeWrite: watch.legs[1]?.added ?? null,
+			killWrite: watch.legs[2]?.added ?? null,
 			legal: readout.legal,
 			legalText,
 			legalVisible,

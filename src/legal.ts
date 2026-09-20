@@ -93,8 +93,16 @@ export const HEAT_HALF_LIFE_S = 30 * 60;
  * the strike's 15 the lattice below ties and two rungs the law has to order
  * become one. Its whole legal life is the open interval 10 … 15, which is why
  * `tests/legal.test.ts` pins the figure against both bounds rather than quoting
- * it. The figure itself is a **declared starting form** (H12's precedent): 13 is
- * eleven minutes Wanted, of the four to fourteen minutes the interval buys.
+ * it. The figure itself is a **declared starting form** (H12's precedent), and
+ * what it buys is derived rather than remembered: heat halves every
+ * `HEAT_HALF_LIFE_S`, so a charge of `h` reads below Wanted after
+ * `log2(h / WANTED_HEAT)` half-lives — **about ten minutes** at 13, against the
+ * strike's seventeen and a half. Read that way the interval is a span of legal
+ * life from nothing at all (at 10 the row is Wanted for no time) to the strike's
+ * own seventeen and a half (at 15), so the rung sits near the short end of what
+ * it could buy and the ladder keeps its ordering. **That is a span of minutes,
+ * and `ASSAULT_FIRE_S` is five seconds of fire** — two quantities, and the
+ * distance between them is not an argument for moving either.
  */
 export const OFFENCE_HEAT = { assault: 13, struck: 15, destroyed: 40 } as const;
 
