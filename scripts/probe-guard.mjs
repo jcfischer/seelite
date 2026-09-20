@@ -383,7 +383,13 @@ export async function bootedGame(page, timeout = 20000) {
  *
  * Answers whether it landed rather than throwing, so the caller can put the
  * answer in a named row: a gate that dies on a wait prints a timeout and never
- * reaches the row that would have named the surface it was waiting for.
+ * reaches the row that would have named the surface it was waiting for. That
+ * makes reading the answer part of the contract, not an option — a call standing
+ * alone as a statement waits, ignores what it learned, and lets the key go down
+ * anyway, which is the early press this exists to prevent with a wait in front of
+ * it. `tests/probe-settings-key.test.ts` holds that in the headless tier, because
+ * the probes do not run in CI and a rule stated only in a comment is a rule
+ * nobody enforces the next time a script learns to press the key.
  */
 export async function waitForSettingsPanel(page, timeout = 20000) {
 	return page

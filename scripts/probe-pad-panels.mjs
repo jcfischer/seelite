@@ -438,12 +438,14 @@ try {
 			// `modal` had the lot. Sage called this half of the blocker, with
 			// this exact repro; neither context had a probe.
 			//
-			// The screen is mounted from a deferred import, so its key is live only
-			// once that lands. This row is long past that window, and the wait is
-			// here so the rule `tests/probe-settings-key.test.ts` holds — a press of
-			// the settings key always follows the mount, with no site exempt because
-			// it happens to arrive late (#418).
-			await waitForSettingsPanel(page);
+			// The mount is what makes the key live, and the answer goes in a row
+			// rather than being dropped: a wait whose result nobody reads is a
+			// press that still races the chunk, which is #418 wearing this file's
+			// clothes. What the wait is for is `waitForSettingsPanel`'s to say.
+			check(
+				"the settings screen is mounted before its key is driven",
+				await waitForSettingsPanel(page),
+			);
 			await page.keyboard.press("z");
 			await frames(3);
 			const underModal = await page.evaluate(() => ({
