@@ -80,6 +80,7 @@ import {
 	guardedOrigin,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -492,6 +493,11 @@ check(
 // The same premise as every surrender row: a screen opened on an unlocked page
 // surrenders nothing, so the relock's own answer is part of the row.
 const beforeSettings = (await relockForward(page)).took;
+// And the same premise as #418: the screen is mounted from a deferred import, so
+// its key is only live once that lands. This site is long past that window; the
+// wait is here so no press of the settings key is exempt from the rule
+// `tests/probe-settings-key.test.ts` holds.
+await waitForSettingsPanel(page);
 await page.keyboard.press("z");
 await settle(page);
 check(

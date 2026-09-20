@@ -362,6 +362,41 @@ export async function bootedGame(page, timeout = 20000) {
 }
 
 /**
+ * Wait until the settings screen exists, so a script can drive its key.
+ *
+ * **The first drawn frame is not that moment.** `main.ts` mounts the screen from
+ * a deferred `import("./settings-panel")`, and that handle lands some time
+ * *after* the frame `bootedGame` answers on. Measured here, six sequential boots
+ * of one build against one dev server: 325 ms with a cold transform cache, and
+ * 410-424 ms for the five warm ones after it — so the wait is not paying a
+ * compile, and it does not shorten when the machine has seen the module before.
+ * A gate that presses the settings key straight after `bootedGame` is pressing
+ * it at a window listener that is not installed yet: the screen opens if the
+ * chunk happens to land first and never opens if it does not. #418's row in
+ * `probe-boot.mjs` failed three runs in three that way, and reported the game
+ * refusing to open settings rather than the probe arriving early.
+ *
+ * The predicate is the handle the mount itself publishes (`Game.settingsPanel`),
+ * assigned inside `mountSettingsPanel` after its key listener is on the window —
+ * so the handle being present is the same fact as the key being live, not a
+ * proxy for it.
+ *
+ * Answers whether it landed rather than throwing, so the caller can put the
+ * answer in a named row: a gate that dies on a wait prints a timeout and never
+ * reaches the row that would have named the surface it was waiting for.
+ */
+export async function waitForSettingsPanel(page, timeout = 20000) {
+	return page
+		.waitForFunction(
+			() => window.__seelite && window.__seelite.settingsPanel !== null,
+			null,
+			{ timeout },
+		)
+		.then(() => true)
+		.catch(() => false);
+}
+
+/**
  * The check counter, the reporter and the exit summary, in one object.
  *
  * Every probe needs the same three things and the second one copied them

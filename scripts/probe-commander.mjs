@@ -38,6 +38,7 @@ import {
 	guardedOrigin,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 
 const ORIGIN =
@@ -168,10 +169,7 @@ try {
 			(await tabA.$('[data-kind="continue"]')) === null,
 		JSON.stringify(s.selected),
 	);
-	const settingsMounted = await waitFor(
-		tabA,
-		() => window.__seelite.settingsPanel !== null,
-	);
+	const settingsMounted = await waitForSettingsPanel(tabA);
 	await tabA.keyboard.press("z");
 	await tabA.waitForTimeout(500);
 	// **Read before Escape.** Escape closes a settings screen that opened over
