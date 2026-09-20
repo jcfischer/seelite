@@ -785,6 +785,10 @@ await fpsGate();
  */
 async function settingsGate() {
 	const page = await open();
+	await page.mouse.click(450, 310);
+	await page.waitForFunction(() => document.hasFocus(), null, {
+		timeout: 5000,
+	});
 	// Hold throttle, then open the screen while it is still down.
 	await page.keyboard.down("Shift");
 	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {
