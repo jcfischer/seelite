@@ -6,13 +6,96 @@
  * and the distance — and the simulate-a-stage controls are gone, because the
  * stage is satisfied by flying there.
  */
+import type { HoldSummary } from "./hold";
 import {
+	type AcceptedRequest,
 	isAcceptedRequest,
 	nextAction,
 	type RequestOffer,
 	type RequestsState,
 	type RequestStation,
 } from "./requests";
+
+/**
+ * What the Deliver control says, and whether it is live (#446).
+ *
+ * **A string builder with a branch deserves its own rows**, and the branch is
+ * the node: one label served both families, so a consignment already aboard
+ * read as a shopping list and the pilot bought eight tonnes of Food they were
+ * already carrying. The details pane said *entrusted* the whole time; a screen
+ * that is merely accurate somewhere is not the test. The test is whether the
+ * control a pilot presses says what it does.
+ */
+export interface DeliverAction {
+	label: string;
+	hint: string;
+	enabled: boolean;
+}
+
+/**
+ * `aboardT` is what is aboard **for this job** — the requester's lot for an
+ * entrusted consignment, the pilot's own tonnage of the good for a
+ * procurement job. The caller reads it off `holdSummary` rather than scanning
+ * the cargo again, so the button, the hold line and the till all answer from
+ * one projection (#443).
+ */
+export function deliverAction(
+	offer: RequestOffer,
+	aboardT: number,
+): DeliverAction {
+	const short = aboardT < offer.tonnes;
+	if (offer.entrusted)
+		return {
+			// **Never "Deliver".** In this game that word is an instruction to
+			// supply something, and supplying is exactly what a consignment does
+			// not need.
+			label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
+			hint: short
+				? `${aboardT} t of ${offer.tonnes} aboard — the consignment is not aboard`
+				: "aboard since you accepted — the requester's",
+			enabled: !short,
+		};
+	return {
+		label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
+		hint: short
+			? `${aboardT} t of ${offer.tonnes} aboard`
+			: `${offer.tonnes} t aboard, yours to hand over`,
+		enabled: !short,
+	};
+}
+
+/**
+ * What a settled job reports (#446).
+ *
+ * The report paid and the manifest never appeared, so **a delivery and a sale
+ * looked identical from the cockpit**. Three facts a pilot cannot otherwise
+ * see: what left the hold, what it paid, and what of theirs is still aboard.
+ *
+ * Composed here rather than in `main.ts` so the words have rows, and fed from
+ * `main.ts` rather than read from the view — #411's round 2 stripped this
+ * projection of commerce inputs deliberately, and `remainingT` arrives as a
+ * number rather than as a commander.
+ */
+export function settlementMessage(settled: {
+	tonnes: number;
+	goodName: string;
+	entrusted: boolean;
+	rewardCr: number;
+	/** The pilot's **own** tonnage of that good after the job settled. */
+	remainingT: number;
+}): string {
+	const moved = settled.entrusted
+		? `${settled.tonnes} t ${settled.goodName} handed over`
+		: `${settled.tonnes} t ${settled.goodName} delivered from your hold`;
+	// A remainder of zero is a sentence, not a figure: `0 t Food still aboard`
+	// is a line about cargo that is not there, which is #443's zeroed
+	// entrusted clause one screen along.
+	const left =
+		settled.remainingT > 0
+			? `${settled.remainingT} t ${settled.goodName} still aboard, yours`
+			: `no ${settled.goodName} left aboard`;
+	return `Reported · ${moved}, ${settled.rewardCr} Cr paid · ${left}.`;
+}
 
 export interface RequestsView {
 	state: RequestsState;
@@ -22,6 +105,17 @@ export interface RequestsView {
 	revision: number;
 	now: number;
 	docked: RequestStation | null;
+	/**
+	 * What is aboard (#443's projection), for the one thing this screen cannot
+	 * answer on its own: how much of a **procurement** job's good the pilot
+	 * already has.
+	 *
+	 * #411's round 2 stripped this view of commerce inputs on purpose, and this
+	 * is not one of them — it is the same summary the trade screen's hold line
+	 * and the till's `cargo-full` sentence read, so the Deliver control cannot
+	 * disagree with either. `null` where no hold has been supplied.
+	 */
+	hold: HoldSummary | null;
 }
 const esc = (x: string) =>
 	x.replace(
@@ -31,8 +125,37 @@ const esc = (x: string) =>
 				c
 			] as string,
 	);
-const button = (action: string, id: string, label: string) =>
-	`<button type="button" class="lc-request-action" data-live-request-action="${action}" data-live-request-id="${esc(id)}">${esc(label)}</button>`;
+const button = (
+	action: string,
+	id: string,
+	label: string,
+	extra: { hint?: string; enabled?: boolean } = {},
+) =>
+	`<button type="button" class="lc-request-action" data-live-request-action="${action}" data-live-request-id="${esc(id)}"${extra.enabled === false ? " disabled" : ""}${extra.hint ? ` title="${esc(extra.hint)}"` : ""}>${esc(label)}${extra.hint ? `<small class="lc-request-hint" data-live-request-hint>${esc(extra.hint)}</small>` : ""}</button>`;
+
+/**
+ * How much of this job's good is aboard, for the job's own sense of aboard.
+ *
+ * An entrusted consignment's tonnage is the requester's lot of the current
+ * acceptance; a procurement job's is the pilot's own cargo of that good, off
+ * #443's projection rather than a second scan.
+ */
+const aboardFor = (
+	view: RequestsView,
+	offer: RequestOffer,
+	request?: AcceptedRequest,
+): number =>
+	offer.entrusted
+		? Object.values(view.state.entrustedByLotId)
+				.filter(
+					(lot) =>
+						lot.offerId === offer.id &&
+						(!request || lot.issuedOrdinal === request.acceptanceOrdinal),
+				)
+				.reduce((sum, lot) => sum + lot.aboardT, 0)
+		: (view.hold?.lines.find(
+				(line) => line.owner === "pilot" && line.goodName === offer.goodName,
+			)?.amount ?? 0);
 export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
@@ -49,6 +172,8 @@ export const REQUESTS_STYLE = `
 .lc-request-details dd { margin: 0; color: #ffe1a9; }
 .lc-request-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .lc-request-action { padding: 9px 13px; border: 1px solid #bb7e36; background: #422607; color: #fff0c9; font: inherit; cursor: pointer; }
+.lc-request-action:disabled { cursor: not-allowed; opacity: .55; }
+.lc-request-hint { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; }
 .lc-request-message { color: #b8dfa9; min-height: 18px; }
 .lc-request-fixtures { margin-top: 24px; padding-top: 12px; border-top: 1px dashed #735432; color: #c7a882; font-size: 11px; }
 .lc-request-fixtures .lc-request-action { font-size: 11px; background: #21190f; }
@@ -138,12 +263,17 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				o.id,
 				state.trackedRequestId === o.id ? "Untrack" : "Track request",
 			);
-			if (r.status === "accepted" && atReport)
-				actions += button(
-					"deliver",
-					o.id,
-					`Deliver ${o.tonnes} t ${esc(o.goodName)}`,
-				);
+			if (r.status === "accepted" && atReport) {
+				// **The control says whose goods it moves** (#446). One label
+				// served both families, so a consignment already aboard read as
+				// a shopping list — and `esc` was applied to the good's name
+				// here and again by `button`, which double-escaped it.
+				const deliver = deliverAction(o, aboardFor(view, o, r));
+				actions += button("deliver", o.id, deliver.label, {
+					hint: deliver.hint,
+					enabled: deliver.enabled,
+				});
+			}
 			if (r.status === "ready-to-report" && atReport)
 				actions += button("report", o.id, `Report · receive ${o.rewardCr} Cr`);
 			actions += button("cancel", o.id, "Cancel request · no fee");

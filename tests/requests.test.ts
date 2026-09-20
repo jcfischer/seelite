@@ -102,6 +102,38 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(entrustedTonnesAboard(state)).toBe(0);
 	});
 
+	test("handing over a consignment does not touch the pilot's own cargo", () => {
+		// **#446's reproduction, pinned.** The principal bought 8 t of Food to
+		// fulfil a consignment that was already aboard and reported a bug in
+		// the finishing of the job. There is no bug: the requester's lot is
+		// consumed once, the pilot's Food is untouched, and the mark is a
+		// single write. That is exactly the behaviour a later refactor of the
+		// two cargo paths would break in silence, so it is a row rather than a
+		// paragraph.
+		const state = accept().state;
+		const mine = { [courier.goodName]: courier.tonnes };
+		const delivered = requestAction(state, offers, "deliver", courier.id, {
+			...context(),
+			docked: at(courier.reportAt),
+			cargo: mine,
+		});
+		expect(delivered.ok).toBe(true);
+		// Nothing of the pilot's is asked for, so nothing is taken.
+		expect(delivered.cargoDelta).toEqual({});
+		// And the requester's lot is gone exactly once.
+		expect(entrustedTonnesAboard(delivered.state)).toBe(0);
+		const reported = requestAction(
+			delivered.state,
+			offers,
+			"report",
+			courier.id,
+			{ ...context(), docked: at(courier.reportAt), cargo: mine },
+		);
+		expect(reported.ok).toBe(true);
+		expect(reported.cargoDelta).toEqual({});
+		expect(reported.mark?.trade.units).toBe(-courier.tonnes);
+	});
+
 	test("reporting pays once and marks the world once", () => {
 		let state = requestAction(accept().state, offers, "deliver", courier.id, {
 			...context(),

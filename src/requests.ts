@@ -147,9 +147,13 @@ export function nextAction(r: AcceptedRequest): string {
 	if (r.status === "ready-to-report")
 		return `Dock at ${r.terms.reportName} and Report`;
 	if (!isAcceptedRequest(r)) return r.outcomeReason ?? r.status;
+	// **Carried, or sourced — and the first says the goods are already
+	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
+	// as the same errand at a glance, and a pilot who read the first as the
+	// second bought eight tonnes they were already carrying.
 	return r.terms.entrusted
-		? `Carry ${r.terms.tonnes} t ${r.terms.goodName} to ${r.terms.reportName}, ${r.terms.reportSystemName}`
-		: `Source ${r.terms.tonnes} t ${r.terms.goodName} and return to ${r.terms.reportName}`;
+		? `Carry the ${r.terms.tonnes} t ${r.terms.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
+		: `Source ${r.terms.tonnes} t ${r.terms.goodName} yourself and return to ${r.terms.reportName}`;
 }
 
 export interface RequestContext {
@@ -377,7 +381,11 @@ export function requestAction(
 			request.status = "ready-to-report";
 		return done(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
-			`${terms.tonnes} t ${terms.goodName} delivered. Report to settle.`,
+			// The two families move different cargo and the message said the
+			// same thing for both (#446).
+			terms.entrusted
+				? `${terms.tonnes} t ${terms.goodName} handed over — the requester's, and out of your hold. Report to settle.`
+				: `${terms.tonnes} t ${terms.goodName} delivered from your hold. Report to settle.`,
 			{ cargoDelta },
 		);
 	}

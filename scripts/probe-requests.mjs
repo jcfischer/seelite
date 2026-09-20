@@ -674,7 +674,56 @@ try {
 			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${id}"]`,
 		)
 		.click();
+	// -----------------------------------------------------------------------
+	// #446 — the control says whose goods it moves.
+	//
+	// The principal bought 8 t of Food to fulfil a consignment already aboard
+	// and reported a bug in the finishing of the job. There was none: the
+	// label read `Deliver 8 t Food` for a courier and for a procurement job
+	// alike, so a consignment read as a shopping list. The details pane said
+	// *entrusted* the whole time, which is the trap — a fact present somewhere
+	// is not the control a pilot presses saying what it does.
+	//
+	// The **two families' labels differ** is a headless row
+	// (`tests/requests-view.test.ts`), because a live procurement offer needs a
+	// deficit at the posting station and binding one here would be checking
+	// `bindProcurement` rather than these words. What the browser owns is that
+	// the entrusted wording reaches the glass.
+	// -----------------------------------------------------------------------
+	const deliverButton = page.locator(
+		'[data-live-station-console] [data-live-request-action="deliver"]',
+	);
+	const deliverLabel = await deliverButton.innerText();
+	check(
+		"an entrusted consignment is handed over, never delivered-as-in-supplied",
+		deliverLabel.includes(`Hand over ${offer.tonnes} t ${offer.goodName}`) &&
+			!/deliver/i.test(deliverLabel),
+		deliverLabel,
+	);
+	check(
+		"and the control itself says the goods are aboard and not the pilot's",
+		/aboard/i.test(
+			await deliverButton.locator("[data-live-request-hint]").innerText(),
+		) &&
+			/requester/i.test(
+				await deliverButton.locator("[data-live-request-hint]").innerText(),
+			),
+		await deliverButton.locator("[data-live-request-hint]").innerText(),
+	);
+	await page.screenshot({ path: `${out}/02b-hand-over.png` });
+
 	await click("deliver");
+	check(
+		"the hand-over says the goods were the requester's, not a sale",
+		/handed over/i.test(
+			await page
+				.locator("[data-live-station-console] .lc-request-message")
+				.innerText(),
+		),
+		await page
+			.locator("[data-live-station-console] .lc-request-message")
+			.innerText(),
+	);
 	check(
 		"delivering at the report station satisfies the objective",
 		await page.evaluate(
@@ -688,6 +737,22 @@ try {
 		),
 	);
 	await click("report");
+	// **What the settlement moved.** The report paid and the manifest never
+	// appeared, so a delivery and a sale looked identical from the cockpit.
+	const settled = await page
+		.locator("[data-live-station-console] .lc-request-message")
+		.innerText();
+	check(
+		"the settlement names the tonnes, the pay and what is left aboard",
+		settled.startsWith("Reported ·") &&
+			settled.includes(`${offer.tonnes} t ${offer.goodName} handed over`) &&
+			settled.includes(`${offer.rewardCr} Cr paid`) &&
+			// Nothing of the pilot's was ever bought in this run, so the
+			// remainder is the empty sentence rather than a zero.
+			settled.includes(`no ${offer.goodName} left aboard`),
+		settled,
+	);
+	await page.screenshot({ path: `${out}/03b-settled.png` });
 	check(
 		"Report pays the pinned reward once",
 		await page.evaluate(
