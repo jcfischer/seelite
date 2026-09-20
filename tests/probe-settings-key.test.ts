@@ -26,7 +26,10 @@
  * the same limit: it reads text, not scope. A consumed readiness call anywhere
  * in the file before the press satisfies it, which is sound for one page because
  * a page under measurement is never navigated (#121): once the screen has
- * mounted it does not unmount.
+ * mounted it does not unmount. What it cannot see is whether a press is *gated*
+ * on the answer rather than merely following it. That belongs to the rows: each
+ * one names the mount inside its own predicate, so a screen that never arrived
+ * is reported as that, and not as the game refusing to open settings.
  */
 import { describe, expect, test } from "bun:test";
 import { SETTINGS_KEY } from "../src/settings-panel";

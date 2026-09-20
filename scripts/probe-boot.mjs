@@ -792,7 +792,22 @@ async function settingsGate() {
 	// before the mount landed and timed out on `[data-settings-panel]`, which
 	// reads as the game refusing to open settings and is the probe arriving early.
 	const mounted = await waitForSettingsPanel(page);
-	check("the settings screen is mounted before its key is driven", mounted);
+	check(
+		"the settings screen is mounted before its key is driven",
+		mounted,
+		mounted
+			? undefined
+			: "the gate stops here: no key is driven at a screen that is not there",
+	);
+	if (!mounted) {
+		// Every row below is about what the screen does with a key, and none of
+		// it is measurable without the screen. Pressing anyway produced #418's
+		// own misreading — a timeout two rows later that reads as the game
+		// refusing to open settings — and a red row nobody acts on is worse than
+		// one that stops the gate.
+		await page.close();
+		return;
+	}
 	// Hold throttle, then open the screen while it is still down.
 	await page.keyboard.down("Shift");
 	await page.waitForFunction(() => window.__seelite.heldKeyCount > 0, null, {

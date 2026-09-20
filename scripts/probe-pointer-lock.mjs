@@ -493,22 +493,29 @@ check(
 // The same premise as every surrender row: a screen opened on an unlocked page
 // surrenders nothing, so the relock's own answer is part of the row.
 const beforeSettings = (await relockForward(page)).took;
-// One premise belongs to this row too: a screen that is not mounted has no key
-// to press, and the answer belongs in a row rather than in the floor. What the
-// wait measures is `waitForSettingsPanel`'s to say; `tests/probe-settings-key.test.ts`
-// is what keeps a press from arriving without it.
+// One premise belongs to the two rows below it: a screen that is not mounted has
+// no key to press. Driving `z` at nothing used to read as the game refusing to
+// surrender the lock, which is #418's misreading one surface over, so the answer
+// is a row and the press is conditional on it. What the wait measures is
+// `waitForSettingsPanel`'s to say, and `tests/probe-settings-key.test.ts` is what
+// keeps a press from arriving without it.
+const settingsMounted = await waitForSettingsPanel(page);
 check(
 	"the settings screen is mounted before its key is driven",
-	await waitForSettingsPanel(page),
+	settingsMounted,
+	`locked-before=${beforeSettings}`,
 );
-await page.keyboard.press("z");
-await settle(page);
+if (settingsMounted) {
+	await page.keyboard.press("z");
+	await settle(page);
+}
 check(
 	"opening the settings screen surrenders the lock as well",
-	beforeSettings &&
+	settingsMounted &&
+		beforeSettings &&
 		(await lockHolder(page)) === null &&
 		(await surface(page)) === "modal",
-	`locked-before=${beforeSettings} lock=${await lockHolder(page)} surface=${await surface(page)}`,
+	`mounted=${settingsMounted} locked-before=${beforeSettings} lock=${await lockHolder(page)} surface=${await surface(page)}`,
 );
 
 // The first row, which is the render scale — a real control whose value changes
