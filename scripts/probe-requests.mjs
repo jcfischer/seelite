@@ -1,7 +1,14 @@
-/** Node 343. Normal Game + cockpit, with explicitly simulated relay facts.
- * Dock setup uses the project's shared canonical berth fixture; no relay is
- * placed or learned. Mouse, real KeyboardEvents, and fake W3C device exercise
- * the public cockpit click/focus dispatch. HEADed=1 captures the same flow.
+/** Node 411. The live request board, flown end to end in a normal Game.
+ *
+ * It was node 343's fixture probe: two authored offers behind
+ * `?requests-prototype`, with buttons that simulated each stage. There is no
+ * flag and no simulated stage now — the board is bound from world state
+ * (`jobs.ts`), the objective is satisfied by flying the cargo to the delivery
+ * station, and the reward and the market mark land on Report.
+ *
+ * Dock setup uses the project's shared canonical berth fixture. Mouse, real
+ * KeyboardEvents and a fake W3C device exercise the public cockpit
+ * click/focus dispatch; HEADED=1 captures the same flow.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import {
@@ -16,17 +23,14 @@ import { installFakePad, STANDARD_INDEX as B } from "./lib/fake-pad.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const origin = process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5343";
-const out = process.env.REQUESTS_EVIDENCE ?? "/tmp/seelite-343-evidence";
+const out = process.env.REQUESTS_EVIDENCE ?? "/tmp/seelite-411-evidence";
 const headed = process.env.HEADED === "1";
 mkdirSync(out, { recursive: true });
 await guardedOrigin(origin);
 const browser = await launchChromium({ headless: !headed });
 // Only for the shader listener: this probe keeps its own throwing `check` and
-// `pageerror` handler, which is a reporting choice worth keeping, and takes
-// the one thing `tally()` adds that they do not — a shader that fails to link
-// is a `console.error`, not a page error, so nothing here would have seen it.
-// The listener only counts; `check` below is what turns that count into a
-// failure, so pass/fail is still decided in one place.
+// `pageerror` handler, and takes the one thing `tally()` adds that they do not
+// — a shader that fails to link is a `console.error`, not a page error.
 const t = tally();
 const checks = [];
 const check = (name, ok, detail = "") => {
@@ -45,30 +49,31 @@ try {
 	await page.addInitScript(installFakePad);
 	await installViewPlacement(page);
 	await installViewFraming(page);
-	await page.goto(gameUrl(origin, { seed: 42, "requests-prototype": true }), {
-		waitUntil: "load",
-	});
+	// **No query flag.** #411 retired `?requests-prototype` with the fixtures
+	// it gated, so this is the page a player gets.
+	await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(page);
 	console.log("BOOTED");
-	// One docking preamble for both arms: the flagged page below and the
-	// unflagged control at the end park the same way, and a change to how a
-	// probe parks should not have to be found twice in one file.
-	const dockAtAStation = (target) =>
-		target.evaluate(async () => {
+
+	const dockAt = (target, stationId) =>
+		target.evaluate(async (wanted) => {
 			const g = window.__seelite;
 			const id =
+				wanted ??
 				g.world.system.bodies.find(
 					(b) => b.kind === "station" && b.stationType === "trade",
-				)?.id ?? g.world.system.bodies.find((b) => b.kind === "station")?.id;
+				)?.id ??
+				g.world.system.bodies.find((b) => b.kind === "station")?.id;
 			if (!id) throw Error("no station");
 			await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
 			g.setHeadLook("forward");
 			g.updateCockpit();
 			return id;
-		});
-	const station = await dockAtAStation(page);
+		}, stationId);
+
+	const station = await dockAt(page);
 	check(
-		"normal docked Game has Requests beside Market and Equipment",
+		"a normal docked Game has Requests beside Market and Equipment",
 		await page.locator('[data-live-station-tab="Requests"]').isVisible(),
 	);
 	await page.screenshot({ path: `${out}/00-before-market.png` });
@@ -79,20 +84,30 @@ try {
 		"Requests key release clears a flight key held before opening",
 		await page.evaluate(() => !window.__seelite.keys.has("arrowup")),
 	);
-	check(
-		"unchanged dock reuses authored fixture offers",
-		await page.evaluate(() => {
-			const g = window.__seelite;
-			return g.requestsView().offers === g.requestsView().offers;
-		}),
-	);
-	await page.screenshot({ path: `${out}/01-selection.png` });
+
 	const rows = page.locator(
 		'[data-live-station-console] [data-live-request-action="details"]',
 	);
-	check("two authored fixture offers", (await rows.count()) === 2);
+	check(
+		"D8's courier floor means the board is not empty",
+		(await rows.count()) >= 1,
+		`${await rows.count()} offer(s)`,
+	);
 	const id = await rows.first().getAttribute("data-live-request-id");
-	const second = await rows.nth(1).getAttribute("data-live-request-id");
+	const offer = await page.evaluate(
+		(i) => window.__seelite.requestsView().offers.find((o) => o.id === i),
+		id,
+	);
+	check(
+		"the offer carries live operands, not authored placeholders",
+		typeof offer.goodName === "string" &&
+			offer.goodName.length > 0 &&
+			offer.tonnes > 0 &&
+			offer.rewardCr > 0 &&
+			offer.reportAt.carrierKey !== offer.requester.carrierKey,
+		`${offer.tonnes} t ${offer.goodName} → ${offer.reportName} (${offer.distanceLy.toFixed(1)} LY)`,
+	);
+
 	const count = () =>
 		page.evaluate(
 			() =>
@@ -100,20 +115,8 @@ try {
 		);
 	await rows.first().click();
 	check("mouse opens details without accepting", (await count()) === 0);
-	await rows.first().focus();
-	await page.keyboard.press("Tab");
-	await page.keyboard.press("Enter");
 	check(
-		"native Tab and Enter open the focused offer without accepting",
-		(await count()) === 0 &&
-			(await page.evaluate(
-				(i) => window.__seelite.requestSelectedId === i,
-				second,
-			)),
-	);
-	await rows.first().click();
-	check(
-		"all terms visible before acceptance",
+		"every term is visible before acceptance",
 		await page
 			.locator("[data-live-station-console] [data-live-request-details]")
 			.evaluate((el) => {
@@ -153,6 +156,7 @@ try {
 				};
 				return [
 					"requester",
+					"report at",
 					"purpose",
 					"action",
 					"intelligence",
@@ -174,6 +178,14 @@ try {
 				);
 			}),
 	);
+	check(
+		"the cargo line says whose goods these are",
+		(
+			await page
+				.locator("[data-live-station-console] [data-live-request-details]")
+				.innerText()
+		).includes(offer.entrusted ? "entrusted" : "your own"),
+	);
 	const ageBefore = await page
 		.locator("[data-live-station-console] [data-live-request-age]")
 		.innerText();
@@ -182,12 +194,13 @@ try {
 		window.__seelite.updateCockpit();
 	});
 	check(
-		"lead age advances on the game clock without another action",
+		"the offer's age advances on the game clock without another action",
 		(await page
 			.locator("[data-live-station-console] [data-live-request-age]")
 			.innerText()) !== ageBefore,
 	);
-	await page.screenshot({ path: `${out}/02-details.png` });
+	await page.screenshot({ path: `${out}/01-details.png` });
+
 	const click = (action) =>
 		page
 			.locator(
@@ -206,7 +219,48 @@ try {
 				window.__seelite.commanderRecord().requests.trackedRequestId === null,
 		),
 	);
+	check(
+		"an entrusted consignment is aboard, and it costs hold",
+		await page.evaluate((t) => {
+			const g = window.__seelite;
+			const lots = Object.values(g.commanderRecord().requests.entrustedByLotId);
+			return (
+				lots.length === 1 &&
+				lots[0].aboardT === t &&
+				// It is the requester's, so it is not in the pilot's cargo.
+				!(lots[0].goodName in g.commanderRecord().state.cargo)
+			);
+		}, offer.tonnes),
+	);
+	check(
+		"no Deliver action at the requester — delivery is at the other end",
+		(await page
+			.locator(
+				'[data-live-station-console] [data-live-request-action="deliver"]',
+			)
+			.count()) === 0,
+	);
+
 	await click("cancel");
+	check(
+		"cancelling keeps the obligation it created",
+		await page.evaluate(
+			() =>
+				Object.values(
+					window.__seelite.commanderRecord().requests.entrustedByLotId,
+				).length === 1,
+		),
+	);
+	await click("return-entrusted");
+	check(
+		"returning the consignment at the requester clears the hold",
+		await page.evaluate(
+			() =>
+				Object.values(
+					window.__seelite.commanderRecord().requests.entrustedByLotId,
+				).length === 0,
+		),
+	);
 	await page
 		.locator('[data-live-station-console] [data-live-request-action="accept"]')
 		.focus();
@@ -215,44 +269,43 @@ try {
 		"native Space reaccepts a focused request without changing tracking",
 		await page.evaluate((i) => {
 			const s = window.__seelite.commanderRecord().requests;
-			return s.byId[i].status === "accepted" && s.trackedRequestId === null;
+			return (
+				s.byId[i].status === "accepted" &&
+				s.byId[i].acceptanceOrdinal === 2 &&
+				s.trackedRequestId === null
+			);
 		}, id),
 	);
-	await click("track");
+
 	const target = await page.evaluate(() => window.__seelite.targetId);
-	await rows.nth(1).click();
-	// Walk real key input to the explicit Accept action.
-	const focused = () =>
-		page.evaluate(
-			() =>
-				window.__seelite.liveCockpit.focusedElement()?.dataset
-					.liveRequestAction,
-		);
-	const walk = async (action, press) => {
-		for (let i = 0; i < 30; i++) {
-			if ((await focused()) === action) return;
-			await press();
-		}
-		throw Error(`focus never reached ${action}`);
-	};
-	await walk("accept", () => page.keyboard.press("ArrowDown"));
-	await page.keyboard.press("Enter");
+	await click("track");
 	check(
-		"keyboard accepts second without changing tracking or flight target",
-		await page.evaluate(
-			([a, b, t]) => {
-				const g = window.__seelite;
-				const s = g.commanderRecord().requests;
-				return (
-					Object.keys(s.byId).length === 2 &&
-					s.trackedRequestId === a &&
-					s.byId[b].status === "accepted" &&
-					g.targetId === t
-				);
-			},
-			[id, second, target],
-		),
+		"tracking changes no flight target",
+		await page.evaluate((t) => window.__seelite.targetId === t, target),
 	);
+
+	// The board is a function of the world, not of how often the pilot docks.
+	const before = await page.evaluate(() =>
+		window.__seelite.requestsView().offers.map((o) => o.id),
+	);
+	await page.evaluate(() => {
+		const g = window.__seelite;
+		g.launch();
+		g.skipDockTraversal();
+		for (let i = 0; i < 60; i++) g.step(1 / 60);
+	});
+	await dockAt(page, station);
+	await page.locator('[data-live-station-tab="Requests"]').click();
+	check(
+		"undocking and docking again rerolls nothing",
+		JSON.stringify(
+			await page.evaluate(() =>
+				window.__seelite.requestsView().offers.map((o) => o.id),
+			),
+		) === JSON.stringify(before),
+	);
+
+	// A fake W3C device drives the same dispatch as the mouse.
 	const tap = async (index) => {
 		if (!Number.isInteger(index)) throw Error("invalid W3C button index");
 		await page.evaluate((i) => window.__pad.hold(i), index);
@@ -260,7 +313,7 @@ try {
 		await page.evaluate((i) => window.__pad.release(i), index);
 		await page.evaluate(() => window.__frames(3));
 	};
-	await tap(B.r1); // Requests -> Market.
+	await tap(B.r1);
 	check(
 		"controller shoulder switches station tab",
 		(await page
@@ -268,45 +321,10 @@ try {
 			.getAttribute("aria-selected")) === "true",
 	);
 	await tap(B.l1);
-	await rows.nth(1).click();
-	for (let i = 0; i < 30; i++) {
-		const d = await page.evaluate(
-			() => window.__seelite.liveCockpit.focusedElement()?.dataset,
-		);
-		if (d?.liveRequestAction === "details" && d.liveRequestId === id) break;
-		await tap(B.down);
-	}
-	await tap(B.a);
-	check(
-		"controller activation opens details without duplicate acceptance",
-		(await count()) === 2 &&
-			(await page.evaluate(
-				(i) => window.__seelite.requestSelectedId === i,
-				id,
-			)),
-	);
-	// First request: ordered fixture transitions remain independent of tracking.
-	await page
-		.locator(
-			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${id}"]`,
-		)
-		.click();
-	await click("untrack");
-	await click("fixture-search");
-	await click("fixture-identify");
-	await click("fixture-disable");
-	check(
-		"untracked progress becomes ready to report",
-		await page.evaluate(
-			(i) =>
-				window.__seelite.commanderRecord().requests.byId[i].status ===
-				"ready-to-report",
-			id,
-		),
-	);
-	await click("track");
-	await page.screenshot({ path: `${out}/03-ready-report.png` });
-	// Launch through the game, then inspect actual in-flight consoles.
+	await rows.first().click();
+
+	// Fly it. The delivery station may be in this system or one jump away; the
+	// binder decides, so the probe reads the offer rather than assuming.
 	await page.evaluate(() => {
 		const g = window.__seelite;
 		g.launch();
@@ -316,57 +334,131 @@ try {
 		g.updateCockpit();
 	});
 	check(
-		"in-flight compact cue shows return/report",
-		/Return.*Report/.test(
-			await page.locator("[data-live-request-cue]").innerText(),
+		"the in-flight cue names the cargo and where it goes",
+		(await page.locator("[data-live-request-cue]").innerText()).includes(
+			offer.reportName,
 		),
 	);
-	await page.screenshot({ path: `${out}/04-active-flight.png` });
-	await page.keyboard.press("Alt+ArrowLeft");
-	await page.locator('[data-live-left-tab="Requests"]').click();
+	await page.screenshot({ path: `${out}/02-tracked-flight.png` });
+
+	const jumped = await page.evaluate((o) => {
+		const g = window.__seelite;
+		const systemIndex = Number(o.reportAt.carrierKey.split(":")[0]);
+		if (systemIndex === g.world.system.record.index) return "same system";
+		const to = g.world.galaxy.systems.find((s) => s.index === systemIndex);
+		if (!to) throw Error("delivery system is not in this galaxy");
+		// A pilot buys fuel; a probe is not measuring the fuel economy here.
+		g.commander = { ...g.commander, fuelLy: 7 };
+		g.performJump(to);
+		for (let i = 0; i < 60; i++) g.step(1 / 60);
+		return g.world.system.record.index === systemIndex
+			? "jumped"
+			: `jump failed: ${g.jumpNotice ?? "no notice"}`;
+	}, offer);
 	check(
-		"flight Requests reachable with both commitments",
-		(await page
-			.locator('[data-live-panel="left"] [data-live-request-action="details"]')
-			.count()) === 2,
+		"the delivery station is reachable on one jump or already here",
+		jumped === "same system" || jumped === "jumped",
+		jumped,
 	);
-	check(
-		"flight has no success Report action",
-		(await page
-			.locator('[data-live-panel="left"] [data-live-request-action="report"]')
-			.count()) === 0,
-	);
-	await page.screenshot({ path: `${out}/05-flight-requests.png` });
+
+	const destination = offer.reportAt.carrierKey.split(":").slice(1).join(":");
+	await dockAt(page, destination);
+	await page.locator('[data-live-station-tab="Requests"]').click();
 	await page
 		.locator(
-			`[data-live-panel="left"] [data-live-request-action="details"][data-live-request-id="${second}"]`,
+			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${id}"]`,
 		)
 		.click();
-	await page
-		.locator('[data-live-panel="left"] [data-live-request-action="track"]')
-		.click();
-	await page.keyboard.press("Alt+ArrowUp");
-	const cue = await page.locator("[data-live-request-cue]").innerText();
-	check(
-		"unconfirmed tracked lead shows region with no exact target",
-		cue.includes("Search") &&
-			cue.includes("search region only") &&
-			!/\b\d+\.?\d* km\b/.test(cue),
+	const creditsBefore = await page.evaluate(
+		() => window.__seelite.commanderRecord().state.credits,
 	);
+	const priceBefore = await page.evaluate(
+		(o) =>
+			window.__seelite
+				.stationConsoleState()
+				.market.find((r) => r.commodity?.name === o.goodName)?.buyCr ?? null,
+		offer,
+	);
+	await click("deliver");
+	check(
+		"delivering at the report station satisfies the objective",
+		await page.evaluate(
+			(i) =>
+				window.__seelite.commanderRecord().requests.byId[i].status ===
+					"ready-to-report" &&
+				Object.values(
+					window.__seelite.commanderRecord().requests.entrustedByLotId,
+				).length === 0,
+			id,
+		),
+	);
+	await click("report");
+	check(
+		"Report pays the pinned reward once",
+		await page.evaluate(
+			([c, r]) => window.__seelite.commanderRecord().state.credits === c + r,
+			[creditsBefore, offer.rewardCr],
+		),
+		`${creditsBefore} → ${creditsBefore + offer.rewardCr} Cr`,
+	);
+	check(
+		"a completed request offers no repeat Report or Accept",
+		(await page
+			.locator(
+				'[data-live-station-console] [data-live-request-action="report"], [data-live-station-console] [data-live-request-action="accept"]',
+			)
+			.count()) === 0,
+	);
+	const marked = await page.evaluate((o) => {
+		const g = window.__seelite;
+		const gi = g.world.system.record.galaxy;
+		const row = g.commerceWorld.galaxies[gi].deficits[o.reportAt.carrierKey];
+		return row ? (row.goods[o.goodName] ?? 0) : 0;
+	}, offer);
+	check(
+		"the delivery leaves a mark on the destination's market",
+		marked < 0,
+		`deficit ${marked.toFixed(2)} units`,
+	);
+	await page.locator('[data-live-station-tab="Market"]').click();
+	const priceAfter = await page.evaluate(
+		(o) =>
+			window.__seelite
+				.stationConsoleState()
+				.market.find((r) => r.commodity?.name === o.goodName)?.buyCr ?? null,
+		offer,
+	);
+	check(
+		"and the price a pilot reads on the glass has moved with it",
+		priceBefore !== null && priceAfter !== null && priceAfter < priceBefore,
+		`${priceBefore} → ${priceAfter} Cr`,
+	);
+	await page.screenshot({ path: `${out}/03-delivered.png` });
+
+	check(
+		"the settled job lets this requester post its next episode",
+		await page.evaluate(
+			(o) => {
+				const g = window.__seelite;
+				// Bound at the requester, which is where the episode counter lives.
+				return (
+					g.commanderRecord().requests.byId[o.id].terms.episode === 1 &&
+					g.commanderRecord().requests.byId[o.id].status === "completed"
+				);
+			},
+			{ id },
+		),
+	);
+
 	// Flush the complete live envelope and boot a new Game from IndexedDB.
 	await page.evaluate(async () => {
 		if (!window.__seelite.saveStore) throw Error("save store not attached");
 		await window.__seelite.saveStore.flush("quit");
 	});
-	// One catalog and one encoding: the journal must arrive in the Commander
-	// catalog, and the trial's own database must not be recreated beside it.
 	check(
-		"the fixture journal lands in the one Commander catalog",
+		"the journal lands in the one Commander catalog at one schema version",
 		await page.evaluate(async () => {
 			const { indexedDbSaveBackend } = await import("/src/save-store.ts");
-			// The current version is read off the module. Pinning the literal
-			// would turn this row red on the next bump for a reason that has
-			// nothing to do with Requests.
 			const { SAVE_SCHEMA_VERSION } = await import("/src/save-envelope.ts");
 			const normal = indexedDbSaveBackend();
 			const records = await Promise.all(
@@ -386,140 +478,24 @@ try {
 			);
 		}),
 	);
-	await page.goto(gameUrl(origin, { "requests-prototype": true }), {
-		waitUntil: "load",
-	});
+	await page.goto(gameUrl(origin, {}), { waitUntil: "load" });
 	await bootedGame(page);
 	check(
-		"serialized envelope restores commitments and chosen cue without payment",
-		(await count()) === 2 &&
-			(await page.evaluate(
-				(i) =>
-					window.__seelite.commanderRecord().requests.trackedRequestId === i,
-				second,
-			)),
-	);
-	await page.evaluate(async (id) => {
-		const g = window.__seelite;
-		await window.__parkInBerth(id, g.berthIdsOfStation(id)[0]);
-		g.setHeadLook("forward");
-		g.updateCockpit();
-	}, station);
-	await page.locator('[data-live-station-tab="Requests"]').click();
-	await page
-		.locator(
-			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${id}"]`,
-		)
-		.click();
-	const credits = await page.evaluate(
-		() => window.__seelite.commanderRecord().state.credits,
-	);
-	await click("report");
-	check(
-		"return Report pays pinned reward once",
+		"a restored envelope carries the settlement rather than repaying it",
 		await page.evaluate(
-			(c) => window.__seelite.commanderRecord().state.credits === c + 250,
-			credits,
-		),
-	);
-	check(
-		"completed request has no repeat Report or Accept",
-		(await page
-			.locator(
-				'[data-live-station-console] [data-live-request-action="report"], [data-live-station-console] [data-live-request-action="accept"]',
-			)
-			.count()) === 0,
-	);
-	await page
-		.locator(
-			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${second}"]`,
-		)
-		.click();
-	await click("fixture-unavailable");
-	check(
-		"first unavailability observation removes the repeat fixture action",
-		(await page
-			.locator(
-				'[data-live-station-console] [data-live-request-action="fixture-unavailable"]',
-			)
-			.count()) === 0,
-	);
-	check(
-		"observed unavailable target offers useful report and cancel",
-		(await page
-			.locator(
-				'[data-live-station-console] [data-live-request-action="report-unavailable"]',
-			)
-			.count()) === 1 &&
-			(await page
-				.locator(
-					'[data-live-station-console] [data-live-request-action="cancel"]',
-				)
-				.count()) === 1,
-	);
-	await walk("cancel", () => tap(B.down));
-	await tap(B.a);
-	check(
-		"controller cancellation clears chosen cue and preserves first settlement",
-		await page.evaluate(
-			([a, b]) => {
-				const s = window.__seelite.commanderRecord().requests;
+			([i, c, r]) => {
+				const g = window.__seelite;
+				const row = g.commanderRecord().requests.byId[i];
 				return (
-					s.byId[a].status === "completed" &&
-					s.byId[b].status === "cancelled" &&
-					s.trackedRequestId === null
+					row?.status === "completed" &&
+					row.settledAt !== null &&
+					g.commanderRecord().state.credits === c + r
 				);
 			},
-			[id, second],
+			[id, creditsBefore, offer.rewardCr],
 		),
 	);
-	await click("accept");
-	check(
-		"cancelled unfinished job reaccepts same identity",
-		await page.evaluate(
-			(i) =>
-				window.__seelite.commanderRecord().requests.byId[i]
-					.acceptanceOrdinal === 2,
-			second,
-		),
-	);
-	await page.screenshot({ path: `${out}/06-unavailable.png` });
-	const normalPage = await browser.newPage({
-		viewport: { width: 1440, height: 900 },
-	});
-	t.watchShaders(normalPage, "normal Game");
-	// `__parkInBerth` is an init script, so it goes on before the navigation —
-	// this arm docks now and the helper is not installed page-wide.
-	await installViewPlacement(normalPage);
-	await installViewFraming(normalPage);
-	await normalPage.goto(gameUrl(origin, { seed: 42, "no-save": true }), {
-		waitUntil: "load",
-	});
-	await bootedGame(normalPage);
-	// **Docked, which the row above it was not (#437).** An undocked Game shows
-	// no station console at all, so a tab count of zero there is true whether
-	// or not the fixtures are gated — the check could not fail. This arm parks
-	// in a berth and turns the head forward, exactly as the flagged arm does
-	// before asserting the tab is present.
-	await dockAtAStation(normalPage);
-	check(
-		"a docked Game without the fixture flag exposes no Requests tab",
-		(await normalPage
-			.locator(
-				'[data-live-station-tab="Requests"], [data-live-left-tab="Requests"]',
-			)
-			.count()) === 0 &&
-			(await normalPage.locator("[data-live-station-console]").count()) > 0,
-	);
-	check(
-		"and its offer source is empty, which is why the tab is absent",
-		await normalPage.evaluate(() => {
-			const view = window.__seelite.requestsView();
-			return view.fixtures === false && view.offers.length === 0;
-		}),
-	);
-	await normalPage.close();
-	check("no shader failed to compile or link on either page", t.failures === 0);
+	check("no shader failed to compile or link", t.failures === 0);
 	writeFileSync(
 		`${out}/checks.json`,
 		JSON.stringify(
@@ -527,7 +503,15 @@ try {
 				headed,
 				viewport: { width: 1440, height: 900 },
 				fixtures:
-					"Dock berth and relay objective facts simulated; no live relay or consequence. Complete IndexedDB live envelope flushed, then restored by normal direct boot into a new Game.",
+					"Dock berth placement only. The offer, its operands, the delivery and the market mark are live; no stage is simulated.",
+				offer: {
+					id: offer.id,
+					family: offer.family,
+					goodName: offer.goodName,
+					tonnes: offer.tonnes,
+					rewardCr: offer.rewardCr,
+					distanceLy: offer.distanceLy,
+				},
 				checks,
 			},
 			null,
