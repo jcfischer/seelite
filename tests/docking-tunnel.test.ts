@@ -29,6 +29,7 @@ import {
 	TUNNEL_FLARE_DEG,
 	TUNNEL_RINGS,
 	dockingTunnel,
+	tunnelRailSegments,
 } from "../src/docking-tunnel";
 import {
 	type Vec3,
@@ -260,5 +261,36 @@ describe("the mouth is clamped rather than trusted", () => {
 			frame.aperture.widthKm / 2,
 			12,
 		);
+	});
+});
+
+describe("the corridor's projected rails", () => {
+	test("break at an omitted ring rather than bridging across it", () => {
+		const point = (x: number) => ({ x, y: 0 });
+		const rails = tunnelRailSegments([
+			[point(0), point(10), point(20), point(30)],
+			[point(1), point(11), point(21), point(31)],
+			[null, null, null, null],
+			[point(3), point(13), point(23), point(33)],
+			[point(4), point(14), point(24), point(34)],
+		]);
+		expect(rails).toEqual([
+			[
+				[point(0), point(1)],
+				[point(3), point(4)],
+			],
+			[
+				[point(10), point(11)],
+				[point(13), point(14)],
+			],
+			[
+				[point(20), point(21)],
+				[point(23), point(24)],
+			],
+			[
+				[point(30), point(31)],
+				[point(33), point(34)],
+			],
+		]);
 	});
 });

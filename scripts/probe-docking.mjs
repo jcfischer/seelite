@@ -1101,15 +1101,24 @@ check(
 	rollSamples.map((s) => `${s.rollDeg}°→${s.tiltDeg?.toFixed(1)}°`).join("  "),
 );
 
-const farther = await directorAt({ ...APPROACH, standoffKm: 20 });
+const beyondMouth = await directorAt({ ...APPROACH, standoffKm: 3.2 });
+const throughMouth = await directorAt({ ...APPROACH, standoffKm: 2.2 });
 check(
-	// The mouth is the ship's own axial distance, so the corridor always reaches
-	// back to the pilot and shortens as they fly it. A fixed-length tunnel would
-	// pass every other row here.
-	"the corridor reaches back to the ship, so it shortens as the ship closes",
-	farther.drawn?.mouthHalfWidthKm > inside.drawn?.mouthHalfWidthKm * 2,
-	`${inside.drawn?.mouthHalfWidthKm?.toFixed(3)} km at ${inside.drawn?.rangeKm?.toFixed(1)} km, ` +
-		`${farther.drawn?.mouthHalfWidthKm?.toFixed(3)} km at ${farther.drawn?.rangeKm?.toFixed(1)} km`,
+	"the fixed corridor holds its mouth as the ship closes",
+	Math.abs(
+		(beyondMouth.drawn?.mouthHalfWidthKm ?? Number.NaN) -
+			(throughMouth.drawn?.mouthHalfWidthKm ?? Number.NaN),
+	) < 1e-6,
+	`${beyondMouth.drawn?.mouthHalfWidthKm?.toFixed(3)} km outside, ` +
+		`${throughMouth.drawn?.mouthHalfWidthKm?.toFixed(3)} km through`,
+);
+check(
+	"rings disappear cleanly as the ship passes through the fixed corridor",
+	(beyondMouth.drawn?.tunnelRingsDrawn ?? 0) >
+		(throughMouth.drawn?.tunnelRingsDrawn ?? Number.POSITIVE_INFINITY) &&
+		(throughMouth.drawn?.tunnelRingsDrawn ?? 0) > 0,
+	`${beyondMouth.drawn?.tunnelRingsDrawn}/${beyondMouth.drawn?.tunnelRings} outside, ` +
+		`${throughMouth.drawn?.tunnelRingsDrawn}/${throughMouth.drawn?.tunnelRings} through`,
 );
 
 // ---------------------------------------------------------------------------
