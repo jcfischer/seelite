@@ -201,6 +201,15 @@ export interface BindContext {
 	station: Station;
 	destinations: readonly JobDestination[];
 	deficits: DeficitMap;
+	/**
+	 * The clock in game **minutes**, which is the unit `economy-trade.md`
+	 * §5.5's deficit rows are stamped in.
+	 *
+	 * An offer's own `observedAt` is in **seconds**, because the journal's
+	 * clock is `world.gameTime` and the save validates every stamp against it
+	 * — `observedAtOf` below is the one conversion, and it exists because the
+	 * two units met in a field with no unit in its name.
+	 */
 	gameTimeMin: number;
 	/**
 	 * Settled jobs of each family at this requester, from the saved journal.
@@ -255,8 +264,14 @@ export interface JobOffer {
 	consequence: string;
 	region: string;
 	source: string;
+	/** Game **seconds** — the journal's clock (`world.gameTime`), not the
+	 *  minutes a deficit row is stamped in. */
 	observedAt: number;
 }
+
+/** The binder's minute clock as the journal's second clock. */
+const observedAtOf = (ctx: BindContext): number =>
+	Math.round(ctx.gameTimeMin * 60);
 
 /** §4's mark, less the two numbers only the caller knows. */
 export interface JobMark {
@@ -277,8 +292,6 @@ export const jobMark = (offer: JobOffer): JobMark => ({
 	trade: { goodName: offer.goodName, units: -offer.tonnes },
 });
 
-/** A station can post market-derived work only if the market can price it —
- *  `station-types.md` §3 still owes the outpost a price offset. */
 /**
  * A station can post or receive market-derived work only if the market can
  * price it — `station-types.md` §3 still owes the outpost a price offset.
@@ -389,13 +402,20 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	const listedThere = new Set(
 		listedAt(destination.station, destination.system).map((c) => c.name),
 	);
-	const good = listedAt(ctx.station, ctx.system)
-		.filter((c) => listedThere.has(c.name) && !c.sellOnly)
-		.sort(
-			(a, b) =>
-				basePriceCr(a, ctx.system, ctx.station) -
-					basePriceCr(b, ctx.system, ctx.station) || (a.name < b.name ? -1 : 1),
-		)[0];
+	// **Tonnes of a legal good, or none of the arithmetic downstream holds.**
+	// `entrustedTonnesAboard`, the hold's room and the mark all count tonnes,
+	// and contraband is the one scoped class (`economy-trade.md` §4) — a
+	// consignment of it would be a job the law model never agreed to.
+	const priced = listedAt(ctx.station, ctx.system)
+		.filter(
+			(c) =>
+				listedThere.has(c.name) && !c.sellOnly && !c.illegal && c.unit === "t",
+		)
+		// Priced once per commodity rather than twice per comparison: this runs
+		// on every bind, which is every dock.
+		.map((c) => ({ c, priceCr: basePriceCr(c, ctx.system, ctx.station) }))
+		.sort((a, b) => a.priceCr - b.priceCr || (a.c.name < b.c.name ? -1 : 1));
+	const good = priced[0]?.c;
 	if (!good) return null;
 
 	return {
@@ -432,7 +452,7 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 		consequence: row.consequence,
 		region: `${destination.station.name}, ${destination.system.name}`,
 		source: `Freight desk at ${ctx.station.name}`,
-		observedAt: ctx.gameTimeMin,
+		observedAt: observedAtOf(ctx),
 	};
 }
 
@@ -504,7 +524,7 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
 		consequence: row.consequence,
 		region: `${ctx.station.name}, ${ctx.system.name}`,
 		source: `Purchasing office at ${ctx.station.name}`,
-		observedAt: ctx.gameTimeMin,
+		observedAt: observedAtOf(ctx),
 	};
 }
 

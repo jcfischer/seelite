@@ -140,6 +140,45 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 	});
 });
 
+describe("the offer's clock is the journal's clock", () => {
+	// **Seconds, not minutes.** The binder works in game minutes because that
+	// is the unit a deficit row is stamped in; the journal's clock is
+	// `world.gameTime` in seconds, and the save validates every stamp against
+	// it. When the two met in a field with no unit in its name, a fresh offer
+	// read 59 minutes old on the console and the refusal below could never
+	// fire, because a minute figure is under a second figure at every clock.
+	const board = firstOffer(SYSTEMS, "courier", { gameTimeMin: 60 });
+
+	test("an offer is stamped in seconds", () => {
+		expect(board.offer.observedAt).toBe(60 * 60);
+	});
+
+	test("an action before the offer was posted is refused", () => {
+		const early = requestAction(
+			emptyRequests(),
+			board.offers,
+			"accept",
+			board.offer.id,
+			{
+				now: board.offer.observedAt - 1,
+				docked: at(board.offer.requester),
+				cargo: {},
+				holdRoomT: 40,
+			},
+		);
+		expect(early.ok).toBe(false);
+		expect(early.message).toContain("observation time");
+		expect(
+			requestAction(emptyRequests(), board.offers, "accept", board.offer.id, {
+				now: board.offer.observedAt,
+				docked: at(board.offer.requester),
+				cargo: {},
+				holdRoomT: 40,
+			}).ok,
+		).toBe(true);
+	});
+});
+
 describe("§4 — cancelling keeps the obligation it created", () => {
 	test("a cancelled courier still owes its cargo back to the requester", () => {
 		const state = requestAction(

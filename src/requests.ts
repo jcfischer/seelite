@@ -298,6 +298,11 @@ export function requestAction(
 			(l) => l.offerId === id,
 		);
 		if (!lot) return refuse("Nothing entrusted to return for this job.");
+		// **Only once the job is off.** §3 lists the return against a cancelled
+		// or failed commitment; handing the goods back while the job is still
+		// running would leave a live obligation with nothing aboard to meet it.
+		if (existing && isAcceptedRequest(existing))
+			return refuse("Cancel the job before returning its consignment.");
 		if (!sameStation(ctx.docked, lot.returnTo))
 			return refuse("Dock at the requester to return entrusted cargo.");
 		const entrustedByLotId = { ...state.entrustedByLotId };
@@ -603,10 +608,18 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			request.status === "completed"
 		)
 			bad();
+		const returnTo = ref(l.returnTo);
+		// The lot goes back to its requester, so the reference has to be that
+		// one rather than any valid-looking key.
+		if (
+			returnTo.galaxyIndex !== request.terms.requester.galaxyIndex ||
+			returnTo.carrierKey !== request.terms.requester.carrierKey
+		)
+			bad();
 		out.entrustedByLotId[lotId] = {
 			lotId,
 			offerId: l.offerId,
-			returnTo: ref(l.returnTo),
+			returnTo,
 			goodName: l.goodName,
 			aboardT: l.aboardT,
 			issuedOrdinal: l.issuedOrdinal,

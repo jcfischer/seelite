@@ -75,7 +75,7 @@ import {
  * **4 is #411's wire shape for that journal.** The content was gated behind a
  * DEV flag for one node more; #411 replaced the fixtures with `jobs.ts`'s
  * bound offers, which changed every field of a saved offer
- * (`slot: "relay" | "survey"` became a family, a row id, a delivery station, a
+ * (the trial's two-value row key became a family, a row id, a delivery station, a
  * commodity and a tonnage) and added the entrusted cargo lots. A version
  * identifies a shape, so a reader that told a 3 from a 4 by which fields
  * happened to be present would be guessing. A version 3 record still loads —

@@ -209,6 +209,44 @@ try {
 			.click();
 	await click("retain");
 	check("retain does not accept", (await count()) === 0);
+
+	// **Real key events, on the public dispatch.** `Enter` on a focused row
+	// opens its details and nothing else; the walk below is what accepts.
+	await rows.first().focus();
+	await page.keyboard.press("Enter");
+	check(
+		"native Enter opens the focused offer without accepting",
+		(await count()) === 0 &&
+			(await page.evaluate(
+				(i) => window.__seelite.requestSelectedId === i,
+				id,
+			)),
+	);
+	const focused = () =>
+		page.evaluate(
+			() =>
+				window.__seelite.liveCockpit.focusedElement()?.dataset
+					.liveRequestAction,
+		);
+	const walk = async (action, press) => {
+		for (let i = 0; i < 30; i++) {
+			if ((await focused()) === action) return;
+			await press();
+		}
+		throw Error(`focus never reached ${action}`);
+	};
+	await walk("accept", () => page.keyboard.press("ArrowDown"));
+	await page.keyboard.press("Enter");
+	check(
+		"the keyboard accepts, and acceptance starts no tracking",
+		(await count()) === 1 &&
+			(await page.evaluate(
+				() =>
+					window.__seelite.commanderRecord().requests.trackedRequestId === null,
+			)),
+	);
+	await click("cancel");
+	await click("return-entrusted");
 	await page
 		.locator('[data-live-station-console] [data-live-request-action="accept"]')
 		.dblclick();
@@ -261,20 +299,29 @@ try {
 				).length === 0,
 		),
 	);
+	const ordinalBefore = await page.evaluate(
+		(i) =>
+			window.__seelite.commanderRecord().requests.byId[i].acceptanceOrdinal,
+		id,
+	);
 	await page
 		.locator('[data-live-station-console] [data-live-request-action="accept"]')
 		.focus();
 	await page.keyboard.press("Space");
 	check(
 		"native Space reaccepts a focused request without changing tracking",
-		await page.evaluate((i) => {
-			const s = window.__seelite.commanderRecord().requests;
-			return (
-				s.byId[i].status === "accepted" &&
-				s.byId[i].acceptanceOrdinal === 2 &&
-				s.trackedRequestId === null
-			);
-		}, id),
+		await page.evaluate(
+			([i, was]) => {
+				const s = window.__seelite.commanderRecord().requests;
+				return (
+					s.byId[i].status === "accepted" &&
+					// The same identity, one issuance further on — not a clone.
+					s.byId[i].acceptanceOrdinal === was + 1 &&
+					s.trackedRequestId === null
+				);
+			},
+			[id, ordinalBefore],
+		),
 	);
 
 	const target = await page.evaluate(() => window.__seelite.targetId);
@@ -336,6 +383,26 @@ try {
 			.getAttribute("aria-selected")) === "true",
 	);
 	await tap(B.l1);
+	// The controller opens details through the same dispatch, and opening is
+	// not accepting.
+	const acceptedBeforePad = await count();
+	for (let i = 0; i < 30; i++) {
+		const data = await page.evaluate(
+			() => window.__seelite.liveCockpit.focusedElement()?.dataset,
+		);
+		if (data?.liveRequestAction === "details" && data.liveRequestId === id)
+			break;
+		await tap(B.down);
+	}
+	await tap(B.a);
+	check(
+		"controller activation opens details without a second acceptance",
+		(await count()) === acceptedBeforePad &&
+			(await page.evaluate(
+				(i) => window.__seelite.requestSelectedId === i,
+				id,
+			)),
+	);
 	await rows.first().click();
 
 	// Fly it. The delivery station may be in this system or one jump away; the
@@ -354,6 +421,20 @@ try {
 			offer.reportName,
 		),
 	);
+	// The left console reviews commitments in flight, and cannot settle one.
+	await page.keyboard.press("Alt+ArrowLeft");
+	await page.locator('[data-live-left-tab="Requests"]').click();
+	check(
+		"the flight panel lists the commitment and offers no Report",
+		(await page
+			.locator('[data-live-panel="left"] [data-live-request-action="details"]')
+			.count()) >= 1 &&
+			(await page
+				.locator('[data-live-panel="left"] [data-live-request-action="report"]')
+				.count()) === 0,
+	);
+	await page.screenshot({ path: `${out}/02b-flight-requests.png` });
+	await page.keyboard.press("Alt+ArrowUp");
 	await page.screenshot({ path: `${out}/02-tracked-flight.png` });
 
 	// One jump, used by both legs of the flight. The second copy of this block
@@ -392,13 +473,28 @@ try {
 	const creditsBefore = await page.evaluate(
 		() => window.__seelite.commanderRecord().state.credits,
 	);
-	const priceBefore = await page.evaluate(
-		(o) =>
-			window.__seelite
-				.stationConsoleState()
-				.market.find((r) => r.commodity?.name === o.goodName)?.buyCr ?? null,
-		offer,
-	);
+	// **Off the glass, not off the state object.** The row is named for what a
+	// pilot reads, so it reads the rendered market cell; a state read would
+	// pass with the screen showing anything at all.
+	const priceOnGlass = async () => {
+		await page.locator('[data-live-station-tab="Market"]').click();
+		const text = await page
+			.locator(
+				`[data-live-station-console] [data-live-market-row="${offer.goodName}"] [data-live-buy]`,
+			)
+			.innerText();
+		const value = Number.parseFloat(text.replace(/[^0-9.]/g, ""));
+		if (!Number.isFinite(value))
+			throw new Error(`no buy price on the glass for ${offer.goodName}`);
+		await page.locator('[data-live-station-tab="Requests"]').click();
+		return value;
+	};
+	const priceBefore = await priceOnGlass();
+	await page
+		.locator(
+			`[data-live-station-console] [data-live-request-action="details"][data-live-request-id="${id}"]`,
+		)
+		.click();
 	await click("deliver");
 	check(
 		"delivering at the report station satisfies the objective",
@@ -440,17 +536,10 @@ try {
 		marked < 0,
 		`deficit ${marked.toFixed(2)} units`,
 	);
-	await page.locator('[data-live-station-tab="Market"]').click();
-	const priceAfter = await page.evaluate(
-		(o) =>
-			window.__seelite
-				.stationConsoleState()
-				.market.find((r) => r.commodity?.name === o.goodName)?.buyCr ?? null,
-		offer,
-	);
+	const priceAfter = await priceOnGlass();
 	check(
 		"and the price a pilot reads on the glass has moved with it",
-		priceBefore !== null && priceAfter !== null && priceAfter < priceBefore,
+		priceAfter < priceBefore,
 		`${priceBefore} → ${priceAfter} Cr`,
 	);
 	await page.screenshot({ path: `${out}/03-delivered.png` });

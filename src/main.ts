@@ -1744,6 +1744,12 @@ class Game {
 	private requestRevision = 0;
 	private requestOffersCacheKey: string | null = null;
 	private requestOffersCache: JobOffer[] = [];
+	/** The delivery candidates for one docked station, kept apart from the
+	 *  board's own cache: a market trade moves the deficit a procurement binder
+	 *  reads, and re-binding for that must not regenerate the contents of every
+	 *  system within a jump. */
+	private requestDestinationsKey: string | null = null;
+	private requestDestinations: ReturnType<typeof deliveryCandidates> = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -11510,9 +11516,12 @@ class Game {
 			// `deliveryCandidates` regenerates the contents of every system
 			// within a jump, so this is not a cheap call to repeat. The key is
 			// the station, the requester's settled episodes and the console
-			// revision that a till or a request action bumps. The clock is
-			// deliberately **not** in it: a board that re-bound every minute
-			// would be the reroll §1 forbids.
+			// revision that a till or a request action bumps — a trade moves
+			// the deficit a procurement binder reads. The **candidates** are
+			// cached on the place alone, because a trade cannot move them and
+			// regenerating a neighbourhood per click is what that would cost.
+			// The clock is deliberately in neither: a board that re-bound every
+			// minute would be the reroll §1 forbids.
 			const settled = settledAt(this.requests, {
 				galaxyIndex: context.galaxyIndex,
 				carrierKey: context.stationKey,
@@ -11523,16 +11532,21 @@ class Game {
 			// who bought the shelf out while docked kept reading the old board.
 			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
-				this.requestOffersCache = bindJobs({
-					galaxyIndex: context.galaxyIndex,
-					system: this.world.system.record,
-					station: context.station,
-					destinations: deliveryCandidates(
+				const place = `${context.galaxyIndex}:${context.stationKey}`;
+				if (place !== this.requestDestinationsKey) {
+					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
 						this.world.system.record,
 						(record) => generateContents(record),
 						context.stationKey,
-					),
+					);
+					this.requestDestinationsKey = place;
+				}
+				this.requestOffersCache = bindJobs({
+					galaxyIndex: context.galaxyIndex,
+					system: this.world.system.record,
+					station: context.station,
+					destinations: this.requestDestinations,
 					deficits: context.envelope.deficits,
 					gameTimeMin: context.gameTimeMin,
 					settled,

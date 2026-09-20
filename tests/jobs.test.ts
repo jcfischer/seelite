@@ -18,6 +18,7 @@ import {
 	deliveryCandidates,
 	jobMark,
 } from "../src/jobs";
+// `JUMP_TANK_LY` is the jump tank's capacity (`hyperspace.ts`).
 import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	boardAt,

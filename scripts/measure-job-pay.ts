@@ -203,6 +203,8 @@ const farmRows: {
 	feeCr: number;
 	tonnes: number;
 	netCr: number;
+	deliverCr: number;
+	sellCr: number;
 }[] = [];
 for (let world = 0; world < worlds; world++) {
 	const systems = generateGalaxy(world * 7919 + 1, 0).systems;
@@ -233,23 +235,34 @@ for (let world = 0; world < worlds; world++) {
 				(o) => o.family === "procurement",
 			);
 			if (!offer) continue;
-			// What the station will pay for the shortfall, plus what the goods are
-			// worth sold into the price the pilot raised — the whole farm's take.
+			// **A tonne is delivered or sold, never both.** The first version of
+			// this row added the shortfall payment to the proceeds of selling
+			// the same tonnes into the price the pilot had raised — but
+			// `deliver` consumes the cargo, so the two arms are alternatives,
+			// and it also never charged the hold that made the deficit. Both
+			// arms are priced now and the better one is the farm's take.
 			const raised = finite(
 				"raised price",
 				stockResponse(base, readDeficit(deficits, key, good.name, 0), HOLD_T),
 			);
 			const feeCr = finite("procurement fee", offer.rewardCr);
-			const netCr = finite(
-				"farm net",
-				feeCr + raised * offer.tonnes - base * offer.tonnes,
+			// Arm A: report the job. The fee is the whole return on those
+			// tonnes, and the tonnes are gone.
+			const deliverCr = finite("deliver arm", feeCr - base * offer.tonnes);
+			// Arm B: ignore the job and sell into the price the purchase raised.
+			const sellCr = finite(
+				"sell arm",
+				(raised - base) * Math.min(offer.tonnes, tonnes),
 			);
+			const netCr = Math.max(deliverCr, sellCr);
 			farmRows.push({
 				good: good.name,
 				costCr,
 				feeCr,
 				tonnes: offer.tonnes,
 				netCr,
+				deliverCr,
+				sellCr,
 			});
 		}
 	}
@@ -266,12 +279,19 @@ for (const [label, q] of [
 	console.log(
 		`${label.padEnd(7)} ${row.tonnes} t ${row.good} · fee ${row.feeCr
 			.toFixed(0)
-			.padStart(4)} Cr · farm net ${row.netCr.toFixed(0).padStart(5)} Cr`,
+			.padStart(4)} Cr · report ${row.deliverCr
+			.toFixed(0)
+			.padStart(5)} Cr · sell instead ${row.sellCr
+			.toFixed(0)
+			.padStart(5)} Cr · best ${row.netCr.toFixed(0).padStart(5)} Cr`,
 	);
 }
 console.log(
-	"\nThe farm's net is the fee plus what the raised price returns, less what the",
-	"\ngoods cost at the unmarked price. Read it against §5.5's decay: the mark",
-	"\nfades on a 20-minute half-life, so a farmed loop pays this once and then",
-	"\nless each time until the shelf forgets.",
+	"\nEach row prices both arms on the tonnes the job asks for: reporting it",
+	"\n(the fee, less what those tonnes cost at the unmarked price) and ignoring",
+	"\nit (selling them into the price the purchase raised). A tonne cannot do",
+	"\nboth. Read the best of the two against §5.5's decay: the mark fades on a",
+	"\n20-minute half-life, so a farmed loop pays this once and then less each",
+	"\ntime until the shelf forgets — and against section 1's run figures, which",
+	"\nis what the same hull earns simply trading.",
 );
