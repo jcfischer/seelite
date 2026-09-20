@@ -678,9 +678,12 @@ try {
 	// #446 — the control says whose goods it moves.
 	//
 	// The principal bought 8 t of Food to fulfil a consignment already aboard
-	// and reported a bug in the finishing of the job. There was none: the
-	// label read `Deliver 8 t Food` for a courier and for a procurement job
-	// alike, so a consignment read as a shopping list. The details pane said
+	// and reported a bug in the finishing of the job. Run through the shipped
+	// modules, the double-charge that symptom suggests is not in these paths —
+	// the session itself was never replayed, so that is what is known and not
+	// more. What this node changes is the wording: the label read
+	// `Deliver 8 t Food` for a courier and for a procurement job alike, so a
+	// consignment read as a shopping list. The details pane said
 	// *entrusted* the whole time, which is the trap — a fact present somewhere
 	// is not the control a pilot presses saying what it does.
 	//
@@ -743,7 +746,7 @@ try {
 		.locator("[data-live-station-console] .lc-request-message")
 		.innerText();
 	check(
-		"the settlement names the tonnes, the pay and what is left aboard",
+		"the settlement names the tonnes and the pay, and claims nothing about a hold the pilot never had",
 		settled.startsWith("Reported ·") &&
 			settled.includes(`${offer.tonnes} t ${offer.goodName} handed over`) &&
 			settled.endsWith(`${offer.rewardCr} Cr paid.`) &&

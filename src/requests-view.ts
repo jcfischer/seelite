@@ -6,7 +6,7 @@
  * and the distance — and the simulate-a-stage controls are gone, because the
  * stage is satisfied by flying there.
  */
-import type { HoldSummary } from "./hold";
+import { aboardForOffer, type HoldSummary } from "./hold";
 import {
 	isAcceptedRequest,
 	nextAction,
@@ -62,9 +62,12 @@ export function deliverAction(
 			}
 		: {
 				label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
+				// `aboardT` on both arms: a pilot carrying 10 t for an 8 t job
+				// was told "8 t aboard", which is the job's figure and not
+				// theirs.
 				hint: short
 					? `${aboardT} t of ${offer.tonnes} aboard`
-					: `${offer.tonnes} t aboard, yours to hand over`,
+					: `${aboardT} t aboard, yours to hand over`,
 			};
 	return { ...words, enabled: !short };
 }
@@ -81,11 +84,13 @@ export interface RequestsView {
 	 * What is aboard — #443's projection, and the only input this screen takes
 	 * about the commander.
 	 *
-	 * The whole summary rather than a tonnage per offer, because both arms of
-	 * `aboardFor` need one — the requester's lot for a consignment, the pilot's
-	 * own tonnage for a procurement job — and threading two numbers per
-	 * rendered offer through the descriptor is the second authority this is
-	 * here to avoid. No credits, no prices, no market: those stay out.
+	 * The whole summary rather than a tonnage per offer, because
+	 * `aboardForOffer` reads the **lines** and a per-offer number computed
+	 * outside would be that reading done twice. The scalar fields —
+	 * `usedT`, `capacityT`, `freeT`, `entrustedT` — arrive unused here and are
+	 * the same object the trade screen draws, which is the point: one
+	 * projection, not a per-consumer slice of it. No credits, no prices, no
+	 * market: those stay out.
 	 *
 	 * `null` where no hold was supplied, which reads as nothing aboard.
 	 */
@@ -103,13 +108,18 @@ const button = (
 	action: string,
 	id: string,
 	label: string,
-	extra: { hint?: string; enabled?: boolean } = {},
+	extra: { hint?: string; enabled?: boolean; surface?: string } = {},
 ) => {
 	// `action` is escaped too. Every caller passes a literal today, so nothing
 	// is reachable; an unescaped attribute position beside the other escaped
 	// ones is a footgun for the next caller, and `esc` covers `"` and `'`.
 	const disabled = extra.enabled === false ? " disabled" : "";
-	const hintId = extra.hint ? `${action}-${id}-hint` : "";
+	// **Namespaced by surface.** `requestsBody` renders on the station console
+	// and again on the flight console, so an offer-derived id alone would be a
+	// duplicate `id` in one document and an ambiguous `aria-describedby`.
+	const hintId = extra.hint
+		? `${extra.surface ?? "console"}-${action}-${id}-hint`
+		: "";
 	// **The hint is a sibling, not a child.** It was inside the button, which
 	// is where it is least reachable: a disabled button is not focusable and
 	// browsers suppress its `title`, and the hint is most needed exactly when
@@ -121,28 +131,16 @@ const button = (
 };
 
 /**
- * How much of this job's good is aboard, for the job's own sense of aboard.
+ * How much of this job's good is aboard — `hold.ts`'s query, re-exported.
  *
- * **Both arms read `hold` and neither re-sums the journal.** `hold.ts` owns
- * the entrusted share (CONTEXT.md §Language, **Hold**); a second sum here
- * would be a second authority on what is aboard, and the button would be able
- * to disagree with the till about it.
- *
- * `null` reads as nothing aboard, which leaves the control disabled with a
- * hint that says how short — the safe direction, and the reason
- * `tests/requests-view.test.ts` flies it.
+ * The view does not interpret the projection's lines; it asks it. A per-job
+ * reading here would be the second authority the whole #443/#446 pair exists
+ * to avoid.
  */
 export const aboardFor = (
 	view: Pick<RequestsView, "hold">,
 	offer: RequestOffer,
-): number =>
-	(view.hold?.lines ?? [])
-		.filter((line) =>
-			offer.entrusted
-				? line.owner === "requester" && line.offerId === offer.id
-				: line.owner === "pilot" && line.goodName === offer.goodName,
-		)
-		.reduce((sum, line) => sum + line.amount, 0);
+): number => aboardForOffer(view.hold, offer);
 export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
@@ -260,6 +258,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				actions += button("deliver", o.id, deliver.label, {
 					hint: deliver.hint,
 					enabled: deliver.enabled,
+					surface: flight ? "flight" : "console",
 				});
 			}
 			if (r.status === "ready-to-report" && atReport)

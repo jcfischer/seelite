@@ -71,9 +71,9 @@ export const boardAt = (
  * `bindProcurement` declines without a live deficit at the posting station, so
  * an offer of that family cannot be found by walking boards the way
  * `firstOffer` does — a deficit has to be planted first. The recipe was
- * written out in `tests/requests.test.ts` and again in
- * `tests/requests-view.test.ts`, down to the error message, which is the
- * duplication this helper exists to end.
+ * written out three times: twice in `tests/requests.test.ts` (one of them
+ * predating #446) and once in `tests/requests-view.test.ts`, each with its own
+ * error message.
  */
 export function firstProcurementOffer(
 	systems: readonly SystemRecord[],
@@ -97,7 +97,13 @@ export function firstProcurementOffer(
 				deficits,
 				gameTimeMin,
 			});
-			const offer = offers.find((o) => o.family === "procurement");
+			// **The good is constrained too.** The deficit is planted for one
+			// good and the binder takes the largest it finds, so a caller
+			// asking for Textiles could otherwise be handed a Food job and
+			// test a fixture it did not ask for.
+			const offer = offers.find(
+				(o) => o.family === "procurement" && o.goodName === good,
+			);
 			if (offer) return { record, station, offers, offer };
 		}
 	throw new Error("no procurement offer could be bound in this galaxy");

@@ -185,12 +185,47 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 		expect(aboardFor({ hold: summary(lines) }, COURIER)).toBe(COURIER.tonnes);
 	});
 
+	test("a non-tonne line of the same good is not counted as tonnes", () => {
+		// Gold is kilogrammes and takes no room; adding one in would compare a
+		// kilogramme figure against a job's tonnage and could enable a control
+		// the till then refuses.
+		expect(
+			aboardFor(
+				{
+					hold: summary([
+						{
+							goodName: PROCUREMENT.goodName,
+							amount: 40,
+							unit: "kg",
+							owner: "pilot",
+						},
+					]),
+				},
+				PROCUREMENT,
+			),
+		).toBe(0);
+	});
+
 	test("no hold reads as nothing aboard, which disables rather than enables", () => {
 		expect(aboardFor({ hold: null }, COURIER)).toBe(0);
 		expect(
 			deliverAction(COURIER, aboardFor({ hold: null }, COURIER)).enabled,
 		).toBe(false);
 	});
+});
+
+/** One accepted request, so a field added to `AcceptedRequest` is one edit. */
+const acceptedRequest = (offer: typeof COURIER) => ({
+	offerId: offer.id,
+	terms: offer,
+	acceptedAt: 0,
+	lastAcceptedAt: 0,
+	acceptanceOrdinal: 1,
+	status: "accepted" as const,
+	stageId: offer.stages[0],
+	evidence: [],
+	settledAt: null,
+	outcomeReason: null,
 });
 
 describe("the rendered control carries what the builder decided", () => {
@@ -201,18 +236,21 @@ describe("the rendered control carries what the builder decided", () => {
 	// fly the enabled entrusted case. `requestsBody` is a pure string builder,
 	// so this is a headless row rather than a probe.
 	const accepted = (offer: typeof COURIER, aboard: number) => {
-		const request = {
-			offerId: offer.id,
-			terms: offer,
-			acceptedAt: 0,
-			lastAcceptedAt: 0,
-			acceptanceOrdinal: 1,
-			status: "accepted" as const,
-			stageId: offer.stages[0],
-			evidence: [],
-			settledAt: null,
-			outcomeReason: null,
-		};
+		const request = acceptedRequest(offer);
+		const line = offer.entrusted
+			? {
+					goodName: offer.goodName,
+					amount: aboard,
+					unit: "t" as const,
+					owner: "requester" as const,
+					offerId: offer.id,
+				}
+			: {
+					goodName: offer.goodName,
+					amount: aboard,
+					unit: "t" as const,
+					owner: "pilot" as const,
+				};
 		const view: RequestsView = {
 			state: {
 				byId: { [offer.id]: request },
@@ -234,24 +272,7 @@ describe("the rendered control carries what the builder decided", () => {
 				capacityT: 20,
 				freeT: 20 - aboard,
 				entrustedT: offer.entrusted ? aboard : 0,
-				lines: aboard
-					? [
-							offer.entrusted
-								? {
-										goodName: offer.goodName,
-										amount: aboard,
-										unit: "t" as const,
-										owner: "requester" as const,
-										offerId: offer.id,
-									}
-								: {
-										goodName: offer.goodName,
-										amount: aboard,
-										unit: "t" as const,
-										owner: "pilot" as const,
-									},
-						]
-					: [],
+				lines: aboard ? [line] : [],
 			},
 		};
 		return requestsBody(view);
@@ -279,27 +300,14 @@ describe("the rendered control carries what the builder decided", () => {
 });
 
 describe("the in-flight cue carries the same distinction", () => {
-	const accepted = (offer: typeof COURIER) => ({
-		offerId: offer.id,
-		terms: offer,
-		acceptedAt: 0,
-		lastAcceptedAt: 0,
-		acceptanceOrdinal: 1,
-		status: "accepted" as const,
-		stageId: offer.stages[0],
-		evidence: [],
-		settledAt: null,
-		outcomeReason: null,
-	});
-
 	test("a consignment is carried and says it is already aboard", () => {
-		const cue = nextAction(accepted(COURIER));
+		const cue = nextAction(acceptedRequest(COURIER));
 		expect(cue).toMatch(/aboard/);
 		expect(cue).toContain(COURIER.reportName);
 	});
 
 	test("a procurement job is sourced and says the pilot supplies it", () => {
-		const cue = nextAction(accepted(PROCUREMENT));
+		const cue = nextAction(acceptedRequest(PROCUREMENT));
 		expect(cue).toMatch(/[Ss]ource/);
 		expect(cue).not.toMatch(/aboard/);
 	});

@@ -141,6 +141,13 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(reported.ok).toBe(true);
 		expect(reported.cargoDelta).toEqual({});
 		expect(reported.mark?.trade.units).toBe(-courier.tonnes);
+		// **And the sentence calls the pilot's tonnage theirs.** This is the
+		// case the node was reported from — the same good on both sides of the
+		// ownership line — and the settlement has to keep them apart in words
+		// as well as in arithmetic.
+		expect(reported.message).toBe(
+			`Reported · ${courier.tonnes} t ${courier.goodName} handed over, ${courier.rewardCr} Cr paid · ${courier.tonnes} t ${courier.goodName} still aboard, yours.`,
+		);
 	});
 
 	test("reporting pays once and marks the world once", () => {
@@ -398,6 +405,16 @@ describe("a procurement job settles against the pilot's own hold", () => {
 	// procurement arm the way `main.ts` runs it: deliver, apply the delta,
 	// report with the cargo that is left.
 	const board = firstProcurementOffer(SYSTEMS);
+	const here = {
+		galaxyIndex: board.offer.requester.galaxyIndex,
+		carrierKey: board.offer.requester.carrierKey,
+	};
+	const ctx = (cargo: Record<string, number>) => ({
+		now: 120 * 60,
+		docked: here,
+		cargo,
+		holdRoomT: 20,
+	});
 
 	const apply = (
 		cargo: Record<string, number>,
@@ -418,16 +435,6 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		// is bypassable from a console or a synthesised click. Nothing pinned
 		// that `requestAction` refuses the procurement arm short, so this does.
 		const { offers: board3, offer } = board;
-		const here = {
-			galaxyIndex: offer.requester.galaxyIndex,
-			carrierKey: offer.requester.carrierKey,
-		};
-		const ctx = (cargo: Record<string, number>) => ({
-			now: 120 * 60,
-			docked: here,
-			cargo,
-			holdRoomT: 20,
-		});
 		const accepted = requestAction(
 			emptyRequests(),
 			board3,
@@ -447,16 +454,6 @@ describe("a procurement job settles against the pilot's own hold", () => {
 
 	test("the remainder is what is left after the delivery, not before it", () => {
 		const { offers: board3, offer } = board;
-		const here = {
-			galaxyIndex: offer.requester.galaxyIndex,
-			carrierKey: offer.requester.carrierKey,
-		};
-		const ctx = (cargo: Record<string, number>) => ({
-			now: 120 * 60,
-			docked: here,
-			cargo,
-			holdRoomT: 20,
-		});
 		// Two tonnes more than the job needs, so the remainder is a figure and
 		// not a zero — a zero would pass under either ordering.
 		let cargo = { [offer.goodName]: offer.tonnes + 2 };
