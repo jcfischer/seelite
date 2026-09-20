@@ -18,7 +18,7 @@ import {
 	deliveryCandidates,
 	jobMark,
 } from "../src/jobs";
-// `JUMP_TANK_LY` is the jump tank's capacity (`hyperspace.ts`).
+// `JUMP_TANK_LY` is the jump tank's capacity (`hyperspace.ts`), in LY.
 import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	boardAt,
@@ -175,7 +175,9 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 	});
 
 	test("D8's courier floor binds at any station with a destination", () => {
-		// **Three galaxies, every posting station.** And note what this row can
+		// **Three galaxies, the first 60 systems of each, every posting station
+		// in them.** A quarter of a galaxy rather than all of it, because this
+		// runs on every `npm test`. And note what this row can
 		// and cannot do: the decline the floor used to have needed a draw to
 		// land on a station the market cannot price, and `system.ts` places
 		// none — a red build with that decline put back stayed green over all

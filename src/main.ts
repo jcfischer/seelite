@@ -528,7 +528,12 @@ import {
 	requestAction,
 	settledAt,
 } from "./requests";
-import { type JobOffer, bindJobs, deliveryCandidates } from "./jobs";
+import {
+	NO_EXCLUDED_STATION,
+	type JobOffer,
+	bindJobs,
+	deliveryCandidates,
+} from "./jobs";
 import type { RequestsView } from "./requests-view";
 import {
 	type CommanderRecord,
@@ -11532,13 +11537,20 @@ class Game {
 			// who bought the shelf out while docked kept reading the old board.
 			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
-				const place = `${context.galaxyIndex}:${context.stationKey}`;
+				// **Keyed on the system, not the station.** Two stations of one
+				// system differ only by which poster is excluded, and that is a
+				// filter rather than a regeneration — keying on the station made
+				// the second dock in a system pay for the whole neighbourhood
+				// again, inside a cockpit update.
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}`;
 				if (place !== this.requestDestinationsKey) {
 					this.requestDestinations = deliveryCandidates(
 						this.world.galaxy.systems,
 						this.world.system.record,
 						(record) => generateContents(record),
-						context.stationKey,
+						// No poster to exclude at this level; the filter below is
+						// what removes whichever station is posting.
+						NO_EXCLUDED_STATION,
 					);
 					this.requestDestinationsKey = place;
 				}
@@ -11546,7 +11558,11 @@ class Game {
 					galaxyIndex: context.galaxyIndex,
 					system: this.world.system.record,
 					station: context.station,
-					destinations: this.requestDestinations,
+					destinations: this.requestDestinations.filter(
+						(candidate) =>
+							this.stationKey(candidate.station) !== context.stationKey ||
+							candidate.system.index !== this.world.system.record.index,
+					),
 					deficits: context.envelope.deficits,
 					gameTimeMin: context.gameTimeMin,
 					settled,

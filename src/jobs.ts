@@ -22,6 +22,14 @@
  * `SAVE_SCHEMA_VERSION` decision rather than a content edit. Adding a *row* or
  * a *binder* is not.
  *
+ * And note what the shipped shape assumes: `goodName`, `tonnes` and
+ * `entrusted` are required, because both families move cargo. **Bounty and
+ * Salvage do not**, so the family that brings them will split these onto a
+ * per-family payload and bump the schema again. That split is deliberately not
+ * made here: a bounty's operand is a target carrier and a salvage's is a
+ * wreck, neither of which exists yet, and a payload shaped for operands nobody
+ * has written is a guess this module would then have to keep.
+ *
  * It imports no Three.js and must not: a board is arithmetic, and
  * `tests/headless.test.ts` is where that stays true.
  */
@@ -154,6 +162,12 @@ export interface JobDestination {
  * and must not be** — see the module header. #185 is open on the per-hull
  * tank; when it closes, this is the function that owes it a second look.
  */
+/**
+ * The key a caller passes when no station is posting yet — a neighbourhood
+ * cached per system and filtered per station (`main.ts`).
+ */
+export const NO_EXCLUDED_STATION = "" as CarrierKey;
+
 export function deliveryCandidates(
 	systems: readonly SystemRecord[],
 	from: SystemRecord,
@@ -162,7 +176,8 @@ export function deliveryCandidates(
 	 * The posting station's key. **Not its `id`**: `Station.id` is
 	 * system-local, so `station-trade` names one station in every system in the
 	 * galaxy (`system.ts`), and excluding by it would drop a neighbour's trade
-	 * station while keeping the poster's own.
+	 * station while keeping the poster's own. `NO_EXCLUDED_STATION` excludes
+	 * nothing, for a caller that caches one neighbourhood per system.
 	 */
 	excludeKey: CarrierKey,
 ): JobDestination[] {
@@ -382,11 +397,18 @@ const round = (cr: number): number => Math.round(cr);
 /**
  * D8's floor: a consignment to a reachable station, always available.
  *
- * The good is an **export** of the posting system — the cheapest thing its
- * economy lists — read off the fixed base price rather than the epoch's, so
- * terms do not drift across a 30-minute boundary while the offer sits on the
- * board. It must be a good the delivery station lists too, or the mark would
- * land on a shelf that does not exist.
+ * The good is the **cheapest tonne good both stations list**, read off the
+ * fixed base price rather than the epoch's, so terms do not drift across a
+ * 30-minute boundary while the offer sits on the board. It must be listed at
+ * the delivery station too, or the mark would land on a shelf that does not
+ * exist.
+ *
+ * Cheapest is a proxy for *what this economy has to spare*, and it is not the
+ * same thing: an economy's true exports are its negative-gradient goods
+ * (`economy-trade.md` §2), and a richer rule would read the gradient rather
+ * than the price. It is deliberately left as the simple one until a family
+ * needs better, and the word "export" is not used for it, because on most
+ * boards it picks Food.
  */
 export function bindCourier(ctx: BindContext): JobOffer | null {
 	if (ctx.destinations.length === 0) return null;
@@ -464,13 +486,22 @@ export const PROCUREMENT_MIN_DEFICIT_T = 4;
  * D8's derivation: a station posts a purchase because its shelf is **actually**
  * thin — the good with the largest positive deficit it has.
  *
- * **This one does move while it sits on the board, and that is the point.**
- * The courier's terms are bound off the fixed base price so they do not drift
- * across a market epoch; a procurement job's good and tonnage are read from
- * the deficit, which decays on `economy-trade.md` §5.5's half-life. That is
- * D8's need-as-throttle rather than a reroll: the shelf filling up is the
- * world changing, and §1's rule is about an offer regenerating on a *docking*
- * or a clock epoch. An accepted job pins its terms and is unaffected.
+ * **This one is a function of the deficit, which decays** — the courier's
+ * terms are bound off the fixed base price so they do not drift across a
+ * market epoch, while a procurement job's good and tonnage follow
+ * `economy-trade.md` §5.5's half-life. That is D8's need-as-throttle rather
+ * than a reroll: the shelf filling up is the world changing, and §1's rule is
+ * about an offer regenerating on a *docking* or a clock epoch. An accepted job
+ * pins its terms and is unaffected either way.
+ *
+ * **What a docked pilot sees is not that decay, and the difference is
+ * deliberate.** `main.ts` binds a board once per visit and re-binds it on the
+ * console revision a till or a request action bumps, never on the clock — an
+ * offer that shrank while the pilot read it would be the board rewriting
+ * itself under them. So the decay reaches the board at the next visit, or at
+ * the next trade; the binder is a pure function of the deficit it is handed,
+ * and `tests/jobs.test.ts` measures it at that level because that is the level
+ * it is true at.
  *
  * Nothing is entrusted: the pilot buys with their own credits and carries the
  * loss, which is the axis that makes this a different decision from a courier

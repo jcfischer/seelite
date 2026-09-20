@@ -154,6 +154,8 @@ for (let world = 0; world < worlds; world++) {
 		}
 	}
 }
+if (courierRows.length === 0)
+	throw new Error("no courier legs measured — the sweep found no board");
 const noTrade = courierRows.filter((r) => r.ratio === null).length;
 const priced = courierRows.filter(
 	(r): r is (typeof courierRows)[0] & { ratio: number } => r.ratio !== null,
@@ -175,8 +177,6 @@ console.log(
 		Math.floor(runs.length * 0.5)
 	].toFixed(0)} Cr · p90 ${runs[Math.floor(runs.length * 0.9)].toFixed(0)} Cr`,
 );
-if (courierRows.length === 0)
-	throw new Error("no courier legs measured — the sweep found no board");
 for (const [label, q] of [
 	["p10", 0.1],
 	["median", 0.5],
@@ -235,25 +235,27 @@ for (let world = 0; world < worlds; world++) {
 				(o) => o.family === "procurement",
 			);
 			if (!offer) continue;
-			// **A tonne is delivered or sold, never both.** The first version of
-			// this row added the shortfall payment to the proceeds of selling
-			// the same tonnes into the price the pilot had raised — but
-			// `deliver` consumes the cargo, so the two arms are alternatives,
-			// and it also never charged the hold that made the deficit. Both
-			// arms are priced now and the better one is the farm's take.
+			// **A tonne is delivered or sold, never both, and the hold that made
+			// the deficit is charged.** The first version added the shortfall
+			// payment to the proceeds of selling the same tonnes — but
+			// `deliver` consumes the cargo — and never charged the purchase at
+			// all. Both arms are priced against the **whole** farm now: the
+			// pilot bought `tonnes` to make the shortfall, and whichever arm
+			// they take, the rest of that hold is still theirs to sell at the
+			// raised price.
 			const raised = finite(
 				"raised price",
 				stockResponse(base, readDeficit(deficits, key, good.name, 0), HOLD_T),
 			);
 			const feeCr = finite("procurement fee", offer.rewardCr);
-			// Arm A: report the job. The fee is the whole return on those
-			// tonnes, and the tonnes are gone.
-			const deliverCr = finite("deliver arm", feeCr - base * offer.tonnes);
-			// Arm B: ignore the job and sell into the price the purchase raised.
-			const sellCr = finite(
-				"sell arm",
-				(raised - base) * Math.min(offer.tonnes, tonnes),
-			);
+			// The whole purchase is a cost in both arms: it is what created the
+			// shortfall, and it is the farm's opening move.
+			const spare = Math.max(0, tonnes - offer.tonnes);
+			// Arm A: deliver the job's tonnes for the fee, and sell whatever
+			// the purchase left over into the price it raised.
+			const deliverCr = finite("deliver arm", feeCr + raised * spare - costCr);
+			// Arm B: ignore the job and sell the whole hold at the raised price.
+			const sellCr = finite("sell arm", raised * tonnes - costCr);
 			const netCr = Math.max(deliverCr, sellCr);
 			farmRows.push({
 				good: good.name,
@@ -287,11 +289,12 @@ for (const [label, q] of [
 	);
 }
 console.log(
-	"\nEach row prices both arms on the tonnes the job asks for: reporting it",
-	"\n(the fee, less what those tonnes cost at the unmarked price) and ignoring",
-	"\nit (selling them into the price the purchase raised). A tonne cannot do",
-	"\nboth. Read the best of the two against §5.5's decay: the mark fades on a",
-	"\n20-minute half-life, so a farmed loop pays this once and then less each",
-	"\ntime until the shelf forgets — and against section 1's run figures, which",
-	"\nis what the same hull earns simply trading.",
+	"\nEach row prices the whole farm from one purchase: buy the hold that makes",
+	"\nthe shortfall, then either report the job and sell the remainder, or",
+	"\nignore the job and sell the lot into the price the purchase raised. The",
+	"\npurchase is charged in both arms and a tonne is never counted twice. Read",
+	"\nthe best of the two against §5.5's decay — the mark fades on a 20-minute",
+	"\nhalf-life, so a farmed loop pays this once and less each time after — and",
+	"\nagainst section 1's run figures, which is what the same hull earns simply",
+	"\ntrading.",
 );

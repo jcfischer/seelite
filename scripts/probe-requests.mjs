@@ -49,8 +49,13 @@ try {
 	await page.addInitScript(installFakePad);
 	await installViewPlacement(page);
 	await installViewFraming(page);
-	// **No query flag.** #411 retired `?requests-prototype` with the fixtures
-	// it gated, so this is the page a player gets.
+	// **No query flag**, because there is none left: #411 retired
+	// `?requests-prototype` with the fixtures it gated. Note what this run is
+	// and is not — a vite dev server, where `import.meta.env.DEV` is true. It
+	// shows that the board needs no flag; the claim that a *production build*
+	// reaches it rests on the flag being gone from the source, which is a grep
+	// rather than a frame. #437's production arm is deleted with the flag it
+	// checked for.
 	await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 	await bootedGame(page);
 	console.log("BOOTED");
