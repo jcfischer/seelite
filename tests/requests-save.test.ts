@@ -56,7 +56,6 @@ const LIVE = liveCourier();
 const requestCtx = (docked: JobOffer["requester"]) => ({
 	now: 20,
 	docked,
-	armed: true,
 	cargo: {} as Readonly<Record<string, number>>,
 	holdRoomT: 35,
 });
@@ -207,7 +206,7 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 			}),
 		),
 	);
-	expect(SAVE_SCHEMA_VERSION).toBe(3);
+	expect(SAVE_SCHEMA_VERSION).toBe(4);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	delete body.commander.requests;
@@ -275,7 +274,7 @@ test("requester labels refresh by CarrierKey without rejecting or changing the s
 	expect(JSON.stringify(raw)).toBe(before);
 });
 
-test("every Commander write is schema 3 and carries its journal", () => {
+test("every Commander write is schema 4 and carries its journal", () => {
 	const save = {
 		world: newWorld(42),
 		commander: newCommanderRecord("courier"),
@@ -295,6 +294,56 @@ test("every Commander write is schema 3 and carries its journal", () => {
 		trackedRequestId: null,
 	});
 	expect(parseSave(raw)).toEqual(save);
+});
+
+test("a schema 3 journal migrates when empty and is refused when it is not", () => {
+	// 3 is a shipped version whose journal never left the DEV flag, so the
+	// shipped case is empty and migrates. A populated one was written by the
+	// retired fixture trial and cannot be read as #411's shape.
+	const v3 = (requests: unknown) => {
+		const current = JSON.parse(
+			JSON.stringify(
+				serializeSave({
+					world: newWorld(42),
+					commander: newCommanderRecord("courier"),
+				}),
+			),
+		);
+		const { integrity, ...body } = current;
+		body.saveSchemaVersion = 3;
+		body.commander.requests = requests;
+		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+	};
+	expect(
+		parseSave(v3({ byId: {}, leadsById: {}, trackedRequestId: null })).commander
+			.requests.byId,
+	).toEqual({});
+	expect(() =>
+		parseSave(
+			v3({
+				byId: { "request-v1/0/0/station-trade/relay": { offerId: "x" } },
+				leadsById: {},
+				trackedRequestId: null,
+			}),
+		),
+	).toThrow("retired fixture trial");
+});
+
+test("a journal of retired fixture evidence is refused by name, not dropped", () => {
+	// #437 let a flagged DEV session write `ui-fixture` stages into an ordinary
+	// Commander. The refusal has to name that, rather than the generic shape
+	// message a re-derived validator would produce.
+	const world = newWorld(42);
+	world.gameTime = 20;
+	const commander = newCommanderRecord("courier");
+	commander.requests = flyCourier(commander.requests).state;
+	const raw = JSON.parse(JSON.stringify(serializeSave({ world, commander })));
+	const row = raw.commander.requests.byId[LIVE.courier.id];
+	row.evidence = [{ ...row.evidence[0], source: "ui-fixture" }];
+	const { integrity, ...body } = raw;
+	expect(() =>
+		parseSave({ ...body, integrity: fnv1a(JSON.stringify(body)) }),
+	).toThrow("ui-fixture");
 });
 
 test("a schema 2 record carrying a requests key is refused, empty or not", () => {

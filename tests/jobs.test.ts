@@ -13,10 +13,15 @@ import { JUMP_RANGE_LY, generateGalaxy } from "../src/galaxy";
 import {
 	JOB_ROWS,
 	type JobOffer,
-	bindJobs,
 	deliveryCandidates,
 	jobMark,
 } from "../src/jobs";
+import {
+	boardAt,
+	boardContext,
+	postingStations,
+	stationKeyOf,
+} from "./helpers/job-board";
 import { MARKET_PERIOD_MIN } from "../src/market";
 import { recordTrade } from "../src/deficits";
 import type { DeficitMap } from "../src/deficits";
@@ -51,6 +56,14 @@ const deliveriesFrom = (systemIndex: number, localCarrierId: string) =>
 		carrierKey(systemIndex, localCarrierId),
 	);
 
+/** The board, through the one helper every caller binds with. */
+const bindJobs = (ctx: ReturnType<typeof contextAt>) =>
+	boardAt(SYSTEMS, ctx.system, ctx.station, {
+		deficits: ctx.deficits,
+		gameTimeMin: ctx.gameTimeMin,
+		settled: ctx.settled,
+	});
+
 interface ContextOptions {
 	deficits?: DeficitMap;
 	gameTimeMin?: number;
@@ -69,22 +82,17 @@ const contextAt = (
 	systemIndex: number,
 	stationId: string,
 	options: ContextOptions = {},
-) => {
-	const system = SYSTEMS[systemIndex];
-	const station = generateContents(system).stations.find(
-		(s) => s.id === stationId,
+) =>
+	boardContext(
+		SYSTEMS,
+		SYSTEMS[systemIndex],
+		stationOf(systemIndex, stationId),
+		{
+			deficits: options.deficits,
+			gameTimeMin: options.gameTimeMin ?? 120,
+			settled: options.settled,
+		},
 	);
-	if (!station) throw new Error(`no station ${stationId}`);
-	return {
-		galaxyIndex: 0,
-		system,
-		station,
-		destinations: deliveriesFrom(systemIndex, station.localCarrierId),
-		deficits: options.deficits ?? {},
-		gameTimeMin: options.gameTimeMin ?? 120,
-		settled: options.settled ?? {},
-	};
-};
 
 const HERE = priceable();
 
@@ -119,7 +127,11 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 		expect(first.length).toBeGreaterThan(0);
 	});
 
-	test("a board does not reroll across a market epoch boundary", () => {
+	test("courier terms do not reroll across a market epoch boundary", () => {
+		// Courier terms only, and the name says so: a procurement offer reads
+		// the deficit, which decays on the clock — the row below measures that
+		// deliberately rather than leaving it to a fixture with no deficits in
+		// it, which is what made this row's earlier name overclaim.
 		const before = bindJobs(
 			contextAt(HERE.index, HERE.stationId, { gameTimeMin: 10 }),
 		);
@@ -195,6 +207,34 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 				),
 			).not.toBe(self);
 		}
+	});
+});
+
+describe("D8 — need is the throttle, so a procurement offer follows it", () => {
+	test("the offer shrinks as the shelf refills, and goes when it has", () => {
+		const station = stationOf(HERE.index, HERE.stationId);
+		const key = carrierKey(HERE.index, station.localCarrierId);
+		const deficits = recordTrade({}, key, {
+			goodName: "Food",
+			units: 20,
+			gameTimeMin: 0,
+			holdT: 20,
+		});
+		const at = (gameTimeMin: number) =>
+			bindJobs(
+				contextAt(HERE.index, HERE.stationId, { deficits, gameTimeMin }),
+			).find((o) => o.family === "procurement");
+		const fresh = at(0);
+		const later = at(40);
+		expect(fresh?.tonnes).toBeGreaterThan(0);
+		expect(later === undefined || later.tonnes < (fresh?.tonnes ?? 0)).toBe(
+			true,
+		);
+		// **This is the world changing, not the offer rerolling.** §1 forbids a
+		// fixed offer being regenerated on docking or a clock epoch; D8 makes
+		// the shortfall itself what posts the job, and an accepted one pins its
+		// terms regardless.
+		expect(at(0)).toEqual(fresh);
 	});
 });
 

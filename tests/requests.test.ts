@@ -10,7 +10,9 @@
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy } from "../src/galaxy";
-import { type JobOffer, bindJobs, deliveryCandidates } from "../src/jobs";
+import type { JobOffer } from "../src/jobs";
+import { boardAt, firstOffer, stationKeyOf } from "./helpers/job-board";
+import { recordTrade } from "../src/deficits";
 import {
 	type RequestsState,
 	emptyRequests,
@@ -22,39 +24,9 @@ import { generateContents } from "../src/system";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 
-const boardAt = (systemIndex: number): JobOffer[] => {
-	const system = SYSTEMS[systemIndex];
-	const station = generateContents(system).stations.find(
-		(s) => s.type !== "outpost",
-	);
-	if (!station) throw new Error("no priceable station");
-	return bindJobs({
-		galaxyIndex: 0,
-		system,
-		station,
-		destinations: deliveryCandidates(
-			SYSTEMS,
-			system,
-			generateContents,
-			carrierKey(system.index, station.localCarrierId),
-		),
-		deficits: {},
-		gameTimeMin: 60,
-		settled: {},
-	});
-};
+const COURIER = firstOffer(SYSTEMS, "courier");
 
-/** The first system in this galaxy that posts a courier run. */
-const firstCourier = (): { offers: JobOffer[]; courier: JobOffer } => {
-	for (let index = 0; index < SYSTEMS.length; index++) {
-		const offers = boardAt(index);
-		const courier = offers.find((o) => o.family === "courier");
-		if (courier) return { offers, courier };
-	}
-	throw new Error("no courier offer in this galaxy");
-};
-
-const { offers, courier } = firstCourier();
+const { offers, offer: courier } = COURIER;
 
 const HOLD_T = 20;
 const at = (ref: JobOffer["requester"]) => ({
@@ -67,7 +39,6 @@ const context = (
 ) => ({
 	now: 60,
 	docked: at(courier.requester),
-	armed: true,
 	cargo: {} as Readonly<Record<string, number>>,
 	holdRoomT: HOLD_T,
 	...overrides,
@@ -194,17 +165,159 @@ describe("§4 — cancelling keeps the obligation it created", () => {
 });
 
 describe("procurement carries the pilot's own goods", () => {
-	test("accepting issues no entrusted lot, and delivery needs the cargo aboard", () => {
-		const procurement = (() => {
-			for (let index = 0; index < SYSTEMS.length; index++) {
-				const found = boardAt(index).find((o) => o.family === "procurement");
-				if (found) return found;
+	/**
+	 * A deficit is what posts a procurement job (D8), and a fresh world has
+	 * none — the previous version of this row read that as "skip", so neither
+	 * branch of the family had a test. The deficit is made here, because it is
+	 * a thing a pilot does: it is the mark of a hold bought off that shelf.
+	 */
+	const shortfall = () => {
+		for (const record of SYSTEMS) {
+			for (const station of generateContents(record).stations) {
+				if (station.type === "outpost") continue;
+				const deficits = recordTrade({}, stationKeyOf(record, station), {
+					goodName: "Food",
+					units: 20,
+					gameTimeMin: 0,
+					holdT: 20,
+				});
+				const found = boardAt(SYSTEMS, record, station, {
+					deficits,
+				}).find((o) => o.family === "procurement");
+				if (found) return { offers: [found], offer: found };
 			}
-			return null;
-		})();
-		// A fresh world has no deficits, so no station posts one — which is D8's
-		// derivation working, not a gap. The row is skipped rather than faked.
-		if (!procurement) return;
-		expect(procurement.entrusted).toBe(false);
+		}
+		throw new Error("no procurement offer after a real purchase");
+	};
+	const { offers: shelf, offer: purchase } = shortfall();
+	const atShelf = (
+		over: Partial<Parameters<typeof requestAction>[4]> = {},
+	) => ({
+		now: 60,
+		docked: at(purchase.requester),
+		cargo: {} as Readonly<Record<string, number>>,
+		holdRoomT: 20,
+		...over,
+	});
+
+	test("it is the pilot's own cargo: no lot is issued, and none is owed", () => {
+		expect(purchase.entrusted).toBe(false);
+		const accepted = requestAction(
+			emptyRequests(),
+			shelf,
+			"accept",
+			purchase.id,
+			atShelf(),
+		);
+		expect(accepted.ok).toBe(true);
+		expect(entrustedTonnesAboard(accepted.state)).toBe(0);
+	});
+
+	test("delivery needs the goods aboard, and takes them", () => {
+		const state = requestAction(
+			emptyRequests(),
+			shelf,
+			"accept",
+			purchase.id,
+			atShelf(),
+		).state;
+		const empty = requestAction(
+			state,
+			shelf,
+			"deliver",
+			purchase.id,
+			atShelf(),
+		);
+		expect(empty.ok).toBe(false);
+		expect(empty.message).toContain(purchase.goodName);
+
+		const laden = requestAction(
+			state,
+			shelf,
+			"deliver",
+			purchase.id,
+			atShelf({ cargo: { [purchase.goodName]: purchase.tonnes } }),
+		);
+		expect(laden.ok).toBe(true);
+		expect(laden.cargoDelta).toEqual({ [purchase.goodName]: -purchase.tonnes });
+		expect(laden.state.byId[purchase.id].status).toBe("ready-to-report");
+	});
+
+	test("a procurement job reports where it was posted", () => {
+		expect(purchase.reportAt.carrierKey).toBe(purchase.requester.carrierKey);
+		expect(purchase.distanceLy).toBe(0);
+	});
+});
+
+describe("§3 — a reaccept cannot restore a satisfied objective", () => {
+	const delivered = () =>
+		requestAction(accept().state, offers, "deliver", courier.id, {
+			...context(),
+			docked: at(courier.reportAt),
+		}).state;
+
+	test("cancelling a ready-to-report job and reaccepting it cannot pay twice", () => {
+		const cancelled = requestAction(
+			delivered(),
+			offers,
+			"cancel",
+			courier.id,
+			context(),
+		).state;
+		const again = requestAction(
+			cancelled,
+			offers,
+			"accept",
+			courier.id,
+			context(),
+		);
+		expect(again.ok).toBe(true);
+		// The objective has to be flown again: the evidence was the cargo, and
+		// §3 re-evaluates cargo stages for the current issuance.
+		expect(again.state.byId[courier.id].status).toBe("accepted");
+		const paid = requestAction(again.state, offers, "report", courier.id, {
+			...context(),
+			docked: at(courier.reportAt),
+		});
+		expect(paid.ok).toBe(false);
+		expect(paid.rewardCr).toBe(0);
+		expect(paid.mark).toBeNull();
+	});
+
+	test("reaccepting with the consignment still aboard is refused, not doubled", () => {
+		const cancelled = requestAction(
+			accept().state,
+			offers,
+			"cancel",
+			courier.id,
+			context(),
+		).state;
+		const again = requestAction(
+			cancelled,
+			offers,
+			"accept",
+			courier.id,
+			context(),
+		);
+		expect(again.ok).toBe(false);
+		expect(entrustedTonnesAboard(again.state)).toBe(courier.tonnes);
+		// Returning it first is the way through, and then one lot is issued.
+		const returned = requestAction(
+			cancelled,
+			offers,
+			"return-entrusted",
+			courier.id,
+			context(),
+		).state;
+		const reaccepted = requestAction(
+			returned,
+			offers,
+			"accept",
+			courier.id,
+			context(),
+		);
+		expect(reaccepted.ok).toBe(true);
+		expect(Object.values(reaccepted.state.entrustedByLotId).length).toBe(1);
+		expect(entrustedTonnesAboard(reaccepted.state)).toBe(courier.tonnes);
 	});
 });

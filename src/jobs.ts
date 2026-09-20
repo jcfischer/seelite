@@ -11,11 +11,11 @@
  * `fixtureOffers` reached at two jobs comes back.
  *
  * **A binder is a pure function of the posting station, the world and the
- * clock.** It reads no commander state — not the tank, not the hold, not the
- * credits — because the request contract §1 forbids a fixed offer being
- * regenerated on docking, and a board that changed when the pilot bought fuel
- * would be exactly that. The offer prints what it costs to reach; the pilot
- * decides.
+ * clock.** It reads no commander state — not the hyperspace tank, not the
+ * hold, not the credits — because the request contract §1 forbids a fixed
+ * offer being regenerated on docking, and a board that changed when the pilot
+ * topped up the tank would be exactly that. The offer prints what it costs to
+ * reach; the pilot decides.
  *
  * It imports no Three.js and must not: a board is arithmetic, and
  * `tests/headless.test.ts` is where that stays true.
@@ -59,10 +59,12 @@ export interface PaymentRule {
 /** One authored job. No operand appears here; see the module header. */
 export interface JobRow {
 	family: JobFamily;
-	/** Stable authored identity, and the first half of an offer's slot. */
-	slot: string;
-	/** Bumped when the row's terms change; an accepted request pins the one it
-	 *  was accepted under (`missions-and-requests.md` §1). */
+	/** Stable authored identity, and the first half of an offer's key.
+	 *  Named `rowId` rather than `slot`, which `CONTEXT.md` reserves for a
+	 *  berth. */
+	rowId: string;
+	/** Bumped when the row's terms change; an offer pins the one it was
+	 *  accepted under (`missions-and-requests.md` §1). */
 	revision: number;
 	title: string;
 	purpose: string;
@@ -86,7 +88,7 @@ const job = (row: JobRow): JobRow => row;
 export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
-		slot: "courier-consignment",
+		rowId: "courier-consignment",
 		revision: 1,
 		title: "Consignment run",
 		purpose:
@@ -100,7 +102,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	}),
 	job({
 		family: "courier",
-		slot: "courier-priority",
+		rowId: "courier-priority",
 		revision: 1,
 		title: "Priority consignment",
 		purpose:
@@ -114,7 +116,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	}),
 	job({
 		family: "procurement",
-		slot: "procurement-shortfall",
+		rowId: "procurement-shortfall",
 		revision: 1,
 		title: "Shortfall purchase",
 		purpose:
@@ -141,10 +143,10 @@ export interface JobDestination {
  * stations, and the stations of every system one jump away.
  *
  * The ruling is the principal's (#411, 2026-09-20): one jump, within the
- * tank's capacity. `JUMP_RANGE_LY` is that capacity and `reachable` already
- * reads it. **`CommanderState.fuelLy` is not read here and must not be** — see
- * the module header. #185 is open on per-hull fuel; when it closes, this is
- * the function that owes it a second look.
+ * hyperspace tank's capacity. `JUMP_RANGE_LY` is that capacity and `reachable`
+ * already reads it. **`CommanderState.fuelLy` is not read here and must not
+ * be** — see the module header. #185 is open on the per-hull tank; when it
+ * closes, this is the function that owes it a second look.
  */
 export function deliveryCandidates(
 	systems: readonly SystemRecord[],
@@ -205,8 +207,17 @@ export interface JobStationRef {
 export interface JobOffer {
 	id: string;
 	family: JobFamily;
-	rowSlot: string;
+	rowId: string;
 	revision: number;
+	/**
+	 * The authored objectives, pinned at bind time.
+	 *
+	 * On the offer rather than derived from the family at load: a journal
+	 * validated against a freshly derived list would refuse a legitimate save
+	 * the day a family's stages change, which is the failure this module's
+	 * header argues against everywhere else.
+	 */
+	stages: readonly string[];
 	/** 1 for the first, `settled + 1` thereafter. */
 	episode: number;
 	requester: JobStationRef;
@@ -281,13 +292,28 @@ const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
 /** The episode draw. Its own domain tag, so a board moves no station, berth or
  *  market — and split by the episode, so consecutive episodes of one family do
  *  not repeat one row. */
-const draw = (station: Station, family: JobFamily, episode: number): number =>
+const draw = (
+	station: Station,
+	family: JobFamily,
+	episode: number,
+	/** Which operand this draw decides. Its own axis rather than an offset on
+	 *  the episode's, because two sub-streams sharing one namespace is the
+	 *  collision `DOMAIN` exists to prevent: shifting the episode by a constant
+	 *  makes one axis's draw at episode n the other's at episode n + k. */
+	axis: number,
+): number =>
 	seededRand(
 		mix(
-			mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS),
+			mix(
+				mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS),
+				axis,
+			),
 			mix(family === "courier" ? 1 : 2, episode),
 		),
 	)();
+
+/** The draw axes inside `DOMAIN.JOB_OFFERS`. */
+const AXIS = { row: 0, destination: 1 } as const;
 
 const episodeOf = (ctx: BindContext, family: JobFamily): number =>
 	(ctx.settled[family] ?? 0) + 1;
@@ -309,7 +335,7 @@ const pickRow = (ctx: BindContext, family: JobFamily, episode: number) => {
 	return rows[
 		Math.min(
 			rows.length - 1,
-			Math.floor(draw(ctx.station, family, episode) * rows.length),
+			Math.floor(draw(ctx.station, family, episode, AXIS.row) * rows.length),
 		)
 	];
 };
@@ -330,7 +356,8 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	const episode = episodeOf(ctx, "courier");
 	const row = pickRow(ctx, "courier", episode);
 	const index = Math.floor(
-		draw(ctx.station, "courier", episode + 1000) * ctx.destinations.length,
+		draw(ctx.station, "courier", episode, AXIS.destination) *
+			ctx.destinations.length,
 	);
 	const destination =
 		ctx.destinations[Math.min(index, ctx.destinations.length - 1)];
@@ -351,8 +378,9 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	return {
 		id: offerId(ctx, "courier", episode),
 		family: "courier",
-		rowSlot: row.slot,
+		rowId: row.rowId,
 		revision: row.revision,
+		stages: ["deliver"],
 		episode,
 		requester: {
 			galaxyIndex: ctx.galaxyIndex,
@@ -393,6 +421,14 @@ export const PROCUREMENT_MIN_DEFICIT_T = 4;
  * D8's derivation: a station posts a purchase because its shelf is **actually**
  * thin — the good with the largest positive deficit it has.
  *
+ * **This one does move while it sits on the board, and that is the point.**
+ * The courier's terms are bound off the fixed base price so they do not drift
+ * across a market epoch; a procurement job's good and tonnage are read from
+ * the deficit, which decays on `economy-trade.md` §5.5's half-life. That is
+ * D8's need-as-throttle rather than a reroll: the shelf filling up is the
+ * world changing, and §1's rule is about an offer regenerating on a *docking*
+ * or a clock epoch. An accepted job pins its terms and is unaffected.
+ *
  * Nothing is entrusted: the pilot buys with their own credits and carries the
  * loss, which is the axis that makes this a different decision from a courier
  * run (`ordinary-requests.md` §1).
@@ -421,8 +457,9 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
 	return {
 		id: offerId(ctx, "procurement", episode),
 		family: "procurement",
-		rowSlot: row.slot,
+		rowId: row.rowId,
 		revision: row.revision,
+		stages: ["deliver"],
 		episode,
 		requester: { galaxyIndex: ctx.galaxyIndex, carrierKey: key },
 		requesterName: ctx.station.name,

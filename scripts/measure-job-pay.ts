@@ -4,10 +4,13 @@
  * Two questions, and neither can be answered by reading `jobs.ts`'s payment
  * rules — a fee is a number beside an economy, not on its own:
  *
- * 1. **Is a courier run worth flying?** A consignment occupies hold the pilot
- *    would otherwise fill with cargo, so the fee competes with the best legal
- *    run over the same leg. A fee far under it is a job nobody takes; a fee
- *    far over it makes trading the hobby.
+ * 1. **Is a courier run worth flying?** The fee is read against the best legal
+ *    run over the same leg, priced at the **full hold** — which is the trade
+ *    the pilot flies when they ignore the board. A consignment is 8–12 t of a
+ *    20 t hold, so in practice they can carry both and the fee is a top-up;
+ *    the comparison is deliberately the harsher one, because a fee that beats
+ *    a whole run is a fee that makes trading the hobby. Under either framing
+ *    the same figure is the answer to "what is this worth beside a run".
  * 2. **Can a procurement job be farmed?** Buying a shelf out at a station is
  *    what creates the deficit that posts its own purchase job. So the farm is:
  *    buy here, fly out, come back, sell into the price you raised, and collect
@@ -147,8 +150,6 @@ for (let world = 0; world < worlds; world++) {
 				),
 			);
 			const feeCr = finite("courier fee", courier.rewardCr);
-			// A consignment does not fill the hold, so the pilot may carry both —
-			// the comparison is what the fee is worth beside a run, not instead.
 			courierRows.push({
 				feeCr,
 				runCr,

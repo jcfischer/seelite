@@ -285,9 +285,28 @@ try {
 	);
 
 	// The board is a function of the world, not of how often the pilot docks.
-	const before = await page.evaluate(() =>
-		window.__seelite.requestsView().offers.map((o) => o.id),
-	);
+	//
+	// **Bind it again rather than reading the memo.** `requestsView` caches on
+	// a key that a re-dock does not move, so comparing two reads of it compares
+	// one array with itself — and an offer's id is a pure function of galaxy,
+	// system, station, family and episode, so even a rerolled good, tonnage,
+	// reward or destination would leave it equal. The cache key is cleared and
+	// every term is compared.
+	const termsOfBoard = () =>
+		page.evaluate(() => {
+			const g = window.__seelite;
+			g.requestOffersCacheKey = null;
+			return g.requestsView().offers.map((o) => ({
+				id: o.id,
+				goodName: o.goodName,
+				tonnes: o.tonnes,
+				rewardCr: o.rewardCr,
+				reportAt: o.reportAt,
+				episode: o.episode,
+				rowId: o.rowId,
+			}));
+		});
+	const before = await termsOfBoard();
 	await page.evaluate(() => {
 		const g = window.__seelite;
 		g.launch();
@@ -298,11 +317,7 @@ try {
 	await page.locator('[data-live-station-tab="Requests"]').click();
 	check(
 		"undocking and docking again rerolls nothing",
-		JSON.stringify(
-			await page.evaluate(() =>
-				window.__seelite.requestsView().offers.map((o) => o.id),
-			),
-		) === JSON.stringify(before),
+		JSON.stringify(await termsOfBoard()) === JSON.stringify(before),
 	);
 
 	// A fake W3C device drives the same dispatch as the mouse.
@@ -347,7 +362,8 @@ try {
 		if (systemIndex === g.world.system.record.index) return "same system";
 		const to = g.world.galaxy.systems.find((s) => s.index === systemIndex);
 		if (!to) throw Error("delivery system is not in this galaxy");
-		// A pilot buys fuel; a probe is not measuring the fuel economy here.
+		// A pilot tops the hyperspace tank up at the board's own station; this
+		// probe is not measuring what that costs.
 		g.commander = { ...g.commander, fuelLy: 7 };
 		g.performJump(to);
 		for (let i = 0; i < 60; i++) g.step(1 / 60);
@@ -402,7 +418,7 @@ try {
 		`${creditsBefore} → ${creditsBefore + offer.rewardCr} Cr`,
 	);
 	check(
-		"a completed request offers no repeat Report or Accept",
+		"a settled job offers no repeat Report or Accept",
 		(await page
 			.locator(
 				'[data-live-station-console] [data-live-request-action="report"], [data-live-station-console] [data-live-request-action="accept"]',
@@ -435,19 +451,34 @@ try {
 	);
 	await page.screenshot({ path: `${out}/03-delivered.png` });
 
+	// Back to the requester: the episode counter lives on its board, and the
+	// row this replaced read the pinned terms of the job just settled — which
+	// cannot fail for the reason its name gives.
+	const home = offer.requester.carrierKey.split(":").slice(1).join(":");
+	await page.evaluate((o) => {
+		const g = window.__seelite;
+		const systemIndex = Number(o.requester.carrierKey.split(":")[0]);
+		if (systemIndex === g.world.system.record.index) return;
+		const to = g.world.galaxy.systems.find((s) => s.index === systemIndex);
+		g.commander = { ...g.commander, fuelLy: 7 };
+		g.performJump(to);
+		for (let i = 0; i < 60; i++) g.step(1 / 60);
+	}, offer);
+	await dockAt(page, home);
+	await page.locator('[data-live-station-tab="Requests"]').click();
+	const nextEpisode = await page.evaluate(
+		(o) =>
+			window.__seelite
+				.requestsView()
+				.offers.filter((row) => row.family === "courier")
+				.map((row) => ({ id: row.id, episode: row.episode }))
+				.find((row) => row.id !== o.id) ?? null,
+		offer,
+	);
 	check(
 		"the settled job lets this requester post its next episode",
-		await page.evaluate(
-			(o) => {
-				const g = window.__seelite;
-				// Bound at the requester, which is where the episode counter lives.
-				return (
-					g.commanderRecord().requests.byId[o.id].terms.episode === 1 &&
-					g.commanderRecord().requests.byId[o.id].status === "completed"
-				);
-			},
-			{ id },
-		),
+		nextEpisode !== null && nextEpisode.episode === 2,
+		nextEpisode ? `${nextEpisode.id} · episode ${nextEpisode.episode}` : "none",
 	);
 
 	// Flush the complete live envelope and boot a new Game from IndexedDB.

@@ -11506,9 +11506,12 @@ class Game {
 	private requestsView(context = this.dockedStationContext()): RequestsView {
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
-			// board recomputed every frame would be identical and wasted; it is
-			// keyed on the station, the requester's settled episodes and the
-			// console revision, which is what changes when the pilot acts.
+			// board recomputed every frame would be identical and wasted. The
+			// key is the station and the requester's settled episodes, and it
+			// is **not** the whole input: `bindProcurement` also reads the
+			// deficit map and the clock, so the board a pilot sees is the one
+			// bound when this key last changed. `actOnRequest` clears the key
+			// after any accepted action, which is when it can have moved.
 			const settled = settledAt(this.requests, {
 				galaxyIndex: context.galaxyIndex,
 				carrierKey: context.stationKey,
@@ -11532,6 +11535,10 @@ class Game {
 				this.requestOffersCacheKey = key;
 			}
 		}
+		const hold = commanderHold(
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
 		return {
 			state: this.requests,
 			offers: context ? this.requestOffersCache : [],
@@ -11542,13 +11549,7 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
-			holdRoomT: Math.max(
-				0,
-				commanderHold(this.commander, entrustedTonnesAboard(this.requests))
-					.capacityT -
-					commanderHold(this.commander, entrustedTonnesAboard(this.requests))
-						.usedT,
-			),
+			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
 			cargo: this.commander.cargo,
 		};
 	}
@@ -11568,7 +11569,6 @@ class Game {
 			const result = requestAction(this.requests, view.offers, action, id, {
 				now: this.world.gameTime,
 				docked: view.docked,
-				armed: this.condition.hull > 0,
 				cargo: this.commander.cargo,
 				holdRoomT: view.holdRoomT,
 			});

@@ -39,14 +39,17 @@ export type RequestStatus =
 	| "failed";
 
 /**
- * The authored objectives of a job.
+ * The authored objectives of a job, **read off the offer rather than derived**.
  *
  * Both shipped families have one: carry the goods to the report station. The
  * request contract's stage machinery is kept whole rather than collapsed,
  * because the relay's `search → identify → disable` is the same list with
- * three entries and joins it without a second mechanism.
+ * three entries and joins it without a second mechanism — and when it does,
+ * an older save's evidence must still be checked against the list it was
+ * earned under, not against whatever the family means today.
  */
-export const stagesFor = (_offer: RequestOffer): string[] => ["deliver"];
+export const stagesFor = (offer: RequestOffer): readonly string[] =>
+	offer.stages;
 
 export interface RequestEvidence {
 	stageId: string;
@@ -152,7 +155,6 @@ export function nextAction(r: AcceptedRequest): string {
 export interface RequestContext {
 	now: number;
 	docked: RequestStation | null;
-	armed: boolean;
 	/** The ordinary cargo aboard, which is what a procurement job delivers. */
 	cargo: Readonly<Record<string, number>>;
 	/** Tonnes the hold still has free, entrusted cargo already deducted. */
@@ -199,6 +201,21 @@ export function requestAction(
 		mark: null,
 		cargoDelta: {},
 	});
+	/** The success sibling of `refuse`, so a field added to `RequestResult`
+	 *  is one edit rather than eight identical literals. */
+	const done = (
+		next: RequestsState,
+		message: string,
+		extra: Partial<RequestResult> = {},
+	): RequestResult => ({
+		state: next,
+		ok: true,
+		message,
+		rewardCr: 0,
+		mark: null,
+		cargoDelta: {},
+		...extra,
+	});
 	const existing = state.byId[id];
 	const offer =
 		existing?.terms ?? offers.find((o) => o.id === id) ?? state.leadsById[id];
@@ -206,17 +223,13 @@ export function requestAction(
 		return refuse("Offer unavailable or invalid observation time.");
 
 	if (action === "retain")
-		return {
-			state: {
+		return done(
+			{
 				...state,
 				leadsById: { ...state.leadsById, [id]: structuredClone(offer) },
 			},
-			ok: true,
-			message: "Lead retained. No commitment accepted.",
-			rewardCr: 0,
-			mark: null,
-			cargoDelta: {},
-		};
+			"Lead retained. No commitment accepted.",
+		);
 
 	if (action === "accept") {
 		if (!sameStation(ctx.docked, offer.requester))
@@ -225,6 +238,19 @@ export function requestAction(
 			return refuse(
 				"Already accepted or terminal; this offer cannot pay again.",
 			);
+		// **A consignment still aboard is returned, not duplicated.** `deliver`
+		// removes only the lot of the current acceptance ordinal, so issuing a
+		// second one would strand the first in the hold with no action that
+		// reaches it — and a lot surviving against a completed request is a
+		// journal `parseRequests` refuses, which makes the pilot's own save
+		// unloadable.
+		if (
+			existing &&
+			Object.values(state.entrustedByLotId).some((lot) => lot.offerId === id)
+		)
+			return refuse(
+				"Return the consignment to the requester before reaccepting.",
+			);
 		// §4: a hull/equipment state that would leave insufficient capacity is
 		// refused atomically rather than silently discarding goods.
 		if (offer.entrusted && ctx.holdRoomT < offer.tonnes)
@@ -232,7 +258,7 @@ export function requestAction(
 				`Needs ${offer.tonnes} t of free hold; ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
 			);
 		const ordinal = (existing?.acceptanceOrdinal ?? 0) + 1;
-		const evidence = existing?.evidence ?? [];
+		const evidence: RequestEvidence[] = [];
 		const stages = stagesFor(offer);
 		const request: AcceptedRequest = {
 			offerId: id,
@@ -259,20 +285,12 @@ export function requestAction(
 				issuedOrdinal: ordinal,
 			};
 		}
-		return {
-			state: {
-				...state,
-				byId: { ...state.byId, [id]: request },
-				entrustedByLotId,
-			},
-			ok: true,
-			message: offer.entrusted
+		return done(
+			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
+			offer.entrusted
 				? `Accepted. ${offer.tonnes} t ${offer.goodName} loaded, and they stay the requester's.`
 				: "Accepted. Source the goods and return with them aboard.",
-			rewardCr: 0,
-			mark: null,
-			cargoDelta: {},
-		};
+		);
 	}
 
 	if (action === "return-entrusted") {
@@ -284,14 +302,10 @@ export function requestAction(
 			return refuse("Dock at the requester to return entrusted cargo.");
 		const entrustedByLotId = { ...state.entrustedByLotId };
 		delete entrustedByLotId[lot.lotId];
-		return {
-			state: { ...state, entrustedByLotId },
-			ok: true,
-			message: `${lot.aboardT} t ${lot.goodName} returned. The obligation is settled.`,
-			rewardCr: 0,
-			mark: null,
-			cargoDelta: {},
-		};
+		return done(
+			{ ...state, entrustedByLotId },
+			`${lot.aboardT} t ${lot.goodName} returned. The obligation is settled.`,
+		);
 	}
 
 	if (!existing || !isAcceptedRequest(existing))
@@ -300,38 +314,29 @@ export function requestAction(
 		return refuse("Action predates acceptance.");
 
 	if (action === "track" || action === "untrack")
-		return {
-			state: { ...state, trackedRequestId: action === "track" ? id : null },
-			ok: true,
-			message:
-				action === "track"
-					? "Tracking this request; flight target unchanged."
-					: "Cue cleared; commitments remain.",
-			rewardCr: 0,
-			mark: null,
-			cargoDelta: {},
-		};
+		return done(
+			{ ...state, trackedRequestId: action === "track" ? id : null },
+			action === "track"
+				? "Tracking this request; flight target unchanged."
+				: "Cue cleared; commitments remain.",
+		);
 
 	const request = { ...existing };
 	const terms = request.terms;
 
 	if (action === "cancel") {
 		request.status = "cancelled";
-		return {
-			state: {
+		return done(
+			{
 				...state,
 				byId: { ...state.byId, [id]: request },
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			ok: true,
-			message: terms.entrusted
+			terms.entrusted
 				? "Cancelled. The consignment is still the requester's — return it to them."
 				: "Cancelled without fee. Unfinished work may be reaccepted at the requester.",
-			rewardCr: 0,
-			mark: null,
-			cargoDelta: {},
-		};
+		);
 	}
 
 	if (action === "deliver") {
@@ -365,18 +370,11 @@ export function requestAction(
 			stages[Math.min(request.evidence.length, stages.length - 1)];
 		if (request.evidence.length === stages.length)
 			request.status = "ready-to-report";
-		return {
-			state: {
-				...state,
-				byId: { ...state.byId, [id]: request },
-				entrustedByLotId,
-			},
-			ok: true,
-			message: `${terms.tonnes} t ${terms.goodName} delivered. Report to settle.`,
-			rewardCr: 0,
-			mark: null,
-			cargoDelta,
-		};
+		return done(
+			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
+			`${terms.tonnes} t ${terms.goodName} delivered. Report to settle.`,
+			{ cargoDelta },
+		);
 	}
 
 	if (action === "report") {
@@ -386,21 +384,21 @@ export function requestAction(
 			return refuse(`Dock at ${terms.reportName} to report.`);
 		request.status = "completed";
 		request.settledAt = ctx.now;
-		return {
-			state: {
+		return done(
+			{
 				...state,
 				byId: { ...state.byId, [id]: request },
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			ok: true,
-			message: `Report accepted · ${terms.rewardCr} Cr paid.`,
-			rewardCr: terms.rewardCr,
-			// §4's mark lands exactly here, with the settlement, so a repeated
-			// Report — refused above as a terminal status — cannot write it twice.
-			mark: jobMark(terms),
-			cargoDelta: {},
-		};
+			`Report accepted · ${terms.rewardCr} Cr paid.`,
+			{
+				rewardCr: terms.rewardCr,
+				// §4's mark lands exactly here, with the settlement, so a repeated
+				// Report — refused above as terminal — cannot write it twice.
+				mark: jobMark(terms),
+			},
+		);
 	}
 
 	return refuse("Unknown request action.");
@@ -453,7 +451,10 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		if (
 			o.id !== id ||
 			(o.family !== "courier" && o.family !== "procurement") ||
-			!text(o.rowSlot) ||
+			!text(o.rowId) ||
+			!Array.isArray(o.stages) ||
+			o.stages.length === 0 ||
+			!o.stages.every((stage: unknown) => text(stage)) ||
 			!Number.isInteger(o.revision) ||
 			o.revision < 1 ||
 			!Number.isInteger(o.episode) ||
@@ -482,8 +483,9 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		return {
 			id,
 			family: o.family,
-			rowSlot: o.rowSlot,
+			rowId: o.rowId,
 			revision: o.revision,
+			stages: [...o.stages],
 			episode: o.episode,
 			requester,
 			requesterName: o.requesterName,
@@ -505,6 +507,23 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			observedAt: o.observedAt,
 		};
 	};
+
+	// **The retired fixture trial, named before anything else is validated.**
+	// #437's promotion let a flagged DEV session write `ui-fixture` stages into
+	// an ordinary Commander; #411 replaced that content, so such a record
+	// cannot load. The scan is here rather than inside the evidence loop
+	// because `offerOf` runs first and would refuse the same save with the
+	// generic message — a refusal by the wrong name is what this avoids.
+	for (const row of Object.values(byId)) {
+		const evidence = (row as { evidence?: unknown })?.evidence;
+		if (
+			Array.isArray(evidence) &&
+			evidence.some((e) => (e as { source?: unknown })?.source === "ui-fixture")
+		)
+			throw new Error(
+				'save: this journal holds retired fixture requests (source "ui-fixture") and cannot load; that content was replaced by live jobs in #411',
+			);
+	}
 
 	const out = emptyRequests();
 	for (const id of Object.keys(leads).sort())
@@ -534,15 +553,6 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		let previous = r.acceptedAt;
 		for (let i = 0; i < r.evidence.length; i++) {
 			const e = obj(r.evidence[i]);
-			// **A DEV journal from the retired fixture trial is named, not
-			// silently dropped.** #437's promotion let a flagged session write
-			// `ui-fixture` stages into an ordinary Commander; that content is
-			// gone with #411, so such a record cannot load — and the contract
-			// forbids discarding request state without saying so.
-			if (e.source === "ui-fixture")
-				throw new Error(
-					'save: this journal holds retired fixture requests (source "ui-fixture") and cannot load; the fixture content was replaced by live jobs in #411',
-				);
 			if (
 				e.stageId !== stages[i] ||
 				e.source !== "delivery" ||
@@ -589,6 +599,8 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 
 	for (const lotId of Object.keys(lots).sort()) {
 		const l = obj(lots[lotId]);
+		if (typeof l.offerId !== "string" || !Object.hasOwn(out.byId, l.offerId))
+			bad();
 		const request = out.byId[l.offerId];
 		if (
 			l.lotId !== lotId ||

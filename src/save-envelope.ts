@@ -70,11 +70,20 @@ import {
  * made the wire shape depend on whether the player had accepted anything,
  * which is the dependency that needed two versions in the first place. There
  * is one version now and an empty journal is written like any other empty
- * field. The content was gated behind a DEV flag for one node more; #411
- * replaced the fixtures with `jobs.ts`'s bound offers and retired the flag, so
- * a production record's journal is empty only until the pilot accepts work.
+ * field.
+ *
+ * **4 is #411's wire shape for that journal.** The content was gated behind a
+ * DEV flag for one node more; #411 replaced the fixtures with `jobs.ts`'s
+ * bound offers, which changed every field of a saved offer
+ * (`slot: "relay" | "survey"` became a family, a row id, a delivery station, a
+ * commodity and a tonnage) and added the entrusted cargo lots. A version
+ * identifies a shape, so a reader that told a 3 from a 4 by which fields
+ * happened to be present would be guessing. A version 3 record still loads —
+ * with an **empty** journal, which is what every shipped one has, because its
+ * content never left the DEV flag — and one carrying accepted work is refused
+ * by name rather than reinterpreted.
  */
-export const SAVE_SCHEMA_VERSION = 3;
+export const SAVE_SCHEMA_VERSION = 4;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -84,7 +93,7 @@ export const SAVE_SCHEMA_VERSION = 3;
  * (`public-site.ts`), so a player's record predates the journal and must still
  * load. `parseCommander` gives it an empty one.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3] as const;
 
 /**
  * What a legacy version may not contain.
@@ -98,6 +107,25 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2] as const;
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
 > = { 2: ["requests"] };
+
+/**
+ * A version 3 record's journal, migrated or refused.
+ *
+ * Empty is the shipped case and migrates to an empty journal. Anything in it
+ * was written by the retired DEV fixture trial, whose offers cannot be read as
+ * #411's shape — so it is refused with its own sentence rather than being
+ * silently dropped, which `missions-and-requests.md` §7 forbids.
+ */
+const migrateV3Requests = (raw: unknown): RequestsState => {
+	const journal = raw as { byId?: unknown; leadsById?: unknown } | null;
+	const populated = (x: unknown) =>
+		x !== null && typeof x === "object" && Object.keys(x).length > 0;
+	if (populated(journal?.byId) || populated(journal?.leadsById))
+		fail(
+			"saveSchemaVersion 3 carries requests from the retired fixture trial; that content was replaced by live jobs in #411 and cannot be migrated",
+		);
+	return emptyRequests();
+};
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -126,7 +154,9 @@ export interface SavedFlight {
 
 /** The player half of a save. */
 export interface CommanderRecord {
-	/** Node 343 UI experiment journal; stored atomically with credits. */
+	/** The live request journal (#411); stored atomically with credits, so a
+	 *  reward and the commitment it settled cannot come back from different
+	 *  snapshots. */
 	requests: RequestsState;
 	/** Credits, cargo, equipment, tank and hull — `station-commerce.ts`'s own
 	 *  struct, unchanged, because commerce is what writes it. */
@@ -383,7 +413,12 @@ const parseCommander = (
 	if (!isSystemIndex(systemIndex))
 		fail(`commander: ${systemIndex} is not a system index`);
 	return {
-		requests: version === 2 ? emptyRequests() : parseRequests(o.requests, now),
+		requests:
+			version === 2
+				? emptyRequests()
+				: version === 3
+					? migrateV3Requests(o.requests)
+					: parseRequests(o.requests, now),
 		state: {
 			credits: num(state, "credits", "commander.state"),
 			cargo,
