@@ -195,7 +195,8 @@ charge an engaged civilian ever drew — which is what the flight report that
 became #396 was about: a pilot who held a beam on a Clean carrier reached the
 divert, and therefore Wanted, and therefore a closed berth, with nothing said in
 between. H4's sustained-fire rung now charges inside that silence, five seconds
-of landed fire, while the shields are still two-thirds up. It does not divert,
+of landed fire — 28% of the beam it takes to open a facing, so well before the
+armour has anything to say about it. It does not divert,
 does not shorten T, and writes no transition: an ordinary carrier under fire
 still gets exactly one, this one.
 
@@ -328,7 +329,7 @@ every station in a galaxy inside one Wanted interval.
 row because an assault has nowhere else to be written.** A traffic carrier under
 fire gets exactly one transition from the player, H3c's `disable`, and the
 sustained-fire charge lands *before* the hull point that earns it: a Clean ship
-with two-thirds of its shields left has no row to point at that says it was
+whose shields are merely reduced has no row to point at that says it was
 assaulted. The alternative the ruling named — a field on the carrier's own row —
 would have to invent a state that row cannot hold. So the fact sits beside the
 witnesses, arrives by the same door, is omitted by `canonicalEnvelope` when empty
