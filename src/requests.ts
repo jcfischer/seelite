@@ -143,13 +143,54 @@ export function settledAt(
 	return out;
 }
 
+/**
+ * What a settled job reports (#446).
+ *
+ * Three facts a pilot cannot otherwise see: what left the hold, what it paid,
+ * and what of theirs is still aboard. **Here rather than in the view**, and
+ * that is a correction rather than a preference — the first pass composed it
+ * in `main.ts` on top of the message this module already returned, which left
+ * `requestAction`'s own report string reaching no screen at all. One module
+ * owns the sentence, and it is the one that knows the job settled.
+ */
+export function settlementMessage(settled: {
+	tonnes: number;
+	goodName: string;
+	entrusted: boolean;
+	rewardCr: number;
+	/** The pilot's **own** tonnage of that good at the moment of the report. */
+	remainingT: number;
+}): string {
+	const moved = settled.entrusted
+		? `${settled.tonnes} t ${settled.goodName} handed over`
+		: `${settled.tonnes} t ${settled.goodName} delivered from your hold`;
+	// **The remainder is the pilot's own, and it is dropped rather than
+	// zeroed.** `0 t Food still aboard` is a line about cargo that is not
+	// there; `no Food left aboard` is worse after a hand-over, because it
+	// reads as the pilot's Food having gone — the ownership confusion this
+	// node exists to remove. So a pilot who was carrying none of the good is
+	// told about the job and nothing else. #443 dropped a zeroed entrusted
+	// clause for the first half of this reason.
+	const left =
+		settled.remainingT > 0
+			? ` · ${settled.remainingT} t ${settled.goodName} still aboard, yours`
+			: settled.entrusted
+				? ""
+				: ` · no ${settled.goodName} left aboard`;
+	return `Reported · ${moved}, ${settled.rewardCr} Cr paid${left}.`;
+}
+
 export function nextAction(r: AcceptedRequest): string {
 	if (r.status === "ready-to-report")
 		return `Dock at ${r.terms.reportName} and Report`;
 	if (!isAcceptedRequest(r)) return r.outcomeReason ?? r.status;
+	// **Carried, or sourced — and the first says the goods are already
+	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
+	// as the same errand at a glance, and a pilot who read the first as the
+	// second bought eight tonnes they were already carrying.
 	return r.terms.entrusted
-		? `Carry ${r.terms.tonnes} t ${r.terms.goodName} to ${r.terms.reportName}, ${r.terms.reportSystemName}`
-		: `Source ${r.terms.tonnes} t ${r.terms.goodName} and return to ${r.terms.reportName}`;
+		? `Carry the ${r.terms.tonnes} t ${r.terms.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
+		: `Source ${r.terms.tonnes} t ${r.terms.goodName} yourself and return to ${r.terms.reportName}`;
 }
 
 export interface RequestContext {
@@ -377,7 +418,11 @@ export function requestAction(
 			request.status = "ready-to-report";
 		return done(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
-			`${terms.tonnes} t ${terms.goodName} delivered. Report to settle.`,
+			// The two families move different cargo and the message said the
+			// same thing for both (#446).
+			terms.entrusted
+				? `${terms.tonnes} t ${terms.goodName} handed over — the requester's, and out of your hold. Report to settle.`
+				: `${terms.tonnes} t ${terms.goodName} delivered from your hold. Report to settle.`,
 			{ cargoDelta },
 		);
 	}
@@ -396,7 +441,18 @@ export function requestAction(
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			`Report accepted · ${terms.rewardCr} Cr paid.`,
+			// **What the settlement moved** (#446). The report paid `N Cr` and
+			// the manifest never appeared, so a delivery and a sale looked
+			// identical from the cockpit. The remainder is read off `ctx.cargo`,
+			// which is the pilot's own hold at the moment of the report — the
+			// delivery's delta has already been applied by then.
+			settlementMessage({
+				tonnes: terms.tonnes,
+				goodName: terms.goodName,
+				entrusted: terms.entrusted,
+				rewardCr: terms.rewardCr,
+				remainingT: ctx.cargo[terms.goodName] ?? 0,
+			}),
 			{
 				rewardCr: terms.rewardCr,
 				// §4's mark lands exactly here, with the settlement, so a repeated

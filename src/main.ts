@@ -11857,6 +11857,12 @@ class Game {
 			message: this.requestMessage,
 			revision: this.requestRevision,
 			now: this.world.gameTime,
+			// #443's projection (#446). The other two readers landed there and
+			// are not in this diff: `stationConsoleState` builds one for the
+			// hold line and the till's `cargo-full` sentence. Not a commerce
+			// input of the kind #411's round 2 stripped — it is the hold, which
+			// is the one thing a Deliver button has to know about the pilot.
+			hold: holdSummary(this.commander, this.requests),
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,

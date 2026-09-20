@@ -163,3 +163,33 @@ export function holdSummary(
 	lines.sort(compareLines);
 	return { usedT, capacityT, freeT: capacityT - usedT, entrustedT, lines };
 }
+
+/**
+ * How much of a job's good is aboard **for that job** (#446).
+ *
+ * Here rather than in the view, because deciding what a line means for a job
+ * is a fact about the projection: a requester's line belongs to the offer it
+ * names, and a pilot's line to nobody. A second reading of that in a screen is
+ * a second authority, and the till and the button could then drift apart on
+ * line ownership with neither file noticing.
+ *
+ * Takes the three fields it reads rather than a `JobOffer`, so this module
+ * stays below `jobs.ts` as well as below the screens.
+ *
+ * **Tonne lines only.** The total is compared against a job's tonnage, and
+ * Gold is kilogrammes — a non-tonne line of the same name added in would be
+ * counted as tonnes and could enable a control the till then refuses.
+ */
+export const aboardForOffer = (
+	hold: HoldSummary | null,
+	offer: { id: string; goodName: string; entrusted: boolean },
+): number =>
+	(hold?.lines ?? [])
+		.filter(
+			(line) =>
+				line.unit === "t" &&
+				(offer.entrusted
+					? line.owner === "requester" && line.offerId === offer.id
+					: line.owner === "pilot" && line.goodName === offer.goodName),
+		)
+		.reduce((sum, line) => sum + line.amount, 0);

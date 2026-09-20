@@ -11,7 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
-import { boardAt, firstOffer, stationKeyOf } from "./helpers/job-board";
+import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 import { recordTrade } from "../src/deficits";
 import {
 	type RequestsState,
@@ -19,6 +19,7 @@ import {
 	entrustedTonnesAboard,
 	requestAction,
 	settledAt,
+	settlementMessage,
 } from "../src/requests";
 import { generateContents } from "../src/system";
 
@@ -100,6 +101,53 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(state.byId[courier.id].status).toBe("ready-to-report");
 		// The goods are the buyer's now, so they are out of the hold.
 		expect(entrustedTonnesAboard(state)).toBe(0);
+	});
+
+	test("handing over a consignment does not touch the pilot's own cargo", () => {
+		// **#446's reproduction, pinned.** The principal bought 8 t of Food to
+		// fulfil a consignment that was already aboard and reported a bug in
+		// the finishing of the job. What this shows is narrower than an
+		// explanation of that session: run through the shipped modules, the
+		// requester's lot is consumed once, the pilot's Food is untouched and
+		// the mark is a single write — so the double-charge the symptom
+		// suggests is not in these paths. The session itself was never
+		// replayed, and the wording is what this node changes. Pinned as a row
+		// rather than a paragraph because a later refactor of the two cargo
+		// paths would break it in silence.
+		const state = accept().state;
+		const mine = { [courier.goodName]: courier.tonnes };
+		const delivered = requestAction(state, offers, "deliver", courier.id, {
+			...context(),
+			docked: at(courier.reportAt),
+			cargo: mine,
+		});
+		expect(delivered.ok).toBe(true);
+		// Nothing of the pilot's is asked for, so nothing is taken.
+		expect(delivered.cargoDelta).toEqual({});
+		// **And the mark is counted, not merely valued.** Asserting only the
+		// figure on the report leaves a second −8 t write at deliver green,
+		// which is the shape of the double-spend the node was reported as.
+		expect(delivered.mark).toBeNull();
+		expect(delivered.rewardCr).toBe(0);
+		// And the requester's lot is gone exactly once.
+		expect(entrustedTonnesAboard(delivered.state)).toBe(0);
+		const reported = requestAction(
+			delivered.state,
+			offers,
+			"report",
+			courier.id,
+			{ ...context(), docked: at(courier.reportAt), cargo: mine },
+		);
+		expect(reported.ok).toBe(true);
+		expect(reported.cargoDelta).toEqual({});
+		expect(reported.mark?.trade.units).toBe(-courier.tonnes);
+		// **And the sentence calls the pilot's tonnage theirs.** This is the
+		// case the node was reported from — the same good on both sides of the
+		// ownership line — and the settlement has to keep them apart in words
+		// as well as in arithmetic.
+		expect(reported.message).toBe(
+			`Reported · ${courier.tonnes} t ${courier.goodName} handed over, ${courier.rewardCr} Cr paid · ${courier.tonnes} t ${courier.goodName} still aboard, yours.`,
+		);
 	});
 
 	test("reporting pays once and marks the world once", () => {
@@ -210,25 +258,13 @@ describe("procurement carries the pilot's own goods", () => {
 	 * branch of the family had a test. The deficit is made here, because it is
 	 * a thing a pilot does: it is the mark of a hold bought off that shelf.
 	 */
-	const shortfall = () => {
-		for (const record of SYSTEMS) {
-			for (const station of generateContents(record).stations) {
-				if (station.type === "outpost") continue;
-				const deficits = recordTrade({}, stationKeyOf(record, station), {
-					goodName: "Food",
-					units: 20,
-					gameTimeMin: 0,
-					holdT: 20,
-				});
-				const found = boardAt(SYSTEMS, record, station, {
-					deficits,
-				}).find((o) => o.family === "procurement");
-				if (found) return { offers: [found], offer: found };
-			}
-		}
-		throw new Error("no procurement offer after a real purchase");
-	};
-	const { offers: shelf, offer: purchase } = shortfall();
+	// `postingStations` is `canPostJobs`, which is "not an outpost" — the same
+	// filter this block used to spell out for itself.
+	const { offers: shelf, offer: purchase } = firstProcurementOffer(
+		SYSTEMS,
+		"Food",
+		0,
+	);
 	const atShelf = (
 		over: Partial<Parameters<typeof requestAction>[4]> = {},
 	) => ({
@@ -358,5 +394,158 @@ describe("§3 — a reaccept cannot restore a satisfied objective", () => {
 		expect(reaccepted.ok).toBe(true);
 		expect(Object.values(reaccepted.state.entrustedByLotId).length).toBe(1);
 		expect(entrustedTonnesAboard(reaccepted.state)).toBe(courier.tonnes);
+	});
+});
+
+describe("a procurement job settles against the pilot's own hold", () => {
+	// **The host's ordering, flown rather than assumed.** `settlementMessage`
+	// reads the remainder off `ctx.cargo`, and the claim that the delivery's
+	// delta has already landed by then was checked only on the entrusted arm,
+	// where `cargoDelta` is empty and the ordering cannot fail. This runs the
+	// procurement arm the way `main.ts` runs it: deliver, apply the delta,
+	// report with the cargo that is left.
+	const board = firstProcurementOffer(SYSTEMS);
+	const here = {
+		galaxyIndex: board.offer.requester.galaxyIndex,
+		carrierKey: board.offer.requester.carrierKey,
+	};
+	const ctx = (cargo: Record<string, number>) => ({
+		now: 120 * 60,
+		docked: here,
+		cargo,
+		holdRoomT: 20,
+	});
+
+	const apply = (
+		cargo: Record<string, number>,
+		delta: Readonly<Record<string, number>>,
+	) => {
+		const next = { ...cargo };
+		for (const [good, amount] of Object.entries(delta)) {
+			const left = (next[good] ?? 0) + amount;
+			if (left <= 0) delete next[good];
+			else next[good] = left;
+		}
+		return next;
+	};
+
+	test("a short hold is refused by the model, not only by the button", () => {
+		// **The disabled attribute is a courtesy; this is the rule.** #446
+		// added a short-hold gate to the rendered control, and a rendered gate
+		// is bypassable from a console or a synthesised click. Nothing pinned
+		// that `requestAction` refuses the procurement arm short, so this does.
+		const { offers: board3, offer } = board;
+		const accepted = requestAction(
+			emptyRequests(),
+			board3,
+			"accept",
+			offer.id,
+			ctx({}),
+		);
+		expect(accepted.ok).toBe(true);
+		const short = requestAction(accepted.state, board3, "deliver", offer.id, {
+			...ctx({ [offer.goodName]: offer.tonnes - 1 }),
+		});
+		expect(short.ok).toBe(false);
+		expect(short.cargoDelta).toEqual({});
+		// And the state is the one it was given, so nothing half-applied.
+		expect(short.state).toBe(accepted.state);
+	});
+
+	test("the remainder is what is left after the delivery, not before it", () => {
+		const { offers: board3, offer } = board;
+		// Two tonnes more than the job needs, so the remainder is a figure and
+		// not a zero — a zero would pass under either ordering.
+		let cargo = { [offer.goodName]: offer.tonnes + 2 };
+		const accepted = requestAction(
+			emptyRequests(),
+			board3,
+			"accept",
+			offer.id,
+			ctx(cargo),
+		);
+		expect(accepted.ok).toBe(true);
+		const delivered = requestAction(
+			accepted.state,
+			board3,
+			"deliver",
+			offer.id,
+			ctx(cargo),
+		);
+		expect(delivered.ok).toBe(true);
+		expect(delivered.cargoDelta).toEqual({ [offer.goodName]: -offer.tonnes });
+		cargo = apply(cargo, delivered.cargoDelta);
+		const reported = requestAction(
+			delivered.state,
+			board3,
+			"report",
+			offer.id,
+			ctx(cargo),
+		);
+		expect(reported.ok).toBe(true);
+		expect(reported.message).toBe(
+			`Reported · ${offer.tonnes} t ${offer.goodName} delivered from your hold, ${offer.rewardCr} Cr paid · 2 t ${offer.goodName} still aboard, yours.`,
+		);
+	});
+});
+
+describe("the settlement says what moved", () => {
+	test("a hand-over names the tonnes, the pay and what is left of the pilot's", () => {
+		expect(
+			settlementMessage({
+				tonnes: 8,
+				goodName: "Food",
+				entrusted: true,
+				rewardCr: 180,
+				remainingT: 8,
+			}),
+		).toBe(
+			"Reported · 8 t Food handed over, 180 Cr paid · 8 t Food still aboard, yours.",
+		);
+	});
+
+	test("a procurement settlement says the goods were the pilot's", () => {
+		expect(
+			settlementMessage({
+				tonnes: 5,
+				goodName: "Textiles",
+				entrusted: false,
+				rewardCr: 90,
+				remainingT: 0,
+			}),
+		).toBe(
+			"Reported · 5 t Textiles delivered from your hold, 90 Cr paid · no Textiles left aboard.",
+		);
+	});
+
+	test("after a hand-over an empty remainder is silence, not a claim", () => {
+		// `no Food left aboard` after a hand-over reads as the pilot's Food
+		// having gone — the ownership confusion this node removes, pointing the
+		// other way. A pilot who carried none of the good is told about the job
+		// and nothing else.
+		expect(
+			settlementMessage({
+				tonnes: 8,
+				goodName: "Food",
+				entrusted: true,
+				rewardCr: 180,
+				remainingT: 0,
+			}),
+		).toBe("Reported · 8 t Food handed over, 180 Cr paid.");
+	});
+
+	test("after a procurement job an empty hold is worth saying", () => {
+		// Here the goods really were the pilot's, so the hold going empty is a
+		// fact about their own cargo and the sentence is not a claim about
+		// someone else's.
+		expect(
+			settlementMessage({
+				tonnes: 5,
+				goodName: "Textiles",
+				entrusted: false,
+				rewardCr: 90,
+				remainingT: 0,
+			}),
+		).toContain("no Textiles left aboard");
 	});
 });

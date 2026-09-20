@@ -6,6 +6,7 @@
  * and the distance — and the simulate-a-stage controls are gone, because the
  * stage is satisfied by flying there.
  */
+import { aboardForOffer, type HoldSummary } from "./hold";
 import {
 	isAcceptedRequest,
 	nextAction,
@@ -13,6 +14,63 @@ import {
 	type RequestsState,
 	type RequestStation,
 } from "./requests";
+
+/**
+ * What the Deliver control says, and whether it is live (#446).
+ *
+ * **A string builder with a branch deserves its own rows**, and the branch is
+ * the node: one label served both families, so a consignment already aboard
+ * read as a shopping list and the pilot bought eight tonnes of Food they were
+ * already carrying. The details pane said *entrusted* the whole time; a screen
+ * that is merely accurate somewhere is not the test. The test is whether the
+ * control a pilot presses says what it does.
+ */
+export interface DeliverAction {
+	label: string;
+	hint: string;
+	enabled: boolean;
+}
+
+/**
+ * `aboardT` is what is aboard **for this job** — the requester's lot for an
+ * entrusted consignment, the pilot's own tonnage of the good for a
+ * procurement job. The caller reads it off `holdSummary` rather than scanning
+ * the cargo again, so the button, the hold line and the till all answer from
+ * one projection (#443).
+ */
+export function deliverAction(
+	offer: RequestOffer,
+	aboardT: number,
+): DeliverAction {
+	const short = aboardT < offer.tonnes;
+	// Only the words differ by family; the enablement is one rule, and it was
+	// written twice.
+	const entrustedHint = (): string => {
+		if (!short) return "aboard since you accepted — the requester's";
+		if (aboardT > 0)
+			return `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`;
+		return "the consignment is not aboard";
+	};
+	const words = offer.entrusted
+		? {
+				// **Never "Deliver" for a consignment.** In this game that word
+				// is an instruction to supply something, and supplying is
+				// exactly what a consignment does not need (CONTEXT.md
+				// §Language, **Entrusted cargo**).
+				label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
+				hint: entrustedHint(),
+			}
+		: {
+				label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
+				// `aboardT` on both arms: a pilot carrying 10 t for an 8 t job
+				// was told "8 t aboard", which is the job's figure and not
+				// theirs.
+				hint: short
+					? `${aboardT} t of ${offer.tonnes} aboard`
+					: `${aboardT} t aboard, yours to hand over`,
+			};
+	return { ...words, enabled: !short };
+}
 
 export interface RequestsView {
 	state: RequestsState;
@@ -22,6 +80,21 @@ export interface RequestsView {
 	revision: number;
 	now: number;
 	docked: RequestStation | null;
+	/**
+	 * What is aboard — #443's projection, and the only input this screen takes
+	 * about the commander.
+	 *
+	 * The whole summary rather than a tonnage per offer, because
+	 * `aboardForOffer` reads the **lines** and a per-offer number computed
+	 * outside would be that reading done twice. The scalar fields —
+	 * `usedT`, `capacityT`, `freeT`, `entrustedT` — arrive unused here and are
+	 * the same object the trade screen draws, which is the point: one
+	 * projection, not a per-consumer slice of it. No credits, no prices, no
+	 * market: those stay out.
+	 *
+	 * `null` where no hold was supplied, which reads as nothing aboard.
+	 */
+	hold: HoldSummary | null;
 }
 const esc = (x: string) =>
 	x.replace(
@@ -31,8 +104,43 @@ const esc = (x: string) =>
 				c
 			] as string,
 	);
-const button = (action: string, id: string, label: string) =>
-	`<button type="button" class="lc-request-action" data-live-request-action="${action}" data-live-request-id="${esc(id)}">${esc(label)}</button>`;
+const button = (
+	action: string,
+	id: string,
+	label: string,
+	extra: { hint?: string; enabled?: boolean; surface?: string } = {},
+) => {
+	// `action` is escaped too. Every caller passes a literal today, so nothing
+	// is reachable; an unescaped attribute position beside the other escaped
+	// ones is a footgun for the next caller, and `esc` covers `"` and `'`.
+	const disabled = extra.enabled === false ? " disabled" : "";
+	// **Namespaced by surface.** `requestsBody` renders on the station console
+	// and again on the flight console, so an offer-derived id alone would be a
+	// duplicate `id` in one document and an ambiguous `aria-describedby`.
+	const hintId = extra.hint
+		? `${extra.surface ?? "console"}-${action}-${id}-hint`
+		: "";
+	// **The hint is a sibling, not a child.** It was inside the button, which
+	// is where it is least reachable: a disabled button is not focusable and
+	// browsers suppress its `title`, and the hint is most needed exactly when
+	// the control is dead. `aria-describedby` ties the two without nesting.
+	const describedBy = hintId ? ` aria-describedby="${esc(hintId)}"` : "";
+	const control = `<button type="button" class="lc-request-action" data-live-request-action="${esc(action)}" data-live-request-id="${esc(id)}"${disabled}${describedBy}>${esc(label)}</button>`;
+	if (!extra.hint) return control;
+	return `<span class="lc-request-control">${control}<small class="lc-request-hint" id="${esc(hintId)}" data-live-request-hint data-live-request-id="${esc(id)}">${esc(extra.hint)}</small></span>`;
+};
+
+/**
+ * How much of this job's good is aboard — `hold.ts`'s query, re-exported.
+ *
+ * The view does not interpret the projection's lines; it asks it. A per-job
+ * reading here would be the second authority the whole #443/#446 pair exists
+ * to avoid.
+ */
+export const aboardFor = (
+	view: Pick<RequestsView, "hold">,
+	offer: RequestOffer,
+): number => aboardForOffer(view.hold, offer);
 export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
@@ -49,6 +157,9 @@ export const REQUESTS_STYLE = `
 .lc-request-details dd { margin: 0; color: #ffe1a9; }
 .lc-request-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .lc-request-action { padding: 9px 13px; border: 1px solid #bb7e36; background: #422607; color: #fff0c9; font: inherit; cursor: pointer; }
+.lc-request-action:disabled { cursor: not-allowed; opacity: .55; }
+.lc-request-control { display: inline-flex; flex-direction: column; gap: 4px; }
+.lc-request-hint { display: block; color: #cb8c51; font-size: 11px; pointer-events: none; }
 .lc-request-message { color: #b8dfa9; min-height: 18px; }
 .lc-request-fixtures { margin-top: 24px; padding-top: 12px; border-top: 1px dashed #735432; color: #c7a882; font-size: 11px; }
 .lc-request-fixtures .lc-request-action { font-size: 11px; background: #21190f; }
@@ -138,12 +249,18 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				o.id,
 				state.trackedRequestId === o.id ? "Untrack" : "Track request",
 			);
-			if (r.status === "accepted" && atReport)
-				actions += button(
-					"deliver",
-					o.id,
-					`Deliver ${o.tonnes} t ${esc(o.goodName)}`,
-				);
+			if (r.status === "accepted" && atReport) {
+				// **The control says whose goods it moves** (#446). One label
+				// served both families, so a consignment already aboard read as
+				// a shopping list — and `esc` was applied to the good's name
+				// here and again by `button`, which double-escaped it.
+				const deliver = deliverAction(o, aboardFor(view, o));
+				actions += button("deliver", o.id, deliver.label, {
+					hint: deliver.hint,
+					enabled: deliver.enabled,
+					surface: flight ? "flight" : "console",
+				});
+			}
 			if (r.status === "ready-to-report" && atReport)
 				actions += button("report", o.id, `Report · receive ${o.rewardCr} Cr`);
 			actions += button("cancel", o.id, "Cancel request · no fee");
