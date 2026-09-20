@@ -1458,7 +1458,7 @@ const setLegalCarrierList = (
 	for (const key of keys) {
 		assertCarrierKey(key);
 		if (seen.has(key))
-			fail(`setLegal${field}: ${key} is listed twice in one row`);
+			fail(`setLegalCarrierList(${field}): ${key} is listed twice in one row`);
 		seen.add(key);
 	}
 	return withEnvelope(world, galaxyIndex, at, (env) => ({

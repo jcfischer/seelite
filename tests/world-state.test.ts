@@ -1225,21 +1225,23 @@ describe("§9.6 round trip", () => {
 	});
 });
 
+/** Re-hash a hand-edited body, which is the only way to speak as an older build
+ *  did: the integrity field covers the canonical body, so a save whose
+ *  `legalStatus` never held a `witnesses` or an `assaulted` member has to be
+ *  *hashed* without one to be the artefact a player actually has. Shared by both
+ *  of the list describes below — it was declared twice, and a helper that exists
+ *  twice is a helper that drifts. */
+const rehash = (raw: unknown): unknown => {
+	const body = { ...(raw as Record<string, unknown>) };
+	delete body.integrity;
+	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
+};
+
+const legalOf = (raw: unknown, galaxy = 0) =>
+	(raw as { galaxies: Array<{ legalStatus: Record<string, unknown> }> })
+		.galaxies[galaxy].legalStatus;
+
 describe("#366 H6: `witnesses` across the save boundary", () => {
-	/** Re-hash a hand-edited body, which is the only way to speak as an older
-	 *  build did: the integrity field covers the canonical body, so a save whose
-	 *  `legalStatus` never held a `witnesses` member has to be *hashed* without
-	 *  one to be the artefact a player actually has. */
-	const rehash = (raw: unknown): unknown => {
-		const body = { ...(raw as Record<string, unknown>) };
-		delete body.integrity;
-		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
-	};
-
-	const legalOf = (raw: unknown, galaxy = 0) =>
-		(raw as { galaxies: Array<{ legalStatus: Record<string, unknown> }> })
-			.galaxies[galaxy].legalStatus;
-
 	test("an empty list is not written at all", () => {
 		// `knownPrivateFacts` is omitted when absent for the same reason. Written
 		// as `"witnesses": []` on every row, the canonical body changes bytes for
@@ -1463,20 +1465,15 @@ describe("§9.10 facility knowledge", () => {
 });
 describe("#396: the sustained-fire charge across the save boundary", () => {
 	/** The `witnesses` rows above are the model for everything here, and the
-	 *  second list is held to every one of them. It is a *second* list rather
-	 *  than a field on the carrier's row because an assault has no transition to
-	 *  write — H3c's `disable` is the only mark a traffic carrier ever gets from
-	 *  the player's fire, and the charge lands before the hull gives way. */
-
-	const rehash = (raw: unknown): unknown => {
-		const body = { ...(raw as Record<string, unknown>) };
-		delete body.integrity;
-		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
-	};
-
-	const legalOf = (raw: unknown, galaxy = 0) =>
-		(raw as { galaxies: Array<{ legalStatus: Record<string, unknown> }> })
-			.galaxies[galaxy].legalStatus;
+	 *  second list is held to every one of them — including the old-save row
+	 *  there, which strips and re-hashes *both* members and so is this list's
+	 *  "a save predating it parses empty" row as much as the first one's. A copy
+	 *  of it here would be a second row that can only go red when the first does.
+	 *
+	 *  The list is a *second* list rather than a field on the carrier's row
+	 *  because an assault has no transition to write — H3c's `disable` is the
+	 *  only mark a traffic carrier ever gets from the player's fire, and this
+	 *  charge lands before the hull gives way. */
 
 	test("an empty charge list is not written at all", () => {
 		// Same reason as the witnesses, and it is the reason the schema version
@@ -1486,18 +1483,6 @@ describe("#396: the sustained-fire charge across the save boundary", () => {
 		expect(
 			legalOf(serializeWorld(setLegalHeat(newWorld(WORLD), 0, 42, 20))),
 		).not.toHaveProperty("assaulted");
-	});
-
-	test("a save from before either list existed parses to two empty lists", () => {
-		const raw = rehash(serializeWorld(setLegalHeat(newWorld(WORLD), 2, 40, 5)));
-		delete legalOf(raw, 2).witnesses;
-		delete legalOf(raw, 2).assaulted;
-		expect(parseWorld(raw).galaxies[2].legalStatus).toEqual({
-			heat: 40,
-			updatedAt: 5,
-			witnesses: [],
-			assaulted: [],
-		});
 	});
 
 	test("a charge list round-trips, in the canonical carrier order", () => {

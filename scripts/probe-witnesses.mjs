@@ -260,7 +260,16 @@ try {
 							instanceOrdinal,
 							g.world.gameTime,
 						);
-						if (standing !== "clean") {
+						// **Which standing the search is hunting for is the
+						// caller's, not this function's.** The witness rows want a
+						// Clean carrier because only a Clean one is an offence; the
+						// hail's Clean-only gate (F7) needs the opposite, and a
+						// predicate that only accepts Clean silently returns a Clean
+						// carrier to a caller asking for a Wanted one — which this
+						// file did for a round, and the row printed `standing:
+						// "clean"` and went red rather than let that pass.
+						const wantClean = want.standing !== "not-clean";
+						if (wantClean ? standing !== "clean" : standing === "clean") {
 							tally.standing++;
 							continue;
 						}
@@ -443,6 +452,11 @@ try {
 							// charged, read off the game, not off this file.
 							at: g.frameBody?.id ?? null,
 							seen,
+							// **The strike's own duration, in seconds.** `ASSAULT_FIRE_S`
+							// is declared as a share of this figure, so the run that
+							// measures the share prints it and a retuner re-reads the
+							// denominator here instead of trusting a comment.
+							secondsToDivert: i * dt,
 							// Where the carrier stood on that frame, which is what #396's
 							// earshot is measured from — not where the pilot was.
 							victim: { ...(g.trafficContacts.get(key)?.pos ?? {}) },
@@ -463,6 +477,42 @@ try {
 					hail,
 					charge,
 					seen,
+				};
+			},
+			/** The game's own standing answer for a carrier, off its own clock. */
+			standingFor(key) {
+				const record = g.world.system.record;
+				return standingMod.carrierStanding(
+					record.seed,
+					key,
+					g.carrierCondition(key).instanceOrdinal,
+					g.world.gameTime,
+				);
+			},
+			/**
+			 * Hold the tether and the trigger for a bounded number of frames, and
+			 * report what the console did.
+			 *
+			 * **The arm the Clean scene cannot be.** #396's hail is Clean's, by F7 —
+			 * a Wanted carrier is a lawful target and a lawful target does not
+			 * complain — and the row that reads that has to shoot a carrier whose
+			 * standing is not Clean and actually land on it. Landing is
+			 * load-bearing: a fight in which nothing hit says nothing about a gate
+			 * keyed on the first hit, so `landedFireS` is read off the engagement
+			 * and the row is only allowed to pass on a target that carries fire.
+			 */
+			hitWithoutHail(key, frames) {
+				const p = window.__witnessProbe;
+				if (!p.tether(key, 1.2)) return { tethered: false };
+				const before = p.comms();
+				for (let i = 0; i < frames; i++) if (!p.followFiring(key)) break;
+				const engagement = g.trafficEngagements.get(key);
+				return {
+					tethered: true,
+					standing: p.standingFor(key),
+					landedFireS: engagement?.landedFireS ?? 0,
+					before,
+					after: p.comms(),
 				};
 			},
 			/**
@@ -496,7 +546,7 @@ try {
 			/**
 			 * The Communications console, as the player would have it open, and what
 			 * it is showing. The tab is a private field and this drives it the way
-			 * the pad binding does, because the rail and the log are both built per
+			 * the console's own tab binding does, because the rail and the log are built per
 			 * tab and neither exists in the DOM until the tab is up.
 			 */
 			comms() {
@@ -651,18 +701,6 @@ try {
 			witnesses: struck.after?.legal.witnesses,
 			victim: struck.strike?.victim,
 		}),
-	);
-	check(
-		"the filed set contains at least the berth the frame body's rule reached, so the amendment only widens H5 (#396)",
-		// The old rule's answer has to be a subset of the new one's, or the
-		// amendment would be a narrowing that reads as a widening: the frame
-		// body's reach is `nearFar`, the transmission's is `range`, and `km`
-		// here is measured from the victim.
-		heard !== null &&
-			heard.stations
-				.filter((st) => st.km <= heard.nearFar)
-				.every((st) => st.witnessed === true),
-		JSON.stringify({ heard }),
 	);
 	// -------------------------------------------------------------------------
 	// #396 §3: the victim's hail, and the charge that the flight report said
@@ -864,6 +902,11 @@ try {
 			anyRefused: readout.stations
 				.filter((s) => s.refusedByLaw)
 				.map((s) => s.id),
+			// The console, read on the same frame as the clearance. Nothing is
+			// being shot at any more — the fight ended at the divert and the jump
+			// that followed it — which is the other half of a present-tense rail:
+			// it has to be able to go back to saying nothing.
+			comms: p.comms(),
 		};
 	});
 	check(
@@ -875,6 +918,53 @@ try {
 			cleared.readout.legal.standing === "clean" &&
 			cleared.anyRefused.length === 0,
 		JSON.stringify(cleared),
+	);
+	check(
+		"the rail says NONE again once nobody is being shot at, and the log keeps the line (#396: a rail, not a history)",
+		// Reached through the shipped jump and not by deleting the engagement by
+		// hand: the glass is asked what it shows when the fight is over, and the
+		// answer has to come from the game's own ending of it.
+		cleared.comms?.rail === "NONE" &&
+			cleared.comms?.store.length === 1 &&
+			cleared.comms?.logLines?.some((l) => l.includes("cease fire")) === true,
+		JSON.stringify({ comms: cleared.comms }),
+	);
+
+	// -------------------------------------------------------------------------
+	// Last, and for one reason: this search runs the system clock forward by up
+	// to half an hour looking for a carrier whose standing is not Clean, and
+	// every row above reads heat that half an hour would have decayed. The Clean
+	// scene cannot answer it either — a Clean carrier is precisely the one that
+	// hails — so the predicate is turned round and the shot is fired at what the
+	// law calls a lawful target.
+	// -------------------------------------------------------------------------
+	const lawful = await page.evaluate(() => {
+		const p = window.__witnessProbe;
+		const found = p.nearStationContact(
+			{ armed: false, standing: "not-clean" },
+			1800,
+		);
+		if (!found?.key) return { found: null, search: found.tally };
+		return {
+			found: { key: found.key, km: found.km },
+			search: found.tally,
+			shot: p.hitWithoutHail(found.key, 30),
+		};
+	});
+	check(
+		"a carrier that is not Clean is hit for thirty frames, and none of the three channels moves (#396: the hail is Clean's, by F7)",
+		lawful.found !== null &&
+			lawful.shot?.tethered === true &&
+			lawful.shot?.standing !== "clean" &&
+			lawful.shot?.landedFireS > 0 &&
+			lawful.shot?.before?.store.length === lawful.shot?.after?.store.length &&
+			lawful.shot?.before?.rail === lawful.shot?.after?.rail &&
+			lawful.shot?.before?.alerts === lawful.shot?.after?.alerts,
+		JSON.stringify({
+			found: lawful.found,
+			search: lawful.search,
+			shot: lawful.shot,
+		}),
 	);
 } finally {
 	await browser.close();

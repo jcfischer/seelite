@@ -218,9 +218,12 @@ assault then reports as costing nothing, having forgotten which of the two it is
 looking at. `tests/legal.test.ts` holds the interval, so a retune that leaves it
 is a red run rather than a quiet change in what the law is.
 
-**Why five seconds.** `ASSAULT_FIRE_S` is 29 % of the 17.5 s an unbroken beam
-takes to open one facing of a freighter, so the charge lands while the shields
-are still two-thirds up: the pilot is charged for what they did to a citizen, not
+**Why five seconds.** `ASSAULT_FIRE_S` is a third of the ~17.6 s an unbroken
+beam takes to open one facing of a freighter — a figure with an instrument behind
+it rather than a remembered one: `probe-witnesses.mjs` holds exactly that beam
+and prints how long the facing lasted (`strike.secondsToDivert`; 176 frames at
+`MAX_DT` on seed 42), and #395's receipt reached the same number from the other
+side. So the charge lands while the shields are still two-thirds up: the pilot is charged for what they did to a citizen, not
 for how long it took the gun to get through the armour. The clock **holds across
 the gaps** — it counts fire that *landed*, and a pilot who breaks off to line up
 again has not un-done the seconds already spent. A clock that reset between hits
@@ -369,6 +372,15 @@ it. It now holds the callsign transmitting, or `NONE` — and `NONE` rather than
 blank, because a label that shows nothing when nothing has happened is a label a
 pilot cannot tell apart from a console that was never wired, which is what this
 one was for three hundred lines of its life.
+
+**And it goes back to `NONE` when the fight ends.** A carrier is transmitting
+*while it is being shot at*, which is what `trafficEngagements` already knows, so
+the callsign leaves the rail on the frame the pilot breaks off, kills it, or
+jumps away — and the line stays on the log underneath, which is the history and
+does that job better. A first draft read the newest entry in the session's store
+and so kept the speaker on the glass for the rest of the session, which is a log
+with a shorter memory rather than a rail: **the rail answers what is happening,
+and only the log answers what happened.**
 
 **The struck Clean carrier's hail is drawn on the first landed hit**, through the
 three channels every other emergency in this game uses: the rail's value, a line

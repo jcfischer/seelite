@@ -381,10 +381,6 @@ import {
 	raiderLog,
 	type RaiderLogLine,
 } from "./raider-log";
-
-/** How many hails the session keeps. The console shows six; the store holds two
- *  screens, and no more, however long the trigger is held. */
-const HAIL_LOG_KEEP = 12;
 import {
 	RELAY_HIT_RADIUS_KM,
 	RELAY_IDENTIFY_RANGE_KM,
@@ -640,6 +636,10 @@ import {
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+
+/** How many hails the session keeps. The console shows six; the store holds two
+ *  screens, and no more, however long the trigger is held. */
+const HAIL_LOG_KEEP = 12;
 
 /**
  * Cube faces drawn per frame, across every bake in flight (#208).
@@ -2004,18 +2004,19 @@ class Game {
 	 */
 	private readonly hails: { line: RaiderLogLine; callsign: string }[] = [];
 	/**
-	 * Which carriers have already hailed, and **which galaxy's law** that hail
-	 * was spent inside.
+	 * Which carriers have already hailed, **bucketed by the galaxy whose law
+	 * spent the hail**.
 	 *
-	 * The galaxy is carried here because the guard's expiry is the law's clock
-	 * and nothing else's: `settleWitnesses` ends an incident when heat reads
-	 * below Wanted, and this forgets on the same read, in the same galaxy, so a
-	 * carrier the pilot let out of its incident hails them again the next time
-	 * they are shot at. A guard that only a reload cleared would leave the rail
-	 * showing a stale speaker — the row is present tense, and a present-tense
-	 * instrument that cannot be silent is a decoration.
+	 * The bucket is the scope, not a label on the entry: a `CarrierKey` is unique
+	 * to a system *within* a galaxy (`carrier-key.ts`), so the same key in the
+	 * next galaxy is a different carrier and a flat set would quietly refuse it
+	 * its hail. And the bucket is what an incident's ending can release in one
+	 * act — see `settleWitnessList`, where the guard expires on the law's own
+	 * reading of the same clock that clears the hearers and the charge list, so a
+	 * carrier the pilot let out of its incident hails again the next time it is
+	 * shot at rather than being mute for the rest of the session.
 	 */
-	private readonly hailed = new Map<CarrierKey, number>();
+	private readonly hailed = new Map<number, Set<CarrierKey>>();
 	private readonly trafficForward = new THREE.Vector3(0, 0, -1);
 	private readonly trafficNose = new THREE.Vector3();
 	private readonly trafficUp = new THREE.Vector3();
@@ -5640,9 +5641,12 @@ class Game {
 	 *
 	 * `victim` is where the **carrier** stood, and the earshot is measured from
 	 * it and not from the player. That is the whole of #396's amendment to H5:
-	 * the transmission is the victim's, so a berth that was 5 km from the pilot
-	 * and 70 km from the victim hears nothing, and one 50 km from the victim and
-	 * out past the frame body's reach hears everything.
+	 * the transmission is the victim's, so a berth 5 000 km from the pilot and
+	 * 80 000 km from the carrier being shot at hears nothing (`DISTRESS_RANGE_KM`
+	 * is the reach, not the pilot's neighbourhood), and one 50 000 km from the
+	 * victim is filed even though no frame body would have been standing that far
+	 * from a ship beside it — where the old rule filed exactly one berth, the one
+	 * the *attacker* happened to be parked at.
 	 *
 	 * **The standing the strike was judged on is re-derived, not remembered.**
 	 * Standing is never saved — it is a pure derivation from the instance and the
@@ -5652,17 +5656,22 @@ class Game {
 	 * the kill that finishes it is worth its full 40 even if the six-hour
 	 * rotation has since turned the target Clean. Standing off the row's own clock
 	 * is how that is known without adding a field to the save. The assault charge
-	 * needs no clock of its own because it is only ever written when it cost
-	 * heat, and heat means the target was Clean at the tick it was judged.
+	 * needs no clock of its own: `assaultCharged` says whether the five seconds
+	 * were served, and the mark is written whatever it cost — a charge that came
+	 * free because the rotation had turned the target Wanted is still spent, and
+	 * what bounds it is the clear, not the figure it stamped.
 	 */
 	private chargeTrafficOffence(
-		record: SystemRecord,
 		actor: TrafficActor,
 		before: EffectiveCarrier,
 		offence: Offence,
-		now: number,
-		victim: Vec3,
+		/** Where the victim stood when the act was done, and what the earshot is
+		 *  measured from. The fight is passed rather than a position plucked out
+		 *  of it at each of the three call sites, all of which pass the same one. */
+		engagement: Engagement,
 	): number {
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
 		const standingOf = (atS: number) =>
 			carrierStanding(record.seed, actor.key, before.instanceOrdinal, atS);
 		const heat = marginalOffenceHeat(
@@ -5682,7 +5691,10 @@ class Game {
 		// no more make a Clean pilot hostile than the kill did. Gating the whole
 		// write on `heat > 0` is what #366's first pass did and it silently drops
 		// the third of H5 that is not about heat.
-		const heardBy = stationsInEarshot(this.earshotStations(), victim);
+		const heardBy = stationsInEarshot(
+			this.earshotStations(),
+			engagement.flight.ship.pos,
+		);
 		const worldBefore = this.commerceWorld;
 		this.commerceWorld = withOffence(
 			this.commerceWorld,
@@ -5717,12 +5729,10 @@ class Game {
 		const now = this.world.gameTime;
 		const carrier = this.carrierCondition(actor.key);
 		const heat = this.chargeTrafficOffence(
-			record,
 			actor,
 			carrier,
 			"assault",
-			now,
-			engagement.flight.ship.pos,
+			engagement,
 		);
 		this.commerceWorld = markAssaultCharged(
 			this.commerceWorld,
@@ -5765,8 +5775,10 @@ class Game {
 			) !== "clean"
 		)
 			return;
-		if (this.hailed.has(actor.key)) return;
-		this.hailed.set(actor.key, record.galaxy);
+		const guarded = this.hailed.get(record.galaxy) ?? new Set<CarrierKey>();
+		if (guarded.has(actor.key)) return;
+		guarded.add(actor.key);
+		this.hailed.set(record.galaxy, guarded);
 		this.hails.push({
 			line: {
 				at: this.world.gameTime,
@@ -5782,18 +5794,29 @@ class Game {
 	}
 
 	/**
-	 * What the Signals rail's `HAILS` label carries: the carrier transmitting
-	 * now, or `NONE`.
+	 * What the Signals rail's `HAILS` label carries: a carrier transmitting
+	 * **now**, or `NONE`.
 	 *
 	 * **`NONE` and not blank.** A label that shows nothing when nothing has
 	 * happened is a label a pilot cannot distinguish from a console that has not
 	 * been wired up — which is exactly what this one was for three hundred lines
 	 * of its life, and the reason #396 asked for a value rather than for a
 	 * brighter alarm.
+	 *
+	 * **And `NONE` again as soon as nobody is being shot at.** A carrier is
+	 * transmitting while the pilot is still shooting it, which is what
+	 * `trafficEngagements` already knows — the fight's own record, ended by a
+	 * break-off, a kill or a reload. The first draft of this read the last hail
+	 * in the store and so showed the speaker forever after: a rail is a present-
+	 * tense instrument, and one that can only ever add is a log with a shorter
+	 * memory, which the log underneath it already is and does better.
 	 */
 	private hailRailValue(): string {
-		const last = this.hails.at(-1);
-		return last ? last.callsign : "NONE";
+		for (let i = this.hails.length - 1; i >= 0; i--) {
+			const hail = this.hails[i];
+			if (this.trafficEngagements.has(hail.line.key)) return hail.callsign;
+		}
+		return "NONE";
 	}
 
 	/**
@@ -5821,12 +5844,10 @@ class Game {
 		for (const event of trafficDiversion(record.index, actor, now))
 			this.applyCarrierTransition(actor.key, event);
 		const heat = this.chargeTrafficOffence(
-			record,
 			actor,
 			carrier,
 			"struck",
-			now,
-			engagement.flight.ship.pos,
+			engagement,
 		);
 		this.lastExit =
 			heat > 0
@@ -5880,12 +5901,10 @@ class Game {
 			}),
 		];
 		const heat = this.chargeTrafficOffence(
-			record,
 			actor,
 			carrier,
 			"destroyed",
-			now,
-			engagement.flight.ship.pos,
+			engagement,
 		);
 		this.audio.explosion();
 		this.lastExit =
@@ -6332,15 +6351,18 @@ class Game {
 		const galaxy = this.world.system.record.galaxy;
 		const before = this.commerceWorld;
 		this.commerceWorld = settleWitnesses(before, galaxy, this.world.gameTime);
-		if (this.commerceWorld === before) return;
-		this.saveDirty();
-		// **The write is the incident's ending, and the hail guard ends with it.**
-		// `settleWitnesses` cleared that galaxy's hearers and its charged
-		// carriers; a session that went on refusing the same carrier's hail after
-		// the law had let the incident go would be a session keeping a record the
-		// world has already dropped, on a rail that reads as present tense.
-		for (const [key, hailedGalaxy] of this.hailed)
-			if (hailedGalaxy === galaxy) this.hailed.delete(key);
+		if (this.commerceWorld !== before) this.saveDirty();
+		// **The hail guard expires on the law's own reading, and not as a side
+		// effect of the write above.** Those are different conditions:
+		// `settleWitnesses` returns the *same* world whenever both lists are
+		// already empty — which is the ordinary case of a pilot who grazed a
+		// citizen, was hauled over the coals for it, and never filed a hearer or
+		// a charge — and a guard keyed to the write would then outlive the
+		// incident by the rest of the session, refusing that carrier's second hail
+		// while the law had long since stopped caring. So this asks the same
+		// question the law asks, on the same clock, and clears the galaxy.
+		if (legalStandingAt(this.legalStatus(), this.world.gameTime) === "clean")
+			this.hailed.delete(galaxy);
 	}
 
 	/** Build the review hulls. Where they go is settled on the first frame. */

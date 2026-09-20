@@ -81,11 +81,20 @@ export const trafficInSights = (
  * act rather than a stray hit — `civilian-combat.md` H4's sustained-fire rung
  * (#396), whose heat is `legal.ts`'s `OFFENCE_HEAT.assault`.
  *
- * A **declared starting form** (H12's precedent): five seconds is 29 % of the
- * 17.5 s an unbroken beam takes to open one facing of a freighter, so the charge
- * lands while the shields are still two-thirds up. The pilot is charged for what
- * they did to a citizen, not for how long it took the gun to get through the
- * armour.
+ * A **declared starting form** (H12's precedent), set against one measured
+ * quantity: a beam held on a Clean freighter takes ~17.6 s to open its facing,
+ * so five seconds is a little under a third of that and the charge lands while
+ * the shields are still two-thirds up. **That 17.6 is not folklore** —
+ * `probe-witnesses.mjs` tethers exactly that beam and reports the frames it
+ * took, and its run on seed 42 returned 176 at `units.MAX_DT`; #395's merged
+ * receipt quoted the same act at ~17.6 s from the other direction. Anyone
+ * retuning this dial re-measures the denominator by running that probe and
+ * reading `strike.secondsToDivert`, which is why the figure is quoted with its
+ * instrument rather than from the author's memory.
+ *
+ * What the fraction is *for* is the sentence after it: the pilot is charged for
+ * what they did to a citizen, not for how long it took the gun to get through
+ * the armour, so the rung sits at a share of the strike rather than beside it.
  *
  * **The clock holds across gaps.** A clock that reset the moment the beam left
  * the target would make the charge a marksmanship test — punishing a pilot for
