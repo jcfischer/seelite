@@ -107,16 +107,43 @@ export interface StationCommerceInput {
 	action: StationAction;
 }
 
+/**
+ * Every way the till says no, as a closed set (#443).
+ *
+ * They were bare strings on `StationCommerceResult.reason`, computed and then
+ * dropped by the caller — `main.ts` did `if (!result.accepted) return;`, so a
+ * refusal to sell reached the player as nothing happening. A union rather than
+ * `string` is what lets `station-console.ts` own one sentence per member and
+ * have the *type* insist the map is complete: a twelfth refusal added here
+ * fails to compile there rather than shipping silently.
+ *
+ * `tests/station-console.test.ts` reads this module's own `rejected(` calls
+ * back off the source, because the union cannot stop a new literal being passed
+ * that nobody added to it.
+ */
+export type CommerceRefusal =
+	| "fuel-full"
+	| "insufficient-credits"
+	| "equipment-unavailable"
+	| "equipment-owned"
+	| "invalid-quantity"
+	| "unknown-commodity"
+	| "commodity-unavailable"
+	| "commodity-sell-only"
+	| "insufficient-shelf"
+	| "cargo-full"
+	| "cargo-missing";
+
 export interface StationCommerceResult {
 	accepted: boolean;
-	reason: string | null;
+	reason: CommerceRefusal | null;
 	commander: CommanderState;
 	deficits: DeficitMap;
 }
 
 const rejected = (
 	input: StationCommerceInput,
-	reason: string,
+	reason: CommerceRefusal,
 ): StationCommerceResult => ({
 	accepted: false,
 	reason,

@@ -37,6 +37,7 @@ import {
 	stockResponse,
 } from "../src/market";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "../src/docking";
+import { codeOf } from "./lib/source-scan";
 import { PLAYER_BASELINE_HULL } from "../src/hull";
 import {
 	LARGE_CARGO_BAY_BONUS_T,
@@ -44,7 +45,9 @@ import {
 	newCommander,
 } from "../src/station-commerce";
 import {
+	REFUSAL_REASONS,
 	flightFloorVisible,
+	refusalSentence,
 	requiredDisplayTL,
 	priceLabel,
 	signedDelta,
@@ -622,4 +625,62 @@ describe("§5.6 the market row shows what the station pays as well as what it as
 	// console where the deficit and the printed label are checked beside the till. It
 	// lived here too, as a second copy of the same three-tech-level round trip, and a
 	// change to that contract meant editing two files.
+});
+
+/**
+ * #443 — the refusals the till computed and the screen dropped.
+ *
+ * The union makes the sentence map exhaustive at compile time; nothing in the
+ * type system stops a *new literal* being handed to `rejected(` that nobody
+ * added to the union, so the first row reads this module's own source back.
+ */
+describe("#443 — every refusal has a sentence", () => {
+	test("every reason the till passes to `rejected` is a member of the union", () => {
+		const source = codeOf("src/station-commerce.ts");
+		const passed = [
+			...source.matchAll(/rejected\(\s*input\s*,\s*"([^"]+)"/g),
+		].map((m) => m[1]);
+		// The control: a scan that found nothing would agree with any build.
+		expect(passed.length).toBeGreaterThan(8);
+		const listed = new Set<string>(REFUSAL_REASONS);
+		for (const reason of passed) expect(listed.has(reason), reason).toBe(true);
+		// And the other direction, so a reason that stops being reachable is
+		// noticed rather than left as a sentence nothing can print.
+		expect([...new Set(passed)].sort()).toEqual([...listed].sort());
+	});
+
+	test("every member renders a sentence, and none of them is empty", () => {
+		for (const reason of REFUSAL_REASONS) {
+			const sentence = refusalSentence(reason, {
+				freeT: 4,
+				capacityT: 20,
+				entrustedT: 8,
+			});
+			expect(sentence.length, reason).toBeGreaterThan(0);
+			expect(sentence.endsWith("."), reason).toBe(true);
+		}
+	});
+
+	test("`cargo-full` names the room that is missing and what is holding it", () => {
+		// #443's own arithmetic: a 20 t hull, an 8 t consignment, 1 t aboard.
+		expect(
+			refusalSentence("cargo-full", {
+				freeT: 11,
+				capacityT: 20,
+				entrustedT: 8,
+			}),
+		).toBe("No room — 11 t free of 20, with 8 t entrusted to a job.");
+	});
+
+	test("with nothing entrusted the clause is absent, not zeroed", () => {
+		// `0 t entrusted to a job` would be a sentence about a job that does not
+		// exist, which is the refusal reading as a bug all over again.
+		expect(
+			refusalSentence("cargo-full", {
+				freeT: 0,
+				capacityT: 35,
+				entrustedT: 0,
+			}),
+		).toBe("No room — 0 t free of 35.");
+	});
 });

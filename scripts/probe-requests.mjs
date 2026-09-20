@@ -336,6 +336,128 @@ try {
 		await page.evaluate((t) => window.__seelite.targetId === t, target),
 	);
 
+	// -----------------------------------------------------------------------
+	// #443 — the hold, and what the till says when it says no.
+	//
+	// The node was reported as a bug in the till: 228 Cr, 28 t of Food on the
+	// shelf, and the console sold eleven tonnes. Every figure was right — a
+	// 20 t hull, an 8 t consignment and 1 t of Radioactives — and **nothing on
+	// the glass said any of it**. So these read the *rendered* text and not a
+	// state object, which is #411 round 3's lesson: a probe that asks the game
+	// what it would have drawn agrees with any build.
+	//
+	// The state is set up through `__seelite` and then restored, the way this
+	// probe already parks a ship and `probe-death` already sets credits. What
+	// is being measured is the screen after a real DOM click, not the setup.
+	// -----------------------------------------------------------------------
+	await page.locator('[data-live-station-tab="Market"]').click();
+	const holdText = () => page.locator("[data-live-station-hold]").innerText();
+	const messageText = () =>
+		page.locator("[data-live-station-message]").innerText();
+
+	const entrustedT = await page.evaluate(() =>
+		Object.values(
+			window.__seelite.commanderRecord().requests.entrustedByLotId,
+		).reduce((sum, lot) => sum + lot.aboardT, 0),
+	);
+	check(
+		"the trade screen says what the hold holds, and that a job is in it",
+		(await holdText()).includes(`${entrustedT} t entrusted`) &&
+			/HOLD \d+ \/ \d+ t · -?\d+ t free/.test(await holdText()),
+		`${entrustedT} t entrusted · ${await holdText()}`,
+	);
+	check(
+		"nothing has been refused yet, so the live region is empty",
+		(await messageText()) === "",
+	);
+	await page.screenshot({ path: `${out}/40-hold-line.png` });
+
+	// Fill the pilot's half of the hold to the brim, leaving the consignment
+	// where it is. The till buys one tonne per press, so `cargo-full` is only
+	// ever reachable at zero free — which is the sentence a pilot actually
+	// meets, and the one the node says must name the consignment.
+	const filled = await page.evaluate(() => {
+		const g = window.__seelite;
+		const was = {
+			credits: g.commander.credits,
+			cargo: { ...g.commander.cargo },
+		};
+		const row = [...document.querySelectorAll("[data-live-market-row]")].find(
+			(el) =>
+				el.getAttribute("data-live-listed") === "true" &&
+				el.querySelector('[data-live-station-action="buy-commodity"]') &&
+				/^\d+\s*t\b/.test(
+					el.querySelector("[data-live-shelf]")?.textContent ?? "",
+				),
+		);
+		const good = row?.getAttribute("data-live-market-row") ?? null;
+		if (!good) return { was, good: null };
+		// **The free tonnage is read off the glass**, not asked of the game.
+		// The line under test is the one being parsed, so a build that drew the
+		// wrong figure would fill the wrong amount and the check below would go
+		// red rather than agreeing with it.
+		const line =
+			document.querySelector("[data-live-station-hold]")?.textContent ?? "";
+		const freeWas = Number(/(-?\d+) t free/.exec(line)?.[1] ?? Number.NaN);
+		if (!Number.isFinite(freeWas)) return { was, good: null, line };
+		g.commander.credits = 100_000;
+		g.commander.cargo = { ...g.commander.cargo, [good]: freeWas };
+		// The console memoises on a key the *game* moves whenever it replaces
+		// the displayed state, and this write is not the game. Without the bump
+		// the cached screen is returned and the setup measures the build's
+		// caching rather than its arithmetic — which is exactly the shape the
+		// first run of this check failed on.
+		g.stationConsoleRevision += 1;
+		g.updateCockpit();
+		return { was, good, freeWas };
+	});
+	check(
+		"a tonne good with a shelf is on the board to fill the hold with",
+		filled.good !== null,
+		JSON.stringify(filled),
+	);
+	check(
+		"a full hold reads as full before anything is pressed",
+		/ 0 t free/.test(await holdText()),
+		await holdText(),
+	);
+	await page
+		.locator(
+			`[data-live-station-action="buy-commodity"][data-live-station-name="${filled.good}"]`,
+		)
+		.click();
+	const refusal = await messageText();
+	check(
+		"a refused purchase says so, names the room and names the consignment",
+		refusal.startsWith("No room") &&
+			refusal.includes(`${entrustedT} t entrusted to a job`) &&
+			/0 t free of \d+/.test(refusal),
+		refusal,
+	);
+	await page.screenshot({ path: `${out}/41-refusal.png` });
+	check(
+		"the refusal is visible, not merely present in the markup",
+		await page.locator("[data-live-station-message]").isVisible(),
+	);
+	// A refusal is about the press that earned it. Leaving the tab retires it.
+	await page.locator('[data-live-station-tab="Equipment"]').click();
+	await page.locator('[data-live-station-tab="Market"]').click();
+	check("a tab change retires the refusal", (await messageText()) === "");
+	await page.evaluate((was) => {
+		const g = window.__seelite;
+		g.commander.credits = was.credits;
+		g.commander.cargo = was.cargo;
+		g.stationConsoleRevision += 1;
+		g.updateCockpit();
+	}, filled.was);
+	check(
+		"the hold is back where the rest of this probe left it",
+		(await holdText()).includes(`${entrustedT} t entrusted`) &&
+			!/ 0 t free/.test(await holdText()),
+		await holdText(),
+	);
+	await page.locator('[data-live-station-tab="Requests"]').click();
+
 	// The board is a function of the world, not of how often the pilot docks.
 	//
 	// **Bind it again rather than reading the memo.** `requestsView` caches on

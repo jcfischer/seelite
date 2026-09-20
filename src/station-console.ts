@@ -43,6 +43,11 @@ import {
 	stockResponse,
 } from "./market";
 import type { DockPhase } from "./dock-session";
+// **Type-only, and it has to stay that way.** `station-commerce.ts` imports
+// `stationEquipmentScreen` from here, so a value import back would be a cycle;
+// a type import is erased at build and cannot be one. `relief-bands.ts` and
+// `pad-bindings.ts` stand the same way, and `tests/headless.test.ts` asserts it.
+import type { CommerceRefusal } from "./station-commerce";
 
 // ---------------------------------------------------------------------------
 // §8.1 / §8.4 — what is on the glass, and when
@@ -435,3 +440,74 @@ export function stationEquipmentScreen(input: {
 		hullsSection: type === "shipyard",
 	};
 }
+
+// ---------------------------------------------------------------------------
+// §8 — what the till says when it says no (#443)
+// ---------------------------------------------------------------------------
+
+/**
+ * The hold figures a refusal is allowed to quote.
+ *
+ * A plain shape rather than `HoldSummary`, and that is the import direction
+ * rather than a preference: `hold.ts` reads `station-commerce.ts`, which reads
+ * this module, so a value import of the projection would close a cycle. The
+ * caller has the summary and passes the three numbers out of it.
+ */
+export interface RefusalHold {
+	freeT: number;
+	capacityT: number;
+	entrustedT: number;
+}
+
+/**
+ * Why the hold is the size it is, when there is a reason worth saying.
+ *
+ * #443's own case is the whole argument: 11 t sold into a 20 t hull reads as a
+ * broken till until the sentence names the 8 t consignment sitting in it.
+ */
+const entrustedClause = (hold: RefusalHold): string =>
+	hold.entrustedT > 0 ? `, with ${hold.entrustedT} t entrusted to a job` : "";
+
+/**
+ * One sentence per refusal, keyed by the union itself.
+ *
+ * **A `Record<CommerceRefusal, …>` and not a switch with a default**, which is
+ * the check §8 owes: a refusal added to the till without a sentence here fails
+ * to compile, where a `default:` arm would have shipped "the station refused"
+ * for it and nobody would have noticed. `scopeReason` above makes the same
+ * argument with a `never` and is the older half of it.
+ *
+ * The words are the console's, not the code's. `cargo-full` is the one that
+ * carries figures, because it is the one a pilot cannot otherwise work out —
+ * the hold is a hull's number, a bay's number and a job's lot, and only two of
+ * those three are ever on a screen.
+ */
+const REFUSAL_SENTENCES: Record<
+	CommerceRefusal,
+	(hold: RefusalHold) => string
+> = {
+	"cargo-full": (hold) =>
+		`No room — ${hold.freeT} t free of ${hold.capacityT}${entrustedClause(hold)}.`,
+	"cargo-missing": () => "None of that aboard.",
+	"commodity-sell-only": () =>
+		"Salvage — this station buys it, never sells it.",
+	"commodity-unavailable": () => "Not traded here.",
+	"equipment-owned": () => "Already fitted.",
+	"equipment-unavailable": () => "This station does not fit that.",
+	"fuel-full": () => "The tank is full.",
+	"insufficient-credits": () => "Not enough credits.",
+	"insufficient-shelf": () => "The shelf is short.",
+	"invalid-quantity": () => "That is not a quantity.",
+	"unknown-commodity": () => "No such good.",
+};
+
+/** What the glass says about a refusal the till computed and used to drop. */
+export const refusalSentence = (
+	reason: CommerceRefusal,
+	hold: RefusalHold,
+): string => REFUSAL_SENTENCES[reason](hold);
+
+/** The union's members at run time, for the row that checks the map is whole. */
+export const REFUSAL_REASONS = Object.keys(
+	REFUSAL_SENTENCES,
+) as readonly CommerceRefusal[];
