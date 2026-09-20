@@ -637,15 +637,8 @@ export class CommanderCatalog {
 		this.locks = options.locks;
 	}
 
-	/**
-	 * Boot and import apply the same catalog boundary before parsing.
-	 *
-	 * **The boundary is `parseSave` alone since #437.** It used to refuse the
-	 * trial's encoding here as well, which is what kept a journal-bearing
-	 * record out of a player's catalog; there is one encoding now. The method
-	 * stays because both callers going through one seam is the property worth
-	 * keeping, not the refusal it once carried.
-	 */
+	/** Boot and import parse through one seam; #437 left it with no policy of
+	 *  its own beyond `parseSave`. */
 	parseRecord(raw: unknown): SaveEnvelope {
 		return parseSave(raw);
 	}

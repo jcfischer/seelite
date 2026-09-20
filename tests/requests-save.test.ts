@@ -56,15 +56,44 @@ test("the one catalog imports a journal-bearing record in either slot", async ()
 	});
 	// Either record may carry the journal: #437 retired the encoding refusal,
 	// so neither arrangement is a reason to reject the import.
-	for (const [slot, records] of [
-		["live-journal", { live: paid, lastDocked: fresh }],
-		["docked-journal", { live: fresh, lastDocked: paid }],
+	for (const [slot, kind, records] of [
+		["live-journal", "live", { live: paid, lastDocked: fresh }],
+		["docked-journal", "lastDocked", { live: fresh, lastDocked: paid }],
 	] as const) {
 		await catalog.importSlot(slot, JSON.stringify(records));
 		expect(await catalog.slots()).toContain(slot);
-		expect(catalog.parseRecord(await backend.read(slot, "live"))).toEqual(
-			parseSave(records.live),
+		// Read back the record that carries the journal, not always `live`:
+		// the docked arm is named for a journal it would never have looked at.
+		expect(catalog.parseRecord(await backend.read(slot, kind))).toEqual(
+			parseSave(paid),
 		);
+		expect(
+			catalog.parseRecord(await backend.read(slot, kind)).commander.requests
+				.byId,
+		).not.toEqual({});
+	}
+});
+
+test("a refused import writes nothing and leaves the catalog empty", async () => {
+	const backend = memorySaveBackend();
+	const catalog = new CommanderCatalog({ backend, locks: memorySlotLocks() });
+	const fresh = serializeSave({
+		world: newWorld(42),
+		commander: newCommanderRecord("courier"),
+	});
+	// #437 retired the encoding refusal, and the rows it retired also carried
+	// D6's import atomicity — that a rejected record leaves no partial slot
+	// behind. The reason a record is refused changed; the atomicity did not.
+	const unsupported = { ...(fresh as object), saveSchemaVersion: 99 };
+	for (const records of [
+		{ live: unsupported, lastDocked: fresh },
+		{ live: fresh, lastDocked: unsupported },
+	]) {
+		await expect(
+			catalog.importSlot("refused", JSON.stringify(records)),
+		).rejects.toThrow("saveSchemaVersion");
+		expect(await catalog.slots()).toEqual([]);
+		expect(backend.writes).toBe(0);
 	}
 });
 
@@ -232,21 +261,23 @@ test("every Commander write is schema 3 and carries its journal", () => {
 	expect(parseSave(raw)).toEqual(save);
 });
 
-test("a schema 2 record carrying a journal is still refused by name", () => {
-	const raw = JSON.parse(
-		JSON.stringify(
-			serializeSave({
-				world: newWorld(42),
-				commander: newCommanderRecord("courier"),
-			}),
-		),
-	);
-	const { integrity, ...body } = raw;
-	body.saveSchemaVersion = 2;
-	const grafted = { ...body, integrity: fnv1a(JSON.stringify(body)) };
-	expect(() => parseSave(grafted)).toThrow(
-		"saveSchemaVersion 2 cannot contain a Requests journal",
-	);
+test("a schema 2 record carrying a requests key is refused, empty or not", () => {
+	// Both arms, because the guard is on the key's presence and a fresh record
+	// now carries an empty container. Naming only the populated case would
+	// describe a stricter check than the one that exists; running only the
+	// empty case would leave the case a player could actually have uncovered.
+	for (const save of [
+		{ world: newWorld(42), commander: newCommanderRecord("courier") },
+		paidTrial(),
+	]) {
+		const raw = JSON.parse(JSON.stringify(serializeSave(save)));
+		const { integrity, ...body } = raw;
+		body.saveSchemaVersion = 2;
+		const grafted = { ...body, integrity: fnv1a(JSON.stringify(body)) };
+		expect(() => parseSave(grafted)).toThrow(
+			"saveSchemaVersion 2 cannot contain a Requests journal",
+		);
+	}
 });
 
 test("a journal survives the save, the reload and a galaxy switch", async () => {
@@ -264,13 +295,23 @@ test("a journal survives the save, the reload and a galaxy switch", async () => 
 	expect(Object.keys(reloaded.commander.requests.byId)).toEqual(
 		Object.keys(save.commander.requests.byId),
 	);
-	// The journal is the Commander's, not the galaxy's: a requester is keyed by
-	// its own galaxyIndex, so moving the ship does not strand the record.
+	// **One `WorldState` holds all eight galaxies** (`world-state.ts`'s
+	// `galaxies: GalaxyEnvelope[]`, and the map's constraint that a galaxy is a
+	// namespace rather than a regeneration), so a switch is exactly this: the
+	// same world, a different `galaxyIndex`. The record below is one the game
+	// can produce.
+	expect(reloaded.world.galaxies.length).toBeGreaterThan(1);
 	const moved = {
 		world: reloaded.world,
 		commander: { ...reloaded.commander, galaxyIndex: 1 },
 	};
-	expect(parseSave(serializeSave(moved)).commander.requests).toEqual(
-		save.commander.requests,
-	);
+	const after = parseSave(serializeSave(moved));
+	expect(after.commander.galaxyIndex).toBe(1);
+	expect(after.commander.requests).toEqual(save.commander.requests);
+	// And the requester is still galaxy 0's, which is the property that makes
+	// the journal the Commander's rather than the galaxy's: a key carries its
+	// own galaxyIndex and the parser validates against that, not against where
+	// the ship now is.
+	for (const request of Object.values(after.commander.requests.byId))
+		expect(request.terms.requester.galaxyIndex).toBe(0);
 });

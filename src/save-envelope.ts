@@ -89,7 +89,20 @@ export const SAVE_SCHEMA_VERSION = 3;
  * (`public-site.ts`), so a player's record predates the journal and must still
  * load. `parseCommander` gives it an empty one.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [2];
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2] as const;
+
+/**
+ * What a legacy version may not contain.
+ *
+ * **Membership above is not the whole rule.** A version is readable *and* has
+ * a shape; 2 predates the journal, so a record claiming 2 and carrying a
+ * `requests` key was assembled rather than saved, and `parseCommander` refuses
+ * it. Keeping the two beside each other means a later entry in the list has to
+ * answer the same question rather than inheriting readability alone.
+ */
+export const LEGACY_SCHEMA_FORBIDS: Readonly<
+	Record<(typeof LEGACY_SAVE_SCHEMA_VERSIONS)[number], "requests">
+> = { 2: "requests" };
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -307,8 +320,12 @@ const parseCommander = (
 	version: number,
 ): CommanderRecord => {
 	const o = asObject(raw, "commander");
-	if (version === 2 && o.requests !== undefined)
-		fail("saveSchemaVersion 2 cannot contain a Requests journal");
+	const forbidden =
+		LEGACY_SCHEMA_FORBIDS[
+			version as (typeof LEGACY_SAVE_SCHEMA_VERSIONS)[number]
+		];
+	if (forbidden !== undefined && o[forbidden] !== undefined)
+		fail(`saveSchemaVersion ${version} cannot contain a Requests journal`);
 	const state = asObject(o.state, "commander.state");
 	const hull = state.hull;
 	if (
@@ -392,7 +409,7 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	if (
 		typeof version !== "number" ||
 		(version !== SAVE_SCHEMA_VERSION &&
-			!LEGACY_SAVE_SCHEMA_VERSIONS.includes(version))
+			!(LEGACY_SAVE_SCHEMA_VERSIONS as readonly number[]).includes(version))
 	)
 		fail(
 			// The reason alone: the player's sentence — left as it is, Export
