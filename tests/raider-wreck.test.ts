@@ -415,11 +415,11 @@ describe("drift, expiry and the scoop", () => {
 
 	test("a scooped tonne goes into the hold, and a full hold refuses it", () => {
 		const commander = newCommander("courier");
-		const took = scoopCargo(commander, "Food", 1);
+		const took = scoopCargo(commander, "Food", 1, 0);
 		expect(took.accepted).toBe(true);
 		expect(took.commander.cargo.Food).toBe(1);
 		const full = { ...commander, cargo: { Food: 10_000 } };
-		const refused = scoopCargo(full, "Food", 1);
+		const refused = scoopCargo(full, "Food", 1, 0);
 		expect(refused.accepted).toBe(false);
 		expect(refused.commander).toBe(full);
 	});
@@ -468,11 +468,11 @@ describe("a scoop takes what fits (civilian-combat.md H11)", () => {
 	test("scoopCargo takes the whole tonnes the hold has room for", () => {
 		const commander = newCommander("courier");
 		const room = HULL_SPECS.courier.holdT;
-		const took = scoopCargo(commander, "Food", 30);
+		const took = scoopCargo(commander, "Food", 30, 0);
 		expect(took.accepted).toBe(true);
 		expect(took.tonnes).toBe(room);
 		expect(took.commander.cargo.Food).toBe(room);
-		const again = scoopCargo(took.commander, "Food", 10);
+		const again = scoopCargo(took.commander, "Food", 10, 0);
 		expect(again).toMatchObject({ accepted: false, tonnes: 0 });
 		expect(again.commander).toBe(took.commander);
 	});

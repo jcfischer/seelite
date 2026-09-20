@@ -1,21 +1,27 @@
-/** Cockpit projection for the fixture-backed node 343 experiment. */
+/**
+ * Cockpit projection for the live request board (#411).
+ *
+ * It was the fixture experiment's screen; what changed is that every field it
+ * prints is now a bound operand — the good, the tonnage, the delivery station
+ * and the distance — and the simulate-a-stage controls are gone, because the
+ * stage is satisfied by flying there.
+ */
 import {
 	isAcceptedRequest,
 	nextAction,
-	type PrototypeOffer,
-	type RequestsPrototypeState,
+	type RequestOffer,
+	type RequestsState,
 	type RequestStation,
-} from "./requests-prototype";
+} from "./requests";
 
 export interface RequestsView {
-	state: RequestsPrototypeState;
-	offers: PrototypeOffer[];
+	state: RequestsState;
+	offers: RequestOffer[];
 	selectedId: string | null;
 	message: string;
 	revision: number;
 	now: number;
 	docked: RequestStation | null;
-	fixtures: boolean;
 }
 const esc = (x: string) =>
 	x.replace(
@@ -57,14 +63,14 @@ export function requestCue(view?: RequestsView): string {
 		? view.state.byId[view.state.trackedRequestId]
 		: null;
 	return r && !view?.docked
-		? `<aside class="lc-request-cue" data-live-request-cue><small>TRACKED REQUEST · UI EXPERIMENT</small><strong>${esc(r.terms.title)}</strong>${esc(nextAction(r))}</aside>`
+		? `<aside class="lc-request-cue" data-live-request-cue><small>TRACKED REQUEST</small><strong>${esc(r.terms.title)}</strong>${esc(nextAction(r))}</aside>`
 		: "";
 }
 export function requestsBody(view?: RequestsView, flight = false): string {
 	if (!view)
-		return `<div class="lc-requests"><p>No Requests experiment loaded.</p></div>`;
+		return `<div class="lc-requests"><p>No request board loaded.</p></div>`;
 	const { state } = view;
-	const entries = new Map<string, PrototypeOffer>();
+	const entries = new Map<string, RequestOffer>();
 	if (!flight) for (const offer of view.offers) entries.set(offer.id, offer);
 	for (const r of Object.values(state.byId)) entries.set(r.offerId, r.terms);
 	for (const lead of Object.values(state.leadsById))
@@ -79,7 +85,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				(state.leadsById[o.id]
 					? "retained lead · not accepted"
 					: "offer · not accepted");
-			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · report at ${esc(o.requesterName)}</small></button>`;
+			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${o.tonnes} t ${esc(o.goodName)} · report at ${esc(o.reportName)}</small></button>`;
 		})
 		.join("");
 	let details = `<div class="lc-request-details" data-live-request-details><h3>Choose work at your own pace</h3><p>Open an offer to read its terms. Reading or retaining a lead makes no commitment.</p><p>Accept multiple requests. Manually Track one to show its next action in flight.</p></div>`;
@@ -90,20 +96,26 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			view.docked?.galaxyIndex === o.requester.galaxyIndex &&
 			view.docked?.carrierKey === o.requester.carrierKey;
 		const fields: [string, string][] = [
-			["Requester", `${o.requesterName} · return and dock here to report`],
+			["Requester", `${o.requesterName} · posted here`],
+			[
+				"Report at",
+				`${o.reportName}, ${o.reportSystemName}${o.distanceLy > 0 ? ` · ${o.distanceLy.toFixed(1)} LY, one jump` : " · this system"}`,
+			],
 			["Purpose", o.purpose],
 			["Action", o.action],
 			[
 				"Intelligence",
-				`${o.region}. ${o.source} · ${Math.max(0, Math.floor(view.now - o.observedAt))}s old · unconfirmed fixture report`,
+				`${o.region}. ${o.source} · ${Math.max(0, Math.floor(view.now - o.observedAt))}s old`,
 			],
 			["Danger", o.danger],
-			["Cargo", "None · no hold commitment or entrusted cargo"],
-			["Equipment", o.requiresWeapon ? "Operational weapon required" : "None"],
 			[
-				"Payment",
-				`${o.rewardCr} Cr · once, on explicit return/report · prototype tuning`,
+				"Cargo",
+				o.entrusted
+					? `${o.tonnes} t ${o.goodName}, entrusted · the requester's throughout, and it cannot be sold`
+					: `${o.tonnes} t ${o.goodName}, your own · buy it where you like and carry the loss`,
 			],
+			["Equipment", "None"],
+			["Payment", `${o.rewardCr} Cr · once, on report at ${o.reportName}`],
 			["Consequence", o.consequence],
 			[
 				"Terms",
@@ -117,43 +129,37 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				o.id,
 				r ? "Reaccept request" : "Accept request",
 			);
+		const atReport =
+			view.docked?.galaxyIndex === o.reportAt.galaxyIndex &&
+			view.docked?.carrierKey === o.reportAt.carrierKey;
 		if (r && isAcceptedRequest(r)) {
 			actions += button(
 				state.trackedRequestId === o.id ? "untrack" : "track",
 				o.id,
 				state.trackedRequestId === o.id ? "Untrack" : "Track request",
 			);
-			if (r.status === "ready-to-report" && atRequester)
-				actions += button("report", o.id, `Report · receive ${o.rewardCr} Cr`);
-			if (r.status === "accepted" && r.unavailableAt !== null && atRequester)
+			if (r.status === "accepted" && atReport)
 				actions += button(
-					"report-unavailable",
+					"deliver",
 					o.id,
-					"Report unavailable · no payment",
+					`Deliver ${o.tonnes} t ${esc(o.goodName)}`,
 				);
+			if (r.status === "ready-to-report" && atReport)
+				actions += button("report", o.id, `Report · receive ${o.rewardCr} Cr`);
 			actions += button("cancel", o.id, "Cancel request · no fee");
 		}
-		let fixtures = "";
-		if (view.fixtures && r && isAcceptedRequest(r)) {
-			const stage =
-				r.status === "accepted" && r.unavailableAt === null
-					? button(
-							`fixture-${r.stageId}`,
-							o.id,
-							`Simulate ${r.stageId} evidence`,
-						)
-					: "";
-			const unavailable =
-				r.unavailableAt === null
-					? button(
-							"fixture-unavailable",
-							o.id,
-							"Simulate observed target unavailable",
-						)
-					: "";
-			fixtures = `<aside class="lc-request-fixtures"><b>PROTOTYPE CONTROLS · world facts are fixtures</b><p>The relay is unbuilt. These controls exercise UI transitions; they do not discover, disable or change anything in the live world.</p><div class="lc-request-actions">${stage}${unavailable}</div></aside>`;
-		}
-		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span> · unconfirmed fixture report` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atRequester ? `<p>Report after docking at ${esc(o.requesterName)}. Remote payment is unavailable.</p>` : ""}${fixtures}</div>`;
+		if (
+			r?.status === "cancelled" &&
+			o.entrusted &&
+			atRequester &&
+			Object.values(state.entrustedByLotId).some((lot) => lot.offerId === o.id)
+		)
+			actions += button(
+				"return-entrusted",
+				o.id,
+				`Return ${o.tonnes} t ${esc(o.goodName)}`,
+			);
+		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Report after docking at ${esc(o.reportName)}. Remote payment is unavailable.</p>` : ""}</div>`;
 	}
-	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · one manual cue · ${flight ? "accepted work and retained leads" : "available offers and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No authored offers here."}</p>`}</div>${details}</div></div>`;
+	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · one manual cue · ${flight ? "accepted work and retained leads" : "available offers and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No work posted here."}</p>`}</div>${details}</div></div>`;
 }

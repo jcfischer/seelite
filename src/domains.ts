@@ -93,6 +93,13 @@ export const DOMAIN = {
 	/** Display-only mechanical fill on authored ship regions (#130). Its own
 	 * tag keeps a hull's clutter independent of every world and gameplay draw. */
 	SHIP_GREEBLES: 21,
+	/** The ordinary-work board (`ordinary-requests.md` §2, #411): which
+	 *  authored row a family posts, and where a courier is sent. Its own tag
+	 *  rather than a read of `STATION_FLAGS` or `MARKET`, for this table's own
+	 *  reason — a job drawn from the market's stream would move every price
+	 *  behind it the day a second row was authored. Split again by the family
+	 *  and the episode, so consecutive episodes do not repeat one row. */
+	JOB_OFFERS: 22,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

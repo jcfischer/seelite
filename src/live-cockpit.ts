@@ -6,7 +6,7 @@ import {
 	requestCue,
 	requestsBody,
 	type RequestsView,
-} from "./requests-prototype-view";
+} from "./requests-view";
 import {
 	RELAY_CUE_STYLE,
 	type RelayCue,

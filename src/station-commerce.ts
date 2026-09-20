@@ -94,6 +94,16 @@ export interface StationCommerceInput {
 	economy: number;
 	gameTimeMin: number;
 	displayTL: number;
+	/**
+	 * Tonnes of entrusted request cargo aboard (`missions-and-requests.md` §4).
+	 *
+	 * **Required rather than defaulted**, for `holdT`'s reason (#182): the lot
+	 * lives in the request journal and never in `CommanderState.cargo`, so a
+	 * caller that forgot it would sell a hold the ship does not have — and a
+	 * zero is indistinguishable from an omission in a diff. §4 says in as many
+	 * words that a display-only deduction is insufficient.
+	 */
+	entrustedT: number;
 	action: StationAction;
 }
 
@@ -155,12 +165,14 @@ export function scoopCargo(
 	commander: CommanderState,
 	commodityName: string,
 	tonnes: number,
+	/** Entrusted tonnes aboard — see `StationCommerceInput.entrustedT`. */
+	entrustedT: number,
 ): { accepted: boolean; tonnes: number; commander: CommanderState } {
 	const good = commodity(commodityName);
 	// What fits, in whole tonnes: a canister of a manifest line can hold more
 	// than the hold has room for, and the rest stays in it (civilian-combat H11).
 	const room = Math.floor(
-		holdCapacityT(commander) - heldTonnes(commander.cargo),
+		holdCapacityT(commander) - heldTonnes(commander.cargo) - entrustedT,
 	);
 	const took = good.unit === "t" ? Math.max(0, Math.min(tonnes, room)) : 0;
 	if (took <= 0) return { accepted: false, tonnes: 0, commander };
@@ -276,7 +288,7 @@ export function transactAtStation(
 			return rejected(input, "insufficient-credits");
 		if (
 			good.unit === "t" &&
-			heldTonnes(input.commander.cargo) + quantity >
+			heldTonnes(input.commander.cargo) + input.entrustedT + quantity >
 				holdCapacityT(input.commander)
 		)
 			return rejected(input, "cargo-full");
@@ -313,8 +325,16 @@ export function transactAtStation(
 	};
 }
 
-/** Kept exported so UI and headless coverage share the actual capacity rule. */
-export const commanderHold = (commander: CommanderState) => ({
-	usedT: heldTonnes(commander.cargo),
+/**
+ * Kept exported so UI and headless coverage share the actual capacity rule.
+ *
+ * `entrustedT` is required here too: a readout that showed only ordinary cargo
+ * would tell a pilot they have room the till will refuse to sell them.
+ */
+export const commanderHold = (
+	commander: CommanderState,
+	entrustedT: number,
+) => ({
+	usedT: heldTonnes(commander.cargo) + entrustedT,
 	capacityT: holdCapacityT(commander),
 });

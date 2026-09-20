@@ -131,6 +131,7 @@ const commerceInput = (commander: ReturnType<typeof newCommander>) => ({
 	economy: 3,
 	gameTimeMin: 0,
 	displayTL: 8,
+	entrustedT: 0,
 	action: { type: "buy-commodity" as const, commodity: "Food" },
 });
 

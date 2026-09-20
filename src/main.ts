@@ -511,7 +511,7 @@ import {
 } from "./cockpit-surface";
 import { applyHullQuality } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
-import type { Station } from "./system";
+import { type Station, generateContents } from "./system";
 import {
 	LiveCockpit,
 	type LeftTab,
@@ -521,13 +521,20 @@ import {
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { isEditable } from "./editable-target";
 import { keyDispatch } from "./key-dispatch";
-import { readDeficit } from "./deficits";
+import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
-	fixtureOffers,
+	entrustedTonnesAboard,
 	requestAction,
-} from "./requests-prototype";
-import type { RequestsView } from "./requests-prototype-view";
+	settledAt,
+} from "./requests";
+import {
+	NO_EXCLUDED_STATION,
+	type JobOffer,
+	bindJobs,
+	deliveryCandidates,
+} from "./jobs";
+import type { RequestsView } from "./requests-view";
 import {
 	type CommanderRecord,
 	type SaveEnvelope,
@@ -1740,11 +1747,14 @@ class Game {
 	private requestSelectedId: string | null = null;
 	private requestMessage = "";
 	private requestRevision = 0;
-	private readonly requestFixtures =
-		import.meta.env.DEV &&
-		new URLSearchParams(window.location.search).has("requests-prototype");
 	private requestOffersCacheKey: string | null = null;
-	private requestOffersCache: ReturnType<typeof fixtureOffers> = [];
+	private requestOffersCache: JobOffer[] = [];
+	/** The delivery candidates for one docked station, kept apart from the
+	 *  board's own cache: a market trade moves the deficit a procurement binder
+	 *  reads, and re-binding for that must not regenerate the contents of every
+	 *  system within a jump. */
+	private requestDestinationsKey: string | null = null;
+	private requestDestinations: ReturnType<typeof deliveryCandidates> = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -9548,6 +9558,7 @@ class Game {
 					this.commander,
 					canister.commodity,
 					canister.tonnes,
+					entrustedTonnesAboard(this.requests),
 				);
 				if (took.accepted) this.commander = took.commander;
 				return took.tonnes;
@@ -11489,9 +11500,7 @@ class Game {
 					: [],
 			relay: this.relayCue(),
 			tuning: this.tuningSummary(),
-			requests: this.requestFixtures
-				? this.requestsView(dockContext)
-				: undefined,
+			requests: this.requestsView(dockContext),
 			stationConsole: this.stationConsoleState(dockContext),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
@@ -11506,21 +11515,64 @@ class Game {
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
 	private requestsView(context = this.dockedStationContext()): RequestsView {
-		if (this.requestFixtures && context) {
-			const key = `${context.galaxyIndex}:${context.stationKey}`;
+		if (context) {
+			// **Bound once per visit, not per frame.** A binder is pure, so a
+			// board recomputed every frame would be identical and wasted —
+			// `deliveryCandidates` regenerates the contents of every system
+			// within a jump, so this is not a cheap call to repeat. The key is
+			// the station, the requester's settled episodes and the console
+			// revision that a till or a request action bumps — a trade moves
+			// the deficit a procurement binder reads. The **candidates** are
+			// cached on the place alone, because a trade cannot move them and
+			// regenerating a neighbourhood per click is what that would cost.
+			// The clock is deliberately in neither: a board that re-bound every
+			// minute would be the reroll §1 forbids.
+			const settled = settledAt(this.requests, {
+				galaxyIndex: context.galaxyIndex,
+				carrierKey: context.stationKey,
+			});
+			// `stationConsoleRevision` is in the key because a **market**
+			// transaction at this same dock moves the deficit a procurement
+			// binder reads, and the till bumps that counter. Without it a pilot
+			// who bought the shelf out while docked kept reading the old board.
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
-				this.requestOffersCache = fixtureOffers(
-					context.galaxyIndex,
-					context.stationKey,
-					this.nameOfStation(context.station.id),
-					0,
-				);
+				// **Keyed on the system, not the station.** Two stations of one
+				// system differ only by which poster is excluded, and that is a
+				// filter rather than a regeneration — keying on the station made
+				// the second dock in a system pay for the whole neighbourhood
+				// again, inside a cockpit update.
+				const place = `${context.galaxyIndex}:${this.world.system.record.index}`;
+				if (place !== this.requestDestinationsKey) {
+					this.requestDestinations = deliveryCandidates(
+						this.world.galaxy.systems,
+						this.world.system.record,
+						(record) => generateContents(record),
+						// No poster to exclude at this level; the filter below is
+						// what removes whichever station is posting.
+						NO_EXCLUDED_STATION,
+					);
+					this.requestDestinationsKey = place;
+				}
+				this.requestOffersCache = bindJobs({
+					galaxyIndex: context.galaxyIndex,
+					system: this.world.system.record,
+					station: context.station,
+					destinations: this.requestDestinations.filter(
+						(candidate) =>
+							this.stationKey(candidate.station) !== context.stationKey ||
+							candidate.system.index !== this.world.system.record.index,
+					),
+					deficits: context.envelope.deficits,
+					gameTimeMin: context.gameTimeMin,
+					settled,
+				});
 				this.requestOffersCacheKey = key;
 			}
 		}
 		return {
 			state: this.requests,
-			offers: this.requestFixtures && context ? this.requestOffersCache : [],
+			offers: context ? this.requestOffersCache : [],
 			selectedId: this.requestSelectedId,
 			message: this.requestMessage,
 			revision: this.requestRevision,
@@ -11528,14 +11580,31 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
-			fixtures: this.requestFixtures,
+		};
+	}
+
+	/**
+	 * What a request action is judged against: the commander's own hold and
+	 * cargo.
+	 *
+	 * **Built here rather than read off the view.** The view is a projection
+	 * for the screen; routing commerce state through it would make every later
+	 * consumer of `RequestsView` fabricate a hold to call this.
+	 */
+	private requestContext(docked: RequestsView["docked"]) {
+		const hold = commanderHold(
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
+		return {
+			now: this.world.gameTime,
+			docked,
+			cargo: this.commander.cargo,
+			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
 		};
 	}
 
 	private actOnRequest(action: string, id: string): void {
-		// Every action here belongs to the isolated fixture experiment. Imported
-		// experiment journals must not pay rewards in a normal Commander session.
-		if (!this.requestFixtures) return;
 		const view = this.requestsView();
 		if (action === "details") {
 			if (
@@ -11547,11 +11616,13 @@ class Game {
 			this.requestSelectedId = id;
 			this.requestMessage = "";
 		} else {
-			const result = requestAction(this.requests, view.offers, action, id, {
-				now: this.world.gameTime,
-				docked: view.docked,
-				armed: this.condition.hull > 0,
-			});
+			const result = requestAction(
+				this.requests,
+				view.offers,
+				action,
+				id,
+				this.requestContext(view.docked),
+			);
 			this.requestMessage = result.message;
 			if (result.ok) {
 				this.requests = result.state;
@@ -11560,6 +11631,39 @@ class Game {
 						...this.commander,
 						credits: this.commander.credits + result.rewardCr,
 					};
+				if (Object.keys(result.cargoDelta).length > 0) {
+					const cargo = { ...this.commander.cargo };
+					for (const [good, delta] of Object.entries(result.cargoDelta)) {
+						const amount = (cargo[good] ?? 0) + delta;
+						if (amount <= 0) delete cargo[good];
+						else cargo[good] = amount;
+					}
+					this.commander = { ...this.commander, cargo };
+				}
+				if (result.mark) {
+					// §4's mark, through the module's own writer and with the
+					// **flown** hull's hold (#182) — the same figure the till uses.
+					const galaxyIndex = this.world.system.record.galaxy;
+					this.commerceWorld = setDeficits(
+						this.commerceWorld,
+						galaxyIndex,
+						recordTrade(
+							this.commerceWorld.galaxies[galaxyIndex].deficits,
+							result.mark.key,
+							{
+								...result.mark.trade,
+								gameTimeMin: this.world.gameTime / 60,
+								holdT: commanderHold(
+									this.commander,
+									entrustedTonnesAboard(this.requests),
+								).capacityT,
+							},
+						),
+						this.world.gameTime,
+					);
+				}
+				// A settled job changes what this requester posts next, and the
+				// console revision below is what the board's cache key reads.
 				this.stationConsoleRevision += 1;
 				this.saveDirty();
 			}
@@ -11592,7 +11696,10 @@ class Game {
 				// uses (#182), read through `commanderHold` rather than off the
 				// roster so the screen and the till cannot disagree about whether
 				// a Large Cargo Bay counts.
-				holdT: commanderHold(this.commander).capacityT,
+				holdT: commanderHold(
+					this.commander,
+					entrustedTonnesAboard(this.requests),
+				).capacityT,
 				// The system's tech level, which is what §5.6's cut is a function
 				// of. Read from the same record the transaction reads it from, so
 				// the quote on the glass is the quote the till charges.
@@ -11790,6 +11897,7 @@ class Game {
 			economy,
 			gameTimeMin,
 			displayTL: this.world.system.record.displayTL,
+			entrustedT: entrustedTonnesAboard(this.requests),
 			action,
 		});
 		if (!result.accepted) return;
@@ -13462,21 +13570,15 @@ if (query.has("model-viewer")) {
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
 	const noSave = query.has("no-save");
-	// **One Commander catalog since #437.** The fixture trial used to get its
-	// own IndexedDB database and lock prefix, on top of a save encoding the
-	// normal catalog refused.
+	// **One Commander catalog since #437**, and one offer source since #411.
+	// The fixture trial used to get its own IndexedDB database and lock prefix
+	// on top of a save encoding the normal catalog refused; both are gone.
 	//
-	// **A flagged DEV session now shares a developer's own Commander.** It can
-	// read that save and it can write to it: a fixture-paid journal and its
-	// credits land in the ordinary catalog. What tells them apart afterwards is
-	// the journal itself — every fixture stage records
-	// `evidence[].source === "ui-fixture"` — and the flag is an explicit
-	// opt-in. It ends when #411 replaces the fixtures with live content.
-	//
-	// What protects a **player** is unchanged and was never storage:
-	// `requestFixtures` gates the offer source and `actOnRequest` returns early
-	// without it, so a production build has nothing to accept and pays no
-	// fixture reward.
+	// The flagged trial is retired with the fixtures it gated, so there is no
+	// longer a session that can pay a fixture reward into an ordinary
+	// Commander. A DEV journal written while it existed carries
+	// `evidence[].source === "ui-fixture"` and is refused by name on load
+	// (`requests.ts`), rather than being dropped.
 	const saveBackend = indexedDbSaveBackend(indexedDB);
 	const saveLocks = webSlotLocks(navigator.locks);
 	// Read once: an unusable `?seed` warns as it is read.
