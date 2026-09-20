@@ -1113,7 +1113,7 @@ check(
 		`${throughMouth.drawn?.mouthHalfWidthKm?.toFixed(3)} km through`,
 );
 check(
-	"rings disappear cleanly as the ship passes through the fixed corridor",
+	"rings are omitted as the ship passes through the fixed corridor",
 	(beyondMouth.drawn?.tunnelRingsDrawn ?? 0) >
 		(throughMouth.drawn?.tunnelRingsDrawn ?? Number.POSITIVE_INFINITY) &&
 		(throughMouth.drawn?.tunnelRingsDrawn ?? 0) > 0,
