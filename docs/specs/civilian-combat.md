@@ -227,7 +227,7 @@ exactly that beam and carries both durations in its strike row, both read off
 `secondsToDivert` the seconds the fight ran. **The fight's clock bounds the landed
 figure by construction** — a frame adds to the landed clock only if the fight's
 clock is running too — so an unbroken beam reads the same number on both arms to
-within the frame each is sampled at, and the run that shipped printed 17.6 s of
+within the frame each is sampled at, and the run that shipped printed 17.8 s of
 fight against 17.7 s landed. The pair is a check on the instrument, not
 two measurements confirming each other, and it is why both are printed: **a share
 taken across the two quantities is a share between unlike things**, so the landed

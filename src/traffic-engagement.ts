@@ -93,7 +93,8 @@ export const trafficInSights = (
  * on frames the same clock is already counting, so no beam can land more seconds
  * than the fight ran for, and a run that opens a facing without ever losing the
  * target reads the same number on both arms to within the frame each is sampled
- * at — 17.6 s of clock against 17.7 s of landed fire on the run that shipped.
+ * at — 17.8 s of fight against 17.7 s of landed fire on the run that shipped, and
+ * the pair cannot come out the other way round for the reason just stated.
  * That is a consistency check on the instrument, and it is why the pair is
  * printed rather than one of them: **a share quoted across the two is a share
  * between unlike quantities**, so this fraction is taken of the landed one. Anyone retuning the dial re-measures it the same way

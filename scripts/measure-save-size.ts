@@ -361,8 +361,13 @@ const priceList = (
 	noun: string,
 	headline: string,
 ) => {
+	// **Throw, do not skip.** This script's printed lines are the evidence H6 and
+	// #396 cite for both bounds, and a tier renamed out from under one of these
+	// calls would print nothing at all — a missing line reads exactly like a bound
+	// nobody claimed, which is the failure mode with no signal in it.
 	const at = TIERS.findIndex((t) => t.name.startsWith(tier));
-	if (at < 0) return;
+	if (at < 0)
+		throw new Error(`measure-save-size: no tier starts with "${tier}"`);
 	const full = rows[at];
 	const bare = build({ ...TIERS[at], [list]: false });
 	const added = full.bytes - bare.bytes;

@@ -785,15 +785,19 @@ try {
 	// system rather than a name.
 	// -------------------------------------------------------------------------
 	const heard = struck.heard;
-	// The retired rule's own answer, mapped through this system's berths: it
-	// filed the frame body, and it filed nobody when the ship had none — which is
-	// what the fight's tether does to a carrier shot at out in the system.
-	const oldRuleFiled = (struck.charge?.at ? [struck.charge.at] : []).flatMap(
-		(id) => {
-			const st = heard?.stations.find((s) => s.id === id);
-			return st ? [st.key] : [];
-		},
-	);
+	const charge = struck.strike?.charge;
+	// The retired rule's own answer, mapped through this system's berths: it filed
+	// the frame body, and it filed nobody when the ship had none.
+	//
+	// **`charge`, not `struck.charge` — and the row refuses a missing one.** The
+	// first version of this line read a property the walk never writes, so the
+	// retired arm was an empty list, every `every` over it answered true, and
+	// `rulesDifferHere` reported the shape of a typo as the shape of the law. An
+	// arm that can be silently absent is not an arm.
+	const oldRuleFiled = (charge?.at ? [charge.at] : []).flatMap((id) => {
+		const st = heard?.stations.find((s) => s.id === id);
+		return st ? [st.key] : [];
+	});
 	check(
 		"every berth within earshot of the carrier is filed and no berth outside it is, and the filed set holds whatever the frame body's rule would have filed (#396, amending H5)",
 		heard !== null &&
@@ -803,6 +807,7 @@ try {
 				heard.stations.filter((st) => st.inEarshot).length &&
 			// The transmission's reach is a widening of the frame body's and not a
 			// different set: whatever the retired rule filed, the filed set holds.
+			charge !== undefined &&
 			struck.after !== null &&
 			oldRuleFiled.every((key) => struck.after.legal.witnesses.includes(key)),
 		JSON.stringify({
@@ -815,7 +820,7 @@ try {
 			// beside a busy station is chosen by distance alone. So the retired rule's
 			// answer is that body or nobody, taken from `g.frameBody` on the frame the
 			// offence was charged, and not modelled from a distance here.
-			frameBodyAtCharge: struck.charge?.at ?? null,
+			frameBodyAtCharge: charge?.at ?? null,
 			oldRuleWouldFile: oldRuleFiled,
 			// True where the amendment actually changed this system's answer. Printed
 			// either way: a row that quietly passes on the agreement and a row that
@@ -1209,7 +1214,8 @@ try {
 		);
 		// The guard answers with the tally it does have. `found.tally` on the
 		// object it just refused is a TypeError, which reports a search that came
-		// back empty as a crash in the script rather than as the empty answer the
+		// back empty as a failed entry in the script rather than as the empty answer
+		// the
 		// row is written to report.
 		if (!found?.key) return { found: null, search: found?.tally ?? null };
 		return {

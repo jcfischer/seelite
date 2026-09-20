@@ -9,8 +9,9 @@
  *
  * `DISTRESS_RANGE_KM` is therefore its own dial, declared at three times the
  * frame body's reach for two reasons. Past `NEAR_FAR_KM` the change is realised
- * rather than nominal — at exactly that figure the two rules pick the same
- * witness and the amendment is a no-op dressed as one. And short of a system's
+ * rather than nominal: a dial set *at* the frame body's reach admits no berth the
+ * retired rule's own horizon could not already name, so the amendment would be a
+ * no-op dressed as one. And short of a system's
  * own scale, so a shot near the middle does not indict every berth in it: at ten
  * times `NEAR_FAR_KM` it would, which turns H5's per-station judgement into a
  * per-system one and makes the exit-by-decay the only thing left of it.
