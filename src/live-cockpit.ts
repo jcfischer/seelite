@@ -121,6 +121,13 @@ export interface LiveCockpitState {
 	/** The player's standing, CLEAN, WANTED or FUGITIVE (#8, civilian-combat
 	 *  H7), stepping back as heat decays. */
 	legalStatus: string;
+	/**
+	 * The Signals rail's `HAILS` value: the callsign transmitting now, or NONE
+	 * (#396). **This label has been authored in this file since the console was
+	 * and has never carried a value** — which is the fact #396's ruling was
+	 * written against, and the reason the row is wired rather than added.
+	 */
+	hails: string;
 	/** #324's duel detail for the Flight console — fore, aft, hull, energy bank and
 	 *  heat — or `null` in peace. */
 	duel: DuelConsoleReadout | null;
@@ -195,6 +202,7 @@ interface CockpitElements {
 	rightPanelCopy: HTMLElement | null;
 	contactCount: HTMLElement | null;
 	legalStatus: HTMLElement | null;
+	hails: HTMLElement | null;
 	assistReadout: HTMLElement | null;
 	chargeReadout: HTMLElement | null;
 	/** #324's duel detail block and its five readings. */
@@ -268,6 +276,7 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-panel-body[data-live-chart-body] { grid-template-columns: 1fr; flex: 1 1 auto; min-height: 0; }
 .lc-rail { display: grid; align-content: start; gap: 8px; padding: 14px 12px; border-right: 1px solid rgba(229, 170, 82, .42); color: #e9a766; font-size: 11px; }
 .lc-rail b { color: #ffe1a9; letter-spacing: .08em; }
+.lc-rail em { display: block; color: #fff0c9; font-style: normal; letter-spacing: .05em; }
 .lc-rail button { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; letter-spacing: .05em; }
 .lc-rail button:hover { color: #fff0c9; }
 .lc-panel-copy { display: grid; align-content: start; gap: 12px; padding: 14px 2px; }
@@ -1044,6 +1053,7 @@ export class LiveCockpit {
 				rightPanelCopy: find('[data-live-panel="right"] .lc-panel-copy > p'),
 				contactCount: find("[data-live-contact-count]"),
 				legalStatus: find("[data-live-legal-status]"),
+				hails: find("[data-live-hails]"),
 				assistReadout: find("[data-live-assist]"),
 				chargeReadout: find("[data-live-charge]"),
 				duel: find("[data-live-duel]"),
@@ -1095,7 +1105,16 @@ export class LiveCockpit {
 		// survives; the ring has to be put back.
 		this.applyFocusRing();
 		const duelKey = state.duel ? Object.values(state.duel).join(",") : "";
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}`;
+		// **`legalStatus` and `hails` are in this key because both rows are bound
+		// below the gate, and a row bound inside a key it is not in only refreshes
+		// when something else moves.** Neither was in it when #396 put a value on
+		// the HAILS row, and the browser row caught it: the carrier had hailed, the
+		// store held the line, and the rail still read `NONE`. In flight that is
+		// invisible — speed and charge are never still long enough to see the lag —
+		// and the probe's frozen loop is the first caller that ever stood still. A
+		// row whose value can move while the pilot holds the stick still is a row
+		// this key has to name.
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}|${state.legalStatus}|${state.hails}`;
 		// #324 part d: the raider lifecycle, a line each, on its own key so a
 		// speed change does not rebuild the list (sage #330). Escaped, although
 		// every line is built from a slot name and a fixed phrase.
@@ -1137,6 +1156,11 @@ export class LiveCockpit {
 			elements.contactCount.textContent = String(state.contacts.length);
 		if (elements.legalStatus)
 			elements.legalStatus.textContent = state.legalStatus;
+		// **The rail's HAILS row, carrying a value for the first time (#396).**
+		// The markup has had the word since this file was written, and a pilot who
+		// is being told to cease fire by the ship they are shooting at has until
+		// now had no row on the glass that could have carried it.
+		if (elements.hails) elements.hails.textContent = state.hails;
 		// **These two rendered as labels with nothing beside them.** §5 gives the
 		// Flight console assist and the Drive console the cruise charge, and the
 		// markup has carried both rows since the console was built — with an
@@ -1419,7 +1443,14 @@ export class LiveCockpit {
 		if (state.leftTab === "Galaxy Map")
 			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
-			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS</span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
+			// **The rail's third label is an alias of the canonical Standing**
+			// (`CONTEXT.md` §Language) and it stays, deliberately: it is shipped
+			// console copy that predates #366, and this line was edited to give
+			// `HAILS` a value, not to rename what the pilot reads. Prose in `docs/specs/` and `CONTEXT.md`
+			// uses Standing throughout. Moving the label is console copy's own node's
+			// call — renaming it from a legal-change PR is a UI change no node asked
+			// for, which the repo's own constraint on this node names.
+			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS<em data-live-hails></em></span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>
 				`<button class="lc-chip" type="button" data-live-nav-kind="${kind}" aria-pressed="${state.navFilter.kinds.includes(kind)}">${kind.toUpperCase()}</button>`,

@@ -76,6 +76,48 @@ export const trafficInSights = (
 ): boolean =>
 	playerLaserHit(aimOrigin, aimNose, pos, trafficHitRadiusKm(hullId)).hit;
 
+/**
+ * How many seconds of **landing fire** on one ordinary carrier makes a deliberate
+ * act rather than a stray hit — `civilian-combat.md` H4's sustained-fire rung
+ * (#396), whose heat is `legal.ts`'s `OFFENCE_HEAT.assault`.
+ *
+ * A **declared starting form** (H12's precedent), set against one measured
+ * quantity: a beam held on a Clean freighter takes **17.7 s of landed fire** to
+ * open its facing, so five seconds is 28% of that beam and the charge lands with
+ * the better part of the facing's armour still between the pilot and the hull.
+ * **That figure has an instrument** — `probe-witnesses.mjs` tethers exactly that
+ * beam and carries both durations in its strike row, both read off the world's
+ * own clock: `landedFireAtDivert` is what this clock counted and `secondsToDivert`
+ * is how long the fight ran. **The
+ * second bounds the first**, and not by measurement: landed fire adds `dt` only
+ * on frames the same clock is already counting, so no beam can land more seconds
+ * than the fight ran for, and a run that opens a facing without ever losing the
+ * target reads the same number on both arms to within the frame each is sampled
+ * at — 17.8 s of fight against 17.7 s of landed fire on the run that shipped, and
+ * the pair cannot come out the other way round for the reason just stated.
+ * That is a consistency check on the instrument, and it is why the pair is
+ * printed rather than one of them: **a share quoted across the two is a share
+ * between unlike quantities**, so this fraction is taken of the landed one. Anyone retuning the dial re-measures it the same way
+ * (`PROBE_ORIGIN=… node scripts/probe-witnesses.mjs` prints both lines) rather
+ * than reading a number out of a comment, which is why the figure is quoted with
+ * its instrument rather than from the author's memory.
+ *
+ * What the fraction is *for* is the sentence after it: the pilot is charged for
+ * what they did to a citizen, not for how long it took the gun to get through
+ * the armour, so the rung sits at a share of the strike rather than beside it.
+ *
+ * **The clock holds across gaps.** A clock that reset the moment the beam left
+ * the target would make the charge a marksmanship test — punishing a pilot for
+ * holding a crosshair steadily rather than for meaning it, and handing one who
+ * jinks a discount on the same act. So `landedFireS` stops on the frames nothing
+ * lands and starts again when something does. It never unwinds.
+ *
+ * **What sits on the other side of the figure is the interval the heat may not
+ * leave**, not this number: the seconds decide *when*, and `tests/legal.test.ts`
+ * holds the charge's price inside the 10 … 15 it has to live in.
+ */
+export const ASSAULT_FIRE_S = 5;
+
 export interface Engagement {
 	key: CarrierKey;
 	hullId: HullId;
@@ -89,6 +131,45 @@ export interface Engagement {
 	 * boundary would drop a different hold from the one shown (sage #368).
 	 */
 	voyageOrdinal: number;
+	/**
+	 * Seconds of the pilot's fire that have **landed** on this carrier, held
+	 * across the gaps between (`ASSAULT_FIRE_S`'s clock). Not the time since the
+	 * fight started and not the time the crosshair has been on it: a beam kept on
+	 * a fleeing target that keeps missing has not yet done anything to it.
+	 */
+	landedFireS: number;
+	/**
+	 * Whether this carrier's sustained-fire clock has been drawn on this carrier,
+	 * **for the life of this fight**. It is the latch, and inside a fight it is
+	 * authoritative: the world's copy (`legal.ts`'s `assaultCharged`) exists only
+	 * to seed this one at `engage`, and it can be cleared underneath a live
+	 * engagement by the settle on a later read — which is right, because that
+	 * settle ends an *incident* and this field remembers a *fight*, and a fight
+	 * already past its five seconds must not get a second one because the pilot's
+	 * heat happened to dip.
+	 *
+	 * It latches whether or not the charge cost anything, so a lawful five seconds
+	 * (F7) cannot be run again inside the same fight; the world records nothing
+	 * for it, and `markAssaultCharged` says why that is the correct asymmetry.
+	 */
+	assaultCharged: boolean;
+	/** Whether any of this pilot's fire has landed on it at all (the hail's mark). */
+	struckOnce: boolean;
+}
+
+/**
+ * What a carrier arrives with. Required, for `FlightPerformance`'s reason: an
+ * optional field here would let a caller that forgot it silently hand a
+ * long-running fight a fresh assault clock, and a fresh clock is a second charge
+ * for the same five seconds.
+ */
+export interface EngagementStart {
+	/**
+	 * Whether the **world** says this carrier's sustained-fire charge is already
+	 * paid (`legal.ts`'s `assaultCharged`). A fight resumed after a reload is the
+	 * same incident, and the engagement is the only place the clock lives.
+	 */
+	assaultAlreadyCharged: boolean;
 }
 
 /**
@@ -117,6 +198,7 @@ export function engage(
 		voyageOrdinal: number;
 	},
 	seed: number,
+	prior: EngagementStart,
 ): Engagement {
 	const armed = ARMED_TRAFFIC_HULLS.has(target.hullId);
 	return {
@@ -125,6 +207,9 @@ export function engage(
 		armed,
 		condition: fullCondition(target.hullId),
 		voyageOrdinal: target.voyageOrdinal,
+		landedFireS: 0,
+		assaultCharged: prior.assaultAlreadyCharged,
+		struckOnce: false,
 		flight: {
 			ship: { pos: { ...target.pos }, vel: { ...target.vel } },
 			nose: target.nose,
@@ -154,6 +239,28 @@ export interface EngagementStep {
 	 * changes nothing in the world.
 	 */
 	hullStruck: boolean;
+	/**
+	 * The **first hit of this engagement has landed** — the moment the struck
+	 * carrier hails (#396 §3, `civilian-combat.md` H5 as amended). Stated as the
+	 * fact rather than as a threshold, as `hullStruck` is: a pilot who has spent
+	 * one quarter-second of the pulse laser on a citizen has been told to stop by
+	 * that citizen, whether or not anything has been charged for it yet. The
+	 * sustained-fire clock is still running at this frame, and the hail says
+	 * nothing about it.
+	 */
+	firstHit: boolean;
+	/**
+	 * The frame the sustained-fire clock crosses `ASSAULT_FIRE_S` — an **edge**,
+	 * true on exactly that frame and `false` on every other, and `false` forever
+	 * once the engagement was seeded with the charge already paid, which is the
+	 * whole reason the seed exists.
+	 *
+	 * **Named apart from `Engagement.assaultCharged` on purpose.** That field is
+	 * the latch, true forever after; this is the crossing, and a caller that read
+	 * the latch here would charge the offence on every frame of the rest of the
+	 * fight. One name for both is how that mistake gets written.
+	 */
+	assaultCrossed: boolean;
 }
 
 export function stepEngagement(
@@ -167,15 +274,25 @@ export function stepEngagement(
 		performance: flightPerformance(engagement.hullId),
 		intent: engagement.armed ? "attacker" : "civilian",
 	});
+	// Held, not reset, when nothing lands this frame. A pilot who breaks off to
+	// line up another shot has not un-done the seconds they already spent.
+	const landedFireS = engagement.landedFireS + (step.playerHit ? dt : 0);
+	const assaultCrossed =
+		!engagement.assaultCharged && landedFireS >= ASSAULT_FIRE_S;
 	return {
 		engagement: {
 			...engagement,
 			flight: step.flight,
 			condition: step.condition,
+			landedFireS,
+			assaultCharged: engagement.assaultCharged || assaultCrossed,
+			struckOnce: engagement.struckOnce || step.playerHit,
 		},
 		returnFire: step.returnFire,
 		destroyed: step.destroyed,
 		hullStruck: step.condition.hull < engagement.condition.hull,
+		firstHit: step.playerHit && !engagement.struckOnce,
+		assaultCrossed,
 	};
 }
 
@@ -348,12 +465,31 @@ export const trafficPresence = (
 export const chargedOffence = (
 	carrier: CarrierConditionRow,
 	standingAtStrike: Standing | null,
-): Offence | null =>
-	trafficPresence(carrier) === "parked-home" &&
-	standingAtStrike !== null &&
-	offenceHeat(standingAtStrike, "struck") > 0
-		? "struck"
-		: null;
+	assaultPaid: boolean,
+): Offence | null => {
+	if (
+		trafficPresence(carrier) === "parked-home" &&
+		standingAtStrike !== null &&
+		offenceHeat(standingAtStrike, "struck") > 0
+	)
+		return "struck";
+	// **The second source, and the reason the signature grew.** A sub-hull
+	// offence leaves no trace on the carrier's row — an ordinary carrier under
+	// fire gets exactly one transition, H3d's `disable`, and the sustained-fire
+	// rung charges the pilot *before* the hull point that earns it is spent. So
+	// the fact lives beside `witnesses` in `LegalStatus` (`legal.ts` owns why),
+	// and it needs no standing of its own to be reported where the strike does:
+	// an assault mark is written only when it cost heat, and heat means the
+	// target was Clean at the tick it was judged (F7). A strike on a carrier that
+	// was Wanted then charged nothing, and must not supersede a later kill.
+	//
+	// `assaultPaid` is required rather than optional for `FlightPerformance`'s
+	// reason: a caller that forgot it would treat every assault as unpaid, and a
+	// charge the pilot has already served arriving again is the exact double
+	// #396 rules out by name — invisible in a diff, because nothing about a
+	// missing argument looks wrong.
+	return assaultPaid ? "assault" : null;
+};
 
 /** The actors standing in a home berth instead of flying a route (H3b): the
  *  struck ones, drawn where the world says they are. */

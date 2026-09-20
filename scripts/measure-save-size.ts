@@ -66,6 +66,18 @@ interface Tier {
 	 * existing. `witnessCost` below is what prices the difference.
 	 */
 	witnesses: boolean;
+	/**
+	 * Whether this tier holds the **charge bound** (#396): every ordinary
+	 * carrier in the galaxy listed as already charged with sustained fire.
+	 *
+	 * The sibling of `witnesses` above, and it needs saying because the two
+	 * bounds are not the same size. A galaxy's berths are few; its Traffic is a
+	 * roster per berth, so the charge list's ceiling is an order of magnitude
+	 * longer than H6's. What keeps it off an ordinary pilot's save is the same
+	 * thing that keeps the witness list off one — `canonicalEnvelope` omits an
+	 * empty list — and `chargeCost` below prices the saturated case.
+	 */
+	charges: boolean;
 }
 
 const TIERS: Tier[] = [
@@ -78,6 +90,7 @@ const TIERS: Tier[] = [
 		objective: true,
 		deficitGoods: 17,
 		witnesses: true,
+		charges: true,
 	},
 	{
 		name: "T2 stations only, all 8 galaxies saturated",
@@ -88,6 +101,7 @@ const TIERS: Tier[] = [
 		objective: true,
 		deficitGoods: 17,
 		witnesses: true,
+		charges: false,
 	},
 	{
 		name: "T3 one galaxy saturated incl. Traffic",
@@ -98,6 +112,7 @@ const TIERS: Tier[] = [
 		objective: true,
 		deficitGoods: 17,
 		witnesses: true,
+		charges: true,
 	},
 	{
 		name: "T4 one galaxy, stations only, saturated",
@@ -108,6 +123,7 @@ const TIERS: Tier[] = [
 		objective: true,
 		deficitGoods: 17,
 		witnesses: true,
+		charges: false,
 	},
 	{
 		name: "T5 heavy play: 200 systems, stations, knowledge+deficits",
@@ -118,6 +134,7 @@ const TIERS: Tier[] = [
 		objective: false,
 		deficitGoods: 6,
 		witnesses: false,
+		charges: false,
 	},
 	{
 		name: "T6 typical: 50 systems, stations, knowledge+deficits",
@@ -128,6 +145,7 @@ const TIERS: Tier[] = [
 		objective: false,
 		deficitGoods: 4,
 		witnesses: false,
+		charges: false,
 	},
 ];
 
@@ -144,6 +162,7 @@ interface Row {
 	carriers: number;
 	bytes: number;
 	witnesses: number;
+	charges: number;
 	kibUtf16: number;
 	kibUtf8: number;
 	writeMs: number;
@@ -154,6 +173,7 @@ function build(tier: Tier): Row {
 	const world: WorldState = newWorld(SEED);
 	let carriers = 0;
 	let witnesses = 0;
+	let charges = 0;
 	for (let g = 0; g < tier.galaxies && g < GALAXY_COUNT; g++) {
 		const galaxy = generateGalaxy(SEED, g);
 		const env: GalaxyEnvelope = world.galaxies[g];
@@ -163,6 +183,10 @@ function build(tier: Tier): Row {
 		// Every berth in the galaxy, for the witness bound. Traffic carriers are
 		// not in it: H6 lists the *station* an offence happened beside.
 		const berths: ReturnType<typeof carrierKey>[] = [];
+		// Every Traffic carrier in the galaxy, for #396's charge bound. The
+		// berths above are not in it: a sustained-fire charge is filed against
+		// the ship, not the station.
+		const flown: ReturnType<typeof carrierKey>[] = [];
 		for (const record of records) {
 			const contents = generateContents(record);
 			const keys: string[] = [];
@@ -171,8 +195,10 @@ function build(tier: Tier): Row {
 				keys.push(berth);
 				berths.push(berth);
 				if (tier.traffic)
-					for (const actor of stationTrafficRoster(record.index, station))
+					for (const actor of stationTrafficRoster(record.index, station)) {
 						keys.push(actor.key);
+						flown.push(actor.key);
+					}
 			}
 			for (const key of keys as ReturnType<typeof carrierKey>[]) {
 				carriers++;
@@ -248,18 +274,29 @@ function build(tier: Tier): Row {
 		if (tier.knowledge) check("knowledge", Object.keys(env.knowledge).length);
 		if (tier.deficitGoods > 0)
 			check("deficit", Object.keys(env.deficits).length);
+		if (tier.charges && new Set(flown).size !== flown.length)
+			throw new Error(`galaxy ${g}: ${flown.length} carriers collide`);
+		if (tier.witnesses || tier.charges) {
+			env.legalStatus = {
+				heat: 100,
+				updatedAt: 123456.789,
+				witnesses: [],
+				assaulted: [],
+			};
+		}
 		if (tier.witnesses) {
 			// The same collision check the domains get: a repeated berth would
 			// understate the ceiling, and `parseWorld` refuses a duplicate — so a
 			// silent one here would take the whole run down far from its cause.
 			if (new Set(berths).size !== berths.length)
 				throw new Error(`galaxy ${g}: ${berths.length} berths collide`);
-			env.legalStatus = {
-				heat: 100,
-				updatedAt: 123456.789,
-				witnesses: berths,
-			};
+			env.legalStatus.witnesses = berths;
 			witnesses += berths.length;
+		}
+		if (tier.charges) {
+			// The same ceiling the witness list gets, on the list #396 added.
+			env.legalStatus.assaulted = flown;
+			charges += flown.length;
 		}
 	}
 	const t0 = performance.now();
@@ -272,6 +309,7 @@ function build(tier: Tier): Row {
 		carriers: finite("carriers", carriers),
 		bytes: finite("bytes", json.length),
 		witnesses: finite("witnesses", witnesses),
+		charges: finite("charges", charges),
 		kibUtf16: finite("kibUtf16", Math.round((json.length * 2) / 1024)),
 		kibUtf8: finite(
 			"kibUtf8",
@@ -284,32 +322,100 @@ function build(tier: Tier): Row {
 
 const rows = TIERS.map(build);
 console.log(
-	"| Tier | Carriers | Witnessed | KiB UTF-16 | KiB UTF-8 | write ms | read ms |",
+	"| Tier | Carriers | Witnessed | Charged | KiB UTF-16 | KiB UTF-8 | write ms | read ms |",
 );
-console.log("|---|---|---|---|---|---|---|");
+console.log("|---|---|---|---|---|---|---|---|");
 for (const row of rows)
 	console.log(
-		`| ${row.name} | ${row.carriers} | ${row.witnesses} | ${row.kibUtf16} | ${row.kibUtf8} | ${row.writeMs} | ${row.readMs} |`,
+		`| ${row.name} | ${row.carriers} | ${row.witnesses} | ${row.charges} | ${row.kibUtf16} | ${row.kibUtf8} | ${row.writeMs} | ${row.readMs} |`,
 	);
 
-// **What the witness list costs, priced by difference rather than asserted.**
-// H6 claims the list is bounded and that an empty one is free; the first half is
-// the `Witnessed` column and this is the second. T4 is the one-galaxy tier, so
-// the list here is at exactly the bound H6 states — every berth in one galaxy —
-// and the two builds differ by that flag and nothing else.
-const BOUND_TIER = TIERS.findIndex((t) => t.name.startsWith("T4"));
-if (BOUND_TIER >= 0) {
-	const withWitnesses = rows[BOUND_TIER];
-	const bare = build({ ...TIERS[BOUND_TIER], witnesses: false });
-	const added = withWitnesses.bytes - bare.bytes;
+/**
+ * Price one of the law's saved lists **by difference**: build one tier twice,
+ * once with the list switched off and once saturated, and the bytes between the
+ * two builds are the list's whole cost. Nothing about an entry's size is asserted
+ * here, which is the point — the alternative is a paragraph claiming a figure
+ * with no way for a later reader to check it.
+ *
+ * The tier is named by its prefix so the caller has to say *which* bound it is
+ * quoting: one galaxy's berths, one galaxy's Traffic, or every galaxy in the
+ * save. Those are three different ceilings, and conflating two of them is the
+ * mistake this version exists to stop.
+ *
+ * **The list is named once** (`list`), as both the flag that turns it off in the
+ * comparison arm and the column that counts what the priced arm holds. It was
+ * two parameters holding the same string, which is a function that lets a
+ * caller price the witness list by subtracting the charge list from it.
+ *
+ * **Each line builds its tier twice, and that is the price of the difference.**
+ * A memo over the bare arm was tried and is inert — every line prices a
+ * different tier, so no key ever repeated — and the arm cannot be derived from
+ * the priced row by subtraction, because then the number being measured would be
+ * the thing being measured. The full script is two seconds and belongs to no
+ * probe lane; the tier being built twice here has never been what made a suite
+ * red.
+ */
+const priceList = (
+	tier: string,
+	list: "witnesses" | "charges",
+	noun: string,
+	headline: string,
+) => {
+	// **Throw, do not skip.** This script's printed lines are the evidence H6 and
+	// #396 cite for both bounds, and a tier renamed out from under one of these
+	// calls would print nothing at all — a missing line reads exactly like a bound
+	// nobody claimed, which is the failure mode with no signal in it.
+	const at = TIERS.findIndex((t) => t.name.startsWith(tier));
+	if (at < 0)
+		throw new Error(`measure-save-size: no tier starts with "${tier}"`);
+	const full = rows[at];
+	const bare = build({ ...TIERS[at], [list]: false });
+	const added = full.bytes - bare.bytes;
+	const held = full[list];
 	console.log(
-		`\nWitness list at H6's bound (T4, one galaxy, every berth): ` +
-			`${withWitnesses.witnesses} berths add ${added} UTF-16 code units ` +
+		`\n${headline}: ${held} ${noun}s add ${added} UTF-16 code units ` +
 			`(${added * 2} bytes) on top of the same tier's ${bare.bytes} — ` +
-			`${((added * 2) / withWitnesses.witnesses).toFixed(1)} bytes per berth held.`,
+			`${((added * 2) / held).toFixed(1)} bytes per ${noun} held, ` +
+			`and ${((added * 2) / 1024).toFixed(1)} KiB at this bound.`,
 	);
-	console.log(
-		"An unwitnessed row adds nothing: `canonicalEnvelope` omits an empty list, " +
-			"which is also what keeps a save taken before #366 hashing to what it was written with.",
-	);
-}
+};
+
+// **What the witness list costs (H6's bound), priced rather than asserted.** H6
+// claims the list is bounded and that an empty one is free; the first half is the
+// `Witnessed` column and this is the second. T4 is the one-galaxy tier, so the
+// list here is at exactly the bound H6 states: every berth in one galaxy.
+priceList(
+	"T4",
+	"witnesses",
+	"berth",
+	"Witness list at H6's bound (T4, one galaxy, every berth)",
+);
+console.log(
+	"An unwitnessed row adds nothing: `canonicalEnvelope` omits an empty list, " +
+		"which is also what keeps a save taken before #366 hashing to what it was written with.",
+);
+
+// **What the sustained-fire charge list costs (#396), at both of its bounds.**
+// H6's bound is a galaxy's berths and this list's bound is a galaxy's Traffic —
+// some five or six times H6's, measured. A pilot's ordinary exposure is a
+// handful of carriers inside one Wanted interval, so what matters is the
+// ceiling, and `LegalStatus` is per envelope: the **save's** ceiling is the tier
+// with every galaxy saturated, not the one-galaxy tier. One version of this
+// block printed a one-galaxy figure and called it "the whole bound", which is
+// why both lines are printed now and the tiers are named in the headline.
+priceList(
+	"T3",
+	"charges",
+	"carrier",
+	"Charge list at one galaxy's bound (T3, every Traffic carrier in it)",
+);
+priceList(
+	"T1",
+	"charges",
+	"carrier",
+	"Charge list at the whole save's ceiling (T1, every carrier in all 8 galaxies)",
+);
+console.log(
+	"An uncharged row adds nothing, for the same reason the witness list costs " +
+		"nothing when empty: the member is omitted, not written as an empty list.",
+);
