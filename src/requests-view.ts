@@ -45,6 +45,12 @@ export function deliverAction(
 	const short = aboardT < offer.tonnes;
 	// Only the words differ by family; the enablement is one rule, and it was
 	// written twice.
+	const entrustedHint = (): string => {
+		if (!short) return "aboard since you accepted — the requester's";
+		if (aboardT > 0)
+			return `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`;
+		return "the consignment is not aboard";
+	};
 	const words = offer.entrusted
 		? {
 				// **Never "Deliver" for a consignment.** In this game that word
@@ -52,11 +58,7 @@ export function deliverAction(
 				// exactly what a consignment does not need (CONTEXT.md
 				// §Language, **Entrusted cargo**).
 				label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
-				hint: short
-					? aboardT > 0
-						? `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`
-						: "the consignment is not aboard"
-					: "aboard since you accepted — the requester's",
+				hint: entrustedHint(),
 			}
 		: {
 				label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
@@ -104,14 +106,18 @@ const button = (
 	extra: { hint?: string; enabled?: boolean } = {},
 ) => {
 	// `action` is escaped too. Every caller passes a literal today, so nothing
-	// is reachable; an unescaped attribute position beside three escaped ones is a
-	// footgun for the next caller, and `esc` covers `"` and `'`.
+	// is reachable; an unescaped attribute position beside the other escaped
+	// ones is a footgun for the next caller, and `esc` covers `"` and `'`.
 	const disabled = extra.enabled === false ? " disabled" : "";
-	const title = extra.hint ? ` title="${esc(extra.hint)}"` : "";
-	const hint = extra.hint
-		? `<small class="lc-request-hint" data-live-request-hint>${esc(extra.hint)}</small>`
-		: "";
-	return `<button type="button" class="lc-request-action" data-live-request-action="${esc(action)}" data-live-request-id="${esc(id)}"${disabled}${title}>${esc(label)}${hint}</button>`;
+	const hintId = extra.hint ? `${action}-${id}-hint` : "";
+	// **The hint is a sibling, not a child.** It was inside the button, which
+	// is where it is least reachable: a disabled button is not focusable and
+	// browsers suppress its `title`, and the hint is most needed exactly when
+	// the control is dead. `aria-describedby` ties the two without nesting.
+	const describedBy = hintId ? ` aria-describedby="${esc(hintId)}"` : "";
+	const control = `<button type="button" class="lc-request-action" data-live-request-action="${esc(action)}" data-live-request-id="${esc(id)}"${disabled}${describedBy}>${esc(label)}</button>`;
+	if (!extra.hint) return control;
+	return `<span class="lc-request-control">${control}<small class="lc-request-hint" id="${esc(hintId)}" data-live-request-hint data-live-request-id="${esc(id)}">${esc(extra.hint)}</small></span>`;
 };
 
 /**
@@ -154,7 +160,8 @@ export const REQUESTS_STYLE = `
 .lc-request-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .lc-request-action { padding: 9px 13px; border: 1px solid #bb7e36; background: #422607; color: #fff0c9; font: inherit; cursor: pointer; }
 .lc-request-action:disabled { cursor: not-allowed; opacity: .55; }
-.lc-request-hint { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; pointer-events: none; }
+.lc-request-control { display: inline-flex; flex-direction: column; gap: 4px; }
+.lc-request-hint { display: block; color: #cb8c51; font-size: 11px; pointer-events: none; }
 .lc-request-message { color: #b8dfa9; min-height: 18px; }
 .lc-request-fixtures { margin-top: 24px; padding-top: 12px; border-top: 1px dashed #735432; color: #c7a882; font-size: 11px; }
 .lc-request-fixtures .lc-request-action { font-size: 11px; background: #21190f; }

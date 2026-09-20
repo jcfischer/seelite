@@ -11,12 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
-import {
-	boardAt,
-	firstOffer,
-	postingStations,
-	stationKeyOf,
-} from "./helpers/job-board";
+import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 import { recordTrade } from "../src/deficits";
 import {
 	type RequestsState,
@@ -111,11 +106,14 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 	test("handing over a consignment does not touch the pilot's own cargo", () => {
 		// **#446's reproduction, pinned.** The principal bought 8 t of Food to
 		// fulfil a consignment that was already aboard and reported a bug in
-		// the finishing of the job. There is no bug: the requester's lot is
-		// consumed once, the pilot's Food is untouched, and the mark is a
-		// single write. That is exactly the behaviour a later refactor of the
-		// two cargo paths would break in silence, so it is a row rather than a
-		// paragraph.
+		// the finishing of the job. What this shows is narrower than an
+		// explanation of that session: run through the shipped modules, the
+		// requester's lot is consumed once, the pilot's Food is untouched and
+		// the mark is a single write — so the double-charge the symptom
+		// suggests is not in these paths. The session itself was never
+		// replayed, and the wording is what this node changes. Pinned as a row
+		// rather than a paragraph because a later refactor of the two cargo
+		// paths would break it in silence.
 		const state = accept().state;
 		const mine = { [courier.goodName]: courier.tonnes };
 		const delivered = requestAction(state, offers, "deliver", courier.id, {
@@ -253,25 +251,13 @@ describe("procurement carries the pilot's own goods", () => {
 	 * branch of the family had a test. The deficit is made here, because it is
 	 * a thing a pilot does: it is the mark of a hold bought off that shelf.
 	 */
-	const shortfall = () => {
-		for (const record of SYSTEMS) {
-			for (const station of generateContents(record).stations) {
-				if (station.type === "outpost") continue;
-				const deficits = recordTrade({}, stationKeyOf(record, station), {
-					goodName: "Food",
-					units: 20,
-					gameTimeMin: 0,
-					holdT: 20,
-				});
-				const found = boardAt(SYSTEMS, record, station, {
-					deficits,
-				}).find((o) => o.family === "procurement");
-				if (found) return { offers: [found], offer: found };
-			}
-		}
-		throw new Error("no procurement offer after a real purchase");
-	};
-	const { offers: shelf, offer: purchase } = shortfall();
+	// `postingStations` is `canPostJobs`, which is "not an outpost" — the same
+	// filter this block used to spell out for itself.
+	const { offers: shelf, offer: purchase } = firstProcurementOffer(
+		SYSTEMS,
+		"Food",
+		0,
+	);
 	const atShelf = (
 		over: Partial<Parameters<typeof requestAction>[4]> = {},
 	) => ({
@@ -411,24 +397,7 @@ describe("a procurement job settles against the pilot's own hold", () => {
 	// where `cargoDelta` is empty and the ordering cannot fail. This runs the
 	// procurement arm the way `main.ts` runs it: deliver, apply the delta,
 	// report with the cargo that is left.
-	const board = (() => {
-		for (const record of SYSTEMS)
-			for (const station of postingStations(record)) {
-				const deficits = recordTrade({}, stationKeyOf(record, station), {
-					goodName: "Food",
-					units: 20,
-					gameTimeMin: 120,
-					holdT: 20,
-				});
-				const all = boardAt(SYSTEMS, record, station, {
-					deficits,
-					gameTimeMin: 120,
-				});
-				const offer = all.find((o) => o.family === "procurement");
-				if (offer) return { offers: all, offer };
-			}
-		throw new Error("no procurement offer could be bound");
-	})();
+	const board = firstProcurementOffer(SYSTEMS);
 
 	const apply = (
 		cargo: Record<string, number>,
@@ -442,6 +411,39 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		}
 		return next;
 	};
+
+	test("a short hold is refused by the model, not only by the button", () => {
+		// **The disabled attribute is a courtesy; this is the rule.** #446
+		// added a short-hold gate to the rendered control, and a rendered gate
+		// is bypassable from a console or a synthesised click. Nothing pinned
+		// that `requestAction` refuses the procurement arm short, so this does.
+		const { offers: board3, offer } = board;
+		const here = {
+			galaxyIndex: offer.requester.galaxyIndex,
+			carrierKey: offer.requester.carrierKey,
+		};
+		const ctx = (cargo: Record<string, number>) => ({
+			now: 120 * 60,
+			docked: here,
+			cargo,
+			holdRoomT: 20,
+		});
+		const accepted = requestAction(
+			emptyRequests(),
+			board3,
+			"accept",
+			offer.id,
+			ctx({}),
+		);
+		expect(accepted.ok).toBe(true);
+		const short = requestAction(accepted.state, board3, "deliver", offer.id, {
+			...ctx({ [offer.goodName]: offer.tonnes - 1 }),
+		});
+		expect(short.ok).toBe(false);
+		expect(short.cargoDelta).toEqual({});
+		// And the state is the one it was given, so nothing half-applied.
+		expect(short.state).toBe(accepted.state);
+	});
 
 	test("the remainder is what is left after the delivery, not before it", () => {
 		const { offers: board3, offer } = board;
@@ -519,10 +521,11 @@ describe("the settlement says what moved", () => {
 		);
 	});
 
-	test("an empty remainder is a sentence rather than a zero", () => {
-		// `0 t Food still aboard, yours` is a line about cargo that is not
-		// there, which is the same reading-as-a-bug problem #443 met with a
-		// zeroed entrusted clause.
+	test("after a hand-over an empty remainder is silence, not a claim", () => {
+		// `no Food left aboard` after a hand-over reads as the pilot's Food
+		// having gone — the ownership confusion this node removes, pointing the
+		// other way. A pilot who carried none of the good is told about the job
+		// and nothing else.
 		expect(
 			settlementMessage({
 				tonnes: 8,
@@ -531,6 +534,21 @@ describe("the settlement says what moved", () => {
 				rewardCr: 180,
 				remainingT: 0,
 			}),
-		).toContain("no Food left aboard");
+		).toBe("Reported · 8 t Food handed over, 180 Cr paid.");
+	});
+
+	test("after a procurement job an empty hold is worth saying", () => {
+		// Here the goods really were the pilot's, so the hold going empty is a
+		// fact about their own cargo and the sentence is not a claim about
+		// someone else's.
+		expect(
+			settlementMessage({
+				tonnes: 5,
+				goodName: "Textiles",
+				entrusted: false,
+				rewardCr: 90,
+				remainingT: 0,
+			}),
+		).toContain("no Textiles left aboard");
 	});
 });

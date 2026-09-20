@@ -14,16 +14,15 @@
  */
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
-import { aboardFor, deliverAction } from "../src/requests-view";
+import {
+	aboardFor,
+	deliverAction,
+	requestsBody,
+	type RequestsView,
+} from "../src/requests-view";
 import { nextAction } from "../src/requests";
 import type { HoldSummary } from "../src/hold";
-import { recordTrade } from "../src/deficits";
-import {
-	boardAt,
-	firstOffer,
-	postingStations,
-	stationKeyOf,
-} from "./helpers/job-board";
+import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 const COURIER = firstOffer(SYSTEMS, "courier").offer;
@@ -35,26 +34,9 @@ const COURIER = firstOffer(SYSTEMS, "courier").offer;
  * scan of `jobs.ts` its control — a row that passes if both literals appear
  * anywhere in that file, including in a comment, and that cannot see which
  * family carries which. `bindProcurement` needs a live deficit at the posting
- * station, so this plants one, and the fixture is then the thing itself.
+ * station, so the helper plants one, and the fixture is then the thing itself.
  */
-const PROCUREMENT = (() => {
-	for (const record of SYSTEMS) {
-		for (const station of postingStations(record)) {
-			const deficits = recordTrade({}, stationKeyOf(record, station), {
-				goodName: "Food",
-				units: 20,
-				gameTimeMin: 120,
-				holdT: 20,
-			});
-			const offer = boardAt(SYSTEMS, record, station, {
-				deficits,
-				gameTimeMin: 120,
-			}).find((o) => o.family === "procurement");
-			if (offer) return offer;
-		}
-	}
-	throw new Error("no procurement offer could be bound");
-})();
+const PROCUREMENT = firstProcurementOffer(SYSTEMS).offer;
 
 describe("the action says whose goods it moves", () => {
 	test("an entrusted consignment is handed over, never supplied", () => {
@@ -208,6 +190,91 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 		expect(
 			deliverAction(COURIER, aboardFor({ hold: null }, COURIER)).enabled,
 		).toBe(false);
+	});
+});
+
+describe("the rendered control carries what the builder decided", () => {
+	// **`deliverAction` returning `enabled: false` is not the same fact as a
+	// dead button on the glass.** Nothing rendered `requestsBody` and read the
+	// attribute back, so `const disabled = extra.enabled === false ? …` and the
+	// hint element shipped uncovered — the four red-proven browser checks all
+	// fly the enabled entrusted case. `requestsBody` is a pure string builder,
+	// so this is a headless row rather than a probe.
+	const accepted = (offer: typeof COURIER, aboard: number) => {
+		const request = {
+			offerId: offer.id,
+			terms: offer,
+			acceptedAt: 0,
+			lastAcceptedAt: 0,
+			acceptanceOrdinal: 1,
+			status: "accepted" as const,
+			stageId: offer.stages[0],
+			evidence: [],
+			settledAt: null,
+			outcomeReason: null,
+		};
+		const view: RequestsView = {
+			state: {
+				byId: { [offer.id]: request },
+				leadsById: {},
+				entrustedByLotId: {},
+				trackedRequestId: null,
+			},
+			offers: [offer],
+			selectedId: offer.id,
+			message: "",
+			revision: 1,
+			now: offer.observedAt + 1,
+			docked: {
+				galaxyIndex: offer.reportAt.galaxyIndex,
+				carrierKey: offer.reportAt.carrierKey,
+			},
+			hold: {
+				usedT: aboard,
+				capacityT: 20,
+				freeT: 20 - aboard,
+				entrustedT: offer.entrusted ? aboard : 0,
+				lines: aboard
+					? [
+							offer.entrusted
+								? {
+										goodName: offer.goodName,
+										amount: aboard,
+										unit: "t" as const,
+										owner: "requester" as const,
+										offerId: offer.id,
+									}
+								: {
+										goodName: offer.goodName,
+										amount: aboard,
+										unit: "t" as const,
+										owner: "pilot" as const,
+									},
+						]
+					: [],
+			},
+		};
+		return requestsBody(view);
+	};
+
+	test("a full hold renders a live control with no disabled attribute", () => {
+		const html = accepted(COURIER, COURIER.tonnes);
+		expect(html).toContain('data-live-request-action="deliver"');
+		expect(html).toContain(`Hand over ${COURIER.tonnes} t ${COURIER.goodName}`);
+		expect(html).not.toMatch(/data-live-request-action="deliver"[^>]*disabled/);
+	});
+
+	test("a short hold renders the attribute and the hint beside it", () => {
+		const html = accepted(PROCUREMENT, 1);
+		expect(html).toMatch(/data-live-request-action="deliver"[^>]*disabled/);
+		expect(html).toContain(`1 t of ${PROCUREMENT.tonnes} aboard`);
+		// The hint is **outside** the button: a disabled button is not
+		// focusable and browsers suppress its title, so a hint nested in one is
+		// least reachable exactly when it is most needed.
+		expect(html).toMatch(
+			/<button[^>]*data-live-request-action="deliver"[^>]*>[^<]*<\/button><small[^>]*data-live-request-hint/,
+		);
+		expect(html).toMatch(/aria-describedby="[^"]+"/);
 	});
 });
 

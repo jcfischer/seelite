@@ -164,14 +164,20 @@ export function settlementMessage(settled: {
 	const moved = settled.entrusted
 		? `${settled.tonnes} t ${settled.goodName} handed over`
 		: `${settled.tonnes} t ${settled.goodName} delivered from your hold`;
-	// A remainder of zero is a sentence, not a figure: `0 t Food still aboard`
-	// is a line about cargo that is not there, which is #443's zeroed
-	// entrusted clause one screen along.
+	// **The remainder is the pilot's own, and it is dropped rather than
+	// zeroed.** `0 t Food still aboard` is a line about cargo that is not
+	// there; `no Food left aboard` is worse after a hand-over, because it
+	// reads as the pilot's Food having gone — the ownership confusion this
+	// node exists to remove. So a pilot who was carrying none of the good is
+	// told about the job and nothing else. #443 dropped a zeroed entrusted
+	// clause for the first half of this reason.
 	const left =
 		settled.remainingT > 0
-			? `${settled.remainingT} t ${settled.goodName} still aboard, yours`
-			: `no ${settled.goodName} left aboard`;
-	return `Reported · ${moved}, ${settled.rewardCr} Cr paid · ${left}.`;
+			? ` · ${settled.remainingT} t ${settled.goodName} still aboard, yours`
+			: settled.entrusted
+				? ""
+				: ` · no ${settled.goodName} left aboard`;
+	return `Reported · ${moved}, ${settled.rewardCr} Cr paid${left}.`;
 }
 
 export function nextAction(r: AcceptedRequest): string {

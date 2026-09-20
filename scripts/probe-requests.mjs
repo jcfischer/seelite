@@ -700,8 +700,13 @@ try {
 			!/deliver/i.test(deliverLabel),
 		deliverLabel,
 	);
-	const deliverHint = await deliverButton
-		.locator("[data-live-request-hint]")
+	// The hint is a **sibling** of the button now, not a child: a disabled
+	// button is not focusable and browsers suppress its title, so a hint nested
+	// in one is least reachable exactly when it is most needed.
+	const deliverHint = await page
+		.locator(
+			`[data-live-station-console] [data-live-request-hint][data-live-request-id="${id}"]`,
+		)
 		.innerText();
 	check(
 		"and the control itself says the goods are aboard and not the pilot's",
@@ -741,10 +746,12 @@ try {
 		"the settlement names the tonnes, the pay and what is left aboard",
 		settled.startsWith("Reported ·") &&
 			settled.includes(`${offer.tonnes} t ${offer.goodName} handed over`) &&
-			settled.includes(`${offer.rewardCr} Cr paid`) &&
-			// Nothing of the pilot's was ever bought in this run, so the
-			// remainder is the empty sentence rather than a zero.
-			settled.includes(`no ${offer.goodName} left aboard`),
+			settled.endsWith(`${offer.rewardCr} Cr paid.`) &&
+			// **Nothing of the pilot's was ever bought in this run**, so after a
+			// hand-over the remainder clause is absent rather than zeroed — and
+			// `no Food left aboard` would be a claim about the pilot's own Food
+			// going, which is the ownership confusion this node removes.
+			!/aboard/.test(settled),
 		settled,
 	);
 	await page.screenshot({ path: `${out}/03b-settled.png` });
