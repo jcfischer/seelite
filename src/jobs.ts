@@ -24,11 +24,7 @@
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit } from "./deficits";
 import { DOMAIN } from "./domains";
-import {
-	JUMP_RANGE_LY,
-	type SystemRecord,
-	distanceLy,
-} from "./galaxy";
+import { JUMP_RANGE_LY, type SystemRecord, distanceLy } from "./galaxy";
 import { reachable } from "./galaxy-route";
 import {
 	type Commodity,
@@ -310,7 +306,12 @@ const rowsFor = (family: JobFamily): JobRow[] =>
 
 const pickRow = (ctx: BindContext, family: JobFamily, episode: number) => {
 	const rows = rowsFor(family);
-	return rows[Math.min(rows.length - 1, Math.floor(draw(ctx.station, family, episode) * rows.length))];
+	return rows[
+		Math.min(
+			rows.length - 1,
+			Math.floor(draw(ctx.station, family, episode) * rows.length),
+		)
+	];
 };
 
 const round = (cr: number): number => Math.round(cr);
@@ -331,7 +332,8 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	const index = Math.floor(
 		draw(ctx.station, "courier", episode + 1000) * ctx.destinations.length,
 	);
-	const destination = ctx.destinations[Math.min(index, ctx.destinations.length - 1)];
+	const destination =
+		ctx.destinations[Math.min(index, ctx.destinations.length - 1)];
 	if (!canPostJobs(destination.station)) return null;
 
 	const listedThere = new Set(
@@ -342,8 +344,7 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 		.sort(
 			(a, b) =>
 				basePriceCr(a, ctx.system, ctx.station) -
-					basePriceCr(b, ctx.system, ctx.station) ||
-				(a.name < b.name ? -1 : 1),
+					basePriceCr(b, ctx.system, ctx.station) || (a.name < b.name ? -1 : 1),
 		)[0];
 	if (!good) return null;
 
@@ -404,7 +405,12 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
 
 	let best: { commodity: Commodity; units: number } | null = null;
 	for (const commodity of listedAt(ctx.station, ctx.system)) {
-		const units = readDeficit(ctx.deficits, key, commodity.name, ctx.gameTimeMin);
+		const units = readDeficit(
+			ctx.deficits,
+			key,
+			commodity.name,
+			ctx.gameTimeMin,
+		);
 		if (units < PROCUREMENT_MIN_DEFICIT_T) continue;
 		if (!best || units > best.units) best = { commodity, units };
 	}

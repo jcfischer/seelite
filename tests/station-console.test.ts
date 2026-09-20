@@ -466,8 +466,8 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 		...bare,
 		ownedEquipment: ["Large Cargo Bay"],
 	};
-	expect(commanderHold(bare).capacityT).toBe(HOLD_REFERENCE_T);
-	expect(commanderHold(withBay).capacityT).toBe(
+	expect(commanderHold(bare, 0).capacityT).toBe(HOLD_REFERENCE_T);
+	expect(commanderHold(withBay, 0).capacityT).toBe(
 		HOLD_REFERENCE_T + LARGE_CARGO_BAY_BONUS_T,
 	);
 	const priceAt = (holdT: number) => {
@@ -484,8 +484,8 @@ test("#182: the screen's prices follow the flown hold, bay included", () => {
 	};
 	// A bigger hold divides the same mark by more, so the same 12 t deficit moves
 	// the price less — the response is scale-free in the hold since #182.
-	expect(priceAt(commanderHold(withBay).capacityT)).toBeLessThan(
-		priceAt(commanderHold(bare).capacityT),
+	expect(priceAt(commanderHold(withBay, 0).capacityT)).toBeLessThan(
+		priceAt(commanderHold(bare, 0).capacityT),
 	);
 	// …and with no mark at all the hold makes no difference, which is what stops
 	// the row above passing on a build that simply scaled every price by hold.

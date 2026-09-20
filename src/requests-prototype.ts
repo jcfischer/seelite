@@ -42,16 +42,50 @@ export interface PrototypeRequest {
 	settledAt: number | null;
 	outcomeReason: string | null;
 }
+/**
+ * A request-owned cargo lot (`missions-and-requests.md` §4).
+ *
+ * It occupies the hold beside ordinary cargo and is excluded from sale; it is
+ * never merged into `CommanderState.cargo`, which is why every capacity
+ * consumer takes an explicit `entrustedT`.
+ */
+export interface EntrustedLot {
+	lotId: string;
+	offerId: string;
+	/** The station the goods go back to if the job is cancelled. */
+	returnTo: RequestStation;
+	goodName: string;
+	/** Tonnes still aboard. */
+	aboardT: number;
+	/** The acceptance ordinal this issuance belongs to (§4). */
+	issuedOrdinal: number;
+}
+
 export interface RequestsPrototypeState {
 	byId: Record<string, PrototypeRequest>;
 	leadsById: Record<string, PrototypeOffer>;
+	entrustedByLotId: Record<string, EntrustedLot>;
 	trackedRequestId: string | null;
 }
 export const emptyRequests = (): RequestsPrototypeState => ({
 	byId: {},
 	leadsById: {},
+	entrustedByLotId: {},
 	trackedRequestId: null,
 });
+
+/**
+ * Entrusted tonnes aboard — what the hold boundary has to be told about.
+ *
+ * One number rather than a second cargo map: the lots are the authority and
+ * this is the projection every capacity consumer reads
+ * (`station-commerce.ts`'s `entrustedT`).
+ */
+export const entrustedTonnesAboard = (state: RequestsPrototypeState): number =>
+	Object.values(state.entrustedByLotId).reduce(
+		(sum, lot) => sum + lot.aboardT,
+		0,
+	);
 export function fixtureOffers(
 	galaxyIndex: number,
 	key: CarrierKey,

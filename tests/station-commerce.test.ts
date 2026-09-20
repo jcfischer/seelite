@@ -30,7 +30,9 @@ import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	type CommanderState,
 	STARTING_CREDITS,
+	commanderHold,
 	newCommander,
+	scoopCargo,
 	transactAtStation,
 } from "../src/station-commerce";
 import { priceLabel, stationMarketScreen } from "../src/station-console";
@@ -80,6 +82,7 @@ const input = (
 	economy: 3,
 	gameTimeMin: 0,
 	displayTL: 8,
+	entrustedT: 0,
 	action: { type: "buy-commodity", commodity: "Food" } as const,
 	...overrides,
 });
@@ -958,6 +961,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			const out = transactAtStation({
 				commander,
 				deficits,
+				entrustedT: 0,
 				station,
 				stationKey,
 				economy: 3,
@@ -1001,6 +1005,7 @@ describe("§5.6 the bid cut, charged by the till", () => {
 				const out = transactAtStation({
 					commander,
 					deficits,
+					entrustedT: 0,
 					station: STATION,
 					stationKey: KEY,
 					economy: 3,
@@ -1042,5 +1047,43 @@ describe("§5.6 the bid cut, charged by the till", () => {
 			6 * 20 * (cost - proceeds),
 			9,
 		);
+	});
+});
+
+/**
+ * §4 of `missions-and-requests.md`: entrusted cargo occupies the hold beside
+ * ordinary cargo and is excluded from sale. It is **not** merged into
+ * `CommanderState.cargo`, so every capacity consumer has to be told about it —
+ * "a display-only hold deduction is insufficient" is the contract's wording,
+ * and the parameter is required for `holdT`'s reason (#182): a caller that
+ * forgot would silently sell a hold it does not have.
+ */
+describe("entrusted tonnes are hold, not cargo", () => {
+	test("the hold readout counts entrusted tonnes it cannot see in cargo", () => {
+		const commander = newCommander(PLAYER_BASELINE_HULL);
+		const empty = commanderHold(commander, 0);
+		const laden = commanderHold(commander, 8);
+		expect(laden.capacityT).toBe(empty.capacityT);
+		expect(laden.usedT).toBe(empty.usedT + 8);
+		expect(commander.cargo).toEqual({});
+	});
+
+	test("a buy is refused when entrusted cargo has filled the hold", () => {
+		const commander = newCommander(PLAYER_BASELINE_HULL);
+		const capacity = commanderHold(commander, 0).capacityT;
+		expect(
+			transactAtStation(input({ commander, entrustedT: capacity })),
+		).toMatchObject({ accepted: false });
+		expect(
+			transactAtStation(input({ commander, entrustedT: 0 })).accepted,
+		).toBe(true);
+	});
+
+	test("a scoop takes only the room entrusted cargo leaves", () => {
+		const commander = newCommander(PLAYER_BASELINE_HULL);
+		const capacity = commanderHold(commander, 0).capacityT;
+		const took = scoopCargo(commander, "Food", capacity, capacity - 3);
+		expect(took.tonnes).toBe(3);
+		expect(scoopCargo(commander, "Food", 1, capacity).accepted).toBe(false);
 	});
 });

@@ -526,6 +526,7 @@ import {
 	emptyRequests,
 	fixtureOffers,
 	requestAction,
+	entrustedTonnesAboard,
 } from "./requests-prototype";
 import type { RequestsView } from "./requests-prototype-view";
 import {
@@ -9548,6 +9549,7 @@ class Game {
 					this.commander,
 					canister.commodity,
 					canister.tonnes,
+					entrustedTonnesAboard(this.requests),
 				);
 				if (took.accepted) this.commander = took.commander;
 				return took.tonnes;
@@ -11592,7 +11594,10 @@ class Game {
 				// uses (#182), read through `commanderHold` rather than off the
 				// roster so the screen and the till cannot disagree about whether
 				// a Large Cargo Bay counts.
-				holdT: commanderHold(this.commander).capacityT,
+				holdT: commanderHold(
+					this.commander,
+					entrustedTonnesAboard(this.requests),
+				).capacityT,
 				// The system's tech level, which is what §5.6's cut is a function
 				// of. Read from the same record the transaction reads it from, so
 				// the quote on the glass is the quote the till charges.
@@ -11790,6 +11795,7 @@ class Game {
 			economy,
 			gameTimeMin,
 			displayTL: this.world.system.record.displayTL,
+			entrustedT: entrustedTonnesAboard(this.requests),
 			action,
 		});
 		if (!result.accepted) return;

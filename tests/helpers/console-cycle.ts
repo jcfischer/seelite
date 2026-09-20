@@ -209,6 +209,7 @@ export function flyConsoleCycle(
 				stationKey,
 				economy,
 				gameTimeMin,
+				entrustedT: 0,
 				displayTL,
 				action: {
 					type: kind === "buy" ? "buy-commodity" : "sell-commodity",
