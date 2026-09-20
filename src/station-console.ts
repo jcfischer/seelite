@@ -465,11 +465,23 @@ export interface RefusalHold {
  * #443's own case is the whole argument: 11 t sold into a 20 t hull reads as a
  * broken till until the sentence names the 8 t consignment sitting in it.
  */
+/**
+ * *", with 8 t entrusted to a job"*, or nothing at all.
+ *
+ * One helper because the refusal and the cockpit's hold line differ only in
+ * their joiners, and the rule that a zero consignment is *omitted* rather than
+ * printed had come to live in both.
+ *
+ * **It coerces its own figure.** Every caller interpolates the result into
+ * markup, and this sum is over the deserialised request journal; `holdLine`
+ * guards its other three figures and this one slipped past for a round.
+ */
 export const entrustedClause = (
 	entrustedT: number,
 	lead: string,
 	tail = "",
-): string => (entrustedT > 0 ? `${lead}${entrustedT} t entrusted${tail}` : "");
+): string =>
+	entrustedT > 0 ? `${lead}${Number(entrustedT)} t entrusted${tail}` : "";
 
 /**
  * One sentence per refusal, keyed by the union itself.

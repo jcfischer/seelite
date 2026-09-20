@@ -3461,7 +3461,7 @@ class Game {
 				// A refusal is about the press that earned it, so **any** tab
 				// press retires it (#443) — including a press on the tab
 				// already showing, which is a pilot clearing the screen.
-				this.stationConsoleMessage = null;
+				this.clearStationRefusal();
 				this.updateCockpit();
 			},
 			onRequestAction: (action, id) => this.actOnRequest(action, id),
@@ -9055,7 +9055,7 @@ class Game {
 		if (this.dock.phase === "launching") {
 			// The console is gone; its last refusal goes with it, or the next
 			// dock opens on a sentence about a station the ship has left (#443).
-			this.stationConsoleMessage = null;
+			this.clearStationRefusal();
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
 			// D4's undock flush. **The record still names the station here** —
 			// `commanderRecord` reads every phase that is not `flying`, and this
@@ -11966,12 +11966,17 @@ class Game {
 		//
 		// **Built before the key, because the key reads it.** The cached value
 		// depends on `this.requests` now, and it did not before; keying on
-		// `stationConsoleRevision` alone would have made the hold line correct
+		// `stationConsoleRevision` alone would have made this screen correct
 		// only for as long as every verb that moves the journal remembered to
 		// bump that counter. The key carries the projection's own content
-		// instead, which cannot be forgotten — and the scan it costs is over the
-		// cargo map and the accepted lots, against seventeen priced market rows
-		// it saves.
+		// instead, and the scan it costs is over the cargo map and the accepted
+		// lots against seventeen priced market rows it saves.
+		//
+		// **This is the console's memo, not the cockpit's.** `LiveCockpit`'s
+		// markup key still reads `stationConsole.revision` and the request
+		// revision, so the *drawn* line depends on those counters even where
+		// this one no longer does. The two together are why the hold line is
+		// correct today; only the half in this file is self-keyed.
 		const hold = holdSummary(this.commander, this.requests);
 		// `pilotLines` would be wrong — these are every line, both owners — and
 		// `manifest` would be worse: CONTEXT.md scopes that noun to what an
@@ -12189,6 +12194,17 @@ class Game {
 		return hasHeldSaveFault(this.saveStore, this.saveFault);
 	}
 
+	/**
+	 * Retire the till's last refusal (#443).
+	 *
+	 * One name for the lifecycle rather than the same assignment at each exit:
+	 * a tab press, a launch and an accepted transaction all end a refusal's
+	 * life, and the fourth such path is the one that would have forgotten.
+	 */
+	private clearStationRefusal(): void {
+		this.stationConsoleMessage = null;
+	}
+
 	/** Applies a complete commerce result or leaves both owner states untouched. */
 	private transactStation(action: StationAction) {
 		const context = this.dockedStationContext();
@@ -12228,7 +12244,7 @@ class Game {
 			this.updateCockpit();
 			return;
 		}
-		this.stationConsoleMessage = null;
+		this.clearStationRefusal();
 		this.commander = result.commander;
 		// Through the module's own writer, not by hand. `setDeficits` carries
 		// the galaxy bound, the "no write before the clock" refusal and

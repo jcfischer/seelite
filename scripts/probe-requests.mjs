@@ -408,9 +408,11 @@ try {
 		);
 
 	// Fill the pilot's half of the hold to the brim, leaving the consignment
-	// where it is. The till buys one tonne per press, so `cargo-full` is only
-	// ever reachable at zero free — which is the sentence a pilot actually
-	// meets, and the one the node says must name the consignment.
+	// where it is. The till buys one tonne per press, so **through the till**
+	// this refusal is met at zero free — which is the sentence a pilot actually
+	// sees, and the one the node says must name the consignment. The sentence
+	// itself carries whatever `freeT` is, negative included, and
+	// `tests/station-console.test.ts` pins that arm.
 	const filled = await page.evaluate(() => {
 		const g = window.__seelite;
 		const was = {
@@ -421,7 +423,11 @@ try {
 			(el) =>
 				el.getAttribute("data-live-listed") === "true" &&
 				el.querySelector('[data-live-station-action="buy-commodity"]') &&
-				/^\d+\s*t\b/.test(
+				// **A positive shelf, not merely a tonne unit.** `0 t` matched,
+				// and buying from an empty shelf earns `insufficient-shelf` —
+				// a refusal, so the message check would pass on the wrong
+				// sentence entirely.
+				/^[1-9]\d*\s*t\b/.test(
 					el.querySelector("[data-live-shelf]")?.textContent ?? "",
 				),
 		);
@@ -439,11 +445,13 @@ try {
 		// does on the right one. The row is self-consistent by construction; the
 		// arithmetic itself is `tests/hold.test.ts`'s, and what this measures is
 		// that the till's refusal reaches the glass after a real click.
-		const line =
+		const holdLineText =
 			document.querySelector("[data-live-station-hold]")?.textContent ?? "";
-		const freeWas = Number(/(-?\d+) t free/.exec(line)?.[1] ?? Number.NaN);
+		const freeWas = Number(
+			/(-?\d+) t free/.exec(holdLineText)?.[1] ?? Number.NaN,
+		);
 		if (!Number.isFinite(freeWas))
-			return fail(`no free tonnage in the hold line: ${line}`);
+			return fail(`no free tonnage in the hold line: ${holdLineText}`);
 		return {
 			was,
 			good,
@@ -477,7 +485,11 @@ try {
 		"a refused purchase says so, names the room and names the consignment",
 		refusal.startsWith("No room") &&
 			refusal.includes(`${entrustedT} t entrusted to a job`) &&
-			/0 t free of \d+/.test(refusal),
+			// Anchored on the whole figure. Unanchored, `0 t free of 20`
+			// matches inside `10 t free of 20` and `-10 t free of 20`, so the
+			// row titled "names the room" passed on a build reporting the
+			// wrong room.
+			/(^|[^\d-])0 t free of \d+/.test(refusal),
 		refusal,
 	);
 	await page.screenshot({ path: `${out}/41-refusal.png` });

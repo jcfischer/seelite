@@ -107,6 +107,10 @@ export function holdSummary(
 	const entrustedT = entrustedTonnesAboard(requests);
 	const { usedT, capacityT } = commanderHold(commander, entrustedT);
 	const lines: HoldLine[] = [];
+	// A cargo key is a commodity name by the time it reaches here: #443 added
+	// the check to `save-envelope.ts` beside the hull's, because the quantity
+	// was validated at the boundary and the name was not — so an unrecognised
+	// good used to survive the load and throw on the first console update.
 	for (const [goodName, amount] of Object.entries(commander.cargo)) {
 		if (amount <= 0) continue;
 		lines.push({

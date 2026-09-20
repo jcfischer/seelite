@@ -39,6 +39,7 @@ import {
 	newCommander,
 	STARTING_CREDITS,
 } from "./station-commerce";
+import { COMMODITIES } from "./market";
 import { fnv1a } from "./rng";
 import {
 	GALAXY_COUNT,
@@ -370,10 +371,19 @@ const parseCommander = (
 		fail(`commander.state: ${String(hull)} is not a hull in the roster`);
 	const cargoRaw = asObject(state.cargo, "commander.state.cargo");
 	const cargo: Record<string, number> = {};
+	// **The name is checked here, not where it is read.** The quantity was
+	// validated and the key was not, so an unrecognised good survived the load
+	// and threw the first time something asked what unit it was in — which
+	// since #443 is the hold projection, on every console update while docked.
+	// A save boundary that admits a name nothing can price is the same class as
+	// a hull that is not in the roster, two checks above.
+	const goodNames = new Set(COMMODITIES.map((good) => good.name));
 	for (const name of Object.keys(cargoRaw).sort()) {
 		const amount = cargoRaw[name];
 		if (typeof amount !== "number" || !Number.isFinite(amount))
 			fail(`commander.state.cargo: ${name} is not a finite quantity`);
+		if (!goodNames.has(name))
+			fail(`commander.state.cargo: ${name} is not a commodity`);
 		cargo[name] = amount as number;
 	}
 	const equipment = state.ownedEquipment;
