@@ -146,6 +146,7 @@ import {
 	projectScannerContacts,
 	targetArrowBearingDeg,
 } from "./cockpit";
+import { sceneRenderEligible } from "./render-eligibility";
 import {
 	CHARGE_CAPACITY_AU,
 	CHARGE_REGEN_AU_PER_S,
@@ -440,6 +441,7 @@ import {
 	dockingDirector,
 	directorEngaged,
 } from "./docking-director";
+import { tunnelRailSegments } from "./docking-tunnel";
 import {
 	type StationMesh,
 	buildStationMesh,
@@ -11343,7 +11345,7 @@ class Game {
 				performance.now() - updateStartedAt,
 			);
 		this.stepAdaptiveResolution();
-		this.render(dt);
+		if (this.sceneRenderEligible()) this.render(dt);
 		this.updateCockpit();
 		if (this.legacyHud) this.updateHud();
 		// Here and not in `updateCockpit`, which returns early in chase: §5.3's
@@ -11354,6 +11356,14 @@ class Game {
 			this.saveFaultShown() && !this.commanderOverlay?.isOpen(),
 		);
 	};
+
+	private sceneRenderEligible() {
+		return sceneRenderEligible({
+			dockPhase: this.dock.phase,
+			view: this.view,
+			headLook: this.headLook,
+		});
+	}
 
 	private readonly chaseOffset = new THREE.Vector3();
 
@@ -12520,21 +12530,13 @@ class Game {
 		// The four rails, so it reads as one tunnel rather than a stack of frames.
 		ctx.strokeStyle = tunnelColour;
 		ctx.lineWidth = 1;
-		for (let corner = 0; corner < 4; corner++) {
-			ctx.beginPath();
-			let started = false;
-			for (const ring of projectedRings) {
-				const point = ring[corner];
-				if (!point) {
-					started = false;
-					continue;
-				}
-				if (started) ctx.lineTo(point.x, point.y);
-				else ctx.moveTo(point.x, point.y);
-				started = true;
+		for (const rail of tunnelRailSegments(projectedRings))
+			for (const segment of rail) {
+				ctx.beginPath();
+				ctx.moveTo(segment[0].x, segment[0].y);
+				for (const point of segment.slice(1)) ctx.lineTo(point.x, point.y);
+				ctx.stroke();
 			}
-			ctx.stroke();
-		}
 
 		// ---------------------------------------------------------------------
 		// The nose cue. Glass, and on a compressed scale.
