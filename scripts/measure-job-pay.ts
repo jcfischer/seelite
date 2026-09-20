@@ -28,7 +28,11 @@
 import { recordTrade, readDeficit } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
-import { bindJobs, deliveryCandidates, type JobOffer } from "../src/jobs";
+import type { JobOffer } from "../src/jobs";
+import {
+	boardAt as bindBoard,
+	postingStations,
+} from "../tests/helpers/job-board";
 import {
 	COMMODITIES,
 	commodity,
@@ -53,8 +57,7 @@ const finite = (label: string, value: number): number => {
 const HOLD_T = HULL_SPECS[PLAYER_BASELINE_HULL].holdT;
 const worlds = Number(process.argv[2] ?? 6);
 
-const stationsOf = (record: ReturnType<typeof generateGalaxy>["systems"][0]) =>
-	generateContents(record).stations.filter((s) => s.type !== "outpost");
+const stationsOf = postingStations;
 
 const boardAt = (
 	systems: ReturnType<typeof generateGalaxy>["systems"],
@@ -63,23 +66,11 @@ const boardAt = (
 	deficits = {},
 	gameTimeMin = 0,
 ): JobOffer[] => {
-	const system = systems[index];
-	const station = stationsOf(system).find((s) => s.id === stationId);
-	if (!station) return [];
-	return bindJobs({
-		galaxyIndex: 0,
-		system,
-		station,
-		destinations: deliveryCandidates(
-			systems,
-			system,
-			generateContents,
-			carrierKey(system.index, station.localCarrierId),
-		),
-		deficits,
-		gameTimeMin,
-		settled: {},
-	});
+	const record = systems[index];
+	const station = stationsOf(record).find((s) => s.id === stationId);
+	return station
+		? bindBoard(systems, record, station, { deficits, gameTimeMin })
+		: [];
 };
 
 /**
@@ -119,7 +110,7 @@ console.log(`# What ordinary work pays · ${worlds} worlds, ${HOLD_T} t hold\n`)
 const courierRows: {
 	feeCr: number;
 	runCr: number;
-	ratio: number;
+	ratio: number | null;
 	ly: number;
 }[] = [];
 for (let world = 0; world < worlds; world++) {
@@ -153,23 +144,45 @@ for (let world = 0; world < worlds; world++) {
 			courierRows.push({
 				feeCr,
 				runCr,
-				ratio: runCr > 0 ? feeCr / runCr : Number.POSITIVE_INFINITY,
+				// A leg with no profitable trade has no ratio to report, and an
+				// infinity printed as a percentage is the quiet garbage the
+				// guard above exists to refuse. It is carried as `null` and the
+				// row is counted separately.
+				ratio: runCr > 0 ? finite("fee/run ratio", feeCr / runCr) : null,
 				ly: courier.distanceLy,
 			});
 		}
 	}
 }
-courierRows.sort((a, b) => a.ratio - b.ratio);
+const noTrade = courierRows.filter((r) => r.ratio === null).length;
+const priced = courierRows.filter(
+	(r): r is (typeof courierRows)[0] & { ratio: number } => r.ratio !== null,
+);
+priced.sort((a, b) => a.ratio - b.ratio);
+const runs = [...priced.map((r) => r.runCr)].sort((a, b) => a - b);
 const quantile = <T>(rows: T[], q: number): T =>
 	rows[Math.min(rows.length - 1, Math.floor(rows.length * q))];
 console.log("## 1. Courier fee against the best legal run on the same leg\n");
-console.log(`rows: ${courierRows.length}`);
+console.log(
+	`rows: ${courierRows.length} · ${noTrade} with no profitable trade on the leg`,
+);
+// **The run column beside a quantile is that leg's run, not the median run.**
+// The rows are ordered by the fee/run ratio, so the row printed at the median
+// is the median-*ratio* leg. The run distribution is printed separately rather
+// than read off a differently-ordered column.
+console.log(
+	`runs alone: p10 ${runs[Math.floor(runs.length * 0.1)].toFixed(0)} Cr · median ${runs[
+		Math.floor(runs.length * 0.5)
+	].toFixed(0)} Cr · p90 ${runs[Math.floor(runs.length * 0.9)].toFixed(0)} Cr`,
+);
+if (courierRows.length === 0)
+	throw new Error("no courier legs measured — the sweep found no board");
 for (const [label, q] of [
 	["p10", 0.1],
 	["median", 0.5],
 	["p90", 0.9],
 ] as const) {
-	const row = quantile(courierRows, q);
+	const row = quantile(priced, q);
 	console.log(
 		`${label.padEnd(7)} fee ${row.feeCr.toFixed(0).padStart(5)} Cr · run ${row.runCr
 			.toFixed(0)

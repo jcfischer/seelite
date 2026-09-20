@@ -480,31 +480,16 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			!time(o.observedAt)
 		)
 			bad();
+		// **Copied by spread, not re-enumerated.** The check above lists every
+		// field once; a return literal listing them a second time is a field
+		// that can be validated and then silently dropped on load, which is
+		// exactly how `entrustedByLotId` went missing from the serializer.
 		return {
+			...(o as JobOffer),
 			id,
-			family: o.family,
-			rowId: o.rowId,
-			revision: o.revision,
-			stages: [...o.stages],
-			episode: o.episode,
 			requester,
-			requesterName: o.requesterName,
 			reportAt,
-			reportName: o.reportName,
-			reportSystemName: o.reportSystemName,
-			distanceLy: o.distanceLy,
-			goodName: o.goodName,
-			tonnes: o.tonnes,
-			rewardCr: o.rewardCr,
-			entrusted: o.entrusted,
-			title: o.title,
-			purpose: o.purpose,
-			danger: o.danger,
-			action: o.action,
-			consequence: o.consequence,
-			region: o.region,
-			source: o.source,
-			observedAt: o.observedAt,
+			stages: [...o.stages],
 		};
 	};
 

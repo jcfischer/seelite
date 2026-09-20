@@ -492,8 +492,12 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	];
 	const stationsBySystem = new Map<string, Map<string, string>>();
 	const galaxies = new Map<number, ReturnType<typeof generateGalaxy>>();
-	for (const offer of offers) {
-		const { galaxyIndex, carrierKey: key } = offer.requester;
+	/** The generated station a reference names, or a refusal. */
+	const stationNameOf = (
+		ref: { galaxyIndex: number; carrierKey: CarrierKey },
+		what: string,
+	): string => {
+		const { galaxyIndex, carrierKey: key } = ref;
 		const separator = key.indexOf(":");
 		const systemIndex = Number(key.slice(0, separator));
 		const localId = key.slice(separator + 1);
@@ -513,15 +517,24 @@ export function parseSave(raw: unknown): SaveEnvelope {
 			);
 			stationsBySystem.set(namespace, stations);
 		}
-		if (!stations.has(localId))
-			fail(`Requests requester ${key} does not exist in galaxy ${galaxyIndex}`);
+		const name = stations.get(localId);
+		if (name === undefined)
+			fail(`Requests ${what} ${key} does not exist in galaxy ${galaxyIndex}`);
+		return name as string;
+	};
+	for (const offer of offers) {
 		// Labels are presentation, not identity. Refresh the requester's name
 		// through the valid CarrierKey, so a naming-policy change cannot
 		// invalidate a save. **The rest of the offer is not refreshed**: its
 		// operands were bound from world state at offer time and pinned at
 		// acceptance (`missions-and-requests.md` §1), so re-deriving them here
 		// would rewrite the terms the pilot agreed to.
-		offer.requesterName = stations.get(localId) ?? offer.requesterName;
+		offer.requesterName = stationNameOf(offer.requester, "requester");
+		// **The report station is checked too, and for a sharper reason than
+		// the requester's**: `report` writes the world mark to `reportAt`, so a
+		// journal naming a station the generator never made would open a
+		// deficit row against a carrier key that does not exist.
+		offer.reportName = stationNameOf(offer.reportAt, "report station");
 	}
 	return { world, commander };
 }

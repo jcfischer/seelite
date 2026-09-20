@@ -13,9 +13,12 @@ import { JUMP_RANGE_LY, generateGalaxy } from "../src/galaxy";
 import {
 	JOB_ROWS,
 	type JobOffer,
+	bindJobs as bindJobsWith,
+	canPostJobs,
 	deliveryCandidates,
 	jobMark,
 } from "../src/jobs";
+import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
 	boardAt,
 	boardContext,
@@ -151,19 +154,59 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 		expect(terms(after)).toEqual(terms(before));
 	});
 
+	test('the tank reaches a jump, so "one jump within it" can fail', () => {
+		// The destination filter reads `JUMP_RANGE_LY`, so a check against that
+		// same constant restates it. The principal's ruling was about the
+		// **tank**, and this is the line where the two meet.
+		expect(JUMP_RANGE_LY).toBeLessThanOrEqual(JUMP_TANK_LY);
+	});
+
+	test("a station with no reachable destination posts nothing, loudly", () => {
+		// The decline path the floor's claim depends on: it exists, and after
+		// this round it is the *only* one. The courier used to decline a second
+		// way — a destination the market cannot price, drawn out of an
+		// unfiltered candidate list — and this row is what holds the candidate
+		// list to stations a job may name.
+		const ctx = contextAt(HERE.index, HERE.stationId);
+		expect(bindJobsWith({ ...ctx, destinations: [] })).toEqual([]);
+		for (const destination of ctx.destinations)
+			expect(canPostJobs(destination.station)).toBe(true);
+	});
+
 	test("D8's courier floor binds at any station with a destination", () => {
+		// **Three galaxies, every posting station.** And note what this row can
+		// and cannot do: the decline the floor used to have needed a draw to
+		// land on a station the market cannot price, and `system.ts` places
+		// none — a red build with that decline put back stayed green over all
+		// three seeds. So this row holds the floor over a wide sweep; the
+		// unreachability of the old hole is `canPostJobs`'s own note.
 		let checked = 0;
-		for (const record of SYSTEMS.slice(0, 40)) {
-			for (const station of generateContents(record).stations) {
-				if (station.type === "outpost") continue;
-				if (deliveriesFrom(record.index, station.localCarrierId).length === 0)
-					continue;
-				const board = bindJobs(contextAt(record.index, station.id));
-				expect(board.some((offer) => offer.family === "courier")).toBe(true);
-				checked++;
+		for (const worldSeed of [WORLD, 0xc0ffee, 0x1d]) {
+			const systems = generateGalaxy(worldSeed, 0).systems;
+			for (const record of systems.slice(0, 60)) {
+				for (const station of postingStations(record)) {
+					const board = boardAt(systems, record, station);
+					if (
+						deliveryCandidates(
+							systems,
+							record,
+							generateContents,
+							stationKeyOf(record, station),
+						).length === 0
+					)
+						continue;
+					expect([
+						`${worldSeed.toString(16)}:${record.index}:${station.id}`,
+						board.some((offer) => offer.family === "courier"),
+					]).toEqual([
+						`${worldSeed.toString(16)}:${record.index}:${station.id}`,
+						true,
+					]);
+					checked++;
+				}
 			}
 		}
-		expect(checked).toBeGreaterThan(0);
+		expect(checked).toBeGreaterThan(100);
 	});
 
 	test("a binder may decline: no deficit, no procurement offer", () => {

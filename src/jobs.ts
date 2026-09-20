@@ -11,11 +11,16 @@
  * `fixtureOffers` reached at two jobs comes back.
  *
  * **A binder is a pure function of the posting station, the world and the
- * clock.** It reads no commander state — not the hyperspace tank, not the
- * hold, not the credits — because the request contract §1 forbids a fixed
- * offer being regenerated on docking, and a board that changed when the pilot
- * topped up the tank would be exactly that. The offer prints what it costs to
- * reach; the pilot decides.
+ * clock.** It reads no commander state — not the jump tank, not the hold, not
+ * the credits — because the request contract §1 forbids a fixed offer being
+ * regenerated on docking, and a board that changed when the pilot topped the
+ * tank up would be exactly that. The offer prints what it costs to reach; the
+ * pilot decides.
+ *
+ * **`JobOffer` is persisted verbatim in the request journal**
+ * (`requests.ts`'s `RequestOffer`), so changing its fields is a
+ * `SAVE_SCHEMA_VERSION` decision rather than a content edit. Adding a *row* or
+ * a *binder* is not.
  *
  * It imports no Three.js and must not: a board is arithmetic, and
  * `tests/headless.test.ts` is where that stays true.
@@ -59,9 +64,8 @@ export interface PaymentRule {
 /** One authored job. No operand appears here; see the module header. */
 export interface JobRow {
 	family: JobFamily;
-	/** Stable authored identity, and the first half of an offer's key.
-	 *  Named `rowId` rather than `slot`, which `CONTEXT.md` reserves for a
-	 *  berth. */
+	/** Stable authored identity, and the first half of an offer's key. Named
+	 *  `rowId` because `CONTEXT.md` reserves the other word for a berth. */
 	rowId: string;
 	/** Bumped when the row's terms change; an offer pins the one it was
 	 *  accepted under (`missions-and-requests.md` §1). */
@@ -142,11 +146,13 @@ export interface JobDestination {
  * Every station a job may name as a delivery point: this system's other
  * stations, and the stations of every system one jump away.
  *
- * The ruling is the principal's (#411, 2026-09-20): one jump, within the
- * hyperspace tank's capacity. `JUMP_RANGE_LY` is that capacity and `reachable`
- * already reads it. **`CommanderState.fuelLy` is not read here and must not
- * be** — see the module header. #185 is open on the per-hull tank; when it
- * closes, this is the function that owes it a second look.
+ * The ruling is the principal's (#411, 2026-09-20): one jump, within the jump
+ * tank's capacity. `JUMP_RANGE_LY` is a jump's reach and `reachable` already
+ * reads it; `tests/jobs.test.ts` holds it at or under `JUMP_TANK_LY`, which is
+ * what makes "within the tank" a claim that can fail rather than a restatement
+ * of the constant the filter uses. **`CommanderState.fuelLy` is not read here
+ * and must not be** — see the module header. #185 is open on the per-hull
+ * tank; when it closes, this is the function that owes it a second look.
  */
 export function deliveryCandidates(
 	systems: readonly SystemRecord[],
@@ -160,17 +166,25 @@ export function deliveryCandidates(
 	 */
 	excludeKey: CarrierKey,
 ): JobDestination[] {
+	// **Only stations a job may name.** The filter is here rather than in the
+	// binder because a binder that draws one candidate and then declines it is
+	// a floor with a hole in it: D8 says a board is never empty, and a draw
+	// landing on a station the market cannot price used to post nothing at all.
 	const out: JobDestination[] = [];
 	for (const station of contentsOf(from).stations)
-		if (carrierKey(from.index, station.localCarrierId) !== excludeKey)
+		if (
+			canPostJobs(station) &&
+			carrierKey(from.index, station.localCarrierId) !== excludeKey
+		)
 			out.push({ system: from, station, distanceLy: 0 });
 	for (const record of reachable(systems, from, JUMP_RANGE_LY))
 		for (const station of contentsOf(record).stations)
-			out.push({
-				system: record,
-				station,
-				distanceLy: distanceLy(from.pos, record.pos),
-			});
+			if (canPostJobs(station))
+				out.push({
+					system: record,
+					station,
+					distanceLy: distanceLy(from.pos, record.pos),
+				});
 	return out.sort(
 		(a, b) =>
 			a.distanceLy - b.distanceLy ||
@@ -265,6 +279,16 @@ export const jobMark = (offer: JobOffer): JobMark => ({
 
 /** A station can post market-derived work only if the market can price it —
  *  `station-types.md` §3 still owes the outpost a price offset. */
+/**
+ * A station can post or receive market-derived work only if the market can
+ * price it — `station-types.md` §3 still owes the outpost a price offset.
+ *
+ * **Nothing in a generated galaxy fails this today**, and that is measured
+ * rather than assumed: `system.ts` places no outposts at all (the spec says so
+ * in as many words at §7.1's ranking). So this is the guard that holds when one
+ * is placed, not a filter doing work now — a red build that put the old
+ * per-draw decline back stayed green for exactly that reason.
+ */
 export const canPostJobs = (station: Station): boolean =>
 	station.type !== "outpost";
 
@@ -361,7 +385,6 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	);
 	const destination =
 		ctx.destinations[Math.min(index, ctx.destinations.length - 1)];
-	if (!canPostJobs(destination.station)) return null;
 
 	const listedThere = new Set(
 		listedAt(destination.station, destination.system).map((c) => c.name),
@@ -441,6 +464,7 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
 
 	let best: { commodity: Commodity; units: number } | null = null;
 	for (const commodity of listedAt(ctx.station, ctx.system)) {
+		if (commodity.illegal || commodity.unit !== "t") continue;
 		const units = readDeficit(
 			ctx.deficits,
 			key,

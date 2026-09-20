@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { type JobOffer, bindJobs, deliveryCandidates } from "../src/jobs";
+import type { JobOffer } from "../src/jobs";
+import { firstOffer } from "./helpers/job-board";
 import { requestAction } from "../src/requests";
 import { generateGalaxy } from "../src/galaxy";
 import { generateContents } from "../src/system";
@@ -27,30 +28,9 @@ import {
  * rather than an obstacle here.
  */
 const SAVE_SYSTEMS = generateGalaxy(42, 0).systems;
-const liveCourier = (): { offers: JobOffer[]; courier: JobOffer } => {
-	for (const system of SAVE_SYSTEMS) {
-		const station = generateContents(system).stations.find(
-			(s) => s.type !== "outpost",
-		);
-		if (!station) continue;
-		const offers = bindJobs({
-			galaxyIndex: 0,
-			system,
-			station,
-			destinations: deliveryCandidates(
-				SAVE_SYSTEMS,
-				system,
-				generateContents,
-				carrierKey(system.index, station.localCarrierId),
-			),
-			deficits: {},
-			gameTimeMin: 0,
-			settled: {},
-		});
-		const courier = offers.find((o) => o.family === "courier");
-		if (courier) return { offers, courier };
-	}
-	throw new Error("no courier offer in world 42");
+const liveCourier = () => {
+	const found = firstOffer(SAVE_SYSTEMS, "courier");
+	return { offers: found.offers, courier: found.offer };
 };
 const LIVE = liveCourier();
 const requestCtx = (docked: JobOffer["requester"]) => ({

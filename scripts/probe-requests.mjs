@@ -356,21 +356,25 @@ try {
 	);
 	await page.screenshot({ path: `${out}/02-tracked-flight.png` });
 
-	const jumped = await page.evaluate((o) => {
-		const g = window.__seelite;
-		const systemIndex = Number(o.reportAt.carrierKey.split(":")[0]);
-		if (systemIndex === g.world.system.record.index) return "same system";
-		const to = g.world.galaxy.systems.find((s) => s.index === systemIndex);
-		if (!to) throw Error("delivery system is not in this galaxy");
-		// A pilot tops the hyperspace tank up at the board's own station; this
-		// probe is not measuring what that costs.
-		g.commander = { ...g.commander, fuelLy: 7 };
-		g.performJump(to);
-		for (let i = 0; i < 60; i++) g.step(1 / 60);
-		return g.world.system.record.index === systemIndex
-			? "jumped"
-			: `jump failed: ${g.jumpNotice ?? "no notice"}`;
-	}, offer);
+	// One jump, used by both legs of the flight. The second copy of this block
+	// had dropped the missing-system guard, which is what a copy does.
+	const jumpToSystemOf = (carrierKey) =>
+		page.evaluate((key) => {
+			const g = window.__seelite;
+			const systemIndex = Number(key.split(":")[0]);
+			if (systemIndex === g.world.system.record.index) return "same system";
+			const to = g.world.galaxy.systems.find((s) => s.index === systemIndex);
+			if (!to) throw Error(`system ${systemIndex} is not in this galaxy`);
+			// A pilot tops the tank up at the board's own station; this probe is
+			// not measuring what that costs.
+			g.commander = { ...g.commander, fuelLy: 7 };
+			g.performJump(to);
+			for (let i = 0; i < 60; i++) g.step(1 / 60);
+			return g.world.system.record.index === systemIndex
+				? "jumped"
+				: `jump failed: ${g.jumpNotice ?? "no notice"}`;
+		}, carrierKey);
+	const jumped = await jumpToSystemOf(offer.reportAt.carrierKey);
 	check(
 		"the delivery station is reachable on one jump or already here",
 		jumped === "same system" || jumped === "jumped",
@@ -455,15 +459,7 @@ try {
 	// row this replaced read the pinned terms of the job just settled — which
 	// cannot fail for the reason its name gives.
 	const home = offer.requester.carrierKey.split(":").slice(1).join(":");
-	await page.evaluate((o) => {
-		const g = window.__seelite;
-		const systemIndex = Number(o.requester.carrierKey.split(":")[0]);
-		if (systemIndex === g.world.system.record.index) return;
-		const to = g.world.galaxy.systems.find((s) => s.index === systemIndex);
-		g.commander = { ...g.commander, fuelLy: 7 };
-		g.performJump(to);
-		for (let i = 0; i < 60; i++) g.step(1 / 60);
-	}, offer);
+	await jumpToSystemOf(offer.requester.carrierKey);
 	await dockAt(page, home);
 	await page.locator('[data-live-station-tab="Requests"]').click();
 	const nextEpisode = await page.evaluate(

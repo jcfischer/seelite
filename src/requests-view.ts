@@ -22,11 +22,6 @@ export interface RequestsView {
 	revision: number;
 	now: number;
 	docked: RequestStation | null;
-	/** Tonnes of free hold, entrusted cargo already deducted — what an Accept
-	 *  is refused against (`missions-and-requests.md` §4). */
-	holdRoomT: number;
-	/** Ordinary cargo aboard, which is what a procurement job delivers. */
-	cargo: Readonly<Record<string, number>>;
 }
 const esc = (x: string) =>
 	x.replace(
@@ -147,7 +142,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				actions += button(
 					"deliver",
 					o.id,
-					`Deliver ${o.tonnes} t ${o.goodName}`,
+					`Deliver ${o.tonnes} t ${esc(o.goodName)}`,
 				);
 			if (r.status === "ready-to-report" && atReport)
 				actions += button("report", o.id, `Report · receive ${o.rewardCr} Cr`);
@@ -162,7 +157,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			actions += button(
 				"return-entrusted",
 				o.id,
-				`Return ${o.tonnes} t ${o.goodName}`,
+				`Return ${o.tonnes} t ${esc(o.goodName)}`,
 			);
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Report after docking at ${esc(o.reportName)}. Remote payment is unavailable.</p>` : ""}</div>`;
 	}

@@ -11506,17 +11506,22 @@ class Game {
 	private requestsView(context = this.dockedStationContext()): RequestsView {
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
-			// board recomputed every frame would be identical and wasted. The
-			// key is the station and the requester's settled episodes, and it
-			// is **not** the whole input: `bindProcurement` also reads the
-			// deficit map and the clock, so the board a pilot sees is the one
-			// bound when this key last changed. `actOnRequest` clears the key
-			// after any accepted action, which is when it can have moved.
+			// board recomputed every frame would be identical and wasted —
+			// `deliveryCandidates` regenerates the contents of every system
+			// within a jump, so this is not a cheap call to repeat. The key is
+			// the station, the requester's settled episodes and the console
+			// revision that a till or a request action bumps. The clock is
+			// deliberately **not** in it: a board that re-bound every minute
+			// would be the reroll §1 forbids.
 			const settled = settledAt(this.requests, {
 				galaxyIndex: context.galaxyIndex,
 				carrierKey: context.stationKey,
 			});
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}`;
+			// `stationConsoleRevision` is in the key because a **market**
+			// transaction at this same dock moves the deficit a procurement
+			// binder reads, and the till bumps that counter. Without it a pilot
+			// who bought the shelf out while docked kept reading the old board.
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
 				this.requestOffersCache = bindJobs({
 					galaxyIndex: context.galaxyIndex,
@@ -11535,10 +11540,6 @@ class Game {
 				this.requestOffersCacheKey = key;
 			}
 		}
-		const hold = commanderHold(
-			this.commander,
-			entrustedTonnesAboard(this.requests),
-		);
 		return {
 			state: this.requests,
 			offers: context ? this.requestOffersCache : [],
@@ -11549,8 +11550,27 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
-			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
+		};
+	}
+
+	/**
+	 * What a request action is judged against: the commander's own hold and
+	 * cargo.
+	 *
+	 * **Built here rather than read off the view.** The view is a projection
+	 * for the screen; routing commerce state through it would make every later
+	 * consumer of `RequestsView` fabricate a hold to call this.
+	 */
+	private requestContext(docked: RequestsView["docked"]) {
+		const hold = commanderHold(
+			this.commander,
+			entrustedTonnesAboard(this.requests),
+		);
+		return {
+			now: this.world.gameTime,
+			docked,
 			cargo: this.commander.cargo,
+			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
 		};
 	}
 
@@ -11566,12 +11586,13 @@ class Game {
 			this.requestSelectedId = id;
 			this.requestMessage = "";
 		} else {
-			const result = requestAction(this.requests, view.offers, action, id, {
-				now: this.world.gameTime,
-				docked: view.docked,
-				cargo: this.commander.cargo,
-				holdRoomT: view.holdRoomT,
-			});
+			const result = requestAction(
+				this.requests,
+				view.offers,
+				action,
+				id,
+				this.requestContext(view.docked),
+			);
 			this.requestMessage = result.message;
 			if (result.ok) {
 				this.requests = result.state;
@@ -11580,11 +11601,13 @@ class Game {
 						...this.commander,
 						credits: this.commander.credits + result.rewardCr,
 					};
-				for (const [good, delta] of Object.entries(result.cargoDelta)) {
-					const amount = (this.commander.cargo[good] ?? 0) + delta;
+				if (Object.keys(result.cargoDelta).length > 0) {
 					const cargo = { ...this.commander.cargo };
-					if (amount <= 0) delete cargo[good];
-					else cargo[good] = amount;
+					for (const [good, delta] of Object.entries(result.cargoDelta)) {
+						const amount = (cargo[good] ?? 0) + delta;
+						if (amount <= 0) delete cargo[good];
+						else cargo[good] = amount;
+					}
 					this.commander = { ...this.commander, cargo };
 				}
 				if (result.mark) {
@@ -11609,9 +11632,8 @@ class Game {
 						this.world.gameTime,
 					);
 				}
-				// A settled job changes what this requester posts next, so the
-				// cached board is no longer the board.
-				this.requestOffersCacheKey = null;
+				// A settled job changes what this requester posts next, and the
+				// console revision below is what the board's cache key reads.
 				this.stationConsoleRevision += 1;
 				this.saveDirty();
 			}
