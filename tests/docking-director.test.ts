@@ -31,7 +31,7 @@ import {
 	directorEngaged,
 	dockingDirector,
 } from "../src/docking-director";
-import { TUNNEL_MOUTH_FRACTION } from "../src/docking-tunnel";
+import { TUNNEL_MOUTH_OFFSET_KM } from "../src/docking-tunnel";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 const DEG = Math.PI / 180;
@@ -507,22 +507,30 @@ describe("§3: when the director is on the glass at all", () => {
 });
 
 describe("§3: the corridor the director carries", () => {
-	test("its mouth stops short of the ship rather than at it", () => {
+	test("its mouth is fixed beyond the aperture, independent of the ship", () => {
 		const frame = frameFor();
-		const axialKm = 12;
-		const d = director(
+		const near = director(
 			frame,
 			nominal(frame, {
-				rel: scale(frame.axis, axialKm),
+				rel: scale(frame.axis, frame.planeKm + 1),
 			}),
 			{ state: granted(GRANT_WINDOW_S) },
 		);
-		const mouth = d.tunnel.rings.at(-1) as { axialKm: number };
-		expect(mouth.axialKm).toBeCloseTo(axialKm * TUNNEL_MOUTH_FRACTION, 9);
-		// Ahead of the pilot, which is the whole of why it is a tunnel to fly
-		// into: a mouth at the eye projects its corners to the frame edges.
-		expect(mouth.axialKm).toBeLessThan(axialKm);
-		expect(d.tunnel.throat.axialKm).toBeCloseTo(frame.planeKm, 9);
+		const far = director(
+			frame,
+			nominal(frame, {
+				rel: scale(frame.axis, frame.planeKm + 20),
+			}),
+			{ state: granted(GRANT_WINDOW_S) },
+		);
+		const nearMouth = near.tunnel.rings.at(-1) as { axialKm: number };
+		const farMouth = far.tunnel.rings.at(-1) as { axialKm: number };
+		expect(nearMouth.axialKm).toBeCloseTo(
+			frame.planeKm + TUNNEL_MOUTH_OFFSET_KM,
+			9,
+		);
+		expect(farMouth.axialKm).toBeCloseTo(nearMouth.axialKm, 9);
+		expect(near.tunnel.throat.axialKm).toBeCloseTo(frame.planeKm, 9);
 	});
 
 	test("it is placed at the station, not at the origin", () => {

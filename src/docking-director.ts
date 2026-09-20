@@ -42,11 +42,11 @@ import {
 	signedRollDeg,
 } from "./docking";
 import {
-	TUNNEL_MOUTH_FRACTION,
+	TUNNEL_MOUTH_OFFSET_KM,
 	type TunnelGeometry,
 	dockingTunnel,
 } from "./docking-tunnel";
-import { type Vec3, dot, length, v3 } from "./vec3";
+import { type Vec3, length, v3 } from "./vec3";
 
 /** One measured angle against the tolerance the pilot is flying to. */
 export interface DirectorCue {
@@ -107,9 +107,9 @@ export interface DirectorState {
 	 */
 	stationPos: Vec3;
 	/**
-	 * `docking-tunnel.ts`'s corridor, reaching from the aperture back to the
-	 * ship. Station-relative kilometres, so the renderer adds `stationPos` and
-	 * projects — nothing here is in scene-graph units.
+	 * `docking-tunnel.ts`'s fixed corridor, reaching three kilometres outward
+	 * from the aperture. Station-relative kilometres, so the renderer adds
+	 * `stationPos` and projects — nothing here is in scene-graph units.
 	 */
 	tunnel: TunnelGeometry;
 	/** Check 4, or `null` for a pad: a square aperture has no distinguished axis to
@@ -212,14 +212,10 @@ export function dockingDirector(input: {
 		// would be editing the aperture frame every docking check reads.
 		axisOut: v3(frame.axis.x, frame.axis.y, frame.axis.z),
 		stationPos,
-		// The mouth follows the ship's own axial distance, so the corridor reaches
-		// back toward the pilot and shortens as they fly it — but stops short of
-		// them, because a rectangle at the eye draws rails off the edges of the
-		// frame rather than a tunnel. Clamped inside `dockingTunnel`, which is
-		// where a mouth behind the throat has to be answered rather than assumed
-		// away.
+		// A fixed station-side runway. Frames passed by the camera are omitted by
+		// the renderer, which keeps this from becoming screen-edge rails.
 		tunnel: dockingTunnel(frame, {
-			mouthKm: dot(pose.rel, frame.axis) * TUNNEL_MOUTH_FRACTION,
+			mouthKm: frame.planeKm + TUNNEL_MOUTH_OFFSET_KM,
 		}),
 		roll:
 			frame.aperture.kind === "slot"
