@@ -78,6 +78,11 @@ try {
 		const engagementMod = await import("/src/traffic-engagement.ts");
 		const standingMod = await import("/src/carrier-standing.ts");
 		const distressMod = await import("/src/distress.ts");
+		// The band a traffic fight is fought inside. The break-off row below is
+		// driven by flying out of it, so its width is read off the module rather
+		// than restated here — a probe with its own copy of a constant goes falsely
+		// red the day the constant moves.
+		const trafficMod = await import("/src/station-traffic.ts");
 		const dt = g.units.MAX_DT;
 		// **Spied, not stubbed:** the alert is `AudioFX.alert`, and the question is
 		// whether the game's own hail path reaches it. Wrapping the shipped method
@@ -407,6 +412,12 @@ try {
 					lastExit: null,
 					heat: null,
 					landedFireS: null,
+					// Where the carrier stood on *its* frame. The one position read
+					// at the divert is not where the assault was charged, and a set
+					// filed at two instants cannot be checked against a reach measured
+					// at one of them; the drift between the two is printed so the
+					// reader can see how far apart those instants actually are.
+					victim: null,
 				};
 				for (let i = 0; i < maxFrames; i++) {
 					if (!p.followFiring(key))
@@ -421,7 +432,13 @@ try {
 					// `trafficReadout` rather than off the console: the store is what the
 					// console is rendered from, and the frame that matters is the frame the
 					// line went in, not the frame this script happened to look at.
-					if (hail.frame < 0 && g.trafficReadout().hails.length > 0) {
+					// Gated on the engagement's own latch, and the readout is built
+					// once, inside the branch: `trafficReadout()` maps every contact and
+					// every station, and asking it every frame whether anything has
+					// landed yet is paying for a report to read one boolean. If the
+					// latch lands and no line ever appears, this row goes red with
+					// `frame: -1` — which is the failure the row exists to catch.
+					if (hail.frame < 0 && g.trafficEngagements.get(key)?.struckOnce) {
 						hail.frame = i;
 						hail.comms = p.comms();
 						hail.landedFireS =
@@ -441,6 +458,7 @@ try {
 						charge.landedFireS =
 							g.trafficEngagements.get(key)?.landedFireS ?? null;
 						charge.heat = g.trafficReadout().legal.heatNow;
+						charge.victim = { ...(g.trafficContacts.get(key)?.pos ?? {}) };
 					}
 					if (g.carrierCondition(key).condition === "repairing")
 						return {
@@ -457,6 +475,13 @@ try {
 							// measures the share prints it and a retuner re-reads the
 							// denominator here instead of trusting a comment.
 							secondsToDivert: i * dt,
+							// **The same duration in the units the clock counts.** The
+							// figure above is wall-clock frames; `ASSAULT_FIRE_S` is
+							// seconds of *landed* fire, and a ratio between the two is a
+							// ratio between unlike things. Both are printed, so the share
+							// the constant cites is stated in the units it is measured in.
+							landedFireAtDivert:
+								g.trafficEngagements.get(key)?.landedFireS ?? null,
 							// Where the carrier stood on that frame, which is what #396's
 							// earshot is measured from — not where the pilot was.
 							victim: { ...(g.trafficContacts.get(key)?.pos ?? {}) },
@@ -576,10 +601,23 @@ try {
 					noneRail: rail?.textContent === "NONE",
 				};
 			},
-			/** Every berth in this system, measured from where the carrier stood. */
+			/**
+			 * Every berth in this system, measured from where the carrier stood.
+			 *
+			 * **`from` is a list, because the offence was filed at more than one
+			 * instant** — the sustained-fire charge and the strike that opened the
+			 * facing are two writes and the carrier moved between them. Checking a
+			 * set unioned over two instants against a reach measured at one of them
+			 * would go red for the wrong reason, so a berth counts as in earshot if
+			 * the transmission reached it from *either* position, and `driftKm` puts
+			 * the slack between those positions on the page instead of in a comment.
+			 */
 			earshot(from) {
-				const km = (st) =>
-					Math.hypot(st.pos.x - from.x, st.pos.y - from.y, st.pos.z - from.z);
+				const origins = (Array.isArray(from) ? from : [from]).filter(
+					(o) => o && Number.isFinite(o.x),
+				);
+				const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+				const km = (st) => Math.min(...origins.map((o) => apart(st.pos, o)));
 				return g.trafficReadout().stations.map((st) => ({
 					id: st.id,
 					type: st.type,
@@ -591,8 +629,27 @@ try {
 					pastFrameReach: km(st) > g.units.NEAR_FAR_KM,
 				}));
 			},
+			/** How far the victim moved between the two instants it was filed at. */
+			driftKm(from) {
+				const origins = (Array.isArray(from) ? from : [from]).filter(
+					(o) => o && Number.isFinite(o.x),
+				);
+				if (origins.length < 2) return 0;
+				return Math.max(
+					...origins
+						.slice(1)
+						.map((o) =>
+							Math.hypot(
+								o.x - origins[0].x,
+								o.y - origins[0].y,
+								o.z - origins[0].z,
+							),
+						),
+				);
+			},
 			distressRangeKm: distressMod.DISTRESS_RANGE_KM,
 			nearFarKm: g.units.NEAR_FAR_KM,
+			dematerializeKm: trafficMod.TRAFFIC_DEMATERIALIZE_KM,
 			assaultFireS: engagementMod.ASSAULT_FIRE_S,
 			heatAt: legalMod.heatAt,
 			wantedHeat: legalMod.WANTED_HEAT,
@@ -614,16 +671,21 @@ try {
 		const before = p.lawReadout();
 		const strike = p.strikeUntilDiverted(found.key, 900);
 		const after = p.lawReadout();
-		// The whole system measured from where the carrier stood, taken on the
-		// frame the hull gave way. The berths drift over the ninety seconds of a
-		// strike, but against a reach of `distressRangeKm` the drift is some
-		// hundreds of km, and the row asks a question with that much slack in it.
+		// The whole system, measured from where the carrier stood on *each* frame
+		// it was filed at. The set is written twice over a strike — once by the
+		// sustained-fire charge, once by the divert — and the carrier moves between
+		// them, so the reach is applied from both positions and the gap between
+		// them is measured rather than asserted (`driftKm` in the payload).
+		const origins = [strike?.charge?.victim, strike?.victim];
 		const heard = strike?.victim
 			? {
 					range: p.distressRangeKm,
 					nearFar: p.nearFarKm,
 					victim: strike.victim,
-					stations: p.earshot(strike.victim),
+					// Both charge instants, not just the last one.
+					chargeVictim: strike?.charge?.victim ?? null,
+					driftKm: p.driftKm(origins),
+					stations: p.earshot(origins),
 				}
 			: null;
 		return {
@@ -795,6 +857,92 @@ try {
 	// A jump is what separates H6's saved list from session state: the system
 	// hand-off and §12's states clear everything the envelope does not hold.
 	// -------------------------------------------------------------------------
+	// **The denominator `ASSAULT_FIRE_S` cites, printed on every run.** The constant
+	// is declared as a share of how long this scene's tethered beam takes to open a
+	// freighter's facing, and a figure a shipped constant is derived from has to be
+	// re-readable without a red row to unlock it. Both durations are printed because
+	// they are not the same quantity: the loop counts frames of wall clock, the
+	// constant counts seconds of *landed* fire, and the share the spec quotes is the
+	// landed pair.
+	{
+		const f = (x) => (typeof x === "number" ? x.toFixed(1) : "n/a");
+		const wall = struck.strike?.secondsToDivert;
+		const landed = struck.strike?.landedFireAtDivert;
+		console.log(
+			`  the strike's beam: ${f(wall)} s of wall clock to open the facing, ` +
+				`${f(landed)} s of it landed — ${
+					struck.assaultFireS
+				} s of landed fire is ${
+					typeof landed === "number"
+						? `${((100 * struck.assaultFireS) / landed).toFixed(0)}%`
+						: "n/a"
+				} of that beam; the victim drifted ${f(
+					struck.heard?.driftKm,
+				)} km between the two frames it was filed at`,
+		);
+	}
+
+	// -------------------------------------------------------------------------
+	// H7's present tense, the other way round. The rail names a carrier that is
+	// being shot at, so the row that proves it is a rail and not a ledger is the
+	// one where the pilot *stops*: fly out of the band the fight is fought inside
+	// and read the glass back. A jump ends a fight too, and this file already
+	// jumps for H6's sake — but the spec's sentence leads with breaking off, and
+	// a claim about the console should be read off the console on the path a
+	// player actually takes rather than inferred from the one that saves.
+	// -------------------------------------------------------------------------
+	const brokeOff = await page.evaluate(async () => {
+		const p = window.__witnessProbe;
+		const g = window.__seelite;
+		const keys = [...g.trafficEngagements.keys()];
+		const key = keys[0] ?? null;
+		if (!key) return { engaged: false, keys };
+		const during = p.comms();
+		const carrier = g.trafficContacts.get(key);
+		const flight = g.trafficEngagements.get(key)?.flight.ship.pos;
+		const anchor = carrier?.pos ?? flight;
+		// Past the band, three times over, and left there: the fight is ended by
+		// range, so this is the pilot doing the leaving rather than this file
+		// deleting an entry to watch the console notice.
+		g.world.ship.pos = {
+			x: anchor.x + p.dematerializeKm * 3,
+			y: anchor.y,
+			z: anchor.z,
+		};
+		for (let i = 0; i < 30; i++) p.frame();
+		return {
+			engaged: true,
+			keys,
+			during,
+			rangeKm: Math.hypot(
+				g.world.ship.pos.x - (carrier?.pos ?? flight).x,
+				g.world.ship.pos.y - (carrier?.pos ?? flight).y,
+				g.world.ship.pos.z - (carrier?.pos ?? flight).z,
+			),
+			dematerializeKm: p.dematerializeKm,
+			after: p.comms(),
+			gone: !g.trafficEngagements.has(key),
+		};
+	});
+	check(
+		"a pilot who breaks off takes the carrier off the rail, and the log keeps what it said (H7's present tense)",
+		brokeOff.engaged === true &&
+			brokeOff.keys.length === 1 &&
+			// Named on the glass while the beam was on it…
+			brokeOff.during?.rail !== "NONE" &&
+			// …silent once the range ends the fight…
+			brokeOff.gone === true &&
+			brokeOff.rangeKm > brokeOff.dematerializeKm &&
+			brokeOff.after?.rail === "NONE" &&
+			brokeOff.after?.noneRail === true &&
+			// …and the history is still there, which is the half that separates a
+			// rail going quiet from the whole feature being switched off.
+			brokeOff.after?.logLines?.some((l) => l.includes("cease fire")) ===
+				true &&
+			brokeOff.after?.store?.length === brokeOff.during?.store?.length,
+		JSON.stringify(brokeOff),
+	);
+
 	const trip = await page.evaluate(() => {
 		const p = window.__witnessProbe;
 		const g = window.__seelite;

@@ -169,6 +169,20 @@ try {
 					before: this.heatAt(before, updatedAt),
 				};
 			},
+			/**
+			 * One heat write, measured as what it added.
+			 *
+			 * **The baseline is the row that stood immediately before the write**, decayed
+			 * to the write's own stamp, so the delta is the marginal the law charged and
+			 * nothing else. Since #396 a fight can write more than one rung — the
+			 * sustained-fire 13, then the strike's 2, then the kill's 25 — and a leg
+			 * measured from the status at the *fight's* opening reads the strike as 15,
+			 * which credits the strike with the assault's charge and hides the very
+			 * supersession these rows exist to read.
+			 */
+			leg(prior, after) {
+				return after.heat - this.heatAt(prior, after.updatedAt);
+			},
 			/** One tethered frame: hold the offset, nose on the target or
 			 *  `offNoseRad` beside it. `framesFired` counts the frames this rig has
 			 *  held the beam open, across every target — the shield-side bound the
@@ -205,6 +219,9 @@ try {
 			},
 			offenceHeat: legalMod.OFFENCE_HEAT.destroyed,
 			strikeOffence: legalMod.OFFENCE_HEAT.struck,
+			// #396 put a rung beneath the strike, so the incident's legs are read
+			// from all three rather than from the pair this file was written against.
+			assaultOffence: legalMod.OFFENCE_HEAT.assault,
 			heatAt: legalMod.heatAt,
 			// How long a full shield side takes the pulse laser: the divert's
 			// trigger is the first hit that gets past it (H3d), and this is read
@@ -271,6 +288,18 @@ try {
 			markOutside,
 		};
 	});
+	// A fight's heat writes, read against the figures the law charges for them.
+	//
+	// **In order, and by length.** A leg that is missing is a rung that never
+	// landed, and a leg more than expected is a rung the ruling does not have — both
+	// are the finding, not a shrug. The tolerance is for float decay across a write
+	// (`2 ** (-elapsed / HEAT_HALF_LIFE_S)`), never for a missing or extra leg: a
+	// tolerance that also forgave shape is how a row starts passing on nothing.
+	const legsAre = (legs, expected) =>
+		Array.isArray(legs) &&
+		legs.length === expected.length &&
+		legs.every((leg, i) => Math.abs(leg.added - expected[i]) < 1e-6);
+
 	check(
 		"a slow Clean civilian flies near the player and is a selectable contact",
 		found.target !== null && found.listed && found.selected,
@@ -465,9 +494,19 @@ try {
 		let beforeMark = null;
 		let atMark = null;
 		let homeKmAt = null;
+		// Every heat write of this fight, in the order they landed. The divert used
+		// to be the only one; #396 put a rung before it, so the loop watches for
+		// writes rather than assuming the last row it sees is the whole offence.
+		const legs = [];
+		let priorLegal = { ...g.trafficReadout().legal };
 		for (; steps < 6000; steps++) {
 			if (!p.follow(key, true)) break;
-			const row = g.trafficReadout().contacts.find((c) => c.key === key);
+			const readout = g.trafficReadout();
+			const after = readout.legal;
+			if (after.updatedAt !== priorLegal.updatedAt)
+				legs.push({ at: g.world.gameTime, added: p.leg(priorLegal, after) });
+			priorLegal = after;
+			const row = readout.contacts.find((c) => c.key === key);
 			if (row === undefined) continue;
 			if (row.condition === "operational") {
 				hullWas = row.hull ?? hullWas;
@@ -500,11 +539,16 @@ try {
 			strike = {
 				at: g.world.gameTime,
 				...p.snapshotLegal(before),
+				// The strike's own leg — the write that opened the facing, against
+				// the row that stood before it, which since #396 may already carry
+				// the sustained-fire rung.
+				legs,
 				carrier,
 				// The row, not the contact row: presence reads a repairing
 				// carrier's recovery kind to tell a divert from a wreck.
 				presence: presenceMod.trafficPresence(carrier),
 				strikeOffence: p.strikeOffence,
+				assaultOffence: p.assaultOffence,
 				hullFull,
 				hullWas,
 				hullNow: row.hull,
@@ -635,12 +679,18 @@ try {
 		JSON.stringify(diverted),
 	);
 	check(
-		"the strike is an offence of its own, and the ship under fire keeps running (H3, H4)",
-		Math.abs(
-			diverted.strike.legal.heat -
-				diverted.strike.before -
-				diverted.strike.strikeOffence,
-		) < 1e-6 &&
+		// Was "the strike is an offence of its own" (#362). #396 put a rung under
+		// it, so a fight that holds fire for `ASSAULT_FIRE_S` before the hull gives
+		// way is now charged twice and the pair still costs the strike's rung: 13
+		// then 2, never 13 + 15. The legs are measured each against the row that
+		// stood before its own write, which is the only baseline that separates
+		// them — from the fight's opening row the pair reads as one 15.
+		"The sustained fire and the strike are one incident, charged as two legs that sum to the strike's rung (H3, H4, H9)",
+		diverted.strike?.legs.length === 2 &&
+			legsAre(diverted.strike?.legs, [
+				diverted.strike?.assaultOffence,
+				diverted.strike?.strikeOffence - diverted.strike?.assaultOffence,
+			]) &&
 			diverted.stillEngaged &&
 			diverted.stillFleeing,
 		JSON.stringify(diverted),
@@ -741,8 +791,18 @@ try {
 		// claim is about the pair of writes, so they are measured separately
 		// against the status that stood before each.
 		let struck = null;
+		// The writes, each against the row that stood before it — see `p.leg`.
+		// The fight that ends in this kill charges the sustained-fire rung on the
+		// way, so the strike's own write is 2 and not 15, and reading it from the
+		// fight's opening row would hide that.
+		const legs = [];
+		let priorLegal = { ...statusBefore };
 		for (; steps < 6000 && g.trafficContacts.has(key); steps++) {
 			p.follow(key, true);
+			const after = g.trafficReadout().legal;
+			if (after.updatedAt !== priorLegal.updatedAt)
+				legs.push({ at: g.world.gameTime, added: p.leg(priorLegal, after) });
+			priorLegal = after;
 			if (!struck && g.carrierCondition(key).condition !== "operational")
 				struck = p.snapshotLegal(statusBefore);
 		}
@@ -775,15 +835,23 @@ try {
 			// had, not only for zero (sage #368), and it separates the strike's
 			// 15 from the kill's 25 rather than reading their sum.
 			struck,
+			legs,
 			// `null`, not a fallback, when no strike was ever captured: the only
 			// thing a fallback here could produce is a pair of numbers that read
 			// as a decomposition of a strike that did not happen, and the row's
 			// red would name the wrong cause. `struck: null` in the payload is
 			// the real failure — the divert never landed.
-			strikeWrite: struck ? struck.legal.heat - struck.before : null,
-			killWrite: struck
-				? readout.legal.heat - p.heatAt(struck.legal, readout.legal.updatedAt)
-				: null,
+			// Each leg of the incident, in the order the law charged them: the
+			// sustained fire, then the strike that opened the facing, then the kill.
+			// **All three come out of the walk, the kill included.** The loop's own
+			// exit condition is the contact disappearing, which is what the kill
+			// causes on its own frame, so a figure computed after the loop is
+			// measured against the row the kill itself wrote and reads as zero —
+			// which is exactly what it did before this line moved. `legs.length
+			// === 3` below is what makes the three positions mean three rungs.
+			assaultWrite: legs[0]?.added ?? null,
+			strikeWrite: legs[1]?.added ?? null,
+			killWrite: legs[2]?.added ?? null,
 			legal: readout.legal,
 			legalText,
 			legalVisible,
@@ -792,6 +860,7 @@ try {
 			authorityReady: readout.authorityReady,
 			offenceHeat: p.offenceHeat,
 			strikeOffence: p.strikeOffence,
+			assaultOffence: p.assaultOffence,
 			targetAfter: g.targetId,
 			lastExit: g.lastExit,
 			killedAt: now,
@@ -816,10 +885,14 @@ try {
 		"a Clean kill reads Wanted on both left tabs, and the cockpit says so (H4, H7)",
 		killed.struck !== null &&
 			// The incident's whole cost, not the kill's own write: this one was
-			// struck first, so the kill wrote what was still owed. The row below
-			// holds that split.
-			Math.abs(killed.strikeWrite + killed.killWrite - killed.offenceHeat) <
-				1e-6 &&
+			// charged for sustained fire, then struck, so the kill wrote what was
+			// still owed. The row below holds the split leg by leg.
+			Math.abs(
+				killed.assaultWrite +
+					killed.strikeWrite +
+					killed.killWrite -
+					killed.offenceHeat,
+			) < 1e-6 &&
 			killed.legal.standing === "wanted" &&
 			killed.legalText === "WANTED" &&
 			killed.legalVisible === true &&
@@ -836,26 +909,39 @@ try {
 		}),
 	);
 	check(
-		"a strike and the kill that follows it cost one incident's heat, not two (H9)",
+		// Was "a strike and the kill that follows it" (#362, #366). The ladder is
+		// three deep now and the browser tier reads all three rungs of one
+		// incident: 13 for the five seconds of sustained fire, the 2 the strike
+		// adds to a 15-incident, the 25 the kill adds to reach 40. A write that
+		// summed the rungs would put this pilot at 68.
+		"a sustained fire, the strike that follows it and the kill cost one incident's heat, not three (H9)",
 		killed.struck !== null &&
-			// The strike's write, then the kill's, each measured against the
-			// status that stood before it. Summing two offences — which is what a
-			// write that ignores the incident does — would put the pair at 55.
-			// Each figure is read as a delta of the saved heat across one write,
-			// so the pair is held to the ruling's figure within a tolerance: an
-			// exact `===` on floats that came through `2 ** (-elapsed /
-			// HEAT_HALF_LIFE_S)` can come apart by an ulp with nothing wrong.
-			Math.abs(killed.strikeWrite - killed.strikeOffence) < 1e-6 &&
-			Math.abs(killed.killWrite - (killed.offenceHeat - killed.strikeOffence)) <
-				1e-6 &&
-			Math.abs(killed.strikeWrite + killed.killWrite - killed.offenceHeat) <
-				1e-6,
+			// Each leg is a delta of the saved heat across one write, decayed to
+			// that write's own stamp — so the legs are held to the ruling's figures
+			// within a tolerance: an exact `===` on floats that came through
+			// `2 ** (-elapsed / HEAT_HALF_LIFE_S)` can come apart by an ulp with
+			// nothing wrong, and this time the legs are separated by seconds of
+			// fight rather than by one frame.
+			legsAre(killed.legs, [
+				killed.assaultOffence,
+				killed.strikeOffence - killed.assaultOffence,
+				killed.offenceHeat - killed.strikeOffence,
+			]) &&
+			Math.abs(
+				killed.assaultWrite +
+					killed.strikeWrite +
+					killed.killWrite -
+					killed.offenceHeat,
+			) < 1e-6,
 		JSON.stringify({
 			strike: killed.struck,
+			legs: killed.legs,
+			assaultWrite: killed.assaultWrite,
 			strikeWrite: killed.strikeWrite,
 			killWrite: killed.killWrite,
 			offence: killed.offenceHeat,
 			strikeOffence: killed.strikeOffence,
+			assaultOffence: killed.assaultOffence,
 		}),
 	);
 	check(

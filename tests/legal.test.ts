@@ -20,7 +20,7 @@ import {
 	OFFENCE_LADDER,
 	assaultCharged,
 	markAssaultCharged,
-	settleWitnesses,
+	settleIncident,
 	stationHostile,
 	withOffence,
 } from "../src/legal";
@@ -147,6 +147,23 @@ describe("H9: one incident costs its largest offence, not their sum", () => {
 		expect(marginalOffenceHeat("clean", "assault", "struck")).toBe(0);
 	});
 
+	// **The figures are written out here, not derived from the module.** The
+	// first version of this row computed the expectation with `offenceRank` —
+	// the same function `marginalOffenceHeat` compares with — and so it passed
+	// on any inversion of the ladder, which is precisely the mistake it is here
+	// to catch. These are the numbers `civilian-combat.md` H4 prints.
+	const LADDER_TOTAL_CR: Record<string, number> = {
+		"assault+assault": 13,
+		"assault+struck": 15,
+		"assault+destroyed": 40,
+		"struck+assault": 15,
+		"struck+struck": 15,
+		"struck+destroyed": 40,
+		"destroyed+assault": 40,
+		"destroyed+struck": 40,
+		"destroyed+destroyed": 40,
+	};
+
 	test("every pair of rungs, in both orders, costs the larger one and no more", () => {
 		// #396's lattice is three deep, and the ordering has to hold whichever
 		// way round a pilot happens to do the two things. Each pair is the sum of
@@ -157,10 +174,20 @@ describe("H9: one incident costs its largest offence, not their sum", () => {
 			for (const b of OFFENCE_LADDER) {
 				const first = marginalOffenceHeat("clean", a, null);
 				const second = marginalOffenceHeat("clean", b, a);
-				expect(first + second).toBe(
-					offenceHeat("clean", offenceRank(a) >= offenceRank(b) ? a : b),
-				);
+				expect(first + second).toBe(LADDER_TOTAL_CR[`${a}+${b}`]);
 			}
+	});
+
+	test("an incident is never the sum of its rungs", () => {
+		// The other half of the same ruling, stated as the wrong answer it
+		// forbids: assault then struck is 15, not 28, and struck then destroyed
+		// is 40, not 55. A write that adds the rungs — which is what a caller
+		// doing `heat += offenceHeat(...)` writes — fails here and nowhere else
+		// in this file, because every row above is a marginal one.
+		expect(marginalOffenceHeat("clean", "struck", "assault")).toBe(2);
+		expect(marginalOffenceHeat("clean", "destroyed", "struck")).toBe(25);
+		expect(marginalOffenceHeat("clean", "destroyed", "assault")).toBe(27);
+		expect(marginalOffenceHeat("clean", "assault", "destroyed")).toBe(0);
 	});
 
 	test("a lawful target costs nothing whatever the incident carries", () => {
@@ -394,7 +421,7 @@ describe("H7: a shipyard refuses a Wanted pilot whatever it saw", () => {
 describe("H6: the list is cleared when heat reads below Wanted", () => {
 	test("a read below Wanted drops every witness", () => {
 		const written = withOffence(newWorld(7), 0, 40, 0, [TRADE]);
-		const settled = settleWitnesses(
+		const settled = settleIncident(
 			written,
 			0,
 			minutesAbove(40, WANTED_HEAT) * MIN,
@@ -404,7 +431,7 @@ describe("H6: the list is cleared when heat reads below Wanted", () => {
 
 	test("a read at or above Wanted keeps them", () => {
 		const written = withOffence(newWorld(7), 0, 40, 0, [TRADE]);
-		const kept = settleWitnesses(written, 0, 0);
+		const kept = settleIncident(written, 0, 0);
 		expect(kept).toBe(written);
 		expect(kept.galaxies[0].legalStatus.witnesses).toEqual([TRADE]);
 	});
@@ -414,7 +441,7 @@ describe("H6: the list is cleared when heat reads below Wanted", () => {
 		// copied eight envelopes on an empty list would mark the save dirty on
 		// a law-abiding pilot's every frame.
 		const world = newWorld(7);
-		expect(settleWitnesses(world, 0, 1e6)).toBe(world);
+		expect(settleIncident(world, 0, 1e6)).toBe(world);
 	});
 
 	test("clearing one galaxy leaves the others' witnesses alone", () => {
@@ -422,7 +449,7 @@ describe("H6: the list is cleared when heat reads below Wanted", () => {
 		world = withOffence(world, 3, 40, 0, [OTHER]);
 		// The clear is per galaxy, as the whole domain is: heat decaying out of
 		// Wanted here says nothing about the pilot's standing somewhere else.
-		const settled = settleWitnesses(world, 2, 61 * MIN);
+		const settled = settleIncident(world, 2, 61 * MIN);
 		expect(settled.galaxies[2].legalStatus.witnesses).toEqual([]);
 		expect(settled.galaxies[3].legalStatus.witnesses).toEqual([OTHER]);
 	});
@@ -463,11 +490,31 @@ describe("H4's sustained-fire rung (#396)", () => {
 	test("the charge is written once per carrier and read back as paid", () => {
 		let world = withOffence(newWorld(7), 0, OFFENCE_HEAT.assault, 0, [TRADE]);
 		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(false);
-		world = markAssaultCharged(world, 0, MINER, 0);
+		world = markAssaultCharged(world, 0, MINER, OFFENCE_HEAT.assault, 0);
 		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(true);
 		// Idempotent: a second charge for the same carrier — a reload into the
 		// same fight, which is the case #396 refuses by name — changes nothing.
-		expect(markAssaultCharged(world, 0, MINER, 60)).toBe(world);
+		expect(markAssaultCharged(world, 0, MINER, OFFENCE_HEAT.assault, 60)).toBe(
+			world,
+		);
+	});
+
+	test("a charge that cost nothing is not recorded", () => {
+		// **The mark is the record of a charge, and a lawful act is not one**
+		// (F7). Recorded anyway, a five seconds spent on a target whose rotation
+		// had turned it Wanted would sit in the row and cost the next strike on
+		// that carrier 2 instead of 15 — a discount on a bill the pilot was never
+		// presented, which is #396's ladder turned inside out. Inside the fight the
+		// clock is latched by the engagement whatever the crossing cost, so
+		// refusing the mark costs nothing in re-charging.
+		const world = markAssaultCharged(
+			withOffence(newWorld(7), 0, 0, 0, []),
+			0,
+			MINER,
+			0,
+			0,
+		);
+		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(false);
 	});
 
 	test("marking a charge does not restamp the heat's clock", () => {
@@ -475,16 +522,29 @@ describe("H4's sustained-fire rung (#396)", () => {
 		// the heat, and restamping it on a write that adds none would hold a
 		// pilot Wanted past the duration their last real offence set.
 		const written = withOffence(newWorld(7), 0, 40, 0, []);
-		const marked = markAssaultCharged(written, 0, MINER, 600);
+		const marked = markAssaultCharged(
+			written,
+			0,
+			MINER,
+			OFFENCE_HEAT.assault,
+			600,
+		);
 		expect(marked.galaxies[0].legalStatus.updatedAt).toBe(0);
 		expect(marked.galaxies[0].legalStatus.heat).toBe(40);
 	});
 
 	test("the charge is held per carrier and per galaxy", () => {
 		const world = markAssaultCharged(
-			markAssaultCharged(withOffence(newWorld(7), 0, 13, 0, []), 0, MINER, 0),
+			markAssaultCharged(
+				withOffence(newWorld(7), 0, 13, 0, []),
+				0,
+				MINER,
+				13,
+				0,
+			),
 			3,
 			MINER,
+			13,
 			0,
 		);
 		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(true);
@@ -504,10 +564,10 @@ describe("H4's sustained-fire rung (#396)", () => {
 		// pardon a carrier forever; the other way round would leave a pilot
 		// re-chargeable inside an incident they are still Wanted for.
 		let world = withOffence(newWorld(7), 0, OFFENCE_HEAT.assault, 0, [TRADE]);
-		world = markAssaultCharged(world, 0, MINER, 0);
-		const still = settleWitnesses(world, 0, 0);
+		world = markAssaultCharged(world, 0, MINER, OFFENCE_HEAT.assault, 0);
+		const still = settleIncident(world, 0, 0);
 		expect(still).toBe(world);
-		const settled = settleWitnesses(
+		const settled = settleIncident(
 			world,
 			0,
 			minutesAbove(OFFENCE_HEAT.assault, WANTED_HEAT) * MIN,
@@ -516,19 +576,17 @@ describe("H4's sustained-fire rung (#396)", () => {
 		expect(settled.galaxies[0].legalStatus.assaulted).toEqual([]);
 	});
 
-	test("a charge with no heat still clears, so it cannot outlive its incident", () => {
-		// The mark is written whatever the charge cost, including nothing. Left
-		// alone, a free charge on a Clean-turned-Wanted target would sit in the
-		// row until some later offence brought heat back up — a pardon for a
-		// five-second act no one was ever billed for.
-		let world = markAssaultCharged(
-			withOffence(newWorld(7), 0, 0, 0, []),
+	test("the clear that ends an incident takes the charge list with it", () => {
+		// A written mark and a written hearer list end on the same read: the
+		// incident has one ending, decay, and a charge memory that outlived it
+		// would be a pardon for a five-second act whose heat is gone.
+		let world = withOffence(newWorld(7), 0, OFFENCE_HEAT.assault, 0, [TRADE]);
+		world = markAssaultCharged(world, 0, MINER, OFFENCE_HEAT.assault, 0);
+		world = settleIncident(
+			world,
 			0,
-			MINER,
-			0,
+			minutesAbove(OFFENCE_HEAT.assault, WANTED_HEAT) * MIN,
 		);
-		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(true);
-		world = settleWitnesses(world, 0, 1);
 		expect(assaultCharged(world.galaxies[0].legalStatus, MINER)).toBe(false);
 	});
 });

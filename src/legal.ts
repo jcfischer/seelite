@@ -46,12 +46,10 @@
  * So the charge is a second saved list beside `witnesses`, which is #396's
  * stated preference and the same door the witnesses came in by: omitted by
  * `canonicalEnvelope` when empty, so an old save keeps the bytes and the hash it
- * was written with, parsed to `[]` when absent, and cleared by `settleWitnesses`
- * on the same read below Wanted. **The clear is what makes it safe to write the
- * mark whatever the charge cost**: an incident ends when its heat decays below
- * Wanted, and a free charge — a target whose rotation had turned it Wanted at
- * the tick (F7) — is spent and forgotten on the next such read rather than
- * sitting in the row pardoning a carrier indefinitely.
+ * was written with, parsed to `[]` when absent, and cleared by `settleIncident`
+ * on the same read below Wanted. **A mark is the record of a charge, so a charge
+ * that cost nothing leaves none** (F7): a free rung must not sit in the row
+ * discounting the next strike on that carrier by 13 the pilot was never billed.
  *
  * ## The two refusals, and why they are not one field
  *
@@ -227,26 +225,31 @@ export const withOffence = (
  * Record that this carrier's **sustained-fire charge** has been paid, so a reload
  * into the same fight cannot charge it again (#396 §2's binding obligation).
  *
- * Called by whoever fires the charge, whatever it cost — including the case where
- * the target's true standing made it free (F7). The rung is once per carrier per
- * incident and the clock is one clock; a charge judged lawful at its tick has
- * been spent, and re-running it because the six-hour rotation happened to turn the
- * target Clean would be a second judgement on the same five seconds of fire.
+ * **Only when the charge cost heat** (`charged` below), which is the caller's
+ * figure and not a fact this module can derive. A mark is the record of a charge,
+ * and a five seconds judged lawful at its tick (F7) is not one — the pilot was
+ * never billed, and a later strike on the same carrier whose rotation has since
+ * turned it Clean would read the mark as "the assault rung is already paid" and
+ * cost 2 where 15 is owed. **A free act must not leave a discount behind.** What
+ * stops the same five seconds being run twice is the fight's own latch
+ * (`Engagement.assaultCharged`, latched on the crossing whether or not it cost),
+ * and the world's copy exists to re-seed that latch across a reload — a reload
+ * into a lawful five seconds has nothing to restore.
  *
  * **It is written with the heat and never restamps it.** `setLegalAssaulted`
- * touches the list only, for `withOffence`'s reason: a 0-heat lawful assault that
- * restamped the row would hold a pilot Wanted past the duration the last real
- * offence set. And since the list is cleared with the witnesses when heat reads
- * below Wanted, an assault that cost nothing leaves a mark that the next frame's
- * settle clears — which is exactly right. The incident lives as long as the heat
- * it cost, so a mark with nothing to protect has nothing to be for.
+ * touches the list only, for `withOffence`'s reason: a mark that restamped the
+ * row would hold a pilot Wanted past the duration the last real offence set.
  */
 export const markAssaultCharged = (
 	world: WorldState,
 	galaxyIndex: number,
 	carrier: CarrierKey,
+	/** What the charge cost. Zero means it was lawful, and a lawful act leaves no
+	 *  mark — see the reason above. */
+	charged: number,
 	gameTime: number,
 ): WorldState => {
+	if (charged <= 0) return world;
 	const before = world.galaxies[galaxyIndex].legalStatus;
 	if (before.assaulted.includes(carrier)) return world;
 	return setLegalAssaulted(
@@ -268,11 +271,13 @@ export const assaultCharged = (
  *
  * Hostility is the list **and** Wanted heat, which is what makes it survivable:
  * the only exit is decay, so no save can be locked out of its only station. That
- * is also why there is no timer here — see the header. The reach that decided
- * whether a station saw an offence at all is the frame body's, `NEAR_FAR_KM`,
- * and it is applied where the offence is charged (`main.ts`), not here: this
- * reads the list, and 20,000 km is not a second witness radius hiding in a
- * predicate.
+ * is also why there is no timer here — see the header. **Which stations are in
+ * the list is not decided here either**: the reach is a station's earshot of the
+ * victim (`distress.ts`'s `DISTRESS_RANGE_KM`, #396's amendment of H5), applied
+ * where the offence is charged, and this predicate reads the resulting list. A
+ * second radius hiding in a predicate is precisely what it is not — the same
+ * figure applied twice would make the amendment a widening on the way in and a
+ * narrowing on the way out.
  *
  * It is the witness half of `dockingRefusedByLaw`, which is its only production
  * caller — a berth's refusal is this plus the shipyard's standing rule. Kept
@@ -331,7 +336,7 @@ export const dockingRefusedByLaw = (
  * hold a station hostile past its own decay, and both of those are the permanent
  * lock-out the header refuses.
  */
-export const settleWitnesses = (
+export const settleIncident = (
 	world: WorldState,
 	galaxyIndex: number,
 	gameTime: number,

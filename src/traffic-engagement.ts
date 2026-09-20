@@ -82,15 +82,19 @@ export const trafficInSights = (
  * (#396), whose heat is `legal.ts`'s `OFFENCE_HEAT.assault`.
  *
  * A **declared starting form** (H12's precedent), set against one measured
- * quantity: a beam held on a Clean freighter takes ~17.6 s to open its facing,
- * so five seconds is a little under a third of that and the charge lands while
- * the shields are still two-thirds up. **That 17.6 is not folklore** —
- * `probe-witnesses.mjs` tethers exactly that beam and reports the frames it
- * took, and its run on seed 42 returned 176 at `units.MAX_DT`; #395's merged
- * receipt quoted the same act at ~17.6 s from the other direction. Anyone
- * retuning this dial re-measures the denominator by running that probe and
- * reading `strike.secondsToDivert`, which is why the figure is quoted with its
- * instrument rather than from the author's memory.
+ * quantity: a beam held on a Clean freighter takes **17.7 s of landed fire** to
+ * open its facing, so five seconds is 28% of that beam and the charge lands with
+ * the better part of the facing's armour still between the pilot and the hull.
+ * **That figure has an instrument** — `probe-witnesses.mjs` tethers exactly that
+ * beam and carries both durations in its strike row: `landedFireAtDivert`, which
+ * is what this clock counts, and `secondsToDivert`, which is wall clock. The run
+ * that shipped this read 17.6 s of clock and 17.7 s of landed fire, the two
+ * agreeing because a tethered probe misses nothing; **a share quoted across the
+ * pair is a share between unlike quantities**, so the landed one is the one this
+ * fraction is taken of. Anyone retuning the dial re-measures it the same way
+ * (`PROBE_ORIGIN=… node scripts/probe-witnesses.mjs` prints both lines) rather
+ * than reading a number out of a comment, which is why the figure is quoted with
+ * its instrument rather than from the author's memory.
  *
  * What the fraction is *for* is the sentence after it: the pilot is charged for
  * what they did to a citizen, not for how long it took the gun to get through
@@ -129,10 +133,18 @@ export interface Engagement {
 	 */
 	landedFireS: number;
 	/**
-	 * Whether this carrier's sustained-fire charge has been drawn. Seeded from
-	 * the world at `engage` rather than from `false`, and latched when the clock
-	 * crosses — which is what stops a reload into the same fight charging it a
-	 * second time.
+	 * Whether this carrier's sustained-fire clock has been drawn on this carrier,
+	 * **for the life of this fight**. It is the latch, and inside a fight it is
+	 * authoritative: the world's copy (`legal.ts`'s `assaultCharged`) exists only
+	 * to seed this one at `engage`, and it can be cleared underneath a live
+	 * engagement by the settle on a later read — which is right, because that
+	 * settle ends an *incident* and this field remembers a *fight*, and a fight
+	 * already past its five seconds must not get a second one because the pilot's
+	 * heat happened to dip.
+	 *
+	 * It latches whether or not the charge cost anything, so a lawful five seconds
+	 * (F7) cannot be run again inside the same fight; the world records nothing
+	 * for it, and `markAssaultCharged` says why that is the correct asymmetry.
 	 */
 	assaultCharged: boolean;
 	/** Whether any of this pilot's fire has landed on it at all (the hail's mark). */
@@ -232,13 +244,17 @@ export interface EngagementStep {
 	 */
 	firstHit: boolean;
 	/**
-	 * The frame the sustained-fire clock crosses `ASSAULT_FIRE_S`, once per
-	 * engagement. `false` on every other frame, and `false` forever once the
-	 * engagement was seeded with the charge already paid — which is the whole
-	 * reason the seed exists. What it costs is the law's (`legal.ts`), and
-	 * whether it costs anything at all is the target's standing's (F7).
+	 * The frame the sustained-fire clock crosses `ASSAULT_FIRE_S` — an **edge**,
+	 * true on exactly that frame and `false` on every other, and `false` forever
+	 * once the engagement was seeded with the charge already paid, which is the
+	 * whole reason the seed exists.
+	 *
+	 * **Named apart from `Engagement.assaultCharged` on purpose.** That field is
+	 * the latch, true forever after; this is the crossing, and a caller that read
+	 * the latch here would charge the offence on every frame of the rest of the
+	 * fight. One name for both is how that mistake gets written.
 	 */
-	assaultCharged: boolean;
+	assaultCrossed: boolean;
 }
 
 export function stepEngagement(
@@ -255,7 +271,7 @@ export function stepEngagement(
 	// Held, not reset, when nothing lands this frame. A pilot who breaks off to
 	// line up another shot has not un-done the seconds they already spent.
 	const landedFireS = engagement.landedFireS + (step.playerHit ? dt : 0);
-	const assaultCharged =
+	const assaultCrossed =
 		!engagement.assaultCharged && landedFireS >= ASSAULT_FIRE_S;
 	return {
 		engagement: {
@@ -263,14 +279,14 @@ export function stepEngagement(
 			flight: step.flight,
 			condition: step.condition,
 			landedFireS,
-			assaultCharged: engagement.assaultCharged || assaultCharged,
+			assaultCharged: engagement.assaultCharged || assaultCrossed,
 			struckOnce: engagement.struckOnce || step.playerHit,
 		},
 		returnFire: step.returnFire,
 		destroyed: step.destroyed,
 		hullStruck: step.condition.hull < engagement.condition.hull,
 		firstHit: step.playerHit && !engagement.struckOnce,
-		assaultCharged,
+		assaultCrossed,
 	};
 }
 

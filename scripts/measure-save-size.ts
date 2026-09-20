@@ -342,19 +342,44 @@ for (const row of rows)
  * save. Those are three different ceilings, and conflating two of them is the
  * mistake this version exists to stop.
  */
+/**
+ * The same tier with one list switched off, remembered.
+ *
+ * The bare arm exists only to be subtracted from the priced one, and building it
+ * is the cost of this whole script: T1 saturates all eight galaxies, and the
+ * charge list is priced at both T3 and T1, so an uncached version builds the
+ * heaviest world in the file twice for a subtraction.
+ */
+const bareTiers = new Map<string, Row>();
+const bareOf = (at: number, flag: "witnesses" | "charges"): Row => {
+	const key = `${at}|${flag}`;
+	const held = bareTiers.get(key);
+	if (held) return held;
+	const built = build({ ...TIERS[at], [flag]: false });
+	bareTiers.set(key, built);
+	return built;
+};
+
+/**
+ * What one saved list costs at one tier's bound.
+ *
+ * **The list is named once** (`list`), as both the flag that turns it off in the
+ * comparison arm and the column that counts what the priced arm holds. It was
+ * two parameters holding the same string, which is a function that lets a
+ * caller price the witness list by subtracting the charge list from it.
+ */
 const priceList = (
 	tier: string,
-	flag: "witnesses" | "charges",
-	key: "witnesses" | "charges",
+	list: "witnesses" | "charges",
 	noun: string,
 	headline: string,
 ) => {
 	const at = TIERS.findIndex((t) => t.name.startsWith(tier));
 	if (at < 0) return;
 	const full = rows[at];
-	const bare = build({ ...TIERS[at], [flag]: false });
+	const bare = bareOf(at, list);
 	const added = full.bytes - bare.bytes;
-	const held = full[key];
+	const held = full[list];
 	console.log(
 		`\n${headline}: ${held} ${noun}s add ${added} UTF-16 code units ` +
 			`(${added * 2} bytes) on top of the same tier's ${bare.bytes} — ` +
@@ -369,7 +394,6 @@ const priceList = (
 // list here is at exactly the bound H6 states: every berth in one galaxy.
 priceList(
 	"T4",
-	"witnesses",
 	"witnesses",
 	"berth",
 	"Witness list at H6's bound (T4, one galaxy, every berth)",
@@ -390,13 +414,11 @@ console.log(
 priceList(
 	"T3",
 	"charges",
-	"charges",
 	"carrier",
 	"Charge list at one galaxy's bound (T3, every Traffic carrier in it)",
 );
 priceList(
 	"T1",
-	"charges",
 	"charges",
 	"carrier",
 	"Charge list at the whole save's ceiling (T1, every carrier in all 8 galaxies)",

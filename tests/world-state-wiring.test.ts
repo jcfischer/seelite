@@ -42,7 +42,7 @@ const WRITERS = [
 	"withOffence",
 	// `legal.ts`'s witness write and its lazy clear (H6), through
 	// `setLegalWitnesses`. Also a writer by composition.
-	"settleWitnesses",
+	"settleIncident",
 	// `legal.ts`'s sustained-fire charge (#396), through `setLegalAssaulted`.
 	// A third writer by composition, and the one that had no row until this one.
 	"markAssaultCharged",
@@ -122,10 +122,15 @@ describe("the Game's world writes", () => {
 		// The key comes from the one derivation of it, not a spelling of it.
 		expect(earshot.slice(0, 400)).toContain("this.stationKey(");
 		expect(MAIN).toContain("private stationKey(station: Station): CarrierKey");
-		// Every charge names where the carrier stood. A default, or a call site
-		// that passed the player's own position, is the amendment quietly undone.
+		// Every charge names where the **carrier** stood. The fight is passed
+		// rather than a position plucked out at each call site, so the rule this
+		// assertion holds is where the earshot is measured *from* inside the
+		// charge: the victim's own row. A charge that read the player's position
+		// instead — through `world.ship` or a parameter default — is #396's
+		// amendment quietly undone, and it would still compile.
 		expect(MAIN.match(/this\.chargeTrafficOffence\(/g) ?? []).toHaveLength(3);
-		expect(charge.slice(0, 900)).toContain("victim: Vec3");
+		expect(charge.slice(0, 1600)).toContain("engagement.flight.ship.pos");
+		expect(charge.slice(0, 1600)).not.toContain("world.ship.pos");
 		// And the sustained-fire charge is marked written, not only priced.
 		const assault = MAIN.split("private assaultTrafficCarrier(")[1] ?? "";
 		expect(assault.slice(0, 900)).toContain("markAssaultCharged(");
@@ -149,8 +154,11 @@ describe("the Game's world writes", () => {
 		expect(MAIN).toContain("dockingRefusedByLaw(");
 		// And the helper they feed is the one that asks the law, not a field.
 		expect(MAIN).toContain("private refusedByLaw(");
-		// H6's clear has to run, not exist. One call, on the flight step.
-		expect(MAIN.match(/this\.settleWitnessList\(\);/g) ?? []).toHaveLength(1);
+		// H6's clear has to run, not exist. One call, on the flight step. It is
+		// named for what it settles — the incident, which since #396 is two lists
+		// — and this assertion follows it, so a rename that leaves the call site
+		// behind is red here rather than a clear nobody runs.
+		expect(MAIN.match(/this\.settleIncidentLists\(\);/g) ?? []).toHaveLength(1);
 	});
 
 	test("a cruise save is not handed its cruise velocity back", () => {

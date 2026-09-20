@@ -336,7 +336,7 @@ import {
 	heatAt,
 	legalStandingAt,
 	marginalOffenceHeat,
-	settleWitnesses,
+	settleIncident,
 	withOffence,
 	assaultCharged,
 	markAssaultCharged,
@@ -2011,7 +2011,7 @@ class Game {
 	 * to a system *within* a galaxy (`carrier-key.ts`), so the same key in the
 	 * next galaxy is a different carrier and a flat set would quietly refuse it
 	 * its hail. And the bucket is what an incident's ending can release in one
-	 * act — see `settleWitnessList`, where the guard expires on the law's own
+	 * act — see `settleIncidentLists`, where the guard expires on the law's own
 	 * reading of the same clock that clears the hearers and the charge list, so a
 	 * carrier the pilot let out of its incident hails again the next time it is
 	 * shot at rather than being mute for the rest of the session.
@@ -5539,7 +5539,7 @@ class Game {
 			// five seconds of fire still said it, and #396's legibility rule is
 			// about the pilot being told, not about the charge landing.
 			if (step.firstHit) this.hailTrafficCarrier(actor);
-			if (step.assaultCharged)
+			if (step.assaultCrossed)
 				this.assaultTrafficCarrier(actor, step.engagement);
 			if (step.destroyed) {
 				this.destroyTrafficCarrier(actor, step.engagement);
@@ -5719,10 +5719,11 @@ class Game {
 	 * transmitting, and `lastExit` says what it cost, which is the same form the
 	 * divert and the kill already use.
 	 *
-	 * **The charge is marked whatever it cost** (`legal.ts`'s reason). A target
-	 * whose rotation had turned it Wanted made it free, and a free charge spent is
-	 * still spent: re-running the clock because a six-hour rotation happened to
-	 * turn the citizen Clean afterwards would judge the same five seconds twice.
+	 * **A charge that cost nothing is not recorded.** The target's true standing
+	 * can make the five seconds lawful (F7), and a lawful act has no mark to
+	 * leave: the fight's own latch still lands, so the clock cannot cross twice
+	 * inside it, but the world keeps no record that would later discount a strike
+	 * the pilot was never billed 13 for.
 	 */
 	private assaultTrafficCarrier(actor: TrafficActor, engagement: Engagement) {
 		const record = this.world.system.record;
@@ -5734,13 +5735,22 @@ class Game {
 			"assault",
 			engagement,
 		);
-		this.commerceWorld = markAssaultCharged(
-			this.commerceWorld,
-			record.galaxy,
-			actor.key,
-			now,
-		);
-		this.saveDirty();
+		// **Only a charge that cost anything is recorded**: the guard is here so a
+		// free act does not dirty the save for a write that will not happen, and
+		// `markAssaultCharged` refuses the zero anyway, because the invariant
+		// belongs to the module that owns the list. A mark for a lawful five
+		// seconds would discount a later strike against a carrier whose rotation
+		// has since turned it Clean.
+		if (heat > 0) {
+			this.commerceWorld = markAssaultCharged(
+				this.commerceWorld,
+				record.galaxy,
+				actor.key,
+				heat,
+				now,
+			);
+			this.saveDirty();
+		}
 		this.lastExit =
 			heat > 0
 				? `${actor.callsign} — sustained fire on a citizen, and that is an offence`
@@ -6341,20 +6351,20 @@ class Game {
 	/**
 	 * H6's lazy clear, run from the flight step.
 	 *
-	 * **Cheap by construction.** `settleWitnesses` hands back the same world when
+	 * **Cheap by construction.** `settleIncident` hands back the same world when
 	 * the list is empty — which is every frame of a lawful pilot's every session —
 	 * so the copy and the dirty-mark happen only on the one frame a Wanted period
 	 * finally decays out of. Nothing else reads the list below Wanted, so nothing
 	 * waits on this: it is H6's bound on the list's size, not a behaviour.
 	 */
-	private settleWitnessList() {
+	private settleIncidentLists() {
 		const galaxy = this.world.system.record.galaxy;
 		const before = this.commerceWorld;
-		this.commerceWorld = settleWitnesses(before, galaxy, this.world.gameTime);
+		this.commerceWorld = settleIncident(before, galaxy, this.world.gameTime);
 		if (this.commerceWorld !== before) this.saveDirty();
 		// **The hail guard expires on the law's own reading, and not as a side
 		// effect of the write above.** Those are different conditions:
-		// `settleWitnesses` returns the *same* world whenever both lists are
+		// `settleIncident` returns the *same* world whenever both lists are
 		// already empty — which is the ordinary case of a pilot who grazed a
 		// citizen, was hauled over the coals for it, and never filed a hearer or
 		// a charge — and a guard keyed to the write would then outlive the
@@ -10498,7 +10508,7 @@ class Game {
 		// states, which come after it and return — so the clear happens whether or
 		// not the pilot is flying, and it costs one array length on the frames
 		// where there is nothing to clear.
-		this.settleWitnessList();
+		this.settleIncidentLists();
 		// **§12's three states come first, and they return.** E5 suspends
 		// flight: the throttle, the stick and the docking computer are all
 		// inert, so none of the input handling below runs — and neither does

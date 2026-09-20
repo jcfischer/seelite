@@ -294,8 +294,8 @@ export interface KnowledgeRow {
  * projection and must not be saved.
  *
  * **`witnesses` is the third member, and it is saved rather than derived
- * because nothing it can be derived from is saved** (#366 H6). The frame body an
- * offence happened beside is where the pilot was at one instant of a session;
+ * because nothing it can be derived from is saved** (#366 H6). Which berths were
+ * in earshot is where the *victim* stood at one instant of a session;
  * session-only hostility lets a reload or a jump out and back clear what decay
  * is meant to clear. It holds each station at most once — `legal.ts`'s write
  * keeps it so — and it is empty far more often than not, which is why

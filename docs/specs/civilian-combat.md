@@ -218,13 +218,18 @@ assault then reports as costing nothing, having forgotten which of the two it is
 looking at. `tests/legal.test.ts` holds the interval, so a retune that leaves it
 is a red run rather than a quiet change in what the law is.
 
-**Why five seconds.** `ASSAULT_FIRE_S` is a third of the ~17.6 s an unbroken
-beam takes to open one facing of a freighter — a figure with an instrument behind
-it rather than a remembered one: `probe-witnesses.mjs` holds exactly that beam
-and prints how long the facing lasted (`strike.secondsToDivert`; 176 frames at
-`MAX_DT` on seed 42), and #395's receipt reached the same number from the other
-side. So the charge lands while the shields are still two-thirds up: the pilot is charged for what they did to a citizen, not
-for how long it took the gun to get through the armour. The clock **holds across
+**Why five seconds.** `ASSAULT_FIRE_S` is 28% of the **17.7 s of landed fire** an
+unbroken beam takes to open one facing of a freighter — a figure with an
+instrument behind it rather than a remembered one. `probe-witnesses.mjs` holds
+exactly that beam and carries both durations in its strike row: `landedFireAtDivert`
+is the one this clock counts, and `secondsToDivert` is wall clock. The run that
+shipped this read **17.6 s of clock against 17.7 s of landed fire**, which agree
+because a probe tethered 1.2 km off a target's quarter misses nothing; a share
+taken across the two quantities would be a share between unlike things, so the
+landed figure is the denominator. #395's receipt reached the same number from the
+other side. So the charge lands with the better part of the facing's armour still
+between the pilot and the hull: the pilot is charged for what they did to a
+citizen, not for how long it took the gun to get through the armour. The clock **holds across
 the gaps** — it counts fire that *landed*, and a pilot who breaks off to line up
 again has not un-done the seconds already spent. A clock that reset between hits
 would make the charge a marksmanship test and hand one who jinks a discount on
@@ -330,8 +335,14 @@ witnesses, arrives by the same door, is omitted by `canonicalEnvelope` when empt
 for the same hash reason as the witnesses, is cleared by the same read below
 Wanted, and holds each carrier at most once per galaxy. Its bound is the
 galaxy's Traffic rather than its berths, which is a longer list, and
-`measure-save-size.ts` prices that in its ceiling tiers rather than leaving it
-argued.
+`measure-save-size.ts` prices both of its bounds rather than leaving it argued:
+145.5 KiB at one galaxy's Traffic, 1 123 KiB at the whole save's ceiling.
+**It records a charge, so a charge that cost nothing leaves no mark** — a free
+rung (F7's lawful target) must not sit in the row discounting the next strike on
+that carrier by 13 the pilot was never billed. What stops the same five seconds
+being run twice inside one fight is the engagement's own latch, which lands
+whatever the crossing cost; the saved list exists to carry that latch across a
+reload, and a reload into a lawful act has nothing to carry.
 
 **One clear ends the incident, and it takes both lists.** "Once per carrier per
 incident" needs an ending, and the law's only ending is decay: clearing the
@@ -670,8 +681,8 @@ Each is amended in the change that builds it, not ahead of it.
 
 ## Scope
 
-This builds civilian combat and its legal consequence. It does not build
-faction simulation, bounty economics, the job catalogue, the scan verb or the
+This builds civilian combat and its legal consequence. It does not build faction
+simulation, the job catalogue and what a lawful kill pays, the scan verb or the
 name draw — the last two are #364's, shipped beside this node's standing rather
 than inside it. It does not reopen the request contract, the law model, the
 combat model or `carrier-identity.md`'s F1–F12, the lootable manifest included.
