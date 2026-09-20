@@ -700,29 +700,24 @@ try {
 			!/deliver/i.test(deliverLabel),
 		deliverLabel,
 	);
+	const deliverHint = await deliverButton
+		.locator("[data-live-request-hint]")
+		.innerText();
 	check(
 		"and the control itself says the goods are aboard and not the pilot's",
-		/aboard/i.test(
-			await deliverButton.locator("[data-live-request-hint]").innerText(),
-		) &&
-			/requester/i.test(
-				await deliverButton.locator("[data-live-request-hint]").innerText(),
-			),
-		await deliverButton.locator("[data-live-request-hint]").innerText(),
+		/aboard/i.test(deliverHint) && /requester/i.test(deliverHint),
+		deliverHint,
 	);
 	await page.screenshot({ path: `${out}/02b-hand-over.png` });
 
 	await click("deliver");
+	const handOver = await page
+		.locator("[data-live-station-console] .lc-request-message")
+		.innerText();
 	check(
 		"the hand-over says the goods were the requester's, not a sale",
-		/handed over/i.test(
-			await page
-				.locator("[data-live-station-console] .lc-request-message")
-				.innerText(),
-		),
-		await page
-			.locator("[data-live-station-console] .lc-request-message")
-			.innerText(),
+		/handed over/i.test(handOver),
+		handOver,
 	);
 	check(
 		"delivering at the report station satisfies the objective",

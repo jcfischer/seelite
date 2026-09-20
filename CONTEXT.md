@@ -324,7 +324,15 @@ _Avoid_: Target position (before identification)
 
 **Entrusted cargo**:
 Requester-owned goods carried in the pilot's hold for a request. `docs/specs/missions-and-requests.md` §4 owns hold usage, sale restrictions and return/loss settlement.
-_Avoid_: Player cargo, reward cargo
+
+**The pilot *hands over* a consignment; they *deliver* goods of their own.**
+In this game **Deliver** is an instruction to supply something, so a control
+reading `Deliver 8 t Food` over cargo the pilot is already carrying sent one
+shopping (#446) — `deliverAction` in `src/requests-view.ts` owns both labels
+and `tests/requests-view.test.ts` holds the entrusted one against
+`/deliver/i`. The same distinction runs through the in-flight cue (*carried*
+against *sourced*) and the settlement.
+_Avoid_: Player cargo, reward cargo, Deliver (of a consignment already aboard)
 
 **System relay**:
 The public station-condition report received when the initial world is

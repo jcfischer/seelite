@@ -8,7 +8,6 @@
  */
 import type { HoldSummary } from "./hold";
 import {
-	type AcceptedRequest,
 	isAcceptedRequest,
 	nextAction,
 	type RequestOffer,
@@ -51,7 +50,9 @@ export function deliverAction(
 			// not need.
 			label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
 			hint: short
-				? `${aboardT} t of ${offer.tonnes} aboard — the consignment is not aboard`
+				? aboardT > 0
+					? `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`
+					: "the consignment is not aboard"
 				: "aboard since you accepted — the requester's",
 			enabled: !short,
 		};
@@ -64,39 +65,6 @@ export function deliverAction(
 	};
 }
 
-/**
- * What a settled job reports (#446).
- *
- * The report paid and the manifest never appeared, so **a delivery and a sale
- * looked identical from the cockpit**. Three facts a pilot cannot otherwise
- * see: what left the hold, what it paid, and what of theirs is still aboard.
- *
- * Composed here rather than in `main.ts` so the words have rows, and fed from
- * `main.ts` rather than read from the view — #411's round 2 stripped this
- * projection of commerce inputs deliberately, and `remainingT` arrives as a
- * number rather than as a commander.
- */
-export function settlementMessage(settled: {
-	tonnes: number;
-	goodName: string;
-	entrusted: boolean;
-	rewardCr: number;
-	/** The pilot's **own** tonnage of that good after the job settled. */
-	remainingT: number;
-}): string {
-	const moved = settled.entrusted
-		? `${settled.tonnes} t ${settled.goodName} handed over`
-		: `${settled.tonnes} t ${settled.goodName} delivered from your hold`;
-	// A remainder of zero is a sentence, not a figure: `0 t Food still aboard`
-	// is a line about cargo that is not there, which is #443's zeroed
-	// entrusted clause one screen along.
-	const left =
-		settled.remainingT > 0
-			? `${settled.remainingT} t ${settled.goodName} still aboard, yours`
-			: `no ${settled.goodName} left aboard`;
-	return `Reported · ${moved}, ${settled.rewardCr} Cr paid · ${left}.`;
-}
-
 export interface RequestsView {
 	state: RequestsState;
 	offers: RequestOffer[];
@@ -106,14 +74,17 @@ export interface RequestsView {
 	now: number;
 	docked: RequestStation | null;
 	/**
-	 * What is aboard (#443's projection), for the one thing this screen cannot
-	 * answer on its own: how much of a **procurement** job's good the pilot
-	 * already has.
+	 * What is aboard — #443's projection, and the only input this screen takes
+	 * about the commander.
 	 *
-	 * #411's round 2 stripped this view of commerce inputs on purpose, and this
-	 * is not one of them — it is the same summary the trade screen's hold line
-	 * and the till's `cargo-full` sentence read, so the Deliver control cannot
-	 * disagree with either. `null` where no hold has been supplied.
+	 * **A number per offer would have done**, and was considered: `aboardFor`
+	 * is the one reader. The summary is passed instead because both arms of it
+	 * need one — the requester's lot for a consignment and the pilot's own
+	 * tonnage for a procurement job — and threading two numbers per rendered
+	 * offer through the descriptor is the second authority this is here to
+	 * avoid. No credits, no prices, no market: those stay out.
+	 *
+	 * `null` where no hold was supplied, which reads as nothing aboard.
 	 */
 	hold: HoldSummary | null;
 }
@@ -130,32 +101,42 @@ const button = (
 	id: string,
 	label: string,
 	extra: { hint?: string; enabled?: boolean } = {},
-) =>
-	`<button type="button" class="lc-request-action" data-live-request-action="${action}" data-live-request-id="${esc(id)}"${extra.enabled === false ? " disabled" : ""}${extra.hint ? ` title="${esc(extra.hint)}"` : ""}>${esc(label)}${extra.hint ? `<small class="lc-request-hint" data-live-request-hint>${esc(extra.hint)}</small>` : ""}</button>`;
+) => {
+	// `action` is escaped too. Every caller passes a literal today, so nothing
+	// is reachable; an unescaped attribute slot beside three escaped ones is a
+	// footgun for the next caller, and `esc` covers `"` and `'`.
+	const disabled = extra.enabled === false ? " disabled" : "";
+	const title = extra.hint ? ` title="${esc(extra.hint)}"` : "";
+	const hint = extra.hint
+		? `<small class="lc-request-hint" data-live-request-hint>${esc(extra.hint)}</small>`
+		: "";
+	return `<button type="button" class="lc-request-action" data-live-request-action="${esc(action)}" data-live-request-id="${esc(id)}"${disabled}${title}>${esc(label)}${hint}</button>`;
+};
 
 /**
  * How much of this job's good is aboard, for the job's own sense of aboard.
  *
- * An entrusted consignment's tonnage is the requester's lot of the current
- * acceptance; a procurement job's is the pilot's own cargo of that good, off
- * #443's projection rather than a second scan.
+ * **Both arms read `hold`, which is the point.** The first pass aggregated
+ * `state.entrustedByLotId` here for the entrusted case, which made the claim
+ * that the button and the till answer from one projection true of half of it:
+ * `hold.ts` owns the entrusted share (CONTEXT.md §Language, **Hold**), and a
+ * second sum in the view is a second authority on what is aboard.
+ *
+ * `null` where no hold was supplied, which reads as nothing aboard and leaves
+ * the control disabled with a hint that says how short — the safe direction,
+ * and the reason `tests/requests-view.test.ts` flies it.
  */
-const aboardFor = (
-	view: RequestsView,
+export const aboardFor = (
+	view: Pick<RequestsView, "hold">,
 	offer: RequestOffer,
-	request?: AcceptedRequest,
 ): number =>
-	offer.entrusted
-		? Object.values(view.state.entrustedByLotId)
-				.filter(
-					(lot) =>
-						lot.offerId === offer.id &&
-						(!request || lot.issuedOrdinal === request.acceptanceOrdinal),
-				)
-				.reduce((sum, lot) => sum + lot.aboardT, 0)
-		: (view.hold?.lines.find(
-				(line) => line.owner === "pilot" && line.goodName === offer.goodName,
-			)?.amount ?? 0);
+	(view.hold?.lines ?? [])
+		.filter((line) =>
+			offer.entrusted
+				? line.owner === "requester" && line.offerId === offer.id
+				: line.owner === "pilot" && line.goodName === offer.goodName,
+		)
+		.reduce((sum, line) => sum + line.amount, 0);
 export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
@@ -173,7 +154,7 @@ export const REQUESTS_STYLE = `
 .lc-request-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .lc-request-action { padding: 9px 13px; border: 1px solid #bb7e36; background: #422607; color: #fff0c9; font: inherit; cursor: pointer; }
 .lc-request-action:disabled { cursor: not-allowed; opacity: .55; }
-.lc-request-hint { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; }
+.lc-request-hint { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; pointer-events: none; }
 .lc-request-message { color: #b8dfa9; min-height: 18px; }
 .lc-request-fixtures { margin-top: 24px; padding-top: 12px; border-top: 1px dashed #735432; color: #c7a882; font-size: 11px; }
 .lc-request-fixtures .lc-request-action { font-size: 11px; background: #21190f; }
@@ -268,7 +249,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				// served both families, so a consignment already aboard read as
 				// a shopping list — and `esc` was applied to the good's name
 				// here and again by `button`, which double-escaped it.
-				const deliver = deliverAction(o, aboardFor(view, o, r));
+				const deliver = deliverAction(o, aboardFor(view, o));
 				actions += button("deliver", o.id, deliver.label, {
 					hint: deliver.hint,
 					enabled: deliver.enabled,

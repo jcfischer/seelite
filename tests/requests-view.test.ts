@@ -14,32 +14,47 @@
  */
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
-import { deliverAction, settlementMessage } from "../src/requests-view";
+import { aboardFor, deliverAction } from "../src/requests-view";
 import { nextAction } from "../src/requests";
-import { readFileSync } from "node:fs";
-import { firstOffer } from "./helpers/job-board";
+import type { HoldSummary } from "../src/hold";
+import { recordTrade } from "../src/deficits";
+import {
+	boardAt,
+	firstOffer,
+	postingStations,
+	stationKeyOf,
+} from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 const COURIER = firstOffer(SYSTEMS, "courier").offer;
 
 /**
- * A procurement offer, from the courier with its family flipped.
+ * A **real** procurement offer, bound the way `tests/jobs.test.ts` binds one.
  *
- * **Not a shortcut around the binder.** A real procurement offer needs a live
- * deficit at the posting station — `tests/jobs.test.ts` binds one that way and
- * is where the *binder* is checked. What this file checks is a string builder
- * whose only inputs are `entrusted`, `tonnes` and `goodName`, and the row
- * below pins that the two families really do differ on the first of those, so
- * a flipped flag is the same input a bound offer would supply. Reaching for
- * the binder here would be checking `bindProcurement` twice and these words
- * once.
+ * The first pass flipped the courier's `entrusted` flag and called a substring
+ * scan of `jobs.ts` its control — a row that passes if both literals appear
+ * anywhere in that file, including in a comment, and that cannot see which
+ * family carries which. `bindProcurement` needs a live deficit at the posting
+ * station, so this plants one, and the fixture is then the thing itself.
  */
-const PROCUREMENT = {
-	...COURIER,
-	entrusted: false,
-	goodName: "Textiles",
-	tonnes: 5,
-};
+const PROCUREMENT = (() => {
+	for (const record of SYSTEMS) {
+		for (const station of postingStations(record)) {
+			const deficits = recordTrade({}, stationKeyOf(record, station), {
+				goodName: "Food",
+				units: 20,
+				gameTimeMin: 120,
+				holdT: 20,
+			});
+			const offer = boardAt(SYSTEMS, record, station, {
+				deficits,
+				gameTimeMin: 120,
+			}).find((o) => o.family === "procurement");
+			if (offer) return offer;
+		}
+	}
+	throw new Error("no procurement offer could be bound");
+})();
 
 describe("the action says whose goods it moves", () => {
 	test("an entrusted consignment is handed over, never supplied", () => {
@@ -72,17 +87,14 @@ describe("the action says whose goods it moves", () => {
 		);
 	});
 
-	test("the catalogue really does flip that flag between the families", () => {
-		// The control for the fixture above: `jobs.ts` declares `entrusted:
-		// true` on the courier row and `false` on the procurement one, so a
-		// flipped flag is the input a bound offer supplies.
+	test("both fixtures are bound offers, and they carry opposite flags", () => {
+		// The control, on the objects rather than on the text of the module
+		// that made them: these are what `bindCourier` and `bindProcurement`
+		// actually produce.
+		expect(COURIER.family).toBe("courier");
 		expect(COURIER.entrusted).toBe(true);
-		const source = readFileSync(
-			new URL("../src/jobs.ts", import.meta.url),
-			"utf8",
-		);
-		expect(source).toContain("entrusted: true");
-		expect(source).toContain("entrusted: false");
+		expect(PROCUREMENT.family).toBe("procurement");
+		expect(PROCUREMENT.entrusted).toBe(false);
 	});
 
 	test("a short hold says how short, and the control is not live", () => {
@@ -100,14 +112,102 @@ describe("the action says whose goods it moves", () => {
 		expect(short.hint).toMatch(/not aboard/);
 	});
 
-	test("nothing in the label or the hint is markup", () => {
-		// `requestsBody` escapes what it renders; this builder hands it text.
-		for (const offer of [COURIER, PROCUREMENT])
-			for (const aboard of [0, 3, offer.tonnes]) {
-				const action = deliverAction(offer, aboard);
-				expect(action.label).not.toMatch(/[<>]/);
-				expect(action.hint).not.toMatch(/[<>]/);
-			}
+	test("the builder is a pass-through, and escaping is the renderer's", () => {
+		// The row this replaced asserted the label carried no `<` over
+		// fixtures whose goods are `Food` and `Alloys` — true because of the
+		// inputs, not because of anything this builder does. The contract is
+		// the opposite one and it is worth pinning: the text arrives verbatim,
+		// and `button()` escapes it on the way into markup.
+		const odd = deliverAction({ ...COURIER, goodName: "Fo<o>d" }, 99);
+		expect(odd.label).toContain("Fo<o>d");
+	});
+
+	test("a partial consignment says how much of it is aboard", () => {
+		// "3 t of 8 aboard — the consignment is not aboard" contradicted
+		// itself, which is the mixed signal this node exists to remove.
+		const partial = deliverAction(COURIER, 3);
+		expect(partial.hint).toBe(
+			`only 3 t of the ${COURIER.tonnes} t consignment aboard`,
+		);
+		expect(partial.enabled).toBe(false);
+	});
+});
+
+describe("what is aboard comes off the hold projection, not a second scan", () => {
+	const summary = (lines: HoldSummary["lines"]): HoldSummary => ({
+		usedT: 0,
+		capacityT: 20,
+		freeT: 20,
+		entrustedT: 0,
+		lines,
+	});
+
+	test("a procurement job reads the pilot's own tonnage of the good", () => {
+		expect(
+			aboardFor(
+				{
+					hold: summary([
+						{
+							goodName: PROCUREMENT.goodName,
+							amount: 3,
+							unit: "t",
+							owner: "pilot",
+						},
+					]),
+				},
+				PROCUREMENT,
+			),
+		).toBe(3);
+	});
+
+	test("a requester's line of the same good is not the pilot's", () => {
+		// The defect this catches is a one-word slip: `owner === "requester"`
+		// on the procurement arm would count someone else's cargo as the
+		// pilot's and enable a control the till then refuses.
+		expect(
+			aboardFor(
+				{
+					hold: summary([
+						{
+							goodName: PROCUREMENT.goodName,
+							amount: 8,
+							unit: "t",
+							owner: "requester",
+							offerId: "some-other-job",
+						},
+					]),
+				},
+				PROCUREMENT,
+			),
+		).toBe(0);
+	});
+
+	test("a consignment reads its own lot and no other job's", () => {
+		const lines: HoldSummary["lines"] = [
+			{
+				goodName: COURIER.goodName,
+				amount: COURIER.tonnes,
+				unit: "t",
+				owner: "requester",
+				offerId: COURIER.id,
+			},
+			{
+				goodName: COURIER.goodName,
+				amount: 4,
+				unit: "t",
+				owner: "requester",
+				offerId: "another-job",
+			},
+			{ goodName: COURIER.goodName, amount: 2, unit: "t", owner: "pilot" },
+		];
+		expect(aboardFor({ hold: summary(lines) }, COURIER)).toBe(COURIER.tonnes);
+	});
+
+	test("no hold reads as nothing aboard, which disables rather than enables", () => {
+		expect(aboardFor({ hold: null }, COURIER)).toBe(0);
+		expect(
+			deliverAction(COURIER, aboardFor({ hold: null }, COURIER)).enabled,
+		).toBe(false);
 	});
 });
 
@@ -135,50 +235,5 @@ describe("the in-flight cue carries the same distinction", () => {
 		const cue = nextAction(accepted(PROCUREMENT));
 		expect(cue).toMatch(/[Ss]ource/);
 		expect(cue).not.toMatch(/aboard/);
-	});
-});
-
-describe("the settlement says what moved", () => {
-	test("a hand-over names the tonnes, the pay and what is left of the pilot's", () => {
-		expect(
-			settlementMessage({
-				tonnes: 8,
-				goodName: "Food",
-				entrusted: true,
-				rewardCr: 180,
-				remainingT: 8,
-			}),
-		).toBe(
-			"Reported · 8 t Food handed over, 180 Cr paid · 8 t Food still aboard, yours.",
-		);
-	});
-
-	test("a procurement settlement says the goods were the pilot's", () => {
-		expect(
-			settlementMessage({
-				tonnes: 5,
-				goodName: "Textiles",
-				entrusted: false,
-				rewardCr: 90,
-				remainingT: 0,
-			}),
-		).toBe(
-			"Reported · 5 t Textiles delivered from your hold, 90 Cr paid · no Textiles left aboard.",
-		);
-	});
-
-	test("an empty remainder is a sentence rather than a zero", () => {
-		// `0 t Food still aboard, yours` is a line about cargo that is not
-		// there, which is the same reading-as-a-bug problem #443 met with a
-		// zeroed entrusted clause.
-		expect(
-			settlementMessage({
-				tonnes: 8,
-				goodName: "Food",
-				entrusted: true,
-				rewardCr: 180,
-				remainingT: 0,
-			}),
-		).toContain("no Food left aboard");
 	});
 });

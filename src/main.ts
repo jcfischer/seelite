@@ -544,7 +544,7 @@ import {
 	bindJobs,
 	deliveryCandidates,
 } from "./jobs";
-import { type RequestsView, settlementMessage } from "./requests-view";
+import type { RequestsView } from "./requests-view";
 import {
 	type CommanderRecord,
 	type SaveEnvelope,
@@ -11910,7 +11910,6 @@ class Game {
 			);
 			this.requestMessage = result.message;
 			if (result.ok) {
-				const terms = this.requests.byId[id]?.terms ?? null;
 				this.requests = result.state;
 				if (result.rewardCr)
 					this.commander = {
@@ -11948,31 +11947,6 @@ class Game {
 						this.world.gameTime,
 					);
 				}
-				// **What the settlement moved** (#446). The report pays and the
-				// manifest never appeared, so a delivery and a sale looked
-				// identical from the cockpit. Composed here, where the
-				// commander lives — the view is a projection and #411's round 2
-				// stripped it of commerce inputs deliberately — and worded by
-				// `settlementMessage`, which has rows.
-				//
-				// `terms` is read **before** the state is replaced, because a
-				// completed request keeps its terms but a caller reaching for
-				// them after the swap would be reading the new journal for a
-				// fact about the old one.
-				if (action === "report" && terms)
-					this.requestMessage = settlementMessage({
-						tonnes: terms.tonnes,
-						goodName: terms.goodName,
-						entrusted: terms.entrusted,
-						rewardCr: result.rewardCr,
-						// The pilot's **own** tonnage after the job settled, off
-						// the same projection the Deliver control read.
-						remainingT:
-							holdSummary(this.commander, this.requests).lines.find(
-								(line) =>
-									line.owner === "pilot" && line.goodName === terms.goodName,
-							)?.amount ?? 0,
-					});
 				// A settled job changes what this requester posts next, and the
 				// console revision below is what the board's cache key reads.
 				this.stationConsoleRevision += 1;

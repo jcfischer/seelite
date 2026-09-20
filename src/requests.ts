@@ -143,6 +143,37 @@ export function settledAt(
 	return out;
 }
 
+/**
+ * What a settled job reports (#446).
+ *
+ * Three facts a pilot cannot otherwise see: what left the hold, what it paid,
+ * and what of theirs is still aboard. **Here rather than in the view**, and
+ * that is a correction rather than a preference — the first pass composed it
+ * in `main.ts` on top of the message this module already returned, which left
+ * `requestAction`'s own report string reaching no screen at all. One module
+ * owns the sentence, and it is the one that knows the job settled.
+ */
+export function settlementMessage(settled: {
+	tonnes: number;
+	goodName: string;
+	entrusted: boolean;
+	rewardCr: number;
+	/** The pilot's **own** tonnage of that good at the moment of the report. */
+	remainingT: number;
+}): string {
+	const moved = settled.entrusted
+		? `${settled.tonnes} t ${settled.goodName} handed over`
+		: `${settled.tonnes} t ${settled.goodName} delivered from your hold`;
+	// A remainder of zero is a sentence, not a figure: `0 t Food still aboard`
+	// is a line about cargo that is not there, which is #443's zeroed
+	// entrusted clause one screen along.
+	const left =
+		settled.remainingT > 0
+			? `${settled.remainingT} t ${settled.goodName} still aboard, yours`
+			: `no ${settled.goodName} left aboard`;
+	return `Reported · ${moved}, ${settled.rewardCr} Cr paid · ${left}.`;
+}
+
 export function nextAction(r: AcceptedRequest): string {
 	if (r.status === "ready-to-report")
 		return `Dock at ${r.terms.reportName} and Report`;
@@ -404,7 +435,18 @@ export function requestAction(
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			`Report accepted · ${terms.rewardCr} Cr paid.`,
+			// **What the settlement moved** (#446). The report paid `N Cr` and
+			// the manifest never appeared, so a delivery and a sale looked
+			// identical from the cockpit. The remainder is read off `ctx.cargo`,
+			// which is the pilot's own hold at the moment of the report — the
+			// delivery's delta has already been applied by then.
+			settlementMessage({
+				tonnes: terms.tonnes,
+				goodName: terms.goodName,
+				entrusted: terms.entrusted,
+				rewardCr: terms.rewardCr,
+				remainingT: ctx.cargo[terms.goodName] ?? 0,
+			}),
 			{
 				rewardCr: terms.rewardCr,
 				// §4's mark lands exactly here, with the settlement, so a repeated

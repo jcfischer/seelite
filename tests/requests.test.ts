@@ -19,6 +19,7 @@ import {
 	entrustedTonnesAboard,
 	requestAction,
 	settledAt,
+	settlementMessage,
 } from "../src/requests";
 import { generateContents } from "../src/system";
 
@@ -120,6 +121,11 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(delivered.ok).toBe(true);
 		// Nothing of the pilot's is asked for, so nothing is taken.
 		expect(delivered.cargoDelta).toEqual({});
+		// **And the mark is counted, not merely valued.** Asserting only the
+		// figure on the report leaves a second −8 t write at deliver green,
+		// which is the shape of the double-spend the node was reported as.
+		expect(delivered.mark).toBeNull();
+		expect(delivered.rewardCr).toBe(0);
 		// And the requester's lot is gone exactly once.
 		expect(entrustedTonnesAboard(delivered.state)).toBe(0);
 		const reported = requestAction(
@@ -390,5 +396,50 @@ describe("§3 — a reaccept cannot restore a satisfied objective", () => {
 		expect(reaccepted.ok).toBe(true);
 		expect(Object.values(reaccepted.state.entrustedByLotId).length).toBe(1);
 		expect(entrustedTonnesAboard(reaccepted.state)).toBe(courier.tonnes);
+	});
+});
+
+describe("the settlement says what moved", () => {
+	test("a hand-over names the tonnes, the pay and what is left of the pilot's", () => {
+		expect(
+			settlementMessage({
+				tonnes: 8,
+				goodName: "Food",
+				entrusted: true,
+				rewardCr: 180,
+				remainingT: 8,
+			}),
+		).toBe(
+			"Reported · 8 t Food handed over, 180 Cr paid · 8 t Food still aboard, yours.",
+		);
+	});
+
+	test("a procurement settlement says the goods were the pilot's", () => {
+		expect(
+			settlementMessage({
+				tonnes: 5,
+				goodName: "Textiles",
+				entrusted: false,
+				rewardCr: 90,
+				remainingT: 0,
+			}),
+		).toBe(
+			"Reported · 5 t Textiles delivered from your hold, 90 Cr paid · no Textiles left aboard.",
+		);
+	});
+
+	test("an empty remainder is a sentence rather than a zero", () => {
+		// `0 t Food still aboard, yours` is a line about cargo that is not
+		// there, which is the same reading-as-a-bug problem #443 met with a
+		// zeroed entrusted clause.
+		expect(
+			settlementMessage({
+				tonnes: 8,
+				goodName: "Food",
+				entrusted: true,
+				rewardCr: 180,
+				remainingT: 0,
+			}),
+		).toContain("no Food left aboard");
 	});
 });
