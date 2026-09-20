@@ -465,8 +465,11 @@ export interface RefusalHold {
  * #443's own case is the whole argument: 11 t sold into a 20 t hull reads as a
  * broken till until the sentence names the 8 t consignment sitting in it.
  */
-const entrustedClause = (hold: RefusalHold): string =>
-	hold.entrustedT > 0 ? `, with ${hold.entrustedT} t entrusted to a job` : "";
+export const entrustedClause = (
+	entrustedT: number,
+	lead: string,
+	tail = "",
+): string => (entrustedT > 0 ? `${lead}${entrustedT} t entrusted${tail}` : "");
 
 /**
  * One sentence per refusal, keyed by the union itself.
@@ -481,13 +484,21 @@ const entrustedClause = (hold: RefusalHold): string =>
  * carries figures, because it is the one a pilot cannot otherwise work out —
  * the hold is a hull's number, a bay's number and a job's lot, and only two of
  * those three are ever on a screen.
+ *
+ * **`freeT` may be negative and the sentence says so.** The till buys a tonne
+ * per press, so the ordinary way to meet this refusal is at zero free — but
+ * `HoldSummary.freeT` is deliberately unfloored, because an over-capacity hold
+ * is exactly the state a pilot most needs told. A sentence reading *"No room —
+ * -10 t free of 20"* is the projection showing through rather than a formatting
+ * fault, and `tests/station-console.test.ts` pins it rather than leaving a
+ * claim that it cannot happen.
  */
 const REFUSAL_SENTENCES: Record<
 	CommerceRefusal,
 	(hold: RefusalHold) => string
 > = {
 	"cargo-full": (hold) =>
-		`No room — ${hold.freeT} t free of ${hold.capacityT}${entrustedClause(hold)}.`,
+		`No room — ${hold.freeT} t free of ${hold.capacityT}${entrustedClause(hold.entrustedT, ", with ", " to a job")}.`,
 	"cargo-missing": () => "None of that aboard.",
 	"commodity-sell-only": () =>
 		"Salvage — this station buys it, never sells it.",

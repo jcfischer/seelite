@@ -425,8 +425,13 @@ try {
 					el.querySelector("[data-live-shelf]")?.textContent ?? "",
 				),
 		);
+		// **One shape on every arm.** Three different ones let the step after
+		// this read `filled.cargo` off an object that never carried it — safe
+		// only because `check` throws, which is a guarantee living in another
+		// function.
+		const fail = (why) => ({ was, good: null, cargo: was.cargo, why });
 		const good = row?.getAttribute("data-live-market-row") ?? null;
-		if (!good) return { was, good: null };
+		if (!good) return fail("no listed tonne good with a buy control");
 		// **The free tonnage is read off the glass, and that does not make the
 		// check below adversarial.** A hold line understating free by a constant
 		// is filled with the understated amount and re-read through the same
@@ -437,11 +442,13 @@ try {
 		const line =
 			document.querySelector("[data-live-station-hold]")?.textContent ?? "";
 		const freeWas = Number(/(-?\d+) t free/.exec(line)?.[1] ?? Number.NaN);
-		if (!Number.isFinite(freeWas)) return { was, good: null, line };
+		if (!Number.isFinite(freeWas))
+			return fail(`no free tonnage in the hold line: ${line}`);
 		return {
 			was,
 			good,
 			freeWas,
+			why: null,
 			// Top up rather than replace: the pilot may already hold this good,
 			// and overwriting it would land the hold short of full and redden
 			// the next check for a reason that has nothing to do with the build.

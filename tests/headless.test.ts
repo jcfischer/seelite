@@ -335,8 +335,8 @@ test("station-commerce, requests and market do not import src/hold.ts", () => {
 	//
 	// **Only those three.** Modules *above* the projection read it freely —
 	// `main.ts` calls `holdSummary` and `live-cockpit.ts` names `HoldSummary`
-	// as a type — and this row said "nothing imports it" for one review round
-	// while the same diff added two such imports.
+	// as a type — so the rule is one-directional and this row's title names the
+	// direction it holds.
 	//
 	// Asserted on the source of the three modules it reads, rather than on a
 	// module graph, for the reason every check in this file is: the failure is a

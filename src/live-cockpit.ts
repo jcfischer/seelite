@@ -40,7 +40,7 @@ import type {
 	ConsoleMarketRow,
 	StationConsoleTab,
 } from "./station-console";
-import { priceLabel, signedDelta } from "./station-console";
+import { entrustedClause, priceLabel, signedDelta } from "./station-console";
 import { padHintFor } from "./pad-bindings";
 import type { LaneRefusal } from "./station-traffic";
 import {
@@ -379,7 +379,10 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
    is, and it is the colour the held launch already uses. An empty live region
    is collapsed rather than left as a gap above the rows. */
 .lc-station-message { margin: 4px 0 0; color: #ff8a73; font-size: 11px; }
-.lc-station-message:empty { display: none; }
+/* An empty region keeps its place in the document and in the accessibility
+   tree; only its margin goes, so there is no gap above the rows. display:none
+   would take it out of both, which is the one thing a live region may not do. */
+.lc-station-message:empty { margin: 0; }
 .lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
 .lc-launch-hold { margin-top: 12px; }
 .lc-launch-hold p { margin: 0 0 4px; color: #ff8a73; font-size: 12px; letter-spacing: .08em; }
@@ -1359,17 +1362,26 @@ export class LiveCockpit {
 	 * consignment that does not exist is the same confusion in reverse.
 	 */
 	private holdLine(hold: HoldSummary) {
-		const entrusted =
-			hold.entrustedT > 0 ? ` · ${hold.entrustedT} t entrusted` : "";
-		return `<p class="lc-station-hold" data-live-station-hold>HOLD ${hold.usedT} / ${hold.capacityT} t · ${hold.freeT} t free${entrusted}</p>`;
+		// `Number(...)` at the boundary, the way `escapeHtml` is on the sibling
+		// below: these are sums over `commander.cargo` and the request journal,
+		// which is deserialised state, and a non-numeric value out of a tampered
+		// save would otherwise concatenate straight into the markup.
+		const n = (value: number) => String(Number(value));
+		return `<p class="lc-station-hold" data-live-station-hold>HOLD ${n(hold.usedT)} / ${n(hold.capacityT)} t · ${n(hold.freeT)} t free${entrustedClause(hold.entrustedT, " · ")}</p>`;
 	}
 
 	/**
 	 * What the till said when it said no, or an empty live region (#443).
 	 *
-	 * The element is present either way and `role="status"` is on it, so a
-	 * screen reader is told about a refusal rather than the region appearing
-	 * under it mid-announcement.
+	 * The element is always rendered, empty or not, and carries `role="status"`
+	 * — **and that is as far as the claim goes.** The console's markup is
+	 * rebuilt wholesale whenever its memo key moves and the message is part of
+	 * that key, so the node carrying a new refusal is a *new* node. Assistive
+	 * technology does not reliably announce a region that arrives with its text
+	 * already in it, and nothing here measures whether it does; what
+	 * `probe-requests` checks is that the refusal is **visible**. Announcing it
+	 * properly wants a persistent region outside the rebuilt subtree, which is
+	 * a cockpit-wide change rather than this node's.
 	 */
 	private stationMessage(message: string | null) {
 		return `<p class="lc-station-message" data-live-station-message role="status">${message === null ? "" : escapeHtml(message)}</p>`;

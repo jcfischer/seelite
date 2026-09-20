@@ -677,6 +677,20 @@ describe("#443 — every refusal has a sentence", () => {
 		).toBe("No room — 11 t free of 20, with 8 t entrusted to a job.");
 	});
 
+	test("an over-capacity hold says so rather than reading as zero", () => {
+		// `HoldSummary.freeT` is unfloored on purpose, so this sentence has to
+		// be able to carry a negative. The PR body claimed for a round that the
+		// refusal is "only ever reachable at zero free", which is true of the
+		// till's one-tonne press and not of the projection.
+		expect(
+			refusalSentence("cargo-full", {
+				freeT: -10,
+				capacityT: 20,
+				entrustedT: 8,
+			}),
+		).toBe("No room — -10 t free of 20, with 8 t entrusted to a job.");
+	});
+
 	test("with nothing entrusted the clause is absent, not zeroed", () => {
 		// `0 t entrusted to a job` would be a sentence about a job that does not
 		// exist, which is the refusal reading as a bug all over again.

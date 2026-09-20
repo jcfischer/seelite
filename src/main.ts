@@ -3458,8 +3458,9 @@ class Game {
 			},
 			onStationTab: (tab) => {
 				this.stationConsoleTab = tab;
-				// A refusal is about the press that earned it, so leaving the
-				// Market tab retires it (#443).
+				// A refusal is about the press that earned it, so **any** tab
+				// press retires it (#443) — including a press on the tab
+				// already showing, which is a pilot clearing the screen.
 				this.stationConsoleMessage = null;
 				this.updateCockpit();
 			},
@@ -11960,8 +11961,8 @@ class Game {
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
 		// One projection for the whole console (#443). The hold line, the
-		// commander footer's manifest and `cargo-full`'s sentence all read it,
-		// so the three cannot disagree about what is aboard.
+		// commander footer's sellable goods and `cargo-full`'s sentence all
+		// read it, so the three cannot disagree about what is aboard.
 		//
 		// **Built before the key, because the key reads it.** The cached value
 		// depends on `this.requests` now, and it did not before; keying on
@@ -11972,10 +11973,14 @@ class Game {
 		// cargo map and the accepted lots, against seventeen priced market rows
 		// it saves.
 		const hold = holdSummary(this.commander, this.requests);
-		const manifest = hold.lines
+		// `pilotLines` would be wrong — these are every line, both owners — and
+		// `manifest` would be worse: CONTEXT.md scopes that noun to what an
+		// ordinary carrier carries on one voyage, and one canonical term with
+		// two referents is how a vocabulary stops being one.
+		const holdKey = hold.lines
 			.map((line) => `${line.owner}:${line.goodName}:${line.amount}`)
 			.join(",");
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${manifest}`;
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCache = {
@@ -12008,9 +12013,9 @@ class Game {
 			hold,
 			message: this.stationConsoleMessage,
 			// The pilot's own goods, off the same projection rather than off
-			// `commander.cargo` a second time. The footer's manifest says what
-			// can be sold; the hold line above it says what the ship is
-			// carrying, and an entrusted lot is in one and not the other.
+			// `commander.cargo` a second time. The footer lists what can be
+			// sold; the hold line above it says what the ship is carrying, and
+			// an entrusted lot is in one and not the other.
 			cargo: hold.lines
 				.filter((line) => line.owner === "pilot")
 				.map((line) => `${line.goodName} ${line.amount}`),

@@ -41,12 +41,12 @@ export interface HoldLine {
 	 * the seventeen, kilogrammes for Gold and Platinum, grammes for
 	 * Gem-Stones.
 	 *
-	 * **`amount` and not `tonnes`, which is what it was called for one review
-	 * round.** Three of the seventeen goods are not tonnes and take no room at
-	 * all, so a field with a `t` in its name invites a consumer to sum the
-	 * column for a hold figure and be silently wrong by however much Gold is
-	 * aboard. The tonne figures carry the suffix — `usedT`, `capacityT`,
-	 * `freeT`, `entrustedT` — and this one travels with its `unit`.
+	 * **`amount`, not `tonnes`.** Three of the seventeen goods are not tonnes
+	 * and take no room at all, so a field with a `t` in its name invites a
+	 * consumer to sum the column for a hold figure and be silently wrong by
+	 * however much Gold is aboard. The tonne figures carry the suffix —
+	 * `usedT`, `capacityT`, `freeT`, `entrustedT` — and this one travels with
+	 * its `unit`.
 	 */
 	amount: number;
 	unit: CommodityUnit;
@@ -125,18 +125,31 @@ export function holdSummary(
 		//
 		// **And this runs on every console update, so the throw takes the docked
 		// screen with it rather than degrading one line.** That is the intended
-		// severity — `requests.ts` validates a save's shape at load and refuses a
-		// journal it cannot reconcile, so reaching here means the refusal was
-		// bypassed, and a cockpit drawing a hold nobody can account for is worse
-		// than one that stops.
+		// severity, and the reason it is reachable at all only through a bug:
+		// `parseRequests` refuses a lot whose `offerId` is not a key of `byId`
+		// (`requests.ts`, the `for (const lotId of Object.keys(lots)...)` loop),
+		// so a restored journal cannot arrive in this state. A cockpit drawing a
+		// hold nobody can account for is worse than one that stops.
 		if (!request)
 			throw new Error(
 				`hold: entrusted lot ${lot.lotId} has no request ${lot.offerId} (#443)`,
 			);
+		// **The lot's amount is `aboardT` and the unit must agree with its
+		// name.** `bindCourier` picks a tonne good and `entrustedTonnesAboard`
+		// sums these into the capacity figure, so a kilogramme lot would be
+		// counted as tonnes by the till while the line printed kg beside it —
+		// which is the mismatch `amount`'s own doc argues the field exists to
+		// prevent. It is an invariant of the binder rather than of the type, so
+		// it is checked where the two meet.
+		const unit = commodity(lot.goodName).unit;
+		if (unit !== "t")
+			throw new Error(
+				`hold: entrusted lot ${lot.lotId} is ${lot.goodName}, which is ${unit} and not tonnes (#443)`,
+			);
 		lines.push({
 			goodName: lot.goodName,
 			amount: lot.aboardT,
-			unit: commodity(lot.goodName).unit,
+			unit,
 			owner: "requester",
 			offerId: lot.offerId,
 			jobTitle: request.terms.title,
