@@ -65,7 +65,7 @@ test("the market row's five cells and the market grid's five tracks agree (#196)
 
 test("a value that can move while the stick holds still is named in the console's key (#396)", () => {
 	// **Why this reads the source and not only the browser.** `update` rebuilds the
-	// left console only when `valueKey` changes, and both the `LEGAL STANDING`
+	// left console only when `valueKey` changes, and both the `LEGAL STATUS`
 	// label and the new `HAILS` row are bound *inside* that gate — so a member that
 	// is not in the key refreshes only when something else moves. In flight that is
 	// invisible: speed and charge are never still long enough to notice the lag, and
