@@ -58,6 +58,30 @@ import { existsSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TREE_ENDPOINT } from "./lib/tree-declaration.mjs";
+import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
+
+/** The opt-in local probe mode that requires the same renderer as a player. */
+export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
+export const HARDWARE_RENDERER = "hardware";
+
+/**
+ * Read the requested probe renderer mode. The unset default deliberately keeps
+ * the portable SwiftShader probe path unchanged.
+ */
+export function probeRendererMode(env = process.env) {
+	const mode = env[PROBE_RENDERER_ENV];
+	if (!mode) return null;
+	if (mode !== HARDWARE_RENDERER)
+		throw new Error(
+			`${PROBE_RENDERER_ENV} must be "${HARDWARE_RENDERER}" or unset, got ${JSON.stringify(mode)}`,
+		);
+	return mode;
+}
+
+/** Launch options for the requested renderer mode, without mutating a caller. */
+export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
+	return mode === HARDWARE_RENDERER ? { ...options, headless: false } : options;
+}
 
 /**
  * The scheme-and-host of a probe URL, without `new URL`.
@@ -341,7 +365,24 @@ export async function launchChromium(options = {}) {
 					: `whatever this checkout has under that name is not the browser package.`
 			}`,
 		);
-	return chromium.launch(options);
+	const mode = probeRendererMode();
+	const browser = await chromium.launch(probeLaunchOptions(options, mode));
+	if (mode !== HARDWARE_RENDERER) return browser;
+
+	try {
+		const context = await browser.newContext();
+		const page = await context.newPage();
+		const renderer = await assertBrowserRenderer(
+			page,
+			"run GPU browser probes",
+		);
+		console.log(`[probe] hardware renderer: ${renderer}`);
+		await context.close();
+		return browser;
+	} catch (error) {
+		await browser.close();
+		throw error;
+	}
 }
 
 /**

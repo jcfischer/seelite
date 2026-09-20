@@ -36,8 +36,9 @@ browser probe. A change is not done until both are green.
 
 ```bash
 rtk test npm test               # bun, headless — sim logic, generators, unit scheme
-npm run probe                   # starts a dev server, runs every browser probe
-npm run probe:one <name>        # one probe
+npm run probe                   # GPU default: starts a dev server, runs every browser probe
+npm run probe:one <name>        # GPU default: one probe
+npm run probe:cpu               # explicit headless/SwiftShader fallback
 npx tsc --noEmit                # no errors
 rtk lint npm run format:check   # biome, no fixes applied
 rtk lint npm run lint           # biome: undeclared names in scripts/
@@ -88,6 +89,12 @@ Two stay unprefixed on purpose. `rtk tsc` returns exit 2 on a clean typecheck,
 so anything reading that exit code would treat a passing repo as broken. And
 `npm run probe` has no rtk filter; a green run is already 19 lines.
 
+`npm run probe` is the local development default. It delegates to the GPU lane,
+which forces headed Chromium and refuses to start unless a fresh WebGL canvas
+identifies a non-software renderer; every child probe repeats that check.
+`npm run probe:cpu` preserves the former headless/SwiftShader command for a
+displayless or portability check.
+
 ### Visual work has a third tier, and it is a person
 
 A probe cannot fail on *this looks flat*. #35 and #36 both closed green and
@@ -121,10 +128,10 @@ reads the real renderer back, and refuses to write a single frame unless that
 renderer can be *shown* not to be a software rasteriser — an unreadable name
 counts as unproven. So it needs a display, but the guarantee is about the
 renderer rather than about headedness, and a displayless machine gets a full
-boot before the refusal. Every other browser script here renders through
-SwiftShader; for an image judged by eye that is the wrong picture, not merely a
-slow one. `view-set/` is gitignored — before/after is two runs at two refs, not
-a baseline in the repo.
+boot before the refusal. The browser-probe default now uses the same hardware
+lane; `npm run probe:cpu` is the deliberate SwiftShader fallback. `view-set/`
+is gitignored — before/after is two runs at two refs, not a baseline in the
+repo.
 
 `scripts/probe-guard.mjs` refuses to measure a dev server that is not serving
 this working tree — the failure it prevents is a probe passing against someone

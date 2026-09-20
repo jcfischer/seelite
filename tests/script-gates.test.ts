@@ -17,7 +17,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLAYWRIGHT_ENV_VARS } from "../scripts/probe-guard.mjs";
+import {
+	HARDWARE_RENDERER,
+	PLAYWRIGHT_ENV_VARS,
+	PROBE_RENDERER_ENV,
+} from "../scripts/probe-guard.mjs";
 import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 import { repoPath } from "./lib/source-scan";
 
@@ -56,6 +60,7 @@ const wiringOver = (files: Record<string, string>) => {
 			"check-launcher-wiring.mjs",
 			"probe-guard.mjs",
 			"lib/tree-declaration.mjs",
+			"lib/players-renderer.mjs",
 		]) {
 			mkdirSync(dirname(join(root, "scripts", rel)), { recursive: true });
 			copyFileSync(repoPath(`scripts/${rel}`), join(root, "scripts", rel));
@@ -148,6 +153,11 @@ test("the runner's environment forwards the variables the launcher reads", () =>
 		expect(PLAYWRIGHT_ENV_VARS).toContain(name);
 		expect(probeRunnerEnvironment({ [name]: "x" })[name]).toBe("x");
 	}
+	expect(
+		probeRunnerEnvironment({ [PROBE_RENDERER_ENV]: HARDWARE_RENDERER })[
+			PROBE_RENDERER_ENV
+		],
+	).toBe(HARDWARE_RENDERER);
 });
 
 test("the lint tier fails on an undeclared name in scripts/", () => {

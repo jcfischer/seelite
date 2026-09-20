@@ -20,9 +20,9 @@
  *   once;
  * - a resize reprimes rather than leaving a stale curve.
  *
- * Like every probe here it runs through SwiftShader, so no figure it prints is
- * player-GPU evidence. The headed view set and the principal's eye are the tier
- * that closes this node.
+ * The default lane runs on the player GPU; `npm run probe:cpu` retains the
+ * SwiftShader portability path. Neither one turns this browser seam into the
+ * policy proof, which remains the headless state-machine suite.
  */
 import {
 	bootedGame,
@@ -275,6 +275,7 @@ const steered = await page.evaluate(async () => {
 		rungs,
 		mode: game.attributionSnapshot()?.mode ?? null,
 		budgetMs: game.adaptiveDiagnostics()?.budgetMs ?? null,
+		downshiftTriggerMs: game.adaptiveDiagnostics()?.downshiftTriggerMs ?? null,
 	};
 });
 const periods = steered.trace
@@ -285,7 +286,8 @@ const overBudgetAtTop = steered.trace.some(
 	(sample) =>
 		sample.scale === 1 &&
 		typeof sample.periodMs === "number" &&
-		sample.periodMs > 1000 / 60,
+		typeof steered.downshiftTriggerMs === "number" &&
+		sample.periodMs > steered.downshiftTriggerMs,
 );
 
 t.check(
@@ -314,7 +316,11 @@ t.check(
 	// which is the implication, stated once rather than smuggled in as an "or".
 	steered.rungs[0] === 1 &&
 		(!overBudgetAtTop || steered.rungs.some((rung) => rung < 1)),
-	JSON.stringify({ rungs: steered.rungs, overBudgetAtTop }),
+	JSON.stringify({
+		rungs: steered.rungs,
+		overBudgetAtTop,
+		triggerMs: steered.downshiftTriggerMs,
+	}),
 );
 
 // ── the controller reads the cadence, not a whole snapshot ──────────────────

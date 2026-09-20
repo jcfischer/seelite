@@ -74,6 +74,11 @@ import { createServer } from "vite";
 import { freePort } from "./lib/free-port.mjs";
 import { parseArgs, resolveOnly } from "./lib/probe-args.mjs";
 import { discoverProbeFiles } from "./lib/probe-inventory.mjs";
+import {
+	HARDWARE_RENDERER,
+	launchChromium,
+	probeRendererMode,
+} from "./probe-guard.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -164,6 +169,14 @@ const probes = selection.probes;
 if (!probes.length) {
 	console.error("no probes found next to this script");
 	process.exit(1);
+}
+
+// Fail before starting a dev server or any probe if the opt-in local lane cannot
+// actually reach a player renderer. Each child verifies again in launchChromium.
+if (probeRendererMode() === HARDWARE_RENDERER) {
+	console.log("checking hardware renderer for GPU probe lane");
+	const browser = await launchChromium();
+	await browser.close();
 }
 
 /** Run one probe to completion. Never rejects — the verdict is the value. */
