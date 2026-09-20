@@ -67,10 +67,29 @@ import {
  * `flight`, so it is carried rather than reconstructed. Free to bump: nothing
  * has shipped a version 1 record, and D8's refusal is what a player would meet
  * if one had.
+ *
+ * **3 adds `commander.requests`, and adds it unconditionally (#437).** For a
+ * round the journal was an isolated development trial with a schema version of
+ * its own, chosen per write: a save carrying an accepted request encoded as 3
+ * and one without it as 2, and the Commander catalog refused 3 outright. That
+ * made the wire shape depend on whether the player had accepted anything,
+ * which is the dependency that needed two versions in the first place. There
+ * is one version now and an empty journal is written like any other empty
+ * field. What is still gated is the *content* — `main.ts`'s `requestFixtures`
+ * decides whether any offer exists to accept — so a production record carries
+ * an empty journal rather than no journal.
  */
-export const SAVE_SCHEMA_VERSION = 2;
-/** Only envelopes carrying the isolated experiment journal use this encoding. */
-export const REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION = 3;
+export const SAVE_SCHEMA_VERSION = 3;
+/**
+ * Versions this parser still reads but no longer writes.
+ *
+ * **2 is a shipped version, which is why it is here rather than deleted.** The
+ * header above says a bump was free while nothing had shipped a version 1
+ * record; that stopped being true for 2 the moment the site offered *Play now*
+ * (`public-site.ts`), so a player's record predates the journal and must still
+ * load. `parseCommander` gives it an empty one.
+ */
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [2];
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
  *  than imported from the renderer: the save's vocabulary is the save's. */
@@ -218,16 +237,10 @@ const canonicalCommander = (record: CommanderRecord) => {
  * report can read.
  */
 export const serializeSave = (save: SaveEnvelope): unknown => {
-	const { requests, ...commander } = canonicalCommander(save.commander);
-	const hasJournal =
-		Object.keys(requests.byId).length > 0 ||
-		Object.keys(requests.leadsById).length > 0;
 	const body = {
-		saveSchemaVersion: hasJournal
-			? REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION
-			: SAVE_SCHEMA_VERSION,
+		saveSchemaVersion: SAVE_SCHEMA_VERSION,
 		world: serializeWorld(save.world),
-		commander: hasJournal ? { requests, ...commander } : commander,
+		commander: canonicalCommander(save.commander),
 	};
 	return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 };
@@ -377,13 +390,17 @@ export function parseSave(raw: unknown): SaveEnvelope {
 	const o = asObject(raw, "envelope");
 	const version = o.saveSchemaVersion;
 	if (
-		version !== SAVE_SCHEMA_VERSION &&
-		version !== REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION
+		typeof version !== "number" ||
+		(version !== SAVE_SCHEMA_VERSION &&
+			!LEGACY_SAVE_SCHEMA_VERSIONS.includes(version))
 	)
 		fail(
 			// The reason alone: the player's sentence — left as it is, Export
 			// takes a copy — is `loadFault`'s, which the overlay puts first.
-			`saveSchemaVersion ${String(version)} is unsupported; expected ${SAVE_SCHEMA_VERSION} or ${REQUESTS_PROTOTYPE_SAVE_SCHEMA_VERSION}`,
+			`saveSchemaVersion ${String(version)} is unsupported; expected ${[
+				SAVE_SCHEMA_VERSION,
+				...LEGACY_SAVE_SCHEMA_VERSIONS,
+			].join(" or ")}`,
 		);
 	if (o.world === undefined || o.world === null) fail("world is missing");
 	if (o.commander === undefined || o.commander === null)

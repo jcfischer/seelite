@@ -13462,23 +13462,21 @@ if (query.has("model-viewer")) {
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
 	const noSave = query.has("no-save");
-	// Fixture progress and payments use an entirely separate Commander catalog.
-	// The production build cannot enable fixtures by adding a URL flag.
-	const fixtureTrial = import.meta.env.DEV && query.has("requests-prototype");
-	const saveBackend = indexedDbSaveBackend(
-		indexedDB,
-		fixtureTrial ? "seelite-requests-prototype-saves" : undefined,
-	);
-	const saveLocks = webSlotLocks(
-		navigator.locks,
-		fixtureTrial ? "seelite-requests-prototype:" : undefined,
-	);
+	// **One Commander catalog since #437.** The fixture trial used to get its
+	// own IndexedDB database and lock prefix, on top of a save encoding the
+	// normal catalog refused. There is one encoding now, so the second database
+	// bought only this: a developer's flagged session could not reach their own
+	// unflagged save. What still protects a player is unchanged and is not
+	// storage — `requestFixtures` gates the offer source and `actOnRequest`
+	// returns early without it, so a production build has nothing to accept and
+	// pays no fixture reward.
+	const saveBackend = indexedDbSaveBackend(indexedDB);
+	const saveLocks = webSlotLocks(navigator.locks);
 	// Read once: an unusable `?seed` warns as it is read.
 	const askedSeed = querySeed();
 	const catalog = new CommanderCatalog({
 		backend: saveBackend,
 		locks: saveLocks,
-		allowRequestsPrototype: fixtureTrial,
 	});
 	let plan = await planBoot({
 		catalog,
@@ -13526,7 +13524,6 @@ if (query.has("model-viewer")) {
 				new SaveStore({
 					backend: saveBackend,
 					locks: saveLocks,
-					allowRequestsPrototype: fixtureTrial,
 					slot: name,
 					schedule: (fn, ms) => {
 						const id = window.setTimeout(fn, ms);
