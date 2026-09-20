@@ -166,6 +166,19 @@ carrier waits and `ScanHold` is a charge, and one identifier cannot serve all
 three.
 _Avoid_: Cargo list, loot table, hold contents
 
+**Hold**:
+The player ship's cargo capacity and what is in it: `usedT`, `capacityT`,
+`freeT`, the entrusted share, and one line per good with its owner. `src/hold.ts`
+owns the projection and `commanderHold` in `station-commerce.ts` owns the
+capacity rule it reads; the station console draws it above the market rows and
+the till refuses against the same figures (#443).
+
+It is the *player's* hold and nothing else's. **Manifest** above is what an
+ordinary carrier carries, **Traffic hold** is a place a carrier waits, `ScanHold`
+is a charge, and a **held launch** is Traffic refusing one — four senses the same
+English word reaches for, which is why each has its own name here.
+_Avoid_: Inventory, cargo bay, hold contents (for the manifest)
+
 **Legal heat**:
 The player's per-galaxy offence score: an offence adds to it, it decays lazily
 on a 30-minute half-life, and it reads as Clean, Wanted or Fugitive at its

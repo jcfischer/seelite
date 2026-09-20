@@ -34,12 +34,13 @@ import {
 import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
+import type { HoldSummary } from "./hold";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
 	StationConsoleTab,
 } from "./station-console";
-import { priceLabel, signedDelta } from "./station-console";
+import { entrustedClause, priceLabel, signedDelta } from "./station-console";
 import { padHintFor } from "./pad-bindings";
 import type { LaneRefusal } from "./station-traffic";
 import {
@@ -148,6 +149,16 @@ export interface LiveCockpitState {
 		market: readonly ConsoleMarketRow[];
 		equipment: ConsoleEquipmentScreen;
 		credits: number;
+		/**
+		 * What is aboard, whose it is, and how much room is left (#443).
+		 *
+		 * The one projection the hold line, the commander footer and the till's
+		 * `cargo-full` sentence all read — `commanderHold`'s figures, not a
+		 * second count.
+		 */
+		hold: HoldSummary;
+		/** The till's last refusal, in the console's words, or `null`. */
+		message: string | null;
 		cargo: readonly string[];
 		ownedEquipment: readonly string[];
 		/** The hyperspace tank, light years, and its capacity (#187) — the Fuel
@@ -363,6 +374,15 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 .lc-station-action:hover { background: rgba(223, 122, 20, .32); }
 .lc-station-owned { color: #9ed89b; font-size: 10px; letter-spacing: .06em; }
 .lc-station-commander { margin: 9px 0 0; color: #f5bd78; font-size: 11px; }
+.lc-station-hold { margin: 6px 0 0; color: #f5bd78; font-size: 11px; letter-spacing: .06em; }
+/* Red is refusal (hud-and-scanner.md section 4), which is exactly what this
+   is, and it is the colour the held launch already uses. An empty live region
+   is collapsed rather than left as a gap above the rows. */
+.lc-station-message { margin: 4px 0 0; color: #ff8a73; font-size: 11px; }
+/* An empty region keeps its place in the document and in the accessibility
+   tree; only its margin goes, so there is no gap above the rows. display:none
+   would take it out of both, which is the one thing a live region may not do. */
+.lc-station-message:empty { margin: 0; }
 .lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
 .lc-launch-hold { margin-top: 12px; }
 .lc-launch-hold p { margin: 0 0 4px; color: #ff8a73; font-size: 12px; letter-spacing: .08em; }
@@ -1020,7 +1040,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1332,6 +1352,41 @@ export class LiveCockpit {
 			: "";
 	}
 
+	/**
+	 * The hold, above the rows the till refuses against (#443).
+	 *
+	 * Used, capacity, free and the entrusted share — the four figures whose
+	 * absence made an eleven-tonne sale into a 20 t hull read as a broken till.
+	 * The entrusted clause is dropped rather than zeroed when no job's cargo is
+	 * aboard, for `entrustedClause`'s reason one module along: a line about a
+	 * consignment that does not exist is the same confusion in reverse.
+	 */
+	private holdLine(hold: HoldSummary) {
+		// `Number(...)` at the boundary, the way `escapeHtml` is on the sibling
+		// below: these are sums over `commander.cargo` and the request journal,
+		// which is deserialised state, and a non-numeric value out of a tampered
+		// save would otherwise concatenate straight into the markup.
+		const n = (value: number) => String(Number(value));
+		return `<p class="lc-station-hold" data-live-station-hold>HOLD ${n(hold.usedT)} / ${n(hold.capacityT)} t · ${n(hold.freeT)} t free${entrustedClause(hold.entrustedT, " · ")}</p>`;
+	}
+
+	/**
+	 * What the till said when it said no, or an empty live region (#443).
+	 *
+	 * The element is always rendered, empty or not, and carries `role="status"`
+	 * — **and that is as far as the claim goes.** The console's markup is
+	 * rebuilt wholesale whenever its memo key moves and the message is part of
+	 * that key, so the node carrying a new refusal is a *new* node. Assistive
+	 * technology does not reliably announce a region that arrives with its text
+	 * already in it, and nothing here measures whether it does; what
+	 * `probe-requests` checks is that the refusal is **visible**. Announcing it
+	 * properly wants a persistent region outside the rebuilt subtree, which is
+	 * a cockpit-wide change rather than this node's.
+	 */
+	private stationMessage(message: string | null) {
+		return `<p class="lc-station-message" data-live-station-message role="status">${message === null ? "" : escapeHtml(message)}</p>`;
+	}
+
 	private stationConsole(state: LiveCockpitState) {
 		const stationConsole = state.stationConsole;
 		if (!stationConsole || state.dockPhase !== "docked") return "";
@@ -1342,7 +1397,7 @@ export class LiveCockpit {
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.holdLine(stationConsole.hold)}${this.stationMessage(stationConsole.message)}${
 			stationConsole.tab === "Requests"
 				? requestsBody(state.requests)
 				: stationConsole.tab === "Market"

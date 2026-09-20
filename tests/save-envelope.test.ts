@@ -155,6 +155,37 @@ describe("#89 D5 — the save envelope", () => {
 		).toThrow(/hull/);
 	});
 
+	test("the commander record refuses a cargo key that is not a commodity", () => {
+		// #443. The quantity was validated and the name was not, so a good the
+		// table does not have survived the load and threw the first time
+		// anything asked what unit it was in — which since the hold projection
+		// is every console update while docked. Refused at the boundary, the
+		// way the hull two rows above is.
+		expect(() =>
+			parseSave(
+				serializeSave({
+					world: world(),
+					commander: {
+						...commander(),
+						state: { ...commander().state, cargo: { Unobtainium: 3 } },
+					},
+				}),
+			),
+		).toThrow(/is not a commodity/);
+		// The control: the same shape with a real good loads.
+		expect(() =>
+			parseSave(
+				serializeSave({
+					world: world(),
+					commander: {
+						...commander(),
+						state: { ...commander().state, cargo: { Textiles: 3 } },
+					},
+				}),
+			),
+		).not.toThrow();
+	});
+
 	test("obligation 3: the save's size is bounded by the carrier count", () => {
 		// #89's obligation 3, and **the count is the load-bearing half**: a
 		// generator change that collided two carrier keys would shrink the store

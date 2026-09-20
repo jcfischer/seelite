@@ -45,6 +45,7 @@ const HEADLESS = [
 	"galaxy",
 	"gamepad",
 	"hud",
+	"hold",
 	"hull",
 	"hyperspace",
 	"key-dispatch",
@@ -100,6 +101,7 @@ test("no module has been quietly dropped from the list", () => {
 		"galaxy",
 		"gamepad",
 		"hud",
+		"hold",
 		"hull",
 		"hyperspace",
 		"key-dispatch",
@@ -322,4 +324,42 @@ test("src/pad-bindings.ts names the pad module only as a type", () => {
 	expect(source).toMatch(/import type \{[^}]*\} from "\.\/gamepad"/);
 	expect(source.match(/\bimport\b/g)).toHaveLength(1);
 	expect(source.match(/\brequire\s*\(/g)).toBeNull();
+});
+
+test("station-commerce, requests and market do not import src/hold.ts", () => {
+	// #443's hold summary reads `station-commerce.ts` for the capacity rule and
+	// `requests.ts` for the entrusted lots. Both of those are read by the till,
+	// so an import back the other way would make the hold's *screen* a
+	// dependency of the hold's *rules* — and the till would then be able to
+	// refuse against a figure the screen had composed.
+	//
+	// **Only those three.** Modules *above* the projection read it freely —
+	// `main.ts` calls `holdSummary` and `live-cockpit.ts` names `HoldSummary`
+	// as a type — so the rule is one-directional and this row's title names the
+	// direction it holds.
+	//
+	// Asserted on the source of the three modules it reads, rather than on a
+	// module graph, for the reason every check in this file is: the failure is a
+	// line someone writes.
+	for (const file of ["station-commerce.ts", "requests.ts", "market.ts"])
+		expect(codeOf(`src/${file}`), file).not.toMatch(
+			/from\s*["'`]\.\/hold["'`]/,
+		);
+});
+
+test("station-console names the refusal union as a type and never as a value", () => {
+	// `station-commerce.ts` imports `stationEquipmentScreen` from
+	// `station-console.ts`, so the sentence map's import of `CommerceRefusal`
+	// runs back up the same edge. A **type** import is erased at build and
+	// cannot close the cycle; a value import of the same name would compile,
+	// would not be erased, and would put the till behind the screen.
+	const source = codeOf("src/station-console.ts");
+	expect(source).toMatch(
+		/import type \{[^}]*CommerceRefusal[^}]*\} from "\.\/station-commerce"/,
+	);
+	// And there is exactly one mention of that module, so a second, untyped one
+	// cannot hide beside it.
+	expect(source.match(/from\s*["'`]\.\/station-commerce["'`]/g)).toHaveLength(
+		1,
+	);
 });

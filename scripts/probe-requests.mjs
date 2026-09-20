@@ -336,6 +336,180 @@ try {
 		await page.evaluate((t) => window.__seelite.targetId === t, target),
 	);
 
+	// -----------------------------------------------------------------------
+	// #443 — the hold, and what the till says when it says no.
+	//
+	// The node was reported as a bug in the till: 228 Cr, 28 t of Food on the
+	// shelf, and the console sold eleven tonnes. Every figure was right — a
+	// 20 t hull, an 8 t consignment and 1 t of Radioactives — and **nothing on
+	// the glass said any of it**. So these read the *rendered* text and not a
+	// state object, which is #411 round 3's lesson: a probe that asks the game
+	// what it would have drawn agrees with any build.
+	//
+	// The state is set up through `__seelite` and then restored, the way this
+	// probe already parks a ship and `probe-death` already sets credits. What
+	// is being measured is the screen after a real DOM click, not the setup.
+	// -----------------------------------------------------------------------
+	const holdText = () => page.locator("[data-live-station-hold]").innerText();
+	const messageText = () =>
+		page.locator("[data-live-station-message]").innerText();
+
+	// **A control, not a build assertion, and it was measured as one.** It is
+	// the before-reading of the before/after pair the refusal check completes,
+	// so the sentence that appears there is attributable to the click. Seeding
+	// `stationConsoleMessage` at construction leaves it green either side of
+	// the Market click, because the Requests tab was already opened further up
+	// and a tab change retires a refusal — there is no build this row can go
+	// red on. Read before the Market click anyway: that is the tightest the
+	// control gets.
+	check(
+		"nothing has been refused yet, so the live region is empty",
+		(await messageText()) === "",
+	);
+	await page.locator('[data-live-station-tab="Market"]').click();
+
+	const entrustedT = await page.evaluate(() =>
+		Object.values(
+			window.__seelite.commanderRecord().requests.entrustedByLotId,
+		).reduce((sum, lot) => sum + lot.aboardT, 0),
+	);
+	// One read per check, reported with the same read. Three separate
+	// `innerText()` calls let the assertion and its failure message describe
+	// different frames.
+	let line = await holdText();
+	check(
+		"the trade screen says what the hold holds, and that a job is in it",
+		line.includes(`${entrustedT} t entrusted`) &&
+			/HOLD \d+ \/ \d+ t · -?\d+ t free/.test(line),
+		`${entrustedT} t entrusted · ${line}`,
+	);
+	await page.screenshot({ path: `${out}/40-hold-line.png` });
+
+	/**
+	 * Write the commander's purse and manifest, then make the console notice.
+	 *
+	 * The revision bump is the non-obvious step and it is here once: the
+	 * console memoises on a key the *game* moves whenever it replaces the
+	 * displayed state, and a probe's write is not the game. Without it the
+	 * cached screen comes back and the setup measures the build's caching
+	 * rather than its arithmetic, which is how the first run of this block
+	 * failed.
+	 */
+	const setCommander = (credits, cargo) =>
+		page.evaluate(
+			([c, m]) => {
+				const g = window.__seelite;
+				g.commander.credits = c;
+				g.commander.cargo = m;
+				g.stationConsoleRevision += 1;
+				g.updateCockpit();
+			},
+			[credits, cargo],
+		);
+
+	// Fill the pilot's half of the hold to the brim, leaving the consignment
+	// where it is. The till buys one tonne per press, so **through the till**
+	// this refusal is met at zero free — which is the sentence a pilot actually
+	// sees, and the one the node says must name the consignment. The sentence
+	// itself carries whatever `freeT` is, negative included, and
+	// `tests/station-console.test.ts` pins that arm.
+	const filled = await page.evaluate(() => {
+		const g = window.__seelite;
+		const was = {
+			credits: g.commander.credits,
+			cargo: { ...g.commander.cargo },
+		};
+		const row = [...document.querySelectorAll("[data-live-market-row]")].find(
+			(el) =>
+				el.getAttribute("data-live-listed") === "true" &&
+				el.querySelector('[data-live-station-action="buy-commodity"]') &&
+				// **A positive shelf, not merely a tonne unit.** `0 t` matched,
+				// and buying from an empty shelf earns `insufficient-shelf` —
+				// a refusal, so the message check would pass on the wrong
+				// sentence entirely.
+				/^[1-9]\d*\s*t\b/.test(
+					el.querySelector("[data-live-shelf]")?.textContent ?? "",
+				),
+		);
+		// **One shape on every arm.** Three different ones let the step after
+		// this read `filled.cargo` off an object that never carried it — safe
+		// only because `check` throws, which is a guarantee living in another
+		// function.
+		const fail = (why) => ({ was, good: null, cargo: was.cargo, why });
+		const good = row?.getAttribute("data-live-market-row") ?? null;
+		if (!good) return fail("no listed tonne good with a buy control");
+		// **The free tonnage is read off the glass, and that does not make the
+		// check below adversarial.** A hold line understating free by a constant
+		// is filled with the understated amount and re-read through the same
+		// derivation, so `0 t free` comes out on the wrong build exactly as it
+		// does on the right one. The row is self-consistent by construction; the
+		// arithmetic itself is `tests/hold.test.ts`'s, and what this measures is
+		// that the till's refusal reaches the glass after a real click.
+		const holdLineText =
+			document.querySelector("[data-live-station-hold]")?.textContent ?? "";
+		const freeWas = Number(
+			/(-?\d+) t free/.exec(holdLineText)?.[1] ?? Number.NaN,
+		);
+		if (!Number.isFinite(freeWas))
+			return fail(`no free tonnage in the hold line: ${holdLineText}`);
+		return {
+			was,
+			good,
+			freeWas,
+			why: null,
+			// Top up rather than replace: the pilot may already hold this good,
+			// and overwriting it would land the hold short of full and redden
+			// the next check for a reason that has nothing to do with the build.
+			cargo: { ...was.cargo, [good]: (was.cargo[good] ?? 0) + freeWas },
+		};
+	});
+	check(
+		"a tonne good with a shelf is on the board to fill the hold with",
+		filled.good !== null,
+		JSON.stringify(filled),
+	);
+	await setCommander(100_000, filled.cargo);
+	line = await holdText();
+	check(
+		"a full hold reads as full before anything is pressed",
+		/ 0 t free/.test(line),
+		line,
+	);
+	await page
+		.locator(
+			`[data-live-station-action="buy-commodity"][data-live-station-name="${filled.good}"]`,
+		)
+		.click();
+	const refusal = await messageText();
+	check(
+		"a refused purchase says so, names the room and names the consignment",
+		refusal.startsWith("No room") &&
+			refusal.includes(`${entrustedT} t entrusted to a job`) &&
+			// Anchored on the whole figure. Unanchored, `0 t free of 20`
+			// matches inside `10 t free of 20` and `-10 t free of 20`, so the
+			// row titled "names the room" passed on a build reporting the
+			// wrong room.
+			/(^|[^\d-])0 t free of \d+/.test(refusal),
+		refusal,
+	);
+	await page.screenshot({ path: `${out}/41-refusal.png` });
+	check(
+		"the refusal is visible, not merely present in the markup",
+		await page.locator("[data-live-station-message]").isVisible(),
+	);
+	// A refusal is about the press that earned it. Leaving the tab retires it.
+	await page.locator('[data-live-station-tab="Equipment"]').click();
+	await page.locator('[data-live-station-tab="Market"]').click();
+	check("a tab change retires the refusal", (await messageText()) === "");
+	await setCommander(filled.was.credits, filled.was.cargo);
+	line = await holdText();
+	check(
+		"the hold is back where the rest of this probe left it",
+		line.includes(`${entrustedT} t entrusted`) && !/ 0 t free/.test(line),
+		line,
+	);
+	await page.locator('[data-live-station-tab="Requests"]').click();
+
 	// The board is a function of the world, not of how often the pilot docks.
 	//
 	// **Bind it again rather than reading the memo.** `requestsView` caches on

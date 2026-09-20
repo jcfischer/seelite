@@ -593,6 +593,7 @@ import {
 	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
+import { holdSummary } from "./hold";
 import { exposeMarketLaw } from "./market-probe-hook";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -623,6 +624,7 @@ import {
 } from "./world-state";
 import {
 	type StationConsoleTab,
+	refusalSentence,
 	stationEquipmentScreen,
 	stationMarketScreen,
 } from "./station-console";
@@ -1810,6 +1812,16 @@ class Game {
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
 	private stationConsoleRevision = 0;
+	/**
+	 * What the till last said when it said no (#443).
+	 *
+	 * `transactStation` used to do `if (!result.accepted) return;`, so a refusal
+	 * was computed, named and then dropped — a hold that had no room read as a
+	 * press that did nothing. It is held here rather than in the view for the
+	 * reason `requestMessage` is: the view is a projection, and the state that
+	 * produced the refusal lives on this side.
+	 */
+	private stationConsoleMessage: string | null = null;
 	/**
 	 * What the Navigation list is narrowed to.
 	 *
@@ -3446,6 +3458,10 @@ class Game {
 			},
 			onStationTab: (tab) => {
 				this.stationConsoleTab = tab;
+				// A refusal is about the press that earned it, so **any** tab
+				// press retires it (#443) — including a press on the tab
+				// already showing, which is a pilot clearing the screen.
+				this.clearStationRefusal();
 				this.updateCockpit();
 			},
 			onRequestAction: (action, id) => this.actOnRequest(action, id),
@@ -9037,6 +9053,9 @@ class Game {
 			this.world.gameTime,
 		);
 		if (this.dock.phase === "launching") {
+			// The console is gone; its last refusal goes with it, or the next
+			// dock opens on a sentence about a station the ship has left (#443).
+			this.clearStationRefusal();
 			this.openPlayerTrafficEvent(stationId, "lane", readyAt, "launch");
 			// D4's undock flush. **The record still names the station here** —
 			// `commanderRecord` reads every phase that is not `flying`, and this
@@ -11941,7 +11960,32 @@ class Game {
 		}
 		const { station, market, envelope, stationKey, economy, gameTimeMin } =
 			context;
-		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}`;
+		// One projection for the whole console (#443). The hold line, the
+		// commander footer's sellable goods and `cargo-full`'s sentence all
+		// read it, so the three cannot disagree about what is aboard.
+		//
+		// **Built before the key, because the key reads it.** The cached value
+		// depends on `this.requests` now, and it did not before; keying on
+		// `stationConsoleRevision` alone would have made this screen correct
+		// only for as long as every verb that moves the journal remembered to
+		// bump that counter. The key carries the projection's own content
+		// instead, and the scan it costs is over the cargo map and the accepted
+		// lots against seventeen priced market rows it saves.
+		//
+		// **This is the console's memo, not the cockpit's.** `LiveCockpit`'s
+		// markup key still reads `stationConsole.revision` and the request
+		// revision, so the *drawn* line depends on those counters even where
+		// this one no longer does. The two together are why the hold line is
+		// correct today; only the half in this file is self-keyed.
+		const hold = holdSummary(this.commander, this.requests);
+		// `pilotLines` would be wrong — these are every line, both owners — and
+		// `manifest` would be worse: CONTEXT.md scopes that noun to what an
+		// ordinary carrier carries on one voyage, and one canonical term with
+		// two referents is how a vocabulary stops being one.
+		const holdKey = hold.lines
+			.map((line) => `${line.owner}:${line.goodName}:${line.amount}`)
+			.join(",");
+		const key = `${this.dock.stationId}|${this.stationConsoleTab}|${this.stationConsoleRevision}|${this.stationConsoleMessage ?? ""}|${hold.usedT}/${hold.capacityT}|${holdKey}`;
 		if (this.stationConsoleCacheKey === key) return this.stationConsoleCache;
 		this.stationConsoleCacheKey = key;
 		this.stationConsoleCache = {
@@ -11971,9 +12015,15 @@ class Game {
 				displayTL: this.world.system.record.displayTL,
 			}),
 			credits: this.commander.credits,
-			cargo: Object.entries(this.commander.cargo)
-				.filter(([, amount]) => amount > 0)
-				.map(([name, amount]) => `${name} ${amount}`),
+			hold,
+			message: this.stationConsoleMessage,
+			// The pilot's own goods, off the same projection rather than off
+			// `commander.cargo` a second time. The footer lists what can be
+			// sold; the hold line above it says what the ship is carrying, and
+			// an entrusted lot is in one and not the other.
+			cargo: hold.lines
+				.filter((line) => line.owner === "pilot")
+				.map((line) => `${line.goodName} ${line.amount}`),
 			ownedEquipment: this.commander.ownedEquipment,
 			fuelLy: this.commander.fuelLy,
 			fuelCapacityLy: this.fuelCapacityLy,
@@ -12144,6 +12194,17 @@ class Game {
 		return hasHeldSaveFault(this.saveStore, this.saveFault);
 	}
 
+	/**
+	 * Retire the till's last refusal (#443).
+	 *
+	 * One name for the lifecycle rather than the same assignment at each exit:
+	 * a tab press, a launch and an accepted transaction all end a refusal's
+	 * life, and the fourth such path is the one that would have forgotten.
+	 */
+	private clearStationRefusal(): void {
+		this.stationConsoleMessage = null;
+	}
+
 	/** Applies a complete commerce result or leaves both owner states untouched. */
 	private transactStation(action: StationAction) {
 		const context = this.dockedStationContext();
@@ -12161,7 +12222,29 @@ class Game {
 			entrustedT: entrustedTonnesAboard(this.requests),
 			action,
 		});
-		if (!result.accepted) return;
+		if (!result.accepted) {
+			// **The reason was always computed; it was the caller that dropped
+			// it** (#443). A refusal to sell then read as a bug in the till,
+			// which is how the node was reported — correctly, because a rule the
+			// player cannot see is indistinguishable from one that is wrong. The
+			// revision bump is what repaints: the console's cache key and the
+			// cockpit's markup key both read it.
+			// `result.reason` is not nullable on this arm: the result is
+			// discriminated on `accepted`, so a refusal carries a reason. The
+			// `?? "invalid-quantity"` this replaced was a default arm in all but
+			// name — it would have printed "That is not a quantity." over a full
+			// hold, which is #443's own failure one turn later.
+			const hold = holdSummary(this.commander, this.requests);
+			this.stationConsoleMessage = refusalSentence(result.reason, {
+				freeT: hold.freeT,
+				capacityT: hold.capacityT,
+				entrustedT: hold.entrustedT,
+			});
+			this.stationConsoleRevision += 1;
+			this.updateCockpit();
+			return;
+		}
+		this.clearStationRefusal();
 		this.commander = result.commander;
 		// Through the module's own writer, not by hand. `setDeficits` carries
 		// the galaxy bound, the "no write before the clock" refusal and

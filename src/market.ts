@@ -60,7 +60,9 @@ export const QUANTITY_CAP = 0x3f;
 export const ECONOMY_MIN = 0;
 export const ECONOMY_MAX = 7;
 
-type CommodityUnit = "t" | "kg" | "g";
+/** The three units the table uses. Exported since #443: the hold projection
+ *  carries a line's unit so a renderer prints it rather than re-deriving it. */
+export type CommodityUnit = "t" | "kg" | "g";
 
 export interface Commodity {
 	name: string;
