@@ -140,8 +140,9 @@ else's checkout on the same port.
 **The probes do not run in CI** (#14). GitHub installs a browser per run, which
 cost minutes per push and once hung for twenty-five; the runner has no GPU, so
 everything it renders is software-rasterised anyway. `.github/workflows/deploy.yml`
-gates a pull request on format, lint, typecheck, unit tests and build — and nothing on
-GitHub proves the browser tier was run. That check is yours, before you merge.
+gates a pull request on format, lint, wiring, typecheck, unit tests and build — and
+nothing on GitHub proves the browser tier was run. That check is yours, before you
+merge.
 
 ## Things that will bite you
 

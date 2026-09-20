@@ -1,5 +1,5 @@
-# Format, typecheck, unit-test, build — and publish to Cloudflare Pages on
-# every push to main.
+# Format, lint, wiring, typecheck, unit-test, build — and publish to Cloudflare
+# Pages on every push to main.
 #
 # The split from `probes.yml` is deliberate and inherited from seekolous: this
 # job is the fast gate every pull request waits on, and the browser probes are
@@ -56,6 +56,14 @@ jobs:
       # Undeclared names in `scripts/`; what it covers and what it cannot see is
       # written in biome.jsonc (#402).
       - run: npm run lint
+
+      # Every script that opens a browser is bound to the launcher it calls
+      # (#403). Static — it scans `scripts/` and launches nothing — so it does
+      # not reopen #14's reason for keeping the browser tier off GitHub, and it
+      # has been green on `main` since #402, so adding it cannot open every PR
+      # red. `npm run probe` and `npm test` already run it here; what it does not
+      # do until now is reach a branch that never got run on a laptop.
+      - run: npm run check:wiring
 
       # The headless tier: seeded generation, the float64 sim, the module
       # boundary that keeps Three.js out of it. Seconds, no browser.
