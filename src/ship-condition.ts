@@ -66,16 +66,19 @@ export const SHIELD_RECHARGE_ENERGY_PER_POINT = 1;
 export const HULL_PRINT_STEP = 1;
 
 /**
- * The hull as the glass shows it: the print step, rounded.
+ * The hull as the Flight console shows it: the print step, rounded.
  *
- * **Every readout of a hull goes through this.** #367's defect was exactly a
- * hull printed here and a kill decided elsewhere: the cue showed `Math.round`
- * while `isAlive` asked for more than nothing, so a ship at a third of a point
- * was alive and read dead. The kill tolerance below is half the step this
- * function rounds to, so a hull that can print no digit cannot survive a frame.
- * **Not by construction** — the two still ask different questions, one rounds and
- * one compares — and what holds them together is that neither does its own
- * arithmetic. Give either one its own number and the reading comes back.
+ * **Every readout that prints hull in points goes through this**, and since #395
+ * one of them does not: the line under a selected target's name prints a share
+ * through `printHullPercent` below, because a bare 215 is whole on a miner and
+ * impossible on a freighter. #367's defect was a hull printed here and a kill
+ * decided elsewhere: the cue showed `Math.round` while `isAlive` asked for more
+ * than nothing, so a ship at a third of a point was alive and read dead. The
+ * kill tolerance below is half the step this function rounds to, so a hull that
+ * can print no digit cannot survive a frame. **Not by construction** — the two
+ * still ask different questions, one rounds and one compares — and what holds
+ * them together is that neither does its own arithmetic. Give either one its own
+ * number and the reading comes back.
  */
 export const printHull = (hull: number): number =>
 	Math.round(hull / HULL_PRINT_STEP) * HULL_PRINT_STEP;
@@ -158,7 +161,57 @@ export function fullCondition(hull: HullId): ShipCondition {
 	};
 }
 
-export const isAlive = (c: ShipCondition): boolean => c.hull > 0;
+/**
+ * What a print is allowed to look at, and the narrowest type that says so.
+ *
+ * These are `Pick`s of `ShipCondition` rather than `ShipCondition` itself. The
+ * reason is not tidiness: a formatter typed against the whole condition has to be
+ * *handed* the whole condition, so every caller — and every test that wants one
+ * printed figure — invents fields it never reads, and a field added to the
+ * condition for some unrelated reason reaches into every place that only knows how
+ * to print. A full `ShipCondition` is still assignable to these, so nothing that
+ * holds a real one has to change.
+ */
+export type HullReading = Pick<ShipCondition, "hull" | "hullMax">;
+
+/** A reading that shows both facings as well as the hull. */
+export type ConditionPrint = Pick<
+	ShipCondition,
+	"fore" | "aft" | "hull" | "hullMax"
+>;
+
+export const isAlive = (c: HullReading): boolean => c.hull > 0;
+
+/**
+ * The hull as a share of its own capacity, in whole percent.
+ *
+ * **The share form of #367 D1, which is why it asks `isAlive` rather than doing
+ * its own arithmetic.** Why the glass prints a share at all is
+ * `hud-and-scanner.md` §5.4's, and this module is not a second copy of it: the
+ * invariant that lives *here* is that a live hull never prints 0%.
+ *
+ * The principal's ruling carries D1 across with it: *"anything below 0.5% is the
+ * same as 0.5 points in terms of how the game works"*. So the floor on a live
+ * hull is one percent, exactly as it is one point, and `0%` means dead.
+ *
+ * **Where the floor sits moved, which is the whole of the difference — and it is
+ * a difference in dependency, not in what a pilot is ever shown.** `printHull`
+ * cannot print 0 for a live ship *because `applyDamage` is the one writer and it
+ * zeroes hull below `HULL_KILL_TOLERANCE`*: the guarantee lives in the writer,
+ * not in the print, and the note above records what that costs — a condition
+ * hand-built under the tolerance is a live ship printing `HULL 0`. The game does
+ * not reach that state and nothing here claims it does. What the share changes is
+ * that the floor stops being borrowed: it asks `isAlive` and floors at the
+ * resolution it prints at, so it holds across a roster whose capacities run 85 to
+ * 2635 without resting on a tolerance measured in points, which on a capital is a
+ * 0.019% band the print has no digit to express.
+ *
+ * Rounding is to nearest at both ends, which is what `printHull` does and what
+ * the ruling describes: a miner at 214.6 points reads 100%, whole as far as the
+ * glass can tell. Only the 0 end carries a law.
+ */
+export const printHullPercent = (c: HullReading): number =>
+	isAlive(c) ? Math.max(1, Math.round((c.hull / c.hullMax) * 100)) : 0;
 
 /**
  * Whether this hull is too broken for the bank to buy shields with.

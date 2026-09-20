@@ -49,6 +49,30 @@ const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
+/**
+ * The two printed shield facings, read back out of the line as painted.
+ *
+ * Parsing what the glass printed is not restating a constant: the numbers come
+ * from the page. What is deliberately *not* here is any rule for turning a
+ * condition into those numbers — that is `targetConditionLine`'s, and a probe
+ * carrying a copy of it would keep passing after it was retuned.
+ */
+/**
+ * **A predicate that throws aborts the run; one that returns `null` lets the row
+ * fail and the rest of the probe keep reporting.** The first version threw here,
+ * which is the wrong shape twice over: a check's whole job is to say what it saw,
+ * and a `TypeError` partway through a `check(...)` argument prints no payload and
+ * forfeits every row after it. Callers therefore test the result.
+ *
+ * `null` rather than `[]`: `[].every(…)` is vacuously true and `Math.min(...[])`
+ * is `Infinity`, so an empty array would turn a line it could not read into a row
+ * that passes.
+ */
+function pools(line) {
+	const m = /^SHD F (\d+) A (\d+)\s/.exec(line);
+	return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
 try {
 	const page = await browser.newPage({
 		viewport: { width: 1440, height: 900 },
@@ -273,18 +297,143 @@ try {
 	// -------------------------------------------------------------------------
 	// The first shot engages; the civilian runs.
 	// -------------------------------------------------------------------------
-	const engaged = await page.evaluate((key) => {
+	const engaged = await page.evaluate(async (key) => {
 		const p = window.__engagementProbe;
 		const g = window.__seelite;
-		for (let i = 0; i < 10; i++) p.follow(key, true);
-		return g.trafficReadout().contacts.find((c) => c.key === key);
+		const conditionMod = await import("/src/ship-condition.ts");
+		const hud = await import("/src/duel-hud.ts");
+		// The painted mark, plus **what the formatter itself says this condition
+		// prints**. The row's whole question is whether the glass and the sim agree,
+		// and a probe carrying its own copy of the form could keep passing while the
+		// two disagreed — which is CLAUDE.md's reason for reading off the page.
+		/**
+		 * Lit pixels in the band a condition line was painted in.
+		 *
+		 * **This is the half the record cannot answer.** `conditionLine` says what
+		 * the game handed the painter; it stays identical whether the glyphs landed
+		 * where a pilot can read them, landed under the mark's own brackets, or were
+		 * never stroked at all. The band is taken from `conditionPaint`, the
+		 * coordinates the frame passed to `fillText`, so this probe neither
+		 * recomputes the projection nor restates the label's layout offsets — and the
+		 * window is centred on the baseline rather than starting at it, because the
+		 * overlay draws with `textBaseline = "middle"`. Sampling from the baseline
+		 * downward is how the duel HUD's band spent rounds passing on the name line's
+		 * pixels above it.
+		 */
+		const inkIn = (at) => {
+			const overlay = document.getElementById("overlay");
+			const ctx = overlay.getContext("2d", { willReadFrequently: true });
+			const data = ctx.getImageData(
+				Math.floor(at.x),
+				Math.floor(at.y) - 8,
+				150,
+				16,
+			).data;
+			let n = 0;
+			for (let i = 3; i < data.length; i += 4) if (data[i] > 40) n++;
+			return n;
+		};
+		const painted = () => {
+			const record = g.selectedRender;
+			if (!record) return null;
+			const fight = g.trafficEngagements?.get(key);
+			return {
+				...record,
+				// Counted before anything else is read, so it is the frame that
+				// carried `conditionLine` and not a later one that shares its text.
+				paint: record.conditionPaint ? inkIn(record.conditionPaint) : null,
+				expected: fight ? hud.targetConditionLine(fight.condition).text : null,
+			};
+		};
+		// **The first shot, on its own frame.** A carrier nobody has fired on has no
+		// condition to read — it is a schedule projection, not a flown ship — so
+		// this is the earliest frame the line can exist on, and a snapshot taken
+		// before it measures the absence of a thing that was never due.
+		p.follow(key, true);
+		const first = painted();
+		for (let i = 0; i < 9; i++) p.follow(key, true);
+		return {
+			contact: g.trafficReadout().contacts.find((c) => c.key === key),
+			first,
+			mark: painted(),
+			// Off the module, never restated here (CLAUDE.md).
+			shieldPool: conditionMod.SHIELD_POOL,
+		};
 	}, key);
 	check(
 		"the first shot hands it from its projection to flight, and it runs rather than fights",
-		engaged?.engaged === true &&
-			["flee", "evade"].includes(engaged.phase) &&
-			engaged.condition === "operational",
-		JSON.stringify(engaged),
+		engaged.contact?.engaged === true &&
+			["flee", "evade"].includes(engaged.contact.phase) &&
+			engaged.contact.condition === "operational",
+		JSON.stringify(engaged.contact),
+	);
+	// -------------------------------------------------------------------------
+	// The glass says what the sim has been saying since #362 (#395). This is the
+	// half that was missing: the principal fired on ordinary traffic for twenty
+	// to thirty seconds and reported that nothing happened, and they were reading
+	// the glass correctly — the sim was right and the glass was silent.
+	// -------------------------------------------------------------------------
+	check(
+		// **Both halves, on the civilian rather than the raider.** What the pixel
+		// half proves is narrow and stated as narrow: ink is on the overlay at the
+		// coordinates the draw reported. It does **not** prove the line is unclipped,
+		// uncrowded or readable at a glance — a 150 x 16 window counting alpha above a
+		// floor cannot see a glyph cut off at its edge, and no threshold on that count
+		// can, because a half-drawn string still clears any count a whole one clears
+		// minus a few pixels. Proving legibility is the principal's flight, which is
+		// why this node has a checkpoint and not just a probe. What the row does kill
+		// is the failure mode it was written for: a record that says a line was drawn
+		// while the canvas has nothing there, or ink landing somewhere other than
+		// where the frame claims it went.
+		//
+		// The record half
+		// the wire this node was opened for: the sim had been right for twenty seconds
+		// of beam and the handoff to the label was not there. The pixel half is what
+		// a record cannot say — that ink reached the canvas where a pilot reads it —
+		// and an earlier round answered that by pointing at `probe-duel-hud.mjs`.
+		// Pointing was not doing it: that probe frames a **raider**, so a civilian's
+		// line had its text checked and its pixels never. Which is the whole defect
+		// this node exists to close, reproduced in its own verification.
+		"the frame the fight begins paints the condition under the mark, and it is the line the sim's own formatter prints",
+		// **Test the record for, do not optional-chain past it.** `first?.x !== null`
+		// is true when `first` is null — the chain yields `undefined`, which is not
+		// `null` — and the next clause then dereferences the null and the run dies
+		// on a TypeError instead of reporting a failed row with its payload. A check
+		// that throws cannot say what it saw, which is the only thing it is for.
+		engaged.first !== null &&
+			engaged.first.conditionLine !== null &&
+			// Ink on the canvas, not only a string in a record. The threshold is the
+			// duel HUD's own for the same form at the same size: enough glyph pixels
+			// that a clipped, offset or unstroked line cannot reach it by accident.
+			engaged.first.paint !== null &&
+			engaged.first.paint > 30 &&
+			engaged.first.conditionLine === engaged.first.expected &&
+			// The one figure on the line known before it is read: H3d spends hull
+			// points only once a facing is gone, so on this frame the hull is whole.
+			engaged.first.conditionLine.endsWith("HULL 100%"),
+		JSON.stringify(engaged.first),
+	);
+	check(
+		"held in the beam, both facings print and the one it is taking comes down",
+		// Both facings print, every time, which is what makes *which* one is going
+		// readable: meeting a carrier from ahead and from behind are different
+		// fights. Which of the two the beam finds depends on how it fled, so this
+		// asks only that the line names both and one has fallen. Pairing a pinned
+		// geometry to a named facing is `tests/duel-hud.test.ts`'s.
+		engaged.first !== null &&
+			engaged.mark !== null &&
+			engaged.mark.conditionLine !== null &&
+			engaged.mark.conditionLine === engaged.mark.expected &&
+			engaged.mark.conditionLine !== engaged.first.conditionLine &&
+			(() => {
+				const p = pools(engaged.mark.conditionLine);
+				return (
+					p !== null &&
+					p.every((n) => n <= engaged.shieldPool) &&
+					Math.min(...p) < engaged.shieldPool
+				);
+			})(),
+		JSON.stringify({ first: engaged.first, mark: engaged.mark }),
 	);
 
 	// -------------------------------------------------------------------------
@@ -297,6 +446,7 @@ try {
 		const presenceMod = await import("/src/traffic-engagement.ts");
 		const conditionMod = await import("/src/ship-condition.ts");
 		const wreck = await import("/src/raider-wreck.ts");
+		const contactMod = await import("/src/display-contact.ts");
 		const before = g.trafficReadout().legal;
 		const actor = g.trafficActors.find((a) => a.key === key);
 		const hullFull = conditionMod.fullCondition(actor.hullId).hull;
@@ -307,14 +457,41 @@ try {
 		// shields took — which depends on which side of them the beam found — but
 		// that the hull was whole until the frame the row turned.
 		let hullWas = hullFull;
+		// **The mark one frame before the divert, and the mark on it.** The word
+		// has to arrive on the strike rather than have been there already: a pilot
+		// who has only stripped shields is looking at a carrier still flying its
+		// schedule (H3d), and a word that never left the name would say nothing
+		// about what their shot had just done.
+		let beforeMark = null;
+		let atMark = null;
+		let homeKmAt = null;
 		for (; steps < 6000; steps++) {
 			if (!p.follow(key, true)) break;
 			const row = g.trafficReadout().contacts.find((c) => c.key === key);
 			if (row === undefined) continue;
 			if (row.condition === "operational") {
 				hullWas = row.hull ?? hullWas;
+				beforeMark = g.selectedRender && { ...g.selectedRender };
 				continue;
 			}
+			atMark = g.selectedRender && { ...g.selectedRender };
+			// **The figure is read off the painted label and not re-derived here.**
+			// Two drafts were wrong before this one. The first measured `Math.hypot`
+			// over the station body: a second copy of a distance definition, which
+			// keeps asserting the old rule after the rule moves. The second called
+			// production's own `homeStationKm`, which is closer and still not right —
+			// that range is measured from the camera the label is projected against,
+			// and a probe cannot honestly name that point, because the Three camera
+			// works in layer units and not world kilometres. So the browser tier asks
+			// the question it is actually for: on the frame the divert wrote, does the
+			// name line carry the word, and a `HOME` figure that is a real distance?
+			// **That the figure is the pilot's own range to the station body is
+			// `tests/display-contact.test.ts`'s**, where the origin is an argument and
+			// can be stated exactly. A browser row cannot pin an arithmetic it cannot
+			// name the inputs to, and pretending otherwise is the false-constant
+			// failure in the other direction.
+			const printed = atMark?.text?.match(/HOME (\d+(?:\.\d+)?) km$/);
+			homeKmAt = printed ? Number(printed[1]) : null;
 			// Snapshot the legal pair on the frame the divert wrote it, so each
 			// write can be measured against the status that stood before it —
 			// decayed to the same clock, and exactly, with no decay law restated
@@ -361,6 +538,12 @@ try {
 			shieldSeconds: p.shieldSeconds,
 			repairS: wreck.RAIDER_REPAIR_S,
 			parked,
+			// The mark either side of the strike, and the home station's range as
+			// the label itself printed it, in kilometres.
+			beforeMark,
+			atMark,
+			homeKm: homeKmAt,
+			divertLabel: contactMod.DIVERT_LABEL,
 			// Booked to the next departure its own schedule makes after T —
 			// recomputed from the instant the divert wrote, not from the frame the
 			// probe happened to read it on.
@@ -389,6 +572,56 @@ try {
 		// fled. `tests/traffic-engagement.test.ts` holds the arithmetic on a rig
 		// where the geometry is pinned.
 		JSON.stringify(diverted),
+	);
+	// -------------------------------------------------------------------------
+	// The other half of what the principal could not see: that the carrier has
+	// left its schedule, and roughly how far away that is. The word arrives on
+	// the frame the hull gives way — the same frame H3c writes the divert and H4
+	// charges the strike — so cause and consequence land together on the glass
+	// rather than only in the world state.
+	// -------------------------------------------------------------------------
+	check(
+		"a carrier still flying its schedule carries no state word beside its name",
+		diverted.beforeMark !== null &&
+			!diverted.beforeMark.text.includes(diverted.divertLabel),
+		JSON.stringify(diverted.beforeMark),
+	);
+	check(
+		"the frame the hull gives way puts the word and a home station figure on the name line",
+		diverted.atMark !== null &&
+			diverted.atMark.id === key &&
+			diverted.atMark.text.includes(diverted.divertLabel) &&
+			// A figure that parses to a real distance — and **zero is one of them.**
+			// This clause used to say `> 0`, on an earlier reading of the cue in which
+			// a zero contradicted the word beside it. That reading is gone, and the
+			// polarity went with it: a pilot beside their own station when the divert
+			// lands is tens of metres from the body, `HOME 0.0 km` is the answer to
+			// their question, and the word alone now means something narrower — *there
+			// is no station to point at*. So a missing figure is what fails here, and
+			// the row is deliberately on the side that goes red if anything ever
+			// suppresses the zero again.
+			diverted.homeKm !== null &&
+			Number.isFinite(diverted.homeKm) &&
+			diverted.homeKm >= 0,
+		JSON.stringify(diverted.atMark),
+	);
+	check(
+		"and it is still being read as a fight: the facing that ran out prints 0",
+		// `min === 0` is what the model guarantees on this frame — a hull point is
+		// reached only once the facing the beam is on has nothing left — and it is
+		// the frame the line goes red. What the *other* facing has left depends on
+		// the flight, which is not something to pin from a tethered pilot.
+		diverted.atMark !== null &&
+			// `pools` returns `null` for a line that prints no two facings, so the
+			// result is tested before it is spread — `Math.min(...null)` would end the
+			// run instead of reporting the row.
+			diverted.atMark.conditionLine !== null &&
+			(() => {
+				const p = pools(diverted.atMark.conditionLine);
+				return p !== null && Math.min(...p) === 0;
+			})() &&
+			/HULL (?!0%)\d+%$/.test(diverted.atMark.conditionLine),
+		JSON.stringify(diverted.atMark),
 	);
 	check(
 		"the divert is the ship's own ordinal, and its home berth is booked to the next departure after H3d's T (H3c)",

@@ -346,6 +346,7 @@ import {
 	onTargetMark,
 	raiderCueTone,
 	targetConditionLine,
+	targetConditionWidest,
 	showDuelRow,
 } from "./duel-hud";
 import {
@@ -471,6 +472,7 @@ import {
 	relativeLabel,
 	targetAgeLabel,
 	targetDesignation,
+	trafficDivertCue,
 } from "./display-contact";
 import {
 	compareStationTurns,
@@ -1141,6 +1143,29 @@ const floorBandTopY = (h: number, band: number) =>
 	h * GLASS_BOTTOM_FRACTION - FLOOR_STRIP_HEIGHT_PX * band;
 /** The widest reading the duel row can print, for the floor's fit. */
 const DUEL_ROW_WIDEST = duelRowWidest();
+/** The widest reading the line under a selected target's name can print, for the
+ *  label's reservation. #395: the fit held the raider's reading because until
+ *  then nothing else was ever selected and shot at, and a Traffic hull's figures
+ *  are not the raider's. */
+const TARGET_CONDITION_WIDEST = targetConditionWidest();
+/** How far under the selected target's name its condition line sits.
+ *  **Named because two places must agree on it and they are far apart:** the
+ *  declutter reservation reads it, and the paint twenty lines later does, and a
+ *  pair of matching literals that drift is a label reserving a rectangle it then
+ *  paints somewhere else. */
+/**
+ * Where the line under a selected target's name starts, on the overlay.
+ *
+ * One constant for the reservation and the paint, which used to be `+20` in one
+ * and `at.x + r + 6` in the other. They agreed because the radius on the only path
+ * that draws this line is 14, and 14 + 6 is 20 — an agreement between two spellings
+ * of a number in two places four hundred lines apart, which is the kind that outlives
+ * the radius that made it true. The reservation would then be protecting a strip the
+ * text is not in: decluttering would move a neighbour off empty glass and let it
+ * land on the reading.
+ */
+const TARGET_CONDITION_DX = 20;
+const TARGET_CONDITION_DY = 18;
 /** Where the baseline sits inside the band, and how big the value type is —
  *  both fractions of it, so the band is the one thing to change. */
 const FLOOR_BASELINE_FRACTION = 0.35;
@@ -2178,8 +2203,6 @@ class Game {
 	cueRender: {
 		tone: FloorTone;
 		onTarget: boolean;
-		/** The selected raider's condition line as drawn, or `null` without one. */
-		enemyLine: string | null;
 		/** The ring's centre on the overlay, or `null` when the edge arrow is
 		 *  drawn instead — so a probe samples the paint, not this record. */
 		at: { x: number; y: number } | null;
@@ -2189,8 +2212,37 @@ class Game {
 	 * painted. Written by the draw, like `cueRender`, so a probe reads the mark a
 	 * pilot sees rather than re-deriving it (sage #368: a civilian's ON TARGET had
 	 * no record at all).
+	 *
+	 * **`conditionLine` lives here and not on `cueRender`, because it is a fact
+	 * about the painted label and not about a hostile's firing cue.** It sat on
+	 * `cueRender` while only a raider could be shot at, which is how an ordinary
+	 * carrier under fire came to have no record of the line it was not drawing
+	 * either. `cueRender`'s `tone` is the duel's — amber, red while the raider
+	 * fires — and a civilian has no tone to take, so the one field that could
+	 * carry both was carrying one.
 	 */
-	selectedRender: { id: string; text: string; onTarget: boolean } | null = null;
+	selectedRender: {
+		id: string;
+		text: string;
+		onTarget: boolean;
+		/** The condition line drawn under `text` this frame, or `null`. */
+		conditionLine: string | null;
+		/**
+		 * The point the condition line's baseline was set to this frame, or `null`
+		 * when no line was drawn.
+		 *
+		 * **A record of what was painted is not the painting.** `conditionLine` says
+		 * what the game handed the painter; whether ink reached the canvas where a
+		 * pilot can read it is only answerable from the canvas. And the one thing a
+		 * probe must not be left to guess is *where* — the mark moves with the camera,
+		 * and a probe that recomputed the position would be a second projection to
+		 * keep in step, while one that restated `TARGET_CONDITION_DX`/`_DY` would
+		 * drift the day the label's layout moves. So the frame that draws the line
+		 * reports the same coordinates it passed to `fillText`, and
+		 * `probe-traffic-engagement.mjs` samples the overlay around those.
+		 */
+		conditionPaint: { x: number; y: number } | null;
+	} | null = null;
 	/** What the HUD last displayed, quantised to its own resolution — so a frame
 	 *  that would render the same text neither builds nor writes it. */
 	private hudKey = "";
@@ -12102,6 +12154,83 @@ class Game {
 		);
 	}
 
+	/**
+	 * The condition of whatever is selected, for the line under its name.
+	 *
+	 * **A wire, not a new state.** `Engagement.condition` has carried an engaged
+	 * carrier's shields and hull since #362 built it — `stepEngagement` steps it
+	 * through the same `stepCondition` the raider's goes through — and the glass
+	 * read it only `raiderSelected ? … : undefined`. So a pilot asked to strip a
+	 * civilian to a threshold, somewhere chosen, was worked to for twenty seconds
+	 * of unbroken beam and shown nothing (#395).
+	 *
+	 * The relay is deliberately absent: it has no condition to show, and a line
+	 * of zeros beside its name would be a reading of a fight it does not have.
+	 */
+	private selectedTargetCondition(): ShipCondition | null {
+		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
+		if (this.trafficSelected())
+			return (
+				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition ??
+				null
+			);
+		return null;
+	}
+
+	/** How far the carrier's **home station** is from the pilot, or `null` when
+	 *  the game cannot say. A `null`, never a 0: see `trafficDivertCue`.
+	 *
+	 *  **The station, not its berth.** A berth is a parking place inside a
+	 *  station's interior — `CONTEXT.md`, and `docking.md` §13.2 owns the
+	 *  catalogue — and this is the range to the body the berths are inside. The
+	 *  glass prints `HOME`, which is the star-side word for the place and names no
+	 *  parking position inside it; the berth the diverted carrier is booked into is
+	 *  H3c's, and is a different fact about the same station.
+	 *
+	 *  **Measured from `from`, which is the camera the label is drawn from, and not
+	 *  from the ship.** The name line beside this figure already prints a range
+	 *  taken at `camPos`; in chase view the camera sits some hundreds of metres off
+	 *  the hull, so a second figure built on `world.ship.pos` would put two ranges
+	 *  on one label that answer slightly different questions and round apart at the
+	 *  digits the pilot is reading. One label, one origin. */
+	private homeStationKm(key: CarrierKey, from: Vec3): number | null {
+		const actor = this.trafficActorByKey(key);
+		if (!actor) return null;
+		// The live body, not a cached one. A station is carried around its star at
+		// some tens of km/s, and the figure is read every frame the mark is up.
+		const home = this.world.system.bodies.find(
+			(b) => b.kind === "station" && b.id === actor.homeStationId,
+		);
+		return home ? length(sub(home.pos, from)) : null;
+	}
+
+	/**
+	 * The state word the selected carrier's name line carries, or `null`.
+	 *
+	 * Two predicates, and both are load-bearing: **off its schedule**
+	 * (`trafficPresence`) and **still being flown** (`trafficEngagements`). Why
+	 * that pair and not one is `trafficDivertCue`'s to explain, beside the word
+	 * itself; repeating it here is how it goes stale.
+	 *
+	 * **Presence is checked before the station is looked for**, and not for
+	 * tidiness: the station lookup is a `bodies.find` and a vector allocation, and
+	 * the word it
+	 * builds is discarded on every one of the ~17 s of shield-stripping a carrier
+	 * spends with its schedule still its own.
+	 *
+	 *  `from` is the label's own origin — pass the camera position the mark was
+	 *  projected against, so the word's figure and the range beside it are measured
+	 *  from the same place. See `homeStationKm`.
+	 */
+	private selectedDivertCue(from: Vec3): string | null {
+		if (!this.trafficSelected()) return null;
+		const key = this.targetId as CarrierKey;
+		if (!this.trafficEngagements.has(key)) return null;
+		const presence = trafficPresence(this.carrierCondition(key));
+		if (presence !== "parked-home") return null;
+		return trafficDivertCue(presence, this.homeStationKm(key, from));
+	}
+
 	/** Whether the duel row shows: a raider contesting, dueling or selected. */
 	private duelRowShown(): boolean {
 		return showDuelRow({
@@ -12836,18 +12965,29 @@ class Game {
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
 			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));
-		// Built once, because the declutter reservation and the paint must agree.
+		// Read once for the frame, not at each of the two places that needs them.
+		// The declutter reservation and the paint have to agree about what is drawn
+		// here, and deriving the same string twice across a hundred lines of draw
+		// code is the way they stop agreeing.
+		//
+		// **And read only when the mark is actually on the glass.** Both of these
+		// are consumed solely by the reservation and the paint, each of which is
+		// already gated on the projection landing inside the overlay, and the divert
+		// cue in particular walks the system's bodies for the home station. A target
+		// behind the camera is selected just as surely as one in front of it, and
+		// owes no work to a label that is not drawn.
+		const markOnGlass = selectedAt?.on === true;
+		const targetCondition = markOnGlass ? this.selectedTargetCondition() : null;
+		const divertCue = markOnGlass ? this.selectedDivertCue(camPos) : null;
 		const selectedLabel = (name: string, km: number) =>
-			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}`;
+			`${name}  ${range(km)}${onTarget ? "  ON TARGET" : ""}${
+				divertCue ? `  ${divertCue}` : ""
+			}`;
 		if (raiderSelected)
 			this.cueRender = {
 				tone: raiderTone,
 				onTarget,
 				at: selectedAt?.on ? { x: selectedAt.x, y: selectedAt.y } : null,
-				enemyLine:
-					selectedAt?.on && this.encounter?.raider
-						? targetConditionLine(this.encounter.raider.condition).text
-						: null,
 			};
 		// Reserve the selected label before the stable station/ship walk below.
 		// Its label is never submitted to decluttering, so context can disappear
@@ -12860,6 +13000,22 @@ class Game {
 			occupiedLabels.push(
 				labelBounds(selectedAt.x + 20, selectedAt.y + 4, text),
 			);
+			// **The line under the name reserves its own room, against its widest
+			// reading and not this one's.** It went unreserved entirely while only a
+			// raider could ever be shot at, and a station label drawn on top of it is
+			// the exact defect §3's declutter pass exists to stop. The widest rather
+			// than the live text for the floor strip's reason: every pool on it
+			// changes while the beam is on, and a reservation keyed to the digits
+			// would let a neighbour in and out as they ran down.
+			if (targetCondition) {
+				occupiedLabels.push(
+					labelBounds(
+						selectedAt.x + TARGET_CONDITION_DX,
+						selectedAt.y + TARGET_CONDITION_DY,
+						TARGET_CONDITION_WIDEST,
+					),
+				);
+			}
 		}
 		for (const body of this.selectable()) {
 			const dir = directionTo(camPos, body.pos);
@@ -12890,18 +13046,33 @@ class Game {
 					}
 					const label = selectedLabel(body.name, km);
 					ctx.fillText(label, at.x + r + 6, at.y + 4);
-					this.selectedRender = { id: body.id, text: label, onTarget };
-					// The selected raider's shields and hull under its name (#324,
-					// the principal's ruling), in the duel row's tones.
-					const enemy = raiderSelected
-						? this.encounter?.raider?.condition
-						: undefined;
-					if (enemy) {
-						const line = targetConditionLine(enemy);
+					// The selected target's shields and hull under its name (#324, the
+					// principal's ruling), in the duel row's tones — and for every
+					// combat target that has a condition, not the raider alone (#395).
+					const line = targetCondition
+						? targetConditionLine(targetCondition)
+						: null;
+					if (line) {
 						ctx.fillStyle = FLOOR_TONE_FILL[line.tone];
-						ctx.fillText(line.text, at.x + r + 6, at.y + 18);
+						ctx.fillText(
+							line.text,
+							at.x + TARGET_CONDITION_DX,
+							at.y + TARGET_CONDITION_DY,
+						);
 						ctx.fillStyle = selectedColour;
 					}
+					this.selectedRender = {
+						id: body.id,
+						text: label,
+						onTarget,
+						conditionLine: line?.text ?? null,
+						conditionPaint: line
+							? {
+									x: at.x + TARGET_CONDITION_DX,
+									y: at.y + TARGET_CONDITION_DY,
+								}
+							: null,
+					};
 					continue;
 				}
 				// Corner brackets rather than a box: a closed square over a distant

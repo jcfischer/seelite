@@ -102,10 +102,17 @@ const installHelpers = () => {
 		rimPaint() {
 			return countIn(2, 2, 16, 16, rimRed);
 		},
-		/** Lit pixels in the band under the selected label, where the enemy's
-		 *  condition line is drawn. */
+		/** Lit pixels in the band the condition line under the selected label is
+		 *  painted in.
+		 *
+		 *  **Centred on the baseline, because the overlay draws with
+		 *  `textBaseline = "middle"`.** This read `at.y + 9` for a line painted at
+		 *  `at.y + TARGET_CONDITION_DY`, which is 18 — a band sitting nine pixels
+		 *  high of the ink, catching its bottom two rows out of eleven. It passed,
+		 *  because the name line above it leaks into the same box, which is the
+		 *  reason a check like this has to be centred rather than merely nonzero. */
 		enemyLinePaint(at) {
-			return countIn(at.x + 20, at.y + 9, 110, 11, passive);
+			return countIn(at.x + 20, at.y + 12, 110, 12, passive);
 		},
 		cruise() {
 			g.resetFlightToStart();
@@ -328,12 +335,24 @@ for (const viewport of VIEWPORTS) {
 				};
 			const cue = g.cueRender;
 			if (!cue?.at || !g.encounter) continue;
-			if (cue.enemyLine && line === null && g.encounter.raider)
+			// The painted line is a fact about the label, so it is read from the
+			// label's record — `selectedRender`, since #395 — and not from the
+			// raider's firing cue. Its position still comes off the cue, which is
+			// what knows where on the overlay the mark was drawn.
+			const painted = g.selectedRender?.conditionLine;
+			if (painted && line === null && g.encounter.raider) {
+				const c = g.encounter.raider.condition;
 				line = {
-					text: cue.enemyLine,
-					hull: Math.round(g.encounter.raider.condition.hull),
+					text: painted,
+					// Whole or not, read off the condition itself. How a hull becomes
+					// a printed figure is `tests/duel-hud.test.ts`'s and
+					// `printHullPercent`'s; a probe that restated the rounding would
+					// go on passing after it was retuned, which is the false constant
+					// CLAUDE.md names.
+					whole: c.hull === c.hullMax,
 					paint: D.enemyLinePaint(cue.at),
 				};
+			}
 			if (cue.onTarget && onTarget === null) onTarget = { ...cue };
 			const tones = D.tonesAround(cue.at);
 			if (g.raiderFiring && firing === null)
@@ -402,11 +421,16 @@ for (const viewport of VIEWPORTS) {
 	);
 	check(
 		`${v}: the selected raider's shields and hull are drawn under its label`,
-		// The line reads the raider's own hull; `tests/duel-hud.test.ts` owns the
-		// format, so only the hull figure is matched here.
+		// The line reads the raider's own hull. `tests/duel-hud.test.ts` owns the
+		// form and the rounding, so two things are matched here and no third is:
+		// the line ends in a percent at all, and a **whole** hull reads 100%. One
+		// way only, deliberately — a nicked hull can still round to 100% (214.6 of
+		// 215 does), and a probe that asserted both directions would be a restated
+		// rounding law waiting to go falsely red on the next retune.
 		duel.line !== null &&
 			duel.line.text.startsWith("SHD F ") &&
-			duel.line.text.endsWith(`HULL ${duel.line.hull}`) &&
+			/HULL \d+%$/.test(duel.line.text) &&
+			(!duel.line.whole || duel.line.text.endsWith("HULL 100%")) &&
 			duel.line.paint > 30,
 		JSON.stringify(duel.line),
 	);

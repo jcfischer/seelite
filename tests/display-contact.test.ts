@@ -5,9 +5,13 @@ import { projectNavTargets } from "../src/cockpit";
 import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
 import {
 	type DisplayContact,
+	DIVERT_LABEL,
 	isDisplayContact,
 	relativeLabel,
+	trafficDivertCue,
 } from "../src/display-contact";
+import { trafficPresence } from "../src/traffic-engagement";
+import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
@@ -480,4 +484,160 @@ test("the scan cone is measured on the sightline the pilot aims with", () => {
 	// so the two cannot drift apart.
 	expect(method("scanStandoffNow")).toContain("scanStandoff(");
 	expect(method("scanStandoffNow")).toContain("this.weaponAim()");
+});
+
+// ---------------------------------------------------------------------------
+// #395. A struck civilian is off its schedule, and nothing anywhere said so. The
+// sim was right — H3 has it fleeing from the first frame the beam lands, and H3d
+// diverts it the frame the hull gives way — and the glass was silent. Two rows
+// own that: the word the mark carries, and the one predicate that decides whether
+// it carries it at all.
+// ---------------------------------------------------------------------------
+test("a carrier flying its route on time carries no state word at all", () => {
+	// Absence is the reading. A traffic contact that has been left alone shows
+	// nothing beside its name, so the word cannot be a decoration that is always
+	// there and means nothing.
+	expect(trafficDivertCue("flying", 40)).toBe(null);
+	expect(trafficDivertCue("absent", 40)).toBe(null);
+});
+
+test("a carrier off its schedule carries the word and how far its station is", () => {
+	const cue = trafficDivertCue("parked-home", 40.25);
+	expect(cue).toContain(DIVERT_LABEL);
+	expect(cue).toContain(range(40.25));
+});
+
+test("with no station to point at it says the fact and no figure", () => {
+	// A missing station position is a `null`, not a 0.
+	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
+});
+
+test("a station beside the pilot prints zero, because zero is the reading", () => {
+	// This row exists because the round before it got this backwards. §5.4 said the
+	// cue must never print `HOME 0.0 km`, a guard was written to match, and the
+	// reasoning sounded careful: a zero says the station is right here while the word
+	// says the ship is gone. It is only true if the pilot is nowhere near the
+	// station — and the ordinary divert happens *at* a station, where the body is
+	// tens of metres off and `range` renders that as `0.0 km`. For that pilot it is
+	// not a contradiction, it is the answer.
+	//
+	// Suppressing it costs more than a figure: `DIVERTING` alone already means *there
+	// is no station to point at*, so a suppressed zero would wear the same face as a
+	// missing station, and the glass has no other way to separate `here` from
+	// `unlocatable`. One string, one meaning.
+	expect(trafficDivertCue("parked-home", 0.04)).toContain("HOME 0.0 km");
+	expect(trafficDivertCue("parked-home", 0)).toContain("HOME 0.0 km");
+	// And `null` — the actual unknown — is still the word alone.
+	expect(trafficDivertCue("parked-home", null)).toBe(DIVERT_LABEL);
+});
+
+/**
+ * The gate, run from `Game`'s own method text rather than a copy of it.
+ *
+ * `from` is the origin the label's ranges are measured from, which the method now
+ * takes as an argument instead of reading `world.ship.pos`: on the glass it is
+ * `camPos`, so that a mark's name-range and its `HOME` figure answer to one point
+ * and cannot round apart in chase view. A test that hands it a position is therefore
+ * testing the rule the browser cannot — the probe has no honest way to name the
+ * camera in world kilometres, so the exact arithmetic lives here.
+ */
+function divertCueOf(over: Record<string, unknown> = {}, from = v3()) {
+	const key = "7:trade:3";
+	const subject = Object.assign(
+		Object.create(
+			methods(["selectedDivertCue", "homeStationKm"], {
+				trafficDivertCue,
+				trafficPresence,
+				length,
+				sub,
+			}),
+		),
+		{
+			targetId: key,
+			trafficSelected: () => true,
+			trafficEngagements: new Map([[key, {}]]),
+			carrierCondition: () => ({
+				condition: "repairing",
+				recovery: { kind: "repair" },
+			}),
+			trafficActorByKey: () => ({ homeStationId: "S1" }),
+			world: {
+				system: {
+					bodies: [{ kind: "station", id: "S1", pos: v3(0, 40, 0) }],
+				},
+				ship: { pos: v3() },
+			},
+			...over,
+		},
+	);
+	return (subject as any).selectedDivertCue(from);
+}
+
+test("the word reads the row's presence, and an operational row carries no word", () => {
+	// **What this row can hold and what it cannot.** It holds the glass's rule: the
+	// word follows `trafficPresence` and nothing else. That the presence turns on
+	// the same tick the hull gives way is H3c, and it is `stepEngagement`'s — held
+	// in `tests/traffic-engagement.test.ts` on a rig that runs the strike, and in
+	// the browser by `probe-traffic-engagement.mjs`, which reads the mark on the
+	// frame before the divert and on the frame of it. A stub that flips a
+	// `condition` here would not notice those two ticks coming apart, so this row
+	// does not pretend to watch them.
+	expect(divertCueOf()).toContain(DIVERT_LABEL);
+	expect(
+		divertCueOf({ carrierCondition: () => ({ condition: "operational" }) }),
+	).toBe(null);
+});
+
+test("a carrier already standing in its berth is not running", () => {
+	// No engagement means it is not being flown. Drawn in the berth, it is found,
+	// not fleeing — and `HOME 0.0 km` beside it would be a lie about a distance
+	// nobody is travelling. That half is #365's surface, not this line's.
+	expect(divertCueOf({ trafficEngagements: new Map() })).toBe(null);
+});
+
+test("the word is the carrier's state, not this engagement's event", () => {
+	// A pilot who lost a struck carrier over the horizon, reacquired it, and fired
+	// again meets it on its way home with its shields whole. The word has to be
+	// there for them, because the ship is off its schedule — which is a fact about
+	// the carrier, not a report on what the last trigger did. So the gate reads
+	// presence and the engagement and **nothing about a hull at all**: the same
+	// word, whether the row's hull is spent or untouched.
+	const offSchedule = (hull: number, hullMax: number) =>
+		divertCueOf({
+			carrierCondition: () => ({
+				condition: "repairing",
+				recovery: { kind: "repair" },
+				hull,
+				hullMax,
+			}),
+		});
+	expect(offSchedule(1, 215)).toContain(DIVERT_LABEL);
+	expect(offSchedule(215, 215)).toContain(DIVERT_LABEL);
+});
+
+test("nothing on the glass but an ordinary carrier gets the word", () => {
+	expect(
+		divertCueOf({
+			trafficSelected: () => false,
+			trafficEngagements: new Map([["raider", {}]]),
+		}),
+	).toBe(null);
+});
+
+test("the home-station distance is measured from where the label is drawn, not from the hull", () => {
+	// The station sits at 40 on one axis; the pilot's eye is a hundred metres up it.
+	// Read from the ship this says `40.0 km`; read from the label's own origin it
+	// says `39.9`. Only the second agrees with the range printed beside it, which is
+	// the whole reason `homeStationKm` takes the origin instead of reaching for the
+	// ship: two figures on one label, answering two questions, is a reading a pilot
+	// cannot tell apart.
+	const cue = divertCueOf({}, v3(0, 0.1, 0));
+	expect(cue).toContain("HOME 39.9 km");
+	expect(cue).not.toContain("HOME 40.0 km");
+	// A station that is not in the system cannot be pointed at.
+	expect(
+		divertCueOf({
+			world: { system: { bodies: [] }, ship: { pos: v3() } },
+		}),
+	).toBe(DIVERT_LABEL);
 });
