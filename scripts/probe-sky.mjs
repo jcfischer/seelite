@@ -6,12 +6,27 @@
  * `galaxy-frame`, the size law, the colour rule. None of it can see the
  * renderer, and the three things that can only be seen here are:
  *
- * - **The buffers that reach the GPU are the ones the module returned.** A jump
- *   rebuilds the derived layer's geometry; a rebuild that wrote new bearings and
- *   left the old sizes mounted would draw a sky of the wrong brightness at the
- *   right bearings, and every headless row would stay green because each buffer
- *   is correct on its own. So the jump arm reads the *mounted* attributes and
- *   asks that the mounted sizes fall as the mounted distances rise.
+ * - **The buffers mounted on the scene graph are the ones the module returned.**
+ *   A jump rebuilds the derived layer's geometry; a rebuild that wrote new
+ *   bearings and left the old sizes mounted would draw a sky of the wrong
+ *   brightness at the right bearings, and every headless row would stay green
+ *   because each buffer is correct on its own. So the jump arm reads the
+ *   *mounted* attributes and asks that the mounted sizes fall as the mounted
+ *   distances rise.
+ *
+ * **What this probe reads, exactly, and what it cannot see.** Every attribute
+ * reading here is `geometry.getAttribute(...)` — the CPU-side `BufferAttribute`
+ * the module handed to the geometry the scene graph is drawing with — plus the
+ * geometry's own identity and the layer's parent chain. Nothing here renders or
+ * reads a pixel back, so **a draw call that never happened, or an upload that the
+ * driver dropped, passes all nine checks**; the claim that the sky is actually on
+ * screen belongs to `probe-output-stage.mjs`, which counts lit pixels of the
+ * composited frame (`the backdrop is still there when the frame is multisampled`)
+ * and is the row that would go red on a lost draw. Naming that boundary is the
+ * honest version of a docstring that used to say "reaches the GPU": the checks
+ * below are the ones only a browser can do, because they read the objects a live
+ * renderer is holding rather than ones a test built, and that is a different claim
+ * from saying anything about what the GPU painted.
  * - **Which layer was actually rebuilt.** Contents alone cannot answer that: a
  *   faint population rebuilt to identical bytes would pass a content check, and
  *   the design claim is that it is not rebuilt at all. So each read tags the
@@ -22,7 +37,8 @@
  * - **Both layers are in the layer they belong in.** `backdropScene` is drawn
  *   with no depth write, first, and re-centred on the camera; a `Points` that
  *   ended up in the far layer would parallax, which is a bug no headless test
- *   can express.
+ *   can express — the parallax itself is read on the sheet, but the parentage
+ *   that causes it is read here.
  *
  * The probe drives the shipped game through `window.__seelite` and reads
  * constants off the page (`units.BACKDROP_RADIUS`) rather than restating them.
@@ -99,8 +115,14 @@ await page.evaluate(() => {
 			const a = attr.array;
 			const words = new Uint32Array(a.buffer, a.byteOffset, a.length);
 			let h = 2166136261;
+			// `Math.imul`, not `*`. The multiply reaches 2^55, which is past what a
+			// double's mantissa carries exactly, so the low bits that `| 0` keeps
+			// are already rounded away before the truncation — an FNV-1a that
+			// quietly discards the part of each step it exists to mix. This digest
+			// *is* the byte-identity claim, so its collision resistance is the
+			// check rather than an implementation detail of it.
 			for (let i = 0; i < words.length; i++)
-				h = ((h ^ words[i]) * 16777619) | 0;
+				h = Math.imul(h ^ words[i], 16777619);
 			return h;
 		};
 		const whole = position.count <= 512;
@@ -108,9 +130,11 @@ await page.evaluate(() => {
 			count: position.count,
 			minRadius: min,
 			maxRadius: max,
-			positions: whole
-				? Array.from(position.array)
-				: Array.from(position.array.slice(0, 24)),
+			// No `positions` array: every check that needed the bearings does it
+			// through `minRadius`/`maxRadius`/`positionChecksum`, and shipping a
+			// 12,000-float slice that no row prints is the payload this file's
+			// checksum was added to replace. `sizes` stays because
+			// `mountedSizesFall` pairs them against the galaxy's distances.
 			sizes: whole
 				? Array.from(size.array)
 				: Array.from(size.array.slice(0, 24)),
@@ -266,7 +290,14 @@ const after = await page.evaluate(() => window.__skyProbe.sky());
 
 check(
 	"a jump re-draws the derived sky onto a geometry that is not the one before",
+	// Both sides read through `?.`, because a layer that never mounted must cost
+	// this row and the ones after it a **red check**, not a TypeError that ends the
+	// run with four rows unreported. `undefined !== undefined` is false, so a
+	// missing layer on either side fails the row it belongs to and the probe keeps
+	// printing. The `!== null` guards stay for the same reason: they name which
+	// side is missing in the failing detail below.
 	after.systems !== null &&
+		before.systems !== null &&
 		after.systems.reads === 1 &&
 		after.systems.positionChecksum !== before.systems.positionChecksum,
 	`the mounted positions differ, and the mounted geometry has survived ${after.systems?.reads} read — the boot one was a different object`,
@@ -275,6 +306,7 @@ check(
 check(
 	"a jump leaves the invented population on the geometry it booted with",
 	after.faint !== null &&
+		before.faint !== null &&
 		after.faint.reads === before.faint.reads + 1 &&
 		after.faint.count === before.faint.count &&
 		after.faint.positionChecksum === before.faint.positionChecksum &&

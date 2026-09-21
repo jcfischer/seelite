@@ -64,21 +64,17 @@
  *
  * ## The law on each point, and the invariant between the layers
  *
- * - **Size is flux.** The shader draws an additive soft disc, so the light a
- *   point contributes goes as its size squared, and drawing a star at `size ∝
- *   1/d` is flux `∝ 1/d²` at constant surface brightness. That is #100's inverse
- *   square with no invented exponent and no dial — and see the colour rule for
- *   what makes "distance is the only thing carrying brightness" true rather than
- *   hopeful.
- * - **Colour is class, never exposure.** A point takes the hue of its system's
- *   own star class, normalised through `star-colour.ts` to the one photosphere
- *   exposure — #59's rule one scale down. Here it does a second job: a tint that
- *   carried its own exposure would put an M dwarf's point well under an F star's
- *   and the size law would stop being a statement about distance.
- * - **No invented star outshines a real one.** `FAINT_SIZE_MAX` sits under
- *   {@link BRIGHT_SIZE_MIN}, held in `tests/backdrop.test.ts`. That hierarchy is
- *   the picture's legibility: the bright points are the places you can go, and
- *   the grain behind them is not.
+ * Three rules, one line each — §12 carries the paragraphs, and this file already
+ * carried them near-verbatim alongside the spec and `CONTEXT.md`, which is the
+ * same triplication of a figure that this node spent five rounds removing.
+ *
+ * - **Size is flux:** an additive disc's light goes as `size²`, so `size ∝ 1/d`
+ *   *is* flux `∝ 1/d²` — #100's inverse square, no invented exponent, no dial.
+ * - **Colour is class, never exposure** (#59 one scale down), which is what makes
+ *   the size law a statement about distance and one thing only.
+ * - **No invented star outshines a real one:** {@link FAINT_SIZE_MAX} sits under
+ *   {@link BRIGHT_SIZE_MIN}, held in `tests/backdrop.test.ts`. The bright points
+ *   are the places you can go; the grain behind them is not.
  */
 
 import { type Galaxy, type SystemRecord, distanceLy } from "./galaxy";
@@ -91,7 +87,20 @@ import { BACKDROP_RADIUS } from "./units";
 export interface StarField {
 	/** xyz triples on a sphere of radius `BACKDROP_RADIUS`. */
 	positions: Float32Array;
-	/** rgb triples, 0..1, linear. */
+	/** rgb triples, 0..1, **linear light** — the space the shader multiplies in.
+	 *
+	 * It has two producers, and they get there differently, which is worth naming
+	 * because #433's bake reads this same attribute. {@link systemField} derives
+	 * each triple from the star-class hex through `star-colour.ts`, so its values
+	 * carry #59's one photosphere exposure and an actual sRGB→linear transfer.
+	 * {@link faintField} authors its ramp by eye *in this space*, with no
+	 * transfer: an eye-picked `0.38` is here a **linear** 0.38, which is a darker
+	 * number than the eye that chose it imagined. Both are therefore legal per
+	 * this declaration and they are not the same act of authoring. Whether the
+	 * invented ramp should be re-authored in sRGB and transferred is a look call
+	 * on #433's sheet — it moves the grain's colour, not its size, and this node
+	 * deliberately did not spend its one look change on it.
+	 */
 	colors: Float32Array;
 	/** Per-point size, in the units `PointsMaterial` wants. */
 	sizes: Float32Array;

@@ -30,7 +30,6 @@ import { describe, expect, test } from "bun:test";
 import {
 	BRIGHT_CEILING_LY,
 	BRIGHT_FLOOR_LY,
-	BRIGHT_SIZE_K,
 	BRIGHT_SIZE_MAX,
 	BRIGHT_SIZE_MID_LY,
 	BRIGHT_SIZE_MIN,
@@ -301,12 +300,15 @@ describe("systemField — the 255 systems that are actually there", () => {
 		expect(brightSizeLy(BRIGHT_SIZE_MID_LY * 2)).toBeLessThan(mid);
 		expect(brightSizeLy(BRIGHT_SIZE_MID_LY / 2)).toBeGreaterThan(mid);
 		// Both clamps are reachable, and reachable *where the exported constants
-		// say they bite*. That is the whole point of those two being exported
-		// numbers rather than prose: `docs/specs/galaxy-generation.md` §12 quotes
-		// both distances, and before they were constants the sentence beside a
-		// moved `K` was free to say anything. A boundary is two rows, because a
-		// distance quoted as "where it bites" is wrong if the law has already
-		// bitten a light year earlier.
+		// say they bite* — which is a claim about the **law**, and worth two rows
+		// per boundary because a distance quoted as "where it bites" is wrong if
+		// the law has already bitten a light year earlier.
+		//
+		// What these rows cannot do is see a *documented number*: `BRIGHT_CEILING_LY`
+		// is defined as `BRIGHT_SIZE_K / BRIGHT_SIZE_MAX`, so comparing the law at
+		// that distance against the band is an identity that holds for any values
+		// of the three dials. The same is true of every ordering row below. The
+		// figures §12 quotes are pinned by their own row for exactly that reason.
 		// `toBeCloseTo` rather than `toBe` at the boundary: the distance and the
 		// size are on opposite sides of the same quotient, and `K / (K / MAX)`
 		// landing one ulp under `MAX` would leave the clamp unfired. That is a
@@ -333,6 +335,28 @@ describe("systemField — the 255 systems that are actually there", () => {
 		// the observed range the clamps sit within.
 		expect(BRIGHT_CEILING_LY).toBeLessThan(BRIGHT_SIZE_MID_LY);
 		expect(BRIGHT_FLOOR_LY).toBeGreaterThan(BRIGHT_SIZE_MID_LY);
+	});
+
+	test("the two clamp distances §12 quotes are the ones that ship", () => {
+		// The only row here whose whole job is to **go red**.
+		//
+		// `docs/specs/galaxy-generation.md` §12 says the clamps bite at 10.04 ly
+		// and 46.03 ly, and those are literals in prose while the constants are
+		// quotients of three dials. Round 1 of this node's review shipped exactly
+		// that pair of sentences beside a `K` that had already moved — 9.07 and 51.0
+		// against 10.04 and 46.03 — and no row noticed, because every row that
+		// *looks* like it guards the distances derives them from the same dials the
+		// distances are made of. So this row deliberately restates them as numbers
+		// at the precision the document quotes them: move `BRIGHT_SIZE_K`, or either
+		// end of the band, and this goes red and §12 has to be edited in the same
+		// commit. A pinned literal is a maintenance cost on purpose; the alternative
+		// is a spec that is politely wrong.
+		//
+		// `sky` mode prints both distances too, from the same constants, so a reader
+		// with the instrument open never needs to trust this row — its job is the
+		// reader who does not.
+		expect(BRIGHT_CEILING_LY).toBeCloseTo(10.04, 2);
+		expect(BRIGHT_FLOOR_LY).toBeCloseTo(46.03, 2);
 	});
 
 	test("the size law refuses a distance that is not a distance", () => {

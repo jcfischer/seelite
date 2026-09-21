@@ -914,12 +914,13 @@ ceiling, which is not a band.
 
 The bake, the points layer, the rim view row and whether a pilot can read any of
 it — siblings below #100 (`#431`, `#432`, `#433`, `#434`), all blocked on this.
-This section answers where a **Galactic frame** direction is in a system's own sky, and
-nothing about what is drawn there. **§12 is what landed in that blank** — and two
-of the figures #100's own receipt quoted beside this frame did not survive being
-re-measured: its "median 21.1 ly" is the median *separation* between two systems
-rather than the median *nearest* one, and its spread is 5.42 magnitudes rather
-than 4.2.
+This section answers where a **Galactic frame** direction is in a system's own sky,
+and nothing about what is drawn there. **§12 is what landed in that blank** — and
+two of the figures #100's own receipt quoted beside this frame came back with the
+*label* wrong rather than the number: its "median 21.1 ly" named no quantity and is
+the median **separation** between two systems (which re-measures to 21.5, so the
+figure agrees to 2%), not the median **nearest** one, which is 3.06 ly; and its
+"4.2 magnitudes" of spread reads 5.42 once the quantity it names is fixed.
 
 ## 12. The sky behind everything, and which half of it is invented
 
@@ -968,12 +969,18 @@ that on the sheet.
 
 ### Why invent anything: the sky is thin
 
-The real layer is **6.18 points per 1000 square degrees**. Earth's *named*
-naked-eye stars are 145 of them, or 3.51 per 1000, so the real layer is already
-denser than a chart a person could hold; but Earth's dark sky is of order 5,000
-stars, and against that the real layer is twenty times short of what reads as
-*sky*. The invented population — 4,000 points, 97 per 1000 sq deg — supplies
-exactly that and nothing else.
+The real layer is **6.18 points per 1000 square degrees**. The comparison
+population is **#100's own choice, not a figure this node re-derived**: its receipt
+set Earth's naked-eye sky at **145** stars, 3.51 per 1000 sq deg, which makes the
+real layer **1.8× denser** than the number #100 itself held up as "a recognisable
+sky" — and that is the exact reach of the claim, since a different 145 would move
+it. Its other comparison, the dark-sky figure of order 5,000 stars, is the one
+#100's "23× sparser" actually needs, and against it the real layer is twenty times
+short of what reads as *sky*. The invented population — 4,000 points, 97 per 1000
+sq deg — supplies exactly that and nothing else. Two populations, two ratios, and
+the receipt quoted both as if they were one: which is the same mislabelling as the
+distances above, and why both comparisons are spelled out here rather than
+collapsed into a "sparser than" sentence.
 
 How thin the real layer is, in the units a size law is written in: the median
 **nearest** other system is **3.06 ly** away, the median *separation* to any other
@@ -1108,21 +1115,28 @@ mounted radius rather than trusting the name, and `probe-boot.mjs` no longer
 reaches for `children.find(c => c.isPoints)`, which cannot tell the two layers
 apart.
 
-### Two of #100's figures did not survive being re-measured
+### Two of #100's figures were labelled for the wrong quantity
 
-Its receipt is the source of this node's design, and two of its numbers were
-mislabelled rather than wrong:
+Its receipt is the source of this node's design, and it is worth being exact about
+what re-measurement found, because "the numbers did not survive" would be the same
+kind of sloppiness the receipt was guilty of. **Both numbers are close to right for
+something; neither was named for the thing it was standing in for:**
 
-- Its "median 21.1 ly" beside a "mean 5.45" named neither quantity. The median
-  **separation** is 21.5 ly; the median **nearest** other system is **3.06 ly**.
+- Its "median 21.1 ly" beside a "mean 5.45" named neither quantity, and that is
+  the whole finding: read as a median **separation** it re-measures to **21.5 ly**,
+  two per cent off, so #100's arithmetic held and its *label* did not. Read as the
+  median **nearest** other system — which is what a size law keyed to "the typical
+  distance to a star you can see" needs — it is **3.06 ly**.
   The two differ by nearly seven, and which one a size law is anchored to is the
   difference between a sky with one bright star in it and one with a handful —
   which is what `BRIGHT_SIZE_MID_LY` is.
 - Its "4.2 magnitudes" of inverse-square spread reads **5.42** median, 13.79 at
   the worst.
 
-Its "23× sparser than a sky a person recognises" holds only against Earth's
-~5,000-star dark sky; against its 145 named stars the real layer is 1.8× denser.
+Its "23× sparser than a sky a person recognises" is the same third figure with a
+sliding population under it: it holds against a ~5,000-star dark sky and not
+against the 145 its own receipt compared against, where the real layer is 1.8×
+*denser* — see "Why invent anything" above for what each ratio is a ratio *of*.
 `scripts/measure-sky-density.ts` states which distance each of its rows is
 reading, which is the discipline the mislabelling was missing — and it checks the
 one arm that was itself wrong at first: a *two-sided* band of ±θ takes **sin θ** of

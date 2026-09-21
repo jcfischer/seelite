@@ -72,8 +72,29 @@ const SEEDS = 40;
 /** Whole-sphere solid angle in square degrees. */
 const SPHERE_SQ_DEG = 41252.96;
 
-/** The naked-eye count #100 compared the derived layer against. */
+/** The comparison population **from #100's own receipt**, not a re-derived count.
+ *
+ * It is the only basis for the "1.8× denser" row this instrument prints beside it,
+ * so the row's reach is "denser than the figure #100 chose", and the print says as
+ * much. §12 of `galaxy-generation.md` carries why the receipt's *other* comparison
+ * — a dark sky of order 5,000 — is the one its "23× sparser" needed, and that no
+ * number here settles which population a person calls a recognisable sky.
+ */
 const EARTH_NAKEDEYE = 145;
+
+/** Degrees to radians. Hand-copied six times before this, in a file whose whole
+ * claim is that its arms are derived rather than typed in. */
+const rad = (deg: number) => (deg * Math.PI) / 180;
+
+/** Clamp to the domain of `acos`/`asin`.
+ *
+ * Not defensive padding: a dot product of unit vectors that were themselves
+ * computed by dividing can come back at 1+1e-16, and the inverse cosine of that is
+ * NaN. `finite` does not catch it — NaN is never `<=` a threshold, so the point
+ * simply leaves the count, which is a silent subtraction from a figure whose `n`
+ * still says the whole corpus. Both call sites need it; one of them had forgotten.
+ */
+const clampUnit = (x: number) => Math.max(-1, Math.min(1, x));
 
 /** Throw rather than print a non-finite figure.
  *
@@ -159,8 +180,7 @@ function quantileSorted(
 
 /** The value below which `p` of an unsorted sample lies. */
 function quantile(xs: readonly number[], p: number, label: string): number {
-	const s = sortedCopy(xs, label);
-	return finite(label, s[Math.min(s.length - 1, Math.floor(s.length * p))]);
+	return quantileSorted(sortedCopy(xs, label), p, label);
 }
 
 /** Which of an observer's three readings a mode actually uses.
@@ -208,10 +228,9 @@ function observerSky(
 	// The centre is the origin (§3's density law is centred there), so the way in
 	// is the negated position. An observer standing exactly at the centre has no
 	// such direction; the generator ships none, and the guard below says so.
-	const coreDir = normalizeOr(
-		sub({ x: 0, y: 0, z: 0 }, observer.pos),
-		GALACTIC_NORMAL,
-	);
+	const coreDir = needs.coreCone
+		? normalizeOr(sub({ x: 0, y: 0, z: 0 }, observer.pos), GALACTIC_NORMAL)
+		: null;
 	if (lengthSq(observer.pos) < 1e-12)
 		throw new Error("measure-sky-density: an observer sits at the centre");
 	for (const other of systems) {
@@ -222,22 +241,26 @@ function observerSky(
 		const delta = sub(other.pos, observer.pos);
 		const d = Math.sqrt(lengthSq(delta));
 		if (needs.dists) (dists ??= []).push(finite("distance", d));
-		const unit: Vec3 = { x: delta.x / d, y: delta.y / d, z: delta.z / d };
-		if (needs.elevations) {
+		// Both angles below need a *direction*, and `sky` mode — the default, and
+		// the one that costs a minute — needs only the distance. So the unit vector
+		// is built for the modes that asked for an angle rather than for all 21M
+		// observer/system pairs, which was 21M objects and three divisions each
+		// thrown away by the mode that ran.
+		const wantsBearing = needs.elevations === true || needs.coreCone === true;
+		const unit: Vec3 | null = wantsBearing
+			? { x: delta.x / d, y: delta.y / d, z: delta.z / d }
+			: null;
+		if (needs.elevations && unit) {
 			// Clamped, because this is a dot product of unit vectors and a unit
 			// vector computed by dividing can come back at 1+1e-16. `asin` of that
 			// is NaN, and NaN is not caught by `finite`: it is simply never `<=` a
 			// threshold, so the point silently leaves the count. The cone arm
 			// below has always clamped; this one had not.
 			const sinLat = finite("sinLat", dot(unit, GALACTIC_NORMAL));
-			(elevAbs ??= []).push(
-				Math.abs(Math.asin(Math.max(-1, Math.min(1, sinLat)))),
-			);
+			(elevAbs ??= []).push(Math.abs(Math.asin(clampUnit(sinLat))));
 		}
-		if (needs.coreCone)
-			(fromCore ??= []).push(
-				Math.acos(Math.max(-1, Math.min(1, dot(unit, coreDir)))),
-			);
+		if (needs.coreCone && unit && coreDir)
+			(fromCore ??= []).push(Math.acos(clampUnit(dot(unit, coreDir))));
 	}
 	return {
 		dists: dists ?? EMPTY,
@@ -361,10 +384,11 @@ function modeSky(): void {
 		`points: ${points}  (${fig(
 			"density",
 			(points / SPHERE_SQ_DEG) * 1000,
-		)} per 1000 sq deg, against Earth's naked-eye ${fig(
-			"earth density",
-			(EARTH_NAKEDEYE / SPHERE_SQ_DEG) * 1000,
-		)})`,
+		)} per 1000 sq deg, against the ${EARTH_NAKEDEYE}-star population #100's ` +
+			`receipt compared against (${fig(
+				"earth density",
+				(EARTH_NAKEDEYE / SPHERE_SQ_DEG) * 1000,
+			)} per 1000 — #100's figure, not re-derived here))`,
 	);
 	// Sorted once each here, and read by both the summary below and the two
 	// percentiles further down. These are 81,920-element series, and this mode was
@@ -448,6 +472,16 @@ function modeSky(): void {
 
 /** The band thresholds, in degrees, and the counts they collect. */
 const BAND_DEG = [5, 10, 20, 30];
+/** The same thresholds in radians, derived once rather than re-multiplied at each
+ * comparison — six hand-copied `× π / 180` was one too many for a file that
+ * audits its own arms. */
+const BAND_RAD = BAND_DEG.map(rad);
+/** The cone the core question is asked with, in degrees and radians. */
+/** The threshold the band's headline row is quoted at. */
+const BAND_HEADLINE_DEG = 20;
+/** The cone the core question is asked with, in degrees and radians. */
+const CORE_CONE_DEG = 20;
+const CORE_CONE_RAD = rad(CORE_CONE_DEG);
 
 function modeBand(): void {
 	console.log(
@@ -467,15 +501,21 @@ function modeBand(): void {
 	let total = 0;
 	let observers = 0;
 	const counts = BAND_DEG.map(() => 0);
-	const bandDeg = 20;
-	const bandIndex = BAND_DEG.indexOf(bandDeg);
+	// The headline row is one of the table's own thresholds rather than a fourth
+	// number, so the two cannot disagree. `BAND_HEADLINE_DEG` is deliberately not
+	// `CORE_CONE_DEG`: both are 20 and they measure different things — an
+	// elevation band against a cone on the centre — and one constant named for
+	// both is how a future edit to the cone quietly moves this row.
+	const bandIndex = BAND_DEG.indexOf(BAND_HEADLINE_DEG);
+	const bandDeg = BAND_DEG[bandIndex];
+	const bandRad = BAND_RAD[bandIndex];
 	sweep({ elevations: true }, (sky, world) => {
 		assertPointCount(sky.elevAbs.length, "band mode");
 		const group = perWorld.get(world) ?? { inBand: 0, total: 0 };
 		for (const e of sky.elevAbs) {
 			for (let i = 0; i < BAND_DEG.length; i++)
-				if (e <= (BAND_DEG[i] * Math.PI) / 180) counts[i]++;
-			if (e <= (bandDeg * Math.PI) / 180) group.inBand++;
+				if (e <= BAND_RAD[i]) counts[i]++;
+			if (e <= bandRad) group.inBand++;
 		}
 		group.total += sky.elevAbs.length;
 		perWorld.set(world, group);
@@ -564,7 +604,7 @@ function modeBand(): void {
  * was made with a comment next to it.
  */
 function bandArm(deg: number): number {
-	return Math.sin((deg * Math.PI) / 180);
+	return Math.sin(rad(deg));
 }
 if (Math.abs(bandArm(30) - 0.5) > 1e-12)
 	throw new Error(
@@ -584,7 +624,7 @@ function modeCore(): void {
 		let within20 = 0;
 		for (const a of sky.fromCore) {
 			sum += a;
-			if (a <= (20 * Math.PI) / 180) within20++;
+			if (a <= CORE_CONE_RAD) within20++;
 		}
 		rows.push({
 			radius: sky.observerRadiusLy,
@@ -622,13 +662,13 @@ function modeCore(): void {
 				),
 		);
 		console.log(
-			`          other systems inside a 20° cone on the centre: ${fig(
+			`          other systems inside a ${CORE_CONE_DEG}° cone on the centre: ${fig(
 				"cone share",
 				mean((r) => r.coneShare),
 				3,
 			)} of them  (uniform sky: ${fig(
 				"uniform cone",
-				(1 - Math.cos((20 * Math.PI) / 180)) / 2,
+				(1 - Math.cos(CORE_CONE_RAD)) / 2,
 				3,
 			)})`,
 		);
