@@ -9,10 +9,11 @@
  * belong in one place a test can execute.
  *
  * **What went wrong when they did not (#294).** `ab47a33` set
- * `DEFAULT_HULL_FINISH` to `worn`; across that one commit the peak went
- * 154.32 → 149.08 and the lower quartile 60.93 → 41.96. Two rows red, a
- * fortnight of standing red, and a picture that reads exactly like an under-lit
- * hull. The thresholds were then lowered, and the reason given for lowering them
+ * `DEFAULT_HULL_FINISH` to `worn`, and every painted-hull reading fell —
+ * the endpoints are `PRE_/POST_SUBJECT_CHANGE_QUARTILE` and
+ * `SUBJECT_CHANGE_OTHER_ROWS` below, rather than a second copy here. Two rows
+ * red, a fortnight of standing red, and a picture that reads exactly like an
+ * under-lit hull. The thresholds were then lowered, and the reason given for lowering them
  * was a Metal/SwiftShader readback difference — stated with no measurement on
  * any build. #294 measured it: at `9627632` the peak reads 149.08 on ANGLE Metal
  * and 149.08 on SwiftShader, and the distribution differs by 0.21 and 0.07. That
@@ -44,6 +45,17 @@
  * rasterisers on one machine**, so it bounds what a lane costs here and says
  * nothing about a third backend; `SHIPPED_BAND_FLOOR` is what stands in for the
  * backends nobody here can measure.
+ */
+/**
+ * **Why the key is the hull finish alone.** The station finish is published on
+ * the same handle and printed beside these rows, and it is deliberately not part
+ * of the guard. `hull-chase` isolates the player hull by subtraction — the frame
+ * is rendered without the ship's meshes and differenced against one with them —
+ * so nothing a station is wearing reaches the masked pixels. Measured rather
+ * than reasoned: with `DEFAULT_STATION_FINISH` moved `worn` → `nostromo` and
+ * everything else held, the peak, the quartile, the median and the pixel count
+ * are bit-identical at 149.08 / 41.24 / 81.10 over 25,578 px. Gating on it would
+ * be a red with nothing behind it.
  */
 export const HULL_LUMA_CALIBRATION = Object.freeze({
 	finish: "worn",
@@ -121,8 +133,10 @@ export const SHIPPED_BAND_FLOOR = 140;
  * Bounded from three sides, and `tests/light-rig.test.ts` asserts each one
  * rather than leaving it as prose.
  *
- * **Below**, a margin must exceed `laneSpread` or the row goes red on which
- * rasteriser ran it. **Above**, the quartile's margin must stay well inside the
+ * **Below**, a margin — converted to display codes under its reading, which is
+ * what the test compares — must exceed `laneSpread`, or the row goes red on
+ * which rasteriser ran it. The fractions here are not comparable to that table
+ * directly: the median's 5% is 4.06 codes against a spread of 0.07. **Above**, the quartile's margin must stay well inside the
  * drop `ab47a33` produced, or the probe passes straight through the next change
  * of subject. And **the peak's floor may not tighten past `SHIPPED_BAND_FLOOR`**,
  * which is why the peak's margin is 8% rather than the 5% it was first written

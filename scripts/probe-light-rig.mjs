@@ -515,12 +515,13 @@ if (!hull.missing) {
 	// rather than red. This says so by name instead of leaving a later reader to
 	// bisect two numeric failures back to a finish commit, which is what #294
 	// had to do.
-	const onCalibratedFinish =
-		hull.finishes?.hull === HULL_LUMA_CALIBRATION.finish;
+	const hullFinish = hull.finishes?.hull ?? "no finish reported";
+	const stationFinish = hull.finishes?.station ?? "no finish reported";
+	const onCalibratedFinish = hullFinish === HULL_LUMA_CALIBRATION.finish;
 	t.check(
 		"the hull on screen is the finish the band was calibrated against",
 		onCalibratedFinish,
-		`measured ${hull.finishes?.hull ?? "no finish reported"}, ` +
+		`measured ${hullFinish}, ` +
 			`calibrated ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref}`,
 	);
 	// Both numeric rows are **gated on that**, rather than reported beside it.
@@ -551,7 +552,7 @@ if (!hull.missing) {
 			`median ${medianMin.toFixed(2)}–${Math.max(...hull.medians).toFixed(2)} of 255`,
 	);
 	console.log(
-		`  finish     hull ${hull.finishes?.hull ?? "?"}, station ${hull.finishes?.station ?? "?"} ` +
+		`  finish     hull ${hullFinish}, station ${stationFinish} ` +
 			`(band calibrated on ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref})`,
 	);
 	console.log(

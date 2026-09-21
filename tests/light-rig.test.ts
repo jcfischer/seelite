@@ -446,14 +446,12 @@ describe("the painted-hull luma calibration", () => {
 	});
 
 	test("every floor is the module's own derivation from its reading", () => {
-		// Re-derived through the module's own `floorUnder`, rounding included: a
-		// test that re-implements the arithmetic without the rounding compares
-		// against a number the module never produced, and goes red on a margin
-		// whose product carries four decimals rather than on any drift.
+		// Through the module's own `floorUnder`, rounding included: re-implementing
+		// the arithmetic here compares against a number the module never produced.
 		//
-		// What this catches is a floor typed in as a literal beside the
-		// derivation — which is how 50/78 became 35/70 under a docstring that
-		// still described 50/78.
+		// What this catches is a floor typed in as a literal beside the derivation,
+		// once a reading moves under it. It cannot catch a literal that still
+		// equals the derivation, which is not drift.
 		for (const metric of METRICS)
 			expect(FLOOR_OF[metric]).toBe(
 				floorUnder(HULL_LUMA_CALIBRATION[metric], HULL_LUMA_MARGINS[metric]),
@@ -461,18 +459,16 @@ describe("the painted-hull luma calibration", () => {
 	});
 
 	test("the band is an ordered band and the calibrated peak is inside it", () => {
-		// A band rather than a floor: a white hull and an under-lit hull are both
-		// exposure failures, and only the floor is derived — the ceiling is an
-		// authored limit on how bright painted metal may read.
+		// Why it is a band and not a floor, and why only one end is derived, is
+		// `HULL_LUMA_BAND`'s docstring to say.
 		expect(HULL_LUMA_BAND.min).toBeLessThan(HULL_LUMA_BAND.max);
 		expect(HULL_LUMA_CALIBRATION.peak).toBeGreaterThan(HULL_LUMA_BAND.min);
 		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
 	});
 
 	test("no margin is tighter than the spread between the two rasterisers", () => {
-		// The lower bound on every margin. A margin under the lane spread is a row
-		// that goes red on which lane ran it, which is the unmeasured reason the
-		// thresholds were last moved.
+		// The lower bound on every margin, in display codes rather than fractions —
+		// the module's docstring has the conversion and the reason.
 		for (const metric of METRICS)
 			expect(
 				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric],
