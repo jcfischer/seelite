@@ -82,17 +82,19 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * never the *key* window, and that is what the lock gate reads. So the lockable
  * mode carries **neither** `headless: false` nor the offscreen flags.
  *
- * **The three backgrounding flags go with the position flag, and that is
- * measured rather than reasoned** (sage, round 1 of #454, which read the
- * "there is no window to position" argument as not reaching
- * `--disable-background-timer-throttling`). It does not have to: in this lane a
- * page that is *not* the front one reads `document.hidden === false`, because
- * new headless composites nothing and so has no occlusion to report. Two pages
- * in one browser, the second brought to front, the first counting over 2 s —
- * 239/242/241/240 rAF frames and 179/178/177/178 ten-millisecond timers across
- * two arms with the flags and two without. A background tab's clamp is one
- * timer a second and no frames at all, so the flags are inert here rather than
- * load-bearing. Both probes that opt in do open a second page.
+ * **The three backgrounding flags go with the position flag because Playwright
+ * already passes them itself.** `--disable-background-timer-throttling` is
+ * about renderers rather than windows, so "there is no window to position" does
+ * not reach it (#454, round 1) — and it does not have to. Read off the browser's
+ * own command line on a launch carrying **none** of this module's flags, via
+ * CDP `Browser.getBrowserCommandLine` (which needs `--enable-automation` set to
+ * answer at all): `--disable-background-timer-throttling`,
+ * `--disable-backgrounding-occluded-windows` and
+ * `--disable-renderer-backgrounding` are all three there, out of Playwright's
+ * `chromiumSwitches`. So `OFFSCREEN_WINDOW_RUNTIME_FLAGS` restates the
+ * launcher's own defaults, and dropping them here changes nothing that reaches
+ * Chromium. That the constant is redundant in **both** branches is a finding
+ * this mode is not the place to act on.
  *
  * The requirement is the lock, not the headlessness. A machine where new
  * headless has no GPU loses the two probes that opt in rather than the lane —

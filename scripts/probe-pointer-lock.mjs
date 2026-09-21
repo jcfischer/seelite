@@ -258,24 +258,36 @@ await page.addInitScript(installFakePad);
 // promise untouched — the section at the foot of this file is what asserts the
 // game swallows it — and only observes.
 //
-// Three things are observed, not one. **The asks are counted**, because a page
-// where the game never asked is a game-side finding and must not be reported as
-// the lane's or the browser's — the misattribution this node exists to end (sage,
-// round 1). **The name is taken from either source**: the returning form of
-// `requestPointerLock` rejects with a `DOMException`, and the form that returns
-// `undefined` reports through `pointerlockerror` instead, which carries no reason
-// of its own. And the patch goes on `Element.prototype`, where the method is
-// actually defined, rather than shadowing it one level down.
+// Three counters, and the third is deliberately **not** a name. The asks are
+// counted, because a page where the game never asked is a game-side finding and
+// must not be reported as the lane's or the browser's. A name is recorded only
+// where there is one — the returning form of `requestPointerLock` rejects with a
+// `DOMException`, and that is the only source that carries a reason.
+// `pointerlockerror`, which is how the form returning `undefined` reports,
+// carries none: it is counted as an *unnamed* refusal, so the diagnosis below
+// can say the cause was unobserved instead of printing the event's own name as
+// though it were one (sage, round 2). The patch goes on `Element.prototype`,
+// where the method is defined, and forwards its arguments — a call made with
+// `{ unadjustedMovement: true }` must reach the browser as the one the player's
+// build makes.
+//
+// **One thing it does change, said rather than claimed away.** Attaching a
+// rejection handler marks that rejection handled, so on this page a refusal the
+// game failed to catch would no longer surface as an unhandled rejection. The
+// row that asserts the game *does* catch it runs at the foot of this file on a
+// second browser with no tap installed, which is why that row still means
+// something.
 await page.addInitScript(() => {
 	window.__lockRefusals = [];
+	window.__lockErrorEvents = 0;
 	window.__lockAsks = 0;
-	document.addEventListener("pointerlockerror", () =>
-		window.__lockRefusals.push("pointerlockerror"),
-	);
+	document.addEventListener("pointerlockerror", () => {
+		window.__lockErrorEvents++;
+	});
 	const ask = Element.prototype.requestPointerLock;
-	Element.prototype.requestPointerLock = function requestPointerLock() {
+	Element.prototype.requestPointerLock = function requestPointerLock(...args) {
 		window.__lockAsks++;
-		const asked = ask.call(this);
+		const asked = ask.apply(this, args);
 		Promise.resolve(asked).catch((error) =>
 			window.__lockRefusals.unshift(error?.name ?? String(error)),
 		);
@@ -297,24 +309,27 @@ if (!locked) {
 	// they are four different findings. A `WrongDocumentError` while the lane is
 	// still forcing `headless: false` is the lane refusing its own lockable mode
 	// — #441's measurement, and neither the browser's fault nor the game's. A
-	// named refusal without that is the genuine article. An ask that was refused
-	// with no name anywhere is unattributed and says so. And no ask at all is the
-	// game, which the message must not dress up as either of the others.
-	const { asks, refusal } = await page.evaluate(() => ({
+	// named refusal without that is the genuine article. An ask refused with no
+	// name on it is unattributed and says so, `pointerlockerror` included. And no
+	// ask at all is the game, which the message must not dress up as either of
+	// the others.
+	const { asks, refusal, events } = await page.evaluate(() => ({
 		asks: window.__lockAsks ?? 0,
 		refusal: window.__lockRefusals?.[0] ?? null,
+		events: window.__lockErrorEvents ?? 0,
 	}));
 	const headedLane = probeLaunchOptions(LAUNCH).headless === false;
-	const diagnosis =
-		asks === 0
-			? "The game never asked for the lock on this page, so neither the lane nor the browser is implicated — that is a game-side finding, and the rows below are still vacuous."
-			: headedLane && refusal === "WrongDocumentError"
-				? "The cause is the lane: it launched a headed window for a lockable view, and a macOS window opened from a background terminal is never the key window (#441). Fix the launch, not this probe."
-				: refusal
-					? `The cause is the refusal itself — ${refusal} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`
-					: `The ask was made ${asks}× and refused with no name on the promise and no \`pointerlockerror\`, so the cause is unobserved here rather than known.`;
+	const diagnose = () => {
+		if (asks === 0)
+			return "The game never asked for the lock on this page, so neither the lane nor the browser is implicated — that is a game-side finding.";
+		if (headedLane && refusal === "WrongDocumentError")
+			return "The cause is the lane: it launched a headed window for a lockable view, and a macOS window opened from a background terminal is never the key window (#441). Fix the launch, not this probe.";
+		if (refusal)
+			return `The cause is the refusal itself — ${refusal} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`;
+		return `The ask was made ${asks}× and refused ${events}× with no name on either side, so the cause is unobserved here rather than known.`;
+	};
 	console.log(
-		` FAIL  the lock was not taken, which makes every row below vacuous. ${diagnosis}`,
+		` FAIL  the lock was not taken, which makes every row below vacuous. ${diagnose()}`,
 	);
 	await browser.close();
 	exit();
