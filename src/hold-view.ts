@@ -33,17 +33,18 @@ const esc = (x: string) =>
 	);
 
 export const HOLD_STYLE = `
-.lc-hold { display: grid; align-content: start; gap: 10px; }
-.lc-hold-capacity { margin: 0; color: #ffe1a9; font-size: 13px; letter-spacing: .06em; }
-.lc-hold-capacity small { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; letter-spacing: .04em; }
+.lc-hold { display: grid; align-content: start; gap: 14px; width: 100%; max-width: 780px; }
+.lc-hold-capacity { margin: 0; color: #fff0c9; font-size: 17px; letter-spacing: .06em; }
+.lc-hold-capacity small { display: block; margin-top: 5px; color: #cb8c51; font-size: 11px; letter-spacing: .04em; }
 .lc-hold-empty { margin: 0; color: #cb8c51; font-size: 12px; }
-.lc-hold-head, .lc-hold-row { display: grid; grid-template-columns: minmax(0, 1.4fr) 62px minmax(0, 1fr); gap: 10px; align-items: baseline; }
-.lc-hold-head { color: #cb8c51; font-size: 10px; letter-spacing: .08em; border-bottom: 1px solid #58381d; padding-bottom: 5px; }
-.lc-hold-row { padding: 6px 0; border-bottom: 1px solid #38220f; color: #ffe1a9; font-size: 12px; }
-.lc-hold-row small { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; }
-.lc-hold-row[data-live-hold-owner="requester"] { color: #d8c08f; }
-.lc-hold-amount { text-align: right; white-space: nowrap; }
-.lc-hold-value { text-align: right; white-space: nowrap; }
+.lc-hold-head, .lc-hold-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px 150px; gap: 18px; align-items: start; }
+.lc-hold-head { color: #cb8c51; font-size: 10px; letter-spacing: .08em; border-bottom: 1px solid #58381d; padding-bottom: 6px; }
+.lc-hold-row { padding: 10px 0; border-bottom: 1px solid #38220f; color: #ffe1a9; font-size: 13px; }
+.lc-hold-row strong { display: block; font-weight: 600; letter-spacing: .04em; }
+.lc-hold-row small { display: block; margin-top: 4px; color: #cb8c51; font-size: 11px; line-height: 1.45; }
+.lc-hold-row[data-live-hold-owner="requester"] strong { color: #d8c08f; }
+.lc-hold-amount, .lc-hold-value { text-align: right; white-space: nowrap; }
+.lc-hold-value small { color: #a9814f; }
 `;
 
 /**
@@ -72,7 +73,7 @@ const valueCells = (line: HoldLine, bids: HoldBids): string => {
 /** Whose the goods are, and for a consignment, where they have to end up. */
 const ownerCell = (line: HoldLine): string => {
 	if (line.owner === "pilot")
-		return '<span class="lc-hold-owner" data-live-hold-owner-note>yours · sellable</span>';
+		return "<small data-live-hold-owner-note>yours · sellable</small>";
 	// A running job must **reach** its report station; a cancelled one must go
 	// **back** to the requester. `jobStatus` is what picks between them, and a
 	// page carrying one of the two would be right for half the journal.
@@ -80,11 +81,14 @@ const ownerCell = (line: HoldLine): string => {
 		line.jobStatus === "cancelled" || line.jobStatus === "failed";
 	const where = returning ? line.returnToName : line.reportName;
 	const verb = returning ? "return to" : "to";
-	return `<span class="lc-hold-owner" data-live-hold-owner-note>the requester's · cannot be sold</span><small>${esc(line.jobTitle ?? "")} · ${verb} ${esc(where ?? "—")}</small>`;
+	return `<small data-live-hold-owner-note>the requester's · cannot be sold</small><small>${esc(line.jobTitle ?? "")} · ${verb} ${esc(where ?? "—")}</small>`;
 };
 
 const row = (line: HoldLine, bids: HoldBids): string =>
-	`<div class="lc-hold-row" data-live-hold-row="${esc(line.goodName)}" data-live-hold-owner="${line.owner}"><span>${esc(line.goodName)}${ownerCell(line)}</span><span class="lc-hold-amount" data-live-hold-amount>${line.amount} ${esc(line.unit)}</span>${valueCells(line, bids)}</div>`;
+	// **The good's name is a block of its own.** It ran straight into the owner
+	// note on the first sheet — `Foodyours · sellable` — which is the kind of
+	// defect no row can see and a glance catches at once.
+	`<div class="lc-hold-row" data-live-hold-row="${esc(line.goodName)}" data-live-hold-owner="${line.owner}"><span class="lc-hold-good"><strong>${esc(line.goodName)}</strong>${ownerCell(line)}</span><span class="lc-hold-amount" data-live-hold-amount>${line.amount} ${esc(line.unit)}</span>${valueCells(line, bids)}</div>`;
 
 /**
  * The page.
