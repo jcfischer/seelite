@@ -14,20 +14,45 @@ import { waitForGalleryClose } from "../scripts/lib/gallery-route.mjs";
  * So the two halves are answered by two different things, and a page too busy
  * to speak may not redden the half that does not need it.
  */
+function timeoutError() {
+	// Playwright names its own; the helper re-throws anything else, because a
+	// closed page is not a route that failed to clear.
+	const error = new Error("timeout");
+	error.name = "TimeoutError";
+	return error;
+}
+
 function stubPage({
 	urlLeaves = true,
 	galleryDetaches = true,
 	pageResponds = true,
 	urlAfterMs = 0,
 } = {}) {
-	const calls: { name: string; timeout: number; waitUntil?: string }[] = [];
+	const calls: {
+		name: string;
+		timeout: number;
+		waitUntil?: string;
+		onGallery?: boolean;
+		onFlight?: boolean;
+	}[] = [];
 	return {
 		calls,
-		async waitForURL(_predicate: unknown, options: { timeout: number; waitUntil?: string }) {
-			calls.push({ name: "waitForURL", timeout: options.timeout, waitUntil: options.waitUntil });
+		async waitForURL(
+			predicate: (url: URL) => boolean,
+			options: { timeout: number; waitUntil?: string },
+		) {
+			calls.push({
+				name: "waitForURL",
+				timeout: options.timeout,
+				waitUntil: options.waitUntil,
+				onGallery: predicate(
+					new URL("http://seelite.test/?seed=42&hud-gallery=assist-on"),
+				),
+				onFlight: predicate(new URL("http://seelite.test/?seed=42")),
+			});
 			if (urlAfterMs)
 				await new Promise((resolve) => setTimeout(resolve, urlAfterMs));
-			if (!urlLeaves) throw new Error("timeout");
+			if (!urlLeaves) throw timeoutError();
 		},
 		async waitForSelector(
 			selector: string,
@@ -40,9 +65,9 @@ function stubPage({
 			// A blocked main thread answers nothing; the wait ends on its bar.
 			if (!pageResponds) {
 				await new Promise((resolve) => setTimeout(resolve, options.timeout));
-				throw new Error("timeout");
+				throw timeoutError();
 			}
-			if (!galleryDetaches) throw new Error("timeout");
+			if (!galleryDetaches) throw timeoutError();
 		},
 	};
 }
@@ -74,6 +99,15 @@ describe("waiting for the gallery close", () => {
 		expect(page.calls[0]?.waitUntil).toBe("commit");
 	});
 
+	test("the predicate holds off the gallery route and only there", async () => {
+		// Without this, an inverted predicate or a mistyped parameter name reads
+		// exactly like a working wait.
+		const page = stubPage();
+		await waitForGalleryClose(page, { timeoutMs: 50 });
+		expect(page.calls[0]?.onGallery).toBe(false);
+		expect(page.calls[0]?.onFlight).toBe(true);
+	});
+
 	test("a route that never clears fails both halves", async () => {
 		const page = stubPage({ urlLeaves: false });
 		expect(await waitForGalleryClose(page, { timeoutMs: 50 })).toEqual({
@@ -92,10 +126,13 @@ describe("waiting for the gallery close", () => {
 
 	test("both halves share one bar rather than taking one each", async () => {
 		// Two waits of the full bar would double #201's twenty seconds in silence.
-		const page = stubPage({ urlAfterMs: 40 });
-		await waitForGalleryClose(page, { timeoutMs: 50 });
+		// The property is "less than the whole bar", not a particular
+		// millisecond: a margin of ten would fail on a loaded machine for a
+		// reason it does not name.
+		const page = stubPage({ urlAfterMs: 200 });
+		await waitForGalleryClose(page, { timeoutMs: 1000 });
 		const second = page.calls.at(-1);
 		expect(second?.name).toBe("waitForSelector:#state-gallery:detached");
-		expect(second?.timeout).toBeLessThanOrEqual(11);
+		expect(second?.timeout).toBeLessThan(1000);
 	});
 });

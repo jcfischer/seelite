@@ -9,8 +9,9 @@
  * predicate evaluated *in* the page therefore answers at the first gap in that
  * boot rather than when the route clears — 5.9 to 9.1 s against a route that
  * had cleared in a seventh of a second. Forcing `polling: 100` instead of
- * `requestAnimationFrame` still stalled 8 closes in 20, so this is not a rAF
- * quirk and no in-page poller escapes it.
+ * `requestAnimationFrame` still stalled 8 closes in 20 — a second poller with
+ * its own clock, stalling on the same boot, which is two configurations rather
+ * than a proof about every possible one.
  *
  * `waitForURL` reads the driver's own navigation events, which a busy main
  * thread cannot delay — **but only at `commit`**. Its default is `load`, and
@@ -19,10 +20,15 @@
  * predicate it replaced. At `commit` the same twenty read 0.053 to 0.140 s. So
  * the option is the fix and the call is not.
  *
- * The DOM half still needs the page — a gallery left mounted on the flight
- * route is a real failure and only the page can report it — so it is still paid
- * for at the boot's price, bounded by the one bar it shares. What it no longer
- * does is redden the route.
+ * The DOM half still needs the page — so it is still paid for at the boot's
+ * price, bounded by the one bar it shares. Note what it is and is not evidence
+ * of: while the close navigates, a new document cannot carry the old one's
+ * `#state-gallery`, so this half is satisfied by construction and not by an
+ * unmount. It goes red on a close that stops navigating — measured, by making
+ * `.sg-close` call `history.replaceState` instead: both viewports failed
+ * `close unmounts the gallery` at 98/100 while the route half stayed green.
+ * That is the regression it guards, and it is the half that knows the
+ * difference.
  *
  * @param {{ waitForURL: Function, waitForSelector: Function }} page
  * @param {{ timeoutMs?: number }} [options]
@@ -35,7 +41,10 @@ export async function waitForGalleryClose(page, { timeoutMs = 20_000 } = {}) {
 			timeout: timeoutMs,
 			waitUntil: "commit",
 		});
-	} catch {
+	} catch (error) {
+		// A closed page or a mistyped option is not a route that failed to
+		// clear, and folding the two together reports the wrong defect.
+		if (error?.name !== "TimeoutError") throw error;
 		return { routeLeft: false, galleryGone: false };
 	}
 	const remaining = deadline - Date.now();
@@ -46,7 +55,8 @@ export async function waitForGalleryClose(page, { timeoutMs = 20_000 } = {}) {
 			timeout: remaining,
 		});
 		return { routeLeft: true, galleryGone: true };
-	} catch {
+	} catch (error) {
+		if (error?.name !== "TimeoutError") throw error;
 		return { routeLeft: true, galleryGone: false };
 	}
 }

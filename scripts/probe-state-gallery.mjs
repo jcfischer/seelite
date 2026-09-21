@@ -299,10 +299,7 @@ for (const viewport of VIEWPORTS) {
 	// the driver now; only the DOM half still needs the page, and it says so.
 	const closed = await waitForGalleryClose(page, { timeoutMs: 20_000 });
 	check(`${viewport.name}: close leaves the gallery route`, closed.routeLeft);
-	check(
-		`${viewport.name}: close unmounts the gallery`,
-		closed.routeLeft && closed.galleryGone,
-	);
+	check(`${viewport.name}: close unmounts the gallery`, closed.galleryGone);
 	await page.close();
 }
 
