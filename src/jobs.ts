@@ -119,9 +119,9 @@ export const JOB_ROWS: readonly JobRow[] = [
 		title: "Priority consignment",
 		purpose:
 			"A standing order was short-shipped. The station will pay for the expedited shipment of the goods.",
-		danger: "No escort. Traders know this cargo is on the move.",
+		danger: "No escort, and raiders know this cargo is moving.",
 		action: "Carry the consignment and report at the delivery station.",
-		consequence: "The order is filled, and the price here settles.",
+		consequence: "The order is filled, and the buyer's price settles.",
 		tonnes: 12,
 		payment: { baseCr: 65, perTonneCr: 11, perLyCr: 18, basePriceFactor: 0 },
 	}),

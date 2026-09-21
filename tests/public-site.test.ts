@@ -86,8 +86,8 @@ describe("the quiet public threshold", () => {
 			"&#96; key winds up the jump",
 			"C asks for clearance",
 			"U switches the docking computer",
-			"Enter launches again",
-			"up and down arrows walk the cursor and Enter opens the row",
+			"Enter launches, and skips the traversal",
+			"In Requests, the up and down arrows walk the cursor and Enter opens the row",
 		])
 			expect(manual.content).toContain(shown);
 	});

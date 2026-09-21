@@ -56,8 +56,8 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 			<section data-topic><h2>Fly</h2><p>Pitch is W and S, yaw is A and D, roll is Q and E, and the arrow keys pitch and yaw as well. Shift and Ctrl move the throttle. X switches flight assist, which keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
 			<section data-topic><h2>Panels and controls</h2><p>Press ? to open the Controls tab and see the complete, remappable control reference. 1 opens the left panel, 2 faces the forward panel, and 3 opens the right panel. Press the same key again to return your view to flight.</p></section>
 			<section data-topic><h2>Travel</h2><p>T and G step through targets, F faces the one you selected, and J engages or drops cruise. The &#96; key winds up the jump to another system. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
-			<section data-topic><h2>Dock</h2><p>C asks for clearance, and you need it before you enter the aperture. Follow the director, align with the slot, and fly gently through the mouth. U switches the docking computer. Enter launches again, and skips the traversal.</p></section>
-			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory. In a list, the up and down arrows walk the cursor and Enter opens the row; the mouse does the same.</p></section>
+			<section data-topic><h2>Dock</h2><p>C asks for clearance, and you need it before you enter the aperture. Follow the director, align with the slot, and fly gently through the mouth. U switches the docking computer. Enter launches, and skips the traversal.</p></section>
+			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory. In Requests, the up and down arrows walk the cursor and Enter opens the row; the mouse does the same.</p></section>
 			${play}`,
 	},
 	{
