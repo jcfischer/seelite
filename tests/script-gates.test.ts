@@ -1,5 +1,6 @@
 /**
- * The two static gates over `scripts/`, held by a test of their own (#402).
+ * The two static gates over `scripts/`, held by a test of their own (#402), and
+ * the row holding that the pull-request gate runs one of them (#403).
  *
  * Neither gate runs in CI's browser tier, because there is none (#14). What
  * each does run is a process, so each is asserted by its **exit code** and by
@@ -12,6 +13,7 @@ import {
 	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -24,6 +26,12 @@ import {
 } from "../scripts/probe-guard.mjs";
 import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 import { repoPath } from "./lib/source-scan";
+import {
+	commandOf,
+	letsFailurePass,
+	parseWorkflow,
+	type Workflow,
+} from "./lib/workflow-scan";
 
 const BIOME = repoPath("node_modules/.bin/biome");
 
@@ -189,3 +197,117 @@ test("`npm run lint` runs the rule over the real tree and it is clean", () => {
 		status: 0,
 	});
 }, 60_000);
+
+let parsed: Workflow | null = null;
+/** Parsed once: the rows below all read the same file. */
+const deployWorkflow = () =>
+	(parsed ??= parseWorkflow(".github/workflows/deploy.yml"));
+
+/**
+ * The single step that runs the launcher-wiring gate, claimed by the rows that
+ * need it.
+ *
+ * Each of them asks for it through here rather than indexing a filter itself, so
+ * a workflow that lost the step fails on "there is exactly one, and this is its
+ * command" instead of on a `TypeError` over `undefined` — which is the shape a
+ * deleted step reached twice.
+ */
+const theWiringStep = () => {
+	const found = deployWorkflow().steps.filter((s) =>
+		commandOf(s).includes("check:wiring"),
+	);
+	expect(found.map(commandOf)).toEqual(["npm run check:wiring"]);
+	return found[0];
+};
+
+/**
+ * The pull-request gate runs the launcher-wiring check (#403).
+ *
+ * `npm test` has run that gate on every pull request since #402, so these rows
+ * do not claim first coverage. They hold the shape the new step adds: an event
+ * list that reaches pull requests without a filter hiding them, neither the step
+ * nor its job skipping itself or shrugging off a failure, the step ahead of the
+ * unit tier and of anything in its job that can publish, and the command it names
+ * still the script the local tier runs. Each is a row of its own because each is
+ * a claim of its own, and a failure should say which.
+ *
+ * What no row here can hold is that a runner runs the step. That is the `Deploy`
+ * job's own step list, which names `Run npm run check:wiring` on a green pull
+ * request and stops a red one there; the headless tier can only hold what the
+ * file says. The reader these rows stand on is measured in
+ * `tests/workflow-scan.test.ts`, not by them.
+ */
+test("the deploy workflow runs on a pull request, with no filter hiding it", () => {
+	const { triggers, steps } = deployWorkflow();
+	// A parse that finds nothing finds nothing for a reason of its own, and every
+	// green below would then be an absence measured as a presence.
+	expect(steps.length).toBeGreaterThan(0);
+	expect(triggers.map((t) => t.name)).toContain("pull_request");
+	const pull = triggers.find((t) => t.name === "pull_request");
+	// Pinned rather than searched for absence: `branches: [main]` is the file's
+	// intent and is meant to be here. A `paths:` or `types:` join is the same
+	// event name on a workflow that no longer runs on the pull requests in hand.
+	expect(pull?.keys).toEqual(["branches"]);
+});
+
+test("neither the wiring step nor its job skips or excuses a pull request", () => {
+	const step = theWiringStep();
+	const job = deployWorkflow().jobs.find((j) => j.name === step.job);
+	// An `if:` naming an event is how the two deploy steps keep off pull requests,
+	// and neither this step nor the job holding it may be written so. The job is
+	// found by name rather than the job list pinned: a second job added for some
+	// other reason says nothing about this gate.
+	expect(step.job).toBe("deploy");
+	expect(step.condition).toBeUndefined();
+	expect(job?.condition).toBeUndefined();
+	// And a gate that reports success while failing gates nothing, at either
+	// level. Only a truthy value is that: `continue-on-error: false` is the
+	// default said out loud, and a row that reddens it has stopped measuring the
+	// hazard and started constraining a spelling.
+	expect(letsFailurePass(step.continueOnError)).toBe(false);
+	expect(letsFailurePass(job?.continueOnError)).toBe(false);
+});
+
+test("the wiring step runs ahead of the unit tier and of anything that publishes", () => {
+	const step = theWiringStep();
+	// One assertion over the order rather than a comparison per pair: being ahead
+	// of these two *is* the step's whole justification, and a row that fetched
+	// `npm test` and discarded its position did not hold it. The list is in
+	// per-job file order and cannot pass by omission — all three must be present,
+	// in that order, in the gate's own job. A publish step relocated to a second
+	// job leaves this list without its third entry rather than silently passing a
+	// comparison over an empty set.
+	expect(
+		deployWorkflow()
+			.steps.filter((s) => s.job === step.job)
+			.filter((s) =>
+				/check:wiring|npm test|wrangler|pages deploy/.test(commandOf(s)),
+			)
+			.map(commandOf),
+	).toEqual([
+		"npm run check:wiring",
+		"npm test",
+		"cloudflare/wrangler-action@v4",
+	]);
+});
+
+/**
+ * The chain from the step to the gate, held statically rather than executed.
+ *
+ * The step names an npm entry; the entry names a script. That is the whole
+ * chain, and the exit code at the end of it is proven once per suite by the row
+ * at the top of this file, which spawns the same script. Spawning it here again
+ * would buy only a faithfulness claim about `npm run`, at the cost of a third
+ * scan of `scripts/` on every pull request — the step, the row above, this one.
+ */
+test("the wiring step runs the entry the local tier runs", () => {
+	expect(theWiringStep().run).toBe("npm run check:wiring");
+	const { scripts } = JSON.parse(
+		readFileSync(repoPath("package.json"), "utf8"),
+	) as unknown as { scripts: Record<string, string> };
+	// The entry is pinned to the same script the gate row above spawns by path,
+	// so the two rows meet at one file and cannot drift apart.
+	expect(scripts["check:wiring"]).toBe(
+		"node scripts/check-launcher-wiring.mjs",
+	);
+});
