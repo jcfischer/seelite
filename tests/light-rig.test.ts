@@ -82,19 +82,20 @@ function atAngle(deg: number, samples = 8): [number, number, number][] {
 const luma = ([r, g, b]: [number, number, number]) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-// **A few ulps of 1, not `toEqual` — and one named tolerance.** The shared primitive
-// scales by a reciprocal where the deleted code divided — `x · (1/l)` is not `x / l`
-// in binary floating point — and it normalises twice where that code divided twice,
-// so components land a step or two of the ladder apart near 1; the worst measured
-// over the 202 directions is 4.2·10⁻¹⁶. The bound is deliberately not that
-// measurement plus one ulp: a tolerance with 5% daylight over what one machine's
-// libm happened to produce is a row about *this* platform's multiplication, which
-// goes red on a different one and gets loosened by whoever is unlucky — the failure
-// mode this file names elsewhere. It is four ulps, twice the measurement, and still
-// eleven orders of magnitude away from what a wrong rotation costs (order 1), so the
-// headroom buys nothing it could not spare. One constant rather than a literal at
-// each of the two rows that compare against the deleted body, because those rows are
-// the same claim about the same refactor.
+// **A few ulps of 1, not `toEqual` — and a bound set from two platforms, not one.**
+// The shared primitive scales by a reciprocal where the deleted code divided —
+// `x · (1/l)` is not `x / l` in binary floating point — and it normalises twice where
+// that code divided twice, so components land a step or two of the ladder apart near
+// 1. How far is a property of the platform's `sqrt`, and two have been measured over
+// the 202 directions: macOS at 4.2·10⁻¹⁶, and GitHub's Linux runner at 5.55·10⁻¹⁶ —
+// 1.9 and 2.5 ulps. The history is the lesson: this bound was `2 ** -51` for three
+// rounds, which is two ulps, and the row was **red on CI at two pushes while green
+// locally**, because the machine writing the row had the luckier libm. That is the
+// failure mode this file names elsewhere, actually reached, and a bound of
+// measurement-plus-one-ulp is what invites it. Four ulps covers the worse platform
+// with 60% to spare and sits fifteen orders below what a wrong rotation costs (order
+// 1), so the headroom buys the row nothing it needed. One constant, because the two
+// rows that compare against the deleted body make one claim about one refactor.
 const REFACTOR_TOLERANCE = 4 * 2 ** -52;
 
 describe("the radiance model is a star and a floor", () => {
