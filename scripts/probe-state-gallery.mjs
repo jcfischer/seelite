@@ -280,15 +280,16 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.locator(".sg-close").click();
 	// **Twenty seconds, not five, and the five was a cold-start cliff** (#201).
-	// The bar asks *whether* the close leaves the route, never how fast.
+	// The bar asks *whether* the close leaves the route, never how fast, and it
+	// is the helper's default rather than a figure restated here.
 	//
 	// **And the route is asked of the driver, because the page is busy (#464).**
 	// `scripts/lib/gallery-route.mjs` owns that account and its figures; the one
 	// line worth having here is that the next page's boot used to answer this
 	// row, and no longer answers the route half of it.
-	const closed = await waitForGalleryClose(page, { timeoutMs: 20_000 });
+	const closed = await waitForGalleryClose(page);
 	check(`${viewport.name}: close leaves the gallery route`, closed.routeLeft);
-	check(`${viewport.name}: close unmounts the gallery`, closed.galleryGone);
+	check(`${viewport.name}: no gallery on the flight route`, closed.galleryGone);
 	if (closed.error) console.log(`     gallery close: ${closed.error}`);
 	await page.close();
 }
