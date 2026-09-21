@@ -2,16 +2,24 @@
 
 Author: Codex / Ivy · 2026-09-15 · Status: proposal, not an approved game contract.
 
-> **Read as a dated record, not as current repo state or canonical vocabulary.**
-> Landed unedited on 2026-09-21 as the story source [#460](https://github.com/jcfischer/seelite/issues/460)'s Notes link to. Two consequences. Its
-> present-tense claims about the codebase — `SELECTED_FORM.trade`, what the relay
-> slice implements, what UI exists — were read at local main `c0a89ac` on
-> 2026-09-15 and have **not** been re-checked; verify any of them before acting.
-> And it predates `CONTEXT.md`'s glossary, so it says *mission*, *legal status*,
-> *reputation*, *pirate base*, *beacon*, *slot* and *active request* where the
-> canonical terms are **Lead**, **Standing**, **Pirate relay**, **Berth** and
+> **Read as a dated record, not as current repo state.** The body landed
+> unedited on 2026-09-21, as the story source that [#460](https://github.com/jcfischer/seelite/issues/460)'s Notes link to; this
+> header note is the only addition. Two consequences.
+>
+> Its present-tense claims about the codebase — `SELECTED_FORM.trade`, what the
+> relay slice implements, what UI exists — were read at local main `c0a89ac` on
+> 2026-09-15 and have **not** been re-checked. Verify any of them before acting.
+>
+> And it was written without `CONTEXT.md`'s §Language open, so four of its words
+> are that section's Avoid aliases: *legal status* and *reputation* for
+> **Standing**, *pirate bases* for **Pirate relay**, and *active-request* for
 > **Tracked request**. A node written against this document uses the glossary's
-> words, not this document's.
+> words. The other flags a reviewer will get here are the alias rule firing on
+> ordinary English, which `CONTEXT.md`'s **Berth** entry warns about by name:
+> *slot* is canonical in `Carrier slot` and `Raider slot`, the *beacon* in
+> "human observation beacon" is not a pirate relay, and *mission* is an alias
+> only for an unconfirmed **Lead** — the spec is called
+> `missions-and-requests.md`.
 
 Principal correction, same day: **the pirate sensor relay prototype is partly built, and mission selection UI does not exist yet.** The next step is to inspect and finish the existing relay slice while providing its request/lead interface. References below to a first prototype describe the desired complete loop, not a proposal to restart it. The Babylon 5 extension at the end revises the sequence accordingly.
 

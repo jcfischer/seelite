@@ -1,6 +1,6 @@
 # seelite Domain Language
 
-This glossary defines vocabulary for seelite's planned causal world model and points to the specs that own structural details. The core consequence terms originate in work-graph node [“Operational consequences: what can the player change?”](https://github.com/jcfischer/seelite/issues/41). The work-graph map (`soma graph node 1 --repo jcfischer/seelite`) remains authoritative for constraints and delivery rules. Since the 2026-09-21 split, gameplay nodes — missions, the expedition story, combat consequence, onboarding, progression — live on a second map, [#460](https://github.com/jcfischer/seelite/issues/460); #41, #43 and #183, cited below, moved there with it. #1 still owns the constraints both maps answer to.
+This glossary defines vocabulary for seelite's planned causal world model and points to the specs that own structural details. The core consequence terms originate in work-graph node [“Operational consequences: what can the player change?”](https://github.com/jcfischer/seelite/issues/41). The work-graph map (`soma graph node 1 --repo jcfischer/seelite`) remains authoritative for constraints and delivery rules. Since the 2026-09-21 split, gameplay nodes — missions, the expedition story, combat consequence, onboarding, progression — live on a second map, [#460](https://github.com/jcfischer/seelite/issues/460); #41, cited above, and #43 and #183, cited below, moved there with it. #1 still owns the constraints both maps answer to.
 
 ## Language
 
