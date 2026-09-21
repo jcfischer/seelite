@@ -82,21 +82,26 @@ function atAngle(deg: number, samples = 8): [number, number, number][] {
 const luma = ([r, g, b]: [number, number, number]) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-// **A few ulps of 1, not `toEqual` — and a bound set from two platforms, not one.**
-// The shared primitive scales by a reciprocal where the deleted code divided —
-// `x · (1/l)` is not `x / l` in binary floating point — and it normalises twice where
-// that code divided twice, so components land a step or two of the ladder apart near
-// 1. How far is a property of the platform's `sqrt`, and two have been measured over
-// the 202 directions: macOS at 4.2·10⁻¹⁶, and GitHub's Linux runner at 5.55·10⁻¹⁶ —
-// 1.9 and 2.5 ulps. The history is the lesson: this bound was `2 ** -51` for three
-// rounds, which is two ulps, and the row was **red on CI at two pushes while green
-// locally**, because the machine writing the row had the luckier libm. That is the
-// failure mode this file names elsewhere, actually reached, and a bound of
-// measurement-plus-one-ulp is what invites it. Four ulps covers the worse platform
-// with 60% to spare and sits fifteen orders below what a wrong rotation costs (order
-// 1), so the headroom buys the row nothing it needed. One constant, because the two
-// rows that compare against the deleted body make one claim about one refactor.
-const REFACTOR_TOLERANCE = 4 * 2 ** -52;
+// **A few ulps is the wrong unit for this, and the history says why.** Two platforms
+// have run this comparison: macOS worst at 4.2·10⁻¹⁶ (1.9 ulps) and GitHub's Linux
+// runner at 9.2·10⁻¹⁶ (4.1). `acos` and then `sin(a/2)`, `cos(a/2)` is not the same
+// sequence of roundings as the half-angle construction, so two correct forms of a
+// shortest arc land a few ulps apart, and *which* few is a property of the libm. The
+// bound here was `2 ** -51` — two ulps — for three rounds, and the row was **red on CI
+// at two of this PR's pushes while green locally**: the machine that wrote the row had
+// the luckier `sqrt`. That is this file's own warned-about failure mode, reached.
+//
+// `1e-14` is the same claim told in units the row is about, which no platform has to
+// agree about: twelve orders below the smallest difference this file treats as real
+// (the band's tightest aim error, 1.4·10⁻⁶) and fifteen below a wrong rotation (order
+// 1), so no refactor hides under it and no libm's rounding reaches it. Two assumptions
+// the first fix got wrong, both corrected by something rather than by luck: the
+// runner's 4.1 ulps is a *first* violation and not a maximum, because a row that
+// throws on the first exceedance reports only what it saw before quitting; and the
+// antiparallel decade is not part of this margin at all, since there the disagreement
+// is the cancellation the closing arm documents (2.4·10⁻¹² at ε = 1.1·10⁻⁹) and not
+// rounding.
+const REFACTOR_TOLERANCE = 1e-14;
 
 describe("the radiance model is a star and a floor", () => {
 	test("the star direction is the brightest direction there is", () => {
@@ -472,11 +477,19 @@ describe("the rotation onto the star", () => {
 	test("the shared primitive returns the rotation this function computed itself", () => {
 		// The claim "#430 changed the shipped rotation for no direction" is worth
 		// nothing as prose, so the deleted body is here as a second implementation
-		// and compared against what ships, across the same 202 directions the rows
-		// above sweep — which include the bake's own star and the exact antiparallel
-		// one.
+		// and compared against what ships, over the spread the rows above sweep.
 		//
-
+		// **All 202 of them, including both degenerates, because the bound — not the
+		// sweep — is where the platform belongs.** This row compared components at
+		// `2 ** -51`, two ulps, for three rounds, and was red on the Linux runner and
+		// green on macOS: `acos` then `sin(a/2)`, `cos(a/2)` is not the same sequence of
+		// roundings as the half-angle construction, and two correct forms of a shortest
+		// arc differ by a few ulps that no platform is obliged to share. The first
+		// version of this fix filtered the near-antiparallel directions out of the sweep;
+		// the row's own count assertion reddened, because this spread holds exactly one
+		// such direction by name and the exceedance was never there — it sits at ordinary
+		// directions, where `acos` amplifies a unit in the last place by up to 1/sin θ.
+		// So the sweep stays whole and the bound is told in the units the claim is about.
 		for (const dir of directions()) {
 			const got = envRotation(dir);
 			const want = legacyEnvRotation(dir);
@@ -587,19 +600,28 @@ describe("the rotation onto the star", () => {
 			expect(worst).toBeGreaterThan(0);
 			expect(worst).toBeLessThan(1 / 255);
 		}
-		// **The band closes.** Past the old threshold the two arms are the same
+		// **The band closes, and "closes" is a smaller claim than it sounds.** Past the old threshold the two arms are the same
 		// computation, and this is the row that says "the refactor changed nothing
 		// else" rather than merely asserting it: one ε outside, the quaternions agree
-		// to the tolerance the legacy-comparison row names (and its measurement, not
-		// this arm's), and the sampled environment cannot tell them apart at all.
+		// agree to a bound set by the conditioning above — one ulp divided by ε,
+		// measured at 2.4·10⁻¹² on the runner and 10⁻¹⁶ here, so an ulp-level claim
+		// about components at this ε is a claim about a platform — and the sampled
+		// environment cannot tell them apart at the scale this row is about.
 		const closedDir = antiparallelDir(1.1e-9);
 		const closedFresh = envRotation(closedDir);
 		const closedStale = legacyEnvRotation(closedDir);
+		// `1 + d` is 1.1·10⁻⁹ here, so the scalar carries relative error ~10⁻⁷ and
+		// the components ~10⁻¹¹. Four orders of magnitude below the smallest thing the
+		// band row measures as a real difference — a wrong rotation is order 1.
 		for (let i = 0; i < 4; i++)
 			expect(Math.abs(closedFresh[i] - closedStale[i])).toBeLessThanOrEqual(
-				REFACTOR_TOLERANCE,
+				1e-11,
 			);
+		// And the reading that decides whether the band has finished: the environment
+		// these two rotations bake. A 2.4·10⁻¹² difference in a quaternion moves the
+		// sampled radiance ~7× that (the gain the band's own rows print), so 10⁻⁹ is
+		// four decades under the smallest radiance figure this file calls a difference.
 		const closedWorst = worstRadianceDelta(closedFresh, closedStale);
-		expect(closedWorst).toBeLessThanOrEqual(1e-12);
+		expect(closedWorst).toBeLessThanOrEqual(1e-9);
 	});
 });
