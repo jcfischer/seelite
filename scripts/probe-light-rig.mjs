@@ -74,21 +74,35 @@
  * the right way. Neither implies the other — a correct rotation applied to an
  * environment that was never assigned is green upstairs.
  *
- * ## SwiftShader, said plainly
+ * ## Which rasteriser, said plainly
  *
- * This runs through the software rasteriser like every probe here (#98), so no
- * number below is the player's. It does not need to be: every claim is a
- * comparison between two renders on the same rasteriser, so what would break it
- * is a renderer that treats the environment differently between two frames, not
- * one that is slow. The half that needs the player's GPU is the picture, and
- * that is the canonical view set's job.
+ * This file used to say it ran through SwiftShader "like every probe here",
+ * which stopped being true when #435 made the hardware lane the default, and it
+ * said so for a fortnight. It runs on whichever lane the runner picked —
+ * `npm run probe` is hardware, `npm run probe:cpu` is SwiftShader — and no
+ * number below is the player's on either.
+ *
+ * Most of what is checked here does not care. Every environment claim is a
+ * comparison between two renders on the *same* rasteriser, so what would break
+ * it is a renderer that treats the environment differently between two frames,
+ * not one that is slow. The painted-hull rows are the exception and the only
+ * one: they read absolute display codes, so a lane could in principle decide
+ * them. What the two lanes here actually read, and what follows from it for the
+ * margins, is `lib/hull-luma.mjs`'s to state and is not repeated here.
+ *
+ * The half that needs the player's GPU is the picture, and that is the
+ * canonical view set's job.
  */
+
+import { gameUrl } from "./lib/game-url.mjs";
+// The painted-hull band and floors are derived in `lib/hull-luma.mjs`, from readings recorded
+// against a named finish. That module owns every figure and the reason for it;
+// nothing about the calibration is restated in this file.
 import {
-	guardedOrigin,
-	bootedGame,
-	launchChromium,
-	tally,
-} from "./probe-guard.mjs";
+	HULL_LUMA_BAND,
+	HULL_LUMA_CALIBRATION,
+	HULL_LUMA_FLOORS,
+} from "./lib/hull-luma.mjs";
 import { installViewFraming } from "./lib/view-placement.mjs";
 /**
  * The canonical view set's fixture, **imported rather than restated** (#174).
@@ -100,8 +114,13 @@ import { installViewFraming } from "./lib/view-placement.mjs";
  * is not; a test measures it.
  */
 import { GAME_TIME_S as CLOCK, SEED } from "./lib/view-set.mjs";
-import { installViewPlacement } from "./probe-guard.mjs";
-import { gameUrl } from "./lib/game-url.mjs";
+import {
+	bootedGame,
+	guardedOrigin,
+	installViewPlacement,
+	launchChromium,
+	tally,
+} from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -110,42 +129,8 @@ const SUBJECT = "station-trade";
  *  station is about a third of the frame and its plating is resolvable. */
 const RADII = 8;
 
-/** Display-space luma after ACES and composition, on the 0–255 canvas readback.
- * A band rather than a floor: a white hull and an under-lit hull are both
- * exposure failures, and the same-build spread printed below qualifies it. */
-// Metal and SwiftShader agree on the lighting relationship below, but their
-// tone-map readback differs by a few display codes. Keep this an exposure band
-// with room for both real backends rather than calibrating it to software.
-const HULL_LUMA_BAND = { min: 140, max: 200 };
-/**
- * Floors for the distribution beneath the peak. They reject the failure the
- * principal caught — one compliant highlight on an otherwise dark hull —
- * without turning the probe into an exact-image comparison.
- *
- * **Lowered by #201, and the honest version of why.** #199 set these at 55 and
- * 85 against its own calibrated 61.04 / 85.37, and called them "deliberately
- * well below" those readings — which the median never was: 85 against 85.29 is
- * three tenths of a percent, a floor with no margin at all. #201 then added a
- * shadow map and an ambient-occlusion pass, both of which **subtract** light
- * from every frame by construction, and the row went red on the first run.
- *
- * Measured on #201's branch, same framing, one build, with its two occlusion
- * passes off and on:
- *
- * | | occlusion off | on (shipped) |
- * |---|---|---|
- * | lower quartile | 60.93 | 55.38 |
- * | median | 85.29 | 82.22 |
- *
- * The off column reproduces #199's build to the digit, so nothing else moved.
- * The floors below sit under the *shipped* column with the margin #199 meant
- * and did not have — 10% under the quartile and 5% under the median — and they
- * still reject a hull that is dark everywhere but one pixel, which is the only
- * thing they were ever for. **That the occlusion darkens the hull by 3.6% of a
- * median is a real change to the picture, not a rounding**, and the canonical
- * sheet is where a person judges whether it is the right one.
- */
-const HULL_LUMA_FLOORS = { lowerQuartile: 35, median: 70 };
+/** Repeats of the hull measurement in one page, so the row can print the
+ *  same-build noise beside the reading rather than one sample of it. */
 const HULL_SAMPLES = 5;
 
 /**
@@ -404,6 +389,7 @@ async function measureHullChase(page) {
 				lowerQuartiles,
 				medians,
 				exposure: game.exposure,
+				finishes: game.finishes,
 			};
 		},
 		[HULL_SAMPLES, bodyId],
@@ -524,18 +510,39 @@ if (!hull.missing) {
 	const max = Math.max(...hull.peaks);
 	const lowerQuartileMin = Math.min(...hull.lowerQuartiles);
 	const medianMin = Math.min(...hull.medians);
+	// Before either band row is read: the calibration is a property of the
+	// finish, so a page carrying a different one makes both rows meaningless
+	// rather than red. This says so by name instead of leaving a later reader to
+	// bisect two numeric failures back to a finish commit, which is what #294
+	// had to do.
+	const hullFinish = hull.finishes?.hull ?? "no finish reported";
+	const stationFinish = hull.finishes?.station ?? "no finish reported";
+	const onCalibratedFinish = hullFinish === HULL_LUMA_CALIBRATION.finish;
 	t.check(
-		"the brightest painted hull pixel stays inside the post-tone-map band",
-		min >= HULL_LUMA_BAND.min && max <= HULL_LUMA_BAND.max,
-		`${min.toFixed(2)}–${max.toFixed(2)} of 255, band ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}`,
+		"the hull on screen is the finish the band was calibrated against",
+		onCalibratedFinish,
+		`measured ${hullFinish}, ` +
+			`calibrated ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref}`,
 	);
-	t.check(
-		"the painted hull distribution is not under-lit beneath that highlight",
-		lowerQuartileMin >= HULL_LUMA_FLOORS.lowerQuartile &&
-			medianMin >= HULL_LUMA_FLOORS.median,
-		`lower quartile ${lowerQuartileMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.lowerQuartile}, ` +
-			`median ${medianMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.median}`,
-	);
+	// Both numeric rows are **gated on that**, rather than reported beside it.
+	// They compare display codes against a floor derived for one named finish, so
+	// on any other finish a pass is not evidence of anything — and a green row is
+	// read as one. The readings are still printed below, where a figure is a note
+	// rather than a check.
+	if (onCalibratedFinish) {
+		t.check(
+			"the brightest painted hull pixel stays inside the post-tone-map band",
+			min >= HULL_LUMA_BAND.min && max <= HULL_LUMA_BAND.max,
+			`${min.toFixed(2)}–${max.toFixed(2)} of 255, band ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}`,
+		);
+		t.check(
+			"the painted hull distribution is not under-lit beneath that highlight",
+			lowerQuartileMin >= HULL_LUMA_FLOORS.lowerQuartile &&
+				medianMin >= HULL_LUMA_FLOORS.median,
+			`lower quartile ${lowerQuartileMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.lowerQuartile}, ` +
+				`median ${medianMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.median}`,
+		);
+	}
 	console.log(
 		`  hull-chase painted peak ${min.toFixed(2)}–${max.toFixed(2)} of 255 ` +
 			`(same-build noise ${(max - min).toFixed(2)}, ${hull.pixels} px, at ${hull.peakAts.map((at) => `${at.x},${at.y}`).join(" / ")})`,
@@ -543,6 +550,10 @@ if (!hull.missing) {
 	console.log(
 		`  hull spread lower quartile ${lowerQuartileMin.toFixed(2)}–${Math.max(...hull.lowerQuartiles).toFixed(2)}, ` +
 			`median ${medianMin.toFixed(2)}–${Math.max(...hull.medians).toFixed(2)} of 255`,
+	);
+	console.log(
+		`  finish     hull ${hullFinish}, station ${stationFinish} ` +
+			`(band calibrated on ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref})`,
 	);
 	console.log(
 		`  exposure   bloom strength ${hull.exposure.bloom.strength}  ` +

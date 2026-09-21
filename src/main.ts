@@ -465,7 +465,7 @@ import {
 	updateStationVisuals,
 	warmStationMaps,
 } from "./station-mesh";
-import { SPEC_FIXTURE_NAMES } from "./station-visuals";
+import { SPEC_FIXTURE_NAMES, stationFinishId } from "./station-visuals";
 import {
 	HULL_SPECS,
 	PLAYER_BASELINE_HULL,
@@ -525,7 +525,7 @@ import {
 	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
-import { applyHullQuality } from "./ship-surface";
+import { applyHullQuality, hullFinishId } from "./ship-surface";
 import type { StationInterior } from "./station-interior";
 import { type Station, generateContents } from "./system";
 import {
@@ -1494,6 +1494,40 @@ class Game {
 	readonly composer: EffectComposer;
 	/** The exact post-processing budget browser probes read back. */
 	readonly exposure = EXPOSURE;
+
+	/**
+	 * The surface finishes this build was assembled with, for the same reason
+	 * `exposure` is here: a probe reads the value the renderer used instead of
+	 * carrying a second copy of it.
+	 *
+	 * A finish is module state, set at import and read by each builder as it
+	 * runs, so what this captures is that state — **not**, as this comment
+	 * claimed for a round, a value taken at the same moment as the meshes. A
+	 * field initialiser runs before the constructor body, so this is strictly
+	 * earlier than any mesh build; the two agree because nothing moves the module
+	 * state in between, which is a different fact and a weaker one.
+	 *
+	 * A snapshot rather than a live read is the shape that matches the question —
+	 * which finish the meshes on screen were *built* with, rather than what the
+	 * module holds at the moment of asking. **Neither is correct under a
+	 * mid-session switch**, and this comment claimed the snapshot was: a switch
+	 * that also rebuilt the meshes would leave this stale and the probe's guard
+	 * row green against a finish it was not calibrated for, which is #294's
+	 * failure wearing a different hat. What makes the pair safe here is that
+	 * nothing in the running game switches a finish at all — `setHullFinish` has
+	 * one caller in `src/`, `model-viewer.ts`, which is the workbench and never
+	 * sets `window.__seelite`. A build that did switch would need this read where
+	 * the meshes are built, not at either end.
+	 *
+	 * `probe-light-rig.mjs` is the consumer: its painted-hull rows read absolute
+	 * display codes, which are a property of the hull finish rather than of the
+	 * lighting, and #294 is what it costs when the probe cannot say which finish
+	 * it measured.
+	 */
+	readonly finishes = {
+		hull: hullFinishId(),
+		station: stationFinishId(),
+	} as const;
 
 	/** Background: stars only, no depth, re-centred on the camera each frame. */
 	readonly backdropScene = new THREE.Scene();
