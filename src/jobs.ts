@@ -367,7 +367,19 @@ const draw = (
 	)();
 
 /** The draw axes inside `DOMAIN.JOB_OFFERS`. */
-const AXIS = { row: 0, destination: 1 } as const;
+const AXIS = { row: 0, destination: 1, good: 2 } as const;
+
+/**
+ * How many of the widest-spread goods a courier consignment is drawn from.
+ *
+ * Tunable, and both ends of it say something. At 1 the rule is the spread
+ * alone and two goods take 89% of a galaxy's boards — the same near-constant
+ * cargo line the cheapest rule gave. At the whole pool the draw is uniform and
+ * the ranking reads nothing about the economy at all. 3 is #442's measured
+ * figure: nine distinct goods across a galaxy with none above 18% of the
+ * boards, from `scripts/measure-courier-goods.ts`.
+ */
+export const COURIER_SPREAD_POOL = 3;
 
 const episodeOf = (ctx: BindContext, family: JobFamily): number =>
 	(ctx.settled[family] ?? 0) + 1;
@@ -399,18 +411,22 @@ const round = (cr: number): number => Math.round(cr);
 /**
  * D8's floor: a consignment to a reachable station, always available.
  *
- * The good is the **cheapest tonne good both stations list**, read off the
- * fixed base price rather than the epoch's, so terms do not drift across a
- * 30-minute boundary while the offer sits on the board. It must be listed at
- * the delivery station too, or the mark would land on a shelf that does not
- * exist.
+ * The good is drawn, per episode, from the `COURIER_SPREAD_POOL` tonne goods
+ * with the **widest base-price spread between the two ends** — the
+ * destination's price less the origin's — read off the fixed base price rather
+ * than the epoch's, so terms do not drift across a 30-minute boundary while the
+ * offer sits on the board. It must be listed at the delivery station too, or
+ * the mark would land on a shelf that does not exist.
  *
- * Cheapest is a proxy for *what this economy has to spare*, and it is not the
- * same thing: an economy's true exports are its negative-gradient goods
- * (`economy-trade.md` §2), and a richer rule would read the gradient rather
- * than the price. It is deliberately left as the simple one until a family
- * needs better, and the word "export" is not used for it, because on most
- * boards it picks Food.
+ * The spread is a proxy, exactly as the cheapest rule it replaced was (#442):
+ * whether the widest price gap is a freight desk's actual reason for moving
+ * something is not a question a measurement can answer, and this rule is not
+ * derived from one. What the measurement does say is that **only a rule
+ * reading both ends can vary at all** — a gradient belongs to the commodity
+ * table and not to a station, so an export or a need test names one good for
+ * the whole galaxy — and that the ranking alone still put two goods on 89% of
+ * boards. The per-episode draw is what turns that into nine goods with none
+ * above 18%, so the ranking and the draw are one rule rather than two.
  */
 export function bindCourier(ctx: BindContext): JobOffer | null {
 	if (ctx.destinations.length === 0) return null;
@@ -430,17 +446,29 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	// `entrustedTonnesAboard`, the hold's room and the mark all count tonnes,
 	// and contraband is the one scoped class (`economy-trade.md` §4) — a
 	// consignment of it would be a job the law model never agreed to.
-	const priced = listedAt(ctx.station, ctx.system)
+	const ranked = listedAt(ctx.station, ctx.system)
 		.filter(
 			(c) =>
 				listedThere.has(c.name) && !c.sellOnly && !c.illegal && c.unit === "t",
 		)
-		// Priced once per commodity rather than twice per comparison: this runs
-		// on every bind, which is every dock.
-		.map((c) => ({ c, priceCr: basePriceCr(c, ctx.system, ctx.station) }))
-		.sort((a, b) => a.priceCr - b.priceCr || (a.c.name < b.c.name ? -1 : 1));
-	const good = priced[0]?.c;
-	if (!good) return null;
+		// Both ends priced once per commodity rather than twice per comparison:
+		// this runs on every bind, which is every dock.
+		.map((c) => ({
+			c,
+			spread:
+				basePriceCr(c, destination.system, destination.station) -
+				basePriceCr(c, ctx.system, ctx.station),
+		}))
+		.sort((a, b) => b.spread - a.spread || (a.c.name < b.c.name ? -1 : 1));
+	if (ranked.length === 0) return null;
+	const width = Math.min(COURIER_SPREAD_POOL, ranked.length);
+	const good =
+		ranked[
+			Math.min(
+				width - 1,
+				Math.floor(draw(ctx.station, "courier", episode, AXIS.good) * width),
+			)
+		].c;
 
 	return {
 		id: offerId(ctx, "courier", episode),

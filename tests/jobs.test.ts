@@ -9,9 +9,15 @@
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { JUMP_RANGE_LY, generateGalaxy } from "../src/galaxy";
 import {
+	JUMP_RANGE_LY,
+	type SystemRecord,
+	generateGalaxy,
+} from "../src/galaxy";
+import {
+	COURIER_SPREAD_POOL,
 	JOB_ROWS,
+	type JobDestination,
 	type JobOffer,
 	bindJobs as bindJobsWith,
 	canPostJobs,
@@ -26,10 +32,16 @@ import {
 	postingStations,
 	stationKeyOf,
 } from "./helpers/job-board";
-import { MARKET_PERIOD_MIN } from "../src/market";
+import {
+	type Commodity,
+	MARKET_PERIOD_MIN,
+	marketRowAt,
+	marketStationOf,
+	stationCommodities,
+} from "../src/market";
 import { recordTrade } from "../src/deficits";
 import type { DeficitMap } from "../src/deficits";
-import { generateContents } from "../src/system";
+import { type Station, generateContents } from "../src/system";
 
 const WORLD = 0x5ee11e;
 const GALAXY = generateGalaxy(WORLD, 0);
@@ -330,5 +342,133 @@ describe("D4 — every job leaves one mark, and only one", () => {
 			holdT: 20,
 		});
 		expect(applied[mark.key]?.goods[mark.trade.goodName]).toBeLessThan(0);
+	});
+});
+
+describe("#455 — a consignment is drawn from the widest-spread goods", () => {
+	/** The base price a station quotes with no fluctuation byte and no deficit
+	 *  — the same figure `bindCourier` ranks on. */
+	const basePriceCr = (
+		commodity: Commodity,
+		system: SystemRecord,
+		station: Station,
+	): number =>
+		marketRowAt(
+			commodity,
+			system.economy,
+			0,
+			marketStationOf(station, system.seed).type,
+		).priceCr;
+
+	const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
+		...stationCommodities(marketStationOf(station, system.seed)),
+	];
+
+	/**
+	 * The pool and the ranking, rebuilt from `market.ts` rather than imported
+	 * from `jobs.ts`: a check that asked the binder for its own order would
+	 * pass on any order at all.
+	 */
+	const rankedPool = (
+		system: SystemRecord,
+		station: Station,
+		destination: JobDestination,
+	): Commodity[] => {
+		const there = new Set(
+			listedAt(destination.station, destination.system).map((c) => c.name),
+		);
+		return listedAt(station, system)
+			.filter(
+				(c) => there.has(c.name) && !c.sellOnly && !c.illegal && c.unit === "t",
+			)
+			.map((c) => ({
+				c,
+				spread:
+					basePriceCr(c, destination.system, destination.station) -
+					basePriceCr(c, system, station),
+			}))
+			.sort((a, b) => b.spread - a.spread || (a.c.name < b.c.name ? -1 : 1))
+			.map((entry) => entry.c);
+	};
+
+	/** Every courier offer this galaxy's first 60 systems post, with the leg
+	 *  the binder drew for it — so the ranking is measured over the same pair
+	 *  of stations the offer was bound from. */
+	const couriers = (settled: Record<string, number> = {}) => {
+		const out: {
+			offer: JobOffer;
+			system: SystemRecord;
+			station: Station;
+			destination: JobDestination;
+		}[] = [];
+		for (const system of SYSTEMS.slice(0, 60))
+			for (const station of postingStations(system)) {
+				const offer = boardAt(SYSTEMS, system, station, {
+					gameTimeMin: 120,
+					settled,
+				}).find((o) => o.family === "courier");
+				if (!offer) continue;
+				const destination = deliveryCandidates(
+					SYSTEMS,
+					system,
+					generateContents,
+					stationKeyOf(system, station),
+				).find(
+					(d) =>
+						carrierKey(d.system.index, d.station.localCarrierId) ===
+						offer.reportAt.carrierKey,
+				);
+				if (!destination) throw new Error(`no leg for ${offer.id}`);
+				out.push({ offer, system, station, destination });
+			}
+		return out;
+	};
+
+	test("the good is in the pool, and in its top COURIER_SPREAD_POOL by spread", () => {
+		const boards = couriers();
+		expect(boards.length).toBeGreaterThan(50);
+		for (const { offer, system, station, destination } of boards) {
+			const ranked = rankedPool(system, station, destination);
+			const top = ranked
+				.slice(0, COURIER_SPREAD_POOL)
+				.map((c) => c.name);
+			expect([offer.id, top.includes(offer.goodName)]).toEqual([
+				offer.id,
+				true,
+			]);
+		}
+	});
+
+	test("the draw is deterministic for one station and one episode", () => {
+		const first = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
+		const again = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
+		expect(again).toEqual(first);
+	});
+
+	test("two consecutive episodes at one requester can differ", () => {
+		// **Existence, not a rate.** A draw from three goods repeats a third of
+		// the time, so a row asserting that *every* desk changes its cargo
+		// would be red on a correct build; what the node claims is that a
+		// second consignment is not the first one by construction.
+		const first = new Map(
+			couriers({ courier: 0 }).map((b) => [b.offer.requester.carrierKey, b]),
+		);
+		const second = couriers({ courier: 1 });
+		expect(second.length).toBeGreaterThan(50);
+		let differs = 0;
+		for (const board of second) {
+			const before = first.get(board.offer.requester.carrierKey);
+			if (!before) continue;
+			expect(before.offer.episode).toBe(1);
+			expect(board.offer.episode).toBe(2);
+			if (before.offer.goodName !== board.offer.goodName) differs += 1;
+		}
+		expect(differs).toBeGreaterThan(0);
+	});
+
+	test("the pool is wider than one, or the rule is the spread alone", () => {
+		// The constant the node's claim rests on: at 1 the distribution
+		// collapses back onto two goods, which is what the shipped rule did.
+		expect(COURIER_SPREAD_POOL).toBeGreaterThan(1);
 	});
 });
