@@ -89,10 +89,18 @@ await page.evaluate(() => {
 		// as well. The head slice stays so a red row prints something readable, and
 		// the derived layer keeps its full arrays because the pairing check below
 		// needs every size and distance.
+		// Folded over the buffer's **bytes**, not over the values. Hashing the
+		// values and truncating with `|0` at each step is the mistake this
+		// replaces: every `aSize` lies between 0.0048 and 0.055, so each one
+		// truncates to zero and the size checksum is identically 0 for every
+		// sky ever drawn — a check that cannot fail, which is the one thing
+		// this node has now been told about three times.
 		const checksum = (attr) => {
 			const a = attr.array;
-			let h = 0;
-			for (let i = 0; i < a.length; i++) h = (h * 31 + a[i]) | 0;
+			const words = new Uint32Array(a.buffer, a.byteOffset, a.length);
+			let h = 2166136261;
+			for (let i = 0; i < words.length; i++)
+				h = ((h ^ words[i]) * 16777619) | 0;
 			return h;
 		};
 		const whole = position.count <= 512;

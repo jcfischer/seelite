@@ -321,10 +321,18 @@ describe("systemField — the 255 systems that are actually there", () => {
 		expect(brightSizeLy(BRIGHT_FLOOR_LY * 0.999)).toBeGreaterThan(
 			BRIGHT_SIZE_MIN,
 		);
-		// And the two are the same law's own quotients, not two numbers kept in
-		// step by hand.
+		// The ordering is the claim: a sky whose ceiling sat beyond its floor
+		// would clamp every point to one size and still pass a row that only asks
+		// whether each clamp is reachable.
 		expect(BRIGHT_CEILING_LY).toBeLessThan(BRIGHT_FLOOR_LY);
-		expect(BRIGHT_SIZE_K / BRIGHT_SIZE_MAX).toBe(BRIGHT_CEILING_LY);
+		// And both sit *inside* the distances the game actually draws, which is
+		// the difference between a clamp that shapes the picture and one that is
+		// off at the end of a dial nobody reaches. The near end is the shipped
+		// `BRIGHT_SIZE_MID_LY` — the measured median separation — because that is
+		// the distance the corpus is dense at; `measure-sky-density.ts sky` prints
+		// the observed range the clamps sit within.
+		expect(BRIGHT_CEILING_LY).toBeLessThan(BRIGHT_SIZE_MID_LY);
+		expect(BRIGHT_FLOOR_LY).toBeGreaterThan(BRIGHT_SIZE_MID_LY);
 	});
 
 	test("the size law refuses a distance that is not a distance", () => {

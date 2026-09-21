@@ -26,9 +26,10 @@
  *   system cannot see itself — at its true bearing through `galaxy-frame.ts`, in
  *   the colour of the sun a pilot finds there, sized by distance.
  * - **{@link faintField} is the fiction**, and stays one, because 255 points is
- *   not a night: Earth's whole naked-eye sky is of order five thousand stars, so
- *   the real layer is twenty times short of the density a person reads as *sky*,
- *   and the invented population supplies that and nothing else.
+ *   not a night: the real layer is more than an order of magnitude short of the
+ *   density a person reads as *sky* — both densities and the ratio between them
+ *   are §12's to carry and `measure-sky-density.ts band` to reprint — and the
+ *   invented population supplies what is missing and nothing else.
  *
  * ## Why two buffers, and so two `Points`
  *
@@ -100,11 +101,12 @@ export interface StarField {
 /**
  * How many invented points the sky carries.
  *
- * A density, not a budget. At 4,000 the layer is 97 points per 1000 square
- * degrees, which is the order of magnitude of a human naked-eye sky; the draw is
- * nothing either way (the research puts the point where a `Points` layer starts
- * costing anything nearer 10⁵), so cutting it buys no milliseconds and thins the
- * night.
+ * A density, not a budget. It is set to the order of magnitude of a human
+ * naked-eye sky — the densities on both sides, and how far the real layer falls
+ * short of that, are §12's to carry and `measure-sky-density.ts band` to reprint
+ * — and the draw is nothing either way: the research puts the point where a
+ * `Points` layer starts costing anything nearer 10⁵, so cutting this buys no
+ * milliseconds and thins the night.
  */
 export const FAINT_COUNT = 4000;
 
@@ -122,13 +124,14 @@ export const FAINT_COUNT = 4000;
  * only channel left in which the real layer is visible as structure.
  *
  * **What that costs, stated rather than left to be noticed:** over `size²`, which
- * is what an additive disc delivers as light, this band leaves the invented layer
- * **a tenth** of what the law it replaced gave it — and almost none of that tenth
- * is the typical point, because what the invariant actually removes is the old
+ * is what an additive disc delivers as light, this band costs the invented layer a
+ * large fraction of what the law it replaced gave it — and almost none of it comes
+ * off the typical point, because what the invariant actually removes is the old
  * law's bright tail: its handful of oversized discs, at random bearings, at sizes
- * indistinguishable from the systems the sky is a picture *of*. The figures are
- * §12's to carry and `measure-sky-density.ts grain` to reprint; what to make of
- * the resulting night is #433's sheet.
+ * indistinguishable from the systems the sky is a picture *of*. The ratio, the two
+ * bands' moments and the px conversion are §12's to carry and
+ * `measure-sky-density.ts grain` to reprint; what to make of the resulting night
+ * is #433's sheet.
  */
 export const FAINT_SIZE_MIN = 0.0048;
 export const FAINT_SIZE_SPAN = 0.0048;
@@ -302,15 +305,16 @@ export function faintField(worldSeed: number, count = FAINT_COUNT): StarField {
  * one-to-one and the order is load-bearing rather than cosmetic.
  *
  * **Cost, per arrival rather than per frame:** one extra draw call, 255 bearings
- * and 255 star-class draws — `measure-sky-density.ts cost` times it and §12 carries
- * what that printed, because a figure in two files is one that goes stale in the
- * next edit. (CPU arithmetic, which is the only kind this half has; what it
- * *draws* is 255 more points on one more draw call, and #433 prices that on the
- * sheet.) Three `Float32Array`s totalling about
- * 4 kB are allocated per arrival and the old ones go; there is no pool, because
+ * and 255 star-class draws, and three `Float32Array`s. CPU arithmetic is the only
+ * kind this half has; what it *draws* is 255 more points on one more draw call,
+ * and #433 prices that on the sheet. Three
+ * allocated per arrival and the previous three dropped. There is no pool, because
  * a pool would trade a number nobody can measure for a stale tail nobody can
- * see. That cost is free enough to pay on every jump, which is the reason the
- * layer is its own buffer rather than 255 rows inside the faint one.
+ * see. What it costs is printed by `cost` mode and carried by §12 — this node
+ * shipped *two* wrong sizes for these three buffers in two comments, so the
+ * measurement is not written down here a third time. It is free enough to pay on
+ * every jump, which is the reason the layer is its own buffer rather than 255
+ * rows inside the faint one.
  */
 export function systemField(galaxy: Galaxy, observer: SystemRecord): StarField {
 	const frame = skyFrame(observer.seed);

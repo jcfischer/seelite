@@ -1712,7 +1712,6 @@ class Game {
 	 *  rather than two; named children because a probe asks which layer it is
 	 *  looking at, and `children.find(isPoints)` cannot answer that. */
 	private starGroup!: THREE.Group;
-	private faintStars!: THREE.Points;
 	private systemStars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
 	private readonly keys = new Set<string>();
@@ -3803,7 +3802,7 @@ class Game {
 	 *
 	 * The faint population is built once, from the world seed, and never
 	 * rebuilt: it is a texture and it does not know where the player is. The
-	 * derived layer is rebuilt on every arrival by {@link rebuildStarField},
+	 * derived layer is rebuilt on every arrival by {@link rebuildDerivedSky},
 	 * which is the whole reason there are two of them — see `backdrop.ts`.
 	 */
 	private buildBackdrop() {
@@ -3849,15 +3848,19 @@ class Game {
 		// One group, so the "the sphere follows the camera" write below is one
 		// write for both layers.
 		this.starGroup = new THREE.Group();
-		this.faintStars = this.pointLayer(
-			"stars-faint",
-			faintField(this.world.seed),
-		);
 		this.systemStars = this.pointLayer(
 			"stars-systems",
 			systemField(this.world.galaxy, this.world.system.record),
 		);
-		this.starGroup.add(this.faintStars, this.systemStars);
+		// The invented layer gets no field: it is built once, handed to the group,
+		// and never read again — which *is* the design, and a field named
+		// `faintStars` that nothing reads invites a search for the reader that
+		// does not exist. The derived layer keeps one, because
+		// `rebuildDerivedSky` swaps its geometry through it.
+		this.starGroup.add(
+			this.pointLayer("stars-faint", faintField(this.world.seed)),
+			this.systemStars,
+		);
 		this.backdropScene.add(this.starGroup);
 	}
 
@@ -3884,7 +3887,7 @@ class Game {
 	 * The measured figure is `systemField`'s to carry, beside the dial it
 	 * measures — one copy of it, in the module that owns the layer.
 	 */
-	private rebuildStarField() {
+	private rebuildDerivedSky() {
 		const field = systemField(this.world.galaxy, this.world.system.record);
 		const geometry = this.systemStars.geometry;
 		this.systemStars.geometry = this.starGeometry(field);
@@ -10541,7 +10544,7 @@ class Game {
 		// not on this path at all — it is a function of the world seed, and the
 		// point of splitting the two layers is that this line has nothing to do
 		// with it.
-		this.rebuildStarField();
+		this.rebuildDerivedSky();
 		// #207's programs for the new system's classes, now that its bodies exist.
 		// The composer is long up on this path, so the target below is the one the
 		// game renders into.

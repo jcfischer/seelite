@@ -48,6 +48,8 @@ import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
  *  probe keeps the seed it chose; `PROBE_URL` replaces the whole thing. The
  *  runner (probe-all.mjs) sets the origin for exactly that reason — a runner
  *  that set the URL would silently hand every probe a different world. */
+const ORIGIN =
+	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 /** How many mounted positions a backdrop seed check reads.
  *
  * The whole 4,000-point buffer would be 12,000 floats across the CDP boundary to
@@ -75,8 +77,6 @@ function skyHeads({ head }) {
 	return { faint: one("stars-faint"), systems: one("stars-systems") };
 }
 
-const ORIGIN =
-	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const SEED = 42;
 
 /** The second seed, for the half of the determinism check that has to differ.
@@ -611,9 +611,8 @@ check(
 );
 
 // (4) The seed reaches the backdrop — both halves, and both layers.
-const readSky = skyHeads;
 const reload = await open();
-const again = await reload.evaluate(readSky, { head: SKY_HEAD });
+const again = await reload.evaluate(skyHeads, { head: SKY_HEAD });
 const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 check(
 	"the same seed draws the same invented stars",
@@ -634,7 +633,7 @@ await reload.close();
 
 // The other seed is the point, so the override must not replace it.
 const other = await open({ params: { seed: OTHER_SEED }, override: false });
-const otherSky = await other.evaluate(readSky, { head: SKY_HEAD });
+const otherSky = await other.evaluate(skyHeads, { head: SKY_HEAD });
 check(
 	"a different seed draws different stars",
 	otherSky.faint.some((v, i) => v !== state.faintPositions[i]),

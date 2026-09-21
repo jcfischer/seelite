@@ -955,7 +955,7 @@ of them; two means an arrival allocates **7,140 bytes** — positions 3,060, col
 printed by `cost` mode — and the texture costs nothing ever again. They share **one** `ShaderMaterial`, because everything that
 distinguishes a point of one layer from a point of the other is already an
 attribute, and a second material would be a second compiled program for an
-identical shader. `rebuildStarField()` disposes the old geometry only after the
+identical shader. `rebuildDerivedSky()` disposes the old geometry only after the
 swap, because disposing the one still mounted frees what the frame in flight is
 drawing with.
 

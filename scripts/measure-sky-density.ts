@@ -288,20 +288,25 @@ function modeSky(): void {
 	let observers = 0;
 	sweep({ dists: true }, (sky) => {
 		assertPointCount(sky.dists.length, "sky mode");
-		nearest.push(Math.min(...sky.dists));
-		farthest.push(Math.max(...sky.dists));
+		// One traversal for both extrema. Spreading `Math.min(…)` and
+		// `Math.max(…)` twice each — as this did — visits the same 255 distances
+		// five times per observer, ~42M extra visits over the corpus, and it puts
+		// the same quantity in two spellings so that editing one silently makes the
+		// magnitude row disagree with the two rows above it.
+		let near = Number.POSITIVE_INFINITY;
+		let far = 0;
+		for (const d of sky.dists) {
+			if (d < near) near = d;
+			if (d > far) far = d;
+		}
+		nearest.push(near);
+		farthest.push(far);
 		mid.push(median(sky.dists, "mid"));
 		// A star's flux goes as 1/d² and the magnitude scale is 2.5·log10 of a
 		// flux ratio, so an inverse-square sky spans 5·log10(d_far/d_near)
 		// magnitudes with no tuning dial at all.
 		magSpread.push(
-			finite(
-				"magnitude spread",
-				5 *
-					Math.log10(
-						Math.max(...sky.dists) / Math.max(Math.min(...sky.dists), 1e-9),
-					),
-			),
+			finite("magnitude spread", 5 * Math.log10(far / Math.max(near, 1e-9))),
 		);
 		census(sky.dists, censusAll);
 		observers++;
@@ -545,7 +550,12 @@ function modeCore(): void {
 			coneShare: within20 / sky.fromCore.length,
 		});
 	});
-	const maxR = Math.max(...rows.map((r) => r.radius));
+	// Folded, not spread: `Math.max(...rows.map(…))` puts one argument per
+	// observer on the stack — 81,920 today, and `SEEDS` is a dial — and V8 throws
+	// `RangeError` on spread call sites in that range. A mode that breaks when the
+	// sweep is widened is an instrument that lies about its own scale.
+	let maxR = 0;
+	for (const r of rows) if (r.radius > maxR) maxR = r.radius;
 	if (!(maxR > 0)) throw new Error("measure-sky-density: no observer radius");
 	const thirds: Record<string, typeof rows> = {
 		"core third": [],
