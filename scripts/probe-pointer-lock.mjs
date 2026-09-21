@@ -79,7 +79,8 @@ import {
 	bootedGame,
 	guardedOrigin,
 	launchChromium,
-	PROBE_WINDOW_VISIBLE,
+	PROBE_WINDOW_LOCKABLE,
+	probeLaunchOptions,
 	tally,
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
@@ -166,9 +167,9 @@ const clickGlass = async (page) => {
 	// the click a player would make, and the harness's own speed is not allowed to
 	// decide whether a premise held.
 	await page.waitForTimeout(3000);
-	// Headed macOS Chromium grants a lock only to its key view. A prior console
-	// interaction can leave the tab visible but not key; bring this exact page
-	// forward before measuring the one real click below.
+	// A lock is granted only to the focused view. A prior console interaction can
+	// leave this tab behind another page of the same browser; bring this exact
+	// page forward before measuring the one real click below.
 	await page.bringToFront();
 	await page.waitForFunction(() => document.hasFocus());
 	const at = await page.evaluate(() => {
@@ -233,11 +234,15 @@ const pressPad = async (target, name) => {
 	await settle(target);
 };
 
-// macOS grants real pointer lock only to a key, visible view. The normal GPU
-// lane is off-screen; this interaction probe is the intentional exception.
+// This probe asks for a view that can hold a pointer lock, and says so rather
+// than spelling out today's answer. #441 measured the answer here: new headless
+// on this channel reports the hardware renderer *and* grants the lock, while the
+// same channel headed reports the same renderer and refuses — a macOS window
+// opened from a background terminal is never the key window, which is what the
+// lock gate reads. `PROBE_WINDOW_LOCKABLE` is where that lives (#454).
 const browser = await launchChromium({
 	channel: "chromium",
-	probeWindow: PROBE_WINDOW_VISIBLE,
+	probeWindow: PROBE_WINDOW_LOCKABLE,
 });
 
 // ---------------------------------------------------------------------------
@@ -250,6 +255,22 @@ watch(page);
 // until a button is pressed and the game's first poll has to find one there. The
 // pad is at rest for every row but the one that turns the head with it.
 await page.addInitScript(installFakePad);
+// **Read the refusal back rather than guessing at it (#454).** The premise row
+// below used to blame "the browser" for every unlocked page, and #441 measured
+// that wrong: the refusal this lane produced was the *launch*. The tap hands back
+// the browser's own promise untouched — the section at the foot of this file is
+// what asserts the game swallows it — and only observes the name.
+await page.addInitScript(() => {
+	window.__lockRefusals = [];
+	const ask = HTMLElement.prototype.requestPointerLock;
+	HTMLElement.prototype.requestPointerLock = function requestPointerLock() {
+		const asked = ask.call(this);
+		Promise.resolve(asked).catch((error) =>
+			window.__lockRefusals.push(error?.name ?? String(error)),
+		);
+		return asked;
+	};
+});
 await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(page);
 
@@ -261,8 +282,24 @@ check(
 	`hit=${glass.hit} lock=${await lockHolder(page)}`,
 );
 if (!locked) {
+	// **Name the cause, because the two are not the same finding (#454).** A
+	// `WrongDocumentError` raised while the lane is still forcing `headless: false`
+	// is the lane refusing its own lockable mode, not the browser and not the game
+	// — #441's measurement. Anything else, or a launch carrying no headless
+	// override, is the genuine article: this view cannot hold a lock.
+	const refusal =
+		(await page.evaluate(() => window.__lockRefusals?.[0] ?? null)) ?? null;
+	const headedLane =
+		probeLaunchOptions({
+			channel: "chromium",
+			probeWindow: PROBE_WINDOW_LOCKABLE,
+		}).headless === false;
 	console.log(
-		" FAIL  the browser refused the lock, which makes every row below vacuous — this probe needs a pointer-lockable view; see the header.",
+		` FAIL  the browser refused the lock, which makes every row below vacuous. ${
+			headedLane && refusal === "WrongDocumentError"
+				? "The cause is the lane: it launched a headed window for a lockable view, and a macOS window opened from a background terminal is never the key window (#441). Fix the launch, not this probe."
+				: `The cause is the refusal itself — ${refusal ?? "no name recorded"} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`
+		}`,
 	);
 	await browser.close();
 	exit();

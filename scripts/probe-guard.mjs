@@ -71,6 +71,25 @@ export const OFFSCREEN_WINDOW_RUNTIME_FLAGS = [
 	"--disable-background-timer-throttling",
 ];
 export const PROBE_WINDOW_VISIBLE = "visible";
+/**
+ * A view that can hold a pointer lock — named for what the probe asks for, not
+ * for how it is answered.
+ *
+ * #441 measured the answer on this machine: `channel: "chromium"` in **new
+ * headless** reports `ANGLE (Apple, ANGLE Metal Renderer)` *and* grants the
+ * lock, while the same channel headed reports the same renderer and throws
+ * `WrongDocumentError` — a macOS window opened from a background terminal is
+ * never the *key* window, and that is what the lock gate reads. So the lockable
+ * mode carries **neither** `headless: false` nor the offscreen flags: new
+ * headless has no window to position, so those flags do not describe something
+ * that is merely unnecessary there, they describe something that does not exist.
+ *
+ * The requirement is the lock, not the headlessness. A machine where new
+ * headless has no GPU loses the two probes that opt in rather than the lane —
+ * `assertBrowserRenderer` below is what says so, loudly, instead of quietly
+ * rasterising in software.
+ */
+export const PROBE_WINDOW_LOCKABLE = "lockable";
 
 /**
  * Read the requested probe renderer mode. The unset default deliberately keeps
@@ -95,6 +114,9 @@ export function probeRendererMode(env = process.env) {
 export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
+	// A lockable view keeps the caller's own launch: no `headless: false`, and
+	// none of the window flags, because there is no window. See the constant.
+	if (probeWindow === PROBE_WINDOW_LOCKABLE) return { ...chromiumOptions };
 	return {
 		...chromiumOptions,
 		headless: false,
