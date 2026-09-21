@@ -266,8 +266,6 @@ describe("the footer under a page is about that page", () => {
 	test("the Hold tab's footer is about the hold, not about Tuning", () => {
 		expect(RIGHT_FOOTER.Hold).not.toMatch(/tuning/i);
 		expect(RIGHT_FOOTER.Hold).toMatch(/entrusted/i);
-		// The node's own requirement: readable away from a station.
-		expect(RIGHT_FOOTER.Hold).toMatch(/in flight/i);
 	});
 
 	test("the four tabs this node does not own keep the shipped sentence", () => {

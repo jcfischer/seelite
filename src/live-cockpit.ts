@@ -93,7 +93,7 @@ const TUNING_FOOTER =
 export const RIGHT_FOOTER: Readonly<Record<RightTab, string>> = {
 	Flight: TUNING_FOOTER,
 	Drive: TUNING_FOOTER,
-	Hold: "Entrusted cargo occupies the hold and cannot be sold. Readable in flight as well as docked.",
+	Hold: "Entrusted cargo occupies the hold and cannot be sold.",
 	Controls: TUNING_FOOTER,
 	Tuning: TUNING_FOOTER,
 };
@@ -1544,7 +1544,7 @@ export class LiveCockpit {
 			// put the hold's table in the 135 px rail column, which the first sheet
 			// showed as a table squeezed into the left third of the panel.
 			return `<div class="lc-panel-body lc-hold-body">${holdBody(state.hold, state.holdBids)}</div>`;
-		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;
+		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {

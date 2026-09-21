@@ -1001,7 +1001,7 @@ export function renderGalleryState(
 					`<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`,
 			)
 			.join(""),
-		rail: ["SHIP", "POWER", "MODULES", "INVENTORY", "STATUS"],
+		rail: ["SHIP", "POWER", "MODULES", "STATUS"],
 		heading: `${rightTab.toUpperCase()} / CONTROL`,
 		body: rightPanelBody(state, rightTab),
 		// `docked`, not `flightDocked`: E5 suspends flight, so the right console's
