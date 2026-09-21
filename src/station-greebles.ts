@@ -61,10 +61,10 @@
  */
 
 import * as THREE from "three";
-import { shared } from "./gpu-teardown";
 import { STATION_GEOMETRY, STATION_TYPES, type StationType } from "./station";
 import { displayRand } from "./station-surface";
-import { currentStationFinish, STATION_VISUALS } from "./station-visuals";
+import { STATION_VISUALS, currentStationFinish } from "./station-visuals";
+import { shared } from "./gpu-teardown";
 
 /**
  * A patch of one form's surface, and how much machinery it wants on it.

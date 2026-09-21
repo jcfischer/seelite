@@ -27,17 +27,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type ViteDevServer } from "vite";
 import { freePort } from "../scripts/lib/free-port.mjs";
-import { treeDeclaration } from "../scripts/lib/tree-declaration.mjs";
-import {
-	assertServingThisTree,
-	TREE_ENDPOINT,
-} from "../scripts/probe-guard.mjs";
 import {
 	callsWithArgument,
 	codeOf,
 	repoPath,
 	scriptFiles,
 } from "./lib/source-scan";
+import {
+	assertServingThisTree,
+	TREE_ENDPOINT,
+} from "../scripts/probe-guard.mjs";
+import { treeDeclaration } from "../scripts/lib/tree-declaration.mjs";
 
 const REPO = realpathSync(join(dirname(fileURLToPath(import.meta.url)), ".."));
 

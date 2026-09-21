@@ -40,12 +40,12 @@
 import { describe, expect, test } from "bun:test";
 import { ROLL_TOLERANCE_DEG } from "../src/docking";
 import { CAPITAL_HULL_IDS, HULL_IDS, type HullId } from "../src/hull";
+import { rolledEnvelope } from "./helpers/rolled-envelope";
 import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import { rolledEnvelope } from "./helpers/rolled-envelope";
 
 /** The capital classes — `hull.ts`'s named list, imported rather than copied,
  *  so a capital added there reaches this file (#335's review). Named rather

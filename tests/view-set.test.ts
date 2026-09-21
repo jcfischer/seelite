@@ -18,20 +18,20 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
+import { makeWorld } from "../src/sim.ts";
+import { STATION_GEOMETRY } from "../src/station.ts";
 import {
-	contactSheet,
 	FIXTURE,
 	GAME_TIME_S,
 	LEVERS,
-	malformedShots,
 	SEED,
 	SHOT_KINDS,
-	uncoveredLevers,
 	VIEWPORT,
 	VIEWS,
+	contactSheet,
+	malformedShots,
+	uncoveredLevers,
 } from "../scripts/lib/view-set.mjs";
-import { makeWorld } from "../src/sim.ts";
-import { STATION_GEOMETRY } from "../src/station.ts";
 
 /** A manifest as `capture-views.mjs` writes one, for a run that captured everything. */
 type ViewShot = { name: string; file: string; gameTime?: number };

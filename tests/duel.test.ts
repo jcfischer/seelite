@@ -10,8 +10,8 @@ import {
 } from "../src/combat-enemy";
 import {
 	type DuelPilot,
-	RAIDER_HIT_RADIUS_KM,
 	RAIDER_OUT_OF_BEAM_KM,
+	RAIDER_HIT_RADIUS_KM,
 	type Raider,
 	raiderAtDrop,
 	raiderInSights,
@@ -19,12 +19,12 @@ import {
 } from "../src/duel";
 import { HULL_SPECS } from "../src/hull";
 import {
-	fullCondition,
 	PULSE_LASER,
 	SHIELD_POOL,
+	fullCondition,
 	stepCondition,
 } from "../src/ship-condition";
-import { scale, type Vec3, v3 } from "../src/vec3";
+import { type Vec3, scale, v3 } from "../src/vec3";
 
 const DT = 1 / 60;
 const FORWARD = v3(0, 0, -1);

@@ -12,9 +12,9 @@
  */
 import * as THREE from "three";
 import {
-	appearanceFor,
 	type PlanetAppearance,
 	type SurfaceClass,
+	appearanceFor,
 } from "./planet-appearance";
 import { type BodyVisual, buildBodyVisual } from "./planet-surface";
 

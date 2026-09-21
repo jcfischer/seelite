@@ -6,30 +6,30 @@
  */
 import { describe, expect, test } from "bun:test";
 import { COMBAT_PROTOTYPE_DEFAULTS } from "../src/combat-prototype";
-import { DOCKING_DAMAGE_SCALE, entryDamage, V_GATE_KMS } from "../src/docking";
-import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
+import { DOCKING_DAMAGE_SCALE, V_GATE_KMS, entryDamage } from "../src/docking";
+import { HULL_IDS, type HullId, HULL_SPECS } from "../src/hull";
 import {
-	applyDamage,
 	CRIPPLED_HULL_FRACTION,
 	ENERGY_BANK,
 	ENERGY_REGEN_PER_S,
-	fullCondition,
 	HEAT_COOL_PER_S,
 	HEAT_LOCK,
 	HEAT_RELEASE,
 	HULL_KILL_TOLERANCE,
 	HULL_PRINT_STEP,
-	headOnPool,
-	isAlive,
-	isCrippled,
 	PULSE_LASER,
-	printHull,
-	printHullPercent,
 	SHIELD_POOL,
 	SHIELD_RECHARGE_DELAY_S,
 	SHIELD_RECHARGE_ENERGY_PER_POINT,
 	SHIELD_RECHARGE_PER_S,
 	type ShipCondition,
+	applyDamage,
+	fullCondition,
+	headOnPool,
+	isAlive,
+	isCrippled,
+	printHull,
+	printHullPercent,
 	sideStruck,
 	stepCondition,
 } from "../src/ship-condition";

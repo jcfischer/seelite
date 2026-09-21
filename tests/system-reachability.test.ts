@@ -29,18 +29,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { generateGalaxy } from "../src/galaxy";
-import {
-	arrivalPoint,
-	generateContents,
-	MAX_ORBIT_AU,
-	MIN_ORBIT_AU,
-} from "../src/system";
 import {
 	ALL_GALAXIES,
 	forEachSystem,
 	worldSeeds,
 } from "./helpers/station-rows";
+import { generateGalaxy } from "../src/galaxy";
+import {
+	MAX_ORBIT_AU,
+	MIN_ORBIT_AU,
+	generateContents,
+	arrivalPoint,
+} from "../src/system";
 
 /**
  * Forty worlds — 81,920 systems — not eight.

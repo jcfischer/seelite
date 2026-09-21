@@ -29,25 +29,25 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { arrivalAttitude, beginLaunch } from "../src/arrival";
 import {
 	type ApertureFrame,
+	type EntryPose,
+	ROLL_TOLERANCE_DEG,
+	V_GATE_KMS,
 	apertureFrame,
 	dockingComputerStep,
-	type EntryPose,
 	evaluateEntry,
 	newDockingState,
 	orthonormalise,
-	ROLL_TOLERANCE_DEG,
 	signedRollDeg,
 	slotBasis,
-	V_GATE_KMS,
 } from "../src/docking";
+import { arrivalAttitude, beginLaunch } from "../src/arrival";
 import { ASSIST_CAP_KMS } from "../src/sim";
+import { rolledEnvelope } from "./helpers/rolled-envelope";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
-import { add, cross, dot, length, scale, type Vec3, v3 } from "../src/vec3";
-import { rolledEnvelope } from "./helpers/rolled-envelope";
+import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 /** Awkward on purpose, for `docking.test.ts`'s reason: on a world axis a
  *  transposition can hide behind coordinates that happen to agree. */

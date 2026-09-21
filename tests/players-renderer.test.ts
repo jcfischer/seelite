@@ -6,12 +6,12 @@ import {
 import {
 	HARDWARE_CHANNEL,
 	HARDWARE_RENDERER,
-	PROBE_RENDERER_ENV,
 	PROBE_WINDOW_LOCKABLE,
 	PROBE_WINDOW_VISIBLE,
 	PROBE_WINDOWS,
 	probeLaunchOptions,
 	probeRendererMode,
+	PROBE_RENDERER_ENV,
 } from "../scripts/probe-guard.mjs";
 
 test("hardware renderer identity requires an unmasked non-software name", () => {

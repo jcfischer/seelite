@@ -30,20 +30,20 @@ import {
 	type HullId,
 	type HullVariantId,
 } from "../src/hull";
-import { hullLoft, uvUnitsOf } from "../src/loft";
-import { buildShipMesh, HULL_REACH_KM } from "../src/ship-mesh";
+import { HULL_REACH_KM, buildShipMesh } from "../src/ship-mesh";
 import {
 	DEFAULT_HULL_FINISH,
-	HULL_FINISH_IDS,
 	HULL_FINISHES,
+	HULL_FINISH_IDS,
 	type HullFinishId,
-	hullFinishId,
-	plateUVs,
 	SHIP_MAP_SIZE,
 	SHIP_PANEL_KM,
 	SHIP_PLATING,
+	hullFinishId,
+	plateUVs,
 	setHullFinish,
 } from "../src/ship-surface";
+import { hullLoft, uvUnitsOf } from "../src/loft";
 
 // Restore the **default**, not stock: bun runs every test file in one
 // process, and a file that left `stock` behind would hand the next file a

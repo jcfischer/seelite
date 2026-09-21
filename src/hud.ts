@@ -25,7 +25,7 @@
  * operation that discards the magnitude the renderer cannot hold.
  */
 
-import { dot, length, scale, sub, type Vec3 } from "./vec3";
+import { type Vec3, dot, length, scale, sub } from "./vec3";
 
 export interface MarkerLabelBounds {
 	left: number;

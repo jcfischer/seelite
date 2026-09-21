@@ -26,6 +26,17 @@
  *   a formula. A frame built as an arc and then a roll is one flipped `quatMul`
  *   away from a wrong sky that every round trip in the repo still passes.
  *
+ * ## Forward only, until something asks for the other way
+ *
+ * There is no `rotateByInverse` and no `quatConjugate` here. #430 deleted both:
+ * their only caller in `src/` was a wrapper that #430 also deleted, and behaviour
+ * whose sole reader is its own test is behaviour nobody has asked for. #99's lesson
+ * — a transform stated in one direction is indistinguishable from its inverse —
+ * argues for the *test* holding the second route, which is where it now lives,
+ * written independently of the forward path it checks rather than derived from it.
+ * When #433's bake has to carry a world-frame direction back into galaxy space it
+ * will need the inverse, and that change is the one that names it.
+ *
  * ## Rotations, not reflections
  *
  * Every rotation here is proper by construction, and `tests/quat.test.ts`
@@ -137,11 +148,6 @@ export function quatMul(a: Quat4, b: Quat4): Quat4 {
 	];
 }
 
-/** The inverse of a unit quaternion, which is its conjugate. */
-export function quatConjugate(q: Quat4): Quat4 {
-	return [-q[0], -q[1], -q[2], q[3]];
-}
-
 /** Rotate a direction by `q`. Assumes a unit `q`, which is what everything
  *  above returns; a non-unit one would scale as well as rotate. */
 export function rotateBy(q: Quat4, v: Vec3): Vec3 {
@@ -160,12 +166,4 @@ export function rotateBy(q: Quat4, v: Vec3): Vec3 {
 		y: v.y + qw * ty + (qz * tx - qx * tz),
 		z: v.z + qw * tz + (qx * ty - qy * tx),
 	};
-}
-
-/** Undo {@link rotateBy}. Written as its own function rather than as a call with
- *  {@link quatConjugate} applied, because the two are the *direction* of a
- *  transform, and the whole reason a transform is a function is that the
- *  direction is something a test can hold (#99). */
-export function rotateByInverse(q: Quat4, v: Vec3): Vec3 {
-	return rotateBy(quatConjugate(q), v);
 }

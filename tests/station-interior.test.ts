@@ -20,20 +20,20 @@ import {
 	HULL_SPECS,
 	type HullId,
 } from "../src/hull";
-import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
+import { SELECTED_FORM, buildStationForm } from "../src/station-mesh";
 import {
 	BERTH_CELL,
 	type Berth,
+	ROLE_BERTHS,
+	ROLE_CAPACITY,
+	type StationInterior,
 	berthFits,
 	berthSpare,
 	chooseBerth,
 	interiorAxialSpanKm,
-	ROLE_BERTHS,
-	ROLE_CAPACITY,
-	type StationInterior,
 	stationInterior,
 } from "../src/station-interior";
-import { buildStationForm, SELECTED_FORM } from "../src/station-mesh";
+import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 
 /** `hull.ts`'s list, imported rather than copied (#335's review). */
 const CAPITALS: readonly HullId[] = CAPITAL_HULL_IDS;

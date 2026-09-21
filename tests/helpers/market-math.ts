@@ -19,28 +19,28 @@
  */
 
 import {
-	addDeficit,
 	type ByteClose,
-	COMMODITIES,
 	type Commodity,
-	clamp,
-	commodity,
+	COMMODITIES,
 	DEFICIT_MAX,
 	DEFICIT_SATURATION_RUNS,
-	decayDeficit,
 	ECONOMY_MAX,
 	ECONOMY_MIN,
 	HOLD_REFERENCE_T,
-	i8,
 	MIN_STOCK_RESPONSE_FACTOR,
-	marketRowAt,
 	PRICE_ELASTICITY,
 	PRICE_STEP_CR,
 	QUANTITY_CAP,
 	SATURATE,
 	type StationTypeKey,
-	stockResponse,
 	TYPE_OFFSET,
+	addDeficit,
+	clamp,
+	commodity,
+	decayDeficit,
+	i8,
+	marketRowAt,
+	stockResponse,
 } from "../../src/market";
 
 /**

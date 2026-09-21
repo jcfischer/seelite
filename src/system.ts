@@ -55,17 +55,17 @@
 import { moonName, planetName, starName } from "./body-name";
 import { DOMAIN } from "./domains";
 import { type SystemRecord, stream } from "./galaxy";
+import { type Vec3, dot, lengthSq } from "./vec3";
 import {
-	fenceProbability,
 	LOCAL_CARRIER_ID,
 	SPIN_RPM_RANGE,
 	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
 	type StationType,
+	fenceProbability,
 } from "./station";
 import { stationNames } from "./station-name";
 import { AU_KM } from "./units";
-import { dot, lengthSq, type Vec3 } from "./vec3";
 
 /** Seconds in a Julian year, the unit Kepler III is written in below. */
 const YEAR_S = 365.25 * 86400;

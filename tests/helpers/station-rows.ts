@@ -23,7 +23,7 @@ import {
 	type SystemRecord,
 } from "../../src/galaxy";
 import { type Body, makeWorld } from "../../src/sim";
-import { generateContents, type SystemContents } from "../../src/system";
+import { type SystemContents, generateContents } from "../../src/system";
 import type { Vec3 } from "../../src/vec3";
 
 /**

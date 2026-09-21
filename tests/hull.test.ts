@@ -22,8 +22,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { carrierKey } from "../src/carrier-key";
 import { CHARGE_CAPACITY_AU } from "../src/cruise";
+import { carrierKey } from "../src/carrier-key";
+import { FUEL_TANK_LY, HOLD_REFERENCE_T, marketStationOf } from "../src/market";
 import { JUMP_RANGE_LY } from "../src/galaxy";
 import {
 	CAPITAL_HULL_IDS,
@@ -35,26 +36,25 @@ import {
 	HULL_PRICE_STEP_CR,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
-	type HullEnvelope,
-	type HullId,
-	type HullVariantId,
 	hullPriceCr,
 	isCapital,
 	PLAYER_BASELINE_HULL,
 	PURCHASABLE_HULL_IDS,
+	type HullEnvelope,
+	type HullId,
+	type HullVariantId,
 } from "../src/hull";
-import { FUEL_TANK_LY, HOLD_REFERENCE_T, marketStationOf } from "../src/market";
 import { buildShipMesh } from "../src/ship-mesh";
 import {
-	flightPerformance,
 	REFERENCE_ANGULAR_ACCEL,
 	REFERENCE_ANGULAR_DAMP_TAU_S,
 	REFERENCE_ANGULAR_MAX,
 	REFERENCE_ASSIST_LATERAL_TAU_S,
 	REFERENCE_THRUST_KMS2,
+	flightPerformance,
 } from "../src/sim";
-import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import { newCommander, transactAtStation } from "../src/station-commerce";
+import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import {
 	BERTH_CELL,
 	berthFits,

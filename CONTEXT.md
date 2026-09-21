@@ -494,8 +494,10 @@ _Avoid_: Hyperspace (as a place), jump space
 **Galactic frame**:
 Galaxy space — the coordinate system `galaxy.ts` places the 256 systems in, whose
 reference plane is `y = 0` and whose centre is the cluster's density peak. Its
-reference-plane normal has exactly one author in `src/`, `GALACTIC_NORMAL` in
-`src/galaxy-frame.ts`, which the chart reads rather than restating.
+reference-plane normal has exactly one **named** author in `src/` —
+`GALACTIC_NORMAL` in `src/galaxy-frame.ts`, which the chart reads rather than
+restating — and one structural one, `GALAXY_FLATTENING_Q` in `galaxy.ts`, which
+flattens onto that axis as a choice of component. A row ties the two.
 `galaxy-generation.md` §2 owns the shape and §11 the frame.
 _Avoid_: Galaxy space (as a type or constant name), universe frame, ecliptic
 
@@ -511,9 +513,9 @@ _Avoid_: World space (unqualified), ecliptic, local frame
 The seeded rotation that carries the **Galactic frame** into one system's
 **System frame**, so a direction in the cluster can be said as a place in a
 particular pilot's sky. One per system, drawn from its own domain tag, isotropic
-over rotations, so no tilt is preferred and no system's band is aligned with the
-flight horizon by construction — which is not the same as ruling that alignment
-out, since an isotropic draw excludes nothing. `src/galaxy-frame.ts` owns it; `galaxy-generation.md` §11 owns the ruling.
+over rotations — what that buys and what it costs is §11's to say, including
+that an isotropic draw rules nothing out. `src/galaxy-frame.ts` owns the
+arithmetic; `galaxy-generation.md` §11 owns the ruling.
 _Avoid_: Attitude (that is the ship's own quaternion), camera frame
 
 **Galactic pole**:

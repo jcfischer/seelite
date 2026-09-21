@@ -46,9 +46,9 @@
  * the chart drew inside the shell. One comparison, or the map lies.
  */
 import {
-	distanceLy,
 	JUMP_RANGE_LY,
 	type SystemRecord,
+	distanceLy,
 	squaredDistanceLy,
 } from "./galaxy";
 

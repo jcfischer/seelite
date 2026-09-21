@@ -11,9 +11,9 @@ import { describe, expect, test } from "bun:test";
 import {
 	type FocusCursor,
 	type FocusItem,
+	NO_FOCUS,
 	focusedItem,
 	moveFocus,
-	NO_FOCUS,
 	refreshFocus,
 	resolveFocus,
 	setFocus,

@@ -19,23 +19,23 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import { Pools, radiatorArray, SHIP_SCALE } from "../src/station-fixtures";
+import { Pools, SHIP_SCALE, radiatorArray } from "../src/station-fixtures";
 import {
-	buildStationForm,
 	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_PANEL_KM,
 	type StationFormId,
+	buildStationForm,
 	setStationDetail,
 } from "../src/station-mesh";
 import {
 	DEFAULT_STATION_FINISH,
-	platingTexels,
-	STATION_FINISH_IDS,
 	STATION_FINISHES,
+	STATION_FINISH_IDS,
 	STATION_VISUALS,
 	type StationDetailLevel,
 	type StationFinishId,
+	platingTexels,
 	setStationFinish,
 	stationFinishId,
 	stationMapSize,

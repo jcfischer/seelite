@@ -18,15 +18,16 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	distanceLy,
 	FUEL_COST_PER_LY,
-	generateGalaxy,
 	JUMP_RANGE_LY,
+	type SystemRecord,
+	distanceLy,
+	generateGalaxy,
 	jumpCost,
 	neighbours,
-	type SystemRecord,
 	startSystem,
 } from "../src/galaxy";
+import { FUEL_CR_PER_LY, FUEL_TANK_LY } from "../src/market";
 import {
 	COURSE_SCHEMA_VERSION,
 	type Course,
@@ -37,7 +38,6 @@ import {
 	serialiseCourse,
 	setCourse,
 } from "../src/galaxy-route";
-import { FUEL_CR_PER_LY, FUEL_TANK_LY } from "../src/market";
 
 /**
  * A bare system record at a position, for the synthetic graphs.

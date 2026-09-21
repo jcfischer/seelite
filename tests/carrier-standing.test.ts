@@ -5,12 +5,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { carrierManifest, MANIFEST_LINES } from "../src/carrier-manifest";
 import {
-	carrierStanding,
 	STANDING_ROTATION_S,
 	STANDING_SHARES,
+	carrierStanding,
 } from "../src/carrier-standing";
+import { MANIFEST_LINES, carrierManifest } from "../src/carrier-manifest";
 import { COMMODITIES } from "../src/market";
 
 const KEYS = Array.from({ length: 400 }, (_, i) =>

@@ -29,7 +29,7 @@
  * from pairs is what makes it impossible to write half of one.
  */
 
-import { BIT, DIRECTIONS, type Plant, solvePlan, type WfcSpec } from "./wfc";
+import { BIT, DIRECTIONS, type Plant, type WfcSpec, solvePlan } from "./wfc";
 
 /** Module 0 is empty in every vocabulary: the solver's `orphanTo` and the
  *  fallback fill, and what sits beside anything on every side. */

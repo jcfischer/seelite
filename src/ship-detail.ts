@@ -1,12 +1,12 @@
 /** Generated machinery and steady hull light for #130. */
 import * as THREE from "three";
-import type { DetailLevel } from "./detail-level";
-import { detailLevel } from "./detail-level";
 import { DOMAIN } from "./domains";
 import { shared } from "./gpu-teardown";
 import type { HullId, HullVariantId } from "./hull";
 import { uvUnitsOf } from "./loft";
 import { fnv1a, mix, seededRand } from "./rng";
+import type { DetailLevel } from "./detail-level";
+import { detailLevel } from "./detail-level";
 
 export type ShipSurface = "dorsal" | "ventral" | "port" | "starboard";
 

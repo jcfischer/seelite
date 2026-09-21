@@ -6,8 +6,8 @@
  * moving-body guard.  Keeping that distinction explicit stops a route preview
  * from becoming a second, weaker collision implementation.
  */
-import { HOST_CLEARANCE_KM, type Mass, SURFACE_MARGIN } from "./cruise";
-import { add, cross, dot, length, scale, sub, type Vec3, v3 } from "./vec3";
+import { HOST_CLEARANCE_KM, SURFACE_MARGIN, type Mass } from "./cruise";
+import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 
 export interface DetourPlan {
 	bodyId: string;

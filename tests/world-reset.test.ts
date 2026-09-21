@@ -28,15 +28,15 @@
  * test below is what would have caught the claim.
  */
 import { describe, expect, test } from "bun:test";
-import { PLAYER_BASELINE_HULL } from "../src/hull";
+import { codeOf } from "./lib/source-scan";
 import {
 	advanceWorldClock,
-	flightPerformance,
 	makeWorld,
 	resetWorldToStart,
 	stepWorld,
+	flightPerformance,
 } from "../src/sim";
-import { codeOf } from "./lib/source-scan";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
 
 /** The baseline hull's handling — see `tests/sim.test.ts` for why these rows
  *  pass a hull's performance and why the courier's is the one they pass. */

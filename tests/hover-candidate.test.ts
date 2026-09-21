@@ -16,9 +16,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-	clickTarget,
 	type HoverPoint,
 	type HoverRule,
+	clickTarget,
 	hoverCandidate,
 } from "../src/hover-candidate";
 

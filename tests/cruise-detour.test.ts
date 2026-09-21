@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { type Mass } from "../src/cruise";
 import { cruiseRouteBlocker, planCruiseDetour } from "../src/cruise-detour";
+import { type Mass } from "../src/cruise";
 import { type Vec3, v3 } from "../src/vec3";
 
 const blocker: Mass = { id: "planet", pos: v3(), radiusKm: 100 };

@@ -25,8 +25,8 @@ import {
 	relayVelocity,
 } from "../src/pirate-relay";
 import { PULSE_LASER } from "../src/ship-condition";
-import { makeWorld } from "../src/sim";
 import { generateContents, positionOnOrbit } from "../src/system";
+import { makeWorld } from "../src/sim";
 import { add, length, sub, v3 } from "../src/vec3";
 import {
 	applyTransition,

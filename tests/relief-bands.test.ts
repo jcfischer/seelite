@@ -13,21 +13,21 @@
  * render loop is one nothing can step twice and compare.
  */
 import { describe, expect, test } from "bun:test";
-import { CLASS_GLSL, RELIEF } from "../src/planet-classes.glsl";
-import { fragmentFor } from "../src/planet-shaders";
 import {
 	BAKE_MAX_PX_PER_TEXEL,
-	focalPx,
-	peakPxPerCubeTexel,
-	projectedRadiusPx,
-	pxPerCubeTexel,
 	RELIEF_BAND_HYSTERESIS,
 	RELIEF_OFF_BELOW_PX,
-	reliefPathFor,
 	SCREEN_SPACE_BELOW_PX,
+	focalPx,
+	projectedRadiusPx,
+	peakPxPerCubeTexel,
+	pxPerCubeTexel,
+	reliefPathFor,
 	surfacePathFor,
 } from "../src/relief-bands";
 import { radiusAtTexelRatio } from "./lib/texel-radius";
+import { CLASS_GLSL, RELIEF } from "../src/planet-classes.glsl";
+import { fragmentFor } from "../src/planet-shaders";
 
 describe("the projection the bands read", () => {
 	/**

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
 	ADAPTIVE_BUDGET_MS,
+	CAPPED_OBSERVATION_TTL_MS,
+	AdaptiveResolution,
 	type AdaptiveDecision,
 	type AdaptiveEvidence,
-	AdaptiveResolution,
 	CAP_TOLERANCE,
-	CAPPED_OBSERVATION_TTL_MS,
 	COOLDOWN_MS,
 	DOWNSHIFT_FRAMES,
 	DOWNSHIFT_TRIGGER_MS,

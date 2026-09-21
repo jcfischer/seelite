@@ -1,24 +1,24 @@
 import { expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
+import { firstOffer } from "./helpers/job-board";
 import { requestAction } from "../src/requests";
-import { fnv1a } from "../src/rng";
+import { generateGalaxy } from "../src/galaxy";
+import { generateContents } from "../src/system";
 import {
 	newCommanderRecord,
 	parseSave,
-	SAVE_SCHEMA_VERSION,
 	serializeSave,
+	SAVE_SCHEMA_VERSION,
 } from "../src/save-envelope";
+import { newWorld } from "../src/world-state";
+import { fnv1a } from "../src/rng";
 import {
 	CommanderCatalog,
 	memorySaveBackend,
 	memorySlotLocks,
 	SaveStore,
 } from "../src/save-store";
-import { generateContents } from "../src/system";
-import { newWorld } from "../src/world-state";
-import { firstOffer } from "./helpers/job-board";
 
 /**
  * A live courier offer, bound at a real station of world 42's first galaxy.

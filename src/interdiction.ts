@@ -33,6 +33,7 @@
  */
 import type { FlightPerformance } from "./sim";
 import {
+	type Vec3,
 	add,
 	dot,
 	frameAcross,
@@ -40,7 +41,6 @@ import {
 	normalizeOr,
 	scale,
 	sub,
-	type Vec3,
 } from "./vec3";
 
 /** The charge a lock must be held through. #48's tuned figure. */

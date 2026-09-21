@@ -7,8 +7,8 @@ import {
 	type GunFeedback,
 	QUIET_GUN,
 	SHOT_SOUND_GAP_S,
-	stepGunFeedback,
 	TRACER_HOLD_S,
+	stepGunFeedback,
 } from "../src/gun-feedback";
 
 const DT = 1 / 60;

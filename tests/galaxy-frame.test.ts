@@ -51,7 +51,7 @@ import {
 	skyBearing,
 	skyFrame,
 } from "../src/galaxy-frame";
-import { rotateByInverse } from "../src/quat";
+import { type Quat4, rotateBy } from "../src/quat";
 import {
 	add,
 	cross,
@@ -91,6 +91,13 @@ const rodrigues = (axis: Vec3, angle: number, v: Vec3): Vec3 => {
 		z: v.z * c + kxv.z * s + axis.z * kv * (1 - c),
 	};
 };
+
+/** Undo `rotateBy`, written here rather than imported. `quat.ts` ships the forward
+ *  direction only — its inverse lost its last `src/` reader when #430 deleted the
+ *  wrapper around it — and an anti-inversion row wants its second route written
+ *  independently of the one it checks rather than derived from it (#99). */
+const rotateInverse = (q: Quat4, v: Vec3): Vec3 =>
+	rotateBy([-q[0], -q[1], -q[2], q[3]], v);
 
 /** Where the **shortest arc** alone would have put `GALACTIC_EAST`, rebuilt from
  *  the extracted pole without reference to the module: the arc's axis is
@@ -156,17 +163,16 @@ describe("skyFrame", () => {
 	});
 
 	test("round trips, every direction, in both orders", () => {
-		// Back through `rotateByInverse`, not through a `systemToGalaxy` wrapper: the
-		// inverse is the thing that has to be right, and a wrapper that merely
-		// reverses the same quaternion is a place for a wrong inverse to hide. #430
-		// ships no reverse-direction helper for the same reason — a direction a pilot
-		// is looking along, stated in the galaxy's terms, is a feature nobody has
-		// charted yet, and surface with no caller is surface kept alive by its test.
+		// Through the suite's own inverse (`rotateInverse`) and not through a
+		// `systemToGalaxy` wrapper: a wrapper that merely reverses its own quaternion
+		// is somewhere a wrong inverse can hide, and #430 ships no reverse-direction
+		// helper at all — a direction a pilot is looking along, in the galaxy's terms,
+		// is a feature no node has charted yet.
 		for (const seed of SEEDS.slice(0, 16)) {
 			const f = skyFrame(seed);
 			for (const d of DIRECTIONS) {
-				expectVec(rotateByInverse(f.q, galaxyToSystem(f, d)), d, 1e-9);
-				expectVec(galaxyToSystem(f, rotateByInverse(f.q, d)), d, 1e-9);
+				expectVec(rotateInverse(f.q, galaxyToSystem(f, d)), d, 1e-9);
+				expectVec(galaxyToSystem(f, rotateInverse(f.q, d)), d, 1e-9);
 			}
 		}
 	});
@@ -343,8 +349,20 @@ describe("skyFrame", () => {
 		// angle.** The extremes above cannot tell the two apart — drawing θ uniformly
 		// instead of `cos θ` *over*-reaches the tails, so a row that only asks
 		// whether the ends are reached passes on the classic mistake. The mean of
-		// |cos| separates them cleanly: exactly 0.5 for a sphere, and 2/π ≈ 0.637
-		// when θ is drawn uniformly, and 1.0 for aligned frames.
+		// |cos| separates the candidates, and the statistic to read is the pole's
+		// elevation above the **system's** plane — that is what "is the band tilted
+		// against the horizon" means. Four families, each flown:
+		//
+		//   isotropic over the sphere                0.5    the answer
+		//   θ uniform, so cos θ squashed to poles    0.637  +5.4 s.e.
+		//   aligned frames, pole = +z everywhere     1.0    +19.6 s.e.
+		//   the cluster's plane seen edge-on         0.0    −19.6 s.e.
+		//
+		// The third is #100's rejected option; the fourth is the arm this row was
+		// first flown against, and round 4 caught that the two had been conflated in
+		// this comment. They are different wrong things on opposite sides of the band,
+		// and the spread rows above catch both, so nothing was unguarded — only
+		// misdescribed.
 		//
 		// The seeds are a fixed list, so this row cannot flake — it is a statement
 		// about this sample, whose observed mean is 0.4735. The standard error of a
@@ -352,9 +370,8 @@ describe("skyFrame", () => {
 		// expectation: **±2.35 standard errors**, which is what this comment once
 		// called "four sigma on either side" and is not. The width is not what makes
 		// the row a detector, though. Every arm it exists to catch is far outside it —
-		// the angle-uniform draw lands at 0.637, 5.4 standard errors out, and aligned
-		// frames at 1.0, 19.6 out — while a correct draw sits 1.0 out on the near
-		// side. That separation is the margin, not the width of the band.
+		// every wrong family above is at least 5.4 standard errors out on one side or
+		// the other. That separation is the margin, not the width of the band.
 		const meanAbsCos = cos.reduce((a, b) => a + Math.abs(b), 0) / cos.length;
 		expect(meanAbsCos).toBeGreaterThan(0.44);
 		expect(meanAbsCos).toBeLessThan(0.56);
@@ -632,12 +649,23 @@ describe("one galactic frame, read by everything that points at it", () => {
 	});
 
 	test("the world frame it aims into is still the one the game rolls against", () => {
-		// The codomain half of the same claim. `SYSTEM_PLANE_NORMAL` says a system's
-		// reference plane is `z = 0`; `hud.ts`'s attitude reference and `main.ts`'s
-		// roll are what make that true in the shipped game, and a change there
-		// silently re-aims every bearing this module returns.
-		expect(codeOf("src/main.ts")).toMatch(
-			/horizonRoll\(\s*this\.orientation,\s*v3\(\s*0,\s*0,\s*1\s*\)\s*\)/,
+		// The codomain half of the same claim, and held the same way the chart's `UP`
+		// is held. `SYSTEM_PLANE_NORMAL` says a system's reference plane is `z = 0`;
+		// `main.ts`'s horizon roll is what makes that true in the shipped game, and a
+		// change there silently re-aims every bearing this module returns.
+		//
+		// Round 3 held this by forbidding the literal — a regex over `main.ts`
+		// requiring `horizonRoll(this.orientation, v3(0, 0, 1))`, which is a rule
+		// about how the call is *spelled* while the codomain's own constant sat in
+		// this module unread. The drift argument the PR applies to the chart applies
+		// here too, so the call site now reads the constant, and this row checks its
+		// provenance: the import carries it, and the roll consumes it.
+		const main = codeOf("src/main.ts");
+		expect(main).toMatch(
+			/import \{ SYSTEM_PLANE_NORMAL \} from "\.\/galaxy-frame"/,
+		);
+		expect(main).toMatch(
+			/horizonRoll\(\s*this\.orientation,\s*SYSTEM_PLANE_NORMAL\s*\)/,
 		);
 	});
 

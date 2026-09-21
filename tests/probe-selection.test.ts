@@ -9,17 +9,17 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
 import { PROBE_CATALOG } from "../scripts/lib/probe-catalog.mjs";
 import { readGitEvidence } from "../scripts/lib/probe-git-evidence.mjs";
 import { discoverProbeFiles } from "../scripts/lib/probe-inventory.mjs";
-import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
+import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
 import {
 	PROBE_EXCLUSION_MAX,
 	selectProbes,
 } from "../scripts/lib/probe-selection.mjs";
-import { readTypeSafeApiKey } from "../scripts/lib/typesafe-key.mjs";
 import { createTypeSafeProbeJudge } from "../scripts/lib/typesafe-probe-judge.mjs";
+import { readTypeSafeApiKey } from "../scripts/lib/typesafe-key.mjs";
+import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 
 const discovered = discoverProbeFiles(new URL("../scripts", import.meta.url));
 

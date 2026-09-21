@@ -51,7 +51,7 @@
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
 import { ASSIST_CAP_KMS } from "./sim";
 import { AU_KM } from "./units";
-import { add, dot, length, lengthSq, scale, sub, type Vec3 } from "./vec3";
+import { type Vec3, add, dot, length, lengthSq, scale, sub } from "./vec3";
 
 /**
  * The tunable half of the spec — §2's speed law and §3's arrival.

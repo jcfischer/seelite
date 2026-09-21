@@ -70,6 +70,39 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+
+import { starField } from "./backdrop";
+import {
+	SeeliteOutputPass,
+	VIGNETTE_MAX,
+	composerTarget,
+	grantedSamples,
+	setComposerSamples,
+} from "./output-stage";
+import {
+	EXPOSURE,
+	LIGHT_RIG,
+	envRotation,
+	equirectEnvironment,
+} from "./light-rig";
+import {
+	CLOSED_GATE,
+	enclosureRad,
+	OCCLUSION,
+	type OcclusionGate,
+	SHADOW_MAP_TEXELS,
+	type ShadowSubject,
+	shadowBox,
+	shadowFit,
+	stepOcclusionGate,
+} from "./occlusion";
+import {
+	hideNonOccluders,
+	markOcclusion,
+	restoreVisibility,
+	subjectOf,
+} from "./occlusion-mesh";
+import { SettingsStore } from "./settings";
 /**
  * Static, unlike `frame-attribution` below.
  *
@@ -85,74 +118,462 @@ import {
 	nearestRung,
 	RENDER_SCALE_LADDER,
 } from "./adaptive-resolution";
-import { berthCentre, recomposeDirection } from "./arrival";
+import type {
+	FrameAttribution,
+	FrameAttributionMode,
+	FrameAttributionSnapshot,
+} from "./frame-attribution";
 import { AudioFX } from "./audio";
-import { starField } from "./backdrop";
-import { type BootMode, bootMode } from "./boot-mode";
+import { CombatPrototypeRig } from "./combat-rig";
 import {
-	nextScoopNotice,
-	SCOOP_NOTICE_S,
-	type ScoopNotice,
-	scoopExit,
-} from "./cargo-notice";
-import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
-import { carrierManifest } from "./carrier-manifest";
+	COURSE_CUE_LABEL,
+	FLIGHT_FLOOR_LABELS,
+	SCANNER_RANGE_KM,
+	type CourseCue,
+	chargeReadsEmpty,
+	courseCue,
+	courseCueWidest,
+	jumpRefusalText,
+	flightFloorWidest,
+	type FloorCell,
+	type FloorTone,
+	type HeadLook,
+	type NavFilter,
+	type NavRow,
+	type ScannerContact,
+	flightFloorCells,
+	projectNavTargets,
+	projectScannerContacts,
+	targetArrowBearingDeg,
+} from "./cockpit";
+import { sceneRenderEligible } from "./render-eligibility";
+import {
+	CHARGE_CAPACITY_AU,
+	CHARGE_REGEN_AU_PER_S,
+	type Mass,
+	type CruiseParams,
+	DEFAULT_CRUISE,
+	HOST_CLEARANCE_KM,
+	SURFACE_MARGIN,
+	advanceCruise,
+	closestApproachKm,
+	chargeAfterRegen,
+	chargeAfterTravel,
+	exitVelocity,
+	legSeconds,
+} from "./cruise";
+import {
+	beginCruiseGuidance,
+	stepCruiseGuidance,
+	type CruiseGuidanceState,
+} from "./cruise-guidance";
+import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
+// The plane a system's bodies orbit near, and the plane the horizon line is
+// rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
+// that module's whole subject is the relation between this plane and the
+// cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
+// vector handed to it.
+import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
+import { type Course, courseProgress, setCourse } from "./galaxy-route";
+// The pad, normalised. What any of it *means* is `pollPad` and the panel
+// routing below, and nowhere else — that module was copied in from seekolous
+// and must not learn what a station is.
+import { GamepadSource, type PadFrame } from "./gamepad";
+import {
+	type PadContext,
+	type PadIntents,
+	contextFliesShip,
+	mouseFireHeld,
+	padFireHeld,
+	padFlightAxes,
+	padIntents,
+	pointerLockMove,
+} from "./pad-bindings";
+import type { PerfPanelHandle } from "./perf-panel";
+import type { SettingsPanelHandle } from "./settings-panel";
+import {
+	JUMP_CHARGE_S,
+	JUMP_TANK_LY,
+	type JumpCharge,
+	type JumpRefusal,
+	beginCharge,
+	cancelCharge,
+	charging,
+	idleCharge,
+	planJump,
+	stepCharge,
+} from "./hyperspace";
+import {
+	type MarkerLabelBounds,
+	MarkerLabelDeclutter,
+	angleOffNose,
+	directionTo,
+	duration,
+	edgeOf,
+	horizonRoll,
+	prograde,
+	projectDirection,
+} from "./hud";
+import {
+	ASSIST_CAP_KMS,
+	type Angular,
+	type FlightPerformance,
+	flightPerformance,
+	type Body,
+	type FlightControl,
+	type System,
+	type World,
+	advanceWorldClock,
+	bodyAccelerationBound,
+	bodyVelocity,
+	stationHostIdOf,
+	jumpWorldTo,
+	makeSystem,
+	makeWorld,
+	restoreWorld,
+	canResetWorldToStart,
+	resetWorldToStart,
+	stationOf,
+	stationPose,
+	stepAngular,
+	stepWorld,
+} from "./sim";
+import type { SurfaceClass } from "./planet-appearance";
+import {
+	type BodyVisual,
+	buildBodyVisual,
+	surfaceSphere,
+} from "./planet-surface";
+import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
+import {
+	BAKE_FACE_SIZES,
+	type SurfacePath,
+	bakeFacePxFor,
+	focalPx,
+	projectedRadiusPx,
+	surfacePathFor,
+} from "./relief-bands";
+
+import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
+import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
+import {
+	type ApertureFrame,
+	type Clearance,
+	type DockingState,
+	type EntryOutcome,
+	type EntryPose,
+	TRAVERSAL_SECONDS_DEEP,
+	TRAVERSAL_SECONDS_NEAR,
+	AXIS_TOLERANCE_DEG,
+	DOCKING_COMPUTER,
+	frameAtPhase,
+	ROLL_TOLERANCE_DEG,
+	VICINITY_KM,
+	V_GATE_KMS,
+	apertureFrame,
+	attemptEntry,
+	dockingComputerStep,
+	grantLive,
+	newDockingState,
+	orthonormalise,
+	planeCrossing,
+	releaseBerth,
+	requestClearance,
+	slewToward,
+	slotBasis,
+	tickDocking,
+	type ComputerPhase,
+	offAxisKm,
+} from "./docking";
+import {
+	type ShieldSide,
+	type ShipCondition,
+	applyDamage,
+	fullCondition,
+	headOnPool,
+	isAlive,
+	sideStruck,
+	stepCondition,
+} from "./ship-condition";
+import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
+import {
+	type Engagement,
+	chargedOffence,
+	engage,
+	fliesItsRoute,
+	flownVoyageOrdinal,
+	flyingTrafficActors,
+	parkedHomeTrafficActors,
+	stepEngagement,
+	trafficDiversion,
+	trafficInSights,
+	trafficKillTransitions,
+	trafficPresence,
+} from "./traffic-engagement";
 import { carrierName } from "./carrier-name";
-import {
-	beginScanHold,
-	type CarrierReading,
-	carrierReading,
-	SCAN_CHARGE_S,
-	SCAN_RANGE_KM,
-	type ScanConsoleReadout,
-	type ScanHold,
-	type ScanSubject,
-	scanCompleted,
-	scanConeHeld,
-	scanFitted,
-	scanInRange,
-	scanProgress,
-	scanRefusal,
-	scanStandoff,
-	stepScanHold,
-} from "./carrier-scan";
 import {
 	type CarrierStanding,
 	carrierInstanceSeed,
 	carrierStanding,
 } from "./carrier-standing";
+import { DOMAIN } from "./domains";
+import { carrierManifest } from "./carrier-manifest";
 import {
-	COURSE_CUE_LABEL,
-	type CourseCue,
-	chargeReadsEmpty,
-	courseCue,
-	courseCueWidest,
-	FLIGHT_FLOOR_LABELS,
-	type FloorCell,
-	type FloorTone,
-	flightFloorCells,
-	flightFloorWidest,
-	type HeadLook,
-	jumpRefusalText,
-	type NavFilter,
-	type NavRow,
-	projectNavTargets,
-	projectScannerContacts,
-	SCANNER_RANGE_KM,
-	type ScannerContact,
-	targetArrowBearingDeg,
-} from "./cockpit";
+	type CarrierReading,
+	type ScanConsoleReadout,
+	type ScanHold,
+	type ScanSubject,
+	SCAN_CHARGE_S,
+	SCAN_RANGE_KM,
+	beginScanHold,
+	carrierReading,
+	scanCompleted,
+	scanConeHeld,
+	scanFitted,
+	scanInRange,
+	scanProgress,
+	scanStandoff,
+	scanRefusal,
+	stepScanHold,
+} from "./carrier-scan";
 import {
-	applyCockpitQuality,
+	type Offence,
+	dockingRefusedByLaw,
+	heatAt,
+	legalStandingAt,
+	marginalOffenceHeat,
+	settleIncident,
+	withOffence,
+	assaultCharged,
+	markAssaultCharged,
+} from "./legal";
+// #396: who heard it, and what the victim said. Its own module because the
+// question is the victim's, and `legal.ts` is the law's.
+import { type EarshotStation, hailText, stationsInEarshot } from "./distress";
+import {
+	DUEL_ROW_LABELS,
+	duelConsoleReadout,
+	duelRowCells,
+	duelRowWidest,
+	onTargetMark,
+	raiderCueTone,
+	targetConditionLine,
+	targetConditionWidest,
+	showDuelRow,
+} from "./duel-hud";
+import {
+	type GunFeedback,
+	QUIET_GUN,
+	SHOT_SOUND_GAP_S,
+	STRUCK_FLASH_S,
+	drawScoopNotice,
+	drawEnemyBeam,
+	drawStruckRim,
+	TRACER_AIM,
+	TRACER_HOLD_S,
+	TRACER_PORTS,
+	drawGunTracer,
+	stepGunFeedback,
+} from "./gun-feedback";
+import {
+	GIMBAL_CONE_RAD,
+	angleBetween,
+	clampToCone,
+	stepGimbal,
+} from "./gimbal";
+import {
+	formatRaiderLogLine,
+	newestFirst,
+	raiderLog,
+	type RaiderLogLine,
+} from "./raider-log";
+import {
+	RELAY_HIT_RADIUS_KM,
+	RELAY_IDENTIFY_RANGE_KM,
+	RELAY_INTEGRITY,
+	RELAY_NAME,
+	type RelayPlan,
+	type RelaySignal,
+	relayDestruction,
+	relayDetection,
+	relayInSights,
+	relayLog,
+	relayPlan,
+	relayPosition,
+	relaySignal,
+	relaySlot,
+	relayVelocity,
+} from "./pirate-relay";
+import { buildRelayMesh } from "./relay-mesh";
+import type { RelayCue } from "./relay-cue";
+import {
+	CANISTER_RADIUS_KM,
+	CARGO_CONTACT_COLOUR,
+	CARGO_CONTACT_CSS,
+	type Canister,
+	driftCanister,
+	dropCanisters,
+	dropManifestCanisters,
+	raiderDestruction,
+	stepCanisters,
+} from "./raider-wreck";
+import {
+	SCOOP_NOTICE_S,
+	type ScoopNotice,
+	nextScoopNotice,
+	scoopExit,
+} from "./cargo-notice";
+import {
+	type Encounter,
+	type EncounterContact,
+	type EncounterEnd,
+	RAIDER_CONTACT_RADIUS_KM,
+	forceEncounter,
+	scheduleEncounter,
+	stepEncounter,
+} from "./encounter";
+import {
+	type EncounterBearing,
+	RAIDER_HULL_ID,
+	type RouteDetection,
+} from "./raider-slots";
+import { berthCentre, recomposeDirection } from "./arrival";
+import {
+	type DockPhase,
+	type DockSession,
+	berthOf,
+	canSkipTraversal,
+	enterArrival,
+	interiorOfStation,
+	flightLive,
+	newDockSession,
+	requestLaunch,
+	skipTraversal,
+	stepDockedWorld,
+} from "./dock-session";
+import {
+	DIRECTOR_RANGE_KM,
+	type DirectorState,
+	dockingDirector,
+	directorEngaged,
+} from "./docking-director";
+import { tunnelRailSegments } from "./docking-tunnel";
+import {
+	type StationMesh,
+	buildStationMesh,
+	stationVisualSnapshot,
+	updateStationVisuals,
+	warmStationMaps,
+} from "./station-mesh";
+import { SPEC_FIXTURE_NAMES } from "./station-visuals";
+import {
+	HULL_SPECS,
+	PLAYER_BASELINE_HULL,
+	PURCHASABLE_HULL_IDS,
+	type HullEnvelope,
+	type HullId,
+	type HullVariantId,
+} from "./hull";
+import {
+	type FleetSlot,
+	HULL_REACH_KM,
+	HULL_VARIANTS,
+	buildShipMesh,
+	fleetLayout,
+	updateShipVisuals,
+} from "./ship-mesh";
+import {
+	type DesignationScan,
+	type ScanStandoff,
+	type DisplayContact,
+	isDisplayContact,
+	relativeLabel,
+	targetAgeLabel,
+	targetDesignation,
+	trafficDivertCue,
+} from "./display-contact";
+import {
+	compareStationTurns,
+	materializeTrafficContact,
+	parkedTrafficProjection,
+	stationTrafficRoster,
+	TRAFFIC_DEMATERIALIZE_KM,
+	TRAFFIC_MATERIALIZE_KM,
+	TRAFFIC_STATION_EXCLUSION_KM,
+	trafficScheduleAt,
+	type TrafficActor,
+	type TrafficProjection,
+	type LaneRefusal,
+	type LaneRequest,
+	playerLaneRefusal,
+} from "./station-traffic";
+import {
+	projectParkedTrafficActor,
+	projectSystemTrafficAuthority,
+	type TrafficCruiseCache,
+	type SystemTrafficProjection,
+	type TrafficBerthCache,
+	type TrafficArbitrationEvent,
+} from "./station-route";
+import {
 	COCKPIT_EMISSIVE_INTENSITIES,
 	COCKPIT_KEY_LIGHT,
+	applyCockpitQuality,
 	cockpitForm,
 	cockpitMaterial,
 	plateCockpitUVs,
 	railLamps,
 	registerKeyLight,
 } from "./cockpit-surface";
-import { CombatPrototypeRig } from "./combat-rig";
+import { applyHullQuality } from "./ship-surface";
+import type { StationInterior } from "./station-interior";
+import { type Station, generateContents } from "./system";
+import {
+	LiveCockpit,
+	type LeftTab,
+	type LiveCockpitState,
+	type RightTab,
+} from "./live-cockpit";
+import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
+import { isEditable } from "./editable-target";
+import { keyDispatch } from "./key-dispatch";
+import { readDeficit, recordTrade } from "./deficits";
+import {
+	emptyRequests,
+	entrustedTonnesAboard,
+	requestAction,
+	settledAt,
+} from "./requests";
+import {
+	NO_EXCLUDED_STATION,
+	type JobOffer,
+	bindJobs,
+	deliveryCandidates,
+} from "./jobs";
+import type { RequestsView } from "./requests-view";
+import {
+	type CommanderRecord,
+	type SaveEnvelope,
+	newCommanderRecord,
+	serializeSave,
+} from "./save-envelope";
+import {
+	CommanderCatalog,
+	DEFAULT_SLOT,
+	type FlushReason,
+	SAVE_BLOCKED_MESSAGE,
+	SAVE_CLOSED_MESSAGE,
+	SAVE_DB_NAME,
+	SAVE_DB_VERSION,
+	SAVE_DEBOUNCE_MS,
+	SAVE_POINTER_STORE_NAME,
+	SAVE_RETRY_LIMIT,
+	SAVE_STORE_NAME,
+	SaveStore,
+	indexedDbSaveBackend,
+	webSlotLocks,
+} from "./save-store";
+import { type BootMode, bootMode } from "./boot-mode";
 import {
 	attachCommander,
 	CommanderSwitch,
@@ -171,478 +592,65 @@ import {
 	type CommanderOverlayHandle,
 	mountCommanderOverlay,
 } from "./commander-overlay";
-import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import {
-	advanceCruise,
-	CHARGE_CAPACITY_AU,
-	CHARGE_REGEN_AU_PER_S,
-	type CruiseParams,
-	chargeAfterRegen,
-	chargeAfterTravel,
-	closestApproachKm,
-	DEFAULT_CRUISE,
-	exitVelocity,
-	HOST_CLEARANCE_KM,
-	legSeconds,
-	type Mass,
-	SURFACE_MARGIN,
-} from "./cruise";
-import {
-	beginCruiseGuidance,
-	type CruiseGuidanceState,
-	stepCruiseGuidance,
-} from "./cruise-guidance";
-import { readDeficit, recordTrade } from "./deficits";
-import {
-	type DesignationScan,
-	type DisplayContact,
-	isDisplayContact,
-	relativeLabel,
-	type ScanStandoff,
-	targetAgeLabel,
-	targetDesignation,
-	trafficDivertCue,
-} from "./display-contact";
-// #396: who heard it, and what the victim said. Its own module because the
-// question is the victim's, and `legal.ts` is the law's.
-import { type EarshotStation, hailText, stationsInEarshot } from "./distress";
-import {
-	berthOf,
-	canSkipTraversal,
-	type DockPhase,
-	type DockSession,
-	enterArrival,
-	flightLive,
-	interiorOfStation,
-	newDockSession,
-	requestLaunch,
-	skipTraversal,
-	stepDockedWorld,
-} from "./dock-session";
-import {
-	type ApertureFrame,
-	AXIS_TOLERANCE_DEG,
-	apertureFrame,
-	attemptEntry,
-	type Clearance,
-	type ComputerPhase,
-	DOCKING_COMPUTER,
-	type DockingState,
-	dockingComputerStep,
-	type EntryOutcome,
-	type EntryPose,
-	frameAtPhase,
-	grantLive,
-	newDockingState,
-	offAxisKm,
-	orthonormalise,
-	planeCrossing,
-	ROLL_TOLERANCE_DEG,
-	releaseBerth,
-	requestClearance,
-	slewToward,
-	slotBasis,
-	TRAVERSAL_SECONDS_DEEP,
-	TRAVERSAL_SECONDS_NEAR,
-	tickDocking,
-	V_GATE_KMS,
-	VICINITY_KM,
-} from "./docking";
-import {
-	DIRECTOR_RANGE_KM,
-	type DirectorState,
-	directorEngaged,
-	dockingDirector,
-} from "./docking-director";
-import { tunnelRailSegments } from "./docking-tunnel";
-import { DOMAIN } from "./domains";
-import { type DuelPilot, type PlayerShot, raiderInSights } from "./duel";
-import {
-	DUEL_ROW_LABELS,
-	duelConsoleReadout,
-	duelRowCells,
-	duelRowWidest,
-	onTargetMark,
-	raiderCueTone,
-	showDuelRow,
-	targetConditionLine,
-	targetConditionWidest,
-} from "./duel-hud";
-import { isEditable } from "./editable-target";
-import {
-	type Encounter,
-	type EncounterContact,
-	type EncounterEnd,
-	forceEncounter,
-	RAIDER_CONTACT_RADIUS_KM,
-	scheduleEncounter,
-	stepEncounter,
-} from "./encounter";
-import type {
-	FrameAttribution,
-	FrameAttributionMode,
-	FrameAttributionSnapshot,
-} from "./frame-attribution";
-import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
-import type { GalaxyChart } from "./galaxy-map";
-import { type Course, courseProgress, setCourse } from "./galaxy-route";
-// The pad, normalised. What any of it *means* is `pollPad` and the panel
-// routing below, and nowhere else — that module was copied in from seekolous
-// and must not learn what a station is.
-import { GamepadSource, type PadFrame } from "./gamepad";
-import {
-	angleBetween,
-	clampToCone,
-	GIMBAL_CONE_RAD,
-	stepGimbal,
-} from "./gimbal";
-import { disposeSubtree } from "./gpu-teardown";
-import {
-	drawEnemyBeam,
-	drawGunTracer,
-	drawScoopNotice,
-	drawStruckRim,
-	type GunFeedback,
-	QUIET_GUN,
-	SHOT_SOUND_GAP_S,
-	STRUCK_FLASH_S,
-	stepGunFeedback,
-	TRACER_AIM,
-	TRACER_HOLD_S,
-	TRACER_PORTS,
-} from "./gun-feedback";
-import { holdSummary } from "./hold";
-import {
-	angleOffNose,
-	directionTo,
-	duration,
-	edgeOf,
-	horizonRoll,
-	type MarkerLabelBounds,
-	MarkerLabelDeclutter,
-	prograde,
-	projectDirection,
-} from "./hud";
-import {
-	HULL_SPECS,
-	type HullEnvelope,
-	type HullId,
-	type HullVariantId,
-	PLAYER_BASELINE_HULL,
-	PURCHASABLE_HULL_IDS,
-} from "./hull";
-import {
-	beginCharge,
-	cancelCharge,
-	charging,
-	idleCharge,
-	JUMP_CHARGE_S,
-	JUMP_TANK_LY,
-	type JumpCharge,
-	type JumpRefusal,
-	planJump,
-	stepCharge,
-} from "./hyperspace";
-import {
-	bindJobs,
-	deliveryCandidates,
-	type JobOffer,
-	NO_EXCLUDED_STATION,
-} from "./jobs";
-import { keyDispatch } from "./key-dispatch";
-import { NO_KNOWLEDGE } from "./knowledge-labels";
-import {
-	assaultCharged,
-	dockingRefusedByLaw,
-	heatAt,
-	legalStandingAt,
-	marginalOffenceHeat,
-	markAssaultCharged,
-	type Offence,
-	settleIncident,
-	withOffence,
-} from "./legal";
-import {
-	EXPOSURE,
-	envRotation,
-	equirectEnvironment,
-	LIGHT_RIG,
-} from "./light-rig";
-import {
-	type LeftTab,
-	LiveCockpit,
-	type LiveCockpitState,
-	type RightTab,
-} from "./live-cockpit";
-import { marketStationOf } from "./market";
-import { exposeMarketLaw } from "./market-probe-hook";
-import {
-	CLOSED_GATE,
-	enclosureRad,
-	OCCLUSION,
-	type OcclusionGate,
-	SHADOW_MAP_TEXELS,
-	type ShadowSubject,
-	shadowBox,
-	shadowFit,
-	stepOcclusionGate,
-} from "./occlusion";
-import {
-	hideNonOccluders,
-	markOcclusion,
-	restoreVisibility,
-	subjectOf,
-} from "./occlusion-mesh";
-import {
-	composerTarget,
-	grantedSamples,
-	SeeliteOutputPass,
-	setComposerSamples,
-	VIGNETTE_MAX,
-} from "./output-stage";
-import {
-	contextFliesShip,
-	mouseFireHeld,
-	type PadContext,
-	type PadIntents,
-	padFireHeld,
-	padFlightAxes,
-	padIntents,
-	pointerLockMove,
-} from "./pad-bindings";
-import type { PerfPanelHandle } from "./perf-panel";
-import {
-	RELAY_HIT_RADIUS_KM,
-	RELAY_IDENTIFY_RANGE_KM,
-	RELAY_INTEGRITY,
-	RELAY_NAME,
-	type RelayPlan,
-	type RelaySignal,
-	relayDestruction,
-	relayDetection,
-	relayInSights,
-	relayLog,
-	relayPlan,
-	relayPosition,
-	relaySignal,
-	relaySlot,
-	relayVelocity,
-} from "./pirate-relay";
-import type { SurfaceClass } from "./planet-appearance";
-import { RELIEF_PATHS, type ReliefPath } from "./planet-shaders";
-import {
-	type BodyVisual,
-	buildBodyVisual,
-	surfaceSphere,
-} from "./planet-surface";
-import {
-	formatRaiderLogLine,
-	newestFirst,
-	type RaiderLogLine,
-	raiderLog,
-} from "./raider-log";
-import {
-	type EncounterBearing,
-	RAIDER_HULL_ID,
-	type RouteDetection,
-} from "./raider-slots";
-import {
-	CANISTER_RADIUS_KM,
-	CARGO_CONTACT_COLOUR,
-	CARGO_CONTACT_CSS,
-	type Canister,
-	driftCanister,
-	dropCanisters,
-	dropManifestCanisters,
-	raiderDestruction,
-	stepCanisters,
-} from "./raider-wreck";
-import type { RelayCue } from "./relay-cue";
-import { buildRelayMesh } from "./relay-mesh";
-import {
-	BAKE_FACE_SIZES,
-	bakeFacePxFor,
-	focalPx,
-	projectedRadiusPx,
-	type SurfacePath,
-	surfacePathFor,
-} from "./relief-bands";
-import { sceneRenderEligible } from "./render-eligibility";
-import {
-	emptyRequests,
-	entrustedTonnesAboard,
-	requestAction,
-	settledAt,
-} from "./requests";
-import type { RequestsView } from "./requests-view";
-import {
-	hasHeldSaveFault,
-	heldSaveFault,
 	mountSaveBadge,
 	type SaveBadgeHandle,
+	hasHeldSaveFault,
+	heldSaveFault,
 } from "./save-badge";
-import {
-	type CommanderRecord,
-	newCommanderRecord,
-	type SaveEnvelope,
-	serializeSave,
-} from "./save-envelope";
-import {
-	CommanderCatalog,
-	DEFAULT_SLOT,
-	type FlushReason,
-	indexedDbSaveBackend,
-	SAVE_BLOCKED_MESSAGE,
-	SAVE_CLOSED_MESSAGE,
-	SAVE_DB_NAME,
-	SAVE_DB_VERSION,
-	SAVE_DEBOUNCE_MS,
-	SAVE_POINTER_STORE_NAME,
-	SAVE_RETRY_LIMIT,
-	SAVE_STORE_NAME,
-	SaveStore,
-	webSlotLocks,
-} from "./save-store";
-import { SettingsStore } from "./settings";
-import type { SettingsPanelHandle } from "./settings-panel";
-import {
-	applyDamage,
-	fullCondition,
-	headOnPool,
-	isAlive,
-	type ShieldSide,
-	type ShipCondition,
-	sideStruck,
-	stepCondition,
-} from "./ship-condition";
-import {
-	buildShipMesh,
-	type FleetSlot,
-	fleetLayout,
-	HULL_REACH_KM,
-	HULL_VARIANTS,
-	updateShipVisuals,
-} from "./ship-mesh";
-import { applyHullQuality } from "./ship-surface";
-import {
-	type Angular,
-	ASSIST_CAP_KMS,
-	advanceWorldClock,
-	type Body,
-	bodyAccelerationBound,
-	bodyVelocity,
-	canResetWorldToStart,
-	type FlightControl,
-	type FlightPerformance,
-	flightPerformance,
-	jumpWorldTo,
-	makeSystem,
-	makeWorld,
-	resetWorldToStart,
-	restoreWorld,
-	type System,
-	stationHostIdOf,
-	stationOf,
-	stationPose,
-	stepAngular,
-	stepWorld,
-	type World,
-} from "./sim";
-import { SPIN_RPM_RANGE, STATION_GEOMETRY } from "./station";
+import { marketStationOf } from "./market";
+import { holdSummary } from "./hold";
+import { exposeMarketLaw } from "./market-probe-hook";
+import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import { NO_KNOWLEDGE } from "./knowledge-labels";
+import { disposeSubtree } from "./gpu-teardown";
 import {
 	commanderHold,
 	newCommander,
-	type StationAction,
 	scoopCargo,
 	transactAtStation,
+	type StationAction,
 } from "./station-commerce";
 import {
-	refusalSentence,
+	newWorld as newPersistentWorld,
+	observeDocking,
+	observeScan,
+	advanceTo,
+	applyTransition,
+	effectiveCarrier,
+	type EffectiveCarrier,
+	observe,
+	observeSystemRelay,
+	readKnowledge,
+	type OperationalCondition,
+	setDeficits,
+	type TransitionEvent,
+	visit,
+	type WorldState,
+} from "./world-state";
+import {
 	type StationConsoleTab,
+	refusalSentence,
 	stationEquipmentScreen,
 	stationMarketScreen,
 } from "./station-console";
-import type { StationInterior } from "./station-interior";
+import type { GalaxyChart } from "./galaxy-map";
+import { type WarpField, warpField } from "./warp";
 import {
-	buildStationMesh,
-	type StationMesh,
-	stationVisualSnapshot,
-	updateStationVisuals,
-	warmStationMaps,
-} from "./station-mesh";
-import {
-	projectParkedTrafficActor,
-	projectSystemTrafficAuthority,
-	type SystemTrafficProjection,
-	type TrafficArbitrationEvent,
-	type TrafficBerthCache,
-	type TrafficCruiseCache,
-} from "./station-route";
-import {
-	compareStationTurns,
-	type LaneRefusal,
-	type LaneRequest,
-	materializeTrafficContact,
-	parkedTrafficProjection,
-	playerLaneRefusal,
-	stationTrafficRoster,
-	TRAFFIC_DEMATERIALIZE_KM,
-	TRAFFIC_MATERIALIZE_KM,
-	TRAFFIC_STATION_EXCLUSION_KM,
-	type TrafficActor,
-	type TrafficProjection,
-	trafficScheduleAt,
-} from "./station-traffic";
-import { SPEC_FIXTURE_NAMES } from "./station-visuals";
-import { generateContents, type Station } from "./system";
-import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
-import {
-	chargedOffence,
-	type Engagement,
-	engage,
-	fliesItsRoute,
-	flownVoyageOrdinal,
-	flyingTrafficActors,
-	parkedHomeTrafficActors,
-	stepEngagement,
-	trafficDiversion,
-	trafficInSights,
-	trafficKillTransitions,
-	trafficPresence,
-} from "./traffic-engagement";
-// One path to `./units`, deliberately. Keeping a namespace import beside a named
-// one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
-// spellings of the same constant — the two-public-paths pattern this branch
-// removed from `sim.ts` and pinned with a source-scan test.
-import * as units from "./units";
-import {
+	type Vec3,
 	add,
 	dot,
 	length,
 	normalizeOr,
 	scale,
 	sub,
-	type Vec3,
 	v3,
 } from "./vec3";
-import { type WarpField, warpField } from "./warp";
-import {
-	advanceTo,
-	applyTransition,
-	type EffectiveCarrier,
-	effectiveCarrier,
-	newWorld as newPersistentWorld,
-	type OperationalCondition,
-	observe,
-	observeDocking,
-	observeScan,
-	observeSystemRelay,
-	readKnowledge,
-	setDeficits,
-	type TransitionEvent,
-	visit,
-	type WorldState,
-} from "./world-state";
+// One path to `./units`, deliberately. Keeping a namespace import beside a named
+// one would let this file reach `FAR_SCALE` and `units.FAR_SCALE` as separate
+// spellings of the same constant — the two-public-paths pattern this branch
+// removed from `sim.ts` and pinned with a source-scan test.
+import * as units from "./units";
 
 /** How many hails the session keeps. The console shows six; the store holds two
  *  screens, and no more, however long the trigger is held. */
@@ -11338,16 +11346,20 @@ class Game {
 			// Zero length means the camera is standing on its own star, and there is
 			// then no direction to it: `envRotation` refuses to invent one (#430). The
 			// guard belongs here, at the one caller in the render path, because the
-			// alternative is an exception escaping through the frame loop and taking
-			// the game down over one degenerate frame. Keeping last frame's aim is the
-			// right answer for that frame — the lighting is continuous in everything
-			// the player can actually see, and the case ends as soon as the ship moves.
+			// alternative is an exception escaping through the frame loop. All three
+			// aims in the block below — the sun's position, the hemisphere's axis and
+			// the environment's rotation — hold at whatever the last frame set them
+			// to, which is the right answer for one degenerate frame: the case ends as
+			// soon as the ship moves. There is no previous frame on the first frame
+			// after a rig is built, and there the rig's own initial values stand,
+			// unchanged from before this function ever ran.
 			//
-			// Dividing by the real length is also what the `Math.max(1e-9, …)` this
-			// replaces had been quietly getting wrong: inside 10⁻⁹ ly of the star it
-			// divided by the clamp rather than by the distance, which leaves `STAR_DIR`
-			// pointing the right way with a magnitude under 1 — harmless while every
-			// reader renormalises, and no longer something to rely on.
+			// The clamp this replaces, `Math.max(1e-9, length)`, is not the guard it
+			// looks like. It kept the division finite without keeping the result a
+			// direction — and it still handed `envRotation` a zero vector, which is
+			// the case #430's throw was written for. `toStar` is kilometres, so the
+			// region where the clamp itself bit (a distance under 10⁻⁹ km) is a
+			// micrometre from the star's centre and is not a place a camera is flown.
 			if (d > 0) {
 				STAR_DIR.set(toStar.x / d, toStar.y / d, toStar.z / d);
 				// The bake put its star at `BAKE_STAR_DIR`; this is the rotation that
@@ -13174,7 +13186,7 @@ class Game {
 		// reference plane. Faint, because it is a background fact rather than
 		// something to look at — but present, because in cockpit view there is no
 		// hull left to read attitude off.
-		const roll = horizonRoll(this.orientation, v3(0, 0, 1));
+		const roll = horizonRoll(this.orientation, SYSTEM_PLANE_NORMAL);
 		if (roll !== null) {
 			ctx.save();
 			ctx.translate(w / 2, h / 2);

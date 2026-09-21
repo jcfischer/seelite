@@ -7,19 +7,19 @@ import { berthCentre, parkedAttitude, recomposeOffset } from "./arrival";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { trafficRegistry } from "./carrier-name";
 import type { DisplayContact } from "./display-contact";
+import type { TrafficRoutePhase } from "./station-route";
 import { apertureFrame, frameAtPhase, slotBasis, V_GATE_KMS } from "./docking";
-import { HULL_SPECS, type HullEnvelope, type HullId } from "./hull";
 import { fnv1a } from "./rng";
+import { HULL_SPECS, type HullEnvelope, type HullId } from "./hull";
 import { bodyVelocity, type System, stationOf, stationPose } from "./sim";
 import { STATION_GEOMETRY, type StationType } from "./station";
 import {
 	berthFits,
 	chooseBerthFrom,
+	trafficBerths,
 	type StationInterior,
 	stationInterior,
-	trafficBerths,
 } from "./station-interior";
-import type { TrafficRoutePhase } from "./station-route";
 import type { Station } from "./system";
 import { add, length, scale, sub, type Vec3 } from "./vec3";
 

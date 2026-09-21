@@ -13,20 +13,20 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	JUMP_RANGE_LY,
+	type SystemRecord,
 	distanceLy,
 	generateGalaxy,
-	JUMP_RANGE_LY,
 	neighbours,
-	type SystemRecord,
 	startSystem,
 } from "../src/galaxy";
 import {
+	JUMP_CHARGE_S,
+	JUMP_TANK_LY,
 	beginCharge,
 	cancelCharge,
 	charging,
 	idleCharge,
-	JUMP_CHARGE_S,
-	JUMP_TANK_LY,
 	planJump,
 	stepCharge,
 } from "../src/hyperspace";

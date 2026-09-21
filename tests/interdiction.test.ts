@@ -13,15 +13,15 @@ import { describe, expect, test } from "bun:test";
 import { COMBAT_PROTOTYPE_DEFAULTS } from "../src/combat-prototype";
 import type { HullId } from "../src/hull";
 import {
-	beginContest,
 	type Contest,
-	cruiseTurnRate,
-	followHeading,
-	headingSeparation,
 	INTERDICTION_ACQUIRE_S,
 	INTERDICTION_CHARGE_S,
 	INTERDICTION_LOCK_DEG,
 	INTERDICTION_TURN_FACTOR,
+	beginContest,
+	cruiseTurnRate,
+	followHeading,
+	headingSeparation,
 	interdictionTurnRate,
 	lockHeld,
 	stepContest,

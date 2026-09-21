@@ -2,6 +2,25 @@ import { describe, expect, test } from "bun:test";
 import { type CarrierKey, carrierKey } from "../src/carrier-key";
 import { type DeficitMap, readDeficit, recordTrade } from "../src/deficits";
 import {
+	COMMODITIES,
+	DEFICIT_MAX,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
+	quantizeToDisplayStepCr,
+	PRICE_ELASTICITY,
+	PRICE_STEP_CR,
+	bidCutAtTl,
+	marketQuote,
+	quoteWithCut,
+	DEFICIT_SATURATION_RUNS,
+	commodity,
+	marketRow,
+	marketStationOf,
+	shelfQuantity,
+	stockResponse,
+	HOLD_REFERENCE_T,
+} from "../src/market";
+import {
 	DOCKABLE_HULL_IDS,
 	HULL_SPECS,
 	type HullId,
@@ -9,44 +28,25 @@ import {
 } from "../src/hull";
 import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
-	bidCutAtTl,
-	COMMODITIES,
-	commodity,
-	DEFICIT_MAX,
-	DEFICIT_SATURATION_RUNS,
-	DISPLAY_TL_MAX,
-	DISPLAY_TL_MIN,
-	HOLD_REFERENCE_T,
-	marketQuote,
-	marketRow,
-	marketStationOf,
-	PRICE_ELASTICITY,
-	PRICE_STEP_CR,
-	quantizeToDisplayStepCr,
-	quoteWithCut,
-	shelfQuantity,
-	stockResponse,
-} from "../src/market";
-import {
 	type CommanderState,
+	STARTING_CREDITS,
 	commanderHold,
 	newCommander,
-	STARTING_CREDITS,
 	scoopCargo,
 	transactAtStation,
 } from "../src/station-commerce";
 import { priceLabel, stationMarketScreen } from "../src/station-console";
 import { newWorld, parseWorld, serializeWorld } from "../src/world-state";
-import {
-	type CycleSurvey,
-	flyConsoleCycle,
-	NO_WEDGE,
-	surveyConsoleCycles,
-} from "./helpers/console-cycle";
 // **§5's eight economies, imported from the helper that already owns them.** This file
 // used to declare its own copy; a copy of a domain list is how a widening of the table
 // turns a sweep into a smaller claim that still prints a clean number.
 import { ALL_ECONOMIES } from "./helpers/market-math";
+import {
+	type CycleSurvey,
+	NO_WEDGE,
+	flyConsoleCycle,
+	surveyConsoleCycles,
+} from "./helpers/console-cycle";
 
 const STATION = marketStationOf(
 	{ type: "trade", localCarrierId: "station-trade", blackMarket: false },

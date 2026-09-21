@@ -43,20 +43,20 @@
  */
 
 import * as THREE from "three";
-import type { DetailLevel } from "./detail-level";
-import { shared } from "./gpu-teardown";
-import { revolve } from "./loft";
-import { STATION_GEOMETRY, type StationType } from "./station";
 import {
 	BLINKING_CORE_GAIN,
 	BLINKING_HALO_GAIN,
 	glowMaterial,
-	glowOnFitting,
 	glowPoints,
 	steadyGlowMaterial,
+	glowOnFitting,
 } from "./station-glow";
+import { shared } from "./gpu-teardown";
+import { revolve } from "./loft";
 import { castOntoStructure } from "./station-greebles";
-import type { StationFixture, StationFormId } from "./station-mesh";
+import { STATION_GEOMETRY, type StationType } from "./station";
+import type { StationFormId, StationFixture } from "./station-mesh";
+import type { DetailLevel } from "./detail-level";
 import type { StationFixtureKind } from "./station-visuals";
 import { STATION_VISUALS } from "./station-visuals";
 

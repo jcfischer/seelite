@@ -496,6 +496,42 @@ describe("the rotation onto the star", () => {
 		// against the number a run produced — so the literals are not the authority,
 		// the arithmetic is, and anything that moves them reddens this row instead of
 		// quietly invalidating a paragraph somewhere else.
+		// A direction `eps` short of straight behind the bake's own star.
+		const antiparallelDir = (eps: number): [number, number, number] => [
+			-(1 - eps),
+			Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))),
+			0,
+		];
+		// How far the two rotations make the sampled environment disagree, with each
+		// turned back through its own inverse first — which is how the renderer's map
+		// is read — over the 202 directions this file already sweeps. One copy,
+		// because the band arm and the closing arm have to be the same measurement or
+		// their comparison means nothing.
+		const worstRadianceDelta = (
+			a: [number, number, number, number],
+			b: [number, number, number, number],
+		): number => {
+			const aInv: [number, number, number, number] = [
+				-a[0],
+				-a[1],
+				-a[2],
+				a[3],
+			];
+			const bInv: [number, number, number, number] = [
+				-b[0],
+				-b[1],
+				-b[2],
+				b[3],
+			];
+			let worst = 0;
+			for (const w of directions(200)) {
+				const x = envRadiance(apply(aInv, w), WARM);
+				const y = envRadiance(apply(bInv, w), WARM);
+				for (let i = 0; i < 3; i++)
+					worst = Math.max(worst, Math.abs(x[i] - y[i]));
+			}
+			return worst;
+		};
 		const aimError = (
 			q: [number, number, number, number],
 			want: readonly [number, number, number],
@@ -517,11 +553,7 @@ describe("the rotation onto the star", () => {
 		const within = (got: number, want: number, rel = 0.02) =>
 			expect(Math.abs(got - want)).toBeLessThanOrEqual(rel * Math.abs(want));
 		for (const { eps, oldAim: pinned, radiance: pinnedRadiance } of BAND) {
-			const dir: [number, number, number] = [
-				-(1 - eps),
-				Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))),
-				0,
-			];
+			const dir = antiparallelDir(eps);
 			const fresh = envRotation(dir);
 			const stale = legacyEnvRotation(dir);
 			// Aim: how far each arm leaves the environment's star from the direction
@@ -535,29 +567,8 @@ describe("the rotation onto the star", () => {
 			// argument for the narrower threshold, stated as a measurement.
 			expect(fresh_).toBeLessThan(1e-13);
 			expect(fresh_).toBeLessThan(old / 100);
-			// And what the difference costs on the thing the rotation is for: the
-			// environment, sampled. Both arms are turned back through their own
-			// inverse — which is how the renderer's map is read — and the radiance
-			// compared along the 202 directions this file already sweeps.
-			const freshInv: [number, number, number, number] = [
-				-fresh[0],
-				-fresh[1],
-				-fresh[2],
-				fresh[3],
-			];
-			const staleInv: [number, number, number, number] = [
-				-stale[0],
-				-stale[1],
-				-stale[2],
-				stale[3],
-			];
-			let worst = 0;
-			for (const w of directions(200)) {
-				const a = envRadiance(apply(freshInv, w), WARM);
-				const b = envRadiance(apply(staleInv, w), WARM);
-				for (let i = 0; i < 3; i++)
-					worst = Math.max(worst, Math.abs(a[i] - b[i]));
-			}
+			// And what the difference costs on the thing the rotation is for.
+			const worst = worstRadianceDelta(fresh, stale);
 			within(worst, pinnedRadiance);
 			// Under one eight-bit code of a unit-scale field, so under every pixel
 			// threshold in the browser tier — and nonzero, because the arms genuinely
@@ -570,37 +581,14 @@ describe("the rotation onto the star", () => {
 		// else" rather than merely asserting it: one ε outside, the quaternions agree
 		// to the same two ulps the legacy-comparison row allows everywhere, and the
 		// sampled environment cannot tell them apart at all.
-		const closedEps = 1.1e-9;
-		const closedDir: [number, number, number] = [
-			-(1 - closedEps),
-			Math.sqrt(Math.max(0, 1 - (1 - closedEps) * (1 - closedEps))),
-			0,
-		];
+		const closedDir = antiparallelDir(1.1e-9);
 		const closedFresh = envRotation(closedDir);
 		const closedStale = legacyEnvRotation(closedDir);
 		for (let i = 0; i < 4; i++)
 			expect(Math.abs(closedFresh[i] - closedStale[i])).toBeLessThanOrEqual(
 				2 ** -51,
 			);
-		const closedFreshInv: [number, number, number, number] = [
-			-closedFresh[0],
-			-closedFresh[1],
-			-closedFresh[2],
-			closedFresh[3],
-		];
-		const closedStaleInv: [number, number, number, number] = [
-			-closedStale[0],
-			-closedStale[1],
-			-closedStale[2],
-			closedStale[3],
-		];
-		let closedWorst = 0;
-		for (const w of directions(200)) {
-			const a = envRadiance(apply(closedFreshInv, w), WARM);
-			const b = envRadiance(apply(closedStaleInv, w), WARM);
-			for (let i = 0; i < 3; i++)
-				closedWorst = Math.max(closedWorst, Math.abs(a[i] - b[i]));
-		}
+		const closedWorst = worstRadianceDelta(closedFresh, closedStale);
 		expect(closedWorst).toBeLessThanOrEqual(1e-12);
 	});
 });

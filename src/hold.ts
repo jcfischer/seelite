@@ -27,8 +27,8 @@
  * No DOM and no Three.js: what is aboard is arithmetic and text.
  */
 import { type CommodityUnit, commodity } from "./market";
+import { type RequestsState, entrustedTonnesAboard } from "./requests";
 import type { RequestStation } from "./requests";
-import { entrustedTonnesAboard, type RequestsState } from "./requests";
 import { type CommanderState, commanderHold } from "./station-commerce";
 
 /** Whose goods a line is. The requester's are excluded from sale (§4). */

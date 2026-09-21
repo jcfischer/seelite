@@ -25,8 +25,8 @@ import { expect, test } from "bun:test";
 import {
 	CLOSED_GATE,
 	OCCLUSION,
-	participatesInShadow,
 	SHADOW_MAP_TEXELS,
+	participatesInShadow,
 	shadowBox,
 	shadowFit,
 	stepOcclusionGate,

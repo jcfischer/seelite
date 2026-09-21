@@ -11,10 +11,10 @@ import {
 	raiderDestruction,
 } from "../src/raider-wreck";
 import {
+	type WorldState,
 	advanceTo,
 	applyTransition,
 	newWorld,
-	type WorldState,
 } from "../src/world-state";
 
 const SYSTEM = 9;

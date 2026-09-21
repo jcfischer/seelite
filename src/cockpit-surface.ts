@@ -47,8 +47,8 @@
  */
 
 import * as THREE from "three";
-import { chamferedBox } from "./chamfer-box";
 import { EMISSIVE_CEILING } from "./light-rig";
+import { chamferedBox } from "./chamfer-box";
 import { boxProjectUVs, setUvUnits } from "./loft";
 import {
 	type PlatingProfile,

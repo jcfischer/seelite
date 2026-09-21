@@ -9,17 +9,17 @@ import {
 	HOLD_REFERENCE_T,
 	MARKET_PERIOD_MIN,
 	type MarketStation,
+	type StationTypeKey,
 	marketEpoch,
 	marketStationOf,
-	type StationTypeKey,
 } from "./market";
 import { exposeMarketLaw } from "./market-probe-hook";
 import {
 	type ConsoleMarketRow,
 	type DockPhase,
+	type StationConsoleTab,
 	flightFloorVisible,
 	priceLabel,
-	type StationConsoleTab,
 	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,

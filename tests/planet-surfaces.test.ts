@@ -2,20 +2,20 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { generateGalaxy } from "../src/galaxy";
 import {
+	RINGED_CLASSES,
+	type SurfaceClass,
 	appearanceFor,
 	appearanceOf,
 	classify,
-	RINGED_CLASSES,
-	type SurfaceClass,
 } from "../src/planet-appearance";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import {
 	BAKE_DESCRIPTORS,
-	bakedFragmentFor,
-	fragmentFor,
 	RING_FRAGMENT,
 	RING_GLSL,
 	RING_VERTEX,
+	bakedFragmentFor,
+	fragmentFor,
 } from "../src/planet-shaders";
 import { buildBodyVisual } from "../src/planet-surface";
 import { makeSystem } from "../src/sim";

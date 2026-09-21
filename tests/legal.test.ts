@@ -5,32 +5,33 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-	type CarrierKey,
-	carrierKey,
-	compareCarrierKeys,
-} from "../src/carrier-key";
-import {
-	assaultCharged,
-	dockingRefusedByLaw,
-	FUGITIVE_HEAT,
 	HEAT_CAP,
 	HEAT_HALF_LIFE_S,
+	OFFENCE_HEAT,
+	WANTED_HEAT,
+	FUGITIVE_HEAT,
+	dockingRefusedByLaw,
 	heatAt,
 	legalStandingAt,
 	legalStandingOf,
 	marginalOffenceHeat,
-	markAssaultCharged,
-	OFFENCE_HEAT,
-	OFFENCE_LADDER,
 	offenceHeat,
 	offenceRank,
+	OFFENCE_LADDER,
+	assaultCharged,
+	markAssaultCharged,
 	settleIncident,
 	stationHostile,
-	WANTED_HEAT,
 	withOffence,
 } from "../src/legal";
+import { newWorld } from "../src/world-state";
+import { type LegalStatus } from "../src/world-state";
 import { type StationType } from "../src/station";
-import { type LegalStatus, newWorld } from "../src/world-state";
+import {
+	type CarrierKey,
+	carrierKey,
+	compareCarrierKeys,
+} from "../src/carrier-key";
 
 const MIN = 60;
 

@@ -12,7 +12,7 @@
  * it bunches points at the poles — obvious once you fly to one, invisible in
  * a screenshot pointed anywhere else.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test, describe } from "bun:test";
 import { starField } from "../src/backdrop";
 import { BACKDROP_RADIUS } from "../src/units";
 

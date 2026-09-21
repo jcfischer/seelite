@@ -7,25 +7,25 @@
  * load — and a table nothing can load is a table nothing checks.
  */
 import { describe, expect, test } from "bun:test";
+import { codeOf, srcFiles } from "./lib/source-scan";
 import {
 	type PadButtonName,
 	type RawPad,
-	readPad,
 	STANDARD_BUTTONS,
+	readPad,
 } from "../src/gamepad";
 import {
-	contextFliesShip,
-	mouseFireHeld,
-	PAD_FLIGHT_KEYS,
 	type PadContext,
 	type PadIntents,
 	type PointerLockMove,
+	PAD_FLIGHT_KEYS,
+	contextFliesShip,
+	mouseFireHeld,
 	padFireHeld,
 	padFlightAxes,
 	padIntents,
 	pointerLockMove,
 } from "../src/pad-bindings";
-import { codeOf, srcFiles } from "./lib/source-scan";
 
 const NOTHING: ReadonlySet<PadButtonName> = new Set();
 

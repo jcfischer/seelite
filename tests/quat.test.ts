@@ -26,10 +26,8 @@ import { describe, expect, test } from "bun:test";
 import {
 	type Quat4,
 	quatAxisAngle,
-	quatConjugate,
 	quatMul,
 	rotateBy,
-	rotateByInverse,
 	shortestArc,
 } from "../src/quat";
 import { cross, dot, length, normalizeOr, type Vec3, v3 } from "../src/vec3";
@@ -152,12 +150,22 @@ describe("shortestArc", () => {
 	});
 });
 
-describe("rotateBy / rotateByInverse", () => {
+describe("rotateBy", () => {
+	// The inverse written here rather than imported. `quat.ts` ships the forward
+	// direction only (#430 round 4), and the anti-inversion law #99 learned wants
+	// the second route written *independently* of the first — a `rotateByInverse`
+	// built out of the module's own conjugate shares its fate, and a route that
+	// cannot be wrong in a way the forward path is not cannot hold that law.
+	const invert = (q: Quat4): Quat4 => [-q[0], -q[1], -q[2], q[3]];
+	const rotateInverse = (q: Quat4, v: Vec3): Vec3 => rotateBy(invert(q), v);
+
 	test("the inverse undoes the rotation in both orders", () => {
+		// Which is also the row that says the quaternion is unit: a scaled one
+		// rotates and grows, and undoes itself only up to that scale.
 		const q = arc(v3(0, 1, 0), normalizeOr(v3(0.4, 0.1, -0.9), UNIT));
 		for (const v of DIRECTIONS) {
-			expectVec(rotateByInverse(q, rotateBy(q, v)), v, 1e-9);
-			expectVec(rotateBy(q, rotateByInverse(q, v)), v, 1e-9);
+			expectVec(rotateInverse(q, rotateBy(q, v)), v, 1e-9);
+			expectVec(rotateBy(q, rotateInverse(q, v)), v, 1e-9);
 		}
 	});
 
@@ -180,11 +188,5 @@ describe("rotateBy / rotateByInverse", () => {
 		const direct = cross(rotateBy(q, a), rotateBy(q, b));
 		const mapped = rotateBy(q, cross(a, b));
 		expectVec(direct, mapped, 1e-9);
-	});
-
-	test("the conjugate is the inverse rotation, not a sign typo", () => {
-		const q = quatAxisAngle(v3(0.3, 0.8, -0.5), 0.9);
-		const v = normalizeOr(v3(0.1, -0.9, 0.4), UNIT);
-		expectVec(rotateBy(quatConjugate(q), v), rotateByInverse(q, v), 1e-9);
 	});
 });

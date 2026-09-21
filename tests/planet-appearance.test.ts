@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
-import { appearanceFor, classify, WARMTH } from "../src/planet-appearance";
+import { WARMTH, appearanceFor, classify } from "../src/planet-appearance";
 import {
 	GIANT_ORBIT_FACTOR,
 	generateContents,

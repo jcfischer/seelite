@@ -14,14 +14,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy } from "../src/galaxy";
-import type { HoldSummary } from "../src/hold";
-import { nextAction } from "../src/requests";
 import {
 	aboardFor,
 	deliverAction,
-	type RequestsView,
 	requestsBody,
+	type RequestsView,
 } from "../src/requests-view";
+import { nextAction } from "../src/requests";
+import type { HoldSummary } from "../src/hold";
 import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;

@@ -10,14 +10,14 @@
  */
 import { expect, test } from "bun:test";
 import { OutputShader } from "three/addons/shaders/OutputShader.js";
+import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import {
 	DITHER_CODES,
 	OUTPUT_MARKERS,
 	SeeliteOutputPass,
-	spliceOutputShader,
 	VIGNETTE_MAX,
+	spliceOutputShader,
 } from "../src/output-stage";
-import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import { makeSplicer } from "../src/shader-splice";
 
 const spliceAgainst = (source: string) => {

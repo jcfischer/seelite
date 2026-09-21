@@ -802,8 +802,9 @@ Recorded deliberately, not to reopen:
 ## 11. The galactic frame, and a system's world frame
 
 Ratified by work-graph node
-[#430](https://github.com/jcfischer/seelite/issues/430) on 2026-09-23, on the
-principal's ruling. `src/galaxy-frame.ts` is this section's arithmetic and
+[#430](https://github.com/jcfischer/seelite/issues/430), on the principal's
+ruling; the node's own record carries the dates, and this section is not the
+place to attest one the node has not closed yet. `src/galaxy-frame.ts` is this section's arithmetic and
 `tests/galaxy-frame.test.ts` holds it; where the two disagree, this section is
 wrong and should say so.
 

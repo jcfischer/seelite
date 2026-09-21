@@ -16,6 +16,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	LAUNCH_RELEASE_KM,
 	arrivalAttitude,
 	arrivalProgress,
 	arrivalRel,
@@ -23,28 +24,27 @@ import {
 	beginArrival,
 	beginLaunch,
 	berthCentre,
-	LAUNCH_RELEASE_KM,
 } from "../src/arrival";
 import {
+	TRAVERSAL_SECONDS_DEEP,
+	TRAVERSAL_SECONDS_NEAR,
 	apertureFrame,
 	evaluateEntry,
 	slotBasis,
-	TRAVERSAL_SECONDS_DEEP,
-	TRAVERSAL_SECONDS_NEAR,
 } from "../src/docking";
 import {
 	SPIN_RPM_RANGE,
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationType,
-	slotPhaseRad,
 } from "../src/station";
+import { slotPhaseRad } from "../src/station";
 import {
 	type Berth,
 	interiorAxialSpanKm,
 	stationInterior,
 } from "../src/station-interior";
-import { add, cross, dot, length, scale, type Vec3, v3 } from "../src/vec3";
+import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
 
 /** An axis that is not a world axis, so nothing below can pass by accident on a
  *  basis that happens to line up with x, y or z. */

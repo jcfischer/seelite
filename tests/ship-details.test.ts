@@ -14,10 +14,10 @@ import { HULL_IDS, HULL_VARIANT_IDS, type HullId } from "../src/hull";
 import { uvUnitsOf } from "../src/loft";
 import { buildShipDetails } from "../src/ship-detail";
 import {
-	buildShipMesh,
 	HABITABLE_HULLS,
 	SHIP_DETAIL_PLANS,
 	SHIP_QUALITY,
+	buildShipMesh,
 	setShipDetail,
 	updateShipVisuals,
 } from "../src/ship-mesh";

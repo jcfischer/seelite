@@ -11,7 +11,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { heldSaveFault } from "../src/save-badge";
 import {
 	type CommanderRecord,
 	newCommanderRecord,
@@ -23,13 +22,14 @@ import {
 	DEFAULT_SLOT,
 	memorySaveBackend,
 	memorySlotLocks,
+	webSlotLocks,
+	type Scheduler,
 	SAVE_DEBOUNCE_MS,
 	SAVE_RETRY_LIMIT,
 	SaveStore,
-	type Scheduler,
 	type SlotLocks,
-	webSlotLocks,
 } from "../src/save-store";
+import { heldSaveFault } from "../src/save-badge";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { newWorld, visit } from "../src/world-state";
 

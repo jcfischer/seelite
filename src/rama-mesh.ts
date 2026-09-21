@@ -23,7 +23,7 @@
  * like every standard material.
  */
 import * as THREE from "three";
-import { hullLoft, type Ring } from "./loft";
+import { type Ring, hullLoft } from "./loft";
 
 /** The novel's figures, kilometres. North is −Z, south +Z. */
 export const RAMA_DIMENSIONS = Object.freeze({ lengthKm: 50, radiusKm: 10 });

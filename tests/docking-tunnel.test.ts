@@ -17,28 +17,28 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	type ApertureFrame,
 	AXIS_TOLERANCE_DEG,
-	apertureFrame,
+	type ApertureFrame,
 	type EntryPose,
+	V_GATE_KMS,
+	apertureFrame,
 	evaluateEntry,
 	slotBasis,
-	V_GATE_KMS,
 } from "../src/docking";
 import {
-	dockingTunnel,
 	TUNNEL_FLARE_DEG,
 	TUNNEL_RINGS,
+	dockingTunnel,
 	tunnelRailSegments,
 } from "../src/docking-tunnel";
 import {
+	type Vec3,
 	add,
 	cross,
 	dot,
 	length,
 	scale,
 	sub,
-	type Vec3,
 	v3,
 } from "../src/vec3";
 

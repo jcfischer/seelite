@@ -17,10 +17,10 @@
 import {
 	applyDamage,
 	isAlive,
-	PULSE_LASER,
 	SHIELD_POOL,
 	type ShipCondition,
 } from "../../src/ship-condition";
+import { PULSE_LASER } from "../../src/ship-condition";
 
 export const PULSE_STEP_S = 1 / 60;
 

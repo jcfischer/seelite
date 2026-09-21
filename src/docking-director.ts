@@ -29,24 +29,24 @@
  */
 
 import {
-	type ApertureFrame,
 	AXIS_TOLERANCE_DEG,
+	ROLL_TOLERANCE_DEG,
+	V_GATE_KMS,
+	VICINITY_KM,
+	type ApertureFrame,
 	type Clearance,
 	type DockingState,
 	type EntryPose,
 	evaluateEntry,
 	grantLive,
-	ROLL_TOLERANCE_DEG,
 	signedRollDeg,
-	V_GATE_KMS,
-	VICINITY_KM,
 } from "./docking";
 import {
-	dockingTunnel,
 	TUNNEL_MOUTH_OFFSET_KM,
 	type TunnelGeometry,
+	dockingTunnel,
 } from "./docking-tunnel";
-import { length, type Vec3, v3 } from "./vec3";
+import { type Vec3, length, v3 } from "./vec3";
 
 /** One measured angle against the tolerance the pilot is flying to. */
 export interface DirectorCue {

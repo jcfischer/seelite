@@ -13,7 +13,7 @@
  * rate. What it hits is the caller's to decide.
  */
 import { HULL_SPECS, type HullId } from "./hull";
-import { dot, type Vec3 } from "./vec3";
+import { type Vec3, dot } from "./vec3";
 
 /** Each shield pool's capacity. #48's tuned figure. */
 export const SHIELD_POOL = 106;

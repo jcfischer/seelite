@@ -14,7 +14,6 @@
 
 import { describe, expect, test } from "bun:test";
 import { CHARGE_CAPACITY_AU, CHARGE_REGEN_AU_PER_S } from "../src/cruise";
-
 /**
  * The wind-up, from the module that owns it.
  *
@@ -23,11 +22,10 @@ import { CHARGE_CAPACITY_AU, CHARGE_REGEN_AU_PER_S } from "../src/cruise";
  * `spoolSeconds` against it, which is the seam that keeps the two honest.
  */
 const SPOOL_SECONDS = 3;
-
 import {
-	chargeReadsEmpty,
 	FLIGHT_FLOOR_LABELS,
 	type FlightFloorState,
+	chargeReadsEmpty,
 	flightFloorCells,
 	flightFloorWidest,
 } from "../src/cockpit";

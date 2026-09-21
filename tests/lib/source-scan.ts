@@ -14,7 +14,7 @@
  * imports — its consumers are `probe-*.mjs` and `tests/probe-args.test.ts`.
  * This is test-only and reads the checkout, which is a third thing again.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** A path relative to the repository root, as this file can see it. */

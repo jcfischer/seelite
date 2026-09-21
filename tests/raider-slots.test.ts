@@ -16,8 +16,8 @@ import { INTERDICTION_RANGE_KM } from "../src/interdiction";
 import {
 	ENCOUNTER_DELAY_S,
 	ENCOUNTER_RANGE_KM,
-	legEncounter,
 	RAIDER_HULL_ID,
+	legEncounter,
 	raiderLegChance,
 	raiderSlotCount,
 	raiderSlots,

@@ -9,21 +9,16 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { radiusAtTexelRatio } from "./lib/texel-radius";
+import { codeOf } from "./lib/source-scan";
+import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import type { SurfaceClass } from "../src/planet-appearance";
 import {
-	bakePairBytes,
 	CUBE_FACE_COUNT,
+	bakePairBytes,
 	cubeFaceBasis,
 	systemBakeBytes,
 } from "../src/planet-bake";
-import { CLASS_GLSL } from "../src/planet-classes.glsl";
-import {
-	BAKE_DESCRIPTORS,
-	BAKEABLE_CLASSES,
-	bakedFragmentFor,
-	bakeFragmentFor,
-	isBakeable,
-} from "../src/planet-shaders";
 import {
 	BAKE_FACE_SIZES,
 	BAKE_MAX_PX_PER_TEXEL,
@@ -31,8 +26,13 @@ import {
 	focalPx,
 	pxPerCubeTexel,
 } from "../src/relief-bands";
-import { codeOf } from "./lib/source-scan";
-import { radiusAtTexelRatio } from "./lib/texel-radius";
+import {
+	BAKEABLE_CLASSES,
+	BAKE_DESCRIPTORS,
+	bakeFragmentFor,
+	bakedFragmentFor,
+	isBakeable,
+} from "../src/planet-shaders";
 
 /**
  * The body of one class's `surface()`, and everything it reaches inside its own

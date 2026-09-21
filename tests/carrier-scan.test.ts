@@ -9,30 +9,30 @@
  * what a completed one means afterwards.
  */
 import { describe, expect, test } from "bun:test";
-import { type CarrierKey, carrierKey } from "../src/carrier-key";
+import { carrierKey, type CarrierKey } from "../src/carrier-key";
 import { carrierManifest } from "../src/carrier-manifest";
 import type { ScanSubject } from "../src/carrier-scan";
 import {
-	beginScanHold,
 	CARRIER_SCAN_FIGURES,
-	carrierReading,
 	SCAN_CHARGE_S,
 	SCAN_CONE_DEG,
 	SCAN_RANGE_KM,
+	beginScanHold,
+	scanFitted,
+	carrierReading,
 	scanCompleted,
 	scanConeHeld,
-	scanFitted,
 	scanInRange,
 	scanProgress,
 	scanRefusal,
 	scanStandoff,
 	stepScanHold,
 } from "../src/carrier-scan";
-import { CarrierStanding, carrierStanding } from "../src/carrier-standing";
 import { SCAN_REFUSAL_LABELS } from "../src/display-contact";
+import { CarrierStanding, carrierStanding } from "../src/carrier-standing";
 import { SCAN_MODULE } from "../src/market";
+import { SCAN_SOURCE, type KnowledgeRow } from "../src/world-state";
 import { v3 } from "../src/vec3";
-import { type KnowledgeRow, SCAN_SOURCE } from "../src/world-state";
 import { codeOf } from "./lib/source-scan";
 
 const AHEAD = v3(0, 0, -1);

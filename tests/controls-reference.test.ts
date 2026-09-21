@@ -8,7 +8,6 @@
  */
 import { describe, expect, test } from "bun:test";
 import { CONTROLS, TASK_GROUPS, type Trigger } from "../src/controls-catalogue";
-import type { TreeItem } from "../src/controls-reference";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,
@@ -18,16 +17,17 @@ import {
 	controlsTree,
 	focusAfterFold,
 	groupFocusId,
-	restoreOnTabPick,
 	rowFocusId,
+	restoreOnTabPick,
 	toggleGroup,
 	triggerLabel,
 } from "../src/controls-reference";
+import type { TreeItem } from "../src/controls-reference";
 import type { DockPhase } from "../src/dock-session";
 import {
 	type FocusItem,
-	focusedItem,
 	NO_FOCUS,
+	focusedItem,
 	setFocus,
 } from "../src/panel-focus";
 

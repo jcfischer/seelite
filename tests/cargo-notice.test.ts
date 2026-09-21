@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
-	nextScoopNotice,
 	SCOOP_NOTICE_S,
+	nextScoopNotice,
 	scoopExit,
 	scoopNotice,
 } from "../src/cargo-notice";

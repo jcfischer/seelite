@@ -11,7 +11,7 @@
  * The costly failure is always the same shape: a filtered run that looks like a
  * full one. A wrong refusal wastes a minute; a wrong pass ships.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test, describe } from "bun:test";
 import { parseArgs, resolveOnly } from "../scripts/lib/probe-args.mjs";
 
 const ALL = ["probe-alpha.mjs", "probe-beta.mjs", "probe-cost.mjs"];

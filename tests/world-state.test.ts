@@ -15,13 +15,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
-import { carrierStanding } from "../src/carrier-standing";
-import { type DeficitMap, recordTrade } from "../src/deficits";
-import { generateGalaxy } from "../src/galaxy";
-import { HOLD_REFERENCE_T } from "../src/market";
 import { raiderSlotCount } from "../src/raider-slots";
 import { fnv1a } from "../src/rng";
+import { carrierKey, compareCarrierKeys } from "../src/carrier-key";
+import { type DeficitMap, recordTrade } from "../src/deficits";
+import { generateGalaxy } from "../src/galaxy";
+import { carrierStanding } from "../src/carrier-standing";
+import { HOLD_REFERENCE_T } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
 import { generateContents } from "../src/system";
 import {

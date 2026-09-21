@@ -23,7 +23,6 @@
 
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { berthCentre } from "../src/arrival";
 import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
@@ -31,33 +30,34 @@ import {
 } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 import {
-	buildStationForm,
-	buildStationMesh,
 	NAMEPLATE_NAME,
 	SELECTED_FORM,
 	STATION_FORMS,
-	STATION_SILHOUETTE_KM,
 	type StationFormId,
+	STATION_SILHOUETTE_KM,
+	buildStationForm,
+	buildStationMesh,
 	setStationDetail,
 } from "../src/station-mesh";
+import { berthCentre } from "../src/arrival";
 import {
 	bayBand,
 	collarSurfaces,
 	corridorIntrusions,
 	corridorLine,
+	drawnInteriorSpanKm,
 	crossings,
 	crossingsLine,
 	cutSurfaces,
-	drawnInteriorSpanKm,
 	hasBay,
 	mouthPlane,
 } from "./helpers/aperture-opening";
 import { instanceBoxes } from "./helpers/instance-boxes";
 import {
 	ASSEMBLY_SEEDS,
-	isSolvedForm,
 	PLAN_SEEDS,
 	SOLVED_FORMS,
+	isSolvedForm,
 } from "./helpers/solved-forms";
 import { LAMP_NAMES, seatedOnStructure } from "./helpers/structure-rays";
 

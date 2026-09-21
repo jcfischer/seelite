@@ -20,12 +20,12 @@
 import type { FloorCell, FloorTone } from "./cockpit";
 import type { EncounterPhase } from "./encounter";
 import {
-	type ConditionPrint,
 	ENERGY_BANK,
 	HEAT_LOCK,
 	printHull,
 	printHullPercent,
 	SHIELD_POOL,
+	type ConditionPrint,
 	type ShipCondition,
 } from "./ship-condition";
 

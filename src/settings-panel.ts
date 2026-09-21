@@ -10,14 +10,13 @@
  * Keyboard-first, because the flight controls are: arrows to move and change,
  * `Escape` or the settings key to close. The mouse works too.
  */
-
-import { isEditable } from "./editable-target";
 import {
 	SETTING_KEYS,
 	type Settings,
 	type SettingsStore,
 	settingSpec,
 } from "./settings";
+import { isEditable } from "./editable-target";
 
 /** The key that opens it, exported so a test can hold it apart from the flight
  *  bindings and from the perf panel's. */

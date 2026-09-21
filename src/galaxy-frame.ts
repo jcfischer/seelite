@@ -64,6 +64,20 @@
  * plain objects, so the headless tier can hold it element by element and
  * `main.ts` has three lines of wrapping and no decisions.
  *
+ * ## Two declarations with no `src/` reader yet
+ *
+ * `GALACTIC_EAST` is one: the plane has no natural east, and the direction exists
+ * so that the roll is a number measured *from* something rather than a feeling
+ * reported without a datum. Its use is declarational — pinning the convention — and
+ * a test that measures the convention back off the rotation is the whole of its
+ * consumption, which is not the same failure as an unused function. This repo's
+ * habit is not to ship surface ahead of its caller, and #430 holds to it for every
+ * function here (`systemToGalaxy`, `rotateByInverse` and `quatConjugate` were all
+ * deleted for it, each named where it went); what is left exported without a
+ * `src/` caller is the frame's three facts and their vocabulary, `GALACTIC_NORMAL`
+ * and `SYSTEM_PLANE_NORMAL` both of which do have consumers, and `GALACTIC_EAST`
+ * which is waiting for #433's bake to place something by it.
+ *
  * ## What this module does not own
  *
  * The bake, the points layer, and the sheet — all three are siblings below #100
@@ -140,10 +154,10 @@ export const GALACTIC_EAST: Vec3 = v3(1, 0, 0);
  * against `z = 0`, because if that moves, every bearing this module returns
  * silently re-aims.
  *
- * Also unread in `src/` so far, and exported for the same reason: it is the
- * codomain's claim in one place, so a consumer drawing in a system's world frame
- * asks this module which plane the planets lie in rather than re-deriving `+z` off
- * the HUD.
+ * It has a consumer: `main.ts` rolls the HUD's horizon against this vector, so the
+ * plane the frame aims into is declared once and read by the thing that depends on
+ * it. That wiring is round 4's; before it the claim was held by a row forbidding a
+ * literal, which is a rule about spelling rather than about the frame.
  */
 export const SYSTEM_PLANE_NORMAL: Vec3 = v3(0, 0, 1);
 

@@ -24,7 +24,6 @@ import { describe, expect, test } from "bun:test";
 // invariants below are stated against.
 import { SURFACE_MARGIN } from "../src/cruise";
 import { STATION_ORBIT_R_OVER_R } from "../src/system";
-import baseline from "./fixtures/station-orbits.json";
 import {
 	ALL_GALAXIES,
 	forEachHostedStation,
@@ -34,6 +33,7 @@ import {
 	stationRows,
 	worldSeeds,
 } from "./helpers/station-rows";
+import baseline from "./fixtures/station-orbits.json";
 
 describe("station placement is stable against added draws", () => {
 	test("the fixture is a real corpus, not an empty pass", () => {

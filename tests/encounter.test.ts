@@ -3,8 +3,6 @@
  * a cruise leg, contests the player's heading, drops both ships, and duels.
  */
 import { describe, expect, test } from "bun:test";
-import { FLEE_HULL_FRACTION } from "../src/combat-enemy";
-import { RAIDER_OUT_OF_BEAM_KM, raiderAtDrop } from "../src/duel";
 import {
 	type Encounter,
 	type EncounterFrame,
@@ -13,27 +11,29 @@ import {
 	stepEncounter,
 } from "../src/encounter";
 import { generateGalaxy } from "../src/galaxy";
-import { HULL_SPECS } from "../src/hull";
 import {
-	cruiseTurnRate,
 	INTERDICTION_CHARGE_S,
 	INTERDICTION_RANGE_KM,
+	cruiseTurnRate,
 } from "../src/interdiction";
+import { RAIDER_OUT_OF_BEAM_KM, raiderAtDrop } from "../src/duel";
+import { FLEE_HULL_FRACTION } from "../src/combat-enemy";
+import { HULL_SPECS } from "../src/hull";
 import { legEncounter, raiderSlots } from "../src/raider-slots";
 import {
 	CRIPPLED_HULL_FRACTION,
-	fullCondition,
 	PULSE_LASER,
+	fullCondition,
 } from "../src/ship-condition";
 import { ASSIST_CAP_KMS, flightPerformance } from "../src/sim";
 import {
+	type Vec3,
 	add,
 	dot,
 	length,
 	normalizeOr,
 	scale,
 	sub,
-	type Vec3,
 	v3,
 } from "../src/vec3";
 

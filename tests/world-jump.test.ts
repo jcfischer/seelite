@@ -21,14 +21,20 @@
  * every other assertion in this file.
  */
 import { describe, expect, test } from "bun:test";
+import {
+	type SystemRecord,
+	generateGalaxy,
+	neighbours,
+	startSystem,
+} from "../src/galaxy";
 import { carrierKey } from "../src/carrier-key";
 import { readDeficit, recordTrade } from "../src/deficits";
 import {
-	generateGalaxy,
-	neighbours,
-	type SystemRecord,
-	startSystem,
-} from "../src/galaxy";
+	ARRIVAL_CLEARANCE_AU,
+	ARRIVAL_DISTANCE_AU,
+	generateContents,
+	placeBodies,
+} from "../src/system";
 import {
 	advanceWorldClock,
 	canResetWorldToStart,
@@ -37,12 +43,6 @@ import {
 	makeWorld,
 	resetWorldToStart,
 } from "../src/sim";
-import {
-	ARRIVAL_CLEARANCE_AU,
-	ARRIVAL_DISTANCE_AU,
-	generateContents,
-	placeBodies,
-} from "../src/system";
 import { AU_KM } from "../src/units";
 import { length, sub } from "../src/vec3";
 

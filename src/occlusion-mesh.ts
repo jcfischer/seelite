@@ -9,9 +9,9 @@
  */
 import * as THREE from "three";
 import {
-	participatesInShadow,
 	type ShadowSubject,
 	type SurfaceFacts,
+	participatesInShadow,
 } from "./occlusion";
 
 /**

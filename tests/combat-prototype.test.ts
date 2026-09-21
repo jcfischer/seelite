@@ -1,24 +1,24 @@
 import { expect, test } from "bun:test";
 import {
-	createCombatEnemy,
+	COMBAT_PROTOTYPE_DEFAULTS,
+	createCombatPrototype,
+	duelInputs,
+	stepCombatPrototype,
+	duelTargetInCone,
+} from "../src/combat-prototype";
+import {
 	ENEMY_COLLISION_RADIUS_KM,
 	FIRE_COS,
 	GUN_RANGE_KM,
 	MERGE_BREAK_KM,
 	PLAYER_LASER_RANGE_KM,
-	playerLaserHit,
 	STRIKER_HULL_ID,
+	createCombatEnemy,
+	playerLaserHit,
 	stepCombatEnemy,
 } from "../src/combat-enemy";
-import {
-	COMBAT_PROTOTYPE_DEFAULTS,
-	createCombatPrototype,
-	duelInputs,
-	duelTargetInCone,
-	stepCombatPrototype,
-} from "../src/combat-prototype";
 import { flightPerformance } from "../src/sim";
-import { dot, length, scale, sub, type Vec3, v3 } from "../src/vec3";
+import { type Vec3, dot, length, scale, sub, v3 } from "../src/vec3";
 
 // The cap is far above either pacing window, so both the low and high bounds
 // are real assertions: a duel that kills too fast (under 60 s) fails the floor,

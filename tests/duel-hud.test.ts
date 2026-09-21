@@ -14,27 +14,27 @@
 import { describe, expect, test } from "bun:test";
 import {
 	DUEL_ROW_LABELS,
-	duelConsoleReadout,
-	duelRowCells,
-	duelRowWidest,
 	HEAT_ACTION_FRACTION,
+	duelConsoleReadout,
 	onTargetMark,
 	raiderCueTone,
-	showDuelRow,
 	targetConditionLine,
 	targetConditionWidest,
+	duelRowCells,
+	duelRowWidest,
+	showDuelRow,
 } from "../src/duel-hud";
 import { HULL_IDS, HULL_SPECS, type HullId } from "../src/hull";
+import { walkDownToKill } from "./helpers/pulse-walk";
 import {
-	applyDamage,
 	ENERGY_BANK,
-	fullCondition,
 	HEAT_LOCK,
-	isAlive,
 	SHIELD_POOL,
 	type ShipCondition,
+	applyDamage,
+	fullCondition,
+	isAlive,
 } from "../src/ship-condition";
-import { walkDownToKill } from "./helpers/pulse-walk";
 
 const courier = (over: Partial<ShipCondition> = {}): ShipCondition => ({
 	...fullCondition("courier"),

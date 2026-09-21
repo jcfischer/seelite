@@ -35,17 +35,17 @@
 
 import {
 	type ApertureFrame,
-	frameAtPhase,
-	slotBasis,
 	TRAVERSAL_SECONDS_DEEP,
 	TRAVERSAL_SECONDS_NEAR,
+	frameAtPhase,
+	slotBasis,
 } from "./docking";
 import type {
 	Berth,
 	InteriorOffset,
 	StationInterior,
 } from "./station-interior";
-import { add, cross, dot, scale, sub, type Vec3, v3 } from "./vec3";
+import { type Vec3, add, cross, dot, scale, sub, v3 } from "./vec3";
 
 /**
  * How far outside the aperture plane the launch releases the ship, km.
