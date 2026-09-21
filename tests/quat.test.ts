@@ -1,0 +1,170 @@
+/**
+ * The quaternion arithmetic two modules share, and one property each needs it
+ * to hold.
+ *
+ * It exists because [#430](https://github.com/jcfischer/seelite/issues/430)
+ * needed a **shortest arc from a constant axis onto a drawn direction** — the
+ * same construction `light-rig.ts`'s `envRotation` had already grown, degenerate
+ * case and all, for `BAKE_STAR_DIR`. A second copy of a 180°-safe shortest arc
+ * is the failure this repo has repeatedly paid for: one copy fixes the
+ * antiparallel case and the other does not, and nothing links the two. So
+ * `envRotation` builds through `shortestArc` here, and this file holds the
+ * primitive rather than trusting that two files agree about it.
+ *
+ * Two claims matter more than the algebra, because they are the ones a mistake
+ * hides behind:
+ *
+ * - **Composition order.** `quatMul(a, b)` is `a` *after* `b`, asserted as a
+ *   function composition rather than as a formula. The frame in `galaxy-frame.ts`
+ *   is a shortest arc and then a roll about the arc's own endpoint, and a flipped
+ *   `quatMul` there is a wrong sky that every round trip still passes.
+ * - **Rotations, not reflections.** Handedness is checked by the cross product
+ *   commuting with the rotation. A round trip is blind to this: a reflection
+ *   round trips perfectly.
+ */
+import { describe, expect, test } from "bun:test";
+import {
+	QUAT_IDENTITY,
+	type Quat4,
+	quatAxisAngle,
+	quatConjugate,
+	quatMul,
+	rotateBy,
+	rotateByInverse,
+	shortestArc,
+} from "../src/quat";
+import { type Vec3, cross, dot, length, normalizeOr, v3 } from "../src/vec3";
+
+const UNIT: Vec3 = v3(0, 0, 1);
+const EPS = 1e-12;
+
+/** `shortestArc` narrowed for the rows that are not about its refusal. A row
+ *  that reads the result has already said the pair is a pair of directions; a
+ *  `null` on that path is the instrument failing, so it throws rather than
+ *  feeding a `Quat4 | null` to an assertion and reporting a type error as a
+ *  finding. */
+const arc = (from: Vec3, to: Vec3): Quat4 => {
+	const q = shortestArc(from, to);
+	if (q === null) throw new Error("shortestArc refused two directions");
+	return q;
+};
+
+const expectVec = (got: Vec3, want: Vec3, tol = 1e-9) => {
+	expect(Math.abs(got.x - want.x)).toBeLessThanOrEqual(tol);
+	expect(Math.abs(got.y - want.y)).toBeLessThanOrEqual(tol);
+	expect(Math.abs(got.z - want.z)).toBeLessThanOrEqual(tol);
+};
+
+/** Directions all over the sphere, including the three axes and their
+ *  negatives — the antiparallel ones are the reason `shortestArc` is not a
+ *  one-line cross product. */
+const DIRECTIONS: Vec3[] = [
+	v3(1, 0, 0),
+	v3(0, 1, 0),
+	v3(0, 0, 1),
+	v3(-1, 0, 0),
+	v3(0, -1, 0),
+	v3(0, 0, -1),
+	v3(1, 1, 0),
+	v3(1, 1, 1),
+	v3(-0.3, 0.6, -0.74),
+	v3(0.001, -0.9999995, 0.001),
+].map((v) => normalizeOr(v, UNIT));
+
+describe("quatMul", () => {
+	test("is composition: a after b, so it applies b first", () => {
+		const a = quatAxisAngle(v3(0, 1, 0), 0.7);
+		const b = quatAxisAngle(v3(1, 0, 0), -1.9);
+		const v = normalizeOr(v3(0.2, -0.7, 0.66), UNIT);
+		expectVec(rotateBy(quatMul(a, b), v), rotateBy(a, rotateBy(b, v)));
+	});
+
+	test("an identity operand changes nothing", () => {
+		const a = quatAxisAngle(v3(1, 2, -1), 2.2);
+		const v = normalizeOr(v3(-0.4, 0.5, 0.7), UNIT);
+		expectVec(rotateBy(quatMul(a, QUAT_IDENTITY), v), rotateBy(a, v));
+		expectVec(rotateBy(quatMul(QUAT_IDENTITY, a), v), rotateBy(a, v));
+	});
+});
+
+describe("shortestArc", () => {
+	test("carries `from` onto `to` for every direction, antiparallel included", () => {
+		// The property `envRotation` was extracted for in #99, held here for the
+		// primitive so it cannot be true in one caller and false in the other.
+		const from = v3(0, 1, 0);
+		for (const to of DIRECTIONS) expectVec(rotateBy(arc(from, to), from), to);
+	});
+
+	test("a coincident pair is the identity, not a NaN", () => {
+		// Cross-of-equals is the zero vector. Normalising it without a fallback
+		// yields a quaternion of NaNs, which propagates silently into a bake or a
+		// point field — the frame that renders is the last one that was finite.
+		const q = shortestArc(UNIT, UNIT)!;
+		expectVec(rotateBy(q, UNIT), UNIT);
+		expect(q.every(Number.isFinite)).toBe(true);
+	});
+
+	test("it turns by exactly the angle between the two, and not one radian more", () => {
+		// "Shortest" is the whole content of the name, and the angle is what it
+		// means: an arc that carries `from` onto `to` *and* spins about `to` on the
+		// way lands the same direction with a hidden roll in it. `galaxy-frame.ts`
+		// adds a roll afterwards on purpose, and would be a wrong number twice over
+		// if the arc it composes with already carried one.
+		for (const to of DIRECTIONS) {
+			for (const from of [v3(0, 1, 0), v3(0.2, -0.5, 0.84), v3(-1, 0.1, 0.3)]) {
+				const f = normalizeOr(from, UNIT);
+				const q = arc(f, to);
+				const want = Math.acos(Math.max(-1, Math.min(1, dot(f, to))));
+				// 2·acos|w| for a unit quaternion, and |w| because q and −q are the
+				// same rotation — the sign is a parameterisation, not a state.
+				const got = 2 * Math.acos(Math.min(1, Math.abs(q[3])));
+				expect(Math.abs(got - want)).toBeLessThan(1e-9);
+			}
+		}
+	});
+
+	test("it refuses a zero vector rather than answering with the identity", () => {
+		// A guard that does not recognise its input has to refuse (#206). A zero
+		// direction carries no information about where the caller meant, and an
+		// identity answer to that question is a frame aimed at nothing.
+		expect(shortestArc(v3(0, 0, 0), UNIT)).toBeNull();
+		expect(shortestArc(UNIT, v3(0, 0, 0))).toBeNull();
+	});
+});
+
+describe("rotateBy / rotateByInverse", () => {
+	test("the inverse undoes the rotation in both orders", () => {
+		const q = arc(v3(0, 1, 0), normalizeOr(v3(0.4, 0.1, -0.9), UNIT));
+		for (const v of DIRECTIONS) {
+			expectVec(rotateByInverse(q, rotateBy(q, v)), v, 1e-9);
+			expectVec(rotateBy(q, rotateByInverse(q, v)), v, 1e-9);
+		}
+	});
+
+	test("lengths and angles survive: it is a rigid rotation", () => {
+		const q = quatAxisAngle(normalizeOr(v3(1, -2, 0.5), UNIT), 1.1);
+		const a = normalizeOr(v3(0.9, 0.1, 0.4), UNIT);
+		const b = normalizeOr(v3(-0.2, 0.8, -0.5), UNIT);
+		expect(length(rotateBy(q, a))).toBeCloseTo(1, 12);
+		expect(dot(rotateBy(q, a), rotateBy(q, b))).toBeCloseTo(dot(a, b), 12);
+	});
+
+	test("handedness is kept: the cross product commutes with it", () => {
+		// A reflection round trips, preserves lengths and preserves dot products.
+		// This is the row that tells the two apart, and the one an axis-pair frame
+		// construction can trip on: swap two basis vectors and every number above
+		// still passes while the sky comes out mirrored.
+		const q = arc(v3(0, 1, 0), normalizeOr(v3(-0.6, 0.5, 0.62), UNIT));
+		const a = normalizeOr(v3(1, 2, 3), UNIT);
+		const b = normalizeOr(v3(-4, 1, 2), UNIT);
+		const direct = cross(rotateBy(q, a), rotateBy(q, b));
+		const mapped = rotateBy(q, cross(a, b));
+		expectVec(direct, mapped, 1e-9);
+	});
+
+	test("the conjugate is the inverse rotation, not a sign typo", () => {
+		const q = quatAxisAngle(v3(0.3, 0.8, -0.5), 0.9);
+		const v = normalizeOr(v3(0.1, -0.9, 0.4), UNIT);
+		expectVec(rotateBy(quatConjugate(q), v), rotateByInverse(q, v), 1e-9);
+	});
+});

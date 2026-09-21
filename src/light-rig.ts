@@ -72,6 +72,9 @@
  * green here.
  */
 
+import { shortestArc } from "./quat";
+import { v3 } from "./vec3";
+
 /** The bake's own star direction: +X, so `atan2(z, x)` puts it at u = 0.5 and
  *  `asin(y)` at v = 0.5 — the centre texel, which is what the buffer test pins. */
 export const BAKE_STAR_DIR: readonly [number, number, number] = [1, 0, 0];
@@ -333,32 +336,19 @@ export function equirectEnvironment(
 export function envRotation(
 	starDir: readonly [number, number, number],
 ): [number, number, number, number] {
-	const l = Math.hypot(starDir[0], starDir[1], starDir[2]);
-	const to: [number, number, number] = [
-		starDir[0] / l,
-		starDir[1] / l,
-		starDir[2] / l,
-	];
-	const from = BAKE_STAR_DIR;
-	const dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
-	// Half-turn: build a unit vector perpendicular to `from` and rotate 180°
-	// about it, which is the quaternion (axis, 0).
-	if (dot < -1 + 1e-9) {
-		// Cross with whichever world axis `from` is least parallel to, so the
-		// perpendicular never degenerates — `view-placement.mjs` picks its frame
-		// the same way and for the same reason.
-		const away: [number, number, number] =
-			Math.abs(from[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-		const ax = from[1] * away[2] - from[2] * away[1];
-		const ay = from[2] * away[0] - from[0] * away[2];
-		const az = from[0] * away[1] - from[1] * away[0];
-		const al = Math.hypot(ax, ay, az);
-		return [ax / al, ay / al, az / al, 0];
-	}
-	const x = from[1] * to[2] - from[2] * to[1];
-	const y = from[2] * to[0] - from[0] * to[2];
-	const z = from[0] * to[1] - from[1] * to[0];
-	const w = 1 + dot;
-	const n = Math.hypot(x, y, z, w);
-	return [x / n, y / n, z / n, w / n];
+	// The arithmetic lives in `quat.ts`'s `shortestArc` — see that module's header
+	// for why #430 moved it out of here rather than let a second copy of a
+	// 180°-safe shortest arc arrive in the sky. The fallback axis for the
+	// antiparallel case is the world axis `from` is least parallel to, which is
+	// the axis this function already chose, so the shipped rotation is unchanged.
+	const q = shortestArc(
+		v3(BAKE_STAR_DIR[0], BAKE_STAR_DIR[1], BAKE_STAR_DIR[2]),
+		v3(starDir[0], starDir[1], starDir[2]),
+	);
+	// A star direction with no direction in it throws where the old inline form
+	// produced a quaternion of NaNs, which `PMREMGenerator` would have sampled
+	// into the environment and rendered as a dead reflection with nothing printed.
+	if (q === null)
+		throw new Error("envRotation: the star direction carries no direction");
+	return [q[0], q[1], q[2], q[3]];
 }
