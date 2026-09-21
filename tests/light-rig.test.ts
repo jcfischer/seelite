@@ -40,7 +40,6 @@ import {
 	HULL_LUMA_FLOOR_OF,
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
-	SHIPPED_BAND_FLOOR,
 	SHIPPED_FLOORS,
 	SUBJECT_CHANGE_OTHER_ROWS,
 	SUBJECT_CHANGE_QUARTILE_DROP,
@@ -432,7 +431,6 @@ describe("the painted-hull luma calibration", () => {
 	// Both derived from the module rather than re-typed: a metric added to
 	// `HULL_LUMA_MARGINS` joins every loop below on its own, instead of silently
 	// getting no coverage from a list this file happens to hold.
-	const FLOOR_OF = HULL_LUMA_FLOOR_OF;
 	const METRICS = Object.keys(HULL_LUMA_MARGINS) as Array<
 		keyof typeof HULL_LUMA_MARGINS
 	>;
@@ -453,7 +451,7 @@ describe("the painted-hull luma calibration", () => {
 		// once a reading moves under it. It cannot catch a literal that still
 		// equals the derivation, which is not drift.
 		for (const metric of METRICS)
-			expect(FLOOR_OF[metric]).toBe(
+			expect(HULL_LUMA_FLOOR_OF[metric]).toBe(
 				floorUnder(HULL_LUMA_CALIBRATION[metric], HULL_LUMA_MARGINS[metric]),
 			);
 	});
@@ -475,15 +473,20 @@ describe("the painted-hull luma calibration", () => {
 			).toBeGreaterThan(HULL_LUMA_CALIBRATION.laneSpread[metric]);
 	});
 
-	test("no derived floor tightens past the one that shipped", () => {
+	test("every floor with a shipped counterpart stays at or under it", () => {
 		// The bound that is not about this machine. Every reading here is one M1
 		// Pro on two rasterisers, so a floor derived from its peak spends headroom
 		// the previous band reserved for backends nobody here can measure. Loosen
 		// freely; tightening needs evidence this repo does not have.
-		expect(HULL_LUMA_BAND.min).toBeLessThanOrEqual(SHIPPED_BAND_FLOOR);
-		expect(HULL_LUMA_FLOORS.median).toBeLessThanOrEqual(SHIPPED_FLOORS.median);
-		// The quartile is deliberately absent: it is the one row with an upper
-		// bound to satisfy, and the module says why the rule cannot reach it.
+		// `SHIPPED_FLOORS` holds the peak and the median and **not the quartile**,
+		// which is the one row with an upper bound to satisfy: its derived 37.116
+		// does tighten past the 35 that shipped, deliberately, and the module says
+		// why the rule cannot reach it. The absence is the assertion here — a
+		// quartile key appearing in that record would make this loop fail, which
+		// is the right way round.
+		for (const [metric, shipped] of Object.entries(SHIPPED_FLOORS))
+			expect(HULL_LUMA_FLOOR_OF[metric]).toBeLessThanOrEqual(shipped);
+		expect(Object.keys(SHIPPED_FLOORS)).not.toContain("lowerQuartile");
 	});
 
 	test("the calibration's shape is the one the floors are derived from", () => {
@@ -497,13 +500,13 @@ describe("the painted-hull luma calibration", () => {
 				true,
 			);
 			expect(Number.isFinite(HULL_LUMA_MARGINS[metric])).toBe(true);
-			expect(Number.isFinite(FLOOR_OF[metric])).toBe(true);
+			expect(Number.isFinite(HULL_LUMA_FLOOR_OF[metric])).toBe(true);
 		}
 		// The rest of what this file dereferences, so a dropped export fails here
 		// by name rather than as arithmetic on `undefined` three tests later.
 		expect(floorUnder).toHaveLength(2);
-		expect(Number.isFinite(SHIPPED_BAND_FLOOR)).toBe(true);
-		expect(Number.isFinite(SHIPPED_FLOORS.median)).toBe(true);
+		for (const shipped of Object.values(SHIPPED_FLOORS))
+			expect(Number.isFinite(shipped)).toBe(true);
 		expect(Number.isFinite(SUBJECT_CHANGE_QUARTILE_DROP)).toBe(true);
 		for (const row of ["peak", "median"] as const) {
 			expect(Number.isFinite(SUBJECT_CHANGE_OTHER_ROWS[row].before)).toBe(true);
@@ -517,7 +520,7 @@ describe("the painted-hull luma calibration", () => {
 		// can fail — a median margin of 0.9 derives 8.11 and passes every other
 		// assertion in this block.
 		for (const metric of ["peak", "median"] as const)
-			expect(FLOOR_OF[metric]).toBeGreaterThan(
+			expect(HULL_LUMA_FLOOR_OF[metric]).toBeGreaterThan(
 				HULL_LUMA_CALIBRATION[metric] * FLOOR_FRACTION_OF_READING,
 			);
 	});

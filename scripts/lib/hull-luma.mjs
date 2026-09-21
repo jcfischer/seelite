@@ -39,7 +39,7 @@
  *
  * `laneSpread` is what they disagreed by, and it is recorded rather than
  * described because the margins below are asserted against it. These are two
- * rasterisers on one machine; what follows from that is `SHIPPED_BAND_FLOOR`'s
+ * rasterisers on one machine; what follows from that is `SHIPPED_FLOORS`'s
  * to say. **The peak's is
  * exactly 0**, so that leg of the assertion is satisfied by any margin above
  * zero and is not a bound on the peak at all — it is recorded as measured rather
@@ -123,12 +123,12 @@ export const SUBJECT_CHANGE_QUARTILE_DROP =
  * band and may not tighten it, because it has no evidence that would justify
  * tightening.
  */
-export const SHIPPED_BAND_FLOOR = 140;
+export const SHIPPED_FLOORS = Object.freeze({ peak: 140, median: 70 });
 
 /**
  * The same rule for the distribution rows, and the one row it cannot cover.
  *
- * `SHIPPED_BAND_FLOOR` states the rule and the reason for it; both are about
+ * `SHIPPED_FLOORS` states the rule and the reason for it; both are about
  * every absolute-code floor derived from one machine's readings, not about the
  * peak. So the median obeys it too — 14% rather than the 5% first written here,
  * which derived 77.045 against a shipped 70.
@@ -143,7 +143,6 @@ export const SHIPPED_BAND_FLOOR = 140;
  * room in it. The row is kept tight deliberately, and the rule is written down
  * as not applying to it rather than quietly not applied.
  */
-export const SHIPPED_FLOORS = Object.freeze({ median: 70 });
 
 /**
  * Where "free to loosen" stops.
@@ -167,9 +166,9 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  * **Below**, a margin — converted to display codes under its reading, which is
  * what the test compares — must exceed `laneSpread`, or the row goes red on
  * which rasteriser ran it. The fractions here are not comparable to that table
- * directly: the median's 5% is 4.06 codes against a spread of 0.07. **Above**, the quartile's margin must stay well inside the
+ * directly: the median's 14% is 11.35 codes against a spread of 0.07. **Above**, the quartile's margin must stay well inside the
  * drop `ab47a33` produced, or the probe passes straight through the next change
- * of subject. And **the peak's floor may not tighten past `SHIPPED_BAND_FLOOR`**,
+ * of subject. And **the peak's floor may not tighten past `SHIPPED_FLOORS`**,
  * which is why the peak's margin is 8% rather than the 5% it was first written
  * at: 5% derives a floor of 141.626, which is a gate quietly tightened on the
  * evidence of one machine.
@@ -178,7 +177,7 @@ export const FLOOR_FRACTION_OF_READING = 0.5;
  * three that `ab47a33` actually tripped. Both other readings are recorded above
  * rather than asserted as percentages: the peak fell 154.32 → 149.08 and the
  * median 85.29 → 81.60, which is 3.4% and 4.3% — under any workable margin, and
- * under the 5% this module gives the median. The two of them are a
+ * under the 14% this module gives the median. The two of them are a
  * second condition — they reject a hull gone dark or blown out everywhere —
  * rather than the discriminating measurement.
  */
@@ -206,8 +205,17 @@ export const floorUnder = (reading, margin) =>
  * exposure failures. Only the floor is derived — the ceiling is an authored
  * limit on how bright painted metal may read, and no calibration produces it.
  */
+export const HULL_LUMA_FLOOR_OF = Object.freeze(
+	Object.fromEntries(
+		Object.entries(HULL_LUMA_MARGINS).map(([metric, margin]) => [
+			metric,
+			floorUnder(HULL_LUMA_CALIBRATION[metric], margin),
+		]),
+	),
+);
+
 export const HULL_LUMA_BAND = Object.freeze({
-	min: floorUnder(HULL_LUMA_CALIBRATION.peak, HULL_LUMA_MARGINS.peak),
+	min: HULL_LUMA_FLOOR_OF.peak,
 	max: 200,
 });
 
@@ -217,11 +225,8 @@ export const HULL_LUMA_BAND = Object.freeze({
  * without turning the probe into an exact-image comparison.
  */
 export const HULL_LUMA_FLOORS = Object.freeze({
-	lowerQuartile: floorUnder(
-		HULL_LUMA_CALIBRATION.lowerQuartile,
-		HULL_LUMA_MARGINS.lowerQuartile,
-	),
-	median: floorUnder(HULL_LUMA_CALIBRATION.median, HULL_LUMA_MARGINS.median),
+	lowerQuartile: HULL_LUMA_FLOOR_OF.lowerQuartile,
+	median: HULL_LUMA_FLOOR_OF.median,
 });
 
 /**
@@ -230,8 +235,3 @@ export const HULL_LUMA_FLOORS = Object.freeze({
  * here is a key with no floor, which `tests/light-rig.test.ts` reads as a shape
  * failure rather than skipping in silence.
  */
-export const HULL_LUMA_FLOOR_OF = Object.freeze({
-	peak: HULL_LUMA_BAND.min,
-	lowerQuartile: HULL_LUMA_FLOORS.lowerQuartile,
-	median: HULL_LUMA_FLOORS.median,
-});
