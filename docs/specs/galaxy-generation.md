@@ -777,7 +777,7 @@ headless `bun` tests unless noted.
     `tests/galaxy-frame.test.ts` and `tests/quat.test.ts`; no browser tier,
     because nothing draws it yet.
 
-Probes 1–9 need no probe-registry entry. Note that the registry currently
+Probes 1–9 and 11 need no probe-registry entry, being headless. Note that the registry currently
 authorises **no** `command` or `url` probes for this repo, so a `bun test`
 probe on a work-graph node refuses until the adopter declares it.
 
@@ -855,20 +855,30 @@ can check.
   system's own star sits — which is the coupling every domain tag in `domains.ts`
   exists to prevent. A washed-out band is what the variety costs, not a defect in
   it.
-- **One copy of the normal.** `GALACTIC_NORMAL` is the only place in `src/` that
-  authors that direction; `galaxy-map.ts` reads it. A chart and a sky that each
-  hold their own idea of which way the galaxy lies will drift, and nothing
-  headless can see it.
-- **`GALACTIC_EAST` is a convention, not a fact.** The plane has no natural east —
-  a rotation about the normal is a symmetry of an oblate spheroid, so nothing in
-  the cluster's shape prefers a direction — and yet the roll has to be measured
-  *from* one to be a number. `+x` is the chart's horizontal: `galaxy-map.ts`
-  draws galaxy `x` into mesh `x` with no axis swap and the camera sits on `+z`
-  looking back at the origin, so `+x` is screen-right with the cluster unyawed.
-  The chart's own view then turns the cluster about the normal by `DEFAULT_YAW` =
-  0.6 rad, which is a fact about the chart's camera and not about the frame. What
-  the frame needs is **one** named in-plane direction; that it is this one is
-  convenience, and only `GALACTIC_EAST × roll` depends on it.
+- **One *named* copy of the normal.** `GALACTIC_NORMAL` is the only place in `src/`
+  that authors that direction **as a vector**, and `galaxy-map.ts` reads it rather
+  than restating it. The second author is structural rather than named: `galaxy.ts`
+  flattens onto `y` through `GALAXY_FLATTENING_Q`, and being the module
+  `galaxy-frame.ts` imports it can never read the constant back without a cycle.
+  What ties the two is `profileRadiusLy` — the exported form of the quotient
+  `systemFromPosition` inlines — held in `tests/galaxy-frame.test.ts` to the
+  component lying along the constant's axis. A chart and a sky that each hold their
+  own idea of which way the galaxy lies will drift and nothing headless can see it;
+  a spelling check sees only the named author, which is what that row is for.
+- **The roll's datum is entailed, not declared.** The plane has no natural east —
+  a rotation about the normal is a symmetry of an oblate spheroid, so nothing in the
+  cluster's shape prefers a direction — and still the roll has to be measured
+  *from* somewhere to be a number rather than a feeling. That somewhere is the
+  **shortest arc's own plane**, which the construction fixes, so the frame ships no
+  in-plane constant: a name sitting beside an entailed datum advertises a choice
+  nobody made, and the one `#430` first exported was deleted for exactly that. It
+  follows that anything reproducing a frame's roll rather than trusting its
+  quaternion — #433's bake is the charted one — rebuilds the same arc and may not
+  pick its own reference direction; `tests/galaxy-frame.test.ts`'s reconstruction
+  row is what that looks like written a second way. That `galaxy-map.ts` draws
+  galaxy `x` into mesh `x` (making `+x` screen-right with the cluster unyawed) and
+  then turns the cluster by `DEFAULT_YAW` = 0.6 rad are facts about the chart's
+  camera, and nothing in the frame reads either.
 
 ### The flattening is geometry, not a distortion to undo
 

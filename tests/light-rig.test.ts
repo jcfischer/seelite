@@ -82,6 +82,21 @@ function atAngle(deg: number, samples = 8): [number, number, number][] {
 const luma = ([r, g, b]: [number, number, number]) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
 
+// **A few ulps of 1, not `toEqual` — and one named tolerance.** The shared primitive
+// scales by a reciprocal where the deleted code divided — `x · (1/l)` is not `x / l`
+// in binary floating point — and it normalises twice where that code divided twice,
+// so components land a step or two of the ladder apart near 1; the worst measured
+// over the 202 directions is 4.2·10⁻¹⁶. The bound is deliberately not that
+// measurement plus one ulp: a tolerance with 5% daylight over what one machine's
+// libm happened to produce is a row about *this* platform's multiplication, which
+// goes red on a different one and gets loosened by whoever is unlucky — the failure
+// mode this file names elsewhere. It is four ulps, twice the measurement, and still
+// eleven orders of magnitude away from what a wrong rotation costs (order 1), so the
+// headroom buys nothing it could not spare. One constant rather than a literal at
+// each of the two rows that compare against the deleted body, because those rows are
+// the same claim about the same refactor.
+const REFACTOR_TOLERANCE = 4 * 2 ** -52;
+
 describe("the radiance model is a star and a floor", () => {
 	test("the star direction is the brightest direction there is", () => {
 		const at = envRadiance(BAKE_STAR_DIR, WARM);
@@ -460,19 +475,14 @@ describe("the rotation onto the star", () => {
 		// above sweep — which include the bake's own star and the exact antiparallel
 		// one.
 		//
-		// **Two ulps of 1, not `toEqual`.** The shared primitive scales by a
-		// reciprocal where the deleted code divided — `x · (1/l)` is not `x / l` in
-		// binary floating point — and it normalises twice where that code divided
-		// twice, so the worst component is two steps of the ladder apart at 1 and
-		// the measured maximum over the 202 directions is 4.2·10⁻¹⁶. Demanding
-		// bit-identity would make this a row about multiplication order, loosened
-		// the first time anyone touches a normalisation, which is the opposite of
-		// what a pin is for.
+
 		for (const dir of directions()) {
 			const got = envRotation(dir);
 			const want = legacyEnvRotation(dir);
 			for (let i = 0; i < 4; i++)
-				expect(Math.abs(got[i] - want[i])).toBeLessThanOrEqual(2 ** -51);
+				expect(Math.abs(got[i] - want[i])).toBeLessThanOrEqual(
+					REFACTOR_TOLERANCE,
+				);
 		}
 		// And exactly equal at the one direction where both branches agree by
 		// construction: the fallback axis for a star sitting behind the bake's own
@@ -579,14 +589,14 @@ describe("the rotation onto the star", () => {
 		// **The band closes.** Past the old threshold the two arms are the same
 		// computation, and this is the row that says "the refactor changed nothing
 		// else" rather than merely asserting it: one ε outside, the quaternions agree
-		// to the same two ulps the legacy-comparison row allows everywhere, and the
-		// sampled environment cannot tell them apart at all.
+		// to the tolerance the legacy-comparison row names (and its measurement, not
+		// this arm's), and the sampled environment cannot tell them apart at all.
 		const closedDir = antiparallelDir(1.1e-9);
 		const closedFresh = envRotation(closedDir);
 		const closedStale = legacyEnvRotation(closedDir);
 		for (let i = 0; i < 4; i++)
 			expect(Math.abs(closedFresh[i] - closedStale[i])).toBeLessThanOrEqual(
-				2 ** -51,
+				REFACTOR_TOLERANCE,
 			);
 		const closedWorst = worstRadianceDelta(closedFresh, closedStale);
 		expect(closedWorst).toBeLessThanOrEqual(1e-12);

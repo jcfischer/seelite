@@ -9,6 +9,12 @@
  * leaves the other silently stricter. This is the same argument
  * `tests/lib/texel-radius.ts` and `tests/lib/source-scan.ts` are in the tree for.
  *
+ * **And no Three.js in here.** `tests/quat.test.ts` imports this file, and
+ * `quat.ts` is headless by declaration; a `three` import held here for one
+ * renderer-side conversion would put the renderer in that suite's process and make
+ * the leaf claim in `tests/headless.test.ts` a statement about the module and not
+ * about the tier that tests it.
+ *
  * **What is deliberately *not* here.** The second arithmetic those files check
  * against — `rodrigues`, `shortestArcEast`, the transcription of a deleted body
  * in `light-rig.test.ts` — stays local to the row that uses it. A cross-check
@@ -16,7 +22,6 @@
  * pattern exists to avoid.
  */
 import { expect } from "bun:test";
-import * as THREE from "three";
 import { normalizeOr, type Vec3, v3 } from "../../src/vec3";
 
 /** `+z`: the fallback every normalisation in these suites agrees on. */
@@ -48,12 +53,3 @@ export const DIRECTIONS: Vec3[] = [
 	v3(1, 1, 1),
 	v3(-0.3, 0.6, -0.74),
 ].map((v) => normalizeOr(v, UNIT));
-
-/**
- * A `Vec3` as a `three` vector — the one place the frame's suite crosses into the
- * renderer's type. It was a five-line component spread written out three times,
- * which is the kind of copy that stops being about the frame and starts being
- * about typing `.x`, `.y`, `.z` in the right order.
- */
-export const toVector3 = (v: Vec3): THREE.Vector3 =>
-	new THREE.Vector3(v.x, v.y, v.z);

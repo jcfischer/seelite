@@ -31,12 +31,12 @@
  * shape of a cluster 24 light years across.
  *
  * **No rule keeps the band out of its own sun**, which is an isotropic draw doing
- * what an isotropic draw does. §11 owns that ruling, its geometry and its figures;
- * what the code owes it is the shape of the function. There is no rejection loop,
- * and no term anywhere in here reads the system's own star, because a frame drawn
- * so as to avoid its own glare is a loop rather than a draw and couples the sky to
- * where that star sits — the coupling every domain tag in `domains.ts` exists to
- * prevent. A washed-out band is what the variety costs.
+ * what an isotropic draw does. §11 owns that ruling with its geometry, its figures
+ * and the price of the variety it buys; what the code owes it is a shape. No
+ * rejection loop, and no term anywhere in here reads the system's own star — a
+ * frame drawn so as to avoid its own glare is a loop rather than a draw, and a loop
+ * couples the sky's shape to where that system's star happens to sit, which is the
+ * coupling `domains.ts` exists to prevent.
  *
  * ## The flattening is geometry, not a distortion to undo
  *
@@ -64,19 +64,26 @@
  * plain objects, so the headless tier can hold it element by element and
  * `main.ts` has three lines of wrapping and no decisions.
  *
- * ## Two declarations with no `src/` reader yet
+ * ## Who reads this, today
  *
- * `GALACTIC_EAST` is one: the plane has no natural east, and the direction exists
- * so that the roll is a number measured *from* something rather than a feeling
- * reported without a datum. Its use is declarational — pinning the convention — and
- * a test that measures the convention back off the rotation is the whole of its
- * consumption, which is not the same failure as an unused function. This repo's
- * habit is not to ship surface ahead of its caller, and #430 holds to it for every
- * function here (`systemToGalaxy`, `rotateByInverse` and `quatConjugate` were all
- * deleted for it, each named where it went); what is left exported without a
- * `src/` caller is the frame's three facts and their vocabulary, `GALACTIC_NORMAL`
- * and `SYSTEM_PLANE_NORMAL` both of which do have consumers, and `GALACTIC_EAST`
- * which is waiting for #433's bake to place something by it.
+ * Two declarations have a `src/` reader: `GALACTIC_NORMAL`, which the chart reads
+ * instead of restating, and `SYSTEM_PLANE_NORMAL`, which `main.ts` rolls the
+ * horizon against. Nothing in `src/` calls any *function* here. `skyFrame`,
+ * `galaxyToSystem`, `skyBearing`, `coreBearing` and `GALACTIC_CORE` are the
+ * transform #430 exists to write, and the nodes that would draw with it — #431's
+ * bearings, #433's bake, #432's deep-sky row — are the ones this node blocks. That
+ * is what a frame landed ahead of the sky that uses it looks like, and it belongs
+ * in the header rather than in a grep: until #431 lands, this module's only reader
+ * is its own suite, which is why that suite measures each of these claims twice
+ * where it can and calls out the arms nobody has flown.
+ *
+ * The deletions are the deliberate half of the same fact. `systemToGalaxy`,
+ * `rotateByInverse`, `quatConjugate` and `QUAT_IDENTITY` went during review for
+ * having no caller, each named in the module whose surface it left, and so did a
+ * `GALACTIC_EAST`: the plane has no natural east, the roll's datum is the shortest
+ * arc's own plane rather than a free choice beside it, and shipping a name for it
+ * would advertise a choice the construction has already made. The suite measures
+ * against an in-plane direction it picks for itself and says so where it picks it.
  *
  * ## What this module does not own
  *
@@ -120,30 +127,6 @@ import { lengthSq, normalizeOr, sub, type Vec3, v3 } from "./vec3";
  * and the structural one held to the same axis by something that runs.
  */
 export const GALACTIC_NORMAL: Vec3 = v3(0, 1, 0);
-
-/**
- * A reference direction *inside* the cluster's reference plane, in galaxy space.
- *
- * The plane has no natural east — turning the cluster about its own normal is a
- * symmetry of an oblate spheroid, so nothing in its shape prefers a direction —
- * and still the roll has to be measured *from* somewhere to be a number rather
- * than a feeling. `+x` is the chart's horizontal: `galaxy-map.ts` draws galaxy
- * `x` into mesh `x` with no axis swap, and its camera sits on `+z` looking back
- * at the origin, so `+x` is screen-right with the cluster unyawed. The chart's
- * default view then turns the cluster itself about the normal by `DEFAULT_YAW` =
- * 0.6 rad, which is the chart's camera and not this frame's business.
- *
- * So this is a convention and not a fact. What the frame needs is **one** named
- * in-plane direction; that it is this one is convenience, and
- * `GALACTIC_EAST × roll` is the only thing that depends on it.
- *
- * Exported with no reader in `src/` yet, which is worth saying rather than
- * implying: the roll is reported *relative to this direction*, so anything that
- * reproduces a frame's roll instead of trusting its quaternion — #433's bake is the
- * one charted — has to read the same reference and not invent one. Until that
- * consumer lands, `tests/galaxy-frame.test.ts`'s basis row is its only reader.
- */
-export const GALACTIC_EAST: Vec3 = v3(1, 0, 0);
 
 /**
  * The normal of a **system's** reference plane, in the system's world frame.

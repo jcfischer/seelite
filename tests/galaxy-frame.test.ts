@@ -43,7 +43,6 @@ import {
 } from "../src/galaxy";
 import {
 	coreBearing,
-	GALACTIC_EAST,
 	GALACTIC_NORMAL,
 	galaxyToSystem,
 	type SkyFrame,
@@ -64,7 +63,24 @@ import {
 	v3,
 } from "../src/vec3";
 import { codeOf, srcFiles } from "./lib/source-scan";
-import { DIRECTIONS, expectVec, toVector3, UNIT } from "./lib/vec-assert";
+import { DIRECTIONS, expectVec, UNIT } from "./lib/vec-assert";
+
+/** A direction inside the cluster's plane, picked by this file.
+ *
+ *  The module ships no such constant, deliberately: the plane has no natural east,
+ *  and the roll's datum is the shortest arc's own plane rather than a free choice
+ *  sitting next to it (#430 round 5 deleted the one that used to be exported). What
+ *  the rows below need is any fixed unit vector perpendicular to `GALACTIC_NORMAL`
+ *  to carry through the rotation and compare against an independent
+ *  reconstruction — the choice carries no meaning, which is precisely why it is not
+ *  worth a shipped name, and worth stating so nobody reads `+x` as load-bearing. */
+const IN_BAND: Vec3 = v3(1, 0, 0);
+
+/** A `Vec3` as `three`'s vector, for the one row that cross-checks against the
+ *  renderer's own quaternion. It lives here and not in `lib/vec-assert` because that
+ *  file is imported by the headless `quat` suite, which must not load `three` in
+ *  order to compare two plain arrays. */
+const toVector3 = (v: Vec3): THREE.Vector3 => new THREE.Vector3(v.x, v.y, v.z);
 
 const TAU = Math.PI * 2;
 
@@ -99,7 +115,7 @@ const rodrigues = (axis: Vec3, angle: number, v: Vec3): Vec3 => {
 const rotateInverse = (q: Quat4, v: Vec3): Vec3 =>
 	rotateBy([-q[0], -q[1], -q[2], q[3]], v);
 
-/** Where the **shortest arc** alone would have put `GALACTIC_EAST`, rebuilt from
+/** Where the **shortest arc** alone would have put `IN_BAND`, rebuilt from
  *  the extracted pole without reference to the module: the arc's axis is
  *  `GALACTIC_NORMAL × pole` and its angle is the angle between them. This is the
  *  zero-roll reference the frame's roll is measured against.
@@ -112,7 +128,7 @@ function shortestArcEast(pole: Vec3): Vec3 {
 	const n = GALACTIC_NORMAL;
 	const c = Math.max(-1, Math.min(1, dot(n, pole)));
 	const axis = normalizeOr(cross(n, pole), v3(1, 0, 0));
-	return rodrigues(axis, Math.acos(c), GALACTIC_EAST);
+	return rodrigues(axis, Math.acos(c), IN_BAND);
 }
 
 /** The signed angle from `a` to `b`, right-handed about a unit `axis`. */
@@ -135,7 +151,7 @@ function extract(frame: SkyFrame): { pole: Vec3; rollRad: number } {
 		rollRad: signedAngleAbout(
 			pole,
 			shortestArcEast(pole),
-			galaxyToSystem(frame, GALACTIC_EAST),
+			galaxyToSystem(frame, IN_BAND),
 		),
 	};
 }
@@ -284,7 +300,7 @@ describe("skyFrame", () => {
 		// a rounding is a row that goes red on a compiler, which teaches nobody
 		// anything; a bound two orders looser would teach the same lesson in reverse.
 		const normal = toVector3(GALACTIC_NORMAL);
-		const east = toVector3(GALACTIC_EAST);
+		const east = toVector3(IN_BAND);
 		let worstQuaternion = 0;
 		let worstEast = 0;
 		for (const seed of SEEDS) {
@@ -311,7 +327,7 @@ describe("skyFrame", () => {
 			// half: a mirrored or inverted frame still lands the *pole* correctly, and
 			// only a direction that depends on the roll can show the mirror.
 			const landedTheirs = east.clone().applyQuaternion(theirs);
-			const landedMine = galaxyToSystem(f, GALACTIC_EAST);
+			const landedMine = galaxyToSystem(f, IN_BAND);
 			worstEast = Math.max(
 				worstEast,
 				Math.abs(landedTheirs.x - landedMine.x),
@@ -431,8 +447,8 @@ describe("galaxyToSystem", () => {
 		// and the roll reference that lives in the plane.
 		const f = skyFrame(4242);
 		expectVec(galaxyToSystem(f, GALACTIC_NORMAL), f.pole, 1e-9);
-		expect(length(galaxyToSystem(f, GALACTIC_EAST))).toBeCloseTo(1, 12);
-		expect(dot(galaxyToSystem(f, GALACTIC_EAST), f.pole)).toBeCloseTo(0, 12);
+		expect(length(galaxyToSystem(f, IN_BAND))).toBeCloseTo(1, 12);
+		expect(dot(galaxyToSystem(f, IN_BAND), f.pole)).toBeCloseTo(0, 12);
 	});
 
 	test("a direction lying in the cluster's reference plane lands perpendicular to the pole", () => {
@@ -603,7 +619,6 @@ describe("one galactic frame, read by everything that points at it", () => {
 					authors.push(`${file}: ${found[1]}`);
 		expect(authors.sort()).toEqual([
 			"src/galaxy-frame.ts: GALACTIC_CORE",
-			"src/galaxy-frame.ts: GALACTIC_EAST",
 			"src/galaxy-frame.ts: GALACTIC_NORMAL",
 		]);
 	});
@@ -626,10 +641,10 @@ describe("one galactic frame, read by everything that points at it", () => {
 			// Along the normal: the whole quotient, and the radius comes out *larger*
 			// than the stored distance, because the fiction squashes this axis.
 			[scale(GALACTIC_NORMAL, 4), 4 / GALAXY_FLATTENING_Q],
-			[scale(GALACTIC_EAST, 4), 4],
-			[scale(cross(GALACTIC_NORMAL, GALACTIC_EAST), 4), 4],
+			[scale(IN_BAND, 4), 4],
+			[scale(cross(GALACTIC_NORMAL, IN_BAND), 4), 4],
 			[
-				add(scale(GALACTIC_EAST, 3), scale(GALACTIC_NORMAL, 4)),
+				add(scale(IN_BAND, 3), scale(GALACTIC_NORMAL, 4)),
 				Math.hypot(3, 4 / GALAXY_FLATTENING_Q),
 			],
 		];
@@ -669,10 +684,15 @@ describe("one galactic frame, read by everything that points at it", () => {
 		);
 	});
 
-	test("the galactic basis is orthonormal as declared", () => {
+	test("the two declared normals are unit", () => {
+		// Unit, and nothing more than that. These are the frame's two shipped
+		// directions, one per space, and each has to be a direction rather than a
+		// scaled one before anything composes a rotation out of it. There is no
+		// orthogonality to check between them — they live in different spaces — and
+		// the old third member of this row, the in-plane reference direction, is no
+		// longer shipped: the roll's datum is entailed by the arc, so the pair to
+		// check perpendicular had become a constant and this file's opinion about it.
 		expect(length(GALACTIC_NORMAL)).toBeCloseTo(1, 12);
-		expect(length(GALACTIC_EAST)).toBeCloseTo(1, 12);
 		expect(length(SYSTEM_PLANE_NORMAL)).toBeCloseTo(1, 12);
-		expect(dot(GALACTIC_NORMAL, GALACTIC_EAST)).toBeCloseTo(0, 12);
 	});
 });
