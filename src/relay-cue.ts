@@ -8,6 +8,7 @@
  * Headless: strings and numbers in, markup out. `live-cockpit.ts` patches it
  * into the glass on its own key, because the bearing moves every frame.
  */
+import { escapeHtml as esc } from "./escape-html";
 import type { OperationalCondition } from "./world-state";
 
 export type RelayCuePhase =
@@ -57,15 +58,6 @@ export const relayCueKey = (cue: RelayCue | null | undefined): string =>
 	cue
 		? `${cue.phase}|${strengthBars(cue.strength)}|${Math.round(cue.offNoseDeg)}|${cue.arrowDeg === null ? "-" : Math.round(cue.arrowDeg)}|${cue.watched}|${cue.km === null ? "-" : Math.round(cue.km)}|${cue.condition}`
 		: "";
-
-const esc = (x: string) =>
-	x.replace(
-		/[&<>"']/g,
-		(c) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				c
-			] as string,
-	);
 
 export function relayCueMarkup(cue: RelayCue): string {
 	const arrow =

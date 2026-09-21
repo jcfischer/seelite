@@ -43,12 +43,12 @@
  * the incomplete copy while `docs/gamepad.md` had it right.
  *
  * That suspension is a reversal, and the reasoning it replaced is worth keeping
- * because it was wrong in an instructive way. The console's footer says
- * *"Simulation continues while this console is open"*, and #283 read it as *the
- * ship must stay flyable*, so the sticks kept flying. It is a claim about the
- * **world** — orbits, markets, NPCs, all of which do go on running — and not
- * about the controls. Flown, the version that kept them was a ship flying off
- * while its pilot read a list.
+ * because it was wrong in an instructive way. The console's footer once read
+ * *"Simulation continues while this console is open"* — since deleted as copy —
+ * and #283 read it as *the ship must stay flyable*, so the sticks kept flying.
+ * It was a claim about the **world** — orbits, markets, NPCs, all of which do go
+ * on running — and not about the controls. Flown, the version that kept them was
+ * a ship flying off while its pilot read a list.
  *
  * The throttle is *held* rather than zeroed, so the ship coasts on the velocity
  * it had. Driving it to zero was offered and declined: it changes your speed

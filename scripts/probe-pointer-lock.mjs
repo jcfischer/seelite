@@ -79,7 +79,8 @@ import {
 	bootedGame,
 	guardedOrigin,
 	launchChromium,
-	PROBE_WINDOW_VISIBLE,
+	launchedAs,
+	PROBE_WINDOW_LOCKABLE,
 	tally,
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
@@ -166,9 +167,9 @@ const clickGlass = async (page) => {
 	// the click a player would make, and the harness's own speed is not allowed to
 	// decide whether a premise held.
 	await page.waitForTimeout(3000);
-	// Headed macOS Chromium grants a lock only to its key view. A prior console
-	// interaction can leave the tab visible but not key; bring this exact page
-	// forward before measuring the one real click below.
+	// A lock is granted only to the focused view. A prior console interaction can
+	// leave this tab behind another page of the same browser; bring this exact
+	// page forward before measuring the one real click below.
 	await page.bringToFront();
 	await page.waitForFunction(() => document.hasFocus());
 	const at = await page.evaluate(() => {
@@ -233,12 +234,13 @@ const pressPad = async (target, name) => {
 	await settle(target);
 };
 
-// macOS grants real pointer lock only to a key, visible view. The normal GPU
-// lane is off-screen; this interaction probe is the intentional exception.
-const browser = await launchChromium({
-	channel: "chromium",
-	probeWindow: PROBE_WINDOW_VISIBLE,
-});
+// This probe needs a view that can hold a pointer lock, and asks for that rather
+// than for today's answer to it — `PROBE_WINDOW_LOCKABLE` owns the why (#454).
+// Named once, because the premise row below reads the same options back to say
+// what the lane made of them, and two spellings would let it reason about a
+// launch that did not happen.
+const LAUNCH = { channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE };
+const browser = await launchChromium(LAUNCH);
 
 // ---------------------------------------------------------------------------
 // The premise, asserted: this harness can hold a pointer lock. Every row after
@@ -250,6 +252,58 @@ watch(page);
 // until a button is pressed and the game's first poll has to find one there. The
 // pad is at rest for every row but the one that turns the head with it.
 await page.addInitScript(installFakePad);
+// **Read the refusal back rather than guessing at it (#454).** The premise row
+// below used to blame "the browser" for every unlocked page, and #441 measured
+// that wrong: what refused was the *launch*. The tap hands back the browser's own
+// promise untouched — the section at the foot of this file is what asserts the
+// game swallows it — and only observes.
+//
+// Three counters, and the third is deliberately **not** a name. The asks are
+// counted, because a page where the game never asked is a game-side finding and
+// must not be reported as the lane's or the browser's. A name is recorded only
+// where there is one — the returning form of `requestPointerLock` rejects with a
+// `DOMException`, and that is the only source that carries a reason.
+// `pointerlockerror`, which is how the form returning `undefined` reports,
+// carries none: it is counted as an *unnamed* refusal, so the diagnosis below
+// can say the cause was unobserved instead of printing the event's own name as
+// though it were one. The patch goes on `Element.prototype`,
+// where the method is defined, and forwards its arguments — a call made with
+// `{ unadjustedMovement: true }` must reach the browser as the one the player's
+// build makes.
+//
+// **One thing it does change, said rather than claimed away.** Attaching a
+// rejection handler marks that rejection handled, so on this page a refusal the
+// game failed to catch would no longer surface as an unhandled rejection. The
+// row that asserts the game *does* catch it runs at the foot of this file on a
+// second browser with no tap installed, which is why that row still means
+// something.
+await page.addInitScript(() => {
+	window.__lockRefusal = null;
+	window.__lockErrorEvents = 0;
+	window.__lockGrants = 0;
+	window.__lockAsks = 0;
+	document.addEventListener("pointerlockerror", () => {
+		window.__lockErrorEvents++;
+	});
+	// A grant that was later released is not the same as never being granted,
+	// and `document.pointerLockElement` read once at the end cannot tell them
+	// apart.
+	document.addEventListener("pointerlockchange", () => {
+		if (document.pointerLockElement) window.__lockGrants++;
+	});
+	const ask = Element.prototype.requestPointerLock;
+	Element.prototype.requestPointerLock = function requestPointerLock(...args) {
+		window.__lockAsks++;
+		const asked = ask.apply(this, args);
+		Promise.resolve(asked).catch((error) => {
+			// One slot, last writer wins: only the most recent name is ever read,
+			// and a page that retries per interaction would otherwise grow a list
+			// nobody looks past the head of.
+			window.__lockRefusal = error?.name ?? String(error);
+		});
+		return asked;
+	};
+});
 await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(page);
 
@@ -261,8 +315,45 @@ check(
 	`hit=${glass.hit} lock=${await lockHolder(page)}`,
 );
 if (!locked) {
+	// **Name the cause, or say that it was not observed (#454).** The arms below
+	// carry their own enumeration; what is worth saying once is that each names a
+	// different owner — the harness, the game, the launch, the browser, a row
+	// above — and that they were printed as one sentence before this node.
+	const { asks, refusal, events, grants } = await page.evaluate(() => ({
+		asks: window.__lockAsks,
+		refusal: window.__lockRefusal ?? null,
+		events: window.__lockErrorEvents ?? 0,
+		grants: window.__lockGrants ?? 0,
+	}));
+	// The launch this browser was opened with, read off the browser rather than
+	// resolved a second time: the guard owns what a launch became, and a probe
+	// that re-ran the resolver would print a reconstruction in the one row whose
+	// job is attribution. Printed as a fact rather than branched on — `headless`
+	// is absent from a lockable launch by construction, so a message arm keyed
+	// on it could not fire in a shipped build, and this one did for a round.
+	const launched = JSON.stringify(launchedAs(browser));
+	const diagnose = () => {
+		if (asks === undefined)
+			return "The observer was not installed on this page, so nothing here saw whether the game asked at all — that is a harness fault and names no cause.";
+		if (asks === 0)
+			return "The game never asked for the lock on this page, so neither the lane nor the browser is implicated — that is a game-side finding.";
+		// **Keyed on the refusal, not on the lane.** A real `WrongDocumentError`
+		// used to fall through an arm gated on the launch and get read back as the
+		// browser's own refusal, which is the misattribution this row exists to
+		// end. The name is the focus gate's signature (#441); the launch is printed
+		// beside it because it is where to look first.
+		if (refusal === "WrongDocumentError")
+			return `The cause is the focus gate: this view is not the key one, which is what \`WrongDocumentError\` means here and never a statement about the game (#441). The launch was ${launched}.`;
+		if (refusal)
+			return `The cause is the refusal itself — ${refusal} — under ${launched}. This view cannot hold a lock; see the header.`;
+		if (grants > 0)
+			return `The lock was granted ${grants}× and is not held now, so it was taken and released rather than refused — a row above this one let go of it.`;
+		if (events === 0)
+			return `The ask was made ${asks}× and was neither granted nor refused — no rejection, no \`pointerlockerror\` and no \`pointerlockchange\` — so nothing here says why the lock is not held.`;
+		return `The ask was made ${asks}× and refused ${events}× through \`pointerlockerror\`, which carries no reason, so the cause is unobserved here rather than known.`;
+	};
 	console.log(
-		" FAIL  the browser refused the lock, which makes every row below vacuous — this probe needs a pointer-lockable view; see the header.",
+		` FAIL  the lock was not taken, which makes every row below vacuous. ${diagnose()}`,
 	);
 	await browser.close();
 	exit();

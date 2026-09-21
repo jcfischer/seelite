@@ -21,7 +21,7 @@
  * `THREE.Vector3` into the simulation because it was convenient.
  */
 import { expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
 import {
 	FAR_NEAR_UNITS,
 	FAR_SCALE,
@@ -42,6 +42,7 @@ const HEADLESS = [
 	"cruise",
 	"deficits",
 	"docking",
+	"escape-html",
 	"galaxy",
 	"gamepad",
 	"hud",
@@ -98,6 +99,7 @@ test("no module has been quietly dropped from the list", () => {
 		"cruise",
 		"deficits",
 		"docking",
+		"escape-html",
 		"galaxy",
 		"gamepad",
 		"hud",
@@ -362,4 +364,31 @@ test("station-console names the refusal union as a type and never as a value", (
 	expect(source.match(/from\s*["'`]\.\/station-commerce["'`]/g)).toHaveLength(
 		1,
 	);
+});
+
+test("src/escape-html.ts is a leaf, which is what lets three builders share it", () => {
+	// It replaced three copies of the same five-character table —
+	// `live-cockpit.ts`, `commander-overlay.ts` and `requests-view.ts` had one
+	// each, and #445 nearly added a fourth. A table with an import could only
+	// ever be taken by some of them, and the failure when two drift is silent:
+	// the module with the older table keeps rendering, and what it renders is
+	// markup.
+	expect(importsIn("escape-html.ts")).toEqual([]);
+});
+
+test("nothing keeps a second copy of the escape table", () => {
+	// The property that matters is not "the leaf exists" but "nobody has one
+	// of their own", and a list of four filenames cannot say that — a fifth
+	// builder with its own table passes it silently. Every module in `src/`
+	// but the leaf, and every spelling of the ampersand entity the five-case
+	// table can use.
+	const entity = /&(amp|#0*38|#x0*26);/i;
+	// `srcFiles()` returns repo-relative paths already.
+	for (const file of srcFiles()) {
+		if (file === "src/escape-html.ts") continue;
+		expect(entity.test(codeOf(file)), file).toBe(false);
+	}
+	// The control: the leaf itself has one, so a scan that matched nothing
+	// anywhere would be caught here rather than read as a clean tree.
+	expect(entity.test(codeOf("src/escape-html.ts"))).toBe(true);
 });

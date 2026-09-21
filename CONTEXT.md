@@ -1,6 +1,6 @@
 # seelite Domain Language
 
-This glossary defines vocabulary for seelite's planned causal world model and points to the specs that own structural details. The core consequence terms originate in work-graph node [“Operational consequences: what can the player change?”](https://github.com/jcfischer/seelite/issues/41). The work-graph map (`soma graph node 1`) remains authoritative for constraints and delivery rules.
+This glossary defines vocabulary for seelite's planned causal world model and points to the specs that own structural details. The core consequence terms originate in work-graph node [“Operational consequences: what can the player change?”](https://github.com/jcfischer/seelite/issues/41). The work-graph map (`soma graph node 1 --repo jcfischer/seelite`) owns the constraints and delivery rules both maps answer to. Since the 2026-09-21 split, gameplay nodes — missions, the expedition story, combat consequence, onboarding, progression — live on a second map, [#460](https://github.com/jcfischer/seelite/issues/460), which **adds constraints of its own on top of #1's**; working one of those nodes means reading both. A node linked from this glossary may sit on either map, so follow the link rather than assuming #1.
 
 ## Language
 
@@ -303,7 +303,7 @@ Work available from a named requester. `docs/specs/missions-and-requests.md` §1
 _Avoid_: Accepted request (before explicit acceptance)
 
 **Lead**:
-Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5).
+Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5). Retaining one is the `retain` action, and that is the word in the code and the save; the screen says **Keep for later** and labels the row **kept**. The principal read `Retain lead` and asked what it meant (#459) — one reader, so this is a ruling rather than a finding about players.
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
 **Accepted request**:

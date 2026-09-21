@@ -63,14 +63,83 @@ import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
 export const HARDWARE_RENDERER = "hardware";
-/** Keep headed hardware Chromium out of the developer's working area. */
-export const OFFSCREEN_WINDOW_POSITION = "--window-position=-32000,-32000";
-export const OFFSCREEN_WINDOW_RUNTIME_FLAGS = [
-	"--disable-backgrounding-occluded-windows",
-	"--disable-renderer-backgrounding",
-	"--disable-background-timer-throttling",
-];
+/**
+ * The Chromium build that carries the GPU when there is no window.
+ *
+ * Playwright's default headless launcher is `chrome-headless-shell`, which
+ * rasterises in software — measured here as
+ * `ANGLE (Google, Vulkan … SwiftShader driver)`. The full Chromium build on
+ * this channel reports `ANGLE (Apple, ANGLE Metal Renderer)` in **new
+ * headless**, which is what lets the whole hardware lane run with no window at
+ * all. That is the one thing the default mode adds to a caller's options, and a
+ * caller that names its own channel keeps it.
+ *
+ * It is not a claim that this holds everywhere: `assertBrowserRenderer` reads
+ * the renderer back on every hardware launch, so a machine where this channel
+ * rasterises in software fails loudly rather than quietly measuring SwiftShader.
+ */
+export const HARDWARE_CHANNEL = "chromium";
+
 export const PROBE_WINDOW_VISIBLE = "visible";
+/**
+ * A view that can hold a pointer lock — named for what the probe asks for, not
+ * for how it is answered.
+ *
+ * **The headed lane is a coin and this mode is not.** Both report
+ * `ANGLE (Apple, ANGLE Metal Renderer)`, so the renderer is not what separates
+ * them. What separates them is the macOS focus gate: a window opened from a
+ * background terminal is key only sometimes, and `WrongDocumentError` is the
+ * refusal that reads. #441 measured a headed launch refusing on three full
+ * suite runs; #454, on the same machine, measured the same headed launch
+ * *granting* the lock four times running after two refusals. So **never** would
+ * be the wrong word and it stood here for a round: the honest reading is that a
+ * headed lock-dependent row is decided by what else is on screen and can hold
+ * either way for a whole session. New headless on this channel granted it on
+ * every run of #454's delivery — `probe-pointer-lock` ten times and
+ * `probe-controls-reference` eight, five of each inside a whole-suite run —
+ * with no refusal. That is the property the mode is for: not a faster lock, a
+ * *decidable* one. The count is stated because the sentence before it retracts
+ * a "never" that rested on three runs. It follows that a **red** on a headed
+ * lock-dependent row is evidence and a green on one is not.
+ *
+ * **And it is now what the whole lane does**, which is why this mode resolves to
+ * the same launch as the default rather than to one of its own. #454 shipped it
+ * as an opt-in on two probes and left the lane headed; the lane opened 54
+ * windows a run and every one of them took the focus. What kept it headed was
+ * that its default launch had no channel, so headless meant
+ * `chrome-headless-shell` and software rasterisation. `HARDWARE_CHANNEL` is
+ * that missing half.
+ *
+ * The requirement is still the lock rather than the headlessness, and the mode
+ * stays for that: a probe saying *why* it needs this launch is worth reading,
+ * and on a machine where new headless has no GPU the guard could answer the two
+ * questions differently. `assertBrowserRenderer` below is what would say so,
+ * loudly, instead of quietly rasterising in software.
+ */
+export const PROBE_WINDOW_LOCKABLE = "lockable";
+
+/**
+ * Where `launchChromium` records the options it passed, read by `launchedAs`.
+ *
+ * A symbol rather than a name, because the value is hung on a Playwright
+ * `Browser` and this repo does not own that object's namespace.
+ */
+const LAUNCH_OPTIONS = Symbol.for("seelite.launchOptions");
+
+/** The options a browser from `launchChromium` was actually opened with. */
+export const launchedAs = (browser) => browser?.[LAUNCH_OPTIONS] ?? null;
+
+/**
+ * Every window mode there is, declared once.
+ *
+ * The guard below reads this rather than a chain of inequalities and builds its
+ * message from it — but **declaring a mode is not handling one**, and the
+ * dispatch is what decides the launch. So the dispatch is exhaustive over this
+ * list and throws on a member with no branch: a fourth mode added here and
+ * nowhere else fails loudly instead of quietly receiving `headless: false`,
+ * which is the launch a lockable probe must not get.
+ */
+export const PROBE_WINDOWS = [PROBE_WINDOW_VISIBLE, PROBE_WINDOW_LOCKABLE];
 
 /**
  * Read the requested probe renderer mode. The unset default deliberately keeps
@@ -89,24 +158,47 @@ export function probeRendererMode(env = process.env) {
 /**
  * Launch options for the requested renderer mode, without mutating a caller.
  *
+ * **An unknown `probeWindow` throws rather than defaulting.** The modes are
+ * picked by equality, so before #454 a misspelled one — and any fourth mode
+ * added later without a branch — fell through to the offscreen default, which
+ * is `headless: false`: exactly the launch #441 measured as losing the pointer
+ * lock, handed over silently. The refusal is outside the mode check because a
+ * misspelling is a bug on the software lane too, where it is simply ignored.
+ *
  * @param {{ args?: string[]; probeWindow?: string; [key: string]: unknown }} options
  * @param {string | null} [mode=probeRendererMode()]
  */
 export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
+	if (
+		options.probeWindow !== undefined &&
+		!PROBE_WINDOWS.includes(options.probeWindow)
+	)
+		throw new Error(
+			`probeWindow must be ${PROBE_WINDOWS.map((w) => JSON.stringify(w)).join(", ")} or unset, got ${JSON.stringify(options.probeWindow)}`,
+		);
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
-	return {
-		...chromiumOptions,
-		headless: false,
-		args:
-			probeWindow === PROBE_WINDOW_VISIBLE
-				? [...(chromiumOptions.args ?? [])]
-				: [
-						...(chromiumOptions.args ?? []),
-						OFFSCREEN_WINDOW_POSITION,
-						...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
-					],
-	};
+	// The default and a lockable view are **one launch**: windowless, on the
+	// channel that carries the GPU there. Written as one expression so they
+	// cannot drift into two answers to the same question; see
+	// `PROBE_WINDOW_LOCKABLE` for why the mode is still worth declaring.
+	if (probeWindow === PROBE_WINDOW_LOCKABLE || probeWindow === undefined)
+		return { channel: HARDWARE_CHANNEL, ...chromiumOptions };
+	// A visible window: headed, and wherever the desktop puts it. The one mode
+	// that still takes the focus, and the one probe that asks for it says why.
+	if (probeWindow === PROBE_WINDOW_VISIBLE)
+		return {
+			...chromiumOptions,
+			headless: false,
+			args: [...(chromiumOptions.args ?? [])],
+		};
+	// Unreachable while every member of PROBE_WINDOWS has a branch above, which
+	// is the point: the check at the top of this function accepts anything on
+	// that list, so a mode declared and not handled would otherwise land in the
+	// headed default it was probably declared to avoid.
+	throw new Error(
+		`probeWindow ${JSON.stringify(probeWindow)} is declared in PROBE_WINDOWS but has no branch in probeLaunchOptions`,
+	);
 }
 
 /**
@@ -392,7 +484,14 @@ export async function launchChromium(options = {}) {
 			}`,
 		);
 	const mode = probeRendererMode();
-	const browser = await chromium.launch(probeLaunchOptions(options, mode));
+	const launchOptions = probeLaunchOptions(options, mode);
+	const browser = await chromium.launch(launchOptions);
+	// **What this launch actually was, recorded on the browser it opened.** A
+	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row
+	// names the launch when the lock is refused — otherwise re-runs the resolver
+	// and prints a reconstruction, which is the same class of mistake as a probe
+	// restating a constant instead of reading it off the page.
+	browser[LAUNCH_OPTIONS] = launchOptions;
 	if (mode !== HARDWARE_RENDERER) return browser;
 
 	try {

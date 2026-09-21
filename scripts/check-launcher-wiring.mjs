@@ -167,6 +167,10 @@ const EXEMPT = new Map([
 		"#324's canister-drift instrument; it prints two tables of ranges and speeds against a frozen twin for a receipt and asserts nothing, so there are no checks for a watch to report into. It reads simulation state through one `page.evaluate` rather than pixels, so a shader failure cannot change what it prints; a boot that never completes, or an evaluate that throws, fails the run rather than counting a failed check",
 	],
 	[
+		"measure-lane-windows.mjs",
+		"the lane's window instrument; it prints whether each surviving window mode's real launch carries `--headless`, anything that would place a window, and which binary answered, so the claim that the lane opens no window can be checked against the browser rather than against this repo's source. It asserts nothing — which binary a channel resolves to is a property of the pinned Playwright — and the gate that does exist is `assertBrowserRenderer` on every hardware launch; a refusal, or a lane that is not the hardware one, throws out of the run rather than counting a failed check",
+	],
+	[
 		"capture-views.mjs",
 		"captures #104's view set; the gate is a human looking at the sheet, so it has no checks either — it does listen for shader and page errors, and a fault removes the run and the sheet rather than reporting one",
 	],

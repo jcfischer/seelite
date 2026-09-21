@@ -32,3 +32,9 @@ view-set/
 .claude/settings.local.json
 # Swift Package Manager cache a tool leaves in a checkout (sage #368).
 .build/
+
+# The `gh` CLI's run-log cache, when a worktree points it at itself so a log can
+# be read without write access to the user cache. Regenerated per `gh run view`,
+# and a 214 KB zip of CI logs in history is permanent.
+.gh-cache
+.gh-cache/
