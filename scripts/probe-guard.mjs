@@ -75,25 +75,26 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * A view that can hold a pointer lock — named for what the probe asks for, not
  * for how it is answered.
  *
- * #441 measured the answer on this machine: `channel: "chromium"` in **new
- * headless** reports `ANGLE (Apple, ANGLE Metal Renderer)` *and* grants the
- * lock, while the same channel headed reports the same renderer and throws
- * `WrongDocumentError` — a macOS window opened from a background terminal is
- * never the *key* window, and that is what the lock gate reads. So the lockable
- * mode carries **neither** `headless: false` nor the offscreen flags.
+ * **The headed lane is a coin and this mode is not.** Both report
+ * `ANGLE (Apple, ANGLE Metal Renderer)`, so the renderer is not what separates
+ * them. What separates them is the macOS focus gate: a window opened from a
+ * background terminal is key only sometimes, and `WrongDocumentError` is the
+ * refusal that reads. #441 measured a headed launch refusing on three full
+ * suite runs; #454, on the same machine, measured the same headed launch
+ * *granting* the lock four times running after two refusals. So **never** would
+ * be the wrong word and it stood here for a round: the honest reading is that a
+ * headed lock-dependent row is decided by what else is on screen and can hold
+ * either way for a whole session. New headless on this channel has granted it
+ * on every run of both nodes, which is the property the mode is for — not a
+ * faster lock, a *decidable* one. It follows that a **red** on a headed
+ * lock-dependent row is evidence and a green on one is not.
  *
- * **The three backgrounding flags go with the position flag because Playwright
- * passes them itself.** `--disable-background-timer-throttling` is about
- * renderers rather than windows, so "there is no window to position" does not
- * reach it. **The reading is not restated here** —
- * `scripts/measure-launch-switches.mjs` reads both lanes' real launches back
- * off Chromium and prints what each one carries, because this is a property of
- * a pinned Playwright rather than of the repo and a comment nobody can re-check
- * is where such a claim goes stale. What is worth knowing without running it:
- * the mode drops no switch that was reaching Chromium, and the constant it
- * drops turns out to be a second copy of Playwright's own defaults — which
- * makes it redundant in the offscreen branch too, a finding this mode is not
- * the place to act on.
+ * So the lockable mode carries neither `headless: false` nor the offscreen
+ * flags. **Why the backgrounding flags go with the position flag is not
+ * restated here** — `scripts/measure-launch-switches.mjs` owns it and prints
+ * each mode's real launch, because it is a property of a pinned Playwright
+ * rather than of this repo. What is worth knowing without running it: the mode
+ * drops no switch that was reaching Chromium.
  *
  * The requirement is the lock, not the headlessness. A machine where new
  * headless has no GPU loses the two probes that opt in rather than the lane —
@@ -105,10 +106,12 @@ export const PROBE_WINDOW_LOCKABLE = "lockable";
 /**
  * Every window mode there is, declared once.
  *
- * The guard below reads this rather than a chain of inequalities, and builds its
- * message from it: a fourth mode added to a chain — and to a message, and to the
- * dispatch — is three edits, and the one that gets missed is the silent
- * fall-through to a headed window that the guard exists to prevent.
+ * The guard below reads this rather than a chain of inequalities and builds its
+ * message from it — but **declaring a mode is not handling one**, and the
+ * dispatch is what decides the launch. So the dispatch is exhaustive over this
+ * list and throws on a member with no branch: a fourth mode added here and
+ * nowhere else fails loudly instead of quietly receiving `headless: false`,
+ * which is the launch a lockable probe must not get.
  */
 export const PROBE_WINDOWS = [PROBE_WINDOW_VISIBLE, PROBE_WINDOW_LOCKABLE];
 
@@ -149,22 +152,29 @@ export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 		);
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
-	// A lockable view keeps the caller's own launch. See the constant for both
-	// halves: why the headed window loses the lock, and what is known about the
-	// backgrounding flags this drops with it.
+	// A lockable view keeps the caller's own launch. See the constant for why.
 	if (probeWindow === PROBE_WINDOW_LOCKABLE) return { ...chromiumOptions };
-	return {
-		...chromiumOptions,
-		headless: false,
-		args:
-			probeWindow === PROBE_WINDOW_VISIBLE
-				? [...(chromiumOptions.args ?? [])]
-				: [
-						...(chromiumOptions.args ?? []),
-						OFFSCREEN_WINDOW_POSITION,
-						...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
-					],
-	};
+	// A visible window, and the offscreen default, are both headed.
+	if (probeWindow === PROBE_WINDOW_VISIBLE || probeWindow === undefined)
+		return {
+			...chromiumOptions,
+			headless: false,
+			args:
+				probeWindow === PROBE_WINDOW_VISIBLE
+					? [...(chromiumOptions.args ?? [])]
+					: [
+							...(chromiumOptions.args ?? []),
+							OFFSCREEN_WINDOW_POSITION,
+							...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+						],
+		};
+	// Unreachable while every member of PROBE_WINDOWS has a branch above, which
+	// is the point: the check at the top of this function accepts anything on
+	// that list, so a mode declared and not handled would otherwise land in the
+	// headed default it was probably declared to avoid.
+	throw new Error(
+		`probeWindow ${JSON.stringify(probeWindow)} is declared in PROBE_WINDOWS but has no branch in probeLaunchOptions`,
+	);
 }
 
 /**

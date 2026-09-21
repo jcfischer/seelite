@@ -9,6 +9,7 @@ import {
 	OFFSCREEN_WINDOW_RUNTIME_FLAGS,
 	PROBE_WINDOW_LOCKABLE,
 	PROBE_WINDOW_VISIBLE,
+	PROBE_WINDOWS,
 	probeLaunchOptions,
 	probeRendererMode,
 	PROBE_RENDERER_ENV,
@@ -106,10 +107,11 @@ test("a window mode nobody declared is refused, not quietly made headed", () => 
 				mode,
 			),
 		).toThrow('probeWindow must be "visible", "lockable" or unset');
-	expect(() =>
-		probeLaunchOptions(
-			{ probeWindow: PROBE_WINDOW_VISIBLE },
-			HARDWARE_RENDERER,
-		),
-	).not.toThrow();
+	// And the other half of the same rule: declaring a mode is not handling one,
+	// so every member of the list must reach a branch. A mode declared without
+	// one would otherwise land in the headed default it was declared to avoid.
+	for (const mode of PROBE_WINDOWS)
+		expect(() =>
+			probeLaunchOptions({ probeWindow: mode }, HARDWARE_RENDERER),
+		).not.toThrow();
 });

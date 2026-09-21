@@ -326,23 +326,25 @@ if (!locked) {
 		events: window.__lockErrorEvents ?? 0,
 		grants: window.__lockGrants ?? 0,
 	}));
-	const headed = probeLaunchOptions(LAUNCH).headless === false;
+	// The launch as the lane resolved it, printed as a fact rather than branched
+	// on: `headless` is absent from a lockable launch by construction, so a
+	// message arm keyed on it could not fire in a shipped build (#454, and it
+	// shipped that way for a round).
+	const launched = JSON.stringify(probeLaunchOptions(LAUNCH));
 	const diagnose = () => {
 		if (asks === undefined)
 			return "The observer was not installed on this page, so nothing here saw whether the game asked at all — that is a harness fault and names no cause.";
 		if (asks === 0)
 			return "The game never asked for the lock on this page, so neither the lane nor the browser is implicated — that is a game-side finding.";
-		// **Keyed on the refusal, not on the lane.** `headed` is false in every
-		// shipped configuration, this mode being what makes it so, and a lane arm
-		// gated on it could only ever fire under a mutation — while a real
-		// `WrongDocumentError` fell through and got read back as the browser's own
-		// refusal, which is the misattribution this row exists to end. The name is
-		// the focus gate's signature (#441); the launch is reported beside it
-		// because a headed one says where to look first.
+		// **Keyed on the refusal, not on the lane.** A real `WrongDocumentError`
+		// used to fall through an arm gated on the launch and get read back as the
+		// browser's own refusal, which is the misattribution this row exists to
+		// end. The name is the focus gate's signature (#441); the launch is printed
+		// beside it because it is where to look first.
 		if (refusal === "WrongDocumentError")
-			return `The cause is the focus gate: this view is not the key one, which is what \`WrongDocumentError\` means here and never a statement about the game (#441). The launch ${headed ? "carries `headless: false`, so fix the launch and not this probe" : "carries no headless override, so the view lost focus some other way"}.`;
+			return `The cause is the focus gate: this view is not the key one, which is what \`WrongDocumentError\` means here and never a statement about the game (#441). The launch was ${launched}.`;
 		if (refusal)
-			return `The cause is the refusal itself — ${refusal} — in a launch carrying ${headed ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`;
+			return `The cause is the refusal itself — ${refusal} — under ${launched}. This view cannot hold a lock; see the header.`;
 		if (grants > 0)
 			return `The lock was granted ${grants}× and is not held now, so it was taken and released rather than refused — a row above this one let go of it.`;
 		if (events === 0)

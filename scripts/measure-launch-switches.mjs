@@ -35,6 +35,7 @@ import {
 	OFFSCREEN_WINDOW_RUNTIME_FLAGS,
 	PROBE_RENDERER_ENV,
 	PROBE_WINDOW_LOCKABLE,
+	PROBE_WINDOW_VISIBLE,
 	probeRendererMode,
 } from "./probe-guard.mjs";
 
@@ -61,22 +62,24 @@ const switchesFor = async (probeWindow) => {
 		args: [AUTOMATION],
 		...(probeWindow ? { probeWindow } : {}),
 	});
-	const page = await browser.newPage();
-	const session = await page.context().newCDPSession(page);
-	const { arguments: argv } = await session.send(
-		"Browser.getBrowserCommandLine",
-	);
-	await browser.close();
-	return argv;
+	try {
+		const page = await browser.newPage();
+		const session = await page.context().newCDPSession(page);
+		const { arguments: argv } = await session.send(
+			"Browser.getBrowserCommandLine",
+		);
+		return argv;
+	} finally {
+		// The read is what is most likely to refuse here, and a browser left open
+		// on the first arm takes every later arm's report with it.
+		await browser.close();
+	}
 };
 
 const report = async (label, probeWindow) => {
 	const argv = await switchesFor(probeWindow);
 	console.log(`\n${label}`);
-	for (const flag of [
-		...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
-		OFFSCREEN_WINDOW_POSITION,
-	]) {
+	for (const flag of OURS) {
 		const seen = argv.filter((a) => a === flag).length;
 		console.log(
 			`  ${seen}×  ${flag}${seen === 0 ? "  (absent)" : seen > 1 ? "  (this module's, restating Playwright's)" : ""}`,
@@ -93,4 +96,8 @@ const report = async (label, probeWindow) => {
 };
 
 await report("lockable — the mode #454 adds", PROBE_WINDOW_LOCKABLE);
+await report(
+	"visible — the headed window a probe asks for by name",
+	PROBE_WINDOW_VISIBLE,
+);
 await report("offscreen — the lane's default, headed", null);
