@@ -430,13 +430,14 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 	test("the good is in the pool, and in its top COURIER_SPREAD_POOL by spread", () => {
 		const boards = couriers();
 		expect(boards.length).toBeGreaterThan(50);
-		// **The width is held at both ends, and neither end is something a
-		// shipped run can print.** At 1 the rule is the ranking alone and the
-		// instrument collapses onto two goods at 45.7% and 45.3%; at or above
-		// the pool's own size the draw is uniform and the ranking decides
-		// nothing. This row slices by the constant, so it is green either way
-		// — the two bounds are what make it a check on the *rule* rather than
-		// on whatever the constant currently is.
+		// **The width is held at both ends.** At 1 the rule is the ranking
+		// alone, which repeats at one requester; at or above the pool's own
+		// size the draw is uniform and the ranking decides nothing. Neither
+		// end is something a shipped run prints, and the figures for both live
+		// with the instrument rather than here. This row slices by the
+		// constant, so it is green either way — the two bounds are what make
+		// it a check on the *rule* rather than on whatever the constant
+		// currently is.
 		expect(COURIER_SPREAD_POOL).toBeGreaterThan(1);
 		for (const { offer, system, station, destination } of boards) {
 			const ranked = rankedPool(system, station, destination);
@@ -479,16 +480,16 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		// show a second cargo and counting it drags the rate toward a floor of
 		// zero that a nearly degenerate draw would clear.
 		//
-		// **What this row is and is not.** Measured on this build: 140
-		// revisited legs of 500, 96 of them carrying more than one good —
-		// 68.6%. The null for a uniform draw from three is **not** 2/3: that is
-		// the figure for a leg flown exactly twice, and this sample is
-		// 104 twice, 27 three times, 6 four and 3 five, which sums to 0.729.
-		// A draw collapsed onto two of the three goods predicts 0.574, so a
-		// floor between them discriminates weakly and the floor below is set
-		// to catch a draw that has stopped drawing rather than one that has
-		// narrowed. **The narrowing is the next row's job** — it reads the
+		// **What this row is and is not.** The null for a uniform draw from
+		// three is **not** 2/3: that is the figure for a leg flown exactly
+		// twice, and this sample mixes legs flown two to five times, which
+		// sums higher. A draw collapsed onto two of the three goods still
+		// predicts well over half, so a floor here discriminates weakly and is
+		// set to catch a draw that has stopped drawing rather than one that
+		// has narrowed. **The narrowing is the next row's job** — it reads the
 		// rank the drawn good held, where a collapse leaves a position empty.
+		// The measured rates are in this PR's review rounds, not here, because
+		// they are a property of one galaxy of one seed.
 		const EPISODES = 8;
 		const goodsPerLeg = new Map<string, string[]>();
 		for (let episode = 1; episode <= EPISODES; episode += 1)
@@ -512,11 +513,11 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		// The draw itself, rather than its shadow on a leg: over eight
 		// episodes of every board, which **position** in the top
 		// `COURIER_SPREAD_POOL` the bound good held. A uniform draw puts a
-		// third on each; this build reads 31.1% / 33.4% / 35.5% over 688
-		// draws, where one position's standard error is 1.8 points. Anything
+		// third on each, over the several hundred draws this sweep makes,
+		// where one position's standard error is under two points. Anything
 		// that collapses the draw — a fixed pick, a narrowed range, a stream
 		// with no entropy left — empties a position, so the floor is a
-		// quarter: four standard errors below uniform and unreachable for a
+		// quarter: several standard errors below uniform and unreachable for a
 		// rule that has stopped using a rank.
 		const drawn = new Map<number, number>();
 		for (let episode = 1; episode <= 8; episode += 1)

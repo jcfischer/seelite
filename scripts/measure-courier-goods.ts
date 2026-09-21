@@ -249,24 +249,25 @@ for (const { system, station } of places) {
 		if (!good) continue;
 		counts[rule].set(good.name, (counts[rule].get(good.name) ?? 0) + 1);
 		row[rule].add(good.name);
-		// The control is no longer "cheapest agrees with bindCourier" — since
-		// #455 it does not, and it is not meant to. What this file must not be
-		// allowed to do is rank a pool the binder does not rank, so the check
-		// is **membership**: the good `bindCourier` bound is in this file's own
-		// top `COURIER_SPREAD_POOL` by spread, which needs no copy of the draw.
-		//
-		// **Membership is blind inside the set.** It catches a pool that has
-		// drifted, and a ranking or tie-break change that moves a good across
-		// the k-th position. It cannot see a reordering *within* the top k —
-		// those goods are all admissible either way. The rank distribution in
-		// `tests/jobs.test.ts` is what watches the order.
-		if (rule === "spread") {
-			const top = rankBy("spread", candidateGoods, system, station, destination)
-				.slice(0, COURIER_SPREAD_POOL)
-				.map((c) => c.name);
-			if (top.includes(shipped.goodName)) shippedAgrees += 1;
-		}
 	}
+
+	// **The control, and it is its own measurement rather than a column.** It
+	// is no longer "cheapest agrees with bindCourier" — since #455 it does
+	// not, and it is not meant to. What this file must not be allowed to do is
+	// rank a pool the binder does not rank, so the check is **membership**:
+	// the good `bindCourier` bound is in this file's own top
+	// `COURIER_SPREAD_POOL` by spread, which needs no copy of the draw.
+	//
+	// **Membership is blind inside the set.** It catches a pool that has
+	// drifted, and a ranking or tie-break change that moves a good across the
+	// k-th position. It cannot see a reordering *within* the top k — those
+	// goods are all admissible either way — and on a pool of
+	// `COURIER_SPREAD_POOL` or fewer it passes for any good at all. The rank
+	// distribution in `tests/jobs.test.ts` is what watches the order.
+	const top = rankBy("spread", candidateGoods, system, station, destination)
+		.slice(0, COURIER_SPREAD_POOL)
+		.map((c) => c.name);
+	if (top.includes(shipped.goodName)) shippedAgrees += 1;
 }
 
 const pct = (n: number, of: number) => `${((100 * n) / of).toFixed(1)}%`;
@@ -295,13 +296,14 @@ for (const rule of RULE_NAMES) {
 }
 
 // **What a pilot sees within one jump**, which is the node's own question.
-// A system's neighbourhood is every system inside jump range, and the boards
-// a pilot can reach without a second jump are that system's and its
-// neighbours'.
+// A system's neighbourhood is the systems holding a destination a job may
+// name — `deliveryCandidates`' own reach, so a system inside jump range with
+// no eligible station is not counted — and the boards a pilot can reach
+// without a second jump are that system's and its neighbours'.
 console.log("\ndistinct goods on the boards within one jump\n");
 console.log("rule       mean   min   max   systems seeing 1 good");
-// Invariant in both loops below, so it is built once rather than re-derived
-// per rule and per pair of systems.
+// Invariant in the loop below, so it is built once rather than re-derived per
+// rule and per pair of systems.
 const neighbours = new Map<number, Set<number>>();
 for (const system of systems)
 	neighbours.set(
@@ -389,20 +391,27 @@ const sweepEpisodes = (
 const sorted = (counts: Map<string, number>) =>
 	[...counts.entries()].sort((a, b) => b[1] - a[1]);
 
+const drawTotal = (counts: Map<string, number>) =>
+	[...counts.values()].reduce((sum, n) => sum + n, 0);
+
 const summarise = (counts: Map<string, number>) => {
 	const rows = sorted(counts);
-	const total = rows.reduce((sum, [, n]) => sum + n, 0);
+	const total = drawTotal(counts);
 	console.log(
 		`  ${rows.length} distinct goods over ${total} draws; top ${rows[0]?.[0]} at ${pct(rows[0]?.[1] ?? 0, total)}`,
 	);
 };
 
-const listRows = (counts: Map<string, number>) => {
-	const rows = sorted(counts);
-	const total = rows.reduce((sum, [, n]) => sum + n, 0);
-	for (const [good, n] of rows)
+/** One row per good. `of` is the denominator a share is read against — the
+ *  draws for an episode sweep, the boards for a per-board column. */
+const listRows = (
+	counts: Map<string, number>,
+	of: number = drawTotal(counts),
+	indent = "    ",
+) => {
+	for (const [good, n] of sorted(counts))
 		console.log(
-			`    ${good.padEnd(16)} ${String(n).padStart(4)}  ${pct(n, total)}`,
+			`${indent}${good.padEnd(16)} ${String(n).padStart(4)}  ${pct(n, of)}`,
 		);
 };
 
@@ -454,9 +463,4 @@ console.log(
 }
 
 console.log("\nfull distribution, the former cheapest rule\n");
-for (const [good, n] of [...counts.cheapest.entries()].sort(
-	(a, b) => b[1] - a[1],
-))
-	console.log(
-		`  ${good.padEnd(16)} ${String(n).padStart(4)}  ${pct(n, boards)}`,
-	);
+listRows(counts.cheapest, boards, "  ");

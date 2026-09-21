@@ -429,10 +429,17 @@ const round = (cr: number): number => Math.round(cr);
  * looks. **A gradient rule cannot vary**: a gradient belongs to the commodity
  * table and not to a station, so an export or a need test names one good for
  * the whole galaxy. That is not a claim about one-end rules in general — the
- * cheapest rule reads one end and does vary, just barely, over two goods. And
- * the spread **ranked alone** is a near-constant of its own, so the
- * per-episode draw is not a garnish on the ranking: the two are one rule.
- * `scripts/measure-courier-goods.ts` prints all four columns.
+ * cheapest rule reads one end and does vary, just barely, over two goods.
+ *
+ * **The draw earns its place on a different axis from the ranking.** Ranked
+ * alone, the spread already varies well across *space* — a pilot within one
+ * jump sees about three goods under it against one and a half under the
+ * cheapest rule. What it cannot do is vary at **one requester**: the ranking
+ * is a function of the two stations, so a second consignment down the same leg
+ * is the first one again, and one good takes 44.6% of a galaxy's boards. That
+ * repetition at one desk is `ordinary-requests.md` D1's texture question and
+ * #442's second one, and the per-episode draw is the only half of this rule
+ * that answers it. `scripts/measure-courier-goods.ts` prints both tables.
  */
 export function bindCourier(ctx: BindContext): JobOffer | null {
 	if (ctx.destinations.length === 0) return null;
@@ -467,9 +474,11 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 		}))
 		.sort((a, b) => b.spread - a.spread || (a.c.name < b.c.name ? -1 : 1));
 	if (ranked.length === 0) return null;
-	// Defensive and uncovered: `tests/jobs.test.ts` asserts every board's pool
-	// is wider than the constant, so nothing measured here has ever clamped.
-	// A narrower pool is a market change, not a state this rule produces.
+	// Defensive and uncovered: `tests/jobs.test.ts` asserts the pool is wider
+	// than the constant on every board of the first 60 systems of one galaxy,
+	// which is the only place it has been measured — the instrument's control
+	// passes vacuously on a pool of three or fewer. A narrower pool is a
+	// market change, not a state this rule produces.
 	const width = Math.min(COURIER_SPREAD_POOL, ranked.length);
 	const good =
 		ranked[
