@@ -852,10 +852,15 @@ can check.
   hold their own idea of which way the galaxy lies will drift, and nothing
   headless can see it.
 - **`GALACTIC_EAST` is a convention, not a fact.** The plane has no natural east —
-  a rotation about the normal is a symmetry of the cluster's shape — so one had to
-  be named for the roll to be a number. `+x` is where the chart puts screen-right
-  at its default yaw, which makes a bearing stated against it readable off the
-  chart.
+  a rotation about the normal is a symmetry of an oblate spheroid, so nothing in
+  the cluster's shape prefers a direction — and yet the roll has to be measured
+  *from* one to be a number. `+x` is the chart's horizontal: `galaxy-map.ts`
+  draws galaxy `x` into mesh `x` with no axis swap and the camera sits on `+z`
+  looking back at the origin, so `+x` is screen-right with the cluster unyawed.
+  The chart's own view then turns the cluster about the normal by `DEFAULT_YAW` =
+  0.6 rad, which is a fact about the chart's camera and not about the frame. What
+  the frame needs is **one** named in-plane direction; that it is this one is
+  convenience, and only `GALACTIC_EAST × roll` depends on it.
 
 ### The flattening is geometry, not a distortion to undo
 

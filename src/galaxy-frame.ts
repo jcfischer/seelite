@@ -101,12 +101,18 @@ export const GALACTIC_NORMAL: Vec3 = v3(0, 1, 0);
 /**
  * A reference direction *inside* the cluster's reference plane, in galaxy space.
  *
- * The plane has no natural east — a rotation about the normal is a symmetry of
- * the cluster's shape — so one has to be named for the frame's roll to be a
- * number rather than a feeling. `+x` is chosen because it is where the chart
- * puts screen-right at its default yaw, which makes a bearing stated against it
- * readable off the chart the same player is looking at. It is a convention and
- * not a fact, and `GALACTIC_EAST × roll` is the only thing that depends on it.
+ * The plane has no natural east — turning the cluster about its own normal is a
+ * symmetry of an oblate spheroid, so nothing in its shape prefers a direction —
+ * and still the roll has to be measured *from* somewhere to be a number rather
+ * than a feeling. `+x` is the chart's horizontal: `galaxy-map.ts` draws galaxy
+ * `x` into mesh `x` with no axis swap, and its camera sits on `+z` looking back
+ * at the origin, so `+x` is screen-right with the cluster unyawed. The chart's
+ * default view then turns the cluster itself about the normal by `DEFAULT_YAW` =
+ * 0.6 rad, which is the chart's camera and not this frame's business.
+ *
+ * So this is a convention and not a fact. What the frame needs is **one** named
+ * in-plane direction; that it is this one is convenience, and
+ * `GALACTIC_EAST × roll` is the only thing that depends on it.
  */
 export const GALACTIC_EAST: Vec3 = v3(1, 0, 0);
 
