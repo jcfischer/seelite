@@ -430,15 +430,22 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 	test("the good is in the pool, and in its top COURIER_SPREAD_POOL by spread", () => {
 		const boards = couriers();
 		expect(boards.length).toBeGreaterThan(50);
-		// The pool is the claim: at 1 this row still passes, and the
-		// distribution collapses onto two goods at 45.7% and 45.3% — the
-		// near-constant cargo line the rule exists to break. So the width is
-		// asserted here rather than left to the instrument alone.
+		// **The width is held at both ends, and neither end is something a
+		// shipped run can print.** At 1 the rule is the ranking alone and the
+		// instrument collapses onto two goods at 45.7% and 45.3%; at or above
+		// the pool's own size the draw is uniform and the ranking decides
+		// nothing. This row slices by the constant, so it is green either way
+		// — the two bounds are what make it a check on the *rule* rather than
+		// on whatever the constant currently is.
 		expect(COURIER_SPREAD_POOL).toBeGreaterThan(1);
 		for (const { offer, system, station, destination } of boards) {
 			const ranked = rankedPool(system, station, destination);
 			const top = ranked.slice(0, COURIER_SPREAD_POOL).map((c) => c.name);
 			expect([offer.id, top.includes(offer.goodName)]).toEqual([
+				offer.id,
+				true,
+			]);
+			expect([offer.id, ranked.length > COURIER_SPREAD_POOL]).toEqual([
 				offer.id,
 				true,
 			]);
@@ -457,7 +464,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		expect(late).toEqual(early);
 	});
 
-	test("two consecutive episodes on the same leg can differ", () => {
+	test("a revisited leg mostly carries a different good", () => {
 		// **The leg is held.** The destination has its own per-episode draw, so
 		// a second consignment usually flies somewhere else and ranks a
 		// different pool — which means a build with no good-draw at all still
@@ -465,27 +472,32 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		// a version of this row that did not hold the leg. So only the boards
 		// whose episode 2 goes to the same station as episode 1 count here.
 		//
-		// **Existence, not a rate.** A draw from three goods repeats a third of
-		// the time, so a row asserting that *every* desk changes its cargo
-		// would be red on a correct build.
-		// Eight episodes rather than two, because the leg coincides on only a
-		// few boards per episode pair and three samples settle nothing.
+		// **A rate, over the only legs that can carry one.** Eight episodes
+		// rather than two, because the leg coincides on few boards per episode
+		// pair and three samples settle nothing — and the denominator is the
+		// legs a board actually *revisits*, because a leg flown once cannot
+		// show a second cargo and counting it drags the rate toward a floor of
+		// zero that a nearly degenerate draw would clear. Measured on this
+		// build: 140 revisited legs of 500, 68.6% of them carrying more than
+		// one good, against the 2/3 a uniform draw from three predicts. The
+		// floor is half, which is well under that and far above a draw that
+		// has stopped drawing.
 		const EPISODES = 8;
-		const goodsPerLeg = new Map<string, Set<string>>();
-		let legsSeen = 0;
+		const goodsPerLeg = new Map<string, string[]>();
 		for (let episode = 1; episode <= EPISODES; episode += 1)
 			for (const board of couriers({ courier: episode - 1 })) {
 				expect(board.offer.episode).toBe(episode);
 				const leg = `${board.offer.requester.carrierKey}->${board.offer.reportAt.carrierKey}`;
-				const seen = goodsPerLeg.get(leg) ?? new Set<string>();
-				if (seen.size === 0) legsSeen += 1;
-				seen.add(board.offer.goodName);
+				const seen = goodsPerLeg.get(leg) ?? [];
+				seen.push(board.offer.goodName);
 				goodsPerLeg.set(leg, seen);
 			}
-		expect(legsSeen).toBeGreaterThan(100);
-		const varying = [...goodsPerLeg.values()].filter(
-			(goods) => goods.size > 1,
-		).length;
-		expect(varying).toBeGreaterThan(0);
+		expect(goodsPerLeg.size).toBeGreaterThan(100);
+		const revisited = [...goodsPerLeg.values()].filter(
+			(goods) => goods.length > 1,
+		);
+		expect(revisited.length).toBeGreaterThan(100);
+		const varying = revisited.filter((goods) => new Set(goods).size > 1).length;
+		expect(varying / revisited.length).toBeGreaterThan(0.5);
 	});
 });

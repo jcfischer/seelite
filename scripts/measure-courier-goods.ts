@@ -133,21 +133,31 @@ const RULES = {
 type RuleName = keyof typeof RULES;
 const RULE_NAMES = Object.keys(RULES) as RuleName[];
 
+/** The pool in one rule's order. One comparator, so a tie-break change lands
+ *  in one place rather than in every caller that re-types it. */
+const rankBy = (
+	rule: RuleName,
+	candidates: Commodity[],
+	from: SystemRecord,
+	at: Station,
+	destination: JobDestination,
+): Commodity[] => {
+	const key = RULES[rule];
+	return [...candidates].sort(
+		(a, b) =>
+			key(a, from, at, destination) - key(b, from, at, destination) ||
+			(a.name < b.name ? -1 : 1),
+	);
+};
+
 const pick = (
 	rule: RuleName,
 	candidates: Commodity[],
 	from: SystemRecord,
 	at: Station,
 	destination: JobDestination,
-): Commodity | null => {
-	if (candidates.length === 0) return null;
-	const key = RULES[rule];
-	return [...candidates].sort(
-		(a, b) =>
-			key(a, from, at, destination) - key(b, from, at, destination) ||
-			(a.name < b.name ? -1 : 1),
-	)[0];
-};
+): Commodity | null =>
+	rankBy(rule, candidates, from, at, destination)[0] ?? null;
 
 /** Every station in a galaxy that can post work, with its system. */
 const postings = (systems: readonly SystemRecord[]) => {
@@ -221,13 +231,7 @@ for (const { system, station } of places) {
 		// catches a pool, a ranking or a tie-break that has drifted apart,
 		// without a second copy of the draw.
 		if (rule === "spread") {
-			const top = [...candidateGoods]
-				.sort(
-					(a, b) =>
-						RULES.spread(a, system, station, destination) -
-							RULES.spread(b, system, station, destination) ||
-						(a.name < b.name ? -1 : 1),
-				)
+			const top = rankBy("spread", candidateGoods, system, station, destination)
 				.slice(0, COURIER_SPREAD_POOL)
 				.map((c) => c.name);
 			if (top.includes(shipped.goodName)) shippedAgrees += 1;
@@ -296,20 +300,24 @@ for (const rule of RULE_NAMES) {
 }
 
 // **Varying the good across episodes at one requester**, which was the node's
-// second question and is now the shipped rule. This section measures
+// second question and is now the shipped rule. Both arms below measure
 // `bindCourier` itself across episodes — the draw is not reimplemented here,
 // because after #455 a copy of it in this file would be the thing under test
-// measuring itself. The prediction it is read against is #442's candidate
-// column, which drew from the same ranking on a different stream: the **count
-// of distinct goods** must match exactly, since the top-k sets are the same,
-// while a **share** is the stream's and is expected to move by a fraction of a
-// point.
+// measuring itself.
 const EPISODES = 8;
-console.log(
-	`\nshipped: drawn from the top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
-);
-{
-	const seen = new Map<string, number>();
+
+/** Eight episodes of every board, counting the cargo `bindCourier` binds.
+ *  `legFor` chooses what the binder is offered: every candidate, which is the
+ *  game, or the one destination it drew first, which is the framing #442's
+ *  prediction was made on. */
+const sweepEpisodes = (
+	legFor: (
+		system: SystemRecord,
+		station: Station,
+		candidates: JobDestination[],
+	) => JobDestination[] | null,
+): { counts: Map<string, number>; perStation: number[] } => {
+	const counts = new Map<string, number>();
 	const perStation: number[] = [];
 	for (const { system, station } of places) {
 		const key = carrierKey(system.index, station.localCarrierId);
@@ -319,100 +327,108 @@ console.log(
 			generateContents,
 			key,
 		);
+		const offered = legFor(system, station, candidates);
+		if (!offered) continue;
 		const here = new Set<string>();
-		for (let episode = 1; episode <= EPISODES; episode += 1) {
-			const ctx: BindContext = {
-				galaxyIndex: GALAXY_INDEX,
-				system,
-				station,
-				destinations: candidates,
-				deficits: {},
-				gameTimeMin: GAME_TIME_MIN,
-				settled: { courier: episode - 1 },
-			};
-			const offer = bindCourier(ctx);
-			if (!offer) continue;
-			if (offer.episode !== episode)
-				throw new Error(
-					`episode ${episode} bound as ${offer.episode} at ${station.id}`,
-				);
-			seen.set(offer.goodName, (seen.get(offer.goodName) ?? 0) + 1);
-			here.add(offer.goodName);
-		}
-		if (here.size > 0) perStation.push(here.size);
-	}
-	const rows = [...seen.entries()].sort((a, b) => b[1] - a[1]);
-	const total = rows.reduce((sum, [, n]) => sum + n, 0);
-	const meanPerStation =
-		perStation.reduce((a, b) => a + b, 0) / perStation.length;
-	console.log(
-		`  ${rows.length} distinct goods over ${total} draws; top ${rows[0]?.[0]} at ${pct(rows[0]?.[1] ?? 0, total)}`,
-	);
-	console.log(
-		`  one freight desk shows ${finite("mean per station", meanPerStation).toFixed(2)} distinct goods across ${EPISODES} episodes (max ${Math.max(...perStation)})`,
-	);
-	for (const [good, n] of rows)
-		console.log(
-			`    ${good.padEnd(16)} ${String(n).padStart(4)}  ${pct(n, total)}`,
-		);
-}
-
-// **The arm the prediction is actually read against.** #442's candidate column
-// held the leg still — it drew one destination and ran eight episodes of the
-// good draw over that one pool — while the shipped rule redraws the
-// destination every episode too. So the section above is a wider set than the
-// prediction by construction, and comparing the two straight is comparing two
-// different experiments. Here the leg is pinned by handing `bindCourier` a
-// one-destination context, which is the binder's own draw on the prediction's
-// framing.
-console.log(
-	`\nshipped, leg held: top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
-);
-{
-	const seen = new Map<string, number>();
-	for (const { system, station } of places) {
-		const key = carrierKey(system.index, station.localCarrierId);
-		const candidates = deliveryCandidates(
-			systems,
-			system,
-			generateContents,
-			key,
-		);
-		const opening = bindCourier({
-			galaxyIndex: GALAXY_INDEX,
-			system,
-			station,
-			destinations: candidates,
-			deficits: {},
-			gameTimeMin: GAME_TIME_MIN,
-			settled: {},
-		});
-		if (!opening) continue;
-		const destination = candidates.find(
-			(d) =>
-				carrierKey(d.system.index, d.station.localCarrierId) ===
-				opening.reportAt.carrierKey,
-		);
-		if (!destination) continue;
 		for (let episode = 1; episode <= EPISODES; episode += 1) {
 			const offer = bindCourier({
 				galaxyIndex: GALAXY_INDEX,
 				system,
 				station,
-				destinations: [destination],
+				destinations: offered,
 				deficits: {},
 				gameTimeMin: GAME_TIME_MIN,
 				settled: { courier: episode - 1 },
 			});
 			if (!offer) continue;
-			seen.set(offer.goodName, (seen.get(offer.goodName) ?? 0) + 1);
+			if (offer.episode !== episode)
+				throw new Error(
+					`episode ${episode} bound as ${offer.episode} at ${station.id}`,
+				);
+			counts.set(offer.goodName, (counts.get(offer.goodName) ?? 0) + 1);
+			here.add(offer.goodName);
 		}
+		if (here.size > 0) perStation.push(here.size);
 	}
-	const rows = [...seen.entries()].sort((a, b) => b[1] - a[1]);
+	return { counts, perStation };
+};
+
+const sorted = (counts: Map<string, number>) =>
+	[...counts.entries()].sort((a, b) => b[1] - a[1]);
+
+const summarise = (counts: Map<string, number>) => {
+	const rows = sorted(counts);
 	const total = rows.reduce((sum, [, n]) => sum + n, 0);
 	console.log(
 		`  ${rows.length} distinct goods over ${total} draws; top ${rows[0]?.[0]} at ${pct(rows[0]?.[1] ?? 0, total)}`,
 	);
+};
+
+const listRows = (counts: Map<string, number>) => {
+	const rows = sorted(counts);
+	const total = rows.reduce((sum, [, n]) => sum + n, 0);
+	for (const [good, n] of rows)
+		console.log(
+			`    ${good.padEnd(16)} ${String(n).padStart(4)}  ${pct(n, total)}`,
+		);
+};
+
+console.log(
+	`\nshipped: drawn from the top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
+);
+{
+	const { counts, perStation } = sweepEpisodes((_system, _station, all) => all);
+	const meanPerStation =
+		perStation.reduce((a, b) => a + b, 0) / perStation.length;
+	summarise(counts);
+	console.log(
+		`  one freight desk shows ${finite("mean per station", meanPerStation).toFixed(2)} distinct goods across ${EPISODES} episodes (max ${Math.max(...perStation)})`,
+	);
+	listRows(counts);
+}
+
+// **The arm the prediction is read against.** #442's candidate column held the
+// leg still — it drew one destination and ran eight episodes of the good draw
+// over that one pool — while the shipped rule redraws the destination every
+// episode too. So the section above is a wider set than the prediction by
+// construction, and comparing the two straight compares two experiments. Here
+// the leg is pinned by handing `bindCourier` a one-destination context, which
+// is the binder's own draw on the prediction's framing.
+//
+// **What agreement here is worth.** The two draws are different streams, so
+// neither the share nor the count is forced to match: which members of a top-3
+// set come up over eight finite episodes is as much the stream's as the share
+// is. The count agreeing is evidence that the pool and the ranking are the
+// same, not a proof that they are — it is the strongest arm available without
+// copying the shipped draw into this file, which is the thing that would make
+// the control circular.
+console.log(
+	`\nshipped, leg held: top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
+);
+{
+	const { counts } = sweepEpisodes((system, station, all) => {
+		const opening = bindCourier({
+			galaxyIndex: GALAXY_INDEX,
+			system,
+			station,
+			destinations: all,
+			deficits: {},
+			gameTimeMin: GAME_TIME_MIN,
+			settled: {},
+		});
+		if (!opening) return null;
+		const destination = all.find(
+			(d) =>
+				carrierKey(d.system.index, d.station.localCarrierId) ===
+				opening.reportAt.carrierKey,
+		);
+		// The first loop throws on this and so does this one: a destination the
+		// offer names and the candidate list does not hold is drift, and
+		// skipping it would quietly shrink the sample the count rests on.
+		if (!destination) throw new Error(`no destination for ${opening.id}`);
+		return [destination];
+	});
+	summarise(counts);
 }
 
 console.log("\nfull distribution, the former cheapest rule\n");

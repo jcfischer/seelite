@@ -372,16 +372,21 @@ const AXIS = { row: 0, destination: 1, good: 2 } as const;
 /**
  * How many of the widest-spread goods a courier consignment is drawn from.
  *
- * Tunable, and both ends of it say something. At 1 the rule is the spread
- * alone and the instrument prints two goods at 45.7% and 45.3% of the draws —
- * the same near-constant cargo line the cheapest rule gave, whose Food ran to
- * 94.6% of the boards. At the whole
- * pool the draw is uniform and the ranking reads nothing about the economy at
- * all. At 3, eight episodes of every board in galaxy 0 of seed 0x5ee11e carry
- * **ten** distinct goods with the top at 17.3%, or nine at 17.0% with the leg
- * held still — #442 predicted nine at 18.0% from the same ranking on another
- * stream and a held leg. `scripts/measure-courier-goods.ts` is the instrument
- * and reprints all of it; none of these figures is derived here.
+ * Tunable, and both ends of it say something. **At 3**, eight episodes of
+ * every board in galaxy 0 of seed 0x5ee11e carry **ten** distinct goods with
+ * the top at 17.3%, or nine at 17.0% with the leg held still — #442 predicted
+ * nine at 18.0% from the same ranking on another stream and a held leg.
+ * `scripts/measure-courier-goods.ts` prints both arms on every run, so those
+ * two are checkable without editing anything.
+ *
+ * The two degenerate ends are not, and each needs one edit to reproduce. **At
+ * 1** the rule is the spread alone: set the constant to 1 and the instrument
+ * prints two goods at 45.7% and 45.3% of the draws — the same near-constant
+ * cargo line the cheapest rule gave, whose Food ran to 94.6% of the boards and
+ * is still printed as the former rule's own column. **At the whole pool** the
+ * draw is uniform and the ranking reads nothing about the economy at all;
+ * `tests/jobs.test.ts` holds the low end and the width against the pool it
+ * ranks, because neither figure below is something the shipped run can show.
  */
 export const COURIER_SPREAD_POOL = 3;
 
@@ -428,9 +433,11 @@ const round = (cr: number): number => Math.round(cr);
  * derived from one. What the measurement does say is that **only a rule
  * reading both ends can vary at all** — a gradient belongs to the commodity
  * table and not to a station, so an export or a need test names one good for
- * the whole galaxy — and that the ranking alone still put two goods on 89% of
- * boards. The per-episode draw is what turns that into nine goods with none
- * above 18%, so the ranking and the draw are one rule rather than two.
+ * the whole galaxy — and that the ranking **alone** is another near-constant,
+ * two goods over most of a galaxy's boards. The per-episode draw is what
+ * spreads it, so the ranking and the draw are one rule rather than two. The
+ * figures for both are `COURIER_SPREAD_POOL`'s, above, and are deliberately
+ * not restated here.
  */
 export function bindCourier(ctx: BindContext): JobOffer | null {
 	if (ctx.destinations.length === 0) return null;
