@@ -52,20 +52,26 @@ export interface HoldLine {
 	unit: CommodityUnit;
 	owner: HoldOwner;
 	/**
-	 * Requester lines only: the job, and where the goods must reach or return.
+	 * The job this lot belongs to — **present exactly on a requester line**.
 	 *
-	 * **Both destinations, because which one applies depends on the job's
-	 * state.** A running consignment must reach `reportName`; a cancelled one
-	 * must go back to `returnToName`, which is the requester. `jobStatus` is
-	 * what picks between them, and a screen that carried only one of the two
-	 * would be right for half the journal.
+	 * One field rather than six optionals. They were six, and they are
+	 * all-present-or-all-absent together, so every consumer coalesced each one
+	 * against a fallback that could not fire for a well-formed line and the
+	 * next field on a consignment would have added a seventh.
 	 */
-	offerId?: string;
-	jobTitle?: string;
-	jobStatus?: RequestStatus;
-	returnTo?: RequestStation;
-	returnToName?: string;
-	reportName?: string;
+	job?: HoldJob;
+}
+
+/** Where a consignment has to end up, and which end applies. */
+export interface HoldJob {
+	offerId: string;
+	title: string;
+	status: RequestStatus;
+	/** Where the goods go back to if the job is off. */
+	returnTo: RequestStation;
+	returnToName: string;
+	/** Where they must reach while the job is running. */
+	reportName: string;
 }
 
 export interface HoldSummary {
@@ -97,8 +103,8 @@ export interface HoldSummary {
 const compareLines = (a: HoldLine, b: HoldLine): number => {
 	if (a.owner !== b.owner) return a.owner === "pilot" ? -1 : 1;
 	if (a.goodName !== b.goodName) return a.goodName < b.goodName ? -1 : 1;
-	const left = a.offerId ?? "";
-	const right = b.offerId ?? "";
+	const left = a.job?.offerId ?? "";
+	const right = b.job?.offerId ?? "";
 	if (left === right) return 0;
 	return left < right ? -1 : 1;
 };
@@ -166,12 +172,14 @@ export function holdSummary(
 			amount: lot.aboardT,
 			unit,
 			owner: "requester",
-			offerId: lot.offerId,
-			jobTitle: request.terms.title,
-			jobStatus: request.status,
-			returnTo: lot.returnTo,
-			returnToName: request.terms.requesterName,
-			reportName: request.terms.reportName,
+			job: {
+				offerId: lot.offerId,
+				title: request.terms.title,
+				status: request.status,
+				returnTo: lot.returnTo,
+				returnToName: request.terms.requesterName,
+				reportName: request.terms.reportName,
+			},
 		});
 	}
 	lines.sort(compareLines);
@@ -203,7 +211,22 @@ export const aboardForOffer = (
 			(line) =>
 				line.unit === "t" &&
 				(offer.entrusted
-					? line.owner === "requester" && line.offerId === offer.id
+					? line.owner === "requester" && line.job?.offerId === offer.id
 					: line.owner === "pilot" && line.goodName === offer.goodName),
 		)
 		.reduce((sum, line) => sum + line.amount, 0);
+
+/**
+ * What the docked station pays for one unit of each good it trades (#445).
+ *
+ * The **bid**, which is what a sale is paid — not the ask a BUY column shows.
+ * A map rather than a screen, so a renderer does not import the market: the
+ * caller already has the priced rows and hands over the column it drew.
+ * `null` means no station, which reads as a dash rather than as a figure from
+ * wherever the ship last was.
+ *
+ * Here beside `HoldSummary` rather than in `hold-view.ts`: it is the shape
+ * `main.ts` produces, and a producer that had to import the presentation
+ * module for it would have the dependency backwards.
+ */
+export type HoldBids = ReadonlyMap<string, number> | null;

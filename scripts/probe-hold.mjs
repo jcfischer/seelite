@@ -22,6 +22,9 @@ import { installViewFraming } from "./lib/view-placement.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 
 const origin = process.env.PROBE_ORIGIN ?? "http://127.0.0.1:5343";
+// The screenshots this writes are the node's third tier — a person reads them
+// and says yes or no — so the path is named here and in the PR, and
+// `HOLD_EVIDENCE` overrides it for a run whose captures have to go elsewhere.
 const out = process.env.HOLD_EVIDENCE ?? "/tmp/seelite-445-evidence";
 const headed = process.env.HEADED === "1";
 mkdirSync(out, { recursive: true });
@@ -82,8 +85,8 @@ try {
 		capacityInFlight,
 	);
 	check(
-		"in flight the page says values need a station",
-		/need a station/i.test(capacityInFlight),
+		"an empty page promises no values, because it draws no column",
+		!/Values/.test(capacityInFlight),
 		capacityInFlight,
 	);
 	await page.screenshot({ path: `${out}/00-hold-in-flight.png` });
@@ -173,12 +176,13 @@ try {
 			/cannot be sold/i.test(requesterText),
 		requesterText,
 	);
+	const requesterValue = await requesterRow
+		.locator("[data-live-hold-value]")
+		.innerText();
 	check(
 		"and it carries no price, because it is not the pilot's to sell",
-		!/Cr/.test(
-			await requesterRow.locator("[data-live-hold-value]").innerText(),
-		),
-		await requesterRow.locator("[data-live-hold-value]").innerText(),
+		!/Cr/.test(requesterValue),
+		requesterValue,
 	);
 
 	const pilotRow = page.locator(
@@ -187,10 +191,11 @@ try {
 	const pilotValue = await pilotRow
 		.locator("[data-live-hold-value]")
 		.innerText();
+	const pilotText = await pilotRow.innerText();
 	check(
 		"the pilot's line says the goods are theirs and what they fetch here",
-		/yours/i.test(await pilotRow.innerText()) && /\d+\.\d Cr/.test(pilotValue),
-		`${await pilotRow.innerText()} · ${pilotValue}`,
+		/yours/i.test(pilotText) && /\d+\.\d Cr/.test(pilotValue),
+		`${pilotText} · ${pilotValue}`,
 	);
 	await page.screenshot({ path: `${out}/01-hold-docked.png` });
 
@@ -199,20 +204,24 @@ try {
 	// ---------------------------------------------------------------------
 	await page.evaluate(() => window.__seelite.setHeadLook("forward"));
 	const tradeLine = await page.locator("[data-live-station-hold]").innerText();
+	// **The capacity line, not every figure on the page.** The trade screen
+	// draws no per-good rows, so there is nothing there to compare them
+	// against; what one projection buys is that used, capacity, free and the
+	// entrusted share agree, and that is what this reads.
+	const capacityFigures = capacityDocked.split("\n")[0];
 	check(
-		"the trade screen's hold line and the Hold page quote the same figures",
-		tradeLine.includes(capacityDocked.split("\n")[0].split(" · ")[0]) &&
-			tradeLine.includes(`${offer.tonnes} t entrusted`),
-		`${tradeLine} || ${capacityDocked.split("\n")[0]}`,
+		"the trade screen's hold line and the Hold page quote the same capacity",
+		tradeLine.includes(capacityFigures),
+		`${tradeLine} || ${capacityFigures}`,
 	);
 
 	await page.close();
 } finally {
 	await browser.close();
 }
-const failed = checks.filter((c) => !c.ok).length;
-console.log(`\n${checks.length - failed}/${checks.length} checks passed`);
-// A shader that fails to link is a `console.error`, not a page error, and
-// `watchShaders` is the only thing that sees it. Its count is separate from
-// this probe's own throwing `check`, so it is read here rather than lost.
-if (failed || t.failures) process.exit(1);
+// **`check` throws**, so reaching here means every one of them passed and a
+// `failed` tally would be a constant zero. A shader that fails to link is a
+// `console.error` rather than a page error, and `watchShaders` is the only
+// thing that sees it — that count is what is left to read.
+console.log(`\n${checks.length}/${checks.length} checks passed`);
+if (t.failures) process.exit(1);

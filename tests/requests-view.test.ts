@@ -21,6 +21,7 @@ import {
 	type RequestsView,
 } from "../src/requests-view";
 import { nextAction } from "../src/requests";
+import type { CarrierKey } from "../src/carrier-key";
 import type { HoldSummary } from "../src/hold";
 import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 
@@ -115,6 +116,16 @@ describe("the action says whose goods it moves", () => {
 	});
 });
 
+/** A requester line's job block, which is what identifies the lot's owner. */
+const JOB = (offerId: string) => ({
+	offerId,
+	title: "a job",
+	status: "accepted" as const,
+	returnTo: { galaxyIndex: 0, carrierKey: "0:0:x" as CarrierKey },
+	returnToName: "somewhere",
+	reportName: "somewhere else",
+});
+
 describe("what is aboard comes off the hold projection, not a second scan", () => {
 	const summary = (lines: HoldSummary["lines"]): HoldSummary => ({
 		usedT: 0,
@@ -155,7 +166,7 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 							amount: 8,
 							unit: "t",
 							owner: "requester",
-							offerId: "some-other-job",
+							job: JOB("some-other-job"),
 						},
 					]),
 				},
@@ -171,14 +182,14 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 				amount: COURIER.tonnes,
 				unit: "t",
 				owner: "requester",
-				offerId: COURIER.id,
+				job: JOB(COURIER.id),
 			},
 			{
 				goodName: COURIER.goodName,
 				amount: 4,
 				unit: "t",
 				owner: "requester",
-				offerId: "another-job",
+				job: JOB("another-job"),
 			},
 			{ goodName: COURIER.goodName, amount: 2, unit: "t", owner: "pilot" },
 		];
@@ -243,7 +254,7 @@ describe("the rendered control carries what the builder decided", () => {
 					amount: aboard,
 					unit: "t" as const,
 					owner: "requester" as const,
-					offerId: offer.id,
+					job: JOB(offer.id),
 				}
 			: {
 					goodName: offer.goodName,

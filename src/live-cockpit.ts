@@ -35,7 +35,8 @@ import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
 import type { HoldSummary } from "./hold";
-import { HOLD_STYLE, type HoldBids, holdBody } from "./hold-view";
+import type { HoldBids } from "./hold";
+import { HOLD_STYLE, holdBody } from "./hold-view";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
@@ -79,17 +80,20 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
  *
  * It was one sentence about `Tuning`, which read as a caption under every
  * other tab — including #445's manifest, where *"Tuning remains on this
- * right-console tab"* is a non sequitur. A sentence under a page has to be
- * about that page.
+ * right-console tab"* is a non sequitur. **Only the Hold tab gets a new
+ * sentence here**: rewording the other four is player-visible prose about
+ * pages this node does not own, and one of the drafts reached for a noun
+ * `CONTEXT.md` forbids. They keep the shipped line until a node owns them.
  */
-const RIGHT_FOOTER: Readonly<Record<RightTab, string>> = {
-	Flight: "Simulation continues while this console is open.",
-	Drive:
-		"The drive charge refills free at any station, and regenerates in flight.",
+const TUNING_FOOTER =
+	"Tuning remains on this right-console tab, never on the flight floor.";
+
+export const RIGHT_FOOTER: Readonly<Record<RightTab, string>> = {
+	Flight: TUNING_FOOTER,
+	Drive: TUNING_FOOTER,
 	Hold: "Entrusted cargo occupies the hold and cannot be sold. Readable in flight as well as docked.",
-	Controls: "Every binding the cockpit answers to, on one page.",
-	Tuning:
-		"Tuning remains on this right-console tab, never on the flight floor.",
+	Controls: TUNING_FOOTER,
+	Tuning: TUNING_FOOTER,
 };
 
 const RIGHT_TABS: readonly RightTab[] = [
@@ -97,7 +101,7 @@ const RIGHT_TABS: readonly RightTab[] = [
 	"Drive",
 	// #445 sits with the other readouts, ahead of the two tabs that are not
 	// about the ship in front of you. #370 D1's rule is unchanged: `Tuning`
-	// keeps the last slot.
+	// stays last.
 	"Hold",
 	"Controls",
 	"Tuning",
@@ -1381,15 +1385,18 @@ export class LiveCockpit {
 		// **On every docked console, not only Flight.** The hold fires by itself
 		// when the lane clears, so a player who pressed Enter from the station
 		// console, or went back to trading, must still see it (sage round 1).
-		const hold = this.launchHoldBlock(state);
+		// **`launchHoldNotice`, not `hold`.** CONTEXT.md keeps the four senses
+		// of that word apart, and since #445 the same method also reads
+		// `state.hold`, which is the cargo hold and not a held launch.
+		const launchHoldNotice = this.launchHoldBlock(state);
 		const launch =
 			state.dockPhase !== "docked"
 				? ""
-				: hold ||
+				: launchHoldNotice ||
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}<footer>${RIGHT_FOOTER[state.rightTab]}</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${launchHoldNotice}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}<footer>${RIGHT_FOOTER[state.rightTab]}</footer></aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
@@ -1540,7 +1547,7 @@ export class LiveCockpit {
 		if (state.rightTab === "Hold")
 			// `lc-hold-body` collapses the rail-and-copy grid to one column, on
 			// `[data-live-chart-body]`'s precedent: the default two-column body
-			// put the manifest in the 135 px rail slot, which the first sheet
+			// put the manifest in the 135 px rail column, which the first sheet
 			// showed as a table squeezed into the left third of the panel.
 			return `<div class="lc-panel-body lc-hold-body">${holdBody(state.hold, state.holdBids)}</div>`;
 		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;

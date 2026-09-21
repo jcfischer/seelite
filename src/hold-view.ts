@@ -7,9 +7,15 @@
  * putting an 8 t consignment in the hold that cannot be sold and could not be
  * seen.
  *
- * **It renders `HoldSummary` and computes nothing.** #443 owns the arithmetic
- * and #446 owns the per-job query; a second count here would be the third
- * authority on what is aboard. A string builder beside `requests-view.ts` for
+ * **It computes no tonnage.** #443 owns the hold's arithmetic and #446 owns
+ * the per-job query; a second count here would be the third authority on what
+ * is aboard.
+ *
+ * It does compute **one** figure, and is the sole authority for it: a line's
+ * extended value, `bid × amount`. No other screen produces that — the Market
+ * tab prices one unit — so `tests/hold-view.test.ts` pins it against figures
+ * chosen so the bid, the amount and the product are three different numbers,
+ * and a swapped basis cannot read as the right one. A string builder beside `requests-view.ts` for
  * that module's reason: `live-cockpit.ts` is long, and a projection with
  * branches deserves its own rows.
  *
@@ -21,7 +27,8 @@
  *
  * No DOM and no Three.js: this is a string.
  */
-import type { HoldLine, HoldSummary } from "./hold";
+import type { HoldBids, HoldLine, HoldSummary } from "./hold";
+import type { RequestStatus } from "./requests";
 
 const esc = (x: string) =>
 	x.replace(
@@ -47,17 +54,6 @@ export const HOLD_STYLE = `
 .lc-hold-value small { color: #a9814f; }
 `;
 
-/**
- * What one unit of a good fetches at the docked station — the **bid**, which
- * is what a sale is paid, not the ask.
- *
- * A map rather than a screen, so this module does not import the market: the
- * caller already has the priced rows and hands over the column it drew.
- * `null` means no station, which reads as a dash rather than as a stale
- * figure from wherever the ship last was.
- */
-export type HoldBids = ReadonlyMap<string, number> | null;
-
 /** The value column, and the rule that only the pilot's goods carry one. */
 const valueCells = (line: HoldLine, bids: HoldBids): string => {
 	// An entrusted lot is not the pilot's to sell (§4), so a figure beside it
@@ -70,18 +66,37 @@ const valueCells = (line: HoldLine, bids: HoldBids): string => {
 	return `<span class="lc-hold-value" data-live-hold-value>${(bid * line.amount).toFixed(1)} Cr<small>${bid.toFixed(1)} Cr each</small></span>`;
 };
 
+/**
+ * The states in which a consignment is still **going** somewhere.
+ *
+ * An allow-list on the union rather than a deny-list of `cancelled` and
+ * `failed`: a status added to `RequestStatus` later would otherwise default to
+ * "must reach", which is the wrong direction to be wrong in — a page telling a
+ * pilot to carry goods to a station for a job that is off.
+ */
+const RUNNING: ReadonlySet<RequestStatus> = new Set<RequestStatus>([
+	"accepted",
+	"ready-to-report",
+]);
+
 /** Whose the goods are, and for a consignment, where they have to end up. */
 const ownerCell = (line: HoldLine): string => {
 	if (line.owner === "pilot")
 		return "<small data-live-hold-owner-note>yours · sellable</small>";
-	// A running job must **reach** its report station; a cancelled one must go
-	// **back** to the requester. `jobStatus` is what picks between them, and a
+	const note =
+		"<small data-live-hold-owner-note>the requester's · cannot be sold</small>";
+	const job = line.job;
+	if (!job) return note;
+	// A running job must **reach** its report station; one that is off must go
+	// **back** to the requester. `status` is what picks between them, and a
 	// page carrying one of the two would be right for half the journal.
-	const returning =
-		line.jobStatus === "cancelled" || line.jobStatus === "failed";
-	const where = returning ? line.returnToName : line.reportName;
+	const returning = !RUNNING.has(job.status);
+	const where = returning ? job.returnToName : job.reportName;
 	const verb = returning ? "return to" : "to";
-	return `<small data-live-hold-owner-note>the requester's · cannot be sold</small><small>${esc(line.jobTitle ?? "")} · ${verb} ${esc(where ?? "—")}</small>`;
+	// Joined from the non-empty parts: an untitled job left a dangling
+	// separator (`· to Reraus Gate`) at the head of the line.
+	const clause = [job.title, `${verb} ${where}`].filter(Boolean).join(" · ");
+	return `${note}<small>${esc(clause)}</small>`;
 };
 
 const row = (line: HoldLine, bids: HoldBids): string =>
@@ -102,7 +117,14 @@ export function holdBody(hold: HoldSummary, bids: HoldBids): string {
 	// `entrustedClause`'s rule one screen along (#443).
 	const entrusted =
 		hold.entrustedT > 0 ? ` · ${hold.entrustedT} t entrusted` : "";
-	const capacity = `<p class="lc-hold-capacity" data-live-hold-capacity>${hold.usedT} / ${hold.capacityT} t · ${hold.freeT} t free${entrusted}<small>${bids ? "Values are this station's bid." : "Values need a station."}</small></p>`;
+	// The values note is about a column, so it is absent when there is no
+	// column: docked with an empty hold the page used to announce values for a
+	// table it does not draw.
+	const note =
+		hold.lines.length === 0
+			? ""
+			: `<small>${bids ? "Values are this station's bid." : "Values need a station."}</small>`;
+	const capacity = `<p class="lc-hold-capacity" data-live-hold-capacity>${hold.usedT} / ${hold.capacityT} t · ${hold.freeT} t free${entrusted}${note}</p>`;
 	if (hold.lines.length === 0)
 		// **A sentence, not a blank.** An empty page reads as a page that failed
 		// to load; the capacity is exactly what a pilot wants at that moment.

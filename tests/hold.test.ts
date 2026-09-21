@@ -127,9 +127,14 @@ describe("ownership is the thing the screen could not say", () => {
 		const line = holdSummary(pilot({}), requests).lines.find(
 			(entry) => entry.owner === "requester",
 		);
-		expect(line?.offerId).toBe(courier.id);
-		expect(line?.jobTitle).toBe(courier.title);
-		expect(line?.returnTo?.carrierKey).toBe(courier.requester.carrierKey);
+		expect(line?.job?.offerId).toBe(courier.id);
+		expect(line?.job?.title).toBe(courier.title);
+		expect(line?.job?.returnTo.carrierKey).toBe(courier.requester.carrierKey);
+		// #445: both ends of the journey, because which one applies depends on
+		// whether the job is still running.
+		expect(line?.job?.status).toBe("accepted");
+		expect(line?.job?.reportName).toBe(courier.reportName);
+		expect(line?.job?.returnToName).toBe(courier.requesterName);
 	});
 
 	test("a lot whose request is missing is a journal fault, and it throws", () => {
