@@ -79,7 +79,7 @@ test("the hardware mode is opt-in and each window mode asks for its own view", (
 	).toEqual({ headless: false, args: ["--example"] });
 });
 
-test("a lockable view is neither headed nor positioned off screen", () => {
+test("a lockable view resolves to the same windowless launch as the default", () => {
 	// #454. `PROBE_WINDOW_LOCKABLE` owns why the mode carries neither
 	// `headless: false` nor the offscreen flags; this pins that it does not.
 	const lockable = probeLaunchOptions(
@@ -87,9 +87,23 @@ test("a lockable view is neither headed nor positioned off screen", () => {
 		HARDWARE_RENDERER,
 	);
 	expect(lockable).toEqual({ channel: "chromium" });
-	// And it resolves to the same launch as the default, which is the whole of
-	// what it now asks for — one expression, so the two cannot drift apart.
-	expect(lockable).toEqual(probeLaunchOptions({}, HARDWARE_RENDERER));
+	// And the guard supplies the channel, rather than the caller's own surviving
+	// a branch that adds nothing — which is what this row would have read if it
+	// compared two results both built from an input that already carried it.
+	expect(
+		probeLaunchOptions(
+			{ probeWindow: PROBE_WINDOW_LOCKABLE },
+			HARDWARE_RENDERER,
+		),
+	).toEqual({ channel: HARDWARE_CHANNEL });
+	// Same launch as the default, which is the whole of what this mode now asks
+	// for — one expression in the guard, so the two cannot drift apart.
+	expect(
+		probeLaunchOptions(
+			{ probeWindow: PROBE_WINDOW_LOCKABLE },
+			HARDWARE_RENDERER,
+		),
+	).toEqual(probeLaunchOptions({}, HARDWARE_RENDERER));
 	expect("headless" in lockable).toBe(false);
 	expect("probeWindow" in lockable).toBe(false);
 

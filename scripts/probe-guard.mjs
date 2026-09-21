@@ -179,16 +179,13 @@ export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
 	// The default and a lockable view are **one launch**: windowless, on the
-	// channel that carries the GPU there. They were two modes while the default
-	// was headed; now that it is not, writing them as one expression is what
-	// stops them drifting into two answers to the same question. `lockable`
-	// stays because a probe declaring *why* it needs this is worth reading, and
-	// because the guard could answer it differently on a machine where new
-	// headless has no GPU.
+	// channel that carries the GPU there. Written as one expression so they
+	// cannot drift into two answers to the same question; see
+	// `PROBE_WINDOW_LOCKABLE` for why the mode is still worth declaring.
 	if (probeWindow === PROBE_WINDOW_LOCKABLE || probeWindow === undefined)
 		return { channel: HARDWARE_CHANNEL, ...chromiumOptions };
 	// A visible window: headed, and wherever the desktop puts it. The one mode
-	// that still takes the focus, and both probes that ask for it say why.
+	// that still takes the focus, and the one probe that asks for it says why.
 	if (probeWindow === PROBE_WINDOW_VISIBLE)
 		return {
 			...chromiumOptions,
