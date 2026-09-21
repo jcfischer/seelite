@@ -445,25 +445,36 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		expect(again).toEqual(first);
 	});
 
-	test("two consecutive episodes at one requester can differ", () => {
+	test("two consecutive episodes on the same leg can differ", () => {
+		// **The leg is held.** The destination has its own per-episode draw, so
+		// a second consignment usually flies somewhere else and ranks a
+		// different pool — which means a build with no good-draw at all still
+		// shows a different cargo. Measured: `ranked[last]` with no draw passed
+		// a version of this row that did not hold the leg. So only the boards
+		// whose episode 2 goes to the same station as episode 1 count here.
+		//
 		// **Existence, not a rate.** A draw from three goods repeats a third of
 		// the time, so a row asserting that *every* desk changes its cargo
-		// would be red on a correct build; what the node claims is that a
-		// second consignment is not the first one by construction.
-		const first = new Map(
-			couriers({ courier: 0 }).map((b) => [b.offer.requester.carrierKey, b]),
-		);
-		const second = couriers({ courier: 1 });
-		expect(second.length).toBeGreaterThan(50);
-		let differs = 0;
-		for (const board of second) {
-			const before = first.get(board.offer.requester.carrierKey);
-			if (!before) continue;
-			expect(before.offer.episode).toBe(1);
-			expect(board.offer.episode).toBe(2);
-			if (before.offer.goodName !== board.offer.goodName) differs += 1;
-		}
-		expect(differs).toBeGreaterThan(0);
+		// would be red on a correct build.
+		// Eight episodes rather than two, because the leg coincides on only a
+		// few boards per episode pair and three samples settle nothing.
+		const EPISODES = 8;
+		const goodsPerLeg = new Map<string, Set<string>>();
+		let legsSeen = 0;
+		for (let episode = 1; episode <= EPISODES; episode += 1)
+			for (const board of couriers({ courier: episode - 1 })) {
+				expect(board.offer.episode).toBe(episode);
+				const leg = `${board.offer.requester.carrierKey}->${board.offer.reportAt.carrierKey}`;
+				const seen = goodsPerLeg.get(leg) ?? new Set<string>();
+				if (seen.size === 0) legsSeen += 1;
+				seen.add(board.offer.goodName);
+				goodsPerLeg.set(leg, seen);
+			}
+		expect(legsSeen).toBeGreaterThan(100);
+		const varying = [...goodsPerLeg.values()].filter(
+			(goods) => goods.size > 1,
+		).length;
+		expect(varying).toBeGreaterThan(0);
 	});
 
 	test("the pool is wider than one, or the rule is the spread alone", () => {
