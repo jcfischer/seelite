@@ -83,20 +83,17 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * mode carries **neither** `headless: false` nor the offscreen flags.
  *
  * **The three backgrounding flags go with the position flag because Playwright
- * already passes them itself.** `--disable-background-timer-throttling` is
- * about renderers rather than windows, so "there is no window to position" does
- * not reach it — and it does not have to. Read back off the browser's own
- * argument list through CDP `Browser.getBrowserCommandLine`, on two launches
- * carrying **none** of this module's flags (the reading needs
- * `--enable-automation` before Chromium will answer at all, so that switch is
- * the one thing added): new headless on this channel, and the same channel
- * headed at the offscreen position. Both list all three, out of Playwright's
- * own `chromiumSwitches`. So this mode drops nothing that was reaching
- * Chromium. Two limits on that reading, because it is one version of one
- * launcher: `chromiumSwitches` is a Playwright internal and can change under a
- * bump, and a **non-redundant** `OFFSCREEN_WINDOW_RUNTIME_FLAGS` would make
- * this mode's drop a real one. What that would cost is bounded above by
- * nothing else here measuring a difference.
+ * passes them itself.** `--disable-background-timer-throttling` is about
+ * renderers rather than windows, so "there is no window to position" does not
+ * reach it. **The reading is not restated here** —
+ * `scripts/measure-launch-switches.mjs` reads both lanes' real launches back
+ * off Chromium and prints what each one carries, because this is a property of
+ * a pinned Playwright rather than of the repo and a comment nobody can re-check
+ * is where such a claim goes stale. What is worth knowing without running it:
+ * the mode drops no switch that was reaching Chromium, and the constant it
+ * drops turns out to be a second copy of Playwright's own defaults — which
+ * makes it redundant in the offscreen branch too, a finding this mode is not
+ * the place to act on.
  *
  * The requirement is the lock, not the headlessness. A machine where new
  * headless has no GPU loses the two probes that opt in rather than the lane —
@@ -104,6 +101,16 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * rasterising in software.
  */
 export const PROBE_WINDOW_LOCKABLE = "lockable";
+
+/**
+ * Every window mode there is, declared once.
+ *
+ * The guard below reads this rather than a chain of inequalities, and builds its
+ * message from it: a fourth mode added to a chain — and to a message, and to the
+ * dispatch — is three edits, and the one that gets missed is the silent
+ * fall-through to a headed window that the guard exists to prevent.
+ */
+export const PROBE_WINDOWS = [PROBE_WINDOW_VISIBLE, PROBE_WINDOW_LOCKABLE];
 
 /**
  * Read the requested probe renderer mode. The unset default deliberately keeps
@@ -135,13 +142,10 @@ export function probeRendererMode(env = process.env) {
 export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 	if (
 		options.probeWindow !== undefined &&
-		options.probeWindow !== PROBE_WINDOW_VISIBLE &&
-		options.probeWindow !== PROBE_WINDOW_LOCKABLE
+		!PROBE_WINDOWS.includes(options.probeWindow)
 	)
 		throw new Error(
-			`probeWindow must be ${JSON.stringify(PROBE_WINDOW_VISIBLE)}, ${JSON.stringify(
-				PROBE_WINDOW_LOCKABLE,
-			)} or unset, got ${JSON.stringify(options.probeWindow)}`,
+			`probeWindow must be ${PROBE_WINDOWS.map((w) => JSON.stringify(w)).join(", ")} or unset, got ${JSON.stringify(options.probeWindow)}`,
 		);
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;

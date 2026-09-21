@@ -280,9 +280,16 @@ await page.addInitScript(installFakePad);
 await page.addInitScript(() => {
 	window.__lockRefusals = [];
 	window.__lockErrorEvents = 0;
+	window.__lockGrants = 0;
 	window.__lockAsks = 0;
 	document.addEventListener("pointerlockerror", () => {
 		window.__lockErrorEvents++;
+	});
+	// A grant that was later released is not the same as never being granted,
+	// and `document.pointerLockElement` read once at the end cannot tell them
+	// apart.
+	document.addEventListener("pointerlockchange", () => {
+		if (document.pointerLockElement) window.__lockGrants++;
 	});
 	const ask = Element.prototype.requestPointerLock;
 	Element.prototype.requestPointerLock = function requestPointerLock(...args) {
@@ -305,29 +312,41 @@ check(
 	`hit=${glass.hit} lock=${await lockHolder(page)}`,
 );
 if (!locked) {
-	// **Name the cause, or say that it was not observed (#454).** Four states, and
-	// they are four different findings. A `WrongDocumentError` while the lane is
-	// still forcing `headless: false` is the lane refusing its own lockable mode
-	// — #441's measurement, and neither the browser's fault nor the game's. A
-	// named refusal without that is the genuine article. An ask refused with no
-	// name on it is unattributed and says so, `pointerlockerror` included. And no
-	// ask at all is the game, which the message must not dress up as either of
-	// the others.
-	const { asks, refusal, events } = await page.evaluate(() => ({
-		asks: window.__lockAsks ?? 0,
+	// **Name the cause, or say that it was not observed (#454).** Six states, and
+	// they are six different findings: the observer never installed, which is the
+	// harness and names nothing; no ask, which is the game; a `WrongDocumentError`,
+	// which is the focus gate and so the launch (#441); any other named refusal,
+	// which is the genuine article; a lock granted and since released, which is a
+	// row above; and an ask refused with no name on it, which is unattributed and
+	// says so. Each of the last five was reachable in a shipped build before this
+	// row could tell them apart, and the first four were being printed as one.
+	const { asks, refusal, events, grants } = await page.evaluate(() => ({
+		asks: window.__lockAsks,
 		refusal: window.__lockRefusals?.[0] ?? null,
 		events: window.__lockErrorEvents ?? 0,
+		grants: window.__lockGrants ?? 0,
 	}));
-	const headedLane = probeLaunchOptions(LAUNCH).headless === false;
+	const headed = probeLaunchOptions(LAUNCH).headless === false;
 	const diagnose = () => {
+		if (asks === undefined)
+			return "The observer was not installed on this page, so nothing here saw whether the game asked at all — that is a harness fault and names no cause.";
 		if (asks === 0)
 			return "The game never asked for the lock on this page, so neither the lane nor the browser is implicated — that is a game-side finding.";
-		if (headedLane && refusal === "WrongDocumentError")
-			return "The cause is the lane: it launched a headed window for a lockable view, and a macOS window opened from a background terminal is never the key window (#441). Fix the launch, not this probe.";
+		// **Keyed on the refusal, not on the lane.** `headed` is false in every
+		// shipped configuration, this mode being what makes it so, and a lane arm
+		// gated on it could only ever fire under a mutation — while a real
+		// `WrongDocumentError` fell through and got read back as the browser's own
+		// refusal, which is the misattribution this row exists to end. The name is
+		// the focus gate's signature (#441); the launch is reported beside it
+		// because a headed one says where to look first.
+		if (refusal === "WrongDocumentError")
+			return `The cause is the focus gate: this view is not the key one, which is what \`WrongDocumentError\` means here and never a statement about the game (#441). The launch ${headed ? "carries `headless: false`, so fix the launch and not this probe" : "carries no headless override, so the view lost focus some other way"}.`;
 		if (refusal)
-			return `The cause is the refusal itself — ${refusal} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`;
+			return `The cause is the refusal itself — ${refusal} — in a launch carrying ${headed ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`;
+		if (grants > 0)
+			return `The lock was granted ${grants}× and is not held now, so it was taken and released rather than refused — a row above this one let go of it.`;
 		if (events === 0)
-			return `The ask was made ${asks}× and was neither granted nor refused — no rejection and no \`pointerlockerror\` — so nothing here says why the lock is not held.`;
+			return `The ask was made ${asks}× and was neither granted nor refused — no rejection, no \`pointerlockerror\` and no \`pointerlockchange\` — so nothing here says why the lock is not held.`;
 		return `The ask was made ${asks}× and refused ${events}× through \`pointerlockerror\`, which carries no reason, so the cause is unobserved here rather than known.`;
 	};
 	console.log(
