@@ -48,6 +48,14 @@ import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
 import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
 import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
 import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
+import { DEFAULT_HULL_FINISH } from "../src/ship-surface";
+import {
+	HULL_LUMA_BAND,
+	HULL_LUMA_CALIBRATION,
+	HULL_LUMA_FLOORS,
+	HULL_LUMA_MARGINS,
+	SUBJECT_CHANGE_QUARTILE_DROP,
+} from "../scripts/lib/hull-luma.mjs";
 
 /** A warm G-type tint, and a neutral one. #59's finding is that the neutral end
  *  is where an emissive tint stops carrying detail; the same palette is used
@@ -391,5 +399,95 @@ describe("the rotation onto the star", () => {
 		const a = envRotation(dir);
 		const b = envRotation(big);
 		for (let i = 0; i < 4; i++) expect(b[i]).toBeCloseTo(a[i], 9);
+	});
+});
+
+/**
+ * The painted-hull calibration, and why it is derived rather than typed.
+ *
+ * `probe-light-rig.mjs`'s three painted-hull rows read **absolute display
+ * codes**, so every one of them is a property of the hull finish that was on
+ * screen when they were calibrated — not of the lighting they are named for.
+ * #294 is the bill for that: `ab47a33` set `DEFAULT_HULL_FINISH` to `worn`, the
+ * peak went 154.32 → 149.08 and the lower quartile 60.93 → 41.96 across that one
+ * commit, both rows went red, and they stayed red for a fortnight while reading
+ * exactly like an under-lit hull. Then a threshold move greened them with a
+ * reason — a Metal/SwiftShader readback difference — that a measurement of both
+ * lanes refutes: the peak is 149.08 on each, to two decimals.
+ *
+ * Two failures to prevent, and they are different failures.
+ *
+ * **The numbers contradicting their own prose.** The docstring over the floors
+ * explained them as sitting 10% under the quartile and 5% under the median of a
+ * recorded column, and by the time #294 read it the constants sat 37% and 15%
+ * under. Prose is assertion; this one went stale in place because nothing
+ * executed it. The floors are computed from the recorded readings and the stated
+ * margins now, so the rule and the numbers cannot disagree again — what is
+ * checked here is that the recorded readings are the ones the game ships.
+ *
+ * **A margin with no bounds.** A margin too tight goes red on the difference
+ * between two rasterisers; too loose and it cannot see the subject change it
+ * exists for. Both bounds are measured, and both are asserted below.
+ */
+describe("the painted-hull luma calibration", () => {
+	test("is recorded against the finish the game actually ships", () => {
+		// The check #294 wanted and nobody had: when the default finish moves,
+		// this goes red naming the finish, instead of three browser rows going
+		// red and reading as a lighting regression.
+		expect(HULL_LUMA_CALIBRATION.finish).toBe(DEFAULT_HULL_FINISH);
+	});
+
+	test("every floor is exactly the stated margin under its reading", () => {
+		const { peak, lowerQuartile, median } = HULL_LUMA_CALIBRATION;
+		expect(HULL_LUMA_BAND.min).toBeCloseTo(
+			peak * (1 - HULL_LUMA_MARGINS.peak),
+			6,
+		);
+		expect(HULL_LUMA_FLOORS.lowerQuartile).toBeCloseTo(
+			lowerQuartile * (1 - HULL_LUMA_MARGINS.lowerQuartile),
+			6,
+		);
+		expect(HULL_LUMA_FLOORS.median).toBeCloseTo(
+			median * (1 - HULL_LUMA_MARGINS.median),
+			6,
+		);
+	});
+
+	test("the band is an ordered band and the calibrated peak is inside it", () => {
+		// A band rather than a floor: a white hull and an under-lit hull are both
+		// exposure failures, and only the floor is derived — the ceiling is an
+		// authored limit on how bright painted metal may read.
+		expect(HULL_LUMA_BAND.min).toBeLessThan(HULL_LUMA_BAND.max);
+		expect(HULL_LUMA_CALIBRATION.peak).toBeGreaterThan(HULL_LUMA_BAND.min);
+		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
+	});
+
+	test("no margin is tighter than the spread between the two rasterisers", () => {
+		// The lower bound on every margin. #294 measured the same build on ANGLE
+		// Metal and on SwiftShader through one dev server; `laneSpread` is what
+		// they disagreed by. A margin under it is a row that goes red on which
+		// lane ran it, which is the false reason the thresholds were last moved.
+		for (const metric of ["peak", "lowerQuartile", "median"]) {
+			const absolute =
+				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric];
+			expect(absolute).toBeGreaterThan(HULL_LUMA_CALIBRATION.laneSpread[metric]);
+		}
+	});
+
+	test("the quartile's margin is still tighter than the change it exists to catch", () => {
+		// The upper bound, and it is only meaningful on the quartile: of the three
+		// rows, that is the one #202 actually tripped. The peak fell 3.4% and the
+		// median 4.3% across that commit — under any workable margin — while the
+		// quartile fell 31.1%. So the quartile is the discriminating row, and its
+		// margin has to stay well inside that drop or the probe keeps passing
+		// through the next finish change.
+		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
+			SUBJECT_CHANGE_QUARTILE_DROP,
+		);
+		// Not merely inside it: a margin at 30% against a 32% drop would pass this
+		// and catch nothing in practice.
+		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
+			SUBJECT_CHANGE_QUARTILE_DROP / 2,
+		);
 	});
 });
