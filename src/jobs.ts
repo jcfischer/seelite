@@ -373,11 +373,14 @@ const AXIS = { row: 0, destination: 1, good: 2 } as const;
  * How many of the widest-spread goods a courier consignment is drawn from.
  *
  * Tunable, and both ends of it say something. At 1 the rule is the spread
- * alone and two goods take 89% of a galaxy's boards — the same near-constant
- * cargo line the cheapest rule gave. At the whole pool the draw is uniform and
- * the ranking reads nothing about the economy at all. 3 is #442's measured
- * figure: nine distinct goods across a galaxy with none above 18% of the
- * boards, from `scripts/measure-courier-goods.ts`.
+ * alone and two goods take 88.7% of a galaxy's boards — the same near-constant
+ * cargo line the cheapest rule gave, which took 94.6% with Food. At the whole
+ * pool the draw is uniform and the ranking reads nothing about the economy at
+ * all. At 3, eight episodes of every board in galaxy 0 of seed 0x5ee11e carry
+ * **ten** distinct goods with the top at 17.3%, or nine at 17.0% with the leg
+ * held still — #442 predicted nine at 18.0% from the same ranking on another
+ * stream and a held leg. `scripts/measure-courier-goods.ts` is the instrument
+ * and reprints all of it; none of these figures is derived here.
  */
 export const COURIER_SPREAD_POOL = 3;
 
