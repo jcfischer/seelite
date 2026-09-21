@@ -183,10 +183,17 @@ const state = await page.evaluate(() => {
 		};
 	});
 
-	const points = g.backdropScene.children.find((c) => c.isPoints);
-	const starPositions = points
-		? Array.from(points.geometry.getAttribute("position").array.slice(0, 24))
-		: [];
+	// Two point layers, named (#431): the invented population and the systems
+	// that are actually there. `children.find(c => c.isPoints)` cannot tell them
+	// apart, and a seed check that silently reads whichever comes first is a
+	// check on one of the two skies.
+	const pointLayer = (name) => g.backdropScene.getObjectByName(name);
+	const faint = pointLayer("stars-faint");
+	const systems = pointLayer("stars-systems");
+	const headOf = (layer) =>
+		layer
+			? Array.from(layer.geometry.getAttribute("position").array.slice(0, 24))
+			: [];
 
 	return {
 		seed: g.world.seed,
@@ -205,8 +212,16 @@ const state = await page.evaluate(() => {
 			return m ? { x: m.position.x, y: m.position.y, z: m.position.z } : null;
 		})(),
 		bodies,
-		starCount: points ? points.geometry.getAttribute("position").count : 0,
-		starPositions,
+		faintCount: faint ? faint.geometry.getAttribute("position").count : 0,
+		// The derived layer owes one point per *other* system. The divisor is
+		// read off the page rather than restated here, so a galaxy that changes
+		// its system count changes the check instead of breaking it.
+		systemCount: systems ? systems.geometry.getAttribute("position").count : 0,
+		systemTotal: g.world.galaxy.systems.length,
+		// One group holding both layers, and nothing else in the layer.
+		backdropChildren: g.backdropScene.children.length,
+		faintPositions: headOf(faint),
+		systemPositions: headOf(systems),
 		canvasSize: {
 			w: g.renderer.domElement.width,
 			h: g.renderer.domElement.height,
@@ -381,9 +396,11 @@ for (const b of drawn) {
 }
 
 check(
-	"the backdrop holds the star points and nothing else",
-	state.starCount > 0,
-	`${state.starCount} points`,
+	"the backdrop holds both point layers and nothing else",
+	state.faintCount > 0 &&
+		state.systemCount === state.systemTotal - 1 &&
+		state.backdropChildren === 1,
+	`${state.faintCount} invented + ${state.systemCount} systems of ${state.systemTotal}, in ${state.backdropChildren} object`,
 );
 
 // (2b) The frame is not blank.
@@ -564,21 +581,30 @@ check(
 	`${ticked.moved} of ${ticked.total} moved`,
 );
 
-// (4) The seed reaches the backdrop — both halves.
+// (4) The seed reaches the backdrop — both halves, and both layers.
+const readSky = () => {
+	const g = window.__seelite;
+	const head = (name) =>
+		Array.from(
+			g.backdropScene
+				.getObjectByName(name)
+				.geometry.getAttribute("position")
+				.array.slice(0, 24),
+		);
+	return { faint: head("stars-faint"), systems: head("stars-systems") };
+};
 const reload = await open();
-const again = await reload.evaluate(() => {
-	const points = window.__seelite.backdropScene.children.find(
-		(c) => c.isPoints,
-	);
-	return Array.from(
-		points.geometry.getAttribute("position").array.slice(0, 24),
-	);
-});
+const again = await reload.evaluate(readSky);
+const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 check(
-	"the same seed draws the same stars",
-	again.length === state.starPositions.length &&
-		again.every((v, i) => v === state.starPositions[i]),
-	`${again.length} values compared`,
+	"the same seed draws the same invented stars",
+	same(again.faint, state.faintPositions),
+	`${again.faint.length} values compared`,
+);
+check(
+	"the same seed draws the same systems",
+	same(again.systems, state.systemPositions),
+	`${again.systems.length} values compared`,
 );
 // Closed as soon as its one reading is taken. Each of these is a *running
 // game*: a WebGL context, a render loop, a simulation. Left open they stack up
@@ -589,18 +615,16 @@ await reload.close();
 
 // The other seed is the point, so the override must not replace it.
 const other = await open({ params: { seed: OTHER_SEED }, override: false });
-const otherStars = await other.evaluate(() => {
-	const points = window.__seelite.backdropScene.children.find(
-		(c) => c.isPoints,
-	);
-	return Array.from(
-		points.geometry.getAttribute("position").array.slice(0, 24),
-	);
-});
+const otherSky = await other.evaluate(readSky);
 check(
 	"a different seed draws different stars",
-	otherStars.some((v, i) => v !== state.starPositions[i]),
-	"the first 8 star positions are not all identical",
+	otherSky.faint.some((v, i) => v !== state.faintPositions[i]),
+	"the first 8 invented star positions are not all identical",
+);
+check(
+	"a different seed draws a different set of systems",
+	otherSky.systems.some((v, i) => v !== state.systemPositions[i]),
+	"the first 8 derived bearings are not all identical",
 );
 await other.close();
 

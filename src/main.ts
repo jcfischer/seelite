@@ -71,7 +71,7 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
-import { starField } from "./backdrop";
+import { faintField, systemField, type StarField } from "./backdrop";
 import {
 	SeeliteOutputPass,
 	VIGNETTE_MAX,
@@ -719,13 +719,14 @@ const {
 	scaleFor,
 } = units;
 
-/** How many stars the backdrop draws. Cheap at this count; the research puts
- *  the point where a `Points` layer starts costing anything nearer 10⁵. */
-const STAR_COUNT = 4000;
-
 /** Multiplier from a star's stored size to pixels, against the canvas height.
  *  Point sizes are in *pixels* and a fixed value would read differently on
- *  every display, so it scales with the buffer. */
+ *  every display, so it scales with the buffer.
+ *
+ *  The count that used to sit beside it moved to `backdrop.ts` as `FAINT_COUNT`
+ *  with #431: it is a density of the invented population, and the module that
+ *  owns that population's size band — the band this one must stay under — is the
+ *  one place both halves of the rule can be read together. */
 const STAR_PIXEL_SCALE = 0.35;
 
 /**
@@ -1704,9 +1705,16 @@ class Game {
 	scannerContacts: ScannerContact[] = this.scannerContactBuffer;
 	/** The browser probe reads this live value instead of copying scanner range. */
 	readonly scannerRangeKm = SCANNER_RANGE_KM;
-	private stars!: THREE.Points;
+	/** The sky: one group around the two point layers `backdrop.ts` builds —
+	 *  `stars-faint`, the invented population, and `stars-systems`, the 255
+	 *  systems that are actually there (#431). One group because the sphere is
+	 *  re-centred on the camera every frame, and that is one position write
+	 *  rather than two; named children because a probe asks which layer it is
+	 *  looking at, and `children.find(isPoints)` cannot answer that. */
+	private starGroup!: THREE.Group;
+	private faintStars!: THREE.Points;
+	private systemStars!: THREE.Points;
 	private starMaterial!: THREE.ShaderMaterial;
-
 	private readonly keys = new Set<string>();
 	/** Primary mouse fire is held state, matching the keyboard laser control. */
 	private mouseFiring = false;
@@ -3790,20 +3798,15 @@ class Game {
 		);
 	}
 
+	/**
+	 * The sky, as two point layers on one material.
+	 *
+	 * The faint population is built once, from the world seed, and never
+	 * rebuilt: it is a texture and it does not know where the player is. The
+	 * derived layer is rebuilt on every arrival by {@link rebuildStarField},
+	 * which is the whole reason there are two of them — see `backdrop.ts`.
+	 */
 	private buildBackdrop() {
-		const field = starField(this.world.seed, STAR_COUNT);
-		const geometry = new THREE.BufferGeometry();
-		geometry.setAttribute(
-			"position",
-			new THREE.BufferAttribute(field.positions, 3),
-		);
-		// Custom attribute names rather than `color`/`size`: a `ShaderMaterial`
-		// declares its own attributes, and borrowing the names the built-in
-		// materials use invites a collision with the chunks Three injects when a
-		// define like USE_COLOR is set.
-		geometry.setAttribute("aColor", new THREE.BufferAttribute(field.colors, 3));
-		geometry.setAttribute("aSize", new THREE.BufferAttribute(field.sizes, 1));
-
 		this.starMaterial = new THREE.ShaderMaterial({
 			uniforms: {
 				uPixelScale: {
@@ -3843,11 +3846,68 @@ class Game {
 			depthTest: false,
 		});
 
-		this.stars = new THREE.Points(geometry, this.starMaterial);
+		// One group, so the "the sphere follows the camera" write below is one
+		// write for both layers.
+		this.starGroup = new THREE.Group();
+		this.faintStars = this.pointLayer(
+			"stars-faint",
+			faintField(this.world.seed),
+		);
+		this.systemStars = this.pointLayer(
+			"stars-systems",
+			systemField(this.world.galaxy, this.world.system.record),
+		);
+		this.starGroup.add(this.faintStars, this.systemStars);
+		this.backdropScene.add(this.starGroup);
+	}
+
+	/** Wrap one `StarField` in a `Points` on the shared sky material. */
+	private pointLayer(name: string, field: StarField): THREE.Points {
+		const points = new THREE.Points(
+			this.starGeometry(field),
+			this.starMaterial,
+		);
+		points.name = name;
 		// Nothing else is in this scene and the sphere surrounds the camera, so
 		// frustum culling has nothing to win and one bounding-sphere test to lose.
-		this.stars.frustumCulled = false;
-		this.backdropScene.add(this.stars);
+		points.frustumCulled = false;
+		return points;
+	}
+
+	/**
+	 * Redraw the sky's derived layer for the system the player is now standing
+	 * in. Called from `rebuildSystem`, which a jump runs (#187).
+	 *
+	 * 255 points, rebuilt in 0.012 ms (`measure-sky-density.ts`, bun headless),
+	 * *because* the layer is its own buffer: the alternative — one geometry
+	 * holding both populations — would re-upload 4,255 vertices on every arrival
+	 * to change 255 of them. The faint layer is not touched, and its GPU buffers
+	 * are never re-uploaded at all.
+	 */
+	private rebuildStarField() {
+		const field = systemField(this.world.galaxy, this.world.system.record);
+		const geometry = this.systemStars.geometry;
+		this.systemStars.geometry = this.starGeometry(field);
+		// **After** the swap, not before: disposing the geometry still attached
+		// to the points would free what the frame in flight is drawing with.
+		geometry.dispose();
+	}
+
+	/** The attribute buffers for one `StarField`.
+	 *
+	 *  Custom attribute names rather than `color`/`size`: a `ShaderMaterial`
+	 *  declares its own attributes, and borrowing the names the built-in
+	 *  materials use invites a collision with the chunks Three injects when a
+	 *  define like USE_COLOR is set. */
+	private starGeometry(field: StarField): THREE.BufferGeometry {
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute(
+			"position",
+			new THREE.BufferAttribute(field.positions, 3),
+		);
+		geometry.setAttribute("aColor", new THREE.BufferAttribute(field.colors, 3));
+		geometry.setAttribute("aSize", new THREE.BufferAttribute(field.sizes, 1));
+		return geometry;
 	}
 
 	/** What every body's visual is built with. One spelling, because
@@ -10476,6 +10536,12 @@ class Game {
 
 		this.buildBodies();
 		this.buildEnvironment();
+		// The sky is a picture of *this* system's neighbourhood, so a jump to a
+		// different star draws a different sky (#431). The faint population is
+		// not on this path at all — it is a function of the world seed, and the
+		// point of splitting the two layers is that this line has nothing to do
+		// with it.
+		this.rebuildStarField();
 		// #207's programs for the new system's classes, now that its bodies exist.
 		// The composer is long up on this path, so the target below is the one the
 		// game renders into.
@@ -11204,7 +11270,8 @@ class Game {
 		// the ship is inside. The camera being at the origin means this is a
 		// no-op today; it is written out because the moment the camera stops
 		// being pinned there, its absence is a bug that takes an hour to see.
-		this.stars.position.copy(this.backdropCamera.position);
+		// One write for both point layers, which is what the group is for.
+		this.starGroup.position.copy(this.backdropCamera.position);
 		this.combatRig?.render(this.view, viewRotation, camPos);
 
 		// The star, resolved once at build time rather than scanned for per frame:

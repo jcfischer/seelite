@@ -41,6 +41,7 @@ import {
 	startBodyBake,
 } from "./planet-bake";
 import type { SurfacePath } from "./relief-bands";
+import { photosphereTintLinear } from "./star-colour";
 import { disposeSubtree, shared } from "./gpu-teardown";
 
 /**
@@ -123,20 +124,22 @@ export const surfaceSphere = (layer: "near" | "approach" | "far") => {
  * and leaves the warm end almost where it already was — the fix pulls the
  * bright classes down to a working exposure rather than pushing every class up
  * to one.
+ *
+ * **The number itself is authored in `star-colour.ts`,** which holds the
+ * transfer function and the luma weights beside it. It cannot live here: the
+ * points layer in `backdrop.ts` draws the same classes under the same rule and
+ * is headless, and an import from there toward this file would put three behind
+ * a generator that a headless test reads. Two copies of a tuned exposure do not
+ * fail, they drift — the consumer with the older figure keeps rendering slightly
+ * off the rest of the sky, which is a picture problem and not a red run.
  */
-export const PHOTOSPHERE_LUMA = 0.55;
-
-/** Rec. 709, the coefficients `probe-planet-surfaces.mjs` measures with. */
-const lumaOf = (c: THREE.Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-
-/** A star's colour at the one exposure every photosphere is drawn at. */
 function photosphereTint(hex: number): THREE.Color {
-	const colour = new THREE.Color(hex);
-	const luma = lumaOf(colour);
-	// Black has no hue to preserve and no exposure to normalise to; no star class
-	// carries it, and dividing by its luma would be a division by zero rather
-	// than a dark star.
-	return luma > 0 ? colour.multiplyScalar(PHOTOSPHERE_LUMA / luma) : colour;
+	// The scaling happens in plain numbers, and the result is written into a
+	// `Color` with `setRGB` — which takes components already in the working
+	// space, which is exactly what they are. `new THREE.Color(hex)` would run
+	// the sRGB transfer a second time.
+	const [r, g, b] = photosphereTintLinear(hex);
+	return new THREE.Color().setRGB(r, g, b);
 }
 
 /**

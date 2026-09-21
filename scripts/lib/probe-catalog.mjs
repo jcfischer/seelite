@@ -298,6 +298,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["ship visuals", "hull mesh", "chase view", "cockpit view"],
 		),
 		entry(
+			"probe-sky.mjs",
+			"Proves the derived star layer sits in the backdrop, paired point to system, and is re-drawn on a jump while the invented population is untouched.",
+			["star field", "derived sky", "hyperspace arrival", "backdrop layer"],
+		),
+		entry(
 			"probe-state-gallery.mjs",
 			"Checks every fixed HUD design-gallery state for legibility at desktop and narrow viewports.",
 			["state gallery", "HUD states", "responsive layout", "workbench"],
