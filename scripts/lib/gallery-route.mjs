@@ -20,8 +20,11 @@
  * predicate it replaced. At `commit` the same twenty read 0.053 to 0.140 s. So
  * the option is the fix and the call is not.
  *
- * The DOM half still needs the page — so it is still paid for at the boot's
- * price, bounded by the one bar it shares. Note what it is and is not evidence
+ * The DOM half still needs the page, so it still meets that boot sometimes:
+ * end to end at `bf38973` this helper is over a second on **3 closes in 40**,
+ * worst 5.256 s, median 0.082 — against the in-page predicate's 10 in 20. The
+ * route half is 0 in 20. So the composite is better and is not free, and it is
+ * bounded by the one bar the two halves share. Note what it is and is not evidence
  * of: while the close navigates, a new document cannot carry the old one's
  * `#state-gallery`, so this half is satisfied by construction and not by an
  * unmount. It goes red on a close that stops navigating — measured, by making
@@ -32,8 +35,11 @@
  *
  * @param {{ waitForURL: Function, waitForSelector: Function }} page
  * @param {{ timeoutMs?: number }} [options]
- * @returns {Promise<{ routeLeft: boolean, galleryGone: boolean }>}
+ * @returns {Promise<{ routeLeft: boolean, galleryGone: boolean, error?: string }>}
  */
+const FAILED = { routeLeft: false, galleryGone: false };
+const isTimeout = (error) => error?.name === "TimeoutError";
+
 export async function waitForGalleryClose(page, { timeoutMs = 20_000 } = {}) {
 	const deadline = Date.now() + timeoutMs;
 	try {
@@ -43,9 +49,11 @@ export async function waitForGalleryClose(page, { timeoutMs = 20_000 } = {}) {
 		});
 	} catch (error) {
 		// A closed page or a mistyped option is not a route that failed to
-		// clear, and folding the two together reports the wrong defect.
-		if (error?.name !== "TimeoutError") throw error;
-		return { routeLeft: false, galleryGone: false };
+		// clear, and folding the two together reports the wrong defect. It is
+		// carried rather than thrown: a throw here skips the second viewport's
+		// checks and the tally, so the run would end without a pass/fail line.
+		if (!isTimeout(error)) return { ...FAILED, error: String(error) };
+		return FAILED;
 	}
 	const remaining = deadline - Date.now();
 	if (remaining <= 0) return { routeLeft: true, galleryGone: false };
@@ -56,7 +64,7 @@ export async function waitForGalleryClose(page, { timeoutMs = 20_000 } = {}) {
 		});
 		return { routeLeft: true, galleryGone: true };
 	} catch (error) {
-		if (error?.name !== "TimeoutError") throw error;
-		return { routeLeft: true, galleryGone: false };
+		const left = { routeLeft: true, galleryGone: false };
+		return isTimeout(error) ? left : { ...left, error: String(error) };
 	}
 }

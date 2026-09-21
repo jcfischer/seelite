@@ -280,26 +280,16 @@ for (const viewport of VIEWPORTS) {
 	);
 	await page.locator(".sg-close").click();
 	// **Twenty seconds, not five, and the five was a cold-start cliff** (#201).
+	// The bar asks *whether* the close leaves the route, never how fast.
 	//
-	// What this check asks is whether closing *leaves the route*; the timeout is
-	// only a bar on how long that may take, and it was sitting on top of the
-	// first-page-in-a-browser cost. Measured five closes per build, same machine:
-	// warm closes take **0.01–0.02 s** on both this branch and the build before
-	// it, and the **first** close after a browser launch measured **5.51 s on the
-	// pre-#201 build** — over a 5 s bar, on the build the bar was written
-	// against.
-	//
-	// **And what it was waiting out was the next page, not this one (#464).** The
-	// close is a navigation, so the flight page boots behind it; at `bf38973` that
-	// boot blocked the new page's main thread for six to nine seconds on about
-	// half of all closes, while the navigation itself committed in 0.13 s every
-	// time. The predicate this used to evaluate ran *in* that page, so it answered
-	// at the first gap in the boot — and an interval poll instead of
-	// `requestAnimationFrame` still stalled 8 closes in 20. The route is asked of
-	// the driver now; only the DOM half still needs the page, and it says so.
+	// **And the route is asked of the driver, because the page is busy (#464).**
+	// `scripts/lib/gallery-route.mjs` owns that account and its figures; the one
+	// line worth having here is that the next page's boot used to answer this
+	// row, and no longer answers the route half of it.
 	const closed = await waitForGalleryClose(page, { timeoutMs: 20_000 });
 	check(`${viewport.name}: close leaves the gallery route`, closed.routeLeft);
 	check(`${viewport.name}: close unmounts the gallery`, closed.galleryGone);
+	if (closed.error) console.log(`     gallery close: ${closed.error}`);
 	await page.close();
 }
 

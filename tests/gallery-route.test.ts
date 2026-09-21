@@ -2,17 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { waitForGalleryClose } from "../scripts/lib/gallery-route.mjs";
 
 /**
- * #464. The gallery's close is a navigation, and the next page then boots. At
- * `bf38973` the navigation committed in 0.13 s on every close — stalled or
- * clean — and the boot that followed blocked the new page's main thread for six
- * to nine seconds on about half of them. The check that asked whether the route
- * had cleared asked it *of the page*, so it waited out the boot and reported a
- * route that had already cleared. Forcing an interval poll rather than
- * `requestAnimationFrame` still stalled 8 closes in 20, so no in-page poller
- * escapes it.
- *
- * So the two halves are answered by two different things, and a page too busy
- * to speak may not redden the half that does not need it.
+ * #464 — the close's two halves are answered by two different things, because
+ * the page the old check asked is the next page, and it is booting.
+ * `scripts/lib/gallery-route.mjs` carries the measurement that says so; these
+ * rows pin the contract that follows from it.
  */
 function timeoutError() {
 	// Playwright names its own; the helper re-throws anything else, because a
@@ -73,7 +66,11 @@ function stubPage({
 }
 
 describe("waiting for the gallery close", () => {
-	test("a page too busy to answer cannot redden the route", async () => {
+	test("a page that answers nothing may not redden the route", async () => {
+		// The stub grants what the browser arm measured — that the driver's
+		// navigation events do not go through the page — so this row pins the
+		// contract and is not itself evidence for it. The evidence is 20 closes
+		// at `bf38973`: 0.053–0.140 s driver-side against 5.9–9.1 s in-page.
 		const page = stubPage({ pageResponds: false });
 		expect(await waitForGalleryClose(page, { timeoutMs: 50 })).toEqual({
 			routeLeft: true,
@@ -129,7 +126,7 @@ describe("waiting for the gallery close", () => {
 		// The property is "less than the whole bar", not a particular
 		// millisecond: a margin of ten would fail on a loaded machine for a
 		// reason it does not name.
-		const page = stubPage({ urlAfterMs: 200 });
+		const page = stubPage({ urlAfterMs: 20 });
 		await waitForGalleryClose(page, { timeoutMs: 1000 });
 		const second = page.calls.at(-1);
 		expect(second?.name).toBe("waitForSelector:#state-gallery:detached");
