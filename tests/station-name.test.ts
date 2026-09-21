@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { DOMAIN } from "../src/domains";
 import {
-	STATION_NAME_SLOT,
 	drawUniqueStationName,
+	STATION_NAME_SLOT,
 	stationNames,
 } from "../src/station-name";
 import { forEachSystem } from "./helpers/station-rows";

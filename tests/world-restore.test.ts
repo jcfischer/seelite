@@ -17,8 +17,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy, startSystem } from "../src/galaxy";
-import { codeOf } from "./lib/source-scan";
 import { makeWorld, restoreWorld, START_GALAXY } from "../src/sim";
+import { codeOf } from "./lib/source-scan";
 
 const SEED = 0x5ee11e;
 

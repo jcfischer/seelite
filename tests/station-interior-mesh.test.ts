@@ -20,10 +20,10 @@ import * as THREE from "three";
 import { STATION_GEOMETRY, STATION_TYPES } from "../src/station";
 import { stationInterior } from "../src/station-interior";
 import {
+	buildStationInterior,
 	INTERIOR_GROUP_NAME,
 	NAMEPLATE_NAME,
 	PLATE_FACTOR,
-	buildStationInterior,
 } from "../src/station-interior-mesh";
 import { drawnInteriorSpanKm } from "./helpers/aperture-opening";
 

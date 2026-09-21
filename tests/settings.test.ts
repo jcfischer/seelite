@@ -12,10 +12,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	DEFAULT_SETTINGS,
 	loadSettings,
-	saveSettings,
-	type Settings,
 	SETTING_KEYS,
+	type Settings,
 	SettingsStore,
+	saveSettings,
 } from "../src/settings";
 
 /**

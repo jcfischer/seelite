@@ -40,9 +40,6 @@ import { cross, dot, lengthSq, normalizeOr, type Vec3, v3 } from "./vec3";
 /** A unit quaternion as `[x, y, z, w]` — see the file's convention note. */
 export type Quat4 = readonly [number, number, number, number];
 
-/** Do nothing, in the shape of a quaternion. */
-export const QUAT_IDENTITY: Quat4 = [0, 0, 0, 1];
-
 /** The fallback axis for a half turn, chosen as the world axis `from` is
  *  *least* parallel to — so the perpendicular it produces is the best-conditioned
  *  one available, and the choice is a rule rather than a magic vector. */

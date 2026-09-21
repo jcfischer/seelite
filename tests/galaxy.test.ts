@@ -13,41 +13,41 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { DOMAIN } from "../src/domains";
 import {
 	CORE_RADIUS_LY,
+	distanceLy,
 	GALAXY_COUNT,
 	GALAXY_FLATTENING_Q,
 	GALAXY_RADIUS_LY,
 	type Galaxy,
-	JUMP_RANGE_LY,
-	MAX_LAYOUT_ATTEMPTS,
-	SYSTEMS_PER_GALAXY,
-	distanceLy,
 	generateGalaxy,
 	isConnected,
+	JUMP_RANGE_LY,
 	layoutGalaxy,
+	MAX_LAYOUT_ATTEMPTS,
 	meanNeighbours,
 	positionForShape,
 	profileRadiusLy,
 	radialCdf,
 	radiusForQuantile,
+	SYSTEMS_PER_GALAXY,
 	startSystem,
 	stream,
 	systemAt,
 } from "../src/galaxy";
+import { mix, seededRand } from "../src/rng";
 import {
 	ARRIVAL_CLEARANCE_AU,
 	ARRIVAL_DISTANCE_AU,
-	MAX_ORBIT_AU,
-	MIN_ORBIT_AU,
-	SHIPYARD_MIN_TL,
 	arrivalPoint,
 	generateContents,
+	MAX_ORBIT_AU,
+	MIN_ORBIT_AU,
 	placeBodies,
 	positionOnOrbit,
+	SHIPYARD_MIN_TL,
 } from "../src/system";
-import { DOMAIN } from "../src/domains";
-import { mix, seededRand } from "../src/rng";
 import { AU_KM } from "../src/units";
 
 /** The world every test below reads. One seed, fixed, so a failure is

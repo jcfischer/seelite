@@ -15,7 +15,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "../src/docking";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
 import {
+	bidCutAtTl,
 	COMMODITIES,
 	type Commodity,
 	DISPLAY_TL_MAX,
@@ -23,39 +26,36 @@ import {
 	EQUIPMENT,
 	FUEL_CR_PER_LY,
 	HOLD_REFERENCE_T,
-	type MarketStation,
-	PRICE_STEP_CR,
-	MARKET_PERIOD_MIN,
-	quantizeToDisplayStepCr,
-	UNIVERSAL_GATE_CAP,
-	UNIVERSAL_ITEMS,
-	bidCutAtTl,
 	listsCommodity,
+	MARKET_PERIOD_MIN,
+	type MarketStation,
 	marketRow,
 	marketStationOf,
+	PRICE_STEP_CR,
+	quantizeToDisplayStepCr,
 	shelfQuantity,
 	stockResponse,
+	UNIVERSAL_GATE_CAP,
+	UNIVERSAL_ITEMS,
 } from "../src/market";
-import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "../src/docking";
-import { codeOf } from "./lib/source-scan";
-import { PLAYER_BASELINE_HULL } from "../src/hull";
 import {
-	LARGE_CARGO_BAY_BONUS_T,
 	commanderHold,
+	LARGE_CARGO_BAY_BONUS_T,
 	newCommander,
 } from "../src/station-commerce";
 import {
-	REFUSAL_REASONS,
 	flightFloorVisible,
+	priceLabel,
+	REFUSAL_REASONS,
 	refusalSentence,
 	requiredDisplayTL,
-	priceLabel,
 	signedDelta,
 	stationConsoleVisible,
 	stationEquipmentScreen,
 	stationMarketScreen,
 	universalItemsAt,
 } from "../src/station-console";
+import { codeOf } from "./lib/source-scan";
 
 const ECONOMY = 3;
 /**

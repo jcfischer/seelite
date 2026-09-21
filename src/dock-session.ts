@@ -37,11 +37,11 @@ import {
 	slotBasis,
 } from "./docking";
 import {
-	type World,
 	advanceWorldClock,
 	bodyVelocity,
 	stationOf,
 	stationPose,
+	type World,
 } from "./sim";
 import { STATION_GEOMETRY } from "./station";
 import {
@@ -49,7 +49,7 @@ import {
 	type StationInterior,
 	stationInterior,
 } from "./station-interior";
-import { type Vec3, add, scale } from "./vec3";
+import { add, scale, type Vec3 } from "./vec3";
 
 /**
  * Where a dock is.

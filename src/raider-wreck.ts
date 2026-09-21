@@ -27,13 +27,13 @@ import { stream } from "./galaxy";
 import { COMMODITIES, type Commodity } from "./market";
 import { mix } from "./rng";
 import {
-	type Vec3,
 	add,
 	cross,
 	frameAcross,
 	length,
 	scale,
 	sub,
+	type Vec3,
 	v3,
 } from "./vec3";
 import { type Provenance, type TransitionEvent } from "./world-state";

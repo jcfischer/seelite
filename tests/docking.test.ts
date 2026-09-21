@@ -16,61 +16,60 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	type ApertureFrame,
 	AXIS_TOLERANCE_DEG,
+	apertureFrame,
+	approachSpeed,
+	attemptEntry,
 	COMPUTER_CONE_TAN,
 	COMPUTER_CORRIDOR_KM,
 	COMPUTER_RUN_IN_MAX_KMS,
 	COMPUTER_RUN_IN_MIN_KMS,
 	COMPUTER_STANDOFF_KM,
 	DAMAGE_FLOOR,
-	GRANT_WINDOW_S,
 	DOCKING_DAMAGE_SCALE,
-	HOSTILE_COOLDOWN_S,
-	ROLL_TOLERANCE_DEG,
-	V_GATE_KMS,
-	VICINITY_KM,
-	type ApertureFrame,
-	type EntryPose,
-	apertureFrame,
-	attemptEntry,
 	dockingComputerStep,
-	approachSpeed,
+	type EntryPose,
 	entryDamage,
 	evaluateEntry,
+	GRANT_WINDOW_S,
 	grantLive,
+	HOSTILE_COOLDOWN_S,
 	insideCorridor,
 	newDockingState,
-	releaseBerth,
 	orthonormalise,
 	planeCrossing,
+	ROLL_TOLERANCE_DEG,
+	releaseBerth,
 	repel,
 	requestClearance,
 	slewToward,
 	slotBasis,
 	tickDocking,
+	V_GATE_KMS,
+	VICINITY_KM,
 } from "../src/docking";
-import { ASSIST_CAP_KMS } from "../src/sim";
+import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
 import {
 	applyDamage,
 	fullCondition,
 	headOnPool,
 	isAlive,
 } from "../src/ship-condition";
-import { HULL_SPECS } from "../src/hull";
+import { ASSIST_CAP_KMS } from "../src/sim";
 import { STATION_GEOMETRY, slotPhaseRad } from "../src/station";
 import { stationInterior } from "../src/station-interior";
+import { MAX_DT } from "../src/units";
 import {
-	type Vec3,
 	add,
 	cross,
 	dot,
 	length,
 	scale,
 	sub,
+	type Vec3,
 	v3,
 } from "../src/vec3";
-import { PLAYER_BASELINE_HULL } from "../src/hull";
-import { MAX_DT } from "../src/units";
 import {
 	type ComputerTraceStep,
 	flyTheComputer as fly,

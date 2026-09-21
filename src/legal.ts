@@ -73,10 +73,10 @@ import type { CarrierKey } from "./carrier-key";
 import type { StationType } from "./station";
 import {
 	type LegalStatus,
-	type WorldState,
+	setLegalAssaulted,
 	setLegalHeat,
 	setLegalWitnesses,
-	setLegalAssaulted,
+	type WorldState,
 } from "./world-state";
 
 export const WANTED_HEAT = 10;

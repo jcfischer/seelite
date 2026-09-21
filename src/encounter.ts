@@ -26,26 +26,26 @@ import { raiderRegistry } from "./carrier-name";
 import {
 	type DuelPilot,
 	type PlayerShot,
-	type Raider,
 	RAIDER_OUT_OF_BEAM_KM,
+	type Raider,
 	raiderAtDrop,
 	stepDuel,
 } from "./duel";
 import { HULL_SPECS } from "./hull";
 import {
-	type Contest,
-	INTERDICTION_RANGE_KM,
 	beginContest,
+	type Contest,
 	followHeading,
+	INTERDICTION_RANGE_KM,
 	interdictionTurnRate,
 	stepContest,
 } from "./interdiction";
 import {
 	type EncounterBearing,
+	legEncounter,
 	RAIDER_HULL_ID,
 	type RaiderSlot,
 	type RouteDetection,
-	legEncounter,
 	raiderSlots,
 } from "./raider-slots";
 import { mix } from "./rng";
@@ -53,7 +53,6 @@ import type { ShieldSide } from "./ship-condition";
 import { fullCondition } from "./ship-condition";
 import { flightPerformance } from "./sim";
 import {
-	type Vec3,
 	add,
 	cross,
 	frameAcross,
@@ -61,6 +60,7 @@ import {
 	normalizeOr,
 	scale,
 	sub,
+	type Vec3,
 	v3,
 } from "./vec3";
 

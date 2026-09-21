@@ -24,36 +24,36 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
 import * as THREE from "three";
-import { RING_SEGMENTS, hullLoft } from "../src/loft";
 import { HULL_IDS } from "../src/hull";
+import { hullLoft, RING_SEGMENTS } from "../src/loft";
 import { buildShipMesh } from "../src/ship-mesh";
-import { STATION_PANEL_KM } from "../src/station-mesh";
 import {
-	SHIP_PANEL_KM,
-	SHIP_PLATING,
-	SHIP_MAP_SIZE,
 	cleanPlateFactors,
 	plateUVs,
+	SHIP_MAP_SIZE,
+	SHIP_PANEL_KM,
+	SHIP_PLATING,
 } from "../src/ship-surface";
+import { STATION_TYPES } from "../src/station";
+import { STATION_PANEL_KM } from "../src/station-mesh";
+import {
+	DEFAULT_STATION_FINISH,
+	platingTexels,
+	STATION_VISUALS,
+	setStationFinish,
+	surfaceTexels,
+} from "../src/station-visuals";
 import {
 	type MacroOctave,
 	PLATE_TEXTURE_SIZE,
 	type PlatingProfile,
-	plateTexels,
 	plateLayout,
+	plateTexels,
 	seamNormalTexels,
 	wearTexels,
 } from "../src/surface";
-import {
-	DEFAULT_STATION_FINISH,
-	STATION_VISUALS,
-	platingTexels,
-	setStationFinish,
-	surfaceTexels,
-} from "../src/station-visuals";
-import { STATION_TYPES } from "../src/station";
+import { codeOf } from "./lib/source-scan";
 
 /** FNV-1a over a buffer. The same hash the module uses for its own texels,
  *  reimplemented here on purpose: a test that imports the function it is

@@ -19,26 +19,26 @@
 import type { CarrierKey } from "../../src/carrier-key";
 import { carrierKey } from "../../src/carrier-key";
 import type { DeficitMap } from "../../src/deficits";
+import { DOCKABLE_HULL_IDS, HULL_SPECS, type HullId } from "../../src/hull";
 import {
-	marketRow,
-	shelfQuantity,
-	marketQuote,
-	marketStationOf,
-	bidCutAtTl,
-	bidCutLadder,
-	quoteWithCut,
-	stockResponse,
-	type QuoteFn,
-	type StationTypeKey,
-	type Commodity,
-	COMMODITIES,
-	DISPLAY_TL_MAX,
-	DISPLAY_TL_MIN,
-	PRICE_STEP_CR,
 	BID_CUT_FLOOR,
 	BID_CUT_GRADE,
+	bidCutAtTl,
+	bidCutLadder,
+	COMMODITIES,
+	type Commodity,
+	DISPLAY_TL_MAX,
+	DISPLAY_TL_MIN,
+	marketQuote,
+	marketRow,
+	marketStationOf,
+	PRICE_STEP_CR,
+	type QuoteFn,
+	quoteWithCut,
+	type StationTypeKey,
+	shelfQuantity,
+	stockResponse,
 } from "../../src/market";
-import { DOCKABLE_HULL_IDS, type HullId, HULL_SPECS } from "../../src/hull";
 import {
 	type CommanderState,
 	newCommander,

@@ -13,13 +13,13 @@
  */
 
 import {
+	distanceLy,
 	GALAXY_COUNT,
 	JUMP_RANGE_LY,
-	SYSTEMS_PER_GALAXY,
-	type SystemRecord,
-	distanceLy,
 	jumpCost,
 	neighbours,
+	SYSTEMS_PER_GALAXY,
+	type SystemRecord,
 } from "./galaxy";
 
 /**

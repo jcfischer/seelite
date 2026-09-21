@@ -12,6 +12,7 @@
  * and is a pure function; where the camera points is the chart's.
  */
 
+import { ECONOMY_NAMES, type SystemRecord } from "./galaxy";
 import {
 	FINDER_MAX_BUDGET,
 	type FinderFilter,
@@ -26,11 +27,10 @@ import {
 	FACILITY_CHIPS,
 	type FacilityAnnotation,
 	type FacilityChip,
-	type LastKnownState,
 	facilityAnnotationLabel,
+	type LastKnownState,
 	worldMinute,
 } from "./knowledge-labels";
-import { ECONOMY_NAMES, type SystemRecord } from "./galaxy";
 
 /**
  * The panel's width, and the whole of what opening it costs the chart.

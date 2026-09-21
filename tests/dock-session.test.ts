@@ -12,30 +12,30 @@
 import { describe, expect, test } from "bun:test";
 import { berthCentre } from "../src/arrival";
 import {
-	TRAVERSAL_SECONDS_DEEP,
-	apertureFrame,
-	slotBasis,
-} from "../src/docking";
-import {
-	type DockPhase,
 	berthOf,
 	canSkipTraversal,
-	interiorOfStation,
 	collisionExempt,
+	type DockPhase,
 	enterArrival,
 	flightLive,
+	interiorOfStation,
 	newDockSession,
 	requestLaunch,
 	skipTraversal,
 	stepDockedWorld,
 } from "../src/dock-session";
 import {
-	type World,
+	apertureFrame,
+	slotBasis,
+	TRAVERSAL_SECONDS_DEEP,
+} from "../src/docking";
+import {
 	advanceSystem,
 	bodyVelocity,
 	makeWorld,
 	stationOf,
 	stationPose,
+	type World,
 } from "../src/sim";
 import { STATION_GEOMETRY } from "../src/station";
 import type { Berth } from "../src/station-interior";

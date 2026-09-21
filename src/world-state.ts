@@ -40,8 +40,8 @@ import {
 import { type DeficitMap, parseDeficits } from "./deficits";
 import { generateGalaxy } from "./galaxy";
 import type { HullId } from "./hull";
-import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
+import { fnv1a } from "./rng";
 import type { StationType } from "./station";
 import { NO_FLOWN_VOYAGE, stationTrafficRoster } from "./station-traffic";
 import { generateContents } from "./system";

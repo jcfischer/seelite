@@ -26,19 +26,19 @@ import {
 	STATION_TYPES,
 	type StationType,
 } from "../src/station";
-import { GREEBLE_PRIMITIVES, buildGreebles } from "../src/station-greebles";
+import { buildGreebles, GREEBLE_PRIMITIVES } from "../src/station-greebles";
 import {
-	STATION_FORMS,
 	buildStationForm,
+	STATION_FORMS,
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
 import {
+	currentStationFinish,
 	DEFAULT_STATION_FINISH,
 	STATION_FINISH_IDS,
 	STATION_QUALITY,
 	STATION_VISUALS,
-	currentStationFinish,
 	setStationFinish,
 } from "../src/station-visuals";
 

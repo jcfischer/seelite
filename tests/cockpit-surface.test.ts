@@ -19,14 +19,14 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
+	applyCockpitQuality,
+	COCKPIT_FINISH_IDS,
+	COCKPIT_FINISHES,
+	COCKPIT_LAMP,
 	COCKPIT_MAP_SIZE,
 	COCKPIT_PANEL_KM,
 	COCKPIT_PLATING,
 	COCKPIT_QUALITY,
-	COCKPIT_FINISHES,
-	COCKPIT_FINISH_IDS,
-	COCKPIT_LAMP,
-	applyCockpitQuality,
 	calibratedProfile,
 	cockpitCleanPlate,
 	cockpitMaterial,

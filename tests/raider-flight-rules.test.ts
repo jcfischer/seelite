@@ -8,22 +8,22 @@
  * player's ship spins up through `stepAngular`'s angular acceleration.
  */
 import { expect, test } from "bun:test";
-import { createCombatPrototype } from "../src/combat-prototype";
 import {
+	createCombatEnemy,
 	ENEMY_COLLISION_RADIUS_KM,
 	STRIKER_HULL_ID,
-	createCombatEnemy,
 	stepCombatEnemy,
 } from "../src/combat-enemy";
+import { createCombatPrototype } from "../src/combat-prototype";
 import { ASSIST_CAP_KMS, flightPerformance } from "../src/sim";
 import {
-	type Vec3,
 	add,
 	cross,
 	dot,
 	length,
 	scale,
 	sub,
+	type Vec3,
 	v3,
 } from "../src/vec3";
 

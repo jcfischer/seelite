@@ -37,19 +37,20 @@
 
 import type { StationType } from "./station";
 import {
+	hash01,
 	type MacroOctave,
 	PLATE_TEXTURE_SIZE,
 	type PlatingProfile,
-	hash01,
 	plateTexels,
 	seamNormalTexels,
 	wearTexels,
 } from "./surface";
+
+export type { DetailLevel as StationDetailLevel } from "./detail-level";
 export {
 	DETAIL_RADII,
 	detailLevel as stationDetailLevel,
 } from "./detail-level";
-export type { DetailLevel as StationDetailLevel } from "./detail-level";
 
 /**
  * A station **finish** (#202): everything about a station's surface and

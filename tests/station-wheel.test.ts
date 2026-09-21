@@ -24,7 +24,7 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { STATION_GEOMETRY } from "../src/station";
 import { stationInterior } from "../src/station-interior";
-import { STATION_FORMS, buildStationForm } from "../src/station-mesh";
+import { buildStationForm, STATION_FORMS } from "../src/station-mesh";
 
 const GREY = 0x9aa6b2;
 const CORE_KM = STATION_GEOMETRY.trade.coreRadiusKm;

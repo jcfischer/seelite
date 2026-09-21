@@ -50,58 +50,61 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import {
-	BLINKING_CORE_GAIN,
-	BLINKING_HALO_GAIN,
-	type GlowClass,
-	glowMaterial,
-	glowPoints,
-	poolMaterial,
-	poolMesh,
-	steadyGlowMaterial,
-	glowOnFitting,
-} from "./station-glow";
-import { mutePaint } from "./surface";
-import { EMISSIVE_CEILING } from "./light-rig";
+import { type DetailLevel, detailLevel } from "./detail-level";
 import { appendRing, cutRing, ringTriangles } from "./face-cut";
-import { type ApertureCut, type Ring, boxProjectUVs, hullLoft } from "./loft";
-import {
-	applyRockSurface,
-	buildAsteroid,
-	displayRand,
-} from "./station-surface";
+import { disposeSubtree, isShared, shared } from "./gpu-teardown";
+import { EMISSIVE_CEILING } from "./light-rig";
+import { type ApertureCut, boxProjectUVs, hullLoft, type Ring } from "./loft";
 import {
 	STATION_GEOMETRY,
 	STATION_TYPES,
 	type StationAperture,
 	type StationType,
 } from "./station";
-import { type GreebleZone, buildGreebles } from "./station-greebles";
 import {
-	Pools,
-	SHIP_SCALE,
 	buildMacroFixtures,
 	mast,
+	Pools,
 	pipeRun,
 	radiatorArray,
+	SHIP_SCALE,
 	tankRack,
 	truss,
 } from "./station-fixtures";
 import {
+	BLINKING_CORE_GAIN,
+	BLINKING_HALO_GAIN,
+	type GlowClass,
+	glowMaterial,
+	glowOnFitting,
+	glowPoints,
+	poolMaterial,
+	poolMesh,
+	steadyGlowMaterial,
+} from "./station-glow";
+import { buildGreebles, type GreebleZone } from "./station-greebles";
+import { stationInterior } from "./station-interior";
+import {
+	buildStationInterior,
+	NAMEPLATE_NAME,
+	ringAround,
+	ringInsideAperture,
+} from "./station-interior-mesh";
+import {
 	DISH,
 	HUB,
+	hostDirOf,
+	isHost,
+	modularPlacements,
 	NODE,
 	type Placement,
+	placementsOf,
 	RADIATOR,
 	TANKS,
 	TRUSS_X,
 	TRUSS_Y,
 	TUBE_X,
 	TUBE_Y,
-	hostDirOf,
-	isHost,
-	modularPlacements,
-	placementsOf,
 } from "./station-modular";
 import {
 	OUTPOST,
@@ -110,31 +113,28 @@ import {
 	REFINERY_RADIUS,
 	REFINERY_VOCABULARY,
 } from "./station-plant";
-import { DIRECTIONS } from "./wfc";
 import {
-	STATION_QUALITY,
-	STATION_VISUALS,
-	type StationQuality,
-	type StationFixtureKind,
+	applyRockSurface,
+	buildAsteroid,
+	displayRand,
+} from "./station-surface";
+import {
 	currentStationFinish,
 	fixtureIntensity,
 	flickerIntensity,
 	platingTexels,
+	STATION_QUALITY,
+	STATION_VISUALS,
+	type StationFixtureKind,
+	type StationQuality,
 	seamTexels,
 	stationFinishId,
 	stationMapSize,
 	stationPlating,
 	surfaceTexels,
 } from "./station-visuals";
-import { type DetailLevel, detailLevel } from "./detail-level";
-import {
-	NAMEPLATE_NAME,
-	buildStationInterior,
-	ringAround,
-	ringInsideAperture,
-} from "./station-interior-mesh";
-import { stationInterior } from "./station-interior";
-import { disposeSubtree, isShared, shared } from "./gpu-teardown";
+import { mutePaint } from "./surface";
+import { DIRECTIONS } from "./wfc";
 
 /**
  * How far the *drawn* object reaches, kilometres — the selected form's own

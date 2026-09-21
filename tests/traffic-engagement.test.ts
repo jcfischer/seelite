@@ -4,17 +4,37 @@
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
+import { carrierManifest } from "../src/carrier-manifest";
+import type { DuelPilot } from "../src/duel";
+import { generateGalaxy } from "../src/galaxy";
+import { HULL_SPECS, type HullId } from "../src/hull";
+import { marginalOffenceHeat, OFFENCE_HEAT, offenceHeat } from "../src/legal";
+import {
+	dropManifestCanisters,
+	PLAYER_KILL,
+	RAIDER_REPAIR_S,
+	RAIDER_WRECK_S,
+} from "../src/raider-wreck";
+import { fullCondition, PULSE_LASER, SHIELD_POOL } from "../src/ship-condition";
+import { flightPerformance } from "../src/sim";
+import {
+	nextTrafficDepartureAtS,
+	stationTrafficRoster,
+	TRAFFIC_HULL_POOLS,
+	trafficScheduleAt,
+} from "../src/station-traffic";
+import { generateContents } from "../src/system";
 import {
 	ARMED_TRAFFIC_HULLS,
-	type Engagement,
+	ASSAULT_FIRE_S,
 	chargedOffence,
+	type Engagement,
+	type EngagementStep,
 	engage,
 	flownVoyageOrdinal,
 	flyingTrafficActors,
 	parkedHomeTrafficActors,
 	stepEngagement,
-	type EngagementStep,
-	ASSAULT_FIRE_S,
 	trafficDestruction,
 	trafficDiversion,
 	trafficHitRadiusKm,
@@ -22,13 +42,7 @@ import {
 	trafficKillTransitions,
 	trafficPresence,
 } from "../src/traffic-engagement";
-import type { DuelPilot } from "../src/duel";
-import {
-	PLAYER_KILL,
-	RAIDER_REPAIR_S,
-	RAIDER_WRECK_S,
-	dropManifestCanisters,
-} from "../src/raider-wreck";
+import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
 import {
 	advanceTo,
 	applyTransition,
@@ -37,20 +51,6 @@ import {
 	parseWorld,
 	serializeWorld,
 } from "../src/world-state";
-import { HULL_SPECS, type HullId } from "../src/hull";
-import {
-	TRAFFIC_HULL_POOLS,
-	nextTrafficDepartureAtS,
-	stationTrafficRoster,
-	trafficScheduleAt,
-} from "../src/station-traffic";
-import { PULSE_LASER, SHIELD_POOL, fullCondition } from "../src/ship-condition";
-import { flightPerformance } from "../src/sim";
-import { add, length, normalizeOr, scale, sub, v3 } from "../src/vec3";
-import { carrierManifest } from "../src/carrier-manifest";
-import { generateGalaxy } from "../src/galaxy";
-import { generateContents } from "../src/system";
-import { marginalOffenceHeat, offenceHeat, OFFENCE_HEAT } from "../src/legal";
 
 /** Every hull any station roster flies, so a row is not a hand-picked subset. */
 const ROSTER_HULLS = [

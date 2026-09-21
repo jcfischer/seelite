@@ -23,26 +23,26 @@
  * No DOM and no Three.js: this is sim-side data for a screen.
  */
 
+import type { DockPhase } from "./dock-session";
 import {
-	PRICE_DISPLAY_STEP_CR,
 	COMMODITIES,
 	type Commodity,
 	EQUIPMENT,
 	type Equipment,
+	listsCommodity,
 	type MarketRow,
 	type MarketStation,
+	marketQuote,
+	marketRow,
+	PRICE_DISPLAY_STEP_CR,
+	type QuoteFn,
 	type StationTypeKey,
+	shelfQuantity,
+	stockResponse,
 	UNIVERSAL_GATE_CAP,
 	UNIVERSAL_ITEMS,
 	type UniversalItem,
-	listsCommodity,
-	marketQuote,
-	marketRow,
-	type QuoteFn,
-	shelfQuantity,
-	stockResponse,
 } from "./market";
-import type { DockPhase } from "./dock-session";
 // **Type-only, and it has to stay that way.** `station-commerce.ts` imports
 // `stationEquipmentScreen` from here, so a value import back would be a cycle;
 // a type import is erased at build and cannot be one. `relief-bands.ts` and

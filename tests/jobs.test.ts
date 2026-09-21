@@ -9,27 +9,27 @@
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { JUMP_RANGE_LY, generateGalaxy } from "../src/galaxy";
+import type { DeficitMap } from "../src/deficits";
+import { recordTrade } from "../src/deficits";
+import { generateGalaxy, JUMP_RANGE_LY } from "../src/galaxy";
+// `JUMP_TANK_LY` is the jump tank's capacity (`hyperspace.ts`), in LY.
+import { JUMP_TANK_LY } from "../src/hyperspace";
 import {
-	JOB_ROWS,
-	type JobOffer,
 	bindJobs as bindJobsWith,
 	canPostJobs,
 	deliveryCandidates,
+	JOB_ROWS,
+	type JobOffer,
 	jobMark,
 } from "../src/jobs";
-// `JUMP_TANK_LY` is the jump tank's capacity (`hyperspace.ts`), in LY.
-import { JUMP_TANK_LY } from "../src/hyperspace";
+import { MARKET_PERIOD_MIN } from "../src/market";
+import { generateContents } from "../src/system";
 import {
 	boardAt,
 	boardContext,
 	postingStations,
 	stationKeyOf,
 } from "./helpers/job-board";
-import { MARKET_PERIOD_MIN } from "../src/market";
-import { recordTrade } from "../src/deficits";
-import type { DeficitMap } from "../src/deficits";
-import { generateContents } from "../src/system";
 
 const WORLD = 0x5ee11e;
 const GALAXY = generateGalaxy(WORLD, 0);

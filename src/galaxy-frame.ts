@@ -70,10 +70,11 @@
  * and blocked on this. And it does not decide *what* the sky shows: it answers
  * only where a galaxy-space direction is in a system's own sky.
  *
- * One thing it deliberately does not offer: a "which way is the band" helper. The
- * angle any direction makes with the cluster's plane is `dot(direction,
- * frame.pole)`, one line, and a function for it would be a second answer to a
- * question the pole already answers.
+ * One thing it deliberately does not offer: a "which way is the band" helper. How
+ * far a direction stands off the cluster's plane is `asin(dot(direction,
+ * frame.pole))` — or the dot product alone, which is the sine of that elevation and
+ * the form §11's glare argument actually reads. One line either way, and a function
+ * for it would be a second answer to a question the pole already answers.
  */
 
 import { DOMAIN } from "./domains";
@@ -83,7 +84,6 @@ import {
 	quatAxisAngle,
 	quatMul,
 	rotateBy,
-	rotateByInverse,
 	shortestArc,
 } from "./quat";
 import { lengthSq, normalizeOr, sub, type Vec3, v3 } from "./vec3";
@@ -91,14 +91,19 @@ import { lengthSq, normalizeOr, sub, type Vec3, v3 } from "./vec3";
 /**
  * The cluster's reference-plane normal, in galaxy space.
  *
- * **The one author of this direction in `src/`.** The chart had its own
- * `new THREE.Vector3(0, 1, 0)` and reads this constant instead, because a sky and
- * a chart that each carry their own idea of which way the galaxy lies will drift
- * and nothing headless will notice. `tests/galaxy-frame.test.ts` holds the two
- * things that can be held: the chart's `UP` is built from this constant, and no
- * `src/` module but this one *declares* a `GALACTIC_*` direction. A second copy
- * under another name is beyond what a spelling check can see, and that row says
- * so where it stands.
+ * **The one *named* author of this direction in `src/`.** The chart had its own
+ * `new THREE.Vector3(0, 1, 0)` and reads this constant instead, because a sky and a
+ * chart that each carry their own idea of which way the galaxy lies will drift and
+ * nothing headless will notice.
+ *
+ * "Named" is doing real work in that sentence, and the exception is `galaxy.ts`:
+ * its `GALAXY_FLATTENING_Q` flattens onto `y`, which is this same fact stated
+ * structurally rather than as a vector — and a module this one imports can never
+ * import the constant back without a cycle. So the declaration guard, which can
+ * only see declarations, is not the whole of the invariant. What closes the gap is
+ * `profileRadiusLy` — the exported form of the quotient `systemFromPosition`
+ * inlines — flattening the component that lies along this normal: the named author
+ * and the structural one held to the same axis by something that runs.
  */
 export const GALACTIC_NORMAL: Vec3 = v3(0, 1, 0);
 
@@ -226,12 +231,6 @@ export function galaxyToSystem(frame: SkyFrame, directionGalaxy: Vec3): Vec3 {
 	return rotateBy(frame.q, directionGalaxy);
 }
 
-/** The inverse: a direction a pilot is looking along, in the galaxy's terms. What
- *  a "point at that smudge and ask what it is" feature reads. */
-export function systemToGalaxy(frame: SkyFrame, directionSystem: Vec3): Vec3 {
-	return rotateByInverse(frame.q, directionSystem);
-}
-
 /**
  * The unit direction from one system to another, in the observer's sky.
  *
@@ -264,10 +263,9 @@ export function skyBearing(
  * The way back to the cluster's core, in the observer's sky.
  *
  * `skyBearing` toward {@link GALACTIC_CORE}, spelled out because it is the one
- * bearing the derived sky is judged on: #100's measurement is that the cluster's
- * light is *directional* rather than bright, which is #100's measurement and
- * §11's to quote, so this direction is most of what a sky in this game says
- * about where the player is.
+ * bearing the derived sky is judged on: #100 measured that the cluster's light is
+ * *directional* rather than bright — §11 keeps the figures — so this direction is
+ * most of what a sky in this game says about where the player is.
  *
  * `null` at the core itself, where every direction is away from it. No system the
  * generator ships sits there, so that is a boundary and not a live case.

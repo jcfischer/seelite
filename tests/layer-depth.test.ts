@@ -20,8 +20,15 @@
  * settled here is the narrower thing #247 asks first: whether the answer is
  * available at all, and where it stops being trustworthy.
  */
-import * as THREE from "three";
+
 import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
+import {
+	flightFraming,
+	OCCLUSION_FRAMINGS,
+} from "../scripts/lib/view-placement.mjs";
+import { VIEWPORT } from "../scripts/lib/view-set.mjs";
+import { STATION_ORBIT_R_OVER_R } from "../src/system";
 import {
 	APPROACH_FAR_UNITS,
 	APPROACH_NEAR_UNITS,
@@ -31,13 +38,7 @@ import {
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
 } from "../src/units";
-import { STATION_ORBIT_R_OVER_R } from "../src/system";
-import { VIEWPORT } from "../scripts/lib/view-set.mjs";
 import { codeOf } from "./lib/source-scan";
-import {
-	flightFraming,
-	OCCLUSION_FRAMINGS,
-} from "../scripts/lib/view-placement.mjs";
 
 /**
  * The two cameras, built exactly as `main.ts` builds them.

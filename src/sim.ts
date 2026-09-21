@@ -48,26 +48,26 @@
 
 import {
 	type Galaxy,
-	type SystemRecord,
 	generateGalaxy,
+	type SystemRecord,
 	startSystem,
 } from "./galaxy";
 import { HULL_SPECS, type HullId, PLAYER_BASELINE_HULL } from "./hull";
+import { appearanceOf, type PlanetAppearance } from "./planet-appearance";
 import { mix, seededRand } from "./rng";
 import { STATION_GEOMETRY, slotPhaseRad } from "./station";
 import {
 	accelerationBoundOnOrbit,
+	arrivalPoint,
+	generateContents,
 	type PlacedBody,
+	placeBodies,
 	type Station,
 	type StationType,
 	type SystemContents,
-	arrivalPoint,
-	generateContents,
-	placeBodies,
 	velocityOnOrbit,
 } from "./system";
-import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
-import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
+import { add, cross, dot, length, scale, sub, type Vec3, v3 } from "./vec3";
 
 /**
  * What a body is for rendering purposes.

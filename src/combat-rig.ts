@@ -57,10 +57,10 @@
 import * as THREE from "three";
 import {
 	type CombatEnemyState,
+	createCombatEnemy,
 	ENEMY_COLLISION_RADIUS_KM,
 	ENEMY_VISUAL_SCALE,
 	STRIKER_HULL_ID,
-	createCombatEnemy,
 	stepCombatEnemy,
 } from "./combat-enemy";
 import {
@@ -68,13 +68,13 @@ import {
 	createCombatPrototype,
 	stepCombatPrototype,
 } from "./combat-prototype";
+import type { DisplayContact } from "./display-contact";
 import { HULL_SPECS } from "./hull";
 import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
 import type { Ship } from "./sim";
-import type { DisplayContact } from "./display-contact";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
-import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
+import { add, cross, length, scale, sub, type Vec3, v3 } from "./vec3";
 
 /** The legend, and the widest text each status line is fitted against. */
 const LEGEND =

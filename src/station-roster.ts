@@ -22,7 +22,7 @@
  */
 
 import type { SystemRecord } from "./galaxy";
-import { type Station, generateContents } from "./system";
+import { generateContents, type Station } from "./system";
 
 /** Two galaxies' systems. See the module doc for why this is bounded at all. */
 const ROSTER_CACHE_LIMIT = 512;

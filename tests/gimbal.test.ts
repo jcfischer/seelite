@@ -5,9 +5,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	angleBetween,
 	GIMBAL_CONE_RAD,
 	GIMBAL_SLEW_RAD_S,
-	angleBetween,
 	stepGimbal,
 } from "../src/gimbal";
 import { type Vec3, v3 } from "../src/vec3";

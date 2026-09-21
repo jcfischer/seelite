@@ -32,23 +32,23 @@ import {
 } from "./combat-enemy";
 import { type DuelPilot, type PlayerShot, stepCombatShip } from "./duel";
 import { HULL_SPECS, type HullId } from "./hull";
-import { type Offence, type Standing, offenceHeat } from "./legal";
+import { type Offence, offenceHeat, type Standing } from "./legal";
 import {
 	PLAYER_KILL,
-	RAIDER_REPAIR_S,
 	playerKillDestruction,
+	RAIDER_REPAIR_S,
 } from "./raider-wreck";
 import {
+	fullCondition,
 	type ShieldSide,
 	type ShipCondition,
-	fullCondition,
 } from "./ship-condition";
-import {
-	type TrafficSchedule,
-	nextTrafficDepartureAtS,
-} from "./station-traffic";
 import { flightPerformance } from "./sim";
-import { type Vec3, frameAcross } from "./vec3";
+import {
+	nextTrafficDepartureAtS,
+	type TrafficSchedule,
+} from "./station-traffic";
+import { frameAcross, type Vec3 } from "./vec3";
 import type {
 	OperationalCondition,
 	Provenance,

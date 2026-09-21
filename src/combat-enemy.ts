@@ -40,13 +40,13 @@
 import { HULL_SPECS, type HullId } from "./hull";
 import { mix, seedFor } from "./rng";
 import {
-	ASSIST_CAP_KMS,
 	type Angular,
-	flightPerformance,
+	ASSIST_CAP_KMS,
 	type FlightPerformance,
+	flightPerformance,
+	type Ship,
 	stepAngular,
 	stepFlight,
-	type Ship,
 } from "./sim";
 import {
 	add,

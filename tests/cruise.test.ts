@@ -16,28 +16,28 @@
  */
 import { expect, test } from "bun:test";
 import {
+	advanceCruise,
 	CHARGE_CAPACITY_AU,
-	HOST_CLEARANCE_KM,
-	type CruiseParams,
 	CHARGE_PER_AU,
 	CHARGE_REGEN_AU_PER_S,
-	DEFAULT_CRUISE,
-	SUBSTEP_FRACTION,
-	SURFACE_MARGIN,
-	advanceCruise,
+	type CruiseParams,
 	chargeAfterRegen,
 	chargeAfterTravel,
 	closingSpeed,
 	cruiseSpeed,
-	legSeconds,
-	speedFor,
+	DEFAULT_CRUISE,
 	exitVelocity,
+	HOST_CLEARANCE_KM,
+	legSeconds,
 	nearestMass,
+	SUBSTEP_FRACTION,
+	SURFACE_MARGIN,
+	speedFor,
 } from "../src/cruise";
 import { ASSIST_CAP_KMS } from "../src/sim";
 import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
 import { AU_KM, HANDOFF_KM } from "../src/units";
-import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
+import { add, length, scale, sub, type Vec3, v3 } from "../src/vec3";
 
 const P = DEFAULT_CRUISE;
 

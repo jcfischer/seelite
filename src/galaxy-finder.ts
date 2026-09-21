@@ -11,23 +11,23 @@
  * records the chart draws, never a second copy of them.
  */
 
+import { carrierKey } from "./carrier-key";
 import {
+	distanceLy,
 	ECONOMY_NAMES,
 	GOVERNMENT_NAMES,
 	JUMP_RANGE_LY,
 	type SystemRecord,
-	distanceLy,
 } from "./galaxy";
 import { type JumpReach, projectJumps } from "./galaxy-route";
-import { carrierKey } from "./carrier-key";
-import { rosterOf } from "./station-roster";
 import {
 	FACILITY_CHIPS,
 	type FacilityAnnotation,
 	type FacilityChip,
-	type LastKnownState,
 	fenceKnowledge,
+	type LastKnownState,
 } from "./knowledge-labels";
+import { rosterOf } from "./station-roster";
 import type { KnowledgeRow } from "./world-state";
 
 /**

@@ -4,8 +4,8 @@
  */
 import { describe, expect, test } from "bun:test";
 import { HULL_SPECS } from "../src/hull";
+import { commodity } from "../src/market";
 import { raiderSlots } from "../src/raider-slots";
-import { ASSIST_CAP_KMS } from "../src/sim";
 import {
 	CANISTER_COUNT,
 	CANISTER_EJECT_KMS,
@@ -15,16 +15,17 @@ import {
 	CANISTER_SCOOP_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
 	type Canister,
-	PLAYER_KILL,
-	RAIDER_REPAIR_S,
-	RAIDER_WRECK_S,
 	cargoWeights,
 	dropCanisters,
 	dropManifestCanisters,
+	PLAYER_KILL,
+	RAIDER_REPAIR_S,
+	RAIDER_WRECK_S,
 	raiderDestruction,
 	scoops,
 	stepCanisters,
 } from "../src/raider-wreck";
+import { ASSIST_CAP_KMS } from "../src/sim";
 import { newCommander, scoopCargo } from "../src/station-commerce";
 import { add, dot, length, scale, sub, v3 } from "../src/vec3";
 import {
@@ -32,7 +33,6 @@ import {
 	effectiveCarrier,
 	newWorld,
 } from "../src/world-state";
-import { commodity } from "../src/market";
 
 const SLOT = raiderSlots(9, 0)[1];
 

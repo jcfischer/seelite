@@ -10,20 +10,20 @@
  */
 import { expect, test } from "bun:test";
 import {
-	MARKER_LABEL_CLEARANCE_PX,
-	MARKER_LABEL_REAPPEAR_S,
-	MarkerLabelDeclutter,
 	angleOffNose,
+	claimMarkerLabel,
 	directionTo,
 	duration,
 	edgeOf,
 	horizonRoll,
 	intoCameraFrame,
+	MARKER_LABEL_CLEARANCE_PX,
+	MARKER_LABEL_REAPPEAR_S,
+	MarkerLabelDeclutter,
 	prograde,
 	projectDirection,
-	claimMarkerLabel,
 } from "../src/hud";
-import { type Vec3, length, scale, v3 } from "../src/vec3";
+import { length, scale, type Vec3, v3 } from "../src/vec3";
 
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 const FOV = (60 * Math.PI) / 180;

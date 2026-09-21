@@ -45,16 +45,16 @@ import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
-import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
+import { PLAYER_KILL } from "./raider-wreck";
 import {
 	type Orbit,
-	type SystemContents,
 	orbitNormal,
 	positionOnOrbit,
+	type SystemContents,
 	velocityOnOrbit,
 } from "./system";
-import { type Vec3, add, length, scale, sub, v3 } from "./vec3";
+import { add, length, scale, sub, type Vec3, v3 } from "./vec3";
 import type {
 	GalaxyEnvelope,
 	Provenance,

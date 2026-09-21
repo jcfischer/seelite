@@ -25,32 +25,32 @@ import {
 	type StationType,
 } from "../src/station";
 import {
+	buildStationForm,
+	buildStationMesh,
 	SELECTED_FORM,
 	STATION_FORMS,
 	STATION_SILHOUETTE_KM,
 	type StationFormId,
-	buildStationForm,
-	buildStationMesh,
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
 import {
-	DETAIL_RADII,
-	SPEC_FIXTURE_NAMES,
 	beaconIntensity,
-	STATION_VISUALS,
-	type StationDetailLevel,
-	strobeIntensity,
+	DETAIL_RADII,
 	flickerIntensity,
 	platingTexels,
+	SPEC_FIXTURE_NAMES,
+	STATION_VISUALS,
+	type StationDetailLevel,
 	stationDetailLevel,
 	stationMapSize,
+	strobeIntensity,
 	surfaceTexels,
 } from "../src/station-visuals";
 import { PLATE_TEXTURE_SIZE } from "../src/surface";
 import { HANDOFF_HYSTERESIS, HANDOFF_KM } from "../src/units";
 import { instanceBoxes } from "./helpers/instance-boxes";
-import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
+import { isSolvedForm, PLAN_SEEDS } from "./helpers/solved-forms";
 import { reachKm } from "./helpers/station-reach";
 
 // From `station.ts`, not a literal: a fourth station type must reach every

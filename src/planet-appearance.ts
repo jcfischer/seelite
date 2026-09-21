@@ -88,10 +88,10 @@ export interface PlanetAppearance {
 
 import {
 	GIANT_ORBIT_FACTOR,
+	orbitWarmth,
 	type PlacedBody,
 	type Planet,
 	type SystemContents,
-	orbitWarmth,
 } from "./system";
 
 /** FNV-1a. Appearance needs a stable number per id, not a good distribution. */

@@ -15,18 +15,18 @@
  * throws on what it exists to catch.
  */
 import { describe, expect, test } from "bun:test";
-import { fpsReadout } from "../src/fps-meter.ts";
-import { VIEWS } from "../scripts/lib/view-set.mjs";
 import {
 	FAR_COLUMN_OUTLIER_FACTOR,
-	RADII,
 	farColumnVerdict,
 	finite,
 	flagExcursions,
 	parseFpsReadout,
+	RADII,
 	radiiRefusal,
 	vsyncRefusal,
 } from "../scripts/lib/planet-cost.mjs";
+import { VIEWS } from "../scripts/lib/view-set.mjs";
+import { fpsReadout } from "../src/fps-meter.ts";
 import { RELIEF_PATHS } from "../src/planet-shaders";
 
 /** What a browser hands back for an element: the tags gone, the text left. */

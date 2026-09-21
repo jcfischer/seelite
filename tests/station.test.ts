@@ -17,11 +17,11 @@ import { DOMAIN } from "../src/domains";
 import { generateGalaxy, stream } from "../src/galaxy";
 import { advanceSystem, makeSystem, stationPose } from "../src/sim";
 import {
+	fenceProbability,
 	SPIN_RPM_RANGE,
 	STATION_FENCE_ELIGIBLE,
 	STATION_GEOMETRY,
 	type StationType,
-	fenceProbability,
 	slotPhaseRad,
 } from "../src/station";
 import { placeBodies } from "../src/system";

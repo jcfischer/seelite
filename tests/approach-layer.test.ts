@@ -5,9 +5,9 @@ import {
 	APPROACH_SCALE,
 	HANDOFF_HYSTERESIS,
 	HANDOFF_KM,
+	massiveLayerFor,
 	NEAR_FAR_KM,
 	NEAR_NEAR_KM,
-	massiveLayerFor,
 } from "../src/units";
 
 test("massive bodies enter approach scale by surface distance, not centre distance", () => {

@@ -10,16 +10,16 @@
  * the hold itself is a second authority, and the till is the one that refuses.
  */
 import { describe, expect, test } from "bun:test";
-import { holdSummary } from "../src/hold";
-import { LARGE_CARGO_BAY_BONUS_T, newCommander } from "../src/station-commerce";
 import { generateGalaxy } from "../src/galaxy";
+import { holdSummary } from "../src/hold";
 import type { JobOffer } from "../src/jobs";
 import {
-	type RequestsState,
 	emptyRequests,
 	entrustedTonnesAboard,
+	type RequestsState,
 	requestAction,
 } from "../src/requests";
+import { LARGE_CARGO_BAY_BONUS_T, newCommander } from "../src/station-commerce";
 import { firstOffer } from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;

@@ -32,8 +32,8 @@ import {
 } from "../scripts/lib/game-url.mjs";
 import {
 	BOOT_QUERY,
-	BOOT_DIRECT as SRC_BOOT_DIRECT,
 	bootMode,
+	BOOT_DIRECT as SRC_BOOT_DIRECT,
 } from "../src/boot-mode";
 import {
 	callArguments,

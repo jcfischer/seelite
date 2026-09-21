@@ -12,10 +12,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
 import {
+	buildRamaMesh,
 	RAMA_DIMENSIONS,
 	RAMA_REACH_KM,
 	RAMA_VARIANTS,
-	buildRamaMesh,
 } from "../src/rama-mesh";
 
 const build = () => {

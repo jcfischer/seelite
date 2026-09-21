@@ -12,9 +12,9 @@
  * `bun test` instead of in flight.
  */
 import { describe, expect, test } from "bun:test";
-import { CLASS_GLSL } from "../src/planet-classes.glsl";
-import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
+import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
+import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { SETTINGS_KEY } from "../src/settings-panel";
 import { boundKeys, codeOf } from "./lib/source-scan";
 

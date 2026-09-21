@@ -23,45 +23,48 @@ import { mutePaint } from "./surface";
 // own until #56 gave them a second caller, and every existing importer and test
 // reaches them through here.
 export {
-	type Ring,
 	hullLoft,
-	revolve,
 	RING_SEGMENTS,
+	type Ring,
+	revolve,
 	SUBDIVISIONS,
 } from "./loft";
+
+import { shared } from "./gpu-teardown";
 import {
+	HULL_IDS,
+	HULL_SPECS,
+	HULL_VARIANT_IDS,
+	type HullId,
+	type HullVariantId,
+} from "./hull";
+import {
+	hullLoft,
 	RING_SEGMENTS,
 	type Ring,
-	hullLoft,
 	revolve,
 	scaleUVs,
 	setUvUnits,
 	uvUnitsOf,
 } from "./loft";
 import {
-	HULL_IDS,
-	HULL_VARIANT_IDS,
-	HULL_SPECS,
-	type HullId,
-	type HullVariantId,
-} from "./hull";
-import { shared } from "./gpu-teardown";
-import {
 	currentHullFinish,
 	hullFinishId,
 	plate,
 	plateUVs,
 } from "./ship-surface";
+
 export {
 	HABITABLE_HULLS,
 	SHIP_QUALITY,
 	setShipDetail,
 	updateShipVisuals,
 } from "./ship-detail";
+
 import {
+	buildShipDetails,
 	type ShipDetailPlan,
 	type ShipSurface,
-	buildShipDetails,
 } from "./ship-detail";
 
 export const SHIP_DESIGN_ROUND = 11;

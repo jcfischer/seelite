@@ -40,8 +40,8 @@ import { describe, expect, test } from "bun:test";
 import {
 	DOCKABLE_HULL_IDS,
 	HULL_SPECS,
-	PLAYER_BASELINE_HULL,
 	type HullId,
+	PLAYER_BASELINE_HULL,
 } from "../src/hull";
 import { flightPerformance } from "../src/sim";
 import {

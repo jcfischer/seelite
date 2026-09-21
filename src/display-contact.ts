@@ -1,10 +1,10 @@
 import type { CarrierStanding } from "./carrier-standing";
+import type { HullId } from "./hull";
 import { SCAN_MODULE } from "./market";
 import type { Body } from "./sim";
 import type { TrafficPresence } from "./traffic-engagement";
 import { range } from "./units";
 import type { Vec3 } from "./vec3";
-import type { HullId } from "./hull";
 
 /** Presentation identity for a target outside the generated body list (#52).
  * Producers own position and velocity; the scene graph never supplies either.

@@ -336,29 +336,15 @@ export function equirectEnvironment(
 export function envRotation(
 	starDir: readonly [number, number, number],
 ): [number, number, number, number] {
-	// The arithmetic lives in `quat.ts`'s `shortestArc` — see that module's header
-	// for why #430 moved it out of here rather than let a second copy of a
-	// 180°-safe shortest arc arrive in the sky.
-	//
-	// **What this changes and what it does not.** Away from exact antiparallel it
-	// returns the rotation this function computed itself, and at the bake's own
-	// direction and at the exact half turn the two agree bit for bit, both taking +Z
-	// as the fallback axis. Inside three decades of antiparallel it is a
-	// **correction**: the branch deleted here answered a merely-nearly-antiparallel
-	// request with a half turn about a fixed world axis, which is not a shortest arc
-	// and leaves the environment's star off target, while this one follows the axis
-	// the geometry determines. How far off, and what that moves in what the
-	// materials sample, is measured by two rows in `tests/light-rig.test.ts` —
-	// `the shared primitive returns the rotation this function computed itself`,
-	// which compares this body against the deleted one over 202 directions, and
-	// `near exact antiparallel the old arm misses the star and the new one does
-	// not`, which sizes the band and samples both environments against each other.
-	// Those rows are where the figures are written down, and no copy of them is kept
-	// here on purpose: a table transcribed into a comment is a table that goes stale
-	// the first time the measurement is repeated. The narrower threshold is the
-	// better of the two for a second reason too — the fixed-axis fallback is
-	// discontinuous as a star sweeps through −X, and a star sweeping through −X is a
-	// player turning around.
+	// The arithmetic is `quat.ts`'s `shortestArc`, which #430 moved out of this
+	// function rather than let a second copy of a 180°-safe shortest arc arrive in
+	// the sky. What that changed, by how much, and what it costs in the sampled
+	// environment are measured rather than described, by two rows in
+	// `tests/light-rig.test.ts` — `the shared primitive returns the rotation this
+	// function computed itself` and `near exact antiparallel the old arm misses the
+	// star and the new one does not`. The refactor's history belongs in those rows
+	// and in the commit that made it; a comment above a call is the wrong place for
+	// a changelog, and the wrong place for numbers that can go stale.
 	const q = shortestArc(
 		v3(BAKE_STAR_DIR[0], BAKE_STAR_DIR[1], BAKE_STAR_DIR[2]),
 		v3(starDir[0], starDir[1], starDir[2]),
@@ -366,11 +352,15 @@ export function envRotation(
 	// A star direction with no direction in it throws, where the old inline form
 	// produced a quaternion of NaNs. That propagates: `main.ts` reads this back into
 	// `ENV_EULER` and then into `scene.environmentRotation`, so a NaN here is a NaN
-	// rotation applied to every direction the environment is sampled along — a
-	// reflection made of nothing, with no error printed anywhere. Reachable, not
-	// theoretical: the caller divides by `Math.max(1e-9, length(toStar))`, so a
-	// camera standing exactly on its own star hands this function a zero vector. The
-	// row is `a star direction with no direction in it is refused, not rotated`.
+	// rotation applied to every direction the environment is sampled along — chrome
+	// plating reading a direction that does not exist, with nothing printed.
+	//
+	// #430 did not leave it to this line to decide what happens in that case. The
+	// one caller in the render path has the direction's length in hand and skips the
+	// update when it is zero — a camera standing exactly on its own star has no
+	// direction *to* the star, and last frame's aim is the answer for that frame.
+	// So this is the tripwire for a second caller, and the row named below is why it
+	// is a refusal rather than a comment about being careful.
 	if (q === null)
 		throw new Error("envRotation: the star direction carries no direction");
 	return [q[0], q[1], q[2], q[3]];

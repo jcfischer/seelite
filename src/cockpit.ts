@@ -6,9 +6,9 @@
  * second source of world position or selection state.
  */
 
+import { directionTo, edgeOf, intoCameraFrame, type Quat } from "./hud";
 import type { JumpRefusal } from "./hyperspace";
 import { SYSTEM_NAME_MAX_CHARS } from "./names";
-import { directionTo, edgeOf, intoCameraFrame, type Quat } from "./hud";
 import { length, sub, type Vec3 } from "./vec3";
 
 export type HeadLook = "forward" | "left" | "right";

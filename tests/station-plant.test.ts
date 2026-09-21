@@ -13,12 +13,12 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	EMPTY,
-	type Vocabulary,
 	allowedOf,
 	centreOf,
+	EMPTY,
 	placementsOf,
 	specOf,
+	type Vocabulary,
 } from "../src/station-modular";
 import {
 	OUTPOST,

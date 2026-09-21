@@ -24,16 +24,16 @@ import {
 	poolMaterial,
 } from "../src/station-glow";
 import {
+	buildStationForm,
+	buildStationMesh,
 	SELECTED_FORM,
 	STATION_FORMS,
 	type StationFormId,
-	buildStationForm,
-	buildStationMesh,
 	setStationDetail,
 	updateStationVisuals,
 } from "../src/station-mesh";
 import { SPEC_FIXTURE_NAMES } from "../src/station-visuals";
-import { PLAN_SEEDS, isSolvedForm } from "./helpers/solved-forms";
+import { isSolvedForm, PLAN_SEEDS } from "./helpers/solved-forms";
 import { poolOverhang } from "./helpers/structure-rays";
 
 const GREY = 0x9aa6b2;

@@ -24,7 +24,6 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-	QUAT_IDENTITY,
 	type Quat4,
 	quatAxisAngle,
 	quatConjugate,
@@ -68,10 +67,16 @@ describe("quatMul", () => {
 	});
 
 	test("an identity operand changes nothing", () => {
+		// The identity written out rather than imported: `quat.ts` ships no named
+		// unit, because nothing in `src/` composes with one yet (#430 round 3). The
+		// law still earns its row — a composition that drops a `w`, or applies its
+		// operands in the other order, is caught here — and the change that first
+		// needs a unit is the change that names one.
+		const identity = [0, 0, 0, 1] as const;
 		const a = quatAxisAngle(v3(1, 2, -1), 2.2);
 		const v = normalizeOr(v3(-0.4, 0.5, 0.7), UNIT);
-		expectVec(rotateBy(quatMul(a, QUAT_IDENTITY), v), rotateBy(a, v));
-		expectVec(rotateBy(quatMul(QUAT_IDENTITY, a), v), rotateBy(a, v));
+		expectVec(rotateBy(quatMul(a, identity), v), rotateBy(a, v));
+		expectVec(rotateBy(quatMul(identity, a), v), rotateBy(a, v));
 	});
 });
 

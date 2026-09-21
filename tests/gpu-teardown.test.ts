@@ -31,6 +31,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
+import { generateGalaxy } from "../src/galaxy";
 import {
 	type Disposable,
 	disposeSubtree,
@@ -38,14 +39,13 @@ import {
 	resourcesOf,
 	shared,
 } from "../src/gpu-teardown";
-import { generateGalaxy } from "../src/galaxy";
-import { buildShipMesh } from "../src/ship-mesh";
-import { type PlanetAppearance, appearanceOf } from "../src/planet-appearance";
+import { appearanceOf, type PlanetAppearance } from "../src/planet-appearance";
 import {
 	type BodyVisual,
 	buildBodyVisual,
 	surfaceSphere,
 } from "../src/planet-surface";
+import { buildShipMesh } from "../src/ship-mesh";
 
 /**
  * Every cube render target a body is holding, found the way a leak would be.
@@ -64,6 +64,7 @@ const cubeTargetsOf = (visual: BodyVisual): THREE.WebGLCubeRenderTarget[] => {
 	});
 	return out;
 };
+
 import { STATION_TYPES } from "../src/station";
 import { buildStationMesh } from "../src/station-mesh";
 import { generateContents } from "../src/system";

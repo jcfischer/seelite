@@ -50,9 +50,9 @@ import type { CarrierKey } from "./carrier-key";
 import { carrierManifest } from "./carrier-manifest";
 import type { CarrierStanding } from "./carrier-standing";
 import { carrierStanding } from "./carrier-standing";
-import { dot, normalizeOr, type Vec3 } from "./vec3";
-import { SCAN_MODULE } from "./market";
 import type { ScanRefusal, ScanStandoff } from "./display-contact";
+import { SCAN_MODULE } from "./market";
+import { dot, normalizeOr, type Vec3 } from "./vec3";
 import type { KnowledgeRow } from "./world-state";
 
 /** How close a carrier has to be to answer. Well inside `SCANNER_RANGE_KM`'s

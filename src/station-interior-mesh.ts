@@ -21,11 +21,11 @@
  */
 
 import * as THREE from "three";
+import { shared } from "./gpu-teardown";
 import { EMISSIVE_CEILING } from "./light-rig";
 import type { StationType } from "./station";
 import type { Berth, StationInterior } from "./station-interior";
 import { STATION_VISUALS, type StationDetailLevel } from "./station-visuals";
-import { shared } from "./gpu-teardown";
 
 /**
  * What `main.ts` looks for when it fills a name shield with pixels.

@@ -15,17 +15,17 @@ import { type DeficitMap, readDeficit, recordTrade } from "./deficits";
 import { HULL_SPECS, type HullId } from "./hull";
 import { JUMP_TANK_LY } from "./hyperspace";
 import {
-	FUEL_CR_PER_LY,
 	type Commodity,
-	type MarketStation,
-	type QuoteFn,
-	type UniversalItem,
 	commodity,
+	FUEL_CR_PER_LY,
 	listsCommodity,
+	type MarketStation,
 	marketQuote,
 	marketRow,
+	type QuoteFn,
 	shelfQuantity,
 	stockResponse,
+	type UniversalItem,
 } from "./market";
 import { stationEquipmentScreen } from "./station-console";
 

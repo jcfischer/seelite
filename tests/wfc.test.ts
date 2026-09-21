@@ -13,22 +13,22 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	buildAllowed,
 	DISH,
 	EMPTY,
 	HUB,
+	isHost,
+	isLeaf,
 	MODULAR_CENTRE,
 	MODULAR_GRID,
 	MODULAR_RADIUS,
+	modularPlacements,
+	modularSpec,
 	N_MODULES,
 	RADIATOR,
 	TANKS,
 	TRUSS_Y,
 	TUBE_X,
-	buildAllowed,
-	isHost,
-	isLeaf,
-	modularPlacements,
-	modularSpec,
 } from "../src/station-modular";
 import { BIT, DIRECTIONS, opposite, popcount, solvePlan } from "../src/wfc";
 

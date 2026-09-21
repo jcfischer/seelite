@@ -21,15 +21,15 @@
  * `THREE.Vector3` into the simulation because it was convenient.
  */
 import { expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
 import {
 	FAR_NEAR_UNITS,
 	FAR_SCALE,
 	HANDOFF_HYSTERESIS,
 	HANDOFF_KM,
-	NEAR_FAR_KM,
 	layerFor,
+	NEAR_FAR_KM,
 } from "../src/units";
+import { codeOf } from "./lib/source-scan";
 
 const HEADLESS = [
 	"audio",

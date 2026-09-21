@@ -16,32 +16,32 @@
  * that quietly routed a position through a `Float32Array` would keep every
  * other test in this file green and lose that, visibly, as jitter.
  */
-import { expect, test, describe } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { generateGalaxy, startSystem } from "../src/galaxy";
+import { PLAYER_BASELINE_HULL } from "../src/hull";
 import {
-	REFERENCE_ANGULAR_MAX,
 	ASSIST_CAP_KMS,
-	START_GALAXY,
-	REFERENCE_THRUST_KMS2,
 	advanceSystem,
 	bodyAccelerationBound,
 	bodyVelocity,
+	flightPerformance,
 	makeSystem,
 	makeWorld,
+	REFERENCE_ANGULAR_MAX,
+	REFERENCE_THRUST_KMS2,
+	START_GALAXY,
 	stepAngular,
 	stepFlight,
 	stepWorld,
-	flightPerformance,
 } from "../src/sim";
-import { generateGalaxy, startSystem } from "../src/galaxy";
 import {
 	ARRIVAL_CLEARANCE_AU,
-	MAX_ORBIT_AU,
 	arrivalPoint,
+	MAX_ORBIT_AU,
 } from "../src/system";
 import { AU_KM, FAR_SCALE } from "../src/units";
 import { add, length, scale, sub, v3 } from "../src/vec3";
 import { codeOf } from "./lib/source-scan";
-import { PLAYER_BASELINE_HULL } from "../src/hull";
 
 /**
  * The baseline hull's handling.

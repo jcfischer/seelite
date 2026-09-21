@@ -16,8 +16,8 @@
 
 import * as THREE from "three";
 import { SimplexNoise } from "./noise";
-import { makeSplicer } from "./shader-splice";
 import { CRATER_CELL, CRATER_PROFILE, NOISE_GLSL } from "./planet-shaders";
+import { makeSplicer } from "./shader-splice";
 
 /** The rock's vertex-stage additions: one varying, and the object-space
  *  position everything else is a function of. Normalised in the fragment stage

@@ -27,41 +27,41 @@
  * to check a chain reads it from there rather than from a line's vertices.
  */
 import * as THREE from "three";
+import { carrierKey } from "./carrier-key";
 import {
+	CORE_RADIUS_LY,
+	distanceLy,
+	ECONOMY_NAMES,
 	GALAXY_COUNT,
 	GALAXY_FLATTENING_Q,
 	GALAXY_RADIUS_LY,
+	type Galaxy,
+	GOVERNMENT_NAMES,
+	generateGalaxy,
 	JUMP_RANGE_LY,
 	SYSTEMS_PER_GALAXY,
-	type Galaxy,
 	type SystemRecord,
-	CORE_RADIUS_LY,
-	ECONOMY_NAMES,
-	GOVERNMENT_NAMES,
-	distanceLy,
-	generateGalaxy,
 	startSystem,
 } from "./galaxy";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
+import { GALACTIC_NORMAL } from "./galaxy-frame";
+import {
+	type Course,
+	type CourseProgress,
+	courseProgress,
+	planRoute,
+	type Route,
+	reachable,
+	setCourse,
+} from "./galaxy-route";
+import { clickTarget, type HoverRule, hoverCandidate } from "./hover-candidate";
 import {
 	type LastKnownState,
 	NO_KNOWLEDGE,
 	stationRosterLine,
 	worldMinute,
 } from "./knowledge-labels";
-import { carrierKey } from "./carrier-key";
 import { rosterOf } from "./station-roster";
-import {
-	type Course,
-	type CourseProgress,
-	type Route,
-	courseProgress,
-	planRoute,
-	reachable,
-	setCourse,
-} from "./galaxy-route";
-import { GALACTIC_NORMAL } from "./galaxy-frame";
-import { type HoverRule, clickTarget, hoverCandidate } from "./hover-candidate";
 
 /**
  * The map's vertical axis is galaxy-space **y**, and its reference plane is

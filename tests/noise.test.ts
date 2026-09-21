@@ -10,7 +10,7 @@
  * The continuity check is the load-bearing one. A hash masquerading as noise
  * passes a determinism test and fails that.
  */
-import { expect, test, describe } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { SimplexNoise } from "../src/noise";
 
 const grid = (n: SimplexNoise, step = 3.7, count = 24) =>

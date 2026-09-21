@@ -1,27 +1,14 @@
 /** The crisp DOM instruments that sit over Game's one WebGL renderer. */
 
-import { range } from "./units";
+import type { ScanConsoleReadout } from "./carrier-scan";
 import {
-	REQUESTS_STYLE,
-	requestCue,
-	requestsBody,
-	type RequestsView,
-} from "./requests-view";
-import {
-	RELAY_CUE_STYLE,
-	type RelayCue,
-	relayCueKey,
-	relayCueMarkup,
-} from "./relay-cue";
-import {
+	cockpitView,
 	type HeadLook,
 	NAV_FILTER_KINDS,
 	type NavFilter,
 	type NavRow,
 	type ScannerContact,
-	cockpitView,
 } from "./cockpit";
-import type { DockPhase } from "./dock-session";
 import { CONTROLS, type TaskGroup } from "./controls-catalogue";
 import {
 	controlsBody,
@@ -31,26 +18,39 @@ import {
 	rowFocusId,
 	toggleGroup,
 } from "./controls-reference";
-import type { ScanConsoleReadout } from "./carrier-scan";
+import type { DockPhase } from "./dock-session";
 import type { DuelConsoleReadout } from "./duel-hud";
-import type { StationAction } from "./station-commerce";
 import type { HoldSummary } from "./hold";
+import { padHintFor } from "./pad-bindings";
+import {
+	type FocusCursor,
+	focusedItem,
+	moveFocus,
+	NO_FOCUS,
+	refreshFocus,
+	setFocus,
+} from "./panel-focus";
+import {
+	RELAY_CUE_STYLE,
+	type RelayCue,
+	relayCueKey,
+	relayCueMarkup,
+} from "./relay-cue";
+import {
+	REQUESTS_STYLE,
+	type RequestsView,
+	requestCue,
+	requestsBody,
+} from "./requests-view";
+import type { StationAction } from "./station-commerce";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
 	StationConsoleTab,
 } from "./station-console";
 import { entrustedClause, priceLabel, signedDelta } from "./station-console";
-import { padHintFor } from "./pad-bindings";
 import type { LaneRefusal } from "./station-traffic";
-import {
-	type FocusCursor,
-	NO_FOCUS,
-	focusedItem,
-	moveFocus,
-	refreshFocus,
-	setFocus,
-} from "./panel-focus";
+import { range } from "./units";
 
 export type RightTab = "Flight" | "Drive" | "Controls" | "Tuning";
 

@@ -15,7 +15,7 @@
  * Headless and a leaf apart from `vec3`: `Game` steps it and aims the shot, the
  * ON TARGET cue and the tracer along what it returns.
  */
-import { type Vec3, add, dot, normalizeOr, scale } from "./vec3";
+import { add, dot, normalizeOr, scale, type Vec3 } from "./vec3";
 
 /** The half-angle the beam may turn from the boresight. */
 export const GIMBAL_CONE_RAD = (6 * Math.PI) / 180;

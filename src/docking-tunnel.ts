@@ -25,7 +25,7 @@
  */
 
 import { type ApertureFrame, slotBasis } from "./docking";
-import { type Vec3, add, scale } from "./vec3";
+import { add, scale, type Vec3 } from "./vec3";
 
 /**
  * The corridor's flare, degrees of half-angle on its width.

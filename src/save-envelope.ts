@@ -30,17 +30,17 @@
  */
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
-import { HULL_IDS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
-import { generateContents } from "./system";
+import { HULL_IDS, type HullId } from "./hull";
+import { COMMODITIES } from "./market";
 import { emptyRequests, parseRequests, type RequestsState } from "./requests";
+import { fnv1a } from "./rng";
 import {
 	type CommanderState,
 	newCommander,
 	STARTING_CREDITS,
 } from "./station-commerce";
-import { COMMODITIES } from "./market";
-import { fnv1a } from "./rng";
+import { generateContents } from "./system";
 import {
 	GALAXY_COUNT,
 	isSystemIndex,

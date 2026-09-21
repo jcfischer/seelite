@@ -19,12 +19,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 import {
 	HARDWARE_RENDERER,
 	PLAYWRIGHT_ENV_VARS,
 	PROBE_RENDERER_ENV,
 } from "../scripts/probe-guard.mjs";
-import { probeRunnerEnvironment } from "../scripts/lib/probe-runner-env.mjs";
 import { repoPath } from "./lib/source-scan";
 import {
 	commandOf,

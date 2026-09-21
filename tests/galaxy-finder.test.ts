@@ -9,6 +9,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { carrierKey } from "../src/carrier-key";
+import {
+	ECONOMY_NAMES,
+	GALAXY_COUNT,
+	generateGalaxy,
+	JUMP_RANGE_LY,
+	type SystemRecord,
+	startSystem,
+} from "../src/galaxy";
 import {
 	FINDER_DEFAULT_BUDGET,
 	FINDER_MAX_BUDGET,
@@ -21,27 +30,18 @@ import {
 	rememberFinderBudget,
 	resetFinderSession,
 } from "../src/galaxy-finder";
-import {
-	ECONOMY_NAMES,
-	GALAXY_COUNT,
-	JUMP_RANGE_LY,
-	type SystemRecord,
-	generateGalaxy,
-	startSystem,
-} from "../src/galaxy";
-import { carrierKey } from "../src/carrier-key";
+import { planRoute, projectJumps } from "../src/galaxy-route";
 import {
 	type FacilityAnnotation,
 	type FacilityChip,
-	type LastKnownState,
 	facilityAnnotationLabel,
+	type LastKnownState,
 	recoveryScheduleLabel,
 	stationRosterLine,
 } from "../src/knowledge-labels";
-import { planRoute, projectJumps } from "../src/galaxy-route";
-import { generateContents } from "../src/system";
 import type { StationType } from "../src/station";
 import type { Station } from "../src/system";
+import { generateContents } from "../src/system";
 import type { OperationalCondition } from "../src/world-state";
 
 const WORLD_SEED = 0x5ee11e;

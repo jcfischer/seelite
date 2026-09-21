@@ -30,15 +30,15 @@ import {
 import { HULL_SPECS } from "./hull";
 import { RAIDER_HULL_ID } from "./raider-slots";
 import {
-	type ShieldSide,
-	type ShipCondition,
 	applyDamage,
 	isAlive,
+	type ShieldSide,
+	type ShipCondition,
 	sideStruck,
 	stepCondition,
 } from "./ship-condition";
-import { type FlightPerformance, type Ship, flightPerformance } from "./sim";
-import { type Vec3, cross, frameAcross, normalizeOr, sub, v3 } from "./vec3";
+import { type FlightPerformance, flightPerformance, type Ship } from "./sim";
+import { cross, frameAcross, normalizeOr, sub, type Vec3, v3 } from "./vec3";
 
 /** The raider's hit sphere: half its built length. */
 export const RAIDER_HIT_RADIUS_KM = HULL_SPECS[RAIDER_HULL_ID].env.lengthKm / 2;

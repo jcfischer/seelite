@@ -33,7 +33,7 @@ import {
 	stationFluct,
 } from "../src/market";
 import { LOCAL_CARRIER_ID } from "../src/station";
-import { type Station, generateContents } from "../src/system";
+import { generateContents, type Station } from "../src/system";
 import { codeOf, srcFiles } from "./lib/source-scan";
 
 const WORLD = 0x5ee11e;

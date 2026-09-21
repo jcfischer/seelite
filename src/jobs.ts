@@ -37,7 +37,7 @@
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { type DeficitMap, readDeficit } from "./deficits";
 import { DOMAIN } from "./domains";
-import { JUMP_RANGE_LY, type SystemRecord, distanceLy } from "./galaxy";
+import { distanceLy, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
 import { reachable } from "./galaxy-route";
 import {
 	type Commodity,

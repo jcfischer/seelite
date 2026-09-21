@@ -3,25 +3,25 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
+	ENEMY_COLLISION_RADIUS_KM,
+	ENEMY_VISUAL_SCALE,
+	STRIKER_HULL_ID,
+} from "../src/combat-enemy";
+import {
 	HULL_IDS,
 	HULL_SPECS,
 	HULL_VARIANT_IDS,
 	type HullVariantId,
 } from "../src/hull";
 import {
-	HULL_REACH_KM,
-	HULL_VARIANTS,
-	NAV_LIGHTS,
-	NAV_LIGHT_PROUD,
-	SHIP_DESIGN_ROUND,
 	buildShipMesh,
 	fleetLayout,
+	HULL_REACH_KM,
+	HULL_VARIANTS,
+	NAV_LIGHT_PROUD,
+	NAV_LIGHTS,
+	SHIP_DESIGN_ROUND,
 } from "../src/ship-mesh";
-import {
-	ENEMY_COLLISION_RADIUS_KM,
-	ENEMY_VISUAL_SCALE,
-	STRIKER_HULL_ID,
-} from "../src/combat-enemy";
 
 function bounds(id: (typeof HULL_IDS)[number], variant: HullVariantId = "a") {
 	const root = buildShipMesh(id, variant).root;

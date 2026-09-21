@@ -9,19 +9,19 @@
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
+import { recordTrade } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import type { JobOffer } from "../src/jobs";
-import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
-import { recordTrade } from "../src/deficits";
 import {
-	type RequestsState,
 	emptyRequests,
 	entrustedTonnesAboard,
+	type RequestsState,
 	requestAction,
 	settledAt,
 	settlementMessage,
 } from "../src/requests";
 import { generateContents } from "../src/system";
+import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 
 const SYSTEMS = generateGalaxy(0x5ee11e, 0).systems;
 

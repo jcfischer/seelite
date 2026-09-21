@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-	MIN_CONTACT_RADIUS,
 	cockpitView,
+	MIN_CONTACT_RADIUS,
 	projectScannerContacts,
 } from "../src/cockpit";
 import { v3 } from "../src/vec3";

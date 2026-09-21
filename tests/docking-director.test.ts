@@ -13,18 +13,18 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-	AXIS_TOLERANCE_DEG,
-	GRANT_WINDOW_S,
-	ROLL_TOLERANCE_DEG,
-	V_GATE_KMS,
-	VICINITY_KM,
 	type ApertureFrame,
+	AXIS_TOLERANCE_DEG,
+	apertureFrame,
 	type DockingState,
 	type EntryPose,
-	apertureFrame,
 	evaluateEntry,
+	GRANT_WINDOW_S,
 	newDockingState,
+	ROLL_TOLERANCE_DEG,
 	slotBasis,
+	V_GATE_KMS,
+	VICINITY_KM,
 } from "../src/docking";
 import {
 	DIRECTOR_RANGE_KM,
@@ -32,7 +32,7 @@ import {
 	dockingDirector,
 } from "../src/docking-director";
 import { TUNNEL_MOUTH_OFFSET_KM } from "../src/docking-tunnel";
-import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
+import { add, cross, dot, length, scale, type Vec3, v3 } from "../src/vec3";
 
 const DEG = Math.PI / 180;
 

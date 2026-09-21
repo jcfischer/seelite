@@ -8,9 +8,9 @@
  * are what a reproducible galaxy rests on and they cannot be seen by reading one
  * call site.
  */
-import { expect, test, describe } from "bun:test";
-import { STREAMS, seededRand, seedFor, streamFor, mix } from "../src/rng";
+import { describe, expect, test } from "bun:test";
 import type { StreamName } from "../src/rng";
+import { mix, STREAMS, seededRand, seedFor, streamFor } from "../src/rng";
 
 const names = Object.keys(STREAMS) as StreamName[];
 const take = (rand: () => number, n: number) =>

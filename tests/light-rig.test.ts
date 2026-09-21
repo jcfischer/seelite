@@ -436,14 +436,16 @@ describe("the rotation onto the star", () => {
 		// function's answer into `ENV_EULER` and then into
 		// `scene.environmentRotation`, so the NaN becomes a rotation applied to every
 		// direction the environment is sampled along. Chrome plating reading a
-		// direction that does not exist is not a crash; it is a picture with nothing
-		// in it and nothing printed.
+		// direction that does not exist is not an error anything downstream can see;
+		// it is a picture with nothing in it and nothing printed.
 		//
-		// And it is reachable, which is what makes it a row and not a footnote: the
-		// caller normalises with `Math.max(1e-9, length(toStar))`, so a camera standing
-		// exactly on its own star passes a zero vector straight through. That guard is
-		// how the old code survived the case — by not crashing — and this is where the
-		// difference between surviving and reporting is settled.
+		// The case is geometric, not a fuzz artifact: a camera standing exactly on its
+		// own star has no direction *to* it. #430 found the render path's caller
+		// dividing by a clamped length, which turned that into a zero vector and let
+		// the NaNs through, and the fix went to the caller — it keeps the previous
+		// frame's rotation when there is no direction to ask about. This row is the
+		// other half: what the function itself owes a caller that does ask, which is a
+		// named refusal and not four NaNs wearing a quaternion's shape.
 		expect(() => envRotation([0, 0, 0])).toThrow(
 			"envRotation: the star direction carries no direction",
 		);
@@ -482,36 +484,18 @@ describe("the rotation onto the star", () => {
 		// Where this refactor *does* change something, so it is sized rather than
 		// waved at. The branch deleted from `envRotation` fired at
 		// `dot < −1 + 1e-9`; `shortestArc`'s fires at `−1 + 1e-12`. Between those
-		// three decades the old code snapped the environment to a half turn about a
-		// fixed world axis, and a half turn about a fixed axis is **not** a shortest
-		// arc to a direction that is merely nearly antiparallel — it leaves the
-		// environment's star off the requested direction by the perpendicular part,
-		// which is √(2ε).
+		// three decades the old code answered with a half turn about a fixed world
+		// axis, and a half turn about a fixed axis is **not** a shortest arc to a
+		// direction that is merely nearly antiparallel: it leaves the environment's
+		// star off the requested direction by the perpendicular part, √(2ε).
 		//
-		// Measured, over the band:
-		//
-		//   ε        old aim error      new aim error    worst radiance delta
-		//   1e−12    1.41·10⁻⁶ rad      1.1·10⁻¹⁶        9.5·10⁻⁶
-		//   1e−11    4.47·10⁻⁶ rad      4.4·10⁻¹⁶        3.0·10⁻⁵
-		//   1e−10    1.41·10⁻⁵ rad      7.1·10⁻¹⁶        9.5·10⁻⁵
-		//   9e−10    4.24·10⁻⁵ rad      1.9·10⁻¹⁴        2.8·10⁻⁴
-		//   1.1e−9   2.6·10⁻¹⁴ rad      2.6·10⁻¹⁴        0  ← outside the band
-		//
-		// So the change is a correction, and a bounded one: the worst case is the
-		// environment's star aimed 4.2·10⁻⁵ rad — eight and a half arc-seconds — more
-		// truly than it was, in a window 0.0027° wide around the star sitting exactly
-		// behind the bake's own axis. The radiance it moves is at most 2.8·10⁻⁴ of a
-		// unit-scale field, which is 0.07 of one eight-bit code and under the two-code
-		// threshold every pixel-differencing probe in this repo uses; the full suite
-		// run at both refs found nothing, which is what "under the threshold" is for.
-		//
-		// The narrower band is the improvement, not an oversight. At `dot = −1 + ε`
-		// the cross product is √(2ε) long, so even at ε = 10⁻¹⁰ it is 1.4·10⁻⁵ —
-		// eleven orders of magnitude above the rounding in the products that built
-		// it, and the axis it determines is the one that aims the star. What the old
-		// threshold bought instead was a fallback that is *discontinuous* as a star
-		// sweeps through antiparallel — and a star sweeping through −X is a player
-		// turning around.
+		// **The figures live here, as assertions.** A measured number copied into a
+		// comment goes stale the first time the measurement is repeated, and this
+		// one has been wrong twice for exactly that reason. Each row of `BAND` is
+		// checked two ways — against the closed form the geometry predicts, and
+		// against the number a run produced — so the literals are not the authority,
+		// the arithmetic is, and anything that moves them reddens this row instead of
+		// quietly invalidating a paragraph somewhere else.
 		const aimError = (
 			q: [number, number, number, number],
 			want: readonly [number, number, number],
@@ -523,10 +507,16 @@ describe("the rotation onto the star", () => {
 				landed[2] - want[2],
 			);
 		};
-		let worstOld = 0;
-		let worstNew = 0;
-		let worstRadiance = 0;
-		for (const eps of [1e-12, 1e-11, 1e-10, 5e-10, 9e-10]) {
+		const BAND = [
+			{ eps: 1e-12, oldAim: 1.4142e-6, radiance: 9.4709e-6 },
+			{ eps: 1e-11, oldAim: 4.4721e-6, radiance: 2.9947e-5 },
+			{ eps: 1e-10, oldAim: 1.4142e-5, radiance: 9.4673e-5 },
+			{ eps: 5e-10, oldAim: 3.1623e-5, radiance: 2.1158e-4 },
+			{ eps: 9e-10, oldAim: 4.2426e-5, radiance: 2.8377e-4 },
+		];
+		const within = (got: number, want: number, rel = 0.02) =>
+			expect(Math.abs(got - want)).toBeLessThanOrEqual(rel * Math.abs(want));
+		for (const { eps, oldAim: pinned, radiance: pinnedRadiance } of BAND) {
 			const dir: [number, number, number] = [
 				-(1 - eps),
 				Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))),
@@ -534,8 +524,17 @@ describe("the rotation onto the star", () => {
 			];
 			const fresh = envRotation(dir);
 			const stale = legacyEnvRotation(dir);
-			worstOld = Math.max(worstOld, aimError(stale, dir));
-			worstNew = Math.max(worstNew, aimError(fresh, dir));
+			// Aim: how far each arm leaves the environment's star from the direction
+			// it was handed, read off where the rotation actually puts it.
+			const old = aimError(stale, dir);
+			const fresh_ = aimError(fresh, dir);
+			within(old, Math.sqrt(2 * eps), 0.001);
+			within(old, pinned);
+			// The new arm hits it to machine precision, and orders of magnitude
+			// better than the arm this refactor replaced — which is the whole
+			// argument for the narrower threshold, stated as a measurement.
+			expect(fresh_).toBeLessThan(1e-13);
+			expect(fresh_).toBeLessThan(old / 100);
 			// And what the difference costs on the thing the rotation is for: the
 			// environment, sampled. Both arms are turned back through their own
 			// inverse — which is how the renderer's map is read — and the radiance
@@ -552,23 +551,56 @@ describe("the rotation onto the star", () => {
 				-stale[2],
 				stale[3],
 			];
+			let worst = 0;
 			for (const w of directions(200)) {
 				const a = envRadiance(apply(freshInv, w), WARM);
 				const b = envRadiance(apply(staleInv, w), WARM);
 				for (let i = 0; i < 3; i++)
-					worstRadiance = Math.max(worstRadiance, Math.abs(a[i] - b[i]));
+					worst = Math.max(worst, Math.abs(a[i] - b[i]));
 			}
+			within(worst, pinnedRadiance);
+			// Under one eight-bit code of a unit-scale field, so under every pixel
+			// threshold in the browser tier — and nonzero, because the arms genuinely
+			// differ and this row is not going to be the one that says they don't.
+			expect(worst).toBeGreaterThan(0);
+			expect(worst).toBeLessThan(1 / 255);
 		}
-		// The old arm's error is the √(2ε) the geometry predicts, to two digits.
-		expect(worstOld).toBeGreaterThan(4.2e-5);
-		expect(worstOld).toBeLessThan(4.3e-5);
-		// The new arm hits it to machine precision, which is what the deleted
-		// threshold was costing.
-		expect(worstNew).toBeLessThan(1e-13);
-		// Under one eight-bit code of a unit-scale field, so under every pixel
-		// threshold in the browser tier — and nonzero, because the arms genuinely
-		// differ and this row is not going to be the one that says they don't.
-		expect(worstRadiance).toBeGreaterThan(0);
-		expect(worstRadiance).toBeLessThan(1 / 255);
+		// **The band closes.** Past the old threshold the two arms are the same
+		// computation, and this is the row that says "the refactor changed nothing
+		// else" rather than merely asserting it: one ε outside, the quaternions agree
+		// to the same two ulps the legacy-comparison row allows everywhere, and the
+		// sampled environment cannot tell them apart at all.
+		const closedEps = 1.1e-9;
+		const closedDir: [number, number, number] = [
+			-(1 - closedEps),
+			Math.sqrt(Math.max(0, 1 - (1 - closedEps) * (1 - closedEps))),
+			0,
+		];
+		const closedFresh = envRotation(closedDir);
+		const closedStale = legacyEnvRotation(closedDir);
+		for (let i = 0; i < 4; i++)
+			expect(Math.abs(closedFresh[i] - closedStale[i])).toBeLessThanOrEqual(
+				2 ** -51,
+			);
+		const closedFreshInv: [number, number, number, number] = [
+			-closedFresh[0],
+			-closedFresh[1],
+			-closedFresh[2],
+			closedFresh[3],
+		];
+		const closedStaleInv: [number, number, number, number] = [
+			-closedStale[0],
+			-closedStale[1],
+			-closedStale[2],
+			closedStale[3],
+		];
+		let closedWorst = 0;
+		for (const w of directions(200)) {
+			const a = envRadiance(apply(closedFreshInv, w), WARM);
+			const b = envRadiance(apply(closedStaleInv, w), WARM);
+			for (let i = 0; i < 3; i++)
+				closedWorst = Math.max(closedWorst, Math.abs(a[i] - b[i]));
+		}
+		expect(closedWorst).toBeLessThanOrEqual(1e-12);
 	});
 });

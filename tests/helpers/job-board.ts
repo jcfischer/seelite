@@ -13,13 +13,13 @@ import { type DeficitMap, recordTrade } from "../../src/deficits";
 import type { SystemRecord } from "../../src/galaxy";
 import {
 	type BindContext,
-	type JobFamily,
-	type JobOffer,
 	bindJobs,
 	canPostJobs,
 	deliveryCandidates,
+	type JobFamily,
+	type JobOffer,
 } from "../../src/jobs";
-import { type Station, generateContents } from "../../src/system";
+import { generateContents, type Station } from "../../src/system";
 
 export interface BoardOptions {
 	deficits?: DeficitMap;

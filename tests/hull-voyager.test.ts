@@ -28,7 +28,7 @@ import {
 	type HullVariantId,
 	PURCHASABLE_HULL_IDS,
 } from "../src/hull";
-import { HULL_VARIANTS, buildShipMesh } from "../src/ship-mesh";
+import { buildShipMesh, HULL_VARIANTS } from "../src/ship-mesh";
 
 const VOYAGER: HullId = "voyager";
 

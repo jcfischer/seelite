@@ -17,9 +17,9 @@ import type {
 } from "./controls-catalogue";
 import { PAD_CONTEXTS, TASK_GROUPS } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
+import type { PadContext } from "./pad-bindings";
 import type { FocusCursor, FocusItem } from "./panel-focus";
 import { setFocus } from "./panel-focus";
-import type { PadContext } from "./pad-bindings";
 
 /** D1: the tab's name, between `Drive` and `Tuning`. */
 export const CONTROLS_TAB = "Controls";

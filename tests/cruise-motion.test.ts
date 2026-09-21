@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test";
 import {
+	advanceCruise,
+	type CruiseParams,
 	DEFAULT_CRUISE,
 	MAX_SUBSTEPS,
-	advanceCruise,
+	type Mass,
 	relativeSphereEntryTime,
 	sphereEntry,
-	type CruiseParams,
-	type Mass,
 } from "../src/cruise";
 import { MAX_DT } from "../src/units";
-import { add, length, scale, sub, v3, type Vec3 } from "../src/vec3";
+import { add, length, scale, sub, type Vec3, v3 } from "../src/vec3";
 
 const CONSTANT_CRUISE: CruiseParams = {
 	...DEFAULT_CRUISE,

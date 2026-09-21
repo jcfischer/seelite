@@ -3,21 +3,21 @@ import { carrierKey } from "../src/carrier-key";
 import { interiorOfStation } from "../src/dock-session";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
+import { trafficBerths } from "../src/station-interior";
+import type { TrafficRoutePhase } from "../src/station-route";
 import {
 	clearancePromotion,
 	compareStationTurns,
 	type LaneRequest,
 	laneWinner,
+	materializeTrafficContact,
 	playerLaneRefusal,
 	playerWinsLane,
-	materializeTrafficContact,
 	stationTrafficRoster,
 	TRAFFIC_HULL_POOLS,
 	TRAFFIC_ROLE,
 	trafficScheduleAt,
 } from "../src/station-traffic";
-import { trafficBerths } from "../src/station-interior";
-import type { TrafficRoutePhase } from "../src/station-route";
 import { generateContents } from "../src/system";
 import { enumerateCarriers, WORLD_GENERATOR_VERSION } from "../src/world-state";
 

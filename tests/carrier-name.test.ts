@@ -12,8 +12,8 @@
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import {
-	HULL_MODEL_NAME,
 	carrierName,
+	HULL_MODEL_NAME,
 	raiderRegistry,
 	trafficRegistry,
 } from "../src/carrier-name";
@@ -21,9 +21,9 @@ import { DOMAIN } from "../src/domains";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS } from "../src/hull";
 import { SYSTEM_NAME_MAX_CHARS } from "../src/names";
+import { raiderSlots } from "../src/raider-slots";
 import { fnv1a } from "../src/rng";
 import { stationTrafficRoster } from "../src/station-traffic";
-import { raiderSlots } from "../src/raider-slots";
 import { generateContents } from "../src/system";
 import { codeOf } from "./lib/source-scan";
 

@@ -16,19 +16,19 @@
  * into the flight loop.
  */
 
+import type { HullEnvelope } from "./hull";
 import {
 	STATION_GEOMETRY,
 	type StationAperture,
 	type StationType,
 } from "./station";
-import type { HullEnvelope } from "./hull";
 import {
 	type Berth,
-	type StationInterior,
 	berthFits,
 	chooseBerth,
+	type StationInterior,
 } from "./station-interior";
-import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
+import { add, cross, dot, length, scale, sub, type Vec3, v3 } from "./vec3";
 
 // ---------------------------------------------------------------------------
 // Tolerances (§3), all of them data rather than literals repeated per call site

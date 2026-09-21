@@ -21,27 +21,27 @@
  */
 
 import * as THREE from "three";
+import { disposeSubtree, shared } from "./gpu-teardown";
 import type { PlanetAppearance, SurfaceClass } from "./planet-appearance";
-import {
-	ATMOSPHERE_FRAGMENT,
-	BAKED_SURFACE_VERTEX,
-	CLOUD_FRAGMENT,
-	RING_FRAGMENT,
-	RING_VERTEX,
-	SURFACE_VERTEX,
-	bakedFragmentFor,
-	fragmentFor,
-	isBakeable,
-} from "./planet-shaders";
-import type { ReliefPath } from "./planet-shaders";
 import {
 	type BakePrograms,
 	type BodyBake,
 	createBakePrograms,
 	startBodyBake,
 } from "./planet-bake";
+import type { ReliefPath } from "./planet-shaders";
+import {
+	ATMOSPHERE_FRAGMENT,
+	BAKED_SURFACE_VERTEX,
+	bakedFragmentFor,
+	CLOUD_FRAGMENT,
+	fragmentFor,
+	isBakeable,
+	RING_FRAGMENT,
+	RING_VERTEX,
+	SURFACE_VERTEX,
+} from "./planet-shaders";
 import type { SurfacePath } from "./relief-bands";
-import { disposeSubtree, shared } from "./gpu-teardown";
 
 /**
  * The tessellation a body and its shells share, and the reason it is exported.

@@ -26,8 +26,9 @@
  * Headless, and on the list in `tests/headless.test.ts`: the unit tier renders
  * **this** catalogue, never a struct a test built.
  */
-import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
+
 import { COMMANDER_KEY } from "./commander-overlay";
+import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import { ALT_CHORDS } from "./key-dispatch";
 import {
 	type PadContext,

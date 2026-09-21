@@ -21,13 +21,13 @@
 
 import {
 	type ApertureFrame,
-	type ComputerPhase,
-	type EntryPose,
 	apertureFrame,
 	attemptEntry,
-	GRANT_WINDOW_S,
+	type ComputerPhase,
 	corridorHalfWidthKm,
 	dockingComputerStep,
+	type EntryPose,
+	GRANT_WINDOW_S,
 	newDockingState,
 	offAxisKm,
 	orthonormalise,
@@ -44,7 +44,7 @@ import {
 	slotPhaseRad,
 } from "../../src/station";
 import { stationInterior } from "../../src/station-interior";
-import { type Vec3, add, cross, dot, length, scale, v3 } from "../../src/vec3";
+import { add, cross, dot, length, scale, type Vec3, v3 } from "../../src/vec3";
 
 /** One step of the computer's flying, for a caller asking how it flew. */
 export interface ComputerTraceStep {

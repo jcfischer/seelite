@@ -2,22 +2,22 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { projectNavTargets } from "../src/cockpit";
-import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
 import {
-	type DisplayContact,
 	DIVERT_LABEL,
+	type DisplayContact,
 	isDisplayContact,
 	relativeLabel,
 	trafficDivertCue,
 } from "../src/display-contact";
-import { trafficPresence } from "../src/traffic-engagement";
-import { range } from "../src/units";
 import {
 	CANISTER_RADIUS_KM,
 	CANISTER_SCOOP_SPEED_KMS,
 	CARGO_CONTACT_COLOUR,
 	scoops,
 } from "../src/raider-wreck";
+import { bodyAccelerationBound, bodyVelocity, makeWorld } from "../src/sim";
+import { trafficPresence } from "../src/traffic-engagement";
+import { range } from "../src/units";
 import { length, sub, v3 } from "../src/vec3";
 import { repoPath } from "./lib/source-scan";
 

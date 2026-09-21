@@ -29,8 +29,8 @@ import {
 	surfaceFactsOf,
 } from "../src/occlusion-mesh";
 import { buildShipMesh } from "../src/ship-mesh";
-import { buildStationMesh } from "../src/station-mesh";
 import { STATION_TYPES } from "../src/station";
+import { buildStationMesh } from "../src/station-mesh";
 
 /** Every mesh in a subtree, in one place so a failure can name the offender. */
 const meshesOf = (root: THREE.Object3D) => {

@@ -36,9 +36,9 @@
  */
 
 import { DOMAIN } from "./domains";
-import { mix, seedFor, seededRand } from "./rng";
 import { planetDescription, systemName } from "./names";
-import { type Vec3, lengthSq } from "./vec3";
+import { mix, seededRand, seedFor } from "./rng";
+import { lengthSq, type Vec3 } from "./vec3";
 
 /** All eight exist from the start; switching galaxy changes an index and
  *  nothing else (spec §2). The consequence is a save obligation: per-galaxy

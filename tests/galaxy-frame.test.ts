@@ -35,8 +35,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { DOMAIN } from "../src/domains";
-import { generateGalaxy, systemSeedFor } from "../src/galaxy";
+import {
+	GALAXY_FLATTENING_Q,
+	generateGalaxy,
+	profileRadiusLy,
+	systemSeedFor,
+} from "../src/galaxy";
 import {
 	coreBearing,
 	GALACTIC_EAST,
@@ -46,9 +50,10 @@ import {
 	SYSTEM_PLANE_NORMAL,
 	skyBearing,
 	skyFrame,
-	systemToGalaxy,
 } from "../src/galaxy-frame";
+import { rotateByInverse } from "../src/quat";
 import {
+	add,
 	cross,
 	dot,
 	length,
@@ -59,7 +64,7 @@ import {
 	v3,
 } from "../src/vec3";
 import { codeOf, srcFiles } from "./lib/source-scan";
-import { DIRECTIONS, expectVec, UNIT } from "./lib/vec-assert";
+import { DIRECTIONS, expectVec, toVector3, UNIT } from "./lib/vec-assert";
 
 const TAU = Math.PI * 2;
 
@@ -151,11 +156,17 @@ describe("skyFrame", () => {
 	});
 
 	test("round trips, every direction, in both orders", () => {
+		// Back through `rotateByInverse`, not through a `systemToGalaxy` wrapper: the
+		// inverse is the thing that has to be right, and a wrapper that merely
+		// reverses the same quaternion is a place for a wrong inverse to hide. #430
+		// ships no reverse-direction helper for the same reason — a direction a pilot
+		// is looking along, stated in the galaxy's terms, is a feature nobody has
+		// charted yet, and surface with no caller is surface kept alive by its test.
 		for (const seed of SEEDS.slice(0, 16)) {
 			const f = skyFrame(seed);
 			for (const d of DIRECTIONS) {
-				expectVec(systemToGalaxy(f, galaxyToSystem(f, d)), d, 1e-9);
-				expectVec(galaxyToSystem(f, systemToGalaxy(f, d)), d, 1e-9);
+				expectVec(rotateByInverse(f.q, galaxyToSystem(f, d)), d, 1e-9);
+				expectVec(galaxyToSystem(f, rotateByInverse(f.q, d)), d, 1e-9);
 			}
 		}
 	});
@@ -266,21 +277,13 @@ describe("skyFrame", () => {
 		// and none for a wrong frame, which disagrees by order 1. A bound tighter than
 		// a rounding is a row that goes red on a compiler, which teaches nobody
 		// anything; a bound two orders looser would teach the same lesson in reverse.
-		const normal = new THREE.Vector3(
-			GALACTIC_NORMAL.x,
-			GALACTIC_NORMAL.y,
-			GALACTIC_NORMAL.z,
-		);
-		const east = new THREE.Vector3(
-			GALACTIC_EAST.x,
-			GALACTIC_EAST.y,
-			GALACTIC_EAST.z,
-		);
+		const normal = toVector3(GALACTIC_NORMAL);
+		const east = toVector3(GALACTIC_EAST);
 		let worstQuaternion = 0;
 		let worstEast = 0;
 		for (const seed of SEEDS) {
 			const f = skyFrame(seed);
-			const pole = new THREE.Vector3(f.pole.x, f.pole.y, f.pole.z);
+			const pole = toVector3(f.pole);
 			const theirs = new THREE.Quaternion()
 				.setFromAxisAngle(pole, f.rollRad)
 				.multiply(new THREE.Quaternion().setFromUnitVectors(normal, pole));
@@ -369,7 +372,6 @@ describe("skyFrame", () => {
 		expect(code).toContain("DOMAIN.SKY_FRAME");
 		expect(code).not.toContain("STREAMS");
 		expect(code).not.toContain('"backdrop"');
-		expect(DOMAIN.SKY_FRAME).toBeGreaterThan(0);
 	});
 
 	test("is uncorrelated with the system's own position", () => {
@@ -404,7 +406,7 @@ describe("skyFrame", () => {
 	});
 });
 
-describe("galaxyToSystem / systemToGalaxy", () => {
+describe("galaxyToSystem", () => {
 	test("carry the basis the module claims, and no more", () => {
 		// A rotation is fully determined by where it sends two perpendicular
 		// directions plus its handedness, and those two directions are this
@@ -421,9 +423,10 @@ describe("galaxyToSystem / systemToGalaxy", () => {
 		// statistical one: the transform carries the galactic plane onto a great
 		// circle whose pole is `SkyFrame.pole`. It is also the row that answers the
 		// flattening trap — `systemFromPosition` divides `y` by
-		// `GALAXY_FLATTENING_Q` for a *profile coordinate*, and a reader who takes
-		// that quotient as a distortion to undo has to put it somewhere; this one
-		// holds only for the stored positions as drawn.
+		// `GALAXY_FLATTENING_Q` because the stored position *is* the fiction's oblate
+		// shape, and a reader who takes that quotient for a distortion to undo has to
+		// put the correction somewhere; this statement holds only for the stored
+		// positions as drawn.
 		for (const seed of SEEDS.slice(0, 8)) {
 			const f = skyFrame(seed);
 			for (const azimuth of [0, 1.1, 2.7, 4.4]) {
@@ -586,6 +589,46 @@ describe("one galactic frame, read by everything that points at it", () => {
 			"src/galaxy-frame.ts: GALACTIC_EAST",
 			"src/galaxy-frame.ts: GALACTIC_NORMAL",
 		]);
+	});
+
+	test("the flattening comes off the component this normal is the normal of", () => {
+		// The exception the declaration guard cannot see. `galaxy.ts` holds this same
+		// axis as a **choice of component**: `profileRadiusLy` — and the identical
+		// quotient `systemFromPosition` inlines — divides the term along `y` by
+		// `GALAXY_FLATTENING_Q`. Being the module this one imports, it can never
+		// import the constant back without a cycle, so the axis is authored twice in
+		// two different forms and a spelling check sees one of them.
+		//
+		// So this row asks the flattening *where it acts*, and asks it of the
+		// constant: the squashed component has to be the one along
+		// `GALACTIC_NORMAL`, in plane directions nothing changes, and the mixed case
+		// is what fails if the quotient is taken off a magnitude rather than off a
+		// component. Re-axis the cluster and this goes red — which is the drift the
+		// module's own doc names and the guard was never going to catch.
+		const probes: [Vec3, number][] = [
+			// Along the normal: the whole quotient, and the radius comes out *larger*
+			// than the stored distance, because the fiction squashes this axis.
+			[scale(GALACTIC_NORMAL, 4), 4 / GALAXY_FLATTENING_Q],
+			[scale(GALACTIC_EAST, 4), 4],
+			[scale(cross(GALACTIC_NORMAL, GALACTIC_EAST), 4), 4],
+			[
+				add(scale(GALACTIC_EAST, 3), scale(GALACTIC_NORMAL, 4)),
+				Math.hypot(3, 4 / GALAXY_FLATTENING_Q),
+			],
+		];
+		for (const [position, expected] of probes)
+			expect(profileRadiusLy(position)).toBeCloseTo(expected, 12);
+		// The *shipped* copy of this quotient is inlined in `systemFromPosition` — one
+		// square root and one domain guard avoided on 2,048 records per world, for a
+		// `q` that is a compile-time constant there — and no call reaches an
+		// expression: the probe above cannot see a defect that lives only in the
+		// inlined form. So that copy is tied the way this file ties the chart's `UP`,
+		// to the declaration itself. It is a text check and it knows it; what it buys
+		// is that re-axing the flattening somewhere no row can evaluate reddens
+		// something, here, rather than nothing.
+		expect(codeOf("src/galaxy.ts")).toMatch(
+			/const flattenedY = pos\.y \/ GALAXY_FLATTENING_Q;/,
+		);
 	});
 
 	test("the world frame it aims into is still the one the game rolls against", () => {
