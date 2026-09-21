@@ -16,9 +16,17 @@ The boundary is engine against fiction, not player against world. A pilot
 presses a key and the game saves, so *controls* and *save* are #1's even though
 a pilot does both; what the fiction asks of a pilot — what work there is, what
 it means, what the world does about it — is #460's. When a node sits on the
-line, ask what its answer **changes**: code that draws, measures, persists or
-reads input is #1's; a decision about what the fiction asks of a pilot is
-#460's.
+line, ask what its answer **changes**: the mechanism that draws, measures,
+persists or reads input is #1's, and what a job is worth, means or costs is
+#460's. Combat consequence is the worked example — a consequence is persisted
+state, so the save format carrying it is #1's while what being struck *costs a
+pilot* is #460's, and the two are separate nodes rather than one node on two
+maps.
+
+A node on one map may be `--blocked-by` a node on the other: blocking is a
+native edge between nodes and knows nothing about membership, so it crosses the
+split and holds the blocked node off its own map's frontier until the blocker
+closes. Record the dependency; do not move a node to keep an edge local.
 
 ```bash
 # --repo is not optional; see below
@@ -34,11 +42,10 @@ same number — it does not error. Read the `(owner/name)` on the first line of
 every result before trusting it.
 
 **#460 does not restate #1's Constraints, Notes or delivery SOP** — it inherits
-them by reference and **adds eleven of its own** on top, about what the fiction
-may cost: the story stays optional, travel physics do not bend for it, a job is
-an authored row, no secret progress through ordinary sales, and so on. So
-working a #460 node means reading both maps: #460 for what it adds, #1 for what
-binds underneath.
+them by reference and adds its own on top, about what the fiction may cost. So
+working a #460 node means reading **both** maps, and neither is a summary of
+the other: #460 for what it adds, #1 for what binds underneath. What those
+constraints say is on #460, and deliberately not here.
 
 #1's **Constraints** section binds every answer — an option that violates one is
 not on the table. #1's **Notes** section carries the delivery SOP (claim →

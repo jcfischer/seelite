@@ -10,8 +10,8 @@ Author: Codex / Ivy · 2026-09-15 · Status: proposal, not an approved game cont
 > relay slice implements, what UI exists — were read at local main `c0a89ac` on
 > 2026-09-15 and have **not** been re-checked. Verify any of them before acting.
 >
-> And it was written without `CONTEXT.md`'s §Language open, so four of its words
-> are that section's Avoid aliases: *legal status* and *reputation* for
+> And it was written without `CONTEXT.md`'s §Language open, so some of its words
+> are that section's Avoid aliases. The clearest are: *legal status* and *reputation* for
 > **Standing**, *pirate bases* for **Pirate relay**, and *active-request* for
 > **Tracked request**. A node written against this document uses the glossary's
 > words. The other flags a reviewer will get here are the alias rule firing on
