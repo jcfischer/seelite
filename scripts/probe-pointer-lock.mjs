@@ -79,8 +79,8 @@ import {
 	bootedGame,
 	guardedOrigin,
 	launchChromium,
+	launchedAs,
 	PROBE_WINDOW_LOCKABLE,
-	probeLaunchOptions,
 	tally,
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
@@ -278,7 +278,7 @@ await page.addInitScript(installFakePad);
 // second browser with no tap installed, which is why that row still means
 // something.
 await page.addInitScript(() => {
-	window.__lockRefusals = [];
+	window.__lockRefusal = null;
 	window.__lockErrorEvents = 0;
 	window.__lockGrants = 0;
 	window.__lockAsks = 0;
@@ -295,9 +295,12 @@ await page.addInitScript(() => {
 	Element.prototype.requestPointerLock = function requestPointerLock(...args) {
 		window.__lockAsks++;
 		const asked = ask.apply(this, args);
-		Promise.resolve(asked).catch((error) =>
-			window.__lockRefusals.unshift(error?.name ?? String(error)),
-		);
+		Promise.resolve(asked).catch((error) => {
+			// One slot, last writer wins: only the most recent name is ever read,
+			// and a page that retries per interaction would otherwise grow a list
+			// nobody looks past the head of.
+			window.__lockRefusal = error?.name ?? String(error);
+		});
 		return asked;
 	};
 });
@@ -312,25 +315,23 @@ check(
 	`hit=${glass.hit} lock=${await lockHolder(page)}`,
 );
 if (!locked) {
-	// **Name the cause, or say that it was not observed (#454).** Six states, and
-	// they are six different findings: the observer never installed, which is the
-	// harness and names nothing; no ask, which is the game; a `WrongDocumentError`,
-	// which is the focus gate and so the launch (#441); any other named refusal,
-	// which is the genuine article; a lock granted and since released, which is a
-	// row above; and an ask refused with no name on it, which is unattributed and
-	// says so. Each of the last five was reachable in a shipped build before this
-	// row could tell them apart, and the first four were being printed as one.
+	// **Name the cause, or say that it was not observed (#454).** The arms below
+	// carry their own enumeration; what is worth saying once is that each names a
+	// different owner — the harness, the game, the launch, the browser, a row
+	// above — and that they were printed as one sentence before this node.
 	const { asks, refusal, events, grants } = await page.evaluate(() => ({
 		asks: window.__lockAsks,
-		refusal: window.__lockRefusals?.[0] ?? null,
+		refusal: window.__lockRefusal ?? null,
 		events: window.__lockErrorEvents ?? 0,
 		grants: window.__lockGrants ?? 0,
 	}));
-	// The launch as the lane resolved it, printed as a fact rather than branched
-	// on: `headless` is absent from a lockable launch by construction, so a
-	// message arm keyed on it could not fire in a shipped build (#454, and it
-	// shipped that way for a round).
-	const launched = JSON.stringify(probeLaunchOptions(LAUNCH));
+	// The launch this browser was opened with, read off the browser rather than
+	// resolved a second time: the guard owns what a launch became, and a probe
+	// that re-ran the resolver would print a reconstruction in the one row whose
+	// job is attribution. Printed as a fact rather than branched on — `headless`
+	// is absent from a lockable launch by construction, so a message arm keyed
+	// on it could not fire in a shipped build, and this one did for a round.
+	const launched = JSON.stringify(launchedAs(browser));
 	const diagnose = () => {
 		if (asks === undefined)
 			return "The observer was not installed on this page, so nothing here saw whether the game asked at all — that is a harness fault and names no cause.";

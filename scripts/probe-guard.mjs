@@ -84,17 +84,24 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * *granting* the lock four times running after two refusals. So **never** would
  * be the wrong word and it stood here for a round: the honest reading is that a
  * headed lock-dependent row is decided by what else is on screen and can hold
- * either way for a whole session. New headless on this channel has granted it
- * on every run of both nodes, which is the property the mode is for — not a
- * faster lock, a *decidable* one. It follows that a **red** on a headed
+ * either way for a whole session. New headless on this channel granted it on
+ * every run of #454's delivery — `probe-pointer-lock` ten times and
+ * `probe-controls-reference` eight, five of each inside a whole-suite run —
+ * with no refusal. That is the property the mode is for: not a faster lock, a
+ * *decidable* one. The count is stated because the sentence before it retracts
+ * a "never" that rested on three runs. It follows that a **red** on a headed
  * lock-dependent row is evidence and a green on one is not.
  *
  * So the lockable mode carries neither `headless: false` nor the offscreen
  * flags. **Why the backgrounding flags go with the position flag is not
  * restated here** — `scripts/measure-launch-switches.mjs` owns it and prints
  * each mode's real launch, because it is a property of a pinned Playwright
- * rather than of this repo. What is worth knowing without running it: the mode
- * drops no switch that was reaching Chromium.
+ * rather than of this repo. What is worth knowing without running it: on the
+ * Playwright pinned when #454 landed, the mode drops no switch that was
+ * reaching Chromium. **Nothing gates on that** — the instrument asserts
+ * nothing, by design — so a bump that dropped one of the three from
+ * Playwright's own defaults would falsify this line with nothing turning red.
+ * Re-run it after a bump.
  *
  * The requirement is the lock, not the headlessness. A machine where new
  * headless has no GPU loses the two probes that opt in rather than the lane —
@@ -102,6 +109,17 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * rasterising in software.
  */
 export const PROBE_WINDOW_LOCKABLE = "lockable";
+
+/**
+ * Where `launchChromium` records the options it passed, read by `launchedAs`.
+ *
+ * A symbol rather than a name, because the value is hung on a Playwright
+ * `Browser` and this repo does not own that object's namespace.
+ */
+const LAUNCH_OPTIONS = Symbol.for("seelite.launchOptions");
+
+/** The options a browser from `launchChromium` was actually opened with. */
+export const launchedAs = (browser) => browser?.[LAUNCH_OPTIONS] ?? null;
 
 /**
  * Every window mode there is, declared once.
@@ -154,19 +172,23 @@ export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 	const { probeWindow, ...chromiumOptions } = options;
 	// A lockable view keeps the caller's own launch. See the constant for why.
 	if (probeWindow === PROBE_WINDOW_LOCKABLE) return { ...chromiumOptions };
-	// A visible window, and the offscreen default, are both headed.
-	if (probeWindow === PROBE_WINDOW_VISIBLE || probeWindow === undefined)
+	// A visible window: headed, and wherever the desktop puts it.
+	if (probeWindow === PROBE_WINDOW_VISIBLE)
 		return {
 			...chromiumOptions,
 			headless: false,
-			args:
-				probeWindow === PROBE_WINDOW_VISIBLE
-					? [...(chromiumOptions.args ?? [])]
-					: [
-							...(chromiumOptions.args ?? []),
-							OFFSCREEN_WINDOW_POSITION,
-							...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
-						],
+			args: [...(chromiumOptions.args ?? [])],
+		};
+	// The default: headed, and kept out of the developer's working area.
+	if (probeWindow === undefined)
+		return {
+			...chromiumOptions,
+			headless: false,
+			args: [
+				...(chromiumOptions.args ?? []),
+				OFFSCREEN_WINDOW_POSITION,
+				...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+			],
 		};
 	// Unreachable while every member of PROBE_WINDOWS has a branch above, which
 	// is the point: the check at the top of this function accepts anything on
@@ -460,7 +482,14 @@ export async function launchChromium(options = {}) {
 			}`,
 		);
 	const mode = probeRendererMode();
-	const browser = await chromium.launch(probeLaunchOptions(options, mode));
+	const launchOptions = probeLaunchOptions(options, mode);
+	const browser = await chromium.launch(launchOptions);
+	// **What this launch actually was, recorded on the browser it opened.** A
+	// caller that needs to *say* what it got — `probe-pointer-lock`'s premise row
+	// names the launch when the lock is refused — otherwise re-runs the resolver
+	// and prints a reconstruction, which is the same class of mistake as a probe
+	// restating a constant instead of reading it off the page.
+	browser[LAUNCH_OPTIONS] = launchOptions;
 	if (mode !== HARDWARE_RENDERER) return browser;
 
 	try {

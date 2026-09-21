@@ -76,22 +76,26 @@ const switchesFor = async (probeWindow) => {
 	}
 };
 
+/** What a count of one flag means, which is the part of this a reader edits. */
+const note = (seen) => {
+	if (seen === 0) return "  (absent)";
+	if (seen > 1) return "  (this module's, restating Playwright's)";
+	return "";
+};
+
 const report = async (label, probeWindow) => {
 	const argv = await switchesFor(probeWindow);
 	console.log(`\n${label}`);
 	for (const flag of OURS) {
 		const seen = argv.filter((a) => a === flag).length;
-		console.log(
-			`  ${seen}×  ${flag}${seen === 0 ? "  (absent)" : seen > 1 ? "  (this module's, restating Playwright's)" : ""}`,
-		);
+		console.log(`  ${seen}×  ${flag}${note(seen)}`);
 	}
 	const ours = argv.filter((a) => OURS.includes(a)).length;
+	const automation = argv.includes(AUTOMATION)
+		? "1 is the instrument's own"
+		: "the instrument's own is missing";
 	console.log(
-		`  argv ${argv.length} switches; ${ours} of them could be this module's, and ${
-			argv.includes(AUTOMATION)
-				? "1 is the instrument's own"
-				: "the instrument's own is missing"
-		}`,
+		`  argv ${argv.length} switches; ${ours} of them could be this module's, and ${automation}`,
 	);
 };
 
