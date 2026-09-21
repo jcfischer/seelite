@@ -553,4 +553,8 @@ night. Every one of them is smaller than the smallest real star, which is the
 invariant that keeps the derived sky readable as structure while the invented
 population outnumbers it by an order of magnitude in every direction.
 `faintField` and `FAINT_COUNT` in `src/backdrop.ts`; §12 says what that costs.
-_Avoid_: Dust, background stars (that is what the derived layer is), filler
+_Avoid_: Dust, filler. **Scope note, not a ban on "background"**: both populations
+sit *in* the background layer, so the words "background stars" name whichever one
+the sentence means and nothing is renamed here. What the sentence has to name is
+which population — an invented point and a system are not interchangeable, and the
+invariant between them is the reason.

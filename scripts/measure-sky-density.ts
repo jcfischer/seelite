@@ -11,15 +11,21 @@
  *   band    the elevation histogram against a uniform sphere, and the density
  *           inside the band and outside it, beside the invented layer's
  *   core    how tightly the other systems cluster around the way to the centre
- *   cost    what `systemField` costs on arrival, and the whole galaxy's worth
+ *   grain   the invented layer's size moments before and after #431's invariant,
+ *           in world units and in pixels at a stated canvas height and scale
+ *   cost    what `systemField` costs on arrival, what it allocates in bytes, and
+ *           the whole galaxy's worth
  *
  * ## Nothing here re-derives a bearing or a size
  *
  * The distances are `sub` over the shipped positions; the `cost` mode calls the
  * shipped `systemField` rather than a copy of it, and the clamp figures call the
- * shipped `brightSizeLy`. The elevation and core-cone angles are read in **galaxy
- * space** — the band is a property of where the systems are, and #430's per-system
- * rotation only turns the whole picture without changing any of these angles.
+ * shipped `brightSizeLy`. The elevation and core-cone angles are read in the
+ * **Galactic frame** — the band is a property of where the systems are, and #430's
+ * per-system rotation only turns the whole picture without changing any of these
+ * angles. Which also means no row here can be evidence *about* that rotation: a
+ * statistic built to be invariant to a transform cannot test it. §12 of
+ * `galaxy-generation.md` says where the transform is actually held.
  *
  * ## Why an instrument rather than a figure copied from #100
  *
@@ -39,6 +45,8 @@
 
 import {
 	BRIGHT_CEILING_LY,
+	FAINT_SIZE_MIN,
+	FAINT_SIZE_SPAN,
 	BRIGHT_FLOOR_LY,
 	BRIGHT_SIZE_K,
 	BRIGHT_SIZE_MAX,
@@ -130,26 +138,37 @@ function quantile(xs: number[], p: number, label: string): number {
 	return finite(label, s[Math.min(s.length - 1, Math.floor(s.length * p))]);
 }
 
-/** One observer's sky, reduced to the figures every mode below reads. */
+/** Which of an observer's three readings a mode actually uses.
+ *
+ * The corpus is 81,920 observers × 255 points, so all three arrays at once is
+ * ~63M numbers — over half a gigabyte resident — and `sky` has never read an
+ * elevation nor `band` a distance. So a mode names what it reads and the rest is
+ * never built.
+ */
+interface SkyNeeds {
+	dists?: boolean;
+	elevations?: boolean;
+	coreCone?: boolean;
+}
+
+/** One observer's sky, reduced to what the calling mode asked for. */
 interface ObserverSky {
-	/** Distance to every other system, light years. */
 	dists: number[];
-	/** |elevation| of every other system off the cluster's plane, radians. */
 	elevAbs: number[];
-	/** Angle of every other system away from the way to the cluster centre,
-	 *  radians — the core cone. */
 	fromCore: number[];
-	/** How far the observer sits from the cluster centre, light years. */
 	observerRadiusLy: number;
 }
+
+const EMPTY: number[] = [];
 
 function observerSky(
 	systems: readonly SystemRecord[],
 	observer: SystemRecord,
+	needs: SkyNeeds,
 ): ObserverSky {
-	const dists: number[] = [];
-	const elevAbs: number[] = [];
-	const fromCore: number[] = [];
+	const dists: number[] = needs.dists ? [] : EMPTY;
+	const elevAbs: number[] = needs.elevations ? [] : EMPTY;
+	const fromCore: number[] = needs.coreCone ? [] : EMPTY;
 	// The centre is the origin (§3's density law is centred there), so the way in
 	// is the negated position. An observer standing exactly at the centre has no
 	// such direction; the generator ships none, and the guard below says so.
@@ -166,11 +185,19 @@ function observerSky(
 		if (other.index === observer.index) continue;
 		const delta = sub(other.pos, observer.pos);
 		const d = Math.sqrt(lengthSq(delta));
-		dists.push(finite("distance", d));
+		if (needs.dists) dists.push(finite("distance", d));
 		const unit: Vec3 = { x: delta.x / d, y: delta.y / d, z: delta.z / d };
-		const sinLat = finite("sinLat", dot(unit, GALACTIC_NORMAL));
-		elevAbs.push(Math.abs(Math.asin(sinLat)));
-		fromCore.push(Math.acos(Math.max(-1, Math.min(1, dot(unit, coreDir)))));
+		if (needs.elevations) {
+			// Clamped, because this is a dot product of unit vectors and a unit
+			// vector computed by dividing can come back at 1+1e-16. `asin` of that
+			// is NaN, and NaN is not caught by `finite`: it is simply never `<=` a
+			// threshold, so the point silently leaves the count. The cone arm
+			// below has always clamped; this one had not.
+			const sinLat = finite("sinLat", dot(unit, GALACTIC_NORMAL));
+			elevAbs.push(Math.abs(Math.asin(Math.max(-1, Math.min(1, sinLat)))));
+		}
+		if (needs.coreCone)
+			fromCore.push(Math.acos(Math.max(-1, Math.min(1, dot(unit, coreDir)))));
 	}
 	return {
 		dists,
@@ -183,64 +210,116 @@ function observerSky(
 	};
 }
 
-function sweep(): ObserverSky[] {
-	const skies: ObserverSky[] = [];
-	for (let seed = 1; seed <= SEEDS; seed++) {
+/**
+ * Every observer of every world, handed to `consume` and then forgotten.
+ *
+ * Not `sweep(): ObserverSky[]`: holding the corpus was the first thing this
+ * instrument did, and it cost more memory than the numbers printed were worth.
+ * Each mode accumulates the handful of figures it prints as it goes, which is
+ * also why no mode has to filter a 21M-element array to get a count.
+ */
+function sweep(
+	needs: SkyNeeds,
+	consume: (sky: ObserverSky, world: number, galaxy: number) => void,
+): number {
+	let observers = 0;
+	for (let seed = 1; seed <= SEEDS; seed++)
 		for (let g = 0; g < GALAXY_COUNT; g++) {
 			const galaxy = generateGalaxy(seed * 7919, g);
-			for (const record of galaxy.systems)
-				skies.push(observerSky(galaxy.systems, record));
+			for (const record of galaxy.systems) {
+				consume(observerSky(galaxy.systems, record, needs), seed, g);
+				observers++;
+			}
 		}
-	}
-	if (skies.length === 0) throw new Error("measure-sky-density: empty sweep");
-	return skies;
+	if (observers === 0) throw new Error("measure-sky-density: empty sweep");
+	return observers;
 }
 
 /** Every observer sees every other system: the count is fixed, so the only
  *  question is whether the sweep actually swept. */
-function assertPointCount(skies: ObserverSky[]): number {
-	for (const s of skies) {
-		if (s.dists.length !== SYSTEMS_PER_GALAXY - 1)
-			throw new Error(
-				`measure-sky-density: expected ${
-					SYSTEMS_PER_GALAXY - 1
-				} other systems in this sky, saw ${s.dists.length}`,
-			);
+function assertPointCount(count: number, label: string): number {
+	if (count !== SYSTEMS_PER_GALAXY - 1)
+		throw new Error(
+			`measure-sky-density: expected ${SYSTEMS_PER_GALAXY - 1} other systems in a sky, saw ${count} (${label})`,
+		);
+	return count;
+}
+
+/** The distance census of one observer: how many of its 255 fall inside each
+ *  ring, and how many of them the shipped size law flattens at either clamp. */
+interface DistanceCensus {
+	rings: number[];
+	atCeiling: number;
+	atFloor: number;
+	minDistance: number;
+}
+
+const RING_LY = [2, 5, 10, 20, 40];
+
+function census(dists: readonly number[], into: DistanceCensus): void {
+	for (const d of dists) {
+		if (d < into.minDistance) into.minDistance = d;
+		for (let i = 0; i < RING_LY.length; i++)
+			if (d <= RING_LY[i]) into.rings[i]++;
+		// Read off the shipped law rather than against the distances the clamps
+		// were chosen at: a ceiling nobody reaches and a floor everybody hits are
+		// both a law that is not the one being drawn.
+		const size = brightSizeLy(d);
+		if (size === BRIGHT_SIZE_MAX) into.atCeiling++;
+		else if (size === BRIGHT_SIZE_MIN) into.atFloor++;
 	}
-	return SYSTEMS_PER_GALAXY - 1;
+}
+
+function freshCensus(): DistanceCensus {
+	return {
+		rings: RING_LY.map(() => 0),
+		atCeiling: 0,
+		atFloor: 0,
+		minDistance: Number.POSITIVE_INFINITY,
+	};
 }
 
 function modeSky(): void {
-	const skies = sweep();
-	const points = assertPointCount(skies);
 	const nearest: number[] = [];
 	const farthest: number[] = [];
 	const mid: number[] = [];
 	const magSpread: number[] = [];
-	for (const s of skies) {
-		const near = Math.min(...s.dists);
-		const far = Math.max(...s.dists);
-		nearest.push(near);
-		farthest.push(far);
-		mid.push(median(s.dists, "mid"));
+	const censusAll = freshCensus();
+	let observers = 0;
+	sweep({ dists: true }, (sky) => {
+		assertPointCount(sky.dists.length, "sky mode");
+		nearest.push(Math.min(...sky.dists));
+		farthest.push(Math.max(...sky.dists));
+		mid.push(median(sky.dists, "mid"));
 		// A star's flux goes as 1/d² and the magnitude scale is 2.5·log10 of a
 		// flux ratio, so an inverse-square sky spans 5·log10(d_far/d_near)
 		// magnitudes with no tuning dial at all.
 		magSpread.push(
-			finite("magnitude spread", 5 * Math.log10(far / Math.max(near, 1e-9))),
+			finite(
+				"magnitude spread",
+				5 *
+					Math.log10(
+						Math.max(...sky.dists) / Math.max(Math.min(...sky.dists), 1e-9),
+					),
+			),
 		);
-	}
+		census(sky.dists, censusAll);
+		observers++;
+	});
+	const points = SYSTEMS_PER_GALAXY - 1;
+	const total = observers * points;
+
 	console.log(
-		`observers: ${skies.length} across ${SEEDS} worlds × ${GALAXY_COUNT} galaxies`,
+		`observers: ${observers} across ${SEEDS} worlds × ${GALAXY_COUNT} galaxies`,
 	);
 	console.log(
-		`points: ${points}  (${finite(
+		`points: ${points}  (${fig(
 			"density",
 			(points / SPHERE_SQ_DEG) * 1000,
-		).toFixed(2)} per 1000 sq deg, against Earth's naked-eye ${finite(
+		)} per 1000 sq deg, against Earth's naked-eye ${fig(
 			"earth density",
 			(EARTH_NAKEDEYE / SPHERE_SQ_DEG) * 1000,
-		).toFixed(2)})`,
+		)})`,
 	);
 	console.log(summarize("nearest other system ly", nearest));
 	console.log(summarize("median separation ly", mid));
@@ -250,42 +329,34 @@ function modeSky(): void {
 	// How many of the 255 a size law with a saturation ceiling would saturate.
 	// A sky's *nearest* few are the ones the eye reads as bright, so a ceiling
 	// that bites past them is a ceiling that flattened the picture.
-	//
-	// Counted in one pass, not with seven `filter`s over the whole corpus: the
-	// corpus is 21M distances and each pass over it is a quarter of a second, so
-	// seven of them would cost more than the sweep that produced the numbers.
-	const total = skies.length * (SYSTEMS_PER_GALAXY - 1);
-	const RINGS = [2, 5, 10, 20, 40];
-	const ringCount = RINGS.map(() => 0);
-	let atCeiling = 0;
-	let atFloor = 0;
-	let minDistance = Infinity;
-	for (const s of skies)
-		for (const d of s.dists) {
-			if (d < minDistance) minDistance = d;
-			for (let i = 0; i < RINGS.length; i++) if (d <= RINGS[i]) ringCount[i]++;
-			// Read off the shipped law rather than against the distances the
-			// clamps were chosen at: a ceiling nobody reaches and a floor
-			// everybody hits are both a law that is not the one being drawn.
-			const size = brightSizeLy(d);
-			if (size === BRIGHT_SIZE_MAX) atCeiling++;
-			else if (size === BRIGHT_SIZE_MIN) atFloor++;
-		}
-	for (let i = 0; i < RINGS.length; i++)
+	for (let i = 0; i < RING_LY.length; i++)
 		console.log(
-			`   within ${String(RINGS[i]).padStart(2)} ly: ${fig(
-				`within ${RINGS[i]}`,
-				ringCount[i] / skies.length,
-			)} of the 255  (${fig(`share ${RINGS[i]}`, ringCount[i] / total, 3)} of all points)`,
+			`   within ${String(RING_LY[i]).padStart(2)} ly: ${fig(
+				`within ${RING_LY[i]}`,
+				censusAll.rings[i] / observers,
+			)} of the 255  (${fig(
+				`share ${RING_LY[i]}`,
+				censusAll.rings[i] / total,
+				3,
+			)} of all points)`,
 		);
 
 	console.log(
-		`\nthe shipped size law: ${fig("ceiling share", atCeiling / total, 4)} of points ` +
-			`saturate at the ceiling (${fig(
-				"ceiling per sky",
-				atCeiling / skies.length,
-			)} of the 255), ${fig("floor share", atFloor / total, 4)} sit on its floor ` +
-			`(${fig("floor per sky", atFloor / skies.length)} of the 255).`,
+		`\nthe shipped size law: ${fig(
+			"ceiling share",
+			censusAll.atCeiling / total,
+			4,
+		)} of points saturate at the ceiling (${fig(
+			"ceiling per sky",
+			censusAll.atCeiling / observers,
+		)} of the 255), ${fig(
+			"floor share",
+			censusAll.atFloor / total,
+			4,
+		)} sit on its floor (${fig(
+			"floor per sky",
+			censusAll.atFloor / observers,
+		)} of the 255).`,
 	);
 	// Printed beside the shares, because a documented distance that is only ever
 	// *written down* is one that goes stale silently: #431's first round quoted
@@ -300,94 +371,116 @@ function modeSky(): void {
 		)} ly (size ${fig("ceiling size", BRIGHT_SIZE_MAX, 4)}) and ${fig(
 			"floor ly",
 			BRIGHT_FLOOR_LY,
-		)} ly (size ${fig(
-			"floor size",
-			BRIGHT_SIZE_MIN,
-			4,
-		)}); the closest pair in the corpus is ${fig(
-			"min distance",
-			minDistance,
-			3,
-		)} ly, whose unclamped size would be ${fig(
-			"unclamped size",
-			BRIGHT_SIZE_K / minDistance,
-			3,
-		)} — ${fig(
-			"unclamped multiple",
-			BRIGHT_SIZE_K / minDistance / BRIGHT_SIZE_MAX,
-			0,
-		)}× the ceiling.`,
+		)} ly (size ${fig("floor size", BRIGHT_SIZE_MIN, 4)}); the closest pair in ` +
+			`the corpus is ${fig("min distance", censusAll.minDistance, 3)} ly, whose ` +
+			`unclamped size would be ${fig(
+				"unclamped size",
+				BRIGHT_SIZE_K / censusAll.minDistance,
+				3,
+			)} — ${fig(
+				"unclamped multiple",
+				BRIGHT_SIZE_K / censusAll.minDistance / BRIGHT_SIZE_MAX,
+				0,
+			)}× the ceiling.`,
 	);
+	// Each quantile computed once and read twice, with a label that would name it
+	// in a throw rather than "r" and "r2".
+	const p01Near = quantile(nearest, 0.01, "1%ile nearest");
+	const p99Far = quantile(farthest, 0.99, "99%ile farthest");
 	console.log(
 		`\nthe size law reads distance, so these are its inputs: 1%ile nearest ${fig(
 			"1%ile nearest",
-			quantile(nearest, 0.01, "1%ile nearest"),
-		)} ly, 99%ile farthest ${fig(
-			"99%ile farthest",
-			quantile(farthest, 0.99, "99%ile farthest"),
-		)} ly — a ${fig(
+			p01Near,
+		)} ly, 99%ile farthest ${fig("99%ile farthest", p99Far)} ly — a ${fig(
 			"span",
-			quantile(farthest, 0.99, "r") / quantile(nearest, 0.01, "r2"),
+			p99Far / p01Near,
 			1,
 		)}:1 span of 1/d, which is what the clamps are asked to cut.`,
 	);
 }
 
+/** The band thresholds, in degrees, and the counts they collect. */
+const BAND_DEG = [5, 10, 20, 30];
+
 function modeBand(): void {
-	const skies = sweep();
-	assertPointCount(skies);
-	const total = skies.length * (SYSTEMS_PER_GALAXY - 1);
-	const within = (deg: number) => {
-		const rad = (deg * Math.PI) / 180;
-		let n = 0;
-		for (const s of skies) for (const e of s.elevAbs) if (e <= rad) n++;
-		return n;
-	};
 	console.log(
-		`points: ${total}  (${finite(
-			"mean per observer",
-			total / skies.length,
-		).toFixed(1)} each)`,
+		`arm check: a two-sided band of ±30° is ${fig(
+			"arm check",
+			bandArm(30),
+			6,
+		)} of a uniform sphere`,
 	);
-	// The arm is checked before it is used, because the arm *is* the result. At
-	// ±30° a uniform sphere has exactly **half** its points — `|sin lat| ≤ ½` is
-	// half a sphere by symmetry — so an arm that does not say 0.500000 there is
-	// not a band arm. This instrument first ran with the cone arm `1−cos θ`
-	// standing in this place and printed ×7.68 at 20° where the honest reading is
-	// ×1.35; one line catches that, and it is here rather than in a comment
-	// because the mistake was made with a comment next to it.
-	const bandArm = (deg: number) => Math.sin((deg * Math.PI) / 180);
-	if (Math.abs(bandArm(30) - 0.5) > 1e-12)
-		throw new Error(
-			`measure-sky-density: the band arm is not a band arm (${bandArm(30)})`,
-		);
-	for (const deg of [5, 10, 20, 30]) {
-		const got = within(deg);
+	// Counted in one pass, in per-group buckets. `modeSky`'s own comment refuses
+	// seven passes over a 21M corpus, and the first version of this mode did
+	// exactly that — five passes, one of them an exact repeat of a row already
+	// printed. The buckets are what make the excess *checkable* rather than
+	// merely printed: pooled over 81,920 observers a share has no spread, and
+	// "agrees with #100 inside seed noise" is a sentence about a spread.
+	const perWorld = new Map<number, { inBand: number; total: number }>();
+	let total = 0;
+	let observers = 0;
+	const counts = BAND_DEG.map(() => 0);
+	const bandDeg = 20;
+	const bandIndex = BAND_DEG.indexOf(bandDeg);
+	sweep({ elevations: true }, (sky, world) => {
+		assertPointCount(sky.elevAbs.length, "band mode");
+		const group = perWorld.get(world) ?? { inBand: 0, total: 0 };
+		for (const e of sky.elevAbs) {
+			for (let i = 0; i < BAND_DEG.length; i++)
+				if (e <= (BAND_DEG[i] * Math.PI) / 180) counts[i]++;
+			if (e <= (bandDeg * Math.PI) / 180) group.inBand++;
+		}
+		group.total += sky.elevAbs.length;
+		perWorld.set(world, group);
+		total += sky.elevAbs.length;
+		observers++;
+	});
+	console.log(
+		`points: ${total}  (${fig("mean per observer", total / observers, 1)} each)`,
+	);
+	for (let i = 0; i < BAND_DEG.length; i++) {
 		// A uniform sphere puts sin θ of its points inside a *two-sided* band of
 		// ±θ: the zone between latitudes ±θ has area 2·sin θ·2π against the
 		// sphere's 4π. A band excess of 1.00 is no band at all.
-		const uniform = bandArm(deg) * total;
+		const uniform = bandArm(BAND_DEG[i]) * total;
 		console.log(
-			`|elevation| <= ${String(deg).padStart(2)}°  share ${finite(
+			`|elevation| <= ${String(BAND_DEG[i]).padStart(2)}°  share ${fig(
 				"band share",
-				got / total,
-			).toFixed(3)}  uniform ${finite("uniform share", uniform / total).toFixed(
+				counts[i] / total,
 				3,
-			)}  excess ×${finite("band excess", got / uniform).toFixed(2)}`,
+			)}  uniform ${fig("uniform share", uniform / total, 3)}  excess ×${fig(
+				"band excess",
+				counts[i] / uniform,
+			)}`,
 		);
 	}
-	const bandDeg = 20;
-	const inBand = within(bandDeg);
+
 	const bandArea = bandArm(bandDeg) * SPHERE_SQ_DEG;
 	const outArea = SPHERE_SQ_DEG - bandArea;
+	const inBand = counts[bandIndex];
 	// Once each, then read twice: the density rows and the outnumbering below are
 	// the same two numbers, and computing them twice is two chances to write the
 	// division out differently.
-	const realIn = (inBand / skies.length / bandArea) * 1000;
-	const realOut = ((total - inBand) / skies.length / outArea) * 1000;
+	const realIn = (inBand / observers / bandArea) * 1000;
+	const realOut = ((total - inBand) / observers / outArea) * 1000;
 	console.log(
 		`\ndensity inside ±${bandDeg}°: ${fig("in band", realIn)} per 1000 sq deg\n` +
 			`density outside it:      ${fig("out of band", realOut)} per 1000 sq deg`,
+	);
+
+	// The spread the "inside seed noise" claim needs. Each world is 8 galaxies ×
+	// 256 observers, so this is the coarsest split that is still a sample of
+	// *worlds* rather than of points; a claim that #100's figure and this one
+	// agree has to say how far worlds move apart on their own.
+	const excesses = [...perWorld.values()].map(
+		(g) => g.inBand / g.total / bandArm(bandDeg),
+	);
+	console.log(
+		`\n±${bandDeg}° excess per world (${perWorld.size} worlds): ${summarize(
+			"per-world excess",
+			excesses,
+			"",
+		)}`,
 	);
 
 	// The faint population is uniform over the sphere, so its density is the
@@ -404,55 +497,167 @@ function modeBand(): void {
 		`\nfaint population at the shipped count (${FAINT_COUNT}): ${fig(
 			"faint density",
 			faintDensity,
-			2,
 		)} per 1000 sq deg\n` +
-			`inside the band the invented outnumber the real ×${finite(
+			`inside the band the invented outnumber the real ×${fig(
 				"swamp ratio",
 				faintDensity / realIn,
-			).toFixed(2)};  outside it ×${finite(
-				"swamp ratio out",
-				faintDensity / realOut,
-			).toFixed(2)}.\n` +
+			)};  outside it ×${fig("swamp ratio out", faintDensity / realOut)}.\n` +
 			`Number is not where the band survives; brightness is.`,
 	);
 }
 
+/** The share of a uniform sphere inside a two-sided band of ±deg.
+ *
+ * The arm is checked before it is used, because the arm *is* the result. At ±30°
+ * a uniform sphere has exactly **half** its points — `|sin lat| ≤ ½` is half a
+ * sphere by symmetry — so an arm that does not say 0.500000 there is not a band
+ * arm. This instrument first ran with the cone arm `1−cos θ` standing in this
+ * place and printed ×7.68 at 20° where the honest reading is ×1.35; one line
+ * catches that, and it runs at load rather than in a comment because the mistake
+ * was made with a comment next to it.
+ */
+function bandArm(deg: number): number {
+	return Math.sin((deg * Math.PI) / 180);
+}
+if (Math.abs(bandArm(30) - 0.5) > 1e-12)
+	throw new Error(
+		`measure-sky-density: the band arm is not a band arm (${bandArm(30)})`,
+	);
+
 function modeCore(): void {
-	const skies = sweep();
-	assertPointCount(skies);
-	const maxR = Math.max(...skies.map((s) => s.observerRadiusLy));
-	const buckets: Record<string, number[]> = {};
-	const coneShares: Record<string, number[]> = {};
-	for (const s of skies) {
-		const t = s.observerRadiusLy / maxR;
+	// Per observer rather than per point: every observer has exactly 255 of them,
+	// so a mean of per-observer shares *is* the pooled share, and it costs 82k
+	// numbers instead of 21M. The radius comes from the same pass, and the thirds
+	// are cut afterwards because the outer radius is not known until the sweep
+	// has run.
+	const rows: { radius: number; meanAngle: number; coneShare: number }[] = [];
+	sweep({ coreCone: true }, (sky) => {
+		assertPointCount(sky.fromCore.length, "core mode");
+		let sum = 0;
+		let within20 = 0;
+		for (const a of sky.fromCore) {
+			sum += a;
+			if (a <= (20 * Math.PI) / 180) within20++;
+		}
+		rows.push({
+			radius: sky.observerRadiusLy,
+			meanAngle: sum / sky.fromCore.length,
+			coneShare: within20 / sky.fromCore.length,
+		});
+	});
+	const maxR = Math.max(...rows.map((r) => r.radius));
+	if (!(maxR > 0)) throw new Error("measure-sky-density: no observer radius");
+	const thirds: Record<string, typeof rows> = {
+		"core third": [],
+		"middle third": [],
+		"rim third": [],
+	};
+	for (const r of rows) {
+		const t = r.radius / maxR;
 		const key =
 			t < 1 / 3 ? "core third" : t < 2 / 3 ? "middle third" : "rim third";
-		(buckets[key] ??= []).push(...s.fromCore);
-		const deg = s.fromCore.map((a) => (a * 180) / Math.PI);
-		(coneShares[key] ??= []).push(
-			deg.filter((a) => a <= 20).length / deg.length,
-		);
+		thirds[key].push(r);
 	}
-	for (const key of ["core third", "middle third", "rim third"]) {
-		const xs = buckets[key];
-		if (!xs) throw new Error(`measure-sky-density: empty bucket ${key}`);
-		const shares = coneShares[key] ?? [];
+	for (const [key, bucket] of Object.entries(thirds)) {
+		if (bucket.length === 0) throw new Error(`measure-sky-density: no ${key}`);
+		const mean = (pick: (r: (typeof bucket)[0]) => number) =>
+			bucket.reduce((a, r) => a + pick(r), 0) / bucket.length;
 		console.log(
-			`${key}  ${summarize(
-				"angle to centre deg",
-				xs.map((a) => (a * 180) / Math.PI),
-			)}`,
+			`${key}  n=${bucket.length}  ` +
+				summarize(
+					"mean angle to centre deg",
+					bucket.map((r) => (r.meanAngle * 180) / Math.PI),
+				),
 		);
 		console.log(
-			`          other systems inside a 20° cone on the centre: ${finite(
+			`          other systems inside a 20° cone on the centre: ${fig(
 				"cone share",
-				shares.reduce((a, b) => a + b, 0) / shares.length,
-			).toFixed(3)} of them  (uniform sky: ${finite(
+				mean((r) => r.coneShare),
+				3,
+			)} of them  (uniform sky: ${fig(
 				"uniform cone",
 				(1 - Math.cos((20 * Math.PI) / 180)) / 2,
-			).toFixed(3)})`,
+				3,
+			)})`,
 		);
 	}
+}
+
+/**
+ * The invented layer's grain, in the units it is drawn in and in the pixels a
+ * sheet shows.
+ *
+ * `bun scripts/measure-sky-density.ts grain [canvasHeight] [pixelScale]`
+ *
+ * The two laws are integrated in closed form rather than sampled: for
+ * `min + span·u⁶` over a uniform `u`, the mean is `min + span/7`, the median is
+ * `min + span/64`, and the mean of `size²` — the light an additive disc delivers
+ * — is `min² + 2·min·span/7 + span²/13`. Sampling would only add noise to three
+ * expressions a reader can check by hand.
+ *
+ * **The pixel conversion takes its dial as an argument, deliberately.**
+ * `STAR_PIXEL_SCALE` lives in `main.ts`, behind a Three.js import this headless
+ * tier may not cross; a copy of it in this file would be a fourth copy of a
+ * renderer dial and one that goes stale the day the renderer moves. So a px row
+ * names the canvas height and the scale it was taken at, and the world-unit rows
+ * beside it need neither.
+ */
+function modeGrain(): void {
+	const canvasHeight = Number(process.argv[3] ?? 900);
+	const pixelScale = Number(process.argv[4] ?? 0.35);
+	if (!(canvasHeight > 0) || !(pixelScale > 0))
+		throw new Error(
+			`measure-sky-density: grain wants a canvas height and a pixel scale, got ${process.argv[3]} and ${process.argv[4]}`,
+		);
+	const toPx = (size: number) => size * canvasHeight * pixelScale;
+
+	/** One law's three moments. `flux` is E[size²], what an additive point buys. */
+	const moments = (label: string, min: number, span: number) => {
+		const mean = min + span / 7;
+		const median = min + span / 64;
+		const flux = min * min + (2 * min * span) / 7 + (span * span) / 13;
+		console.log(
+			`${label.padEnd(34)} max ${fig(
+				`${label} max`,
+				min + span,
+				5,
+			)}  mean ${fig(`${label} mean`, mean, 5)}  median ${fig(
+				`${label} median`,
+				median,
+				5,
+			)}  E[size²] ${fig(`${label} flux`, flux, 7)}`,
+		);
+		console.log(
+			`${"".padEnd(34)} on a ${canvasHeight}-px canvas at scale ${pixelScale}: ` +
+				`max ${fig(`${label} px max`, toPx(min + span), 1)} px  mean ${fig(
+					`${label} px mean`,
+					toPx(mean),
+					1,
+				)} px  median ${fig(`${label} px median`, toPx(median), 1)} px`,
+		);
+		return flux;
+	};
+
+	console.log(
+		`the shipped band (FAINT_SIZE_MIN ${FAINT_SIZE_MIN}, span ${FAINT_SIZE_SPAN})`,
+	);
+	const now = moments("shipped", FAINT_SIZE_MIN, FAINT_SIZE_SPAN);
+	// The law this node replaced, kept here as the comparison it is: a law that
+	// is no longer shipped has no module left to print it, and the sentence
+	// "the grain lost most of its light" needs both sides or it is an opinion.
+	const before = moments("replaced (0.006 + 0.05·u⁶)", 0.006, 0.05);
+	console.log(
+		`\nlight per invented point, before ÷ after: ×${fig(
+			"light ratio",
+			before / now,
+		)}  (median point: ÷${fig(
+			"median ratio",
+			(0.006 + 0.05 / 64) / (FAINT_SIZE_MIN + FAINT_SIZE_SPAN / 64),
+		)})\n` +
+			`so the light left with the **tail**, not with the grain. Whether that is ` +
+			`still a night is #433's sheet, and the ceiling of both bands is what the ` +
+			`invariant row in tests/backdrop.test.ts holds.`,
+	);
 }
 
 function modeCost(): void {
@@ -472,6 +677,16 @@ function modeCost(): void {
 	for (const r of systems) systemField(galaxy, r);
 	const all = performance.now() - t1;
 
+	// Measured off a field the shipped call returned, not off an arithmetic
+	// sketch of one: this node printed two different sizes for these three
+	// buffers in two files and both were wrong, which is what a byte count is an
+	// instrument for.
+	const field = systemField(galaxy, systems[0]);
+	const bytes =
+		field.positions.byteLength +
+		field.colors.byteLength +
+		field.sizes.byteLength;
+
 	if (!Number.isFinite(one) || one <= 0)
 		throw new Error(`measure-sky-density: the cost did not compute (${one})`);
 	console.log(
@@ -483,15 +698,25 @@ function modeCost(): void {
 			`   [bun, headless — CPU arithmetic; the draw is 255 points and one more call]`,
 	);
 	console.log(
-		`all ${systems.length} observers in one sweep: ${finite("all", all).toFixed(
-			2,
-		)} ms`,
+		`all ${systems.length} observers in one sweep: ${fig("all", all)} ms`,
+	);
+	console.log(
+		`what an arrival allocates: ${bytes} bytes — positions ${fig(
+			"positions bytes",
+			field.positions.byteLength,
+			0,
+		)}, colours ${fig("colours bytes", field.colors.byteLength, 0)}, sizes ${fig(
+			"sizes bytes",
+			field.sizes.byteLength,
+			0,
+		)} — three typed arrays handed to the GPU and the previous three dropped.`,
 	);
 }
 
 const MODES: Record<string, () => void> = {
 	sky: modeSky,
 	band: modeBand,
+	grain: modeGrain,
 	core: modeCore,
 	cost: modeCost,
 };

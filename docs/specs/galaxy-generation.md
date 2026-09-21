@@ -914,7 +914,7 @@ ceiling, which is not a band.
 
 The bake, the points layer, the rim view row and whether a pilot can read any of
 it — siblings below #100 (`#431`, `#432`, `#433`, `#434`), all blocked on this.
-This section answers where a galaxy-space direction is in a system's own sky, and
+This section answers where a **Galactic frame** direction is in a system's own sky, and
 nothing about what is drawn there. **§12 is what landed in that blank** — and two
 of the figures #100's own receipt quoted beside this frame did not survive being
 re-measured: its "median 21.1 ly" is the median *separation* between two systems
@@ -950,8 +950,9 @@ unless a line below says otherwise, every figure in it is that script's `sky` an
 
 Two `THREE.Points` follow from that, not from two ideas — there is one sky. One
 geometry holding both would re-upload 4,255 vertices on an arrival to change 255
-of them; two means the arriving layer costs 3 kB and the texture costs nothing
-ever again. They share **one** `ShaderMaterial`, because everything that
+of them; two means an arrival allocates **7,140 bytes** — positions 3,060, colours
+3,060, sizes 1,020, counted off a field the shipped `systemField` returned and
+printed by `cost` mode — and the texture costs nothing ever again. They share **one** `ShaderMaterial`, because everything that
 distinguishes a point of one layer from a point of the other is already an
 attribute, and a second material would be a second compiled program for an
 identical shader. `rebuildStarField()` disposes the old geometry only after the
@@ -1039,9 +1040,17 @@ number or goes red.
 46.3% of a sky's points sit within 20° of the cluster's plane against **34.2%**
 for a uniform sphere — a **1.35×** excess, ×1.41 inside ±10°. That is #100's 1.31×
 re-measured on the same question, and the question is the same one: the elevation
-and cone statistics are read in **galaxy space**, which §11's section and the
+and cone statistics are read in the **Galactic frame**, which §11's section and the
 instrument's own header both say is deliberate, because #430's per-system rotation
 turns the whole picture without changing any of these angles.
+
+**How far apart the worlds themselves get is printed, not assumed.** Across 40
+worlds the ±20° excess runs **1.322 to 1.397**, median 1.353. So #100's 1.31× sits
+*below* the low end of its own kind of spread, not inside it: the two instruments
+agree to within 3% and no seed explains the remaining 3%, which is a difference
+#100's deleted instrument may have had and this one cannot re-check. Saying
+"agrees inside seed noise" would have made a spread do work it was never measured
+to do.
 
 **Which is why the agreement checks the instrument and the cluster, and not the
 transform.** A statistic built to be invariant to `skyFrame` cannot test
@@ -1061,20 +1070,31 @@ anyone quoting "the band" for this should quote 1.35× and 8× instead.
 
 ### What the invariant costs the invented layer
 
-Ten times its light, and almost none of it is the grain. The law this section
-replaces was `0.006 + 0.05·u⁶`: its points **averaged** 4.1 px on a 900-px-tall
-canvas, its **median** was 2.1 px, and its top of range drew 17.6 px — as large as
-the derived layer's *brightest* star, which is the inversion the invariant
-forbids. The new band averages 1.7 px with a 1.5 px median and a 3.0 px maximum,
-so over `size²` — what an additive disc delivers as light — the population
-contributes **a tenth of what it did**.
+Ten times its light, and almost none of it is the grain. `grain` mode integrates
+both laws in closed form — for `min + span·u⁶`, mean `min + span/7`, median
+`min + span/64`, and mean `size²` `min² + 2·min·span/7 + span²/13`, which is the
+light an additive disc delivers:
 
-Where the tenth went is the part worth carrying to #433's sheet: the median point
-dimmed by 1.4×, not by 10×. The lost light is the **tail** — the old law scattered
-its handful of 17 px discs over the whole sphere, at random bearings, at sizes
-indistinguishable from the systems the sky is supposed to be a picture *of*. The
-invariant removed exactly those. The grain is nearly as bright as it was, and
-whether it is enough of a night remains the sheet's question.
+| band | mean size | median | top of range | E[size²] |
+| --- | --- | --- | --- | --- |
+| replaced `0.006 + 0.05·u⁶` | 0.01314 | 0.00678 | 0.05600 | 0.0003140 |
+| shipped `0.0048 + 0.0048·u⁶` | 0.00549 | 0.00487 | 0.00960 | 0.0000314 |
+
+**Light per invented point falls ×10.00, and the median point dims only ÷1.39.**
+The lost light is the **tail**: the old law scattered its handful of 17-px discs
+over the whole sphere, at random bearings, at sizes indistinguishable from the
+systems the sky is supposed to be a picture *of*. The invariant removed exactly
+those. The grain is nearly as bright as it was, and whether it is enough of a
+night remains the sheet's question.
+
+Those size figures are world units, which is what the instrument owns. The px
+readings — 4.1 px to 1.7 px at the mean, 2.1 to 1.5 at the median, 17.6 to 3.0 at
+the top — are the same rows multiplied by a canvas height and `STAR_PIXEL_SCALE`,
+and `grain` takes both as **arguments** (`grain 900 0.35`) rather than copying the
+renderer's dial: `main.ts` sits behind a Three.js import this headless tier may not
+cross, and a fourth copy of a display dial is a fifth way for a figure to go stale.
+A px row is therefore a *stated reading* — canvas, scale and all — and the rows
+above it are the ones that re-derive on their own.
 
 ### `BACKDROP_RADIUS` is where a direction is drawn, not where a star is
 

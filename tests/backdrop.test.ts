@@ -67,8 +67,16 @@ const triple = (a: Float32Array, i: number) => [
 	a[i * 3 + 2],
 ];
 
-/** float32 storage of a figure of order `BACKDROP_RADIUS`. */
-const F32 = 1e-5;
+/** Slack for a *size* that has been through a `Float32Array`.
+ *
+ * Sized to the quantity, not to the layer: the sizes live at 0.012 to 0.055,
+ * where float32 spacing is about 4e-9, so 1e-7 is roughly twenty-five steps of
+ * storage noise and nothing more. The bearing rows above read figures of order
+ * `BACKDROP_RADIUS` and are held with `toBeCloseTo(…, 4)` for that reason; one
+ * tolerance written for one magnitude and used at another is how a row stops
+ * measuring what its comment says it measures.
+ */
+const F32_SIZE = 1e-7;
 
 const radiusOf = (positions: Float32Array, i: number) =>
 	Math.hypot(...triple(positions, i));
@@ -276,7 +284,7 @@ describe("systemField — the 255 systems that are actually there", () => {
 			const size = field.sizes[i];
 			expect(size).toBeGreaterThanOrEqual(BRIGHT_SIZE_MIN);
 			expect(size).toBeLessThanOrEqual(BRIGHT_SIZE_MAX);
-			expect(size).toBeLessThanOrEqual(previous + F32);
+			expect(size).toBeLessThanOrEqual(previous + F32_SIZE);
 			previous = size;
 			expect(Number.isFinite(d)).toBe(true);
 		}
@@ -299,11 +307,17 @@ describe("systemField — the 255 systems that are actually there", () => {
 		// moved `K` was free to say anything. A boundary is two rows, because a
 		// distance quoted as "where it bites" is wrong if the law has already
 		// bitten a light year earlier.
-		expect(brightSizeLy(BRIGHT_CEILING_LY)).toBe(BRIGHT_SIZE_MAX);
+		// `toBeCloseTo` rather than `toBe` at the boundary: the distance and the
+		// size are on opposite sides of the same quotient, and `K / (K / MAX)`
+		// landing one ulp under `MAX` would leave the clamp unfired. That is a
+		// coin flip about IEEE754, not about the law, and a row that fails on it
+		// would be a red light pointing at the wrong thing. Past the boundary the
+		// exact rows stay, because there the clamp has plainly fired.
+		expect(brightSizeLy(BRIGHT_CEILING_LY)).toBeCloseTo(BRIGHT_SIZE_MAX, 9);
 		expect(brightSizeLy(BRIGHT_CEILING_LY * 1.001)).toBeLessThan(
 			BRIGHT_SIZE_MAX,
 		);
-		expect(brightSizeLy(BRIGHT_FLOOR_LY)).toBe(BRIGHT_SIZE_MIN);
+		expect(brightSizeLy(BRIGHT_FLOOR_LY)).toBeCloseTo(BRIGHT_SIZE_MIN, 9);
 		expect(brightSizeLy(BRIGHT_FLOOR_LY * 0.999)).toBeGreaterThan(
 			BRIGHT_SIZE_MIN,
 		);

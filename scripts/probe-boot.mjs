@@ -48,6 +48,33 @@ import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
  *  probe keeps the seed it chose; `PROBE_URL` replaces the whole thing. The
  *  runner (probe-all.mjs) sets the origin for exactly that reason — a runner
  *  that set the URL would silently hand every probe a different world. */
+/** How many mounted positions a backdrop seed check reads.
+ *
+ * The whole 4,000-point buffer would be 12,000 floats across the CDP boundary to
+ * answer "did the seed reach the sky", which a head answers: the scatter is drawn
+ * from one stream, so a different seed moves the head too. Kept as one constant
+ * and one function because both readings of it live in this file and the two had
+ * grown apart.
+ */
+const SKY_HEAD = 24;
+
+/** The heads of both backdrop layers' positions, read in the page.
+ *
+ * One function, called with the count, because `page.evaluate` ships a function's
+ * own source and nothing it closes over — which is precisely how the two readers
+ * this replaces drifted apart. Taking the count as an argument keeps the one
+ * number this file owns on this side of the boundary.
+ */
+function skyHeads({ head }) {
+	const one = (name) => {
+		const layer = window.__seelite.backdropScene.getObjectByName(name);
+		return layer
+			? Array.from(layer.geometry.getAttribute("position").array.slice(0, head))
+			: [];
+	};
+	return { faint: one("stars-faint"), systems: one("stars-systems") };
+}
+
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const SEED = 42;
@@ -190,11 +217,6 @@ const state = await page.evaluate(() => {
 	const pointLayer = (name) => g.backdropScene.getObjectByName(name);
 	const faint = pointLayer("stars-faint");
 	const systems = pointLayer("stars-systems");
-	const headOf = (layer) =>
-		layer
-			? Array.from(layer.geometry.getAttribute("position").array.slice(0, 24))
-			: [];
-
 	return {
 		seed: g.world.seed,
 		frames: g.frames,
@@ -220,14 +242,21 @@ const state = await page.evaluate(() => {
 		systemTotal: g.world.galaxy.systems.length,
 		// One group holding both layers, and nothing else in the layer.
 		backdropChildren: g.backdropScene.children.length,
-		faintPositions: headOf(faint),
-		systemPositions: headOf(systems),
 		canvasSize: {
 			w: g.renderer.domElement.width,
 			h: g.renderer.domElement.height,
 		},
 	};
 });
+
+// The two backdrop heads, read through the one function this file's other
+// backdrop rows use. They are read after the state block rather than inside it
+// because an `evaluate` closure cannot reach a module-scope helper — which is
+// exactly how the two readers drifted apart in the first place, so the boundary
+// is taken rather than the duplication accepted.
+const bootSky = await page.evaluate(skyHeads, { head: SKY_HEAD });
+state.faintPositions = bootSky.faint;
+state.systemPositions = bootSky.systems;
 
 check(
 	"the seed in the URL is the seed the world used",
@@ -582,19 +611,9 @@ check(
 );
 
 // (4) The seed reaches the backdrop — both halves, and both layers.
-const readSky = () => {
-	const g = window.__seelite;
-	const head = (name) =>
-		Array.from(
-			g.backdropScene
-				.getObjectByName(name)
-				.geometry.getAttribute("position")
-				.array.slice(0, 24),
-		);
-	return { faint: head("stars-faint"), systems: head("stars-systems") };
-};
+const readSky = skyHeads;
 const reload = await open();
-const again = await reload.evaluate(readSky);
+const again = await reload.evaluate(readSky, { head: SKY_HEAD });
 const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 check(
 	"the same seed draws the same invented stars",
@@ -615,7 +634,7 @@ await reload.close();
 
 // The other seed is the point, so the override must not replace it.
 const other = await open({ params: { seed: OTHER_SEED }, override: false });
-const otherSky = await other.evaluate(readSky);
+const otherSky = await other.evaluate(readSky, { head: SKY_HEAD });
 check(
 	"a different seed draws different stars",
 	otherSky.faint.some((v, i) => v !== state.faintPositions[i]),

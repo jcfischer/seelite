@@ -37,7 +37,9 @@
  * world seed and is rebuilt never. The derived layer is a function of which
  * system the player is standing in and is rebuilt on every witchspace arrival.
  * One geometry would mean re-uploading 4,255 vertices to change 255 of them; two
- * means an arriving system costs 3 kB and the texture costs nothing ever again.
+ * means an arrival reallocates its own three small buffers and the texture is
+ * never touched again — what that costs in bytes and milliseconds is printed by
+ * `measure-sky-density.ts cost` and carried by §12, not by this comment.
  * They share one `ShaderMaterial`, because everything that differs between them
  * is already in the attributes and a second material would be a second program
  * for an identical shader.
@@ -119,19 +121,14 @@ export const FAINT_COUNT = 4000;
  * magnitude in every direction, so how much light each layer contributes is the
  * only channel left in which the real layer is visible as structure.
  *
- * **What that costs, stated rather than left to be noticed.** The law this band
- * replaces was `0.006 + 0.05·u⁶`, whose top of range drew a point as large as the
- * derived layer's *brightest* star — the inversion the paragraph above forbids —
- * and over `size²`, which is what an additive disc delivers as light, the
- * population now contributes **a tenth of what it did**. Where the tenth went is
- * worth knowing before these two numbers are read: almost none of it is the
- * typical point. It is the **tail**. The old law scattered its handful of
- * oversized discs over the whole sphere, at random bearings, at sizes
- * indistinguishable from the systems the sky is supposed to be a picture *of*;
- * this band takes exactly those away and leaves the grain nearly as it was. The
- * px figures behind that sentence are §12's to carry, and so is the question of
- * whether the grain is still enough of a night, which is #433's sheet to settle —
- * the cost is named here so that sheet is argued with rather than looked at.
+ * **What that costs, stated rather than left to be noticed:** over `size²`, which
+ * is what an additive disc delivers as light, this band leaves the invented layer
+ * **a tenth** of what the law it replaced gave it — and almost none of that tenth
+ * is the typical point, because what the invariant actually removes is the old
+ * law's bright tail: its handful of oversized discs, at random bearings, at sizes
+ * indistinguishable from the systems the sky is a picture *of*. The figures are
+ * §12's to carry and `measure-sky-density.ts grain` to reprint; what to make of
+ * the resulting night is #433's sheet.
  */
 export const FAINT_SIZE_MIN = 0.0048;
 export const FAINT_SIZE_SPAN = 0.0048;

@@ -65,6 +65,7 @@ await page.evaluate(() => {
 		if (!layer) return null;
 		const geometry = layer.geometry;
 		const position = geometry.getAttribute("position");
+		const size = geometry.getAttribute("aSize");
 		// The radius of *every* point rather than of the first one: a rebuild
 		// that wrote unnormalised bearings past the head would otherwise pass.
 		let min = Infinity;
@@ -83,12 +84,30 @@ await page.evaluate(() => {
 		// so the count is the number of sky reads that object has survived.
 		if (geometry.__skyProbeReads === undefined) geometry.__skyProbeReads = 0;
 		geometry.__skyProbeReads += 1;
+		// A 4,000-point layer serialised whole is 16,000 floats through CDP per
+		// read, for a claim — "nothing was written here" — that a checksum answers
+		// as well. The head slice stays so a red row prints something readable, and
+		// the derived layer keeps its full arrays because the pairing check below
+		// needs every size and distance.
+		const checksum = (attr) => {
+			const a = attr.array;
+			let h = 0;
+			for (let i = 0; i < a.length; i++) h = (h * 31 + a[i]) | 0;
+			return h;
+		};
+		const whole = position.count <= 512;
 		return {
 			count: position.count,
 			minRadius: min,
 			maxRadius: max,
-			positions: Array.from(position.array),
-			sizes: Array.from(geometry.getAttribute("aSize").array),
+			positions: whole
+				? Array.from(position.array)
+				: Array.from(position.array.slice(0, 24)),
+			sizes: whole
+				? Array.from(size.array)
+				: Array.from(size.array.slice(0, 24)),
+			positionChecksum: checksum(position),
+			sizeChecksum: checksum(size),
 			// Which layer the renderer thinks it is drawing in, read back from
 			// the parent chain rather than from the name.
 			inBackdrop:
@@ -193,7 +212,7 @@ function mountedSizesFall(reading) {
 }
 
 const before = await page.evaluate(() => window.__skyProbe.sky());
-const monotone = mountedSizesFall(before);
+const monotoneBefore = mountedSizesFall(before);
 
 check(
 	"the backdrop mounts two named point layers",
@@ -220,9 +239,9 @@ check(
 );
 
 check(
-	"the mounted sizes fall as the mounted distances rise",
-	monotone.ok,
-	monotone.why,
+	"at boot the mounted sizes fall as the mounted distances rise",
+	monotoneBefore.ok,
+	monotoneBefore.why,
 );
 
 const jumped = await page.evaluate(() => window.__skyProbe.jumpToNearest());
@@ -241,7 +260,7 @@ check(
 	"a jump re-draws the derived sky onto a geometry that is not the one before",
 	after.systems !== null &&
 		after.systems.reads === 1 &&
-		after.systems.positions.some((v, i) => v !== before.systems.positions[i]),
+		after.systems.positionChecksum !== before.systems.positionChecksum,
 	`the mounted positions differ, and the mounted geometry has survived ${after.systems?.reads} read — the boot one was a different object`,
 );
 
@@ -249,16 +268,29 @@ check(
 	"a jump leaves the invented population on the geometry it booted with",
 	after.faint !== null &&
 		after.faint.reads === before.faint.reads + 1 &&
-		after.faint.positions.length === before.faint.positions.length &&
-		after.faint.positions.every((v, i) => v === before.faint.positions[i]) &&
-		after.faint.sizes.every((v, i) => v === before.faint.sizes[i]),
-	`${after.faint?.count} points, same BufferGeometry after ${after.faint?.reads} reads, byte for byte`,
+		after.faint.count === before.faint.count &&
+		after.faint.positionChecksum === before.faint.positionChecksum &&
+		after.faint.sizeChecksum === before.faint.sizeChecksum,
+	`${after.faint?.count} points, same BufferGeometry after ${after.faint?.reads} reads, same position and aSize checksums`,
 );
 
 check(
 	"the derived layer is still full after the arrival",
 	after.systems !== null && after.systems.count === after.systemTotal - 1,
 	`${after.systems?.count} for ${after.systemTotal} systems`,
+);
+
+// The row the probe was written for. A rebuild that wrote new bearings and kept
+// the old sizes — or wrote both from a stale galaxy — draws the right sky at the
+// wrong brightness, and only the *rebuilt* buffer can show it: the boot buffer
+// pairs correctly by construction, because nothing has had the chance to go
+// stale yet.
+const monotoneAfter = mountedSizesFall(after);
+
+check(
+	"on the rebuilt buffer too, the mounted sizes fall as the distances rise",
+	monotoneAfter.ok,
+	monotoneAfter.why,
 );
 
 await browser.close();

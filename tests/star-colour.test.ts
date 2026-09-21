@@ -112,15 +112,27 @@ describe("photosphereTintLinear — hue yes, exposure no", () => {
 });
 
 describe("the luma rule has one author", () => {
-	test("no second module declares it", () => {
+	test("no second module declares it, under any name", () => {
 		// The number moved out of `planet-surface.ts` when the points layer
-		// needed it. A second `export const` of the same name is what two
-		// consumers each carrying their own copy looks like, and a scan is the
-		// only form of this claim that a fifth consumer cannot walk past.
+		// needed it. A scan is the only form of this claim that a fifth consumer
+		// cannot walk past — and the scan has to look for the **value**, not for
+		// the identifier, because `const luma = 0.55` in a third module is the
+		// drift this is afraid of and it declares nothing called
+		// `PHOTOSPHERE_LUMA`. Both shapes are checked: the shipped name in two
+		// files, and a fresh binding of the literal anywhere else in `src/`.
 		const declared = srcFiles().filter((file) =>
 			/export const PHOTOSPHERE_LUMA\b/.test(codeOf(file)),
 		);
 		expect(declared).toEqual(["src/star-colour.ts"]);
+
+		const rebound = srcFiles()
+			.filter((file) => file !== "src/star-colour.ts")
+			.filter((file) =>
+				/\b(?:const|let)\s+\w*(?:luma|Luma|LUMA)\w*\s*(?::\s*number)?\s*=\s*0\.55\b/.test(
+					codeOf(file),
+				),
+			);
+		expect(rebound).toEqual([]);
 	});
 
 	test("the star surface reads it rather than restating it", () => {
