@@ -63,13 +63,23 @@ import { assertBrowserRenderer } from "./lib/players-renderer.mjs";
 /** The opt-in local probe mode that requires a non-software renderer. */
 export const PROBE_RENDERER_ENV = "SEELITE_PROBE_RENDERER";
 export const HARDWARE_RENDERER = "hardware";
-/** Keep headed hardware Chromium out of the developer's working area. */
-export const OFFSCREEN_WINDOW_POSITION = "--window-position=-32000,-32000";
-export const OFFSCREEN_WINDOW_RUNTIME_FLAGS = [
-	"--disable-backgrounding-occluded-windows",
-	"--disable-renderer-backgrounding",
-	"--disable-background-timer-throttling",
-];
+/**
+ * The Chromium build that carries the GPU when there is no window.
+ *
+ * Playwright's default headless launcher is `chrome-headless-shell`, which
+ * rasterises in software — measured here as
+ * `ANGLE (Google, Vulkan … SwiftShader driver)`. The full Chromium build on
+ * this channel reports `ANGLE (Apple, ANGLE Metal Renderer)` in **new
+ * headless**, which is what lets the whole hardware lane run with no window at
+ * all. That is the one thing the default mode adds to a caller's options, and a
+ * caller that names its own channel keeps it.
+ *
+ * It is not a claim that this holds everywhere: `assertBrowserRenderer` reads
+ * the renderer back on every hardware launch, so a machine where this channel
+ * rasterises in software fails loudly rather than quietly measuring SwiftShader.
+ */
+export const HARDWARE_CHANNEL = "chromium";
+
 export const PROBE_WINDOW_VISIBLE = "visible";
 /**
  * A view that can hold a pointer lock — named for what the probe asks for, not
@@ -92,21 +102,19 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * a "never" that rested on three runs. It follows that a **red** on a headed
  * lock-dependent row is evidence and a green on one is not.
  *
- * So the lockable mode carries neither `headless: false` nor the offscreen
- * flags. **Why the backgrounding flags go with the position flag is not
- * restated here** — `scripts/measure-launch-switches.mjs` owns it and prints
- * each mode's real launch, because it is a property of a pinned Playwright
- * rather than of this repo. What is worth knowing without running it: on the
- * Playwright pinned when #454 landed, the mode drops no switch that was
- * reaching Chromium. **Nothing gates on that** — the instrument asserts
- * nothing, by design — so a bump that dropped one of the three from
- * Playwright's own defaults would falsify this line with nothing turning red.
- * Re-run it after a bump.
+ * **And it is now what the whole lane does**, which is why this mode resolves to
+ * the same launch as the default rather than to one of its own. #454 shipped it
+ * as an opt-in on two probes and left the lane headed; the lane opened 54
+ * windows a run and every one of them took the focus. What kept it headed was
+ * that its default launch had no channel, so headless meant
+ * `chrome-headless-shell` and software rasterisation. `HARDWARE_CHANNEL` is
+ * that missing half.
  *
- * The requirement is the lock, not the headlessness. A machine where new
- * headless has no GPU loses the two probes that opt in rather than the lane —
- * `assertBrowserRenderer` below is what says so, loudly, instead of quietly
- * rasterising in software.
+ * The requirement is still the lock rather than the headlessness, and the mode
+ * stays for that: a probe saying *why* it needs this launch is worth reading,
+ * and on a machine where new headless has no GPU the guard could answer the two
+ * questions differently. `assertBrowserRenderer` below is what would say so,
+ * loudly, instead of quietly rasterising in software.
  */
 export const PROBE_WINDOW_LOCKABLE = "lockable";
 
@@ -170,25 +178,19 @@ export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 		);
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
-	// A lockable view keeps the caller's own launch. See the constant for why.
-	if (probeWindow === PROBE_WINDOW_LOCKABLE) return { ...chromiumOptions };
-	// A visible window: headed, and wherever the desktop puts it.
+	// The default and a lockable view are **one launch**: windowless, on the
+	// channel that carries the GPU there. Written as one expression so they
+	// cannot drift into two answers to the same question; see
+	// `PROBE_WINDOW_LOCKABLE` for why the mode is still worth declaring.
+	if (probeWindow === PROBE_WINDOW_LOCKABLE || probeWindow === undefined)
+		return { channel: HARDWARE_CHANNEL, ...chromiumOptions };
+	// A visible window: headed, and wherever the desktop puts it. The one mode
+	// that still takes the focus, and the one probe that asks for it says why.
 	if (probeWindow === PROBE_WINDOW_VISIBLE)
 		return {
 			...chromiumOptions,
 			headless: false,
 			args: [...(chromiumOptions.args ?? [])],
-		};
-	// The default: headed, and kept out of the developer's working area.
-	if (probeWindow === undefined)
-		return {
-			...chromiumOptions,
-			headless: false,
-			args: [
-				...(chromiumOptions.args ?? []),
-				OFFSCREEN_WINDOW_POSITION,
-				...OFFSCREEN_WINDOW_RUNTIME_FLAGS,
-			],
 		};
 	// Unreachable while every member of PROBE_WINDOWS has a branch above, which
 	// is the point: the check at the top of this function accepts anything on
