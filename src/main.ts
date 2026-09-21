@@ -7661,9 +7661,11 @@ class Game {
 				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings.
 				//
 				// Press to launch, press again to skip the traversal: one key, and
-				// the second press is the skip §12.2 makes unconditional. The skip
-				// refuses on an *arrival*, which is E4's unmet dependency rather
-				// than a policy — `canSkipTraversal` carries that argument.
+				// the second press is the skip §12.2 makes unconditional. **Both
+				// traversals skip since §13.3**, which retired E4's per-station-type
+				// flags rather than implementing them — this said the skip refused on
+				// an arrival for a round after that stopped being true, and
+				// `canSkipTraversal` carries the argument.
 				if (this.dock.phase === "docked") this.launch();
 				else this.skipDockTraversal();
 				return;

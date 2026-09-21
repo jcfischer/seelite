@@ -194,12 +194,12 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			const label =
 				r?.status ??
 				(state.leadsById[o.id]
-					? "retained lead · not accepted"
+					? "kept · not accepted"
 					: "offer · not accepted");
 			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${o.tonnes} t ${esc(o.goodName)} · report at ${esc(o.reportName)}</small></button>`;
 		})
 		.join("");
-	let details = `<div class="lc-request-details" data-live-request-details><h3>Choose work at your own pace</h3><p>Open an offer to read its terms. Reading or retaining a lead makes no commitment.</p><p>Accept multiple requests. Manually Track one to show its next action in flight.</p></div>`;
+	let details = `<div class="lc-request-details" data-live-request-details><h3>Choose work at your own pace</h3><p>Open a row to read its terms. Reading one, or keeping it for later, commits you to nothing.</p><p>Accept multiple requests. Manually Track one to show its next action in flight.</p></div>`;
 	if (selected) {
 		const o = selected;
 		const r = state.byId[o.id];
@@ -222,7 +222,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			[
 				"Cargo",
 				o.entrusted
-					? `${o.tonnes} t ${o.goodName}, entrusted · the requester's throughout, and it cannot be sold`
+					? `${o.tonnes} t ${o.goodName}, entrusted · it stays the requester's, and you cannot sell it`
 					: `${o.tonnes} t ${o.goodName}, your own · buy it where you like and carry the loss`,
 			],
 			["Equipment", "None"],
@@ -233,7 +233,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				"No deadline, exclusivity, cancellation fee or reputation penalty",
 			],
 		];
-		let actions = button("retain", o.id, "Retain lead");
+		let actions = button("retain", o.id, "Keep for later");
 		if ((!r || r.status === "cancelled") && atRequester)
 			actions += button(
 				"accept",
@@ -278,5 +278,5 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			);
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Report after docking at ${esc(o.reportName)}. Remote payment is unavailable.</p>` : ""}</div>`;
 	}
-	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · one manual cue · ${flight ? "accepted work and retained leads" : "available offers and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No work posted here."}</p>`}</div>${details}</div></div>`;
+	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your work, and what you kept" : "offers posted here, and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No work posted here."}</p>`}</div>${details}</div></div>`;
 }

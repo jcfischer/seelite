@@ -115,14 +115,16 @@ export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
 		rowId: "courier-priority",
-		revision: 1,
+		// #459 rewrote this row's purpose, danger and consequence. An accepted
+		// offer pins the revision it was taken under, so terms a pilot was shown
+		// get a new number even when only the words moved.
+		revision: 2,
 		title: "Priority consignment",
 		purpose:
-			"A standing order was short-shipped. The station will pay for the hull that closes the gap.",
-		danger:
-			"No escort, and the cargo is known to be moving. Fly it like it matters.",
+			"A standing order was short-shipped. The station will pay for the expedited shipment of the goods.",
+		danger: "No escort, and raiders know this cargo is moving.",
 		action: "Carry the consignment and report at the delivery station.",
-		consequence: "The gap in the order closes, and the price with it.",
+		consequence: "The order is filled, and the buyer's price settles.",
 		tonnes: 12,
 		payment: { baseCr: 65, perTonneCr: 11, perLyCr: 18, basePriceFactor: 0 },
 	}),
