@@ -238,7 +238,7 @@ const pressPad = async (target, name) => {
 // than for today's answer to it — `PROBE_WINDOW_LOCKABLE` owns the why (#454).
 // Named once, because the premise row below reads the same options back to say
 // what the lane made of them, and two spellings would let it reason about a
-// launch that did not happen (sage, round 1).
+// launch that did not happen.
 const LAUNCH = { channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE };
 const browser = await launchChromium(LAUNCH);
 
@@ -266,7 +266,7 @@ await page.addInitScript(installFakePad);
 // `pointerlockerror`, which is how the form returning `undefined` reports,
 // carries none: it is counted as an *unnamed* refusal, so the diagnosis below
 // can say the cause was unobserved instead of printing the event's own name as
-// though it were one (sage, round 2). The patch goes on `Element.prototype`,
+// though it were one. The patch goes on `Element.prototype`,
 // where the method is defined, and forwards its arguments — a call made with
 // `{ unadjustedMovement: true }` must reach the browser as the one the player's
 // build makes.
@@ -326,7 +326,9 @@ if (!locked) {
 			return "The cause is the lane: it launched a headed window for a lockable view, and a macOS window opened from a background terminal is never the key window (#441). Fix the launch, not this probe.";
 		if (refusal)
 			return `The cause is the refusal itself — ${refusal} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`;
-		return `The ask was made ${asks}× and refused ${events}× with no name on either side, so the cause is unobserved here rather than known.`;
+		if (events === 0)
+			return `The ask was made ${asks}× and was neither granted nor refused — no rejection and no \`pointerlockerror\` — so nothing here says why the lock is not held.`;
+		return `The ask was made ${asks}× and refused ${events}× through \`pointerlockerror\`, which carries no reason, so the cause is unobserved here rather than known.`;
 	};
 	console.log(
 		` FAIL  the lock was not taken, which makes every row below vacuous. ${diagnose()}`,

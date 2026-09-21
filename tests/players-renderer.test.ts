@@ -67,9 +67,8 @@ test("the hardware mode is opt-in and each window mode asks for its own view", (
 });
 
 test("a lockable view is neither headed nor positioned off screen", () => {
-	// #454: new headless has no window, so `headless: false` and the offscreen
-	// flags do not describe something that exists there — and it is the headed
-	// window that loses the pointer lock (#441). The mode carries neither.
+	// #454. `PROBE_WINDOW_LOCKABLE` owns why the mode carries neither
+	// `headless: false` nor the offscreen flags; this pins that it does not.
 	const lockable = probeLaunchOptions(
 		{ channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE },
 		HARDWARE_RENDERER,
@@ -78,6 +77,9 @@ test("a lockable view is neither headed nor positioned off screen", () => {
 	expect("headless" in lockable).toBe(false);
 	expect("probeWindow" in lockable).toBe(false);
 
+	// Exactly the caller's own args: neither OFFSCREEN_WINDOW_POSITION nor any
+	// of OFFSCREEN_WINDOW_RUNTIME_FLAGS survives, and an exact match is what says
+	// so — a `not.toContain` beside it could not fail independently of this.
 	const withArgs = probeLaunchOptions(
 		{
 			channel: "chromium",
@@ -87,11 +89,27 @@ test("a lockable view is neither headed nor positioned off screen", () => {
 		HARDWARE_RENDERER,
 	);
 	expect(withArgs.args).toEqual(["--example"]);
-	expect(withArgs.args).not.toContain(OFFSCREEN_WINDOW_POSITION);
-	for (const flag of OFFSCREEN_WINDOW_RUNTIME_FLAGS)
-		expect(withArgs.args).not.toContain(flag);
 
 	// Still a no-op off the hardware lane: the caller's own options, unchanged.
 	const defaults = { channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE };
 	expect(probeLaunchOptions(defaults, null)).toBe(defaults);
+});
+
+test("a window mode nobody declared is refused, not quietly made headed", () => {
+	// The modes are picked by equality, so a misspelling used to fall through to
+	// the offscreen default — `headless: false`, the launch #441 measured as
+	// losing the lock. On both lanes, because a typo is a typo either way.
+	for (const mode of [HARDWARE_RENDERER, null])
+		expect(() =>
+			probeLaunchOptions(
+				{ channel: "chromium", probeWindow: "lockible" },
+				mode,
+			),
+		).toThrow('probeWindow must be "visible", "lockable" or unset');
+	expect(() =>
+		probeLaunchOptions(
+			{ probeWindow: PROBE_WINDOW_VISIBLE },
+			HARDWARE_RENDERER,
+		),
+	).not.toThrow();
 });

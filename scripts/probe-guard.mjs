@@ -85,16 +85,18 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * **The three backgrounding flags go with the position flag because Playwright
  * already passes them itself.** `--disable-background-timer-throttling` is
  * about renderers rather than windows, so "there is no window to position" does
- * not reach it (#454, round 1) — and it does not have to. Read off the browser's
- * own command line on a launch carrying **none** of this module's flags, via
- * CDP `Browser.getBrowserCommandLine` (which needs `--enable-automation` set to
- * answer at all): `--disable-background-timer-throttling`,
- * `--disable-backgrounding-occluded-windows` and
- * `--disable-renderer-backgrounding` are all three there, out of Playwright's
- * `chromiumSwitches`. So `OFFSCREEN_WINDOW_RUNTIME_FLAGS` restates the
- * launcher's own defaults, and dropping them here changes nothing that reaches
- * Chromium. That the constant is redundant in **both** branches is a finding
- * this mode is not the place to act on.
+ * not reach it — and it does not have to. Read back off the browser's own
+ * argument list through CDP `Browser.getBrowserCommandLine`, on two launches
+ * carrying **none** of this module's flags (the reading needs
+ * `--enable-automation` before Chromium will answer at all, so that switch is
+ * the one thing added): new headless on this channel, and the same channel
+ * headed at the offscreen position. Both list all three, out of Playwright's
+ * own `chromiumSwitches`. So this mode drops nothing that was reaching
+ * Chromium. Two limits on that reading, because it is one version of one
+ * launcher: `chromiumSwitches` is a Playwright internal and can change under a
+ * bump, and a **non-redundant** `OFFSCREEN_WINDOW_RUNTIME_FLAGS` would make
+ * this mode's drop a real one. What that would cost is bounded above by
+ * nothing else here measuring a difference.
  *
  * The requirement is the lock, not the headlessness. A machine where new
  * headless has no GPU loses the two probes that opt in rather than the lane —
@@ -120,15 +122,32 @@ export function probeRendererMode(env = process.env) {
 /**
  * Launch options for the requested renderer mode, without mutating a caller.
  *
+ * **An unknown `probeWindow` throws rather than defaulting.** The modes are
+ * picked by equality, so before #454 a misspelled one — and any fourth mode
+ * added later without a branch — fell through to the offscreen default, which
+ * is `headless: false`: exactly the launch #441 measured as losing the pointer
+ * lock, handed over silently. The refusal is outside the mode check because a
+ * misspelling is a bug on the software lane too, where it is simply ignored.
+ *
  * @param {{ args?: string[]; probeWindow?: string; [key: string]: unknown }} options
  * @param {string | null} [mode=probeRendererMode()]
  */
 export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
+	if (
+		options.probeWindow !== undefined &&
+		options.probeWindow !== PROBE_WINDOW_VISIBLE &&
+		options.probeWindow !== PROBE_WINDOW_LOCKABLE
+	)
+		throw new Error(
+			`probeWindow must be ${JSON.stringify(PROBE_WINDOW_VISIBLE)}, ${JSON.stringify(
+				PROBE_WINDOW_LOCKABLE,
+			)} or unset, got ${JSON.stringify(options.probeWindow)}`,
+		);
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
 	// A lockable view keeps the caller's own launch. See the constant for both
-	// halves: why the headed window loses the lock, and what was measured about
-	// the backgrounding flags this drops with it.
+	// halves: why the headed window loses the lock, and what is known about the
+	// backgrounding flags this drops with it.
 	if (probeWindow === PROBE_WINDOW_LOCKABLE) return { ...chromiumOptions };
 	return {
 		...chromiumOptions,
