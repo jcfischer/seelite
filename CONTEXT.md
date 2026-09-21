@@ -511,19 +511,19 @@ _Avoid_: World space (unqualified), ecliptic, local frame
 The seeded rotation that carries the **Galactic frame** into one system's
 **System frame**, so a direction in the cluster can be said as a place in a
 particular pilot's sky. One per system, drawn from its own domain tag, isotropic
-over orientations — the cluster's plane is never parallel to the flight horizon by
+over rotations — the cluster's plane is never parallel to the flight horizon by
 design. `src/galaxy-frame.ts` owns it; `galaxy-generation.md` §11 owns the ruling.
-_Avoid_: Attitude (that is the ship's own quaternion), orientation, camera frame
+_Avoid_: Attitude (that is the ship's own quaternion), camera frame
 
 **Galactic pole**:
 Where a **Sky frame** lands the cluster's reference-plane normal — the direction
 "straight up out of the galaxy" looks like from this cockpit, and therefore the
 axis any cluster structure is arranged about. Varies per system, by design.
-_Avoid_: Zenith, up, galactic north (unqualified)
+_Avoid_: Zenith, galactic north (unqualified)
 
 **Core bearing**:
 The direction from here to the cluster's centre, in the observer's own sky. Worth
-stating because it is the one bearing that carries information rather than light:
-#100 measured 2.17× of integrated brightness from core to rim against ×1.8–8.3 of
-system density in a cone toward it. `coreBearing` in `src/galaxy-frame.ts`.
+stating because it is the one bearing that carries information rather than light —
+which is #100's measurement, and `galaxy-generation.md` §11 is where its figures
+are written down once. `coreBearing` in `src/galaxy-frame.ts`.
 _Avoid_: The way home, galactic down

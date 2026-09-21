@@ -34,53 +34,34 @@
  * yes, not a headless claim.
  */
 import { describe, expect, test } from "bun:test";
+import * as THREE from "three";
 import { DOMAIN } from "../src/domains";
-import { GALAXY_RADIUS_LY, generateGalaxy, systemSeedFor } from "../src/galaxy";
+import { generateGalaxy, systemSeedFor } from "../src/galaxy";
 import {
+	coreBearing,
 	GALACTIC_EAST,
 	GALACTIC_NORMAL,
-	SYSTEM_PLANE_NORMAL,
-	type SkyFrame,
-	coreBearing,
 	galaxyToSystem,
+	type SkyFrame,
+	SYSTEM_PLANE_NORMAL,
 	skyBearing,
 	skyFrame,
 	systemToGalaxy,
 } from "../src/galaxy-frame";
 import {
-	type Vec3,
 	cross,
 	dot,
 	length,
 	normalizeOr,
 	scale,
 	sub,
+	type Vec3,
 	v3,
 } from "../src/vec3";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
+import { DIRECTIONS, expectVec, UNIT } from "./lib/vec-assert";
 
-const UNIT: Vec3 = v3(0, 0, 1);
 const TAU = Math.PI * 2;
-
-const expectVec = (got: Vec3, want: Vec3, tol = 1e-9) => {
-	expect(Math.abs(got.x - want.x)).toBeLessThanOrEqual(tol);
-	expect(Math.abs(got.y - want.y)).toBeLessThanOrEqual(tol);
-	expect(Math.abs(got.z - want.z)).toBeLessThanOrEqual(tol);
-};
-
-/** Directions all over the sphere, axes and their negatives included — a claim
- *  checked on four pleasant directions is a claim about those four. */
-const DIRECTIONS: Vec3[] = [
-	v3(1, 0, 0),
-	v3(0, 1, 0),
-	v3(0, 0, 1),
-	v3(-1, 0, 0),
-	v3(0, -1, 0),
-	v3(0, 0, -1),
-	v3(1, 1, 0),
-	v3(1, 1, 1),
-	v3(-0.3, 0.6, -0.74),
-].map((v) => normalizeOr(v, UNIT));
 
 /** Seeds spread over the range a real `systemSeed` occupies, not 1…128. */
 const SEEDS = Array.from(
@@ -218,16 +199,12 @@ describe("skyFrame", () => {
 		// the view set's own seed — because one value could be a coincidence of
 		// where that system happens to sit.
 		//
-		// **These were derived twice before being pinned.** Once by this module,
-		// and once by a scratch script that composed the same pole and roll through
-		// `three`'s own `Quaternion.setFromUnitVectors` and `setFromAxisAngle` — a
-		// second implementation, from a different codebase, with its own conventions
-		// about product order and handedness. The two agree to **2.3e-16** on the
-		// quaternion, on the pole it lands the galactic normal on, on where it
-		// carries the roll reference `GALACTIC_EAST`, and on the resulting core
-		// bearing. The `GALACTIC_EAST` one is the load-bearing of the four: a
-		// mirrored or inverted frame still lands the pole correctly, and only a
-		// direction-dependent direction shows it.
+		// **These were derived twice before being pinned.** Once by this module, and
+		// once through `three`'s own quaternion arithmetic — a second implementation,
+		// from a different codebase, with its own conventions about product order and
+		// handedness. That second derivation was a scratch script for a round, which
+		// made "the two agree to 2.3e-16" a claim about a run nobody could repeat; it
+		// is the row below this one now, over every seed rather than two.
 		//
 		// That is the whole point of the pin. A literal copied out of this module's
 		// own first run would pin a wrong handedness and read green forever, which is
@@ -263,6 +240,77 @@ describe("skyFrame", () => {
 				[core!.x, core!.y, core!.z].map((n) => Number(n.toFixed(9))),
 			).toEqual(pin.core);
 		}
+	});
+
+	test("three's own arithmetic builds the same frame from the same pole and roll", () => {
+		// The second derivation behind the pins above, shipped as a row.
+		//
+		// `three` composes the same two pieces — its `setFromUnitVectors` is the
+		// shortest arc arrived at another way, `setFromAxisAngle` the same roll — and
+		// shares no line with `src/quat.ts`. Comparing against it checks the
+		// composition, the **order** of the two factors, and the sign of the roll
+		// against the library the renderer itself uses, which is the authority on what
+		// a quaternion means on screen. Agreement with a transcription written by the
+		// same hand as the original is worth considerably less.
+		//
+		// Compared up to sign: `q` and `−q` are the same rotation, and the two
+		// libraries are free to report either. The rotation is what is being pinned,
+		// not the octant of the 4-sphere it is quoted from.
+		//
+		// Measured over all 128 seeds: the largest component difference between the
+		// two quaternions is 8.5·10⁻¹⁶ — four steps of the ladder at 1 — and the
+		// largest difference between where they carry the roll reference is
+		// 1.8·10⁻¹⁵, eight steps, the extra four being the roundings of applying a
+		// rotation rather than building one. Both are rounding and nothing else. The
+		// bound below is two orders above the worse of them: a real disagreement about
+		// a frame is of order 1, and a bound tighter than a rounding is a row that
+		// goes red on a compiler, which teaches nobody anything.
+		const normal = new THREE.Vector3(
+			GALACTIC_NORMAL.x,
+			GALACTIC_NORMAL.y,
+			GALACTIC_NORMAL.z,
+		);
+		const east = new THREE.Vector3(
+			GALACTIC_EAST.x,
+			GALACTIC_EAST.y,
+			GALACTIC_EAST.z,
+		);
+		let worstQuaternion = 0;
+		let worstEast = 0;
+		for (const seed of SEEDS) {
+			const f = skyFrame(seed);
+			const pole = new THREE.Vector3(f.pole.x, f.pole.y, f.pole.z);
+			const theirs = new THREE.Quaternion()
+				.setFromAxisAngle(pole, f.rollRad)
+				.multiply(new THREE.Quaternion().setFromUnitVectors(normal, pole));
+			const mine = new THREE.Quaternion(f.q[0], f.q[1], f.q[2], f.q[3]);
+			// `q` and `−q` are the same rotation, so the comparison is up to sign.
+			// `set` rather than a scalar multiply: this repo's `@types/three` does not
+			// declare `multiplyScalar`, and reaching for it through a cast would be a
+			// row that depends on a typing gap.
+			if (theirs.dot(mine) < 0)
+				theirs.set(-theirs.x, -theirs.y, -theirs.z, -theirs.w);
+			worstQuaternion = Math.max(
+				worstQuaternion,
+				Math.abs(theirs.x - mine.x),
+				Math.abs(theirs.y - mine.y),
+				Math.abs(theirs.z - mine.z),
+				Math.abs(theirs.w - mine.w),
+			);
+			// And where each carries the roll reference. This is the load-bearing
+			// half: a mirrored or inverted frame still lands the *pole* correctly, and
+			// only a direction that depends on the roll can show the mirror.
+			const landedTheirs = east.clone().applyQuaternion(theirs);
+			const landedMine = galaxyToSystem(f, GALACTIC_EAST);
+			worstEast = Math.max(
+				worstEast,
+				Math.abs(landedTheirs.x - landedMine.x),
+				Math.abs(landedTheirs.y - landedMine.y),
+				Math.abs(landedTheirs.z - landedMine.z),
+			);
+		}
+		expect(worstQuaternion).toBeLessThanOrEqual(1e-14);
+		expect(worstEast).toBeLessThanOrEqual(1e-14);
 	});
 
 	test("the drawn poles cover the sphere, and the rolls cover the circle", () => {
@@ -303,7 +351,7 @@ describe("skyFrame", () => {
 
 	test("is drawn from its own domain tag, and from no other", () => {
 		// The map's per-system RNG constraint in the form this node was written
-		// against: reusing `STREAMS.backdrop` correlates the sky's orientation with
+		// against: reusing `STREAMS.backdrop` correlates which way the sky is drawn with
 		// the point field's scatter, and #100 named that in its own constraints.
 		// `tests/market-state.test.ts` pins the tag's *value*, so this row is about
 		// what the frame reads rather than what the integer is.
@@ -438,15 +486,22 @@ describe("coreBearing", () => {
 	});
 
 	test("is defined for every system the generator ships", () => {
-		// So the refusal above is a boundary and not a live case: no generated
-		// system sits at the centre. `GALAXY_RADIUS_LY` is here to say the row is
-		// about the shipped cluster's geometry rather than a synthetic one.
+		// So the refusal above is a boundary and not a live case. This walks the
+		// shipped cluster — world seed 47, galaxy 0, the view set's own seed — and
+		// goes red the day the generator places a system on the centre, which is the
+		// only way that refusal becomes a runtime answer.
+		//
+		// A second assertion used to sit here, `GALAXY_RADIUS_LY > 0`, offered as
+		// proof that the row is about real geometry. It was decoration: no mutation
+		// of this module can turn a positive radius negative, so it could not go red,
+		// and a row that cannot fail is not evidence that the row beside it means
+		// what it says. That the sample is the shipped cluster is stated above, where
+		// a reader can weigh it; the generator's own suite is what holds it.
 		expect(
 			galaxy.systems.every(
 				(r) => coreBearing(skyFrame(r.seed), r.pos) !== null,
 			),
 		).toBe(true);
-		expect(GALAXY_RADIUS_LY).toBeGreaterThan(0);
 	});
 
 	test("the core is overhead in some systems and underfoot in others", () => {
@@ -469,14 +524,50 @@ describe("coreBearing", () => {
 });
 
 describe("one galactic frame, read by everything that points at it", () => {
-	test("the chart reads the module instead of restating the plane", () => {
+	test("the chart's UP is the module's normal, not the chart's own", () => {
 		// `galaxy-map.ts` had `const UP = new THREE.Vector3(0, 1, 0)`: the cluster's
 		// reference-plane normal, authored a second time in a renderer. That is the
 		// drift this node exists to end, and no row above can see it because none of
 		// them reads the chart.
+		//
+		// Asserted **positively** — the declaration has to read the constant, and the
+		// import has to be the one carrying it — rather than by forbidding the literal
+		// `new THREE.Vector3(0, 1, 0)` anywhere in the file. What is held here is one
+		// declaration's provenance. A spelling ban would redden this row over a chart
+		// lamp or a camera up-vector with nothing to do with the galaxy, and the first
+		// author to trip it would be right to widen it.
 		const chart = codeOf("src/galaxy-map.ts");
-		expect(chart).toContain("GALACTIC_NORMAL");
-		expect(chart).not.toMatch(/new THREE\.Vector3\(\s*0,\s*1,\s*0\s*\)/);
+		expect(chart).toMatch(
+			/import \{ GALACTIC_NORMAL \} from "\.\/galaxy-frame"/,
+		);
+		expect(chart).toMatch(
+			/const UP = new THREE\.Vector3\(\s*GALACTIC_NORMAL\.x,\s*GALACTIC_NORMAL\.y,\s*GALACTIC_NORMAL\.z,?\s*\)/,
+		);
+	});
+
+	test("nothing but this module declares the galactic frame's directions", () => {
+		// The other half of one copy. The chart reading the constant is worth little
+		// if any other file is free to author a second normal, so the guard sits at
+		// the level the claim is at — a **declaration** — and runs over every module in
+		// `src/` rather than over the one file this node happened to edit. The
+		// expected list is a literal, so a fourth direction added here is a row that
+		// has to be read and not just re-pinned.
+		//
+		// What it cannot see, said plainly: a copy under another name — `GALAXY_UP`, or
+		// a bare `v3(0, 1, 0)` in a module nobody has thought of yet — is beyond any
+		// spelling check, and `(0, 1, 0)` is already a legitimate vector in unrelated
+		// places besides this one. Banning those would make the row about coincidental
+		// coordinates, which is how a guard gets widened into nothing.
+		const declared = /(?:export )?const (GALACTIC_[A-Z_]+)/g;
+		const authors: string[] = [];
+		for (const file of srcFiles())
+			for (const found of codeOf(file).matchAll(declared))
+				authors.push(`${file}: ${found[1]}`);
+		expect(authors.sort()).toEqual([
+			"src/galaxy-frame.ts: GALACTIC_CORE",
+			"src/galaxy-frame.ts: GALACTIC_EAST",
+			"src/galaxy-frame.ts: GALACTIC_NORMAL",
+		]);
 	});
 
 	test("the world frame it aims into is still the one the game rolls against", () => {

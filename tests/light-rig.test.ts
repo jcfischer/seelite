@@ -32,22 +32,22 @@
  * flipped bake, zero on both arms with no bake at all.
  */
 import { describe, expect, test } from "bun:test";
+import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
 import {
 	BAKE_STAR_DIR,
 	EMISSIVE_CEILING,
 	ENV_HEIGHT,
 	ENV_WIDTH,
 	EXPOSURE,
-	LIGHT_RIG,
 	envRadiance,
 	envRotation,
 	equirectEnvironment,
+	LIGHT_RIG,
 } from "../src/light-rig";
-import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
+import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
 import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
 import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
-import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 
 /** A warm G-type tint, and a neutral one. #59's finding is that the neutral end
  *  is where an emissive tint stops carrying detail; the same palette is used
@@ -391,5 +391,157 @@ describe("the rotation onto the star", () => {
 		const a = envRotation(dir);
 		const b = envRotation(big);
 		for (let i = 0; i < 4; i++) expect(b[i]).toBeCloseTo(a[i], 9);
+	});
+
+	/** The arithmetic this function carried until #430 delegated it to
+	 *  `quat.ts`, transcribed rather than imported so the row below has a second
+	 *  implementation to compare against and not its own subject. */
+	function legacyEnvRotation(
+		starDir: readonly [number, number, number],
+	): [number, number, number, number] {
+		const l = Math.hypot(starDir[0], starDir[1], starDir[2]);
+		const to: [number, number, number] = [
+			starDir[0] / l,
+			starDir[1] / l,
+			starDir[2] / l,
+		];
+		const from = BAKE_STAR_DIR;
+		const d = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+		if (d < -1 + 1e-9) {
+			const away: [number, number, number] =
+				Math.abs(from[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+			const ax = from[1] * away[2] - from[2] * away[1];
+			const ay = from[2] * away[0] - from[0] * away[2];
+			const az = from[0] * away[1] - from[1] * away[0];
+			const al = Math.hypot(ax, ay, az);
+			return [ax / al, ay / al, az / al, 0];
+		}
+		const x = from[1] * to[2] - from[2] * to[1];
+		const y = from[2] * to[0] - from[0] * to[2];
+		const z = from[0] * to[1] - from[1] * to[0];
+		const w = 1 + d;
+		const n = Math.hypot(x, y, z, w);
+		return [x / n, y / n, z / n, w / n];
+	}
+
+	test("the shared primitive returns the rotation this function computed itself", () => {
+		// The claim "#430 changed the shipped rotation for no direction" is worth
+		// nothing as prose, so the deleted body is here as a second implementation
+		// and compared against what ships, across the same 202 directions the rows
+		// above sweep — which include the bake's own star and the exact antiparallel
+		// one.
+		//
+		// **Two ulps of 1, not `toEqual`.** The shared primitive scales by a
+		// reciprocal where the deleted code divided — `x · (1/l)` is not `x / l` in
+		// binary floating point — and it normalises twice where that code divided
+		// twice, so the worst component is two steps of the ladder apart at 1 and
+		// the measured maximum over the 202 directions is 4.2·10⁻¹⁶. Demanding
+		// bit-identity would make this a row about multiplication order, loosened
+		// the first time anyone touches a normalisation, which is the opposite of
+		// what a pin is for.
+		for (const dir of directions()) {
+			const got = envRotation(dir);
+			const want = legacyEnvRotation(dir);
+			for (let i = 0; i < 4; i++)
+				expect(Math.abs(got[i] - want[i])).toBeLessThanOrEqual(2 ** -51);
+		}
+		// And exactly equal at the one direction where both branches agree by
+		// construction: the fallback axis for a star sitting behind the bake's own
+		// is the world axis `from` is least parallel to, which both pick as +Z.
+		expect(envRotation([-1, 0, 0])).toEqual([0, 0, 1, 0]);
+	});
+
+	test("near exact antiparallel the old arm misses the star and the new one does not", () => {
+		// Where this refactor *does* change something, so it is sized rather than
+		// waved at. The branch deleted from `envRotation` fired at
+		// `dot < −1 + 1e-9`; `shortestArc`'s fires at `−1 + 1e-12`. Between those
+		// three decades the old code snapped the environment to a half turn about a
+		// fixed world axis, and a half turn about a fixed axis is **not** a shortest
+		// arc to a direction that is merely nearly antiparallel — it leaves the
+		// environment's star off the requested direction by the perpendicular part,
+		// which is √(2ε).
+		//
+		// Measured, over the band:
+		//
+		//   ε        old aim error      new aim error    worst radiance delta
+		//   1e−12    1.41·10⁻⁶ rad      1.1·10⁻¹⁶        9.5·10⁻⁶
+		//   1e−11    4.47·10⁻⁶ rad      4.4·10⁻¹⁶        3.0·10⁻⁵
+		//   1e−10    1.41·10⁻⁵ rad      7.1·10⁻¹⁶        9.5·10⁻⁵
+		//   9e−10    4.24·10⁻⁵ rad      1.9·10⁻¹⁴        2.8·10⁻⁴
+		//   1.1e−9   2.6·10⁻¹⁴ rad      2.6·10⁻¹⁴        0  ← outside the band
+		//
+		// So the change is a correction, and a bounded one: the worst case is the
+		// environment's star aimed 4.2·10⁻⁵ rad — eight and a half arc-seconds — more
+		// truly than it was, in a window 0.0027° wide around the star sitting exactly
+		// behind the bake's own axis. The radiance it moves is at most 2.8·10⁻⁴ of a
+		// unit-scale field, which is 0.07 of one eight-bit code and under the two-code
+		// threshold every pixel-differencing probe in this repo uses; the full suite
+		// run at both refs found nothing, which is what "under the threshold" is for.
+		//
+		// The narrower band is the improvement, not an oversight. At `dot = −1 + ε`
+		// the cross product is √(2ε) long, so even at ε = 10⁻¹⁰ it is 1.4·10⁻⁵ —
+		// eleven orders of magnitude above the rounding in the products that built
+		// it, and the axis it determines is the one that aims the star. What the old
+		// threshold bought instead was a fallback that is *discontinuous* as a star
+		// sweeps through antiparallel — and a star sweeping through −X is a player
+		// turning around.
+		const aimError = (
+			q: [number, number, number, number],
+			want: readonly [number, number, number],
+		): number => {
+			const landed = apply(q, BAKE_STAR_DIR);
+			return Math.hypot(
+				landed[0] - want[0],
+				landed[1] - want[1],
+				landed[2] - want[2],
+			);
+		};
+		let worstOld = 0;
+		let worstNew = 0;
+		let worstRadiance = 0;
+		for (const eps of [1e-12, 1e-11, 1e-10, 5e-10, 9e-10]) {
+			const dir: [number, number, number] = [
+				-(1 - eps),
+				Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))),
+				0,
+			];
+			const fresh = envRotation(dir);
+			const stale = legacyEnvRotation(dir);
+			worstOld = Math.max(worstOld, aimError(stale, dir));
+			worstNew = Math.max(worstNew, aimError(fresh, dir));
+			// And what the difference costs on the thing the rotation is for: the
+			// environment, sampled. Both arms are turned back through their own
+			// inverse — which is how the renderer's map is read — and the radiance
+			// compared along the 202 directions this file already sweeps.
+			const freshInv: [number, number, number, number] = [
+				-fresh[0],
+				-fresh[1],
+				-fresh[2],
+				fresh[3],
+			];
+			const staleInv: [number, number, number, number] = [
+				-stale[0],
+				-stale[1],
+				-stale[2],
+				stale[3],
+			];
+			for (const w of directions(200)) {
+				const a = envRadiance(apply(freshInv, w), WARM);
+				const b = envRadiance(apply(staleInv, w), WARM);
+				for (let i = 0; i < 3; i++)
+					worstRadiance = Math.max(worstRadiance, Math.abs(a[i] - b[i]));
+			}
+		}
+		// The old arm's error is the √(2ε) the geometry predicts, to two digits.
+		expect(worstOld).toBeGreaterThan(4.2e-5);
+		expect(worstOld).toBeLessThan(4.3e-5);
+		// The new arm hits it to machine precision, which is what the deleted
+		// threshold was costing.
+		expect(worstNew).toBeLessThan(1e-13);
+		// Under one eight-bit code of a unit-scale field, so under every pixel
+		// threshold in the browser tier — and nonzero, because the arms genuinely
+		// differ and this row is not going to be the one that says they don't.
+		expect(worstRadiance).toBeGreaterThan(0);
+		expect(worstRadiance).toBeLessThan(1 / 255);
 	});
 });

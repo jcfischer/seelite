@@ -834,19 +834,26 @@ can check.
 - **Isotropic.** The galactic plane's normal lands anywhere on the world sphere,
   and the frame rolls about it as well. With the pole uniform *on the sphere* (its
   polar cosine drawn directly, not its angle) and the roll uniform on the circle,
-  the frame is uniform over orientations: no axis favoured, no tilt preferred.
+  the draw is uniform over rotations: no axis favoured, no tilt preferred.
 - **Aligned frames were rejected**, twice over. #100 refused the version that
   makes every system's orbital plane the galactic plane, because it gives every
   sky the same band tilt and throws away the per-system variety the decision was
   bought for. The bounded-tilt arm — the cluster kept within N degrees of the
   flight horizon — is the same refusal one step narrower, and was ruled out here.
-- **No rule keeps the band out of its own sun.** Under an isotropic draw the
-  galactic pole lands within 30° of the system's own star in roughly one system in
-  eight, and the cluster's structure there is washed out by glare. Accepted on the
+- **No rule keeps the band out of its own sun.** Under an isotropic draw the band
+  passes close to the system's own star far more often than intuition says: the
+  band is the great circle perpendicular to the pole, so the event that washes
+  structure out is the star lying **near the cluster's plane**, whose probability
+  is `sin 30° = 1/2` — in about **one system in two** the band runs within 30° of
+  the star, and that figure does not depend on where in the system's sky the star
+  sits. (The case that reads as the obvious one — the pole landing near the star,
+  `(1 − cos 30°)/2`, one system in fifteen — is the *favourable* one: there the
+  band and the core bearing sit 60–90° off the glare.) Accepted on the
   principal's ruling rather than engineered away: a rejection rule makes the frame
-  a loop instead of a draw, and couples the sky's orientation to where the system's
-  own star sits — which is the coupling every domain tag in `domains.ts` exists to
-  prevent. A dull sky is the variety this bought, not a defect.
+  a loop instead of a draw, and couples which way the sky is drawn to where the
+  system's own star sits — which is the coupling every domain tag in `domains.ts`
+  exists to prevent. A washed-out band is what the variety costs, not a defect in
+  it.
 - **One copy of the normal.** `GALACTIC_NORMAL` is the only place in `src/` that
   authors that direction; `galaxy-map.ts` reads it. A chart and a sky that each
   hold their own idea of which way the galaxy lies will drift, and nothing

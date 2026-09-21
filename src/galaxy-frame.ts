@@ -30,18 +30,24 @@
  * honest physics: nothing about a star's own planetary plane is related to the
  * shape of a cluster 24 light years across.
  *
- * **No rule keeps the band out of its own sun.** Under an isotropic draw the
- * galactic pole lands near the star's direction in roughly one system in eight,
- * and the band there is washed out by glare. That is accepted rather than
+ * **No rule keeps the band out of its own sun.** What glare washes out is the
+ * *band*, and the band is the great circle perpendicular to the pole — so the
+ * event to count is the star lying near the cluster's plane, not the pole
+ * landing near the star, which is the *favourable* case. With the pole uniform
+ * on the sphere that probability is `sin 30° = 1/2`: in about one system in two
+ * the band passes within 30° of the system's own star, and the figure does not
+ * depend on where in that system's sky the star sits. Accepted rather than
  * engineered away: a rejection rule would make the frame a loop rather than a
  * draw, and would couple the sky to where the system's own star sits — which is
- * the coupling every domain tag in `domains.ts` exists to prevent.
+ * the coupling every domain tag in `domains.ts` exists to prevent. §11 owns the
+ * ruling.
  *
  * ## The flattening is geometry, not a distortion to undo
  *
  * `systemFromPosition` divides a position's `y` by `GALAXY_FLATTENING_Q`. That
- * quotient is the **profile coordinate** for the spec's §4 gradients, and it is
- * the only place it belongs: the stored position *is* the fiction's shape, an
+ * quotient is the **profile radius** §3 names and `profileRadiusLy` computes,
+ * the coordinate every radial term in §4 reads, and it is the only place it
+ * belongs: the stored position *is* the fiction's shape, an
  * oblate cluster, so a bearing is taken from the stored positions exactly as
  * they stand. Unflattening before differencing is a mistake that no test can see
  * as wrong, because the result is still a unit vector.
@@ -86,15 +92,19 @@ import {
 	rotateByInverse,
 	shortestArc,
 } from "./quat";
-import { type Vec3, lengthSq, normalizeOr, scale, sub, v3 } from "./vec3";
+import { lengthSq, normalizeOr, sub, type Vec3, v3 } from "./vec3";
 
 /**
  * The cluster's reference-plane normal, in galaxy space.
  *
- * **The one copy of this direction in `src/`.** The chart had its own
- * `new THREE.Vector3(0, 1, 0)`; `tests/galaxy-frame.test.ts` now forbids it,
- * because a sky and a chart that each carry their own idea of which way the
- * galaxy lies will drift and nothing headless will notice.
+ * **The one author of this direction in `src/`.** The chart had its own
+ * `new THREE.Vector3(0, 1, 0)` and reads this constant instead, because a sky and
+ * a chart that each carry their own idea of which way the galaxy lies will drift
+ * and nothing headless will notice. `tests/galaxy-frame.test.ts` holds the two
+ * things that can be held: the chart's `UP` is built from this constant, and no
+ * `src/` module but this one *declares* a `GALACTIC_*` direction. A second copy
+ * under another name is beyond what a spelling check can see, and that row says
+ * so where it stands.
  */
 export const GALACTIC_NORMAL: Vec3 = v3(0, 1, 0);
 
@@ -130,18 +140,18 @@ export const SYSTEM_PLANE_NORMAL: Vec3 = v3(0, 0, 1);
 /**
  * The cluster's centre, in galaxy space.
  *
- * The density profile is centred here (`CORE_RADIUS_LY = R/√2`), so "toward the
- * core" is "toward the origin" and not toward some other landmark. #100 measured
- * what that is worth looking at: integrated `1/d²` varies only 2.17× from core to
- * rim, while the density in a 20° cone toward the core runs ×1.8 to ×6.8–8.3. The
- * bearing is the picture; the brightness almost never is.
+ * §3's density law is centred here (`CORE_RADIUS_LY = R/√2`), so "toward the
+ * core" is "toward the origin" and not toward some other landmark. What that is
+ * worth looking at — that the bearing is the picture and the brightness almost
+ * never is — is #100's measurement, and §11 is its only copy.
  */
 export const GALACTIC_CORE: Vec3 = v3(0, 0, 0);
 
 /** Below this separation, two positions carry no bearing between them.
- *  `BEARING_MIN_LY` is a nanometre at human scale and ten orders of magnitude
- *  below the nearest-neighbour mean of 5.45 ly, so nothing real is refused —
- *  the predicate is there for the caller that passes the same position twice. */
+ *  Ten orders of magnitude of a light year is 9,460 km, about the Earth's
+ *  radius, against a mean inter-system spacing of 5.45 ly — so nothing real is
+ *  refused. The predicate is there for the caller that passes the same position
+ *  twice, which would otherwise normalise a zero difference. */
 const BEARING_MIN_LY = 1e-9;
 
 /** One system's sky: the rotation, and the two numbers it was drawn from. */
@@ -153,7 +163,7 @@ export interface SkyFrame {
 	 *  Equal to `galaxyToSystem(frame, GALACTIC_NORMAL)`, carried out so a caller
 	 *  that wants the band's axis does not recompose it. */
 	readonly pole: Vec3;
-	/** The frame's spin about {@link pole}, right-handed, in (−π, π]. */
+	/** The frame's spin about {@link pole}, right-handed, in [−π, π). */
 	readonly rollRad: number;
 }
 
@@ -176,7 +186,7 @@ export interface SkyFrame {
  * `cos θ` is drawn directly, and the ring radius follows. Drawing θ and φ both
  * uniformly bunches the poles, which would be a sky with a preference it never
  * chose. With the pole uniform and the roll uniform on the circle, the frame is
- * uniform over orientations — no axis favoured, no tilt preferred.
+ * uniform over rotations — no axis favoured, no tilt preferred.
  */
 export function skyFrame(systemSeed: number): SkyFrame {
 	const rand = stream(systemSeed, DOMAIN.SKY_FRAME);
@@ -188,8 +198,9 @@ export function skyFrame(systemSeed: number): SkyFrame {
 		sinPolar * Math.sin(azimuth),
 		cosPolar,
 	);
-	// Mapped into (−π, π] so the reported number is comparable across systems and
-	// a test can hold the spread without wrapping.
+	// `rand()` is in [0, 1), so this lands in [−π, π) — half-open at the low end,
+	// which is the end a consumer wrapping against it has to know. Reported as
+	// drawn, not folded, so a row can hold the spread without wrapping.
 	const rollRad = (2 * rand() - 1) * Math.PI;
 
 	const arc = shortestArc(GALACTIC_NORMAL, pole);
@@ -249,9 +260,9 @@ export function skyBearing(
  *
  * `skyBearing` toward {@link GALACTIC_CORE}, spelled out because it is the one
  * bearing the derived sky is judged on: #100's measurement is that the cluster's
- * light is *directional* rather than bright — 2.17× of integrated `1/d²` from
- * core to rim, against a cone density of ×1.8 to ×6.8–8.3 — so this direction is
- * most of what a sky in this game says about where the player is.
+ * light is *directional* rather than bright, which is #100's measurement and
+ * §11's to quote, so this direction is most of what a sky in this game says
+ * about where the player is.
  *
  * `null` at the core itself, where every direction is away from it. No system the
  * generator ships sits there, so that is a boundary and not a live case.

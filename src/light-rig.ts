@@ -338,9 +338,27 @@ export function envRotation(
 ): [number, number, number, number] {
 	// The arithmetic lives in `quat.ts`'s `shortestArc` — see that module's header
 	// for why #430 moved it out of here rather than let a second copy of a
-	// 180°-safe shortest arc arrive in the sky. The fallback axis for the
-	// antiparallel case is the world axis `from` is least parallel to, which is
-	// the axis this function already chose, so the shipped rotation is unchanged.
+	// 180°-safe shortest arc arrive in the sky.
+	//
+	// **What this changes and what it does not.** Away from exact antiparallel it
+	// returns the rotation this function computed itself, to within two ulps of 1;
+	// at the bake's own direction and at the exact half turn the two agree bit for
+	// bit, both taking +Z as the fallback axis. Inside three decades of antiparallel it is
+	// **not** the old behaviour, and the difference is a correction rather than a
+	// variation: the branch deleted here fired at `dot < −1 + 1e-9` and answered
+	// with a half turn about a fixed world axis, which is not a shortest arc to a
+	// direction that is merely nearly antiparallel — it leaves the environment's
+	// star off the requested one by the perpendicular part, √(2ε), reaching
+	// 4.2·10⁻⁵ rad at the wide end of the band. This one follows the axis the
+	// geometry determines and lands to 10⁻¹⁴. What that moves in the sampled
+	// environment is at most 2.8·10⁻⁴ of a unit-scale radiance field — seven
+	// hundredths of one eight-bit code, under the two-code threshold every
+	// pixel-differencing probe here uses — inside a heading window 0.0027° wide.
+	// `tests/light-rig.test.ts` holds that table as arithmetic: this body against
+	// the deleted one over 202 directions, and the two environments sampled against
+	// each other. The narrower band is the better of the two for a second reason
+	// too: the fixed-axis fallback is discontinuous as a star sweeps through −X,
+	// and a star sweeping through −X is a player turning around.
 	const q = shortestArc(
 		v3(BAKE_STAR_DIR[0], BAKE_STAR_DIR[1], BAKE_STAR_DIR[2]),
 		v3(starDir[0], starDir[1], starDir[2]),

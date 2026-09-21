@@ -33,10 +33,8 @@ import {
 	rotateByInverse,
 	shortestArc,
 } from "../src/quat";
-import { type Vec3, cross, dot, length, normalizeOr, v3 } from "../src/vec3";
-
-const UNIT: Vec3 = v3(0, 0, 1);
-const EPS = 1e-12;
+import { cross, dot, length, normalizeOr, type Vec3, v3 } from "../src/vec3";
+import { expectVec, DIRECTIONS as SPREAD, UNIT } from "./lib/vec-assert";
 
 /** `shortestArc` narrowed for the rows that are not about its refusal. A row
  *  that reads the result has already said the pair is a pair of directions; a
@@ -49,27 +47,17 @@ const arc = (from: Vec3, to: Vec3): Quat4 => {
 	return q;
 };
 
-const expectVec = (got: Vec3, want: Vec3, tol = 1e-9) => {
-	expect(Math.abs(got.x - want.x)).toBeLessThanOrEqual(tol);
-	expect(Math.abs(got.y - want.y)).toBeLessThanOrEqual(tol);
-	expect(Math.abs(got.z - want.z)).toBeLessThanOrEqual(tol);
-};
-
-/** Directions all over the sphere, including the three axes and their
- *  negatives — the antiparallel ones are the reason `shortestArc` is not a
- *  one-line cross product. */
+/**
+ * The shared spread — every axis and its negative, which is what makes
+ * `shortestArc` more than a one-line cross product — plus one direction it has
+ * no reason to carry: `v3(0.001, −0.9999995, 0.001)` sits 1.4·10⁻³ behind −y,
+ * close enough that only the antiparallel branch and not the arc beside it
+ * answers it. A row over the shared nine would pass with that branch deleted.
+ */
 const DIRECTIONS: Vec3[] = [
-	v3(1, 0, 0),
-	v3(0, 1, 0),
-	v3(0, 0, 1),
-	v3(-1, 0, 0),
-	v3(0, -1, 0),
-	v3(0, 0, -1),
-	v3(1, 1, 0),
-	v3(1, 1, 1),
-	v3(-0.3, 0.6, -0.74),
-	v3(0.001, -0.9999995, 0.001),
-].map((v) => normalizeOr(v, UNIT));
+	...SPREAD,
+	normalizeOr(v3(0.001, -0.9999995, 0.001), UNIT),
+];
 
 describe("quatMul", () => {
 	test("is composition: a after b, so it applies b first", () => {

@@ -35,7 +35,7 @@
  * out mirrored through everything else the suite asks.
  */
 
-import { type Vec3, cross, dot, lengthSq, normalizeOr, v3 } from "./vec3";
+import { cross, dot, lengthSq, normalizeOr, type Vec3, v3 } from "./vec3";
 
 /** A unit quaternion as `[x, y, z, w]` — see the file's convention note. */
 export type Quat4 = readonly [number, number, number, number];
@@ -91,6 +91,16 @@ export function quatAxisAngle(axis: Vec3, angle: number): Quat4 {
  *   point of picking one by rule is that the choice is deterministic: a
  *   different one is a different frame, and a frame that depends on which way
  *   the compiler rounded is not a fact anyone can state.
+ * - **How close counts as antiparallel** — `1e-12`, where the copy of this
+ *   arithmetic in `light-rig.ts` used `1e-9` before #430 folded the two together.
+ *   A wider threshold is not a safety margin, because the fallback is not a better
+ *   answer, it is a different one: a half turn about a fixed world axis leaves the
+ *   result off the requested direction by the perpendicular part, √(2ε), and it is
+ *   discontinuous as an input sweeps through antiparallel. At `dot = −1 + 10⁻¹⁰`
+ *   the cross product is 1.4·10⁻⁵ long — eleven orders of magnitude above the
+ *   rounding in the products that built it, and the axis it determines is the one
+ *   that aims the arc. `tests/light-rig.test.ts` measures the old threshold's cost
+ *   rather than asserting it away.
  */
 export function shortestArc(from: Vec3, to: Vec3): Quat4 | null {
 	const a = normalizeOr(from, v3(0, 0, 0));
