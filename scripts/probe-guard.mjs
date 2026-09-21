@@ -80,9 +80,19 @@ export const PROBE_WINDOW_VISIBLE = "visible";
  * lock, while the same channel headed reports the same renderer and throws
  * `WrongDocumentError` — a macOS window opened from a background terminal is
  * never the *key* window, and that is what the lock gate reads. So the lockable
- * mode carries **neither** `headless: false` nor the offscreen flags: new
- * headless has no window to position, so those flags do not describe something
- * that is merely unnecessary there, they describe something that does not exist.
+ * mode carries **neither** `headless: false` nor the offscreen flags.
+ *
+ * **The three backgrounding flags go with the position flag, and that is
+ * measured rather than reasoned** (sage, round 1 of #454, which read the
+ * "there is no window to position" argument as not reaching
+ * `--disable-background-timer-throttling`). It does not have to: in this lane a
+ * page that is *not* the front one reads `document.hidden === false`, because
+ * new headless composites nothing and so has no occlusion to report. Two pages
+ * in one browser, the second brought to front, the first counting over 2 s —
+ * 239/242/241/240 rAF frames and 179/178/177/178 ten-millisecond timers across
+ * two arms with the flags and two without. A background tab's clamp is one
+ * timer a second and no frames at all, so the flags are inert here rather than
+ * load-bearing. Both probes that opt in do open a second page.
  *
  * The requirement is the lock, not the headlessness. A machine where new
  * headless has no GPU loses the two probes that opt in rather than the lane —
@@ -114,8 +124,9 @@ export function probeRendererMode(env = process.env) {
 export function probeLaunchOptions(options = {}, mode = probeRendererMode()) {
 	if (mode !== HARDWARE_RENDERER) return options;
 	const { probeWindow, ...chromiumOptions } = options;
-	// A lockable view keeps the caller's own launch: no `headless: false`, and
-	// none of the window flags, because there is no window. See the constant.
+	// A lockable view keeps the caller's own launch. See the constant for both
+	// halves: why the headed window loses the lock, and what was measured about
+	// the backgrounding flags this drops with it.
 	if (probeWindow === PROBE_WINDOW_LOCKABLE) return { ...chromiumOptions };
 	return {
 		...chromiumOptions,

@@ -132,9 +132,8 @@ const pressPad = async (page, name) => {
 };
 
 // The first row's lock is this probe's premise, so it asks the lane for a view
-// that can hold one (#454). Without that the lane forces a headed window, which
-// on macOS is never key and never granted the lock (#441) — and the fold row
-// below would have gone green over the exact defect #371 fixed.
+// that can hold one rather than taking whatever the lane defaults to (#454).
+// `PROBE_WINDOW_LOCKABLE` owns why that is not the same thing.
 const browser = await launchChromium({
 	channel: "chromium",
 	probeWindow: PROBE_WINDOW_LOCKABLE,

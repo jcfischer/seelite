@@ -234,16 +234,13 @@ const pressPad = async (target, name) => {
 	await settle(target);
 };
 
-// This probe asks for a view that can hold a pointer lock, and says so rather
-// than spelling out today's answer. #441 measured the answer here: new headless
-// on this channel reports the hardware renderer *and* grants the lock, while the
-// same channel headed reports the same renderer and refuses — a macOS window
-// opened from a background terminal is never the key window, which is what the
-// lock gate reads. `PROBE_WINDOW_LOCKABLE` is where that lives (#454).
-const browser = await launchChromium({
-	channel: "chromium",
-	probeWindow: PROBE_WINDOW_LOCKABLE,
-});
+// This probe needs a view that can hold a pointer lock, and asks for that rather
+// than for today's answer to it — `PROBE_WINDOW_LOCKABLE` owns the why (#454).
+// Named once, because the premise row below reads the same options back to say
+// what the lane made of them, and two spellings would let it reason about a
+// launch that did not happen (sage, round 1).
+const LAUNCH = { channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE };
+const browser = await launchChromium(LAUNCH);
 
 // ---------------------------------------------------------------------------
 // The premise, asserted: this harness can hold a pointer lock. Every row after
@@ -257,16 +254,30 @@ watch(page);
 await page.addInitScript(installFakePad);
 // **Read the refusal back rather than guessing at it (#454).** The premise row
 // below used to blame "the browser" for every unlocked page, and #441 measured
-// that wrong: the refusal this lane produced was the *launch*. The tap hands back
-// the browser's own promise untouched — the section at the foot of this file is
-// what asserts the game swallows it — and only observes the name.
+// that wrong: what refused was the *launch*. The tap hands back the browser's own
+// promise untouched — the section at the foot of this file is what asserts the
+// game swallows it — and only observes.
+//
+// Three things are observed, not one. **The asks are counted**, because a page
+// where the game never asked is a game-side finding and must not be reported as
+// the lane's or the browser's — the misattribution this node exists to end (sage,
+// round 1). **The name is taken from either source**: the returning form of
+// `requestPointerLock` rejects with a `DOMException`, and the form that returns
+// `undefined` reports through `pointerlockerror` instead, which carries no reason
+// of its own. And the patch goes on `Element.prototype`, where the method is
+// actually defined, rather than shadowing it one level down.
 await page.addInitScript(() => {
 	window.__lockRefusals = [];
-	const ask = HTMLElement.prototype.requestPointerLock;
-	HTMLElement.prototype.requestPointerLock = function requestPointerLock() {
+	window.__lockAsks = 0;
+	document.addEventListener("pointerlockerror", () =>
+		window.__lockRefusals.push("pointerlockerror"),
+	);
+	const ask = Element.prototype.requestPointerLock;
+	Element.prototype.requestPointerLock = function requestPointerLock() {
+		window.__lockAsks++;
 		const asked = ask.call(this);
 		Promise.resolve(asked).catch((error) =>
-			window.__lockRefusals.push(error?.name ?? String(error)),
+			window.__lockRefusals.unshift(error?.name ?? String(error)),
 		);
 		return asked;
 	};
@@ -282,24 +293,28 @@ check(
 	`hit=${glass.hit} lock=${await lockHolder(page)}`,
 );
 if (!locked) {
-	// **Name the cause, because the two are not the same finding (#454).** A
-	// `WrongDocumentError` raised while the lane is still forcing `headless: false`
-	// is the lane refusing its own lockable mode, not the browser and not the game
-	// — #441's measurement. Anything else, or a launch carrying no headless
-	// override, is the genuine article: this view cannot hold a lock.
-	const refusal =
-		(await page.evaluate(() => window.__lockRefusals?.[0] ?? null)) ?? null;
-	const headedLane =
-		probeLaunchOptions({
-			channel: "chromium",
-			probeWindow: PROBE_WINDOW_LOCKABLE,
-		}).headless === false;
-	console.log(
-		` FAIL  the browser refused the lock, which makes every row below vacuous. ${
-			headedLane && refusal === "WrongDocumentError"
+	// **Name the cause, or say that it was not observed (#454).** Four states, and
+	// they are four different findings. A `WrongDocumentError` while the lane is
+	// still forcing `headless: false` is the lane refusing its own lockable mode
+	// — #441's measurement, and neither the browser's fault nor the game's. A
+	// named refusal without that is the genuine article. An ask that was refused
+	// with no name anywhere is unattributed and says so. And no ask at all is the
+	// game, which the message must not dress up as either of the others.
+	const { asks, refusal } = await page.evaluate(() => ({
+		asks: window.__lockAsks ?? 0,
+		refusal: window.__lockRefusals?.[0] ?? null,
+	}));
+	const headedLane = probeLaunchOptions(LAUNCH).headless === false;
+	const diagnosis =
+		asks === 0
+			? "The game never asked for the lock on this page, so neither the lane nor the browser is implicated — that is a game-side finding, and the rows below are still vacuous."
+			: headedLane && refusal === "WrongDocumentError"
 				? "The cause is the lane: it launched a headed window for a lockable view, and a macOS window opened from a background terminal is never the key window (#441). Fix the launch, not this probe."
-				: `The cause is the refusal itself — ${refusal ?? "no name recorded"} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`
-		}`,
+				: refusal
+					? `The cause is the refusal itself — ${refusal} — in a launch carrying ${headedLane ? "headless: false" : "no headless override"}. This view cannot hold a lock; see the header.`
+					: `The ask was made ${asks}× and refused with no name on the promise and no \`pointerlockerror\`, so the cause is unobserved here rather than known.`;
+	console.log(
+		` FAIL  the lock was not taken, which makes every row below vacuous. ${diagnosis}`,
 	);
 	await browser.close();
 	exit();
