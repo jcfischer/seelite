@@ -33,29 +33,29 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-	BAKE_STAR_DIR,
-	EMISSIVE_CEILING,
-	ENV_HEIGHT,
-	ENV_WIDTH,
-	EXPOSURE,
-	LIGHT_RIG,
-	envRadiance,
-	envRotation,
-	equirectEnvironment,
-} from "../src/light-rig";
-import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
-import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
-import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
-import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
-import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
-import { DEFAULT_HULL_FINISH } from "../src/ship-surface";
-import {
 	HULL_LUMA_BAND,
 	HULL_LUMA_CALIBRATION,
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
 	SUBJECT_CHANGE_QUARTILE_DROP,
 } from "../scripts/lib/hull-luma.mjs";
+import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
+import {
+	BAKE_STAR_DIR,
+	EMISSIVE_CEILING,
+	ENV_HEIGHT,
+	ENV_WIDTH,
+	EXPOSURE,
+	envRadiance,
+	envRotation,
+	equirectEnvironment,
+	LIGHT_RIG,
+} from "../src/light-rig";
+import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
+import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
+import { DEFAULT_HULL_FINISH } from "../src/ship-surface";
+import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
+import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
 
 /** A warm G-type tint, and a neutral one. #59's finding is that the neutral end
  *  is where an emissive tint stops carrying detail; the same palette is used
@@ -434,7 +434,7 @@ describe("the painted-hull luma calibration", () => {
 		// The check #294 wanted and nobody had: when the default finish moves,
 		// this goes red naming the finish, instead of three browser rows going
 		// red and reading as a lighting regression.
-		expect(HULL_LUMA_CALIBRATION.finish).toBe(DEFAULT_HULL_FINISH);
+		expect<string>(HULL_LUMA_CALIBRATION.finish).toBe(DEFAULT_HULL_FINISH);
 	});
 
 	test("every floor is exactly the stated margin under its reading", () => {
@@ -467,10 +467,12 @@ describe("the painted-hull luma calibration", () => {
 		// Metal and on SwiftShader through one dev server; `laneSpread` is what
 		// they disagreed by. A margin under it is a row that goes red on which
 		// lane ran it, which is the false reason the thresholds were last moved.
-		for (const metric of ["peak", "lowerQuartile", "median"]) {
+		for (const metric of ["peak", "lowerQuartile", "median"] as const) {
 			const absolute =
 				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric];
-			expect(absolute).toBeGreaterThan(HULL_LUMA_CALIBRATION.laneSpread[metric]);
+			expect(absolute).toBeGreaterThan(
+				HULL_LUMA_CALIBRATION.laneSpread[metric],
+			);
 		}
 	});
 

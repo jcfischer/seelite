@@ -71,8 +71,14 @@ export const HULL_LUMA_MARGINS = Object.freeze({
  */
 export const SUBJECT_CHANGE_QUARTILE_DROP = (60.93 - 41.96) / 60.93;
 
-/** A floor at its stated margin under a recorded reading. */
-const floorUnder = (reading, margin) => reading * (1 - margin);
+/**
+ * A floor at its stated margin under a recorded reading, rounded to three
+ * decimals — the readings carry two, and a floor printed as
+ * `77.04499999999999` in a probe row is a number nobody can check against the
+ * calibration above.
+ */
+const floorUnder = (reading, margin) =>
+	Math.round(reading * (1 - margin) * 1000) / 1000;
 
 /**
  * Display-space luma after ACES and composition, on the 0–255 canvas readback.
@@ -96,8 +102,5 @@ export const HULL_LUMA_FLOORS = Object.freeze({
 		HULL_LUMA_CALIBRATION.lowerQuartile,
 		HULL_LUMA_MARGINS.lowerQuartile,
 	),
-	median: floorUnder(
-		HULL_LUMA_CALIBRATION.median,
-		HULL_LUMA_MARGINS.median,
-	),
+	median: floorUnder(HULL_LUMA_CALIBRATION.median, HULL_LUMA_MARGINS.median),
 });
