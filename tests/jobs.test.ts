@@ -394,7 +394,10 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 	/** Every courier offer this galaxy's first 60 systems post, with the leg
 	 *  the binder drew for it — so the ranking is measured over the same pair
 	 *  of stations the offer was bound from. */
-	const couriers = (settled: Record<string, number> = {}) => {
+	const couriers = (
+		settled: Record<string, number> = {},
+		gameTimeMin = 120,
+	) => {
 		const out: {
 			offer: JobOffer;
 			system: SystemRecord;
@@ -404,7 +407,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		for (const system of SYSTEMS.slice(0, 60))
 			for (const station of postingStations(system)) {
 				const offer = boardAt(SYSTEMS, system, station, {
-					gameTimeMin: 120,
+					gameTimeMin,
 					settled,
 				}).find((o) => o.family === "courier");
 				if (!offer) continue;
@@ -427,6 +430,11 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 	test("the good is in the pool, and in its top COURIER_SPREAD_POOL by spread", () => {
 		const boards = couriers();
 		expect(boards.length).toBeGreaterThan(50);
+		// The pool is the claim: at 1 this row still passes, and the
+		// distribution collapses onto two goods at 45.7% and 45.3% — the
+		// near-constant cargo line the rule exists to break. So the width is
+		// asserted here rather than left to the instrument alone.
+		expect(COURIER_SPREAD_POOL).toBeGreaterThan(1);
 		for (const { offer, system, station, destination } of boards) {
 			const ranked = rankedPool(system, station, destination);
 			const top = ranked.slice(0, COURIER_SPREAD_POOL).map((c) => c.name);
@@ -437,10 +445,16 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		}
 	});
 
-	test("the draw is deterministic for one station and one episode", () => {
-		const first = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
-		const again = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
-		expect(again).toEqual(first);
+	test("the good is the station's and the episode's, not the clock's", () => {
+		// §2 already holds one board bound twice. What this adds is the axis
+		// that row cannot see: the draw reads no clock, so an offer sitting on
+		// a board across a market epoch keeps its cargo — the same guarantee
+		// the epoch row makes for the terms, over the whole galaxy sweep.
+		const early = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
+		const late = couriers({}, 120 + MARKET_PERIOD_MIN * 3).map(
+			(b) => `${b.offer.id}:${b.offer.goodName}`,
+		);
+		expect(late).toEqual(early);
 	});
 
 	test("two consecutive episodes on the same leg can differ", () => {
@@ -473,11 +487,5 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 			(goods) => goods.size > 1,
 		).length;
 		expect(varying).toBeGreaterThan(0);
-	});
-
-	test("the pool is wider than one, or the rule is the spread alone", () => {
-		// The constant the node's claim rests on: at 1 the distribution
-		// collapses back onto two goods, which is what the shipped rule did.
-		expect(COURIER_SPREAD_POOL).toBeGreaterThan(1);
 	});
 });
