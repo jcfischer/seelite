@@ -424,6 +424,33 @@ describe("the rotation onto the star", () => {
 		return [x / n, y / n, z / n, w / n];
 	}
 
+	test("a star direction with no direction in it is refused, not rotated", () => {
+		// The one behaviour change in this refactor that is not an aim correction:
+		// where the deleted inline form divided by a length of zero and handed back a
+		// quaternion of NaNs, `envRotation` throws.
+		//
+		// Both halves are asserted, because the throw is only worth having if the
+		// thing it replaced really was unseeable. The old arithmetic on a zero
+		// direction is right here — `0 / 0` into all four components — and a NaN
+		// quaternion is not an error anywhere in the pipeline: `main.ts` reads this
+		// function's answer into `ENV_EULER` and then into
+		// `scene.environmentRotation`, so the NaN becomes a rotation applied to every
+		// direction the environment is sampled along. Chrome plating reading a
+		// direction that does not exist is not a crash; it is a picture with nothing
+		// in it and nothing printed.
+		//
+		// And it is reachable, which is what makes it a row and not a footnote: the
+		// caller normalises with `Math.max(1e-9, length(toStar))`, so a camera standing
+		// exactly on its own star passes a zero vector straight through. That guard is
+		// how the old code survived the case — by not crashing — and this is where the
+		// difference between surviving and reporting is settled.
+		expect(() => envRotation([0, 0, 0])).toThrow(
+			"envRotation: the star direction carries no direction",
+		);
+		const stale = legacyEnvRotation([0, 0, 0]);
+		for (const component of stale) expect(Number.isNaN(component)).toBe(true);
+	});
+
 	test("the shared primitive returns the rotation this function computed itself", () => {
 		// The claim "#430 changed the shipped rotation for no direction" is worth
 		// nothing as prose, so the deleted body is here as a second implementation

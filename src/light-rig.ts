@@ -341,31 +341,36 @@ export function envRotation(
 	// 180°-safe shortest arc arrive in the sky.
 	//
 	// **What this changes and what it does not.** Away from exact antiparallel it
-	// returns the rotation this function computed itself, to within two ulps of 1;
-	// at the bake's own direction and at the exact half turn the two agree bit for
-	// bit, both taking +Z as the fallback axis. Inside three decades of antiparallel it is
-	// **not** the old behaviour, and the difference is a correction rather than a
-	// variation: the branch deleted here fired at `dot < −1 + 1e-9` and answered
-	// with a half turn about a fixed world axis, which is not a shortest arc to a
-	// direction that is merely nearly antiparallel — it leaves the environment's
-	// star off the requested one by the perpendicular part, √(2ε), reaching
-	// 4.2·10⁻⁵ rad at the wide end of the band. This one follows the axis the
-	// geometry determines and lands to 10⁻¹⁴. What that moves in the sampled
-	// environment is at most 2.8·10⁻⁴ of a unit-scale radiance field — seven
-	// hundredths of one eight-bit code, under the two-code threshold every
-	// pixel-differencing probe here uses — inside a heading window 0.0027° wide.
-	// `tests/light-rig.test.ts` holds that table as arithmetic: this body against
-	// the deleted one over 202 directions, and the two environments sampled against
-	// each other. The narrower band is the better of the two for a second reason
-	// too: the fixed-axis fallback is discontinuous as a star sweeps through −X,
-	// and a star sweeping through −X is a player turning around.
+	// returns the rotation this function computed itself, and at the bake's own
+	// direction and at the exact half turn the two agree bit for bit, both taking +Z
+	// as the fallback axis. Inside three decades of antiparallel it is a
+	// **correction**: the branch deleted here answered a merely-nearly-antiparallel
+	// request with a half turn about a fixed world axis, which is not a shortest arc
+	// and leaves the environment's star off target, while this one follows the axis
+	// the geometry determines. How far off, and what that moves in what the
+	// materials sample, is measured by two rows in `tests/light-rig.test.ts` —
+	// `the shared primitive returns the rotation this function computed itself`,
+	// which compares this body against the deleted one over 202 directions, and
+	// `near exact antiparallel the old arm misses the star and the new one does
+	// not`, which sizes the band and samples both environments against each other.
+	// Those rows are where the figures are written down, and no copy of them is kept
+	// here on purpose: a table transcribed into a comment is a table that goes stale
+	// the first time the measurement is repeated. The narrower threshold is the
+	// better of the two for a second reason too — the fixed-axis fallback is
+	// discontinuous as a star sweeps through −X, and a star sweeping through −X is a
+	// player turning around.
 	const q = shortestArc(
 		v3(BAKE_STAR_DIR[0], BAKE_STAR_DIR[1], BAKE_STAR_DIR[2]),
 		v3(starDir[0], starDir[1], starDir[2]),
 	);
-	// A star direction with no direction in it throws where the old inline form
-	// produced a quaternion of NaNs, which `PMREMGenerator` would have sampled
-	// into the environment and rendered as a dead reflection with nothing printed.
+	// A star direction with no direction in it throws, where the old inline form
+	// produced a quaternion of NaNs. That propagates: `main.ts` reads this back into
+	// `ENV_EULER` and then into `scene.environmentRotation`, so a NaN here is a NaN
+	// rotation applied to every direction the environment is sampled along — a
+	// reflection made of nothing, with no error printed anywhere. Reachable, not
+	// theoretical: the caller divides by `Math.max(1e-9, length(toStar))`, so a
+	// camera standing exactly on its own star hands this function a zero vector. The
+	// row is `a star direction with no direction in it is refused, not rotated`.
 	if (q === null)
 		throw new Error("envRotation: the star direction carries no direction");
 	return [q[0], q[1], q[2], q[3]];

@@ -84,7 +84,13 @@ export function quatAxisAngle(axis: Vec3, angle: number): Quat4 {
  * The two degenerate cases are handled rather than assumed away, because both
  * are reachable in this game:
  *
- * - **Coincident** — the cross product is zero and the arc is the identity.
+ * - **Coincident** — the cross product is zero, and the general form below
+ *   answers that exactly: `(0, 0, 0, 1 + 1)` normalises to the identity. There is
+ *   deliberately **no snap at a tolerance** on this end either. Two directions
+ *   whose `dot` differs from 1 by 10⁻¹² describe an arc of 1.4·10⁻⁶ rad, and
+ *   answering that with no rotation at all is the same class of aim error the last
+ *   bullet refuses on the other end of the range — the branch there is forced by a
+ *   cross product that has stopped carrying information, not by a preference.
  * - **Antiparallel** — the cross product is zero *and* the angle is π, so the
  *   axis is undefined; it is taken as the perpendicular to `from` through
  *   {@link leastParallelAxis}. Any perpendicular is a correct half turn, and the
@@ -94,13 +100,13 @@ export function quatAxisAngle(axis: Vec3, angle: number): Quat4 {
  * - **How close counts as antiparallel** — `1e-12`, where the copy of this
  *   arithmetic in `light-rig.ts` used `1e-9` before #430 folded the two together.
  *   A wider threshold is not a safety margin, because the fallback is not a better
- *   answer, it is a different one: a half turn about a fixed world axis leaves the
- *   result off the requested direction by the perpendicular part, √(2ε), and it is
- *   discontinuous as an input sweeps through antiparallel. At `dot = −1 + 10⁻¹⁰`
- *   the cross product is 1.4·10⁻⁵ long — eleven orders of magnitude above the
- *   rounding in the products that built it, and the axis it determines is the one
- *   that aims the arc. `tests/light-rig.test.ts` measures the old threshold's cost
- *   rather than asserting it away.
+ *   answer, it is a different one: a half turn about a fixed world axis is not a
+ *   shortest arc to a direction that is merely nearly antiparallel, and it is
+ *   discontinuous as an input sweeps through antiparallel. What the old threshold
+ *   cost, in radians of aim and units of radiance, is measured by the row named
+ *   `near exact antiparallel the old arm misses the star and the new one does not`
+ *   in `tests/light-rig.test.ts`, which is where those figures live and the only
+ *   place they are written down.
  */
 export function shortestArc(from: Vec3, to: Vec3): Quat4 | null {
 	const a = normalizeOr(from, v3(0, 0, 0));
@@ -108,7 +114,6 @@ export function shortestArc(from: Vec3, to: Vec3): Quat4 | null {
 	if (lengthSq(a) < 1 - 1e-9 || lengthSq(b) < 1 - 1e-9) return null;
 
 	const c = dot(a, b);
-	if (c > 1 - 1e-12) return QUAT_IDENTITY;
 	if (c < -1 + 1e-12) {
 		const axis = normalizeOr(cross(a, leastParallelAxis(a)), v3(0, 0, 0));
 		if (lengthSq(axis) < 1 - 1e-9) return null;

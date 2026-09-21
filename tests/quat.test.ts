@@ -92,6 +92,33 @@ describe("shortestArc", () => {
 		expect(q.every(Number.isFinite)).toBe(true);
 	});
 
+	test("no snap at either end: an arc of 10⁻⁶ rad is 10⁻⁶ rad, not zero", () => {
+		// Both degenerate ends of `shortestArc` are branches only where the arithmetic
+		// has stopped carrying information. Near **coincident** it has not:
+		// `(a×b, 1 + a·b)` is perfectly conditioned at `dot = 1`, so there is no
+		// tolerance snapping a short arc to the identity here either. That is the same
+		// argument the module makes at the antiparallel end, applied to this one — a
+		// snap would leave a sky aimed 10⁻⁶ rad off its drawn pole for whichever
+		// systems happen to draw near the reference, silently, and the reason for
+		// refusing a wider fallback on the far side would have been a story about one
+		// end of the range instead of about the arithmetic.
+		for (const angle of [1e-6, 1e-4, 1e-2]) {
+			const to = normalizeOr(v3(Math.sin(angle), 0, Math.cos(angle)), UNIT);
+			const q = arc(UNIT, to);
+			// Where the vector lands carries the angle exactly. `w` at 10⁻⁶ rad is
+			// 1 − 1.25·10⁻¹³, and an angle read back off that difference has less
+			// precision than the angle being checked. The arc from `+z` toward
+			// `(sin, 0, cos)` is a turn about `+y`, so `x` is the component that moves
+			// and `y` is the one that provably does not.
+			expect(rotateBy(q, UNIT).x).toBeCloseTo(Math.sin(angle), 9);
+			// Not the identity — which is exactly what a snap satisfies and an arc
+			// fails. This is why the row is about 10⁻⁶ and not about 10⁻².
+			expect(2 * Math.acos(Math.min(1, Math.abs(q[3])))).toBeGreaterThan(
+				angle / 2,
+			);
+		}
+	});
+
 	test("it turns by exactly the angle between the two, and not one radian more", () => {
 		// "Shortest" is the whole content of the name, and the angle is what it
 		// means: an arc that carries `from` onto `to` *and* spins about `to` on the

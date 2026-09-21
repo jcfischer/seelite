@@ -827,7 +827,7 @@ sky is nothing but bearings from here to the other 255 systems.
 **One seeded rotation per system, drawn from `DOMAIN.SKY_FRAME` (23)**, carrying
 galaxy-space directions into that system's world frame. Three draws, in a fixed
 order: the image of the galactic normal's polar cosine, its azimuth, then a roll
-about that image in (−π, π]. The frame reports the pole and the roll beside the
+about that image in [−π, π). The frame reports the pole and the roll beside the
 quaternion, because a rotation that cannot be interrogated is a rotation nobody
 can check.
 
@@ -846,9 +846,9 @@ can check.
   structure out is the star lying **near the cluster's plane**, whose probability
   is `sin 30° = 1/2` — in about **one system in two** the band runs within 30° of
   the star, and that figure does not depend on where in the system's sky the star
-  sits. (The case that reads as the obvious one — the pole landing near the star,
-  `(1 − cos 30°)/2`, one system in fifteen — is the *favourable* one: there the
-  band and the core bearing sit 60–90° off the glare.) Accepted on the
+  sits. The clean case is the rare one: the pole within 30° of the star *or its
+  antipode* — `1 − cos 30° = 0.134`, one system in seven — is what sets the band
+  and the core bearing 60–90° off the glare. Accepted on the
   principal's ruling rather than engineered away: a rejection rule makes the frame
   a loop instead of a draw, and couples which way the sky is drawn to where the
   system's own star sits — which is the coupling every domain tag in `domains.ts`

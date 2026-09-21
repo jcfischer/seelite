@@ -186,7 +186,7 @@ describe("skyFrame", () => {
 			const f = skyFrame(seed);
 			const got = extract(f);
 			expectVec(got.pole, f.pole, 1e-9);
-			// `rollRad` is reported in (−π, π], so the extracted value is compared
+			// `rollRad` is reported in [−π, π), so the extracted value is compared
 			// as an angle rather than as a number: 3.13 and −3.13 are the same roll.
 			const delta = Math.abs(got.rollRad - f.rollRad);
 			expect(Math.min(delta, TAU - delta)).toBeLessThanOrEqual(1e-9);
@@ -262,9 +262,10 @@ describe("skyFrame", () => {
 		// largest difference between where they carry the roll reference is
 		// 1.8·10⁻¹⁵, eight steps, the extra four being the roundings of applying a
 		// rotation rather than building one. Both are rounding and nothing else. The
-		// bound below is two orders above the worse of them: a real disagreement about
-		// a frame is of order 1, and a bound tighter than a rounding is a row that
-		// goes red on a compiler, which teaches nobody anything.
+		// bound below is 5.6 times the worse of them — room for a rounding to move,
+		// and none for a wrong frame, which disagrees by order 1. A bound tighter than
+		// a rounding is a row that goes red on a compiler, which teaches nobody
+		// anything; a bound two orders looser would teach the same lesson in reverse.
 		const normal = new THREE.Vector3(
 			GALACTIC_NORMAL.x,
 			GALACTIC_NORMAL.y,
@@ -340,8 +341,17 @@ describe("skyFrame", () => {
 		// instead of `cos θ` *over*-reaches the tails, so a row that only asks
 		// whether the ends are reached passes on the classic mistake. The mean of
 		// |cos| separates them cleanly: exactly 0.5 for a sphere, and 2/π ≈ 0.637
-		// when θ is drawn uniformly. Over 128 draws the standard error is 0.026, so
-		// this band is four sigma wide on either side.
+		// when θ is drawn uniformly, and 1.0 for aligned frames.
+		//
+		// The seeds are a fixed list, so this row cannot flake — it is a statement
+		// about this sample, whose observed mean is 0.4735. The standard error of a
+		// mean of 128 uniform |cos| draws is 0.0255, so the bounds sit ±0.06 from the
+		// expectation: **±2.35 standard errors**, which is what this comment once
+		// called "four sigma on either side" and is not. The width is not what makes
+		// the row a detector, though. Every arm it exists to catch is far outside it —
+		// the angle-uniform draw lands at 0.637, 5.4 standard errors out, and aligned
+		// frames at 1.0, 19.6 out — while a correct draw sits 1.0 out on the near
+		// side. That separation is the margin, not the width of the band.
 		const meanAbsCos = cos.reduce((a, b) => a + Math.abs(b), 0) / cos.length;
 		expect(meanAbsCos).toBeGreaterThan(0.44);
 		expect(meanAbsCos).toBeLessThan(0.56);
@@ -558,11 +568,19 @@ describe("one galactic frame, read by everything that points at it", () => {
 		// spelling check, and `(0, 1, 0)` is already a legitimate vector in unrelated
 		// places besides this one. Banning those would make the row about coincidental
 		// coordinates, which is how a guard gets widened into nothing.
-		const declared = /(?:export )?const (GALACTIC_[A-Z_]+)/g;
+		//
+		// Direction-**shaped** names only, for the same reason. The repository already
+		// ships a Galactic Hyperdrive, and a `GALACTIC_HYPERDRIVE_SCAN_MS` reddening a
+		// row about frame directions is a false alarm that trains the next author to
+		// widen the row. So the check is on a name that reads as an axis.
+		const axisName =
+			/^(?:[A-Z_]+_)?(?:NORMAL|EAST|WEST|NORTH|SOUTH|UP|DOWN|POLE|AXIS|CORE|DIRECTION)$/;
+		const declared = /(?:export )?const (GALACTIC_[A-Z_]+)\b/g;
 		const authors: string[] = [];
 		for (const file of srcFiles())
 			for (const found of codeOf(file).matchAll(declared))
-				authors.push(`${file}: ${found[1]}`);
+				if (axisName.test(found[1].slice("GALACTIC_".length)))
+					authors.push(`${file}: ${found[1]}`);
 		expect(authors.sort()).toEqual([
 			"src/galaxy-frame.ts: GALACTIC_CORE",
 			"src/galaxy-frame.ts: GALACTIC_EAST",

@@ -30,27 +30,21 @@
  * honest physics: nothing about a star's own planetary plane is related to the
  * shape of a cluster 24 light years across.
  *
- * **No rule keeps the band out of its own sun.** What glare washes out is the
- * *band*, and the band is the great circle perpendicular to the pole — so the
- * event to count is the star lying near the cluster's plane, not the pole
- * landing near the star, which is the *favourable* case. With the pole uniform
- * on the sphere that probability is `sin 30° = 1/2`: in about one system in two
- * the band passes within 30° of the system's own star, and the figure does not
- * depend on where in that system's sky the star sits. Accepted rather than
- * engineered away: a rejection rule would make the frame a loop rather than a
- * draw, and would couple the sky to where the system's own star sits — which is
- * the coupling every domain tag in `domains.ts` exists to prevent. §11 owns the
- * ruling.
+ * **No rule keeps the band out of its own sun**, which is an isotropic draw doing
+ * what an isotropic draw does. §11 owns that ruling, its geometry and its figures;
+ * what the code owes it is the shape of the function. There is no rejection loop,
+ * and no term anywhere in here reads the system's own star, because a frame drawn
+ * so as to avoid its own glare is a loop rather than a draw and couples the sky to
+ * where that star sits — the coupling every domain tag in `domains.ts` exists to
+ * prevent. A washed-out band is what the variety costs.
  *
  * ## The flattening is geometry, not a distortion to undo
  *
- * `systemFromPosition` divides a position's `y` by `GALAXY_FLATTENING_Q`. That
- * quotient is the **profile radius** §3 names and `profileRadiusLy` computes,
- * the coordinate every radial term in §4 reads, and it is the only place it
- * belongs: the stored position *is* the fiction's shape, an
- * oblate cluster, so a bearing is taken from the stored positions exactly as
- * they stand. Unflattening before differencing is a mistake that no test can see
- * as wrong, because the result is still a unit vector.
+ * Every bearing here is taken from the **stored** positions, unmodified. §11 owns
+ * why, and the arithmetic consequence is what keeps the section honest: no
+ * function in this file reads `GALAXY_FLATTENING_Q`, and a reader who adds such a
+ * step has unflattened a shape the fiction actually has. The result is still a
+ * unit vector, which is exactly why no test in this repo can see that mistake.
  *
  * ## Why a function, and not a line in the renderer
  *
@@ -123,6 +117,12 @@ export const GALACTIC_NORMAL: Vec3 = v3(0, 1, 0);
  * So this is a convention and not a fact. What the frame needs is **one** named
  * in-plane direction; that it is this one is convenience, and
  * `GALACTIC_EAST × roll` is the only thing that depends on it.
+ *
+ * Exported with no reader in `src/` yet, which is worth saying rather than
+ * implying: the roll is reported *relative to this direction*, so anything that
+ * reproduces a frame's roll instead of trusting its quaternion — #433's bake is the
+ * one charted — has to read the same reference and not invent one. Until that
+ * consumer lands, `tests/galaxy-frame.test.ts`'s basis row is its only reader.
  */
 export const GALACTIC_EAST: Vec3 = v3(1, 0, 0);
 
@@ -134,6 +134,11 @@ export const GALACTIC_EAST: Vec3 = v3(1, 0, 0);
  * rolled against it. `tests/galaxy-frame.test.ts` asserts `main.ts` still rolls
  * against `z = 0`, because if that moves, every bearing this module returns
  * silently re-aims.
+ *
+ * Also unread in `src/` so far, and exported for the same reason: it is the
+ * codomain's claim in one place, so a consumer drawing in a system's world frame
+ * asks this module which plane the planets lie in rather than re-deriving `+z` off
+ * the HUD.
  */
 export const SYSTEM_PLANE_NORMAL: Vec3 = v3(0, 0, 1);
 
@@ -148,8 +153,8 @@ export const SYSTEM_PLANE_NORMAL: Vec3 = v3(0, 0, 1);
 export const GALACTIC_CORE: Vec3 = v3(0, 0, 0);
 
 /** Below this separation, two positions carry no bearing between them.
- *  Ten orders of magnitude of a light year is 9,460 km, about the Earth's
- *  radius, against a mean inter-system spacing of 5.45 ly — so nothing real is
+ *  Nine orders of magnitude below a light year: 9,460 km, which is half again the
+ *  Earth's radius, against a mean inter-system spacing of 5.45 ly. Nothing real is
  *  refused. The predicate is there for the caller that passes the same position
  *  twice, which would otherwise normalise a zero difference. */
 const BEARING_MIN_LY = 1e-9;

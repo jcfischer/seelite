@@ -511,8 +511,9 @@ _Avoid_: World space (unqualified), ecliptic, local frame
 The seeded rotation that carries the **Galactic frame** into one system's
 **System frame**, so a direction in the cluster can be said as a place in a
 particular pilot's sky. One per system, drawn from its own domain tag, isotropic
-over rotations — the cluster's plane is never parallel to the flight horizon by
-design. `src/galaxy-frame.ts` owns it; `galaxy-generation.md` §11 owns the ruling.
+over rotations, so no tilt is preferred and no system's band is aligned with the
+flight horizon by construction — which is not the same as ruling that alignment
+out, since an isotropic draw excludes nothing. `src/galaxy-frame.ts` owns it; `galaxy-generation.md` §11 owns the ruling.
 _Avoid_: Attitude (that is the ship's own quaternion), camera frame
 
 **Galactic pole**:
