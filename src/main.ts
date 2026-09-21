@@ -1814,7 +1814,7 @@ class Game {
 	private stationConsoleCacheKey: string | null = null;
 	/** #445's bid column, memoised on the key the priced rows were built under. */
 	private holdBidsCache: HoldBids = null;
-	private holdBidsCacheKey: string | null = null;
+	private holdBidsCacheKey: string | null | undefined = undefined;
 	private stationConsoleRevision = 0;
 	/**
 	 * What the till last said when it said no (#443).
@@ -11740,9 +11740,10 @@ class Game {
 						this.orientation,
 					)
 				: null,
-			// #445's manifest, from #443's projection — the one the trade
+			// What is aboard, from #443's projection — the one the trade
 			// screen's hold line and the till's refusal already read, so the
-			// three cannot disagree about what is aboard.
+			// three cannot disagree about it. **Not "the manifest":**
+			// CONTEXT.md gives that noun to what an ordinary carrier carries.
 			//
 			// **One scan, not two.** Gating it on the open tab was written and
 			// withdrawn — the closed arm has to hand the state *something*, and
@@ -12010,12 +12011,22 @@ class Game {
 		// rows were built under. Without it the frame loop allocated a Map and
 		// seventeen entries on every cockpit update whether or not the page was
 		// open, to read back a table that had not moved.
-		if (this.holdBidsCacheKey === this.stationConsoleCacheKey)
+		// **`undefined` is "never computed" and `null` is "not docked".** Both
+		// fields started at `null`, so a screen built while the console's own
+		// key was still null would have served a cached `null` for ever and
+		// drawn dashes at a station.
+		if (
+			this.holdBidsCacheKey !== undefined &&
+			this.holdBidsCacheKey === this.stationConsoleCacheKey
+		)
 			return this.holdBidsCache;
 		const bids = new Map<string, number>();
+		// `sellCr` alone: `stationMarketScreen` sets it **iff** the row is
+		// listed, so the `listed` half was a second reading of the same fact —
+		// and a good this station does not list cannot be sold here anyway,
+		// because `transactAtStation` refuses it as `commodity-unavailable`.
 		for (const row of screen.market)
-			if (row.listed && row.sellCr !== undefined)
-				bids.set(row.commodity.name, row.sellCr);
+			if (row.sellCr !== undefined) bids.set(row.commodity.name, row.sellCr);
 		this.holdBidsCacheKey = this.stationConsoleCacheKey;
 		this.holdBidsCache = bids;
 		return bids;

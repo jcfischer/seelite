@@ -11,9 +11,11 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { CarrierKey } from "../src/carrier-key";
-import type { HoldSummary } from "../src/hold";
+import type { HoldJob, HoldSummary } from "../src/hold";
+import type { RequestStatus } from "../src/requests";
 import { holdBody } from "../src/hold-view";
 import { RIGHT_FOOTER } from "../src/live-cockpit";
+import { codeOf } from "./lib/source-scan";
 
 const KEY = "0:3:station-trade" as CarrierKey;
 
@@ -33,7 +35,7 @@ const pilotLine = (goodName: string, amount: number) => ({
 	owner: "pilot" as const,
 });
 
-const requesterLine = () => ({
+const requesterLine = (jobOver: Partial<HoldJob> = {}) => ({
 	goodName: "Food",
 	amount: 8,
 	unit: "t" as const,
@@ -41,10 +43,11 @@ const requesterLine = () => ({
 	job: {
 		offerId: "job-1",
 		title: "Grain for the yards",
-		status: "accepted" as const,
+		status: "accepted" as RequestStatus,
 		returnTo: { galaxyIndex: 0, carrierKey: KEY },
 		returnToName: "Lave Ring",
 		reportName: "Reraus Gate",
+		...jobOver,
 	},
 });
 
@@ -135,12 +138,7 @@ describe("ownership is the fact the page exists for", () => {
 				usedT: 8,
 				freeT: 12,
 				entrustedT: 8,
-				lines: [
-					{
-						...requesterLine(),
-						job: { ...requesterLine().job, status: "cancelled" as const },
-					},
-				],
+				lines: [requesterLine({ status: "cancelled" })],
 			}),
 			null,
 		);
@@ -214,13 +212,12 @@ describe("what it fetches here is a docked fact", () => {
 
 describe("a consignment with no title still reads", () => {
 	test("an untitled job leaves no dangling separator", () => {
-		const line = requesterLine();
 		const html = holdBody(
 			summary({
 				usedT: 8,
 				freeT: 12,
 				entrustedT: 8,
-				lines: [{ ...line, job: { ...line.job, title: "" } }],
+				lines: [requesterLine({ title: "" })],
 			}),
 			null,
 		);
@@ -228,22 +225,22 @@ describe("a consignment with no title still reads", () => {
 		expect(html).toContain("to Reraus Gate");
 	});
 
-	test("a status nobody has added yet reads as a job that is off", () => {
-		// An allow-list, so a `RequestStatus` added later defaults to *return*
-		// rather than to *carry these somewhere for a job that has ended*.
-		const line = requesterLine();
-		const html = holdBody(
-			summary({
-				usedT: 8,
-				freeT: 12,
-				entrustedT: 8,
-				lines: [
-					{ ...line, job: { ...line.job, status: "completed" as const } },
-				],
-			}),
-			null,
-		);
-		expect(html).toContain("return to Lave Ring");
+	test("a completed job's consignment reads as a job that is off", () => {
+		// `isRunning` is an allow-list on `RequestStatus`, so every terminal
+		// state — and any state added later — reads as *return* rather than as
+		// *carry these somewhere for a job that has ended*.
+		for (const status of ["completed", "cancelled", "failed"] as const) {
+			const html = holdBody(
+				summary({
+					usedT: 8,
+					freeT: 12,
+					entrustedT: 8,
+					lines: [requesterLine({ status })],
+				}),
+				null,
+			);
+			expect(html, status).toContain("return to Lave Ring");
+		}
 	});
 });
 
@@ -254,17 +251,32 @@ describe("the markup is escaped where it interpolates", () => {
 				usedT: 8,
 				freeT: 12,
 				entrustedT: 8,
-				lines: [
-					{
-						...requesterLine(),
-						job: { ...requesterLine().job, title: "<b>boom</b>" },
-					},
-				],
+				lines: [requesterLine({ title: "<b>boom</b>" })],
 			}),
 			null,
 		);
 		expect(html).not.toContain("<b>boom</b>");
 		expect(html).toContain("&lt;b&gt;boom&lt;/b&gt;");
+	});
+});
+
+describe("the right console's tab order", () => {
+	// **A headless row, because the probe that pinned this is red.**
+	// `probe-controls-reference` asserts the rendered order and is red on both
+	// trees for an unrelated reason (#441) — so when #445's new tab broke that
+	// row, the failure was indistinguishable from the standing one. A standing
+	// red is exactly where a real regression hides.
+	test("Hold sits with the readouts and Controls stays immediately before Tuning", () => {
+		const source = codeOf("src/live-cockpit.ts");
+		const listed = /const RIGHT_TABS: readonly RightTab\[\] = \[([\s\S]*?)\];/
+			.exec(source)?.[1]
+			.match(/"([A-Za-z]+)"/g)
+			?.map((q) => q.slice(1, -1));
+		expect(listed).toEqual(["Flight", "Drive", "Hold", "Controls", "Tuning"]);
+		// #370 D1's rule, stated as the rule rather than as the whole list, so
+		// a later tab that keeps it does not have to edit this line too.
+		const i = listed?.indexOf("Controls") ?? -1;
+		expect(listed?.[i + 1]).toBe("Tuning");
 	});
 });
 
@@ -292,9 +304,46 @@ describe("the footer under a page is about that page", () => {
 	});
 
 	test("the four tabs this node does not own keep the shipped sentence", () => {
-		// Rewording them is player-visible prose about pages #445 does not own,
-		// and one draft reached for a noun CONTEXT.md forbids.
-		for (const tab of ["Flight", "Drive", "Controls"] as const)
-			expect(RIGHT_FOOTER[tab]).toBe(RIGHT_FOOTER.Tuning);
+		// **The literal, not mutual equality.** Asserting they equal
+		// `RIGHT_FOOTER.Tuning` lets a rewrite of that one move all four
+		// together and stay green, which is the row not being able to fail on
+		// the thing it names. Rewording them is player-visible prose about
+		// pages #445 does not own, and one draft reached for a noun CONTEXT.md
+		// forbids.
+		const shipped =
+			"Tuning remains on this right-console tab, never on the flight floor.";
+		for (const tab of ["Flight", "Drive", "Controls", "Tuning"] as const)
+			expect(RIGHT_FOOTER[tab], tab).toBe(shipped);
+	});
+});
+
+describe("the page's own markup carries what the first sheet lacked", () => {
+	// The manifest shipped once inside `.lc-panel-body`'s 135 px rail column,
+	// which is a shape a glance caught and no row expressed — so here is the
+	// row. `lc-hold-body` is what collapses that grid to one column.
+	//
+	// **On the source, not on the rendered panel.** `rightBody` is private and
+	// `STYLE` is module-local; exporting either so a test can reach it would be
+	// production surface existing for one caller. `tests/headless.test.ts` reads
+	// this repo's own source for the same reason: the failure is a line someone
+	// writes, and the line is what this can see.
+	const source = codeOf("src/live-cockpit.ts");
+
+	test("the Hold tab's body collapses the rail-and-copy grid", () => {
+		expect(source).toContain('"lc-panel-body lc-hold-body"');
+		// And it is the Hold branch that carries it.
+		expect(source).toMatch(
+			/state\.rightTab === "Hold"[\s\S]{0,600}lc-panel-body lc-hold-body/,
+		);
+	});
+
+	test("the stylesheet gives that class a single column", () => {
+		expect(source).toContain(
+			".lc-panel-body.lc-hold-body { grid-template-columns: 1fr; }",
+		);
+	});
+
+	test("the class appears once, so no other tab quietly takes it", () => {
+		expect(source.match(/lc-hold-body/g)).toHaveLength(2);
 	});
 });

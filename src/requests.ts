@@ -118,7 +118,21 @@ export const entrustedTonnesAboard = (state: RequestsState): number =>
 	);
 
 export const isAcceptedRequest = (r: AcceptedRequest): boolean =>
-	r.status === "accepted" || r.status === "ready-to-report";
+	isRunning(r.status);
+
+/**
+ * Whether a job is still **going** somewhere (#445).
+ *
+ * An allow-list on the union rather than a deny-list of the terminal states: a
+ * status added later would otherwise default to "running", and a screen would
+ * tell a pilot to carry goods to a station for a job that has ended.
+ *
+ * Here rather than in the screen that needed it first: classifying a journal
+ * state is this module's concern, and a second surface asking the same
+ * question would either duplicate the list or import a view.
+ */
+export const isRunning = (status: RequestStatus): boolean =>
+	status === "accepted" || status === "ready-to-report";
 
 /**
  * How many jobs of each family this requester has settled — the binder's

@@ -6,6 +6,7 @@
  * and the distance — and the simulate-a-stage controls are gone, because the
  * stage is satisfied by flying there.
  */
+import { escapeHtml as esc } from "./escape-html";
 import { aboardForOffer, type HoldSummary } from "./hold";
 import {
 	isAcceptedRequest,
@@ -96,14 +97,6 @@ export interface RequestsView {
 	 */
 	hold: HoldSummary | null;
 }
-const esc = (x: string) =>
-	x.replace(
-		/[&<>"']/g,
-		(c) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				c
-			] as string,
-	);
 const button = (
 	action: string,
 	id: string,

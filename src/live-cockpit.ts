@@ -34,8 +34,8 @@ import {
 import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
-import type { HoldSummary } from "./hold";
-import type { HoldBids } from "./hold";
+import type { HoldBids, HoldSummary } from "./hold";
+import { escapeHtml } from "./escape-html";
 import { HOLD_STYLE, holdBody } from "./hold-view";
 import type {
 	ConsoleEquipmentScreen,
@@ -57,7 +57,11 @@ import {
 export type RightTab =
 	| "Flight"
 	| "Drive"
-	/** #445's manifest. The word `CONTEXT.md` uses — not Inventory, not Cargo. */
+	/**
+	 * #445's page: what is aboard. `Hold` is the word `CONTEXT.md` uses — not
+	 * Inventory, not Cargo, and **not Manifest**, which that glossary gives to
+	 * what an ordinary carrier carries on one voyage.
+	 */
 	| "Hold"
 	| "Controls"
 	| "Tuning";
@@ -73,8 +77,6 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
 	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
 	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
 };
-// #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
-// on this console that is not fiction.
 /**
  * The right console's footer, per tab.
  *
@@ -96,6 +98,8 @@ export const RIGHT_FOOTER: Readonly<Record<RightTab, string>> = {
 	Tuning: TUNING_FOOTER,
 };
 
+// #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
+// on this console that is not fiction.
 const RIGHT_TABS: readonly RightTab[] = [
 	"Flight",
 	"Drive",
@@ -292,16 +296,6 @@ interface CockpitElements {
 }
 
 const STYLE_ID = "seelite-live-cockpit-style";
-
-function escapeHtml(value: string) {
-	return value.replace(
-		/[&<>"']/g,
-		(character) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				character
-			] as string,
-	);
-}
 
 /** Seconds as the panel prints them. `null` reads `—`, never `0s`. */
 function navEta(seconds: number | null) {
@@ -1547,7 +1541,7 @@ export class LiveCockpit {
 		if (state.rightTab === "Hold")
 			// `lc-hold-body` collapses the rail-and-copy grid to one column, on
 			// `[data-live-chart-body]`'s precedent: the default two-column body
-			// put the manifest in the 135 px rail column, which the first sheet
+			// put the hold's table in the 135 px rail column, which the first sheet
 			// showed as a table squeezed into the left third of the panel.
 			return `<div class="lc-panel-body lc-hold-body">${holdBody(state.hold, state.holdBids)}</div>`;
 		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;

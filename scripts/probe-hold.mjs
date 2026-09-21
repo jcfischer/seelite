@@ -8,7 +8,11 @@
  * manifest, and it has to be readable **away from a station** as well as at
  * one — which is why it lives on the flight console rather than the station's.
  *
- * Every assertion reads **rendered text**, not a state object (#411 round 3).
+ * Every assertion **about the page** reads rendered text, not a state object
+ * (#411 round 3). Three checks are setup gates rather than claims about the
+ * page — the dock phase, the offer the board named, and that there is a tonne
+ * good with a shelf to buy — and each reads the thing it gates rather than a
+ * proxy for it.
  */
 import { mkdirSync } from "node:fs";
 import {
@@ -106,9 +110,15 @@ try {
 		g.updateCockpit();
 		return id;
 	});
+	// The **dock phase**, not the id the setup returned: a ship parked but not
+	// docked would pass an is-it-a-string row and fail something later with a
+	// less legible message.
+	const dockPhase = await page.evaluate(() => window.__seelite.dock.phase);
 	check(
 		"the ship is docked",
-		typeof station === "string" && station.length > 0,
+		dockPhase === "docked" &&
+			(await page.locator("[data-live-station-console]").isVisible()),
+		`${station} · ${dockPhase}`,
 	);
 
 	await page.locator('[data-live-station-tab="Requests"]').click();
@@ -120,6 +130,13 @@ try {
 	const offer = await page.evaluate(
 		(i) => window.__seelite.requestsView().offers.find((o) => o.id === i),
 		offerId,
+	);
+	// Named before the first field read: a miss here surfaced as an opaque
+	// TypeError three checks later.
+	check(
+		"the offer row names an offer the board knows",
+		offerId !== null && offer != null && typeof offer.tonnes === "number",
+		`${offerId}`,
 	);
 	await offerRow.click();
 	await page

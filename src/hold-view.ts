@@ -12,10 +12,14 @@
  * is aboard.
  *
  * It does compute **one** figure, and is the sole authority for it: a line's
- * extended value, `bid × amount`. No other screen produces that — the Market
- * tab prices one unit — so `tests/hold-view.test.ts` pins it against figures
- * chosen so the bid, the amount and the product are three different numbers,
- * and a swapped basis cannot read as the right one. A string builder beside `requests-view.ts` for
+ * worth at the current bid, `bid × amount`. No other screen produces that —
+ * the Market tab prices one unit — so `tests/hold-view.test.ts` pins it
+ * against figures chosen so the bid, the amount and the product are three
+ * different numbers, and a swapped basis cannot read as the right one.
+ *
+ * It is **not** a claim about what selling the lot would realise: §5.2's stock
+ * response moves the price as the pilot sells. The column says `AT THIS BID`
+ * for that reason. A string builder beside `requests-view.ts` for
  * that module's reason: `live-cockpit.ts` is long, and a projection with
  * branches deserves its own rows.
  *
@@ -28,16 +32,8 @@
  * No DOM and no Three.js: this is a string.
  */
 import type { HoldBids, HoldLine, HoldSummary } from "./hold";
-import type { RequestStatus } from "./requests";
-
-const esc = (x: string) =>
-	x.replace(
-		/[&<>"']/g,
-		(c) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				c
-			] as string,
-	);
+import { escapeHtml as esc } from "./escape-html";
+import { isRunning } from "./requests";
 
 export const HOLD_STYLE = `
 .lc-hold { display: grid; align-content: start; gap: 14px; width: 100%; max-width: 780px; }
@@ -63,21 +59,14 @@ const valueCells = (line: HoldLine, bids: HoldBids): string => {
 		line.owner === "pilot" ? (bids?.get(line.goodName) ?? null) : null;
 	if (bid === null)
 		return '<span class="lc-hold-value" data-live-hold-value>—</span>';
+	// **At this bid, which is not the same as what selling it all would
+	// fetch.** §5.2's stock response moves the price as the pilot sells, and
+	// the till buys a tonne per press, so the extension is the lot's worth at
+	// the price on the glass *now* — the figure that decides whether to sell
+	// here at all. The column is headed `AT THIS BID` for that reason, and the
+	// per-unit figure is printed beside it so a pilot can see which is which.
 	return `<span class="lc-hold-value" data-live-hold-value>${(bid * line.amount).toFixed(1)} Cr<small>${bid.toFixed(1)} Cr each</small></span>`;
 };
-
-/**
- * The states in which a consignment is still **going** somewhere.
- *
- * An allow-list on the union rather than a deny-list of `cancelled` and
- * `failed`: a status added to `RequestStatus` later would otherwise default to
- * "must reach", which is the wrong direction to be wrong in — a page telling a
- * pilot to carry goods to a station for a job that is off.
- */
-const RUNNING: ReadonlySet<RequestStatus> = new Set<RequestStatus>([
-	"accepted",
-	"ready-to-report",
-]);
 
 /** Whose the goods are, and for a consignment, where they have to end up. */
 const ownerCell = (line: HoldLine): string => {
@@ -90,7 +79,7 @@ const ownerCell = (line: HoldLine): string => {
 	// A running job must **reach** its report station; one that is off must go
 	// **back** to the requester. `status` is what picks between them, and a
 	// page carrying one of the two would be right for half the journal.
-	const returning = !RUNNING.has(job.status);
+	const returning = !isRunning(job.status);
 	const where = returning ? job.returnToName : job.reportName;
 	const verb = returning ? "return to" : "to";
 	// Joined from the non-empty parts: an untitled job left a dangling
@@ -129,6 +118,6 @@ export function holdBody(hold: HoldSummary, bids: HoldBids): string {
 		// **A sentence, not a blank.** An empty page reads as a page that failed
 		// to load; the capacity is exactly what a pilot wants at that moment.
 		return `<div class="lc-hold" data-live-hold>${capacity}<p class="lc-hold-empty" data-live-hold-empty>Nothing aboard. The hold takes ${hold.capacityT} t.</p></div>`;
-	const head = `<div class="lc-hold-head"><span>GOOD</span><span class="lc-hold-amount">ABOARD</span><span class="lc-hold-value">FETCHES HERE</span></div>`;
+	const head = `<div class="lc-hold-head"><span>GOOD</span><span class="lc-hold-amount">ABOARD</span><span class="lc-hold-value">AT THIS BID</span></div>`;
 	return `<div class="lc-hold" data-live-hold>${capacity}${head}${hold.lines.map((line) => row(line, bids)).join("")}</div>`;
 }
