@@ -67,8 +67,8 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 	/**
 	 * #459 renamed this action's words. The id stays `retain` and §6 keeps
 	 * *retained lead*; the message a pilot reads says the plain thing, and says
-	 * plainly that nothing was committed. Sage round 3 was right that a green
-	 * suite was no evidence for a string nothing read.
+	 * plainly that nothing was committed. `tests/requests-view.test.ts` owns why
+	 * a string like this is checked at all.
 	 */
 	test("keeping an offer commits nothing, and says so", () => {
 		const kept = requestAction(
@@ -82,6 +82,40 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(kept.state.leadsById[courier.id]).toBeDefined();
 		expect(kept.state.byId[courier.id]).toBeUndefined();
 		expect(kept.message).toBe("Kept for later. You have accepted nothing.");
+	});
+
+	/**
+	 * **What makes a revision bump safe.** #459 rewrote `courier-priority`'s
+	 * purpose, danger and consequence and moved the row to `revision: 2`; sage
+	 * round 4 was right that nothing exercised the save semantics the bump's own
+	 * comment asserts. §1: an accepted request pins its content revision and
+	 * terms, and changing the available offer later cannot change them. So the
+	 * check is that acceptance stops reading the catalogue at all — every action
+	 * after it is flown here against an **empty** offer list, which is a harsher
+	 * catalogue change than a reworded row.
+	 */
+	test("an accepted request is flown off its pinned terms, not the catalogue", () => {
+		const state = accept().state;
+		expect(state.byId[courier.id].terms).toEqual(courier);
+		// An empty list is really an empty catalogue: with nothing accepted,
+		// nothing can be. Without this the arm below proves only that `[]` is
+		// ignored.
+		expect(
+			requestAction(emptyRequests(), [], "accept", courier.id, context()).ok,
+		).toBe(false);
+		let flying = state;
+		for (const [action, where] of [
+			["deliver", courier.reportAt],
+			["report", courier.reportAt],
+		] as const) {
+			const result = requestAction(flying, [], action, courier.id, {
+				...context(),
+				docked: where,
+			});
+			expect(result.ok).toBe(true);
+			flying = result.state;
+		}
+		expect(flying.byId[courier.id].terms).toEqual(courier);
 	});
 
 	test("a courier's cargo is the requester's, and it occupies the hold", () => {

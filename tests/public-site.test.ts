@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { CONTROLS } from "../src/controls-catalogue";
 import { PUBLIC_PAGES, pageForPath } from "../src/public-site";
-import { repoPath } from "./lib/source-scan";
+import { codeOf, repoPath, srcFiles } from "./lib/source-scan";
 
 /** One shape for the manual's key markup: the extraction and the strip that
  *  checks nothing escaped it must agree, or widening one silently narrows the
@@ -20,14 +20,22 @@ const KEY_LABELS: Record<string, string> = {
 };
 
 /**
- * Named keys this game binds to nothing, which a writer could still print.
+ * Key names the catalogue never produces: keys this game binds to nothing, and
+ * alternate spellings of ones it does — `ctrl` is here for a key bound as
+ * `control`, which is why this is not "unbound" as it once said.
  *
- * Every one reads as a key and as nothing else, which is the bar sage round 3
- * set: `Return`, `Space`, `End`, `Home` and `Delete` were here and are gone,
- * because a sentence about a space game may open with *Space is large* and
- * this row would then go red about unmarked keys. Dropping them is a real loss
- * of reach — an unmarked `Space` now passes — and the second row's docblock
- * counts it among the holes rather than leaving it implied.
+ * Every entry should read as a key and as nothing else, which is the bar sage
+ * round 3 set: `Return`, `Space`, `End`, `Home` and `Delete` were here and are
+ * gone, because a sentence about a space game may open with *Space is large*
+ * and this row would then go red about unmarked keys. Dropping them is a real
+ * loss of reach — an unmarked `Space` now passes — and the second row's
+ * docblock counts it among the holes.
+ *
+ * **`tab` does not quite clear that bar and is kept anyway.** This page writes
+ * *the Controls tab*, and a later edit capitalising that UI name would turn
+ * the row red about an unmarked key it is not. Kept because `Tab` is a key a
+ * manual is likely to print and the collision is one word away from being
+ * avoided; noted here so the red is read correctly when it comes.
  */
 const UNBOUND_KEY_NAMES = [
 	"alt",
@@ -95,6 +103,23 @@ describe("the quiet public threshold", () => {
 	});
 
 	/**
+	 * **The promise is about the whole game, so the check has to be too.** The
+	 * row above scans one file, and #459 leaned on it to say "nothing in this
+	 * repo implements opt-in reports" while deleting the sentence that described
+	 * them — a repo-wide claim from a one-file scan, which sage round 4 named.
+	 * This reads every module the page can load, with comments stripped so a
+	 * paragraph about not fetching is not mistaken for a fetch.
+	 */
+	test("no module the page loads can reach the network", () => {
+		const reaches =
+			/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bEventSource\b|sendBeacon/;
+		const offenders = srcFiles().filter((rel) => reaches.test(codeOf(rel)));
+		expect(offenders).toEqual([]);
+		// Not vacuous: there are modules to scan, and they are this game's.
+		expect(srcFiles().length).toBeGreaterThan(50);
+	});
+
+	/**
 	 * The manual prints keys, and the catalogue binds them. A hand-written
 	 * `[command, key]` list would be a fourth copy of the binding and could not
 	 * see a key added to the page and left out of it — sage round 1 said so, and
@@ -156,10 +181,16 @@ describe("the quiet public threshold", () => {
 		// that empties this set fails here rather than passing everything.
 		expect(names.size).toBeGreaterThan(3);
 		for (const unbound of UNBOUND_KEY_NAMES) names.add(unbound);
-		for (const name of names)
-			expect(prose).not.toMatch(
-				new RegExp(`\\b${name[0].toUpperCase()}${name.slice(1)}\\b`),
+		for (const name of names) {
+			// Escaped: the names come from the catalogue, and a future key
+			// carrying a metacharacter would otherwise change the pattern or
+			// throw instead of being looked for.
+			const capitalised = (name[0].toUpperCase() + name.slice(1)).replace(
+				/[.*+?^${}()|[\]\\]/g,
+				"\\$&",
 			);
+			expect(prose).not.toMatch(new RegExp(`\\b${capitalised}\\b`));
+		}
 		for (const loose of [
 			/(^|[^\w<])[A-Z](?![\w])/,
 			/\bF\d{1,2}\b/,
