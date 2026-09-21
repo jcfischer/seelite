@@ -192,100 +192,143 @@ test("`npm run lint` runs the rule over the real tree and it is clean", () => {
 	});
 }, 60_000);
 
+/** A job's name and its `if:`, which is how a whole job skips an event. */
+type WorkflowJob = { name: string; condition?: string };
+
 /** One entry from a workflow's `steps:` list. */
 type WorkflowStep = {
 	job: string;
 	/** Position within its job, so an ordering claim can be made. */
 	index: number;
-	name?: string;
 	run?: string;
 	uses?: string;
 	/** The step's `if:`, which is how a step skips itself on an event. */
 	condition?: string;
 };
 
+/** The three things a row needs to know about a workflow file. */
+type Workflow = {
+	/** The events listed under `on:`. */
+	triggers: string[];
+	jobs: WorkflowJob[];
+	steps: WorkflowStep[];
+};
+
 /**
- * The steps of a workflow file, read from its configuration and not from its
- * prose.
+ * The keys of one step, from the lines between its `- ` and the next.
+ *
+ * One key per line at eight spaces, and a `run:` written as a block scalar is
+ * joined back into one string — the two deploy steps are, and a row that read
+ * them line by line would read a shell script as a step.
+ */
+const readStep = (
+	job: string,
+	index: number,
+	lines: string[],
+): WorkflowStep => {
+	const step: WorkflowStep = { job, index };
+	let block: { key: "run" | "uses"; parts: string[] } | null = null;
+	const close = () => {
+		if (block) step[block.key] = block.parts.join("\n");
+		block = null;
+	};
+	for (const line of lines) {
+		if (block && (/^ {10,}/.test(line) || line.trim() === "")) {
+			block.parts.push(line.trim());
+			continue;
+		}
+		close();
+		const key = line.match(/^ {8}([\w-]+):\s*(.*)$/);
+		if (!key) continue;
+		const [, name, value] = key;
+		if (/^[|>][-+]?$/.test(value)) {
+			if (name === "run" || name === "uses") block = { key: name, parts: [] };
+			continue;
+		}
+		const scalar = value.replace(/^['"]|['"]$/g, "");
+		if (name === "run" || name === "uses") step[name] = scalar;
+		if (name === "if") step.condition = scalar;
+	}
+	close();
+	return step;
+};
+
+/**
+ * A workflow file, read from its configuration and not from its prose.
  *
  * There is no YAML dependency here and one is not wanted for a file this size.
- * What is needed instead is a reader that a comment cannot satisfy:
- * `deploy.yml` explains itself at length, so a substring search over the whole
- * file goes green on the paragraph that merely *says* a gate runs. Only lines
- * inside a `steps:` block are read, comment lines are dropped, and the `- `
- * opening a step is blanked so its first key lines up with the keys under it.
+ * What is needed instead is a reader a comment cannot satisfy: `deploy.yml`
+ * explains itself at length, so a substring search over the whole file goes
+ * green on the paragraph that merely *says* a gate runs. Comment lines are
+ * therefore dropped, and the `- ` opening a step is blanked so its first key
+ * lines up with the keys under it. This function owns the file's structure —
+ * which event, which job, where a step begins — and hands each step's lines to
+ * `readStep`, which owns nothing but that step's keys.
  *
- * It knows the shape this repo's workflows are written in — two-space indents,
- * one key per line, a block scalar for a multi-line command. A workflow written
- * some other way reads as *fewer* steps, which is the direction that reports a
- * missing gate rather than inventing one.
+ * It knows the shape this repo's workflows are written in: two-space indents,
+ * `on:` and `jobs:` at column zero, steps at six. A workflow written some other
+ * way reads as *fewer* triggers, jobs or steps, which is the direction that
+ * reports a missing gate rather than inventing one.
  */
-const workflowSteps = (rel: string): WorkflowStep[] => {
+const parseWorkflow = (rel: string): Workflow => {
+	const triggers: string[] = [];
+	const jobs: WorkflowJob[] = [];
 	const steps: WorkflowStep[] = [];
-	let job = "";
-	let inJobs = false;
-	let inSteps = false;
-	let current: WorkflowStep | null = null;
+	let section = "";
+	let stepLines: string[] | null = null;
 	let stepIndex = 0;
-	let block: { key: "run" | "name" | "uses"; parts: string[] } | null = null;
 
-	const flush = () => {
-		if (block && current) current[block.key] = block.parts.join("\n");
-		block = null;
+	const closeStep = () => {
+		if (stepLines && jobs.length)
+			steps.push(readStep(jobs[jobs.length - 1].name, stepIndex++, stepLines));
+		stepLines = null;
 	};
 
 	for (const raw of readFileSync(repoPath(rel), "utf8").split("\n")) {
 		if (raw.trimStart().startsWith("#")) continue;
+		const blank = raw.trim() === "";
+		const indent = raw.length - raw.trimStart().length;
 
-		if (inSteps) {
-			if (!/^ {6}- /.test(raw) && raw.trim() !== "" && !/^ {8,}/.test(raw)) {
-				flush();
-				inSteps = false;
-				current = null;
-			} else if (block && (/^ {10,}/.test(raw) || raw.trim() === "")) {
-				block.parts.push(raw.trim());
-				continue;
-			} else {
-				flush();
-			}
-		}
-		if (!inSteps) {
-			if (raw === "jobs:") inJobs = true;
-			const named = inJobs && raw.match(/^ {2}([\w-]+):\s*$/);
-			if (named) {
-				job = named[1];
-				inSteps = false;
-			}
-			if (/^ {4}steps:\s*$/.test(raw)) {
-				inSteps = true;
-				stepIndex = 0;
-			}
+		if (stepLines && (indent > 6 || blank)) {
+			stepLines.push(raw);
 			continue;
 		}
+		closeStep();
+		if (blank) continue;
 
-		const isStep = /^ {6}- /.test(raw);
-		const line = isStep ? `        ${raw.slice(8)}` : raw;
-		if (isStep) {
-			current = { job, index: steps.length };
-			steps.push(current);
-		}
-		if (!current) continue;
-
-		const key = line.match(/^ {8}([\w-]+):\s*(.*)$/);
-		if (!key) continue;
-		const [name, value] = [key[1], key[2]] as const;
-		if (/^[|>][-+]?$/.test(value)) {
-			if (name === "run" || name === "name" || name === "uses")
-				block = { key: name, parts: [] };
+		if (indent === 0) {
+			section = (raw.match(/^([\w-]+):/) ?? [])[1] ?? "";
 			continue;
 		}
-		const scalar = value.replace(/^['"]|['"]$/g, "");
-		if (name === "run" || name === "uses" || name === "name")
-			current[name] = scalar;
-		if (name === "if") current.condition = scalar;
+		if (section === "on" && indent === 2) {
+			const event = raw.match(/^ {2}([\w-]+):/);
+			if (event) triggers.push(event[1]);
+			continue;
+		}
+		if (section !== "jobs") continue;
+
+		if (indent === 2) {
+			closeStep();
+			stepIndex = 0;
+			const named = raw.match(/^ {2}([\w-]+):\s*$/);
+			if (named) jobs.push({ name: named[1] });
+			continue;
+		}
+		if (/^ {6}- /.test(raw)) {
+			stepLines = [`        ${raw.slice(8)}`];
+			continue;
+		}
+		if (indent === 4) {
+			const key = raw.match(/^ {4}([\w-]+):\s*(.*)$/);
+			if (!key) continue;
+			const [, name, value] = key;
+			if (name === "steps") stepIndex = 0;
+			if (name === "if" && jobs.length)
+				jobs[jobs.length - 1].condition = value.replace(/^['"]|['"]$/g, "");
+		}
 	}
-	flush();
-	return steps;
+	closeStep();
+	return { triggers, jobs, steps };
 };
 
 /**
@@ -293,57 +336,74 @@ const workflowSteps = (rel: string): WorkflowStep[] => {
  *
  * The gate is static — it scans `scripts/` and opens no browser — so #14's
  * reason for keeping the browser tier off GitHub does not reach it, and #402
- * made it green on `main`, so adding it cannot open every PR red.
- *
- * The command is read out of the workflow and then spawned, not restated here,
- * for the reason the `npm run lint` row above goes through the script: a step
- * naming an entry that stopped existing is red here rather than green by text.
+ * made it green on `main`, so adding it cannot open every PR red. `npm test`
+ * has run the same gate since #402, so what this row holds is not first
+ * coverage but what a named step adds: an event list that reaches pull requests,
+ * a job and a step that skip themselves to nobody, the gate ahead of anything
+ * that can publish, and a command that still passes.
  *
  * What no row here can hold is that a runner runs it. That is proven on the
- * runner — a commit adding a probe without `tally()` must redden the `Deploy`
- * job at this step — and the run is recorded on node #403's receipt.
+ * runner — a commit adding a probe without `tally()` reddened the `Deploy` job
+ * at this step in 18 s — and both runs are linked from the pull request.
  */
 test("the pull-request gate runs the launcher-wiring check", () => {
-	const steps = workflowSteps(".github/workflows/deploy.yml");
+	const { triggers, jobs, steps } = parseWorkflow(
+		".github/workflows/deploy.yml",
+	);
 	// A parse that finds nothing finds nothing for a reason of its own, and a
 	// green below would then be an absence measured as a presence.
 	expect(steps.length).toBeGreaterThan(0);
+	// The workflow is triggered by a pull request at all. Without this the row's
+	// name would be the only thing claiming it.
+	expect(triggers).toContain("pull_request");
 
 	const wiring = steps.filter((s) => (s.run ?? "").includes("check:wiring"));
 	// Exactly one, and by the name the local tier uses.
 	expect(wiring.map((s) => s.run)).toEqual(["npm run check:wiring"]);
 
 	const step = wiring[0];
-	// Nothing skips it on a pull request: an `if:` naming an event is exactly
-	// how the two deploy steps keep off PRs, and this must not be written so.
+	// Nothing skips it, at the step or at the job that holds it: an `if:` naming
+	// an event is exactly how the two deploy steps keep off pull requests, and
+	// neither this step nor its job may be written that way.
 	expect(step.condition).toBeUndefined();
-	// It sits in the job a pull request already waits on, and fails before
-	// anything can publish. Both jobs are pinned to a name rather than compared
-	// to each other: a bare equality reads green when neither step was found.
+	expect(jobs.map((j) => [j.name, j.condition])).toEqual([
+		["deploy", undefined],
+	]);
+	// It sits in the job the unit tier sits in, and fails before anything in
+	// that job can publish. Both jobs are pinned to a name rather than compared
+	// to each other, and the publish steps are read from the gate's own job —
+	// a publish step in a later job would leave an ordering claim over an empty
+	// list, which `Math.min` reports as `-Infinity` and passes.
 	const unit = steps.find((s) => (s.run ?? "").trim() === "npm test");
 	expect({ gateJob: step.job, unitJob: unit?.job }).toEqual({
 		gateJob: "deploy",
 		unitJob: "deploy",
 	});
-	const publish = steps.filter((s) =>
-		/wrangler|pages deploy/.test(`${s.run ?? ""} ${s.uses ?? ""}`),
+	const publish = steps.filter(
+		(s) =>
+			s.job === step.job &&
+			/wrangler|pages deploy/.test(`${s.run ?? ""} ${s.uses ?? ""}`),
 	);
 	expect(publish.length).toBeGreaterThan(0);
 	expect(step.index).toBeLessThan(Math.min(...publish.map((s) => s.index)));
 
+	// The step runs the entry the local tier runs, and that entry is the gate.
 	const { scripts } = JSON.parse(
 		readFileSync(repoPath("package.json"), "utf8"),
 	) as unknown as { scripts: Record<string, string> };
-	expect(scripts["check:wiring"]).toBe(
-		"node scripts/check-launcher-wiring.mjs",
-	);
+	const entry = scripts["check:wiring"];
+	expect(entry).toBe("node scripts/check-launcher-wiring.mjs");
 
-	// And it passes when run the way the gate runs it. Splitting on spaces is
-	// the command only because it carries no shell: that is asserted, so a step
-	// that later grew a pipe is red here rather than run as two arguments.
-	const command = (step.run ?? "").trim();
-	expect(command).toMatch(/^[\w./: -]+$/);
-	const [bin, ...args] = command.split(/\s+/);
+	// And the entry passes when its own words are run — read out of `package.json`
+	// rather than restated, so the workflow claim above is an executed fact and
+	// not a string match. Splitting on spaces is the command only because it
+	// carries no shell; that is asserted, so an entry that grew a pipe is red
+	// here rather than run as two arguments. This is a second run of the gate per
+	// `bun test`, and answers a question the row above it does not: that one
+	// spawns a path written into the test, this one spawns the script the
+	// workflow's step reaches through `package.json`.
+	expect(entry).toMatch(/^[\w./: -]+$/);
+	const [bin, ...args] = entry.split(/\s+/);
 	const run = spawnSync(bin, args, { cwd: repoPath("."), encoding: "utf8" });
 	expect({ status: run.status, out: run.stdout }).toMatchObject({ status: 0 });
 }, 60_000);
