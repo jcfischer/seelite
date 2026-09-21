@@ -89,7 +89,10 @@
  * one: they read absolute display codes. `lib/hull-luma.mjs` records what the
  * two lanes actually read — the peak agrees to two decimals and the
  * distribution to a fifth of a code — and the margins there are asserted to
- * exceed that spread, so a lane cannot decide those rows either.
+ * exceed that spread. **That is two rasterisers on one M1 Pro**, so it says what
+ * a lane costs here and nothing about a backend this machine does not have;
+ * `SHIPPED_BAND_FLOOR` is what keeps the derived floor from spending the
+ * headroom the previous band reserved for one.
  *
  * The half that needs the player's GPU is the picture, and that is the
  * canonical view set's job.
@@ -521,24 +524,33 @@ if (!hull.missing) {
 	// rather than red. This says so by name instead of leaving a later reader to
 	// bisect two numeric failures back to a finish commit, which is what #294
 	// had to do.
+	const onCalibratedFinish =
+		hull.finishes?.hull === HULL_LUMA_CALIBRATION.finish;
 	t.check(
 		"the hull on screen is the finish the band was calibrated against",
-		hull.finishes?.hull === HULL_LUMA_CALIBRATION.finish,
+		onCalibratedFinish,
 		`measured ${hull.finishes?.hull ?? "no finish reported"}, ` +
 			`calibrated ${HULL_LUMA_CALIBRATION.finish} at ${HULL_LUMA_CALIBRATION.ref}`,
 	);
-	t.check(
-		"the brightest painted hull pixel stays inside the post-tone-map band",
-		min >= HULL_LUMA_BAND.min && max <= HULL_LUMA_BAND.max,
-		`${min.toFixed(2)}–${max.toFixed(2)} of 255, band ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}`,
-	);
-	t.check(
-		"the painted hull distribution is not under-lit beneath that highlight",
-		lowerQuartileMin >= HULL_LUMA_FLOORS.lowerQuartile &&
-			medianMin >= HULL_LUMA_FLOORS.median,
-		`lower quartile ${lowerQuartileMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.lowerQuartile}, ` +
-			`median ${medianMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.median}`,
-	);
+	// Both numeric rows are **gated on that**, rather than reported beside it.
+	// They compare display codes against a floor derived for one named finish, so
+	// on any other finish a pass is not evidence of anything — and a green row is
+	// read as one. The readings are still printed below, where a figure is a note
+	// rather than a check.
+	if (onCalibratedFinish) {
+		t.check(
+			"the brightest painted hull pixel stays inside the post-tone-map band",
+			min >= HULL_LUMA_BAND.min && max <= HULL_LUMA_BAND.max,
+			`${min.toFixed(2)}–${max.toFixed(2)} of 255, band ${HULL_LUMA_BAND.min}–${HULL_LUMA_BAND.max}`,
+		);
+		t.check(
+			"the painted hull distribution is not under-lit beneath that highlight",
+			lowerQuartileMin >= HULL_LUMA_FLOORS.lowerQuartile &&
+				medianMin >= HULL_LUMA_FLOORS.median,
+			`lower quartile ${lowerQuartileMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.lowerQuartile}, ` +
+				`median ${medianMin.toFixed(2)} ≥ ${HULL_LUMA_FLOORS.median}`,
+		);
+	}
 	console.log(
 		`  hull-chase painted peak ${min.toFixed(2)}–${max.toFixed(2)} of 255 ` +
 			`(same-build noise ${(max - min).toFixed(2)}, ${hull.pixels} px, at ${hull.peakAts.map((at) => `${at.x},${at.y}`).join(" / ")})`,

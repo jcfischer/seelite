@@ -33,10 +33,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	floorUnder,
 	HULL_LUMA_BAND,
 	HULL_LUMA_CALIBRATION,
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
+	SHIPPED_BAND_FLOOR,
 	SUBJECT_CHANGE_QUARTILE_DROP,
 } from "../scripts/lib/hull-luma.mjs";
 import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
@@ -408,49 +410,53 @@ describe("the rotation onto the star", () => {
  * `probe-light-rig.mjs`'s three painted-hull rows read **absolute display
  * codes**, so every one of them is a property of the hull finish that was on
  * screen when they were calibrated — not of the lighting they are named for.
- * #294 is the bill for that: `ab47a33` set `DEFAULT_HULL_FINISH` to `worn`, the
- * peak went 154.32 → 149.08 and the lower quartile 60.93 → 41.96 across that one
- * commit, both rows went red, and they stayed red for a fortnight while reading
- * exactly like an under-lit hull. Then a threshold move greened them with a
- * reason — a Metal/SwiftShader readback difference — that a measurement of both
- * lanes refutes: the peak is 149.08 on each, to two decimals.
+ * `scripts/lib/hull-luma.mjs` owns that story and every figure in it, including
+ * what #294 measured and where; nothing is restated here, because two
+ * hand-kept copies of one measurement is the shape that drifted last time.
  *
- * Two failures to prevent, and they are different failures.
+ * What is checked here is the part of it that can be executed:
  *
- * **The numbers contradicting their own prose.** The docstring over the floors
- * explained them as sitting 10% under the quartile and 5% under the median of a
- * recorded column, and by the time #294 read it the constants sat 37% and 15%
- * under. Prose is assertion; this one went stale in place because nothing
- * executed it. The floors are computed from the recorded readings and the stated
- * margins now, so the rule and the numbers cannot disagree again — what is
- * checked here is that the recorded readings are the ones the game ships.
- *
- * **A margin with no bounds.** A margin too tight goes red on the difference
- * between two rasterisers; too loose and it cannot see the subject change it
- * exists for. Both bounds are measured, and both are asserted below.
+ * - **The calibration names the finish the game ships.** When the default moves,
+ *   this goes red naming it, instead of three browser rows going red and reading
+ *   as a lighting regression.
+ * - **The floors are the module's own derivation**, not literals re-typed beside
+ *   it — which is how the old constants came to sit 37% under a reading their
+ *   docstring described as 10% under.
+ * - **Every margin is inside its bounds**, and there are three of them: above
+ *   the lane spread, inside the drop it must still catch, and never tighter than
+ *   the band floor that shipped before this module existed.
  */
 describe("the painted-hull luma calibration", () => {
+	/** The floor each metric's reading feeds, in one place so the assertions and
+	 *  the bounds below iterate the same three. */
+	const FLOOR_OF = {
+		peak: HULL_LUMA_BAND.min,
+		lowerQuartile: HULL_LUMA_FLOORS.lowerQuartile,
+		median: HULL_LUMA_FLOORS.median,
+	} as const;
+	const METRICS = ["peak", "lowerQuartile", "median"] as const;
+
 	test("is recorded against the finish the game actually ships", () => {
-		// The check #294 wanted and nobody had: when the default finish moves,
-		// this goes red naming the finish, instead of three browser rows going
-		// red and reading as a lighting regression.
+		// The limit of this, said plainly: it matches a *name*. A change to what
+		// `worn` renders leaves this green and lands as two numeric reds, exactly
+		// as in #294 — that case is what the quartile margin's upper bound is
+		// for, and no assertion on an id can cover it.
 		expect<string>(HULL_LUMA_CALIBRATION.finish).toBe(DEFAULT_HULL_FINISH);
 	});
 
-	test("every floor is exactly the stated margin under its reading", () => {
-		const { peak, lowerQuartile, median } = HULL_LUMA_CALIBRATION;
-		expect(HULL_LUMA_BAND.min).toBeCloseTo(
-			peak * (1 - HULL_LUMA_MARGINS.peak),
-			6,
-		);
-		expect(HULL_LUMA_FLOORS.lowerQuartile).toBeCloseTo(
-			lowerQuartile * (1 - HULL_LUMA_MARGINS.lowerQuartile),
-			6,
-		);
-		expect(HULL_LUMA_FLOORS.median).toBeCloseTo(
-			median * (1 - HULL_LUMA_MARGINS.median),
-			6,
-		);
+	test("every floor is the module's own derivation from its reading", () => {
+		// Re-derived through the module's own `floorUnder`, rounding included: a
+		// test that re-implements the arithmetic without the rounding compares
+		// against a number the module never produced, and goes red on a margin
+		// whose product carries four decimals rather than on any drift.
+		//
+		// What this catches is a floor typed in as a literal beside the
+		// derivation — which is how 50/78 became 35/70 under a docstring that
+		// still described 50/78.
+		for (const metric of METRICS)
+			expect(FLOOR_OF[metric]).toBe(
+				floorUnder(HULL_LUMA_CALIBRATION[metric], HULL_LUMA_MARGINS[metric]),
+			);
 	});
 
 	test("the band is an ordered band and the calibrated peak is inside it", () => {
@@ -463,30 +469,32 @@ describe("the painted-hull luma calibration", () => {
 	});
 
 	test("no margin is tighter than the spread between the two rasterisers", () => {
-		// The lower bound on every margin. #294 measured the same build on ANGLE
-		// Metal and on SwiftShader through one dev server; `laneSpread` is what
-		// they disagreed by. A margin under it is a row that goes red on which
-		// lane ran it, which is the false reason the thresholds were last moved.
-		for (const metric of ["peak", "lowerQuartile", "median"] as const) {
-			const absolute =
-				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric];
-			expect(absolute).toBeGreaterThan(
-				HULL_LUMA_CALIBRATION.laneSpread[metric],
-			);
-		}
+		// The lower bound on every margin. A margin under the lane spread is a row
+		// that goes red on which lane ran it, which is the unmeasured reason the
+		// thresholds were last moved.
+		for (const metric of METRICS)
+			expect(
+				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric],
+			).toBeGreaterThan(HULL_LUMA_CALIBRATION.laneSpread[metric]);
+	});
+
+	test("the derived band floor never tightens past the one that shipped", () => {
+		// The bound that is not about this machine. Every reading here is one M1
+		// Pro on two rasterisers, so a floor derived from its peak spends headroom
+		// the previous band reserved for backends nobody here can measure. Loosen
+		// freely; tightening needs evidence this repo does not have.
+		expect(HULL_LUMA_BAND.min).toBeLessThanOrEqual(SHIPPED_BAND_FLOOR);
 	});
 
 	test("the quartile's margin is still tighter than the change it exists to catch", () => {
 		// The upper bound, and it is only meaningful on the quartile: of the three
-		// rows, that is the one #202 actually tripped. The peak fell 3.4% and the
-		// median 4.3% across that commit — under any workable margin — while the
-		// quartile fell 31.1%. So the quartile is the discriminating row, and its
-		// margin has to stay well inside that drop or the probe keeps passing
-		// through the next finish change.
+		// rows, that is the one `ab47a33` actually tripped. The peak and the median
+		// moved by less than any workable margin, so the quartile is the
+		// discriminating row and its margin has to stay well inside that drop.
 		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
 			SUBJECT_CHANGE_QUARTILE_DROP,
 		);
-		// Not merely inside it: a margin at 30% against a 32% drop would pass this
+		// Not merely inside it: a margin at 30% against a 31% drop would pass this
 		// and catch nothing in practice.
 		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
 			SUBJECT_CHANGE_QUARTILE_DROP / 2,
