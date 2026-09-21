@@ -178,9 +178,9 @@ describe("a press becomes a command, once", () => {
 });
 
 describe("a console takes six controls and leaves the rest flying", () => {
-	// The console footer says "Simulation continues while this console is open",
-	// and it is right: suspending the sticks every time the pilot glanced at the
-	// target list would stop the ship. So a console claims the d-pad's two
+	// The console footer once read "Simulation continues while this console is
+	// open", and it was right: suspending the sticks every time the pilot glanced
+	// at the target list would stop the ship. So a console claims the d-pad's two
 	// vertical positions, the two face buttons and the two shoulders — and
 	// nothing else changes meaning.
 
@@ -311,9 +311,10 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 	test("an open console suspends them too, which is the principal's ruling", () => {
 		// **This reverses what #283 shipped.** The node argued that a console
 		// takes six discrete controls and the sticks keep flying, from the
-		// console's own footer — "Simulation continues while this console is
-		// open". Flown, that reads as the ship flying off while you are reading
-		// it. The world still runs; the *controls* are what a panel takes.
+		// console's own footer, which `src/pad-bindings.ts`'s header quotes and
+		// owns, including what became of it. Flown, that reads as the ship flying
+		// off while you are reading it. The world still runs; the *controls* are
+		// what a panel takes.
 		expect(padFlightAxes(sticks([1, 1, 1, 1]), "console")).toEqual({
 			yaw: 0,
 			pitch: 0,

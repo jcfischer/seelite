@@ -14,7 +14,6 @@ import type { CarrierKey } from "../src/carrier-key";
 import type { HoldJob, HoldSummary } from "../src/hold";
 import type { RequestStatus } from "../src/requests";
 import { holdBody } from "../src/hold-view";
-import { RIGHT_FOOTER } from "../src/live-cockpit";
 import { codeOf } from "./lib/source-scan";
 
 const KEY = "0:3:station-trade" as CarrierKey;
@@ -244,41 +243,6 @@ describe("the right console's tab order", () => {
 		// a later tab that keeps it does not have to edit this line too.
 		const i = listed?.indexOf("Controls") ?? -1;
 		expect(listed?.[i + 1]).toBe("Tuning");
-	});
-});
-
-describe("the footer under a page is about that page", () => {
-	// The first sheet put *"Tuning remains on this right-console tab"* under
-	// the hold page, which is a non sequitur — and the PR claimed for a round
-	// that no row could have caught it. A `Record` keyed by the tab is exactly
-	// what a row asserts.
-	test("every right-console tab has a footer", () => {
-		for (const tab of [
-			"Flight",
-			"Drive",
-			"Hold",
-			"Controls",
-			"Tuning",
-		] as const)
-			expect(RIGHT_FOOTER[tab].length, tab).toBeGreaterThan(0);
-	});
-
-	test("the Hold tab's footer is about the hold, not about Tuning", () => {
-		expect(RIGHT_FOOTER.Hold).not.toMatch(/tuning/i);
-		expect(RIGHT_FOOTER.Hold).toMatch(/entrusted/i);
-	});
-
-	test("the four tabs this node does not own keep the shipped sentence", () => {
-		// **The literal, not mutual equality.** Asserting they equal
-		// `RIGHT_FOOTER.Tuning` lets a rewrite of that one move all four
-		// together and stay green, which is the row not being able to fail on
-		// the thing it names. Rewording them is player-visible prose about
-		// pages #445 does not own, and one draft reached for a noun CONTEXT.md
-		// forbids.
-		const shipped =
-			"Tuning remains on this right-console tab, never on the flight floor.";
-		for (const tab of ["Flight", "Drive", "Controls", "Tuning"] as const)
-			expect(RIGHT_FOOTER[tab], tab).toBe(shipped);
 	});
 });
 

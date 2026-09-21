@@ -296,6 +296,23 @@ describe("the rendered control carries what the builder decided", () => {
 		expect(html).not.toMatch(/data-live-request-action="deliver"[^>]*disabled/);
 	});
 
+	/**
+	 * **The decision on the glass, not a transcript of it.** #459 renamed the
+	 * control that stores an offer without accepting it: the action id stays
+	 * `retain` and `missions-and-requests.md` §6 keeps *retained lead* as its
+	 * structural term, but the screen says **Keep for later**. Sage round 3 was
+	 * right that a green suite was no evidence for those strings — nothing read
+	 * them. What this holds is the split itself, so the spec's word cannot creep
+	 * back onto the glass, and the label cannot be changed by accident.
+	 */
+	test("the control that keeps an offer says so in the player's words", () => {
+		const html = accepted(COURIER, COURIER.tonnes);
+		expect(html).toContain('data-live-request-action="retain"');
+		expect(html).toContain("Keep for later");
+		for (const spec of ["Retain lead", "retained lead", "Lead retained"])
+			expect(html).not.toContain(spec);
+	});
+
 	test("a short hold renders the attribute and the hint beside it", () => {
 		const html = accepted(PROCUREMENT, 1);
 		expect(html).toMatch(/data-live-request-action="deliver"[^>]*disabled/);

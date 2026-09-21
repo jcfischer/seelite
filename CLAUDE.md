@@ -5,16 +5,50 @@ Vite + Three.js, static bundle, no backend, no runtime network requests.
 
 ## Read the map first
 
-Work on this repo is planned as a **work-graph map**, and the map is the
-authority on what to build and how:
+Work on this repo is planned as **two work-graph maps**, and both are the
+authority on what to build and how. Which one you read is decided by what you
+are changing: **#1 is the machine** — rendering, performance, probes, the input
+and binding layer, the save format, station geometry, the sky — and **#460 is
+the fiction** — missions, the Rama expedition story, combat consequence,
+onboarding and the progression ladder.
+
+The boundary is engine against fiction, not player against world. A pilot
+presses a key and the game saves, so *controls* and *save* are #1's even though
+a pilot does both; what the fiction asks of a pilot — what work there is, what
+it means, what the world does about it — is #460's. When a node sits on the
+line, ask what its answer **changes**: the mechanism that draws, measures,
+persists or reads input is #1's, and what a job is worth, means or costs is
+#460's. Combat consequence is the worked example — a consequence is persisted
+state, so the save format carrying it is #1's while what being struck *costs a
+pilot* is #460's, and the two are separate nodes rather than one node on two
+maps.
+
+A node on one map may be `--blocked-by` a node on the other: blocking is a
+native edge between nodes and knows nothing about membership, so it crosses the
+split and holds the blocked node off its own map's frontier until the blocker
+closes. Record the dependency; do not move a node to keep an edge local.
 
 ```bash
-soma graph node 1          # the map: destination, constraints, notes, decisions
-soma graph frontier 1      # what is takeable right now
+# --repo is not optional; see below
+soma graph node 1 --repo jcfischer/seelite      # the machine map: destination, constraints, notes, decisions
+soma graph frontier 1 --repo jcfischer/seelite  # what is takeable right now on the machine
+soma graph node 460 --repo jcfischer/seelite    # the fiction map (split out of #1 on 2026-09-21)
+soma graph frontier 460 --repo jcfischer/seelite
 ```
 
-Its **Constraints** section binds every answer — an option that violates one is
-not on the table. Its **Notes** section carries the delivery SOP (claim →
+**`--repo jcfischer/seelite` on every `soma graph` verb.** Without it the verb
+resolves `the-metafactory/soma` and silently returns that repo's node of the
+same number — it does not error. Read the `(owner/name)` on the first line of
+every result before trusting it.
+
+**#460 does not restate #1's Constraints, Notes or delivery SOP** — it inherits
+them by reference and adds its own on top, about what the fiction may cost. So
+working a #460 node means reading **both** maps, and neither is a summary of
+the other: #460 for what it adds, #1 for what binds underneath. What those
+constraints say is on #460, and deliberately not here.
+
+#1's **Constraints** section binds every answer — an option that violates one is
+not on the table. #1's **Notes** section carries the delivery SOP (claim →
 branch → worktree → TDD → PR → sage review → merge), when to stop reviewing, and
 the repo's verification culture. Do not restate either here; read them there, so
 there is one authoritative copy rather than two that drift. The map owns
@@ -140,8 +174,9 @@ else's checkout on the same port.
 **The probes do not run in CI** (#14). GitHub installs a browser per run, which
 cost minutes per push and once hung for twenty-five; the runner has no GPU, so
 everything it renders is software-rasterised anyway. `.github/workflows/deploy.yml`
-gates a pull request on format, lint, typecheck, unit tests and build — and nothing on
-GitHub proves the browser tier was run. That check is yours, before you merge.
+gates a pull request on format, lint, wiring, typecheck, unit tests and build — and
+nothing on GitHub proves the browser tier was run. That check is yours, before you
+merge.
 
 ## Things that will bite you
 

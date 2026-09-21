@@ -39,7 +39,6 @@ import {
 	guardedOrigin,
 	installCamSim,
 	launchChromium,
-	PROBE_WINDOW_VISIBLE,
 	tally,
 	waitForSettingsPanel,
 } from "./probe-guard.mjs";
@@ -64,9 +63,11 @@ const OTHER_SEED = 20260818;
 const RELATIVE_EPS = 1e-3;
 
 await guardedOrigin(ORIGIN);
-// The Settings gate proves a real keyboard shortcut; offscreen macOS windows
-// cannot reliably receive that shortcut after another probe's compositor work.
-const browser = await launchChromium({ probeWindow: PROBE_WINDOW_VISIBLE });
+// The Settings gate proves a real keyboard shortcut. This probe asked for a
+// visible window because an offscreen one could not reliably take that shortcut
+// after another probe's compositor work; the lane is windowless now, and a
+// windowless launch delivers it.
+const browser = await launchChromium({});
 
 const { check, watch, exit } = tally();
 

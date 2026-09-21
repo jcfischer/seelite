@@ -77,26 +77,6 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
 	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
 	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
 };
-/**
- * The right console's footer, per tab.
- *
- * It was one sentence about `Tuning`, which read as a caption under every
- * other tab — including #445's hold page, where *"Tuning remains on this
- * right-console tab"* is a non sequitur. **Only the Hold tab gets a new
- * sentence here**: rewording the other four is player-visible prose about
- * pages this node does not own, and one of the drafts reached for a noun
- * `CONTEXT.md` forbids. They keep the shipped line until a node owns them.
- */
-const TUNING_FOOTER =
-	"Tuning remains on this right-console tab, never on the flight floor.";
-
-export const RIGHT_FOOTER: Readonly<Record<RightTab, string>> = {
-	Flight: TUNING_FOOTER,
-	Drive: TUNING_FOOTER,
-	Hold: "Entrusted cargo occupies the hold and cannot be sold.",
-	Controls: TUNING_FOOTER,
-	Tuning: TUNING_FOOTER,
-};
 
 // #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
 // on this console that is not fiction.
@@ -319,7 +299,7 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 #live-cockpit[data-live-head-look="left"] .lc-director, #live-cockpit[data-live-head-look="right"] .lc-director { opacity: .12; }
 .lc-panel header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 11px; border-bottom: 2px solid #e5aa52; }
 .lc-panel h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
-.lc-panel header small, .lc-panel footer { color: #cb8c51; }
+.lc-panel header small { color: #cb8c51; }
 .lc-tabs { display: flex; gap: 7px; margin: 12px 0; border-bottom: 1px solid rgba(229, 170, 82, .55); }
 .lc-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: #d49352; cursor: pointer; font: inherit; font-size: 11px; letter-spacing: .05em; padding: 7px 10px; }
 .lc-tab[aria-selected="true"] { border-color: #ffe0a2; color: #fff0c9; background: rgba(223, 122, 20, .18); }
@@ -1390,7 +1370,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${launchHoldNotice}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}<footer>${RIGHT_FOOTER[state.rightTab]}</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
