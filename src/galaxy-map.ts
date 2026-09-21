@@ -42,6 +42,7 @@ import {
 	generateGalaxy,
 	startSystem,
 } from "./galaxy";
+import { GALACTIC_NORMAL } from "./galaxy-frame";
 import { type FinderPanelState, mountFinderPanel } from "./galaxy-finder-panel";
 import {
 	type LastKnownState,
@@ -71,8 +72,19 @@ import { type HoverRule, clickTarget, hoverCandidate } from "./hover-candidate";
  * would look the same. What matters is that the *same* axis is used by the
  * plane, the drop-lines and the anchor discs — a plane on one axis and a mast
  * on another would draw a depth cue that means nothing.
+ *
+ * **And the same axis as the sky's**, which is #430's addition to the sentence.
+ * This was `new THREE.Vector3(0, 1, 0)`: a renderer's second copy of the
+ * cluster's reference-plane normal, while `galaxy-frame.ts` was about to carry
+ * the first. A chart and a sky that each hold their own idea of which way the
+ * galaxy lies will drift, and nothing headless can see it, so the direction is
+ * read from there and this line authors nothing.
  */
-const UP = new THREE.Vector3(0, 1, 0);
+const UP = new THREE.Vector3(
+	GALACTIC_NORMAL.x,
+	GALACTIC_NORMAL.y,
+	GALACTIC_NORMAL.z,
+);
 
 /** One LY is one world unit. The cluster is 44 units across, which keeps the
  *  camera's near/far plane arithmetic trivial and lets a probe read a radius

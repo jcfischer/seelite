@@ -100,6 +100,13 @@ export const DOMAIN = {
 	 *  behind it the day a second row was authored. Split again by the family
 	 *  and the episode, so consecutive episodes do not repeat one row. */
 	JOB_OFFERS: 22,
+	/** Which way the galaxy lies from a system: the seeded rotation between the
+	 *  cluster's frame and that system's own world frame (`galaxy-frame.ts`,
+	 *  #430). Its own tag rather than a draw off `backdrop`, which is what #100
+	 *  named in its own constraints — the point field's scatter and the sky's
+	 *  orientation are two different questions, and sharing a stream makes a
+	 *  system's band tilt a function of how many stars were scattered. */
+	SKY_FRAME: 23,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

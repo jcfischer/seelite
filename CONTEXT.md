@@ -490,3 +490,43 @@ not turn over #25's 30-minute market epoch and is not a way to wait a market
 out. Misjumps and witchspace ambushes are reserved to #8, and the tunnel as a
 *rendered* thing is unbuilt.
 _Avoid_: Hyperspace (as a place), jump space
+
+**Galactic frame**:
+Galaxy space — the coordinate system `galaxy.ts` places the 256 systems in, whose
+reference plane is `y = 0` and whose centre is the cluster's density peak. Its
+reference-plane normal has exactly one **named** author in `src/` —
+`GALACTIC_NORMAL` in `src/galaxy-frame.ts`, which the chart reads rather than
+restating — and one structural one, `GALAXY_FLATTENING_Q` in `galaxy.ts`, which
+flattens onto that axis as a choice of component. A row ties the two.
+`galaxy-generation.md` §2 owns the shape and §11 the frame.
+_Avoid_: Galaxy space (as a type or constant name), universe frame, ecliptic
+
+**System frame**:
+A single system's own world frame — the one the ship flies in, the sim is written
+in, and the renderer draws. Its reference plane is `z = 0`, the planets' orbital
+plane, and `hud.ts`'s attitude reference calls its normal "up". Distinct from the
+**Galactic frame**, which it has no fixed relation to: a system's planets and a
+cluster 24 light years across are not coplanar by anything but coincidence.
+_Avoid_: World space (unqualified), ecliptic
+
+**Sky frame**:
+The seeded rotation that carries the **Galactic frame** into one system's
+**System frame**, so a direction in the cluster can be said as a place in a
+particular pilot's sky. One per system, drawn from its own domain tag, isotropic
+over rotations — what that buys and what it costs is §11's to say, including
+that an isotropic draw rules nothing out. `src/galaxy-frame.ts` owns the
+arithmetic; `galaxy-generation.md` §11 owns the ruling.
+_Avoid_: Attitude (that is the ship's own quaternion)
+
+**Galactic pole**:
+Where a **Sky frame** lands the cluster's reference-plane normal — the direction
+"straight up out of the galaxy" looks like from this cockpit, and therefore the
+axis any cluster structure is arranged about. Varies per system, by design.
+_Avoid_: Zenith, galactic north (unqualified)
+
+**Core bearing**:
+The direction from here to the cluster's centre, in the observer's own sky. Worth
+stating because it is the one bearing that carries information rather than light —
+which is #100's measurement, and `galaxy-generation.md` §11 is where its figures
+are written down once. `coreBearing` in `src/galaxy-frame.ts`.
+_Avoid_: The way home, galactic down

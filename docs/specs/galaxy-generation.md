@@ -97,6 +97,12 @@ Galaxies are a **namespace, not a regeneration**: switching galaxy changes
 later bolt-on, and **the save must carry per-galaxy state** — visited flags,
 market fluctuation bytes, legal status — not one global set.
 
+**The plane is `y = 0`, and that is a fact about galaxy space only.** What a
+pilot standing in one of these systems sees of that plane — which way the cluster
+lies from inside a system — is §11's, and it is *not* "the same plane, drawn
+lower", because a system's own reference plane is its planets' orbital plane and
+has nothing to do with the cluster's.
+
 ### The disc, and why it is 0.70 and not Elite's 0.50
 
 This section ratified a **sphere** until #107 re-opened it on 2026-08-28. The
@@ -766,8 +772,12 @@ headless `bun` tests unless noted.
 10. **Layer handoff** (browser probe) — a body crossing `HANDOFF_KM` does not
     pop in apparent size. Nothing has crossed it yet; this is the first content
     that will.
+11. **Sky frame** — the transform of §11 round trips, is a rotation and not a
+    reflection, reports the parameters it was drawn from, and covers the sphere.
+    `tests/galaxy-frame.test.ts` and `tests/quat.test.ts`; no browser tier,
+    because nothing draws it yet.
 
-Probes 1–9 need no probe-registry entry. Note that the registry currently
+Probes 1–9 and 11 need no probe-registry entry, being headless. Note that the registry currently
 authorises **no** `command` or `url` probes for this repo, so a `bun test`
 probe on a work-graph node refuses until the adopter declares it.
 
@@ -786,3 +796,123 @@ Recorded deliberately, not to reopen:
 - **Rim connectivity depends on resampling behaving.** If a generator change
   pushes attempt counts up sharply, the profile (§3) or the radius (§2.1) is
   what needs revisiting — not the retry loop.
+
+---
+
+## 11. The galactic frame, and a system's world frame
+
+Ratified by work-graph node
+[#430](https://github.com/jcfischer/seelite/issues/430), on the principal's
+ruling; the node's own record carries the dates, and this section is not the
+place to attest one the node has not closed yet. `src/galaxy-frame.ts` is this section's arithmetic and
+`tests/galaxy-frame.test.ts` holds it; where the two disagree, this section is
+wrong and should say so.
+
+### Two planes, and nothing between them
+
+| | Galaxy space | A system's world frame |
+|---|---|---|
+| Reference plane | `y = 0` (§2 — the disc's flattening axis) | `z = 0` — the planets' orbital plane, which `system.ts` perturbs by each body's inclination |
+| Who calls it | `galaxy-map.md` §2, the chart's drop-lines, `galaxy.ts`'s flattening | `hud.ts`'s attitude reference, rolled against `v3(0, 0, 1)` in `main.ts` |
+| Whose normal | `GALACTIC_NORMAL` | `SYSTEM_PLANE_NORMAL` |
+
+Before #430 these were two unrelated coordinate systems and **no transform
+between them existed in `src/`**: `git grep -iE 'galactic|galaxyFrame|fromGalaxy'`
+returned the Galactic Hyperdrive and nothing else. That made *"which way from here
+is the cluster's core"* unanswerable, which is the whole of what
+[#100](https://github.com/jcfischer/seelite/issues/100)'s derived sky needs — the
+sky is nothing but bearings from here to the other 255 systems.
+
+### The transform
+
+**One seeded rotation per system, drawn from `DOMAIN.SKY_FRAME` (23)**, carrying
+galaxy-space directions into that system's world frame. Three draws, in a fixed
+order: the image of the galactic normal's polar cosine, its azimuth, then a roll
+about that image in [−π, π). The frame reports the pole and the roll beside the
+quaternion, because a rotation that cannot be interrogated is a rotation nobody
+can check.
+
+- **Isotropic.** The galactic plane's normal lands anywhere on the world sphere,
+  and the frame rolls about it as well. With the pole uniform *on the sphere* (its
+  polar cosine drawn directly, not its angle) and the roll uniform on the circle,
+  the draw is uniform over rotations: no axis favoured, no tilt preferred.
+- **Aligned frames were rejected**, twice over. #100 refused the version that
+  makes every system's orbital plane the galactic plane, because it gives every
+  sky the same band tilt and throws away the per-system variety the decision was
+  bought for. The bounded-tilt arm — the cluster kept within N degrees of the
+  flight horizon — is the same refusal one step narrower, and was ruled out here.
+- **No rule keeps the band out of its own sun.** Under an isotropic draw the band
+  passes close to the system's own star far more often than intuition says: the
+  band is the great circle perpendicular to the pole, so the event that washes
+  structure out is the star lying **near the cluster's plane**, whose probability
+  is `sin 30° = 1/2` — in about **one system in two** the band runs within 30° of
+  the star, and that figure does not depend on where in the system's sky the star
+  sits. The clean case is the rare one: the pole within 30° of the star *or its
+  antipode* — `1 − cos 30° = 0.134`, one system in seven — is what puts the
+  **band** 60–90° off the glare, because the band is the great circle perpendicular
+  to that pole. It constrains nothing about the **core bearing**, which is not in
+  the band: a system standing near the flattening axis (§4's `systemFromPosition`
+  divides `y` by `Q`) can have the core near the pole and therefore near its own
+  star. No row measures core bearing against `frame.pole`, and until one does this
+  sentence is about the band alone — as written before #430 it claimed both.
+  Accepted on the
+  principal's ruling rather than engineered away: a rejection rule makes the frame
+  a loop instead of a draw, and couples which way the sky is drawn to where the
+  system's own star sits — which is the coupling every domain tag in `domains.ts`
+  exists to prevent. A washed-out band is what the variety costs, not a defect in
+  it.
+- **One *named* copy of the normal.** `GALACTIC_NORMAL` is the only place in `src/`
+  that authors that direction **as a vector**, and `galaxy-map.ts` reads it rather
+  than restating it. The second author is structural rather than named: `galaxy.ts`
+  flattens onto `y` through `GALAXY_FLATTENING_Q`, and being the module
+  `galaxy-frame.ts` imports it can never read the constant back without a cycle.
+  What ties the two is `profileRadiusLy` — the exported form of the quotient
+  `systemFromPosition` inlines — held in `tests/galaxy-frame.test.ts` to the
+  component lying along the constant's axis. A chart and a sky that each hold their
+  own idea of which way the galaxy lies will drift and nothing headless can see it;
+  a spelling check sees only the named author, which is what that row is for.
+- **The roll's datum is entailed, not declared.** The plane has no natural east —
+  a rotation about the normal is a symmetry of an oblate spheroid, so nothing in the
+  cluster's shape prefers a direction — and still the roll has to be measured
+  *from* somewhere to be a number rather than a feeling. That somewhere is the
+  **shortest arc's own plane**, which the construction fixes, so the frame ships no
+  in-plane constant: a name sitting beside an entailed datum advertises a choice
+  nobody made, and the one `#430` first exported was deleted for exactly that. It
+  follows that anything reproducing a frame's roll rather than trusting its
+  quaternion — #433's bake is the charted one — rebuilds the same arc and may not
+  pick its own reference direction; `tests/galaxy-frame.test.ts`'s reconstruction
+  row is what that looks like written a second way. That `galaxy-map.ts` draws
+  galaxy `x` into mesh `x` (making `+x` screen-right with the cluster unyawed) and
+  then turns the cluster by `DEFAULT_YAW` = 0.6 rad are facts about the chart's
+  camera, and nothing in the frame reads either.
+
+### The flattening is geometry, not a distortion to undo
+
+`systemFromPosition` divides a position's `y` by `GALAXY_FLATTENING_Q`. That
+quotient is the **profile coordinate** the §4 gradients are written against —
+"profile" in §3's and §4's sense, the distribution's own radial argument, which is
+what `profileRadiusLy` is named for. It is not the _Avoid_ alias for a **Commander**,
+which `CONTEXT.md` scopes to player-facing text; this is the spec talking to itself
+about a gradient. And
+it belongs there and only there: the stored position *is* the fiction's shape, an
+oblate cluster of 256 systems, so a bearing is taken from the stored positions
+exactly as they stand. Unflattening before differencing produces a unit vector
+that is subtly wrong and no test in this repo will call it out.
+
+### The centre, and what pointing at it is worth
+
+`GALACTIC_CORE` is the origin: §3's density profile is centred there, so "toward
+the core" is "toward the origin". #100 measured over 81,920 observer systems what
+that direction buys — integrated `1/d²` varies only **2.17×** from core to rim,
+while the density in a 20° cone toward the core runs **×1.8 to ×6.8–8.3** (two seed
+draws disagree at the rim, so the range is the honest figure), and the plane
+itself measures **1.31×** against isotropic. **The bearing is the picture; the
+brightness almost never is.** Anyone quoting "the band" is quoting that 1.31×
+ceiling, which is not a band.
+
+### What this section does not decide
+
+The bake, the points layer, the rim view row and whether a pilot can read any of
+it — siblings below #100 (`#431`, `#432`, `#433`, `#434`), all blocked on this.
+This section answers where a galaxy-space direction is in a system's own sky, and
+nothing about what is drawn there.
