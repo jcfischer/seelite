@@ -3,6 +3,7 @@
  * It does not talk to `Game`: docking, communications, panels, and scanner
  * contacts are still design consumers, not completed simulation systems.
  */
+import { escapeHtml as esc } from "./escape-html";
 import * as THREE from "three";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "./docking";
 import {
@@ -291,12 +292,6 @@ export const GALLERY_ARRIVAL_SECONDS =
  * assigned to `innerHTML`, and the day a station or good name comes from a save
  * or a URL the guard has to already be here rather than be remembered.
  */
-const esc = (value: string): string =>
-	value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
 
 function renderMarketRow(row: ConsoleMarketRow): string {
 	const marker = row.commodity.illegal
@@ -894,7 +889,6 @@ function renderConsolePanel({
 	heading,
 	body,
 	list,
-	footer,
 	dockedFlight = false,
 	inertReadouts = false,
 }: {
@@ -907,7 +901,6 @@ function renderConsolePanel({
 	heading: string;
 	body: string;
 	list: readonly [string, string][];
-	footer: string;
 	/**
 	 * **M9:** docked, the Flight console carries the launch control. Only that
 	 * console and only that control — launching is flight, and §1 gives Flight
@@ -926,7 +919,7 @@ function renderConsolePanel({
 	 */
 	inertReadouts?: boolean;
 }): string {
-	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${inertReadouts ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${dockedFlight ? LAUNCH_CONTROL : ""}<small>${footer}</small></aside>`;
+	return `<aside class="sg-panel" data-gallery-panel="${side}" data-active="${active}"><header class="sg-console-top"><h2>${title}</h2><small>${subtitle}</small></header><nav class="sg-tabs" aria-label="${side} console tabs">${tabs}</nav><div class="sg-console-layout"><div class="sg-console-rail">${rail.map((item, index) => (index === 0 ? `<b>${item}</b>` : `<span>${item}</span>`)).join("")}</div><div class="sg-console-data"><h3>${heading}</h3><p ${title === "TUNING" ? "data-gallery-tuning" : ""}>${body}</p><div class="sg-console-list"${inertReadouts ? " data-gallery-inert" : ""}>${list.map(([label, value]) => `<span><b>${label}</b><em>${value}</em></span>`).join("")}</div></div></div>${dockedFlight ? LAUNCH_CONTROL : ""}</aside>`;
 }
 
 /**
@@ -989,7 +982,6 @@ export function renderGalleryState(
 			["TRADE STATION", "6,240 km"],
 			["LAST CONTACT", "08:41"],
 		],
-		footer: "Simulation continues while this console is open.",
 	});
 	// M9: launching is flight, and §1 gives Flight to the right panel. The
 	// console is otherwise inert while docked and says so.
@@ -1006,7 +998,7 @@ export function renderGalleryState(
 					`<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`,
 			)
 			.join(""),
-		rail: ["SHIP", "POWER", "MODULES", "INVENTORY", "STATUS"],
+		rail: ["SHIP", "POWER", "MODULES", "STATUS"],
 		heading: `${rightTab.toUpperCase()} / CONTROL`,
 		body: rightPanelBody(state, rightTab),
 		// `docked`, not `flightDocked`: E5 suspends flight, so the right console's
@@ -1024,8 +1016,6 @@ export function renderGalleryState(
 					["HEAT", "18%"],
 					["FUEL", "92%"],
 				],
-		footer:
-			"Tuning stays on this right-console tab, never on the flight floor.",
 	});
 	return `<div class="sg-wrap" data-gallery-state-active="${state.id}" data-gallery-dock-phase="${phase}" data-gallery-clock-min="${view.gameTimeMin}" data-gallery-market-epoch="${marketEpoch(view.station.station.phaseMin, view.gameTimeMin)}">
 		<header class="sg-head"><div><h1>SEELITE · COCKPIT STATE GALLERY</h1><p>Issue #34 prototype — visual contract, not simulated docking.</p></div><div class="sg-head-actions"><nav class="sg-look" aria-label="Cockpit head direction">${(["left", "forward", "right"] as HeadLook[]).map((look) => `<button type="button" data-gallery-look="${look}" aria-pressed="${headLook === look}">look ${look}</button>`).join("")}</nav><button class="sg-close" type="button">return to flight</button></div></header>

@@ -34,7 +34,9 @@ import {
 import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
-import type { HoldSummary } from "./hold";
+import type { HoldBids, HoldSummary } from "./hold";
+import { escapeHtml } from "./escape-html";
+import { HOLD_STYLE, holdBody } from "./hold-view";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
@@ -52,7 +54,17 @@ import {
 	setFocus,
 } from "./panel-focus";
 
-export type RightTab = "Flight" | "Drive" | "Controls" | "Tuning";
+export type RightTab =
+	| "Flight"
+	| "Drive"
+	/**
+	 * #445's page: what is aboard. `Hold` is the word `CONTEXT.md` uses — not
+	 * Inventory, not Cargo, and **not Manifest**, which that glossary gives to
+	 * what an ordinary carrier carries on one voyage.
+	 */
+	| "Hold"
+	| "Controls"
+	| "Tuning";
 
 /**
  * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
@@ -65,11 +77,16 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
 	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
 	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
 };
+
 // #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
 // on this console that is not fiction.
 const RIGHT_TABS: readonly RightTab[] = [
 	"Flight",
 	"Drive",
+	// #445 sits with the other readouts, ahead of the two tabs that are not
+	// about the ship in front of you. #370 D1's rule is unchanged: `Tuning`
+	// stays last.
+	"Hold",
 	"Controls",
 	"Tuning",
 ];
@@ -168,6 +185,23 @@ export interface LiveCockpitState {
 		/** Changes only when an accepted action replaces the displayed state. */
 		revision: number;
 	} | null;
+	/**
+	 * What is aboard, for the right console's **Hold** page (#445).
+	 *
+	 * Top level rather than under `stationConsole`, because the right console
+	 * is the flight console: a pilot deciding whether to detour for a scoop
+	 * needs this away from a station, which is the point of putting the page
+	 * there rather than on the station's tab.
+	 */
+	hold: HoldSummary;
+	/**
+	 * The docked station's bid per good, or `null` in flight (#445).
+	 *
+	 * The value column is a **docked** fact. Away from a station it reads as a
+	 * dash rather than as a figure from wherever the ship last was, which is
+	 * the stale-number failure `stockResponse`'s screen already guards against.
+	 */
+	holdBids: HoldBids;
 	/** A launch Traffic refused and is holding, and why (#314). */
 	launchHold: { refusal: LaneRefusal } | null;
 }
@@ -243,16 +277,6 @@ interface CockpitElements {
 
 const STYLE_ID = "seelite-live-cockpit-style";
 
-function escapeHtml(value: string) {
-	return value.replace(
-		/[&<>"']/g,
-		(character) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				character
-			] as string,
-	);
-}
-
 /** Seconds as the panel prints them. `null` reads `—`, never `0s`. */
 function navEta(seconds: number | null) {
 	if (seconds === null) return "—";
@@ -262,7 +286,7 @@ function navEta(seconds: number | null) {
 	return `${(seconds / 86_400).toFixed(0)}d`;
 }
 
-const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
+const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 #live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
@@ -275,7 +299,7 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
 #live-cockpit[data-live-head-look="left"] .lc-director, #live-cockpit[data-live-head-look="right"] .lc-director { opacity: .12; }
 .lc-panel header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 11px; border-bottom: 2px solid #e5aa52; }
 .lc-panel h2 { margin: 0; color: #ffe1a9; font-size: 18px; letter-spacing: .1em; }
-.lc-panel header small, .lc-panel footer { color: #cb8c51; }
+.lc-panel header small { color: #cb8c51; }
 .lc-tabs { display: flex; gap: 7px; margin: 12px 0; border-bottom: 1px solid rgba(229, 170, 82, .55); }
 .lc-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: #d49352; cursor: pointer; font: inherit; font-size: 11px; letter-spacing: .05em; padding: 7px 10px; }
 .lc-tab[aria-selected="true"] { border-color: #ffe0a2; color: #fff0c9; background: rgba(223, 122, 20, .18); }
@@ -285,6 +309,7 @@ const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
    check green and a third of the surface wasted. */
 #live-cockpit[data-live-head-look="left"][data-live-left-view="Galaxy Map"] .lc-panel[data-live-panel="left"] { display: flex; flex-direction: column; }
 .lc-panel-body[data-live-chart-body] { grid-template-columns: 1fr; flex: 1 1 auto; min-height: 0; }
+.lc-panel-body.lc-hold-body { grid-template-columns: 1fr; }
 .lc-rail { display: grid; align-content: start; gap: 8px; padding: 14px 12px; border-right: 1px solid rgba(229, 170, 82, .42); color: #e9a766; font-size: 11px; }
 .lc-rail b { color: #ffe1a9; letter-spacing: .08em; }
 .lc-rail em { display: block; color: #fff0c9; font-style: normal; letter-spacing: .05em; }
@@ -1334,15 +1359,18 @@ export class LiveCockpit {
 		// **On every docked console, not only Flight.** The hold fires by itself
 		// when the lane clears, so a player who pressed Enter from the station
 		// console, or went back to trading, must still see it (sage round 1).
-		const hold = this.launchHoldBlock(state);
+		// **`launchHoldNotice`, not `hold`.** CONTEXT.md keeps the four senses
+		// of that word apart, and since #445 the same method also reads
+		// `state.hold`, which is the cargo hold and not a held launch.
+		const launchHoldNotice = this.launchHoldBlock(state);
 		const launch =
 			state.dockPhase !== "docked"
 				? ""
-				: hold ||
+				: launchHoldNotice ||
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${hold}<footer>Simulation continues while this console is open.</footer></aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}<footer>Tuning remains on this right-console tab, never on the flight floor.</footer></aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
@@ -1487,7 +1515,16 @@ export class LiveCockpit {
 	private rightBody(state: LiveCockpitState) {
 		if (state.rightTab === "Controls")
 			return controlsBody(CONTROLS, this.controlsCollapsed);
-		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;
+		// #445, on the Galaxy Map and `Controls` precedent: a page with its own
+		// grid replaces the rail-and-copy body wholesale rather than being
+		// squeezed into a 48-character column.
+		if (state.rightTab === "Hold")
+			// `lc-hold-body` collapses the rail-and-copy grid to one column, on
+			// `[data-live-chart-body]`'s precedent: the default two-column body
+			// put the hold's table in the 135 px rail column, which the first sheet
+			// showed as a table squeezed into the left third of the panel.
+			return `<div class="lc-panel-body lc-hold-body">${holdBody(state.hold, state.holdBids)}</div>`;
+		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;
 	}
 
 	private leftBody(state: LiveCockpitState) {

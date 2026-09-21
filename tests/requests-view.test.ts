@@ -21,6 +21,7 @@ import {
 	type RequestsView,
 } from "../src/requests-view";
 import { nextAction } from "../src/requests";
+import type { CarrierKey } from "../src/carrier-key";
 import type { HoldSummary } from "../src/hold";
 import { firstOffer, firstProcurementOffer } from "./helpers/job-board";
 
@@ -115,6 +116,16 @@ describe("the action says whose goods it moves", () => {
 	});
 });
 
+/** A requester line's job block, which is what identifies the lot's owner. */
+const JOB = (offerId: string) => ({
+	offerId,
+	title: "a job",
+	status: "accepted" as const,
+	returnTo: { galaxyIndex: 0, carrierKey: "0:0:x" as CarrierKey },
+	returnToName: "somewhere",
+	reportName: "somewhere else",
+});
+
 describe("what is aboard comes off the hold projection, not a second scan", () => {
 	const summary = (lines: HoldSummary["lines"]): HoldSummary => ({
 		usedT: 0,
@@ -155,7 +166,7 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 							amount: 8,
 							unit: "t",
 							owner: "requester",
-							offerId: "some-other-job",
+							job: JOB("some-other-job"),
 						},
 					]),
 				},
@@ -171,14 +182,14 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 				amount: COURIER.tonnes,
 				unit: "t",
 				owner: "requester",
-				offerId: COURIER.id,
+				job: JOB(COURIER.id),
 			},
 			{
 				goodName: COURIER.goodName,
 				amount: 4,
 				unit: "t",
 				owner: "requester",
-				offerId: "another-job",
+				job: JOB("another-job"),
 			},
 			{ goodName: COURIER.goodName, amount: 2, unit: "t", owner: "pilot" },
 		];
@@ -243,7 +254,7 @@ describe("the rendered control carries what the builder decided", () => {
 					amount: aboard,
 					unit: "t" as const,
 					owner: "requester" as const,
-					offerId: offer.id,
+					job: JOB(offer.id),
 				}
 			: {
 					goodName: offer.goodName,
@@ -283,6 +294,23 @@ describe("the rendered control carries what the builder decided", () => {
 		expect(html).toContain('data-live-request-action="deliver"');
 		expect(html).toContain(`Hand over ${COURIER.tonnes} t ${COURIER.goodName}`);
 		expect(html).not.toMatch(/data-live-request-action="deliver"[^>]*disabled/);
+	});
+
+	/**
+	 * **The decision on the glass, not a transcript of it.** #459 renamed the
+	 * control that stores an offer without accepting it: the action id stays
+	 * `retain` and `missions-and-requests.md` §6 keeps *retained lead* as its
+	 * structural term, but the screen says **Keep for later**. Sage round 3 was
+	 * right that a green suite was no evidence for those strings — nothing read
+	 * them. What this holds is the split itself, so the spec's word cannot creep
+	 * back onto the glass, and the label cannot be changed by accident.
+	 */
+	test("the control that keeps an offer says so in the player's words", () => {
+		const html = accepted(COURIER, COURIER.tonnes);
+		expect(html).toContain('data-live-request-action="retain"');
+		expect(html).toContain("Keep for later");
+		for (const spec of ["Retain lead", "retained lead", "Lead retained"])
+			expect(html).not.toContain(spec);
 	});
 
 	test("a short hold renders the attribute and the hint beside it", () => {

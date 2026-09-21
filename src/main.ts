@@ -599,7 +599,8 @@ import {
 	heldSaveFault,
 } from "./save-badge";
 import { marketStationOf } from "./market";
-import { holdSummary } from "./hold";
+import { type HoldBids, holdSummary } from "./hold";
+
 import { exposeMarketLaw } from "./market-probe-hook";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -1817,6 +1818,9 @@ class Game {
 	/** Docked console screens are stable until station or tab changes; do not rebuild them each frame. */
 	private stationConsoleCache: LiveCockpitState["stationConsole"] = null;
 	private stationConsoleCacheKey: string | null = null;
+	/** #445's bid column, memoised on the key the priced rows were built under. */
+	private holdBidsCache: HoldBids = null;
+	private holdBidsCacheKey: string | null | undefined = undefined;
 	private stationConsoleRevision = 0;
 	/**
 	 * What the till last said when it said no (#443).
@@ -7667,9 +7671,11 @@ class Game {
 				// `tests/perf-panel-keys.test.ts` enforces are not flight bindings.
 				//
 				// Press to launch, press again to skip the traversal: one key, and
-				// the second press is the skip §12.2 makes unconditional. The skip
-				// refuses on an *arrival*, which is E4's unmet dependency rather
-				// than a policy — `canSkipTraversal` carries that argument.
+				// the second press is the skip §12.2 makes unconditional. **Both
+				// traversals skip since §13.3**, which retired E4's per-station-type
+				// flags rather than implementing them — this said the skip refused on
+				// an arrival for a round after that stopped being true, and
+				// `canSkipTraversal` carries the argument.
 				if (this.dock.phase === "docked") this.launch();
 				else this.skipDockTraversal();
 				return;
@@ -11734,6 +11740,9 @@ class Game {
 		this.updateHologramContacts(this.scannerContacts);
 		this.updateInstruments(target, targetKm, velocity);
 		const dockContext = this.dockedStationContext();
+		// One projection per update, read by the Hold page (#445) and by the
+		// request board's Deliver control (#446).
+		const hold = holdSummary(this.commander, this.requests);
 		this.liveCockpit.update({
 			visible: true,
 			dockPhase: this.dock.phase,
@@ -11758,6 +11767,23 @@ class Game {
 						this.orientation,
 					)
 				: null,
+			// What is aboard, from #443's projection — the one the trade
+			// screen's hold line and the till's refusal already read, so the
+			// three cannot disagree about it. **Not "the manifest":**
+			// CONTEXT.md gives that noun to what an ordinary carrier carries.
+			//
+			// **One scan, not two.** Gating it on the open tab was written and
+			// withdrawn — the closed arm has to hand the state *something*, and
+			// a fabricated empty hold is a figure that is wrong rather than
+			// absent. What it costs is one pass over the cargo map and the
+			// accepted jobs, shared with the request board's reader below
+			// rather than repeated for it (#446).
+			hold,
+			// The value column is a **docked** fact. Built from the console's
+			// own priced rows — which are memoised — rather than from a second
+			// market call, so the figure on this page is the figure the till
+			// would pay, and `null` in flight rather than a stale one.
+			holdBids: this.holdBids(dockContext),
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,
@@ -11805,7 +11831,7 @@ class Game {
 					: [],
 			relay: this.relayCue(),
 			tuning: this.tuningSummary(),
-			requests: this.requestsView(dockContext),
+			requests: this.requestsView(dockContext, hold),
 			stationConsole: this.stationConsoleState(dockContext),
 			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
 		});
@@ -11819,7 +11845,16 @@ class Game {
 	 * Deficits come from the current galaxy's persistent envelope, and commander
 	 * state comes from the one Game instance that can apply an accepted action.
 	 */
-	private requestsView(context = this.dockedStationContext()): RequestsView {
+	/**
+	 * `hold` is a parameter so one cockpit update scans the cargo map and the
+	 * accepted jobs **once** — the Hold page (#445) and this board's Deliver
+	 * control (#446) read the same object. The default keeps the other caller,
+	 * `actOnRequest`, honest without threading it through.
+	 */
+	private requestsView(
+		context = this.dockedStationContext(),
+		hold = holdSummary(this.commander, this.requests),
+	): RequestsView {
 		if (context) {
 			// **Bound once per visit, not per frame.** A binder is pure, so a
 			// board recomputed every frame would be identical and wasted —
@@ -11882,12 +11917,13 @@ class Game {
 			message: this.requestMessage,
 			revision: this.requestRevision,
 			now: this.world.gameTime,
-			// #443's projection (#446). The other two readers landed there and
-			// are not in this diff: `stationConsoleState` builds one for the
-			// hold line and the till's `cargo-full` sentence. Not a commerce
-			// input of the kind #411's round 2 stripped — it is the hold, which
-			// is the one thing a Deliver button has to know about the pilot.
-			hold: holdSummary(this.commander, this.requests),
+			// #443's projection (#446). The other readers landed there and in
+			// #445: `stationConsoleState` builds one for the hold line and the
+			// till's `cargo-full` sentence, and the right console's Hold page
+			// draws it. Not a commerce input of the kind #411's round 2
+			// stripped — it is the hold, which is the one thing a Deliver
+			// button has to know about the pilot.
+			hold,
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
@@ -11981,6 +12017,54 @@ class Game {
 		}
 		this.requestRevision += 1;
 		this.updateCockpit();
+	}
+
+	/**
+	 * What the docked station pays for one unit of each good it trades (#445).
+	 *
+	 * The **bid**, which is what a sale is paid — not the ask the BUY column
+	 * shows. Read off the console's own priced rows, so the Hold page and the
+	 * Market tab cannot quote different figures for the same good, and `null`
+	 * away from a station rather than a figure from wherever the ship last was.
+	 */
+	private holdBids(context = this.dockedStationContext()): HoldBids {
+		const screen = this.stationConsoleState(context);
+		if (!screen) {
+			this.holdBidsCacheKey = null;
+			this.holdBidsCache = null;
+			return null;
+		}
+		// **Memoised on the console's own key**, which is the one the priced
+		// rows were built under. Without it the frame loop allocated a Map and
+		// seventeen entries on every cockpit update whether or not the page was
+		// open, to read back a table that had not moved.
+		// **The console's key is the right key, and it has a known hole.** It
+		// carries the station, the tab and `stationConsoleRevision`, which the
+		// till and a request action bump — so a price that moved because the
+		// *player* moved it invalidates this too. What neither covers is a
+		// price that moves on the **clock**: §5.2's deficit decays and the
+		// market epoch turns. That is #321's open question for the shelf, and
+		// the bid column inherits it rather than adding a second one.
+		//
+		// **`undefined` is "never computed" and `null` is "not docked".** Both
+		// fields started at `null`, so a screen built while the console's own
+		// key was still null would have served a cached `null` for ever and
+		// drawn dashes at a station.
+		if (
+			this.holdBidsCacheKey !== undefined &&
+			this.holdBidsCacheKey === this.stationConsoleCacheKey
+		)
+			return this.holdBidsCache;
+		const bids = new Map<string, number>();
+		// `sellCr` alone: `stationMarketScreen` sets it **iff** the row is
+		// listed, so the `listed` half was a second reading of the same fact —
+		// and a good this station does not list cannot be sold here anyway,
+		// because `transactAtStation` refuses it as `commodity-unavailable`.
+		for (const row of screen.market)
+			if (row.sellCr !== undefined) bids.set(row.commodity.name, row.sellCr);
+		this.holdBidsCacheKey = this.stationConsoleCacheKey;
+		this.holdBidsCache = bids;
+		return bids;
 	}
 
 	private stationConsoleState(context = this.dockedStationContext()) {

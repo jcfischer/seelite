@@ -16,6 +16,7 @@
  * `CONTEXT.md`).
  */
 
+import { escapeHtml } from "./escape-html";
 import {
 	type BootPlan,
 	type CommanderSwitch,
@@ -267,15 +268,6 @@ type View =
 	| { kind: "rename"; from: string; name: string; seed: string }
 	| { kind: "delete"; slot: string; name: string; seed: string }
 	| { kind: "import"; text: string; name: string; seed: string };
-
-const escapeHtml = (text: string) =>
-	text.replace(
-		/[&<>"']/g,
-		(c) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				c
-			] as string,
-	);
 
 /**
  * A fault as the overlay draws it: one block per fault (a blank line apart),
