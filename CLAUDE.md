@@ -5,15 +5,31 @@ Vite + Three.js, static bundle, no backend, no runtime network requests.
 
 ## Read the map first
 
-Work on this repo is planned as a **work-graph map**, and the map is the
-authority on what to build and how:
+Work on this repo is planned as **two work-graph maps**, and the map is the
+authority on what to build and how. Which one you read is decided by what you
+are changing: **#1 is the platform** — rendering, performance, probes, controls,
+save, station geometry, the sky — and **#460 is gameplay**, meaning missions, the
+Rama expedition story, combat consequence, onboarding and the progression
+ladder. Anything a *pilot does* is #460's; anything that *draws or measures* is
+#1's.
 
 ```bash
-soma graph node 1          # the map: destination, constraints, notes, decisions
-soma graph frontier 1      # what is takeable right now
+soma graph node 1          # the platform map: destination, constraints, notes, decisions
+soma graph frontier 1      # what is takeable right now on the platform
+soma graph node 460        # the gameplay map (split out of #1 on 2026-09-21)
+soma graph frontier 460    # what is takeable right now in gameplay
 ```
 
-Its **Constraints** section binds every answer — an option that violates one is
+**`--repo jcfischer/seelite` on every `soma graph` verb.** Without it the verb
+resolves `the-metafactory/soma` and silently returns that repo's node of the
+same number — it does not error. Read the `(owner/name)` on the first line of
+every result before trusting it.
+
+**#460 does not restate #1's Constraints, Notes or delivery SOP** — it inherits
+them by reference. Working a gameplay node means reading both maps: #460 for
+what it adds, #1 for what binds underneath.
+
+#1's **Constraints** section binds every answer — an option that violates one is
 not on the table. Its **Notes** section carries the delivery SOP (claim →
 branch → worktree → TDD → PR → sage review → merge), when to stop reviewing, and
 the repo's verification culture. Do not restate either here; read them there, so
