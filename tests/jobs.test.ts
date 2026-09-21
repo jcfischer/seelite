@@ -452,7 +452,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		}
 	});
 
-	test("the good is the station's and the episode's, not the clock's", () => {
+	test("the good reads no clock", () => {
 		// §2 already holds one board bound twice. What this adds is the axis
 		// that row cannot see: the draw reads no clock, so an offer sitting on
 		// a board across a market epoch keeps its cargo — the same guarantee
@@ -477,11 +477,18 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		// pair and three samples settle nothing — and the denominator is the
 		// legs a board actually *revisits*, because a leg flown once cannot
 		// show a second cargo and counting it drags the rate toward a floor of
-		// zero that a nearly degenerate draw would clear. Measured on this
-		// build: 140 revisited legs of 500, 68.6% of them carrying more than
-		// one good, against the 2/3 a uniform draw from three predicts. The
-		// floor is half, which is well under that and far above a draw that
-		// has stopped drawing.
+		// zero that a nearly degenerate draw would clear.
+		//
+		// **What this row is and is not.** Measured on this build: 140
+		// revisited legs of 500, 96 of them carrying more than one good —
+		// 68.6%. The null for a uniform draw from three is **not** 2/3: that is
+		// the figure for a leg flown exactly twice, and this sample is
+		// 104 twice, 27 three times, 6 four and 3 five, which sums to 0.729.
+		// A draw collapsed onto two of the three goods predicts 0.574, so a
+		// floor between them discriminates weakly and the floor below is set
+		// to catch a draw that has stopped drawing rather than one that has
+		// narrowed. **The narrowing is the next row's job** — it reads the
+		// rank the drawn good held, where a collapse leaves a position empty.
 		const EPISODES = 8;
 		const goodsPerLeg = new Map<string, string[]>();
 		for (let episode = 1; episode <= EPISODES; episode += 1)
@@ -499,5 +506,33 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		expect(revisited.length).toBeGreaterThan(100);
 		const varying = revisited.filter((goods) => new Set(goods).size > 1).length;
 		expect(varying / revisited.length).toBeGreaterThan(0.5);
+	});
+
+	test("every rank in the pool is drawn, and about as often as the others", () => {
+		// The draw itself, rather than its shadow on a leg: over eight
+		// episodes of every board, which **position** in the top
+		// `COURIER_SPREAD_POOL` the bound good held. A uniform draw puts a
+		// third on each; this build reads 31.1% / 33.4% / 35.5% over 688
+		// draws, where one position's standard error is 1.8 points. Anything
+		// that collapses the draw — a fixed pick, a narrowed range, a stream
+		// with no entropy left — empties a position, so the floor is a
+		// quarter: four standard errors below uniform and unreachable for a
+		// rule that has stopped using a rank.
+		const drawn = new Map<number, number>();
+		for (let episode = 1; episode <= 8; episode += 1)
+			for (const { offer, system, station, destination } of couriers({
+				courier: episode - 1,
+			})) {
+				const rank = rankedPool(system, station, destination)
+					.slice(0, COURIER_SPREAD_POOL)
+					.findIndex((c) => c.name === offer.goodName);
+				expect([offer.id, rank]).not.toEqual([offer.id, -1]);
+				drawn.set(rank, (drawn.get(rank) ?? 0) + 1);
+			}
+		const total = [...drawn.values()].reduce((a, b) => a + b, 0);
+		expect(total).toBeGreaterThan(500);
+		expect(drawn.size).toBe(COURIER_SPREAD_POOL);
+		for (const [rank, n] of drawn)
+			expect([rank, n / total > 0.25]).toEqual([rank, true]);
 	});
 });

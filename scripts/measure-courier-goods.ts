@@ -21,8 +21,17 @@
  * were chosen to supply.
  *
  * Every figure here is computed through `jobs.ts` and `market.ts` and none is
- * restated; a non-finite number throws rather than being printed, which is the
- * guard `measure-job-pay.ts` carries for the same reason.
+ * restated. `finite` guards the derived means rather than every printed
+ * number: a share whose denominator is zero prints `NaN%`, and on a galaxy
+ * with no courier board at all there is nothing to say anyway.
+ *
+ * **This file owns the figures**, so they are here rather than in `jobs.ts`,
+ * where a copy would be a claim about one seed sitting on a module's public
+ * surface. Measured on galaxy 0 of seed 0x5ee11e, 392 boards, at
+ * `COURIER_SPREAD_POOL` 3: ten distinct goods over eight episodes with the top
+ * at 17.3%, nine at 17.0% with the leg held. At 1 — one edit to the constant,
+ * reverted — two goods at 45.7% and 45.3%, against the former cheapest rule's
+ * Food at 94.6% of boards. Every one of them is reprinted by a run.
  *
  * Run: `npx tsx scripts/measure-courier-goods.ts` or `bun scripts/measure-courier-goods.ts`
  */
@@ -168,6 +177,37 @@ const postings = (systems: readonly SystemRecord[]) => {
 	return out;
 };
 
+/** One `BindContext`, so a field added to it lands in one place here. */
+const ctxFor = (
+	system: SystemRecord,
+	station: Station,
+	destinations: JobDestination[],
+	settled: Record<string, number> = {},
+): BindContext => ({
+	galaxyIndex: GALAXY_INDEX,
+	system,
+	station,
+	destinations,
+	deficits: {},
+	gameTimeMin: GAME_TIME_MIN,
+	settled,
+});
+
+/** The leg an offer names, recovered from the candidate list it was drawn
+ *  from. A miss is drift, never a sample to skip. */
+const legOf = (
+	offer: { id: string; reportAt: { carrierKey: string } },
+	candidates: JobDestination[],
+): JobDestination => {
+	const destination = candidates.find(
+		(d) =>
+			carrierKey(d.system.index, d.station.localCarrierId) ===
+			offer.reportAt.carrierKey,
+	);
+	if (!destination) throw new Error(`no destination for ${offer.id}`);
+	return destination;
+};
+
 const galaxy = generateGalaxy(GALAXY_SEED, GALAXY_INDEX);
 const systems = galaxy.systems;
 const places = postings(systems);
@@ -188,25 +228,11 @@ let shippedAgrees = 0;
 for (const { system, station } of places) {
 	const key = carrierKey(system.index, station.localCarrierId);
 	const candidates = deliveryCandidates(systems, system, generateContents, key);
-	const ctx: BindContext = {
-		galaxyIndex: GALAXY_INDEX,
-		system,
-		station,
-		destinations: candidates,
-		deficits: {},
-		gameTimeMin: GAME_TIME_MIN,
-		settled: {},
-	};
-	const shipped = bindCourier(ctx);
+	const shipped = bindCourier(ctxFor(system, station, candidates));
 	if (!shipped) continue;
 	// The destination `bindCourier` drew, recovered from the offer so every
 	// rule is measured over the **same** leg.
-	const destination = candidates.find(
-		(d) =>
-			carrierKey(d.system.index, d.station.localCarrierId) ===
-			shipped.reportAt.carrierKey,
-	);
-	if (!destination) throw new Error(`no destination for ${shipped.id}`);
+	const destination = legOf(shipped, candidates);
 	const candidateGoods = pool(system, station, destination);
 	boards += 1;
 	const row =
@@ -227,9 +253,13 @@ for (const { system, station } of places) {
 		// #455 it does not, and it is not meant to. What this file must not be
 		// allowed to do is rank a pool the binder does not rank, so the check
 		// is **membership**: the good `bindCourier` bound is in this file's own
-		// top `COURIER_SPREAD_POOL` by spread. That is stream-independent — it
-		// catches a pool, a ranking or a tie-break that has drifted apart,
-		// without a second copy of the draw.
+		// top `COURIER_SPREAD_POOL` by spread, which needs no copy of the draw.
+		//
+		// **Membership is blind inside the set.** It catches a pool that has
+		// drifted, and a ranking or tie-break change that moves a good across
+		// the k-th position. It cannot see a reordering *within* the top k —
+		// those goods are all admissible either way. The rank distribution in
+		// `tests/jobs.test.ts` is what watches the order.
 		if (rule === "spread") {
 			const top = rankBy("spread", candidateGoods, system, station, destination)
 				.slice(0, COURIER_SPREAD_POOL)
@@ -270,6 +300,23 @@ for (const rule of RULE_NAMES) {
 // neighbours'.
 console.log("\ndistinct goods on the boards within one jump\n");
 console.log("rule       mean   min   max   systems seeing 1 good");
+// Invariant in both loops below, so it is built once rather than re-derived
+// per rule and per pair of systems.
+const neighbours = new Map<number, Set<number>>();
+for (const system of systems)
+	neighbours.set(
+		system.index,
+		new Set([
+			system.index,
+			...deliveryCandidates(
+				systems,
+				system,
+				generateContents,
+				NO_EXCLUDED_STATION,
+			).map((d) => d.system.index),
+		]),
+	);
+
 for (const rule of RULE_NAMES) {
 	const spreads: number[] = [];
 	let singletons = 0;
@@ -277,15 +324,7 @@ for (const rule of RULE_NAMES) {
 		const seen = new Set<string>();
 		for (const other of systems) {
 			if (!perSystem.has(other.index)) continue;
-			const near =
-				other.index === system.index ||
-				deliveryCandidates(
-					systems,
-					system,
-					generateContents,
-					NO_EXCLUDED_STATION,
-				).some((d) => d.system.index === other.index);
-			if (!near) continue;
+			if (!neighbours.get(system.index)?.has(other.index)) continue;
 			for (const good of perSystem.get(other.index)?.[rule] ?? [])
 				seen.add(good);
 		}
@@ -331,15 +370,9 @@ const sweepEpisodes = (
 		if (!offered) continue;
 		const here = new Set<string>();
 		for (let episode = 1; episode <= EPISODES; episode += 1) {
-			const offer = bindCourier({
-				galaxyIndex: GALAXY_INDEX,
-				system,
-				station,
-				destinations: offered,
-				deficits: {},
-				gameTimeMin: GAME_TIME_MIN,
-				settled: { courier: episode - 1 },
-			});
+			const offer = bindCourier(
+				ctxFor(system, station, offered, { courier: episode - 1 }),
+			);
 			if (!offer) continue;
 			if (offer.episode !== episode)
 				throw new Error(
@@ -382,7 +415,7 @@ console.log(
 		perStation.reduce((a, b) => a + b, 0) / perStation.length;
 	summarise(counts);
 	console.log(
-		`  one freight desk shows ${finite("mean per station", meanPerStation).toFixed(2)} distinct goods across ${EPISODES} episodes (max ${Math.max(...perStation)})`,
+		`  one requester shows ${finite("mean per station", meanPerStation).toFixed(2)} distinct goods across ${EPISODES} episodes (max ${Math.max(...perStation)})`,
 	);
 	listRows(counts);
 }
@@ -395,38 +428,27 @@ console.log(
 // the leg is pinned by handing `bindCourier` a one-destination context, which
 // is the binder's own draw on the prediction's framing.
 //
-// **What agreement here is worth.** The two draws are different streams, so
-// neither the share nor the count is forced to match: which members of a top-3
-// set come up over eight finite episodes is as much the stream's as the share
-// is. The count agreeing is evidence that the pool and the ranking are the
-// same, not a proof that they are — it is the strongest arm available without
-// copying the shipped draw into this file, which is the thing that would make
-// the control circular.
+// **What agreement here is worth, and it is less than it reads.** The two
+// draws are different streams, so neither the share nor the count is forced to
+// match: which members of a top-3 set come up over eight finite episodes is as
+// much the stream's as the share is. And the count is **near its own ceiling**
+// — the shipped arm above names ten goods that ever appear at all, so nine is
+// one short of everything observed and almost any non-degenerate draw over a
+// three-wide pool would reach it. So read this as the prediction's framing
+// reproduced rather than as a discriminating test; the membership control
+// above and the rank distribution in `tests/jobs.test.ts` are what actually
+// hold the rule.
 console.log(
 	`\nshipped, leg held: top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
 );
 {
 	const { counts } = sweepEpisodes((system, station, all) => {
-		const opening = bindCourier({
-			galaxyIndex: GALAXY_INDEX,
-			system,
-			station,
-			destinations: all,
-			deficits: {},
-			gameTimeMin: GAME_TIME_MIN,
-			settled: {},
-		});
+		const opening = bindCourier(ctxFor(system, station, all));
 		if (!opening) return null;
-		const destination = all.find(
-			(d) =>
-				carrierKey(d.system.index, d.station.localCarrierId) ===
-				opening.reportAt.carrierKey,
-		);
-		// The first loop throws on this and so does this one: a destination the
-		// offer names and the candidate list does not hold is drift, and
-		// skipping it would quietly shrink the sample the count rests on.
-		if (!destination) throw new Error(`no destination for ${opening.id}`);
-		return [destination];
+		// `legOf` throws rather than returning null: a destination the offer
+		// names and the candidate list does not hold is drift, and skipping it
+		// would quietly shrink the sample the count rests on.
+		return [legOf(opening, all)];
 	});
 	summarise(counts);
 }
