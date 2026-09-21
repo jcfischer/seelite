@@ -112,78 +112,76 @@ export const SUBJECT_CHANGE_QUARTILE_DROP =
 	PRE_SUBJECT_CHANGE_QUARTILE;
 
 /**
- * The band floor that shipped before this module existed (#435).
+ * The floors that shipped before this module existed (#435), as a ratchet.
  *
  * Every reading here is from one M1 Pro on two rasterisers, so nothing measured
  * in this repo covers a third backend — and the comment #463 deleted had
  * explicitly reserved that headroom, "with room for both real backends rather
- * than calibrating it to software". Deriving a floor from one machine's peak is
- * how that headroom gets spent without anyone deciding to. So the derived floor
- * is required to sit **at or below** this figure: #463 may loosen the shipped
- * band and may not tighten it, because it has no evidence that would justify
- * tightening.
- */
-export const SHIPPED_FLOORS = Object.freeze({ peak: 140, median: 70 });
-
-/**
- * The same rule for the distribution rows, and the one row it cannot cover.
+ * than calibrating it to software". Deriving a floor from one machine's readings
+ * is how that headroom gets spent without anyone deciding to. So every derived
+ * floor is required to sit **at or below** its entry here: this module may
+ * loosen what shipped and may not tighten it, having no evidence that would
+ * justify tightening.
  *
- * `SHIPPED_FLOORS` states the rule and the reason for it; both are about
- * every absolute-code floor derived from one machine's readings, not about the
- * peak. So the median obeys it too — 14% rather than the 5% first written here,
- * which derived 77.045 against a shipped 70.
- *
- * **The lower quartile is exempt, and the exemption is the point rather than a
- * gap.** It is the only row of the three with a *sensitivity* requirement:
- * `SUBJECT_CHANGE_QUARTILE_DROP` bounds its margin from above, because it is the
- * row that has to keep catching a change of subject. Loosening is free for the
- * peak and the median, which caught nothing at `ab47a33` and are not asked to.
- * It is not free here — a floor at 35 is 15.1% under the reading against an
- * upper bound of 15.6%, so the two bounds would meet and leave a margin with no
- * room in it. The row is kept tight deliberately, and the rule is written down
- * as not applying to it rather than quietly not applied.
+ * The rule has **no exemption**, which cost the quartile's margin its round
+ * number. An earlier pass carved that row out — it is the one row with a
+ * *sensitivity* bound above it, so it cannot simply be loosened — and then
+ * tightened it from 35 to 37.116 anyway, which is the thing this constant
+ * exists to prevent. There is no need for the carve-out: at 15.2% the derived
+ * floor is 34.972, inside the ratchet, and still inside
+ * `SUBJECT_CHANGE_QUARTILE_DROP / 2` at 15.57%. The two bounds nearly meet, and
+ * that is the honest shape of this row rather than a defect — it is as loose as
+ * the ratchet demands and as tight as sensitivity allows, with about half a
+ * point between them.
  */
+export const SHIPPED_FLOORS = Object.freeze({
+	peak: 140,
+	lowerQuartile: 35,
+	median: 70,
+});
 
 /**
  * Where "free to loosen" stops.
  *
- * The peak and the median are a **second condition** — they reject a hull gone
- * dark or blown out everywhere — so loosening them costs nothing the quartile
- * was not already doing. It costs nothing only while they still reject that
- * case: a median margin of 0.9 satisfies every other bound here and derives a
- * floor of 8.11, which a hull rendered nearly black would pass. Half the
- * calibrated reading is the line, and it is a long way outside any finish this
- * game has shipped — `worn` moved the median by 4.3%.
+ * The ratchet above only bounds a floor from one side. Without a second bound a
+ * margin of 0.9 satisfies every other rule here and derives a median floor of
+ * 8.11, which a hull rendered nearly black would pass — and the peak and the
+ * median exist precisely to reject a hull gone dark or blown out everywhere,
+ * since neither is the discriminating measurement. Half the calibrated reading
+ * is the line, a long way outside anything this game has shipped: `worn` moved
+ * the median by 4.3%.
  */
 export const FLOOR_FRACTION_OF_READING = 0.5;
 
 /**
  * How far under each reading its floor sits, as a fraction.
  *
- * Bounded from three sides, and `tests/light-rig.test.ts` asserts each one
- * rather than leaving it as prose.
+ * Bounded on three sides, and `tests/light-rig.test.ts` asserts each one rather
+ * than leaving it as prose.
  *
- * **Below**, a margin — converted to display codes under its reading, which is
- * what the test compares — must exceed `laneSpread`, or the row goes red on
- * which rasteriser ran it. The fractions here are not comparable to that table
- * directly: the median's 14% is 11.35 codes against a spread of 0.07. **Above**, the quartile's margin must stay well inside the
- * drop `ab47a33` produced, or the probe passes straight through the next change
- * of subject. And **the peak's floor may not tighten past `SHIPPED_FLOORS`**,
- * which is why the peak's margin is 8% rather than the 5% it was first written
- * at: 5% derives a floor of 141.626, which is a gate quietly tightened on the
- * evidence of one machine.
+ * **Above**, by `SHIPPED_FLOORS` — no floor may tighten past what shipped. That
+ * is why the peak's margin is 8% rather than the 5% first written here, which
+ * derived 141.626 against a shipped 140, and why the quartile's is 15.2%.
  *
- * The quartile carries the upper bound alone because it is the only row of the
- * three that `ab47a33` actually tripped. Both other readings are recorded above
- * rather than asserted as percentages: the peak fell 154.32 → 149.08 and the
- * median 85.29 → 81.60, which is 3.4% and 4.3% — under any workable margin, and
- * under the 14% this module gives the median. The two of them are a
- * second condition — they reject a hull gone dark or blown out everywhere —
- * rather than the discriminating measurement.
+ * **Below**, by `FLOOR_FRACTION_OF_READING`, so loosening stops short of a floor
+ * nothing can fail.
+ *
+ * **And for the quartile, by `SUBJECT_CHANGE_QUARTILE_DROP`**, which is the only
+ * *sensitivity* bound here: that row has to keep catching a change of subject,
+ * and it is the only one of the three `ab47a33` actually tripped. The peak fell
+ * 154.32 → 149.08 and the median 85.29 → 81.60 — 3.4% and 4.3%, under any
+ * workable margin — so neither could have caught it and neither is asked to.
+ *
+ * A fourth bound is **asserted and not binding**, and is worth reading as a rail
+ * rather than a constraint: a margin in display codes must exceed `laneSpread`,
+ * or the row would go red on which rasteriser ran it. At the margins here that
+ * is 11.93, 6.27 and 11.35 codes against spreads of 0, 0.21 and 0.07 — between
+ * 30x and unbounded away from binding. It rejects a margin small enough to be a
+ * typo and nothing a person would choose on purpose.
  */
 export const HULL_LUMA_MARGINS = Object.freeze({
 	peak: 0.08,
-	lowerQuartile: 0.1,
+	lowerQuartile: 0.152,
 	median: 0.14,
 });
 
@@ -199,11 +197,9 @@ export const floorUnder = (reading, margin) =>
 	Math.round(reading * (1 - margin) * 1000) / 1000;
 
 /**
- * Display-space luma after ACES and composition, on the 0–255 canvas readback.
- *
- * A band rather than a floor: a white hull and an under-lit hull are both
- * exposure failures. Only the floor is derived — the ceiling is an authored
- * limit on how bright painted metal may read, and no calibration produces it.
+ * Every metric's floor, derived in one place by mapping the margins over the
+ * readings, so a metric added to `HULL_LUMA_MARGINS` gets a floor rather than
+ * being silently missed by a hand-written list.
  */
 export const HULL_LUMA_FLOOR_OF = Object.freeze(
 	Object.fromEntries(
@@ -214,24 +210,26 @@ export const HULL_LUMA_FLOOR_OF = Object.freeze(
 	),
 );
 
+/**
+ * Display-space luma after ACES and composition, on the 0–255 canvas readback.
+ *
+ * A band rather than a floor: a white hull and an under-lit hull are both
+ * exposure failures. Only the floor is derived — the ceiling is an authored
+ * limit on how bright painted metal may read, and no calibration produces it.
+ */
 export const HULL_LUMA_BAND = Object.freeze({
 	min: HULL_LUMA_FLOOR_OF.peak,
 	max: 200,
 });
 
 /**
- * Floors for the distribution beneath the peak. They reject the failure the
- * principal caught — one compliant highlight on an otherwise dark hull —
- * without turning the probe into an exact-image comparison.
+ * The floors for the distribution beneath the peak — every derived floor except
+ * the peak's, which is the band's. They reject the failure the principal caught:
+ * one compliant highlight on an otherwise dark hull, without turning the probe
+ * into an exact-image comparison.
  */
-export const HULL_LUMA_FLOORS = Object.freeze({
-	lowerQuartile: HULL_LUMA_FLOOR_OF.lowerQuartile,
-	median: HULL_LUMA_FLOOR_OF.median,
-});
-
-/**
- * Every metric's floor, by name, so a consumer iterates the module's own set
- * rather than re-typing it. A metric added to `HULL_LUMA_MARGINS` and missed
- * here is a key with no floor, which `tests/light-rig.test.ts` reads as a shape
- * failure rather than skipping in silence.
- */
+export const HULL_LUMA_FLOORS = Object.freeze(
+	Object.fromEntries(
+		Object.entries(HULL_LUMA_FLOOR_OF).filter(([metric]) => metric !== "peak"),
+	),
+);

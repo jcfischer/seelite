@@ -464,9 +464,11 @@ describe("the painted-hull luma calibration", () => {
 		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
 	});
 
-	test("no margin is tighter than the spread between the two rasterisers", () => {
-		// The lower bound on every margin, in display codes rather than fractions —
-		// the module's docstring has the conversion and the reason.
+	test("no margin is small enough to be decided by which rasteriser ran", () => {
+		// A rail rather than a bound, and the module says so: at the margins here
+		// this clears by 30x or more, so it rejects a margin small enough to be a
+		// typo and nothing a person would choose on purpose. Kept because the
+		// typo is the case that would send a later reader hunting a renderer bug.
 		for (const metric of METRICS)
 			expect(
 				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric],
@@ -478,15 +480,13 @@ describe("the painted-hull luma calibration", () => {
 		// Pro on two rasterisers, so a floor derived from its peak spends headroom
 		// the previous band reserved for backends nobody here can measure. Loosen
 		// freely; tightening needs evidence this repo does not have.
-		// `SHIPPED_FLOORS` holds the peak and the median and **not the quartile**,
-		// which is the one row with an upper bound to satisfy: its derived 37.116
-		// does tighten past the 35 that shipped, deliberately, and the module says
-		// why the rule cannot reach it. The absence is the assertion here — a
-		// quartile key appearing in that record would make this loop fail, which
-		// is the right way round.
+		// The ratchet has no exemption: every metric has an entry, and every
+		// derived floor sits at or under it. An earlier pass carved the quartile
+		// out and then tightened it anyway; the module has the reason that is
+		// unnecessary.
+		expect(Object.keys(SHIPPED_FLOORS).sort()).toEqual([...METRICS].sort());
 		for (const [metric, shipped] of Object.entries(SHIPPED_FLOORS))
 			expect(HULL_LUMA_FLOOR_OF[metric]).toBeLessThanOrEqual(shipped);
-		expect(Object.keys(SHIPPED_FLOORS)).not.toContain("lowerQuartile");
 	});
 
 	test("the calibration's shape is the one the floors are derived from", () => {
@@ -514,12 +514,11 @@ describe("the painted-hull luma calibration", () => {
 		}
 	});
 
-	test("a floor free to loosen still rejects a hull gone dark", () => {
-		// The upper bound on the two rows that carry no sensitivity requirement.
-		// Without it, "loosening is free" is true all the way to a floor nothing
-		// can fail — a median margin of 0.9 derives 8.11 and passes every other
-		// assertion in this block.
-		for (const metric of ["peak", "median"] as const)
+	test("no floor loosens far enough to stop rejecting a hull gone dark", () => {
+		// The other side of the ratchet. Without it, "may loosen freely" is true
+		// all the way to a floor nothing can fail — a median margin of 0.9 derives
+		// 8.11 and passes every other assertion in this block.
+		for (const metric of METRICS)
 			expect(HULL_LUMA_FLOOR_OF[metric]).toBeGreaterThan(
 				HULL_LUMA_CALIBRATION[metric] * FLOOR_FRACTION_OF_READING,
 			);

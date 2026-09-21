@@ -1494,16 +1494,18 @@ class Game {
 	 * `exposure` is here: a probe reads the value the renderer used instead of
 	 * carrying a second copy of it.
 	 *
-	 * A finish is module state read at build time, so these are captured once, at
-	 * construction, exactly like every mesh and map that was keyed on them —
-	 * and that is deliberately the question a probe wants answered. What a band
-	 * on display codes needs to know is which finish the meshes on screen were
-	 * *built* with, not what the module holds now, and those two answers are the
-	 * same only while nothing switches. `setHullFinish` has one caller in
-	 * `src/` — `model-viewer.ts`, the workbench, which never sets
-	 * `window.__seelite` — and four in the finish tests. But a snapshot is the
-	 * right answer whether or not that stays true, which a live read would not
-	 * be.
+	 * A finish is module state, set at import and read by each builder as it
+	 * runs, so what this captures is that state — **not**, as this comment
+	 * claimed for a round, a value taken at the same moment as the meshes. A
+	 * field initialiser runs before the constructor body, so this is strictly
+	 * earlier than any mesh build; the two agree because nothing moves the module
+	 * state in between, which is a different fact and a weaker one.
+	 *
+	 * A snapshot rather than a live read is still the right shape. What a band on
+	 * display codes needs to know is which finish the meshes on screen were
+	 * *built* with, and a getter would answer what the module holds at the moment
+	 * of asking. Those differ exactly when something switches mid-session — the
+	 * case where the snapshot is right and the live read is wrong.
 	 *
 	 * `probe-light-rig.mjs` is the consumer: its painted-hull rows read absolute
 	 * display codes, which are a property of the hull finish rather than of the
