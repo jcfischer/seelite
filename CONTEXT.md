@@ -530,3 +530,21 @@ stating because it is the one bearing that carries information rather than light
 which is #100's measurement, and `galaxy-generation.md` §11 is where its figures
 are written down once. `coreBearing` in `src/galaxy-frame.ts`.
 _Avoid_: The way home, galactic down
+
+**Derived sky**:
+The points that *are* systems — one for every other system in the galaxy, at its
+true bearing through the observer's **Sky frame**, sized by how far away it is and
+coloured by the class of the sun a pilot finds there. Rebuilt on every hyperspace
+arrival, because it is a picture of where the player is standing. `systemField` in
+`src/backdrop.ts`; `galaxy-generation.md` §12 owns the size law and the figures.
+_Avoid_: The star field (there are two now), the bright stars (brightness is not
+what makes them real)
+
+**Invented population**:
+The scattered points behind the **derived sky** — a uniform scatter over the
+sphere from the world seed, never rebuilt, and there because 255 systems is not a
+night. Every one of them is smaller than the smallest real star, which is the
+invariant that keeps the derived sky readable as structure while the invented
+population outnumbers it by an order of magnitude in every direction.
+`faintField` and `FAINT_COUNT` in `src/backdrop.ts`; §12 says what that costs.
+_Avoid_: Dust, background stars (that is what the derived layer is), filler

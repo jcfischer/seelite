@@ -285,23 +285,36 @@ function modeBand(): void {
 			total / skies.length,
 		).toFixed(1)} each)`,
 	);
+	// The arm is checked before it is used, because the arm *is* the result. At
+	// ±30° a uniform sphere has exactly **half** its points — `|sin lat| ≤ ½` is
+	// half a sphere by symmetry — so an arm that does not say 0.500000 there is
+	// not a band arm. This instrument first ran with the cone arm `1−cos θ`
+	// sitting in this slot and printed ×7.68 at 20° where the honest reading is
+	// ×1.35; one line catches that, and it is here rather than in a comment
+	// because the mistake was made with a comment next to it.
+	const bandArm = (deg: number) => Math.sin((deg * Math.PI) / 180);
+	if (Math.abs(bandArm(30) - 0.5) > 1e-12)
+		throw new Error(
+			`measure-sky-density: the band arm is not a band arm (${bandArm(30)})`,
+		);
 	for (const deg of [5, 10, 20, 30]) {
 		const got = within(deg);
-		// A uniform sphere puts 1−cos θ of its points inside an elevation band of
-		// ±θ. That is the arm: a band excess of 1.00 is no band at all.
-		const uniform = (1 - Math.cos((deg * Math.PI) / 180)) * total;
+		// A uniform sphere puts sin θ of its points inside a *two-sided* band of
+		// ±θ: the zone between latitudes ±θ has area 2·sin θ·2π against the
+		// sphere's 4π. A band excess of 1.00 is no band at all.
+		const uniform = bandArm(deg) * total;
 		console.log(
 			`|elevation| <= ${String(deg).padStart(2)}°  share ${finite(
 				"band share",
 				got / total,
 			).toFixed(3)}  uniform ${finite("uniform share", uniform / total).toFixed(
 				3,
-			)}  excess ×${finite("band excess", got / uniform).toFixed(2)})`,
+			)}  excess ×${finite("band excess", got / uniform).toFixed(2)}`,
 		);
 	}
 	const bandDeg = 20;
 	const inBand = within(bandDeg);
-	const bandArea = (1 - Math.cos((bandDeg * Math.PI) / 180)) * SPHERE_SQ_DEG;
+	const bandArea = bandArm(bandDeg) * SPHERE_SQ_DEG;
 	const outArea = SPHERE_SQ_DEG - bandArea;
 	console.log(
 		`\ndensity inside ±${bandDeg}°: ${finite(

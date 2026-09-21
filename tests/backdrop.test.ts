@@ -305,12 +305,13 @@ describe("systemField — the 255 systems that are actually there", () => {
 
 describe("the two layers, beside each other", () => {
 	test("no invented star outshines a real one", () => {
-		// The relationship #431 was written to decide. Inside the cluster's band
-		// the real points are outnumbered about two to one by the invented ones
-		// (`measure-sky-density.ts` band mode), so the band cannot survive on
-		// count; brightness is the only channel left, and a channel with no floor
-		// under it is a channel that drifts the first time somebody tunes the
-		// texture. Held as a relationship rather than as two figures.
+		// The relationship #431 was written to decide. The invented layer
+		// outnumbers the real one by an order of magnitude in every direction —
+		// 11.6 : 1 inside the cluster's plane, 19.2 : 1 outside it, per
+		// `measure-sky-density.ts` band mode — so the sky cannot survive as
+		// structure on count; brightness is the only channel left, and a channel
+		// with no floor under it is a channel that drifts the first time somebody
+		// tunes the texture. Held as a relationship rather than as two figures.
 		for (const seed of [1, 42, 31337, 2026]) {
 			const faint = faintField(seed, 4000);
 			let ceiling = 0;

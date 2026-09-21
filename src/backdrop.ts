@@ -52,22 +52,28 @@
  *
  * ## What the sky is a picture *of*, measured
  *
- * The cluster is oblate (`GALAXY_FLATTENING_Q`), and that is what gives a sky in
- * this game its one big formal event. Over the same 81,920 observers:
+ * The cluster is oblate (`GALAXY_FLATTENING_Q`), and #430 ruled that this is
+ * where its shape becomes visible. What the measurement says is that the
+ * visibility is in the *cone and the ordering*, and not in the band:
  *
  * - **46.3% of a sky's points sit within 20° of the cluster's plane**, against
- *   6.0% for a uniform sphere — a **7.7× excess**, and ×16.2 inside ±10°.
- * - **47.5 points per 1000 sq deg** inside that band against **3.5** outside it.
- * - A star near the cluster's rim puts **24.5%** of its neighbours inside a 20°
- *   cone on the centre, eight times uniform; one near the core manages 6.7%,
- *   because from the middle the core is every direction at once.
+ *   34.2% for a uniform sphere — a **1.35× excess**, ×1.41 inside ±10°. That is
+ *   #100's 1.31× re-measured through the shipped transform, and it is a gentle
+ *   ridge rather than a band: 8.4 points per 1000 sq deg inside ±20° against 5.0
+ *   outside.
+ * - **The core is the loud one.** A star near the cluster's rim puts **24.5%** of
+ *   its neighbours inside a 20° cone on the centre, eight times uniform; one near
+ *   the core manages 6.7%, because from the middle the core is every direction at
+ *   once.
+ * - **Brightness is where the structure lives**, because it is the only channel
+ *   left. A uniform 4,000 is 97 points per 1000 sq deg everywhere, so the
+ *   invented layer outnumbers the real one **11.6 : 1 inside the band and 19.2 : 1
+ *   outside it** — `band` mode prints both. Nothing about the count can carry a
+ *   band at those odds, which is what the two size bands below are for.
  *
- * The band and the core cone are therefore free: they fall out of bearings nobody
- * tuned. What is not free is surviving the faint layer. A uniform 4,000 points is
- * 97 per 1000 sq deg everywhere, so inside the band the real stars are
- * **outnumbered two to one** by the invented ones, which `band` mode prints. The
- * band cannot live in the count, so it lives in brightness — which is what the
- * two size bands below are for.
+ * The cone and the ordering therefore come free: they fall out of bearings nobody
+ * tuned. The band comes free too, at exactly the strength #430 said it would, and
+ * this file is where that gets checked rather than asserted.
  *
  * ## The law on each point, and the invariant between the layers
  *
@@ -125,9 +131,20 @@ export const FAINT_COUNT = 4000;
  * that was the whole sky.
  *
  * The band sits **entirely below** the derived layer's floor, and the measurement
- * in the header is why it has to: inside the cluster's band the invented points
- * outnumber the real ones two to one, so how much light each layer contributes is
- * the only channel left in which the real layer is visible as structure.
+ * in the header is why it has to: the invented layer outnumbers the real one
+ * eleven to one inside the cluster's plane and nineteen to one outside it, so how
+ * much light each layer contributes is the only channel left in which the real
+ * layer is visible as structure.
+ *
+ * **What that costs, stated rather than left to be noticed:** the law this band
+ * replaces was `0.006 + 0.05·u⁶`, whose median point drew 4.1 px on a 900-px-tall
+ * canvas and whose top of range drew 17.6 px — as large as the derived layer's
+ * *brightest* star, which is the inversion the paragraph above forbids. This band
+ * draws a 1.7 px median and a 3.0 px maximum, so the expected value of `size²` —
+ * what an additive disc delivers as light — is **a tenth of what it was**. The
+ * grain is texture and not subjects; whether a tenth is still enough of a night is
+ * a question for #433's sheet, and the number belongs here so that sheet is
+ * argued with rather than looked at.
  */
 export const FAINT_SIZE_MIN = 0.0048;
 export const FAINT_SIZE_SPAN = 0.0048;
