@@ -12,31 +12,32 @@
  * 2. The renderer's job is to wrap these in a `BufferGeometry`, which is three
  *    lines and no decisions.
  *
- * ## What the old docstring claimed, and what is now true
+ * ## Which half is which
  *
- * This file used to say its points were "the bright, nameable stars — the ones
+ * This file used to claim its points were "the bright, nameable stars — the ones
  * that are also systems you can jump to", and drew 4,000 of them scattered
- * uniformly over a sphere without ever reading the galaxy. The claim was
- * [#100](https://github.com/jcfischer/seelite/issues/100)'s design; the code was
- * a fiction at roughly fifteen times the density of the thing it said it was a
- * picture of. Both halves exist now, separately, and the file names which is
- * which.
+ * uniformly without reading the galaxy; #100's design, shipped as a fiction. The
+ * history is §12's and the PR's to tell. What a reader of this module needs is
+ * the two producers:
  *
  * - **{@link systemField} is the claim.** One point per other system — 255, a
  *   system cannot see itself — at its true bearing through `galaxy-frame.ts`, in
  *   the colour of the sun a pilot finds there, sized by distance.
  * - **{@link faintField} is the fiction**, and stays one, because 255 points is
- *   not a night: the real layer is more than an order of magnitude short of the
- *   density a person reads as *sky* — both densities and the ratio between them
- *   are §12's to carry and `measure-sky-density.ts band` to reprint — and the
- *   invented population supplies what is missing and nothing else.
+ *   not a night; it supplies the density the real layer cannot and nothing else.
+ *
+ * The findings behind those two sentences — how thin the real layer is, what the
+ * invented layer is allowed to reach, what each costs — are measurements, so they
+ * live once, in `docs/specs/galaxy-generation.md` §12, whose source is
+ * `scripts/measure-sky-density.ts`. This file carried three copies of two of them
+ * for a round of review, which is the drift that rule exists to stop.
  *
  * ## Why two buffers, and so two `Points`
  *
  * Not because there are two ideas — there is one sky — but because **the two
  * layers go stale on different days.** The faint population is a function of the
- * world seed and is rebuilt never. The derived layer is a function of which
- * system the player is standing in and is rebuilt on every witchspace arrival.
+ * world seed and is built once. The derived layer is a function of which system
+ * the player is standing in and is rebuilt on every witchspace transition.
  * One geometry would mean re-uploading 4,255 vertices to change 255 of them; two
  * means an arrival reallocates its own three small buffers and the texture is
  * never touched again — what that costs in bytes and milliseconds is printed by
@@ -49,7 +50,7 @@
  *
  * Three findings decided this file's shape, and they are measurements rather
  * than opinions, so they are written down once — in
- * [`galaxy-generation.md` §12](../../docs/specs/galaxy-generation.md), whose
+ * `docs/specs/galaxy-generation.md` §12, whose
  * source is `scripts/measure-sky-density.ts`. Only the two that a dial here
  * depends on are restated, beside the dial:
  *
@@ -72,9 +73,19 @@
  *   *is* flux `∝ 1/d²` — #100's inverse square, no invented exponent, no dial.
  * - **Colour is class, never exposure** (#59 one scale down), which is what makes
  *   the size law a statement about distance and one thing only.
- * - **No invented star outshines a real one:** {@link FAINT_SIZE_MAX} sits under
- *   {@link BRIGHT_SIZE_MIN}, held in `tests/backdrop.test.ts`. The bright points
- *   are the places you can go; the grain behind them is not.
+ * - **No invented point is drawn larger than the smallest real star:**
+ *   {@link FAINT_SIZE_MAX} sits under {@link BRIGHT_SIZE_MIN}, held in
+ *   `tests/backdrop.test.ts`, and that ordering is the picture's legibility: the
+ *   bright points are the places you can go and the grain behind them is not.
+ *   **Its scope is the size, and the sentence used to claim more than that.** A
+ *   point's delivered light is `size²` times its tint, the two layers' tints are on
+ *   different authoring scales ({@link faintField}'s ramp is picked by eye in linear
+ *   light and is not normalised, while {@link systemField}'s is), and `grain` mode
+ *   prints the share of the invented population whose luma is high enough that a
+ *   *largest* invented point outshines a *smallest* real one — a third of it, on the
+ *   shipped ramp. Closing that is a colour decision, not a size one: normalise the
+ *   ramp to the same photosphere exposure or drop `FAINT_SIZE_MAX` further, and both
+ *   move the look, so it is #433's sheet to settle.
  */
 
 import { type Galaxy, type SystemRecord, distanceLy } from "./galaxy";
@@ -160,14 +171,17 @@ export const BRIGHT_SIZE_MAX = 0.055;
 /**
  * The distance at which a real system draws at the middle of the band.
  *
- * **21.5 ly is a measurement** — the median distance from one system to another
- * in a 256-system galaxy, over 81,920 observers — and
- * `scripts/measure-sky-density.ts` is where it comes from. The
- * middle of a reciprocal law is the geometric mean of the two clamps, so this one
- * figure sets where the whole sky sits: move it and every star in the game moves
- * up or down together.
+ * **21.1 ly is a measurement**: the **pooled** median separation between two
+ * systems in a 256-system galaxy, one sample per pair — 20,889,600 of them across
+ * 40 worlds × 8 galaxies — printed by `scripts/measure-sky-density.ts sky`. Pooled
+ * is the word that matters: the median *of* every observer's own median separation
+ * is a different statistic and runs 2% higher, and this constant was anchored to
+ * that one for a round. The middle of a reciprocal law is the geometric mean of the
+ * two clamps, so this single figure sets where the whole sky sits: move it and every
+ * star in the game moves up or down together, which is why it is a measured number
+ * rather than a pleasant one.
  */
-export const BRIGHT_SIZE_MID_LY = 21.5;
+export const BRIGHT_SIZE_MID_LY = 21.1;
 
 /** The law's constant: `size = K / d`, which is flux `∝ 1/d²` drawn at constant
  *  surface brightness — the geometric mid of the band, placed at the measured
@@ -317,13 +331,8 @@ export function faintField(worldSeed: number, count = FAINT_COUNT): StarField {
  * and 255 star-class draws, and three `Float32Array`s. CPU arithmetic is the only
  * kind this half has; what it *draws* is 255 more points on one more draw call,
  * and #433 prices that on the sheet. Three
- * allocated per arrival and the previous three dropped. There is no pool, because
- * a pool would trade a number nobody can measure for a stale tail nobody can
- * see. What it costs is printed by `cost` mode and carried by §12 — this node
- * shipped *two* wrong sizes for these three buffers in two comments, so the
- * measurement is not written down here a third time. It is free enough to pay on
- * every jump, which is the reason the layer is its own buffer rather than 255
- * rows inside the faint one.
+ * There is no pool, because a pool would trade a number nobody can measure for a
+ * stale tail nobody can see.
  */
 export function systemField(galaxy: Galaxy, observer: SystemRecord): StarField {
 	const frame = skyFrame(observer.seed);

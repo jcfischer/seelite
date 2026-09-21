@@ -546,15 +546,20 @@ the type — so a ban on the words would fire on every correct use of them, whic
 the misfire §Language rules out by name. What is worth saying is the scope: since
 #431 there are two point layers, so **"the star field" unqualified** and **"the
 bright stars"** are both ambiguous, and the sentence should name which one.
-Brightness in particular is not what makes the derived sky real: the invented
-points are dimmer, and the systems are real, for two different reasons.
+Brightness is not what makes the derived sky real: the invented points are drawn
+smaller, and the systems are systems, for two different reasons.
 
 **Invented population**:
 The scattered points behind the **derived sky** — a uniform scatter over the
 sphere from the world seed, never rebuilt, and there because 255 systems is not a
-night. Every one of them is smaller than the smallest real star, which is the
-invariant that keeps the derived sky readable as structure while the invented
-population outnumbers it by an order of magnitude in every direction.
+night. Every one of them is drawn **smaller** than the smallest real star, which is
+the ordering the counts make necessary — the invented population outnumbers the
+derived one by an order of magnitude in every direction, so size is the only channel
+in which the real layer can read as structure at all. Two things that sentence does
+not do: it does not say the derived sky *is* legible, which is a question about a
+picture and belongs to #433's sheet and the principal's yes; and it does not say no
+invented point delivers more light than a real one, which is `size²` times a tint,
+and the two layers' tints are not yet on one scale (§12, `grain` mode).
 `faintField` and `FAINT_COUNT` in `src/backdrop.ts`; §12 says what that costs.
 _Avoid_: Dust, filler. **Scope note, not a ban on "background"**: both populations
 sit *in* the background layer, so the words "background stars" name whichever one

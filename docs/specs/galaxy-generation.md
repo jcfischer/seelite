@@ -915,12 +915,15 @@ ceiling, which is not a band.
 The bake, the points layer, the rim view row and whether a pilot can read any of
 it — siblings below #100 (`#431`, `#432`, `#433`, `#434`), all blocked on this.
 This section answers where a **Galactic frame** direction is in a system's own sky,
-and nothing about what is drawn there. **§12 is what landed in that blank** — and
-two of the figures #100's own receipt quoted beside this frame came back with the
-*label* wrong rather than the number: its "median 21.1 ly" named no quantity and is
-the median **separation** between two systems (which re-measures to 21.5, so the
-figure agrees to 2%), not the median **nearest** one, which is 3.06 ly; and its
-"4.2 magnitudes" of spread reads 5.42 once the quantity it names is fixed.
+and nothing about what is drawn there. **§12 is what landed in that blank**, and
+re-measuring the receipt it came with found one figure whose *label* was missing
+rather than wrong: #100's "median 21.1 ly" sat beside a "mean 5.45" with no quantity
+named, and read as the **pooled median separation** of two systems it is right to the
+printed precision (§12 measures 21.10). It took this node's own instrument a round to
+agree: the figure it first printed for that row was the median *of* 81,920
+per-observer medians, a different statistic 2% higher, and the discrepancy it "found"
+in #100 was its own. The spread is the other case — 5.42 magnitudes rather than 4.2,
+which moved once the quantity it names is fixed.
 
 ## 12. The sky behind everything, and which half of it is invented
 
@@ -984,7 +987,9 @@ collapsed into a "sparser than" sentence.
 
 How thin the real layer is, in the units a size law is written in: the median
 **nearest** other system is **3.06 ly** away, the median *separation* to any other
-system is **21.5 ly**, and the median *farthest* is **38.0 ly** with the worst in
+system is **21.10 ly** — pooled, one sample per pair over 20,889,600 of them, which
+is what "typically" asks and what `BRIGHT_SIZE_MID_LY` is anchored to — and the median
+*farthest* is **38.0 ly** with the worst in
 the corpus at **48.8**. The 1st percentile nearest sits at 0.72 ly against a 99th
 percentile farthest of 47.2: a **65 : 1** span for one layer to draw.
 
@@ -998,7 +1003,7 @@ percentile farthest of 47.2: a **65 : 1** span for one layer to draw.
   contributes goes as its drawn size squared; drawing at `size ∝ 1/d` is therefore
   flux `∝ 1/d²` at constant surface brightness. That is #100's inverse square with
   no invented exponent and no dial beside it. The band's mid sits at
-  `BRIGHT_SIZE_MID_LY` = 21.5 ly, which is the measured median separation above,
+  `BRIGHT_SIZE_MID_LY` = 21.1 ly, the pooled median separation above,
   and the mid of a reciprocal law is the geometric mean of its two clamps — so
   that one figure places every star in the game together.
 - **Colour is class, never exposure.** A point takes the hue of its system's own
@@ -1007,36 +1012,51 @@ percentile farthest of 47.2: a **65 : 1** span for one layer to draw.
   second job: a tint that carried its own exposure would put an M dwarf's point far
   under an F star's, and the size law would stop being a statement about distance
   and become a statement about two things at once.
-- **No invented star outshines a real one.** `FAINT_SIZE_MAX < BRIGHT_SIZE_MIN`,
-  held in `tests/backdrop.test.ts`. That is a relationship and not two settings,
-  and the counts are why it has to hold: the invented layer is 97 points per 1000
-  sq deg everywhere while the real one runs **8.4 inside ±20° of the cluster's
-  plane and 5.0 outside it**, so the invented population outnumbers the real one
-  **11.6 : 1 inside the plane and 19.2 : 1 outside it**. Nothing a count can do
-  carries structure at those odds; brightness is the only channel left, and a
-  single inverted pair makes what is there invisible.
+- **No invented point is drawn larger than the smallest real star.**
+  `FAINT_SIZE_MAX < BRIGHT_SIZE_MIN`, held in `tests/backdrop.test.ts`. That is a
+  relationship and not two settings, and the counts are why it has to hold: the
+  invented layer is 97 points per 1000 sq deg everywhere while the real one runs
+  **8.4 inside ±20° of the cluster's plane and 5.0 outside it**, so the invented
+  population outnumbers the real one **11.6 : 1 inside the plane and 19.2 : 1
+  outside it**. Nothing a count can do carries structure at those odds; brightness
+  is the only channel left.
+
+**The scope of that invariant is the size, and this section claimed more than it
+holds for a round.** Delivered light is `size² × tint`, and the two layers' tints are
+not on one authoring scale: {@link systemField}'s comes from a star-class hex through
+the sRGB→linear transfer at the one photosphere exposure, while the invented ramp is
+picked by eye *in* linear light and normalised to nothing. `grain` mode prints where
+that lands — `(0.0096/0.012)² = 0.64`, so an invented point outshines the dimmest real
+one above linear luma **0.859**, and across eight worlds of the shipped ramp **35.1% of
+invented points sit above it**, median luma 0.765, maximum 1.000. A third of the
+population can therefore deliver more light than the faintest system while being drawn
+smaller than it, and no size row can see that. Two ways to close it exist and both move
+the picture — normalise the invented ramp to the same photosphere exposure, or push
+`FAINT_SIZE_MAX` far enough down that no luma reaches the threshold — which is
+#433's colour decision on its sheet, not a fact this node can settle by asserting a
+size ordering. What is settled here is what is held: **geometry**.
 
 ### What the two clamps catch, and where they are written
 
-The two distances are `BRIGHT_CEILING_LY` = **10.04 ly** and `BRIGHT_FLOOR_LY` =
-**46.03 ly**, computed from the same constants as the law and printed by `sky`
+The two distances are `BRIGHT_CEILING_LY` = **9.86 ly** and `BRIGHT_FLOOR_LY` =
+**45.17 ly**, computed from the same constants as the law and printed by `sky`
 mode beside the share each one catches. They are exported constants rather than
 prose for a reason: the first draft of this node documented "9.07 ly" and "51.0
 ly" next to a `K` that had already moved, and no check could see it. A test now
 holds each distance against the law, so moving a clamp moves the documented
 number or goes red.
 
-- The **ceiling** catches **8.6% of points — 21.9 of a sky's 255**, which is what
+- The **ceiling** catches **8.2% of points — 20.8 of a sky's 255**, which is what
   "one system in twelve is drawn as big as it is allowed to be" actually means:
   every sky has a couple of dozen stars at the same top brightness. What the clamp
   gives up is the ordering *within* that handful; what it buys is the corpus's
   closest pair, **0.063 ly** apart, drawing at the ceiling rather than at the
-  **160× the ceiling** an unclamped `K / d` asks for there. `sky` mode prints that
+  **157× the ceiling** an unclamped `K / d` asks for there. `sky` mode prints that
   multiple in world units, deliberately short of a px figure: converting one
   would read `STAR_PIXEL_SCALE` across the Three.js boundary, and a documented px
   figure with a renderer dial in its product is one that goes stale on its own.
-- The **floor** catches **0.03% of points**, and that is not zero: the corpus's
-  worst farthest other system is 48.8 ly against a floor at 46.0, so the
+- The **floor** catches **0.07% of points**, and that is not zero: the corpus's
+  worst farthest other system is 48.8 ly against a floor at 45.2, so the
   outermost systems of the most peripheral observers *are* drawn at the floor and
   stop shrinking there. It is a guard rail that today's corpus already leans on,
   and the honest statement of it is that the far edge of a sparse sky reads as one
@@ -1119,19 +1139,24 @@ apart.
 
 Its receipt is the source of this node's design, and it is worth being exact about
 what re-measurement found, because "the numbers did not survive" would be the same
-kind of sloppiness the receipt was guilty of. **Both numbers are close to right for
-something; neither was named for the thing it was standing in for:**
+kind of sloppiness the receipt was guilty of — and, in one case, the sloppiness was
+this section's own rather than the receipt's.
 
-- Its "median 21.1 ly" beside a "mean 5.45" named neither quantity, and that is
-  the whole finding: read as a median **separation** it re-measures to **21.5 ly**,
-  two per cent off, so #100's arithmetic held and its *label* did not. Read as the
-  median **nearest** other system — which is what a size law keyed to "the typical
-  distance to a star you can see" needs — it is **3.06 ly**.
-  The two differ by nearly seven, and which one a size law is anchored to is the
-  difference between a sky with one bright star in it and one with a handful —
-  which is what `BRIGHT_SIZE_MID_LY` is.
-- Its "4.2 magnitudes" of inverse-square spread reads **5.42** median, 13.79 at
-  the worst.
+- Its "median 21.1 ly" sat beside a "mean 5.45" and **named no quantity**, which is
+  the whole defect: a number without its quantity cannot be checked, only agreed or
+  disagreed with. Named, it is **right**. The pooled median separation — one sample
+  per pair, 20,889,600 pairs — is **21.10 ly**, and that is what `BRIGHT_SIZE_MID_LY`
+  is now anchored to. What it is *not* is the median **nearest** other system, which
+  is **3.06 ly**; nothing in the receipt claimed that, and the two statistics differ
+  by nearly seven, which is the difference between a sky with one bright star in it
+  and one with a handful. **The 2% discrepancy this section first reported against
+  #100 was this instrument's own label slip**: it printed the median *of* 81,920
+  per-observer medians (21.52) under the name "median separation", and `sky` mode now
+  prints both rows with their quantities on them. A receipt that names nothing and an
+  instrument that names the wrong thing produce the same argument, and only one of
+  them can be fixed by editing prose.
+- Its "4.2 magnitudes" of inverse-square spread is the case where the number itself
+  moved: **5.42** median, 13.79 at the worst.
 
 Its "23× sparser than a sky a person recognises" is the same third figure with a
 sliding population under it: it holds against a ~5,000-star dark sky and not

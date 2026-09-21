@@ -21,8 +21,12 @@
  * reads a pixel back, so **a draw call that never happened, or an upload that the
  * driver dropped, passes all nine checks**; the claim that the sky is actually on
  * screen belongs to `probe-output-stage.mjs`, which counts lit pixels of the
- * composited frame (`the backdrop is still there when the frame is multisampled`)
- * and is the row that would go red on a lost draw. Naming that boundary is the
+ * composited frame (`the backdrop is still there when the frame is multisampled`).
+ * That row is a floor on **the backdrop as a whole**, and it predates this PR: it
+ * would go red on a backdrop that stopped drawing, and it is not shown to
+ * distinguish a missing 255-point derived layer from the 4,000 invented points
+ * still drawing behind it. Nobody has read the derived layer's pixels on their own,
+ * and the look of the thing is #433's sheet in any case. Naming that boundary is the
  * honest version of a docstring that used to say "reaches the GPU": the checks
  * below are the ones only a browser can do, because they read the objects a live
  * renderer is holding rather than ones a test built, and that is a different claim
@@ -30,9 +34,9 @@
  * - **Which layer was actually rebuilt.** Contents alone cannot answer that: a
  *   faint population rebuilt to identical bytes would pass a content check, and
  *   the design claim is that it is not rebuilt at all. So each read tags the
- *   `BufferGeometry` object it found and reports how many reads that same object
- *   has seen. After a jump the invented layer must still be on its **first**
- *   object and the derived layer must be on a **different** one — which is what
+ *   `BufferGeometry` object it found, by its `uuid`. After a jump the invented
+ *   layer must still be on the **same** object and the derived layer on a
+ *   **different** one — which is what
  *   `backdrop.ts` claims when it says the texture costs nothing ever again.
  * - **Both layers are in the layer they belong in.** `backdropScene` is drawn
  *   with no depth write, first, and re-centred on the camera; a `Points` that
@@ -95,11 +99,12 @@ await page.evaluate(() => {
 			if (r < min) min = r;
 			if (r > max) max = r;
 		}
-		// A tag on the geometry *object*, so a swapped-in geometry shows up even
-		// when its bytes come back identical. One read of the sky per page read,
-		// so the count is the number of sky reads that object has survived.
-		if (geometry.__skyProbeReads === undefined) geometry.__skyProbeReads = 0;
-		geometry.__skyProbeReads += 1;
+		// The geometry's own `uuid`, read rather than written: it identifies the
+		// *object*, so a swapped-in geometry shows up even when its bytes come back
+		// identical, and this probe no longer leaves bookkeeping on a live
+		// `BufferGeometry` the renderer owns. (It did, as a counter of sky reads —
+		// instrumentation state leaking into runtime objects, for an identity
+		// question three.js already answers.)
 		// A 4,000-point layer serialised whole is 16,000 floats through CDP per
 		// read, for a claim — "nothing was written here" — that a checksum answers
 		// as well. The head slice stays so a red row prints something readable, and
@@ -145,7 +150,9 @@ await page.evaluate(() => {
 			inBackdrop:
 				layer.parent === g.backdropScene ||
 				layer.parent?.parent === g.backdropScene,
-			reads: geometry.__skyProbeReads,
+			// Three's stable per-object identity, truncated only for the detail
+			// string; compared whole.
+			uuid: geometry.uuid,
 		};
 	};
 
@@ -298,20 +305,20 @@ check(
 	// side is missing in the failing detail below.
 	after.systems !== null &&
 		before.systems !== null &&
-		after.systems.reads === 1 &&
+		before.systems.uuid !== after.systems.uuid &&
 		after.systems.positionChecksum !== before.systems.positionChecksum,
-	`the mounted positions differ, and the mounted geometry has survived ${after.systems?.reads} read — the boot one was a different object`,
+	`the mounted bytes differ, and the mounted geometry is ${after.systems?.uuid?.slice(0, 8)} against the boot ${before.systems?.uuid?.slice(0, 8)}`,
 );
 
 check(
 	"a jump leaves the invented population on the geometry it booted with",
 	after.faint !== null &&
 		before.faint !== null &&
-		after.faint.reads === before.faint.reads + 1 &&
+		after.faint.uuid === before.faint.uuid &&
 		after.faint.count === before.faint.count &&
 		after.faint.positionChecksum === before.faint.positionChecksum &&
 		after.faint.sizeChecksum === before.faint.sizeChecksum,
-	`${after.faint?.count} points, same BufferGeometry after ${after.faint?.reads} reads, same position and aSize checksums`,
+	`${after.faint?.count} points on the boot geometry ${after.faint?.uuid?.slice(0, 8)}, same position and aSize checksums`,
 );
 
 check(

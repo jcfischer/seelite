@@ -45,16 +45,19 @@
 
 import {
 	BRIGHT_CEILING_LY,
+	FAINT_COUNT,
+	FAINT_SIZE_MAX,
 	FAINT_SIZE_MIN,
 	FAINT_SIZE_SPAN,
+	faintField,
 	BRIGHT_FLOOR_LY,
 	BRIGHT_SIZE_K,
 	BRIGHT_SIZE_MAX,
 	BRIGHT_SIZE_MIN,
-	FAINT_COUNT,
 	brightSizeLy,
 	systemField,
 } from "../src/backdrop";
+import { PHOTOSPHERE_LUMA, rec709Luma } from "../src/star-colour";
 import {
 	GALAXY_COUNT,
 	SYSTEMS_PER_GALAXY,
@@ -178,11 +181,6 @@ function quantileSorted(
 	return finite(label, s[Math.min(s.length - 1, Math.floor(p * s.length))]);
 }
 
-/** The value below which `p` of an unsorted sample lies. */
-function quantile(xs: readonly number[], p: number, label: string): number {
-	return quantileSorted(sortedCopy(xs, label), p, label);
-}
-
 /** Which of an observer's three readings a mode actually uses.
  *
  * The corpus is 81,920 observers × 255 points, so all three arrays at once is
@@ -225,10 +223,14 @@ function observerSky(
 	let dists: number[] | null = null;
 	let elevAbs: number[] | null = null;
 	let fromCore: number[] | null = null;
+	// Two property loads that cannot change during a sweep, hoisted out of the
+	// 255-iteration loop they used to sit in.
+	const wantsElevation = needs.elevations === true;
+	const wantsCore = needs.coreCone === true;
 	// The centre is the origin (§3's density law is centred there), so the way in
 	// is the negated position. An observer standing exactly at the centre has no
 	// such direction; the generator ships none, and the guard below says so.
-	const coreDir = needs.coreCone
+	const coreDir = wantsCore
 		? normalizeOr(sub({ x: 0, y: 0, z: 0 }, observer.pos), GALACTIC_NORMAL)
 		: null;
 	if (lengthSq(observer.pos) < 1e-12)
@@ -241,26 +243,31 @@ function observerSky(
 		const delta = sub(other.pos, observer.pos);
 		const d = Math.sqrt(lengthSq(delta));
 		if (needs.dists) (dists ??= []).push(finite("distance", d));
-		// Both angles below need a *direction*, and `sky` mode — the default, and
-		// the one that costs a minute — needs only the distance. So the unit vector
-		// is built for the modes that asked for an angle rather than for all 21M
-		// observer/system pairs, which was 21M objects and three divisions each
-		// thrown away by the mode that ran.
-		const wantsBearing = needs.elevations === true || needs.coreCone === true;
-		const unit: Vec3 | null = wantsBearing
-			? { x: delta.x / d, y: delta.y / d, z: delta.z / d }
-			: null;
-		if (needs.elevations && unit) {
+		// The two angles below need a *direction*. Rather than build a `Vec3` for
+		// every pair — 21M objects in the modes that read an angle, and `sky` mode
+		// used to pay them too — the three quotients are taken as named scalars and
+		// only when an angle was asked for.
+		const ux = wantsElevation || wantsCore ? delta.x / d : 0;
+		const uy = wantsElevation || wantsCore ? delta.y / d : 0;
+		const uz = wantsElevation || wantsCore ? delta.z / d : 0;
+		if (wantsElevation) {
 			// Clamped, because this is a dot product of unit vectors and a unit
 			// vector computed by dividing can come back at 1+1e-16. `asin` of that
 			// is NaN, and NaN is not caught by `finite`: it is simply never `<=` a
 			// threshold, so the point silently leaves the count. The cone arm
 			// below has always clamped; this one had not.
-			const sinLat = finite("sinLat", dot(unit, GALACTIC_NORMAL));
+			const sinLat = finite(
+				"sinLat",
+				ux * GALACTIC_NORMAL.x +
+					uy * GALACTIC_NORMAL.y +
+					uz * GALACTIC_NORMAL.z,
+			);
 			(elevAbs ??= []).push(Math.abs(Math.asin(clampUnit(sinLat))));
 		}
-		if (needs.coreCone && unit && coreDir)
-			(fromCore ??= []).push(Math.acos(clampUnit(dot(unit, coreDir))));
+		if (wantsCore && coreDir)
+			(fromCore ??= []).push(
+				Math.acos(clampUnit(ux * coreDir.x + uy * coreDir.y + uz * coreDir.z)),
+			);
 	}
 	return {
 		dists: dists ?? EMPTY,
@@ -315,13 +322,61 @@ interface DistanceCensus {
 	atCeiling: number;
 	atFloor: number;
 	minDistance: number;
+	/** Pair counts by distance bin, for the **pooled** median separation.
+	 *
+	 * The corpus is 20.9M pairs, which is not an array anybody keeps, and a median
+	 * cannot be averaged out of per-observer medians — the mean of medians is not
+	 * the median, and this file prints both and says which is which because it
+	 * shipped for a round calling one the other. 0.05 ly bins over 120 ly is 2,400
+	 * counters, so the pooled median comes back resolved to a bin rather than
+	 * guessed.
+	 */
+	separationBins: Int32Array;
+	pairs: number;
 }
 
+/** Width and span of the separation histogram. */
+const SEPARATION_BIN_LY = 0.05;
+const SEPARATION_BINS = Math.ceil(120 / SEPARATION_BIN_LY);
+
 const RING_LY = [2, 5, 10, 20, 40];
+
+/** The pooled median separation, interpolated inside its bin.
+ *
+ * Every pair in the corpus is one sample here, which is the quantity
+ * `BRIGHT_SIZE_MID_LY` is anchored to: "how far apart are two systems,
+ * typically" — not "what is the median of each observer's own median".
+ */
+/** Folded maximum. `Math.max(...xs)` puts one argument per element on the stack. */
+function maxOf(xs: readonly number[], label: string): number {
+	let m = Number.NEGATIVE_INFINITY;
+	for (const x of xs) if (x > m) m = x;
+	return finite(label, m);
+}
+
+function pooledMedianSeparation(c: DistanceCensus, label: string): number {
+	if (!(c.pairs > 0)) throw new Error(`measure-sky-density: no ${label}`);
+	const half = c.pairs / 2;
+	let cum = 0;
+	for (let i = 0; i < SEPARATION_BINS; i++) {
+		const next = cum + c.separationBins[i];
+		if (next >= half)
+			return finite(
+				label,
+				(i + (half - cum) / c.separationBins[i]) * SEPARATION_BIN_LY,
+			);
+		cum = next;
+	}
+	throw new Error(`measure-sky-density: ${label} runs past the histogram`);
+}
 
 function census(dists: readonly number[], into: DistanceCensus): void {
 	for (const d of dists) {
 		if (d < into.minDistance) into.minDistance = d;
+		into.separationBins[
+			Math.min(SEPARATION_BINS - 1, Math.floor(d / SEPARATION_BIN_LY))
+		]++;
+		into.pairs++;
 		for (let i = 0; i < RING_LY.length; i++)
 			if (d <= RING_LY[i]) into.rings[i]++;
 		// Read off the shipped law rather than against the distances the clamps
@@ -339,6 +394,8 @@ function freshCensus(): DistanceCensus {
 		atCeiling: 0,
 		atFloor: 0,
 		minDistance: Number.POSITIVE_INFINITY,
+		separationBins: new Int32Array(SEPARATION_BINS),
+		pairs: 0,
 	};
 }
 
@@ -396,64 +453,32 @@ function modeSky(): void {
 	const nearestSorted = sortedCopy(nearest, "nearest other system ly");
 	const farthestSorted = sortedCopy(farthest, "farthest system ly");
 	console.log(summarizeSorted("nearest other system ly", nearestSorted));
-	console.log(summarize("median separation ly", mid));
+	// Two quantities, both printed, because they are not the same number and this
+	// file printed the wrong one for a round under the other one's name — the
+	// label slippage it spends three paragraphs indicting #100 for.
+	//
+	// The **pooled** figure is the one `BRIGHT_SIZE_MID_LY` is anchored to: every
+	// pair in the corpus is a sample, and that is what "how far apart are two
+	// systems, typically" asks. The median *of* per-observer medians is a summary
+	// of the per-sky distribution and is printed as that; averaging medians does
+	// not recover a median.
+	const pooled = pooledMedianSeparation(censusAll, "pooled median separation");
+	console.log(
+		`median separation, pooled over ${censusAll.pairs} pairs: ${fig(
+			"pooled median separation",
+			pooled,
+		)} ly  (histogram bin ${SEPARATION_BIN_LY} ly)  <- what BRIGHT_SIZE_MID_LY is anchored to`,
+	);
+	console.log(
+		summarize("median OF per-observer medians ly", mid) +
+			"  (a summary of per-sky medians, not a pooled separation)",
+	);
 	console.log(summarizeSorted("farthest system ly", farthestSorted));
 	console.log(summarize("inverse-square spread mag", magSpread));
 
-	// How many of the 255 a size law with a saturation ceiling would saturate.
-	// A sky's *nearest* few are the ones the eye reads as bright, so a ceiling
-	// that bites past them is a ceiling that flattened the picture.
-	for (let i = 0; i < RING_LY.length; i++)
-		console.log(
-			`   within ${String(RING_LY[i]).padStart(2)} ly: ${fig(
-				`within ${RING_LY[i]}`,
-				censusAll.rings[i] / observers,
-			)} of the 255  (${fig(
-				`share ${RING_LY[i]}`,
-				censusAll.rings[i] / total,
-				3,
-			)} of all points)`,
-		);
+	reportRings(censusAll, observers, total);
+	reportSizeLaw(censusAll, observers, total);
 
-	// Every figure named before it is printed. These two rows used to carry six
-	// and eight `fig(...)` calls interleaved inside one template each, which is
-	// formatting welded to arithmetic: to read the sentence you had to unpick
-	// which `${}` was a number and which was a guard. `fig` still guards each one.
-	const ceilingShare = fig("ceiling share", censusAll.atCeiling / total, 4);
-	const ceilingPerSky = fig("ceiling per sky", censusAll.atCeiling / observers);
-	const floorShare = fig("floor share", censusAll.atFloor / total, 4);
-	const floorPerSky = fig("floor per sky", censusAll.atFloor / observers);
-	console.log(
-		`\nthe shipped size law: ${ceilingShare} of points saturate at the ceiling ` +
-			`(${ceilingPerSky} of the 255), ${floorShare} sit on its floor (${floorPerSky} of the 255).`,
-	);
-	// Printed beside the shares, because a documented distance that is only ever
-	// *written down* is one that goes stale silently: #431's first round quoted
-	// two of them against constants that had already moved. The last row is in
-	// world units rather than pixels on purpose — a px figure would need
-	// `STAR_PIXEL_SCALE` from `main.ts`, and a script reading a renderer dial
-	// across the Three.js boundary is how a documented px figure goes stale.
-	const closestLy = fig("closest pair ly", censusAll.minDistance, 3);
-	// What the closest pair would have been drawn as had the ceiling not caught
-	// it: the size law's own arithmetic, with the clamp taken out.
-	const closestUnclamped = BRIGHT_SIZE_K / censusAll.minDistance;
-	const unclampedSize = fig("unclamped size", closestUnclamped, 3);
-	const timesCeiling = fig(
-		"over ceiling",
-		closestUnclamped / BRIGHT_SIZE_MAX,
-		0,
-	);
-	const ceilingLy = fig("ceiling ly", BRIGHT_CEILING_LY);
-	const floorLy = fig("floor ly", BRIGHT_FLOOR_LY);
-	console.log(
-		`the clamps are at ${ceilingLy} ly (size ${fig(
-			"ceiling size",
-			BRIGHT_SIZE_MAX,
-			4,
-		)}) and ${floorLy} ly (size ${fig("floor size", BRIGHT_SIZE_MIN, 4)}); the ` +
-			`closest pair in the corpus is ${closestLy} ly, whose unclamped size would ` +
-			`be ${unclampedSize} — ${timesCeiling}× the ceiling.`,
-	);
 	// Each quantile computed once and read twice, with a label that would name it
 	// in a throw rather than "r" and "r2".
 	const p01Near = quantileSorted(nearestSorted, 0.01, "1%ile nearest");
@@ -476,14 +501,18 @@ const BAND_DEG = [5, 10, 20, 30];
  * comparison — six hand-copied `× π / 180` was one too many for a file that
  * audits its own arms. */
 const BAND_RAD = BAND_DEG.map(rad);
-/** The cone the core question is asked with, in degrees and radians. */
-/** The threshold the band's headline row is quoted at. */
+/** The threshold the band's headline row is quoted at. An elevation band, not a
+ * cone — see the note in `modeBand` on why this is not `CORE_CONE_DEG`, which is
+ * also 20 and answers a different question. */
 const BAND_HEADLINE_DEG = 20;
-/** The cone the core question is asked with, in degrees and radians. */
+/** The cone the core question is asked with. */
 const CORE_CONE_DEG = 20;
 const CORE_CONE_RAD = rad(CORE_CONE_DEG);
+/** How many worlds `grain` samples the invented ramp over. */
+const GRAIN_WORLDS = 8;
 
 function modeBand(): void {
+	assertBandArm();
 	console.log(
 		`arm check: a two-sided band of ±30° is ${fig(
 			"arm check",
@@ -605,6 +634,37 @@ function modeBand(): void {
  */
 function bandArm(deg: number): number {
 	return Math.sin(rad(deg));
+}
+
+/** Check the arm before any share is divided by it.
+ *
+ * **Four identities, not one.** The check this replaces printed `bandArm(30)` and
+ * nothing more: it could not fail, and even the throw it was going to have would
+ * have constrained a single point — a linear `deg/60` passes `30 → 0.5` and misreports
+ * every other threshold in `BAND_DEG`, which is the exact class of mistake the ×7.68
+ * reading was. So: `sin θ` read off the sphere (nothing at the pole, half the sky at
+ * 30°, √2⁄2 at 45°, the whole sky at 90°) and monotonicity across the four thresholds
+ * this file actually prints.
+ */
+function assertBandArm(): void {
+	const checks: readonly [number, number][] = [
+		[0, 0],
+		[30, 0.5],
+		[45, Math.SQRT1_2],
+		[90, 1],
+	];
+	for (const [deg, want] of checks) {
+		const got = bandArm(deg);
+		if (Math.abs(got - want) > 1e-12)
+			throw new Error(
+				`measure-sky-density: bandArm(${deg}) = ${got}, not ${want}. A two-sided band of ±θ takes sin θ of a uniform sphere.`,
+			);
+	}
+	for (let i = 1; i < BAND_DEG.length; i++)
+		if (!(bandArm(BAND_DEG[i]) > bandArm(BAND_DEG[i - 1])))
+			throw new Error(
+				"measure-sky-density: bandArm does not increase across the thresholds it is printed against",
+			);
 }
 if (Math.abs(bandArm(30) - 0.5) > 1e-12)
 	throw new Error(
@@ -730,8 +790,62 @@ function modeGrain(): void {
 		return flux;
 	};
 
+	// **Does the size invariant do what its sentence claims?** It is a size
+	// ordering, and light is `size² × tint`, so the claim "no invented star
+	// outshines a real one" only follows if the two layers' tints are comparable —
+	// and they are not: the invented ramp is authored by eye in linear light and
+	// never normalised, while the derived layer's tint is normalised to
+	// `PHOTOSPHERE_LUMA`. So the mode prints the luma at which the *largest*
+	// invented point outshines the *smallest* real one, and the share of the shipped
+	// population above it. Sampling the shipped `faintField` rather than integrating
+	// the ramp, because the ramp is piecewise and the drawing code is the thing under
+	// test.
+	const sizeRatioSq = (FAINT_SIZE_MAX / BRIGHT_SIZE_MIN) ** 2;
+	const outshineLuma = PHOTOSPHERE_LUMA / sizeRatioSq;
+	const lumas: number[] = [];
+	for (let seed = 0; seed < GRAIN_WORLDS; seed++) {
+		const field = faintField(seed * 104729 + 5, FAINT_COUNT);
+		for (let i = 0; i < field.count; i++)
+			lumas.push(
+				finite(
+					"invented luma",
+					rec709Luma(
+						field.colors[i * 3],
+						field.colors[i * 3 + 1],
+						field.colors[i * 3 + 2],
+					),
+				),
+			);
+	}
+	const above = lumas.filter((l) => l > outshineLuma).length;
 	console.log(
-		`the shipped band (FAINT_SIZE_MIN ${FAINT_SIZE_MIN}, span ${FAINT_SIZE_SPAN})`,
+		`\nthe size invariant, in light: (FAINT_SIZE_MAX / BRIGHT_SIZE_MIN)² = ${fig(
+			"size ratio squared",
+			sizeRatioSq,
+		)}, so an invented point outshines the dimmest real one above linear luma ${fig(
+			"outshine luma",
+			outshineLuma,
+			4,
+		)} (the derived tint's luma is ${PHOTOSPHERE_LUMA})`,
+	);
+	console.log(
+		`  across ${GRAIN_WORLDS} worlds of the shipped ramp: median luma ${fig(
+			"invented median luma",
+			median(lumas, "invented luma"),
+			4,
+		)}, max ${fig(
+			"invented max luma",
+			maxOf(lumas, "invented max luma"),
+			4,
+		)}, and ${fig(
+			"share outshining",
+			above / lumas.length,
+			4,
+		)} of invented points sit above that luma — so the invariant holds the **size** ordering and not the delivered light, and closing the gap is a colour decision for #433's sheet`,
+	);
+
+	console.log(
+		`\nthe shipped band (FAINT_SIZE_MIN ${FAINT_SIZE_MIN}, span ${FAINT_SIZE_SPAN})`,
 	);
 	const now = moments("shipped", FAINT_SIZE_MIN, FAINT_SIZE_SPAN);
 	// The law this node replaced, kept here as the comparison it is: a law that
@@ -749,6 +863,80 @@ function modeGrain(): void {
 			`so the light left with the **tail**, not with the grain. Whether that is ` +
 			`still a night is #433's sheet, and the ceiling of both bands is what the ` +
 			`invariant row in tests/backdrop.test.ts holds.`,
+	);
+}
+
+/** How many of the 255 a size law with a saturation ceiling would saturate, ring by
+ * ring, and what the shipped law does at its own two clamps.
+ *
+ * Split out of `modeSky`, which had run its sweep and then printed for sixty lines:
+ * a reader had to hold the accumulation in memory across a screen and a half of
+ * report to know what a row meant. Both take the census the sweep filled.
+ */
+function reportRings(
+	census: DistanceCensus,
+	observers: number,
+	total: number,
+): void {
+	// How many of the 255 a size law with a saturation ceiling would saturate.
+	// A sky's *nearest* few are the ones the eye reads as bright, so a ceiling
+	// that bites past them is a ceiling that flattened the picture.
+	for (let i = 0; i < RING_LY.length; i++)
+		console.log(
+			`   within ${String(RING_LY[i]).padStart(2)} ly: ${fig(
+				`within ${RING_LY[i]}`,
+				census.rings[i] / observers,
+			)} of the 255  (${fig(
+				`share ${RING_LY[i]}`,
+				census.rings[i] / total,
+				3,
+			)} of all points)`,
+		);
+}
+
+function reportSizeLaw(
+	census: DistanceCensus,
+	observers: number,
+	total: number,
+): void {
+	// Every figure named before it is printed. These two rows used to carry six
+	// and eight `fig(...)` calls interleaved inside one template each, which is
+	// formatting welded to arithmetic: to read the sentence you had to unpick
+	// which `${}` was a number and which was a guard. `fig` still guards each one.
+	const ceilingShare = fig("ceiling share", census.atCeiling / total, 4);
+	const ceilingPerSky = fig("ceiling per sky", census.atCeiling / observers);
+	const floorShare = fig("floor share", census.atFloor / total, 4);
+	const floorPerSky = fig("floor per sky", census.atFloor / observers);
+	console.log(
+		`\nthe shipped size law: ${ceilingShare} of points saturate at the ceiling ` +
+			`(${ceilingPerSky} of the 255), ${floorShare} sit on its floor (${floorPerSky} of the 255).`,
+	);
+	// Printed beside the shares, because a documented distance that is only ever
+	// *written down* is one that goes stale silently: #431's first round quoted
+	// two of them against constants that had already moved. The last row is in
+	// world units rather than pixels on purpose — a px figure would need
+	// `STAR_PIXEL_SCALE` from `main.ts`, and a script reading a renderer dial
+	// across the Three.js boundary is how a documented px figure goes stale.
+	const closestLy = fig("closest pair ly", census.minDistance, 3);
+	// What the closest pair would have been drawn as had the ceiling not caught
+	// it: the size law's own arithmetic, with the clamp taken out.
+	const closestUnclamped = BRIGHT_SIZE_K / census.minDistance;
+	const unclampedSize = fig("unclamped size", closestUnclamped, 3);
+	const timesCeiling = fig(
+		"over ceiling",
+		closestUnclamped / BRIGHT_SIZE_MAX,
+		0,
+	);
+	const ceilingLy = fig("ceiling ly", BRIGHT_CEILING_LY);
+	const floorLy = fig("floor ly", BRIGHT_FLOOR_LY);
+	console.log(
+		`the clamps are at ${ceilingLy} ly (size ${fig(
+			"ceiling size",
+			BRIGHT_SIZE_MAX,
+			4,
+		)}) and ${floorLy} ly (size ${fig("floor size", BRIGHT_SIZE_MIN, 4)}); the ` +
+			`closest pair in the corpus is ${closestLy} ly, whose unclamped size would ` +
+			`be ${unclampedSize} — ${timesCeiling}× the ceiling.`,
 	);
 }
 

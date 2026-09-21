@@ -70,9 +70,15 @@ const SKY_HEAD = 24;
 function skyHeads({ head }) {
 	const one = (name) => {
 		const layer = window.__seelite.backdropScene.getObjectByName(name);
-		return layer
-			? Array.from(layer.geometry.getAttribute("position").array.slice(0, head))
-			: [];
+		// Loud rather than empty. An empty head compares equal to another empty
+		// head, so a page that mounted no named layer made both determinism rows
+		// pass with "0 values compared" — the shape of green that says nothing was
+		// read. `same` below also requires the full head length, so a short read
+		// cannot pass either.
+		if (!layer) throw new Error(`probe-boot: no backdrop layer named ${name}`);
+		return Array.from(
+			layer.geometry.getAttribute("position").array.slice(0, head),
+		);
 	};
 	return { faint: one("stars-faint"), systems: one("stars-systems") };
 }
@@ -613,7 +619,12 @@ check(
 // (4) The seed reaches the backdrop — both halves, and both layers.
 const reload = await open();
 const again = await reload.evaluate(skyHeads, { head: SKY_HEAD });
-const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+// The length is part of the claim: two empty heads are "the same" to an
+// `every`, and a row that compared nothing has no business reporting ok.
+const same = (a, b) =>
+	a.length === SKY_HEAD &&
+	b.length === SKY_HEAD &&
+	a.every((v, i) => v === b[i]);
 check(
 	"the same seed draws the same invented stars",
 	same(again.faint, state.faintPositions),

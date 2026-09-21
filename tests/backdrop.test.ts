@@ -340,8 +340,8 @@ describe("systemField — the 255 systems that are actually there", () => {
 	test("the two clamp distances §12 quotes are the ones that ship", () => {
 		// The only row here whose whole job is to **go red**.
 		//
-		// `docs/specs/galaxy-generation.md` §12 says the clamps bite at 10.04 ly
-		// and 46.03 ly, and those are literals in prose while the constants are
+		// `docs/specs/galaxy-generation.md` §12 says the clamps bite at 9.86 ly and
+		// 45.17 ly, and those are literals in prose while the constants are
 		// quotients of three dials. Round 1 of this node's review shipped exactly
 		// that pair of sentences beside a `K` that had already moved — 9.07 and 51.0
 		// against 10.04 and 46.03 — and no row noticed, because every row that
@@ -355,8 +355,8 @@ describe("systemField — the 255 systems that are actually there", () => {
 		// `sky` mode prints both distances too, from the same constants, so a reader
 		// with the instrument open never needs to trust this row — its job is the
 		// reader who does not.
-		expect(BRIGHT_CEILING_LY).toBeCloseTo(10.04, 2);
-		expect(BRIGHT_FLOOR_LY).toBeCloseTo(46.03, 2);
+		expect(BRIGHT_CEILING_LY).toBeCloseTo(9.86, 2);
+		expect(BRIGHT_FLOOR_LY).toBeCloseTo(45.17, 2);
 	});
 
 	test("the size law refuses a distance that is not a distance", () => {
