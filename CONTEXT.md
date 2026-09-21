@@ -534,11 +534,17 @@ _Avoid_: The way home, galactic down
 **Derived sky**:
 The points that *are* systems — one for every other system in the galaxy, at its
 true bearing through the observer's **Sky frame**, sized by how far away it is and
-coloured by the class of the sun a pilot finds there. Rebuilt on every hyperspace
-arrival, because it is a picture of where the player is standing. `systemField` in
+coloured by the class of the sun a pilot finds there. Rebuilt on every **witchspace
+transition**, because it is a picture of where the player is standing. `systemField` in
 `src/backdrop.ts`; `galaxy-generation.md` §12 owns the size law and the figures.
-_Avoid_: The star field (there are two now), the bright stars (brightness is not
-what makes them real)
+**Scope note, not an _Avoid_ line.** `StarField` is the buffer shape *both* layers
+return — `systemField` and `faintField` hand back one apiece, and `main.ts` imports
+the type — so a ban on the words would fire on every correct use of them, which is
+the misfire §Language rules out by name. What is worth saying is the scope: since
+#431 there are two point layers, so **"the star field" unqualified** and **"the
+bright stars"** are both ambiguous, and the sentence should name which one.
+Brightness in particular is not what makes the derived sky real: the invented
+points are dimmer, and the systems are real, for two different reasons.
 
 **Invented population**:
 The scattered points behind the **derived sky** — a uniform scatter over the

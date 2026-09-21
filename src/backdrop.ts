@@ -24,17 +24,9 @@
  *
  * - **{@link systemField} is the claim.** One point per other system — 255, a
  *   system cannot see itself — at its true bearing through `galaxy-frame.ts`, in
- *   the colour of the sun a pilot finds there, sized by distance. Measured over
- *   81,920 observers: **6.18 points per 1000 square degrees** (against Earth's
- *   145 brightest stars at 3.51), a median **nearest** neighbour of **3.06 ly**,
- *   a median neighbour of **21.5 ly**, a median farthest of **38.0 ly** with the
- *   worst at **48.8**. `scripts/measure-sky-density.ts` prints all of it. #100's
- *   receipt quoted two of these mislabelled — its "median 21.1 ly" is the median
- *   *neighbour*, not the median *nearest* neighbour, which is nearly seven times
- *   closer, and that difference is the difference between a sky with one bright
- *   star in it and one with a handful.
+ *   the colour of the sun a pilot finds there, sized by distance.
  * - **{@link faintField} is the fiction**, and stays one, because 255 points is
- *   not a night. Earth's whole naked-eye sky is of order five thousand stars, so
+ *   not a night: Earth's whole naked-eye sky is of order five thousand stars, so
  *   the real layer is twenty times short of the density a person reads as *sky*,
  *   and the invented population supplies that and nothing else.
  *
@@ -43,37 +35,29 @@
  * Not because there are two ideas — there is one sky — but because **the two
  * layers go stale on different days.** The faint population is a function of the
  * world seed and is rebuilt never. The derived layer is a function of which
- * system the player is standing in and is rebuilt on every hyperspace arrival.
+ * system the player is standing in and is rebuilt on every witchspace arrival.
  * One geometry would mean re-uploading 4,255 vertices to change 255 of them; two
  * means an arriving system costs 3 kB and the texture costs nothing ever again.
  * They share one `ShaderMaterial`, because everything that differs between them
  * is already in the attributes and a second material would be a second program
  * for an identical shader.
  *
- * ## What the sky is a picture *of*, measured
+ * ## What the picture is made of, and where the figures live
  *
- * The cluster is oblate (`GALAXY_FLATTENING_Q`), and #430 ruled that this is
- * where its shape becomes visible. What the measurement says is that the
- * visibility is in the *cone and the ordering*, and not in the band:
+ * Three findings decided this file's shape, and they are measurements rather
+ * than opinions, so they are written down once — in
+ * [`galaxy-generation.md` §12](../../docs/specs/galaxy-generation.md), whose
+ * source is `scripts/measure-sky-density.ts`. Only the two that a dial here
+ * depends on are restated, beside the dial:
  *
- * - **46.3% of a sky's points sit within 20° of the cluster's plane**, against
- *   34.2% for a uniform sphere — a **1.35× excess**, ×1.41 inside ±10°. That is
- *   #100's 1.31× re-measured through the shipped transform, and it is a gentle
- *   ridge rather than a band: 8.4 points per 1000 sq deg inside ±20° against 5.0
- *   outside.
- * - **The core is the loud one.** A star near the cluster's rim puts **24.5%** of
- *   its neighbours inside a 20° cone on the centre, eight times uniform; one near
- *   the core manages 6.7%, because from the middle the core is every direction at
- *   once.
- * - **Brightness is where the structure lives**, because it is the only channel
- *   left. A uniform 4,000 is 97 points per 1000 sq deg everywhere, so the
- *   invented layer outnumbers the real one **11.6 : 1 inside the band and 19.2 : 1
- *   outside it** — `band` mode prints both. Nothing about the count can carry a
- *   band at those odds, which is what the two size bands below are for.
- *
- * The cone and the ordering therefore come free: they fall out of bearings nobody
- * tuned. The band comes free too, at exactly the strength #430 said it would, and
- * this file is where that gets checked rather than asserted.
+ * - The cluster is oblate (`GALAXY_FLATTENING_Q`), but its plane is a **gentle
+ *   ridge** in a sky rather than a band, and the invented layer outnumbers the
+ *   real one by an order of magnitude in every direction. So a count cannot
+ *   carry the cluster's shape; brightness is the only channel that can, which is
+ *   what the two size bands below are for. The loud structure is the cone on the
+ *   centre, and that one comes free from bearings nobody tuned.
+ * - The sky is thin enough that **distance has to be what carries brightness**,
+ *   because there is nothing else to order 255 points by.
  *
  * ## The law on each point, and the invariant between the layers
  *
@@ -125,33 +109,37 @@ export const FAINT_COUNT = 4000;
 /**
  * The invented population's size band, in the units the point shader wants.
  *
- * The law is `min + span · u⁶`: a steep power so the field is mostly faint
+ * The law is `min + span · u⁶`: a steep curve so the field is mostly faint
  * pinpricks with a few brighter ones. A flat distribution reads as static rather
  * than as a sky, which is why the shape is kept from the version of this file
  * that was the whole sky.
  *
- * The band sits **entirely below** the derived layer's floor, and the measurement
- * in the header is why it has to: the invented layer outnumbers the real one
- * eleven to one inside the cluster's plane and nineteen to one outside it, so how
- * much light each layer contributes is the only channel left in which the real
- * layer is visible as structure.
+ * The band sits **entirely below** the derived layer's floor, and §12's counts
+ * are why it has to: the invented layer outnumbers the real one by an order of
+ * magnitude in every direction, so how much light each layer contributes is the
+ * only channel left in which the real layer is visible as structure.
  *
- * **What that costs, stated rather than left to be noticed:** the law this band
- * replaces was `0.006 + 0.05·u⁶`, whose median point drew 4.1 px on a 900-px-tall
- * canvas and whose top of range drew 17.6 px — as large as the derived layer's
- * *brightest* star, which is the inversion the paragraph above forbids. This band
- * draws a 1.7 px median and a 3.0 px maximum, so the expected value of `size²` —
- * what an additive disc delivers as light — is **a tenth of what it was**. The
- * grain is texture and not subjects; whether a tenth is still enough of a night is
- * a question for #433's sheet, and the number belongs here so that sheet is
- * argued with rather than looked at.
+ * **What that costs, stated rather than left to be noticed.** The law this band
+ * replaces was `0.006 + 0.05·u⁶`, whose top of range drew a point as large as the
+ * derived layer's *brightest* star — the inversion the paragraph above forbids —
+ * and over `size²`, which is what an additive disc delivers as light, the
+ * population now contributes **a tenth of what it did**. Where the tenth went is
+ * worth knowing before these two numbers are read: almost none of it is the
+ * typical point. It is the **tail**. The old law scattered its handful of
+ * oversized discs over the whole sphere, at random bearings, at sizes
+ * indistinguishable from the systems the sky is supposed to be a picture *of*;
+ * this band takes exactly those away and leaves the grain nearly as it was. The
+ * px figures behind that sentence are §12's to carry, and so is the question of
+ * whether the grain is still enough of a night, which is #433's sheet to settle —
+ * the cost is named here so that sheet is argued with rather than looked at.
  */
 export const FAINT_SIZE_MIN = 0.0048;
 export const FAINT_SIZE_SPAN = 0.0048;
 export const FAINT_SIZE_MAX = FAINT_SIZE_MIN + FAINT_SIZE_SPAN;
 
 /**
- * The derived layer's size band, at 3.8 to 17 px on a 900-px-tall canvas.
+ * The derived layer's size band, in the same units the point shader wants; what
+ * each end of it looks like in a real sky is §12's.
  *
  * `FAINT_SIZE_MAX` under {@link BRIGHT_SIZE_MIN} is a relationship, held by a
  * test; read those four numbers as one rule about which layer is allowed to be
@@ -163,8 +151,9 @@ export const BRIGHT_SIZE_MAX = 0.055;
 /**
  * The distance at which a real system draws at the middle of the band.
  *
- * **21.5 ly is a measurement** — the median neighbour distance over 81,920
- * observers — and `scripts/measure-sky-density.ts` is where it comes from. The
+ * **21.5 ly is a measurement** — the median distance from one system to another
+ * in a 256-system galaxy, over 81,920 observers — and
+ * `scripts/measure-sky-density.ts` is where it comes from. The
  * middle of a reciprocal law is the geometric mean of the two clamps, so this one
  * figure sets where the whole sky sits: move it and every star in the game moves
  * up or down together.
@@ -172,32 +161,39 @@ export const BRIGHT_SIZE_MAX = 0.055;
 export const BRIGHT_SIZE_MID_LY = 21.5;
 
 /** The law's constant: `size = K / d`, which is flux `∝ 1/d²` drawn at constant
- *  surface brightness. The geometric mid of the band, placed at the measured mid
- *  distance. */
-const BRIGHT_SIZE_K =
+ *  surface brightness — the geometric mid of the band, placed at the measured
+ *  mid distance.
+ *
+ *  Exported because the two clamps are *this* divided by the two band ends, and
+ *  an instrument that wants to say where the law saturates has to divide the
+ *  same constant rather than re-multiply the three dials and hope. */
+export const BRIGHT_SIZE_K =
 	BRIGHT_SIZE_MID_LY * Math.sqrt(BRIGHT_SIZE_MIN * BRIGHT_SIZE_MAX);
+
+/**
+ * Where the law reaches its ceiling, in light years: `K / MAX`.
+ *
+ * A named constant rather than a figure in a comment because the comment is what
+ * #431's first review round got wrong: the header quoted 9.07 ly beside a `K`
+ * that had moved, and nothing could catch it. `tests/backdrop.test.ts` now holds
+ * the distance against the law, and `measure-sky-density.ts` prints it beside the
+ * share of the sky the ceiling actually catches.
+ */
+export const BRIGHT_CEILING_LY = BRIGHT_SIZE_K / BRIGHT_SIZE_MAX;
+
+/** Where the law reaches its floor, in light years: `K / MIN`. See
+ *  {@link BRIGHT_CEILING_LY} for why it is a constant and not a comment. */
+export const BRIGHT_FLOOR_LY = BRIGHT_SIZE_K / BRIGHT_SIZE_MIN;
 
 /**
  * A real system's drawn size from how far away it is.
  *
  * The reciprocal is the design; the two clamps are what make it drawable, and
- * both are measured rather than assumed — `measure-sky-density.ts sky` prints the
- * share of the sky each one actually catches:
- *
- * - The **ceiling** bites inside **9.07 ly** (`K / MAX`), where a soft additive
- *   disc is already mostly bloom. Measured, **8.6% of points saturate there —
- *   21.9 of a sky's 255**, so every sky carries a couple of dozen stars at the
- *   same top brightness. What the clamp gives up is the ordering *within* that
- *   handful, which is the price of not drawing the nearest system in a close
- *   pair as a 178 px blob; and an eye at the top of a magnitude scale does
- *   roughly the same thing anyway.
- * - The **floor** bites beyond **51.0 ly** (`K / MIN`), and catches **0.03% of
- *   points** — one star in about fourteen skies, at the very edge of the
- *   cluster. The worst farthest-neighbour over 81,920 observers is 48.8 ly
- *   against a floor at 51.0, so this clamp is a guard rail a re-solved
- *   `GALAXY_RADIUS_LY` would lean on, not a term that shapes today's picture. It
- *   is stated rather than left as a coincidence, because the day it starts
- *   biting it bites silently: a floored star is simply a small one.
+ * where they bite is {@link BRIGHT_CEILING_LY} and {@link BRIGHT_FLOOR_LY} —
+ * computed from these constants, printed by `measure-sky-density.ts sky`, and
+ * asserted by `tests/backdrop.test.ts`, which is the only way a documented
+ * distance stays true after someone moves a dial. What each one catches in a
+ * real sky is §12's to carry.
  *
  * Exported because it is the dial. A test holds the mid and both clamps against
  * this function rather than against a buffer, and #433's bake will read the same
@@ -308,11 +304,12 @@ export function faintField(worldSeed: number, count = FAINT_COUNT): StarField {
  * systems' bearings coincide — that is a test row too — so the correspondence is
  * one-to-one and the order is load-bearing rather than cosmetic.
  *
- * **Cost, per arrival rather than per frame:** one frame draw, 255 bearings and
- * 255 star-class draws, measured at **0.036 ms** in
- * `measure-sky-density.ts cost` (bun, headless — CPU arithmetic, which is the
- * only kind this half has; what it *draws* is 255 more points on one more draw
- * call, and #433 prices that on the sheet). Three `Float32Array`s totalling about
+ * **Cost, per arrival rather than per frame:** one extra draw call, 255 bearings
+ * and 255 star-class draws — `measure-sky-density.ts cost` times it and §12 carries
+ * what that printed, because a figure in two files is one that goes stale in the
+ * next edit. (CPU arithmetic, which is the only kind this half has; what it
+ * *draws* is 255 more points on one more draw call, and #433 prices that on the
+ * sheet.) Three `Float32Array`s totalling about
  * 4 kB are allocated per arrival and the old ones go; there is no pool, because
  * a pool would trade a number nobody can measure for a stale tail nobody can
  * see. That cost is free enough to pay on every jump, which is the reason the

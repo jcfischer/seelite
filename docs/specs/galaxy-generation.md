@@ -917,24 +917,34 @@ it — siblings below #100 (`#431`, `#432`, `#433`, `#434`), all blocked on this
 This section answers where a galaxy-space direction is in a system's own sky, and
 nothing about what is drawn there. **§12 is what landed in that blank** — and two
 of the figures #100's own receipt quoted beside this frame did not survive being
-re-measured: its "median 21.1 ly" is the median *neighbour* rather than the median
-*nearest* neighbour, and its spread is 5.42 magnitudes rather than 4.2.
+re-measured: its "median 21.1 ly" is the median *separation* between two systems
+rather than the median *nearest* one, and its spread is 5.42 magnitudes rather
+than 4.2.
 
 ## 12. The sky behind everything, and which half of it is invented
 
-`#431` settled what the backdrop draws now that `#430` had settled where a
-direction is. The answer is two populations of points under one shader, and the
-structural content of that decision is a staleness rule, a size law, and one
-invariant that runs between the two layers.
+`#431` settled what the backdrop draws now that `#11`'s section above had settled
+where a direction is. The answer is two populations of points under one shader,
+and the structural content of that decision is a staleness rule, a size law, and
+one invariant that runs between the two layers.
+
+**This section is the single home of the figures.** `src/backdrop.ts` and
+`CONTEXT.md` cite it rather than restating them, because three copies of a number
+only an instrument can re-derive is one copy that goes stale in the next edit —
+which is not a hypothetical here: the first draft of this node carried a rebuild
+cost in two files with two different values and a clamp distance that no longer
+matched the constants beside it. The instrument is `scripts/measure-sky-density.ts`;
+unless a line below says otherwise, every figure in it is that script's `sky` and
+`band` modes over **81,920 observers** — 40 worlds × 8 galaxies × 256 systems.
 
 ### Two populations, because they go stale on different days
 
-- **The derived layer** is `systemField(galaxy, observer)`: one point for every
+- **The derived sky** is `systemField(galaxy, observer)`: one point for every
   other system in the galaxy — 255, because a system cannot see itself — at its
   true bearing through §11's frame. It is a function of *which system the player
-  is standing in*, so a hyperspace arrival rebuilds it; `rebuildSystem()` is the
+  is standing in*, so a witchspace arrival rebuilds it; `rebuildSystem()` is the
   call, and `probe-sky.mjs` is the row that notices when it stops being one.
-- **The faint population** is `faintField(worldSeed, FAINT_COUNT)`: an area-
+- **The invented population** is `faintField(worldSeed, FAINT_COUNT)`: an area-
   preserving scatter over the sphere, from `STREAMS.backdrop`. It is a function of
   the world seed and is built once, at boot, and never again.
 
@@ -944,70 +954,127 @@ of them; two means the arriving layer costs 3 kB and the texture costs nothing
 ever again. They share **one** `ShaderMaterial`, because everything that
 distinguishes a point of one layer from a point of the other is already an
 attribute, and a second material would be a second compiled program for an
-identical shader.
+identical shader. `rebuildStarField()` disposes the old geometry only after the
+swap, because disposing the one still mounted frees what the frame in flight is
+drawing with.
 
-The reason it is worth inventing anything at all is density. Over 81,920
-observers — 40 worlds × 8 galaxies × 256 systems, which is
-`scripts/measure-sky-density.ts` and is where every figure in this section comes
-from — the real layer is **6.18 points per 1000 square degrees**. Earth's
-*named* naked-eye stars are 145 of them, or 3.51 per 1000, so the real layer is
-already denser than a chart a person could hold; but Earth's dark sky is of order
-5,000 stars, and against that the real layer is twenty times short of what reads
-as *sky*. The invented population supplies exactly that and nothing else.
+Rebuilding costs **0.036 ms** per arrival — 255 bearings, 255 star-class draws,
+three small typed arrays, from `cost` mode (bun, headless). This is the one copy
+of that figure: `src/backdrop.ts` and `src/main.ts` both point here rather than
+carrying it, because this node shipped it in two files with two different values.
+What the layer *draws* is 255 more points on one more draw call, and #433 prices
+that on the sheet.
+
+### Why invent anything: the sky is thin
+
+The real layer is **6.18 points per 1000 square degrees**. Earth's *named*
+naked-eye stars are 145 of them, or 3.51 per 1000, so the real layer is already
+denser than a chart a person could hold; but Earth's dark sky is of order 5,000
+stars, and against that the real layer is twenty times short of what reads as
+*sky*. The invented population — 4,000 points, 97 per 1000 sq deg — supplies
+exactly that and nothing else.
+
+How thin the real layer is, in the units a size law is written in: the median
+**nearest** other system is **3.06 ly** away, the median *separation* to any other
+system is **21.5 ly**, and the median *farthest* is **38.0 ly** with the worst in
+the corpus at **48.8**. The 1st percentile nearest sits at 0.72 ly against a 99th
+percentile farthest of 47.2: a **65 : 1** span for one layer to draw.
 
 ### The law on each point
 
 - **Bearing is §11's, unchanged.** `skyBearing(frame, observer.pos, other.pos)`,
-  scaled onto the backdrop sphere. `tests/backdrop.test.ts` holds every one of the
-  255 against that call rather than against a golden array, so a replaced
-  transform is a red row and not a surviving coincidence.
+  scaled onto the backdrop sphere. `tests/backdrop.test.ts` holds all 255 against
+  that call rather than against a golden array, so a replaced transform is a red
+  row and not a surviving coincidence.
 - **Size is flux.** The shader draws an additive soft disc, so the light a point
   contributes goes as its drawn size squared; drawing at `size ∝ 1/d` is therefore
   flux `∝ 1/d²` at constant surface brightness. That is #100's inverse square with
   no invented exponent and no dial beside it. The band's mid sits at
-  `BRIGHT_SIZE_MID_LY` = 21.5 ly, which is the measured **median neighbour**
-  distance, and the mid of a reciprocal law is the geometric mean of its two
-  clamps — so that one figure places every star in the game together.
+  `BRIGHT_SIZE_MID_LY` = 21.5 ly, which is the measured median separation above,
+  and the mid of a reciprocal law is the geometric mean of its two clamps — so
+  that one figure places every star in the game together.
 - **Colour is class, never exposure.** A point takes the hue of its system's own
   star class, normalised through `star-colour.ts` to the one photosphere exposure
-  `planet-surface.ts` gives a sun's disc; #59's rule one scale down. Here
-  it does a second job: a tint that carried its own exposure would put an M
-  dwarf's point far under an F star's, and the size law would stop being a
-  statement about distance and become a statement about two things at once.
+  `planet-surface.ts` gives a sun's disc; #59's rule one scale down. Here it does a
+  second job: a tint that carried its own exposure would put an M dwarf's point far
+  under an F star's, and the size law would stop being a statement about distance
+  and become a statement about two things at once.
 - **No invented star outshines a real one.** `FAINT_SIZE_MAX < BRIGHT_SIZE_MIN`,
   held in `tests/backdrop.test.ts`. That is a relationship and not two settings,
-  and the measurement is why it has to hold: a uniform 4,000 is 97 points per
-  1000 sq deg everywhere while the real layer runs **8.4 inside ±20° of the
-  cluster's plane and 5.0 outside it**, so the invented population outnumbers the
-  real one **11.6 : 1 inside the band and 19.2 : 1 outside it**. The count cannot
-  carry structure at those odds. Brightness is the only channel left, and a single
-  inverted pair makes what is there invisible.
+  and the counts are why it has to hold: the invented layer is 97 points per 1000
+  sq deg everywhere while the real one runs **8.4 inside ±20° of the cluster's
+  plane and 5.0 outside it**, so the invented population outnumbers the real one
+  **11.6 : 1 inside the plane and 19.2 : 1 outside it**. Nothing a count can do
+  carries structure at those odds; brightness is the only channel left, and a
+  single inverted pair makes what is there invisible.
 
-### The band is mild, and that is §11's answer confirmed rather than a new one
+### What the two clamps catch, and where they are written
+
+The two distances are `BRIGHT_CEILING_LY` = **10.04 ly** and `BRIGHT_FLOOR_LY` =
+**46.03 ly**, computed from the same constants as the law and printed by `sky`
+mode beside the share each one catches. They are exported constants rather than
+prose for a reason: the first draft of this node documented "9.07 ly" and "51.0
+ly" next to a `K` that had already moved, and no check could see it. A test now
+holds each distance against the law, so moving a clamp moves the documented
+number or goes red.
+
+- The **ceiling** catches **8.6% of points — 21.9 of a sky's 255**, which is what
+  "one system in twelve is drawn as big as it is allowed to be" actually means:
+  every sky has a couple of dozen stars at the same top brightness. What the clamp
+  gives up is the ordering *within* that handful; what it buys is the corpus's
+  closest pair, **0.063 ly** apart, drawing at the ceiling rather than at the
+  **160× the ceiling** an unclamped `K / d` asks for there. `sky` mode prints that
+  multiple in world units, deliberately short of a px figure: converting one
+  would read `STAR_PIXEL_SCALE` across the Three.js boundary, and a documented px
+  figure with a renderer dial in its product is one that goes stale on its own.
+- The **floor** catches **0.03% of points**, and that is not zero: the corpus's
+  worst farthest other system is 48.8 ly against a floor at 46.0, so the
+  outermost systems of the most peripheral observers *are* drawn at the floor and
+  stop shrinking there. It is a guard rail that today's corpus already leans on,
+  and the honest statement of it is that the far edge of a sparse sky reads as one
+  size rather than as a diminishing one.
+
+### The plane is a ridge, and the cone is the loud one
 
 46.3% of a sky's points sit within 20° of the cluster's plane against **34.2%**
-for a uniform sphere — a **1.35×** excess, ×1.41 inside ±10°. §11 records #100
-measuring 1.31× on the same question, so the derived layer reproduces the frame's
-own ruling to within seed noise, which is the check that the transform is doing
-what it claims. The loud structure in a sky here is not the band: it is the
-**core cone** — a star at the cluster's rim puts 24.5% of its neighbours inside a
-20° cone on the centre, eight times uniform, while one near the core manages 6.7%
-because from the middle the core is every direction at once — and the ordering the
-size law imposes. §11's "the bearing is the picture; the brightness almost never
-is" is true of the *counts* and inverted for this layer: the counts are a gentle
-ridge, and everything that reads as structure is drawn in size.
+for a uniform sphere — a **1.35×** excess, ×1.41 inside ±10°. That is #100's 1.31×
+re-measured on the same question, and the question is the same one: the elevation
+and cone statistics are read in **galaxy space**, which §11's section and the
+instrument's own header both say is deliberate, because #430's per-system rotation
+turns the whole picture without changing any of these angles.
+
+**Which is why the agreement checks the instrument and the cluster, and not the
+transform.** A statistic built to be invariant to `skyFrame` cannot test
+`skyFrame`; that is `tests/backdrop.test.ts`'s element-by-element hold of every
+point against `skyBearing`, which is not invariant and does not care about the
+plane at all. What re-measuring #100 buys is the receipt being checkable again —
+its instrument went with the file that has since been rewritten — and the finding
+that the plane is a gentle ridge, not a band, which is §11's ruling arriving a
+second time from a different direction.
+
+What is loud is the cone on the centre: a system near the cluster's rim puts
+**24.5%** of the other systems in its sky inside a 20° cone on the centre, eight
+times uniform, while one near the core manages 6.7%, because from the middle the
+core is every direction at once. So the picture this layer draws is a bright
+ordering inside a mild ridge with one dense direction — not a Milky Way band, and
+anyone quoting "the band" for this should quote 1.35× and 8× instead.
 
 ### What the invariant costs the invented layer
 
-Ten times its light, and that is the honest number to carry to #433's sheet. The
-law this section replaces was `0.006 + 0.05·u⁶`: its median point drew 4.1 px on a
-900-px-tall canvas and the top of its range drew 17.6 px, which is as large as the
-derived layer's *brightest* star. The invariant forbids that, and with
-`FAINT_SIZE_MAX` capped under the derived floor the same population draws a 1.7 px
-median and a 3.0 px maximum — the expected value of `size²`, which is what an
-additive disc delivers as light, falls by a factor of **10.0**. The grain is
-texture rather than subjects, which is the ruling; whether it is now too faint to
-read as a night is a look question this section cannot settle and #433 must.
+Ten times its light, and almost none of it is the grain. The law this section
+replaces was `0.006 + 0.05·u⁶`: its points **averaged** 4.1 px on a 900-px-tall
+canvas, its **median** was 2.1 px, and its top of range drew 17.6 px — as large as
+the derived layer's *brightest* star, which is the inversion the invariant
+forbids. The new band averages 1.7 px with a 1.5 px median and a 3.0 px maximum,
+so over `size²` — what an additive disc delivers as light — the population
+contributes **a tenth of what it did**.
+
+Where the tenth went is the part worth carrying to #433's sheet: the median point
+dimmed by 1.4×, not by 10×. The lost light is the **tail** — the old law scattered
+its handful of 17 px discs over the whole sphere, at random bearings, at sizes
+indistinguishable from the systems the sky is supposed to be a picture *of*. The
+invariant removed exactly those. The grain is nearly as bright as it was, and
+whether it is enough of a night remains the sheet's question.
 
 ### `BACKDROP_RADIUS` is where a direction is drawn, not where a star is
 
@@ -1016,21 +1083,10 @@ Every point of both layers sits at exactly `BACKDROP_RADIUS` from the camera,
 which is re-centred into the sphere each frame; the number is this layer's
 convention for *far enough that it cannot parallax*, and nothing more. Distance
 travels in the size. A point placed at its `distanceLy` instead would leave the
-backdrop camera's frustum and never draw at all.
-
-### What the two clamps actually catch
-
-Both were chosen at figures and then measured, which is the order that catches a
-wrong one. Over the same 81,920 observers: the ceiling bites inside **9.07 ly**
-and catches **8.6% of points — 21.9 of a sky's 255**; the floor bites beyond
-**51.0 ly** and catches **0.03%**, roughly one star in fourteen skies, the worst
-farthest-neighbour in the corpus being 48.8 ly. The floor is a guard rail, not a
-term that shapes today's picture, and it is named because a floored star is
-merely a small one: that clamp fails silently.
-
-Rebuilding the derived layer costs **0.036 ms** per arrival on bun, headless —
-255 bearings, 255 star-class draws, three small typed arrays. `cost` mode prints
-it beside the whole galaxy's worth.
+backdrop camera's frustum and never draw at all. `probe-sky.mjs` measures the
+mounted radius rather than trusting the name, and `probe-boot.mjs` no longer
+reaches for `children.find(c => c.isPoints)`, which cannot tell the two layers
+apart.
 
 ### Two of #100's figures did not survive being re-measured
 
@@ -1038,8 +1094,8 @@ Its receipt is the source of this node's design, and two of its numbers were
 mislabelled rather than wrong:
 
 - Its "median 21.1 ly" beside a "mean 5.45" named neither quantity. The median
-  **neighbour** is 21.5 ly; the median **nearest** neighbour is **3.06 ly**. The
-  two differ by nearly seven, and which one a size law is anchored to is the
+  **separation** is 21.5 ly; the median **nearest** other system is **3.06 ly**.
+  The two differ by nearly seven, and which one a size law is anchored to is the
   difference between a sky with one bright star in it and one with a handful —
   which is what `BRIGHT_SIZE_MID_LY` is.
 - Its "4.2 magnitudes" of inverse-square spread reads **5.42** median, 13.79 at
@@ -1048,14 +1104,19 @@ mislabelled rather than wrong:
 Its "23× sparser than a sky a person recognises" holds only against Earth's
 ~5,000-star dark sky; against its 145 named stars the real layer is 1.8× denser.
 `scripts/measure-sky-density.ts` states which distance each of its rows is
-reading, which is the discipline the mislabelling was missing.
+reading, which is the discipline the mislabelling was missing — and it checks the
+one arm that was itself wrong at first: a *two-sided* band of ±θ takes **sin θ** of
+a uniform sphere, and the cone arm `1−cos θ` printed ×7.68 where the reading is
+×1.35. `bandArm` is tested against the ±30° identity before it is used, because
+the wrong arm shipped with a comment beside it saying the wrong thing.
 
 ### What this section does not decide
 
 The rim's deep-sky sheet row is `#432`. The bake — the haze that goes *behind*
-these points, at whatever exposure makes both readable — and the canonical
-sheet and the principal's yes on it are `#433`, which reads this section's size
-law rather than authoring its own. Whether a pilot can find a system by bearing
-at all is `#434`. The faint population's dimming above is the one
-visible thing this section changes about the shipped picture, and it is a look
-decision `#433`'s sheet owns rather than one this section ratifies.
+these points, at whatever exposure makes both readable — and the canonical sheet
+and the principal's yes on it are `#433`, which reads this section's size law
+rather than authoring its own. Whether a pilot can find a system by bearing at all
+is `#434`. And the one visible thing this section changes about the shipped
+picture — the invented layer's bright tail going away — is a look decision
+`#433`'s sheet owns: this section rates it in pixels and leaves the verdict where
+the ruling says it belongs.

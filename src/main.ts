@@ -3878,11 +3878,11 @@ class Game {
 	 * Redraw the sky's derived layer for the system the player is now standing
 	 * in. Called from `rebuildSystem`, which a jump runs (#187).
 	 *
-	 * 255 points, rebuilt in 0.012 ms (`measure-sky-density.ts`, bun headless),
-	 * *because* the layer is its own buffer: the alternative — one geometry
-	 * holding both populations — would re-upload 4,255 vertices on every arrival
-	 * to change 255 of them. The faint layer is not touched, and its GPU buffers
-	 * are never re-uploaded at all.
+	 * Why it is worth rebuilding 255 points on every arrival: this layer is its
+	 * own buffer, so an arrival costs 255 vertices and not the 4,255 that one
+	 * geometry holding both populations would re-upload to change 255 of them.
+	 * The measured figure is `systemField`'s to carry, beside the dial it
+	 * measures — one copy of it, in the module that owns the layer.
 	 */
 	private rebuildStarField() {
 		const field = systemField(this.world.galaxy, this.world.system.record);

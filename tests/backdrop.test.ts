@@ -28,6 +28,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	BRIGHT_CEILING_LY,
+	BRIGHT_FLOOR_LY,
+	BRIGHT_SIZE_K,
 	BRIGHT_SIZE_MAX,
 	BRIGHT_SIZE_MID_LY,
 	BRIGHT_SIZE_MIN,
@@ -280,7 +283,7 @@ describe("systemField — the 255 systems that are actually there", () => {
 	});
 
 	test("the size law is the inverse square, with named clamps", () => {
-		// The mid of the band is the *median* neighbour distance, which is why it
+		// The mid of the band is the *median separation* between two systems, which
 		// is a named constant rather than a number beside the shader: it is a
 		// measurement, and `scripts/measure-sky-density.ts` is where it comes from.
 		const mid = Math.sqrt(BRIGHT_SIZE_MIN * BRIGHT_SIZE_MAX);
@@ -289,10 +292,25 @@ describe("systemField — the 255 systems that are actually there", () => {
 		// far end, it is the far end of the *band* once the ceiling bites.
 		expect(brightSizeLy(BRIGHT_SIZE_MID_LY * 2)).toBeLessThan(mid);
 		expect(brightSizeLy(BRIGHT_SIZE_MID_LY / 2)).toBeGreaterThan(mid);
-		// Both clamps are reachable, and they are reachable at the distances the
-		// instrument says the sky actually has.
-		expect(brightSizeLy(0.5)).toBe(BRIGHT_SIZE_MAX);
-		expect(brightSizeLy(500)).toBe(BRIGHT_SIZE_MIN);
+		// Both clamps are reachable, and reachable *where the exported constants
+		// say they bite*. That is the whole point of those two being exported
+		// numbers rather than prose: `docs/specs/galaxy-generation.md` §12 quotes
+		// both distances, and before they were constants the sentence beside a
+		// moved `K` was free to say anything. A boundary is two rows, because a
+		// distance quoted as "where it bites" is wrong if the law has already
+		// bitten a light year earlier.
+		expect(brightSizeLy(BRIGHT_CEILING_LY)).toBe(BRIGHT_SIZE_MAX);
+		expect(brightSizeLy(BRIGHT_CEILING_LY * 1.001)).toBeLessThan(
+			BRIGHT_SIZE_MAX,
+		);
+		expect(brightSizeLy(BRIGHT_FLOOR_LY)).toBe(BRIGHT_SIZE_MIN);
+		expect(brightSizeLy(BRIGHT_FLOOR_LY * 0.999)).toBeGreaterThan(
+			BRIGHT_SIZE_MIN,
+		);
+		// And the two are the same law's own quotients, not two numbers kept in
+		// step by hand.
+		expect(BRIGHT_CEILING_LY).toBeLessThan(BRIGHT_FLOOR_LY);
+		expect(BRIGHT_SIZE_K / BRIGHT_SIZE_MAX).toBe(BRIGHT_CEILING_LY);
 	});
 
 	test("the size law refuses a distance that is not a distance", () => {
@@ -307,8 +325,8 @@ describe("the two layers, beside each other", () => {
 	test("no invented star outshines a real one", () => {
 		// The relationship #431 was written to decide. The invented layer
 		// outnumbers the real one by an order of magnitude in every direction —
-		// 11.6 : 1 inside the cluster's plane, 19.2 : 1 outside it, per
-		// `measure-sky-density.ts` band mode — so the sky cannot survive as
+		// the two ratios are `measure-sky-density.ts` band mode's to print and §12's
+		// to carry, and are not repeated in a test comment — so the sky cannot survive as
 		// structure on count; brightness is the only channel left, and a channel
 		// with no floor under it is a channel that drifts the first time somebody
 		// tunes the texture. Held as a relationship rather than as two figures.

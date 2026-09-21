@@ -299,8 +299,8 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-sky.mjs",
-			"Proves the derived star layer sits in the backdrop, paired point to system, and is re-drawn on a jump while the invented population is untouched.",
-			["star field", "derived sky", "hyperspace arrival", "backdrop layer"],
+			"Proves the derived star layer sits in the backdrop, paired point to system, and is re-drawn on a jump while the invented population's geometry is never swapped.",
+			["star field", "derived sky", "witchspace arrival", "backdrop layer"],
 		),
 		entry(
 			"probe-state-gallery.mjs",

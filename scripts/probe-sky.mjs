@@ -4,16 +4,21 @@
  *
  * `tests/backdrop.test.ts` owns the arithmetic — every bearing against
  * `galaxy-frame`, the size law, the colour rule. None of it can see the
- * renderer, and the two things that can only be seen here are:
+ * renderer, and the three things that can only be seen here are:
  *
  * - **The buffers that reach the GPU are the ones the module returned.** A jump
- *   rebuilds the derived layer's geometry; a rebuild that updated the positions
- *   and left the old sizes mounted would draw a sky of the wrong brightness at
- *   the right bearings, and every headless row would stay green. So the jump arm
- *   reads the *mounted* attributes and asks that the brightest mounted point
- *   belongs to the nearest system, and that the two layers moved apart from each
- *   other in the way #431 designed them to: the systems re-drawn, the invented
- *   population not touched at all.
+ *   rebuilds the derived layer's geometry; a rebuild that wrote new bearings and
+ *   left the old sizes mounted would draw a sky of the wrong brightness at the
+ *   right bearings, and every headless row would stay green because each buffer
+ *   is correct on its own. So the jump arm reads the *mounted* attributes and
+ *   asks that the mounted sizes fall as the mounted distances rise.
+ * - **Which layer was actually rebuilt.** Contents alone cannot answer that: a
+ *   faint population rebuilt to identical bytes would pass a content check, and
+ *   the design claim is that it is not rebuilt at all. So each read tags the
+ *   `BufferGeometry` object it found and reports how many reads that same object
+ *   has seen. After a jump the invented layer must still be on its **first**
+ *   object and the derived layer must be on a **different** one — which is what
+ *   `backdrop.ts` claims when it says the texture costs nothing ever again.
  * - **Both layers are in the layer they belong in.** `backdropScene` is drawn
  *   with no depth write, first, and re-centred on the camera; a `Points` that
  *   ended up in the far layer would parallax, which is a bug no headless test
@@ -32,7 +37,7 @@ import {
 
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
-/** A seed with a first system that has neighbours in every direction, which any
+/** A seed whose first system has other systems in every direction, which every
  *  connected layout has. Fixed so a red run is reproducible. */
 const SEED = 42;
 
@@ -54,45 +59,62 @@ await page.evaluate(() => {
 		g.render(dt);
 	};
 
-	/** The mounted attributes of one backdrop layer, as the GPU sees them. */
+	/** The mounted state of one backdrop layer, as the GPU sees it. */
 	const mounted = (name) => {
 		const layer = g.backdropScene.getObjectByName(name);
 		if (!layer) return null;
-		const attr = (n) => layer.geometry.getAttribute(n);
+		const geometry = layer.geometry;
+		const position = geometry.getAttribute("position");
+		// The radius of *every* point rather than of the first one: a rebuild
+		// that wrote unnormalised bearings past the head would otherwise pass.
+		let min = Infinity;
+		let max = 0;
+		for (let i = 0; i < position.count; i++) {
+			const r = Math.hypot(
+				position.getX(i),
+				position.getY(i),
+				position.getZ(i),
+			);
+			if (r < min) min = r;
+			if (r > max) max = r;
+		}
+		// A tag on the geometry *object*, so a swapped-in geometry shows up even
+		// when its bytes come back identical. One read of the sky per page read,
+		// so the count is the number of sky reads that object has survived.
+		if (geometry.__skyProbeReads === undefined) geometry.__skyProbeReads = 0;
+		geometry.__skyProbeReads += 1;
 		return {
-			count: attr("position").count,
-			radius: attr("position").count
-				? Math.hypot(
-						attr("position").getX(0),
-						attr("position").getY(0),
-						attr("position").getZ(0),
-					)
-				: null,
-			positions: Array.from(attr("position").array),
-			sizes: Array.from(attr("aSize").array),
+			count: position.count,
+			minRadius: min,
+			maxRadius: max,
+			positions: Array.from(position.array),
+			sizes: Array.from(geometry.getAttribute("aSize").array),
 			// Which layer the renderer thinks it is drawing in, read back from
 			// the parent chain rather than from the name.
 			inBackdrop:
 				layer.parent === g.backdropScene ||
 				layer.parent?.parent === g.backdropScene,
+			reads: geometry.__skyProbeReads,
 		};
 	};
 
 	window.__skyProbe = {
-		mounted,
 		/** Both layers, plus the galaxy the page is standing in. */
 		sky() {
 			return {
 				systemIndex: g.world.system.record.index,
 				systemTotal: g.world.galaxy.systems.length,
-				// Galaxy-space positions of every system, for the distance
-				// reading below. Index-aligned with `systems[i]`.
-				positions: g.world.galaxy.systems.map((s) => ({
-					index: s.index,
-					x: s.pos.x,
-					y: s.pos.y,
-					z: s.pos.z,
-				})),
+				// Galaxy-space positions of every system. `systemField` emits its
+				// points in `galaxy.systems` order with the observer skipped, so
+				// dropping the observer here re-aligns the two.
+				positions: g.world.galaxy.systems
+					.filter((s) => s.index !== g.world.system.record.index)
+					.map((s) => ({ x: s.pos.x, y: s.pos.y, z: s.pos.z })),
+				observer: {
+					x: g.world.system.record.pos.x,
+					y: g.world.system.record.pos.y,
+					z: g.world.system.record.pos.z,
+				},
 				backdropRadius: g.units.BACKDROP_RADIUS,
 				faint: mounted("stars-faint"),
 				systems: mounted("stars-systems"),
@@ -130,7 +152,48 @@ await page.evaluate(() => {
 	};
 });
 
+/** The mounted sizes fall as the mounted distances rise.
+ *
+ * The pairing claim, read off the buffers the GPU was handed. The layer's points
+ * are index-aligned with the galaxy's other systems, so the distances can be
+ * rebuilt here; if a rebuild ever wrote new bearings over old sizes — or the two
+ * buffers were swapped — a nearby system would draw small and a far one large,
+ * and every headless row would stay green because each buffer is correct alone. */
+function mountedSizesFall(reading) {
+	const layer = reading.systems;
+	if (layer === null) return { ok: false, why: "no derived layer is mounted" };
+	if (layer.sizes.length !== reading.positions.length)
+		return {
+			ok: false,
+			why: `${layer.sizes.length} sizes for ${reading.positions.length} systems`,
+		};
+	const d = (a) =>
+		Math.hypot(
+			a.x - reading.observer.x,
+			a.y - reading.observer.y,
+			a.z - reading.observer.z,
+		);
+	const pairs = reading.positions
+		.map((s, i) => ({ d: d(s), size: layer.sizes[i] }))
+		.sort((a, b) => a.d - b.d);
+	for (let i = 1; i < pairs.length; i++)
+		if (pairs[i].size > pairs[i - 1].size + 1e-9)
+			return {
+				ok: false,
+				why: `the system at ${pairs[i].d.toFixed(2)} ly draws ${pairs[
+					i
+				].size.toFixed(5)} against ${pairs[i - 1].size.toFixed(
+					5,
+				)} for the one at ${pairs[i - 1].d.toFixed(2)} ly`,
+			};
+	return {
+		ok: true,
+		why: `${pairs.length} mounted points, brightest at the closest`,
+	};
+}
+
 const before = await page.evaluate(() => window.__skyProbe.sky());
+const monotone = mountedSizesFall(before);
 
 check(
 	"the backdrop mounts two named point layers",
@@ -145,65 +208,51 @@ check(
 );
 
 check(
-	"every point sits at the backdrop radius, not at its distance",
+	"every point of both layers sits at the backdrop radius, not at its distance",
 	[before.faint, before.systems].every(
 		(layer) =>
 			layer !== null &&
 			layer.inBackdrop &&
-			Math.abs(layer.radius - before.backdropRadius) < 1e-3,
+			Math.abs(layer.minRadius - before.backdropRadius) < 1e-3 &&
+			Math.abs(layer.maxRadius - before.backdropRadius) < 1e-3,
 	),
-	`radius ${before.systems?.radius} against the page's ${before.backdropRadius}`,
+	`the derived layer spans ${before.systems?.minRadius} to ${before.systems?.maxRadius} against the page's ${before.backdropRadius}`,
 );
 
 check(
 	"the mounted sizes fall as the mounted distances rise",
-	// The pairing claim, read off the buffers the GPU was handed. The layer's
-	// points are index-aligned with `galaxy.systems` minus the observer, so the
-	// distances can be rebuilt here; if a rebuild ever wrote new bearings over
-	// old sizes — or the two buffers were swapped — a nearby system would draw
-	// small and a far one large, and every headless row would stay green because
-	// each buffer is correct on its own.
-	(() => {
-		if (before.systems === null) return false;
-		const here = before.positions.find((s) => s.index === before.systemIndex);
-		const d = (a) => Math.hypot(a.x - here.x, a.y - here.y, a.z - here.z);
-		const others = before.positions.filter((s) => s.index !== here.index);
-		const sizes = before.systems.sizes;
-		if (sizes.length !== others.length) return false;
-		const pairs = others
-			.map((s, i) => ({ d: d(s), size: sizes[i] }))
-			.sort((a, b) => a.d - b.d);
-		for (let i = 1; i < pairs.length; i++)
-			if (pairs[i].size > pairs[i - 1].size + 1e-9) return false;
-		return true;
-	})(),
-	"255 points, brightest at the nearest system",
+	monotone.ok,
+	monotone.why,
 );
 
 const jumped = await page.evaluate(() => window.__skyProbe.jumpToNearest());
 
 check(
-	"a jump reaches another system",
-	jumped.arrived,
-	`system ${jumped.from} to ${jumped.to} across ${jumped.distanceLy.toFixed(2)} ly`,
+	"a jump commits a course, charges the drive, and reaches another system",
+	jumped.committed && jumped.charged && jumped.arrived,
+	`system ${jumped.from} to ${jumped.to} across ${jumped.distanceLy.toFixed(
+		2,
+	)} ly — committed ${jumped.committed}, charged ${jumped.charged}`,
 );
 
 const after = await page.evaluate(() => window.__skyProbe.sky());
 
 check(
-	"a jump re-draws the derived sky",
+	"a jump re-draws the derived sky onto a geometry that is not the one before",
 	after.systems !== null &&
+		after.systems.reads === 1 &&
 		after.systems.positions.some((v, i) => v !== before.systems.positions[i]),
-	"the mounted positions differ after the arrival",
+	`the mounted positions differ, and the mounted geometry has survived ${after.systems?.reads} read — the boot one was a different object`,
 );
 
 check(
-	"a jump leaves the invented population exactly where it was",
+	"a jump leaves the invented population on the geometry it booted with",
 	after.faint !== null &&
+		after.faint.reads === before.faint.reads + 1 &&
 		after.faint.positions.length === before.faint.positions.length &&
 		after.faint.positions.every((v, i) => v === before.faint.positions[i]) &&
 		after.faint.sizes.every((v, i) => v === before.faint.sizes[i]),
-	`${after.faint?.count} points, byte-identical`,
+	`${after.faint?.count} points, same BufferGeometry after ${after.faint?.reads} reads, byte for byte`,
 );
 
 check(
