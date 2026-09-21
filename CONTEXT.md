@@ -527,8 +527,11 @@ _Avoid_: Zenith, galactic north (unqualified)
 **Core bearing**:
 The direction from here to the cluster's centre, in the observer's own sky. Worth
 stating because it is the one bearing that carries information rather than light —
-which is #100's measurement, and `galaxy-generation.md` §11 is where its figures
-are written down once. `coreBearing` in `src/galaxy-frame.ts`.
+which is #100's measurement. §11 of `galaxy-generation.md` is where the rule is
+written down once, and §12 is where the measured cone figures are — how much of a
+sky's other systems a star near the rim puts inside a cone on the centre, against
+what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core`.
+`coreBearing` in `src/galaxy-frame.ts`.
 _Avoid_: The way home, galactic down
 
 **Derived sky**:

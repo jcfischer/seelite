@@ -115,24 +115,43 @@ describe("the luma rule has one author", () => {
 	test("no second module declares it, under any name", () => {
 		// The number moved out of `planet-surface.ts` when the points layer
 		// needed it. A scan is the only form of this claim that a fifth consumer
-		// cannot walk past — and the scan has to look for the **value**, not for
-		// the identifier, because `const luma = 0.55` in a third module is the
-		// drift this is afraid of and it declares nothing called
-		// `PHOTOSPHERE_LUMA`. Both shapes are checked: the shipped name in two
-		// files, and a fresh binding of the literal anywhere else in `src/`.
+		// cannot walk past, and an identifier scan alone is not that scan: a copy
+		// renamed `const luma = 0.55` declares nothing called `PHOTOSPHERE_LUMA`,
+		// and that renaming is the drift this row exists to catch.
+		//
+		// So the row checks the **value** under any name that says what it is
+		// (any binding naming luma, at this value), and then stops — because a
+		// scan for the bare literal anywhere was tried, and it reported
+		// `WORKS_ROCK_KM` and `VIGNETTE_INNER`, two module-scope dials that are
+		// 0.55 of something else entirely. A guard that cries wolf on unrelated
+		// code is a guard someone deletes.
+		//
+		// What closes the remaining hole is not a value scan but a structural one:
+		// the rule is a *function* as much as a constant, and nothing can call it
+		// without naming its author. So every file that reaches for the rule is
+		// required to import it. A private copy can still be written by
+		// hand-copying the arithmetic — but it can no longer be *used* without the
+		// import showing up in the diff, which is the honest reach of a text scan
+		// and is stated as much here rather than claimed as proof.
 		const declared = srcFiles().filter((file) =>
 			/export const PHOTOSPHERE_LUMA\b/.test(codeOf(file)),
 		);
 		expect(declared).toEqual(["src/star-colour.ts"]);
 
+		const renamed =
+			/\b(?:const|let)\s+\w*(?:luma|Luma|LUMA)\w*\s*(?::\s*number)?\s*=\s*0\.55\b/;
 		const rebound = srcFiles()
 			.filter((file) => file !== "src/star-colour.ts")
-			.filter((file) =>
-				/\b(?:const|let)\s+\w*(?:luma|Luma|LUMA)\w*\s*(?::\s*number)?\s*=\s*0\.55\b/.test(
-					codeOf(file),
-				),
-			);
+			.filter((file) => renamed.test(codeOf(file)));
 		expect(rebound).toEqual([]);
+
+		const RULE =
+			/\b(?:rec709Luma|photosphereTintLinear|srgbToLinear|hexToLinearRgb)\b/;
+		const consumers = srcFiles()
+			.filter((file) => file !== "src/star-colour.ts")
+			.filter((file) => RULE.test(codeOf(file)))
+			.filter((file) => !/from "\.\/star-colour"/.test(codeOf(file)));
+		expect(consumers).toEqual([]);
 	});
 
 	test("the star surface reads it rather than restating it", () => {

@@ -99,13 +99,13 @@ function fig(label: string, x: number, digits = 2): string {
 }
 
 /** A copy sorted ascending, once. Every quantile below reads this copy. */
-function sortedCopy(xs: number[], label: string): number[] {
+function sortedCopy(xs: readonly number[], label: string): number[] {
 	if (xs.length === 0) throw new Error(`measure-sky-density: no ${label}`);
 	return [...xs].sort((a, b) => a - b);
 }
 
 /** The median of an *already sorted* array. */
-function medianOf(sorted: number[], label: string): number {
+function medianOf(sorted: readonly number[], label: string): number {
 	const mid = sorted.length >> 1;
 	return finite(
 		label,
@@ -113,15 +113,26 @@ function medianOf(sorted: number[], label: string): number {
 	);
 }
 
-function median(xs: number[], label = "median"): number {
+function median(xs: readonly number[], label = "median"): number {
 	return medianOf(sortedCopy(xs, label), label);
 }
 
-/** min / mean / median / max as one line. */
-function summarize(label: string, xs: number[], unit = ""): string {
-	const s = sortedCopy(xs, label);
-	const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
-	return `${label.padEnd(28)} n=${String(xs.length).padStart(7)}  min ${fig(
+/** min / mean / median / max over a series the caller has **already sorted**.
+ *
+ * The sorted copy is the expensive half of every row here (81,920 elements), and
+ * a mode that prints a summary and then a percentile of the same series was
+ * sorting it three times and holding three 640 kB copies of it. So the sort
+ * belongs to the caller and these two functions take its result; `summarize` and
+ * `quantile` below are the one-call convenience over them. A mean is a sum, so it
+ * reads the sorted copy — the multiset is the same either way.
+ */
+function summarizeSorted(
+	label: string,
+	s: readonly number[],
+	unit = "",
+): string {
+	const mean = s.reduce((a, b) => a + b, 0) / s.length;
+	return `${label.padEnd(28)} n=${String(s.length).padStart(7)}  min ${fig(
 		`${label} min`,
 		s[0],
 		3,
@@ -132,8 +143,22 @@ function summarize(label: string, xs: number[], unit = ""): string {
 	)}  max ${fig(`${label} max`, s[s.length - 1], 3)}${unit}`;
 }
 
-/** The value below which `p` of the sample lies. */
-function quantile(xs: number[], p: number, label: string): number {
+/** min / mean / median / max of an unsorted series: sorts it and defers. */
+function summarize(label: string, xs: readonly number[], unit = ""): string {
+	return summarizeSorted(label, sortedCopy(xs, label), unit);
+}
+
+/** The value below which `p` of the sample lies, over an already sorted series. */
+function quantileSorted(
+	s: readonly number[],
+	p: number,
+	label: string,
+): number {
+	return finite(label, s[Math.min(s.length - 1, Math.floor(p * s.length))]);
+}
+
+/** The value below which `p` of an unsorted sample lies. */
+function quantile(xs: readonly number[], p: number, label: string): number {
 	const s = sortedCopy(xs, label);
 	return finite(label, s[Math.min(s.length - 1, Math.floor(s.length * p))]);
 }
@@ -153,22 +178,33 @@ interface SkyNeeds {
 
 /** One observer's sky, reduced to what the calling mode asked for. */
 interface ObserverSky {
-	dists: number[];
-	elevAbs: number[];
-	fromCore: number[];
+	dists: readonly number[];
+	elevAbs: readonly number[];
+	fromCore: readonly number[];
 	observerRadiusLy: number;
 }
 
-const EMPTY: number[] = [];
+/** Handed out instead of allocating for a mode that did not ask for the series.
+ *
+ * Frozen, and the interface says `readonly`, because it is **one** array shared by
+ * all 81,920 observers: a mode whose push is mis-gated would otherwise append to
+ * the same buffer across the whole sweep and print a figure whose `n` says 81,920.
+ * The type is what makes that a compile error rather than a longer report.
+ */
+const EMPTY: readonly number[] = Object.freeze([]);
 
 function observerSky(
 	systems: readonly SystemRecord[],
 	observer: SystemRecord,
 	needs: SkyNeeds,
 ): ObserverSky {
-	const dists: number[] = needs.dists ? [] : EMPTY;
-	const elevAbs: number[] = needs.elevations ? [] : EMPTY;
-	const fromCore: number[] = needs.coreCone ? [] : EMPTY;
+	// Built only if asked for, and handed back as `EMPTY` otherwise: the corpus is
+	// 81,920 observers and a mode reads one of the three series at most. `null`
+	// rather than the frozen array while filling, so nothing can write to a buffer
+	// the sweep shares with every other observer.
+	let dists: number[] | null = null;
+	let elevAbs: number[] | null = null;
+	let fromCore: number[] | null = null;
 	// The centre is the origin (§3's density law is centred there), so the way in
 	// is the negated position. An observer standing exactly at the centre has no
 	// such direction; the generator ships none, and the guard below says so.
@@ -185,7 +221,7 @@ function observerSky(
 		if (other.index === observer.index) continue;
 		const delta = sub(other.pos, observer.pos);
 		const d = Math.sqrt(lengthSq(delta));
-		if (needs.dists) dists.push(finite("distance", d));
+		if (needs.dists) (dists ??= []).push(finite("distance", d));
 		const unit: Vec3 = { x: delta.x / d, y: delta.y / d, z: delta.z / d };
 		if (needs.elevations) {
 			// Clamped, because this is a dot product of unit vectors and a unit
@@ -194,15 +230,19 @@ function observerSky(
 			// threshold, so the point silently leaves the count. The cone arm
 			// below has always clamped; this one had not.
 			const sinLat = finite("sinLat", dot(unit, GALACTIC_NORMAL));
-			elevAbs.push(Math.abs(Math.asin(Math.max(-1, Math.min(1, sinLat)))));
+			(elevAbs ??= []).push(
+				Math.abs(Math.asin(Math.max(-1, Math.min(1, sinLat)))),
+			);
 		}
 		if (needs.coreCone)
-			fromCore.push(Math.acos(Math.max(-1, Math.min(1, dot(unit, coreDir)))));
+			(fromCore ??= []).push(
+				Math.acos(Math.max(-1, Math.min(1, dot(unit, coreDir)))),
+			);
 	}
 	return {
-		dists,
-		elevAbs,
-		fromCore,
+		dists: dists ?? EMPTY,
+		elevAbs: elevAbs ?? EMPTY,
+		fromCore: fromCore ?? EMPTY,
 		observerRadiusLy: finite(
 			"observer radius",
 			Math.sqrt(lengthSq(observer.pos)),
@@ -326,9 +366,14 @@ function modeSky(): void {
 			(EARTH_NAKEDEYE / SPHERE_SQ_DEG) * 1000,
 		)})`,
 	);
-	console.log(summarize("nearest other system ly", nearest));
+	// Sorted once each here, and read by both the summary below and the two
+	// percentiles further down. These are 81,920-element series, and this mode was
+	// sorting each of them three times over.
+	const nearestSorted = sortedCopy(nearest, "nearest other system ly");
+	const farthestSorted = sortedCopy(farthest, "farthest system ly");
+	console.log(summarizeSorted("nearest other system ly", nearestSorted));
 	console.log(summarize("median separation ly", mid));
-	console.log(summarize("farthest system ly", farthest));
+	console.log(summarizeSorted("farthest system ly", farthestSorted));
 	console.log(summarize("inverse-square spread mag", magSpread));
 
 	// How many of the 255 a size law with a saturation ceiling would saturate.
@@ -346,22 +391,17 @@ function modeSky(): void {
 			)} of all points)`,
 		);
 
+	// Every figure named before it is printed. These two rows used to carry six
+	// and eight `fig(...)` calls interleaved inside one template each, which is
+	// formatting welded to arithmetic: to read the sentence you had to unpick
+	// which `${}` was a number and which was a guard. `fig` still guards each one.
+	const ceilingShare = fig("ceiling share", censusAll.atCeiling / total, 4);
+	const ceilingPerSky = fig("ceiling per sky", censusAll.atCeiling / observers);
+	const floorShare = fig("floor share", censusAll.atFloor / total, 4);
+	const floorPerSky = fig("floor per sky", censusAll.atFloor / observers);
 	console.log(
-		`\nthe shipped size law: ${fig(
-			"ceiling share",
-			censusAll.atCeiling / total,
-			4,
-		)} of points saturate at the ceiling (${fig(
-			"ceiling per sky",
-			censusAll.atCeiling / observers,
-		)} of the 255), ${fig(
-			"floor share",
-			censusAll.atFloor / total,
-			4,
-		)} sit on its floor (${fig(
-			"floor per sky",
-			censusAll.atFloor / observers,
-		)} of the 255).`,
+		`\nthe shipped size law: ${ceilingShare} of points saturate at the ceiling ` +
+			`(${ceilingPerSky} of the 255), ${floorShare} sit on its floor (${floorPerSky} of the 255).`,
 	);
 	// Printed beside the shares, because a documented distance that is only ever
 	// *written down* is one that goes stale silently: #431's first round quoted
@@ -369,29 +409,31 @@ function modeSky(): void {
 	// world units rather than pixels on purpose — a px figure would need
 	// `STAR_PIXEL_SCALE` from `main.ts`, and a script reading a renderer dial
 	// across the Three.js boundary is how a documented px figure goes stale.
+	const closestLy = fig("closest pair ly", censusAll.minDistance, 3);
+	// What the closest pair would have been drawn as had the ceiling not caught
+	// it: the size law's own arithmetic, with the clamp taken out.
+	const closestUnclamped = BRIGHT_SIZE_K / censusAll.minDistance;
+	const unclampedSize = fig("unclamped size", closestUnclamped, 3);
+	const timesCeiling = fig(
+		"over ceiling",
+		closestUnclamped / BRIGHT_SIZE_MAX,
+		0,
+	);
+	const ceilingLy = fig("ceiling ly", BRIGHT_CEILING_LY);
+	const floorLy = fig("floor ly", BRIGHT_FLOOR_LY);
 	console.log(
-		`the clamps are at ${fig(
-			"ceiling ly",
-			BRIGHT_CEILING_LY,
-		)} ly (size ${fig("ceiling size", BRIGHT_SIZE_MAX, 4)}) and ${fig(
-			"floor ly",
-			BRIGHT_FLOOR_LY,
-		)} ly (size ${fig("floor size", BRIGHT_SIZE_MIN, 4)}); the closest pair in ` +
-			`the corpus is ${fig("min distance", censusAll.minDistance, 3)} ly, whose ` +
-			`unclamped size would be ${fig(
-				"unclamped size",
-				BRIGHT_SIZE_K / censusAll.minDistance,
-				3,
-			)} — ${fig(
-				"unclamped multiple",
-				BRIGHT_SIZE_K / censusAll.minDistance / BRIGHT_SIZE_MAX,
-				0,
-			)}× the ceiling.`,
+		`the clamps are at ${ceilingLy} ly (size ${fig(
+			"ceiling size",
+			BRIGHT_SIZE_MAX,
+			4,
+		)}) and ${floorLy} ly (size ${fig("floor size", BRIGHT_SIZE_MIN, 4)}); the ` +
+			`closest pair in the corpus is ${closestLy} ly, whose unclamped size would ` +
+			`be ${unclampedSize} — ${timesCeiling}× the ceiling.`,
 	);
 	// Each quantile computed once and read twice, with a label that would name it
 	// in a throw rather than "r" and "r2".
-	const p01Near = quantile(nearest, 0.01, "1%ile nearest");
-	const p99Far = quantile(farthest, 0.99, "99%ile farthest");
+	const p01Near = quantileSorted(nearestSorted, 0.01, "1%ile nearest");
+	const p99Far = quantileSorted(farthestSorted, 0.99, "99%ile farthest");
 	console.log(
 		`\nthe size law reads distance, so these are its inputs: 1%ile nearest ${fig(
 			"1%ile nearest",
