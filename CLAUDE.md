@@ -5,19 +5,25 @@ Vite + Three.js, static bundle, no backend, no runtime network requests.
 
 ## Read the map first
 
-Work on this repo is planned as **two work-graph maps**, and the map is the
+Work on this repo is planned as **two work-graph maps**, and both are the
 authority on what to build and how. Which one you read is decided by what you
-are changing: **#1 is the platform** — rendering, performance, probes, controls,
-save, station geometry, the sky — and **#460 is gameplay**, meaning missions, the
-Rama expedition story, combat consequence, onboarding and the progression
-ladder. Anything a *pilot does* is #460's; anything that *draws or measures* is
-#1's.
+are changing: **#1 is the machine** — rendering, performance, probes, the input
+and binding layer, the save format, station geometry, the sky — and **#460 is
+the fiction** — missions, the Rama expedition story, combat consequence,
+onboarding and the progression ladder.
+
+The boundary is engine against fiction, not player against world. A pilot
+presses a key and the game saves, so *controls* and *save* are #1's even though
+a pilot does both; what the fiction asks of a pilot — what work there is, what
+it means, what the world does about it — is #460's. When a node sits on the
+line, it belongs to the map whose Constraints its answer could violate.
 
 ```bash
-soma graph node 1          # the platform map: destination, constraints, notes, decisions
-soma graph frontier 1      # what is takeable right now on the platform
-soma graph node 460        # the gameplay map (split out of #1 on 2026-09-21)
-soma graph frontier 460    # what is takeable right now in gameplay
+# --repo is not optional; see below
+soma graph node 1 --repo jcfischer/seelite      # the machine map: destination, constraints, notes, decisions
+soma graph frontier 1 --repo jcfischer/seelite  # what is takeable right now on the machine
+soma graph node 460 --repo jcfischer/seelite    # the fiction map (split out of #1 on 2026-09-21)
+soma graph frontier 460 --repo jcfischer/seelite
 ```
 
 **`--repo jcfischer/seelite` on every `soma graph` verb.** Without it the verb

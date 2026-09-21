@@ -2,6 +2,17 @@
 
 Author: Codex / Ivy · 2026-09-15 · Status: proposal, not an approved game contract.
 
+> **Read as a dated record, not as current repo state or canonical vocabulary.**
+> Landed unedited on 2026-09-21 as the story source [#460](https://github.com/jcfischer/seelite/issues/460)'s Notes link to. Two consequences. Its
+> present-tense claims about the codebase — `SELECTED_FORM.trade`, what the relay
+> slice implements, what UI exists — were read at local main `c0a89ac` on
+> 2026-09-15 and have **not** been re-checked; verify any of them before acting.
+> And it predates `CONTEXT.md`'s glossary, so it says *mission*, *legal status*,
+> *reputation*, *pirate base*, *beacon*, *slot* and *active request* where the
+> canonical terms are **Lead**, **Standing**, **Pirate relay**, **Berth** and
+> **Tracked request**. A node written against this document uses the glossary's
+> words, not this document's.
+
 Principal correction, same day: **the pirate sensor relay prototype is partly built, and mission selection UI does not exist yet.** The next step is to inspect and finish the existing relay slice while providing its request/lead interface. References below to a first prototype describe the desired complete loop, not a proposal to restart it. The Babylon 5 extension at the end revises the sequence accordingly.
 
 ## Recommendation
