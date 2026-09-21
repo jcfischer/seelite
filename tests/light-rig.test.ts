@@ -33,21 +33,34 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	FLOOR_FRACTION_OF_READING,
+	floorUnder,
+	HULL_LUMA_BAND,
+	HULL_LUMA_CALIBRATION,
+	HULL_LUMA_FLOOR_OF,
+	HULL_LUMA_FLOORS,
+	HULL_LUMA_MARGINS,
+	SHIPPED_FLOORS,
+	SUBJECT_CHANGE_OTHER_ROWS,
+	SUBJECT_CHANGE_QUARTILE_DROP,
+} from "../scripts/lib/hull-luma.mjs";
+import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
+import {
 	BAKE_STAR_DIR,
 	EMISSIVE_CEILING,
 	ENV_HEIGHT,
 	ENV_WIDTH,
 	EXPOSURE,
-	LIGHT_RIG,
 	envRadiance,
 	envRotation,
 	equirectEnvironment,
+	LIGHT_RIG,
 } from "../src/light-rig";
-import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
+import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 import { SHIP_EMISSIVE_INTENSITIES } from "../src/ship-mesh";
+import { DEFAULT_HULL_FINISH } from "../src/ship-surface";
 import { STATION_INTERIOR_EMISSIVE_INTENSITIES } from "../src/station-interior-mesh";
 import { STATION_EMISSIVE_INTENSITIES } from "../src/station-mesh";
-import { DEFAULT_SETTINGS, settingSpec } from "../src/settings";
 
 /** A warm G-type tint, and a neutral one. #59's finding is that the neutral end
  *  is where an emissive tint stops carrying detail; the same palette is used
@@ -391,5 +404,163 @@ describe("the rotation onto the star", () => {
 		const a = envRotation(dir);
 		const b = envRotation(big);
 		for (let i = 0; i < 4; i++) expect(b[i]).toBeCloseTo(a[i], 9);
+	});
+});
+
+/**
+ * The painted-hull calibration, and why it is derived rather than typed.
+ *
+ * Why those rows are a property of the hull finish rather than of the lighting,
+ * and every figure behind it, is `scripts/lib/hull-luma.mjs`'s to state. Nothing
+ * of it is restated here: two hand-kept copies of one measurement is the shape
+ * that drifted last time.
+ *
+ * What is checked here is the part of it that can be executed:
+ *
+ * - **The calibration names the finish the game ships.** When the default moves,
+ *   this goes red naming it, instead of three browser rows going red and reading
+ *   as a lighting regression.
+ * - **The floors are the module's own derivation**, not literals re-typed beside
+ *   it — which is how the old constants came to sit 37% under a reading their
+ *   docstring described as 10% under.
+ * - **Every margin is inside its bounds**, and there are three of them: above
+ *   the lane spread, inside the drop it must still catch, and never tighter than
+ *   the band floor that shipped before this module existed.
+ */
+describe("the painted-hull luma calibration", () => {
+	// Both derived from the module rather than re-typed: a metric added to
+	// `HULL_LUMA_MARGINS` joins every loop below on its own, instead of silently
+	// getting no coverage from a list this file happens to hold.
+	const METRICS = Object.keys(HULL_LUMA_MARGINS) as Array<
+		keyof typeof HULL_LUMA_MARGINS
+	>;
+
+	test("is recorded against the finish the game actually ships", () => {
+		// The limit of this, said plainly: it matches a *name*. A change to what
+		// `worn` renders leaves this green and lands as two numeric reds, exactly
+		// as in #294 — that case is what the quartile margin's upper bound is
+		// for, and no assertion on an id can cover it.
+		expect<string>(HULL_LUMA_CALIBRATION.finish).toBe(DEFAULT_HULL_FINISH);
+	});
+
+	test("every floor is the module's own derivation from its reading", () => {
+		// Through the module's own `floorUnder`, rounding included: re-implementing
+		// the arithmetic here compares against a number the module never produced.
+		//
+		// What this catches is a floor typed in as a literal beside the derivation,
+		// once a reading moves under it. It cannot catch a literal that still
+		// equals the derivation, which is not drift.
+		for (const metric of METRICS)
+			expect(HULL_LUMA_FLOOR_OF[metric]).toBe(
+				floorUnder(HULL_LUMA_CALIBRATION[metric], HULL_LUMA_MARGINS[metric]),
+			);
+	});
+
+	test("the band is an ordered band and the calibrated peak is inside it", () => {
+		// Why it is a band and not a floor, and why only one end is derived, is
+		// `HULL_LUMA_BAND`'s docstring to say.
+		expect(HULL_LUMA_BAND.min).toBeLessThan(HULL_LUMA_BAND.max);
+		expect(HULL_LUMA_CALIBRATION.peak).toBeGreaterThan(HULL_LUMA_BAND.min);
+		expect(HULL_LUMA_CALIBRATION.peak).toBeLessThan(HULL_LUMA_BAND.max);
+	});
+
+	test("no margin is small enough to be decided by which rasteriser ran", () => {
+		// A rail rather than a bound, and the module says so: at the margins here
+		// this clears by 30x or more, so it rejects a margin small enough to be a
+		// typo and nothing a person would choose on purpose. Kept because the
+		// typo is the case that would send a later reader hunting a renderer bug.
+		for (const metric of METRICS)
+			expect(
+				HULL_LUMA_CALIBRATION[metric] * HULL_LUMA_MARGINS[metric],
+			).toBeGreaterThan(HULL_LUMA_CALIBRATION.laneSpread[metric]);
+	});
+
+	test("every floor with a shipped counterpart stays at or under it", () => {
+		// The bound that is not about this machine. Every reading here is one M1
+		// Pro on two rasterisers, so a floor derived from its peak spends headroom
+		// the previous band reserved for backends nobody here can measure. Loosen
+		// freely; tightening needs evidence this repo does not have.
+		// The ratchet has no exemption: every metric has an entry, and every
+		// derived floor sits at or under it. An earlier pass carved the quartile
+		// out and then tightened it anyway; the module has the reason that is
+		// unnecessary.
+		expect(Object.keys(SHIPPED_FLOORS).sort()).toEqual([...METRICS].sort());
+		for (const [metric, shipped] of Object.entries(SHIPPED_FLOORS))
+			expect(HULL_LUMA_FLOOR_OF[metric]).toBeLessThanOrEqual(shipped);
+	});
+
+	test("what the probe reads is what these bounds were asserted over", () => {
+		// The gap this closes: every bound below runs over `HULL_LUMA_FLOOR_OF`,
+		// and `probe-light-rig.mjs` imports `HULL_LUMA_BAND` and
+		// `HULL_LUMA_FLOORS`. Without this row a literal typed into either would
+		// tighten past its shipped floor with the whole suite green — which is the
+		// same defect as a literal floor beside a derivation, one export along.
+		expect(HULL_LUMA_BAND.min).toBe(HULL_LUMA_FLOOR_OF.peak);
+		expect(HULL_LUMA_FLOORS).toEqual(
+			Object.fromEntries(
+				Object.entries(HULL_LUMA_FLOOR_OF).filter(([m]) => m !== "peak"),
+			),
+		);
+	});
+
+	test("the calibration's shape is the one the floors are derived from", () => {
+		// Cheap, and it guards the boundary between a typechecked tier and a
+		// plain-JS module: a key renamed or dropped in `hull-luma.mjs` would
+		// otherwise reach the arithmetic as `undefined` and derive `NaN`.
+		expect(METRICS.length).toBeGreaterThan(0);
+		for (const metric of METRICS) {
+			expect(Number.isFinite(HULL_LUMA_CALIBRATION[metric])).toBe(true);
+			expect(Number.isFinite(HULL_LUMA_CALIBRATION.laneSpread[metric])).toBe(
+				true,
+			);
+			expect(Number.isFinite(HULL_LUMA_MARGINS[metric])).toBe(true);
+			expect(Number.isFinite(HULL_LUMA_FLOOR_OF[metric])).toBe(true);
+		}
+		// The rest of what this file dereferences, so a dropped export fails here
+		// by name rather than as arithmetic on `undefined` three tests later.
+		expect(floorUnder).toHaveLength(2);
+		for (const shipped of Object.values(SHIPPED_FLOORS))
+			expect(Number.isFinite(shipped)).toBe(true);
+		expect(Number.isFinite(SUBJECT_CHANGE_QUARTILE_DROP)).toBe(true);
+		for (const row of ["peak", "median"] as const) {
+			expect(Number.isFinite(SUBJECT_CHANGE_OTHER_ROWS[row].before)).toBe(true);
+			expect(Number.isFinite(SUBJECT_CHANGE_OTHER_ROWS[row].after)).toBe(true);
+		}
+	});
+
+	test("no floor loosens far enough to stop rejecting a hull gone dark", () => {
+		// The other side of the ratchet. Without it, "may loosen freely" is true
+		// all the way to a floor nothing can fail — a median margin of 0.9 derives
+		// 8.11 and passes every other assertion in this block.
+		for (const metric of METRICS)
+			expect(HULL_LUMA_FLOOR_OF[metric]).toBeGreaterThan(
+				HULL_LUMA_CALIBRATION[metric] * FLOOR_FRACTION_OF_READING,
+			);
+	});
+
+	test("the other two rows could not have caught that change, which is why they carry no bound", () => {
+		// The sentence in the module that explains why only the quartile gets an
+		// upper bound, made executable. If either of these ever grows past its
+		// margin, the claim that the quartile is the discriminating row stops
+		// being true and the bound below belongs somewhere else too.
+		for (const metric of ["peak", "median"] as const) {
+			const { before, after } = SUBJECT_CHANGE_OTHER_ROWS[metric];
+			expect((before - after) / before).toBeLessThan(HULL_LUMA_MARGINS[metric]);
+		}
+	});
+
+	test("the quartile's margin is still tighter than the change it exists to catch", () => {
+		// The upper bound, and it is only meaningful on the quartile: of the three
+		// rows, that is the one `ab47a33` actually tripped. The peak and the median
+		// moved by less than any workable margin, so the quartile is the
+		// discriminating row and its margin has to stay well inside that drop.
+		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
+			SUBJECT_CHANGE_QUARTILE_DROP,
+		);
+		// Not merely inside it: a margin at 30% against a 31% drop would pass this
+		// and catch nothing in practice.
+		expect(HULL_LUMA_MARGINS.lowerQuartile).toBeLessThan(
+			SUBJECT_CHANGE_QUARTILE_DROP / 2,
+		);
 	});
 });
