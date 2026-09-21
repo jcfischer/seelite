@@ -848,8 +848,14 @@ can check.
   is `sin 30° = 1/2` — in about **one system in two** the band runs within 30° of
   the star, and that figure does not depend on where in the system's sky the star
   sits. The clean case is the rare one: the pole within 30° of the star *or its
-  antipode* — `1 − cos 30° = 0.134`, one system in seven — is what sets the band
-  and the core bearing 60–90° off the glare. Accepted on the
+  antipode* — `1 − cos 30° = 0.134`, one system in seven — is what puts the
+  **band** 60–90° off the glare, because the band is the great circle perpendicular
+  to that pole. It constrains nothing about the **core bearing**, which is not in
+  the band: a system standing near the flattening axis (§4's `systemFromPosition`
+  divides `y` by `Q`) can have the core near the pole and therefore near its own
+  star. No row measures core bearing against `frame.pole`, and until one does this
+  sentence is about the band alone — as written before #430 it claimed both.
+  Accepted on the
   principal's ruling rather than engineered away: a rejection rule makes the frame
   a loop instead of a draw, and couples which way the sky is drawn to where the
   system's own star sits — which is the coupling every domain tag in `domains.ts`
@@ -883,7 +889,11 @@ can check.
 ### The flattening is geometry, not a distortion to undo
 
 `systemFromPosition` divides a position's `y` by `GALAXY_FLATTENING_Q`. That
-quotient is the **profile coordinate** the §4 gradients are written against, and
+quotient is the **profile coordinate** the §4 gradients are written against —
+"profile" in §3's and §4's sense, the distribution's own radial argument, which is
+what `profileRadiusLy` is named for. It is not the _Avoid_ alias for a **Commander**,
+which `CONTEXT.md` scopes to player-facing text; this is the spec talking to itself
+about a gradient. And
 it belongs there and only there: the stored position *is* the fiction's shape, an
 oblate cluster of 256 systems, so a bearing is taken from the stored positions
 exactly as they stand. Unflattening before differencing produces a unit vector

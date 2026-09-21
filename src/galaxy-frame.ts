@@ -62,7 +62,10 @@
  *
  * No Three.js, and no `Object3D` in sight: a frame is a unit quaternion over
  * plain objects, so the headless tier can hold it element by element and
- * `main.ts` has three lines of wrapping and no decisions.
+ * A caller needs three lines of wrapping and no decisions: look up the system's
+ * frame, compose the direction, read the vector out. Nothing here asks the caller
+ * to decide anything, which is the point of returning a frame rather than a
+ * matrix. No caller in `src/` does that yet — see who reads this, below.
  *
  * ## Who reads this, today
  *

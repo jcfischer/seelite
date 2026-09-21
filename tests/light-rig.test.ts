@@ -32,7 +32,6 @@
  * flipped bake, zero on both arms with no bake at all.
  */
 import { describe, expect, test } from "bun:test";
-import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
 import {
 	FLOOR_FRACTION_OF_READING,
 	floorUnder,
@@ -97,8 +96,10 @@ const luma = ([r, g, b]: [number, number, number]) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
 
 // **A few ulps is the wrong unit for this, and the history says why.** Two platforms
-// have run this comparison: macOS worst at 4.2·10⁻¹⁶ (1.9 ulps) and GitHub's Linux
-// runner at 9.2·10⁻¹⁶ (4.1). `acos` and then `sin(a/2)`, `cos(a/2)` is not the same
+// have run this comparison. Observed on macOS: 4.2·10⁻¹⁶ (1.9 ulps); observed on
+// GitHub's Linux runner: 9.2·10⁻¹⁶ (4.1) — and *observed* is the whole of what is
+// known, because a row that throws on its first exceedance reports only what it saw
+// before quitting, so neither platform's maximum has been measured. `acos` and then `sin(a/2)`, `cos(a/2)` is not the same
 // sequence of roundings as the half-angle construction, so two correct forms of a
 // shortest arc land a few ulps apart, and *which* few is a property of the libm. The
 // bound here was `2 ** -51` — two ulps — for three rounds, and the row was **red on CI
@@ -109,12 +110,13 @@ const luma = ([r, g, b]: [number, number, number]) =>
 // agree about: twelve orders below the smallest difference this file treats as real
 // (the band's tightest aim error, 1.4·10⁻⁶) and fifteen below a wrong rotation (order
 // 1), so no refactor hides under it and no libm's rounding reaches it. Two assumptions
-// the first fix got wrong, both corrected by something rather than by luck: the
-// runner's 4.1 ulps is a *first* violation and not a maximum, because a row that
-// throws on the first exceedance reports only what it saw before quitting; and the
-// antiparallel decade is not part of this margin at all, since there the disagreement
-// is the cancellation the closing arm documents (2.4·10⁻¹² at ε = 1.1·10⁻⁹) and not
-// rounding.
+// the first fix got wrong, both corrected by something rather than by luck: it
+// assumed the exceedance came from the sweep's near-antiparallel directions and
+// filtered them out, and the row's own count assertion reddened — this spread holds
+// one such direction, by name — so the exceedance was at ordinary directions all
+// along; and it treated the antiparallel decade as part of this margin, when there the
+// disagreement is the cancellation the closing arm documents (2.4·10⁻¹² at
+// ε = 1.1·10⁻⁹) and not rounding.
 const REFACTOR_TOLERANCE = 1e-14;
 
 describe("the radiance model is a star and a floor", () => {
@@ -459,6 +461,63 @@ describe("the rotation onto the star", () => {
 		return [x / n, y / n, z / n, w / n];
 	}
 
+	/** A direction `eps` short of straight behind the bake's own star, on the great
+	 *  circle through it and +Y. The band's rows are stated in ε because that is
+	 *  the quantity the two thresholds are compared on. */
+	function antiparallelDir(eps: number): [number, number, number] {
+		return [-(1 - eps), Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))), 0];
+	}
+
+	/** The rotation that undoes `q`: a unit quaternion's inverse is its conjugate.
+	 *  One place spells it, because the band arm and the closing arm have to turn
+	 *  back through their inverses the same way or their comparison is nothing. */
+	function inv(
+		q: [number, number, number, number],
+	): [number, number, number, number] {
+		return [-q[0], -q[1], -q[2], q[3]];
+	}
+
+	/** How far the two rotations make the sampled environment disagree, each turned
+	 *  back through its own inverse first — which is how the renderer's map is read
+	 *  — over the 202 directions this file already sweeps. One copy, for the same
+	 *  reason the band arm and the closing arm share `antiparallelDir`. */
+	function worstRadianceDelta(
+		a: [number, number, number, number],
+		b: [number, number, number, number],
+	): number {
+		const aInv = inv(a);
+		const bInv = inv(b);
+		let worst = 0;
+		for (const w of directions(200)) {
+			const x = envRadiance(apply(aInv, w), WARM);
+			const y = envRadiance(apply(bInv, w), WARM);
+			for (let i = 0; i < 3; i++)
+				worst = Math.max(worst, Math.abs(x[i] - y[i]));
+		}
+		return worst;
+	}
+
+	/** How far a rotation leaves the environment's own star from the direction it
+	 *  was meant to land — the aim error, in units of direction. */
+	function aimError(
+		q: [number, number, number, number],
+		want: readonly [number, number, number],
+	): number {
+		const landed = apply(q, BAKE_STAR_DIR);
+		return Math.hypot(
+			landed[0] - want[0],
+			landed[1] - want[1],
+			landed[2] - want[2],
+		);
+	}
+
+	/** A measured figure checked to a relative band: the literal is a witness and
+	 *  not the authority, so the arithmetic owns the claim and a moved measurement
+	 *  reddens a row rather than invalidating a paragraph somewhere else. */
+	function within(got: number, want: number, rel = 0.02): void {
+		expect(Math.abs(got - want)).toBeLessThanOrEqual(rel * Math.abs(want));
+	}
+
 	test("a star direction with no direction in it is refused, not rotated", () => {
 		// The one behaviour change in this refactor that is not an aim correction:
 		// where the deleted inline form divided by a length of zero and handed back a
@@ -534,53 +593,6 @@ describe("the rotation onto the star", () => {
 		// against the number a run produced — so the literals are not the authority,
 		// the arithmetic is, and anything that moves them reddens this row instead of
 		// quietly invalidating a paragraph somewhere else.
-		// A direction `eps` short of straight behind the bake's own star.
-		const antiparallelDir = (eps: number): [number, number, number] => [
-			-(1 - eps),
-			Math.sqrt(Math.max(0, 1 - (1 - eps) * (1 - eps))),
-			0,
-		];
-		// How far the two rotations make the sampled environment disagree, with each
-		// turned back through its own inverse first — which is how the renderer's map
-		// is read — over the 202 directions this file already sweeps. One copy,
-		// because the band arm and the closing arm have to be the same measurement or
-		// their comparison means nothing.
-		const worstRadianceDelta = (
-			a: [number, number, number, number],
-			b: [number, number, number, number],
-		): number => {
-			const aInv: [number, number, number, number] = [
-				-a[0],
-				-a[1],
-				-a[2],
-				a[3],
-			];
-			const bInv: [number, number, number, number] = [
-				-b[0],
-				-b[1],
-				-b[2],
-				b[3],
-			];
-			let worst = 0;
-			for (const w of directions(200)) {
-				const x = envRadiance(apply(aInv, w), WARM);
-				const y = envRadiance(apply(bInv, w), WARM);
-				for (let i = 0; i < 3; i++)
-					worst = Math.max(worst, Math.abs(x[i] - y[i]));
-			}
-			return worst;
-		};
-		const aimError = (
-			q: [number, number, number, number],
-			want: readonly [number, number, number],
-		): number => {
-			const landed = apply(q, BAKE_STAR_DIR);
-			return Math.hypot(
-				landed[0] - want[0],
-				landed[1] - want[1],
-				landed[2] - want[2],
-			);
-		};
 		const BAND = [
 			{ eps: 1e-12, oldAim: 1.4142e-6, radiance: 9.4709e-6 },
 			{ eps: 1e-11, oldAim: 4.4721e-6, radiance: 2.9947e-5 },
@@ -588,8 +600,6 @@ describe("the rotation onto the star", () => {
 			{ eps: 5e-10, oldAim: 3.1623e-5, radiance: 2.1158e-4 },
 			{ eps: 9e-10, oldAim: 4.2426e-5, radiance: 2.8377e-4 },
 		];
-		const within = (got: number, want: number, rel = 0.02) =>
-			expect(Math.abs(got - want)).toBeLessThanOrEqual(rel * Math.abs(want));
 		for (const { eps, oldAim: pinned, radiance: pinnedRadiance } of BAND) {
 			const dir = antiparallelDir(eps);
 			const fresh = envRotation(dir);
@@ -614,13 +624,15 @@ describe("the rotation onto the star", () => {
 			expect(worst).toBeGreaterThan(0);
 			expect(worst).toBeLessThan(1 / 255);
 		}
-		// **The band closes, and "closes" is a smaller claim than it sounds.** Past the old threshold the two arms are the same
-		// computation, and this is the row that says "the refactor changed nothing
-		// else" rather than merely asserting it: one ε outside, the quaternions agree
-		// agree to a bound set by the conditioning above — one ulp divided by ε,
-		// measured at 2.4·10⁻¹² on the runner and 10⁻¹⁶ here, so an ulp-level claim
-		// about components at this ε is a claim about a platform — and the sampled
-		// environment cannot tell them apart at the scale this row is about.
+		// **The band closes, and "closes" is a narrower claim than it first said.**
+		// This is the row standing behind "the refactor changed nothing else", and
+		// past the old threshold what it can honestly say is that the two arms make
+		// the same *decision* — both take a shortest arc — not that they compute it
+		// identically. Their components differ by the conditioning above, one unit in
+		// the last place divided by ε: 2.4·10⁻¹² measured on the runner against 10⁻¹⁶
+		// here, which is exactly why an ulp-level claim about components at this ε is
+		// a claim about a platform. What closes is the difference the row is about: the
+		// environment the rotation bakes cannot tell the two apart.
 		const closedDir = antiparallelDir(1.1e-9);
 		const closedFresh = envRotation(closedDir);
 		const closedStale = legacyEnvRotation(closedDir);

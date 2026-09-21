@@ -507,7 +507,7 @@ in, and the renderer draws. Its reference plane is `z = 0`, the planets' orbital
 plane, and `hud.ts`'s attitude reference calls its normal "up". Distinct from the
 **Galactic frame**, which it has no fixed relation to: a system's planets and a
 cluster 24 light years across are not coplanar by anything but coincidence.
-_Avoid_: World space (unqualified), ecliptic, local frame
+_Avoid_: World space (unqualified), ecliptic
 
 **Sky frame**:
 The seeded rotation that carries the **Galactic frame** into one system's
@@ -516,7 +516,7 @@ particular pilot's sky. One per system, drawn from its own domain tag, isotropic
 over rotations — what that buys and what it costs is §11's to say, including
 that an isotropic draw rules nothing out. `src/galaxy-frame.ts` owns the
 arithmetic; `galaxy-generation.md` §11 owns the ruling.
-_Avoid_: Attitude (that is the ship's own quaternion), camera frame
+_Avoid_: Attitude (that is the ship's own quaternion)
 
 **Galactic pole**:
 Where a **Sky frame** lands the cluster's reference-plane normal — the direction

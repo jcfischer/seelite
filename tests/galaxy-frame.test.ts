@@ -548,6 +548,24 @@ describe("coreBearing", () => {
 				(r) => coreBearing(skyFrame(r.seed), r.pos) !== null,
 			),
 		).toBe(true);
+		// **And how wide the refusal is allowed to be, which nothing measured until
+		// it was flown.** Widening `BEARING_MIN_LY` from 1e-9 ly to 1e-2 ly — a
+		// million-fold, still far below any real separation — reddened nothing in this
+		// suite, which is how the sixth round found out: the row above proves the
+		// threshold is not *too narrow to be a live case*, and says nothing at all
+		// about too wide. What turns that into a detector is the margin, so the row
+		// takes the threshold off the declaration rather than restating it, and asks
+		// how much of the cluster's own geometry sits above it. Six orders is the
+		// claim this module makes in its comment; here it is an assertion, so a
+		// threshold grown into real geometry is a red row and not a quiet refusal.
+		const declared = Number(
+			codeOf("src/galaxy-frame.ts").match(
+				/const BEARING_MIN_LY = ([\d.e+-]+);/,
+			)?.[1],
+		);
+		expect(declared).toBeGreaterThan(0);
+		const nearest = Math.min(...galaxy.systems.map((r) => length(r.pos)));
+		expect(nearest / declared).toBeGreaterThanOrEqual(1e6);
 	});
 
 	test("the core is overhead in some systems and underfoot in others", () => {

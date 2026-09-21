@@ -61,6 +61,18 @@ const leastParallelAxis = (v: Vec3): Vec3 =>
 			? v3(0, 1, 0)
 			: v3(0, 0, 1);
 
+/** `v` normalised, or `null` when there is no direction to normalise.
+ *
+ *  The tolerance is one claim, so it is one expression. A vector that came out of
+ *  a normalisation and is not unit is either a zero vector or a NaN, and neither
+ *  has a direction to give. Written out at each call site — and it was, four
+ *  times — the same bound drifts: loosen one copy and the others are silently
+ *  stricter, a difference no row can see from outside. */
+const unitOrNull = (v: Vec3): Vec3 | null => {
+	const u = normalizeOr(v, v3(0, 0, 0));
+	return lengthSq(u) < 1 - 1e-9 ? null : u;
+};
+
 /** A rotation through `angle` radians, right-handed about `axis`, which need not
  *  be normalised.
  *
@@ -71,8 +83,8 @@ const leastParallelAxis = (v: Vec3): Vec3 =>
  *  aimed at nothing (#206). {@link shortestArc} returns `null` instead, because
  *  there the bad direction is the world's, not the caller's. */
 export function quatAxisAngle(axis: Vec3, angle: number): Quat4 {
-	const unit = normalizeOr(axis, v3(0, 0, 0));
-	if (lengthSq(unit) < 1 - 1e-9)
+	const unit = unitOrNull(axis);
+	if (unit === null)
 		throw new Error("quatAxisAngle: an axis with no direction in it");
 	const half = angle / 2;
 	const s = Math.sin(half);
@@ -117,14 +129,19 @@ export function quatAxisAngle(axis: Vec3, angle: number): Quat4 {
  *   place they are written down.
  */
 export function shortestArc(from: Vec3, to: Vec3): Quat4 | null {
-	const a = normalizeOr(from, v3(0, 0, 0));
-	const b = normalizeOr(to, v3(0, 0, 0));
-	if (lengthSq(a) < 1 - 1e-9 || lengthSq(b) < 1 - 1e-9) return null;
+	const a = unitOrNull(from);
+	const b = unitOrNull(to);
+	if (a === null || b === null) return null;
 
 	const c = dot(a, b);
 	if (c < -1 + 1e-12) {
+		// No reachability check on the cross product, and that is arithmetic rather
+		// than optimism. `leastParallelAxis` picks the world axis whose component in
+		// `a` is smallest, so for a unit `a` that component is at most 1/√3 and
+		// |a × axis|² = 1 − (a·axis)² ≥ 2/3: the perpendicular cannot come out
+		// degenerate. A guard here was a branch no row could ever redden, and a
+		// branch nobody can redden is a branch nobody knows the truth of.
 		const axis = normalizeOr(cross(a, leastParallelAxis(a)), v3(0, 0, 0));
-		if (lengthSq(axis) < 1 - 1e-9) return null;
 		// A half turn: `w = cos(π/2) = 0`, so the quaternion is the axis itself.
 		return [axis.x, axis.y, axis.z, 0];
 	}
