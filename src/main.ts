@@ -594,6 +594,7 @@ import {
 } from "./save-badge";
 import { marketStationOf } from "./market";
 import { holdSummary } from "./hold";
+import type { HoldBids } from "./hold-view";
 import { exposeMarketLaw } from "./market-probe-hook";
 import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
@@ -11733,6 +11734,23 @@ class Game {
 						this.orientation,
 					)
 				: null,
+			// #445's manifest, from #443's projection — the one the trade
+			// screen's hold line and the till's refusal already read, so the
+			// three cannot disagree about what is aboard.
+			//
+			// **Unconditional, and that is the node's own instruction: measure
+			// before you cache.** Gating it on the open tab was written and
+			// withdrawn, because the closed arm has to hand the state
+			// *something*, and a fabricated empty hold is a figure that is
+			// wrong rather than absent. The scan is over the cargo map and the
+			// accepted jobs, and this method already calls `holdSummary` once
+			// for the request board (#446).
+			hold: holdSummary(this.commander, this.requests),
+			// The value column is a **docked** fact. Built from the console's
+			// own priced rows — which are memoised — rather than from a second
+			// market call, so the figure on this page is the figure the till
+			// would pay, and `null` in flight rather than a stale one.
+			holdBids: this.holdBids(dockContext),
 			mode: this.regime === "cruise" ? "CRUISE" : "NORMAL FLIGHT",
 			throttle: `${(this.throttle * 100).toFixed(0)}%`,
 			speed: velocity.speed,
@@ -11956,6 +11974,24 @@ class Game {
 		}
 		this.requestRevision += 1;
 		this.updateCockpit();
+	}
+
+	/**
+	 * What the docked station pays for one unit of each good it trades (#445).
+	 *
+	 * The **bid**, which is what a sale is paid — not the ask the BUY column
+	 * shows. Read off the console's own priced rows, so the Hold page and the
+	 * Market tab cannot quote different figures for the same good, and `null`
+	 * away from a station rather than a figure from wherever the ship last was.
+	 */
+	private holdBids(context = this.dockedStationContext()): HoldBids {
+		const screen = this.stationConsoleState(context);
+		if (!screen) return null;
+		const bids = new Map<string, number>();
+		for (const row of screen.market)
+			if (row.listed && row.sellCr !== undefined)
+				bids.set(row.commodity.name, row.sellCr);
+		return bids;
 	}
 
 	private stationConsoleState(context = this.dockedStationContext()) {

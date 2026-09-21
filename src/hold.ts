@@ -28,7 +28,7 @@
  */
 import { type CommodityUnit, commodity } from "./market";
 import { type RequestsState, entrustedTonnesAboard } from "./requests";
-import type { RequestStation } from "./requests";
+import type { RequestStation, RequestStatus } from "./requests";
 import { type CommanderState, commanderHold } from "./station-commerce";
 
 /** Whose goods a line is. The requester's are excluded from sale (§4). */
@@ -51,10 +51,21 @@ export interface HoldLine {
 	amount: number;
 	unit: CommodityUnit;
 	owner: HoldOwner;
-	/** Requester lines only: the job, and where the goods must reach or return. */
+	/**
+	 * Requester lines only: the job, and where the goods must reach or return.
+	 *
+	 * **Both destinations, because which one applies depends on the job's
+	 * state.** A running consignment must reach `reportName`; a cancelled one
+	 * must go back to `returnToName`, which is the requester. `jobStatus` is
+	 * what picks between them, and a screen that carried only one of the two
+	 * would be right for half the journal.
+	 */
 	offerId?: string;
 	jobTitle?: string;
+	jobStatus?: RequestStatus;
 	returnTo?: RequestStation;
+	returnToName?: string;
+	reportName?: string;
 }
 
 export interface HoldSummary {
@@ -157,7 +168,10 @@ export function holdSummary(
 			owner: "requester",
 			offerId: lot.offerId,
 			jobTitle: request.terms.title,
+			jobStatus: request.status,
 			returnTo: lot.returnTo,
+			returnToName: request.terms.requesterName,
+			reportName: request.terms.reportName,
 		});
 	}
 	lines.sort(compareLines);

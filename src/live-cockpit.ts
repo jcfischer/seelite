@@ -35,6 +35,7 @@ import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";
 import type { HoldSummary } from "./hold";
+import { HOLD_STYLE, type HoldBids, holdBody } from "./hold-view";
 import type {
 	ConsoleEquipmentScreen,
 	ConsoleMarketRow,
@@ -52,7 +53,13 @@ import {
 	setFocus,
 } from "./panel-focus";
 
-export type RightTab = "Flight" | "Drive" | "Controls" | "Tuning";
+export type RightTab =
+	| "Flight"
+	| "Drive"
+	/** #445's manifest. The word `CONTEXT.md` uses — not Inventory, not Cargo. */
+	| "Hold"
+	| "Controls"
+	| "Tuning";
 
 /**
  * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
@@ -70,6 +77,10 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
 const RIGHT_TABS: readonly RightTab[] = [
 	"Flight",
 	"Drive",
+	// #445 sits with the other readouts, ahead of the two tabs that are not
+	// about the ship in front of you. #370 D1's rule is unchanged: `Tuning`
+	// keeps the last slot.
+	"Hold",
 	"Controls",
 	"Tuning",
 ];
@@ -168,6 +179,23 @@ export interface LiveCockpitState {
 		/** Changes only when an accepted action replaces the displayed state. */
 		revision: number;
 	} | null;
+	/**
+	 * What is aboard, for the right console's **Hold** page (#445).
+	 *
+	 * Top level rather than under `stationConsole`, because the right console
+	 * is the flight console: a pilot deciding whether to detour for a scoop
+	 * needs this away from a station, which is the point of putting the page
+	 * there rather than on the station's tab.
+	 */
+	hold: HoldSummary;
+	/**
+	 * The docked station's bid per good, or `null` in flight (#445).
+	 *
+	 * The value column is a **docked** fact. Away from a station it reads as a
+	 * dash rather than as a figure from wherever the ship last was, which is
+	 * the stale-number failure `stockResponse`'s screen already guards against.
+	 */
+	holdBids: HoldBids;
 	/** A launch Traffic refused and is holding, and why (#314). */
 	launchHold: { refusal: LaneRefusal } | null;
 }
@@ -262,7 +290,7 @@ function navEta(seconds: number | null) {
 	return `${(seconds / 86_400).toFixed(0)}d`;
 }
 
-const STYLE = `${REQUESTS_STYLE}${RELAY_CUE_STYLE}
+const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 #live-cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; color: #c8e7f7; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; text-shadow: 0 0 8px rgba(0, 0, 0, .92); }
 #live-cockpit[data-live-active="false"] { display: none; }
 #live-cockpit * { box-sizing: border-box; }
@@ -1487,6 +1515,11 @@ export class LiveCockpit {
 	private rightBody(state: LiveCockpitState) {
 		if (state.rightTab === "Controls")
 			return controlsBody(CONTROLS, this.controlsCollapsed);
+		// #445, on the Galaxy Map and `Controls` precedent: a page with its own
+		// grid replaces the rail-and-copy body wholesale rather than being
+		// squeezed into a 48-character column.
+		if (state.rightTab === "Hold")
+			return `<div class="lc-panel-body">${holdBody(state.hold, state.holdBids)}</div>`;
 		return `<div class="lc-panel-body"><div class="lc-rail"><b>SHIP</b><span>POWER</span><span>MODULES</span><span>INVENTORY</span><span>STATUS</span></div><div class="lc-panel-copy"><h3>${state.rightTab.toUpperCase()} / CONTROL</h3><p ${state.rightTab === "Tuning" ? "data-live-tuning" : ""}></p><div class="lc-readout"><span><b>ASSIST</b><em data-live-assist></em></span><span><b>CHARGE</b><em data-live-charge></em></span></div><div class="lc-readout" data-live-duel style="display: none"><span><b>FORE</b><em data-live-duel-fore></em></span><span><b>AFT</b><em data-live-duel-aft></em></span><span><b>HULL</b><em data-live-duel-hull></em></span><span><b>ENERGY BANK</b><em data-live-duel-bank></em></span><span><b>HEAT</b><em data-live-duel-heat></em></span></div><div class="lc-readout" data-live-scan style="display: none"><span><b>NAME</b><em data-live-scan-name></em></span><span><b>REGISTRY</b><em data-live-scan-registry></em></span><span><b>STANDING</b><em data-live-scan-standing></em></span><span><b>HELD</b><em data-live-scan-manifest></em></span><span><b>READ</b><em data-live-scan-age></em></span></div></div></div>`;
 	}
 
