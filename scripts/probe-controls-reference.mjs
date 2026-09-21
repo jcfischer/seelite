@@ -26,6 +26,7 @@ import {
 	bootedGame,
 	guardedOrigin,
 	launchChromium,
+	PROBE_WINDOW_LOCKABLE,
 	tally,
 } from "./probe-guard.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";
@@ -130,7 +131,13 @@ const pressPad = async (page, name) => {
 	await settle(page);
 };
 
-const browser = await launchChromium({ channel: "chromium" });
+// The first row's lock is this probe's premise, so it asks the lane for a view
+// that can hold one rather than taking whatever the lane defaults to (#454).
+// `PROBE_WINDOW_LOCKABLE` owns why that is not the same thing.
+const browser = await launchChromium({
+	channel: "chromium",
+	probeWindow: PROBE_WINDOW_LOCKABLE,
+});
 
 // ---------------------------------------------------------------------------
 // The key, from a locked forward view.

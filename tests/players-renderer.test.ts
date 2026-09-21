@@ -7,7 +7,9 @@ import {
 	HARDWARE_RENDERER,
 	OFFSCREEN_WINDOW_POSITION,
 	OFFSCREEN_WINDOW_RUNTIME_FLAGS,
+	PROBE_WINDOW_LOCKABLE,
 	PROBE_WINDOW_VISIBLE,
+	PROBE_WINDOWS,
 	probeLaunchOptions,
 	probeRendererMode,
 	PROBE_RENDERER_ENV,
@@ -35,7 +37,7 @@ test("hardware renderer identity requires an unmasked non-software name", () => 
 	expect(SOFTWARE.test("SwiftShader")).toBe(true);
 });
 
-test("the hardware mode is opt-in and forces headed Chromium", () => {
+test("the hardware mode is opt-in and each window mode asks for its own view", () => {
 	expect(probeRendererMode({})).toBeNull();
 	expect(probeRendererMode({ [PROBE_RENDERER_ENV]: HARDWARE_RENDERER })).toBe(
 		HARDWARE_RENDERER,
@@ -63,4 +65,53 @@ test("the hardware mode is opt-in and forces headed Chromium", () => {
 			HARDWARE_RENDERER,
 		),
 	).toEqual({ headless: false, args: ["--example"] });
+});
+
+test("a lockable view is neither headed nor positioned off screen", () => {
+	// #454. `PROBE_WINDOW_LOCKABLE` owns why the mode carries neither
+	// `headless: false` nor the offscreen flags; this pins that it does not.
+	const lockable = probeLaunchOptions(
+		{ channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE },
+		HARDWARE_RENDERER,
+	);
+	expect(lockable).toEqual({ channel: "chromium" });
+	expect("headless" in lockable).toBe(false);
+	expect("probeWindow" in lockable).toBe(false);
+
+	// Exactly the caller's own args: neither OFFSCREEN_WINDOW_POSITION nor any
+	// of OFFSCREEN_WINDOW_RUNTIME_FLAGS survives, and an exact match is what says
+	// so — a `not.toContain` beside it could not fail independently of this.
+	const withArgs = probeLaunchOptions(
+		{
+			channel: "chromium",
+			args: ["--example"],
+			probeWindow: PROBE_WINDOW_LOCKABLE,
+		},
+		HARDWARE_RENDERER,
+	);
+	expect(withArgs.args).toEqual(["--example"]);
+
+	// Still a no-op off the hardware lane: the caller's own options, unchanged.
+	const defaults = { channel: "chromium", probeWindow: PROBE_WINDOW_LOCKABLE };
+	expect(probeLaunchOptions(defaults, null)).toBe(defaults);
+});
+
+test("a window mode nobody declared is refused, not quietly made headed", () => {
+	// The modes are picked by equality, so a misspelling used to fall through to
+	// the offscreen default — `headless: false`, the launch #441 measured as
+	// losing the lock. On both lanes, because a typo is a typo either way.
+	for (const mode of [HARDWARE_RENDERER, null])
+		expect(() =>
+			probeLaunchOptions(
+				{ channel: "chromium", probeWindow: "lockible" },
+				mode,
+			),
+		).toThrow('probeWindow must be "visible", "lockable" or unset');
+	// And the other half of the same rule: declaring a mode is not handling one,
+	// so every member of the list must reach a branch. A mode declared without
+	// one would otherwise land in the headed default it was declared to avoid.
+	for (const mode of PROBE_WINDOWS)
+		expect(() =>
+			probeLaunchOptions({ probeWindow: mode }, HARDWARE_RENDERER),
+		).not.toThrow();
 });
