@@ -195,6 +195,34 @@ test("`npm run lint` runs the rule over the real tree and it is clean", () => {
 /** A line of a workflow, with its comments gone and its indent measured. */
 type Line = { text: string; indent: number };
 
+/**
+ * The layout this reader admits, in columns.
+ *
+ * Two spaces a level, `on:` and `jobs:` at column zero. Level two is a child of
+ * a top-level key — an event, or a job — and level four is a key of that child:
+ * a trigger's filter, or a job's setting. Six opens a step, eight is a key of
+ * that step. Named once because round 3 found the same rule written three times
+ * and already diverging: one reader anchored the job header to end of line and
+ * the other did not, so a job one read and the other missed made "the job
+ * carrying this step has no `if:`" pass on a job nothing had found.
+ */
+const COLUMN = { child: 2, childKey: 4, step: 6, stepKey: 8 } as const;
+
+/** `key: written`, read at exactly `indent` columns. */
+const keyAt = (line: Line, indent: number) => {
+	const key = line.text.match(new RegExp(`^ {${indent}}([\\w-]+):\\s*(.*)$`));
+	return key ? { name: key[1], written: key[2] } : null;
+};
+
+/** The name of a key that carries no value: an event, a job, a `steps:`. */
+const headerAt = (line: Line, indent: number) => {
+	const key = keyAt(line, indent);
+	return key && key.written === "" ? key.name : undefined;
+};
+
+/** An event under `on:`, with the keys nested under it — its filters. */
+type WorkflowTrigger = { name: string; keys: string[] };
+
 /** A job's name and its `if:`, which is how a whole job skips an event. */
 type WorkflowJob = { name: string; condition?: string };
 
@@ -207,12 +235,13 @@ type WorkflowStep = {
 	uses?: string;
 	/** The step's `if:`, which is how a step skips itself on an event. */
 	condition?: string;
+	/** A step that fails without failing the job is a gate that does not gate. */
+	continueOnError?: string;
 };
 
-/** The three things a row needs to know about a workflow file. */
+/** What a row may need to know about a workflow file. */
 type Workflow = {
-	/** The events listed under `on:`. */
-	triggers: string[];
+	triggers: WorkflowTrigger[];
 	jobs: WorkflowJob[];
 	steps: WorkflowStep[];
 };
@@ -221,11 +250,11 @@ type Workflow = {
  * A key's value: the text after the colon, or — when that text is a block
  * scalar indicator — every following line indented deeper than the key, joined.
  *
- * This is not a `run:`-only concern. `if:` may be written as a block scalar
- * too, and a reader that collected only `run` would report a step with no
- * `if:` for a step whose `if:` is a folded scalar — the one reading that turns
- * "nothing skips this step" green on a step that is skipped on every event.
- * Returns how many further lines the value consumed.
+ * This is not a `run:`-only concern. `if:` may be written as a block scalar too,
+ * and a reader that collected only `run` reports a step with no `if:` for a step
+ * whose `if:` is a folded scalar: the one reading that turns "nothing skips this
+ * step" green on a step skipped on every event. Returns how many further lines
+ * the value consumed.
  */
 const readValue = (lines: Line[], at: number, written: string) => {
 	if (!/^[|>][-+]?\d*$/.test(written))
@@ -267,35 +296,47 @@ const topLevelBlock = (lines: Line[], key: string): Line[] => {
 	return block;
 };
 
-/** The event names listed under `on:`, in file order. */
-const readTriggers = (block: Line[]): string[] =>
-	block
-		.map((line) =>
-			line.indent === 2
-				? (line.text.match(/^ {2}([\w-]+):/) ?? [])[1]
-				: undefined,
-		)
-		.filter((name): name is string => Boolean(name));
+/**
+ * The events under `on:`, each with the keys nested under it.
+ *
+ * A bare event name is not the claim. `pull_request:` carrying a `paths:` filter
+ * is a workflow that stops running on most pull requests while still listing the
+ * event, so the filters are read rather than assumed absent.
+ */
+const readTriggers = (block: Line[]): WorkflowTrigger[] => {
+	const triggers: WorkflowTrigger[] = [];
+	for (const line of block) {
+		const event = headerAt(line, COLUMN.child);
+		if (event) {
+			triggers.push({ name: event, keys: [] });
+			continue;
+		}
+		const key = keyAt(line, COLUMN.childKey);
+		if (key && triggers.length)
+			triggers[triggers.length - 1].keys.push(key.name);
+	}
+	return triggers;
+};
 
 /**
  * Each job and its `if:`, in file order.
  *
  * A job-level `if:` is the other way a pull request can stop waiting on a step,
- * and it sits at an indent no step reader ever looks at.
+ * and it sits at a column no step reader ever looks at.
  */
 const readJobs = (block: Line[]): WorkflowJob[] => {
 	const jobs: WorkflowJob[] = [];
 	for (let i = 0; i < block.length; i++) {
 		const line = block[i];
-		if (line.indent === 2) {
-			const name = (line.text.match(/^ {2}([\w-]+):\s*$/) ?? [])[1];
+		if (line.indent === COLUMN.child) {
+			const name = headerAt(line, COLUMN.child);
 			if (name) jobs.push({ name });
 			continue;
 		}
-		if (line.indent !== 4 || !jobs.length) continue;
-		const written = line.text.match(/^ {4}if:\s*(.*)$/);
-		if (!written) continue;
-		const { value, used } = readValue(block, i, written[1]);
+		if (line.indent !== COLUMN.childKey || !jobs.length) continue;
+		const written = keyAt(line, COLUMN.childKey);
+		if (written?.name !== "if") continue;
+		const { value, used } = readValue(block, i, written.written);
 		i += used;
 		jobs[jobs.length - 1].condition = value;
 	}
@@ -306,14 +347,14 @@ const readJobs = (block: Line[]): WorkflowJob[] => {
 const readStep = (job: string, index: number, lines: Line[]): WorkflowStep => {
 	const step: WorkflowStep = { job, index };
 	for (let i = 0; i < lines.length; i++) {
-		const written = lines[i].text.match(/^ {8}([\w-]+):\s*(.*)$/);
+		const written = keyAt(lines[i], COLUMN.stepKey);
 		if (!written) continue;
-		const [, name, rest] = written;
-		const { value, used } = readValue(lines, i, rest);
+		const { value, used } = readValue(lines, i, written.written);
 		i += used;
-		if (name === "run") step.run = value;
-		if (name === "uses") step.uses = value;
-		if (name === "if") step.condition = value;
+		if (written.name === "run") step.run = value;
+		if (written.name === "uses") step.uses = value;
+		if (written.name === "if") step.condition = value;
+		if (written.name === "continue-on-error") step.continueOnError = value;
 	}
 	return step;
 };
@@ -321,9 +362,8 @@ const readStep = (job: string, index: number, lines: Line[]): WorkflowStep => {
 /**
  * Every step of every job, numbered within its own job.
  *
- * The numbering is per job because an ordering claim across two jobs is not an
- * ordering claim: the rows that care read one job's steps and compare positions
- * inside it.
+ * The numbering is per job because a position in one job says nothing about the
+ * order of another's.
  */
 const readSteps = (block: Line[]): WorkflowStep[] => {
 	const steps: WorkflowStep[] = [];
@@ -339,27 +379,30 @@ const readSteps = (block: Line[]): WorkflowStep[] => {
 
 	for (const line of block) {
 		if (line.text.trim() === "") continue;
-		if (line.indent <= 6) close();
-		if (line.indent === 2) {
+		if (line.indent <= COLUMN.step) close();
+		if (line.indent === COLUMN.child) {
 			inSteps = false;
 			index = 0;
-			job = (line.text.match(/^ {2}([\w-]+):/) ?? [])[1] ?? job;
+			const name = headerAt(line, COLUMN.child);
+			if (name) job = name;
 			continue;
 		}
-		if (line.indent === 4) {
-			if (line.text.trim() === "steps:") {
+		if (line.indent === COLUMN.childKey) {
+			if (headerAt(line, COLUMN.childKey) === "steps") {
 				inSteps = true;
 				index = 0;
 			}
 			continue;
 		}
 		if (!inSteps) continue;
-		if (/^ {6}- /.test(line.text)) {
+		if (
+			line.indent === COLUMN.step &&
+			line.text.startsWith("- ", COLUMN.step)
+		) {
 			group = [
 				{
-					...line,
-					text: `        ${line.text.slice(8)}`,
-					indent: 8,
+					text: `${" ".repeat(COLUMN.stepKey)}${line.text.slice(COLUMN.stepKey)}`,
+					indent: COLUMN.stepKey,
 				},
 			];
 			continue;
@@ -378,13 +421,13 @@ const readSteps = (block: Line[]): WorkflowStep[] => {
  * `deploy.yml` explains itself at length, so a substring search over the whole
  * file goes green on the paragraph that merely *says* a gate runs.
  *
- * What it admits is this repo's layout: `on:` and `jobs:` at column zero, two
- * spaces per level, a step opening at column six. A workflow written some other
- * way reads as *fewer* triggers, jobs or steps, which is the direction that
- * reports a missing gate rather than inventing one — with one exception worth
- * naming, which is why `readValue` is not `run`-only: a key written as a block
- * scalar reads as a value, not as an absent key, because absence is the claim
- * several of these rows make.
+ * What it admits is `COLUMN`'s layout. A workflow written some other way reads as
+ * *fewer* triggers, jobs or steps, which is the direction that reports a missing
+ * gate rather than inventing one. Two claims do not live by that direction, and
+ * both are handled where they are read rather than argued here: a key written as
+ * a block scalar is read as a value, because "this step has no `if:`" is a claim
+ * about absence; and every reader takes a header from the same `headerAt`, so one
+ * cannot see a job another has missed.
  */
 const parseWorkflow = (rel: string): Workflow => {
 	const lines = workflowLines(rel);
@@ -397,88 +440,116 @@ const parseWorkflow = (rel: string): Workflow => {
 };
 
 let parsed: Workflow | null = null;
-/** Parsed once: four rows read the same file. */
+/** Parsed once: the rows below all read the same file. */
 const deployWorkflow = () =>
 	(parsed ??= parseWorkflow(".github/workflows/deploy.yml"));
 
-/** The one step that runs the launcher-wiring gate. */
-const wiringSteps = () =>
-	deployWorkflow().steps.filter((s) => (s.run ?? "").includes("check:wiring"));
+/**
+ * The single step that runs the launcher-wiring gate, claimed by the rows that
+ * need it.
+ *
+ * Each of them asks for it through here rather than indexing a filter itself, so
+ * a workflow that lost the step fails on "there is exactly one, and this is its
+ * command" instead of on a `TypeError` over `undefined` — which is the shape the
+ * last finding is about, and the shape a deleted step reached twice.
+ */
+const theWiringStep = () => {
+	const found = deployWorkflow().steps.filter((s) =>
+		(s.run ?? "").includes("check:wiring"),
+	);
+	expect(found.map((s) => (s.run ?? "").trim())).toEqual([
+		"npm run check:wiring",
+	]);
+	return found[0];
+};
 
 /**
  * The pull-request gate runs the launcher-wiring check (#403).
  *
  * `npm test` has run that gate on every pull request since #402, so these rows
  * do not claim first coverage. They hold the shape the new step adds: an event
- * list that reaches pull requests, neither the step nor its job skipping itself,
- * the step ahead of anything in its job that can publish, and the command it
- * names still the script the local tier runs. Each is a row of its own because
- * each is a claim of its own, and a failure should say which.
+ * list that reaches pull requests without a path filter, neither the step nor its
+ * job skipping itself, the step ahead of the unit tier and of anything in its job
+ * that can publish, and the command it names still the script the local tier
+ * runs. Each is a row of its own because each is a claim of its own, and a
+ * failure should say which.
  *
  * What no row here can hold is that a runner runs the step. That is the `Deploy`
- * job's own log, which lists `Run npm run check:wiring` on a green pull request
- * and stops a red one there; the headless tier can only hold what the file says.
+ * job's own step list, which names `Run npm run check:wiring` on a green pull
+ * request and stops a red one there; the headless tier can only hold what the
+ * file says.
  */
-test("the deploy workflow is triggered by a pull request", () => {
+test("the deploy workflow runs on a pull request, with no filter hiding it", () => {
 	const { triggers, steps } = deployWorkflow();
 	// A parse that finds nothing finds nothing for a reason of its own, and every
 	// green below would then be an absence measured as a presence.
 	expect(steps.length).toBeGreaterThan(0);
-	expect(triggers).toContain("pull_request");
+	expect(triggers.map((t) => t.name)).toContain("pull_request");
+	const pull = triggers.find((t) => t.name === "pull_request");
+	// Pinned rather than searched for absence: `branches: [main]` is the file's
+	// intent and is meant to be here. A `paths:` or `types:` join is the same
+	// event name on a workflow that no longer runs on the pull requests in hand.
+	expect(pull?.keys).toEqual(["branches"]);
 });
 
 test("neither the wiring step nor its job skips a pull request", () => {
-	const { jobs } = deployWorkflow();
-	// Exactly one wiring step, and by the name the local tier uses.
-	expect(wiringSteps().map((s) => (s.run ?? "").trim())).toEqual([
-		"npm run check:wiring",
-	]);
-	const step = wiringSteps()[0];
+	const step = theWiringStep();
 	expect(step.condition).toBeUndefined();
+	// A step that fails without failing the job is a gate that does not gate.
+	expect(step.continueOnError).toBeUndefined();
 	// An `if:` naming an event is how the two deploy steps keep off pull
 	// requests, and neither this step nor the job holding it may be written so.
-	// The job is found by name rather than the job list pinned: a second,
-	// unrelated job added for some other reason says nothing about this gate.
+	// The job is found by name rather than the job list pinned: a second job
+	// added for some other reason says nothing about this gate.
 	expect(step.job).toBe("deploy");
-	expect(jobs.find((j) => j.name === step.job)?.condition).toBeUndefined();
+	expect(
+		deployWorkflow().jobs.find((j) => j.name === step.job)?.condition,
+	).toBeUndefined();
 });
 
-test("the wiring step runs ahead of the publish steps in its own job", () => {
-	const step = wiringSteps()[0];
-	// The unit tier's job is pinned by name too, for the same reason the parse
-	// count is checked: a comparison of two derived values is green when neither
-	// was found.
-	const unit = deployWorkflow().steps.find(
-		(s) => (s.run ?? "").trim() === "npm test",
+test("the wiring step runs ahead of the unit tier and of anything that publishes", () => {
+	const step = theWiringStep();
+	const inJob = deployWorkflow().steps.filter((s) => s.job === step.job);
+	// One assertion over the order rather than a comparison per pair, because
+	// being ahead of these two *is* the step's whole justification, and a row
+	// that fetched `npm test` and discarded its position did not hold it. This
+	// list cannot pass by omission: all three must be there, in that order.
+	const order = inJob
+		.filter((s) =>
+			/check:wiring|npm test|wrangler|pages deploy/.test(
+				`${s.run ?? ""} ${s.uses ?? ""}`,
+			),
+		)
+		.map((s) => `${s.run ?? s.uses ?? ""}`.trim());
+	expect(order).toEqual([
+		"npm run check:wiring",
+		"npm test",
+		"cloudflare/wrangler-action@v4",
+	]);
+	// And the position the order is measured on is the one this row's other
+	// claims read: per job, so a second job cannot shift it.
+	expect(step.index).toBeLessThan(
+		Math.min(
+			...inJob
+				.filter((s) =>
+					/wrangler|pages deploy/.test(`${s.run ?? ""} ${s.uses ?? ""}`),
+				)
+				.map((s) => s.index),
+		),
 	);
-	expect({ gateJob: step.job, unitJob: unit?.job }).toEqual({
-		gateJob: "deploy",
-		unitJob: "deploy",
-	});
-	// Only this job's publish steps: a publish step in a later job would leave
-	// `Math.min` over an empty list, which is `-Infinity`, and pass.
-	const publish = deployWorkflow().steps.filter(
-		(s) =>
-			s.job === step.job &&
-			/wrangler|pages deploy/.test(`${s.run ?? ""} ${s.uses ?? ""}`),
-	);
-	expect(publish.length).toBeGreaterThan(0);
-	expect(step.index).toBeLessThan(Math.min(...publish.map((s) => s.index)));
 });
 
 /**
  * The chain from the step to the gate, held statically rather than executed.
  *
  * The step names an npm entry; the entry names a script. That is the whole
- * chain, and the exit code at the end of it is already proven once per suite by
- * the row at the top of this file, which spawns the same script. Spawning it a
- * second time here would buy only a faithfulness claim about `npm run`, at the
- * cost of a third scan of `scripts/` on every pull request — the step, the row
- * above, and this one.
+ * chain, and the exit code at the end of it is proven once per suite by the row
+ * at the top of this file, which spawns the same script. Spawning it here again
+ * would buy only a faithfulness claim about `npm run`, at the cost of a third
+ * scan of `scripts/` on every pull request — the step, the row above, this one.
  */
 test("the wiring step runs the entry the local tier runs", () => {
-	const step = wiringSteps()[0];
-	expect((step.run ?? "").trim()).toBe("npm run check:wiring");
+	expect(theWiringStep().run).toBe("npm run check:wiring");
 	const { scripts } = JSON.parse(
 		readFileSync(repoPath("package.json"), "utf8"),
 	) as unknown as { scripts: Record<string, string> };

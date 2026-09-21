@@ -63,10 +63,11 @@ jobs:
       #
       # `npm test` has run this same gate on every pull request since #402, and
       # still does. This step is about the shape of the failure rather than its
-      # presence: the job stops on a step named `check:wiring`, ahead of the unit
-      # tier and the build, instead of at the tail of a 2,600-row `bun test` run
-      # whose exit code does not name the gate that failed. It is green on
-      # `main`, so adding it cannot open every PR red.
+      # presence: the job stops on its own step — the runner lists it as
+      # `Run npm run check:wiring` — ahead of the unit tier and the build,
+      # instead of at the tail of a 2,600-row `bun test` run whose exit code does
+      # not name the gate that failed. It is green on `main`, so adding it cannot
+      # open every PR red.
       - run: npm run check:wiring
 
       # The headless tier: seeded generation, the float64 sim, the module
