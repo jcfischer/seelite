@@ -115,7 +115,10 @@ export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
 		rowId: "courier-priority",
-		revision: 1,
+		// #459 rewrote this row's purpose, danger and consequence. An accepted
+		// offer pins the revision it was taken under, so terms a pilot was shown
+		// get a new number even when only the words moved.
+		revision: 2,
 		title: "Priority consignment",
 		purpose:
 			"A standing order was short-shipped. The station will pay for the expedited shipment of the goods.",

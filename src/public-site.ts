@@ -46,6 +46,11 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 			${play}`,
 	},
 	{
+		// **Every key this page prints goes in `<kbd data-command="…">`.** The
+		// attribute is the only thing tying the manual to `controls-catalogue.ts`,
+		// and `tests/public-site.test.ts` derives from it: a key left loose in the
+		// prose turns that file red, and a key marked for a command that does not
+		// bind it turns it red too.
 		slug: "manual",
 		entry: "manual/index.html",
 		nav: "Manual",
@@ -54,7 +59,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		dek: "A short reference for the moments when you want an answer without leaving the game behind.",
 		content: `<label class="manual-search">Search this page <input type="search" placeholder="Try “dock” or “cruise”" autocomplete="off" /></label>
 			<p class="manual-note">Every key below is the one this game ships with. Keys are remappable, and the Controls tab in the cockpit shows the ones you fly with.</p>
-			<section data-topic><h2>Fly</h2><p>Pitch is <kbd data-command="pitch">W</kbd> and <kbd data-command="pitch">S</kbd>, yaw is <kbd data-command="yaw">A</kbd> and <kbd data-command="yaw">D</kbd>, roll is <kbd data-command="roll">Q</kbd> and <kbd data-command="roll">E</kbd>. The arrows do the same: <kbd data-command="pitch">↑</kbd> and <kbd data-command="pitch">↓</kbd> pitch, <kbd data-command="yaw">←</kbd> and <kbd data-command="yaw">→</kbd> yaw. <kbd data-command="throttle-up">Shift</kbd> and <kbd data-command="throttle-down">Ctrl</kbd> move the throttle. <kbd data-command="assist-or-beam">X</kbd> switches flight assist, which keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
+			<section data-topic><h2>Fly</h2><p>Pitch is <kbd data-command="pitch">W</kbd> and <kbd data-command="pitch">S</kbd>, yaw is <kbd data-command="yaw">A</kbd> and <kbd data-command="yaw">D</kbd>, roll is <kbd data-command="roll">Q</kbd> and <kbd data-command="roll">E</kbd>. The arrows do the same: <kbd data-command="pitch">↑</kbd> and <kbd data-command="pitch">↓</kbd> pitch, <kbd data-command="yaw">←</kbd> and <kbd data-command="yaw">→</kbd> yaw. <kbd data-command="throttle-up">Shift</kbd> and <kbd data-command="throttle-down">Ctrl</kbd> move the throttle. <kbd data-command="assist-or-beam">X</kbd> switches flight assist on a press, and keeps a combat-speed ceiling while it is on; switch it off when you want to drift. Held, the same key fires the beam. The green cue marks where you are going, not only where the ship points.</p></section>
 			<section data-topic><h2>Panels and controls</h2><p>Press <kbd data-command="controls-reference">?</kbd> to open the Controls tab and see the complete, remappable control reference. <kbd data-command="head-left">1</kbd> opens the left panel, <kbd data-command="head-forward">2</kbd> faces the forward panel, and <kbd data-command="head-right">3</kbd> opens the right panel. Press the same key again to return your view to flight.</p></section>
 			<section data-topic><h2>Travel</h2><p><kbd data-command="target-next">T</kbd> and <kbd data-command="target-previous">G</kbd> step through targets, <kbd data-command="face-target">F</kbd> faces the one you selected, and <kbd data-command="cruise">J</kbd> engages or drops cruise. <kbd data-command="jump">&#96;</kbd> winds up the jump to another system. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
 			<section data-topic><h2>Dock</h2><p><kbd data-command="clearance">C</kbd> asks for clearance, and you need it before you enter the aperture. Follow the director, align with the aperture, and fly gently through the mouth. <kbd data-command="docking-computer">U</kbd> switches the docking computer. <kbd data-command="launch">Enter</kbd> launches, and skips the departure sequence.</p></section>

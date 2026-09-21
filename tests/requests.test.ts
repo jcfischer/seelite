@@ -64,6 +64,26 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(accept().ok).toBe(true);
 	});
 
+	/**
+	 * #459 renamed this action's words. The id stays `retain` and §6 keeps
+	 * *retained lead*; the message a pilot reads says the plain thing, and says
+	 * plainly that nothing was committed. Sage round 3 was right that a green
+	 * suite was no evidence for a string nothing read.
+	 */
+	test("keeping an offer commits nothing, and says so", () => {
+		const kept = requestAction(
+			emptyRequests(),
+			offers,
+			"retain",
+			courier.id,
+			context(),
+		);
+		expect(kept.ok).toBe(true);
+		expect(kept.state.leadsById[courier.id]).toBeDefined();
+		expect(kept.state.byId[courier.id]).toBeUndefined();
+		expect(kept.message).toBe("Kept for later. You have accepted nothing.");
+	});
+
 	test("a courier's cargo is the requester's, and it occupies the hold", () => {
 		const state = accept().state;
 		expect(entrustedTonnesAboard(state)).toBe(courier.tonnes);

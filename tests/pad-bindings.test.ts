@@ -311,10 +311,10 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 	test("an open console suspends them too, which is the principal's ruling", () => {
 		// **This reverses what #283 shipped.** The node argued that a console
 		// takes six discrete controls and the sticks keep flying, from the
-		// console's own footer, which then read "Simulation continues while this
-		// console is open". Flown, that reads as the ship flying off while you are
-		// reading it. The world still runs; the *controls* are what a panel takes.
-		// `src/pad-bindings.ts`'s header owns what became of that footer.
+		// console's own footer, which `src/pad-bindings.ts`'s header quotes and
+		// owns, including what became of it. Flown, that reads as the ship flying
+		// off while you are reading it. The world still runs; the *controls* are
+		// what a panel takes.
 		expect(padFlightAxes(sticks([1, 1, 1, 1]), "console")).toEqual({
 			yaw: 0,
 			pitch: 0,

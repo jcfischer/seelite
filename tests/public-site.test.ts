@@ -9,10 +9,65 @@ import { repoPath } from "./lib/source-scan";
  *  other. */
 const KBD = /<kbd data-command="([a-z-]+)">([^<]+)<\/kbd>/g;
 
-describe("the quiet public threshold", () => {
-	const manual = PUBLIC_PAGES.find((page) => page.slug === "manual");
-	if (!manual) throw new Error("no manual page");
+/** A printed label as `KeyboardEvent.key` reads it. */
+const KEY_LABELS: Record<string, string> = {
+	ctrl: "control",
+	"↑": "arrowup",
+	"↓": "arrowdown",
+	"←": "arrowleft",
+	"→": "arrowright",
+	"&#96;": "`",
+};
 
+/**
+ * Named keys this game binds to nothing, which a writer could still print.
+ *
+ * Every one reads as a key and as nothing else, which is the bar sage round 3
+ * set: `Return`, `Space`, `End`, `Home` and `Delete` were here and are gone,
+ * because a sentence about a space game may open with *Space is large* and
+ * this row would then go red about unmarked keys. Dropping them is a real loss
+ * of reach — an unmarked `Space` now passes — and the second row's docblock
+ * counts it among the holes rather than leaving it implied.
+ */
+const UNBOUND_KEY_NAMES = [
+	"alt",
+	"backspace",
+	"cmd",
+	"ctrl",
+	"esc",
+	"escape",
+	"pagedown",
+	"pageup",
+	"tab",
+];
+
+/** How many keys the manual prints, as a literal. A floor lets a whole
+ *  section's keys be deleted silently; this does not. */
+const MANUAL_KEY_COUNT = 28;
+
+/** The manual page, resolved per row rather than in the `describe` body — a
+ *  throw there aborts the file, including the row that names the slugs and
+ *  would have explained it. */
+function manualPage() {
+	const page = PUBLIC_PAGES.find((candidate) => candidate.slug === "manual");
+	if (!page) throw new Error("no manual page");
+	return page;
+}
+
+/** The manual's prose with every key, and every `aria-hidden` decoration,
+ *  taken out — what is left must name no key at all. */
+function manualProse(content: string) {
+	return (
+		content
+			.replace(KBD, " ")
+			// Decoration by its own declaration — the Play button's chevron is
+			// `aria-hidden`, and a screen reader does not say it either.
+			.replace(/<span aria-hidden="true">[^<]*<\/span>/g, " ")
+			.replace(/<[^>]+>/g, " ")
+	);
+}
+
+describe("the quiet public threshold", () => {
 	test("names exactly the approved static destinations", () => {
 		expect(PUBLIC_PAGES.map((page) => page.slug)).toEqual([
 			"",
@@ -44,41 +99,23 @@ describe("the quiet public threshold", () => {
 	 * `[command, key]` list would be a fourth copy of the binding and could not
 	 * see a key added to the page and left out of it — sage round 1 said so, and
 	 * it was right. So the page marks every key it prints as
-	 * `<kbd data-command="…">`, this row **derives** its pairs from the page, and
-	 * a second arm strips the markup and refuses a key name left loose in the
-	 * prose.
+	 * `<kbd data-command="…">` and this row **derives** its pairs from the page.
 	 *
-	 * **What the second arm reaches, and what it does not.** Its vocabulary is
-	 * the catalogue's own multi-character key names plus the ones this game
-	 * binds to nothing and a writer could still print, and it matches them
-	 * **capitalised**, which is how a key is printed and how `Enter` is told
-	 * apart from *before you enter the aperture*. A key printed in lower case
-	 * therefore passes it. Sage round 2 named that hole and this is the width
-	 * chosen against it, not a claim of completeness.
-	 *
-	 * **And the pairing is not checked, because the catalogue cannot answer it.**
+	 * **The pairing is not checked, because the catalogue cannot answer it.**
 	 * `pitch` binds `w`, `s`, `arrowup` and `arrowdown` with no sense recorded,
 	 * so a page that swapped W for S, or ↑ for ↓, tells the player the wrong
-	 * direction and every row here stays green. That is a person's job until a
-	 * command records a direction.
+	 * direction and this row stays green. Run and confirmed, not assumed. That
+	 * is a person's job until a command records a direction — and so is whether
+	 * the *sentence* around a key describes the command it points at, which no
+	 * arm here reads.
 	 */
-	test("prints only keys the controls catalogue binds, and marks up every one", () => {
-		/** A printed label as `KeyboardEvent.key` reads it. */
-		const asKey = (label: string) =>
-			(
-				({
-					ctrl: "control",
-					"↑": "arrowup",
-					"↓": "arrowdown",
-					"←": "arrowleft",
-					"→": "arrowright",
-					"&#96;": "`",
-				}) as Record<string, string>
-			)[label.toLowerCase()] ?? label.toLowerCase();
+	test("marks every printed key for a command that binds it", () => {
+		const manual = manualPage();
 		const printed = [...manual.content.matchAll(KBD)].map(
-			([, id, label]) => [id, asKey(label)] as const,
+			([, id, label]) =>
+				[id, KEY_LABELS[label.toLowerCase()] ?? label.toLowerCase()] as const,
 		);
-		expect(printed.length).toBeGreaterThan(20);
+		expect(printed.length).toBe(MANUAL_KEY_COUNT);
 		for (const [id, key] of printed) {
 			const command = CONTROLS.commands.find((c) => c.id === id);
 			if (!command) throw new Error(`manual names no such command: ${id}`);
@@ -88,13 +125,26 @@ describe("the quiet public threshold", () => {
 				),
 			).toContain(key);
 		}
+	});
 
-		const prose = manual.content
-			.replace(KBD, " ")
-			// Decoration by its own declaration — the Play button's chevron is
-			// `aria-hidden`, and a screen reader does not say it either.
-			.replace(/<span aria-hidden="true">[^<]*<\/span>/g, " ")
-			.replace(/<[^>]+>/g, " ");
+	/**
+	 * Every key on the page is inside a `<kbd>`, so the prose around them holds
+	 * no key name at all. Without this the row above only checks what someone
+	 * remembered to mark up.
+	 *
+	 * **Its vocabulary** is the catalogue's own multi-character key names plus
+	 * `UNBOUND_KEY_NAMES`, matched **capitalised** — which is how a key is
+	 * printed, and how `Enter` is told apart from *before you enter the
+	 * aperture*.
+	 *
+	 * **Three holes, each run rather than reasoned about.** A key printed in
+	 * lower case passes. A named key dropped from `UNBOUND_KEY_NAMES` for
+	 * reading as ordinary English — `Space`, `Return`, `End`, `Home`, `Delete`
+	 * — passes. And a single letter is caught only where a non-word character
+	 * follows it, which is every punctuation mark but not the end of a word.
+	 */
+	test("leaves no key name loose in the manual's prose", () => {
+		const prose = manualProse(manualPage().content);
 		const names = new Set(
 			CONTROLS.commands
 				.flatMap((command) => command.defaultTriggers)
@@ -105,32 +155,13 @@ describe("the quiet public threshold", () => {
 		// Not vacuous: the catalogue really does bind named keys, so a refactor
 		// that empties this set fails here rather than passing everything.
 		expect(names.size).toBeGreaterThan(3);
-		for (const unbound of [
-			"ctrl",
-			"cmd",
-			"return",
-			"tab",
-			"esc",
-			"escape",
-			"alt",
-			"option",
-			"space",
-			"spacebar",
-			"backspace",
-			"delete",
-			"del",
-			"home",
-			"end",
-			"pageup",
-			"pagedown",
-		])
-			names.add(unbound);
+		for (const unbound of UNBOUND_KEY_NAMES) names.add(unbound);
 		for (const name of names)
 			expect(prose).not.toMatch(
 				new RegExp(`\\b${name[0].toUpperCase()}${name.slice(1)}\\b`),
 			);
 		for (const loose of [
-			/(^|\s)[A-Z](\s|[.,;])/,
+			/(^|[^\w<])[A-Z](?![\w])/,
 			/\bF\d{1,2}\b/,
 			/[↑↓←→]|&#96;/,
 		])
@@ -138,7 +169,8 @@ describe("the quiet public threshold", () => {
 	});
 
 	test("gives a new pilot the controls needed to reach every cockpit panel", () => {
-		// The keys themselves are checked by the row above, which derives them
+		const manual = manualPage();
+		// The keys themselves are checked by the rows above, which derive them
 		// from the page; what this one holds is that the sentences naming the
 		// four panel moves are still on the page at all.
 		for (const shown of [
