@@ -1,12 +1,18 @@
 /**
  * What a courier consignment is actually carrying, over a galaxy (#442).
  *
- * `bindCourier` takes the **cheapest tonne good both stations list**, read off
- * the fixed base price. Its own header calls that a proxy for *what this
- * economy has to spare* and not an export test, and #411 found the board
- * landing on Food at very nearly every station it touched. This measures that
- * rather than asserting it, and measures three candidate rules beside it, so
- * the choice is made against a spread instead of an impression.
+ * `bindCourier` took the **cheapest tonne good both stations list** until #455;
+ * its header called that a proxy for *what this economy has to spare* and not
+ * an export test, and #411 found the board landing on Food at very nearly
+ * every station it touched. This measured that rather than asserting it, and
+ * measured three candidate rules beside it, so the choice was made against a
+ * spread instead of an impression.
+ *
+ * **Since #455 the shipped rule is the spread one**, drawn per episode from
+ * its top `COURIER_SPREAD_POOL`. The four ranking columns below are kept as
+ * the comparison the decision was made on — `cheapest` is the former rule, not
+ * the shipped one — and the shipped distribution is measured by calling
+ * `bindCourier` across episodes rather than by a second copy of its draw.
  *
  * The question `ordinary-requests.md` D1 makes load-bearing is **texture**:
  * authored templates with live operands were chosen precisely so a job could
@@ -23,6 +29,7 @@
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy, type SystemRecord } from "../src/galaxy";
 import {
+	COURIER_SPREAD_POOL,
 	NO_EXCLUDED_STATION,
 	bindCourier,
 	canPostJobs,
@@ -36,8 +43,6 @@ import {
 	marketStationOf,
 	stationCommodities,
 } from "../src/market";
-import { DOMAIN } from "../src/domains";
-import { fnv1a, mix, seededRand } from "../src/rng";
 import { type Station, generateContents } from "../src/system";
 
 const GALAXY_SEED = 0x5ee11e;
@@ -94,7 +99,7 @@ const pool = (
  * reproducible.
  */
 const RULES = {
-	/** Shipped: the cheapest thing both ends trade. */
+	/** The former rule (pre-#455): the cheapest thing both ends trade. */
 	cheapest: (c: Commodity, from: SystemRecord, at: Station) =>
 		basePriceCr(c, from, at),
 	/**
@@ -208,10 +213,25 @@ for (const { system, station } of places) {
 		if (!good) continue;
 		counts[rule].set(good.name, (counts[rule].get(good.name) ?? 0) + 1);
 		row[rule].add(good.name);
-		// The control: the shipped rule reimplemented here must agree with
-		// `bindCourier` itself, or every column below is measuring this file.
-		if (rule === "cheapest" && good.name === shipped.goodName)
-			shippedAgrees += 1;
+		// The control is no longer "cheapest agrees with bindCourier" — since
+		// #455 it does not, and it is not meant to. What this file must not be
+		// allowed to do is rank a pool the binder does not rank, so the check
+		// is **membership**: the good `bindCourier` bound is in this file's own
+		// top `COURIER_SPREAD_POOL` by spread. That is stream-independent — it
+		// catches a pool, a ranking or a tie-break that has drifted apart,
+		// without a second copy of the draw.
+		if (rule === "spread") {
+			const top = [...candidateGoods]
+				.sort(
+					(a, b) =>
+						RULES.spread(a, system, station, destination) -
+							RULES.spread(b, system, station, destination) ||
+						(a.name < b.name ? -1 : 1),
+				)
+				.slice(0, COURIER_SPREAD_POOL)
+				.map((c) => c.name);
+			if (top.includes(shipped.goodName)) shippedAgrees += 1;
+		}
 	}
 }
 
@@ -221,11 +241,11 @@ console.log(
 	`galaxy ${GALAXY_INDEX} of seed 0x${GALAXY_SEED.toString(16)} · ${systems.length} systems · ${boards} courier boards\n`,
 );
 console.log(
-	`control: the reimplemented cheapest rule agrees with bindCourier on ${shippedAgrees}/${boards} boards (${pct(shippedAgrees, boards)})`,
+	`control: bindCourier's good is in this file's top ${COURIER_SPREAD_POOL} by spread on ${shippedAgrees}/${boards} boards (${pct(shippedAgrees, boards)})`,
 );
 if (shippedAgrees !== boards)
 	throw new Error(
-		"the reimplemented shipped rule disagrees with bindCourier; every column below would be measuring this script",
+		"the reimplemented spread ranking disagrees with bindCourier; every column below would be measuring this script",
 	);
 
 console.log("\nwhat a courier consignment is, per rule\n");
@@ -275,16 +295,18 @@ for (const rule of RULE_NAMES) {
 	);
 }
 
-// **Varying the good across episodes at one requester**, which is the node's
-// second question. Any rule above is a total order, so the top *k* of it is a
-// pool a per-episode draw can pick from — the same shape `pickRow` already
-// uses for prose. Measured at k = 3 over the spread rule, and over eight
-// episodes of each board, because a second consignment from one freight desk
-// not being the first one is the thing being asked about.
+// **Varying the good across episodes at one requester**, which was the node's
+// second question and is now the shipped rule. This section measures
+// `bindCourier` itself across episodes — the draw is not reimplemented here,
+// because after #455 a copy of it in this file would be the thing under test
+// measuring itself. The prediction it is read against is #442's candidate
+// column, which drew from the same ranking on a different stream: the **count
+// of distinct goods** must match exactly, since the top-k sets are the same,
+// while a **share** is the stream's and is expected to move by a fraction of a
+// point.
 const EPISODES = 8;
-const POOL_K = 3;
 console.log(
-	`\nspread, drawn from the top ${POOL_K} across ${EPISODES} episodes\n`,
+	`\nshipped: drawn from the top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
 );
 {
 	const seen = new Map<string, number>();
@@ -297,43 +319,27 @@ console.log(
 			generateContents,
 			key,
 		);
-		const ctx: BindContext = {
-			galaxyIndex: GALAXY_INDEX,
-			system,
-			station,
-			destinations: candidates,
-			deficits: {},
-			gameTimeMin: GAME_TIME_MIN,
-			settled: {},
-		};
-		const shipped = bindCourier(ctx);
-		if (!shipped) continue;
-		const destination = candidates.find(
-			(d) =>
-				carrierKey(d.system.index, d.station.localCarrierId) ===
-				shipped.reportAt.carrierKey,
-		);
-		if (!destination) continue;
-		const ranked = [...pool(system, station, destination)].sort(
-			(a, b) =>
-				RULES.spread(a, system, station, destination) -
-					RULES.spread(b, system, station, destination) ||
-				(a.name < b.name ? -1 : 1),
-		);
-		if (ranked.length === 0) continue;
 		const here = new Set<string>();
 		for (let episode = 1; episode <= EPISODES; episode += 1) {
-			// Its own stream, so a board moves no station, berth or market —
-			// `jobs.ts`'s own rule for every draw it makes.
-			const roll = seededRand(
-				mix(mix(fnv1a(key), DOMAIN.JOB_OFFERS), episode),
-			)();
-			const width = Math.min(POOL_K, ranked.length);
-			const good = ranked[Math.min(Math.floor(roll * width), width - 1)];
-			seen.set(good.name, (seen.get(good.name) ?? 0) + 1);
-			here.add(good.name);
+			const ctx: BindContext = {
+				galaxyIndex: GALAXY_INDEX,
+				system,
+				station,
+				destinations: candidates,
+				deficits: {},
+				gameTimeMin: GAME_TIME_MIN,
+				settled: { courier: episode - 1 },
+			};
+			const offer = bindCourier(ctx);
+			if (!offer) continue;
+			if (offer.episode !== episode)
+				throw new Error(
+					`episode ${episode} bound as ${offer.episode} at ${station.id}`,
+				);
+			seen.set(offer.goodName, (seen.get(offer.goodName) ?? 0) + 1);
+			here.add(offer.goodName);
 		}
-		perStation.push(here.size);
+		if (here.size > 0) perStation.push(here.size);
 	}
 	const rows = [...seen.entries()].sort((a, b) => b[1] - a[1]);
 	const total = rows.reduce((sum, [, n]) => sum + n, 0);
@@ -351,7 +357,65 @@ console.log(
 		);
 }
 
-console.log("\nfull distribution, shipped rule\n");
+// **The arm the prediction is actually read against.** #442's candidate column
+// held the leg still — it drew one destination and ran eight episodes of the
+// good draw over that one pool — while the shipped rule redraws the
+// destination every episode too. So the section above is a wider set than the
+// prediction by construction, and comparing the two straight is comparing two
+// different experiments. Here the leg is pinned by handing `bindCourier` a
+// one-destination context, which is the binder's own draw on the prediction's
+// framing.
+console.log(
+	`\nshipped, leg held: top ${COURIER_SPREAD_POOL} across ${EPISODES} episodes\n`,
+);
+{
+	const seen = new Map<string, number>();
+	for (const { system, station } of places) {
+		const key = carrierKey(system.index, station.localCarrierId);
+		const candidates = deliveryCandidates(
+			systems,
+			system,
+			generateContents,
+			key,
+		);
+		const opening = bindCourier({
+			galaxyIndex: GALAXY_INDEX,
+			system,
+			station,
+			destinations: candidates,
+			deficits: {},
+			gameTimeMin: GAME_TIME_MIN,
+			settled: {},
+		});
+		if (!opening) continue;
+		const destination = candidates.find(
+			(d) =>
+				carrierKey(d.system.index, d.station.localCarrierId) ===
+				opening.reportAt.carrierKey,
+		);
+		if (!destination) continue;
+		for (let episode = 1; episode <= EPISODES; episode += 1) {
+			const offer = bindCourier({
+				galaxyIndex: GALAXY_INDEX,
+				system,
+				station,
+				destinations: [destination],
+				deficits: {},
+				gameTimeMin: GAME_TIME_MIN,
+				settled: { courier: episode - 1 },
+			});
+			if (!offer) continue;
+			seen.set(offer.goodName, (seen.get(offer.goodName) ?? 0) + 1);
+		}
+	}
+	const rows = [...seen.entries()].sort((a, b) => b[1] - a[1]);
+	const total = rows.reduce((sum, [, n]) => sum + n, 0);
+	console.log(
+		`  ${rows.length} distinct goods over ${total} draws; top ${rows[0]?.[0]} at ${pct(rows[0]?.[1] ?? 0, total)}`,
+	);
+}
+
+console.log("\nfull distribution, the former cheapest rule\n");
 for (const [good, n] of [...counts.cheapest.entries()].sort(
 	(a, b) => b[1] - a[1],
 ))

@@ -429,9 +429,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		expect(boards.length).toBeGreaterThan(50);
 		for (const { offer, system, station, destination } of boards) {
 			const ranked = rankedPool(system, station, destination);
-			const top = ranked
-				.slice(0, COURIER_SPREAD_POOL)
-				.map((c) => c.name);
+			const top = ranked.slice(0, COURIER_SPREAD_POOL).map((c) => c.name);
 			expect([offer.id, top.includes(offer.goodName)]).toEqual([
 				offer.id,
 				true,
