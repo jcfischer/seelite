@@ -53,11 +53,11 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "Enough to leave the berth.",
 		dek: "A short reference for the moments when you want an answer without leaving the game behind.",
 		content: `<label class="manual-search">Search this page <input type="search" placeholder="Try “dock” or “cruise”" autocomplete="off" /></label>
-			<section data-topic><h2>Fly</h2><p>Pitch is W and S, yaw is A and D, roll is Q and E, and the arrow keys pitch and yaw as well. Shift and Ctrl move the throttle. X switches flight assist, which keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
-			<section data-topic><h2>Panels and controls</h2><p>Press ? to open the Controls tab and see the complete, remappable control reference. 1 opens the left panel, 2 faces the forward panel, and 3 opens the right panel. Press the same key again to return your view to flight.</p></section>
-			<section data-topic><h2>Travel</h2><p>T and G step through targets, F faces the one you selected, and J engages or drops cruise. The &#96; key winds up the jump to another system. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
-			<section data-topic><h2>Dock</h2><p>C asks for clearance, and you need it before you enter the aperture. Follow the director, align with the slot, and fly gently through the mouth. U switches the docking computer. Enter launches, and skips the traversal.</p></section>
-			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory. In Requests, the up and down arrows walk the cursor and Enter opens the row; the mouse does the same.</p></section>
+			<section data-topic><h2>Fly</h2><p>These are the default keys; the Controls tab shows the ones you fly with. Pitch is <kbd data-command="pitch">W</kbd> and <kbd data-command="pitch">S</kbd>, yaw is <kbd data-command="yaw">A</kbd> and <kbd data-command="yaw">D</kbd>, roll is <kbd data-command="roll">Q</kbd> and <kbd data-command="roll">E</kbd>. The arrows do the same: <kbd data-command="pitch">↑</kbd> and <kbd data-command="pitch">↓</kbd> pitch, <kbd data-command="yaw">←</kbd> and <kbd data-command="yaw">→</kbd> yaw. <kbd data-command="throttle-up">Shift</kbd> and <kbd data-command="throttle-down">Ctrl</kbd> move the throttle. <kbd data-command="assist-or-beam">X</kbd> switches flight assist, which keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
+			<section data-topic><h2>Panels and controls</h2><p>Press <kbd data-command="controls-reference">?</kbd> to open the Controls tab and see the complete, remappable control reference. <kbd data-command="head-left">1</kbd> opens the left panel, <kbd data-command="head-forward">2</kbd> faces the forward panel, and <kbd data-command="head-right">3</kbd> opens the right panel. Press the same key again to return your view to flight.</p></section>
+			<section data-topic><h2>Travel</h2><p><kbd data-command="target-next">T</kbd> and <kbd data-command="target-previous">G</kbd> step through targets, <kbd data-command="face-target">F</kbd> faces the one you selected, and <kbd data-command="cruise">J</kbd> engages or drops cruise. <kbd data-command="jump">&#96;</kbd> winds up the jump to another system. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
+			<section data-topic><h2>Dock</h2><p><kbd data-command="clearance">C</kbd> asks for clearance, and you need it before you enter the aperture. Follow the director, align with the berth, and fly gently through the mouth. <kbd data-command="docking-computer">U</kbd> switches the docking computer. <kbd data-command="launch">Enter</kbd> launches, and skips the departure sequence.</p></section>
+			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory. In Requests, <kbd data-command="console-cursor">↑</kbd> and <kbd data-command="console-cursor">↓</kbd> walk the cursor and <kbd data-command="console-activate">Enter</kbd> opens the row; the mouse does the same.</p></section>
 			${play}`,
 	},
 	{
@@ -68,7 +68,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "Your flight is yours.",
 		dek: "The Far Between is private by default, immediate by design, and intentionally small in what it asks of you.",
 		content: `<ul class="promise"><li>No accounts, tracking, analytics, advertising, or runtime network calls.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
-			<p>There is no behavioural telemetry. The project learns through direct feedback, opt-in reports where they make sense, and conversation.</p>`,
+			<p>There is no behavioural telemetry. The project learns through direct feedback and conversation.</p>`,
 	},
 	{
 		slug: "credits",

@@ -32,71 +32,81 @@ describe("the quiet public threshold", () => {
 	});
 
 	/**
-	 * The manual prints keys, and the catalogue binds them. A third copy of a
-	 * binding goes stale in silence, so every key the page names is looked up in
-	 * `CONTROLS` by the command it is named for — a rebound command turns this
-	 * row red rather than leaving the public page lying.
+	 * The manual prints keys, and the catalogue binds them. A hand-written table
+	 * of pairs would be a fourth copy of the binding and could not see a key
+	 * added to the page and left out of the table — sage round 1 said so, and it
+	 * was right. So the page marks every key it prints as
+	 * `<kbd data-command="…">`, this row **derives** the pairs from the page, and
+	 * a second arm reads the prose with every `<kbd>` cut out and refuses a key
+	 * name left loose in it. A rebind turns the first arm red; a key printed
+	 * without markup turns the second red.
 	 */
-	test("prints only keys the controls catalogue actually binds", () => {
+	test("prints only keys the controls catalogue binds, and marks up every one", () => {
 		const manual = PUBLIC_PAGES.find((page) => page.slug === "manual");
 		if (!manual) throw new Error("no manual page");
-		const bound = (id: string) =>
-			CONTROLS.commands
-				.find((command) => command.id === id)
-				?.defaultTriggers.flatMap((trigger) =>
+		/** A printed label as `KeyboardEvent.key` reads it. */
+		const asKey = (label: string) =>
+			(
+				({
+					ctrl: "control",
+					"↑": "arrowup",
+					"↓": "arrowdown",
+					"←": "arrowleft",
+					"→": "arrowright",
+					"&#96;": "`",
+				}) as Record<string, string>
+			)[label.toLowerCase()] ?? label.toLowerCase();
+		const printed = [
+			...manual.content.matchAll(
+				/<kbd data-command="([a-z-]+)">([^<]+)<\/kbd>/g,
+			),
+		].map(([, id, label]) => [id, asKey(label)] as const);
+		expect(printed.length).toBeGreaterThan(20);
+		for (const [id, key] of printed) {
+			const command = CONTROLS.commands.find((c) => c.id === id);
+			if (!command) throw new Error(`manual names no such command: ${id}`);
+			expect(
+				command.defaultTriggers.flatMap((trigger) =>
 					trigger.kind === "key" ? [trigger.key] : [],
-				) ?? [];
-		const printed: [string, string][] = [
-			["pitch", "w"],
-			["pitch", "s"],
-			["pitch", "arrowup"],
-			["pitch", "arrowdown"],
-			["yaw", "a"],
-			["yaw", "d"],
-			["yaw", "arrowleft"],
-			["yaw", "arrowright"],
-			["roll", "q"],
-			["roll", "e"],
-			["throttle-up", "shift"],
-			["throttle-down", "control"],
-			["assist-or-beam", "x"],
-			["target-next", "t"],
-			["target-previous", "g"],
-			["face-target", "f"],
-			["cruise", "j"],
-			["jump", "`"],
-			["clearance", "c"],
-			["docking-computer", "u"],
-			["launch", "enter"],
-			["console-cursor", "arrowup"],
-			["console-cursor", "arrowdown"],
-			["console-activate", "enter"],
-			["controls-reference", "?"],
-			["head-left", "1"],
-			["head-forward", "2"],
-			["head-right", "3"],
-		];
-		for (const [id, key] of printed) expect(bound(id)).toContain(key);
-		for (const shown of [
-			"Pitch is W and S, yaw is A and D, roll is Q and E",
-			"Shift and Ctrl move the throttle",
-			"X switches flight assist",
-			"T and G step through targets, F faces the one you selected",
-			"J engages or drops cruise",
-			"&#96; key winds up the jump",
-			"C asks for clearance",
-			"U switches the docking computer",
-			"Enter launches, and skips the traversal",
-			"In Requests, the up and down arrows walk the cursor and Enter opens the row",
+				),
+			).toContain(key);
+		}
+		// Every key on the page is inside a `<kbd>`, so the prose around them
+		// holds no bare key name. Without this arm the row above only checks
+		// what someone remembered to mark up.
+		const prose = manual.content
+			.replace(/<kbd data-command="[a-z-]+">[^<]+<\/kbd>/g, " ")
+			// Decoration by its own declaration — the Play button's chevron is
+			// `aria-hidden`, and a screen reader does not say it either.
+			.replace(/<span aria-hidden="true">[^<]*<\/span>/g, " ")
+			.replace(/<[^>]+>/g, " ");
+		for (const loose of [
+			/(^|\s)[A-Z](\s|[.,;])/,
+			/\b(Shift|Ctrl|Enter)\b/,
+			/[↑↓←→]|&#96;/,
 		])
-			expect(manual.content).toContain(shown);
+			expect(prose).not.toMatch(loose);
 	});
 
 	test("gives a new pilot the controls needed to reach every cockpit panel", () => {
-		const source = readFileSync(repoPath("src/public-site.ts"), "utf8");
-		expect(source).toContain("Press ? to open the Controls tab");
-		expect(source).toContain(
-			"1 opens the left panel, 2 faces the forward panel, and 3 opens the right panel",
-		);
+		// The keys themselves are checked by the row above, which derives them
+		// from the page; what this one holds is that the sentences naming the
+		// four panel moves are still on the page at all.
+		const manual = PUBLIC_PAGES.find((page) => page.slug === "manual");
+		if (!manual) throw new Error("no manual page");
+		for (const shown of [
+			"to open the Controls tab",
+			"opens the left panel",
+			"faces the forward panel",
+			"opens the right panel",
+		])
+			expect(manual.content).toContain(shown);
+		for (const id of [
+			"controls-reference",
+			"head-left",
+			"head-forward",
+			"head-right",
+		])
+			expect(manual.content).toContain(`<kbd data-command="${id}">`);
 	});
 });

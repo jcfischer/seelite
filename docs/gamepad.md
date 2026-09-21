@@ -60,8 +60,8 @@ replaced was wrong in a way worth keeping. **`src/pad-bindings.ts`'s header owns
 the argument and this file does not repeat it** — it was verbatim in both for a
 round, which is the third-copy drift `CLAUDE.md` warns about. What is worth
 knowing without opening it: the footer the argument rested on was a claim about
-the *world*, not the controls — it has since been deleted as copy — and the
-throttle is **held** rather than zeroed, so you coast.
+the *world*, not the controls, and the throttle is **held** rather than zeroed,
+so you coast. The header also says what became of that footer.
 
 **One consequence of that suspension went unshipped until #371.** A console that
 suspends the mouse while the pointer is still captured suspends nothing the player can

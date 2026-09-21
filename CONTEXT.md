@@ -303,7 +303,7 @@ Work available from a named requester. `docs/specs/missions-and-requests.md` §1
 _Avoid_: Accepted request (before explicit acceptance)
 
 **Lead**:
-Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5).
+Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5). Retaining one is the `retain` action, and that is the word in the code and the save; the screen says **Keep for later** and labels the row **kept**, because the spec's word did not read as anything on the glass (#459).
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
 **Accepted request**:
