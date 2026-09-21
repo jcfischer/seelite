@@ -9,6 +9,7 @@
  * #370's receipt carries the nine rulings; the comments below cite them by
  * their D-number rather than restating them.
  */
+import { escapeHtml } from "./escape-html";
 import type {
 	ControlCommand,
 	ControlsCatalogue,
@@ -289,13 +290,6 @@ export function contextNote(
 	}
 	return parts.join("; ");
 }
-
-const escapeHtml = (value: string) =>
-	value
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;")
-		.replaceAll('"', "&quot;");
 
 function rowMarkup(catalogue: ControlsCatalogue, command: ControlCommand) {
 	const triggers = command.currentTriggers.length

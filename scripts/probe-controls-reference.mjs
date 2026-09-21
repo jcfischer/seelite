@@ -199,17 +199,26 @@ check(
 		!/your layout/i.test(header),
 	JSON.stringify(header),
 );
+// **This row pins the whole order, and #445 moved it.** The Hold page sits
+// with the other readouts, so Controls is no longer Drive's neighbour — what
+// #370 D1 actually decided is that `Controls` comes immediately before
+// `Tuning`, and that is unchanged. The row failed on the branch that added the
+// tab and passed on `origin/main`, which is the only reason anyone noticed:
+// this probe is red on both trees for an unrelated reason (#441), and a
+// standing red is exactly where a real regression hides.
+const rightTabOrder = (
+	await page.evaluate(() =>
+		[
+			...document.querySelectorAll(
+				'[data-live-panel="right"] [data-live-right-tab]',
+			),
+		].map((b) => b.dataset.liveRightTab),
+	)
+).join(",");
 check(
-	"the tab sits between Drive and Tuning",
-	(
-		await page.evaluate(() =>
-			[
-				...document.querySelectorAll(
-					'[data-live-panel="right"] [data-live-right-tab]',
-				),
-			].map((b) => b.dataset.liveRightTab),
-		)
-	).join(",") === "Flight,Drive,Controls,Tuning",
+	"the right console's tabs are in order, with Controls immediately before Tuning",
+	rightTabOrder === "Flight,Drive,Hold,Controls,Tuning",
+	rightTabOrder,
 );
 // #370 R1: `THROTTLE_UP` is Shift, so the chord's modifier is itself a held
 // binding. Reported, not asserted either way: the reading is what #369 and the

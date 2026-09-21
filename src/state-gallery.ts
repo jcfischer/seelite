@@ -3,6 +3,7 @@
  * It does not talk to `Game`: docking, communications, panels, and scanner
  * contacts are still design consumers, not completed simulation systems.
  */
+import { escapeHtml as esc } from "./escape-html";
 import * as THREE from "three";
 import { TRAVERSAL_SECONDS_DEEP, TRAVERSAL_SECONDS_NEAR } from "./docking";
 import {
@@ -291,12 +292,6 @@ export const GALLERY_ARRIVAL_SECONDS =
  * assigned to `innerHTML`, and the day a station or good name comes from a save
  * or a URL the guard has to already be here rather than be remembered.
  */
-const esc = (value: string): string =>
-	value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
 
 function renderMarketRow(row: ConsoleMarketRow): string {
 	const marker = row.commodity.illegal
@@ -1003,7 +998,7 @@ export function renderGalleryState(
 					`<button class="sg-tab" type="button" data-gallery-right-tab="${tab}" aria-selected="${rightTab === tab}">${tab}</button>`,
 			)
 			.join(""),
-		rail: ["SHIP", "POWER", "MODULES", "INVENTORY", "STATUS"],
+		rail: ["SHIP", "POWER", "MODULES", "STATUS"],
 		heading: `${rightTab.toUpperCase()} / CONTROL`,
 		body: rightPanelBody(state, rightTab),
 		// `docked`, not `flightDocked`: E5 suspends flight, so the right console's

@@ -152,6 +152,18 @@ export const PROBE_CATALOG = Object.freeze(
 			["render layer", "handoff", "apparent size", "camera distance"],
 		),
 		entry(
+			"probe-hold.mjs",
+			"Flies the right console's Hold page in flight and docked: capacity, ownership, and the station's bid.",
+			[
+				"hold",
+				"cargo capacity",
+				"what is aboard",
+				"entrusted cargo",
+				"right console",
+				"station bid",
+			],
+		),
+		entry(
 			"probe-hud.mjs",
 			"Checks full-screen HUD sizing and projection of attitude, velocity, target, and docking markers.",
 			["HUD", "projection", "canvas resize", "markers", "cockpit"],
