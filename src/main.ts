@@ -11068,6 +11068,63 @@ class Game {
 		return add(this.world.ship.pos, v3(offset.x, offset.y, offset.z));
 	}
 
+	/** Aim the per-layer lights at the star, in every scene the rig owns.
+	 *
+	 *  A camera standing exactly on its own star has no direction to it, and then
+	 *  this changes nothing at all: `envRotation` refuses to invent a rotation out of
+	 *  a zero vector (#430), so all three aims — the sun's position, the hemisphere's
+	 *  axis and the environment's rotation — hold at whatever the last frame set them
+	 *  to. That is the right answer for one degenerate frame, and the case ends as
+	 *  soon as the ship moves. There is no previous frame to hold on the first frame
+	 *  after a rig is built, and there the rig's own initial values stand.
+	 *
+	 *  The clamp this replaced, `Math.max(1e-9, length)`, is not the guard it looks
+	 *  like. It kept the division finite without keeping the result a direction, and
+	 *  it still handed `envRotation` the zero vector, which is the case #430's throw
+	 *  was written for. `toStar` is kilometres, so the region where the clamp itself
+	 *  bit — a distance under 10⁻⁹ km, a micrometre off the star's centre — is not a
+	 *  place a camera is flown.
+	 *
+	 *  A method rather than a nesting level inside `render`, because `render` is the
+	 *  float64-to-float32 boundary and every line of it is about placing something
+	 *  relative to the camera. This is one decision with one degenerate case.
+	 */
+	private aimLayerLights(starPos: Vec3, camPos: Vec3): void {
+		const toStar = sub(starPos, camPos);
+		const d = length(toStar);
+		if (d === 0) return;
+		STAR_DIR.set(toStar.x / d, toStar.y / d, toStar.z / d);
+		// The bake put its star at `BAKE_STAR_DIR`; this is the rotation that
+		// carries it onto the real one. A rotation rather than a rebake because
+		// the star direction changes continuously as the ship crosses the
+		// system, and a PMREM pass per frame is not a thing to spend a frame on.
+		//
+		// `envRotation` picks the shortest arc, so the environment also rolls
+		// about the star axis as the ship moves. Nothing in the bake varies
+		// about that axis — the model is a lobe and a floor — so the roll is
+		// unobservable, and it stops being so the day #100's haze arrives.
+		// That is the seam, named where the rotation is applied.
+		//
+		// It is derived in `light-rig.ts` and not here, and that is the fix
+		// for #99's review blocker rather than a tidiness point: written here
+		// as `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)` it was
+		// indistinguishable from its own inverse by anything the repo could
+		// run. As a function it has a round trip a headless test sweeps.
+		ENV_QUAT.fromArray(envRotation([STAR_DIR.x, STAR_DIR.y, STAR_DIR.z]));
+		ENV_EULER.setFromQuaternion(ENV_QUAT);
+		// Cached at build rather than looked up: `getObjectByName` walks every
+		// descendant, and the near scene holds every drawn body — so the two
+		// name lookups this replaced cost six recursive traversals a frame,
+		// scaling with the scene rather than with the two lights being found.
+		for (const rig of this.layerLights) {
+			rig.sun.position.copy(STAR_DIR);
+			// The hemisphere's axis is its position, so aiming it at the star is
+			// what turns a flat lift into a star-side gradient.
+			rig.hemisphere.position.copy(STAR_DIR);
+			rig.scene.environmentRotation.copy(ENV_EULER);
+		}
+	}
+
 	/**
 	 * Place everything relative to the camera, and draw.
 	 *
@@ -11346,59 +11403,7 @@ class Game {
 		// at either scale, which is the property that let one light stand for two.
 		// This is the *camera's* direction to the star and it lights the ship and
 		// the stations; a planet's own surface shader uses its own, above.
-		if (star) {
-			const toStar = sub(star.pos, camPos);
-			const d = length(toStar);
-			// Zero length means the camera is standing on its own star, and there is
-			// then no direction to it: `envRotation` refuses to invent one (#430). The
-			// guard belongs here, at the one caller in the render path, because the
-			// alternative is an exception escaping through the frame loop. All three
-			// aims in the block below — the sun's position, the hemisphere's axis and
-			// the environment's rotation — hold at whatever the last frame set them
-			// to, which is the right answer for one degenerate frame: the case ends as
-			// soon as the ship moves. There is no previous frame on the first frame
-			// after a rig is built, and there the rig's own initial values stand,
-			// unchanged from before this function ever ran.
-			//
-			// The clamp this replaces, `Math.max(1e-9, length)`, is not the guard it
-			// looks like. It kept the division finite without keeping the result a
-			// direction — and it still handed `envRotation` a zero vector, which is
-			// the case #430's throw was written for. `toStar` is kilometres, so the
-			// region where the clamp itself bit (a distance under 10⁻⁹ km) is a
-			// micrometre from the star's centre and is not a place a camera is flown.
-			if (d > 0) {
-				STAR_DIR.set(toStar.x / d, toStar.y / d, toStar.z / d);
-				// The bake put its star at `BAKE_STAR_DIR`; this is the rotation that
-				// carries it onto the real one. A rotation rather than a rebake because
-				// the star direction changes continuously as the ship crosses the
-				// system, and a PMREM pass per frame is not a thing to spend a frame on.
-				//
-				// `envRotation` picks the shortest arc, so the environment also rolls
-				// about the star axis as the ship moves. Nothing in the bake varies
-				// about that axis — the model is a lobe and a floor — so the roll is
-				// unobservable, and it stops being so the day #100's haze arrives.
-				// That is the seam, named where the rotation is applied.
-				//
-				// It is derived in `light-rig.ts` and not here, and that is the fix
-				// for #99's review blocker rather than a tidiness point: written here
-				// as `setFromUnitVectors(BAKE_STAR_UNIT, STAR_DIR)` it was
-				// indistinguishable from its own inverse by anything the repo could
-				// run. As a function it has a round trip a headless test sweeps.
-				ENV_QUAT.fromArray(envRotation([STAR_DIR.x, STAR_DIR.y, STAR_DIR.z]));
-				ENV_EULER.setFromQuaternion(ENV_QUAT);
-				// Cached at build rather than looked up: `getObjectByName` walks every
-				// descendant, and the near scene holds every drawn body — so the two
-				// name lookups this replaced cost six recursive traversals a frame,
-				// scaling with the scene rather than with the two lights being found.
-				for (const rig of this.layerLights) {
-					rig.sun.position.copy(STAR_DIR);
-					// The hemisphere's axis is its position, so aiming it at the star is
-					// what turns a flat lift into a star-side gradient.
-					rig.hemisphere.position.copy(STAR_DIR);
-					rig.scene.environmentRotation.copy(ENV_EULER);
-				}
-			}
-		}
+		if (star) this.aimLayerLights(star.pos, camPos);
 
 		// The fill follows the camera's orientation, so it stays over the viewer's
 		// left shoulder however the ship is pointed — which is what makes it read
