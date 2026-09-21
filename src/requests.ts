@@ -269,7 +269,7 @@ export function requestAction(
 				...state,
 				leadsById: { ...state.leadsById, [id]: structuredClone(offer) },
 			},
-			"Lead retained. No commitment accepted.",
+			"Kept for later. You have accepted nothing.",
 		);
 
 	if (action === "accept") {

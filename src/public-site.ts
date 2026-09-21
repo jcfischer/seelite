@@ -20,7 +20,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "The Far Between",
 		dek: "A little ship. A large sky. Work worth doing between the two.",
 		content: `<div class="threshold-actions">${play}<a class="button button--quiet" href="/about/">Find your bearings</a></div>
-			<p class="threshold-note">No accounts. No tracking. No analytics.<br />No runtime network calls. Your saves stay with you.</p>
+			<p class="threshold-note">No accounts. No tracking. No analytics.<br />No runtime network calls.</p>
 			<div class="instrument" aria-label="A quiet frontier transmission"><span>SECTOR: UNCHARTED</span><span>LOCAL: 03:17</span><span>SIGNAL: FAINT</span></div>`,
 	},
 	{
@@ -30,8 +30,9 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "About the Far Between",
 		title: "A frontier with room to breathe.",
 		dek: "The Far Between is a solo space game about flying, trading, taking work, getting into trouble, and noticing what is out there.",
-		content: `<p>The surface is meant to be readable. The systems beneath it reward attention, not homework. Start immediately in your browser; follow useful work, quiet travel, combat, or the trail of something stranger when you want to.</p>
+		content: `<p>The game rewards attention, not homework. Start immediately in your browser; follow useful work, quiet travel, combat, or the trail of something stranger when you want to.</p>
 			<p>There are no streaks, campaigns to keep up with, or lore exams. Your work leaves marks. The world remembers.</p>
+			<p>Made by <a href="https://invisible.ch" rel="noreferrer">invisible.ch</a>.</p>
 			${play}`,
 	},
 	{
@@ -41,8 +42,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Field Notes",
 		title: "Occasional signals from the frontier.",
 		dek: "Screens, postcards, release notes, and worthwhile observations arrive here when there is something real to show.",
-		content: `<p>This is not a feed to maintain. It is a small shelf for finished work and scenes worth keeping.</p>
-			<p>The first note is still in flight. Until then, the game is the better place to find out what is waiting.</p>
+		content: `<p>The first note is still in flight. Until then, the game is the better place to find out what is waiting.</p>
 			${play}`,
 	},
 	{
@@ -53,11 +53,11 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		title: "Enough to leave the berth.",
 		dek: "A short reference for the moments when you want an answer without leaving the game behind.",
 		content: `<label class="manual-search">Search this page <input type="search" placeholder="Try “dock” or “cruise”" autocomplete="off" /></label>
-			<section data-topic><h2>Fly</h2><p>Pitch, yaw, roll and throttle are on the flight controls. Flight assist keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
+			<section data-topic><h2>Fly</h2><p>Pitch is W and S, yaw is A and D, roll is Q and E, and the arrow keys pitch and yaw as well. Shift and Ctrl move the throttle. X switches flight assist, which keeps a combat-speed ceiling; switch it off when you want to drift. The green cue marks where you are going, not only where the ship points.</p></section>
 			<section data-topic><h2>Panels and controls</h2><p>Press ? to open the Controls tab and see the complete, remappable control reference. 1 opens the left panel, 2 faces the forward panel, and 3 opens the right panel. Press the same key again to return your view to flight.</p></section>
-			<section data-topic><h2>Travel</h2><p>Select a station, face it, and engage cruise for the long leg. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
-			<section data-topic><h2>Dock</h2><p>Ask for clearance before entering the aperture. Follow the director, align with the slot, and fly gently through the mouth.</p></section>
-			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory.</p></section>
+			<section data-topic><h2>Travel</h2><p>T and G step through targets, F faces the one you selected, and J engages or drops cruise. The &#96; key winds up the jump to another system. Cruise is for distance; ordinary flight is for arriving, fighting, and docking.</p></section>
+			<section data-topic><h2>Dock</h2><p>C asks for clearance, and you need it before you enter the aperture. Follow the director, align with the slot, and fly gently through the mouth. U switches the docking computer. Enter launches again, and skips the traversal.</p></section>
+			<section data-topic><h2>Work</h2><p>Requests, trade, and opportunities emerge from the state of the system. Take what suits you; none of them are compulsory. In a list, the up and down arrows walk the cursor and Enter opens the row; the mouse does the same.</p></section>
 			${play}`,
 	},
 	{
@@ -67,7 +67,7 @@ export const PUBLIC_PAGES: readonly PublicPage[] = [
 		eyebrow: "Trust",
 		title: "Your flight is yours.",
 		dek: "The Far Between is private by default, immediate by design, and intentionally small in what it asks of you.",
-		content: `<ul class="promise"><li>No accounts, tracking, analytics, advertising, or runtime network calls.</li><li>Saves live locally in your browser and can be exported as portable data.</li><li>Feedback leaves your machine only when you choose an external channel to send it through.</li></ul>
+		content: `<ul class="promise"><li>No accounts, tracking, analytics, advertising, or runtime network calls.</li><li>Saves live locally in your browser and can be exported as portable data.</li></ul>
 			<p>There is no behavioural telemetry. The project learns through direct feedback, opt-in reports where they make sense, and conversation.</p>`,
 	},
 	{

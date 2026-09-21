@@ -165,7 +165,7 @@ The existing carrier model permits disabled or destroyed stations; this specific
 
 ### 6. Interface and focus flow
 
-**Docked:** Requests is the third tab on the forward station console. It contains available offers, accepted requests, retained leads and outcomes/return obligations as distinct list sections. Rows open details. Details show Accept only for an offer, Reaccept for eligible cancelled unfinished work, Track/Untrack and Cancel for an accepted request, and Report only when docked at its report station with valid success evidence. Reading a retained lead can identify a search region, never create a commitment.
+**Docked:** Requests is the third tab on the forward station console. It contains available offers, accepted requests, retained leads and outcomes/return obligations as distinct list sections. Rows open details. Details show Accept only for an offer, Reaccept for eligible cancelled unfinished work, Track/Untrack and Cancel for an accepted request, and Report only when docked at its report station with valid success evidence. Reading a retained lead can identify a search region, never create a commitment. *Retained lead* is this document's term; the screen says **Keep for later** and labels such a row **kept**, because the spec's word did not read as anything to a player.
 
 **In flight:** Requests on the left console reviews accepted jobs and retained leads. Selecting a row opens details; Track chooses the one compact next-action cue. With nothing tracked, show no objective marker and a neutral “no request tracked” entry. No automatic tracking occurs on acceptance, completion or cancellation: completing or cancelling the tracked request clears the cue and invites manual selection of another.
 
