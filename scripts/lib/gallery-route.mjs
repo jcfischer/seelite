@@ -35,7 +35,7 @@ const isTimeout = (error) => error?.name === "TimeoutError";
  * `#state-gallery`, so this half is satisfied by construction and not by an
  * unmount. It goes red on a close that stops navigating — measured, by making
  * `.sg-close` call `history.replaceState` instead: both viewports failed
- * `close unmounts the gallery` at 98/100 while the route half stayed green.
+ * `no gallery on the flight route` at 98/100 while the route half stayed green.
  * That is the regression it guards, and it is the half that knows the
  * difference.
  *
