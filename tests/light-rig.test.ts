@@ -39,6 +39,7 @@ import {
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
 	SHIPPED_BAND_FLOOR,
+	SUBJECT_CHANGE_OTHER_ROWS,
 	SUBJECT_CHANGE_QUARTILE_DROP,
 } from "../scripts/lib/hull-luma.mjs";
 import { COCKPIT_EMISSIVE_INTENSITIES } from "../src/cockpit-surface";
@@ -484,6 +485,17 @@ describe("the painted-hull luma calibration", () => {
 		// the previous band reserved for backends nobody here can measure. Loosen
 		// freely; tightening needs evidence this repo does not have.
 		expect(HULL_LUMA_BAND.min).toBeLessThanOrEqual(SHIPPED_BAND_FLOOR);
+	});
+
+	test("the other two rows could not have caught that change, which is why they carry no bound", () => {
+		// The sentence in the module that explains why only the quartile gets an
+		// upper bound, made executable. If either of these ever grows past its
+		// margin, the claim that the quartile is the discriminating row stops
+		// being true and the bound below belongs somewhere else too.
+		for (const metric of ["peak", "median"] as const) {
+			const { before, after } = SUBJECT_CHANGE_OTHER_ROWS[metric];
+			expect((before - after) / before).toBeLessThan(HULL_LUMA_MARGINS[metric]);
+		}
 	});
 
 	test("the quartile's margin is still tighter than the change it exists to catch", () => {

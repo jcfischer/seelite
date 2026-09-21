@@ -37,7 +37,10 @@
  * | median | 81.10 | 81.17 |
  *
  * `laneSpread` is what they disagreed by, and it is recorded rather than
- * described because the margins below are asserted against it. **It is two
+ * described because the margins below are asserted against it. **The peak's is
+ * exactly 0**, so that leg of the assertion is satisfied by any margin above
+ * zero and is not a bound on the peak at all — it is recorded as measured rather
+ * than padded to a figure nobody read. **It is two
  * rasterisers on one machine**, so it bounds what a lane costs here and says
  * nothing about a third backend; `SHIPPED_BAND_FLOOR` is what stands in for the
  * backends nobody here can measure.
@@ -68,14 +71,35 @@ export const HULL_LUMA_CALIBRATION = Object.freeze({
  * of that table to within a quarter of a code — which is how the two are known to be
  * the same measurement at two points rather than two different things.
  */
-export const PRE_SUBJECT_CHANGE_QUARTILE = 60.93;
+const PRE_SUBJECT_CHANGE_QUARTILE = 60.93;
+
+/**
+ * The same reading at `ab47a33` itself, and the other endpoint of the drop.
+ *
+ * Named for the reason the one above is: a bare literal inside the expression is
+ * the shape this module exists to remove, and half a pair with provenance is
+ * still half a pair without it.
+ */
+const POST_SUBJECT_CHANGE_QUARTILE = 41.96;
+
+/**
+ * The other two rows across the same commit, recorded so the sentence that
+ * explains why they carry no upper bound is checkable rather than asserted.
+ * Both were read by #294 at `ab47a33^` and `ab47a33` with the probe each of
+ * those builds shipped.
+ */
+export const SUBJECT_CHANGE_OTHER_ROWS = Object.freeze({
+	peak: Object.freeze({ before: 154.32, after: 149.08 }),
+	median: Object.freeze({ before: 85.29, after: 81.6 }),
+});
 
 /**
  * The relative drop in the lower quartile that `ab47a33` produced —
  * 60.93 → 41.96 — kept as the sensitivity this row is required to retain.
  */
 export const SUBJECT_CHANGE_QUARTILE_DROP =
-	(PRE_SUBJECT_CHANGE_QUARTILE - 41.96) / PRE_SUBJECT_CHANGE_QUARTILE;
+	(PRE_SUBJECT_CHANGE_QUARTILE - POST_SUBJECT_CHANGE_QUARTILE) /
+	PRE_SUBJECT_CHANGE_QUARTILE;
 
 /**
  * The band floor that shipped before this module existed (#435).
@@ -106,8 +130,10 @@ export const SHIPPED_BAND_FLOOR = 140;
  * evidence of one machine.
  *
  * The quartile carries the upper bound alone because it is the only row of the
- * three that `ab47a33` actually tripped: the peak fell 3.4% and the median 4.3%
- * across that commit, which no workable margin catches. The two of them are a
+ * three that `ab47a33` actually tripped. Both other readings are recorded above
+ * rather than asserted as percentages: the peak fell 154.32 → 149.08 and the
+ * median 85.29 → 81.60, which is 3.4% and 4.3% — under any workable margin, and
+ * under the 5% this module gives the median. The two of them are a
  * second condition — they reject a hull gone dark or blown out everywhere —
  * rather than the discriminating measurement.
  */

@@ -1495,9 +1495,15 @@ class Game {
 	 * carrying a second copy of it.
 	 *
 	 * A finish is module state read at build time, so these are captured once, at
-	 * construction, exactly like every mesh and map that was keyed on them.
-	 * Nothing in the game switches a finish — the workbench does, and the
-	 * workbench deliberately never sets `window.__seelite`.
+	 * construction, exactly like every mesh and map that was keyed on them —
+	 * and that is deliberately the question a probe wants answered. What a band
+	 * on display codes needs to know is which finish the meshes on screen were
+	 * *built* with, not what the module holds now, and those two answers are the
+	 * same only while nothing switches. `setHullFinish` has one caller in
+	 * `src/` — `model-viewer.ts`, the workbench, which never sets
+	 * `window.__seelite` — and four in the finish tests. But a snapshot is the
+	 * right answer whether or not that stays true, which a live read would not
+	 * be.
 	 *
 	 * `probe-light-rig.mjs` is the consumer: its painted-hull rows read absolute
 	 * display codes, which are a property of the hull finish rather than of the

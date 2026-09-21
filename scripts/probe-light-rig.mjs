@@ -86,19 +86,18 @@
  * comparison between two renders on the *same* rasteriser, so what would break
  * it is a renderer that treats the environment differently between two frames,
  * not one that is slow. The painted-hull rows are the exception and the only
- * one: they read absolute display codes. `lib/hull-luma.mjs` records what the
- * two lanes actually read — the peak agrees to two decimals and the
- * distribution to a fifth of a code — and the margins there are asserted to
- * exceed that spread. **That is two rasterisers on one M1 Pro**, so it says what
- * a lane costs here and nothing about a backend this machine does not have;
- * `SHIPPED_BAND_FLOOR` is what keeps the derived floor from spending the
- * headroom the previous band reserved for one.
+ * one: they read absolute display codes, so a lane could in principle decide
+ * them. What the two lanes here actually read, and what follows from it for the
+ * margins, is `lib/hull-luma.mjs`'s to state and is not repeated here.
  *
  * The half that needs the player's GPU is the picture, and that is the
  * canonical view set's job.
  */
 
 import { gameUrl } from "./lib/game-url.mjs";
+// The painted-hull band and floors are derived there, from readings recorded
+// against a named finish. That module owns every figure and the reason for it;
+// nothing about the calibration is restated in this file.
 import {
 	HULL_LUMA_BAND,
 	HULL_LUMA_CALIBRATION,
@@ -130,16 +129,8 @@ const SUBJECT = "station-trade";
  *  station is about a third of the frame and its plating is resolvable. */
 const RADII = 8;
 
-/**
- * The painted-hull band and floors are **derived**, in `lib/hull-luma.mjs`,
- * from readings recorded against a named hull finish — not typed here.
- *
- * They read absolute display codes, so they are a property of the finish on
- * screen rather than of the lighting they are named for, and #294 is the bill:
- * one commit changing `DEFAULT_HULL_FINISH` took both rows red for a fortnight
- * while reading exactly like an under-lit hull. The finish the page reports is
- * checked against the calibrated one below, so that failure names itself.
- */
+/** Repeats of the hull measurement in one page, so the row can print the
+ *  same-build noise beside the reading rather than one sample of it. */
 const HULL_SAMPLES = 5;
 
 /**
