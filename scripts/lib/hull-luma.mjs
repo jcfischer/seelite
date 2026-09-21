@@ -45,8 +45,7 @@
  * rasterisers on one machine**, so it bounds what a lane costs here and says
  * nothing about a third backend; `SHIPPED_BAND_FLOOR` is what stands in for the
  * backends nobody here can measure.
- */
-/**
+ *
  * **Why the key is the hull finish alone.** The station finish is published on
  * the same handle and printed beside these rows, and it is deliberately not part
  * of the guard. `hull-chase` isolates the player hull by subtraction — the frame
@@ -128,6 +127,27 @@ export const SUBJECT_CHANGE_QUARTILE_DROP =
 export const SHIPPED_BAND_FLOOR = 140;
 
 /**
+ * The same rule for the distribution rows, and the one row it cannot cover.
+ *
+ * The argument behind `SHIPPED_BAND_FLOOR` is not about the peak — it is about
+ * every absolute-code floor derived from one machine's readings. So the median
+ * obeys it too, which is why its margin is 14% rather than the 5% it was first
+ * written at: 5% derives 77.045 against a shipped 70, a gate tightened by seven
+ * codes on evidence covering one GPU.
+ *
+ * **The lower quartile is exempt, and the exemption is the point rather than a
+ * gap.** It is the only row of the three with a *sensitivity* requirement:
+ * `SUBJECT_CHANGE_QUARTILE_DROP` bounds its margin from above, because it is the
+ * row that has to keep catching a change of subject. Loosening is free for the
+ * peak and the median, which caught nothing at `ab47a33` and are not asked to.
+ * It is not free here — a floor at 35 is 15.1% under the reading against an
+ * upper bound of 15.6%, so the two bounds would meet and leave a margin with no
+ * room in it. The row is kept tight deliberately, and the rule is written down
+ * as not applying to it rather than quietly not applied.
+ */
+export const SHIPPED_FLOORS = Object.freeze({ median: 70 });
+
+/**
  * How far under each reading its floor sits, as a fraction.
  *
  * Bounded from three sides, and `tests/light-rig.test.ts` asserts each one
@@ -140,7 +160,7 @@ export const SHIPPED_BAND_FLOOR = 140;
  * drop `ab47a33` produced, or the probe passes straight through the next change
  * of subject. And **the peak's floor may not tighten past `SHIPPED_BAND_FLOOR`**,
  * which is why the peak's margin is 8% rather than the 5% it was first written
- * at: 5% derives a floor of 141.63, which is a gate quietly tightened on the
+ * at: 5% derives a floor of 141.626, which is a gate quietly tightened on the
  * evidence of one machine.
  *
  * The quartile carries the upper bound alone because it is the only row of the
@@ -154,7 +174,7 @@ export const SHIPPED_BAND_FLOOR = 140;
 export const HULL_LUMA_MARGINS = Object.freeze({
 	peak: 0.08,
 	lowerQuartile: 0.1,
-	median: 0.05,
+	median: 0.14,
 });
 
 /**

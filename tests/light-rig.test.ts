@@ -39,6 +39,7 @@ import {
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
 	SHIPPED_BAND_FLOOR,
+	SHIPPED_FLOORS,
 	SUBJECT_CHANGE_OTHER_ROWS,
 	SUBJECT_CHANGE_QUARTILE_DROP,
 } from "../scripts/lib/hull-luma.mjs";
@@ -408,12 +409,10 @@ describe("the rotation onto the star", () => {
 /**
  * The painted-hull calibration, and why it is derived rather than typed.
  *
- * `probe-light-rig.mjs`'s three painted-hull rows read **absolute display
- * codes**, so every one of them is a property of the hull finish that was on
- * screen when they were calibrated — not of the lighting they are named for.
- * `scripts/lib/hull-luma.mjs` owns that story and every figure in it, including
- * what #294 measured and where; nothing is restated here, because two
- * hand-kept copies of one measurement is the shape that drifted last time.
+ * Why those rows are a property of the hull finish rather than of the lighting,
+ * and every figure behind it, is `scripts/lib/hull-luma.mjs`'s to state. Nothing
+ * of it is restated here: two hand-kept copies of one measurement is the shape
+ * that drifted last time.
  *
  * What is checked here is the part of it that can be executed:
  *
@@ -475,12 +474,29 @@ describe("the painted-hull luma calibration", () => {
 			).toBeGreaterThan(HULL_LUMA_CALIBRATION.laneSpread[metric]);
 	});
 
-	test("the derived band floor never tightens past the one that shipped", () => {
+	test("no derived floor tightens past the one that shipped", () => {
 		// The bound that is not about this machine. Every reading here is one M1
 		// Pro on two rasterisers, so a floor derived from its peak spends headroom
 		// the previous band reserved for backends nobody here can measure. Loosen
 		// freely; tightening needs evidence this repo does not have.
 		expect(HULL_LUMA_BAND.min).toBeLessThanOrEqual(SHIPPED_BAND_FLOOR);
+		expect(HULL_LUMA_FLOORS.median).toBeLessThanOrEqual(SHIPPED_FLOORS.median);
+		// The quartile is deliberately absent: it is the one row with an upper
+		// bound to satisfy, and the module says why the rule cannot reach it.
+	});
+
+	test("the calibration's shape is the one the floors are derived from", () => {
+		// Cheap, and it guards the boundary between a typechecked tier and a
+		// plain-JS module: a key renamed or dropped in `hull-luma.mjs` would
+		// otherwise reach the arithmetic as `undefined` and derive `NaN`.
+		for (const metric of METRICS) {
+			expect(Number.isFinite(HULL_LUMA_CALIBRATION[metric])).toBe(true);
+			expect(Number.isFinite(HULL_LUMA_CALIBRATION.laneSpread[metric])).toBe(
+				true,
+			);
+			expect(Number.isFinite(HULL_LUMA_MARGINS[metric])).toBe(true);
+			expect(Number.isFinite(FLOOR_OF[metric])).toBe(true);
+		}
 	});
 
 	test("the other two rows could not have caught that change, which is why they carry no bound", () => {
