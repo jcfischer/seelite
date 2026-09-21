@@ -489,6 +489,20 @@ describe("the painted-hull luma calibration", () => {
 			expect(HULL_LUMA_FLOOR_OF[metric]).toBeLessThanOrEqual(shipped);
 	});
 
+	test("what the probe reads is what these bounds were asserted over", () => {
+		// The gap this closes: every bound below runs over `HULL_LUMA_FLOOR_OF`,
+		// and `probe-light-rig.mjs` imports `HULL_LUMA_BAND` and
+		// `HULL_LUMA_FLOORS`. Without this row a literal typed into either would
+		// tighten past its shipped floor with the whole suite green — which is the
+		// same defect as a literal floor beside a derivation, one export along.
+		expect(HULL_LUMA_BAND.min).toBe(HULL_LUMA_FLOOR_OF.peak);
+		expect(HULL_LUMA_FLOORS).toEqual(
+			Object.fromEntries(
+				Object.entries(HULL_LUMA_FLOOR_OF).filter(([m]) => m !== "peak"),
+			),
+		);
+	});
+
 	test("the calibration's shape is the one the floors are derived from", () => {
 		// Cheap, and it guards the boundary between a typechecked tier and a
 		// plain-JS module: a key renamed or dropped in `hull-luma.mjs` would

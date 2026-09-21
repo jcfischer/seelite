@@ -1501,11 +1501,17 @@ class Game {
 	 * earlier than any mesh build; the two agree because nothing moves the module
 	 * state in between, which is a different fact and a weaker one.
 	 *
-	 * A snapshot rather than a live read is still the right shape. What a band on
-	 * display codes needs to know is which finish the meshes on screen were
-	 * *built* with, and a getter would answer what the module holds at the moment
-	 * of asking. Those differ exactly when something switches mid-session — the
-	 * case where the snapshot is right and the live read is wrong.
+	 * A snapshot rather than a live read is the shape that matches the question —
+	 * which finish the meshes on screen were *built* with, rather than what the
+	 * module holds at the moment of asking. **Neither is correct under a
+	 * mid-session switch**, and this comment claimed the snapshot was: a switch
+	 * that also rebuilt the meshes would leave this stale and the probe's guard
+	 * row green against a finish it was not calibrated for, which is #294's
+	 * failure wearing a different hat. What makes the pair safe here is that
+	 * nothing in the running game switches a finish at all — `setHullFinish` has
+	 * one caller in `src/`, `model-viewer.ts`, which is the workbench and never
+	 * sets `window.__seelite`. A build that did switch would need this read where
+	 * the meshes are built, not at either end.
 	 *
 	 * `probe-light-rig.mjs` is the consumer: its painted-hull rows read absolute
 	 * display codes, which are a property of the hull finish rather than of the
