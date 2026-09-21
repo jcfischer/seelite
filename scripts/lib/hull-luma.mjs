@@ -38,13 +38,12 @@
  * | median | 81.10 | 81.17 |
  *
  * `laneSpread` is what they disagreed by, and it is recorded rather than
- * described because the margins below are asserted against it. **The peak's is
+ * described because the margins below are asserted against it. These are two
+ * rasterisers on one machine; what follows from that is `SHIPPED_BAND_FLOOR`'s
+ * to say. **The peak's is
  * exactly 0**, so that leg of the assertion is satisfied by any margin above
  * zero and is not a bound on the peak at all — it is recorded as measured rather
- * than padded to a figure nobody read. **It is two
- * rasterisers on one machine**, so it bounds what a lane costs here and says
- * nothing about a third backend; `SHIPPED_BAND_FLOOR` is what stands in for the
- * backends nobody here can measure.
+ * than padded to a figure nobody read.
  *
  * **Why the key is the hull finish alone.** The station finish is published on
  * the same handle and printed beside these rows, and it is deliberately not part
@@ -129,11 +128,10 @@ export const SHIPPED_BAND_FLOOR = 140;
 /**
  * The same rule for the distribution rows, and the one row it cannot cover.
  *
- * The argument behind `SHIPPED_BAND_FLOOR` is not about the peak — it is about
- * every absolute-code floor derived from one machine's readings. So the median
- * obeys it too, which is why its margin is 14% rather than the 5% it was first
- * written at: 5% derives 77.045 against a shipped 70, a gate tightened by seven
- * codes on evidence covering one GPU.
+ * `SHIPPED_BAND_FLOOR` states the rule and the reason for it; both are about
+ * every absolute-code floor derived from one machine's readings, not about the
+ * peak. So the median obeys it too — 14% rather than the 5% first written here,
+ * which derived 77.045 against a shipped 70.
  *
  * **The lower quartile is exempt, and the exemption is the point rather than a
  * gap.** It is the only row of the three with a *sensitivity* requirement:
@@ -146,6 +144,19 @@ export const SHIPPED_BAND_FLOOR = 140;
  * as not applying to it rather than quietly not applied.
  */
 export const SHIPPED_FLOORS = Object.freeze({ median: 70 });
+
+/**
+ * Where "free to loosen" stops.
+ *
+ * The peak and the median are a **second condition** — they reject a hull gone
+ * dark or blown out everywhere — so loosening them costs nothing the quartile
+ * was not already doing. It costs nothing only while they still reject that
+ * case: a median margin of 0.9 satisfies every other bound here and derives a
+ * floor of 8.11, which a hull rendered nearly black would pass. Half the
+ * calibrated reading is the line, and it is a long way outside any finish this
+ * game has shipped — `worn` moved the median by 4.3%.
+ */
+export const FLOOR_FRACTION_OF_READING = 0.5;
 
 /**
  * How far under each reading its floor sits, as a fraction.
@@ -211,4 +222,16 @@ export const HULL_LUMA_FLOORS = Object.freeze({
 		HULL_LUMA_MARGINS.lowerQuartile,
 	),
 	median: floorUnder(HULL_LUMA_CALIBRATION.median, HULL_LUMA_MARGINS.median),
+});
+
+/**
+ * Every metric's floor, by name, so a consumer iterates the module's own set
+ * rather than re-typing it. A metric added to `HULL_LUMA_MARGINS` and missed
+ * here is a key with no floor, which `tests/light-rig.test.ts` reads as a shape
+ * failure rather than skipping in silence.
+ */
+export const HULL_LUMA_FLOOR_OF = Object.freeze({
+	peak: HULL_LUMA_BAND.min,
+	lowerQuartile: HULL_LUMA_FLOORS.lowerQuartile,
+	median: HULL_LUMA_FLOORS.median,
 });

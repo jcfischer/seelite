@@ -33,9 +33,11 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	FLOOR_FRACTION_OF_READING,
 	floorUnder,
 	HULL_LUMA_BAND,
 	HULL_LUMA_CALIBRATION,
+	HULL_LUMA_FLOOR_OF,
 	HULL_LUMA_FLOORS,
 	HULL_LUMA_MARGINS,
 	SHIPPED_BAND_FLOOR,
@@ -427,14 +429,13 @@ describe("the rotation onto the star", () => {
  *   the band floor that shipped before this module existed.
  */
 describe("the painted-hull luma calibration", () => {
-	/** The floor each metric's reading feeds, in one place so the assertions and
-	 *  the bounds below iterate the same three. */
-	const FLOOR_OF = {
-		peak: HULL_LUMA_BAND.min,
-		lowerQuartile: HULL_LUMA_FLOORS.lowerQuartile,
-		median: HULL_LUMA_FLOORS.median,
-	} as const;
-	const METRICS = ["peak", "lowerQuartile", "median"] as const;
+	// Both derived from the module rather than re-typed: a metric added to
+	// `HULL_LUMA_MARGINS` joins every loop below on its own, instead of silently
+	// getting no coverage from a list this file happens to hold.
+	const FLOOR_OF = HULL_LUMA_FLOOR_OF;
+	const METRICS = Object.keys(HULL_LUMA_MARGINS) as Array<
+		keyof typeof HULL_LUMA_MARGINS
+	>;
 
 	test("is recorded against the finish the game actually ships", () => {
 		// The limit of this, said plainly: it matches a *name*. A change to what
@@ -489,6 +490,7 @@ describe("the painted-hull luma calibration", () => {
 		// Cheap, and it guards the boundary between a typechecked tier and a
 		// plain-JS module: a key renamed or dropped in `hull-luma.mjs` would
 		// otherwise reach the arithmetic as `undefined` and derive `NaN`.
+		expect(METRICS.length).toBeGreaterThan(0);
 		for (const metric of METRICS) {
 			expect(Number.isFinite(HULL_LUMA_CALIBRATION[metric])).toBe(true);
 			expect(Number.isFinite(HULL_LUMA_CALIBRATION.laneSpread[metric])).toBe(
@@ -497,6 +499,27 @@ describe("the painted-hull luma calibration", () => {
 			expect(Number.isFinite(HULL_LUMA_MARGINS[metric])).toBe(true);
 			expect(Number.isFinite(FLOOR_OF[metric])).toBe(true);
 		}
+		// The rest of what this file dereferences, so a dropped export fails here
+		// by name rather than as arithmetic on `undefined` three tests later.
+		expect(floorUnder).toHaveLength(2);
+		expect(Number.isFinite(SHIPPED_BAND_FLOOR)).toBe(true);
+		expect(Number.isFinite(SHIPPED_FLOORS.median)).toBe(true);
+		expect(Number.isFinite(SUBJECT_CHANGE_QUARTILE_DROP)).toBe(true);
+		for (const row of ["peak", "median"] as const) {
+			expect(Number.isFinite(SUBJECT_CHANGE_OTHER_ROWS[row].before)).toBe(true);
+			expect(Number.isFinite(SUBJECT_CHANGE_OTHER_ROWS[row].after)).toBe(true);
+		}
+	});
+
+	test("a floor free to loosen still rejects a hull gone dark", () => {
+		// The upper bound on the two rows that carry no sensitivity requirement.
+		// Without it, "loosening is free" is true all the way to a floor nothing
+		// can fail — a median margin of 0.9 derives 8.11 and passes every other
+		// assertion in this block.
+		for (const metric of ["peak", "median"] as const)
+			expect(FLOOR_OF[metric]).toBeGreaterThan(
+				HULL_LUMA_CALIBRATION[metric] * FLOOR_FRACTION_OF_READING,
+			);
 	});
 
 	test("the other two rows could not have caught that change, which is why they carry no bound", () => {

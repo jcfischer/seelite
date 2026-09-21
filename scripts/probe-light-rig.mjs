@@ -95,7 +95,7 @@
  */
 
 import { gameUrl } from "./lib/game-url.mjs";
-// The painted-hull band and floors are derived there, from readings recorded
+// The painted-hull band and floors are derived in `lib/hull-luma.mjs`, from readings recorded
 // against a named finish. That module owns every figure and the reason for it;
 // nothing about the calibration is restated in this file.
 import {
