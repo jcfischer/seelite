@@ -74,14 +74,25 @@
  * the right way. Neither implies the other — a correct rotation applied to an
  * environment that was never assigned is green upstairs.
  *
- * ## SwiftShader, said plainly
+ * ## Which rasteriser, said plainly
  *
- * This runs through the software rasteriser like every probe here (#98), so no
- * number below is the player's. It does not need to be: every claim is a
- * comparison between two renders on the same rasteriser, so what would break it
- * is a renderer that treats the environment differently between two frames, not
- * one that is slow. The half that needs the player's GPU is the picture, and
- * that is the canonical view set's job.
+ * This file used to say it ran through SwiftShader "like every probe here",
+ * which stopped being true when #435 made the hardware lane the default, and it
+ * said so for a fortnight. It runs on whichever lane the runner picked —
+ * `npm run probe` is hardware, `npm run probe:cpu` is SwiftShader — and no
+ * number below is the player's on either.
+ *
+ * Most of what is checked here does not care. Every environment claim is a
+ * comparison between two renders on the *same* rasteriser, so what would break
+ * it is a renderer that treats the environment differently between two frames,
+ * not one that is slow. The painted-hull rows are the exception and the only
+ * one: they read absolute display codes. `lib/hull-luma.mjs` records what the
+ * two lanes actually read — the peak agrees to two decimals and the
+ * distribution to a fifth of a code — and the margins there are asserted to
+ * exceed that spread, so a lane cannot decide those rows either.
+ *
+ * The half that needs the player's GPU is the picture, and that is the
+ * canonical view set's job.
  */
 
 import { gameUrl } from "./lib/game-url.mjs";
