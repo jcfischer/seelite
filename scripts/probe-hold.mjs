@@ -5,7 +5,7 @@
  * showed, and #411 made that sharper by putting an 8 t consignment in it that
  * cannot be sold and could not be seen. #443 put a line on the trade screen
  * and #446 put ownership into the words on a control; this is the full
- * manifest, and it has to be readable **away from a station** as well as at
+ * hold page, and it has to be readable **away from a station** as well as at
  * one — which is why it lives on the flight console rather than the station's.
  *
  * Every assertion **about the page** reads rendered text, not a state object
@@ -35,11 +35,14 @@ mkdirSync(out, { recursive: true });
 await guardedOrigin(origin);
 const browser = await launchChromium({ headless: !headed });
 const t = tally();
-const checks = [];
+// **A counter, not a list.** `check` throws, so every entry it could hold
+// would be `ok: true` and nothing reads the rest — dead state a reader has to
+// rule out.
+let passed = 0;
 const check = (name, ok, detail = "") => {
-	checks.push({ name, ok: !!ok, detail });
 	console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` · ${detail}` : ""}`);
 	if (!ok) throw new Error(name);
+	passed += 1;
 };
 try {
 	const page = await browser.newPage({
@@ -76,11 +79,13 @@ try {
 		"the Hold page is on the right console and visible with the head turned",
 		await page.locator("[data-live-hold]").isVisible(),
 	);
+	// One read, tested twice and reported from the same read: three CDP
+	// round-trips read three separately re-rendered pages.
+	const emptyLine = await holdText("[data-live-hold-empty]");
 	check(
 		"an empty hold is a sentence and still says the capacity",
-		/nothing aboard/i.test(await holdText("[data-live-hold-empty]")) &&
-			/\d+ t/.test(await holdText("[data-live-hold-empty]")),
-		await holdText("[data-live-hold-empty]"),
+		/nothing aboard/i.test(emptyLine) && /\d+ t/.test(emptyLine),
+		emptyLine,
 	);
 	const capacityInFlight = await holdText("[data-live-hold-capacity]");
 	check(
@@ -182,8 +187,11 @@ try {
 		capacityDocked,
 	);
 
+	// **Selected by the offer id**, not by ownership alone: two consignments of
+	// one good can be aboard at once, and an owner-only locator then resolves
+	// to two nodes and throws instead of measuring either.
 	const requesterRow = page.locator(
-		'[data-live-panel="right"] [data-live-hold-row][data-live-hold-owner="requester"]',
+		`[data-live-panel="right"] [data-live-hold-offer="${offerId}"]`,
 	);
 	const requesterText = await requesterRow.innerText();
 	check(
@@ -216,10 +224,33 @@ try {
 	);
 	await page.screenshot({ path: `${out}/01-hold-docked.png` });
 
+	// **The bid column does not belong to the Market tab.** Everything above
+	// was read with that tab open, which is the one state where the priced
+	// rows are certainly on screen; a column that went blank behind the
+	// Requests tab would have passed every check so far.
+	await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+	await page.locator('[data-live-station-tab="Requests"]').click();
+	await openHold();
+	const pilotValueElsewhere = await page
+		.locator(
+			`[data-live-panel="right"] [data-live-hold-row="${mine}"][data-live-hold-owner="pilot"] [data-live-hold-value]`,
+		)
+		.innerText();
+	// **Still a price, not the same price.** The two reads are seconds of game
+	// time apart and §5.2's response decays, so the figure legitimately moves —
+	// 3.6 Cr to 3.5 Cr on the run that first caught this. Pinning equality
+	// would be pinning the clock.
+	check(
+		"the bid survives a station-console tab change",
+		/\d+\.\d Cr/.test(pilotValueElsewhere),
+		`${pilotValue.split("\n")[0]} → ${pilotValueElsewhere.split("\n")[0]}`,
+	);
+
 	// ---------------------------------------------------------------------
 	// The page and the trade screen agree, because they read one projection.
 	// ---------------------------------------------------------------------
 	await page.evaluate(() => window.__seelite.setHeadLook("forward"));
+	await page.locator('[data-live-station-tab="Market"]').click();
 	const tradeLine = await page.locator("[data-live-station-hold]").innerText();
 	// **The capacity line, not every figure on the page.** The trade screen
 	// draws no per-good rows, so there is nothing there to compare them
@@ -240,5 +271,5 @@ try {
 // `failed` tally would be a constant zero. A shader that fails to link is a
 // `console.error` rather than a page error, and `watchShaders` is the only
 // thing that sees it — that count is what is left to read.
-console.log(`\n${checks.length}/${checks.length} checks passed`);
+console.log(`\n${passed}/${passed} checks passed`);
 if (t.failures) process.exit(1);

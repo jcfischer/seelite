@@ -12011,6 +12011,14 @@ class Game {
 		// rows were built under. Without it the frame loop allocated a Map and
 		// seventeen entries on every cockpit update whether or not the page was
 		// open, to read back a table that had not moved.
+		// **The console's key is the right key, and it has a known hole.** It
+		// carries the station, the tab and `stationConsoleRevision`, which the
+		// till and a request action bump — so a price that moved because the
+		// *player* moved it invalidates this too. What neither covers is a
+		// price that moves on the **clock**: §5.2's deficit decays and the
+		// market epoch turns. That is #321's open question for the shelf, and
+		// the bid column inherits it rather than adding a second one.
+		//
 		// **`undefined` is "never computed" and `null` is "not docked".** Both
 		// fields started at `null`, so a screen built while the console's own
 		// key was still null would have served a cached `null` for ever and

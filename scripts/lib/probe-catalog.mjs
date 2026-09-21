@@ -154,7 +154,14 @@ export const PROBE_CATALOG = Object.freeze(
 		entry(
 			"probe-hold.mjs",
 			"Flies the right console's Hold page in flight and docked: capacity, ownership, and the station's bid.",
-			["hold", "manifest", "entrusted cargo", "right console", "station bid"],
+			[
+				"hold",
+				"cargo capacity",
+				"what is aboard",
+				"entrusted cargo",
+				"right console",
+				"station bid",
+			],
 		),
 		entry(
 			"probe-hud.mjs",

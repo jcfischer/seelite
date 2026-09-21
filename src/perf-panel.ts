@@ -37,6 +37,7 @@
  * of materials would have to be kept in step with a world that regenerates on
  * every jump, and this cannot go stale.
  */
+import { escapeHtml } from "./escape-html";
 import type * as THREE from "three";
 import type { AdaptiveDiagnostics } from "./adaptive-resolution";
 import type { FrameAttribution } from "./frame-attribution";
@@ -56,18 +57,6 @@ type Switch = {
  * `frame-attribution.ts` from a backend entry. Escaped rather than trusted, so
  * a reason added later cannot become markup.
  */
-const escapeHtml = (text: string): string =>
-	text.replace(
-		/[&<>"']/g,
-		(c) =>
-			({
-				"&": "&amp;",
-				"<": "&lt;",
-				">": "&gt;",
-				'"': "&quot;",
-				"'": "&#39;",
-			})[c] ?? c,
-	);
 
 const STYLE_ID = "seelite-perf-style";
 const STYLE = `
@@ -589,18 +578,11 @@ function metric(value: number | null): string {
 }
 
 function identity(value: string | null): string {
-	return (
-		value?.replace(/[&<>"']/g, (character) => {
-			const escaped: Record<string, string> = {
-				"&": "&amp;",
-				"<": "&lt;",
-				">": "&gt;",
-				'"': "&quot;",
-				"'": "&#39;",
-			};
-			return escaped[character];
-		}) ?? "unavailable"
-	);
+	// This module had **two** escape tables of its own, which is the shape the
+	// leaf exists to stop: one of them built its record inside the replacer,
+	// so it allocated per character and nothing said it was the same five
+	// cases as the other.
+	return value === null ? "unavailable" : escapeHtml(value);
 }
 
 /**

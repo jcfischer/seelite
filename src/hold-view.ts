@@ -92,7 +92,11 @@ const row = (line: HoldLine, bids: HoldBids): string =>
 	// **The good's name is a block of its own.** It ran straight into the owner
 	// note on the first sheet — `Foodyours · sellable` — which is the kind of
 	// defect no row can see and a glance catches at once.
-	`<div class="lc-hold-row" data-live-hold-row="${esc(line.goodName)}" data-live-hold-owner="${line.owner}"><span class="lc-hold-good"><strong>${esc(line.goodName)}</strong>${ownerCell(line)}</span><span class="lc-hold-amount" data-live-hold-amount>${line.amount} ${esc(line.unit)}</span>${valueCells(line, bids)}</div>`;
+	// **The offer id is on the row.** `compareLines` sorts requester lines by
+	// it precisely because two consignments of one good can be aboard at once;
+	// without it both rows share an identity and a probe's locator resolves to
+	// two nodes instead of measuring either.
+	`<div class="lc-hold-row" data-live-hold-row="${esc(line.goodName)}" data-live-hold-owner="${line.owner}"${line.job ? ` data-live-hold-offer="${esc(line.job.offerId)}"` : ""}><span class="lc-hold-good"><strong>${esc(line.goodName)}</strong>${ownerCell(line)}</span><span class="lc-hold-amount" data-live-hold-amount>${line.amount} ${esc(line.unit)}</span>${valueCells(line, bids)}</div>`;
 
 /**
  * The page.

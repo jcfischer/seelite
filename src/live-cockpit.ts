@@ -81,7 +81,7 @@ export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
  * The right console's footer, per tab.
  *
  * It was one sentence about `Tuning`, which read as a caption under every
- * other tab — including #445's manifest, where *"Tuning remains on this
+ * other tab — including #445's hold page, where *"Tuning remains on this
  * right-console tab"* is a non sequitur. **Only the Hold tab gets a new
  * sentence here**: rewording the other four is player-visible prose about
  * pages this node does not own, and one of the drafts reached for a noun

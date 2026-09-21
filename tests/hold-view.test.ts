@@ -3,7 +3,7 @@
  *
  * The hold is the one thing a pilot has to reason about that no screen showed.
  * #443 put a line on the trade screen and #446 put ownership into the words on
- * a control; this is the full manifest, and it renders from the **same**
+ * a control; this is the whole of what is aboard, and it renders from the **same**
  * projection so the three cannot disagree.
  *
  * Rows on the string builder rather than the DOM, for `requests-view.ts`'s
@@ -27,6 +27,15 @@ const summary = (over: Partial<HoldSummary> = {}): HoldSummary => ({
 	lines: [],
 	...over,
 });
+
+/** A hold carrying one 8 t consignment and nothing of the pilot's. */
+const entrustedHold = (jobOver: Partial<HoldJob> = {}) =>
+	summary({
+		usedT: 8,
+		freeT: 12,
+		entrustedT: 8,
+		lines: [requesterLine(jobOver)],
+	});
 
 const pilotLine = (goodName: string, amount: number) => ({
 	goodName,
@@ -67,17 +76,7 @@ describe("capacity comes first, because it is what decides a purchase", () => {
 	});
 
 	test("an entrusted share is named, and absent when there is none", () => {
-		expect(
-			holdBody(
-				summary({
-					usedT: 8,
-					freeT: 12,
-					entrustedT: 8,
-					lines: [requesterLine()],
-				}),
-				null,
-			),
-		).toContain("8 t entrusted");
+		expect(holdBody(entrustedHold(), null)).toContain("8 t entrusted");
 		expect(
 			holdBody(summary({ lines: [pilotLine("Food", 0)] }), null),
 		).not.toContain("entrusted");
@@ -133,15 +132,7 @@ describe("ownership is the fact the page exists for", () => {
 	});
 
 	test("a cancelled job's consignment says where it must go back", () => {
-		const html = holdBody(
-			summary({
-				usedT: 8,
-				freeT: 12,
-				entrustedT: 8,
-				lines: [requesterLine({ status: "cancelled" })],
-			}),
-			null,
-		);
+		const html = holdBody(entrustedHold({ status: "cancelled" }), null);
 		expect(html).toContain("Lave Ring");
 		expect(html).toMatch(/return/i);
 	});
@@ -212,15 +203,7 @@ describe("what it fetches here is a docked fact", () => {
 
 describe("a consignment with no title still reads", () => {
 	test("an untitled job leaves no dangling separator", () => {
-		const html = holdBody(
-			summary({
-				usedT: 8,
-				freeT: 12,
-				entrustedT: 8,
-				lines: [requesterLine({ title: "" })],
-			}),
-			null,
-		);
+		const html = holdBody(entrustedHold({ title: "" }), null);
 		expect(html).not.toContain(" · to Reraus Gate");
 		expect(html).toContain("to Reraus Gate");
 	});
@@ -230,15 +213,7 @@ describe("a consignment with no title still reads", () => {
 		// state — and any state added later — reads as *return* rather than as
 		// *carry these somewhere for a job that has ended*.
 		for (const status of ["completed", "cancelled", "failed"] as const) {
-			const html = holdBody(
-				summary({
-					usedT: 8,
-					freeT: 12,
-					entrustedT: 8,
-					lines: [requesterLine({ status })],
-				}),
-				null,
-			);
+			const html = holdBody(entrustedHold({ status }), null);
 			expect(html, status).toContain("return to Lave Ring");
 		}
 	});
@@ -246,15 +221,7 @@ describe("a consignment with no title still reads", () => {
 
 describe("the markup is escaped where it interpolates", () => {
 	test("a job title with markup in it is escaped", () => {
-		const html = holdBody(
-			summary({
-				usedT: 8,
-				freeT: 12,
-				entrustedT: 8,
-				lines: [requesterLine({ title: "<b>boom</b>" })],
-			}),
-			null,
-		);
+		const html = holdBody(entrustedHold({ title: "<b>boom</b>" }), null);
 		expect(html).not.toContain("<b>boom</b>");
 		expect(html).toContain("&lt;b&gt;boom&lt;/b&gt;");
 	});
@@ -282,7 +249,7 @@ describe("the right console's tab order", () => {
 
 describe("the footer under a page is about that page", () => {
 	// The first sheet put *"Tuning remains on this right-console tab"* under
-	// the manifest, which is a non sequitur — and the PR claimed for a round
+	// the hold page, which is a non sequitur — and the PR claimed for a round
 	// that no row could have caught it. A `Record` keyed by the tab is exactly
 	// what a row asserts.
 	test("every right-console tab has a footer", () => {
@@ -318,9 +285,13 @@ describe("the footer under a page is about that page", () => {
 });
 
 describe("the page's own markup carries what the first sheet lacked", () => {
-	// The manifest shipped once inside `.lc-panel-body`'s 135 px rail column,
-	// which is a shape a glance caught and no row expressed — so here is the
-	// row. `lc-hold-body` is what collapses that grid to one column.
+	// The hold's table shipped once inside `.lc-panel-body`'s 135 px rail
+	// column, which a glance caught and no row expressed. **These rows guard
+	// the wiring, not the layout** — that the Hold branch carries the class and
+	// that the class has a rule — and a rewrite that keeps both and still
+	// renders badly passes them. Whether the page *reads* well is the node's
+	// third tier and belongs to a person; what these stop is the class or the
+	// rule being deleted by accident.
 	//
 	// **On the source, not on the rendered panel.** `rightBody` is private and
 	// `STYLE` is module-local; exporting either so a test can reach it would be
