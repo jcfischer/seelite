@@ -227,14 +227,18 @@ describe("a rejected row costs that row and says which", () => {
 		);
 	});
 
+	// **Most of these are guarded twice**, and the two guards are named where
+	// it matters: the validator refuses a shape, and `rebind` refuses a move
+	// the registry's law does not allow. A row here says the blob does not
+	// reach the layout, not which guard stopped it — the describe below is
+	// where the validator is asked to answer on its own.
 	test.each([
 		["a command id that is not one", { command: "fly.wiggle" }],
 		["a command id that is a number", { command: 7 }],
 		["a trigger kind the registry has no row for", { to: { kind: "wheel" } }],
-		["a key that is not a string", { to: { kind: "key", key: 8 } }],
 		[
 			"a surface that is not one",
-			{ to: { kind: "key", key: "8", surface: "hold" } },
+			{ to: { kind: "key", key: "8", hold: true, surface: "hold" } },
 		],
 		[
 			"a qualifier that is not `true`",
@@ -266,6 +270,10 @@ describe("a rejected row costs that row and says which", () => {
 		]);
 		const read = parseLayout(raw);
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
+		// A blob existed and every row of it was refused, so the shipped layout
+		// is what is flying — and the screen must not offer "PLAYER LAYOUT" for
+		// a layout the player is not flying.
+		expect(read.source).toBe("default");
 		expect(kinds(read.notices)).toEqual(["rejected"]);
 		expect(noticeText(read.notices[0] as LayoutNotice)).toContain(
 			commandById(PITCH_UP).name,
@@ -299,6 +307,76 @@ describe("a rejected row costs that row and says which", () => {
 		expect(read.notices.length).toBe(2);
 		for (const n of read.notices)
 			expect(noticeText(n).trim().length).toBeGreaterThan(0);
+	});
+});
+
+describe("the validator answers what the registry's law cannot", () => {
+	/**
+	 * These two are the reason `accept()`'s set membership is not enough.
+	 *
+	 * Every other malformed row in this file is refused by `rebind` as well,
+	 * so deleting the validator would leave the suite green — which is exactly
+	 * the check-that-cannot-fail this repo keeps paying for. Both rows below
+	 * pass `movedTrigger`'s law and are still wrong, so each fails if and only
+	 * if the nested check is gone.
+	 */
+	const legal = {
+		command: PITCH_UP,
+		from: FROM,
+		to: { kind: "key", key: "8", hold: true },
+	};
+	/** What `legal` produces: the same move as `moved`, minus the code the
+	 *  capture modal would have recorded. */
+	const moved8 = rebind(DEFAULT_BINDINGS, PITCH_UP, FROM, {
+		kind: "key",
+		key: "8",
+		hold: true,
+	});
+
+	test("a key that is not a string never reaches the layout", () => {
+		// `matchesQualifiers` compares `hold`, `alt` and `surface` and never
+		// looks at the key, so `rebind` accepts this and stores a trigger whose
+		// `key` is a number. `resolveKey` compares it with a string, so the
+		// command is silently unflyable — a key that does nothing, which is the
+		// failure the notice exists for.
+		const read = parseLayout(blob([{ ...legal, to: { ...legal.to, key: 8 } }]));
+		expect(kinds(read.notices)).toEqual(["rejected"]);
+		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
+	});
+
+	/** The trigger `PITCH_UP` ends up on, whatever the blob asked for. */
+	const storedTrigger = (read: { layout: readonly Binding[] }) =>
+		read.layout.find((b) => b.command === PITCH_UP && b.trigger.hold === true)
+			?.trigger;
+
+	test("a field the registry has no place for is dropped, not carried", () => {
+		// **The row still loads**, and that is the answer rather than a
+		// shortcut: the player moved a key, and one stray property in a string
+		// store is not a reason to refuse them the move. What must not happen is
+		// the field *travelling*. `keyTrigger` spreads what it is handed, so a
+		// stored `contexts` would survive into the trigger — and `scopeOf` reads
+		// `"contexts" in trigger` to decide whether a row is the pad's, so the
+		// row would fly with a scope nobody authored and nothing would say so.
+		const read = parseLayout(
+			blob([{ ...legal, to: { ...legal.to, contexts: ["console"] } }]),
+		);
+		expect(read.notices).toEqual([]);
+		expect(keysOf(read.layout)).toEqual(keysOf(moved8));
+		expect(Object.keys(storedTrigger(read) ?? {})).not.toContain("contexts");
+	});
+
+	test("and a legal move stores exactly the fields a key trigger has", () => {
+		// The control for the row above: the same blob without the stray field
+		// stores the same three keys, so the assertion there is about the field
+		// and not about the shape of the test. No `code`, because `8` is a digit
+		// and `codeFor` deliberately leaves those codeless.
+		const read = parseLayout(blob([legal]));
+		expect(read.notices).toEqual([]);
+		expect(Object.keys(storedTrigger(read) ?? {}).sort()).toEqual([
+			"hold",
+			"key",
+			"kind",
+		]);
 	});
 });
 
