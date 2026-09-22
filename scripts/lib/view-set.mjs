@@ -209,22 +209,25 @@ export const SHOT_KINDS = Object.freeze([
  * seed" of this set would be the class of claim this file's own capture code
  * refuses: a caption asserting a fixture property the frames do not have.
  *
- * **One seed is not one place.** Every row is framed in the system the game boots
- * at, which is `startSystem` — the most *central* well-stocked and orderly one —
- * and a row may name a `system` to stand at instead (#432). None does: the row
- * that needed it was measured, judged and removed, and the reason is beside
- * `sky-only`. `capture-views.mjs` still restores the system with the seed before
- * each view, with the same readback and the same refusal: a row that got a
- * different system than it asked for has to be a red run rather than a wrong
- * picture with the right caption.
+ * **One seed is not one place, and one place is not the whole cluster.** Every
+ * row is framed in the system the game boots at, which is `startSystem` — the
+ * most *central* well-stocked and orderly one — and a row may name a `system` to
+ * stand at instead (#432). One does: `sky-at-the-rim`, at the farthest system from
+ * the centre (#480). That is the whole point of it. Until #480 the only frame whose
+ * subject was the sky stood at the middle of the cluster and aimed away from it, so
+ * the sheet had nothing to say about the sky from anywhere the sky is thin. The row
+ * that came before it needed the same affordance in a different role, was measured,
+ * judged and removed, and the reason is beside `sky-only`.
  *
- * **That plumbing is carried knowingly, at a cost this file is naming.** It is
- * exercised by no row today, so every branch of it runs only in tests. The
- * alternative — dropping it until a row asks — is what #478 will undo, and the
- * half worth keeping is not the argument to `gameUrl` but the readback: the one
- * place a wrong-star caption can be caught is the boot that made it, and a row
- * added under [#478](https://github.com/jcfischer/seelite/issues/478) should fail
- * loudly on its first run rather than be believed.
+ * **The plumbing that row left is now carried by one.** `capture-views.mjs`
+ * restores the system with the seed before each view, with the same readback and
+ * the same refusal: a row that got a different system than it asked for has to be
+ * a red run rather than a wrong picture with the right caption. #432 handed that
+ * over unused, by name, as a cost worth paying; #480 is the row that pays it, which
+ * is the only reason the readback has ever run outside a test. The half that was
+ * worth keeping was never the argument to `gameUrl` but the readback — the one
+ * place a wrong-star caption can be caught is the boot that made it — and a row
+ * naming a place should fail loudly on its first run rather than be believed.
  *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
