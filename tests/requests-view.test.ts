@@ -41,9 +41,9 @@ const PROCUREMENT = firstProcurementOffer(SYSTEMS).offer;
 
 describe("the action says whose goods it moves", () => {
 	test("an entrusted consignment is handed over, never supplied", () => {
-		const action = deliverAction(COURIER, COURIER.tonnes);
+		const action = deliverAction(COURIER, COURIER.operand.tonnes);
 		expect(action.label).toBe(
-			`Hand over ${COURIER.tonnes} t ${COURIER.goodName}`,
+			`Hand over ${COURIER.operand.tonnes} t ${COURIER.operand.goodName}`,
 		);
 		// **Never the word that sent a pilot shopping.** The label may not read
 		// as an instruction to supply anything.
@@ -54,9 +54,9 @@ describe("the action says whose goods it moves", () => {
 	});
 
 	test("a procurement job says the goods come out of the pilot's hold", () => {
-		const action = deliverAction(PROCUREMENT, PROCUREMENT.tonnes);
+		const action = deliverAction(PROCUREMENT, PROCUREMENT.operand.tonnes);
 		expect(action.label).toBe(
-			`Deliver ${PROCUREMENT.tonnes} t ${PROCUREMENT.goodName} from your hold`,
+			`Deliver ${PROCUREMENT.operand.tonnes} t ${PROCUREMENT.operand.goodName} from your hold`,
 		);
 		expect(action.enabled).toBe(true);
 		expect(action.hint).toMatch(/yours/);
@@ -65,8 +65,11 @@ describe("the action says whose goods it moves", () => {
 	test("the two families' labels differ, which is the whole node", () => {
 		// One offer, one flag, two labels — the same offer that used to render
 		// the same string either way.
-		expect(deliverAction(COURIER, COURIER.tonnes).label).not.toBe(
-			deliverAction({ ...COURIER, entrusted: false }, COURIER.tonnes).label,
+		expect(deliverAction(COURIER, COURIER.operand.tonnes).label).not.toBe(
+			deliverAction(
+				{ ...COURIER, operand: { ...COURIER.operand, entrusted: false } },
+				COURIER.operand.tonnes,
+			).label,
 		);
 	});
 
@@ -75,14 +78,14 @@ describe("the action says whose goods it moves", () => {
 		// that made them: these are what `bindCourier` and `bindProcurement`
 		// actually produce.
 		expect(COURIER.family).toBe("courier");
-		expect(COURIER.entrusted).toBe(true);
+		expect(COURIER.operand.entrusted).toBe(true);
 		expect(PROCUREMENT.family).toBe("procurement");
-		expect(PROCUREMENT.entrusted).toBe(false);
+		expect(PROCUREMENT.operand.entrusted).toBe(false);
 	});
 
 	test("a short hold says how short, and the control is not live", () => {
 		const short = deliverAction(PROCUREMENT, 3);
-		expect(short.hint).toBe(`3 t of ${PROCUREMENT.tonnes} aboard`);
+		expect(short.hint).toBe(`3 t of ${PROCUREMENT.operand.tonnes} aboard`);
 		expect(short.enabled).toBe(false);
 	});
 
@@ -101,7 +104,10 @@ describe("the action says whose goods it moves", () => {
 		// inputs, not because of anything this builder does. The contract is
 		// the opposite one and it is worth pinning: the text arrives verbatim,
 		// and `button()` escapes it on the way into markup.
-		const odd = deliverAction({ ...COURIER, goodName: "Fo<o>d" }, 99);
+		const odd = deliverAction(
+			{ ...COURIER, operand: { ...COURIER.operand, goodName: "Fo<o>d" } },
+			99,
+		);
 		expect(odd.label).toContain("Fo<o>d");
 	});
 
@@ -110,7 +116,7 @@ describe("the action says whose goods it moves", () => {
 		// itself, which is the mixed signal this node exists to remove.
 		const partial = deliverAction(COURIER, 3);
 		expect(partial.hint).toBe(
-			`only 3 t of the ${COURIER.tonnes} t consignment aboard`,
+			`only 3 t of the ${COURIER.operand.tonnes} t consignment aboard`,
 		);
 		expect(partial.enabled).toBe(false);
 	});
@@ -141,7 +147,7 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 				{
 					hold: summary([
 						{
-							goodName: PROCUREMENT.goodName,
+							goodName: PROCUREMENT.operand.goodName,
 							amount: 3,
 							unit: "t",
 							owner: "pilot",
@@ -162,7 +168,7 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 				{
 					hold: summary([
 						{
-							goodName: PROCUREMENT.goodName,
+							goodName: PROCUREMENT.operand.goodName,
 							amount: 8,
 							unit: "t",
 							owner: "requester",
@@ -178,22 +184,29 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 	test("a consignment reads its own lot and no other job's", () => {
 		const lines: HoldSummary["lines"] = [
 			{
-				goodName: COURIER.goodName,
-				amount: COURIER.tonnes,
+				goodName: COURIER.operand.goodName,
+				amount: COURIER.operand.tonnes,
 				unit: "t",
 				owner: "requester",
 				job: JOB(COURIER.id),
 			},
 			{
-				goodName: COURIER.goodName,
+				goodName: COURIER.operand.goodName,
 				amount: 4,
 				unit: "t",
 				owner: "requester",
 				job: JOB("another-job"),
 			},
-			{ goodName: COURIER.goodName, amount: 2, unit: "t", owner: "pilot" },
+			{
+				goodName: COURIER.operand.goodName,
+				amount: 2,
+				unit: "t",
+				owner: "pilot",
+			},
 		];
-		expect(aboardFor({ hold: summary(lines) }, COURIER)).toBe(COURIER.tonnes);
+		expect(aboardFor({ hold: summary(lines) }, COURIER)).toBe(
+			COURIER.operand.tonnes,
+		);
 	});
 
 	test("a non-tonne line of the same good is not counted as tonnes", () => {
@@ -205,7 +218,7 @@ describe("what is aboard comes off the hold projection, not a second scan", () =
 				{
 					hold: summary([
 						{
-							goodName: PROCUREMENT.goodName,
+							goodName: PROCUREMENT.operand.goodName,
 							amount: 40,
 							unit: "kg",
 							owner: "pilot",
@@ -248,16 +261,16 @@ describe("the rendered control carries what the builder decided", () => {
 	// so this is a headless row rather than a probe.
 	const accepted = (offer: typeof COURIER, aboard: number) => {
 		const request = acceptedRequest(offer);
-		const line = offer.entrusted
+		const line = offer.operand.entrusted
 			? {
-					goodName: offer.goodName,
+					goodName: offer.operand.goodName,
 					amount: aboard,
 					unit: "t" as const,
 					owner: "requester" as const,
 					job: JOB(offer.id),
 				}
 			: {
-					goodName: offer.goodName,
+					goodName: offer.operand.goodName,
 					amount: aboard,
 					unit: "t" as const,
 					owner: "pilot" as const,
@@ -282,7 +295,7 @@ describe("the rendered control carries what the builder decided", () => {
 				usedT: aboard,
 				capacityT: 20,
 				freeT: 20 - aboard,
-				entrustedT: offer.entrusted ? aboard : 0,
+				entrustedT: offer.operand.entrusted ? aboard : 0,
 				lines: aboard ? [line] : [],
 			},
 		};
@@ -290,9 +303,11 @@ describe("the rendered control carries what the builder decided", () => {
 	};
 
 	test("a full hold renders a live control with no disabled attribute", () => {
-		const html = accepted(COURIER, COURIER.tonnes);
+		const html = accepted(COURIER, COURIER.operand.tonnes);
 		expect(html).toContain('data-live-request-action="deliver"');
-		expect(html).toContain(`Hand over ${COURIER.tonnes} t ${COURIER.goodName}`);
+		expect(html).toContain(
+			`Hand over ${COURIER.operand.tonnes} t ${COURIER.operand.goodName}`,
+		);
 		expect(html).not.toMatch(/data-live-request-action="deliver"[^>]*disabled/);
 	});
 
@@ -306,7 +321,7 @@ describe("the rendered control carries what the builder decided", () => {
 	 * back onto the glass, and the label cannot be changed by accident.
 	 */
 	test("the control that keeps an offer says so in the player's words", () => {
-		const html = accepted(COURIER, COURIER.tonnes);
+		const html = accepted(COURIER, COURIER.operand.tonnes);
 		expect(html).toContain('data-live-request-action="retain"');
 		expect(html).toContain("Keep for later");
 		for (const spec of ["Retain lead", "retained lead", "Lead retained"])
@@ -316,7 +331,7 @@ describe("the rendered control carries what the builder decided", () => {
 	test("a short hold renders the attribute and the hint beside it", () => {
 		const html = accepted(PROCUREMENT, 1);
 		expect(html).toMatch(/data-live-request-action="deliver"[^>]*disabled/);
-		expect(html).toContain(`1 t of ${PROCUREMENT.tonnes} aboard`);
+		expect(html).toContain(`1 t of ${PROCUREMENT.operand.tonnes} aboard`);
 		// The hint is **outside** the button: a disabled button is not
 		// focusable and browsers suppress its title, so a hint nested in one is
 		// least reachable exactly when it is most needed.

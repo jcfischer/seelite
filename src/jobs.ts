@@ -22,13 +22,15 @@
  * `SAVE_SCHEMA_VERSION` decision rather than a content edit. Adding a *row* or
  * a *binder* is not.
  *
- * And note what the shipped shape assumes: `goodName`, `tonnes` and
- * `entrusted` are required, because both families move cargo. **Bounty and
- * Salvage do not**, so the family that brings them will split these onto a
- * per-family payload and bump the schema again. That split is deliberately not
- * made here: a bounty's operand is a target carrier and a salvage's is a
- * wreck, neither of which exists yet, and a payload shaped for operands nobody
- * has written is a guess this module would then have to keep.
+ * **What a job is *about* is a discriminated `operand`** (#440, built in #453),
+ * not three flat fields. `goodName`, `tonnes` and `entrusted` were required of
+ * every offer because both shipped families move cargo — and **Bounty and
+ * Salvage do not**, so a third family would have had to change the persisted
+ * shape and migrate every save in the same change that authored its content.
+ * The shape moved first and alone, because the migration is the expensive part
+ * and an in-flight shape is cheap to change late. There is one member today;
+ * a bounty's operand is a target carrier and a salvage's is a wreck, and
+ * neither is written here, which is the point.
  *
  * It imports no Three.js and must not: a board is arithmetic, and
  * `tests/headless.test.ts` is where that stays true.
@@ -243,6 +245,51 @@ export interface JobStationRef {
 	carrierKey: CarrierKey;
 }
 
+/**
+ * What a job is about, tagged by the family that owns the tag (#440).
+ *
+ * One member, and the union is the point rather than the member: a `switch` on
+ * `kind` with a `never` default means the day Bounty's target carrier or
+ * Salvage's wreck arrives, every **typed** reader fails to compile instead of
+ * quietly reading a field that is not there.
+ *
+ * The qualifier is load-bearing. `scripts/probe-requests.mjs` reads
+ * `offer.operand.goodName` and is not typechecked, so a non-cargo operand
+ * reaches it as `undefined` rather than as a build error — the browser tier
+ * inherits the question a family adds, and the compiler will not raise it.
+ * #453's own round 1 went red there rather than at the compiler.
+ */
+export type JobOperand = {
+	kind: "cargo";
+	goodName: string;
+	tonnes: number;
+	/** True when the cargo is the requester's (request contract §4's entrusted
+	 *  lot), false when the pilot buys it with their own credits. */
+	entrusted: boolean;
+};
+
+/**
+ * Which operand each family carries — the pairing, as a total record.
+ *
+ * **A `Record<JobFamily, …>` rather than a list of family names**, because a
+ * list is what the validator had and a list does not fail on a family it has
+ * never heard of. Add a member to `JobFamily` and this stops compiling until
+ * it says what that family is *about*; `requests.ts` reads both the key set
+ * and the value here, so neither the accepted families nor the family→kind
+ * pairing is written down a second time.
+ *
+ * It does not make a *new cargo family* a compile error at the validator —
+ * that is a value in this table, not a type — and the sentence above is the
+ * whole of what the exhaustiveness buys. The `never` in `operandOk` covers
+ * the **kind**; this covers the family.
+ */
+export const FAMILY_OPERAND_KIND: Readonly<
+	Record<JobFamily, JobOperand["kind"]>
+> = {
+	courier: "cargo",
+	procurement: "cargo",
+};
+
 /** A bound, offerable job: one row with every operand filled. */
 export interface JobOffer {
 	id: string;
@@ -268,12 +315,9 @@ export interface JobOffer {
 	reportName: string;
 	reportSystemName: string;
 	distanceLy: number;
-	goodName: string;
-	tonnes: number;
+	/** What this job is about — the one field a family may shape (#440). */
+	operand: JobOperand;
 	rewardCr: number;
-	/** True when the cargo is the requester's (request contract §4's entrusted
-	 *  lot), false when the pilot buys it with their own credits. */
-	entrusted: boolean;
 	title: string;
 	purpose: string;
 	danger: string;
@@ -302,11 +346,15 @@ export interface JobMark {
  *
  * `holdT` and the clock stay the caller's, because `recordTrade` requires the
  * **flown** hull's hold (#182) and this module never sees a commander.
+ *
+ * **It stays cargo-shaped, and that is #440's D3** rather than an omission: a
+ * mark never reaches a save, so it is split on the day a family has a mark
+ * that is not a deficit — late, where the change is cheap.
  */
 export const jobMark = (offer: JobOffer): JobMark => ({
 	key: offer.reportAt.carrierKey,
 	// Supplying a station is the sale sign (`economy-trade.md` §5.2).
-	trade: { goodName: offer.goodName, units: -offer.tonnes },
+	trade: { goodName: offer.operand.goodName, units: -offer.operand.tonnes },
 });
 
 /**
@@ -507,14 +555,17 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 		reportName: destination.station.name,
 		reportSystemName: destination.system.name,
 		distanceLy: destination.distanceLy,
-		goodName: good.name,
-		tonnes: row.tonnes,
+		operand: {
+			kind: "cargo",
+			goodName: good.name,
+			tonnes: row.tonnes,
+			entrusted: true,
+		},
 		rewardCr: round(
 			row.payment.baseCr +
 				row.payment.perTonneCr * row.tonnes +
 				row.payment.perLyCr * destination.distanceLy,
 		),
-		entrusted: true,
 		title: row.title,
 		purpose: row.purpose,
 		danger: row.danger,
@@ -590,12 +641,18 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
 		reportName: ctx.station.name,
 		reportSystemName: ctx.system.name,
 		distanceLy: 0,
-		goodName: best.commodity.name,
-		tonnes,
+		operand: {
+			kind: "cargo",
+			goodName: best.commodity.name,
+			tonnes,
+			// Nothing is entrusted: the pilot buys with their own credits and
+			// carries the loss, which is the axis that makes this a different
+			// decision from a courier run (`ordinary-requests.md` §1).
+			entrusted: false,
+		},
 		rewardCr: round(
 			row.payment.baseCr + base * row.payment.basePriceFactor * tonnes,
 		),
-		entrusted: false,
 		title: row.title,
 		purpose: row.purpose,
 		danger: row.danger,

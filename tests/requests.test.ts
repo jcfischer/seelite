@@ -120,10 +120,10 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 
 	test("a courier's cargo is the requester's, and it occupies the hold", () => {
 		const state = accept().state;
-		expect(entrustedTonnesAboard(state)).toBe(courier.tonnes);
+		expect(entrustedTonnesAboard(state)).toBe(courier.operand.tonnes);
 		const lots = Object.values(state.entrustedByLotId);
 		expect(lots).toHaveLength(1);
-		expect(lots[0].goodName).toBe(courier.goodName);
+		expect(lots[0].goodName).toBe(courier.operand.goodName);
 		expect(lots[0].returnTo.carrierKey).toBe(courier.requester.carrierKey);
 	});
 
@@ -135,7 +135,7 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 			courier.id,
 			{
 				...context(),
-				holdRoomT: courier.tonnes - 1,
+				holdRoomT: courier.operand.tonnes - 1,
 			},
 		);
 		expect(refused.ok).toBe(false);
@@ -169,7 +169,7 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		// rather than a paragraph because a later refactor of the two cargo
 		// paths would break it in silence.
 		const state = accept().state;
-		const mine = { [courier.goodName]: courier.tonnes };
+		const mine = { [courier.operand.goodName]: courier.operand.tonnes };
 		const delivered = requestAction(state, offers, "deliver", courier.id, {
 			...context(),
 			docked: at(courier.reportAt),
@@ -194,13 +194,13 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		);
 		expect(reported.ok).toBe(true);
 		expect(reported.cargoDelta).toEqual({});
-		expect(reported.mark?.trade.units).toBe(-courier.tonnes);
+		expect(reported.mark?.trade.units).toBe(-courier.operand.tonnes);
 		// **And the sentence calls the pilot's tonnage theirs.** This is the
 		// case the node was reported from — the same good on both sides of the
 		// ownership line — and the settlement has to keep them apart in words
 		// as well as in arithmetic.
 		expect(reported.message).toBe(
-			`Reported · ${courier.tonnes} t ${courier.goodName} handed over, ${courier.rewardCr} Cr paid · ${courier.tonnes} t ${courier.goodName} still aboard, yours.`,
+			`Reported · ${courier.operand.tonnes} t ${courier.operand.goodName} handed over, ${courier.rewardCr} Cr paid · ${courier.operand.tonnes} t ${courier.operand.goodName} still aboard, yours.`,
 		);
 	});
 
@@ -291,7 +291,7 @@ describe("§4 — cancelling keeps the obligation it created", () => {
 			context(),
 		).state;
 		expect(state.byId[courier.id].status).toBe("cancelled");
-		expect(entrustedTonnesAboard(state)).toBe(courier.tonnes);
+		expect(entrustedTonnesAboard(state)).toBe(courier.operand.tonnes);
 
 		const returned = requestAction(
 			state,
@@ -330,7 +330,7 @@ describe("procurement carries the pilot's own goods", () => {
 	});
 
 	test("it is the pilot's own cargo: no lot is issued, and none is owed", () => {
-		expect(purchase.entrusted).toBe(false);
+		expect(purchase.operand.entrusted).toBe(false);
 		const accepted = requestAction(
 			emptyRequests(),
 			shelf,
@@ -358,17 +358,21 @@ describe("procurement carries the pilot's own goods", () => {
 			atShelf(),
 		);
 		expect(empty.ok).toBe(false);
-		expect(empty.message).toContain(purchase.goodName);
+		expect(empty.message).toContain(purchase.operand.goodName);
 
 		const laden = requestAction(
 			state,
 			shelf,
 			"deliver",
 			purchase.id,
-			atShelf({ cargo: { [purchase.goodName]: purchase.tonnes } }),
+			atShelf({
+				cargo: { [purchase.operand.goodName]: purchase.operand.tonnes },
+			}),
 		);
 		expect(laden.ok).toBe(true);
-		expect(laden.cargoDelta).toEqual({ [purchase.goodName]: -purchase.tonnes });
+		expect(laden.cargoDelta).toEqual({
+			[purchase.operand.goodName]: -purchase.operand.tonnes,
+		});
 		expect(laden.state.byId[purchase.id].status).toBe("ready-to-report");
 	});
 
@@ -429,7 +433,7 @@ describe("§3 — a reaccept cannot restore a satisfied objective", () => {
 			context(),
 		);
 		expect(again.ok).toBe(false);
-		expect(entrustedTonnesAboard(again.state)).toBe(courier.tonnes);
+		expect(entrustedTonnesAboard(again.state)).toBe(courier.operand.tonnes);
 		// Returning it first is the way through, and then one lot is issued.
 		const returned = requestAction(
 			cancelled,
@@ -447,7 +451,9 @@ describe("§3 — a reaccept cannot restore a satisfied objective", () => {
 		);
 		expect(reaccepted.ok).toBe(true);
 		expect(Object.values(reaccepted.state.entrustedByLotId).length).toBe(1);
-		expect(entrustedTonnesAboard(reaccepted.state)).toBe(courier.tonnes);
+		expect(entrustedTonnesAboard(reaccepted.state)).toBe(
+			courier.operand.tonnes,
+		);
 	});
 });
 
@@ -498,7 +504,7 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		);
 		expect(accepted.ok).toBe(true);
 		const short = requestAction(accepted.state, board3, "deliver", offer.id, {
-			...ctx({ [offer.goodName]: offer.tonnes - 1 }),
+			...ctx({ [offer.operand.goodName]: offer.operand.tonnes - 1 }),
 		});
 		expect(short.ok).toBe(false);
 		expect(short.cargoDelta).toEqual({});
@@ -510,7 +516,7 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		const { offers: board3, offer } = board;
 		// Two tonnes more than the job needs, so the remainder is a figure and
 		// not a zero — a zero would pass under either ordering.
-		let cargo = { [offer.goodName]: offer.tonnes + 2 };
+		let cargo = { [offer.operand.goodName]: offer.operand.tonnes + 2 };
 		const accepted = requestAction(
 			emptyRequests(),
 			board3,
@@ -527,7 +533,9 @@ describe("a procurement job settles against the pilot's own hold", () => {
 			ctx(cargo),
 		);
 		expect(delivered.ok).toBe(true);
-		expect(delivered.cargoDelta).toEqual({ [offer.goodName]: -offer.tonnes });
+		expect(delivered.cargoDelta).toEqual({
+			[offer.operand.goodName]: -offer.operand.tonnes,
+		});
 		cargo = apply(cargo, delivered.cargoDelta);
 		const reported = requestAction(
 			delivered.state,
@@ -538,7 +546,7 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		);
 		expect(reported.ok).toBe(true);
 		expect(reported.message).toBe(
-			`Reported · ${offer.tonnes} t ${offer.goodName} delivered from your hold, ${offer.rewardCr} Cr paid · 2 t ${offer.goodName} still aboard, yours.`,
+			`Reported · ${offer.operand.tonnes} t ${offer.operand.goodName} delivered from your hold, ${offer.rewardCr} Cr paid · 2 t ${offer.operand.goodName} still aboard, yours.`,
 		);
 	});
 });

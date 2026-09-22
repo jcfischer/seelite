@@ -186,7 +186,11 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 			}),
 		),
 	);
-	expect(SAVE_SCHEMA_VERSION).toBe(4);
+	// **A literal, so a bump has to come through here.** This row grafts a
+	// version 2 body out of a current one; if the two ever met, it would be
+	// asserting the migration path against no migration at all. It went red on
+	// #453's bump, which is the tripwire working.
+	expect(SAVE_SCHEMA_VERSION).toBe(5);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
 	delete body.commander.requests;
@@ -254,7 +258,7 @@ test("requester labels refresh by CarrierKey without rejecting or changing the s
 	expect(JSON.stringify(raw)).toBe(before);
 });
 
-test("every Commander write is schema 4 and carries its journal", () => {
+test("every Commander write is the current schema and carries its journal", () => {
 	const save = {
 		world: newWorld(42),
 		commander: newCommanderRecord("courier"),
@@ -379,4 +383,150 @@ test("a journal survives the save, the reload and a galaxy switch", async () => 
 	// the ship now is.
 	for (const request of Object.values(after.commander.requests.byId))
 		expect(request.terms.requester.galaxyIndex).toBe(0);
+});
+
+/**
+ * A settled courier run **and** a retained lead, so a migration row reaches
+ * both arrays the journal holds.
+ *
+ * The lead is the same station's *next* episode rather than another station's
+ * offer: `offerId` is keyed on the episode, so `settled: { courier: 1 }` binds
+ * a distinct offer without walking the galaxy a second time and without the
+ * two sharing an id.
+ */
+const paidTrialWithLead = () => {
+	const trial = paidTrial();
+	const next = firstOffer(SAVE_SYSTEMS, "courier", {
+		settled: { courier: 1 },
+	});
+	const retained = requestAction(
+		trial.commander.requests,
+		next.offers,
+		"retain",
+		next.offer.id,
+		requestCtx(next.offer.requester),
+	);
+	if (!retained.ok) throw new Error(`retain: ${retained.message}`);
+	trial.commander.requests = retained.state;
+	return trial;
+};
+
+/** A body's integrity, recomputed the way `serializeSave` computes it. */
+const sealed = (body: Record<string, unknown>) => ({
+	...body,
+	integrity: fnv1a(JSON.stringify(body)),
+});
+
+/**
+ * Today's record written back as version 4: the operand flattened onto the
+ * offer, which is the shape every shipped v4 save carries.
+ *
+ * **Read what this is and is not, because the first version of this comment
+ * overclaimed it.** Every field but three comes from `serializeSave`, so the
+ * envelope, the journal's containers and the rest of an offer cannot drift
+ * from what the game writes. The **v4-ness** — flattening the operand back
+ * onto the offer — is authored here, and it is the exact inverse of `lift`.
+ * So the row below proves those two agree; it is not an archaeological v4
+ * save, and nothing in this repo is. A genuine drift in what v4 *was* is
+ * therefore outside what it can catch.
+ *
+ * What makes the inverse the right shape is not this helper's word for it:
+ * version 5 changed these three fields and nothing else, which is what the
+ * re-serialize row pins — a lifted v4 record and a native v5 one are the same
+ * structure, so no fourth key is invented or dropped on the way through. Read
+ * that as *structure* and not as bytes: it is a `toEqual`, which is blind to
+ * key order, and `integrity` — the one field that is order-sensitive — is
+ * destructured away on both sides before the comparison. An earlier version of
+ * this sentence said "every byte", which the row does not check.
+ */
+const asV4 = (
+	save: ReturnType<typeof paidTrialWithLead>,
+	{ keepOperand = false } = {},
+) => {
+	const raw = JSON.parse(JSON.stringify(serializeSave(save)));
+	const { integrity: _, ...body } = raw;
+	body.saveSchemaVersion = 4;
+	const offers = [
+		...Object.values(
+			body.commander.requests.byId as Record<string, { terms: JobOffer }>,
+		).map((r) => r.terms),
+		...Object.values(
+			body.commander.requests.leadsById as Record<string, JobOffer>,
+		),
+	] as unknown as Record<string, unknown>[];
+	if (offers.length < 2) throw new Error("the v4 fixture reaches one array");
+	for (const offer of offers) {
+		const operand = offer.operand as Record<string, unknown>;
+		offer.goodName = operand.goodName;
+		offer.tonnes = operand.tonnes;
+		offer.entrusted = operand.entrusted;
+		if (!keepOperand) delete offer.operand;
+	}
+	return sealed(body);
+};
+
+test("a schema 4 journal lifts its flat cargo fields into an operand", () => {
+	const save = paidTrialWithLead();
+	// The lift reaches every well-formed v4 offer, because every v4 family is
+	// a courier or a procurement job and both move cargo. It is not a claim
+	// that a v4 load cannot throw — the row two below is the one thing it
+	// refuses, and it is asserted there. A row that
+	// sampled one offer would not say that — this one reads the settled
+	// request and the retained lead.
+	expect(parseSave(asV4(save))).toEqual(save);
+});
+
+test("a lifted schema 4 record re-serializes as a native version 5", () => {
+	// **The flat keys have to be removed, not merely superseded.** `offerOf`
+	// copies the validated offer by spread, so a `goodName` left beside the
+	// operand rides through the load and out into the next write — a v5 record
+	// carrying v4's fields, which no version identifies.
+	const save = paidTrialWithLead();
+	const { integrity: _native, ...native } = JSON.parse(
+		JSON.stringify(serializeSave(save)),
+	);
+	const { integrity: _lifted, ...lifted } = JSON.parse(
+		JSON.stringify(serializeSave(parseSave(asV4(save)))),
+	);
+	expect(lifted).toEqual(native);
+});
+
+test("a schema 4 offer carrying an operand is refused by name", () => {
+	// The mirror of the schema 2 rule above: a version is readable *and* has a
+	// shape, so a v4 record holding v5's field was assembled rather than
+	// saved. The refusal names the version and the key, because a generic
+	// shape message would send a reader looking at the journal's content.
+	expect(() =>
+		parseSave(asV4(paidTrialWithLead(), { keepOperand: true })),
+	).toThrow('saveSchemaVersion 4 cannot contain "operand"');
+});
+
+test("a v4 offer keyed __proto__ is refused, not silently dropped", () => {
+	// **The guard on the lift's row containers, given something to catch.**
+	// `JSON.parse` makes `__proto__` an own key, so `Object.entries` yields it
+	// and assigning it on an ordinary object reaches `Object.prototype`'s
+	// setter: the offer would leave the migration having never been stored,
+	// and the journal would load one request short with nothing said. With a
+	// null prototype it is stored, reaches `parseRequests`, and is refused for
+	// what is actually wrong with it — its id does not match its key.
+	//
+	// Swap `Object.create(null)` for `{}` in `migrateV4Requests` and this row
+	// goes red while every other row in the file stays green, which is the
+	// only way to tell the two apart.
+	const save = paidTrialWithLead();
+	const v4 = asV4(save) as unknown as {
+		commander: { requests: { byId: Record<string, unknown> } };
+	};
+	const [only] = Object.values(v4.commander.requests.byId);
+	// **Built as text, because an object literal cannot express this.**
+	// `{ __proto__: x }` sets the prototype rather than an own key — it is the
+	// one spelling JavaScript treats specially — so the key has to arrive the
+	// way a save's does, through `JSON.parse`.
+	const rows = JSON.stringify(v4.commander.requests.byId);
+	v4.commander.requests.byId = JSON.parse(
+		`{"__proto__":${JSON.stringify(only)}${rows === "{}" ? "" : `,${rows.slice(1, -1)}`}}`,
+	);
+	expect(Object.hasOwn(v4.commander.requests.byId, "__proto__")).toBe(true);
+	const { integrity: _, ...body } = v4 as Record<string, unknown>;
+	expect(() => parseSave(sealed(body))).toThrow("invalid Requests journal");
 });

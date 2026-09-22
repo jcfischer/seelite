@@ -75,9 +75,9 @@ describe("the capacity is the till's, not the screen's", () => {
 		// could not say.
 		const requests = withConsignment();
 		const summary = holdSummary(pilot({ Radioactives: 1 }), requests);
-		expect(summary.entrustedT).toBe(courier.tonnes);
-		expect(summary.usedT).toBe(courier.tonnes + 1);
-		expect(summary.freeT).toBe(COURIER_HOLD_T - courier.tonnes - 1);
+		expect(summary.entrustedT).toBe(courier.operand.tonnes);
+		expect(summary.usedT).toBe(courier.operand.tonnes + 1);
+		expect(summary.freeT).toBe(COURIER_HOLD_T - courier.operand.tonnes - 1);
 	});
 
 	test("entrusted tonnes are the journal's projection, not a second sum", () => {
@@ -110,13 +110,16 @@ describe("the capacity is the till's, not the screen's", () => {
 describe("ownership is the thing the screen could not say", () => {
 	test("the pilot's goods and the requester's are separate lines", () => {
 		const requests = withConsignment();
-		const summary = holdSummary(pilot({ [courier.goodName]: 3 }), requests);
+		const summary = holdSummary(
+			pilot({ [courier.operand.goodName]: 3 }),
+			requests,
+		);
 		const mine = summary.lines.filter((line) => line.owner === "pilot");
 		const theirs = summary.lines.filter((line) => line.owner === "requester");
 		expect(mine).toHaveLength(1);
 		expect(theirs).toHaveLength(1);
 		expect(mine[0].amount).toBe(3);
-		expect(theirs[0].amount).toBe(courier.tonnes);
+		expect(theirs[0].amount).toBe(courier.operand.tonnes);
 		// The same good, and the two are not merged: one can be sold and one
 		// cannot, which is the whole of #411 §4.
 		expect(mine[0].goodName).toBe(theirs[0].goodName);
@@ -158,7 +161,7 @@ describe("ownership is the thing the screen could not say", () => {
 			"pilot:Alloys",
 			"pilot:Food",
 			"pilot:Textiles",
-			`requester:${courier.goodName}`,
+			`requester:${courier.operand.goodName}`,
 		]);
 	});
 

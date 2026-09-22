@@ -43,31 +43,31 @@ export function deliverAction(
 	offer: RequestOffer,
 	aboardT: number,
 ): DeliverAction {
-	const short = aboardT < offer.tonnes;
+	const short = aboardT < offer.operand.tonnes;
 	// Only the words differ by family; the enablement is one rule, and it was
 	// written twice.
 	const entrustedHint = (): string => {
 		if (!short) return "aboard since you accepted — the requester's";
 		if (aboardT > 0)
-			return `only ${aboardT} t of the ${offer.tonnes} t consignment aboard`;
+			return `only ${aboardT} t of the ${offer.operand.tonnes} t consignment aboard`;
 		return "the consignment is not aboard";
 	};
-	const words = offer.entrusted
+	const words = offer.operand.entrusted
 		? {
 				// **Never "Deliver" for a consignment.** In this game that word
 				// is an instruction to supply something, and supplying is
 				// exactly what a consignment does not need (CONTEXT.md
 				// §Language, **Entrusted cargo**).
-				label: `Hand over ${offer.tonnes} t ${offer.goodName}`,
+				label: `Hand over ${offer.operand.tonnes} t ${offer.operand.goodName}`,
 				hint: entrustedHint(),
 			}
 		: {
-				label: `Deliver ${offer.tonnes} t ${offer.goodName} from your hold`,
+				label: `Deliver ${offer.operand.tonnes} t ${offer.operand.goodName} from your hold`,
 				// `aboardT` on both arms: a pilot carrying 10 t for an 8 t job
 				// was told "8 t aboard", which is the job's figure and not
 				// theirs.
 				hint: short
-					? `${aboardT} t of ${offer.tonnes} aboard`
+					? `${aboardT} t of ${offer.operand.tonnes} aboard`
 					: `${aboardT} t aboard, yours to hand over`,
 			};
 	return { ...words, enabled: !short };
@@ -133,7 +133,16 @@ const button = (
 export const aboardFor = (
 	view: Pick<RequestsView, "hold">,
 	offer: RequestOffer,
-): number => aboardForOffer(view.hold, offer);
+): number =>
+	// **The pick is built here rather than `hold.ts` taking the offer.** That
+	// module stays below `jobs.ts` (its own header's rule), so the operand is
+	// unwrapped on this side of the boundary and the three fields it reads
+	// stay its signature.
+	aboardForOffer(view.hold, {
+		id: offer.id,
+		goodName: offer.operand.goodName,
+		entrusted: offer.operand.entrusted,
+	});
 export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
@@ -189,7 +198,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				(state.leadsById[o.id]
 					? "kept · not accepted"
 					: "offer · not accepted");
-			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${o.tonnes} t ${esc(o.goodName)} · report at ${esc(o.reportName)}</small></button>`;
+			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${o.operand.tonnes} t ${esc(o.operand.goodName)} · report at ${esc(o.reportName)}</small></button>`;
 		})
 		.join("");
 	let details = `<div class="lc-request-details" data-live-request-details><h3>Choose work at your own pace</h3><p>Open a row to read its terms. Reading one, or keeping it for later, commits you to nothing.</p><p>Accept multiple requests. Manually Track one to show its next action in flight.</p></div>`;
@@ -214,9 +223,9 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			["Danger", o.danger],
 			[
 				"Cargo",
-				o.entrusted
-					? `${o.tonnes} t ${o.goodName}, entrusted · it stays the requester's, and you cannot sell it`
-					: `${o.tonnes} t ${o.goodName}, your own · buy it where you like and carry the loss`,
+				o.operand.entrusted
+					? `${o.operand.tonnes} t ${o.operand.goodName}, entrusted · it stays the requester's, and you cannot sell it`
+					: `${o.operand.tonnes} t ${o.operand.goodName}, your own · buy it where you like and carry the loss`,
 			],
 			["Equipment", "None"],
 			["Payment", `${o.rewardCr} Cr · once, on report at ${o.reportName}`],
@@ -260,14 +269,14 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		}
 		if (
 			r?.status === "cancelled" &&
-			o.entrusted &&
+			o.operand.entrusted &&
 			atRequester &&
 			Object.values(state.entrustedByLotId).some((lot) => lot.offerId === o.id)
 		)
 			actions += button(
 				"return-entrusted",
 				o.id,
-				`Return ${o.tonnes} t ${esc(o.goodName)}`,
+				`Return ${o.operand.tonnes} t ${esc(o.operand.goodName)}`,
 			);
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Report after docking at ${esc(o.reportName)}. Remote payment is unavailable.</p>` : ""}</div>`;
 	}
