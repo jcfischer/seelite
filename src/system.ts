@@ -467,6 +467,24 @@ const pickWeighted = (rand: () => number): StarClassDef => {
 };
 
 /**
+ * A system's star class, from its seed and nothing else.
+ *
+ * `generateContents` takes the class as the **first draw** of the `BODIES`
+ * stream, and this repeats that one draw on a fresh stream of the same tag,
+ * which is the same first value. `tests/backdrop.test.ts` holds the two equal
+ * over a spread of systems rather than trusting this sentence, because the
+ * failure if the draw order ever moves is not an exception: it is every star in
+ * the sky wearing the wrong colour while every system's own sun stays right.
+ *
+ * The consumer that earned it is the sky. `backdrop.ts` draws the 255 other
+ * systems as points and wants each one in the colour of the sun a pilot finds
+ * there, which needs a system's class without generating its planets, its
+ * stations and its market — 255 of those, on every jump.
+ */
+export const starClassFor = (systemSeed: number): StarClassDef =>
+	pickWeighted(stream(systemSeed, DOMAIN.BODIES));
+
+/**
  * Generate a system's contents from its record.
  *
  * Two streams, in a fixed draw order each: `BODIES` for the star, planets, moons

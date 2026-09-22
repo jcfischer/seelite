@@ -527,6 +527,42 @@ _Avoid_: Zenith, galactic north (unqualified)
 **Core bearing**:
 The direction from here to the cluster's centre, in the observer's own sky. Worth
 stating because it is the one bearing that carries information rather than light —
-which is #100's measurement, and `galaxy-generation.md` §11 is where its figures
-are written down once. `coreBearing` in `src/galaxy-frame.ts`.
+which is #100's measurement. §11 of `galaxy-generation.md` is where the rule is
+written down once, and §12 is where the measured cone figures are — how much of a
+sky's other systems a star near the rim puts inside a cone on the centre, against
+what uniform spacing would — reprinted by `scripts/measure-sky-density.ts core`.
+`coreBearing` in `src/galaxy-frame.ts`.
 _Avoid_: The way home, galactic down
+
+**Derived sky**:
+The points that *are* systems — one for every other system in the galaxy, at its
+true bearing through the observer's **Sky frame**, sized by how far away it is and
+coloured by the class of the sun a pilot finds there. Rebuilt on every **witchspace
+transition**, because it is a picture of where the player is standing. `systemField` in
+`src/backdrop.ts`; `galaxy-generation.md` §12 owns the size law and the figures.
+**Scope note, not an _Avoid_ line.** `StarField` is the buffer shape *both* layers
+return — `systemField` and `faintField` hand back one apiece, and `main.ts` imports
+the type — so a ban on the words would fire on every correct use of them, which is
+the misfire §Language rules out by name. What is worth saying is the scope: since
+#431 there are two point layers, so **"the star field" unqualified** and **"the
+bright stars"** are both ambiguous, and the sentence should name which one.
+Brightness is not what makes the derived sky real: the invented points are drawn
+smaller, and the systems are systems, for two different reasons.
+
+**Invented population**:
+The scattered points behind the **derived sky** — a uniform scatter over the
+sphere from the world seed, never rebuilt, and there because 255 systems is not a
+night. Every one of them is drawn **smaller** than the smallest real star, which is
+the ordering the counts make necessary — the invented population outnumbers the
+derived one by an order of magnitude in every direction, so size is the only channel
+in which the real layer can read as structure at all. Two things that sentence does
+not do: it does not say the derived sky *is* legible, which is a question about a
+picture and belongs to #433's sheet and the principal's yes; and it does not say no
+invented point delivers more light than a real one, which is `size²` times a tint,
+and the two layers' tints are not yet on one scale (§12, `grain` mode).
+`faintField` and `FAINT_COUNT` in `src/backdrop.ts`; §12 says what that costs.
+_Avoid_: Dust, filler. **Scope note, not a ban on "background"**: both populations
+sit *in* the background layer, so the words "background stars" name whichever one
+the sentence means and nothing is renamed here. What the sentence has to name is
+which population — an invented point and a system are not interchangeable, and the
+invariant between them is the reason.

@@ -41,6 +41,7 @@ import {
 	startBodyBake,
 } from "./planet-bake";
 import type { SurfacePath } from "./relief-bands";
+import { photosphereTintLinear } from "./star-colour";
 import { disposeSubtree, shared } from "./gpu-teardown";
 
 /**
@@ -112,31 +113,29 @@ export const surfaceSphere = (layer: "near" | "approach" | "far") => {
  *   property they were evidence for: the disc has granulation, and the bloom
  *   pass is not where it comes from.
  *
- * So the tint carries **hue, not exposure**. That is the honest division: a
- * star's apparent brightness on screen is already a rendering choice rather
- * than a measurement, the tone curve is not a photometer, and what reads as
- * class is the colour. The light a star *casts* is untouched — `sunColor` is a
- * different question, and a hot star lighting its worlds more brightly than a
- * cool one is right.
+ * So the tint carries **hue, not exposure**: a star's apparent brightness on
+ * screen is already a rendering choice rather than a measurement, the tone curve is
+ * not a photometer, and what reads as class is the colour. The light a star *casts*
+ * is untouched — `sunColor` is a different question, and a hot star lighting its
+ * worlds more brightly than a cool one is right.
  *
- * 0.55 puts the peak at 1.52 × 0.55 ≈ 0.84, under the knee for a neutral tint,
- * and leaves the warm end almost where it already was — the fix pulls the
- * bright classes down to a working exposure rather than pushing every class up
- * to one.
+ * The exposure it is normalised to, why that number, and the measurement behind it
+ * are authored in `./star-colour` beside the transfer function and the luma weights
+ * (`PHOTOSPHERE_LUMA`), and are not restated here. This module cannot own them: the
+ * points layer in `backdrop.ts` draws the same classes under the same rule and is
+ * headless, and an import from there toward this file would put three behind a
+ * generator a headless test reads. Two copies of a tuned exposure do not fail, they
+ * drift — the consumer with the older figure keeps rendering slightly off the rest
+ * of the sky, which is a picture problem and not a red run.
+ *
  */
-export const PHOTOSPHERE_LUMA = 0.55;
-
-/** Rec. 709, the coefficients `probe-planet-surfaces.mjs` measures with. */
-const lumaOf = (c: THREE.Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-
-/** A star's colour at the one exposure every photosphere is drawn at. */
 function photosphereTint(hex: number): THREE.Color {
-	const colour = new THREE.Color(hex);
-	const luma = lumaOf(colour);
-	// Black has no hue to preserve and no exposure to normalise to; no star class
-	// carries it, and dividing by its luma would be a division by zero rather
-	// than a dark star.
-	return luma > 0 ? colour.multiplyScalar(PHOTOSPHERE_LUMA / luma) : colour;
+	// The scaling happens in plain numbers, and the result is written into a
+	// `Color` with `setRGB` — which takes components already in the working
+	// space, which is exactly what they are. `new THREE.Color(hex)` would run
+	// the sRGB transfer a second time.
+	const [r, g, b] = photosphereTintLinear(hex);
+	return new THREE.Color().setRGB(r, g, b);
 }
 
 /**

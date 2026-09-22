@@ -50,6 +50,39 @@ import { gameUrl, workbenchUrl } from "./lib/game-url.mjs";
  *  that set the URL would silently hand every probe a different world. */
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
+/** How many mounted positions a backdrop seed check reads.
+ *
+ * The whole 4,000-point buffer would be 12,000 floats across the CDP boundary to
+ * answer "did the seed reach the sky", which a head answers: the scatter is drawn
+ * from one stream, so a different seed moves the head too. Kept as one constant
+ * and one function because both readings of it live in this file and the two had
+ * grown apart.
+ */
+const SKY_HEAD = 24;
+
+/** The heads of both backdrop layers' positions, read in the page.
+ *
+ * One function, called with the count, because `page.evaluate` ships a function's
+ * own source and nothing it closes over — which is precisely how the two readers
+ * this replaces drifted apart. Taking the count as an argument keeps the one
+ * number this file owns on this side of the boundary.
+ */
+function skyHeads({ head }) {
+	const one = (name) => {
+		const layer = window.__seelite.backdropScene.getObjectByName(name);
+		// Loud rather than empty. An empty head compares equal to another empty
+		// head, so a page that mounted no named layer made both determinism rows
+		// pass with "0 values compared" — the shape of green that says nothing was
+		// read. `same` below also requires the full head length, so a short read
+		// cannot pass either.
+		if (!layer) throw new Error(`probe-boot: no backdrop layer named ${name}`);
+		return Array.from(
+			layer.geometry.getAttribute("position").array.slice(0, head),
+		);
+	};
+	return { faint: one("stars-faint"), systems: one("stars-systems") };
+}
+
 const SEED = 42;
 
 /** The second seed, for the half of the determinism check that has to differ.
@@ -183,11 +216,13 @@ const state = await page.evaluate(() => {
 		};
 	});
 
-	const points = g.backdropScene.children.find((c) => c.isPoints);
-	const starPositions = points
-		? Array.from(points.geometry.getAttribute("position").array.slice(0, 24))
-		: [];
-
+	// Two point layers, named (#431): the invented population and the systems
+	// that are actually there. `children.find(c => c.isPoints)` cannot tell them
+	// apart, and a seed check that silently reads whichever comes first is a
+	// check on one of the two skies.
+	const pointLayer = (name) => g.backdropScene.getObjectByName(name);
+	const faint = pointLayer("stars-faint");
+	const systems = pointLayer("stars-systems");
 	return {
 		seed: g.world.seed,
 		frames: g.frames,
@@ -205,14 +240,72 @@ const state = await page.evaluate(() => {
 			return m ? { x: m.position.x, y: m.position.y, z: m.position.z } : null;
 		})(),
 		bodies,
-		starCount: points ? points.geometry.getAttribute("position").count : 0,
-		starPositions,
+		faintCount: faint ? faint.geometry.getAttribute("position").count : 0,
+		// The derived layer owes one point per *other* system. The divisor is
+		// read off the page rather than restated here, so a galaxy that changes
+		// its system count changes the check instead of breaking it.
+		systemCount: systems ? systems.geometry.getAttribute("position").count : 0,
+		systemTotal: g.world.galaxy.systems.length,
+		// The two populations, counted where they are found — by name — rather than
+		// by the container that holds them. Two earlier versions of this row read
+		// `backdropScene.children.length === 1`, then
+		// `getObjectByName("starGroup")?.children.length ?? …`: the group carries no
+		// `name`, so that lookup missed and the fallback counted one container — a
+		// claim about nesting, not about the backdrop's contents, and a third
+		// population mounted inside that group would have passed it.
+		pointLayers: ["stars-faint", "stars-systems"].filter(
+			(name) => g.backdropScene.getObjectByName(name)?.isPoints,
+		).length,
+		// "on one shared material" is a claim the two layers make **to each other**,
+		// so it is read between them. Comparing each against `__seelite.starMaterial`
+		// compares against whatever material the most recent `buildBackdrop` made:
+		// `buildBackdrop` constructs a new `ShaderMaterial` on every call, so a page
+		// that has rebuilt its backdrop holds layers against the one before, and the
+		// comparison reported one match out of two on a page whose two layers were
+		// identical to each other.
+		sharedStarMaterial: (() => {
+			const [faintLayer, systemsLayer] = ["stars-faint", "stars-systems"].map(
+				(name) => g.backdropScene.getObjectByName(name),
+			);
+			return Boolean(
+				faintLayer?.isPoints &&
+					systemsLayer?.isPoints &&
+					faintLayer.material === systemsLayer.material,
+			);
+		})(),
 		canvasSize: {
 			w: g.renderer.domElement.width,
 			h: g.renderer.domElement.height,
 		},
 	};
 });
+
+// The two backdrop heads, read through the one function this file's other
+// backdrop rows use. They are read after the state block rather than inside it
+// because an `evaluate` closure cannot reach a module-scope helper — which is
+// exactly how the two readers drifted apart in the first place, so the boundary
+// is taken rather than the duplication accepted.
+// `skyHeads` throws rather than returning empty heads, which is the right
+// behaviour for the rows and the wrong one for the *run*: an `evaluate`
+// rejection here would end probe-boot before a single row printed, and a page
+// missing one layer would report as a crashed probe rather than as a named
+// failure beside forty others that passed. So the throw is caught, named as a
+// row, and the empty heads that follow make the two determinism rows fail
+// loudly on their own length check.
+let bootSky = { faint: [], systems: [] };
+let skyReadError = null;
+try {
+	bootSky = await page.evaluate(skyHeads, { head: SKY_HEAD });
+} catch (error) {
+	skyReadError = String(error);
+}
+check(
+	"both backdrop layers can be read by name",
+	skyReadError === null,
+	skyReadError ?? "stars-faint and stars-systems both resolved",
+);
+state.faintPositions = bootSky.faint;
+state.systemPositions = bootSky.systems;
 
 check(
 	"the seed in the URL is the seed the world used",
@@ -381,9 +474,16 @@ for (const b of drawn) {
 }
 
 check(
-	"the backdrop holds the star points and nothing else",
-	state.starCount > 0,
-	`${state.starCount} points`,
+	"the backdrop holds both point layers and nothing else",
+	state.faintCount > 0 &&
+		state.systemCount === state.systemTotal - 1 &&
+		// "and nothing else" has to count the thing the row is about: the two
+		// point layers. It used to read `backdropScene.children.length === 1`,
+		// which is one *container* and says nothing about what hangs off it —
+		// a third population added inside the group would have passed it.
+		state.pointLayers === 2 &&
+		state.sharedStarMaterial,
+	`${state.faintCount} invented + ${state.systemCount} systems of ${state.systemTotal}: ${state.pointLayers} named layers are Points, one shared material: ${state.sharedStarMaterial}`,
 );
 
 // (2b) The frame is not blank.
@@ -564,21 +664,24 @@ check(
 	`${ticked.moved} of ${ticked.total} moved`,
 );
 
-// (4) The seed reaches the backdrop — both halves.
+// (4) The seed reaches the backdrop — both halves, and both layers.
 const reload = await open();
-const again = await reload.evaluate(() => {
-	const points = window.__seelite.backdropScene.children.find(
-		(c) => c.isPoints,
-	);
-	return Array.from(
-		points.geometry.getAttribute("position").array.slice(0, 24),
-	);
-});
+const again = await reload.evaluate(skyHeads, { head: SKY_HEAD });
+// The length is part of the claim: two empty heads are "the same" to an
+// `every`, and a row that compared nothing has no business reporting ok.
+const same = (a, b) =>
+	a.length === SKY_HEAD &&
+	b.length === SKY_HEAD &&
+	a.every((v, i) => v === b[i]);
 check(
-	"the same seed draws the same stars",
-	again.length === state.starPositions.length &&
-		again.every((v, i) => v === state.starPositions[i]),
-	`${again.length} values compared`,
+	"the same seed draws the same invented stars",
+	same(again.faint, state.faintPositions),
+	`${again.faint.length} values compared`,
+);
+check(
+	"the same seed draws the same systems",
+	same(again.systems, state.systemPositions),
+	`${again.systems.length} values compared`,
 );
 // Closed as soon as its one reading is taken. Each of these is a *running
 // game*: a WebGL context, a render loop, a simulation. Left open they stack up
@@ -589,18 +692,16 @@ await reload.close();
 
 // The other seed is the point, so the override must not replace it.
 const other = await open({ params: { seed: OTHER_SEED }, override: false });
-const otherStars = await other.evaluate(() => {
-	const points = window.__seelite.backdropScene.children.find(
-		(c) => c.isPoints,
-	);
-	return Array.from(
-		points.geometry.getAttribute("position").array.slice(0, 24),
-	);
-});
+const otherSky = await other.evaluate(skyHeads, { head: SKY_HEAD });
 check(
 	"a different seed draws different stars",
-	otherStars.some((v, i) => v !== state.starPositions[i]),
-	"the first 8 star positions are not all identical",
+	otherSky.faint.some((v, i) => v !== state.faintPositions[i]),
+	"the first 8 invented star positions are not all identical",
+);
+check(
+	"a different seed draws a different set of systems",
+	otherSky.systems.some((v, i) => v !== state.systemPositions[i]),
+	"the first 8 derived bearings are not all identical",
 );
 await other.close();
 
