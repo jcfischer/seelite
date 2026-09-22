@@ -51,7 +51,8 @@ Verified on `main` at `295320a`, 2026-09-16.
   (`src/world-state.ts:1238`) is called only from `tests/`. `LegalStatus` is
   `{ heat, updatedAt }` and is saved and parsed field by field
   (`world-state.ts:1738-1741`). The cockpit rail had a `LEGAL STATUS` label and
-  no value (`src/live-cockpit.ts:1272`). **Both halves are later than this
+  no value (`src/live-cockpit.ts`'s left-panel template; the line number this
+  bullet once carried no longer resolves to it). **Both halves are later than this
   section's stamp and are marked as such rather than folded into it**: `HAILS`
   has carried a value since #396, and the label itself reads `STANDING` since
   #457, which paid `CONTEXT.md` §Language's alias debt in the same change that

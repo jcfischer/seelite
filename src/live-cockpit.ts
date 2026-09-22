@@ -1545,11 +1545,11 @@ export class LiveCockpit {
 			// `civilian-combat.md` H1's audit and deliberately nowhere here.
 			//
 			// **The `data-live-legal-status` selector is deliberately unchanged.**
-			// It is the probe-facing name of the slot and not a word the pilot
-			// reads; renaming it is a breaking change to every probe that reads
-			// the readout, for no gain in what the console says. The same scope
-			// split `CONTEXT.md` §Language draws for **Commander**, where the
-			// storage layer's words stay as they are.
+			// It is the probe-facing name of the readout field and not a word the
+			// pilot reads; renaming it is a breaking change to every probe that
+			// reads the readout, for no gain in what the console says. The same
+			// scope split `CONTEXT.md` §Language draws for **Commander**, where
+			// the storage layer's words stay as they are.
 			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS<em data-live-hails></em></span><span>STANDING</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>
