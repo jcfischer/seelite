@@ -7635,25 +7635,24 @@ class Game {
 			route.kind === "key" &&
 			// Walking the surface is a command, so a key held under Ctrl flies
 			// instead, as it does everywhere else (#377).
-			route.commands &&
-			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(
-				route.key,
-			)
+			route.commands
 		) {
-			e.preventDefault();
-			if (route.oneShot) {
-				if (route.key === "enter")
-					this.liveCockpit.activateKeyboardFocus(e.target);
-				else {
-					// Arrow walking hands input back to the shared cursor. A native
-					// button left focused would otherwise steal the following Enter.
-					if (e.target instanceof HTMLElement) e.target.blur();
-					if (route.key === "arrowleft" || route.key === "arrowright")
-						this.liveCockpit.stepTab(route.key === "arrowleft" ? -1 : 1);
-					else this.liveCockpit.stepFocus(route.key === "arrowup" ? -1 : 1);
-				}
+			// The list of five keys this asked about is the registry's now: the
+			// `panel.*` rows carry `surface: "requests"`, which is the third axis
+			// of a `Scope` and the one that says a key is a screen's rather than
+			// the ship's (#381).
+			const walking = resolveKey(this.bindings, {
+				key: route.key,
+				code: e.code,
+				surface: "requests",
+				view: this.view,
+			});
+			if (walking.length > 0) {
+				e.preventDefault();
+				if (route.oneShot)
+					for (const id of walking) this.panelCommand(id, e.target);
+				return;
 			}
-			return;
 		}
 		if (route.kind === "chord") {
 			// A chord stands for a key — today the three head-look keys — and
@@ -7859,6 +7858,39 @@ class Game {
 				return;
 			case "tune.approachLeadDown":
 				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, -1);
+				return;
+			default:
+		}
+	}
+
+	/**
+	 * Walking the one console surface that claims the keyboard.
+	 *
+	 * Its own switch rather than a branch of `command`, because these five are
+	 * the *surface's* and not the ship's: the same arrows fly outside it, and
+	 * `resolveKey` tells the two apart on `Scope.surface` rather than on a key.
+	 */
+	private panelCommand(id: CommandId, target: EventTarget | null) {
+		if (!this.liveCockpit) return;
+		// Arrow walking hands input back to the shared cursor. A native button
+		// left focused would otherwise steal the following Enter — and the
+		// activation itself is what that Enter *is*, so it keeps its focus.
+		if (id !== "panel.activate" && target instanceof HTMLElement) target.blur();
+		switch (id) {
+			case "panel.activate":
+				this.liveCockpit.activateKeyboardFocus(target);
+				return;
+			case "panel.tabPrevious":
+				this.liveCockpit.stepTab(-1);
+				return;
+			case "panel.tabNext":
+				this.liveCockpit.stepTab(1);
+				return;
+			case "panel.cursorUp":
+				this.liveCockpit.stepFocus(-1);
+				return;
+			case "panel.cursorDown":
+				this.liveCockpit.stepFocus(1);
 				return;
 			default:
 		}
