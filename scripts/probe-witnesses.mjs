@@ -413,6 +413,11 @@ try {
 				const charge = {
 					frame: -1,
 					lastExit: null,
+					// What the glass and the console said at that frame — the two
+					// surfaces #447 ruled a charge is owed, and neither of which
+					// this row read before #457.
+					painted: null,
+					comms: null,
 					heat: null,
 					landedFireS: null,
 					// **The frame body on the frame the offence was charged.** The rule
@@ -465,6 +470,13 @@ try {
 						charge.frame = i;
 						charge.at = g.frameBody?.id ?? null;
 						charge.lastExit = g.lastExit;
+						// **The painted frame, and the console, at the charge frame.**
+						// #447: `lastExit` goes to an element the page clips to
+						// 1x1, so it is evidence a string was authored and never
+						// that a pilot was told. The pixels are read first, because
+						// `comms()` drives the console's tab and renders.
+						charge.painted = p.chargePixels();
+						charge.comms = p.comms();
 						charge.landedFireS =
 							g.trafficEngagements.get(key)?.landedFireS ?? null;
 						charge.heat = g.trafficReadout().legal.heatNow;
@@ -589,6 +601,59 @@ try {
 			 * the console's own tab binding does, because the rail and the log are built per
 			 * tab and neither exists in the DOM until the tab is up.
 			 */
+			/**
+			 * **What the charge painted, read off the canvas** (#447, #457).
+			 *
+			 * `g.chargedRender` is written inside the draw, so it is a record of
+			 * painting and not of paint — #69's mistake, and the one #447 found
+			 * this probe repeating with `g.lastExit`. So the frame is differenced
+			 * against a same-build control with the notice's clock zeroed: the
+			 * pixels that move are the notice's, whatever else the frame is doing,
+			 * and no geometry constant is restated up here to find them.
+			 *
+			 * The tone is read off those pixels rather than asserted as a css
+			 * string, because the string is what the draw was *asked* for.
+			 */
+			chargePixels() {
+				g.view = "cockpit";
+				const overlay = document.getElementById("overlay");
+				const c2d = overlay.getContext("2d", { willReadFrequently: true });
+				const shot = () => {
+					g.render(dt);
+					return c2d.getImageData(0, 0, overlay.width, overlay.height).data;
+				};
+				const shown = shot();
+				const kept = g.charged.left;
+				g.charged.left = 0;
+				const control = shot();
+				g.charged.left = kept;
+				g.render(dt);
+				let moved = 0;
+				let r = 0;
+				let gr = 0;
+				let b = 0;
+				for (let i = 0; i < shown.length; i += 4) {
+					// Any channel moving past a code is a moved pixel: the notice is
+					// drawn with a fading alpha, so its faintest row is a few codes
+					// and a threshold tuned to its peak would miss the event it is
+					// there to see.
+					if (
+						Math.abs(shown[i] - control[i]) > 8 ||
+						Math.abs(shown[i + 1] - control[i + 1]) > 8 ||
+						Math.abs(shown[i + 2] - control[i + 2]) > 8
+					) {
+						moved++;
+						r += shown[i];
+						gr += shown[i + 1];
+						b += shown[i + 2];
+					}
+				}
+				return {
+					moved,
+					render: g.chargedRender ? { ...g.chargedRender } : null,
+					mean: moved ? { r: r / moved, g: gr / moved, b: b / moved } : null,
+				};
+			},
 			comms() {
 				// The console is only built while the cockpit is the view, and the
 				// rail only while this tab is up — so both are driven here rather
@@ -924,9 +989,36 @@ try {
 			assaultFireS: struck.assaultFireS,
 		}),
 	);
+	// **This row was named "the sustained-fire charge is said in the pilot's own
+	// line" and read `g.lastExit`** — a string bound for `#hud`, which the page
+	// clips to 1x1. #447 found that false by flying it, and named the row as one
+	// of the three places the claim was made. It reads the painted frame now.
 	check(
-		"the sustained-fire charge is said in the pilot's own line, and it costs Wanted (#396 §2)",
+		"the sustained-fire charge is painted on the glass at the frame it lands, and it costs Wanted (#396 §2, #457)",
 		struck.strike?.charge?.frame >= 0 &&
+			// Pixels moved against a same-build control with the notice's clock
+			// zeroed. A figure rather than a boolean, because a notice that paints
+			// one pixel is the defect this row exists to catch.
+			struck.strike?.charge?.painted?.moved > 200 &&
+			// §4's amber: warmer than it is blue, and not the red the law speaks
+			// refusal in. Read off the pixels, not off the css the draw was asked
+			// for.
+			struck.strike?.charge?.painted?.mean?.r >
+				struck.strike?.charge?.painted?.mean?.b &&
+			struck.strike?.charge?.painted?.mean?.g >
+				struck.strike?.charge?.painted?.mean?.b &&
+			// The words name the act and the carrier, and carry no figure —
+			// `tests/charge-notice.test.ts` holds the template; this holds that the
+			// template is what reached the glass.
+			/SUSTAINED FIRE ON /.test(
+				struck.strike?.charge?.painted?.render?.text ?? "",
+			) &&
+			// And the console holds the same charge, so the record survives the
+			// notice fading. Sampled at the charge frame, which this probe never
+			// did before #457: it read before the first hit and at the divert.
+			struck.strike?.charge?.comms?.logLines?.some((line) =>
+				/sustained fire/.test(line),
+			) &&
 			typeof struck.strike?.charge?.lastExit === "string" &&
 			struck.strike?.charge?.lastExit.includes("sustained fire") &&
 			struck.strike?.charge?.heat >= struck.after?.wantedHeat &&
