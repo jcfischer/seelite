@@ -21,7 +21,7 @@
  */
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import type { JobFamily, JobMark, JobOffer, JobOperand } from "./jobs";
-import { jobMark } from "./jobs";
+import { FAMILY_OPERAND_KIND, jobMark } from "./jobs";
 
 export interface RequestStation {
 	galaxyIndex: number;
@@ -503,26 +503,40 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 	const time = (x: unknown): boolean =>
 		typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= now;
 	const text = (x: unknown): boolean => typeof x === "string" && x.length > 0;
+	/** A family this build knows, read off the pairing table rather than
+	 *  listed again — `jobs.ts`'s `FAMILY_OPERAND_KIND` is total over
+	 *  `JobFamily`, so adding one there is what admits it here. */
+	const knownFamily = (x: unknown): x is JobFamily =>
+		typeof x === "string" && Object.hasOwn(FAMILY_OPERAND_KIND, x);
 	/**
 	 * §4's operand, checked by its own tag and against the family that owns it.
 	 *
-	 * **A `switch` with a `never` default, not a conjunction** (#440). The day
-	 * Bounty's target carrier or Salvage's wreck is written, this stops
-	 * compiling rather than admitting a record it cannot read — which a flat
-	 * list of field checks would do silently.
+	 * **Two different guards, and it is worth saying which covers what.** The
+	 * `switch`'s `never` default covers the **kind**: the day Bounty's target
+	 * carrier or Salvage's wreck is written, this stops compiling rather than
+	 * admitting a record it cannot read. `FAMILY_OPERAND_KIND` covers the
+	 * **family**, and covers it at the same strength — it is a
+	 * `Record<JobFamily, …>`, so a family added to that union stops the table
+	 * compiling until it declares its operand.
 	 *
-	 * The family is checked **against** the kind rather than beside it: the
-	 * two shipped families both move cargo, and a v5 record pairing a cargo
-	 * operand with a family that will not own one is a record no binder wrote.
+	 * What neither covers is a new family whose operand is *also* cargo: that
+	 * is a value in the table, not a type, and it is admitted the moment it is
+	 * written there. An earlier version of this comment read as though the
+	 * exhaustiveness reached that case too.
+	 *
+	 * The pairing is checked **against** the kind rather than beside it: a v5
+	 * record pairing a cargo operand with a family that does not carry one is
+	 * a record no binder wrote.
 	 */
 	const operandOk = (family: unknown, raw: unknown): boolean => {
 		const operand = raw as Partial<JobOperand> | null;
 		if (!operand || typeof operand !== "object") return false;
+		if (!knownFamily(family)) return false;
 		const kind = operand.kind as JobOperand["kind"];
+		if (FAMILY_OPERAND_KIND[family] !== kind) return false;
 		switch (kind) {
 			case "cargo":
 				return (
-					(family === "courier" || family === "procurement") &&
 					text(operand.goodName) &&
 					Number.isInteger(operand.tonnes) &&
 					(operand.tonnes as number) > 0 &&
@@ -563,7 +577,11 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		const reportAt = ref(o.reportAt);
 		if (
 			o.id !== id ||
-			(o.family !== "courier" && o.family !== "procurement") ||
+			// The second copy of the family list, retired: `operandOk` reads
+			// the same table and this read it again, so a family added to one
+			// and not the other would have been accepted by exactly one of
+			// them. One owner, and it is `jobs.ts`.
+			!knownFamily(o.family) ||
 			!text(o.rowId) ||
 			!Array.isArray(o.stages) ||
 			o.stages.length === 0 ||

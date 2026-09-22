@@ -464,8 +464,10 @@ const asV4 = (
 
 test("a schema 4 journal lifts its flat cargo fields into an operand", () => {
 	const save = paidTrialWithLead();
-	// The lift is total: every v4 offer is a courier or a procurement job and
-	// both move cargo, so there is no v4 record it declines. A row that
+	// The lift reaches every well-formed v4 offer, because every v4 family is
+	// a courier or a procurement job and both move cargo. It is not a claim
+	// that a v4 load cannot throw — the row two below is the one thing it
+	// refuses, and it is asserted there. A row that
 	// sampled one offer would not say that — this one reads the settled
 	// request and the retained lead.
 	expect(parseSave(asV4(save))).toEqual(save);
@@ -494,4 +496,34 @@ test("a schema 4 offer carrying an operand is refused by name", () => {
 	expect(() =>
 		parseSave(asV4(paidTrialWithLead(), { keepOperand: true })),
 	).toThrow('saveSchemaVersion 4 cannot contain "operand"');
+});
+
+test("a v4 offer keyed __proto__ is refused, not silently dropped", () => {
+	// **The guard on the lift's row containers, given something to catch.**
+	// `JSON.parse` makes `__proto__` an own key, so `Object.entries` yields it
+	// and assigning it on an ordinary object reaches `Object.prototype`'s
+	// setter: the offer would leave the migration having never been stored,
+	// and the journal would load one request short with nothing said. With a
+	// null prototype it is stored, reaches `parseRequests`, and is refused for
+	// what is actually wrong with it — its id does not match its key.
+	//
+	// Swap `Object.create(null)` for `{}` in `migrateV4Requests` and this row
+	// goes red while every other row in the file stays green, which is the
+	// only way to tell the two apart.
+	const save = paidTrialWithLead();
+	const v4 = asV4(save) as unknown as {
+		commander: { requests: { byId: Record<string, unknown> } };
+	};
+	const [only] = Object.values(v4.commander.requests.byId);
+	// **Built as text, because an object literal cannot express this.**
+	// `{ __proto__: x }` sets the prototype rather than an own key — it is the
+	// one spelling JavaScript treats specially — so the key has to arrive the
+	// way a save's does, through `JSON.parse`.
+	const rows = JSON.stringify(v4.commander.requests.byId);
+	v4.commander.requests.byId = JSON.parse(
+		`{"__proto__":${JSON.stringify(only)}${rows === "{}" ? "" : `,${rows.slice(1, -1)}`}}`,
+	);
+	expect(Object.hasOwn(v4.commander.requests.byId, "__proto__")).toBe(true);
+	const { integrity: _, ...body } = v4 as Record<string, unknown>;
+	expect(() => parseSave(sealed(body))).toThrow("invalid Requests journal");
 });

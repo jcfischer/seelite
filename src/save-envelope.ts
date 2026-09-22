@@ -91,8 +91,10 @@ import {
  * is taken **alone and early** on purpose: a migration is the expensive part
  * of a persisted change, and paying it in a change with no content in it means
  * the family that needs it later adds a union member rather than a save
- * version. Every v4 offer lifts — there is no v4 record this reader declines
- * for its operand — because every v4 family was a cargo family.
+ * version. Every well-formed v4 offer lifts, because every v4 family was a
+ * cargo family. It is not a promise that a v4 load cannot throw:
+ * `migrateV4Requests` below refuses one thing — an offer already carrying
+ * `operand` — and `parseRequests` refuses the rest of the shape as always.
  */
 export const SAVE_SCHEMA_VERSION = 5;
 /**

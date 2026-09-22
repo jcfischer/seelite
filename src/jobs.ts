@@ -257,6 +257,7 @@ export interface JobStationRef {
  * `offer.operand.goodName` and is not typechecked, so a non-cargo operand
  * reaches it as `undefined` rather than as a build error — the browser tier
  * inherits the question a family adds, and the compiler will not raise it.
+ * #453's own round 1 went red there rather than at the compiler.
  */
 export type JobOperand = {
 	kind: "cargo";
@@ -265,6 +266,28 @@ export type JobOperand = {
 	/** True when the cargo is the requester's (request contract §4's entrusted
 	 *  lot), false when the pilot buys it with their own credits. */
 	entrusted: boolean;
+};
+
+/**
+ * Which operand each family carries — the pairing, as a total record.
+ *
+ * **A `Record<JobFamily, …>` rather than a list of family names**, because a
+ * list is what the validator had and a list does not fail on a family it has
+ * never heard of. Add a member to `JobFamily` and this stops compiling until
+ * it says what that family is *about*; `requests.ts` reads both the key set
+ * and the value here, so neither the accepted families nor the family→kind
+ * pairing is written down a second time.
+ *
+ * It does not make a *new cargo family* a compile error at the validator —
+ * that is a value in this table, not a type — and the sentence above is the
+ * whole of what the exhaustiveness buys. The `never` in `operandOk` covers
+ * the **kind**; this covers the family.
+ */
+export const FAMILY_OPERAND_KIND: Readonly<
+	Record<JobFamily, JobOperand["kind"]>
+> = {
+	courier: "cargo",
+	procurement: "cargo",
 };
 
 /** A bound, offerable job: one row with every operand filled. */
