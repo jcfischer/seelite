@@ -8175,16 +8175,14 @@ class Game {
 	 *  two are in the cockpit — left is left in both views. */
 	private chaseOrbitInput(): number {
 		// **Spelled out at the call site, not hoisted to a constant.** Sage
-		// round 3 asked for the eight single-element arrays to be module
-		// constants, since the flight step rebuilds them every frame. They are
-		// back here because `tests/commands.test.ts` reads the pairing *out of
-		// the call site* — which half of each axis is the negative term is the
-		// one thing `main.ts` still decides alone, and swapping two ids there
-		// is a working game that flies inverted. Hoisting turned four rows red
-		// for exactly that reason. Eight small arrays a frame against a check
-		// on inverted flight controls is not a trade worth making; if the
-		// allocation ever matters, the scanner has to move with them.
-		return this.axis(["view.orbitPort"], ["view.orbitStarboard"]);
+		// round 3 asked for these to be module constants, since the flight step
+		// re-evaluates them every frame. They are here because
+		// `tests/commands.test.ts` reads the pairing *out of the call site* —
+		// which half of each axis is the negative term is the one thing
+		// `main.ts` still decides alone, and swapping two ids there is a
+		// working game that flies inverted. Hoisting turned four rows red for
+		// exactly that reason. If it ever measures, the scanner moves with them.
+		return this.axis("view.orbitPort", "view.orbitStarboard");
 	}
 
 	/**
@@ -8197,10 +8195,13 @@ class Game {
 	 * layout in force which keys fly this command, so a rebind reaches the ship
 	 * rather than only the table.
 	 */
-	private axis(negative: CommandId[], positive: CommandId[]): number {
-		const neg = negative.some(this.held) ? 1 : 0;
-		const pos = positive.some(this.held) ? 1 : 0;
-		return pos - neg;
+	private axis(negative: CommandId, positive: CommandId): number {
+		// **Two ids, not two lists of one.** The lists are the key-list era's
+		// shape: a command could be reached by several keys, so an axis half
+		// was several strings. The registry answers that now — `isHeld` walks
+		// every trigger the command has — and every call site had collapsed to
+		// a single-element array (sage round 5).
+		return (this.held(positive) ? 1 : 0) - (this.held(negative) ? 1 : 0);
 	}
 
 	/**
@@ -10926,10 +10927,9 @@ class Game {
 		const stickToChart = this.chartHasStick();
 		const padYaw = stickToChart ? 0 : padAxes.yaw;
 		const padPitch = stickToChart ? 0 : padAxes.pitch;
-		const yaw = this.axis(["fly.yawStarboard"], ["fly.yawPort"]) + padYaw;
-		const pitch = this.axis(["fly.pitchUp"], ["fly.pitchDown"]) + padPitch;
-		const roll =
-			this.axis(["fly.rollStarboard"], ["fly.rollPort"]) + padAxes.roll;
+		const yaw = this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
+		const pitch = this.axis("fly.pitchUp", "fly.pitchDown") + padPitch;
+		const roll = this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
 		// stepped, so the cancel and the input land on the same frame rather than

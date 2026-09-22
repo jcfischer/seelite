@@ -22,7 +22,7 @@ import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
 import { commandById, DEFAULT_BINDINGS } from "../src/commands";
-import { PANEL_OWNED_COMMANDS } from "./lib/source-scan";
+import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
 /**
  * Every key the game binds to something that is **not** a panel of its own.
  *

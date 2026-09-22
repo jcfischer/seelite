@@ -84,18 +84,24 @@ let restFailed = false;
 async function atRest() {
 	// One read per tick: the sample that ends this iteration begins the next.
 	let prev = await nose();
-	for (let i = 0; i < 200; i++) {
+	// **Shorter once it has already failed.** Nine arms at ten seconds each is
+	// ninety seconds of waiting on a build whose damping broke — long enough
+	// to hit a harness timeout, which is the outcome the reported row exists
+	// to avoid. The first exhaustion is the diagnosis; the rest just have to
+	// finish so the row can print.
+	const ticks = restFailed ? 40 : 200;
+	for (let i = 0; i < ticks; i++) {
 		await page.waitForTimeout(50);
 		const now = await nose();
-		if (degreesBetween(prev, now) < 0.02) return true;
+		if (degreesBetween(prev, now) < 0.02) return;
 		prev = now;
 	}
 	restFailed = true;
 	// **Reported, not thrown.** A throw at top level here aborts before
 	// `browser.close()` and `exit()`, so a build whose damping broke would
 	// crash the suite rather than name a failing row — which is the hazard
-	// this file already names for `page.evaluate`.
-	return false;
+	// this file already names for `page.evaluate`. `restFailed` is the one
+	// signal: a return value beside it was a second channel nobody read.
 }
 
 /** Hold `key` for `HOLD_MS` and report how far the nose turned. `null` holds

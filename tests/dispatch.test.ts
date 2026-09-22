@@ -15,6 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	type Binding,
+	codeKey,
 	COMMANDS,
 	DEFAULT_BINDINGS,
 	defaultCollisions,
@@ -176,6 +177,65 @@ describe("the two triggerKey hazards S1 recorded, settled together", () => {
 		expect(defaultCollisions()).toEqual([]);
 	});
 
+	/**
+	 * **Every shipped key that is not a letter or a digit has a code that maps
+	 * back to it** (sage round 5).
+	 *
+	 * The header called this hazard settled while `codeKey` held twelve
+	 * punctuation entries and no modifiers — and the game binds two: `shift`
+	 * is `fly.throttleUp` and `control` is `fly.throttleDown`. A browser
+	 * reports those as `ShiftLeft` and `ControlLeft`, which the prefix strip
+	 * lowercased to `shiftleft`: one physical key with two identities against
+	 * the shipped `key: "shift"`, which is exactly the split the table exists
+	 * to close.
+	 *
+	 * The mapping is restated here on purpose — it is the one place the
+	 * browser's name for a key meets the registry's — and the second half of
+	 * the row is what stops it going stale: a shipped key that is neither a
+	 * letter, a digit, nor named below is a red run.
+	 */
+	test("every shipped non-letter key has a code that maps back to it", () => {
+		const CODES: Record<string, string> = {
+			ShiftLeft: "shift",
+			ShiftRight: "shift",
+			ControlLeft: "control",
+			ControlRight: "control",
+			Space: " ",
+			Enter: "enter",
+			F1: "f1",
+			ArrowUp: "arrowup",
+			ArrowDown: "arrowdown",
+			ArrowLeft: "arrowleft",
+			ArrowRight: "arrowright",
+			Backquote: "`",
+			BracketLeft: "[",
+			BracketRight: "]",
+			Equal: "=",
+			Minus: "-",
+			Quote: "'",
+			Semicolon: ";",
+			Period: ".",
+			Comma: ",",
+			Slash: "/",
+		};
+		for (const [code, key] of Object.entries(CODES))
+			expect(`${code} -> ${codeKey(code)}`).toBe(`${code} -> ${key}`);
+		// And the list covers the layout: anything shipped that is not a letter,
+		// a digit or `?` — the one character #377 ruled carries no code — must
+		// be named above.
+		const named = new Set(Object.values(CODES));
+		const missing = [
+			...new Set(
+				DEFAULT_BINDINGS.flatMap((b) =>
+					b.trigger.kind === "key" && !b.trigger.alt ? [b.trigger.key] : [],
+				),
+			),
+		].filter(
+			(key) => !/^[a-z0-9]$/.test(key) && key !== "?" && !named.has(key),
+		);
+		expect(missing).toEqual([]);
+	});
+
 	test("and an event on that one physical key reaches the character it typed", () => {
 		expect(
 			resolveKey(DEFAULT_BINDINGS, { key: "?", code: "Slash", ...cockpit }),
@@ -285,16 +345,69 @@ describe("a rebind reaches the simulation", () => {
 	 * The hold index is keyed on the layout's array identity, so a layout
 	 * merged **in place** would keep that identity and be answered out of a
 	 * stale index. That was a documented precondition for a round; freezing
-	 * makes it a property, and this is the row that says the freeze is real
-	 * rather than intended (sage round 4).
+	 * makes it a property.
+	 *
+	 * **And the first version of this row could not see the merge it names.**
+	 * It asserted one slot assignment, and `Object.freeze` is shallow — so
+	 * `layout[0].command = …` and `layout[0].trigger.hold = true`, which is
+	 * what a merge actually writes, both succeeded silently while the row
+	 * stayed green and `rebind`'s comment claimed the precondition was
+	 * enforced (sage round 5). Every level a merge can reach is asserted
+	 * here, and the layout is frozen through rather than at the surface.
 	 */
-	test("a layout cannot be merged in place — the freeze refuses the write", () => {
-		const layout = moved();
-		const write = (table: readonly Binding[]) => () => {
-			(table as unknown as { [k: number]: unknown })[0] = { nope: true };
-		};
-		expect(write(layout)).toThrow();
-		expect(write(DEFAULT_BINDINGS)).toThrow();
+	test("a layout cannot be merged in place, at any depth", () => {
+		for (const table of [moved(), DEFAULT_BINDINGS]) {
+			const row = table[0];
+			if (row === undefined) throw new Error("empty layout");
+			const writes: [string, () => void][] = [
+				[
+					"the slot",
+					() => {
+						(table as unknown as { [k: number]: unknown })[0] = { nope: true };
+					},
+				],
+				[
+					"the row's command",
+					() => {
+						(row as unknown as { command: string }).command = "nope";
+					},
+				],
+				[
+					"the row's trigger",
+					() => {
+						(row.trigger as unknown as { key: string }).key = "nope";
+					},
+				],
+				[
+					"the row's scope",
+					() => {
+						(row.scope as unknown as { views: unknown }).views = [];
+					},
+				],
+				[
+					"the scope's view list",
+					() => {
+						(row.scope.views as unknown as string[]).push("nope");
+					},
+				],
+			];
+			for (const [what, write] of writes)
+				expect(() => {
+					write();
+					return what;
+				}).toThrow();
+		}
+	});
+
+	test("and a layout this module never built is frozen when it is first indexed", () => {
+		// `isHeld` takes any array, and the storage slice will hand it one this
+		// module did not make — so freezing at the producer left the invariant
+		// on callers with no type to carry it. Indexing is where the array
+		// acquires the identity the index is keyed on.
+		const loose: Binding[] = DEFAULT_BINDINGS.map((b) => ({ ...b }));
+		expect(Object.isFrozen(loose)).toBe(false);
+		isHeld(loose, "fly.pitchUp", new Set(["s"]), "cockpit");
+		expect(Object.isFrozen(loose)).toBe(true);
 	});
 
 	test("a rebind that names no such binding is refused rather than ignored", () => {

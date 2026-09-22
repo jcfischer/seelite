@@ -28,12 +28,8 @@ import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import {
-	boundKeys,
-	codeOf,
-	dispatchSites,
-	PANEL_OWNED_COMMANDS,
-} from "./lib/source-scan";
+import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
+import { boundKeys, codeOf, dispatchSites } from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
 	CONTROLS.commands.flatMap((command) => [...command.currentTriggers]);
@@ -58,9 +54,14 @@ const keyShaped = (key: string) => key === key.toLowerCase();
  * Four panels keep a key constant of their own, because each is loaded on
  * demand and a static import from the registry would pull it into the eager
  * bundle. They are the whole of this set since #381's dispatch fold: `main.ts`
- * and `combat-rig.ts` state no key at all any more, so a scan of their text
+ * and `combat-rig.ts` no longer **compare** a key, so a scan of their text
  * answers nothing — and a scan that answers nothing makes a completeness row
  * vacuously green, which is the direction this file must never fail in.
+ *
+ * *Compared*, not *stated*: `combat-rig.ts` still draws `LEGEND`, which names
+ * four keys in prose. The row below says why that is S5's and not a hole
+ * here; this sentence said "state no key at all" for a round, and the fix
+ * landed in one copy of the claim and not the other (sage round 5).
  */
 const sourceKeys = () =>
 	// **Unfiltered**: `keyShaped` is for scanner output, where a string with a

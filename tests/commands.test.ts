@@ -270,14 +270,10 @@ describe("the axis law names which key is which", () => {
 	 */
 	const axisCalls = () => {
 		const source = codeOf("src/main.ts");
-		const found = [
-			...source.matchAll(/this\.axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g),
-		];
-		const ids = (list: string) =>
-			[...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
+		const found = [...source.matchAll(/this\.axis\("([^"]+)",\s*"([^"]+)"\)/g)];
 		return found.map((m) => ({
-			negative: ids(m[1] as string),
-			positive: ids(m[2] as string),
+			negative: [m[1] as string],
+			positive: [m[2] as string],
 		}));
 	};
 

@@ -537,11 +537,13 @@ const AUTHORED = [
 		// this command is held every frame; `fly.assist` takes the press.
 		//
 		// **`x`, not `s`, and the reason moved here with the key.** `s` is
-		// pitch-up, so a beam bound to it meant every held shot also pushed the
-		// nose off the thing being shot at — invisible against a scripted
-		// target and the whole difficulty against a flown one.
-		// `probe-live-cockpit.mjs` held the old key for fifteen seconds and
-		// timed out rather than saying so.
+		// `fly.pitchUp` — the row above is the authority, and the comment this
+		// replaced in `combat-rig.ts` said "pitch-down", which was the sentence
+		// being wrong rather than the key. Either way a beam bound to it meant
+		// every held shot also pushed the nose off the thing being shot at,
+		// invisible against a scripted target and the whole difficulty against
+		// a flown one. `probe-live-cockpit.mjs` held the old key for fifteen
+		// seconds and timed out rather than saying so.
 		id: "fight.fireBeam",
 		name: "Fire the beam (combat rig)",
 		group: "fight",
@@ -925,6 +927,24 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
  * only the other direction of that decision.
  */
 const PUNCTUATION_CODES: Readonly<Record<string, string>> = {
+	// **The modifiers are here because the game binds two of them.** `shift`
+	// is `fly.throttleUp` and `control` is `fly.throttleDown`, and a browser
+	// reports those as `ShiftLeft`/`ShiftRight` and `ControlLeft`/`ControlRight`
+	// — which the prefix strip lowercases to `shiftleft`, one physical key with
+	// two identities against the shipped `key: "shift"`. That is the same hole
+	// this table was built to close for punctuation, left open for the two keys
+	// a pilot holds most (sage round 5). `alt` and `meta` are here for the same
+	// reason even though nothing binds them yet: the capture modal will hand
+	// this a `KeyboardEvent.code` off the page, and a key it cannot name is a
+	// key it cannot refuse.
+	AltLeft: "alt",
+	AltRight: "alt",
+	ControlLeft: "control",
+	ControlRight: "control",
+	MetaLeft: "meta",
+	MetaRight: "meta",
+	ShiftLeft: "shift",
+	ShiftRight: "shift",
 	Backquote: "`",
 	Backslash: "\\",
 	BracketLeft: "[",
@@ -1164,7 +1184,34 @@ export const commandById = (id: CommandId): Command => {
 };
 
 /** The shipped layout, as bindings rather than as rows. */
-export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze(
+/**
+ * A layout, frozen **through** rather than at the surface.
+ *
+ * `Object.freeze` on the array alone was round 4's answer and it is not one:
+ * the freeze is shallow, so `layout[0].command = …` and
+ * `layout[0].trigger.hold = true` both succeed silently — and a merge is far
+ * likelier to write a row than to replace a slot. The row that was supposed to
+ * hold this asserted a slot assignment and could not see either (sage round
+ * 5). Each binding, its trigger and its scope are frozen here, which is what
+ * the hold index's precondition actually needs.
+ *
+ * The trigger and scope objects are shared with `COMMANDS` and with the
+ * context constants, so this freezes those too. That is intended: they are
+ * read-only by contract everywhere already.
+ */
+const freezeLayout = (rows: readonly Binding[]): readonly Binding[] => {
+	for (const b of rows) {
+		Object.freeze(b.trigger);
+		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
+		Object.freeze(b.scope.pad);
+		Object.freeze(b.scope.views);
+		Object.freeze(b.scope);
+		Object.freeze(b);
+	}
+	return Object.freeze(rows);
+};
+
+export const DEFAULT_BINDINGS: readonly Binding[] = freezeLayout(
 	COMMANDS.flatMap((c) =>
 		c.defaultTriggers.map((trigger) => ({
 			command: c.id,
@@ -1299,8 +1346,9 @@ export const defaultCollisions = (): Collision[] =>
 export interface KeyFacts {
 	/** `KeyboardEvent.key`, lowercased, as `keyDispatch` hands it over. */
 	readonly key: string;
-	/** `KeyboardEvent.code`. Absent on a synthetic press, which is every press
-	 *  the probe tier makes. */
+	/** `KeyboardEvent.code`. Absent only on a hand-built
+	 *  `new KeyboardEvent({ key })` — Playwright's keyboard supplies one, so
+	 *  the browser tier exercises the code arm rather than the fallback. */
 	readonly code?: string;
 	readonly alt?: boolean;
 	/** Asking what this key flies rather than what it presses. */
@@ -1406,17 +1454,31 @@ export function resolveKey(
  * layout does not; it is checked on the way out, over a list that is one or
  * two rows long.
  */
-const HOLD_INDEX = new WeakMap<readonly Binding[], Map<CommandId, Binding[]>>();
+type HeldBinding = Binding & { trigger: Extract<Trigger, { kind: "key" }> };
 
-const holdRows = (bindings: readonly Binding[]): Map<CommandId, Binding[]> => {
+const HOLD_INDEX = new WeakMap<
+	readonly Binding[],
+	Map<CommandId, HeldBinding[]>
+>();
+
+const holdRows = (
+	bindings: readonly Binding[],
+): Map<CommandId, HeldBinding[]> => {
 	const found = HOLD_INDEX.get(bindings);
 	if (found !== undefined) return found;
-	const index = new Map<CommandId, Binding[]>();
+	// **Frozen here, not only where a layout is built.** `isHeld` takes any
+	// array, and the storage slice will build layouts this module never made —
+	// so freezing at the producer left the precondition on callers with no type
+	// to carry it (sage round 5). Indexing an array is the moment it acquires
+	// the identity the index is keyed on, which is the moment the freeze has to
+	// happen.
+	freezeLayout(bindings);
+	const index = new Map<CommandId, HeldBinding[]>();
 	for (const b of bindings) {
 		const keyed = keyBinding(b);
 		if (keyed === null || !matchesQualifiers(keyed.trigger, { hold: true }))
 			continue;
-		index.set(b.command, [...(index.get(b.command) ?? []), b]);
+		index.set(b.command, [...(index.get(b.command) ?? []), keyed]);
 	}
 	HOLD_INDEX.set(bindings, index);
 	return index;
@@ -1443,11 +1505,12 @@ export function isHeld(
 	keys: ReadonlySet<string>,
 	view: ViewMode,
 ): boolean {
-	for (const b of holdRows(bindings).get(command) ?? []) {
-		const keyed = keyBinding(b);
-		if (keyed === null || !b.scope.views.includes(view)) continue;
-		if (keys.has(keyed.trigger.key)) return true;
-	}
+	// The index stores rows already narrowed to a key trigger and already
+	// filtered on every qualifier, so the view is the only thing left to ask —
+	// the null re-check this replaced was a condition `holdRows` guarantees,
+	// and a reader had to prove that to know the branch was dead.
+	for (const b of holdRows(bindings).get(command) ?? [])
+		if (b.scope.views.includes(view) && keys.has(b.trigger.key)) return true;
 	return false;
 }
 
@@ -1482,13 +1545,7 @@ export function rebind(
 		trigger: moved,
 		scope: scopeOf(moved, commandById(command).views),
 	};
-	// **Frozen, so the hold index's precondition is enforced rather than
-	// documented.** That index is keyed on the array identity, and a layout
-	// merged *in place* would keep its identity and be answered out of a stale
-	// one. A frozen array makes that attempt throw in strict mode — which
-	// every module here is — instead of going quietly wrong in the storage
-	// slice.
-	return Object.freeze(next);
+	return freezeLayout(next);
 }
 
 /**
