@@ -8,7 +8,9 @@
  * here are the headless half of that: the resolver and the held-key query,
  * driven against a layout that is **not** the shipped one.
  *
- * Headless, and on the list in `tests/headless.test.ts`.
+ * `scripts/probe-rebind.mjs` is the other half, and the division is the usual
+ * one: a table changing is not a ship flying, and only the browser tier can
+ * say the second.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -73,30 +75,27 @@ describe("a key event reaches the command the table gives it", () => {
 	});
 });
 
-describe("D7: dispatch is on the physical key where the row carries one", () => {
+describe("D7: a pressed command is reached by position, not by character", () => {
 	/**
 	 * The property this slice buys, and the only reason to author a `code`.
 	 *
-	 * On AZERTY the key at W's position sends `z`. The pitch row carries
-	 * `code: "KeyW"`, so the pilot's fingers stay where they were — and the
-	 * codeless `z` row (Settings) must not take the press instead, which is
-	 * what "code wins over character" is for.
+	 * On AZERTY the M position types `,`. `tune.vicinityUp` is `m` and
+	 * `tune.dropSpeedDown` is `,`, so the two answers are both real commands
+	 * and the rule has to pick between them — this is the conflict rather than
+	 * a contrived pair.
 	 */
-	test("an AZERTY W flies the ship rather than opening Settings", () => {
+	test("the M position steps the vicinity dial although it types a comma", () => {
 		expect(
-			resolveKey(DEFAULT_BINDINGS, {
-				key: "z",
-				code: "KeyW",
-				hold: true,
-				...cockpit,
-			}),
-		).toEqual(["fly.pitchDown"]);
+			resolveKey(DEFAULT_BINDINGS, { key: ",", code: "KeyM", ...cockpit }),
+		).toEqual(["tune.vicinityUp"]);
 	});
 
-	test("and the same physical key opens Settings from its own position", () => {
+	test("and the character answers where no row carries that code", () => {
+		// `,` is punctuation and deliberately codeless, so the US press lands
+		// on the command the character names.
 		expect(
-			resolveKey(DEFAULT_BINDINGS, { key: "w", code: "KeyZ", ...cockpit }),
-		).toEqual(["system.settings"]);
+			resolveKey(DEFAULT_BINDINGS, { key: ",", code: "Comma", ...cockpit }),
+		).toEqual(["tune.dropSpeedDown"]);
 	});
 
 	test("an event with no code at all still resolves by character", () => {
@@ -105,6 +104,45 @@ describe("D7: dispatch is on the physical key where the row carries one", () => 
 		expect(
 			resolveKey(DEFAULT_BINDINGS, { key: "w", hold: true, ...cockpit }),
 		).toEqual(["fly.pitchDown"]);
+	});
+
+	/**
+	 * **A digit is not coded, and that is a decision with a cost on each
+	 * side.** Shift is `fly.throttleUp`, so a US pilot throttling up and
+	 * touching `1` arrives as `{ key: "!", code: "Digit1" }` — with the digit
+	 * coded, the code arm wins and the head turns to the port console, where
+	 * before the fold `case "!"` matched nothing. The AZERTY digit row is a
+	 * layout question of its own; this row is what keeps it from being
+	 * answered by accident.
+	 */
+	test("Shift over a digit reaches nothing, as it did before the fold", () => {
+		expect(
+			resolveKey(DEFAULT_BINDINGS, { key: "!", code: "Digit1", ...cockpit }),
+		).toEqual([]);
+		expect(
+			resolveKey(DEFAULT_BINDINGS, { key: ")", code: "Digit0", ...cockpit }),
+		).toEqual([]);
+	});
+
+	/**
+	 * **And a held command is reached by character, which is a limit this
+	 * slice states rather than closes.**
+	 *
+	 * `main.ts` keeps its held set as the characters `keyDispatch` hands over,
+	 * so `isHeld` asks the layout for a key and not for a position: on AZERTY
+	 * the W position is held as `z` and the pitch is not flown. Giving the
+	 * held set the code is the same change #390 needs for the macOS Option
+	 * release — where a key released under Option reports a different
+	 * character and stays held — and that node owns it. Written as a row so
+	 * the boundary is checkable rather than remembered.
+	 */
+	test("a held command is not reached by position yet, and #390 owns that", () => {
+		expect(
+			isHeld(DEFAULT_BINDINGS, "fly.pitchDown", new Set(["z"]), "cockpit"),
+		).toBe(false);
+		expect(
+			isHeld(DEFAULT_BINDINGS, "fly.pitchDown", new Set(["w"]), "cockpit"),
+		).toBe(true);
 	});
 });
 

@@ -29,12 +29,14 @@
  *   `collisions()` answers both and each caller decides what an answer means.
  * - **D7** — dispatch is on the physical key (`code`) and print is on the
  *   character the binding was *recorded* with, so the tab keeps printing
- *   characters. **The shipped letter defaults do not carry a `code` yet**, and
- *   saying otherwise would be claiming the AZERTY property this slice has not
- *   built: only the three Alt chords carry one, because `ALT_CHORDS` is keyed
- *   on `code` already. `triggerKey` reads `code ?? key`, so it is ready for
- *   them; authoring the letter rows and migrating a saved layout belongs to
- *   the dispatch slice, which is where the codes have a consumer.
+ *   characters. The letter rows carry a code since the dispatch slice, derived
+ *   in `keyTrigger` rather than authored fifty times; the Alt chords carried
+ *   one already, because `ALT_CHORDS` is keyed on `code`. **Two groups do not,
+ *   and `codeFor` owns both reasons** — punctuation, because `?` and `/` share
+ *   a physical key, and digits, because Shift is the throttle. And the
+ *   property reaches a *pressed* command only: the held set is characters, so
+ *   `isHeld` asks for a key rather than a position, and #390 owns the change
+ *   that would move it. Migrating a saved layout is the storage slice's.
  *
  * **What is derived and what is authored**, unchanged from #372's interim
  * module because the reason has not changed: the pad's half is derived here,
@@ -45,16 +47,16 @@
  * `tests/controls-catalogue.test.ts` reads `main.ts` with the partition test's
  * own scanner, in both directions.
  *
- * **One hazard the dispatch slice inherits, recorded here because no function
- * owns both halves of it.** `codeKey` reaches the letter and digit codes and
- * no others, and `triggerKey` routes identity through it: author
- * `code: "Slash"` and it hashes `key:slash` against the shipped `key:/`, one
- * physical key with two identities that `collisions()` cannot see. The
- * shipped defaults hold ten punctuation keys. And one pair fails the other
- * way — `?` and `/` are one physical key apart by Shift, which this model
- * does not carry because #377 ruled `?` is the character the keyboard types
- * and not a chord, so coding both would report a collision the game does not
- * have. Whichever way that slice settles it, it settles both halves at once.
+ * **The hazard S1 recorded, and how the dispatch slice settled it.** `codeKey`
+ * reached the letter and digit codes and no others, so a row authored
+ * `code: "Slash"` hashed `key:slash` against the shipped `key:/` — one
+ * physical key with two identities that `collisions()` could not see, over ten
+ * punctuation keys. It is a table over the codes this game ships now, mapping
+ * each to the **unshifted** character, which is the other half of the same
+ * hazard: `?` and `/` are one physical key apart by Shift, #377 ruled `?` is
+ * the character the keyboard types rather than a chord, so `?` carries no code
+ * and the pair stays the two identities the game really has. One rule settled
+ * both, and `tests/dispatch.test.ts` holds all three consequences.
  *
  * Headless, and on the list in `tests/headless.test.ts`.
  */
@@ -950,21 +952,30 @@ export const codeKey = (code: string) =>
 
 /**
  * The physical key a character is typed by on the layout the defaults were
- * authored on — **letters and digits only** (#369 D7).
+ * authored on — **letters, and nothing else** (#369 D7).
  *
  * This is the AZERTY property, and it is the only reason to author a code: the
  * key at W's position sends `z` there, and a pilot's fingers should stay where
- * they were. Punctuation is deliberately left codeless. Its positions move
- * across layouts too, but `?` and `/` share one physical key, so a code on
- * either would report a collision the game does not have — and the resolver's
- * fallback is the character, which is the answer #377 already ruled for.
+ * they were. Two groups are deliberately left codeless, for two different
+ * reasons, and both were flown before they were refused.
+ *
+ * **Punctuation**, because `?` and `/` share one physical key. #377 ruled `?`
+ * is the character the keyboard types rather than a chord, so a code on either
+ * would report a collision the game does not have. The resolver falls back to
+ * the character there, which is the answer #377 already gave.
+ *
+ * **Digits**, because the code arm wins over the character and Shift is
+ * `fly.throttleUp`. With `Digit1` authored, a US pilot throttling up and
+ * touching `1` arrives as `{ key: "!", code: "Digit1" }`, the coded arm
+ * matches, and the head turns to the port console; `0` resets the cruise
+ * dials the same way. Before the fold `case "!"` matched nothing. That is a
+ * regression bought for a property nobody has asked for, and the AZERTY digit
+ * row — where the digits are themselves the shifted characters — is a layout
+ * question of its own rather than something this slice should settle in
+ * passing.
  */
 const codeFor = (key: string): string | undefined =>
-	/^[a-z]$/.test(key)
-		? `Key${key.toUpperCase()}`
-		: /^[0-9]$/.test(key)
-			? `Digit${key}`
-			: undefined;
+	/^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : undefined;
 
 /**
  * The Alt chords that stand for one of this command's pressed keys — derived
@@ -1310,12 +1321,19 @@ const liveFor = (b: Binding, facts: KeyFacts): boolean => {
  *
  * **The physical key wins, and the character is the fallback** — which is D7's
  * two halves in one rule rather than two. A row that carries a `code` is
- * matched on the event's `code`, so the AZERTY pilot's W position still
- * pitches although it types `z` and the codeless `z` row (Settings) does not
- * take the press. A row that carries none is matched on the character, so `?`
- * reaches the reference and `/` reaches the rig although both arrive on
- * `Slash` — and so does every synthetic press in the probe tier, which carries
- * no code at all.
+ * matched on the event's `code`, so an AZERTY pilot pressing the M position
+ * still steps the vicinity dial although it types `,` there. A row that
+ * carries none is matched on the character, so `?` reaches the reference and
+ * `/` reaches the rig although both arrive on `Slash` — and so does every
+ * synthetic press in the probe tier, which carries no code at all.
+ *
+ * **This reaches a *pressed* command and not a held one, and that is a limit
+ * rather than an omission.** `main.ts` keeps its held set as the characters
+ * `keyDispatch` hands it, so `isHeld` asks the layout for a key rather than a
+ * position: on AZERTY the W position is held as `z` and pitch is not flown.
+ * Giving the held set the code is the same change #390 needs for the macOS
+ * Option release — where a key released under Option reports a different
+ * character and stays held — and that node owns it.
  *
  * A list rather than one id: nothing in the shipped layout answers twice, and
  * `collisions()` is what holds that, but a player layout may — D5 is warn and
@@ -1340,11 +1358,17 @@ export function resolveKey(
 /**
  * Is this command being flown right now?
  *
- * `keys` is the held set as `main.ts` keeps it: **physical keys as they were
- * pressed**, which is what #377's first ruling and #390's limit depend on — a
- * release clears the key it names, and a set of command ids could not be
- * cleared by a keyup that reports a different character. So the store does not
- * change and the query does: an id, resolved to its live hold triggers.
+ * `keys` is the held set as `main.ts` keeps it: **the characters
+ * `keyDispatch` hands over**, which is what #377's first ruling and #390's
+ * limit depend on — a release clears the key it names, and a set of command
+ * ids could not be cleared by a keyup that reports a different character. So
+ * the store does not change and the query does: an id, resolved to its live
+ * hold triggers.
+ *
+ * It follows that a held command is reached by **character and not by
+ * position**, so `resolveKey`'s code arm does not extend to one. See that
+ * function's note: the fix is the held set carrying the code, and #390 owns
+ * it.
  */
 export function isHeld(
 	bindings: readonly Binding[],

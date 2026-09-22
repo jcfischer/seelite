@@ -7671,6 +7671,9 @@ class Game {
 			// The layout in force, and the physical key beside the character:
 			// `resolveKey` prefers the code where a row carries one, which is
 			// what keeps an AZERTY pilot's fingers where they were (#369 D7).
+			// **A pressed command only** — the held set below is characters, so
+			// a held command is reached by character; `resolveKey`'s own note
+			// says why and which node owns the rest.
 			for (const id of resolveKey(this.bindings, {
 				key: route.key,
 				code: e.code,
