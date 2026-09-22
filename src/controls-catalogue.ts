@@ -23,7 +23,7 @@
  * Headless, and on the list in `tests/headless.test.ts`: the unit tier renders
  * **this** catalogue, never a struct a test built.
  */
-import type { LayoutNotice } from "./binding-store";
+import type { LayoutNotice } from "./layout-notice";
 import {
 	type Command,
 	type CommandId,

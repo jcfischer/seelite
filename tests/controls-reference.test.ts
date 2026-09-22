@@ -7,12 +7,8 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import {
-	LAYOUT_VERSION,
-	type LayoutNotice,
-	parseLayout,
-	type RejectReason,
-} from "../src/binding-store";
+import { LAYOUT_VERSION, parseLayout } from "../src/binding-store";
+import type { LayoutNotice, RejectReason } from "../src/layout-notice";
 import {
 	type CommandId,
 	commandById,

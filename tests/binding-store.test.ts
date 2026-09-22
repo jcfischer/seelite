@@ -18,13 +18,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	LAYOUT_KEY,
 	LAYOUT_VERSION,
-	type LayoutNotice,
 	loadLayout,
-	retiredBySave,
 	parseLayout,
 	saveLayout,
 	serializeLayout,
 } from "../src/binding-store";
+// The notice vocabulary moved out from behind the store in #381 S4;
+// `tests/layout-notice.test.ts` owns the boundary and the two functions.
+import type { LayoutNotice } from "../src/layout-notice";
 import {
 	type Binding,
 	type CommandId,
@@ -636,37 +637,6 @@ describe("the browser is a string store that may refuse", () => {
 		// which is the silent fallback this whole slice argues against, and the
 		// first version did exactly that (sage round 3).
 		expect(kinds(read.notices)).toEqual(["unreadable"]);
-	});
-
-	test("the store owns which notices a save retires", () => {
-		// `main.ts` wrote this rule as `kind !== "collision"` for a round, so a
-		// sixth kind would have been classified by its reader rather than by
-		// the module that decides which kinds exist (sage round 2).
-		expect(
-			retiredBySave({ kind: "unreadable", cause: "corrupt", detail: "x" }),
-		).toBe(true);
-		expect(retiredBySave({ kind: "version", stored: 2 })).toBe(true);
-		expect(
-			retiredBySave({
-				kind: "rejected",
-				command: PITCH_UP,
-				reason: "moved-default",
-				detail: "x",
-			}),
-		).toBe(true);
-		// A collision is a property of the table as it stands, not a fact about
-		// the blob that was read, so replacing the blob does not retire it.
-		expect(
-			retiredBySave({
-				kind: "collision",
-				collision: {
-					trigger: triggerKey(FROM),
-					commands: [PITCH_UP, PITCH_DOWN],
-					scope: { pad: ["flight"], views: ["cockpit"] },
-				},
-				at: FROM,
-			}),
-		).toBe(false);
 	});
 
 	test("a layout that is not this game's is a loud throw, not a failed write", () => {

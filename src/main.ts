@@ -545,13 +545,12 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
+import { loadLayout, saveLayout } from "./binding-store";
 import {
 	collisionNotices,
 	type LayoutNotice,
-	loadLayout,
 	retiredBySave,
-	saveLayout,
-} from "./binding-store";
+} from "./layout-notice";
 import { controlsCatalogue } from "./controls-catalogue";
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { isEditable } from "./editable-target";

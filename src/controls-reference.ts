@@ -9,7 +9,7 @@
  * #370's receipt carries the nine rulings; the comments below cite them by
  * their D-number rather than restating them.
  */
-import type { LayoutNotice, RejectReason } from "./binding-store";
+import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
 import type { Surface, TaskGroup, Trigger } from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
@@ -420,10 +420,13 @@ const inViews = (views: readonly string[]): string =>
 /**
  * The sentence a `LayoutNotice` prints.
  *
- * **Here rather than in `binding-store.ts`**, because #369 D11 gives this
- * module the one owner of every printed control name and `triggerLabel` is
- * already it. A formatter beside the store would be a second table of the
- * same names, which is the drift D11 was written against.
+ * **Here rather than in `layout-notice.ts`**, beside the union it prints,
+ * because #369 D11 gives this module the one owner of every printed control
+ * name and `triggerLabel` is already it. A formatter beside the kinds would
+ * be a second table of the same names, which is the drift D11 was written
+ * against. (It said `binding-store.ts` until #381 S4 moved the kinds out from
+ * behind the store — the argument is the same and the module it names is
+ * not.)
  *
  * **The collision sentence says what the game does, not what #369 D5 says it
  * should.** D5's resolution is warn, allow, and resolve by last-changed-wins —
