@@ -651,37 +651,54 @@ try {
 						mean: moved ? { r: r / moved, g: gr / moved, b: b / moved } : null,
 					};
 				};
-				const shown = shot();
-				// **A null control, because the isolation is an assumption until it
-				// is measured** (sage round 1 on #477). Two shots with nothing
-				// changed: any frame-to-frame jitter lands here, it is printed
-				// beside the reading rather than assumed away, and the row asserts
-				// it is a small fraction of what the notice moves. **Measured at
-				// 0 on this scene**, against 3,699 moved by the notice — so the
-				// guard is a tripwire for a frame that stops being still rather
-				// than a bound doing work today, and the figure is stated so a
-				// later reader does not mistake it for one.
+				// **The frame has to be settled before it can be differenced.**
+				// Measured here with the draw deleted: the first two renders
+				// agree, the third moves 1,363 pixels, and every one after that
+				// agrees again — a one-off the scene works through, not noise.
+				// A control taken across that boundary reports the settle as the
+				// subject, and that is what happened: with the notice drawing
+				// nothing the row still read 1,363 moved pixels whose mean passed
+				// the amber ratio, and went green on a build that painted nothing
+				// (sage round 3).
+				//
+				// So shots are taken until **two** consecutive pairs agree, and
+				// the count is reported rather than assumed. One agreement is not
+				// enough, and that is measured too: the first pair agrees and the
+				// next moves the 1,363, so a settle stopping at one hands the
+				// whole one-off to the control standing next to it.
+				let settle = 0;
+				let last = shot();
+				let quiet = 0;
+				for (; settle < 12 && quiet < 2; settle++) {
+					const next = shot();
+					quiet = diff(last, next).moved === 0 ? quiet + 1 : 0;
+					last = next;
+				}
+				const shown = last;
+				// **A null control, because the isolation is an assumption until
+				// it is measured** (sage round 1 on #477). One more shot with
+				// nothing changed: whatever a settled frame still moves lands
+				// here, beside the reading rather than assumed away, and the row
+				// asserts it is a small fraction of what the notice moves.
 				const still = shot();
 				const jitter = diff(shown, still).moved;
 				const kept = g.charged.left;
 				g.charged.left = 0;
+				// **The measurement is the adjacent pair**, `still` against
+				// `control`, so it spans exactly the one frame gap the null
+				// control spans (sage round 2). `still` carries the notice, so
+				// the colour basis is unchanged.
 				const control = shot();
 				g.charged.left = kept;
-				// **The measurement is the adjacent pair**, `still` against
-				// `control`, so it spans exactly the one frame gap the null control
-				// above spans. Differencing `shown` against `control` would cross
-				// two gaps and collect twice the drift it is compared against
-				// (sage round 2). `still` carries the notice, so the colour basis
-				// is unchanged.
 				const measured = diff(still, control);
-				// **The record is read after the notice is back**, because the last
-				// frame drawn was the control's and `chargedRender` is written by
-				// the draw — reading it there returns the null the control painted
-				// and says the notice does not exist.
+				// **The record is read after the notice is back**, because the
+				// last frame drawn was the control's and `chargedRender` is
+				// written by the draw — reading it there returns the null the
+				// control painted and says the notice does not exist.
 				g.render(dt);
 				const render = g.chargedRender ? { ...g.chargedRender } : null;
 				g.view = wasView;
-				return { ...measured, jitter, render };
+				return { ...measured, jitter, settle, render };
 			},
 			comms() {
 				// The console is only built while the cockpit is the view, and the
@@ -1049,11 +1066,15 @@ try {
 			// ordering like `g > b` is satisfied by both — `FLOOR_TONE_FILL`'s
 			// refusal is `rgba(255, 110, 96)`, whose green clears its blue. So
 			// the ratio is what settles it, and the bound is calibrated rather
-			// than declared: measured on this frame the amber notice reads
-			// g/r **0.771** (150.2 green over 194.8 red) and the same draw with
-			// the refusal fill spliced in reads **0.495** (96.0 over 194.1).
-			// 0.6 sits between the two, and the row was watched red on that
-			// spliced build before it was believed.
+			// than declared. Measured on the settled frame: the amber notice
+			// reads g/r **0.764** (194.8 green over 254.9 red) across 2,351
+			// moved pixels, and the same draw with the refusal fill spliced in
+			// reads **0.427** (108.9 over 254.9) across 2,306. 0.6 sits between
+			// the two, and the row was watched red on that spliced build before
+			// it was believed. **Both figures are later than the settle above**
+			// and were re-measured with it, because the first pair was taken on
+			// the instrument that could not tell the notice from the scene
+			// settling.
 			painted?.mean?.g > painted?.mean?.r * 0.6 &&
 			painted?.mean?.r > painted?.mean?.b,
 		chargeEvidence(),
