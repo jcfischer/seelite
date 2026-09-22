@@ -755,8 +755,13 @@ export const VIEWS = Object.freeze([
 	 * #478's to decide, and the sky is already the picture he asked for.
 	 *
 	 * System 115 is the farthest of the 256 from the cluster centre on the sheet's
-	 * own seed — `SystemRecord.t` 0.999, where the row's `what` says *"outermost"*.
-	 * It is written down because a shot has to name one index and the capture is a
+	 * own seed, on the generator's own radial coordinate (`SystemRecord.t`) rather
+	 * than a ruler held here, which is what the row's `what` means by *"the
+	 * outermost system on the cluster's rim"*. How far out that is is deliberately
+	 * not written down: what answers to a re-cut cluster is the rule — no other
+	 * system outranks it — and the floor — it stands in the rim third — and both are
+	 * in `tests/view-set.test.ts`, while a figure in a comment answers to neither.
+	 * The index is written down because a shot has to name one and the capture is a
 	 * browser tool that cannot recompute anything, and it is *recomputed* rather
 	 * than remembered in `tests/view-set.test.ts`: the same fold over
 	 * `makeWorld(SEED).galaxy.systems` runs there every run, so a re-cut cluster

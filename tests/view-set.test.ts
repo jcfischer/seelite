@@ -172,10 +172,9 @@ describe("the view set itself", () => {
 		// `measure-sky-density.ts`; #480 put a twenty-ninth back in the other
 		// role, a rim row that is a look at the sky that ships rather than proof
 		// of a cone, which is the thing the measurement foreclosed.) A literal and
-		// not
-		// `VIEWS.length`, which is
-		// the whole point: a view deleted by accident has to be a red run, and a
-		// check derived from its own subject cannot be one.
+		// not `VIEWS.length`, which is the whole point: a view deleted by accident
+		// has to be a red run, and a check derived from its own subject cannot be
+		// one.
 		expect(VIEWS.length).toBe(29);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
@@ -668,6 +667,20 @@ describe("the rim look row #480 added", () => {
 	/** The farthest system from the cluster centre — folded, not a spread `max`,
 	 *  and deterministic on the sheet's own seed. */
 	const farthest = systems.reduce((a, b) => (b.t > a.t ? b : a));
+	/** The row under test, found once. Each test asserts it exists before reading
+	 *  through it, because a missing row has to be an assertion naming the row and
+	 *  not a TypeError that buries which of the two moved. */
+	const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+	/**
+	 * The system the row *names*, resolved back against the generator. This is the
+	 * fixture as the page will receive it: the literal in `view-set.mjs` is the
+	 * claim, `farthest` is the rule, and they describe the same place only if this
+	 * record is that system. `ensureFixture` checks the same thing at the browser
+	 * tier, against the booted page rather than the declared one.
+	 */
+	const named = systems.find(
+		(s) => s.index === (row?.shot as { system?: number }).system,
+	);
 
 	/**
 	 * The row stands where #432's stood in role and not in aim: the farthest star
@@ -677,7 +690,7 @@ describe("the rim look row #480 added", () => {
 	 * #118's fixed radial figures did.
 	 */
 	test("it stands at the farthest system of the sheet's own seed", () => {
-		const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+		expect(row).toBeDefined();
 		expect(row?.covers).toEqual([431]);
 		expect(row?.shot).toEqual({
 			kind: "deep-sky",
@@ -687,14 +700,18 @@ describe("the rim look row #480 added", () => {
 	});
 
 	/**
-	 * The rule and the claim in the same place: `farthest` is by construction the
-	 * maximum of §4's radial coordinate, so if it ever reads under two thirds the
-	 * cluster has been re-cut and "the rim third" has stopped meaning what the
-	 * node said it meant. That is the failure this row exists to notice.
+	 * The row's own star, measured against every other star, rather than the fold
+	 * checked against a second fold of itself. A `reduce` and a `Math.max` over one
+	 * array cannot disagree, so a row comparing them notices nothing; this one goes
+	 * red the day the generator's edge moves away from the index the row pinned, and
+	 * the rim-third floor below goes red the day "the rim third" stops meaning two
+	 * thirds of §4's radial coordinate.
 	 */
-	test("that system is in §4's rim third, and the row says so off the generator", () => {
-		expect(farthest.t).toBeGreaterThanOrEqual(2 / 3);
-		expect(farthest.t).toBe(Math.max(...systems.map((s) => s.t)));
+	test("no other system in the galaxy is farther out, and that star is in §4's rim third", () => {
+		expect(named).toBeDefined();
+		const outranking = systems.filter((s) => s.t > (named?.t ?? 0));
+		expect(outranking.map((s) => s.index)).toEqual([]);
+		expect(named?.t).toBeGreaterThanOrEqual(2 / 3);
 	});
 
 	/**
@@ -706,7 +723,7 @@ describe("the rim look row #480 added", () => {
 	 * frame of its own, and its answer is owed a look decision, not a caption.
 	 */
 	test("its caption promises the field and never names the thing it cannot show", () => {
-		const what = VIEWS.find((v) => v.name === "sky-at-the-rim")?.what ?? "";
+		const what = row?.what ?? "";
 		expect(what).not.toBe("");
 		expect(what.toLowerCase()).toContain("rim");
 		expect(what.toLowerCase()).not.toMatch(/core|cone|bearing/);
@@ -720,7 +737,7 @@ describe("the rim look row #480 added", () => {
 	 * dead: an aim is what needed clearance, and an aim is what #478 decides on.
 	 */
 	test("it aims by the shipped emptiest rule and carries no aim axis", () => {
-		const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+		expect(row).toBeDefined();
 		// Non-vacuous: the negative below is worth nothing unless the row is the
 		// kind of shot that has a heading rule at all.
 		expect((row?.shot as { kind?: string }).kind).toBe("deep-sky");
