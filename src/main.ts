@@ -3884,8 +3884,10 @@ class Game {
 	 * Why it is worth rebuilding 255 points on every arrival: this layer is its
 	 * own buffer, so an arrival costs 255 vertices and not the 4,255 that one
 	 * geometry holding both populations would re-upload to change 255 of them.
-	 * The measured figure is `systemField`'s to carry, beside the dial it
-	 * measures — one copy of it, in the module that owns the layer.
+	 * What that costs is measured, and lives once: `docs/specs/galaxy-generation.md`
+	 * §12, reprinted by `scripts/measure-sky-density.ts cost`. Neither `backdrop.ts`
+	 * nor `systemField` carries a number — both point there — so this points there
+	 * too rather than at a docstring that hands the reader on.
 	 */
 	private rebuildDerivedSky() {
 		const field = systemField(this.world.galaxy, this.world.system.record);

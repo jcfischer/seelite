@@ -82,8 +82,10 @@
  *   different authoring scales ({@link faintField}'s ramp is picked by eye in linear
  *   light and is not normalised, while {@link systemField}'s is), and `grain` mode
  *   prints the share of the invented population whose luma is high enough that a
- *   *largest* invented point outshines a *smallest* real one — a third of it, on the
- *   shipped ramp. Closing that is a colour decision, not a size one: normalise the
+ *   *largest* invented point outshines a *smallest* real one, and — jointly, each
+ *   point's own size against its own tint — **0.41%** of them actually do it. Both
+ *   rows print, because the first is a bound at maximum size and reading it as a
+ *   share overstated the leak eighty-five-fold. Closing it is a colour decision, not a size one: normalise the
  *   ramp to the same photosphere exposure or drop `FAINT_SIZE_MAX` further, and both
  *   move the look, so it is #433's sheet to settle.
  */
@@ -330,7 +332,7 @@ export function faintField(worldSeed: number, count = FAINT_COUNT): StarField {
  * **Cost, per arrival rather than per frame:** one extra draw call, 255 bearings
  * and 255 star-class draws, and three `Float32Array`s. CPU arithmetic is the only
  * kind this half has; what it *draws* is 255 more points on one more draw call,
- * and #433 prices that on the sheet. Three
+ * and #433 prices that on the sheet.
  * There is no pool, because a pool would trade a number nobody can measure for a
  * stale tail nobody can see.
  */

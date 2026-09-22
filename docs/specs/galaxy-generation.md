@@ -987,8 +987,10 @@ collapsed into a "sparser than" sentence.
 
 How thin the real layer is, in the units a size law is written in: the median
 **nearest** other system is **3.06 ly** away, the median *separation* to any other
-system is **21.10 ly** — pooled, one sample per pair over 20,889,600 of them, which
-is what "typically" asks and what `BRIGHT_SIZE_MID_LY` is anchored to — and the median
+system is **21.10 ly** — pooled over 20,889,600 **ordered** observer-to-other-system
+samples, which is 10,444,800 unordered pairs seen from both ends and does not move a
+median, and is what "typically" asks and what `BRIGHT_SIZE_MID_LY` is anchored to — and
+the median
 *farthest* is **38.0 ly** with the worst in
 the corpus at **48.8**. The 1st percentile nearest sits at 0.72 ly against a 99th
 percentile farthest of 47.2: a **65 : 1** span for one layer to draw.
@@ -1027,12 +1029,20 @@ not on one authoring scale: {@link systemField}'s comes from a star-class hex th
 the sRGB→linear transfer at the one photosphere exposure, while the invented ramp is
 picked by eye *in* linear light and normalised to nothing. `grain` mode prints where
 that lands — `(0.0096/0.012)² = 0.64`, so an invented point outshines the dimmest real
-one above linear luma **0.859**, and across eight worlds of the shipped ramp **35.1% of
-invented points sit above it**, median luma 0.765, maximum 1.000. A third of the
-population can therefore deliver more light than the faintest system while being drawn
-smaller than it, and no size row can see that. Two ways to close it exist and both move
-the picture — normalise the invented ramp to the same photosphere exposure, or push
-`FAINT_SIZE_MAX` far enough down that no luma reaches the threshold — which is
+one above linear luma **0.859**, and **35.1% of the shipped ramp's points sit above that
+luma** (median 0.765, maximum 1.000). **That 35.1% is not a share of outshining**, and
+the first version of this section read it as one, an eighty-five-fold overstatement of
+the leak. Size and tint are drawn from independent RNG streams, so a threshold computed
+*at maximum size* is a bound, not a share: taking each point's own `size²` with its own
+luma against the dimmest real star's, **0.41% of invented points actually outshine it**
+(132 of 32,000 sampled across eight worlds). It is a tail problem — everything above
+the size law's top 2.6% of draws, `u > 0.974`, and 0.41% of the whole population once
+its tint is counted — not a third of the sky, and a reader who is told "a third" will
+size #433's colour decision two orders of magnitude wrong. Both rows print in `grain`
+mode, the marginal one labelled as the bound it is. Two ways to close even the 0.41%
+exist and both move the picture — normalise the invented ramp to the same photosphere
+exposure, or push `FAINT_SIZE_MAX` far enough down that no luma reaches the
+threshold — which is
 #433's colour decision on its sheet, not a fact this node can settle by asserting a
 size ordering. What is settled here is what is held: **geometry**.
 
@@ -1107,7 +1117,7 @@ light an additive disc delivers:
 | replaced `0.006 + 0.05·u⁶` | 0.01314 | 0.00678 | 0.05600 | 0.0003140 |
 | shipped `0.0048 + 0.0048·u⁶` | 0.00549 | 0.00487 | 0.00960 | 0.0000314 |
 
-**Light per invented point falls ×10.00, and the median point dims only ÷1.39.**
+**Light per invented point falls ×10.00, and the median point's light falls ÷1.93.**
 The lost light is the **tail**: the old law scattered its handful of 17-px discs
 over the whole sphere, at random bearings, at sizes indistinguishable from the
 systems the sky is supposed to be a picture *of*. The invariant removed exactly
@@ -1145,7 +1155,8 @@ this section's own rather than the receipt's.
 - Its "median 21.1 ly" sat beside a "mean 5.45" and **named no quantity**, which is
   the whole defect: a number without its quantity cannot be checked, only agreed or
   disagreed with. Named, it is **right**. The pooled median separation — one sample
-  per pair, 20,889,600 pairs — is **21.10 ly**, and that is what `BRIGHT_SIZE_MID_LY`
+  per ordered observer-to-system sample (20,889,600 of them, 10,444,800 unordered pairs
+  read from both ends) — is **21.10 ly**, and that is what `BRIGHT_SIZE_MID_LY`
   is now anchored to. What it is *not* is the median **nearest** other system, which
   is **3.06 ly**; nothing in the receipt claimed that, and the two statistics differ
   by nearly seven, which is the difference between a sky with one bright star in it

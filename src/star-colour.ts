@@ -39,9 +39,18 @@
  * 0.55 puts the star shader's peak (1.52 × 0.55 ≈ 0.84) under the tone curve's
  * knee for a neutral tint and leaves the warm end almost where it already was —
  * the fix pulls the bright classes down to a working exposure rather than
- * pushing every class up to one. See the block above
- * `photosphereTint`'s call site in `planet-surface.ts` for the measurement it
- * came from.
+ * pushing every class up to one.
+ *
+ * **The measurement it came from is here, in one place.** The evidence is a
+ * neutral tint clipping all three channels at once, which draws a flat white disc:
+ * measured on `?seed=15`, whose star is `0xf8f7ff`, a disc mean of 235 with a
+ * granulation spread of 2.8 against 199 and 4.5 for a warm one — the difference
+ * between a lamp and a star. Those two figures describe the build *before* this
+ * constant existed and cannot be re-derived from the tree, because nothing ships a
+ * way to disable the normalisation; what `probe-planet-surfaces.mjs` checks on every
+ * run is the property they were evidence for, that the disc has granulation and the
+ * bloom pass is not where it comes from. `planet-surface.ts`'s `photosphereTint` is
+ * this constant's consumer, not its owner.
  */
 export const PHOTOSPHERE_LUMA = 0.55;
 

@@ -227,6 +227,8 @@ function observerSky(
 	// 255-iteration loop they used to sit in.
 	const wantsElevation = needs.elevations === true;
 	const wantsCore = needs.coreCone === true;
+	const wantsDists = needs.dists === true;
+	const wantsAngle = wantsElevation || wantsCore;
 	// The centre is the origin (§3's density law is centred there), so the way in
 	// is the negated position. An observer standing exactly at the centre has no
 	// such direction; the generator ships none, and the guard below says so.
@@ -242,14 +244,14 @@ function observerSky(
 		if (other.index === observer.index) continue;
 		const delta = sub(other.pos, observer.pos);
 		const d = Math.sqrt(lengthSq(delta));
-		if (needs.dists) (dists ??= []).push(finite("distance", d));
+		if (wantsDists) (dists ??= []).push(finite("distance", d));
 		// The two angles below need a *direction*. Rather than build a `Vec3` for
 		// every pair — 21M objects in the modes that read an angle, and `sky` mode
 		// used to pay them too — the three quotients are taken as named scalars and
 		// only when an angle was asked for.
-		const ux = wantsElevation || wantsCore ? delta.x / d : 0;
-		const uy = wantsElevation || wantsCore ? delta.y / d : 0;
-		const uz = wantsElevation || wantsCore ? delta.z / d : 0;
+		const ux = wantsAngle ? delta.x / d : 0;
+		const uy = wantsAngle ? delta.y / d : 0;
+		const uz = wantsAngle ? delta.z / d : 0;
 		if (wantsElevation) {
 			// Clamped, because this is a dot product of unit vectors and a unit
 			// vector computed by dividing can come back at 1+1e-16. `asin` of that
@@ -341,6 +343,12 @@ const SEPARATION_BINS = Math.ceil(120 / SEPARATION_BIN_LY);
 
 const RING_LY = [2, 5, 10, 20, 40];
 
+function maxOf(xs: readonly number[], label: string): number {
+	let m = Number.NEGATIVE_INFINITY;
+	for (const x of xs) if (x > m) m = x;
+	return finite(label, m);
+}
+
 /** The pooled median separation, interpolated inside its bin.
  *
  * Every pair in the corpus is one sample here, which is the quantity
@@ -348,12 +356,6 @@ const RING_LY = [2, 5, 10, 20, 40];
  * typically" — not "what is the median of each observer's own median".
  */
 /** Folded maximum. `Math.max(...xs)` puts one argument per element on the stack. */
-function maxOf(xs: readonly number[], label: string): number {
-	let m = Number.NEGATIVE_INFINITY;
-	for (const x of xs) if (x > m) m = x;
-	return finite(label, m);
-}
-
 function pooledMedianSeparation(c: DistanceCensus, label: string): number {
 	if (!(c.pairs > 0)) throw new Error(`measure-sky-density: no ${label}`);
 	const half = c.pairs / 2;
@@ -373,9 +375,16 @@ function pooledMedianSeparation(c: DistanceCensus, label: string): number {
 function census(dists: readonly number[], into: DistanceCensus): void {
 	for (const d of dists) {
 		if (d < into.minDistance) into.minDistance = d;
-		into.separationBins[
-			Math.min(SEPARATION_BINS - 1, Math.floor(d / SEPARATION_BIN_LY))
-		]++;
+		// Refuse rather than fold: clamping into the top bin would move the pooled
+		// median by however many distances ran past 120 ly, silently, while
+		// `pooledMedianSeparation` throws only when the median itself lands there.
+		if (d >= SEPARATION_BINS * SEPARATION_BIN_LY)
+			throw new Error(
+				`measure-sky-density: a ${d.toFixed(2)} ly separation runs past the ${
+					SEPARATION_BINS * SEPARATION_BIN_LY
+				} ly histogram the pooled median is read from — widen SEPARATION_BINS rather than trust the figure`,
+			);
+		into.separationBins[Math.floor(d / SEPARATION_BIN_LY)]++;
 		into.pairs++;
 		for (let i = 0; i < RING_LY.length; i++)
 			if (d <= RING_LY[i]) into.rings[i]++;
@@ -464,7 +473,13 @@ function modeSky(): void {
 	// not recover a median.
 	const pooled = pooledMedianSeparation(censusAll, "pooled median separation");
 	console.log(
-		`median separation, pooled over ${censusAll.pairs} pairs: ${fig(
+		// "pairs" is doing sloppy work again if the print says it and the count is
+		// ordered samples: 20,889,600 observer-to-other-system samples is
+		// 10,444,800 unordered pairs, each read from both ends. A median is
+		// unaffected; a reader who multiplies the n by hand is not.
+		`median separation, pooled over ${censusAll.pairs} ordered observer-to-system samples (${
+			censusAll.pairs / 2
+		} unordered pairs, each read from both ends): ${fig(
 			"pooled median separation",
 			pooled,
 		)} ly  (histogram bin ${SEPARATION_BIN_LY} ly)  <- what BRIGHT_SIZE_MID_LY is anchored to`,
@@ -754,6 +769,15 @@ function modeCore(): void {
  * names the canvas height and the scale it was taken at, and the world-unit rows
  * beside it need neither.
  */
+/** The band the shipped law replaced: `0.006 + 0.05·u⁶`.
+ *
+ * Named once. Both the moment table and the median row below used to spell the two
+ * constants out by hand, which is the drift this file indicts others for — edit one
+ * and the printed ratio quietly stops describing the law in the table above it.
+ */
+const REPLACED_MIN = 0.006;
+const REPLACED_SPAN = 0.05;
+
 function modeGrain(): void {
 	const canvasHeight = Number(process.argv[3] ?? 900);
 	const pixelScale = Number(process.argv[4] ?? 0.35);
@@ -802,20 +826,27 @@ function modeGrain(): void {
 	// test.
 	const sizeRatioSq = (FAINT_SIZE_MAX / BRIGHT_SIZE_MIN) ** 2;
 	const outshineLuma = PHOTOSPHERE_LUMA / sizeRatioSq;
+	const dimmestRealLight = BRIGHT_SIZE_MIN ** 2 * PHOTOSPHERE_LUMA;
 	const lumas: number[] = [];
+	let joint = 0;
+	let counted = 0;
 	for (let seed = 0; seed < GRAIN_WORLDS; seed++) {
 		const field = faintField(seed * 104729 + 5, FAINT_COUNT);
-		for (let i = 0; i < field.count; i++)
-			lumas.push(
-				finite(
-					"invented luma",
-					rec709Luma(
-						field.colors[i * 3],
-						field.colors[i * 3 + 1],
-						field.colors[i * 3 + 2],
-					),
+		for (let i = 0; i < field.count; i++) {
+			const luma = finite(
+				"invented luma",
+				rec709Luma(
+					field.colors[i * 3],
+					field.colors[i * 3 + 1],
+					field.colors[i * 3 + 2],
 				),
 			);
+			lumas.push(luma);
+			counted++;
+			// The **joint** test: this point's own size with this point's own
+			// tint, because the generator draws them from independent streams.
+			if (field.sizes[i] ** 2 * luma > dimmestRealLight) joint++;
+		}
 	}
 	const above = lumas.filter((l) => l > outshineLuma).length;
 	console.log(
@@ -829,7 +860,7 @@ function modeGrain(): void {
 		)} (the derived tint's luma is ${PHOTOSPHERE_LUMA})`,
 	);
 	console.log(
-		`  across ${GRAIN_WORLDS} worlds of the shipped ramp: median luma ${fig(
+		`  the marginal reading: across ${GRAIN_WORLDS} worlds of the shipped ramp, median luma ${fig(
 			"invented median luma",
 			median(lumas, "invented luma"),
 			4,
@@ -838,10 +869,25 @@ function modeGrain(): void {
 			maxOf(lumas, "invented max luma"),
 			4,
 		)}, and ${fig(
-			"share outshining",
+			"share above that luma",
 			above / lumas.length,
 			4,
-		)} of invented points sit above that luma — so the invariant holds the **size** ordering and not the delivered light, and closing the gap is a colour decision for #433's sheet`,
+		)} of invented points sit above it. **That share is not a share of outshining.** It is the share clearing a luma threshold computed *assuming the point is at maximum size*, and size and tint come from independent RNG streams, so almost nothing that bright is that large`,
+	);
+	console.log(
+		`  the joint reading — each point's own size² × its own luma against the dimmest real star's ${dimmestRealLight.toExponential(
+			3,
+		)}: ${fig(
+			"joint share outshining",
+			joint / counted,
+			4,
+		)} of ${counted} invented points actually outshine it${
+			joint > 0 ? ` (${joint} points)` : ""
+		}. That is the number #433 is deciding whether to close, and it is a **tail** problem, confined to the size law's top 2.6% of draws (u > 0.974) — inside which 0.41% of the whole population lands once its own tint is counted — not a third of the population. This row printed ${fig(
+			"wrong share printed",
+			above / lumas.length,
+			4,
+		)} for a round because a marginal share was read off a threshold that only holds at maximum size, an eighty-five-fold overstatement of the leak`,
 	);
 
 	console.log(
@@ -851,15 +897,30 @@ function modeGrain(): void {
 	// The law this node replaced, kept here as the comparison it is: a law that
 	// is no longer shipped has no module left to print it, and the sentence
 	// "the grain lost most of its light" needs both sides or it is an opinion.
-	const before = moments("replaced (0.006 + 0.05·u⁶)", 0.006, 0.05);
+	const before = moments(
+		`replaced (${REPLACED_MIN} + ${REPLACED_SPAN}·u⁶)`,
+		REPLACED_MIN,
+		REPLACED_SPAN,
+	);
+	// Median size and median light are different quantities and the row used to
+	// print one under the other's name: light is `size²`, so the median point lost
+	// 1.39² not 1.39 of its brightness. Both printed, both named.
+	const medianBefore = REPLACED_MIN + REPLACED_SPAN / 64;
+	const medianAfter = FAINT_SIZE_MIN + FAINT_SIZE_SPAN / 64;
+	const medianSizeRatio = medianBefore / medianAfter;
 	console.log(
 		`\nlight per invented point, before ÷ after: ×${fig(
 			"light ratio",
 			before / now,
-		)}  (median point: ÷${fig(
-			"median ratio",
-			(0.006 + 0.05 / 64) / (FAINT_SIZE_MIN + FAINT_SIZE_SPAN / 64),
-		)})\n` +
+		)} (E[size²] over the two bands)\n` +
+			`  the median point's **size** fell ÷${fig(
+				"median size ratio",
+				medianSizeRatio,
+			)} and its **light** ÷${fig(
+				"median light ratio",
+				medianSizeRatio ** 2,
+			)} — size and light are different quantities and this row printed the first under the second's name for a round
+` +
 			`so the light left with the **tail**, not with the grain. Whether that is ` +
 			`still a night is #433's sheet, and the ceiling of both bands is what the ` +
 			`invariant row in tests/backdrop.test.ts holds.`,
