@@ -50,8 +50,10 @@ The loop, as a pilot flies it:
    the law for this government.
 2. **Fit the scanner.** Since #481 every step below is a **bought module's**:
    the Long-Range Scanner, 1,000 Cr at a shipyard. Without it steps 3 and 4
-   read nothing at all — no cue, no knowledge row, no contact, no target —
-   while step 1 is unchanged, which is #479's ruling that the route effect is
+   read nothing at all — no cue, no knowledge row, no contact, no target — and
+   step 5 goes with them, because "select it" needs the target identification
+   hands over: the mesh and the shot stay ungated, but there is nothing to
+   select. Step 1 is unchanged, which is #479's ruling that the route effect is
    felt by a pilot who cannot find its cause.
 3. **Find it.** Fly to the trade station's approach. Inside 2,500 km of the
    relay a cue appears on the right of the glass: `PIRATE RELAY SIGNAL`, five

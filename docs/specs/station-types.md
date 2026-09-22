@@ -309,8 +309,10 @@ universal**:
 > follows is unchanged — the exclusive is *why* a module is worth travelling
 > for. The two are one keystroke apart in every list that names them and they
 > answer different questions: the identity scanner reads a hull the pilot is
-> holding on target, the long-range scanner reads a relay's signal across a
-> system.
+> holding on target, the long-range scanner reads a **Pirate relay**'s signal
+> at the range `pirate-relay.ts` declares — thousands of kilometres, not a
+> system-wide sensor, and the range is that module's to state rather than
+> this table's.
 
 Fuel scoops go to the refinery because scooping is the mining trade's tool, and
 the extra energy unit to the shipyard because it is the heaviest hull-work
