@@ -463,10 +463,23 @@ export class LiveCockpit {
 	 */
 	private controls: ControlsCatalogue = CONTROLS;
 
-	/** What the Controls tab prints from now on. `Game` owns the layout, so
-	 *  `Game` is what says when it changed. */
+	/**
+	 * What the Controls tab prints from now on. `Game` owns the layout, so
+	 * `Game` is what says when it changed.
+	 *
+	 * **The assignment is not enough, and that was the first version.** The
+	 * body is drawn from `lastKey` and the catalogue is not in that key, so a
+	 * rebind while the tab is open changed the field and nothing on the
+	 * screen — until some unrelated tab change happened to rebuild it (sage
+	 * round 1). Invalidating the key is the mechanism this class already has
+	 * for "the structure moved", and the cost the comment beside it warns
+	 * about — a rebuild losing a filter field's caret — is not this caller's:
+	 * a layout changes twice a session, not on a keystroke.
+	 */
 	setControls(catalogue: ControlsCatalogue) {
+		if (catalogue === this.controls) return;
 		this.controls = catalogue;
+		this.lastKey = "";
 	}
 
 	constructor(private readonly callbacks: LiveCockpitCallbacks) {

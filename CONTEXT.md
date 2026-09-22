@@ -155,6 +155,8 @@ callsign is spoken and a registry is filed. Presentation, like the **Drawn name*
 and for the same reason: neither is a persistence key. Composed by
 `carrier-name.ts`'s `trafficRegistry` since #364; `station-traffic.md` §3.2.
 
+> **Scope of the `registry` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). The canonical term is a *carrier's* registration designation. `src/commands.ts` calls itself the **binding registry** — the table of `(command, trigger, scope)` #369 D1 ratified — which is a table of inputs and names no carrier. The two never meet in one sentence, and renaming either would make one word mean two things. Where the shorter word could be read as a carrier's, the prose says "the command registry" or names the module.
+
 **Manifest**:
 What an ordinary carrier instance carries on one voyage: one to four lines, each
 a tonne good and its tonnes, derived and never saved. What a scan shows and what
@@ -177,6 +179,14 @@ It is the *player's* hold and nothing else's. **Manifest** above is what an
 ordinary carrier carries, **Traffic hold** is a place a carrier waits, `ScanHold`
 is a charge, and a **held launch** is Traffic refusing one — four senses the same
 English word reaches for, which is why each has its own name here.
+
+A fifth is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is
+flown by keeping a key down rather than by pressing it (#369 D3 splits `x`
+pressed from `x` held on exactly that), and #381's storage slice writes it into
+`seelite:bindings`. It is a property of an input and never of cargo, a carrier
+or a launch, so it takes no name of its own here — but it is durable now, and a
+reader meeting `{ kind: "key", hold: true }` in a stored blob should find it
+listed rather than wonder which of the four it is.
 _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
 
 **Legal heat**:

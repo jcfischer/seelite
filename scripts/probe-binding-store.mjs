@@ -330,6 +330,127 @@ check(
 	JSON.stringify(collided?.notices ?? null),
 );
 
+// ---------------------------------------------------------------------------
+// A rebind while the tab is open, with no reload between.
+//
+// Every band reading above is taken after a boot, so nothing had observed
+// `setControls` reaching the screen — it assigns a field, and the body is
+// drawn off a structural key the catalogue is not in (sage round 1). These
+// rows drive the path a player will take in S4: the tab is open, the layout
+// changes, and the screen has to follow.
+// ---------------------------------------------------------------------------
+const rejectedStanding = await bootOn([
+	{
+		command: "fly.rollPort",
+		from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
+		to: { kind: "key", key: "k" },
+	},
+]);
+check(
+	"a boot on a blob with a refused row leaves a notice standing",
+	rejectedStanding !== null && rejectedStanding.notices.length === 1,
+	JSON.stringify(rejectedStanding?.notices ?? null),
+);
+
+const liveMove = await tryRebind(
+	"fly.yawPort",
+	{ kind: "key", key: "a", hold: true },
+	{ kind: "key", key: "k", hold: true },
+);
+check(
+	"a rebind with the tab open is accepted",
+	liveMove === "accepted",
+	liveMove,
+);
+await settle();
+await page.waitForTimeout(120);
+const afterLiveMove = await tab();
+check(
+	"the notice about the old blob is gone the moment a save replaces it — no reload",
+	afterLiveMove !== null && afterLiveMove.notices.length === 0,
+	JSON.stringify(afterLiveMove?.notices ?? null),
+);
+check(
+	"and the tab is still drawn, still the player's",
+	afterLiveMove !== null && afterLiveMove.owner.includes("PLAYER LAYOUT"),
+	JSON.stringify(afterLiveMove?.owner ?? null),
+);
+
+// The blob this boot ran on moved only `fly.rollPort`, so pitch-up is still
+// on its shipped key here — reading `NEW_KEY` instead is the last boot's
+// layout, which is not the one in force.
+const ontoTaken = await tryRebind(
+	"fly.pitchUp",
+	{ kind: "key", key: "s", hold: true },
+	// `w` is `fly.pitchDown`'s held key.
+	{ kind: "key", key: "w", hold: true },
+);
+check(
+	"a rebind onto a key another command already holds is accepted (#369 D5: warn and allow)",
+	ontoTaken === "accepted",
+	ontoTaken,
+);
+await settle();
+await page.waitForTimeout(120);
+const afterCollide = await tab();
+check(
+	"and the collision is on the screen without a reload, naming both commands",
+	afterCollide !== null &&
+		afterCollide.notices.length === 1 &&
+		afterCollide.notices[0].startsWith("collision:") &&
+		/nose up/i.test(afterCollide.notices[0]) &&
+		/nose down/i.test(afterCollide.notices[0]),
+	JSON.stringify(afterCollide?.notices ?? null),
+);
+
+// ---------------------------------------------------------------------------
+// And a write that does not land retires nothing.
+//
+// This is the whole reason `saveLayout` reports: a private window or a full
+// quota leaves the old blob exactly where it is, so every notice about it is
+// still true. Without this arm, "retire on a successful save" and "retire
+// always" are the same build.
+// ---------------------------------------------------------------------------
+const stillStanding = await bootOn([
+	{
+		command: "fly.rollPort",
+		from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
+		to: { kind: "key", key: "k" },
+	},
+]);
+check(
+	"the refused row's notice is up before the store is broken",
+	stillStanding !== null && stillStanding.notices.length === 1,
+	JSON.stringify(stillStanding?.notices ?? null),
+);
+// What a private window does. Patched on the prototype because the game reads
+// `window.localStorage.setItem` at call time, so the running build takes it.
+await page.evaluate(() => {
+	Storage.prototype.setItem = () => {
+		throw new Error("quota");
+	};
+});
+const refusedSave = await tryRebind(
+	"fly.yawPort",
+	{ kind: "key", key: "a", hold: true },
+	{ kind: "key", key: "k", hold: true },
+);
+check(
+	"the rebind itself still works when the store refuses it",
+	refusedSave === "accepted",
+	refusedSave,
+);
+await settle();
+await page.waitForTimeout(120);
+const afterRefused = await tab();
+check(
+	"and the notice stays up, because the blob it describes is still on disk",
+	afterRefused !== null &&
+		afterRefused.notices.length === 1 &&
+		afterRefused.notices[0].startsWith("rejected:"),
+	JSON.stringify(afterRefused?.notices ?? null),
+);
+
 check(
 	"the rest gate never ran out, so every angle above is a settled reading",
 	!restFailed,

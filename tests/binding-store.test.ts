@@ -9,7 +9,7 @@
  * does nothing with nothing on screen saying why — so every refusal here is
  * checked for a notice as well as for the fallback.
  *
- * Three departures from the neighbour are what is actually under test:
+ * Three departures from that module are what is actually under test:
  *
  * - the version lives **inside** the blob, because a key-versioned store
  *   discards a layout a player built by hand;
@@ -212,7 +212,7 @@ describe("a rejected row costs that row and says which", () => {
 		to: TO,
 	};
 
-	test("one bad row leaves its neighbour flying", () => {
+	test("one bad row leaves the row beside it flying", () => {
 		const raw = blob([
 			good,
 			{ command: "fly.rollPort", from: { kind: "key" }, to: { key: "k" } },
@@ -504,6 +504,14 @@ describe("the browser is a string store that may refuse", () => {
 		expect(read.source).toBe("default");
 	});
 
+	test("a write that lands says so, because a notice depends on it", () => {
+		// `Game` retires the blob's own notices when a save replaces the blob,
+		// and must not when the write was refused — the old blob is still there
+		// and every one of those notices is still true. A `void` return made
+		// the two indistinguishable.
+		expect(saveLayout(moved)).toBe(true);
+	});
+
 	test("a storage that refuses to be written loses a layout, not a session", () => {
 		(globalThis as unknown as { window: unknown }).window = {
 			localStorage: {
@@ -514,6 +522,7 @@ describe("the browser is a string store that may refuse", () => {
 			},
 		};
 		expect(() => saveLayout(moved)).not.toThrow();
+		expect(saveLayout(moved)).toBe(false);
 	});
 });
 

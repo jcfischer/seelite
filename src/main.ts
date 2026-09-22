@@ -1871,15 +1871,23 @@ class Game {
 	private readonly storedLayout = loadLayout();
 	private bindings: readonly Binding[] = this.storedLayout.layout;
 	/**
-	 * What the store could not do, for the Controls tab's band.
+	 * What was wrong with the blob that was read, until a save replaces it.
 	 *
-	 * Held rather than re-derived, because it is a fact about the *blob* that
-	 * was read and not about the layout now in force: a rejected row leaves no
-	 * trace in the table it failed to change. The collisions in it are a
-	 * different matter and are recomputed on every rebind, which is why this
-	 * is assigned there too rather than being `readonly`.
+	 * Held rather than re-derived, because it is a fact about the *blob* and
+	 * not about the layout now in force: a rejected row leaves no trace in the
+	 * table it failed to change. `rebindCommand` clears it once a write lands.
 	 */
-	private layoutNotices: readonly LayoutNotice[] = this.storedLayout.notices;
+	private storedNotices: readonly LayoutNotice[] =
+		// Collisions filtered out and re-derived below, because `parseLayout`
+		// reports both and only the blob's own half is the thing a save
+		// retires. Adding its list whole would print every collision twice.
+		this.storedLayout.notices.filter((n) => n.kind !== "collision");
+	/** The band the Controls tab prints: the blob's own notices while they are
+	 *  still true, plus the collisions in the table as it stands. */
+	private layoutNotices: readonly LayoutNotice[] = [
+		...this.storedNotices,
+		...collisionNotices(this.storedLayout.layout),
+	];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -8041,13 +8049,21 @@ class Game {
 	 */
 	rebindCommand(command: CommandId, from: Trigger, to: Trigger) {
 		this.bindings = rebind(this.bindings, command, from, to);
-		saveLayout(this.bindings);
-		// The rows that could not be *loaded* are a fact about the blob and
-		// stay; a collision is a property of the table that just changed, so
-		// it is asked again rather than this call trying to work out which of
-		// the old ones survived.
+		// **A write retires the blob's own notices, and a refusal does not.**
+		// Every notice the boot produced is a fact about the blob that was
+		// read: that it had no version this build knows, that a row in it
+		// could not be applied. A successful save has replaced that blob, so
+		// none of them describes anything any more — and the first pass kept
+		// them, so the tab printed `PLAYER LAYOUT` beside "the default layout
+		// is in force" for the rest of the session (sage round 1). A *refused*
+		// write leaves the old blob exactly where it was, and every one of
+		// those notices is still true.
+		//
+		// A collision is not a fact about the blob at all — it is a property of
+		// the table that just changed — so it is asked again either way.
+		if (saveLayout(this.bindings)) this.storedNotices = [];
 		this.layoutNotices = [
-			...this.storedLayout.notices.filter((n) => n.kind !== "collision"),
+			...this.storedNotices,
 			...collisionNotices(this.bindings),
 		];
 		this.publishControls();

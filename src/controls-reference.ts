@@ -438,10 +438,14 @@ export function noticeText(notice: LayoutNotice): string {
 		case "rejected":
 			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;
 		case "collision": {
-			const [a, b] = notice.collision.commands as readonly [
-				CommandId,
-				CommandId,
-			];
+			// **Two names, and no cast to get them.** `Collision.commands` is a
+			// pair in the type, because `collisions()` reports one entry per
+			// overlapping *pair* — so three commands on one trigger arrive as
+			// three notices with two names each, not one notice that drops a
+			// name. The first pass narrowed the array by assertion, which read
+			// as a truncation it is not (sage round 1); a wider report would
+			// fail to compile here rather than print short.
+			const [a, b] = notice.collision.commands;
 			return `${controlName(a)} and ${controlName(b)} are both on ${triggerLabel(notice.at)}${inViews(notice.collision.scope.views)}. Both run; move one to separate them.`;
 		}
 	}

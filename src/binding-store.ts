@@ -1,7 +1,7 @@
 /**
  * Where a player's layout lives, and what it is allowed to do (#381, slice 3).
  *
- * `settings.ts` is the neighbour this sits beside, and #369 D8 ruled the shape
+ * `settings.ts` is the module this sits beside, and #369 D8 ruled the shape
  * by naming the three places the two part company. Each departure is a
  * property of what a binding *is*, not a preference about storage:
  *
@@ -37,10 +37,15 @@
  * five times stores one move, rebinding it back stores none, and "the default
  * moved under this row" is exactly one `rebind` that throws.
  *
- * **A qualifier is still the command's.** `rebind` refuses a `to` that changes
- * `hold`, `alt` or `surface`, and refuses every non-key trigger until the
- * capture modal (S4) can admit one. This module does not re-decide either: a
- * row the registry refuses becomes a notice, so the two cannot drift.
+ * **A qualifier is still the command's, and the registry is what says so.**
+ * `rebind` refuses a `to` that changes `hold`, `alt` or `surface`; a row it
+ * refuses becomes a notice here and the rule is not restated. **One rule is
+ * written twice on purpose and it is named rather than left to be found**:
+ * only a *key* may be stored, which `acceptTrigger` refuses and `movedTrigger`
+ * refuses again. The reason is that the two refusals answer different
+ * questions — the store cannot hold a pad trigger's shape at all, and the
+ * registry cannot move one — and S4 lifts both together, in one change, which
+ * is where that pair has to be re-read.
  *
  * **There is no `migrate()`, and that is the honest answer rather than a
  * gap.** Version 1 is the first version this game has ever written, so a
@@ -273,6 +278,72 @@ const unreadable = (reason: string): LoadedLayout => ({
 });
 
 /**
+ * One stored change applied to a layout, or the notice saying why it was not.
+ *
+ * Its own function rather than five `continue`s at depth three inside
+ * `parseLayout`, which also owns the JSON, the version and the collision pass:
+ * a reader had to hold the blob-level refusals and the row-level ones at once
+ * (sage round 1).
+ */
+function applyMove(
+	layout: readonly Binding[],
+	entry: unknown,
+): { layout: readonly Binding[] } | { notice: LayoutNotice } {
+	const named =
+		isRecord(entry) && typeof entry.command === "string" ? entry.command : null;
+	const rejected = (
+		reason: RejectReason,
+		detail: string,
+	): { notice: LayoutNotice } => ({
+		notice: { kind: "rejected", command: named, reason, detail },
+	});
+	if (!isRecord(entry))
+		return rejected("unreadable-row", "a stored change is an object");
+	if (named === null || !COMMAND_IDS.has(named))
+		return rejected(
+			"unknown-control",
+			`no command is called ${String(entry.command)}`,
+		);
+	/** The two trigger fields, checked the same way and named in the detail —
+	 *  the block was written out twice with only the field name differing. */
+	const accepted: Partial<Record<"from" | "to", Trigger>> = {};
+	for (const field of ["from", "to"] as const) {
+		const t = acceptTrigger(entry[field]);
+		if (typeof t === "string")
+			return rejected("unreadable-trigger", `${field}: ${t}`);
+		accepted[field] = t;
+	}
+	const from = accepted.from as Trigger;
+	const to = accepted.to as Trigger;
+	// **Asked before `rebind` is, and the duplicated lookup is the point.**
+	// `rebind` throws for both of the next two reasons and its message is one
+	// string; the player's answer is two different sentences — "this control
+	// has moved since you saved" is something they can redo, and "that change
+	// asked for more than a key" is not. Only this module knows which sentence
+	// to print, so it asks the cheap question itself rather than reading a
+	// thrown message for a verdict.
+	if (
+		!layout.some(
+			(b) => b.command === named && triggerKey(b.trigger) === triggerKey(from),
+		)
+	)
+		return rejected(
+			"moved-default",
+			`${named} no longer ships on ${triggerKey(from)}`,
+		);
+	try {
+		// The registry decides whether the *move* is legal — a `to` that changes
+		// a qualifier the command owns is refused there and not restated here.
+		return { layout: rebind(layout, named as CommandId, from, to) };
+	} catch (e) {
+		return rejected(
+			"not-just-a-key",
+			e instanceof Error ? e.message : String(e),
+		);
+	}
+}
+
+/**
  * A stored blob, applied to the shipped layout row by row.
  *
  * Pure, and it takes the string rather than reading it: every red case this
@@ -308,60 +379,9 @@ export function parseLayout(raw: string | null): LoadedLayout {
 	const notices: LayoutNotice[] = [];
 	let layout = DEFAULT_BINDINGS;
 	for (const entry of parsed.moves as unknown[]) {
-		const named =
-			isRecord(entry) && typeof entry.command === "string"
-				? entry.command
-				: null;
-		const reject = (reason: RejectReason, detail: string) =>
-			notices.push({ kind: "rejected", command: named, reason, detail });
-		if (!isRecord(entry)) {
-			reject("unreadable-row", "a stored change is an object");
-			continue;
-		}
-		if (named === null || !COMMAND_IDS.has(named)) {
-			reject(
-				"unknown-control",
-				`no command is called ${String(entry.command)}`,
-			);
-			continue;
-		}
-		const from = acceptTrigger(entry.from);
-		if (typeof from === "string") {
-			reject("unreadable-trigger", `from: ${from}`);
-			continue;
-		}
-		const to = acceptTrigger(entry.to);
-		if (typeof to === "string") {
-			reject("unreadable-trigger", `to: ${to}`);
-			continue;
-		}
-		// **Asked before `rebind` is, and the duplicated lookup is the point.**
-		// `rebind` throws for both of the next two reasons and its message is
-		// one string; the player's answer is two different sentences — "this
-		// control has moved since you saved" is something they can redo, and
-		// "that change asked for more than a key" is not. Only this module
-		// knows which sentence to print, so it asks the cheap question itself
-		// rather than reading a thrown message for a verdict.
-		if (
-			!layout.some(
-				(b) =>
-					b.command === named && triggerKey(b.trigger) === triggerKey(from),
-			)
-		) {
-			reject(
-				"moved-default",
-				`${named} no longer ships on ${triggerKey(from)}`,
-			);
-			continue;
-		}
-		try {
-			// The registry decides whether the move itself is legal, not this
-			// module: a `to` that changes a qualifier the command owns is
-			// refused there, so the two cannot drift.
-			layout = rebind(layout, named as CommandId, from, to);
-		} catch (e) {
-			reject("not-just-a-key", e instanceof Error ? e.message : String(e));
-		}
+		const applied = applyMove(layout, entry);
+		if ("notice" in applied) notices.push(applied.notice);
+		else layout = applied.layout;
 	}
 
 	notices.push(...collisionNotices(layout));
@@ -433,17 +453,26 @@ export function loadLayout(): LoadedLayout {
 }
 
 /**
- * Write the layout, and say nothing if the browser refuses.
+ * Write the layout. Returns whether it landed.
  *
  * It writes whatever this build can express, so it also **replaces a blob this
  * build refused to read** — the downgrade case, where a newer build wrote a
  * version 2. That is deliberate: preserving the unreadable blob would make its
  * notice permanent, with no move the player could make to clear it.
+ *
+ * **And that is why it reports.** Every notice `parseLayout` produced is a
+ * fact about the blob that was *read*, so a successful write retires all of
+ * them — and a refused write does not, because the old blob is still there and
+ * every one of those notices is still true. A `void` return made the two
+ * indistinguishable, and the panel went on printing "the default layout is in
+ * force" beside `PLAYER LAYOUT` for the rest of the session (sage round 1).
  */
-export function saveLayout(layout: readonly Binding[]) {
+export function saveLayout(layout: readonly Binding[]): boolean {
 	try {
 		window.localStorage.setItem(LAYOUT_KEY, serializeLayout(layout));
+		return true;
 	} catch {
 		/* private mode, quota, or a disabled store */
+		return false;
 	}
 }
