@@ -9,13 +9,18 @@ import {
 } from "../src/charge-notice";
 
 /** A callsign carrying a digit, so "no figure" is a claim about the template
- *  and not about the one name this file happened to pick. */
-const CALLSIGN = "SIRIUS 9";
+ *  and not about the one name this file happened to pick — and **mixed case**,
+ *  so the glass line's uppercasing and the log's raw spelling are two different
+ *  strings. With an already-shouted fixture the two arms below are one
+ *  assertion written twice (sage round 2). */
+const CALLSIGN = "Sirius 9";
 
 describe("the charge's own words", () => {
 	test("names the act and the carrier it was done to", () => {
 		const said = chargeNotice({ callsign: CALLSIGN });
-		expect(said).toContain(CALLSIGN);
+		// Shouted, like the scoop's line, so the carrier is named in the glass's
+		// own case rather than the roster's.
+		expect(said).toContain(CALLSIGN.toUpperCase());
 		expect(said.toLowerCase()).toContain("sustained fire");
 	});
 
@@ -24,13 +29,17 @@ describe("the charge's own words", () => {
 		// taken out before the template is read. #429's heat figures are held
 		// inside `10 ... 15` by `tests/legal.test.ts`; none of them is a thing a
 		// pilot is shown.
-		for (const line of [
-			chargeNotice({ callsign: CALLSIGN }),
-			chargeLogText({ callsign: CALLSIGN }),
-		]) {
-			expect(line.split(CALLSIGN.toUpperCase()).join("")).not.toMatch(/\d/);
-			expect(line.split(CALLSIGN).join("")).not.toMatch(/\d/);
-		}
+		// Each line is read with **its own** spelling of the callsign taken out:
+		// the glass shouts it and the log does not, so one substitution cannot
+		// serve both without silently passing on the arm it does not fit.
+		expect(
+			chargeNotice({ callsign: CALLSIGN })
+				.split(CALLSIGN.toUpperCase())
+				.join(""),
+		).not.toMatch(/\d/);
+		expect(
+			chargeLogText({ callsign: CALLSIGN }).split(CALLSIGN).join(""),
+		).not.toMatch(/\d/);
 	});
 
 	test("the log says the same thing as the glass, in the log's sentence shape", () => {

@@ -105,6 +105,12 @@ export const STRUCK_FLASH_S = 0.22;
 const NOTICE_ROW_PX = 28;
 const NOTICE_ROW_PITCH_PX = 22;
 
+/** **The ladder has one owner, and it is this.** Two subjects share the rows
+ *  now and a third would have nowhere to learn which are taken, so the rungs
+ *  are named here rather than passed as bare literals from `render` (sage
+ *  round 2 on #457). Row 0 is the bottom line. */
+export const GLASS_NOTICE_ROW = { scoop: 0, charge: 1 } as const;
+
 /**
  * A one-line notice on the glass: centred under the reticle, just above the
  * glass line, in whatever colour the event earned — `hud-and-scanner.md` §4
@@ -120,15 +126,15 @@ const NOTICE_ROW_PITCH_PX = 22;
  * other's baseline: row 0 is the bottom line, row 1 sits above it. What is
  * shared is one font, one alignment and one ladder — the state machines stay
  * apart, because a charge that could push an unread scoop off the glass is the
- * defect `nextScoopNotice` exists to refuse.
+ * defect `nextScoopNotice` exists to refuse. The rungs are named by
+ * `GLASS_NOTICE_ROW` rather than counted at the call sites.
  */
 export function drawGlassNotice(
 	ctx: CanvasRenderingContext2D,
 	w: number,
 	h: number,
 	glassBottom: number,
-	notice: { text: string; alpha: number; fill: string },
-	row = 0,
+	notice: { text: string; alpha: number; fill: string; row?: number },
 ) {
 	ctx.save();
 	ctx.globalAlpha = notice.alpha;
@@ -138,7 +144,7 @@ export function drawGlassNotice(
 	ctx.fillText(
 		notice.text,
 		w / 2,
-		h * glassBottom - NOTICE_ROW_PX - row * NOTICE_ROW_PITCH_PX,
+		h * glassBottom - NOTICE_ROW_PX - (notice.row ?? 0) * NOTICE_ROW_PITCH_PX,
 	);
 	ctx.restore();
 }

@@ -366,6 +366,7 @@ import {
 	QUIET_GUN,
 	SHOT_SOUND_GAP_S,
 	STRUCK_FLASH_S,
+	GLASS_NOTICE_ROW,
 	drawGlassNotice,
 	drawEnemyBeam,
 	drawStruckRim,
@@ -663,6 +664,12 @@ import * as units from "./units";
 /** How many hails the session keeps. The console shows six; the store holds two
  *  screens, and no more, however long the trigger is held. */
 const HAIL_LOG_KEEP = 12;
+
+/** How many charges the session keeps, on the same reasoning and deliberately
+ *  its own name (sage round 2 on #457): the two stores are separate, and a
+ *  bound written as the hails' constant would move this one whenever that one
+ *  moved. Equal today, and that is a choice rather than a coupling. */
+const CHARGE_LOG_KEEP = HAIL_LOG_KEEP;
 
 /**
  * Cube faces drawn per frame, across every bake in flight (#208).
@@ -5955,7 +5962,7 @@ class Game {
 			});
 			// Bounded like the hails, and for the same reason: a screenful is what
 			// the log can show, and a held trigger may not grow this past one.
-			if (this.charges.length > HAIL_LOG_KEEP) this.charges.shift();
+			if (this.charges.length > CHARGE_LOG_KEEP) this.charges.shift();
 		}
 	}
 
@@ -13580,14 +13587,12 @@ class Game {
 			// reads as one event even when three land within a few seconds of
 			// each other.
 			const alpha = Math.min(1, notice.left / (lifeS * 0.4));
-			drawGlassNotice(
-				ctx,
-				w,
-				h,
-				glassBottom,
-				{ text: notice.text, alpha, fill },
+			drawGlassNotice(ctx, w, h, glassBottom, {
+				text: notice.text,
+				alpha,
+				fill,
 				row,
-			);
+			});
 			return alpha;
 		};
 		// The scoop's acknowledgement (#324). In **every** view, not only the
@@ -13600,7 +13605,7 @@ class Game {
 			this.scoop,
 			SCOOP_NOTICE_S,
 			this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
-			0,
+			GLASS_NOTICE_ROW.scoop,
 		);
 		this.scoopRender =
 			scoopAlpha === null
@@ -13628,7 +13633,7 @@ class Game {
 			this.charged,
 			CHARGE_NOTICE_S,
 			FLOOR_TONE_FILL.action,
-			1,
+			GLASS_NOTICE_ROW.charge,
 		);
 		this.chargedRender =
 			chargedAlpha === null
