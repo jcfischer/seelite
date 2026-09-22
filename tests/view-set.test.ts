@@ -157,7 +157,7 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares twenty-eight views with unique kebab-case names", () => {
+	test("declares twenty-nine views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
@@ -166,15 +166,13 @@ describe("the view set itself", () => {
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
 		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded. (#432 added a twenty-ninth — a rim row
-		// aimed along the Core bearing — and removed it in the same PR, on the
-		// principal's reading of the frame plus the density arm in
-		// `measure-sky-density.ts`. The count did not move, and the row's absence
-		// is explained where it stood rather than here.) A literal and not
-		// `VIEWS.length`, which is
-		// the whole point: a view deleted by accident has to be a red run, and a
-		// check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(28);
+		// the Controls tab open and folded. (#432 added a twenty-ninth and removed it
+		// in the same PR; #480 put one back, in the other role. Why both happened is
+		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
+		// not `VIEWS.length`, which is the whole point: a view deleted by accident
+		// has to be a red run, and a check derived from its own subject cannot be
+		// one.
+		expect(VIEWS.length).toBe(29);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -472,7 +470,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–11.4s");
+		expect(html).toContain("· clock 0.6–11.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -608,28 +606,140 @@ describe("the rim sky row #432 built and removed", () => {
 	 * `sky-only` rather than instead of it: `sky-only` declares `covers: [100,
 	 * 200]`, so relocating it would have re-baselined #200's dither evidence with
 	 * it. "The arrival point, empty sky" is an honest frame of the world the game
-	 * actually starts the player in, and it survives the row that replaced it.
+	 * actually starts the player in, and no row has displaced it — including the one
+	 * #480 added at the other end of the cluster.
 	 */
 	test("sky-only still stands at the arrival point and aims away from everything", () => {
 		const skyOnly = VIEWS.find((v) => v.name === "sky-only");
 		expect(skyOnly?.covers).toEqual([100, 200]);
 		expect(skyOnly?.shot).toEqual({ kind: "deep-sky", view: "cockpit" });
 	});
+});
+
+/**
+ * The sheet's second sky frame, added by #480.
+ *
+ * Why the set needed it, and what its line on the sheet may claim, is told once, in
+ * the note beside `sky-at-the-rim` in `view-set.mjs` — including what the row is not
+ * evidence for. This describe holds only what a headless run can hold about a frame:
+ * which star the row names, that the star is the edge by the generator's own radial
+ * coordinate rather than by a ruler of this file's, and which words the caption has
+ * not earned. Whether the frame is worth the row is a person's, off the sheet —
+ * which is why the node carrying it is `propose`.
+ */
+describe("the rim look row #480 added", () => {
+	/**
+	 * §4's radial coordinate, read off the generator rather than re-derived:
+	 * `SystemRecord.t` is `radiusLy / GALAXY_RADIUS_LY` and the record calls it
+	 * "the one input every radial bias in §4 reads". Recomputing a radius here
+	 * would be a second ruler, and #118 is the history of what two of those do to
+	 * a gradient.
+	 */
+	const rimWorld = makeWorld(SEED);
+	const systems = rimWorld.galaxy.systems;
+	/** The farthest system from the cluster centre — folded, not a spread `max`,
+	 *  and deterministic on the sheet's own seed. */
+	const farthest = systems.reduce((a, b) => (b.t > a.t ? b : a));
+	/** The row under test, found once. */
+	const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+	/**
+	 * Its shot, or an empty object when the row is gone.
+	 *
+	 * This binding is evaluated in the describe body, so it runs while the file is
+	 * being *collected* — before a single `expect` exists to fail. Reading
+	 * `row.shot.system` directly would throw a TypeError at that point if the row
+	 * were ever deleted, and the file would go down without one assertion naming the
+	 * row that went. With the fallback an absent row is four ordinary failures that
+	 * each say which row they mean.
+	 */
+	const shot = (row?.shot ?? {}) as {
+		kind?: string;
+		view?: string;
+		system?: number;
+	};
+	/**
+	 * The system the row *names*, resolved back against the generator. This is the
+	 * fixture as the page will receive it: the literal in `view-set.mjs` is the
+	 * claim, `farthest` is the rule, and they describe the same place only if this
+	 * record is that system.
+	 */
+	const named =
+		shot.system === undefined
+			? undefined
+			: systems.find((s) => s.index === shot.system);
 
 	/**
-	 * `?system=` ships, `capture-views.mjs` will restore a named system beside the
-	 * seed for any row, and nothing in the set asks for one. That is a decision
-	 * rather than an oversight, and this row is what makes it one: the day the
-	 * derived layer's population moves far enough for a rim frame to show the cone,
-	 * a row here will name a system, and this row goes red with it.
+	 * The shot is matched exactly, which is what holds the prohibition #480 was
+	 * written against: `toEqual` fails on an extra defined property, so #432's `aim`
+	 * axis cannot come back on this row unnoticed. No `aim` is declared in this
+	 * file's cast — the check is the shape, not a read of a field nobody ships.
 	 */
-	test("no row in the set names a system to stand at", () => {
-		// Cast rather than a declaration: `system` is legal on a shot and no row
-		// uses it, so the inferred union of the literals in `view-set.mjs` has no
-		// such property to read. `malformedShots` reads it the same way.
+	test("it stands at the farthest system of the sheet's own seed, and aims by nothing else", () => {
+		expect(row).toBeDefined();
+		expect(row?.covers).toEqual([431]);
+		expect(shot).toEqual({
+			kind: "deep-sky",
+			view: "cockpit",
+			system: farthest.index,
+		});
+	});
+
+	/**
+	 * The row's own star, measured against every other star, rather than the fold
+	 * the claim is the row's index against the fold, and that is the row above. What
+	 * is new here is the floor, and it guards a word rather than the fixture.
+	 *
+	 * `t` is `radiusLy / GALAXY_RADIUS_LY`, so *rim* means anything about the
+	 * farthest star only while the cluster still reaches the radius that constant
+	 * claims — which is exactly what #118's reshape put at risk, and what a future
+	 * re-cut would break the same way. If the cluster stopped reaching it, `t` would
+	 * top out under two thirds, the row's `what` would still print *"the outermost
+	 * system on the cluster's rim"*, and nothing else in this file would notice.
+	 */
+	test("the cluster still reaches §4's rim, so the word rim names a place", () => {
+		expect(named).toBeDefined();
+		expect(named?.t).toBeGreaterThanOrEqual(2 / 3);
+	});
+
+	/**
+	 * A fence on the two ways this row's caption has already gone wrong, not a
+	 * proof of anything: a line reading *"an empty sky ahead"* would clear every
+	 * assertion here. That is worth saying in the test's own name, because the
+	 * stronger claim the PR made — that the row can only promise what it shows — is
+	 * carried by the note beside the row and by whoever edits it next, and a
+	 * denylist of six stems is a much smaller thing than that sentence.
+	 *
+	 * All three patterns are anchored, because the hazard is a substring doing the
+	 * claiming: unanchored, `dense` reads *"condense"* as a crowding claim and `core`
+	 * reads *"score"* as the bearing. What the row may say is owned
+	 * by that note in `view-set.mjs`, which is where the two drafts that broke the
+	 * rule are told; this row only holds the words, anchored, with `rim` required as
+	 * a whole word so *"primary"* cannot satisfy it either.
+	 */
+	test("its caption avoids the words this row has already over-claimed with", () => {
+		const what = row?.what ?? "";
+		expect(what).not.toBe("");
+		expect(what.toLowerCase()).toMatch(/\brim\b/);
+		expect(what.toLowerCase()).not.toMatch(/\b(core|cone|bearing)/);
+		expect(what.toLowerCase()).not.toMatch(
+			/\b(thin|dense|crowd|number of|count of|nothing)/,
+		);
+	});
+
+	/**
+	 * The scope of the affordance #432 shipped, held so it cannot spread by
+	 * accident. Exactly one row stands off the boot system; a second is either that
+	 * decision widened or a fixture copied, and either way it should be a red run
+	 * rather than a quiet merge.
+	 */
+	test("it is the only row in the set that names a system to stand at", () => {
+		// Cast rather than a declaration: `system` is declared by exactly one row's
+		// literal, so it exists on one arm of the union `view-set.mjs` infers and on
+		// none of the other twenty-eight — which is exactly what a union refuses to
+		// let you read. `malformedShots` reads it the same way.
 		const declaring = VIEWS.filter(
 			(v) => (v.shot as { system?: number }).system !== undefined,
 		);
-		expect(declaring.map((v) => v.name)).toEqual([]);
+		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
 	});
 });

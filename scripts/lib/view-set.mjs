@@ -142,6 +142,7 @@ export const LEVERS = Object.freeze({
 	300: "every §5 fixture on the surface its own aperture axis looks at",
 	324: "the duel HUD, the canister markers after a kill, and the Communications console's raider log",
 	372: "the Controls tab: every control as a folding tree of task groups",
+	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 });
 
 /**
@@ -208,22 +209,19 @@ export const SHOT_KINDS = Object.freeze([
  * seed" of this set would be the class of claim this file's own capture code
  * refuses: a caption asserting a fixture property the frames do not have.
  *
- * **One seed is not one place.** Every row is framed in the system the game boots
- * at, which is `startSystem` — the most *central* well-stocked and orderly one —
- * and a row may name a `system` to stand at instead (#432). None does: the row
- * that needed it was measured, judged and removed, and the reason is beside
- * `sky-only`. `capture-views.mjs` still restores the system with the seed before
- * each view, with the same readback and the same refusal: a row that got a
- * different system than it asked for has to be a red run rather than a wrong
- * picture with the right caption.
- *
- * **That plumbing is carried knowingly, at a cost this file is naming.** It is
- * exercised by no row today, so every branch of it runs only in tests. The
- * alternative — dropping it until a row asks — is what #478 will undo, and the
- * half worth keeping is not the argument to `gameUrl` but the readback: the one
- * place a wrong-star caption can be caught is the boot that made it, and a row
- * added under [#478](https://github.com/jcfischer/seelite/issues/478) should fail
- * loudly on its first run rather than be believed.
+ * **One seed is not one place, and one place is not the whole cluster.** Every
+ * row is framed in the system the game boots at, which is `startSystem` — the most
+ * *central* well-stocked and orderly one — and a row may name a `system` to stand at
+ * instead (#432). One does: `sky-at-the-rim` (#480). Why the set needed it, the rule
+ * that picked its star, and what its line on the sheet may claim are all told once,
+ * in the note beside that row, and not here. What belongs here is the mechanism.
+ * `capture-views.mjs` restores the system with the seed before each view and reads
+ * the booted index back: a row that got a different system than it asked for has to
+ * be a red run rather than a wrong picture wearing the right caption. The half of
+ * that plumbing worth keeping was never the argument to `gameUrl` but the readback —
+ * the one place a wrong-star caption can be caught is the boot that made it — which
+ * is why it stayed when #432's row was removed, carried by no row for a round and
+ * named out loud as the cost of keeping it.
  *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
@@ -733,20 +731,78 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
-	 * The gap here is #432's answer, and it is a measurement rather than a
-	 * missing row. A row standing at the cluster's rim and aimed along the **Core
-	 * bearing** was built, captured on the GPU lane and judged by the principal,
-	 * whose reading was *"few dots, neither wall of dots or cone of lights"*.
-	 * That is what the arithmetic predicts: `scripts/measure-sky-density.ts`'s
-	 * core mode prints the crowded heading's points-per-square-degree against the
-	 * density the invented population already lays down in *every* direction, and
-	 * the cone loses. No framing at a 256-system cluster makes #100's lever
-	 * visible, because — as `CONTEXT.md` says of the Core bearing — it carries
-	 * information rather than light. What #432 shipped is the way to stand at a
-	 * named system (`?system=`) and the measurement that standing there is not
-	 * enough. The lever is the derived layer's population, which is the node that
-	 * measurement opened; a rim sky row comes back after that, not before it.
+	 * The gap between these two rows is #432's answer, and it is a measurement
+	 * rather than a missing row. A row standing at the cluster's rim and aimed
+	 * along the **Core bearing** was built, captured on the GPU lane and judged by
+	 * the principal, whose reading was *"few dots, neither wall of dots or cone of
+	 * lights"*. That is what the arithmetic predicts:
+	 * `scripts/measure-sky-density.ts`'s core mode prints the crowded heading's
+	 * points-per-square-degree against the density the invented population already
+	 * lays down in *every* direction, and the cone loses. No framing at a
+	 * 256-system cluster makes #100's lever visible, because — as `CONTEXT.md`
+	 * says of the Core bearing — it carries information rather than light. What
+	 * #432 shipped is the way to stand at a named system (`?system=`) and the
+	 * measurement that standing there is not enough.
+	 *
+	 * The row below is what came back after that, in the role a rim frame can
+	 * actually fill, on the principal's ruling and not on this file's: the cone is
+	 * #478's to decide, and the sky is already the picture he asked for.
+	 *
+	 * **What its caption may claim is measured rather than tasted, and this is the
+	 * one place that account lives.** Two claims are open to it and no more. Where
+	 * it stands — the farthest system of the cluster, recomputed by
+	 * `tests/view-set.test.ts` — and which rule pointed the camera. Nothing else.
+	 *
+	 * In particular it says nothing about what is *in* the frame, and two drafts of
+	 * it did. The first read *"seen from where they are thinnest"*:
+	 * `__emptiestDirection` takes the star and the bodies of *this system* as its
+	 * subjects and knows nothing about the derived field, so the heading is as free
+	 * to point coreward, where the neighbours are densest, as outboard. The second
+	 * read *"with nothing in front of it"*, which is the subtler of the two and just
+	 * as unheld: the rule maximises the *minimum* angle over a 512-point sampling of
+	 * the sphere, which makes it the emptiest heading available rather than an empty
+	 * one, and nothing here bounds the angle it achieves against the cockpit's field
+	 * of view at system 115. Bounding it is clearance arithmetic, and clearance
+	 * arithmetic is what #432's `aim` axis existed to do and this row deliberately did
+	 * not revive. So the line names the *rule* — what the camera did, which is true
+	 * and readable off the placer — instead of what the frame contains, which is
+	 * neither. (`sky-only`'s line has said *"with nothing in front of it"* on that
+	 * same unbounded basis since #104. That is not this row's to fix and it is worth
+	 * its own node.)
+	 *
+	 * System 115 is the farthest of the 256 from the cluster centre on the sheet's
+	 * own seed, on the generator's own radial coordinate (`SystemRecord.t`) rather
+	 * than a ruler held here, which is what the row's `what` means by *"the
+	 * outermost system on the cluster's rim"*. How far out that is is deliberately
+	 * not written down: what answers to a re-cut cluster is the rule — no other
+	 * system outranks it — and the floor — it stands in the rim third — and both are
+	 * in `tests/view-set.test.ts`, while a figure in a comment answers to neither.
+	 * The index is written down because a shot has to name one and the capture is a
+	 * browser tool that cannot recompute anything, and it is *recomputed* rather
+	 * than remembered in `tests/view-set.test.ts`: the same fold over
+	 * `makeWorld(SEED).galaxy.systems` runs there every run, so a re-cut cluster
+	 * moves the row or goes red rather than leaving it standing at a star that is
+	 * no longer the edge. The browser-side half is `ensureFixture`: it restores seed
+	 * and system together, reads the index back off the world the page is running, and
+	 * throws on a mismatch. Both halves are worth stating precisely rather than
+	 * praising. The boot has run — this row's capture put the page at system 115 and
+	 * the readback agreed — which is the first time that path has been walked for a row
+	 * rather than for a test fixture. The refusal has never fired, in a capture or
+	 * anywhere else: it is a throw in a browser tool that no headless test can reach,
+	 * and the nearest thing to coverage of the subject is `probe-sky.mjs` proving that
+	 * the *page* refuses an unusable index politely, which is the other half of a
+	 * different guard. Said out loud because this is the first row leaning on a net
+	 * that has never once caught anything. Nor is it assumed that the number in the
+	 * literal means what `?system=` reads: that question is settled where it could be
+	 * got wrong, by `probe-sky.mjs` asking the URL for an index it computed off the
+	 * running page and asking the page which system it came up as.
 	 */
+	{
+		name: "sky-at-the-rim",
+		covers: [431],
+		what: "Aimed by the emptiest-heading rule `sky-only` uses, at the outermost system on the cluster's rim. The derived sky, framed from the rim rather than the centre.",
+		shot: { kind: "deep-sky", view: "cockpit", system: 115 },
+	},
 	/**
 	 * #372's two frames: the tree as `?` first opens it, and with four groups
 	 * folded, so the sheet shows both what a fold does and the lower groups an
