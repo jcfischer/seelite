@@ -102,8 +102,8 @@ export const STRUCK_FLASH_S = 0.22;
 /** How far the first notice row sits above the glass line, and how far apart
  *  two rows are, in px. One figure each, because a second notice drawn at the
  *  first one's baseline is one illegible line and not two (#457). */
-export const NOTICE_ROW_PX = 28;
-export const NOTICE_ROW_PITCH_PX = 22;
+const NOTICE_ROW_PX = 28;
+const NOTICE_ROW_PITCH_PX = 22;
 
 /**
  * A one-line notice on the glass: centred under the reticle, just above the
@@ -115,7 +115,7 @@ export const NOTICE_ROW_PITCH_PX = 22;
  * is already very large (sage #355).
  *
  * **It was the scoop's, and it is a drawer now (#324, widened by #457).** The
- * sustained-fire charge is a second subject with its own words, window and
+ * charge for sustained fire is a second subject with its own words, window and
  * re-arm rule (`charge-notice.ts`), and `row` is what keeps the two off each
  * other's baseline: row 0 is the bottom line, row 1 sits above it. What is
  * shared is one font, one alignment and one ladder — the state machines stay

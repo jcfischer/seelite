@@ -51,10 +51,12 @@ Verified on `main` at `295320a`, 2026-09-16.
   (`src/world-state.ts:1238`) is called only from `tests/`. `LegalStatus` is
   `{ heat, updatedAt }` and is saved and parsed field by field
   (`world-state.ts:1738-1741`). The cockpit rail had a `LEGAL STATUS` label and
-  no value (`src/live-cockpit.ts:1272`); `HAILS` beside it has carried a value
-  since #396, and the label itself is `STANDING` since #457, which paid
-  `CONTEXT.md` §Language's alias debt in the same change that gave the
-  sustained-fire charge a voice.
+  no value (`src/live-cockpit.ts:1272`). **Both halves are later than this
+  section's stamp and are marked as such rather than folded into it**: `HAILS`
+  has carried a value since #396, and the label itself reads `STANDING` since
+  #457, which paid `CONTEXT.md` §Language's alias debt in the same change that
+  gave the charge for sustained fire a voice. The old spelling survives in this
+  paragraph as the quotation of a label that was, and nowhere else.
 - **Every ship already shares one condition model.** `fullCondition(hull)`
   gives 106 shield per side, a bank of 100 and `HULL_SPECS[hull].integrity`
   hull points (`src/ship-condition.ts:19-31, 78-92`); the pulse laser does 6
@@ -414,7 +416,8 @@ frame the first hit lands and the sustained-fire clock is still running: a victi
 that announces a charge which has not been made tells the pilot the wrong thing
 on the one surface that is honest about the moment.
 
-**The sustained-fire charge is said out loud at the frame its clock crosses**
+**The charge for sustained fire is said out loud at the frame its clock
+crosses**
 (#457, on #447's ruling). One sentence on the glass, in the law's voice, naming
 the act and the carrier it was done to and carrying no figure — drawn beside the
 scoop's notice on the row above it, in §4's amber, which is that grammar's

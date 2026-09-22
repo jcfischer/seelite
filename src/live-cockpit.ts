@@ -1537,11 +1537,19 @@ export class LiveCockpit {
 			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
 			// **The rail's third label is the canonical Standing** (`CONTEXT.md`
-			// §Language, which lists *Legal status* under `_Avoid_`). It read
-			// `LEGAL STATUS` until #457: #366 deferred the rename to "console copy's
-			// own node" rather than make a UI change from a legal-change PR, and
-			// #447's ruling is that node — the principal chose to pay the alias debt
-			// in the same template line the charge's voice is owed on.
+			// §Language). It carried the Avoid alias until #457: #366 deferred the
+			// rename to "console copy's own node" rather than make a UI change
+			// from a legal-change PR, and #447's ruling is that node — the
+			// principal chose to pay the alias debt in the same template line the
+			// charge's voice is owed on. The old spelling is quoted in
+			// `civilian-combat.md` H1's audit and deliberately nowhere here.
+			//
+			// **The `data-live-legal-status` selector is deliberately unchanged.**
+			// It is the probe-facing name of the slot and not a word the pilot
+			// reads; renaming it is a breaking change to every probe that reads
+			// the readout, for no gain in what the console says. The same scope
+			// split `CONTEXT.md` §Language draws for **Commander**, where the
+			// storage layer's words stay as they are.
 			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS<em data-live-hails></em></span><span>STANDING</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>

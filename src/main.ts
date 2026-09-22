@@ -2084,7 +2084,7 @@ class Game {
 	 */
 	private readonly hails: { line: RaiderLogLine; callsign: string }[] = [];
 	/**
-	 * The sustained-fire charges this session has been told about, newest last,
+	 * The charges for sustained fire this session has been told about, newest last,
 	 * capped the same way (#457).
 	 *
 	 * **Its own list and not the hails'**, for two reasons that agree. A hail is
@@ -2331,7 +2331,7 @@ class Game {
 	 *  is up. */
 	scoopRender: { text: string; alpha: number; accepted: boolean } | null = null;
 	/**
-	 * The sustained-fire charge's acknowledgement, in the same shape and for
+	 * The sustained-fire rung's acknowledgement, in the same shape and for
 	 * the same reason (#457 on #447's ruling).
 	 *
 	 * **A peer of the scoop's notice rather than a second subject inside it.**
@@ -12006,7 +12006,7 @@ class Game {
 							// #396: the struck carrier's hail. Not a derivation, and
 							// the one line here that is not — see `this.hails`.
 							...this.hails.map((h) => h.line),
-							// #457: the sustained-fire charge, in the law's voice. The
+							// #457: the charge for sustained fire, in the law's voice. The
 							// second line here that is not a derivation, and its own
 							// store for the reason `this.charges` gives. The log is the
 							// record and never the voice — it is read by turning away
@@ -13563,27 +13563,54 @@ class Game {
 			drawStruckRim(ctx, w, h, glassBottom, rim);
 			this.hostileFireRender.rim = Math.max(0, rim);
 		}
+		// **One fade, one draw, one record, for both notices.** The two state
+		// machines stay apart — `nextScoopNotice` is keyed on a canister and
+		// `nextChargeNotice` on a read guard, and neither may push the other off
+		// the glass — but the step that turns a standing notice into pixels is
+		// the same step, and it was written twice before this (sage #477). A
+		// third row copies nothing.
+		const paintNotice = (
+			notice: { text: string; left: number },
+			lifeS: number,
+			fill: string,
+			row: number,
+		): number | null => {
+			if (!(notice.left > 0 && notice.text)) return null;
+			// It fades over its last stretch rather than cutting, so a notice
+			// reads as one event even when three land within a few seconds of
+			// each other.
+			const alpha = Math.min(1, notice.left / (lifeS * 0.4));
+			drawGlassNotice(
+				ctx,
+				w,
+				h,
+				glassBottom,
+				{ text: notice.text, alpha, fill },
+				row,
+			);
+			return alpha;
+		};
 		// The scoop's acknowledgement (#324). In **every** view, not only the
 		// cockpit: the canister marker is drawn in both, so the event that
-		// removes it has to be answered in both. It fades over its last stretch
-		// rather than cutting, so a scoop reads as one event even when three
-		// land within a few seconds of each other.
-		if (this.scoop.left > 0 && this.scoop.text) {
-			const alpha = Math.min(1, this.scoop.left / (SCOOP_NOTICE_S * 0.4));
-			// §4's grammar: green confirms, red refuses. A full hold drawn in the
-			// cargo green read as a successful scoop (sage #355).
-			drawGlassNotice(ctx, w, h, glassBottom, {
-				text: this.scoop.text,
-				alpha,
-				fill: this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
-			});
-			this.scoopRender = {
-				text: this.scoop.text,
-				alpha,
-				accepted: this.scoop.accepted,
-			};
-		} else this.scoopRender = null;
-		// The sustained-fire charge's, on the row above it (#457). In every view
+		// removes it has to be answered in both.
+		//
+		// §4's grammar: green confirms, red refuses. A full hold drawn in the
+		// cargo green read as a successful scoop (sage #355).
+		const scoopAlpha = paintNotice(
+			this.scoop,
+			SCOOP_NOTICE_S,
+			this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
+			0,
+		);
+		this.scoopRender =
+			scoopAlpha === null
+				? null
+				: {
+						text: this.scoop.text,
+						alpha: scoopAlpha,
+						accepted: this.scoop.accepted,
+					};
+		// The sustained-fire rung's, on the row above it (#457). In every view
 		// for the scoop's reason: the act is the pilot's own, and a pilot who
 		// pulled back to chase to see what they were shooting at is the one the
 		// flight report was written by.
@@ -13597,18 +13624,16 @@ class Game {
 		// crossed, the divert has not, and stopping now is still a thing the
 		// pilot can do. It is a look decision, so it is the frame and the
 		// principal that settle it rather than this comment.
-		if (this.charged.left > 0 && this.charged.text) {
-			const alpha = Math.min(1, this.charged.left / (CHARGE_NOTICE_S * 0.4));
-			drawGlassNotice(
-				ctx,
-				w,
-				h,
-				glassBottom,
-				{ text: this.charged.text, alpha, fill: FLOOR_TONE_FILL.action },
-				1,
-			);
-			this.chargedRender = { text: this.charged.text, alpha };
-		} else this.chargedRender = null;
+		const chargedAlpha = paintNotice(
+			this.charged,
+			CHARGE_NOTICE_S,
+			FLOOR_TONE_FILL.action,
+			1,
+		);
+		this.chargedRender =
+			chargedAlpha === null
+				? null
+				: { text: this.charged.text, alpha: chargedAlpha };
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip
 		// shows where it points.

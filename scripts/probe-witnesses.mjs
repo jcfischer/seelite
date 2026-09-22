@@ -612,9 +612,12 @@ try {
 			 * and no geometry constant is restated up here to find them.
 			 *
 			 * The tone is read off those pixels rather than asserted as a css
-			 * string, because the string is what the draw was *asked* for.
+			 * string, because the string is what the draw was *asked* for. And the
+			 * isolation is measured rather than assumed: `jitter` is a null
+			 * control, two shots with nothing changed between them.
 			 */
 			chargePixels() {
+				const wasView = g.view;
 				g.view = "cockpit";
 				const overlay = document.getElementById("overlay");
 				const c2d = overlay.getContext("2d", { willReadFrequently: true });
@@ -622,37 +625,53 @@ try {
 					g.render(dt);
 					return c2d.getImageData(0, 0, overlay.width, overlay.height).data;
 				};
+				// Any channel moving past a code is a moved pixel: the notice is
+				// drawn with a fading alpha, so its faintest row is a few codes and
+				// a threshold tuned to its peak would miss the event it is there
+				// to see.
+				const diff = (a, b2) => {
+					let moved = 0;
+					let r = 0;
+					let gr = 0;
+					let b = 0;
+					for (let i = 0; i < a.length; i += 4) {
+						if (
+							Math.abs(a[i] - b2[i]) > 8 ||
+							Math.abs(a[i + 1] - b2[i + 1]) > 8 ||
+							Math.abs(a[i + 2] - b2[i + 2]) > 8
+						) {
+							moved++;
+							r += a[i];
+							gr += a[i + 1];
+							b += a[i + 2];
+						}
+					}
+					return {
+						moved,
+						mean: moved ? { r: r / moved, g: gr / moved, b: b / moved } : null,
+					};
+				};
 				const shown = shot();
+				// **A null control, because the isolation is an assumption until it
+				// is measured** (sage round 1 on #477). Two shots with nothing
+				// changed: any frame-to-frame jitter lands here, it is printed
+				// beside the reading rather than assumed away, and the row asserts
+				// it is a small fraction of what the notice moves.
+				const still = shot();
+				const jitter = diff(shown, still).moved;
 				const kept = g.charged.left;
 				g.charged.left = 0;
 				const control = shot();
 				g.charged.left = kept;
+				const measured = diff(shown, control);
+				// **The record is read after the notice is back**, because the last
+				// frame drawn was the control's and `chargedRender` is written by
+				// the draw — reading it there returns the null the control painted
+				// and says the notice does not exist.
 				g.render(dt);
-				let moved = 0;
-				let r = 0;
-				let gr = 0;
-				let b = 0;
-				for (let i = 0; i < shown.length; i += 4) {
-					// Any channel moving past a code is a moved pixel: the notice is
-					// drawn with a fading alpha, so its faintest row is a few codes
-					// and a threshold tuned to its peak would miss the event it is
-					// there to see.
-					if (
-						Math.abs(shown[i] - control[i]) > 8 ||
-						Math.abs(shown[i + 1] - control[i + 1]) > 8 ||
-						Math.abs(shown[i + 2] - control[i + 2]) > 8
-					) {
-						moved++;
-						r += shown[i];
-						gr += shown[i + 1];
-						b += shown[i + 2];
-					}
-				}
-				return {
-					moved,
-					render: g.chargedRender ? { ...g.chargedRender } : null,
-					mean: moved ? { r: r / moved, g: gr / moved, b: b / moved } : null,
-				};
+				const render = g.chargedRender ? { ...g.chargedRender } : null;
+				g.view = wasView;
+				return { ...measured, jitter, render };
 			},
 			comms() {
 				// The console is only built while the cockpit is the view, and the
@@ -993,42 +1012,47 @@ try {
 	// line" and read `g.lastExit`** — a string bound for `#hud`, which the page
 	// clips to 1x1. #447 found that false by flying it, and named the row as one
 	// of the three places the claim was made. It reads the painted frame now.
+	const chargeSeen = struck.strike?.charge;
+	const painted = chargeSeen?.painted;
 	check(
-		"the sustained-fire charge is painted on the glass at the frame it lands, and it costs Wanted (#396 §2, #457)",
-		struck.strike?.charge?.frame >= 0 &&
+		"the charge for sustained fire is painted on the glass at the frame it lands, and it costs Wanted (#396 §2, #457)",
+		chargeSeen?.frame >= 0 &&
 			// Pixels moved against a same-build control with the notice's clock
 			// zeroed. A figure rather than a boolean, because a notice that paints
-			// one pixel is the defect this row exists to catch.
-			struck.strike?.charge?.painted?.moved > 200 &&
-			// §4's amber: warmer than it is blue, and not the red the law speaks
-			// refusal in. Read off the pixels, not off the css the draw was asked
-			// for.
-			struck.strike?.charge?.painted?.mean?.r >
-				struck.strike?.charge?.painted?.mean?.b &&
-			struck.strike?.charge?.painted?.mean?.g >
-				struck.strike?.charge?.painted?.mean?.b &&
+			// one pixel is the defect this row exists to catch — and it is read
+			// against the null control beside it, so the figure is the notice
+			// rather than the frame being restless.
+			painted?.moved > 200 &&
+			painted?.moved > painted?.jitter * 20 &&
+			// **§4's amber, and not the red the law speaks refusal in.** The two
+			// fills differ in how much green stands beside the red: amber is
+			// `rgba(255, 196, 110)` at g/r 0.77 and the refusal `rgba(255, 110,
+			// 96)` at 0.43, so the ordering `g > b` both of them satisfy settles
+			// nothing and the ratio does. 0.6 sits between the two, and the row
+			// was watched red with the refusal fill spliced in before it was
+			// believed.
+			painted?.mean?.g > painted?.mean?.r * 0.6 &&
+			painted?.mean?.r > painted?.mean?.b &&
 			// The words name the act and the carrier, and carry no figure —
 			// `tests/charge-notice.test.ts` holds the template; this holds that the
 			// template is what reached the glass.
-			/SUSTAINED FIRE ON /.test(
-				struck.strike?.charge?.painted?.render?.text ?? "",
-			) &&
+			/SUSTAINED FIRE ON /.test(painted?.render?.text ?? "") &&
 			// And the console holds the same charge, so the record survives the
 			// notice fading. Sampled at the charge frame, which this probe never
 			// did before #457: it read before the first hit and at the divert.
-			struck.strike?.charge?.comms?.logLines?.some((line) =>
+			chargeSeen?.comms?.logLines?.some((line) =>
 				/sustained fire/.test(line),
 			) &&
-			typeof struck.strike?.charge?.lastExit === "string" &&
-			struck.strike?.charge?.lastExit.includes("sustained fire") &&
-			struck.strike?.charge?.heat >= struck.after?.wantedHeat &&
-			struck.strike?.charge?.landedFireS >= struck.assaultFireS &&
+			typeof chargeSeen?.lastExit === "string" &&
+			chargeSeen?.lastExit.includes("sustained fire") &&
+			chargeSeen?.heat >= struck.after?.wantedHeat &&
+			chargeSeen?.landedFireS >= struck.assaultFireS &&
 			// And the whole thing happens before the divert: this is the part of
 			// the flight report that was missing, the interval in which the pilot
 			// could still have stopped.
-			struck.strike?.charge?.frame < struck.strike?.frames,
+			chargeSeen?.frame < struck.strike?.frames,
 		JSON.stringify({
-			charge: struck.strike?.charge,
+			charge: chargeSeen,
 			frames: struck.strike?.frames,
 			assaultFireS: struck.assaultFireS,
 			wanted: struck.after?.wantedHeat,

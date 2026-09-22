@@ -1,6 +1,6 @@
 /**
- * What the cockpit says when the sustained-fire clock crosses, and for how long
- * (#457, on #447's ruling).
+ * What the cockpit says when the charge for sustained fire lands, and for how
+ * long (#457, on #447's ruling).
  *
  * **A charge had no voice a pilot could hear.** `civilian-combat.md` H4's third
  * rung is charged at `ASSAULT_FIRE_S` of landed fire, and until this module the
@@ -37,14 +37,21 @@ export const CHARGE_NOTICE_S = 3.6;
  *
  * The charge is latched one per carrier per incident, so a second one is
  * another carrier — rare, and possible with a turret held across two of them.
- * A newer charge that replaced the line immediately would leave the pilot
- * charged twice and told once; one that never replaced it would do the same.
- * So the first line is guaranteed its read and the second takes the glass
- * after it, and the Communications log holds both either way.
+ * A newer charge that replaced the line immediately would push a sentence off
+ * the glass before it had been read.
+ *
+ * **So the newer charge is dropped from the glass, not deferred onto it.**
+ * There is no queue here and this is the whole of the rule: inside the guard
+ * the standing line keeps the glass and the second charge is seen only on the
+ * Communications log, which is what the log is for. Past the guard the newer
+ * charge takes the glass with a fresh life. A queue was not built because a
+ * sentence shown late is a sentence about a moment that has gone — the scoop's
+ * own refusal (`nextScoopNotice`) drops a line for the same reason rather than
+ * holding it.
  */
 export const CHARGE_READ_S = 1.2;
 
-/** One sustained-fire charge, as the glass and the log both need it. */
+/** One charge for sustained fire, as the glass and the log both need it. */
 export interface ChargeEvent {
 	/** The carrier the fire was held on: who the act was done to. */
 	callsign: string;
@@ -91,9 +98,10 @@ export const chargeExit = (event: ChargeEvent, charged: boolean): string =>
 /**
  * The notice after one charge, given whatever is still standing.
  *
- * A standing notice younger than its read time keeps the glass; the charge is
- * on the log regardless, so nothing is lost by making the pilot finish the
- * sentence they are already reading.
+ * A standing notice younger than its read time keeps the glass and the newer
+ * charge is **dropped** from it — it is on the log regardless, so what is lost
+ * is a sentence and not a record, and what is kept is the one the pilot is
+ * already halfway through.
  */
 export function nextChargeNotice(
 	standing: ChargeNotice,
