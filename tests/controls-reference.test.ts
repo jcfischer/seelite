@@ -7,7 +7,8 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import { CONTROLS, TASK_GROUPS, type Trigger } from "../src/controls-catalogue";
+import { TASK_GROUPS, type Trigger } from "../src/commands";
+import { CONTROLS } from "../src/controls-catalogue";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,

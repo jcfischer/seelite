@@ -153,7 +153,7 @@ describe("the catalogue #369 ratified", () => {
 		expect(new Set(pitch.map((b) => b.command)).size).toBe(2);
 	});
 
-	test("the diagnostics and the rig keys are catalogued and not rebindable", () => {
+	test("the three kinds of fixed row are catalogued and not rebindable", () => {
 		// D12's rider: `tests/perf-panel-keys.test.ts` exists to keep the
 		// diagnostics off the flight path, and D5 permits a player layout to
 		// collide — so a registry that offered them would be permitted to bind a
@@ -165,6 +165,7 @@ describe("the catalogue #369 ratified", () => {
 			[
 				"fight.rigEcm",
 				"fight.rigIncoming",
+				"fly.takePointer",
 				"perf.atmosphere",
 				"perf.bloom",
 				"perf.class",
@@ -216,6 +217,55 @@ describe("D5's two predicates", () => {
 		expect(found.length).toBe(1);
 		const clashed = found[0]?.commands.map<string>((id) => id).sort();
 		expect(clashed).toEqual(["fight.firePulse", "fly.cruise"]);
+	});
+
+	test("every press/hold pair the defaults ship is named here", () => {
+		// **What `defaultCollisions()` being empty does and does not say.** A
+		// press and a hold of one key are different triggers, so a pair can
+		// never be reported — and the shipped layout has two of them. Listing
+		// them is what keeps the empty list from reading as "no key does two
+		// things": `x` is #369 D3's own example, and `q` is the one the
+		// resolution flags in passing, roll in the game and the ECM in the rig.
+		// A third arriving unannounced turns this row red.
+		const byPhysical = new Map<string, Set<string>>();
+		for (const b of DEFAULT_BINDINGS) {
+			if (b.trigger.kind !== "key") continue;
+			const at = `${b.trigger.code ?? b.trigger.key}${b.trigger.alt ? "+alt" : ""}`;
+			byPhysical.set(at, (byPhysical.get(at) ?? new Set()).add(b.command));
+		}
+		const shared = [...byPhysical]
+			.filter(([, commands]) => commands.size > 1)
+			.map(([at, commands]) => `${at}: ${[...commands].sort().join(" + ")}`)
+			.sort();
+		expect(shared).toEqual([
+			"1: view.headPort + view.orbitPort",
+			"2: view.headForward + view.orbitCentre",
+			"3: view.headStarboard + view.orbitStarboard",
+			"arrowdown: fly.pitchUp + panel.cursorDown",
+			"arrowleft: fly.yawPort + panel.tabPrevious",
+			"arrowright: fly.yawStarboard + panel.tabNext",
+			"arrowup: fly.pitchDown + panel.cursorUp",
+			"enter: dock.launch + panel.activate",
+			"q: fight.rigEcm + fly.rollPort",
+			"x: fight.fireBeam + fly.assist",
+		]);
+	});
+
+	test("a surface claims a trigger, and an unscoped pair still collides", () => {
+		// The third axis, and the direction it fails in. `main.ts` returns out
+		// of its key handler for the five keys the Requests console claims, so
+		// `Enter` there never reaches the switch that launches — the two are
+		// not live at once. Bind a *second* unscoped `Enter` and they are.
+		const launch = DEFAULT_BINDINGS.find((b) => b.command === "dock.launch");
+		if (!launch) throw new Error("dock.launch has no default binding");
+		expect(launch.scope.surface).toBeUndefined();
+		const onEnter = DEFAULT_BINDINGS.filter(
+			(b) => b.trigger.kind === "key" && b.trigger.key === "enter",
+		);
+		expect(onEnter.length).toBe(2);
+		expect(collisions(onEnter)).toEqual([]);
+		const second: Binding = { ...launch, command: "fly.cruise" };
+		expect(collisions([...onEnter, second]).length).toBe(1);
 	});
 
 	test("a press and a hold of one key are not a collision", () => {

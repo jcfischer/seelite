@@ -26,8 +26,13 @@
  *   a *player* layout that collides is a printed warning. They are different
  *   questions and cannot share a row.
  * - **D7** — dispatch is on the physical key (`code`) and print is on the
- *   character the binding was *recorded* with, so a WASD-shaped default is the
- *   same physical cluster on AZERTY and the tab still prints characters.
+ *   character the binding was *recorded* with, so the tab keeps printing
+ *   characters. **The shipped letter defaults do not carry a `code` yet**, and
+ *   saying otherwise would be claiming the AZERTY property this slice has not
+ *   built: only the three Alt chords carry one, because `ALT_CHORDS` is keyed
+ *   on `code` already. `triggerKey` reads `code ?? key`, so it is ready for
+ *   them; authoring the letter rows and migrating a saved layout belongs to
+ *   the dispatch slice, which is where the codes have a consumer.
  *
  * **What is derived and what is authored**, unchanged from #372's interim
  * module because the reason has not changed: the pad's half is derived here,
@@ -120,7 +125,8 @@ export type Trigger =
 			readonly code?: string;
 			/** Held rather than pressed. */
 			readonly hold?: true;
-			/** Named when only one surface takes the key. */
+			/** The screen that claims this key, when one does. Absent is the
+			 *  ship's own surface — see `Scope`. */
 			readonly surface?: string;
 	  }
 	| {
@@ -304,10 +310,15 @@ interface Authored {
 	/** The views this command is live in. Absent means both (#369 D4). */
 	views?: readonly ViewMode[];
 	/**
-	 * Catalogued and printed, but not offered for rebinding (#369's D12 rider):
-	 * the `?perf` diagnostics, which `tests/perf-panel-keys.test.ts` exists to
-	 * keep off the flight path, and the two combat-rig keys that are inert
-	 * outside `?combat=1`.
+	 * Catalogued and printed, but not offered for rebinding. Three different
+	 * reasons, and a consumer that conflates them will be wrong about one:
+	 *
+	 * - the `?perf` diagnostics (#369's D12 rider), which
+	 *   `tests/perf-panel-keys.test.ts` exists to keep off the flight path;
+	 * - the two combat-rig keys, inert outside `?combat=1`;
+	 * - the pointer rows, which have **no movable trigger at all** — a click on
+	 *   a station row or on the glass is #370's standing premise that a screen
+	 *   is always clickable, not a binding a player could move elsewhere.
 	 */
 	readonly rebindable?: false;
 	readonly keys?: readonly KeySpec[];
@@ -442,6 +453,9 @@ const AUTHORED = [
 		id: "fly.takePointer",
 		name: "Give the mouse back to the ship: click the view",
 		group: "fly",
+		// A pointer row, for `trade.actOnRow`'s reason: its only trigger is the
+		// click that acquires pointer lock, and there is nowhere else to put it.
+		rebindable: false,
 		more: [{ kind: "mouse-button", action: "click", surface: "the view" }],
 	},
 	// fight -------------------------------------------------------------
@@ -816,7 +830,14 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 }
 
 /** How a physical key prints: a letter or digit key by its character, an
- *  arrow by the key it sends. */
+ *  arrow by the key it sends.
+ *
+ *  **Punctuation is the hole, and it is still open.** A `Slash` or `Comma`
+ *  code would print as its code name, because the character a punctuation key
+ *  types is a property of the keyboard layout and `ALT_CHORDS` holds only the
+ *  three arrows today. The capture slice records the character a binding was
+ *  made with (D7), which is what closes it; until then a chord authored on a
+ *  punctuation key prints wrong. */
 const codeKey = (code: string) =>
 	code.replace(/^(Key|Digit)/, "").toLowerCase();
 
@@ -834,13 +855,24 @@ function chordsFor(keys: readonly Trigger[]): Trigger[] {
 		.map(([code]) => ({ kind: "key", key: codeKey(code), alt: true, code }));
 }
 
-function padIntentTriggers(intent: PanelIntent, half: Half): Trigger[] {
+/**
+ * The pad buttons that produce one half of an intent.
+ *
+ * `signed` is what separates a pair from the boolean three: `panel.valueUp`
+ * carries `half: "+"` and `panel.back` carries no half at all, so a consumer
+ * can tell "the positive half of a pair" from "not a pair".
+ */
+function padIntentTriggers(
+	intent: PanelIntent,
+	half: Half,
+	signed: boolean,
+): Trigger[] {
 	const found = PRESSES.intents.get(`${intent}${half}`) ?? new Map();
 	return [...found].map(([button, contexts]) => ({
 		kind: "pad-intent" as const,
 		intent,
 		button,
-		...(half === "+" ? {} : { half }),
+		...(signed ? { half } : {}),
 		contexts,
 	}));
 }
@@ -853,9 +885,18 @@ function padIntentTriggers(intent: PanelIntent, half: Half): Trigger[] {
  * Where a binding is live: D4's context set, both halves of it.
  *
  * `pad` is the four-value union and `views` is the half `PadContext` cannot
- * express. `surface` names the one screen that takes a trigger when only one
- * does — a console's arrow keys, a pointer on a station row — which is what
- * keeps `Enter` from colliding with itself.
+ * express. `surface` is the third axis, and it is **the screen that claims the
+ * trigger**, not a hint about where a row prints.
+ *
+ * **Absent means the ship's own surface**, which is the one the flight keys are
+ * on — deliberately not "every surface". `main.ts` returns out of its key
+ * handler while the Requests console is up for exactly the five keys that
+ * console claims, so a press of `Enter` there reaches
+ * `activateKeyboardFocus` and never the switch that launches. Two bindings on
+ * different surfaces are never live at once, which is why `dock.launch` and
+ * `panel.activate` both hold `Enter` and are not a collision — and why a
+ * *second* unscoped `Enter` would be one. `tests/commands.test.ts` holds both
+ * directions.
  */
 export interface Scope {
 	readonly pad: readonly PadContext[];
@@ -928,7 +969,13 @@ function triggersOf(a: Authored): Trigger[] {
 		...chords,
 		...padButtonsFor(keys),
 		...(a.more ?? []),
-		...(a.intent ? padIntentTriggers(a.intent, a.intentHalf ?? "+") : []),
+		...(a.intent
+			? padIntentTriggers(
+					a.intent,
+					a.intentHalf ?? "+",
+					a.intentHalf !== undefined,
+				)
+			: []),
 	];
 }
 
@@ -998,7 +1045,10 @@ export function triggerKey(t: Trigger): string {
 			return `pad-trigger:${t.trigger}`;
 		case "pad-button":
 			return `pad:${t.button}:${t.hold ? "hold" : "press"}`;
-		default:
+		case "pad-intent":
+			// One namespace with `pad-button`, because they are one button: the
+			// d-pad's ↑ presses a key in flight and steps a cursor in a console,
+			// and a model that gave them two identities could not see that.
 			return `pad:${t.button}:press`;
 	}
 }
@@ -1022,11 +1072,15 @@ export interface Collision {
  * Every pair of commands one trigger would reach at the same time.
  *
  * D5's resolution is *warn and allow*, resolved by one stated law, so this is
- * a report rather than a refusal. What differs is who reads it: a **player's**
- * layout hands its collisions to the panel, and the **default** layout hands
- * them to CI, where the list must be empty — F5's half that survives
- * remapping. Both read this one function, because two implementations of the
- * same question drift.
+ * a report rather than a refusal. What differs is who reads it: the **default**
+ * layout hands its list to CI, where it must be empty — F5's half that
+ * survives remapping — and a **player's** layout will hand its list to the
+ * panel.
+ *
+ * **Will, not does.** There is no player layout and no panel in this slice;
+ * `tests/commands.test.ts` is the only caller today, and it drives both arms.
+ * The function is one function so that the two questions cannot drift apart
+ * when the second caller arrives, which is the storage slice's.
  */
 export function collisions(bindings: readonly Binding[]): Collision[] {
 	const byTrigger = new Map<string, Binding[]>();
@@ -1046,7 +1100,17 @@ export function collisions(bindings: readonly Binding[]): Collision[] {
 				out.push({
 					trigger,
 					commands: [a.command, b.command],
-					scope: a.scope,
+					// The **overlap**, not one side's scope: `overlaps` asked only
+					// for an intersection, so `a`'s own scope would name contexts
+					// and views where `b` is not live — a panel warning that
+					// pointed at the wrong half of the game.
+					scope: {
+						pad: a.scope.pad.filter((c) => b.scope.pad.includes(c)),
+						views: a.scope.views.filter((v) => b.scope.views.includes(v)),
+						...(a.scope.surface === undefined
+							? {}
+							: { surface: a.scope.surface }),
+					},
 				});
 			}
 	return out;

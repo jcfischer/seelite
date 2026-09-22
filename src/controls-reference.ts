@@ -10,13 +10,9 @@
  * their D-number rather than restating them.
  */
 import { escapeHtml } from "./escape-html";
-import type {
-	ControlCommand,
-	ControlsCatalogue,
-	TaskGroup,
-	Trigger,
-} from "./controls-catalogue";
-import { PAD_CONTEXTS, TASK_GROUPS } from "./controls-catalogue";
+import type { TaskGroup, Trigger } from "./commands";
+import { PAD_CONTEXTS, TASK_GROUPS } from "./commands";
+import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
 import type { FocusCursor, FocusItem } from "./panel-focus";
 import { setFocus } from "./panel-focus";

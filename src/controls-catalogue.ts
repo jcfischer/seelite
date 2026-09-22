@@ -18,57 +18,27 @@
  * Headless, and on the list in `tests/headless.test.ts`: the unit tier renders
  * **this** catalogue, never a struct a test built.
  */
-import {
-	COMMANDS,
-	type Command,
-	type CommandId,
-	type Half,
-	isPressedKey,
-	PAD_CONTEXTS,
-	PANEL_INTENTS,
-	type PanelIntent,
-	type Scope,
-	TASK_GROUPS,
-	type TaskGroup,
-	type Trigger,
-	VIEW_MODES,
-	type ViewMode,
-} from "./commands";
-import type { PadContext } from "./pad-bindings";
+import { type Command, COMMANDS, type Trigger } from "./commands";
 
-export { isPressedKey, PAD_CONTEXTS, PANEL_INTENTS, TASK_GROUPS, VIEW_MODES };
-export type {
-	Command,
-	CommandId,
-	Half,
-	PanelIntent,
-	Scope,
-	TaskGroup,
-	Trigger,
-	ViewMode,
-};
+/**
+ * **One import path per symbol.** This module used to re-export the registry's
+ * whole type surface, which gave `Trigger`, `CommandId`, `Scope` and the rest
+ * two homes; the slices after this one each have to pick a path, and two paths
+ * drift. Everything but the catalogue itself is imported from `./commands`.
+ */
 
-export interface ControlCommand {
-	/** Not a key string: a command keeps its id when #381 rebinds it. */
-	readonly id: CommandId;
-	readonly name: string;
-	readonly group: TaskGroup;
-	readonly defaultTriggers: readonly Trigger[];
+/**
+ * A registry row, plus the one thing a screen needs that a registry row does
+ * not carry: what is bound **now**.
+ *
+ * It extends `Command` rather than restating it. The restatement was written
+ * first and cost two fields inside one review round — `views` and
+ * `rebindable` had to be declared twice and copied by hand — which is the
+ * second-copy drift this repo keeps paying for elsewhere.
+ */
+export interface ControlCommand extends Command {
 	/** What is bound now. Until the settings row lands this *is* the default. */
 	readonly currentTriggers: readonly Trigger[];
-	/**
-	 * The pad contexts this command is live in, from its pad triggers. Empty
-	 * when it has none — the keyboard and the mouse are not part of the pad's
-	 * context model, so a key-only command carries no note.
-	 */
-	readonly contexts: readonly PadContext[];
-	/**
-	 * The views it is live in (#369 D4's second half). Both, unless the command
-	 * is one of the six the cockpit and the chase camera share digits over.
-	 */
-	readonly views: readonly ViewMode[];
-	/** Whether the player may move it: the diagnostics and the rig keys may not. */
-	readonly rebindable: boolean;
 }
 
 export interface ControlsCatalogue {
@@ -77,18 +47,12 @@ export interface ControlsCatalogue {
 	readonly commands: readonly ControlCommand[];
 }
 
+// The player's layout is #381's storage slice; until it lands the only layout
+// is the shipped one, and `layout` below says so rather than the screen
+// claiming a layout it cannot report.
 const row = (c: Command): ControlCommand => ({
-	id: c.id,
-	name: c.name,
-	group: c.group,
-	defaultTriggers: c.defaultTriggers,
-	// The player's layout is #381's storage slice; until it lands the only
-	// layout is the shipped one, and `layout` below says so rather than the
-	// screen claiming a layout it cannot report.
+	...c,
 	currentTriggers: c.defaultTriggers,
-	contexts: c.contexts,
-	views: c.views,
-	rebindable: c.rebindable,
 });
 
 export const CONTROLS: ControlsCatalogue = {

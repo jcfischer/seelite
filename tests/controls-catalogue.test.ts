@@ -15,13 +15,13 @@
 import { describe, expect, test } from "bun:test";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
-	CONTROLS,
 	isPressedKey,
 	PANEL_INTENTS,
 	type PanelIntent,
 	TASK_GROUPS,
 	type Trigger,
-} from "../src/controls-catalogue";
+} from "../src/commands";
+import { CONTROLS } from "../src/controls-catalogue";
 import { STANDARD_BUTTONS } from "../src/gamepad";
 import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
@@ -285,9 +285,11 @@ describe("the catalogue's shape", () => {
 		const keys = sourceKeys();
 		for (const id of ids) {
 			expect(`${id} is a key: ${keys.has(id)}`).toBe(`${id} is a key: false`);
-			// #369 D1: a namespaced id, so the task grouping is a consequence of
-			// the name rather than a second table, and two commands cannot
-			// collide on a plausible word.
+			// #369 D1: a namespaced id, so two commands cannot collide on a
+			// plausible word. **The namespace is not the task group** — three
+			// namespaces (`panel`, `tune`, `perf`) share the `system` group, and
+			// a reader deriving one from the other would be wrong on better than
+			// a third of the rows. `group` is authored beside the id.
 			expect(id).toMatch(/^[a-z]+\.[a-zA-Z0-9]+$/);
 		}
 	});
