@@ -129,20 +129,17 @@ const shipped = await turnedWhileHolding("s");
 // the other arms actually start in.
 const residual = await turnedWhileHolding(null);
 check(
-	"the shipped `s` pitches the ship, orders of magnitude above the rest gate's floor",
-	// **This is a floor, and saying so is the honest version.** `residual < 1`
-	// was settled by `atRest`'s own precondition; the ratio is better only
-	// because the *numerator* is unconstrained, and with the denominator
-	// capped near 0.16° it still amounts to "about 8° or more". That is worth
-	// having — a build where the key reached nothing reads 0.01° — but calling
-	// it a measurement of drift would be the same dressing-up again.
-	shipped > residual * 50,
-	`held ${shipped.toFixed(2)}°, residual after the rest gate ${residual.toFixed(2)}°`,
-);
-check(
-	"and the rest gate settled every arm rather than running out of patience",
-	restFailed === false,
-	`atRest exhausted its 200 ticks: ${restFailed}`,
+	"the shipped `s` pitches the ship, well clear of an absolute floor and of the residual",
+	// **Two terms, because the ratio alone has no floor — and the comment
+	// here argued the inverse for a round.** `atRest` caps `residual` from
+	// *above*, so `residual * 50` is the **largest** the threshold can be:
+	// a well-settled ship reading 0.001° reduces the row to `shipped > 0.05`,
+	// and the build this was meant to catch — the key reaching nothing, at
+	// 0.01° — would have passed it green. The absolute term is what actually
+	// holds; the ratio is kept beside it because it is the one that fails when
+	// the ship is *not* settled and the reading is drift.
+	shipped > 5 && shipped > residual * 50,
+	`held ${shipped.toFixed(2)}°, floor 5.00°, residual ${residual.toFixed(2)}° (x50 = ${(residual * 50).toFixed(2)}°)`,
 );
 
 // ---------------------------------------------------------------------------
@@ -236,15 +233,19 @@ check(
 // `resolveKey`.
 // ---------------------------------------------------------------------------
 const view = () => page.evaluate(() => window.__seelite.view);
-await page.keyboard.press("v");
-await settle(page);
-const toggledOnV = await view();
-await page.keyboard.press("v");
-await settle(page);
+/** Press one key, let two frames pass, and read the view back. A copy of this
+ *  that forgot the settle would read the frame before the press. */
+const pressAndRead = async (key) => {
+	await page.keyboard.press(key);
+	await settle(page);
+	return view();
+};
+const toggledOnV = await pressAndRead("v");
+const backFromV = await pressAndRead("v");
 check(
 	"the shipped `v` toggles the view, so the arm below can fail",
-	toggledOnV !== (await view()),
-	`v gave ${toggledOnV}, and back to ${await view()}`,
+	toggledOnV !== backFromV,
+	`v gave ${toggledOnV}, and back to ${backFromV}`,
 );
 const movedPress = await tryRebind(
 	"view.toggle",
@@ -257,12 +258,8 @@ check(
 	movedPress,
 );
 const before7 = await view();
-await page.keyboard.press("v");
-await settle(page);
-const afterOldPress = await view();
-await page.keyboard.press("7");
-await settle(page);
-const afterNewPress = await view();
+const afterOldPress = await pressAndRead("v");
+const afterNewPress = await pressAndRead("7");
 check(
 	"the key the view toggle was moved off no longer toggles it",
 	afterOldPress === before7,
@@ -273,8 +270,7 @@ check(
 	afterNewPress !== afterOldPress,
 	`${afterOldPress} -> ${afterNewPress}`,
 );
-await page.keyboard.press("7");
-await settle(page);
+await pressAndRead("7");
 
 // ---------------------------------------------------------------------------
 // A rebind that names no such binding is refused rather than ignored.
@@ -298,6 +294,16 @@ check(
 	"and the refused key flies nothing",
 	afterRefusal < 1,
 	`held ${afterRefusal.toFixed(2)}°`,
+);
+
+check(
+	"and the rest gate settled every arm rather than running out of patience",
+	// **Last, after every arm.** It sat after the third of nine and the five
+	// later `atRest` calls could not reach it, so an exhausted gate on a
+	// parity or refusal arm failed open — the reading taken against a still
+	// rotating ship, with the row named after that case already green.
+	restFailed === false,
+	`atRest exhausted its 200 ticks on at least one arm: ${restFailed}`,
 );
 
 await browser.close();

@@ -254,10 +254,12 @@ export function boundKeys(source: string): Set<string> {
  * `id === "fight.rigIncoming"` is a command dispatch, and a caller asking
  * "which ids are read as held" got it and went red.
  *
- * - `cases` — a `case "<id>":` label, in either of `main.ts`'s two switches.
- * - `held` — an id handed to a held query: `this.held("…")` in `main.ts`,
- *   `held("…")` in `combat-rig.ts`, and the pair lists of `this.axis`.
- * - `commanded` — the rig's `id === "…"`, which `Game.command` delegates to.
+ * Three shapes are scanned — a `case "<id>":` label in either of `main.ts`'s
+ * two switches, an id handed to a held query (`this.held("…")` in `main.ts`,
+ * `held("…")` in `combat-rig.ts`, and the pair lists of `this.axis`), and the
+ * rig's own `id === "…"` — and two sets come back: `held`, because the
+ * held-ness row is about that shape alone, and `all`, because the
+ * completeness row is about any of them.
  *
  * Only these shapes. A mention anywhere else — a comment, a doc, a deleted
  * branch's leftovers — is deliberately not a dispatch, which is the whole
@@ -269,9 +271,7 @@ export function boundKeys(source: string): Set<string> {
  * to end: a rename that killed one arm would have left the other green.
  */
 export function dispatchSites(source: string): {
-	cases: Set<string>;
 	held: Set<string>;
-	commanded: Set<string>;
 	all: Set<string>;
 } {
 	const ids = (...res: RegExp[]) =>
@@ -290,12 +290,10 @@ export function dispatchSites(source: string): {
 		/\.axis\((\[[^\]]*\],\s*\[[^\]]*\])\)/g,
 	);
 	const commanded = ids(/id === (\s*"[^"]+"\s*)/g);
-	return {
-		cases,
-		held,
-		commanded,
-		all: new Set([...cases, ...held, ...commanded]),
-	};
+	// `cases` and `commanded` are scanned and not returned: no caller reads
+	// them, and unread surface on a freshly extracted helper is the next
+	// reader's puzzle. They are one line away when one wants them.
+	return { held, all: new Set([...cases, ...held, ...commanded]) };
 }
 
 /**

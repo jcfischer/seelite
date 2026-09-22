@@ -213,7 +213,7 @@ describe("a rebind reaches the simulation", () => {
 	 * says the table answers a layout that is not the shipped one, which is the
 	 * thing no row on `main` could ask.
 	 */
-	const moved = (): Binding[] =>
+	const moved = (): readonly Binding[] =>
 		rebind(
 			DEFAULT_BINDINGS,
 			"fly.pitchUp",
@@ -269,19 +269,14 @@ describe("a rebind reaches the simulation", () => {
 		// Derived, never authored: a rebind that stored `to` verbatim would
 		// leave a letter codeless and lose D7's position dispatch for exactly
 		// the command the player just chose to move.
-		const layout = rebind(
-			DEFAULT_BINDINGS,
-			"fly.pitchUp",
-			{ kind: "key", key: "s", hold: true },
-			{ kind: "key", key: "p", hold: true },
-		);
-		const moved = layout.find(
+		const layout = moved();
+		const row = layout.find(
 			(b) =>
 				b.command === "fly.pitchUp" &&
 				b.trigger.kind === "key" &&
 				b.trigger.key === "p",
 		);
-		expect(moved?.trigger.kind === "key" ? moved.trigger.code : "none").toBe(
+		expect(row?.trigger.kind === "key" ? row.trigger.code : "none").toBe(
 			"KeyP",
 		);
 	});

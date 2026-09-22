@@ -63,9 +63,11 @@ const keyShaped = (key: string) => key === key.toLowerCase();
  * vacuously green, which is the direction this file must never fail in.
  */
 const sourceKeys = () =>
-	new Set(
-		[...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY, COMMANDER_KEY].filter(keyShaped),
-	);
+	// **Unfiltered**: `keyShaped` is for scanner output, where a string with a
+	// capital in it is a comparison no keypress can satisfy. These are
+	// imported constants, and filtering them would silently drop an uppercase
+	// panel key out of the completeness row instead of checking it.
+	new Set([...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY, COMMANDER_KEY]);
 
 describe("the catalogue is complete against the source", () => {
 	test("the two files that used to compare keys no longer compare any", () => {

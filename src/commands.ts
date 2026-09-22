@@ -42,7 +42,13 @@
  * module because the reason has not changed: the pad's half is derived here,
  * at load, by asking `pad-bindings.ts` what each button does in each context —
  * the same functions the game calls — so a rebound button moves its row with
- * no edit here. The keyboard's half cannot be: its bindings live in `main.ts`'s
+ * no edit here. **`PAD_FLIGHT_KEYS` and `ALT_CHORDS` still name keys rather
+ * than commands**, which is why `main.ts` keeps a `commandKey(key)` beside
+ * `command(id)`: both tables stand for a key and are resolved against the
+ * shipped layout. That pins every pad button to the default keyboard by
+ * construction, so a pad *rebind* cannot be expressed until those tables name
+ * a `CommandId` — a recorded staging point for the capture slice rather than
+ * the settled design. The keyboard's half cannot be: its bindings live in `main.ts`'s
  * key switch, which the unit tier cannot load. So the keys are stated and
  * `tests/controls-catalogue.test.ts` reads `main.ts` with the partition test's
  * own scanner, in both directions.
@@ -1158,12 +1164,14 @@ export const commandById = (id: CommandId): Command => {
 };
 
 /** The shipped layout, as bindings rather than as rows. */
-export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
-	c.defaultTriggers.map((trigger) => ({
-		command: c.id,
-		trigger,
-		scope: scopeOf(trigger, c.views),
-	})),
+export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze(
+	COMMANDS.flatMap((c) =>
+		c.defaultTriggers.map((trigger) => ({
+			command: c.id,
+			trigger,
+			scope: scopeOf(trigger, c.views),
+		})),
+	),
 );
 
 // ---------------------------------------------------------------------------
@@ -1388,10 +1396,11 @@ export function resolveKey(
  * itself, so a `rebind` — which returns a new array rather than mutating one —
  * simply builds a new one, and no invalidation step exists to be forgotten.
  *
- * **That is a precondition and not a property**, and the storage slice is the
- * obvious candidate to break it: a layout merged *in place* keeps its array
- * identity and would be answered out of a stale index. Every layout is a new
- * array here, and `isHeld` is pure only for callers that hold to it.
+ * **That was a precondition before it was a property.** The storage slice is
+ * the obvious candidate to break it — a layout merged *in place* keeps its
+ * array identity and would be answered out of a stale index — so
+ * `DEFAULT_BINDINGS` and everything `rebind` returns are frozen, and the
+ * attempt throws in strict mode rather than going quietly wrong.
  *
  * **The view is not indexed**, because it changes between frames while the
  * layout does not; it is checked on the way out, over a list that is one or
@@ -1460,7 +1469,7 @@ export function rebind(
 	command: CommandId,
 	from: Trigger,
 	to: Trigger,
-): Binding[] {
+): readonly Binding[] {
 	const wanted = triggerKey(from);
 	const at = bindings.findIndex(
 		(b) => b.command === command && triggerKey(b.trigger) === wanted,
@@ -1473,7 +1482,13 @@ export function rebind(
 		trigger: moved,
 		scope: scopeOf(moved, commandById(command).views),
 	};
-	return next;
+	// **Frozen, so the hold index's precondition is enforced rather than
+	// documented.** That index is keyed on the array identity, and a layout
+	// merged *in place* would keep its identity and be answered out of a stale
+	// one. A frozen array makes that attempt throw in strict mode — which
+	// every module here is — instead of going quietly wrong in the storage
+	// slice.
+	return Object.freeze(next);
 }
 
 /**
