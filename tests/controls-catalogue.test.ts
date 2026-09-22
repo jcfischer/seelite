@@ -17,6 +17,7 @@ import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
 	type CommandId,
 	DEFAULT_BINDINGS,
+	PAD_FLIGHT_COMMANDS,
 	PANEL_INTENTS,
 	rebind,
 	type PanelIntent,
@@ -26,8 +27,7 @@ import {
 } from "../src/commands";
 import { CONTROLS, controlsCatalogue } from "../src/controls-catalogue";
 import { STANDARD_BUTTONS } from "../src/gamepad";
-import { ALT_CHORDS } from "../src/key-dispatch";
-import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
+import { padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
 import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
@@ -267,49 +267,73 @@ describe("the catalogue is complete against the source", () => {
 	});
 
 	/**
-	 * **The chord shape — and what is checkable about it** (sage round 3).
+	 * **The chord shape, and what became checkable about it** (sage round 3,
+	 * reworked by #381 S4).
 	 *
 	 * The finding was that the per-command row cannot hold a chord: deleting
 	 * an entry from `ALT_CHORDS` would leave the tab printing `Alt + ←` with
-	 * the suite green. The first row written against it asserted exactly that,
-	 * and **it could not fail** — an entry was deleted and the run stayed
-	 * green, because `chordsFor` *derives* the catalogue's chord rows from
-	 * that same table, so the printed row disappears with the entry. The
-	 * replaced row's own `chordOk` was tautological for the same reason.
+	 * the suite green. The row written against it *could not fail*, because
+	 * `chordsFor` derived the catalogue's chord rows from that same table, and
+	 * so did its replacement.
 	 *
-	 * So the derivation is the guarantee, and what is worth a row is that it
-	 * stays a derivation: a chord **authored** by hand would print without an
-	 * entry behind it, and that is the shape the finding was really about.
+	 * **The table is gone now, and with it the class of defect.** A chord is a
+	 * row of the registry, and `keyDispatch` holds no chord table at all — it
+	 * decides only *that* an Alt press is a chord, and the layout answers what
+	 * it reaches. There are no longer two places to disagree, so the row worth
+	 * having is the one that says the second place has not come back.
 	 */
-	test("no chord is authored — every printed chord is one the table derives", () => {
+	test("the dispatch law holds no chord table of its own", () => {
+		// A code literal there is the shape of the defect: `ArrowLeft` beside
+		// the key it stands for is exactly what was deleted. Nothing in the law
+		// may name a physical key, because naming one is holding a binding.
+		const law = codeOf("src/key-dispatch.ts");
+		const body = law.slice(law.indexOf("export function keyDispatch"));
+		expect(body).not.toMatch(/Arrow(Left|Up|Right|Down)/);
+		expect(body).not.toMatch(/\bKey[A-Z]\b/);
+	});
+
+	test("the three ratified chords are printed, and nothing else is", () => {
+		// A literal, because this is the *defaults-did-not-move* question and a
+		// list derived from the thing it checks answers it with itself. #369's
+		// Boundary is that the principal flew this layout.
 		const printed = triggers().flatMap((t) =>
-			t.kind === "key" && t.alt && t.code !== undefined ? [t.code] : [],
+			t.kind === "key" && t.alt === true && t.code !== undefined
+				? [t.code]
+				: [],
 		);
-		expect([...printed].sort()).toEqual(Object.keys(ALT_CHORDS).sort());
+		expect([...printed].sort()).toEqual(
+			["ArrowLeft", "ArrowRight", "ArrowUp"].sort(),
+		);
 	});
 
 	/**
-	 * And the half that is not derived: the key a chord *stands for* must still
-	 * reach the command that prints it. `main.ts` runs a chord by handing
-	 * `commandKey` the stand-in key, so a command whose bare key moved out from
-	 * under its chord would print `Alt + ←` and run something else — which no
-	 * derivation prevents, because the two halves come from different places.
+	 * And that each printed chord reaches the row that prints it.
+	 *
+	 * **Weaker than the row it replaces, and deliberately so.** A chord used
+	 * to *stand for* a key, so the two halves came from different places and
+	 * could part company — a command whose bare key moved out from under its
+	 * chord would print `Alt + ←` and run something else. There is one half
+	 * now, so this asks only that `resolveKey`'s Alt arm agrees with what the
+	 * tab prints: it would catch a resolver that dropped `alt` from its
+	 * qualifiers, and it cannot catch a drift that no longer has two sides.
 	 */
-	test("and the key each chord stands for still reaches the row that prints it", () => {
+	test("and each printed chord reaches the row that prints it", () => {
 		let checked = 0;
 		for (const c of CONTROLS.commands)
 			for (const t of c.currentTriggers) {
-				if (t.kind !== "key" || !t.alt || t.code === undefined) continue;
-				const stands = ALT_CHORDS[t.code] as string;
+				if (t.kind !== "key" || t.alt !== true || t.code === undefined)
+					continue;
 				const reached = resolveKey(DEFAULT_BINDINGS, {
-					key: stands,
+					key: t.key,
+					code: t.code,
+					alt: true,
 					view: "cockpit",
 				});
-				const at = `${c.id}: ${JSON.stringify(t.key)}+alt stands for ${JSON.stringify(stands)}`;
+				const at = `${c.id}: ${JSON.stringify(t.code)}+alt`;
 				expect(`${at}: ${reached.includes(c.id)}`).toBe(`${at}: true`);
 				checked++;
 			}
-		expect(checked).toBe(Object.keys(ALT_CHORDS).length);
+		expect(checked).toBe(3);
 	});
 
 	/**
@@ -346,7 +370,7 @@ describe("the catalogue is complete against the source", () => {
 		// Read off the value the pad module returns, not off a list written
 		// here: a seventh field added to `PadIntents` is a red run.
 		const fields = Object.keys(padIntents(null, "flight")).filter(
-			(k) => k !== "keys",
+			(k) => k !== "buttons",
 		) as PanelIntent[];
 		expect(fields.length).toBe(6);
 		expect([...PANEL_INTENTS].sort()).toEqual([...fields].sort());
@@ -357,18 +381,23 @@ describe("the catalogue is complete against the source", () => {
 			expect(`${field}: ${printed.has(field)}`).toBe(`${field}: true`);
 	});
 
-	test("every pad button the flight table binds is on the row that owns its key", () => {
-		for (const [button, key] of Object.entries(PAD_FLIGHT_KEYS)) {
-			const owners = CONTROLS.commands.filter((c) =>
-				c.currentTriggers.some((t) => t.kind === "key" && t.key === key),
-			);
-			const onRow = owners.some((c) =>
-				c.currentTriggers.some(
-					(t) => t.kind === "pad-button" && t.button === button,
-				),
-			);
-			expect(`${button} → ${key}: ${onRow}`).toBe(`${button} → ${key}: true`);
-		}
+	test("every pad button the flight table binds is printed on that command's row", () => {
+		// The table names commands since #381 S4, so this no longer hops
+		// through a key: the button is printed on the row of the command the
+		// table names, and a button naming a command that does not print it is
+		// a player told the wrong thing.
+		let checked = 0;
+		for (const [button, ids] of Object.entries(PAD_FLIGHT_COMMANDS))
+			for (const id of ids ?? []) {
+				const row = CONTROLS.commands.find((c) => c.id === id);
+				const onRow =
+					row?.currentTriggers.some(
+						(t) => t.kind === "pad-button" && t.button === button,
+					) === true;
+				expect(`${button} → ${id}: ${onRow}`).toBe(`${button} → ${id}: true`);
+				checked++;
+			}
+		expect(checked).toBe(13);
 	});
 
 	test("every pad button is printed somewhere, except the one nothing claims", () => {

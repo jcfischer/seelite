@@ -178,7 +178,7 @@ import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
 // and must not learn what a station is.
-import { GamepadSource, type PadFrame } from "./gamepad";
+import { GamepadSource, type PadButtonName, type PadFrame } from "./gamepad";
 import {
 	type PadContext,
 	type PadIntents,
@@ -562,6 +562,7 @@ import {
 	isHeld,
 	rebind,
 	resolveKey,
+	resolvePad,
 	type Trigger,
 } from "./commands";
 import { keyDispatch } from "./key-dispatch";
@@ -7543,7 +7544,7 @@ class Game {
 			if (intents.back) return perf.setFocused(false);
 			if (intents.focusDelta !== 0) perf.moveCursor(intents.focusDelta);
 			if (intents.activate) perf.activate();
-			for (const key of intents.keys) this.commandKey(key);
+			this.runPadPresses(intents.buttons, context);
 			return;
 		}
 		// A console. It takes six discrete controls **and** suspends flight
@@ -7563,7 +7564,7 @@ class Game {
 		// drawn inside the same panel and belong to a handle it does not hold.
 		if (intents.activate && !this.liveCockpit.activateFocus())
 			this.activateChartRow(this.liveCockpit.focusedElement());
-		for (const key of intents.keys) this.commandKey(key);
+		this.runPadPresses(intents.buttons, context);
 	}
 
 	/**
@@ -7689,16 +7690,22 @@ class Game {
 		if (!frame.connected) return;
 		const context = this.padContextThisFrame;
 		const intents = padIntents(frame, context);
-		const acted = intents.keys.length > 0 || intents.activate;
+		// **What a press *reaches*, not that one stood for a key.** The old
+		// reading was `intents.keys.length > 0`, and a button is not a key any
+		// more — every unclaimed press is reported now, including the ones the
+		// layout binds to nothing, so counting them would sound the notice for
+		// Square and for `home`.
+		const acted =
+			this.padPressReaches(intents.buttons, context) || intents.activate;
 		if (context !== "flight") {
 			this.applyPanelIntents(intents, context);
 			if (acted) this.padAudioNotice();
 			return;
 		}
 		if (intents.instrument) this.perfPanel?.setFocused(true);
-		// Through `command`, not through a second copy of what each key does.
-		// The pad presses the key; one implementation stays one implementation.
-		for (const key of intents.keys) this.commandKey(key);
+		// Through the layout, not through a second copy of what each button
+		// does. The pad presses a row; one implementation stays one.
+		this.runPadPresses(intents.buttons, context);
 		// **After the dispatch, not before it.** `command` opens by clearing
 		// `jumpNotice` — #187's "dismissed by playing" — so a notice written
 		// first was wiped by the very press that triggered it, and the once-only
@@ -7792,12 +7799,28 @@ class Game {
 			}
 		}
 		if (route.kind === "chord") {
-			// A chord stands for a key — today the three head-look keys — and
-			// runs that key's command, in the cockpit only: head-look is a
-			// cockpit mechanism, and in chase `2` would recentre the camera,
-			// which the Alt chord never did.
+			// **The law said it is a chord; the layout says what it reaches**
+			// (#381 S4). `keyDispatch` no longer carries a code-to-key table, so
+			// an Alt press the layout does not bind resolves to nothing here —
+			// which is what its swallow did, and the default is prevented on
+			// this route either way.
+			//
+			// **And the cockpit guard this branch carried is gone, not
+			// relocated.** It existed because a chord stood for a key and `2`
+			// would have recentred the chase camera through `view.orbitCentre`.
+			// The three chords are authored on `views: COCKPIT` commands and
+			// `resolveKey` compares `alt`, so an unqualified chase row can never
+			// answer an Alt fact — `tests/commands.test.ts` holds that a chase
+			// `Alt+↑` reaches nothing, which is what licensed deleting the
+			// second copy rather than an argument that it was safe.
 			e.preventDefault();
-			if (this.view === "cockpit") this.commandKey(route.key);
+			for (const id of resolveKey(this.bindings, {
+				key: route.key,
+				code: route.code,
+				alt: true,
+				view: this.view,
+			}))
+				this.command(id);
 			return;
 		}
 		this.keys.add(route.key);
@@ -8108,21 +8131,42 @@ class Game {
 	}
 
 	/**
-	 * A command reached by something that *stands for* a key.
+	 * Run what the pad's unclaimed presses reach, in this context.
 	 *
-	 * The Alt chords and the pad's flight table both hand over a key string:
-	 * `ALT_CHORDS` maps a physical key to the key it stands for, and
-	 * `padIntents().keys` says which key a button presses. Both are resolved
-	 * against **`DEFAULT_BINDINGS`**, never against the layout in force, and
-	 * that is the point rather than an oversight — a table that stands for `1`
-	 * stands for the key `1` was, so moving head-look off `1` moves the
-	 * keyboard and leaves the d-pad and the chord where they were. Resolving
-	 * them through the player's layout would make a keyboard rebind silently
-	 * change what a gamepad does.
+	 * **Through the layout in force, which is the whole of #381 S4's first
+	 * step.** This was `commandKey(key)`: `padIntents` handed over a *key*
+	 * through `PAD_FLIGHT_KEYS` and an Alt chord handed one over through
+	 * `ALT_CHORDS`, and both were resolved against `DEFAULT_BINDINGS` rather
+	 * than against `this.bindings`. That bought one property — a keyboard
+	 * rebind could not move a pad button — and paid for it with the one the
+	 * capture modal needs, because a button whose meaning lives in a table the
+	 * player's layout is not cannot be rebound at all. A pad button is a row of
+	 * the layout now, so moving the *key* row leaves the *button* row alone and
+	 * the property survives without the table.
 	 */
-	private commandKey(key: string) {
-		for (const id of resolveKey(DEFAULT_BINDINGS, { key, view: this.view }))
-			this.command(id);
+	private runPadPresses(
+		buttons: readonly PadButtonName[],
+		context: PadContext,
+	) {
+		for (const button of buttons)
+			for (const id of resolvePad(this.bindings, {
+				button,
+				context,
+				view: this.view,
+			}))
+				this.command(id);
+	}
+
+	/** Whether any of these presses reaches a command in `context`. */
+	private padPressReaches(
+		buttons: readonly PadButtonName[],
+		context: PadContext,
+	): boolean {
+		return buttons.some(
+			(button) =>
+				resolvePad(this.bindings, { button, context, view: this.view }).length >
+				0,
+		);
 	}
 
 	/**

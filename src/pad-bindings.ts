@@ -89,48 +89,28 @@ import type { PadButtonName, PadFrame } from "./gamepad";
 export type PadContext = "flight" | "console" | "modal" | "instrument";
 
 /**
- * The flight table. DualSense labels in brackets; an Xbox pad reads `a`/`b`/
- * `x`/`y` literally.
+ * Which standard buttons fall through to the flight layout, and in which
+ * contexts.
  *
- * | button | key | does |
- * | --- | --- | --- |
- * | `a` (Cross) | `enter` | launch, or skip the dock traversal |
- * | `b` (Circle) | `c` | request docking clearance |
- * | `y` (Triangle) | `j` | engage or drop cruise |
- * | `l1` / `r1` | `g` / `t` | previous and next target |
- * | `l3` | `f` | face the target |
- * | `r3` | `v` | cockpit or chase |
- * | `start` (Options) | `u` | docking computer |
- * | `select` (Create) | `` ` `` | charge the Jump |
- * | d-pad ←/↑/→ | `1` / `2` / `3` | head-look port, forward, starboard |
+ * **The table of what each one *does* is not here any more (#381 S4).** It was
+ * `PAD_FLIGHT_KEYS`, a button-to-key map resolved against the shipped
+ * keyboard, and that pinned every pad button to the default layout by
+ * construction: a pad rebind could not be expressed at all, because the
+ * button's meaning lived somewhere a player's layout is not. The authored
+ * defaults are `PAD_FLIGHT_COMMANDS` in `src/commands.ts` now, as
+ * `CommandId`s, and `resolvePad` reads the layout in force.
  *
- * D-pad ↓ is not in the table because what it does is not a key: it hands the
- * pad to the frame instrument and takes it back (`PadIntents.instrument`).
+ * What stays here is the half that is genuinely this module's: **which presses
+ * a surface has already claimed.** A console takes six of them and the rest
+ * fall through, which is the rule `padIntents` states once below — so this
+ * module still decides *whether* a button reaches the ship, and no longer
+ * decides *what* it reaches.
  *
- * `x` (Square) is not in the table either: it is the pulse laser's trigger,
- * held (`padFireHeld`), by the principal's ruling (#324). Flight assist stays on
- * the keyboard's `x`.
- *
- * **Unbound: `home` alone.** The module reports it; nothing here claims it. The
+ * **Unbound: `home` alone.** The registry reports it; nothing claims it. The
  * tuning dials and the settings key stay on the keyboard — seventeen buttons
  * cannot carry twenty-six letters, and saying which are dropped is better than
  * discovering it in flight.
  */
-export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
-	a: "enter",
-	b: "c",
-	y: "j",
-	l1: "g",
-	r1: "t",
-	l3: "f",
-	r3: "v",
-	start: "u",
-	select: "`",
-	left: "1",
-	up: "2",
-	right: "3",
-};
-
 /**
  * The line a console shows a pad player, built from what that surface has.
  *
@@ -180,8 +160,14 @@ export function padHintFor(surface: {
  * adding it means a timer, and a timer is state this function does not have.
  */
 export interface PadIntents {
-	/** Keys to hand to `Game.command`, in press order. */
-	readonly keys: readonly string[];
+	/**
+	 * The presses this surface did not claim, in press order.
+	 *
+	 * Buttons rather than keys since #381 S4: what each one reaches is the
+	 * layout's answer and not this module's, so these are handed to
+	 * `resolvePad` with the context they were read in.
+	 */
+	readonly buttons: readonly PadButtonName[];
 	/** Walk the panel's cursor: -1 up, +1 down. */
 	readonly focusDelta: number;
 	/** Change the panel's tab: -1 left, +1 right. */
@@ -203,8 +189,11 @@ export interface PadIntents {
 	readonly instrument: boolean;
 }
 
+/** The two buttons that are pulls rather than presses; see `padIntents`. */
+const ANALOG_TRIGGERS: readonly PadButtonName[] = ["l2", "r2"];
+
 const NO_INTENTS: PadIntents = {
-	keys: [],
+	buttons: [],
 	focusDelta: 0,
 	tabDelta: 0,
 	valueDelta: 0,
@@ -219,7 +208,7 @@ export function padIntents(
 ): PadIntents {
 	if (!frame?.connected || frame.pressed.size === 0) return NO_INTENTS;
 
-	const keys: string[] = [];
+	const buttons: PadButtonName[] = [];
 	let focusDelta = 0;
 	let tabDelta = 0;
 	let valueDelta = 0;
@@ -278,12 +267,23 @@ export function padIntents(
 			instrument = true;
 			continue;
 		}
-		const key = PAD_FLIGHT_KEYS[name];
-		if (key !== undefined) keys.push(key);
+		// **An analog trigger is a value, never a press.** Rule 3 of this
+		// module's header: a trigger read as a switch is a key with extra
+		// steps, and the standard mapping reports `pressed` on a full pull —
+		// so `padFlightAxes` reads `values.r2 - values.l2` and nothing here
+		// reports the pull. This was implicit while the flight table was a
+		// key map, because that table simply had no entry for either; the
+		// table names commands elsewhere now and reports every unclaimed
+		// press, so the law has to be stated or it changes in silence
+		// (#381 S4).
+		if (ANALOG_TRIGGERS.includes(name)) continue;
+		// Unclaimed, so it falls through to the ship. Whether the layout binds
+		// it is the registry's question, asked with this context.
+		buttons.push(name);
 	}
 
 	return {
-		keys,
+		buttons,
 		focusDelta,
 		tabDelta,
 		valueDelta,
