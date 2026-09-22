@@ -8,9 +8,12 @@
  * - **The version is inside the blob.** `settings.ts` puts `v1` in the key
  *   name, so a bump silently abandons every stored row — which is the right
  *   trade for six preferences a player can re-pick from a screen in front of
- *   them, and the wrong one for a layout they built by hand. A version in the
- *   blob is a thing this module can *read* and answer, and the answer is not
- *   always "start again".
+ *   them, and the wrong one for a layout they built by hand. **What it buys
+ *   today is that the refusal is not silent** — a version this build does not
+ *   know is named on screen rather than a key that quietly matches nothing —
+ *   and what it buys later is the option of answering something other than
+ *   "start again", which a key-versioned store does not have because the rows
+ *   are simply not there to read.
  * - **The validator reads a table.** `accept()` asks whether a value is in a
  *   set of literals, which settles a `Quality` and cannot see a `Trigger`: a
  *   trigger is an object with a discriminant, optional qualifiers and a
@@ -84,6 +87,18 @@ export const LAYOUT_KEY = "seelite:bindings";
 /** The blob shape this build writes and is the only one it reads. */
 export const LAYOUT_VERSION = 1;
 
+/**
+ * The longest blob this store will parse at all.
+ *
+ * The row cap below bounds the *merge*, and it runs after `JSON.parse` — so a
+ * multi-megabyte value still parsed on the boot path, from a field
+ * initialiser (sage round 6). Only a same-origin writer can put one there, so
+ * this is self-inflicted rather than reachable by anyone else; it is bounded
+ * because there is no reason not to. A full layout serialises to a few
+ * kilobytes.
+ */
+const RAW_MAX = 256 * 1024;
+
 /** The longest `KeyboardEvent.key` this store will hold. The shipped table's
  *  longest is `arrowright`; the bound is generous and finite, which is the
  *  property that matters. */
@@ -113,9 +128,17 @@ export type RejectReason =
 	 *  trigger. Hand-written blobs reach it; one this build wrote cannot,
 	 *  because the diff holds one row per moved binding. */
 	| "already-changed"
-	/** The registry refused the move itself: it asked for more than moving a
-	 *  key, which is the command's to decide and not the player's. */
-	| "not-just-a-key";
+	/**
+	 * The registry refused the move itself.
+	 *
+	 * Today that is always the qualifier law — a `to` that changes `hold`,
+	 * `alt` or `surface`, which is the command's to decide and not the
+	 * player's. It is named for the *refusal* and not for that law, because
+	 * the reason is whatever `rebind` throws and a guard added there later
+	 * would otherwise print a sentence about something else entirely
+	 * (sage round 1).
+	 */
+	| "refused-by-registry";
 
 /**
  * Something the player is owed a sentence about.
@@ -331,7 +354,7 @@ const unreadable = (detail: string): LoadedLayout => ({
  * Its own function rather than five `continue`s at depth three inside
  * `parseLayout`, which also owns the JSON, the version and the collision pass:
  * a reader had to hold the blob-level refusals and the row-level ones at once
- * (sage round 1).
+ * (sage round 6).
  */
 function applyMove(
 	layout: readonly Binding[],
@@ -392,7 +415,7 @@ function applyMove(
 		return { layout: rebind(layout, named as CommandId, from, to) };
 	} catch (e) {
 		return rejected(
-			"not-just-a-key",
+			"refused-by-registry",
 			e instanceof Error ? e.message : String(e),
 		);
 	}
@@ -423,6 +446,8 @@ function applyMove(
 export function parseLayout(raw: string | null): LoadedLayout {
 	if (raw === null || raw === "")
 		return { layout: DEFAULT_BINDINGS, notices: [] };
+	if (raw.length > RAW_MAX)
+		return unreadable("the stored layout is larger than any layout can be");
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
@@ -438,11 +463,11 @@ export function parseLayout(raw: string | null): LoadedLayout {
 		};
 	if (!Array.isArray(parsed.moves))
 		return unreadable("the stored layout holds no list of changes");
-	// **Capped at the size of the table it is a diff of.** A legitimate diff
-	// cannot name more rows than the layout has, and every row costs two full
-	// scans plus a `rebind` that copies the whole array — so an unbounded list
-	// out of a player-writable string store stalls the boot before the first
-	// frame, from a field initialiser (sage round 3).
+	// **Capped at the size of the table it is a diff of**, which bounds the
+	// *merge*: a legitimate diff cannot name more rows than the layout has,
+	// and every row costs two full scans plus a `rebind` that copies the whole
+	// array. The parse itself is bounded by `RAW_MAX` above, because this cap
+	// necessarily runs after it.
 	if (parsed.moves.length > DEFAULT_BINDINGS.length)
 		return unreadable(
 			`the stored layout names more changes than this game has controls`,
@@ -506,10 +531,22 @@ const triggerFor = (
 // ---------------------------------------------------------------------------
 
 /**
- * Read the stored layout. Never throws, for `loadSettings`' reason: a private
- * window refuses `localStorage` outright, and a game that cannot start because
- * it cannot read a layout would be a poor trade for a layout. It does not fall
- * back in *silence*, which is the difference between this and its neighbour.
+ * Read the stored layout.
+ *
+ * **It does not throw on anything a player's browser can do to it**, which is
+ * `loadSettings`' reason: a private window refuses `localStorage` outright,
+ * and a game that cannot start because it cannot read a layout would be a poor
+ * trade for a layout. Nor does it fall back in *silence*, which is the
+ * difference between this and its neighbour.
+ *
+ * **It is not an unqualified "never throws", and the headline said so for a
+ * round** (sage round 6). `parseLayout` is deliberately outside the storage
+ * guard, and `triggerFor` inside it ends in a `throw` that is unreachable by
+ * construction. If that invariant ever breaks, this crashes — which is the
+ * intended behaviour and not a gap, because the alternative is a sentence
+ * blaming the player's browser for a bug in this file. `main.ts` calls this
+ * from a field initialiser, so a crash there is a boot that does not start,
+ * loudly.
  */
 export function loadLayout(): LoadedLayout {
 	let raw: string | null;

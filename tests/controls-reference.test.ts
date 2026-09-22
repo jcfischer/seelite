@@ -361,7 +361,7 @@ describe("the band above the tree (#381 S3)", () => {
 	const rejected: LayoutNotice = {
 		kind: "rejected",
 		command: ROLL,
-		reason: "not-just-a-key",
+		reason: "refused-by-registry",
 		detail:
 			"a rebind may move a key, not its qualifiers: key:q::hold -> key:k::press",
 	};

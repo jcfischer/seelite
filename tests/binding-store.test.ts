@@ -9,13 +9,10 @@
  * does nothing with nothing on screen saying why — so every refusal here is
  * checked for a notice as well as for the fallback.
  *
- * Three departures from that module are what is actually under test:
- *
- * - the version lives **inside** the blob, because a key-versioned store
- *   discards a layout a player built by hand;
- * - the validator reads a **table**, which `accept()`'s set membership
- *   cannot; and
- * - a rejected row is **named**, not silently dropped.
+ * What is actually under test is the set of departures from that module, and
+ * **`binding-store.ts`'s header states them** — a second list here is the
+ * third copy this repo's history is about, and it was one for six rounds
+ * (sage round 6). The rows below name the one they are about.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
@@ -110,6 +107,25 @@ const keysOf = (rows: readonly Binding[]) =>
 	rows.map((b) => `${b.command} ${triggerKey(b.trigger)}`);
 
 const kinds = (notices: readonly LayoutNotice[]) => notices.map((n) => n.kind);
+
+/**
+ * One notice, narrowed to the kind the row is about.
+ *
+ * `if (notice.kind !== "rejected") throw` was written out four times, which is
+ * four places to edit when a kind is added and four chances for the message to
+ * stop matching the row (sage round 6).
+ */
+function only<K extends LayoutNotice["kind"]>(
+	notices: readonly LayoutNotice[],
+	kind: K,
+): Extract<LayoutNotice, { kind: K }> {
+	const found = notices[0];
+	if (found === undefined || found.kind !== kind)
+		throw new Error(
+			`expected one ${kind}, got ${kinds(notices).join(",") || "none"}`,
+		);
+	return found as Extract<LayoutNotice, { kind: K }>;
+}
 
 /**
  * Which layout is in force, asked of the registry.
@@ -379,8 +395,7 @@ describe("a rejected row costs that row and says which", () => {
 		const raw = blob([good, { ...good, to: { ...TO, key: "9" } }]);
 		const read = parseLayout(raw);
 		expect(keysOf(read.layout)).toEqual(keysOf(moved));
-		const notice = read.notices[0] as LayoutNotice;
-		if (notice.kind !== "rejected") throw new Error("not a rejection");
+		const notice = only(read.notices, "rejected");
 		expect(notice.reason).toBe("already-changed");
 		expect(noticeText(notice)).toContain(commandById(PITCH_UP).name);
 	});
@@ -391,8 +406,7 @@ describe("a rejected row costs that row and says which", () => {
 		const raw = blob([
 			{ ...good, from: { kind: "key", key: "\u00a7", hold: true } },
 		]);
-		const notice = parseLayout(raw).notices[0] as LayoutNotice;
-		if (notice.kind !== "rejected") throw new Error("not a rejection");
+		const notice = only(parseLayout(raw).notices, "rejected");
 		expect(notice.reason).toBe("moved-default");
 	});
 
@@ -422,9 +436,8 @@ describe("a rejected row costs that row and says which", () => {
 			},
 		]);
 		const read = parseLayout(raw);
-		const notice = read.notices[0] as LayoutNotice;
-		if (notice.kind !== "rejected") throw new Error("not a rejection");
-		expect(notice.reason).toBe("not-just-a-key");
+		const notice = only(read.notices, "rejected");
+		expect(notice.reason).toBe("refused-by-registry");
 		expect(notice.detail).toContain("key:q::hold");
 		expect(noticeText(notice)).not.toContain("key:");
 		expect(noticeText(notice)).toContain(commandById("fly.rollPort").name);
@@ -531,8 +544,7 @@ describe("a player layout may collide, and is told that it does", () => {
 		const onto = rebind(DEFAULT_BINDINGS, PITCH_UP, FROM, ONTO_PITCH_DOWN);
 		const read = parseLayout(serializeLayout(onto));
 		expect(kinds(read.notices)).toEqual(["collision"]);
-		const notice = read.notices[0] as LayoutNotice;
-		if (notice.kind !== "collision") throw new Error("not a collision");
+		const notice = only(read.notices, "collision");
 		expect([...notice.collision.commands].sort()).toEqual(
 			[PITCH_UP, PITCH_DOWN].sort(),
 		);

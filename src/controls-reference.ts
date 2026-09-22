@@ -11,7 +11,7 @@
  */
 import type { LayoutNotice, RejectReason } from "./binding-store";
 import { escapeHtml } from "./escape-html";
-import type { CommandId, Surface, TaskGroup, Trigger } from "./commands";
+import type { Surface, TaskGroup, Trigger } from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
@@ -409,7 +409,7 @@ export const REJECTED_WHY: Record<RejectReason, string> = {
 		"it has moved in this version, so your change no longer fits — set it again",
 	"already-changed":
 		"your saved controls change it more than once, and only the first change was kept",
-	"not-just-a-key":
+	"refused-by-registry":
 		"the saved change asked for more than moving a key, which this control decides",
 };
 
@@ -454,7 +454,7 @@ export function noticeText(notice: LayoutNotice): string {
 			return `Your saved controls were written by a different build (${
 				notice.stored === undefined
 					? "they carry no version"
-					: `version ${short(JSON.stringify(notice.stored) ?? String(notice.stored))}`
+					: `version ${short(JSON.stringify(notice.stored))}`
 			}). The default layout is in force, and changing a control will replace them.`;
 		case "rejected":
 			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;

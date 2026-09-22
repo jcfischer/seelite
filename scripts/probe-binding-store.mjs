@@ -76,6 +76,13 @@ async function atRest() {
 	let prev = await nose();
 	const ticks = restFailed ? 40 : 200;
 	for (let i = 0; i < ticks; i++) {
+		// **The wait comes first, and moving it broke the gate.** A review
+		// round suggested sampling before waiting, to save 50 ms on a ship
+		// already still. Applied, `prev` and `now` are read back-to-back with
+		// nothing between them, they agree by construction, and this returns
+		// on the first iteration every time: the next arm read a residual of
+		// 10.41° against a floor of 0.16°, and four rows went red at once. The
+		// 50 ms is what makes the comparison a comparison (sage round 6).
 		await page.waitForTimeout(50);
 		const now = await nose();
 		if (degreesBetween(prev, now) < 0.02) return;
@@ -344,8 +351,18 @@ const bootOn = async (moves) => {
 	// fail the rows below for a reason that reads like a rendering bug.
 	const stored = (await storedLayout())[0];
 	const key = stored?.key;
-	if (typeof key !== "string")
-		throw new Error("no stored layout to overwrite — nothing wrote one");
+	if (typeof key !== "string") {
+		// **Reported, not thrown.** A throw at top level here escapes past
+		// `browser.close()` and `exit()`, so the suite reports a crash instead
+		// of a failing row and leaves a page running for the next probe to
+		// boot beside (sage round 6).
+		check(
+			"there is a stored layout to overwrite — something wrote one",
+			false,
+			JSON.stringify(stored ?? null),
+		);
+		return null;
+	}
 	// **The version comes off the blob the game itself wrote**, not from a
 	// literal here. A probe with its own copy of a constant goes falsely red
 	// the day the module changes it — and this one would have gone falsely
