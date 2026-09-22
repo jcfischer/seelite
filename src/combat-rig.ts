@@ -71,6 +71,7 @@ import {
 import { HULL_SPECS } from "./hull";
 import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
+import type { CommandId } from "./commands";
 import type { Ship } from "./sim";
 import type { DisplayContact } from "./display-contact";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
@@ -79,15 +80,6 @@ import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
 /** The legend, and the widest text each status line is fitted against. */
 const LEGEND =
 	"COMBAT PROTOTYPE — hold SPACE pulse · LMB / X beam · / warning · Q ECM";
-/**
- * `X`, not `S`.
- *
- * `S` is pitch-down. A beam bound to it meant every held shot also pushed the
- * nose off the thing being shot at, which on a *scripted* target was invisible
- * and on a flown one is the whole difficulty. `probe-live-cockpit.mjs` held the
- * old key for fifteen seconds and timed out rather than saying so.
- */
-const BEAM_KEY = "x";
 
 /**
  * Incoming fire, as bolts that travel.
@@ -527,12 +519,12 @@ export class CombatPrototypeRig {
 	 * meanings, and the branch that decides which one applies used to be spelled
 	 * twice inside that switch.
 	 */
-	command(key: string): boolean {
-		if (key === "/") {
+	command(id: CommandId): boolean {
+		if (id === "fight.rigIncoming") {
 			this.incoming = true;
 			return true;
 		}
-		if (key === "q") {
+		if (id === "fight.rigEcm") {
 			this.ecm = true;
 			return true;
 		}
@@ -552,7 +544,7 @@ export class CombatPrototypeRig {
 	 */
 	step(
 		dt: number,
-		keys: Set<string>,
+		held: (id: CommandId) => boolean,
 		inCruise: boolean,
 		pilot: {
 			ship: Ship;
@@ -566,7 +558,7 @@ export class CombatPrototypeRig {
 		},
 	): void {
 		this.hitFlash = Math.max(0, this.hitFlash - dt);
-		const beam = pilot.mouseFiring || keys.has(BEAM_KEY);
+		const beam = pilot.mouseFiring || held("fight.fireBeam");
 		// **The shot the model accepted, not the trigger the player held.**
 		//
 		// `stepCombatPrototype` nulls `firing` when the weapon is heat-locked or
@@ -611,14 +603,14 @@ export class CombatPrototypeRig {
 
 		this.state = stepCombatPrototype(this.state, {
 			dt,
-			firing: beam ? "beam" : keys.has(" ") ? "pulse" : null,
+			firing: beam ? "beam" : held("fight.firePulse") ? "pulse" : null,
 			targetInCone: flown.targetInCone,
 			incomingMissile: this.incoming,
 			ecm: this.ecm,
 			// Interdiction only charges in cruise (it is a cruise mechanic);
 			// the probe therefore never observes ACTIVE in normal flight.
 			interdicting: inCruise,
-			breakAngle: keys.has("q") || keys.has("e"),
+			breakAngle: held("fly.rollPort") || held("fly.rollStarboard"),
 			enemyFiring: flown.enemyFiring,
 			enemyHitAft: flown.enemyHitAft,
 		});

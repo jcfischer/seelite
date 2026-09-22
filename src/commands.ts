@@ -527,8 +527,15 @@ const AUTHORED = [
 		more: [{ kind: "mouse-button", action: "hold" }, ...fireButtons()],
 	},
 	{
-		// The other half of D3's split on `x`. `combat-rig.ts` reads `BEAM_KEY`
-		// held every frame; `fly.assist` takes the press.
+		// The other half of D3's split on `x`. `combat-rig.ts` asks whether
+		// this command is held every frame; `fly.assist` takes the press.
+		//
+		// **`x`, not `s`, and the reason moved here with the key.** `s` is
+		// pitch-up, so a beam bound to it meant every held shot also pushed the
+		// nose off the thing being shot at — invisible against a scripted
+		// target and the whole difficulty against a flown one.
+		// `probe-live-cockpit.mjs` held the old key for fifteen seconds and
+		// timed out rather than saying so.
 		id: "fight.fireBeam",
 		name: "Fire the beam (combat rig)",
 		group: "fight",
