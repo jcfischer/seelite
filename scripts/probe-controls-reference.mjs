@@ -231,7 +231,7 @@ console.log(
 // The fold, by a real click.
 // ---------------------------------------------------------------------------
 const allRows = await rowCount(page);
-const flyRows = await rowCount(page, '[data-live-controls-row="pitch"]');
+const flyRows = await rowCount(page, '[data-live-controls-row="fly.pitchUp"]');
 const fold = await clickAt(page, '[data-live-controls-group="fly"]');
 check(
 	"a real click on the FLY header lands on it",
@@ -243,7 +243,7 @@ check(
 	"and folds the group: its header says so and its rows are gone",
 	(await expanded(page, "fly")) === "false" &&
 		flyRows === 1 &&
-		(await rowCount(page, '[data-live-controls-row="pitch"]')) === 0 &&
+		(await rowCount(page, '[data-live-controls-row="fly.pitchUp"]')) === 0 &&
 		afterFold < allRows,
 	`rows ${allRows} -> ${afterFold}, expanded=${await expanded(page, "fly")}`,
 );
