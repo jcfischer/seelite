@@ -50,8 +50,14 @@ Verified on `main` at `295320a`, 2026-09-16.
 - **Nothing writes or reads legal heat.** `setLegalHeat`
   (`src/world-state.ts:1238`) is called only from `tests/`. `LegalStatus` is
   `{ heat, updatedAt }` and is saved and parsed field by field
-  (`world-state.ts:1738-1741`). The cockpit rail has a `LEGAL STATUS` label and
-  no value (`src/live-cockpit.ts:1272`).
+  (`world-state.ts:1738-1741`). The cockpit rail had a `LEGAL STATUS` label and
+  no value (`src/live-cockpit.ts`'s left-panel template; the line number this
+  bullet once carried no longer resolves to it). **Both halves are later than this
+  section's stamp and are marked as such rather than folded into it**: `HAILS`
+  has carried a value since #396, and the label itself reads `STANDING` since
+  #457, which paid `CONTEXT.md` §Language's alias debt in the same change that
+  gave the charge for sustained fire a voice. The old spelling survives in this
+  paragraph as the quotation of a label that was, and nowhere else.
 - **Every ship already shares one condition model.** `fullCondition(hull)`
   gives 106 shield per side, a bank of 100 and `HULL_SPECS[hull].integrity`
   hull points (`src/ship-condition.ts:19-31, 78-92`); the pulse laser does 6
@@ -383,7 +389,7 @@ the full account, beside §9.10's opposite case.
 
 ### H7 — The HUD shows standing, and shipyards refuse Wanted
 
-The left console's readout shows LEGAL STATUS as Clean, Wanted or Fugitive,
+The left console's readout shows STANDING as Clean, Wanted or Fugitive,
 stepping back as heat decays, on both left tabs. The rail keeps its labels, and **one of them carries a value for the first
 time** (#396): the Signals rail's `HAILS` row has been authored in
 `live-cockpit.ts` since the console was built and has never had anything beside
@@ -410,6 +416,31 @@ And it says `cease fire` and nothing about a charge, because the hail is on the
 frame the first hit lands and the sustained-fire clock is still running: a victim
 that announces a charge which has not been made tells the pilot the wrong thing
 on the one surface that is honest about the moment.
+
+**The charge for sustained fire is said out loud at the frame its clock
+crosses**
+(#457, on #447's ruling). One sentence on the glass, in the law's voice, naming
+the act and the carrier it was done to and carrying no figure — drawn beside the
+scoop's notice on the row above it, in §4's amber, which is that grammar's
+actionable prompt: the divert has not happened and stopping is still something
+the pilot can do. Red is refusal there and the law already speaks it at a
+hostile berth, so a charge drawn red would be the same word for the act and for
+its consequence. The same charge goes on the Communications log, which is read
+by turning away from the glass and is therefore the record and never the voice.
+It earns no second `audio.alert()`: the incident spends its one utterance on the
+hail.
+
+**Only a charge that cost heat is said.** The target's own standing can make
+five seconds of fire lawful (F7), and a lawful act is not a thing the pilot was
+booked for; the exit line still records it, for probes, and the glass says
+nothing.
+
+**#447 ruled this after a blind flight, and corrected three claims with it.**
+Until then the charge wrote `Game.lastExit` and nothing else, and `lastExit`
+reaches only `#hud`, which the page clips to `1 px x 1 px` — so a pilot who held
+a beam on a Clean carrier read the charge as `Standing: Wanted`, which a single
+hull strike produces too. A string written to `lastExit` is evidence that a line
+was authored and never that a pilot was told.
 
 **The hail line is session-only**, which is #396's ruling rather than an
 omission: there is no world row that says "this carrier hailed at T", because

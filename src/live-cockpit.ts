@@ -208,7 +208,7 @@ export interface LiveCockpitState {
 }
 
 /** Both left tabs' readout block, one copy so the two cannot drift apart. */
-const LEFT_READOUT = `<div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span><span><b>LEGAL STATUS</b><em data-live-legal-status></em></span></div>`;
+const LEFT_READOUT = `<div class="lc-readout"><span><b>SCANNER RANGE</b><em>10,000 km</em></span><span><b>CONTACTS</b><em data-live-contact-count></em></span><span><b>STANDING</b><em data-live-legal-status></em></span></div>`;
 
 export interface LiveCockpitCallbacks {
 	onRequestAction?: (action: string, id: string) => void;
@@ -1536,14 +1536,21 @@ export class LiveCockpit {
 		if (state.leftTab === "Galaxy Map")
 			return `<div class="lc-panel-body" data-live-chart-body><div class="lc-chart-host" data-live-chart-host></div></div>`;
 		if (state.leftTab === "Communications")
-			// **The rail's third label is an alias of the canonical Standing**
-			// (`CONTEXT.md` §Language) and it stays, deliberately: it is shipped
-			// console copy that predates #366, and this line was edited to give
-			// `HAILS` a value, not to rename what the pilot reads. Prose in `docs/specs/` and `CONTEXT.md`
-			// uses Standing throughout. Moving the label is console copy's own node's
-			// call — renaming it from a legal-change PR is a UI change no node asked
-			// for, which the repo's own constraint on this node names.
-			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS<em data-live-hails></em></span><span>LEGAL STATUS</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
+			// **The rail's third label is the canonical Standing** (`CONTEXT.md`
+			// §Language). It carried the Avoid alias until #457: #366 deferred the
+			// rename to "console copy's own node" rather than make a UI change
+			// from a legal-change PR, and #447's ruling is that node — the
+			// principal chose to pay the alias debt in the same template line the
+			// charge's voice is owed on. The old spelling is quoted in
+			// `civilian-combat.md` H1's audit and deliberately nowhere here.
+			//
+			// **The `data-live-legal-status` selector is deliberately unchanged.**
+			// It is the probe-facing name of the readout field and not a word the
+			// pilot reads; renaming it is a breaking change to every probe that
+			// reads the readout, for no gain in what the console says. The same
+			// scope split `CONTEXT.md` §Language draws for **Commander**, where
+			// the storage layer's words stay as they are.
+			return `<div class="lc-panel-body"><div class="lc-rail"><b>SIGNALS</b><span>CLEARANCE</span><span>HAILS<em data-live-hails></em></span><span>STANDING</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><h3>LOG</h3><ul class="lc-nav-list" data-live-raider-log></ul>${LEFT_READOUT}</div></div>`;
 		const chips = NAV_FILTER_KINDS.map(
 			(kind) =>
 				`<button class="lc-chip" type="button" data-live-nav-kind="${kind}" aria-pressed="${state.navFilter.kinds.includes(kind)}">${kind.toUpperCase()}</button>`,

@@ -99,28 +99,53 @@ export function drawGunTracer(
 /** How long the canopy rim glows after a hit lands on the player, s. */
 export const STRUCK_FLASH_S = 0.22;
 
+/** How far the first notice row sits above the glass line, and how far apart
+ *  two rows are, in px. One figure each, because a second notice drawn at the
+ *  first one's baseline is one illegible line and not two (#457). */
+const NOTICE_ROW_PX = 28;
+const NOTICE_ROW_PITCH_PX = 22;
+
+/** **The ladder has one owner, and it is this.** Two subjects share the rows
+ *  now and a third would have nowhere to learn which are taken, so the rungs
+ *  are named here rather than passed as bare literals from `render` (sage
+ *  round 2 on #457). Row 0 is the bottom line. */
+export const GLASS_NOTICE_ROW = { scoop: 0, charge: 1 } as const;
+
 /**
- * The scoop's notice on the glass (#324): centred under the reticle, just above
- * the glass line, in whatever colour the outcome earned — `hud-and-scanner.md`
- * §4 owns green for a confirmed state and red for a refusal, so the caller
- * passes the fill rather than this deciding.
+ * A one-line notice on the glass: centred under the reticle, just above the
+ * glass line, in whatever colour the event earned — `hud-and-scanner.md` §4
+ * owns green for a confirmed state, amber for an actionable one and red for a
+ * refusal, so the caller passes the fill rather than this deciding.
  *
  * Here beside the other overlay effects rather than inline in `render`, which
  * is already very large (sage #355).
+ *
+ * **It was the scoop's, and it is a drawer now (#324, widened by #457).** The
+ * charge for sustained fire is a second subject with its own words, window and
+ * re-arm rule (`charge-notice.ts`), and `row` is what keeps the two off each
+ * other's baseline: row 0 is the bottom line, row 1 sits above it. What is
+ * shared is one font, one alignment and one ladder — the state machines stay
+ * apart, because a charge that could push an unread scoop off the glass is the
+ * defect `nextScoopNotice` exists to refuse. The rungs are named by
+ * `GLASS_NOTICE_ROW` rather than counted at the call sites.
  */
-export function drawScoopNotice(
+export function drawGlassNotice(
 	ctx: CanvasRenderingContext2D,
 	w: number,
 	h: number,
 	glassBottom: number,
-	notice: { text: string; alpha: number; fill: string },
+	notice: { text: string; alpha: number; fill: string; row?: number },
 ) {
 	ctx.save();
 	ctx.globalAlpha = notice.alpha;
 	ctx.fillStyle = notice.fill;
 	ctx.font = "16px ui-monospace, Menlo, monospace";
 	ctx.textAlign = "center";
-	ctx.fillText(notice.text, w / 2, h * glassBottom - 28);
+	ctx.fillText(
+		notice.text,
+		w / 2,
+		h * glassBottom - NOTICE_ROW_PX - (notice.row ?? 0) * NOTICE_ROW_PITCH_PX,
+	);
 	ctx.restore();
 }
 /** The raider's beam, warm against the player's cyan. */

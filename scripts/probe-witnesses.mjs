@@ -413,6 +413,11 @@ try {
 				const charge = {
 					frame: -1,
 					lastExit: null,
+					// What the glass and the console said at that frame — the two
+					// surfaces #447 ruled a charge is owed, and neither of which
+					// this row read before #457.
+					painted: null,
+					comms: null,
 					heat: null,
 					landedFireS: null,
 					// **The frame body on the frame the offence was charged.** The rule
@@ -465,6 +470,13 @@ try {
 						charge.frame = i;
 						charge.at = g.frameBody?.id ?? null;
 						charge.lastExit = g.lastExit;
+						// **The painted frame, and the console, at the charge frame.**
+						// #447: `lastExit` goes to an element the page clips to
+						// 1x1, so it is evidence a string was authored and never
+						// that a pilot was told. The pixels are read first, because
+						// `comms()` drives the console's tab and renders.
+						charge.painted = p.chargePixels();
+						charge.comms = p.comms();
 						charge.landedFireS =
 							g.trafficEngagements.get(key)?.landedFireS ?? null;
 						charge.heat = g.trafficReadout().legal.heatNow;
@@ -589,6 +601,107 @@ try {
 			 * the console's own tab binding does, because the rail and the log are built per
 			 * tab and neither exists in the DOM until the tab is up.
 			 */
+			/**
+			 * **What the charge painted, read off the canvas** (#447, #457).
+			 *
+			 * `g.chargedRender` is written inside the draw, so it is a record of
+			 * painting and not of paint — #69's mistake, and the one #447 found
+			 * this probe repeating with `g.lastExit`. So the frame is differenced
+			 * against a same-build control with the notice's clock zeroed: the
+			 * pixels that move are the notice's, whatever else the frame is doing,
+			 * and no geometry constant is restated up here to find them.
+			 *
+			 * The tone is read off those pixels rather than asserted as a css
+			 * string, because the string is what the draw was *asked* for. And the
+			 * isolation is measured rather than assumed: `jitter` is a null
+			 * control, two shots with nothing changed between them.
+			 */
+			chargePixels() {
+				const wasView = g.view;
+				g.view = "cockpit";
+				const overlay = document.getElementById("overlay");
+				const c2d = overlay.getContext("2d", { willReadFrequently: true });
+				const shot = () => {
+					g.render(dt);
+					return c2d.getImageData(0, 0, overlay.width, overlay.height).data;
+				};
+				// Any channel moving past a code is a moved pixel: the notice is
+				// drawn with a fading alpha, so its faintest row is a few codes and
+				// a threshold tuned to its peak would miss the event it is there
+				// to see.
+				const diff = (before, after) => {
+					let moved = 0;
+					let r = 0;
+					let gr = 0;
+					let b = 0;
+					for (let i = 0; i < before.length; i += 4) {
+						if (
+							Math.abs(before[i] - after[i]) > 8 ||
+							Math.abs(before[i + 1] - after[i + 1]) > 8 ||
+							Math.abs(before[i + 2] - after[i + 2]) > 8
+						) {
+							moved++;
+							r += before[i];
+							gr += before[i + 1];
+							b += before[i + 2];
+						}
+					}
+					return {
+						moved,
+						mean: moved ? { r: r / moved, g: gr / moved, b: b / moved } : null,
+					};
+				};
+				// **The frame has to be settled before it can be differenced.**
+				// Measured here with the draw deleted: the first two renders
+				// agree, the third moves 1,363 pixels, and every one after that
+				// agrees again — a one-off the scene works through, not noise.
+				// A control taken across that boundary reports the settle as the
+				// subject, and that is what happened: with the notice drawing
+				// nothing the row still read 1,363 moved pixels whose mean passed
+				// the amber ratio, and went green on a build that painted nothing
+				// (sage round 3).
+				//
+				// So shots are taken until **two** consecutive pairs agree, and
+				// the row asserts that they did: the loop is capped, so a scene
+				// that never quiets would otherwise hand the control the same
+				// one-off with nothing saying so (sage round 4). One agreement is not
+				// enough, and that is measured too: the first pair agrees and the
+				// next moves the 1,363, so a settle stopping at one hands the
+				// whole one-off to the control standing next to it.
+				let settle = 0;
+				let last = shot();
+				let quiet = 0;
+				for (; settle < 12 && quiet < 2; settle++) {
+					const next = shot();
+					quiet = diff(last, next).moved === 0 ? quiet + 1 : 0;
+					last = next;
+				}
+				const shown = last;
+				// **A null control, because the isolation is an assumption until
+				// it is measured** (sage round 1 on #477). One more shot with
+				// nothing changed: whatever a settled frame still moves lands
+				// here, beside the reading rather than assumed away, and the row
+				// asserts it is a small fraction of what the notice moves.
+				const still = shot();
+				const jitter = diff(shown, still).moved;
+				const kept = g.charged.left;
+				g.charged.left = 0;
+				// **The measurement is the adjacent pair**, `still` against
+				// `control`, so it spans exactly the one frame gap the null
+				// control spans (sage round 2). `still` carries the notice, so
+				// the colour basis is unchanged.
+				const control = shot();
+				g.charged.left = kept;
+				const measured = diff(still, control);
+				// **The record is read after the notice is back**, because the
+				// last frame drawn was the control's and `chargedRender` is
+				// written by the draw — reading it there returns the null the
+				// control painted and says the notice does not exist.
+				g.render(dt);
+				const render = g.chargedRender ? { ...g.chargedRender } : null;
+				g.view = wasView;
+				return { ...measured, jitter, settle, settled: quiet >= 2, render };
+			},
 			comms() {
 				// The console is only built while the cockpit is the view, and the
 				// rail only while this tab is up — so both are driven here rather
@@ -924,23 +1037,95 @@ try {
 			assaultFireS: struck.assaultFireS,
 		}),
 	);
-	check(
-		"the sustained-fire charge is said in the pilot's own line, and it costs Wanted (#396 §2)",
-		struck.strike?.charge?.frame >= 0 &&
-			typeof struck.strike?.charge?.lastExit === "string" &&
-			struck.strike?.charge?.lastExit.includes("sustained fire") &&
-			struck.strike?.charge?.heat >= struck.after?.wantedHeat &&
-			struck.strike?.charge?.landedFireS >= struck.assaultFireS &&
-			// And the whole thing happens before the divert: this is the part of
-			// the flight report that was missing, the interval in which the pilot
-			// could still have stopped.
-			struck.strike?.charge?.frame < struck.strike?.frames,
+	// **This row was named "the sustained-fire charge is said in the pilot's own
+	// line" and read `g.lastExit`** — a string bound for `#hud`, which the page
+	// clips to 1x1. #447 found that false by flying it, and named the row as one
+	// of the three places the claim was made. It reads the painted frame now.
+	const chargeSeen = struck.strike?.charge;
+	const painted = chargeSeen?.painted;
+	const chargeEvidence = () =>
 		JSON.stringify({
-			charge: struck.strike?.charge,
+			charge: chargeSeen,
 			frames: struck.strike?.frames,
 			assaultFireS: struck.assaultFireS,
 			wanted: struck.after?.wantedHeat,
-		}),
+		});
+	// **Three rows where there was one** (sage round 2). Nine claims behind one
+	// boolean say only "the charge row failed", and the earlier arms
+	// short-circuit the later ones — which is how two red builds flown against
+	// the first version never evaluated the console arm at all.
+	check(
+		"the charge for sustained fire paints the glass at the frame it lands, in §4's amber (#457)",
+		// Pixels moved against a same-build control with the notice's clock
+		// zeroed. A figure rather than a boolean, because a notice that paints
+		// one pixel is the defect this row exists to catch — and it is read
+		// against the null control beside it, so the figure is the notice rather
+		// than the frame being restless.
+		// **The frame settled**, rather than the loop running out of shots: a
+		// capped settle that failed open is how the defect below would come
+		// back without anything saying so.
+		painted?.settled === true &&
+			// The notice's pixels, floor and drift together rather than a floor
+			// alone: on a settled frame `jitter` is 0 and a ratio against it says
+			// nothing, so the null control is **added** to the floor instead of
+			// multiplied into a comparison that degenerates (sage round 4).
+			painted?.moved > 200 + painted?.jitter * 20 &&
+			// **§4's amber, and not the red the law speaks refusal in.** The two
+			// fills differ in how much green stands beside the red, and an
+			// ordering like `g > b` is satisfied by both — `FLOOR_TONE_FILL`'s
+			// refusal is `rgba(255, 110, 96)`, whose green clears its blue. So
+			// the ratio is what settles it, and the bound is calibrated rather
+			// than declared. Measured on the settled frame: the amber notice
+			// reads g/r **0.764** (194.8 green over 254.9 red) across 2,351
+			// moved pixels, and the same draw with the refusal fill spliced in
+			// reads **0.427** (108.9 over 254.9) across 2,306. 0.6 sits between
+			// the two, and the row was watched red on that spliced build before
+			// it was believed. **Both figures are later than the settle above**
+			// and were re-measured with it, because the first pair was taken on
+			// the instrument that could not tell the notice from the scene
+			// settling.
+			painted?.mean?.g > painted?.mean?.r * 0.6 &&
+			painted?.mean?.r > painted?.mean?.b,
+		chargeEvidence(),
+	);
+	check(
+		"the glass and the Communications log say the same charge, and the log keeps it (#457)",
+		// The words name the act and the carrier, and carry no figure —
+		// `tests/charge-notice.test.ts` holds the template; this holds that the
+		// template is what reached the glass.
+		/SUSTAINED FIRE ON /.test(painted?.render?.text ?? "") &&
+			// Sampled at the charge frame, which this probe never did before
+			// #457: it read before the first hit and at the divert.
+			chargeSeen?.comms?.logLines?.some((line) =>
+				/sustained fire/.test(line),
+			) === true &&
+			// **And the log still holds it after the notice is gone**, which is
+			// the whole claim in "keeps it" and was asserted rather than
+			// measured for a round: `commsAfter` is read at the divert, 126
+			// frames and well past `CHARGE_NOTICE_S` after the charge, when
+			// nothing is on the glass.
+			struck.strike?.commsAfter?.logLines?.some((line) =>
+				/sustained fire/.test(line),
+			) === true,
+		chargeEvidence(),
+	);
+	// **This row was named "the sustained-fire charge is said in the pilot's own
+	// line" and read `g.lastExit`** — a string bound for `#hud`, which the page
+	// clips to 1x1. #447 found that false by flying it, and named the row as one
+	// of the three places the claim was made. The saying is the two rows above,
+	// off the painted frame and the console; what is left here is the cost.
+	check(
+		"the charge for sustained fire lands before the divert and costs Wanted (#396 §2)",
+		chargeSeen?.frame >= 0 &&
+			typeof chargeSeen?.lastExit === "string" &&
+			chargeSeen?.lastExit.includes("sustained fire") &&
+			chargeSeen?.heat >= struck.after?.wantedHeat &&
+			chargeSeen?.landedFireS >= struck.assaultFireS &&
+			// And the whole thing happens before the divert: this is the part of
+			// the flight report that was missing, the interval in which the pilot
+			// could still have stopped.
+			chargeSeen?.frame < struck.strike?.frames,
+		chargeEvidence(),
 	);
 	check(
 		"the hail is one line per carrier, not one per hit (#396: the rail says who, not how often)",
