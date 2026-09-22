@@ -39,12 +39,40 @@
  * is what makes the same reading honest at any other place, and it is not free to
  * be dropped because it is small today.
  *
- * **Subjects are the star at the origin plus every placed body** — the set
- * `__emptiestDirection` itself scores, read from the same live record, so the rule
- * and the audit cannot disagree about what was avoided. The star is not among the
- * placed bodies: it lives in `system.contents`, and the placer adds the origin by
- * hand. If a later generator does place it too, the origin is measured twice at
- * the same angle and radius, which cannot move a minimum.
+ * **Subjects are the origin plus `world.system.bodies`, which is what
+ * `__emptiestDirection` in `view-placement.mjs` scores**: it builds its list from
+ * a literal `{0,0,0}` and `world.system.bodies[].pos`, and this file rebuilds the
+ * same two terms from the same live record. Stated as a rebuild rather than as
+ * reading the placer's own array, because the placer exposes no list — only its
+ * heading — so what makes the two agree is that both name the origin and both walk
+ * `bodies`, and a future placer that scored a fourth thing would leave this file
+ * silently auditing less than it avoided. The visible symptom would be a clearance
+ * that reads wider than the heading deserves, which is the wrong direction to be
+ * wrong in. Hence the row in `probe-sky.mjs` that aims the same arithmetic at the
+ * star and requires it to report a body in frame: not a demonstration that a body
+ * *will* appear at the arrival system, which nothing here can show, but that the
+ * reading notices one when it is there.
+ *
+ * The star is measured from `system.contents.star`, which is where the generator
+ * keeps it and why the placer adds the origin by hand. **A system without a star
+ * throws rather than becoming a radius-zero point**: a subject silently demoted to
+ * a point is a clearance computed on a set that no longer matches anyone's, and the
+ * whole claim of this file is that it measures what the rule avoided. If a later
+ * generator does place the star among the bodies too, the origin is measured twice
+ * at the same angle and radius, which cannot move a minimum.
+ *
+ * ## What a consumer owes: the rectangle
+ *
+ * The half-diagonal is a function of the page's **aspect**, so the angle this file
+ * prints is a property of the viewport the caller opened, not of the game. The
+ * sheet is captured at `VIEWPORT`, 1440x900, and both consumers must boot at that
+ * ratio or they are quoting a frame nobody prints: at 16:10 the half-diagonal is
+ * 47.4°, and at Playwright's default 1280x720 it is 49.7°. Two thirds of a degree
+ * is nothing against a 40° margin and everything against a claim that the reading
+ * is of *that row* — which is #296's lesson about measuring a build that is not
+ * yours, arrived at through a window size instead of a working tree.
+ * `measure-sky-clearance.mjs` therefore opens its page at `VIEWPORT` rather than at
+ * a default, and prints the ratio it used beside the numbers.
  *
  * ## What it cannot see
  *
@@ -55,7 +83,45 @@
  * therefore conservative, measuring the camera's rectangle rather than the
  * visible one.
  */
-import { OCCLUSION_FRAMINGS, settleFrames } from "./view-placement.mjs";
+import { gameUrl } from "./game-url.mjs";
+import {
+	installViewFraming,
+	OCCLUSION_FRAMINGS,
+	settleFrames,
+} from "./view-placement.mjs";
+import { bootedGame, installViewPlacement } from "../probe-guard.mjs";
+
+/**
+ * Install the page-side helpers a clearance reading needs.
+ *
+ * `installViewPlacement` is the primitive set the framings are written against,
+ * and `__returnToBootPosition` — which is the first thing `deepSky`'s placer does
+ * — reaches for `__placeShipAt` out of it. Both are `addInitScript` payloads, so
+ * where this is called decides which navigations pay for them: a probe whose other
+ * rows never touch a placer should call it last, not first.
+ */
+export async function installClearanceHooks(page) {
+	await installViewPlacement(page);
+	await installViewFraming(page);
+}
+
+/**
+ * Boot the world a reading is taken in, at the position the sheet boots it in.
+ *
+ * The preamble is here rather than at each callsite because it is the part that
+ * makes the reading valid, and a copy of an arithmetic that drifts out of agreement
+ * with its twin is bad enough when the two also disagree about where the ship was
+ * standing: `__rememberBootPosition` has to run after the boot and before the
+ * placement, or `deepSky` places the camera wherever the last traversal left it and
+ * every figure in the table describes a different world from the one it names.
+ */
+export async function bootForClearance(page, origin, seed) {
+	await page.goto(gameUrl(origin, { seed, raider: "off" }), {
+		waitUntil: "load",
+	});
+	await bootedGame(page);
+	await page.evaluate(() => window.__rememberBootPosition());
+}
 
 /**
  * Read the clearance of whatever the camera is already pointing at, without
@@ -64,7 +130,8 @@ import { OCCLUSION_FRAMINGS, settleFrames } from "./view-placement.mjs";
  * Split out from `emptiestClearance` so the arithmetic can be turned on a framing
  * that is *not* the emptiest heading. A gate nobody has seen go red is a belief,
  * and the only honest way to see this one red is to aim the same reading at the
- * star and watch it report a body in the frame.
+ * star and watch it report a body in the frame — which `probe-sky.mjs` now does as
+ * a row of its own rather than as a run someone remembers doing.
  */
 export async function measureClearance(page, askedSeed) {
 	return page.evaluate((asked) => {
@@ -79,11 +146,15 @@ export async function measureClearance(page, askedSeed) {
 		const halfDiagonal = Math.atan(tanHalfHeight * Math.hypot(cam.aspect, 1));
 		const p = g.world.ship.pos;
 		const star = g.world.system.contents?.star;
+		if (!star)
+			throw new Error(
+				"sky-clearance: this system has no contents.star, and measuring it as a radius-zero point would quietly audit a set nobody aimed at — the star's disc is the largest subject in the frame wherever the frame is not empty",
+			);
 		const subjects = [
 			{
-				name: star?.name ?? "star",
+				name: star.name ?? "star",
 				pos: { x: 0, y: 0, z: 0 },
-				radiusKm: star?.radiusKm ?? 0,
+				radiusKm: star.radiusKm,
 			},
 			...g.world.system.bodies,
 		];

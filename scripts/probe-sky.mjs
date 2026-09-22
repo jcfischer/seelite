@@ -57,16 +57,21 @@
  * constants off the page (`units.BACKDROP_RADIUS`) rather than restating them.
  */
 import { gameUrl } from "./lib/game-url.mjs";
-import { emptiestClearance } from "./lib/sky-clearance.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
+import {
+	bootForClearance,
+	emptiestClearance,
+	installClearanceHooks,
+	measureClearance,
+} from "./lib/sky-clearance.mjs";
 // The seed the contact sheet is captured at, which is the only world `sky-only`
 // is ever drawn in. Imported rather than written, because a probe that pins the
-// sheet's seed by number keeps passing after the sheet moves.
+// sheet's seed by number keeps passing after the sheet moves. Note this is a
+// different world from this file's own `SEED` below: those rows ask the generator
+// for a sky with neighbours in every direction, the clearance row asks the sheet's.
 import { SEED as SHEET_SEED } from "./lib/view-set.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
-	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -83,12 +88,9 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 watch(page);
-// Both installers before the first navigation, in `capture-views.mjs`'s order:
-// `installViewPlacement` is the page-side primitive set the framings are written
-// against, and `__returnToBootPosition` reaches for `__placeShipAt` out of it. The
-// rows above this line never needed a placer; the one below does.
-await installViewPlacement(page);
-await installViewFraming(page);
+// 1280x800 is 16:10, the sheet's ratio rather than Playwright's default 16:9, so
+// the frame the clearance row below measures is the frame the caption is printed
+// in. The rows above it project nothing angular and would not notice either way.
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 
@@ -437,40 +439,66 @@ check(
 // The caption `sky-only` has carried since #104 is a claim about the picture —
 // *"with nothing in front of it"* — and #480's review blocked two drafts of a new
 // caption on exactly that ground, which is how the old one became a question
-// instead of a fixture. It was measured (#487), and it holds: over eleven worlds
-// the nearest subject's **limb** stays 89.81° off the view axis at the tightest,
-// against a frame whose widest angle is 49.66°. Nothing is merely outside the cone —
-// on every one of those worlds every subject is behind the camera's plane.
+// instead of a fixture. It was measured for #487 and it holds; the spread of worlds
+// and every figure that came out of it belong to `measure-sky-clearance.mjs`, which
+// prints them, and are deliberately **not restated here** — this file has a check
+// that prints its own numbers, and a comment holding the sweep's figures is a third
+// copy of a measurement that nothing runs.
 //
-// This row is the part of that which can be *held*, and it holds one world rather
-// than the spread: `measure-sky-clearance.mjs` owns eleven and prints them, and a
-// gate that samples one must not lend a spread's authority to a single boot. What
-// one world earns a gate is **the sheet's own seed**, because that is the world the
-// sentence is printed against — `sky-only` is never captured anywhere else. So the
-// day the arrival point moves, or the placer's candidate sphere coarsens, or a body
-// is added at the arrival system and this framing gains a planet, the caption on the
-// contact sheet is the thing that has become false, and this is the row that says so
-// rather than a person noticing it while looking at the sheet.
+// Two rows, because a gate that has never been seen red is a belief:
+//
+// - the framing the sheet actually uses, requiring that no subject's disc is inside
+//   the frame — which is the caption, held;
+// - the same arithmetic aimed at the star, requiring that it *does* find bodies in
+//   the frame — which is the arithmetic's own non-vacuity.
+//
+// **What the second row is not**, said plainly because it is the tempting reading:
+// it does not show that a body will ever appear at the arrival system, which nothing
+// here can show. It shows that this reading notices a body when one is in front of
+// the camera, so that the first row's green is a measurement rather than a tautology
+// about a cone nobody is looking through.
+//
+// Both rows hold **one** world, the sheet's own seed, rather than the sweep's eleven:
+// a gate that samples a spread must not lend that spread's authority to a single
+// boot, and the reason the sheet's seed earns a gate at all is that it is the only
+// world `sky-only` is ever drawn in. So the day the arrival point moves, or the
+// placer's candidate sphere coarsens, or a body appears at the arrival system, the
+// caption on the contact sheet is the thing that has become false, and this is the
+// row that says so rather than a person noticing it while reading the sheet.
 //
 // The bound is the frame's half-diagonal and a subject is a disc, both read off the
-// page: `lib/sky-clearance.mjs` is the one owner of that arithmetic and this row is
-// its second consumer. Bloom stays outside it by construction — a body clear of the
-// cone can still wash the corner behind it, and that is a look judgement on the sheet
-// rather than a number computable here.
+// page; `lib/sky-clearance.mjs` owns that arithmetic and why each piece is the piece
+// it is, including the viewport the rectangle belongs to. Bloom stays outside both
+// rows by construction: a body clear of the cone can still wash the corner behind
+// it, and that is a look judgement on the sheet, not a number computable here.
 // ---------------------------------------------------------------------------
 
-await page.goto(gameUrl(origin, { seed: SHEET_SEED, raider: "off" }));
-await bootedGame(page);
-await page.evaluate(() => window.__rememberBootPosition());
+// Last, not first: these are `addInitScript` payloads, and the twelve rows above
+// never touch a placer, so they should not pay for one on every navigation.
+await installClearanceHooks(page);
+await bootForClearance(page, origin, SHEET_SEED);
 
 const clearance = await emptiestClearance(page, SHEET_SEED);
 const limb = clearance.nearest.limbDeg;
 const halfDiagonal = clearance.halfDiagonalDeg;
+const stoodOnTheSheetsSeed = clearance.worldSeed === SHEET_SEED;
 
 check(
 	"the deep-sky framing leaves no body's disc inside the frame, which is what `sky-only`'s caption claims",
-	clearance.inFrame === 0 && clearance.worldSeed === SHEET_SEED,
-	`seed ${clearance.worldSeed}, system ${clearance.system}, ${clearance.bodies} bodies and the star: the nearest is ${clearance.nearest.name}, whose limb sits ${limb.toFixed(2)}° off the axis against a frame half-diagonal of ${halfDiagonal.toFixed(2)}°, so ${clearance.inFrame === 0 ? `${(limb - halfDiagonal).toFixed(2)}° of margin` : `${clearance.inFrame} subject(s) in frame`}`,
+	clearance.inFrame === 0 && stoodOnTheSheetsSeed,
+	`${stoodOnTheSheetsSeed ? `seed ${clearance.worldSeed}, system ${clearance.system}` : `asked for the sheet's seed ${SHEET_SEED} and booted ${clearance.worldSeed}, so this says nothing about the sheet`}, ${clearance.bodies} bodies and the star: the nearest is ${clearance.nearest.name}, whose limb sits ${limb.toFixed(2)}° off the axis against a frame half-diagonal of ${halfDiagonal.toFixed(2)}°, so ${clearance.inFrame === 0 ? `${(limb - halfDiagonal).toFixed(2)}° of margin` : `${clearance.inFrame} subject(s) in frame`}`,
+);
+
+// The control. `__lookAt` the star rather than constructing a heading, so this is
+// the shipped placement helper being misused on purpose and not a second arithmetic
+// that agrees with the first by construction.
+await page.evaluate(() => window.__lookAt({ x: 0, y: 0, z: 0 }));
+const aimed = await measureClearance(page, SHEET_SEED);
+
+check(
+	"the same reading aimed at the star finds bodies in the frame, so the row above is a measurement",
+	aimed.inFrame > 0,
+	`aimed at the star from the same place, ${aimed.inFrame} of ${aimed.bodies + 1} subjects have their limb inside ${aimed.halfDiagonalDeg.toFixed(2)}°, nearest ${aimed.nearest.name} at ${aimed.nearest.limbDeg.toFixed(2)}°`,
 );
 
 await browser.close();

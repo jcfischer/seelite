@@ -53,17 +53,14 @@
  * justifies it, nothing that fails a build. What the reading obliges is decided on
  * #487.
  */
-import { gameUrl } from "./lib/game-url.mjs";
 import { assertPlayersRenderer } from "./lib/players-renderer.mjs";
-import { emptiestClearance } from "./lib/sky-clearance.mjs";
-import { SEED } from "./lib/view-set.mjs";
 import {
-	bootedGame,
-	guardedTree,
-	installViewPlacement,
-	launchChromium,
-} from "./probe-guard.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
+	bootForClearance,
+	emptiestClearance,
+	installClearanceHooks,
+} from "./lib/sky-clearance.mjs";
+import { SEED, VIEWPORT } from "./lib/view-set.mjs";
+import { guardedTree, launchChromium } from "./probe-guard.mjs";
 
 const ORIGIN = process.env.PROBE_ORIGIN ?? "http://localhost:5173";
 
@@ -72,34 +69,34 @@ const SEEDS = [SEED, 0, 1, 2, 3, 4, 5, 6, 7, 11, 23];
 
 const { origin: SERVING } = await guardedTree(ORIGIN);
 const browser = await launchChromium({ headless: false });
-const page = await browser.newPage();
+// The sheet's own viewport, because the bound this table quotes is a function of
+// the page's aspect: at Playwright's default 16:9 the frame's half-diagonal is
+// 49.7° and at the sheet's 16:10 it is 47.4°, so a table printed at the default is
+// describing a frame the caption is never rendered in. The ratio is printed beside
+// the numbers for exactly that reason.
+const page = await browser.newPage({ viewport: VIEWPORT });
 
-// Both installers, in the order `capture-views.mjs` runs them:
-// `installViewPlacement` is the page-side primitive set the framings are written
-// against, and `__returnToBootPosition` reaches for `__placeShipAt` out of it.
-await installViewPlacement(page);
-await installViewFraming(page);
+await installClearanceHooks(page);
 
 let renderer = null;
 const rows = [];
 
-for (const seed of SEEDS) {
-	await page.goto(gameUrl(SERVING, { seed, raider: "off" }), {
-		waitUntil: "load",
-	});
-	await bootedGame(page);
-	await page.evaluate(() => window.__rememberBootPosition());
-	if (renderer === null)
-		renderer = await assertPlayersRenderer(page, "sky-clearance");
-
-	rows.push(await emptiestClearance(page, seed));
+try {
+	for (const seed of SEEDS) {
+		await bootForClearance(page, SERVING, seed);
+		if (renderer === null)
+			renderer = await assertPlayersRenderer(page, "sky-clearance");
+		rows.push(await emptiestClearance(page, seed));
+	}
+} finally {
+	// Headed, so a refusal part-way through the sweep would otherwise leave a
+	// window open holding the GPU and starve every later boot on the machine.
+	await browser.close();
 }
-
-await browser.close();
 
 console.log(`renderer: ${renderer}`);
 console.log(
-	"framing: OCCLUSION_FRAMINGS.deepSky, the shipped `sky-only` placement\n",
+	`framing: OCCLUSION_FRAMINGS.deepSky, the shipped \`sky-only\` placement, on the sheet's ${VIEWPORT.width}x${VIEWPORT.height} viewport\n`,
 );
 console.log(
 	"seed   sys  bodies  fov   aspect   halfDiag   nearest        angle   disc    limb    verdict",
@@ -118,7 +115,7 @@ for (const r of rows) {
 			`${n.angleDeg.toFixed(2).padStart(7)}°  ` +
 			`${n.apparentDeg.toFixed(2).padStart(6)}°  ` +
 			`${n.limbDeg.toFixed(2).padStart(7)}°  ` +
-			`${margin >= 0 ? "out by" : "IN by "} ${Math.abs(margin).toFixed(2)}°` +
+			`${margin >= 0 ? "out by" : "IN FRAME by "} ${Math.abs(margin).toFixed(2)}°` +
 			(r.inFrame === 0 ? "" : `   [${r.inFrame} subject(s) in frame]`),
 	);
 }
