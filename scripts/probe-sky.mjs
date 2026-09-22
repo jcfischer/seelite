@@ -57,9 +57,16 @@
  * constants off the page (`units.BACKDROP_RADIUS`) rather than restating them.
  */
 import { gameUrl } from "./lib/game-url.mjs";
+import { emptiestClearance } from "./lib/sky-clearance.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
+// The seed the contact sheet is captured at, which is the only world `sky-only`
+// is ever drawn in. Imported rather than written, because a probe that pins the
+// sheet's seed by number keeps passing after the sheet moves.
+import { SEED as SHEET_SEED } from "./lib/view-set.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
+	installViewPlacement,
 	launchChromium,
 	tally,
 } from "./probe-guard.mjs";
@@ -76,6 +83,12 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 watch(page);
+// Both installers before the first navigation, in `capture-views.mjs`'s order:
+// `installViewPlacement` is the page-side primitive set the framings are written
+// against, and `__returnToBootPosition` reaches for `__placeShipAt` out of it. The
+// rows above this line never needed a placer; the one below does.
+await installViewPlacement(page);
+await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 
@@ -417,6 +430,47 @@ check(
 	"an index the galaxy does not have is said, and the start system boots instead",
 	bootedTheStart && refusalWasSaid,
 	`${bootedTheStart ? `system ${refused} booted, the start system, not clamped to the last index` : `system ${refused} booted for an index the galaxy does not have`}${refusalWasSaid ? ", and the refusal was said in the console" : ", and nothing was said about it"}`,
+);
+
+// ---------------------------------------------------------------------------
+//
+// The caption `sky-only` has carried since #104 is a claim about the picture —
+// *"with nothing in front of it"* — and #480's review blocked two drafts of a new
+// caption on exactly that ground, which is how the old one became a question
+// instead of a fixture. It was measured (#487), and it holds: over eleven worlds
+// the nearest subject's **limb** stays 89.81° off the view axis at the tightest,
+// against a frame whose widest angle is 49.66°. Nothing is merely outside the cone —
+// on every one of those worlds every subject is behind the camera's plane.
+//
+// This row is the part of that which can be *held*, and it holds one world rather
+// than the spread: `measure-sky-clearance.mjs` owns eleven and prints them, and a
+// gate that samples one must not lend a spread's authority to a single boot. What
+// one world earns a gate is **the sheet's own seed**, because that is the world the
+// sentence is printed against — `sky-only` is never captured anywhere else. So the
+// day the arrival point moves, or the placer's candidate sphere coarsens, or a body
+// is added at the arrival system and this framing gains a planet, the caption on the
+// contact sheet is the thing that has become false, and this is the row that says so
+// rather than a person noticing it while looking at the sheet.
+//
+// The bound is the frame's half-diagonal and a subject is a disc, both read off the
+// page: `lib/sky-clearance.mjs` is the one owner of that arithmetic and this row is
+// its second consumer. Bloom stays outside it by construction — a body clear of the
+// cone can still wash the corner behind it, and that is a look judgement on the sheet
+// rather than a number computable here.
+// ---------------------------------------------------------------------------
+
+await page.goto(gameUrl(origin, { seed: SHEET_SEED, raider: "off" }));
+await bootedGame(page);
+await page.evaluate(() => window.__rememberBootPosition());
+
+const clearance = await emptiestClearance(page, SHEET_SEED);
+const limb = clearance.nearest.limbDeg;
+const halfDiagonal = clearance.halfDiagonalDeg;
+
+check(
+	"the deep-sky framing leaves no body's disc inside the frame, which is what `sky-only`'s caption claims",
+	clearance.inFrame === 0 && clearance.worldSeed === SHEET_SEED,
+	`seed ${clearance.worldSeed}, system ${clearance.system}, ${clearance.bodies} bodies and the star: the nearest is ${clearance.nearest.name}, whose limb sits ${limb.toFixed(2)}° off the axis against a frame half-diagonal of ${halfDiagonal.toFixed(2)}°, so ${clearance.inFrame === 0 ? `${(limb - halfDiagonal).toFixed(2)}° of margin` : `${clearance.inFrame} subject(s) in frame`}`,
 );
 
 await browser.close();

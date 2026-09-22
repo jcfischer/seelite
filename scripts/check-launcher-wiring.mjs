@@ -147,6 +147,10 @@ const EXEMPT = new Map([
 		"#206's headed planet-cost sweep; like #99's it gates on nothing — the output is a table for a receipt, not a threshold — so there are no checks for a watch to report into. Its refusals — an unreadable meter line, a flat run, a column inside the body — throw out of the run rather than counting a failed check",
 	],
 	[
+		"measure-sky-clearance.mjs",
+		"#487's headed clearance sweep; a sibling of #206's and #201's, exempt for the same reason — it prints the angle the emptiest heading actually leaves between the frame's half-diagonal and the nearest body's limb over eleven worlds, and gates on nothing, because the judgement is the one row `probe-sky.mjs` holds and a table that also gated would be the check deriving itself from its own subject. What it refuses — a software rasteriser — throws out of the run, and a page that booted a world other than the seed it was asked for is printed with a `!` rather than quietly averaged into the table",
+	],
+	[
 		"measure-frame-attribution.mjs",
 		"#223's headed sampler-overhead instrument; it reports paired CPU submission timings on a proven player renderer without imposing a machine-independent performance threshold",
 	],
