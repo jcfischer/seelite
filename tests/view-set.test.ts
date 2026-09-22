@@ -638,21 +638,15 @@ describe("the rim sky row #432 built and removed", () => {
 });
 
 /**
- * The sheet's second sky frame, and the second half of #432's answer.
+ * The sheet's second sky frame, added by #480.
  *
- * #432 removed the rim row it built because that row promised #100's **Core
- * bearing** and could not show it. The hole that left is a different one: with
- * only `sky-only` the set keeps one picture of its own sky, taken from the most
- * central system the generator has and aimed away from everything in the cluster,
- * so the sky is evidenced from exactly the one place its crowding is not. #480
- * put a row back at the other end of the same cluster, in the role a look row can
- * actually fill: showing what the derived layer looks like from a rim star.
- *
- * The principal's reading of the sky — that it reads well, sparse rather than a
- * wall, and better than the dense field #431 replaced — is why this row exists and
- * what it is for. It is not evidence for the cone. `measure-sky-density.ts`'s core
- * mode owns that question and answers it in the negative; no figure of its own is
- * restated here, in either direction.
+ * Why the set needed it, and what its line on the sheet may claim, is told once, in
+ * the note beside `sky-at-the-rim` in `view-set.mjs` — including what the row is not
+ * evidence for. This describe holds only what a headless run can hold about a frame:
+ * which star the row names, that the star is the edge by the generator's own radial
+ * coordinate rather than by a ruler of this file's, and which words the caption has
+ * not earned. Whether the frame is worth the row is a person's, off the sheet —
+ * which is why the node carrying it is `propose`.
  */
 describe("the rim look row #480 added", () => {
 	/**
@@ -667,10 +661,22 @@ describe("the rim look row #480 added", () => {
 	/** The farthest system from the cluster centre — folded, not a spread `max`,
 	 *  and deterministic on the sheet's own seed. */
 	const farthest = systems.reduce((a, b) => (b.t > a.t ? b : a));
-	/** The row under test, found once. Each test asserts it exists before reading
-	 *  through it, because a missing row has to be an assertion naming the row and
-	 *  not a TypeError that buries which of the two moved. */
+	/** The row under test, found once. */
 	const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+	/**
+	 * Its shot, or an empty object when the row is gone. This exists so every read
+	 * below is a *missing property* rather than a dereference of `undefined`: bun
+	 * keeps executing after a failed `expect`, so a row that vanished mid-file
+	 * would otherwise take the whole file down with a TypeError collected before
+	 * any assertion could name it. The assertions are what report the absence, and
+	 * they can only do that if nothing throws first.
+	 */
+	const shot = (row?.shot ?? {}) as {
+		kind?: string;
+		view?: string;
+		system?: number;
+		aim?: string;
+	};
 	/**
 	 * The system the row *names*, resolved back against the generator. This is the
 	 * fixture as the page will receive it: the literal in `view-set.mjs` is the
@@ -678,9 +684,10 @@ describe("the rim look row #480 added", () => {
 	 * record is that system. `ensureFixture` checks the same thing at the browser
 	 * tier, against the booted page rather than the declared one.
 	 */
-	const named = systems.find(
-		(s) => s.index === (row?.shot as { system?: number }).system,
-	);
+	const named =
+		shot.system === undefined
+			? undefined
+			: systems.find((s) => s.index === shot.system);
 
 	/**
 	 * The row stands where #432's stood in role and not in aim: the farthest star
@@ -692,7 +699,7 @@ describe("the rim look row #480 added", () => {
 	test("it stands at the farthest system of the sheet's own seed", () => {
 		expect(row).toBeDefined();
 		expect(row?.covers).toEqual([431]);
-		expect(row?.shot).toEqual({
+		expect(shot).toEqual({
 			kind: "deep-sky",
 			view: "cockpit",
 			system: farthest.index,
@@ -715,32 +722,46 @@ describe("the rim look row #480 added", () => {
 	});
 
 	/**
-	 * The prohibition, held as text. #432's row was captioned as #100's cone and
-	 * read as a disappointment; a look row that promises only what it shows cannot
-	 * be over-claimed. A caption naming the cone, the Core, or a bearing is the day
-	 * someone quietly re-scoped this row into the thing the measurement foreclosed
-	 * — that day should be a red run. `#478` owns whether the bearing ever gets a
-	 * frame of its own, and its answer is owed a look decision, not a caption.
+	 * Two claims are held, and the caption may make no others. *Where it stands* is
+	 * held above, off the generator, and by `ensureFixture` at the browser tier.
+	 * *Nothing in front of it* is held by the placer: `__emptiestDirection` takes the
+	 * star and every body of the system as subjects and maximises the minimum angle
+	 * from all of them, which is the same guarantee `sky-only`'s caption rests on.
+	 *
+	 * Everything else about the frame is a claim about the cluster, and nothing on
+	 * this branch measures it. "Where they are thinnest" was the first try at this
+	 * caption and it is not one of the two: the emptiest heading avoids the *system's
+	 * own* bodies and knows nothing about the derived field, so it could as easily
+	 * point coreward, where the neighbours are densest. That is the failure
+	 * `#432` was opened over — a caption asserting a fixture property the frames do
+	 * not have — and a row built on the node that learned that lesson must not
+	 * repeat it in its own line of sheet text. So the ban covers the crowding words
+	 * as well as the bearing words, and a caption earns a word like *thinnest* by
+	 * measuring it, which is #478's ground.
 	 */
-	test("its caption promises the field and never names the thing it cannot show", () => {
+	test("its caption claims only the place and the emptiness the placer guarantees", () => {
 		const what = row?.what ?? "";
 		expect(what).not.toBe("");
 		expect(what.toLowerCase()).toContain("rim");
 		expect(what.toLowerCase()).not.toMatch(/core|cone|bearing/);
+		// Anchored, because an unanchored `thin` reads "no*thin*g in front of it" as
+		// a crowding claim. The ban is on the word doing the claiming.
+		expect(what.toLowerCase()).not.toMatch(
+			/\b(thin|dense|crowd|number of|count of)/,
+		);
 	});
 
 	/**
-	 * The heading is the shipped rule — `__emptiestDirection`, which takes the star
-	 * and every body as subjects and maximises the minimum angle from all of them.
-	 * That is why this row needs no clearance arithmetic of its own, and why
-	 * `#432`'s selection rule (the tightest clear cone in the rim third) stays
-	 * dead: an aim is what needed clearance, and an aim is what #478 decides on.
+	 * The heading is the shipped rule and nothing else: no `aim` axis, because an aim
+	 * is what #478 decides on, and it was #432's `aim` — the tightest clear cone in
+	 * the rim third, and the clearance arithmetic that came with it — that this row
+	 * deliberately does not revive.
 	 */
 	test("it aims by the shipped emptiest rule and carries no aim axis", () => {
 		expect(row).toBeDefined();
 		// Non-vacuous: the negative below is worth nothing unless the row is the
 		// kind of shot that has a heading rule at all.
-		expect((row?.shot as { kind?: string }).kind).toBe("deep-sky");
-		expect((row?.shot as { aim?: string }).aim).toBeUndefined();
+		expect(shot.kind).toBe("deep-sky");
+		expect(shot.aim).toBeUndefined();
 	});
 });

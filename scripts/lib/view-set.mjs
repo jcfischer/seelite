@@ -210,24 +210,18 @@ export const SHOT_KINDS = Object.freeze([
  * refuses: a caption asserting a fixture property the frames do not have.
  *
  * **One seed is not one place, and one place is not the whole cluster.** Every
- * row is framed in the system the game boots at, which is `startSystem` — the
- * most *central* well-stocked and orderly one — and a row may name a `system` to
- * stand at instead (#432). One does: `sky-at-the-rim`, at the farthest system from
- * the centre (#480). That is the whole point of it. Until #480 the only frame whose
- * subject was the sky stood at the middle of the cluster and aimed away from it, so
- * the sheet had nothing to say about the sky from anywhere the sky is thin. The row
- * that came before it needed the same affordance in a different role, was measured,
- * judged and removed, and the reason is beside `sky-only`.
- *
- * **The plumbing that row left is now carried by one.** `capture-views.mjs`
- * restores the system with the seed before each view, with the same readback and
- * the same refusal: a row that got a different system than it asked for has to be
- * a red run rather than a wrong picture with the right caption. #432 handed that
- * over unused, by name, as a cost worth paying; #480 is the row that pays it, which
- * is the only reason the readback has ever run outside a test. The half that was
- * worth keeping was never the argument to `gameUrl` but the readback — the one
- * place a wrong-star caption can be caught is the boot that made it — and a row
- * naming a place should fail loudly on its first run rather than be believed.
+ * row is framed in the system the game boots at, which is `startSystem` — the most
+ * *central* well-stocked and orderly one — and a row may name a `system` to stand at
+ * instead (#432). One does: `sky-at-the-rim` (#480). Why the set needed it, the rule
+ * that picked its star, and what its line on the sheet may claim are all told once,
+ * in the note beside that row, and not here. What belongs here is the mechanism.
+ * `capture-views.mjs` restores the system with the seed before each view and reads
+ * the booted index back: a row that got a different system than it asked for has to
+ * be a red run rather than a wrong picture wearing the right caption. The half of
+ * that plumbing worth keeping was never the argument to `gameUrl` but the readback —
+ * the one place a wrong-star caption can be caught is the boot that made it — which
+ * is why it stayed when #432's row was removed, carried by no row for a round and
+ * named out loud as the cost of keeping it.
  *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
@@ -754,6 +748,23 @@ export const VIEWS = Object.freeze([
 	 * actually fill, on the principal's ruling and not on this file's: the cone is
 	 * #478's to decide, and the sky is already the picture he asked for.
 	 *
+	 * **What its caption may claim is measured rather than tasted, and this is the
+	 * one place that account lives.** Two claims are open to it and no more. Where
+	 * it stands: the farthest system of the cluster, recomputed by
+	 * `tests/view-set.test.ts` and refused at the browser tier by `ensureFixture` if
+	 * the page came up anywhere else. And that nothing stands in front of it, which
+	 * is what `__emptiestDirection` guarantees — it takes the star and every body of
+	 * *this system* as subjects and maximises the minimum angle from all of them, the
+	 * same guarantee `sky-only`'s line rests on. What the frame's *crowding* is
+	 * belongs to the derived field, and the placer knows nothing about the derived
+	 * field: it could as easily point coreward, where the neighbours are densest. The
+	 * first draft of this row's line read *"seen from where they are thinnest"*, which
+	 * is a claim about the frame no check on this branch holds and the heading cannot
+	 * ensure — the exact fault this file names above, where it calls a caption
+	 * asserting a fixture property the frames do not have the thing its capture code
+	 * refuses, and the fault #432 existed to catch. A crowding word is earned by
+	 * measuring crowding, and measuring that is #478's ground, not a caption's.
+	 *
 	 * System 115 is the farthest of the 256 from the cluster centre on the sheet's
 	 * own seed, on the generator's own radial coordinate (`SystemRecord.t`) rather
 	 * than a ruler held here, which is what the row's `what` means by *"the
@@ -773,7 +784,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "sky-at-the-rim",
 		covers: [431],
-		what: "Away from the star and every body, at the outermost system on the cluster's rim. The derived sky as a field of real neighbours, seen from where they are thinnest.",
+		what: "Away from the star and every body, at the outermost system on the cluster's rim. The derived sky with nothing in front of it, framed from the edge of the cluster rather than its centre.",
 		shot: { kind: "deep-sky", view: "cockpit", system: 115 },
 	},
 	/**
