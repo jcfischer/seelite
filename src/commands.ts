@@ -943,7 +943,14 @@ const PUNCTUATION_CODES: Readonly<Record<string, string>> = {
  * printed `Digit1` the moment a digit row carried a code.
  */
 export const codeKey = (code: string) =>
-	PUNCTUATION_CODES[code] ?? code.replace(/^(Key|Digit)/, "").toLowerCase();
+	// `Object.hasOwn`, not `??`: a bare index returns an inherited member for
+	// `"constructor"` or `"toString"`, so this would hand back a *function*
+	// instead of falling through. Every caller passes an authored `trigger.code`
+	// today; the capture modal will pass a `KeyboardEvent.code` off the page,
+	// and that is the slice this guard is here for.
+	Object.hasOwn(PUNCTUATION_CODES, code)
+		? (PUNCTUATION_CODES[code] as string)
+		: code.replace(/^(Key|Digit)/, "").toLowerCase();
 
 /**
  * The physical key a character is typed by on the layout the defaults were
@@ -1493,11 +1500,18 @@ export function rebind(
  * that a caller passing an inconsistent pair gets exactly what it asked for.
  */
 function movedTrigger(from: Trigger, to: Trigger): Trigger {
-	if (from.kind !== "key" || to.kind !== "key") {
-		if (from.kind !== to.kind)
-			throw new Error(`cannot move a ${from.kind} onto a ${to.kind}`);
-		return to;
-	}
+	if (from.kind !== to.kind)
+		throw new Error(`cannot move a ${from.kind} onto a ${to.kind}`);
+	// **Only a key is rebindable here, and refusing the rest is the point.**
+	// The first version returned a same-kind non-key `to` verbatim, which let a
+	// `mouse-button` hold be moved onto a click — stored, satisfying no reader,
+	// which is the defect the key branch exists to refuse. Every non-key kind
+	// has its own qualifiers (`action`, `half`, `intent`, `hold`), and a table
+	// of which part of each is movable is the capture modal's to write, since
+	// it is the thing that will admit a stick or a trigger for one capture.
+	// Until then a refusal is the honest answer, and S4 lifts it.
+	if (from.kind !== "key" || to.kind !== "key")
+		throw new Error(`only a key may be rebound here, not a ${from.kind}`);
 	if (!matchesQualifiers(to, from))
 		throw new Error(
 			`a rebind may move a key, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,

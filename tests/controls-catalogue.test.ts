@@ -15,9 +15,11 @@
 import { describe, expect, test } from "bun:test";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
+	DEFAULT_BINDINGS,
 	PANEL_INTENTS,
 	type PanelIntent,
 	TASK_GROUPS,
+	resolveKey,
 	type Trigger,
 } from "../src/commands";
 import { CONTROLS } from "../src/controls-catalogue";
@@ -61,10 +63,18 @@ const sourceKeys = () =>
 	);
 
 describe("the catalogue is complete against the source", () => {
-	test("the two files that used to state keys no longer state any", () => {
+	test("the two files that used to compare keys no longer compare any", () => {
 		// The fold's own claim, and the reason the scan above shrank rather
-		// than breaking: a key left behind in either file is a binding the
+		// than breaking: a key *compared* in either file is a binding the
 		// registry does not own and the `Controls` tab cannot report.
+		//
+		// **Compared, not stated** — the weaker word is the true one, and the
+		// stronger one was wrong for a round. `combat-rig.ts` still ships
+		// `LEGEND`, which names SPACE, X, `/` and Q in a string it draws; the
+		// fold made all four rebindable and the legend will not follow one
+		// when it moves. That is #381's S5, the slice whose whole subject is
+		// every printed name having one owner, and `boundKeys` cannot see it
+		// anyway — a key inside a prose string is not a comparison shape.
 		//
 		// Two things the scanner reads that are not keys, and both are named
 		// rather than filtered by shape. `main.ts` compares
@@ -244,6 +254,82 @@ describe("the catalogue is complete against the source", () => {
 		}
 		// Every entry was used: a row renamed away from its entry is red too.
 		expect(checked).toBe(Object.keys(EFFECTS).length);
+	});
+
+	/**
+	 * **The chord shape — and what is checkable about it** (sage round 3).
+	 *
+	 * The finding was that the per-command row cannot hold a chord: deleting
+	 * an entry from `ALT_CHORDS` would leave the tab printing `Alt + ←` with
+	 * the suite green. The first row written against it asserted exactly that,
+	 * and **it could not fail** — an entry was deleted and the run stayed
+	 * green, because `chordsFor` *derives* the catalogue's chord rows from
+	 * that same table, so the printed row disappears with the entry. The
+	 * replaced row's own `chordOk` was tautological for the same reason.
+	 *
+	 * So the derivation is the guarantee, and what is worth a row is that it
+	 * stays a derivation: a chord **authored** by hand would print without an
+	 * entry behind it, and that is the shape the finding was really about.
+	 */
+	test("no chord is authored — every printed chord is one the table derives", () => {
+		const printed = triggers().flatMap((t) =>
+			t.kind === "key" && t.alt && t.code !== undefined ? [t.code] : [],
+		);
+		expect([...printed].sort()).toEqual(Object.keys(ALT_CHORDS).sort());
+	});
+
+	/**
+	 * And the half that is not derived: the key a chord *stands for* must still
+	 * reach the command that prints it. `main.ts` runs a chord by handing
+	 * `commandKey` the stand-in key, so a command whose bare key moved out from
+	 * under its chord would print `Alt + ←` and run something else — which no
+	 * derivation prevents, because the two halves come from different places.
+	 */
+	test("and the key each chord stands for still reaches the row that prints it", () => {
+		let checked = 0;
+		for (const c of CONTROLS.commands)
+			for (const t of c.currentTriggers) {
+				if (t.kind !== "key" || !t.alt || t.code === undefined) continue;
+				const stands = ALT_CHORDS[t.code] as string;
+				const reached = resolveKey(DEFAULT_BINDINGS, {
+					key: stands,
+					view: "cockpit",
+				});
+				const at = `${c.id}: ${JSON.stringify(t.key)}+alt stands for ${JSON.stringify(stands)}`;
+				expect(`${at}: ${reached.includes(c.id)}`).toBe(`${at}: true`);
+				checked++;
+			}
+		expect(checked).toBe(Object.keys(ALT_CHORDS).length);
+	});
+
+	/**
+	 * **And the surface shape, for the same reason.** `panel.cursorUp` and
+	 * `fly.pitchDown` are both reached, so the per-command row is satisfied by
+	 * either; what it cannot say is that the *surface-scoped* arrow is the one
+	 * the console walks on. `main.ts` resolves that branch with an explicit
+	 * `surface: "requests"`, so the registry's answer there is the check.
+	 */
+	test("every surface-scoped key is resolved on that surface and not off it", () => {
+		let checked = 0;
+		for (const c of CONTROLS.commands)
+			for (const t of c.currentTriggers) {
+				if (t.kind !== "key" || t.surface === undefined) continue;
+				const on = resolveKey(DEFAULT_BINDINGS, {
+					key: t.key,
+					surface: t.surface,
+					view: "cockpit",
+				});
+				const off = resolveKey(DEFAULT_BINDINGS, {
+					key: t.key,
+					view: "cockpit",
+				});
+				const at = `${c.id}: ${JSON.stringify(t.key)} on ${t.surface}`;
+				expect(`${at}: ${on.includes(c.id)} / ${off.includes(c.id)}`).toBe(
+					`${at}: true / false`,
+				);
+				checked++;
+			}
+		expect(checked).toBeGreaterThan(4);
 	});
 
 	test("the six panel intents each have a row", () => {
