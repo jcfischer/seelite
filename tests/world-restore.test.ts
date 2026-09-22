@@ -18,7 +18,14 @@
 import { describe, expect, test } from "bun:test";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import { codeOf } from "./lib/source-scan";
-import { makeWorld, restoreWorld, START_GALAXY } from "../src/sim";
+import {
+	canResetWorldToStart,
+	makeWorld,
+	makeWorldAtSystem,
+	restoreWorld,
+	START_GALAXY,
+} from "../src/sim";
+import { arrivalPoint } from "../src/system";
 
 const SEED = 0x5ee11e;
 
@@ -35,6 +42,15 @@ describe("restoreWorld", () => {
 		const body = codeOf("src/sim.ts").split("export function makeWorld")[1];
 		expect(body).toContain("restoreWorld(");
 		expect(body.split("}")[0]).not.toContain("makeSystem(");
+		// **And the pinned boot goes through the same door** (#432). The rule is
+		// that there is one way to build a world; a second path introduced for
+		// `?system=` is how a fixture boot and a load come to disagree about what
+		// "a new game" means, quietly and for whichever one nobody re-reads.
+		const pinned = codeOf("src/sim.ts").split(
+			"export function makeWorldAtSystem",
+		)[1];
+		expect(pinned.split("}")[0]).toContain("restoreWorld(");
+		expect(pinned.split("}")[0]).not.toContain("makeSystem(");
 		// And the arguments a new game means: galaxy 0, the start system, t=0.
 		const start = startSystem(generateGalaxy(SEED, START_GALAXY));
 		const fresh = makeWorld(SEED);
@@ -73,5 +89,66 @@ describe("restoreWorld", () => {
 		expect(() => restoreWorld(SEED, -1, 0, 0)).toThrow(/galaxy/);
 		expect(() => restoreWorld(SEED, 0, 999, 0)).toThrow(/system/);
 		expect(() => restoreWorld(SEED, 0, 0, Number.NaN)).toThrow(/clock/);
+	});
+});
+
+/**
+ * `makeWorldAtSystem` is `?system=`'s half of world construction (#432): a new
+ * game — galaxy 0, clock 0, the ship on the arrival point — at a system the
+ * caller named instead of at `startSystem`.
+ *
+ * It is a second name for the same construction rather than a second path
+ * beside it, which is what the row above holds for `makeWorld`. What is
+ * checkable here is which record the argument reached: every row below asks for
+ * a system that is *not* the start system, so a build that took the parameter
+ * and threw it away is red rather than green-and-quiet.
+ */
+describe("makeWorldAtSystem: a new game at a named system", () => {
+	const galaxy = generateGalaxy(SEED, START_GALAXY);
+	const start = startSystem(galaxy);
+	// Chosen by index arithmetic rather than by literal, so a generator change
+	// that moves the start system cannot quietly make this the start system and
+	// turn every row here into a tautology.
+	const asked = (start.index + 7) % galaxy.systems.length;
+	const world = makeWorldAtSystem(SEED, asked);
+
+	test("the named system is the one the world is in, not the start system", () => {
+		expect(asked).not.toBe(start.index);
+		expect(world.system.record.index).toBe(asked);
+		expect(world.galaxy.index).toBe(START_GALAXY);
+		expect(world.gameTime).toBe(0);
+	});
+
+	test("the ship is at the named system's arrival point", () => {
+		// The discriminator is *which record* the arrival was computed from: a
+		// build that swapped the system in and left the start system's arrival
+		// point in place passes every index check above and puts the ship on the
+		// wrong star. `arrivalPoint` is the shipped one, so this row holds the
+		// pairing and not the arithmetic — `tests/arrival.test.ts` holds that.
+		const record = galaxy.systems[asked];
+		expect(world.system.record.index).toBe(asked);
+		expect(world.ship.pos).toEqual(
+			arrivalPoint(record, world.system.contents, null, 0),
+		);
+	});
+
+	test("an index the galaxy does not have is refused, not clamped", () => {
+		expect(() => makeWorldAtSystem(SEED, galaxy.systems.length)).toThrow(
+			/system/,
+		);
+		expect(() => makeWorldAtSystem(SEED, -1)).toThrow(/system/);
+	});
+
+	/**
+	 * A consequence of the pin, recorded rather than assumed. `resetWorldToStart`
+	 * returns a world to *the start system*, so a pinned world is one it declines
+	 * to reset — which is the right answer, and worth a row because the predicate
+	 * reads as a property of the world rather than of how it was made. Why
+	 * `?system=` writes nothing is a different argument, and `commander-flow.ts`
+	 * carries it.
+	 */
+	test("a pinned world is not the start system, and says so", () => {
+		expect(canResetWorldToStart(world)).toBe(false);
+		expect(canResetWorldToStart(makeWorld(SEED))).toBe(true);
 	});
 });

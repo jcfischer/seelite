@@ -19,7 +19,8 @@
  * the module handed to the geometry the scene graph is drawing with — plus the
  * geometry's own identity and the layer's parent chain. Nothing here renders or
  * reads a pixel back, so **a draw call that never happened, or an upload that the
- * driver dropped, passes all nine checks**; the claim that the sky is actually on
+ * driver dropped, passes every check in this file**; the claim that the sky is
+ * actually on
  * screen belongs to `probe-output-stage.mjs`, which counts lit pixels of the
  * composited frame (`the backdrop is still there when the frame is multisampled`).
  * That row is a floor on **the backdrop as a whole**, and it predates this PR: it
@@ -43,6 +44,14 @@
  *   ended up in the far layer would parallax, which is a bug no headless test
  *   can express — the parallax itself is read on the sheet, but the parentage
  *   that causes it is read here.
+ *
+ * #432's two rows read the one thing no headless row can: that `?system=` moved a
+ * *running* game to a system the generator did not pick. The row it was built for
+ * — a `deep-sky` frame aimed along the Core bearing — was measured, judged on the
+ * sheet, and removed; `scripts/measure-sky-density.ts`'s core mode is the reading
+ * that decided it, and the note beside `sky-only` in `lib/view-set.mjs` is the
+ * account. What the affordance outlived the row for, and what these two rows
+ * hold, is the way to stand anywhere at all.
  *
  * The probe drives the shipped game through `window.__seelite` and reads
  * constants off the page (`units.BACKDROP_RADIUS`) rather than restating them.
@@ -338,6 +347,76 @@ check(
 	"on the rebuilt buffer too, the mounted sizes fall as the distances rise",
 	monotoneAfter.ok,
 	monotoneAfter.why,
+);
+
+// ---------------------------------------------------------------------------
+// #432: `?system=` reaches a system the game would not have booted at.
+//
+// The headless tier holds the parse (`boot-system.test.ts`), the boot plan
+// (`commander-flow.test.ts`) and the world built at a named index
+// (`world-restore.test.ts`). What it cannot hold is that the three agree through a
+// *running* page: `querySystem`, `planBoot` and `makeWorldAtSystem` are wired
+// inside `main.ts`, which builds a renderer at module scope and so cannot be
+// imported under bun. Two rows close that gap, and neither of them names a
+// system.
+//
+// **The index is read off the page it is asked of.** The start system and the
+// length of the galaxy both come from the booted world, and the probe asks for
+// one seven along, wrapped inside that galaxy — so it is asking for a system the
+// generator did not pick and one that exists, without either figure being copied
+// here. A probe holding its own copy of a fixture is a probe that keeps passing
+// after the thing it exists to test has moved.
+//
+// The second row asks for one index past the end and expects the page's own
+// politeness — say it, and boot the start system — because `capture-views.mjs`
+// refuses that case loudly, and the two halves of one affordance disagreeing is
+// not something a contact sheet should be the one to find out.
+// ---------------------------------------------------------------------------
+
+const booted = await page.evaluate(() => {
+	const g = window.__seelite;
+	return {
+		start: g.world.system.record.index,
+		count: g.world.galaxy.systems.length,
+	};
+});
+
+/** Seven along from where the game put the ship, wrapped inside this galaxy. */
+const asked = (booted.start + 7) % booted.count;
+
+await page.goto(gameUrl(origin, { seed: SEED, system: asked }));
+await bootedGame(page);
+const elsewhere = await page.evaluate(
+	() => window.__seelite.world.system.record.index,
+);
+
+check(
+	"`?system=` boots the running game at the system it was asked for",
+	elsewhere === asked && asked !== booted.start,
+	`asked for ${asked}, standing in system ${elsewhere}; the game boots at ${booted.start} on its own, so arriving elsewhere is the whole of the affordance`,
+);
+
+const said = [];
+page.on("console", (message) => {
+	if (message.type() === "warning" || message.type() === "error")
+		said.push(message.text());
+});
+await page.goto(gameUrl(origin, { seed: SEED, system: booted.count }));
+await bootedGame(page);
+const refused = await page.evaluate(
+	() => window.__seelite.world.system.record.index,
+);
+
+// **Hoisted, because a check that says its own predicate twice has two edit
+// sites.** Both halves belong in the message — a reader of a red run needs to know
+// which of the two failed — and neither belongs twice in the code.
+const bootedTheStart = refused === booted.start;
+const refusalWasSaid = said.some((w) => w.includes(`?system=${booted.count}`));
+
+check(
+	"an index the galaxy does not have is said, and the start system boots instead",
+	bootedTheStart && refusalWasSaid,
+	`${bootedTheStart ? `system ${refused} booted, the start system, not clamped to the last index` : `system ${refused} booted for an index the galaxy does not have`}${refusalWasSaid ? ", and the refusal was said in the console" : ", and nothing was said about it"}`,
 );
 
 await browser.close();

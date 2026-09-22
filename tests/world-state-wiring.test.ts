@@ -230,13 +230,31 @@ describe("the Game's world writes", () => {
 		// still export. A store attached to that slot would write over it on the
 		// first dirty event: the next dock, the next trade, the relay observe on
 		// the next jump. The guard is on the construction, not on the write.
-		expect(MAIN).toContain("!noSave && plan.fault === null");
+		//
+		// **`plan.writesNothing` since #432, and the guard got wider rather than
+		// moving.** It used to read `!noSave`, one cause read off the URL at the
+		// call site; a pinned `?system=` is a second cause, and a shell that
+		// re-derived the permission from either one of them instead of reading the
+		// plan's answer would attach a store where the plan says to write nothing.
+		// Why the second cause has to be said at all is §11.6 of
+		// `persistent-world-state.md`, which owns the rule.
+		expect(MAIN).toContain("!plan.writesNothing && plan.fault === null");
 		// **And on the one-shot path**, which attaches with no such guard: a
 		// record that parses and will not restore turns the plan into an overlay
 		// boot there. `withRestoreFault` is tested headless; this pins that the
 		// boot calls it. Textual, so it proves the call is present and nothing
 		// about what surrounds it.
 		expect(MAIN).toContain("plan = withRestoreFault(plan, error);");
+		// **And the retry is the save's, not every construction's.** Since #432 the
+		// same `catch` can be reached by a world that would not build at a *named
+		// system*, where `plan.loaded` is already null; retrying there hands the
+		// build the argument that just threw and labels the cause "the loaded save".
+		// So the guard comes first, and its order relative to the retry is the whole
+		// of what this row holds.
+		const guarded = MAIN.indexOf("if (plan.loaded === null) {");
+		const retried = MAIN.indexOf("plan = withRestoreFault(plan, error);");
+		expect(guarded).toBeGreaterThan(-1);
+		expect(guarded).toBeLessThan(retried);
 	});
 
 	test("permadeath is chosen at new game and cannot be flipped later", () => {

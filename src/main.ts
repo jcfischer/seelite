@@ -230,6 +230,7 @@ import {
 	jumpWorldTo,
 	makeSystem,
 	makeWorld,
+	makeWorldAtSystem,
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
@@ -591,6 +592,7 @@ import {
 	webSlotLocks,
 } from "./save-store";
 import { type BootMode, bootMode } from "./boot-mode";
+import { querySystem } from "./boot-system";
 import {
 	attachCommander,
 	CommanderSwitch,
@@ -3153,13 +3155,30 @@ class Game {
 	 * A new game, or a loaded one.
 	 *
 	 * **The load is a constructor arm rather than a method**, and that is
-	 * `resetWorldToStart`'s argument applied: `Game` calls `makeWorld` exactly
-	 * once and holds per-system caches deliberately never invalidated on that
-	 * basis — the baked `environmentMap`, the `interiors` berth catalogue. A
-	 * `load()` that swapped `this.world` mid-session would be the world rebuild
-	 * that comment rules out.
+	 * `resetWorldToStart`'s argument applied: `Game` builds its world exactly
+	 * once — `makeWorld`, or `makeWorldAtSystem` for a boot that named a system
+	 * — and holds per-system caches deliberately never invalidated on that basis
+	 * — the baked `environmentMap`, the `interiors` berth catalogue. A `load()`
+	 * that swapped `this.world` mid-session would be the world rebuild that
+	 * comment rules out.
+	 *
+	 * `atSystem` is `?system=` (#432): a new game *elsewhere*. It has nowhere to
+	 * go on the load arm — a save names its own system — and `planBoot` keeps the
+	 * two apart by writing nothing for a pinned boot. That is another module's
+	 * promise and this is where it is relied on, so the pair is refused here too
+	 * rather than answered by quietly discarding one of them: a constructor that
+	 * accepts a request and drops half of it is a state the type allows and no
+	 * caller can see.
 	 */
-	constructor(seed: number, save: SaveEnvelope | null = null) {
+	constructor(
+		seed: number,
+		save: SaveEnvelope | null = null,
+		atSystem: number | null = null,
+	) {
+		if (save !== null && atSystem !== null)
+			throw new Error(
+				`Game: a save names its own system, so ${atSystem} has nowhere to go — boot at a named system writes no save to load`,
+			);
 		if (save) {
 			// `restoreWorld` rather than `makeWorld` plus a jump: `jumpWorldTo`
 			// throws across a galaxy boundary on purpose, so a save taken in
@@ -3227,7 +3246,12 @@ class Game {
 				this.restoredAttitude = true;
 			}
 		} else {
-			this.world = makeWorld(seed);
+			// A named system is the same new game at another star (#432), and the
+			// `visit` below reads the record off the world rather than off
+			// `startSystem`, so the visited flag lands on the system the ship is
+			// actually in — which is the half that would have quietly been a lie.
+			this.world =
+				atSystem === null ? makeWorld(seed) : makeWorldAtSystem(seed, atSystem);
 			this.commerceWorld = newPersistentWorld(seed);
 			// §7's visited flag for the system a new game starts in. Recorded
 			// here rather than only on arrival, so the set is "everywhere the
@@ -14410,7 +14434,12 @@ if (query.has("model-viewer")) {
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
-	const noSave = query.has("no-save");
+	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
+	// #432). Where the permission is computed and why it is the boot's rather than
+	// the URL's is that section's; what is specific here is that this file reads
+	// one field instead of re-deriving it from one of the permission's two causes.
+	// Read once, like the seed below: an unusable value warns as it is read.
+	const askedSystem = querySystem(query);
 	// **One Commander catalog since #437**, and one offer source since #411.
 	// The fixture trial used to get its own IndexedDB database and lock prefix
 	// on top of a save encoding the normal catalog refused; both are gone.
@@ -14432,8 +14461,9 @@ if (query.has("model-viewer")) {
 		catalog,
 		backend: saveBackend,
 		boot,
-		noSave,
+		noSave: query.has("no-save"),
 		querySeed: askedSeed,
+		pinnedSystem: askedSystem,
 	});
 	for (const line of [plan.fault, plan.notice])
 		if (line !== null) console.warn(`save: ${line}`);
@@ -14445,11 +14475,23 @@ if (query.has("model-viewer")) {
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
 	try {
-		game = new Game(worldSeed, plan.loaded);
+		game = new Game(worldSeed, plan.loaded, askedSystem);
 	} catch (error) {
+		// **Two failures reach here and only one of them is the save's.** With a
+		// system asked for, `planBoot` returns before any record is read, so
+		// `plan.loaded` is already `null` and nothing here came from a save: it
+		// came from building the world at the named index. The retry below hands
+		// that build the same index that just threw, and calls the cause "the
+		// loaded save would not restore" — a wrong name on the one failure worth
+		// reading. It escapes either way, so what is gained by saying it is that
+		// the line above the stack names the thing that failed.
+		if (plan.loaded === null) {
+			console.error(`world: system ${askedSystem} would not build`, error);
+			throw error;
+		}
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
-		game = new Game(worldSeed, null);
+		game = new Game(worldSeed, null, askedSystem);
 	}
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
@@ -14549,7 +14591,10 @@ if (query.has("model-viewer")) {
 	};
 	let openAtBoot = plan.mode === "overlay";
 	if (plan.mode === "direct") {
-		if (!noSave && plan.fault === null) await attach(plan.slot);
+		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a
+		// boot write nothing, and the shell that attaches a store has to read the
+		// plan's answer rather than re-derive it from one of the two causes.
+		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
@@ -14562,8 +14607,8 @@ if (query.has("model-viewer")) {
 		}
 	}
 	game.commanderOverlay = mountCommanderOverlay({
-		catalog: noSave ? null : catalog,
-		switcher: noSave
+		catalog: plan.writesNothing ? null : catalog,
+		switcher: plan.writesNothing
 			? null
 			: new CommanderSwitch({
 					catalog,
@@ -14590,7 +14635,7 @@ if (query.has("model-viewer")) {
 			// at zero that can never die again. The store's own lock goes back
 			// first, or the one-shot below is refused by this very tab.
 			if (game.dead) {
-				if (!noSave) {
+				if (!plan.writesNothing) {
 					game.saveStore?.release();
 					try {
 						await catalog.chooseCommander(slot);
@@ -14601,7 +14646,7 @@ if (query.has("model-viewer")) {
 				window.location.reload();
 				return null;
 			}
-			const fault = noSave ? null : await attach(slot);
+			const fault = plan.writesNothing ? null : await attach(slot);
 			if (fault === null) game.clockHeld = false;
 			return fault;
 		},

@@ -141,8 +141,37 @@ async function applyCaptureQuality(page) {
  * the ship to the arrival point and drops what the previous boot remembered —
  * `deep-sky` reads it, and it is only safe at any position in the list if
  * every boot leaves one behind.
+ *
+ * **A row may declare a `system` as well as a `seed`, and it is restored by the
+ * same act** (#432). The reasoning is identical: one seed is not one place, and
+ * a row that needs to stand at another star has to say so and have the boot
+ * carry it there, rather than depend on the view above it having left the page
+ * somewhere. What is *new* here is that the affordance can refuse — `?system=`
+ * warns and boots the start system for an index it cannot use — so the restore
+ * reads the booted index back and throws. A seed the page refused would have put
+ * the whole run's frames in the wrong galaxy and announced itself everywhere at
+ * once; a refused system puts one row's frame in the wrong star with a caption
+ * naming the right one.
+ *
+ * It is called `ensureFixture` and not `ensureSeed` because it restores both
+ * halves — and the name is a checked contract, since `tests/view-set.test.ts`
+ * pins the call site as a string to prove the loop restores them together. A name
+ * that says half of what the function guarantees is a name that misleads exactly
+ * where a reader is deciding whether they can trust it.
  */
 let currentSeed = null;
+/**
+ * The system the loaded page was asked to boot at, or `null` for the start
+ * system — the other half of the fixture a row declares (#432).
+ *
+ * **Read back, not assumed.** `?system=` is polite about an index it cannot use:
+ * it warns and boots the start system, which is right for a person at a URL and
+ * wrong for a capture, because the row is captioned with the system it asked for.
+ * So the booted index is compared here, on the page that booted, and a mismatch
+ * throws the way a missing view throws — a sheet with a wrong picture in it reads
+ * exactly like a whole one.
+ */
+let currentSystem = null;
 /**
  * Set by a placer that writes world state — the duel's kill (#324 part d) — so
  * the next view boots on a world with no save, as the first boot does.
@@ -155,8 +184,8 @@ let currentSeed = null;
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureSeed(page, seed) {
-	if (currentSeed === seed && !worldWritten) return;
+async function ensureFixture(page, seed, system = null) {
+	if (currentSeed === seed && currentSystem === system && !worldWritten) return;
 	if (worldWritten) {
 		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
 			waitUntil: "load",
@@ -175,14 +204,26 @@ async function ensureSeed(page, seed) {
 	}
 	// `raider: "off"`: traversals cruise, and a leg-law raider would move the
 	// frame. The duel placer forces its own raider, which this does not stop.
-	await page.goto(gameUrl(SERVING, { seed, raider: "off" }), {
+	// `system` is left off the URL when the row declares none, which is every
+	// row written before #432 and every row that is not a frame of the rim.
+	await page.goto(gameUrl(SERVING, { seed, raider: "off", system }), {
 		waitUntil: "load",
 	});
 	await bootedGame(page);
+	if (system !== null) {
+		const booted = await page.evaluate(
+			() => window.__seelite.world.system.record.index,
+		);
+		if (booted !== system)
+			throw new Error(
+				`capture: ${seed ? `seed ${seed} ` : ""}system ${system} was asked for and system ${booted} booted — the page refuses an index it cannot use, quietly and for a person at a URL, so the capture is the one that has to refuse loudly`,
+			);
+	}
 	await applyCaptureQuality(page);
 	await page.evaluate(() => window.__rememberBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
+	currentSystem = system;
 }
 
 /**
@@ -291,7 +332,7 @@ const PLACERS = {
 	duel: async (page, shot) => {
 		// **The next view boots on a fresh world** (sage #330). A duel leaves the
 		// page changed — an encounter, a kill with a destroyed slot, and for the
-		// log a clock 601 s ahead — and `ensureSeed` reloaded only on a seed
+		// log a clock 601 s ahead — and `ensureFixture` reloaded only on a seed
 		// change, so the same-seed berth views after it ran on that page, 697 to
 		// 1036 s into the clock. Marked before placing, so a placer that throws
 		// still leaves the page marked.
@@ -430,6 +471,13 @@ const PLACERS = {
 		// Back to the arrival point first. Turning the camera alone left the ship
 		// wherever the previous view had put it, which made one view of a
 		// *canonical* set a function of the order of the array above it.
+		//
+		// One heading rule, `__emptiestDirection`. #432 added a second — aim along
+		// the **Core bearing**, through `galaxy-frame.ts`'s transform rather than
+		// arithmetic here, which is #430's reason for existing — and removed it in
+		// the same PR: the row it was for cannot show its subject at this cluster's
+		// population, and `measure-sky-density.ts`'s core mode is the reading that
+		// said so. See the note beside `sky-only` in `lib/view-set.mjs`.
 		await page.evaluate(async () => {
 			await window.__returnToBootPosition();
 			const g = window.__seelite;
@@ -672,13 +720,18 @@ try {
 		if (view.shot.kind !== "workbench-interior") {
 			// Before the view is set, because a page load resets the game to the
 			// cockpit and would undo it.
-			await ensureSeed(page, view.shot.seed ?? SEED);
+			await ensureFixture(
+				page,
+				view.shot.seed ?? SEED,
+				view.shot.system ?? null,
+			);
 			await setView(page, view.shot.view);
 		} else {
 			// The workbench is not the game and carries no seed. Its own
-			// navigation leaves the page somewhere `ensureSeed` cannot reason
+			// navigation leaves the page somewhere `ensureFixture` cannot reason
 			// about, so the next view — there is none today — starts by navigating.
 			currentSeed = null;
+			currentSystem = null;
 		}
 		const subject = await PLACERS[view.shot.kind](page, view.shot);
 		// **Again, after placing**, because placing can move the view. The

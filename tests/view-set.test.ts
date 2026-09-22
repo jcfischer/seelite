@@ -109,16 +109,30 @@ describe("the view set itself", () => {
 		expect(from).toBeGreaterThan(0);
 		expect(to).toBeGreaterThan(from);
 		const loop = source.slice(from, to).replace(/\s+/g, " ");
-		expect(loop).toContain("await ensureSeed(page, view.shot.seed ?? SEED);");
-		// And no placer navigates on a seed of its own any more. `PLACERS` is the
-		// object the loop dispatches through, so a `shot.seed` read inside it is
-		// exactly the mechanism that came out.
+		// Both halves of the fixture a row may declare, restored by one call: the
+		// seed, and the system since #432 — hence `ensureFixture` rather than
+		// `ensureSeed`, because the name is pinned here and a name that describes
+		// half of what a function guarantees is a name that misleads at the call
+		// site. A row that names a system and a loop that drops it is a caption on
+		// a start-system frame.
+		//
+		// A pattern and not a `toContain`, because the longer name is what the
+		// formatter decides to wrap, and whitespace after `(` is exactly the kind
+		// of change this row must stay silent about.
+		expect(loop).toMatch(
+			/await ensureFixture\(\s*page,\s*view\.shot\.seed \?\? SEED,\s*view\.shot\.system \?\? null,?\s*\);/,
+		);
+		// And no placer navigates on a fixture of its own any more. `PLACERS` is
+		// the object the loop dispatches through, so a `shot.seed` read inside it
+		// is exactly the mechanism that came out — and the same trap exists for
+		// the system, so it is refused in the same breath.
 		const placers = source.slice(
 			source.indexOf("const PLACERS = {"),
 			source.indexOf("\n};", source.indexOf("const PLACERS = {")),
 		);
 		expect(placers.length).toBeGreaterThan(200);
 		expect(placers).not.toContain("shot.seed");
+		expect(placers).not.toContain("shot.system");
 	});
 
 	/** Three views name their own seed, and every one does it because the
@@ -152,7 +166,11 @@ describe("the view set itself", () => {
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
 		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded. A literal and not
+		// the Controls tab open and folded. (#432 added a twenty-ninth — a rim row
+		// aimed along the Core bearing — and removed it in the same PR, on the
+		// principal's reading of the frame plus the density arm in
+		// `measure-sky-density.ts`. The count did not move, and the row's absence
+		// is explained where it stood rather than here.) A literal and not
 		// `VIEWS.length`, which is
 		// the whole point: a view deleted by accident has to be a red run, and a
 		// check derived from its own subject cannot be one.
@@ -188,9 +206,30 @@ describe("the view set itself", () => {
 				},
 				{ name: "no-radii", shot: { kind: "station-axis", station: "trade" } },
 				{ name: "bad-kind", shot: { kind: "improvised" } },
+				// **A `system` that is not an index** (#432). `?system=` refuses an
+				// index the galaxy does not have — politely, on the page, where the
+				// refusal is a console warning and the start system boots anyway. A
+				// fractional or stringy value in a row would therefore produce the
+				// wrong picture wearing the right caption, which is the one failure
+				// this function exists to make a name instead of a squint.
+				{
+					name: "system-not-an-index",
+					shot: { kind: "deep-sky", system: 161.5 },
+				},
+				// A whole-number system on a row that does not use one is well
+				// formed: `system` is a boot parameter and not a kind's payload.
+				{
+					name: "somewhere-else",
+					shot: {
+						kind: "berth",
+						station: "trade",
+						berth: "overhead-deep",
+						system: 3,
+					},
+				},
 				{ name: "fine", shot: { kind: "deep-sky" } },
 			]),
-		).toEqual(["no-angle", "no-radii", "bad-kind"]);
+		).toEqual(["no-angle", "no-radii", "bad-kind", "system-not-an-index"]);
 	});
 
 	test("every covered id is a lever on the map", () => {
@@ -431,8 +470,8 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — twenty-eight since #372 added the two
-		// Controls tab views.
+		// many views the set declares — which is the count row's business, not this
+		// one's, and this literal moves with it.
 		expect(html).toContain("· clock 0.6–11.4s");
 		expect(html).not.toContain("pinned");
 	});
@@ -542,5 +581,55 @@ describe("the contact sheet", () => {
 		// And the same run is incomplete against the real set, which is the half
 		// that proves the parameter is doing the deciding.
 		expect(() => contactSheet([run])).toThrow("cockpit-arrival");
+	});
+});
+
+/**
+ * #432's rim row: built, captured, judged, and removed in the same PR.
+ *
+ * The set got a second `deep-sky` row standing at a rim system and aimed along the
+ * **Core bearing**, which needed the `?system=` boot affordance to exist at all —
+ * that half shipped. The frame did not: the principal's reading of it was *"few
+ * dots, neither wall of dots or cone of lights"*, and `measure-sky-density.ts`'s
+ * core mode prints why, in the one comparison that decides it — the crowded
+ * heading's points per square degree against the density the invented population
+ * already lays down in *every* direction. No figure is restated here, per that
+ * file's own rule about a third copy: what it prints, over every observer of the
+ * sweep, is a bound rather than an average, and the bound is under the floor.
+ * `CONTEXT.md` said as much in advance: the Core bearing carries information
+ * rather than light.
+ *
+ * What the node therefore leaves behind is the affordance, the measurement, and
+ * the node the measurement opened. These two rows keep the removal honest.
+ */
+describe("the rim sky row #432 built and removed", () => {
+	/**
+	 * The node's own prohibition, and the reason the row was added *beside*
+	 * `sky-only` rather than instead of it: `sky-only` declares `covers: [100,
+	 * 200]`, so relocating it would have re-baselined #200's dither evidence with
+	 * it. "The arrival point, empty sky" is an honest frame of the world the game
+	 * actually starts the player in, and it survives the row that replaced it.
+	 */
+	test("sky-only still stands at the arrival point and aims away from everything", () => {
+		const skyOnly = VIEWS.find((v) => v.name === "sky-only");
+		expect(skyOnly?.covers).toEqual([100, 200]);
+		expect(skyOnly?.shot).toEqual({ kind: "deep-sky", view: "cockpit" });
+	});
+
+	/**
+	 * `?system=` ships, `capture-views.mjs` will restore a named system beside the
+	 * seed for any row, and nothing in the set asks for one. That is a decision
+	 * rather than an oversight, and this row is what makes it one: the day the
+	 * derived layer's population moves far enough for a rim frame to show the cone,
+	 * a row here will name a system, and this row goes red with it.
+	 */
+	test("no row in the set names a system to stand at", () => {
+		// Cast rather than a declaration: `system` is legal on a shot and no row
+		// uses it, so the inferred union of the literals in `view-set.mjs` has no
+		// such property to read. `malformedShots` reads it the same way.
+		const declaring = VIEWS.filter(
+			(v) => (v.shot as { system?: number }).system !== undefined,
+		);
+		expect(declaring.map((v) => v.name)).toEqual([]);
 	});
 });

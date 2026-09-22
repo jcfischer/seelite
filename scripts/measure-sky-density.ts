@@ -724,6 +724,18 @@ function modeCore(): void {
 			t < 1 / 3 ? "core third" : t < 2 / 3 ? "middle third" : "rim third";
 		thirds[key].push(r);
 	}
+	// The conversion is bucket-independent, so it is written once: a cone's solid
+	// angle in square degrees, the derived points a share of the sky hands to it,
+	// and the invented layer's own density over the whole sphere. The count is
+	// `SYSTEMS_PER_GALAXY - 1`, the figure `assertPointCount` holds on every sweep
+	// iteration — pairing the mean share with one iteration's count would be a
+	// mean over radii multiplied by a single observer's sky.
+	const coneDeg2 =
+		2 * Math.PI * (1 - Math.cos(CORE_CONE_RAD)) * (180 / Math.PI) ** 2;
+	const faintPer100 =
+		(FAINT_COUNT / (4 * Math.PI * (180 / Math.PI) ** 2)) * 100;
+	const per100 = (share: number) =>
+		((share * (SYSTEMS_PER_GALAXY - 1)) / coneDeg2) * 100;
 	for (const [key, bucket] of Object.entries(thirds)) {
 		if (bucket.length === 0) throw new Error(`measure-sky-density: no ${key}`);
 		const mean = (pick: (r: (typeof bucket)[0]) => number) =>
@@ -745,6 +757,58 @@ function modeCore(): void {
 				(1 - Math.cos(CORE_CONE_RAD)) / 2,
 				3,
 			)})`,
+		);
+		// **The reading that ended #432's rim sky row, and the one §12 does not
+		// carry.** A cone's *share* answers "is this heading more crowded than a
+		// random one", which is #100's question and is not a question about
+		// visibility. What a frame shows is points per square degree, and the
+		// invented population lays a floor under that in *every* direction; below
+		// the floor a crowded heading is not a brightening at all, it is a sparser
+		// set of large discs sitting inside a denser field of small ones. That is
+		// the whole of the principal's "few dots, neither wall of dots or cone of
+		// lights", and it is arithmetic rather than taste.
+		//
+		// And it is not a brightness reading either: every derived disc is at least
+		// `BRIGHT_SIZE_MIN`, against the faint law's `FAINT_SIZE_MIN`..`FAINT_SIZE_MAX`
+		// skewed to its floor. The derived points are the larger ones. It is count
+		// per area, which is what an eye resolves as a surface.
+		//
+		// **Mean and best, printed apart, because the two license different
+		// sentences.** The mean bounds what an average observer is given; the best
+		// observer in the bucket is the strongest case the arm can make for the row,
+		// and it is the one that had to fail for the removal to be about the cluster
+		// rather than about a bad choice of star.
+		const meanPer100 = per100(mean((r) => r.coneShare));
+		const bestPer100 = per100(
+			maxOf(
+				bucket.map((r) => r.coneShare),
+				"cone share",
+			),
+		);
+		console.log(
+			`          points per 100 deg² inside that cone — mean ${fig("cone mean per 100 deg2", meanPer100)}, best observer ${fig("cone best per 100 deg2", bestPer100)} — against the invented layer's own density of ${fig("faint per 100 deg2", faintPer100)} everywhere, so its best case is ${fig("best cone over faint density", bestPer100 / faintPer100)}× the floor the same sky has behind it in every direction`,
+		);
+	}
+	if (rows.length > 0) {
+		// **The sweep's own strongest case, and what this arm does not bound.** The
+		// bucket maxima are maxima over a partition of every observer, so the
+		// largest of them is the largest: the single best star in the cluster, aimed
+		// along the **Core bearing**, in the widest cone this mode prints. That is
+		// the sentence the removal rests on, and it is a bound rather than an
+		// average — which is why the row was removed rather than re-aimed.
+		//
+		// What it does *not* bound is an arbitrary heading. The cone here is the one
+		// *on the centre*, because that is the bearing #100's ruling is about and the
+		// row existed to point at it; a search over all headings is a different
+		// question, and this mode does not run it.
+		const best = per100(
+			maxOf(
+				rows.map((r) => r.coneShare),
+				"cone share",
+			),
+		);
+		console.log(
+			`          the strongest case over all ${rows.length} observers is ${fig("sweep best per 100 deg2", best)} points per 100 deg², ${fig("sweep best over faint density", best / faintPer100)}× the invented layer's floor — no system aimed along the Core bearing reaches it, and an arbitrary heading is a question this mode does not run`,
 		);
 	}
 }

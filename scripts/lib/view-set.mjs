@@ -156,9 +156,13 @@ export const LEVERS = Object.freeze({
  *   lit, 180 puts it beyond the subject and the subject a silhouette. #99's
  *   fill exists because the second case rendered the hull as a black cutout,
  *   and the sheet has to contain the case the fix was made for.
- * - `deep-sky` — at the arrival point, looking away from the star and every
- *   body. The only view where the backdrop is the subject rather than the
- *   thing behind one.
+ * - `deep-sky` — at the arrival point, with the backdrop as the subject rather
+ *   than the thing behind one, aimed by `__emptiestDirection` at the heading with
+ *   the least on it, which is what a frame for *nothing in front of it* needs.
+ *   #432 grew an `aim: "core"` arm here, aimed along the **Core bearing**, and it
+ *   is gone again: see the note beside `sky-only` for why a row aimed at the
+ *   cluster's centre cannot show it, and `scripts/measure-sky-density.ts`'s field
+ *   arm for the reading that decided it.
  * - `berth` — docked at a **named berth** of a named station, flown there by
  *   §7's docking computer, stopped at a named point of the traversal. #147's
  *   interior is only ever seen from inside, and the berth is named rather than
@@ -203,6 +207,23 @@ export const SHOT_KINDS = Object.freeze([
  * two carry `seed: 2` and `seed: 5` and their captures navigate. Saying "one
  * seed" of this set would be the class of claim this file's own capture code
  * refuses: a caption asserting a fixture property the frames do not have.
+ *
+ * **One seed is not one place.** Every row is framed in the system the game boots
+ * at, which is `startSystem` — the most *central* well-stocked and orderly one —
+ * and a row may name a `system` to stand at instead (#432). None does: the row
+ * that needed it was measured, judged and removed, and the reason is beside
+ * `sky-only`. `capture-views.mjs` still restores the system with the seed before
+ * each view, with the same readback and the same refusal: a row that got a
+ * different system than it asked for has to be a red run rather than a wrong
+ * picture with the right caption.
+ *
+ * **That plumbing is carried knowingly, at a cost this file is naming.** It is
+ * exercised by no row today, so every branch of it runs only in tests. The
+ * alternative — dropping it until a row asks — is what #478 will undo, and the
+ * half worth keeping is not the argument to `gameUrl` but the readback: the one
+ * place a wrong-star caption can be caught is the boot that made it, and a row
+ * added under [#478](https://github.com/jcfischer/seelite/issues/478) should fail
+ * loudly on its first run rather than be believed.
  *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
@@ -712,6 +733,21 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
+	 * The gap here is #432's answer, and it is a measurement rather than a
+	 * missing row. A row standing at the cluster's rim and aimed along the **Core
+	 * bearing** was built, captured on the GPU lane and judged by the principal,
+	 * whose reading was *"few dots, neither wall of dots or cone of lights"*.
+	 * That is what the arithmetic predicts: `scripts/measure-sky-density.ts`'s
+	 * core mode prints the crowded heading's points-per-square-degree against the
+	 * density the invented population already lays down in *every* direction, and
+	 * the cone loses. No framing at a 256-system cluster makes #100's lever
+	 * visible, because — as `CONTEXT.md` says of the Core bearing — it carries
+	 * information rather than light. What #432 shipped is the way to stand at a
+	 * named system (`?system=`) and the measurement that standing there is not
+	 * enough. The lever is the derived layer's population, which is the node that
+	 * measurement opened; a rim sky row comes back after that, not before it.
+	 */
+	/**
 	 * #372's two frames: the tree as `?` first opens it, and with four groups
 	 * folded, so the sheet shows both what a fold does and the lower groups an
 	 * open tree pushes below the panel.
@@ -989,6 +1025,23 @@ const SHOT_REQUIREMENTS = {
 export function malformedShots(views) {
 	return views
 		.filter((v) => {
+			// `system` is checked over every kind rather than inside one's, because
+			// it is a boot parameter and not a framing: a row may name where it
+			// stands as well as which world it stands in (#432). A fractional,
+			// stringy or negative one would reach `?system=` as an index the page
+			// refuses — and the page refuses *politely*, booting the start system,
+			// so a bad value here is the wrong picture wearing the right caption.
+			//
+			// The upper bound is deliberately absent: the galaxy's length is not
+			// this file's to own, and `capture-views.mjs` reads the booted index back
+			// and throws, so an index too big for the galaxy is caught where the
+			// page that refused it is still open. A negative is caught here because
+			// no bound is needed to know it is wrong.
+			if (
+				v.shot.system !== undefined &&
+				(!Number.isInteger(v.shot.system) || v.shot.system < 0)
+			)
+				return true;
 			const needs = SHOT_REQUIREMENTS[v.shot.kind];
 			return !needs || !needs(v.shot);
 		})

@@ -63,6 +63,7 @@ const origin = () => {
 			boot?: "direct" | "overlay";
 			noSave?: boolean;
 			querySeed?: number | null;
+			pinnedSystem?: number | null;
 		} = {},
 	) =>
 		planBoot({
@@ -71,6 +72,7 @@ const origin = () => {
 			boot: options.boot ?? "overlay",
 			noSave: options.noSave ?? false,
 			querySeed: options.querySeed ?? null,
+			pinnedSystem: options.pinnedSystem ?? null,
 		});
 	const store = (slot: string, env: () => SaveEnvelope = () => envelope()) =>
 		new SaveStore({
@@ -236,6 +238,79 @@ describe("the one-shot continue (§11.3)", () => {
 		expect(plan.loaded).toBeNull();
 		expect(plan.slot).toBe(DEFAULT_SLOT);
 		expect((await o.boot()).mode).toBe("continue");
+	});
+});
+
+/**
+ * `?system=<index>` (#432), the boot affordance that lets a script stand the page
+ * at a named star. It outlived the view row it was built for: see the note beside
+ * `sky-only` in `scripts/lib/view-set.mjs`.
+ *
+ * §11.6 of `persistent-world-state.md` owns the rule that such a boot writes
+ * nothing and the reason for it. This file's job is that the plan answers, and the
+ * rows below are the ones §11.7's obligation points at: reads nothing, writes
+ * nothing, and leaves the save continuable afterwards.
+ */
+describe("`?system` pins where the ship boots and writes nothing (§11.6)", () => {
+	test("a pinned boot reads nothing and writes nothing, beside its own save", async () => {
+		const o = origin();
+		await o.save(DEFAULT_SLOT, SEED);
+		await o.catalog.chooseCommander(DEFAULT_SLOT);
+		// Same seed as the save, which is the arm that would otherwise load it,
+		// attach a store, and overwrite the Commander with a different start.
+		const plan = await o.boot({
+			boot: "direct",
+			querySeed: SEED,
+			pinnedSystem: 161,
+		});
+		expect(plan.loaded).toBeNull();
+		expect(plan.writesNothing).toBe(true);
+		expect(plan.canContinue).toBe(true);
+		// **The third half of the obligation, and asserted rather than titled:**
+		// a later plain boot still loads that Commander, so the pinned boot left
+		// the pointer and the continue alone. No continue was *set up* for the
+		// pinned boot to consume — under `?boot=direct` there is no overlay to
+		// arm one — which is why this reads as "left alone" and not "consumed".
+		expect((await o.boot({ boot: "direct" })).loaded?.world.seed).toBe(SEED);
+	});
+
+	test("it says which system the boot was pinned to", async () => {
+		const o = origin();
+		const plan = await o.boot({ boot: "direct", pinnedSystem: 161 });
+		expect(plan.notice).not.toBeNull();
+		expect(plan.notice).toContain("161");
+		expect(plan.fault).toBeNull();
+	});
+
+	/**
+	 * **A refusal is not a naming, and the difference is the world moving.**
+	 * `querySystem` warns and returns `null` for an index it cannot use, so what
+	 * reaches `planBoot` is an ordinary boot — which is right, not a leak: a boot
+	 * that named no usable system named no *place*, so it stands where its own save
+	 * expects to be and §11.6's writes-nothing does not reach it. Pinned here
+	 * because the return type collapses the two cases, and the collapse is only
+	 * safe while this stays true.
+	 */
+	test("a boot with nothing pinned is an ordinary one, and it writes", async () => {
+		const o = origin();
+		await o.save(DEFAULT_SLOT, SEED);
+		await o.catalog.chooseCommander(DEFAULT_SLOT);
+		const plan = await o.boot({ boot: "direct", querySeed: SEED });
+		expect(plan.loaded?.world.seed).toBe(SEED);
+		expect(plan.writesNothing).toBe(false);
+		expect(plan.notice).toBeNull();
+	});
+
+	/**
+	 * `writesNothing` is the field the shell reads before attaching a store, and
+	 * it now has two authors. A row that pins both is the only thing between a
+	 * new affordance and a store quietly attaching to a fixture boot.
+	 */
+	test("writesNothing says which boots touch storage, and an ordinary one does", async () => {
+		const o = origin();
+		expect((await o.boot({ boot: "direct" })).writesNothing).toBe(false);
+		expect((await o.boot({ noSave: true })).writesNothing).toBe(true);
+		expect((await o.boot({ pinnedSystem: 3 })).writesNothing).toBe(true);
 	});
 });
 

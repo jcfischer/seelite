@@ -121,7 +121,17 @@ export interface BootInput {
 	noSave: boolean;
 	/** A usable `?seed`, or `null`. */
 	querySeed: number | null;
+	/**
+	 * A usable `?system`, or `null` (#432). A pinned boot writes nothing, for
+	 * the reason on `planBoot` — it is folded into `writesNothing` there rather
+	 * than kept as a second flag the shell has to remember to read.
+	 */
+	pinnedSystem: number | null;
 }
+
+/** What a boot that names a system is told, once, in the plan's own words. */
+export const pinnedSystemNotice = (system: number): string =>
+	`?system=${system} pins where the ship boots, so this game writes no Commander record`;
 
 export interface BootPlan {
 	/**
@@ -141,6 +151,17 @@ export interface BootPlan {
 	/** The Commander a fault concerns, which the overlay offers Export of. */
 	faultSlot: string | null;
 	notice: string | null;
+	/**
+	 * This boot touches no storage, and the shell must not attach a store to it.
+	 * Two things make it true: `?no-save`, and a system named by `?system=`.
+	 *
+	 * §11.6 of `persistent-world-state.md` owns the rule and the reason for it, and
+	 * this is the copy the code cites rather than a second statement of it. What is
+	 * specific to this type is only *where* the answer is computed: here, because it
+	 * is a property of the boot and not of the URL, and four call sites in `main.ts`
+	 * read one field instead of re-deriving the permission from one of its causes.
+	 */
+	writesNothing: boolean;
 	/**
 	 * Something to continue, and no fault that concerns its record. A lock fault
 	 * (`withLockFault`) keeps it: the Commander is continuable once the other tab
@@ -167,8 +188,11 @@ export interface BootPlan {
  * still discards it.
  */
 export async function planBoot(input: BootInput): Promise<BootPlan> {
-	const { catalog, backend, boot, noSave, querySeed } = input;
+	const { catalog, backend, boot, noSave, querySeed, pinnedSystem } = input;
 	const direct = boot === "direct";
+	// A pinned system is a fixture, and a fixture is not a player's afternoon:
+	// see `writesNothing` for why the pin cannot lean on the seed set-aside.
+	const writesNothing = noSave || pinnedSystem !== null;
 	const plan: BootPlan = {
 		mode: direct ? "direct" : "overlay",
 		slot: DEFAULT_SLOT,
@@ -176,13 +200,14 @@ export async function planBoot(input: BootInput): Promise<BootPlan> {
 		pending: null,
 		fault: null,
 		faultSlot: null,
-		notice: null,
+		notice: pinnedSystem === null ? null : pinnedSystemNotice(pinnedSystem),
+		writesNothing,
 		canContinue: false,
 		seedPrefill: direct ? null : querySeed,
 		record: null,
 	};
 	// A fresh game that saves nothing, so there is always something to continue.
-	if (noSave) {
+	if (writesNothing) {
 		plan.canContinue = true;
 		return plan;
 	}

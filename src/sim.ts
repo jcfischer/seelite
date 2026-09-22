@@ -608,6 +608,25 @@ export function makeWorld(seed: number): World {
 }
 
 /**
+ * A new game at a system the caller named, instead of at `startSystem`
+ * ([#432](https://github.com/jcfischer/seelite/issues/432)).
+ *
+ * **A new game, elsewhere** — that is the whole difference, and it is why this
+ * is a second *name* for `restoreWorld` rather than a second construction path
+ * beside it: galaxy 0, clock 0, the ship on the arrival point, nothing carried
+ * over. A build that kept the start system's arrival point while swapping in the
+ * named system's bodies would produce a world that looks whole and is on the
+ * wrong star, which is what `tests/world-restore.test.ts` holds.
+ *
+ * `?system=` boots through here. What such a boot may write is §11.6's ruling and
+ * `BootPlan.writesNothing`'s answer, not this function's: a world builder has no
+ * storage reach, so a promise made here is one nothing keeps.
+ */
+export function makeWorldAtSystem(seed: number, systemIndex: number): World {
+	return restoreWorld(seed, START_GALAXY, systemIndex, 0);
+}
+
+/**
  * Take a world to another system — the act §8 describes and nothing has ever
  * performed (#187).
  *
