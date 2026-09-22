@@ -26,7 +26,7 @@ import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { boundKeys, codeOf } from "./lib/source-scan";
+import { boundKeys, codeOf, dispatchSites } from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
 	CONTROLS.commands.flatMap((command) => [...command.currentTriggers]);
@@ -126,25 +126,12 @@ describe("the catalogue is complete against the source", () => {
 		// `source.includes(id)` cannot tell a live dispatch site from a stale
 		// mention in a comment, which is the failure the row it replaced was
 		// immune to — that one looked each trigger up in the shape it was
-		// printed as. So the ids are collected from the four shapes that
-		// actually run a command, and a mention anywhere else does not count.
-		const main = codeOf("src/main.ts");
-		const rig = codeOf("src/combat-rig.ts");
-		const ids = (source: string, re: RegExp) =>
-			[...source.matchAll(re)].flatMap((m) =>
-				[...(m[1] ?? "").matchAll(/"([a-z]+\.[A-Za-z0-9]+)"/g)].map(
-					(x) => x[1] as string,
-				),
-			);
+		// printed as. `dispatchSites` owns the four shapes that actually run a
+		// command, and is shared with `commands.test.ts` rather than copied
+		// (sage round 2).
 		const reached = new Set([
-			// `case "fly.assist":` — the two switches, `command` and `panelCommand`.
-			...ids(main, /(case\s+"[a-z]+\.[A-Za-z0-9]+"\s*:)/g),
-			// `this.held("fly.throttleUp")`, and the pair lists of `this.axis`.
-			...ids(main, /this\.held\((\s*"[^"]+"\s*)\)/g),
-			...ids(main, /this\.axis\((\[[^\]]*\],\s*\[[^\]]*\])\)/g),
-			// The rig, which is handed the predicate and asked by id.
-			...ids(rig, /held\((\s*"[^"]+"\s*)\)/g),
-			...ids(rig, /id === (\s*"[^"]+"\s*)/g),
+			...dispatchSites(codeOf("src/main.ts")).all,
+			...dispatchSites(codeOf("src/combat-rig.ts")).all,
 		]);
 		// Guard the guard: each shape found something, so a renamed helper
 		// cannot make the loop below pass on a set built from four dead regexes.

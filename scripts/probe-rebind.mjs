@@ -16,9 +16,13 @@
  * ship passes the second; drop the second and a build that binds the new key
  * *beside* the old one passes the third.
  *
- * A fourth arm holds the null: the same wait with nothing held. Without it
- * every figure below is quoted against zero rather than against the drift the
- * ship has anyway.
+ * A fourth arm holds the null: the same wait with nothing held. **It is a
+ * residual and not a control**, and it was sold as one for a round. `atRest`
+ * returns only once two samples 50 ms apart agree to within 0.02° — under
+ * 0.4°/s — so a 400 ms wait after it cannot turn much more than 0.16°
+ * whatever the build does. The arm reports what the rest gate leaves rather
+ * than measuring what the ship does, and the row it feeds says only that the
+ * held readings are orders of magnitude above that floor.
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import {
@@ -116,11 +120,14 @@ const shipped = await turnedWhileHolding("s");
 // The null arm **after** a real one, not before it: from boot the ship is
 // already still, so a drift figure read there says nothing about the state
 // the other arms actually start in.
-const drift = await turnedWhileHolding(null);
+const residual = await turnedWhileHolding(null);
 check(
-	"the shipped `s` pitches the ship, well clear of the drift it is read against",
-	shipped > 5 && drift < 1,
-	`held ${shipped.toFixed(2)}°, drift ${drift.toFixed(2)}°`,
+	"the shipped `s` pitches the ship, orders of magnitude above the rest gate's floor",
+	// Not `residual < 1`: `atRest` bounds that by construction, so the
+	// comparison would have been settled by its own precondition. What is
+	// worth asserting is the ratio, which nothing guarantees.
+	shipped > residual * 50,
+	`held ${shipped.toFixed(2)}°, residual after the rest gate ${residual.toFixed(2)}°`,
 );
 
 // ---------------------------------------------------------------------------
@@ -164,12 +171,17 @@ check(
  * marginal. A 400 ms hold is still not a rate measurement, which is why the
  * band is this wide and not tighter.
  */
-const parity = (turned) => turned > shipped * 0.8 && turned < shipped * 1.2;
+const BAND = [0.8, 1.2];
+const parity = (turned) =>
+	turned > shipped * BAND[0] && turned < shipped * BAND[1];
+/** The band as a red row prints it — interpolated, so the printed acceptance
+ *  criterion cannot diverge from the one that ran. It did, for a round. */
+const bandText = `band ${BAND[0]}-${BAND[1]}x of ${shipped.toFixed(2)}°`;
 const newKey = await turnedWhileHolding(NEW_KEY);
 check(
 	`and \`${NEW_KEY}\` pitches it as \`s\` did — the rebind reached the simulation`,
 	parity(newKey),
-	`held ${newKey.toFixed(2)}°, against ${shipped.toFixed(2)}° on the shipped key (band 0.7-1.3x)`,
+	`held ${newKey.toFixed(2)}° on the shipped key's ${bandText}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -179,14 +191,71 @@ const otherHalf = await turnedWhileHolding("w");
 check(
 	"the other half of the same axis is untouched",
 	parity(otherHalf),
-	`held ${otherHalf.toFixed(2)}°, against ${shipped.toFixed(2)}°`,
+	`held ${otherHalf.toFixed(2)}°, ${bandText}`,
 );
 const arrow = await turnedWhileHolding("ArrowDown");
 check(
 	"and so is the arrow that shared the command with the key that moved",
 	parity(arrow),
-	`held ${arrow.toFixed(2)}°, against ${shipped.toFixed(2)}°`,
+	`held ${arrow.toFixed(2)}°, ${bandText}`,
 );
+
+// ---------------------------------------------------------------------------
+// And a *pressed* command, which is the other path entirely.
+//
+// A held command is read out of the layout every frame by `isHeld`; a pressed
+// one goes through `onKey` — `keyDispatch` decides `oneShot`, then `resolveKey`
+// answers against the layout in force. Moving only `fly.pitchUp` left that
+// second path unexercised in this tier, and the two share no code below
+// `resolveKey`.
+// ---------------------------------------------------------------------------
+const view = () => page.evaluate(() => window.__seelite.view);
+await page.keyboard.press("v");
+await settle(page);
+const toggledOnV = await view();
+await page.keyboard.press("v");
+await settle(page);
+check(
+	"the shipped `v` toggles the view, so the arm below can fail",
+	toggledOnV !== (await view()),
+	`v gave ${toggledOnV}, and back to ${await view()}`,
+);
+const movedPress = await page.evaluate(() => {
+	try {
+		window.__seelite.rebindCommand(
+			"view.toggle",
+			{ kind: "key", key: "v" },
+			{ kind: "key", key: "7" },
+		);
+		return "accepted";
+	} catch (e) {
+		return `threw: ${e instanceof Error ? e.message : String(e)}`;
+	}
+});
+check(
+	"the pressed command's rebind is accepted",
+	movedPress === "accepted",
+	movedPress,
+);
+const before7 = await view();
+await page.keyboard.press("v");
+await settle(page);
+const afterOldPress = await view();
+await page.keyboard.press("7");
+await settle(page);
+const afterNewPress = await view();
+check(
+	"the key the view toggle was moved off no longer toggles it",
+	afterOldPress === before7,
+	`${before7} -> ${afterOldPress}`,
+);
+check(
+	"and `7` toggles it — a pressed rebind reaches the game through onKey",
+	afterNewPress !== afterOldPress,
+	`${afterOldPress} -> ${afterNewPress}`,
+);
+await page.keyboard.press("7");
+await settle(page);
 
 // ---------------------------------------------------------------------------
 // A rebind that names no such binding is refused rather than ignored.

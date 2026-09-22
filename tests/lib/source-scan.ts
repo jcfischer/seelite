@@ -246,3 +246,54 @@ export function boundKeys(source: string): Set<string> {
 			for (const token of list.split(",")) add(token);
 	return out;
 }
+
+/**
+ * How a source file dispatches on a command id, **by shape and not as one
+ * set** — because the two test files that ask want different subsets, and
+ * flattening them is what made the first version wrong: the rig's own
+ * `id === "fight.rigIncoming"` is a command dispatch, and a caller asking
+ * "which ids are read as held" got it and went red.
+ *
+ * - `cases` — a `case "<id>":` label, in either of `main.ts`'s two switches.
+ * - `held` — an id handed to a held query: `this.held("…")` in `main.ts`,
+ *   `held("…")` in `combat-rig.ts`, and the pair lists of `this.axis`.
+ * - `commanded` — the rig's `id === "…"`, which `Game.command` delegates to.
+ *
+ * Only these shapes. A mention anywhere else — a comment, a doc, a deleted
+ * branch's leftovers — is deliberately not a dispatch, which is the whole
+ * difference between this and `source.includes(id)`.
+ *
+ * Here rather than in the two test files that want it (#381, sage round 2).
+ * They had a near-copy each, differing only in how the quotes were captured,
+ * and two scanners of one question is what `stripComments` above was merged
+ * to end: a rename that killed one arm would have left the other green.
+ */
+export function dispatchSites(source: string): {
+	cases: Set<string>;
+	held: Set<string>;
+	commanded: Set<string>;
+	all: Set<string>;
+} {
+	const ids = (...res: RegExp[]) =>
+		new Set(
+			res.flatMap((re) =>
+				[...source.matchAll(re)].flatMap((m) =>
+					[...(m[1] ?? "").matchAll(/"([a-z]+\.[A-Za-z0-9]+)"/g)].map(
+						(x) => x[1] as string,
+					),
+				),
+			),
+		);
+	const cases = ids(/(case\s+"[a-z]+\.[A-Za-z0-9]+"\s*:)/g);
+	const held = ids(
+		/\bheld\((\s*"[^"]+"\s*)\)/g,
+		/\.axis\((\[[^\]]*\],\s*\[[^\]]*\])\)/g,
+	);
+	const commanded = ids(/id === (\s*"[^"]+"\s*)/g);
+	return {
+		cases,
+		held,
+		commanded,
+		all: new Set([...cases, ...held, ...commanded]),
+	};
+}

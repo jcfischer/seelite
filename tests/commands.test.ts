@@ -9,7 +9,7 @@
  * into a collision.
  */
 import { describe, expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, dispatchSites } from "./lib/source-scan";
 import {
 	type Binding,
 	codeKey,
@@ -360,14 +360,14 @@ describe("the axis law names which key is which", () => {
 		// asks by id, and `combat-rig.ts` is handed the predicate and asks it
 		// four times — the beam, the pulse and the two rolls — which had no
 		// row anywhere while the axes had one.
-		const main = codeOf("src/main.ts");
-		const rig = codeOf("src/combat-rig.ts");
-		const quoted = (source: string, re: RegExp) =>
-			[...source.matchAll(re)].map((m) => m[1] as string);
+		// `dispatchSites` is the shared scanner (sage round 2), and `held` is
+		// the shape this row is about — not `all`, which also carries the
+		// rig's `id === "fight.rigIncoming"`, a *pressed* command that this
+		// row would then have demanded be held.
 		const asked = new Set([
 			...axisCalls().flatMap((c) => [...c.negative, ...c.positive]),
-			...quoted(main, /this\.held\("([^"]+)"\)/g),
-			...quoted(rig, /held\("([^"]+)"\)/g),
+			...dispatchSites(codeOf("src/main.ts")).held,
+			...dispatchSites(codeOf("src/combat-rig.ts")).held,
 		]);
 		// Guard the guard: all three scans found something.
 		expect([
@@ -434,8 +434,14 @@ describe("what a surface claims", () => {
 			source.indexOf('if (route.kind === "chord")', from),
 		);
 		expect(claim).toContain('surface: "requests"');
-		expect(claim).toContain("if (walking.length > 0) {");
-		expect(claim).toContain("return;");
+		// **Anchored inside the walking branch, not loose in the span**
+		// (sage round 2). `toContain("return;")` over the whole claim was
+		// satisfied by any return in it, including the Space guard's — which
+		// is a different branch and would have kept the row green with the
+		// one that matters deleted.
+		const walking = claim.slice(claim.indexOf("if (walking.length > 0) {"));
+		expect(walking.startsWith("if (walking.length > 0) {")).toBe(true);
+		expect(walking.slice(0, walking.indexOf("\n\t\t\t}"))).toContain("return;");
 		// And the scope is not empty, so the branch cannot be satisfied by a
 		// resolve that can never answer.
 		const scoped = DEFAULT_BINDINGS.filter(

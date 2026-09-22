@@ -25,11 +25,16 @@ import { commandById, DEFAULT_BINDINGS } from "../src/commands";
 /**
  * Every key the game binds to something that is **not** a panel of its own.
  *
- * The diagnostics carry `fixed: "diagnostic"` and the two player screens are
- * their own rows, so the partition is a property of the catalogue rather than
- * a list written here: a flight command that took `b` tomorrow lands in this
- * set and the row below goes red, which is the failure this file was opened
- * for.
+ * The diagnostics carry `fixed: "diagnostic"`, so that half is a property of
+ * the catalogue: a flight command that took `b` tomorrow lands in this set and
+ * the row below goes red, which is the failure this file was opened for.
+ *
+ * **The two player screens are a written list, and that is a gap rather than a
+ * shape** (sage round 2). The registry has no axis for "a panel owns this open
+ * key" — `fixed` is the wrong one, because #381 makes `z` remappable — so the
+ * pair is named here and again in `controls-catalogue.test.ts`, and a third
+ * panel tomorrow needs both edited. The axis belongs with the capture slice,
+ * which is what gives `z` a non-binding route in the first place.
  */
 const flightKeys = () =>
 	new Set(

@@ -32,11 +32,11 @@
  *   characters. The letter rows carry a code since the dispatch slice, derived
  *   in `keyTrigger` rather than authored fifty times; the Alt chords carried
  *   one already, because `ALT_CHORDS` is keyed on `code`. **Two groups do not,
- *   and `codeFor` owns both reasons** — punctuation, because `?` and `/` share
- *   a physical key, and digits, because Shift is the throttle. And the
- *   property reaches a *pressed* command only: the held set is characters, so
- *   `isHeld` asks for a key rather than a position, and #390 owns the change
- *   that would move it. Migrating a saved layout is the storage slice's.
+ *   and `codeFor` owns both reasons** rather than this list restating them.
+ *   The property reaches a *pressed* command only: the held set is characters,
+ *   so `isHeld` asks for a key rather than a position, and #390 owns the
+ *   change that would move it. Migrating a saved layout is the storage
+ *   slice's.
  *
  * **What is derived and what is authored**, unchanged from #372's interim
  * module because the reason has not changed: the pad's half is derived here,
@@ -52,11 +52,9 @@
  * `code: "Slash"` hashed `key:slash` against the shipped `key:/` — one
  * physical key with two identities that `collisions()` could not see, over ten
  * punctuation keys. It is a table over the codes this game ships now, mapping
- * each to the **unshifted** character, which is the other half of the same
- * hazard: `?` and `/` are one physical key apart by Shift, #377 ruled `?` is
- * the character the keyboard types rather than a chord, so `?` carries no code
- * and the pair stays the two identities the game really has. One rule settled
- * both, and `tests/dispatch.test.ts` holds all three consequences.
+ * each to the **unshifted** character — which is the other half of the same
+ * hazard, for the reason `codeFor` gives. One rule settled both, and
+ * `tests/dispatch.test.ts` holds all three consequences.
  *
  * Headless, and on the list in `tests/headless.test.ts`.
  */
@@ -916,12 +914,9 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
  * hashed against the shipped `key: "/"` as two identities of one physical key,
  * invisible to `collisions()`.
  *
- * The **unshifted** character on purpose. `?` and `/` are one physical key
- * apart by Shift, and #377 ruled `?` is the character the keyboard types
- * rather than a chord — so `?` carries no code, `/` is what `Slash` means, and
- * the pair stays the two identities the game really has. That is the other
- * half, and it is why this table is not also read in the other direction for
- * punctuation: see `codeFor`.
+ * The **unshifted** character on purpose, and the reason is `codeFor`'s to
+ * give: it decides which characters carry a code at all, and this table is
+ * only the other direction of that decision.
  */
 const PUNCTUATION_CODES: Readonly<Record<string, string>> = {
 	Backquote: "`",
@@ -1307,7 +1302,6 @@ const keyBinding = (
 		? (b as Binding & { trigger: Extract<Trigger, { kind: "key" }> })
 		: null;
 
-/** Everything about a key binding except which key it is. */
 /**
  * Everything about a key trigger except which key it is and where it is live.
  *
@@ -1378,21 +1372,6 @@ export function resolveKey(
 }
 
 /**
- * Is this command being flown right now?
- *
- * `keys` is the held set as `main.ts` keeps it: **the characters
- * `keyDispatch` hands over**, which is what #377's first ruling and #390's
- * limit depend on — a release clears the key it names, and a set of command
- * ids could not be cleared by a keyup that reports a different character. So
- * the store does not change and the query does: an id, resolved to its live
- * hold triggers.
- *
- * It follows that a held command is reached by **character and not by
- * position**, so `resolveKey`'s code arm does not extend to one. See that
- * function's note: the fix is the held set carrying the code, and #390 owns
- * it.
- */
-/**
  * The hold rows of one layout, by command — built once per table.
  *
  * `isHeld` is asked about a dozen times a frame (both axes, the roll, the
@@ -1401,6 +1380,11 @@ export function resolveKey(
  * this replaced did one hash probe. The index is keyed on the layout array
  * itself, so a `rebind` — which returns a new array rather than mutating one —
  * simply builds a new one, and no invalidation step exists to be forgotten.
+ *
+ * **That is a precondition and not a property**, and the storage slice is the
+ * obvious candidate to break it: a layout merged *in place* keeps its array
+ * identity and would be answered out of a stale index. Every layout is a new
+ * array here, and `isHeld` is pure only for callers that hold to it.
  *
  * **The view is not indexed**, because it changes between frames while the
  * layout does not; it is checked on the way out, over a list that is one or
@@ -1422,6 +1406,21 @@ const holdRows = (bindings: readonly Binding[]): Map<CommandId, Binding[]> => {
 	return index;
 };
 
+/**
+ * Is this command being flown right now?
+ *
+ * `keys` is the held set as `main.ts` keeps it: **the characters
+ * `keyDispatch` hands over**, which is what #377's first ruling and #390's
+ * limit depend on — a release clears the key it names, and a set of command
+ * ids could not be cleared by a keyup that reports a different character. So
+ * the store does not change and the query does: an id, resolved to its live
+ * hold triggers.
+ *
+ * It follows that a held command is reached by **character and not by
+ * position**, so `resolveKey`'s code arm does not extend to one. See that
+ * function's note: the fix is the held set carrying the code, and #390 owns
+ * it.
+ */
 export function isHeld(
 	bindings: readonly Binding[],
 	command: CommandId,
@@ -1483,10 +1482,15 @@ export function rebind(
  * "the player edits the trigger; the context set is the command's" applied to
  * the half of a trigger that is not the key.
  *
- * **And a code is derived, never authored.** The shipped rows get theirs from
- * `keyTrigger`, so a rebind that stored `to` verbatim would leave a letter
- * codeless and lose D7's position dispatch for exactly the command the player
- * just chose to move.
+ * **And a code is derived when the caller does not give one.** The shipped
+ * rows get theirs from `keyTrigger`, so a rebind that stored `to` verbatim
+ * would leave a letter codeless and lose D7's position dispatch for exactly
+ * the command the player just chose to move. A `to` that *does* carry a code
+ * keeps it, which is the capture modal's case rather than an oversight: it
+ * records the physical key it saw, and on a layout where that key does not
+ * type its US character — which is the whole point of D7 — the pair is
+ * legitimately mismatched and only the capture knows the truth. The cost is
+ * that a caller passing an inconsistent pair gets exactly what it asked for.
  */
 function movedTrigger(from: Trigger, to: Trigger): Trigger {
 	if (from.kind !== "key" || to.kind !== "key") {
