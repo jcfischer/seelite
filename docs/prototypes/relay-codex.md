@@ -48,26 +48,31 @@ The loop, as a pilot flies it:
 1. **Before.** Set the trade station as target and cruise to it. Every leg
    meets a raider. Cruise to the shipyard instead: about one leg in four does,
    the law for this government.
-2. **Find it.** Fly to the trade station's approach. Inside 2,500 km of the
+2. **Fit the scanner.** Since #481 every step below is a **bought module's**:
+   the Long-Range Scanner, 1,000 Cr at a shipyard. Without it steps 3 and 4
+   read nothing at all — no cue, no knowledge row, no contact, no target —
+   while step 1 is unchanged, which is #479's ruling that the route effect is
+   felt by a pilot who cannot find its cause.
+3. **Find it.** Fly to the trade station's approach. Inside 2,500 km of the
    relay a cue appears on the right of the glass: `PIRATE RELAY SIGNAL`, five
    bars of strength, degrees off the nose and an arrow. It never shows a range
    or a marker. Turn to put the bearing on the nose and fly until the bars
    fill; the search region is a thousand kilometres round the station.
-3. **Identify it.** Inside 150 km the cue changes to `PIRATE RELAY ·
+4. **Identify it.** Inside 150 km the cue changes to `PIRATE RELAY ·
    IDENTIFIED` with a range, the relay becomes a scanner contact, a target
    (`RELAY · HOSTILE` on the Target panel) and a marker, and the Galaxy Map's
    station card would carry the row under `IDENTIFIED` if it listed relays.
    That is the knowledge write.
-4. **Destroy it.** Select it, close to a few kilometres, and hold fire. Ten
+5. **Destroy it.** Select it, close to a few kilometres, and hold fire. Ten
    seconds of pulse fire spend its hull. The cue reads `DESTROYED`, the dish
    drops and the lamp goes out, and the Communications console logs
    `Pirate relay destroyed`.
-5. **After.** Cruise to the trade station: no leg meets a raider. Cruise to
+6. **After.** Cruise to the trade station: no leg meets a raider. Cruise to
    the shipyard: the law as before. A raider already on you is not made to
    vanish.
-6. **Leave and return.** Jump to a neighbour and back, or save and reload.
+7. **Leave and return.** Jump to a neighbour and back, or save and reload.
    The relay is still destroyed, still identified, still drawn as a wreck.
-7. **Recovery.** Twenty minutes after the kill the log reads `under repair`;
+8. **Recovery.** Twenty minutes after the kill the log reads `under repair`;
    an hour after it, `back in service`, the relay is drawn lit again, and the
    trade route is watched again.
 

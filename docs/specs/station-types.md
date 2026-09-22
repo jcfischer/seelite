@@ -297,22 +297,29 @@ universal**:
 
 | Universal — `min(displayTL + 3, 10)` | Type-exclusive |
 |---|---|
-| fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam laser, escape pod, energy bomb, docking computer, galactic hyperdrive | **refinery:** fuel scoops, mining laser¹ · **shipyard:** extra energy unit, military laser¹, identity scanner¹, **hulls** |
+| fuel, missiles, large cargo bay, extra pulse laser, ECM, extra beam laser, escape pod, energy bomb, docking computer, galactic hyperdrive | **refinery:** fuel scoops, mining laser¹ · **shipyard:** extra energy unit, military laser¹, identity scanner¹, long-range scanner¹, **hulls** |
 
 ¹ Not in Elite's 12 — new to seelite, and priced by #7 alongside the rest.
 
-> **The scanner module is here since #364, as a shipyard exclusive.** It takes
-> an exclusive rather than an eleventh universal item, and this section does not
-> argue for that a second time: the universal count is ten and §4.2's saturation
-> argument rests on it, which is F12's own reason along with the two options it
-> rejected. What follows is unchanged — the exclusive is *why* the module is
-> worth travelling for.
+> **Two scanner modules are here as shipyard exclusives** — #364's identity
+> scanner and #481's long-range scanner. Each takes an exclusive rather than an
+> eleventh universal item, and this section does not argue for that a second
+> time: the universal count is ten and §4.2's saturation argument rests on it,
+> which is F12's own reason along with the two options it rejected. What
+> follows is unchanged — the exclusive is *why* a module is worth travelling
+> for. The two are one keystroke apart in every list that names them and they
+> answer different questions: the identity scanner reads a hull the pilot is
+> holding on target, the long-range scanner reads a relay's signal across a
+> system.
 
 Fuel scoops go to the refinery because scooping is the mining trade's tool, and
 the extra energy unit to the shipyard because it is the heaviest hull-work
-upgrade on the list. The identity scanner joins the shipyard column on the same
-kind of ground — reading a hull's identity is a shipyard's craft, not a miner's,
-and `carrier-identity.md` F12 records the ruling, its price and its consequence. Every other item is available anywhere the system's tech
+upgrade on the list. Both scanners join the shipyard column on the same
+kind of ground — sensor work is a shipyard's craft, not a miner's.
+`carrier-identity.md` F12 records the identity scanner's ruling, its price and
+its consequence; #479 and #468 record the long-range scanner's, and its
+consequence is stated there rather than here: no module, no relay cue and no
+identification, while the relay's dial on the watched route still bites. Every other item is available anywhere the system's tech
 level reaches it.
 
 ### 4.2 Why type does not shift the tech level

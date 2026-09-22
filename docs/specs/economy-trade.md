@@ -1358,13 +1358,19 @@ price.
 | Extra Energy Unit | 1,500 Cr | **shipyard** |
 | Military Laser | 6,000 Cr | **shipyard** |
 | Identity Scanner | 600 Cr | **shipyard** |
+| Long-Range Scanner | 1,000 Cr | **shipyard** |
 
 The ten universal items are gated at `min(displayTL + 3, 10)` per
 `station-types.md` §4.1. Mining and military lasers are not in Elite's cassette
 list — `station-types.md` §4.1 introduced them and left the price here; the
-figures are the disc/Master ones research §3.1 cites. The identity scanner is the
-third `newToSeelite` row and the third shipyard exclusive, and is priced at the
-E.C.M.'s figure on F12's instruction rather than derived from anything here. seelite is therefore on
+figures are the disc/Master ones research §3.1 cites. The identity scanner is
+priced at the E.C.M.'s figure on F12's instruction rather than derived from
+anything here, and #481's long-range scanner at 1,000 Cr flat on #468's, which
+puts it between that scanner and the Extra Energy Unit. Neither figure is
+derived from this section, and the counts of `newToSeelite` rows and of
+shipyard exclusives are `tests/market.test.ts`'s rather than this table's —
+they were stated here as "the third" and "the third" and went stale the day a
+fourth arrived. seelite is therefore on
 **cassette economy plus disc laser tiers**, which is what research §6's open
 question recommended.
 
@@ -1556,18 +1562,19 @@ the existing roster already lacks.
 A full 20 t hold on the canonical lane is ~700 Cr per run at 3–5 minutes. The
 Large Cargo Bay is the first purchase and lifts that to ~1,225 Cr.
 
-The thirteen items above total **19,725 Cr** — 19,845 with a full missile rack.
+The fourteen items above total **20,725 Cr** — 20,845 with a full missile rack.
 Both are `fullKitCr()`, derived from the price list rather than added up in
-prose, and asserted. **The scanner module is the reason they read thirteen and
-19,725 rather than twelve and 19,125**; the 600 Cr is one row's arrival, and
-every measured figure below was taken before it.
+prose, and asserted. **Two rows have arrived since the measurements below were
+taken**: #364's identity scanner at 600 Cr and #481's long-range scanner at
+1,000, so the kit has moved 1,600 Cr — 8.4% — against figures measured at
+19,125. Every "earns the kit's price in N minutes" below is short by that.
 That is about fifteen clean runs, and the design was aiming at **1.5–2.5 hours**
 of trading once §5.2's deficit forces route rotation.
 
 **Measured, the pump is faster than the aim.** §10.3's greedy trader earns the
 kit's whole price in **56–82 minutes** across four galaxies, at 233–363
-Cr/min — a run taken before the scanner row landed, so it is 3.1% short of the
-kit it is being quoted against. `scripts/measure-greedy-trader.ts` reprints the
+Cr/min — a run taken before either scanner row landed, so it is 8.4% short of
+the kit it is being quoted against. `scripts/measure-greedy-trader.ts` reprints the
 range on the machine it is run on, and this section's habit of quoting a stale
 one is what §12.7 records the cost of. All four land under the target's lower bound of 90 minutes, so the
 1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
