@@ -1154,7 +1154,11 @@ this section's own rather than the receipt's.
 
 - Its "median 21.1 ly" sat beside a "mean 5.45" and **named no quantity**, which is
   the whole defect: a number without its quantity cannot be checked, only agreed or
-  disagreed with. Named, it is **right**. The pooled median separation — one sample
+  disagreed with. Node #431's own question supplied a quantity for the 5.45 — "mean
+  nearest neighbour" — and that one is wrong rather than unlabelled: the corpus's mean
+  nearest other system is **3.14 ly**, and 5.418 is the mean of the **magnitude spread**.
+  The receipt under-measured the sky's tightest spacing by a third while quoting a
+  brightness figure beside it as if it were a distance. Named, it is **right**. The pooled median separation — one sample
   per ordered observer-to-system sample (20,889,600 of them, 10,444,800 unordered pairs
   read from both ends) — is **21.10 ly**, and that is what `BRIGHT_SIZE_MID_LY`
   is now anchored to. What it is *not* is the median **nearest** other system, which
