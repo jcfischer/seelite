@@ -28,7 +28,12 @@ import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { boundKeys, codeOf, dispatchSites } from "./lib/source-scan";
+import {
+	boundKeys,
+	codeOf,
+	dispatchSites,
+	PANEL_OWNED_COMMANDS,
+} from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
 	CONTROLS.commands.flatMap((command) => [...command.currentTriggers]);
@@ -154,7 +159,7 @@ describe("the catalogue is complete against the source", () => {
 			reached.has("fight.rigEcm"), // the rig's own command
 		]).toEqual([true, true, true, true, true, true]);
 
-		const PANELS = new Set(["system.settings", "system.commander"]);
+		const PANELS = new Set(PANEL_OWNED_COMMANDS);
 		let checked = 0;
 		for (const c of CONTROLS.commands) {
 			if (PANELS.has(c.id) || c.fixed === "diagnostic") continue;

@@ -8174,6 +8174,16 @@ class Game {
 	/** `1` swings to port and `3` to starboard, matching the panel keys those
 	 *  two are in the cockpit — left is left in both views. */
 	private chaseOrbitInput(): number {
+		// **Spelled out at the call site, not hoisted to a constant.** Sage
+		// round 3 asked for the eight single-element arrays to be module
+		// constants, since the flight step rebuilds them every frame. They are
+		// back here because `tests/commands.test.ts` reads the pairing *out of
+		// the call site* — which half of each axis is the negative term is the
+		// one thing `main.ts` still decides alone, and swapping two ids there
+		// is a working game that flies inverted. Hoisting turned four rows red
+		// for exactly that reason. Eight small arrays a frame against a check
+		// on inverted flight controls is not a trade worth making; if the
+		// allocation ever matters, the scanner has to move with them.
 		return this.axis(["view.orbitPort"], ["view.orbitStarboard"]);
 	}
 

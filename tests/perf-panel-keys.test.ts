@@ -22,6 +22,7 @@ import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
 import { commandById, DEFAULT_BINDINGS } from "../src/commands";
+import { PANEL_OWNED_COMMANDS } from "./lib/source-scan";
 /**
  * Every key the game binds to something that is **not** a panel of its own.
  *
@@ -30,18 +31,16 @@ import { commandById, DEFAULT_BINDINGS } from "../src/commands";
  * the row below goes red, which is the failure this file was opened for.
  *
  * **The two player screens are a written list, and that is a gap rather than a
- * shape** (sage round 2). The registry has no axis for "a panel owns this open
- * key" — `fixed` is the wrong one, because #381 makes `z` remappable — so the
- * pair is named here and again in `controls-catalogue.test.ts`, and a third
- * panel tomorrow needs both edited. The axis belongs with the capture slice,
- * which is what gives `z` a non-binding route in the first place.
+ * shape.** It lives in `PANEL_OWNED_COMMANDS` beside the scanners, so a third
+ * panel is one edit rather than two (sage rounds 2 and 3); the registry axis
+ * that would make it derived belongs with the capture slice, which is what
+ * gives `z` a non-binding route in the first place.
  */
 const flightKeys = () =>
 	new Set(
 		DEFAULT_BINDINGS.flatMap((b) =>
 			b.trigger.kind === "key" &&
-			b.command !== "system.settings" &&
-			b.command !== "system.commander" &&
+			!PANEL_OWNED_COMMANDS.includes(b.command) &&
 			commandById(b.command).fixed !== "diagnostic"
 				? [b.trigger.key]
 				: [],

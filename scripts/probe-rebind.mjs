@@ -80,22 +80,29 @@ const degreesBetween = (a, b) => {
  * which is a confident red on a build that was working. An arm that measures
  * an angle owes the state it started from.
  */
+let restFailed = false;
 async function atRest() {
 	// One read per tick: the sample that ends this iteration begins the next.
 	let prev = await nose();
 	for (let i = 0; i < 200; i++) {
 		await page.waitForTimeout(50);
 		const now = await nose();
-		if (degreesBetween(prev, now) < 0.02) return;
+		if (degreesBetween(prev, now) < 0.02) return true;
 		prev = now;
 	}
-	throw new Error("the ship never stopped turning");
+	restFailed = true;
+	// **Reported, not thrown.** A throw at top level here aborts before
+	// `browser.close()` and `exit()`, so a build whose damping broke would
+	// crash the suite rather than name a failing row — which is the hazard
+	// this file already names for `page.evaluate`.
+	return false;
 }
 
 /** Hold `key` for `HOLD_MS` and report how far the nose turned. `null` holds
  *  nothing, which is the drift arm. */
 async function turnedWhileHolding(key) {
 	await atRest();
+
 	const before = await nose();
 	if (key !== null) await page.keyboard.down(key);
 	await page.waitForTimeout(HOLD_MS);
@@ -123,31 +130,50 @@ const shipped = await turnedWhileHolding("s");
 const residual = await turnedWhileHolding(null);
 check(
 	"the shipped `s` pitches the ship, orders of magnitude above the rest gate's floor",
-	// Not `residual < 1`: `atRest` bounds that by construction, so the
-	// comparison would have been settled by its own precondition. What is
-	// worth asserting is the ratio, which nothing guarantees.
+	// **This is a floor, and saying so is the honest version.** `residual < 1`
+	// was settled by `atRest`'s own precondition; the ratio is better only
+	// because the *numerator* is unconstrained, and with the denominator
+	// capped near 0.16° it still amounts to "about 8° or more". That is worth
+	// having — a build where the key reached nothing reads 0.01° — but calling
+	// it a measurement of drift would be the same dressing-up again.
 	shipped > residual * 50,
 	`held ${shipped.toFixed(2)}°, residual after the rest gate ${residual.toFixed(2)}°`,
+);
+check(
+	"and the rest gate settled every arm rather than running out of patience",
+	restFailed === false,
+	`atRest exhausted its 200 ticks: ${restFailed}`,
 );
 
 // ---------------------------------------------------------------------------
 // The rebind, through the route the capture modal will take.
 // ---------------------------------------------------------------------------
-// Caught rather than allowed to reject: an evaluate that throws aborts the
-// probe, so a refusal would take the suite down instead of printing a red row
-// — and the row would have been settled by its own `return true`.
-const moved = await page.evaluate((key) => {
-	try {
-		window.__seelite.rebindCommand(
-			"fly.pitchUp",
-			{ kind: "key", key: "s", hold: true },
-			{ kind: "key", key, hold: true },
-		);
-		return "accepted";
-	} catch (e) {
-		return `threw: ${e instanceof Error ? e.message : String(e)}`;
-	}
-}, NEW_KEY);
+/**
+ * One rebind, through the route the capture modal will take.
+ *
+ * Caught rather than allowed to reject: an evaluate that throws aborts the
+ * probe, so a refusal would take the suite down instead of printing a red row.
+ * One helper rather than three copies of the block — the third copy had
+ * already drifted to a different prefix, which is what a copied block invites.
+ */
+const tryRebind = (command, from, to) =>
+	page.evaluate(
+		([id, a, b]) => {
+			try {
+				window.__seelite.rebindCommand(id, a, b);
+				return "accepted";
+			} catch (e) {
+				return `refused: ${e instanceof Error ? e.message : String(e)}`;
+			}
+		},
+		[command, from, to],
+	);
+
+const moved = await tryRebind(
+	"fly.pitchUp",
+	{ kind: "key", key: "s", hold: true },
+	{ kind: "key", key: NEW_KEY, hold: true },
+);
 check("the rebind is accepted", moved === "accepted", moved);
 
 const oldKey = await turnedWhileHolding("s");
@@ -220,18 +246,11 @@ check(
 	toggledOnV !== (await view()),
 	`v gave ${toggledOnV}, and back to ${await view()}`,
 );
-const movedPress = await page.evaluate(() => {
-	try {
-		window.__seelite.rebindCommand(
-			"view.toggle",
-			{ kind: "key", key: "v" },
-			{ kind: "key", key: "7" },
-		);
-		return "accepted";
-	} catch (e) {
-		return `threw: ${e instanceof Error ? e.message : String(e)}`;
-	}
-});
+const movedPress = await tryRebind(
+	"view.toggle",
+	{ kind: "key", key: "v" },
+	{ kind: "key", key: "7" },
+);
 check(
 	"the pressed command's rebind is accepted",
 	movedPress === "accepted",
@@ -264,18 +283,11 @@ await settle(page);
 // success and moved nothing is the defect, and it is the wiring here that
 // would swallow the throw.
 // ---------------------------------------------------------------------------
-const refused = await page.evaluate(() => {
-	try {
-		window.__seelite.rebindCommand(
-			"fly.pitchUp",
-			{ kind: "key", key: "j" },
-			{ kind: "key", key: "9", hold: true },
-		);
-		return "accepted";
-	} catch (e) {
-		return `refused: ${e instanceof Error ? e.message : String(e)}`;
-	}
-});
+const refused = await tryRebind(
+	"fly.pitchUp",
+	{ kind: "key", key: "j" },
+	{ kind: "key", key: "9", hold: true },
+);
 check(
 	"a rebind off a trigger the command does not have is refused",
 	refused.startsWith("refused:"),
