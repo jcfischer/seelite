@@ -83,9 +83,10 @@
  *   light and is not normalised, while {@link systemField}'s is), and `grain` mode
  *   prints the share of the invented population whose luma is high enough that a
  *   *largest* invented point outshines a *smallest* real one, and — jointly, each
- *   point's own size against its own tint — **0.41%** of them actually do it. Both
- *   rows print, because the first is a bound at maximum size and reading it as a
- *   share overstated the leak eighty-five-fold. Closing it is a colour decision, not a size one: normalise the
+ *   point's own size against its own tint — what share actually does it. Both rows
+ *   print in `measure-sky-density.ts grain`; neither figure is repeated here, because
+ *   the marginal one is a bound at maximum size and was read as a share once already.
+ *   Closing the gap is a colour decision, not a size one: normalise the
  *   ramp to the same photosphere exposure or drop `FAINT_SIZE_MAX` further, and both
  *   move the look, so it is #433's sheet to settle.
  */
@@ -173,12 +174,12 @@ export const BRIGHT_SIZE_MAX = 0.055;
 /**
  * The distance at which a real system draws at the middle of the band.
  *
- * **21.1 ly is a measurement**: the **pooled** median separation between two
- * systems in a 256-system galaxy, one sample per pair — 20,889,600 of them across
- * 40 worlds × 8 galaxies — printed by `scripts/measure-sky-density.ts sky`. Pooled
- * is the word that matters: the median *of* every observer's own median separation
- * is a different statistic and runs 2% higher, and this constant was anchored to
- * that one for a round. The middle of a reciprocal law is the geometric mean of the
+ * **21.1 ly is a measurement**: the **pooled** median separation between two systems
+ * in a 256-system galaxy, one sample per ordered observer-to-system pair, printed by
+ * `scripts/measure-sky-density.ts sky` and carried by §12 rather than by this comment.
+ * **Pooled** is the word that matters: the median *of* every observer's own median
+ * separation is a different statistic and runs higher, and this constant was anchored
+ * to that one for a round. The middle of a reciprocal law is the geometric mean of the
  * two clamps, so this single figure sets where the whole sky sits: move it and every
  * star in the game moves up or down together, which is why it is a measured number
  * rather than a pleasant one.
@@ -347,11 +348,13 @@ export function systemField(galaxy: Galaxy, observer: SystemRecord): StarField {
 	others.forEach((other, i) => {
 		const bearing = skyBearing(frame, observer.pos, other.pos);
 		if (bearing === null)
-			// Two systems standing on the same light year. The layout generator
-			// cannot ship that — every position is a fresh draw, and a duplicate
-			// would still have to survive §5's connectivity solve — but the
-			// alternative to refusing is quietly drawing 254 points for a galaxy
-			// of 256, which is how a missing star reaches a player.
+			// Two systems standing on the same light year, which is a direction
+			// `skyBearing` cannot answer. Nothing upstream promises it cannot
+			// happen: §5's connectivity solve spaces bodies that are *too close*,
+			// which is a different predicate from no two sharing a point, so the
+			// refusal lives here. The alternative to refusing is quietly drawing
+			// 254 points for a galaxy of 256, which is how a missing star reaches
+			// a player with every row still green.
 			throw new Error(
 				`systemField: system ${other.index} carries no bearing from ${observer.index}`,
 			);

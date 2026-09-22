@@ -38,3 +38,6 @@ view-set/
 # and a 214 KB zip of CI logs in history is permanent.
 .gh-cache
 .gh-cache/
+
+# scratch instruments an agent drops beside the tree; never a shipped consumer of src/
+.probe-tmp/

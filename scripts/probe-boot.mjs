@@ -246,8 +246,33 @@ const state = await page.evaluate(() => {
 		// its system count changes the check instead of breaking it.
 		systemCount: systems ? systems.geometry.getAttribute("position").count : 0,
 		systemTotal: g.world.galaxy.systems.length,
-		// One group holding both layers, and nothing else in the layer.
-		backdropChildren: g.backdropScene.children.length,
+		// The two populations, counted where they are found — by name — rather than
+		// by the container that holds them. Two earlier versions of this row read
+		// `backdropScene.children.length === 1`, then
+		// `getObjectByName("starGroup")?.children.length ?? …`: the group carries no
+		// `name`, so that lookup missed and the fallback counted one container — a
+		// claim about nesting, not about the backdrop's contents, and a third
+		// population mounted inside that group would have passed it.
+		pointLayers: ["stars-faint", "stars-systems"].filter(
+			(name) => g.backdropScene.getObjectByName(name)?.isPoints,
+		).length,
+		// "on one shared material" is a claim the two layers make **to each other**,
+		// so it is read between them. Comparing each against `__seelite.starMaterial`
+		// compares against whatever material the most recent `buildBackdrop` made:
+		// `buildBackdrop` constructs a new `ShaderMaterial` on every call, so a page
+		// that has rebuilt its backdrop holds layers against the one before, and the
+		// comparison reported one match out of two on a page whose two layers were
+		// identical to each other.
+		sharedStarMaterial: (() => {
+			const [faintLayer, systemsLayer] = ["stars-faint", "stars-systems"].map(
+				(name) => g.backdropScene.getObjectByName(name),
+			);
+			return Boolean(
+				faintLayer?.isPoints &&
+					systemsLayer?.isPoints &&
+					faintLayer.material === systemsLayer.material,
+			);
+		})(),
 		canvasSize: {
 			w: g.renderer.domElement.width,
 			h: g.renderer.domElement.height,
@@ -260,7 +285,25 @@ const state = await page.evaluate(() => {
 // because an `evaluate` closure cannot reach a module-scope helper — which is
 // exactly how the two readers drifted apart in the first place, so the boundary
 // is taken rather than the duplication accepted.
-const bootSky = await page.evaluate(skyHeads, { head: SKY_HEAD });
+// `skyHeads` throws rather than returning empty heads, which is the right
+// behaviour for the rows and the wrong one for the *run*: an `evaluate`
+// rejection here would end probe-boot before a single row printed, and a page
+// missing one layer would report as a crashed probe rather than as a named
+// failure beside forty others that passed. So the throw is caught, named as a
+// row, and the empty heads that follow make the two determinism rows fail
+// loudly on their own length check.
+let bootSky = { faint: [], systems: [] };
+let skyReadError = null;
+try {
+	bootSky = await page.evaluate(skyHeads, { head: SKY_HEAD });
+} catch (error) {
+	skyReadError = String(error);
+}
+check(
+	"both backdrop layers can be read by name",
+	skyReadError === null,
+	skyReadError ?? "stars-faint and stars-systems both resolved",
+);
 state.faintPositions = bootSky.faint;
 state.systemPositions = bootSky.systems;
 
@@ -434,8 +477,13 @@ check(
 	"the backdrop holds both point layers and nothing else",
 	state.faintCount > 0 &&
 		state.systemCount === state.systemTotal - 1 &&
-		state.backdropChildren === 1,
-	`${state.faintCount} invented + ${state.systemCount} systems of ${state.systemTotal}, in ${state.backdropChildren} object`,
+		// "and nothing else" has to count the thing the row is about: the two
+		// point layers. It used to read `backdropScene.children.length === 1`,
+		// which is one *container* and says nothing about what hangs off it —
+		// a third population added inside the group would have passed it.
+		state.pointLayers === 2 &&
+		state.sharedStarMaterial,
+	`${state.faintCount} invented + ${state.systemCount} systems of ${state.systemTotal}: ${state.pointLayers} named layers are Points, one shared material: ${state.sharedStarMaterial}`,
 );
 
 // (2b) The frame is not blank.

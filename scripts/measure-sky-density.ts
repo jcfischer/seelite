@@ -355,7 +355,6 @@ function maxOf(xs: readonly number[], label: string): number {
  * `BRIGHT_SIZE_MID_LY` is anchored to: "how far apart are two systems,
  * typically" — not "what is the median of each observer's own median".
  */
-/** Folded maximum. `Math.max(...xs)` puts one argument per element on the stack. */
 function pooledMedianSeparation(c: DistanceCensus, label: string): number {
 	if (!(c.pairs > 0)) throw new Error(`measure-sky-density: no ${label}`);
 	const half = c.pairs / 2;
@@ -527,7 +526,6 @@ const CORE_CONE_RAD = rad(CORE_CONE_DEG);
 const GRAIN_WORLDS = 8;
 
 function modeBand(): void {
-	assertBandArm();
 	console.log(
 		`arm check: a two-sided band of ±30° is ${fig(
 			"arm check",
@@ -681,10 +679,11 @@ function assertBandArm(): void {
 				"measure-sky-density: bandArm does not increase across the thresholds it is printed against",
 			);
 }
-if (Math.abs(bandArm(30) - 0.5) > 1e-12)
-	throw new Error(
-		`measure-sky-density: the band arm is not a band arm (${bandArm(30)})`,
-	);
+// At load, so no mode can print a share divided by a wrong arm. The one-point
+// version of this ran here for a round beside the four-identity check that
+// condemns it — a linear `deg/60` passes 30° and misreports every threshold in
+// `BAND_DEG`, which is how a ×7.68 reading reaches a spec.
+assertBandArm();
 
 function modeCore(): void {
 	// Per observer rather than per point: every observer has exactly 255 of them,
@@ -883,11 +882,11 @@ function modeGrain(): void {
 			4,
 		)} of ${counted} invented points actually outshine it${
 			joint > 0 ? ` (${joint} points)` : ""
-		}. That is the number #433 is deciding whether to close, and it is a **tail** problem, confined to the size law's top 2.6% of draws (u > 0.974) — inside which 0.41% of the whole population lands once its own tint is counted — not a third of the population. This row printed ${fig(
+		}. That is the number #433 is deciding whether to close, and it is a **tail** problem: nothing drawn below the size law's top 2.6% (u > 0.974) can reach the threshold even at maximum tint. This row printed ${fig(
 			"wrong share printed",
 			above / lumas.length,
 			4,
-		)} for a round because a marginal share was read off a threshold that only holds at maximum size, an eighty-five-fold overstatement of the leak`,
+		)} for a round — a marginal share read off a threshold that only holds at maximum size, which is what dividing one by the other on this line is for`,
 	);
 
 	console.log(
