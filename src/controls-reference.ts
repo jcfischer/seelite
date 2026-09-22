@@ -9,9 +9,10 @@
  * #370's receipt carries the nine rulings; the comments below cite them by
  * their D-number rather than restating them.
  */
+import type { LayoutNotice, RejectReason } from "./binding-store";
 import { escapeHtml } from "./escape-html";
 import type { Surface, TaskGroup, Trigger } from "./commands";
-import { PAD_CONTEXTS, TASK_GROUPS } from "./commands";
+import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
 import type { FocusCursor, FocusItem } from "./panel-focus";
@@ -356,5 +357,132 @@ export function controlsBody(
 ): string {
 	const owner =
 		catalogue.layout === "default" ? "DEFAULT LAYOUT" : "PLAYER LAYOUT";
-	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header><div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
+	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header>${noticesMarkup(catalogue.notices)}<div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// What a stored layout could not do, in the player's words (#381, slice 3)
+// ---------------------------------------------------------------------------
+
+const COMMAND_NAMES = new Map<string, string>(
+	COMMANDS.map((c) => [c.id, c.name]),
+);
+
+/**
+ * A stored string on its way into a sentence, cut to a length a line can hold.
+ *
+ * Everything the band prints is escaped by `noticesMarkup`, so this is not an
+ * injection guard — it is a length one. A command id and a version come out of
+ * a string store that anything can write, and the two that reach a sentence
+ * were the only unbounded values left after the key and the code were capped
+ * (sage round 4).
+ */
+const short = (v: string) => (v.length > 40 ? `${v.slice(0, 40)}…` : v);
+
+/**
+ * A control's name, or the blob's own string when this build has no such
+ * control.
+ *
+ * Both halves are reachable: a rejected row may name a command that was
+ * renamed or removed, and a notice that printed nothing in that case would be
+ * a refusal the player cannot act on — which is the whole failure this slice
+ * exists to prevent.
+ */
+const controlName = (id: string | null): string =>
+	id === null
+		? "A saved control"
+		: (COMMAND_NAMES.get(id) ?? `An unknown control (${short(id)})`);
+
+/**
+ * What each refusal means, in the player's words.
+ *
+ * A table over `RejectReason` rather than the store's own message, because
+ * that message is `rebind`'s and carries `triggerKey`'s hash — the tab printed
+ * `key:q::hold -> key:k::press` for a round, which is a string no player can
+ * act on. The store keeps the detail for a console; this is what is drawn.
+ */
+export const REJECTED_WHY: Record<RejectReason, string> = {
+	"unreadable-row": "one of your saved changes could not be read",
+	"unknown-control": "this version of the game has no such control",
+	"unreadable-trigger": "the key it was saved on could not be read",
+	"moved-default":
+		"it has moved in this version, so your change no longer fits — set it again",
+	"already-changed":
+		"your saved controls change it more than once, and only the first change was kept",
+	"refused-by-registry":
+		"the saved change asked for more than moving a key, which this control decides",
+};
+
+/** Where a collision is live, when it is not everywhere. */
+const inViews = (views: readonly string[]): string =>
+	views.length === VIEW_MODES.length ? "" : ` in ${views.join(" and ")}`;
+
+/**
+ * The sentence a `LayoutNotice` prints.
+ *
+ * **Here rather than in `binding-store.ts`**, because #369 D11 gives this
+ * module the one owner of every printed control name and `triggerLabel` is
+ * already it. A formatter beside the store would be a second table of the
+ * same names, which is the drift D11 was written against.
+ *
+ * **The collision sentence says what the game does, not what #369 D5 says it
+ * should.** D5's resolution is warn, allow, and resolve by last-changed-wins —
+ * and the dispatch does not resolve: `resolveKey` returns every command a key
+ * reaches and `main.ts` runs all of them. That is reachable on `main` through
+ * `rebindCommand` and is not this slice's regression, but a notice promising a
+ * law the game does not keep would be worse than no notice at all. **#484 owns
+ * the law**, including the reason it is not simply implementable here: the
+ * store is a diff and keeps no record of which row moved last. The sentence
+ * becomes D5's when that node closes.
+ */
+export function noticeText(notice: LayoutNotice): string {
+	switch (notice.kind) {
+		case "unreadable":
+			// **Two causes and two sentences, because only one of them can
+			// promise a repair.** A store that throws on a read throws on a
+			// write, so "changing a control will replace them" printed beside
+			// "This change could not be saved" for a round (sage round 4). And
+			// the thrown message is `detail` and is not printed: it is the
+			// half-machine string this slice abolished for a rejection.
+			return notice.cause === "refused"
+				? "Your browser is not letting this game read what it stored, which a private window does. The default layout is in force, and a change you make now will not be saved either."
+				: "Your saved controls could not be read. The default layout is in force, and changing a control will replace them.";
+		case "version":
+			// `JSON.stringify` rather than `String`, and the absent case named:
+			// a stored `"1"` printed as `1` reads exactly like the version this
+			// build *is*, and a missing one printed `undefined`.
+			return `Your saved controls were written by a different build (${
+				notice.stored === undefined
+					? "they carry no version"
+					: `version ${short(JSON.stringify(notice.stored))}`
+			}). The default layout is in force, and changing a control will replace them.`;
+		case "rejected":
+			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;
+		case "unsaved":
+			return "This change could not be saved — your browser is refusing storage, which a private window does. It will fly until you reload the page.";
+		case "collision": {
+			// **Two names, and no cast to get them.** `Collision.commands` is a
+			// pair in the type, because `collisions()` reports one entry per
+			// overlapping *pair* — so three commands on one trigger arrive as
+			// three notices with two names each, not one notice that drops a
+			// name. The first pass narrowed the array by assertion, which read
+			// as a truncation it is not (sage round 1); a wider report would
+			// fail to compile here rather than print short.
+			const [a, b] = notice.collision.commands;
+			return `${controlName(a)} and ${controlName(b)} are both on ${triggerLabel(notice.at)}${inViews(notice.collision.scope.views)}. Both run; move one to separate them.`;
+		}
+	}
+}
+
+/** The band above the tree. Absent when there is nothing to say, rather than
+ *  an empty box that reads as a screen that failed to draw. */
+function noticesMarkup(notices: readonly LayoutNotice[]): string {
+	if (notices.length === 0) return "";
+	const rows = notices
+		.map(
+			(n) =>
+				`<li class="lc-controls-notice" data-live-controls-notice="${n.kind}">${escapeHtml(noticeText(n))}</li>`,
+		)
+		.join("");
+	return `<ul class="lc-controls-notices" data-live-controls-notices>${rows}</ul>`;
 }

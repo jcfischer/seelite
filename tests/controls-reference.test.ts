@@ -7,8 +7,21 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import { TASK_GROUPS, type Trigger } from "../src/commands";
-import { CONTROLS } from "../src/controls-catalogue";
+import {
+	LAYOUT_VERSION,
+	type LayoutNotice,
+	parseLayout,
+	type RejectReason,
+} from "../src/binding-store";
+import {
+	type CommandId,
+	commandById,
+	DEFAULT_BINDINGS,
+	TASK_GROUPS,
+	type Trigger,
+	triggerKey,
+} from "../src/commands";
+import { CONTROLS, controlsCatalogue } from "../src/controls-catalogue";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,
@@ -18,6 +31,8 @@ import {
 	controlsTree,
 	focusAfterFold,
 	groupFocusId,
+	noticeText,
+	REJECTED_WHY,
 	rowFocusId,
 	restoreOnTabPick,
 	toggleGroup,
@@ -332,5 +347,190 @@ describe("a tab picked by hand", () => {
 
 	test("clicking Controls while already on it keeps the memory", () => {
 		expect(restoreOnTabPick(CONTROLS_TAB, CONTROLS_TAB, "Drive")).toBe("Drive");
+	});
+});
+
+describe("the band above the tree (#381 S3)", () => {
+	const ROLL: CommandId = "fly.rollPort";
+	const PITCH_UP: CommandId = "fly.pitchUp";
+	const PITCH_DOWN: CommandId = "fly.pitchDown";
+	// Derived from the shipped table rather than written out: a hand-copied
+	// list is caught by `Record<RejectReason, string>` when a reason is *added*
+	// there and silently skipped by the uniqueness check here (sage round 3).
+	const REJECT_REASONS = Object.keys(REJECTED_WHY) as RejectReason[];
+	const rejected: LayoutNotice = {
+		kind: "rejected",
+		command: ROLL,
+		reason: "refused-by-registry",
+		detail:
+			"a rebind may move a key, not its qualifiers: key:q::hold -> key:k::press",
+	};
+
+	test("a catalogue with no notices draws no band at all", () => {
+		// Absent rather than empty: a box with nothing in it reads as a screen
+		// that failed to draw.
+		expect(controlsBody(CONTROLS, new Set())).not.toContain(
+			"data-live-controls-notices",
+		);
+	});
+
+	test("a notice is drawn, in the tab, above the tree", () => {
+		const html = controlsBody(
+			controlsCatalogue(DEFAULT_BINDINGS, [rejected]),
+			new Set(),
+		);
+		expect(html).toContain("data-live-controls-notices");
+		expect(html).toContain('data-live-controls-notice="rejected"');
+		expect(html).toContain(commandById(ROLL).name);
+		expect(html.indexOf("data-live-controls-notices")).toBeLessThan(
+			html.indexOf("data-live-controls-tree"),
+		);
+	});
+
+	test("what is drawn is the sentence, never the detail's hash", () => {
+		// `rebind`'s message is kept for a console; the tab prints a table over
+		// the reason. The band read `key:q::hold -> key:k::press` for a round.
+		const html = controlsBody(
+			controlsCatalogue(DEFAULT_BINDINGS, [rejected]),
+			new Set(),
+		);
+		expect(html).not.toContain("key:q::hold");
+	});
+
+	test("a version the build refused names it, and quotes a string one", () => {
+		// `"1"` printed through `String` reads exactly like the number this
+		// build is, and an absent version printed `undefined`.
+		expect(noticeText({ kind: "version", stored: 2 })).toContain("version 2");
+		expect(noticeText({ kind: "version", stored: "1" })).toContain('"1"');
+		expect(noticeText({ kind: "version", stored: undefined })).toContain(
+			"no version",
+		);
+	});
+
+	test("a store that refuses a read promises no repair it cannot make", () => {
+		// A store that throws on `getItem` throws on `setItem`, so the sentence
+		// that ends "changing a control will replace them" printed beside
+		// "This change could not be saved" for a round (sage round 4).
+		const refused = noticeText({
+			kind: "unreadable",
+			cause: "refused",
+			detail: "access denied",
+		});
+		expect(refused).not.toMatch(/will replace/i);
+		expect(refused).toMatch(/will not be saved/i);
+		// The blob is there and unreadable: the store works, so the promise is
+		// true and is made.
+		expect(
+			noticeText({ kind: "unreadable", cause: "corrupt", detail: "x" }),
+		).toMatch(/will replace/i);
+	});
+
+	test("the thrown message is kept and never drawn", () => {
+		for (const cause of ["refused", "corrupt"] as const)
+			expect(
+				noticeText({ kind: "unreadable", cause, detail: "SecurityError: x" }),
+			).not.toContain("SecurityError");
+	});
+
+	test("a stored string reaching a sentence is cut to a line", () => {
+		const long = "z".repeat(500);
+		expect(
+			noticeText({
+				kind: "rejected",
+				command: long,
+				reason: "unknown-control",
+				detail: "d",
+			}).length,
+		).toBeLessThan(200);
+		expect(noticeText({ kind: "version", stored: long }).length).toBeLessThan(
+			200,
+		);
+	});
+
+	test("a control this build does not have is still named", () => {
+		// Reachable: a saved row may name a command that has since been removed,
+		// and a notice that printed nothing there is a refusal nobody can act on.
+		const text = noticeText({
+			kind: "rejected",
+			command: "fly.wiggle",
+			reason: "unknown-control",
+			detail: "no command is called fly.wiggle",
+		});
+		expect(text).toContain("fly.wiggle");
+		expect(text.trim().length).toBeGreaterThan(0);
+	});
+
+	test("a change the browser refused says so, and says what still works", () => {
+		// The rebind flies and does not survive the page. Saying nothing was
+		// the same silent failure the band exists to abolish (sage round 2).
+		const text = noticeText({ kind: "unsaved" });
+		expect(text).toMatch(/could not be saved/i);
+		expect(text).toMatch(/reload/i);
+	});
+
+	test("every reason a row can be rejected for has its own sentence", () => {
+		// A `Record<RejectReason, string>` makes a missing one a type error, and
+		// this is the row that makes a *duplicated* one visible: two reasons
+		// with the same words are two answers the player cannot tell apart.
+		const said = REJECT_REASONS.map((reason) =>
+			noticeText({
+				kind: "rejected",
+				command: "fly.rollPort",
+				reason,
+				detail: "d",
+			}),
+		);
+		expect(new Set(said).size).toBe(REJECT_REASONS.length);
+		for (const t of said) expect(t.trim().length).toBeGreaterThan(0);
+	});
+
+	test("a key out of the string store cannot reach the markup as markup", () => {
+		// **The only thing between a player-writable store and `innerHTML` is
+		// `rowMarkup`'s `escapeHtml`, and nothing asserted it** — the store's
+		// own comment named it and a length cap was standing in for a proof
+		// (sage round 5). A future change to `rowMarkup` fails here.
+		const from = DEFAULT_BINDINGS.find(
+			(b) => b.command === "fly.pitchUp" && b.trigger.kind === "key",
+		)?.trigger;
+		if (from === undefined || from.kind !== "key")
+			throw new Error("no shipped pitch-up key");
+		const read = parseLayout(
+			JSON.stringify({
+				version: LAYOUT_VERSION,
+				moves: [
+					{
+						command: "fly.pitchUp",
+						from,
+						to: { ...from, key: "<img src=x onerror=1>", code: undefined },
+					},
+				],
+			}),
+		);
+		expect(read.notices).toEqual([]);
+		const html = controlsBody(controlsCatalogue(read.layout), new Set());
+		expect(html).toContain("&lt;img");
+		expect(html).not.toContain("<img");
+	});
+
+	test("a collision names both commands and the key, in words", () => {
+		const trigger = DEFAULT_BINDINGS.find(
+			(b) => b.command === PITCH_DOWN && b.trigger.kind === "key",
+		)?.trigger;
+		if (trigger === undefined) throw new Error("no shipped pitch-down key");
+		const text = noticeText({
+			kind: "collision",
+			collision: {
+				trigger: triggerKey(trigger),
+				commands: [PITCH_UP, PITCH_DOWN],
+				scope: { pad: ["flight"], views: ["cockpit", "chase"] },
+			},
+			at: trigger,
+		});
+		expect(text).toContain(commandById(PITCH_UP).name);
+		expect(text).toContain(commandById(PITCH_DOWN).name);
+		expect(text).toContain(triggerLabel(trigger));
+		// It says what the game does — both commands run — and not #369 D5's
+		// last-changed law, which no dispatch implements. #484 owns that.
+		expect(text).toMatch(/both run/i);
 	});
 });

@@ -15,14 +15,16 @@
 import { describe, expect, test } from "bun:test";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
+	type CommandId,
 	DEFAULT_BINDINGS,
 	PANEL_INTENTS,
+	rebind,
 	type PanelIntent,
 	TASK_GROUPS,
 	resolveKey,
 	type Trigger,
 } from "../src/commands";
-import { CONTROLS } from "../src/controls-catalogue";
+import { CONTROLS, controlsCatalogue } from "../src/controls-catalogue";
 import { STANDARD_BUTTONS } from "../src/gamepad";
 import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
@@ -463,5 +465,59 @@ describe("the catalogue's shape", () => {
 			c.currentTriggers.some((t) => t.kind === "key" && t.key === "?"),
 		);
 		expect(row?.group).toBe("view");
+	});
+});
+
+describe("the catalogue is a view of the layout in force (#381 S3)", () => {
+	const PITCH_UP: CommandId = "fly.pitchUp";
+	const found = DEFAULT_BINDINGS.find(
+		(b) => b.command === PITCH_UP && b.trigger.kind === "key" && b.trigger.hold,
+	)?.trigger;
+	if (found === undefined || found.kind !== "key")
+		throw new Error(`${PITCH_UP} ships on no held key`);
+	const from = found;
+	const moved = rebind(DEFAULT_BINDINGS, PITCH_UP, from, {
+		kind: "key",
+		key: "8",
+		hold: true,
+	});
+
+	test("the shipped layout is reported as the default, not the player's", () => {
+		// The screen must not offer "PLAYER LAYOUT" for rows the player never
+		// moved — which is what `layout: \"default\"` was hardcoded to say until
+		// there was a layout to compare against.
+		expect(controlsCatalogue(DEFAULT_BINDINGS).layout).toBe("default");
+		expect(CONTROLS.layout).toBe("default");
+	});
+
+	test("one moved row makes it the player's", () => {
+		expect(controlsCatalogue(moved).layout).toBe("player");
+	});
+
+	test("and the row prints the key it is on now, not the one it shipped on", () => {
+		// `currentTriggers` was a copy of `defaultTriggers` for two slices, so
+		// the two were the same thing and nothing could tell them apart.
+		const row = controlsCatalogue(moved).commands.find(
+			(c) => c.id === PITCH_UP,
+		);
+		expect(
+			row?.currentTriggers.some((t) => t.kind === "key" && t.key === "8"),
+		).toBe(true);
+		expect(
+			row?.currentTriggers.some((t) => t.kind === "key" && t.key === from.key),
+		).toBe(false);
+		// The shipped triggers are untouched beside it, which is what makes the
+		// tab able to say what a control *was*.
+		expect(
+			row?.defaultTriggers.some((t) => t.kind === "key" && t.key === from.key),
+		).toBe(true);
+	});
+
+	test("notices are carried, and there are none by default", () => {
+		expect(CONTROLS.notices).toEqual([]);
+		const carried = controlsCatalogue(DEFAULT_BINDINGS, [
+			{ kind: "unreadable", cause: "corrupt", detail: "not JSON" },
+		]);
+		expect(carried.notices.length).toBe(1);
 	});
 });

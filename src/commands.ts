@@ -156,7 +156,15 @@ export type FixedReason = "diagnostic" | "rig" | "pointer";
  * reported as a collision, and rewording a label would silently move a scope.
  * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
  */
-const SURFACES = ["requests", "station-console"] as const;
+/**
+ * The screens that claim the keyboard, and the set a stored layout is checked
+ * against.
+ *
+ * Exported since the storage slice: `binding-store.ts`'s validator has to ask
+ * whether a surface in a blob is one this build has, and a second list written
+ * there is the third copy this repo's history is about.
+ */
+export const SURFACES = ["requests", "station-console"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 /**
@@ -1512,6 +1520,49 @@ export function isHeld(
 	for (const b of holdRows(bindings).get(command) ?? [])
 		if (b.scope.views.includes(view) && keys.has(b.trigger.key)) return true;
 	return false;
+}
+
+/** One row a player moved: which command, off what, onto what. */
+export interface LayoutMove {
+	readonly command: CommandId;
+	readonly from: Trigger;
+	readonly to: Trigger;
+}
+
+/**
+ * Every row of a layout whose trigger is not the one it shipped on.
+ *
+ * **A question about the registry and not about storage**, which is why it
+ * lives here beside `rebind` rather than in `binding-store.ts`: the `Controls`
+ * tab asks it to decide whether it is printing the player's layout or the
+ * shipped one, and routing that through the module that owns `localStorage`
+ * put the presentation tier downstream of the persistence tier for a pure
+ * comparison (sage round 2).
+ *
+ * Paired by position, because `rebind` writes `next[at]` and returns a new
+ * array of the same length — so row *i* of any layout this game can produce is
+ * row *i* of the shipped one with, at most, a different trigger. The pairing
+ * is asserted rather than assumed: a layout that is not the shipped table with
+ * triggers moved is a programming error, and one that silently produced the
+ * wrong diff would be saved as a blob that loads as a different layout.
+ */
+export function layoutMoves(layout: readonly Binding[]): LayoutMove[] {
+	if (layout.length !== DEFAULT_BINDINGS.length)
+		throw new Error(
+			`a layout has ${DEFAULT_BINDINGS.length} rows, not ${layout.length}`,
+		);
+	const out: LayoutMove[] = [];
+	for (let i = 0; i < layout.length; i++) {
+		const live = layout[i] as Binding;
+		const base = DEFAULT_BINDINGS[i] as Binding;
+		if (live.command !== base.command)
+			throw new Error(
+				`layout row ${i} is ${live.command}, not ${base.command}`,
+			);
+		if (triggerKey(live.trigger) === triggerKey(base.trigger)) continue;
+		out.push({ command: base.command, from: base.trigger, to: live.trigger });
+	}
+	return out;
 }
 
 /**

@@ -34,6 +34,7 @@ import {
 const HEADLESS = [
 	"audio",
 	"backdrop",
+	"binding-store",
 	"carrier-key",
 	"cockpit",
 	"combat-prototype",
@@ -95,6 +96,7 @@ test("no module has been quietly dropped from the list", () => {
 	const required = [
 		"audio",
 		"backdrop",
+		"binding-store",
 		"carrier-key",
 		"cockpit",
 		"combat-prototype",

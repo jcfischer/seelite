@@ -23,7 +23,16 @@
  * Headless, and on the list in `tests/headless.test.ts`: the unit tier renders
  * **this** catalogue, never a struct a test built.
  */
-import { type Command, COMMANDS, type Trigger } from "./commands";
+import type { LayoutNotice } from "./binding-store";
+import {
+	type Binding,
+	type Command,
+	type CommandId,
+	COMMANDS,
+	DEFAULT_BINDINGS,
+	layoutMoves,
+	type Trigger,
+} from "./commands";
 
 /**
  * A registry row, plus the one thing a screen needs that a registry row does
@@ -39,20 +48,71 @@ export interface ControlCommand extends Command {
 }
 
 export interface ControlsCatalogue {
-	/** #370 D5: `default` until the registry can report a player layout. */
+	/**
+	 * #370 D5: which layout the rows below are.
+	 *
+	 * **Derived, never stored.** A blob may exist and still leave the shipped
+	 * layout in force — every row of it rejected, or a version this build
+	 * refused — and a screen that read "a layout was saved" would then claim a
+	 * player layout it is not flying. The answer is whether the rows differ
+	 * from the ones that shipped.
+	 */
 	readonly layout: "default" | "player";
 	readonly commands: readonly ControlCommand[];
+	/** What the store could not do, for the band above the tree (#381 S3).
+	 *  Empty on the shipped layout, which is the common case. */
+	readonly notices: readonly LayoutNotice[];
 }
 
-// The player's layout is #381's storage slice; until it lands the only layout
-// is the shipped one, and `layout` below says so rather than the screen
-// claiming a layout it cannot report.
-const row = (c: Command): ControlCommand => ({
+const row = (
+	c: Command,
+	bound: ReadonlyMap<CommandId, Trigger[]>,
+): ControlCommand => ({
 	...c,
-	currentTriggers: c.defaultTriggers,
+	currentTriggers: bound.get(c.id) ?? [],
 });
 
-export const CONTROLS: ControlsCatalogue = {
-	layout: "default",
-	commands: COMMANDS.map(row),
-};
+/**
+ * The catalogue for one layout.
+ *
+ * A function since the storage slice, because the tab now prints what the
+ * player is flying rather than what shipped — and `currentTriggers` is read
+ * out of the layout rather than copied off `defaultTriggers`, which is what
+ * made the two the same thing for two slices.
+ */
+export function controlsCatalogue(
+	bindings: readonly Binding[] = DEFAULT_BINDINGS,
+	notices: readonly LayoutNotice[] = [],
+): ControlsCatalogue {
+	// **The diff first, and it is the guard as well as the answer.**
+	// `layoutMoves` throws on a table that is not the shipped one with
+	// triggers moved, so a command missing from `bound` below is impossible
+	// rather than drawn blank — a row that shows no key at all would be a
+	// control the tab claims exists and gives no way to press (sage round 3).
+	// A command with *no shipped trigger* is a different thing and is drawn
+	// `unbound` by `rowMarkup`, which is what it is.
+	const moves = layoutMoves(bindings);
+	// One pass over the table rather than one scan per command: the filter this
+	// replaced was `COMMANDS.length` walks of the whole binding table. Cheap
+	// either way at these sizes, and it runs on every rebind (sage round 2).
+	const bound = new Map<CommandId, Trigger[]>();
+	for (const b of bindings) {
+		const rows = bound.get(b.command);
+		if (rows === undefined) bound.set(b.command, [b.trigger]);
+		else rows.push(b.trigger);
+	}
+	return {
+		layout: moves.length > 0 ? "player" : "default",
+		commands: COMMANDS.map((c) => row(c, bound)),
+		notices,
+	};
+}
+
+/**
+ * The shipped layout's catalogue.
+ *
+ * Kept as a value because the unit tier renders **this** — a catalogue built
+ * by a test is a struct the test itself authored, which is the thing
+ * `tests/controls-catalogue.test.ts` exists to refuse.
+ */
+export const CONTROLS: ControlsCatalogue = controlsCatalogue();
