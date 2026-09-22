@@ -78,14 +78,17 @@ const page = await browser.newPage({ viewport: VIEWPORT });
 
 await installClearanceHooks(page);
 
-let renderer = null;
+/** Every distinct renderer the sweep was given, checked on **every** boot rather
+ *  than on the first — a machine that falls back to a software rasteriser part-way
+ *  through a sweep is the one that produces a table of confident wrong angles, and
+ *  the EXEMPT entry claims this file refuses that. */
+const renderers = new Set();
 const rows = [];
 
 try {
 	for (const seed of SEEDS) {
 		await bootForClearance(page, SERVING, seed);
-		if (renderer === null)
-			renderer = await assertPlayersRenderer(page, "sky-clearance");
+		renderers.add(await assertPlayersRenderer(page, "sky-clearance"));
 		rows.push(await emptiestClearance(page, seed));
 	}
 } finally {
@@ -94,12 +97,12 @@ try {
 	await browser.close();
 }
 
-console.log(`renderer: ${renderer}`);
+console.log(`renderer: ${[...renderers].join("  |  ")}`);
 console.log(
 	`framing: OCCLUSION_FRAMINGS.deepSky, the shipped \`sky-only\` placement, on the sheet's ${VIEWPORT.width}x${VIEWPORT.height} viewport\n`,
 );
 console.log(
-	"seed   sys  bodies  fov   aspect   halfDiag   nearest        angle   disc    limb    verdict",
+	"seed   sys  bodies craft placed  fov   aspect   halfH   halfDiag   nearest        angle   disc    limb    verdict",
 );
 for (const r of rows) {
 	const n = r.nearest;
@@ -107,18 +110,21 @@ for (const r of rows) {
 	console.log(
 		`${String(r.askedSeed).padStart(4)}${r.worldSeed === r.askedSeed ? " " : "!"} ` +
 			`${String(r.system).padStart(3)}  ` +
-			`${String(r.bodies).padStart(6)}  ` +
+			`${String(r.bodies).padStart(6)} ` +
+			`${String(r.craft).padStart(5)} ` +
+			`${String(r.craftPlaced).padStart(6)}  ` +
 			`${r.fovDeg.toFixed(0).padStart(4)}  ` +
 			`${r.aspect.toFixed(2).padStart(6)}  ` +
+			`${r.halfHeightDeg.toFixed(2).padStart(6)}°  ` +
 			`${r.halfDiagonalDeg.toFixed(2).padStart(8)}°  ` +
 			`${n.name.padEnd(14)} ` +
 			`${n.angleDeg.toFixed(2).padStart(7)}°  ` +
-			`${n.apparentDeg.toFixed(2).padStart(6)}°  ` +
+			`${n.apparentDeg.toFixed(3).padStart(6)}°  ` +
 			`${n.limbDeg.toFixed(2).padStart(7)}°  ` +
-			`${margin >= 0 ? "out by" : "IN FRAME by "} ${Math.abs(margin).toFixed(2)}°` +
+			`${margin >= 0 ? "out by" : "IN FRAME"} ${Math.abs(margin).toFixed(2)}°` +
 			(r.inFrame === 0 ? "" : `   [${r.inFrame} subject(s) in frame]`),
 	);
 }
 console.log(
-	"\n`limb` is the angle from the camera's axis to the near edge of that subject's disc, against `halfDiag`, the widest angle the frame's rectangle contains. `limb > halfDiag` is out of the picture. A `!` beside a seed means the page booted a world other than the one asked for.",
+	"\n`limb` is the angle from the camera's axis to the near edge of that subject's disc, against `halfDiag`, the widest angle the frame's rectangle contains (`halfH` is the vertical half-angle, the narrower bound the diagonal is preferred to). `limb > halfDiag` is out of the picture. A `!` beside a seed means the page booted a world other than the one asked for. `craft` is Traffic the game says it draws and `placed` the routes it can put one on; hulls are scored as centres at their route's position, and a drawn carrier with no route throws rather than going unmeasured.",
 );

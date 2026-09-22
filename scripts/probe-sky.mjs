@@ -68,7 +68,7 @@ import {
 // sheet's seed by number keeps passing after the sheet moves. Note this is a
 // different world from this file's own `SEED` below: those rows ask the generator
 // for a sky with neighbours in every direction, the clearance row asks the sheet's.
-import { SEED as SHEET_SEED } from "./lib/view-set.mjs";
+import { SEED as SHEET_SEED, VIEWPORT } from "./lib/view-set.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -466,11 +466,21 @@ check(
 // caption on the contact sheet is the thing that has become false, and this is the
 // row that says so rather than a person noticing it while reading the sheet.
 //
-// The bound is the frame's half-diagonal and a subject is a disc, both read off the
-// page; `lib/sky-clearance.mjs` owns that arithmetic and why each piece is the piece
-// it is, including the viewport the rectangle belongs to. Bloom stays outside both
-// rows by construction: a body clear of the cone can still wash the corner behind
-// it, and that is a look judgement on the sheet, not a number computable here.
+// The bound is the frame's half-diagonal, checked against `VIEWPORT` rather than
+// assumed from this file's own viewport; bodies are measured as discs and traffic as
+// centres, because a hull's drawn size is display state and not a radius the world
+// can quote. `lib/sky-clearance.mjs` owns that arithmetic and why each piece is the
+// piece it is.
+//
+// **Two boundaries on what these rows establish**, said here because the caption's
+// word is *nothing* and a reader is entitled to know what the word was held to:
+// bloom is outside both rows by construction — a body clear of the cone can still
+// wash the corner behind it, and that is a look judgement on the sheet — and the
+// fixture is part of the claim, since both rows boot `raider: "off"` exactly as the
+// capture does. **What is held is the captured arrival frame, not every moment of
+// play in that system.** Fly far enough and something crosses the view; no reading of
+// an arrival point can promise otherwise, and a caption that implied it could would
+// be a different claim than the one `sky-only` makes.
 // ---------------------------------------------------------------------------
 
 // Last, not first: these are `addInitScript` payloads, and the twelve rows above
@@ -482,23 +492,33 @@ const clearance = await emptiestClearance(page, SHEET_SEED);
 const limb = clearance.nearest.limbDeg;
 const halfDiagonal = clearance.halfDiagonalDeg;
 const stoodOnTheSheetsSeed = clearance.worldSeed === SHEET_SEED;
+// **The rectangle is part of the claim, so it is checked and not commented on.**
+// This probe's page is 1280x800 and the sheet is captured at `VIEWPORT`; the two
+// agree today because both are 16:10, and nothing about that survives an edit to
+// either. `lib/sky-clearance.mjs` says a consumer at the wrong ratio is quoting a
+// frame nobody prints, so the row asks the page what its aspect actually is.
+const sheetsRatio =
+	Math.abs(clearance.aspect - VIEWPORT.width / VIEWPORT.height) < 1e-9;
 
 check(
-	"the deep-sky framing leaves no body's disc inside the frame, which is what `sky-only`'s caption claims",
-	clearance.inFrame === 0 && stoodOnTheSheetsSeed,
-	`${stoodOnTheSheetsSeed ? `seed ${clearance.worldSeed}, system ${clearance.system}` : `asked for the sheet's seed ${SHEET_SEED} and booted ${clearance.worldSeed}, so this says nothing about the sheet`}, ${clearance.bodies} bodies and the star: the nearest is ${clearance.nearest.name}, whose limb sits ${limb.toFixed(2)}° off the axis against a frame half-diagonal of ${halfDiagonal.toFixed(2)}°, so ${clearance.inFrame === 0 ? `${(limb - halfDiagonal).toFixed(2)}° of margin` : `${clearance.inFrame} subject(s) in frame`}`,
+	"the deep-sky framing leaves nothing drawn inside the frame, which is what `sky-only`'s caption claims",
+	clearance.inFrame === 0 && stoodOnTheSheetsSeed && sheetsRatio,
+	`${stoodOnTheSheetsSeed ? `seed ${clearance.worldSeed}, system ${clearance.system}` : `asked for the sheet's seed ${SHEET_SEED} and booted ${clearance.worldSeed}, so this says nothing about the sheet`}: ${clearance.bodies} bodies and ${clearance.craft} traffic hulls drawn (${clearance.craftPlaced} placed), nearest ${clearance.nearest.name} (${clearance.nearest.kind}) with its limb ${limb.toFixed(2)}° off the axis against a frame half-diagonal of ${halfDiagonal.toFixed(2)}°, so ${clearance.inFrame === 0 ? `${(limb - halfDiagonal).toFixed(2)}° of margin` : `${clearance.inFrame} subject(s) in frame`}${sheetsRatio ? "" : ` — and the page's aspect is ${clearance.aspect.toFixed(4)}, not the sheet's ${(VIEWPORT.width / VIEWPORT.height).toFixed(4)}, so the bound above is not the sheet's bound`}`,
 );
 
 // The control. `__lookAt` the star rather than constructing a heading, so this is
 // the shipped placement helper being misused on purpose and not a second arithmetic
-// that agrees with the first by construction.
+// that agrees with the first by construction. It requires a **non-star** subject in
+// frame: the star is injected by hand from `contents.star`, so a control going green
+// on it alone would still pass with an empty or drifted bodies list — the exact drift
+// it is here to catch.
 await page.evaluate(() => window.__lookAt({ x: 0, y: 0, z: 0 }));
 const aimed = await measureClearance(page, SHEET_SEED);
 
 check(
-	"the same reading aimed at the star finds bodies in the frame, so the row above is a measurement",
-	aimed.inFrame > 0,
-	`aimed at the star from the same place, ${aimed.inFrame} of ${aimed.bodies + 1} subjects have their limb inside ${aimed.halfDiagonalDeg.toFixed(2)}°, nearest ${aimed.nearest.name} at ${aimed.nearest.limbDeg.toFixed(2)}°`,
+	"the same reading aimed at the star finds bodies other than the star in the frame, so the row above is a measurement",
+	aimed.inFrameBodies > 0,
+	`aimed at the star from the same place, where ${aimed.inFrame} of ${aimed.bodies + aimed.craftPlaced + 1} subjects fall inside ${aimed.halfDiagonalDeg.toFixed(2)}° — ${aimed.inFrameStar} star, ${aimed.inFrameBodies} bodies, ${aimed.inFrameTraffic} traffic [${aimed.inFrameNames.join(", ") || "nothing"}]`,
 );
 
 await browser.close();

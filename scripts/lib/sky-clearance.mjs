@@ -39,27 +39,26 @@
  * is what makes the same reading honest at any other place, and it is not free to
  * be dropped because it is small today.
  *
- * **Subjects are the origin plus `world.system.bodies`, which is what
- * `__emptiestDirection` in `view-placement.mjs` scores**: it builds its list from
- * a literal `{0,0,0}` and `world.system.bodies[].pos`, and this file rebuilds the
- * same two terms from the same live record. Stated as a rebuild rather than as
- * reading the placer's own array, because the placer exposes no list — only its
- * heading — so what makes the two agree is that both name the origin and both walk
- * `bodies`, and a future placer that scored a fourth thing would leave this file
- * silently auditing less than it avoided. The visible symptom would be a clearance
- * that reads wider than the heading deserves, which is the wrong direction to be
- * wrong in. Hence the row in `probe-sky.mjs` that aims the same arithmetic at the
- * star and requires it to report a body in frame: not a demonstration that a body
- * *will* appear at the arrival system, which nothing here can show, but that the
- * reading notices one when it is there.
+ * **The placer's own subjects are a literal origin plus `world.system.bodies`,** as
+ * `__emptiestDirection` builds them in `view-placement.mjs`; this file rebuilds those
+ * two terms and then *widens* the set with traffic, because the placer is answering a
+ * different question from the caption — it is choosing the emptiest heading available
+ * from what it scores, and the caption claims nothing is in front. Stated as a rebuild
+ * rather than as reading the placer's array, because the placer exposes a heading and
+ * no list, so what makes the two agree is that both name the origin and both walk
+ * `bodies`. The visible symptom of drifting is a clearance reading **wider** than the
+ * heading deserves, which is the wrong direction to be wrong in — hence the control row
+ * in `probe-sky.mjs` requiring the same arithmetic to find bodies when aimed at the
+ * star, and requiring it to find one that is *not* the injected star.
  *
- * The star is measured from `system.contents.star`, which is where the generator
- * keeps it and why the placer adds the origin by hand. **A system without a star
- * throws rather than becoming a radius-zero point**: a subject silently demoted to
- * a point is a clearance computed on a set that no longer matches anyone's, and the
- * whole claim of this file is that it measures what the rule avoided. If a later
- * generator does place the star among the bodies too, the origin is measured twice
- * at the same angle and radius, which cannot move a minimum.
+ * The star is measured from `system.contents.star`. `system.bodies` carries it too,
+ * as `kind: "star"`, at the same origin with the same radius, so it is dropped from the
+ * bodies list rather than counted twice: the set and the minimum are unchanged, and what
+ * changes is that a count printed beside a table means bodies and not bodies plus a
+ * duplicate. **A system without a star throws rather than becoming a radius-zero
+ * point**: a subject silently demoted to a point is a clearance computed on a set that
+ * matches nobody's, and the whole claim of this file is that it measures what is in
+ * front of the camera.
  *
  * ## What a consumer owes: the rectangle
  *
@@ -74,14 +73,44 @@
  * `measure-sky-clearance.mjs` therefore opens its page at `VIEWPORT` rather than at
  * a default, and prints the ratio it used beside the numbers.
  *
- * ## What it cannot see
+ * ## What "nothing in front of it" covers, and what escapes it
  *
- * **Bloom.** It spreads outside a disc and is #98's lever rather than geometry, so
- * a body just clear of the cone can still wash the corner behind it and this
- * reading is blind to that by construction. And the cockpit's canopy covers part
- * of the rectangle, which shrinks what the player sees: every figure here is
- * therefore conservative, measuring the camera's rectangle rather than the
- * visible one.
+ * The caption's word is *nothing*, so the subject set has to be everything that can
+ * draw between the camera and the backdrop, not merely the things the placer happens
+ * to avoid. Three classes, each measured its own way:
+ *
+ * - **Bodies** — star, planets, moons, stations — as **discs**, because a station's
+ *   limb and a planet's limb are both the edge of a thing.
+ * - **Traffic** is measured as **centres**, from `game.trafficRoutes`, the game's own
+ *   world-kilometre projections — the same values `updateTrafficPresentation` samples to
+ *   place a mesh. Not from the scene graph: reading a position back out of an `Object3D`
+ *   is the thing `CLAUDE.md` forbids, and a layer group's local coordinates would make
+ *   it wrong besides. A hull has no quotable angular radius — a `TrafficActor` is a
+ *   callsign, a hull and a schedule, and its drawn size is display state — so a centre
+ *   inside the frame is what "standing in front of the camera" can mean here. Routes are
+ *   a **superset** of what is drawn (the presentation also skips engaged carriers and
+ *   ones `trafficShown` refuses), which is the conservative direction for a caption; a
+ *   drawn carrier with no route is the other direction and **throws**.
+ *
+ *   Twelve carriers are drawn at the shipped arrival frame. That number is the reason
+ *   this class exists in the reading at all: the first draft asked none of these
+ *   questions, read `g.flyingTraffic` as a list when it is a method, got an empty one,
+ *   and reported a sky with nothing in it.
+ * - **Bloom**, which this reading cannot see at all. It spreads outside a disc and is
+ *   #98's lever rather than geometry: a body just clear of the cone can still wash the
+ *   corner behind it. So the honest form of the caption is *nothing stands in front of
+ *   the camera*, and not *no light from a thing outside the cone reaches the frame* —
+ *   the second is a look judgement on the sheet, and the row does not speak to it.
+ *
+ * And the fixture is part of the claim. Both consumers boot with `raider: "off"`,
+ * exactly as `capture-views.mjs` does, because that is the frame the caption is
+ * printed on. **What is held is the captured frame, not every moment of play in that
+ * system** — fly far enough and something will cross the view, and no reading of an
+ * arrival point can promise otherwise.
+ *
+ * The cockpit's canopy covers part of the rectangle, which shrinks what the player
+ * sees: every figure here is therefore conservative, measuring the camera's rectangle
+ * rather than the visible one.
  */
 import { gameUrl } from "./game-url.mjs";
 import {
@@ -124,8 +153,11 @@ export async function bootForClearance(page, origin, seed) {
 }
 
 /**
- * Read the clearance of whatever the camera is already pointing at, without
- * moving it.
+ * Settle, then read the clearance of whatever the camera is already pointing at.
+ *
+ * The settle belongs *here* rather than at the callsites, because both readings
+ * must share it: `__lookAt` is applied by the frame loop, so a control that aims
+ * and measures in the same breath measures the basis of the framing it replaced.
  *
  * Split out from `emptiestClearance` so the arithmetic can be turned on a framing
  * that is *not* the emptiest heading. A gate nobody has seen go red is a belief,
@@ -134,6 +166,8 @@ export async function bootForClearance(page, origin, seed) {
  * a row of its own rather than as a run someone remembers doing.
  */
 export async function measureClearance(page, askedSeed) {
+	await settleFrames(page, 5);
+
 	return page.evaluate((asked) => {
 		const g = window.__seelite;
 		const cam = g.nearCamera;
@@ -150,25 +184,100 @@ export async function measureClearance(page, askedSeed) {
 			throw new Error(
 				"sky-clearance: this system has no contents.star, and measuring it as a radius-zero point would quietly audit a set nobody aimed at — the star's disc is the largest subject in the frame wherever the frame is not empty",
 			);
+		// `system.bodies` carries the star too, as `kind: "star"`, at the origin and
+		// with the same radius `contents.star` gives it — so it is taken from the
+		// bodies list rather than twice. The set is unchanged and the minimum cannot
+		// move; what changes is that a count printed beside a table means bodies
+		// rather than bodies-plus-a-duplicate.
+		const bodies = g.world.system.bodies.filter((b) => b.kind !== "star");
+		// Traffic, because the caption's word is *nothing* and not *no body* — and
+		// there is traffic here: **twelve carriers are drawn at the shipped arrival
+		// frame.** An earlier draft of this file reported zero, by iterating
+		// `g.flyingTraffic` — the *method* — rather than calling it, and taking an
+		// empty list out of a function object.
+		//
+		// A hull's place comes from `trafficRoutes`, the game's own
+		// `SystemTrafficProjection[]`: authoritative world kilometres, which is what
+		// `updateTrafficPresentation` samples to put a mesh anywhere. The alternative —
+		// reading `trafficMeshes` back out of the scene graph — is what `CLAUDE.md`
+		// forbids ("the authoritative world is float64 kilometres outside the scene
+		// graph; nothing reads a position back out of an `Object3D`"), and a layer
+		// group's local coordinates would make the reading wrong besides.
+		//
+		// **The routes are a superset of what is drawn**: the presentation additionally
+		// skips engaged carriers and ones `trafficShown` refuses. That is the
+		// conservative direction for a caption — if nothing in the superset stands in
+		// front of the camera, nothing drawn does either. A drawn carrier with no route
+		// is the other direction, and is a refusal.
+		//
+		// A hull is scored as a **centre**, with no angular radius: a `TrafficActor` is
+		// a callsign, a hull and a schedule, and what a hull is drawn at is display
+		// state (`HULL_REACH_KM`), not a radius a reader of the world can quote. At
+		// these ranges a hull is far below a pixel; the caption's question — is anything
+		// standing in front of the camera — is answered by a centre.
+		if (!Array.isArray(g.trafficRoutes))
+			throw new Error(
+				"sky-clearance: game.trafficRoutes is not a list, so Traffic can be neither placed nor excluded and the caption's *nothing* is no longer measurable",
+			);
+		const drawn = [];
+		for (const accessor of ["flyingTraffic", "divertedTraffic"]) {
+			const listed = g[accessor];
+			if (typeof listed !== "function")
+				throw new Error(
+					`sky-clearance: game.${accessor}() is no longer a function, so this reading cannot say how much Traffic is drawn in the frame it is auditing`,
+				);
+			for (const actor of listed.call(g))
+				drawn.push(actor.callsign ?? "carrier");
+		}
+		const routes = [];
+		for (const route of g.trafficRoutes) {
+			if (!route?.pos || !Number.isFinite(route.pos.x))
+				throw new Error(
+					`sky-clearance: a traffic route has no usable position, so it can be neither placed nor excluded — and a subject the frame cannot evaluate is dropped by the in-frame filter rather than counted, which is a green light handed out by a blind spot`,
+				);
+			routes.push({
+				name: route.key ?? "carrier",
+				pos: route.pos,
+				radiusKm: 0,
+				kind: "traffic",
+			});
+		}
+		if (drawn.length > routes.length)
+			throw new Error(
+				`sky-clearance: ${drawn.length} Traffic hulls are drawn and only ${routes.length} carry a route, so ${drawn.length - routes.length} cannot be placed — and a hull this reading cannot locate is one the caption cannot claim is out of frame`,
+			);
+
 		const subjects = [
 			{
 				name: star.name ?? "star",
 				pos: { x: 0, y: 0, z: 0 },
 				radiusKm: star.radiusKm,
+				kind: "star",
 			},
-			...g.world.system.bodies,
+			...bodies.map((b) => ({ ...b, kind: b.kind ?? "body" })),
+			...routes,
 		];
 		const measured = subjects
 			.map((s) => {
+				const radiusKm = s.radiusKm;
+				if (!Number.isFinite(radiusKm))
+					throw new Error(
+						`sky-clearance: subject ${s.name} has no finite radius (${String(radiusKm)}), and NaN propagates into the limb, into the sort, and into the in-frame filter — where a subject the frame cannot evaluate is dropped rather than counted, which is the green light this file exists to refuse`,
+					);
 				const dx = s.pos.x - p.x;
 				const dy = s.pos.y - p.y;
 				const dz = s.pos.z - p.z;
 				const distanceKm = Math.hypot(dx, dy, dz);
+				if (!(distanceKm > 0))
+					throw new Error(
+						`sky-clearance: subject ${s.name} is standing on the camera (distance ${distanceKm} km), so it has no bearing and no angular radius`,
+					);
 				const cos = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / distanceKm;
 				const angle = Math.acos(Math.min(1, Math.max(-1, cos)));
-				const apparent = Math.asin(Math.min(1, s.radiusKm / distanceKm));
+				const apparent = Math.asin(Math.min(1, radiusKm / distanceKm));
 				return {
-					name: s.name ?? "star",
+					name: s.name ?? "unnamed",
+					kind: s.kind,
 					distanceKm,
 					angleDeg: deg(angle),
 					apparentDeg: deg(apparent),
@@ -176,17 +285,31 @@ export async function measureClearance(page, askedSeed) {
 				};
 			})
 			.sort((a, b) => a.limbDeg - b.limbDeg);
+		const bound = deg(halfDiagonal);
+		const inside = measured.filter((m) => m.limbDeg < bound);
 		return {
 			askedSeed: asked,
 			worldSeed: g.world.seed,
 			system: g.world.system.record.index,
-			bodies: g.world.system.bodies.length,
+			bodies: bodies.length,
+			craft: drawn.length,
+			craftPlaced: routes.length,
 			fovDeg: cam.fov,
 			aspect: cam.aspect,
 			halfHeightDeg: deg(halfHeight),
 			halfDiagonalDeg: deg(halfDiagonal),
 			nearest: measured[0],
-			inFrame: measured.filter((m) => m.limbDeg < deg(halfDiagonal)).length,
+			inFrame: inside.length,
+			// Split by class, because the control row has to show that the reading
+			// notices something other than the star it was handed by hand: a control
+			// that goes green on the injected star alone proves nothing about the list
+			// it is supposed to be auditing.
+			inFrameBodies: inside.filter(
+				(m) => m.kind !== "star" && m.kind !== "traffic",
+			).length,
+			inFrameTraffic: inside.filter((m) => m.kind === "traffic").length,
+			inFrameStar: inside.filter((m) => m.kind === "star").length,
+			inFrameNames: inside.slice(0, 6).map((m) => `${m.name} (${m.kind})`),
 		};
 	}, askedSeed);
 }
@@ -202,6 +325,5 @@ export async function measureClearance(page, askedSeed) {
  */
 export async function emptiestClearance(page, askedSeed) {
 	await OCCLUSION_FRAMINGS.deepSky.place(page);
-	await settleFrames(page, 5);
 	return measureClearance(page, askedSeed);
 }
