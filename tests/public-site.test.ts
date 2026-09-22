@@ -50,8 +50,12 @@ const UNBOUND_KEY_NAMES = [
 ];
 
 /** How many keys the manual prints, as a literal. A floor lets a whole
- *  section's keys be deleted silently; this does not. */
-const MANUAL_KEY_COUNT = 28;
+ *  section's keys be deleted silently; this does not.
+ *
+ *  29 since #381: the beam sentence used to say "the same key" and now
+ *  anchors its own `<kbd>` on `fight.fireBeam`, because D3 split `x` into a
+ *  press and a hold and the hold is a command a player can move. */
+const MANUAL_KEY_COUNT = 29;
 
 /** The manual page, resolved per row rather than in the `describe` body — a
  *  throw there aborts the file, including the row that names the slugs and

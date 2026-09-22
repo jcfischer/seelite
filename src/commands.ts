@@ -110,9 +110,13 @@ export type Half = "+" | "-";
  * The screens that claim a trigger of their own.
  *
  * **They are mutually exclusive by construction**, which is what lets
- * `overlapScope` decide with inequality: the right console's Requests tab,
- * the docked station screen and the glass are three places, never one drawn
- * inside another. A surface that *contained* another would need containment
+ * `overlapScope` decide with inequality: the right console's Requests tab and
+ * the docked station screen are two places, never one drawn inside another,
+ * and **the glass is not in the union at all** — it is what *absent* means,
+ * so it has one encoding rather than two. A `"view"` value was written here
+ * and removed for that: `fly.takePointer` carried it while every flight key
+ * carried nothing, which is one surface with two names inside a union
+ * compared by inequality. A surface that *contained* another would need containment
  * rather than inequality, and this union may not gain one without that
  * change — which is why there is no `console-row` beside `station-console`.
  * The pair was written and removed inside one review round: two click rows
@@ -126,7 +130,7 @@ export type Half = "+" | "-";
  * reported as a collision, and rewording a label would silently move a scope.
  * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
  */
-const SURFACES = ["requests", "station-console", "view"] as const;
+const SURFACES = ["requests", "station-console"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 /**
@@ -387,8 +391,9 @@ const AUTHORED = [
 			{ key: "s", hold: true },
 			{ key: "arrowdown", hold: true },
 		],
-		// `pitch` is negated off `mouseDy` (`main.ts:10886`), so the nose comes
-		// up as the mouse comes back.
+		// `pitch` is negated off `mouseDy` in `main.ts`, so the nose comes up as
+		// the mouse comes back — and `tests/commands.test.ts` reads that
+		// negation out of the source rather than trusting this sentence.
 		more: [
 			{ kind: "mouse-move", axis: "y", half: "+" },
 			...stickFor("pitch", -1),
@@ -431,7 +436,7 @@ const AUTHORED = [
 		],
 	},
 	{
-		// `axis(["e"], ["q"])` at `main.ts:10796`: `q` is the positive term, and
+		// `axis(["e"], ["q"])` in `main.ts`: `q` is the positive term, and
 		// positive is port in all three axes — `chaseOrbitInput`'s own comment
 		// holds the same convention for `1` and `3`. There is no mouse roll:
 		// `impulse.roll` is a hard `0`.
@@ -488,7 +493,8 @@ const AUTHORED = [
 		// A pointer row, for `trade.actOnRow`'s reason: its only trigger is the
 		// click that acquires pointer lock, and there is nowhere else to put it.
 		rebindable: false,
-		more: [{ kind: "mouse-button", action: "click", surface: "view" }],
+		// Unscoped, because the glass *is* the ship's own surface — see `Scope`.
+		more: [{ kind: "mouse-button", action: "click" }],
 	},
 	// fight -------------------------------------------------------------
 	{
@@ -983,8 +989,6 @@ export interface Binding {
 	readonly scope: Scope;
 }
 
-const ALL_PAD: readonly PadContext[] = PAD_CONTEXTS;
-
 /**
  * The pad contexts a trigger is live in.
  *
@@ -992,8 +996,9 @@ const ALL_PAD: readonly PadContext[] = PAD_CONTEXTS;
  * kinds are the keyboard's and the mouse's, and neither is part of the pad's
  * context model:
  *
- * - **The keyboard still flies**, which #283 settled and `main.ts:9552-9562`
- *   records — a key reaches the game whatever the head is doing.
+ * - **The keyboard still flies**, which #283 settled and the comment beside
+ *   `main.ts`'s mouse-delta zeroing records — a key reaches the game whatever
+ *   the head is doing.
  * - **Mouse movement does not.** Since #371 a console surrenders the pointer
  *   lock and the delta is zeroed, so the look is a flight input only.
  * - **The mouse trigger is on the other side of that line**, and deliberately
@@ -1008,7 +1013,7 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 			? trigger.contexts
 			: trigger.kind === "mouse-move"
 				? (["flight"] as const)
-				: ALL_PAD;
+				: PAD_CONTEXTS;
 	const surface =
 		(trigger.kind === "key" || trigger.kind === "mouse-button") &&
 		trigger.surface !== undefined
@@ -1079,13 +1084,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
  * What makes two bindings the *same* trigger.
  *
  * Physical identity, not printed identity: a key is its physical position
- * under D7, normalised through `codeKey`, **which reaches the letter and
- * digit keys and no others**: `KeyW` and `w` hash alike, and `Slash` against
- * `/`, `Comma` against `,` and every other punctuation code do not. That
- * matters because the identity function is the one surface the storage slice
- * cannot change cheaply once layouts are on disk — the letters are settled
- * before codes are authored, and the punctuation half is the dispatch slice's
- * to settle with `codeKey`'s table, not a printing nicety,
+ * under D7, normalised through `codeKey` — which reaches the letters and
+ * digits and no others, so `KeyW` and `w` hash alike and the punctuation half
+ * is a hole `codeKey`'s own doc owns,
  * and a press and a hold of the same key are different triggers — which is
  * what makes D3's split on `x` a split rather than a collision. A pad button
  * and a pad intent share one namespace because they are one button.
@@ -1172,6 +1173,8 @@ export function collisions(bindings: readonly Binding[]): Collision[] {
 	return out;
 }
 
-/** The shipped layout's collisions, which must be none. */
+/** The shipped layout's collisions, which must be none. It exists as a name
+ *  because the storage slice adds the CI gate that calls it; until then the
+ *  test row calls it so the alias cannot rot beside a direct call. */
 export const defaultCollisions = (): Collision[] =>
 	collisions(DEFAULT_BINDINGS);

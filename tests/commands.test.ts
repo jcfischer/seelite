@@ -20,6 +20,7 @@ import {
 	defaultCollisions,
 	PAD_CONTEXTS,
 	TASK_GROUPS,
+	type Trigger,
 	triggerKey,
 	VIEW_MODES,
 } from "../src/commands";
@@ -164,13 +165,14 @@ describe("the catalogue #369 ratified", () => {
 		// fail is the pairing: each physical axis is pushed two ways, the two
 		// pushes land on different commands, and the pair is the pair the
 		// registry says it is.
-		const halves = DEFAULT_BINDINGS.filter(
-			(b) => b.trigger.kind === "pad-stick" || b.trigger.kind === "mouse-move",
-		);
+		const isSigned = (
+			b: Binding,
+		): b is Binding & {
+			trigger: Extract<Trigger, { kind: "pad-stick" | "mouse-move" }>;
+		} => b.trigger.kind === "pad-stick" || b.trigger.kind === "mouse-move";
+		const halves = DEFAULT_BINDINGS.filter(isSigned);
 		const byAxis = new Map<string, Map<string, string>>();
 		for (const b of halves) {
-			if (b.trigger.kind !== "pad-stick" && b.trigger.kind !== "mouse-move")
-				continue;
 			const axis =
 				b.trigger.kind === "pad-stick"
 					? `${b.trigger.stick}-stick-${b.trigger.axis}`
@@ -354,6 +356,31 @@ describe("the axis law names which key is which", () => {
 			),
 		].sort();
 		expect(scoped).toEqual(keys);
+	});
+
+	test("each surface a binding names is a place the source draws", () => {
+		// `overlapScope` decides with inequality, so the zero-collision result
+		// rests on the surfaces being disjoint — and prose asserting that was
+		// exactly what let `console-row` sit inside `station-console` for a
+		// round. Each one gets an anchor in the module that draws it, and the
+		// set a binding may name is the set with an anchor.
+		const ANCHORS: Record<string, { file: string; mark: RegExp }> = {
+			requests: { file: "src/main.ts", mark: /route\.key/ },
+			"station-console": {
+				file: "src/live-cockpit.ts",
+				mark: /data-live-market-row/,
+			},
+		};
+		const used = [
+			...new Set(
+				DEFAULT_BINDINGS.flatMap<string>((b) =>
+					b.scope.surface === undefined ? [] : [b.scope.surface],
+				),
+			),
+		].sort();
+		expect(used).toEqual(Object.keys(ANCHORS).sort());
+		for (const [surface, { file, mark }] of Object.entries(ANCHORS))
+			expect(`${surface}: ${mark.test(codeOf(file))}`).toBe(`${surface}: true`);
 	});
 
 	test("every held key lands on the command the axis law gives it", () => {
