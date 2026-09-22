@@ -172,30 +172,36 @@ describe("the catalogue is complete against the source", () => {
 		const vicinity = dial("vicinityKm", "VICINITY_DIAL_KM");
 		const lead = dial("approachLeadS", "APPROACH_LEAD_DIAL_S");
 		const EFFECTS: Record<string, Record<string, string>> = {
-			"assist-or-beam": { x: "this.assist = !this.assist" },
-			cruise: { j: "this.engageCruise()" },
-			jump: { "`": "this.chargeJump()" },
-			"target-next": { t: "this.cycleTarget(1)" },
-			"target-previous": { g: "this.cycleTarget(-1)" },
-			"face-target": { f: "this.faceTarget()" },
-			"rig-incoming": { "/": 'this.combatRig?.command("/")' },
-			"rig-ecm": { q: 'this.combatRig?.command("q")' },
-			clearance: { c: "this.requestDockingClearance()" },
-			"docking-computer": { u: "this.toggleDockingComputer()" },
-			launch: { enter: "this.launch()" },
-			"head-left": { "1": 'this.setHeadLook("left")' },
-			"head-forward": { "2": 'this.setHeadLook("forward")' },
-			"head-right": { "3": 'this.setHeadLook("right")' },
-			"controls-reference": { "?": "controlsKeyMove(", f1: "controlsKeyMove(" },
-			view: { v: 'this.view === "cockpit" ? "chase" : "cockpit"' },
-			"chase-centre": { "2": "this.chaseYaw = 0" },
-			"dial-reset": { "0": "DEFAULT_CRUISE" },
-			"dial-exponent": { "]": exponent.up, "[": exponent.down },
-			"dial-vmax": { "=": vmax.up, "-": vmax.down },
-			"dial-drop-radius": { "'": radius.up, ";": radius.down },
-			"dial-drop-speed": { ".": speed.up, ",": speed.down },
-			"dial-vicinity": { m: vicinity.up, n: vicinity.down },
-			"dial-approach-lead": { l: lead.up, k: lead.down },
+			"fly.assist": { x: "this.assist = !this.assist" },
+			"fly.cruise": { j: "this.engageCruise()" },
+			"fly.jump": { "`": "this.chargeJump()" },
+			"fight.targetNext": { t: "this.cycleTarget(1)" },
+			"fight.targetPrevious": { g: "this.cycleTarget(-1)" },
+			"fight.faceTarget": { f: "this.faceTarget()" },
+			"fight.rigIncoming": { "/": 'this.combatRig?.command("/")' },
+			"fight.rigEcm": { q: 'this.combatRig?.command("q")' },
+			"dock.clearance": { c: "this.requestDockingClearance()" },
+			"dock.computer": { u: "this.toggleDockingComputer()" },
+			"dock.launch": { enter: "this.launch()" },
+			"view.headPort": { "1": 'this.setHeadLook("left")' },
+			"view.headForward": { "2": 'this.setHeadLook("forward")' },
+			"view.headStarboard": { "3": 'this.setHeadLook("right")' },
+			"view.reference": { "?": "controlsKeyMove(", f1: "controlsKeyMove(" },
+			"view.toggle": { v: 'this.view === "cockpit" ? "chase" : "cockpit"' },
+			"view.orbitCentre": { "2": "this.chaseYaw = 0" },
+			"tune.reset": { "0": "DEFAULT_CRUISE" },
+			"tune.exponentUp": { "]": exponent.up },
+			"tune.exponentDown": { "[": exponent.down },
+			"tune.vMaxUp": { "=": vmax.up },
+			"tune.vMaxDown": { "-": vmax.down },
+			"tune.dropRadiusUp": { "'": radius.up },
+			"tune.dropRadiusDown": { ";": radius.down },
+			"tune.dropSpeedUp": { ".": speed.up },
+			"tune.dropSpeedDown": { ",": speed.down },
+			"tune.vicinityUp": { m: vicinity.up },
+			"tune.vicinityDown": { n: vicinity.down },
+			"tune.approachLeadUp": { l: lead.up },
+			"tune.approachLeadDown": { k: lead.down },
 		};
 		let checked = 0;
 		for (const c of CONTROLS.commands)
@@ -279,7 +285,10 @@ describe("the catalogue's shape", () => {
 		const keys = sourceKeys();
 		for (const id of ids) {
 			expect(`${id} is a key: ${keys.has(id)}`).toBe(`${id} is a key: false`);
-			expect(id).toMatch(/^[a-z][a-z0-9-]+$/);
+			// #369 D1: a namespaced id, so the task grouping is a consequence of
+			// the name rather than a second table, and two commands cannot
+			// collide on a plausible word.
+			expect(id).toMatch(/^[a-z]+\.[a-zA-Z0-9]+$/);
 		}
 	});
 
@@ -299,13 +308,31 @@ describe("the catalogue's shape", () => {
 			expect(c.currentTriggers).toEqual(c.defaultTriggers);
 	});
 
-	test("x is one row naming both of its behaviours", () => {
+	test("x is two rows, because the gesture picks the meaning", () => {
+		// #369 D3, which reverses #370 D8's single row on the evidence #370 did
+		// not have: `x` *pressed* toggles the assist in `main.ts`'s switch and
+		// `x` *held* is read every frame by `combat-rig.ts`. A trigger whose
+		// meaning game state picks stays one row (`fly.cruise`, `dock.launch`);
+		// a trigger whose meaning the gesture picks is two, and a player must be
+		// able to move one without moving the other.
 		const rows = CONTROLS.commands.filter((c) =>
 			c.currentTriggers.some((t) => t.kind === "key" && t.key === "x"),
 		);
-		expect(rows.length).toBe(1);
-		expect(rows[0]?.name).toMatch(/assist/i);
-		expect(rows[0]?.name).toMatch(/beam/i);
+		expect(rows.map((c) => c.id).sort()).toEqual([
+			"fight.fireBeam",
+			"fly.assist",
+		]);
+		const press = rows.find((c) => c.id === "fly.assist");
+		const hold = rows.find((c) => c.id === "fight.fireBeam");
+		expect(press?.name).toMatch(/assist/i);
+		expect(hold?.name).toMatch(/beam/i);
+		// And they are not a collision: a press and a hold are different triggers.
+		expect(
+			press?.currentTriggers.some((t) => t.kind === "key" && !t.hold),
+		).toBe(true);
+		expect(hold?.currentTriggers.some((t) => t.kind === "key" && t.hold)).toBe(
+			true,
+		);
 	});
 
 	test("? is the controls reference's own key", () => {

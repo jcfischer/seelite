@@ -193,6 +193,22 @@ const CONTEXT_WORDS: Readonly<Record<PadContext, string>> = {
 };
 
 /**
+ * Which way a signed input is pushed, in the player's words.
+ *
+ * #369 D2 splits a pair into two commands, so the stick and the mouse axis
+ * appear on two rows each — and a row that printed only the axis would print
+ * the same string on both, which reads as the reference not knowing.
+ */
+const way = (axis: "x" | "y", half: "+" | "-") =>
+	axis === "x"
+		? half === "+"
+			? "right"
+			: "left"
+		: half === "+"
+			? "down"
+			: "up";
+
+/**
  * D7 and D8: a key prints as its character, a chord spelled out, and a control
  * with no character gets words.
  */
@@ -203,14 +219,16 @@ export function triggerLabel(t: Trigger): string {
 			const chord = t.alt ? `Alt + ${base}` : base;
 			return t.surface ? `${chord} (${t.surface})` : chord;
 		}
-		case "mouse-button":
-			return t.action === "hold" ? "hold left mouse button" : "click";
+		case "mouse-button": {
+			const press = t.action === "hold" ? "hold left mouse button" : "click";
+			return t.surface ? `${press} ${t.surface}` : press;
+		}
 		case "mouse-move":
-			return `move the mouse ${t.axis === "x" ? "↔" : "↕"}`;
+			return `move the mouse ${way(t.axis, t.half)}`;
 		case "pad-button":
 			return t.hold ? `hold ${padButton(t.button)}` : padButton(t.button);
 		case "pad-stick":
-			return `${t.stick} stick ${t.axis === "x" ? "↔" : "↕"}`;
+			return `${t.stick} stick ${way(t.axis, t.half)}`;
 		case "pad-trigger":
 			return t.trigger.toUpperCase();
 		case "pad-intent":

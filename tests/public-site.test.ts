@@ -7,7 +7,7 @@ import { codeOf, repoPath, srcFiles } from "./lib/source-scan";
 /** One shape for the manual's key markup: the extraction and the strip that
  *  checks nothing escaped it must agree, or widening one silently narrows the
  *  other. */
-const KBD = /<kbd data-command="([a-z-]+)">([^<]+)<\/kbd>/g;
+const KBD = /<kbd data-command="([a-z]+\.[a-zA-Z0-9]+)">([^<]+)<\/kbd>/g;
 
 /** A printed label as `KeyboardEvent.key` reads it. */
 const KEY_LABELS: Record<string, string> = {
@@ -212,10 +212,10 @@ describe("the quiet public threshold", () => {
 		])
 			expect(manual.content).toContain(shown);
 		for (const id of [
-			"controls-reference",
-			"head-left",
-			"head-forward",
-			"head-right",
+			"view.reference",
+			"view.headPort",
+			"view.headForward",
+			"view.headStarboard",
 		])
 			expect(manual.content).toContain(`<kbd data-command="${id}">`);
 	});
