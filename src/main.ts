@@ -556,9 +556,8 @@ import { controlsCatalogue } from "./controls-catalogue";
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { isEditable } from "./editable-target";
 import {
-	type Binding,
 	type CommandId,
-	DEFAULT_BINDINGS,
+	type Layout,
 	isHeld,
 	rebind,
 	resolveKey,
@@ -1873,7 +1872,7 @@ class Game {
 	 * shipped table when nothing was stored, or when nothing stored could be
 	 * applied.
 	 */
-	private bindings: readonly Binding[] = this.storedLayout.layout;
+	private bindings: Layout = this.storedLayout.layout;
 	/**
 	 * What was wrong with the blob that was read, until a save replaces it.
 	 *

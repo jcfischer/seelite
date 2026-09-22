@@ -1290,7 +1290,25 @@ export const commandById = (id: CommandId): Command => {
 
 /** The shipped layout, as bindings rather than as rows. */
 /**
- * A layout, frozen **through** rather than at the surface.
+ * A table of bindings that came from `layoutOf`, and from nowhere else.
+ *
+ * **The brand is the point** (#381 S4). `holdRows` keys its index on the array
+ * *identity*, so a layout written into rather than rebuilt is answered out of
+ * a stale index — and the freeze that makes that throw is a runtime backstop
+ * discovered by whoever trips it. A nominal type moves the precondition into
+ * the signature: a module that assembles its own rows cannot hand them to
+ * `isHeld`, `resolveKey`, `resolvePad` or `rebind` at all, and the storage
+ * slice was the obvious candidate to break it before the capture modal became
+ * the next one.
+ *
+ * `tests/layout.types.ts` is where that is checked, because "this does not
+ * compile" is not a thing `bun test` can see.
+ */
+declare const LAYOUT: unique symbol;
+export type Layout = readonly Binding[] & { readonly [LAYOUT]: true };
+
+/**
+ * The one constructor, which freezes **through** rather than at the surface.
  *
  * `Object.freeze` on the array alone was round 4's answer and it is not one:
  * the freeze is shallow, so `layout[0].command = …` and
@@ -1303,8 +1321,12 @@ export const commandById = (id: CommandId): Command => {
  * The trigger and scope objects are shared with `COMMANDS` and with the
  * context constants, so this freezes those too. That is intended: they are
  * read-only by contract everywhere already.
+ *
+ * **This is the only cast to `Layout` in the repo**, which is what makes the
+ * brand mean anything; a second one is a second producer and the type is back
+ * to being a comment.
  */
-const freezeLayout = (rows: readonly Binding[]): readonly Binding[] => {
+export const layoutOf = (rows: readonly Binding[]): Layout => {
 	for (const b of rows) {
 		Object.freeze(b.trigger);
 		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
@@ -1313,10 +1335,10 @@ const freezeLayout = (rows: readonly Binding[]): readonly Binding[] => {
 		Object.freeze(b.scope);
 		Object.freeze(b);
 	}
-	return Object.freeze(rows);
+	return Object.freeze(rows) as Layout;
 };
 
-export const DEFAULT_BINDINGS: readonly Binding[] = freezeLayout(
+export const DEFAULT_BINDINGS: Layout = layoutOf(
 	COMMANDS.flatMap((c) =>
 		c.defaultTriggers.map((trigger) => ({
 			command: c.id,
@@ -1401,6 +1423,15 @@ export interface Collision {
  * `tests/commands.test.ts` is the only caller today, and it drives both arms.
  * The function is one function so that the two questions cannot drift apart
  * when the second caller arrives, which is the storage slice's.
+ *
+ * **Rows, and deliberately not a `Layout`** (#381 S4). Every other reader of a
+ * table took the brand, because each of them either keys an index on the
+ * array's identity or pairs the rows against the shipped ones. This one is a
+ * pure predicate over whatever it is given, and it has to stay that way: the
+ * rows that prove it can *fail* are a filtered subset with one scope widened,
+ * which is not a layout and must not be made to look like one by passing it
+ * through the constructor. A `Layout` is assignable here, so both D5 callers
+ * reach it unchanged.
  */
 export function collisions(bindings: readonly Binding[]): Collision[] {
 	const byTrigger = new Map<string, Binding[]>();
@@ -1524,10 +1555,7 @@ const liveFor = (b: Binding, facts: KeyFacts): boolean => {
  * `collisions()` is what holds that, but a player layout may — D5 is warn and
  * allow, so the dispatch has to be able to run both.
  */
-export function resolveKey(
-	bindings: readonly Binding[],
-	facts: KeyFacts,
-): CommandId[] {
+export function resolveKey(bindings: Layout, facts: KeyFacts): CommandId[] {
 	const live = bindings.filter((b) => liveFor(b, facts));
 	const byCode =
 		facts.code === undefined
@@ -1569,10 +1597,7 @@ export interface PadFacts {
 	readonly view: ViewMode;
 }
 
-export function resolvePad(
-	bindings: readonly Binding[],
-	facts: PadFacts,
-): CommandId[] {
+export function resolvePad(bindings: Layout, facts: PadFacts): CommandId[] {
 	const hits = bindings.filter((b) => {
 		const t = b.trigger;
 		return (
@@ -1611,23 +1636,18 @@ export function resolvePad(
  */
 type HeldBinding = Binding & { trigger: Extract<Trigger, { kind: "key" }> };
 
-const HOLD_INDEX = new WeakMap<
-	readonly Binding[],
-	Map<CommandId, HeldBinding[]>
->();
+const HOLD_INDEX = new WeakMap<Layout, Map<CommandId, HeldBinding[]>>();
 
-const holdRows = (
-	bindings: readonly Binding[],
-): Map<CommandId, HeldBinding[]> => {
+const holdRows = (bindings: Layout): Map<CommandId, HeldBinding[]> => {
 	const found = HOLD_INDEX.get(bindings);
 	if (found !== undefined) return found;
-	// **Frozen here, not only where a layout is built.** `isHeld` takes any
-	// array, and the storage slice will build layouts this module never made —
-	// so freezing at the producer left the precondition on callers with no type
-	// to carry it (sage round 5). Indexing an array is the moment it acquires
-	// the identity the index is keyed on, which is the moment the freeze has to
-	// happen.
-	freezeLayout(bindings);
+	// **Belt as well as braces, and the braces are new.** This freeze was the
+	// whole guarantee when `isHeld` took any array (sage round 5): freezing at
+	// the producer left the precondition on callers with no type to carry it.
+	// `Layout` carries it now, so every argument here has already been through
+	// `layoutOf` — and this stays, because the brand is a compile-time claim
+	// and the probe tier calls into this module from JavaScript.
+	layoutOf(bindings);
 	const index = new Map<CommandId, HeldBinding[]>();
 	for (const b of bindings) {
 		const keyed = keyBinding(b);
@@ -1655,7 +1675,7 @@ const holdRows = (
  * it.
  */
 export function isHeld(
-	bindings: readonly Binding[],
+	bindings: Layout,
 	command: CommandId,
 	keys: ReadonlySet<string>,
 	view: ViewMode,
@@ -1693,7 +1713,7 @@ export interface LayoutMove {
  * triggers moved is a programming error, and one that silently produced the
  * wrong diff would be saved as a blob that loads as a different layout.
  */
-export function layoutMoves(layout: readonly Binding[]): LayoutMove[] {
+export function layoutMoves(layout: Layout): LayoutMove[] {
 	if (layout.length !== DEFAULT_BINDINGS.length)
 		throw new Error(
 			`a layout has ${DEFAULT_BINDINGS.length} rows, not ${layout.length}`,
@@ -1726,11 +1746,11 @@ export function layoutMoves(layout: readonly Binding[]): LayoutMove[] {
  * defect a rebind screen ships with.
  */
 export function rebind(
-	bindings: readonly Binding[],
+	bindings: Layout,
 	command: CommandId,
 	from: Trigger,
 	to: Trigger,
-): readonly Binding[] {
+): Layout {
 	const wanted = triggerKey(from);
 	const at = bindings.findIndex(
 		(b) => b.command === command && triggerKey(b.trigger) === wanted,
@@ -1743,7 +1763,7 @@ export function rebind(
 		trigger: moved,
 		scope: scopeOf(moved, commandById(command).views),
 	};
-	return freezeLayout(next);
+	return layoutOf(next);
 }
 
 /**

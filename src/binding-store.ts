@@ -61,7 +61,7 @@
  * Headless, and on the list in `tests/headless.test.ts`.
  */
 import {
-	type Binding,
+	type Layout,
 	type Collision,
 	type CommandId,
 	COMMANDS,
@@ -211,7 +211,7 @@ export type LayoutNotice =
 	  };
 
 export interface LoadedLayout {
-	readonly layout: readonly Binding[];
+	readonly layout: Layout;
 	readonly notices: readonly LayoutNotice[];
 }
 
@@ -237,7 +237,7 @@ export const retiredBySave = (notice: LayoutNotice): boolean =>
 const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 
 /** The blob, as a string. */
-export function serializeLayout(layout: readonly Binding[]): string {
+export function serializeLayout(layout: Layout): string {
 	return JSON.stringify({
 		version: LAYOUT_VERSION,
 		moves: layoutMoves(layout),
@@ -357,9 +357,9 @@ const unreadable = (detail: string): LoadedLayout => ({
  * (sage round 6).
  */
 function applyMove(
-	layout: readonly Binding[],
+	layout: Layout,
 	entry: unknown,
-): { layout: readonly Binding[] } | { notice: LayoutNotice } {
+): { layout: Layout } | { notice: LayoutNotice } {
 	const named =
 		isRecord(entry) && typeof entry.command === "string" ? entry.command : null;
 	const rejected = (
@@ -400,7 +400,7 @@ function applyMove(
 	// moved binding.
 	// Hashed once rather than per row of each of the two scans.
 	const wanted = triggerKey(from);
-	const on = (rows: readonly Binding[]) =>
+	const on = (rows: Layout) =>
 		rows.some((b) => b.command === named && triggerKey(b.trigger) === wanted);
 	if (!on(DEFAULT_BINDINGS))
 		return rejected("moved-default", `${named} no longer ships on ${wanted}`);
@@ -499,7 +499,7 @@ export function parseLayout(raw: string | null): LoadedLayout {
  * trace in the table it failed to change, so those notices are a fact about
  * the blob and have to be carried rather than recomputed.
  */
-export function collisionNotices(layout: readonly Binding[]): LayoutNotice[] {
+export function collisionNotices(layout: Layout): LayoutNotice[] {
 	return collisions(layout).map((collision) => ({
 		kind: "collision",
 		collision,
@@ -509,10 +509,7 @@ export function collisionNotices(layout: readonly Binding[]): LayoutNotice[] {
 
 /** One of the two triggers a collision is on, for a notice that prints a key
  *  rather than the hash `collisions()` groups by. */
-const triggerFor = (
-	layout: readonly Binding[],
-	collision: Collision,
-): Trigger => {
+const triggerFor = (layout: Layout, collision: Collision): Trigger => {
 	const found = layout.find(
 		(b) =>
 			b.command === collision.commands[0] &&
@@ -596,7 +593,7 @@ export function loadLayout(): LoadedLayout {
  * indistinguishable, and the panel went on printing "the default layout is in
  * force" beside `PLAYER LAYOUT` for the rest of the session (sage round 1).
  */
-export function saveLayout(layout: readonly Binding[]): boolean {
+export function saveLayout(layout: Layout): boolean {
 	// **Serialized outside the try**, so `layoutMoves`' invariant throw stays
 	// loud. Inside it, a layout that is not the shipped table with triggers
 	// moved — a programming error the assertion exists to shout about —

@@ -20,6 +20,7 @@ import {
 	DEFAULT_BINDINGS,
 	defaultCollisions,
 	isHeld,
+	type Layout,
 	rebind,
 	resolveKey,
 	triggerKey,
@@ -273,7 +274,7 @@ describe("a rebind reaches the simulation", () => {
 	 * says the table answers a layout that is not the shipped one, which is the
 	 * thing no row on `main` could ask.
 	 */
-	const moved = (): readonly Binding[] =>
+	const moved = (): Layout =>
 		rebind(
 			DEFAULT_BINDINGS,
 			"fly.pitchUp",
@@ -406,7 +407,17 @@ describe("a rebind reaches the simulation", () => {
 		// acquires the identity the index is keyed on.
 		const loose: Binding[] = DEFAULT_BINDINGS.map((b) => ({ ...b }));
 		expect(Object.isFrozen(loose)).toBe(false);
-		isHeld(loose, "fly.pitchUp", new Set(["s"]), "cockpit");
+		// **The cast is the caller this row stands for.** Since #381 S4 a
+		// `Layout` is a branded type from one constructor, so no TypeScript
+		// caller can reach `isHeld` with a loose array at all — and the freeze
+		// stays because the brand is erased at build and the probe tier calls
+		// into this module from JavaScript, where nothing checks.
+		isHeld(
+			loose as unknown as Layout,
+			"fly.pitchUp",
+			new Set(["s"]),
+			"cockpit",
+		);
 		expect(Object.isFrozen(loose)).toBe(true);
 	});
 

@@ -9,7 +9,7 @@
  * into a collision.
  */
 import { describe, expect, test } from "bun:test";
-import { codeOf, dispatchSites } from "./lib/source-scan";
+import { codeOf, dispatchSites, srcFiles } from "./lib/source-scan";
 import {
 	type Binding,
 	codeKey,
@@ -22,6 +22,8 @@ import {
 	defaultCollisions,
 	PAD_CONTEXTS,
 	PAD_FLIGHT_COMMANDS,
+	type Layout,
+	layoutOf,
 	rebind,
 	resolveKey,
 	resolvePad,
@@ -430,15 +432,17 @@ describe("the pad and the chord are resolved through the layout", () => {
 	 * table in exactly the contexts `y` does, so the scope carries over
 	 * unchanged and the row measures the resolver rather than a context edit.
 	 */
-	const onButton = (row: Binding, button: PadButtonName): readonly Binding[] =>
-		DEFAULT_BINDINGS.map((b) =>
-			b === row
-				? {
-						command: b.command,
-						trigger: { ...b.trigger, button },
-						scope: b.scope,
-					}
-				: b,
+	const onButton = (row: Binding, button: PadButtonName): Layout =>
+		layoutOf(
+			DEFAULT_BINDINGS.map((b) =>
+				b === row
+					? {
+							command: b.command,
+							trigger: { ...b.trigger, button },
+							scope: b.scope,
+						}
+					: b,
+			),
 		);
 
 	test("a pad button reaches the command its row in the layout names", () => {
@@ -675,6 +679,29 @@ describe("the pad and the chord are resolved through the layout", () => {
 				(b) => b.trigger.kind === "pad-button" && b.trigger.button === "home",
 			),
 		).toBe(false);
+	});
+
+	test("`layoutOf` is the only producer of a layout in the whole of src/", () => {
+		// **What makes the brand mean anything.** `Layout` is a nominal type in
+		// `commands.ts` and `tests/layout.types.ts` holds that a bare array
+		// cannot be handed to `isHeld`, `resolveKey`, `resolvePad` or `rebind`.
+		// That is worth exactly as much as the number of casts: a second one is
+		// a second producer, and a layout that did not go through the freeze is
+		// answered out of a stale hold index — the failure the type was made
+		// for. The type cannot police this itself, because a cast is how the
+		// one legitimate producer works.
+		//
+		// A test may cast, and two do: one stands in for a JavaScript caller
+		// the brand cannot reach, and one builds a truncated table on purpose.
+		// Neither is in `src/`.
+		const casts: string[] = [];
+		for (const file of srcFiles())
+			for (const line of codeOf(file).split("\n"))
+				if (/\bas\s+(unknown\s+as\s+)?Layout\b/.test(line))
+					casts.push(`${file}: ${line.trim()}`);
+		expect(casts).toEqual([
+			"src/commands.ts: return Object.freeze(rows) as Layout;",
+		]);
 	});
 
 	test("main.ts resolves both against the layout and keeps neither table", () => {

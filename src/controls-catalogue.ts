@@ -25,11 +25,11 @@
  */
 import type { LayoutNotice } from "./binding-store";
 import {
-	type Binding,
 	type Command,
 	type CommandId,
 	COMMANDS,
 	DEFAULT_BINDINGS,
+	type Layout,
 	layoutMoves,
 	type Trigger,
 } from "./commands";
@@ -81,7 +81,7 @@ const row = (
  * made the two the same thing for two slices.
  */
 export function controlsCatalogue(
-	bindings: readonly Binding[] = DEFAULT_BINDINGS,
+	bindings: Layout = DEFAULT_BINDINGS,
 	notices: readonly LayoutNotice[] = [],
 ): ControlsCatalogue {
 	// **The diff first, and it is the guard as well as the answer.**
