@@ -402,6 +402,8 @@ import {
 	relayLog,
 	relayPlan,
 	relayPosition,
+	relayIdentified,
+	relayScannerFitted,
 	relaySignal,
 	relaySlot,
 	relayVelocity,
@@ -10392,10 +10394,32 @@ class Game {
 		const key = relaySlot(record.index).key;
 		const pos = relayPosition(plan, contents, now);
 		const vel = relayVelocity(plan, contents, now);
-		const signal = relaySignal(this.world.ship.pos, pos);
-		let identified =
-			readKnowledge(this.commerceWorld.galaxies[record.galaxy], key) !==
-			undefined;
+		// **#481: reading a relay at all is the bought module's, and the gate is
+		// on the *reading* rather than on the cue.** `relayScannerFitted` is the
+		// rule and `pirate-relay.ts` states it once; this is where it is applied.
+		//
+		// **It takes two reads because a relay can be known already.**
+		// Nulling the signal alone stops the cue and stops the identification
+		// write below — but `identified` also comes out of the knowledge
+		// envelope, and a commander who identified a relay under the free
+		// regime this node ends would keep the contact and the target with no
+		// module and no cue. `relayIdentified` is that gated read, and it lives
+		// in the relay's module so the Galaxy Map's station card inherits it
+		// rather than re-deriving it. The row itself is never unwritten: the
+		// relay goes dark and what was found is found again when the module is
+		// back.
+		//
+		// What stays ungated is everything the relay *does*: its mesh, the shot
+		// that can destroy it, and `relayDetectionNow`'s dial on the watched
+		// route.
+		const owned = this.commander.ownedEquipment;
+		const signal = relayScannerFitted(owned)
+			? relaySignal(this.world.ship.pos, pos)
+			: null;
+		let identified = relayIdentified(
+			owned,
+			readKnowledge(this.commerceWorld.galaxies[record.galaxy], key),
+		);
 		if (!identified && signal && signal.km <= RELAY_IDENTIFY_RANGE_KM) {
 			this.commerceWorld = observe(
 				this.commerceWorld,

@@ -130,6 +130,15 @@ await page.evaluate(() => {
 			g.throttle = 0;
 			frame();
 		},
+		/** #481: fit or strip the long-range scanner, the module the whole
+		 *  reading channel is gated on. The name comes from `market.ts` rather
+		 *  than from a literal here, because a probe with its own copy of a
+		 *  constant goes falsely red the day the module is renamed. */
+		async fitScanner(own) {
+			const market = await import("/src/market.ts");
+			g.commander.ownedEquipment = own ? [market.LONG_RANGE_SCANNER] : [];
+			frame();
+		},
 		/** What the probe reads of the relay and the glass. */
 		readout() {
 			const r = g.relayReadout();
@@ -297,9 +306,94 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// Inside the signal's range: the cue reads and the relay is still hidden.
+// #481: the reading is a bought module's, and the route effect is not.
+//
+// Every check above this line was flown with an empty equipment list, and the
+// two leg rows are already half of #479's ruling: the watched route's dial
+// bites for a pilot who owns nothing. This arm is the other half — standing
+// where the fitted pilot reads strength, and again where the fitted pilot
+// identifies, an unfitted one reads nothing at all.
+//
+// **Both ranges, not one.** The identification write is what lists the contact
+// and hands over a target, so a gate on the cue alone would leave an unfitted
+// pilot a relay in the Navigation list they cannot see in the glass. A single
+// check at 1,200 km would pass on that build.
 // ---------------------------------------------------------------------------
+// **One definition of dark, read by both unfitted arms.** Two copies of it
+// drift apart the day a field joins `readout()`.
+const readsNothing = (r) =>
+	r.km === null &&
+	r.strength === null &&
+	!r.identified &&
+	!r.listed &&
+	!r.targetable &&
+	r.cueVisible === false;
+
+await page.evaluate(() => window.__relayProbe.fitScanner(false));
+const unfittedSignal = await page.evaluate(() => {
+	window.__relayProbe.placeNear(1200);
+	return window.__relayProbe.readout();
+});
+await settle();
+const unfittedNear = await page.evaluate(() => {
+	window.__relayProbe.placeNear(60);
+	window.__relayProbe.frame();
+	return window.__relayProbe.readout();
+});
+await settle();
+const unfittedCue = await page.evaluate(
+	() => window.__relayProbe.readout().cueVisible,
+);
+// **The dial is a property of the selected target, not of where the ship is
+// standing.** `relayDetection` reads `targetId`, so a readout taken with the
+// other station selected says `law` whatever the relay is doing — the first
+// version of this check read exactly that and called it a regression. Select
+// the watched station, which is what a pilot flying that route has done.
+const unfittedDial = await page.evaluate(() => {
+	const g = window.__seelite;
+	// **Restored afterwards.** The checks below this arm were written against
+	// whatever the boot selected, and `relayDetection` reads `targetId` — a
+	// selection left behind here would make a later `detection` row pass or
+	// fail for the selection rather than for the code.
+	const was = g.targetId;
+	g.targetId = "station-trade";
+	window.__relayProbe.frame();
+	const readout = window.__relayProbe.readout();
+	g.targetId = was;
+	window.__relayProbe.frame();
+	return readout;
+});
+check(
+	"#481: without the module there is no signal at 1,200 km and no identification at 60 km — no cue, no knowledge, no contact, no target",
+	readsNothing(unfittedSignal) && readsNothing(unfittedNear) && !unfittedCue,
+	JSON.stringify({ unfittedSignal, unfittedNear, unfittedCue }),
+);
+check(
+	"#481: the watched route's dial bites all the same — the effect is felt by a pilot who cannot find its cause",
+	unfittedDial.detection === "certain" &&
+		unfittedDial.condition === "operational" &&
+		// Still nothing to see, at the moment the dial is certain.
+		unfittedDial.km === null &&
+		!unfittedDial.identified &&
+		unfittedDial.cueVisible === false,
+	JSON.stringify(unfittedDial),
+);
+await capture("00-unfitted");
+
+// ---------------------------------------------------------------------------
+// Inside the signal's range: the cue reads and the relay is still hidden.
+//
+// Fitted from here on. The checks below are unchanged and were green before
+// the module existed, so the fitted arm is the old behaviour restored rather
+// than a new one described (#481).
+// ---------------------------------------------------------------------------
+// **Place first, then fit.** `fitScanner` steps a frame, and a frame stepped
+// while the ship still stands at the arm above's 60 km identifies the relay
+// the instant the module is fitted — which is correct behaviour and wrong
+// evidence: the check below would then read `IDENTIFIED` at 1,200 km and go
+// red for the ordering rather than for the code.
 await page.evaluate(() => window.__relayProbe.placeNear(1200));
+await page.evaluate(() => window.__relayProbe.fitScanner(true));
 await settle();
 const signalled = await page.evaluate(() => window.__relayProbe.readout());
 check(
@@ -674,6 +768,49 @@ check(
 	JSON.stringify(pulse),
 );
 await capture("05-replaced");
+
+// ---------------------------------------------------------------------------
+// #481: an already-identified relay, and the module gone.
+//
+// **What this exercises, said exactly.** The relay above was identified by
+// flying to it, not by loading a save — so this is the gated *read* of a row
+// that exists, which is the same envelope read a loaded save would make, and
+// not a load. The commander the gate is justified by (one who identified a
+// relay under the free regime this node ends) arrives at this same state by a
+// route this arm does not fly; the serialization row above is what carries the
+// envelope across a load.
+//
+// **It runs last on purpose.** Taken earlier it wrote that knowledge row
+// before the checks that require a relay nobody has found yet, and turned two
+// of them red for the ordering rather than for the code.
+//
+// Nothing unwrites knowledge. Strip the module and the relay goes dark; fit it
+// again, standing still at the same range, and what was found is found again.
+// ---------------------------------------------------------------------------
+// The baseline is read **here**, not carried down from the destroy arm: a
+// stale snapshot would let `stripped` go dark for something that happened in
+// between and read as the gate working.
+const beforeStrip = await page.evaluate(() => window.__relayProbe.readout());
+await page.evaluate(() => window.__relayProbe.fitScanner(false));
+await settle();
+const stripped = await page.evaluate(() => window.__relayProbe.readout());
+await page.evaluate(() => window.__relayProbe.fitScanner(true));
+await settle();
+const refitted = await page.evaluate(() => window.__relayProbe.readout());
+check(
+	"#481: an already-identified relay goes dark when the module is gone, and is found again when it is back — the row is never unwritten",
+	beforeStrip.identified &&
+		beforeStrip.listed &&
+		readsNothing(stripped) &&
+		refitted.identified &&
+		refitted.listed &&
+		refitted.targetable &&
+		// Refitted where it stands, without flying back through identification
+		// range: the row is still in the envelope.
+		refitted.km !== null &&
+		refitted.cueVisible === true,
+	JSON.stringify({ beforeStrip, stripped, refitted }),
+);
 
 await browser.close();
 exit();

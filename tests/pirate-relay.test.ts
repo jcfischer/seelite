@@ -6,6 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
 import { generateGalaxy } from "../src/galaxy";
+import { EQUIPMENT, LONG_RANGE_SCANNER, SCAN_MODULE } from "../src/market";
 import {
 	RELAY_IDENTIFY_RANGE_KM,
 	RELAY_INTEGRITY,
@@ -20,6 +21,7 @@ import {
 	relayLog,
 	relayPlan,
 	relayPosition,
+	relayScannerFitted,
 	relaySignal,
 	relaySlot,
 	relayVelocity,
@@ -198,6 +200,20 @@ describe("the signal", () => {
 	test("identification is inside the signal's range, and the region holds both", () => {
 		expect(RELAY_IDENTIFY_RANGE_KM).toBeLessThan(RELAY_SIGNAL_RANGE_KM);
 		expect(RELAY_STANDOFF_KM[1]).toBeLessThan(RELAY_REGION_KM);
+	});
+	test("#481: reading a relay at all is the bought module's", () => {
+		expect(relayScannerFitted([])).toBe(false);
+		expect(relayScannerFitted([LONG_RANGE_SCANNER])).toBe(true);
+		// Fitted among others, because the list is the whole of the commander's
+		// equipment and an `includes` on the wrong element would pass a
+		// single-item case.
+		expect(relayScannerFitted(["Fuel Scoops", LONG_RANGE_SCANNER])).toBe(true);
+		// The scanner that already exists is a different module, and the two are
+		// one keystroke apart in every list that names them.
+		expect(relayScannerFitted([SCAN_MODULE])).toBe(false);
+		expect(LONG_RANGE_SCANNER).not.toBe(SCAN_MODULE);
+		// The module is buyable, or the gate locks the channel permanently.
+		expect(EQUIPMENT.some((e) => e.name === LONG_RANGE_SCANNER)).toBe(true);
 	});
 });
 

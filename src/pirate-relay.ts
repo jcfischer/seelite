@@ -44,6 +44,7 @@ import { type CarrierKey, carrierKey } from "./carrier-key";
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
+import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
@@ -94,6 +95,42 @@ export const RELAY_SIGNAL_RANGE_KM = 2_500;
 /** Inside this range the relay is identified: a knowledge row, a contact, a
  *  target. Well under scanner range, so the scanner cannot find it first. */
 export const RELAY_IDENTIFY_RANGE_KM = 150;
+
+/**
+ * Both ranges are a **bought module's** reading, not a hull's (#481, #479).
+ *
+ * The channel is the long-range scanner's: fitted, the cockpit reads strength
+ * and bearing inside the signal's range and identifies inside the near one;
+ * unfitted it reads nothing at all — no cue, no knowledge row, no contact.
+ * What is deliberately *not* gated is the relay's dial on the watched route,
+ * so an unequipped pilot still meets the raiders it sends and cannot find the
+ * cause. That asymmetry is the whole of #479's ruling.
+ *
+ * **The name is a persisted identity.** `ownedEquipment` saves the display
+ * string itself, so renaming the row in `market.ts` unfits the module in every
+ * existing save whatever reads this constant — it is a save migration, not a
+ * rename.
+ *
+ * The lookup is `market.ts`'s `equipmentFitted`; what lives here is the rule,
+ * so the relay's module owns every question about reading a relay.
+ */
+export const relayScannerFitted = (
+	ownedEquipment: readonly string[],
+): boolean => equipmentFitted(ownedEquipment, LONG_RANGE_SCANNER);
+
+/**
+ * Has this pilot found this relay? **The gated read, so a second consumer
+ * inherits the gate rather than re-deriving it.**
+ *
+ * `relay-codex.md` already names one in view — the Galaxy Map's station card
+ * would carry the row if it listed relays — and the rule is not "is there a
+ * row" but "is there a row *and* a module to read it with". The row is never
+ * unwritten: what the gate withholds is the reading.
+ */
+export const relayIdentified = (
+	ownedEquipment: readonly string[],
+	knowledgeRow: unknown,
+): boolean => relayScannerFitted(ownedEquipment) && knowledgeRow !== undefined;
 
 /** Hull points. Ten seconds of pulse fire (`PULSE_LASER.damagePerS` 6). */
 export const RELAY_INTEGRITY = 60;
