@@ -662,7 +662,9 @@ try {
 				// (sage round 3).
 				//
 				// So shots are taken until **two** consecutive pairs agree, and
-				// the count is reported rather than assumed. One agreement is not
+				// the row asserts that they did: the loop is capped, so a scene
+				// that never quiets would otherwise hand the control the same
+				// one-off with nothing saying so (sage round 4). One agreement is not
 				// enough, and that is measured too: the first pair agrees and the
 				// next moves the 1,363, so a settle stopping at one hands the
 				// whole one-off to the control standing next to it.
@@ -698,7 +700,7 @@ try {
 				g.render(dt);
 				const render = g.chargedRender ? { ...g.chargedRender } : null;
 				g.view = wasView;
-				return { ...measured, jitter, settle, render };
+				return { ...measured, jitter, settle, settled: quiet >= 2, render };
 			},
 			comms() {
 				// The console is only built while the cockpit is the view, and the
@@ -1059,8 +1061,15 @@ try {
 		// one pixel is the defect this row exists to catch — and it is read
 		// against the null control beside it, so the figure is the notice rather
 		// than the frame being restless.
-		painted?.moved > 200 &&
-			painted?.moved > painted?.jitter * 20 &&
+		// **The frame settled**, rather than the loop running out of shots: a
+		// capped settle that failed open is how the defect below would come
+		// back without anything saying so.
+		painted?.settled === true &&
+			// The notice's pixels, floor and drift together rather than a floor
+			// alone: on a settled frame `jitter` is 0 and a ratio against it says
+			// nothing, so the null control is **added** to the floor instead of
+			// multiplied into a comparison that degenerates (sage round 4).
+			painted?.moved > 200 + painted?.jitter * 20 &&
 			// **§4's amber, and not the red the law speaks refusal in.** The two
 			// fills differ in how much green stands beside the red, and an
 			// ordering like `g > b` is satisfied by both — `FLOOR_TONE_FILL`'s
