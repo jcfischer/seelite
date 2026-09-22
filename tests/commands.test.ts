@@ -171,14 +171,20 @@ describe("the catalogue #369 ratified", () => {
 			trigger: Extract<Trigger, { kind: "pad-stick" | "mouse-move" }>;
 		} => b.trigger.kind === "pad-stick" || b.trigger.kind === "mouse-move";
 		const halves = DEFAULT_BINDINGS.filter(isSigned);
-		const byAxis = new Map<string, Map<string, string>>();
+		const byAxis = new Map<string, Map<string, string[]>>();
 		for (const b of halves) {
 			const axis =
 				b.trigger.kind === "pad-stick"
 					? `${b.trigger.stick}-stick-${b.trigger.axis}`
 					: `mouse-${b.trigger.axis}`;
-			const halfMap = byAxis.get(axis) ?? new Map<string, string>();
-			halfMap.set(b.trigger.half, b.command);
+			// **Accumulated, not overwritten.** `set` would hide a second
+			// command claiming one half of an axis, which is the thing this row
+			// exists to see.
+			const halfMap = byAxis.get(axis) ?? new Map<string, string[]>();
+			halfMap.set(b.trigger.half, [
+				...(halfMap.get(b.trigger.half) ?? []),
+				b.command,
+			]);
 			byAxis.set(axis, halfMap);
 		}
 		const pairs = [...byAxis]
@@ -196,29 +202,32 @@ describe("the catalogue #369 ratified", () => {
 		]);
 	});
 
-	test("the three kinds of fixed row are catalogued and not rebindable", () => {
-		// D12's rider: `tests/perf-panel-keys.test.ts` exists to keep the
-		// diagnostics off the flight path, and D5 permits a player layout to
-		// collide — so a registry that offered them would be permitted to bind a
-		// bloom toggle onto a flight key.
-		const fixed = COMMANDS.filter((c) => !c.rebindable).map<string>(
-			(c) => c.id,
-		);
-		expect(fixed.sort()).toEqual(
-			[
-				"fight.rigEcm",
-				"fight.rigIncoming",
-				"fly.takePointer",
-				"perf.atmosphere",
-				"perf.bloom",
-				"perf.class",
-				"perf.clouds",
-				"perf.craters",
-				"perf.relief",
-				"perf.restore",
-				"trade.actOnRow",
-			].sort(),
-		);
+	test("the three kinds of fixed row are catalogued, and say which kind", () => {
+		// D12's rider, and the distinction the capture slice needs: a
+		// diagnostic and a rig key *have* a trigger the player is not offered,
+		// while a pointer row has nothing to move at all. A bit would make
+		// those one answer.
+		const fixed = COMMANDS.filter((c) => c.fixed !== undefined)
+			.map((c) => `${c.id}: ${c.fixed}`)
+			.sort();
+		expect(fixed).toEqual([
+			"fight.rigEcm: rig",
+			"fight.rigIncoming: rig",
+			"fly.takePointer: pointer",
+			"perf.atmosphere: diagnostic",
+			"perf.bloom: diagnostic",
+			"perf.class: diagnostic",
+			"perf.clouds: diagnostic",
+			"perf.craters: diagnostic",
+			"perf.relief: diagnostic",
+			"perf.restore: diagnostic",
+			"trade.actOnRow: pointer",
+		]);
+		// And the bit agrees with the reason, both ways.
+		for (const c of COMMANDS)
+			expect(`${c.id}: ${c.rebindable}`).toBe(
+				`${c.id}: ${c.fixed === undefined}`,
+			);
 	});
 
 	test("every command is in one of the six task groups", () => {
@@ -332,6 +341,55 @@ describe("the axis law names which key is which", () => {
 		]);
 	});
 
+	test("every held key lands on the command the axis law gives it", () => {
+		const rows = axisCalls()
+			.map(
+				(call) =>
+					`${call.negative.map(heldCommand).join(",")} ← → ${call.positive
+						.map(heldCommand)
+						.join(",")}`,
+			)
+			.sort();
+		expect(rows).toEqual(
+			[
+				// `chaseOrbitInput`, whose own comment holds the port ruling.
+				"view.orbitPort ← → view.orbitStarboard",
+				"fly.pitchUp,fly.pitchUp ← → fly.pitchDown,fly.pitchDown",
+				"fly.rollStarboard ← → fly.rollPort",
+				"fly.yawStarboard,fly.yawStarboard ← → fly.yawPort,fly.yawPort",
+			].sort(),
+		);
+	});
+});
+
+describe("the chord is view-guarded and the pad is not", () => {
+	test("main.ts guards the chord on the cockpit and the pad keys on nothing", () => {
+		// **Why `triggersOf` excludes a chord from a chase-only command and
+		// keeps the pad button.** They look like one route — both end in
+		// `Game.command(key)` — and they are not: `main.ts` runs a chord only
+		// `if (this.view === "cockpit")`, while every pad dispatch is the bare
+		// loop. So the d-pad's ↑ does centre the chase camera and an
+		// `Alt+↑` does not, and `view.orbitCentre` carrying a pad button but
+		// no chord is the game rather than an oversight. Read out of the
+		// source, because this asymmetry was read as a defect on review.
+		const source = codeOf("src/main.ts");
+		expect(
+			/if\s*\(this\.view === "cockpit"\)\s*this\.command\(route\.key\)/.test(
+				source,
+			),
+		).toBe(true);
+		const padLoops = [
+			...source.matchAll(
+				/for \(const key of intents\.keys\) this\.command\(key\);/g,
+			),
+		];
+		expect(padLoops.length).toBeGreaterThan(0);
+		// None of them tests the view on the same statement.
+		for (const m of padLoops) expect(m[0].includes("this.view")).toBe(false);
+	});
+});
+
+describe("what a surface claims", () => {
 	test("the Requests console claims exactly the keys the registry scopes to it", () => {
 		// The other unchecked sentence: `dock.launch`'s bare `Enter` and
 		// `panel.activate`'s scoped one are not a collision *because* `main.ts`
@@ -359,13 +417,19 @@ describe("the axis law names which key is which", () => {
 	});
 
 	test("each surface a binding names is a place the source draws", () => {
-		// `overlapScope` decides with inequality, so the zero-collision result
-		// rests on the surfaces being disjoint — and prose asserting that was
-		// exactly what let `console-row` sit inside `station-console` for a
-		// round. Each one gets an anchor in the module that draws it, and the
-		// set a binding may name is the set with an anchor.
+		// **What this can and cannot do.** It holds the union closed — a
+		// binding may name only a surface with an anchor, so a fourth cannot
+		// be invented in a row and left unexamined — and it holds each anchor
+		// present, so a surface whose screen is deleted goes red. It does
+		// **not** prove two surfaces are disjoint; no grep can, and the
+		// `console-row` defect would have survived this row. Disjointness is
+		// `Scope`'s stated precondition, and adding a surface is the moment to
+		// re-argue it.
 		const ANCHORS: Record<string, { file: string; mark: RegExp }> = {
-			requests: { file: "src/main.ts", mark: /route\.key/ },
+			requests: {
+				file: "src/main.ts",
+				mark: /"enter"\s*\]\.includes\(\s*route\.key/,
+			},
 			"station-console": {
 				file: "src/live-cockpit.ts",
 				mark: /data-live-market-row/,
@@ -381,26 +445,6 @@ describe("the axis law names which key is which", () => {
 		expect(used).toEqual(Object.keys(ANCHORS).sort());
 		for (const [surface, { file, mark }] of Object.entries(ANCHORS))
 			expect(`${surface}: ${mark.test(codeOf(file))}`).toBe(`${surface}: true`);
-	});
-
-	test("every held key lands on the command the axis law gives it", () => {
-		const rows = axisCalls()
-			.map(
-				(call) =>
-					`${call.negative.map(heldCommand).join(",")} ← → ${call.positive
-						.map(heldCommand)
-						.join(",")}`,
-			)
-			.sort();
-		expect(rows).toEqual(
-			[
-				// `chaseOrbitInput`, whose own comment holds the port ruling.
-				"view.orbitPort ← → view.orbitStarboard",
-				"fly.pitchUp,fly.pitchUp ← → fly.pitchDown,fly.pitchDown",
-				"fly.rollStarboard ← → fly.rollPort",
-				"fly.yawStarboard,fly.yawStarboard ← → fly.yawPort,fly.yawPort",
-			].sort(),
-		);
 	});
 });
 

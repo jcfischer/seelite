@@ -205,8 +205,15 @@ describe("how a binding prints", () => {
 	});
 
 	test("the controls with no key get words", () => {
-		expect(triggerLabel({ kind: "mouse-move", axis: "x", half: "+" })).toMatch(
-			/mouse/,
+		// **The direction word, not just the noun.** `half` exists because a
+		// split pair would otherwise print one string on two rows, so a row
+		// matching only /mouse/ would stay green with the `WAY` table's
+		// entries swapped — or with `way()` deleted.
+		expect(triggerLabel({ kind: "mouse-move", axis: "x", half: "+" })).toBe(
+			"move the mouse right",
+		);
+		expect(triggerLabel({ kind: "mouse-move", axis: "y", half: "-" })).toBe(
+			"move the mouse up",
 		);
 		expect(
 			triggerLabel({
@@ -216,7 +223,7 @@ describe("how a binding prints", () => {
 				half: "-",
 				contexts: ["flight"],
 			}),
-		).toMatch(/left stick/);
+		).toBe("left stick left");
 		expect(
 			triggerLabel({
 				kind: "pad-trigger",

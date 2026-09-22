@@ -45,6 +45,17 @@
  * `tests/controls-catalogue.test.ts` reads `main.ts` with the partition test's
  * own scanner, in both directions.
  *
+ * **One hazard the dispatch slice inherits, recorded here because no function
+ * owns both halves of it.** `codeKey` reaches the letter and digit codes and
+ * no others, and `triggerKey` routes identity through it: author
+ * `code: "Slash"` and it hashes `key:slash` against the shipped `key:/`, one
+ * physical key with two identities that `collisions()` cannot see. The
+ * shipped defaults hold ten punctuation keys. And one pair fails the other
+ * way — `?` and `/` are one physical key apart by Shift, which this model
+ * does not carry because #377 ruled `?` is the character the keyboard types
+ * and not a chord, so coding both would report a collision the game does not
+ * have. Whichever way that slice settles it, it settles both halves at once.
+ *
  * Headless, and on the list in `tests/headless.test.ts`.
  */
 import { COMMANDER_KEY } from "./commander-overlay";
@@ -105,6 +116,15 @@ export const PANEL_INTENTS: readonly PanelIntent[] = [
  * says which.
  */
 export type Half = "+" | "-";
+
+/**
+ * Why a command's trigger cannot be moved.
+ *
+ * `diagnostic` and `rig` have a trigger the player is not offered;
+ * `pointer` has no movable trigger at all, which is a different question for
+ * a capture modal and for a panel that prints "unbound".
+ */
+export type FixedReason = "diagnostic" | "rig" | "pointer";
 
 /**
  * The screens that claim a trigger of their own.
@@ -339,8 +359,10 @@ interface Authored {
 	/** The views this command is live in. Absent means both (#369 D4). */
 	views?: readonly ViewMode[];
 	/**
-	 * Catalogued and printed, but not offered for rebinding. Three different
-	 * reasons, and a consumer that conflates them will be wrong about one:
+	 * Why this row is not offered for rebinding, when it is not. Three
+	 * different reasons, and the field carries **which** rather than a bit,
+	 * because the capture slice needs "nothing to move" to be a different
+	 * answer from "has a trigger, not offered":
 	 *
 	 * - the `?perf` diagnostics (#369's D12 rider), which
 	 *   `tests/perf-panel-keys.test.ts` exists to keep off the flight path;
@@ -353,7 +375,7 @@ interface Authored {
 	 *   a station row or on the glass is #370's standing premise that a screen
 	 *   is always clickable, not a binding a player could move elsewhere.
 	 */
-	readonly rebindable?: false;
+	readonly fixed?: FixedReason;
 	readonly keys?: readonly KeySpec[];
 	/** Triggers that are not keys, or pad triggers not reached through a key. */
 	readonly more?: readonly Trigger[];
@@ -492,7 +514,7 @@ const AUTHORED = [
 		group: "fly",
 		// A pointer row, for `trade.actOnRow`'s reason: its only trigger is the
 		// click that acquires pointer lock, and there is nowhere else to put it.
-		rebindable: false,
+		fixed: "pointer",
 		// Unscoped, because the glass *is* the ship's own surface — see `Scope`.
 		more: [{ kind: "mouse-button", action: "click" }],
 	},
@@ -529,14 +551,14 @@ const AUTHORED = [
 		id: "fight.rigIncoming",
 		name: "Call an incoming raider (combat rig)",
 		group: "fight",
-		rebindable: false,
+		fixed: "rig",
 		keys: ["/"],
 	},
 	{
 		id: "fight.rigEcm",
 		name: "Fire the ECM (combat rig)",
 		group: "fight",
-		rebindable: false,
+		fixed: "rig",
 		keys: ["q"],
 	},
 	// dock --------------------------------------------------------------
@@ -567,11 +589,11 @@ const AUTHORED = [
 		id: "trade.actOnRow",
 		name: "Buy, sell or fit: click a station row",
 		group: "trade",
+		fixed: "pointer",
 		// **The one pointer row on a console**, and the reason `panel.activate`
 		// has no click of its own: a click that selects a row is this, wherever
 		// the row is drawn. Two click rows was the containment `Scope`'s doc
 		// now forbids.
-		rebindable: false,
 		more: [
 			{ kind: "mouse-button", action: "click", surface: "station-console" },
 		],
@@ -798,49 +820,49 @@ const AUTHORED = [
 		id: "perf.bloom",
 		name: `Bloom (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["b"],
 	},
 	{
 		id: "perf.atmosphere",
 		name: `Atmosphere (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["h"],
 	},
 	{
 		id: "perf.clouds",
 		name: `Clouds (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["y"],
 	},
 	{
 		id: "perf.relief",
 		name: `Relief (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["r"],
 	},
 	{
 		id: "perf.craters",
 		name: `Craters (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["o"],
 	},
 	{
 		id: "perf.class",
 		name: `Planet class (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["p"],
 	},
 	{
 		id: "perf.restore",
 		name: `Restore every switch (${PERF})`,
 		group: "system",
-		rebindable: false,
+		fixed: "diagnostic",
 		keys: ["i"],
 	},
 ] as const satisfies readonly Authored[];
@@ -871,24 +893,8 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 }
 
 /** How a physical key prints: a letter or digit key by its character, an
- *  arrow by the key it sends.
- *
- *  **Punctuation is the hole, and it is open in two places rather than one.**
- *  A `Slash` or `Comma` code prints as its code name, because the character a
- *  punctuation key types is a property of the keyboard layout. And
- *  `triggerKey` routes *identity* through this same function, so a future
- *  `code: "Slash"` would hash `key:slash` against the shipped `key:/` — one
- *  physical key with two identities, which `collisions()` cannot see. The
- *  shipped defaults hold ten punctuation keys, so this is the dispatch
- *  slice's first job and not a printing nicety. **And one pair fails the
- *  other way**: `?` and `/` are one physical key apart by Shift, which this
- *  model does not carry — #377 ruled `?` is the character the keyboard types
- *  and not a Shift chord, so adding a `shift` flag here would be reopening
- *  that node from a helper. Author a code on both and they hash alike, and
- *  `view.reference` and `fight.rigIncoming` are reported as a collision that
- *  the game does not have. Whichever way the dispatch slice settles it, it
- *  settles both halves at once. `ALT_CHORDS` holds only the
- *  three arrows today, which is why nothing is wrong yet. */
+ *  arrow by the key it sends. Punctuation prints as its code name, which is
+ *  half of the hazard the module header records. */
 const codeKey = (code: string) =>
 	code.replace(/^(Key|Digit)/, "").toLowerCase();
 
@@ -969,7 +975,9 @@ export interface Command {
 	readonly id: CommandId;
 	readonly name: string;
 	readonly group: TaskGroup;
-	/** Whether the player may move it (#369 D12's rider). */
+	/** Absent when the player may move it; otherwise why not (#369 D12's rider). */
+	readonly fixed?: FixedReason;
+	/** Derived from `fixed`, for the common question. */
 	readonly rebindable: boolean;
 	readonly views: readonly ViewMode[];
 	/**
@@ -1050,7 +1058,8 @@ function toCommand(a: Authored): Command {
 		id: a.id as CommandId,
 		name: a.name,
 		group: a.group,
-		rebindable: a.rebindable ?? true,
+		...(a.fixed === undefined ? {} : { fixed: a.fixed }),
+		rebindable: a.fixed === undefined,
 		views: a.views ?? VIEW_MODES,
 		padTriggerContexts: contextsOf(defaultTriggers),
 		defaultTriggers,
