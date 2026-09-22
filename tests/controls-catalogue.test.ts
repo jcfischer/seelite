@@ -516,7 +516,7 @@ describe("the catalogue is a view of the layout in force (#381 S3)", () => {
 	test("notices are carried, and there are none by default", () => {
 		expect(CONTROLS.notices).toEqual([]);
 		const carried = controlsCatalogue(DEFAULT_BINDINGS, [
-			{ kind: "unreadable", reason: "not JSON" },
+			{ kind: "unreadable", cause: "corrupt", detail: "not JSON" },
 		]);
 		expect(carried.notices.length).toBe(1);
 	});

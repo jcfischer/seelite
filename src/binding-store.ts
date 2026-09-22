@@ -124,8 +124,29 @@ export type RejectReason =
  * a formatter here would be the second copy.
  */
 export type LayoutNotice =
-	/** The blob is not a blob: not JSON, not an object, or no list of moves. */
-	| { readonly kind: "unreadable"; readonly reason: string }
+	/**
+	 * The stored layout could not be read, for one of two reasons that are
+	 * not one thing to a player.
+	 *
+	 * `corrupt` is a blob that is there and is not a blob — not JSON, not an
+	 * object, no list of moves, more rows than the game has controls. The
+	 * store still works, so changing a control replaces it.
+	 *
+	 * `refused` is the browser declining to hand it over at all, which a
+	 * private window does. **Nothing can be replaced there**, because a store
+	 * that throws on a read throws on a write, and the first version printed
+	 * "changing a control will replace them" beside "This change could not be
+	 * saved" (sage round 4).
+	 *
+	 * `detail` is the thrown message or the shape that failed, and is **not
+	 * printed** — the first version interpolated it into the sentence, which
+	 * is the half-machine string this slice abolished for a rejection.
+	 */
+	| {
+			readonly kind: "unreadable";
+			readonly cause: "corrupt" | "refused";
+			readonly detail: string;
+	  }
 	/** A version this build does not know. The layout is left alone. */
 	| { readonly kind: "version"; readonly stored: unknown }
 	/** One row could not be applied. `command` is whatever the blob said, which
@@ -209,20 +230,33 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 /**
  * A qualifier is present and `true`, or absent — nothing else.
  *
+ * Returns the value or **the reason it is not one**, on `acceptTrigger`'s
+ * convention, so one `typeof x === "string"` test reads the whole validator.
+ * Three conventions in one function — `null` for no, `undefined` for absent,
+ * a string for a reason — was three things a reader had to hold, and a bare
+ * `Surface | string` cannot tell a valid surface from a complaint about one
+ * (sage round 4). Hence the wrapper.
+ *
  * `hold: false` is not the same object as no `hold` to `triggerKey`'s reader
  * but is to its arithmetic, and a blob that carried one would hash alike and
  * compare unlike. Refusing anything but `true` keeps the stored form and the
  * authored form the same shape.
  */
-const acceptFlag = (v: unknown): true | undefined | null =>
-	v === undefined ? undefined : v === true ? true : null;
+type Accepted<T> = { readonly value: T | undefined } | string;
 
-const acceptSurface = (v: unknown): Surface | undefined | null =>
+const acceptFlag = (name: string, v: unknown): Accepted<true> =>
 	v === undefined
-		? undefined
+		? { value: undefined }
+		: v === true
+			? { value: true }
+			: `\`${name}\` is \`true\` or absent`;
+
+const acceptSurface = (v: unknown): Accepted<Surface> =>
+	v === undefined
+		? { value: undefined }
 		: SURFACES.includes(v as Surface)
-			? (v as Surface)
-			: null;
+			? { value: v as Surface }
+			: `a surface is one of ${SURFACES.join(", ")}`;
 
 /**
  * A stored trigger, or `null` with the reason it is not one.
@@ -255,12 +289,18 @@ function acceptTrigger(v: unknown): Trigger | string {
 		return "a key trigger carries one key, not a string of them";
 	if (v.code !== undefined && typeof v.code !== "string")
 		return "a physical key is a `KeyboardEvent.code`";
-	const alt = acceptFlag(v.alt);
-	if (alt === null) return "`alt` is `true` or absent";
-	const hold = acceptFlag(v.hold);
-	if (hold === null) return "`hold` is `true` or absent";
+	// Bounded beside the key, for the key's reason and because it was not:
+	// `codeKey` strips a prefix and lowercases whatever it is handed, so an
+	// unbounded `code` is an unbounded `triggerKey` (sage round 4). The
+	// longest this game authors is `ArrowRight`.
+	if (v.code !== undefined && v.code.length > KEY_NAME_MAX)
+		return "a physical key is one key, not a string of them";
+	const alt = acceptFlag("alt", v.alt);
+	if (typeof alt === "string") return alt;
+	const hold = acceptFlag("hold", v.hold);
+	if (typeof hold === "string") return hold;
 	const surface = acceptSurface(v.surface);
-	if (surface === null) return `a surface is one of ${SURFACES.join(", ")}`;
+	if (typeof surface === "string") return surface;
 	// Rebuilt field by field rather than spread, so nothing the blob carried
 	// beyond these five reaches a `Trigger` — a stored `contexts` would make a
 	// key trigger answer `"contexts" in trigger` and take the pad's branch in
@@ -269,9 +309,9 @@ function acceptTrigger(v: unknown): Trigger | string {
 		kind: "key",
 		key: v.key,
 		...(v.code === undefined ? {} : { code: v.code as string }),
-		...(alt === undefined ? {} : { alt }),
-		...(hold === undefined ? {} : { hold }),
-		...(surface === undefined ? {} : { surface }),
+		...(alt.value === undefined ? {} : { alt: alt.value }),
+		...(hold.value === undefined ? {} : { hold: hold.value }),
+		...(surface.value === undefined ? {} : { surface: surface.value }),
 	};
 }
 
@@ -279,9 +319,9 @@ function acceptTrigger(v: unknown): Trigger | string {
 // Reading
 // ---------------------------------------------------------------------------
 
-const unreadable = (reason: string): LoadedLayout => ({
+const unreadable = (detail: string): LoadedLayout => ({
 	layout: DEFAULT_BINDINGS,
-	notices: [{ kind: "unreadable", reason }],
+	notices: [{ kind: "unreadable", cause: "corrupt", detail }],
 });
 
 /**
@@ -334,19 +374,16 @@ function applyMove(
 	// happened (sage round 2). A hand-written blob is exactly what reaches
 	// that; one this build wrote cannot, because the diff holds one row per
 	// moved binding.
+	// Hashed once rather than per row of each of the two scans.
+	const wanted = triggerKey(from);
 	const on = (rows: readonly Binding[]) =>
-		rows.some(
-			(b) => b.command === named && triggerKey(b.trigger) === triggerKey(from),
-		);
+		rows.some((b) => b.command === named && triggerKey(b.trigger) === wanted);
 	if (!on(DEFAULT_BINDINGS))
-		return rejected(
-			"moved-default",
-			`${named} no longer ships on ${triggerKey(from)}`,
-		);
+		return rejected("moved-default", `${named} no longer ships on ${wanted}`);
 	if (!on(layout))
 		return rejected(
 			"already-changed",
-			`an earlier row already moved ${named} off ${triggerKey(from)}`,
+			`an earlier row already moved ${named} off ${wanted}`,
 		);
 	try {
 		// The registry decides whether the *move* is legal — a `to` that changes
@@ -483,7 +520,8 @@ export function loadLayout(): LoadedLayout {
 			notices: [
 				{
 					kind: "unreadable",
-					reason: e instanceof Error ? e.message : String(e),
+					cause: "refused",
+					detail: e instanceof Error ? e.message : String(e),
 				},
 			],
 		};

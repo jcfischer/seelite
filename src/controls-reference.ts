@@ -377,10 +377,21 @@ const COMMAND_NAMES = new Map<string, string>(
  * a refusal the player cannot act on — which is the whole failure this slice
  * exists to prevent.
  */
+/**
+ * A stored string on its way into a sentence, cut to a length a line can hold.
+ *
+ * Everything the band prints is escaped by `noticesMarkup`, so this is not an
+ * injection guard — it is a length one. A command id and a version come out of
+ * a string store that anything can write, and the two that reach a sentence
+ * were the only unbounded values left after the key and the code were capped
+ * (sage round 4).
+ */
+const short = (v: string) => (v.length > 40 ? `${v.slice(0, 40)}…` : v);
+
 const controlName = (id: string | null): string =>
 	id === null
 		? "A saved control"
-		: (COMMAND_NAMES.get(id) ?? `An unknown control (${id})`);
+		: (COMMAND_NAMES.get(id) ?? `An unknown control (${short(id)})`);
 
 /**
  * What each refusal means, in the player's words.
@@ -427,7 +438,15 @@ const inViews = (views: readonly string[]): string =>
 export function noticeText(notice: LayoutNotice): string {
 	switch (notice.kind) {
 		case "unreadable":
-			return `Your saved controls could not be read — ${notice.reason}. The default layout is in force, and changing a control will replace them.`;
+			// **Two causes and two sentences, because only one of them can
+			// promise a repair.** A store that throws on a read throws on a
+			// write, so "changing a control will replace them" printed beside
+			// "This change could not be saved" for a round (sage round 4). And
+			// the thrown message is `detail` and is not printed: it is the
+			// half-machine string this slice abolished for a rejection.
+			return notice.cause === "refused"
+				? "Your browser is not letting this game read what it stored, which a private window does. The default layout is in force, and a change you make now will not be saved either."
+				: "Your saved controls could not be read. The default layout is in force, and changing a control will replace them.";
 		case "version":
 			// `JSON.stringify` rather than `String`, and the absent case named:
 			// a stored `"1"` printed as `1` reads exactly like the version this
@@ -435,7 +454,7 @@ export function noticeText(notice: LayoutNotice): string {
 			return `Your saved controls were written by a different build (${
 				notice.stored === undefined
 					? "they carry no version"
-					: `version ${JSON.stringify(notice.stored)}`
+					: `version ${short(JSON.stringify(notice.stored) ?? String(notice.stored))}`
 			}). The default layout is in force, and changing a control will replace them.`;
 		case "rejected":
 			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;

@@ -210,7 +210,7 @@ check(
 );
 check(
 	"the blob is a diff of one row, versioned inside itself",
-	written[0]?.value?.version === 1 &&
+	typeof written[0]?.value?.version === "number" &&
 		written[0]?.value?.moves?.length === 1 &&
 		written[0]?.value?.moves?.[0]?.command === "fly.pitchUp",
 	JSON.stringify(written[0]?.value),
@@ -310,9 +310,15 @@ const bootOn = async (moves) => {
 	const key = (await storedLayout())[0]?.key;
 	if (typeof key !== "string")
 		throw new Error("no stored layout to overwrite — nothing wrote one");
+	// **The version comes off the blob the game itself wrote**, not from a
+	// literal here. A probe with its own copy of a constant goes falsely red
+	// the day the module changes it — and this one would have gone falsely
+	// *green*, refusing every seeded blob as a version this build does not
+	// know while the rows read that as the layout not applying (sage round 4).
+	const version = (await storedLayout())[0]?.value?.version;
 	await page.evaluate(
 		([k, blob]) => localStorage.setItem(k, blob),
-		[key, JSON.stringify({ version: 1, moves })],
+		[key, JSON.stringify({ version, moves })],
 	);
 	await reload();
 	await pressQuestion();
@@ -492,6 +498,44 @@ check(
 		afterSilent.notices[0].startsWith("unsaved:") &&
 		/reload/i.test(afterSilent.notices[0]),
 	JSON.stringify(afterSilent?.notices ?? null),
+);
+
+// ---------------------------------------------------------------------------
+// "Both run" is a sentence on the screen, so it is a claim about the ship.
+//
+// The band tells the player that a doubled-up key runs both commands (#369
+// D5's warn-and-allow, with D5's *resolution* unimplemented — #484 owns it).
+// Every check on that sentence up to here read the sentence. This one holds
+// the key and reads the nose: pitch-up and pitch-down are opposite terms, so
+// two commands firing cancel and one does not, which makes the claim
+// falsifiable rather than quoted (sage round 4).
+// ---------------------------------------------------------------------------
+await page.evaluate(() => localStorage.clear());
+await reload();
+// The discarded first hold, then `w` on the shipped layout, where it is
+// pitch-down alone.
+await turnedWhileHolding("w");
+const wAlone = await turnedWhileHolding("w");
+check(
+	"on the shipped layout `w` is one command and turns the ship",
+	wAlone > 5,
+	`held ${wAlone.toFixed(2)}°, floor 5.00°`,
+);
+const doubled = await tryRebind(
+	"fly.pitchUp",
+	{ kind: "key", key: "s", hold: true },
+	{ kind: "key", key: "w", hold: true },
+);
+check(
+	"pitch-up moves onto `w`, which pitch-down holds",
+	doubled === "accepted",
+	doubled,
+);
+const wDoubled = await turnedWhileHolding("w");
+check(
+	"and now `w` runs both, which is what the band says — the two cancel",
+	wDoubled < wAlone * 0.2,
+	`held ${wDoubled.toFixed(2)}° against ${wAlone.toFixed(2)}° for the single command`,
 );
 
 check(

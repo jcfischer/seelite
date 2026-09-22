@@ -238,6 +238,22 @@ describe("a string store is not a promise about size", () => {
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
 	});
 
+	test("a physical key longer than a key name is refused too", () => {
+		// `codeKey` strips a prefix and lowercases whatever it is handed, so an
+		// unbounded `code` is an unbounded `triggerKey` — bounded beside the
+		// key because it was not (sage round 4).
+		const read = parseLayout(
+			blob([
+				{
+					command: PITCH_UP,
+					from: FROM,
+					to: { ...TO, code: `Key${"K".repeat(64)}` },
+				},
+			]),
+		);
+		expect(kinds(read.notices)).toEqual(["rejected"]);
+	});
+
 	test("and the longest key the game actually ships is not", () => {
 		// The control, taken off the shipped table rather than guessed: a bound
 		// that refused a key the game itself binds would be a silent unbinding.
@@ -613,7 +629,9 @@ describe("the browser is a string store that may refuse", () => {
 		// `main.ts` wrote this rule as `kind !== "collision"` for a round, so a
 		// sixth kind would have been classified by its reader rather than by
 		// the module that decides which kinds exist (sage round 2).
-		expect(retiredBySave({ kind: "unreadable", reason: "x" })).toBe(true);
+		expect(
+			retiredBySave({ kind: "unreadable", cause: "corrupt", detail: "x" }),
+		).toBe(true);
 		expect(retiredBySave({ kind: "version", stored: 2 })).toBe(true);
 		expect(
 			retiredBySave({
