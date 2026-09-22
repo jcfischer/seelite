@@ -1025,11 +1025,14 @@ try {
 			painted?.moved > 200 &&
 			painted?.moved > painted?.jitter * 20 &&
 			// **§4's amber, and not the red the law speaks refusal in.** The two
-			// fills differ in how much green stands beside the red: amber is
-			// `rgba(255, 196, 110)` at g/r 0.77 and the refusal `rgba(255, 110,
-			// 96)` at 0.43, so the ordering `g > b` both of them satisfy settles
-			// nothing and the ratio does. 0.6 sits between the two, and the row
-			// was watched red with the refusal fill spliced in before it was
+			// fills differ in how much green stands beside the red, and an
+			// ordering like `g > b` is satisfied by both — `FLOOR_TONE_FILL`'s
+			// refusal is `rgba(255, 110, 96)`, whose green clears its blue. So
+			// the ratio is what settles it, and the bound is calibrated rather
+			// than declared: measured on this frame the amber notice reads g/r
+			// **0.771** (194.8 / 150.2) and the same draw with the refusal fill
+			// spliced in reads **0.495** (194.1 / 96.0). 0.6 sits between the
+			// two, and the row was watched red on that build before it was
 			// believed.
 			painted?.mean?.g > painted?.mean?.r * 0.6 &&
 			painted?.mean?.r > painted?.mean?.b &&
