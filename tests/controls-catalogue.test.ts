@@ -330,7 +330,9 @@ describe("the catalogue's shape", () => {
 		expect(hold?.name).toMatch(/beam/i);
 		// And they are not a collision: a press and a hold are different triggers.
 		expect(
-			press?.currentTriggers.some((t) => t.kind === "key" && !t.hold),
+			press?.currentTriggers.some(
+				(t) => t.kind === "key" && t.key === "x" && !t.hold,
+			),
 		).toBe(true);
 		expect(hold?.currentTriggers.some((t) => t.kind === "key" && t.hold)).toBe(
 			true,

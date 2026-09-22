@@ -22,9 +22,11 @@
  *   `1` is head-look in the cockpit and the chase orbit in chase, and a note
  *   that reads only the four-value union is confidently wrong on exactly the
  *   rows a player asks about.
- * - **D5** — two predicates, not one. A *default* layout that collides is red;
- *   a *player* layout that collides is a printed warning. They are different
- *   questions and cannot share a row.
+ * - **D5** — two *predicates*, and one function. A default layout that
+ *   collides is red in CI; a player layout that collides is a printed warning.
+ *   They are different questions and cannot share a test row — but they are
+ *   the same arithmetic, and two implementations of one question drift, so
+ *   `collisions()` answers both and each caller decides what an answer means.
  * - **D7** — dispatch is on the physical key (`code`) and print is on the
  *   character the binding was *recorded* with, so the tab keeps printing
  *   characters. **The shipped letter defaults do not carry a `code` yet**, and
@@ -107,13 +109,20 @@ export type Half = "+" | "-";
 /**
  * The screens that claim a trigger of their own.
  *
+ * **They are mutually exclusive by construction**, which is what lets
+ * `overlapScope` decide with inequality: `console-row` is a pointer
+ * affordance on a station console rather than a region inside `requests`, and
+ * no two of these are ever drawn as one surface. A surface that *contained*
+ * another would need containment rather than inequality, and this union may
+ * not gain one without that change.
+ *
  * A closed union rather than a phrase, because `overlaps` decides liveness by
  * comparing two of these and `controls-reference.ts` prints them: with prose
  * in the field, two bindings on one screen worded differently could never be
  * reported as a collision, and rewording a label would silently move a scope.
  * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
  */
-export const SURFACES = [
+const SURFACES = [
 	"requests",
 	"station-console",
 	"console-row",
@@ -884,7 +893,9 @@ function padIntentTriggers(
 	half: Half,
 	signed: boolean,
 ): Trigger[] {
-	const found = PRESSES.intents.get(`${intent}${half}`) ?? new Map();
+	const found =
+		PRESSES.intents.get(`${intent}${half}`) ??
+		new Map<PadButtonName, PadContext[]>();
 	return [...found].map(([button, contexts]) => ({
 		kind: "pad-intent" as const,
 		intent,
@@ -915,6 +926,12 @@ function padIntentTriggers(
  * *second* unscoped `Enter` would be one. `tests/commands.test.ts` holds both
  * directions.
  */
+const makeScope = (
+	pad: readonly PadContext[],
+	views: readonly ViewMode[],
+	surface?: Surface,
+): Scope => (surface === undefined ? { pad, views } : { pad, views, surface });
+
 export interface Scope {
 	readonly pad: readonly PadContext[];
 	readonly views: readonly ViewMode[];
@@ -977,7 +994,7 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 		trigger.surface !== undefined
 			? trigger.surface
 			: undefined;
-	return surface === undefined ? { pad, views } : { pad, views, surface };
+	return makeScope(pad, views, surface);
 };
 
 function triggersOf(a: Authored): Trigger[] {
@@ -1048,11 +1065,11 @@ export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
  * What makes two bindings the *same* trigger.
  *
  * Physical identity, not printed identity: a key is its physical position
- * under D7 (`code` when the binding carries one, the character otherwise —
- * **and those are one namespace, which is a hole while both exist**. Once the
- * dispatch slice authors `code` on the letter rows it must migrate a saved
- * layout too, or one coded and one uncoded binding on the same physical key
- * hash apart and `collisions()` reports nothing),
+ * under D7, **normalised through `codeKey` so a coded and an uncoded binding
+ * on one physical key hash alike**. That is not tidiness — the identity
+ * function is the one surface the storage slice cannot change cheaply once
+ * layouts are on disk, so `KeyW` and `w` have to agree before the dispatch
+ * slice authors codes rather than after,
  * and a press and a hold of the same key are different triggers — which is
  * what makes D3's split on `x` a split rather than a collision. A pad button
  * and a pad intent share one namespace because they are one button.
@@ -1060,7 +1077,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
 export function triggerKey(t: Trigger): string {
 	switch (t.kind) {
 		case "key":
-			return `key:${t.code ?? t.key}:${t.alt ? "alt" : ""}:${t.hold ? "hold" : "press"}`;
+			return `key:${t.code === undefined ? t.key : codeKey(t.code)}:${t.alt ? "alt" : ""}:${t.hold ? "hold" : "press"}`;
 		case "mouse-button":
 			return `mouse-button:${t.action}`;
 		case "mouse-move":
@@ -1095,9 +1112,7 @@ const overlapScope = (a: Scope, b: Scope): Scope | null => {
 	const pad = intersection(a.pad, b.pad);
 	const views = intersection(a.views, b.views);
 	if (pad.length === 0 || views.length === 0) return null;
-	return a.surface === undefined
-		? { pad, views }
-		: { pad, views, surface: a.surface };
+	return makeScope(pad, views, a.surface);
 };
 
 export interface Collision {

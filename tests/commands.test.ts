@@ -14,9 +14,9 @@ import {
 	type Binding,
 	collisions,
 	COMMANDS,
+	type Half,
 	commandById,
 	DEFAULT_BINDINGS,
-	defaultCollisions,
 	PAD_CONTEXTS,
 	TASK_GROUPS,
 	triggerKey,
@@ -38,7 +38,7 @@ import {
  * not: `isPressedKey` excludes them, so nothing in that row looks at
  * `key:w::hold`. An inverted `w`/`s` would freeze green here and ship to the
  * public manual — which is why `the axis law names which key is which` below
- * reads the three `axis()` call sites out of `main.ts` and pairs them, and
+ * reads the four `axis()` call sites out of `main.ts` and pairs them, and
  * why this row carries each binding's **scope** rather than its trigger
  * alone: dropping `surface` from a panel key would otherwise leave the row
  * unchanged while moving the key onto the ship's surface.
@@ -61,9 +61,6 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:;::press → tune.dropRadiusDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:=::press → tune.vMaxUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:?::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
-	"key:ArrowLeft:alt:press → view.headPort @ flight/instrument/console/modal cockpit -",
-	"key:ArrowRight:alt:press → view.headStarboard @ flight/instrument/console/modal cockpit -",
-	"key:ArrowUp:alt:press → view.headForward @ flight/instrument/console/modal cockpit -",
 	"key:[::press → tune.exponentDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:]::press → tune.exponentUp @ flight/instrument/console/modal cockpit/chase -",
 	"key:`::press → fly.jump @ flight/instrument/console/modal cockpit/chase -",
@@ -72,10 +69,13 @@ const RATIFIED_LAYOUT: readonly string[] = [
 	"key:arrowdown::press → panel.cursorDown @ flight/instrument/console/modal cockpit/chase requests",
 	"key:arrowleft::hold → fly.yawPort @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowleft::press → panel.tabPrevious @ flight/instrument/console/modal cockpit/chase requests",
+	"key:arrowleft:alt:press → view.headPort @ flight/instrument/console/modal cockpit -",
 	"key:arrowright::hold → fly.yawStarboard @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowright::press → panel.tabNext @ flight/instrument/console/modal cockpit/chase requests",
+	"key:arrowright:alt:press → view.headStarboard @ flight/instrument/console/modal cockpit -",
 	"key:arrowup::hold → fly.pitchDown @ flight/instrument/console/modal cockpit/chase -",
 	"key:arrowup::press → panel.cursorUp @ flight/instrument/console/modal cockpit/chase requests",
+	"key:arrowup:alt:press → view.headForward @ flight/instrument/console/modal cockpit -",
 	"key:b::press → perf.bloom @ flight/instrument/console/modal cockpit/chase -",
 	"key:c::press → dock.clearance @ flight/instrument/console/modal cockpit/chase -",
 	"key:control::hold → fly.throttleDown @ flight/instrument/console/modal cockpit/chase -",
@@ -144,7 +144,6 @@ describe("the catalogue #369 ratified", () => {
 			// The property the split is about: two rows, each with triggers of
 			// its own. `commandById` throws on an id that is not in the table,
 			// so a missing half is red before the assertion below runs.
-			expect(up).not.toBe(down);
 			expect(commandById(up).defaultTriggers.length).toBeGreaterThan(0);
 			expect(commandById(down).defaultTriggers.length).toBeGreaterThan(0);
 			expect(commandById(up).defaultTriggers).not.toEqual(
@@ -266,13 +265,15 @@ describe("the axis law names which key is which", () => {
 		}));
 	};
 
-	/** The command a *held* key reaches. */
-	const heldCommand = (key: string) => {
+	/** The command a *held* key reaches, as text so a miss reads as a name. */
+	const heldCommand = (key: string): string => {
 		const found = DEFAULT_BINDINGS.filter(
 			(b) =>
 				b.trigger.kind === "key" && b.trigger.key === key && b.trigger.hold,
 		);
-		return found.length === 1 ? found[0]?.command : `${found.length} commands`;
+		return found.length === 1
+			? (found[0]?.command ?? "none")
+			: `${found.length} commands`;
 	};
 
 	test("the scan finds the call sites it is supposed to find", () => {
@@ -284,6 +285,74 @@ describe("the axis law names which key is which", () => {
 			expect(call.negative.length).toBeGreaterThan(0);
 			expect(call.positive.length).toBeGreaterThan(0);
 		}
+	});
+
+	test("the mouse's two axes agree with the keys they share a term with", () => {
+		// The hazard the row above closes for held keys, closed for the mouse
+		// rows — which print a concrete direction to a player and were, until
+		// this row, an authored sign with a line-number citation behind it.
+		//
+		// `impulse.pitch` is `-mouseDy` and `impulse.yaw` is `-mouseDx`, and
+		// both are summed with `axis(negative, positive)`, which returns
+		// `positive - negative`. So a *positive* mouse delta produces the same
+		// sign as pressing a key from the **negative** list, and the mouse half
+		// must land on that list's command. Read the negation out of the
+		// source rather than restating it.
+		const source = codeOf("src/main.ts");
+		const negated = (field: string) =>
+			new RegExp(`${field}:\\s*clampAbs\\(\\s*-this\\.mouse`).test(source);
+		expect({ pitch: negated("pitch"), yaw: negated("yaw") }).toEqual({
+			pitch: true,
+			yaw: true,
+		});
+		const mouseHalf = (axis: "x" | "y", half: Half): string | undefined =>
+			DEFAULT_BINDINGS.find(
+				(b) =>
+					b.trigger.kind === "mouse-move" &&
+					b.trigger.axis === axis &&
+					b.trigger.half === half,
+			)?.command;
+		const calls = axisCalls();
+		const pitchCall = calls.find((c) => c.negative.includes("s"));
+		const yawCall = calls.find((c) => c.negative.includes("d"));
+		// A negated term means the positive push agrees with the negative list.
+		expect([
+			mouseHalf("y", "+") ?? "none",
+			mouseHalf("y", "-") ?? "none",
+			mouseHalf("x", "+") ?? "none",
+			mouseHalf("x", "-") ?? "none",
+		]).toEqual([
+			heldCommand(pitchCall?.negative[0] ?? ""),
+			heldCommand(pitchCall?.positive[0] ?? ""),
+			heldCommand(yawCall?.negative[0] ?? ""),
+			heldCommand(yawCall?.positive[0] ?? ""),
+		]);
+	});
+
+	test("the Requests console claims exactly the keys the registry scopes to it", () => {
+		// The other unchecked sentence: `dock.launch`'s bare `Enter` and
+		// `panel.activate`'s scoped one are not a collision *because* `main.ts`
+		// returns out of its key handler for the keys that console claims.
+		// Delete that early return and the CI gate would have stayed green
+		// while `Enter` both launched and activated.
+		const source = codeOf("src/main.ts");
+		const claimed = source.match(
+			/\[((?:"(?:arrow[a-z]+|enter)",?\s*)+)\]\.includes\(\s*route\.key/,
+		);
+		if (!claimed) throw new Error("main.ts no longer claims a key list");
+		const keys = [...(claimed[1] ?? "").matchAll(/"([^"]+)"/g)]
+			.map((m) => m[1] as string)
+			.sort();
+		const scoped = [
+			...new Set(
+				DEFAULT_BINDINGS.flatMap((b) =>
+					b.trigger.kind === "key" && b.scope.surface === "requests"
+						? [b.trigger.key]
+						: [],
+				),
+			),
+		].sort();
+		expect(scoped).toEqual(keys);
 	});
 
 	test("every held key lands on the command the axis law gives it", () => {
@@ -309,7 +378,7 @@ describe("the axis law names which key is which", () => {
 
 describe("D5's two predicates", () => {
 	test("the shipped defaults collide with nothing", () => {
-		expect(defaultCollisions()).toEqual([]);
+		expect(collisions(DEFAULT_BINDINGS)).toEqual([]);
 	});
 
 	test("and the predicate can say otherwise", () => {
