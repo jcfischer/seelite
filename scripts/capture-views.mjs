@@ -152,6 +152,12 @@ async function applyCaptureQuality(page) {
  * the whole run's frames in the wrong galaxy and announced itself everywhere at
  * once; a refused system puts one row's frame in the wrong star with a caption
  * naming the right one.
+ *
+ * It is called `ensureFixture` and not `ensureSeed` because it restores both
+ * halves — and the name is a checked contract, since `tests/view-set.test.ts`
+ * pins the call site as a string to prove the loop restores them together. A name
+ * that says half of what the function guarantees is a name that misleads exactly
+ * where a reader is deciding whether they can trust it.
  */
 let currentSeed = null;
 /**
@@ -178,7 +184,7 @@ let currentSystem = null;
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureSeed(page, seed, system = null) {
+async function ensureFixture(page, seed, system = null) {
 	if (currentSeed === seed && currentSystem === system && !worldWritten) return;
 	if (worldWritten) {
 		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
@@ -326,7 +332,7 @@ const PLACERS = {
 	duel: async (page, shot) => {
 		// **The next view boots on a fresh world** (sage #330). A duel leaves the
 		// page changed — an encounter, a kill with a destroyed slot, and for the
-		// log a clock 601 s ahead — and `ensureSeed` reloaded only on a seed
+		// log a clock 601 s ahead — and `ensureFixture` reloaded only on a seed
 		// change, so the same-seed berth views after it ran on that page, 697 to
 		// 1036 s into the clock. Marked before placing, so a placer that throws
 		// still leaves the page marked.
@@ -461,29 +467,29 @@ const PLACERS = {
 		);
 		return `duel · ${name} · ${shot.headLook}${shot.aftermath ? ` · ${shot.aftermath}` : ""}`;
 	},
-	"deep-sky": async (page, shot) => {
+	"deep-sky": async (page) => {
 		// Back to the arrival point first. Turning the camera alone left the ship
 		// wherever the previous view had put it, which made one view of a
 		// *canonical* set a function of the order of the array above it.
 		//
-		// Two heading rules, and the row names which: `emptiest` searches for the
-		// least, `core` points along the **Core bearing** — the way back to the
-		// cluster's centre — through `Game.coreBearingHere()`. The second is the
-		// shipped transform rather than arithmetic here on purpose: a script that
-		// derived the galactic frame itself would be a second idea of it, which is
-		// what #430 exists to prevent. Both rules are turned by one `__aimAlong`,
-		// which `scripts/lib/view-placement.mjs` owns and `probe-sky.mjs` measures.
-		const aim = shot.aim ?? "emptiest";
-		const at = await page.evaluate(async (which) => {
+		// One heading rule, `__emptiestDirection`. #432 added a second — aim along
+		// the **Core bearing**, through `galaxy-frame.ts`'s transform rather than
+		// arithmetic here, which is #430's reason for existing — and removed it in
+		// the same PR: the row it was for cannot show its subject at this cluster's
+		// population, and `measure-sky-density.ts`'s field arm is the reading that
+		// said so. See the note beside `sky-only` in `lib/view-set.mjs`.
+		await page.evaluate(async () => {
 			await window.__returnToBootPosition();
-			await window.__aimAlong(which);
-			// Read off the page rather than restated from the row: the caption
-			// says which star this frame was taken at.
-			return window.__seelite.world.system.record.index;
-		}, aim);
-		return aim === "core"
-			? `arrival point of system ${at}, aimed along the way to the cluster's core`
-			: "arrival point, empty sky";
+			const g = window.__seelite;
+			const d = window.__emptiestDirection();
+			const p = g.world.ship.pos;
+			await window.__lookAt({
+				x: p.x + d.x * 1e9,
+				y: p.y + d.y * 1e9,
+				z: p.z + d.z * 1e9,
+			});
+		});
+		return "arrival point, empty sky";
 	},
 	controls: async (page, shot) => {
 		// The arrival point and a forward head, then `?` through the keyboard —
@@ -714,11 +720,15 @@ try {
 		if (view.shot.kind !== "workbench-interior") {
 			// Before the view is set, because a page load resets the game to the
 			// cockpit and would undo it.
-			await ensureSeed(page, view.shot.seed ?? SEED, view.shot.system ?? null);
+			await ensureFixture(
+				page,
+				view.shot.seed ?? SEED,
+				view.shot.system ?? null,
+			);
 			await setView(page, view.shot.view);
 		} else {
 			// The workbench is not the game and carries no seed. Its own
-			// navigation leaves the page somewhere `ensureSeed` cannot reason
+			// navigation leaves the page somewhere `ensureFixture` cannot reason
 			// about, so the next view — there is none today — starts by navigating.
 			currentSeed = null;
 			currentSystem = null;

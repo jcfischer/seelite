@@ -692,8 +692,9 @@ function modeCore(): void {
 	// are cut afterwards because the outer radius is not known until the sweep
 	// has run.
 	const rows: { radius: number; meanAngle: number; coneShare: number }[] = [];
+	let others = 0;
 	sweep({ coreCone: true }, (sky) => {
-		assertPointCount(sky.fromCore.length, "core mode");
+		others = assertPointCount(sky.fromCore.length, "core mode");
 		let sum = 0;
 		let within20 = 0;
 		for (const a of sky.fromCore) {
@@ -745,6 +746,36 @@ function modeCore(): void {
 				(1 - Math.cos(CORE_CONE_RAD)) / 2,
 				3,
 			)})`,
+		);
+		// **The reading that ended #432's rim sky row, and the one §12 does not
+		// carry.** A cone's *share* answers "is this heading more crowded than a
+		// random one", which is #100's question and is not a question about
+		// visibility. What a frame shows is points per square degree, and the
+		// invented population lays a floor under that in *every* direction; below
+		// the floor a crowded heading is not a brightening at all, it is a sparser
+		// set of large discs sitting inside a denser field of small ones. That is
+		// the whole of the principal's "few dots, neither wall of dots or cone of
+		// lights", and it is arithmetic rather than taste: no choice of system and
+		// no choice of heading gets above the floor at this population, which is
+		// why the row was removed rather than re-aimed.
+		//
+		// And it is not a brightness reading either: every derived disc is at least
+		// `BRIGHT_SIZE_MIN`, against the faint law's `FAINT_SIZE_MIN`..`FAINT_SIZE_MAX`
+		// skewed to its floor. The derived points are the larger ones. It is count
+		// per area, which is what an eye resolves as a surface.
+		const coneDeg2 =
+			2 * Math.PI * (1 - Math.cos(CORE_CONE_RAD)) * (180 / Math.PI) ** 2;
+		const faintPer100 =
+			(FAINT_COUNT / (4 * Math.PI * (180 / Math.PI) ** 2)) * 100;
+		const conePer100 = ((mean((r) => r.coneShare) * others) / coneDeg2) * 100;
+		console.log(
+			`          points per 100 deg²: ${fig("cone per 100 deg2", conePer100)} inside that cone against ${fig(
+				"faint per 100 deg2",
+				faintPer100,
+			)} for the invented layer everywhere — the crowded heading is ${fig(
+				"cone over faint density",
+				conePer100 / faintPer100,
+			)}× the sky's own floor, so it cannot read as light`,
 		);
 	}
 }

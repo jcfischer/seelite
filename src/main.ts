@@ -172,9 +172,8 @@ import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
-// vector handed to it. `coreBearing` is the same relation read as a direction:
-// the first caller in `src/` is `coreBearingHere` below, for #432's row.
-import { coreBearing, SYSTEM_PLANE_NORMAL, skyFrame } from "./galaxy-frame";
+// vector handed to it.
+import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
@@ -3921,29 +3920,6 @@ class Game {
 		// **After** the swap, not before: disposing the geometry still attached
 		// to the points would free what the frame in flight is drawing with.
 		geometry.dispose();
-	}
-
-	/**
-	 * The way back to the cluster's core, in this system's world frame: a unit
-	 * direction, or `null` in a system standing on the core itself, where every
-	 * direction is away from it (#432).
-	 *
-	 * Three lines of wrapping around `galaxy-frame.ts`, which is what that module
-	 * means when it says a caller needs wrapping and no decisions. It is a method
-	 * on the game rather than arithmetic in a capture script for two standing
-	 * reasons. The page holds the only copy of *which system this is* —
-	 * `world.system.record` — so a script that derived the heading itself would be
-	 * a second idea of the galactic frame, which is exactly what #430 refuses. And
-	 * #99's rule: a transform nothing can break is a claim, so the transform is
-	 * held by `tests/galaxy-frame.test.ts` and what is held here is that the page
-	 * reports it, which `scripts/probe-sky.mjs` reads off a running game.
-	 *
-	 * `sky-cluster-core` aims the camera along this, and is the first caller in
-	 * `src/` — the reason the function is a method rather than a scratch reading.
-	 */
-	coreBearingHere(): Vec3 | null {
-		const record = this.world.system.record;
-		return coreBearing(skyFrame(record.seed), record.pos);
 	}
 
 	/** The attribute buffers for one `StarField`.

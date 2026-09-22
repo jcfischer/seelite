@@ -45,19 +45,18 @@
  *   can express — the parallax itself is read on the sheet, but the parentage
  *   that causes it is read here.
  *
- * #432's four rows arrive with the row that aims at the cluster's core, and read
- * the two things no headless row can: that `?system=` moved the *page* to the
- * system the row names, and that the frame it aims at holds the cone. The
- * fixture — seed and system alike — is read out of `view-set.mjs` rather than
- * restated here, because a probe holding its own copy of the thing it exists to
- * photograph keeps passing after the photograph has moved.
+ * #432's two rows read the one thing no headless row can: that `?system=` moved a
+ * *running* game to a system the generator did not pick. The row it was built for
+ * — a `deep-sky` frame aimed along the Core bearing — was measured, judged on the
+ * sheet, and removed; `scripts/measure-sky-density.ts`'s field arm is the reading
+ * that decided it, and the note beside `sky-only` in `lib/view-set.mjs` is the
+ * account. What the affordance outlived the row for, and what these two rows
+ * hold, is the way to stand anywhere at all.
  *
  * The probe drives the shipped game through `window.__seelite` and reads
  * constants off the page (`units.BACKDROP_RADIUS`) rather than restating them.
  */
 import { gameUrl } from "./lib/game-url.mjs";
-import { SEED as VIEW_SEED, VIEWS } from "./lib/view-set.mjs";
-import { installViewFraming } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -71,32 +70,12 @@ const ORIGIN =
  *  connected layout has. Fixed so a red run is reproducible. */
 const SEED = 42;
 
-/**
- * The canonical row #432 added, read out of the view set rather than restated.
- *
- * The rim system's index is that file's to own — `tests/view-set.test.ts` holds
- * the rule that picked it — and a probe with its own copy of the fixture is a
- * probe that keeps passing after the row it exists to test has moved. The row
- * missing at all is refused here, before a browser is launched, because the four
- * rows below would otherwise report a share of `NaN`.
- */
-const coreRow = VIEWS.find((v) => v.shot?.aim === "core");
-if (!coreRow)
-	throw new Error(
-		"probe-sky: the view set declares no `deep-sky` row aimed at the cluster's core — #432's rows have nothing to aim at",
-	);
-
 const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 watch(page);
-// #432's rows aim the shipped game with the same vocabulary the canonical
-// capture aims it with — `__lookAt`, `__coreBearingHere`,
-// `__emptiestDirection` — rather than with a second copy of the framing that
-// would then be the thing measured instead of the thing shipped.
-await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 
@@ -371,226 +350,68 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// #432: standing at a named system, and what the frame there holds.
+// #432: `?system=` reaches a system the game would not have booted at.
 //
-// The headless tier holds the arithmetic and the fixture rule. What it cannot
-// hold is either half of what this node is actually for: that the affordance
-// moves a *running game* to the system a row names — `planBoot` and
-// `makeWorldAtSystem` have to agree through a browser boot for that — and that
-// the heading the row aims along is where the cone of cluster light is, which is
-// only measurable against the bearings a live renderer is holding.
+// The headless tier holds the parse (`boot-system.test.ts`), the boot plan
+// (`commander-flow.test.ts`) and the world built at a named index
+// (`world-restore.test.ts`). What it cannot hold is that the three agree through a
+// *running* page: `querySystem`, `planBoot` and `makeWorldAtSystem` are wired
+// inside `main.ts`, which builds a renderer at module scope and so cannot be
+// imported under bun. Two rows close that gap, and neither of them names a
+// system.
 //
-// **Nothing below quotes a figure of its own.** A share of one seeded sky at one
-// instant is a property of that world, and #1's constraint is that such a number
-// earns its place as a ratio or a bound: the Core bearing is judged against the
-// crowdest heading a search can find, the old rule's heading against the new
-// one's, the rim's frame against the centre's frame on the same seed. The one
-// absolute printed is a frame's share of a uniform sphere — a reference for
-// reading the percentages, not a threshold, and labelled where it appears.
+// **The index is read off the page it is asked of.** The start system and the
+// length of the galaxy both come from the booted world, and the probe asks for
+// one seven along, wrapped inside that galaxy — so it is asking for a system the
+// generator did not pick and one that exists, without either figure being copied
+// here. A probe holding its own copy of a fixture is a probe that keeps passing
+// after the thing it exists to test has moved.
 //
-// What this still does not do is read a pixel. Every number below comes off the
-// mounted `BufferAttribute` and the camera's own matrix, so — as above — a frame
-// that never drew would pass, and the look of the cone is the sheet's to judge.
+// The second row asks for one index past the end and expects the page's own
+// politeness — say it, and boot the start system — because `capture-views.mjs`
+// refuses that case loudly, and the two halves of one affordance disagreeing is
+// not something a contact sheet should be the one to find out.
 // ---------------------------------------------------------------------------
 
-/**
- * Aim the shipped game from where it stands, and read what its frame holds.
- *
- * The frame is read as a box in angle off the camera that draws the sky — the
- * same `tan θ / tan(fov/2)` form `main.ts` uses for its own projection — because
- * the question is what is *inside the frame*, and an angular radius is not a
- * frustum test. The aiming is `__aimAlong`, the same call the capture makes, so
- * what is measured here is the framing that ships.
- *
- * **And a heading is scored against a search, not against the anti-aim.** The
- * first cut of the cone row compared the Core bearing with
- * `__emptiestDirection` — a search whose whole purpose is finding the minimum —
- * which any heading at all beats, cone or no cone. So the page now scores 512
- * candidate headings itself and the row asks whether the shipped transform's
- * bearing is at the crowdest place there is.
- */
-const frameReading = (which) =>
-	page.evaluate(async (rule) => {
-		const g = window.__seelite;
-		const record = g.world.system.record;
-		const ship = g.world.ship.pos;
-		const d = await window.__aimAlong(rule);
+const booted = await page.evaluate(() => {
+	const g = window.__seelite;
+	return {
+		start: g.world.system.record.index,
+		count: g.world.galaxy.systems.length,
+	};
+});
 
-		const cam = g.backdropCamera;
-		cam.updateMatrixWorld(true);
-		const tanV = Math.tan((cam.fov * Math.PI) / 360);
-		const tanH = tanV * cam.aspect;
-		const e = cam.matrixWorld.elements;
-		const right = [e[0], e[1], e[2]];
-		const up = [e[4], e[5], e[6]];
-		// three's camera looks down its own -Z.
-		const fwd = [-e[8], -e[9], -e[10]];
-		const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-		// Homogeneous in the vector's length, so the sky's radius and a body's
-		// distance both pass straight through it unnormalised.
-		const inFrame = (v, padTan = 0) => {
-			const z = dot3(v, fwd);
-			if (z <= 0) return false;
-			return (
-				Math.abs(dot3(v, right) / z) <= tanH + padTan &&
-				Math.abs(dot3(v, up) / z) <= tanV + padTan
-			);
-		};
-		// What a heading of this frame's own solid angle would hold if the sky were
-		// uniform: the rectangular pyramid's solid angle over the sphere's 4π.
-		// Printed as a reference, never as a threshold — the derived sky is not
-		// uniform, which is the entire subject.
-		const isoShare =
-			(4 * Math.asin(Math.sin(Math.atan(tanH)) * Math.sin(Math.atan(tanV)))) /
-			(4 * Math.PI);
+/** Seven along from where the game put the ship, wrapped inside this galaxy. */
+const asked = (booted.start + 7) % booted.count;
 
-		const sky = g.backdropScene
-			.getObjectByName("stars-systems")
-			.geometry.getAttribute("position");
-		const unit = (v) => {
-			const l = Math.hypot(v[0], v[1], v[2]);
-			return [v[0] / l, v[1] / l, v[2] / l];
-		};
-		// The heading the ship was just turned along, as the triples this file's
-		// arithmetic runs on. `__aimAlong` hands back a `Vec3`.
-		const bearing = unit([d.x, d.y, d.z]);
-		const bearings = [];
-		let lit = 0;
-		for (let i = 0; i < sky.count; i++) {
-			const v = [sky.getX(i), sky.getY(i), sky.getZ(i)];
-			bearings.push(unit(v));
-			if (inFrame(v)) lit++;
-		}
-
-		// A cone rather than the box for the search: a candidate heading has no
-		// roll to be measured against, and the question is *where the crowd is*.
-		// Its half-angle is the frame's own vertical one, read off the same camera.
-		const coneCos = Math.cos(Math.atan(tanV));
-		const inCone = (c) => {
-			let n = 0;
-			for (const b of bearings) if (dot3(c, b) >= coneCos) n++;
-			return n;
-		};
-		const N = 512;
-		const golden = Math.PI * (3 - Math.sqrt(5));
-		let best = { held: -1, at: null };
-		for (let i = 0; i < N; i++) {
-			const y = 1 - (i / (N - 1)) * 2;
-			const r = Math.sqrt(Math.max(0, 1 - y * y));
-			const t = golden * i;
-			const c = [Math.cos(t) * r, y, Math.sin(t) * r];
-			const held = inCone(c);
-			if (held > best.held) best = { held, at: c };
-		}
-		const atBearing = inCone(bearing);
-		const offDeg =
-			(Math.acos(Math.min(1, dot3(bearing, best.at))) * 180) / Math.PI;
-
-		// What could be the frame's subject instead of the sky. A disc counts by
-		// the frame growing by the disc's own tangent, which is the conservative
-		// direction: a sliver of a planet over the edge is reported as in frame.
-		const subjects = [];
-		for (const b of g.world.system.bodies) {
-			const to = [b.pos.x - ship.x, b.pos.y - ship.y, b.pos.z - ship.z];
-			const dist = Math.hypot(to[0], to[1], to[2]);
-			if (dist <= b.radiusKm || inFrame(to, b.radiusKm / dist))
-				subjects.push(b.id);
-		}
-		return {
-			index: record.index,
-			name: record.name,
-			t: record.t,
-			lit,
-			total: sky.count,
-			subjects,
-			isoShare,
-			coneDeg: (Math.atan(tanV) * 180) / Math.PI,
-			atBearing,
-			bestHeld: best.held,
-			offDeg,
-		};
-	}, which);
-
-await page.goto(
-	gameUrl(origin, {
-		seed: VIEW_SEED,
-		raider: "off",
-		system: coreRow.shot.system,
-	}),
-);
+await page.goto(gameUrl(origin, { seed: SEED, system: asked }));
 await bootedGame(page);
-
-const atCore = await frameReading("core");
-const atEmptiest = await frameReading("emptiest");
-
-check(
-	"`?system=` boots the running page at the system the row names",
-	atCore.index === coreRow.shot.system,
-	`system ${atCore.index} ${atCore.name} at t=${atCore.t.toFixed(
-		3,
-	)}, asked for ${coreRow.shot.system}`,
-);
-
-/**
- * The row the node was really for, and the reason this probe scores headings at
- * all. `≥ 90%` of the searched maximum rather than equal to it, because the
- * densest place in a lumpy sky need not be exactly the centre of the cluster —
- * the claim is that the transform's bearing is *at* the crowd, not that it is its
- * arithmetic centre. A wrong transform lands far off the maximum and goes red.
- */
-check(
-	"the Core bearing the page reports is at the crowd the search finds",
-	atCore.atBearing >= 0.9 * atCore.bestHeld,
-	`a cone of ${atCore.coneDeg.toFixed(1)}° on the Core bearing holds ${
-		atCore.atBearing
-	} of ${atCore.total} derived points; the crowdest of 512 searched headings holds ${
-		atCore.bestHeld
-	}, ${atCore.offDeg.toFixed(1)}° off the Core bearing`,
+const elsewhere = await page.evaluate(
+	() => window.__seelite.world.system.record.index,
 );
 
 check(
-	"the frame the row aims holds no sun and no planet",
-	atCore.subjects.length === 0,
-	atCore.subjects.length === 0
-		? "nothing of the system's own light is inside the frame"
-		: `in frame: ${atCore.subjects.join(", ")}`,
+	"`?system=` boots the running game at the system it was asked for",
+	elsewhere === asked && asked !== booted.start,
+	`asked for ${asked}, standing in system ${elsewhere}; the game boots at ${booted.start} on its own, so arriving elsewhere is the whole of the affordance`,
 );
 
-/**
- * What the *old* rule does with this sky, which is the other half of why the row
- * exists. Honest about its own weakness: `__emptiestDirection` searches for the
- * least, so a small number is what it is built to return — the reading is kept
- * because the sheet needs the size of the difference between the two rules, not
- * because it locates the cone. The row above is what locates it.
- */
-check(
-	"the emptiest heading rule finds far less of the same sky than the Core bearing does",
-	atEmptiest.lit * 4 <= atCore.lit,
-	`${atEmptiest.lit} of ${atEmptiest.total} derived points inside the frame aimed at emptiness against ${atCore.lit} aimed along the Core bearing — the same sky, the same camera`,
-);
-
-// The other half of the node: the row could not be taken where the game boots,
-// because `startSystem` is the most central system there is and a directional
-// arm has nothing to point along from the centre. Same seed, same aim, no
-// `?system=`. §12 of `galaxy-generation.md` owns the cone figures this restates
-// structurally, and `measure-sky-density.ts core` reprints them.
-await page.goto(gameUrl(origin, { seed: VIEW_SEED, raider: "off" }));
+const said = [];
+page.on("console", (message) => {
+	if (message.type() === "warning" || message.type() === "error")
+		said.push(message.text());
+});
+await page.goto(gameUrl(origin, { seed: SEED, system: booted.count }));
 await bootedGame(page);
-const atStart = await frameReading("core");
-
-const rimShare = atCore.lit / atCore.total;
-const centreShare = atStart.lit / atStart.total;
+const refused = await page.evaluate(
+	() => window.__seelite.world.system.record.index,
+);
 
 check(
-	"the same aim at the system the game boots at is the inverted frame #432 was opened to escape",
-	atStart.index !== atCore.index && rimShare >= 2 * centreShare,
-	`${(rimShare * 100).toFixed(1)}% of the derived sky in frame at system ${
-		atCore.index
-	} (t=${atCore.t.toFixed(3)}) against ${(centreShare * 100).toFixed(
-		1,
-	)}% at the start system ${atStart.index} (t=${atStart.t.toFixed(3)}); this frame's share of a uniform sphere is ${(
-		atCore.isoShare * 100
-	).toFixed(1)}%, so the centre's is a heading you could have picked blind`,
+	"an index the galaxy does not have is said, and the start system boots instead",
+	refused === booted.start &&
+		said.some((w) => w.includes(`?system=${booted.count}`)),
+	`${refused === booted.start ? `system ${refused} booted, the start system, not clamped to the last index` : `system ${refused} booted for an index the galaxy does not have`}${said.some((w) => w.includes(`?system=${booted.count}`)) ? ", and the refusal was said in the console" : ", and nothing was said about it"}`,
 );
 
 await browser.close();

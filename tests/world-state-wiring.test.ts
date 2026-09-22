@@ -234,9 +234,10 @@ describe("the Game's world writes", () => {
 		// **`plan.writesNothing` since #432, and the guard got wider rather than
 		// moving.** It used to read `!noSave`, one cause read off the URL at the
 		// call site; a pinned `?system=` is a second cause, and a shell that
-		// re-derived the permission from one of them would attach a store to a
-		// fixture boot and write a Commander who started at a rim star over the
-		// one who did not.
+		// re-derived the permission from either one of them instead of reading the
+		// plan's answer would attach a store where the plan says to write nothing.
+		// Why the second cause has to be said at all is §11.6 of
+		// `persistent-world-state.md`, which owns the rule.
 		expect(MAIN).toContain("!plan.writesNothing && plan.fault === null");
 		// **And on the one-shot path**, which attaches with no such guard: a
 		// record that parses and will not restore turns the plan into an overlay

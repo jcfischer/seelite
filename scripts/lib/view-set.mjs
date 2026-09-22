@@ -157,18 +157,12 @@ export const LEVERS = Object.freeze({
  *   fill exists because the second case rendered the hull as a black cutout,
  *   and the sheet has to contain the case the fix was made for.
  * - `deep-sky` — at the arrival point, with the backdrop as the subject rather
- *   than the thing behind one. `aim` picks the heading rule, and the two are
- *   opposite questions: `emptiest` (the default, and every row written before
- *   #432) searches for the heading with the least on it, which is what a frame
- *   for *nothing in front of it* needs; `core` points along the **Core bearing**,
- *   the way back to the cluster's centre, which is what a frame for #100's derived
- *   layer needs — and it **has to name a `system`**, because `startSystem` is the
- *   most central system the generator makes and a directional arm has nothing to
- *   point along from the centre. §11 and §12 of `galaxy-generation.md` own how
- *   much less that is, and `scripts/measure-sky-density.ts core` reprints it, so
- *   no copy of that reading is repeated here. A heading rule that names the core
- *   is only answerable through `galaxy-frame.ts`, which is #430's reason for
- *   existing.
+ *   than the thing behind one, aimed by `__emptiestDirection` at the heading with
+ *   the least on it, which is what a frame for *nothing in front of it* needs.
+ *   #432 grew an `aim: "core"` arm here, aimed along the **Core bearing**, and it
+ *   is gone again: see the note beside `sky-only` for why a row aimed at the
+ *   cluster's centre cannot show it, and `scripts/measure-sky-density.ts`'s field
+ *   arm for the reading that decided it.
  * - `berth` — docked at a **named berth** of a named station, flown there by
  *   §7's docking computer, stopped at a named point of the traversal. #147's
  *   interior is only ever seen from inside, and the berth is named rather than
@@ -214,14 +208,14 @@ export const SHOT_KINDS = Object.freeze([
  * seed" of this set would be the class of claim this file's own capture code
  * refuses: a caption asserting a fixture property the frames do not have.
  *
- * **One seed is not one place.** Every other row is framed in the system the
- * game boots at, which is `startSystem` — the most *central* well-stocked and
- * orderly one — and only `sky-cluster-core` names a `system` to stand at instead
- * (#432), because the layer #100 ruled is a cone of cluster light on the centre
- * and there is no cone to photograph from the centre. `capture-views.mjs`
- * restores that with the seed, before each view, for the same reason and with the
- * same readback: a row that got a different system than it asked for has to be a
- * red run rather than a wrong picture with the right caption.
+ * **One seed is not one place.** Every row is framed in the system the game boots
+ * at, which is `startSystem` — the most *central* well-stocked and orderly one —
+ * and a row may name a `system` to stand at instead (#432). None does: the row
+ * that needed it was measured, judged and removed, and the reason is beside
+ * `sky-only`. `capture-views.mjs` still restores the system with the seed before
+ * each view, with the same readback and the same refusal: a row that got a
+ * different system than it asked for has to be a red run rather than a wrong
+ * picture with the right caption.
  *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
@@ -731,47 +725,20 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
-	 * #432's row, and the reason `deep-sky` grew an `aim`.
-	 *
-	 * #100 ruled the derived sky directional rather than bright: what a sky in
-	 * this game says about where the player is is *which way the cluster's light
-	 * crowds*. The row above cannot show that from where it stands, in either
-	 * half. `startSystem` is the most **central** well-stocked and orderly system
-	 * the generator offers — deep in §4's central third on this seed — and a
-	 * directional arm has nothing to point along from the centre, which is how
-	 * #104 came to be able to say "captured, green, complete and shows nothing"
-	 * with both tiers agreeing. And `__emptiestDirection` is a rule for finding the
-	 * least on any heading, which aimed at a cone of light is an anti-aim.
-	 *
-	 * The size of the difference is measured, owned in one place, and not printed
-	 * here: §11 and §12 of `galaxy-generation.md`, reprinted by
-	 * `scripts/measure-sky-density.ts core`, and `probe-sky.mjs`'s rim-versus-start
-	 * row for this frame on this seed.
-	 *
-	 * So this row stands at the rim of the cluster and looks back down the cone.
-	 * Both halves are the shipped code's, not a caption's: `?system=` boots the
-	 * page at the named system (`src/boot-system.ts`), and the heading comes from
-	 * `Game.coreBearingHere()`, which is `galaxy-frame.ts`'s transform read at
-	 * the system the world is actually in.
-	 *
-	 * **The index below is data, and the rule that picked it lives in one place:**
-	 * `tests/view-set.test.ts` recomputes it off the shipped generator on every
-	 * run, so a generator change that moves the tightest clear cone makes this row
-	 * red rather than quietly re-framing the sheet against a different sky. The
-	 * rim band, the clearance and the ordering statistic are all in that file,
-	 * which is their only copy.
+	 * The gap here is #432's answer, and it is a measurement rather than a
+	 * missing row. A row standing at the cluster's rim and aimed along the **Core
+	 * bearing** was built, captured on the GPU lane and judged by the principal,
+	 * whose reading was *"few dots, neither wall of dots or cone of lights"*.
+	 * That is what the arithmetic predicts: `scripts/measure-sky-density.ts`'s
+	 * field arm prints the crowded heading's points-per-square-degree against the
+	 * density the invented population already lays down in *every* direction, and
+	 * the cone loses. No framing at a 256-system cluster makes #100's lever
+	 * visible, because — as `CONTEXT.md` says of the Core bearing — it carries
+	 * information rather than light. What #432 shipped is the way to stand at a
+	 * named system (`?system=`) and the measurement that standing there is not
+	 * enough. The lever is the derived layer's population, which is the node that
+	 * measurement opened; a rim sky row comes back after that, not before it.
 	 */
-	{
-		name: "sky-cluster-core",
-		covers: [100],
-		what: "At the cluster's rim, aimed back along the way to its centre: the other systems crowded into the cone of cluster light, with the invented grain behind them.",
-		shot: {
-			kind: "deep-sky",
-			aim: "core",
-			system: 161,
-			view: "cockpit",
-		},
-	},
 	/**
 	 * #372's two frames: the tree as `?` first opens it, and with four groups
 	 * folded, so the sheet shows both what a fold does and the lower groups an
@@ -1013,15 +980,7 @@ const SHOT_REQUIREMENTS = {
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
-	"deep-sky": (s) =>
-		(s.aim === undefined || s.aim === "emptiest" || s.aim === "core") &&
-		// #432. `aim: "core"` without a system to stand at is the row that cannot
-		// show its own subject — the Core bearing from the system the game boots at
-		// is a bearing with nothing crowded along it — and on the sheet it looks
-		// exactly like the one that can. `malformedShots` is where that is refused,
-		// because a garbage frame in a contact sheet is something a reviewer squints
-		// at rather than something that names the field that is missing.
-		(s.aim !== "core" || Number.isInteger(s.system)),
+	"deep-sky": () => true,
 	// The berth is named for the reason `SHOT_KINDS` gives: an unnamed one is a
 	// different room each run. `at`, `headLook` and `launch` are optional and a
 	// missing one is a docked, forward, cockpit frame.
@@ -1058,6 +1017,14 @@ const SHOT_REQUIREMENTS = {
 export function malformedShots(views) {
 	return views
 		.filter((v) => {
+			// `system` is checked over every kind rather than inside one's, because
+			// it is a boot parameter and not a framing: a row may name where it
+			// stands as well as which world it stands in (#432). A fractional or
+			// stringy one would reach `?system=` as an index the page refuses — and
+			// the page refuses *politely*, booting the start system, so a bad value
+			// here is the wrong picture wearing the right caption.
+			if (v.shot.system !== undefined && !Number.isInteger(v.shot.system))
+				return true;
 			const needs = SHOT_REQUIREMENTS[v.shot.kind];
 			return !needs || !needs(v.shot);
 		})

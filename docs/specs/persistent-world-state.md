@@ -512,8 +512,9 @@ site.
 ### 11.7 Verification obligations
 
 Headless: the active pointer's read, write and fallback; a boot that names a system
-reading, consuming and writing nothing even beside a save at its own seed, and the
-parameter refusing an unusable index with a word said; the one-shot continue
+reading nothing and writing nothing even beside a save at its own seed, leaving the
+pointer and the continue for the boot after it, and the parameter refusing an
+unusable index with a word said; the one-shot continue
 consumed by exactly one boot, into the slot the pointer names after New game,
 Load and Import alike; a pending new game surviving until its first `live` write
 lands; a switch refused when its awaited flush fails; Export, Rename and Delete

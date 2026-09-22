@@ -242,19 +242,18 @@ describe("the one-shot continue (§11.3)", () => {
 });
 
 /**
- * `?system=<index>` (#432), the affordance that lets a canonical frame stand at
- * a named star.
+ * `?system=<index>` (#432), the boot affordance that lets a script stand the page
+ * at a named star. It outlived the view row it was built for: see the note beside
+ * `sky-only` in `scripts/lib/view-set.mjs`.
  *
- * **It writes nothing, and that rule is the node's, not a detail.** `?seed`
- * protects a player's record by *disagreeing* with it: a save at another seed
- * trips the set-aside below and no store attaches. A pinned system carries no
- * such disagreement — ask for `?seed=<the save's own seed>&system=161` and the
- * seed matches, the save loads, a store attaches, and the first dirty event
- * writes a Commander who started at a rim star over the one who did not. So the
- * pin implies `?no-save`: a fixture is not a player's afternoon.
+ * §11.6 of `persistent-world-state.md` owns the rule that such a boot writes
+ * nothing, and why — a named system carries none of the disagreement that makes
+ * `?seed` protective, so the set-aside never reaches it. This file's job is that
+ * the plan answers it, and the rows below are the ones §11.7's obligation points
+ * at: reads nothing, writes nothing, and leaves the save continuable afterwards.
  */
 describe("`?system` pins where the ship boots and writes nothing (§11.6)", () => {
-	test("a pinned system reads, consumes and writes nothing, even beside its own save", async () => {
+	test("a pinned boot reads nothing and writes nothing, beside its own save", async () => {
 		const o = origin();
 		await o.save(DEFAULT_SLOT, SEED);
 		await o.catalog.chooseCommander(DEFAULT_SLOT);
@@ -268,7 +267,11 @@ describe("`?system` pins where the ship boots and writes nothing (§11.6)", () =
 		expect(plan.loaded).toBeNull();
 		expect(plan.writesNothing).toBe(true);
 		expect(plan.canContinue).toBe(true);
-		// And the Commander is still there to be continued afterwards.
+		// **The third half of the obligation, and asserted rather than titled:**
+		// a later plain boot still loads that Commander, so the pinned boot left
+		// the pointer and the continue alone. No continue was *set up* for the
+		// pinned boot to consume — under `?boot=direct` there is no overlay to
+		// arm one — which is why this reads as "left alone" and not "consumed".
 		expect((await o.boot({ boot: "direct" })).loaded?.world.seed).toBe(SEED);
 	});
 

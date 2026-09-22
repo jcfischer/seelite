@@ -153,15 +153,16 @@ export interface BootPlan {
 	notice: string | null;
 	/**
 	 * This boot touches no storage, and the shell must not attach a store to it.
-	 * Two things make it true: `?no-save`, and a system named by `?system=`
-	 * (§11.6, #432).
+	 * Two things make it true: `?no-save`, and a system named by `?system=`.
 	 *
-	 * **The pin is here rather than at the call site** because the rule is a
-	 * boot's, not a URL's. `?seed` protects a record by disagreeing with it — a
-	 * save at another seed trips the set-aside below and no store attaches. A
-	 * pinned system carries no such disagreement: `?seed=<the save's own
-	 * seed>&system=161` matches, loads, attaches, and the first dirty event
-	 * writes a Commander who started at a rim star over the one who did not.
+	 * §11.6 of `persistent-world-state.md` is where the rule and its reason are
+	 * written once — including why a named system's permission is not a copy of
+	 * `?no-save`'s but a consequence of the set-aside not reaching it — and this is
+	 * the copy the code cites rather than a second statement of it. What is
+	 * specific to this type is only *where* the answer is computed: here, because
+	 * it is a property of the boot and not of the URL, and four call sites in
+	 * `main.ts` read one field instead of re-deriving the permission from one of
+	 * its two causes.
 	 */
 	writesNothing: boolean;
 	/**
