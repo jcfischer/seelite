@@ -185,6 +185,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-rebind.mjs",
+			"Checks that rebinding a flight command onto a new key reaches the simulation: the ship answers the new trigger, stops answering the old one, and a rebind off a trigger the command does not have is refused.",
+			[
+				"rebind",
+				"key binding",
+				"binding registry",
+				"command dispatch",
+				"flight controls",
+			],
+		),
+		entry(
 			"probe-light-rig.mjs",
 			"Checks live baked-environment orientation, star lighting, material response, and light-rig exposure.",
 			[
