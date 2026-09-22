@@ -402,6 +402,7 @@ import {
 	relayLog,
 	relayPlan,
 	relayPosition,
+	relayScannerFitted,
 	relaySignal,
 	relaySlot,
 	relayVelocity,
@@ -10392,7 +10393,20 @@ class Game {
 		const key = relaySlot(record.index).key;
 		const pos = relayPosition(plan, contents, now);
 		const vel = relayVelocity(plan, contents, now);
-		const signal = relaySignal(this.world.ship.pos, pos);
+		// **#481: the signal is the bought module's, and it gates two things
+		// rather than one.** Read nothing without it and the cue has nothing to
+		// show *and* the identification below never fires — so an unfitted pilot
+		// gets no knowledge row, and with no row `updateRelayPresentation`
+		// lists no contact and no target. Gating the cue alone would leave the
+		// relay in the Navigation list of a pilot who cannot see it.
+		//
+		// What stays ungated is everything the relay *does*: its mesh, the shot
+		// that can destroy it, and `relayDetectionNow`'s dial on the watched
+		// route. #479's ruling is exactly that asymmetry — the route effect is
+		// felt by a pilot who cannot find its cause.
+		const signal = relayScannerFitted(this.commander.ownedEquipment)
+			? relaySignal(this.world.ship.pos, pos)
+			: null;
 		let identified =
 			readKnowledge(this.commerceWorld.galaxies[record.galaxy], key) !==
 			undefined;

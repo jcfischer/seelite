@@ -43,6 +43,7 @@
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
+import { LONG_RANGE_SCANNER } from "./market";
 import { stream } from "./galaxy";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
@@ -94,6 +95,24 @@ export const RELAY_SIGNAL_RANGE_KM = 2_500;
 /** Inside this range the relay is identified: a knowledge row, a contact, a
  *  target. Well under scanner range, so the scanner cannot find it first. */
 export const RELAY_IDENTIFY_RANGE_KM = 150;
+
+/**
+ * Both ranges are a **bought module's** reading, not a hull's (#481, #479).
+ *
+ * The channel is the long-range scanner's: fitted, the cockpit reads strength
+ * and bearing inside the signal's range and identifies inside the near one;
+ * unfitted it reads nothing at all — no cue, no knowledge row, no contact.
+ * What is deliberately *not* gated is the relay's dial on the watched route,
+ * so an unequipped pilot still meets the raiders it sends and cannot find the
+ * cause. That asymmetry is the whole of #479's ruling.
+ *
+ * Its shape is `scanFitted`'s (`carrier-scan.ts`) because it answers the same
+ * question of the same list, and it lives here rather than beside that one so
+ * the relay's module owns every rule about reading a relay.
+ */
+export const relayScannerFitted = (
+	ownedEquipment: readonly string[],
+): boolean => ownedEquipment.includes(LONG_RANGE_SCANNER);
 
 /** Hull points. Ten seconds of pulse fire (`PULSE_LASER.damagePerS` 6). */
 export const RELAY_INTEGRITY = 60;

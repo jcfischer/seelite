@@ -21,6 +21,7 @@ import {
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	EQUIPMENT,
+	LONG_RANGE_SCANNER,
 	FUEL_CR_PER_LY,
 	HOLD_REFERENCE_T,
 	type MarketStation,
@@ -378,10 +379,25 @@ test("obligation 6: type exclusives are sold at their own type and named everywh
 		"Extra Energy Unit",
 		"Military Laser",
 		"Identity Scanner",
+		"Long-Range Scanner",
 	]);
 	expect(
 		shipyard.unavailable.filter((e) => e.reason.startsWith("requires TL")),
 	).toEqual([]);
+
+	// #481's checkpoint, on the screen rather than on the row: the other two
+	// station types name the module and refuse to sell it. A refinery is
+	// checked above through the shared reason string; the trade station is the
+	// type with no exclusive of its own, so nothing else covers it.
+	const trade = stationEquipmentScreen({ type: "trade", displayTL: 11 });
+	for (const screen of [refinery, trade]) {
+		expect(screen.available.map((e) => e.name)).not.toContain(
+			LONG_RANGE_SCANNER,
+		);
+		expect(
+			screen.unavailable.find((e) => e.name === LONG_RANGE_SCANNER)?.reason,
+		).toBe("shipyards only");
+	}
 });
 
 test("§8.3: the hull section exists at a shipyard and is empty until #26", () => {

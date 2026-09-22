@@ -991,6 +991,27 @@ export const SCAN_MODULE = "Identity Scanner";
 /** E.C.M.'s price, per F12. */
 export const SCAN_MODULE_PRICE_CR = 600;
 
+/**
+ * The long-range scanner, by name (#481, under #468).
+ *
+ * **Named here, beside the row it buys**, for `SCAN_MODULE`'s reason: a
+ * behaviour gate, a console line and a shipyard's list all have to mean the
+ * same purchase, and a second copy of the string is the bug.
+ *
+ * **A shipyard exclusive at 1,000 Cr, flat.** The universal column is closed —
+ * `station-types.md` §4.1's table holds exactly ten and §4.2's saturation
+ * argument counts them — and a non-hull item is priced flat rather than by a
+ * curve. The figure sits between the Identity Scanner's 600 and the Extra
+ * Energy Unit's 1,500, which is #468's pricing.
+ *
+ * The consequence is #479's: no module, no relay cue and no identification —
+ * while the relay's dial on the watched route still bites, so the pilot feels
+ * a cause they cannot find.
+ */
+export const LONG_RANGE_SCANNER = "Long-Range Scanner";
+/** #468's figure, flat. */
+export const LONG_RANGE_SCANNER_PRICE_CR = 1000;
+
 export const EQUIPMENT: readonly Equipment[] = [
 	{ name: "Missile", priceCr: 30, scope: "universal" },
 	{ name: "Large Cargo Bay", priceCr: 400, scope: "universal" },
@@ -1013,6 +1034,12 @@ export const EQUIPMENT: readonly Equipment[] = [
 	{
 		name: SCAN_MODULE,
 		priceCr: SCAN_MODULE_PRICE_CR,
+		scope: "shipyard",
+		newToSeelite: true,
+	},
+	{
+		name: LONG_RANGE_SCANNER,
+		priceCr: LONG_RANGE_SCANNER_PRICE_CR,
 		scope: "shipyard",
 		newToSeelite: true,
 	},

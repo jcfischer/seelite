@@ -33,6 +33,10 @@ import {
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	EQUIPMENT,
+	type Equipment,
+	LONG_RANGE_SCANNER,
+	LONG_RANGE_SCANNER_PRICE_CR,
+	SCAN_MODULE,
 	FUEL_CR_PER_LY,
 	FUEL_TANK_LY,
 	HOLD_REFERENCE_T,
@@ -1126,10 +1130,11 @@ describe("§7/§8 equipment prices and the fitting-out total", () => {
 		// unpinned transcribed constant costs.
 		expect(EQUIPMENT.filter((e) => e.scope === "universal").length).toBe(9);
 		expect(EQUIPMENT.filter((e) => e.scope === "refinery").length).toBe(2);
-		// Three, since #364's identity scanner joined the column. The universal
-		// nine is the count §4.1's saturation argument counts (Fuel is the tenth,
-		// priced per LY below), and it is the one an eleventh item would move.
-		expect(EQUIPMENT.filter((e) => e.scope === "shipyard").length).toBe(3);
+		// Four, since #481's long-range scanner joined #364's identity scanner in
+		// the column. The universal nine is the count §4.1's saturation argument
+		// counts (Fuel is the tenth, priced per LY below), and it is the one an
+		// eleventh item would move; an exclusive moves no ceiling.
+		expect(EQUIPMENT.filter((e) => e.scope === "shipyard").length).toBe(4);
 		// Fuel is the tenth universal item; it is priced per LY, not per unit,
 		// so it lives in its own constants rather than in the list.
 		expect(FUEL_CR_PER_LY * FUEL_TANK_LY).toBe(14);
@@ -1138,11 +1143,38 @@ describe("§7/§8 equipment prices and the fitting-out total", () => {
 			EQUIPMENT.filter((e) => e.newToSeelite)
 				.map((e) => e.name)
 				.sort(),
-		).toEqual(["Identity Scanner", "Military Laser", "Mining Laser"]);
+		).toEqual([
+			"Identity Scanner",
+			"Long-Range Scanner",
+			"Military Laser",
+			"Mining Laser",
+		]);
+	});
+
+	test("#481's long-range scanner is a flat-priced shipyard exclusive", () => {
+		const row = EQUIPMENT.find((e) => e.name === LONG_RANGE_SCANNER);
+		if (!row) throw new Error("the long-range scanner is not in EQUIPMENT");
+		// The name is asserted rather than assumed: a behaviour gate, a console
+		// line and this row all read the one constant, and the failure a second
+		// copy of the string buys is a module nothing can be fitted with.
+		expect(LONG_RANGE_SCANNER).toBe("Long-Range Scanner");
+		expect(row.priceCr).toBe(LONG_RANGE_SCANNER_PRICE_CR);
+		expect(row.priceCr).toBe(1000);
+		// #468's placement in the column, checked as a relationship rather than
+		// as two more transcribed figures.
+		const priceOf = (name: string) =>
+			(EQUIPMENT.find((e) => e.name === name) as Equipment).priceCr;
+		expect(row.priceCr).toBeGreaterThan(priceOf(SCAN_MODULE));
+		expect(row.priceCr).toBeLessThan(priceOf("Extra Energy Unit"));
+		// A shipyard exclusive: the checkpoint's "a refinery and a trade station
+		// do not sell it" is this row plus `station-console.ts`'s scope filter,
+		// which `tests/station-console.test.ts` flies on the screen itself.
+		expect(row.scope).toBe("shipyard");
+		expect(row.newToSeelite).toBe(true);
 	});
 
 	test("§8's fitting-out total is derived from the list", () => {
-		expect(fullKitCr()).toBe(19725);
-		expect(fullKitCr({ withMissiles: true })).toBe(19845);
+		expect(fullKitCr()).toBe(20725);
+		expect(fullKitCr({ withMissiles: true })).toBe(20845);
 	});
 });
