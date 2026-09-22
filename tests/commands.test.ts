@@ -9,6 +9,7 @@
  * into a collision.
  */
 import { describe, expect, test } from "bun:test";
+import { codeOf } from "./lib/source-scan";
 import {
 	type Binding,
 	collisions,
@@ -30,84 +31,93 @@ import {
  * default would be two changes and one review. Without this row any later
  * feature can move one as a side effect and the suite stays green.
  *
- * **It is not a fixture the registry generated for itself.** Every key in it
- * is tied to `main.ts` in both directions by `controls-catalogue.test.ts`,
- * which reads the source with the partition test's own scanner — so what this
- * adds over that row is the *pairing*: which command each key reaches, and
- * that it has not silently changed hands.
+ * **What ties it to something outside this file, and what does not.** The
+ * *pressed* keys are tied to `main.ts` in both directions by
+ * `controls-catalogue.test.ts`, which reads the source with the partition
+ * test's own scanner and checks each one's case body. The **held** keys are
+ * not: `isPressedKey` excludes them, so nothing in that row looks at
+ * `key:w::hold`. An inverted `w`/`s` would freeze green here and ship to the
+ * public manual — which is why `the axis law names which key is which` below
+ * reads the three `axis()` call sites out of `main.ts` and pairs them, and
+ * why this row carries each binding's **scope** rather than its trigger
+ * alone: dropping `surface` from a panel key would otherwise leave the row
+ * unchanged while moving the key onto the ship's surface.
  */
 const RATIFIED_LAYOUT: readonly string[] = [
-	"key: ::hold → fight.firePulse",
-	"key:'::press → tune.dropRadiusUp",
-	"key:,::press → tune.dropSpeedDown",
-	"key:-::press → tune.vMaxDown",
-	"key:.::press → tune.dropSpeedUp",
-	"key:/::press → fight.rigIncoming",
-	"key:0::press → tune.reset",
-	"key:1::hold → view.orbitPort",
-	"key:1::press → view.headPort",
-	"key:2::press → view.headForward",
-	"key:2::press → view.orbitCentre",
-	"key:3::hold → view.orbitStarboard",
-	"key:3::press → view.headStarboard",
-	"key:9::press → system.commander",
-	"key:;::press → tune.dropRadiusDown",
-	"key:=::press → tune.vMaxUp",
-	"key:?::press → view.reference",
-	"key:ArrowLeft:alt:press → view.headPort",
-	"key:ArrowRight:alt:press → view.headStarboard",
-	"key:ArrowUp:alt:press → view.headForward",
-	"key:[::press → tune.exponentDown",
-	"key:]::press → tune.exponentUp",
-	"key:`::press → fly.jump",
-	"key:a::hold → fly.yawPort",
-	"key:arrowdown::hold → fly.pitchUp",
-	"key:arrowdown::press → panel.cursorDown",
-	"key:arrowleft::hold → fly.yawPort",
-	"key:arrowleft::press → panel.tabPrevious",
-	"key:arrowright::hold → fly.yawStarboard",
-	"key:arrowright::press → panel.tabNext",
-	"key:arrowup::hold → fly.pitchDown",
-	"key:arrowup::press → panel.cursorUp",
-	"key:b::press → perf.bloom",
-	"key:c::press → dock.clearance",
-	"key:control::hold → fly.throttleDown",
-	"key:d::hold → fly.yawStarboard",
-	"key:e::hold → fly.rollStarboard",
-	"key:enter::press → dock.launch",
-	"key:enter::press → panel.activate",
-	"key:f1::press → view.reference",
-	"key:f::press → fight.faceTarget",
-	"key:g::press → fight.targetPrevious",
-	"key:h::press → perf.atmosphere",
-	"key:i::press → perf.restore",
-	"key:j::press → fly.cruise",
-	"key:k::press → tune.approachLeadDown",
-	"key:l::press → tune.approachLeadUp",
-	"key:m::press → tune.vicinityUp",
-	"key:n::press → tune.vicinityDown",
-	"key:o::press → perf.craters",
-	"key:p::press → perf.class",
-	"key:q::hold → fly.rollPort",
-	"key:q::press → fight.rigEcm",
-	"key:r::press → perf.relief",
-	"key:s::hold → fly.pitchUp",
-	"key:shift::hold → fly.throttleUp",
-	"key:t::press → fight.targetNext",
-	"key:u::press → dock.computer",
-	"key:v::press → view.toggle",
-	"key:w::hold → fly.pitchDown",
-	"key:x::hold → fight.fireBeam",
-	"key:x::press → fly.assist",
-	"key:y::press → perf.clouds",
-	"key:z::press → system.settings",
+	"key: ::hold → fight.firePulse @ flight/instrument/console/modal cockpit/chase -",
+	"key:'::press → tune.dropRadiusUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:,::press → tune.dropSpeedDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:-::press → tune.vMaxDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:.::press → tune.dropSpeedUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:/::press → fight.rigIncoming @ flight/instrument/console/modal cockpit/chase -",
+	"key:0::press → tune.reset @ flight/instrument/console/modal cockpit/chase -",
+	"key:1::hold → view.orbitPort @ flight/instrument/console/modal chase -",
+	"key:1::press → view.headPort @ flight/instrument/console/modal cockpit -",
+	"key:2::press → view.headForward @ flight/instrument/console/modal cockpit -",
+	"key:2::press → view.orbitCentre @ flight/instrument/console/modal chase -",
+	"key:3::hold → view.orbitStarboard @ flight/instrument/console/modal chase -",
+	"key:3::press → view.headStarboard @ flight/instrument/console/modal cockpit -",
+	"key:9::press → system.commander @ flight/instrument/console/modal cockpit/chase -",
+	"key:;::press → tune.dropRadiusDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:=::press → tune.vMaxUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:?::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
+	"key:ArrowLeft:alt:press → view.headPort @ flight/instrument/console/modal cockpit -",
+	"key:ArrowRight:alt:press → view.headStarboard @ flight/instrument/console/modal cockpit -",
+	"key:ArrowUp:alt:press → view.headForward @ flight/instrument/console/modal cockpit -",
+	"key:[::press → tune.exponentDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:]::press → tune.exponentUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:`::press → fly.jump @ flight/instrument/console/modal cockpit/chase -",
+	"key:a::hold → fly.yawPort @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowdown::hold → fly.pitchUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowdown::press → panel.cursorDown @ flight/instrument/console/modal cockpit/chase requests",
+	"key:arrowleft::hold → fly.yawPort @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowleft::press → panel.tabPrevious @ flight/instrument/console/modal cockpit/chase requests",
+	"key:arrowright::hold → fly.yawStarboard @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowright::press → panel.tabNext @ flight/instrument/console/modal cockpit/chase requests",
+	"key:arrowup::hold → fly.pitchDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:arrowup::press → panel.cursorUp @ flight/instrument/console/modal cockpit/chase requests",
+	"key:b::press → perf.bloom @ flight/instrument/console/modal cockpit/chase -",
+	"key:c::press → dock.clearance @ flight/instrument/console/modal cockpit/chase -",
+	"key:control::hold → fly.throttleDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:d::hold → fly.yawStarboard @ flight/instrument/console/modal cockpit/chase -",
+	"key:e::hold → fly.rollStarboard @ flight/instrument/console/modal cockpit/chase -",
+	"key:enter::press → dock.launch @ flight/instrument/console/modal cockpit/chase -",
+	"key:enter::press → panel.activate @ flight/instrument/console/modal cockpit/chase requests",
+	"key:f1::press → view.reference @ flight/instrument/console/modal cockpit/chase -",
+	"key:f::press → fight.faceTarget @ flight/instrument/console/modal cockpit/chase -",
+	"key:g::press → fight.targetPrevious @ flight/instrument/console/modal cockpit/chase -",
+	"key:h::press → perf.atmosphere @ flight/instrument/console/modal cockpit/chase -",
+	"key:i::press → perf.restore @ flight/instrument/console/modal cockpit/chase -",
+	"key:j::press → fly.cruise @ flight/instrument/console/modal cockpit/chase -",
+	"key:k::press → tune.approachLeadDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:l::press → tune.approachLeadUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:m::press → tune.vicinityUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:n::press → tune.vicinityDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:o::press → perf.craters @ flight/instrument/console/modal cockpit/chase -",
+	"key:p::press → perf.class @ flight/instrument/console/modal cockpit/chase -",
+	"key:q::hold → fly.rollPort @ flight/instrument/console/modal cockpit/chase -",
+	"key:q::press → fight.rigEcm @ flight/instrument/console/modal cockpit/chase -",
+	"key:r::press → perf.relief @ flight/instrument/console/modal cockpit/chase -",
+	"key:s::hold → fly.pitchUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:shift::hold → fly.throttleUp @ flight/instrument/console/modal cockpit/chase -",
+	"key:t::press → fight.targetNext @ flight/instrument/console/modal cockpit/chase -",
+	"key:u::press → dock.computer @ flight/instrument/console/modal cockpit/chase -",
+	"key:v::press → view.toggle @ flight/instrument/console/modal cockpit/chase -",
+	"key:w::hold → fly.pitchDown @ flight/instrument/console/modal cockpit/chase -",
+	"key:x::hold → fight.fireBeam @ flight/instrument/console/modal cockpit/chase -",
+	"key:x::press → fly.assist @ flight/instrument/console/modal cockpit/chase -",
+	"key:y::press → perf.clouds @ flight/instrument/console/modal cockpit/chase -",
+	"key:z::press → system.settings @ flight/instrument/console/modal cockpit/chase -",
 ];
+
+const scopeText = (b: Binding) =>
+	`${b.scope.pad.join("/")} ${b.scope.views.join("/")} ${b.scope.surface ?? "-"}`;
 
 const keyRows = (bindings: readonly Binding[]) =>
 	bindings
 		.flatMap((b) =>
 			b.trigger.kind === "key"
-				? [`${triggerKey(b.trigger)} → ${b.command}`]
+				? [`${triggerKey(b.trigger)} → ${b.command} @ ${scopeText(b)}`]
 				: [],
 		)
 		.sort();
@@ -131,10 +141,17 @@ describe("the catalogue #369 ratified", () => {
 			["panel.valueDown", "panel.valueUp"],
 			["view.orbitPort", "view.orbitStarboard"],
 		] as const) {
-			expect(commandById(up).id).toBe(up);
-			expect(commandById(down).id).toBe(down);
+			// The property the split is about: two rows, each with triggers of
+			// its own. `commandById` throws on an id that is not in the table,
+			// so a missing half is red before the assertion below runs.
+			expect(up).not.toBe(down);
+			expect(commandById(up).defaultTriggers.length).toBeGreaterThan(0);
+			expect(commandById(down).defaultTriggers.length).toBeGreaterThan(0);
+			expect(commandById(up).defaultTriggers).not.toEqual(
+				commandById(down).defaultTriggers,
+			);
 		}
-		// And the twelve dial steps are twelve, not six.
+		// Twelve dial steps and a reset, where #372 had six rows and a reset.
 		expect(COMMANDS.filter((c) => c.id.startsWith("tune.")).length).toBe(13);
 	});
 
@@ -142,15 +159,39 @@ describe("the catalogue #369 ratified", () => {
 		// D2's hard case. A stick causes both directions, and the answer is two
 		// signed bindings on two commands rather than a second kind of bindable
 		// thing — so every stick and mouse-axis trigger names its half.
+		// **Not `"half" in trigger`** — the type declares it required on both
+		// kinds, so that reads as a check and holds by construction. What can
+		// fail is the pairing: each physical axis is pushed two ways, the two
+		// pushes land on different commands, and the pair is the pair the
+		// registry says it is.
 		const halves = DEFAULT_BINDINGS.filter(
 			(b) => b.trigger.kind === "pad-stick" || b.trigger.kind === "mouse-move",
 		);
-		expect(halves.length).toBeGreaterThan(0);
-		for (const b of halves)
-			expect(`${b.command}: ${"half" in b.trigger}`).toBe(`${b.command}: true`);
-		// The two halves of one stick axis land on different commands.
-		const pitch = halves.filter((b) => b.command.startsWith("fly.pitch"));
-		expect(new Set(pitch.map((b) => b.command)).size).toBe(2);
+		const byAxis = new Map<string, Map<string, string>>();
+		for (const b of halves) {
+			if (b.trigger.kind !== "pad-stick" && b.trigger.kind !== "mouse-move")
+				continue;
+			const axis =
+				b.trigger.kind === "pad-stick"
+					? `${b.trigger.stick}-stick-${b.trigger.axis}`
+					: `mouse-${b.trigger.axis}`;
+			const halfMap = byAxis.get(axis) ?? new Map<string, string>();
+			halfMap.set(b.trigger.half, b.command);
+			byAxis.set(axis, halfMap);
+		}
+		const pairs = [...byAxis]
+			.map(
+				([axis, halfMap]) =>
+					`${axis}: ${halfMap.get("-")} | ${halfMap.get("+")}`,
+			)
+			.sort();
+		expect(pairs).toEqual([
+			"left-stick-x: fly.rollPort | fly.rollStarboard",
+			"mouse-x: fly.yawPort | fly.yawStarboard",
+			"mouse-y: fly.pitchDown | fly.pitchUp",
+			"right-stick-x: fly.yawPort | fly.yawStarboard",
+			"right-stick-y: fly.pitchDown | fly.pitchUp",
+		]);
 	});
 
 	test("the three kinds of fixed row are catalogued and not rebindable", () => {
@@ -195,9 +236,74 @@ describe("the ratified layout", () => {
 		// above pass on nothing.
 		expect(RATIFIED_LAYOUT.length).toBeGreaterThan(50);
 		for (const row of RATIFIED_LAYOUT) {
-			const id = row.slice(row.indexOf("→ ") + 2);
+			const id = row.slice(row.indexOf("→ ") + 2, row.indexOf(" @ "));
 			expect(`${id}: ${COMMANDS.some((c) => c.id === id)}`).toBe(`${id}: true`);
 		}
+	});
+});
+
+describe("the axis law names which key is which", () => {
+	/**
+	 * The held keys' half of the ratified layout, read out of `main.ts`.
+	 *
+	 * `controls-catalogue.test.ts` checks every *pressed* key against its case
+	 * body; a held key has no case, so nothing outside this file knew which of
+	 * `w` and `s` puts the nose up — and the registry publishes that pairing to
+	 * the `Controls` tab and to the public manual. `axis(negative, positive)`
+	 * at `main.ts` is where it is actually decided, so this reads the call
+	 * sites and pairs them against the ids.
+	 */
+	const axisCalls = () => {
+		const source = codeOf("src/main.ts");
+		const found = [
+			...source.matchAll(/this\.axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g),
+		];
+		const keys = (list: string) =>
+			[...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
+		return found.map((m) => ({
+			negative: keys(m[1] as string),
+			positive: keys(m[2] as string),
+		}));
+	};
+
+	/** The command a *held* key reaches. */
+	const heldCommand = (key: string) => {
+		const found = DEFAULT_BINDINGS.filter(
+			(b) =>
+				b.trigger.kind === "key" && b.trigger.key === key && b.trigger.hold,
+		);
+		return found.length === 1 ? found[0]?.command : `${found.length} commands`;
+	};
+
+	test("the scan finds the call sites it is supposed to find", () => {
+		// Guarding the guard: a renamed helper would make the row below pass on
+		// an empty list.
+		const calls = axisCalls();
+		expect(calls.length).toBe(4);
+		for (const call of calls) {
+			expect(call.negative.length).toBeGreaterThan(0);
+			expect(call.positive.length).toBeGreaterThan(0);
+		}
+	});
+
+	test("every held key lands on the command the axis law gives it", () => {
+		const rows = axisCalls()
+			.map(
+				(call) =>
+					`${call.negative.map(heldCommand).join(",")} ← → ${call.positive
+						.map(heldCommand)
+						.join(",")}`,
+			)
+			.sort();
+		expect(rows).toEqual(
+			[
+				// `chaseOrbitInput`, whose own comment holds the port ruling.
+				"view.orbitPort ← → view.orbitStarboard",
+				"fly.pitchUp,fly.pitchUp ← → fly.pitchDown,fly.pitchDown",
+				"fly.rollStarboard ← → fly.rollPort",
+				"fly.yawStarboard,fly.yawStarboard ← → fly.yawPort,fly.yawPort",
+			].sort(),
+		);
 	});
 });
 

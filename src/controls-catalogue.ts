@@ -15,26 +15,23 @@
  * thing one trigger can cause is one command, so pitch up and pitch down are
  * two rows, and the tab folds by task rather than by pair.
  *
+ * **One import path per symbol.** This module exports the catalogue and
+ * nothing else — every registry symbol (`Trigger`, `TaskGroup`,
+ * `PAD_CONTEXTS`, `CommandId`) is imported from `./commands` by its consumers,
+ * so the slices after this one cannot each pick a different path.
+ *
  * Headless, and on the list in `tests/headless.test.ts`: the unit tier renders
  * **this** catalogue, never a struct a test built.
  */
 import { type Command, COMMANDS, type Trigger } from "./commands";
 
 /**
- * **One import path per symbol.** This module used to re-export the registry's
- * whole type surface, which gave `Trigger`, `CommandId`, `Scope` and the rest
- * two homes; the slices after this one each have to pick a path, and two paths
- * drift. Everything but the catalogue itself is imported from `./commands`.
- */
-
-/**
  * A registry row, plus the one thing a screen needs that a registry row does
  * not carry: what is bound **now**.
  *
- * It extends `Command` rather than restating it. The restatement was written
- * first and cost two fields inside one review round — `views` and
- * `rebindable` had to be declared twice and copied by hand — which is the
- * second-copy drift this repo keeps paying for elsewhere.
+ * It extends `Command` rather than restating it: a second declaration of the
+ * same seven fields is a second thing to edit every time the registry gains
+ * one, which is the drift this repo pays for elsewhere.
  */
 export interface ControlCommand extends Command {
 	/** What is bound now. Until the settings row lands this *is* the default. */

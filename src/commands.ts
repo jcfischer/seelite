@@ -105,6 +105,23 @@ export const PANEL_INTENTS: readonly PanelIntent[] = [
 export type Half = "+" | "-";
 
 /**
+ * The screens that claim a trigger of their own.
+ *
+ * A closed union rather than a phrase, because `overlaps` decides liveness by
+ * comparing two of these and `controls-reference.ts` prints them: with prose
+ * in the field, two bindings on one screen worded differently could never be
+ * reported as a collision, and rewording a label would silently move a scope.
+ * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
+ */
+export const SURFACES = [
+	"requests",
+	"station-console",
+	"console-row",
+	"view",
+] as const;
+export type Surface = (typeof SURFACES)[number];
+
+/**
  * One way to reach a command.
  *
  * #370 D2's trigger kinds: a character key, a mouse button, mouse movement, a
@@ -127,12 +144,12 @@ export type Trigger =
 			readonly hold?: true;
 			/** The screen that claims this key, when one does. Absent is the
 			 *  ship's own surface — see `Scope`. */
-			readonly surface?: string;
+			readonly surface?: Surface;
 	  }
 	| {
 			readonly kind: "mouse-button";
 			readonly action: "hold" | "click";
-			readonly surface?: string;
+			readonly surface?: Surface;
 	  }
 	| {
 			readonly kind: "mouse-move";
@@ -456,7 +473,7 @@ const AUTHORED = [
 		// A pointer row, for `trade.actOnRow`'s reason: its only trigger is the
 		// click that acquires pointer lock, and there is nowhere else to put it.
 		rebindable: false,
-		more: [{ kind: "mouse-button", action: "click", surface: "the view" }],
+		more: [{ kind: "mouse-button", action: "click", surface: "view" }],
 	},
 	// fight -------------------------------------------------------------
 	{
@@ -531,7 +548,7 @@ const AUTHORED = [
 		group: "trade",
 		rebindable: false,
 		more: [
-			{ kind: "mouse-button", action: "click", surface: "a station console" },
+			{ kind: "mouse-button", action: "click", surface: "station-console" },
 		],
 	},
 	// view --------------------------------------------------------------
@@ -604,7 +621,7 @@ const AUTHORED = [
 		id: "panel.cursorUp",
 		name: "Walk a console's cursor up",
 		group: "system",
-		keys: [{ key: "arrowup", surface: "Requests" }],
+		keys: [{ key: "arrowup", surface: "requests" }],
 		intent: "focusDelta",
 		intentHalf: "-",
 	},
@@ -612,7 +629,7 @@ const AUTHORED = [
 		id: "panel.cursorDown",
 		name: "Walk a console's cursor down",
 		group: "system",
-		keys: [{ key: "arrowdown", surface: "Requests" }],
+		keys: [{ key: "arrowdown", surface: "requests" }],
 		intent: "focusDelta",
 		intentHalf: "+",
 	},
@@ -627,7 +644,7 @@ const AUTHORED = [
 		id: "panel.tabPrevious",
 		name: "Previous console tab",
 		group: "system",
-		keys: [{ key: "arrowleft", surface: "Requests" }],
+		keys: [{ key: "arrowleft", surface: "requests" }],
 		intent: "tabDelta",
 		intentHalf: "-",
 	},
@@ -635,7 +652,7 @@ const AUTHORED = [
 		id: "panel.tabNext",
 		name: "Next console tab",
 		group: "system",
-		keys: [{ key: "arrowright", surface: "Requests" }],
+		keys: [{ key: "arrowright", surface: "requests" }],
 		intent: "tabDelta",
 		intentHalf: "+",
 	},
@@ -643,8 +660,8 @@ const AUTHORED = [
 		id: "panel.activate",
 		name: "Select the row under the cursor",
 		group: "system",
-		keys: [{ key: "enter", surface: "Requests" }],
-		more: [{ kind: "mouse-button", action: "click", surface: "a console row" }],
+		keys: [{ key: "enter", surface: "requests" }],
+		more: [{ kind: "mouse-button", action: "click", surface: "console-row" }],
 		intent: "activate",
 	},
 	{
@@ -901,7 +918,7 @@ function padIntentTriggers(
 export interface Scope {
 	readonly pad: readonly PadContext[];
 	readonly views: readonly ViewMode[];
-	readonly surface?: string;
+	readonly surface?: Surface;
 }
 
 export interface Command {
@@ -912,8 +929,13 @@ export interface Command {
 	/** Whether the player may move it (#369 D12's rider). */
 	readonly rebindable: boolean;
 	readonly views: readonly ViewMode[];
-	/** The pad contexts this command is live in, from its pad triggers. */
-	readonly contexts: readonly PadContext[];
+	/**
+	 * The pad contexts this command's **pad triggers** are live in, and empty
+	 * for a command the pad does not reach. Deliberately not the same question
+	 * as a binding's `Scope.pad`, which answers for one trigger and gives a
+	 * keyboard binding every context — the name says which.
+	 */
+	readonly padTriggerContexts: readonly PadContext[];
 	readonly defaultTriggers: readonly Trigger[];
 }
 
@@ -994,7 +1016,7 @@ function toCommand(a: Authored): Command {
 		group: a.group,
 		rebindable: a.rebindable ?? true,
 		views: a.views ?? VIEW_MODES,
-		contexts: contextsOf(defaultTriggers),
+		padTriggerContexts: contextsOf(defaultTriggers),
 		defaultTriggers,
 	};
 }
@@ -1026,7 +1048,11 @@ export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
  * What makes two bindings the *same* trigger.
  *
  * Physical identity, not printed identity: a key is its physical position
- * under D7 (`code` when the binding carries one, the character otherwise),
+ * under D7 (`code` when the binding carries one, the character otherwise —
+ * **and those are one namespace, which is a hole while both exist**. Once the
+ * dispatch slice authors `code` on the letter rows it must migrate a saved
+ * layout too, or one coded and one uncoded binding on the same physical key
+ * hash apart and `collisions()` reports nothing),
  * and a press and a hold of the same key are different triggers — which is
  * what makes D3's split on `x` a split rather than a collision. A pad button
  * and a pad intent share one namespace because they are one button.
@@ -1053,14 +1079,26 @@ export function triggerKey(t: Trigger): string {
 	}
 }
 
-const intersects = <T>(a: readonly T[], b: readonly T[]) =>
-	a.some((x) => b.includes(x));
+const intersection = <T>(a: readonly T[], b: readonly T[]) =>
+	a.filter((x) => b.includes(x));
 
-/** Two bindings are live at the same time, so one trigger would mean two things. */
-const overlaps = (a: Scope, b: Scope) =>
-	a.surface === b.surface &&
-	intersects(a.pad, b.pad) &&
-	intersects(a.views, b.views);
+/**
+ * Where two bindings are both live — the empty answer on either axis, or a
+ * different surface, means they never meet.
+ *
+ * One function rather than a predicate beside a rebuild of the same filters:
+ * the report has to name the **overlap**, because `a`'s own scope would point
+ * a panel warning at contexts where `b` is not live at all.
+ */
+const overlapScope = (a: Scope, b: Scope): Scope | null => {
+	if (a.surface !== b.surface) return null;
+	const pad = intersection(a.pad, b.pad);
+	const views = intersection(a.views, b.views);
+	if (pad.length === 0 || views.length === 0) return null;
+	return a.surface === undefined
+		? { pad, views }
+		: { pad, views, surface: a.surface };
+};
 
 export interface Collision {
 	readonly trigger: string;
@@ -1096,22 +1134,9 @@ export function collisions(bindings: readonly Binding[]): Collision[] {
 				const b = group[j];
 				if (a === undefined || b === undefined) continue;
 				if (a.command === b.command) continue;
-				if (!overlaps(a.scope, b.scope)) continue;
-				out.push({
-					trigger,
-					commands: [a.command, b.command],
-					// The **overlap**, not one side's scope: `overlaps` asked only
-					// for an intersection, so `a`'s own scope would name contexts
-					// and views where `b` is not live — a panel warning that
-					// pointed at the wrong half of the game.
-					scope: {
-						pad: a.scope.pad.filter((c) => b.scope.pad.includes(c)),
-						views: a.scope.views.filter((v) => b.scope.views.includes(v)),
-						...(a.scope.surface === undefined
-							? {}
-							: { surface: a.scope.surface }),
-					},
-				});
+				const scope = overlapScope(a.scope, b.scope);
+				if (scope === null) continue;
+				out.push({ trigger, commands: [a.command, b.command], scope });
 			}
 	return out;
 }
