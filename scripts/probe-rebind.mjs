@@ -103,6 +103,15 @@ async function turnedWhileHolding(key) {
 // ---------------------------------------------------------------------------
 // The instrument, and the drift it is read against.
 // ---------------------------------------------------------------------------
+// **A discarded hold first, because the first arm is not comparable.** With
+// the band in place the figures came out 20.52° for the opening arm and
+// 14.77-14.89° for every one after it — a 1.38x step, repeatable, and nothing
+// to do with the rebind. Whatever the page is still doing on the first hold
+// after boot, an arm read there is a different measurement from the rest, and
+// a control that is not in the same regime as the thing it controls for is
+// the "comparisons must offer both sides the same menu" defect with the arms
+// in time order rather than in argument order.
+await turnedWhileHolding("s");
 const shipped = await turnedWhileHolding("s");
 // The null arm **after** a real one, not before it: from boot the ship is
 // already still, so a drift figure read there says nothing about the state
@@ -142,16 +151,20 @@ check(
 );
 
 /**
- * Parity is a band against the shipped reading, not a floor.
+ * Parity is a band against the shipped reading in the same run, not a floor.
  *
  * `> 5` was the first threshold and it is the wrong shape: the shipped key
- * reads about 20°, so a rebind delivering a quarter of the rate would have
- * passed and printed as parity. The band is read against `shipped` in the same
- * run, which is the only control that carries the machine's own frame cost —
- * and it is wide because a 400 ms hold is not a rate measurement: two arms of
- * the same build have read 20.62° and 16.96°, which is 82%.
+ * reads about 16°, so a rebind delivering a third of the rate would have
+ * passed and printed as parity.
+ *
+ * **The band is what found the warm-up defect above**, which a floor would
+ * have hidden for as long as the floor stayed low. With the discarded hold in
+ * place the four measured arms of one run read 15.86°, 14.90°, 15.65° and
+ * 14.81° — a spread of about 6% — so 0.8-1.2x is comfortable rather than
+ * marginal. A 400 ms hold is still not a rate measurement, which is why the
+ * band is this wide and not tighter.
  */
-const parity = (turned) => turned > shipped * 0.7 && turned < shipped * 1.3;
+const parity = (turned) => turned > shipped * 0.8 && turned < shipped * 1.2;
 const newKey = await turnedWhileHolding(NEW_KEY);
 check(
 	`and \`${NEW_KEY}\` pitches it as \`s\` did — the rebind reached the simulation`,
