@@ -9,7 +9,7 @@
  * #370's receipt carries the nine rulings; the comments below cite them by
  * their D-number rather than restating them.
  */
-import type { LayoutNotice } from "./binding-store";
+import type { LayoutNotice, RejectReason } from "./binding-store";
 import { escapeHtml } from "./escape-html";
 import type { CommandId, Surface, TaskGroup, Trigger } from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
@@ -382,6 +382,24 @@ const controlName = (id: string | null): string =>
 		? "A saved control"
 		: (COMMAND_NAMES.get(id) ?? `An unknown control (${id})`);
 
+/**
+ * What each refusal means, in the player's words.
+ *
+ * A table over `RejectReason` rather than the store's own message, because
+ * that message is `rebind`'s and carries `triggerKey`'s hash — the tab printed
+ * `key:q::hold -> key:k::press` for a round, which is a string no player can
+ * act on. The store keeps the detail for a console; this is what is drawn.
+ */
+const REJECTED_WHY: Record<RejectReason, string> = {
+	"unreadable-row": "one of your saved changes could not be read",
+	"unknown-control": "this version of the game has no such control",
+	"unreadable-trigger": "the key it was saved on could not be read",
+	"moved-default":
+		"it has moved in this version, so your change no longer fits — set it again",
+	"not-just-a-key":
+		"the saved change asked for more than moving a key, which this control decides",
+};
+
 /** Where a collision is live, when it is not everywhere. */
 const inViews = (views: readonly string[]): string =>
 	views.length === VIEW_MODES.length ? "" : ` in ${views.join(" and ")}`;
@@ -408,7 +426,7 @@ export function noticeText(notice: LayoutNotice): string {
 		case "version":
 			return `Your saved controls were written by a different build (version ${String(notice.stored)}). The default layout is in force, and changing a control will replace them.`;
 		case "rejected":
-			return `${controlName(notice.command)} kept its default: ${notice.reason}.`;
+			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;
 		case "collision": {
 			const [a, b] = notice.collision.commands as readonly [
 				CommandId,

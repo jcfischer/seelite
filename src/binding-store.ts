@@ -78,6 +78,27 @@ export const LAYOUT_KEY = "seelite:bindings";
 /** The blob shape this build writes and is the only one it reads. */
 export const LAYOUT_VERSION = 1;
 
+/**
+ * Why a stored row could not be applied — five answers, because they are five
+ * different things for the player to do about it.
+ *
+ * A code rather than a sentence, for #369 D11's reason: the sentence belongs
+ * with every other printed control name, in `controls-reference.ts`.
+ */
+export type RejectReason =
+	/** The entry is not even a row: nothing about it names a control. */
+	| "unreadable-row"
+	/** The blob names a control this build does not have. */
+	| "unknown-control"
+	/** The stored trigger is not a trigger this build can store. */
+	| "unreadable-trigger"
+	/** The control no longer ships on the trigger the row moved it off — a
+	 *  default moved under a saved layout, which is the migration case. */
+	| "moved-default"
+	/** The registry refused the move itself: it asked for more than moving a
+	 *  key, which is the command's to decide and not the player's. */
+	| "not-just-a-key";
+
 /** One row the player moved: which command, off what, onto what. */
 export interface LayoutMove {
 	readonly command: CommandId;
@@ -102,7 +123,18 @@ export type LayoutNotice =
 	| {
 			readonly kind: "rejected";
 			readonly command: string | null;
-			readonly reason: string;
+			readonly reason: RejectReason;
+			/**
+			 * What actually went wrong, for a console and for a probe.
+			 *
+			 * **Not printed.** The first pass put `rebind`'s thrown message
+			 * straight on the screen and the `Controls` tab read
+			 * `a rebind may move a key, not its qualifiers: key:q::hold ->
+			 * key:k::press` — half English and half the hash `triggerKey`
+			 * groups on, which is not a sentence a player can act on. The
+			 * reason above is what prints; this is what a developer reads.
+			 */
+			readonly detail: string;
 	  }
 	/** Two commands one trigger reaches at once (#369 D5: warn and allow). */
 	| {
@@ -280,34 +312,55 @@ export function parseLayout(raw: string | null): LoadedLayout {
 			isRecord(entry) && typeof entry.command === "string"
 				? entry.command
 				: null;
-		const reject = (reason: string) =>
-			notices.push({ kind: "rejected", command: named, reason });
+		const reject = (reason: RejectReason, detail: string) =>
+			notices.push({ kind: "rejected", command: named, reason, detail });
 		if (!isRecord(entry)) {
-			reject("a stored change is an object");
+			reject("unreadable-row", "a stored change is an object");
 			continue;
 		}
 		if (named === null || !COMMAND_IDS.has(named)) {
-			reject("this build has no such control");
+			reject(
+				"unknown-control",
+				`no command is called ${String(entry.command)}`,
+			);
 			continue;
 		}
 		const from = acceptTrigger(entry.from);
 		if (typeof from === "string") {
-			reject(from);
+			reject("unreadable-trigger", `from: ${from}`);
 			continue;
 		}
 		const to = acceptTrigger(entry.to);
 		if (typeof to === "string") {
-			reject(to);
+			reject("unreadable-trigger", `to: ${to}`);
+			continue;
+		}
+		// **Asked before `rebind` is, and the duplicated lookup is the point.**
+		// `rebind` throws for both of the next two reasons and its message is
+		// one string; the player's answer is two different sentences — "this
+		// control has moved since you saved" is something they can redo, and
+		// "that change asked for more than a key" is not. Only this module
+		// knows which sentence to print, so it asks the cheap question itself
+		// rather than reading a thrown message for a verdict.
+		if (
+			!layout.some(
+				(b) =>
+					b.command === named && triggerKey(b.trigger) === triggerKey(from),
+			)
+		) {
+			reject(
+				"moved-default",
+				`${named} no longer ships on ${triggerKey(from)}`,
+			);
 			continue;
 		}
 		try {
-			// The registry decides whether the move is legal, not this module.
-			// `rebind` refuses a `from` the command does not have — which is the
-			// migration case, a default that moved under a stored row — and
-			// refuses a `to` that changes a qualifier the command owns.
+			// The registry decides whether the move itself is legal, not this
+			// module: a `to` that changes a qualifier the command owns is
+			// refused there, so the two cannot drift.
 			layout = rebind(layout, named as CommandId, from, to);
 		} catch (e) {
-			reject(e instanceof Error ? e.message : String(e));
+			reject("not-just-a-key", e instanceof Error ? e.message : String(e));
 		}
 	}
 

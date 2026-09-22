@@ -292,6 +292,28 @@ describe("a rejected row costs that row and says which", () => {
 		expect(kinds(read.notices)).toEqual(["rejected"]);
 	});
 
+	test("what is printed is a sentence, not the registry's own hash", () => {
+		// The tab read `Roll to port kept its default: a rebind may move a key,
+		// not its qualifiers: key:q::hold -> key:k::press` for a round — half
+		// English and half the string `triggerKey` groups on. `rebind`'s
+		// message is kept as `detail` for a console; what a player reads is a
+		// table over the reason.
+		const raw = blob([
+			{
+				command: "fly.rollPort",
+				from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
+				to: { kind: "key", key: "k" },
+			},
+		]);
+		const read = parseLayout(raw);
+		const notice = read.notices[0] as LayoutNotice;
+		if (notice.kind !== "rejected") throw new Error("not a rejection");
+		expect(notice.reason).toBe("not-just-a-key");
+		expect(notice.detail).toContain("key:q::hold");
+		expect(noticeText(notice)).not.toContain("key:");
+		expect(noticeText(notice)).toContain(commandById("fly.rollPort").name);
+	});
+
 	test("every notice has something a screen can print", () => {
 		// Anti-criterion: no refusal path is silent. A notice kind with no text
 		// is a rejection the player never hears about, which is the failure this
@@ -346,8 +368,12 @@ describe("the validator answers what the registry's law cannot", () => {
 
 	/** The trigger `PITCH_UP` ends up on, whatever the blob asked for. */
 	const storedTrigger = (read: { layout: readonly Binding[] }) =>
-		read.layout.find((b) => b.command === PITCH_UP && b.trigger.hold === true)
-			?.trigger;
+		read.layout.find(
+			(b) =>
+				b.command === PITCH_UP &&
+				b.trigger.kind === "key" &&
+				b.trigger.hold === true,
+		)?.trigger;
 
 	test("a field the registry has no place for is dropped, not carried", () => {
 		// **The row still loads**, and that is the answer rather than a
