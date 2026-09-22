@@ -466,21 +466,10 @@ check(
 // caption on the contact sheet is the thing that has become false, and this is the
 // row that says so rather than a person noticing it while reading the sheet.
 //
-// The bound is the frame's half-diagonal, checked against `VIEWPORT` rather than
-// assumed from this file's own viewport; bodies are measured as discs and traffic as
-// centres, because a hull's drawn size is display state and not a radius the world
-// can quote. `lib/sky-clearance.mjs` owns that arithmetic and why each piece is the
-// piece it is.
-//
-// **Two boundaries on what these rows establish**, said here because the caption's
-// word is *nothing* and a reader is entitled to know what the word was held to:
-// bloom is outside both rows by construction — a body clear of the cone can still
-// wash the corner behind it, and that is a look judgement on the sheet — and the
-// fixture is part of the claim, since both rows boot `raider: "off"` exactly as the
-// capture does. **What is held is the captured arrival frame, not every moment of
-// play in that system.** Fly far enough and something crosses the view; no reading of
-// an arrival point can promise otherwise, and a caption that implied it could would
-// be a different claim than the one `sky-only` makes.
+// The bound is the frame's half-diagonal, and it is checked against `VIEWPORT` rather
+// than assumed from this file's own page. Everything else about the arithmetic — discs
+// and centres, bloom, the fixture, what the settled instant can and cannot hold — is
+// owned by `lib/sky-clearance.mjs`, which these two rows read and do not restate.
 // ---------------------------------------------------------------------------
 
 // Last, not first: these are `addInitScript` payloads, and the twelve rows above

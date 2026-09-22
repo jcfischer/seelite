@@ -92,10 +92,17 @@
  *   ones `trafficShown` refuses), which is the conservative direction for a caption; a
  *   drawn carrier with no route is the other direction and **throws**.
  *
- *   Twelve carriers are drawn at the shipped arrival frame. That number is the reason
+ *   Traffic is drawn at the shipped arrival frame — a dozen carriers, give or take, per
+ *   world, which the sweep prints rather than what this sentence says. That number is why
  *   this class exists in the reading at all: the first draft asked none of these
  *   questions, read `g.flyingTraffic` as a list when it is a method, got an empty one,
  *   and reported a sky with nothing in it.
+ *
+ *   **And it is a moving set.** Bodies sit where the generator put them at boot; carriers
+ *   fly, and the reading is taken after five settled frames, so what it holds for traffic
+ *   is *this settled instant* and not the photographed one. That is enough for a margin of
+ *   tens of degrees and it is not enough for a hull one degree off a corner, and a caption
+ *   that wanted to survive that would have to be measured by the capture itself.
  * - **Bloom**, which this reading cannot see at all. It spreads outside a disc and is
  *   #98's lever rather than geometry: a body just clear of the cone can still wash the
  *   corner behind it. So the honest form of the caption is *nothing stands in front of
@@ -186,68 +193,15 @@ export async function measureClearance(page, askedSeed) {
 			);
 		// `system.bodies` carries the star too, as `kind: "star"`, at the origin and
 		// with the same radius `contents.star` gives it — so it is taken from the
-		// bodies list rather than twice. The set is unchanged and the minimum cannot
-		// move; what changes is that a count printed beside a table means bodies
-		// rather than bodies-plus-a-duplicate.
+		// bodies list rather than counted twice. The set is unchanged and the minimum
+		// cannot move; what changes is that a count printed beside a table means
+		// bodies rather than bodies-plus-a-duplicate.
 		const bodies = g.world.system.bodies.filter((b) => b.kind !== "star");
-		// Traffic, because the caption's word is *nothing* and not *no body* — and
-		// there is traffic here: **twelve carriers are drawn at the shipped arrival
-		// frame.** An earlier draft of this file reported zero, by iterating
-		// `g.flyingTraffic` — the *method* — rather than calling it, and taking an
-		// empty list out of a function object.
-		//
-		// A hull's place comes from `trafficRoutes`, the game's own
-		// `SystemTrafficProjection[]`: authoritative world kilometres, which is what
-		// `updateTrafficPresentation` samples to put a mesh anywhere. The alternative —
-		// reading `trafficMeshes` back out of the scene graph — is what `CLAUDE.md`
-		// forbids ("the authoritative world is float64 kilometres outside the scene
-		// graph; nothing reads a position back out of an `Object3D`"), and a layer
-		// group's local coordinates would make the reading wrong besides.
-		//
-		// **The routes are a superset of what is drawn**: the presentation additionally
-		// skips engaged carriers and ones `trafficShown` refuses. That is the
-		// conservative direction for a caption — if nothing in the superset stands in
-		// front of the camera, nothing drawn does either. A drawn carrier with no route
-		// is the other direction, and is a refusal.
-		//
-		// A hull is scored as a **centre**, with no angular radius: a `TrafficActor` is
-		// a callsign, a hull and a schedule, and what a hull is drawn at is display
-		// state (`HULL_REACH_KM`), not a radius a reader of the world can quote. At
-		// these ranges a hull is far below a pixel; the caption's question — is anything
-		// standing in front of the camera — is answered by a centre.
-		if (!Array.isArray(g.trafficRoutes))
-			throw new Error(
-				"sky-clearance: game.trafficRoutes is not a list, so Traffic can be neither placed nor excluded and the caption's *nothing* is no longer measurable",
-			);
-		const drawn = [];
-		for (const accessor of ["flyingTraffic", "divertedTraffic"]) {
-			const listed = g[accessor];
-			if (typeof listed !== "function")
-				throw new Error(
-					`sky-clearance: game.${accessor}() is no longer a function, so this reading cannot say how much Traffic is drawn in the frame it is auditing`,
-				);
-			for (const actor of listed.call(g))
-				drawn.push(actor.callsign ?? "carrier");
-		}
-		const routes = [];
-		for (const route of g.trafficRoutes) {
-			if (!route?.pos || !Number.isFinite(route.pos.x))
-				throw new Error(
-					`sky-clearance: a traffic route has no usable position, so it can be neither placed nor excluded — and a subject the frame cannot evaluate is dropped by the in-frame filter rather than counted, which is a green light handed out by a blind spot`,
-				);
-			routes.push({
-				name: route.key ?? "carrier",
-				pos: route.pos,
-				radiusKm: 0,
-				kind: "traffic",
-			});
-		}
-		if (drawn.length > routes.length)
-			throw new Error(
-				`sky-clearance: ${drawn.length} Traffic hulls are drawn and only ${routes.length} carry a route, so ${drawn.length - routes.length} cannot be placed — and a hull this reading cannot locate is one the caption cannot claim is out of frame`,
-			);
-
-		const subjects = [
+		// Why traffic is a subject at all, why its place comes from `trafficRoutes`
+		// and not the scene graph, and why a hull is a centre, are in this file's
+		// header; `collectTraffic` is that reasoning's only executable form.
+		const { drawn, routes } = collectTraffic(g);
+		const measured = [
 			{
 				name: star.name ?? "star",
 				pos: { x: 0, y: 0, z: 0 },
@@ -256,34 +210,8 @@ export async function measureClearance(page, askedSeed) {
 			},
 			...bodies.map((b) => ({ ...b, kind: b.kind ?? "body" })),
 			...routes,
-		];
-		const measured = subjects
-			.map((s) => {
-				const radiusKm = s.radiusKm;
-				if (!Number.isFinite(radiusKm))
-					throw new Error(
-						`sky-clearance: subject ${s.name} has no finite radius (${String(radiusKm)}), and NaN propagates into the limb, into the sort, and into the in-frame filter — where a subject the frame cannot evaluate is dropped rather than counted, which is the green light this file exists to refuse`,
-					);
-				const dx = s.pos.x - p.x;
-				const dy = s.pos.y - p.y;
-				const dz = s.pos.z - p.z;
-				const distanceKm = Math.hypot(dx, dy, dz);
-				if (!(distanceKm > 0))
-					throw new Error(
-						`sky-clearance: subject ${s.name} is standing on the camera (distance ${distanceKm} km), so it has no bearing and no angular radius`,
-					);
-				const cos = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / distanceKm;
-				const angle = Math.acos(Math.min(1, Math.max(-1, cos)));
-				const apparent = Math.asin(Math.min(1, radiusKm / distanceKm));
-				return {
-					name: s.name ?? "unnamed",
-					kind: s.kind,
-					distanceKm,
-					angleDeg: deg(angle),
-					apparentDeg: deg(apparent),
-					limbDeg: deg(angle - apparent),
-				};
-			})
+		]
+			.map(measureSubject)
 			.sort((a, b) => a.limbDeg - b.limbDeg);
 		const bound = deg(halfDiagonal);
 		const inside = measured.filter((m) => m.limbDeg < bound);
@@ -309,8 +237,90 @@ export async function measureClearance(page, askedSeed) {
 			).length,
 			inFrameTraffic: inside.filter((m) => m.kind === "traffic").length,
 			inFrameStar: inside.filter((m) => m.kind === "star").length,
+			// A display cap, not a total: `inFrame` is the count and this is the first
+			// few of its names. Left unnamed it reads as the whole list, which is how a
+			// "six of six" got into a description once.
 			inFrameNames: inside.slice(0, 6).map((m) => `${m.name} (${m.kind})`),
 		};
+
+		/**
+		 * Every Traffic hull the game says it draws, and every route it can place one
+		 * on. See the header: routes are a superset of what is drawn, so the guard
+		 * below has to be about **which** hulls have routes and never about how many.
+		 */
+		function collectTraffic(game) {
+			if (!Array.isArray(game.trafficRoutes))
+				throw new Error(
+					"sky-clearance: game.trafficRoutes is not a list, so Traffic can be neither placed nor excluded and the caption's *nothing* is no longer measurable",
+				);
+			const drawn = [];
+			for (const accessor of ["flyingTraffic", "divertedTraffic"]) {
+				const listed = game[accessor];
+				if (typeof listed !== "function")
+					throw new Error(
+						`sky-clearance: game.${accessor}() is no longer a function, so this reading cannot say how much Traffic is drawn in the frame it is auditing`,
+					);
+				for (const actor of listed.call(game))
+					drawn.push({
+						key: actor.key,
+						label: actor.callsign ?? String(actor.key ?? "carrier"),
+					});
+			}
+			const routes = [];
+			for (const route of game.trafficRoutes) {
+				if (!route?.pos || !Number.isFinite(route.pos.x))
+					throw new Error(
+						`sky-clearance: a traffic route has no usable position, so it can be neither placed nor excluded — and a subject the frame cannot evaluate is dropped by the in-frame filter rather than counted, which is a green light handed out by a blind spot`,
+					);
+				routes.push({
+					name: route.key ?? "carrier",
+					pos: route.pos,
+					radiusKm: 0,
+					kind: "traffic",
+				});
+			}
+			// **By identity, not by count.** A comparison of lengths passes whenever the
+			// superset is merely larger, which is its normal state — so one drawn hull
+			// with no route would hide behind an undrawn route that happens to exist,
+			// and go unmeasured under a green row. That is the exact shape of mistake
+			// this whole section is here to stop, so the check is a key set and the
+			// failure names the hulls rather than a difference of two numbers.
+			const placed = new Set(routes.map((r) => r.name));
+			const unplaced = drawn.filter((d) => !placed.has(d.key));
+			if (unplaced.length > 0)
+				throw new Error(
+					`sky-clearance: ${unplaced.length} of ${drawn.length} drawn Traffic hulls have no route — ${unplaced.map((d) => d.label).join(", ")} — so this reading cannot place them, and a hull it cannot place is one the caption cannot claim is out of frame`,
+				);
+			return { drawn, routes };
+		}
+
+		/** One subject, from the camera's own basis. Throws rather than yielding a `NaN`. */
+		function measureSubject(s) {
+			const radiusKm = s.radiusKm;
+			if (!Number.isFinite(radiusKm))
+				throw new Error(
+					`sky-clearance: subject ${s.name} has no finite radius (${String(radiusKm)}), and NaN propagates into the limb, into the sort, and into the in-frame filter — where a subject the frame cannot evaluate is dropped rather than counted, which is the green light this file exists to refuse`,
+				);
+			const dx = s.pos.x - p.x;
+			const dy = s.pos.y - p.y;
+			const dz = s.pos.z - p.z;
+			const distanceKm = Math.hypot(dx, dy, dz);
+			if (!(distanceKm > 0))
+				throw new Error(
+					`sky-clearance: subject ${s.name} is standing on the camera (distance ${distanceKm} km), so it has no bearing and no angular radius`,
+				);
+			const cos = (dx * fwd.x + dy * fwd.y + dz * fwd.z) / distanceKm;
+			const angle = Math.acos(Math.min(1, Math.max(-1, cos)));
+			const apparent = Math.asin(Math.min(1, radiusKm / distanceKm));
+			return {
+				name: s.name ?? "unnamed",
+				kind: s.kind,
+				distanceKm,
+				angleDeg: deg(angle),
+				apparentDeg: deg(apparent),
+				limbDeg: deg(angle - apparent),
+			};
+		}
 	}, askedSeed);
 }
 
