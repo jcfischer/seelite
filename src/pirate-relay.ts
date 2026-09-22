@@ -43,8 +43,8 @@
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
-import { LONG_RANGE_SCANNER } from "./market";
 import { stream } from "./galaxy";
+import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
@@ -106,13 +106,17 @@ export const RELAY_IDENTIFY_RANGE_KM = 150;
  * so an unequipped pilot still meets the raiders it sends and cannot find the
  * cause. That asymmetry is the whole of #479's ruling.
  *
- * Its shape is `scanFitted`'s (`carrier-scan.ts`) because it answers the same
- * question of the same list, and it lives here rather than beside that one so
- * the relay's module owns every rule about reading a relay.
+ * **The name is a persisted identity.** `ownedEquipment` saves the display
+ * string itself, so renaming the row in `market.ts` unfits the module in every
+ * existing save whatever reads this constant — it is a save migration, not a
+ * rename.
+ *
+ * The lookup is `market.ts`'s `equipmentFitted`; what lives here is the rule,
+ * so the relay's module owns every question about reading a relay.
  */
 export const relayScannerFitted = (
 	ownedEquipment: readonly string[],
-): boolean => ownedEquipment.includes(LONG_RANGE_SCANNER);
+): boolean => equipmentFitted(ownedEquipment, LONG_RANGE_SCANNER);
 
 /** Hull points. Ten seconds of pulse fire (`PULSE_LASER.damagePerS` 6). */
 export const RELAY_INTEGRITY = 60;

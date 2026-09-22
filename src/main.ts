@@ -10393,23 +10393,28 @@ class Game {
 		const key = relaySlot(record.index).key;
 		const pos = relayPosition(plan, contents, now);
 		const vel = relayVelocity(plan, contents, now);
-		// **#481: the signal is the bought module's, and it gates two things
-		// rather than one.** Read nothing without it and the cue has nothing to
-		// show *and* the identification below never fires — so an unfitted pilot
-		// gets no knowledge row, and with no row `updateRelayPresentation`
-		// lists no contact and no target. Gating the cue alone would leave the
-		// relay in the Navigation list of a pilot who cannot see it.
+		// **#481: reading a relay at all is the bought module's, and the gate is
+		// on the *reading* rather than on the cue.** `relayScannerFitted` is the
+		// rule and `pirate-relay.ts` states it once; this is where it is applied.
+		//
+		// **It takes two lines because a relay can be known from a save.**
+		// Nulling the signal alone stops the cue and stops the identification
+		// write below — but `identified` is also read out of the knowledge
+		// envelope, and a commander who identified a relay under the free
+		// regime this node ends would keep the contact and the target with no
+		// module and no cue. So the knowledge row is read only while fitted.
+		// The row itself is never unwritten: sell the module and the relay goes
+		// dark, fit it again and what was found is still found.
 		//
 		// What stays ungated is everything the relay *does*: its mesh, the shot
 		// that can destroy it, and `relayDetectionNow`'s dial on the watched
-		// route. #479's ruling is exactly that asymmetry — the route effect is
-		// felt by a pilot who cannot find its cause.
-		const signal = relayScannerFitted(this.commander.ownedEquipment)
-			? relaySignal(this.world.ship.pos, pos)
-			: null;
+		// route.
+		const fitted = relayScannerFitted(this.commander.ownedEquipment);
+		const signal = fitted ? relaySignal(this.world.ship.pos, pos) : null;
 		let identified =
+			fitted &&
 			readKnowledge(this.commerceWorld.galaxies[record.galaxy], key) !==
-			undefined;
+				undefined;
 		if (!identified && signal && signal.km <= RELAY_IDENTIFY_RANGE_KM) {
 			this.commerceWorld = observe(
 				this.commerceWorld,

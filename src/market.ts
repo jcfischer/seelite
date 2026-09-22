@@ -1004,9 +1004,8 @@ export const SCAN_MODULE_PRICE_CR = 600;
  * curve. The figure sits between the Identity Scanner's 600 and the Extra
  * Energy Unit's 1,500, which is #468's pricing.
  *
- * The consequence is #479's: no module, no relay cue and no identification —
- * while the relay's dial on the watched route still bites, so the pilot feels
- * a cause they cannot find.
+ * What owning it changes, and what it deliberately does not, is #479's ruling
+ * and is stated once at `relayScannerFitted` (`pirate-relay.ts`).
  */
 export const LONG_RANGE_SCANNER = "Long-Range Scanner";
 /** #468's figure, flat. */
@@ -1044,6 +1043,24 @@ export const EQUIPMENT: readonly Equipment[] = [
 		newToSeelite: true,
 	},
 ];
+
+/**
+ * Is a module fitted? **One predicate, beside the list that sells them.**
+ *
+ * `scanFitted` and `relayScannerFitted` are this with their own row's name
+ * bound, and each still lives in the module that owns the *rule* rather than
+ * here — the answer to "what does the identity scanner gate" is
+ * `carrier-scan.ts`'s and the relay's is `pirate-relay.ts`'s. What was
+ * duplicated is the lookup, and a third gate would have made it three.
+ *
+ * It is a name in a list rather than a flag, which is the idiom
+ * `station-commerce.ts` already uses for the Large Cargo Bay: a flag can
+ * disagree with the purchase that set it.
+ */
+export const equipmentFitted = (
+	ownedEquipment: readonly string[],
+	name: string,
+): boolean => ownedEquipment.includes(name);
 
 /** §6.1: 0.2 Cr per 0.1 LY — 2 Cr/LY, 14 Cr for the 7 LY tank. */
 export const FUEL_CR_PER_LY = 2;

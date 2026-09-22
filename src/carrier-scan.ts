@@ -51,7 +51,7 @@ import { carrierManifest } from "./carrier-manifest";
 import type { CarrierStanding } from "./carrier-standing";
 import { carrierStanding } from "./carrier-standing";
 import { dot, normalizeOr, type Vec3 } from "./vec3";
-import { SCAN_MODULE } from "./market";
+import { equipmentFitted, SCAN_MODULE } from "./market";
 import type { ScanRefusal, ScanStandoff } from "./display-contact";
 import type { KnowledgeRow } from "./world-state";
 
@@ -83,7 +83,7 @@ const SCAN_CONE_COS = Math.cos((SCAN_CONE_DEG * Math.PI) / 180);
  * never a separate flag that can disagree with the purchase that set it.
  */
 export const scanFitted = (ownedEquipment: readonly string[]): boolean =>
-	ownedEquipment.includes(SCAN_MODULE);
+	equipmentFitted(ownedEquipment, SCAN_MODULE);
 
 /** Is the target inside the cone the nose is pointing down? */
 export const scanConeHeld = (nose: Vec3, towardTarget: Vec3): boolean =>

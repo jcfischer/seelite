@@ -340,9 +340,18 @@ const unfittedCue = await page.evaluate(
 // version of this check read exactly that and called it a regression. Select
 // the watched station, which is what a pilot flying that route has done.
 const unfittedDial = await page.evaluate(() => {
-	window.__seelite.targetId = "station-trade";
+	const g = window.__seelite;
+	// **Restored afterwards.** The checks below this arm were written against
+	// whatever the boot selected, and `relayDetection` reads `targetId` — a
+	// selection left behind here would make a later `detection` row pass or
+	// fail for the selection rather than for the code.
+	const was = g.targetId;
+	g.targetId = "station-trade";
 	window.__relayProbe.frame();
-	return window.__relayProbe.readout();
+	const readout = window.__relayProbe.readout();
+	g.targetId = was;
+	window.__relayProbe.frame();
+	return readout;
 });
 check(
 	"#481: without the module there is no signal at 1,200 km and no identification at 60 km — no cue, no knowledge, no contact, no target",
@@ -756,6 +765,45 @@ check(
 	JSON.stringify(pulse),
 );
 await capture("05-replaced");
+
+// ---------------------------------------------------------------------------
+// #481: a relay known from a save, and the module gone.
+//
+// **This arm runs last on purpose.** The regime this node ends identified
+// relays for free, so a commander may load with a row already written — and
+// the knowledge read has to be gated too, or that commander keeps the contact
+// and the target with no module and no cue. The relay above has been
+// identified by flying to it, which is the same row, so the state this needs
+// already exists; taking it earlier would have written that row before the
+// checks that require a relay nobody has found yet.
+//
+// Nothing unwrites knowledge. Strip the module and the relay goes dark; fit it
+// again, standing still at the same range, and what was found is found again.
+// ---------------------------------------------------------------------------
+await page.evaluate(() => window.__relayProbe.fitScanner(false));
+await settle();
+const stripped = await page.evaluate(() => window.__relayProbe.readout());
+await page.evaluate(() => window.__relayProbe.fitScanner(true));
+await settle();
+const refitted = await page.evaluate(() => window.__relayProbe.readout());
+check(
+	"#481: a relay known from the save goes dark when the module is gone, and is found again when it is back — the row is never unwritten",
+	pulse.identified &&
+		pulse.listed &&
+		!stripped.identified &&
+		!stripped.listed &&
+		!stripped.targetable &&
+		stripped.km === null &&
+		stripped.cueVisible === false &&
+		refitted.identified &&
+		refitted.listed &&
+		refitted.targetable &&
+		// Refitted where it stands, without flying back through identification
+		// range: the row is still in the envelope.
+		refitted.km !== null &&
+		refitted.cueVisible === true,
+	JSON.stringify({ stripped, refitted }),
+);
 
 await browser.close();
 exit();
