@@ -750,20 +750,25 @@ export const VIEWS = Object.freeze([
 	 *
 	 * **What its caption may claim is measured rather than tasted, and this is the
 	 * one place that account lives.** Two claims are open to it and no more. Where
-	 * it stands: the farthest system of the cluster, recomputed by
-	 * `tests/view-set.test.ts` and refused at the browser tier by `ensureFixture` if
-	 * the page came up anywhere else. And that nothing stands in front of it, which
-	 * is what `__emptiestDirection` guarantees — it takes the star and every body of
-	 * *this system* as subjects and maximises the minimum angle from all of them, the
-	 * same guarantee `sky-only`'s line rests on. What the frame's *crowding* is
-	 * belongs to the derived field, and the placer knows nothing about the derived
-	 * field: it could as easily point coreward, where the neighbours are densest. The
-	 * first draft of this row's line read *"seen from where they are thinnest"*, which
-	 * is a claim about the frame no check on this branch holds and the heading cannot
-	 * ensure — the exact fault this file names above, where it calls a caption
-	 * asserting a fixture property the frames do not have the thing its capture code
-	 * refuses, and the fault #432 existed to catch. A crowding word is earned by
-	 * measuring crowding, and measuring that is #478's ground, not a caption's.
+	 * it stands — the farthest system of the cluster, recomputed by
+	 * `tests/view-set.test.ts` — and which rule pointed the camera. Nothing else.
+	 *
+	 * In particular it says nothing about what is *in* the frame, and two drafts of
+	 * it did. The first read *"seen from where they are thinnest"*:
+	 * `__emptiestDirection` takes the star and the bodies of *this system* as its
+	 * subjects and knows nothing about the derived field, so the heading is as free
+	 * to point coreward, where the neighbours are densest, as outboard. The second
+	 * read *"with nothing in front of it"*, which is the subtler of the two and just
+	 * as unheld: the rule maximises the *minimum* angle over a 512-point sampling of
+	 * the sphere, which makes it the emptiest heading available rather than an empty
+	 * one, and nothing here bounds the angle it achieves against the cockpit's field
+	 * of view at system 115. Bounding it is clearance arithmetic, and clearance
+	 * arithmetic is what #432's `aim` axis existed to do and this row deliberately did
+	 * not revive. So the line names the *rule* — what the camera did, which is true
+	 * and readable off the placer — instead of what the frame contains, which is
+	 * neither. (`sky-only`'s line has said *"with nothing in front of it"* on that
+	 * same unbounded basis since #104. That is not this row's to fix and it is worth
+	 * its own node.)
 	 *
 	 * System 115 is the farthest of the 256 from the cluster centre on the sheet's
 	 * own seed, on the generator's own radial coordinate (`SystemRecord.t`) rather
@@ -777,14 +782,21 @@ export const VIEWS = Object.freeze([
 	 * than remembered in `tests/view-set.test.ts`: the same fold over
 	 * `makeWorld(SEED).galaxy.systems` runs there every run, so a re-cut cluster
 	 * moves the row or goes red rather than leaving it standing at a star that is
-	 * no longer the edge. `ensureFixture` is the browser-side half: it restores
-	 * seed and system together and refuses the run if the page booted anywhere
-	 * else, so this number cannot silently become a different place.
+	 * no longer the edge. The browser-side half is `ensureFixture`: it restores seed
+	 * and system together, reads the index back off the world the page is running, and
+	 * throws on a mismatch. Both halves are worth stating precisely rather than
+	 * praising: the boot has been exercised by this row's capture, and the refusal has
+	 * been exercised by nothing — it is a guard that has never fired, which is worth
+	 * saying out loud on the first row that leans on it. Nor is it assumed that the
+	 * number in the literal means what `?system=` reads: `scripts/probe-sky.mjs` asks
+	 * the URL for an index it computed off the running page and asks the page which
+	 * system it came up as, which is the index-and-name question settled at the tier
+	 * where it could actually be got wrong.
 	 */
 	{
 		name: "sky-at-the-rim",
 		covers: [431],
-		what: "Away from the star and every body, at the outermost system on the cluster's rim. The derived sky with nothing in front of it, framed from the edge of the cluster rather than its centre.",
+		what: "Aimed by the emptiest-heading rule `sky-only` uses, at the outermost system on the cluster's rim. The derived sky, framed from the rim rather than the centre.",
 		shot: { kind: "deep-sky", view: "cockpit", system: 115 },
 	},
 	/**

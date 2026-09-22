@@ -609,31 +609,13 @@ describe("the rim sky row #432 built and removed", () => {
 	 * `sky-only` rather than instead of it: `sky-only` declares `covers: [100,
 	 * 200]`, so relocating it would have re-baselined #200's dither evidence with
 	 * it. "The arrival point, empty sky" is an honest frame of the world the game
-	 * actually starts the player in, and it survives the row that replaced it.
+	 * actually starts the player in, and no row has displaced it — including the one
+	 * #480 added at the other end of the cluster.
 	 */
 	test("sky-only still stands at the arrival point and aims away from everything", () => {
 		const skyOnly = VIEWS.find((v) => v.name === "sky-only");
 		expect(skyOnly?.covers).toEqual([100, 200]);
 		expect(skyOnly?.shot).toEqual({ kind: "deep-sky", view: "cockpit" });
-	});
-
-	/**
-	 * `?system=` ships and `capture-views.mjs` will restore a named system beside
-	 * the seed for any row. Until #480 nothing in the set asked for one, which was
-	 * a decision rather than an oversight — and the scope is still what this row
-	 * holds: exactly one row stands off the boot system, the one #480 added. A
-	 * second row naming a system is either that decision widened or a fixture
-	 * copied, and either way it should be a red run rather than a quiet merge.
-	 */
-	test("the rim look row is the only one that names a system to stand at", () => {
-		// Cast rather than a declaration: `system` is optional on a shot and all
-		// but one row omits it, so the inferred union of the literals in
-		// `view-set.mjs` has no such property to read. `malformedShots` reads it
-		// the same way.
-		const declaring = VIEWS.filter(
-			(v) => (v.shot as { system?: number }).system !== undefined,
-		);
-		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
 	});
 });
 
@@ -664,25 +646,25 @@ describe("the rim look row #480 added", () => {
 	/** The row under test, found once. */
 	const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
 	/**
-	 * Its shot, or an empty object when the row is gone. This exists so every read
-	 * below is a *missing property* rather than a dereference of `undefined`: bun
-	 * keeps executing after a failed `expect`, so a row that vanished mid-file
-	 * would otherwise take the whole file down with a TypeError collected before
-	 * any assertion could name it. The assertions are what report the absence, and
-	 * they can only do that if nothing throws first.
+	 * Its shot, or an empty object when the row is gone.
+	 *
+	 * This binding is evaluated in the describe body, so it runs while the file is
+	 * being *collected* — before a single `expect` exists to fail. Reading
+	 * `row.shot.system` directly would throw a TypeError at that point if the row
+	 * were ever deleted, and the file would go down without one assertion naming the
+	 * row that went. With the fallback an absent row is four ordinary failures that
+	 * each say which row they mean.
 	 */
 	const shot = (row?.shot ?? {}) as {
 		kind?: string;
 		view?: string;
 		system?: number;
-		aim?: string;
 	};
 	/**
 	 * The system the row *names*, resolved back against the generator. This is the
 	 * fixture as the page will receive it: the literal in `view-set.mjs` is the
 	 * claim, `farthest` is the rule, and they describe the same place only if this
-	 * record is that system. `ensureFixture` checks the same thing at the browser
-	 * tier, against the booted page rather than the declared one.
+	 * record is that system.
 	 */
 	const named =
 		shot.system === undefined
@@ -690,13 +672,12 @@ describe("the rim look row #480 added", () => {
 			: systems.find((s) => s.index === shot.system);
 
 	/**
-	 * The row stands where #432's stood in role and not in aim: the farthest star
-	 * of the sheet's own world, so the rule that picked it is one sentence rather
-	 * than a taste. It re-runs every time the generator changes, which is the
-	 * point — a pinned index would go stale against a reshaped cluster the way
-	 * #118's fixed radial figures did.
+	 * The shot is matched exactly, which is what holds the prohibition #480 was
+	 * written against: `toEqual` fails on an extra defined property, so #432's `aim`
+	 * axis cannot come back on this row unnoticed. No `aim` is declared in this
+	 * file's cast — the check is the shape, not a read of a field nobody ships.
 	 */
-	test("it stands at the farthest system of the sheet's own seed", () => {
+	test("it stands at the farthest system of the sheet's own seed, and aims by nothing else", () => {
 		expect(row).toBeDefined();
 		expect(row?.covers).toEqual([431]);
 		expect(shot).toEqual({
@@ -708,13 +689,19 @@ describe("the rim look row #480 added", () => {
 
 	/**
 	 * The row's own star, measured against every other star, rather than the fold
-	 * checked against a second fold of itself. A `reduce` and a `Math.max` over one
-	 * array cannot disagree, so a row comparing them notices nothing; this one goes
-	 * red the day the generator's edge moves away from the index the row pinned, and
-	 * the rim-third floor below goes red the day "the rim third" stops meaning two
-	 * thirds of §4's radial coordinate.
+	 * checked against a second fold of itself: a `reduce` and a `Math.max` over one
+	 * array cannot disagree, so a row comparing them notices nothing. This one goes
+	 * red the day the generator's edge moves out from under the index the row
+	 * pinned.
+	 *
+	 * The floor below is the other half, and it guards the word rather than the
+	 * fixture. `t` is `radiusLy / GALAXY_RADIUS_LY`, so it only says *rim* about the
+	 * farthest star if the cluster still reaches the radius that constant claims —
+	 * which is exactly what #118's reshape put at risk, and what a future re-cut
+	 * would break in the same way. It is not a second check on which star the row
+	 * picked; it is a check that "the rim third" still names a place.
 	 */
-	test("no other system in the galaxy is farther out, and that star is in §4's rim third", () => {
+	test("no other system in the galaxy is farther out, and the cluster still reaches §4's rim", () => {
 		expect(named).toBeDefined();
 		const outranking = systems.filter((s) => s.t > (named?.t ?? 0));
 		expect(outranking.map((s) => s.index)).toEqual([]);
@@ -722,46 +709,36 @@ describe("the rim look row #480 added", () => {
 	});
 
 	/**
-	 * Two claims are held, and the caption may make no others. *Where it stands* is
-	 * held above, off the generator, and by `ensureFixture` at the browser tier.
-	 * *Nothing in front of it* is held by the placer: `__emptiestDirection` takes the
-	 * star and every body of the system as subjects and maximises the minimum angle
-	 * from all of them, which is the same guarantee `sky-only`'s caption rests on.
-	 *
-	 * Everything else about the frame is a claim about the cluster, and nothing on
-	 * this branch measures it. "Where they are thinnest" was the first try at this
-	 * caption and it is not one of the two: the emptiest heading avoids the *system's
-	 * own* bodies and knows nothing about the derived field, so it could as easily
-	 * point coreward, where the neighbours are densest. That is the failure
-	 * `#432` was opened over — a caption asserting a fixture property the frames do
-	 * not have — and a row built on the node that learned that lesson must not
-	 * repeat it in its own line of sheet text. So the ban covers the crowding words
-	 * as well as the bearing words, and a caption earns a word like *thinnest* by
-	 * measuring it, which is #478's ground.
+	 * The caption's claim budget, mechanically. Both bans are anchored, because the
+	 * hazard is a substring doing the claiming: an unanchored `thin` reads
+	 * *"no**thin**g"* as a crowding claim, and an unanchored `core` would read
+	 * *"score"* as the bearing. What the row may say is owned by the note beside it
+	 * in `view-set.mjs`, which is also where the two drafts that broke this rule are
+	 * told; this row only holds the words.
 	 */
-	test("its caption claims only the place and the emptiness the placer guarantees", () => {
+	test("its caption claims the place and the rule, and no property of the frame", () => {
 		const what = row?.what ?? "";
 		expect(what).not.toBe("");
 		expect(what.toLowerCase()).toContain("rim");
-		expect(what.toLowerCase()).not.toMatch(/core|cone|bearing/);
-		// Anchored, because an unanchored `thin` reads "no*thin*g in front of it" as
-		// a crowding claim. The ban is on the word doing the claiming.
+		expect(what.toLowerCase()).not.toMatch(/\b(core|cone|bearing)/);
 		expect(what.toLowerCase()).not.toMatch(
-			/\b(thin|dense|crowd|number of|count of)/,
+			/\b(thin|dense|crowd|number of|count of|nothing)/,
 		);
 	});
 
 	/**
-	 * The heading is the shipped rule and nothing else: no `aim` axis, because an aim
-	 * is what #478 decides on, and it was #432's `aim` — the tightest clear cone in
-	 * the rim third, and the clearance arithmetic that came with it — that this row
-	 * deliberately does not revive.
+	 * The scope of the affordance #432 shipped, held so it cannot spread by
+	 * accident. Exactly one row stands off the boot system; a second is either that
+	 * decision widened or a fixture copied, and either way it should be a red run
+	 * rather than a quiet merge.
 	 */
-	test("it aims by the shipped emptiest rule and carries no aim axis", () => {
-		expect(row).toBeDefined();
-		// Non-vacuous: the negative below is worth nothing unless the row is the
-		// kind of shot that has a heading rule at all.
-		expect(shot.kind).toBe("deep-sky");
-		expect(shot.aim).toBeUndefined();
+	test("it is the only row in the set that names a system to stand at", () => {
+		// Cast rather than a declaration: `system` is optional on a shot and all but
+		// one row omits it, so the inferred union of the literals in `view-set.mjs`
+		// has no such property to read. `malformedShots` reads it the same way.
+		const declaring = VIEWS.filter(
+			(v) => (v.shot as { system?: number }).system !== undefined,
+		);
+		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
 	});
 });
