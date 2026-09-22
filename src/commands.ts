@@ -870,10 +870,16 @@ const AUTHORED = [
 /** Every command's id, and the type every dispatch site takes. */
 export type CommandId = (typeof AUTHORED)[number]["id"];
 
-const keyTrigger = (spec: KeySpec): Trigger =>
-	typeof spec === "string"
-		? { kind: "key", key: spec }
-		: { kind: "key", ...spec };
+const keyTrigger = (spec: KeySpec): Trigger => {
+	const base = typeof spec === "string" ? { key: spec } : spec;
+	// Derived rather than authored, so a letter row cannot be added without
+	// one: fifty-odd hand-written `code` fields is fifty-odd chances to omit
+	// the one that matters, and the omission is invisible on a US keyboard.
+	const code = base.code ?? codeFor(base.key);
+	return code === undefined
+		? { kind: "key", ...base }
+		: { kind: "key", ...base, code };
+};
 
 /**
  * The pad buttons that press one of this command's keys.
@@ -892,11 +898,66 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 	return out;
 }
 
-/** How a physical key prints: a letter or digit key by its character, an
- *  arrow by the key it sends. Punctuation prints as its code name, which is
- *  half of the hazard the module header records. */
-const codeKey = (code: string) =>
-	code.replace(/^(Key|Digit)/, "").toLowerCase();
+/**
+ * The punctuation keys, by the character they type unshifted.
+ *
+ * A prefix strip cannot reach these: `Slash` is not `Key`- or `Digit`-prefixed
+ * and lowercases to `slash`, which is a string no keypress produces. That was
+ * half of the hazard S1's header recorded — a row authored `code: "Slash"`
+ * hashed against the shipped `key: "/"` as two identities of one physical key,
+ * invisible to `collisions()`.
+ *
+ * The **unshifted** character on purpose. `?` and `/` are one physical key
+ * apart by Shift, and #377 ruled `?` is the character the keyboard types
+ * rather than a chord — so `?` carries no code, `/` is what `Slash` means, and
+ * the pair stays the two identities the game really has. That is the other
+ * half, and it is why this table is not also read in the other direction for
+ * punctuation: see `codeFor`.
+ */
+const PUNCTUATION_CODES: Readonly<Record<string, string>> = {
+	Backquote: "`",
+	Backslash: "\\",
+	BracketLeft: "[",
+	BracketRight: "]",
+	Comma: ",",
+	Equal: "=",
+	Minus: "-",
+	Period: ".",
+	Quote: "'",
+	Semicolon: ";",
+	Slash: "/",
+	Space: " ",
+};
+
+/**
+ * How a physical key prints: a letter or digit key by its character, an arrow
+ * by the key it sends, and punctuation by the table above.
+ *
+ * Exported because `tests/commands.test.ts` labels a press/hold pair by the
+ * physical key it is on, and a second normalisation written there is exactly
+ * the drift `triggerKey`'s own doc warns about — it read `code ?? key` and
+ * printed `Digit1` the moment a digit row carried a code.
+ */
+export const codeKey = (code: string) =>
+	PUNCTUATION_CODES[code] ?? code.replace(/^(Key|Digit)/, "").toLowerCase();
+
+/**
+ * The physical key a character is typed by on the layout the defaults were
+ * authored on — **letters and digits only** (#369 D7).
+ *
+ * This is the AZERTY property, and it is the only reason to author a code: the
+ * key at W's position sends `z` there, and a pilot's fingers should stay where
+ * they were. Punctuation is deliberately left codeless. Its positions move
+ * across layouts too, but `?` and `/` share one physical key, so a code on
+ * either would report a collision the game does not have — and the resolver's
+ * fallback is the character, which is the answer #377 already ruled for.
+ */
+const codeFor = (key: string): string | undefined =>
+	/^[a-z]$/.test(key)
+		? `Key${key.toUpperCase()}`
+		: /^[0-9]$/.test(key)
+			? `Digit${key}`
+			: undefined;
 
 /**
  * The Alt chords that stand for one of this command's pressed keys — derived
@@ -1187,3 +1248,143 @@ export function collisions(bindings: readonly Binding[]): Collision[] {
  *  test row calls it so the alias cannot rot beside a direct call. */
 export const defaultCollisions = (): Collision[] =>
 	collisions(DEFAULT_BINDINGS);
+
+// ---------------------------------------------------------------------------
+// The dispatch (#381 slice 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a keyboard event states, as much of it as the table reads.
+ *
+ * Not a `KeyboardEvent`: `src/key-dispatch.ts` already decided what the event
+ * *means* — release, swallow, chord or ordinary key — and this answers the
+ * next question, which is which command that key reaches. Keeping the two
+ * apart is what keeps both headless, and `key-dispatch.ts` stays a leaf: this
+ * module imports it, never the reverse.
+ *
+ * `view` is required for the reason #369 D4 gives — `2` is head-forward in the
+ * cockpit and the orbit reset in chase, and a resolver that defaulted it would
+ * answer one of those silently.
+ */
+export interface KeyFacts {
+	/** `KeyboardEvent.key`, lowercased, as `keyDispatch` hands it over. */
+	readonly key: string;
+	/** `KeyboardEvent.code`. Absent on a synthetic press, which is every press
+	 *  the probe tier makes. */
+	readonly code?: string;
+	readonly alt?: boolean;
+	/** Asking what this key flies rather than what it presses. */
+	readonly hold?: boolean;
+	readonly view: ViewMode;
+	/** The screen that owns the keyboard right now, when one does. */
+	readonly surface?: Surface;
+}
+
+const keyBinding = (
+	b: Binding,
+): (Binding & { trigger: Extract<Trigger, { kind: "key" }> }) | null =>
+	b.trigger.kind === "key"
+		? (b as Binding & { trigger: Extract<Trigger, { kind: "key" }> })
+		: null;
+
+/** Everything about a key binding except which key it is. */
+const liveFor = (b: Binding, facts: KeyFacts): boolean => {
+	const keyed = keyBinding(b);
+	if (keyed === null) return false;
+	const t = keyed.trigger;
+	if ((t.alt ?? false) !== (facts.alt ?? false)) return false;
+	if ((t.hold ?? false) !== (facts.hold ?? false)) return false;
+	if (t.surface !== facts.surface) return false;
+	return b.scope.views.includes(facts.view);
+};
+
+/**
+ * The commands this key event reaches, in `bindings`.
+ *
+ * **The physical key wins, and the character is the fallback** — which is D7's
+ * two halves in one rule rather than two. A row that carries a `code` is
+ * matched on the event's `code`, so the AZERTY pilot's W position still
+ * pitches although it types `z` and the codeless `z` row (Settings) does not
+ * take the press. A row that carries none is matched on the character, so `?`
+ * reaches the reference and `/` reaches the rig although both arrive on
+ * `Slash` — and so does every synthetic press in the probe tier, which carries
+ * no code at all.
+ *
+ * A list rather than one id: nothing in the shipped layout answers twice, and
+ * `collisions()` is what holds that, but a player layout may — D5 is warn and
+ * allow, so the dispatch has to be able to run both.
+ */
+export function resolveKey(
+	bindings: readonly Binding[],
+	facts: KeyFacts,
+): CommandId[] {
+	const live = bindings.filter((b) => liveFor(b, facts));
+	const byCode =
+		facts.code === undefined
+			? []
+			: live.filter((b) => keyBinding(b)?.trigger.code === facts.code);
+	const hits =
+		byCode.length > 0
+			? byCode
+			: live.filter((b) => keyBinding(b)?.trigger.key === facts.key);
+	return [...new Set(hits.map((b) => b.command))];
+}
+
+/**
+ * Is this command being flown right now?
+ *
+ * `keys` is the held set as `main.ts` keeps it: **physical keys as they were
+ * pressed**, which is what #377's first ruling and #390's limit depend on — a
+ * release clears the key it names, and a set of command ids could not be
+ * cleared by a keyup that reports a different character. So the store does not
+ * change and the query does: an id, resolved to its live hold triggers.
+ */
+export function isHeld(
+	bindings: readonly Binding[],
+	command: CommandId,
+	keys: ReadonlySet<string>,
+	view: ViewMode,
+): boolean {
+	for (const b of bindings) {
+		if (b.command !== command) continue;
+		const keyed = keyBinding(b);
+		if (keyed === null || keyed.trigger.hold !== true) continue;
+		if (keyed.trigger.surface !== undefined) continue;
+		if (!b.scope.views.includes(view)) continue;
+		if (keys.has(keyed.trigger.key)) return true;
+	}
+	return false;
+}
+
+/**
+ * One binding moved onto a new trigger, as a new table.
+ *
+ * Pure, and it returns a table rather than mutating one, because the layout is
+ * the `Game`'s state and not this module's. A finish was module state once and
+ * every test that set one owed an `afterEach`; a layout is the same shape of
+ * hazard with a worse failure, since a leaked rebind flies the next test's
+ * ship.
+ *
+ * **It throws on a trigger the command does not have.** A silent no-op is a
+ * capture modal that reports success and moves nothing, which is exactly the
+ * defect a rebind screen ships with.
+ */
+export function rebind(
+	bindings: readonly Binding[],
+	command: CommandId,
+	from: Trigger,
+	to: Trigger,
+): Binding[] {
+	const wanted = triggerKey(from);
+	const at = bindings.findIndex(
+		(b) => b.command === command && triggerKey(b.trigger) === wanted,
+	);
+	if (at === -1) throw new Error(`${command} has no binding on ${wanted}`);
+	const next = [...bindings];
+	next[at] = {
+		command,
+		trigger: to,
+		scope: scopeOf(to, commandById(command).views),
+	};
+	return next;
+}

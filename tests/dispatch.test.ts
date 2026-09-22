@@ -179,12 +179,8 @@ describe("a rebind reaches the simulation", () => {
 		rebind(
 			DEFAULT_BINDINGS,
 			"fly.pitchUp",
-			{ kind: "key", key: "s" },
-			{
-				kind: "key",
-				key: "p",
-				hold: true,
-			},
+			{ kind: "key", key: "s", hold: true },
+			{ kind: "key", key: "p", hold: true },
 		);
 
 	test("the new key flies the command and the old one no longer does", () => {

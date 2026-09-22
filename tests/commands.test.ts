@@ -12,6 +12,7 @@ import { describe, expect, test } from "bun:test";
 import { codeOf } from "./lib/source-scan";
 import {
 	type Binding,
+	codeKey,
 	collisions,
 	COMMANDS,
 	type Half,
@@ -480,7 +481,12 @@ describe("D5's two predicates", () => {
 		const byPhysical = new Map<string, Set<string>>();
 		for (const b of DEFAULT_BINDINGS) {
 			if (b.trigger.kind !== "key") continue;
-			const at = `${b.trigger.code ?? b.trigger.key}${b.trigger.alt ? "+alt" : ""}`;
+			// Normalised through the registry's own `codeKey`, not through
+			// `code ?? key`: a letter row carries `code: "KeyQ"` since the
+			// dispatch slice, and the raw code is not what a player calls it.
+			const physical =
+				b.trigger.code === undefined ? b.trigger.key : codeKey(b.trigger.code);
+			const at = `${physical}${b.trigger.alt ? "+alt" : ""}`;
 			byPhysical.set(at, (byPhysical.get(at) ?? new Set()).add(b.command));
 		}
 		const shared = [...byPhysical]
