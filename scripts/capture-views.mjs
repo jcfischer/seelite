@@ -467,28 +467,19 @@ const PLACERS = {
 		// *canonical* set a function of the order of the array above it.
 		//
 		// Two heading rules, and the row names which: `emptiest` searches for the
-		// least, `core` points along the way back to the cluster's centre through
-		// `Game.clusterCoreDirection()`. The second is the shipped transform
-		// rather than arithmetic here on purpose — a script that derived the
-		// galactic frame itself would be a second idea of it, which is what #430
-		// exists to prevent.
+		// least, `core` points along the **Core bearing** — the way back to the
+		// cluster's centre — through `Game.coreBearingHere()`. The second is the
+		// shipped transform rather than arithmetic here on purpose: a script that
+		// derived the galactic frame itself would be a second idea of it, which is
+		// what #430 exists to prevent. Both rules are turned by one `__aimAlong`,
+		// which `scripts/lib/view-placement.mjs` owns and `probe-sky.mjs` measures.
 		const aim = shot.aim ?? "emptiest";
 		const at = await page.evaluate(async (which) => {
 			await window.__returnToBootPosition();
-			const g = window.__seelite;
-			const p = g.world.ship.pos;
-			const d =
-				which === "core"
-					? window.__clusterCoreDirection()
-					: window.__emptiestDirection();
-			await window.__lookAt({
-				x: p.x + d.x * 1e9,
-				y: p.y + d.y * 1e9,
-				z: p.z + d.z * 1e9,
-			});
+			await window.__aimAlong(which);
 			// Read off the page rather than restated from the row: the caption
 			// says which star this frame was taken at.
-			return g.world.system.record.index;
+			return window.__seelite.world.system.record.index;
 		}, aim);
 		return aim === "core"
 			? `arrival point of system ${at}, aimed along the way to the cluster's core`

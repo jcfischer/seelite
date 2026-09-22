@@ -105,12 +105,18 @@ describe("?system=", () => {
 			new URL("../scripts/capture-views.mjs", import.meta.url),
 		).text();
 		// The game URL the capture builds has to carry a `system` parameter.
-		// Matched as the call rather than as `system:`, because an object
-		// shorthand spells the same parameter and a formatting choice is not a
-		// change in what the URL says.
+		// Matched as the call rather than as a bare `system` anywhere in the file,
+		// and on the **key position** rather than on the word: `{ starIndex: system }`
+		// builds a URL that no longer says `?system=` while `SYSTEM_QUERY` still
+		// answers that name, and a guard that passes it is a guard that cannot fail.
+		// A formatting change is not a change in what the URL says, hence the
+		// collapse.
 		const scoped = capture.replace(/\s+/g, " ");
-		expect(/gameUrl\(SERVING, \{[^}]*\bsystem\b[^}]*\}\)/.test(scoped)).toBe(
-			true,
-		);
+		const found = /gameUrl\(SERVING, \{[^}]*\}\)/.exec(scoped);
+		// Guarded rather than asserted, so a capture that stopped building that URL
+		// at all fails this row by name instead of throwing on a null dereference.
+		const call = found === null ? "" : found[0];
+		expect(call).not.toBe("");
+		expect(/[,{]\s*system\s*[,}:]/.test(call)).toBe(true);
 	});
 });

@@ -413,7 +413,7 @@ export async function installViewFraming(page) {
 		/**
 		 * The way back to the cluster's core, as the game computes it (#432).
 		 *
-		 * A read of `Game.clusterCoreDirection()`, and the whole of it is that it
+		 * A read of `Game.coreBearingHere()`, and the whole of it is that it
 		 * is a read: #430's `galaxy-frame.ts` is the one place the relation between
 		 * a system and the cluster's centre is authored, so a placement script
 		 * working the rotation out for itself would be a second idea of the
@@ -423,12 +423,38 @@ export async function installViewFraming(page) {
 		 * from it. A person at a console can shrug at that; a capture cannot,
 		 * because the frame it is about to write is captioned as the cone.
 		 */
-		window.__clusterCoreDirection = () => {
-			const d = window.__seelite.clusterCoreDirection();
+		window.__coreBearingHere = () => {
+			const d = window.__seelite.coreBearingHere();
 			if (!d)
 				throw new Error(
 					"placement: this system stands on the cluster's core, so no heading points at it",
 				);
+			return d;
+		};
+
+		/**
+		 * Turn the ship along one of the two heading rules, and hand back the way it
+		 * now points.
+		 *
+		 * A rule's name rather than a direction, because a rule name is what a row
+		 * declares — `aim: "emptiest" | "core"` in `view-set.mjs` — and the
+		 * composition (choose the heading, stand a way off it, turn) is what both the
+		 * capture and its probe need. Written twice it would be two framings, and
+		 * #431's rule for this file is that the probe measures the framing the capture
+		 * ships rather than a second one of its own.
+		 */
+		window.__aimAlong = async (rule) => {
+			const g = window.__seelite;
+			const p = g.world.ship.pos;
+			const d =
+				rule === "core"
+					? window.__coreBearingHere()
+					: window.__emptiestDirection();
+			await window.__lookAt({
+				x: p.x + d.x * 1e9,
+				y: p.y + d.y * 1e9,
+				z: p.z + d.z * 1e9,
+			});
 			return d;
 		};
 	});

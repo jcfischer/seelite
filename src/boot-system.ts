@@ -6,9 +6,10 @@
  * set's sky row can only show what #100 ruled — the cone of cluster light on the
  * centre — from the rim, and `startSystem` is specified as the most **central**
  * well-stocked and orderly system. `?seed` pins a world; it cannot pin a place
- * inside one. A scripted hyperspace hop was the alternative on the table and it
- * is worse: it costs fuel, needs an in-range route, and would make a canonical
- * frame a function of whichever systems the jump happened to route through.
+ * inside one. A scripted jump was the alternative on the table and it is worse:
+ * it spends the Hyperspace tank, needs an in-range route, and would make a
+ * canonical frame a function of whichever systems the jump happened to route
+ * through.
  *
  * ## The rule: it is a new game, elsewhere
  *
@@ -34,8 +35,9 @@
  *
  * `main.ts` builds a renderer at module scope and cannot be imported under bun,
  * so a decision written there is a decision nothing runs — `commander-flow.ts`
- * exists for that reason, and this file for the same one. `scripts/lib/
- * game-url.mjs` builds the parameter under node and cannot import it either, so
+ * exists for that reason, and this file for the same one. The script that *builds*
+ * the parameter, `scripts/capture-views.mjs`, runs under node through
+ * `scripts/lib/game-url.mjs` and can import neither, so
  * `tests/boot-system.test.ts` pins the two spellings against each other the way
  * `tests/game-url.test.ts` pins `?boot`.
  */

@@ -201,10 +201,11 @@ describe("the view set itself", () => {
 				},
 				{ name: "no-radii", shot: { kind: "station-axis", station: "trade" } },
 				{ name: "bad-kind", shot: { kind: "improvised" } },
-				// **An aim at the core without a system to stand at** (#432). From
-				// where the game boots the cone on the centre is *below* isotropic,
-				// so that shot is the inverted frame the rim row exists to escape,
-				// and it reads exactly like the right one on the sheet.
+				// **An aim at the core without a system to stand at** (#432). The
+				// Core bearing from where the game boots is a bearing with nothing
+				// crowded along it — `startSystem` is the most central system there
+				// is — so that shot is the frame the rim row exists to escape, and it
+				// reads exactly like the right one on the sheet.
 				{ name: "core-aim-no-system", shot: { kind: "deep-sky", aim: "core" } },
 				{ name: "aim-not-a-rule", shot: { kind: "deep-sky", aim: "sideways" } },
 				// No `aim` at all is the row that was here first: `sky-only`, whose
@@ -684,13 +685,14 @@ function aimClearanceDeg(index: number): { deg: number; off: string } {
  * has one answer rather than whichever the sort happened to meet first.
  */
 function tightestClearRimSystem(): number {
+	// Decorated **before** sorting. In the comparator this was a 255-element
+	// statistic recomputed twice per comparison — a thousand full passes over the
+	// galaxy to order eighty-five systems, and the kind of cost that reads as a
+	// fixture being slow rather than as a sort doing arithmetic.
 	const ranked = galaxy.systems
 		.filter((s) => s.t >= RIM_THIRD_T)
-		.sort(
-			(a, b) =>
-				coreCrowdingDeg(a.index) - coreCrowdingDeg(b.index) ||
-				a.index - b.index,
-		);
+		.map((s) => ({ index: s.index, deg: coreCrowdingDeg(s.index) }))
+		.sort((a, b) => a.deg - b.deg || a.index - b.index);
 	if (ranked.length === 0)
 		throw new Error(
 			`view-set fixture: no system of seed ${SEED} is in the rim third`,
@@ -701,6 +703,10 @@ function tightestClearRimSystem(): number {
 		`view-set fixture: no rim-third system of seed ${SEED} clears its own light by ${AIM_CLEARANCE_DEG}°`,
 	);
 }
+
+/** The system the row declares, in one place. Four rows want it, and a cast
+ *  written four times is four places to change when the row moves. */
+const rimSystem = rimRow?.shot.system as number;
 
 describe("the rim sky row #432 added", () => {
 	test("there is a second sky row, and it is the one that aims at the core", () => {
@@ -735,7 +741,7 @@ describe("the rim sky row #432 added", () => {
 	});
 
 	test("the named system is in the rim third, where the cone is", () => {
-		const record = galaxy.systems[rimRow?.shot.system as number];
+		const record = galaxy.systems[rimSystem];
 		expect(record.t).toBeGreaterThanOrEqual(RIM_THIRD_T);
 	});
 
@@ -747,13 +753,13 @@ describe("the rim sky row #432 added", () => {
 	 * a claim about the two, not about either.
 	 */
 	test("the same aim crowds the core tighter than it does at the start system", () => {
-		const at = coreCrowdingDeg(rimRow?.shot.system as number);
+		const at = coreCrowdingDeg(rimSystem);
 		const atStart = coreCrowdingDeg(startSystem(galaxy).index);
 		expect(atStart / at).toBeGreaterThanOrEqual(2);
 	});
 
 	test("the aim stands clear of the system's own sun and planets", () => {
-		const { deg, off } = aimClearanceDeg(rimRow?.shot.system as number);
+		const { deg, off } = aimClearanceDeg(rimSystem);
 		expect(deg).toBeGreaterThanOrEqual(AIM_CLEARANCE_DEG);
 		expect(off).not.toBe("");
 	});

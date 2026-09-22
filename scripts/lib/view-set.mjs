@@ -160,11 +160,14 @@ export const LEVERS = Object.freeze({
  *   than the thing behind one. `aim` picks the heading rule, and the two are
  *   opposite questions: `emptiest` (the default, and every row written before
  *   #432) searches for the heading with the least on it, which is what a frame
- *   for *nothing in front of it* needs; `core` points along the way back to the
- *   cluster's centre, which is what a frame for #100's derived layer needs — and
- *   it **has to name a `system`**, because from the system the game boots at the
- *   cone on the centre is below isotropic. A heading rule that names the core is
- *   only answerable through `galaxy-frame.ts`, which is #430's reason for
+ *   for *nothing in front of it* needs; `core` points along the **Core bearing**,
+ *   the way back to the cluster's centre, which is what a frame for #100's derived
+ *   layer needs — and it **has to name a `system`**, because `startSystem` is the
+ *   most central system the generator makes and a directional arm has nothing to
+ *   point along from the centre. §11 and §12 of `galaxy-generation.md` own how
+ *   much less that is, and `scripts/measure-sky-density.ts core` reprints it, so
+ *   no copy of that reading is repeated here. A heading rule that names the core
+ *   is only answerable through `galaxy-frame.ts`, which is #430's reason for
  *   existing.
  * - `berth` — docked at a **named berth** of a named station, flown there by
  *   §7's docking computer, stopped at a named point of the traversal. #147's
@@ -733,16 +736,22 @@ export const VIEWS = Object.freeze([
 	 * #100 ruled the derived sky directional rather than bright: what a sky in
 	 * this game says about where the player is is *which way the cluster's light
 	 * crowds*. The row above cannot show that from where it stands, in either
-	 * half. `startSystem` is the most **central** well-stocked and orderly system,
-	 * so on this seed the start system sits at `t = 0.146` and its cone on the
-	 * centre measures **below** isotropic — the inverted frame, photographed
-	 * green; and `__emptiestDirection` is a rule for finding the least on any
-	 * heading, which aimed at a cone of light is an anti-aim.
+	 * half. `startSystem` is the most **central** well-stocked and orderly system
+	 * the generator offers — deep in §4's central third on this seed — and a
+	 * directional arm has nothing to point along from the centre, which is how
+	 * #104 came to be able to say "captured, green, complete and shows nothing"
+	 * with both tiers agreeing. And `__emptiestDirection` is a rule for finding the
+	 * least on any heading, which aimed at a cone of light is an anti-aim.
+	 *
+	 * The size of the difference is measured, owned in one place, and not printed
+	 * here: §11 and §12 of `galaxy-generation.md`, reprinted by
+	 * `scripts/measure-sky-density.ts core`, and `probe-sky.mjs`'s rim-versus-start
+	 * row for this frame on this seed.
 	 *
 	 * So this row stands at the rim of the cluster and looks back down the cone.
 	 * Both halves are the shipped code's, not a caption's: `?system=` boots the
 	 * page at the named system (`src/boot-system.ts`), and the heading comes from
-	 * `Game.clusterCoreDirection()`, which is `galaxy-frame.ts`'s transform read at
+	 * `Game.coreBearingHere()`, which is `galaxy-frame.ts`'s transform read at
 	 * the system the world is actually in.
 	 *
 	 * **The index below is data, and the rule that picked it lives in one place:**
@@ -1007,11 +1016,11 @@ const SHOT_REQUIREMENTS = {
 	"deep-sky": (s) =>
 		(s.aim === undefined || s.aim === "emptiest" || s.aim === "core") &&
 		// #432. `aim: "core"` without a system to stand at is the row that cannot
-		// show its own subject — the cone on the centre is *below* isotropic from
-		// the system the game boots at — and on the sheet it looks exactly like the
-		// one that can. `malformedShots` is where that is refused, because a
-		// garbage frame in a contact sheet is something a reviewer squints at
-		// rather than something that names the field that is missing.
+		// show its own subject — the Core bearing from the system the game boots at
+		// is a bearing with nothing crowded along it — and on the sheet it looks
+		// exactly like the one that can. `malformedShots` is where that is refused,
+		// because a garbage frame in a contact sheet is something a reviewer squints
+		// at rather than something that names the field that is missing.
 		(s.aim !== "core" || Number.isInteger(s.system)),
 	// The berth is named for the reason `SHOT_KINDS` gives: an unnamed one is a
 	// different room each run. `at`, `headLook` and `launch` are optional and a

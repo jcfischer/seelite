@@ -173,7 +173,7 @@ import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
 // vector handed to it. `coreBearing` is the same relation read as a direction:
-// the first caller in `src/` is `clusterCoreDirection` below, for #432's row.
+// the first caller in `src/` is `coreBearingHere` below, for #432's row.
 import { coreBearing, SYSTEM_PLANE_NORMAL, skyFrame } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
@@ -3096,15 +3096,22 @@ class Game {
 	 * comment rules out.
 	 *
 	 * `atSystem` is `?system=` (#432): a new game *elsewhere*. It has nowhere to
-	 * go on the load arm — a save names its own system — and `planBoot` makes the
-	 * two mutually exclusive by writing nothing for a pinned boot, so the arm
-	 * below is a boundary rather than a live case.
+	 * go on the load arm — a save names its own system — and `planBoot` keeps the
+	 * two apart by writing nothing for a pinned boot. That is another module's
+	 * promise and this is where it is relied on, so the pair is refused here too
+	 * rather than answered by quietly discarding one of them: a constructor that
+	 * accepts a request and drops half of it is a state the type allows and no
+	 * caller can see.
 	 */
 	constructor(
 		seed: number,
 		save: SaveEnvelope | null = null,
 		atSystem: number | null = null,
 	) {
+		if (save !== null && atSystem !== null)
+			throw new Error(
+				`Game: a save names its own system, so ${atSystem} has nowhere to go — boot at a named system writes no save to load`,
+			);
 		if (save) {
 			// `restoreWorld` rather than `makeWorld` plus a jump: `jumpWorldTo`
 			// throws across a galaxy boundary on purpose, so a save taken in
@@ -3934,7 +3941,7 @@ class Game {
 	 * `sky-cluster-core` aims the camera along this, and is the first caller in
 	 * `src/` — the reason the function is a method rather than a scratch reading.
 	 */
-	clusterCoreDirection(): Vec3 | null {
+	coreBearingHere(): Vec3 | null {
 		const record = this.world.system.record;
 		return coreBearing(skyFrame(record.seed), record.pos);
 	}

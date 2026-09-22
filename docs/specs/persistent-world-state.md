@@ -487,9 +487,33 @@ Commander aside, so Continue stays available. Today's set-aside exists because a
 boot straight into a save could not ask which world was wanted; the overlay does
 ask, so the rule applies only where nothing asks — under `?boot=direct`.
 
+**`?system=<index>` names the system a *new* game boots in** (#432), and a boot
+that names one **writes nothing**, as `?no-save` does. It exists for the view
+capture: `startSystem` is the most central well-stocked and orderly system, and
+the derived sky's arm (§11 of `galaxy-generation.md`) is directional, so a
+canonical frame of the cluster's light cannot be taken there — reaching a rim
+system means booting at one, not spending a tank and three systems to fly to it.
+Everything else about such a boot is what a new game is: galaxy 0, clock 0, the
+ship on the arrival point, its `visit` recorded, and only the system named. An
+index outside the galaxy is **refused and said**, never clamped — a frame
+captioned with the system that was asked for is the whole use of the affordance,
+and `capture-views` reads the booted index back and refuses a page that booted
+somewhere else.
+
+**The storage rule is not a copy of `?no-save`'s, and the reason is the
+set-aside.** `?seed` protects a Commander by *disagreeing* with it, and under
+`?boot=direct` a mismatch sets that Commander aside. A named system carries no such
+disagreement: `?seed=<the save's own seed>&system=161` matches, loads, attaches,
+and the first dirty event writes a Commander who started at a rim star over the one
+who did not. So the boot plan answers `writesNothing` for both causes and the shell
+reads that, rather than re-deriving the permission from one of them at the call
+site.
+
 ### 11.7 Verification obligations
 
-Headless: the active pointer's read, write and fallback; the one-shot continue
+Headless: the active pointer's read, write and fallback; a boot that names a system
+reading, consuming and writing nothing even beside a save at its own seed, and the
+parameter refusing an unusable index with a word said; the one-shot continue
 consumed by exactly one boot, into the slot the pointer names after New game,
 Load and Import alike; a pending new game surviving until its first `live` write
 lands; a switch refused when its awaited flush fails; Export, Rename and Delete

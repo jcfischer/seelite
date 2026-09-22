@@ -697,7 +697,8 @@ describe("one galactic frame, read by everything that points at it", () => {
 		// The braces are a *list*, matched loosely since #432 put a second name of
 		// this module's on the same import: what the row pins is that the roll's
 		// normal arrives from here rather than being written out at the call site,
-		// and a neighbour sharing the statement does not change its provenance.
+		// and a second importee sharing the statement does not change its
+		// provenance.
 		expect(main).toMatch(
 			/import \{[^}]*\bSYSTEM_PLANE_NORMAL\b[^}]*\} from "\.\/galaxy-frame"/,
 		);

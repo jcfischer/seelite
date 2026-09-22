@@ -19,7 +19,8 @@
  * the module handed to the geometry the scene graph is drawing with — plus the
  * geometry's own identity and the layer's parent chain. Nothing here renders or
  * reads a pixel back, so **a draw call that never happened, or an upload that the
- * driver dropped, passes every check above**; the claim that the sky is actually on
+ * driver dropped, passes every check in this file**; the claim that the sky is
+ * actually on
  * screen belongs to `probe-output-stage.mjs`, which counts lit pixels of the
  * composited frame (`the backdrop is still there when the frame is multisampled`).
  * That row is a floor on **the backdrop as a whole**, and it predates this PR: it
@@ -92,7 +93,7 @@ const { check, watch, exit } = tally();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 watch(page);
 // #432's rows aim the shipped game with the same vocabulary the canonical
-// capture aims it with — `__lookAt`, `__clusterCoreDirection`,
+// capture aims it with — `__lookAt`, `__coreBearingHere`,
 // `__emptiestDirection` — rather than with a second copy of the framing that
 // would then be the thing measured instead of the thing shipped.
 await installViewFraming(page);
@@ -379,13 +380,13 @@ check(
 // the heading the row aims along is where the cone of cluster light is, which is
 // only measurable against the bearings a live renderer is holding.
 //
-// **Both comparisons are ratios against a second framing of the same sky**, and
-// neither quotes a figure of its own. The share of a sky that lies inside a frame
-// is a property of one seeded world at one instant, and #1's constraint is that
-// such a number earns its place by being a ratio; the two framings move together
-// when the generator moves, and the claim — that aiming at the core shows
-// cluster light where aiming at emptiness shows none, and that the same aim at
-// the centre of the cluster shows nothing at all — is a claim about the pair.
+// **Nothing below quotes a figure of its own.** A share of one seeded sky at one
+// instant is a property of that world, and #1's constraint is that such a number
+// earns its place as a ratio or a bound: the Core bearing is judged against the
+// crowdest heading a search can find, the old rule's heading against the new
+// one's, the rim's frame against the centre's frame on the same seed. The one
+// absolute printed is a frame's share of a uniform sphere — a reference for
+// reading the percentages, not a threshold, and labelled where it appears.
 //
 // What this still does not do is read a pixel. Every number below comes off the
 // mounted `BufferAttribute` and the camera's own matrix, so — as above — a frame
@@ -393,27 +394,27 @@ check(
 // ---------------------------------------------------------------------------
 
 /**
- * Aim the shipped game from where it stands, and count what its frame holds.
+ * Aim the shipped game from where it stands, and read what its frame holds.
  *
  * The frame is read as a box in angle off the camera that draws the sky — the
  * same `tan θ / tan(fov/2)` form `main.ts` uses for its own projection — because
  * the question is what is *inside the frame*, and an angular radius is not a
- * frustum test.
+ * frustum test. The aiming is `__aimAlong`, the same call the capture makes, so
+ * what is measured here is the framing that ships.
+ *
+ * **And a heading is scored against a search, not against the anti-aim.** The
+ * first cut of the cone row compared the Core bearing with
+ * `__emptiestDirection` — a search whose whole purpose is finding the minimum —
+ * which any heading at all beats, cone or no cone. So the page now scores 512
+ * candidate headings itself and the row asks whether the shipped transform's
+ * bearing is at the crowdest place there is.
  */
 const frameReading = (which) =>
 	page.evaluate(async (rule) => {
 		const g = window.__seelite;
 		const record = g.world.system.record;
 		const ship = g.world.ship.pos;
-		const d =
-			rule === "core"
-				? window.__clusterCoreDirection()
-				: window.__emptiestDirection();
-		await window.__lookAt({
-			x: ship.x + d.x * 1e9,
-			y: ship.y + d.y * 1e9,
-			z: ship.z + d.z * 1e9,
-		});
+		const d = await window.__aimAlong(rule);
 
 		const cam = g.backdropCamera;
 		cam.updateMatrixWorld(true);
@@ -435,13 +436,55 @@ const frameReading = (which) =>
 				Math.abs(dot3(v, up) / z) <= tanV + padTan
 			);
 		};
+		// What a heading of this frame's own solid angle would hold if the sky were
+		// uniform: the rectangular pyramid's solid angle over the sphere's 4π.
+		// Printed as a reference, never as a threshold — the derived sky is not
+		// uniform, which is the entire subject.
+		const isoShare =
+			(4 * Math.asin(Math.sin(Math.atan(tanH)) * Math.sin(Math.atan(tanV)))) /
+			(4 * Math.PI);
 
 		const sky = g.backdropScene
 			.getObjectByName("stars-systems")
 			.geometry.getAttribute("position");
+		const unit = (v) => {
+			const l = Math.hypot(v[0], v[1], v[2]);
+			return [v[0] / l, v[1] / l, v[2] / l];
+		};
+		// The heading the ship was just turned along, as the triples this file's
+		// arithmetic runs on. `__aimAlong` hands back a `Vec3`.
+		const bearing = unit([d.x, d.y, d.z]);
+		const bearings = [];
 		let lit = 0;
-		for (let i = 0; i < sky.count; i++)
-			if (inFrame([sky.getX(i), sky.getY(i), sky.getZ(i)])) lit++;
+		for (let i = 0; i < sky.count; i++) {
+			const v = [sky.getX(i), sky.getY(i), sky.getZ(i)];
+			bearings.push(unit(v));
+			if (inFrame(v)) lit++;
+		}
+
+		// A cone rather than the box for the search: a candidate heading has no
+		// roll to be measured against, and the question is *where the crowd is*.
+		// Its half-angle is the frame's own vertical one, read off the same camera.
+		const coneCos = Math.cos(Math.atan(tanV));
+		const inCone = (c) => {
+			let n = 0;
+			for (const b of bearings) if (dot3(c, b) >= coneCos) n++;
+			return n;
+		};
+		const N = 512;
+		const golden = Math.PI * (3 - Math.sqrt(5));
+		let best = { held: -1, at: null };
+		for (let i = 0; i < N; i++) {
+			const y = 1 - (i / (N - 1)) * 2;
+			const r = Math.sqrt(Math.max(0, 1 - y * y));
+			const t = golden * i;
+			const c = [Math.cos(t) * r, y, Math.sin(t) * r];
+			const held = inCone(c);
+			if (held > best.held) best = { held, at: c };
+		}
+		const atBearing = inCone(bearing);
+		const offDeg =
+			(Math.acos(Math.min(1, dot3(bearing, best.at))) * 180) / Math.PI;
 
 		// What could be the frame's subject instead of the sky. A disc counts by
 		// the frame growing by the disc's own tangent, which is the conservative
@@ -460,6 +503,11 @@ const frameReading = (which) =>
 			lit,
 			total: sky.count,
 			subjects,
+			isoShare,
+			coneDeg: (Math.atan(tanV) * 180) / Math.PI,
+			atBearing,
+			bestHeld: best.held,
+			offDeg,
 		};
 	}, which);
 
@@ -483,10 +531,21 @@ check(
 	)}, asked for ${coreRow.shot.system}`,
 );
 
+/**
+ * The row the node was really for, and the reason this probe scores headings at
+ * all. `≥ 90%` of the searched maximum rather than equal to it, because the
+ * densest place in a lumpy sky need not be exactly the centre of the cluster —
+ * the claim is that the transform's bearing is *at* the crowd, not that it is its
+ * arithmetic centre. A wrong transform lands far off the maximum and goes red.
+ */
 check(
-	"the heading the row aims along is the one the mounted cone is crowded along",
-	atCore.lit >= 2 * Math.max(1, atEmptiest.lit),
-	`${atCore.lit} of ${atCore.total} derived points inside the frame aimed at the core against ${atEmptiest.lit} aimed at emptiness — the same sky, the same camera, two heading rules`,
+	"the Core bearing the page reports is at the crowd the search finds",
+	atCore.atBearing >= 0.9 * atCore.bestHeld,
+	`a cone of ${atCore.coneDeg.toFixed(1)}° on the Core bearing holds ${
+		atCore.atBearing
+	} of ${atCore.total} derived points; the crowdest of 512 searched headings holds ${
+		atCore.bestHeld
+	}, ${atCore.offDeg.toFixed(1)}° off the Core bearing`,
 );
 
 check(
@@ -497,9 +556,24 @@ check(
 		: `in frame: ${atCore.subjects.join(", ")}`,
 );
 
+/**
+ * What the *old* rule does with this sky, which is the other half of why the row
+ * exists. Honest about its own weakness: `__emptiestDirection` searches for the
+ * least, so a small number is what it is built to return — the reading is kept
+ * because the sheet needs the size of the difference between the two rules, not
+ * because it locates the cone. The row above is what locates it.
+ */
+check(
+	"the emptiest heading rule finds far less of the same sky than the Core bearing does",
+	atEmptiest.lit * 4 <= atCore.lit,
+	`${atEmptiest.lit} of ${atEmptiest.total} derived points inside the frame aimed at emptiness against ${atCore.lit} aimed along the Core bearing — the same sky, the same camera`,
+);
+
 // The other half of the node: the row could not be taken where the game boots,
 // because `startSystem` is the most central system there is and a directional
-// arm has nothing to show from the centre. Same seed, same aim, no `?system=`.
+// arm has nothing to point along from the centre. Same seed, same aim, no
+// `?system=`. §12 of `galaxy-generation.md` owns the cone figures this restates
+// structurally, and `measure-sky-density.ts core` reprints them.
 await page.goto(gameUrl(origin, { seed: VIEW_SEED, raider: "off" }));
 await bootedGame(page);
 const atStart = await frameReading("core");
@@ -514,7 +588,9 @@ check(
 		atCore.index
 	} (t=${atCore.t.toFixed(3)}) against ${(centreShare * 100).toFixed(
 		1,
-	)}% at the start system ${atStart.index} (t=${atStart.t.toFixed(3)})`,
+	)}% at the start system ${atStart.index} (t=${atStart.t.toFixed(3)}); this frame's share of a uniform sphere is ${(
+		atCore.isoShare * 100
+	).toFixed(1)}%, so the centre's is a heading you could have picked blind`,
 );
 
 await browser.close();

@@ -140,11 +140,12 @@ describe("makeWorldAtSystem: a new game at a named system", () => {
 	});
 
 	/**
-	 * The consequence of a pinned boot, recorded as a row rather than as a
-	 * promise: `resetWorldToStart` returns a world to *the start system*, so a
-	 * reset from a pinned one moves the ship to another star. That is why
-	 * `?system=` writes nothing — a fixture that could be reset into a player's
-	 * save would leave it somewhere nobody started.
+	 * A consequence of the pin, recorded rather than assumed. `resetWorldToStart`
+	 * returns a world to *the start system*, so a pinned world is one it declines
+	 * to reset — which is the right answer, and worth a row because the predicate
+	 * reads as a property of the world rather than of how it was made. Why
+	 * `?system=` writes nothing is a different argument, and `commander-flow.ts`
+	 * carries it.
 	 */
 	test("a pinned world is not the start system, and says so", () => {
 		expect(canResetWorldToStart(world)).toBe(false);
