@@ -15,7 +15,6 @@
 import { describe, expect, test } from "bun:test";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
-	isPressedKey,
 	PANEL_INTENTS,
 	type PanelIntent,
 	TASK_GROUPS,
@@ -27,7 +26,7 @@ import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { boundKeys, codeOf, keysByShape } from "./lib/source-scan";
+import { boundKeys, codeOf } from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
 	CONTROLS.commands.flatMap((command) => [...command.currentTriggers]);
@@ -122,24 +121,57 @@ describe("the catalogue is complete against the source", () => {
 	 * player screens listen for their own key, and the `?perf` diagnostics are
 	 * `fixed: "diagnostic"` and live in a module this tier does not read.
 	 */
-	test("every command a key reaches is named by its id in the code", () => {
-		const code = `${codeOf("src/main.ts")}${codeOf("src/combat-rig.ts")}`;
+	test("every command a key reaches is named by its id at a dispatch site", () => {
+		// **The shapes, not the file's text** (sage round 1). A bare
+		// `source.includes(id)` cannot tell a live dispatch site from a stale
+		// mention in a comment, which is the failure the row it replaced was
+		// immune to — that one looked each trigger up in the shape it was
+		// printed as. So the ids are collected from the four shapes that
+		// actually run a command, and a mention anywhere else does not count.
+		const main = codeOf("src/main.ts");
+		const rig = codeOf("src/combat-rig.ts");
+		const ids = (source: string, re: RegExp) =>
+			[...source.matchAll(re)].flatMap((m) =>
+				[...(m[1] ?? "").matchAll(/"([a-z]+\.[A-Za-z0-9]+)"/g)].map(
+					(x) => x[1] as string,
+				),
+			);
+		const reached = new Set([
+			// `case "fly.assist":` — the two switches, `command` and `panelCommand`.
+			...ids(main, /(case\s+"[a-z]+\.[A-Za-z0-9]+"\s*:)/g),
+			// `this.held("fly.throttleUp")`, and the pair lists of `this.axis`.
+			...ids(main, /this\.held\((\s*"[^"]+"\s*)\)/g),
+			...ids(main, /this\.axis\((\[[^\]]*\],\s*\[[^\]]*\])\)/g),
+			// The rig, which is handed the predicate and asked by id.
+			...ids(rig, /held\((\s*"[^"]+"\s*)\)/g),
+			...ids(rig, /id === (\s*"[^"]+"\s*)/g),
+		]);
+		// Guard the guard: each shape found something, so a renamed helper
+		// cannot make the loop below pass on a set built from four dead regexes.
+		expect([
+			reached.has("fly.assist"), // a case
+			reached.has("panel.cursorUp"), // a case in the other switch
+			reached.has("fly.throttleUp"), // a held read
+			reached.has("fly.pitchUp"), // an axis list
+			reached.has("fight.fireBeam"), // the rig's predicate
+			reached.has("fight.rigEcm"), // the rig's own command
+		]).toEqual([true, true, true, true, true, true]);
+
 		const PANELS = new Set(["system.settings", "system.commander"]);
 		let checked = 0;
 		for (const c of CONTROLS.commands) {
 			if (PANELS.has(c.id) || c.fixed === "diagnostic") continue;
 			if (!c.currentTriggers.some((t) => t.kind === "key")) continue;
-			const at = `${c.id}: ${code.includes(`"${c.id}"`)}`;
-			expect(at).toBe(`${c.id}: true`);
+			expect(`${c.id}: ${reached.has(c.id)}`).toBe(`${c.id}: true`);
 			checked++;
 		}
 		expect(checked).toBeGreaterThan(40);
-		// The exemptions are exemptions, not a hole: neither panel's id is in
-		// either file, so a row that quietly moved into one would be caught by
+		// The exemptions are exemptions, not a hole: neither panel's id is at a
+		// dispatch site, so a row that quietly moved to one would be caught by
 		// the loop above rather than excused by this set.
 		for (const id of PANELS)
-			expect(`${id} in code: ${code.includes(`"${id}"`)}`).toBe(
-				`${id} in code: false`,
+			expect(`${id} dispatched: ${reached.has(id)}`).toBe(
+				`${id} dispatched: false`,
 			);
 	});
 

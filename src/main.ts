@@ -7953,8 +7953,8 @@ class Game {
 			// §7 counts the throttle. Leaving it out was worse than no cancel:
 			// `stepDockingComputer` overwrites `this.throttle` on the same frame,
 			// so a player pushing the throttle got neither a cancel nor an effect.
-			isHeld(this.bindings, "fly.throttleUp", this.keys, this.view) ||
-			isHeld(this.bindings, "fly.throttleDown", this.keys, this.view) ||
+			this.held("fly.throttleUp") ||
+			this.held("fly.throttleDown") ||
 			// The pad's trim counts for the same reason the keys do. The sticks
 			// are already in `yaw`/`pitch`/`roll` above, and they reach here
 			// **deadzoned** — `applyRadialDeadzone` returns a hard zero inside
@@ -8188,12 +8188,22 @@ class Game {
 	 * rather than only the table.
 	 */
 	private axis(negative: CommandId[], positive: CommandId[]): number {
-		const held = (id: CommandId) =>
-			isHeld(this.bindings, id, this.keys, this.view);
-		const neg = negative.some(held) ? 1 : 0;
-		const pos = positive.some(held) ? 1 : 0;
+		const neg = negative.some(this.held) ? 1 : 0;
+		const pos = positive.some(this.held) ? 1 : 0;
 		return pos - neg;
 	}
+
+	/**
+	 * Is this command being flown right now?
+	 *
+	 * Three of `isHeld`'s four arguments are always these same fields, and the
+	 * form was spelled out at eight sites — so every future change to how the
+	 * held state is stored touched eight lines, and #390 is going to make one.
+	 * A bound property rather than a method because `combat-rig.ts` is handed
+	 * it as a predicate and `Array.some` takes it directly.
+	 */
+	private readonly held = (id: CommandId): boolean =>
+		isHeld(this.bindings, id, this.keys, this.view);
 
 	/** The nearest body of a kind, by centre distance — what picks the boot-time
 	 *  target, so the panel names something reachable on frame one. */
@@ -10879,20 +10889,15 @@ class Game {
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
-		this.combatRig?.step(
-			dt,
-			(id) => isHeld(this.bindings, id, this.keys, this.view),
-			this.regime === "cruise",
-			{
-				ship: this.world.ship,
-				nose: this.nose(),
-				mouseFiring: this.mouseFiring,
-				// The sightline through the reticle, not the ship's attitude: a player
-				// looking off the nose aims where they are looking.
-				aimOrigin: this.cameraPos(),
-				aimNose: this.weaponAim(),
-			},
-		);
+		this.combatRig?.step(dt, this.held, this.regime === "cruise", {
+			ship: this.world.ship,
+			nose: this.nose(),
+			mouseFiring: this.mouseFiring,
+			// The sightline through the reticle, not the ship's attitude: a player
+			// looking off the nose aims where they are looking.
+			aimOrigin: this.cameraPos(),
+			aimNose: this.weaponAim(),
+		});
 		// The pad's sticks sit **beside** the key set rather than through it, so
 		// the pad's contribution keeps its own magnitude (#283's F1). Nothing
 		// clamps the sum here: `stepAngular` clamps the command to [-1, 1]
@@ -10955,8 +10960,8 @@ class Game {
 			// 18.3%. Sage found it, round 4, and it is exactly the failure the
 			// keyboard half of this guard was written for.
 			if (
-				!isHeld(this.bindings, "fly.throttleUp", this.keys, this.view) &&
-				!isHeld(this.bindings, "fly.throttleDown", this.keys, this.view) &&
+				!this.held("fly.throttleUp") &&
+				!this.held("fly.throttleDown") &&
 				padAxes.throttleTrim === 0
 			)
 				this.throttle = 1;
@@ -11043,9 +11048,9 @@ class Game {
 		if (orbit !== 0)
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
-		if (isHeld(this.bindings, "fly.throttleUp", this.keys, this.view))
+		if (this.held("fly.throttleUp"))
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
-		if (isHeld(this.bindings, "fly.throttleDown", this.keys, this.view))
+		if (this.held("fly.throttleDown"))
 			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		// The triggers **trim** the throttle rather than setting it (#283's F2).
 		// A pull is a speed, not a position: let go and the throttle stays where

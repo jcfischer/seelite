@@ -1276,9 +1276,11 @@ export const defaultCollisions = (): Collision[] =>
  *
  * Not a `KeyboardEvent`: `src/key-dispatch.ts` already decided what the event
  * *means* — release, swallow, chord or ordinary key — and this answers the
- * next question, which is which command that key reaches. Keeping the two
- * apart is what keeps both headless, and `key-dispatch.ts` stays a leaf: this
- * module imports it, never the reverse.
+ * next question, which is which command that key reaches. **Neither module
+ * imports the other for the facts**, which is a stronger boundary than a
+ * direction and is why this shape is restated here rather than shared: this
+ * module imports `ALT_CHORDS` from there and nothing else, and a shared facts
+ * type would couple the law to the table it is asked about.
  *
  * `view` is required for the reason #369 D4 gives — `2` is head-forward in the
  * cockpit and the orbit reset in chase, and a resolver that defaulted it would
@@ -1306,14 +1308,34 @@ const keyBinding = (
 		: null;
 
 /** Everything about a key binding except which key it is. */
+/**
+ * Everything about a key trigger except which key it is and where it is live.
+ *
+ * One owner, because `resolveKey` and `isHeld` both ask it and two hand-rolled
+ * walks of one table drift the moment `Trigger` grows an axis. The second walk
+ * existed for a round and had already diverged: it compared no `alt` at all,
+ * so an Alt-qualified hold row would have flown on the bare key.
+ */
+const matchesQualifiers = (
+	t: Extract<Trigger, { kind: "key" }>,
+	facts: {
+		readonly alt?: boolean;
+		readonly hold?: boolean;
+		readonly surface?: Surface;
+	},
+): boolean =>
+	(t.alt ?? false) === (facts.alt ?? false) &&
+	(t.hold ?? false) === (facts.hold ?? false) &&
+	t.surface === facts.surface;
+
+/** Everything about a key binding except which key it is. */
 const liveFor = (b: Binding, facts: KeyFacts): boolean => {
 	const keyed = keyBinding(b);
-	if (keyed === null) return false;
-	const t = keyed.trigger;
-	if ((t.alt ?? false) !== (facts.alt ?? false)) return false;
-	if ((t.hold ?? false) !== (facts.hold ?? false)) return false;
-	if (t.surface !== facts.surface) return false;
-	return b.scope.views.includes(facts.view);
+	return (
+		keyed !== null &&
+		matchesQualifiers(keyed.trigger, facts) &&
+		b.scope.views.includes(facts.view)
+	);
 };
 
 /**
@@ -1370,18 +1392,45 @@ export function resolveKey(
  * function's note: the fix is the held set carrying the code, and #390 owns
  * it.
  */
+/**
+ * The hold rows of one layout, by command — built once per table.
+ *
+ * `isHeld` is asked about a dozen times a frame (both axes, the roll, the
+ * chase orbit, the throttle's two and the rig's four), and a scan of the whole
+ * table for each of those is a dozen walks of two hundred rows where the code
+ * this replaced did one hash probe. The index is keyed on the layout array
+ * itself, so a `rebind` — which returns a new array rather than mutating one —
+ * simply builds a new one, and no invalidation step exists to be forgotten.
+ *
+ * **The view is not indexed**, because it changes between frames while the
+ * layout does not; it is checked on the way out, over a list that is one or
+ * two rows long.
+ */
+const HOLD_INDEX = new WeakMap<readonly Binding[], Map<CommandId, Binding[]>>();
+
+const holdRows = (bindings: readonly Binding[]): Map<CommandId, Binding[]> => {
+	const found = HOLD_INDEX.get(bindings);
+	if (found !== undefined) return found;
+	const index = new Map<CommandId, Binding[]>();
+	for (const b of bindings) {
+		const keyed = keyBinding(b);
+		if (keyed === null || !matchesQualifiers(keyed.trigger, { hold: true }))
+			continue;
+		index.set(b.command, [...(index.get(b.command) ?? []), b]);
+	}
+	HOLD_INDEX.set(bindings, index);
+	return index;
+};
+
 export function isHeld(
 	bindings: readonly Binding[],
 	command: CommandId,
 	keys: ReadonlySet<string>,
 	view: ViewMode,
 ): boolean {
-	for (const b of bindings) {
-		if (b.command !== command) continue;
+	for (const b of holdRows(bindings).get(command) ?? []) {
 		const keyed = keyBinding(b);
-		if (keyed === null || keyed.trigger.hold !== true) continue;
-		if (keyed.trigger.surface !== undefined) continue;
-		if (!b.scope.views.includes(view)) continue;
+		if (keyed === null || !b.scope.views.includes(view)) continue;
 		if (keys.has(keyed.trigger.key)) return true;
 	}
 	return false;
@@ -1411,11 +1460,44 @@ export function rebind(
 		(b) => b.command === command && triggerKey(b.trigger) === wanted,
 	);
 	if (at === -1) throw new Error(`${command} has no binding on ${wanted}`);
+	const moved = movedTrigger(from, to);
 	const next = [...bindings];
 	next[at] = {
 		command,
-		trigger: to,
-		scope: scopeOf(to, commandById(command).views),
+		trigger: moved,
+		scope: scopeOf(moved, commandById(command).views),
 	};
 	return next;
+}
+
+/**
+ * The trigger a rebind actually stores — `to`, checked and completed.
+ *
+ * Two things the bare `to` gets wrong, and both produce the defect `rebind`'s
+ * doc names rather than preventing it.
+ *
+ * **A qualifier is the command's, not the player's.** `fly.pitchUp` is flown
+ * by holding a key; a `to` that dropped `hold` would be stored, would satisfy
+ * no `isHeld`, and the command would be silently unflyable while the call
+ * returned successfully. The player moves *which key*, which is #369 D4's
+ * "the player edits the trigger; the context set is the command's" applied to
+ * the half of a trigger that is not the key.
+ *
+ * **And a code is derived, never authored.** The shipped rows get theirs from
+ * `keyTrigger`, so a rebind that stored `to` verbatim would leave a letter
+ * codeless and lose D7's position dispatch for exactly the command the player
+ * just chose to move.
+ */
+function movedTrigger(from: Trigger, to: Trigger): Trigger {
+	if (from.kind !== "key" || to.kind !== "key") {
+		if (from.kind !== to.kind)
+			throw new Error(`cannot move a ${from.kind} onto a ${to.kind}`);
+		return to;
+	}
+	if (!matchesQualifiers(to, from))
+		throw new Error(
+			`a rebind may move a key, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
+		);
+	const { kind: _kind, ...rest } = to;
+	return keyTrigger(rest);
 }

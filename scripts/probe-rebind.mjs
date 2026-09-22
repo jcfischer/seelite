@@ -77,10 +77,13 @@ const degreesBetween = (a, b) => {
  * an angle owes the state it started from.
  */
 async function atRest() {
+	// One read per tick: the sample that ends this iteration begins the next.
+	let prev = await nose();
 	for (let i = 0; i < 200; i++) {
-		const a = await nose();
 		await page.waitForTimeout(50);
-		if (degreesBetween(a, await nose()) < 0.02) return;
+		const now = await nose();
+		if (degreesBetween(prev, now) < 0.02) return;
+		prev = now;
 	}
 	throw new Error("the ship never stopped turning");
 }
@@ -114,15 +117,22 @@ check(
 // ---------------------------------------------------------------------------
 // The rebind, through the route the capture modal will take.
 // ---------------------------------------------------------------------------
+// Caught rather than allowed to reject: an evaluate that throws aborts the
+// probe, so a refusal would take the suite down instead of printing a red row
+// — and the row would have been settled by its own `return true`.
 const moved = await page.evaluate((key) => {
-	window.__seelite.rebindCommand(
-		"fly.pitchUp",
-		{ kind: "key", key: "s", hold: true },
-		{ kind: "key", key, hold: true },
-	);
-	return true;
+	try {
+		window.__seelite.rebindCommand(
+			"fly.pitchUp",
+			{ kind: "key", key: "s", hold: true },
+			{ kind: "key", key, hold: true },
+		);
+		return "accepted";
+	} catch (e) {
+		return `threw: ${e instanceof Error ? e.message : String(e)}`;
+	}
 }, NEW_KEY);
-check("the rebind is accepted", moved === true, `returned ${moved}`);
+check("the rebind is accepted", moved === "accepted", moved);
 
 const oldKey = await turnedWhileHolding("s");
 check(
@@ -131,11 +141,22 @@ check(
 	`held ${oldKey.toFixed(2)}°, against ${shipped.toFixed(2)}° before the rebind`,
 );
 
+/**
+ * Parity is a band against the shipped reading, not a floor.
+ *
+ * `> 5` was the first threshold and it is the wrong shape: the shipped key
+ * reads about 20°, so a rebind delivering a quarter of the rate would have
+ * passed and printed as parity. The band is read against `shipped` in the same
+ * run, which is the only control that carries the machine's own frame cost —
+ * and it is wide because a 400 ms hold is not a rate measurement: two arms of
+ * the same build have read 20.62° and 16.96°, which is 82%.
+ */
+const parity = (turned) => turned > shipped * 0.7 && turned < shipped * 1.3;
 const newKey = await turnedWhileHolding(NEW_KEY);
 check(
 	`and \`${NEW_KEY}\` pitches it as \`s\` did — the rebind reached the simulation`,
-	newKey > 5,
-	`held ${newKey.toFixed(2)}°, against ${shipped.toFixed(2)}° on the shipped key`,
+	parity(newKey),
+	`held ${newKey.toFixed(2)}°, against ${shipped.toFixed(2)}° on the shipped key (band 0.7-1.3x)`,
 );
 
 // ---------------------------------------------------------------------------
@@ -144,14 +165,14 @@ check(
 const otherHalf = await turnedWhileHolding("w");
 check(
 	"the other half of the same axis is untouched",
-	otherHalf > 5,
-	`held ${otherHalf.toFixed(2)}°`,
+	parity(otherHalf),
+	`held ${otherHalf.toFixed(2)}°, against ${shipped.toFixed(2)}°`,
 );
 const arrow = await turnedWhileHolding("ArrowDown");
 check(
 	"and so is the arrow that shared the command with the key that moved",
-	arrow > 5,
-	`held ${arrow.toFixed(2)}°`,
+	parity(arrow),
+	`held ${arrow.toFixed(2)}°, against ${shipped.toFixed(2)}°`,
 );
 
 // ---------------------------------------------------------------------------

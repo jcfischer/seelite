@@ -351,20 +351,39 @@ describe("the axis law names which key is which", () => {
 		);
 	});
 
-	test("and every id it names is a command that is held, not pressed", () => {
+	test("and every id asked as held is a command that is held, not pressed", () => {
 		// The half the ids alone cannot state: a call site that named a
 		// *pressed* command would compile, read correctly and never fly,
 		// because `isHeld` only ever looks at hold triggers.
-		for (const call of axisCalls())
-			for (const id of [...call.negative, ...call.positive]) {
-				const holds = DEFAULT_BINDINGS.some(
-					(b) =>
-						b.command === id &&
-						b.trigger.kind === "key" &&
-						b.trigger.hold === true,
-				);
-				expect(`${id} is held: ${holds}`).toBe(`${id} is held: true`);
-			}
+		//
+		// **Every held query, not only the axes** (sage round 1). The throttle
+		// asks by id, and `combat-rig.ts` is handed the predicate and asks it
+		// four times — the beam, the pulse and the two rolls — which had no
+		// row anywhere while the axes had one.
+		const main = codeOf("src/main.ts");
+		const rig = codeOf("src/combat-rig.ts");
+		const quoted = (source: string, re: RegExp) =>
+			[...source.matchAll(re)].map((m) => m[1] as string);
+		const asked = new Set([
+			...axisCalls().flatMap((c) => [...c.negative, ...c.positive]),
+			...quoted(main, /this\.held\("([^"]+)"\)/g),
+			...quoted(rig, /held\("([^"]+)"\)/g),
+		]);
+		// Guard the guard: all three scans found something.
+		expect([
+			asked.has("fly.pitchUp"),
+			asked.has("fly.throttleUp"),
+			asked.has("fight.fireBeam"),
+		]).toEqual([true, true, true]);
+		for (const id of asked) {
+			const holds = DEFAULT_BINDINGS.some(
+				(b) =>
+					b.command === id &&
+					b.trigger.kind === "key" &&
+					b.trigger.hold === true,
+			);
+			expect(`${id} is held: ${holds}`).toBe(`${id} is held: true`);
+		}
 	});
 });
 

@@ -15,7 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	type Binding,
-	type CommandId,
+	COMMANDS,
 	DEFAULT_BINDINGS,
 	defaultCollisions,
 	isHeld,
@@ -249,6 +249,43 @@ describe("a rebind reaches the simulation", () => {
 		).toBe(true);
 	});
 
+	test("a rebind may move a key, and not what kind of trigger it is", () => {
+		// The other half of the guard the doc names. A `to` that dropped `hold`
+		// would be stored, would satisfy no `isHeld`, and the command would be
+		// silently unflyable while the call returned successfully — which is
+		// the same "reports success and moves nothing" defect reached through
+		// the half `from` does not cover. Sage found it, round 1.
+		expect(() =>
+			rebind(
+				DEFAULT_BINDINGS,
+				"fly.pitchUp",
+				{ kind: "key", key: "s", hold: true },
+				{ kind: "key", key: "p" },
+			),
+		).toThrow();
+	});
+
+	test("and the key it moves onto gets its code, as a shipped row would", () => {
+		// Derived, never authored: a rebind that stored `to` verbatim would
+		// leave a letter codeless and lose D7's position dispatch for exactly
+		// the command the player just chose to move.
+		const layout = rebind(
+			DEFAULT_BINDINGS,
+			"fly.pitchUp",
+			{ kind: "key", key: "s", hold: true },
+			{ kind: "key", key: "p", hold: true },
+		);
+		const moved = layout.find(
+			(b) =>
+				b.command === "fly.pitchUp" &&
+				b.trigger.kind === "key" &&
+				b.trigger.key === "p",
+		);
+		expect(moved?.trigger.kind === "key" ? moved.trigger.code : "none").toBe(
+			"KeyP",
+		);
+	});
+
 	test("a rebind that names no such binding is refused rather than ignored", () => {
 		// A silent no-op here is a rebind modal that reports success and moves
 		// nothing, which is exactly the shape a capture slice would ship.
@@ -293,10 +330,19 @@ describe("a table that stands for a key stands for the default key", () => {
 });
 
 describe("every command the registry ships is reachable", () => {
-	test("each rebindable command has at least one trigger", () => {
-		const ids: CommandId[] = [];
-		for (const b of DEFAULT_BINDINGS) ids.push(b.command);
-		const reached = new Set(ids);
-		expect(reached.size).toBeGreaterThan(50);
+	/**
+	 * **Over `COMMANDS`, not over `DEFAULT_BINDINGS`.** The row this replaces
+	 * built a set of `b.command` and asserted its size, which is a set that can
+	 * only ever hold commands that have a binding — a shipped command with no
+	 * trigger at all was invisible to the very row named after finding it.
+	 * Sage caught it in the first round on this branch.
+	 */
+	test("every command has at least one trigger", () => {
+		const bound = new Set(DEFAULT_BINDINGS.map((b) => b.command));
+		for (const c of COMMANDS)
+			expect(`${c.id}: ${bound.has(c.id)}`).toBe(`${c.id}: true`);
+		// Guarding the guard: the catalogue is not empty, and the set is built
+		// from a different collection than the one being walked.
+		expect(COMMANDS.length).toBeGreaterThan(50);
 	});
 });
