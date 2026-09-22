@@ -1068,6 +1068,14 @@ try {
 			// #457: it read before the first hit and at the divert.
 			chargeSeen?.comms?.logLines?.some((line) =>
 				/sustained fire/.test(line),
+			) === true &&
+			// **And the log still holds it after the notice is gone**, which is
+			// the whole claim in "keeps it" and was asserted rather than
+			// measured for a round: `commsAfter` is read at the divert, 126
+			// frames and well past `CHARGE_NOTICE_S` after the charge, when
+			// nothing is on the glass.
+			struck.strike?.commsAfter?.logLines?.some((line) =>
+				/sustained fire/.test(line),
 			) === true,
 		chargeEvidence(),
 	);

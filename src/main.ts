@@ -665,11 +665,13 @@ import * as units from "./units";
  *  screens, and no more, however long the trigger is held. */
 const HAIL_LOG_KEEP = 12;
 
-/** How many charges the session keeps, on the same reasoning and deliberately
- *  its own name (sage round 2 on #457): the two stores are separate, and a
- *  bound written as the hails' constant would move this one whenever that one
- *  moved. Equal today, and that is a choice rather than a coupling. */
-const CHARGE_LOG_KEEP = HAIL_LOG_KEEP;
+/** How many charges the session keeps, on the same reasoning as the hails' —
+ *  the console shows six and the store holds two screens — and its own figure
+ *  rather than an alias of theirs (sage rounds 2 and 3 on #457). The two
+ *  stores are separate and the two bounds answer separate questions; writing
+ *  this as `HAIL_LOG_KEEP` moved it whenever that moved, which is the coupling
+ *  a second name was supposed to remove and did not. */
+const CHARGE_LOG_KEEP = 12;
 
 /**
  * Cube faces drawn per frame, across every bake in flight (#208).
