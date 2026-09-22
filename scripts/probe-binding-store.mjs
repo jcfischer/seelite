@@ -265,9 +265,16 @@ check(
 /** Write a blob by hand and boot on it. This is what an older build, another
  *  tab, or a person with a console open can put there. */
 const bootOn = async (moves) => {
+	// The key is the one the game itself wrote, so this probe still states no
+	// constant of its own — and a build that stopped writing one would
+	// otherwise have this helper quietly seed a key called `undefined` and
+	// fail the rows below for a reason that reads like a rendering bug.
+	const key = (await storedLayout())[0]?.key;
+	if (typeof key !== "string")
+		throw new Error("no stored layout to overwrite — nothing wrote one");
 	await page.evaluate(
-		([key, blob]) => localStorage.setItem(key, blob),
-		[(await storedLayout())[0]?.key, JSON.stringify({ version: 1, moves })],
+		([k, blob]) => localStorage.setItem(k, blob),
+		[key, JSON.stringify({ version: 1, moves })],
 	);
 	await reload();
 	await pressQuestion();
