@@ -390,7 +390,7 @@ const controlName = (id: string | null): string =>
  * `key:q::hold -> key:k::press` for a round, which is a string no player can
  * act on. The store keeps the detail for a console; this is what is drawn.
  */
-const REJECTED_WHY: Record<RejectReason, string> = {
+export const REJECTED_WHY: Record<RejectReason, string> = {
 	"unreadable-row": "one of your saved changes could not be read",
 	"unknown-control": "this version of the game has no such control",
 	"unreadable-trigger": "the key it was saved on could not be read",

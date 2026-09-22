@@ -195,6 +195,68 @@ describe("nothing stored, and nothing readable, fly the shipped layout", () => {
 	});
 });
 
+describe("a string store is not a promise about size", () => {
+	test("a blob naming more changes than the game has controls is refused", () => {
+		// Every row costs two full scans and a `rebind` that copies the table,
+		// and this runs from a field initialiser at boot — so an unbounded list
+		// out of `localStorage` stalls the game before the first frame. A
+		// legitimate diff cannot be longer than the table it is a diff of.
+		const many = Array.from({ length: DEFAULT_BINDINGS.length + 1 }, () => ({
+			command: PITCH_UP,
+			from: FROM,
+			to: TO,
+		}));
+		const read = parseLayout(blob(many));
+		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
+		expect(kinds(read.notices)).toEqual(["unreadable"]);
+	});
+
+	test("and a blob exactly as long as the table is still read", () => {
+		// The control: the cap is a cap and not an off-by-one that refuses a
+		// legal blob. Every row but the first is a duplicate, so they are
+		// rejected one by one rather than the list being refused whole.
+		const full = Array.from({ length: DEFAULT_BINDINGS.length }, () => ({
+			command: PITCH_UP,
+			from: FROM,
+			to: TO,
+		}));
+		const read = parseLayout(blob(full));
+		expect(keysOf(read.layout)).toEqual(keysOf(moved));
+		expect(kinds(read.notices)).not.toContain("unreadable");
+	});
+
+	test("a key longer than a key name is refused", () => {
+		// The value reaches the tab's markup. `rowMarkup` escapes it, so this
+		// is not the injection it resembles — but nothing else bounded it, and
+		// a stored key of ten thousand characters draws off the screen.
+		const read = parseLayout(
+			blob([
+				{ command: PITCH_UP, from: FROM, to: { ...TO, key: "k".repeat(64) } },
+			]),
+		);
+		expect(kinds(read.notices)).toEqual(["rejected"]);
+		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
+	});
+
+	test("and the longest key the game actually ships is not", () => {
+		// The control, taken off the shipped table rather than guessed: a bound
+		// that refused a key the game itself binds would be a silent unbinding.
+		const longest = DEFAULT_BINDINGS.map((b) =>
+			b.trigger.kind === "key" ? b.trigger.key.length : 0,
+		).reduce((a, b) => Math.max(a, b), 0);
+		const read = parseLayout(
+			blob([
+				{
+					command: PITCH_UP,
+					from: FROM,
+					to: { ...TO, key: "k".repeat(longest) },
+				},
+			]),
+		);
+		expect(read.notices).toEqual([]);
+	});
+});
+
 describe("the version is inside the blob, and an unknown one is not read", () => {
 	test("the version the store writes is the one it reads", () => {
 		expect(JSON.parse(serializeLayout(moved)).version).toBe(LAYOUT_VERSION);
@@ -531,7 +593,7 @@ describe("the browser is a string store that may refuse", () => {
 		);
 	});
 
-	test("a storage that refuses to be read does not stop the game", () => {
+	test("a storage that refuses to be read does not stop the game, and says so", () => {
 		(globalThis as unknown as { window: unknown }).window = {
 			get localStorage(): never {
 				throw new Error("access denied");
@@ -540,6 +602,11 @@ describe("the browser is a string store that may refuse", () => {
 		const read = loadLayout();
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
 		expect(inForce(read)).toBe("default");
+		// **And not in silence.** A private window refuses `localStorage`
+		// outright, so a player who had saved a layout flies the defaults —
+		// which is the silent fallback this whole slice argues against, and the
+		// first version did exactly that (sage round 3).
+		expect(kinds(read.notices)).toEqual(["unreadable"]);
 	});
 
 	test("the store owns which notices a save retires", () => {
@@ -556,10 +623,19 @@ describe("the browser is a string store that may refuse", () => {
 				detail: "x",
 			}),
 		).toBe(true);
-		// A collision is a property of the table as it stands, and an unsaved
-		// write is about the write. Neither is a fact about the blob that was
-		// read, so neither is retired by replacing it.
-		expect(retiredBySave({ kind: "unsaved" })).toBe(false);
+		// A collision is a property of the table as it stands, not a fact about
+		// the blob that was read, so replacing the blob does not retire it.
+		expect(
+			retiredBySave({
+				kind: "collision",
+				collision: {
+					trigger: triggerKey(FROM),
+					commands: [PITCH_UP, PITCH_DOWN],
+					scope: { pad: ["flight"], views: ["cockpit"] },
+				},
+				at: FROM,
+			}),
+		).toBe(false);
 	});
 
 	test("a layout that is not this game's is a loud throw, not a failed write", () => {

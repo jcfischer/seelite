@@ -179,15 +179,9 @@ It is the *player's* hold and nothing else's. **Manifest** above is what an
 ordinary carrier carries, **Traffic hold** is a place a carrier waits, `ScanHold`
 is a charge, and a **held launch** is Traffic refusing one — four senses the same
 English word reaches for, which is why each has its own name here.
-
-A fifth is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is
-flown by keeping a key down rather than by pressing it (#369 D3 splits `x`
-pressed from `x` held on exactly that), and #381's storage slice writes it into
-`seelite:bindings`. It is a property of an input and never of cargo, a carrier
-or a launch, so it takes no name of its own here — but it is durable now, and a
-reader meeting `{ kind: "key", hold: true }` in a stored blob should find it
-listed rather than wonder which of the four it is.
 _Avoid_: Inventory, cargo bay, hold contents (for the manifest)
+
+> **Scope of the `hold` alias** (added by [#486](https://github.com/jcfischer/seelite/pull/486), the same reading as the `Command` note below). A fifth English sense is a **held key**: `Trigger.hold` in `src/commands.ts` says a binding is flown by keeping a key down rather than by pressing it — #369 D3 splits `x` pressed from `x` held on exactly that — and #381's storage slice writes it into `seelite:bindings`. It is a property of an input and never of cargo, a carrier or a launch, so it takes no canonical name here; it is listed because it is durable now, and a reader meeting `{ kind: "key", hold: true }` in a stored blob should find it rather than wonder which of the four it is. The `_Avoid_` line above is **Hold**'s and not this note's.
 
 **Legal heat**:
 The player's per-galaxy offence score: an offence adds to it, it decays lazily

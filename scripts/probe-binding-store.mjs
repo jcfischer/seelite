@@ -133,11 +133,6 @@ const storedLayout = () =>
 		return found;
 	});
 
-/**
- * A stored row that is shape-legal and law-illegal: `fly.rollPort` is flown by
- * holding `q`, and a `to` that drops the hold asks for more than moving a key.
- * Written out three times before it was hoisted (sage round 2).
- */
 /** Let the frame the rebind landed on be drawn, then read the tab. Written
  *  out three times as `settle(); waitForTimeout(120); tab()` (sage round 2). */
 const settledTab = async () => {
@@ -146,6 +141,30 @@ const settledTab = async () => {
 	return tab();
 };
 
+/** What a private window does to a write. Patched on the prototype because the
+ *  game reads `window.localStorage.setItem` at call time, so the running build
+ *  takes it. */
+const refuseStorage = () =>
+	page.evaluate(() => {
+		Storage.prototype.setItem = () => {
+			throw new Error("quota");
+		};
+	});
+
+/** A move onto a key nothing else holds, used wherever an arm needs *a*
+ *  rebind rather than a particular one. */
+const moveYaw = () =>
+	tryRebind(
+		"fly.yawPort",
+		{ kind: "key", key: "a", hold: true },
+		{ kind: "key", key: "k", hold: true },
+	);
+
+/**
+ * A stored row that is shape-legal and law-illegal: `fly.rollPort` is flown by
+ * holding `q`, and a `to` that drops the hold asks for more than moving a key.
+ * Written out three times before it was hoisted (sage round 2).
+ */
 const REFUSED_ROW = {
 	command: "fly.rollPort",
 	from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
@@ -359,11 +378,7 @@ check(
 	JSON.stringify(rejectedStanding?.notices ?? null),
 );
 
-const liveMove = await tryRebind(
-	"fly.yawPort",
-	{ kind: "key", key: "a", hold: true },
-	{ kind: "key", key: "k", hold: true },
-);
+const liveMove = await moveYaw();
 check(
 	"a rebind with the tab open is accepted",
 	liveMove === "accepted",
@@ -420,18 +435,8 @@ check(
 	stillStanding !== null && stillStanding.notices.length === 1,
 	JSON.stringify(stillStanding?.notices ?? null),
 );
-// What a private window does. Patched on the prototype because the game reads
-// `window.localStorage.setItem` at call time, so the running build takes it.
-await page.evaluate(() => {
-	Storage.prototype.setItem = () => {
-		throw new Error("quota");
-	};
-});
-const refusedSave = await tryRebind(
-	"fly.yawPort",
-	{ kind: "key", key: "a", hold: true },
-	{ kind: "key", key: "k", hold: true },
-);
+await refuseStorage();
+const refusedSave = await moveYaw();
 check(
 	"the rebind itself still works when the store refuses it",
 	refusedSave === "accepted",
@@ -472,16 +477,8 @@ check(
 		cleanTab.notices.length === 0,
 	JSON.stringify(cleanTab),
 );
-await page.evaluate(() => {
-	Storage.prototype.setItem = () => {
-		throw new Error("quota");
-	};
-});
-const silentRisk = await tryRebind(
-	"fly.yawPort",
-	{ kind: "key", key: "a", hold: true },
-	{ kind: "key", key: "k", hold: true },
-);
+await refuseStorage();
+const silentRisk = await moveYaw();
 check(
 	"a rebind a private window cannot store is still accepted",
 	silentRisk === "accepted",

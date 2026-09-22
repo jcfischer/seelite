@@ -27,6 +27,7 @@ import {
 	focusAfterFold,
 	groupFocusId,
 	noticeText,
+	REJECTED_WHY,
 	rowFocusId,
 	restoreOnTabPick,
 	toggleGroup,
@@ -348,14 +349,10 @@ describe("the band above the tree (#381 S3)", () => {
 	const ROLL: CommandId = "fly.rollPort";
 	const PITCH_UP: CommandId = "fly.pitchUp";
 	const PITCH_DOWN: CommandId = "fly.pitchDown";
-	const REJECT_REASONS: readonly RejectReason[] = [
-		"unreadable-row",
-		"unknown-control",
-		"unreadable-trigger",
-		"moved-default",
-		"already-changed",
-		"not-just-a-key",
-	];
+	// Derived from the shipped table rather than written out: a hand-copied
+	// list is caught by `Record<RejectReason, string>` when a reason is *added*
+	// there and silently skipped by the uniqueness check here (sage round 3).
+	const REJECT_REASONS = Object.keys(REJECTED_WHY) as RejectReason[];
 	const rejected: LayoutNotice = {
 		kind: "rejected",
 		command: ROLL,

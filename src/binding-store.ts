@@ -84,9 +84,16 @@ export const LAYOUT_KEY = "seelite:bindings";
 /** The blob shape this build writes and is the only one it reads. */
 export const LAYOUT_VERSION = 1;
 
+/** The longest `KeyboardEvent.key` this store will hold. The shipped table's
+ *  longest is `arrowright`; the bound is generous and finite, which is the
+ *  property that matters. */
+const KEY_NAME_MAX = 32;
+
 /**
- * Why a stored row could not be applied — five answers, because they are five
- * different things for the player to do about it.
+ * Why a stored row could not be applied. One reason per thing the player can
+ * do about it — **the count is not stated here**, because it was written as
+ * five while the union held six inside one round (sage round 3), which is what
+ * a count of a list right below it is worth.
  *
  * A code rather than a sentence, for #369 D11's reason: the sentence belongs
  * with every other printed control name, in `controls-reference.ts`.
@@ -169,12 +176,18 @@ export interface LoadedLayout {
  * **The store's rule, not its reader's.** Every notice but a collision is a
  * fact about the blob that was *read*, so a write that lands replaces the
  * thing they describe; a collision is a property of the table as it stands and
- * survives. `main.ts` encoded that as `kind !== "collision"` for a round,
- * which would have silently classified a sixth kind without this module
+ * survives. `main.ts` encoded exactly this expression for a round, which would
+ * have silently classified a later kind without the module that owns the kinds
  * saying anything (sage round 2).
+ *
+ * **It does not except `unsaved`, and the first version did.** That clause was
+ * unreachable — the only caller filters `parseLayout`'s output, which never
+ * holds one — and it was also the wrong sign: a write that lands is precisely
+ * what makes an earlier refusal stop being true. `main.ts` clears that flag on
+ * the same branch, so there is one rule and not two (sage round 3).
  */
 export const retiredBySave = (notice: LayoutNotice): boolean =>
-	notice.kind !== "collision" && notice.kind !== "unsaved";
+	notice.kind !== "collision";
 
 const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 
@@ -232,6 +245,14 @@ function acceptTrigger(v: unknown): Trigger | string {
 			: "a trigger names its kind";
 	if (typeof v.key !== "string" || v.key.length === 0)
 		return "a key trigger carries the character it was recorded with";
+	// **Bounded**, because the value reaches the `Controls` tab's markup.
+	// `rowMarkup` runs every label through `escapeHtml`, so this is not the
+	// injection it looks like — but nothing else bounds it, and a stored key of
+	// ten thousand characters is a row that draws off the screen.
+	// `KeyboardEvent.key` is a character or a name like `arrowdown`; the
+	// longest the shipped table holds is well inside this.
+	if (v.key.length > KEY_NAME_MAX)
+		return "a key trigger carries one key, not a string of them";
 	if (v.code !== undefined && typeof v.code !== "string")
 		return "a physical key is a `KeyboardEvent.code`";
 	const alt = acceptFlag(v.alt);
@@ -370,6 +391,15 @@ export function parseLayout(raw: string | null): LoadedLayout {
 		};
 	if (!Array.isArray(parsed.moves))
 		return unreadable("the stored layout holds no list of changes");
+	// **Capped at the size of the table it is a diff of.** A legitimate diff
+	// cannot name more rows than the layout has, and every row costs two full
+	// scans plus a `rebind` that copies the whole array — so an unbounded list
+	// out of a player-writable string store stalls the boot before the first
+	// frame, from a field initialiser (sage round 3).
+	if (parsed.moves.length > DEFAULT_BINDINGS.length)
+		return unreadable(
+			`the stored layout names more changes than this game has controls`,
+		);
 
 	const notices: LayoutNotice[] = [];
 	let layout = DEFAULT_BINDINGS;
@@ -431,16 +461,33 @@ const triggerFor = (
 /**
  * Read the stored layout. Never throws, for `loadSettings`' reason: a private
  * window refuses `localStorage` outright, and a game that cannot start because
- * it cannot read a layout would be a poor trade for a layout.
+ * it cannot read a layout would be a poor trade for a layout. It does not fall
+ * back in *silence*, which is the difference between this and its neighbour.
  */
 export function loadLayout(): LoadedLayout {
-	let raw: string | null = null;
 	try {
-		raw = window.localStorage.getItem(LAYOUT_KEY);
-	} catch {
-		return { layout: DEFAULT_BINDINGS, notices: [] };
+		return parseLayout(window.localStorage.getItem(LAYOUT_KEY));
+	} catch (e) {
+		// **A refusal here is a notice and not a silence**, which is the whole
+		// argument of this module and the first version broke it: a private
+		// window refuses `localStorage` outright, so a player who had saved a
+		// layout flew the defaults with nothing on screen (sage round 3).
+		//
+		// `parseLayout` is inside the guard rather than after it, so "never
+		// throws" is a property of this function and not a claim about the one
+		// it calls — `triggerFor` ends in a `throw` that is unreachable by
+		// construction, and a contract that rests on a reader proving that is
+		// not a contract.
+		return {
+			layout: DEFAULT_BINDINGS,
+			notices: [
+				{
+					kind: "unreadable",
+					reason: e instanceof Error ? e.message : String(e),
+				},
+			],
+		};
 	}
-	return parseLayout(raw);
 }
 
 /**

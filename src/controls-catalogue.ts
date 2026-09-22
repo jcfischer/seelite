@@ -84,6 +84,14 @@ export function controlsCatalogue(
 	bindings: readonly Binding[] = DEFAULT_BINDINGS,
 	notices: readonly LayoutNotice[] = [],
 ): ControlsCatalogue {
+	// **The diff first, and it is the guard as well as the answer.**
+	// `layoutMoves` throws on a table that is not the shipped one with
+	// triggers moved, so a command missing from `bound` below is impossible
+	// rather than drawn blank — a row that shows no key at all would be a
+	// control the tab claims exists and gives no way to press (sage round 3).
+	// A command with *no shipped trigger* is a different thing and is drawn
+	// `unbound` by `rowMarkup`, which is what it is.
+	const moves = layoutMoves(bindings);
 	// One pass over the table rather than one scan per command: the filter this
 	// replaced was `COMMANDS.length` walks of the whole binding table. Cheap
 	// either way at these sizes, and it runs on every rebind (sage round 2).
@@ -94,7 +102,7 @@ export function controlsCatalogue(
 		else rows.push(b.trigger);
 	}
 	return {
-		layout: layoutMoves(bindings).length > 0 ? "player" : "default",
+		layout: moves.length > 0 ? "player" : "default",
 		commands: COMMANDS.map((c) => row(c, bound)),
 		notices,
 	};
