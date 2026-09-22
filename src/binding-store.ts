@@ -99,7 +99,8 @@ const KEY_NAME_MAX = 32;
  * with every other printed control name, in `controls-reference.ts`.
  */
 export type RejectReason =
-	/** The entry is not even a row: nothing about it names a control. */
+	/** The entry is not an object at all. A record whose `command` is not a
+	 *  string is `unknown-control` instead, because it does name something. */
 	| "unreadable-row"
 	/** The blob names a control this build does not have. */
 	| "unknown-control"
@@ -409,6 +410,15 @@ function applyMove(
  * fallback by name: a layout is the thing a player built, and deleting all of
  * it because one entry is malformed is the failure the per-field settings
  * loader already refuses for a preference.
+ *
+ * **Not every refusal is per-row, and the ones that are not are refusals of
+ * the blob rather than of a row in it.** Two of them have no rows to be
+ * per-row about — a blob that is not an object, and one whose version this
+ * build does not know, whose rows *mean* something this build cannot read. The
+ * third does: a list longer than the table it is a diff of is discarded whole,
+ * first row included, because the length is the tell that the list is not a
+ * diff of this table at all and walking it is the cost the cap exists to
+ * refuse. All three are notices; none is silent.
  */
 export function parseLayout(raw: string | null): LoadedLayout {
 	if (raw === null || raw === "")
@@ -502,19 +512,20 @@ const triggerFor = (
  * back in *silence*, which is the difference between this and its neighbour.
  */
 export function loadLayout(): LoadedLayout {
+	let raw: string | null;
 	try {
-		return parseLayout(window.localStorage.getItem(LAYOUT_KEY));
+		raw = window.localStorage.getItem(LAYOUT_KEY);
 	} catch (e) {
 		// **A refusal here is a notice and not a silence**, which is the whole
 		// argument of this module and the first version broke it: a private
 		// window refuses `localStorage` outright, so a player who had saved a
 		// layout flew the defaults with nothing on screen (sage round 3).
 		//
-		// `parseLayout` is inside the guard rather than after it, so "never
-		// throws" is a property of this function and not a claim about the one
-		// it calls — `triggerFor` ends in a `throw` that is unreachable by
-		// construction, and a contract that rests on a reader proving that is
-		// not a contract.
+		// **The read is guarded on its own**, because `cause: "refused"` prints
+		// "your browser is not letting this game read what it stored" — and a
+		// guard that also covered the parse would blame the browser for an
+		// internal invariant failure, with the only distinguishing evidence in
+		// a `detail` that is deliberately never drawn (sage round 5).
 		return {
 			layout: DEFAULT_BINDINGS,
 			notices: [
@@ -526,6 +537,11 @@ export function loadLayout(): LoadedLayout {
 			],
 		};
 	}
+	// Outside the guard, and `parseLayout` is the function that must not
+	// throw: `triggerFor`'s `throw` is unreachable by construction, and a
+	// contract resting on a reader proving that is not a contract. If it ever
+	// does, it is a crash here rather than a sentence blaming a private window.
+	return parseLayout(raw);
 }
 
 /**

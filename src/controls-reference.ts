@@ -369,15 +369,6 @@ const COMMAND_NAMES = new Map<string, string>(
 );
 
 /**
- * A control's name, or the blob's own string when this build has no such
- * control.
- *
- * Both halves are reachable: a rejected row may name a command that was
- * renamed or removed, and a notice that printed nothing in that case would be
- * a refusal the player cannot act on — which is the whole failure this slice
- * exists to prevent.
- */
-/**
  * A stored string on its way into a sentence, cut to a length a line can hold.
  *
  * Everything the band prints is escaped by `noticesMarkup`, so this is not an
@@ -388,6 +379,15 @@ const COMMAND_NAMES = new Map<string, string>(
  */
 const short = (v: string) => (v.length > 40 ? `${v.slice(0, 40)}…` : v);
 
+/**
+ * A control's name, or the blob's own string when this build has no such
+ * control.
+ *
+ * Both halves are reachable: a rejected row may name a command that was
+ * renamed or removed, and a notice that printed nothing in that case would be
+ * a refusal the player cannot act on — which is the whole failure this slice
+ * exists to prevent.
+ */
 const controlName = (id: string | null): string =>
 	id === null
 		? "A saved control"

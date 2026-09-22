@@ -327,6 +327,11 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 .lc-panel-body.lc-controls { display: flex; flex-direction: column; gap: 10px; }
 .lc-controls-head { display: flex; flex-wrap: wrap; gap: 4px 16px; color: #f5bd78; font-size: 11px; }
 .lc-controls-head b { color: #ffe1a9; letter-spacing: .08em; }
+/* #381 S3's band: what the stored layout could not do. Amber rather than
+   red - hud-and-scanner.md §4 owns red as *refusal*, and every one of these is
+   a thing the player can still act on. */
+.lc-controls-notices { display: grid; gap: 2px; margin: 6px 0; padding: 6px 10px; list-style: none; border-left: 2px solid #f5bd78; background: rgba(245,189,120,.08); }
+.lc-controls-notice { color: #ffd9a0; font-size: 11px; line-height: 1.45; }
 .lc-controls-tree { display: grid; gap: 1px; }
 .lc-controls-group { display: flex; justify-content: space-between; width: 100%; margin-top: 8px; padding: 5px 6px; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .55); background: rgba(223, 122, 20, .12); color: #ffe1a9; cursor: pointer; font: inherit; letter-spacing: .1em; text-align: left; }
 .lc-controls-group:hover { color: #fff0c9; }

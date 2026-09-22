@@ -687,12 +687,42 @@ describe("the browser is a string store that may refuse", () => {
 });
 
 describe("the store speaks the registry's language", () => {
-	test("every command a move may name is one the registry holds", () => {
+	test("every command the registry holds is one a blob may name", () => {
+		// **The claim this row makes is about `parseLayout`, so it calls it.**
+		// The version it replaced iterated `layoutMoves(moved)` and asserted
+		// the ids were in `COMMANDS` — but `layoutMoves` reads each command
+		// straight off `DEFAULT_BINDINGS`, so the assertion could not fail and
+		// neither `parseLayout` nor `COMMAND_IDS` was reached (sage round 5).
+		//
 		// The validator reads the shipped catalogue rather than a list of its
 		// own, so a command added to `commands.ts` is storable the day it lands
-		// and a command removed stops being accepted the same day.
-		const ids = new Set(COMMANDS.map((c) => c.id));
-		for (const move of layoutMoves(moved))
-			expect(ids.has(move.command)).toBe(true);
+		// and one removed stops being accepted the same day. Every command with
+		// a key binding is driven; the rest have no `from` a key move could
+		// name.
+		const named = new Set<string>();
+		for (const b of DEFAULT_BINDINGS) {
+			if (b.trigger.kind !== "key" || named.has(b.command)) continue;
+			named.add(b.command);
+			const read = parseLayout(
+				blob([
+					{
+						command: b.command,
+						from: b.trigger,
+						// A key nothing in the shipped table holds, with the
+						// command's own qualifiers kept — the player moves which
+						// key and never the rest.
+						to: { ...b.trigger, key: "8", code: undefined },
+					},
+				]),
+			);
+			expect(`${b.command}: ${kinds(read.notices).join(",")}`).toBe(
+				`${b.command}: `,
+			);
+		}
+		// The control for the loop: it drove something, and the set it drove is
+		// the shipped catalogue's.
+		expect(named.size).toBeGreaterThan(20);
+		for (const id of named)
+			expect(COMMANDS.some((c) => c.id === id)).toBe(true);
 	});
 });

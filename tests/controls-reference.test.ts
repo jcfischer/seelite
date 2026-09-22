@@ -7,7 +7,12 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import type { LayoutNotice, RejectReason } from "../src/binding-store";
+import {
+	LAYOUT_VERSION,
+	type LayoutNotice,
+	parseLayout,
+	type RejectReason,
+} from "../src/binding-store";
 import {
 	type CommandId,
 	commandById,
@@ -477,6 +482,34 @@ describe("the band above the tree (#381 S3)", () => {
 		);
 		expect(new Set(said).size).toBe(REJECT_REASONS.length);
 		for (const t of said) expect(t.trim().length).toBeGreaterThan(0);
+	});
+
+	test("a key out of the string store cannot reach the markup as markup", () => {
+		// **The only thing between a player-writable store and `innerHTML` is
+		// `rowMarkup`'s `escapeHtml`, and nothing asserted it** — the store's
+		// own comment named it and a length cap was standing in for a proof
+		// (sage round 5). A future change to `rowMarkup` fails here.
+		const from = DEFAULT_BINDINGS.find(
+			(b) => b.command === "fly.pitchUp" && b.trigger.kind === "key",
+		)?.trigger;
+		if (from === undefined || from.kind !== "key")
+			throw new Error("no shipped pitch-up key");
+		const read = parseLayout(
+			JSON.stringify({
+				version: LAYOUT_VERSION,
+				moves: [
+					{
+						command: "fly.pitchUp",
+						from,
+						to: { ...from, key: "<img src=x onerror=1>", code: undefined },
+					},
+				],
+			}),
+		);
+		expect(read.notices).toEqual([]);
+		const html = controlsBody(controlsCatalogue(read.layout), new Set());
+		expect(html).toContain("&lt;img");
+		expect(html).not.toContain("<img");
 	});
 
 	test("a collision names both commands and the key, in words", () => {

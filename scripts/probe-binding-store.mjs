@@ -94,6 +94,39 @@ async function turnedWhileHolding(key) {
 	return degreesBetween(before, await nose());
 }
 
+/**
+ * Two keys held alternately, `n` times each, reported as medians.
+ *
+ * **One hold is not a measurement of a rate, and this probe shipped two
+ * comparisons that rested on one each.** Caught by running it: a `w`/`8` pair
+ * read 14.00° and 18.68° on one run out of four and 13.99°/13.88° on the
+ * others, so a 1.33x hitch on a single hold failed a 0.8-1.2x band on a build
+ * that was working. A 400 ms hold is a coarse instrument — `probe-rebind.mjs`
+ * says so and bands rather than floors for that reason — and a coarse
+ * instrument sampled once is a coin toss at the edges.
+ *
+ * **Interleaved, not blocked**, which is this repo's own lesson from
+ * `measure-light-cost.mjs`: running all of one arm and then all of the other
+ * measures the order as much as the arm.
+ */
+async function medianPair(a, b, n = 3) {
+	const runs = { [a]: [], [b]: [] };
+	for (let i = 0; i < n; i++)
+		for (const key of [a, b]) runs[key].push(await turnedWhileHolding(key));
+	const median = (xs) =>
+		[...xs].sort((x, y) => x - y)[Math.floor(xs.length / 2)];
+	return {
+		[a]: median(runs[a]),
+		[b]: median(runs[b]),
+		spread: Object.fromEntries(
+			Object.entries(runs).map(([k, xs]) => [
+				k,
+				`${Math.min(...xs).toFixed(2)}-${Math.max(...xs).toFixed(2)}°`,
+			]),
+		),
+	};
+}
+
 const tryRebind = (command, from, to) =>
 	page.evaluate(
 		([id, a, b]) => {
@@ -221,24 +254,26 @@ check(
 // ---------------------------------------------------------------------------
 await reload();
 
-// The discarded first hold, and then the in-boot reference.
+// The discarded first hold, then the reference and the moved key measured
+// against each other, interleaved.
 await turnedWhileHolding("w");
-const reference = await turnedWhileHolding("w");
+const reloaded = await medianPair("w", NEW_KEY);
+const reference = reloaded.w;
 check(
 	"after the reload the untouched half of the axis still flies",
 	reference > 5,
-	`held ${reference.toFixed(2)}°, floor 5.00°`,
+	`median ${reference.toFixed(2)}° over ${reloaded.spread.w}, floor 5.00°`,
 );
 
 const parity = (turned) =>
 	turned > reference * BAND[0] && turned < reference * BAND[1];
 const bandText = `band ${BAND[0]}-${BAND[1]}x of ${reference.toFixed(2)}°`;
 
-const newAfterReload = await turnedWhileHolding(NEW_KEY);
+const newAfterReload = reloaded[NEW_KEY];
 check(
 	`\`${NEW_KEY}\` pitches the ship after a reload — the stored layout reached the simulation`,
 	parity(newAfterReload),
-	`held ${newAfterReload.toFixed(2)}°, ${bandText}`,
+	`median ${newAfterReload.toFixed(2)}° over ${reloaded.spread[NEW_KEY]}, ${bandText}`,
 );
 const oldAfterReload = await turnedWhileHolding("s");
 check(
@@ -307,7 +342,8 @@ const bootOn = async (moves) => {
 	// constant of its own — and a build that stopped writing one would
 	// otherwise have this helper quietly seed a key called `undefined` and
 	// fail the rows below for a reason that reads like a rendering bug.
-	const key = (await storedLayout())[0]?.key;
+	const stored = (await storedLayout())[0];
+	const key = stored?.key;
 	if (typeof key !== "string")
 		throw new Error("no stored layout to overwrite — nothing wrote one");
 	// **The version comes off the blob the game itself wrote**, not from a
@@ -315,7 +351,7 @@ const bootOn = async (moves) => {
 	// the day the module changes it — and this one would have gone falsely
 	// *green*, refusing every seeded blob as a version this build does not
 	// know while the rows read that as the layout not applying (sage round 4).
-	const version = (await storedLayout())[0]?.value?.version;
+	const version = stored?.value?.version;
 	await page.evaluate(
 		([k, blob]) => localStorage.setItem(k, blob),
 		[key, JSON.stringify({ version, moves })],
@@ -505,37 +541,56 @@ check(
 //
 // The band tells the player that a doubled-up key runs both commands (#369
 // D5's warn-and-allow, with D5's *resolution* unimplemented — #484 owns it).
-// Every check on that sentence up to here read the sentence. This one holds
-// the key and reads the nose: pitch-up and pitch-down are opposite terms, so
-// two commands firing cancel and one does not, which makes the claim
-// falsifiable rather than quoted (sage round 4).
+// Every check on that sentence up to round 4 read the sentence.
+//
+// **And the first attempt to read the ship instead could not fail in the
+// direction it claimed.** It collided pitch-up onto pitch-down's key and
+// asserted the turn collapsed, because opposite terms cancel — but a build
+// where a collided key dispatches *nothing* reads zero and passes, while the
+// printed sentence is false (sage round 5). Nothing-at-all is the *plausible*
+// failure here, not an exotic one: it is what an attempt at #484's resolution
+// looks like if it resolves to neither.
+//
+// So the two commands are chosen not to cancel. Pitch and yaw are orthogonal,
+// so one alone turns the nose by θ and both together by more; nothing at all
+// turns it by nothing. One scalar separates all three.
 // ---------------------------------------------------------------------------
 await page.evaluate(() => localStorage.clear());
 await reload();
-// The discarded first hold, then `w` on the shipped layout, where it is
-// pitch-down alone.
-await turnedWhileHolding("w");
-const wAlone = await turnedWhileHolding("w");
+// The discarded first hold, then `d` on the shipped layout, where it is yaw
+// to starboard alone.
+// `d` is yaw to starboard, and `s` is pitch up. The pair is measured
+// interleaved *before* the rebind, so the "one command" figure is a median
+// like the one it is compared with.
+await turnedWhileHolding("d");
+const single = await medianPair("d", "s");
 check(
-	"on the shipped layout `w` is one command and turns the ship",
-	wAlone > 5,
-	`held ${wAlone.toFixed(2)}°, floor 5.00°`,
+	"on the shipped layout `d` and `s` are one command each and both turn the ship",
+	single.d > 5 && single.s > 5,
+	`d ${single.d.toFixed(2)}° over ${single.spread.d}, s ${single.s.toFixed(2)}° over ${single.spread.s}`,
 );
 const doubled = await tryRebind(
 	"fly.pitchUp",
 	{ kind: "key", key: "s", hold: true },
-	{ kind: "key", key: "w", hold: true },
+	{ kind: "key", key: "d", hold: true },
 );
 check(
-	"pitch-up moves onto `w`, which pitch-down holds",
+	"pitch-up moves onto `d`, which yaw-to-starboard holds",
 	doubled === "accepted",
 	doubled,
 );
-const wDoubled = await turnedWhileHolding("w");
+const after = await medianPair("d", "s");
 check(
-	"and now `w` runs both, which is what the band says — the two cancel",
-	wDoubled < wAlone * 0.2,
-	`held ${wDoubled.toFixed(2)}° against ${wAlone.toFixed(2)}° for the single command`,
+	"and `d` now turns the ship *further* than either command alone — both run",
+	// Three terms and each refuses a different build. The floor refuses one
+	// where a collided key reaches nothing. The ratio against `d` alone
+	// refuses one where it reaches only the command that was already there.
+	// And `s` reading nothing now is what says pitch-up *moved* rather than
+	// being copied — without it, a build that bound pitch-up to both keys
+	// passes the first two. A right angle between two equal rates gives
+	// 1.41x, so 1.15 leaves room for the rates not being equal.
+	after.d > 5 && after.d > single.d * 1.15 && after.s < 1,
+	`d ${after.d.toFixed(2)}° over ${after.spread.d} against ${single.d.toFixed(2)}° for one command (${(after.d / single.d).toFixed(2)}x); s ${after.s.toFixed(2)}° over ${after.spread.s}`,
 );
 
 check(
