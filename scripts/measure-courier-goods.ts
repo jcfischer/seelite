@@ -267,7 +267,7 @@ for (const { system, station } of places) {
 	const top = rankBy("spread", candidateGoods, system, station, destination)
 		.slice(0, COURIER_SPREAD_POOL)
 		.map((c) => c.name);
-	if (top.includes(shipped.goodName)) shippedAgrees += 1;
+	if (top.includes(shipped.operand.goodName)) shippedAgrees += 1;
 }
 
 const pct = (n: number, of: number) => `${((100 * n) / of).toFixed(1)}%`;
@@ -380,8 +380,11 @@ const sweepEpisodes = (
 				throw new Error(
 					`episode ${episode} bound as ${offer.episode} at ${station.id}`,
 				);
-			counts.set(offer.goodName, (counts.get(offer.goodName) ?? 0) + 1);
-			here.add(offer.goodName);
+			counts.set(
+				offer.operand.goodName,
+				(counts.get(offer.operand.goodName) ?? 0) + 1,
+			);
+			here.add(offer.operand.goodName);
 		}
 		if (here.size > 0) perStation.push(here.size);
 	}

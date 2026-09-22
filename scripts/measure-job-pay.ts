@@ -250,7 +250,7 @@ for (let world = 0; world < worlds; world++) {
 			const feeCr = finite("procurement fee", offer.rewardCr);
 			// The whole purchase is a cost in both arms: it is what created the
 			// shortfall, and it is the farm's opening move.
-			const spare = Math.max(0, tonnes - offer.tonnes);
+			const spare = Math.max(0, tonnes - offer.operand.tonnes);
 			// Arm A: deliver the job's tonnes for the fee, and sell whatever
 			// the purchase left over into the price it raised.
 			const deliverCr = finite("deliver arm", feeCr + raised * spare - costCr);
@@ -261,7 +261,7 @@ for (let world = 0; world < worlds; world++) {
 				good: good.name,
 				costCr,
 				feeCr,
-				tonnes: offer.tonnes,
+				tonnes: offer.operand.tonnes,
 				netCr,
 				deliverCr,
 				sellCr,

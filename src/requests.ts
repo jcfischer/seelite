@@ -20,7 +20,7 @@
  * No Three.js: a journal is arithmetic and text.
  */
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
-import type { JobFamily, JobMark, JobOffer } from "./jobs";
+import type { JobFamily, JobMark, JobOffer, JobOperand } from "./jobs";
 import { jobMark } from "./jobs";
 
 export interface RequestStation {
@@ -202,9 +202,9 @@ export function nextAction(r: AcceptedRequest): string {
 	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
 	// as the same errand at a glance, and a pilot who read the first as the
 	// second bought eight tonnes they were already carrying.
-	return r.terms.entrusted
-		? `Carry the ${r.terms.tonnes} t ${r.terms.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
-		: `Source ${r.terms.tonnes} t ${r.terms.goodName} yourself and return to ${r.terms.reportName}`;
+	return r.terms.operand.entrusted
+		? `Carry the ${r.terms.operand.tonnes} t ${r.terms.operand.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
+		: `Source ${r.terms.operand.tonnes} t ${r.terms.operand.goodName} yourself and return to ${r.terms.reportName}`;
 }
 
 export interface RequestContext {
@@ -308,9 +308,9 @@ export function requestAction(
 			);
 		// §4: a hull/equipment state that would leave insufficient capacity is
 		// refused atomically rather than silently discarding goods.
-		if (offer.entrusted && ctx.holdRoomT < offer.tonnes)
+		if (offer.operand.entrusted && ctx.holdRoomT < offer.operand.tonnes)
 			return refuse(
-				`Needs ${offer.tonnes} t of free hold; ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
+				`Needs ${offer.operand.tonnes} t of free hold; ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
 			);
 		const ordinal = (existing?.acceptanceOrdinal ?? 0) + 1;
 		const evidence: RequestEvidence[] = [];
@@ -329,21 +329,21 @@ export function requestAction(
 			outcomeReason: null,
 		};
 		const entrustedByLotId = { ...state.entrustedByLotId };
-		if (offer.entrusted) {
+		if (offer.operand.entrusted) {
 			const lotId = lotIdFor(id, ordinal);
 			entrustedByLotId[lotId] = {
 				lotId,
 				offerId: id,
 				returnTo: offer.requester,
-				goodName: offer.goodName,
-				aboardT: offer.tonnes,
+				goodName: offer.operand.goodName,
+				aboardT: offer.operand.tonnes,
 				issuedOrdinal: ordinal,
 			};
 		}
 		return done(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
-			offer.entrusted
-				? `Accepted. ${offer.tonnes} t ${offer.goodName} loaded, and they stay the requester's.`
+			offer.operand.entrusted
+				? `Accepted. ${offer.operand.tonnes} t ${offer.operand.goodName} loaded, and they stay the requester's.`
 				: "Accepted. Source the goods and return with them aboard.",
 		);
 	}
@@ -393,7 +393,7 @@ export function requestAction(
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			terms.entrusted
+			terms.operand.entrusted
 				? "Cancelled. The consignment is still the requester's — return it to them."
 				: "Cancelled without fee. Unfinished work may be reaccepted at the requester.",
 		);
@@ -406,20 +406,20 @@ export function requestAction(
 			return refuse(`Dock at ${terms.reportName} to deliver.`);
 		const entrustedByLotId = { ...state.entrustedByLotId };
 		let cargoDelta: Record<string, number> = {};
-		if (terms.entrusted) {
+		if (terms.operand.entrusted) {
 			const lot = Object.values(state.entrustedByLotId).find(
 				(l) =>
 					l.offerId === id && l.issuedOrdinal === request.acceptanceOrdinal,
 			);
-			if (!lot || lot.aboardT < terms.tonnes)
+			if (!lot || lot.aboardT < terms.operand.tonnes)
 				return refuse("The consignment is not aboard.");
 			delete entrustedByLotId[lot.lotId];
 		} else {
-			if ((ctx.cargo[terms.goodName] ?? 0) < terms.tonnes)
+			if ((ctx.cargo[terms.operand.goodName] ?? 0) < terms.operand.tonnes)
 				return refuse(
-					`Needs ${terms.tonnes} t ${terms.goodName} aboard to deliver.`,
+					`Needs ${terms.operand.tonnes} t ${terms.operand.goodName} aboard to deliver.`,
 				);
-			cargoDelta = { [terms.goodName]: -terms.tonnes };
+			cargoDelta = { [terms.operand.goodName]: -terms.operand.tonnes };
 		}
 		request.evidence = [
 			...request.evidence,
@@ -434,9 +434,9 @@ export function requestAction(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
 			// The two families move different cargo and the message said the
 			// same thing for both (#446).
-			terms.entrusted
-				? `${terms.tonnes} t ${terms.goodName} handed over — the requester's, and out of your hold. Report to settle.`
-				: `${terms.tonnes} t ${terms.goodName} delivered from your hold. Report to settle.`,
+			terms.operand.entrusted
+				? `${terms.operand.tonnes} t ${terms.operand.goodName} handed over — the requester's, and out of your hold. Report to settle.`
+				: `${terms.operand.tonnes} t ${terms.operand.goodName} delivered from your hold. Report to settle.`,
 			{ cargoDelta },
 		);
 	}
@@ -461,11 +461,11 @@ export function requestAction(
 			// which is the pilot's own hold at the moment of the report — the
 			// delivery's delta has already been applied by then.
 			settlementMessage({
-				tonnes: terms.tonnes,
-				goodName: terms.goodName,
-				entrusted: terms.entrusted,
+				tonnes: terms.operand.tonnes,
+				goodName: terms.operand.goodName,
+				entrusted: terms.operand.entrusted,
 				rewardCr: terms.rewardCr,
-				remainingT: ctx.cargo[terms.goodName] ?? 0,
+				remainingT: ctx.cargo[terms.operand.goodName] ?? 0,
 			}),
 			{
 				rewardCr: terms.rewardCr,
@@ -497,6 +497,38 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 	const time = (x: unknown): boolean =>
 		typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= now;
 	const text = (x: unknown): boolean => typeof x === "string" && x.length > 0;
+	/**
+	 * §4's operand, checked by its own tag and against the family that owns it.
+	 *
+	 * **A `switch` with a `never` default, not a conjunction** (#440). The day
+	 * Bounty's target carrier or Salvage's wreck is written, this stops
+	 * compiling rather than admitting a record it cannot read — which a flat
+	 * list of field checks would do silently.
+	 *
+	 * The family is checked **against** the kind rather than beside it: the
+	 * two shipped families both move cargo, and a v5 record pairing a cargo
+	 * operand with a family that will not own one is a record no binder wrote.
+	 */
+	const operandOk = (family: unknown, raw: unknown): boolean => {
+		const operand = raw as Partial<JobOperand> | null;
+		if (!operand || typeof operand !== "object") return false;
+		const kind = operand.kind as JobOperand["kind"];
+		switch (kind) {
+			case "cargo":
+				return (
+					(family === "courier" || family === "procurement") &&
+					text(operand.goodName) &&
+					Number.isInteger(operand.tonnes) &&
+					(operand.tonnes as number) > 0 &&
+					typeof operand.entrusted === "boolean"
+				);
+			default: {
+				const unreachable: never = kind;
+				void unreachable;
+				return false;
+			}
+		}
+	};
 	const ref = (x: unknown): RequestStation => {
 		const r = obj(x);
 		if (
@@ -539,12 +571,9 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			!text(o.reportSystemName) ||
 			!Number.isFinite(o.distanceLy) ||
 			o.distanceLy < 0 ||
-			!text(o.goodName) ||
-			!Number.isInteger(o.tonnes) ||
-			o.tonnes <= 0 ||
+			!operandOk(o.family, o.operand) ||
 			!Number.isFinite(o.rewardCr) ||
 			o.rewardCr < 0 ||
-			typeof o.entrusted !== "boolean" ||
 			!text(o.title) ||
 			!text(o.purpose) ||
 			!text(o.danger) ||
@@ -665,12 +694,12 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		if (
 			l.lotId !== lotId ||
 			!request ||
-			!request.terms.entrusted ||
+			!request.terms.operand.entrusted ||
 			!text(l.goodName) ||
-			l.goodName !== request.terms.goodName ||
+			l.goodName !== request.terms.operand.goodName ||
 			!Number.isInteger(l.aboardT) ||
 			l.aboardT <= 0 ||
-			l.aboardT > request.terms.tonnes ||
+			l.aboardT > request.terms.operand.tonnes ||
 			!Number.isInteger(l.issuedOrdinal) ||
 			l.issuedOrdinal < 1 ||
 			l.issuedOrdinal > request.acceptanceOrdinal ||

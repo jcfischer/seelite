@@ -83,8 +83,18 @@ import {
  * with an **empty** journal, which is what every shipped one has, because its
  * content never left the DEV flag — and one carrying accepted work is refused
  * by name rather than reinterpreted.
+ *
+ * **5 is #440's discriminated operand (#453).** A v4 offer carried `goodName`,
+ * `tonnes` and `entrusted` flat, because both shipped families move cargo;
+ * Bounty's operand is a target carrier and Salvage's is a wreck, so the field
+ * a job is *about* became a tagged union before either was written. The bump
+ * is taken **alone and early** on purpose: a migration is the expensive part
+ * of a persisted change, and paying it in a change with no content in it means
+ * the family that needs it later adds a union member rather than a save
+ * version. Every v4 offer lifts — there is no v4 record this reader declines
+ * for its operand — because every v4 family was a cargo family.
  */
-export const SAVE_SCHEMA_VERSION = 4;
+export const SAVE_SCHEMA_VERSION = 5;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -93,8 +103,12 @@ export const SAVE_SCHEMA_VERSION = 4;
  * record; that stopped being true for 2 the moment the site offered *Play now*
  * (`public-site.ts`), so a player's record predates the journal and must still
  * load. `parseCommander` gives it an empty one.
+ *
+ * **4 is shipped too, and with content**: it is the version every save written
+ * between #411 and #453 carries, journal and all. It is the first entry in
+ * this list whose migration moves data rather than emptying it.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4] as const;
 
 /**
  * What a legacy version may not contain.
@@ -126,6 +140,61 @@ const migrateV3Requests = (raw: unknown): RequestsState => {
 			"saveSchemaVersion 3 carries requests from the retired fixture trial; that content was replaced by live jobs in #411 and cannot be migrated",
 		);
 	return emptyRequests();
+};
+
+/**
+ * A version 4 journal's offers, lifted onto #440's operand.
+ *
+ * **The refusal is here rather than in `LEGACY_SCHEMA_FORBIDS`, and that is a
+ * correction to #453's own text.** That table is read against the *commander*
+ * object (`parseCommander` below), and `operand` lives three levels down on an
+ * offer — an entry of `{ 4: ["operand"] }` would never fire, and a green row
+ * beside it would be a check that cannot fail. The rule the table states for
+ * `2` is the right rule; this is the only place that can apply it to a field
+ * inside the journal.
+ *
+ * **The three flat keys are deleted, not merely superseded.** `offerOf` copies
+ * a validated offer by spread, so a `goodName` left beside the operand rides
+ * through the load and out into the next write — a version 5 record carrying
+ * version 4's fields, which no version identifies.
+ *
+ * Total by construction: every v4 family is `courier` or `procurement` and
+ * both move cargo, so there is no v4 offer this declines. The shape itself is
+ * still `parseRequests`'s to check — this reshapes, it does not validate.
+ */
+const migrateV4Requests = (raw: unknown): unknown => {
+	if (raw === null || typeof raw !== "object") return raw;
+	const journal = raw as Record<string, unknown>;
+	const lift = (offer: unknown): unknown => {
+		if (offer === null || typeof offer !== "object") return offer;
+		const { goodName, tonnes, entrusted, ...rest } = offer as Record<
+			string,
+			unknown
+		>;
+		if (rest.operand !== undefined)
+			fail('saveSchemaVersion 4 cannot contain "operand"');
+		return { ...rest, operand: { kind: "cargo", goodName, tonnes, entrusted } };
+	};
+	const map = (
+		container: unknown,
+		each: (row: Record<string, unknown>) => unknown,
+	): unknown => {
+		if (container === null || typeof container !== "object") return container;
+		const out: Record<string, unknown> = {};
+		for (const [id, row] of Object.entries(
+			container as Record<string, unknown>,
+		))
+			out[id] =
+				row !== null && typeof row === "object"
+					? each(row as Record<string, unknown>)
+					: row;
+		return out;
+	};
+	return {
+		...journal,
+		byId: map(journal.byId, (row) => ({ ...row, terms: lift(row.terms) })),
+		leadsById: map(journal.leadsById, (row) => lift(row)),
+	};
 };
 
 /** The two flight regimes a save can be taken in (#10). Declared here rather
@@ -428,7 +497,14 @@ const parseCommander = (
 				? emptyRequests()
 				: version === 3
 					? migrateV3Requests(o.requests)
-					: parseRequests(o.requests, now),
+					: // The lift runs **before** the validator rather than inside
+						// it: `parseRequests` knows one shape, the current one, and a
+						// validator that also read retired shapes would have to be
+						// re-read every time a version is added.
+						parseRequests(
+							version === 4 ? migrateV4Requests(o.requests) : o.requests,
+							now,
+						),
 		state: {
 			credits: num(state, "credits", "commander.state"),
 			cargo,

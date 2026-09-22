@@ -102,7 +102,7 @@ export function firstProcurementOffer(
 			// asking for Textiles could otherwise be handed a Food job and
 			// test a fixture it did not ask for.
 			const offer = offers.find(
-				(o) => o.family === "procurement" && o.goodName === good,
+				(o) => o.family === "procurement" && o.operand.goodName === good,
 			);
 			if (offer) return { record, station, offers, offer };
 		}

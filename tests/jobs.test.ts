@@ -159,8 +159,8 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 		const terms = (offers: JobOffer[]) =>
 			offers.map((o) => ({
 				id: o.id,
-				goodName: o.goodName,
-				tonnes: o.tonnes,
+				goodName: o.operand.goodName,
+				tonnes: o.operand.tonnes,
 				rewardCr: o.rewardCr,
 				reportAt: o.reportAt,
 			}));
@@ -245,7 +245,7 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 			contextAt(HERE.index, HERE.stationId, { deficits, gameTimeMin: 120 }),
 		);
 		const offer = board.find((o) => o.family === "procurement");
-		expect(offer?.goodName).toBe("Food");
+		expect(offer?.operand.goodName).toBe("Food");
 		expect(offer?.reportAt.carrierKey).toBe(key);
 	});
 
@@ -284,10 +284,11 @@ describe("D8 — need is the throttle, so a procurement offer follows it", () =>
 			).find((o) => o.family === "procurement");
 		const fresh = at(0);
 		const later = at(40);
-		expect(fresh?.tonnes).toBeGreaterThan(0);
-		expect(later === undefined || later.tonnes < (fresh?.tonnes ?? 0)).toBe(
-			true,
-		);
+		expect(fresh?.operand.tonnes).toBeGreaterThan(0);
+		expect(
+			later === undefined ||
+				later.operand.tonnes < (fresh?.operand.tonnes ?? 0),
+		).toBe(true);
 		// **This is the world changing, not the offer rerolling.** §1 forbids a
 		// fixed offer being regenerated on docking or a clock epoch; D8 makes
 		// the shortfall itself what posts the job, and an accepted one pins its
@@ -321,10 +322,10 @@ describe("D4 — every job leaves one mark, and only one", () => {
 		if (!courier) throw new Error("no courier offer");
 		const mark = jobMark(courier);
 		expect(mark.key).toBe(courier.reportAt.carrierKey);
-		expect(mark.trade.goodName).toBe(courier.goodName);
+		expect(mark.trade.goodName).toBe(courier.operand.goodName);
 		// Delivering supplies the destination, which is the sale sign (§5.2).
 		expect(mark.trade.units).toBeLessThan(0);
-		expect(Math.abs(mark.trade.units)).toBe(courier.tonnes);
+		expect(Math.abs(mark.trade.units)).toBe(courier.operand.tonnes);
 	});
 
 	test("the mark names no hull and no clock, so neither can be defaulted", () => {
@@ -442,7 +443,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		for (const { offer, system, station, destination } of boards) {
 			const ranked = rankedPool(system, station, destination);
 			const top = ranked.slice(0, COURIER_SPREAD_POOL).map((c) => c.name);
-			expect([offer.id, top.includes(offer.goodName)]).toEqual([
+			expect([offer.id, top.includes(offer.operand.goodName)]).toEqual([
 				offer.id,
 				true,
 			]);
@@ -458,9 +459,11 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		// that row cannot see: the draw reads no clock, so an offer sitting on
 		// a board across a market epoch keeps its cargo — the same guarantee
 		// the epoch row makes for the terms, over the whole galaxy sweep.
-		const early = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
+		const early = couriers().map(
+			(b) => `${b.offer.id}:${b.offer.operand.goodName}`,
+		);
 		const late = couriers({}, 120 + MARKET_PERIOD_MIN * 3).map(
-			(b) => `${b.offer.id}:${b.offer.goodName}`,
+			(b) => `${b.offer.id}:${b.offer.operand.goodName}`,
 		);
 		expect(late).toEqual(early);
 	});
@@ -497,7 +500,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 				expect(board.offer.episode).toBe(episode);
 				const leg = `${board.offer.requester.carrierKey}->${board.offer.reportAt.carrierKey}`;
 				const seen = goodsPerLeg.get(leg) ?? [];
-				seen.push(board.offer.goodName);
+				seen.push(board.offer.operand.goodName);
 				goodsPerLeg.set(leg, seen);
 			}
 		expect(goodsPerLeg.size).toBeGreaterThan(100);
@@ -526,7 +529,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 			})) {
 				const rank = rankedPool(system, station, destination)
 					.slice(0, COURIER_SPREAD_POOL)
-					.findIndex((c) => c.name === offer.goodName);
+					.findIndex((c) => c.name === offer.operand.goodName);
 				expect([offer.id, rank]).not.toEqual([offer.id, -1]);
 				drawn.set(rank, (drawn.get(rank) ?? 0) + 1);
 			}

@@ -105,12 +105,12 @@ try {
 	);
 	check(
 		"the offer carries live operands, not authored placeholders",
-		typeof offer.goodName === "string" &&
-			offer.goodName.length > 0 &&
-			offer.tonnes > 0 &&
+		typeof offer.operand.goodName === "string" &&
+			offer.operand.goodName.length > 0 &&
+			offer.operand.tonnes > 0 &&
 			offer.rewardCr > 0 &&
 			offer.reportAt.carrierKey !== offer.requester.carrierKey,
-		`${offer.tonnes} t ${offer.goodName} → ${offer.reportName} (${offer.distanceLy.toFixed(1)} LY)`,
+		`${offer.operand.tonnes} t ${offer.operand.goodName} → ${offer.reportName} (${offer.distanceLy.toFixed(1)} LY)`,
 	);
 
 	const count = () =>
@@ -189,7 +189,7 @@ try {
 			await page
 				.locator("[data-live-station-console] [data-live-request-details]")
 				.innerText()
-		).includes(offer.entrusted ? "entrusted" : "your own"),
+		).includes(offer.operand.entrusted ? "entrusted" : "your own"),
 	);
 	const ageBefore = await page
 		.locator("[data-live-station-console] [data-live-request-age]")
@@ -273,7 +273,7 @@ try {
 				// It is the requester's, so it is not in the pilot's cargo.
 				!(lots[0].goodName in g.commanderRecord().state.cargo)
 			);
-		}, offer.tonnes),
+		}, offer.operand.tonnes),
 	);
 	check(
 		"no Deliver action at the requester — delivery is at the other end",
@@ -524,8 +524,8 @@ try {
 			g.requestOffersCacheKey = null;
 			return g.requestsView().offers.map((o) => ({
 				id: o.id,
-				goodName: o.goodName,
-				tonnes: o.tonnes,
+				goodName: o.operand.goodName,
+				tonnes: o.operand.tonnes,
 				rewardCr: o.rewardCr,
 				reportAt: o.reportAt,
 				episode: o.episode,
@@ -659,12 +659,14 @@ try {
 		await page.locator('[data-live-station-tab="Market"]').click();
 		const text = await page
 			.locator(
-				`[data-live-station-console] [data-live-market-row="${offer.goodName}"] [data-live-buy]`,
+				`[data-live-station-console] [data-live-market-row="${offer.operand.goodName}"] [data-live-buy]`,
 			)
 			.innerText();
 		const value = Number.parseFloat(text.replace(/[^0-9.]/g, ""));
 		if (!Number.isFinite(value))
-			throw new Error(`no buy price on the glass for ${offer.goodName}`);
+			throw new Error(
+				`no buy price on the glass for ${offer.operand.goodName}`,
+			);
 		await page.locator('[data-live-station-tab="Requests"]').click();
 		return value;
 	};
@@ -699,8 +701,9 @@ try {
 	const deliverLabel = await deliverButton.innerText();
 	check(
 		"an entrusted consignment is handed over, never delivered-as-in-supplied",
-		deliverLabel.includes(`Hand over ${offer.tonnes} t ${offer.goodName}`) &&
-			!/deliver/i.test(deliverLabel),
+		deliverLabel.includes(
+			`Hand over ${offer.operand.tonnes} t ${offer.operand.goodName}`,
+		) && !/deliver/i.test(deliverLabel),
 		deliverLabel,
 	);
 	// The hint is a **sibling** of the button now, not a child: a disabled
@@ -748,7 +751,9 @@ try {
 	check(
 		"the settlement names the tonnes and the pay, and claims nothing about a hold the pilot never had",
 		settled.startsWith("Reported ·") &&
-			settled.includes(`${offer.tonnes} t ${offer.goodName} handed over`) &&
+			settled.includes(
+				`${offer.operand.tonnes} t ${offer.operand.goodName} handed over`,
+			) &&
 			settled.endsWith(`${offer.rewardCr} Cr paid.`) &&
 			// **Nothing of the pilot's was ever bought in this run**, so after a
 			// hand-over the remainder clause is absent rather than zeroed — and
@@ -778,7 +783,7 @@ try {
 		const g = window.__seelite;
 		const gi = g.world.system.record.galaxy;
 		const row = g.commerceWorld.galaxies[gi].deficits[o.reportAt.carrierKey];
-		return row ? (row.goods[o.goodName] ?? 0) : 0;
+		return row ? (row.goods[o.operand.goodName] ?? 0) : 0;
 	}, offer);
 	check(
 		"the delivery leaves a mark on the destination's market",
@@ -872,8 +877,8 @@ try {
 				offer: {
 					id: offer.id,
 					family: offer.family,
-					goodName: offer.goodName,
-					tonnes: offer.tonnes,
+					goodName: offer.operand.goodName,
+					tonnes: offer.operand.tonnes,
 					rewardCr: offer.rewardCr,
 					distanceLy: offer.distanceLy,
 				},
