@@ -133,6 +133,25 @@ const storedLayout = () =>
 		return found;
 	});
 
+/**
+ * A stored row that is shape-legal and law-illegal: `fly.rollPort` is flown by
+ * holding `q`, and a `to` that drops the hold asks for more than moving a key.
+ * Written out three times before it was hoisted (sage round 2).
+ */
+/** Let the frame the rebind landed on be drawn, then read the tab. Written
+ *  out three times as `settle(); waitForTimeout(120); tab()` (sage round 2). */
+const settledTab = async () => {
+	await settle();
+	await page.waitForTimeout(120);
+	return tab();
+};
+
+const REFUSED_ROW = {
+	command: "fly.rollPort",
+	from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
+	to: { kind: "key", key: "k" },
+};
+
 const reload = async () => {
 	await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 	await bootedGame(page);
@@ -287,13 +306,7 @@ const mixed = await bootOn([
 		from: { kind: "key", key: "s", hold: true, code: "KeyS" },
 		to: { kind: "key", key: NEW_KEY, hold: true, code: "Digit8" },
 	},
-	// Shape-legal and law-illegal: `fly.rollPort` is not flown from a surface,
-	// so `rebind` refuses the move and the row keeps its default.
-	{
-		command: "fly.rollPort",
-		from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
-		to: { kind: "key", key: "k" },
-	},
+	REFUSED_ROW,
 ]);
 check(
 	"a blob with one bad row still prints the good row's layout",
@@ -339,13 +352,7 @@ check(
 // rows drive the path a player will take in S4: the tab is open, the layout
 // changes, and the screen has to follow.
 // ---------------------------------------------------------------------------
-const rejectedStanding = await bootOn([
-	{
-		command: "fly.rollPort",
-		from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
-		to: { kind: "key", key: "k" },
-	},
-]);
+const rejectedStanding = await bootOn([REFUSED_ROW]);
 check(
 	"a boot on a blob with a refused row leaves a notice standing",
 	rejectedStanding !== null && rejectedStanding.notices.length === 1,
@@ -362,9 +369,7 @@ check(
 	liveMove === "accepted",
 	liveMove,
 );
-await settle();
-await page.waitForTimeout(120);
-const afterLiveMove = await tab();
+const afterLiveMove = await settledTab();
 check(
 	"the notice about the old blob is gone the moment a save replaces it — no reload",
 	afterLiveMove !== null && afterLiveMove.notices.length === 0,
@@ -390,9 +395,7 @@ check(
 	ontoTaken === "accepted",
 	ontoTaken,
 );
-await settle();
-await page.waitForTimeout(120);
-const afterCollide = await tab();
+const afterCollide = await settledTab();
 check(
 	"and the collision is on the screen without a reload, naming both commands",
 	afterCollide !== null &&
@@ -411,13 +414,7 @@ check(
 // still true. Without this arm, "retire on a successful save" and "retire
 // always" are the same build.
 // ---------------------------------------------------------------------------
-const stillStanding = await bootOn([
-	{
-		command: "fly.rollPort",
-		from: { kind: "key", key: "q", hold: true, code: "KeyQ" },
-		to: { kind: "key", key: "k" },
-	},
-]);
+const stillStanding = await bootOn([REFUSED_ROW]);
 check(
 	"the refused row's notice is up before the store is broken",
 	stillStanding !== null && stillStanding.notices.length === 1,
@@ -440,15 +437,64 @@ check(
 	refusedSave === "accepted",
 	refusedSave,
 );
-await settle();
-await page.waitForTimeout(120);
-const afterRefused = await tab();
+const afterRefused = await settledTab();
 check(
 	"and the notice stays up, because the blob it describes is still on disk",
 	afterRefused !== null &&
-		afterRefused.notices.length === 1 &&
-		afterRefused.notices[0].startsWith("rejected:"),
+		afterRefused.notices.some((n) => n.startsWith("rejected:")),
 	JSON.stringify(afterRefused?.notices ?? null),
+);
+check(
+	"and the refusal itself is said beside it, not instead of it",
+	afterRefused !== null &&
+		afterRefused.notices.length === 2 &&
+		afterRefused.notices.some((n) => n.startsWith("unsaved:")),
+	JSON.stringify(afterRefused?.notices ?? null),
+);
+
+// ---------------------------------------------------------------------------
+// And a refusal with nothing stored says so on its own.
+//
+// The arm above only shows that a *pre-existing* notice stays up. With an
+// empty store there is no earlier complaint to inherit, so a build that says
+// nothing here lets a player rebind in a private window, fly it, lose it on
+// reload and hear about none of it — which is the silent failure this whole
+// slice exists to abolish (sage round 2).
+// ---------------------------------------------------------------------------
+await page.evaluate(() => localStorage.clear());
+await reload();
+await pressQuestion();
+const cleanTab = await settledTab();
+check(
+	"a boot with nothing stored is the default layout, with nothing to say",
+	cleanTab !== null &&
+		cleanTab.owner.includes("DEFAULT LAYOUT") &&
+		cleanTab.notices.length === 0,
+	JSON.stringify(cleanTab),
+);
+await page.evaluate(() => {
+	Storage.prototype.setItem = () => {
+		throw new Error("quota");
+	};
+});
+const silentRisk = await tryRebind(
+	"fly.yawPort",
+	{ kind: "key", key: "a", hold: true },
+	{ kind: "key", key: "k", hold: true },
+);
+check(
+	"a rebind a private window cannot store is still accepted",
+	silentRisk === "accepted",
+	silentRisk,
+);
+const afterSilent = await settledTab();
+check(
+	"and the band says it was not saved, with nothing else to have said it",
+	afterSilent !== null &&
+		afterSilent.notices.length === 1 &&
+		afterSilent.notices[0].startsWith("unsaved:") &&
+		/reload/i.test(afterSilent.notices[0]),
+	JSON.stringify(afterSilent?.notices ?? null),
 );
 
 check(

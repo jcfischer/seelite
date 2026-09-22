@@ -59,14 +59,15 @@
  */
 import {
 	type Binding,
-	type CommandId,
 	type Collision,
+	type CommandId,
 	COMMANDS,
 	collisions,
 	DEFAULT_BINDINGS,
+	layoutMoves,
 	rebind,
-	SURFACES,
 	type Surface,
+	SURFACES,
 	type Trigger,
 	triggerKey,
 } from "./commands";
@@ -100,16 +101,13 @@ export type RejectReason =
 	/** The control no longer ships on the trigger the row moved it off — a
 	 *  default moved under a saved layout, which is the migration case. */
 	| "moved-default"
+	/** An earlier row in the same blob already moved this control off that
+	 *  trigger. Hand-written blobs reach it; one this build wrote cannot,
+	 *  because the diff holds one row per moved binding. */
+	| "already-changed"
 	/** The registry refused the move itself: it asked for more than moving a
 	 *  key, which is the command's to decide and not the player's. */
 	| "not-just-a-key";
-
-/** One row the player moved: which command, off what, onto what. */
-export interface LayoutMove {
-	readonly command: CommandId;
-	readonly from: Trigger;
-	readonly to: Trigger;
-}
 
 /**
  * Something the player is owed a sentence about.
@@ -141,6 +139,16 @@ export type LayoutNotice =
 			 */
 			readonly detail: string;
 	  }
+	/**
+	 * A change the browser would not store.
+	 *
+	 * A private window refuses `localStorage` outright and a full one refuses
+	 * a write, and the rebind still *flies* — so the layout is right until the
+	 * page is reloaded and then silently is not. The first pass said nothing
+	 * at all here, against this module's own header claiming every refusal
+	 * produces a notice (sage round 2).
+	 */
+	| { readonly kind: "unsaved" }
 	/** Two commands one trigger reaches at once (#369 D5: warn and allow). */
 	| {
 			readonly kind: "collision";
@@ -153,43 +161,22 @@ export type LayoutNotice =
 export interface LoadedLayout {
 	readonly layout: readonly Binding[];
 	readonly notices: readonly LayoutNotice[];
-	/** Derived from the result, not from whether storage held anything: a blob
-	 *  every row of which was rejected leaves the shipped layout in force, and
-	 *  the screen must not claim a player layout it is not flying. */
-	readonly source: "default" | "player";
 }
-
-const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 
 /**
- * Every row whose trigger is not the one it shipped on.
+ * Whether a successful save makes this notice stop being true.
  *
- * Paired by position, because `rebind` writes `next[at]` and returns a new
- * array of the same length — so row *i* of any layout this game can produce is
- * row *i* of the shipped one with, at most, a different trigger. The pairing
- * is asserted rather than assumed: a layout that is not the shipped table with
- * triggers moved is a programming error here, and one that silently produced
- * the wrong diff would write a blob that loads as a different layout than the
- * one saved.
+ * **The store's rule, not its reader's.** Every notice but a collision is a
+ * fact about the blob that was *read*, so a write that lands replaces the
+ * thing they describe; a collision is a property of the table as it stands and
+ * survives. `main.ts` encoded that as `kind !== "collision"` for a round,
+ * which would have silently classified a sixth kind without this module
+ * saying anything (sage round 2).
  */
-export function layoutMoves(layout: readonly Binding[]): LayoutMove[] {
-	if (layout.length !== DEFAULT_BINDINGS.length)
-		throw new Error(
-			`a layout has ${DEFAULT_BINDINGS.length} rows, not ${layout.length}`,
-		);
-	const out: LayoutMove[] = [];
-	for (let i = 0; i < layout.length; i++) {
-		const live = layout[i] as Binding;
-		const base = DEFAULT_BINDINGS[i] as Binding;
-		if (live.command !== base.command)
-			throw new Error(
-				`layout row ${i} is ${live.command}, not ${base.command}`,
-			);
-		if (triggerKey(live.trigger) === triggerKey(base.trigger)) continue;
-		out.push({ command: base.command, from: base.trigger, to: live.trigger });
-	}
-	return out;
-}
+export const retiredBySave = (notice: LayoutNotice): boolean =>
+	notice.kind !== "collision" && notice.kind !== "unsaved";
+
+const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 
 /** The blob, as a string. */
 export function serializeLayout(layout: readonly Binding[]): string {
@@ -274,7 +261,6 @@ function acceptTrigger(v: unknown): Trigger | string {
 const unreadable = (reason: string): LoadedLayout => ({
 	layout: DEFAULT_BINDINGS,
 	notices: [{ kind: "unreadable", reason }],
-	source: "default",
 });
 
 /**
@@ -316,20 +302,30 @@ function applyMove(
 	const from = accepted.from as Trigger;
 	const to = accepted.to as Trigger;
 	// **Asked before `rebind` is, and the duplicated lookup is the point.**
-	// `rebind` throws for both of the next two reasons and its message is one
-	// string; the player's answer is two different sentences — "this control
-	// has moved since you saved" is something they can redo, and "that change
-	// asked for more than a key" is not. Only this module knows which sentence
-	// to print, so it asks the cheap question itself rather than reading a
-	// thrown message for a verdict.
-	if (
-		!layout.some(
+	// `rebind` throws for all three of the next reasons and its message is one
+	// string; the player's answers are three different sentences, and only
+	// this module knows which to print.
+	//
+	// **The shipped table answers first, and the running one second.** Asking
+	// only the running layout called a *duplicate row* a moved default — the
+	// first row moves the command, the second cannot find its `from`, and the
+	// player is told "it has moved in this version", which is not what
+	// happened (sage round 2). A hand-written blob is exactly what reaches
+	// that; one this build wrote cannot, because the diff holds one row per
+	// moved binding.
+	const on = (rows: readonly Binding[]) =>
+		rows.some(
 			(b) => b.command === named && triggerKey(b.trigger) === triggerKey(from),
-		)
-	)
+		);
+	if (!on(DEFAULT_BINDINGS))
 		return rejected(
 			"moved-default",
 			`${named} no longer ships on ${triggerKey(from)}`,
+		);
+	if (!on(layout))
+		return rejected(
+			"already-changed",
+			`an earlier row already moved ${named} off ${triggerKey(from)}`,
 		);
 	try {
 		// The registry decides whether the *move* is legal — a `to` that changes
@@ -358,7 +354,7 @@ function applyMove(
  */
 export function parseLayout(raw: string | null): LoadedLayout {
 	if (raw === null || raw === "")
-		return { layout: DEFAULT_BINDINGS, notices: [], source: "default" };
+		return { layout: DEFAULT_BINDINGS, notices: [] };
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
@@ -371,7 +367,6 @@ export function parseLayout(raw: string | null): LoadedLayout {
 		return {
 			layout: DEFAULT_BINDINGS,
 			notices: [{ kind: "version", stored: parsed.version }],
-			source: "default",
 		};
 	if (!Array.isArray(parsed.moves))
 		return unreadable("the stored layout holds no list of changes");
@@ -386,11 +381,7 @@ export function parseLayout(raw: string | null): LoadedLayout {
 
 	notices.push(...collisionNotices(layout));
 
-	return {
-		layout,
-		notices,
-		source: layoutMoves(layout).length > 0 ? "player" : "default",
-	};
+	return { layout, notices };
 }
 
 /**
@@ -447,7 +438,7 @@ export function loadLayout(): LoadedLayout {
 	try {
 		raw = window.localStorage.getItem(LAYOUT_KEY);
 	} catch {
-		return { layout: DEFAULT_BINDINGS, notices: [], source: "default" };
+		return { layout: DEFAULT_BINDINGS, notices: [] };
 	}
 	return parseLayout(raw);
 }
@@ -468,8 +459,14 @@ export function loadLayout(): LoadedLayout {
  * force" beside `PLAYER LAYOUT` for the rest of the session (sage round 1).
  */
 export function saveLayout(layout: readonly Binding[]): boolean {
+	// **Serialized outside the try**, so `layoutMoves`' invariant throw stays
+	// loud. Inside it, a layout that is not the shipped table with triggers
+	// moved — a programming error the assertion exists to shout about —
+	// returned `false` and was indistinguishable from a full quota (sage
+	// round 2).
+	const blob = serializeLayout(layout);
 	try {
-		window.localStorage.setItem(LAYOUT_KEY, serializeLayout(layout));
+		window.localStorage.setItem(LAYOUT_KEY, blob);
 		return true;
 	} catch {
 		/* private mode, quota, or a disabled store */

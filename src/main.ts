@@ -547,6 +547,7 @@ import {
 	collisionNotices,
 	type LayoutNotice,
 	loadLayout,
+	retiredBySave,
 	saveLayout,
 } from "./binding-store";
 import { controlsCatalogue } from "./controls-catalogue";
@@ -1852,42 +1853,41 @@ class Game {
 	private requestDestinationsKey: string | null = null;
 	private requestDestinations: ReturnType<typeof deliveryCandidates> = [];
 	/**
+	 * What `localStorage` had, read once at boot (#381 S3).
+	 *
+	 * One read rather than one per consumer: the rows and the notices are two
+	 * halves of the same answer, and a second `loadLayout()` would report a
+	 * blob that the first had already replaced.
+	 */
+	private readonly storedLayout = loadLayout();
+	/**
 	 * The layout in force, `(command, trigger, scope)` rows (#381).
 	 *
 	 * **The Game's state and not the registry's module state.** A finish was
 	 * module state once and every test that set one owed an `afterEach`; a
 	 * leaked layout is the same shape with a worse failure, since it flies the
-	 * next test's ship. Storage, and the per-row merge that loads one off disk,
-	 * is the slice after this — here it is the shipped table until something
-	 * sets another.
+	 * next test's ship. It starts as whatever the store handed back — the
+	 * shipped table when nothing was stored, or when nothing stored could be
+	 * applied.
 	 */
-	/**
-	 * What `localStorage` had, read once at boot (#381 S3).
-	 *
-	 * One read rather than one per consumer: the notices and the layout are
-	 * two halves of the same answer, and a second `loadLayout()` would report
-	 * a blob that the first had already replaced.
-	 */
-	private readonly storedLayout = loadLayout();
 	private bindings: readonly Binding[] = this.storedLayout.layout;
 	/**
 	 * What was wrong with the blob that was read, until a save replaces it.
 	 *
 	 * Held rather than re-derived, because it is a fact about the *blob* and
 	 * not about the layout now in force: a rejected row leaves no trace in the
-	 * table it failed to change. `rebindCommand` clears it once a write lands.
+	 * table it failed to change. `retiredBySave` is the store's own rule for
+	 * which half that is; the test was `kind !== "collision"` written here, so
+	 * a sixth kind would have been classified by its reader (sage round 2).
 	 */
 	private storedNotices: readonly LayoutNotice[] =
-		// Collisions filtered out and re-derived below, because `parseLayout`
-		// reports both and only the blob's own half is the thing a save
-		// retires. Adding its list whole would print every collision twice.
-		this.storedLayout.notices.filter((n) => n.kind !== "collision");
-	/** The band the Controls tab prints: the blob's own notices while they are
-	 *  still true, plus the collisions in the table as it stands. */
-	private layoutNotices: readonly LayoutNotice[] = [
-		...this.storedNotices,
-		...collisionNotices(this.storedLayout.layout),
-	];
+		this.storedLayout.notices.filter(retiredBySave);
+	/** Set when a write was refused — a private window, a full quota. The
+	 *  rebind still flies; it just will not survive the page. */
+	private layoutUnsaved = false;
+	/** The band the Controls tab prints. Written by `refreshNotices`, which is
+	 *  the one statement of what it is made of. */
+	private layoutNotices: readonly LayoutNotice[] = [];
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -3665,6 +3665,7 @@ class Game {
 		// The tab prints the layout in force from the first frame, not from the
 		// first rebind: a stored layout that loaded, or a notice saying one did
 		// not, is the whole of what the player has to go on.
+		this.refreshNotices();
 		this.publishControls();
 		window.addEventListener("resize", () => {
 			// A different window size is a different number of pixels, so every
@@ -8059,14 +8060,35 @@ class Game {
 		// write leaves the old blob exactly where it was, and every one of
 		// those notices is still true.
 		//
-		// A collision is not a fact about the blob at all — it is a property of
-		// the table that just changed — so it is asked again either way.
-		if (saveLayout(this.bindings)) this.storedNotices = [];
+		// **And a refusal says so on its own.** Saying nothing when there was
+		// no earlier blob to complain about was the same silent failure this
+		// slice exists to abolish: the rebind flies, survives nothing, and
+		// tells the player neither (sage round 2).
+		if (saveLayout(this.bindings)) {
+			this.storedNotices = [];
+			this.layoutUnsaved = false;
+		} else this.layoutUnsaved = true;
+		this.refreshNotices();
+		this.publishControls();
+	}
+
+	/**
+	 * What the band is made of, in one place.
+	 *
+	 * The blob's own notices while they are still true, whether the last write
+	 * landed, and the collisions in the table as it stands — a collision is
+	 * not a fact about the blob at all, so it is asked again every time. The
+	 * boot path and `rebindCommand` both said this, and two statements of one
+	 * rule have to be kept in step (sage round 2).
+	 */
+	private refreshNotices() {
 		this.layoutNotices = [
 			...this.storedNotices,
+			...(this.layoutUnsaved
+				? [{ kind: "unsaved" } as const satisfies LayoutNotice]
+				: []),
 			...collisionNotices(this.bindings),
 		];
-		this.publishControls();
 	}
 
 	/**

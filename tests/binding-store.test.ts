@@ -22,8 +22,8 @@ import {
 	LAYOUT_KEY,
 	LAYOUT_VERSION,
 	type LayoutNotice,
-	layoutMoves,
 	loadLayout,
+	retiredBySave,
 	parseLayout,
 	saveLayout,
 	serializeLayout,
@@ -33,6 +33,7 @@ import {
 	type CommandId,
 	COMMANDS,
 	commandById,
+	layoutMoves,
 	DEFAULT_BINDINGS,
 	rebind,
 	type Trigger,
@@ -110,6 +111,17 @@ const keysOf = (rows: readonly Binding[]) =>
 
 const kinds = (notices: readonly LayoutNotice[]) => notices.map((n) => n.kind);
 
+/**
+ * Which layout is in force, asked of the registry.
+ *
+ * `LoadedLayout` carried a `source` field saying this, and nothing in the game
+ * read it — `controlsCatalogue` derived the same answer from the same
+ * predicate, so one rule had two homes (sage round 2). The store hands back
+ * rows; what they *are* is `layoutMoves`' question.
+ */
+const inForce = (read: { layout: readonly Binding[] }) =>
+	layoutMoves(read.layout).length > 0 ? "player" : "default";
+
 describe("a layout is stored as what the player changed", () => {
 	test("the shipped layout is no moves at all", () => {
 		// The blob is a diff, so a player who has never rebound anything stores
@@ -156,7 +168,7 @@ describe("a layout is stored as what the player changed", () => {
 		const read = parseLayout(serializeLayout(moved));
 		expect(read.notices).toEqual([]);
 		expect(keysOf(read.layout)).toEqual(keysOf(moved));
-		expect(read.source).toBe("player");
+		expect(inForce(read)).toBe("player");
 	});
 });
 
@@ -165,7 +177,7 @@ describe("nothing stored, and nothing readable, fly the shipped layout", () => {
 		const read = parseLayout(null);
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
 		expect(read.notices).toEqual([]);
-		expect(read.source).toBe("default");
+		expect(inForce(read)).toBe("default");
 	});
 
 	test.each([
@@ -176,7 +188,7 @@ describe("nothing stored, and nothing readable, fly the shipped layout", () => {
 	])("%s is refused out loud", (_name, raw) => {
 		const read = parseLayout(raw);
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
-		expect(read.source).toBe("default");
+		expect(inForce(read)).toBe("default");
 		// Out loud: the settings loader may fall back in silence because a
 		// preference is visible on the screen it changes. A layout is not.
 		expect(kinds(read.notices)).toContain("unreadable");
@@ -192,7 +204,7 @@ describe("the version is inside the blob, and an unknown one is not read", () =>
 		const raw = blob(JSON.parse(serializeLayout(moved)).moves, 2);
 		const read = parseLayout(raw);
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
-		expect(read.source).toBe("default");
+		expect(inForce(read)).toBe("default");
 		expect(kinds(read.notices)).toEqual(["version"]);
 		expect(noticeText(read.notices[0] as LayoutNotice)).toContain("2");
 	});
@@ -220,7 +232,7 @@ describe("a rejected row costs that row and says which", () => {
 		const read = parseLayout(raw);
 		// The good move applied.
 		expect(keysOf(read.layout)).toEqual(keysOf(moved));
-		expect(read.source).toBe("player");
+		expect(inForce(read)).toBe("player");
 		expect(kinds(read.notices)).toEqual(["rejected"]);
 		expect(noticeText(read.notices[0] as LayoutNotice)).toContain(
 			commandById("fly.rollPort").name,
@@ -273,11 +285,37 @@ describe("a rejected row costs that row and says which", () => {
 		// A blob existed and every row of it was refused, so the shipped layout
 		// is what is flying — and the screen must not offer "PLAYER LAYOUT" for
 		// a layout the player is not flying.
-		expect(read.source).toBe("default");
+		expect(inForce(read)).toBe("default");
 		expect(kinds(read.notices)).toEqual(["rejected"]);
 		expect(noticeText(read.notices[0] as LayoutNotice)).toContain(
 			commandById(PITCH_UP).name,
 		);
+	});
+
+	test("a second row for one control is not a moved default", () => {
+		// The `from` lookup ran against the *running* layout, so the first row
+		// moved the command and the second could not find its `from` — and the
+		// player was told "it has moved in this version", which is not what
+		// happened (sage round 2). A hand-written blob is what reaches this;
+		// the diff this build writes holds one row per moved binding.
+		const raw = blob([good, { ...good, to: { ...TO, key: "9" } }]);
+		const read = parseLayout(raw);
+		expect(keysOf(read.layout)).toEqual(keysOf(moved));
+		const notice = read.notices[0] as LayoutNotice;
+		if (notice.kind !== "rejected") throw new Error("not a rejection");
+		expect(notice.reason).toBe("already-changed");
+		expect(noticeText(notice)).toContain(commandById(PITCH_UP).name);
+	});
+
+	test("and a `from` that never shipped still reads as a moved default", () => {
+		// The control for the row above: the two reasons have to be told apart
+		// by the trigger, not by the position of the row.
+		const raw = blob([
+			{ ...good, from: { kind: "key", key: "\u00a7", hold: true } },
+		]);
+		const notice = parseLayout(raw).notices[0] as LayoutNotice;
+		if (notice.kind !== "rejected") throw new Error("not a rejection");
+		expect(notice.reason).toBe("moved-default");
 	});
 
 	test("a non-key rebind is refused here and S4 lifts it", () => {
@@ -436,7 +474,7 @@ describe("a player layout may collide, and is told that it does", () => {
 		const onto = rebind(DEFAULT_BINDINGS, PITCH_UP, FROM, ONTO_PITCH_DOWN);
 		const read = parseLayout(serializeLayout(onto));
 		expect(keysOf(read.layout)).toEqual(keysOf(onto));
-		expect(read.source).toBe("player");
+		expect(inForce(read)).toBe("player");
 	});
 });
 
@@ -501,7 +539,35 @@ describe("the browser is a string store that may refuse", () => {
 		};
 		const read = loadLayout();
 		expect(keysOf(read.layout)).toEqual(keysOf(DEFAULT_BINDINGS));
-		expect(read.source).toBe("default");
+		expect(inForce(read)).toBe("default");
+	});
+
+	test("the store owns which notices a save retires", () => {
+		// `main.ts` wrote this rule as `kind !== "collision"` for a round, so a
+		// sixth kind would have been classified by its reader rather than by
+		// the module that decides which kinds exist (sage round 2).
+		expect(retiredBySave({ kind: "unreadable", reason: "x" })).toBe(true);
+		expect(retiredBySave({ kind: "version", stored: 2 })).toBe(true);
+		expect(
+			retiredBySave({
+				kind: "rejected",
+				command: PITCH_UP,
+				reason: "moved-default",
+				detail: "x",
+			}),
+		).toBe(true);
+		// A collision is a property of the table as it stands, and an unsaved
+		// write is about the write. Neither is a fact about the blob that was
+		// read, so neither is retired by replacing it.
+		expect(retiredBySave({ kind: "unsaved" })).toBe(false);
+	});
+
+	test("a layout that is not this game's is a loud throw, not a failed write", () => {
+		// `layoutMoves`' invariant used to be serialised *inside* the try, so a
+		// programming error came back as `false` and was indistinguishable from
+		// a full quota (sage round 2).
+		installStorage();
+		expect(() => saveLayout(DEFAULT_BINDINGS.slice(0, 3))).toThrow();
 	});
 
 	test("a write that lands says so, because a notice depends on it", () => {

@@ -7,7 +7,7 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import type { LayoutNotice } from "../src/binding-store";
+import type { LayoutNotice, RejectReason } from "../src/binding-store";
 import {
 	type CommandId,
 	commandById,
@@ -348,6 +348,14 @@ describe("the band above the tree (#381 S3)", () => {
 	const ROLL: CommandId = "fly.rollPort";
 	const PITCH_UP: CommandId = "fly.pitchUp";
 	const PITCH_DOWN: CommandId = "fly.pitchDown";
+	const REJECT_REASONS: readonly RejectReason[] = [
+		"unreadable-row",
+		"unknown-control",
+		"unreadable-trigger",
+		"moved-default",
+		"already-changed",
+		"not-just-a-key",
+	];
 	const rejected: LayoutNotice = {
 		kind: "rejected",
 		command: ROLL,
@@ -408,6 +416,30 @@ describe("the band above the tree (#381 S3)", () => {
 		});
 		expect(text).toContain("fly.wiggle");
 		expect(text.trim().length).toBeGreaterThan(0);
+	});
+
+	test("a change the browser refused says so, and says what still works", () => {
+		// The rebind flies and does not survive the page. Saying nothing was
+		// the same silent failure the band exists to abolish (sage round 2).
+		const text = noticeText({ kind: "unsaved" });
+		expect(text).toMatch(/could not be saved/i);
+		expect(text).toMatch(/reload/i);
+	});
+
+	test("every reason a row can be rejected for has its own sentence", () => {
+		// A `Record<RejectReason, string>` makes a missing one a type error, and
+		// this is the row that makes a *duplicated* one visible: two reasons
+		// with the same words are two answers the player cannot tell apart.
+		const said = REJECT_REASONS.map((reason) =>
+			noticeText({
+				kind: "rejected",
+				command: "fly.rollPort",
+				reason,
+				detail: "d",
+			}),
+		);
+		expect(new Set(said).size).toBe(REJECT_REASONS.length);
+		for (const t of said) expect(t.trim().length).toBeGreaterThan(0);
 	});
 
 	test("a collision names both commands and the key, in words", () => {

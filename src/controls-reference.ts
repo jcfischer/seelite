@@ -396,6 +396,8 @@ const REJECTED_WHY: Record<RejectReason, string> = {
 	"unreadable-trigger": "the key it was saved on could not be read",
 	"moved-default":
 		"it has moved in this version, so your change no longer fits — set it again",
+	"already-changed":
+		"your saved controls change it more than once, and only the first change was kept",
 	"not-just-a-key":
 		"the saved change asked for more than moving a key, which this control decides",
 };
@@ -437,6 +439,8 @@ export function noticeText(notice: LayoutNotice): string {
 			}). The default layout is in force, and changing a control will replace them.`;
 		case "rejected":
 			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;
+		case "unsaved":
+			return "This change could not be saved — your browser is refusing storage, which a private window does. It will fly until you reload the page.";
 		case "collision": {
 			// **Two names, and no cast to get them.** `Collision.commands` is a
 			// pair in the type, because `collisions()` reports one entry per

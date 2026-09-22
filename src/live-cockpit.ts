@@ -475,9 +475,14 @@ export class LiveCockpit {
 	 * for "the structure moved", and the cost the comment beside it warns
 	 * about — a rebuild losing a filter field's caret — is not this caller's:
 	 * a layout changes twice a session, not on a keystroke.
+	 *
+	 * **No identity guard**, and the one that was here could never fire:
+	 * `publishControls` builds a fresh catalogue on every call, so
+	 * `catalogue === this.controls` was false every time and the early return
+	 * was unreachable (sage round 2). A guard that never guards reads as a
+	 * cost this method does not pay.
 	 */
 	setControls(catalogue: ControlsCatalogue) {
-		if (catalogue === this.controls) return;
 		this.controls = catalogue;
 		this.lastKey = "";
 	}

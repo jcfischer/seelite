@@ -23,12 +23,14 @@
  * Headless, and on the list in `tests/headless.test.ts`: the unit tier renders
  * **this** catalogue, never a struct a test built.
  */
-import { type LayoutNotice, layoutMoves } from "./binding-store";
+import type { LayoutNotice } from "./binding-store";
 import {
 	type Binding,
 	type Command,
+	type CommandId,
 	COMMANDS,
 	DEFAULT_BINDINGS,
+	layoutMoves,
 	type Trigger,
 } from "./commands";
 
@@ -62,11 +64,12 @@ export interface ControlsCatalogue {
 	readonly notices: readonly LayoutNotice[];
 }
 
-const row = (c: Command, bindings: readonly Binding[]): ControlCommand => ({
+const row = (
+	c: Command,
+	bound: ReadonlyMap<CommandId, Trigger[]>,
+): ControlCommand => ({
 	...c,
-	currentTriggers: bindings
-		.filter((b) => b.command === c.id)
-		.map((b) => b.trigger),
+	currentTriggers: bound.get(c.id) ?? [],
 });
 
 /**
@@ -81,9 +84,18 @@ export function controlsCatalogue(
 	bindings: readonly Binding[] = DEFAULT_BINDINGS,
 	notices: readonly LayoutNotice[] = [],
 ): ControlsCatalogue {
+	// One pass over the table rather than one scan per command: the filter this
+	// replaced was `COMMANDS.length` walks of the whole binding table. Cheap
+	// either way at these sizes, and it runs on every rebind (sage round 2).
+	const bound = new Map<CommandId, Trigger[]>();
+	for (const b of bindings) {
+		const rows = bound.get(b.command);
+		if (rows === undefined) bound.set(b.command, [b.trigger]);
+		else rows.push(b.trigger);
+	}
 	return {
 		layout: layoutMoves(bindings).length > 0 ? "player" : "default",
-		commands: COMMANDS.map((c) => row(c, bindings)),
+		commands: COMMANDS.map((c) => row(c, bound)),
 		notices,
 	};
 }
