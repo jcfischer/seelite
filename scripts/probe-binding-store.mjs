@@ -23,6 +23,7 @@
  * reads it — so the rows below open the `Controls` tab and ask whether the
  * sentence is drawn where a person would find it.
  */
+import { flightHarness, HOLD_MS, NEW_KEY } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
@@ -37,11 +38,6 @@ const origin = await guardedOrigin(ORIGIN);
 const { check, watch, exit } = tally();
 
 const SEED = 42;
-/** `scripts/probe-rebind.mjs` states the reason: the shipped layout binds `0`
- *  through `3` in the digit row and nothing else, so `8` has no other command
- *  that could answer for it. */
-const NEW_KEY = "8";
-const HOLD_MS = 400;
 /** `probe-rebind.mjs` measured twelve arms across three runs at 14.79-15.66°
  *  and took 0.8-1.2x; the same hold is being measured here, so the same band
  *  applies. */
@@ -53,53 +49,15 @@ watch(page);
 await page.goto(gameUrl(origin, { seed: SEED }), { waitUntil: "load" });
 await bootedGame(page);
 
-const settle = () =>
-	page.evaluate(
-		() =>
-			new Promise((done) =>
-				requestAnimationFrame(() => requestAnimationFrame(done)),
-			),
-	);
-
-const nose = () => page.evaluate(() => window.__seelite.nose());
-
-const degreesBetween = (a, b) => {
-	const dot = Math.min(1, Math.max(-1, a.x * b.x + a.y * b.y + a.z * b.z));
-	return (Math.acos(dot) * 180) / Math.PI;
-};
-
-/** Wait until the ship has stopped turning; `probe-rebind.mjs`'s header owns
- *  why an arm that measures an angle owes the state it started from, and why
- *  an exhausted wait is reported rather than thrown. */
-let restFailed = false;
-async function atRest() {
-	let prev = await nose();
-	const ticks = restFailed ? 40 : 200;
-	for (let i = 0; i < ticks; i++) {
-		// **The wait comes first, and moving it broke the gate.** A review
-		// round suggested sampling before waiting, to save 50 ms on a ship
-		// already still. Applied, `prev` and `now` are read back-to-back with
-		// nothing between them, they agree by construction, and this returns
-		// on the first iteration every time: the next arm read a residual of
-		// 10.41° against a floor of 0.16°, and four rows went red at once. The
-		// 50 ms is what makes the comparison a comparison (sage round 6).
-		await page.waitForTimeout(50);
-		const now = await nose();
-		if (degreesBetween(prev, now) < 0.02) return;
-		prev = now;
-	}
-	restFailed = true;
-}
-
-async function turnedWhileHolding(key) {
-	await atRest();
-	const before = await nose();
-	if (key !== null) await page.keyboard.down(key);
-	await page.waitForTimeout(HOLD_MS);
-	if (key !== null) await page.keyboard.up(key);
-	await settle();
-	return degreesBetween(before, await nose());
-}
+/**
+ * The measurement, shared with `probe-rebind.mjs` since #381 S4 —
+ * `scripts/lib/flight-harness.mjs` owns `atRest`, `turnedWhileHolding` and
+ * every reason the two are shaped the way they are, including the sage round
+ * that proved sampling before waiting disables the rest gate. `NEW_KEY` and
+ * `HOLD_MS` moved with them. This file was the second copy; the capture
+ * modal's rows would have been the third.
+ */
+const { settle, turnedWhileHolding, restFailed } = flightHarness(page);
 
 /**
  * Two keys held alternately, `n` times each, reported as medians.
@@ -612,8 +570,14 @@ check(
 
 check(
 	"the rest gate never ran out, so every angle above is a settled reading",
-	!restFailed,
-	`restFailed=${restFailed}`,
+	// **`=== false`, not `!`** (#381 S4). `restFailed` is a reader now rather
+	// than a module-level flag, because two probes sharing one would let the
+	// first to run shorten the second's waits — and a bare `!restFailed` on a
+	// function is `false`, so this row would have gone on passing while
+	// measuring nothing. That is the shape of defect an extraction out of a
+	// probe produces, and no headless gate here can see it.
+	restFailed() === false,
+	`restFailed=${restFailed()}`,
 );
 
 await browser.close();
