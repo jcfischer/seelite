@@ -166,12 +166,9 @@ describe("the view set itself", () => {
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
 		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded. (#432 added a twenty-ninth — a rim row
-		// aimed along the Core bearing — and removed it in the same PR, on the
-		// principal's reading of the frame plus the density arm in
-		// `measure-sky-density.ts`; #480 put a twenty-ninth back in the other
-		// role, a rim row that is a look at the sky that ships rather than proof
-		// of a cone, which is the thing the measurement foreclosed.) A literal and
+		// the Controls tab open and folded. (#432 added a twenty-ninth and removed it
+		// in the same PR; #480 put one back, in the other role. Why both happened is
+		// told once, in the note beside `sky-at-the-rim`, and not here.) A literal and
 		// not `VIEWS.length`, which is the whole point: a view deleted by accident
 		// has to be a red run, and a check derived from its own subject cannot be
 		// one.
@@ -689,37 +686,40 @@ describe("the rim look row #480 added", () => {
 
 	/**
 	 * The row's own star, measured against every other star, rather than the fold
-	 * checked against a second fold of itself: a `reduce` and a `Math.max` over one
-	 * array cannot disagree, so a row comparing them notices nothing. This one goes
-	 * red the day the generator's edge moves out from under the index the row
-	 * pinned.
+	 * the claim is the row's index against the fold, and that is the row above. What
+	 * is new here is the floor, and it guards a word rather than the fixture.
 	 *
-	 * The floor below is the other half, and it guards the word rather than the
-	 * fixture. `t` is `radiusLy / GALAXY_RADIUS_LY`, so it only says *rim* about the
-	 * farthest star if the cluster still reaches the radius that constant claims —
-	 * which is exactly what #118's reshape put at risk, and what a future re-cut
-	 * would break in the same way. It is not a second check on which star the row
-	 * picked; it is a check that "the rim third" still names a place.
+	 * `t` is `radiusLy / GALAXY_RADIUS_LY`, so *rim* means anything about the
+	 * farthest star only while the cluster still reaches the radius that constant
+	 * claims — which is exactly what #118's reshape put at risk, and what a future
+	 * re-cut would break the same way. If the cluster stopped reaching it, `t` would
+	 * top out under two thirds, the row's `what` would still print *"the outermost
+	 * system on the cluster's rim"*, and nothing else in this file would notice.
 	 */
-	test("no other system in the galaxy is farther out, and the cluster still reaches §4's rim", () => {
+	test("the cluster still reaches §4's rim, so the word rim names a place", () => {
 		expect(named).toBeDefined();
-		const outranking = systems.filter((s) => s.t > (named?.t ?? 0));
-		expect(outranking.map((s) => s.index)).toEqual([]);
 		expect(named?.t).toBeGreaterThanOrEqual(2 / 3);
 	});
 
 	/**
-	 * The caption's claim budget, mechanically. Both bans are anchored, because the
-	 * hazard is a substring doing the claiming: an unanchored `thin` reads
-	 * *"no**thin**g"* as a crowding claim, and an unanchored `core` would read
-	 * *"score"* as the bearing. What the row may say is owned by the note beside it
-	 * in `view-set.mjs`, which is also where the two drafts that broke this rule are
-	 * told; this row only holds the words.
+	 * A fence on the two ways this row's caption has already gone wrong, not a
+	 * proof of anything: a line reading *"an empty sky ahead"* would clear every
+	 * assertion here. That is worth saying in the test's own name, because the
+	 * stronger claim the PR made — that the row can only promise what it shows — is
+	 * carried by the note beside the row and by whoever edits it next, and a
+	 * denylist of six stems is a much smaller thing than that sentence.
+	 *
+	 * All three patterns are anchored, because the hazard is a substring doing the
+	 * claiming: unanchored, `dense` reads *"condense"* as a crowding claim and `core`
+	 * reads *"score"* as the bearing. What the row may say is owned
+	 * by that note in `view-set.mjs`, which is where the two drafts that broke the
+	 * rule are told; this row only holds the words, anchored, with `rim` required as
+	 * a whole word so *"primary"* cannot satisfy it either.
 	 */
-	test("its caption claims the place and the rule, and no property of the frame", () => {
+	test("its caption avoids the words this row has already over-claimed with", () => {
 		const what = row?.what ?? "";
 		expect(what).not.toBe("");
-		expect(what.toLowerCase()).toContain("rim");
+		expect(what.toLowerCase()).toMatch(/\brim\b/);
 		expect(what.toLowerCase()).not.toMatch(/\b(core|cone|bearing)/);
 		expect(what.toLowerCase()).not.toMatch(
 			/\b(thin|dense|crowd|number of|count of|nothing)/,
@@ -733,9 +733,10 @@ describe("the rim look row #480 added", () => {
 	 * rather than a quiet merge.
 	 */
 	test("it is the only row in the set that names a system to stand at", () => {
-		// Cast rather than a declaration: `system` is optional on a shot and all but
-		// one row omits it, so the inferred union of the literals in `view-set.mjs`
-		// has no such property to read. `malformedShots` reads it the same way.
+		// Cast rather than a declaration: `system` is declared by exactly one row's
+		// literal, so it exists on one arm of the union `view-set.mjs` infers and on
+		// none of the other twenty-eight — which is exactly what a union refuses to
+		// let you read. `malformedShots` reads it the same way.
 		const declaring = VIEWS.filter(
 			(v) => (v.shot as { system?: number }).system !== undefined,
 		);

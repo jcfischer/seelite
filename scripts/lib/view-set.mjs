@@ -785,13 +785,17 @@ export const VIEWS = Object.freeze([
 	 * no longer the edge. The browser-side half is `ensureFixture`: it restores seed
 	 * and system together, reads the index back off the world the page is running, and
 	 * throws on a mismatch. Both halves are worth stating precisely rather than
-	 * praising: the boot has been exercised by this row's capture, and the refusal has
-	 * been exercised by nothing — it is a guard that has never fired, which is worth
-	 * saying out loud on the first row that leans on it. Nor is it assumed that the
-	 * number in the literal means what `?system=` reads: `scripts/probe-sky.mjs` asks
-	 * the URL for an index it computed off the running page and asks the page which
-	 * system it came up as, which is the index-and-name question settled at the tier
-	 * where it could actually be got wrong.
+	 * praising. The boot has run — this row's capture put the page at system 115 and
+	 * the readback agreed — which is the first time that path has been walked for a row
+	 * rather than for a test fixture. The refusal has never fired, in a capture or
+	 * anywhere else: it is a throw in a browser tool that no headless test can reach,
+	 * and the nearest thing to coverage of the subject is `probe-sky.mjs` proving that
+	 * the *page* refuses an unusable index politely, which is the other half of a
+	 * different guard. Said out loud because this is the first row leaning on a net
+	 * that has never once caught anything. Nor is it assumed that the number in the
+	 * literal means what `?system=` reads: that question is settled where it could be
+	 * got wrong, by `probe-sky.mjs` asking the URL for an index it computed off the
+	 * running page and asking the page which system it came up as.
 	 */
 	{
 		name: "sky-at-the-rim",
