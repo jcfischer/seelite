@@ -366,7 +366,7 @@ import {
 	QUIET_GUN,
 	SHOT_SOUND_GAP_S,
 	STRUCK_FLASH_S,
-	drawScoopNotice,
+	drawGlassNotice,
 	drawEnemyBeam,
 	drawStruckRim,
 	TRACER_AIM,
@@ -423,6 +423,13 @@ import {
 	nextScoopNotice,
 	scoopExit,
 } from "./cargo-notice";
+import {
+	CHARGE_NOTICE_S,
+	type ChargeNotice,
+	chargeExit,
+	chargeLogText,
+	nextChargeNotice,
+} from "./charge-notice";
 import {
 	type Encounter,
 	type EncounterContact,
@@ -2077,6 +2084,25 @@ class Game {
 	 */
 	private readonly hails: { line: RaiderLogLine; callsign: string }[] = [];
 	/**
+	 * The sustained-fire charges this session has been told about, newest last,
+	 * capped the same way (#457).
+	 *
+	 * **Its own list and not the hails'**, for two reasons that agree. A hail is
+	 * the victim speaking and a charge is the law, so the rail's HAILS value —
+	 * which reads this session's hail store for who is transmitting — would
+	 * start naming a carrier that said nothing. And
+	 * `scripts/probe-witnesses.mjs` pins the incident at one hail and one alert
+	 * by the divert, reading `trafficReadout().hails`: reusing that store would
+	 * turn a real check red for a reason that has nothing to do with the rule it
+	 * holds.
+	 *
+	 * Session state for the hail's own reason (#396, above): there is no world
+	 * row saying "this pilot was told at T", the charge's own mark is already in
+	 * `commerceWorld`, and a reload inside the 30-minute decay costs the pilot
+	 * the console's memory of a sentence and nothing the law reads.
+	 */
+	private readonly charges: RaiderLogLine[] = [];
+	/**
 	 * Which carriers have already hailed, **bucketed by the galaxy whose law
 	 * spent the hail**.
 	 *
@@ -2304,6 +2330,21 @@ class Game {
 	 *  restate: the text, its alpha and its outcome, or null when nothing
 	 *  is up. */
 	scoopRender: { text: string; alpha: number; accepted: boolean } | null = null;
+	/**
+	 * The sustained-fire charge's acknowledgement, in the same shape and for
+	 * the same reason (#457 on #447's ruling).
+	 *
+	 * **A peer of the scoop's notice rather than a second subject inside it.**
+	 * `nextScoopNotice` is keyed on a canister and its re-arm rules are the
+	 * cargo's — a refusal of the canister a standing take is about, a full hold
+	 * retried every frame. Feeding a charge through that state would let each
+	 * push the other off the glass, which is the defect that module exists to
+	 * refuse; `charge-notice.ts` owns this one's own window instead.
+	 */
+	charged: ChargeNotice = { text: "", left: 0 };
+	/** What the charge notice drew this frame, for a probe to read beside the
+	 *  pixels rather than instead of them (#69, #447). */
+	chargedRender: { text: string; alpha: number } | null = null;
 	/** The gimballed beam's direction, or `null` before the first step, when it
 	 *  is the boresight (`gimbal.ts`). */
 	gunAim: Vec3 | null = null;
@@ -5853,9 +5894,19 @@ class Game {
 	 * **This is the frame the flight report was about.** A pilot who held a beam
 	 * on a Clean miner reached the divert — and therefore Wanted, and therefore a
 	 * closed berth — with nothing said at any point in between. Here the clock
-	 * crosses while the shields are still two-thirds up, the rail says who is
-	 * transmitting, and `lastExit` says what it cost, which is the same form the
-	 * divert and the kill already use.
+	 * crosses while the shields are still two-thirds up, and the pilot is told:
+	 * one sentence on the glass (`charge-notice.ts`, drawn with the scoop's
+	 * notice) and one line on the Communications log.
+	 *
+	 * **The claim this comment used to make was false, and #447 corrected it
+	 * where it was made.** It said the rail named the transmitter and `lastExit`
+	 * said what it cost, "the same form the divert and the kill already use".
+	 * The rail's value is the **first hit's** hail, written ~4.9 s earlier by
+	 * `hailTrafficCarrier`, and `hailRailValue` returns a bare callsign rather
+	 * than a verdict; `lastExit` goes only to `#hud`, which the page clips to
+	 * `1 px x 1 px`. So the form the divert and the kill "already use" reached no
+	 * pilot either. `lastExit` keeps its line here as probe evidence that a
+	 * string was authored, and it is not the voice.
 	 *
 	 * **A charge that cost nothing is not recorded.** The target's true standing
 	 * can make the five seconds lawful (F7), and a lawful act has no mark to
@@ -5889,10 +5940,23 @@ class Game {
 			);
 			this.saveDirty();
 		}
-		this.lastExit =
-			heat > 0
-				? `${actor.callsign} — sustained fire on a citizen, and that is an offence`
-				: `${actor.callsign} — sustained fire`;
+		const event = { callsign: actor.callsign };
+		this.lastExit = chargeExit(event, heat > 0);
+		// **And the pilot is told, which is the whole of #457.** Only a charge
+		// that cost something: a lawful five seconds (F7) leaves no mark on the
+		// world and is not a thing the pilot was booked for, so saying so on the
+		// glass would be the console accusing them of something the law did not.
+		if (heat > 0) {
+			this.charged = nextChargeNotice(this.charged, event);
+			this.charges.push({
+				at: now,
+				key: actor.key,
+				text: chargeLogText(event),
+			});
+			// Bounded like the hails, and for the same reason: a screenful is what
+			// the log can show, and a held trigger may not grow this past one.
+			if (this.charges.length > HAIL_LOG_KEEP) this.charges.shift();
+		}
 	}
 
 	/**
@@ -9536,6 +9600,11 @@ class Game {
 		// is the row that insists on it.
 		this.scoop = { text: "", left: 0, accepted: true, canisterId: null };
 		this.scoopRender = null;
+		// And the charge's, for the same reason (#457): a sentence about a
+		// carrier in the system the pilot has left says nothing here. The
+		// Communications log keeps its line, which is what a record is for.
+		this.charged = { text: "", left: 0 };
+		this.chargedRender = null;
 		this.gunAim = null;
 		this.struckFor = 0;
 		this.lastExit = "";
@@ -10756,6 +10825,7 @@ class Game {
 		// regime branch below chooses how to fly this frame.
 		this.struckFor = Math.max(0, this.struckFor - dt);
 		this.scoop.left = Math.max(0, this.scoop.left - dt);
+		this.charged.left = Math.max(0, this.charged.left - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
 		this.stepRelay(shot);
@@ -11936,6 +12006,13 @@ class Game {
 							// #396: the struck carrier's hail. Not a derivation, and
 							// the one line here that is not — see `this.hails`.
 							...this.hails.map((h) => h.line),
+							// #457: the sustained-fire charge, in the law's voice. The
+							// second line here that is not a derivation, and its own
+							// store for the reason `this.charges` gives. The log is the
+							// record and never the voice — it is read by turning away
+							// from the glass — so the sentence the pilot was shown at
+							// the frame it landed is still here after it has faded.
+							...this.charges,
 						])
 							.slice(0, 6)
 							.map(formatRaiderLogLine)
@@ -13495,7 +13572,7 @@ class Game {
 			const alpha = Math.min(1, this.scoop.left / (SCOOP_NOTICE_S * 0.4));
 			// §4's grammar: green confirms, red refuses. A full hold drawn in the
 			// cargo green read as a successful scoop (sage #355).
-			drawScoopNotice(ctx, w, h, glassBottom, {
+			drawGlassNotice(ctx, w, h, glassBottom, {
 				text: this.scoop.text,
 				alpha,
 				fill: this.scoop.accepted ? CARGO_CONTACT_CSS : FLOOR_TONE_FILL.refused,
@@ -13506,6 +13583,32 @@ class Game {
 				accepted: this.scoop.accepted,
 			};
 		} else this.scoopRender = null;
+		// The sustained-fire charge's, on the row above it (#457). In every view
+		// for the scoop's reason: the act is the pilot's own, and a pilot who
+		// pulled back to chase to see what they were shooting at is the one the
+		// flight report was written by.
+		//
+		// **Amber, on §4's grammar.** Cyan is passive instrumentation, green
+		// confirms a state the pilot asked for, and red is refusal — which the
+		// law already speaks in red at a hostile berth
+		// (`docking-director.ts`), so a charge drawn red would be the same word
+		// for the consequence and for the act that earned it. Amber is §4's
+		// actionable prompt, and the charge is exactly that: the clock has
+		// crossed, the divert has not, and stopping now is still a thing the
+		// pilot can do. It is a look decision, so it is the frame and the
+		// principal that settle it rather than this comment.
+		if (this.charged.left > 0 && this.charged.text) {
+			const alpha = Math.min(1, this.charged.left / (CHARGE_NOTICE_S * 0.4));
+			drawGlassNotice(
+				ctx,
+				w,
+				h,
+				glassBottom,
+				{ text: this.charged.text, alpha, fill: FLOOR_TONE_FILL.action },
+				1,
+			);
+			this.chargedRender = { text: this.charged.text, alpha };
+		} else this.chargedRender = null;
 		// The gimballed beam's point on the glass (#324): the tracer ends there,
 		// and while the gimbal has turned the beam off the boresight a small pip
 		// shows where it points.
