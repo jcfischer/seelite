@@ -158,8 +158,15 @@ export const LEVERS = Object.freeze({
  *   fill exists because the second case rendered the hull as a black cutout,
  *   and the sheet has to contain the case the fix was made for.
  * - `deep-sky` — at the arrival point, with the backdrop as the subject rather
- *   than the thing behind one, aimed by `__emptiestDirection` at the heading with
- *   the least on it, which is what a frame for *nothing in front of it* needs.
+ *   than the thing behind one, aimed by `__emptiestDirection`. What that rule is
+ *   worth knowing before its heading is trusted: it takes the **maximum of the
+ *   minimum** angle over 512 candidate directions, so it returns the emptiest
+ *   heading *available* and not an empty one, and the angle it lands on
+ *   is a measured quantity rather than something the rule guarantees. #487 measured
+ *   it, and `probe-sky.mjs` holds the reading at this file's own seed. **What the
+ *   sweep found is the sweep's to print** — neither its seed count nor its verdict is
+ *   reprinted here, because this file has carried a stale figure before and a
+ *   caption's strongest word should be held by a row rather than by a comment.
  *   #432 grew an `aim: "core"` arm here, aimed along the **Core bearing**, and it
  *   is gone again: see the note beside `sky-only` for why a row aimed at the
  *   cluster's centre cannot show it, and `scripts/measure-sky-density.ts`'s field
@@ -766,9 +773,15 @@ export const VIEWS = Object.freeze([
 	 * arithmetic is what #432's `aim` axis existed to do and this row deliberately did
 	 * not revive. So the line names the *rule* — what the camera did, which is true
 	 * and readable off the placer — instead of what the frame contains, which is
-	 * neither. (`sky-only`'s line has said *"with nothing in front of it"* on that
-	 * same unbounded basis since #104. That is not this row's to fix and it is worth
-	 * its own node.)
+	 * neither. (`sky-only`'s line has said *"with nothing in front of it"* since
+	 * #104 on just the basis this paragraph calls unheld, and it was a fair
+	 * question why a new row had to be careful about a sentence an old one had been
+	 * spending for twenty nodes. #487 measured it and the sentence stands —
+	 * `scripts/measure-sky-clearance.mjs` prints what it found and `probe-sky.mjs`
+	 * holds this file's own seed, and neither the sweep's count nor its verdict is
+	 * reprinted here. Which does not make this row's draft right: it claimed a
+	 * *crowding* property, which is a different question from a clearance and is not
+	 * rescued by measuring one.)
 	 *
 	 * System 115 is the farthest of the 256 from the cluster centre on the sheet's
 	 * own seed, on the generator's own radial coordinate (`SystemRecord.t`) rather

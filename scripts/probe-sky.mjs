@@ -58,6 +58,18 @@
  */
 import { gameUrl } from "./lib/game-url.mjs";
 import {
+	bootForClearance,
+	emptiestClearance,
+	installClearanceHooks,
+	measureClearance,
+} from "./lib/sky-clearance.mjs";
+// The seed the contact sheet is captured at, which is the only world `sky-only`
+// is ever drawn in. Imported rather than written, because a probe that pins the
+// sheet's seed by number keeps passing after the sheet moves. Note this is a
+// different world from this file's own `SEED` below: those rows ask the generator
+// for a sky with neighbours in every direction, the clearance row asks the sheet's.
+import { SEED as SHEET_SEED, VIEWPORT } from "./lib/view-set.mjs";
+import {
 	bootedGame,
 	guardedOrigin,
 	launchChromium,
@@ -76,6 +88,9 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 watch(page);
+// 1280x800 is 16:10, the sheet's ratio rather than Playwright's default 16:9, so
+// the frame the clearance row below measures is the frame the caption is printed
+// in. The rows above it project nothing angular and would not notice either way.
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 
@@ -417,6 +432,82 @@ check(
 	"an index the galaxy does not have is said, and the start system boots instead",
 	bootedTheStart && refusalWasSaid,
 	`${bootedTheStart ? `system ${refused} booted, the start system, not clamped to the last index` : `system ${refused} booted for an index the galaxy does not have`}${refusalWasSaid ? ", and the refusal was said in the console" : ", and nothing was said about it"}`,
+);
+
+// ---------------------------------------------------------------------------
+//
+// The caption `sky-only` has carried since #104 is a claim about the picture —
+// *"with nothing in front of it"* — and #480's review blocked two drafts of a new
+// caption on exactly that ground, which is how the old one became a question
+// instead of a fixture. It was measured for #487 and it holds; the spread of worlds
+// and every figure that came out of it belong to `measure-sky-clearance.mjs`, which
+// prints them, and are deliberately **not restated here** — this file has a check
+// that prints its own numbers, and a comment holding the sweep's figures is a third
+// copy of a measurement that nothing runs.
+//
+// Two rows, because a gate that has never been seen red is a belief:
+//
+// - the framing the sheet actually uses, requiring that no subject's disc is inside
+//   the frame — which is the caption, held;
+// - the same arithmetic aimed at the star, requiring that it *does* find bodies in
+//   the frame — which is the arithmetic's own non-vacuity.
+//
+// **What the second row is not**, said plainly because it is the tempting reading:
+// it does not show that a body will ever appear at the arrival system, which nothing
+// here can show. It shows that this reading notices a body when one is in front of
+// the camera, so that the first row's green is a measurement rather than a tautology
+// about a cone nobody is looking through.
+//
+// Both rows hold **one** world, the sheet's own seed, rather than the sweep's eleven:
+// a gate that samples a spread must not lend that spread's authority to a single
+// boot, and the reason the sheet's seed earns a gate at all is that it is the only
+// world `sky-only` is ever drawn in. So the day the arrival point moves, or the
+// placer's candidate sphere coarsens, or a body appears at the arrival system, the
+// caption on the contact sheet is the thing that has become false, and this is the
+// row that says so rather than a person noticing it while reading the sheet.
+//
+// The bound is the frame's half-diagonal, and it is checked against `VIEWPORT` rather
+// than assumed from this file's own page. Everything else about the arithmetic — discs
+// and centres, bloom, the fixture, what the settled instant can and cannot hold — is
+// owned by `lib/sky-clearance.mjs`, which these two rows read and do not restate.
+// ---------------------------------------------------------------------------
+
+// Last, not first: these are `addInitScript` payloads, and the twelve rows above
+// never touch a placer, so they should not pay for one on every navigation.
+await installClearanceHooks(page);
+await bootForClearance(page, origin, SHEET_SEED);
+
+const clearance = await emptiestClearance(page, SHEET_SEED);
+const limb = clearance.nearest.limbDeg;
+const halfDiagonal = clearance.halfDiagonalDeg;
+const stoodOnTheSheetsSeed = clearance.worldSeed === SHEET_SEED;
+// **The rectangle is part of the claim, so it is checked and not commented on.**
+// This probe's page is 1280x800 and the sheet is captured at `VIEWPORT`; the two
+// agree today because both are 16:10, and nothing about that survives an edit to
+// either. `lib/sky-clearance.mjs` says a consumer at the wrong ratio is quoting a
+// frame nobody prints, so the row asks the page what its aspect actually is.
+const sheetsRatio =
+	Math.abs(clearance.aspect - VIEWPORT.width / VIEWPORT.height) < 1e-9;
+
+check(
+	"the deep-sky framing leaves nothing drawn inside the frame, which is what `sky-only`'s caption claims",
+	clearance.inFrame === 0 && stoodOnTheSheetsSeed && sheetsRatio,
+	`${stoodOnTheSheetsSeed ? `seed ${clearance.worldSeed}, system ${clearance.system}` : `asked for the sheet's seed ${SHEET_SEED} and booted ${clearance.worldSeed}, so this says nothing about the sheet`}: ${clearance.bodies} bodies and ${clearance.craft} traffic hulls drawn (${clearance.craftPlaced} placed), nearest ${clearance.nearest.name} (${clearance.nearest.kind}) with its limb ${limb.toFixed(2)}° off the axis against a frame half-diagonal of ${halfDiagonal.toFixed(2)}°, so ${clearance.inFrame === 0 ? `${(limb - halfDiagonal).toFixed(2)}° of margin` : `${clearance.inFrame} subject(s) in frame`}${sheetsRatio ? "" : ` — and the page's aspect is ${clearance.aspect.toFixed(4)}, not the sheet's ${(VIEWPORT.width / VIEWPORT.height).toFixed(4)}, so the bound above is not the sheet's bound`}`,
+);
+
+// The control. `__lookAt` the star rather than constructing a heading, so this is
+// the shipped placement helper being misused on purpose and not a second arithmetic
+// that agrees with the first by construction. It requires a **non-star** subject in
+// frame: the star is injected by hand from `contents.star`, so a control going green
+// on it alone would still pass with an empty or drifted bodies list — the exact drift
+// it is here to catch.
+await page.evaluate(() => window.__lookAt({ x: 0, y: 0, z: 0 }));
+const aimed = await measureClearance(page, SHEET_SEED);
+
+check(
+	"the same reading aimed at the star finds bodies other than the star in the frame, so the row above is a measurement",
+	aimed.inFrameBodies > 0,
+	`aimed at the star from the same place, where ${aimed.inFrame} of ${aimed.bodies + aimed.craftPlaced + 1} subjects fall inside ${aimed.halfDiagonalDeg.toFixed(2)}° — ${aimed.inFrameStar} star, ${aimed.inFrameBodies} bodies, ${aimed.inFrameTraffic} traffic [${aimed.inFrameNames.join(", ") || "nothing"}]`,
 );
 
 await browser.close();
