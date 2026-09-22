@@ -9,9 +9,10 @@
  * into a collision.
  */
 import { describe, expect, test } from "bun:test";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, dispatchSites } from "./lib/source-scan";
 import {
 	type Binding,
+	codeKey,
 	collisions,
 	COMMANDS,
 	type Half,
@@ -255,37 +256,25 @@ describe("the ratified layout", () => {
 
 describe("the axis law names which key is which", () => {
 	/**
-	 * The held keys' half of the ratified layout, read out of `main.ts`.
+	 * The signed axes, read out of `main.ts` — **as command ids since #381's
+	 * dispatch fold**, which is what those call sites now name.
 	 *
-	 * `controls-catalogue.test.ts` checks every *pressed* key against its case
-	 * body; a held key has no case, so nothing outside this file knew which of
-	 * `w` and `s` puts the nose up — and the registry publishes that pairing to
-	 * the `Controls` tab and to the public manual. `axis(negative, positive)`
-	 * at `main.ts` is where it is actually decided, so this reads the call
-	 * sites and pairs them against the ids.
+	 * The question this row asks did not change with the fold, and the thing
+	 * that answers it did. `axis(negative, positive)` used to carry two key
+	 * lists, and nothing outside this file knew which of `w` and `s` puts the
+	 * nose up while the registry publishes that pairing to the `Controls` tab
+	 * and to the public manual. The keys are the registry's now, held frozen
+	 * by `RATIFIED_LAYOUT`; what `main.ts` still decides by itself is **which
+	 * half of the pair is the negative term**, and swapping two ids there is
+	 * still a working game that flies inverted.
 	 */
 	const axisCalls = () => {
 		const source = codeOf("src/main.ts");
-		const found = [
-			...source.matchAll(/this\.axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g),
-		];
-		const keys = (list: string) =>
-			[...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
+		const found = [...source.matchAll(/this\.axis\("([^"]+)",\s*"([^"]+)"\)/g)];
 		return found.map((m) => ({
-			negative: keys(m[1] as string),
-			positive: keys(m[2] as string),
+			negative: [m[1] as string],
+			positive: [m[2] as string],
 		}));
-	};
-
-	/** The command a *held* key reaches, as text so a miss reads as a name. */
-	const heldCommand = (key: string): string => {
-		const found = DEFAULT_BINDINGS.filter(
-			(b) =>
-				b.trigger.kind === "key" && b.trigger.key === key && b.trigger.hold,
-		);
-		return found.length === 1
-			? (found[0]?.command ?? "none")
-			: `${found.length} commands`;
 	};
 
 	test("the scan finds the call sites it is supposed to find", () => {
@@ -325,8 +314,8 @@ describe("the axis law names which key is which", () => {
 					b.trigger.half === half,
 			)?.command;
 		const calls = axisCalls();
-		const pitchCall = calls.find((c) => c.negative.includes("s"));
-		const yawCall = calls.find((c) => c.negative.includes("d"));
+		const pitchCall = calls.find((c) => c.negative.includes("fly.pitchUp"));
+		const yawCall = calls.find((c) => c.negative.includes("fly.yawStarboard"));
 		// A negated term means the positive push agrees with the negative list.
 		expect([
 			mouseHalf("y", "+") ?? "none",
@@ -334,31 +323,63 @@ describe("the axis law names which key is which", () => {
 			mouseHalf("x", "+") ?? "none",
 			mouseHalf("x", "-") ?? "none",
 		]).toEqual([
-			heldCommand(pitchCall?.negative[0] ?? ""),
-			heldCommand(pitchCall?.positive[0] ?? ""),
-			heldCommand(yawCall?.negative[0] ?? ""),
-			heldCommand(yawCall?.positive[0] ?? ""),
+			pitchCall?.negative[0] ?? "none",
+			pitchCall?.positive[0] ?? "none",
+			yawCall?.negative[0] ?? "none",
+			yawCall?.positive[0] ?? "none",
 		]);
 	});
 
-	test("every held key lands on the command the axis law gives it", () => {
+	test("every axis names the pair the law gives it, in the right order", () => {
 		const rows = axisCalls()
 			.map(
-				(call) =>
-					`${call.negative.map(heldCommand).join(",")} ← → ${call.positive
-						.map(heldCommand)
-						.join(",")}`,
+				(call) => `${call.negative.join(",")} ← → ${call.positive.join(",")}`,
 			)
 			.sort();
 		expect(rows).toEqual(
 			[
 				// `chaseOrbitInput`, whose own comment holds the port ruling.
 				"view.orbitPort ← → view.orbitStarboard",
-				"fly.pitchUp,fly.pitchUp ← → fly.pitchDown,fly.pitchDown",
+				"fly.pitchUp ← → fly.pitchDown",
 				"fly.rollStarboard ← → fly.rollPort",
-				"fly.yawStarboard,fly.yawStarboard ← → fly.yawPort,fly.yawPort",
+				"fly.yawStarboard ← → fly.yawPort",
 			].sort(),
 		);
+	});
+
+	test("and every id asked as held is a command that is held, not pressed", () => {
+		// The half the ids alone cannot state: a call site that named a
+		// *pressed* command would compile, read correctly and never fly,
+		// because `isHeld` only ever looks at hold triggers.
+		//
+		// **Every held query, not only the axes** (sage round 1). The throttle
+		// asks by id, and `combat-rig.ts` is handed the predicate and asks it
+		// four times — the beam, the pulse and the two rolls — which had no
+		// row anywhere while the axes had one.
+		// `dispatchSites` is the shared scanner (sage round 2), and `held` is
+		// the shape this row is about — not `all`, which also carries the
+		// rig's `id === "fight.rigIncoming"`, a *pressed* command that this
+		// row would then have demanded be held.
+		const asked = new Set([
+			...axisCalls().flatMap((c) => [...c.negative, ...c.positive]),
+			...dispatchSites(codeOf("src/main.ts")).held,
+			...dispatchSites(codeOf("src/combat-rig.ts")).held,
+		]);
+		// Guard the guard: all three scans found something.
+		expect([
+			asked.has("fly.pitchUp"),
+			asked.has("fly.throttleUp"),
+			asked.has("fight.fireBeam"),
+		]).toEqual([true, true, true]);
+		for (const id of asked) {
+			const holds = DEFAULT_BINDINGS.some(
+				(b) =>
+					b.command === id &&
+					b.trigger.kind === "key" &&
+					b.trigger.hold === true,
+			);
+			expect(`${id} is held: ${holds}`).toBe(`${id} is held: true`);
+		}
 	});
 });
 
@@ -374,13 +395,13 @@ describe("the chord is view-guarded and the pad is not", () => {
 		// source, because this asymmetry was read as a defect on review.
 		const source = codeOf("src/main.ts");
 		expect(
-			/if\s*\(this\.view === "cockpit"\)\s*this\.command\(route\.key\)/.test(
+			/if\s*\(this\.view === "cockpit"\)\s*this\.commandKey\(route\.key\)/.test(
 				source,
 			),
 		).toBe(true);
 		const padLoops = [
 			...source.matchAll(
-				/for \(const key of intents\.keys\) this\.command\(key\);/g,
+				/for \(const key of intents\.keys\) this\.commandKey\(key\);/g,
 			),
 		];
 		expect(padLoops.length).toBeGreaterThan(0);
@@ -390,30 +411,39 @@ describe("the chord is view-guarded and the pad is not", () => {
 });
 
 describe("what a surface claims", () => {
-	test("the Requests console claims exactly the keys the registry scopes to it", () => {
+	test("the Requests console claims by scope, and still returns out", () => {
 		// The other unchecked sentence: `dock.launch`'s bare `Enter` and
 		// `panel.activate`'s scoped one are not a collision *because* `main.ts`
 		// returns out of its key handler for the keys that console claims.
 		// Delete that early return and the CI gate would have stayed green
 		// while `Enter` both launched and activated.
+		//
+		// **The five-key list this compared against is gone** (#381): `main.ts`
+		// asks the registry for the surface's rows, so the two can no longer
+		// disagree by construction and there is nothing left to compare. What
+		// still has to hold is the branch — the scoped resolve, and the return
+		// that keeps a claimed key from reaching the ship's switch below.
 		const source = codeOf("src/main.ts");
-		const claimed = source.match(
-			/\[((?:"(?:arrow[a-z]+|enter)",?\s*)+)\]\.includes\(\s*route\.key/,
+		const from = source.indexOf("const requests =");
+		const claim = source.slice(
+			from,
+			source.indexOf('if (route.kind === "chord")', from),
 		);
-		if (!claimed) throw new Error("main.ts no longer claims a key list");
-		const keys = [...(claimed[1] ?? "").matchAll(/"([^"]+)"/g)]
-			.map((m) => m[1] as string)
-			.sort();
-		const scoped = [
-			...new Set(
-				DEFAULT_BINDINGS.flatMap((b) =>
-					b.trigger.kind === "key" && b.scope.surface === "requests"
-						? [b.trigger.key]
-						: [],
-				),
-			),
-		].sort();
-		expect(scoped).toEqual(keys);
+		expect(claim).toContain('surface: "requests"');
+		// **Anchored inside the walking branch, not loose in the span**
+		// (sage round 2). `toContain("return;")` over the whole claim was
+		// satisfied by any return in it, including the Space guard's — which
+		// is a different branch and would have kept the row green with the
+		// one that matters deleted.
+		const walking = claim.slice(claim.indexOf("if (walking.length > 0) {"));
+		expect(walking.startsWith("if (walking.length > 0) {")).toBe(true);
+		expect(walking.slice(0, walking.indexOf("\n\t\t\t}"))).toContain("return;");
+		// And the scope is not empty, so the branch cannot be satisfied by a
+		// resolve that can never answer.
+		const scoped = DEFAULT_BINDINGS.filter(
+			(b) => b.scope.surface === "requests",
+		);
+		expect(scoped.length).toBeGreaterThan(4);
 	});
 
 	test("each surface a binding names is a place the source draws", () => {
@@ -428,7 +458,7 @@ describe("what a surface claims", () => {
 		const ANCHORS: Record<string, { file: string; mark: RegExp }> = {
 			requests: {
 				file: "src/main.ts",
-				mark: /"enter"\s*\]\.includes\(\s*route\.key/,
+				mark: /surface: "requests",/,
 			},
 			"station-console": {
 				file: "src/live-cockpit.ts",
@@ -480,7 +510,12 @@ describe("D5's two predicates", () => {
 		const byPhysical = new Map<string, Set<string>>();
 		for (const b of DEFAULT_BINDINGS) {
 			if (b.trigger.kind !== "key") continue;
-			const at = `${b.trigger.code ?? b.trigger.key}${b.trigger.alt ? "+alt" : ""}`;
+			// Normalised through the registry's own `codeKey`, not through
+			// `code ?? key`: a letter row carries `code: "KeyQ"` since the
+			// dispatch slice, and the raw code is not what a player calls it.
+			const physical =
+				b.trigger.code === undefined ? b.trigger.key : codeKey(b.trigger.code);
+			const at = `${physical}${b.trigger.alt ? "+alt" : ""}`;
 			byPhysical.set(at, (byPhysical.get(at) ?? new Set()).add(b.command));
 		}
 		const shared = [...byPhysical]

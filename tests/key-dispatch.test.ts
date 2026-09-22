@@ -293,8 +293,13 @@ describe("main.ts acts on the route", () => {
 
 	test("a chord runs its key's command, in the cockpit", () => {
 		const chord = branch("chord");
+		// `commandKey`, not `command`: a chord hands over the key it stands
+		// for, and the registry resolves that against the **shipped** table
+		// rather than the player's (#381). The cockpit guard is still not
+		// redundant — `2` in chase is `view.orbitCentre`, which the d-pad
+		// reaches and this never has.
 		expect(chord).toContain(
-			'if (this.view === "cockpit") this.command(route.key);',
+			'if (this.view === "cockpit") this.commandKey(route.key);',
 		);
 		expect(chord).toContain("e.preventDefault();");
 	});

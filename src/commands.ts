@@ -29,32 +29,38 @@
  *   `collisions()` answers both and each caller decides what an answer means.
  * - **D7** — dispatch is on the physical key (`code`) and print is on the
  *   character the binding was *recorded* with, so the tab keeps printing
- *   characters. **The shipped letter defaults do not carry a `code` yet**, and
- *   saying otherwise would be claiming the AZERTY property this slice has not
- *   built: only the three Alt chords carry one, because `ALT_CHORDS` is keyed
- *   on `code` already. `triggerKey` reads `code ?? key`, so it is ready for
- *   them; authoring the letter rows and migrating a saved layout belongs to
- *   the dispatch slice, which is where the codes have a consumer.
+ *   characters. The letter rows carry a code since the dispatch slice, derived
+ *   in `keyTrigger` rather than authored fifty times; the Alt chords carried
+ *   one already, because `ALT_CHORDS` is keyed on `code`. **Two groups do not,
+ *   and `codeFor` owns both reasons** rather than this list restating them.
+ *   The property reaches a *pressed* command only: the held set is characters,
+ *   so `isHeld` asks for a key rather than a position, and #390 owns the
+ *   change that would move it. Migrating a saved layout is the storage
+ *   slice's.
  *
  * **What is derived and what is authored**, unchanged from #372's interim
  * module because the reason has not changed: the pad's half is derived here,
  * at load, by asking `pad-bindings.ts` what each button does in each context —
  * the same functions the game calls — so a rebound button moves its row with
- * no edit here. The keyboard's half cannot be: its bindings live in `main.ts`'s
+ * no edit here. **`PAD_FLIGHT_KEYS` and `ALT_CHORDS` still name keys rather
+ * than commands**, which is why `main.ts` keeps a `commandKey(key)` beside
+ * `command(id)`: both tables stand for a key and are resolved against the
+ * shipped layout. That pins every pad button to the default keyboard by
+ * construction, so a pad *rebind* cannot be expressed until those tables name
+ * a `CommandId` — a recorded staging point for the capture slice rather than
+ * the settled design. The keyboard's half cannot be: its bindings live in `main.ts`'s
  * key switch, which the unit tier cannot load. So the keys are stated and
  * `tests/controls-catalogue.test.ts` reads `main.ts` with the partition test's
  * own scanner, in both directions.
  *
- * **One hazard the dispatch slice inherits, recorded here because no function
- * owns both halves of it.** `codeKey` reaches the letter and digit codes and
- * no others, and `triggerKey` routes identity through it: author
- * `code: "Slash"` and it hashes `key:slash` against the shipped `key:/`, one
- * physical key with two identities that `collisions()` cannot see. The
- * shipped defaults hold ten punctuation keys. And one pair fails the other
- * way — `?` and `/` are one physical key apart by Shift, which this model
- * does not carry because #377 ruled `?` is the character the keyboard types
- * and not a chord, so coding both would report a collision the game does not
- * have. Whichever way that slice settles it, it settles both halves at once.
+ * **The hazard S1 recorded, and how the dispatch slice settled it.** `codeKey`
+ * reached the letter and digit codes and no others, so a row authored
+ * `code: "Slash"` hashed `key:slash` against the shipped `key:/` — one
+ * physical key with two identities that `collisions()` could not see, over ten
+ * punctuation keys. It is a table over the codes this game ships now, mapping
+ * each to the **unshifted** character — which is the other half of the same
+ * hazard, for the reason `codeFor` gives. One rule settled both, and
+ * `tests/dispatch.test.ts` holds all three consequences.
  *
  * Headless, and on the list in `tests/headless.test.ts`.
  */
@@ -527,8 +533,17 @@ const AUTHORED = [
 		more: [{ kind: "mouse-button", action: "hold" }, ...fireButtons()],
 	},
 	{
-		// The other half of D3's split on `x`. `combat-rig.ts` reads `BEAM_KEY`
-		// held every frame; `fly.assist` takes the press.
+		// The other half of D3's split on `x`. `combat-rig.ts` asks whether
+		// this command is held every frame; `fly.assist` takes the press.
+		//
+		// **`x`, not `s`, and the reason moved here with the key.** `s` is
+		// `fly.pitchUp` — the row above is the authority, and the comment this
+		// replaced in `combat-rig.ts` said "pitch-down", which was the sentence
+		// being wrong rather than the key. Either way a beam bound to it meant
+		// every held shot also pushed the nose off the thing being shot at,
+		// invisible against a scripted target and the whole difficulty against
+		// a flown one. `probe-live-cockpit.mjs` held the old key for fifteen
+		// seconds and timed out rather than saying so.
 		id: "fight.fireBeam",
 		name: "Fire the beam (combat rig)",
 		group: "fight",
@@ -870,10 +885,16 @@ const AUTHORED = [
 /** Every command's id, and the type every dispatch site takes. */
 export type CommandId = (typeof AUTHORED)[number]["id"];
 
-const keyTrigger = (spec: KeySpec): Trigger =>
-	typeof spec === "string"
-		? { kind: "key", key: spec }
-		: { kind: "key", ...spec };
+const keyTrigger = (spec: KeySpec): Trigger => {
+	const base = typeof spec === "string" ? { key: spec } : spec;
+	// Derived rather than authored, so a letter row cannot be added without
+	// one: fifty-odd hand-written `code` fields is fifty-odd chances to omit
+	// the one that matters, and the omission is invisible on a US keyboard.
+	const code = base.code ?? codeFor(base.key);
+	return code === undefined
+		? { kind: "key", ...base }
+		: { kind: "key", ...base, code };
+};
 
 /**
  * The pad buttons that press one of this command's keys.
@@ -892,11 +913,97 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 	return out;
 }
 
-/** How a physical key prints: a letter or digit key by its character, an
- *  arrow by the key it sends. Punctuation prints as its code name, which is
- *  half of the hazard the module header records. */
-const codeKey = (code: string) =>
-	code.replace(/^(Key|Digit)/, "").toLowerCase();
+/**
+ * The punctuation keys, by the character they type unshifted.
+ *
+ * A prefix strip cannot reach these: `Slash` is not `Key`- or `Digit`-prefixed
+ * and lowercases to `slash`, which is a string no keypress produces. That was
+ * half of the hazard S1's header recorded — a row authored `code: "Slash"`
+ * hashed against the shipped `key: "/"` as two identities of one physical key,
+ * invisible to `collisions()`.
+ *
+ * The **unshifted** character on purpose, and the reason is `codeFor`'s to
+ * give: it decides which characters carry a code at all, and this table is
+ * only the other direction of that decision.
+ */
+const PUNCTUATION_CODES: Readonly<Record<string, string>> = {
+	// **The modifiers are here because the game binds two of them.** `shift`
+	// is `fly.throttleUp` and `control` is `fly.throttleDown`, and a browser
+	// reports those as `ShiftLeft`/`ShiftRight` and `ControlLeft`/`ControlRight`
+	// — which the prefix strip lowercases to `shiftleft`, one physical key with
+	// two identities against the shipped `key: "shift"`. That is the same hole
+	// this table was built to close for punctuation, left open for the two keys
+	// a pilot holds most (sage round 5). `alt` and `meta` are here for the same
+	// reason even though nothing binds them yet: the capture modal will hand
+	// this a `KeyboardEvent.code` off the page, and a key it cannot name is a
+	// key it cannot refuse.
+	AltLeft: "alt",
+	AltRight: "alt",
+	ControlLeft: "control",
+	ControlRight: "control",
+	MetaLeft: "meta",
+	MetaRight: "meta",
+	ShiftLeft: "shift",
+	ShiftRight: "shift",
+	Backquote: "`",
+	Backslash: "\\",
+	BracketLeft: "[",
+	BracketRight: "]",
+	Comma: ",",
+	Equal: "=",
+	Minus: "-",
+	Period: ".",
+	Quote: "'",
+	Semicolon: ";",
+	Slash: "/",
+	Space: " ",
+};
+
+/**
+ * How a physical key prints: a letter or digit key by its character, an arrow
+ * by the key it sends, and punctuation by the table above.
+ *
+ * Exported because `tests/commands.test.ts` labels a press/hold pair by the
+ * physical key it is on, and a second normalisation written there is exactly
+ * the drift `triggerKey`'s own doc warns about — it read `code ?? key` and
+ * printed `Digit1` the moment a digit row carried a code.
+ */
+export const codeKey = (code: string) =>
+	// `Object.hasOwn`, not `??`: a bare index returns an inherited member for
+	// `"constructor"` or `"toString"`, so this would hand back a *function*
+	// instead of falling through. Every caller passes an authored `trigger.code`
+	// today; the capture modal will pass a `KeyboardEvent.code` off the page,
+	// and that is the slice this guard is here for.
+	Object.hasOwn(PUNCTUATION_CODES, code)
+		? (PUNCTUATION_CODES[code] as string)
+		: code.replace(/^(Key|Digit)/, "").toLowerCase();
+
+/**
+ * The physical key a character is typed by on the layout the defaults were
+ * authored on — **letters, and nothing else** (#369 D7).
+ *
+ * This is the AZERTY property, and it is the only reason to author a code: the
+ * key at W's position sends `z` there, and a pilot's fingers should stay where
+ * they were. Two groups are deliberately left codeless, for two different
+ * reasons, and both were flown before they were refused.
+ *
+ * **Punctuation**, because `?` and `/` share one physical key. #377 ruled `?`
+ * is the character the keyboard types rather than a chord, so a code on either
+ * would report a collision the game does not have. The resolver falls back to
+ * the character there, which is the answer #377 already gave.
+ *
+ * **Digits**, because the code arm wins over the character and Shift is
+ * `fly.throttleUp`. With `Digit1` authored, a US pilot throttling up and
+ * touching `1` arrives as `{ key: "!", code: "Digit1" }`, the coded arm
+ * matches, and the head turns to the port console; `0` resets the cruise
+ * dials the same way. Before the fold `case "!"` matched nothing. That is a
+ * regression bought for a property nobody has asked for, and the AZERTY digit
+ * row — where the digits are themselves the shifted characters — is a layout
+ * question of its own rather than something this slice should settle in
+ * passing.
+ */
+const codeFor = (key: string): string | undefined =>
+	/^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : undefined;
 
 /**
  * The Alt chords that stand for one of this command's pressed keys — derived
@@ -1077,12 +1184,41 @@ export const commandById = (id: CommandId): Command => {
 };
 
 /** The shipped layout, as bindings rather than as rows. */
-export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
-	c.defaultTriggers.map((trigger) => ({
-		command: c.id,
-		trigger,
-		scope: scopeOf(trigger, c.views),
-	})),
+/**
+ * A layout, frozen **through** rather than at the surface.
+ *
+ * `Object.freeze` on the array alone was round 4's answer and it is not one:
+ * the freeze is shallow, so `layout[0].command = …` and
+ * `layout[0].trigger.hold = true` both succeed silently — and a merge is far
+ * likelier to write a row than to replace a slot. The row that was supposed to
+ * hold this asserted a slot assignment and could not see either (sage round
+ * 5). Each binding, its trigger and its scope are frozen here, which is what
+ * the hold index's precondition actually needs.
+ *
+ * The trigger and scope objects are shared with `COMMANDS` and with the
+ * context constants, so this freezes those too. That is intended: they are
+ * read-only by contract everywhere already.
+ */
+const freezeLayout = (rows: readonly Binding[]): readonly Binding[] => {
+	for (const b of rows) {
+		Object.freeze(b.trigger);
+		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
+		Object.freeze(b.scope.pad);
+		Object.freeze(b.scope.views);
+		Object.freeze(b.scope);
+		Object.freeze(b);
+	}
+	return Object.freeze(rows);
+};
+
+export const DEFAULT_BINDINGS: readonly Binding[] = freezeLayout(
+	COMMANDS.flatMap((c) =>
+		c.defaultTriggers.map((trigger) => ({
+			command: c.id,
+			trigger,
+			scope: scopeOf(trigger, c.views),
+		})),
+	),
 );
 
 // ---------------------------------------------------------------------------
@@ -1187,3 +1323,271 @@ export function collisions(bindings: readonly Binding[]): Collision[] {
  *  test row calls it so the alias cannot rot beside a direct call. */
 export const defaultCollisions = (): Collision[] =>
 	collisions(DEFAULT_BINDINGS);
+
+// ---------------------------------------------------------------------------
+// The dispatch (#381 slice 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a keyboard event states, as much of it as the table reads.
+ *
+ * Not a `KeyboardEvent`: `src/key-dispatch.ts` already decided what the event
+ * *means* — release, swallow, chord or ordinary key — and this answers the
+ * next question, which is which command that key reaches. **Neither module
+ * imports the other for the facts**, which is a stronger boundary than a
+ * direction and is why this shape is restated here rather than shared: this
+ * module imports `ALT_CHORDS` from there and nothing else, and a shared facts
+ * type would couple the law to the table it is asked about.
+ *
+ * `view` is required for the reason #369 D4 gives — `2` is head-forward in the
+ * cockpit and the orbit reset in chase, and a resolver that defaulted it would
+ * answer one of those silently.
+ */
+export interface KeyFacts {
+	/** `KeyboardEvent.key`, lowercased, as `keyDispatch` hands it over. */
+	readonly key: string;
+	/** `KeyboardEvent.code`. Absent only on a hand-built
+	 *  `new KeyboardEvent({ key })` — Playwright's keyboard supplies one, so
+	 *  the browser tier exercises the code arm rather than the fallback. */
+	readonly code?: string;
+	readonly alt?: boolean;
+	/** Asking what this key flies rather than what it presses. */
+	readonly hold?: boolean;
+	readonly view: ViewMode;
+	/** The screen that owns the keyboard right now, when one does. */
+	readonly surface?: Surface;
+}
+
+const keyBinding = (
+	b: Binding,
+): (Binding & { trigger: Extract<Trigger, { kind: "key" }> }) | null =>
+	b.trigger.kind === "key"
+		? (b as Binding & { trigger: Extract<Trigger, { kind: "key" }> })
+		: null;
+
+/**
+ * Everything about a key trigger except which key it is and where it is live.
+ *
+ * One owner, because `resolveKey` and `isHeld` both ask it and two hand-rolled
+ * walks of one table drift the moment `Trigger` grows an axis. The second walk
+ * existed for a round and had already diverged: it compared no `alt` at all,
+ * so an Alt-qualified hold row would have flown on the bare key.
+ */
+const matchesQualifiers = (
+	t: Extract<Trigger, { kind: "key" }>,
+	facts: {
+		readonly alt?: boolean;
+		readonly hold?: boolean;
+		readonly surface?: Surface;
+	},
+): boolean =>
+	(t.alt ?? false) === (facts.alt ?? false) &&
+	(t.hold ?? false) === (facts.hold ?? false) &&
+	t.surface === facts.surface;
+
+/** Everything about a key binding except which key it is. */
+const liveFor = (b: Binding, facts: KeyFacts): boolean => {
+	const keyed = keyBinding(b);
+	return (
+		keyed !== null &&
+		matchesQualifiers(keyed.trigger, facts) &&
+		b.scope.views.includes(facts.view)
+	);
+};
+
+/**
+ * The commands this key event reaches, in `bindings`.
+ *
+ * **The physical key wins, and the character is the fallback** — which is D7's
+ * two halves in one rule rather than two. A row that carries a `code` is
+ * matched on the event's `code`, so an AZERTY pilot pressing the M position
+ * still steps the vicinity dial although it types `,` there. A row that
+ * carries none is matched on the character, so `?` reaches the reference and
+ * `/` reaches the rig although both arrive on `Slash` — and so does every
+ * synthetic press in the probe tier, which carries no code at all.
+ *
+ * **This reaches a *pressed* command and not a held one, and that is a limit
+ * rather than an omission.** `main.ts` keeps its held set as the characters
+ * `keyDispatch` hands it, so `isHeld` asks the layout for a key rather than a
+ * position: on AZERTY the W position is held as `z` and pitch is not flown.
+ * Giving the held set the code is the same change #390 needs for the macOS
+ * Option release — where a key released under Option reports a different
+ * character and stays held — and that node owns it.
+ *
+ * A list rather than one id: nothing in the shipped layout answers twice, and
+ * `collisions()` is what holds that, but a player layout may — D5 is warn and
+ * allow, so the dispatch has to be able to run both.
+ */
+export function resolveKey(
+	bindings: readonly Binding[],
+	facts: KeyFacts,
+): CommandId[] {
+	const live = bindings.filter((b) => liveFor(b, facts));
+	const byCode =
+		facts.code === undefined
+			? []
+			: live.filter((b) => keyBinding(b)?.trigger.code === facts.code);
+	const hits =
+		byCode.length > 0
+			? byCode
+			: live.filter((b) => keyBinding(b)?.trigger.key === facts.key);
+	return [...new Set(hits.map((b) => b.command))];
+}
+
+/**
+ * The hold rows of one layout, by command — built once per table.
+ *
+ * `isHeld` is asked about a dozen times a frame (both axes, the roll, the
+ * chase orbit, the throttle's two and the rig's four), and a scan of the whole
+ * table for each of those is a dozen walks of two hundred rows where the code
+ * this replaced did one hash probe. The index is keyed on the layout array
+ * itself, so a `rebind` — which returns a new array rather than mutating one —
+ * simply builds a new one, and no invalidation step exists to be forgotten.
+ *
+ * **That was a precondition before it was a property.** The storage slice is
+ * the obvious candidate to break it — a layout merged *in place* keeps its
+ * array identity and would be answered out of a stale index — so
+ * `DEFAULT_BINDINGS` and everything `rebind` returns are frozen, and the
+ * attempt throws in strict mode rather than going quietly wrong.
+ *
+ * **The view is not indexed**, because it changes between frames while the
+ * layout does not; it is checked on the way out, over a list that is one or
+ * two rows long.
+ */
+type HeldBinding = Binding & { trigger: Extract<Trigger, { kind: "key" }> };
+
+const HOLD_INDEX = new WeakMap<
+	readonly Binding[],
+	Map<CommandId, HeldBinding[]>
+>();
+
+const holdRows = (
+	bindings: readonly Binding[],
+): Map<CommandId, HeldBinding[]> => {
+	const found = HOLD_INDEX.get(bindings);
+	if (found !== undefined) return found;
+	// **Frozen here, not only where a layout is built.** `isHeld` takes any
+	// array, and the storage slice will build layouts this module never made —
+	// so freezing at the producer left the precondition on callers with no type
+	// to carry it (sage round 5). Indexing an array is the moment it acquires
+	// the identity the index is keyed on, which is the moment the freeze has to
+	// happen.
+	freezeLayout(bindings);
+	const index = new Map<CommandId, HeldBinding[]>();
+	for (const b of bindings) {
+		const keyed = keyBinding(b);
+		if (keyed === null || !matchesQualifiers(keyed.trigger, { hold: true }))
+			continue;
+		index.set(b.command, [...(index.get(b.command) ?? []), keyed]);
+	}
+	HOLD_INDEX.set(bindings, index);
+	return index;
+};
+
+/**
+ * Is this command being flown right now?
+ *
+ * `keys` is the held set as `main.ts` keeps it: **the characters
+ * `keyDispatch` hands over**, which is what #377's first ruling and #390's
+ * limit depend on — a release clears the key it names, and a set of command
+ * ids could not be cleared by a keyup that reports a different character. So
+ * the store does not change and the query does: an id, resolved to its live
+ * hold triggers.
+ *
+ * It follows that a held command is reached by **character and not by
+ * position**, so `resolveKey`'s code arm does not extend to one. See that
+ * function's note: the fix is the held set carrying the code, and #390 owns
+ * it.
+ */
+export function isHeld(
+	bindings: readonly Binding[],
+	command: CommandId,
+	keys: ReadonlySet<string>,
+	view: ViewMode,
+): boolean {
+	// The index stores rows already narrowed to a key trigger and already
+	// filtered on every qualifier, so the view is the only thing left to ask —
+	// the null re-check this replaced was a condition `holdRows` guarantees,
+	// and a reader had to prove that to know the branch was dead.
+	for (const b of holdRows(bindings).get(command) ?? [])
+		if (b.scope.views.includes(view) && keys.has(b.trigger.key)) return true;
+	return false;
+}
+
+/**
+ * One binding moved onto a new trigger, as a new table.
+ *
+ * Pure, and it returns a table rather than mutating one, because the layout is
+ * the `Game`'s state and not this module's. A finish was module state once and
+ * every test that set one owed an `afterEach`; a layout is the same shape of
+ * hazard with a worse failure, since a leaked rebind flies the next test's
+ * ship.
+ *
+ * **It throws on a trigger the command does not have.** A silent no-op is a
+ * capture modal that reports success and moves nothing, which is exactly the
+ * defect a rebind screen ships with.
+ */
+export function rebind(
+	bindings: readonly Binding[],
+	command: CommandId,
+	from: Trigger,
+	to: Trigger,
+): readonly Binding[] {
+	const wanted = triggerKey(from);
+	const at = bindings.findIndex(
+		(b) => b.command === command && triggerKey(b.trigger) === wanted,
+	);
+	if (at === -1) throw new Error(`${command} has no binding on ${wanted}`);
+	const moved = movedTrigger(from, to);
+	const next = [...bindings];
+	next[at] = {
+		command,
+		trigger: moved,
+		scope: scopeOf(moved, commandById(command).views),
+	};
+	return freezeLayout(next);
+}
+
+/**
+ * The trigger a rebind actually stores — `to`, checked and completed.
+ *
+ * Two things the bare `to` gets wrong, and both produce the defect `rebind`'s
+ * doc names rather than preventing it.
+ *
+ * **A qualifier is the command's, not the player's.** `fly.pitchUp` is flown
+ * by holding a key; a `to` that dropped `hold` would be stored, would satisfy
+ * no `isHeld`, and the command would be silently unflyable while the call
+ * returned successfully. The player moves *which key*, which is #369 D4's
+ * "the player edits the trigger; the context set is the command's" applied to
+ * the half of a trigger that is not the key.
+ *
+ * **And a code is derived when the caller does not give one.** The shipped
+ * rows get theirs from `keyTrigger`, so a rebind that stored `to` verbatim
+ * would leave a letter codeless and lose D7's position dispatch for exactly
+ * the command the player just chose to move. A `to` that *does* carry a code
+ * keeps it, which is the capture modal's case rather than an oversight: it
+ * records the physical key it saw, and on a layout where that key does not
+ * type its US character — which is the whole point of D7 — the pair is
+ * legitimately mismatched and only the capture knows the truth. The cost is
+ * that a caller passing an inconsistent pair gets exactly what it asked for.
+ */
+function movedTrigger(from: Trigger, to: Trigger): Trigger {
+	if (from.kind !== to.kind)
+		throw new Error(`cannot move a ${from.kind} onto a ${to.kind}`);
+	// **Only a key is rebindable here, and refusing the rest is the point.**
+	// The first version returned a same-kind non-key `to` verbatim, which let a
+	// `mouse-button` hold be moved onto a click — stored, satisfying no reader,
+	// which is the defect the key branch exists to refuse. Every non-key kind
+	// has its own qualifiers (`action`, `half`, `intent`, `hold`), and a table
+	// of which part of each is movable is the capture modal's to write, since
+	// it is the thing that will admit a stick or a trigger for one capture.
+	// Until then a refusal is the honest answer, and S4 lifts it.
+	if (from.kind !== "key" || to.kind !== "key")
+		throw new Error(`only a key may be rebound here, not a ${from.kind}`);
+	if (!matchesQualifiers(to, from))
+		throw new Error(
+			`a rebind may move a key, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
+		);
+	const { kind: _kind, ...rest } = to;
+	return keyTrigger(rest);
+}

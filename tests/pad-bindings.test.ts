@@ -7,6 +7,7 @@
  * load — and a table nothing can load is a table nothing checks.
  */
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_BINDINGS, resolveKey, VIEW_MODES } from "../src/commands";
 import { codeOf, srcFiles } from "./lib/source-scan";
 import {
 	type PadButtonName,
@@ -78,19 +79,31 @@ describe("the flight table names keys the keyboard already understands", () => {
 		// the check green and the binding dead. Sage found that, round 6. A
 		// source read rather than an import because `main.ts` cannot be loaded in
 		// this tier; it is the same trade `tests/output-stage.test.ts` makes.
+		//
+		// **Through the registry since #381's dispatch fold**, which is what the
+		// pad's route actually is now: `commandKey` resolves the key against the
+		// shipped table and `command` switches on the id. So the question is two
+		// questions, and the first one is new — a pad button bound to a key no
+		// row claims used to be caught here by accident and is named now.
 		const source = codeOf("src/main.ts");
-		const body = source.slice(source.indexOf("private command(key: string)"));
+		const body = source.slice(source.indexOf("private command(id: CommandId)"));
 		const handled = new Set(
 			[
 				...body.slice(0, body.indexOf("\n\t}")).matchAll(/case "([^"]+)":/g),
 			].map((m) => m[1]),
 		);
 		expect(handled.size).toBeGreaterThan(10);
-		for (const key of Object.values(PAD_FLIGHT_KEYS))
-			expect(
-				handled.has(key),
-				`${key} is bound but command does not handle it`,
-			).toBe(true);
+		for (const key of Object.values(PAD_FLIGHT_KEYS)) {
+			const ids = VIEW_MODES.flatMap((view) =>
+				resolveKey(DEFAULT_BINDINGS, { key, view }),
+			);
+			expect(ids, `${key} is bound but reaches no command`).not.toEqual([]);
+			for (const id of ids)
+				expect(
+					handled.has(id),
+					`${key} reaches ${id}, which command does not handle`,
+				).toBe(true);
+		}
 	});
 
 	test("no two buttons are bound to the same key", () => {

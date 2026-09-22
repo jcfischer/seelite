@@ -248,40 +248,50 @@ export function boundKeys(source: string): Set<string> {
 }
 
 /**
- * The same bindings split by the shape a key is read in (#372): a `case` of a
- * switch, a comparison `key === "…")`, a held key (`keys.has` or an `axis`
- * list), and the list the Requests surface claims. The Alt chords are not a
- * shape of `main.ts` any more: `src/key-dispatch.ts`'s `ALT_CHORDS` holds them
- * (#377), and a test reads that table directly. The controls catalogue prints a key as one of these, and a key bound
- * in another shape does not make the printed one true.
+ * How a source file dispatches on a command id, **by shape and not as one
+ * set** — because the two test files that ask want different subsets, and
+ * flattening them is what made the first version wrong: the rig's own
+ * `id === "fight.rigIncoming"` is a command dispatch, and a caller asking
+ * "which ids are read as held" got it and went red.
+ *
+ * Three shapes are scanned — a `case "<id>":` label in either of `main.ts`'s
+ * two switches, an id handed to a held query (`this.held("…")` in `main.ts`,
+ * `held("…")` in `combat-rig.ts`, and the pair lists of `this.axis`), and the
+ * rig's own `id === "…"` — and two sets come back: `held`, because the
+ * held-ness row is about that shape alone, and `all`, because the
+ * completeness row is about any of them.
+ *
+ * Only these shapes. A mention anywhere else — a comment, a doc, a deleted
+ * branch's leftovers — is deliberately not a dispatch, which is the whole
+ * difference between this and `source.includes(id)`.
+ *
+ * Here rather than in the two test files that want it (#381, sage round 2).
+ * They had a near-copy each, differing only in how the quotes were captured,
+ * and two scanners of one question is what `stripComments` above was merged
+ * to end: a rename that killed one arm would have left the other green.
  */
-export function keysByShape(source: string) {
-	const resolve = keyResolver(source);
-	// Only a list is split on commas: `case ",":` is one token, and splitting it
-	// would lose the key.
-	const all = (re: RegExp, list = false) =>
+export function dispatchSites(source: string): {
+	held: Set<string>;
+	all: Set<string>;
+} {
+	const ids = (...res: RegExp[]) =>
 		new Set(
-			[...source.matchAll(re)].flatMap((m) =>
-				(list ? m[1].split(",") : [m[1]])
-					.map(resolve)
-					.filter((k): k is string => !!k),
+			res.flatMap((re) =>
+				[...source.matchAll(re)].flatMap((m) =>
+					[...(m[1] ?? "").matchAll(/"([a-z]+\.[A-Za-z0-9]+)"/g)].map(
+						(x) => x[1] as string,
+					),
+				),
 			),
 		);
-	const axisLists = [
-		...source.matchAll(/axis\(\[([^\]]*)\],\s*\[([^\]]*)\]\)/g),
-	].flatMap((m) => `${m[1]},${m[2]}`.split(","));
-	return {
-		cases: all(/case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:/g),
-		compared: all(/key === ("[^"]+"|[A-Z][A-Z0-9_]*)\)/g),
-		held: new Set([
-			...all(/keys\.has\(("[^"]+"|[A-Za-z_$][\w$]*)\)/g),
-			...axisLists.map(resolve).filter((k): k is string => !!k),
-		]),
-		requests: all(
-			// The one list `onKey` checks a key route against before walking the
-			// Requests surface (#377 moved it behind `keyDispatch`).
-			/\[([^\]]*)\]\.includes\(\s*route\.key\s*,?\s*\)/g,
-			true,
-		),
-	};
+	const cases = ids(/(case\s+"[a-z]+\.[A-Za-z0-9]+"\s*:)/g);
+	const held = ids(
+		/\bheld\((\s*"[^"]+"\s*)\)/g,
+		/\.axis\((\s*"[^"]+",\s*"[^"]+"\s*)\)/g,
+	);
+	const commanded = ids(/id === (\s*"[^"]+"\s*)/g);
+	// `cases` and `commanded` are scanned and not returned: no caller reads
+	// them, and unread surface on a freshly extracted helper is the next
+	// reader's puzzle. They are one line away when one wants them.
+	return { held, all: new Set([...cases, ...held, ...commanded]) };
 }

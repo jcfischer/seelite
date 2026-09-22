@@ -544,6 +544,15 @@ import {
 } from "./live-cockpit";
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { isEditable } from "./editable-target";
+import {
+	type Binding,
+	type CommandId,
+	DEFAULT_BINDINGS,
+	isHeld,
+	rebind,
+	resolveKey,
+	type Trigger,
+} from "./commands";
 import { keyDispatch } from "./key-dispatch";
 import { readDeficit, recordTrade } from "./deficits";
 import {
@@ -925,8 +934,6 @@ function wrapAngle(radians: number) {
  * a thing that can be compared with one.
  */
 const CHART_ORBIT_PX_PER_S = 420;
-const THROTTLE_UP = "shift";
-const THROTTLE_DOWN = "control";
 /** Ten seconds from idle to full inside the station zone, rather than one. */
 const STATION_THROTTLE_RATE_SCALE = 0.1;
 
@@ -1835,6 +1842,17 @@ class Game {
 	 *  system within a jump. */
 	private requestDestinationsKey: string | null = null;
 	private requestDestinations: ReturnType<typeof deliveryCandidates> = [];
+	/**
+	 * The layout in force, `(command, trigger, scope)` rows (#381).
+	 *
+	 * **The Game's state and not the registry's module state.** A finish was
+	 * module state once and every test that set one owed an `afterEach`; a
+	 * leaked layout is the same shape with a worse failure, since it flies the
+	 * next test's ship. Storage, and the per-row merge that loads one off disk,
+	 * is the slice after this — here it is the shipped table until something
+	 * sets another.
+	 */
+	private bindings: readonly Binding[] = DEFAULT_BINDINGS;
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -7461,7 +7479,7 @@ class Game {
 			if (intents.back) return perf.setFocused(false);
 			if (intents.focusDelta !== 0) perf.moveCursor(intents.focusDelta);
 			if (intents.activate) perf.activate();
-			for (const key of intents.keys) this.command(key);
+			for (const key of intents.keys) this.commandKey(key);
 			return;
 		}
 		// A console. It takes six discrete controls **and** suspends flight
@@ -7481,7 +7499,7 @@ class Game {
 		// drawn inside the same panel and belong to a handle it does not hold.
 		if (intents.activate && !this.liveCockpit.activateFocus())
 			this.activateChartRow(this.liveCockpit.focusedElement());
-		for (const key of intents.keys) this.command(key);
+		for (const key of intents.keys) this.commandKey(key);
 	}
 
 	/**
@@ -7616,7 +7634,7 @@ class Game {
 		if (intents.instrument) this.perfPanel?.setFocused(true);
 		// Through `command`, not through a second copy of what each key does.
 		// The pad presses the key; one implementation stays one implementation.
-		for (const key of intents.keys) this.command(key);
+		for (const key of intents.keys) this.commandKey(key);
 		// **After the dispatch, not before it.** `command` opens by clearing
 		// `jumpNotice` — #187's "dismissed by playing" — so a notice written
 		// first was wiped by the very press that triggered it, and the once-only
@@ -7690,25 +7708,24 @@ class Game {
 			route.kind === "key" &&
 			// Walking the surface is a command, so a key held under Ctrl flies
 			// instead, as it does everywhere else (#377).
-			route.commands &&
-			["arrowup", "arrowdown", "arrowleft", "arrowright", "enter"].includes(
-				route.key,
-			)
+			route.commands
 		) {
-			e.preventDefault();
-			if (route.oneShot) {
-				if (route.key === "enter")
-					this.liveCockpit.activateKeyboardFocus(e.target);
-				else {
-					// Arrow walking hands input back to the shared cursor. A native
-					// button left focused would otherwise steal the following Enter.
-					if (e.target instanceof HTMLElement) e.target.blur();
-					if (route.key === "arrowleft" || route.key === "arrowright")
-						this.liveCockpit.stepTab(route.key === "arrowleft" ? -1 : 1);
-					else this.liveCockpit.stepFocus(route.key === "arrowup" ? -1 : 1);
-				}
+			// The list of five keys this asked about is the registry's now: the
+			// `panel.*` rows carry `surface: "requests"`, which is the third axis
+			// of a `Scope` and the one that says a key is a screen's rather than
+			// the ship's (#381).
+			const walking = resolveKey(this.bindings, {
+				key: route.key,
+				code: e.code,
+				surface: "requests",
+				view: this.view,
+			});
+			if (walking.length > 0) {
+				e.preventDefault();
+				if (route.oneShot)
+					for (const id of walking) this.panelCommand(id, e.target);
+				return;
 			}
-			return;
 		}
 		if (route.kind === "chord") {
 			// A chord stands for a key — today the three head-look keys — and
@@ -7716,14 +7733,26 @@ class Game {
 			// cockpit mechanism, and in chase `2` would recentre the camera,
 			// which the Alt chord never did.
 			e.preventDefault();
-			if (this.view === "cockpit") this.command(route.key);
+			if (this.view === "cockpit") this.commandKey(route.key);
 			return;
 		}
 		this.keys.add(route.key);
 		// One-shot commands fire on the press, not on the held state: engaging
 		// cruise and stepping a dial are events, and reading them out of `keys`
 		// each frame would repeat them sixty times a second.
-		if (route.oneShot) this.command(route.key);
+		if (route.oneShot)
+			// The layout in force, and the physical key beside the character:
+			// `resolveKey` prefers the code where a row carries one, which is
+			// what keeps an AZERTY pilot's fingers where they were (#369 D7).
+			// **A pressed command only** — the held set below is characters, so
+			// a held command is reached by character; `resolveKey`'s own note
+			// says why and which node owns the rest.
+			for (const id of resolveKey(this.bindings, {
+				key: route.key,
+				code: e.code,
+				view: this.view,
+			}))
+				this.command(id);
 		if (route.prevent) e.preventDefault();
 	}
 
@@ -7738,7 +7767,7 @@ class Game {
 	 * and a page reload between the two things being compared, which is exactly
 	 * long enough to forget what the first one felt like.
 	 */
-	private command(key: string) {
+	private command(id: CommandId) {
 		// **The jump notice is dismissed by playing** (#187). It is the last
 		// thing that happened — a refusal, a commitment, an arrival — and it
 		// holds the one prompt line until the pilot does something, which is the
@@ -7751,23 +7780,28 @@ class Game {
 		// the countdown, and blanking it left an empty prompt for the rest of
 		// the window — the exact failure `chargeJump`'s comment says it fixed,
 		// reintroduced through the dismissal path (sage round 2).
-		if (this.jumpNotice && key !== "`" && !charging(this.jumpCharge))
+		if (this.jumpNotice && id !== "fly.jump" && !charging(this.jumpCharge))
 			this.jumpNotice = "";
-		switch (key) {
-			case "1":
-				if (this.view === "cockpit") this.setHeadLook("left");
+		switch (id) {
+			// The view guards these three carried are the registry's now: all
+			// three rows are `views: COCKPIT`, so `resolveKey` never hands the
+			// chase view one. `2` was one case with an `else` for the same
+			// reason and is two commands here, which is what #369 D4 says it is.
+			case "view.headPort":
+				this.setHeadLook("left");
 				return;
-			case "2":
-				if (this.view === "cockpit") this.setHeadLook("forward");
-				else this.chaseYaw = 0;
+			case "view.headForward":
+				this.setHeadLook("forward");
 				return;
-			case "3":
-				if (this.view === "cockpit") this.setHeadLook("right");
+			case "view.orbitCentre":
+				this.chaseYaw = 0;
+				return;
+			case "view.headStarboard":
+				this.setHeadLook("right");
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
-			case "f1":
-			case "?": {
+			case "view.reference": {
 				// #370 D3: the Controls tab, by head-look. `controlsKeyMove` owns the
 				// law, including the abstentions: silent outside the cockpit view,
 				// which `1` and `3` share, and silent while docked, which they do
@@ -7787,18 +7821,18 @@ class Game {
 				this.setHeadLook(move.headLook);
 				return;
 			}
-			case "/":
-				if (this.combatRig?.command("/")) return;
+			case "fight.rigIncoming":
+				if (this.combatRig?.command("fight.rigIncoming")) return;
 				break;
-			case "q":
-				if (this.combatRig?.command("q")) return;
+			case "fight.rigEcm":
+				if (this.combatRig?.command("fight.rigEcm")) return;
 				break;
-			case "j":
+			case "fly.cruise":
 				if (this.regime === "cruise") this.dropOut("dropped by the player");
 				else if (this.spoolLeftS > 0) this.cancelSpoolUp();
 				else this.engageCruise();
 				return;
-			case "`":
+			case "fly.jump":
 				// §8's jump, on the one key left.
 				//
 				// **A key rather than a button on the chart**, and not the letter
@@ -7811,24 +7845,24 @@ class Game {
 				// view because §8's window is a thing you are vulnerable inside.
 				this.chargeJump();
 				return;
-			case "t":
+			case "fight.targetNext":
 				this.cycleTarget(1);
 				return;
-			case "g":
+			case "fight.targetPrevious":
 				this.cycleTarget(-1);
 				return;
-			case "f":
+			case "fight.faceTarget":
 				this.faceTarget();
 				return;
-			case "c":
+			case "dock.clearance":
 				// §6's request. A no-op outside `VICINITY_KM`, which is a refusal
 				// to answer rather than a denial — see `requestClearance`.
 				this.requestDockingClearance();
 				return;
-			case "u":
+			case "dock.computer":
 				this.toggleDockingComputer();
 				return;
-			case "enter":
+			case "dock.launch":
 				// §12.2's launch, and obligation 5's skip, on one key.
 				//
 				// **A key, and deliberately not a screen.** M9 puts the launch
@@ -7851,58 +7885,127 @@ class Game {
 				if (this.dock.phase === "docked") this.launch();
 				else this.skipDockTraversal();
 				return;
-			case "x":
+			case "fly.assist":
 				// #5's assist toggle. Not in force inside cruise (#10 §1), where the
 				// regime is nose-locked — the state is kept and applied on exit.
 				this.assist = !this.assist;
 				return;
-			case "v":
+			case "view.toggle":
 				this.view = this.view === "cockpit" ? "chase" : "cockpit";
 				if (this.view === "chase") this.setHeadLook("forward");
 				return;
-			case "0":
+			case "tune.reset":
 				// Back to the spec's own figures, from wherever the tuning has got
 				// to. The reset is what makes the dials safe to wander with.
 				this.cruiseParams = { ...DEFAULT_CRUISE };
 				return;
-			case "]":
+			case "tune.exponentUp":
 				this.dial("exponent", EXPONENT_DIAL, 1);
 				return;
-			case "[":
+			case "tune.exponentDown":
 				this.dial("exponent", EXPONENT_DIAL, -1);
 				return;
-			case "=":
+			case "tune.vMaxUp":
 				this.dial("vMaxKms", V_MAX_DIAL_C, 1, IN_C);
 				return;
-			case "-":
+			case "tune.vMaxDown":
 				this.dial("vMaxKms", V_MAX_DIAL_C, -1, IN_C);
 				return;
-			case "'":
+			case "tune.dropRadiusUp":
 				this.dial("dropRadiusKm", DROP_RADIUS_DIAL_KM, 1);
 				return;
-			case ";":
+			case "tune.dropRadiusDown":
 				this.dial("dropRadiusKm", DROP_RADIUS_DIAL_KM, -1);
 				return;
-			case ".":
+			case "tune.dropSpeedUp":
 				this.dial("dropSpeedKms", DROP_SPEED_DIAL_KMS, 1);
 				return;
-			case ",":
+			case "tune.dropSpeedDown":
 				this.dial("dropSpeedKms", DROP_SPEED_DIAL_KMS, -1);
 				return;
-			case "m":
+			case "tune.vicinityUp":
 				this.dial("vicinityKm", VICINITY_DIAL_KM, 1);
 				return;
-			case "n":
+			case "tune.vicinityDown":
 				this.dial("vicinityKm", VICINITY_DIAL_KM, -1);
 				return;
-			case "l":
+			case "tune.approachLeadUp":
 				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, 1);
 				return;
-			case "k":
+			case "tune.approachLeadDown":
 				this.dial("approachLeadS", APPROACH_LEAD_DIAL_S, -1);
 				return;
 			default:
 		}
+	}
+
+	/**
+	 * Walking the one console surface that claims the keyboard.
+	 *
+	 * Its own switch rather than a branch of `command`, because these five are
+	 * the *surface's* and not the ship's: the same arrows fly outside it, and
+	 * `resolveKey` tells the two apart on `Scope.surface` rather than on a key.
+	 */
+	private panelCommand(id: CommandId, target: EventTarget | null) {
+		if (!this.liveCockpit) return;
+		// Arrow walking hands input back to the shared cursor. A native button
+		// left focused would otherwise steal the following Enter — and the
+		// activation itself is what that Enter *is*, so it keeps its focus.
+		if (id !== "panel.activate" && target instanceof HTMLElement) target.blur();
+		switch (id) {
+			case "panel.activate":
+				this.liveCockpit.activateKeyboardFocus(target);
+				return;
+			case "panel.tabPrevious":
+				this.liveCockpit.stepTab(-1);
+				return;
+			case "panel.tabNext":
+				this.liveCockpit.stepTab(1);
+				return;
+			case "panel.cursorUp":
+				this.liveCockpit.stepFocus(-1);
+				return;
+			case "panel.cursorDown":
+				this.liveCockpit.stepFocus(1);
+				return;
+			default:
+		}
+	}
+
+	/**
+	 * Move one command onto a new trigger, in the layout in force.
+	 *
+	 * Public, and reachable as `__seelite.rebindCommand(...)`, because a probe
+	 * has to be able to fly a layout that is **not** the shipped one: a check
+	 * that the table changed has not checked that the ship flew, and no probe
+	 * on `main` could produce that case. It is not probe-only machinery
+	 * either — the two slices after this one set the layout from a saved row
+	 * and from the capture modal, and both arrive here.
+	 *
+	 * It throws on a trigger the command does not have, for `rebind`'s reason:
+	 * a silent no-op is a rebind screen that reports success and moves
+	 * nothing.
+	 */
+	rebindCommand(command: CommandId, from: Trigger, to: Trigger) {
+		this.bindings = rebind(this.bindings, command, from, to);
+	}
+
+	/**
+	 * A command reached by something that *stands for* a key.
+	 *
+	 * The Alt chords and the pad's flight table both hand over a key string:
+	 * `ALT_CHORDS` maps a physical key to the key it stands for, and
+	 * `padIntents().keys` says which key a button presses. Both are resolved
+	 * against **`DEFAULT_BINDINGS`**, never against the layout in force, and
+	 * that is the point rather than an oversight — a table that stands for `1`
+	 * stands for the key `1` was, so moving head-look off `1` moves the
+	 * keyboard and leaves the d-pad and the chord where they were. Resolving
+	 * them through the player's layout would make a keyboard rebind silently
+	 * change what a gamepad does.
+	 */
+	private commandKey(key: string) {
+		for (const id of resolveKey(DEFAULT_BINDINGS, { key, view: this.view }))
+			this.command(id);
 	}
 
 	/**
@@ -7923,8 +8026,8 @@ class Game {
 			// §7 counts the throttle. Leaving it out was worse than no cancel:
 			// `stepDockingComputer` overwrites `this.throttle` on the same frame,
 			// so a player pushing the throttle got neither a cancel nor an effect.
-			this.keys.has(THROTTLE_UP) ||
-			this.keys.has(THROTTLE_DOWN) ||
+			this.held("fly.throttleUp") ||
+			this.held("fly.throttleDown") ||
 			// The pad's trim counts for the same reason the keys do. The sticks
 			// are already in `yaw`/`pitch`/`roll` above, and they reach here
 			// **deadzoned** — `applyRadialDeadzone` returns a hard zero inside
@@ -8144,14 +8247,47 @@ class Game {
 	/** `1` swings to port and `3` to starboard, matching the panel keys those
 	 *  two are in the cockpit — left is left in both views. */
 	private chaseOrbitInput(): number {
-		return this.axis(["1"], ["3"]);
+		// **Spelled out at the call site, not hoisted to a constant.** Sage
+		// round 3 asked for these to be module constants, since the flight step
+		// re-evaluates them every frame. They are here because
+		// `tests/commands.test.ts` reads the pairing *out of the call site* —
+		// which half of each axis is the negative term is the one thing
+		// `main.ts` still decides alone, and swapping two ids there is a
+		// working game that flies inverted. Hoisting turned four rows red for
+		// exactly that reason. If it ever measures, the scanner moves with them.
+		return this.axis("view.orbitPort", "view.orbitStarboard");
 	}
 
-	private axis(negative: string[], positive: string[]): number {
-		const neg = negative.some((k) => this.keys.has(k)) ? 1 : 0;
-		const pos = positive.some((k) => this.keys.has(k)) ? 1 : 0;
-		return pos - neg;
+	/**
+	 * A signed axis, by the two commands its halves are — not by their keys.
+	 *
+	 * `this.keys` still holds **physical keys as they were pressed**, because
+	 * #377's first ruling and #390's limit both depend on a release clearing
+	 * the key it names, and a set of ids could not be cleared by a keyup that
+	 * reports a different character. Only the question moved: `isHeld` asks the
+	 * layout in force which keys fly this command, so a rebind reaches the ship
+	 * rather than only the table.
+	 */
+	private axis(negative: CommandId, positive: CommandId): number {
+		// **Two ids, not two lists of one.** The lists are the key-list era's
+		// shape: a command could be reached by several keys, so an axis half
+		// was several strings. The registry answers that now — `isHeld` walks
+		// every trigger the command has — and every call site had collapsed to
+		// a single-element array (sage round 5).
+		return (this.held(positive) ? 1 : 0) - (this.held(negative) ? 1 : 0);
 	}
+
+	/**
+	 * Is this command being flown right now?
+	 *
+	 * Three of `isHeld`'s four arguments are always these same fields, and the
+	 * form was spelled out at eight sites — so every future change to how the
+	 * held state is stored touched eight lines, and #390 is going to make one.
+	 * A bound property rather than a method because `combat-rig.ts` is handed
+	 * it as a predicate and `Array.some` takes it directly.
+	 */
+	private readonly held = (id: CommandId): boolean =>
+		isHeld(this.bindings, id, this.keys, this.view);
 
 	/** The nearest body of a kind, by centre distance — what picks the boot-time
 	 *  target, so the panel names something reachable on frame one. */
@@ -10843,7 +10979,7 @@ class Game {
 		this.syncCargoContacts();
 		// #48 deliberately couples no combat entity to the world yet: this is a
 		// flyable balance rig over the shared flight loop, not production combat.
-		this.combatRig?.step(dt, this.keys, this.regime === "cruise", {
+		this.combatRig?.step(dt, this.held, this.regime === "cruise", {
 			ship: this.world.ship,
 			nose: this.nose(),
 			mouseFiring: this.mouseFiring,
@@ -10870,9 +11006,9 @@ class Game {
 		const stickToChart = this.chartHasStick();
 		const padYaw = stickToChart ? 0 : padAxes.yaw;
 		const padPitch = stickToChart ? 0 : padAxes.pitch;
-		const yaw = this.axis(["arrowright", "d"], ["arrowleft", "a"]) + padYaw;
-		const pitch = this.axis(["arrowdown", "s"], ["arrowup", "w"]) + padPitch;
-		const roll = this.axis(["e"], ["q"]) + padAxes.roll;
+		const yaw = this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
+		const pitch = this.axis("fly.pitchUp", "fly.pitchDown") + padPitch;
+		const roll = this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll;
 
 		// §7: any control input cancels the computer. Read before the rates are
 		// stepped, so the cancel and the input land on the same frame rather than
@@ -10913,8 +11049,8 @@ class Game {
 			// 18.3%. Sage found it, round 4, and it is exactly the failure the
 			// keyboard half of this guard was written for.
 			if (
-				!this.keys.has(THROTTLE_UP) &&
-				!this.keys.has(THROTTLE_DOWN) &&
+				!this.held("fly.throttleUp") &&
+				!this.held("fly.throttleDown") &&
 				padAxes.throttleTrim === 0
 			)
 				this.throttle = 1;
@@ -11001,9 +11137,9 @@ class Game {
 		if (orbit !== 0)
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
-		if (this.keys.has(THROTTLE_UP))
+		if (this.held("fly.throttleUp"))
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
-		if (this.keys.has(THROTTLE_DOWN))
+		if (this.held("fly.throttleDown"))
 			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		// The triggers **trim** the throttle rather than setting it (#283's F2).
 		// A pull is a speed, not a position: let go and the throttle stays where

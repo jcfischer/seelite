@@ -7,35 +7,60 @@
  * resets the cruise dials. Four working controls, silently stolen, in a mode
  * whose entire purpose is to be used *while flying*.
  *
- * A comment cannot hold that; a test can. The bindings are read out of
- * `main.ts` rather than restated here, so a key bound tomorrow collides at
+ * A comment cannot hold that; a test can. The bindings are read out of the
+ * registry rather than restated here, so a key bound tomorrow collides at
  * `bun test` instead of in flight.
+ *
+ * **Out of the registry since #381's dispatch fold, and out of `main.ts`
+ * before it.** That file no longer states a key, so a scan of its text finds
+ * nothing and every row below would have gone *vacuously* green — the exact
+ * failure mode the guard-the-guard row exists to catch, and it did.
  */
 import { describe, expect, test } from "bun:test";
 import { CLASS_GLSL } from "../src/planet-classes.glsl";
 import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { boundKeys, codeOf } from "./lib/source-scan";
-
-const main = codeOf("src/main.ts");
+import { commandById, DEFAULT_BINDINGS } from "../src/commands";
+import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
+/**
+ * Every key the game binds to something that is **not** a panel of its own.
+ *
+ * The diagnostics carry `fixed: "diagnostic"`, so that half is a property of
+ * the catalogue: a flight command that took `b` tomorrow lands in this set and
+ * the row below goes red, which is the failure this file was opened for.
+ *
+ * **The two player screens are a written list, and that is a gap rather than a
+ * shape.** It lives in `PANEL_OWNED_COMMANDS` beside the scanners, so a third
+ * panel is one edit rather than two (sage rounds 2 and 3); the registry axis
+ * that would make it derived belongs with the capture slice, which is what
+ * gives `z` a non-binding route in the first place.
+ */
+const flightKeys = () =>
+	new Set(
+		DEFAULT_BINDINGS.flatMap((b) =>
+			b.trigger.kind === "key" &&
+			!PANEL_OWNED_COMMANDS.includes(b.command) &&
+			commandById(b.command).fixed !== "diagnostic"
+				? [b.trigger.key]
+				: [],
+		),
+	);
 
 describe("the perf panel stays out of the flight controls", () => {
-	test("the scan finds the bindings it is supposed to find", () => {
-		// Guarding the guard: a regex that matched nothing would make the case
-		// below vacuously green, which is the failure mode of every source scan.
-		const bound = boundKeys(main);
+	test("the partition finds the bindings it is supposed to find", () => {
+		// Guarding the guard: an empty set would make the case below vacuously
+		// green, which is the failure mode of every derived partition.
+		const bound = flightKeys();
 		expect(bound.size).toBeGreaterThan(15);
-		// Three known bindings of the three different shapes.
-		expect(bound).toContain("v"); // one-shot: view toggle
-		// Bound through `const THROTTLE_UP = "shift"`, so this also asserts the
-		// scan resolves constants rather than only literals.
-		expect(bound).toContain("shift"); // held: throttle, via a constant
-		expect(bound).toContain("w"); // axis list: pitch
+		// Three known bindings of three different shapes.
+		expect(bound).toContain("v"); // pressed: view toggle
+		expect(bound).toContain("shift"); // held: throttle
+		expect(bound).toContain("w"); // an axis half: pitch
 	});
 
 	test("no panel key is a flight binding", () => {
-		const bound = boundKeys(main);
+		const bound = flightKeys();
 		for (const key of [...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY])
 			expect(`${key}: ${bound.has(key)}`).toBe(`${key}: false`);
 	});
@@ -53,7 +78,7 @@ describe("the perf panel stays out of the flight controls", () => {
 	test("the Commander overlay's key is no flight binding and no other panel's key", () => {
 		// `persistent-world-state.md` §11.1: it opens on a key the flight bindings
 		// do not hold, and settings and the perf panel listen beside it.
-		const bound = boundKeys(main);
+		const bound = flightKeys();
 		expect(`${COMMANDER_KEY}: ${bound.has(COMMANDER_KEY)}`).toBe(
 			`${COMMANDER_KEY}: false`,
 		);

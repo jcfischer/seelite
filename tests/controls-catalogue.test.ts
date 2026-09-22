@@ -15,10 +15,11 @@
 import { describe, expect, test } from "bun:test";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import {
-	isPressedKey,
+	DEFAULT_BINDINGS,
 	PANEL_INTENTS,
 	type PanelIntent,
 	TASK_GROUPS,
+	resolveKey,
 	type Trigger,
 } from "../src/commands";
 import { CONTROLS } from "../src/controls-catalogue";
@@ -27,7 +28,8 @@ import { ALT_CHORDS } from "../src/key-dispatch";
 import { PAD_FLIGHT_KEYS, padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { boundKeys, codeOf, keysByShape } from "./lib/source-scan";
+import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
+import { boundKeys, codeOf, dispatchSites } from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
 	CONTROLS.commands.flatMap((command) => [...command.currentTriggers]);
@@ -47,31 +49,69 @@ const catalogueKeys = () =>
 const keyShaped = (key: string) => key === key.toLowerCase();
 
 /**
- * `BEAM_KEY` is private to `combat-rig.ts`, and that module imports Three, so
- * it is read the way `main.ts` is rather than imported into the unit tier.
+ * Every key the game states **outside** the registry.
+ *
+ * Four panels keep a key constant of their own, because each is loaded on
+ * demand and a static import from the registry would pull it into the eager
+ * bundle. They are the whole of this set since #381's dispatch fold: `main.ts`
+ * and `combat-rig.ts` no longer **compare** a key, so a scan of their text
+ * answers nothing — and a scan that answers nothing makes a completeness row
+ * vacuously green, which is the direction this file must never fail in.
+ *
+ * *Compared*, not *stated*: `combat-rig.ts` still draws `LEGEND`, which names
+ * four keys in prose. The row below says why that is S5's and not a hole
+ * here; this sentence said "state no key at all" for a round, and the fix
+ * landed in one copy of the claim and not the other (sage round 5).
  */
-const beamKeys = () =>
-	[...boundKeys(codeOf("src/combat-rig.ts"))].filter(keyShaped);
-
 const sourceKeys = () =>
-	new Set([
-		...[...boundKeys(codeOf("src/main.ts"))].filter(keyShaped),
-		...PERF_KEYS,
-		RESTORE_KEY,
-		SETTINGS_KEY,
-		COMMANDER_KEY,
-		...beamKeys(),
-	]);
+	// **Unfiltered**: `keyShaped` is for scanner output, where a string with a
+	// capital in it is a comparison no keypress can satisfy. These are
+	// imported constants, and filtering them would silently drop an uppercase
+	// panel key out of the completeness row instead of checking it.
+	new Set([...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY, COMMANDER_KEY]);
 
 describe("the catalogue is complete against the source", () => {
-	test("the scans find what they are supposed to find", () => {
-		// Guarding the guard, as the partition test does: an empty scan would
-		// make both directions below vacuously green.
-		expect(beamKeys()).toContain("x");
-		expect(sourceKeys()).toContain("shift");
-		expect(sourceKeys()).toContain("?");
+	test("the two files that used to compare keys no longer compare any", () => {
+		// The fold's own claim, and the reason the scan above shrank rather
+		// than breaking: a key *compared* in either file is a binding the
+		// registry does not own and the `Controls` tab cannot report.
+		//
+		// **Compared, not stated** — the weaker word is the true one, and the
+		// stronger one was wrong for a round. `combat-rig.ts` still ships
+		// `LEGEND`, which names SPACE, X, `/` and Q in a string it draws; the
+		// fold made all four rebindable and the legend will not follow one
+		// when it moves. That is #381's S5, the slice whose whole subject is
+		// every printed name having one owner, and `boundKeys` cannot see it
+		// anyway — a key inside a prose string is not a comparison shape.
+		//
+		// Two things the scanner reads that are not keys, and both are named
+		// rather than filtered by shape. `main.ts` compares
+		// `key === "renderScale"` in the settings subscription, which is a
+		// settings field — `onKey` lowercases `e.key`, so a string with a
+		// capital in it is one no keyboard produces, and that is `keyShaped`.
+		// And every `case` label is a command id now, which is the fold.
+		//
+		// The one literal left is Space, and it is the browser's rather than
+		// the game's: a focused native button activates on its *release*, so
+		// `onKey` returns without firing or preventing it. That is not a
+		// binding and has no registry row.
+		const anId = (k: string) => /^[a-z]+\.[A-Za-z0-9]+$/.test(k);
+		for (const file of ["src/main.ts", "src/combat-rig.ts"]) {
+			const left = [...boundKeys(codeOf(file))]
+				.filter(keyShaped)
+				.filter((k) => !anId(k) && k !== " ");
+			expect(`${file}: ${left.join(",")}`).toBe(`${file}: `);
+		}
+		// Guarding that guard: the scanner still reads this file, so an empty
+		// answer above is the code being clean rather than the regex being dead.
 		expect(boundKeys(codeOf("src/main.ts"))).toContain("renderScale");
-		expect(sourceKeys()).not.toContain("renderScale");
+	});
+
+	test("the panels' own keys are found", () => {
+		// Guarding the guard: an empty set would make the row below vacuously
+		// green.
+		expect(sourceKeys().size).toBeGreaterThan(8);
+		expect(sourceKeys()).toContain(SETTINGS_KEY);
 	});
 
 	test("every bound key is in the catalogue", () => {
@@ -83,82 +123,83 @@ describe("the catalogue is complete against the source", () => {
 	});
 
 	/**
-	 * **Per shape, not per key string** (sage round 1). A bare-key check passes a
-	 * printed `Alt + ←` for as long as *anything* binds `arrowleft` — and yaw
-	 * does — so removing the Alt head-look would leave the row printed and this
-	 * test green. Each trigger is looked for where its own shape is read, by
-	 * `keysByShape`, which shares `boundKeys`' resolver (sage round 2).
+	 * **Every command a key reaches is named by its id in the code** (#381).
+	 *
+	 * The row this replaces checked each printed key in the shape it was
+	 * printed as, against `main.ts`'s own text — a `case "v":`, a `keys.has`,
+	 * an `axis` list. The dispatch fold took every one of those shapes away:
+	 * the registry states the key and `main.ts` states only the effect, keyed
+	 * by id. So the question turns over. It is no longer "is this key bound",
+	 * which the registry answers by construction; it is **"does anything
+	 * happen when it is pressed"**, and a command printed on the `Controls`
+	 * tab with no handler behind it is exactly the failure the old row was
+	 * opened against — a player trusts the reference and the key does nothing.
+	 *
+	 * The two exempt groups are named rather than filtered by shape: the
+	 * player screens listen for their own key, and the `?perf` diagnostics are
+	 * `fixed: "diagnostic"` and live in a module this tier does not read.
 	 */
-	test("every key the catalogue prints is bound in the shape it is printed as", () => {
-		const main = keysByShape(codeOf("src/main.ts"));
-		const rig = keysByShape(codeOf("src/combat-rig.ts"));
-		const pressed = new Set([
-			...main.cases,
-			...rig.compared,
-			...PERF_KEYS,
-			RESTORE_KEY,
-			SETTINGS_KEY,
-			COMMANDER_KEY,
+	test("every command a key reaches is named by its id at a dispatch site", () => {
+		// **The shapes, not the file's text** (sage round 1). A bare
+		// `source.includes(id)` cannot tell a live dispatch site from a stale
+		// mention in a comment, which is the failure the row it replaced was
+		// immune to — that one looked each trigger up in the shape it was
+		// printed as. `dispatchSites` owns the four shapes that actually run a
+		// command, and is shared with `commands.test.ts` rather than copied
+		// (sage round 2).
+		const reached = new Set([
+			...dispatchSites(codeOf("src/main.ts")).all,
+			...dispatchSites(codeOf("src/combat-rig.ts")).all,
 		]);
-		const held = new Set([...main.held, ...rig.held]);
-		// Guard the guard: every shape's scan finds something it must, and `,`
-		// is the one a comma-splitting scan would lose.
+		// Guard the guard: each shape found something, so a renamed helper
+		// cannot make the loop below pass on a set built from four dead regexes.
 		expect([
-			pressed.has("v"),
-			pressed.has(","),
-			held.has("shift"),
-			Object.keys(ALT_CHORDS).length > 0,
-			main.requests.has("enter"),
-		]).toEqual([true, true, true, true, true]);
-		for (const c of CONTROLS.commands)
-			for (const t of c.currentTriggers) {
-				if (t.kind !== "key") continue;
-				// A chord is bound when the dispatch's table holds its physical key
-				// and that entry stands for a key this row presses (#377).
-				const chordOk =
-					t.code !== undefined &&
-					ALT_CHORDS[t.code] !== undefined &&
-					c.currentTriggers.some(
-						(o) =>
-							o.kind === "key" &&
-							!o.alt &&
-							o.key === ALT_CHORDS[t.code as string],
-					);
-				const [shape, set] = t.alt
-					? ["alt", new Set(chordOk ? [t.key] : [])]
-					: t.surface
-						? ["requests", main.requests]
-						: t.hold
-							? ["held", held]
-							: ["pressed", pressed];
-				const at = `${c.id}: ${JSON.stringify(t.key)} ${shape}`;
-				expect(`${at}: ${set.has(t.key)}`).toBe(`${at}: true`);
-			}
+			reached.has("fly.assist"), // a case
+			reached.has("panel.cursorUp"), // a case in the other switch
+			reached.has("fly.throttleUp"), // a held read
+			reached.has("fly.pitchUp"), // an axis list
+			reached.has("fight.fireBeam"), // the rig's predicate
+			reached.has("fight.rigEcm"), // the rig's own command
+		]).toEqual([true, true, true, true, true, true]);
+
+		const PANELS = new Set(PANEL_OWNED_COMMANDS);
+		let checked = 0;
+		for (const c of CONTROLS.commands) {
+			if (PANELS.has(c.id) || c.fixed === "diagnostic") continue;
+			if (!c.currentTriggers.some((t) => t.kind === "key")) continue;
+			expect(`${c.id}: ${reached.has(c.id)}`).toBe(`${c.id}: true`);
+			checked++;
+		}
+		expect(checked).toBeGreaterThan(40);
+		// The exemptions are exemptions, not a hole: neither panel's id is at a
+		// dispatch site, so a row that quietly moved to one would be caught by
+		// the loop above rather than excused by this set.
+		for (const id of PANELS)
+			expect(`${id} dispatched: ${reached.has(id)}`).toBe(
+				`${id} dispatched: false`,
+			);
 	});
 
 	/**
-	 * **A key on the right row, not only a bound key** (sage round 2). The two
-	 * checks above hold key *sets*: swap the bodies of `case "t":` and
-	 * `case "g":` and both stay green while the tab prints "Next target" against
-	 * the key that now selects the previous one. So every pressed key a row
-	 * prints is looked up in `main.ts`'s switch, and its `case` body must make
-	 * the call this table names for that row.
+	 * **A command on the right row, not only a reached one** (sage round 2 on
+	 * #372, re-aimed by #381). The row above holds id *sets*: swap the bodies
+	 * of `case "fight.targetNext":` and `case "fight.targetPrevious":` and it
+	 * stays green while the tab prints "Next target" against the command that
+	 * now selects the previous one. So every command with a case in `main.ts`
+	 * is looked up there, and its body must make the call this table names.
 	 *
-	 * The table is a restatement, deliberately: it is the one place the row's
-	 * *meaning* meets the code. A row whose pressed key has a `case` in `main.ts`
-	 * and no entry here is a red run; a key with no `case` there — a panel's own —
-	 * is not checked by this row, and the shape row above is what holds it.
+	 * The table is a restatement, deliberately: it is the one place a row's
+	 * *meaning* meets the code. A command with a `case` and no entry here is a
+	 * red run; one with no case — a panel's own, or a held command, which has
+	 * no case by construction — is not checked by this row, and the row above
+	 * is what holds it.
 	 */
-	test("every pressed key's case does what its row says", () => {
+	test("every case does what its command's row says", () => {
 		const main = codeOf("src/main.ts");
-		const caseBody = (key: string) => {
-			const at = main.indexOf(`case ${JSON.stringify(key)}:`);
+		const caseBody = (id: string) => {
+			const at = main.indexOf(`case ${JSON.stringify(id)}:`);
 			if (at === -1) return null;
-			// Labels that fall through share the body below them: `case "f1":`
-			// stands on `case "?":` (#377), so every stacked label is skipped first.
-			const rest = main
-				.slice(at)
-				.replace(/^(\s*case\s+("[^"]+"|[A-Z][A-Z0-9_]*)\s*:)+/, "");
+			const rest = main.slice(at).replace(/^(\s*case\s+"[^"]+"\s*:)+/, "");
 			return rest.slice(0, rest.search(/\n\t*(case |default:)/));
 		};
 		const dial = (field: string, table: string, extra = "") => ({
@@ -171,54 +212,132 @@ describe("the catalogue is complete against the source", () => {
 		const speed = dial("dropSpeedKms", "DROP_SPEED_DIAL_KMS");
 		const vicinity = dial("vicinityKm", "VICINITY_DIAL_KM");
 		const lead = dial("approachLeadS", "APPROACH_LEAD_DIAL_S");
-		const EFFECTS: Record<string, Record<string, string>> = {
-			"fly.assist": { x: "this.assist = !this.assist" },
-			"fly.cruise": { j: "this.engageCruise()" },
-			"fly.jump": { "`": "this.chargeJump()" },
-			"fight.targetNext": { t: "this.cycleTarget(1)" },
-			"fight.targetPrevious": { g: "this.cycleTarget(-1)" },
-			"fight.faceTarget": { f: "this.faceTarget()" },
-			"fight.rigIncoming": { "/": 'this.combatRig?.command("/")' },
-			"fight.rigEcm": { q: 'this.combatRig?.command("q")' },
-			"dock.clearance": { c: "this.requestDockingClearance()" },
-			"dock.computer": { u: "this.toggleDockingComputer()" },
-			"dock.launch": { enter: "this.launch()" },
-			"view.headPort": { "1": 'this.setHeadLook("left")' },
-			"view.headForward": { "2": 'this.setHeadLook("forward")' },
-			"view.headStarboard": { "3": 'this.setHeadLook("right")' },
-			"view.reference": { "?": "controlsKeyMove(", f1: "controlsKeyMove(" },
-			"view.toggle": { v: 'this.view === "cockpit" ? "chase" : "cockpit"' },
-			"view.orbitCentre": { "2": "this.chaseYaw = 0" },
-			"tune.reset": { "0": "DEFAULT_CRUISE" },
-			"tune.exponentUp": { "]": exponent.up },
-			"tune.exponentDown": { "[": exponent.down },
-			"tune.vMaxUp": { "=": vmax.up },
-			"tune.vMaxDown": { "-": vmax.down },
-			"tune.dropRadiusUp": { "'": radius.up },
-			"tune.dropRadiusDown": { ";": radius.down },
-			"tune.dropSpeedUp": { ".": speed.up },
-			"tune.dropSpeedDown": { ",": speed.down },
-			"tune.vicinityUp": { m: vicinity.up },
-			"tune.vicinityDown": { n: vicinity.down },
-			"tune.approachLeadUp": { l: lead.up },
-			"tune.approachLeadDown": { k: lead.down },
+		const EFFECTS: Record<string, string> = {
+			"fly.assist": "this.assist = !this.assist",
+			"fly.cruise": "this.engageCruise()",
+			"fly.jump": "this.chargeJump()",
+			"fight.targetNext": "this.cycleTarget(1)",
+			"fight.targetPrevious": "this.cycleTarget(-1)",
+			"fight.faceTarget": "this.faceTarget()",
+			"fight.rigIncoming": 'this.combatRig?.command("fight.rigIncoming")',
+			"fight.rigEcm": 'this.combatRig?.command("fight.rigEcm")',
+			"dock.clearance": "this.requestDockingClearance()",
+			"dock.computer": "this.toggleDockingComputer()",
+			"dock.launch": "this.launch()",
+			"view.headPort": 'this.setHeadLook("left")',
+			"view.headForward": 'this.setHeadLook("forward")',
+			"view.headStarboard": 'this.setHeadLook("right")',
+			"view.orbitCentre": "this.chaseYaw = 0",
+			"view.reference": "controlsKeyMove(",
+			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
+			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",
+			"panel.tabPrevious": "this.liveCockpit.stepTab(-1)",
+			"panel.tabNext": "this.liveCockpit.stepTab(1)",
+			"panel.cursorUp": "this.liveCockpit.stepFocus(-1)",
+			"panel.cursorDown": "this.liveCockpit.stepFocus(1)",
+			"tune.reset": "DEFAULT_CRUISE",
+			"tune.exponentUp": exponent.up,
+			"tune.exponentDown": exponent.down,
+			"tune.vMaxUp": vmax.up,
+			"tune.vMaxDown": vmax.down,
+			"tune.dropRadiusUp": radius.up,
+			"tune.dropRadiusDown": radius.down,
+			"tune.dropSpeedUp": speed.up,
+			"tune.dropSpeedDown": speed.down,
+			"tune.vicinityUp": vicinity.up,
+			"tune.vicinityDown": vicinity.down,
+			"tune.approachLeadUp": lead.up,
+			"tune.approachLeadDown": lead.down,
 		};
+		let checked = 0;
+		for (const c of CONTROLS.commands) {
+			const body = caseBody(c.id);
+			if (body === null) continue;
+			const want = EFFECTS[c.id];
+			const at = `${c.id}`;
+			expect(`${at} → ${want !== undefined && body.includes(want)}`).toBe(
+				`${at} → true`,
+			);
+			checked++;
+		}
+		// Every entry was used: a row renamed away from its entry is red too.
+		expect(checked).toBe(Object.keys(EFFECTS).length);
+	});
+
+	/**
+	 * **The chord shape — and what is checkable about it** (sage round 3).
+	 *
+	 * The finding was that the per-command row cannot hold a chord: deleting
+	 * an entry from `ALT_CHORDS` would leave the tab printing `Alt + ←` with
+	 * the suite green. The first row written against it asserted exactly that,
+	 * and **it could not fail** — an entry was deleted and the run stayed
+	 * green, because `chordsFor` *derives* the catalogue's chord rows from
+	 * that same table, so the printed row disappears with the entry. The
+	 * replaced row's own `chordOk` was tautological for the same reason.
+	 *
+	 * So the derivation is the guarantee, and what is worth a row is that it
+	 * stays a derivation: a chord **authored** by hand would print without an
+	 * entry behind it, and that is the shape the finding was really about.
+	 */
+	test("no chord is authored — every printed chord is one the table derives", () => {
+		const printed = triggers().flatMap((t) =>
+			t.kind === "key" && t.alt && t.code !== undefined ? [t.code] : [],
+		);
+		expect([...printed].sort()).toEqual(Object.keys(ALT_CHORDS).sort());
+	});
+
+	/**
+	 * And the half that is not derived: the key a chord *stands for* must still
+	 * reach the command that prints it. `main.ts` runs a chord by handing
+	 * `commandKey` the stand-in key, so a command whose bare key moved out from
+	 * under its chord would print `Alt + ←` and run something else — which no
+	 * derivation prevents, because the two halves come from different places.
+	 */
+	test("and the key each chord stands for still reaches the row that prints it", () => {
 		let checked = 0;
 		for (const c of CONTROLS.commands)
 			for (const t of c.currentTriggers) {
-				if (!isPressedKey(t)) continue;
-				const body = caseBody(t.key);
-				if (body === null) continue; // a panel's own key, held above
-				const want = EFFECTS[c.id]?.[t.key];
-				const at = `${c.id}: ${JSON.stringify(t.key)}`;
-				expect(`${at} → ${want !== undefined && body.includes(want)}`).toBe(
-					`${at} → true`,
+				if (t.kind !== "key" || !t.alt || t.code === undefined) continue;
+				const stands = ALT_CHORDS[t.code] as string;
+				const reached = resolveKey(DEFAULT_BINDINGS, {
+					key: stands,
+					view: "cockpit",
+				});
+				const at = `${c.id}: ${JSON.stringify(t.key)}+alt stands for ${JSON.stringify(stands)}`;
+				expect(`${at}: ${reached.includes(c.id)}`).toBe(`${at}: true`);
+				checked++;
+			}
+		expect(checked).toBe(Object.keys(ALT_CHORDS).length);
+	});
+
+	/**
+	 * **And the surface shape, for the same reason.** `panel.cursorUp` and
+	 * `fly.pitchDown` are both reached, so the per-command row is satisfied by
+	 * either; what it cannot say is that the *surface-scoped* arrow is the one
+	 * the console walks on. `main.ts` resolves that branch with an explicit
+	 * `surface: "requests"`, so the registry's answer there is the check.
+	 */
+	test("every surface-scoped key is resolved on that surface and not off it", () => {
+		let checked = 0;
+		for (const c of CONTROLS.commands)
+			for (const t of c.currentTriggers) {
+				if (t.kind !== "key" || t.surface === undefined) continue;
+				const on = resolveKey(DEFAULT_BINDINGS, {
+					key: t.key,
+					surface: t.surface,
+					view: "cockpit",
+				});
+				const off = resolveKey(DEFAULT_BINDINGS, {
+					key: t.key,
+					view: "cockpit",
+				});
+				const at = `${c.id}: ${JSON.stringify(t.key)} on ${t.surface}`;
+				expect(`${at}: ${on.includes(c.id)} / ${off.includes(c.id)}`).toBe(
+					`${at}: true / false`,
 				);
 				checked++;
 			}
-		// Every entry was used: a row renamed away from its entry is red too.
-		const entries = Object.values(EFFECTS).flatMap((e) => Object.keys(e));
-		expect(checked).toBe(entries.length);
+		expect(checked).toBeGreaterThan(4);
 	});
 
 	test("the six panel intents each have a row", () => {
