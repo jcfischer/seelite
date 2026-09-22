@@ -63,6 +63,7 @@ const origin = () => {
 			boot?: "direct" | "overlay";
 			noSave?: boolean;
 			querySeed?: number | null;
+			pinnedSystem?: number | null;
 		} = {},
 	) =>
 		planBoot({
@@ -71,6 +72,7 @@ const origin = () => {
 			boot: options.boot ?? "overlay",
 			noSave: options.noSave ?? false,
 			querySeed: options.querySeed ?? null,
+			pinnedSystem: options.pinnedSystem ?? null,
 		});
 	const store = (slot: string, env: () => SaveEnvelope = () => envelope()) =>
 		new SaveStore({
@@ -236,6 +238,58 @@ describe("the one-shot continue (§11.3)", () => {
 		expect(plan.loaded).toBeNull();
 		expect(plan.slot).toBe(DEFAULT_SLOT);
 		expect((await o.boot()).mode).toBe("continue");
+	});
+});
+
+/**
+ * `?system=<index>` (#432), the affordance that lets a canonical frame stand at
+ * a named star.
+ *
+ * **It writes nothing, and that rule is the node's, not a detail.** `?seed`
+ * protects a player's record by *disagreeing* with it: a save at another seed
+ * trips the set-aside below and no store attaches. A pinned system carries no
+ * such disagreement — ask for `?seed=<the save's own seed>&system=161` and the
+ * seed matches, the save loads, a store attaches, and the first dirty event
+ * writes a Commander who started at a rim star over the one who did not. So the
+ * pin implies `?no-save`: a fixture is not a player's afternoon.
+ */
+describe("`?system` pins where the ship boots and writes nothing (§11.6)", () => {
+	test("a pinned system reads, consumes and writes nothing, even beside its own save", async () => {
+		const o = origin();
+		await o.save(DEFAULT_SLOT, SEED);
+		await o.catalog.chooseCommander(DEFAULT_SLOT);
+		// Same seed as the save, which is the arm that would otherwise load it,
+		// attach a store, and overwrite the Commander with a different start.
+		const plan = await o.boot({
+			boot: "direct",
+			querySeed: SEED,
+			pinnedSystem: 161,
+		});
+		expect(plan.loaded).toBeNull();
+		expect(plan.writesNothing).toBe(true);
+		expect(plan.canContinue).toBe(true);
+		// And the Commander is still there to be continued afterwards.
+		expect((await o.boot({ boot: "direct" })).loaded?.world.seed).toBe(SEED);
+	});
+
+	test("it says which system the boot was pinned to", async () => {
+		const o = origin();
+		const plan = await o.boot({ boot: "direct", pinnedSystem: 161 });
+		expect(plan.notice).not.toBeNull();
+		expect(plan.notice).toContain("161");
+		expect(plan.fault).toBeNull();
+	});
+
+	/**
+	 * `writesNothing` is the field the shell reads before attaching a store, and
+	 * it now has two authors. A row that pins both is the only thing between a
+	 * new affordance and a store quietly attaching to a fixture boot.
+	 */
+	test("writesNothing says which boots touch storage, and an ordinary one does", async () => {
+		const o = origin();
+		expect((await o.boot({ boot: "direct" })).writesNothing).toBe(false);
+		expect((await o.boot({ noSave: true })).writesNothing).toBe(true);
+		expect((await o.boot({ pinnedSystem: 3 })).writesNothing).toBe(true);
 	});
 });
 

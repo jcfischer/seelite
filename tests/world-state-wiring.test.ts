@@ -230,7 +230,14 @@ describe("the Game's world writes", () => {
 		// still export. A store attached to that slot would write over it on the
 		// first dirty event: the next dock, the next trade, the relay observe on
 		// the next jump. The guard is on the construction, not on the write.
-		expect(MAIN).toContain("!noSave && plan.fault === null");
+		//
+		// **`plan.writesNothing` since #432, and the guard got wider rather than
+		// moving.** It used to read `!noSave`, one cause read off the URL at the
+		// call site; a pinned `?system=` is a second cause, and a shell that
+		// re-derived the permission from one of them would attach a store to a
+		// fixture boot and write a Commander who started at a rim star over the
+		// one who did not.
+		expect(MAIN).toContain("!plan.writesNothing && plan.fault === null");
 		// **And on the one-shot path**, which attaches with no such guard: a
 		// record that parses and will not restore turns the plan into an overlay
 		// boot there. `withRestoreFault` is tested headless; this pins that the

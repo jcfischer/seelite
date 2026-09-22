@@ -141,8 +141,31 @@ async function applyCaptureQuality(page) {
  * the ship to the arrival point and drops what the previous boot remembered —
  * `deep-sky` reads it, and it is only safe at any position in the list if
  * every boot leaves one behind.
+ *
+ * **A row may declare a `system` as well as a `seed`, and it is restored by the
+ * same act** (#432). The reasoning is identical: one seed is not one place, and
+ * a row that needs to stand at another star has to say so and have the boot
+ * carry it there, rather than depend on the view above it having left the page
+ * somewhere. What is *new* here is that the affordance can refuse — `?system=`
+ * warns and boots the start system for an index it cannot use — so the restore
+ * reads the booted index back and throws. A seed the page refused would have put
+ * the whole run's frames in the wrong galaxy and announced itself everywhere at
+ * once; a refused system puts one row's frame in the wrong star with a caption
+ * naming the right one.
  */
 let currentSeed = null;
+/**
+ * The system the loaded page was asked to boot at, or `null` for the start
+ * system — the other half of the fixture a row declares (#432).
+ *
+ * **Read back, not assumed.** `?system=` is polite about an index it cannot use:
+ * it warns and boots the start system, which is right for a person at a URL and
+ * wrong for a capture, because the row is captioned with the system it asked for.
+ * So the booted index is compared here, on the page that booted, and a mismatch
+ * throws the way a missing view throws — a sheet with a wrong picture in it reads
+ * exactly like a whole one.
+ */
+let currentSystem = null;
 /**
  * Set by a placer that writes world state — the duel's kill (#324 part d) — so
  * the next view boots on a world with no save, as the first boot does.
@@ -155,8 +178,8 @@ let currentSeed = null;
  * route, which opens no save store, and only then is the game loaded.
  */
 let worldWritten = false;
-async function ensureSeed(page, seed) {
-	if (currentSeed === seed && !worldWritten) return;
+async function ensureSeed(page, seed, system = null) {
+	if (currentSeed === seed && currentSystem === system && !worldWritten) return;
 	if (worldWritten) {
 		await page.goto(workbenchUrl(SERVING, { "hud-gallery": true }), {
 			waitUntil: "load",
@@ -175,14 +198,26 @@ async function ensureSeed(page, seed) {
 	}
 	// `raider: "off"`: traversals cruise, and a leg-law raider would move the
 	// frame. The duel placer forces its own raider, which this does not stop.
-	await page.goto(gameUrl(SERVING, { seed, raider: "off" }), {
+	// `system` is left off the URL when the row declares none, which is every
+	// row written before #432 and every row that is not a frame of the rim.
+	await page.goto(gameUrl(SERVING, { seed, raider: "off", system }), {
 		waitUntil: "load",
 	});
 	await bootedGame(page);
+	if (system !== null) {
+		const booted = await page.evaluate(
+			() => window.__seelite.world.system.record.index,
+		);
+		if (booted !== system)
+			throw new Error(
+				`capture: ${seed ? `seed ${seed} ` : ""}system ${system} was asked for and system ${booted} booted — the page refuses an index it cannot use, quietly and for a person at a URL, so the capture is the one that has to refuse loudly`,
+			);
+	}
 	await applyCaptureQuality(page);
 	await page.evaluate(() => window.__rememberBootPosition());
 	await page.evaluate((t) => window.__startClockAt(t), GAME_TIME_S);
 	currentSeed = seed;
+	currentSystem = system;
 }
 
 /**
@@ -426,22 +461,38 @@ const PLACERS = {
 		);
 		return `duel · ${name} · ${shot.headLook}${shot.aftermath ? ` · ${shot.aftermath}` : ""}`;
 	},
-	"deep-sky": async (page) => {
+	"deep-sky": async (page, shot) => {
 		// Back to the arrival point first. Turning the camera alone left the ship
 		// wherever the previous view had put it, which made one view of a
 		// *canonical* set a function of the order of the array above it.
-		await page.evaluate(async () => {
+		//
+		// Two heading rules, and the row names which: `emptiest` searches for the
+		// least, `core` points along the way back to the cluster's centre through
+		// `Game.clusterCoreDirection()`. The second is the shipped transform
+		// rather than arithmetic here on purpose — a script that derived the
+		// galactic frame itself would be a second idea of it, which is what #430
+		// exists to prevent.
+		const aim = shot.aim ?? "emptiest";
+		const at = await page.evaluate(async (which) => {
 			await window.__returnToBootPosition();
 			const g = window.__seelite;
-			const d = window.__emptiestDirection();
 			const p = g.world.ship.pos;
+			const d =
+				which === "core"
+					? window.__clusterCoreDirection()
+					: window.__emptiestDirection();
 			await window.__lookAt({
 				x: p.x + d.x * 1e9,
 				y: p.y + d.y * 1e9,
 				z: p.z + d.z * 1e9,
 			});
-		});
-		return "arrival point, empty sky";
+			// Read off the page rather than restated from the row: the caption
+			// says which star this frame was taken at.
+			return g.world.system.record.index;
+		}, aim);
+		return aim === "core"
+			? `arrival point of system ${at}, aimed along the way to the cluster's core`
+			: "arrival point, empty sky";
 	},
 	controls: async (page, shot) => {
 		// The arrival point and a forward head, then `?` through the keyboard —
@@ -672,13 +723,14 @@ try {
 		if (view.shot.kind !== "workbench-interior") {
 			// Before the view is set, because a page load resets the game to the
 			// cockpit and would undo it.
-			await ensureSeed(page, view.shot.seed ?? SEED);
+			await ensureSeed(page, view.shot.seed ?? SEED, view.shot.system ?? null);
 			await setView(page, view.shot.view);
 		} else {
 			// The workbench is not the game and carries no seed. Its own
 			// navigation leaves the page somewhere `ensureSeed` cannot reason
 			// about, so the next view — there is none today — starts by navigating.
 			currentSeed = null;
+			currentSystem = null;
 		}
 		const subject = await PLACERS[view.shot.kind](page, view.shot);
 		// **Again, after placing**, because placing can move the view. The

@@ -172,8 +172,9 @@ import { GOVERNMENT_NAMES, JUMP_RANGE_LY, type SystemRecord } from "./galaxy";
 // rolled against, in one declaration (#430). Authored in `galaxy-frame.ts` because
 // that module's whole subject is the relation between this plane and the
 // cluster's; the roll below is its consumer, and the one in `hud.ts` reads the
-// vector handed to it.
-import { SYSTEM_PLANE_NORMAL } from "./galaxy-frame";
+// vector handed to it. `coreBearing` is the same relation read as a direction:
+// the first caller in `src/` is `clusterCoreDirection` below, for #432's row.
+import { coreBearing, SYSTEM_PLANE_NORMAL, skyFrame } from "./galaxy-frame";
 import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
@@ -230,6 +231,7 @@ import {
 	jumpWorldTo,
 	makeSystem,
 	makeWorld,
+	makeWorldAtSystem,
 	restoreWorld,
 	canResetWorldToStart,
 	resetWorldToStart,
@@ -574,6 +576,7 @@ import {
 	webSlotLocks,
 } from "./save-store";
 import { type BootMode, bootMode } from "./boot-mode";
+import { querySystem } from "./boot-system";
 import {
 	attachCommander,
 	CommanderSwitch,
@@ -3085,13 +3088,23 @@ class Game {
 	 * A new game, or a loaded one.
 	 *
 	 * **The load is a constructor arm rather than a method**, and that is
-	 * `resetWorldToStart`'s argument applied: `Game` calls `makeWorld` exactly
-	 * once and holds per-system caches deliberately never invalidated on that
-	 * basis — the baked `environmentMap`, the `interiors` berth catalogue. A
-	 * `load()` that swapped `this.world` mid-session would be the world rebuild
-	 * that comment rules out.
+	 * `resetWorldToStart`'s argument applied: `Game` builds its world exactly
+	 * once — `makeWorld`, or `makeWorldAtSystem` for a boot that named a system
+	 * — and holds per-system caches deliberately never invalidated on that basis
+	 * — the baked `environmentMap`, the `interiors` berth catalogue. A `load()`
+	 * that swapped `this.world` mid-session would be the world rebuild that
+	 * comment rules out.
+	 *
+	 * `atSystem` is `?system=` (#432): a new game *elsewhere*. It has nowhere to
+	 * go on the load arm — a save names its own system — and `planBoot` makes the
+	 * two mutually exclusive by writing nothing for a pinned boot, so the arm
+	 * below is a boundary rather than a live case.
 	 */
-	constructor(seed: number, save: SaveEnvelope | null = null) {
+	constructor(
+		seed: number,
+		save: SaveEnvelope | null = null,
+		atSystem: number | null = null,
+	) {
 		if (save) {
 			// `restoreWorld` rather than `makeWorld` plus a jump: `jumpWorldTo`
 			// throws across a galaxy boundary on purpose, so a save taken in
@@ -3159,7 +3172,12 @@ class Game {
 				this.restoredAttitude = true;
 			}
 		} else {
-			this.world = makeWorld(seed);
+			// A named system is the same new game at another star (#432), and the
+			// `visit` below reads the record off the world rather than off
+			// `startSystem`, so the visited flag lands on the system the ship is
+			// actually in — which is the half that would have quietly been a lie.
+			this.world =
+				atSystem === null ? makeWorld(seed) : makeWorldAtSystem(seed, atSystem);
 			this.commerceWorld = newPersistentWorld(seed);
 			// §7's visited flag for the system a new game starts in. Recorded
 			// here rather than only on arrival, so the set is "everywhere the
@@ -3896,6 +3914,29 @@ class Game {
 		// **After** the swap, not before: disposing the geometry still attached
 		// to the points would free what the frame in flight is drawing with.
 		geometry.dispose();
+	}
+
+	/**
+	 * The way back to the cluster's core, in this system's world frame: a unit
+	 * direction, or `null` in a system standing on the core itself, where every
+	 * direction is away from it (#432).
+	 *
+	 * Three lines of wrapping around `galaxy-frame.ts`, which is what that module
+	 * means when it says a caller needs wrapping and no decisions. It is a method
+	 * on the game rather than arithmetic in a capture script for two standing
+	 * reasons. The page holds the only copy of *which system this is* —
+	 * `world.system.record` — so a script that derived the heading itself would be
+	 * a second idea of the galactic frame, which is exactly what #430 refuses. And
+	 * #99's rule: a transform nothing can break is a claim, so the transform is
+	 * held by `tests/galaxy-frame.test.ts` and what is held here is that the page
+	 * reports it, which `scripts/probe-sky.mjs` reads off a running game.
+	 *
+	 * `sky-cluster-core` aims the camera along this, and is the first caller in
+	 * `src/` — the reason the function is a method rather than a scratch reading.
+	 */
+	clusterCoreDirection(): Vec3 | null {
+		const record = this.world.system.record;
+		return coreBearing(skyFrame(record.seed), record.pos);
 	}
 
 	/** The attribute buffers for one `StarField`.
@@ -14139,7 +14180,12 @@ if (query.has("model-viewer")) {
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
-	const noSave = query.has("no-save");
+	// **A pinned system writes nothing, and the plan is what says so.** `?seed`
+	// protects a record by disagreeing with it; a named system carries no such
+	// disagreement, so a boot that names one reads, consumes and writes nothing
+	// at all — §11.6, #432. Read once, like the seed below: an unusable value
+	// warns as it is read.
+	const askedSystem = querySystem(query);
 	// **One Commander catalog since #437**, and one offer source since #411.
 	// The fixture trial used to get its own IndexedDB database and lock prefix
 	// on top of a save encoding the normal catalog refused; both are gone.
@@ -14161,8 +14207,9 @@ if (query.has("model-viewer")) {
 		catalog,
 		backend: saveBackend,
 		boot,
-		noSave,
+		noSave: query.has("no-save"),
 		querySeed: askedSeed,
+		pinnedSystem: askedSystem,
 	});
 	for (const line of [plan.fault, plan.notice])
 		if (line !== null) console.warn(`save: ${line}`);
@@ -14174,11 +14221,11 @@ if (query.has("model-viewer")) {
 	const worldSeed = plan.pending?.seed ?? askedSeed ?? randomSeed();
 	let game: Game;
 	try {
-		game = new Game(worldSeed, plan.loaded);
+		game = new Game(worldSeed, plan.loaded, askedSystem);
 	} catch (error) {
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
-		game = new Game(worldSeed, null);
+		game = new Game(worldSeed, null, askedSystem);
 	}
 	// Held until a store is attached or the player chooses (§11.2 step 4).
 	game.clockHeld = true;
@@ -14278,7 +14325,10 @@ if (query.has("model-viewer")) {
 	};
 	let openAtBoot = plan.mode === "overlay";
 	if (plan.mode === "direct") {
-		if (!noSave && plan.fault === null) await attach(plan.slot);
+		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a
+		// boot write nothing, and the shell that attaches a store has to read the
+		// plan's answer rather than re-derive it from one of the two causes.
+		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
@@ -14291,8 +14341,8 @@ if (query.has("model-viewer")) {
 		}
 	}
 	game.commanderOverlay = mountCommanderOverlay({
-		catalog: noSave ? null : catalog,
-		switcher: noSave
+		catalog: plan.writesNothing ? null : catalog,
+		switcher: plan.writesNothing
 			? null
 			: new CommanderSwitch({
 					catalog,
@@ -14319,7 +14369,7 @@ if (query.has("model-viewer")) {
 			// at zero that can never die again. The store's own lock goes back
 			// first, or the one-shot below is refused by this very tab.
 			if (game.dead) {
-				if (!noSave) {
+				if (!plan.writesNothing) {
 					game.saveStore?.release();
 					try {
 						await catalog.chooseCommander(slot);
@@ -14330,7 +14380,7 @@ if (query.has("model-viewer")) {
 				window.location.reload();
 				return null;
 			}
-			const fault = noSave ? null : await attach(slot);
+			const fault = plan.writesNothing ? null : await attach(slot);
 			if (fault === null) game.clockHeld = false;
 			return fault;
 		},

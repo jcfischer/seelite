@@ -694,8 +694,12 @@ describe("one galactic frame, read by everything that points at it", () => {
 		// here too, so the call site now reads the constant, and this row checks its
 		// provenance: the import carries it, and the roll consumes it.
 		const main = codeOf("src/main.ts");
+		// The braces are a *list*, matched loosely since #432 put a second name of
+		// this module's on the same import: what the row pins is that the roll's
+		// normal arrives from here rather than being written out at the call site,
+		// and a neighbour sharing the statement does not change its provenance.
 		expect(main).toMatch(
-			/import \{ SYSTEM_PLANE_NORMAL \} from "\.\/galaxy-frame"/,
+			/import \{[^}]*\bSYSTEM_PLANE_NORMAL\b[^}]*\} from "\.\/galaxy-frame"/,
 		);
 		expect(main).toMatch(
 			/horizonRoll\(\s*this\.orientation,\s*SYSTEM_PLANE_NORMAL\s*\)/,

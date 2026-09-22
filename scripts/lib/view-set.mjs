@@ -156,9 +156,16 @@ export const LEVERS = Object.freeze({
  *   lit, 180 puts it beyond the subject and the subject a silhouette. #99's
  *   fill exists because the second case rendered the hull as a black cutout,
  *   and the sheet has to contain the case the fix was made for.
- * - `deep-sky` — at the arrival point, looking away from the star and every
- *   body. The only view where the backdrop is the subject rather than the
- *   thing behind one.
+ * - `deep-sky` — at the arrival point, with the backdrop as the subject rather
+ *   than the thing behind one. `aim` picks the heading rule, and the two are
+ *   opposite questions: `emptiest` (the default, and every row written before
+ *   #432) searches for the heading with the least on it, which is what a frame
+ *   for *nothing in front of it* needs; `core` points along the way back to the
+ *   cluster's centre, which is what a frame for #100's derived layer needs — and
+ *   it **has to name a `system`**, because from the system the game boots at the
+ *   cone on the centre is below isotropic. A heading rule that names the core is
+ *   only answerable through `galaxy-frame.ts`, which is #430's reason for
+ *   existing.
  * - `berth` — docked at a **named berth** of a named station, flown there by
  *   §7's docking computer, stopped at a named point of the traversal. #147's
  *   interior is only ever seen from inside, and the berth is named rather than
@@ -203,6 +210,15 @@ export const SHOT_KINDS = Object.freeze([
  * two carry `seed: 2` and `seed: 5` and their captures navigate. Saying "one
  * seed" of this set would be the class of claim this file's own capture code
  * refuses: a caption asserting a fixture property the frames do not have.
+ *
+ * **One seed is not one place.** Every other row is framed in the system the
+ * game boots at, which is `startSystem` — the most *central* well-stocked and
+ * orderly one — and only `sky-cluster-core` names a `system` to stand at instead
+ * (#432), because the layer #100 ruled is a cone of cluster light on the centre
+ * and there is no cone to photograph from the centre. `capture-views.mjs`
+ * restores that with the seed, before each view, for the same reason and with the
+ * same readback: a row that got a different system than it asked for has to be a
+ * red run rather than a wrong picture with the right caption.
  *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
@@ -712,6 +728,42 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
+	 * #432's row, and the reason `deep-sky` grew an `aim`.
+	 *
+	 * #100 ruled the derived sky directional rather than bright: what a sky in
+	 * this game says about where the player is is *which way the cluster's light
+	 * crowds*. The row above cannot show that from where it stands, in either
+	 * half. `startSystem` is the most **central** well-stocked and orderly system,
+	 * so on this seed the start system sits at `t = 0.146` and its cone on the
+	 * centre measures **below** isotropic — the inverted frame, photographed
+	 * green; and `__emptiestDirection` is a rule for finding the least on any
+	 * heading, which aimed at a cone of light is an anti-aim.
+	 *
+	 * So this row stands at the rim of the cluster and looks back down the cone.
+	 * Both halves are the shipped code's, not a caption's: `?system=` boots the
+	 * page at the named system (`src/boot-system.ts`), and the heading comes from
+	 * `Game.clusterCoreDirection()`, which is `galaxy-frame.ts`'s transform read at
+	 * the system the world is actually in.
+	 *
+	 * **The index below is data, and the rule that picked it lives in one place:**
+	 * `tests/view-set.test.ts` recomputes it off the shipped generator on every
+	 * run, so a generator change that moves the tightest clear cone makes this row
+	 * red rather than quietly re-framing the sheet against a different sky. The
+	 * rim band, the clearance and the ordering statistic are all in that file,
+	 * which is their only copy.
+	 */
+	{
+		name: "sky-cluster-core",
+		covers: [100],
+		what: "At the cluster's rim, aimed back along the way to its centre: the other systems crowded into the cone of cluster light, with the invented grain behind them.",
+		shot: {
+			kind: "deep-sky",
+			aim: "core",
+			system: 161,
+			view: "cockpit",
+		},
+	},
+	/**
 	 * #372's two frames: the tree as `?` first opens it, and with four groups
 	 * folded, so the sheet shows both what a fold does and the lower groups an
 	 * open tree pushes below the panel.
@@ -952,7 +1004,15 @@ const SHOT_REQUIREMENTS = {
 	"station-axis": (s) => typeof s.station === "string" && finite(s.radii),
 	"body-offset": (s) =>
 		typeof s.body === "string" && finite(s.radii) && finite(s.sunAngleDeg),
-	"deep-sky": () => true,
+	"deep-sky": (s) =>
+		(s.aim === undefined || s.aim === "emptiest" || s.aim === "core") &&
+		// #432. `aim: "core"` without a system to stand at is the row that cannot
+		// show its own subject — the cone on the centre is *below* isotropic from
+		// the system the game boots at — and on the sheet it looks exactly like the
+		// one that can. `malformedShots` is where that is refused, because a
+		// garbage frame in a contact sheet is something a reviewer squints at
+		// rather than something that names the field that is missing.
+		(s.aim !== "core" || Number.isInteger(s.system)),
 	// The berth is named for the reason `SHOT_KINDS` gives: an unnamed one is a
 	// different room each run. `at`, `headLook` and `launch` are optional and a
 	// missing one is a docked, forward, cockpit frame.

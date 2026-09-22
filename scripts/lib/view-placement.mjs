@@ -409,6 +409,28 @@ export async function installViewFraming(page) {
 			}
 			return best;
 		};
+
+		/**
+		 * The way back to the cluster's core, as the game computes it (#432).
+		 *
+		 * A read of `Game.clusterCoreDirection()`, and the whole of it is that it
+		 * is a read: #430's `galaxy-frame.ts` is the one place the relation between
+		 * a system and the cluster's centre is authored, so a placement script
+		 * working the rotation out for itself would be a second idea of the
+		 * galactic frame — the exact thing that module was written to stop.
+		 *
+		 * `null` is a system standing on the core, where every heading points away
+		 * from it. A person at a console can shrug at that; a capture cannot,
+		 * because the frame it is about to write is captioned as the cone.
+		 */
+		window.__clusterCoreDirection = () => {
+			const d = window.__seelite.clusterCoreDirection();
+			if (!d)
+				throw new Error(
+					"placement: this system stands on the cluster's core, so no heading points at it",
+				);
+			return d;
+		};
 	});
 }
 

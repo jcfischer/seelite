@@ -19,7 +19,7 @@
  * the module handed to the geometry the scene graph is drawing with — plus the
  * geometry's own identity and the layer's parent chain. Nothing here renders or
  * reads a pixel back, so **a draw call that never happened, or an upload that the
- * driver dropped, passes all nine checks**; the claim that the sky is actually on
+ * driver dropped, passes every check above**; the claim that the sky is actually on
  * screen belongs to `probe-output-stage.mjs`, which counts lit pixels of the
  * composited frame (`the backdrop is still there when the frame is multisampled`).
  * That row is a floor on **the backdrop as a whole**, and it predates this PR: it
@@ -44,10 +44,19 @@
  *   can express — the parallax itself is read on the sheet, but the parentage
  *   that causes it is read here.
  *
+ * #432's four rows arrive with the row that aims at the cluster's core, and read
+ * the two things no headless row can: that `?system=` moved the *page* to the
+ * system the row names, and that the frame it aims at holds the cone. The
+ * fixture — seed and system alike — is read out of `view-set.mjs` rather than
+ * restated here, because a probe holding its own copy of the thing it exists to
+ * photograph keeps passing after the photograph has moved.
+ *
  * The probe drives the shipped game through `window.__seelite` and reads
  * constants off the page (`units.BACKDROP_RADIUS`) rather than restating them.
  */
 import { gameUrl } from "./lib/game-url.mjs";
+import { SEED as VIEW_SEED, VIEWS } from "./lib/view-set.mjs";
+import { installViewFraming } from "./lib/view-placement.mjs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -61,12 +70,32 @@ const ORIGIN =
  *  connected layout has. Fixed so a red run is reproducible. */
 const SEED = 42;
 
+/**
+ * The canonical row #432 added, read out of the view set rather than restated.
+ *
+ * The rim system's index is that file's to own — `tests/view-set.test.ts` holds
+ * the rule that picked it — and a probe with its own copy of the fixture is a
+ * probe that keeps passing after the row it exists to test has moved. The row
+ * missing at all is refused here, before a browser is launched, because the four
+ * rows below would otherwise report a share of `NaN`.
+ */
+const coreRow = VIEWS.find((v) => v.shot?.aim === "core");
+if (!coreRow)
+	throw new Error(
+		"probe-sky: the view set declares no `deep-sky` row aimed at the cluster's core — #432's rows have nothing to aim at",
+	);
+
 const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium();
 const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 watch(page);
+// #432's rows aim the shipped game with the same vocabulary the canonical
+// capture aims it with — `__lookAt`, `__clusterCoreDirection`,
+// `__emptiestDirection` — rather than with a second copy of the framing that
+// would then be the thing measured instead of the thing shipped.
+await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: SEED }));
 await bootedGame(page);
 
@@ -338,6 +367,154 @@ check(
 	"on the rebuilt buffer too, the mounted sizes fall as the distances rise",
 	monotoneAfter.ok,
 	monotoneAfter.why,
+);
+
+// ---------------------------------------------------------------------------
+// #432: standing at a named system, and what the frame there holds.
+//
+// The headless tier holds the arithmetic and the fixture rule. What it cannot
+// hold is either half of what this node is actually for: that the affordance
+// moves a *running game* to the system a row names — `planBoot` and
+// `makeWorldAtSystem` have to agree through a browser boot for that — and that
+// the heading the row aims along is where the cone of cluster light is, which is
+// only measurable against the bearings a live renderer is holding.
+//
+// **Both comparisons are ratios against a second framing of the same sky**, and
+// neither quotes a figure of its own. The share of a sky that lies inside a frame
+// is a property of one seeded world at one instant, and #1's constraint is that
+// such a number earns its place by being a ratio; the two framings move together
+// when the generator moves, and the claim — that aiming at the core shows
+// cluster light where aiming at emptiness shows none, and that the same aim at
+// the centre of the cluster shows nothing at all — is a claim about the pair.
+//
+// What this still does not do is read a pixel. Every number below comes off the
+// mounted `BufferAttribute` and the camera's own matrix, so — as above — a frame
+// that never drew would pass, and the look of the cone is the sheet's to judge.
+// ---------------------------------------------------------------------------
+
+/**
+ * Aim the shipped game from where it stands, and count what its frame holds.
+ *
+ * The frame is read as a box in angle off the camera that draws the sky — the
+ * same `tan θ / tan(fov/2)` form `main.ts` uses for its own projection — because
+ * the question is what is *inside the frame*, and an angular radius is not a
+ * frustum test.
+ */
+const frameReading = (which) =>
+	page.evaluate(async (rule) => {
+		const g = window.__seelite;
+		const record = g.world.system.record;
+		const ship = g.world.ship.pos;
+		const d =
+			rule === "core"
+				? window.__clusterCoreDirection()
+				: window.__emptiestDirection();
+		await window.__lookAt({
+			x: ship.x + d.x * 1e9,
+			y: ship.y + d.y * 1e9,
+			z: ship.z + d.z * 1e9,
+		});
+
+		const cam = g.backdropCamera;
+		cam.updateMatrixWorld(true);
+		const tanV = Math.tan((cam.fov * Math.PI) / 360);
+		const tanH = tanV * cam.aspect;
+		const e = cam.matrixWorld.elements;
+		const right = [e[0], e[1], e[2]];
+		const up = [e[4], e[5], e[6]];
+		// three's camera looks down its own -Z.
+		const fwd = [-e[8], -e[9], -e[10]];
+		const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+		// Homogeneous in the vector's length, so the sky's radius and a body's
+		// distance both pass straight through it unnormalised.
+		const inFrame = (v, padTan = 0) => {
+			const z = dot3(v, fwd);
+			if (z <= 0) return false;
+			return (
+				Math.abs(dot3(v, right) / z) <= tanH + padTan &&
+				Math.abs(dot3(v, up) / z) <= tanV + padTan
+			);
+		};
+
+		const sky = g.backdropScene
+			.getObjectByName("stars-systems")
+			.geometry.getAttribute("position");
+		let lit = 0;
+		for (let i = 0; i < sky.count; i++)
+			if (inFrame([sky.getX(i), sky.getY(i), sky.getZ(i)])) lit++;
+
+		// What could be the frame's subject instead of the sky. A disc counts by
+		// the frame growing by the disc's own tangent, which is the conservative
+		// direction: a sliver of a planet over the edge is reported as in frame.
+		const subjects = [];
+		for (const b of g.world.system.bodies) {
+			const to = [b.pos.x - ship.x, b.pos.y - ship.y, b.pos.z - ship.z];
+			const dist = Math.hypot(to[0], to[1], to[2]);
+			if (dist <= b.radiusKm || inFrame(to, b.radiusKm / dist))
+				subjects.push(b.id);
+		}
+		return {
+			index: record.index,
+			name: record.name,
+			t: record.t,
+			lit,
+			total: sky.count,
+			subjects,
+		};
+	}, which);
+
+await page.goto(
+	gameUrl(origin, {
+		seed: VIEW_SEED,
+		raider: "off",
+		system: coreRow.shot.system,
+	}),
+);
+await bootedGame(page);
+
+const atCore = await frameReading("core");
+const atEmptiest = await frameReading("emptiest");
+
+check(
+	"`?system=` boots the running page at the system the row names",
+	atCore.index === coreRow.shot.system,
+	`system ${atCore.index} ${atCore.name} at t=${atCore.t.toFixed(
+		3,
+	)}, asked for ${coreRow.shot.system}`,
+);
+
+check(
+	"the heading the row aims along is the one the mounted cone is crowded along",
+	atCore.lit >= 2 * Math.max(1, atEmptiest.lit),
+	`${atCore.lit} of ${atCore.total} derived points inside the frame aimed at the core against ${atEmptiest.lit} aimed at emptiness — the same sky, the same camera, two heading rules`,
+);
+
+check(
+	"the frame the row aims holds no sun and no planet",
+	atCore.subjects.length === 0,
+	atCore.subjects.length === 0
+		? "nothing of the system's own light is inside the frame"
+		: `in frame: ${atCore.subjects.join(", ")}`,
+);
+
+// The other half of the node: the row could not be taken where the game boots,
+// because `startSystem` is the most central system there is and a directional
+// arm has nothing to show from the centre. Same seed, same aim, no `?system=`.
+await page.goto(gameUrl(origin, { seed: VIEW_SEED, raider: "off" }));
+await bootedGame(page);
+const atStart = await frameReading("core");
+
+const rimShare = atCore.lit / atCore.total;
+const centreShare = atStart.lit / atStart.total;
+
+check(
+	"the same aim at the system the game boots at is the inverted frame #432 was opened to escape",
+	atStart.index !== atCore.index && rimShare >= 2 * centreShare,
+	`${(rimShare * 100).toFixed(1)}% of the derived sky in frame at system ${
+		atCore.index
+	} (t=${atCore.t.toFixed(3)}) against ${(centreShare * 100).toFixed(
+		1,
+	)}% at the start system ${atStart.index} (t=${atStart.t.toFixed(3)})`,
 );
 
 await browser.close();

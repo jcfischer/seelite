@@ -18,8 +18,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { TreeDeclaration } from "../scripts/lib/tree-declaration.mjs";
-import { makeWorld } from "../src/sim.ts";
+import { generateGalaxy, startSystem } from "../src/galaxy";
+import { coreBearing, skyFrame } from "../src/galaxy-frame";
+import { START_GALAXY, makeSystem, makeWorld } from "../src/sim.ts";
 import { STATION_GEOMETRY } from "../src/station.ts";
+import { arrivalPoint } from "../src/system";
+import { dot, length, normalizeOr, sub, v3, type Vec3 } from "../src/vec3";
 import {
 	FIXTURE,
 	GAME_TIME_S,
@@ -109,16 +113,24 @@ describe("the view set itself", () => {
 		expect(from).toBeGreaterThan(0);
 		expect(to).toBeGreaterThan(from);
 		const loop = source.slice(from, to).replace(/\s+/g, " ");
-		expect(loop).toContain("await ensureSeed(page, view.shot.seed ?? SEED);");
-		// And no placer navigates on a seed of its own any more. `PLACERS` is the
-		// object the loop dispatches through, so a `shot.seed` read inside it is
-		// exactly the mechanism that came out.
+		// Both halves of the fixture a row may declare, restored by one call: the
+		// seed and, since #432, the system. A row that names a system and a loop
+		// that drops it is a rim caption on a start-system frame, which is the
+		// inverted picture the node was opened to escape.
+		expect(loop).toContain(
+			"await ensureSeed(page, view.shot.seed ?? SEED, view.shot.system ?? null);",
+		);
+		// And no placer navigates on a fixture of its own any more. `PLACERS` is
+		// the object the loop dispatches through, so a `shot.seed` read inside it
+		// is exactly the mechanism that came out — and the same trap exists for
+		// the system, so it is refused in the same breath.
 		const placers = source.slice(
 			source.indexOf("const PLACERS = {"),
 			source.indexOf("\n};", source.indexOf("const PLACERS = {")),
 		);
 		expect(placers.length).toBeGreaterThan(200);
 		expect(placers).not.toContain("shot.seed");
+		expect(placers).not.toContain("shot.system");
 	});
 
 	/** Three views name their own seed, and every one does it because the
@@ -143,7 +155,7 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares twenty-eight views with unique kebab-case names", () => {
+	test("declares twenty-nine views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
@@ -152,11 +164,12 @@ describe("the view set itself", () => {
 		// the refinery a frame from their own aperture axis, twenty-four since
 		// #324 added the duel's glass and console, twenty-six since #324 part d
 		// added the canisters and the raider log, twenty-eight since #372 added
-		// the Controls tab open and folded. A literal and not
+		// the Controls tab open and folded, twenty-nine since #432 added the rim
+		// row that can show the derived sky. A literal and not
 		// `VIEWS.length`, which is
 		// the whole point: a view deleted by accident has to be a red run, and a
 		// check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(28);
+		expect(VIEWS.length).toBe(29);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -188,9 +201,23 @@ describe("the view set itself", () => {
 				},
 				{ name: "no-radii", shot: { kind: "station-axis", station: "trade" } },
 				{ name: "bad-kind", shot: { kind: "improvised" } },
+				// **An aim at the core without a system to stand at** (#432). From
+				// where the game boots the cone on the centre is *below* isotropic,
+				// so that shot is the inverted frame the rim row exists to escape,
+				// and it reads exactly like the right one on the sheet.
+				{ name: "core-aim-no-system", shot: { kind: "deep-sky", aim: "core" } },
+				{ name: "aim-not-a-rule", shot: { kind: "deep-sky", aim: "sideways" } },
+				// No `aim` at all is the row that was here first: `sky-only`, whose
+				// heading rule is the emptiest one.
 				{ name: "fine", shot: { kind: "deep-sky" } },
 			]),
-		).toEqual(["no-angle", "no-radii", "bad-kind"]);
+		).toEqual([
+			"no-angle",
+			"no-radii",
+			"bad-kind",
+			"core-aim-no-system",
+			"aim-not-a-rule",
+		]);
 	});
 
 	test("every covered id is a lever on the map", () => {
@@ -431,9 +458,9 @@ describe("the contact sheet", () => {
 	test("prints the clock span the frames were taken across, not a pinned time", () => {
 		const html = contactSheet([fullRun("before")]);
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
-		// many views the set declares — twenty-eight since #372 added the two
-		// Controls tab views.
-		expect(html).toContain("· clock 0.6–11.4s");
+		// many views the set declares — twenty-nine since #432 added the rim sky
+		// row.
+		expect(html).toContain("· clock 0.6–11.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -542,5 +569,192 @@ describe("the contact sheet", () => {
 		// And the same run is incomplete against the real set, which is the half
 		// that proves the parameter is doing the deciding.
 		expect(() => contactSheet([run])).toThrow("cockpit-arrival");
+	});
+});
+
+/**
+ * #432's rim row: the one frame in the set whose subject is the derived sky.
+ *
+ * `sky-only` stands where the game boots and aims at the emptiest heading, and
+ * both halves of that are wrong for the layer #100 ruled in. The start system is
+ * the most **central** well-stocked and orderly one — `t = 0.146` on this seed —
+ * and the derived arm is *directional* rather than bright, so from the centre
+ * there is no direction to look along; and a heading rule whose whole purpose is
+ * finding the least on any heading is an **anti**-aim at a cone of light. So the
+ * set got a second row, and this is the half of it no browser is needed for:
+ * **the system the row names is the system the rule picks**, recomputed here from
+ * the shipped generator.
+ *
+ * What this cannot reach is the thing the row exists for. Every row here is a
+ * statement about the *fixture*; that the frame it photographs shows a cone of
+ * cluster light rather than a black field with a dot in it is a claim about
+ * pixels, and it belongs to `scripts/probe-sky.mjs` and to the person the sheet
+ * is judged by. #104's failure was a sheet that was captured, green, complete and
+ * showed nothing, and a green row here is not what stands between them and it.
+ */
+
+/** §4's rim third, in the one quantity every radial bias in the generator reads. */
+const RIM_THIRD_T = 2 / 3;
+
+/**
+ * How far the aim has to stand from the system's own light to be a frame of sky.
+ *
+ * A parameter, stated. It is not a measurement and pretends to none: it is the
+ * fixture's own admission that a frame with the sun or a planet in it is a frame
+ * *of that*, with the cone behind it unreadable — the same reason `deep-sky`
+ * turns away from bodies at all. The probe measures the frame the camera actually
+ * gets; this row only refuses to photograph a system whose own light is in the
+ * way before the question is even asked.
+ */
+const AIM_CLEARANCE_DEG = 30;
+
+const galaxy = generateGalaxy(SEED, START_GALAXY);
+const rimRow = VIEWS.find((v) => v.name === "sky-cluster-core");
+
+const unitAngleDeg = (a: Vec3, b: Vec3): number =>
+	(Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180) / Math.PI;
+
+/**
+ * How tightly a system's sky crowds the way to the core: the median angle, over
+ * every other system, from the core heading out to it. Small means crowded.
+ *
+ * **A median rather than a share inside a cone, on purpose.** A cone needs an
+ * angle, and the only angle worth quoting here is the camera's — which `main.ts`
+ * holds, and restating it here would be the third copy this repo keeps having to
+ * delete. §12 of `galaxy-generation.md` owns the share inside 20° and the
+ * instrument that reprints it; this is an *ordering* statistic between two
+ * systems, and a median needs no threshold to order with.
+ *
+ * **And it is frame-free**, which is why no `skyFrame` reaches it: the per-system
+ * rotation turns the whole picture, so every angle *within* a sky survives it
+ * unchanged. That is the same reason `measure-sky-density.ts` reads its
+ * cone in the galactic frame, and the same reason nothing here can be evidence
+ * about that rotation.
+ */
+function coreCrowdingDeg(index: number): number {
+	const self = galaxy.systems[index].pos;
+	const toCore = normalizeOr(sub(v3(), self), v3(0, 0, 1));
+	const angles = galaxy.systems
+		.filter((s) => s.index !== index)
+		.map((s) =>
+			unitAngleDeg(toCore, normalizeOr(sub(s.pos, self), v3(0, 0, 1))),
+		)
+		.sort((a, b) => a - b);
+	return angles[Math.floor(angles.length / 2)];
+}
+
+/**
+ * The narrowest gap, in degrees, between the aim heading and anything in this
+ * system that makes or blocks light — a body's disc counted as its own angular
+ * radius, so a planet's limb and not just its centre has to be off the aim.
+ *
+ * Read at the arrival point and at the clock the set declares, because that is
+ * where the row's placer stands the ship and no other place.
+ */
+function aimClearanceDeg(index: number): { deg: number; off: string } {
+	const record = galaxy.systems[index];
+	const system = makeSystem(record, GAME_TIME_S);
+	const ship = arrivalPoint(record, system.contents, null, GAME_TIME_S);
+	const aim = coreBearing(skyFrame(record.seed), record.pos);
+	if (!aim)
+		throw new Error(`view-set fixture: system ${index} has no core bearing`);
+	let worst = { deg: Number.POSITIVE_INFINITY, off: "" };
+	for (const body of system.bodies) {
+		const to = sub(body.pos, ship);
+		const dist = length(to);
+		const angle = unitAngleDeg(aim, normalizeOr(to, v3(0, 0, 1)));
+		// A body the ship is inside of has no angular radius and every heading is
+		// blocked; `arrivalPoint` never does that, and the guard is for a build
+		// that starts to.
+		const limbDeg =
+			dist <= body.radiusKm
+				? 180
+				: (Math.asin(Math.min(1, body.radiusKm / dist)) * 180) / Math.PI;
+		const clearance = angle - limbDeg;
+		if (clearance < worst.deg) worst = { deg: clearance, off: body.id };
+	}
+	return worst;
+}
+
+/**
+ * The rule the row's index was picked by, run again on the shipped generator.
+ *
+ * The tightest cone in the rim third, among the systems whose own light is not in
+ * the way. Tie-broken by index so a generator change that produces an exact tie
+ * has one answer rather than whichever the sort happened to meet first.
+ */
+function tightestClearRimSystem(): number {
+	const ranked = galaxy.systems
+		.filter((s) => s.t >= RIM_THIRD_T)
+		.sort(
+			(a, b) =>
+				coreCrowdingDeg(a.index) - coreCrowdingDeg(b.index) ||
+				a.index - b.index,
+		);
+	if (ranked.length === 0)
+		throw new Error(
+			`view-set fixture: no system of seed ${SEED} is in the rim third`,
+		);
+	for (const s of ranked)
+		if (aimClearanceDeg(s.index).deg >= AIM_CLEARANCE_DEG) return s.index;
+	throw new Error(
+		`view-set fixture: no rim-third system of seed ${SEED} clears its own light by ${AIM_CLEARANCE_DEG}°`,
+	);
+}
+
+describe("the rim sky row #432 added", () => {
+	test("there is a second sky row, and it is the one that aims at the core", () => {
+		expect(rimRow?.shot.kind).toBe("deep-sky");
+		expect(rimRow?.shot.aim).toBe("core");
+		// The lever it is evidence for is #100's, which `sky-only` already
+		// declares — two rows on one lever is the point, one per heading.
+		expect(rimRow?.covers).toContain(100);
+	});
+
+	/**
+	 * The node's own prohibition, as a row. `sky-only` declares `covers: [100,
+	 * 200]`, so relocating it would re-baseline #200's dither evidence with it,
+	 * and "the arrival point, empty sky" is an honest frame for the fixture the
+	 * game actually starts the player in. The rim row was added *beside* it, and
+	 * this is what stops the beside from quietly becoming instead.
+	 */
+	test("sky-only still stands at the arrival point and aims away from everything", () => {
+		const skyOnly = VIEWS.find((v) => v.name === "sky-only");
+		expect(skyOnly?.covers).toEqual([100, 200]);
+		expect(skyOnly?.shot).toEqual({ kind: "deep-sky", view: "cockpit" });
+	});
+
+	test("the core aim names the system to stand at, and the rule still picks it", () => {
+		const named = rimRow?.shot.system;
+		expect(typeof named).toBe("number");
+		expect(Number.isInteger(named)).toBe(true);
+		expect(named).toBe(tightestClearRimSystem());
+		// And it is not the start system by another name, which is the whole
+		// reason the row exists.
+		expect(named).not.toBe(startSystem(galaxy).index);
+	});
+
+	test("the named system is in the rim third, where the cone is", () => {
+		const record = galaxy.systems[rimRow?.shot.system as number];
+		expect(record.t).toBeGreaterThanOrEqual(RIM_THIRD_T);
+	});
+
+	/**
+	 * **A ratio and not a figure**, per the map's rule that a number quoted from
+	 * one seeded world is worth more as a ratio: both halves of this reading
+	 * move together when the generator moves, and the claim — that the same aim
+	 * at the start system is the *inverted* frame #432 was opened to escape — is
+	 * a claim about the two, not about either.
+	 */
+	test("the same aim crowds the core tighter than it does at the start system", () => {
+		const at = coreCrowdingDeg(rimRow?.shot.system as number);
+		const atStart = coreCrowdingDeg(startSystem(galaxy).index);
+		expect(atStart / at).toBeGreaterThanOrEqual(2);
+	});
+
+	test("the aim stands clear of the system's own sun and planets", () => {
+		const { deg, off } = aimClearanceDeg(rimRow?.shot.system as number);
+		expect(deg).toBeGreaterThanOrEqual(AIM_CLEARANCE_DEG);
+		expect(off).not.toBe("");
 	});
 });
