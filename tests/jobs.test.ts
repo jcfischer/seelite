@@ -9,9 +9,15 @@
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
-import { JUMP_RANGE_LY, generateGalaxy } from "../src/galaxy";
 import {
+	JUMP_RANGE_LY,
+	type SystemRecord,
+	generateGalaxy,
+} from "../src/galaxy";
+import {
+	COURIER_SPREAD_POOL,
 	JOB_ROWS,
+	type JobDestination,
 	type JobOffer,
 	bindJobs as bindJobsWith,
 	canPostJobs,
@@ -26,10 +32,16 @@ import {
 	postingStations,
 	stationKeyOf,
 } from "./helpers/job-board";
-import { MARKET_PERIOD_MIN } from "../src/market";
+import {
+	type Commodity,
+	MARKET_PERIOD_MIN,
+	marketRowAt,
+	marketStationOf,
+	stationCommodities,
+} from "../src/market";
 import { recordTrade } from "../src/deficits";
 import type { DeficitMap } from "../src/deficits";
-import { generateContents } from "../src/system";
+import { type Station, generateContents } from "../src/system";
 
 const WORLD = 0x5ee11e;
 const GALAXY = generateGalaxy(WORLD, 0);
@@ -330,5 +342,198 @@ describe("D4 — every job leaves one mark, and only one", () => {
 			holdT: 20,
 		});
 		expect(applied[mark.key]?.goods[mark.trade.goodName]).toBeLessThan(0);
+	});
+});
+
+describe("#455 — a consignment is drawn from the widest-spread goods", () => {
+	/** The base price a station quotes with no fluctuation byte and no deficit
+	 *  — the same figure `bindCourier` ranks on. */
+	const basePriceCr = (
+		commodity: Commodity,
+		system: SystemRecord,
+		station: Station,
+	): number =>
+		marketRowAt(
+			commodity,
+			system.economy,
+			0,
+			marketStationOf(station, system.seed).type,
+		).priceCr;
+
+	const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
+		...stationCommodities(marketStationOf(station, system.seed)),
+	];
+
+	/**
+	 * The pool and the ranking, rebuilt from `market.ts` rather than imported
+	 * from `jobs.ts`: a check that asked the binder for its own order would
+	 * pass on any order at all.
+	 */
+	const rankedPool = (
+		system: SystemRecord,
+		station: Station,
+		destination: JobDestination,
+	): Commodity[] => {
+		const there = new Set(
+			listedAt(destination.station, destination.system).map((c) => c.name),
+		);
+		return listedAt(station, system)
+			.filter(
+				(c) => there.has(c.name) && !c.sellOnly && !c.illegal && c.unit === "t",
+			)
+			.map((c) => ({
+				c,
+				spread:
+					basePriceCr(c, destination.system, destination.station) -
+					basePriceCr(c, system, station),
+			}))
+			.sort((a, b) => b.spread - a.spread || (a.c.name < b.c.name ? -1 : 1))
+			.map((entry) => entry.c);
+	};
+
+	/** Every courier offer this galaxy's first 60 systems post, with the leg
+	 *  the binder drew for it — so the ranking is measured over the same pair
+	 *  of stations the offer was bound from. */
+	const couriers = (
+		settled: Record<string, number> = {},
+		gameTimeMin = 120,
+	) => {
+		const out: {
+			offer: JobOffer;
+			system: SystemRecord;
+			station: Station;
+			destination: JobDestination;
+		}[] = [];
+		for (const system of SYSTEMS.slice(0, 60))
+			for (const station of postingStations(system)) {
+				const offer = boardAt(SYSTEMS, system, station, {
+					gameTimeMin,
+					settled,
+				}).find((o) => o.family === "courier");
+				if (!offer) continue;
+				const destination = deliveryCandidates(
+					SYSTEMS,
+					system,
+					generateContents,
+					stationKeyOf(system, station),
+				).find(
+					(d) =>
+						carrierKey(d.system.index, d.station.localCarrierId) ===
+						offer.reportAt.carrierKey,
+				);
+				if (!destination) throw new Error(`no leg for ${offer.id}`);
+				out.push({ offer, system, station, destination });
+			}
+		return out;
+	};
+
+	test("the good is in the pool, and in its top COURIER_SPREAD_POOL by spread", () => {
+		const boards = couriers();
+		expect(boards.length).toBeGreaterThan(50);
+		// **The width is held at both ends.** At 1 the rule is the ranking
+		// alone, which repeats at one requester; at or above the pool's own
+		// size the draw is uniform and the ranking decides nothing. Neither
+		// end is something a shipped run prints, and the figures for both live
+		// with the instrument rather than here. This row slices by the
+		// constant, so it is green either way — the two bounds are what make
+		// it a check on the *rule* rather than on whatever the constant
+		// currently is.
+		expect(COURIER_SPREAD_POOL).toBeGreaterThan(1);
+		for (const { offer, system, station, destination } of boards) {
+			const ranked = rankedPool(system, station, destination);
+			const top = ranked.slice(0, COURIER_SPREAD_POOL).map((c) => c.name);
+			expect([offer.id, top.includes(offer.goodName)]).toEqual([
+				offer.id,
+				true,
+			]);
+			expect([offer.id, ranked.length > COURIER_SPREAD_POOL]).toEqual([
+				offer.id,
+				true,
+			]);
+		}
+	});
+
+	test("the good reads no clock", () => {
+		// §2 already holds one board bound twice. What this adds is the axis
+		// that row cannot see: the draw reads no clock, so an offer sitting on
+		// a board across a market epoch keeps its cargo — the same guarantee
+		// the epoch row makes for the terms, over the whole galaxy sweep.
+		const early = couriers().map((b) => `${b.offer.id}:${b.offer.goodName}`);
+		const late = couriers({}, 120 + MARKET_PERIOD_MIN * 3).map(
+			(b) => `${b.offer.id}:${b.offer.goodName}`,
+		);
+		expect(late).toEqual(early);
+	});
+
+	test("a revisited leg mostly carries a different good", () => {
+		// **The leg is held.** The destination has its own per-episode draw, so
+		// a second consignment usually flies somewhere else and ranks a
+		// different pool — which means a build with no good-draw at all still
+		// shows a different cargo. Measured: `ranked[last]` with no draw passed
+		// a version of this row that did not hold the leg. So only the boards
+		// whose episode 2 goes to the same station as episode 1 count here.
+		//
+		// **A rate, over the only legs that can carry one.** Eight episodes
+		// rather than two, because the leg coincides on few boards per episode
+		// pair and three samples settle nothing — and the denominator is the
+		// legs a board actually *revisits*, because a leg flown once cannot
+		// show a second cargo and counting it drags the rate toward a floor of
+		// zero that a nearly degenerate draw would clear.
+		//
+		// **What this row is and is not.** The null for a uniform draw from
+		// three is **not** 2/3: that is the figure for a leg flown exactly
+		// twice, and this sample mixes legs flown two to five times, which
+		// sums higher. A draw collapsed onto two of the three goods still
+		// predicts well over half, so a floor here discriminates weakly and is
+		// set to catch a draw that has stopped drawing rather than one that
+		// has narrowed. **The narrowing is the next row's job** — it reads the
+		// rank the drawn good held, where a collapse leaves a position empty.
+		// The measured rates are in this PR's review rounds, not here, because
+		// they are a property of one galaxy of one seed.
+		const EPISODES = 8;
+		const goodsPerLeg = new Map<string, string[]>();
+		for (let episode = 1; episode <= EPISODES; episode += 1)
+			for (const board of couriers({ courier: episode - 1 })) {
+				expect(board.offer.episode).toBe(episode);
+				const leg = `${board.offer.requester.carrierKey}->${board.offer.reportAt.carrierKey}`;
+				const seen = goodsPerLeg.get(leg) ?? [];
+				seen.push(board.offer.goodName);
+				goodsPerLeg.set(leg, seen);
+			}
+		expect(goodsPerLeg.size).toBeGreaterThan(100);
+		const revisited = [...goodsPerLeg.values()].filter(
+			(goods) => goods.length > 1,
+		);
+		expect(revisited.length).toBeGreaterThan(100);
+		const varying = revisited.filter((goods) => new Set(goods).size > 1).length;
+		expect(varying / revisited.length).toBeGreaterThan(0.5);
+	});
+
+	test("every rank in the pool is drawn, and about as often as the others", () => {
+		// The draw itself, rather than its shadow on a leg: over eight
+		// episodes of every board, which **position** in the top
+		// `COURIER_SPREAD_POOL` the bound good held. A uniform draw puts a
+		// third on each, over the several hundred draws this sweep makes,
+		// where one position's standard error is under two points. Anything
+		// that collapses the draw — a fixed pick, a narrowed range, a stream
+		// with no entropy left — empties a position, so the floor is a
+		// quarter: several standard errors below uniform and unreachable for a
+		// rule that has stopped using a rank.
+		const drawn = new Map<number, number>();
+		for (let episode = 1; episode <= 8; episode += 1)
+			for (const { offer, system, station, destination } of couriers({
+				courier: episode - 1,
+			})) {
+				const rank = rankedPool(system, station, destination)
+					.slice(0, COURIER_SPREAD_POOL)
+					.findIndex((c) => c.name === offer.goodName);
+				expect([offer.id, rank]).not.toEqual([offer.id, -1]);
+				drawn.set(rank, (drawn.get(rank) ?? 0) + 1);
+			}
+		const total = [...drawn.values()].reduce((a, b) => a + b, 0);
+		expect(total).toBeGreaterThan(500);
+		expect(drawn.size).toBe(COURIER_SPREAD_POOL);
+		for (const [rank, n] of drawn)
+			expect([rank, n / total > 0.25]).toEqual([rank, true]);
 	});
 });

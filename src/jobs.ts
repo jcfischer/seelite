@@ -367,7 +367,23 @@ const draw = (
 	)();
 
 /** The draw axes inside `DOMAIN.JOB_OFFERS`. */
-const AXIS = { row: 0, destination: 1 } as const;
+const AXIS = { row: 0, destination: 1, good: 2 } as const;
+
+/**
+ * How many of the widest-spread goods a courier consignment is drawn from.
+ *
+ * Tunable, and both ends of it say something. At 1 the rule is the ranking
+ * alone, which is another near-constant: the spread's own column is two goods
+ * over most of a galaxy's boards, the way the cheapest rule's was Food. At or
+ * above the pool's own size the draw is uniform and the ranking decides
+ * nothing at all. **No figure is quoted here on purpose** —
+ * `scripts/measure-courier-goods.ts` owns every one of them beside the run
+ * that produces it, and a copy in this module is a claim about a seed that
+ * goes stale when the pool, the ranking or the generator moves.
+ * `tests/jobs.test.ts` holds both ends structurally: the width against the
+ * pool it ranks, and every rank in that width actually drawn.
+ */
+export const COURIER_SPREAD_POOL = 3;
 
 const episodeOf = (ctx: BindContext, family: JobFamily): number =>
 	(ctx.settled[family] ?? 0) + 1;
@@ -399,18 +415,31 @@ const round = (cr: number): number => Math.round(cr);
 /**
  * D8's floor: a consignment to a reachable station, always available.
  *
- * The good is the **cheapest tonne good both stations list**, read off the
- * fixed base price rather than the epoch's, so terms do not drift across a
- * 30-minute boundary while the offer sits on the board. It must be listed at
- * the delivery station too, or the mark would land on a shelf that does not
- * exist.
+ * The good is drawn, per episode, from the `COURIER_SPREAD_POOL` tonne goods
+ * with the **widest base-price spread between the two ends** — the
+ * destination's price less the origin's — read off the fixed base price rather
+ * than the epoch's, so terms do not drift across a 30-minute boundary while the
+ * offer sits on the board. It must be listed at the delivery station too, or
+ * the mark would land on a shelf that does not exist.
  *
- * Cheapest is a proxy for *what this economy has to spare*, and it is not the
- * same thing: an economy's true exports are its negative-gradient goods
- * (`economy-trade.md` §2), and a richer rule would read the gradient rather
- * than the price. It is deliberately left as the simple one until a family
- * needs better, and the word "export" is not used for it, because on most
- * boards it picks Food.
+ * The spread is a proxy, exactly as the cheapest rule it replaced was (#442):
+ * whether the widest price gap is a freight desk's actual reason for moving
+ * something is not a question a measurement can answer, and this rule is not
+ * derived from one. What the measurement does say is narrower than it first
+ * looks. **A gradient rule cannot vary**: a gradient belongs to the commodity
+ * table and not to a station, so an export or a need test names one good for
+ * the whole galaxy. That is not a claim about one-end rules in general — the
+ * cheapest rule reads one end and does vary, just barely, over two goods.
+ *
+ * **The draw earns its place on a different axis from the ranking.** Ranked
+ * alone, the spread already varies well across *space* — a pilot within one
+ * jump sees about three goods under it against one and a half under the
+ * cheapest rule. What it cannot do is vary at **one requester**: the ranking
+ * is a function of the two stations, so a second consignment down the same leg
+ * is the first one again, and one good takes 44.6% of a galaxy's boards. That
+ * repetition at one desk is `ordinary-requests.md` D1's texture question and
+ * #442's second one, and the per-episode draw is the only half of this rule
+ * that answers it. `scripts/measure-courier-goods.ts` prints both tables.
  */
 export function bindCourier(ctx: BindContext): JobOffer | null {
 	if (ctx.destinations.length === 0) return null;
@@ -430,17 +459,34 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 	// `entrustedTonnesAboard`, the hold's room and the mark all count tonnes,
 	// and contraband is the one scoped class (`economy-trade.md` §4) — a
 	// consignment of it would be a job the law model never agreed to.
-	const priced = listedAt(ctx.station, ctx.system)
+	const ranked = listedAt(ctx.station, ctx.system)
 		.filter(
 			(c) =>
 				listedThere.has(c.name) && !c.sellOnly && !c.illegal && c.unit === "t",
 		)
-		// Priced once per commodity rather than twice per comparison: this runs
-		// on every bind, which is every dock.
-		.map((c) => ({ c, priceCr: basePriceCr(c, ctx.system, ctx.station) }))
-		.sort((a, b) => a.priceCr - b.priceCr || (a.c.name < b.c.name ? -1 : 1));
-	const good = priced[0]?.c;
-	if (!good) return null;
+		// Both ends priced once per commodity rather than twice per comparison:
+		// this runs on every bind, which is every dock.
+		.map((c) => ({
+			c,
+			spread:
+				basePriceCr(c, destination.system, destination.station) -
+				basePriceCr(c, ctx.system, ctx.station),
+		}))
+		.sort((a, b) => b.spread - a.spread || (a.c.name < b.c.name ? -1 : 1));
+	if (ranked.length === 0) return null;
+	// Defensive and uncovered: `tests/jobs.test.ts` asserts the pool is wider
+	// than the constant on every board of the first 60 systems of one galaxy,
+	// which is the only place it has been measured — the instrument's control
+	// passes vacuously on a pool of three or fewer. A narrower pool is a
+	// market change, not a state this rule produces.
+	const width = Math.min(COURIER_SPREAD_POOL, ranked.length);
+	const good =
+		ranked[
+			Math.min(
+				width - 1,
+				Math.floor(draw(ctx.station, "courier", episode, AXIS.good) * width),
+			)
+		].c;
 
 	return {
 		id: offerId(ctx, "courier", episode),
