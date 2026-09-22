@@ -157,7 +157,7 @@ describe("the view set itself", () => {
 		expect(FIXTURE.planets.every((p) => !p.gasGiant)).toBe(true);
 	});
 
-	test("declares twenty-eight views with unique kebab-case names", () => {
+	test("declares twenty-nine views with unique kebab-case names", () => {
 		// Eight after #129 added `station-flank`, fifteen since #147 added
 		// §13.6's seven-frame acceptance set, seventeen since #144 added the two
 		// station-port views #134 ratified, eighteen since #206 added
@@ -169,12 +169,14 @@ describe("the view set itself", () => {
 		// the Controls tab open and folded. (#432 added a twenty-ninth — a rim row
 		// aimed along the Core bearing — and removed it in the same PR, on the
 		// principal's reading of the frame plus the density arm in
-		// `measure-sky-density.ts`. The count did not move, and the row's absence
-		// is explained where it stood rather than here.) A literal and not
+		// `measure-sky-density.ts`; #480 put a twenty-ninth back in the other
+		// role, a rim row that is a look at the sky that ships rather than proof
+		// of a cone, which is the thing the measurement foreclosed.) A literal and
+		// not
 		// `VIEWS.length`, which is
 		// the whole point: a view deleted by accident has to be a red run, and a
 		// check derived from its own subject cannot be one.
-		expect(VIEWS.length).toBe(28);
+		expect(VIEWS.length).toBe(29);
 		const names = VIEWS.map((v) => v.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const name of names) expect(name).toMatch(/^[a-z]+(-[a-z]+)*$/);
@@ -472,7 +474,7 @@ describe("the contact sheet", () => {
 		// The fixture spaces its frames 0.4 s apart, so the span is fixed by how
 		// many views the set declares — which is the count row's business, not this
 		// one's, and this literal moves with it.
-		expect(html).toContain("· clock 0.6–11.4s");
+		expect(html).toContain("· clock 0.6–11.8s");
 		expect(html).not.toContain("pinned");
 	});
 
@@ -617,19 +619,111 @@ describe("the rim sky row #432 built and removed", () => {
 	});
 
 	/**
-	 * `?system=` ships, `capture-views.mjs` will restore a named system beside the
-	 * seed for any row, and nothing in the set asks for one. That is a decision
-	 * rather than an oversight, and this row is what makes it one: the day the
-	 * derived layer's population moves far enough for a rim frame to show the cone,
-	 * a row here will name a system, and this row goes red with it.
+	 * `?system=` ships and `capture-views.mjs` will restore a named system beside
+	 * the seed for any row. Until #480 nothing in the set asked for one, which was
+	 * a decision rather than an oversight — and the scope is still what this row
+	 * holds: exactly one row stands off the boot system, the one #480 added. A
+	 * second row naming a system is either that decision widened or a fixture
+	 * copied, and either way it should be a red run rather than a quiet merge.
 	 */
-	test("no row in the set names a system to stand at", () => {
-		// Cast rather than a declaration: `system` is legal on a shot and no row
-		// uses it, so the inferred union of the literals in `view-set.mjs` has no
-		// such property to read. `malformedShots` reads it the same way.
+	test("the rim look row is the only one that names a system to stand at", () => {
+		// Cast rather than a declaration: `system` is optional on a shot and all
+		// but one row omits it, so the inferred union of the literals in
+		// `view-set.mjs` has no such property to read. `malformedShots` reads it
+		// the same way.
 		const declaring = VIEWS.filter(
 			(v) => (v.shot as { system?: number }).system !== undefined,
 		);
-		expect(declaring.map((v) => v.name)).toEqual([]);
+		expect(declaring.map((v) => v.name)).toEqual(["sky-at-the-rim"]);
+	});
+});
+
+/**
+ * The sheet's second sky frame, and the second half of #432's answer.
+ *
+ * #432 removed the rim row it built because that row promised #100's **Core
+ * bearing** and could not show it. The hole that left is a different one: with
+ * only `sky-only` the set keeps one picture of its own sky, taken from the most
+ * central system the generator has and aimed away from everything in the cluster,
+ * so the sky is evidenced from exactly the one place its crowding is not. #480
+ * put a row back at the other end of the same cluster, in the role a look row can
+ * actually fill: showing what the derived layer looks like from a rim star.
+ *
+ * The principal's reading of the sky — that it reads well, sparse rather than a
+ * wall, and better than the dense field #431 replaced — is why this row exists and
+ * what it is for. It is not evidence for the cone. `measure-sky-density.ts`'s core
+ * mode owns that question and answers it in the negative; no figure of its own is
+ * restated here, in either direction.
+ */
+describe("the rim look row #480 added", () => {
+	/**
+	 * §4's radial coordinate, read off the generator rather than re-derived:
+	 * `SystemRecord.t` is `radiusLy / GALAXY_RADIUS_LY` and the record calls it
+	 * "the one input every radial bias in §4 reads". Recomputing a radius here
+	 * would be a second ruler, and #118 is the history of what two of those do to
+	 * a gradient.
+	 */
+	const rimWorld = makeWorld(SEED);
+	const systems = rimWorld.galaxy.systems;
+	/** The farthest system from the cluster centre — folded, not a spread `max`,
+	 *  and deterministic on the sheet's own seed. */
+	const farthest = systems.reduce((a, b) => (b.t > a.t ? b : a));
+
+	/**
+	 * The row stands where #432's stood in role and not in aim: the farthest star
+	 * of the sheet's own world, so the rule that picked it is one sentence rather
+	 * than a taste. It re-runs every time the generator changes, which is the
+	 * point — a pinned index would go stale against a reshaped cluster the way
+	 * #118's fixed radial figures did.
+	 */
+	test("it stands at the farthest system of the sheet's own seed", () => {
+		const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+		expect(row?.covers).toEqual([431]);
+		expect(row?.shot).toEqual({
+			kind: "deep-sky",
+			view: "cockpit",
+			system: farthest.index,
+		});
+	});
+
+	/**
+	 * The rule and the claim in the same place: `farthest` is by construction the
+	 * maximum of §4's radial coordinate, so if it ever reads under two thirds the
+	 * cluster has been re-cut and "the rim third" has stopped meaning what the
+	 * node said it meant. That is the failure this row exists to notice.
+	 */
+	test("that system is in §4's rim third, and the row says so off the generator", () => {
+		expect(farthest.t).toBeGreaterThanOrEqual(2 / 3);
+		expect(farthest.t).toBe(Math.max(...systems.map((s) => s.t)));
+	});
+
+	/**
+	 * The prohibition, held as text. #432's row was captioned as #100's cone and
+	 * read as a disappointment; a look row that promises only what it shows cannot
+	 * be over-claimed. A caption naming the cone, the Core, or a bearing is the day
+	 * someone quietly re-scoped this row into the thing the measurement foreclosed
+	 * — that day should be a red run. `#478` owns whether the bearing ever gets a
+	 * frame of its own, and its answer is owed a look decision, not a caption.
+	 */
+	test("its caption promises the field and never names the thing it cannot show", () => {
+		const what = VIEWS.find((v) => v.name === "sky-at-the-rim")?.what ?? "";
+		expect(what).not.toBe("");
+		expect(what.toLowerCase()).toContain("rim");
+		expect(what.toLowerCase()).not.toMatch(/core|cone|bearing/);
+	});
+
+	/**
+	 * The heading is the shipped rule — `__emptiestDirection`, which takes the star
+	 * and every body as subjects and maximises the minimum angle from all of them.
+	 * That is why this row needs no clearance arithmetic of its own, and why
+	 * `#432`'s selection rule (the tightest clear cone in the rim third) stays
+	 * dead: an aim is what needed clearance, and an aim is what #478 decides on.
+	 */
+	test("it aims by the shipped emptiest rule and carries no aim axis", () => {
+		const row = VIEWS.find((v) => v.name === "sky-at-the-rim");
+		// Non-vacuous: the negative below is worth nothing unless the row is the
+		// kind of shot that has a heading rule at all.
+		expect((row?.shot as { kind?: string }).kind).toBe("deep-sky");
+		expect((row?.shot as { aim?: string }).aim).toBeUndefined();
 	});
 });

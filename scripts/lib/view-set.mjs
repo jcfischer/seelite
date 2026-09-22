@@ -142,6 +142,7 @@ export const LEVERS = Object.freeze({
 	300: "every §5 fixture on the surface its own aperture axis looks at",
 	324: "the duel HUD, the canister markers after a kill, and the Communications console's raider log",
 	372: "the Controls tab: every control as a folding tree of task groups",
+	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 });
 
 /**
@@ -733,20 +734,40 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "deep-sky", view: "cockpit" },
 	},
 	/**
-	 * The gap here is #432's answer, and it is a measurement rather than a
-	 * missing row. A row standing at the cluster's rim and aimed along the **Core
-	 * bearing** was built, captured on the GPU lane and judged by the principal,
-	 * whose reading was *"few dots, neither wall of dots or cone of lights"*.
-	 * That is what the arithmetic predicts: `scripts/measure-sky-density.ts`'s
-	 * core mode prints the crowded heading's points-per-square-degree against the
-	 * density the invented population already lays down in *every* direction, and
-	 * the cone loses. No framing at a 256-system cluster makes #100's lever
-	 * visible, because — as `CONTEXT.md` says of the Core bearing — it carries
-	 * information rather than light. What #432 shipped is the way to stand at a
-	 * named system (`?system=`) and the measurement that standing there is not
-	 * enough. The lever is the derived layer's population, which is the node that
-	 * measurement opened; a rim sky row comes back after that, not before it.
+	 * The gap between these two rows is #432's answer, and it is a measurement
+	 * rather than a missing row. A row standing at the cluster's rim and aimed
+	 * along the **Core bearing** was built, captured on the GPU lane and judged by
+	 * the principal, whose reading was *"few dots, neither wall of dots or cone of
+	 * lights"*. That is what the arithmetic predicts:
+	 * `scripts/measure-sky-density.ts`'s core mode prints the crowded heading's
+	 * points-per-square-degree against the density the invented population already
+	 * lays down in *every* direction, and the cone loses. No framing at a
+	 * 256-system cluster makes #100's lever visible, because — as `CONTEXT.md`
+	 * says of the Core bearing — it carries information rather than light. What
+	 * #432 shipped is the way to stand at a named system (`?system=`) and the
+	 * measurement that standing there is not enough.
+	 *
+	 * The row below is what came back after that, in the role a rim frame can
+	 * actually fill, on the principal's ruling and not on this file's: the cone is
+	 * #478's to decide, and the sky is already the picture he asked for.
+	 *
+	 * System 115 is the farthest of the 256 from the cluster centre on the sheet's
+	 * own seed — `SystemRecord.t` 0.999, where the row's `what` says *"outermost"*.
+	 * It is written down because a shot has to name one index and the capture is a
+	 * browser tool that cannot recompute anything, and it is *recomputed* rather
+	 * than remembered in `tests/view-set.test.ts`: the same fold over
+	 * `makeWorld(SEED).galaxy.systems` runs there every run, so a re-cut cluster
+	 * moves the row or goes red rather than leaving it standing at a star that is
+	 * no longer the edge. `ensureFixture` is the browser-side half: it restores
+	 * seed and system together and refuses the run if the page booted anywhere
+	 * else, so this number cannot silently become a different place.
 	 */
+	{
+		name: "sky-at-the-rim",
+		covers: [431],
+		what: "Away from the star and every body, at the outermost system on the cluster's rim. The derived sky as a field of real neighbours, seen from where they are thinnest.",
+		shot: { kind: "deep-sky", view: "cockpit", system: 115 },
+	},
 	/**
 	 * #372's two frames: the tree as `?` first opens it, and with four groups
 	 * folded, so the sheet shows both what a fold does and the lower groups an
