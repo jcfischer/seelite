@@ -86,7 +86,28 @@ import type { PadButtonName, PadFrame } from "./gamepad";
  * keeps seekolous's rule intact: no field records which device is in charge,
  * and the mouse can act on the same panel in the same frame.
  */
-export type PadContext = "flight" | "console" | "modal" | "instrument";
+export type PadContext =
+	| "flight"
+	| "console"
+	| "modal"
+	| "instrument"
+	/**
+	 * The rebind modal is open and listening (#369 D9).
+	 *
+	 * Its whole job: **admit the sticks and triggers for one capture, refuse
+	 * everything else, and swallow every input except its own cancel.** F8's
+	 * problem — a modal must refuse the axes, because a stick is a position and
+	 * there is nothing to release — is answered in the open by a context that
+	 * exists to admit them, rather than by punching a hole in `modal`'s
+	 * suspension. Nothing here flies the ship, which `contextFliesShip` says
+	 * once for the axes, the trigger and the pointer alike.
+	 *
+	 * **The reading is `capturedTrigger`'s, in `commands.ts`**, because what it
+	 * produces is a `Trigger` and that is the registry's word. This module
+	 * answers the half that is its own: which presses a surface claims, and
+	 * here that is one — the way out.
+	 */
+	| "capture";
 
 /**
  * Which standard buttons fall through to the flight layout, and in which
@@ -189,6 +210,17 @@ export interface PadIntents {
 	readonly instrument: boolean;
 }
 
+/**
+ * The button that closes the capture modal, and is therefore the one button
+ * the modal cannot record.
+ *
+ * Named here rather than in `commands.ts` because it is a property of the
+ * context, and `capturedTrigger` asks this module rather than keeping a second
+ * copy — the third copy of a table is what this repo's whole drift history is
+ * about.
+ */
+export const CAPTURE_CANCEL: PadButtonName = "b";
+
 /** The two buttons that are pulls rather than presses; see `padIntents`. */
 const ANALOG_TRIGGERS: readonly PadButtonName[] = ["l2", "r2"];
 
@@ -217,6 +249,20 @@ export function padIntents(
 	let instrument = false;
 
 	for (const name of frame.pressed) {
+		if (context === "capture") {
+			// **Nothing but the way out** (#369 D9). The stick and the trigger
+			// are read by `capturedTrigger` off the frame directly, not through
+			// this function, because they are a position rather than a press
+			// and an intent struct has nowhere to put one.
+			//
+			// Circle is the cancel because Circle is `back` everywhere else in
+			// this game, and a modal that invented a different way out would be
+			// a second grammar beside the one a player already has. The cost is
+			// named rather than discovered: **Circle cannot be captured from a
+			// pad while this modal is open**, and the modal says so.
+			if (name === CAPTURE_CANCEL) back = true;
+			continue;
+		}
 		if (context === "modal") {
 			// The whole pad, and no key reaches the ship. Left and right are a
 			// *value* here rather than a head turn, because the settings panel's
@@ -399,7 +445,12 @@ export function contextFliesShip(context: PadContext): boolean {
  * is not, and the click belongs to the console. Sticks aside: this is the pointer's
  * rule only, so #283's instrument exception is untouched.
  *
- * **`capture` is permission for a click, not an instruction to make one.** The
+ * **`take` is permission for a click, not an instruction to make one.** The
+ * word was `capture` until #381 S4, and it gave it up: D9 names the rebind
+ * modal's input context `capture`, and two meanings of one word in one module
+ * — a pointer verdict and an input context — is a thing neither a reader nor a
+ * grep can tell apart. The ruling owns the context; this verdict is the
+ * repo's own word, so this is the one that moves. The
  * browser grants a lock only from an activation-triggering event or after a
  * page-initiated exit, and it rate-limits being asked at all:
  * `scripts/probe-pointer-lock.mjs` measures that window against its own click
@@ -417,10 +468,10 @@ export function pointerLockMove(
 ): PointerLockMove {
 	if (!contextFliesShip(context) || consoleDrawn)
 		return held ? "release" : "at-rest";
-	return held ? "keep" : "capture";
+	return held ? "keep" : "take";
 }
 
-export type PointerLockMove = "capture" | "release" | "keep" | "at-rest";
+export type PointerLockMove = "take" | "release" | "keep" | "at-rest";
 
 export function padFlightAxes(
 	frame: PadFrame | null,
@@ -488,5 +539,5 @@ export function mouseFireHeld(
 	context: PadContext,
 	consoleDrawn: boolean,
 ): boolean {
-	return held && pointerLockMove(context, consoleDrawn, false) === "capture";
+	return held && pointerLockMove(context, consoleDrawn, false) === "take";
 }

@@ -9,12 +9,19 @@
 import { describe, expect, test } from "bun:test";
 import { PAD_FLIGHT_COMMANDS } from "../src/commands";
 import { codeOf, srcFiles } from "./lib/source-scan";
+import { type PadButtonName, STANDARD_BUTTONS } from "../src/gamepad";
+// The frame builders are `tests/lib/pad-frames.ts` since #381 S4;
+// `tests/capture.test.ts` would have been the second copy.
 import {
-	type PadButtonName,
-	type RawPad,
-	STANDARD_BUTTONS,
-	readPad,
-} from "../src/gamepad";
+	absent as absentFrame,
+	NOTHING,
+	pad,
+	padFrame,
+	press,
+	rest as restFrame,
+	sticks,
+	trigger,
+} from "./lib/pad-frames";
 import {
 	type PadContext,
 	type PadIntents,
@@ -27,44 +34,8 @@ import {
 	pointerLockMove,
 } from "../src/pad-bindings";
 
-const NOTHING: ReadonlySet<PadButtonName> = new Set();
-
-function pad(overrides: Partial<RawPad> = {}): RawPad {
-	return {
-		id: "DualSense Wireless Controller (STANDARD GAMEPAD)",
-		mapping: "standard",
-		axes: [0, 0, 0, 0],
-		buttons: STANDARD_BUTTONS.map(() => ({ pressed: false, value: 0 })),
-		...overrides,
-	};
-}
-
-/** A frame in which exactly `name` has just gone down. */
-const press = (name: PadButtonName, value = 1) => {
-	const index = STANDARD_BUTTONS.indexOf(name);
-	const buttons = STANDARD_BUTTONS.map((_, i) =>
-		i === index
-			? { pressed: value >= 0.5, value }
-			: { pressed: false, value: 0 },
-	);
-	return readPad(pad({ buttons }), NOTHING);
-};
-
-/** A frame with the sticks at [leftX, leftY, rightX, rightY]. */
-const sticks = (axes: [number, number, number, number]) =>
-	readPad(pad({ axes }), NOTHING);
-
-/**
- * A frame with one analog trigger pulled to `value`.
- *
- * The same construction as `press`, which is the point: a trigger is a button
- * that reports a continuous pull, and building it a second way would let the
- * two drift. Sage asked for the reuse, round 2.
- */
-const trigger = (name: "l2" | "r2", value: number) => press(name, value);
-
-const rest = readPad(pad(), NOTHING);
-const absent = readPad(null, NOTHING);
+const rest = restFrame();
+const absent = absentFrame();
 
 /**
  * **What a button *means* is not this module's any more (#381 S4).**
@@ -93,7 +64,7 @@ describe("a press is reported unless the surface claimed it", () => {
 		// `command` fires on the edge, exactly as `onKey`'s `!e.repeat` does.
 		// Reading the held set instead would toggle cruise sixty times a second.
 		const held: ReadonlySet<PadButtonName> = new Set<PadButtonName>(["y"]);
-		const frame = readPad(
+		const frame = padFrame(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
 					n === "y"
@@ -419,7 +390,7 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 	});
 
 	test("both triggers together cancel out", () => {
-		const both = readPad(
+		const both = padFrame(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
 					n === "l2" || n === "r2"
@@ -561,7 +532,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// reason it keeps the sticks — its panel is `pointer-events: none`, so a
 		// frame that exists to be measured while flown is still being flown.
 		flight: {
-			clear: { notHeld: "capture", held: "keep" },
+			clear: { notHeld: "take", held: "keep" },
 			drawn: { notHeld: "at-rest", held: "release" },
 		},
 		// **`instrument` + a drawn console is the cell round 5 found.**
@@ -573,7 +544,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// the console wins. That is the principal's ruling on this node, and before it
 		// this cell read `keep` and left the console unclickable.
 		instrument: {
-			clear: { notHeld: "capture", held: "keep" },
+			clear: { notHeld: "take", held: "keep" },
 			drawn: { notHeld: "at-rest", held: "release" },
 		},
 		// And here the pointer comes back, which is the whole of #371. Why the
@@ -583,6 +554,16 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// unreachable from the game's own reads — kept because the *rule* still has to
 		// answer it, and a table that only holds reachable cells cannot say that.
 		console: {
+			clear: { notHeld: "at-rest", held: "release" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		// The rebind modal, which is `modal` with one more thing suspended:
+		// nothing here flies, so nothing here may hold the pointer either, and
+		// the cell is the same for the same reason. It is listed rather than
+		// folded because the table's whole job is that a new context cannot
+		// join the union in silence — which is how this row found itself
+		// (#381 S4).
+		capture: {
 			clear: { notHeld: "at-rest", held: "release" },
 			drawn: { notHeld: "at-rest", held: "release" },
 		},
@@ -606,7 +587,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 				// way about, is the drift `contextFliesShip` was extracted to stop. A
 				// drawn console is the one thing that overrules it, and that is the
 				// whole of the `&& !drawn` below.
-				expect(pointerLockMove(context, drawn, false) === "capture").toBe(
+				expect(pointerLockMove(context, drawn, false) === "take").toBe(
 					contextFliesShip(context) && !drawn,
 				);
 			}
@@ -620,7 +601,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// does: the keyboard's ruling is not this node's.
 		for (const context of Object.keys(CELLS) as PadContext[])
 			for (const drawn of [false, true]) {
-				const admits = pointerLockMove(context, drawn, false) === "capture";
+				const admits = pointerLockMove(context, drawn, false) === "take";
 				expect(mouseFireHeld(true, context, drawn), `${context}/${drawn}`).toBe(
 					admits,
 				);
@@ -705,6 +686,6 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// Biome reflowing the statement — or someone adding braces — would have gone
 		// red with the rule untouched. Braces and reflows are allowed here; an answer
 		// that is computed and dropped is not.
-		expect(door).toMatch(/!==\s*"capture"[\s\S]{0,24}?return\b/);
+		expect(door).toMatch(/!==\s*"take"[\s\S]{0,24}?return\b/);
 	});
 });

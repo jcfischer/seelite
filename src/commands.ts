@@ -87,13 +87,41 @@ export const TASK_GROUPS = [
 ] as const;
 export type TaskGroup = (typeof TASK_GROUPS)[number];
 
-/** The four contexts the pad model knows, in the order a note prints them. */
-export const PAD_CONTEXTS: readonly PadContext[] = [
+/**
+ * Every context the pad model knows, in the order a note prints them.
+ *
+ * **The count is not stated here**, because it said four while the union held
+ * five for the length of one edit (#381 S4): `capture` joined `PadContext` and
+ * this list went on being typed `readonly PadContext[]`, which checks that
+ * each entry *is* a context and says nothing about whether all of them are.
+ * Every derivation in this module probes over this list — `padPresses`,
+ * `stickFor`, `triggerFor`, `fireButtons` — so a context missing from it is a
+ * context nothing is ever asked about, in silence.
+ *
+ * The order is the printed one and not alphabetical, which is why this is a
+ * written list rather than the keys of a record.
+ */
+export const PAD_CONTEXTS = [
 	"flight",
 	"instrument",
 	"console",
 	"modal",
-];
+	"capture",
+] as const satisfies readonly PadContext[];
+
+/**
+ * A compile error naming any context the list above forgot.
+ *
+ * `satisfies` checks the entries and not the coverage, so it is this that
+ * closes the hole. The error reads
+ * `Type 'true' is not assignable to type ['missing from PAD_CONTEXTS', "…"]`,
+ * with the missing member spelled in it.
+ */
+type MissingContext = Exclude<PadContext, (typeof PAD_CONTEXTS)[number]>;
+const _everyContextListed: [MissingContext] extends [never]
+	? true
+	: ["missing from PAD_CONTEXTS", MissingContext] = true;
+void _everyContextListed;
 
 /**
  * The second half of a context, and the half `PadContext` cannot express
@@ -1224,14 +1252,39 @@ export interface Binding {
  *   `mouseFiring` with no context test while the pad's `x` is gated. That is
  *   #369's defect 2, and #378 owns the ruling. A registry that quietly gated
  *   it here would be deciding that node by implementation.
+ *
+ * **And `capture` is subtracted from every one of them** (#381 S4). The other
+ * four contexts differ in what they *claim*; that one exists to claim
+ * everything — D9's "swallow every input except its own cancel" — because a
+ * key pressed while the rebind modal is listening is the thing being recorded,
+ * not a command being run. A key live there would print a context note saying
+ * the ship answers `w` while the modal is capturing `w`.
+ *
+ * It is subtracted rather than left out of `EVERY_CONTEXT`, because a *pad*
+ * trigger can be live in `capture` and one is: `capturedTrigger` records a
+ * stick and a trigger with that context and nothing else. So the rule is
+ * about the kinds whose liveness this function invents, and not about the
+ * context.
+ *
+ * **What this does not fix**, and it is older: `modal` is still in the list
+ * for a key, while the settings panel's `releaseHeldKeys` exists precisely
+ * because a held throttle key went on flying the ship behind a screen the
+ * player was reading. That inaccuracy predates this slice and moving it is a
+ * change to what a note *prints* for every keyboard row, which is #370's
+ * screen rather than this node's.
  */
+/** Every context but the one that exists to swallow input; see `scopeOf`. */
+const NOT_WHILE_CAPTURING: readonly PadContext[] = PAD_CONTEXTS.filter(
+	(c) => c !== "capture",
+);
+
 const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 	const pad =
 		"contexts" in trigger
 			? trigger.contexts
 			: trigger.kind === "mouse-move"
 				? (["flight"] as const)
-				: PAD_CONTEXTS;
+				: NOT_WHILE_CAPTURING;
 	const surface =
 		(trigger.kind === "key" || trigger.kind === "mouse-button") &&
 		trigger.surface !== undefined
@@ -1569,6 +1622,102 @@ export function resolveKey(bindings: Layout, facts: KeyFacts): CommandId[] {
 }
 
 /**
+ * How far a stick or a trigger must be pushed to count as a capture.
+ *
+ * Well above `applyRadialDeadzone`'s 0.18, because this is a deliberate shove
+ * and not a drift: a worn stick resting at 0.3 would otherwise bind itself the
+ * moment the modal opened, which is the failure D10 gives for leaving the
+ * deadzone unexposed in the first place.
+ */
+export const CAPTURE_DEFLECTION = 0.5;
+
+/**
+ * What the pad just offered the rebind modal, as a trigger — or nothing.
+ *
+ * #369 D9's `capture` context exists so this can read the sticks and the
+ * triggers while nothing flies. `pad-bindings.ts` owns whether an input is
+ * *claimed*; this owns what it *is*, because what it produces is a `Trigger`
+ * and that is the registry's word.
+ *
+ * **An edge, never a level, and the difference is the whole of C10.** A player
+ * flying with the right stick over, who turns their head and presses the
+ * shoulder to open this modal, has not let go of the stick. A level reading
+ * records it on the first frame — and passes a row named "reads a stick on the
+ * frame after the modal suspended it" while recording the stick the player
+ * never chose. So `previous` is the frame before, and an axis already outside
+ * the band there is not a push; with no previous frame at all nothing analog
+ * is captured, because the opening frame has nothing to be an edge against.
+ * A **press** needs none of this: `readPad` computes that edge itself, against
+ * the previous poll.
+ *
+ * **The cancel is asked for, not listed.** `padIntents` says which button
+ * closes the modal, so the one button a capture cannot record is the same
+ * button that closes it, by construction rather than by a second table.
+ *
+ * **The contexts on a captured button are the button's.** #369 D4 gives the
+ * player the trigger and the command the context set; a pad button's set is
+ * neither — it is where `pad-bindings.ts` lets that button through, which is
+ * why `a` comes back flight-only and `y` with all three. A button that falls
+ * through nowhere is refused: a binding live in no context is a row that
+ * prints and never fires.
+ */
+export function capturedTrigger(
+	frame: PadFrame | null,
+	previous: PadFrame | null,
+): Trigger | null {
+	if (!frame?.connected) return null;
+	// The way out wins over the recording, whatever else the frame holds.
+	if (padIntents(frame, "capture").back) return null;
+
+	for (const button of frame.pressed) {
+		if (button === "l2" || button === "r2") continue;
+		const contexts = PRESSES.flight.get(button);
+		if (contexts === undefined || contexts.length === 0) continue;
+		return { kind: "pad-button", button, contexts };
+	}
+
+	// Analog from here down, and all of it needs the frame before.
+	if (previous === null) return null;
+
+	for (const trigger of ["l2", "r2"] as const)
+		if (
+			frame.values[trigger] >= CAPTURE_DEFLECTION &&
+			previous.values[trigger] < CAPTURE_DEFLECTION
+		)
+			return { kind: "pad-trigger", trigger, contexts: CAPTURE_ONLY };
+
+	for (const [name, stick, axis] of [
+		["leftX", "left", "x"],
+		["leftY", "left", "y"],
+		["rightX", "right", "x"],
+		["rightY", "right", "y"],
+	] as const) {
+		const now = frame.axes[name];
+		if (Math.abs(now) < CAPTURE_DEFLECTION) continue;
+		if (Math.abs(previous.axes[name]) >= CAPTURE_DEFLECTION) continue;
+		return {
+			kind: "pad-stick",
+			stick,
+			axis,
+			half: halfOf(now),
+			contexts: CAPTURE_ONLY,
+		};
+	}
+	return null;
+}
+
+/**
+ * The context set a captured stick or trigger carries.
+ *
+ * `capture` and nothing else, which is the honest answer rather than a
+ * placeholder: the only place this game reads a stick off a *layout* is the
+ * modal that just recorded it. `rebind` refuses to store either kind for that
+ * exact reason, and names the reader — `padFlightAxes` — that would have to
+ * start asking the layout first.
+ */
+const CAPTURE_ONLY: readonly PadContext[] = ["capture"];
+
+/**
  * What this pad press reaches, in `bindings`.
  *
  * `resolveKey`'s sibling, and new in #381 S4. Before it, `main.ts` turned a
@@ -1769,43 +1918,131 @@ export function rebind(
 /**
  * The trigger a rebind actually stores — `to`, checked and completed.
  *
- * Two things the bare `to` gets wrong, and both produce the defect `rebind`'s
- * doc names rather than preventing it.
+ * **A per-kind table of which part of a trigger is the player's** (#381 S4).
+ * The first version returned a same-kind non-key `to` verbatim, which let a
+ * `mouse-button` hold be moved onto a click: stored, satisfying no reader. The
+ * version after it refused every non-key kind outright and said "S4 lifts it".
+ * This is the lift, and what it lifts is narrower than #369 D12 asks for —
+ * the table is *which kinds the layout has a reader for*, not which kinds
+ * exist.
+ *
+ * **What a move may change, by kind:**
+ *
+ * | kind | the player moves | the command keeps |
+ * | --- | --- | --- |
+ * | `key` | which key, and its code | `hold`, `alt`, `surface` |
+ * | `pad-button` | which button | `hold`, and the contexts are the button's |
+ * | `key` ↔ `pad-button` | the whole device | `hold` on neither side |
+ *
+ * **And what it refuses, each naming the reader that would have to exist.**
+ * A stored move for a kind nothing reads off the layout is the defect this
+ * function's first version shipped, so the refusals are the honest answer and
+ * not a gap:
+ *
+ * - a `pad-stick` or a `pad-trigger`, because `padFlightAxes` reads fixed
+ *   positions and not the layout. #369 D10's invert and sensitivity route
+ *   through that same function, so the two are one change and not this slice's.
+ * - a `pad-button` **held**, because `padFireHeld` reads a fixed position too,
+ *   and `resolvePad` answers a press.
+ * - a `mouse-button`, `mouse-move` or `pad-intent`, which have no capture
+ *   surface at all — the modal does not record them.
  *
  * **A qualifier is the command's, not the player's.** `fly.pitchUp` is flown
- * by holding a key; a `to` that dropped `hold` would be stored, would satisfy
- * no `isHeld`, and the command would be silently unflyable while the call
- * returned successfully. The player moves *which key*, which is #369 D4's
- * "the player edits the trigger; the context set is the command's" applied to
- * the half of a trigger that is not the key.
+ * by *holding* a key; a `to` that dropped `hold` would be stored, would
+ * satisfy no `isHeld`, and the command would be silently unflyable while the
+ * call returned successfully. That is #369 D4's "the player edits the trigger;
+ * the context set is the command's" applied to the half of a trigger that is
+ * not the key — and on a pad button the contexts are that half, so they are
+ * taken from `pad-bindings.ts` and never from the caller.
  *
- * **And a code is derived when the caller does not give one.** The shipped
- * rows get theirs from `keyTrigger`, so a rebind that stored `to` verbatim
- * would leave a letter codeless and lose D7's position dispatch for exactly
- * the command the player just chose to move. A `to` that *does* carry a code
- * keeps it, which is the capture modal's case rather than an oversight: it
- * records the physical key it saw, and on a layout where that key does not
- * type its US character — which is the whole point of D7 — the pair is
- * legitimately mismatched and only the capture knows the truth. The cost is
- * that a caller passing an inconsistent pair gets exactly what it asked for.
+ * **A code is derived when the caller does not give one.** The shipped rows
+ * get theirs from `keyTrigger`, so a rebind that stored `to` verbatim would
+ * leave a letter codeless and lose D7's position dispatch for exactly the
+ * command the player just chose to move. A `to` that *does* carry a code keeps
+ * it, which is the capture modal's case rather than an oversight: it records
+ * the physical key it saw, and on a layout where that key does not type its US
+ * character — which is the whole point of D7 — the pair is legitimately
+ * mismatched and only the capture knows the truth. The cost is that a caller
+ * passing an inconsistent pair gets exactly what it asked for.
  */
 function movedTrigger(from: Trigger, to: Trigger): Trigger {
-	if (from.kind !== to.kind)
-		throw new Error(`cannot move a ${from.kind} onto a ${to.kind}`);
-	// **Only a key is rebindable here, and refusing the rest is the point.**
-	// The first version returned a same-kind non-key `to` verbatim, which let a
-	// `mouse-button` hold be moved onto a click — stored, satisfying no reader,
-	// which is the defect the key branch exists to refuse. Every non-key kind
-	// has its own qualifiers (`action`, `half`, `intent`, `hold`), and a table
-	// of which part of each is movable is the capture modal's to write, since
-	// it is the thing that will admit a stick or a trigger for one capture.
-	// Until then a refusal is the honest answer, and S4 lifts it.
-	if (from.kind !== "key" || to.kind !== "key")
-		throw new Error(`only a key may be rebound here, not a ${from.kind}`);
-	if (!matchesQualifiers(to, from))
+	if (!movable(from))
 		throw new Error(
-			`a rebind may move a key, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
+			`a ${from.kind} is not a trigger this game offers for rebinding`,
 		);
-	const { kind: _kind, ...rest } = to;
-	return keyTrigger(rest);
+	// **One switch, so the table is one construct.** A pair of them — a
+	// refusal list beside an acceptance list — is two places to add a kind to
+	// and one of them is the place a reader looks.
+	switch (to.kind) {
+		case "key": {
+			// `matchesQualifiers` is the one owner of everything about a key
+			// trigger except which key it is. A cross-device move has no `alt`
+			// or `surface` on the far side, so what a pad button carries is
+			// `hold` alone and that is what is compared.
+			if (from.kind === "key") {
+				if (!matchesQualifiers(to, from)) throw keptQualifiers(from, to);
+			} else if ((to.hold ?? false) !== (heldRather(from) ?? false))
+				throw keptQualifiers(from, to);
+			const { kind: _kind, ...rest } = to;
+			return keyTrigger(rest);
+		}
+		case "pad-button": {
+			if (to.hold === true)
+				throw unstorable(
+					to,
+					"a held button is read by padFireHeld, which reads a fixed position and not the layout",
+				);
+			if ((to.hold ?? false) !== (heldRather(from) ?? false))
+				throw keptQualifiers(from, to);
+			// The contexts are the **button's**, asked of `pad-bindings.ts`
+			// through the derivation the shipped rows came from — so a caller
+			// that hands over a set of its own gets the button's anyway.
+			const contexts = PRESSES.flight.get(to.button);
+			if (contexts === undefined || contexts.length === 0)
+				throw new Error(
+					`${to.button} is claimed in every context, so a binding on it is live nowhere`,
+				);
+			return { kind: "pad-button", button: to.button, contexts };
+		}
+		case "pad-stick":
+		case "pad-trigger":
+			throw unstorable(
+				to,
+				"a stick and a trigger are read by padFlightAxes, which reads fixed positions and not the layout",
+			);
+		case "mouse-button":
+		case "mouse-move":
+			throw unstorable(
+				to,
+				"the mouse has no capture surface, so nothing can record a move onto it",
+			);
+		case "pad-intent":
+			throw unstorable(
+				to,
+				"a panel intent is the console's grammar and is not offered for rebinding",
+			);
+	}
 }
+
+/**
+ * The refusal for a kind the layout has no reader for.
+ *
+ * It names the **reader**, because that is what has to change before the
+ * refusal can be lifted; a message saying only "not supported" would leave the
+ * next slice guessing which function to go and look at.
+ */
+const unstorable = (to: Trigger, why: string) =>
+	new Error(`a rebind cannot store a ${to.kind}: ${why}`);
+
+const keptQualifiers = (from: Trigger, to: Trigger) =>
+	new Error(
+		`a rebind may move a trigger, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
+	);
+
+/** Whether this trigger is held rather than pressed, on the kinds that say. */
+const heldRather = (t: Trigger): boolean | undefined =>
+	t.kind === "key" || t.kind === "pad-button" ? t.hold : undefined;
+
+/** Whether a command's existing trigger is one a player may move at all. */
+const movable = (t: Trigger): boolean =>
+	t.kind === "key" || (t.kind === "pad-button" && t.hold !== true);

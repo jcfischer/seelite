@@ -181,12 +181,22 @@ const PAD_WORDS: Readonly<Record<string, string>> = {
 
 const padButton = (button: string) => PAD_WORDS[button] ?? button.toUpperCase();
 
-/** The player's word for a pad context. `modal` is a menu on screen. */
+/**
+ * The player's word for a pad context. `modal` is a menu on screen.
+ *
+ * `capture` is the rebind modal itself, and the word is what the player is
+ * doing there rather than what the code calls it. A row is only ever *printed*
+ * in it if a binding claims it, which today is the stick and trigger a capture
+ * records and `rebind` then refuses — so the word has to exist and is not yet
+ * reachable from a shipped layout. Keyed by `PadContext`, so a sixth context
+ * cannot join in silence.
+ */
 const CONTEXT_WORDS: Readonly<Record<PadContext, string>> = {
 	flight: "flight",
 	instrument: "instrument",
 	console: "console",
 	modal: "menu",
+	capture: "rebinding",
 };
 
 /**

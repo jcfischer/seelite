@@ -77,6 +77,7 @@ import {
 	type Trigger,
 	triggerKey,
 } from "./commands";
+import { type PadButtonName, STANDARD_BUTTONS } from "./gamepad";
 // The notice vocabulary is not this module's, and has not been since #381 S4:
 // `collisionNotices` diagnoses a table with no store in the room, and a second
 // storage-free caller — the capture modal's bind-time warning — is what took
@@ -170,13 +171,23 @@ const acceptSurface = (v: unknown): Accepted<Surface> =>
 			: `a surface is one of ${SURFACES.join(", ")}`;
 
 /**
- * A stored trigger, or `null` with the reason it is not one.
+ * A stored trigger, or the reason it is not one.
  *
- * **Key triggers only**, which is not this module narrowing the model: the
- * registry's `rebind` refuses every other kind until the capture modal can
- * admit a stick for one capture, so a stored pad or mouse row could never be
- * applied and accepting one here would move the refusal later and make it
- * harder to name. S4 lifts both together.
+ * **Keys and pad buttons**, which is the shape half of #381 S4's lift. It was
+ * keys alone, because `rebind` refused every other kind and a stored row that
+ * could never be applied would move the refusal later and make it harder to
+ * name. `rebind` admits a pad button now, so this does — and the two refusals
+ * stay two, because they answer different questions: this one is about a
+ * *shape* this module can hold, and `movedTrigger`'s is about a *move* the
+ * registry will make. A stick fails here on shape and would fail there on the
+ * reader; that is not a duplicated rule, it is the same input refused by the
+ * layer it reaches first, and the sentence the player reads differs.
+ *
+ * **A stored `contexts` is not read.** Loading is one `rebind` per row and
+ * `movedTrigger` derives the contexts from `pad-bindings.ts`, so a blob that
+ * claimed a button is live everywhere gets the button's real set back. It is
+ * accepted as a shape and dropped, rather than refused, because a blob this
+ * build wrote carries one.
  *
  * What it checks is the shape a `Trigger` has, one field at a time — which is
  * the thing `settings.ts`'s `accept()` cannot do, because membership of a set
@@ -184,9 +195,10 @@ const acceptSurface = (v: unknown): Accepted<Surface> =>
  */
 function acceptTrigger(v: unknown): Trigger | string {
 	if (!isRecord(v)) return "a trigger is an object";
+	if (v.kind === "pad-button") return acceptPadButton(v);
 	if (v.kind !== "key")
 		return typeof v.kind === "string"
-			? `only a key may be stored here, not a ${v.kind}`
+			? `only a key or a pad button may be stored here, not a ${v.kind}`
 			: "a trigger names its kind";
 	if (typeof v.key !== "string" || v.key.length === 0)
 		return "a key trigger carries the character it was recorded with";
@@ -223,6 +235,35 @@ function acceptTrigger(v: unknown): Trigger | string {
 		...(alt.value === undefined ? {} : { alt: alt.value }),
 		...(hold.value === undefined ? {} : { hold: hold.value }),
 		...(surface.value === undefined ? {} : { surface: surface.value }),
+	};
+}
+
+/**
+ * A stored pad button, rebuilt to the shape the registry will accept.
+ *
+ * The `contexts` a blob carried are **dropped and re-derived**, which is the
+ * pad's version of the rule that a code is derived for a key: what a button is
+ * live in is `pad-bindings.ts`' answer and never a player's, so a hand-written
+ * blob cannot widen one. `movedTrigger` fills them in, and the empty list here
+ * is what it replaces — it is never the set a row ends up with.
+ *
+ * `hold` is accepted as a shape and refused as a move: `padFireHeld` reads a
+ * fixed position, so the registry says no and names that reader, which is a
+ * better sentence than "a pad button does not have a hold" would be.
+ */
+function acceptPadButton(v: Record<string, unknown>): Trigger | string {
+	if (
+		typeof v.button !== "string" ||
+		!STANDARD_BUTTONS.includes(v.button as PadButtonName)
+	)
+		return `a pad button is one of ${STANDARD_BUTTONS.join(", ")}`;
+	const hold = acceptFlag("hold", v.hold);
+	if (typeof hold === "string") return hold;
+	return {
+		kind: "pad-button",
+		button: v.button as PadButtonName,
+		...(hold.value === undefined ? {} : { hold: hold.value }),
+		contexts: [],
 	};
 }
 

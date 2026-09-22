@@ -3810,7 +3810,7 @@ class Game {
 					this.readPadContext(consoleDrawn),
 					consoleDrawn,
 					this.canvasHoldsLock(),
-				) !== "capture"
+				) !== "take"
 			)
 				return;
 			// **A refusal is read, not thrown** — it is the ordinary case, not the
