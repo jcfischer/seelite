@@ -10,13 +10,9 @@
  * their D-number rather than restating them.
  */
 import { escapeHtml } from "./escape-html";
-import type {
-	ControlCommand,
-	ControlsCatalogue,
-	TaskGroup,
-	Trigger,
-} from "./controls-catalogue";
-import { PAD_CONTEXTS, TASK_GROUPS } from "./controls-catalogue";
+import type { Surface, TaskGroup, Trigger } from "./commands";
+import { PAD_CONTEXTS, TASK_GROUPS } from "./commands";
+import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
 import type { FocusCursor, FocusItem } from "./panel-focus";
 import { setFocus } from "./panel-focus";
@@ -193,6 +189,35 @@ const CONTEXT_WORDS: Readonly<Record<PadContext, string>> = {
 };
 
 /**
+ * The player's word for a surface that claims a trigger.
+ *
+ * The registry holds a closed identifier because it compares two of them to
+ * decide whether a collision is one; the prose lives here, beside
+ * `CONTEXT_WORDS`, for the same reason the pad contexts' does.
+ */
+const SURFACE_WORDS: Readonly<Record<Surface, string>> = {
+	requests: "Requests",
+	"station-console": "a station console",
+};
+
+/** The four ways a signed input is pushed, as a table rather than a tree. */
+const WAY = {
+	"x+": "right",
+	"x-": "left",
+	"y+": "down",
+	"y-": "up",
+} as const;
+
+/**
+ * Which way a signed input is pushed, in the player's words.
+ *
+ * #369 D2 splits a pair into two commands, so the stick and the mouse axis
+ * appear on two rows each — and a row that printed only the axis would print
+ * the same string on both, which reads as the reference not knowing.
+ */
+const way = (axis: "x" | "y", half: "+" | "-") => WAY[`${axis}${half}`];
+
+/**
  * D7 and D8: a key prints as its character, a chord spelled out, and a control
  * with no character gets words.
  */
@@ -201,16 +226,18 @@ export function triggerLabel(t: Trigger): string {
 		case "key": {
 			const base = KEY_WORDS[t.key] ?? t.key;
 			const chord = t.alt ? `Alt + ${base}` : base;
-			return t.surface ? `${chord} (${t.surface})` : chord;
+			return t.surface ? `${chord} (${SURFACE_WORDS[t.surface]})` : chord;
 		}
-		case "mouse-button":
-			return t.action === "hold" ? "hold left mouse button" : "click";
+		case "mouse-button": {
+			const press = t.action === "hold" ? "hold left mouse button" : "click";
+			return t.surface ? `${press} ${SURFACE_WORDS[t.surface]}` : press;
+		}
 		case "mouse-move":
-			return `move the mouse ${t.axis === "x" ? "↔" : "↕"}`;
+			return `move the mouse ${way(t.axis, t.half)}`;
 		case "pad-button":
 			return t.hold ? `hold ${padButton(t.button)}` : padButton(t.button);
 		case "pad-stick":
-			return `${t.stick} stick ${t.axis === "x" ? "↔" : "↕"}`;
+			return `${t.stick} stick ${way(t.axis, t.half)}`;
 		case "pad-trigger":
 			return t.trigger.toUpperCase();
 		case "pad-intent":

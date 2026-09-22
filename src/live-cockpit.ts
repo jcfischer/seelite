@@ -22,7 +22,8 @@ import {
 	cockpitView,
 } from "./cockpit";
 import type { DockPhase } from "./dock-session";
-import { CONTROLS, type TaskGroup } from "./controls-catalogue";
+import type { TaskGroup } from "./commands";
+import { CONTROLS } from "./controls-catalogue";
 import {
 	controlsBody,
 	controlsTreeMarkup,

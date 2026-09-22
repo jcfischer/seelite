@@ -7,7 +7,8 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import { CONTROLS, TASK_GROUPS, type Trigger } from "../src/controls-catalogue";
+import { TASK_GROUPS, type Trigger } from "../src/commands";
+import { CONTROLS } from "../src/controls-catalogue";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,
@@ -169,8 +170,8 @@ describe("the folding tree", () => {
 
 	test("folding hands the cursor to the header, not to whatever took the row's index", () => {
 		const open = treeFocusIds(controlsTree(CONTROLS, new Set()));
-		const onRow = setFocus(open, NO_FOCUS, rowFocusId("roll"));
-		expect(focusedItem(open, onRow)?.id).toBe(rowFocusId("roll"));
+		const onRow = setFocus(open, NO_FOCUS, rowFocusId("fly.rollPort"));
+		expect(focusedItem(open, onRow)?.id).toBe(rowFocusId("fly.rollPort"));
 		const folded = toggleGroup(new Set(), "fly");
 		const after = focusAfterFold(
 			treeFocusIds(controlsTree(CONTROLS, folded)),
@@ -204,15 +205,25 @@ describe("how a binding prints", () => {
 	});
 
 	test("the controls with no key get words", () => {
-		expect(triggerLabel({ kind: "mouse-move", axis: "x" })).toMatch(/mouse/);
+		// **The direction word, not just the noun.** `half` exists because a
+		// split pair would otherwise print one string on two rows, so a row
+		// matching only /mouse/ would stay green with the `WAY` table's
+		// entries swapped — or with `way()` deleted.
+		expect(triggerLabel({ kind: "mouse-move", axis: "x", half: "+" })).toBe(
+			"move the mouse right",
+		);
+		expect(triggerLabel({ kind: "mouse-move", axis: "y", half: "-" })).toBe(
+			"move the mouse up",
+		);
 		expect(
 			triggerLabel({
 				kind: "pad-stick",
 				stick: "left",
 				axis: "x",
+				half: "-",
 				contexts: ["flight"],
 			}),
-		).toMatch(/left stick/);
+		).toBe("left stick left");
 		expect(
 			triggerLabel({
 				kind: "pad-trigger",
@@ -248,16 +259,16 @@ describe("the context note", () => {
 	test("a pad button whose meaning moves with the context says both meanings", () => {
 		// #370 D4's example: ↑ is head-forward in flight and the cursor in a
 		// console, and the row says so.
-		const note = contextNote(CONTROLS, row("head-forward"));
+		const note = contextNote(CONTROLS, row("view.headForward"));
 		expect(note).toContain("d-pad ↑ in flight");
 		expect(note).toContain("in instrument, console, menu:");
 		expect(note).toContain("flight");
 		expect(note).toContain("console");
-		expect(note).toContain(row("console-cursor").name);
+		expect(note).toContain(row("panel.cursorUp").name);
 	});
 
 	test("a key-only row has none", () => {
-		expect(contextNote(CONTROLS, row("dial-reset"))).toBe("");
+		expect(contextNote(CONTROLS, row("tune.reset"))).toBe("");
 	});
 });
 

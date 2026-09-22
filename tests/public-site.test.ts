@@ -7,7 +7,7 @@ import { codeOf, repoPath, srcFiles } from "./lib/source-scan";
 /** One shape for the manual's key markup: the extraction and the strip that
  *  checks nothing escaped it must agree, or widening one silently narrows the
  *  other. */
-const KBD = /<kbd data-command="([a-z-]+)">([^<]+)<\/kbd>/g;
+const KBD = /<kbd data-command="([a-z]+\.[a-zA-Z0-9]+)">([^<]+)<\/kbd>/g;
 
 /** A printed label as `KeyboardEvent.key` reads it. */
 const KEY_LABELS: Record<string, string> = {
@@ -50,8 +50,12 @@ const UNBOUND_KEY_NAMES = [
 ];
 
 /** How many keys the manual prints, as a literal. A floor lets a whole
- *  section's keys be deleted silently; this does not. */
-const MANUAL_KEY_COUNT = 28;
+ *  section's keys be deleted silently; this does not.
+ *
+ *  29 since #381: the beam sentence used to say "the same key" and now
+ *  anchors its own `<kbd>` on `fight.fireBeam`, because D3 split `x` into a
+ *  press and a hold and the hold is a command a player can move. */
+const MANUAL_KEY_COUNT = 29;
 
 /** The manual page, resolved per row rather than in the `describe` body — a
  *  throw there aborts the file, including the row that names the slugs and
@@ -212,10 +216,10 @@ describe("the quiet public threshold", () => {
 		])
 			expect(manual.content).toContain(shown);
 		for (const id of [
-			"controls-reference",
-			"head-left",
-			"head-forward",
-			"head-right",
+			"view.reference",
+			"view.headPort",
+			"view.headForward",
+			"view.headStarboard",
 		])
 			expect(manual.content).toContain(`<kbd data-command="${id}">`);
 	});
