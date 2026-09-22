@@ -118,6 +118,20 @@ export const relayScannerFitted = (
 	ownedEquipment: readonly string[],
 ): boolean => equipmentFitted(ownedEquipment, LONG_RANGE_SCANNER);
 
+/**
+ * Has this pilot found this relay? **The gated read, so a second consumer
+ * inherits the gate rather than re-deriving it.**
+ *
+ * `relay-codex.md` already names one in view — the Galaxy Map's station card
+ * would carry the row if it listed relays — and the rule is not "is there a
+ * row" but "is there a row *and* a module to read it with". The row is never
+ * unwritten: what the gate withholds is the reading.
+ */
+export const relayIdentified = (
+	ownedEquipment: readonly string[],
+	knowledgeRow: unknown,
+): boolean => relayScannerFitted(ownedEquipment) && knowledgeRow !== undefined;
+
 /** Hull points. Ten seconds of pulse fire (`PULSE_LASER.damagePerS` 6). */
 export const RELAY_INTEGRITY = 60;
 

@@ -348,19 +348,23 @@ established or the player later enters a system (#116). It refreshes Last-known
 state for every station there, and preserves any private facility facts already
 checked, but reveals no new ones such as black-market presence. Opening the Galaxy Map does not contact a System relay.
 _Avoid_: Live galaxy feed, long-range scan
-_Scope_: the Avoid line bans "long-range scan" as a name for **this report**.
-It does not reach the **Long-Range Scanner**, which is a bought module and a
-different thing entirely — a report about stations against a reading of one
+_Scope_: that Avoid line bans the phrase as a name for **this report** — the
+phrase is quoted there and here to name the ban, not used as a name. It does
+not reach the **Long-Range Scanner** below, which is a bought module and a
+different thing entirely: a report about stations against a reading of one
 carrier's signal.
 
 **Long-Range Scanner**:
 The module a pilot buys at a Shipyard for 1,000 Cr (#481, under #468) to read
-a **Pirate relay** at all: strength and bearing inside 2,500 km, identification
-inside 150 km, which is #43's close regime. Unfitted there is no cue, no
-knowledge row, no contact and no target; the relay's **Route detection** dial
-is deliberately untouched, so the effect is felt by a pilot who cannot find its
-cause (#479). Not the **Identity Scanner**, which reads a hull held on target.
-_Avoid_: long-range scan, system scanner, sensor upgrade
+a **Pirate relay** at all: strength and bearing at range, identification much
+closer in, which is #43's close regime — `pirate-relay.ts` owns both figures
+and nothing restates them. Unfitted, nothing is read: no cue, no contact, no
+target, and no identification is recorded. **An identification already
+recorded is not erased, only unread** — the relay goes dark and is found again
+when the module is back. The relay's **Route detection** dial is deliberately
+untouched, so the effect is felt by a pilot who cannot find its cause (#479).
+Not the **Identity Scanner**, which reads a hull held on target.
+_Avoid_: system scanner, sensor upgrade
 
 **Recovery process**:
 A named, visible, and interruptible in-world process that repairs a carrier instance or replaces it with a new one.

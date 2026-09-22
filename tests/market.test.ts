@@ -33,7 +33,6 @@ import {
 	DISPLAY_TL_MAX,
 	DISPLAY_TL_MIN,
 	EQUIPMENT,
-	type Equipment,
 	FUEL_CR_PER_LY,
 	FUEL_TANK_LY,
 	HOLD_REFERENCE_T,
@@ -1162,8 +1161,13 @@ describe("§7/§8 equipment prices and the fitting-out total", () => {
 		expect(row.priceCr).toBe(1000);
 		// #468's placement in the column, checked as a relationship rather than
 		// as two more transcribed figures.
-		const priceOf = (name: string) =>
-			(EQUIPMENT.find((e) => e.name === name) as Equipment).priceCr;
+		const priceOf = (name: string) => {
+			const found = EQUIPMENT.find((e) => e.name === name);
+			// Guarded rather than cast: a renamed row should read as a named
+			// failure here, not as a TypeError on `undefined`.
+			if (!found) throw new Error(`no EQUIPMENT row named ${name}`);
+			return found.priceCr;
+		};
 		expect(row.priceCr).toBeGreaterThan(priceOf(SCAN_MODULE));
 		expect(row.priceCr).toBeLessThan(priceOf("Extra Energy Unit"));
 		// A shipyard exclusive: the checkpoint's "a refinery and a trade station

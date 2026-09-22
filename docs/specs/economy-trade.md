@@ -1576,10 +1576,14 @@ kit's whole price in **56–82 minutes** across four galaxies, at 233–363
 Cr/min — a run taken before either scanner row landed, so it is 8.4% short of
 the kit it is being quoted against. `scripts/measure-greedy-trader.ts` reprints the
 range on the machine it is run on, and this section's habit of quoting a stale
-one is what §12.7 records the cost of. All four land under the target's lower bound of 90 minutes — but **corrected
-for the 8.4% the kit has grown, the top of the range is about 89 minutes, and
-that margin is one minute rather than eight**. The conclusion survives and the
-slack behind it does not. So the
+one is what §12.7 records the cost of. All four land under the target's lower bound of 90 minutes — **on figures
+measured against a kit 8.4% cheaper than the one that now ships**. Scaled by
+that ratio the top of the range is about 89 minutes, which is arithmetic and
+not a run: it assumes the trader's Cr/min holds over the extra 1,600 Cr, and
+no spread is quoted for it. So the margin the conclusion rests on is somewhere
+around a minute rather than eight, and the honest form is that **the
+conclusion is no longer established by the measurement behind it** —
+`scripts/measure-greedy-trader.ts` is what would settle it. So the
 1.5–2.5 h figure survives only as a claim about a *human*: it needs a real
 player to run at roughly 0.7× the ceiling. That is plausible and unmeasured, and
 it is the honest form of the sentence.
