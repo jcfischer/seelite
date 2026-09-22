@@ -442,10 +442,14 @@ describe("a player layout may collide, and is told that it does", () => {
 
 describe("the layout handed back cannot be merged in place", () => {
 	test("a loaded layout is frozen through", () => {
-		// `holdRows` keys its index on the array identity, so a layout written
-		// into rather than rebuilt would be answered out of a stale index. The
-		// freeze is the enforcement of that precondition and this is the caller
-		// S2's header named as the one most likely to break it.
+		// **Inherited from `rebind`, held here as a property of what the store
+		// hands back.** `holdRows` keys its index on the array identity, so a
+		// layout written into rather than rebuilt would be answered out of a
+		// stale index — and S2's header named the storage slice as the caller
+		// most likely to break that. It does not: every layout this module
+		// returns is either `DEFAULT_BINDINGS` or something `rebind` built, and
+		// both are frozen there. Removing the freeze from `holdRows` leaves
+		// this row green, which is the honest reading of what it holds.
 		const read = parseLayout(serializeLayout(moved));
 		const row = read.layout[0] as Binding;
 		expect(() => {

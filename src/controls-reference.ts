@@ -417,14 +417,24 @@ const inViews = (views: readonly string[]): string =>
  * and the dispatch does not resolve: `resolveKey` returns every command a key
  * reaches and `main.ts` runs all of them. That is reachable on `main` through
  * `rebindCommand` and is not this slice's regression, but a notice promising a
- * law the game does not keep would be worse than no notice at all.
+ * law the game does not keep would be worse than no notice at all. **#484 owns
+ * the law**, including the reason it is not simply implementable here: the
+ * store is a diff and keeps no record of which row moved last. The sentence
+ * becomes D5's when that node closes.
  */
 export function noticeText(notice: LayoutNotice): string {
 	switch (notice.kind) {
 		case "unreadable":
-			return `Your saved controls could not be read — ${notice.reason}. The default layout is in force.`;
+			return `Your saved controls could not be read — ${notice.reason}. The default layout is in force, and changing a control will replace them.`;
 		case "version":
-			return `Your saved controls were written by a different build (version ${String(notice.stored)}). The default layout is in force, and changing a control will replace them.`;
+			// `JSON.stringify` rather than `String`, and the absent case named:
+			// a stored `"1"` printed as `1` reads exactly like the version this
+			// build *is*, and a missing one printed `undefined`.
+			return `Your saved controls were written by a different build (${
+				notice.stored === undefined
+					? "they carry no version"
+					: `version ${JSON.stringify(notice.stored)}`
+			}). The default layout is in force, and changing a control will replace them.`;
 		case "rejected":
 			return `${controlName(notice.command)} kept its default: ${REJECTED_WHY[notice.reason]}.`;
 		case "collision": {

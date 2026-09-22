@@ -7,8 +7,16 @@
  * prints (#370 D2, item 6).
  */
 import { describe, expect, test } from "bun:test";
-import { TASK_GROUPS, type Trigger } from "../src/commands";
-import { CONTROLS } from "../src/controls-catalogue";
+import type { LayoutNotice } from "../src/binding-store";
+import {
+	type CommandId,
+	commandById,
+	DEFAULT_BINDINGS,
+	TASK_GROUPS,
+	type Trigger,
+	triggerKey,
+} from "../src/commands";
+import { CONTROLS, controlsCatalogue } from "../src/controls-catalogue";
 import {
 	CONTROLS_CHORD,
 	CONTROLS_TAB,
@@ -18,6 +26,7 @@ import {
 	controlsTree,
 	focusAfterFold,
 	groupFocusId,
+	noticeText,
 	rowFocusId,
 	restoreOnTabPick,
 	toggleGroup,
@@ -332,5 +341,94 @@ describe("a tab picked by hand", () => {
 
 	test("clicking Controls while already on it keeps the memory", () => {
 		expect(restoreOnTabPick(CONTROLS_TAB, CONTROLS_TAB, "Drive")).toBe("Drive");
+	});
+});
+
+describe("the band above the tree (#381 S3)", () => {
+	const ROLL: CommandId = "fly.rollPort";
+	const PITCH_UP: CommandId = "fly.pitchUp";
+	const PITCH_DOWN: CommandId = "fly.pitchDown";
+	const rejected: LayoutNotice = {
+		kind: "rejected",
+		command: ROLL,
+		reason: "not-just-a-key",
+		detail:
+			"a rebind may move a key, not its qualifiers: key:q::hold -> key:k::press",
+	};
+
+	test("a catalogue with no notices draws no band at all", () => {
+		// Absent rather than empty: a box with nothing in it reads as a screen
+		// that failed to draw.
+		expect(controlsBody(CONTROLS, new Set())).not.toContain(
+			"data-live-controls-notices",
+		);
+	});
+
+	test("a notice is drawn, in the tab, above the tree", () => {
+		const html = controlsBody(
+			controlsCatalogue(DEFAULT_BINDINGS, [rejected]),
+			new Set(),
+		);
+		expect(html).toContain("data-live-controls-notices");
+		expect(html).toContain('data-live-controls-notice="rejected"');
+		expect(html).toContain(commandById(ROLL).name);
+		expect(html.indexOf("data-live-controls-notices")).toBeLessThan(
+			html.indexOf("data-live-controls-tree"),
+		);
+	});
+
+	test("what is drawn is the sentence, never the detail's hash", () => {
+		// `rebind`'s message is kept for a console; the tab prints a table over
+		// the reason. The band read `key:q::hold -> key:k::press` for a round.
+		const html = controlsBody(
+			controlsCatalogue(DEFAULT_BINDINGS, [rejected]),
+			new Set(),
+		);
+		expect(html).not.toContain("key:q::hold");
+	});
+
+	test("a version the build refused names it, and quotes a string one", () => {
+		// `"1"` printed through `String` reads exactly like the number this
+		// build is, and an absent version printed `undefined`.
+		expect(noticeText({ kind: "version", stored: 2 })).toContain("version 2");
+		expect(noticeText({ kind: "version", stored: "1" })).toContain('"1"');
+		expect(noticeText({ kind: "version", stored: undefined })).toContain(
+			"no version",
+		);
+	});
+
+	test("a control this build does not have is still named", () => {
+		// Reachable: a saved row may name a command that has since been removed,
+		// and a notice that printed nothing there is a refusal nobody can act on.
+		const text = noticeText({
+			kind: "rejected",
+			command: "fly.wiggle",
+			reason: "unknown-control",
+			detail: "no command is called fly.wiggle",
+		});
+		expect(text).toContain("fly.wiggle");
+		expect(text.trim().length).toBeGreaterThan(0);
+	});
+
+	test("a collision names both commands and the key, in words", () => {
+		const trigger = DEFAULT_BINDINGS.find(
+			(b) => b.command === PITCH_DOWN && b.trigger.kind === "key",
+		)?.trigger;
+		if (trigger === undefined) throw new Error("no shipped pitch-down key");
+		const text = noticeText({
+			kind: "collision",
+			collision: {
+				trigger: triggerKey(trigger),
+				commands: [PITCH_UP, PITCH_DOWN],
+				scope: { pad: ["flight"], views: ["cockpit", "chase"] },
+			},
+			at: trigger,
+		});
+		expect(text).toContain(commandById(PITCH_UP).name);
+		expect(text).toContain(commandById(PITCH_DOWN).name);
+		expect(text).toContain(triggerLabel(trigger));
+		// It says what the game does — both commands run — and not #369 D5's
+		// last-changed law, which no dispatch implements. #484 owns that.
+		expect(text).toMatch(/both run/i);
 	});
 });
