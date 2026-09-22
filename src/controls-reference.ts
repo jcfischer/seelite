@@ -101,19 +101,45 @@ export function restoreOnTabPick<T extends string>(
 // The tree
 // ---------------------------------------------------------------------------
 
+/**
+ * The tab's own door to the settings panel (#369 D12).
+ *
+ * **Not a command, which is the whole of it.** D12 makes `z` remappable, and
+ * what keeps that safe is that this tab grows a route to settings that no
+ * binding table holds — #370's "nothing a binding table holds is on the path
+ * to it", extended to the one door that is a letter today. A player who moves
+ * `system.settings` onto a key they then forget still reaches the panel here.
+ *
+ * A string rather than a `CommandId` on purpose: the registry must not have a
+ * row for it, or it would be bindable by the back door and the bootstrap would
+ * be circular again.
+ */
+export const SETTINGS_ACTION = "settings";
+
 export type TreeItem =
 	| { kind: "header"; group: TaskGroup; count: number }
-	| { kind: "row"; command: ControlCommand };
+	| { kind: "row"; command: ControlCommand }
+	/** A door rather than a control; see `SETTINGS_ACTION`. */
+	| { kind: "action"; action: typeof SETTINGS_ACTION; label: string };
+
+/** The cursor's name for a door, beside `groupFocusId` and `rowFocusId`. */
+export const actionFocusId = (action: string) => `controls-action:${action}`;
 
 /**
  * D6: two levels, group header and rows, in task order. A folded group keeps
  * its header — that is what the player opens it again with.
+ *
+ * **The door comes first**, before any group, so a player who has folded
+ * everything still has it in front of them — and because the thing it is for
+ * is being lost, which is not a state to go hunting in.
  */
 export function controlsTree(
 	catalogue: ControlsCatalogue,
 	collapsed: ReadonlySet<TaskGroup>,
 ): TreeItem[] {
-	const items: TreeItem[] = [];
+	const items: TreeItem[] = [
+		{ kind: "action", action: SETTINGS_ACTION, label: "Settings" },
+	];
 	for (const group of TASK_GROUPS) {
 		const rows = catalogue.commands.filter((c) => c.group === group);
 		items.push({ kind: "header", group, count: rows.length });
@@ -345,11 +371,23 @@ export function controlsTreeMarkup(
 	collapsed: ReadonlySet<TaskGroup>,
 ): string {
 	return controlsTree(catalogue, collapsed)
-		.map((item) =>
-			item.kind === "header"
-				? `<button class="lc-controls-group" type="button" data-live-controls-group="${item.group}" aria-expanded="${!collapsed.has(item.group)}"><span>${collapsed.has(item.group) ? "▸" : "▾"} ${item.group.toUpperCase()}</span><small>${item.count}</small></button>`
-				: rowMarkup(catalogue, item.command),
-		)
+		.map((item) => {
+			// A `switch` rather than the ternary pair this replaced: the tree
+			// grew a third kind in #381 S4 and a `header ? … : row` reads every
+			// new kind as a row, silently (`item.command` on a door is
+			// `undefined`, and the markup builder would print a row of blanks).
+			switch (item.kind) {
+				case "header":
+					return `<button class="lc-controls-group" type="button" data-live-controls-group="${item.group}" aria-expanded="${!collapsed.has(item.group)}"><span>${collapsed.has(item.group) ? "▸" : "▾"} ${item.group.toUpperCase()}</span><small>${item.count}</small></button>`;
+				case "action":
+					// **A door, drawn as one.** It is not a control, so it gets
+					// no trigger column — a blank one would read as a control
+					// nothing is bound to, which is the opposite of what it is.
+					return `<button class="lc-controls-door" type="button" data-live-controls-action="${item.action}">${escapeHtml(item.label)}</button>`;
+				case "row":
+					return rowMarkup(catalogue, item.command);
+			}
+		})
 		.join("");
 }
 

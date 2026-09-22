@@ -26,6 +26,7 @@ import {
 	controlsKeyMove,
 	controlsTree,
 	focusAfterFold,
+	actionFocusId,
 	groupFocusId,
 	noticeText,
 	REJECTED_WHY,
@@ -53,7 +54,9 @@ const treeFocusIds = (items: readonly TreeItem[]): FocusItem[] =>
 		id:
 			item.kind === "header"
 				? groupFocusId(item.group)
-				: rowFocusId(item.command.id),
+				: item.kind === "action"
+					? actionFocusId(item.action)
+					: rowFocusId(item.command.id),
 	}));
 
 const cockpit = {
@@ -157,7 +160,8 @@ describe("the folding tree", () => {
 		let group: string = "";
 		for (const item of items) {
 			if (item.kind === "header") group = item.group;
-			else expect(item.command.group as string).toBe(group);
+			else if (item.kind === "row")
+				expect(item.command.group as string).toBe(group);
 		}
 	});
 

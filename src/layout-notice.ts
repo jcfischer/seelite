@@ -29,7 +29,9 @@
 import {
 	type Collision,
 	collisions,
+	type CommandId,
 	type Layout,
+	rebind,
 	type Trigger,
 	triggerKey,
 } from "./commands";
@@ -195,3 +197,47 @@ const triggerFor = (layout: Layout, collision: Collision): Trigger => {
 		throw new Error(`no ${collision.commands[0]} row on ${collision.trigger}`);
 	return found.trigger;
 };
+
+/**
+ * A move, offered with its warnings — or refused (#369 D5, D9).
+ *
+ * **The second storage-free caller this module was split out for**, and the
+ * shape is what makes D5 structural rather than remembered. D5 is *warn at
+ * bind time, allow the bind, resolve by one stated law*, and a warning that
+ * comes after the bind is a different promise: the modal has to be able to
+ * tell a player that the trigger they just pressed already means something,
+ * **before** it commits, and commit anyway if they say so.
+ *
+ * So a caller cannot get the candidate without the warnings beside it. The
+ * version this replaces would have been a `rebind` call with a
+ * `collisionNotices` call under it — the same two lines with the second one
+ * optional, which is the one a later edit drops and nothing goes red.
+ *
+ * **A refusal carries no layout.** `rebind` throws on a move the registry will
+ * not make — a stick, a held button, a qualifier that is the command's — and
+ * there is nothing to warn about there, because there is nothing to commit.
+ * The sentence comes back so the modal can print it; `REJECTED_WHY` in
+ * `controls-reference.ts` is what a *stored* row's refusal prints, and this is
+ * the live one.
+ *
+ * **Nothing is mutated.** `rebind` returns a new table, so a player who reads
+ * the warning and backs out has changed nothing — which is the property a
+ * modal that previewed a bind by writing into the layout would break, and the
+ * `Layout` brand is what stops it trying.
+ */
+export function proposedRebind(
+	bindings: Layout,
+	command: CommandId,
+	from: Trigger,
+	to: Trigger,
+):
+	| { readonly layout: Layout; readonly warnings: LayoutNotice[] }
+	| { readonly refused: string } {
+	let layout: Layout;
+	try {
+		layout = rebind(bindings, command, from, to);
+	} catch (e) {
+		return { refused: e instanceof Error ? e.message : String(e) };
+	}
+	return { layout, warnings: collisionNotices(layout) };
+}
