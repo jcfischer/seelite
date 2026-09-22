@@ -188,11 +188,14 @@ check(
  * passed and printed as parity.
  *
  * **The band is what found the warm-up defect above**, which a floor would
- * have hidden for as long as the floor stayed low. With the discarded hold in
- * place the four measured arms of one run read 15.86°, 14.90°, 15.65° and
- * 14.81° — a spread of about 6% — so 0.8-1.2x is comfortable rather than
- * marginal. A 400 ms hold is still not a rate measurement, which is why the
- * band is this wide and not tighter.
+ * have hidden for as long as the floor stayed low.
+ *
+ * Its width is measured rather than guessed, and **over three runs rather than
+ * one** — a single run's spread was quoted here for a round, which is this
+ * repo's own "one sample is not a measurement". Twelve measured arms across
+ * three consecutive runs read 14.79° to 15.66°, so about ±3% around 15.2°;
+ * 0.8-1.2x needs a 20% deviation and has room. A 400 ms hold is still not a
+ * rate measurement, which is why the band is this wide and not tighter.
  */
 const BAND = [0.8, 1.2];
 const parity = (turned) =>
