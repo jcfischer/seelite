@@ -432,9 +432,12 @@ const sealed = (body: Record<string, unknown>) => ({
  *
  * What makes the inverse the right shape is not this helper's word for it:
  * version 5 changed these three fields and nothing else, which is what the
- * re-serialize row pins — a lifted v4 record and a native v5 one agree on
- * every byte of the body, so no fourth key is being invented or dropped on
- * the way through.
+ * re-serialize row pins — a lifted v4 record and a native v5 one are the same
+ * structure, so no fourth key is invented or dropped on the way through. Read
+ * that as *structure* and not as bytes: it is a `toEqual`, which is blind to
+ * key order, and `integrity` — the one field that is order-sensitive — is
+ * destructured away on both sides before the comparison. An earlier version of
+ * this sentence said "every byte", which the row does not check.
  */
 const asV4 = (
 	save: ReturnType<typeof paidTrialWithLead>,

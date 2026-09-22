@@ -107,8 +107,12 @@ export const SAVE_SCHEMA_VERSION = 5;
  * load. `parseCommander` gives it an empty one.
  *
  * **4 is shipped too, and with content**: it is the version every save written
- * between #411 and #453 carries, journal and all. It is the first entry in
- * this list whose migration moves data rather than emptying it.
+ * between #411 and #453 carries, journal and all. That is not in tension with
+ * what the header above says about 3 — the DEV flag left *3*'s journals empty,
+ * and #411 both retired the flag and made the content live, which is what made
+ * it a new version. So 4 is the first entry in this list whose migration moves
+ * data rather than emptying it, and the first with a real population behind
+ * it.
  */
 export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4] as const;
 

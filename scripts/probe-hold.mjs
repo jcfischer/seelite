@@ -137,12 +137,13 @@ try {
 		offerId,
 	);
 	// Named before the first field read: a miss here surfaced as an opaque
-	// TypeError three checks later.
+	// TypeError three checks later. **Optional all the way down**, because the
+	// operand put a second level between the offer and the field — a plain
+	// `offer.operand.tonnes` throws inside the guard on the very case the
+	// guard exists to name.
 	check(
 		"the offer row names an offer the board knows",
-		offerId !== null &&
-			offer != null &&
-			typeof offer.operand.tonnes === "number",
+		offerId !== null && typeof offer?.operand?.tonnes === "number",
 		`${offerId}`,
 	);
 	await offerRow.click();
