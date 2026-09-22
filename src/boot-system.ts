@@ -2,14 +2,24 @@
  * `?system=<index>`: which system a new game boots in.
  *
  * [#432](https://github.com/jcfischer/seelite/issues/432) asked for the way to
- * *stand* somewhere other than the start system, because the canonical view
- * set's sky row can only show what #100 ruled — the cone of cluster light on the
- * centre — from the rim, and `startSystem` is specified as the most **central**
- * well-stocked and orderly system. `?seed` pins a world; it cannot pin a place
- * inside one. A scripted jump was the alternative on the table and it is worse:
- * it spends the Hyperspace tank, needs an in-range route, and would make a
- * canonical frame a function of whichever systems the jump happened to route
- * through.
+ * *stand* somewhere other than the start system. `sky-only` stands where the game
+ * boots, and `startSystem` is specified as the most **central** well-stocked and
+ * orderly system, so a canonical frame could be taken from nowhere else. `?seed`
+ * pins a world; it cannot pin a place inside one. A scripted jump was the
+ * alternative on the table and it is worse: it spends the Hyperspace tank — the
+ * canonical compound of `CONTEXT.md` §Language, the fuel store rather than a
+ * place, so this is not the _Avoid_ alias for **Witchspace** — it needs an
+ * in-range route, and it would make a canonical frame a function of whichever
+ * systems the jump happened to route through.
+ *
+ * **The node built this for a row, and the row did not survive being measured.**
+ * It was aimed along the **Core bearing** at a rim system, captured, judged on the
+ * sheet, and removed in the same PR: the cone of cluster light sits below the
+ * density the invented layer already lays down in every direction, which
+ * `scripts/measure-sky-density.ts`'s core mode prints. So what this file is for is
+ * the standing and not the aiming — how a script, or a person at a URL, gets a
+ * game to any system at all. [#478](https://github.com/jcfischer/seelite/issues/478)
+ * holds what to do with the bearing now.
  *
  * ## The rule: it is a new game, elsewhere
  *
@@ -53,9 +63,15 @@ const INDEX = /^[0-9]+$/;
 /**
  * The system a boot was asked for, or `null` for the start system.
  *
- * `null` covers three cases the caller must not confuse and cannot act on
- * differently — absent, unusable, out of range — which is why the second and
- * third are *said* here rather than returned as a distinction nobody reads.
+ * `null` covers three cases — absent, unusable, out of range — and they are one
+ * boot, which is the reason they are not returned apart. A boot that named no
+ * usable system **named no place**: it stands where the generator stands the
+ * ship, which is where its own save expects to be, so it is an ordinary boot and
+ * §11.6's writes-nothing does not reach it. `?system=999` continues a Commander
+ * rather than being quarantined like a boot that named a system it *used* — that
+ * one is `pinnedSystem !== null` in `commander-flow.ts`, and the difference is
+ * whether the world moved. What the two refusals share is that neither is
+ * silence: each is said here, where the string that failed is still in hand.
  */
 export function querySystem(query: URLSearchParams): number | null {
 	const raw = query.get(SYSTEM_QUERY);

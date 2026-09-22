@@ -476,7 +476,7 @@ const PLACERS = {
 		// the **Core bearing**, through `galaxy-frame.ts`'s transform rather than
 		// arithmetic here, which is #430's reason for existing — and removed it in
 		// the same PR: the row it was for cannot show its subject at this cluster's
-		// population, and `measure-sky-density.ts`'s field arm is the reading that
+		// population, and `measure-sky-density.ts`'s core mode is the reading that
 		// said so. See the note beside `sky-only` in `lib/view-set.mjs`.
 		await page.evaluate(async () => {
 			await window.__returnToBootPosition();

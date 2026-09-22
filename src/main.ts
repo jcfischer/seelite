@@ -14163,11 +14163,11 @@ if (query.has("model-viewer")) {
 	// direct boot sets the Commander aside. Without direct the overlay asks
 	// which world is wanted, and the seed only pre-fills New game (§11.6).
 	const boot = bootMode(query);
-	// **A pinned system writes nothing, and the plan is what says so.** `?seed`
-	// protects a record by disagreeing with it; a named system carries no such
-	// disagreement, so a boot that names one reads, consumes and writes nothing
-	// at all — §11.6, #432. Read once, like the seed below: an unusable value
-	// warns as it is read.
+	// **A pinned system writes nothing, and the plan is what says so** (§11.6,
+	// #432). Where the permission is computed and why it is the boot's rather than
+	// the URL's is that section's; what is specific here is that this file reads
+	// one field instead of re-deriving it from one of the permission's two causes.
+	// Read once, like the seed below: an unusable value warns as it is read.
 	const askedSystem = querySystem(query);
 	// **One Commander catalog since #437**, and one offer source since #411.
 	// The fixture trial used to get its own IndexedDB database and lock prefix
@@ -14206,6 +14206,18 @@ if (query.has("model-viewer")) {
 	try {
 		game = new Game(worldSeed, plan.loaded, askedSystem);
 	} catch (error) {
+		// **Two failures reach here and only one of them is the save's.** With a
+		// system asked for, `planBoot` returns before any record is read, so
+		// `plan.loaded` is already `null` and nothing here came from a save: it
+		// came from building the world at the named index. The retry below hands
+		// that build the same index that just threw, and calls the cause "the
+		// loaded save would not restore" — a wrong name on the one failure worth
+		// reading. It escapes either way, so what is gained by saying it is that
+		// the line above the stack names the thing that failed.
+		if (plan.loaded === null) {
+			console.error(`world: system ${askedSystem} would not build`, error);
+			throw error;
+		}
 		console.error("save: the loaded save would not restore", error);
 		plan = withRestoreFault(plan, error);
 		game = new Game(worldSeed, null, askedSystem);

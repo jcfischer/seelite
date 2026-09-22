@@ -155,14 +155,11 @@ export interface BootPlan {
 	 * This boot touches no storage, and the shell must not attach a store to it.
 	 * Two things make it true: `?no-save`, and a system named by `?system=`.
 	 *
-	 * §11.6 of `persistent-world-state.md` is where the rule and its reason are
-	 * written once — including why a named system's permission is not a copy of
-	 * `?no-save`'s but a consequence of the set-aside not reaching it — and this is
-	 * the copy the code cites rather than a second statement of it. What is
-	 * specific to this type is only *where* the answer is computed: here, because
-	 * it is a property of the boot and not of the URL, and four call sites in
-	 * `main.ts` read one field instead of re-deriving the permission from one of
-	 * its two causes.
+	 * §11.6 of `persistent-world-state.md` owns the rule and the reason for it, and
+	 * this is the copy the code cites rather than a second statement of it. What is
+	 * specific to this type is only *where* the answer is computed: here, because it
+	 * is a property of the boot and not of the URL, and four call sites in `main.ts`
+	 * read one field instead of re-deriving the permission from one of its causes.
 	 */
 	writesNothing: boolean;
 	/**

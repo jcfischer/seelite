@@ -48,7 +48,7 @@
  * #432's two rows read the one thing no headless row can: that `?system=` moved a
  * *running* game to a system the generator did not pick. The row it was built for
  * — a `deep-sky` frame aimed along the Core bearing — was measured, judged on the
- * sheet, and removed; `scripts/measure-sky-density.ts`'s field arm is the reading
+ * sheet, and removed; `scripts/measure-sky-density.ts`'s core mode is the reading
  * that decided it, and the note beside `sky-only` in `lib/view-set.mjs` is the
  * account. What the affordance outlived the row for, and what these two rows
  * hold, is the way to stand anywhere at all.
@@ -407,11 +407,16 @@ const refused = await page.evaluate(
 	() => window.__seelite.world.system.record.index,
 );
 
+// **Hoisted, because a check that says its own predicate twice has two edit
+// sites.** Both halves belong in the message — a reader of a red run needs to know
+// which of the two failed — and neither belongs twice in the code.
+const bootedTheStart = refused === booted.start;
+const refusalWasSaid = said.some((w) => w.includes(`?system=${booted.count}`));
+
 check(
 	"an index the galaxy does not have is said, and the start system boots instead",
-	refused === booted.start &&
-		said.some((w) => w.includes(`?system=${booted.count}`)),
-	`${refused === booted.start ? `system ${refused} booted, the start system, not clamped to the last index` : `system ${refused} booted for an index the galaxy does not have`}${said.some((w) => w.includes(`?system=${booted.count}`)) ? ", and the refusal was said in the console" : ", and nothing was said about it"}`,
+	bootedTheStart && refusalWasSaid,
+	`${bootedTheStart ? `system ${refused} booted, the start system, not clamped to the last index` : `system ${refused} booted for an index the galaxy does not have`}${refusalWasSaid ? ", and the refusal was said in the console" : ", and nothing was said about it"}`,
 );
 
 await browser.close();

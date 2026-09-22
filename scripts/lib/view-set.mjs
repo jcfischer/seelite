@@ -217,6 +217,14 @@ export const SHOT_KINDS = Object.freeze([
  * different system than it asked for has to be a red run rather than a wrong
  * picture with the right caption.
  *
+ * **That plumbing is carried knowingly, at a cost this file is naming.** It is
+ * exercised by no row today, so every branch of it runs only in tests. The
+ * alternative — dropping it until a row asks — is what #478 will undo, and the
+ * half worth keeping is not the argument to `gameUrl` but the readback: the one
+ * place a wrong-star caption can be caught is the boot that made it, and a row
+ * added under [#478](https://github.com/jcfischer/seelite/issues/478) should fail
+ * loudly on its first run rather than be believed.
+ *
  * **A declared seed used to be an ordering hazard and is not any more.** The
  * navigation lived inside the `berth` placer, so every view *below* a
  * seed-declaring one was captured on that view's world; it was harmless only
@@ -730,7 +738,7 @@ export const VIEWS = Object.freeze([
 	 * bearing** was built, captured on the GPU lane and judged by the principal,
 	 * whose reading was *"few dots, neither wall of dots or cone of lights"*.
 	 * That is what the arithmetic predicts: `scripts/measure-sky-density.ts`'s
-	 * field arm prints the crowded heading's points-per-square-degree against the
+	 * core mode prints the crowded heading's points-per-square-degree against the
 	 * density the invented population already lays down in *every* direction, and
 	 * the cone loses. No framing at a 256-system cluster makes #100's lever
 	 * visible, because — as `CONTEXT.md` says of the Core bearing — it carries
@@ -1019,11 +1027,20 @@ export function malformedShots(views) {
 		.filter((v) => {
 			// `system` is checked over every kind rather than inside one's, because
 			// it is a boot parameter and not a framing: a row may name where it
-			// stands as well as which world it stands in (#432). A fractional or
-			// stringy one would reach `?system=` as an index the page refuses — and
-			// the page refuses *politely*, booting the start system, so a bad value
-			// here is the wrong picture wearing the right caption.
-			if (v.shot.system !== undefined && !Number.isInteger(v.shot.system))
+			// stands as well as which world it stands in (#432). A fractional,
+			// stringy or negative one would reach `?system=` as an index the page
+			// refuses — and the page refuses *politely*, booting the start system,
+			// so a bad value here is the wrong picture wearing the right caption.
+			//
+			// The upper bound is deliberately absent: the galaxy's length is not
+			// this file's to own, and `capture-views.mjs` reads the booted index back
+			// and throws, so an index too big for the galaxy is caught where the
+			// page that refused it is still open. A negative is caught here because
+			// no bound is needed to know it is wrong.
+			if (
+				v.shot.system !== undefined &&
+				(!Number.isInteger(v.shot.system) || v.shot.system < 0)
+			)
 				return true;
 			const needs = SHOT_REQUIREMENTS[v.shot.kind];
 			return !needs || !needs(v.shot);

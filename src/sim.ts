@@ -618,9 +618,9 @@ export function makeWorld(seed: number): World {
  * named system's bodies would produce a world that looks whole and is on the
  * wrong star, which is what `tests/world-restore.test.ts` holds.
  *
- * `?system=` boots through here, and a boot that boots here writes nothing:
- * §11.6's reason is that a pinned system carries no disagreement with a save for
- * a store to act on, so the only safe rule is not to attach one.
+ * `?system=` boots through here. What such a boot may write is §11.6's ruling and
+ * `BootPlan.writesNothing`'s answer, not this function's: a world builder has no
+ * storage reach, so a promise made here is one nothing keeps.
  */
 export function makeWorldAtSystem(seed: number, systemIndex: number): World {
 	return restoreWorld(seed, START_GALAXY, systemIndex, 0);

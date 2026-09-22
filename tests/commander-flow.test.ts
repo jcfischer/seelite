@@ -247,10 +247,9 @@ describe("the one-shot continue (§11.3)", () => {
  * `sky-only` in `scripts/lib/view-set.mjs`.
  *
  * §11.6 of `persistent-world-state.md` owns the rule that such a boot writes
- * nothing, and why — a named system carries none of the disagreement that makes
- * `?seed` protective, so the set-aside never reaches it. This file's job is that
- * the plan answers it, and the rows below are the ones §11.7's obligation points
- * at: reads nothing, writes nothing, and leaves the save continuable afterwards.
+ * nothing and the reason for it. This file's job is that the plan answers, and the
+ * rows below are the ones §11.7's obligation points at: reads nothing, writes
+ * nothing, and leaves the save continuable afterwards.
  */
 describe("`?system` pins where the ship boots and writes nothing (§11.6)", () => {
 	test("a pinned boot reads nothing and writes nothing, beside its own save", async () => {
@@ -281,6 +280,25 @@ describe("`?system` pins where the ship boots and writes nothing (§11.6)", () =
 		expect(plan.notice).not.toBeNull();
 		expect(plan.notice).toContain("161");
 		expect(plan.fault).toBeNull();
+	});
+
+	/**
+	 * **A refusal is not a naming, and the difference is the world moving.**
+	 * `querySystem` warns and returns `null` for an index it cannot use, so what
+	 * reaches `planBoot` is an ordinary boot — which is right, not a leak: a boot
+	 * that named no usable system named no *place*, so it stands where its own save
+	 * expects to be and §11.6's writes-nothing does not reach it. Pinned here
+	 * because the return type collapses the two cases, and the collapse is only
+	 * safe while this stays true.
+	 */
+	test("a boot with nothing pinned is an ordinary one, and it writes", async () => {
+		const o = origin();
+		await o.save(DEFAULT_SLOT, SEED);
+		await o.catalog.chooseCommander(DEFAULT_SLOT);
+		const plan = await o.boot({ boot: "direct", querySeed: SEED });
+		expect(plan.loaded?.world.seed).toBe(SEED);
+		expect(plan.writesNothing).toBe(false);
+		expect(plan.notice).toBeNull();
 	});
 
 	/**

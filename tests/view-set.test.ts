@@ -591,12 +591,13 @@ describe("the contact sheet", () => {
  * **Core bearing**, which needed the `?system=` boot affordance to exist at all —
  * that half shipped. The frame did not: the principal's reading of it was *"few
  * dots, neither wall of dots or cone of lights"*, and `measure-sky-density.ts`'s
- * field arm prints why, in the one comparison that decides it — the crowded
+ * core mode prints why, in the one comparison that decides it — the crowded
  * heading's points per square degree against the density the invented population
- * already lays down in *every* direction. The derived layer loses that by a
- * factor of three at a 256-system cluster, so no framing and no choice of system
- * makes #100's lever something an eye can see, and `CONTEXT.md` said as much in
- * advance: the Core bearing carries information rather than light.
+ * already lays down in *every* direction. No figure is restated here, per that
+ * file's own rule about a third copy: what it prints, over every observer of the
+ * sweep, is a bound rather than an average, and the bound is under the floor.
+ * `CONTEXT.md` said as much in advance: the Core bearing carries information
+ * rather than light.
  *
  * What the node therefore leaves behind is the affordance, the measurement, and
  * the node the measurement opened. These two rows keep the removal honest.

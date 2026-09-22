@@ -245,6 +245,16 @@ describe("the Game's world writes", () => {
 		// boot calls it. Textual, so it proves the call is present and nothing
 		// about what surrounds it.
 		expect(MAIN).toContain("plan = withRestoreFault(plan, error);");
+		// **And the retry is the save's, not every construction's.** Since #432 the
+		// same `catch` can be reached by a world that would not build at a *named
+		// system*, where `plan.loaded` is already null; retrying there hands the
+		// build the argument that just threw and labels the cause "the loaded save".
+		// So the guard comes first, and its order relative to the retry is the whole
+		// of what this row holds.
+		const guarded = MAIN.indexOf("if (plan.loaded === null) {");
+		const retried = MAIN.indexOf("plan = withRestoreFault(plan, error);");
+		expect(guarded).toBeGreaterThan(-1);
+		expect(guarded).toBeLessThan(retried);
 	});
 
 	test("permadeath is chosen at new game and cannot be flipped later", () => {
