@@ -198,7 +198,6 @@ const CONTEXT_WORDS: Readonly<Record<PadContext, string>> = {
 const SURFACE_WORDS: Readonly<Record<Surface, string>> = {
 	requests: "Requests",
 	"station-console": "a station console",
-	"console-row": "a console row",
 	view: "the view",
 };
 

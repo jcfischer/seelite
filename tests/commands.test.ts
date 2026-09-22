@@ -17,6 +17,7 @@ import {
 	type Half,
 	commandById,
 	DEFAULT_BINDINGS,
+	defaultCollisions,
 	PAD_CONTEXTS,
 	TASK_GROUPS,
 	triggerKey,
@@ -378,7 +379,10 @@ describe("the axis law names which key is which", () => {
 
 describe("D5's two predicates", () => {
 	test("the shipped defaults collide with nothing", () => {
-		expect(collisions(DEFAULT_BINDINGS)).toEqual([]);
+		// Through the exported helper, which is what a later slice's CI gate
+		// will call: an alias nothing exercises can be pointed at the wrong
+		// binding set and stay green.
+		expect(defaultCollisions()).toEqual([]);
 	});
 
 	test("and the predicate can say otherwise", () => {

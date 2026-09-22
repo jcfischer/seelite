@@ -110,11 +110,15 @@ export type Half = "+" | "-";
  * The screens that claim a trigger of their own.
  *
  * **They are mutually exclusive by construction**, which is what lets
- * `overlapScope` decide with inequality: `console-row` is a pointer
- * affordance on a station console rather than a region inside `requests`, and
- * no two of these are ever drawn as one surface. A surface that *contained*
- * another would need containment rather than inequality, and this union may
- * not gain one without that change.
+ * `overlapScope` decide with inequality: the right console's Requests tab,
+ * the docked station screen and the glass are three places, never one drawn
+ * inside another. A surface that *contained* another would need containment
+ * rather than inequality, and this union may not gain one without that
+ * change — which is why there is no `console-row` beside `station-console`.
+ * The pair was written and removed inside one review round: two click rows
+ * whose prose put one inside the other were reported as disjoint by
+ * inequality, so the zero-collision result was the split rather than the
+ * absence of a shared trigger.
  *
  * A closed union rather than a phrase, because `overlaps` decides liveness by
  * comparing two of these and `controls-reference.ts` prints them: with prose
@@ -122,12 +126,7 @@ export type Half = "+" | "-";
  * reported as a collision, and rewording a label would silently move a scope.
  * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
  */
-const SURFACES = [
-	"requests",
-	"station-console",
-	"console-row",
-	"view",
-] as const;
+const SURFACES = ["requests", "station-console", "view"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 /**
@@ -341,7 +340,11 @@ interface Authored {
 	 *
 	 * - the `?perf` diagnostics (#369's D12 rider), which
 	 *   `tests/perf-panel-keys.test.ts` exists to keep off the flight path;
-	 * - the two combat-rig keys, inert outside `?combat=1`;
+	 * - the two combat-rig keys `/` and `q`, which reach nothing but the rig:
+	 *   `command()` breaks out of the switch for both in normal play. Note what
+	 *   this does **not** cover — `fight.fireBeam` is `x` held, which
+	 *   `combat-rig.ts` reads and the assist toggle shares, so it is a key a
+	 *   player holds in a game that ships and it stays rebindable;
 	 * - the pointer rows, which have **no movable trigger at all** — a click on
 	 *   a station row or on the glass is #370's standing premise that a screen
 	 *   is always clickable, not a binding a player could move elsewhere.
@@ -370,6 +373,9 @@ const CHASE = ["chase"] as const;
  * `SETTINGS_KEY` is `z` in `settings-panel.ts`. They are restated rather than
  * imported because those modules are loaded on demand and a static import from
  * here would pull both into the eager bundle; the test imports them instead.
+ * `COMMANDER_KEY` **is** imported, because `commander-overlay.ts` is already
+ * eager — `main.ts` imports it at the top level for the boot flow. If that
+ * ever changes, this import is the third restatement, not an exception.
  */
 const AUTHORED = [
 	// fly ---------------------------------------------------------------
@@ -555,6 +561,10 @@ const AUTHORED = [
 		id: "trade.actOnRow",
 		name: "Buy, sell or fit: click a station row",
 		group: "trade",
+		// **The one pointer row on a console**, and the reason `panel.activate`
+		// has no click of its own: a click that selects a row is this, wherever
+		// the row is drawn. Two click rows was the containment `Scope`'s doc
+		// now forbids.
 		rebindable: false,
 		more: [
 			{ kind: "mouse-button", action: "click", surface: "station-console" },
@@ -670,7 +680,6 @@ const AUTHORED = [
 		name: "Select the row under the cursor",
 		group: "system",
 		keys: [{ key: "enter", surface: "requests" }],
-		more: [{ kind: "mouse-button", action: "click", surface: "console-row" }],
 		intent: "activate",
 	},
 	{
@@ -858,12 +867,22 @@ function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
 /** How a physical key prints: a letter or digit key by its character, an
  *  arrow by the key it sends.
  *
- *  **Punctuation is the hole, and it is still open.** A `Slash` or `Comma`
- *  code would print as its code name, because the character a punctuation key
- *  types is a property of the keyboard layout and `ALT_CHORDS` holds only the
- *  three arrows today. The capture slice records the character a binding was
- *  made with (D7), which is what closes it; until then a chord authored on a
- *  punctuation key prints wrong. */
+ *  **Punctuation is the hole, and it is open in two places rather than one.**
+ *  A `Slash` or `Comma` code prints as its code name, because the character a
+ *  punctuation key types is a property of the keyboard layout. And
+ *  `triggerKey` routes *identity* through this same function, so a future
+ *  `code: "Slash"` would hash `key:slash` against the shipped `key:/` — one
+ *  physical key with two identities, which `collisions()` cannot see. The
+ *  shipped defaults hold ten punctuation keys, so this is the dispatch
+ *  slice's first job and not a printing nicety. **And one pair fails the
+ *  other way**: `?` and `/` are one physical key apart by Shift, which this
+ *  model does not carry — #377 ruled `?` is the character the keyboard types
+ *  and not a Shift chord, so adding a `shift` flag here would be reopening
+ *  that node from a helper. Author a code on both and they hash alike, and
+ *  `view.reference` and `fight.rigIncoming` are reported as a collision that
+ *  the game does not have. Whichever way the dispatch slice settles it, it
+ *  settles both halves at once. `ALT_CHORDS` holds only the
+ *  three arrows today, which is why nothing is wrong yet. */
 const codeKey = (code: string) =>
 	code.replace(/^(Key|Digit)/, "").toLowerCase();
 
@@ -890,9 +909,10 @@ function chordsFor(keys: readonly Trigger[]): Trigger[] {
  */
 function padIntentTriggers(
 	intent: PanelIntent,
-	half: Half,
-	signed: boolean,
+	intentHalf: Half | undefined,
 ): Trigger[] {
+	const half = intentHalf ?? "+";
+	const signed = intentHalf !== undefined;
 	const found =
 		PRESSES.intents.get(`${intent}${half}`) ??
 		new Map<PadButtonName, PadContext[]>();
@@ -1008,13 +1028,7 @@ function triggersOf(a: Authored): Trigger[] {
 		...chords,
 		...padButtonsFor(keys),
 		...(a.more ?? []),
-		...(a.intent
-			? padIntentTriggers(
-					a.intent,
-					a.intentHalf ?? "+",
-					a.intentHalf !== undefined,
-				)
-			: []),
+		...(a.intent ? padIntentTriggers(a.intent, a.intentHalf) : []),
 	];
 }
 
@@ -1065,11 +1079,13 @@ export const DEFAULT_BINDINGS: readonly Binding[] = COMMANDS.flatMap((c) =>
  * What makes two bindings the *same* trigger.
  *
  * Physical identity, not printed identity: a key is its physical position
- * under D7, **normalised through `codeKey` so a coded and an uncoded binding
- * on one physical key hash alike**. That is not tidiness — the identity
- * function is the one surface the storage slice cannot change cheaply once
- * layouts are on disk, so `KeyW` and `w` have to agree before the dispatch
- * slice authors codes rather than after,
+ * under D7, normalised through `codeKey`, **which reaches the letter and
+ * digit keys and no others**: `KeyW` and `w` hash alike, and `Slash` against
+ * `/`, `Comma` against `,` and every other punctuation code do not. That
+ * matters because the identity function is the one surface the storage slice
+ * cannot change cheaply once layouts are on disk — the letters are settled
+ * before codes are authored, and the punctuation half is the dispatch slice's
+ * to settle with `codeKey`'s table, not a printing nicety,
  * and a press and a hold of the same key are different triggers — which is
  * what makes D3's split on `x` a split rather than a collision. A pad button
  * and a pad intent share one namespace because they are one button.
