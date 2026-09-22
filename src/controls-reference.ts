@@ -9,9 +9,10 @@
  * #370's receipt carries the nine rulings; the comments below cite them by
  * their D-number rather than restating them.
  */
+import type { LayoutNotice } from "./binding-store";
 import { escapeHtml } from "./escape-html";
-import type { Surface, TaskGroup, Trigger } from "./commands";
-import { PAD_CONTEXTS, TASK_GROUPS } from "./commands";
+import type { CommandId, Surface, TaskGroup, Trigger } from "./commands";
+import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
 import type { FocusCursor, FocusItem } from "./panel-focus";
@@ -356,5 +357,77 @@ export function controlsBody(
 ): string {
 	const owner =
 		catalogue.layout === "default" ? "DEFAULT LAYOUT" : "PLAYER LAYOUT";
-	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header><div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
+	return `<div class="lc-panel-body lc-controls" data-live-controls-body><header class="lc-controls-head"><b data-live-controls-owner>${owner}</b><span>F1 or ${CONTROLS_CHORD} opens and closes this tab</span><span>The chord assumes a US layout; every other key prints as the character you type</span></header>${noticesMarkup(catalogue.notices)}<div class="lc-controls-tree" data-live-controls-tree>${controlsTreeMarkup(catalogue, collapsed)}</div></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// What a stored layout could not do, in the player's words (#381, slice 3)
+// ---------------------------------------------------------------------------
+
+const COMMAND_NAMES = new Map<string, string>(
+	COMMANDS.map((c) => [c.id, c.name]),
+);
+
+/**
+ * A control's name, or the blob's own string when this build has no such
+ * control.
+ *
+ * Both halves are reachable: a rejected row may name a command that was
+ * renamed or removed, and a notice that printed nothing in that case would be
+ * a refusal the player cannot act on — which is the whole failure this slice
+ * exists to prevent.
+ */
+const controlName = (id: string | null): string =>
+	id === null
+		? "A saved control"
+		: (COMMAND_NAMES.get(id) ?? `An unknown control (${id})`);
+
+/** Where a collision is live, when it is not everywhere. */
+const inViews = (views: readonly string[]): string =>
+	views.length === VIEW_MODES.length ? "" : ` in ${views.join(" and ")}`;
+
+/**
+ * The sentence a `LayoutNotice` prints.
+ *
+ * **Here rather than in `binding-store.ts`**, because #369 D11 gives this
+ * module the one owner of every printed control name and `triggerLabel` is
+ * already it. A formatter beside the store would be a second table of the
+ * same names, which is the drift D11 was written against.
+ *
+ * **The collision sentence says what the game does, not what #369 D5 says it
+ * should.** D5's resolution is warn, allow, and resolve by last-changed-wins —
+ * and the dispatch does not resolve: `resolveKey` returns every command a key
+ * reaches and `main.ts` runs all of them. That is reachable on `main` through
+ * `rebindCommand` and is not this slice's regression, but a notice promising a
+ * law the game does not keep would be worse than no notice at all.
+ */
+export function noticeText(notice: LayoutNotice): string {
+	switch (notice.kind) {
+		case "unreadable":
+			return `Your saved controls could not be read — ${notice.reason}. The default layout is in force.`;
+		case "version":
+			return `Your saved controls were written by a different build (version ${String(notice.stored)}). The default layout is in force, and changing a control will replace them.`;
+		case "rejected":
+			return `${controlName(notice.command)} kept its default: ${notice.reason}.`;
+		case "collision": {
+			const [a, b] = notice.collision.commands as readonly [
+				CommandId,
+				CommandId,
+			];
+			return `${controlName(a)} and ${controlName(b)} are both on ${triggerLabel(notice.at)}${inViews(notice.collision.scope.views)}. Both run; move one to separate them.`;
+		}
+	}
+}
+
+/** The band above the tree. Absent when there is nothing to say, rather than
+ *  an empty box that reads as a screen that failed to draw. */
+function noticesMarkup(notices: readonly LayoutNotice[]): string {
+	if (notices.length === 0) return "";
+	const rows = notices
+		.map(
+			(n) =>
+				`<li class="lc-controls-notice" data-live-controls-notice="${n.kind}">${escapeHtml(noticeText(n))}</li>`,
+		)
+		.join("");
+	return `<ul class="lc-controls-notices" data-live-controls-notices>${rows}</ul>`;
 }

@@ -543,6 +543,13 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
+import {
+	collisionNotices,
+	type LayoutNotice,
+	loadLayout,
+	saveLayout,
+} from "./binding-store";
+import { controlsCatalogue } from "./controls-catalogue";
 import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
 import { isEditable } from "./editable-target";
 import {
@@ -1854,7 +1861,25 @@ class Game {
 	 * is the slice after this — here it is the shipped table until something
 	 * sets another.
 	 */
-	private bindings: readonly Binding[] = DEFAULT_BINDINGS;
+	/**
+	 * What `localStorage` had, read once at boot (#381 S3).
+	 *
+	 * One read rather than one per consumer: the notices and the layout are
+	 * two halves of the same answer, and a second `loadLayout()` would report
+	 * a blob that the first had already replaced.
+	 */
+	private readonly storedLayout = loadLayout();
+	private bindings: readonly Binding[] = this.storedLayout.layout;
+	/**
+	 * What the store could not do, for the Controls tab's band.
+	 *
+	 * Held rather than re-derived, because it is a fact about the *blob* that
+	 * was read and not about the layout now in force: a rejected row leaves no
+	 * trace in the table it failed to change. The collisions in it are a
+	 * different matter and are recomputed on every rebind, which is why this
+	 * is assigned there too rather than being `readonly`.
+	 */
+	private layoutNotices: readonly LayoutNotice[] = this.storedLayout.notices;
 	/** Commander-owned mutable commerce state; no renderer may write it. */
 	private commander = newCommander(PLAYER_HULL[0]);
 	/** The game-owned per-galaxy state holds the station deficit map. */
@@ -3629,6 +3654,10 @@ class Game {
 			},
 			onChartHost: (host) => this.setChartHost(host),
 		});
+		// The tab prints the layout in force from the first frame, not from the
+		// first rebind: a stored layout that loaded, or a notice saying one did
+		// not, is the whole of what the player has to go on.
+		this.publishControls();
 		window.addEventListener("resize", () => {
 			// A different window size is a different number of pixels, so every
 			// period in the ring and every point on the curve was measured
@@ -8012,6 +8041,30 @@ class Game {
 	 */
 	rebindCommand(command: CommandId, from: Trigger, to: Trigger) {
 		this.bindings = rebind(this.bindings, command, from, to);
+		saveLayout(this.bindings);
+		// The rows that could not be *loaded* are a fact about the blob and
+		// stay; a collision is a property of the table that just changed, so
+		// it is asked again rather than this call trying to work out which of
+		// the old ones survived.
+		this.layoutNotices = [
+			...this.storedLayout.notices.filter((n) => n.kind !== "collision"),
+			...collisionNotices(this.bindings),
+		];
+		this.publishControls();
+	}
+
+	/**
+	 * Hand the Controls tab the layout it is flying.
+	 *
+	 * Pushed rather than pulled, because `LiveCockpit` renders from a state
+	 * struct that is rebuilt every frame and a binding table changes twice a
+	 * session; threading it through that struct would rebuild the catalogue
+	 * sixty times a second to print the same rows.
+	 */
+	private publishControls() {
+		this.liveCockpit?.setControls(
+			controlsCatalogue(this.bindings, this.layoutNotices),
+		);
 	}
 
 	/**

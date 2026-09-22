@@ -23,7 +23,7 @@ import {
 } from "./cockpit";
 import type { DockPhase } from "./dock-session";
 import type { TaskGroup } from "./commands";
-import { CONTROLS } from "./controls-catalogue";
+import { CONTROLS, type ControlsCatalogue } from "./controls-catalogue";
 import {
 	controlsBody,
 	controlsTreeMarkup,
@@ -450,6 +450,24 @@ export class LiveCockpit {
 	 * the DOM, so a structural rebuild draws the tree as the player left it.
 	 */
 	private controlsCollapsed: ReadonlySet<TaskGroup> = new Set();
+	/**
+	 * The layout the Controls tab prints, and what the store could not do
+	 * (#381 S3).
+	 *
+	 * Beside the fold rather than in `LiveCockpitState`, because it changes
+	 * twice a session — at boot and on a rebind — while the state struct is
+	 * rebuilt every frame by every caller that draws a cockpit. The shipped
+	 * catalogue is the value until `Game` hands over the one it is flying, so
+	 * a probe or a workbench that never calls the setter prints the defaults
+	 * rather than nothing.
+	 */
+	private controls: ControlsCatalogue = CONTROLS;
+
+	/** What the Controls tab prints from now on. `Game` owns the layout, so
+	 *  `Game` is what says when it changed. */
+	setControls(catalogue: ControlsCatalogue) {
+		this.controls = catalogue;
+	}
 
 	constructor(private readonly callbacks: LiveCockpitCallbacks) {
 		installStyle();
@@ -996,7 +1014,7 @@ export class LiveCockpit {
 			"[data-live-controls-tree]",
 		);
 		if (!tree) return;
-		tree.innerHTML = controlsTreeMarkup(CONTROLS, this.controlsCollapsed);
+		tree.innerHTML = controlsTreeMarkup(this.controls, this.controlsCollapsed);
 		const ids = this.focusIds(this.focusElements()).map((id) => ({ id }));
 		this.focusCursor = focusAfterFold(ids, this.focusCursor, group);
 		this.applyFocusRing(true);
@@ -1515,7 +1533,7 @@ export class LiveCockpit {
 	 */
 	private rightBody(state: LiveCockpitState) {
 		if (state.rightTab === "Controls")
-			return controlsBody(CONTROLS, this.controlsCollapsed);
+			return controlsBody(this.controls, this.controlsCollapsed);
 		// #445, on the Galaxy Map and `Controls` precedent: a page with its own
 		// grid replaces the rail-and-copy body wholesale rather than being
 		// squeezed into a 48-character column.

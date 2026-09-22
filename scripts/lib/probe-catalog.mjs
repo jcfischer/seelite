@@ -185,6 +185,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-binding-store.mjs",
+			"Checks that a rebound control survives a page reload and still flies the ship, and that a stored layout the build cannot apply prints a notice naming the control on the Controls tab.",
+			[
+				"binding storage",
+				"localStorage",
+				"page reload",
+				"player layout",
+				"rejected row notice",
+				"collision warning",
+			],
+		),
+		entry(
 			"probe-rebind.mjs",
 			"Checks that rebinding a flight command onto a new key reaches the simulation: the ship answers the new trigger, stops answering the old one, and a rebind off a trigger the command does not have is refused.",
 			[

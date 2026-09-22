@@ -156,7 +156,15 @@ export type FixedReason = "diagnostic" | "rig" | "pointer";
  * reported as a collision, and rewording a label would silently move a scope.
  * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
  */
-const SURFACES = ["requests", "station-console"] as const;
+/**
+ * The screens that claim the keyboard, and the set a stored layout is checked
+ * against.
+ *
+ * Exported since the storage slice: `binding-store.ts`'s validator has to ask
+ * whether a surface in a blob is one this build has, and a second list written
+ * there is the third copy this repo's history is about.
+ */
+export const SURFACES = ["requests", "station-console"] as const;
 export type Surface = (typeof SURFACES)[number];
 
 /**
