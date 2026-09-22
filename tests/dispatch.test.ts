@@ -281,6 +281,22 @@ describe("a rebind reaches the simulation", () => {
 		);
 	});
 
+	/**
+	 * The hold index is keyed on the layout's array identity, so a layout
+	 * merged **in place** would keep that identity and be answered out of a
+	 * stale index. That was a documented precondition for a round; freezing
+	 * makes it a property, and this is the row that says the freeze is real
+	 * rather than intended (sage round 4).
+	 */
+	test("a layout cannot be merged in place — the freeze refuses the write", () => {
+		const layout = moved();
+		const write = (table: readonly Binding[]) => () => {
+			(table as unknown as { [k: number]: unknown })[0] = { nope: true };
+		};
+		expect(write(layout)).toThrow();
+		expect(write(DEFAULT_BINDINGS)).toThrow();
+	});
+
 	test("a rebind that names no such binding is refused rather than ignored", () => {
 		// A silent no-op here is a rebind modal that reports success and moves
 		// nothing, which is exactly the shape a capture slice would ship.
