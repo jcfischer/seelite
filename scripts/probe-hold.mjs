@@ -140,7 +140,9 @@ try {
 	// TypeError three checks later.
 	check(
 		"the offer row names an offer the board knows",
-		offerId !== null && offer != null && typeof offer.tonnes === "number",
+		offerId !== null &&
+			offer != null &&
+			typeof offer.operand.tonnes === "number",
 		`${offerId}`,
 	);
 	await offerRow.click();
@@ -178,7 +180,7 @@ try {
 	const capacityDocked = await holdText("[data-live-hold-capacity]");
 	check(
 		"docked, the capacity line names the entrusted share",
-		capacityDocked.includes(`${offer.tonnes} t entrusted`),
+		capacityDocked.includes(`${offer.operand.tonnes} t entrusted`),
 		capacityDocked,
 	);
 	check(

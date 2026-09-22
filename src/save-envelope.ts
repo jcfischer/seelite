@@ -118,6 +118,11 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4] as const;
  * `requests` key was assembled rather than saved, and `parseCommander` refuses
  * it. Keeping the two beside each other means a later entry in the list has to
  * answer the same question rather than inheriting readability alone.
+ *
+ * **This table reaches the commander's own keys and nothing deeper.** A field
+ * a legacy version may not carry *inside* the journal is banned where that
+ * journal is reshaped — `migrateV4Requests` below is the worked example, and
+ * #453 specified an entry here that could never have fired.
  */
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
@@ -158,9 +163,16 @@ const migrateV3Requests = (raw: unknown): RequestsState => {
  * through the load and out into the next write — a version 5 record carrying
  * version 4's fields, which no version identifies.
  *
- * Total by construction: every v4 family is `courier` or `procurement` and
- * both move cargo, so there is no v4 offer this declines. The shape itself is
- * still `parseRequests`'s to check — this reshapes, it does not validate.
+ * **It reshapes, and it refuses exactly one thing** — an offer that already
+ * carries `operand`, the paragraph above's rule. Everything else about the
+ * shape is `parseRequests`'s, so a reader looking for where a v4 record is
+ * rejected finds one case here and the rest there. An earlier version of this
+ * paragraph said it "does not validate" three lines below a `fail`, which is
+ * the claim a caller would have read as *this cannot throw*.
+ *
+ * Total over **well-formed** v4 offers: every v4 family is `courier` or
+ * `procurement` and both move cargo, so no genuine v4 record loses its
+ * operand here.
  */
 const migrateV4Requests = (raw: unknown): unknown => {
 	if (raw === null || typeof raw !== "object") return raw;
@@ -180,7 +192,11 @@ const migrateV4Requests = (raw: unknown): unknown => {
 		each: (row: Record<string, unknown>) => unknown,
 	): unknown => {
 		if (container === null || typeof container !== "object") return container;
-		const out: Record<string, unknown> = {};
+		// **A null prototype, because the keys are a save's.** `JSON.parse`
+		// makes `__proto__` an own key, and assigning it on an ordinary object
+		// reaches `Object.prototype`'s setter instead of storing a row — the
+		// offer would vanish here rather than be refused by `parseRequests`.
+		const out: Record<string, unknown> = Object.create(null);
 		for (const [id, row] of Object.entries(
 			container as Record<string, unknown>,
 		))

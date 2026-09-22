@@ -250,8 +250,13 @@ export interface JobStationRef {
  *
  * One member, and the union is the point rather than the member: a `switch` on
  * `kind` with a `never` default means the day Bounty's target carrier or
- * Salvage's wreck arrives, every reader fails to compile instead of quietly
- * reading a field that is not there.
+ * Salvage's wreck arrives, every **typed** reader fails to compile instead of
+ * quietly reading a field that is not there.
+ *
+ * The qualifier is load-bearing. `scripts/probe-requests.mjs` reads
+ * `offer.operand.goodName` and is not typechecked, so a non-cargo operand
+ * reaches it as `undefined` rather than as a build error — the browser tier
+ * inherits the question a family adds, and the compiler will not raise it.
  */
 export type JobOperand = {
 	kind: "cargo";

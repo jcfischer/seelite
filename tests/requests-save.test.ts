@@ -421,9 +421,20 @@ const sealed = (body: Record<string, unknown>) => ({
  * Today's record written back as version 4: the operand flattened onto the
  * offer, which is the shape every shipped v4 save carries.
  *
- * **Derived from `serializeSave` rather than typed out.** A hand-built fixture
- * is a second author of the wire shape and drifts from what was actually
- * written — which is the whole reason a migration row is worth having.
+ * **Read what this is and is not, because the first version of this comment
+ * overclaimed it.** Every field but three comes from `serializeSave`, so the
+ * envelope, the journal's containers and the rest of an offer cannot drift
+ * from what the game writes. The **v4-ness** — flattening the operand back
+ * onto the offer — is authored here, and it is the exact inverse of `lift`.
+ * So the row below proves those two agree; it is not an archaeological v4
+ * save, and nothing in this repo is. A genuine drift in what v4 *was* is
+ * therefore outside what it can catch.
+ *
+ * What makes the inverse the right shape is not this helper's word for it:
+ * version 5 changed these three fields and nothing else, which is what the
+ * re-serialize row pins — a lifted v4 record and a native v5 one agree on
+ * every byte of the body, so no fourth key is being invented or dropped on
+ * the way through.
  */
 const asV4 = (
 	save: ReturnType<typeof paidTrialWithLead>,

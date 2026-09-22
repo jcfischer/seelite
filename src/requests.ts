@@ -404,22 +404,25 @@ export function requestAction(
 			return refuse("This job's objective is already satisfied.");
 		if (!sameStation(ctx.docked, terms.reportAt))
 			return refuse(`Dock at ${terms.reportName} to deliver.`);
+		// Unwrapped once per branch. The operand is one level deeper than the
+		// three fields it replaced, and spelling the path at every use put
+		// every sentence in this branch over the line width for no reader's
+		// benefit.
+		const { goodName, tonnes, entrusted } = terms.operand;
 		const entrustedByLotId = { ...state.entrustedByLotId };
 		let cargoDelta: Record<string, number> = {};
-		if (terms.operand.entrusted) {
+		if (entrusted) {
 			const lot = Object.values(state.entrustedByLotId).find(
 				(l) =>
 					l.offerId === id && l.issuedOrdinal === request.acceptanceOrdinal,
 			);
-			if (!lot || lot.aboardT < terms.operand.tonnes)
+			if (!lot || lot.aboardT < tonnes)
 				return refuse("The consignment is not aboard.");
 			delete entrustedByLotId[lot.lotId];
 		} else {
-			if ((ctx.cargo[terms.operand.goodName] ?? 0) < terms.operand.tonnes)
-				return refuse(
-					`Needs ${terms.operand.tonnes} t ${terms.operand.goodName} aboard to deliver.`,
-				);
-			cargoDelta = { [terms.operand.goodName]: -terms.operand.tonnes };
+			if ((ctx.cargo[goodName] ?? 0) < tonnes)
+				return refuse(`Needs ${tonnes} t ${goodName} aboard to deliver.`);
+			cargoDelta = { [goodName]: -tonnes };
 		}
 		request.evidence = [
 			...request.evidence,
@@ -434,9 +437,9 @@ export function requestAction(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
 			// The two families move different cargo and the message said the
 			// same thing for both (#446).
-			terms.operand.entrusted
-				? `${terms.operand.tonnes} t ${terms.operand.goodName} handed over — the requester's, and out of your hold. Report to settle.`
-				: `${terms.operand.tonnes} t ${terms.operand.goodName} delivered from your hold. Report to settle.`,
+			entrusted
+				? `${tonnes} t ${goodName} handed over — the requester's, and out of your hold. Report to settle.`
+				: `${tonnes} t ${goodName} delivered from your hold. Report to settle.`,
 			{ cargoDelta },
 		);
 	}
@@ -461,6 +464,9 @@ export function requestAction(
 			// which is the pilot's own hold at the moment of the report — the
 			// delivery's delta has already been applied by then.
 			settlementMessage({
+				// Named rather than spread from the operand. A spread would carry
+				// `kind` in too, and the leak this whole change pins at the save
+				// boundary is the same mistake one call deeper.
 				tonnes: terms.operand.tonnes,
 				goodName: terms.operand.goodName,
 				entrusted: terms.operand.entrusted,
