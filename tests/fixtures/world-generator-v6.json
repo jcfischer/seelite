@@ -1,0 +1,135 @@
+{
+	"worldSchemaVersion": 3,
+	"worldGeneratorVersion": 6,
+	"seed": 6218014,
+	"gameTime": 100,
+	"galaxies": [
+		{
+			"galaxyIndex": 0,
+			"objective": {
+				"3:relay-00": {
+					"instanceOrdinal": 0,
+					"condition": "destroyed",
+					"scheduled": {
+						"processId": "3:relay-00#1:replacement",
+						"consequenceArea": "route:3:station-trade",
+						"startsAt": 1300,
+						"completesAt": 3700,
+						"initiatedBy": {
+							"causeKind": "relay-replacement",
+							"actorId": "raider-network-3",
+							"playerRole": "none"
+						}
+					}
+				}
+			},
+			"episodes": {
+				"3:relay-00": {
+					"ordinal": 1,
+					"initiating": {
+						"key": "3:relay-00",
+						"instanceOrdinal": 0,
+						"episodeOrdinal": 1,
+						"kind": "destroy",
+						"occurredAt": 100,
+						"cause": {
+							"causeKind": "player-weapons",
+							"actorId": "player",
+							"playerRole": "direct"
+						}
+					},
+					"latest": {
+						"key": "3:relay-00",
+						"instanceOrdinal": 0,
+						"episodeOrdinal": 1,
+						"kind": "destroy",
+						"occurredAt": 100,
+						"cause": {
+							"causeKind": "player-weapons",
+							"actorId": "player",
+							"playerRole": "direct"
+						}
+					},
+					"closed": false
+				}
+			},
+			"knowledge": {
+				"3:relay-00": {
+					"observedInstanceOrdinal": 0,
+					"observedCondition": "destroyed",
+					"observedAt": 100,
+					"source": "intervention"
+				}
+			},
+			"deficits": {
+				"3:station-trade": { "goods": { "Food": 20 }, "updatedAt": 1 }
+			},
+			"visited": [3],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 1,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 2,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 3,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 4,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 5,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 6,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		},
+		{
+			"galaxyIndex": 7,
+			"objective": {},
+			"episodes": {},
+			"knowledge": {},
+			"deficits": {},
+			"visited": [],
+			"legalStatus": { "heat": 0, "updatedAt": 0 }
+		}
+	],
+	"integrity": 2812318632
+}

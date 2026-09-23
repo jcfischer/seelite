@@ -394,20 +394,18 @@ import {
 	RELAY_IDENTIFY_RANGE_KM,
 	RELAY_INTEGRITY,
 	RELAY_NAME,
-	type RelayPlan,
 	type RelaySignal,
 	relayDestruction,
 	relayDetection,
 	relayInSights,
 	relayLog,
-	relayPlan,
 	relayPosition,
 	relayIdentified,
 	relayScannerFitted,
 	relaySignal,
-	relaySlot,
 	relayVelocity,
 } from "./pirate-relay";
+import { type RelayPlan, relayPlan, relaySlot } from "./relay-slot";
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {

@@ -13,8 +13,8 @@
  * whether or not the system's relay is *active*: activity is a runtime roll
  * (`pirate-relay.ts`), so re-tuning it is not a generator bump.
  *
- * Imports the generator's contents type, the galaxy's stream helper and
- * leaves, and nothing that renders or simulates.
+ * Imports the generator's contents and orbit types, the galaxy's stream helper,
+ * the domain table and the hull id type, and nothing that renders or simulates.
  */
 import { type CarrierKey, carrierKey } from "./carrier-key";
 import { DOMAIN } from "./domains";

@@ -31,13 +31,9 @@
  */
 
 import { carrierKey } from "../src/carrier-key";
-import { GALAXY_COUNT } from "../src/world-state";
+import { enumerateCarriers, GALAXY_COUNT } from "../src/world-state";
 import { generateGalaxy } from "../src/galaxy";
 import { COMMODITIES } from "../src/market";
-import { raiderSlots } from "../src/raider-slots";
-import { relayPlan, relaySlot, relayTenderSlot } from "../src/relay-slot";
-import { stationTrafficRoster } from "../src/station-traffic";
-import { generateContents } from "../src/system";
 import {
 	type GalaxyEnvelope,
 	newWorld,
@@ -192,90 +188,74 @@ function build(tier: Tier): Row {
 		// berths above are not in it: a sustained-fire charge is filed against
 		// the ship, not the station.
 		const flown: ReturnType<typeof carrierKey>[] = [];
-		for (const record of records) {
-			const contents = generateContents(record);
-			const keys: string[] = [];
-			for (const station of contents.stations) {
-				const berth = carrierKey(record.index, station.localCarrierId);
-				keys.push(berth);
-				berths.push(berth);
-				if (tier.everyCarrier)
-					for (const actor of stationTrafficRoster(record.index, station)) {
-						keys.push(actor.key);
-						flown.push(actor.key);
-					}
-			}
-			// The system's own slots — #324's raiders and #351's relay and its
-			// tender — ride the saturated tier with the Traffic: each is a carrier
-			// a kill writes a row for. The raiders were missing from this ceiling
-			// between #324 and #351.
-			if (tier.everyCarrier) {
-				for (const slot of raiderSlots(record.index, record.government))
-					keys.push(slot.key);
-				if (relayPlan(contents, record.seed))
-					keys.push(
-						relaySlot(record.index).key,
-						relayTenderSlot(record.index).key,
-					);
-			}
-			for (const key of keys as ReturnType<typeof carrierKey>[]) {
-				carriers++;
-				inGalaxy++;
-				if (tier.objective) {
-					env.objective[key] = {
+		// Every carrier the generator enumerates, so a kind added there reaches this
+		// ceiling without a copy here: the raiders were missing from it between
+		// #324 and #351 because this loop listed kinds by hand.
+		const keys: ReturnType<typeof carrierKey>[] = [];
+		for (const c of enumerateCarriers(SEED, g)) {
+			if (c.systemIndex >= tier.systems) continue;
+			if (c.kind === "station") berths.push(c.key);
+			else if (!tier.everyCarrier) continue;
+			else if (c.kind === "traffic") flown.push(c.key);
+			keys.push(c.key);
+		}
+		for (const key of keys) {
+			carriers++;
+			inGalaxy++;
+			if (tier.objective) {
+				env.objective[key] = {
+					instanceOrdinal: 3,
+					condition: "repairing",
+					recovery: {
+						kind: "replacement",
+						processId: `${key}#e7#replacement`,
+						consequenceArea: "station-services",
+						startedAt: 123456.789,
+						completesAt: 234567.891,
+						initiatedBy: {
+							causeKind: "player-attack",
+							actorId: "player",
+							playerRole: "direct",
+						},
+					},
+				};
+				const fact = (kind: "destroy" | "replacement-start" | "interrupt") =>
+					({
+						key,
 						instanceOrdinal: 3,
-						condition: "repairing",
-						recovery: {
-							kind: "replacement",
-							processId: `${key}#e7#replacement`,
-							consequenceArea: "station-services",
-							startedAt: 123456.789,
-							completesAt: 234567.891,
-							initiatedBy: {
-								causeKind: "player-attack",
-								actorId: "player",
-								playerRole: "direct",
-							},
+						episodeOrdinal: 7,
+						kind,
+						occurredAt: 123456.789,
+						cause: {
+							causeKind: "player-attack",
+							actorId: "player",
+							playerRole: "direct",
 						},
-					};
-					const fact = (kind: "destroy" | "replacement-start" | "interrupt") =>
-						({
-							key,
-							instanceOrdinal: 3,
-							episodeOrdinal: 7,
-							kind,
-							occurredAt: 123456.789,
-							cause: {
-								causeKind: "player-attack",
-								actorId: "player",
-								playerRole: "direct",
-							},
-							processId: `${key}#e7#replacement`,
-						}) as const;
-					env.episodes[key] = {
-						ordinal: 7,
-						initiating: fact("destroy"),
-						intervention: fact("replacement-start"),
-						latest: fact("interrupt"),
-						closed: false,
-					};
-				}
-				if (tier.knowledge)
-					env.knowledge[key] = {
-						observedInstanceOrdinal: 1,
-						observedCondition: "operational",
-						observedAt: 123456.789,
-						source: "system-relay",
-						knownPrivateFacts: {
-							blackMarket: { learnedAt: 123456.789, source: "docking" },
-						},
-					};
-				if (tier.deficitGoods > 0) {
-					const goods: Record<string, number> = {};
-					for (const name of GOODS.slice(0, tier.deficitGoods))
-						goods[name] = -63.4;
-					env.deficits[key] = { goods, updatedAt: 123456.789 };
-				}
+						processId: `${key}#e7#replacement`,
+					}) as const;
+				env.episodes[key] = {
+					ordinal: 7,
+					initiating: fact("destroy"),
+					intervention: fact("replacement-start"),
+					latest: fact("interrupt"),
+					closed: false,
+				};
+			}
+			if (tier.knowledge)
+				env.knowledge[key] = {
+					observedInstanceOrdinal: 1,
+					observedCondition: "operational",
+					observedAt: 123456.789,
+					source: "system-relay",
+					knownPrivateFacts: {
+						blackMarket: { learnedAt: 123456.789, source: "docking" },
+					},
+				};
+			if (tier.deficitGoods > 0) {
+				const goods: Record<string, number> = {};
+				for (const name of GOODS.slice(0, tier.deficitGoods))
+					goods[name] = -63.4;
+				env.deficits[key] = { goods, updatedAt: 123456.789 };
 			}
 		}
 		// **Keys must be distinct per carrier**, or the counter and the store

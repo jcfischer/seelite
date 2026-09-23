@@ -55,19 +55,6 @@ import type {
 	TransitionEvent,
 } from "./world-state";
 
-export {
-	RELAY_LOCAL_CARRIER_ID,
-	RELAY_OFFPLANE_KM,
-	RELAY_REGION_KM,
-	RELAY_STANDOFF_KM,
-	RELAY_TENDER_LOCAL_CARRIER_ID,
-	type RelayPlan,
-	type RelaySlot,
-	relayPlan,
-	relaySlot,
-	relayTenderSlot,
-} from "./relay-slot";
-
 /** What the cockpit calls it once identified, and what the log calls it. */
 export const RELAY_NAME = "Pirate relay";
 
