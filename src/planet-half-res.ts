@@ -65,6 +65,70 @@ export class PlanetHalfResolution {
 		this.allowed = allowed;
 	}
 
+	private ensureTarget(width: number, height: number) {
+		if (!this.target) {
+			this.target = new THREE.WebGLRenderTarget(width, height, {
+				type: THREE.HalfFloatType,
+				minFilter: THREE.LinearFilter,
+				magFilter: THREE.LinearFilter,
+				depthBuffer: true,
+			});
+			this.target.texture.name = "planet-surface-half-res";
+		} else if (this.target.width !== width || this.target.height !== height) {
+			this.target.setSize(width, height);
+		}
+		return this.target;
+	}
+
+	/** Compile the same surface programs against the half target that a later
+	 * prepass will use. A target's output colour space is a program key. */
+	prewarmSurfaces(
+		renderer: THREE.WebGLRenderer,
+		camera: THREE.PerspectiveCamera,
+		surfaces: readonly SurfaceMesh[],
+	) {
+		const scene = new THREE.Scene();
+		const geometry = new THREE.SphereGeometry(1, 8, 6);
+		for (const surface of surfaces) {
+			const mesh = new THREE.Mesh(geometry, surface.material);
+			mesh.position.z = -5;
+			scene.add(mesh);
+		}
+		const was = renderer.getRenderTarget();
+		renderer.setRenderTarget(this.ensureTarget(1, 1));
+		try {
+			renderer.compile(scene, camera);
+		} finally {
+			renderer.setRenderTarget(was);
+			geometry.dispose();
+		}
+	}
+
+	/** Compile the full-size blit before the first close approach. */
+	prewarmComposite(
+		renderer: THREE.WebGLRenderer,
+		camera: THREE.PerspectiveCamera,
+		composerTarget: THREE.WebGLRenderTarget,
+	) {
+		const scene = new THREE.Scene();
+		const geometry = new THREE.PlaneGeometry(1, 1);
+		const mesh = new THREE.Mesh(geometry, this.composite);
+		mesh.position.z = -5;
+		scene.add(mesh);
+		// The real approach pass has one sun and one hemisphere. ShaderMaterial
+		// still includes their counts in its program key, even when it reads no
+		// light uniforms of its own.
+		scene.add(new THREE.DirectionalLight(), new THREE.HemisphereLight());
+		const was = renderer.getRenderTarget();
+		renderer.setRenderTarget(composerTarget);
+		try {
+			renderer.compile(scene, camera);
+		} finally {
+			renderer.setRenderTarget(was);
+			geometry.dispose();
+		}
+	}
+
 	/** Run the surface-only draw, attach the full-size composite material, and
 	 * return a restoration callback for the composer call's finally block. */
 	begin(
@@ -77,21 +141,8 @@ export class PlanetHalfResolution {
 		if (!this.engaged) return () => {};
 		renderer.getDrawingBufferSize(this.fullSize);
 		const size = halfTargetSize(this.fullSize.x, this.fullSize.y);
-		if (!this.target) {
-			this.target = new THREE.WebGLRenderTarget(size.width, size.height, {
-				type: THREE.HalfFloatType,
-				minFilter: THREE.LinearFilter,
-				magFilter: THREE.LinearFilter,
-				depthBuffer: true,
-			});
-			this.target.texture.name = "planet-surface-half-res";
-		} else if (
-			this.target.width !== size.width ||
-			this.target.height !== size.height
-		) {
-			this.target.setSize(size.width, size.height);
-		}
-		this.composite.uniforms.lowRes.value = this.target.texture;
+		const target = this.ensureTarget(size.width, size.height);
+		this.composite.uniforms.lowRes.value = target.texture;
 		(this.composite.uniforms.invFullSize.value as THREE.Vector2).set(
 			1 / this.fullSize.x,
 			1 / this.fullSize.y,
@@ -104,7 +155,7 @@ export class PlanetHalfResolution {
 		try {
 			for (const surface of surfaces) surface.layers.enable(1);
 			camera.layers.set(1);
-			renderer.setRenderTarget(this.target);
+			renderer.setRenderTarget(target);
 			renderer.setClearColor(0x000000, 0);
 			renderer.clear(true, true, true);
 			renderer.render(scene, camera);

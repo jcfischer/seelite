@@ -71,8 +71,15 @@ for (const viewport of VIEWPORTS) {
 			cockpit.physicalCockpit &&
 			!cockpit.duplicateDomFloor,
 	);
+	const framesBeforeChase = await page.evaluate(() => window.__seelite.frames);
 	await page.keyboard.press("v");
 	await page.waitForFunction(() => window.__seelite?.view === "chase");
+	// The key changes the view immediately; visibility and offset are written
+	// by render. At the narrow viewport the old read sometimes beat that frame.
+	await page.waitForFunction(
+		(before) => window.__seelite.frames > before + 1,
+		framesBeforeChase,
+	);
 	const chase = await page.evaluate(state);
 	check(
 		`${viewport.name}: chase exposes the named courier silhouette`,

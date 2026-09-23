@@ -2229,16 +2229,29 @@ if (airless) {
  * geometry writes the depth and edge. Compare the equatorial limb with the
  * same frame drawn at full resolution, keeping the clock and placement fixed. */
 {
-	const subject = await page.evaluate(
+	// Earlier surface/class probes deliberately hide and replace live objects.
+	// Use a fresh game so this row measures the shipped scene.
+	const halfPage = await browser.newPage({ viewport: VIEW });
+	watch(halfPage, "half-resolution");
+	await installHelpers(halfPage);
+	await installViewPlacement(halfPage);
+	await installViewFraming(halfPage);
+	await halfPage.goto(URL, { waitUntil: "domcontentloaded" });
+	await bootedGame(halfPage);
+	const subject = await halfPage.evaluate(
 		() =>
 			window.__seelite.world.system.bodies.find(
 				(body) =>
 					window.__seelite.bodyVisuals.get(body.id)?.surface === "terran",
 			)?.id,
 	);
-	check("the half-resolution limb fixture has a terran body", Boolean(subject), String(subject));
+	check(
+		"the half-resolution limb fixture has a terran body",
+		Boolean(subject),
+		String(subject),
+	);
 	if (subject) {
-		const result = await page.evaluate((id) => {
+		const result = await halfPage.evaluate((id) => {
 			const game = window.__seelite;
 			game.settings.set("quality", "high");
 			window.__sunOffset(id, 2.5, 60);
@@ -2257,24 +2270,39 @@ if (airless) {
 			group.visible = false;
 			const background = frame();
 			group.visible = true;
-			const w = 900;
-			const y = 450;
-			const lumaDelta = (a, b, x) => {
+			// __framePixels intentionally downsamples the 900 px viewport to 300.
+			const w = 300;
+			const y = 150;
+			const body = game.world.system.byId.get(id);
+			const ship = game.world.ship.pos;
+			const distance = Math.hypot(
+				body.pos.x - ship.x,
+				body.pos.y - ship.y,
+				body.pos.z - ship.z,
+			);
+			const focal = y / Math.tan((game.approachCamera.fov * Math.PI) / 360);
+			const expectedEdge = Math.round(
+				w / 2 -
+					(focal * body.radiusKm) /
+						Math.sqrt(distance * distance - body.radiusKm * body.radiusKm),
+			);
+			const contrast = (x) => {
 				const i = (y * w + x) * 4;
 				return (
-					Math.abs(a[i] - b[i]) +
-					Math.abs(a[i + 1] - b[i + 1]) +
-					Math.abs(a[i + 2] - b[i + 2])
+					Math.abs(full[i] - background[i]) +
+					Math.abs(full[i + 1] - background[i + 1]) +
+					Math.abs(full[i + 2] - background[i + 2])
 				);
 			};
-			let edge = 0;
-			for (let x = w / 2; x > 10; x--) {
-				if (lumaDelta(full, background, x) < 35) {
+			let edge = -1;
+			for (let x = Math.max(1, expectedEdge - 20); x < expectedEdge + 20; x++) {
+				if (contrast(x) > 30 && contrast(x + 1) > 30) {
 					edge = x;
 					break;
 				}
 			}
 			const maxStep = (pixels) => {
+				if (edge < 8) return 0;
 				let max = 0;
 				for (let x = edge - 8; x <= edge + 8; x++) {
 					const a = (y * w + x) * 4;
@@ -2290,6 +2318,8 @@ if (airless) {
 			return {
 				target,
 				fullSize,
+				centerContrast: contrast(w / 2),
+				expectedEdge,
 				edge,
 				fullStep: maxStep(full),
 				halfStep: maxStep(half),
@@ -2304,10 +2334,14 @@ if (airless) {
 		);
 		check(
 			"the full-size limb adds no step above 32 display codes per channel",
-			result.edge > 10 && result.halfStep <= result.fullStep + 96,
-			`edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep} (RGB code sum)`,
+			result.centerContrast > 100 &&
+				result.edge > 8 &&
+				result.fullStep > 10 &&
+				result.halfStep <= result.fullStep + 96,
+			`center contrast ${result.centerContrast}, expected edge ${result.expectedEdge}, measured edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep} (RGB code sum)`,
 		);
 	}
+	await halfPage.close();
 }
 
 await browser.close();

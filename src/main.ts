@@ -4346,7 +4346,15 @@ class Game {
 		// path, where the previous system's bodies were, that this is for.
 		this.setBakeAllowed(false);
 		const paths = RELIEF_PATHS;
+		const surfaceScenes = [
+			[this.farScene, this.farCamera],
+			[this.approachScene, this.approachCamera],
+			[this.nearScene, this.nearCamera],
+		] as const;
 		const before = new Map<string, ReliefPath>();
+		const surfaces = [...this.bodyVisuals.values()].map(
+			(visual) => visual.surfaceMesh,
+		);
 		for (const [id, visual] of this.bodyVisuals)
 			before.set(id, visual.reliefPath());
 		for (const path of paths) {
@@ -4355,12 +4363,13 @@ class Game {
 			// would switch #207's selector off for the whole session.
 			for (const visual of this.bodyVisuals.values())
 				visual.applyReliefBand(path);
-			for (const [scene, camera] of [
-				[this.farScene, this.farCamera],
-				[this.approachScene, this.approachCamera],
-				[this.nearScene, this.nearCamera],
-			] as const)
+			for (const [scene, camera] of surfaceScenes)
 				this.renderer.compile(scene, camera);
+			this.planetHalfRes.prewarmSurfaces(
+				this.renderer,
+				this.approachCamera,
+				surfaces,
+			);
 		}
 		for (const [id, visual] of this.bodyVisuals) {
 			const was = before.get(id);
@@ -4391,14 +4400,20 @@ class Game {
 			if (undo) restores.push(undo);
 		}
 		if (restores.length > 0) {
-			for (const [scene, camera] of [
-				[this.farScene, this.farCamera],
-				[this.approachScene, this.approachCamera],
-				[this.nearScene, this.nearCamera],
-			] as const)
+			for (const [scene, camera] of surfaceScenes)
 				this.renderer.compile(scene, camera);
+			this.planetHalfRes.prewarmSurfaces(
+				this.renderer,
+				this.approachCamera,
+				surfaces,
+			);
 			for (const undo of restores) undo();
 		}
+		this.planetHalfRes.prewarmComposite(
+			this.renderer,
+			this.approachCamera,
+			this.composer.renderTarget1,
+		);
 		this.renderer.setRenderTarget(wasTarget);
 	}
 
