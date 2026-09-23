@@ -19,12 +19,21 @@
  *
  * ## The way out is a click, and that is the bootstrap
  *
- * `capture` swallows all seventeen pad buttons and every key reaches this as
- * a candidate, so neither device holds an exit. The cancel is a control on the
- * screen, by the principal's ruling — and #370's standing premise that a
- * screen is always clickable is what makes that a guarantee rather than a
- * hope. It is the same argument that gives the `Controls` tab its settings
- * door: a way in that no binding table can hold.
+ * `capture` swallows all seventeen pad buttons, so the **pad** holds no exit
+ * at all. The cancel is a control on the screen, by the principal's ruling —
+ * and #370's standing premise that a screen is always clickable is what makes
+ * that a guarantee rather than a hope. It is the same argument that gives the
+ * `Controls` tab its settings door: a way in that no binding table can hold.
+ *
+ * **The keyboard does keep one, and it is `Escape`.** This paragraph claimed
+ * neither device held an exit for two rounds (sage rounds 1 and 3 on #497;
+ * the round-1 fix was lost to a `git checkout` during a red build and went
+ * back in unnoticed). Every other key reaches this as a candidate and
+ * `Escape` closes instead, so it is the one key a capture cannot record —
+ * the same cost the pad refused to pay for Circle, paid here and now said.
+ * It is a courtesy exit rather than the guarantee: `Escape` is what every
+ * dialog in this game closes on, a player who wanted a control there has
+ * chosen that key, and the *click* is what the bootstrap actually rests on.
  *
  * ## One owner for what it prints
  *
@@ -36,6 +45,7 @@
  */
 import type { CommandId, Layout, RebindRefusal, Trigger } from "./commands";
 import type { ControlsCatalogue } from "./controls-catalogue";
+import { heldRather } from "./commands";
 import {
 	CAPTURE_REFUSED_WHY,
 	noticeText,
@@ -108,28 +118,17 @@ export function offered(
 						// Alt chord it takes the character the *position* types
 						// rather than the one Option sent. Showing what was
 						// offered meant a captured `Alt+D` on macOS read
-						// `Alt + ∂` on screen and was bound as `Alt + d`, so the
-						// modal named a key nobody has.
-						to: storedTrigger(bindings, out.layout) ?? to,
+						// `Alt + ∂` on screen and was bound as `Alt + d`.
+						//
+						// Handed back by `proposedRebind` rather than inferred
+						// from the candidate's slot identity, which was round 2's
+						// fix and rested on an implementation detail of `rebind`
+						// (round 3).
+						to: out.stored,
 						layout: out.layout,
 						warnings: out.warnings,
 					},
 	};
-}
-
-/**
- * The one row `rebind` replaced, read back out of the candidate.
- *
- * `rebind` returns a new table with one slot rewritten and every other slot
- * the same object, so the changed row is the first slot whose identity moved.
- * That is cheaper and steadier than re-deriving the move: it asks the layout
- * what happened rather than repeating the arithmetic that made it, which is
- * the second implementation this repo keeps finding.
- */
-function storedTrigger(before: Layout, after: Layout): Trigger | null {
-	for (const [i, row] of after.entries())
-		if (row !== before[i]) return row.trigger;
-	return null;
 }
 
 /**
@@ -157,8 +156,7 @@ function storedTrigger(before: Layout, after: Layout): Trigger | null {
  * press the command cannot fly.
  */
 function qualifiedLike(from: Trigger, to: Trigger): Trigger {
-	const hold =
-		from.kind === "key" || from.kind === "pad-button" ? from.hold : undefined;
+	const hold = heldRather(from);
 	if (to.kind === "key") {
 		const alt = from.kind === "key" ? from.alt : undefined;
 		const surface = from.kind === "key" ? from.surface : undefined;

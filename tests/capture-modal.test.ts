@@ -195,6 +195,23 @@ describe("the capture says which key and the command says the rest", () => {
 	 * key:k::press`. That is the storage slice's defect on a different screen.
 	 */
 	const PITCH = shippedTrigger("fly.pitchUp");
+	/**
+	 * `view.headPort`'s Alt row.
+	 *
+	 * `shippedTrigger` takes a kind and not a qualifier, and this command has
+	 * three key triggers — so the lookup is here once rather than in each of
+	 * the two rows that need it (sage round 3 on #497).
+	 */
+	const chordRow = (): Trigger => {
+		const found = DEFAULT_BINDINGS.find(
+			(b) =>
+				b.command === "view.headPort" &&
+				b.trigger.kind === "key" &&
+				b.trigger.alt === true,
+		);
+		if (!found) throw new Error("view.headPort has no Alt row");
+		return found.trigger;
+	};
 
 	test("a held control captures a held key", () => {
 		const session = offered(
@@ -227,15 +244,8 @@ describe("the capture says which key and the command says the rest", () => {
 	test("a chord row captures a bare key as a chord", () => {
 		// `alt` travels with `hold`, and the label the modal prints is the
 		// completed trigger — so what will be bound is what the player reads.
-		const chord = DEFAULT_BINDINGS.find(
-			(b) =>
-				b.command === "view.headPort" &&
-				b.trigger.kind === "key" &&
-				b.trigger.alt === true,
-		)?.trigger;
-		if (!chord) throw new Error("no chord row");
 		const session = offered(
-			openCapture("view.headPort", chord),
+			openCapture("view.headPort", chordRow()),
 			DEFAULT_BINDINGS,
 			{ kind: "key", key: "q" },
 		);
@@ -253,15 +263,8 @@ describe("the capture says which key and the command says the rest", () => {
 		// `Alt + ∂` and the row named a key nobody has. `movedTrigger`
 		// normalises from the code now, so every producer of an Alt trigger
 		// gets the rule rather than just `chordsFor`.
-		const chord = DEFAULT_BINDINGS.find(
-			(b) =>
-				b.command === "view.headPort" &&
-				b.trigger.kind === "key" &&
-				b.trigger.alt === true,
-		)?.trigger;
-		if (!chord) throw new Error("no chord row");
 		const session = offered(
-			openCapture("view.headPort", chord),
+			openCapture("view.headPort", chordRow()),
 			DEFAULT_BINDINGS,
 			{ kind: "key", key: "∂", code: "KeyD" },
 		);

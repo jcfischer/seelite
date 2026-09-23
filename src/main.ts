@@ -575,6 +575,24 @@ import {
 	type Trigger,
 } from "./commands";
 import { keyDispatch } from "./key-dispatch";
+
+/**
+ * The keys that are only ever half of a press, for the capture modal.
+ *
+ * `KeyboardEvent.key` as it arrives, not lowercased: these are the spellings
+ * the platform uses. A modifier reaches the capture as a keydown of its own —
+ * `Shift` is the first half of `Shift+/`, which is how the `Controls` tab is
+ * opened — and binding a control to it would make every chord that uses it
+ * fire the control first.
+ */
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+	"Shift",
+	"Control",
+	"Alt",
+	"Meta",
+	"AltGraph",
+	"CapsLock",
+]);
 import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
@@ -7863,14 +7881,29 @@ class Game {
 		// premise); this is the courtesy one.
 		if (this.captureModal?.isOpen()) {
 			e.preventDefault();
-			if (e.key === "Escape") this.captureModal.close();
-			else
-				this.captureModal.offer({
-					kind: "key",
-					key: e.key.toLowerCase(),
-					code: e.code,
-					...(route.kind === "chord" ? { alt: true as const } : {}),
-				});
+			if (e.key === "Escape") {
+				this.captureModal.close();
+				return;
+			}
+			// **A modifier on its own is not a candidate** (sage round 3 on
+			// #497). A lone `Shift` — the first half of `Shift+/`, which is how
+			// this tab is opened — arrived as a key called `shift` with a live
+			// "Bind it" beside it. The same for `Alt`, which is the *prefix* of
+			// every chord this game has, and for `Meta`, whose own keydown
+			// would otherwise be bound while `preventDefault` ate the browser
+			// shortcut the player was reaching for.
+			//
+			// **And a repeat is the same press.** Held down, every repeat ran a
+			// whole `rebind`, a `layoutOf` freeze, a `collisions` scan and an
+			// `innerHTML` replacement at the OS repeat rate, all to produce the
+			// answer already on screen.
+			if (e.repeat || MODIFIER_KEYS.has(e.key)) return;
+			this.captureModal.offer({
+				kind: "key",
+				key: e.key.toLowerCase(),
+				code: e.code,
+				...(route.kind === "chord" ? { alt: true as const } : {}),
+			});
 			return;
 		}
 		if (route.kind === "swallow") {

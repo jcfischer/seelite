@@ -210,8 +210,14 @@ export interface PadIntents {
 	readonly instrument: boolean;
 }
 
-/** The two buttons that are pulls rather than presses; see `padIntents`. */
-const ANALOG_TRIGGERS: readonly PadButtonName[] = ["l2", "r2"];
+/**
+ * The two buttons that are pulls rather than presses; see `padIntents`.
+ *
+ * Exported because `capturedTrigger` in `commands.ts` needs the same law — a
+ * capture must not record a full pull as a button press — and it had the pair
+ * written out again (sage round 3 on #497).
+ */
+export const ANALOG_TRIGGERS: readonly PadButtonName[] = ["l2", "r2"];
 
 const NO_INTENTS: PadIntents = {
 	buttons: [],

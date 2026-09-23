@@ -69,6 +69,7 @@
 import { COMMANDER_KEY } from "./commander-overlay";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import {
+	ANALOG_TRIGGERS,
 	type PadContext,
 	type PadIntents,
 	padFireHeld,
@@ -1196,6 +1197,11 @@ function padIntentTriggers(
 // The registry
 // ---------------------------------------------------------------------------
 
+/** Every context but the one that exists to swallow input; see `scopeOf`. */
+const NOT_WHILE_CAPTURING: readonly PadContext[] = PAD_CONTEXTS.filter(
+	(c) => c !== "capture",
+);
+
 /**
  * Where a binding is live: D4's context set, both halves of it.
  *
@@ -1290,11 +1296,6 @@ export interface Binding {
  * change to what a note *prints* for every keyboard row, which is #370's
  * screen rather than this node's.
  */
-/** Every context but the one that exists to swallow input; see `scopeOf`. */
-const NOT_WHILE_CAPTURING: readonly PadContext[] = PAD_CONTEXTS.filter(
-	(c) => c !== "capture",
-);
-
 const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 	const pad =
 		"contexts" in trigger
@@ -1400,9 +1401,13 @@ export type Layout = readonly Binding[] & { readonly [LAYOUT]: true };
  * context constants, so this freezes those too. That is intended: they are
  * read-only by contract everywhere already.
  *
- * **This is the only cast to `Layout` in the repo**, which is what makes the
- * brand mean anything; a second one is a second producer and the type is back
- * to being a comment.
+ * **This is the only cast to `Layout` in `src/`**, which is what makes the
+ * brand mean anything; a second one there is a second producer and the type is
+ * back to being a comment. It said "in the repo" for three rounds and that was
+ * false (sage round 3 on #497): two tests cast deliberately — one stands in
+ * for a JavaScript caller the brand cannot reach, one builds a truncated table
+ * on purpose — and `tests/commands.test.ts`'s guard row has always scanned
+ * `src/` and said so.
  */
 export const layoutOf = (rows: readonly Binding[]): Layout => {
 	for (const b of rows) {
@@ -1704,7 +1709,10 @@ export function capturedTrigger(
 	if (!frame?.connected) return null;
 
 	for (const button of frame.pressed) {
-		if (button === "l2" || button === "r2") continue;
+		// The same law `padIntents` applies, asked of the module that owns it:
+		// a full pull reports `pressed`, and a trigger read as a switch is a
+		// key with extra steps.
+		if (ANALOG_TRIGGERS.includes(button)) continue;
 		// **Recorded even when it falls through nowhere, so the modal can say
 		// so** (sage round 2 on #497). This used to `continue`, which left the
 		// doc claiming such a button was "refused" while the player pressing
@@ -2055,8 +2063,8 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 			// The contexts are the **button's**, asked of `pad-bindings.ts`
 			// through the derivation the shipped rows came from — so a caller
 			// that hands over a set of its own gets the button's anyway.
-			const contexts = PRESSES.flight.get(to.button);
-			if (contexts === undefined || contexts.length === 0)
+			const contexts = buttonContexts(to.button);
+			if (contexts === null)
 				throw new RebindRefused(
 					"live-nowhere",
 					`${to.button} is claimed in every context, so a binding on it is live nowhere`,
@@ -2155,8 +2163,16 @@ const keptQualifiers = (from: Trigger, to: Trigger) =>
 		`a rebind may move a trigger, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
 	);
 
-/** Whether this trigger is held rather than pressed, on the kinds that say. */
-const heldRather = (t: Trigger): boolean | undefined =>
+/**
+ * Whether this trigger is held rather than pressed, on the kinds that say.
+ *
+ * Exported because the capture modal completes a captured trigger with the
+ * command's qualifiers and needs the same answer — `movedTrigger` *enforces*
+ * the rule and `qualifiedLike` supplies it, so a second copy of "which kinds
+ * carry hold" would let the two disagree about one qualifier (sage round 3
+ * on #497).
+ */
+export const heldRather = (t: Trigger): true | undefined =>
 	t.kind === "key" || t.kind === "pad-button" ? t.hold : undefined;
 
 /** Whether a command's existing trigger is one a player may move at all. */

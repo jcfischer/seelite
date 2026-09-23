@@ -242,8 +242,35 @@ export function proposedRebind(
 	from: Trigger,
 	to: Trigger,
 ):
-	| { readonly layout: Layout; readonly warnings: LayoutNotice[] }
+	| {
+			readonly layout: Layout;
+			/**
+			 * The trigger the registry actually stored.
+			 *
+			 * **Returned rather than inferred** (sage round 3 on #497). The
+			 * modal has to *show* what it will bind, and `movedTrigger`
+			 * completes a captured trigger — it derives a missing code and
+			 * takes an Alt chord's character from its position. The first fix
+			 * read the changed row back by comparing slot identity against the
+			 * table before it, which is an undocumented property of `rebind`'s
+			 * implementation rather than its contract: a `rebind` that ever
+			 * copied rows would silently fall back to the offered trigger, and
+			 * the screen would read `Alt + ∂` again.
+			 */
+			readonly stored: Trigger;
+			readonly warnings: LayoutNotice[];
+	  }
 	| { readonly refused: RebindRefusal; readonly detail: string } {
+	// **The slot `rebind` will replace, found the way `rebind` finds it.** It
+	// matches the command and the trigger hash, and rewrites that one index —
+	// so reading the same index back is exact, where searching the result for
+	// "a row that is not `from`" is not: a command may have several triggers,
+	// and `view.headPort` has three, so that search returned whichever came
+	// first (sage round 3 on #497 asked for the stored trigger to be returned
+	// rather than inferred; the first attempt inferred it differently).
+	const at = bindings.findIndex(
+		(b) => b.command === command && triggerKey(b.trigger) === triggerKey(from),
+	);
 	let layout: Layout;
 	try {
 		layout = rebind(bindings, command, from, to);
@@ -254,5 +281,10 @@ export function proposedRebind(
 		if (!(e instanceof RebindRefused)) throw e;
 		return { refused: e.refusal, detail: e.message };
 	}
-	return { layout, warnings: collisionNotices(layout) };
+	// `rebind` throws when nothing matches `from`, so by here `at` is a real
+	// index and the row at it is the one it rewrote.
+	const stored = layout[at]?.trigger;
+	if (stored === undefined)
+		throw new Error(`rebind returned no row at ${at} for ${command}`);
+	return { layout, stored, warnings: collisionNotices(layout) };
 }
