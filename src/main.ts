@@ -288,6 +288,7 @@ import {
 	offAxisKm,
 } from "./docking";
 import {
+	type ConditionPrint,
 	type ShieldSide,
 	type ShipCondition,
 	applyDamage,
@@ -13790,8 +13791,26 @@ class Game {
 	 * The relay is deliberately absent: it has no condition to show, and a line
 	 * of zeros beside its name would be a reading of a fight it does not have.
 	 */
-	private selectedTargetCondition(): ShipCondition | null {
+	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
+		// #351: the relay and its tender carry hull points and no shields, so
+		// their line reads both pools at zero — the truth, in the stripped tone
+		// a ship shows with its shields down. A wreck is no target to shoot and
+		// gets no line (Q12); the panel names its condition instead.
+		if (this.relayShootable())
+			return {
+				fore: 0,
+				aft: 0,
+				hull: this.relayHull,
+				hullMax: RELAY_INTEGRITY,
+			};
+		if (this.tenderSelected())
+			return {
+				fore: 0,
+				aft: 0,
+				hull: this.tenderHull,
+				hullMax: RELAY_TENDER_INTEGRITY,
+			};
 		if (this.trafficSelected())
 			return (
 				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition ??

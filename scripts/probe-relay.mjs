@@ -698,18 +698,20 @@ const relayAim = () =>
 			beamOffDeg,
 			onTarget: g.selectedRender?.onTarget ?? null,
 			designation: display.targetDesignation(g.targetBody()),
+			conditionLine: g.selectedRender?.conditionLine ?? null,
 			km: len,
 		};
 	});
 const wreckAim = await relayAim();
 check(
-	"#351 Q12: a selected wreck stays selectable but is no combat target — no gimbal pull, no on-target mark, RELAY · DESTROYED",
+	"#351 Q12: a selected wreck stays selectable but is no combat target — no gimbal pull, no on-target mark, no condition line, RELAY · DESTROYED",
 	wreckAim.condition === "destroyed" &&
 		wreckAim.selected &&
 		wreckAim.noseOffDeg > 2.5 &&
 		wreckAim.beamOffDeg > 2.5 &&
 		wreckAim.onTarget === false &&
-		wreckAim.designation === "RELAY · DESTROYED",
+		wreckAim.designation === "RELAY · DESTROYED" &&
+		wreckAim.conditionLine === null,
 	JSON.stringify(wreckAim),
 );
 
@@ -807,7 +809,7 @@ check(
 // wreck's row above, and here the beam is pulled onto it and the mark lights.
 const liveAim = await relayAim();
 check(
-	"a selected operational relay pulls the gimbal and earns the on-target mark: three degrees off the nose, the beam is on it",
+	"a selected operational relay pulls the gimbal, earns the on-target mark and shows its shields and hull: three degrees off the nose, the beam is on it",
 	// The beam aims from the camera, 8 m off the ship's position the row measures
 	// from: a quarter of a degree at 2 km, against a hit sphere 2.4° wide there.
 	liveAim.condition === "operational" &&
@@ -815,7 +817,10 @@ check(
 		liveAim.noseOffDeg < 3.5 &&
 		liveAim.beamOffDeg < 1 &&
 		liveAim.onTarget === true &&
-		liveAim.designation === "RELAY · HOSTILE",
+		liveAim.designation === "RELAY · HOSTILE" &&
+		// Its shields and hull under the name, as any ship's in a fight: a relay
+		// has no shields, and the replacement is whole.
+		liveAim.conditionLine === "SHD F 0 A 0  HULL 100%",
 	JSON.stringify(liveAim),
 );
 // The replacement starts whole: one pulse wears it, it does not die (sage
@@ -987,6 +992,7 @@ const tenderGimbal = await page.evaluate(() => {
 		return {
 			noseOffDeg: deg(g.nose(), dir),
 			beamOffDeg: deg(g.beamAim(), dir),
+			conditionLine: g.selectedRender?.conditionLine ?? null,
 		};
 	};
 	const selected = arm(true);
@@ -995,9 +1001,12 @@ const tenderGimbal = await page.evaluate(() => {
 	return { selected, control };
 });
 check(
-	"#351: a selected tender pulls the gimbal onto it; unselected, the beam stays on the boresight",
+	"#351: a selected tender pulls the gimbal onto it and shows its shields and hull; unselected, the beam stays on the boresight",
 	tenderGimbal.selected.noseOffDeg > 2 &&
 		tenderGimbal.selected.beamOffDeg < 1 &&
+		// And its shields and hull under the name, as any ship's: the tug has none
+		// of the first, and it is whole here.
+		tenderGimbal.selected.conditionLine === "SHD F 0 A 0  HULL 100%" &&
 		tenderGimbal.control.noseOffDeg > 2 &&
 		tenderGimbal.control.beamOffDeg > 2,
 	JSON.stringify(tenderGimbal),
