@@ -9,9 +9,9 @@
  * #370's receipt carries the nine rulings; the comments below cite them by
  * their D-number rather than restating them.
  */
-import type { LayoutNotice, RejectReason } from "./binding-store";
+import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
-import type { Surface, TaskGroup, Trigger } from "./commands";
+import type { RebindRefusal, Surface, TaskGroup, Trigger } from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
@@ -101,19 +101,54 @@ export function restoreOnTabPick<T extends string>(
 // The tree
 // ---------------------------------------------------------------------------
 
+/**
+ * The tab's own door to the settings panel (#369 D12).
+ *
+ * **Not a command, which is the whole of it.** D12 makes `z` remappable, and
+ * what keeps that safe is that this tab grows a route to settings that no
+ * binding table holds — #370's "nothing a binding table holds is on the path
+ * to it", extended to the one door that is a letter today. A player who moves
+ * `system.settings` onto a key they then forget still reaches the panel here.
+ *
+ * A string rather than a `CommandId` on purpose: the registry must not have a
+ * row for it, or it would be bindable by the back door and the bootstrap would
+ * be circular again.
+ */
+export const SETTINGS_ACTION = "settings";
+
+/**
+ * Every door the tab can carry.
+ *
+ * A union of one, so a second door is a compile error at every consumer
+ * rather than a `string` that silently falls through `main.ts`'s `if`
+ * (sage round 4 on #497).
+ */
+export type ControlsAction = typeof SETTINGS_ACTION;
+
 export type TreeItem =
 	| { kind: "header"; group: TaskGroup; count: number }
-	| { kind: "row"; command: ControlCommand };
+	| { kind: "row"; command: ControlCommand }
+	/** A door rather than a control; see `SETTINGS_ACTION`. */
+	| { kind: "action"; action: ControlsAction; label: string };
+
+/** The cursor's name for a door, beside `groupFocusId` and `rowFocusId`. */
+export const actionFocusId = (action: string) => `controls-action:${action}`;
 
 /**
  * D6: two levels, group header and rows, in task order. A folded group keeps
  * its header — that is what the player opens it again with.
+ *
+ * **The door comes first**, before any group, so a player who has folded
+ * everything still has it in front of them — and because the thing it is for
+ * is being lost, which is not a state to go hunting in.
  */
 export function controlsTree(
 	catalogue: ControlsCatalogue,
 	collapsed: ReadonlySet<TaskGroup>,
 ): TreeItem[] {
-	const items: TreeItem[] = [];
+	const items: TreeItem[] = [
+		{ kind: "action", action: SETTINGS_ACTION, label: "Settings" },
+	];
 	for (const group of TASK_GROUPS) {
 		const rows = catalogue.commands.filter((c) => c.group === group);
 		items.push({ kind: "header", group, count: rows.length });
@@ -181,12 +216,22 @@ const PAD_WORDS: Readonly<Record<string, string>> = {
 
 const padButton = (button: string) => PAD_WORDS[button] ?? button.toUpperCase();
 
-/** The player's word for a pad context. `modal` is a menu on screen. */
+/**
+ * The player's word for a pad context. `modal` is a menu on screen.
+ *
+ * `capture` is the rebind modal itself, and the word is what the player is
+ * doing there rather than what the code calls it. A row is only ever *printed*
+ * in it if a binding claims it, which today is the stick and trigger a capture
+ * records and `rebind` then refuses — so the word has to exist and is not yet
+ * reachable from a shipped layout. Keyed by `PadContext`, so a sixth context
+ * cannot join in silence.
+ */
 const CONTEXT_WORDS: Readonly<Record<PadContext, string>> = {
 	flight: "flight",
 	instrument: "instrument",
 	console: "console",
 	modal: "menu",
+	capture: "rebinding",
 };
 
 /**
@@ -221,13 +266,26 @@ const way = (axis: "x" | "y", half: "+" | "-") => WAY[`${axis}${half}`];
 /**
  * D7 and D8: a key prints as its character, a chord spelled out, and a control
  * with no character gets words.
+ *
+ * **A held key says `hold`, and did not until #381 S4.** The pad's branch
+ * below has said it since #372 — `hold Y` — so the inconsistency was inside
+ * this one function: `x` printed identically for `fly.assist`, which is a
+ * press, and `fight.fireBeam`, which is the same key held. That is #369 D3's
+ * split on `x`, which the tab could not show. It was found by looking at the
+ * capture modal, where a player about to move `fly.pitchUp` onto a new key
+ * needed to know the new key is one they hold — and the fix belongs here
+ * rather than in the modal, because D11 gives this module the one owner of
+ * every printed control name and a second phrasing over there is the drift
+ * that ruling refuses. It changes what the `Controls` tab prints on every
+ * held row, which is the point.
  */
 export function triggerLabel(t: Trigger): string {
 	switch (t.kind) {
 		case "key": {
 			const base = KEY_WORDS[t.key] ?? t.key;
 			const chord = t.alt ? `Alt + ${base}` : base;
-			return t.surface ? `${chord} (${SURFACE_WORDS[t.surface]})` : chord;
+			const held = t.hold ? `hold ${chord}` : chord;
+			return t.surface ? `${held} (${SURFACE_WORDS[t.surface]})` : held;
 		}
 		case "mouse-button": {
 			const press = t.action === "hold" ? "hold left mouse button" : "click";
@@ -335,11 +393,23 @@ export function controlsTreeMarkup(
 	collapsed: ReadonlySet<TaskGroup>,
 ): string {
 	return controlsTree(catalogue, collapsed)
-		.map((item) =>
-			item.kind === "header"
-				? `<button class="lc-controls-group" type="button" data-live-controls-group="${item.group}" aria-expanded="${!collapsed.has(item.group)}"><span>${collapsed.has(item.group) ? "▸" : "▾"} ${item.group.toUpperCase()}</span><small>${item.count}</small></button>`
-				: rowMarkup(catalogue, item.command),
-		)
+		.map((item) => {
+			// A `switch` rather than the ternary pair this replaced: the tree
+			// grew a third kind in #381 S4 and a `header ? … : row` reads every
+			// new kind as a row, silently (`item.command` on a door is
+			// `undefined`, and the markup builder would print a row of blanks).
+			switch (item.kind) {
+				case "header":
+					return `<button class="lc-controls-group" type="button" data-live-controls-group="${item.group}" aria-expanded="${!collapsed.has(item.group)}"><span>${collapsed.has(item.group) ? "▸" : "▾"} ${item.group.toUpperCase()}</span><small>${item.count}</small></button>`;
+				case "action":
+					// **A door, drawn as one.** It is not a control, so it gets
+					// no trigger column — a blank one would read as a control
+					// nothing is bound to, which is the opposite of what it is.
+					return `<button class="lc-controls-door" type="button" data-live-controls-action="${item.action}">${escapeHtml(item.label)}</button>`;
+				case "row":
+					return rowMarkup(catalogue, item.command);
+			}
+		})
 		.join("");
 }
 
@@ -367,6 +437,39 @@ export function controlsBody(
 const COMMAND_NAMES = new Map<string, string>(
 	COMMANDS.map((c) => [c.id, c.name]),
 );
+
+/**
+ * Why the capture modal cannot take what the player just pressed, in the
+ * player's words (#381 S4).
+ *
+ * **A table here rather than `movedTrigger`'s thrown string**, for
+ * `REJECTED_WHY`'s reason below and for a sharper one: the first pass put the
+ * throw on the screen and the modal read `a rebind may move a trigger, not its
+ * qualifiers: key:s::hold -> key:k::press` — half English and half the hash
+ * `triggerKey` groups on. That is the *same defect the storage slice shipped
+ * and had caught by looking at a frame*, on a different screen, with every
+ * headless row green. The thrown message stays what a developer reads.
+ *
+ * **Keyed on the refusal and not on the trigger's kind**, which is what the
+ * second pass got wrong (sage round 1 on #497). Two different refusals land on
+ * `pad-button` — held, and claimed in every context — so a kind-keyed table
+ * printed the hold sentence for both; and a `key`, which the registry normally
+ * takes, is refused when the trigger being *moved* is one the game does not
+ * offer, where that table had only an empty string. `RebindRefusal` carries
+ * the reason and this maps it, so a new reason is a compile error here.
+ */
+export const CAPTURE_REFUSED_WHY: Readonly<Record<RebindRefusal, string>> = {
+	"not-offered": "This control is not one the game offers for rebinding.",
+	qualifiers:
+		"That is not the kind of press this control takes — it is held rather than tapped, or the other way round.",
+	"no-reader-held":
+		"This control is held down to work, and the pad cannot yet hold a button for it. Choose a key instead.",
+	"no-reader-axes":
+		"A stick or a trigger cannot be bound yet — the ship still reads them in fixed positions.",
+	"no-capture-surface": "The mouse is not offered for rebinding.",
+	"live-nowhere":
+		"Every screen already claims that button, so a control bound to it would never fire.",
+};
 
 /**
  * A stored string on its way into a sentence, cut to a length a line can hold.
@@ -420,10 +523,13 @@ const inViews = (views: readonly string[]): string =>
 /**
  * The sentence a `LayoutNotice` prints.
  *
- * **Here rather than in `binding-store.ts`**, because #369 D11 gives this
- * module the one owner of every printed control name and `triggerLabel` is
- * already it. A formatter beside the store would be a second table of the
- * same names, which is the drift D11 was written against.
+ * **Here rather than in `layout-notice.ts`**, beside the union it prints,
+ * because #369 D11 gives this module the one owner of every printed control
+ * name and `triggerLabel` is already it. A formatter beside the kinds would
+ * be a second table of the same names, which is the drift D11 was written
+ * against. (It said `binding-store.ts` until #381 S4 moved the kinds out from
+ * behind the store — the argument is the same and the module it names is
+ * not.)
  *
  * **The collision sentence says what the game does, not what #369 D5 says it
  * should.** D5's resolution is warn, allow, and resolve by last-changed-wins —

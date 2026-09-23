@@ -113,6 +113,13 @@ describe("the settings key is driven only after the screen exists", () => {
 		// whole check having stopped matching anything.
 		expect(filesDrivingTheKey.map((e) => e.file)).toEqual([
 			"scripts/probe-boot.mjs",
+			// #381 S4 drives it to show it is **dead**: the bootstrap moves
+			// `system.settings` off `z` and the row asks that the key no
+			// longer opens the screen. The readiness call is what keeps that
+			// able to fail in the direction it names — a build where the panel
+			// never mounts would satisfy "z did not open it" for the wrong
+			// reason.
+			"scripts/probe-capture.mjs",
 			"scripts/probe-commander.mjs",
 			"scripts/probe-pad-panels.mjs",
 			"scripts/probe-pointer-lock.mjs",

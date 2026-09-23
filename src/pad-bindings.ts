@@ -86,51 +86,52 @@ import type { PadButtonName, PadFrame } from "./gamepad";
  * keeps seekolous's rule intact: no field records which device is in charge,
  * and the mouse can act on the same panel in the same frame.
  */
-export type PadContext = "flight" | "console" | "modal" | "instrument";
+export type PadContext =
+	| "flight"
+	| "console"
+	| "modal"
+	| "instrument"
+	/**
+	 * The rebind modal is open and listening (#369 D9).
+	 *
+	 * Its whole job: **admit the sticks and triggers for one capture, refuse
+	 * everything else, and swallow every input except its own cancel.** F8's
+	 * problem — a modal must refuse the axes, because a stick is a position and
+	 * there is nothing to release — is answered in the open by a context that
+	 * exists to admit them, rather than by punching a hole in `modal`'s
+	 * suspension. Nothing here flies the ship, which `contextFliesShip` says
+	 * once for the axes, the trigger and the pointer alike.
+	 *
+	 * **The reading is `capturedTrigger`'s, in `commands.ts`**, because what it
+	 * produces is a `Trigger` and that is the registry's word. This module
+	 * answers the half that is its own: which presses a surface claims, and
+	 * here that is one — the way out.
+	 */
+	| "capture";
 
 /**
- * The flight table. DualSense labels in brackets; an Xbox pad reads `a`/`b`/
- * `x`/`y` literally.
+ * Which standard buttons fall through to the flight layout, and in which
+ * contexts.
  *
- * | button | key | does |
- * | --- | --- | --- |
- * | `a` (Cross) | `enter` | launch, or skip the dock traversal |
- * | `b` (Circle) | `c` | request docking clearance |
- * | `y` (Triangle) | `j` | engage or drop cruise |
- * | `l1` / `r1` | `g` / `t` | previous and next target |
- * | `l3` | `f` | face the target |
- * | `r3` | `v` | cockpit or chase |
- * | `start` (Options) | `u` | docking computer |
- * | `select` (Create) | `` ` `` | charge the Jump |
- * | d-pad ←/↑/→ | `1` / `2` / `3` | head-look port, forward, starboard |
+ * **The table of what each one *does* is not here any more (#381 S4).** It was
+ * `PAD_FLIGHT_KEYS`, a button-to-key map resolved against the shipped
+ * keyboard, and that pinned every pad button to the default layout by
+ * construction: a pad rebind could not be expressed at all, because the
+ * button's meaning lived somewhere a player's layout is not. The authored
+ * defaults are `PAD_FLIGHT_COMMANDS` in `src/commands.ts` now, as
+ * `CommandId`s, and `resolvePad` reads the layout in force.
  *
- * D-pad ↓ is not in the table because what it does is not a key: it hands the
- * pad to the frame instrument and takes it back (`PadIntents.instrument`).
+ * What stays here is the half that is genuinely this module's: **which presses
+ * a surface has already claimed.** A console takes six of them and the rest
+ * fall through, which is the rule `padIntents` states once below — so this
+ * module still decides *whether* a button reaches the ship, and no longer
+ * decides *what* it reaches.
  *
- * `x` (Square) is not in the table either: it is the pulse laser's trigger,
- * held (`padFireHeld`), by the principal's ruling (#324). Flight assist stays on
- * the keyboard's `x`.
- *
- * **Unbound: `home` alone.** The module reports it; nothing here claims it. The
+ * **Unbound: `home` alone.** The registry reports it; nothing claims it. The
  * tuning dials and the settings key stay on the keyboard — seventeen buttons
  * cannot carry twenty-six letters, and saying which are dropped is better than
  * discovering it in flight.
  */
-export const PAD_FLIGHT_KEYS: Partial<Record<PadButtonName, string>> = {
-	a: "enter",
-	b: "c",
-	y: "j",
-	l1: "g",
-	r1: "t",
-	l3: "f",
-	r3: "v",
-	start: "u",
-	select: "`",
-	left: "1",
-	up: "2",
-	right: "3",
-};
-
 /**
  * The line a console shows a pad player, built from what that surface has.
  *
@@ -180,8 +181,14 @@ export function padHintFor(surface: {
  * adding it means a timer, and a timer is state this function does not have.
  */
 export interface PadIntents {
-	/** Keys to hand to `Game.command`, in press order. */
-	readonly keys: readonly string[];
+	/**
+	 * The presses this surface did not claim, in press order.
+	 *
+	 * Buttons rather than keys since #381 S4: what each one reaches is the
+	 * layout's answer and not this module's, so these are handed to
+	 * `resolvePad` with the context they were read in.
+	 */
+	readonly buttons: readonly PadButtonName[];
 	/** Walk the panel's cursor: -1 up, +1 down. */
 	readonly focusDelta: number;
 	/** Change the panel's tab: -1 left, +1 right. */
@@ -203,8 +210,25 @@ export interface PadIntents {
 	readonly instrument: boolean;
 }
 
+/**
+ * The two buttons that are pulls rather than presses; see `padIntents`.
+ *
+ * Exported because `capturedTrigger` in `commands.ts` needs the same law — a
+ * capture must not record a full pull as a button press — and it had the pair
+ * written out again (sage round 3 on #497).
+ */
+export const ANALOG_TRIGGERS = [
+	"l2",
+	"r2",
+] as const satisfies readonly PadButtonName[];
+
+/** Whether this button is one of them. A predicate, because `includes` on a
+ *  `as const` tuple narrows its own argument and refuses every other name. */
+export const isAnalogTrigger = (name: PadButtonName): boolean =>
+	(ANALOG_TRIGGERS as readonly PadButtonName[]).includes(name);
+
 const NO_INTENTS: PadIntents = {
-	keys: [],
+	buttons: [],
 	focusDelta: 0,
 	tabDelta: 0,
 	valueDelta: 0,
@@ -219,7 +243,7 @@ export function padIntents(
 ): PadIntents {
 	if (!frame?.connected || frame.pressed.size === 0) return NO_INTENTS;
 
-	const keys: string[] = [];
+	const buttons: PadButtonName[] = [];
 	let focusDelta = 0;
 	let tabDelta = 0;
 	let valueDelta = 0;
@@ -228,6 +252,28 @@ export function padIntents(
 	let instrument = false;
 
 	for (const name of frame.pressed) {
+		if (context === "capture") {
+			// **Nothing at all, and that includes the way out** (#369 D9's
+			// "swallow every input except its own cancel", answered by the
+			// principal's ruling on which input the cancel is).
+			//
+			// The first version reserved Circle, because Circle is `back`
+			// everywhere else in this game — and the cost was that Circle
+			// became the one button a pad could never bind. It does not have
+			// to be paid: **the cancel is a click**, and a click is the one
+			// input this game guarantees. #370's standing premise is that a
+			// screen is always clickable, which is why the pointer rows carry
+			// `fixed: "pointer"` — no movable trigger at all. So the modal's
+			// way out is a control that no binding table can hold, by the same
+			// argument that gives the `Controls` tab its settings door, and
+			// every one of the seventeen buttons stays capturable.
+			//
+			// The stick and the trigger are read by `capturedTrigger` off the
+			// frame directly rather than through this function, because they
+			// are a position rather than a press and an intent struct has
+			// nowhere to put one.
+			continue;
+		}
 		if (context === "modal") {
 			// The whole pad, and no key reaches the ship. Left and right are a
 			// *value* here rather than a head turn, because the settings panel's
@@ -278,12 +324,23 @@ export function padIntents(
 			instrument = true;
 			continue;
 		}
-		const key = PAD_FLIGHT_KEYS[name];
-		if (key !== undefined) keys.push(key);
+		// **An analog trigger is a value, never a press.** Rule 3 of this
+		// module's header: a trigger read as a switch is a key with extra
+		// steps, and the standard mapping reports `pressed` on a full pull —
+		// so `padFlightAxes` reads `values.r2 - values.l2` and nothing here
+		// reports the pull. This was implicit while the flight table was a
+		// key map, because that table simply had no entry for either; the
+		// table names commands elsewhere now and reports every unclaimed
+		// press, so the law has to be stated or it changes in silence
+		// (#381 S4).
+		if (isAnalogTrigger(name)) continue;
+		// Unclaimed, so it falls through to the ship. Whether the layout binds
+		// it is the registry's question, asked with this context.
+		buttons.push(name);
 	}
 
 	return {
-		keys,
+		buttons,
 		focusDelta,
 		tabDelta,
 		valueDelta,
@@ -399,7 +456,12 @@ export function contextFliesShip(context: PadContext): boolean {
  * is not, and the click belongs to the console. Sticks aside: this is the pointer's
  * rule only, so #283's instrument exception is untouched.
  *
- * **`capture` is permission for a click, not an instruction to make one.** The
+ * **`take` is permission for a click, not an instruction to make one.** The
+ * word was `capture` until #381 S4, and it gave it up: D9 names the rebind
+ * modal's input context `capture`, and two meanings of one word in one module
+ * — a pointer verdict and an input context — is a thing neither a reader nor a
+ * grep can tell apart. The ruling owns the context; this verdict is the
+ * repo's own word, so this is the one that moves. The
  * browser grants a lock only from an activation-triggering event or after a
  * page-initiated exit, and it rate-limits being asked at all:
  * `scripts/probe-pointer-lock.mjs` measures that window against its own click
@@ -417,10 +479,10 @@ export function pointerLockMove(
 ): PointerLockMove {
 	if (!contextFliesShip(context) || consoleDrawn)
 		return held ? "release" : "at-rest";
-	return held ? "keep" : "capture";
+	return held ? "keep" : "take";
 }
 
-export type PointerLockMove = "capture" | "release" | "keep" | "at-rest";
+export type PointerLockMove = "take" | "release" | "keep" | "at-rest";
 
 export function padFlightAxes(
 	frame: PadFrame | null,
@@ -488,5 +550,5 @@ export function mouseFireHeld(
 	context: PadContext,
 	consoleDrawn: boolean,
 ): boolean {
-	return held && pointerLockMove(context, consoleDrawn, false) === "capture";
+	return held && pointerLockMove(context, consoleDrawn, false) === "take";
 }

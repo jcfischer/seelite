@@ -7,19 +7,25 @@
  * load — and a table nothing can load is a table nothing checks.
  */
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_BINDINGS, resolveKey, VIEW_MODES } from "../src/commands";
+import { PAD_FLIGHT_COMMANDS } from "../src/commands";
 import { codeOf, srcFiles } from "./lib/source-scan";
+import { type PadButtonName, STANDARD_BUTTONS } from "../src/gamepad";
+// The frame builders are `tests/lib/pad-frames.ts` since #381 S4;
+// `tests/capture.test.ts` would have been the second copy.
 import {
-	type PadButtonName,
-	type RawPad,
-	STANDARD_BUTTONS,
-	readPad,
-} from "../src/gamepad";
+	absent as absentFrame,
+	NOTHING,
+	pad,
+	padFrame,
+	press,
+	rest as restFrame,
+	sticks,
+	trigger,
+} from "./lib/pad-frames";
 import {
 	type PadContext,
 	type PadIntents,
 	type PointerLockMove,
-	PAD_FLIGHT_KEYS,
 	contextFliesShip,
 	mouseFireHeld,
 	padFireHeld,
@@ -28,129 +34,37 @@ import {
 	pointerLockMove,
 } from "../src/pad-bindings";
 
-const NOTHING: ReadonlySet<PadButtonName> = new Set();
-
-function pad(overrides: Partial<RawPad> = {}): RawPad {
-	return {
-		id: "DualSense Wireless Controller (STANDARD GAMEPAD)",
-		mapping: "standard",
-		axes: [0, 0, 0, 0],
-		buttons: STANDARD_BUTTONS.map(() => ({ pressed: false, value: 0 })),
-		...overrides,
-	};
-}
-
-/** A frame in which exactly `name` has just gone down. */
-const press = (name: PadButtonName, value = 1) => {
-	const index = STANDARD_BUTTONS.indexOf(name);
-	const buttons = STANDARD_BUTTONS.map((_, i) =>
-		i === index
-			? { pressed: value >= 0.5, value }
-			: { pressed: false, value: 0 },
-	);
-	return readPad(pad({ buttons }), NOTHING);
-};
-
-/** A frame with the sticks at [leftX, leftY, rightX, rightY]. */
-const sticks = (axes: [number, number, number, number]) =>
-	readPad(pad({ axes }), NOTHING);
+const rest = restFrame();
+const absent = absentFrame();
 
 /**
- * A frame with one analog trigger pulled to `value`.
- *
- * The same construction as `press`, which is the point: a trigger is a button
- * that reports a continuous pull, and building it a second way would let the
- * two drift. Sage asked for the reuse, round 2.
+ * **What a button *means* is not this module's any more (#381 S4).**
+ * `PAD_FLIGHT_KEYS` lived here and named keys; `PAD_FLIGHT_COMMANDS` is in
+ * `src/commands.ts` and names ids, so the rows that checked the table against
+ * `Game.command` moved to `tests/commands.test.ts` with it. What is left here
+ * is the half that is genuinely this module's — which presses a surface
+ * claims, and which fall through to the ship.
  */
-const trigger = (name: "l2" | "r2", value: number) => press(name, value);
-
-const rest = readPad(pad(), NOTHING);
-const absent = readPad(null, NOTHING);
-
-describe("the flight table names keys the keyboard already understands", () => {
-	test("every binding is a key `Game.command` actually handles", () => {
-		// The pad does not get its own copy of what a button does. It presses the
-		// key, and one implementation stays one implementation — a second copy is
-		// how the pad and the keyboard come to disagree about what `j` means.
-		//
-		// **Read off `command`'s own cases, not matched against a shape.** This
-		// was a regular expression accepting any single letter, which `p` and `z`
-		// satisfy while `command` handles neither — so deleting a handler left
-		// the check green and the binding dead. Sage found that, round 6. A
-		// source read rather than an import because `main.ts` cannot be loaded in
-		// this tier; it is the same trade `tests/output-stage.test.ts` makes.
-		//
-		// **Through the registry since #381's dispatch fold**, which is what the
-		// pad's route actually is now: `commandKey` resolves the key against the
-		// shipped table and `command` switches on the id. So the question is two
-		// questions, and the first one is new — a pad button bound to a key no
-		// row claims used to be caught here by accident and is named now.
-		const source = codeOf("src/main.ts");
-		const body = source.slice(source.indexOf("private command(id: CommandId)"));
-		const handled = new Set(
-			[
-				...body.slice(0, body.indexOf("\n\t}")).matchAll(/case "([^"]+)":/g),
-			].map((m) => m[1]),
-		);
-		expect(handled.size).toBeGreaterThan(10);
-		for (const key of Object.values(PAD_FLIGHT_KEYS)) {
-			const ids = VIEW_MODES.flatMap((view) =>
-				resolveKey(DEFAULT_BINDINGS, { key, view }),
-			);
-			expect(ids, `${key} is bound but reaches no command`).not.toEqual([]);
-			for (const id of ids)
-				expect(
-					handled.has(id),
-					`${key} reaches ${id}, which command does not handle`,
-				).toBe(true);
-		}
+describe("a press is reported unless the surface claimed it", () => {
+	test("Cross falls through to the ship", () => {
+		expect(padIntents(press("a"), "flight").buttons).toEqual(["a"]);
 	});
 
-	test("no two buttons are bound to the same key", () => {
-		const keys = Object.values(PAD_FLIGHT_KEYS);
-		expect(new Set(keys).size).toBe(keys.length);
-	});
-
-	test("the flight-critical set from the node is all there", () => {
-		const bound = new Set(Object.values(PAD_FLIGHT_KEYS));
-		// cruise, next/previous target, face, clearance, docking computer,
-		// launch/skip, view, jump, and the three head-look positions.
-		//
-		// **Assist left the pad in #324, by the principal's ruling**: Square is
-		// the laser's trigger, and flight assist stays on the keyboard's `x`.
-		expect(bound.has("x")).toBe(false);
-		for (const key of [
-			"j",
-			"t",
-			"g",
-			"f",
-			"c",
-			"u",
-			"enter",
-			"v",
-			"`",
-			"1",
-			"2",
-			"3",
-		])
-			expect(bound.has(key), key).toBe(true);
-	});
-});
-
-describe("a press becomes a command, once", () => {
-	test("Cross launches", () => {
-		expect(padIntents(press("a"), "flight").keys).toEqual(["enter"]);
-	});
-
-	test("Square presses no key: it is the laser's trigger (#324)", () => {
-		expect(padIntents(press("x"), "flight").keys).toEqual([]);
+	test("Square falls through too, and the layout binds it to nothing", () => {
+		// **This row used to say `keys` was empty, and that was this module
+		// answering a question it no longer owns.** Square is the pulse laser's
+		// trigger, *held* (#324), so no press reaches a command — but "which
+		// presses does the ship see" and "what does the ship do with one" are
+		// two questions now, and only the first is here. The second is
+		// `tests/commands.test.ts`, which asks `resolvePad`.
+		expect(padIntents(press("x"), "flight").buttons).toEqual(["x"]);
 	});
 
 	test("a button merely held is not a press", () => {
 		// `command` fires on the edge, exactly as `onKey`'s `!e.repeat` does.
 		// Reading the held set instead would toggle cruise sixty times a second.
 		const held: ReadonlySet<PadButtonName> = new Set<PadButtonName>(["y"]);
-		const frame = readPad(
+		const frame = padFrame(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
 					n === "y"
@@ -160,11 +74,14 @@ describe("a press becomes a command, once", () => {
 			}),
 			held,
 		);
-		expect(padIntents(frame, "flight").keys).toEqual([]);
+		expect(padIntents(frame, "flight").buttons).toEqual([]);
 	});
 
-	test("an unbound button says nothing", () => {
-		expect(padIntents(press("home"), "flight").keys).toEqual([]);
+	test("a button no surface claims is reported whether or not it is bound", () => {
+		// `home` is the one standard button the layout leaves free, and it
+		// arrives here all the same — the registry is what turns it into
+		// nothing.
+		expect(padIntents(press("home"), "flight").buttons).toEqual(["home"]);
 	});
 
 	test("d-pad down asks for the instrument, and is the last free direction", () => {
@@ -174,7 +91,7 @@ describe("a press becomes a command, once", () => {
 		// forward and right are the three head-look positions.
 		const asked = padIntents(press("down"), "flight");
 		expect(asked.instrument).toBe(true);
-		expect(asked.keys).toEqual([]);
+		expect(asked.buttons).toEqual([]);
 		expect(asked.focusDelta).toBe(0);
 	});
 
@@ -186,7 +103,7 @@ describe("a press becomes a command, once", () => {
 
 	test("a disconnected pad says nothing at all", () => {
 		expect(padIntents(absent, "flight")).toEqual(padIntents(rest, "flight"));
-		expect(padIntents(absent, "flight").keys).toEqual([]);
+		expect(padIntents(absent, "flight").buttons).toEqual([]);
 	});
 });
 
@@ -200,7 +117,7 @@ describe("a console takes six controls and leaves the rest flying", () => {
 	test("up and down walk the cursor instead of turning the head", () => {
 		expect(padIntents(press("up"), "console").focusDelta).toBe(-1);
 		expect(padIntents(press("down"), "console").focusDelta).toBe(1);
-		expect(padIntents(press("up"), "console").keys).toEqual([]);
+		expect(padIntents(press("up"), "console").buttons).toEqual([]);
 	});
 
 	test("down walks the list rather than reaching for the instrument", () => {
@@ -208,37 +125,37 @@ describe("a console takes six controls and leaves the rest flying", () => {
 	});
 
 	test("up and down are head-look again once the head is forward", () => {
-		expect(padIntents(press("up"), "flight").keys).toEqual(["2"]);
+		expect(padIntents(press("up"), "flight").buttons).toEqual(["up"]);
 		expect(padIntents(press("up"), "flight").focusDelta).toBe(0);
 	});
 
 	test("left and right keep turning the head, so the other console is reachable", () => {
-		expect(padIntents(press("left"), "console").keys).toEqual(["1"]);
-		expect(padIntents(press("right"), "console").keys).toEqual(["3"]);
+		expect(padIntents(press("left"), "console").buttons).toEqual(["left"]);
+		expect(padIntents(press("right"), "console").buttons).toEqual(["right"]);
 	});
 
 	test("Cross activates the focused row rather than launching", () => {
 		// Which is not a loss: LAUNCH is a button *on* the right console, so
 		// Cross still launches — through the row instead of past it.
 		expect(padIntents(press("a"), "console").activate).toBe(true);
-		expect(padIntents(press("a"), "console").keys).toEqual([]);
+		expect(padIntents(press("a"), "console").buttons).toEqual([]);
 	});
 
 	test("Circle backs out to the forward view", () => {
 		expect(padIntents(press("b"), "console").back).toBe(true);
-		expect(padIntents(press("b"), "console").keys).toEqual([]);
+		expect(padIntents(press("b"), "console").buttons).toEqual([]);
 	});
 
 	test("the shoulders change tab rather than target", () => {
 		expect(padIntents(press("l1"), "console").tabDelta).toBe(-1);
 		expect(padIntents(press("r1"), "console").tabDelta).toBe(1);
-		expect(padIntents(press("l1"), "console").keys).toEqual([]);
+		expect(padIntents(press("l1"), "console").buttons).toEqual([]);
 	});
 
 	test("everything else still flies the ship", () => {
-		expect(padIntents(press("y"), "console").keys).toEqual(["j"]);
-		expect(padIntents(press("l3"), "console").keys).toEqual(["f"]);
-		expect(padIntents(press("select"), "console").keys).toEqual(["`"]);
+		expect(padIntents(press("y"), "console").buttons).toEqual(["y"]);
+		expect(padIntents(press("l3"), "console").buttons).toEqual(["l3"]);
+		expect(padIntents(press("select"), "console").buttons).toEqual(["select"]);
 	});
 });
 
@@ -248,7 +165,7 @@ describe("a modal panel takes the whole pad", () => {
 		// `releaseHeldKeys` — because a held throttle key kept flying the ship
 		// behind a screen the player was reading.
 		for (const name of STANDARD_BUTTONS)
-			expect(padIntents(press(name), "modal").keys, name).toEqual([]);
+			expect(padIntents(press(name), "modal").buttons, name).toEqual([]);
 	});
 
 	test("left and right change a value rather than turning the head", () => {
@@ -377,7 +294,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// them into `t`/`g` and cycle the target while the panel has the pad.
 		for (const name of ["l1", "r1"] as const) {
 			expect(padIntents(press(name), "instrument").tabDelta, name).toBe(0);
-			expect(padIntents(press(name), "instrument").keys, name).toEqual([]);
+			expect(padIntents(press(name), "instrument").buttons, name).toEqual([]);
 		}
 		// A console still steps its tabs with them.
 		expect(padIntents(press("r1"), "console").tabDelta).toBe(1);
@@ -392,7 +309,7 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// **Keyed by `PadIntents`, so a new field is a type error here** rather
 		// than a field this row silently skips (sage round 1 on #379).
 		const FIELDS: Record<keyof PadIntents, true> = {
-			keys: true,
+			buttons: true,
 			focusDelta: true,
 			tabDelta: true,
 			valueDelta: true,
@@ -422,9 +339,18 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		// A read here is an `if` on the field or a loop over it, which is what a
 		// source scan can see. It cannot see what that branch then does: whether
 		// the read acts is the browser tier's (`probe-pad-instrument.mjs`).
+		// **Three shapes of read, and the third is new.** A field can be tested
+		// (`if (intents.back)`), walked (`for (… of intents.keys)`) or handed
+		// to a method — which is what `buttons` is since #381 S4, because what
+		// a press reaches is the layout's answer and the resolver needs the
+		// context. A method call is still a read this scan can see; what it
+		// cannot see is whether the method acts, which is the browser tier's
+		// (`probe-pad-instrument.mjs`).
 		for (const field of emitted)
 			expect(branch, `instrument emits ${field}`).toMatch(
-				new RegExp(`(if \\(intents\\.${field}\\b|of intents\\.${field}\\))`),
+				new RegExp(
+					`(if \\(intents\\.${field}\\b|of intents\\.${field}\\)|\\(intents\\.${field}[,)])`,
+				),
 			);
 	});
 
@@ -432,9 +358,9 @@ describe("the sticks are a command, and they carry their own magnitude", () => {
 		expect(padIntents(press("up"), "instrument").focusDelta).toBe(-1);
 		expect(padIntents(press("a"), "instrument").activate).toBe(true);
 		expect(padIntents(press("b"), "instrument").back).toBe(true);
-		expect(padIntents(press("up"), "instrument").keys).toEqual([]);
+		expect(padIntents(press("up"), "instrument").buttons).toEqual([]);
 		// And everything else still flies it.
-		expect(padIntents(press("y"), "instrument").keys).toEqual(["j"]);
+		expect(padIntents(press("y"), "instrument").buttons).toEqual(["y"]);
 	});
 });
 
@@ -464,7 +390,7 @@ describe("the throttle is a trim, and the rejected arm is why", () => {
 	});
 
 	test("both triggers together cancel out", () => {
-		const both = readPad(
+		const both = padFrame(
 			pad({
 				buttons: STANDARD_BUTTONS.map((n) =>
 					n === "l2" || n === "r2"
@@ -495,10 +421,12 @@ describe("Square is the trigger, and the shoulders the targets (#324)", () => {
 		expect(padFireHeld(press("x"), "modal")).toBe(false);
 	});
 
-	test("R1 and L1 step the target, and L2 presses no key", () => {
-		expect(padIntents(press("r1"), "flight").keys).toEqual(["t"]);
-		expect(padIntents(press("l1"), "flight").keys).toEqual(["g"]);
-		expect(padIntents(trigger("l2", 1), "flight").keys).toEqual([]);
+	test("R1 and L1 fall through, and a pulled trigger is not a press", () => {
+		expect(padIntents(press("r1"), "flight").buttons).toEqual(["r1"]);
+		expect(padIntents(press("l1"), "flight").buttons).toEqual(["l1"]);
+		// Rule 3 of this module's header: a trigger read as a switch is a key
+		// with extra steps, so `l2` produces a throttle *value* and no press.
+		expect(padIntents(trigger("l2", 1), "flight").buttons).toEqual([]);
 	});
 });
 
@@ -604,7 +532,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// reason it keeps the sticks — its panel is `pointer-events: none`, so a
 		// frame that exists to be measured while flown is still being flown.
 		flight: {
-			clear: { notHeld: "capture", held: "keep" },
+			clear: { notHeld: "take", held: "keep" },
 			drawn: { notHeld: "at-rest", held: "release" },
 		},
 		// **`instrument` + a drawn console is the cell round 5 found.**
@@ -616,7 +544,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// the console wins. That is the principal's ruling on this node, and before it
 		// this cell read `keep` and left the console unclickable.
 		instrument: {
-			clear: { notHeld: "capture", held: "keep" },
+			clear: { notHeld: "take", held: "keep" },
 			drawn: { notHeld: "at-rest", held: "release" },
 		},
 		// And here the pointer comes back, which is the whole of #371. Why the
@@ -626,6 +554,16 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// unreachable from the game's own reads — kept because the *rule* still has to
 		// answer it, and a table that only holds reachable cells cannot say that.
 		console: {
+			clear: { notHeld: "at-rest", held: "release" },
+			drawn: { notHeld: "at-rest", held: "release" },
+		},
+		// The rebind modal, which is `modal` with one more thing suspended:
+		// nothing here flies, so nothing here may hold the pointer either, and
+		// the cell is the same for the same reason. It is listed rather than
+		// folded because the table's whole job is that a new context cannot
+		// join the union in silence — which is how this row found itself
+		// (#381 S4).
+		capture: {
 			clear: { notHeld: "at-rest", held: "release" },
 			drawn: { notHeld: "at-rest", held: "release" },
 		},
@@ -649,7 +587,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 				// way about, is the drift `contextFliesShip` was extracted to stop. A
 				// drawn console is the one thing that overrules it, and that is the
 				// whole of the `&& !drawn` below.
-				expect(pointerLockMove(context, drawn, false) === "capture").toBe(
+				expect(pointerLockMove(context, drawn, false) === "take").toBe(
 					contextFliesShip(context) && !drawn,
 				);
 			}
@@ -663,7 +601,7 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// does: the keyboard's ruling is not this node's.
 		for (const context of Object.keys(CELLS) as PadContext[])
 			for (const drawn of [false, true]) {
-				const admits = pointerLockMove(context, drawn, false) === "capture";
+				const admits = pointerLockMove(context, drawn, false) === "take";
 				expect(mouseFireHeld(true, context, drawn), `${context}/${drawn}`).toBe(
 					admits,
 				);
@@ -707,9 +645,12 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// second copy of the keyboard row is this mapping: the d-pad's three
 		// horizontal positions are the `1`/`2`/`3` commands, which is why the probe
 		// can say "the gamepad door" and mean `command`, not a binding of its own.
-		expect(PAD_FLIGHT_KEYS.left).toBe("1");
-		expect(PAD_FLIGHT_KEYS.up).toBe("2");
-		expect(PAD_FLIGHT_KEYS.right).toBe("3");
+		expect(PAD_FLIGHT_COMMANDS.left).toEqual(["view.headPort"]);
+		expect(PAD_FLIGHT_COMMANDS.up).toEqual([
+			"view.headForward",
+			"view.orbitCentre",
+		]);
+		expect(PAD_FLIGHT_COMMANDS.right).toEqual(["view.headStarboard"]);
 	});
 
 	test("the lock is asked for at one door, and given up at two that are named", () => {
@@ -745,6 +686,6 @@ describe("the pointer goes with the mouse, not with the camera (#371)", () => {
 		// Biome reflowing the statement — or someone adding braces — would have gone
 		// red with the rule untouched. Braces and reflows are allowed here; an answer
 		// that is computed and dropped is not.
-		expect(door).toMatch(/!==\s*"capture"[\s\S]{0,24}?return\b/);
+		expect(door).toMatch(/!==\s*"take"[\s\S]{0,24}?return\b/);
 	});
 });

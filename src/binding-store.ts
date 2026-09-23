@@ -23,7 +23,10 @@
  *   silence because a rejected preference is visible on the screen it changes.
  *   A rejected *binding* is a key that does nothing, with nothing on screen
  *   saying why, on a control the player moved on purpose and will go looking
- *   for. Every refusal below produces a `LayoutNotice`.
+ *   for. Every refusal below produces a `LayoutNotice` — a kind this module
+ *   makes and, since #381 S4, does not define: `layout-notice.ts` owns the
+ *   vocabulary, because `collisionNotices` answers a question about a table
+ *   in memory and no store is involved in it at all.
  *
  * **What is stored is what the player changed, not the table.** A blob holding
  * the whole layout would pin the shipped defaults onto disk: a later build
@@ -50,6 +53,21 @@
  * registry cannot move one — and S4 lifts both together, in one change, which
  * is where that pair has to be re-read.
  *
+ * **The format is forward-only, and a downgrade is not clean** (#381 S4, sage
+ * round 4). This slice widened the blob: a stored trigger may now be a
+ * `pad-button`, and `LAYOUT_VERSION` did not move. A *newer* build reads
+ * everything an older one wrote, which is the direction that matters. An
+ * older build meets a pad row as `unreadable-trigger` — one rejected row,
+ * named on screen — and its next save drops it, because `retiredBySave`
+ * retires that notice. The version was not bumped because the two costs are
+ * not symmetric: a bump is certain and forward-facing — this build refuses a
+ * version it does not know, so every existing `v1` layout is abandoned on
+ * upgrade, for every player — while what it buys is a *downgrade* refusing
+ * cleanly instead of dropping one row. How often anyone downgrades this game
+ * is not something this module knows, and an earlier draft of this paragraph
+ * asserted it was nobody (sage round 6 on #497). The cost is named here
+ * rather than discovered.
+ *
  * **There is no `migrate()`, and that is the honest answer rather than a
  * gap.** Version 1 is the first version this game has ever written, so a
  * migration function here would be a path no red build can reach — and this
@@ -61,7 +79,7 @@
  * Headless, and on the list in `tests/headless.test.ts`.
  */
 import {
-	type Binding,
+	type Layout,
 	type Collision,
 	type CommandId,
 	COMMANDS,
@@ -74,6 +92,16 @@ import {
 	type Trigger,
 	triggerKey,
 } from "./commands";
+import { type PadButtonName, STANDARD_BUTTONS } from "./gamepad";
+// The notice vocabulary is not this module's, and has not been since #381 S4:
+// `collisionNotices` diagnoses a table with no store in the room, and a second
+// storage-free caller — the capture modal's bind-time warning — is what took
+// the kinds out from behind the persistence module. This one produces them.
+import {
+	collisionNotices,
+	type LayoutNotice,
+	type RejectReason,
+} from "./layout-notice";
 
 /**
  * The key, with no version in it.
@@ -104,145 +132,41 @@ const RAW_MAX = 256 * 1024;
  *  property that matters. */
 const KEY_NAME_MAX = 32;
 
-/**
- * Why a stored row could not be applied. One reason per thing the player can
- * do about it — **the count is not stated here**, because it was written as
- * five while the union held six inside one round (sage round 3), which is what
- * a count of a list right below it is worth.
- *
- * A code rather than a sentence, for #369 D11's reason: the sentence belongs
- * with every other printed control name, in `controls-reference.ts`.
- */
-export type RejectReason =
-	/** The entry is not an object at all. A record whose `command` is not a
-	 *  string is `unknown-control` instead, because it does name something. */
-	| "unreadable-row"
-	/** The blob names a control this build does not have. */
-	| "unknown-control"
-	/** The stored trigger is not a trigger this build can store. */
-	| "unreadable-trigger"
-	/** The control no longer ships on the trigger the row moved it off — a
-	 *  default moved under a saved layout, which is the migration case. */
-	| "moved-default"
-	/** An earlier row in the same blob already moved this control off that
-	 *  trigger. Hand-written blobs reach it; one this build wrote cannot,
-	 *  because the diff holds one row per moved binding. */
-	| "already-changed"
-	/**
-	 * The registry refused the move itself.
-	 *
-	 * Today that is always the qualifier law — a `to` that changes `hold`,
-	 * `alt` or `surface`, which is the command's to decide and not the
-	 * player's. It is named for the *refusal* and not for that law, because
-	 * the reason is whatever `rebind` throws and a guard added there later
-	 * would otherwise print a sentence about something else entirely
-	 * (sage round 1).
-	 */
-	| "refused-by-registry";
-
-/**
- * Something the player is owed a sentence about.
- *
- * Data, not prose. The sentence is `controls-reference.ts`'s, beside every
- * other printed control name — #369 D11 gives that module the one owner, and
- * a formatter here would be the second copy.
- */
-export type LayoutNotice =
-	/**
-	 * The stored layout could not be read, for one of two reasons that are
-	 * not one thing to a player.
-	 *
-	 * `corrupt` is a blob that is there and is not a blob — not JSON, not an
-	 * object, no list of moves, more rows than the game has controls. The
-	 * store still works, so changing a control replaces it.
-	 *
-	 * `refused` is the browser declining to hand it over at all, which a
-	 * private window does. **Nothing can be replaced there**, because a store
-	 * that throws on a read throws on a write, and the first version printed
-	 * "changing a control will replace them" beside "This change could not be
-	 * saved" (sage round 4).
-	 *
-	 * `detail` is the thrown message or the shape that failed, and is **not
-	 * printed** — the first version interpolated it into the sentence, which
-	 * is the half-machine string this slice abolished for a rejection.
-	 */
-	| {
-			readonly kind: "unreadable";
-			readonly cause: "corrupt" | "refused";
-			readonly detail: string;
-	  }
-	/** A version this build does not know. The layout is left alone. */
-	| { readonly kind: "version"; readonly stored: unknown }
-	/** One row could not be applied. `command` is whatever the blob said, which
-	 *  may not be a command at all. */
-	| {
-			readonly kind: "rejected";
-			readonly command: string | null;
-			readonly reason: RejectReason;
-			/**
-			 * What actually went wrong, for a console and for a probe.
-			 *
-			 * **Not printed.** The first pass put `rebind`'s thrown message
-			 * straight on the screen and the `Controls` tab read
-			 * `a rebind may move a key, not its qualifiers: key:q::hold ->
-			 * key:k::press` — half English and half the hash `triggerKey`
-			 * groups on, which is not a sentence a player can act on. The
-			 * reason above is what prints; this is what a developer reads.
-			 */
-			readonly detail: string;
-	  }
-	/**
-	 * A change the browser would not store.
-	 *
-	 * A private window refuses `localStorage` outright and a full one refuses
-	 * a write, and the rebind still *flies* — so the layout is right until the
-	 * page is reloaded and then silently is not. The first pass said nothing
-	 * at all here, against this module's own header claiming every refusal
-	 * produces a notice (sage round 2).
-	 */
-	| { readonly kind: "unsaved" }
-	/** Two commands one trigger reaches at once (#369 D5: warn and allow). */
-	| {
-			readonly kind: "collision";
-			readonly collision: Collision;
-			/** One of the two triggers, so the notice can print the key rather
-			 *  than the hash `collisions()` groups on. */
-			readonly at: Trigger;
-	  };
-
 export interface LoadedLayout {
-	readonly layout: readonly Binding[];
+	readonly layout: Layout;
 	readonly notices: readonly LayoutNotice[];
 }
 
-/**
- * Whether a successful save makes this notice stop being true.
- *
- * **The store's rule, not its reader's.** Every notice but a collision is a
- * fact about the blob that was *read*, so a write that lands replaces the
- * thing they describe; a collision is a property of the table as it stands and
- * survives. `main.ts` encoded exactly this expression for a round, which would
- * have silently classified a later kind without the module that owns the kinds
- * saying anything (sage round 2).
- *
- * **It does not except `unsaved`, and the first version did.** That clause was
- * unreachable — the only caller filters `parseLayout`'s output, which never
- * holds one — and it was also the wrong sign: a write that lands is precisely
- * what makes an earlier refusal stop being true. `main.ts` clears that flag on
- * the same branch, so there is one rule and not two (sage round 3).
- */
-export const retiredBySave = (notice: LayoutNotice): boolean =>
-	notice.kind !== "collision";
-
 const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 
-/** The blob, as a string. */
-export function serializeLayout(layout: readonly Binding[]): string {
+/**
+ * The blob, as a string.
+ *
+ * **A pad row is written without its contexts** (sage round 5 on #497). They
+ * are `pad-bindings.ts`' answer, re-derived by `movedTrigger` on every load,
+ * and `acceptPadButton` already drops whatever a blob carries. Writing them
+ * anyway put a field into a durable store whose meaning the format disowns —
+ * and with the version deliberately unbumped, a later slice that gives stored
+ * contexts a meaning would find existing blobs holding values nobody chose.
+ * The read stays lenient, for the blobs this build already wrote.
+ */
+export function serializeLayout(layout: Layout): string {
 	return JSON.stringify({
 		version: LAYOUT_VERSION,
-		moves: layoutMoves(layout),
+		moves: layoutMoves(layout).map((move) => ({
+			...move,
+			from: withoutContexts(move.from),
+			to: withoutContexts(move.to),
+		})),
 	});
 }
+
+/** A trigger as the store holds it: the pad's derived half left off. */
+const withoutContexts = (t: Trigger): Trigger => {
+	if (!("contexts" in t)) return t;
+	const { contexts: _contexts, ...rest } = t;
+	return rest as Trigger;
+};
 
 // ---------------------------------------------------------------------------
 // The nested validator
@@ -283,13 +207,25 @@ const acceptSurface = (v: unknown): Accepted<Surface> =>
 			: `a surface is one of ${SURFACES.join(", ")}`;
 
 /**
- * A stored trigger, or `null` with the reason it is not one.
+ * A stored trigger, or the reason it is not one.
  *
- * **Key triggers only**, which is not this module narrowing the model: the
- * registry's `rebind` refuses every other kind until the capture modal can
- * admit a stick for one capture, so a stored pad or mouse row could never be
- * applied and accepting one here would move the refusal later and make it
- * harder to name. S4 lifts both together.
+ * **Keys and pad buttons**, which is the shape half of #381 S4's lift. It was
+ * keys alone, because `rebind` refused every other kind and a stored row that
+ * could never be applied would move the refusal later and make it harder to
+ * name. `rebind` admits a pad button now, so this does — and the two refusals
+ * stay two, because they answer different questions: this one is about a
+ * *shape* this module can hold, and `movedTrigger`'s is about a *move* the
+ * registry will make. A stick fails here on shape and would fail there on the
+ * reader; that is not a duplicated rule, it is the same input refused by the
+ * layer it reaches first, and the sentence the player reads differs. Both
+ * lift together again or not at all, and
+ * [#496](https://github.com/jcfischer/seelite/issues/496) is where.
+ *
+ * **A stored `contexts` is not read.** Loading is one `rebind` per row and
+ * `movedTrigger` derives the contexts from `pad-bindings.ts`, so a blob that
+ * claimed a button is live everywhere gets the button's real set back. It is
+ * accepted as a shape and dropped, rather than refused, because a blob this
+ * build wrote carries one.
  *
  * What it checks is the shape a `Trigger` has, one field at a time — which is
  * the thing `settings.ts`'s `accept()` cannot do, because membership of a set
@@ -297,9 +233,10 @@ const acceptSurface = (v: unknown): Accepted<Surface> =>
  */
 function acceptTrigger(v: unknown): Trigger | string {
 	if (!isRecord(v)) return "a trigger is an object";
+	if (v.kind === "pad-button") return acceptPadButton(v);
 	if (v.kind !== "key")
 		return typeof v.kind === "string"
-			? `only a key may be stored here, not a ${v.kind}`
+			? `only a key or a pad button may be stored here, not a ${v.kind}`
 			: "a trigger names its kind";
 	if (typeof v.key !== "string" || v.key.length === 0)
 		return "a key trigger carries the character it was recorded with";
@@ -339,6 +276,35 @@ function acceptTrigger(v: unknown): Trigger | string {
 	};
 }
 
+/**
+ * A stored pad button, rebuilt to the shape the registry will accept.
+ *
+ * The `contexts` a blob carried are **dropped and re-derived**, which is the
+ * pad's version of the rule that a code is derived for a key: what a button is
+ * live in is `pad-bindings.ts`' answer and never a player's, so a hand-written
+ * blob cannot widen one. `movedTrigger` fills them in, and the empty list here
+ * is what it replaces — it is never the set a row ends up with.
+ *
+ * `hold` is accepted as a shape and refused as a move: `padFireHeld` reads a
+ * fixed position, so the registry says no and names that reader, which is a
+ * better sentence than "a pad button does not have a hold" would be.
+ */
+function acceptPadButton(v: Record<string, unknown>): Trigger | string {
+	if (
+		typeof v.button !== "string" ||
+		!STANDARD_BUTTONS.includes(v.button as PadButtonName)
+	)
+		return `a pad button is one of ${STANDARD_BUTTONS.join(", ")}`;
+	const hold = acceptFlag("hold", v.hold);
+	if (typeof hold === "string") return hold;
+	return {
+		kind: "pad-button",
+		button: v.button as PadButtonName,
+		...(hold.value === undefined ? {} : { hold: hold.value }),
+		contexts: [],
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
@@ -357,9 +323,9 @@ const unreadable = (detail: string): LoadedLayout => ({
  * (sage round 6).
  */
 function applyMove(
-	layout: readonly Binding[],
+	layout: Layout,
 	entry: unknown,
-): { layout: readonly Binding[] } | { notice: LayoutNotice } {
+): { layout: Layout } | { notice: LayoutNotice } {
 	const named =
 		isRecord(entry) && typeof entry.command === "string" ? entry.command : null;
 	const rejected = (
@@ -400,7 +366,7 @@ function applyMove(
 	// moved binding.
 	// Hashed once rather than per row of each of the two scans.
 	const wanted = triggerKey(from);
-	const on = (rows: readonly Binding[]) =>
+	const on = (rows: Layout) =>
 		rows.some((b) => b.command === named && triggerKey(b.trigger) === wanted);
 	if (!on(DEFAULT_BINDINGS))
 		return rejected("moved-default", `${named} no longer ships on ${wanted}`);
@@ -486,46 +452,6 @@ export function parseLayout(raw: string | null): LoadedLayout {
 	return { layout, notices };
 }
 
-/**
- * What is wrong with a layout *as it stands*, which is only ever collisions.
- *
- * D5's second predicate, and its first player-layout caller: the shipped
- * layout must not collide and CI holds that, while a player's may and is told
- * that it does. Exported because a **rebind** needs the same answer about the
- * table it just produced, and `main.ts` building the notice itself would be a
- * second place that decides what a collision notice looks like.
- *
- * It is not the whole of `parseLayout`'s answer: a rejected row leaves no
- * trace in the table it failed to change, so those notices are a fact about
- * the blob and have to be carried rather than recomputed.
- */
-export function collisionNotices(layout: readonly Binding[]): LayoutNotice[] {
-	return collisions(layout).map((collision) => ({
-		kind: "collision",
-		collision,
-		at: triggerFor(layout, collision),
-	}));
-}
-
-/** One of the two triggers a collision is on, for a notice that prints a key
- *  rather than the hash `collisions()` groups by. */
-const triggerFor = (
-	layout: readonly Binding[],
-	collision: Collision,
-): Trigger => {
-	const found = layout.find(
-		(b) =>
-			b.command === collision.commands[0] &&
-			triggerKey(b.trigger) === collision.trigger,
-	);
-	// `collisions` reports only pairs it found in this layout, so the lookup
-	// cannot miss; the throw says so rather than handing a caller a trigger
-	// from somewhere else.
-	if (found === undefined)
-		throw new Error(`no ${collision.commands[0]} row on ${collision.trigger}`);
-	return found.trigger;
-};
-
 // ---------------------------------------------------------------------------
 // The browser
 // ---------------------------------------------------------------------------
@@ -596,7 +522,7 @@ export function loadLayout(): LoadedLayout {
  * indistinguishable, and the panel went on printing "the default layout is in
  * force" beside `PLAYER LAYOUT` for the rest of the session (sage round 1).
  */
-export function saveLayout(layout: readonly Binding[]): boolean {
+export function saveLayout(layout: Layout): boolean {
 	// **Serialized outside the try**, so `layoutMoves`' invariant throw stays
 	// loud. Inside it, a layout that is not the shipped table with triggers
 	// moved — a programming error the assertion exists to shout about —

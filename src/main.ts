@@ -178,7 +178,7 @@ import { type Course, courseProgress, setCourse } from "./galaxy-route";
 // The pad, normalised. What any of it *means* is `pollPad` and the panel
 // routing below, and nowhere else — that module was copied in from seekolous
 // and must not learn what a station is.
-import { GamepadSource, type PadFrame } from "./gamepad";
+import { GamepadSource, type PadButtonName, type PadFrame } from "./gamepad";
 import {
 	type PadContext,
 	type PadIntents,
@@ -545,26 +545,55 @@ import {
 	type LiveCockpitState,
 	type RightTab,
 } from "./live-cockpit";
+import { loadLayout, saveLayout } from "./binding-store";
 import {
 	collisionNotices,
 	type LayoutNotice,
-	loadLayout,
 	retiredBySave,
-	saveLayout,
-} from "./binding-store";
-import { controlsCatalogue } from "./controls-catalogue";
-import { controlsKeyMove, restoreOnTabPick } from "./controls-reference";
+} from "./layout-notice";
+import {
+	type ControlsCatalogue,
+	controlsCatalogue,
+} from "./controls-catalogue";
+import {
+	controlsKeyMove,
+	restoreOnTabPick,
+	SETTINGS_ACTION,
+} from "./controls-reference";
+import type { CaptureModalHandle } from "./capture-modal";
 import { isEditable } from "./editable-target";
 import {
-	type Binding,
+	capturedTrigger,
+	codeKey,
 	type CommandId,
-	DEFAULT_BINDINGS,
+	type PadAnalog,
+	commandById,
+	type Layout,
 	isHeld,
 	rebind,
 	resolveKey,
+	resolvePad,
 	type Trigger,
 } from "./commands";
 import { keyDispatch } from "./key-dispatch";
+
+/**
+ * The keys that are only ever half of a press, for the capture modal.
+ *
+ * `KeyboardEvent.key` as it arrives, not lowercased: these are the spellings
+ * the platform uses. A modifier reaches the capture as a keydown of its own —
+ * `Shift` is the first half of `Shift+/`, which is how the `Controls` tab is
+ * opened — and binding a control to it would make every chord that uses it
+ * fire the control first.
+ */
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+	"Shift",
+	"Control",
+	"Alt",
+	"Meta",
+	"AltGraph",
+	"CapsLock",
+]);
 import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
@@ -1872,7 +1901,7 @@ class Game {
 	 * shipped table when nothing was stored, or when nothing stored could be
 	 * applied.
 	 */
-	private bindings: readonly Binding[] = this.storedLayout.layout;
+	private bindings: Layout = this.storedLayout.layout;
 	/**
 	 * What was wrong with the blob that was read, until a save replaces it.
 	 *
@@ -3601,6 +3630,29 @@ class Game {
 		this.sizeOverlay();
 		this.hud = document.getElementById("hud") as HTMLElement;
 		this.liveCockpit = new LiveCockpit({
+			/**
+			 * A `Controls` row opens the rebind modal on it (#381 S4).
+			 *
+			 * **The first of the command's triggers**, which is the one the row
+			 * prints first and the one a player pointing at that row means. A
+			 * command with several — `view.reference` is `?` and `F1` — needs a
+			 * way to say which, and that is a screen question #370 owns; a
+			 * modal that guessed differently from the row would move a trigger
+			 * the player was not looking at.
+			 */
+			onRebindRow: (command) => {
+				const row = this.bindings.find((b) => b.command === command);
+				if (!row) return;
+				if (!commandById(row.command).rebindable) return;
+				this.captureModal?.open(row.command, row.trigger);
+			},
+			/**
+			 * #369 D12's bootstrap: the tab's door to settings, which is not a
+			 * binding and so cannot be lost by rebinding one.
+			 */
+			onControlsAction: (action) => {
+				if (action === SETTINGS_ACTION) this.settingsPanel?.open();
+			},
 			onRightTab: (tab) => {
 				// A tab picked by hand moves what `?` will restore (#372).
 				this.controlsRestoreTab = restoreOnTabPick(
@@ -3811,7 +3863,7 @@ class Game {
 					this.readPadContext(consoleDrawn),
 					consoleDrawn,
 					this.canvasHoldsLock(),
-				) !== "capture"
+				) !== "take"
 			)
 				return;
 			// **A refusal is read, not thrown** — it is the ordinary case, not the
@@ -7394,6 +7446,24 @@ class Game {
 	 * than dressed up. Sage found both the stale claim and the inversion.
 	 */
 	private padContextThisFrame: PadContext = "flight";
+	/**
+	 * Last frame's analog reading, for the capture modal's edge.
+	 *
+	 * Only `capturedTrigger` reads it, and only while the modal is up — but it
+	 * is written every frame, because the frame that *matters* is the one
+	 * before the modal opened and nothing knows that in advance.
+	 *
+	 * **The frame itself, and a copy of it was the wrong fix.** The modal was
+	 * offered the same stick on every one of forty frames, and this field was
+	 * briefly a per-frame copy of the numbers on the theory that the frame had
+	 * changed under it. It had not: `readPad` freezes every frame it returns,
+	 * axes included. The mutation that would have proved the copy load-bearing
+	 * — putting the frame back — turned nothing red, and that is what found
+	 * the real cause, which is one line below. The copy cost three
+	 * allocations a frame, one of them seventeen fields wide, for the whole
+	 * session (sage rounds 1, 3 and 4 on #497).
+	 */
+	private padAnalogPrevious: PadAnalog | null = null;
 	// The drawn console beside it, for the same reason and with the same caveat: the
 	// pointer's rule wants this fact whether or not it owns the pad, and asking twice
 	// a frame would make a rendered-DOM read a per-frame cost twice.
@@ -7423,6 +7493,13 @@ class Game {
 	}
 
 	private readPadContext(consoleDrawn = this.consoleIsDrawn()): PadContext {
+		// **First, and above `modal`** (#369 D9). The rebind modal is drawn over
+		// everything and is the one surface that must not answer `modal`: a
+		// modal panel claims six buttons as a cursor, and this one claims all
+		// seventeen as candidates. Asked second, a capture opened from a tab
+		// with the settings screen behind it would have walked that screen's
+		// rows with the d-pad instead of recording them.
+		if (this.captureModal?.isOpen()) return "capture";
 		if (this.commanderOverlay?.isOpen() || this.settingsPanel?.isOpen())
 			return "modal";
 		// The instrument takes what a side console takes — six controls — and
@@ -7491,6 +7568,15 @@ class Game {
 	settingsPanel: SettingsPanelHandle | null = null;
 
 	/**
+	 * The rebind modal (#369 D9), when the `Controls` tab has opened one.
+	 *
+	 * Held on the game because `padContextThisFrame` has to answer `capture`
+	 * while it is up — that is what suspends the sticks and the trigger — and
+	 * because every input this frame is offered to it rather than to the ship.
+	 */
+	captureModal: CaptureModalHandle | null = null;
+
+	/**
 	 * The frame instrument, when `?perf` mounted one.
 	 *
 	 * `null` for every player: the panel is behind a query gate and nothing in
@@ -7543,7 +7629,7 @@ class Game {
 			if (intents.back) return perf.setFocused(false);
 			if (intents.focusDelta !== 0) perf.moveCursor(intents.focusDelta);
 			if (intents.activate) perf.activate();
-			for (const key of intents.keys) this.commandKey(key);
+			this.runPadPresses(intents.buttons, context);
 			return;
 		}
 		// A console. It takes six discrete controls **and** suspends flight
@@ -7563,7 +7649,7 @@ class Game {
 		// drawn inside the same panel and belong to a handle it does not hold.
 		if (intents.activate && !this.liveCockpit.activateFocus())
 			this.activateChartRow(this.liveCockpit.focusedElement());
-		for (const key of intents.keys) this.commandKey(key);
+		this.runPadPresses(intents.buttons, context);
 	}
 
 	/**
@@ -7688,17 +7774,48 @@ class Game {
 		);
 		if (!frame.connected) return;
 		const context = this.padContextThisFrame;
+		// **The modal is fed before anything else reads the frame, and it is
+		// fed the frame *before* this one too.** `capturedTrigger` takes an
+		// edge and not a level, because a player who was flying with the stick
+		// over and turned their head to open this has not let go of it — a
+		// level reading records that stick on the first frame. Nothing below
+		// runs in this context: `padIntents` reports nothing at all there, so
+		// the `acted` read and the dispatch are both empty by construction
+		// rather than by a branch.
+		// **Advanced before the modal is offered anything, and that ordering is
+		// the whole fix.** The modal draws inside `offer`, and a throw there —
+		// `escapeHtml` on an undefined sentence, which is what a refusal keyed
+		// on the trigger's *kind* produced — propagates out of `pollPad` and
+		// skips every line after it. So the previous reading never advanced,
+		// `capturedTrigger` compared a deflected stick against rest forever,
+		// and the modal was re-offered the same stick on all forty frames of
+		// the probe's window. One crash, two symptoms, and the edge C10 rests
+		// on was the one that looked like an independent bug.
+		//
+		// A consumer must not be able to break an input invariant by failing.
+		const previous = this.padAnalogPrevious;
+		this.padAnalogPrevious = frame;
+		if (context === "capture") {
+			const caught = capturedTrigger(frame, previous);
+			if (caught) this.captureModal?.offer(caught);
+		}
 		const intents = padIntents(frame, context);
-		const acted = intents.keys.length > 0 || intents.activate;
+		// **What a press *reaches*, not that one stood for a key.** The old
+		// reading was `intents.keys.length > 0`, and a button is not a key any
+		// more — every unclaimed press is reported now, including the ones the
+		// layout binds to nothing, so counting them would sound the notice for
+		// Square and for `home`.
+		const acted =
+			this.padPressIds(intents.buttons, context).length > 0 || intents.activate;
 		if (context !== "flight") {
 			this.applyPanelIntents(intents, context);
 			if (acted) this.padAudioNotice();
 			return;
 		}
 		if (intents.instrument) this.perfPanel?.setFocused(true);
-		// Through `command`, not through a second copy of what each key does.
-		// The pad presses the key; one implementation stays one implementation.
-		for (const key of intents.keys) this.commandKey(key);
+		// Through the layout, not through a second copy of what each button
+		// does. The pad presses a row; one implementation stays one.
+		this.runPadPresses(intents.buttons, context);
 		// **After the dispatch, not before it.** `command` opens by clearing
 		// `jumpNotice` — #187's "dismissed by playing" — so a notice written
 		// first was wiped by the very press that triggered it, and the once-only
@@ -7750,6 +7867,59 @@ class Game {
 			this.keys.delete(route.key);
 			return;
 		}
+		// **The rebind modal takes every key that is left, and takes it here**
+		// (#369 D9). After the release, because a key held when the modal opened
+		// must still be let go of — the same ordering #380's field gate has, and
+		// for the same reason. Before everything else, because every remaining
+		// route is a *candidate* rather than a command: a chord, a walked
+		// surface and an ordinary press are all things a player may want bound.
+		//
+		// `Escape` is the exception and it is not a hole: it is the keyboard's
+		// universal way out of a screen, the modal is a screen, and a player who
+		// binds a control to `Escape` has bound it to the thing every dialog in
+		// this game closes on. The *click* is the guaranteed exit (#370's
+		// premise); this is the courtesy one.
+		if (this.captureModal?.isOpen()) {
+			// **A browser shortcut is left alone, and `preventDefault` moved
+			// below this to make that true** (sage round 6 on #497). The guard
+			// stopped `Cmd+R` being *captured* and still ate it, which is the
+			// worse half: the player got neither the binding nor the reload.
+			// `keyDispatch` refuses both combinations for the game's own
+			// reasons; this refuses them for the browser's.
+			if (e.metaKey || e.ctrlKey) return;
+			e.preventDefault();
+			if (e.key === "Escape") {
+				this.captureModal.close();
+				return;
+			}
+			// **A modifier on its own is not a candidate** (sage round 3 on
+			// #497). A lone `Shift` — the first half of `Shift+/`, which is how
+			// this tab is opened — arrived as a key called `shift` with a live
+			// "Bind it" beside it. The same for `Alt`, which is the *prefix* of
+			// every chord this game has, and for `Meta`, whose own keydown
+			// would otherwise be bound while `preventDefault` ate the browser
+			// shortcut the player was reaching for.
+			//
+			// **And a repeat is the same press.** Held down, every repeat ran a
+			// whole `rebind`, a `layoutOf` freeze, a `collisions` scan and an
+			// `innerHTML` replacement at the OS repeat rate, all to produce the
+			// answer already on screen.
+			if (e.repeat || MODIFIER_KEYS.has(e.key)) return;
+			this.captureModal.offer({
+				kind: "key",
+				// **Option makes the character untrustworthy, and only here is
+				// that a known fact.** `Alt+Q` on macOS arrives as `œ`, and a
+				// row that is not itself a chord drops the `alt` — so without
+				// this the capture stored `œ` for a key the player pressed as
+				// `Q`. `movedTrigger` applies the same rule to a *chord*,
+				// which is a different fact about a different thing (sage
+				// rounds 4 and 5 on #497).
+				key: e.altKey ? codeKey(e.code) : e.key.toLowerCase(),
+				code: e.code,
+				...(route.kind === "chord" ? { alt: true as const } : {}),
+			});
+			return;
+		}
 		if (route.kind === "swallow") {
 			if (route.prevent) e.preventDefault();
 			return;
@@ -7792,12 +7962,28 @@ class Game {
 			}
 		}
 		if (route.kind === "chord") {
-			// A chord stands for a key — today the three head-look keys — and
-			// runs that key's command, in the cockpit only: head-look is a
-			// cockpit mechanism, and in chase `2` would recentre the camera,
-			// which the Alt chord never did.
+			// **The law said it is a chord; the layout says what it reaches**
+			// (#381 S4). `keyDispatch` no longer carries a code-to-key table, so
+			// an Alt press the layout does not bind resolves to nothing here —
+			// which is what its swallow did, and the default is prevented on
+			// this route either way.
+			//
+			// **And the cockpit guard this branch carried is gone, not
+			// relocated.** It existed because a chord stood for a key and `2`
+			// would have recentred the chase camera through `view.orbitCentre`.
+			// The three chords are authored on `views: COCKPIT` commands and
+			// `resolveKey` compares `alt`, so an unqualified chase row can never
+			// answer an Alt fact — `tests/commands.test.ts` holds that a chase
+			// `Alt+↑` reaches nothing, which is what licensed deleting the
+			// second copy rather than an argument that it was safe.
 			e.preventDefault();
-			if (this.view === "cockpit") this.commandKey(route.key);
+			for (const id of resolveKey(this.bindings, {
+				key: route.key,
+				code: route.code,
+				alt: true,
+				view: this.view,
+			}))
+				this.command(id);
 			return;
 		}
 		this.keys.add(route.key);
@@ -7862,6 +8048,31 @@ class Game {
 				return;
 			case "view.headStarboard":
 				this.setHeadLook("right");
+				return;
+			// **The settings screen's own door, folded here in #381 S4.** It
+			// was `settings-panel.ts`'s window listener, which made `z` the
+			// panel's key rather than the registry's — so #369 D12's "`z` is
+			// an ordinary command and can be moved" was false: a rebound
+			// `system.settings` still opened on `z`, and the key the player
+			// chose did nothing. S2 deferred the fold with a reason ("a folded
+			// open-trigger before that route exists is a door a rebind can
+			// lock") and the route is this slice's `Controls` tab door.
+			//
+			// The panel still owns the keyboard while it is *up*, including
+			// the key that closes it; only the opening moved.
+			case "system.settings":
+				// **Not behind the Commander overlay**, which the settings
+				// panel's own listener used to check before #381 S4 folded
+				// this open here. The check is not restated: that overlay
+				// takes `keydown` in the *capture* phase and calls
+				// `stopPropagation`, and this handler is on `window` in the
+				// bubble phase — so an event it claims never arrives. The old
+				// guard existed because the two panels were *sibling* capture
+				// listeners, where a stop does not reach across.
+				// Driven in a headed browser to check that rather than reason
+				// it: with the overlay open, `z` leaves the settings screen
+				// closed.
+				this.settingsPanel?.open();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
@@ -8051,7 +8262,36 @@ class Game {
 	 * nothing.
 	 */
 	rebindCommand(command: CommandId, from: Trigger, to: Trigger) {
-		this.bindings = rebind(this.bindings, command, from, to);
+		this.commitLayout(rebind(this.bindings, command, from, to));
+	}
+
+	/**
+	 * The layout in force, and the catalogue drawn from it.
+	 *
+	 * Readers rather than public fields, because the capture modal has to ask
+	 * *each time*: a bind commits a new layout under it, and a value handed
+	 * over once would diagnose the table as it stood when the modal opened.
+	 */
+	layoutInForce(): Layout {
+		return this.bindings;
+	}
+
+	controlsNow(): ControlsCatalogue {
+		return controlsCatalogue(this.bindings, this.layoutNotices);
+	}
+
+	/**
+	 * Put a layout in force, save it, and say what that changed.
+	 *
+	 * **`rebindCommand`'s body, lifted out for the capture modal** (#381 S4).
+	 * The modal does not arrive with a command and two triggers: it arrives
+	 * with the candidate `proposedRebind` already built and already diagnosed,
+	 * and re-deriving it here from the pieces would be a second `rebind` of the
+	 * same move — a second chance to disagree with the warning the player has
+	 * just read and accepted.
+	 */
+	commitLayout(layout: Layout) {
+		this.bindings = layout;
 		// **A write retires the blob's own notices, and a refusal does not.**
 		// Every notice the boot produced is a fact about the blob that was
 		// read: that it had no version this build knows, that a row in it
@@ -8108,21 +8348,40 @@ class Game {
 	}
 
 	/**
-	 * A command reached by something that *stands for* a key.
+	 * Run what the pad's unclaimed presses reach, in this context.
 	 *
-	 * The Alt chords and the pad's flight table both hand over a key string:
-	 * `ALT_CHORDS` maps a physical key to the key it stands for, and
-	 * `padIntents().keys` says which key a button presses. Both are resolved
-	 * against **`DEFAULT_BINDINGS`**, never against the layout in force, and
-	 * that is the point rather than an oversight — a table that stands for `1`
-	 * stands for the key `1` was, so moving head-look off `1` moves the
-	 * keyboard and leaves the d-pad and the chord where they were. Resolving
-	 * them through the player's layout would make a keyboard rebind silently
-	 * change what a gamepad does.
+	 * **Through the layout in force, which is the whole of #381 S4's first
+	 * step.** This was `commandKey(key)`: `padIntents` handed over a *key*
+	 * through `PAD_FLIGHT_KEYS` and an Alt chord handed one over through
+	 * `ALT_CHORDS`, and both were resolved against `DEFAULT_BINDINGS` rather
+	 * than against `this.bindings`. That bought one property — a keyboard
+	 * rebind could not move a pad button — and paid for it with the one the
+	 * capture modal needs, because a button whose meaning lives in a table the
+	 * player's layout is not cannot be rebound at all. A pad button is a row of
+	 * the layout now, so moving the *key* row leaves the *button* row alone and
+	 * the property survives without the table.
 	 */
-	private commandKey(key: string) {
-		for (const id of resolveKey(DEFAULT_BINDINGS, { key, view: this.view }))
-			this.command(id);
+	private runPadPresses(
+		buttons: readonly PadButtonName[],
+		context: PadContext,
+	) {
+		for (const id of this.padPressIds(buttons, context)) this.command(id);
+	}
+
+	/**
+	 * What these presses reach, once.
+	 *
+	 * One loop, because the two callers below built the same facts literal and
+	 * asked `resolvePad` the same question — one to run the answer and one to
+	 * test it for emptiness (sage round 2 on #497).
+	 */
+	private padPressIds(
+		buttons: readonly PadButtonName[],
+		context: PadContext,
+	): CommandId[] {
+		return buttons.flatMap((button) =>
+			resolvePad(this.bindings, { button, context, view: this.view }),
+		);
 	}
 
 	/**
@@ -14834,6 +15093,16 @@ if (query.has("model-viewer")) {
 	// the game exists. Gated first, so nothing is imported when it is not asked
 	// for.
 	// The settings screen is a player-facing feature, so it is not gated.
+	// The rebind modal (#369 D9). It is a player-facing feature and is not
+	// gated; it is imported beside the settings screen because it is the other
+	// half of D12's bootstrap — the tab's door opens one of these two.
+	import("./capture-modal").then(({ mountCaptureModal }) => {
+		game.captureModal = mountCaptureModal(
+			() => game.layoutInForce(),
+			() => game.controlsNow(),
+			(layout) => game.commitLayout(layout),
+		);
+	});
 	import("./settings-panel").then(({ mountSettingsPanel }) => {
 		// Held on the game so the pad can drive the cursor the screen already
 		// has (#283). The screen keeps owning the keyboard in the capture phase;

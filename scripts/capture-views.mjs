@@ -554,6 +554,63 @@ const PLACERS = {
 			throw new Error(
 				`controls placer: ${unfolded.join(", ")} did not fold — no such group, or the fold was lost`,
 			);
+		if (shot.rebind) {
+			// **The row is clicked and the modal is read back**, on the placer's
+			// own rule two paragraphs up: a selector that matched nothing would
+			// produce the tab with no modal on it, and a sheet captioned
+			// "rebinding" showing a tab reads exactly like a regression in the
+			// modal. A build without one is captured and *said*, which is the
+			// honest `before` of this node.
+			const row = `[data-live-controls-row="${shot.rebind}"]`;
+			const opened = await page.evaluate((sel) => {
+				const el = document.querySelector(sel);
+				if (!el) return false;
+				el.click();
+				return true;
+			}, row);
+			if (!opened) return `no ${shot.rebind} row on this build`;
+			const up = await page
+				.waitForFunction(
+					() => !!document.querySelector("[data-capture-modal]"),
+					undefined,
+					{ timeout: 2000 },
+				)
+				.then(
+					() => true,
+					() => false,
+				);
+			if (!up) return `the ${shot.rebind} row opened no modal on this build`;
+			// The key the modal is shown having caught. A press rather than a
+			// field assignment, for the reason `?` is pressed above: the frame
+			// is what the game does with a keystroke.
+			if (shot.press) {
+				await page.keyboard.press(shot.press);
+				// **Wait on the confirm control, not on `.capture-caught`.**
+				// The refused branch draws that class too — it shows what it
+				// caught and then says why it cannot take it — so a build that
+				// *refused* the key would satisfy the wait and the sheet would
+				// be captioned `caught k` over a refusal (sage round 2 on
+				// #497). Only a candidate the registry will store draws a
+				// confirm.
+				// **Reported, not thrown**, like the two waits above it: a throw
+				// here aborts the whole capture run, and a build that refuses
+				// the key is a thing this sheet exists to *show* (sage round 5
+				// on #497).
+				const offered = await page
+					.waitForFunction(
+						() => !!document.querySelector("[data-capture-confirm]"),
+						undefined,
+						{ timeout: 2000 },
+					)
+					.then(
+						() => true,
+						() => false,
+					);
+				if (!offered)
+					return `${shot.rebind} · ${shot.press} was caught and refused`;
+			}
+			return `Rebinding ${shot.rebind}${shot.press ? ` · caught ${shot.press}` : ""}`;
+		}
 		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
 	},
 };
@@ -714,6 +771,24 @@ try {
 	await mkdir(join(OUT, LABEL), { recursive: true });
 
 	for (const view of VIEWS) {
+		// **Any modal the previous view left up comes down first** (#381 S4).
+		// The rebind modal is a full-screen overlay outside the canvas, and
+		// nothing else in this loop resets the DOM — `ensureFixture` reloads
+		// only when the seed changes and `setView` presses a key. So
+		// `controls-rebind` left its modal standing and it was captured again
+		// in `duel-glass`, the next view to frame the glass: 30.99% of that
+		// frame moved against a same-build control of 0.00%, which reads
+		// exactly like a regression in the duel HUD.
+		//
+		// Dismissed the way a player does, through the modal's own control,
+		// rather than by removing the node: a `remove()` here would leave the
+		// game still believing it is in the `capture` context, and the next
+		// view would be flown with the sticks suspended.
+		await page.evaluate(() => {
+			document
+				.querySelector("[data-capture-modal] [data-capture-cancel]")
+				?.click();
+		});
 		// **Not on the workbench**, which has no view cycle: `v` there is an
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.

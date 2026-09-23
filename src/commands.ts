@@ -30,8 +30,8 @@
  * - **D7** — dispatch is on the physical key (`code`) and print is on the
  *   character the binding was *recorded* with, so the tab keeps printing
  *   characters. The letter rows carry a code since the dispatch slice, derived
- *   in `keyTrigger` rather than authored fifty times; the Alt chords carried
- *   one already, because `ALT_CHORDS` is keyed on `code`. **Two groups do not,
+ *   in `keyTrigger` rather than authored fifty times; the three Alt chords are
+ *   authored *on* a code, which is what a chord is. **Two groups do not,
  *   and `codeFor` owns both reasons** rather than this list restating them.
  *   The property reaches a *pressed* command only: the held set is characters,
  *   so `isHeld` asks for a key rather than a position, and #390 owns the
@@ -42,13 +42,15 @@
  * module because the reason has not changed: the pad's half is derived here,
  * at load, by asking `pad-bindings.ts` what each button does in each context —
  * the same functions the game calls — so a rebound button moves its row with
- * no edit here. **`PAD_FLIGHT_KEYS` and `ALT_CHORDS` still name keys rather
- * than commands**, which is why `main.ts` keeps a `commandKey(key)` beside
- * `command(id)`: both tables stand for a key and are resolved against the
- * shipped layout. That pins every pad button to the default keyboard by
- * construction, so a pad *rebind* cannot be expressed until those tables name
- * a `CommandId` — a recorded staging point for the capture slice rather than
- * the settled design. The keyboard's half cannot be: its bindings live in `main.ts`'s
+ * no edit here. **The pad's *table* is not derived — it is
+ * `PAD_FLIGHT_COMMANDS`, here, naming ids** (#381 S4). It named keys until the
+ * capture slice and lived in `pad-bindings.ts`, resolved against the shipped
+ * layout, which pinned every pad button to the default keyboard by
+ * construction and left a pad rebind with nowhere to be stored. `ALT_CHORDS`
+ * was the same shape and is gone the same way: a chord is an authored row and
+ * `keyDispatch` decides only *that* a press is one. So `main.ts` has a single
+ * resolver pair over the layout in force — `resolveKey` and `resolvePad` — and
+ * no `commandKey` beside them. The keyboard's half cannot be derived: its bindings live in `main.ts`'s
  * key switch, which the unit tier cannot load. So the keys are stated and
  * `tests/controls-catalogue.test.ts` reads `main.ts` with the partition test's
  * own scanner, in both directions.
@@ -66,8 +68,9 @@
  */
 import { COMMANDER_KEY } from "./commander-overlay";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
-import { ALT_CHORDS } from "./key-dispatch";
 import {
+	ANALOG_TRIGGERS,
+	isAnalogTrigger,
 	type PadContext,
 	type PadIntents,
 	padFireHeld,
@@ -86,13 +89,41 @@ export const TASK_GROUPS = [
 ] as const;
 export type TaskGroup = (typeof TASK_GROUPS)[number];
 
-/** The four contexts the pad model knows, in the order a note prints them. */
-export const PAD_CONTEXTS: readonly PadContext[] = [
+/**
+ * Every context the pad model knows, in the order a note prints them.
+ *
+ * **The count is not stated here**, because it said four while the union held
+ * five for the length of one edit (#381 S4): `capture` joined `PadContext` and
+ * this list went on being typed `readonly PadContext[]`, which checks that
+ * each entry *is* a context and says nothing about whether all of them are.
+ * Every derivation in this module probes over this list — `padPresses`,
+ * `stickFor`, `triggerFor`, `fireButtons` — so a context missing from it is a
+ * context nothing is ever asked about, in silence.
+ *
+ * The order is the printed one and not alphabetical, which is why this is a
+ * written list rather than the keys of a record.
+ */
+export const PAD_CONTEXTS = [
 	"flight",
 	"instrument",
 	"console",
 	"modal",
-];
+	"capture",
+] as const satisfies readonly PadContext[];
+
+/**
+ * A compile error naming any context the list above forgot.
+ *
+ * `satisfies` checks the entries and not the coverage, so it is this that
+ * closes the hole. The error reads
+ * `Type 'true' is not assignable to type ['missing from PAD_CONTEXTS', "…"]`,
+ * with the missing member spelled in it.
+ */
+type MissingContext = Exclude<PadContext, (typeof PAD_CONTEXTS)[number]>;
+const _everyContextListed: [MissingContext] extends [never]
+	? true
+	: ["missing from PAD_CONTEXTS", MissingContext] = true;
+void _everyContextListed;
 
 /**
  * The second half of a context, and the half `PadContext` cannot express
@@ -251,9 +282,18 @@ function frame(part: Partial<PadFrame>): PadFrame {
 
 const halfOf = (value: number): Half => (value > 0 ? "+" : "-");
 
-/** What one pressed button does in each context: keys, and signed intents. */
+/**
+ * What one pressed button does in each context: whether it falls through to
+ * the ship, and which signed intents it produces.
+ *
+ * `flight` is the *fall-through* half and no longer says what a button means —
+ * `padIntents` reports which presses a surface left unclaimed, and
+ * `PAD_FLIGHT_COMMANDS` says what the ship does with one (#381 S4). Derived by
+ * asking the same function the game calls, in every context, so a console that
+ * claims a seventh button moves its row here with no edit.
+ */
 function padPresses() {
-	const keys = new Map<string, Map<PadButtonName, PadContext[]>>();
+	const flight = new Map<PadButtonName, PadContext[]>();
 	type IntentKey = `${PanelIntent}${Half}`;
 	const intents = new Map<IntentKey, Map<PadButtonName, PadContext[]>>();
 	const note = <K>(
@@ -269,7 +309,8 @@ function padPresses() {
 	for (const button of STANDARD_BUTTONS)
 		for (const context of PAD_CONTEXTS) {
 			const out = padIntents(frame({ pressed: new Set([button]) }), context);
-			for (const key of out.keys) note(keys, key, button, context);
+			if (out.buttons.includes(button))
+				flight.set(button, [...(flight.get(button) ?? []), context]);
 			for (const intent of PANEL_INTENTS) {
 				const value = out[intent];
 				if (value === 0 || value === false) continue;
@@ -279,7 +320,7 @@ function padPresses() {
 				note(intents, `${intent}${half}` as IntentKey, button, context);
 			}
 		}
-	return { keys, intents };
+	return { flight, intents };
 }
 
 const PRESSES = padPresses();
@@ -391,6 +432,14 @@ interface Authored {
 	 */
 	readonly fixed?: FixedReason;
 	readonly keys?: readonly KeySpec[];
+	/**
+	 * Physical keys (`KeyboardEvent.code`) that reach this command under Alt.
+	 *
+	 * Alt is the only chord prefix the throttle law leaves free (#369 D6), and
+	 * a chord is authored rather than derived since #381 S4 — `chordsFor`'s
+	 * doc gives the reason, which is the same one that moved the pad's table.
+	 */
+	readonly chords?: readonly string[];
 	/** Triggers that are not keys, or pad triggers not reached through a key. */
 	readonly more?: readonly Trigger[];
 	readonly intent?: PanelIntent;
@@ -628,6 +677,7 @@ const AUTHORED = [
 		group: "view",
 		views: COCKPIT,
 		keys: ["1"],
+		chords: ["ArrowLeft"],
 	},
 	{
 		id: "view.headForward",
@@ -635,6 +685,7 @@ const AUTHORED = [
 		group: "view",
 		views: COCKPIT,
 		keys: ["2"],
+		chords: ["ArrowUp"],
 	},
 	{
 		id: "view.headStarboard",
@@ -642,6 +693,7 @@ const AUTHORED = [
 		group: "view",
 		views: COCKPIT,
 		keys: ["3"],
+		chords: ["ArrowRight"],
 	},
 	{
 		id: "view.reference",
@@ -905,21 +957,100 @@ const keyTrigger = (spec: KeySpec): Trigger => {
 };
 
 /**
- * The pad buttons that press one of this command's keys.
+ * The flight table: what the ship does with a pad press a surface left alone.
  *
- * Only a key that is *pressed* — a pad button is a press, and `padIntents`
- * hands `Game.command` a key, never a held one. So the d-pad reaches head-look
- * through `1` and does not reach the chase orbit, which reads `1` held.
+ * **It names commands, and that is the whole of #381 S4's first step.** It was
+ * `PAD_FLIGHT_KEYS` in `pad-bindings.ts` and it named *keys*, resolved by
+ * `main.ts` against `DEFAULT_BINDINGS` rather than against the layout in
+ * force. That bought one property — a keyboard rebind could not move a pad
+ * button — and paid for it with the property this slice needs: a pad rebind
+ * could not be expressed at all, because the button's meaning lived in a table
+ * the player's layout is not. Naming a `CommandId` here makes the pad's half a
+ * row of `DEFAULT_BINDINGS` like any other, and `resolvePad` reads the layout.
+ * The first property survives without the table, because a `key` trigger and a
+ * `pad-button` trigger are now two rows and a rebind moves one of them.
+ *
+ * DualSense labels in brackets; an Xbox pad reads `a`/`b`/`x`/`y` literally.
+ *
+ * | button | does |
+ * | --- | --- |
+ * | `a` (Cross) | launch, or skip the dock traversal |
+ * | `b` (Circle) | request docking clearance |
+ * | `y` (Triangle) | engage or drop cruise |
+ * | `l1` / `r1` | previous and next target |
+ * | `l3` | face the target |
+ * | `r3` | cockpit or chase |
+ * | `start` (Options) | docking computer |
+ * | `select` (Create) | charge the Jump |
+ * | d-pad ←/↑/→ | head-look port, forward, starboard |
+ *
+ * **A list per button, because `up` genuinely reaches two commands.** `2` is
+ * head-forward in the cockpit and the orbit reset in chase, which #369 D3
+ * settles as two commands with disjoint view scopes rather than one with two
+ * meanings — so the d-pad's ↑ carries both rows and `resolvePad` picks by
+ * view. A button that reached two commands in *one* view would be a collision,
+ * and `defaultCollisions()` is red in CI for exactly that.
+ *
+ * D-pad ↓ is not in the table because what it does is not a command: it hands
+ * the pad to the frame instrument and takes it back (`PadIntents.instrument`).
+ * `x` (Square) is not either: it is the pulse laser's trigger, *held*, by the
+ * principal's ruling (#324), and `fireButtons` derives that row. Flight assist
+ * stays on the keyboard's `x`. **`home` is bound to nothing at all**, which is
+ * the one free standard button and is said here rather than discovered in
+ * flight.
  */
-function padButtonsFor(keys: readonly Trigger[]): Trigger[] {
+export const PAD_FLIGHT_COMMANDS: Partial<
+	Record<PadButtonName, readonly CommandId[]>
+> = {
+	a: ["dock.launch"],
+	b: ["dock.clearance"],
+	y: ["fly.cruise"],
+	l1: ["fight.targetPrevious"],
+	r1: ["fight.targetNext"],
+	l3: ["fight.faceTarget"],
+	r3: ["view.toggle"],
+	start: ["dock.computer"],
+	select: ["fly.jump"],
+	left: ["view.headPort"],
+	up: ["view.headForward", "view.orbitCentre"],
+	right: ["view.headStarboard"],
+};
+
+/**
+ * The pad buttons that press this command.
+ *
+ * The contexts are the *button's*, asked of `pad-bindings.ts` rather than
+ * stated here: a console claims six presses and the rest fall through, so
+ * `a` is flight-only while `y` also reaches the ship from a console. That is
+ * why this is derived at load and not a third column in the table above.
+ */
+function padButtonsFor(id: CommandId): Trigger[] {
 	const out: Trigger[] = [];
-	for (const t of keys) {
-		if (!isPressedKey(t)) continue;
-		for (const [button, contexts] of PRESSES.keys.get(t.key) ?? [])
-			out.push({ kind: "pad-button", button, contexts });
+	for (const button of STANDARD_BUTTONS) {
+		if (!(PAD_FLIGHT_COMMANDS[button] ?? []).includes(id)) continue;
+		const contexts = buttonContexts(button);
+		if (contexts === null) continue;
+		out.push({ kind: "pad-button", button, contexts });
 	}
 	return out;
 }
+
+/**
+ * Where a button falls through to the ship, or `null` when it never does.
+ *
+ * One owner, because the rule was written three times — here, in
+ * `capturedTrigger` and in `movedTrigger` — and "a button live nowhere is not
+ * a binding" is one rule (sage rounds 1 and 2 on #497). The three readers do
+ * different things with the `null`: a default row is skipped, a capture
+ * records the button anyway so the registry can *say* why, and a rebind
+ * refuses it.
+ */
+const buttonContexts = (
+	button: PadButtonName,
+): readonly PadContext[] | null => {
+	const contexts = PRESSES.flight.get(button);
+	return contexts !== undefined && contexts.length > 0 ? contexts : null;
+};
 
 /**
  * The punctuation keys, by the character they type unshifted.
@@ -1014,18 +1145,29 @@ const codeFor = (key: string): string | undefined =>
 	/^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : undefined;
 
 /**
- * The Alt chords that stand for one of this command's pressed keys — derived
- * from `ALT_CHORDS`, the table the dispatch reads, so a chord added there gets
- * its row here with no edit to this file (#377).
+ * The Alt chords authored on a command, as key triggers.
+ *
+ * **Authored here since #381 S4, and derived from `ALT_CHORDS` before it.**
+ * That table mapped a physical key to the key it *stood for*, so a chord was
+ * resolved against the shipped keyboard exactly as the pad's flight table was
+ * — a chord moved in the registry was expressible and dead, because
+ * `keyDispatch` swallowed every Alt press whose code the table did not carry.
+ * The law now decides only *that* an Alt press is a chord and the layout
+ * decides what it reaches, so there is nothing left for a second table to say
+ * and these are three rows like any other.
+ *
+ * The character is `codeKey`'s, not the event's: on macOS Option changes it
+ * (`Alt+D` arrives as `∂`), and what a row *prints* is the key at that
+ * position on the layout the defaults were authored on — #369 D7's two halves,
+ * which is also why the code is what `resolveKey` matches.
  */
-function chordsFor(keys: readonly Trigger[]): Trigger[] {
-	const pressed = new Set(
-		keys.flatMap((t) => (isPressedKey(t) ? [t.key] : [])),
-	);
-	return Object.entries(ALT_CHORDS)
-		.filter(([, key]) => pressed.has(key))
-		.map(([code]) => ({ kind: "key", key: codeKey(code), alt: true, code }));
-}
+const chordsFor = (codes: readonly string[]): Trigger[] =>
+	codes.map((code) => ({
+		kind: "key",
+		key: codeKey(code),
+		alt: true,
+		code,
+	}));
 
 /**
  * The pad buttons that produce one half of an intent.
@@ -1055,6 +1197,11 @@ function padIntentTriggers(
 // ---------------------------------------------------------------------------
 // The registry
 // ---------------------------------------------------------------------------
+
+/** Every context but the one that exists to swallow input; see `scopeOf`. */
+const NOT_WHILE_CAPTURING: readonly PadContext[] = PAD_CONTEXTS.filter(
+	(c) => c !== "capture",
+);
 
 /**
  * Where a binding is live: D4's context set, both halves of it.
@@ -1129,6 +1276,26 @@ export interface Binding {
  *   `mouseFiring` with no context test while the pad's `x` is gated. That is
  *   #369's defect 2, and #378 owns the ruling. A registry that quietly gated
  *   it here would be deciding that node by implementation.
+ *
+ * **And `capture` is subtracted from every one of them** (#381 S4). The other
+ * four contexts differ in what they *claim*; that one exists to claim
+ * everything — D9's "swallow every input except its own cancel" — because a
+ * key pressed while the rebind modal is listening is the thing being recorded,
+ * not a command being run. A key live there would print a context note saying
+ * the ship answers `w` while the modal is capturing `w`.
+ *
+ * It is subtracted rather than left out of `EVERY_CONTEXT`, because a *pad*
+ * trigger can be live in `capture` and one is: `capturedTrigger` records a
+ * stick and a trigger with that context and nothing else. So the rule is
+ * about the kinds whose liveness this function invents, and not about the
+ * context.
+ *
+ * **What this does not fix**, and it is older: `modal` is still in the list
+ * for a key, while the settings panel's `releaseHeldKeys` exists precisely
+ * because a held throttle key went on flying the ship behind a screen the
+ * player was reading. That inaccuracy predates this slice and moving it is a
+ * change to what a note *prints* for every keyboard row, which is #370's
+ * screen rather than this node's.
  */
 const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 	const pad =
@@ -1136,7 +1303,7 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 			? trigger.contexts
 			: trigger.kind === "mouse-move"
 				? (["flight"] as const)
-				: PAD_CONTEXTS;
+				: NOT_WHILE_CAPTURING;
 	const surface =
 		(trigger.kind === "key" || trigger.kind === "mouse-button") &&
 		trigger.surface !== undefined
@@ -1147,14 +1314,16 @@ const scopeOf = (trigger: Trigger, views: readonly ViewMode[]): Scope => {
 
 function triggersOf(a: Authored): Trigger[] {
 	const keys = (a.keys ?? []).map(keyTrigger);
-	const views = a.views ?? VIEW_MODES;
-	// A chord runs its key's command, and `command()` answers `1`, `2` and `3`
-	// in the cockpit only — so a chase-only command has no chord (#377).
-	const chords = views.includes("cockpit") ? chordsFor(keys) : [];
+	// Head-look is a cockpit mechanism and the three chords are authored on
+	// cockpit-only commands, so the view guard that used to stand here is the
+	// scope those rows already carry — `tests/commands.test.ts` holds that a
+	// chase `Alt+↑` reaches nothing, which is what licensed removing it and
+	// `main.ts`'s copy of it with it (#381 S4).
+	const chords = chordsFor(a.chords ?? []);
 	return [
 		...keys,
 		...chords,
-		...padButtonsFor(keys),
+		...padButtonsFor(a.id as CommandId),
 		...(a.more ?? []),
 		...(a.intent ? padIntentTriggers(a.intent, a.intentHalf) : []),
 	];
@@ -1193,7 +1362,33 @@ export const commandById = (id: CommandId): Command => {
 
 /** The shipped layout, as bindings rather than as rows. */
 /**
- * A layout, frozen **through** rather than at the surface.
+ * A table of bindings that came from `layoutOf`, and from nowhere else.
+ *
+ * **The brand is the point** (#381 S4). `holdRows` keys its index on the array
+ * *identity*, so a layout written into rather than rebuilt is answered out of
+ * a stale index — and the freeze that makes that throw is a runtime backstop
+ * discovered by whoever trips it. A nominal type moves the precondition into
+ * the signature: a module that assembles its own rows cannot hand them to
+ * `isHeld`, `resolveKey`, `resolvePad` or `rebind` at all, and the storage
+ * slice was the obvious candidate to break it before the capture modal became
+ * the next one.
+ *
+ * `tests/layout.types.ts` is where that is checked, because "this does not
+ * compile" is not a thing `bun test` can see.
+ *
+ * **What the brand guarantees is the freeze, not provenance** (sage round 1
+ * on #497 read the paragraph above as claiming more). `layoutOf` is exported
+ * and takes any rows: `binding-store.ts` folds a stored diff into one, and
+ * the tests build colliding tables with it. So a `Layout` is "a table that
+ * went through the freeze", which is exactly what the hold index needs, and
+ * not "the shipped table with moves applied" — `layoutMoves` is the function
+ * that answers *that*, and it throws when the answer is no.
+ */
+declare const LAYOUT: unique symbol;
+export type Layout = readonly Binding[] & { readonly [LAYOUT]: true };
+
+/**
+ * The one constructor, which freezes **through** rather than at the surface.
  *
  * `Object.freeze` on the array alone was round 4's answer and it is not one:
  * the freeze is shallow, so `layout[0].command = …` and
@@ -1206,8 +1401,16 @@ export const commandById = (id: CommandId): Command => {
  * The trigger and scope objects are shared with `COMMANDS` and with the
  * context constants, so this freezes those too. That is intended: they are
  * read-only by contract everywhere already.
+ *
+ * **This is the only cast to `Layout` in `src/`**, which is what makes the
+ * brand mean anything; a second one there is a second producer and the type is
+ * back to being a comment. It said "in the repo" for three rounds and that was
+ * false (sage round 3 on #497): two tests cast deliberately — one stands in
+ * for a JavaScript caller the brand cannot reach, one builds a truncated table
+ * on purpose — and `tests/commands.test.ts`'s guard row has always scanned
+ * `src/` and said so.
  */
-const freezeLayout = (rows: readonly Binding[]): readonly Binding[] => {
+export const layoutOf = (rows: readonly Binding[]): Layout => {
 	for (const b of rows) {
 		Object.freeze(b.trigger);
 		if ("contexts" in b.trigger) Object.freeze(b.trigger.contexts);
@@ -1216,10 +1419,10 @@ const freezeLayout = (rows: readonly Binding[]): readonly Binding[] => {
 		Object.freeze(b.scope);
 		Object.freeze(b);
 	}
-	return Object.freeze(rows);
+	return Object.freeze(rows) as Layout;
 };
 
-export const DEFAULT_BINDINGS: readonly Binding[] = freezeLayout(
+export const DEFAULT_BINDINGS: Layout = layoutOf(
 	COMMANDS.flatMap((c) =>
 		c.defaultTriggers.map((trigger) => ({
 			command: c.id,
@@ -1304,6 +1507,15 @@ export interface Collision {
  * `tests/commands.test.ts` is the only caller today, and it drives both arms.
  * The function is one function so that the two questions cannot drift apart
  * when the second caller arrives, which is the storage slice's.
+ *
+ * **Rows, and deliberately not a `Layout`** (#381 S4). Every other reader of a
+ * table took the brand, because each of them either keys an index on the
+ * array's identity or pairs the rows against the shipped ones. This one is a
+ * pure predicate over whatever it is given, and it has to stay that way: the
+ * rows that prove it can *fail* are a filtered subset with one scope widened,
+ * which is not a layout and must not be made to look like one by passing it
+ * through the constructor. A `Layout` is assignable here, so both D5 callers
+ * reach it unchanged.
  */
 export function collisions(bindings: readonly Binding[]): Collision[] {
 	const byTrigger = new Map<string, Binding[]>();
@@ -1342,10 +1554,11 @@ export const defaultCollisions = (): Collision[] =>
  * Not a `KeyboardEvent`: `src/key-dispatch.ts` already decided what the event
  * *means* — release, swallow, chord or ordinary key — and this answers the
  * next question, which is which command that key reaches. **Neither module
- * imports the other for the facts**, which is a stronger boundary than a
- * direction and is why this shape is restated here rather than shared: this
- * module imports `ALT_CHORDS` from there and nothing else, and a shared facts
- * type would couple the law to the table it is asked about.
+ * imports the other at all**, which is a stronger boundary than a direction
+ * and is why this shape is restated here rather than shared: a shared facts
+ * type would couple the law to the table it is asked about. The one import
+ * that did cross — `ALT_CHORDS` — went in #381 S4, because a chord standing
+ * for a key was the second half of the defect that pinned the pad.
  *
  * `view` is required for the reason #369 D4 gives — `2` is head-forward in the
  * cockpit and the orbit reset in chase, and a resolver that defaulted it would
@@ -1426,10 +1639,7 @@ const liveFor = (b: Binding, facts: KeyFacts): boolean => {
  * `collisions()` is what holds that, but a player layout may — D5 is warn and
  * allow, so the dispatch has to be able to run both.
  */
-export function resolveKey(
-	bindings: readonly Binding[],
-	facts: KeyFacts,
-): CommandId[] {
+export function resolveKey(bindings: Layout, facts: KeyFacts): CommandId[] {
 	const live = bindings.filter((b) => liveFor(b, facts));
 	const byCode =
 		facts.code === undefined
@@ -1439,6 +1649,169 @@ export function resolveKey(
 		byCode.length > 0
 			? byCode
 			: live.filter((b) => keyBinding(b)?.trigger.key === facts.key);
+	return [...new Set(hits.map((b) => b.command))];
+}
+
+/**
+ * How far a stick or a trigger must be pushed to count as a capture.
+ *
+ * Well above `applyRadialDeadzone`'s 0.18, because this is a deliberate shove
+ * and not a drift: a worn stick resting at 0.3 would otherwise bind itself the
+ * moment the modal opened, which is the failure D10 gives for leaving the
+ * deadzone unexposed in the first place.
+ */
+export const CAPTURE_DEFLECTION = 0.5;
+
+/**
+ * What the pad just offered the rebind modal, as a trigger — or nothing.
+ *
+ * #369 D9's `capture` context exists so this can read the sticks and the
+ * triggers while nothing flies. `pad-bindings.ts` owns whether an input is
+ * *claimed*; this owns what it *is*, because what it produces is a `Trigger`
+ * and that is the registry's word.
+ *
+ * **An edge, never a level, and the difference is the whole of C10.** A player
+ * flying with the right stick over, who turns their head and presses the
+ * shoulder to open this modal, has not let go of the stick. A level reading
+ * records it on the first frame — and passes a row named "reads a stick on the
+ * frame after the modal suspended it" while recording the stick the player
+ * never chose. So `previous` is the frame before, and an axis already outside
+ * the band there is not a push; with no previous frame at all nothing analog
+ * is captured, because the opening frame has nothing to be an edge against.
+ * A **press** needs none of this: `readPad` computes that edge itself, against
+ * the previous poll.
+ *
+ * **Every button is capturable, including Circle.** The first version
+ * reserved Circle as the modal's way out, which made it the one button a pad
+ * could never bind. The principal's ruling removes the cost rather than
+ * accepting it: the cancel is a *click*, which #370's standing premise
+ * guarantees is always available and which no binding table can hold. So this
+ * records whatever the pad offers and the modal's own control is what closes
+ * it.
+ *
+ * **The contexts on a captured button are the button's.** #369 D4 gives the
+ * player the trigger and the command the context set; a pad button's set is
+ * neither — it is where `pad-bindings.ts` lets that button through, which is
+ * why `a` comes back flight-only and `y` with all three. A button that falls
+ * through **nowhere** comes back with an empty set rather than as `null`, so
+ * `rebind` refuses it as `live-nowhere` and the modal prints a sentence — a
+ * press that recorded nothing at all left the player looking at a modal that
+ * had not reacted.
+ */
+export interface PadAnalog {
+	readonly axes: PadFrame["axes"];
+	readonly values: PadFrame["values"];
+}
+
+export function capturedTrigger(
+	frame: PadFrame | null,
+	previous: PadAnalog | null,
+): Trigger | null {
+	if (!frame?.connected) return null;
+
+	for (const button of frame.pressed) {
+		// The same law `padIntents` applies, asked of the module that owns it:
+		// a full pull reports `pressed`, and a trigger read as a switch is a
+		// key with extra steps.
+		if (isAnalogTrigger(button)) continue;
+		// **Recorded even when it falls through nowhere, so the modal can say
+		// so** (sage round 2 on #497). This used to `continue`, which left the
+		// doc claiming such a button was "refused" while the player pressing
+		// d-pad ↓ got a modal that went on listening with no feedback — and
+		// made `movedTrigger`'s `live-nowhere` refusal and its sentence
+		// unreachable from a pad. An empty context set is what `rebind` reads
+		// to raise it.
+		return {
+			kind: "pad-button",
+			button,
+			contexts: buttonContexts(button) ?? [],
+		};
+	}
+
+	// Analog from here down, and all of it needs the frame before.
+	if (previous === null) return null;
+
+	for (const trigger of ANALOG_TRIGGERS)
+		if (
+			frame.values[trigger] >= CAPTURE_DEFLECTION &&
+			previous.values[trigger] < CAPTURE_DEFLECTION
+		)
+			return { kind: "pad-trigger", trigger, contexts: CAPTURE_ONLY };
+
+	for (const [name, stick, axis] of [
+		["leftX", "left", "x"],
+		["leftY", "left", "y"],
+		["rightX", "right", "x"],
+		["rightY", "right", "y"],
+	] as const) {
+		const now = frame.axes[name];
+		if (Math.abs(now) < CAPTURE_DEFLECTION) continue;
+		if (Math.abs(previous.axes[name]) >= CAPTURE_DEFLECTION) continue;
+		return {
+			kind: "pad-stick",
+			stick,
+			axis,
+			half: halfOf(now),
+			contexts: CAPTURE_ONLY,
+		};
+	}
+	return null;
+}
+
+/**
+ * The context set a captured stick or trigger carries.
+ *
+ * `capture` and nothing else, which is the honest answer rather than a
+ * placeholder: the only place this game reads a stick off a *layout* is the
+ * modal that just recorded it. `rebind` refuses to store either kind for that
+ * exact reason, and names the reader — `padFlightAxes` — that would have to
+ * start asking the layout first.
+ */
+const CAPTURE_ONLY: readonly PadContext[] = ["capture"];
+
+/**
+ * What this pad press reaches, in `bindings`.
+ *
+ * `resolveKey`'s sibling, and new in #381 S4. Before it, `main.ts` turned a
+ * button into a *key* through `PAD_FLIGHT_KEYS` and resolved that key against
+ * `DEFAULT_BINDINGS` — so the pad answered the shipped layout whatever the
+ * player had done, and a pad rebind had nowhere to be stored. A pad button is
+ * a row now, and this reads the row.
+ *
+ * **Three axes and all three are asked.** The button, the pad context — a
+ * console claims Circle, so pressing it there must not request docking
+ * clearance under the panel — and the view, because the d-pad's ↑ is
+ * head-forward in the cockpit and the orbit reset in chase (#369 D4).
+ *
+ * **A press and not a hold.** `fight.firePulse` is Square *held* and
+ * `padFireHeld` reads it, exactly as the keyboard's held set is read by
+ * `isHeld` rather than by `resolveKey`. A capture that records a button hold
+ * is a trigger kind this resolver does not answer, and `rebind` says so.
+ *
+ * A list rather than one id, for `resolveKey`'s reason: D5 is warn and allow,
+ * so a player layout may put two commands on one button in one context and
+ * the dispatch has to be able to run both.
+ */
+export interface PadFacts {
+	readonly button: PadButtonName;
+	readonly context: PadContext;
+	readonly view: ViewMode;
+}
+
+export function resolvePad(bindings: Layout, facts: PadFacts): CommandId[] {
+	const hits = bindings.filter((b) => {
+		const t = b.trigger;
+		return (
+			t.kind === "pad-button" &&
+			t.hold !== true &&
+			t.button === facts.button &&
+			// `scope.pad` rather than `trigger.contexts`: they are the same
+			// object for a pad trigger, and the scope is the one place liveness
+			// is published — `liveFor` reads `scope.views` next door for it.
+			b.scope.pad.includes(facts.context) &&
+			b.scope.views.includes(facts.view)
+		);
+	});
 	return [...new Set(hits.map((b) => b.command))];
 }
 
@@ -1464,23 +1837,18 @@ export function resolveKey(
  */
 type HeldBinding = Binding & { trigger: Extract<Trigger, { kind: "key" }> };
 
-const HOLD_INDEX = new WeakMap<
-	readonly Binding[],
-	Map<CommandId, HeldBinding[]>
->();
+const HOLD_INDEX = new WeakMap<Layout, Map<CommandId, HeldBinding[]>>();
 
-const holdRows = (
-	bindings: readonly Binding[],
-): Map<CommandId, HeldBinding[]> => {
+const holdRows = (bindings: Layout): Map<CommandId, HeldBinding[]> => {
 	const found = HOLD_INDEX.get(bindings);
 	if (found !== undefined) return found;
-	// **Frozen here, not only where a layout is built.** `isHeld` takes any
-	// array, and the storage slice will build layouts this module never made —
-	// so freezing at the producer left the precondition on callers with no type
-	// to carry it (sage round 5). Indexing an array is the moment it acquires
-	// the identity the index is keyed on, which is the moment the freeze has to
-	// happen.
-	freezeLayout(bindings);
+	// **Belt as well as braces, and the braces are new.** This freeze was the
+	// whole guarantee when `isHeld` took any array (sage round 5): freezing at
+	// the producer left the precondition on callers with no type to carry it.
+	// `Layout` carries it now, so every argument here has already been through
+	// `layoutOf` — and this stays, because the brand is a compile-time claim
+	// and the probe tier calls into this module from JavaScript.
+	layoutOf(bindings);
 	const index = new Map<CommandId, HeldBinding[]>();
 	for (const b of bindings) {
 		const keyed = keyBinding(b);
@@ -1508,7 +1876,7 @@ const holdRows = (
  * it.
  */
 export function isHeld(
-	bindings: readonly Binding[],
+	bindings: Layout,
 	command: CommandId,
 	keys: ReadonlySet<string>,
 	view: ViewMode,
@@ -1546,7 +1914,7 @@ export interface LayoutMove {
  * triggers moved is a programming error, and one that silently produced the
  * wrong diff would be saved as a blob that loads as a different layout.
  */
-export function layoutMoves(layout: readonly Binding[]): LayoutMove[] {
+export function layoutMoves(layout: Layout): LayoutMove[] {
 	if (layout.length !== DEFAULT_BINDINGS.length)
 		throw new Error(
 			`a layout has ${DEFAULT_BINDINGS.length} rows, not ${layout.length}`,
@@ -1579,11 +1947,31 @@ export function layoutMoves(layout: readonly Binding[]): LayoutMove[] {
  * defect a rebind screen ships with.
  */
 export function rebind(
-	bindings: readonly Binding[],
+	bindings: Layout,
 	command: CommandId,
 	from: Trigger,
 	to: Trigger,
-): readonly Binding[] {
+): Layout {
+	return rebound(bindings, command, from, to).layout;
+}
+
+/**
+ * The same move, with the trigger it stored.
+ *
+ * **The registry hands the stored trigger back rather than letting a caller
+ * work it out** (sage round 5 on #497). `movedTrigger` completes a captured
+ * trigger — it derives a missing code, and takes a chord's character from its
+ * position — so a screen that shows what it will bind needs the *completed*
+ * one. `proposedRebind` inferred it twice, first from slot identity and then
+ * by repeating this function's own `findIndex`; both were this function's
+ * internals read from outside it.
+ */
+export function rebound(
+	bindings: Layout,
+	command: CommandId,
+	from: Trigger,
+	to: Trigger,
+): { readonly layout: Layout; readonly stored: Trigger } {
 	const wanted = triggerKey(from);
 	const at = bindings.findIndex(
 		(b) => b.command === command && triggerKey(b.trigger) === wanted,
@@ -1596,49 +1984,242 @@ export function rebind(
 		trigger: moved,
 		scope: scopeOf(moved, commandById(command).views),
 	};
-	return freezeLayout(next);
+	return { layout: layoutOf(next), stored: moved };
 }
 
 /**
  * The trigger a rebind actually stores — `to`, checked and completed.
  *
- * Two things the bare `to` gets wrong, and both produce the defect `rebind`'s
- * doc names rather than preventing it.
+ * **A per-kind table of which part of a trigger is the player's** (#381 S4).
+ * The first version returned a same-kind non-key `to` verbatim, which let a
+ * `mouse-button` hold be moved onto a click: stored, satisfying no reader. The
+ * version after it refused every non-key kind outright and said "S4 lifts it".
+ * This is the lift, and what it lifts is narrower than #369 D12 asks for —
+ * the table is *which kinds the layout has a reader for*, not which kinds
+ * exist.
+ *
+ * **What a move may change, by kind:**
+ *
+ * | kind | the player moves | the command keeps |
+ * | --- | --- | --- |
+ * | `key` | which key, and its code | `hold`, `alt`, `surface` |
+ * | `pad-button` | which button | `hold`, and the contexts are the button's |
+ * | `key` ↔ `pad-button` | the whole device | `hold` on neither side |
+ *
+ * **And what it refuses, each naming the reader that would have to exist.**
+ * A stored move for a kind nothing reads off the layout is the defect this
+ * function's first version shipped, so the refusals are the honest answer and
+ * not a gap:
+ *
+ * - a `pad-stick` or a `pad-trigger`, because `padFlightAxes` reads fixed
+ *   positions and not the layout. #369 D10's invert and sensitivity route
+ *   through that same function, so the two are one change and not this slice's
+ *   — [#496](https://github.com/jcfischer/seelite/issues/496) owns both.
+ * - a `pad-button` **held**, because `padFireHeld` reads a fixed position too,
+ *   and `resolvePad` answers a press. #496's third question is whether that
+ *   and `isHeld` are one predicate over both devices or two.
+ * - a `mouse-button`, `mouse-move` or `pad-intent`, which have no capture
+ *   surface at all — the modal does not record them.
  *
  * **A qualifier is the command's, not the player's.** `fly.pitchUp` is flown
- * by holding a key; a `to` that dropped `hold` would be stored, would satisfy
- * no `isHeld`, and the command would be silently unflyable while the call
- * returned successfully. The player moves *which key*, which is #369 D4's
- * "the player edits the trigger; the context set is the command's" applied to
- * the half of a trigger that is not the key.
+ * by *holding* a key; a `to` that dropped `hold` would be stored, would
+ * satisfy no `isHeld`, and the command would be silently unflyable while the
+ * call returned successfully. That is #369 D4's "the player edits the trigger;
+ * the context set is the command's" applied to the half of a trigger that is
+ * not the key — and on a pad button the contexts are that half, so they are
+ * taken from `pad-bindings.ts` and never from the caller.
  *
- * **And a code is derived when the caller does not give one.** The shipped
- * rows get theirs from `keyTrigger`, so a rebind that stored `to` verbatim
- * would leave a letter codeless and lose D7's position dispatch for exactly
- * the command the player just chose to move. A `to` that *does* carry a code
- * keeps it, which is the capture modal's case rather than an oversight: it
- * records the physical key it saw, and on a layout where that key does not
- * type its US character — which is the whole point of D7 — the pair is
- * legitimately mismatched and only the capture knows the truth. The cost is
- * that a caller passing an inconsistent pair gets exactly what it asked for.
+ * **A code is derived when the caller does not give one.** The shipped rows
+ * get theirs from `keyTrigger`, so a rebind that stored `to` verbatim would
+ * leave a letter codeless and lose D7's position dispatch for exactly the
+ * command the player just chose to move. A `to` that *does* carry a code keeps
+ * it, which is the capture modal's case rather than an oversight: it records
+ * the physical key it saw, and on a layout where that key does not type its US
+ * character — which is the whole point of D7 — the pair is legitimately
+ * mismatched and only the capture knows the truth. The cost is that a caller
+ * passing an inconsistent pair gets exactly what it asked for.
  */
 function movedTrigger(from: Trigger, to: Trigger): Trigger {
-	if (from.kind !== to.kind)
-		throw new Error(`cannot move a ${from.kind} onto a ${to.kind}`);
-	// **Only a key is rebindable here, and refusing the rest is the point.**
-	// The first version returned a same-kind non-key `to` verbatim, which let a
-	// `mouse-button` hold be moved onto a click — stored, satisfying no reader,
-	// which is the defect the key branch exists to refuse. Every non-key kind
-	// has its own qualifiers (`action`, `half`, `intent`, `hold`), and a table
-	// of which part of each is movable is the capture modal's to write, since
-	// it is the thing that will admit a stick or a trigger for one capture.
-	// Until then a refusal is the honest answer, and S4 lifts it.
-	if (from.kind !== "key" || to.kind !== "key")
-		throw new Error(`only a key may be rebound here, not a ${from.kind}`);
-	if (!matchesQualifiers(to, from))
-		throw new Error(
-			`a rebind may move a key, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
+	if (!movable(from))
+		throw new RebindRefused(
+			"not-offered",
+			`a ${from.kind} is not a trigger this game offers for rebinding`,
 		);
-	const { kind: _kind, ...rest } = to;
-	return keyTrigger(rest);
+	// **One switch, so the table is one construct.** A pair of them — a
+	// refusal list beside an acceptance list — is two places to add a kind to
+	// and one of them is the place a reader looks.
+	switch (to.kind) {
+		case "key": {
+			// `matchesQualifiers` is the one owner of everything about a key
+			// trigger except which key it is. A cross-device move has no `alt`
+			// or `surface` on the far side, so what a pad button carries is
+			// `hold` alone and that is what is compared.
+			if (from.kind === "key") {
+				if (!matchesQualifiers(to, from)) throw keptQualifiers(from, to);
+			} else if (!sameHold(from, to)) throw keptQualifiers(from, to);
+			// **A key's character is its position's, not the event's** — the
+			// rule `chordsFor` states and, until sage round 2 on #497, the rule
+			// only `chordsFor` obeyed. On macOS Option changes the character,
+			// so a captured `Alt+D` arrives as `∂` and was stored and printed
+			// as `Alt + ∂`. Normalising here rather than in the capture means
+			// every producer gets it, which a rule living in one producer did
+			// not.
+			//
+			// **Under `alt`, and round 4 widened this too far.** Normalising
+			// every coded key turned a captured `?` into `/` — `codeKey` gives
+			// the character a position types *unshifted*, and `Slash` is `/`.
+			// #377 ruled `?` is the character the keyboard types, so that
+			// regression renamed a shipped binding the moment a player
+			// recaptured it. The condition that was right is the narrow one:
+			// a *chord* prints its position, because Option is the only thing
+			// in this game that makes the event's character untrustworthy
+			// (sage rounds 2, 4 and 5).
+			//
+			// The other half of round 4's finding — an *ordinary* row
+			// capturing `Alt+Q` on macOS — is answered where the fact lives:
+			// `main.ts` knows Option was held and sends the position's
+			// character. Two places, two different facts, and neither is the
+			// other's copy.
+			const { kind: _kind, ...rest } = to;
+			return keyTrigger(
+				rest.alt === true && rest.code !== undefined
+					? { ...rest, key: codeKey(rest.code) }
+					: rest,
+			);
+		}
+		case "pad-button": {
+			if (to.hold === true)
+				throw unstorable(
+					"no-reader-held",
+					to,
+					"a held button is read by padFireHeld, which reads a fixed position and not the layout",
+				);
+			if (!sameHold(from, to)) throw keptQualifiers(from, to);
+			// The contexts are the **button's**, asked of `pad-bindings.ts`
+			// through the derivation the shipped rows came from — so a caller
+			// that hands over a set of its own gets the button's anyway.
+			const contexts = buttonContexts(to.button);
+			if (contexts === null)
+				throw new RebindRefused(
+					"live-nowhere",
+					`${to.button} is claimed in every context, so a binding on it is live nowhere`,
+				);
+			return { kind: "pad-button", button: to.button, contexts };
+		}
+		case "pad-stick":
+		case "pad-trigger":
+			throw unstorable(
+				"no-reader-axes",
+				to,
+				"a stick and a trigger are read by padFlightAxes, which reads fixed positions and not the layout",
+			);
+		case "mouse-button":
+		case "mouse-move":
+			throw unstorable(
+				"no-capture-surface",
+				to,
+				"the mouse has no capture surface, so nothing can record a move onto it",
+			);
+		case "pad-intent":
+			throw unstorable(
+				"not-offered",
+				to,
+				"a panel intent is the console's grammar and is not offered for rebinding",
+			);
+	}
 }
+
+/**
+ * Why a rebind was refused, as a code rather than as the sentence.
+ *
+ * **The sentence is not enough, and keying one off `to.kind` was wrong**
+ * (sage round 1 on #497). `movedTrigger` refuses for several reasons and two
+ * of them can land on the same kind: a `pad-button` is refused when it
+ * is held *and* when it is claimed in every context, and a `key` — which the
+ * registry normally takes — is refused when the trigger being *moved* is one
+ * the game does not offer. A capture modal keying its sentence on the kind
+ * therefore printed the hold sentence for a button that was claimed
+ * everywhere, and an empty string for a refused key.
+ *
+ * A code and not prose, for `RejectReason`'s reason next door in
+ * `layout-notice.ts`: #369 D11 gives `controls-reference.ts` the one owner of
+ * every printed name, and a sentence thrown from here is a developer's.
+ *
+ * **The count is not stated here.** It was written as five beside a union of
+ * six inside one round, which is what a count of a list directly below it is
+ * worth — `RejectReason`'s doc next door already refuses to state its own for
+ * the same reason (sage round 2 on #497).
+ */
+export type RebindRefusal =
+	/** The trigger being moved is not one this game offers (`fixed`, a hold). */
+	| "not-offered"
+	/** The `to` changes `hold`, `alt` or `surface`, which are the command's. */
+	| "qualifiers"
+	/** A held pad button: `padFireHeld` reads a fixed position (#496). */
+	| "no-reader-held"
+	/** A stick or trigger: `padFlightAxes` reads fixed positions (#496). */
+	| "no-reader-axes"
+	/** The mouse, which nothing can record a move onto. */
+	| "no-capture-surface"
+	/** A button every surface claims, so a binding on it is live nowhere. */
+	| "live-nowhere";
+
+/**
+ * What `rebind` throws, carrying the code beside the developer's sentence.
+ *
+ * An `Error` subclass rather than a returned union, because `rebind` is called
+ * from `binding-store.ts`'s load path too — where the sentence becomes a
+ * `refused-by-registry` notice — and a second return shape there would be a
+ * second thing every caller has to unpack.
+ */
+export class RebindRefused extends Error {
+	constructor(
+		readonly refusal: RebindRefusal,
+		message: string,
+	) {
+		super(message);
+		this.name = "RebindRefused";
+	}
+}
+
+/**
+ * The refusal for a kind the layout has no reader for.
+ *
+ * It names the **reader**, because that is what has to change before the
+ * refusal can be lifted; a message saying only "not supported" would leave the
+ * next slice guessing which function to go and look at.
+ */
+const unstorable = (refusal: RebindRefusal, to: Trigger, why: string) =>
+	new RebindRefused(refusal, `a rebind cannot store a ${to.kind}: ${why}`);
+
+const keptQualifiers = (from: Trigger, to: Trigger) =>
+	new RebindRefused(
+		"qualifiers",
+		`a rebind may move a trigger, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
+	);
+
+/**
+ * Whether two triggers agree about being held.
+ *
+ * One owner, because `movedTrigger` asked it in both the cross-device key arm
+ * and the pad-button arm, and "hold is the command's" is one rule (sage round
+ * 4 on #497).
+ */
+const sameHold = (from: Trigger, to: Trigger) =>
+	(heldRather(to) ?? false) === (heldRather(from) ?? false);
+
+/**
+ * Whether this trigger is held rather than pressed, on the kinds that say.
+ *
+ * Exported because the capture modal completes a captured trigger with the
+ * command's qualifiers and needs the same answer — `movedTrigger` *enforces*
+ * the rule and `qualifiedLike` supplies it, so a second copy of "which kinds
+ * carry hold" would let the two disagree about one qualifier (sage round 3
+ * on #497).
+ */
+export const heldRather = (t: Trigger): true | undefined =>
+	t.kind === "key" || t.kind === "pad-button" ? t.hold : undefined;
+
+/** Whether a command's existing trigger is one a player may move at all. */
+const movable = (t: Trigger): boolean =>
+	t.kind === "key" || (t.kind === "pad-button" && t.hold !== true);

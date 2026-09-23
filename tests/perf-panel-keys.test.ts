@@ -59,10 +59,24 @@ describe("the perf panel stays out of the flight controls", () => {
 		expect(bound).toContain("w"); // an axis half: pitch
 	});
 
-	test("no panel key is a flight binding", () => {
+	test("no diagnostic key is a flight binding", () => {
+		// **`SETTINGS_KEY` left this list in #381 S4, and its absence is the
+		// change rather than a hole.** `z` is a flight-path binding now —
+		// `system.settings` dispatches through `Game.command` like any other
+		// command, which is what #369 D12 means by "`z` is an ordinary command
+		// and can be moved", and what the settings door on the `Controls` tab
+		// makes safe. The row below still holds it apart from every *perf*
+		// key, which is this file's subject.
 		const bound = flightKeys();
-		for (const key of [...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY])
+		for (const key of [...PERF_KEYS, RESTORE_KEY])
 			expect(`${key}: ${bound.has(key)}`).toBe(`${key}: false`);
+	});
+
+	test("and the settings key is one, which is the point of D12", () => {
+		// Guarding the change rather than only removing the old assertion: if
+		// `system.settings` ever goes back to opening on its panel's own
+		// listener, `z` leaves the flight partition and this goes red.
+		expect(flightKeys()).toContain(SETTINGS_KEY);
 	});
 
 	test("the settings key is not a perf-panel key either", () => {

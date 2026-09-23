@@ -6,7 +6,7 @@
  * press — so every chord row is run twice, pressed and held.
  */
 import { describe, expect, test } from "bun:test";
-import { ALT_CHORDS, keyDispatch } from "../src/key-dispatch";
+import { keyDispatch } from "../src/key-dispatch";
 import { codeOf } from "./lib/source-scan";
 
 const press = (key: string, code: string, mods: Partial<KeyMods> = {}) =>
@@ -31,18 +31,35 @@ const NONE: KeyMods = {
 const ALT = { altKey: true };
 
 describe("a chord is one-shot, and never a held key", () => {
-	test("a pressed Alt+D is swallowed", () => {
-		expect(press("d", "KeyD", ALT)).toEqual({ kind: "swallow", prevent: true });
+	/**
+	 * **The law stopped holding a chord table in #381 S4.** It consulted
+	 * `ALT_CHORDS`, a code-to-key map, so an Alt press it did not carry was
+	 * swallowed — which made a chord moved in the binding registry expressible
+	 * and dead. Every Alt press is a chord route now and the layout decides
+	 * what it reaches, so *these* rows answer "is it one-shot, and is it kept
+	 * from the page", and which chords are bound is `tests/commands.test.ts`'s.
+	 */
+	test("an unbound Alt+D is routed, and reaches nothing downstream", () => {
+		// It is not swallowed here any more. `main.ts` resolves it against the
+		// layout, gets no command, and runs none — and prevents the browser's
+		// default on this route unconditionally, which is the property the old
+		// swallow's `prevent` carried and the source row below holds.
+		expect(press("d", "KeyD", ALT)).toEqual({
+			kind: "chord",
+			key: "d",
+			code: "KeyD",
+		});
 	});
 
-	test("a held Alt+D is swallowed too — the repeat that yawed the ship", () => {
+	test("a held Alt+D is swallowed — the repeat that yawed the ship", () => {
 		expect(hold("d", "KeyD", ALT)).toEqual({ kind: "swallow", prevent: true });
 	});
 
 	test("a bound chord acts on its first press", () => {
 		expect(press("arrowleft", "ArrowLeft", ALT)).toEqual({
 			kind: "chord",
-			key: ALT_CHORDS.ArrowLeft,
+			key: "arrowleft",
+			code: "ArrowLeft",
 		});
 	});
 
@@ -56,23 +73,16 @@ describe("a chord is one-shot, and never a held key", () => {
 	});
 });
 
-describe("the chord table is keyed on the physical key", () => {
+describe("a chord carries the physical key", () => {
 	test("macOS Option changes the character and not the code", () => {
-		// Option+D types ∂. A table on `e.key` would never see `d` there.
-		// An unbound chord is kept from the browser too: on Windows and Linux
-		// Alt+D focuses the address bar (sage round 3 on #391).
-		expect(press("∂", "KeyD", ALT)).toEqual({ kind: "swallow", prevent: true });
-		expect(press("arrowright", "ArrowRight", ALT)).toEqual({
+		// Option+D types ∂, so the character is useless for identifying the
+		// chord and the code is what the resolver matches. The character rides
+		// along only for `resolveKey`'s fallback, which is the arm a row with
+		// no code takes.
+		expect(press("∂", "KeyD", ALT)).toEqual({
 			kind: "chord",
-			key: ALT_CHORDS.ArrowRight,
-		});
-	});
-
-	test("today's table is the three head-look arrows", () => {
-		expect(ALT_CHORDS).toEqual({
-			ArrowLeft: "1",
-			ArrowUp: "2",
-			ArrowRight: "3",
+			key: "∂",
+			code: "KeyD",
 		});
 	});
 });
@@ -269,11 +279,18 @@ describe("a key typed into a field reaches only the field", () => {
 /**
  * The wiring, read off the source (sage round 1 on #391).
  *
- * The catalogue derives its Alt rows from `ALT_CHORDS`, so a check that those
- * rows are in the table holds by construction. What can break is `main.ts`
- * acting on the route — and `main.ts` cannot load headless — so its branches
- * are read as text. The browser probe holds the behaviour; this row makes a
- * dropped call a red `npm test`, which CI runs and the probe does not.
+ * What can break is `main.ts` acting on the route — and `main.ts` cannot load
+ * headless — so its branches are read as text. The browser probe holds the
+ * behaviour; this row makes a dropped call a red `npm test`, which CI runs and
+ * the probe does not.
+ *
+ * **One of these rows carries more weight since #381 S4.** The chord route had
+ * an explicit `prevent` on the swallow arm that a unit row could read; an
+ * unbound Alt press takes the chord arm now, where the browser's default is
+ * prevented by the caller and nothing in the route says so. `Alt+D` focusing
+ * the address bar and `Alt+F` opening a menu (sage round 3 on #391) are held
+ * by the `e.preventDefault()` assertion below and by nothing else in this
+ * tier.
  */
 describe("main.ts acts on the route", () => {
 	const main = codeOf("src/main.ts");
@@ -291,16 +308,18 @@ describe("main.ts acts on the route", () => {
 		expect(main).toContain("editable: isEditable(e.target),");
 	});
 
-	test("a chord runs its key's command, in the cockpit", () => {
+	test("a chord is resolved against the layout, and always prevented", () => {
 		const chord = branch("chord");
-		// `commandKey`, not `command`: a chord hands over the key it stands
-		// for, and the registry resolves that against the **shipped** table
-		// rather than the player's (#381). The cockpit guard is still not
-		// redundant — `2` in chase is `view.orbitCentre`, which the d-pad
-		// reaches and this never has.
-		expect(chord).toContain(
-			'if (this.view === "cockpit") this.commandKey(route.key);',
-		);
+		// **Through `this.bindings`, not `DEFAULT_BINDINGS`** (#381 S4): a
+		// chord no longer stands for a key, so moving its row in the registry
+		// moves the chord. The cockpit guard this branch carried is gone with
+		// the table — the three chords are on `views: COCKPIT` commands and
+		// `resolveKey` compares `alt`, which `tests/commands.test.ts` holds.
+		expect(chord).toContain("resolveKey(this.bindings, {");
+		expect(chord).toContain("alt: true,");
+		expect(chord).toContain("code: route.code,");
+		expect(chord).not.toContain('this.view === "cockpit"');
+		// The whole of what keeps an unbound Alt press off the browser.
 		expect(chord).toContain("e.preventDefault();");
 	});
 

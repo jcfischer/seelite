@@ -28,7 +28,9 @@
  *    reaches the game, as the three panel listeners already did.
  * 3. **Alt is the chord prefix, and a chord is one-shot.** Any press with Alt
  *    down takes the chord path, repeat or not, and nothing on it reaches the
- *    held set. The old guard was `down && !e.repeat && e.altKey`, so the first
+ *    held set. *Which* chords are bound is not this module's question since
+ *    #381 S4 — the route carries the physical key and the binding registry
+ *    answers it. The old guard was `down && !e.repeat && e.altKey`, so the first
  *    auto-repeat of a held `Alt+D` fell past it and yawed the ship — a rule
  *    that was untrue for exactly the case a player holds a modifier for.
  * 4. **Everything else is the ordinary path**: held while down, its command on
@@ -38,25 +40,6 @@
  * Headless and a leaf, so the unit tier runs the law itself rather than a
  * description of it.
  */
-
-/**
- * The chord table: a physical key (`KeyboardEvent.code`) under Alt, and the key
- * `Game.command` receives for it.
- *
- * **Keyed on `code`, not on the character.** On macOS, Option changes the
- * character — `Alt+D` arrives as `∂` and `Alt+/` as `÷` — so a table on `e.key`
- * could never hold an `Alt`+letter there. The arrows were the only chords that
- * worked, because Option leaves them alone.
- *
- * **The value is a command key, as `PAD_FLIGHT_KEYS`' is,** so a chord runs the
- * same code as the key it stands for and the controls catalogue can derive its
- * Alt rows from this table rather than restating them. #381's registry fills it.
- */
-export const ALT_CHORDS: Readonly<Record<string, string>> = {
-	ArrowLeft: "1",
-	ArrowUp: "2",
-	ArrowRight: "3",
-};
 
 export interface KeyEventFacts {
 	readonly key: string;
@@ -75,8 +58,18 @@ export type KeyRoute =
 	| { readonly kind: "release"; readonly key: string }
 	/** Nothing reaches the game. `prevent`: nor the browser. */
 	| { readonly kind: "swallow"; readonly prevent?: true }
-	/** Run `Game.command(key)` once, and keep the event from the browser. */
-	| { readonly kind: "chord"; readonly key: string }
+	/**
+	 * An Alt press, once, kept from the browser — resolve it and run what it
+	 * reaches.
+	 *
+	 * **It carries the physical key, and that is what the caller matches on.**
+	 * On macOS Option changes the character (`Alt+D` arrives as `∂`), so a
+	 * chord asked for by character could never be an `Alt`+letter there; the
+	 * arrows were the only chords that worked, because Option leaves them
+	 * alone. `key` rides along for the fallback `resolveKey` gives a row that
+	 * carries no code.
+	 */
+	| { readonly kind: "chord"; readonly key: string; readonly code: string }
 	/** Hold `key`; on the first press also run its command. */
 	| {
 			readonly kind: "key";
@@ -102,13 +95,26 @@ export function keyDispatch(e: KeyEventFacts): KeyRoute {
 	if (e.editable) return { kind: "swallow" };
 	if (e.metaKey) return { kind: "swallow" };
 	if (e.altKey) {
-		const chord = ALT_CHORDS[e.code];
-		// Unbound, it is still kept from the browser: on Windows and Linux Alt+D
-		// focuses the address bar and Alt+F opens a menu (sage round 3 on #391).
-		if (chord === undefined) return { kind: "swallow", prevent: true };
+		// **Every Alt press is a chord here, and the layout decides what it
+		// reaches** (#381 S4). This branch used to consult `ALT_CHORDS`, a
+		// code-to-key table that stood for the *shipped* keyboard — so a chord
+		// moved in the registry was expressible and dead, which is the same
+		// defect `PAD_FLIGHT_KEYS` had and it is fixed the same way. The law
+		// decides *that* a press is a chord; it is not a second binding table.
+		//
+		// **Nothing is lost by dropping the lookup.** An Alt press the layout
+		// does not bind resolves to no command and runs nothing, which is what
+		// the swallow did — and the caller prevents the browser's default on
+		// this route unconditionally, so `Alt+D`'s address bar and `Alt+F`'s
+		// menu are still kept from the page on Windows and Linux (sage round 3
+		// on #391).
+		//
+		// A chord is still one-shot: a held `Alt+D` on auto-repeat reaches
+		// nothing, which is #377's third ruling and the defect it was written
+		// for.
 		return e.repeat
 			? { kind: "swallow", prevent: true }
-			: { kind: "chord", key: chord };
+			: { kind: "chord", key, code: e.code };
 	}
 	// The Control key itself is the throttle, and its own keydown carries
 	// ctrlKey; everything else pressed under Ctrl is held and runs nothing.

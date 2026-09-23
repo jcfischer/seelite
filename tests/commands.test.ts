@@ -9,22 +9,31 @@
  * into a collision.
  */
 import { describe, expect, test } from "bun:test";
-import { codeOf, dispatchSites } from "./lib/source-scan";
+import { codeOf, dispatchSites, srcFiles } from "./lib/source-scan";
 import {
 	type Binding,
 	codeKey,
 	collisions,
 	COMMANDS,
+	type CommandId,
 	type Half,
 	commandById,
 	DEFAULT_BINDINGS,
 	defaultCollisions,
 	PAD_CONTEXTS,
+	PAD_FLIGHT_COMMANDS,
+	type Layout,
+	layoutOf,
+	rebind,
+	resolveKey,
+	resolvePad,
 	TASK_GROUPS,
 	type Trigger,
 	triggerKey,
 	VIEW_MODES,
 } from "../src/commands";
+import type { PadButtonName } from "../src/gamepad";
+import { keyDispatch } from "../src/key-dispatch";
 
 /**
  * The shipped keyboard layout, frozen.
@@ -383,30 +392,331 @@ describe("the axis law names which key is which", () => {
 	});
 });
 
-describe("the chord is view-guarded and the pad is not", () => {
-	test("main.ts guards the chord on the cockpit and the pad keys on nothing", () => {
-		// **Why `triggersOf` excludes a chord from a chase-only command and
-		// keeps the pad button.** They look like one route — both end in
-		// `Game.command(key)` — and they are not: `main.ts` runs a chord only
-		// `if (this.view === "cockpit")`, while every pad dispatch is the bare
-		// loop. So the d-pad's ↑ does centre the chase camera and an
-		// `Alt+↑` does not, and `view.orbitCentre` carrying a pad button but
-		// no chord is the game rather than an oversight. Read out of the
-		// source, because this asymmetry was read as a defect on review.
-		const source = codeOf("src/main.ts");
+describe("the pad and the chord are resolved through the layout", () => {
+	/**
+	 * C1's second clause, which is the one a table naming a `CommandId` does
+	 * not buy.
+	 *
+	 * Before this slice both the pad's flight table and the Alt chords stood
+	 * for a *key*, and `main.ts` resolved that key against `DEFAULT_BINDINGS`
+	 * — never against the layout in force. That decoupled a pad button from a
+	 * keyboard rebind, which was the point, and it also meant a pad rebind
+	 * could not be expressed at all: the button's meaning lived in a table the
+	 * player's layout is not. A capture modal that admits a button has nowhere
+	 * to put the result.
+	 *
+	 * So the rows below ask the two halves separately — moving the *pad* row
+	 * moves the button, and moving the *key* row does not.
+	 */
+	const padRowOf = (command: CommandId) => {
+		const found = DEFAULT_BINDINGS.find(
+			(b) =>
+				b.command === command &&
+				b.trigger.kind === "pad-button" &&
+				b.trigger.hold !== true,
+		);
+		if (found === undefined) throw new Error(`${command} has no pad button`);
+		return found;
+	};
+
+	/**
+	 * The same layout with one pad row on another button.
+	 *
+	 * Built by hand rather than through `rebind`, because this row is about
+	 * `resolvePad` reading a layout and not about the registry's willingness to
+	 * make the move — `tests/capture.test.ts` is where `rebind`'s per-kind
+	 * switch is exercised. A **new** row object, because `layoutOf` freezes
+	 * through and a spread onto a frozen row throws.
+	 *
+	 * `home` is the button to move onto: the module's header declares it the
+	 * one standard button nothing claims, and it falls through to the flight
+	 * table in exactly the contexts `y` does, so the scope carries over
+	 * unchanged and the row measures the resolver rather than a context edit.
+	 */
+	const onButton = (row: Binding, button: PadButtonName): Layout =>
+		layoutOf(
+			DEFAULT_BINDINGS.map((b) =>
+				b === row
+					? {
+							command: b.command,
+							trigger: { ...b.trigger, button },
+							scope: b.scope,
+						}
+					: b,
+			),
+		);
+
+	test("a pad button reaches the command its row in the layout names", () => {
 		expect(
-			/if\s*\(this\.view === "cockpit"\)\s*this\.commandKey\(route\.key\)/.test(
-				source,
+			resolvePad(DEFAULT_BINDINGS, {
+				button: "y",
+				context: "flight",
+				view: "cockpit",
+			}),
+		).toEqual(["fly.cruise"]);
+	});
+
+	test("moving the pad row moves the button, and the old one goes quiet", () => {
+		const layout = onButton(padRowOf("fly.cruise"), "home");
+		expect(
+			resolvePad(layout, {
+				button: "home",
+				context: "flight",
+				view: "cockpit",
+			}),
+		).toEqual(["fly.cruise"]);
+		expect(
+			resolvePad(layout, { button: "y", context: "flight", view: "cockpit" }),
+		).toEqual([]);
+	});
+
+	test("a keyboard rebind does not move what a pad button does", () => {
+		// The property the old key-resolved route bought by construction, now
+		// bought by the pad row being a row of its own. Cruise moves off `j`
+		// and Triangle keeps engaging it.
+		//
+		// **Onto `5`, because every letter in this game is already bound** —
+		// `4` through `8` and the backslash are the only free characters the
+		// shipped layout leaves. A letter target would be a legal D5 collision
+		// and this row would then be measuring that instead.
+		const layout = rebind(
+			DEFAULT_BINDINGS,
+			"fly.cruise",
+			{ kind: "key", key: "j" },
+			{ kind: "key", key: "5" },
+		);
+		expect(resolveKey(layout, { key: "j", view: "cockpit" })).toEqual([]);
+		expect(resolveKey(layout, { key: "5", view: "cockpit" })).toEqual([
+			"fly.cruise",
+		]);
+		expect(
+			resolvePad(layout, { button: "y", context: "flight", view: "cockpit" }),
+		).toEqual(["fly.cruise"]);
+	});
+
+	test("a button the layout does not claim reaches nothing", () => {
+		expect(
+			resolvePad(DEFAULT_BINDINGS, {
+				button: "home",
+				context: "flight",
+				view: "cockpit",
+			}),
+		).toEqual([]);
+	});
+
+	test("the context is read, not assumed", () => {
+		// Circle is the console's `back` and never a flight press there, which
+		// is `padIntents`' law and the reason a pad trigger carries contexts at
+		// all. The resolver has to honour it or a console press requests
+		// docking clearance under the panel.
+		expect(
+			resolvePad(DEFAULT_BINDINGS, {
+				button: "b",
+				context: "flight",
+				view: "cockpit",
+			}),
+		).toEqual(["dock.clearance"]);
+		expect(
+			resolvePad(DEFAULT_BINDINGS, {
+				button: "b",
+				context: "console",
+				view: "cockpit",
+			}),
+		).toEqual([]);
+	});
+
+	test("the view is read too: the d-pad centres the chase camera", () => {
+		// `2` is head-forward in the cockpit and the orbit reset in chase, and
+		// both carry the same button. A resolver that dropped the view would
+		// answer one of them silently — #369 D4.
+		expect(
+			resolvePad(DEFAULT_BINDINGS, {
+				button: "up",
+				context: "flight",
+				view: "cockpit",
+			}),
+		).toEqual(["view.headForward"]);
+		expect(
+			resolvePad(DEFAULT_BINDINGS, {
+				button: "up",
+				context: "flight",
+				view: "chase",
+			}),
+		).toEqual(["view.orbitCentre"]);
+	});
+
+	test("an Alt chord is a row in the layout, and the cockpit gate is its scope", () => {
+		// What removed `main.ts`'s `if (this.view === "cockpit")` guard on the
+		// chord branch: the three head-look commands are `views: COCKPIT`, and
+		// `matchesQualifiers` compares `alt`, so `view.orbitCentre` — `2`,
+		// unqualified, chase — cannot answer an Alt fact whatever the view.
+		// The guard was a second copy of that, and this row is what licenses
+		// deleting it rather than an assertion that it is safe.
+		expect(
+			resolveKey(DEFAULT_BINDINGS, {
+				key: "arrowup",
+				code: "ArrowUp",
+				alt: true,
+				view: "cockpit",
+			}),
+		).toEqual(["view.headForward"]);
+		expect(
+			resolveKey(DEFAULT_BINDINGS, {
+				key: "arrowup",
+				code: "ArrowUp",
+				alt: true,
+				view: "chase",
+			}),
+		).toEqual([]);
+	});
+
+	test("a rebound Alt chord reaches the dispatch", () => {
+		// The chord half of the same defect. `ALT_CHORDS` was a code-to-key
+		// table outside the layout, so a chord moved in the registry was
+		// expressible and dead: `keyDispatch` swallowed every Alt press whose
+		// code that table did not carry. The law decides *that* a press is a
+		// chord; the layout decides what it reaches.
+		const layout = rebind(
+			DEFAULT_BINDINGS,
+			"view.headPort",
+			{ kind: "key", key: "arrowleft", alt: true, code: "ArrowLeft" },
+			{ kind: "key", key: "q", alt: true, code: "KeyQ" },
+		);
+		expect(
+			resolveKey(layout, {
+				key: "q",
+				code: "KeyQ",
+				alt: true,
+				view: "cockpit",
+			}),
+		).toEqual(["view.headPort"]);
+		const route = keyDispatch({
+			key: "q",
+			code: "KeyQ",
+			down: true,
+			repeat: false,
+			altKey: true,
+			ctrlKey: false,
+			metaKey: false,
+			editable: false,
+		});
+		expect(route).toEqual({ kind: "chord", key: "q", code: "KeyQ" });
+	});
+
+	test("every button the flight table binds reaches a command `command` handles", () => {
+		// **Moved here from `tests/pad-bindings.test.ts` with the table.** The
+		// pad does not get its own copy of what a button does; it presses a row
+		// and `command` switches on the id, so a button bound to a command the
+		// switch does not handle is a dead binding.
+		//
+		// Read off `command`'s own cases, not matched against a shape: this was
+		// a regular expression accepting any single letter, which `p` and `z`
+		// satisfy while `command` handles neither, so deleting a handler left
+		// the check green and the binding dead (sage round 6 on #283). A source
+		// read rather than an import because `main.ts` cannot be loaded in this
+		// tier.
+		const source = codeOf("src/main.ts");
+		const body = source.slice(source.indexOf("private command(id: CommandId)"));
+		const handled = new Set(
+			[
+				...body.slice(0, body.indexOf("\n\t}")).matchAll(/case "([^"]+)":/g),
+			].map((m) => m[1]),
+		);
+		expect(handled.size).toBeGreaterThan(10);
+		let checked = 0;
+		for (const [button, ids] of Object.entries(PAD_FLIGHT_COMMANDS))
+			for (const id of ids ?? []) {
+				const reached = VIEW_MODES.flatMap((view) =>
+					PAD_CONTEXTS.flatMap((context) =>
+						resolvePad(DEFAULT_BINDINGS, {
+							button: button as PadButtonName,
+							context,
+							view,
+						}),
+					),
+				);
+				expect(
+					reached,
+					`${button} is bound to ${id} and reaches nothing`,
+				).toContain(id);
+				expect(
+					handled.has(id),
+					`${button} reaches ${id}, which command does not handle`,
+				).toBe(true);
+				checked++;
+			}
+		expect(checked).toBe(13);
+	});
+
+	test("Square and `home` reach no command, for two different reasons", () => {
+		// Both rows were `padIntents(...).keys` being empty, which was that
+		// module answering a question it no longer owns. Square is the pulse
+		// laser's trigger and it is *held* (#324), so it has a row and no
+		// press reaches it; `home` has no row at all, which is the one free
+		// standard button.
+		for (const view of VIEW_MODES)
+			for (const context of PAD_CONTEXTS) {
+				expect(
+					resolvePad(DEFAULT_BINDINGS, { button: "x", context, view }),
+					`x in ${context}/${view}`,
+				).toEqual([]);
+				expect(
+					resolvePad(DEFAULT_BINDINGS, { button: "home", context, view }),
+					`home in ${context}/${view}`,
+				).toEqual([]);
+			}
+		// And Square does have a row — held, which is what makes the two
+		// reasons different rather than one answer twice.
+		expect(
+			DEFAULT_BINDINGS.some(
+				(b) =>
+					b.trigger.kind === "pad-button" &&
+					b.trigger.button === "x" &&
+					b.trigger.hold === true,
 			),
 		).toBe(true);
-		const padLoops = [
-			...source.matchAll(
-				/for \(const key of intents\.keys\) this\.commandKey\(key\);/g,
+		expect(
+			DEFAULT_BINDINGS.some(
+				(b) => b.trigger.kind === "pad-button" && b.trigger.button === "home",
 			),
-		];
-		expect(padLoops.length).toBeGreaterThan(0);
-		// None of them tests the view on the same statement.
-		for (const m of padLoops) expect(m[0].includes("this.view")).toBe(false);
+		).toBe(false);
+	});
+
+	test("`layoutOf` is the only producer of a layout in the whole of src/", () => {
+		// **What makes the brand mean anything.** `Layout` is a nominal type in
+		// `commands.ts` and `tests/layout.types.ts` holds that a bare array
+		// cannot be handed to `isHeld`, `resolveKey`, `resolvePad` or `rebind`.
+		// That is worth exactly as much as the number of casts: a second one is
+		// a second producer, and a layout that did not go through the freeze is
+		// answered out of a stale hold index — the failure the type was made
+		// for. The type cannot police this itself, because a cast is how the
+		// one legitimate producer works.
+		//
+		// A test may cast, and two do: one stands in for a JavaScript caller
+		// the brand cannot reach, and one builds a truncated table on purpose.
+		// Neither is in `src/`.
+		const casts: string[] = [];
+		for (const file of srcFiles())
+			for (const line of codeOf(file).split("\n"))
+				if (/\bas\s+(unknown\s+as\s+)?Layout\b/.test(line))
+					casts.push(`${file}: ${line.trim()}`);
+		expect(casts).toEqual([
+			"src/commands.ts: return Object.freeze(rows) as Layout;",
+		]);
+	});
+
+	test("main.ts resolves both against the layout and keeps neither table", () => {
+		// The wiring, read out of the source for the reason every row in this
+		// file that reads `main.ts` gives: it cannot be loaded in this tier.
+		// `commandKey` is the thing that must be gone — a resolver against
+		// `DEFAULT_BINDINGS` standing beside one against `this.bindings`.
+		const source = codeOf("src/main.ts");
+		expect(source).not.toMatch(/this\.commandKey/);
+		expect(source).toMatch(/resolvePad\(this\.bindings/);
+		// And the chord branch no longer carries its own view test.
+		expect(source).not.toMatch(
+			/if\s*\(this\.view === "cockpit"\)\s*this\.command/,
+		);
 	});
 });
 

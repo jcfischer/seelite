@@ -18,18 +18,20 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	LAYOUT_KEY,
 	LAYOUT_VERSION,
-	type LayoutNotice,
 	loadLayout,
-	retiredBySave,
 	parseLayout,
 	saveLayout,
 	serializeLayout,
 } from "../src/binding-store";
+// The notice vocabulary moved out from behind the store in #381 S4;
+// `tests/layout-notice.test.ts` owns the boundary and the two functions.
+import type { LayoutNotice } from "../src/layout-notice";
 import {
 	type Binding,
 	type CommandId,
 	COMMANDS,
 	commandById,
+	type Layout,
 	layoutMoves,
 	DEFAULT_BINDINGS,
 	rebind,
@@ -135,7 +137,7 @@ function only<K extends LayoutNotice["kind"]>(
  * predicate, so one rule had two homes (sage round 2). The store hands back
  * rows; what they *are* is `layoutMoves`' question.
  */
-const inForce = (read: { layout: readonly Binding[] }) =>
+const inForce = (read: { layout: Layout }) =>
 	layoutMoves(read.layout).length > 0 ? "player" : "default";
 
 describe("a layout is stored as what the player changed", () => {
@@ -581,7 +583,7 @@ describe("the layout handed back cannot be merged in place", () => {
 		const read = parseLayout(serializeLayout(moved));
 		const row = read.layout[0] as Binding;
 		expect(() => {
-			(read.layout as Binding[])[0] = row;
+			(read.layout as unknown as Binding[])[0] = row;
 		}).toThrow();
 		expect(() => {
 			(row as { command: string }).command = "fly.wiggle";
@@ -637,43 +639,18 @@ describe("the browser is a string store that may refuse", () => {
 		expect(kinds(read.notices)).toEqual(["unreadable"]);
 	});
 
-	test("the store owns which notices a save retires", () => {
-		// `main.ts` wrote this rule as `kind !== "collision"` for a round, so a
-		// sixth kind would have been classified by its reader rather than by
-		// the module that decides which kinds exist (sage round 2).
-		expect(
-			retiredBySave({ kind: "unreadable", cause: "corrupt", detail: "x" }),
-		).toBe(true);
-		expect(retiredBySave({ kind: "version", stored: 2 })).toBe(true);
-		expect(
-			retiredBySave({
-				kind: "rejected",
-				command: PITCH_UP,
-				reason: "moved-default",
-				detail: "x",
-			}),
-		).toBe(true);
-		// A collision is a property of the table as it stands, not a fact about
-		// the blob that was read, so replacing the blob does not retire it.
-		expect(
-			retiredBySave({
-				kind: "collision",
-				collision: {
-					trigger: triggerKey(FROM),
-					commands: [PITCH_UP, PITCH_DOWN],
-					scope: { pad: ["flight"], views: ["cockpit"] },
-				},
-				at: FROM,
-			}),
-		).toBe(false);
-	});
-
 	test("a layout that is not this game's is a loud throw, not a failed write", () => {
 		// `layoutMoves`' invariant used to be serialised *inside* the try, so a
 		// programming error came back as `false` and was indistinguishable from
 		// a full quota (sage round 2).
 		installStorage();
-		expect(() => saveLayout(DEFAULT_BINDINGS.slice(0, 3))).toThrow();
+		// The cast is the programming error this row is about: a truncated
+		// table is not a layout, and since #381 S4 the type says so — which is
+		// a second line of defence rather than a replacement, because
+		// `layoutMoves`' invariant is what a JavaScript caller still meets.
+		expect(() =>
+			saveLayout(DEFAULT_BINDINGS.slice(0, 3) as unknown as Layout),
+		).toThrow();
 	});
 
 	test("a write that lands says so, because a notice depends on it", () => {

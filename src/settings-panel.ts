@@ -76,6 +76,15 @@ const STYLE = `
 export interface SettingsPanelHandle {
 	/** Whether the screen is currently mounted over the canvas. */
 	readonly isOpen: () => boolean;
+	/**
+	 * Put the screen up — or take it down, which is what `SETTINGS_KEY` does.
+	 *
+	 * Exposed since #381 S4 for the `Controls` tab's door. #369 D12 makes `z`
+	 * remappable, so the key is no longer the only way in and the only way in
+	 * may no longer be a key: a player who moved `system.settings` onto a
+	 * button they forgot reaches the panel through the tab instead.
+	 */
+	readonly open: () => void;
 	readonly close: () => void;
 	/** Walk the row cursor, wrapping. A no-op while the screen is closed. */
 	readonly moveCursor: (delta: number) => void;
@@ -201,21 +210,22 @@ export function mountSettingsPanel(
 
 	const onKey = (e: KeyboardEvent) => {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
-		if (!root) {
-			// **Not over the Commander overlay, and not from a field.** Both
-			// listen on the window in the capture phase, and a stopped event still
-			// reaches every listener on that same target — so a `z` typed into a
-			// Commander's name opened this screen on top of it.
-			if (
-				e.key === SETTINGS_KEY &&
-				!isEditable(e.target) &&
-				!document.querySelector("[data-commander-overlay]")
-			) {
-				e.preventDefault();
-				open();
-			}
-			return;
-		}
+		// **Closed, this listener does nothing** (#381 S4). It used to open the
+		// screen on `SETTINGS_KEY` itself, which made that key the panel's
+		// rather than the registry's — so #369 D12's "`z` is an ordinary
+		// command and can be moved" was false: a player who rebound
+		// `system.settings` still opened this screen with `z`, and the key
+		// they chose did nothing. `Game.command("system.settings")` opens it
+		// now.
+		//
+		// S2 deferred that fold with a reason — "a folded open-trigger before
+		// that route exists is a door a rebind can lock" — and the route is
+		// this slice's `Controls` tab door. Sage round 5 on #497 found the
+		// gap, by pressing the key twice.
+		//
+		// The *closing* half stays here, with the rest of the keyboard this
+		// screen owns while it is up.
+		if (!root) return;
 		// While it is open it owns the keyboard, so the ship does not fly off
 		// behind a dialog the player is reading.
 		e.preventDefault();
@@ -234,6 +244,7 @@ export function mountSettingsPanel(
 
 	return {
 		isOpen: () => root !== null,
+		open,
 		close,
 		moveCursor,
 		stepValue,

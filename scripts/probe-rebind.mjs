@@ -24,6 +24,7 @@
  * than measuring what the ship does, and the row it feeds says only that the
  * held readings are orders of magnitude above that floor.
  */
+import { flightHarness, HOLD_MS, NEW_KEY } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
@@ -37,85 +38,19 @@ const ORIGIN =
 const origin = await guardedOrigin(ORIGIN);
 const { check, watch, exit } = tally();
 
-/**
- * The key the rebind moves pitch-up onto.
- *
- * `8` on purpose: the shipped layout binds `0` through `3` and nothing else in
- * the digit row, so it is a key with no row at all. A key that merely looked
- * free — one the perf panel owns, say — would make a pass here ambiguous
- * between the rebind working and the other binding firing.
- */
-const NEW_KEY = "8";
-/** How long a key is held, and how long the null arm waits. */
-const HOLD_MS = 400;
-
 const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 watch(page);
 await page.goto(gameUrl(origin, { seed: 42 }), { waitUntil: "load" });
 await bootedGame(page);
 
-const settle = (p) =>
-	p.evaluate(
-		() =>
-			new Promise((done) =>
-				requestAnimationFrame(() => requestAnimationFrame(done)),
-			),
-	);
-
-const nose = () => page.evaluate(() => window.__seelite.nose());
-
-/** The angle between two unit noses, in degrees. */
-const degreesBetween = (a, b) => {
-	const dot = Math.min(1, Math.max(-1, a.x * b.x + a.y * b.y + a.z * b.z));
-	return (Math.acos(dot) * 180) / Math.PI;
-};
-
 /**
- * Wait until the ship has stopped turning.
- *
- * Without this every arm reads the arm before it. A released pitch key leaves
- * the ship rotating — `stepAngular` damps it over a second or so — and the
- * first pass of this probe read 8.70° for a key that had just been unbound,
- * which is a confident red on a build that was working. An arm that measures
- * an angle owes the state it started from.
+ * The measurement, shared with `probe-binding-store.mjs` since #381 S4 —
+ * `scripts/lib/flight-harness.mjs` owns `atRest`, `turnedWhileHolding` and
+ * the reasons both are shaped the way they are. `NEW_KEY` and `HOLD_MS` moved
+ * with them.
  */
-let restFailed = false;
-async function atRest() {
-	// One read per tick: the sample that ends this iteration begins the next.
-	let prev = await nose();
-	// **Shorter once it has already failed.** Nine arms at ten seconds each is
-	// ninety seconds of waiting on a build whose damping broke — long enough
-	// to hit a harness timeout, which is the outcome the reported row exists
-	// to avoid. The first exhaustion is the diagnosis; the rest just have to
-	// finish so the row can print.
-	const ticks = restFailed ? 40 : 200;
-	for (let i = 0; i < ticks; i++) {
-		await page.waitForTimeout(50);
-		const now = await nose();
-		if (degreesBetween(prev, now) < 0.02) return;
-		prev = now;
-	}
-	restFailed = true;
-	// **Reported, not thrown.** A throw at top level here aborts before
-	// `browser.close()` and `exit()`, so a build whose damping broke would
-	// crash the suite rather than name a failing row — which is the hazard
-	// this file already names for `page.evaluate`. `restFailed` is the one
-	// signal: a return value beside it was a second channel nobody read.
-}
-
-/** Hold `key` for `HOLD_MS` and report how far the nose turned. `null` holds
- *  nothing, which is the drift arm. */
-async function turnedWhileHolding(key) {
-	await atRest();
-
-	const before = await nose();
-	if (key !== null) await page.keyboard.down(key);
-	await page.waitForTimeout(HOLD_MS);
-	if (key !== null) await page.keyboard.up(key);
-	await settle(page);
-	return degreesBetween(before, await nose());
-}
+const { settle, turnedWhileHolding, restFailed } = flightHarness(page);
 
 // ---------------------------------------------------------------------------
 // The instrument, and the drift it is read against.
@@ -246,7 +181,7 @@ const view = () => page.evaluate(() => window.__seelite.view);
  *  that forgot the settle would read the frame before the press. */
 const pressAndRead = async (key) => {
 	await page.keyboard.press(key);
-	await settle(page);
+	await settle();
 	return view();
 };
 const toggledOnV = await pressAndRead("v");
@@ -311,8 +246,19 @@ check(
 	// later `atRest` calls could not reach it, so an exhausted gate on a
 	// parity or refusal arm failed open — the reading taken against a still
 	// rotating ship, with the row named after that case already green.
-	restFailed === false,
-	`atRest exhausted its 200 ticks on at least one arm: ${restFailed}`,
+	// **Called, since the harness moved out** (#381 S4): `restFailed` is a
+	// reader now and not a flag, because two probes sharing one module-level
+	// one would let the first to run shorten the second's waits.
+	//
+	// A bare `restFailed` here would be the function object. `=== false` makes
+	// that a *type* mistake rather than a truthiness one — and the claim this
+	// comment carried for a round, that `!restFailed` would "pass in silence",
+	// was backwards: `!fn` is `false`, so `check(name, false)` is a red row.
+	// Sage round 2 on #497 caught the inversion in both copies. The real cost
+	// of `!` is the opposite one — a row that is red for the wrong reason and
+	// can never be green.
+	restFailed() === false,
+	`atRest exhausted its 200 ticks on at least one arm: ${restFailed()}`,
 );
 
 await browser.close();
