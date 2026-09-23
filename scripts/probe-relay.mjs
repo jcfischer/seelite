@@ -836,6 +836,193 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+// #351: the recovery you can meet. Kill the replacement, move the clock into
+// its repair, and the tender flies in, parks at the wreck and can be shot —
+// which sets the repair back and brings the next tender a wreck later.
+// ---------------------------------------------------------------------------
+await page.evaluate(() => {
+	window.__relayProbe.placeNear(1.5);
+});
+const secondKill = await page.evaluate(() => window.__relayProbe.shoot(400));
+const tenderAt = await page.evaluate(async (killedAt) => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const relay = await import("/src/pirate-relay.ts");
+	const tender = await import("/src/relay-tender.ts");
+	const frame = () => {
+		g.step(dt);
+		g.render(dt);
+	};
+	const read = () => {
+		const r = g.relayReadout();
+		const t = r.tender;
+		const rel = r.view?.pos;
+		return {
+			condition: r.view?.condition ?? null,
+			present: t !== null,
+			kmFromRelay:
+				t && rel
+					? Math.hypot(t.pos.x - rel.x, t.pos.y - rel.y, t.pos.z - rel.z)
+					: null,
+			listed: t?.listed ?? false,
+			drawn: t?.drawn ?? false,
+			targetable: t ? g.selectableIds().includes(t.key) : false,
+			key: t?.key ?? null,
+		};
+	};
+	const repairFrom = killedAt + relay.RELAY_WRECK_S;
+	g.world.gameTime = repairFrom - 5;
+	frame();
+	const beforeWindow = read();
+	g.world.gameTime = repairFrom + 1;
+	frame();
+	const arriving = read();
+	g.world.gameTime = repairFrom + tender.RELAY_TENDER_INBOUND_S / 2;
+	frame();
+	const halfway = read();
+	g.world.gameTime = repairFrom + tender.RELAY_TENDER_INBOUND_S + 30;
+	frame();
+	const parked = read();
+	return {
+		beforeWindow,
+		arriving,
+		halfway,
+		parked,
+		entryKm: tender.RELAY_TENDER_ENTRY_KM,
+		parkKm: tender.RELAY_TENDER_PARK_KM,
+	};
+}, secondKill.killedAt);
+check(
+	"#351: no tender while the relay is a fresh wreck; in the repair window it flies in from far out and parks at the wreck",
+	secondKill.hullBefore > 0 &&
+		tenderAt.beforeWindow.condition === "destroyed" &&
+		!tenderAt.beforeWindow.present &&
+		tenderAt.arriving.condition === "repairing" &&
+		tenderAt.arriving.present &&
+		tenderAt.arriving.kmFromRelay > tenderAt.entryKm * 0.9 &&
+		tenderAt.halfway.kmFromRelay < tenderAt.arriving.kmFromRelay &&
+		tenderAt.halfway.kmFromRelay > tenderAt.parkKm &&
+		Math.abs(tenderAt.parked.kmFromRelay - tenderAt.parkKm) < 1e-3,
+	JSON.stringify({ secondKill, tenderAt }),
+);
+check(
+	"#351: the tender is a listed, targetable, drawn contact",
+	tenderAt.parked.listed && tenderAt.parked.targetable && tenderAt.parked.drawn,
+	JSON.stringify(tenderAt.parked),
+);
+const tenderKill = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const relay = await import("/src/pirate-relay.ts");
+	const frame = () => {
+		g.step(dt);
+		g.render(dt);
+	};
+	const r0 = g.relayReadout();
+	const t0 = r0.tender;
+	// Beside it, at rest in the relay's frame, nose on it. The assist pulls the
+	// ship toward another frame at about 0.6 km/s, which carries it out of beam
+	// range inside the 25 s a tug takes to kill — so the ship is put back beside
+	// it every fifty steps, as a pilot holds range.
+	const besideIt = (t) => {
+		g.dropOut("probe");
+		g.encounter = null;
+		g.world.ship.pos = { x: t.pos.x + 1.2, y: t.pos.y, z: t.pos.z };
+		g.world.ship.vel = { ...t.vel };
+		g.throttle = 0;
+	};
+	besideIt(t0);
+	g.setHeadLook("forward");
+	frame();
+	g.targetId = t0.key;
+	const hullBefore = g.relayReadout().tender.hull;
+	g.keys.add(" ");
+	const samples = [];
+	let steps = 0;
+	for (; steps < 2000; steps++) {
+		const t = g.relayReadout().tender;
+		if (!t) break;
+		if (steps > 0 && steps % 50 === 0) besideIt(t);
+		const p = g.world.ship.pos;
+		if (steps % 100 === 0)
+			samples.push([
+				steps,
+				Math.round(
+					Math.hypot(t.pos.x - p.x, t.pos.y - p.y, t.pos.z - p.z) * 1000,
+				) / 1000,
+				Math.round(t.hull * 10) / 10,
+			]);
+		g.setAttitude(
+			{ x: t.pos.x - p.x, y: t.pos.y - p.y, z: t.pos.z - p.z },
+			g.shipUp(),
+		);
+		frame();
+	}
+	g.keys.delete(" ");
+	const env = g.saveEnvelope().world.galaxies[g.world.system.record.galaxy];
+	// The kill's own time, off the saved episode: the loop has stepped once
+	// more by the time it notices the tender is gone.
+	const killedAt = env.episodes[t0.key]?.initiating.occurredAt ?? Number.NaN;
+	const relayKey = r0.view.key;
+	const after = g.relayReadout();
+	g.leftTab = "Communications";
+	g.setHeadLook("left");
+	frame();
+	const lines = [...document.querySelectorAll("[data-live-raider-log] li")].map(
+		(li) => li.textContent,
+	);
+	g.setHeadLook("forward");
+	frame();
+	return {
+		hullBefore,
+		steps,
+		samples,
+		killedAt,
+		lastExit: g.lastExit,
+		tenderGone: after.tender === null,
+		tenderCondition: env.objective[t0.key]?.condition ?? null,
+		relayCondition: g.carrierCondition(relayKey).condition,
+		relayCompletesAt: g.carrierCondition(relayKey).recovery?.completesAt,
+		expectedCompletesAt: killedAt + relay.RELAY_WRECK_S + relay.RELAY_REPAIR_S,
+		lines,
+	};
+});
+check(
+	"#351: shooting the tender destroys it, saves the kill, and sets the relay's repair back by a wreck and a repair",
+	tenderKill.hullBefore > 0 &&
+		tenderKill.tenderGone &&
+		tenderKill.lastExit === "relay tender destroyed" &&
+		tenderKill.tenderCondition === "destroyed" &&
+		tenderKill.relayCondition === "repairing" &&
+		Math.abs(tenderKill.relayCompletesAt - tenderKill.expectedCompletesAt) <
+			1e-6 &&
+		tenderKill.lines.some((l) =>
+			l.endsWith("Relay tender destroyed · relay repair set back"),
+		),
+	JSON.stringify(tenderKill),
+);
+const nextTender = await page.evaluate(async (killedAt) => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const relay = await import("/src/pirate-relay.ts");
+	g.world.gameTime = killedAt + relay.RELAY_WRECK_S - 5;
+	g.step(dt);
+	g.render(dt);
+	const gap = g.relayReadout().tender;
+	g.world.gameTime = killedAt + relay.RELAY_WRECK_S + 1;
+	g.step(dt);
+	g.render(dt);
+	const next = g.relayReadout().tender;
+	return { gap, next: next && { listed: next.listed, drawn: next.drawn } };
+}, tenderKill.killedAt);
+check(
+	"#351: no tender for a wreck period, then the next one flies in",
+	nextTender.gap === null && nextTender.next?.listed === true,
+	JSON.stringify(nextTender),
+);
+await capture("05-tender-next");
+
+// ---------------------------------------------------------------------------
 // #351: a system whose relay did not roll active has none — not drawn, no
 // signal even with the module fitted, and the law on every route. Its own
 // page, because a page under measurement is never navigated (#121).
