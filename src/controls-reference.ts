@@ -448,12 +448,14 @@ const inViews = (views: readonly string[]): string =>
  *
  * **Here rather than in `layout-notice.ts`**, beside the union it prints,
  * because a formatter beside the kinds would be a second table of the same
- * names, which is the drift #369 D11 was written against. **And here rather
- * than in `key-names.ts`**, because it names *commands*, which it reads off
- * the registry as a value, and that leaf takes types only (#499 D1). The key
- * in a collision sentence is still spelled there, by `triggerLabel`. (It said `binding-store.ts` until #381 S4 moved the kinds out from
- * behind the store — the argument is the same and the module it names is
- * not.)
+ * names, which is the drift #369 D11 was written against. (It said
+ * `binding-store.ts` until #381 S4 moved the kinds out from behind the store —
+ * the argument is the same and the module it names is not.)
+ *
+ * **And here rather than in `key-names.ts`**, because it names *commands*,
+ * which it reads off the registry as a value, and that leaf takes types only
+ * (#499 D4). The key in a collision sentence is still spelled there, by
+ * `triggerLabel`.
  *
  * **The collision sentence says what the game does, not what #369 D5 says it
  * should.** D5's resolution is warn, allow, and resolve by last-changed-wins —

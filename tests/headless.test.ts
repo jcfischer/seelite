@@ -170,6 +170,25 @@ test("src/units.ts is a leaf, which is the whole of its job", () => {
 	expect(importsIn("units.ts")).toEqual([]);
 });
 
+/**
+ * What stops a module from being a types-only leaf: its value imports, static
+ * or dynamic, and its re-exports.
+ *
+ * One copy for every such leaf rather than a regex per row (sage round 1 on
+ * #502). The re-export match runs to the statement's `;` rather than the end
+ * of the line, because biome wraps a long `export { … } from` across lines and
+ * a single-line match reads that form as no re-export at all.
+ */
+const typesOnlyViolations = (file: string) => {
+	const code = codeOf(file);
+	return {
+		valueImports:
+			(code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length +
+			(code.match(/\bimport\s*\(/g) ?? []).length,
+		reExports: (code.match(/^\s*export\b[^;]*?\bfrom\s*["'`]/gm) ?? []).length,
+	};
+};
+
 test("src/knowledge-labels.ts imports types and nothing else", () => {
 	// **Its doc stakes the module on this**, and until #275's fifth review round
 	// nothing checked it: the module imported `FacilityChip` back from
@@ -182,10 +201,7 @@ test("src/knowledge-labels.ts imports types and nothing else", () => {
 	// the finder into the game's entry chunk for a handful of label strings.
 	// Type imports are erased and cost nothing, which is why this counts value
 	// imports rather than asserting the empty list `units.ts` gets.
-	const code = codeOf("src/knowledge-labels.ts");
-	const valueImports = (code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length;
-	const reExports = (code.match(/^\s*export\s+.*\bfrom\s*["']/gm) ?? []).length;
-	expect({ valueImports, reExports }).toEqual({
+	expect(typesOnlyViolations("src/knowledge-labels.ts")).toEqual({
 		valueImports: 0,
 		reExports: 0,
 	});
@@ -200,17 +216,27 @@ test("src/key-names.ts imports types and nothing else", () => {
 	//
 	// And no re-exports, because the leaf is the one module that spells a key
 	// (#499 D2) and a second import path to its names is the coupling
-	// `carrier-key.ts` was split out to end. `import(` is counted too — the
-	// module doc above names it as the form a line-start match misses.
-	const code = codeOf("src/key-names.ts");
-	const valueImports =
-		(code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length +
-		(code.match(/\bimport\s*\(/g) ?? []).length;
-	const reExports = (code.match(/^\s*export\s+.*\bfrom\s*["']/gm) ?? []).length;
-	expect({ valueImports, reExports }).toEqual({
+	// `carrier-key.ts` was split out to end.
+	expect(typesOnlyViolations("src/key-names.ts")).toEqual({
 		valueImports: 0,
 		reExports: 0,
 	});
+});
+
+test("no module re-exports src/key-names.ts", () => {
+	// The other half of one import path (#499 D2): the leaf re-exporting
+	// nothing does not stop `controls-reference.ts` handing its names on, which
+	// is the arm #499 refused for keeping `derived-names.test.ts` byte-identical.
+	const reExportsLeaf = /^\s*export\b[^;]*?\bfrom\s*["'`]\.\/key-names["'`]/m;
+	const offenders = srcFiles().filter((file) =>
+		reExportsLeaf.test(codeOf(file)),
+	);
+	expect(offenders).toEqual([]);
+	// The control: the scan reads a module that does import the leaf, so a
+	// path or a scanner that saw nothing would not pass as a clean tree.
+	expect(codeOf("src/controls-reference.ts")).toMatch(
+		/\bfrom\s*["'`]\.\/key-names["'`]/,
+	);
 });
 
 test("the hysteresis band fits inside the near layer's reach", () => {

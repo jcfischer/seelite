@@ -202,14 +202,14 @@ const readInConsole = (t: Trigger): boolean =>
 /**
  * The line a console shows a pad player, built from what that surface has.
  *
- * **Derived since #381 S5, and here since #499.** It lived in `pad-bindings.ts`, "beside
- * the bindings it names" — it had been written into `live-cockpit.ts` first,
- * as a third copy of a table that module and `docs/gamepad.md` already owned,
- * so a rebind moved two of the three. S4 moved the bindings to the registry
- * and the reason went with them; and it could not ask the registry from
- * there, because `commands.ts` already reads `pad-bindings.ts` to derive the
- * pad's rows. So each segment's button is the layout's answer and the verb is
- * the only word authored here.
+ * **Derived since #381 S5, and here since #499.** It lived in
+ * `pad-bindings.ts`, "beside the bindings it names" — it had been written into
+ * `live-cockpit.ts` first, as a third copy of a table that module and
+ * `docs/gamepad.md` already owned, so a rebind moved two of the three. S4
+ * moved the bindings to the registry and the reason went with them; and it
+ * could not ask the registry from there, because `commands.ts` already reads
+ * `pad-bindings.ts` to derive the pad's rows. So each segment's button is the
+ * layout's answer and the verb is the only word authored here.
  *
  * **Assembled rather than picked from near-copies.** It began as one constant,
  * gained a station variant that was the first minus one segment, and would
