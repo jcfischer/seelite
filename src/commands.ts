@@ -1943,9 +1943,11 @@ export function rebind(
  *
  * - a `pad-stick` or a `pad-trigger`, because `padFlightAxes` reads fixed
  *   positions and not the layout. #369 D10's invert and sensitivity route
- *   through that same function, so the two are one change and not this slice's.
+ *   through that same function, so the two are one change and not this slice's
+ *   — [#496](https://github.com/jcfischer/seelite/issues/496) owns both.
  * - a `pad-button` **held**, because `padFireHeld` reads a fixed position too,
- *   and `resolvePad` answers a press.
+ *   and `resolvePad` answers a press. #496's third question is whether that
+ *   and `isHeld` are one predicate over both devices or two.
  * - a `mouse-button`, `mouse-move` or `pad-intent`, which have no capture
  *   surface at all — the modal does not record them.
  *

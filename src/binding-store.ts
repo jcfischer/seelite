@@ -181,7 +181,9 @@ const acceptSurface = (v: unknown): Accepted<Surface> =>
  * *shape* this module can hold, and `movedTrigger`'s is about a *move* the
  * registry will make. A stick fails here on shape and would fail there on the
  * reader; that is not a duplicated rule, it is the same input refused by the
- * layer it reaches first, and the sentence the player reads differs.
+ * layer it reaches first, and the sentence the player reads differs. Both
+ * lift together again or not at all, and
+ * [#496](https://github.com/jcfischer/seelite/issues/496) is where.
  *
  * **A stored `contexts` is not read.** Loading is one `rebind` per row and
  * `movedTrigger` derives the contexts from `pad-bindings.ts`, so a blob that
