@@ -2225,5 +2225,188 @@ if (airless) {
 	await ringPage.close();
 }
 
+/* #211. The selected surface has a half-size target, while its full-size
+ * geometry writes the depth and edge. Compare the equatorial limb with the
+ * same frame drawn at full resolution, keeping the clock and placement fixed. */
+{
+	// Earlier surface/class probes deliberately hide and replace live objects.
+	// Use a fresh game so this row measures the shipped scene.
+	const halfPage = await browser.newPage({ viewport: VIEW });
+	watch(halfPage, "half-resolution");
+	await installHelpers(halfPage);
+	await installViewPlacement(halfPage);
+	await installViewFraming(halfPage);
+	await halfPage.goto(URL, { waitUntil: "domcontentloaded" });
+	await bootedGame(halfPage);
+	const subject = await halfPage.evaluate(
+		() =>
+			window.__seelite.world.system.bodies.find(
+				(body) =>
+					window.__seelite.bodyVisuals.get(body.id)?.surface === "terran",
+			)?.id,
+	);
+	check(
+		"the half-resolution limb fixture has a terran body",
+		Boolean(subject),
+		String(subject),
+	);
+	if (subject) {
+		const result = await halfPage.evaluate(async (id) => {
+			const game = window.__seelite;
+			game.settings.set("quality", "high");
+			await window.__sunOffset(id, 2.5, 60);
+			const fullSize = [
+				game.renderer.domElement.width,
+				game.renderer.domElement.height,
+			];
+			// Read at the full drawing-buffer size. The shared __framePixels helper
+			// downsamples to 300 px, below the 450 px half target, and would hide a
+			// one-pixel stair-step at the actual limb.
+			const scratch = document.createElement("canvas");
+			scratch.width = fullSize[0];
+			scratch.height = fullSize[1];
+			const context = scratch.getContext("2d", { willReadFrequently: true });
+			const frame = () => {
+				game.render(0);
+				context.drawImage(game.renderer.domElement, 0, 0);
+				return Uint8ClampedArray.from(
+					context.getImageData(0, 0, scratch.width, scratch.height).data,
+				);
+			};
+			game.setPlanetHalfResAllowed(false);
+			const full = frame();
+			const fullTarget = game.planetHalfResState();
+			game.setPlanetHalfResAllowed(true);
+			const half = frame();
+			const halfTarget = game.planetHalfResState();
+			const group = game.meshes.get(id);
+			group.visible = false;
+			const background = frame();
+			group.visible = true;
+			const w = fullSize[0];
+			const cx = Math.floor(w / 2);
+			const cy = Math.floor(fullSize[1] / 2);
+			const body = game.world.system.byId.get(id);
+			const ship = game.world.ship.pos;
+			const distance = Math.hypot(
+				body.pos.x - ship.x,
+				body.pos.y - ship.y,
+				body.pos.z - ship.z,
+			);
+			const focal = cy / Math.tan((game.approachCamera.fov * Math.PI) / 360);
+			const radius =
+				(focal * body.radiusKm) /
+				Math.sqrt(distance * distance - body.radiusKm * body.radiusKm);
+			const contrast = (x, y) => {
+				const i = (y * w + x) * 4;
+				return (
+					Math.abs(full[i] - background[i]) +
+					Math.abs(full[i + 1] - background[i + 1]) +
+					Math.abs(full[i + 2] - background[i + 2])
+				);
+			};
+			let changedInterior = 0;
+			for (let yy = cy - 210; yy < cy - 30; yy++) {
+				for (let xx = cx - 120; xx < cx + 120; xx++) {
+					const i = (yy * w + xx) * 4;
+					const difference = Math.max(
+						Math.abs(full[i] - half[i]),
+						Math.abs(full[i + 1] - half[i + 1]),
+						Math.abs(full[i + 2] - half[i + 2]),
+					);
+					if (difference > 2) changedInterior++;
+				}
+			}
+			let fullStep = 0;
+			let halfStep = 0;
+			let extraStep = 0;
+			const rows = [];
+			for (const fraction of [-0.7, -0.4, -0.2, 0, 0.2]) {
+				const y = Math.round(cy + fraction * radius);
+				const expectedEdge = Math.round(
+					cx - Math.sqrt(radius * radius - (y - cy) * (y - cy)),
+				);
+				let edge = -1;
+				// Walk out from the planet interior; isolated background stars
+				// cannot masquerade as the first visible atmosphere pixel.
+				for (let x = cx; x >= 3; x--) {
+					if (
+						contrast(x, y) < 10 &&
+						contrast(x - 1, y) < 10 &&
+						contrast(x - 2, y) < 10
+					) {
+						edge = x + 1;
+						break;
+					}
+				}
+				rows.push({ y, expectedEdge, edge, centerContrast: contrast(cx, y) });
+				if (edge < 8) continue;
+				// Cover the atmosphere's first visible edge through the solid
+				// sphere's limb, then compare the same channel at the same pixel.
+				for (let x = edge - 8; x <= edge + 80; x++) {
+					const a = (y * w + x) * 4;
+					const b = a + 4;
+					for (let channel = 0; channel < 3; channel++) {
+						const f = Math.abs(full[a + channel] - full[b + channel]);
+						const h = Math.abs(half[a + channel] - half[b + channel]);
+						fullStep = Math.max(fullStep, f);
+						halfStep = Math.max(halfStep, h);
+						extraStep = Math.max(extraStep, h - f);
+					}
+				}
+			}
+			return {
+				fullTarget,
+				halfTarget,
+				fullSize,
+				changedInterior,
+				centerContrast: contrast(cx, cy),
+				rows,
+				fullStep,
+				halfStep,
+				extraStep,
+			};
+		}, subject);
+		check(
+			"the selected planet surface target is half the drawing buffer",
+			!result.fullTarget.engaged &&
+				result.halfTarget.engaged &&
+				result.halfTarget.targetWidth === Math.ceil(result.fullSize[0] / 2) &&
+				result.halfTarget.targetHeight === Math.ceil(result.fullSize[1] / 2),
+			JSON.stringify({ full: result.fullTarget, half: result.halfTarget }),
+		);
+		check(
+			"the half-resolution arm changes visible planet surface pixels",
+			result.changedInterior > 100,
+			`${result.changedInterior} changed interior pixels`,
+		);
+		check(
+			"the full-size limb adds no step above 32 display codes per channel",
+			result.centerContrast > 100 &&
+				result.rows.length === 5 &&
+				result.rows.every((row) => row.edge > 8 && row.centerContrast > 30) &&
+				result.extraStep <= 32,
+			`center contrast ${result.centerContrast}, rows ${JSON.stringify(result.rows)}, full ${result.fullStep}, half ${result.halfStep}, extra ${result.extraStep} (max channel code)`,
+		);
+		const lowAtSmallDisc = await halfPage.evaluate(async (id) => {
+			const game = window.__seelite;
+			await window.__sunOffset(id, 3.5, 60);
+			game.settings.set("quality", "high");
+			game.render(0);
+			const high = game.planetHalfResState();
+			game.settings.set("quality", "low");
+			game.render(0);
+			const low = game.planetHalfResState();
+			return { high, low };
+		}, subject);
+		check(
+			"Low uses the half target for a small approach-layer disc",
+			!lowAtSmallDisc.high.engaged && lowAtSmallDisc.low.engaged,
+			JSON.stringify(lowAtSmallDisc),
+		);
+	}
+	await halfPage.close();
+}
+
 await browser.close();
 exit();
