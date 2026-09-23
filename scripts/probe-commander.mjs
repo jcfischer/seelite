@@ -397,7 +397,15 @@ try {
 	// -----------------------------------------------------------------------
 	const key = await tabB.evaluate(() => window.__seelite.commanderBoot.key);
 	await tabB.keyboard.press(key);
-	await waitFor(tabB, () => document.querySelector("[data-commander-overlay]"));
+	// **The row, not the overlay** (#503). `open()` draws before `refresh()` has
+	// read the catalog, so its first draw has no Commander rows; they land about 12 ms
+	// later on an M1 Pro. Waiting on the overlay read that first draw and got `{}`. A
+	// row that never lands still fails: the wait gives up and the read is empty.
+	await waitFor(tabB, () =>
+		document.querySelector(
+			'[data-commander-overlay] [data-commander="Probe One"] [data-action]',
+		),
+	);
 	const inPlayActions = await tabB.evaluate(() =>
 		Object.fromEntries(
 			[
