@@ -1356,6 +1356,14 @@ export const commandById = (id: CommandId): Command => {
  *
  * `tests/layout.types.ts` is where that is checked, because "this does not
  * compile" is not a thing `bun test` can see.
+ *
+ * **What the brand guarantees is the freeze, not provenance** (sage round 1
+ * on #497 read the paragraph above as claiming more). `layoutOf` is exported
+ * and takes any rows: `binding-store.ts` folds a stored diff into one, and
+ * the tests build colliding tables with it. So a `Layout` is "a table that
+ * went through the freeze", which is exactly what the hold index needs, and
+ * not "the shipped table with moves applied" — `layoutMoves` is the function
+ * that answers *that*, and it throws when the answer is no.
  */
 declare const LAYOUT: unique symbol;
 export type Layout = readonly Binding[] & { readonly [LAYOUT]: true };
