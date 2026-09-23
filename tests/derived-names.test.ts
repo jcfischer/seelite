@@ -28,19 +28,21 @@ import {
 import { commanderHint } from "../src/commander-overlay";
 import { controlsCatalogue } from "../src/controls-catalogue";
 import {
-	anyOf,
-	boundNames,
 	COMMANDER_ACTION,
 	controlsTree,
+	SETTINGS_ACTION,
+} from "../src/controls-reference";
+import {
+	anyOf,
+	boundNames,
 	cruisePrompt,
 	dialKeys,
 	jumpPrompt,
 	onKeyboard,
 	padHintFor,
-	SETTINGS_ACTION,
 	targetPrompt,
 	triggerLabel,
-} from "../src/controls-reference";
+} from "../src/key-names";
 import { saveBadgeMarkup } from "../src/save-badge";
 import { settingsHint } from "../src/settings-panel";
 import * as padBindings from "../src/pad-bindings";

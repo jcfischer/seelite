@@ -30,10 +30,10 @@ import {
 	controlsTreeMarkup,
 	focusAfterFold,
 	groupFocusId,
-	padHintFor,
 	rowFocusId,
 	toggleGroup,
 } from "./controls-reference";
+import { padHintFor } from "./key-names";
 import type { ScanConsoleReadout } from "./carrier-scan";
 import type { DuelConsoleReadout } from "./duel-hud";
 import type { StationAction } from "./station-commerce";

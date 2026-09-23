@@ -6,7 +6,7 @@
  * `dialKeys`'s doc that a dial the registry has no pair for does not compile.
  */
 import { DEFAULT_BINDINGS } from "../src/commands";
-import { dialKeys } from "../src/controls-reference";
+import { dialKeys } from "../src/key-names";
 
 dialKeys(DEFAULT_BINDINGS, "vMax");
 // @ts-expect-error — no `tune.vMaxxDown` row, so no such dial.

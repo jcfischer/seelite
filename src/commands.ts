@@ -182,10 +182,10 @@ export type FixedReason = "diagnostic" | "rig" | "pointer";
  * absence of a shared trigger.
  *
  * A closed union rather than a phrase, because `overlaps` decides liveness by
- * comparing two of these and `controls-reference.ts` prints them: with prose
+ * comparing two of these and `key-names.ts` prints them: with prose
  * in the field, two bindings on one screen worded differently could never be
  * reported as a collision, and rewording a label would silently move a scope.
- * The printed phrase is `SURFACE_WORDS` there, beside `CONTEXT_WORDS`.
+ * The printed phrase is `SURFACE_WORDS` there.
  */
 /**
  * The screens that claim the keyboard, and the set a stored layout is checked
@@ -2142,8 +2142,9 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
  * everywhere, and an empty string for a refused key.
  *
  * A code and not prose, for `RejectReason`'s reason next door in
- * `layout-notice.ts`: #369 D11 gives `controls-reference.ts` the one owner of
- * every printed name, and a sentence thrown from here is a developer's.
+ * `layout-notice.ts`: a sentence a player reads is `controls-reference.ts`'s,
+ * with its key spelled by `key-names.ts` (#369 D11, as #499 D2 reads it), and
+ * a sentence thrown from here is a developer's.
  *
  * **The count is not stated here.** It was written as five beside a union of
  * six inside one round, which is what a count of a list directly below it is

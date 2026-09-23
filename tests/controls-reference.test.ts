@@ -33,8 +33,8 @@ import {
 	rowFocusId,
 	restoreOnTabPick,
 	toggleGroup,
-	triggerLabel,
 } from "../src/controls-reference";
+import { triggerLabel } from "../src/key-names";
 import type { TreeItem } from "../src/controls-reference";
 import type { DockPhase } from "../src/dock-session";
 import {

@@ -115,8 +115,8 @@ describe("the boundary itself", () => {
 	});
 
 	test("the printed sentence is no longer downstream of the store", () => {
-		// #369 D11 gives `controls-reference.ts` the one owner of every printed
-		// control name, and it reached for the notice union through the
+		// `controls-reference.ts` prints the notice sentences (#499 D1), and it
+		// reached for the notice union through the
 		// persistence module to get it. It does not any more, which is what the
 		// split buys a reader beyond tidiness: the tab's formatter and the
 		// player's disk have no edge between them.

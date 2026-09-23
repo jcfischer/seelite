@@ -556,18 +556,20 @@ import {
 	controlsCatalogue,
 } from "./controls-catalogue";
 import {
-	boundNames,
 	COMMANDER_ACTION,
 	controlsKeyMove,
+	restoreOnTabPick,
+	SETTINGS_ACTION,
+} from "./controls-reference";
+import {
+	boundNames,
 	cruisePrompt,
 	dialKeys,
 	jumpPrompt,
 	onKeyboard,
 	type OwnKey,
-	restoreOnTabPick,
-	SETTINGS_ACTION,
 	targetPrompt,
-} from "./controls-reference";
+} from "./key-names";
 import type { CaptureModalHandle } from "./capture-modal";
 import { isEditable } from "./editable-target";
 import {
