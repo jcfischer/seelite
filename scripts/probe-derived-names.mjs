@@ -226,11 +226,7 @@ check(
 	const engaged = await spool();
 	check(
 		"the cruise prompt names the moved key, and that key engages cruise",
-		moved === null &&
-			!byOld &&
-			named === FREE.cruise &&
-			pressed &&
-			engaged,
+		moved === null && !byOld && named === FREE.cruise && pressed && engaged,
 		`${moved ?? "moved"}; j engaged it: ${byOld}; prompt "${text}"; named ${named}; engaged after pressing it: ${engaged}`,
 	);
 	// Stand the drive down on the key the prompt named, so the next row reads

@@ -280,9 +280,7 @@ describe("the prompt line and the dial legend (#381 S5)", () => {
 		expect(targetPrompt(movedKey("fight.targetNext", "5"))).toBe(
 			"5 selects a target",
 		);
-		expect(cruisePrompt(movedKey("fly.cruise", "6"))).toBe(
-			"press 6 to cruise",
-		);
+		expect(cruisePrompt(movedKey("fly.cruise", "6"))).toBe("press 6 to cruise");
 	});
 
 	test("a command moved off the keyboard is named where it went", () => {
@@ -303,7 +301,11 @@ describe("the prompt line and the dial legend (#381 S5)", () => {
 			dialKeys(DEFAULT_BINDINGS, "tune.exponentDown", "tune.exponentUp"),
 		).toBe("([/])");
 		expect(
-			dialKeys(movedKey("tune.vicinityUp", "4"), "tune.vicinityDown", "tune.vicinityUp"),
+			dialKeys(
+				movedKey("tune.vicinityUp", "4"),
+				"tune.vicinityDown",
+				"tune.vicinityUp",
+			),
 		).toBe("(n/4)");
 	});
 });
