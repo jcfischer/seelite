@@ -2251,10 +2251,10 @@ if (airless) {
 		String(subject),
 	);
 	if (subject) {
-		const result = await halfPage.evaluate((id) => {
+		const result = await halfPage.evaluate(async (id) => {
 			const game = window.__seelite;
 			game.settings.set("quality", "high");
-			window.__sunOffset(id, 2.5, 60);
+			await window.__sunOffset(id, 2.5, 60);
 			const fullSize = [
 				game.renderer.domElement.width,
 				game.renderer.domElement.height,
