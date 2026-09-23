@@ -417,7 +417,6 @@ import {
 } from "./relay-slot";
 import {
 	RELAY_TENDER_HIT_RADIUS_KM,
-	RELAY_TENDER_INTEGRITY,
 	RELAY_TENDER_NAME,
 	tenderEntry,
 	tenderInSights,
@@ -2165,7 +2164,9 @@ class Game {
 	 *  state like the relay's; its kill is the world's. */
 	private tenderView: { key: CarrierKey; since: number; entry: Vec3 } | null =
 		null;
-	private tenderHull = RELAY_TENDER_INTEGRITY;
+	/** The tug's shields and hull this visit (#351 Q13: ship shields, like any
+	 *  ship in a fight). Flight state like the relay's hull. */
+	private tenderCondition: ShipCondition = fullCondition(RELAY_TENDER_HULL_ID);
 	private tenderListed = false;
 	private readonly tenderContact: DisplayContact = {
 		id: "",
@@ -10206,7 +10207,7 @@ class Game {
 		this.relayPlanCache = null;
 		this.relayHull = RELAY_INTEGRITY;
 		this.relayHullInstance = 0;
-		this.tenderHull = RELAY_TENDER_INTEGRITY;
+		this.tenderCondition = fullCondition(RELAY_TENDER_HULL_ID);
 		this.tenderView = null;
 	}
 
@@ -10877,7 +10878,7 @@ class Game {
 	 * through `applyCarrierTransition`, the one writer every carrier
 	 * transition in the game goes through.
 	 */
-	private stepRelay(shot: PlayerShot) {
+	private stepRelay(shot: PlayerShot, dt: number) {
 		const plan = this.currentRelayPlan();
 		if (!plan) {
 			this.relayView = null;
@@ -10959,7 +10960,7 @@ class Game {
 				this.world.system.byId.get(plan.watchedStationId)?.name ??
 				plan.watchedStationId,
 		};
-		this.stepTender(shot, plan, carrier);
+		this.stepTender(shot, plan, carrier, dt);
 	}
 
 	/**
@@ -10985,6 +10986,7 @@ class Game {
 		plan: RelayPlan,
 		/** The relay's condition as `stepRelay` read it this frame. */
 		relay: EffectiveCarrier,
+		dt: number,
 	) {
 		const { record } = this.world.system;
 		const now = this.world.gameTime;
@@ -11002,17 +11004,30 @@ class Game {
 		let view = this.tenderView;
 		if (!view || view.key !== key || view.since !== since) {
 			view = { key, since, entry: tenderEntry(record.seed) };
-			this.tenderHull = RELAY_TENDER_INTEGRITY;
+			this.tenderCondition = fullCondition(RELAY_TENDER_HULL_ID);
 		}
 		this.tenderView = view;
+		// Its shields recharge on the duel's rule: the tug never fires, so the
+		// step is recovery only, and a pause in the pilot's fire lets them back.
+		this.tenderCondition = stepCondition(
+			this.tenderCondition,
+			dt,
+			false,
+		).condition;
 		const { pos } = this.tenderNow(view, plan);
 		if (
 			shot.fired &&
 			shot.damage > 0 &&
 			tenderInSights(this.cameraPos(), this.beamAim(), pos)
 		) {
-			this.tenderHull = Math.max(0, this.tenderHull - shot.damage);
-			if (this.tenderHull === 0) {
+			// The pool the shot meets is the side it comes from, as a raider's: the
+			// tug faces the wreck, nose along `-entry`.
+			this.tenderCondition = applyDamage(
+				this.tenderCondition,
+				shot.damage,
+				sideStruck(scale(view.entry, -1), sub(this.cameraPos(), pos)),
+			);
+			if (!isAlive(this.tenderCondition)) {
 				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event);
 				this.audio.explosion();
@@ -11207,7 +11222,9 @@ class Game {
 							key: this.tenderView.key,
 							since: this.tenderView.since,
 							...this.tenderNow(this.tenderView, plan),
-							hull: this.tenderHull,
+							hull: this.tenderCondition.hull,
+							fore: this.tenderCondition.fore,
+							aft: this.tenderCondition.aft,
 							listed: this.tenderListed,
 							drawn: this.tenderMesh.parent !== null,
 						}
@@ -11654,7 +11671,7 @@ class Game {
 		this.charged.left = Math.max(0, this.charged.left - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
-		this.stepRelay(shot);
+		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot);
 		this.stepCargoCanisters(dt);
 		this.syncCargoContacts();
@@ -13793,10 +13810,9 @@ class Game {
 	 */
 	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
-		// #351: the relay and its tender carry hull points and no shields, so
-		// their line reads both pools at zero — the truth, in the stripped tone
-		// a ship shows with its shields down. A wreck is no target to shoot and
-		// gets no line (Q12); the panel names its condition instead.
+		// #351: the relay carries hull points and no shields, so its line reads
+		// both pools at zero, in the stripped tone. A wreck is no target to shoot
+		// and gets no line (Q12). The tender is a ship with a ship's shields (Q13).
 		if (this.relayShootable())
 			return {
 				fore: 0,
@@ -13804,13 +13820,7 @@ class Game {
 				hull: this.relayHull,
 				hullMax: RELAY_INTEGRITY,
 			};
-		if (this.tenderSelected())
-			return {
-				fore: 0,
-				aft: 0,
-				hull: this.tenderHull,
-				hullMax: RELAY_TENDER_INTEGRITY,
-			};
+		if (this.tenderSelected()) return this.tenderCondition;
 		if (this.trafficSelected())
 			return (
 				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition ??

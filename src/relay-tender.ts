@@ -69,7 +69,9 @@ export const RELAY_TENDER_ENTRY_KM = 50_000;
 /** Where it parks, km off the relay: alongside, not inside the hit sphere. */
 export const RELAY_TENDER_PARK_KM = 0.25;
 
-/** Hull points: the tug's own. */
+/** Hull points: the tug's own. Its shields are a ship's (`fullCondition`,
+ *  the principal's ruling Q13), so a kill costs both pools on one side and
+ *  this hull. */
 export const RELAY_TENDER_INTEGRITY =
 	HULL_SPECS[RELAY_TENDER_HULL_ID].integrity;
 /** The hit sphere: half the envelope's diagonal, so it holds the built hull. */

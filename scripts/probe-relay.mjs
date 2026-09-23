@@ -1004,9 +1004,11 @@ check(
 	"#351: a selected tender pulls the gimbal onto it and shows its shields and hull; unselected, the beam stays on the boresight",
 	tenderGimbal.selected.noseOffDeg > 2 &&
 		tenderGimbal.selected.beamOffDeg < 1 &&
-		// And its shields and hull under the name, as any ship's: the tug has none
-		// of the first, and it is whole here.
-		tenderGimbal.selected.conditionLine === "SHD F 0 A 0  HULL 100%" &&
+		// And its shields and hull under the name, as any ship's: a ship's shields
+		// (Q13), and whole here.
+		/^SHD F [1-9]\d* A [1-9]\d*  HULL 100%$/.test(
+			tenderGimbal.selected.conditionLine ?? "",
+		) &&
 		tenderGimbal.control.noseOffDeg > 2 &&
 		tenderGimbal.control.beamOffDeg > 2,
 	JSON.stringify(tenderGimbal),
@@ -1073,7 +1075,7 @@ const tenderKill = await page.evaluate(async () => {
 	const t0 = r0.tender;
 	// Beside it, at rest in the relay's frame, nose on it. The assist pulls the
 	// ship toward another frame at about 0.6 km/s, which carries it out of beam
-	// range inside the 25 s a tug takes to kill — so the ship is put back beside
+	// range inside the minute a shielded tug takes to kill — so the ship is put back beside
 	// it every fifty steps, as a pilot holds range.
 	window.__relayProbe.placeBesideTender(1.2);
 	g.setHeadLook("forward");
@@ -1095,6 +1097,8 @@ const tenderKill = await page.evaluate(async () => {
 				Math.round(
 					Math.hypot(t.pos.x - p.x, t.pos.y - p.y, t.pos.z - p.z) * 1000,
 				) / 1000,
+				Math.round(t.fore),
+				Math.round(t.aft),
 				Math.round(t.hull * 10) / 10,
 			]);
 		g.setAttitude(
@@ -1213,7 +1217,8 @@ const secondVisit = await page.evaluate(async (killedAt) => {
 		probe.frame();
 	}
 	g.keys.delete(" ");
-	const worn = g.relayReadout().tender.hull;
+	const pools = (t) => (t ? { fore: t.fore, aft: t.aft, hull: t.hull } : null);
+	const worn = pools(g.relayReadout().tender);
 	g.world.gameTime = arrival + relay.RELAY_REPAIR_S + 5;
 	probe.frame();
 	const afterRepair = g.relayReadout();
@@ -1226,16 +1231,22 @@ const secondVisit = await page.evaluate(async (killedAt) => {
 		relayAfterRepair: afterRepair.view?.condition ?? null,
 		tenderAfterRepair: afterRepair.tender,
 		thirdKill: third.steps,
-		nextHull: g.relayReadout().tender?.hull ?? null,
-		integrity: tender.RELAY_TENDER_INTEGRITY,
+		next: pools(g.relayReadout().tender),
+		// A whole tug: both shields full and its own hull (Q13), off the page.
+		full: {
+			fore: (await import("/src/ship-condition.ts")).SHIELD_POOL,
+			aft: (await import("/src/ship-condition.ts")).SHIELD_POOL,
+			hull: tender.RELAY_TENDER_INTEGRITY,
+		},
 	};
 }, tenderKill.killedAt);
 check(
 	"#351: a tender worn on one visit leaves with the repair, and the next repair's tender arrives whole",
-	secondVisit.worn < secondVisit.integrity &&
+	secondVisit.worn.fore + secondVisit.worn.aft + secondVisit.worn.hull <
+		secondVisit.full.fore + secondVisit.full.aft + secondVisit.full.hull &&
 		secondVisit.relayAfterRepair === "operational" &&
 		secondVisit.tenderAfterRepair === null &&
-		secondVisit.nextHull === secondVisit.integrity,
+		JSON.stringify(secondVisit.next) === JSON.stringify(secondVisit.full),
 	JSON.stringify(secondVisit),
 );
 
