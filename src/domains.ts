@@ -111,6 +111,9 @@ export const DOMAIN = {
 	 *  draw per system against a chance that falls with government. Its own tag,
 	 *  so the roll moves neither the relay's placement nor anything else. */
 	RELAY_ACTIVE: 24,
+	/** The relay tender's way in (`relay-tender.ts`, #351): the direction it
+	 *  flies in from. Its own tag, so it moves no relay placement or roll. */
+	RELAY_TENDER: 25,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
