@@ -417,22 +417,24 @@ check(
 // answer is read here for that, and the row above has already shown the panel
 // on screen.
 const panelMounted = await waitForSettingsPanel(page);
-await page.keyboard.press("z");
+// **Closed from the screen itself, so the press below is measured from a
+// closed state.** The first version pressed `z` while the door's panel was
+// still up, where `z` is the screen's own close key — so the row named "no
+// longer opens it" was reading a close (sage round 6 on #497). Escape is the
+// panel's other way out and is not the key under test.
+await page.keyboard.press("Escape");
 await frames(3);
 check(
-	"the settings key the player moved off no longer opens it",
-	// `z` closes the panel the door opened rather than leaving it up, so the
-	// reading either way is "the screen is gone" — which is why this presses
-	// it a second time from the closed state and asks that it stays closed.
+	"the door's panel closes, so the key below is pressed from a closed screen",
 	panelMounted && !(await shown("[data-settings-panel]")),
-	panelMounted ? "z is dead" : "the settings screen never mounted",
+	panelMounted ? "closed" : "the settings screen never mounted",
 );
 await page.keyboard.press("z");
 await frames(3);
 check(
-	"and pressing it again does not bring it back",
+	"the settings key the player moved off no longer opens it",
 	!(await shown("[data-settings-panel]")),
-	"z is still dead from the closed state",
+	"z is dead",
 );
 
 await browser.close();

@@ -59,10 +59,14 @@
  * everything an older one wrote, which is the direction that matters. An
  * older build meets a pad row as `unreadable-trigger` — one rejected row,
  * named on screen — and its next save drops it, because `retiredBySave`
- * retires that notice. The version was not bumped because a bump is worse in
- * the direction players actually travel: this build refuses a version it does
- * not know, so every existing `v1` layout would be abandoned to protect a
- * downgrade nobody performs. The cost is named here rather than discovered.
+ * retires that notice. The version was not bumped because the two costs are
+ * not symmetric: a bump is certain and forward-facing — this build refuses a
+ * version it does not know, so every existing `v1` layout is abandoned on
+ * upgrade, for every player — while what it buys is a *downgrade* refusing
+ * cleanly instead of dropping one row. How often anyone downgrades this game
+ * is not something this module knows, and an earlier draft of this paragraph
+ * asserted it was nobody (sage round 6 on #497). The cost is named here
+ * rather than discovered.
  *
  * **There is no `migrate()`, and that is the honest answer rather than a
  * gap.** Version 1 is the first version this game has ever written, so a

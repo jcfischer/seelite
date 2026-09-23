@@ -7880,6 +7880,13 @@ class Game {
 		// this game closes on. The *click* is the guaranteed exit (#370's
 		// premise); this is the courtesy one.
 		if (this.captureModal?.isOpen()) {
+			// **A browser shortcut is left alone, and `preventDefault` moved
+			// below this to make that true** (sage round 6 on #497). The guard
+			// stopped `Cmd+R` being *captured* and still ate it, which is the
+			// worse half: the player got neither the binding nor the reload.
+			// `keyDispatch` refuses both combinations for the game's own
+			// reasons; this refuses them for the browser's.
+			if (e.metaKey || e.ctrlKey) return;
 			e.preventDefault();
 			if (e.key === "Escape") {
 				this.captureModal.close();
@@ -7897,13 +7904,7 @@ class Game {
 			// whole `rebind`, a `layoutOf` freeze, a `collisions` scan and an
 			// `innerHTML` replacement at the OS repeat rate, all to produce the
 			// answer already on screen.
-			// **And a combination is not a candidate either.** `Cmd+R` reached
-			// this as a plain `r` after `preventDefault` had eaten the reload —
-			// so the shortcut was swallowed *and* the key was offered. This
-			// matches `keyDispatch`, which refuses both: Ctrl is the throttle
-			// and Meta reaches nothing.
-			if (e.repeat || e.metaKey || e.ctrlKey || MODIFIER_KEYS.has(e.key))
-				return;
+			if (e.repeat || MODIFIER_KEYS.has(e.key)) return;
 			this.captureModal.offer({
 				kind: "key",
 				// **Option makes the character untrustworthy, and only here is
@@ -8060,6 +8061,17 @@ class Game {
 			// The panel still owns the keyboard while it is *up*, including
 			// the key that closes it; only the opening moved.
 			case "system.settings":
+				// **Not behind the Commander overlay**, which the settings
+				// panel's own listener used to check before #381 S4 folded
+				// this open here. The check is not restated: that overlay
+				// takes `keydown` in the *capture* phase and calls
+				// `stopPropagation`, and this handler is on `window` in the
+				// bubble phase — so an event it claims never arrives. The old
+				// guard existed because the two panels were *sibling* capture
+				// listeners, where a stop does not reach across.
+				// Driven in a headed browser to check that rather than reason
+				// it: with the overlay open, `z` leaves the settings screen
+				// closed.
 				this.settingsPanel?.open();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
