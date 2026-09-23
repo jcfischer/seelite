@@ -42,6 +42,8 @@
  * out of the suite; `check-launcher-wiring.mjs` exempts it from the `tally()`
  * rule for the same reason it exempts `shot-ships.mjs`.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -3,6 +3,8 @@
  * from the gallery probe: it proves the Game's renderer, true world contacts,
  * and head-look states rather than the fixed design fixtures.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import {
 	guardedOrigin,
 	launchChromium,

@@ -1,4 +1,6 @@
 /** #198: both producers feed live selection, Navigation and the scanner. */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import {
 	bootedGame,
 	guardedOrigin,

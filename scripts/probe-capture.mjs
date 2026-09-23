@@ -21,6 +21,8 @@
  * what a player can actually do. `tests/bind-time.test.ts` holds the other
  * half — that nothing can lose its last trigger.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { installFakePad, STANDARD_INDEX } from "./lib/fake-pad.mjs";
 import { degreesBetween, flightHarness } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";

@@ -1,3 +1,6 @@
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
+
 /**
  * The framing vocabulary the canonical view set is aimed with.
  *

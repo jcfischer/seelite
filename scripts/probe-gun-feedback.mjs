@@ -12,6 +12,8 @@
  * The controller's other bindings (L2/R2 throttle, L1/R1 target, Square not
  * trimming) are `probe-gamepad.mjs`'s, so one remap edits one probe (sage #328).
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { installFakePad, STANDARD_INDEX } from "./lib/fake-pad.mjs";
 import {
 	bootedGame,

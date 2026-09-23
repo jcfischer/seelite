@@ -1,5 +1,7 @@
 /** Prove the live renderer exposes #35's hull identity only where it is useful:
  * chase view. Cockpit remains the instrument-first flight view. */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { guardedOrigin, launchChromium, tally } from "./probe-guard.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 

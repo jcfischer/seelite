@@ -75,6 +75,8 @@
  * collapses repeats: thirty refused clicks on the broken build reported **one**
  * page error, which would have made a row keyed on it a coin toss.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import {
 	bootedGame,
 	guardedOrigin,
