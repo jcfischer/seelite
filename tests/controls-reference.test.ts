@@ -219,6 +219,22 @@ describe("how a binding prints", () => {
 		expect(CONTROLS_CHORD).toBe("Shift + /");
 	});
 
+	test("a held key says so, as a held pad button always has", () => {
+		// **#369 D3's split on `x`, which this screen could not show.**
+		// `fly.assist` is `x` pressed and `fight.fireBeam` is `x` held, and
+		// both printed `x` until #381 S4 — while the pad branch had said
+		// `hold Y` since #372, so the inconsistency was inside one function.
+		// Found by looking at the capture modal: a player moving `fly.pitchUp`
+		// onto a new key has to know the new key is one they hold.
+		expect(key("w", { hold: true } as Partial<Trigger>)).toBe("hold w");
+		expect(key("arrowdown", { hold: true } as Partial<Trigger>)).toBe("hold ↓");
+		expect(
+			key("arrowleft", { alt: true, hold: true } as Partial<Trigger>),
+		).toBe("hold Alt + ←");
+		// And a press is unchanged, which is what makes the pair legible.
+		expect(key("x")).toBe("x");
+	});
+
 	test("the controls with no key get words", () => {
 		// **The direction word, not just the noun.** `half` exists because a
 		// split pair would otherwise print one string on two rows, so a row

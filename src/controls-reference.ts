@@ -257,13 +257,26 @@ const way = (axis: "x" | "y", half: "+" | "-") => WAY[`${axis}${half}`];
 /**
  * D7 and D8: a key prints as its character, a chord spelled out, and a control
  * with no character gets words.
+ *
+ * **A held key says `hold`, and did not until #381 S4.** The pad's branch
+ * below has said it since #372 — `hold Y` — so the inconsistency was inside
+ * this one function: `x` printed identically for `fly.assist`, which is a
+ * press, and `fight.fireBeam`, which is the same key held. That is #369 D3's
+ * split on `x`, which the tab could not show. It was found by looking at the
+ * capture modal, where a player about to move `fly.pitchUp` onto a new key
+ * needed to know the new key is one they hold — and the fix belongs here
+ * rather than in the modal, because D11 gives this module the one owner of
+ * every printed control name and a second phrasing over there is the drift
+ * that ruling refuses. It changes what the `Controls` tab prints on every
+ * held row, which is the point.
  */
 export function triggerLabel(t: Trigger): string {
 	switch (t.kind) {
 		case "key": {
 			const base = KEY_WORDS[t.key] ?? t.key;
 			const chord = t.alt ? `Alt + ${base}` : base;
-			return t.surface ? `${chord} (${SURFACE_WORDS[t.surface]})` : chord;
+			const held = t.hold ? `hold ${chord}` : chord;
+			return t.surface ? `${held} (${SURFACE_WORDS[t.surface]})` : held;
 		}
 		case "mouse-button": {
 			const press = t.action === "hold" ? "hold left mouse button" : "click";
@@ -415,6 +428,37 @@ export function controlsBody(
 const COMMAND_NAMES = new Map<string, string>(
 	COMMANDS.map((c) => [c.id, c.name]),
 );
+
+/**
+ * Why the capture modal cannot take what the player just pressed, in the
+ * player's words (#381 S4).
+ *
+ * **A table here rather than `movedTrigger`'s thrown string**, for
+ * `REJECTED_WHY`'s reason one paragraph down and for a sharper one: the first
+ * pass put the throw on the screen and the modal read
+ * `a rebind may move a trigger, not its qualifiers: key:s::hold ->
+ * key:k::press` — half English and half the hash `triggerKey` groups on. That
+ * is the *same defect the storage slice shipped and had caught by looking at a
+ * frame*, reintroduced on a different screen, with every headless row green.
+ * The thrown message stays what a developer reads.
+ *
+ * Keyed by `Trigger["kind"]`, so a new kind is a compile error here rather
+ * than a modal that falls back to the hash again. The two the registry does
+ * take have no sentence because they never reach this table; `never` is how
+ * that is said rather than a pair of empty strings.
+ */
+export const CAPTURE_REFUSED_WHY: Readonly<Record<Trigger["kind"], string>> = {
+	key: "",
+	"pad-button":
+		"This control is held down to work, and the pad cannot yet hold a button for it. Choose a key instead.",
+	"pad-stick":
+		"A stick cannot be bound yet — the ship still reads the sticks in fixed positions.",
+	"pad-trigger":
+		"A trigger cannot be bound yet — the ship still reads the triggers in fixed positions.",
+	"mouse-button": "The mouse buttons are not offered for rebinding.",
+	"mouse-move": "Mouse movement is not offered for rebinding.",
+	"pad-intent": "That button belongs to the console's own controls.",
+};
 
 /**
  * A stored string on its way into a sentence, cut to a length a line can hold.

@@ -76,6 +76,15 @@ const STYLE = `
 export interface SettingsPanelHandle {
 	/** Whether the screen is currently mounted over the canvas. */
 	readonly isOpen: () => boolean;
+	/**
+	 * Put the screen up — or take it down, which is what `SETTINGS_KEY` does.
+	 *
+	 * Exposed since #381 S4 for the `Controls` tab's door. #369 D12 makes `z`
+	 * remappable, so the key is no longer the only way in and the only way in
+	 * may no longer be a key: a player who moved `system.settings` onto a
+	 * button they forgot reaches the panel through the tab instead.
+	 */
+	readonly open: () => void;
 	readonly close: () => void;
 	/** Walk the row cursor, wrapping. A no-op while the screen is closed. */
 	readonly moveCursor: (delta: number) => void;
@@ -234,6 +243,7 @@ export function mountSettingsPanel(
 
 	return {
 		isOpen: () => root !== null,
+		open,
 		close,
 		moveCursor,
 		stepValue,

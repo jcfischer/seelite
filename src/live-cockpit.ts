@@ -222,6 +222,21 @@ export interface LiveCockpitCallbacks {
 	/** Give up a held launch (#314). */
 	onCancelLaunch: () => void;
 	/**
+	 * A `Controls` row was selected: open the rebind modal on it (#381 S4).
+	 *
+	 * A callback rather than this module opening one, for the reason every
+	 * other door here is a callback: the modal needs the layout in force and
+	 * the commit path, and neither is this surface's.
+	 */
+	onRebindRow: (command: string) => void;
+	/**
+	 * A door on the `Controls` tab was selected — today only `settings`.
+	 *
+	 * #369 D12's bootstrap: `z` is remappable, so the tab carries a route to
+	 * the settings panel that no binding table holds.
+	 */
+	onControlsAction: (action: string) => void;
+	/**
 	 * The Galaxy Map tab's chart host has appeared or gone away.
 	 *
 	 * A callback rather than this module importing the chart: `galaxy-map.ts`
@@ -336,6 +351,13 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
 .lc-controls-group { display: flex; justify-content: space-between; width: 100%; margin-top: 8px; padding: 5px 6px; border: 0; border-bottom: 1px solid rgba(229, 170, 82, .55); background: rgba(223, 122, 20, .12); color: #ffe1a9; cursor: pointer; font: inherit; letter-spacing: .1em; text-align: left; }
 .lc-controls-group:hover { color: #fff0c9; }
 .lc-controls-group small { color: #cb8c51; }
+/* The settings door (#369 D12). **Deliberately quieter than a group header**,
+   which is what it inherited when it had no rule of its own: unstyled it drew
+   a full-width bar and read as the most important thing on the tab, which a
+   door out of a reference is not. Right-aligned and narrow, so it reads as a
+   way out rather than as a section of the list it sits above. */
+.lc-controls-door { display: block; margin: 0 0 4px auto; padding: 3px 10px; border: 1px solid rgba(139, 168, 209, .35); border-radius: 3px; background: transparent; color: #8ba8d1; cursor: pointer; font: inherit; letter-spacing: .08em; }
+.lc-controls-door:hover { color: #cfe3ff; border-color: rgba(139, 168, 209, .6); }
 .lc-controls-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr); gap: 2px 14px; align-items: baseline; padding: 3px 6px; border-bottom: 1px solid rgba(229, 170, 82, .18); font-size: 11px; }
 .lc-controls-name { color: #ffdcb0; }
 .lc-controls-keys { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -593,10 +615,24 @@ export class LiveCockpit {
 			this.foldControlsGroup(group.dataset.liveControlsGroup as TaskGroup);
 			return;
 		}
-		// A reference row does nothing when selected; it is in the walk so the
-		// ring can scroll to it, and a click on one must not fall through to a
-		// branch below.
-		if (element.closest("[data-live-controls-row]")) return;
+		// **A door before a row**, because the door is drawn inside the same
+		// tree and `closest` would otherwise never reach it.
+		const door = element.closest<HTMLElement>("[data-live-controls-action]");
+		if (door) {
+			this.callbacks.onControlsAction(
+				door.dataset.liveControlsAction as string,
+			);
+			return;
+		}
+		// A reference row opens the rebind modal on its command since #381 S4.
+		// It did nothing when selected while the registry could not store a
+		// player layout; it is still in the walk for the reason it always was,
+		// so the ring can scroll a long group into view.
+		const control = element.closest<HTMLElement>("[data-live-controls-row]");
+		if (control) {
+			this.callbacks.onRebindRow(control.dataset.liveControlsRow as string);
+			return;
+		}
 		const right = element.closest<HTMLElement>("[data-live-right-tab]");
 		if (right) {
 			const value = right.dataset.liveRightTab;
@@ -666,6 +702,11 @@ export class LiveCockpit {
 		// reverse #283 — the principal's ruling on this node.
 		"[data-live-controls-group]",
 		"[data-live-controls-row]",
+		// The settings door (#369 D12). It is on the walk as well as clickable,
+		// because a pad player who has moved `system.settings` onto a button
+		// they forgot has to be able to reach it without a mouse — the mouse is
+		// the *modal's* bootstrap, and this is the tab's.
+		"[data-live-controls-action]",
 	].join(",");
 
 	/**
