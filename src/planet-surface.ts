@@ -178,6 +178,8 @@ export interface BodyVisualOptions {
 export interface BodyVisual {
 	/** Add this to a layer's scene, and scale it by `radiusKm × layerFactor`. */
 	group: THREE.Group;
+	/** The solid sphere alone; shells stay at full resolution. */
+	surfaceMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
 	/** Shared by the surface and every shell, so the cloud deck, the atmosphere
 	 *  and the rings all see the same sun and the same clock without any of them
 	 *  being told about it separately. */
@@ -877,6 +879,7 @@ export function buildBodyVisual(
 
 	return {
 		group,
+		surfaceMesh: planet,
 		uniforms,
 		surface: look.surface,
 		setSunDirection(direction, starAngularRadius) {

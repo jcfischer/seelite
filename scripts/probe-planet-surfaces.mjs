@@ -2225,5 +2225,90 @@ if (airless) {
 	await ringPage.close();
 }
 
+/* #211. The selected surface has a half-size target, while its full-size
+ * geometry writes the depth and edge. Compare the equatorial limb with the
+ * same frame drawn at full resolution, keeping the clock and placement fixed. */
+{
+	const subject = await page.evaluate(
+		() =>
+			window.__seelite.world.system.bodies.find(
+				(body) =>
+					window.__seelite.bodyVisuals.get(body.id)?.surface === "terran",
+			)?.id,
+	);
+	check("the half-resolution limb fixture has a terran body", Boolean(subject), String(subject));
+	if (subject) {
+		const result = await page.evaluate((id) => {
+			const game = window.__seelite;
+			game.settings.set("quality", "high");
+			window.__sunOffset(id, 2.5, 60);
+			game.render(0);
+			const target = game.planetHalfResState();
+			const fullSize = [
+				game.renderer.domElement.width,
+				game.renderer.domElement.height,
+			];
+			const frame = () => Uint8ClampedArray.from(window.__framePixels());
+			game.setPlanetHalfResAllowed(false);
+			const full = frame();
+			game.setPlanetHalfResAllowed(true);
+			const half = frame();
+			const group = game.meshes.get(id);
+			group.visible = false;
+			const background = frame();
+			group.visible = true;
+			const w = 900;
+			const y = 450;
+			const lumaDelta = (a, b, x) => {
+				const i = (y * w + x) * 4;
+				return (
+					Math.abs(a[i] - b[i]) +
+					Math.abs(a[i + 1] - b[i + 1]) +
+					Math.abs(a[i + 2] - b[i + 2])
+				);
+			};
+			let edge = 0;
+			for (let x = w / 2; x > 10; x--) {
+				if (lumaDelta(full, background, x) < 35) {
+					edge = x;
+					break;
+				}
+			}
+			const maxStep = (pixels) => {
+				let max = 0;
+				for (let x = edge - 8; x <= edge + 8; x++) {
+					const a = (y * w + x) * 4;
+					const b = a + 4;
+					const step =
+						Math.abs(pixels[a] - pixels[b]) +
+						Math.abs(pixels[a + 1] - pixels[b + 1]) +
+						Math.abs(pixels[a + 2] - pixels[b + 2]);
+					max = Math.max(max, step);
+				}
+				return max;
+			};
+			return {
+				target,
+				fullSize,
+				edge,
+				fullStep: maxStep(full),
+				halfStep: maxStep(half),
+			};
+		}, subject);
+		check(
+			"the selected planet surface target is half the drawing buffer",
+			result.target.engaged &&
+				result.target.targetWidth === Math.ceil(result.fullSize[0] / 2) &&
+				result.target.targetHeight === Math.ceil(result.fullSize[1] / 2),
+			JSON.stringify(result.target),
+		);
+		check(
+			"the full-size limb adds no step above 32 display codes per channel",
+			result.edge > 10 && result.halfStep <= result.fullStep + 96,
+			`edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep} (RGB code sum)`,
+		);
+	}
+}
+
 await browser.close();
 exit();

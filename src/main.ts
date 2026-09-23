@@ -245,6 +245,7 @@ import {
 	buildBodyVisual,
 	surfaceSphere,
 } from "./planet-surface";
+import { PlanetHalfResolution, useHalfResolution } from "./planet-half-res";
 import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
 import {
 	BAKE_FACE_SIZES,
@@ -1715,6 +1716,14 @@ class Game {
 	/** The shader surface for every body that is a sphere — star, planet, moon.
 	 *  A station is not in here; `stationVisuals` above is its equivalent. */
 	private readonly bodyVisuals = new Map<string, BodyVisual>();
+	private readonly planetHalfRes = new PlanetHalfResolution();
+	/** Read by the planet surface probe from the live render target. */
+	planetHalfResState() {
+		return this.planetHalfRes.snapshot();
+	}
+	setPlanetHalfResAllowed(allowed: boolean) {
+		this.planetHalfRes.setAllowed(allowed);
+	}
 	/** The system's star. Every body's sun direction is measured from it, and it
 	 *  is re-resolved by `buildBodies` — which a jump runs again (#187). */
 	private starBody?: Body;
@@ -11994,6 +12003,7 @@ class Game {
 		 */
 		let widestId: string | undefined;
 		let widestPx = 0;
+		const halfResSurfaces: BodyVisual["surfaceMesh"][] = [];
 
 		for (const body of this.world.system.bodies) {
 			const mesh = this.meshes.get(body.id);
@@ -12074,6 +12084,15 @@ class Game {
 					distanceKm,
 					this.focalPx,
 				);
+				if (
+					useHalfResolution(
+						layer,
+						visual.surface,
+						this.settings.value.quality,
+						radiusPx,
+					)
+				)
+					halfResSurfaces.push(visual.surfaceMesh);
 				/**
 				 * #208's band sits over #207's, and one call decides both.
 				 *
@@ -12299,9 +12318,17 @@ class Game {
 		// frame; #352 split the two for exactly this call site.
 		attribution?.markFrame(renderStartedAt);
 		attribution?.beginGpuFrame(renderStartedAt);
+		let restoreSurfaces = () => {};
 		try {
+			restoreSurfaces = this.planetHalfRes.begin(
+				this.renderer,
+				this.approachScene,
+				this.approachCamera,
+				halfResSurfaces,
+			);
 			this.composer.render();
 		} finally {
+			restoreSurfaces();
 			attribution?.endGpuFrame();
 		}
 		if (attribution)
