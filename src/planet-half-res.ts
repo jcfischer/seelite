@@ -95,7 +95,9 @@ export class PlanetHalfResolution {
 			scene.add(mesh);
 		}
 		const was = renderer.getRenderTarget();
-		renderer.setRenderTarget(this.ensureTarget(1, 1));
+		// A jump can rewarm after the target has reached viewport size. Keep its
+		// allocation so the next close approach does not resize it twice.
+		renderer.setRenderTarget(this.target ?? this.ensureTarget(1, 1));
 		try {
 			renderer.compile(scene, camera);
 		} finally {

@@ -2259,7 +2259,20 @@ if (airless) {
 				game.renderer.domElement.width,
 				game.renderer.domElement.height,
 			];
-			const frame = () => Uint8ClampedArray.from(window.__framePixels());
+			// Read at the full drawing-buffer size. The shared __framePixels helper
+			// downsamples to 300 px, below the 450 px half target, and would hide a
+			// one-pixel stair-step at the actual limb.
+			const scratch = document.createElement("canvas");
+			scratch.width = fullSize[0];
+			scratch.height = fullSize[1];
+			const context = scratch.getContext("2d", { willReadFrequently: true });
+			const frame = () => {
+				game.render(0);
+				context.drawImage(game.renderer.domElement, 0, 0);
+				return Uint8ClampedArray.from(
+					context.getImageData(0, 0, scratch.width, scratch.height).data,
+				);
+			};
 			game.setPlanetHalfResAllowed(false);
 			const full = frame();
 			const fullTarget = game.planetHalfResState();
@@ -2270,9 +2283,8 @@ if (airless) {
 			group.visible = false;
 			const background = frame();
 			group.visible = true;
-			// __framePixels intentionally downsamples the 900 px viewport to 300.
-			const w = 300;
-			const y = 150;
+			const w = fullSize[0];
+			const y = Math.floor(fullSize[1] / 2);
 			const body = game.world.system.byId.get(id);
 			const ship = game.world.ship.pos;
 			const distance = Math.hypot(
@@ -2295,15 +2307,15 @@ if (airless) {
 				);
 			};
 			let edge = -1;
-			for (let x = Math.max(1, expectedEdge - 20); x < expectedEdge + 20; x++) {
-				if (contrast(x) > 30 && contrast(x + 1) > 30) {
+			for (let x = Math.max(1, expectedEdge - 80); x < expectedEdge + 80; x++) {
+				if (contrast(x) > 10 && contrast(x + 1) > 10) {
 					edge = x;
 					break;
 				}
 			}
 			let changedInterior = 0;
-			for (let yy = 80; yy < 140; yy++) {
-				for (let xx = 110; xx < 190; xx++) {
+			for (let yy = y - 210; yy < y - 30; yy++) {
+				for (let xx = w / 2 - 120; xx < w / 2 + 120; xx++) {
 					const i = (yy * w + xx) * 4;
 					const difference = Math.max(
 						Math.abs(full[i] - half[i]),
@@ -2313,21 +2325,24 @@ if (airless) {
 					if (difference > 2) changedInterior++;
 				}
 			}
-			const maxStep = (pixels) => {
-				if (edge < 8) return 0;
-				let max = 0;
-				for (let x = edge - 8; x <= edge + 8; x++) {
+			let fullStep = 0;
+			let halfStep = 0;
+			let extraStep = 0;
+			if (edge >= 8) {
+				// Cover the atmosphere's first visible edge through the solid
+				// sphere's limb, then compare the same channel at the same pixel.
+				for (let x = edge - 8; x <= edge + 80; x++) {
 					const a = (y * w + x) * 4;
 					const b = a + 4;
-					const step = Math.max(
-						Math.abs(pixels[a] - pixels[b]),
-						Math.abs(pixels[a + 1] - pixels[b + 1]),
-						Math.abs(pixels[a + 2] - pixels[b + 2]),
-					);
-					max = Math.max(max, step);
+					for (let channel = 0; channel < 3; channel++) {
+						const f = Math.abs(full[a + channel] - full[b + channel]);
+						const h = Math.abs(half[a + channel] - half[b + channel]);
+						fullStep = Math.max(fullStep, f);
+						halfStep = Math.max(halfStep, h);
+						extraStep = Math.max(extraStep, h - f);
+					}
 				}
-				return max;
-			};
+			}
 			return {
 				fullTarget,
 				halfTarget,
@@ -2336,8 +2351,9 @@ if (airless) {
 				centerContrast: contrast(w / 2),
 				expectedEdge,
 				edge,
-				fullStep: maxStep(full),
-				halfStep: maxStep(half),
+				fullStep,
+				halfStep,
+				extraStep,
 			};
 		}, subject);
 		check(
@@ -2350,16 +2366,13 @@ if (airless) {
 		);
 		check(
 			"the half-resolution arm changes visible planet surface pixels",
-			result.changedInterior > 0,
+			result.changedInterior > 100,
 			`${result.changedInterior} changed interior pixels`,
 		);
 		check(
 			"the full-size limb adds no step above 32 display codes per channel",
-			result.centerContrast > 100 &&
-				result.edge > 8 &&
-				result.fullStep > 10 &&
-				result.halfStep <= result.fullStep + 32,
-			`center contrast ${result.centerContrast}, expected edge ${result.expectedEdge}, measured edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep} (max channel code)`,
+			result.centerContrast > 100 && result.edge > 8 && result.extraStep <= 32,
+			`center contrast ${result.centerContrast}, expected edge ${result.expectedEdge}, measured edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep}, extra ${result.extraStep} (max channel code)`,
 		);
 	}
 	await halfPage.close();

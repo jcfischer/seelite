@@ -24,6 +24,7 @@ describe("planet surface half-resolution policy", () => {
 	test("low quality uses the half target throughout the approach layer", () => {
 		expect(useHalfResolution("approach", "airless", "low", 1)).toBe(true);
 		expect(useHalfResolution("approach", "jovian", "low", 1)).toBe(true);
+		expect(useHalfResolution("approach", "star", "low", 1)).toBe(false);
 		expect(useHalfResolution("far", "terran", "low", 1000)).toBe(false);
 	});
 
