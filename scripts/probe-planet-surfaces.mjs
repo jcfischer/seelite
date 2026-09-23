@@ -2255,8 +2255,6 @@ if (airless) {
 			const game = window.__seelite;
 			game.settings.set("quality", "high");
 			window.__sunOffset(id, 2.5, 60);
-			game.render(0);
-			const target = game.planetHalfResState();
 			const fullSize = [
 				game.renderer.domElement.width,
 				game.renderer.domElement.height,
@@ -2264,8 +2262,10 @@ if (airless) {
 			const frame = () => Uint8ClampedArray.from(window.__framePixels());
 			game.setPlanetHalfResAllowed(false);
 			const full = frame();
+			const fullTarget = game.planetHalfResState();
 			game.setPlanetHalfResAllowed(true);
 			const half = frame();
+			const halfTarget = game.planetHalfResState();
 			const group = game.meshes.get(id);
 			group.visible = false;
 			const background = frame();
@@ -2301,23 +2301,38 @@ if (airless) {
 					break;
 				}
 			}
+			let changedInterior = 0;
+			for (let yy = 80; yy < 140; yy++) {
+				for (let xx = 110; xx < 190; xx++) {
+					const i = (yy * w + xx) * 4;
+					const difference = Math.max(
+						Math.abs(full[i] - half[i]),
+						Math.abs(full[i + 1] - half[i + 1]),
+						Math.abs(full[i + 2] - half[i + 2]),
+					);
+					if (difference > 2) changedInterior++;
+				}
+			}
 			const maxStep = (pixels) => {
 				if (edge < 8) return 0;
 				let max = 0;
 				for (let x = edge - 8; x <= edge + 8; x++) {
 					const a = (y * w + x) * 4;
 					const b = a + 4;
-					const step =
-						Math.abs(pixels[a] - pixels[b]) +
-						Math.abs(pixels[a + 1] - pixels[b + 1]) +
-						Math.abs(pixels[a + 2] - pixels[b + 2]);
+					const step = Math.max(
+						Math.abs(pixels[a] - pixels[b]),
+						Math.abs(pixels[a + 1] - pixels[b + 1]),
+						Math.abs(pixels[a + 2] - pixels[b + 2]),
+					);
 					max = Math.max(max, step);
 				}
 				return max;
 			};
 			return {
-				target,
+				fullTarget,
+				halfTarget,
 				fullSize,
+				changedInterior,
 				centerContrast: contrast(w / 2),
 				expectedEdge,
 				edge,
@@ -2327,18 +2342,24 @@ if (airless) {
 		}, subject);
 		check(
 			"the selected planet surface target is half the drawing buffer",
-			result.target.engaged &&
-				result.target.targetWidth === Math.ceil(result.fullSize[0] / 2) &&
-				result.target.targetHeight === Math.ceil(result.fullSize[1] / 2),
-			JSON.stringify(result.target),
+			!result.fullTarget.engaged &&
+				result.halfTarget.engaged &&
+				result.halfTarget.targetWidth === Math.ceil(result.fullSize[0] / 2) &&
+				result.halfTarget.targetHeight === Math.ceil(result.fullSize[1] / 2),
+			JSON.stringify({ full: result.fullTarget, half: result.halfTarget }),
+		);
+		check(
+			"the half-resolution arm changes visible planet surface pixels",
+			result.changedInterior > 0,
+			`${result.changedInterior} changed interior pixels`,
 		);
 		check(
 			"the full-size limb adds no step above 32 display codes per channel",
 			result.centerContrast > 100 &&
 				result.edge > 8 &&
 				result.fullStep > 10 &&
-				result.halfStep <= result.fullStep + 96,
-			`center contrast ${result.centerContrast}, expected edge ${result.expectedEdge}, measured edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep} (RGB code sum)`,
+				result.halfStep <= result.fullStep + 32,
+			`center contrast ${result.centerContrast}, expected edge ${result.expectedEdge}, measured edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep} (max channel code)`,
 		);
 	}
 	await halfPage.close();
