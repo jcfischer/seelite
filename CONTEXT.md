@@ -205,6 +205,15 @@ and #351's receipt the production ones.
 Not to be confused with the **System relay**, which is an information channel.
 _Avoid_: Pirate base, sensor buoy, beacon
 
+**Relay tender**:
+The pirate relay's repair ship (#351): a tug, carrier slot `relay-00/tender`,
+that flies in from far out when a destroyed relay starts its repair and parks
+at the wreck. Destroying it sets the repair back by a wreck and a repair
+(`persistent-world-state.md` §4's opposition) and the next tender comes a wreck
+later. It is what makes the relay's recovery interruptible. `src/relay-tender.ts`
+owns it.
+_Avoid_: Repair convoy, repair drone
+
 **Route detection**:
 The pirate relay's dial on the leg law (`raider-slots.ts`' `RouteDetection`):
 `law` is the ordinary draw; `watched` is a watched route while the relay is
