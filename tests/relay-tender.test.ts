@@ -125,7 +125,7 @@ describe("the interruption", () => {
 		const t = REPAIR_FROM + 600;
 		let w = killedRelay();
 		const before = effectiveCarrier(w.galaxies[0], RELAY, t);
-		for (const { key, event } of tenderKill(SYSTEM, t, AREA))
+		for (const { key, event } of tenderKill(SYSTEM, t, "station-trade"))
 			w = applyTransition(w, 0, key, event);
 		const after = effectiveCarrier(w.galaxies[0], RELAY, t + 1);
 		expect(after.condition).toBe("repairing");
@@ -166,7 +166,7 @@ describe("the log", () => {
 		expect(
 			tenderLog(w.galaxies[0], SYSTEM, REPAIR_FROM).map((l) => l.text),
 		).toEqual(["Relay tender inbound"]);
-		for (const { key, event } of tenderKill(SYSTEM, t, AREA))
+		for (const { key, event } of tenderKill(SYSTEM, t, "station-trade"))
 			w = applyTransition(w, 0, key, event);
 		const lines = tenderLog(w.galaxies[0], SYSTEM, t + RELAY_WRECK_S);
 		expect(lines.map((l) => [l.at, l.text])).toEqual([

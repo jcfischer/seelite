@@ -20,9 +20,9 @@ import { scheduleEncounter } from "../src/encounter";
 import {
 	relayActive,
 	relayActiveChance,
-	relayActiveShare,
 	relayDetection,
 } from "../src/pirate-relay";
+import { relayActiveShare } from "../src/relay-measure";
 import { relayPlan } from "../src/relay-slot";
 import { raiderLegChance } from "../src/raider-slots";
 import { makeWorld } from "../src/sim";

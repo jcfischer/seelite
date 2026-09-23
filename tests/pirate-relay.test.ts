@@ -16,7 +16,6 @@ import {
 	relayDestruction,
 	relayActive,
 	relayActiveChance,
-	relayActiveShare,
 	RELAY_ACTIVE_CHANCE,
 	relayDetection,
 	relayLog,
@@ -33,6 +32,7 @@ import {
 	relaySlot,
 } from "../src/relay-slot";
 import { PULSE_LASER } from "../src/ship-condition";
+import { relayActiveShare } from "../src/relay-measure";
 import { generateContents, positionOnOrbit } from "../src/system";
 import { makeWorld } from "../src/sim";
 import { add, length, sub, v3 } from "../src/vec3";

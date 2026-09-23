@@ -2165,7 +2165,6 @@ class Game {
 	private tenderView: { key: CarrierKey; since: number; entry: Vec3 } | null =
 		null;
 	private tenderHull = RELAY_TENDER_INTEGRITY;
-	private tenderHullInstance = 0;
 	private tenderListed = false;
 	private readonly tenderContact: DisplayContact = {
 		id: "",
@@ -10205,7 +10204,7 @@ class Game {
 		this.relayHull = RELAY_INTEGRITY;
 		this.relayHullInstance = 0;
 		this.tenderHull = RELAY_TENDER_INTEGRITY;
-		this.tenderHullInstance = 0;
+		this.tenderView = null;
 	}
 
 	/**
@@ -10993,15 +10992,15 @@ class Game {
 			this.tenderView = null;
 			return;
 		}
-		if (tender.instanceOrdinal !== this.tenderHullInstance) {
-			this.tenderHullInstance = tender.instanceOrdinal;
+		// A new arrival is a new visit, and a new visit starts whole: a tender that
+		// left when the last repair completed keeps its slot's ordinal, so the
+		// ordinal cannot say so (sage #507 round 2). The entry direction is the
+		// system's, so neither is rebuilt per frame.
+		let view = this.tenderView;
+		if (!view || view.key !== key || view.since !== since) {
+			view = { key, since, entry: tenderEntry(record.seed) };
 			this.tenderHull = RELAY_TENDER_INTEGRITY;
 		}
-		// The entry direction is the system's and the view changes only with a
-		// new arrival, so neither is rebuilt per frame.
-		let view = this.tenderView;
-		if (!view || view.key !== key || view.since !== since)
-			view = { key, since, entry: tenderEntry(record.seed) };
 		this.tenderView = view;
 		const { pos } = this.tenderNow(view, plan);
 		if (
@@ -11011,11 +11010,7 @@ class Game {
 		) {
 			this.tenderHull = Math.max(0, this.tenderHull - shot.damage);
 			if (this.tenderHull === 0) {
-				for (const t of tenderKill(
-					record.index,
-					now,
-					`route:${record.index}:${plan.watchedStationId}`,
-				))
+				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event);
 				this.audio.explosion();
 				this.lastExit = "relay tender destroyed";

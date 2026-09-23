@@ -30,8 +30,9 @@
  * next tender arrives a wreck after it, exactly when the killed tender's own
  * replacement completes.
  *
- * Headless: imports the relay's module, the slot ids and the world-state
- * types; nothing that renders.
+ * Headless: imports the relay's module and its slot ids, the duel's beam test,
+ * the hull table, the galaxy's stream helper and domain table, the player's
+ * kill provenance and the world-state reads; nothing that renders.
  */
 import { playerLaserHit } from "./combat-enemy";
 import type { CarrierKey } from "./carrier-key";
@@ -42,6 +43,7 @@ import {
 	RELAY_REPAIR_S,
 	RELAY_WRECK_S,
 	relayReplacementActor,
+	relayRouteArea,
 } from "./pirate-relay";
 import type { RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
@@ -89,11 +91,6 @@ export const tenderInSights = (
 export const tenderArrival = (recovery: { completesAt: number }): number =>
 	recovery.completesAt - RELAY_REPAIR_S;
 
-/**
- * Whether the tender is there at `now`, and since when: the relay is being
- * replaced, the tender's own slot is operational, and its arrival has come.
- * Null otherwise.
- */
 /** A repair's tender is due at `now`: the relay is being replaced and its
  *  tender's arrival has come. The arrival, or null. The one gate both the
  *  presence and the log read. */
@@ -104,6 +101,11 @@ export function tenderDue(relay: EffectiveCarrier, now: number): number | null {
 	return now >= arrival ? arrival : null;
 }
 
+/**
+ * Whether the tender is there at `now`, and since when: the relay is being
+ * replaced, the tender's own slot is operational, and its arrival has come.
+ * Null otherwise.
+ */
 export function tenderPresentSince(
 	relay: EffectiveCarrier,
 	tender: EffectiveCarrier,
@@ -147,7 +149,7 @@ export function tenderOffset(
 
 /** The tender's kill: a `destroy` whose replacement completes one wreck later,
  *  when the next tender is due. */
-export function tenderDestruction(
+function tenderDestruction(
 	systemIndex: number,
 	now: number,
 	/** The relay's own route, `route:<system>:<watched station>`: the tender
@@ -169,10 +171,7 @@ export function tenderDestruction(
 
 /** The relay's side of a tender kill: opposition, in §4's words, moving the
  *  replacement's completion out by a wreck and a repair. */
-export function relaySetBack(
-	now: number,
-	consequenceArea: string,
-): TransitionEvent {
+function relaySetBack(now: number, consequenceArea: string): TransitionEvent {
 	return {
 		kind: "recovery-change",
 		occurredAt: now,
@@ -228,8 +227,9 @@ export function tenderLog(
 export function tenderKill(
 	systemIndex: number,
 	now: number,
-	consequenceArea: string,
+	watchedStationId: string,
 ): { key: CarrierKey; event: TransitionEvent }[] {
+	const consequenceArea = relayRouteArea(systemIndex, watchedStationId);
 	return [
 		{
 			key: relayTenderSlot(systemIndex).key,

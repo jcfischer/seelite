@@ -40,7 +40,7 @@
  */
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
-import { generateGalaxy, stream } from "./galaxy";
+import { stream } from "./galaxy";
 import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
@@ -252,6 +252,13 @@ export function relaySignal(shipPos: Vec3, relayPos: Vec3): RelaySignal | null {
 	return { km, strength };
 }
 
+/** The consequence area of a relay's capability: the route it watches.
+ *  One spelling, read by the relay's kill and its tender's. */
+export const relayRouteArea = (
+	systemIndex: number,
+	watchedStationId: string,
+): string => `route:${systemIndex}:${watchedStationId}`;
+
 /** Who replaces a system's relay. Out of sight, so it updates no knowledge. */
 export const relayReplacementActor = (systemIndex: number): Provenance => ({
 	causeKind: "relay-replacement",
@@ -275,7 +282,7 @@ export function relayDestruction(
 		schedule: {
 			startsAt: now + RELAY_WRECK_S,
 			completesAt: now + RELAY_WRECK_S + RELAY_REPAIR_S,
-			consequenceArea: `route:${systemIndex}:${watchedStationId}`,
+			consequenceArea: relayRouteArea(systemIndex, watchedStationId),
 			cause: relayReplacementActor(systemIndex),
 		},
 	};
@@ -291,22 +298,4 @@ export function relayLog(
 	return newestFirst(
 		lifecycleLines(env, relaySlot(systemIndex).key, RELAY_NAME, gameTime),
 	);
-}
-
-/**
- * Over every galaxy of a world seed, per government: how many systems there
- * are and how many rolled an active relay. The one tally the test and
- * `measure-relay-route.ts` both read, so they cannot count differently.
- */
-export function relayActiveShare(
-	worldSeed: number,
-): { n: number; active: number }[] {
-	const byGov = Array.from({ length: 8 }, () => ({ n: 0, active: 0 }));
-	for (let g = 0; g < 8; g++)
-		for (const record of generateGalaxy(worldSeed, g).systems) {
-			const bucket = byGov[record.government];
-			bucket.n++;
-			if (relayActive(record)) bucket.active++;
-		}
-	return byGov;
 }

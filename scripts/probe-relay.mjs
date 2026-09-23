@@ -139,6 +139,18 @@ await page.evaluate(() => {
 			g.throttle = 0;
 			frame();
 		},
+		/** #351: put the ship `km` beside the relay's tender, at rest in its frame
+		 *  and with no turn carried over, and return the tender as read. */
+		placeBesideTender(km) {
+			const t = g.relayReadout().tender;
+			g.dropOut("probe");
+			g.encounter = null;
+			g.world.ship.pos = { x: t.pos.x + km, y: t.pos.y, z: t.pos.z };
+			g.world.ship.vel = { ...t.vel };
+			g.throttle = 0;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			return t;
+		},
 		/** #481: fit or strip the long-range scanner, the module the whole
 		 *  reading channel is gated on. The name comes from `market.ts` rather
 		 *  than from a literal here, because a probe with its own copy of a
@@ -848,13 +860,9 @@ await page.evaluate(() => {
 const secondKill = await page.evaluate(() => window.__relayProbe.shoot(400));
 const tenderAt = await page.evaluate(async (killedAt) => {
 	const g = window.__seelite;
-	const dt = g.units.MAX_DT;
 	const relay = await import("/src/pirate-relay.ts");
 	const tender = await import("/src/relay-tender.ts");
-	const frame = () => {
-		g.step(dt);
-		g.render(dt);
-	};
+	const frame = window.__relayProbe.frame;
 	const read = () => {
 		const r = g.relayReadout();
 		const t = r.tender;
@@ -926,16 +934,10 @@ const tenderGimbal = await page.evaluate(() => {
 			180) /
 		Math.PI;
 	const arm = (select) => {
-		const t0 = g.relayReadout().tender;
-		g.dropOut("probe");
-		g.encounter = null;
-		g.world.ship.pos = { x: t0.pos.x + 2, y: t0.pos.y, z: t0.pos.z };
-		g.world.ship.vel = { ...t0.vel };
-		g.throttle = 0;
+		const t0 = window.__relayProbe.placeBesideTender(2);
 		g.targetId = select ? t0.key : null;
 		const a = (3 * Math.PI) / 180;
 		const to = { x: -2, y: 0, z: 0 };
-		g.rates = { pitch: 0, yaw: 0, roll: 0 };
 		g.setAttitude(
 			{
 				x: to.x * Math.cos(a) + to.z * Math.sin(a),
@@ -970,13 +972,7 @@ check(
 // the frame, and two shown frames of the same build move it by far less.
 await page.evaluate(() => {
 	const g = window.__seelite;
-	const t0 = g.relayReadout().tender;
-	g.dropOut("probe");
-	g.encounter = null;
-	g.world.ship.pos = { x: t0.pos.x + 1.5, y: t0.pos.y, z: t0.pos.z };
-	g.world.ship.vel = { ...t0.vel };
-	g.throttle = 0;
-	g.rates = { pitch: 0, yaw: 0, roll: 0 };
+	window.__relayProbe.placeBesideTender(1.5);
 	g.setAttitude({ x: -1, y: 0, z: 0 }, g.shipUp());
 	g.setHeadLook("forward");
 	for (let i = 0; i < 4; i++) window.__relayProbe.frame();
@@ -1028,26 +1024,15 @@ check(
 await capture("05-tender-parked");
 const tenderKill = await page.evaluate(async () => {
 	const g = window.__seelite;
-	const dt = g.units.MAX_DT;
 	const relay = await import("/src/pirate-relay.ts");
-	const frame = () => {
-		g.step(dt);
-		g.render(dt);
-	};
+	const frame = window.__relayProbe.frame;
 	const r0 = g.relayReadout();
 	const t0 = r0.tender;
 	// Beside it, at rest in the relay's frame, nose on it. The assist pulls the
 	// ship toward another frame at about 0.6 km/s, which carries it out of beam
 	// range inside the 25 s a tug takes to kill — so the ship is put back beside
 	// it every fifty steps, as a pilot holds range.
-	const besideIt = (t) => {
-		g.dropOut("probe");
-		g.encounter = null;
-		g.world.ship.pos = { x: t.pos.x + 1.2, y: t.pos.y, z: t.pos.z };
-		g.world.ship.vel = { ...t.vel };
-		g.throttle = 0;
-	};
-	besideIt(t0);
+	window.__relayProbe.placeBesideTender(1.2);
 	g.setHeadLook("forward");
 	frame();
 	g.targetId = t0.key;
@@ -1058,7 +1043,8 @@ const tenderKill = await page.evaluate(async () => {
 	for (; steps < 2000; steps++) {
 		const t = g.relayReadout().tender;
 		if (!t) break;
-		if (steps > 0 && steps % 50 === 0) besideIt(t);
+		if (steps > 0 && steps % 50 === 0)
+			window.__relayProbe.placeBesideTender(1.2);
 		const p = g.world.ship.pos;
 		if (steps % 100 === 0)
 			samples.push([
@@ -1142,15 +1128,12 @@ check(
 );
 const nextTender = await page.evaluate(async (killedAt) => {
 	const g = window.__seelite;
-	const dt = g.units.MAX_DT;
 	const relay = await import("/src/pirate-relay.ts");
 	g.world.gameTime = killedAt + relay.RELAY_WRECK_S - 5;
-	g.step(dt);
-	g.render(dt);
+	window.__relayProbe.frame();
 	const gap = g.relayReadout().tender;
 	g.world.gameTime = killedAt + relay.RELAY_WRECK_S + 1;
-	g.step(dt);
-	g.render(dt);
+	window.__relayProbe.frame();
 	const next = g.relayReadout().tender;
 	return { gap, next: next && { listed: next.listed, drawn: next.drawn } };
 }, tenderKill.killedAt);
@@ -1160,6 +1143,56 @@ check(
 	JSON.stringify(nextTender),
 );
 await capture("06-tender-next");
+// A tender that leaves when its repair completes keeps its slot's ordinal, so
+// the next repair's tender must start whole by being a new visit (sage #507
+// round 2): wear this one, let the repair finish, kill the relay again, and
+// read the tender that comes for that.
+const secondVisit = await page.evaluate(async (killedAt) => {
+	const g = window.__seelite;
+	const relay = await import("/src/pirate-relay.ts");
+	const tender = await import("/src/relay-tender.ts");
+	const probe = window.__relayProbe;
+	const arrival = killedAt + relay.RELAY_WRECK_S;
+	g.world.gameTime = arrival + tender.RELAY_TENDER_INBOUND_S + 10;
+	probe.frame();
+	const t0 = probe.placeBesideTender(1.2);
+	g.targetId = t0.key;
+	g.keys.add(" ");
+	for (let i = 0; i < 30; i++) {
+		const t = g.relayReadout().tender;
+		const p = g.world.ship.pos;
+		g.setAttitude(
+			{ x: t.pos.x - p.x, y: t.pos.y - p.y, z: t.pos.z - p.z },
+			g.shipUp(),
+		);
+		probe.frame();
+	}
+	g.keys.delete(" ");
+	const worn = g.relayReadout().tender.hull;
+	g.world.gameTime = arrival + relay.RELAY_REPAIR_S + 5;
+	probe.frame();
+	const afterRepair = g.relayReadout();
+	probe.placeNear(1.5);
+	const third = probe.shoot(400);
+	g.world.gameTime = third.killedAt + relay.RELAY_WRECK_S + 1;
+	probe.frame();
+	return {
+		worn,
+		relayAfterRepair: afterRepair.view?.condition ?? null,
+		tenderAfterRepair: afterRepair.tender,
+		thirdKill: third.steps,
+		nextHull: g.relayReadout().tender?.hull ?? null,
+		integrity: tender.RELAY_TENDER_INTEGRITY,
+	};
+}, tenderKill.killedAt);
+check(
+	"#351: a tender worn on one visit leaves with the repair, and the next repair's tender arrives whole",
+	secondVisit.worn < secondVisit.integrity &&
+		secondVisit.relayAfterRepair === "operational" &&
+		secondVisit.tenderAfterRepair === null &&
+		secondVisit.nextHull === secondVisit.integrity,
+	JSON.stringify(secondVisit),
+);
 
 // ---------------------------------------------------------------------------
 // #351: a system whose relay did not roll active has none — not drawn, no
