@@ -157,6 +157,7 @@ await page.evaluate(() => {
 				strength: r.view?.signal?.strength ?? null,
 				identified: r.view?.identified ?? null,
 				condition: r.view?.condition ?? null,
+				active: r.active,
 				listed: r.listed,
 				hull: r.hull,
 				detection: r.detection,
@@ -485,13 +486,16 @@ const provenance = await page.evaluate(async () => {
 		kind: episode?.initiating.kind,
 		role: episode?.initiating.cause.playerRole,
 		area: env.objective[key]?.scheduled?.consequenceArea,
+		// Read off the page rather than restated: the system is the seed's.
+		expectedArea: `route:${g.world.system.record.index}:${g.relayReadout().plan.watchedStationId}`,
 	};
 });
 check(
 	"the episode records a destroy by the player, and its consequence area is the route",
 	provenance.kind === "destroy" &&
 		provenance.role === "direct" &&
-		provenance.area === "route:58:station-trade",
+		provenance.area === provenance.expectedArea &&
+		provenance.expectedArea.endsWith(":station-trade"),
 	JSON.stringify(provenance),
 );
 await settle();
@@ -606,7 +610,11 @@ const trip = await page.evaluate(() => window.__relayProbe.jumpOutAndBack());
 check(
 	"a jump out reaches another system, where the relay read is that system's own",
 	trip.outward.arrived &&
-		trip.awayReadout.condition === "operational" &&
+		// #351: the neighbour's relay is its own roll — absent, or present
+		// and un-identified. Either way not this system's wreck.
+		(trip.awayReadout.active
+			? trip.awayReadout.condition === "operational"
+			: trip.awayReadout.condition === null && !trip.awayReadout.meshDrawn) &&
 		!trip.awayReadout.identified,
 	JSON.stringify(trip),
 );
