@@ -21,7 +21,7 @@ supplies position, velocity, name, hull type and scanner classification;
 contact's display name is a label, with no persistence identity or Carrier slot
 meaning. `ship-visuals.md` §2 owns the review fleet's use of it; the other
 producers include the raider, Traffic actors, the combat rig, the **Pirate
-relay** and the **Cargo canister**.
+relay**, its **Relay tender** (a `ship` contact) and the **Cargo canister**.
 
 **Review fleet slot**:
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`

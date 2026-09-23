@@ -418,10 +418,9 @@ import {
 	RELAY_TENDER_HIT_RADIUS_KM,
 	RELAY_TENDER_INTEGRITY,
 	RELAY_TENDER_NAME,
-	relaySetBack,
-	tenderDestruction,
 	tenderEntry,
 	tenderInSights,
+	tenderKill,
 	tenderLog,
 	tenderOffset,
 	tenderPresentSince,
@@ -2165,7 +2164,7 @@ class Game {
 	 *  state like the relay's; its kill is the world's. */
 	private tenderView: { key: CarrierKey; since: number; entry: Vec3 } | null =
 		null;
-	tenderHull = RELAY_TENDER_INTEGRITY;
+	private tenderHull = RELAY_TENDER_INTEGRITY;
 	private tenderHullInstance = 0;
 	private tenderListed = false;
 	private readonly tenderContact: DisplayContact = {
@@ -10958,7 +10957,7 @@ class Game {
 				this.world.system.byId.get(plan.watchedStationId)?.name ??
 				plan.watchedStationId,
 		};
-		this.stepTender(shot, plan);
+		this.stepTender(shot, plan, carrier);
 	}
 
 	/**
@@ -10971,18 +10970,25 @@ class Game {
 	 * **Not gated on the long-range scanner.** The tender is a ship, found the
 	 * way ships are — by the scanner every hull carries — and #479's gate is on
 	 * *reading the relay*, which the tender does not need.
+	 * The counter-case is that a parked tender marks where the wreck is for a
+	 * pilot with no module. It exists only while a destroyed relay is being
+	 * repaired, and in the game only the player destroys a relay. The shot is
+	 * ungated, but an unfitted pilot has no cue, contact or marker to find an
+	 * 83 m object by, so the pilot a tender would inform has in practice
+	 * already found the relay — and what it reveals is a wreck, not a working
+	 * relay.
 	 */
-	private stepTender(shot: PlayerShot, plan: RelayPlan) {
+	private stepTender(
+		shot: PlayerShot,
+		plan: RelayPlan,
+		/** The relay's condition as `stepRelay` read it this frame. */
+		relay: EffectiveCarrier,
+	) {
 		const { record } = this.world.system;
 		const now = this.world.gameTime;
-		const relayKey = relaySlot(record.index).key;
 		const key = relayTenderSlot(record.index).key;
 		const tender = this.carrierCondition(key);
-		const since = tenderPresentSince(
-			this.carrierCondition(relayKey),
-			tender,
-			now,
-		);
+		const since = tenderPresentSince(relay, tender, now);
 		if (since === null) {
 			this.tenderView = null;
 			return;
@@ -10991,7 +10997,11 @@ class Game {
 			this.tenderHullInstance = tender.instanceOrdinal;
 			this.tenderHull = RELAY_TENDER_INTEGRITY;
 		}
-		const view = { key, since, entry: tenderEntry(record.seed) };
+		// The entry direction is the system's and the view changes only with a
+		// new arrival, so neither is rebuilt per frame.
+		let view = this.tenderView;
+		if (!view || view.key !== key || view.since !== since)
+			view = { key, since, entry: tenderEntry(record.seed) };
 		this.tenderView = view;
 		const { pos } = this.tenderNow(view, plan);
 		if (
@@ -11001,11 +11011,12 @@ class Game {
 		) {
 			this.tenderHull = Math.max(0, this.tenderHull - shot.damage);
 			if (this.tenderHull === 0) {
-				this.applyCarrierTransition(key, tenderDestruction(record.index, now));
-				this.applyCarrierTransition(
-					relayKey,
-					relaySetBack(now, `route:${record.index}:${plan.watchedStationId}`),
-				);
+				for (const t of tenderKill(
+					record.index,
+					now,
+					`route:${record.index}:${plan.watchedStationId}`,
+				))
+					this.applyCarrierTransition(t.key, t.event);
 				this.audio.explosion();
 				this.lastExit = "relay tender destroyed";
 				this.tenderView = null;
@@ -11065,6 +11076,16 @@ class Game {
 			pos.z - cameraPos.z,
 		);
 		this.trafficQuaternion({ nose: scale(v.entry, -1) }, root.quaternion);
+	}
+
+	/** #43, #351: the relay's and its tender's Communications lines, or none
+	 *  where the relay is inactive. */
+	private relayLogLines(): RaiderLogLine[] {
+		if (!this.currentRelayPlan()) return [];
+		const { galaxy, index } = this.world.system.record;
+		const env = this.commerceWorld.galaxies[galaxy];
+		const now = this.world.gameTime;
+		return [...relayLog(env, index, now), ...tenderLog(env, index, now)];
 	}
 
 	/** #43: what the glass shows of the relay, or null with nothing to show. */
@@ -12820,25 +12841,8 @@ class Game {
 							// #43: the relay's lifecycle in the same log, same derivation.
 							// An inactive relay is absent, log included — a save from the
 							// prototype can hold rows for one, and they stay unread (#351).
-							...(this.currentRelayPlan()
-								? relayLog(
-										this.commerceWorld.galaxies[
-											this.world.system.record.galaxy
-										],
-										this.world.system.record.index,
-										this.world.gameTime,
-									)
-								: []),
-							// #351: the tender's arrival and its kill, beside the relay's.
-							...(this.currentRelayPlan()
-								? tenderLog(
-										this.commerceWorld.galaxies[
-											this.world.system.record.galaxy
-										],
-										this.world.system.record.index,
-										this.world.gameTime,
-									)
-								: []),
+							// #351: and its tender's arrival and kill beside it.
+							...this.relayLogLines(),
 							// #396: the struck carrier's hail. Not a derivation, and
 							// the one line here that is not — see `this.hails`.
 							...this.hails.map((h) => h.line),

@@ -40,7 +40,7 @@
  */
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
-import { stream } from "./galaxy";
+import { generateGalaxy, stream } from "./galaxy";
 import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
@@ -291,4 +291,22 @@ export function relayLog(
 	return newestFirst(
 		lifecycleLines(env, relaySlot(systemIndex).key, RELAY_NAME, gameTime),
 	);
+}
+
+/**
+ * Over every galaxy of a world seed, per government: how many systems there
+ * are and how many rolled an active relay. The one tally the test and
+ * `measure-relay-route.ts` both read, so they cannot count differently.
+ */
+export function relayActiveShare(
+	worldSeed: number,
+): { n: number; active: number }[] {
+	const byGov = Array.from({ length: 8 }, () => ({ n: 0, active: 0 }));
+	for (let g = 0; g < 8; g++)
+		for (const record of generateGalaxy(worldSeed, g).systems) {
+			const bucket = byGov[record.government];
+			bucket.n++;
+			if (relayActive(record)) bucket.active++;
+		}
+	return byGov;
 }

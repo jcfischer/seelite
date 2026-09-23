@@ -7,6 +7,13 @@
  * pirate tug flies in from far out and parks at the wreck, and destroying it
  * restarts the repair with a new wreck timer.
  *
+ * **What that is in the state machine.** §4 has no verb that re-destroys a
+ * repairing carrier with a fresh schedule, so the relay does not go back to
+ * `destroyed`: it stays `repairing` while its completion moves out by a wreck
+ * and a repair, and for the first wreck period no tender is there. The pilot
+ * sees the wreck, reads `under repair`, and meets no tender until the new one
+ * flies in.
+ *
  * **No new world-state verb.** `persistent-world-state.md` §4 already allows
  * "repairing → repairing when assistance, opposition, or another intervention
  * changes the active recovery descriptor". A tender kill is opposition: the
@@ -14,8 +21,8 @@
  * in the same episode and the same process. The tender itself is its own
  * carrier slot (`relay-00/tender`, enrolled at generator 7) and takes an
  * ordinary `destroy` whose scheduled replacement completes when the next
- * tender is due — so its kill saves, loads and survives a jump like any
- * other carrier's.
+ * tender is due — so its kill is written to the save like any other
+ * carrier's (`probe-relay` jumps out and back and finds it).
  *
  * **One invariant ties the two.** A tender arrives one repair period before
  * the relay's completion (`tenderArrival`). A fresh repair starts there, and a
@@ -27,6 +34,7 @@
  * types; nothing that renders.
  */
 import { playerLaserHit } from "./combat-enemy";
+import type { CarrierKey } from "./carrier-key";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { HULL_SPECS } from "./hull";
@@ -86,16 +94,23 @@ export const tenderArrival = (recovery: { completesAt: number }): number =>
  * replaced, the tender's own slot is operational, and its arrival has come.
  * Null otherwise.
  */
+/** A repair's tender is due at `now`: the relay is being replaced and its
+ *  tender's arrival has come. The arrival, or null. The one gate both the
+ *  presence and the log read. */
+export function tenderDue(relay: EffectiveCarrier, now: number): number | null {
+	if (relay.condition !== "repairing") return null;
+	if (relay.recovery?.kind !== "replacement") return null;
+	const arrival = tenderArrival(relay.recovery);
+	return now >= arrival ? arrival : null;
+}
+
 export function tenderPresentSince(
 	relay: EffectiveCarrier,
 	tender: EffectiveCarrier,
 	now: number,
 ): number | null {
-	if (relay.condition !== "repairing") return null;
-	if (relay.recovery?.kind !== "replacement") return null;
 	if (tender.condition !== "operational") return null;
-	const arrival = tenderArrival(relay.recovery);
-	return now >= arrival ? arrival : null;
+	return tenderDue(relay, now);
 }
 
 /** The direction a system's tender comes in from, a unit vector on its own
@@ -135,6 +150,9 @@ export function tenderOffset(
 export function tenderDestruction(
 	systemIndex: number,
 	now: number,
+	/** The relay's own route, `route:<system>:<watched station>`: the tender
+	 *  works for the relay, so its kill has the relay's consequence area. */
+	consequenceArea: string,
 ): TransitionEvent {
 	return {
 		kind: "destroy",
@@ -143,7 +161,7 @@ export function tenderDestruction(
 		schedule: {
 			startsAt: now + RELAY_WRECK_S / 2,
 			completesAt: now + RELAY_WRECK_S,
-			consequenceArea: `relay-repair:${systemIndex}`,
+			consequenceArea,
 			cause: relayReplacementActor(systemIndex),
 		},
 	};
@@ -177,19 +195,16 @@ export function tenderLog(
 	const relayKey = relaySlot(systemIndex).key;
 	const tenderKey = relayTenderSlot(systemIndex).key;
 	const lines: RaiderLogLine[] = [];
-	const relay = effectiveCarrier(env, relayKey, gameTime);
-	if (
-		relay.condition === "repairing" &&
-		relay.recovery?.kind === "replacement"
-	) {
-		const arrival = tenderArrival(relay.recovery);
-		if (gameTime >= arrival)
-			lines.push({
-				at: arrival,
-				key: tenderKey,
-				text: `${RELAY_TENDER_NAME} inbound`,
-			});
-	}
+	const arrival = tenderDue(
+		effectiveCarrier(env, relayKey, gameTime),
+		gameTime,
+	);
+	if (arrival !== null)
+		lines.push({
+			at: arrival,
+			key: tenderKey,
+			text: `${RELAY_TENDER_NAME} inbound`,
+		});
 	const episode = env.episodes[tenderKey];
 	if (
 		episode?.initiating.kind === "destroy" &&
@@ -201,4 +216,28 @@ export function tenderLog(
 			text: `${RELAY_TENDER_NAME} destroyed · relay repair set back`,
 		});
 	return lines.sort((a, b) => b.at - a.at);
+}
+
+/**
+ * A tender kill, as the two transitions it is: the tender's `destroy` and the
+ * relay's set-back, in that order. **Apply both or neither** — the pair is what
+ * keeps `tenderArrival`'s invariant, so a caller that applied one would leave
+ * the next tender arriving when no replacement is due. Returned as a list so
+ * the module owns the pairing and a second caller cannot split it.
+ */
+export function tenderKill(
+	systemIndex: number,
+	now: number,
+	consequenceArea: string,
+): { key: CarrierKey; event: TransitionEvent }[] {
+	return [
+		{
+			key: relayTenderSlot(systemIndex).key,
+			event: tenderDestruction(systemIndex, now, consequenceArea),
+		},
+		{
+			key: relaySlot(systemIndex).key,
+			event: relaySetBack(now, consequenceArea),
+		},
+	];
 }

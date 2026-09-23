@@ -19,9 +19,8 @@ import {
 	RELAY_TENDER_INBOUND_S,
 	RELAY_TENDER_INTEGRITY,
 	RELAY_TENDER_PARK_KM,
-	relaySetBack,
 	tenderArrival,
-	tenderDestruction,
+	tenderKill,
 	tenderEntry,
 	tenderLog,
 	tenderOffset,
@@ -41,6 +40,7 @@ const RELAY = relaySlot(SYSTEM).key;
 const TENDER = relayTenderSlot(SYSTEM).key;
 const KILL = 100;
 const REPAIR_FROM = KILL + RELAY_WRECK_S;
+const AREA = `route:${SYSTEM}:station-trade`;
 
 const killedRelay = (): WorldState =>
 	applyTransition(
@@ -125,15 +125,14 @@ describe("the interruption", () => {
 		const t = REPAIR_FROM + 600;
 		let w = killedRelay();
 		const before = effectiveCarrier(w.galaxies[0], RELAY, t);
-		w = applyTransition(w, 0, TENDER, tenderDestruction(SYSTEM, t));
-		w = applyTransition(
-			w,
-			0,
-			RELAY,
-			relaySetBack(t, `route:${SYSTEM}:station-trade`),
-		);
+		for (const { key, event } of tenderKill(SYSTEM, t, AREA))
+			w = applyTransition(w, 0, key, event);
 		const after = effectiveCarrier(w.galaxies[0], RELAY, t + 1);
 		expect(after.condition).toBe("repairing");
+		// The tender works for the relay, so its kill carries the relay's route.
+		expect(w.galaxies[0].objective[TENDER]?.scheduled?.consequenceArea).toBe(
+			AREA,
+		);
 		expect(after.recovery?.processId).toBe(before.recovery?.processId);
 		expect(after.recovery?.completesAt).toBe(
 			t + RELAY_WRECK_S + RELAY_REPAIR_S,
@@ -167,13 +166,8 @@ describe("the log", () => {
 		expect(
 			tenderLog(w.galaxies[0], SYSTEM, REPAIR_FROM).map((l) => l.text),
 		).toEqual(["Relay tender inbound"]);
-		w = applyTransition(w, 0, TENDER, tenderDestruction(SYSTEM, t));
-		w = applyTransition(
-			w,
-			0,
-			RELAY,
-			relaySetBack(t, `route:${SYSTEM}:station-trade`),
-		);
+		for (const { key, event } of tenderKill(SYSTEM, t, AREA))
+			w = applyTransition(w, 0, key, event);
 		const lines = tenderLog(w.galaxies[0], SYSTEM, t + RELAY_WRECK_S);
 		expect(lines.map((l) => [l.at, l.text])).toEqual([
 			[t + RELAY_WRECK_S, "Relay tender inbound"],

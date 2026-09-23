@@ -16,6 +16,7 @@ import {
 	relayDestruction,
 	relayActive,
 	relayActiveChance,
+	relayActiveShare,
 	RELAY_ACTIVE_CHANCE,
 	relayDetection,
 	relayLog,
@@ -301,13 +302,8 @@ describe("which systems have one (#351)", () => {
 		// buckets are not even — 221, 353, 437, 452, 324, 194, 60 and 7 systems
 		// from Anarchy to Corporate State at this seed — so the band is per
 		// bucket, and the Corporate one is wide because seven systems say little.
-		const seen = Array.from({ length: 8 }, () => ({ n: 0, active: 0 }));
-		for (let g = 0; g < 8; g++)
-			for (const record of generateGalaxy(WORLD, g).systems) {
-				const bucket = seen[record.government];
-				bucket.n++;
-				if (relayActive(record)) bucket.active++;
-			}
+		const seen = relayActiveShare(WORLD);
+		expect(seen.reduce((s, b) => s + b.n, 0)).toBe(8 * 256);
 		for (let government = 0; government < 8; government++) {
 			const { n, active } = seen[government];
 			const p = relayActiveChance(government);

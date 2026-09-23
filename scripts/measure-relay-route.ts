@@ -17,10 +17,10 @@
  * an instrument that quietly prints NaN is worse than one that dies (#7).
  */
 import { scheduleEncounter } from "../src/encounter";
-import { generateGalaxy } from "../src/galaxy";
 import {
 	relayActive,
 	relayActiveChance,
+	relayActiveShare,
 	relayDetection,
 } from "../src/pirate-relay";
 import { relayPlan } from "../src/relay-slot";
@@ -85,15 +85,9 @@ console.log(
 // government, the share whose relay rolled active beside the ruled chance.
 console.log("");
 console.log("government   systems   active   ruled chance");
-const byGov = Array.from({ length: 8 }, () => ({ n: 0, active: 0 }));
-for (let g = 0; g < 8; g++)
-	for (const r of generateGalaxy(seed, g).systems) {
-		byGov[r.government].n++;
-		if (relayActive(r)) byGov[r.government].active++;
-	}
-byGov.forEach(({ n, active }, government) => {
+relayActiveShare(seed).forEach(({ n, active }, government) => {
 	const share = n === 0 ? "—" : pct(finite(active / n, `share(${government})`));
 	console.log(
-		`${String(government).padStart(10)}   ${String(n).padStart(7)}   ${share.padStart(6)}   ${pct(relayActiveChance(government)).padStart(12)}`,
+		`${String(government).padStart(10)}   ${String(n).padStart(7)}   ${share.padStart(6)}   ${pct(finite(relayActiveChance(government), `chance(${government})`)).padStart(12)}`,
 	);
 });

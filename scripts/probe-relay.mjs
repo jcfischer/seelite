@@ -495,7 +495,9 @@ check(
 	provenance.kind === "destroy" &&
 		provenance.role === "direct" &&
 		provenance.area === provenance.expectedArea &&
-		provenance.expectedArea.endsWith(":station-trade"),
+		// And pinned, so a mis-derived index cannot agree with itself: ESLAIN is
+		// system 244 at seed 56 (`measure-relay-route.ts` prints it).
+		provenance.area === "route:244:station-trade",
 	JSON.stringify(provenance),
 );
 await settle();
@@ -910,6 +912,120 @@ check(
 	tenderAt.parked.listed && tenderAt.parked.targetable && tenderAt.parked.drawn,
 	JSON.stringify(tenderAt.parked),
 );
+// The fourth combat target pulls the gimbal by name (map constraint from #43).
+// Three degrees off the nose with the tender selected the beam is on it; the
+// same pose with nothing selected is the control, and leaves the beam on the
+// boresight — so the pull is `tenderSelected`'s and not the pose's.
+const tenderGimbal = await page.evaluate(() => {
+	const g = window.__seelite;
+	const deg = (u, v) =>
+		(Math.acos(
+			(u.x * v.x + u.y * v.y + u.z * v.z) /
+				(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
+		) *
+			180) /
+		Math.PI;
+	const arm = (select) => {
+		const t0 = g.relayReadout().tender;
+		g.dropOut("probe");
+		g.encounter = null;
+		g.world.ship.pos = { x: t0.pos.x + 2, y: t0.pos.y, z: t0.pos.z };
+		g.world.ship.vel = { ...t0.vel };
+		g.throttle = 0;
+		g.targetId = select ? t0.key : null;
+		const a = (3 * Math.PI) / 180;
+		const to = { x: -2, y: 0, z: 0 };
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setAttitude(
+			{
+				x: to.x * Math.cos(a) + to.z * Math.sin(a),
+				y: to.y,
+				z: -to.x * Math.sin(a) + to.z * Math.cos(a),
+			},
+			g.shipUp(),
+		);
+		for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+		const t = g.relayReadout().tender.pos;
+		const q = g.world.ship.pos;
+		const dir = { x: t.x - q.x, y: t.y - q.y, z: t.z - q.z };
+		return {
+			noseOffDeg: deg(g.nose(), dir),
+			beamOffDeg: deg(g.beamAim(), dir),
+		};
+	};
+	const selected = arm(true);
+	const control = arm(false);
+	g.targetId = null;
+	return { selected, control };
+});
+check(
+	"#351: a selected tender pulls the gimbal onto it; unselected, the beam stays on the boresight",
+	tenderGimbal.selected.noseOffDeg > 2 &&
+		tenderGimbal.selected.beamOffDeg < 1 &&
+		tenderGimbal.control.noseOffDeg > 2 &&
+		tenderGimbal.control.beamOffDeg > 2,
+	JSON.stringify(tenderGimbal),
+);
+// Drawn, as pixels: nose on the parked tug at 1.5 km, hiding its mesh moves
+// the frame, and two shown frames of the same build move it by far less.
+await page.evaluate(() => {
+	const g = window.__seelite;
+	const t0 = g.relayReadout().tender;
+	g.dropOut("probe");
+	g.encounter = null;
+	g.world.ship.pos = { x: t0.pos.x + 1.5, y: t0.pos.y, z: t0.pos.z };
+	g.world.ship.vel = { ...t0.vel };
+	g.throttle = 0;
+	g.rates = { pitch: 0, yaw: 0, roll: 0 };
+	g.setAttitude({ x: -1, y: 0, z: 0 }, g.shipUp());
+	g.setHeadLook("forward");
+	for (let i = 0; i < 4; i++) window.__relayProbe.frame();
+});
+const framePng = async () => {
+	// Render without stepping: a step moves the ship and the tug between the
+	// two shots, and the control then reads the motion as a difference.
+	await page.evaluate(() => window.__seelite.render(0));
+	return PNG.sync.read(await page.screenshot());
+};
+const movedBetween = (a, b) => {
+	let moved = 0;
+	for (let i = 0; i < a.data.length; i += 4)
+		if (
+			Math.abs(a.data[i] - b.data[i]) > 24 ||
+			Math.abs(a.data[i + 1] - b.data[i + 1]) > 24 ||
+			Math.abs(a.data[i + 2] - b.data[i + 2]) > 24
+		)
+			moved++;
+	return moved;
+};
+// And hold the page's own loop, as the combat rig does: it steps the world
+// between two screenshots otherwise.
+await page.evaluate(() => {
+	const g = window.__seelite;
+	if (g.animationFrame) cancelAnimationFrame(g.animationFrame);
+	g.animationFrame = 0;
+});
+const tenderShown = await framePng();
+const tenderShownAgain = await framePng();
+await page.evaluate(() => {
+	window.__seelite.tenderMesh.visible = false;
+});
+const tenderHidden = await framePng();
+await page.evaluate(() => {
+	window.__seelite.tenderMesh.visible = true;
+	window.__seelite.render(0);
+	if (!window.__seelite.animationFrame) window.__seelite.animate();
+});
+const tenderPx = {
+	moved: movedBetween(tenderShown, tenderHidden),
+	control: movedBetween(tenderShown, tenderShownAgain),
+};
+check(
+	"#351: the parked tender is drawn: hiding its mesh moves pixels, and a same-build control moves far fewer",
+	tenderPx.moved > 200 && tenderPx.moved > 5 * tenderPx.control,
+	JSON.stringify(tenderPx),
+);
+await capture("05-tender-parked");
 const tenderKill = await page.evaluate(async () => {
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
@@ -1001,6 +1117,29 @@ check(
 		),
 	JSON.stringify(tenderKill),
 );
+// The kill is the world's: a jump out and back finds the tender destroyed and
+// the relay's set-back where it was.
+const tenderTrip = await page.evaluate(
+	async ({ tenderKey, relayKey }) => {
+		const g = window.__seelite;
+		const trip = await window.__relayProbe.jumpOutAndBack();
+		return {
+			arrived: trip.outward.arrived && trip.back.arrived,
+			gameTime: g.world.gameTime,
+			tender: g.carrierCondition(tenderKey).condition,
+			relayCompletesAt: g.carrierCondition(relayKey).recovery?.completesAt,
+		};
+	},
+	{ tenderKey: tenderAt.parked.key, relayKey: kill.key },
+);
+check(
+	"#351: a jump out and back finds the tender destroyed and the set-back kept",
+	tenderTrip.arrived &&
+		tenderTrip.gameTime < tenderKill.killedAt + 1200 &&
+		tenderTrip.tender !== "operational" &&
+		tenderTrip.relayCompletesAt === tenderKill.relayCompletesAt,
+	JSON.stringify({ tenderTrip, killedAt: tenderKill.killedAt }),
+);
 const nextTender = await page.evaluate(async (killedAt) => {
 	const g = window.__seelite;
 	const dt = g.units.MAX_DT;
@@ -1020,7 +1159,7 @@ check(
 	nextTender.gap === null && nextTender.next?.listed === true,
 	JSON.stringify(nextTender),
 );
-await capture("05-tender-next");
+await capture("06-tender-next");
 
 // ---------------------------------------------------------------------------
 // #351: a system whose relay did not roll active has none — not drawn, no
@@ -1075,7 +1214,9 @@ check(
 		absent.plan === null &&
 		absent.view === null &&
 		absent.detections.join() === "law" &&
-		absent.met < 24 &&
+		// The law here is about a quarter and the watched rate 90%: 12 of 24
+		// separates them by more than four sd either way.
+		absent.met <= 12 &&
 		absent.cueFound &&
 		absent.cueVisible === false &&
 		absent.meshDrawn === false,
