@@ -8,6 +8,7 @@
  * against, and no amount of looking at a frame catches it.
  */
 import { describe, expect, test } from "bun:test";
+import { shippedTrigger } from "./lib/shipped-trigger";
 import {
 	captureModalMarkup,
 	committable,
@@ -17,15 +18,7 @@ import {
 import { controlsCatalogue } from "../src/controls-catalogue";
 import { DEFAULT_BINDINGS, isHeld, type Trigger } from "../src/commands";
 
-const shipped = (command: string, kind: Trigger["kind"] = "key") => {
-	const found = DEFAULT_BINDINGS.find(
-		(b) => b.command === command && b.trigger.kind === kind,
-	);
-	if (!found) throw new Error(`${command} has no ${kind} binding`);
-	return found.trigger;
-};
-
-const CRUISE = shipped("fly.cruise");
+const CRUISE = shippedTrigger("fly.cruise");
 const open = () => openCapture("fly.cruise", CRUISE);
 
 describe("a session listens, catches, and commits once", () => {
@@ -70,6 +63,7 @@ describe("a session listens, catches, and commits once", () => {
 		});
 		expect(session.stage.kind).toBe("refused");
 		if (session.stage.kind !== "refused") return;
+		expect(session.stage.refusal).toBe("no-reader-axes");
 		expect(session.stage.why).toMatch(/padFlightAxes/);
 		expect("layout" in session.stage).toBe(false);
 	});
@@ -95,6 +89,10 @@ describe("a session listens, catches, and commits once", () => {
 			contexts: ["capture"],
 		});
 		expect(then.stage.kind).toBe("refused");
+		// **The row's own title, asserted** (sage round 1): it said "leaves
+		// nothing committable" and checked only the stage, so a regression
+		// where `committable` kept the earlier candidate passed it.
+		expect(committable(then)).toBeNull();
 	});
 
 	test("the session never mutates the layout it was given", () => {
@@ -158,7 +156,7 @@ describe("what the modal says", () => {
 		// `toContain("padFlightAxes")` until a frame was looked at: the modal
 		// was printing `movedTrigger`'s message, which names the reader a
 		// developer has to change and means nothing to anyone flying.
-		expect(html).toContain("A stick cannot be bound yet");
+		expect(html).toContain("A stick or a trigger cannot be bound yet");
 		expect(html).not.toContain("padFlightAxes");
 	});
 
@@ -196,7 +194,7 @@ describe("the capture says which key and the command says the rest", () => {
 	 * `a rebind may move a trigger, not its qualifiers: key:s::hold ->
 	 * key:k::press`. That is the storage slice's defect on a different screen.
 	 */
-	const PITCH = shipped("fly.pitchUp");
+	const PITCH = shippedTrigger("fly.pitchUp");
 
 	test("a held control captures a held key", () => {
 		const session = offered(

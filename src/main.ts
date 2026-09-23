@@ -565,6 +565,7 @@ import { isEditable } from "./editable-target";
 import {
 	capturedTrigger,
 	type CommandId,
+	type PadAnalog,
 	commandById,
 	type Layout,
 	isHeld,
@@ -7427,13 +7428,21 @@ class Game {
 	 */
 	private padContextThisFrame: PadContext = "flight";
 	/**
-	 * Last frame's pad, for the capture modal's edge.
+	 * Last frame's analog reading, for the capture modal's edge.
 	 *
 	 * Only `capturedTrigger` reads it, and only while the modal is up — but it
 	 * is written every frame, because the frame that *matters* is the one
 	 * before the modal opened and nothing knows that in advance.
+	 *
+	 * **A copy of the numbers and not the frame** (sage round 1 on #497 found
+	 * the symptom; this is the cause). Holding the `PadFrame` made the edge
+	 * depend on that object still reading what it read when it was stored, and
+	 * it did not: the modal was offered the same stick on every one of forty
+	 * frames, so the edge C10 rests on was not holding in the game while the
+	 * unit test — which passes an explicit rest frame — was green. Four
+	 * numbers and seventeen copied by value cannot be moved under this.
 	 */
-	private padFramePrevious: PadFrame | null = null;
+	private padAnalogPrevious: PadAnalog | null = null;
 	// The drawn console beside it, for the same reason and with the same caveat: the
 	// pointer's rule wants this fact whether or not it owns the pad, and asking twice
 	// a frame would make a rendered-DOM read a per-frame cost twice.
@@ -7752,11 +7761,26 @@ class Game {
 		// runs in this context: `padIntents` reports nothing at all there, so
 		// the `acted` read and the dispatch are both empty by construction
 		// rather than by a branch.
+		// **Advanced before the modal is offered anything, and that ordering is
+		// the fix rather than a tidy-up.** The modal draws inside `offer`, and
+		// a throw there — `escapeHtml` on an undefined sentence, which is what
+		// a refusal keyed on the trigger's *kind* produced — propagates out of
+		// `pollPad` and skips every line after it. So the previous reading
+		// never advanced, `capturedTrigger` compared a deflected stick against
+		// rest forever, and the modal was re-offered the same stick on all
+		// forty frames of the probe's window. One crash, two symptoms, and the
+		// edge C10 rests on was the one that looked like an independent bug.
+		//
+		// A consumer must not be able to break an input invariant by failing.
+		const previous = this.padAnalogPrevious;
+		this.padAnalogPrevious = {
+			axes: { ...frame.axes },
+			values: { ...frame.values },
+		};
 		if (context === "capture") {
-			const caught = capturedTrigger(frame, this.padFramePrevious);
+			const caught = capturedTrigger(frame, previous);
 			if (caught) this.captureModal?.offer(caught);
 		}
-		this.padFramePrevious = frame;
 		const intents = padIntents(frame, context);
 		// **What a press *reaches*, not that one stood for a key.** The old
 		// reading was `intents.keys.length > 0`, and a button is not a key any

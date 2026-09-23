@@ -422,10 +422,11 @@ describe("the pad and the chord are resolved through the layout", () => {
 	/**
 	 * The same layout with one pad row on another button.
 	 *
-	 * Built by hand rather than through `rebind`, because `rebind` still
-	 * refuses every non-key trigger until C6's per-kind table lands — which is
-	 * the next step and not this one. A **new** row object, because
-	 * `freezeLayout` freezes through and a spread onto the frozen one throws.
+	 * Built by hand rather than through `rebind`, because this row is about
+	 * `resolvePad` reading a layout and not about the registry's willingness to
+	 * make the move — `tests/capture.test.ts` is where `rebind`'s per-kind
+	 * switch is exercised. A **new** row object, because `layoutOf` freezes
+	 * through and a spread onto a frozen row throws.
 	 *
 	 * `home` is the button to move onto: the module's header declares it the
 	 * one standard button nothing claims, and it falls through to the flight

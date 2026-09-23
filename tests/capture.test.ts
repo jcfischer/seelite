@@ -18,6 +18,7 @@
  * a reader, with each refusal naming the one that would have to exist.
  */
 import { describe, expect, test } from "bun:test";
+import { shippedTrigger } from "./lib/shipped-trigger";
 import {
 	capturedTrigger,
 	CAPTURE_DEFLECTION,
@@ -196,19 +197,11 @@ describe("what one capture records", () => {
 });
 
 describe("what a rebind may move onto", () => {
-	const shipped = (command: string, kind: Trigger["kind"]) => {
-		const found = DEFAULT_BINDINGS.find(
-			(b) => b.command === command && b.trigger.kind === kind,
-		);
-		if (!found) throw new Error(`${command} has no ${kind} binding`);
-		return found.trigger;
-	};
-
 	test("a pad button moves onto another pad button, and flies there", () => {
 		// The row C6 exists for. `home` is the one standard button the shipped
 		// layout leaves free, and `resolvePad` is what answers afterwards — the
 		// table is not the evidence, the resolver is.
-		const from = shipped("fly.cruise", "pad-button");
+		const from = shippedTrigger("fly.cruise", "pad-button");
 		const to = capturedTrigger(press("home"), rest);
 		if (to === null) throw new Error("home was not captured");
 		const layout = rebind(DEFAULT_BINDINGS, "fly.cruise", from, to);
@@ -229,7 +222,7 @@ describe("what a rebind may move onto", () => {
 		// cannot carry twenty-six letters, and D12 retires the rule without
 		// retiring the arithmetic — the trade becomes the player's. A command
 		// the pad never reached can be put on the pad.
-		const from = shipped("fly.assist", "key");
+		const from = shippedTrigger("fly.assist", "key");
 		const to = capturedTrigger(press("home"), rest);
 		if (to === null) throw new Error("home was not captured");
 		const layout = rebind(DEFAULT_BINDINGS, "fly.assist", from, to);
@@ -247,7 +240,7 @@ describe("what a rebind may move onto", () => {
 	});
 
 	test("a pad button moves onto a key, the other way across", () => {
-		const from = shipped("fly.cruise", "pad-button");
+		const from = shippedTrigger("fly.cruise", "pad-button");
 		const layout = rebind(DEFAULT_BINDINGS, "fly.cruise", from, {
 			kind: "key",
 			key: "5",
@@ -265,7 +258,7 @@ describe("what a rebind may move onto", () => {
 		// A stick reaches the ship through `padFlightAxes`, which reads fixed
 		// positions and not the layout; storing the move would leave a row that
 		// prints, satisfies nothing and flies nothing.
-		const from = shipped("fly.cruise", "pad-button");
+		const from = shippedTrigger("fly.cruise", "pad-button");
 		const to = capturedTrigger(sticks([0, 0, 1, 0]), rest);
 		if (to === null) throw new Error("the stick was not captured");
 		expect(() => rebind(DEFAULT_BINDINGS, "fly.cruise", from, to)).toThrow(
@@ -274,7 +267,7 @@ describe("what a rebind may move onto", () => {
 	});
 
 	test("so is a trigger, for the same reason and naming the same reader", () => {
-		const from = shipped("fly.cruise", "pad-button");
+		const from = shippedTrigger("fly.cruise", "pad-button");
 		const to = capturedTrigger(press("r2"), rest);
 		if (to === null) throw new Error("the trigger was not captured");
 		expect(() => rebind(DEFAULT_BINDINGS, "fly.cruise", from, to)).toThrow(
@@ -286,7 +279,7 @@ describe("what a rebind may move onto", () => {
 		// `fight.firePulse` is Square held, and `padFireHeld` is what reads it —
 		// a fixed position, like the axes. `resolvePad` answers a press only,
 		// and says so.
-		const from = shipped("fly.cruise", "pad-button");
+		const from = shippedTrigger("fly.cruise", "pad-button");
 		const to: Trigger = {
 			kind: "pad-button",
 			button: "home",
@@ -302,7 +295,7 @@ describe("what a rebind may move onto", () => {
 		// Unchanged by any of the above, and the rule the whole table is an
 		// extension of — `fly.pitchUp` is flown by *holding* a key, so a `to`
 		// that dropped `hold` would store and fly nothing.
-		const from = shipped("fly.pitchUp", "key");
+		const from = shippedTrigger("fly.pitchUp", "key");
 		expect(() =>
 			rebind(DEFAULT_BINDINGS, "fly.pitchUp", from, { kind: "key", key: "5" }),
 		).toThrow(/qualifiers/);
@@ -312,7 +305,7 @@ describe("what a rebind may move onto", () => {
 		// A caller that hands over a `contexts` of its own gets the button's
 		// anyway: `Cross` falls through in flight alone, whatever a modal
 		// claims about it. The same rule as a key's `hold`.
-		const from = shipped("fly.cruise", "pad-button");
+		const from = shippedTrigger("fly.cruise", "pad-button");
 		const layout = rebind(DEFAULT_BINDINGS, "fly.cruise", from, {
 			kind: "pad-button",
 			button: "a",
@@ -333,10 +326,11 @@ describe("what a rebind may move onto", () => {
 describe("a pad move survives the trip to disk and back", () => {
 	/**
 	 * **The half `rebind` cannot hold up on its own.** `binding-store.ts`'s
-	 * header says only a key may be stored, which `acceptTrigger` refuses and
-	 * `movedTrigger` refuses again, and that "S4 lifts both together, in one
-	 * change". A lifted `rebind` with an unlifted store is a pad move that is
-	 * accepted, flies, and then refuses on reload — with the player told their
+	 * header said only a key may be stored — refused by `acceptTrigger` and
+	 * refused again by `movedTrigger` — and that "S4 lifts both together, in
+	 * one change". This is that change, and these rows are why it had to be
+	 * one: a lifted `rebind` with an unlifted store is a pad move that is
+	 * accepted, flies, and then refuses on reload, with the player told their
 	 * saved change "asked for more than moving a key".
 	 */
 	test("the blob names the button, and the reload flies it", () => {

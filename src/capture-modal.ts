@@ -34,7 +34,7 @@
  * refuse — and it would drift from the band on the tab behind it, which is the
  * same sentence about the same table.
  */
-import type { CommandId, Layout, Trigger } from "./commands";
+import type { CommandId, Layout, RebindRefusal, Trigger } from "./commands";
 import type { ControlsCatalogue } from "./controls-catalogue";
 import {
 	CAPTURE_REFUSED_WHY,
@@ -57,7 +57,14 @@ export type CaptureStage =
 			readonly warnings: readonly LayoutNotice[];
 	  }
 	/** Something it will not, and the reader that would have to change. */
-	| { readonly kind: "refused"; readonly to: Trigger; readonly why: string };
+	| {
+			readonly kind: "refused";
+			readonly to: Trigger;
+			/** What a screen keys its sentence on. */
+			readonly refusal: RebindRefusal;
+			/** The developer's sentence, for a console and a probe. */
+			readonly why: string;
+	  };
 
 export interface CaptureSession {
 	readonly command: CommandId;
@@ -92,7 +99,7 @@ export function offered(
 		...session,
 		stage:
 			"refused" in out
-				? { kind: "refused", to, why: out.refused }
+				? { kind: "refused", to, refusal: out.refused, why: out.detail }
 				: { kind: "caught", to, layout: out.layout, warnings: out.warnings },
 	};
 }
@@ -202,7 +209,12 @@ function stageMarkup(stage: CaptureStage): string {
 			// key:k::press` — which is the defect the storage slice shipped,
 			// caught the same way, on a different screen. `stage.why` is still
 			// carried, for a console and for a probe.
-			const why = escapeHtml(CAPTURE_REFUSED_WHY[stage.to.kind]);
+			// **Keyed on the refusal, not on the kind** (sage round 1 on #497):
+			// two refusals land on `pad-button` and a `key` is refused when the
+			// trigger being *moved* is not offered, so a kind-keyed table
+			// printed the hold sentence for both buttons and nothing at all for
+			// the key.
+			const why = escapeHtml(CAPTURE_REFUSED_WHY[stage.refusal]);
 			return `<p class="capture-caught"><kbd>${caught}</kbd></p><p class="capture-refused">${why}</p>`;
 		}
 	}

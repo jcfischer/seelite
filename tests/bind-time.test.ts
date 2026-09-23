@@ -13,6 +13,7 @@
  * second one optional, which is the version a later edit drops.
  */
 import { describe, expect, test } from "bun:test";
+import { shippedTrigger } from "./lib/shipped-trigger";
 import {
 	COMMANDS,
 	DEFAULT_BINDINGS,
@@ -25,21 +26,13 @@ import { controlsTree, SETTINGS_ACTION } from "../src/controls-reference";
 import { controlsCatalogue } from "../src/controls-catalogue";
 import { codeOf } from "./lib/source-scan";
 
-const shipped = (command: string, kind: Trigger["kind"] = "key") => {
-	const found = DEFAULT_BINDINGS.find(
-		(b) => b.command === command && b.trigger.kind === kind,
-	);
-	if (!found) throw new Error(`${command} has no ${kind} binding`);
-	return found.trigger;
-};
-
 describe("a bind is warned about before it is taken, and taken anyway", () => {
 	test("a move onto a free key proposes a layout and says nothing", () => {
 		// `5` is one of the five characters the shipped layout leaves alone.
 		const out = proposedRebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
-			shipped("fly.cruise"),
+			shippedTrigger("fly.cruise"),
 			{
 				kind: "key",
 				key: "5",
@@ -48,7 +41,17 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 		expect("refused" in out).toBe(false);
 		if ("refused" in out) return;
 		expect(out.warnings).toEqual([]);
-		expect(triggerKey(out.layout[0]?.trigger as Trigger)).toBeDefined();
+		// **That the move landed, not that a string came back.** This row read
+		// `expect(triggerKey(...)).toBeDefined()`, which passes for anything
+		// `triggerKey` returns and says nothing about the rebind (sage round 1).
+		expect(
+			out.layout.some(
+				(b) =>
+					b.command === "fly.cruise" &&
+					b.trigger.kind === "key" &&
+					b.trigger.key === "5",
+			),
+		).toBe(true);
 	});
 
 	test("a move onto a taken key proposes it anyway, and names both commands", () => {
@@ -57,7 +60,7 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 		const out = proposedRebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
-			shipped("fly.cruise"),
+			shippedTrigger("fly.cruise"),
 			{
 				kind: "key",
 				key: "k",
@@ -82,10 +85,15 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 		// follows — and it is the property a modal that mutated in place to
 		// "preview" the bind would break.
 		const before = DEFAULT_BINDINGS.map((b) => triggerKey(b.trigger)).join("|");
-		proposedRebind(DEFAULT_BINDINGS, "fly.cruise", shipped("fly.cruise"), {
-			kind: "key",
-			key: "k",
-		});
+		proposedRebind(
+			DEFAULT_BINDINGS,
+			"fly.cruise",
+			shippedTrigger("fly.cruise"),
+			{
+				kind: "key",
+				key: "k",
+			},
+		);
 		expect(DEFAULT_BINDINGS.map((b) => triggerKey(b.trigger)).join("|")).toBe(
 			before,
 		);
@@ -98,7 +106,7 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 		const out = proposedRebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
-			shipped("fly.cruise", "pad-button"),
+			shippedTrigger("fly.cruise", "pad-button"),
 			{
 				kind: "pad-stick",
 				stick: "right",
@@ -108,7 +116,12 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 			},
 		);
 		expect("refused" in out).toBe(true);
-		if ("refused" in out) expect(out.refused).toMatch(/padFlightAxes/);
+		if ("refused" in out) {
+			// The **code** is what a screen keys on; the sentence is a
+			// developer's and still names the reader that would have to change.
+			expect(out.refused).toBe("no-reader-axes");
+			expect(out.detail).toMatch(/padFlightAxes/);
+		}
 	});
 
 	test("the warning is the same one the band prints after the bind", () => {
@@ -119,14 +132,14 @@ describe("a bind is warned about before it is taken, and taken anyway", () => {
 		const out = proposedRebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
-			shipped("fly.cruise"),
+			shippedTrigger("fly.cruise"),
 			to,
 		);
 		if ("refused" in out) throw new Error("refused");
 		const after = rebind(
 			DEFAULT_BINDINGS,
 			"fly.cruise",
-			shipped("fly.cruise"),
+			shippedTrigger("fly.cruise"),
 			to,
 		);
 		// `collisionNotices` is what the band is built from, and the proposal
@@ -151,7 +164,7 @@ describe("the door cannot be shut", () => {
 		const moved = rebind(
 			DEFAULT_BINDINGS,
 			"view.headStarboard",
-			shipped("view.headStarboard"),
+			shippedTrigger("view.headStarboard"),
 			{
 				kind: "key",
 				key: "5",

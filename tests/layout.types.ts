@@ -11,7 +11,7 @@
  *
  * **Why the type and not the freeze.** `holdRows` keys its index on the array
  * *identity*, so a layout written into rather than rebuilt is answered out of
- * a stale index. `freezeLayout` makes that throw in strict mode, which is a
+ * a stale index. `layoutOf` makes that throw in strict mode, which is a
  * runtime backstop; this makes the precondition something a signature carries,
  * so a module that builds its own table cannot hand one over at all. The
  * storage slice was the obvious candidate to break it and every later producer

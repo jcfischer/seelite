@@ -10,9 +10,15 @@
  * scripts — `npm test` does not load `scripts/`, and `tsc` parses `.mjs`
  * without checking it — so an extraction here is believed on a probe run and
  * on nothing else. This repo has twice had a share-out of a probe silently
- * delete an adjacent fix. Both copies' comments are carried below for that
- * reason, and the two figures that differ between them are named where they
- * differ rather than averaged into one.
+ * delete an adjacent fix.
+ *
+ * **The two copies' code was identical; their comments were not, and that is
+ * what an extraction loses.** `probe-binding-store.mjs` carried the sage round
+ * that proved sampling before the wait disables the rest gate, and
+ * `probe-rebind.mjs` carried the shortened retry and the reported-not-thrown
+ * rule. Neither had the other's. Both are below. (An earlier draft of this
+ * paragraph claimed differing *figures* were named where they differ; there
+ * were none, and sage round 1 on #497 said so.)
  *
  * ## What it measures
  *

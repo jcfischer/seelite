@@ -1665,9 +1665,14 @@ export const CAPTURE_DEFLECTION = 0.5;
  * through nowhere is refused: a binding live in no context is a row that
  * prints and never fires.
  */
+export interface PadAnalog {
+	readonly axes: PadFrame["axes"];
+	readonly values: PadFrame["values"];
+}
+
 export function capturedTrigger(
 	frame: PadFrame | null,
-	previous: PadFrame | null,
+	previous: PadAnalog | null,
 ): Trigger | null {
 	if (!frame?.connected) return null;
 
@@ -1971,7 +1976,8 @@ export function rebind(
  */
 function movedTrigger(from: Trigger, to: Trigger): Trigger {
 	if (!movable(from))
-		throw new Error(
+		throw new RebindRefused(
+			"not-offered",
 			`a ${from.kind} is not a trigger this game offers for rebinding`,
 		);
 	// **One switch, so the table is one construct.** A pair of them — a
@@ -1993,6 +1999,7 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 		case "pad-button": {
 			if (to.hold === true)
 				throw unstorable(
+					"no-reader-held",
 					to,
 					"a held button is read by padFireHeld, which reads a fixed position and not the layout",
 				);
@@ -2003,7 +2010,8 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 			// that hands over a set of its own gets the button's anyway.
 			const contexts = PRESSES.flight.get(to.button);
 			if (contexts === undefined || contexts.length === 0)
-				throw new Error(
+				throw new RebindRefused(
+					"live-nowhere",
 					`${to.button} is claimed in every context, so a binding on it is live nowhere`,
 				);
 			return { kind: "pad-button", button: to.button, contexts };
@@ -2011,20 +2019,71 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 		case "pad-stick":
 		case "pad-trigger":
 			throw unstorable(
+				"no-reader-axes",
 				to,
 				"a stick and a trigger are read by padFlightAxes, which reads fixed positions and not the layout",
 			);
 		case "mouse-button":
 		case "mouse-move":
 			throw unstorable(
+				"no-capture-surface",
 				to,
 				"the mouse has no capture surface, so nothing can record a move onto it",
 			);
 		case "pad-intent":
 			throw unstorable(
+				"not-offered",
 				to,
 				"a panel intent is the console's grammar and is not offered for rebinding",
 			);
+	}
+}
+
+/**
+ * Why a rebind was refused, as a code rather than as the sentence.
+ *
+ * **The sentence is not enough, and keying one off `to.kind` was wrong**
+ * (sage round 1 on #497). `movedTrigger` refuses for five different reasons
+ * and two of them can land on the same kind: a `pad-button` is refused when it
+ * is held *and* when it is claimed in every context, and a `key` — which the
+ * registry normally takes — is refused when the trigger being *moved* is one
+ * the game does not offer. A capture modal keying its sentence on the kind
+ * therefore printed the hold sentence for a button that was claimed
+ * everywhere, and an empty string for a refused key.
+ *
+ * A code and not prose, for `RejectReason`'s reason next door in
+ * `layout-notice.ts`: #369 D11 gives `controls-reference.ts` the one owner of
+ * every printed name, and a sentence thrown from here is a developer's.
+ */
+export type RebindRefusal =
+	/** The trigger being moved is not one this game offers (`fixed`, a hold). */
+	| "not-offered"
+	/** The `to` changes `hold`, `alt` or `surface`, which are the command's. */
+	| "qualifiers"
+	/** A held pad button: `padFireHeld` reads a fixed position (#496). */
+	| "no-reader-held"
+	/** A stick or trigger: `padFlightAxes` reads fixed positions (#496). */
+	| "no-reader-axes"
+	/** The mouse, which nothing can record a move onto. */
+	| "no-capture-surface"
+	/** A button every surface claims, so a binding on it is live nowhere. */
+	| "live-nowhere";
+
+/**
+ * What `rebind` throws, carrying the code beside the developer's sentence.
+ *
+ * An `Error` subclass rather than a returned union, because `rebind` is called
+ * from `binding-store.ts`'s load path too — where the sentence becomes a
+ * `refused-by-registry` notice — and a second return shape there would be a
+ * second thing every caller has to unpack.
+ */
+export class RebindRefused extends Error {
+	constructor(
+		readonly refusal: RebindRefusal,
+		message: string,
+	) {
+		super(message);
+		this.name = "RebindRefused";
 	}
 }
 
@@ -2035,11 +2094,12 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
  * refusal can be lifted; a message saying only "not supported" would leave the
  * next slice guessing which function to go and look at.
  */
-const unstorable = (to: Trigger, why: string) =>
-	new Error(`a rebind cannot store a ${to.kind}: ${why}`);
+const unstorable = (refusal: RebindRefusal, to: Trigger, why: string) =>
+	new RebindRefused(refusal, `a rebind cannot store a ${to.kind}: ${why}`);
 
 const keptQualifiers = (from: Trigger, to: Trigger) =>
-	new Error(
+	new RebindRefused(
+		"qualifiers",
 		`a rebind may move a trigger, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
 	);
 

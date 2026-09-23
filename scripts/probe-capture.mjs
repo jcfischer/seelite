@@ -22,6 +22,7 @@
  * half — that nothing can lose its last trigger.
  */
 import { installFakePad, STANDARD_INDEX } from "./lib/fake-pad.mjs";
+import { degreesBetween, flightHarness } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {
 	bootedGame,
@@ -122,16 +123,21 @@ check(
  * refuse (this repo's "a limit is the first failure", on the other axis).
  *
  * So the arm is a comparison: the same window, the same length, with the stick
- * at rest and with it over. A suspended context makes those two the same
- * reading; a context that flies makes the second one many times the first, and
- * the row prints both so the separation is on the page rather than in a
- * constant.
+ * at rest and with it over.
+ *
+ * **And the replacement bound is measured, which the first one was not** —
+ * sage round 1 on #497 pointed out that it was otherwise as underived as the
+ * floor it indicts. On this build both readings are 0.00°; with `capture`
+ * added to `contextFliesShip` the pushed arm reads **9.67°** over the same
+ * forty frames. `max(atRest × 3, 0.2)` sits two orders of magnitude under that
+ * and above any drift the rest gate leaves behind. Both readings are printed,
+ * so a machine that disagrees says so on the page rather than through a
+ * constant nobody can check.
  */
-const nose = () => page.evaluate(() => window.__seelite.nose());
-const degreesBetween = (a, b) => {
-	const dot = Math.min(1, Math.max(-1, a.x * b.x + a.y * b.y + a.z * b.z));
-	return (Math.acos(dot) * 180) / Math.PI;
-};
+// **From the harness, not a third copy** (sage round 1 on #497). #381 S4
+// extracted `scripts/lib/flight-harness.mjs` on the argument that this file
+// would be the third copy of the angle maths — and then wrote one anyway.
+const { nose } = flightHarness(page);
 /** How far the nose moves over `n` frames, from wherever it is now. */
 const drift = async (n) => {
 	const start = await nose();
@@ -142,8 +148,25 @@ const drift = async (n) => {
 const WINDOW = 40;
 // The control first, while the sticks are still centred.
 const atRest = await drift(WINDOW);
+// **Count what the modal is offered, because "caught" cannot see "caught
+// forty times".** The edge was not holding in the game: `main.ts` kept the
+// previous `PadFrame` and compared against an object that had changed under
+// it, so a stick held over was re-offered on every frame while the row below
+// — which asks only whether the modal caught *a* stick and whether the ship
+// moved — stayed green, and the unit test stayed green because it passes an
+// explicit rest frame. Found by a page error, not by a check.
+await page.evaluate(() => {
+	window.__offers = 0;
+	const modal = window.__seelite.captureModal;
+	const inner = modal.offer;
+	modal.offer = (t) => {
+		window.__offers += 1;
+		return inner(t);
+	};
+});
 await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
 const turned = await drift(WINDOW);
+const offers = await page.evaluate(() => window.__offers);
 const caught = await modalText();
 
 check(
@@ -159,6 +182,12 @@ check(
 	// both readings zero, and a page that is tumbling makes both large.
 	turned < Math.max(atRest * 3, 0.2),
 	`the nose moved ${turned.toFixed(2)}° with the stick over, against ${atRest.toFixed(2)}° at rest over the same ${WINDOW} frames`,
+);
+
+check(
+	"and it is offered once, not on every frame the stick is over",
+	offers === 1,
+	`the modal was offered ${offers} times across ${WINDOW} frames`,
 );
 
 check(
@@ -182,11 +211,16 @@ await frames(3);
 // A pad button, captured and flown
 // ---------------------------------------------------------------------------
 
+/** Press a pad button and let go, the way a player does. */
+const tapPad = async (index) => {
+	await page.evaluate((i) => window.__pad.hold(i), index);
+	await frames(3);
+	await page.evaluate((i) => window.__pad.release(i), index);
+	await frames(3);
+};
+
 // `home` is the one standard button the shipped layout leaves free.
-await page.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX.home);
-await frames(3);
-await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.home);
-await frames(2);
+await tapPad(STANDARD_INDEX.home);
 
 check(
 	"a pad button is caught and offered, where the stick was refused",
@@ -209,10 +243,7 @@ check(
 await page.keyboard.press("2");
 await frames(3);
 const wasView = await view();
-await page.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX.home);
-await frames(3);
-await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.home);
-await frames(3);
+await tapPad(STANDARD_INDEX.home);
 const nowView = await view();
 
 check(
@@ -236,60 +267,96 @@ check(
 // The bootstrap: move every door, and still get in
 // ---------------------------------------------------------------------------
 
-// Every keyboard trigger that stands between a player and the rebind surface:
-// the reference chord and key, the head turns that reach the tab, and the
-// settings key itself. Moved onto the digits the shipped layout leaves free,
-// which `tests/commands.test.ts` names as `4`-`8`.
-const moved = await page.evaluate(() => {
-	const out = [];
-	for (const [command, to] of [
-		["view.reference", "4"],
-		["view.headStarboard", "5"],
-		["system.settings", "6"],
-	]) {
-		const row = window.__seelite
-			.layoutInForce()
-			.find((b) => b.command === command && b.trigger.kind === "key");
-		if (!row) {
-			out.push(`${command}: no key row`);
-			continue;
+// **Every key row of every door, not the first one** (sage round 1 on #497).
+// The first version took `.find(… kind === "key")` while the prose said "every
+// door trigger": `view.reference` is `?` **and** `F1`, and `view.headStarboard`
+// is `3` and the `Alt+→` chord — so two of the three doors kept a keyboard way
+// in, and the row could not show what it claimed.
+//
+// The pad rows are deliberately left where they are. The reach #369 D9 calls
+// structural *is* the head-turn and the shoulder, so moving those would ask a
+// different question — whether a player can shut themselves out of the
+// keyboard and the pad at once — which no single layout edit does.
+//
+// Moved onto the characters the shipped layout leaves free, which
+// `tests/commands.test.ts` names as `4`–`8`.
+const FREE_KEYS = ["4", "5", "6", "7", "8"];
+const DOORS = ["view.reference", "view.headStarboard", "system.settings"];
+const moved = await page.evaluate(
+	({ free, doors }) => {
+		const out = [];
+		let next = 0;
+		for (const command of doors) {
+			const rows = window.__seelite
+				.layoutInForce()
+				.filter((b) => b.command === command && b.trigger.kind === "key");
+			if (rows.length === 0) {
+				out.push(`${command}: no key row`);
+				continue;
+			}
+			for (const row of rows) {
+				const to = free[next++];
+				if (to === undefined) {
+					out.push(`${command}: ran out of free keys`);
+					continue;
+				}
+				try {
+					window.__seelite.rebindCommand(command, row.trigger, {
+						kind: "key",
+						key: to,
+						...(row.trigger.hold ? { hold: true } : {}),
+						...(row.trigger.alt ? { alt: true } : {}),
+					});
+					out.push(`${command}: ${row.trigger.key} -> ${to}`);
+				} catch (e) {
+					out.push(`${command}: ${e.message}`);
+				}
+			}
 		}
-		try {
-			window.__seelite.rebindCommand(command, row.trigger, {
-				kind: "key",
-				key: to,
-				...(row.trigger.hold ? { hold: true } : {}),
-				...(row.trigger.alt ? { alt: true } : {}),
-			});
-			out.push(`${command}: -> ${to}`);
-		} catch (e) {
-			out.push(`${command}: ${e.message}`);
-		}
-	}
-	return out;
-});
+		return out;
+	},
+	{ free: FREE_KEYS, doors: DOORS },
+);
 
 check(
-	"every door's key is moved off the one it shipped on",
-	moved.every((m) => m.includes("->")),
+	"every key row of every door is moved off the one it shipped on",
+	moved.length >= 5 && moved.every((m) => m.includes("->")),
 	moved.join(" | "),
+);
+
+check(
+	"and no door keeps a key it shipped on",
+	await page.evaluate(
+		({ free, doors }) =>
+			window.__seelite
+				.layoutInForce()
+				.filter((b) => doors.includes(b.command) && b.trigger.kind === "key")
+				.every((b) => free.includes(b.trigger.key)),
+		{ free: FREE_KEYS, doors: DOORS },
+	),
+	"every remaining key row of the three doors is on a key the player chose",
 );
 
 // **Back to the cockpit first.** The rows above left the view in chase — the
 // capture flew, which is what they were for — and `controlsKeyMove` abstains
 // outside the cockpit for the reason head-look does. `home` is the view toggle
 // now, which is itself a small proof that the capture stuck.
-await page.evaluate((i) => window.__pad.hold(i), STANDARD_INDEX.home);
-await frames(3);
-await page.evaluate((i) => window.__pad.release(i), STANDARD_INDEX.home);
-await frames(3);
+await tapPad(STANDARD_INDEX.home);
 check(
 	"the captured button gets back to the cockpit",
 	(await view()) === "cockpit",
 	await view(),
 );
 
-// The head turn is what reaches the tab, and it is on `5` now.
+// **`view.reference` is the door, and the free keys go out in order**, so it
+// holds `4` (was `?`) and `5` (was `F1`). Pressing either turns the head to
+// starboard *and* selects the tab, which a bare head turn does not — that
+// shows whichever right tab was last picked. `2` first, so the head is forward
+// and the turn is a turn.
+//
+// A comment here read "the head turn is what reaches the tab, and it is on `5`
+// now", which stopped being true the moment this block began moving every key
+// row rather than the first: `view.headStarboard` is on `6` and `7`.
 await page.keyboard.press("2");
 await frames(3);
 await page.keyboard.press("5");

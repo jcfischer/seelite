@@ -11,7 +11,7 @@
  */
 import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
-import type { Surface, TaskGroup, Trigger } from "./commands";
+import type { RebindRefusal, Surface, TaskGroup, Trigger } from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
@@ -434,30 +434,32 @@ const COMMAND_NAMES = new Map<string, string>(
  * player's words (#381 S4).
  *
  * **A table here rather than `movedTrigger`'s thrown string**, for
- * `REJECTED_WHY`'s reason one paragraph down and for a sharper one: the first
- * pass put the throw on the screen and the modal read
- * `a rebind may move a trigger, not its qualifiers: key:s::hold ->
- * key:k::press` — half English and half the hash `triggerKey` groups on. That
- * is the *same defect the storage slice shipped and had caught by looking at a
- * frame*, reintroduced on a different screen, with every headless row green.
- * The thrown message stays what a developer reads.
+ * `REJECTED_WHY`'s reason below and for a sharper one: the first pass put the
+ * throw on the screen and the modal read `a rebind may move a trigger, not its
+ * qualifiers: key:s::hold -> key:k::press` — half English and half the hash
+ * `triggerKey` groups on. That is the *same defect the storage slice shipped
+ * and had caught by looking at a frame*, on a different screen, with every
+ * headless row green. The thrown message stays what a developer reads.
  *
- * Keyed by `Trigger["kind"]`, so a new kind is a compile error here rather
- * than a modal that falls back to the hash again. The two the registry does
- * take have no sentence because they never reach this table; `never` is how
- * that is said rather than a pair of empty strings.
+ * **Keyed on the refusal and not on the trigger's kind**, which is what the
+ * second pass got wrong (sage round 1 on #497). Two different refusals land on
+ * `pad-button` — held, and claimed in every context — so a kind-keyed table
+ * printed the hold sentence for both; and a `key`, which the registry normally
+ * takes, is refused when the trigger being *moved* is one the game does not
+ * offer, where that table had only an empty string. `RebindRefusal` carries
+ * the reason and this maps it, so a new reason is a compile error here.
  */
-export const CAPTURE_REFUSED_WHY: Readonly<Record<Trigger["kind"], string>> = {
-	key: "",
-	"pad-button":
+export const CAPTURE_REFUSED_WHY: Readonly<Record<RebindRefusal, string>> = {
+	"not-offered": "This control is not one the game offers for rebinding.",
+	qualifiers:
+		"That is not the kind of press this control takes — it is held rather than tapped, or the other way round.",
+	"no-reader-held":
 		"This control is held down to work, and the pad cannot yet hold a button for it. Choose a key instead.",
-	"pad-stick":
-		"A stick cannot be bound yet — the ship still reads the sticks in fixed positions.",
-	"pad-trigger":
-		"A trigger cannot be bound yet — the ship still reads the triggers in fixed positions.",
-	"mouse-button": "The mouse buttons are not offered for rebinding.",
-	"mouse-move": "Mouse movement is not offered for rebinding.",
-	"pad-intent": "That button belongs to the console's own controls.",
+	"no-reader-axes":
+		"A stick or a trigger cannot be bound yet — the ship still reads them in fixed positions.",
+	"no-capture-surface": "The mouse is not offered for rebinding.",
+	"live-nowhere":
+		"Every screen already claims that button, so a control bound to it would never fire.",
 };
 
 /**

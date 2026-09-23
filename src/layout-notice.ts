@@ -32,6 +32,8 @@ import {
 	type CommandId,
 	type Layout,
 	rebind,
+	type RebindRefusal,
+	RebindRefused,
 	type Trigger,
 	triggerKey,
 } from "./commands";
@@ -63,12 +65,14 @@ export type RejectReason =
 	/**
 	 * The registry refused the move itself.
 	 *
-	 * Today that is always the qualifier law — a `to` that changes `hold`,
-	 * `alt` or `surface`, which is the command's to decide and not the
-	 * player's. It is named for the *refusal* and not for that law, because
-	 * the reason is whatever `rebind` throws and a guard added there later
-	 * would otherwise print a sentence about something else entirely
-	 * (sage round 1).
+	 * It is named for the *refusal* and not for any one law behind it, and
+	 * that has paid off twice. When this was written the only reachable cause
+	 * was the qualifier rule; #381 S4 gave `movedTrigger` a per-kind switch
+	 * with six `RebindRefusal` codes, and this row needed no edit. What
+	 * reaches a *stored* row is narrower than what reaches the capture modal,
+	 * because `acceptTrigger` refuses most of those shapes one layer earlier
+	 * — so the two have different vocabularies on purpose (sage round 1 on
+	 * #380, and round 1 on #497).
 	 */
 	| "refused-by-registry";
 
@@ -232,12 +236,16 @@ export function proposedRebind(
 	to: Trigger,
 ):
 	| { readonly layout: Layout; readonly warnings: LayoutNotice[] }
-	| { readonly refused: string } {
+	| { readonly refused: RebindRefusal; readonly detail: string } {
 	let layout: Layout;
 	try {
 		layout = rebind(bindings, command, from, to);
 	} catch (e) {
-		return { refused: e instanceof Error ? e.message : String(e) };
+		// **A throw that is not `RebindRefused` is not a refusal**, and folding
+		// it into one would print a player sentence about a programming error.
+		// It is rethrown, the way an unknown command already is.
+		if (!(e instanceof RebindRefused)) throw e;
+		return { refused: e.refusal, detail: e.message };
 	}
 	return { layout, warnings: collisionNotices(layout) };
 }
