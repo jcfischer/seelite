@@ -644,13 +644,28 @@ export function boundNames(
 }
 
 /**
+ * Several names for one command, as a player reads them: `j or k`.
+ *
+ * A `hold` every name shares is said once — `hold x or left mouse button` —
+ * because the qualifier is the command's (`movedTrigger`'s table) and a list
+ * that repeated it reads as a list of different gestures. Only when every
+ * name carries it: a press beside a hold keeps both words, since they are.
+ */
+export function anyOf(names: readonly string[]): string {
+	const HOLD = "hold ";
+	return names.length > 1 && names.every((n) => n.startsWith(HOLD))
+		? `${HOLD}${names.map((n) => n.slice(HOLD.length)).join(" or ")}`
+		: names.join(" or ");
+}
+
+/**
  * Two commands that are a pair, as one segment: `d-pad ↑/↓`, `L1/R1`.
  *
  * A shared first word is said once, so a pair reads as one control pushed two
  * ways rather than two controls. Everything before it is `triggerLabel`'s.
  */
 function pairOf(a: readonly string[], b: readonly string[]): string {
-	const [first, second] = [a.join(" or "), b.join(" or ")];
+	const [first, second] = [anyOf(a), anyOf(b)];
 	const space = first.lastIndexOf(" ");
 	const shared = space === -1 ? "" : first.slice(0, space + 1);
 	return shared && second.startsWith(shared)
@@ -725,7 +740,7 @@ export function padHintFor(
 ): string {
 	const on = (id: CommandId) => boundNames(layout, id, readInConsole);
 	const segment = (names: readonly string[], verb: string) =>
-		names.length > 0 ? [`${names.join(" or ")} ${verb}`] : [];
+		names.length > 0 ? [`${anyOf(names)} ${verb}`] : [];
 	const pair = (a: CommandId, b: CommandId, verb: string) =>
 		on(a).length > 0 && on(b).length > 0
 			? [`${pairOf(on(a), on(b))} ${verb}`]

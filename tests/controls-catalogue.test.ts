@@ -52,17 +52,20 @@ const keyShaped = (key: string) => key === key.toLowerCase();
 /**
  * Every key the game states **outside** the registry.
  *
- * Four panels keep a key constant of their own, because each is loaded on
- * demand and a static import from the registry would pull it into the eager
- * bundle. They are the whole of this set since #381's dispatch fold: `main.ts`
- * and `combat-rig.ts` no longer **compare** a key, so a scan of their text
- * answers nothing — and a scan that answers nothing makes a completeness row
- * vacuously green, which is the direction this file must never fail in.
+ * Four constants, in three panels. The perf panel's two are keys it reads.
+ * `SETTINGS_KEY` and `COMMANDER_KEY` are the two player screens' shipped
+ * defaults, and since #381 S5 neither screen reads its own: both open, close
+ * and print through the layout in force. They are the whole of this set since
+ * #381's dispatch fold: `main.ts` and `combat-rig.ts` no longer **compare** a
+ * key, so a scan of their text answers nothing — and a scan that answers
+ * nothing makes a completeness row vacuously green, which is the direction
+ * this file must never fail in.
  *
- * *Compared*, not *stated*: `combat-rig.ts` still draws `LEGEND`, which names
- * four keys in prose. The row below says why that is S5's and not a hole
- * here; this sentence said "state no key at all" for a round, and the fix
- * landed in one copy of the claim and not the other (sage round 5).
+ * *Compared*, and since S5 not *stated* either: `combat-rig.ts` drew a
+ * `LEGEND` naming four keys in prose until `rigLegend` read them off the
+ * layout. This sentence said "state no key at all" for a round before that
+ * was true, and the fix landed in one copy of the claim and not the other
+ * (sage round 5).
  */
 const sourceKeys = () =>
 	// **Unfiltered**: `keyShaped` is for scanner output, where a string with a
@@ -77,13 +80,12 @@ describe("the catalogue is complete against the source", () => {
 		// than breaking: a key *compared* in either file is a binding the
 		// registry does not own and the `Controls` tab cannot report.
 		//
-		// **Compared, not stated** — the weaker word is the true one, and the
-		// stronger one was wrong for a round. `combat-rig.ts` still ships
-		// `LEGEND`, which names SPACE, X, `/` and Q in a string it draws; the
-		// fold made all four rebindable and the legend will not follow one
-		// when it moves. That is #381's S5, the slice whose whole subject is
-		// every printed name having one owner, and `boundKeys` cannot see it
-		// anyway — a key inside a prose string is not a comparison shape.
+		// **Compared, not stated** — the weaker word was the true one for a
+		// round, while `combat-rig.ts` shipped a `LEGEND` naming SPACE, X, `/`
+		// and Q that the fold had made rebindable. #381 S5 derived it
+		// (`rigLegend`), and `tests/derived-names.test.ts` holds it; this scan
+		// could not have, since a key inside a prose string is not a
+		// comparison shape.
 		//
 		// Two things the scanner reads that are not keys, and both are named
 		// rather than filtered by shape. `main.ts` compares

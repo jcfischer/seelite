@@ -17,31 +17,45 @@ import {
 	rebind,
 	type Trigger,
 } from "../src/commands";
+import {
+	type FitCache,
+	fitLine,
+	RIG_MOUSE,
+	rigLegend,
+} from "../src/combat-rig";
 import { commanderHint } from "../src/commander-overlay";
 import { controlsCatalogue } from "../src/controls-catalogue";
 import {
+	anyOf,
 	boundNames,
 	COMMANDER_ACTION,
 	controlsTree,
 	onKeyboard,
 	padHintFor,
 	SETTINGS_ACTION,
+	triggerLabel,
 } from "../src/controls-reference";
 import { saveBadgeMarkup } from "../src/save-badge";
 import { settingsHint } from "../src/settings-panel";
 import * as padBindings from "../src/pad-bindings";
 import { shippedTrigger } from "./lib/shipped-trigger";
 
-const key = (k: string): Trigger => ({ kind: "key", key: k });
-
-/** A layout with one command's shipped key moved to `to`. */
-const movedKey = (command: string, to: string): Layout =>
-	rebind(
+/**
+ * A layout with one command's shipped key moved to `to`, keeping its
+ * qualifiers — `rebind` refuses a move that drops a `hold`, which is the
+ * command's and not the player's.
+ */
+const movedKey = (command: string, to: string): Layout => {
+	const from = shippedTrigger(command);
+	if (from.kind !== "key") throw new Error(`${command} ships no key`);
+	const { code: _code, ...qualifiers } = from;
+	return rebind(
 		DEFAULT_BINDINGS,
 		command as Parameters<typeof rebind>[1],
-		shippedTrigger(command),
-		key(to),
+		from,
+		{ ...qualifiers, key: to },
 	);
+};
 
 /**
  * A layout with one pad-intent row's button replaced.
@@ -179,5 +193,69 @@ describe("the Controls tab's doors (#381 S5)", () => {
 			items.slice(0, 2).map((i) => (i.kind === "action" ? i.action : i.kind)),
 		).toEqual([SETTINGS_ACTION, COMMANDER_ACTION]);
 		expect(items[2]?.kind).toBe("header");
+	});
+});
+
+describe("a list of names (#381 S5)", () => {
+	test("one name is itself, and several are joined with or", () => {
+		expect(anyOf(["j"])).toBe("j");
+		expect(anyOf(["j", "k"])).toBe("j or k");
+	});
+
+	test("a hold every name shares is said once", () => {
+		expect(anyOf(["hold x", "hold left mouse button"])).toBe(
+			"hold x or left mouse button",
+		);
+		// Only when every name shares it: a press beside a hold keeps both words.
+		expect(anyOf(["x", "hold left mouse button"])).toBe(
+			"x or hold left mouse button",
+		);
+	});
+});
+
+describe("the combat rig's legend (#381 S5)", () => {
+	test("the shipped layout's keys, and the rig's own mouse on the beam", () => {
+		expect(rigLegend(DEFAULT_BINDINGS)).toBe(
+			"hold Space pulse · hold x or left mouse button beam · / warning · q ECM",
+		);
+	});
+
+	test("each key is read off the layout", () => {
+		const legend = rigLegend(movedKey("fight.fireBeam", "c"));
+		expect(legend).toContain("hold c or left mouse button beam");
+		expect(rigLegend(movedKey("fight.firePulse", "v"))).toContain(
+			"hold v pulse",
+		);
+	});
+
+	test("the mouse is the rig's reading, printed in triggerLabel's words", () => {
+		expect(triggerLabel(RIG_MOUSE)).toBe("hold left mouse button");
+	});
+});
+
+describe("the rig's fitter re-solves a legend that changed (#381 S5)", () => {
+	/** A context that only measures: a monospace glyph is 0.6 of its size. */
+	const measuring = () => {
+		const ctx = {
+			font: "",
+			measureText: (text: string) => ({
+				width: text.length * 0.6 * Number.parseFloat(ctx.font),
+			}),
+		};
+		return ctx as unknown as Pick<
+			CanvasRenderingContext2D,
+			"font" | "measureText"
+		>;
+	};
+
+	test("a longer legend at the same width gets its own fit", () => {
+		const ctx = measuring();
+		const cache: FitCache = new Map();
+		const short = fitLine(ctx, cache, "legend", "x".repeat(40), 12, 390);
+		const long = fitLine(ctx, cache, "legend", "x".repeat(70), 12, 390);
+		// Keyed on the role and the width alone, the second call was answered
+		// out of the first's entry and reported the short line's width.
+		expect(long.worstWidth).toBeGreaterThan(short.worstWidth);
+		expect(long.worstWidth).toBeLessThanOrEqual(390 - 16);
 	});
 });

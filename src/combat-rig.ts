@@ -71,15 +71,96 @@ import {
 import { HULL_SPECS } from "./hull";
 import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
-import type { CommandId } from "./commands";
+import type { CommandId, Layout, Trigger } from "./commands";
+import { anyOf, boundNames, onKeyboard, triggerLabel } from "./controls-reference";
 import type { Ship } from "./sim";
 import type { DisplayContact } from "./display-contact";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";
 import { type Vec3, add, cross, length, scale, sub, v3 } from "./vec3";
 
-/** The legend, and the widest text each status line is fitted against. */
-const LEGEND =
-	"COMBAT PROTOTYPE — hold SPACE pulse · LMB / X beam · / warning · Q ECM";
+/**
+ * The rig's mouse: held, it fires the **beam** here.
+ *
+ * **Not a binding, and the registry says otherwise on purpose.** In normal
+ * play the held mouse button is `fight.firePulse`'s, and that is the row the
+ * `Controls` tab prints. This rig reads the pointer itself — `mouseFiring` in
+ * `step` — and has since before the registry existed, so the two disagree
+ * about one button in `?combat=1` alone. The principal ruled that the rig
+ * says so itself rather than moving either side (#381 S5): the legend prints
+ * this through `triggerLabel`, so the word is the registry's and the reading
+ * is the rig's, and the disagreement is recorded here rather than resolved.
+ */
+export const RIG_MOUSE: Trigger = { kind: "mouse-button", action: "hold" };
+
+/**
+ * The legend, read off the layout in force (#381 S5).
+ *
+ * It was one authored string naming `SPACE`, `LMB`, `X`, `/` and `Q` — five
+ * keys the dispatch slice made rebindable and the legend could not follow.
+ * The verbs are the rig's; every name is `boundNames`', on the keyboard,
+ * which is the device this line has always spoken to.
+ *
+ * **It lost its `COMBAT PROTOTYPE —` title to do it.** Spelled in
+ * `triggerLabel`'s words the line is longer than the authored one was — `hold
+ * left mouse button` where it said `LMB` — and at 390 px it measured 432 px
+ * against 374 px of room at the fitter's 8 px floor, which
+ * `probe-live-cockpit.mjs`'s narrow row refuses. Without the title it is 71
+ * characters and fits; the keys are what the line is for, and the page it is
+ * drawn on is `?combat=1`, which says what it is.
+ */
+export function rigLegend(layout: Layout): string {
+	const keys = (id: CommandId) => boundNames(layout, id, onKeyboard);
+	const beam = anyOf([...keys("fight.fireBeam"), triggerLabel(RIG_MOUSE)]);
+	return `${anyOf(keys("fight.firePulse"))} pulse · ${beam} beam · ${anyOf(keys("fight.rigIncoming"))} warning · ${anyOf(keys("fight.rigEcm"))} ECM`;
+}
+
+/** The font a line was fitted at, and the width its widest text takes there. */
+export interface Fit {
+	readonly font: string;
+	readonly worstWidth: number;
+}
+export type FitCache = Map<string, Fit>;
+
+/**
+ * The font one status line fits in, and the width its worst case occupies.
+ *
+ * **Fitted against the widest text the line can ever hold, not against the
+ * live digits**, so a reading that grows by a character does not resize the
+ * line under the player. That makes the answer a property of the line and
+ * the glass width alone, which is what lets it be cached: the rig measures
+ * once per role per width, not once per frame.
+ *
+ * **Keyed on the widest text too** (#381 S5). The legend's widest text *is*
+ * the legend, and it is read off the layout now, so a rebind changes it;
+ * keyed on the role and the width alone, the first legend's fit would be
+ * answered for every legend after it, and a longer one would overrun the
+ * glass it was measured to fit. Out of the class so the unit tier can hold
+ * that, with a context that only measures.
+ */
+export function fitLine(
+	ctx: Pick<CanvasRenderingContext2D, "font" | "measureText">,
+	cache: FitCache,
+	key: string,
+	widest: string,
+	startSize: number,
+	w: number,
+): Fit {
+	const cacheKey = `${key}|${w}|${widest}`;
+	const held = cache.get(cacheKey);
+	if (held) return held;
+	let size = startSize;
+	ctx.font = `${size}px ui-monospace, monospace`;
+	while (size > 8 && ctx.measureText(widest).width > w - 16) {
+		size -= 1;
+		ctx.font = `${size}px ui-monospace, monospace`;
+	}
+	const fitted = {
+		font: ctx.font,
+		worstWidth: ctx.measureText(widest).width,
+	};
+	cache.set(cacheKey, fitted);
+	return fitted;
+}
 
 /**
  * Incoming fire, as bolts that travel.
@@ -329,12 +410,8 @@ export class CombatPrototypeRig {
 	private wasHit = false;
 	private incoming = false;
 	private ecm = false;
-	/** Fitted overlay font cache: keyed by role + glass width; the fit is
-	 *  computed against a widest-case text so any live state fits. */
-	private readonly statusFit = new Map<
-		string,
-		{ font: string; worstWidth: number }
-	>();
+	/** Fitted overlay font cache; see `fitLine` for what it is keyed on. */
+	private readonly statusFit: FitCache = new Map();
 
 	constructor(
 		scene: THREE.Scene,
@@ -840,37 +917,14 @@ export class CombatPrototypeRig {
 		ctx.restore();
 	}
 
-	/**
-	 * The font one status line fits in, and the width its worst case occupies.
-	 *
-	 * **Fitted against the widest text the line can ever hold, not against the
-	 * live digits**, so a reading that grows by a character does not resize the
-	 * line under the player. That makes the answer a property of the line and
-	 * the glass width alone, which is what lets it be cached: the loop below
-	 * measures once per role per width, not once per frame.
-	 */
 	private fitFont(
 		ctx: CanvasRenderingContext2D,
 		key: string,
 		widest: string,
 		startSize: number,
 		w: number,
-	): { font: string; worstWidth: number } {
-		const cacheKey = `${key}|${w}`;
-		const held = this.statusFit.get(cacheKey);
-		if (held) return held;
-		let size = startSize;
-		ctx.font = `${size}px ui-monospace, monospace`;
-		while (size > 8 && ctx.measureText(widest).width > w - 16) {
-			size -= 1;
-			ctx.font = `${size}px ui-monospace, monospace`;
-		}
-		const fitted = {
-			font: ctx.font,
-			worstWidth: ctx.measureText(widest).width,
-		};
-		this.statusFit.set(cacheKey, fitted);
-		return fitted;
+	): Fit {
+		return fitLine(ctx, this.statusFit, key, widest, startSize, w);
 	}
 
 	/** Whether the weapon is showing at all. One predicate, because the 3D beam
@@ -900,6 +954,8 @@ export class CombatPrototypeRig {
 		w: number,
 		h: number,
 		view: CombatView,
+		/** The layout in force, which the legend names its keys from. */
+		layout: Layout,
 	): void {
 		if (view !== "cockpit") {
 			this.clearOverlay();
@@ -925,13 +981,14 @@ export class CombatPrototypeRig {
 			return fit;
 		};
 		const s = this.state;
+		const legend = rigLegend(layout);
 		drawFitted(
-			LEGEND,
+			legend,
 			h * 0.72,
 			"rgba(255, 214, 120, 0.9)",
 			12,
 			"legend",
-			LEGEND,
+			legend,
 		);
 		drawFitted(
 			`TARGET  SHIELDS F ${s.targetForeShield.toFixed(0)}  A ${s.targetAftShield.toFixed(0)}  HULL ${s.targetHull.toFixed(0)} · AI ${this.enemy.phase.toUpperCase()} · HOSTILE ${s.enemyFiring?.toUpperCase() ?? "SAFE"}`,

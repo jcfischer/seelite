@@ -14329,7 +14329,7 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
-		this.combatRig?.drawOverlay(ctx, w, h, this.view);
+		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
