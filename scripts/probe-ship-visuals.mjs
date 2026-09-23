@@ -71,14 +71,12 @@ for (const viewport of VIEWPORTS) {
 			cockpit.physicalCockpit &&
 			!cockpit.duplicateDomFloor,
 	);
-	const framesBeforeChase = await page.evaluate(() => window.__seelite.frames);
 	await page.keyboard.press("v");
-	await page.waitForFunction(() => window.__seelite?.view === "chase");
-	// The key changes the view immediately; visibility and offset are written
-	// by render. At the narrow viewport the old read sometimes beat that frame.
+	// Visibility is written by render after the view changes in the key handler.
+	// Waiting on the drawn state cannot be satisfied by frames before the press.
 	await page.waitForFunction(
-		(before) => window.__seelite.frames > before + 1,
-		framesBeforeChase,
+		() =>
+			window.__seelite?.view === "chase" && window.__seelite.shipMesh.visible,
 	);
 	const chase = await page.evaluate(state);
 	check(
@@ -119,16 +117,16 @@ for (const viewport of VIEWPORTS) {
 			Math.abs(length(orbited.shipOffset) - length(chase.shipOffset)) < 1e-6,
 	);
 
-	// **Wait for a drawn frame after the key.** `2` zeroes `chaseYaw` inside the
-	// key handler, but the ship offset read below is placed by `render` — so a
-	// read taken before the next frame compares the orbited offset against the
-	// astern one. The row flaked on that race on `main` as well (#324 part b's
-	// probe run: 1 of 2 there, 3 of 3 on the branch), narrow viewport only.
-	const framesBeforeCentre = await page.evaluate(() => window.__seelite.frames);
+	// `2` zeroes chaseYaw in the key handler; render then restores the astern
+	// offset. Wait for that offset itself so earlier frames cannot satisfy it.
 	await page.keyboard.press("2");
 	await page.waitForFunction(
-		(before) => window.__seelite.frames > before + 1,
-		framesBeforeCentre,
+		(offset) =>
+			window.__seelite.chaseYaw === 0 &&
+			window.__seelite.shipMesh.position
+				.toArray()
+				.every((n, i) => Math.abs(n - offset[i]) < 1e-6),
+		chase.shipOffset,
 	);
 	const centred = await page.evaluate(state);
 	check(
