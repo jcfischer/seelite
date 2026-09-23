@@ -37,8 +37,9 @@
  *
  * ## One owner for what it prints
  *
- * `triggerLabel` and `noticeText` are `controls-reference.ts`'s, which #369
- * D11 makes the one owner of every printed control name. A modal with its own
+ * `triggerLabel` is `key-names.ts`'s, the one module that spells a key (#369
+ * D11, as #499 D2 reads it), and `noticeText` is the `Controls` tab's, which
+ * spells its key through the same function. A modal with its own
  * phrasing for a collision would be the second copy that ruling exists to
  * refuse — and it would drift from the band on the tab behind it, which is the
  * same sentence about the same table.
@@ -46,11 +47,8 @@
 import type { CommandId, Layout, RebindRefusal, Trigger } from "./commands";
 import type { ControlsCatalogue } from "./controls-catalogue";
 import { heldRather } from "./commands";
-import {
-	CAPTURE_REFUSED_WHY,
-	noticeText,
-	triggerLabel,
-} from "./controls-reference";
+import { CAPTURE_REFUSED_WHY, noticeText } from "./controls-reference";
+import { triggerLabel } from "./key-names";
 import { escapeHtml } from "./escape-html";
 import { type LayoutNotice, proposedRebind } from "./layout-notice";
 

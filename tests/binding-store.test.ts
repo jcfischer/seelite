@@ -38,9 +38,10 @@ import {
 	type Trigger,
 	triggerKey,
 } from "../src/commands";
-// The sentence a notice prints lives with every other printed control name
-// (#369 D11), not in the store — so this file reaches for it where it is
-// owned rather than letting the store grow a second formatter.
+// The sentence a notice prints lives with the `Controls` tab, which spells its
+// keys through `key-names.ts` (#369 D11, #499), not in the store — so this file
+// reaches for it where it is owned rather than letting the store grow a second
+// formatter.
 import { noticeText } from "../src/controls-reference";
 
 /**

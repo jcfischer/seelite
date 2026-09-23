@@ -72,12 +72,7 @@ import { HULL_SPECS } from "./hull";
 import { mix, seedFor } from "./rng";
 import { buildShipMesh } from "./ship-mesh";
 import type { CommandId, Layout, Trigger } from "./commands";
-import {
-	anyOf,
-	boundNames,
-	onKeyboard,
-	triggerLabel,
-} from "./controls-reference";
+import { anyOf, boundNames, onKeyboard, triggerLabel } from "./key-names";
 import type { Ship } from "./sim";
 import type { DisplayContact } from "./display-contact";
 import { PROMPT_FILL, PROMPT_FONT, TextRaster } from "./text-raster";

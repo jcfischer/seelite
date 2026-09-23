@@ -24,7 +24,7 @@ import {
 	messageOf,
 	randomSeed,
 } from "./commander-flow";
-import type { OwnKey } from "./controls-reference";
+import type { OwnKey } from "./key-names";
 import { isEditable } from "./editable-target";
 import type { CommanderCatalog } from "./save-store";
 

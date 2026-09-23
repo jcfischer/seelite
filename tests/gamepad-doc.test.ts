@@ -30,7 +30,7 @@ import {
 	type Layout,
 	type Trigger,
 } from "../src/commands";
-import { anyOf, boundNames, triggerLabel } from "../src/controls-reference";
+import { anyOf, boundNames, triggerLabel } from "../src/key-names";
 import type { PadContext } from "../src/pad-bindings";
 
 const DOC = join(import.meta.dir, "..", "docs", "gamepad.md");

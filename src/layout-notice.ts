@@ -17,9 +17,9 @@
  * pay is the second caller, which is this slice's.
  *
  * **Data, not prose.** The sentence each of these prints is
- * `controls-reference.ts`'s, beside every other printed control name — #369
- * D11 gives that module the one owner, and a formatter here would be the
- * second copy. What the split buys a reader beyond tidiness is an edge
+ * `controls-reference.ts`'s, which spells its keys through `key-names.ts`
+ * (#369 D11, as #499 D2 reads it); a formatter here would be the second
+ * copy. What the split buys a reader beyond tidiness is an edge
  * removed: the tab's formatter used to reach *through* the persistence module
  * to name the union, and does not now.
  *
@@ -51,8 +51,8 @@ import {
  * five while the union held six inside one round (sage round 3), which is what
  * a count of a list right below it is worth.
  *
- * A code rather than a sentence, for #369 D11's reason: the sentence belongs
- * with every other printed control name, in `controls-reference.ts`.
+ * A code rather than a sentence, for #369 D11's reason: the sentence is
+ * `controls-reference.ts`'s, and a second phrasing here would drift from it.
  */
 export type RejectReason =
 	/** The entry is not an object at all. A record whose `command` is not a
@@ -86,9 +86,9 @@ export type RejectReason =
 /**
  * Something the player is owed a sentence about.
  *
- * Data, not prose. The sentence is `controls-reference.ts`'s, beside every
- * other printed control name — #369 D11 gives that module the one owner, and
- * a formatter here would be the second copy.
+ * Data, not prose. The sentence is `controls-reference.ts`'s, with its keys
+ * spelled by `key-names.ts` (#369 D11, as #499 D2 reads it), and a formatter
+ * here would be the second copy.
  */
 export type LayoutNotice =
 	/**

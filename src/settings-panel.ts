@@ -16,7 +16,7 @@ import {
 	type SettingsStore,
 	settingSpec,
 } from "./settings";
-import type { OwnKey } from "./controls-reference";
+import type { OwnKey } from "./key-names";
 import { isEditable } from "./editable-target";
 import { escapeHtml } from "./escape-html";
 

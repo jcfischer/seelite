@@ -53,6 +53,7 @@ const HEADLESS = [
 	"hull",
 	"hyperspace",
 	"key-dispatch",
+	"key-names",
 	"layout-notice",
 	"names",
 	"noise",
@@ -116,6 +117,7 @@ test("no module has been quietly dropped from the list", () => {
 		"hull",
 		"hyperspace",
 		"key-dispatch",
+		"key-names",
 		"layout-notice",
 		"names",
 		"noise",
@@ -182,6 +184,28 @@ test("src/knowledge-labels.ts imports types and nothing else", () => {
 	// imports rather than asserting the empty list `units.ts` gets.
 	const code = codeOf("src/knowledge-labels.ts");
 	const valueImports = (code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length;
+	const reExports = (code.match(/^\s*export\s+.*\bfrom\s*["']/gm) ?? []).length;
+	expect({ valueImports, reExports }).toEqual({
+		valueImports: 0,
+		reExports: 0,
+	});
+});
+
+test("src/key-names.ts imports types and nothing else", () => {
+	// #499 D4: the cycle `commander-overlay` → `key-names` → `commands` →
+	// `commander-overlay` is closed by this row, not by anyone remembering it.
+	// `commands.ts` value-imports the Commander overlay for its default key, and
+	// the overlay reads `OwnKey` from here; one value import back into the
+	// registry would give that loop a runtime edge.
+	//
+	// And no re-exports, because the leaf is the one module that spells a key
+	// (#499 D2) and a second import path to its names is the coupling
+	// `carrier-key.ts` was split out to end. `import(` is counted too — the
+	// module doc above names it as the form a line-start match misses.
+	const code = codeOf("src/key-names.ts");
+	const valueImports =
+		(code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length +
+		(code.match(/\bimport\s*\(/g) ?? []).length;
 	const reExports = (code.match(/^\s*export\s+.*\bfrom\s*["']/gm) ?? []).length;
 	expect({ valueImports, reExports }).toEqual({
 		valueImports: 0,

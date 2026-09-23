@@ -128,7 +128,8 @@ describe("what the modal says", () => {
 	});
 
 	test("a warning is printed as the sentence the band prints", () => {
-		// #369 D11: one owner for every printed name, and `noticeText` is it.
+		// #369 D11: one phrasing for every printed name, and for a notice
+		// `noticeText` is it.
 		// A modal with its own phrasing is the second copy that ruling refuses.
 		const html = captureModalMarkup(
 			offered(open(), DEFAULT_BINDINGS, { kind: "key", key: "k" }),
