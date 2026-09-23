@@ -97,6 +97,19 @@ export const PROBE_CATALOG = Object.freeze(
 			["ship death", "save recovery", "permadeath", "reload", "world state"],
 		),
 		entry(
+			"probe-derived-names.mjs",
+			"Moves a command to a free key, reads each surface that names it off the screen — the settings and Commander footers, the Commanders door, the cruise and target prompts, the combat rig's legend and the legacy dial line — presses the key the surface names, and checks it does what the surface says; also that the key legend strip is gone and that the pad reaches the settings door.",
+			[
+				"derived key names",
+				"rebind",
+				"settings footer",
+				"Commander overlay",
+				"cruise prompt",
+				"combat rig legend",
+				"Controls tab door",
+			],
+		),
+		entry(
 			"probe-display-contacts.mjs",
 			"Checks that contact producers feed live target selection, Navigation, and scanner presentation.",
 			["display contacts", "target selection", "Navigation", "scanner"],
