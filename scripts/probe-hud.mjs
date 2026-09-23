@@ -265,7 +265,7 @@ if (legacyEta.noTarget) {
 	check(
 		"the legacy compatibility panel names the regime that can get there",
 		legacyEta.regime === "normal" &&
-			/press J to cruise/.test(legacyEta.bootText),
+			/press j to cruise/.test(legacyEta.bootText),
 		legacyEta.bootText.split("\n")[1] ?? legacyEta.bootText,
 	);
 	check(

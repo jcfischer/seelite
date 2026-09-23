@@ -462,7 +462,7 @@ for (const viewport of VIEWPORTS) {
 			globalThis.__seeliteEtaReadout.test(
 				game.cockpit.targetInstrument.secondaryText.text,
 			) &&
-			game.cockpitPrompt.text.includes("press J to cruise")
+			game.cockpitPrompt.text.includes("press j to cruise")
 		);
 	});
 	const distant = await page.evaluate(measureLiveCockpit);
@@ -472,7 +472,7 @@ for (const viewport of VIEWPORTS) {
 			distant.targetInstrumentSecondaryText &&
 			distant.cruisePromptText &&
 			ETA_READOUT.test(distant.targetInstrumentSecondaryReadout ?? "") &&
-			distant.cruisePromptReadout.includes("press J to cruise"),
+			distant.cruisePromptReadout.includes("press j to cruise"),
 		`range ${distant.targetRangeKm}; target-panel ${distant.targetInstrumentSecondaryReadout}; prompt ${distant.cruisePromptReadout}; text match ${distant.targetInstrumentSecondaryText}/${distant.cruisePromptText}`,
 	);
 

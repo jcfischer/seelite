@@ -757,3 +757,48 @@ export function padHintFor(
 		...pair("panel.tabPrevious", "panel.tabNext", "TAB"),
 	].join(" · ");
 }
+
+/**
+ * A command as a prompt names it: its keyboard triggers, or — when a player
+ * moved every one of them to the pad — wherever they went.
+ *
+ * The keyboard first because the prompt line has always spoken to it, and a
+ * line naming `Y` beside `j` for a keyboard player is noise on every frame.
+ * The fallback is not decoration: `rebind` moves a trigger and never removes
+ * one, so a command with no key left still has a button, and a prompt that
+ * printed nothing would read `press  to cruise`.
+ */
+function spoken(layout: Layout, id: CommandId): string {
+	const keys = boundNames(layout, id, onKeyboard);
+	return anyOf(keys.length > 0 ? keys : boundNames(layout, id));
+}
+
+/**
+ * The prompt line's three sentences that name a control (#381 S5).
+ *
+ * `main.ts`'s `cruisePrompt` picks which one shows; these say it. They were
+ * authored there — `press \` to jump`, `T selects a target`, `press J to
+ * cruise` — and in capitals the tab never printed, which is #370 D7's
+ * "every other key prints as the character you type" and the principal's
+ * ruling that the glass follows it rather than the tab following the glass.
+ */
+export const jumpPrompt = (layout: Layout, hop: string): string =>
+	`press ${spoken(layout, "fly.jump")} to jump to ${hop}`;
+export const targetPrompt = (layout: Layout): string =>
+	`${spoken(layout, "fight.targetNext")} selects a target`;
+export const cruisePrompt = (layout: Layout): string =>
+	`press ${spoken(layout, "fly.cruise")} to cruise`;
+
+/**
+ * A cruise dial's two keys, for the legacy HUD's dial line: `(-/=)`.
+ *
+ * In parentheses rather than the brackets the line used, because two of the
+ * dials *are* the bracket keys and `[[/]]` reads as punctuation rather than
+ * as two keys. Keyboard only, which is what that line is for.
+ */
+export const dialKeys = (
+	layout: Layout,
+	down: CommandId,
+	up: CommandId,
+): string =>
+	`(${pairOf(boundNames(layout, down, onKeyboard), boundNames(layout, up, onKeyboard))})`;

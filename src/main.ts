@@ -559,10 +559,14 @@ import {
 	boundNames,
 	COMMANDER_ACTION,
 	controlsKeyMove,
+	cruisePrompt,
+	dialKeys,
+	jumpPrompt,
 	onKeyboard,
 	type OwnKey,
 	restoreOnTabPick,
 	SETTINGS_ACTION,
+	targetPrompt,
 } from "./controls-reference";
 import type { CaptureModalHandle } from "./capture-modal";
 import { isEditable } from "./editable-target";
@@ -8923,10 +8927,16 @@ class Game {
 		// Five sage rounds and 1,110 headless tests had not found it, because
 		// none of them asks whether a player would ever see the line.
 		//
-		// It wins over "press J to cruise" rather than sharing the row, because
-		// cruise is discoverable without this line — the key help along the
-		// bottom of the frame names it — and the jump was not discoverable
-		// anywhere.
+		// It wins over the cruise prompt rather than sharing the row. **The
+		// reason given here was that cruise stays discoverable without this
+		// line, because the key legend along the bottom of the frame named
+		// it** — and #381 S5 deleted that legend on the principal's ruling
+		// (#369 D11: generated or deleted, and this argument moves with it).
+		// What is left is the `Controls` tab, which names every key but only
+		// once it is opened. So a pilot who sets a course before finding
+		// cruise sees the jump line and not the cruise one until the course
+		// is cleared or flown; that is a consequence of the ruling, stated
+		// here rather than argued away.
 		//
 		// **This is the prompt only.** A *persistent* indication that a course is
 		// set is #117's, and it is a real gap: today the set course appears in
@@ -8945,15 +8955,15 @@ class Game {
 			// predicate, read by both.
 			const decision = this.jumpDecision(hop);
 			return decision.ok
-				? `press \` to jump to ${hop.name}`
+				? jumpPrompt(this.bindings, hop.name)
 				: jumpRefusalText(decision.refusal, hop.name);
 		}
-		if (targetKm === null) return "T selects a target";
+		if (targetKm === null) return targetPrompt(this.bindings);
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
 		// argument — and above it the answer is always cruise.
 		if (targetKm < 3600 * ASSIST_CAP_KMS) return "";
-		return "press J to cruise";
+		return cruisePrompt(this.bindings);
 	}
 
 	/**
@@ -13358,12 +13368,15 @@ class Game {
 			// setting is not visible produces judgements that cannot be written
 			// down afterwards, which is the one thing this node has to deliver.
 			[
-				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c [-/=]`,
-				`exp ${p.exponent.toFixed(2)} [ [ / ] ]`,
-				`drop ${p.dropRadiusKm} km [;/']`,
-				`below ${p.dropSpeedKms} km/s [,/.]`,
-				`vicinity ${range(p.vicinityKm)} [n/m]`,
-				`lead ${p.approachLeadS}s [k/l]`,
+				// The keys off the layout in force (#381 S5): every dial is an
+				// ordinary command since D12, so a moved one printed its old key
+				// here.
+				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c ${dialKeys(this.bindings, "tune.vMaxDown", "tune.vMaxUp")}`,
+				`exp ${p.exponent.toFixed(2)} ${dialKeys(this.bindings, "tune.exponentDown", "tune.exponentUp")}`,
+				`drop ${p.dropRadiusKm} km ${dialKeys(this.bindings, "tune.dropRadiusDown", "tune.dropRadiusUp")}`,
+				`below ${p.dropSpeedKms} km/s ${dialKeys(this.bindings, "tune.dropSpeedDown", "tune.dropSpeedUp")}`,
+				`vicinity ${range(p.vicinityKm)} ${dialKeys(this.bindings, "tune.vicinityDown", "tune.vicinityUp")}`,
+				`lead ${p.approachLeadS}s ${dialKeys(this.bindings, "tune.approachLeadDown", "tune.approachLeadUp")}`,
 			].join("   "),
 		];
 		// The clock is quantised into the key separately because it is *not* on

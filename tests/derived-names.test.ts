@@ -30,9 +30,13 @@ import {
 	boundNames,
 	COMMANDER_ACTION,
 	controlsTree,
+	cruisePrompt,
+	dialKeys,
+	jumpPrompt,
 	onKeyboard,
 	padHintFor,
 	SETTINGS_ACTION,
+	targetPrompt,
 	triggerLabel,
 } from "../src/controls-reference";
 import { saveBadgeMarkup } from "../src/save-badge";
@@ -257,5 +261,49 @@ describe("the rig's fitter re-solves a legend that changed (#381 S5)", () => {
 		// out of the first's entry and reported the short line's width.
 		expect(long.worstWidth).toBeGreaterThan(short.worstWidth);
 		expect(long.worstWidth).toBeLessThanOrEqual(390 - 16);
+	});
+});
+
+describe("the prompt line and the dial legend (#381 S5)", () => {
+	test("the shipped layout's prompts, in the characters a player types", () => {
+		expect(jumpPrompt(DEFAULT_BINDINGS, "ANDIMA")).toBe(
+			"press ` to jump to ANDIMA",
+		);
+		expect(targetPrompt(DEFAULT_BINDINGS)).toBe("t selects a target");
+		expect(cruisePrompt(DEFAULT_BINDINGS)).toBe("press j to cruise");
+	});
+
+	test("each prompt reads the layout", () => {
+		expect(jumpPrompt(movedKey("fly.jump", "4"), "ANDIMA")).toBe(
+			"press 4 to jump to ANDIMA",
+		);
+		expect(targetPrompt(movedKey("fight.targetNext", "5"))).toBe(
+			"5 selects a target",
+		);
+		expect(cruisePrompt(movedKey("fly.cruise", "6"))).toBe(
+			"press 6 to cruise",
+		);
+	});
+
+	test("a command moved off the keyboard is named where it went", () => {
+		const onPad = rebind(
+			DEFAULT_BINDINGS,
+			"fly.cruise",
+			shippedTrigger("fly.cruise"),
+			{ kind: "pad-button", button: "l3", contexts: [] },
+		);
+		expect(cruisePrompt(onPad)).toBe("press L3 or Y to cruise");
+	});
+
+	test("the dial legend pairs each dial's two keys off the layout", () => {
+		expect(dialKeys(DEFAULT_BINDINGS, "tune.vMaxDown", "tune.vMaxUp")).toBe(
+			"(-/=)",
+		);
+		expect(
+			dialKeys(DEFAULT_BINDINGS, "tune.exponentDown", "tune.exponentUp"),
+		).toBe("([/])");
+		expect(
+			dialKeys(movedKey("tune.vicinityUp", "4"), "tune.vicinityDown", "tune.vicinityUp"),
+		).toBe("(n/4)");
 	});
 });
