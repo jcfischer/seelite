@@ -400,6 +400,7 @@ import {
 	relayDetection,
 	relayInSights,
 	relayLog,
+	relayActive,
 	relayPosition,
 	relayIdentified,
 	relayScannerFitted,
@@ -884,22 +885,6 @@ const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
-/**
- * #43's pirate relay prototype: development builds only, on
- * `?relay-prototype=1`, the way #343's Requests trial is gated. The relay's
- * carrier key exists regardless (`pirate-relay.ts`), so nothing about a save
- * depends on the query string; what the flag turns on is the drawn relay, its
- * signal, its target and its dial on the leg law. In a production build the
- * flag is `false` and its branches fold; the relay modules, the mesh and the
- * cue's aside are still in the bundle, inert.
- */
-const RELAY_PARAM = new URLSearchParams(window.location.search).get(
-	"relay-prototype",
-);
-const RELAY_PROTOTYPE =
-	import.meta.env.DEV &&
-	RELAY_PARAM !== null &&
-	!["off", "0", "false"].includes(RELAY_PARAM);
 
 /** What one frame read of the relay (#43), for the renderer and the glass. */
 interface RelayView {
@@ -10821,7 +10806,11 @@ class Game {
 		const { record, contents } = this.world.system;
 		if (this.relayPlanSystem !== record.index) {
 			this.relayPlanSystem = record.index;
-			this.relayPlanCache = relayPlan(contents, record.seed);
+			// #351: an inactive relay is absent — no plan, so nothing below draws,
+			// reads or dials it.
+			this.relayPlanCache = relayActive(record)
+				? relayPlan(contents, record.seed)
+				: null;
 		}
 		return this.relayPlanCache;
 	}
@@ -10838,7 +10827,7 @@ class Game {
 	 * transition in the game goes through.
 	 */
 	private stepRelay(shot: PlayerShot) {
-		const plan = RELAY_PROTOTYPE ? this.currentRelayPlan() : null;
+		const plan = this.currentRelayPlan();
 		if (!plan) {
 			this.relayView = null;
 			return;
@@ -11020,7 +11009,7 @@ class Game {
 		const plan = this.currentRelayPlan();
 		const record = this.world.system.record;
 		return {
-			enabled: RELAY_PROTOTYPE,
+			active: plan !== null,
 			plan,
 			// The relay where the clock stands, for the same reason the
 			// presentation reads it there: a probe aiming at the frame-start
@@ -11038,7 +11027,6 @@ class Game {
 	/** #43: the relay's dial on a leg to the selected target, as it stands.
 	 *  One expression, read by the scheduler and by the probe readout. */
 	private relayDetectionNow(): RouteDetection {
-		if (!RELAY_PROTOTYPE) return "law";
 		const record = this.world.system.record;
 		return relayDetection(
 			this.currentRelayPlan(),
@@ -12659,7 +12647,9 @@ class Game {
 								this.world.gameTime,
 							),
 							// #43: the relay's lifecycle in the same log, same derivation.
-							...(RELAY_PROTOTYPE
+							// An inactive relay is absent, log included — a save from the
+							// prototype can hold rows for one, and they stay unread (#351).
+							...(this.currentRelayPlan()
 								? relayLog(
 										this.commerceWorld.galaxies[
 											this.world.system.record.galaxy

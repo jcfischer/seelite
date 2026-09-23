@@ -351,20 +351,22 @@ describe("the duel in play", () => {
 
 describe("the relay's dial on the leg (node #43)", () => {
 	const record = generateGalaxy(WORLD, 0).systems[5];
-	test("`certain` schedules a raider on every leg with an operational slot, `none` on no leg", () => {
-		for (let leg = 0; leg < 200; leg++) {
-			expect(
-				scheduleEncounter(ALL_UP, 5, record, leg, 0, "certain"),
-			).not.toBeNull();
+	test("`watched` schedules a raider on about 90% of legs with an operational slot, `none` on no leg", () => {
+		let met = 0;
+		for (let leg = 0; leg < 2000; leg++) {
+			if (scheduleEncounter(ALL_UP, 5, record, leg, 0, "watched")) met++;
 			expect(scheduleEncounter(ALL_UP, 5, record, leg, 0, "none")).toBeNull();
 		}
+		// p = 0.9 over 2,000: sd 0.67 points; the band is 3 sd.
+		expect(met / 2000).toBeGreaterThan(0.88);
+		expect(met / 2000).toBeLessThan(0.92);
 	});
-	test("`certain` still sends nobody when the drawn slot is down", () => {
+	test("`watched` still sends nobody when the drawn slot is down", () => {
 		// The relay tells the raiders where to look; it does not conjure one.
 		const NONE_UP = () => false;
 		for (let leg = 0; leg < 50; leg++)
 			expect(
-				scheduleEncounter(NONE_UP, 5, record, leg, 0, "certain"),
+				scheduleEncounter(NONE_UP, 5, record, leg, 0, "watched"),
 			).toBeNull();
 	});
 	test("the default is the law", () => {

@@ -36,6 +36,8 @@
  * and nothing that renders.
  */
 import { playerLaserHit } from "./combat-enemy";
+import { DOMAIN } from "./domains";
+import { stream } from "./galaxy";
 import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
@@ -57,6 +59,36 @@ import type {
 
 /** What the cockpit calls it once identified, and what the log calls it. */
 export const RELAY_NAME = "Pirate relay";
+
+/**
+ * The chance a system's relay is active, by the principal's ruling on #351:
+ * most lawless systems have one, a corporate state rarely. Linear in
+ * government between the two ends, like `RAIDER_LEG_CHANCE`.
+ */
+export const RELAY_ACTIVE_CHANCE = { anarchy: 0.8, corporate: 0.1 } as const;
+
+export const relayActiveChance = (government: number): number => {
+	const g = Math.max(0, Math.min(7, Math.round(government)));
+	return (
+		RELAY_ACTIVE_CHANCE.anarchy +
+		((RELAY_ACTIVE_CHANCE.corporate - RELAY_ACTIVE_CHANCE.anarchy) * g) / 7
+	);
+};
+
+/**
+ * Is this system's relay active? One seeded draw per system on its own tag.
+ *
+ * **A runtime roll, not a generator fact** (#351, D1). The slot and its plan
+ * are enumerated in every system with a station whatever this says, so
+ * re-tuning the chance moves no identity and owes no generator bump. An
+ * inactive relay is absent from the game: not drawn, no signal, no dial on
+ * the leg law. A row a save already holds for it is kept and read by nothing.
+ */
+export const relayActive = (record: {
+	seed: number;
+	government: number;
+}): boolean =>
+	stream(record.seed, DOMAIN.RELAY_ACTIVE)() < relayActiveChance(record.government);
 
 /** Inside this range of the relay the cockpit reads its signal. */
 export const RELAY_SIGNAL_RANGE_KM = 2_500;
@@ -194,7 +226,7 @@ export function relayDetection(
 	relayOperational: boolean,
 ): RouteDetection {
 	if (!plan || legTargetId !== plan.watchedStationId) return "law";
-	return relayOperational ? "certain" : "none";
+	return relayOperational ? "watched" : "none";
 }
 
 export interface RelaySignal {

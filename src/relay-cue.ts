@@ -66,7 +66,7 @@ export function relayCueMarkup(cue: RelayCue): string {
 			: `<i class="lc-relay-arrow" style="transform: rotate(${Math.round(cue.arrowDeg)}deg)">➤</i>`;
 	const bearing = `${Math.round(cue.offNoseDeg)}° off nose${arrow}`;
 	if (cue.phase === "signal")
-		return `<small>PIRATE RELAY SIGNAL · PROTOTYPE</small><strong><span class="lc-relay-bars">${strengthBars(cue.strength)}</span></strong>${bearing}<br>Search the approach of ${esc(cue.watched)}`;
+		return `<small>PIRATE RELAY SIGNAL</small><strong><span class="lc-relay-bars">${strengthBars(cue.strength)}</span></strong>${bearing}<br>Search the approach of ${esc(cue.watched)}`;
 	if (cue.phase === "identified")
 		return `<small>PIRATE RELAY · IDENTIFIED</small><strong>${esc(cue.condition.toUpperCase())} · ${Math.round(cue.km ?? 0).toLocaleString("en-US")} km</strong>${bearing}<br>Watches the route to ${esc(cue.watched)}`;
 	return `<small>PIRATE RELAY · ${esc(cue.condition.toUpperCase())}</small><strong>${Math.round(cue.km ?? 0).toLocaleString("en-US")} km</strong>${bearing}<br>Route to ${esc(cue.watched)} unwatched`;
