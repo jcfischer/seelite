@@ -16,7 +16,8 @@
  * an instrument that quietly prints NaN is worse than one that dies (#7).
  */
 import { scheduleEncounter } from "../src/encounter";
-import { relayDetection, relayPlan } from "../src/pirate-relay";
+import { relayDetection } from "../src/pirate-relay";
+import { relayPlan } from "../src/relay-slot";
 import { raiderLegChance } from "../src/raider-slots";
 import { makeWorld } from "../src/sim";
 

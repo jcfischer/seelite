@@ -196,7 +196,8 @@ system, `relay-00`, standing a few hundred kilometres off one station's
 approach and moving with it. Its capability is **Route detection**: the
 system's raiders find every ship on the route to the station it watches. It
 is found by its signal, identified inside its own range, destroyed by the
-pulse laser, and replaced on the game clock. `src/pirate-relay.ts` owns it;
+pulse laser, and replaced on the game clock. `src/relay-slot.ts` owns its
+persistence ids and its plan, `src/pirate-relay.ts` the rest;
 `docs/prototypes/relay-codex.md` records the decisions taken as proposals.
 Not to be confused with the **System relay**, which is an information channel.
 _Avoid_: Pirate base, sensor buoy, beacon

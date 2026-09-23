@@ -42,6 +42,12 @@ import { generateGalaxy } from "./galaxy";
 import type { HullId } from "./hull";
 import { fnv1a } from "./rng";
 import { RAIDER_HULL_ID, raiderSlots } from "./raider-slots";
+import {
+	RELAY_TENDER_HULL_ID,
+	relayPlan,
+	relaySlot,
+	relayTenderSlot,
+} from "./relay-slot";
 import type { StationType } from "./station";
 import { NO_FLOWN_VOYAGE, stationTrafficRoster } from "./station-traffic";
 import { generateContents } from "./system";
@@ -68,7 +74,20 @@ export const WORLD_SCHEMA_VERSION = 3;
  * exactly the set `carrierBaselineFingerprint` hashes, so the pinned
  * fingerprints in `world-state.test.ts` go red at the same moment.
  */
-export const WORLD_GENERATOR_VERSION = 6;
+export const WORLD_GENERATOR_VERSION = 7;
+
+/**
+ * Generator versions a snapshot may still carry, each loading as the current
+ * one (#351). A version belongs here only when every carrier it enumerated is
+ * still enumerated with the same identity, type, parent and placement — then a
+ * row it saved names the carrier it named, and the migration is a relabel.
+ * `tests/world-state.test.ts` holds that for 6 against version 6's own golden
+ * fingerprints. Version 5 is not here, and listing it would open nothing: saves
+ * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
+ * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
+ * schema check refuses it first.
+ */
+export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [6];
 
 export const GALAXY_COUNT = 8;
 
@@ -429,6 +448,18 @@ export type GeneratedCarrier = GeneratedCarrierBase &
 		 *  and carries no placeholder zeros for one, which the fingerprint would
 		 *  otherwise pin (sage round 1). */
 		| { kind: "raider"; hullId: HullId }
+		/** The pirate relay (#351): a system slot like a raider's, whose generated
+		 *  placement is its plan — the station it watches and where it stands
+		 *  relative to it — rather than an orbit of its own. */
+		| {
+				kind: "relay";
+				watchedLocalCarrierId: string;
+				leadKm: number;
+				offPlaneKm: number;
+		  }
+		/** The relay's repair tender (#351), parented to the relay. It flies in
+		 *  when it is sent, so like a raider it has no generated placement. */
+		| { kind: "relay-tender"; hullId: HullId }
 	);
 
 /**
@@ -449,7 +480,8 @@ export function* enumerateCarriers(
 		systemIndex++
 	) {
 		const record = galaxy.systems[systemIndex];
-		for (const station of generateContents(record).stations) {
+		const contents = generateContents(record);
+		for (const station of contents.stations) {
 			yield {
 				systemIndex,
 				localCarrierId: station.localCarrierId,
@@ -482,8 +514,67 @@ export function* enumerateCarriers(
 				hullId: RAIDER_HULL_ID,
 				parentId: null,
 			};
+		const plan = relayPlan(contents, record.seed);
+		if (plan) {
+			const relay = relaySlot(systemIndex);
+			yield {
+				systemIndex,
+				localCarrierId: relay.localCarrierId,
+				key: relay.key,
+				kind: "relay",
+				parentId: null,
+				watchedLocalCarrierId: plan.watchedLocalCarrierId,
+				leadKm: plan.leadKm,
+				offPlaneKm: plan.offPlaneKm,
+			};
+			const tender = relayTenderSlot(systemIndex);
+			yield {
+				systemIndex,
+				localCarrierId: tender.localCarrierId,
+				key: tender.key,
+				kind: "relay-tender",
+				hullId: RELAY_TENDER_HULL_ID,
+				parentId: relay.localCarrierId,
+			};
+		}
 	}
 }
+
+/** The generated type a fingerprint line carries, per kind. */
+const fingerprintType = (c: GeneratedCarrier): string => {
+	switch (c.kind) {
+		case "station":
+			return c.stationType;
+		case "traffic":
+			return `traffic:${c.homeStationType}:${c.hullId}`;
+		case "raider":
+			return `raider:${c.hullId}`;
+		case "relay":
+			return "relay";
+		case "relay-tender":
+			return `relay-tender:${c.hullId}`;
+	}
+};
+
+/**
+ * A fingerprint line's placement, per kind. A raider or tender slot has none,
+ * so its line ends at the parent. The station and Traffic lines are byte for
+ * byte what version 5 hashed and the raider lines what version 6 did, which
+ * `tests/world-state.test.ts` holds against both versions' goldens. A relay's
+ * placement is its plan: the watched station and the standoff.
+ */
+const fingerprintPlacement = (c: GeneratedCarrier): string => {
+	switch (c.kind) {
+		case "station":
+		case "traffic":
+			return `|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`;
+		case "relay":
+			return `|${c.watchedLocalCarrierId}|${c.leadKm.toFixed(6)}|${c.offPlaneKm.toFixed(6)}`;
+		case "raider":
+		case "relay-tender":
+			return "";
+	}
+};
 
 /**
  * §9.1's baseline fingerprint: identity, type, parent and generated placement
@@ -500,24 +591,10 @@ export const carrierBaselineFingerprint = (
 	galaxyIndex: number,
 ): number => {
 	const parts: string[] = [];
-	for (const c of enumerateCarriers(worldSeed, galaxyIndex)) {
-		const generatedType =
-			c.kind === "station"
-				? c.stationType
-				: c.kind === "traffic"
-					? `traffic:${c.homeStationType}:${c.hullId}`
-					: `raider:${c.hullId}`;
-		// A raider slot has no placement, so its line ends at the parent. The
-		// station and Traffic lines are byte for byte what version 5 hashed,
-		// which `tests/world-state.test.ts` holds against version 5's goldens.
-		const placement =
-			c.kind === "raider"
-				? ""
-				: `|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`;
+	for (const c of enumerateCarriers(worldSeed, galaxyIndex))
 		parts.push(
-			`${c.systemIndex}|${c.localCarrierId}|${generatedType}|${c.parentId ?? "-"}${placement}`,
+			`${c.systemIndex}|${c.localCarrierId}|${fingerprintType(c)}|${c.parentId ?? "-"}${fingerprintPlacement(c)}`,
 		);
-	}
 	return fnv1a(parts.join("\n"));
 };
 
@@ -2154,10 +2231,13 @@ export function parseWorld(raw: unknown): WorldState {
 		fail(
 			`snapshot: worldSchemaVersion ${worldSchemaVersion} needs a migration`,
 		);
-	const worldGeneratorVersion = num(o, "worldGeneratorVersion", "snapshot");
-	if (worldGeneratorVersion !== WORLD_GENERATOR_VERSION)
+	const savedGeneratorVersion = num(o, "worldGeneratorVersion", "snapshot");
+	if (
+		savedGeneratorVersion !== WORLD_GENERATOR_VERSION &&
+		!LEGACY_WORLD_GENERATOR_VERSIONS.includes(savedGeneratorVersion)
+	)
 		fail(
-			`snapshot: worldGeneratorVersion ${worldGeneratorVersion} needs a migration`,
+			`snapshot: worldGeneratorVersion ${savedGeneratorVersion} needs a migration`,
 		);
 	for (const field of Object.keys(o))
 		if (!(WORLD_FIELDS as readonly string[]).includes(field))
@@ -2167,7 +2247,9 @@ export function parseWorld(raw: unknown): WorldState {
 
 	const world: WorldState = {
 		worldSchemaVersion,
-		worldGeneratorVersion,
+		// The relabel. The integrity hash below is over what arrived, so it still
+		// checks the version-6 body; the next write hashes a version-7 one.
+		worldGeneratorVersion: WORLD_GENERATOR_VERSION,
 		seed: num(o, "seed", "snapshot"),
 		gameTime: num(o, "gameTime", "snapshot"),
 		galaxies: (o.galaxies as unknown[]).map((g, i) => parseEnvelope(g, i)),

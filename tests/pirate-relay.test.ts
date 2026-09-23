@@ -10,22 +10,24 @@ import { EQUIPMENT, LONG_RANGE_SCANNER, SCAN_MODULE } from "../src/market";
 import {
 	RELAY_IDENTIFY_RANGE_KM,
 	RELAY_INTEGRITY,
-	RELAY_LOCAL_CARRIER_ID,
-	RELAY_REGION_KM,
 	RELAY_REPAIR_S,
 	RELAY_SIGNAL_RANGE_KM,
-	RELAY_STANDOFF_KM,
 	RELAY_WRECK_S,
 	relayDestruction,
 	relayDetection,
 	relayLog,
-	relayPlan,
 	relayPosition,
 	relayScannerFitted,
 	relaySignal,
-	relaySlot,
 	relayVelocity,
 } from "../src/pirate-relay";
+import {
+	RELAY_LOCAL_CARRIER_ID,
+	RELAY_REGION_KM,
+	RELAY_STANDOFF_KM,
+	relayPlan,
+	relaySlot,
+} from "../src/relay-slot";
 import { PULSE_LASER } from "../src/ship-condition";
 import { generateContents, positionOnOrbit } from "../src/system";
 import { makeWorld } from "../src/sim";

@@ -13,16 +13,11 @@
  * which is #41's "most carriers affect one station, one system, or one named
  * route".
  *
- * **What it is not, yet.** Not in `enumerateCarriers` and not in the golden
- * persistence table: `parseWorld` refuses a `worldGeneratorVersion` it does not
- * know, so enrolling the slot bumps the version and refuses every existing
- * save until a migration exists. The prototype writes its rows under this
- * reserved id and leaves enrolment, the fingerprint and the version to the
- * node that makes the relay production content — not yet charted; #344
- * consumes this result and is not that node — which is where the missions
- * spec put that decision. The rows round-trip through the save
- * unchanged either way, because the parser checks a key's shape and not its
- * membership.
+ * **Enrolled (#351).** The slot and its repair tender are in
+ * `enumerateCarriers`, the golden table and the fingerprint at generator
+ * version 7, and a version-6 save loads by relabelling, because enrolment moved
+ * no older slot (`LEGACY_WORLD_GENERATOR_VERSIONS`). The ids and the plan live
+ * in `relay-slot.ts`, which the enumeration can import without reaching `sim.ts`.
  *
  * **Discovery.** A bounded search region around the watched station
  * (`RELAY_REGION_KM`), a signal the cockpit reads inside `RELAY_SIGNAL_RANGE_KM`
@@ -40,14 +35,12 @@
  * Headless: imports the generator's orbit arithmetic and the world-state types
  * and nothing that renders.
  */
-import { type CarrierKey, carrierKey } from "./carrier-key";
 import { playerLaserHit } from "./combat-enemy";
-import { DOMAIN } from "./domains";
-import { stream } from "./galaxy";
 import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
+import { type RelayPlan, relaySlot } from "./relay-slot";
 import {
 	type Orbit,
 	type SystemContents,
@@ -62,34 +55,9 @@ import type {
 	TransitionEvent,
 } from "./world-state";
 
-/** The slot's persistence id. One per system; renaming it is a migration. */
-export const RELAY_LOCAL_CARRIER_ID = "relay-00";
-
 /** What the cockpit calls it once identified, and what the log calls it. */
 export const RELAY_NAME = "Pirate relay";
 
-export interface RelaySlot {
-	localCarrierId: string;
-	key: CarrierKey;
-}
-
-export const relaySlot = (systemIndex: number): RelaySlot => ({
-	localCarrierId: RELAY_LOCAL_CARRIER_ID,
-	key: carrierKey(systemIndex, RELAY_LOCAL_CARRIER_ID),
-});
-
-/**
- * How far along the watched station's orbit the relay stands, km. Hundreds
- * rather than thousands because it is reached in normal flight at the 2 km/s
- * assist cap — 120 km a minute — and a search is a few minutes, not a
- * commute. Drawn between the two, ahead or behind.
- */
-export const RELAY_STANDOFF_KM = [400, 800] as const;
-/** How far off the orbital plane it stands, km, either side. */
-export const RELAY_OFFPLANE_KM = 120;
-/** The search region: a sphere of this radius about the watched station. It
- *  holds every standoff the draw can give. */
-export const RELAY_REGION_KM = 1_000;
 /** Inside this range of the relay the cockpit reads its signal. */
 export const RELAY_SIGNAL_RANGE_KM = 2_500;
 /** Inside this range the relay is identified: a knowledge row, a contact, a
@@ -177,55 +145,6 @@ export const relayInSights = (
  *  than a hull. An hour in all. */
 export const RELAY_WRECK_S = 1_200;
 export const RELAY_REPAIR_S = 2_400;
-
-/** The plan: which station the relay watches, and where it stands relative to
- *  that station. Pure in the system, so it is never saved. */
-export interface RelayPlan {
-	watchedStationId: string;
-	watchedLocalCarrierId: string;
-	/** The station's parent planet, or null for a star-centric orbit. */
-	parentId: string | null;
-	/** The watched station's orbit, phase-shifted by the standoff. */
-	orbit: Orbit;
-	/** Signed: positive is ahead of the station along its orbit. */
-	leadKm: number;
-	/** Signed: along the orbit's normal. */
-	offPlaneKm: number;
-}
-
-/** The station a system's relay watches: the trade station where there is
- *  one, otherwise the next role in this order. */
-const WATCH_ORDER = ["trade", "shipyard", "refinery", "outpost"] as const;
-
-export function relayPlan(
-	contents: SystemContents,
-	systemSeed: number,
-): RelayPlan | null {
-	const { stations } = contents;
-	if (stations.length === 0) return null;
-	const watched =
-		WATCH_ORDER.map((type) => stations.find((s) => s.type === type)).find(
-			(s) => s !== undefined,
-		) ?? stations[0];
-	const rand = stream(systemSeed, DOMAIN.RELAY);
-	const ahead = rand() < 0.5;
-	const standoff =
-		RELAY_STANDOFF_KM[0] +
-		(RELAY_STANDOFF_KM[1] - RELAY_STANDOFF_KM[0]) * rand();
-	const offPlaneKm = (rand() < 0.5 ? -1 : 1) * RELAY_OFFPLANE_KM;
-	const leadKm = ahead ? standoff : -standoff;
-	return {
-		watchedStationId: watched.id,
-		watchedLocalCarrierId: watched.localCarrierId,
-		parentId: watched.parentId,
-		orbit: {
-			...watched.orbit,
-			theta0: watched.orbit.theta0 + leadKm / watched.orbit.radiusKm,
-		},
-		leadKm,
-		offPlaneKm,
-	};
-}
 
 function parentOrbit(plan: RelayPlan, contents: SystemContents): Orbit | null {
 	if (!plan.parentId) return null;
