@@ -135,13 +135,34 @@ export interface LoadedLayout {
 
 const COMMAND_IDS = new Set<string>(COMMANDS.map((c) => c.id));
 
-/** The blob, as a string. */
+/**
+ * The blob, as a string.
+ *
+ * **A pad row is written without its contexts** (sage round 5 on #497). They
+ * are `pad-bindings.ts`' answer, re-derived by `movedTrigger` on every load,
+ * and `acceptPadButton` already drops whatever a blob carries. Writing them
+ * anyway put a field into a durable store whose meaning the format disowns —
+ * and with the version deliberately unbumped, a later slice that gives stored
+ * contexts a meaning would find existing blobs holding values nobody chose.
+ * The read stays lenient, for the blobs this build already wrote.
+ */
 export function serializeLayout(layout: Layout): string {
 	return JSON.stringify({
 		version: LAYOUT_VERSION,
-		moves: layoutMoves(layout),
+		moves: layoutMoves(layout).map((move) => ({
+			...move,
+			from: withoutContexts(move.from),
+			to: withoutContexts(move.to),
+		})),
 	});
 }
+
+/** A trigger as the store holds it: the pad's derived half left off. */
+const withoutContexts = (t: Trigger): Trigger => {
+	if (!("contexts" in t)) return t;
+	const { contexts: _contexts, ...rest } = t;
+	return rest as Trigger;
+};
 
 // ---------------------------------------------------------------------------
 // The nested validator

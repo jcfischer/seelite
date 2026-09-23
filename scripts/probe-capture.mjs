@@ -29,6 +29,7 @@ import {
 	guardedOrigin,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 
 const ORIGIN =
@@ -401,6 +402,37 @@ check(
 	openedSettings
 		? "the settings panel is drawn"
 		: "the tab has no door to click",
+);
+
+// **And the key the player moved off is dead, pressed rather than read off
+// the table** (sage round 5 on #497). The move row above is the surrogate this
+// file's own header warns against: `settings-panel.ts` owns `SETTINGS_KEY` on
+// a window listener in the capture phase, so "the table says `z` moved" is a
+// different fact from "`z` no longer opens the panel", and the bootstrap's
+// claim is about the second.
+//
+// **After the door has opened it once**, which is what makes the row able to
+// fail in the direction it names: a build where the panel never mounts would
+// satisfy "z did not open it" for the wrong reason. `waitForSettingsPanel`'s
+// answer is read here for that, and the row above has already shown the panel
+// on screen.
+const panelMounted = await waitForSettingsPanel(page);
+await page.keyboard.press("z");
+await frames(3);
+check(
+	"the settings key the player moved off no longer opens it",
+	// `z` closes the panel the door opened rather than leaving it up, so the
+	// reading either way is "the screen is gone" — which is why this presses
+	// it a second time from the closed state and asks that it stays closed.
+	panelMounted && !(await shown("[data-settings-panel]")),
+	panelMounted ? "z is dead" : "the settings screen never mounted",
+);
+await page.keyboard.press("z");
+await frames(3);
+check(
+	"and pressing it again does not bring it back",
+	!(await shown("[data-settings-panel]")),
+	"z is still dead from the closed state",
 );
 
 await browser.close();

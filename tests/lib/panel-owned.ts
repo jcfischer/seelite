@@ -1,18 +1,20 @@
 /**
  * The commands a panel opens itself, rather than the ship's dispatch reaching.
  *
- * `settings-panel.ts` and `commander-overlay.ts` each listen for their own key
- * on their own capture-phase listener, so neither id appears at a dispatch
- * site and both partitions that walk the catalogue have to exempt them.
+ * `commander-overlay.ts` listens for its own key on its own capture-phase
+ * listener, so its id appears at no dispatch site and both partitions that
+ * walk the catalogue have to exempt it.
  *
- * **A written list, and the registry should own it instead.** There is no axis
- * for "a panel owns this open key" — `fixed` is the wrong one, because #381
- * makes `z` remappable — so the pair lives here rather than in two test files
- * (sage round 3), which is one edit for a third panel rather than two. The
- * axis itself belongs with the capture slice, since that is what gives `z` a
- * non-binding route in the first place.
+ * **`system.settings` left this list in #381 S4, which is what this comment
+ * said should happen.** It read: "the axis itself belongs with the capture
+ * slice, since that is what gives `z` a non-binding route in the first place."
+ * That route is the `Controls` tab's settings door, and until the fold, #369
+ * D12's "`z` is an ordinary command and can be moved" was false — a player who
+ * rebound `system.settings` still opened the screen with `z`, and the key they
+ * chose did nothing. Sage round 5 on #497 found it by pressing the key twice.
+ *
+ * **`system.commander` stays**, and deliberately: it has no such door, so
+ * folding its open key would be the thing S2 refused — a rebind that can lock
+ * the only way in. That is a node of its own.
  */
-export const PANEL_OWNED_COMMANDS: readonly string[] = [
-	"system.settings",
-	"system.commander",
-];
+export const PANEL_OWNED_COMMANDS: readonly string[] = ["system.commander"];

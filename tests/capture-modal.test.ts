@@ -256,6 +256,36 @@ describe("the capture says which key and the command says the rest", () => {
 		);
 	});
 
+	test("a shifted character keeps the character, not its unshifted position", () => {
+		// **The regression round 4 shipped and round 5 caught.** Normalising
+		// every coded capture through `codeKey` turned `?` into `/` — that
+		// function gives the character a position types *unshifted*, and
+		// `Slash` is `/`. #377 ruled `?` is the character the keyboard types,
+		// so the widening silently renamed a shipped binding the moment a
+		// player recaptured it.
+		const session = offered(
+			openCapture("view.toggle", shippedTrigger("view.toggle")),
+			DEFAULT_BINDINGS,
+			{ kind: "key", key: "?", code: "Slash" },
+		);
+		if (session.stage.kind !== "caught") throw new Error(session.stage.kind);
+		expect(session.stage.to).toMatchObject({ key: "?", code: "Slash" });
+	});
+
+	test("and a key with no character of its own keeps its name", () => {
+		// `codeKey` strips a `Key`/`Digit` prefix and lowercases the rest, so
+		// `F2` would have become `f2` and `NumpadAdd` `numpadadd` — names no
+		// keypress produces. Nothing normalises them now, and this row is the
+		// one that says so.
+		const session = offered(
+			openCapture("view.toggle", shippedTrigger("view.toggle")),
+			DEFAULT_BINDINGS,
+			{ kind: "key", key: "f2", code: "F2" },
+		);
+		if (session.stage.kind !== "caught") throw new Error(session.stage.kind);
+		expect(session.stage.to).toMatchObject({ key: "f2", code: "F2" });
+	});
+
 	test("a chord takes the character its position types, not the one Option sent", () => {
 		// **#369 D7's whole point, and it reached only one producer** until
 		// sage round 2 on #497. On macOS Option changes the character, so a

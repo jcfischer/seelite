@@ -564,6 +564,7 @@ import type { CaptureModalHandle } from "./capture-modal";
 import { isEditable } from "./editable-target";
 import {
 	capturedTrigger,
+	codeKey,
 	type CommandId,
 	type PadAnalog,
 	commandById,
@@ -7905,7 +7906,14 @@ class Game {
 				return;
 			this.captureModal.offer({
 				kind: "key",
-				key: e.key.toLowerCase(),
+				// **Option makes the character untrustworthy, and only here is
+				// that a known fact.** `Alt+Q` on macOS arrives as `œ`, and a
+				// row that is not itself a chord drops the `alt` — so without
+				// this the capture stored `œ` for a key the player pressed as
+				// `Q`. `movedTrigger` applies the same rule to a *chord*,
+				// which is a different fact about a different thing (sage
+				// rounds 4 and 5 on #497).
+				key: e.altKey ? codeKey(e.code) : e.key.toLowerCase(),
 				code: e.code,
 				...(route.kind === "chord" ? { alt: true as const } : {}),
 			});
@@ -8039,6 +8047,20 @@ class Game {
 				return;
 			case "view.headStarboard":
 				this.setHeadLook("right");
+				return;
+			// **The settings screen's own door, folded here in #381 S4.** It
+			// was `settings-panel.ts`'s window listener, which made `z` the
+			// panel's key rather than the registry's — so #369 D12's "`z` is
+			// an ordinary command and can be moved" was false: a rebound
+			// `system.settings` still opened on `z`, and the key the player
+			// chose did nothing. S2 deferred the fold with a reason ("a folded
+			// open-trigger before that route exists is a door a rebind can
+			// lock") and the route is this slice's `Controls` tab door.
+			//
+			// The panel still owns the keyboard while it is *up*, including
+			// the key that closes it; only the opening moved.
+			case "system.settings":
+				this.settingsPanel?.open();
 				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.

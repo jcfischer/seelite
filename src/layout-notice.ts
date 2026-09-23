@@ -38,9 +38,9 @@ import {
 	collisions,
 	type CommandId,
 	type Layout,
-	rebind,
 	type RebindRefusal,
 	RebindRefused,
+	rebound,
 	type Trigger,
 	triggerKey,
 } from "./commands";
@@ -264,19 +264,12 @@ export function proposedRebind(
 			readonly warnings: LayoutNotice[];
 	  }
 	| { readonly refused: RebindRefusal; readonly detail: string } {
-	// **The slot `rebind` will replace, found the way `rebind` finds it.** It
-	// matches the command and the trigger hash, and rewrites that one index —
-	// so reading the same index back is exact, where searching the result for
-	// "a row that is not `from`" is not: a command may have several triggers,
-	// and `view.headPort` has three, so that search returned whichever came
-	// first (sage round 3 on #497 asked for the stored trigger to be returned
-	// rather than inferred; the first attempt inferred it differently).
-	const at = bindings.findIndex(
-		(b) => b.command === command && triggerKey(b.trigger) === triggerKey(from),
-	);
-	let layout: Layout;
+	// **`rebound` hands the stored trigger back**, because working it out here
+	// is reading `rebind`'s internals from outside it — first by slot identity
+	// and then by repeating its own `findIndex` (sage rounds 3 and 5 on #497).
+	let moved: { layout: Layout; stored: Trigger };
 	try {
-		layout = rebind(bindings, command, from, to);
+		moved = rebound(bindings, command, from, to);
 	} catch (e) {
 		// **A throw that is not `RebindRefused` is not a refusal**, and folding
 		// it into one would print a player sentence about a programming error.
@@ -284,10 +277,9 @@ export function proposedRebind(
 		if (!(e instanceof RebindRefused)) throw e;
 		return { refused: e.refusal, detail: e.message };
 	}
-	// `rebind` throws when nothing matches `from`, so by here `at` is a real
-	// index and the row at it is the one it rewrote.
-	const stored = layout[at]?.trigger;
-	if (stored === undefined)
-		throw new Error(`rebind returned no row at ${at} for ${command}`);
-	return { layout, stored, warnings: collisionNotices(layout) };
+	return {
+		layout: moved.layout,
+		stored: moved.stored,
+		warnings: collisionNotices(moved.layout),
+	};
 }

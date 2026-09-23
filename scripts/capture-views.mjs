@@ -592,11 +592,22 @@ const PLACERS = {
 				// be captioned `caught k` over a refusal (sage round 2 on
 				// #497). Only a candidate the registry will store draws a
 				// confirm.
-				await page.waitForFunction(
-					() => !!document.querySelector("[data-capture-confirm]"),
-					undefined,
-					{ timeout: 2000 },
-				);
+				// **Reported, not thrown**, like the two waits above it: a throw
+				// here aborts the whole capture run, and a build that refuses
+				// the key is a thing this sheet exists to *show* (sage round 5
+				// on #497).
+				const offered = await page
+					.waitForFunction(
+						() => !!document.querySelector("[data-capture-confirm]"),
+						undefined,
+						{ timeout: 2000 },
+					)
+					.then(
+						() => true,
+						() => false,
+					);
+				if (!offered)
+					return `${shot.rebind} · ${shot.press} was caught and refused`;
 			}
 			return `Rebinding ${shot.rebind}${shot.press ? ` · caught ${shot.press}` : ""}`;
 		}

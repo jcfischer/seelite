@@ -230,6 +230,9 @@ describe("the catalogue is complete against the source", () => {
 			"view.headForward": 'this.setHeadLook("forward")',
 			"view.headStarboard": 'this.setHeadLook("right")',
 			"view.orbitCentre": "this.chaseYaw = 0",
+			// #381 S4: the settings screen's open key is the registry's now, not
+			// the panel's own listener.
+			"system.settings": "this.settingsPanel?.open()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",

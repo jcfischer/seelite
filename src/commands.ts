@@ -1952,6 +1952,26 @@ export function rebind(
 	from: Trigger,
 	to: Trigger,
 ): Layout {
+	return rebound(bindings, command, from, to).layout;
+}
+
+/**
+ * The same move, with the trigger it stored.
+ *
+ * **The registry hands the stored trigger back rather than letting a caller
+ * work it out** (sage round 5 on #497). `movedTrigger` completes a captured
+ * trigger — it derives a missing code, and takes a chord's character from its
+ * position — so a screen that shows what it will bind needs the *completed*
+ * one. `proposedRebind` inferred it twice, first from slot identity and then
+ * by repeating this function's own `findIndex`; both were this function's
+ * internals read from outside it.
+ */
+export function rebound(
+	bindings: Layout,
+	command: CommandId,
+	from: Trigger,
+	to: Trigger,
+): { readonly layout: Layout; readonly stored: Trigger } {
 	const wanted = triggerKey(from);
 	const at = bindings.findIndex(
 		(b) => b.command === command && triggerKey(b.trigger) === wanted,
@@ -1964,7 +1984,7 @@ export function rebind(
 		trigger: moved,
 		scope: scopeOf(moved, commandById(command).views),
 	};
-	return layoutOf(next);
+	return { layout: layoutOf(next), stored: moved };
 }
 
 /**
@@ -2045,15 +2065,26 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 			// every producer gets it, which a rule living in one producer did
 			// not.
 			//
-			// **Whenever there is a code, not only under Alt** (round 4). The
-			// first version keyed on `alt`, which left an *ordinary* row
-			// capturing `Alt+Q` on macOS stored as `œ` — the modal's own doc
-			// claimed it would be stored as `q`. Where no Option is involved
-			// the two agree, so the narrower condition bought nothing and was
-			// wrong exactly where it mattered.
+			// **Under `alt`, and round 4 widened this too far.** Normalising
+			// every coded key turned a captured `?` into `/` — `codeKey` gives
+			// the character a position types *unshifted*, and `Slash` is `/`.
+			// #377 ruled `?` is the character the keyboard types, so that
+			// regression renamed a shipped binding the moment a player
+			// recaptured it. The condition that was right is the narrow one:
+			// a *chord* prints its position, because Option is the only thing
+			// in this game that makes the event's character untrustworthy
+			// (sage rounds 2, 4 and 5).
+			//
+			// The other half of round 4's finding — an *ordinary* row
+			// capturing `Alt+Q` on macOS — is answered where the fact lives:
+			// `main.ts` knows Option was held and sends the position's
+			// character. Two places, two different facts, and neither is the
+			// other's copy.
 			const { kind: _kind, ...rest } = to;
 			return keyTrigger(
-				rest.code === undefined ? rest : { ...rest, key: codeKey(rest.code) },
+				rest.alt === true && rest.code !== undefined
+					? { ...rest, key: codeKey(rest.code) }
+					: rest,
 			);
 		}
 		case "pad-button": {
