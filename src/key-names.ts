@@ -1,18 +1,21 @@
 /**
  * How a key is spelled: every printed control name, from a binding's trigger.
  *
- * #499 split this out of `controls-reference.ts`, and #369 D11 reads through
- * it: the registry (`commands.ts`) owns the bindings, this module and no other
- * spells a key, and every surface that names a control — the `Controls` tab,
- * the capture modal, the prompt line, the footers, the pad hint, the combat
- * rig — is a format over both.
+ * Split out of `controls-reference.ts` as #499 ruled (built in #501), and
+ * #369 D11 reads through it: the registry (`commands.ts`) owns the bindings,
+ * this module and no other spells a key, and every surface that names a
+ * control — the `Controls` tab, the capture modal, the prompt line, the
+ * footers, the pad hint, the combat rig — is a format over both.
  *
  * **Types only from the registry**, and `tests/headless.test.ts` holds it.
  * `commands.ts` value-imports the Commander overlay for its default key, and
  * the overlay imports `OwnKey` from here — a type today. Holding this half
  * type-only is what leaves the overlay free to take a *value* from here as
  * well without closing a runtime loop through the registry (#499 D4). Nothing
- * here re-exports, and nothing re-exports this: one module, one import path.
+ * here re-exports, and no module in `src/` re-exports this with
+ * `export … from "./key-names"` — one module, one import path. That second
+ * half is checked in that form only: an `import` followed by a bare
+ * `export { … }` of the same name would pass the scan.
  */
 import type { CommandId, Layout, Surface, Trigger } from "./commands";
 
@@ -203,7 +206,7 @@ const readInConsole = (t: Trigger): boolean =>
 /**
  * The line a console shows a pad player, built from what that surface has.
  *
- * **Derived since #381 S5, and here since #499.** It lived in
+ * **Derived since #381 S5, and here since #501.** It lived in
  * `pad-bindings.ts`, "beside the bindings it names" — it had been written into
  * `live-cockpit.ts` first, as a third copy of a table that module and
  * `docs/gamepad.md` already owned, so a rebind moved two of the three. S4
