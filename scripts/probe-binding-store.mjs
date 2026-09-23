@@ -572,10 +572,13 @@ check(
 	"the rest gate never ran out, so every angle above is a settled reading",
 	// **`=== false`, not `!`** (#381 S4). `restFailed` is a reader now rather
 	// than a module-level flag, because two probes sharing one would let the
-	// first to run shorten the second's waits — and a bare `!restFailed` on a
-	// function is `false`, so this row would have gone on passing while
-	// measuring nothing. That is the shape of defect an extraction out of a
-	// probe produces, and no headless gate here can see it.
+	// first to run shorten the second's waits.
+	//
+	// The comment here claimed a bare `!restFailed` would have "gone on
+	// passing while measuring nothing". That is backwards and sage round 2 on
+	// #497 said so: `!fn` is `false`, so the row would be permanently *red*.
+	// What `=== false` buys is that the mistake is a type error a reader can
+	// see, rather than a row nobody can make green.
 	restFailed() === false,
 	`restFailed=${restFailed()}`,
 );

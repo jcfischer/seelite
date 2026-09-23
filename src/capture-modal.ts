@@ -100,8 +100,36 @@ export function offered(
 		stage:
 			"refused" in out
 				? { kind: "refused", to, refusal: out.refused, why: out.detail }
-				: { kind: "caught", to, layout: out.layout, warnings: out.warnings },
+				: {
+						kind: "caught",
+						// **The row as it will be stored, not as it was offered**
+						// (sage round 2 on #497). `movedTrigger` completes a
+						// captured trigger — it derives a missing code, and on an
+						// Alt chord it takes the character the *position* types
+						// rather than the one Option sent. Showing what was
+						// offered meant a captured `Alt+D` on macOS read
+						// `Alt + ∂` on screen and was bound as `Alt + d`, so the
+						// modal named a key nobody has.
+						to: storedTrigger(bindings, out.layout) ?? to,
+						layout: out.layout,
+						warnings: out.warnings,
+					},
 	};
+}
+
+/**
+ * The one row `rebind` replaced, read back out of the candidate.
+ *
+ * `rebind` returns a new table with one slot rewritten and every other slot
+ * the same object, so the changed row is the first slot whose identity moved.
+ * That is cheaper and steadier than re-deriving the move: it asks the layout
+ * what happened rather than repeating the arithmetic that made it, which is
+ * the second implementation this repo keeps finding.
+ */
+function storedTrigger(before: Layout, after: Layout): Trigger | null {
+	for (const [i, row] of after.entries())
+		if (row !== before[i]) return row.trigger;
+	return null;
 }
 
 /**
@@ -298,7 +326,6 @@ export interface CaptureModalHandle {
 	 * is what lets `main.ts` feed it every frame without asking first.
 	 */
 	readonly offer: (to: Trigger) => void;
-	readonly unmount: () => void;
 }
 
 /**
@@ -364,6 +391,5 @@ export function mountCaptureModal(
 			session = offered(session, bindings(), to);
 			draw();
 		},
-		unmount: close,
 	};
 }

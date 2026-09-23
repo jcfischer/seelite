@@ -246,6 +246,32 @@ describe("the capture says which key and the command says the rest", () => {
 		);
 	});
 
+	test("a chord takes the character its position types, not the one Option sent", () => {
+		// **#369 D7's whole point, and it reached only one producer** until
+		// sage round 2 on #497. On macOS Option changes the character, so a
+		// captured `Alt+D` arrives as `∂`; stored verbatim it printed as
+		// `Alt + ∂` and the row named a key nobody has. `movedTrigger`
+		// normalises from the code now, so every producer of an Alt trigger
+		// gets the rule rather than just `chordsFor`.
+		const chord = DEFAULT_BINDINGS.find(
+			(b) =>
+				b.command === "view.headPort" &&
+				b.trigger.kind === "key" &&
+				b.trigger.alt === true,
+		)?.trigger;
+		if (!chord) throw new Error("no chord row");
+		const session = offered(
+			openCapture("view.headPort", chord),
+			DEFAULT_BINDINGS,
+			{ kind: "key", key: "∂", code: "KeyD" },
+		);
+		if (session.stage.kind !== "caught") throw new Error(session.stage.kind);
+		expect(session.stage.to).toMatchObject({ key: "d", code: "KeyD" });
+		expect(captureModalMarkup(session, controlsCatalogue())).toContain(
+			"Alt + d",
+		);
+	});
+
 	test("a held control moved onto a pad button keeps its hold, and is refused", () => {
 		// Which is the right refusal rather than a missing feature: the hold is
 		// carried so the registry can say `padFireHeld` is the reader that

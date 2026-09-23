@@ -24,7 +24,7 @@ import {
 import { collisionNotices, proposedRebind } from "../src/layout-notice";
 import { controlsTree, SETTINGS_ACTION } from "../src/controls-reference";
 import { controlsCatalogue } from "../src/controls-catalogue";
-import { codeOf } from "./lib/source-scan";
+import { codeOf, srcFiles } from "./lib/source-scan";
 
 describe("a bind is warned about before it is taken, and taken anyway", () => {
 	test("a move onto a free key proposes a layout and says nothing", () => {
@@ -185,13 +185,19 @@ describe("the door cannot be shut", () => {
 		// last trigger off `view.headStarboard` and lose the tab that fixes it,
 		// and answering that needs a fourth `FixedReason` — an amendment to
 		// #369 D12 rather than something this slice may decide in passing.
-		const registry = codeOf("src/commands.ts");
-		for (const verb of [
-			"export function unbind",
-			"export const unbind",
-			"export function clearBinding",
-		])
-			expect(registry, verb).not.toContain(verb);
+		// **Over every module, and by shape rather than by three names** (sage
+		// round 2 on #497 said the first version passed for a removal verb
+		// under any other name, or in any other file, and it did). What an
+		// unbind *is*, is an export whose name says it takes a binding away —
+		// so the scan is a pattern over every source file, and the assertion
+		// prints what it found rather than a bare `false`.
+		const removal =
+			/export\s+(?:function|const|async function)\s+(\w*(?:unbind|clearBinding|removeBinding|dropBinding|deleteBinding)\w*)/gi;
+		const found: string[] = [];
+		for (const file of srcFiles())
+			for (const m of codeOf(file).matchAll(removal))
+				found.push(`${file}: ${m[1]}`);
+		expect(found).toEqual([]);
 	});
 
 	test("the Controls tab carries a settings row that is not a binding", () => {

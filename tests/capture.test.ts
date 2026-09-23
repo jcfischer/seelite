@@ -122,12 +122,31 @@ describe("what one capture records", () => {
 		});
 	});
 
-	test("a button no context lets through cannot be captured", () => {
+	test("a button no context lets through is recorded, and then refused", () => {
 		// D-pad down hands the pad to the frame instrument and is claimed by
 		// every panel, so it falls through nowhere. A binding on it would be
-		// live in no context at all, which is a row that prints and never
-		// fires.
-		expect(capturedTrigger(press("down"), rest)).toBeNull();
+		// live in no context at all — but the *capture* records it, and the
+		// registry is what says why.
+		//
+		// **It returned `null` for a round** (sage round 2 on #497): the doc
+		// said such a button was refused, the code silently ignored it, the
+		// player pressing d-pad ↓ got a modal that did not react, and
+		// `movedTrigger`'s `live-nowhere` refusal was unreachable from a pad.
+		const caught = capturedTrigger(press("down"), rest);
+		expect(caught).toEqual({
+			kind: "pad-button",
+			button: "down",
+			contexts: [],
+		});
+		if (caught === null) return;
+		expect(() =>
+			rebind(
+				DEFAULT_BINDINGS,
+				"fly.cruise",
+				shippedTrigger("fly.cruise", "pad-button"),
+				caught,
+			),
+		).toThrow(/live nowhere/);
 	});
 
 	test("a stick is recorded on the half the player pushed", () => {

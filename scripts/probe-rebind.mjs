@@ -248,10 +248,15 @@ check(
 	// rotating ship, with the row named after that case already green.
 	// **Called, since the harness moved out** (#381 S4): `restFailed` is a
 	// reader now and not a flag, because two probes sharing one module-level
-	// one would let the first to run shorten the second's waits. A bare
-	// `restFailed` here would be a function, and `=== false` catches that —
-	// `probe-binding-store.mjs` wrote the same row as `!restFailed`, which a
-	// function passes in silence.
+	// one would let the first to run shorten the second's waits.
+	//
+	// A bare `restFailed` here would be the function object. `=== false` makes
+	// that a *type* mistake rather than a truthiness one — and the claim this
+	// comment carried for a round, that `!restFailed` would "pass in silence",
+	// was backwards: `!fn` is `false`, so `check(name, false)` is a red row.
+	// Sage round 2 on #497 caught the inversion in both copies. The real cost
+	// of `!` is the opposite one — a row that is red for the wrong reason and
+	// can never be green.
 	restFailed() === false,
 	`atRest exhausted its 200 ticks on at least one arm: ${restFailed()}`,
 );

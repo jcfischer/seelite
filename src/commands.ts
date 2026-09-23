@@ -1026,12 +1026,29 @@ function padButtonsFor(id: CommandId): Trigger[] {
 	const out: Trigger[] = [];
 	for (const button of STANDARD_BUTTONS) {
 		if (!(PAD_FLIGHT_COMMANDS[button] ?? []).includes(id)) continue;
-		const contexts = PRESSES.flight.get(button);
-		if (contexts === undefined || contexts.length === 0) continue;
+		const contexts = buttonContexts(button);
+		if (contexts === null) continue;
 		out.push({ kind: "pad-button", button, contexts });
 	}
 	return out;
 }
+
+/**
+ * Where a button falls through to the ship, or `null` when it never does.
+ *
+ * One owner, because the rule was written three times — here, in
+ * `capturedTrigger` and in `movedTrigger` — and "a button live nowhere is not
+ * a binding" is one rule (sage rounds 1 and 2 on #497). The three readers do
+ * different things with the `null`: a default row is skipped, a capture
+ * records the button anyway so the registry can *say* why, and a rebind
+ * refuses it.
+ */
+const buttonContexts = (
+	button: PadButtonName,
+): readonly PadContext[] | null => {
+	const contexts = PRESSES.flight.get(button);
+	return contexts !== undefined && contexts.length > 0 ? contexts : null;
+};
 
 /**
  * The punctuation keys, by the character they type unshifted.
@@ -1670,8 +1687,10 @@ export const CAPTURE_DEFLECTION = 0.5;
  * player the trigger and the command the context set; a pad button's set is
  * neither — it is where `pad-bindings.ts` lets that button through, which is
  * why `a` comes back flight-only and `y` with all three. A button that falls
- * through nowhere is refused: a binding live in no context is a row that
- * prints and never fires.
+ * through **nowhere** comes back with an empty set rather than as `null`, so
+ * `rebind` refuses it as `live-nowhere` and the modal prints a sentence — a
+ * press that recorded nothing at all left the player looking at a modal that
+ * had not reacted.
  */
 export interface PadAnalog {
 	readonly axes: PadFrame["axes"];
@@ -1686,9 +1705,18 @@ export function capturedTrigger(
 
 	for (const button of frame.pressed) {
 		if (button === "l2" || button === "r2") continue;
-		const contexts = PRESSES.flight.get(button);
-		if (contexts === undefined || contexts.length === 0) continue;
-		return { kind: "pad-button", button, contexts };
+		// **Recorded even when it falls through nowhere, so the modal can say
+		// so** (sage round 2 on #497). This used to `continue`, which left the
+		// doc claiming such a button was "refused" while the player pressing
+		// d-pad ↓ got a modal that went on listening with no feedback — and
+		// made `movedTrigger`'s `live-nowhere` refusal and its sentence
+		// unreachable from a pad. An empty context set is what `rebind` reads
+		// to raise it.
+		return {
+			kind: "pad-button",
+			button,
+			contexts: buttonContexts(button) ?? [],
+		};
 	}
 
 	// Analog from here down, and all of it needs the frame before.
@@ -2001,8 +2029,19 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 				if (!matchesQualifiers(to, from)) throw keptQualifiers(from, to);
 			} else if ((to.hold ?? false) !== (heldRather(from) ?? false))
 				throw keptQualifiers(from, to);
+			// **A chord's character is the position's, not the event's** — the
+			// rule `chordsFor` states and, until sage round 2 on #497, the rule
+			// only `chordsFor` obeyed. On macOS Option changes the character,
+			// so a captured `Alt+D` arrives as `∂` and was stored and printed
+			// as `Alt + ∂`. Normalising here rather than in the capture means
+			// every producer of an Alt trigger gets it, which is what a rule
+			// living in one producer did not.
 			const { kind: _kind, ...rest } = to;
-			return keyTrigger(rest);
+			return keyTrigger(
+				rest.alt === true && rest.code !== undefined
+					? { ...rest, key: codeKey(rest.code) }
+					: rest,
+			);
 		}
 		case "pad-button": {
 			if (to.hold === true)
@@ -2051,8 +2090,8 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
  * Why a rebind was refused, as a code rather than as the sentence.
  *
  * **The sentence is not enough, and keying one off `to.kind` was wrong**
- * (sage round 1 on #497). `movedTrigger` refuses for five different reasons
- * and two of them can land on the same kind: a `pad-button` is refused when it
+ * (sage round 1 on #497). `movedTrigger` refuses for several reasons and two
+ * of them can land on the same kind: a `pad-button` is refused when it
  * is held *and* when it is claimed in every context, and a `key` — which the
  * registry normally takes — is refused when the trigger being *moved* is one
  * the game does not offer. A capture modal keying its sentence on the kind
@@ -2062,6 +2101,11 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
  * A code and not prose, for `RejectReason`'s reason next door in
  * `layout-notice.ts`: #369 D11 gives `controls-reference.ts` the one owner of
  * every printed name, and a sentence thrown from here is a developer's.
+ *
+ * **The count is not stated here.** It was written as five beside a union of
+ * six inside one round, which is what a count of a list directly below it is
+ * worth — `RejectReason`'s doc next door already refuses to state its own for
+ * the same reason (sage round 2 on #497).
  */
 export type RebindRefusal =
 	/** The trigger being moved is not one this game offers (`fixed`, a hold). */

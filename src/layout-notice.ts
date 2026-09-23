@@ -23,6 +23,13 @@
  * removed: the tab's formatter used to reach *through* the persistence module
  * to name the union, and does not now.
  *
+ * **And `proposedRebind` lives here too**, which the header did not say for a
+ * round (sage round 2 on #497). It is the bind-time wrapper: it calls `rebind`
+ * and hands back the candidate layout with the notices it produced, or the
+ * refusal. It is here rather than beside `rebind` because what it returns is
+ * a `LayoutNotice[]`, and a reader looking for the notice vocabulary is the
+ * reader who needs it.
+ *
  * Headless, a leaf but for the registry, and on the list in
  * `tests/headless.test.ts`.
  */

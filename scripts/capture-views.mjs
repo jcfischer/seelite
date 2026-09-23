@@ -585,9 +585,15 @@ const PLACERS = {
 			// is what the game does with a keystroke.
 			if (shot.press) {
 				await page.keyboard.press(shot.press);
+				// **Wait on the confirm control, not on `.capture-caught`.**
+				// The refused branch draws that class too — it shows what it
+				// caught and then says why it cannot take it — so a build that
+				// *refused* the key would satisfy the wait and the sheet would
+				// be captioned `caught k` over a refusal (sage round 2 on
+				// #497). Only a candidate the registry will store draws a
+				// confirm.
 				await page.waitForFunction(
-					() =>
-						!!document.querySelector("[data-capture-modal] .capture-caught"),
+					() => !!document.querySelector("[data-capture-confirm]"),
 					undefined,
 					{ timeout: 2000 },
 				);

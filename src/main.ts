@@ -8293,13 +8293,23 @@ class Game {
 		buttons: readonly PadButtonName[],
 		context: PadContext,
 	) {
-		for (const button of buttons)
-			for (const id of resolvePad(this.bindings, {
-				button,
-				context,
-				view: this.view,
-			}))
-				this.command(id);
+		for (const id of this.padPressIds(buttons, context)) this.command(id);
+	}
+
+	/**
+	 * What these presses reach, once.
+	 *
+	 * One loop, because the two callers below built the same facts literal and
+	 * asked `resolvePad` the same question — one to run the answer and one to
+	 * test it for emptiness (sage round 2 on #497).
+	 */
+	private padPressIds(
+		buttons: readonly PadButtonName[],
+		context: PadContext,
+	): CommandId[] {
+		return buttons.flatMap((button) =>
+			resolvePad(this.bindings, { button, context, view: this.view }),
+		);
 	}
 
 	/** Whether any of these presses reaches a command in `context`. */
@@ -8307,11 +8317,7 @@ class Game {
 		buttons: readonly PadButtonName[],
 		context: PadContext,
 	): boolean {
-		return buttons.some(
-			(button) =>
-				resolvePad(this.bindings, { button, context, view: this.view }).length >
-				0,
-		);
+		return this.padPressIds(buttons, context).length > 0;
 	}
 
 	/**

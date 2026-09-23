@@ -198,7 +198,7 @@ export const PROBE_CATALOG = Object.freeze(
 		),
 		entry(
 			"probe-capture.mjs",
-			"Checks the rebind modal launched from the Controls tab: a stick pushed while it is open is caught by the modal and ignored by the ship, a pad button is captured and then flies the command it was bound to, and moving every door trigger elsewhere still leaves the tab reachable and settings openable from it.",
+			"Checks the rebind modal launched from the Controls tab: a stick pushed while it is open is caught by the modal once and ignored by the ship, a pad button is captured and then flies the command it was bound to, and moving every keyboard trigger of every door elsewhere still leaves the tab reachable and settings openable from it. It does not move the doors' pad triggers, so a keyboard-and-pad lockout is not covered.",
 			[
 				"rebind modal",
 				"capture context",
