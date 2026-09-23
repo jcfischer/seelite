@@ -8,6 +8,8 @@ import type { SurfaceClass } from "./planet-appearance";
 /** CSS-pixel radius: at 900 px height, a disc this wide spans two thirds of
  * the viewport height. Smaller discs keep their surface pixels on High. */
 export const HALF_RES_RADIUS_PX = 300;
+/** Reserved Three.js layer for the surface-only approach prepass. */
+export const PLANET_HALF_RES_LAYER = 1;
 
 export function useHalfResolution(
 	layer: "near" | "approach" | "far",
@@ -156,15 +158,17 @@ export class PlanetHalfResolution {
 		const beforeClearAlpha = renderer.getClearAlpha();
 		const originals = surfaces.map((surface) => surface.material);
 		try {
-			for (const surface of surfaces) surface.layers.enable(1);
-			camera.layers.set(1);
+			for (const surface of surfaces)
+				surface.layers.enable(PLANET_HALF_RES_LAYER);
+			camera.layers.set(PLANET_HALF_RES_LAYER);
 			renderer.setRenderTarget(target);
 			renderer.setClearColor(0x000000, 0);
 			renderer.clear(true, true, true);
 			renderer.render(scene, camera);
 		} finally {
 			camera.layers.mask = beforeLayerMask;
-			for (const surface of surfaces) surface.layers.disable(1);
+			for (const surface of surfaces)
+				surface.layers.disable(PLANET_HALF_RES_LAYER);
 			renderer.setRenderTarget(beforeTarget);
 			renderer.setClearColor(beforeClearColor, beforeClearAlpha);
 		}

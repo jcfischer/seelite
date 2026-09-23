@@ -2388,6 +2388,22 @@ if (airless) {
 				result.extraStep <= 32,
 			`center contrast ${result.centerContrast}, rows ${JSON.stringify(result.rows)}, full ${result.fullStep}, half ${result.halfStep}, extra ${result.extraStep} (max channel code)`,
 		);
+		const lowAtSmallDisc = await halfPage.evaluate(async (id) => {
+			const game = window.__seelite;
+			await window.__sunOffset(id, 3.5, 60);
+			game.settings.set("quality", "high");
+			game.render(0);
+			const high = game.planetHalfResState();
+			game.settings.set("quality", "low");
+			game.render(0);
+			const low = game.planetHalfResState();
+			return { high, low };
+		}, subject);
+		check(
+			"Low uses the half target for a small approach-layer disc",
+			!lowAtSmallDisc.high.engaged && lowAtSmallDisc.low.engaged,
+			JSON.stringify(lowAtSmallDisc),
+		);
 	}
 	await halfPage.close();
 }

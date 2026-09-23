@@ -184,7 +184,7 @@ const SCHEMA = {
 		allowed: ["high", "low"] as const,
 		label: "Quality",
 		describe: (v: string) => (v === "high" ? "High" : "Low"),
-		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and — once a station is close enough to be worth the frame it costs — casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. A close planet fills its own half-resolution surface target at either setting; Low uses that target throughout the approach layer. The atmosphere, rings, cockpit and HUD stay at full resolution. Corner and contact shading is the Occlusion row, not this one.",
+		note: "High reflects the star off every hull, plate and cockpit surface, cuts the panel lines into the hulls and the cabin so a moving sun breaks across them, lights the console from above, and — once a station is close enough to be worth the frame it costs — casts the star's shadow across whatever is nearest. Low drops all four and keeps the sun, the star-side gradient and the cockpit fill; the picture stays lit, the panel lines stay painted, and the metal stops reading as metal. A close planet's surface uses a shared half-resolution target at either setting; Low uses it throughout the approach layer. The atmosphere, rings, cockpit and HUD stay at full resolution. Corner and contact shading is the Occlusion row, not this one.",
 	},
 	/**
 	 * How many samples the composed frame is drawn with — #200.
