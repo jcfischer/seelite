@@ -648,50 +648,69 @@ check(
 
 // The gimbal pulls the beam toward a selected relay as it does toward a
 // raider (the principal flew the first build with the beam on the boresight
-// and could not hit it). Three degrees off the nose, the beam sits on it.
-const gimbal = await page.evaluate(() => {
-	const g = window.__seelite;
-	window.__relayProbe.placeNear(2);
-	g.targetId = g.relayReadout().view.key;
-	const r = g.relayReadout();
-	const p = g.world.ship.pos;
-	const t = r.view.pos;
-	const to = { x: t.x - p.x, y: t.y - p.y, z: t.z - p.z };
-	const len = Math.hypot(to.x, to.y, to.z);
-	// Turn 3° off the relay about the vertical.
-	const a = (3 * Math.PI) / 180;
-	const off = {
-		x: to.x * Math.cos(a) + to.z * Math.sin(a),
-		y: to.y,
-		z: -to.x * Math.sin(a) + to.z * Math.cos(a),
-	};
-	// Rotation has momentum (`stepAngular`); an earlier segment's rates would
-	// carry the nose off the bearing set here.
-	g.rates = { pitch: 0, yaw: 0, roll: 0 };
-	g.setAttitude(off, g.shipUp());
-	for (let i = 0; i < 3; i++) window.__relayProbe.frame();
-	const deg = (u, v) =>
-		(Math.acos(
-			(u.x * v.x + u.y * v.y + u.z * v.z) /
-				(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
-		) *
-			180) /
-		Math.PI;
-	const rr = g.relayReadout().view.pos;
-	const q = g.world.ship.pos;
-	const dir = { x: rr.x - q.x, y: rr.y - q.y, z: rr.z - q.z };
-	return {
-		noseOffDeg: deg(g.nose(), dir),
-		beamOffDeg: deg(g.beamAim(), dir),
-		km: len,
-	};
-});
+// and could not hit it) — while it is operational. Three degrees off the nose
+// it reads where the beam sits, and nose-on it reads the painted on-target
+// mark and the Target panel's designation. Run on the wreck here and on the
+// replacement below (#351 Q12: the principal fired at a wreck for minutes).
+const relayAim = () =>
+	page.evaluate(async () => {
+		const display = await import("/src/display-contact.ts");
+		const g = window.__seelite;
+		window.__relayProbe.placeNear(2);
+		g.targetId = g.relayReadout().view.key;
+		const r = g.relayReadout();
+		const p = g.world.ship.pos;
+		const t = r.view.pos;
+		const to = { x: t.x - p.x, y: t.y - p.y, z: t.z - p.z };
+		const len = Math.hypot(to.x, to.y, to.z);
+		// Turn 3° off the relay about the vertical.
+		const a = (3 * Math.PI) / 180;
+		const off = {
+			x: to.x * Math.cos(a) + to.z * Math.sin(a),
+			y: to.y,
+			z: -to.x * Math.sin(a) + to.z * Math.cos(a),
+		};
+		// Rotation has momentum (`stepAngular`); an earlier segment's rates would
+		// carry the nose off the bearing set here.
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setAttitude(off, g.shipUp());
+		for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+		const deg = (u, v) =>
+			(Math.acos(
+				(u.x * v.x + u.y * v.y + u.z * v.z) /
+					(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
+			) *
+				180) /
+			Math.PI;
+		const rr = g.relayReadout().view.pos;
+		const q = g.world.ship.pos;
+		const dir = { x: rr.x - q.x, y: rr.y - q.y, z: rr.z - q.z };
+		const noseOffDeg = deg(g.nose(), dir);
+		const beamOffDeg = deg(g.beamAim(), dir);
+		// Nose on it: the mark as painted, and the panel's word for it.
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setAttitude(dir, g.shipUp());
+		for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+		return {
+			condition: g.relayReadout().view.condition,
+			selected: g.targetId === g.relayReadout().view.key,
+			noseOffDeg,
+			beamOffDeg,
+			onTarget: g.selectedRender?.onTarget ?? null,
+			designation: display.targetDesignation(g.targetBody()),
+			km: len,
+		};
+	});
+const wreckAim = await relayAim();
 check(
-	"a selected relay pulls the gimbal: three degrees off the nose, the beam is on it",
-	// The beam aims from the camera, 8 m off the ship's position the row measures
-	// from: a quarter of a degree at 2 km, against a hit sphere 2.4° wide there.
-	gimbal.noseOffDeg > 2.5 && gimbal.noseOffDeg < 3.5 && gimbal.beamOffDeg < 1,
-	JSON.stringify(gimbal),
+	"#351 Q12: a selected wreck stays selectable but is no combat target — no gimbal pull, no on-target mark, RELAY · DESTROYED",
+	wreckAim.condition === "destroyed" &&
+		wreckAim.selected &&
+		wreckAim.noseOffDeg > 2.5 &&
+		wreckAim.beamOffDeg > 2.5 &&
+		wreckAim.onTarget === false &&
+		wreckAim.designation === "RELAY · DESTROYED",
+	JSON.stringify(wreckAim),
 );
 
 // The wreck is on the screen: pixels move when its mesh is hidden.
@@ -783,6 +802,21 @@ check(
 		relitCue.cueVisible === true &&
 		/IDENTIFIED/.test(relitCue.cueText),
 	JSON.stringify({ relit, relitCue }),
+);
+// The operational replacement is a combat target again: the same pose as the
+// wreck's row above, and here the beam is pulled onto it and the mark lights.
+const liveAim = await relayAim();
+check(
+	"a selected operational relay pulls the gimbal and earns the on-target mark: three degrees off the nose, the beam is on it",
+	// The beam aims from the camera, 8 m off the ship's position the row measures
+	// from: a quarter of a degree at 2 km, against a hit sphere 2.4° wide there.
+	liveAim.condition === "operational" &&
+		liveAim.noseOffDeg > 2.5 &&
+		liveAim.noseOffDeg < 3.5 &&
+		liveAim.beamOffDeg < 1 &&
+		liveAim.onTarget === true &&
+		liveAim.designation === "RELAY · HOSTILE",
+	JSON.stringify(liveAim),
 );
 // The replacement starts whole: one pulse wears it, it does not die (sage
 // #350 — it inherited the wreck's zero hull and fell to the first shot).

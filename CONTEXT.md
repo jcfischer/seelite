@@ -199,6 +199,9 @@ Anarchy to 10% in a Corporate State; an inactive one is absent. Its capability
 is **Route detection**: the system's raiders find most ships on the route to
 the station it watches. It is found by its signal, identified inside its own
 range, destroyed by the pulse laser, and replaced on the game clock.
+A destroyed relay stays drawn and selectable but is no combat target: the
+gun's aim lets go, there is no on-target mark, and the Target panel reads
+`RELAY · DESTROYED`, then `REPAIRING` (#351 Q12).
 `src/relay-slot.ts` owns its persistence ids and its plan, `src/pirate-relay.ts`
 the rest; `docs/prototypes/relay-codex.md` records the prototype's decisions
 and #351's receipt the production ones.

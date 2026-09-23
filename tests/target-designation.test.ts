@@ -156,6 +156,27 @@ test("the cell a station and a relay show is not this cell", () => {
 	expect(targetDesignation(relay, scan)).toBe("RELAY · UNKNOWN");
 });
 
+test("a relay that is not operational says so, not HOSTILE (#351 Q12)", () => {
+	// The principal fired at a wreck for minutes because the panel still read
+	// HOSTILE. A destroyed relay stays selectable — the pilot flies back to it
+	// for the tender — so the cell names its condition instead.
+	const relay: DisplayContact = {
+		...body,
+		kind: "relay",
+		velocity: v3(),
+		standing: null,
+		scannerClass: "hostile",
+	};
+	const at = (condition: DisplayContact["condition"]): DisplayContact => ({
+		...relay,
+		condition,
+	});
+	expect(targetDesignation(at("operational"))).toBe("RELAY · HOSTILE");
+	expect(targetDesignation(relay)).toBe("RELAY · HOSTILE");
+	expect(targetDesignation(at("destroyed"))).toBe("RELAY · DESTROYED");
+	expect(targetDesignation(at("repairing"))).toBe("RELAY · REPAIRING");
+});
+
 test("the field is called standing, and the old name is gone from every producer", async () => {
 	// The rename rides the retype (§6): a field still called `legalStatus`
 	// sitting beside the player's `LegalStatus` is the collision this paragraph

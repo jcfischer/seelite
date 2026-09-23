@@ -9181,10 +9181,12 @@ class Game {
 		// planet selected near the nose would turn it off the boresight, and a
 		// raider on the boresight but not selected would then be missed. The
 		// relay is one (#43): the principal flew the first build with the beam
-		// held on the boresight and could not hit it beside a planet.
+		// held on the boresight and could not hit it beside a planet. A wreck is
+		// not (#351 Q12): it stays selectable, and pulling the beam onto it told
+		// the principal every shot at a dead relay was landing.
 		const target =
 			this.raiderSelected() ||
-			this.relaySelected() ||
+			this.relayShootable() ||
 			this.tenderSelected() ||
 			this.trafficSelected()
 				? this.targetBody()
@@ -11143,6 +11145,8 @@ class Game {
 		// the clock, by `advanceSystem`.
 		const { pos, vel } = this.relayNow(v);
 		contact.id = v.key;
+		// The Target panel names a wreck's condition rather than HOSTILE (Q12).
+		contact.condition = v.condition;
 		contact.pos.x = pos.x;
 		contact.pos.y = pos.y;
 		contact.pos.z = pos.z;
@@ -13747,6 +13751,12 @@ class Game {
 		);
 	}
 
+	/** The relay as something to shoot at: selected and operational (#351 Q12). A
+	 *  wreck stays selectable for its range and the tender, and is not one. */
+	private relayShootable(): boolean {
+		return this.relaySelected() && this.relayView?.condition === "operational";
+	}
+
 	/** Whether the relay's tender is the selected target (#351): the fourth
 	 *  combat target, so it pulls the gimbal and earns the mark by name. */
 	private tenderSelected(): boolean {
@@ -14605,9 +14615,10 @@ class Game {
 		const selectedColour = raiderSelected
 			? FLOOR_TONE_FILL[raiderTone]
 			: "rgba(255, 214, 120, 0.95)";
-		// The relay earns the mark whenever a shot would land (#43): it has no
-		// phases, and `stepRelay` lands the shot in every one of them.
-		const relaySelected = selectedBody !== null && this.relaySelected();
+		// The relay earns the mark whenever a shot would land (#43), which is
+		// while it is operational: `stepRelay` lands nothing on a wreck, so a
+		// wreck earns no mark (#351 Q12).
+		const relaySelected = selectedBody !== null && this.relayShootable();
 		const onTarget =
 			(raiderSelected &&
 				onTargetMark(
