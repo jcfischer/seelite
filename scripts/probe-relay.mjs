@@ -1121,8 +1121,10 @@ const tenderTrip = await page.evaluate(
 check(
 	"#351: a jump out and back finds the tender destroyed and the set-back kept",
 	tenderTrip.arrived &&
-		tenderTrip.gameTime < tenderKill.killedAt + 1200 &&
-		tenderTrip.tender !== "operational" &&
+		// Inside the first half-wreck, where the tender's slot is `destroyed`
+		// (its replacement starts halfway): so the row reads the kill itself.
+		tenderTrip.gameTime < tenderKill.killedAt + 600 &&
+		tenderTrip.tender === "destroyed" &&
 		tenderTrip.relayCompletesAt === tenderKill.relayCompletesAt,
 	JSON.stringify({ tenderTrip, killedAt: tenderKill.killedAt }),
 );

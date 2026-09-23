@@ -161,6 +161,8 @@ function tenderDestruction(
 		occurredAt: now,
 		cause: PLAYER_KILL,
 		schedule: {
+			// Halfway: the destroyed/repairing split of a tender's slot has no
+			// observer, so this only labels its condition in the save.
 			startsAt: now + RELAY_WRECK_S / 2,
 			completesAt: now + RELAY_WRECK_S,
 			consequenceArea,
@@ -222,7 +224,8 @@ export function tenderLog(
  * relay's set-back, in that order. **Apply both or neither** — the pair is what
  * keeps `tenderArrival`'s invariant, so a caller that applied one would leave
  * the next tender arriving when no replacement is due. Returned as a list so
- * the module owns the pairing and a second caller cannot split it.
+ * the pairing is written once, here; the halves are not exported. It is a
+ * convention, not a transaction: a caller applying the list must apply both.
  */
 export function tenderKill(
 	systemIndex: number,

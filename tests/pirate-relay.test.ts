@@ -285,15 +285,22 @@ describe("which systems have one (#351)", () => {
 			);
 	});
 
-	test("the roll is the system's own, and stable", () => {
-		const record = galaxy.systems[9];
-		expect(relayActive(record)).toBe(relayActive(record));
-		// Its own stream: the placement draw is unmoved by it, so an inactive
-		// relay's slot keeps the placement the fingerprint pins.
-		const contents = generateContents(record);
-		expect(relayPlan(contents, record.seed)).toEqual(
-			relayPlan(contents, record.seed),
+	test("the roll is pinned, and on its own stream", () => {
+		// Pinned outcomes, so a roll moved onto another stream — or a chance
+		// changed — turns this red: 141 of galaxy 0's 256 systems roll active,
+		// and DIANINCE (system 9, government 3) does not.
+		expect(galaxy.systems.filter((r) => relayActive(r)).length).toBe(141);
+		expect(galaxy.systems[9].name).toBe("DIANINCE");
+		expect(relayActive(galaxy.systems[9])).toBe(false);
+		// The placement is unmoved by the roll: a relay's plan is in the carrier
+		// baseline fingerprint (`world-state.test.ts`), whose goldens this node's
+		// roll left as #351's enrolment pinned them. One value restated here so
+		// the row reads on its own.
+		const plan = relayPlan(
+			generateContents(galaxy.systems[9]),
+			galaxy.systems[9].seed,
 		);
+		expect(plan?.leadKm).toBeCloseTo(701.2311429716647, 9);
 	});
 
 	test("the share of active relays tracks the chance in every government", () => {
