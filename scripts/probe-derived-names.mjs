@@ -365,6 +365,9 @@ async function footerCloses({ command, shipped, free, screen }) {
 	const charging = () =>
 		page.evaluate(() => window.__seelite.jumpCharge.toIndex !== null);
 	const moved = await move("fly.jump", FREE.jump);
+	// Head forward, on a key this page has not moved: the pad row left it on
+	// the right console, and the prompt line is not drawn there.
+	await press("2");
 	// A course and a full tank, so the line offers the jump: every system in a
 	// galaxy is routable from every other (`galaxy-generation.md` §5), which is
 	// how `probe-live-cockpit.mjs` sets one too.
