@@ -50,7 +50,16 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 watch(page);
-await page.goto(gameUrl(origin, { seed: 42, "relay-prototype": true }));
+// **A normal boot, no flag (#351).** The relay is production content, active by
+// a seeded roll per system that falls with government, so the probe needs a
+// start system whose roll came up: seed 56 starts in ESLAIN (government 6, a
+// trade station and a shipyard — RAAQU's layout). Seed 42's RAAQU rolled
+// inactive, and the last block below boots it to check the relay is absent.
+// Both are asserted rather than assumed, so a re-tuned chance that flips
+// either one fails here by name.
+const RELAY_SEED = 56;
+const NO_RELAY_SEED = 42;
+await page.goto(gameUrl(origin, { seed: RELAY_SEED }));
 await bootedGame(page);
 const capture = async (name) => {
 	if (headed) await page.screenshot({ path: `${out}/${name}.png` });
@@ -259,15 +268,15 @@ const far = await page.evaluate(() => {
 		r.view.pos.z - g.world.ship.pos.z,
 	);
 	return {
-		enabled: r.enabled,
+		active: r.active,
 		watched: r.plan?.watchedStationId,
 		distanceKm: km,
 		...window.__relayProbe.readout(),
 	};
 });
 check(
-	"the prototype is on and the relay watches the trade station",
-	far.enabled && far.watched === "station-trade",
+	"a normal boot: the start system's relay is active and watches the trade station",
+	far.active && far.watched === "station-trade",
 	JSON.stringify(far),
 );
 check(
@@ -287,15 +296,21 @@ check(
 // Before: legs flown to each station with the relay up.
 // ---------------------------------------------------------------------------
 const before = await page.evaluate(() =>
-	window.__relayProbe.flyLegs("station-trade", 6),
-);
-check(
-	"before: every leg to the watched station meets a raider, detection certain",
-	before.met.every(Boolean) && before.detections.join() === "certain",
-	JSON.stringify(before),
+	window.__relayProbe.flyLegs("station-trade", 24),
 );
 const controlBefore = await page.evaluate(() =>
 	window.__relayProbe.flyLegs("station-shipyard", 24),
+);
+const metCount = (arm) => arm.met.filter(Boolean).length;
+check(
+	// #351's rate is 90%: over 24 legs the mean is 21.6 and the sd 1.5, so 16
+	// is almost four below it. The law here is about a quarter, so the
+	// watched route must also out-meet the control flown beside it.
+	"before: most legs to the watched station meet a raider, detection watched, well above the control",
+	before.detections.join() === "watched" &&
+		metCount(before) >= 16 &&
+		metCount(before) > metCount(controlBefore),
+	JSON.stringify({ before, control: metCount(controlBefore) }),
 );
 check(
 	"before: legs to the other station meet raiders at the law — some, not all",
@@ -370,9 +385,9 @@ check(
 );
 check(
 	"#481: the watched route's dial bites all the same — the effect is felt by a pilot who cannot find its cause",
-	unfittedDial.detection === "certain" &&
+	unfittedDial.detection === "watched" &&
 		unfittedDial.condition === "operational" &&
-		// Still nothing to see, at the moment the dial is certain.
+		// Still nothing to see, at the moment the dial is watched.
 		unfittedDial.km === null &&
 		!unfittedDial.identified &&
 		unfittedDial.cueVisible === false,
@@ -741,7 +756,7 @@ check(
 	"the replacement is drawn operational, watches the route again, and the cue is back after a cockpit rebuild",
 	relit.condition === "operational" &&
 		relit.meshCondition === "operational" &&
-		relit.detection === "certain" &&
+		relit.detection === "watched" &&
 		relit.hull === 60 &&
 		relitCue.cueVisible === true &&
 		/IDENTIFIED/.test(relitCue.cueText),
@@ -811,6 +826,67 @@ check(
 		refitted.cueVisible === true,
 	JSON.stringify({ beforeStrip, stripped, refitted }),
 );
+
+// ---------------------------------------------------------------------------
+// #351: a system whose relay did not roll active has none — not drawn, no
+// signal even with the module fitted, and the law on every route. Its own
+// page, because a page under measurement is never navigated (#121).
+// ---------------------------------------------------------------------------
+await page.close();
+const quiet = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+watch(quiet);
+await quiet.goto(gameUrl(origin, { seed: NO_RELAY_SEED }));
+await bootedGame(quiet);
+const absent = await quiet.evaluate(async () => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const market = await import("/src/market.ts");
+	g.commander.ownedEquipment = [market.LONG_RANGE_SCANNER];
+	g.targetId = "station-trade";
+	g.step(dt);
+	g.render(dt);
+	const r = g.relayReadout();
+	const detections = new Set();
+	let met = 0;
+	for (let i = 0; i < 24; i++) {
+		g.targetId = "station-trade";
+		g.engageCruise();
+		for (let s = 0; s < 200 && g.regime !== "cruise"; s++) g.step(dt);
+		if (g.regime !== "cruise")
+			throw new Error(`leg ${i}: never reached cruise (${g.lastExit})`);
+		detections.add(g.relayReadout().detection);
+		if (g.encounter !== null) met++;
+		g.dropOut("probe");
+		g.encounter = null;
+		g.world.gameTime += 1.5;
+		g.step(dt);
+	}
+	const cue = document.querySelector("[data-live-relay-cue]");
+	return {
+		system: g.world.system.record.name,
+		cueFound: cue !== null,
+		meshDrawn: g.relayMesh.root.parent !== null,
+		active: r.active,
+		plan: r.plan,
+		view: r.view,
+		detections: [...detections],
+		met,
+		cueVisible: cue ? cue.checkVisibility() : false,
+	};
+});
+check(
+	"#351: where the relay did not roll active there is none — no plan, nothing drawn, no cue with the module fitted, and the law on the trade route",
+	absent.active === false &&
+		absent.plan === null &&
+		absent.view === null &&
+		absent.detections.join() === "law" &&
+		absent.met < 24 &&
+		absent.cueFound &&
+		absent.cueVisible === false &&
+		absent.meshDrawn === false,
+	JSON.stringify(absent),
+);
+await quiet.close();
 
 await browser.close();
 exit();

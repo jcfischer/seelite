@@ -191,24 +191,27 @@ thresholds. Saved as `LegalStatus`; the reading is derived. `combat-model.md`
 _Avoid_: Bounty, notoriety, wanted level
 
 **Pirate relay**:
-The first infrastructure **Carrier** (#43, prototype): one **Carrier slot** per
-system, `relay-00`, standing a few hundred kilometres off one station's
-approach and moving with it. Its capability is **Route detection**: the
-system's raiders find every ship on the route to the station it watches. It
-is found by its signal, identified inside its own range, destroyed by the
-pulse laser, and replaced on the game clock. `src/relay-slot.ts` owns its
-persistence ids and its plan, `src/pirate-relay.ts` the rest;
-`docs/prototypes/relay-codex.md` records the decisions taken as proposals.
+The first infrastructure **Carrier** (#43, production since #351): one
+**Carrier slot** per system with a station, `relay-00`, standing a few hundred
+kilometres off one station's approach and moving with it. Whether a system's
+relay is *active* is a seeded roll that falls with government, 80% in an
+Anarchy to 10% in a Corporate State; an inactive one is absent. Its capability
+is **Route detection**: the system's raiders find most ships on the route to
+the station it watches. It is found by its signal, identified inside its own
+range, destroyed by the pulse laser, and replaced on the game clock.
+`src/relay-slot.ts` owns its persistence ids and its plan, `src/pirate-relay.ts`
+the rest; `docs/prototypes/relay-codex.md` records the prototype's decisions
+and #351's receipt the production ones.
 Not to be confused with the **System relay**, which is an information channel.
 _Avoid_: Pirate base, sensor buoy, beacon
 
 **Route detection**:
 The pirate relay's dial on the leg law (`raider-slots.ts`' `RouteDetection`):
-`law` is the ordinary draw; `certain` is a watched route while the relay is
-operational, where every leg meets a raider given an operational **Raider
-slot** to send; `none` is that route while the relay is down. The dial skips
-the chance and not the draw, so a `certain` leg meets the raider the law would
-have sent. `combat-model.md` §3 states it beside the law.
+`law` is the ordinary draw; `watched` is a watched route while the relay is
+operational, where 90% of legs meet a raider given an operational **Raider
+slot** to send; `none` is that route while the relay is down. The dial moves
+the chance's threshold and not the draw, so a `watched` leg meets the raider
+the law would have sent. `combat-model.md` §3 states it beside the law.
 _Avoid_: Encounter modifier, danger bonus
 
 **Interdiction contest**:

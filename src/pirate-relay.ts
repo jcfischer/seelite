@@ -1,14 +1,17 @@
 /**
- * The pirate sensor relay (node #43): the first infrastructure carrier, and
- * the prototype for #41's discover → intervene → persist → revisit loop.
+ * The pirate sensor relay (node #43, production since #351): the first
+ * infrastructure carrier, and #41's discover → intervene → persist → revisit
+ * loop.
  *
  * **What it is.** One carrier slot per system, `relay-00`, standing a few
  * hundred kilometres off one station's approach and moving with it. Its
  * **capability** (`operational-consequences`, #41) is that the system's raiders
- * are told about every ship on the route to that station: a cruise leg whose
- * target is the watched station meets a raider on **every** leg while the relay
- * is operational (`RouteDetection` `certain`, given an operational raider slot
- * to send), and on **no** leg while it is destroyed or repairing (`none`).
+ * are told about ships on the route to that station: a cruise leg whose target
+ * is the watched station meets a raider on `RELAY_WATCHED_LEG_CHANCE` of legs
+ * while the relay is operational (`RouteDetection` `watched`, given an
+ * operational raider slot to send), and on **no** leg while it is destroyed or
+ * repairing (`none`). Only a system whose relay rolled active
+ * (`relayActive`) has one at all.
  * Every other route keeps the leg law. The consequence area is that one route,
  * which is #41's "most carriers affect one station, one system, or one named
  * route".
@@ -88,7 +91,8 @@ export const relayActive = (record: {
 	seed: number;
 	government: number;
 }): boolean =>
-	stream(record.seed, DOMAIN.RELAY_ACTIVE)() < relayActiveChance(record.government);
+	stream(record.seed, DOMAIN.RELAY_ACTIVE)() <
+	relayActiveChance(record.government);
 
 /** Inside this range of the relay the cockpit reads its signal. */
 export const RELAY_SIGNAL_RANGE_KM = 2_500;
@@ -217,7 +221,7 @@ export function relayVelocity(
 
 /**
  * The capability, as the leg law reads it: the route to the watched station is
- * `certain` while the relay is operational and `none` while it is not; every
+ * `watched` while the relay is operational and `none` while it is not; every
  * other leg is `law`. `legTargetId` is the cruise leg's selected target.
  */
 export function relayDetection(
