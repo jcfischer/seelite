@@ -40,6 +40,7 @@ import {
 	guardedOrigin,
 	launchChromium,
 	tally,
+	waitForSettingsPanel,
 } from "./probe-guard.mjs";
 
 const ORIGIN =
@@ -129,6 +130,12 @@ check(
 
 {
 	const { page, drawn, move, press } = game;
+	// **Mounted first, or the dead-key arm passes on an empty page.** The
+	// screen is a dynamic import that lands after boot (#423), so `z` pressed
+	// before it has nothing to open whatever the layout says — and "z did not
+	// open it" would be true for the wrong reason. S4's round 5 was this
+	// surrogate one row over.
+	const mounted = await waitForSettingsPanel(page);
 	const moved = await move("system.settings", FREE.settings);
 	await press("z");
 	const openedByOld = (await drawn("[data-settings-panel]")) !== null;
@@ -139,13 +146,14 @@ check(
 	const closed = (await drawn("[data-settings-panel]")) === null;
 	check(
 		"settings: the footer names the moved key, and that key closes the screen",
-		moved === null &&
+		mounted &&
+			moved === null &&
 			!openedByOld &&
 			footer !== null &&
 			named === FREE.settings &&
 			pressed &&
 			closed,
-		`${moved ?? "moved"}; z opened it: ${openedByOld}; footer "${footer}"; named ${named}; closed after pressing it: ${closed}`,
+		`mounted before z: ${mounted}; ${moved ?? "moved"}; z opened it: ${openedByOld}; footer "${footer}"; named ${named}; closed after pressing it: ${closed}`,
 	);
 	await page.keyboard.press("Escape");
 }

@@ -259,7 +259,8 @@ evidence, and #283 does not close without it.
 - **Open the settings screen by a button of its own.** Nothing on the pad is
   bound to it by default. Since #381 S4 the `Controls` tab has a Settings door,
   and the pad reaches it — d-pad → turns the head to the right console, the
-  shoulders step to the tab, and `A` on the door opens the screen. Once it is
+  shoulders step to the tab, d-pad ↑ walks the ring onto the door, and `A`
+  opens the screen (`scripts/probe-derived-names.mjs` flies that path). Once it is
   open the pad drives it, and Circle closes it. A player can also bind
   `system.settings` to a button in that tab.
 - **Type a Commander's name or a seed** (once #306 lands). The new-game form
