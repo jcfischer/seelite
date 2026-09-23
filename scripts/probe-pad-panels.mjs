@@ -54,6 +54,8 @@
  *   npm run dev
  *   node scripts/probe-pad-panels.mjs [baseUrl]
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import {
 	bootedGame,
 	guardedOrigin,
@@ -889,8 +891,10 @@ try {
 	// --- 6. the settings screen -------------------------------------------
 
 	{
-		// Opened from the keyboard, which is the only way in — the pad has no
-		// binding for it, and that is stated rather than discovered.
+		// Opened from the keyboard. The pad has no binding for it by default;
+		// its way in is the `Controls` tab's door since #381 S4, which
+		// `probe-derived-names.mjs` reaches on the pad. This row is about what
+		// the pad does once the screen is up.
 		await page.keyboard.press("z");
 		await frames(2);
 		const open = await page.evaluate(() =>

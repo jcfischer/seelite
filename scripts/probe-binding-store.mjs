@@ -23,6 +23,8 @@
  * reads it — so the rows below open the `Controls` tab and ask whether the
  * sentence is drawn where a person would find it.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { flightHarness, HOLD_MS, NEW_KEY } from "./lib/flight-harness.mjs";
 import { gameUrl } from "./lib/game-url.mjs";
 import {

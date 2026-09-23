@@ -62,6 +62,14 @@ export interface ControlsCatalogue {
 	/** What the store could not do, for the band above the tree (#381 S3).
 	 *  Empty on the shipped layout, which is the common case. */
 	readonly notices: readonly LayoutNotice[];
+	/**
+	 * The layout the rows were read from (#381 S5).
+	 *
+	 * Carried so a surface drawn beside the tab — the pad hint — asks the
+	 * same table the tab printed, rather than a second one handed over by a
+	 * second setter that could fall a rebind behind.
+	 */
+	readonly bindings: Layout;
 }
 
 const row = (
@@ -105,6 +113,7 @@ export function controlsCatalogue(
 		layout: moves.length > 0 ? "player" : "default",
 		commands: COMMANDS.map((c) => row(c, bound)),
 		notices,
+		bindings,
 	};
 }
 

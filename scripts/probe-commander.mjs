@@ -30,6 +30,8 @@
  * The URLs are built with `boot: null`, which is `gameUrl`'s option for a probe
  * of the overlay itself and for nothing else.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { readFileSync } from "node:fs";
 import { gameUrl } from "./lib/game-url.mjs";
 import { STANDARD_INDEX, installFakePad } from "./lib/fake-pad.mjs";

@@ -30,6 +30,7 @@ import {
 	controlsTreeMarkup,
 	focusAfterFold,
 	groupFocusId,
+	padHintFor,
 	rowFocusId,
 	toggleGroup,
 } from "./controls-reference";
@@ -45,7 +46,6 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { entrustedClause, priceLabel, signedDelta } from "./station-console";
-import { padHintFor } from "./pad-bindings";
 import type { LaneRefusal } from "./station-traffic";
 import {
 	type FocusCursor,
@@ -889,7 +889,7 @@ export class LiveCockpit {
 		// what it had — narrow the Navigation filter to nothing and the line went
 		// on promising a walk. Sage found it.
 		const text = wanted
-			? padHintFor({
+			? padHintFor(this.controls.bindings, {
 					station: wanted.matches("[data-live-station-console]"),
 					walkable: elements.length > 0,
 				})

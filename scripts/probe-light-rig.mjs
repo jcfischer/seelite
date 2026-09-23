@@ -93,6 +93,8 @@
  * The half that needs the player's GPU is the picture, and that is the
  * canonical view set's job.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 
 import { gameUrl } from "./lib/game-url.mjs";
 // The painted-hull band and floors are derived in `lib/hull-luma.mjs`, from readings recorded

@@ -556,9 +556,17 @@ import {
 	controlsCatalogue,
 } from "./controls-catalogue";
 import {
+	boundNames,
+	COMMANDER_ACTION,
 	controlsKeyMove,
+	cruisePrompt,
+	dialKeys,
+	jumpPrompt,
+	onKeyboard,
+	type OwnKey,
 	restoreOnTabPick,
 	SETTINGS_ACTION,
+	targetPrompt,
 } from "./controls-reference";
 import type { CaptureModalHandle } from "./capture-modal";
 import { isEditable } from "./editable-target";
@@ -3651,7 +3659,23 @@ class Game {
 			 * binding and so cannot be lost by rebinding one.
 			 */
 			onControlsAction: (action) => {
-				if (action === SETTINGS_ACTION) this.settingsPanel?.open();
+				// A `switch` over the union that ends in `never`, so a third door
+				// is a compile error here rather than a click that does nothing.
+				// The first version claimed that without the `default` that
+				// makes it true, and a third member compiled and fell through
+				// (sage round 3 on #498).
+				switch (action) {
+					case SETTINGS_ACTION:
+						this.settingsPanel?.open();
+						return;
+					case COMMANDER_ACTION:
+						this.commanderOverlay?.open();
+						return;
+					default: {
+						const unhandled: never = action;
+						throw new Error(`no route for the Controls door ${unhandled}`);
+					}
+				}
 			},
 			onRightTab: (tab) => {
 				// A tab picked by hand moves what `?` will restore (#372).
@@ -8074,6 +8098,17 @@ class Game {
 				// closed.
 				this.settingsPanel?.open();
 				return;
+			// **The Commander overlay's, folded here in #381 S5** for the same
+			// reason and on the same terms. It opened on `COMMANDER_KEY` from
+			// its own listener, so the registry offered a key for rebinding
+			// that moved nothing: rebound to `4`, the tab printed `4`, `4` did
+			// nothing and `9` still opened the screen. The `Controls` tab's
+			// Commanders door is the route no rebind can lock, which is what S2
+			// and S4 waited for. Not behind the settings screen, for the
+			// capture-phase reason the case above gives.
+			case "system.commander":
+				this.commanderOverlay?.open();
+				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
 			case "view.reference": {
@@ -8278,6 +8313,45 @@ class Game {
 
 	controlsNow(): ControlsCatalogue {
 		return controlsCatalogue(this.bindings, this.layoutNotices);
+	}
+
+	/**
+	 * A screen's own command, read from the layout in force each time (#381
+	 * S5).
+	 *
+	 * `reaches` asks the same `keyDispatch` and `resolveKey` the open went
+	 * through, so the key that opens a screen, the key that closes it and the
+	 * key its footer prints are one answer. That is the close half of #422's
+	 * question — the panels compared a raw `e.key` against a constant while
+	 * the dispatch lowercased first — answered the way S4 already answered
+	 * the open half. A dispatch that is not a plain press (a chord, a
+	 * release, a typed field) reaches nothing here, as it would open nothing.
+	 */
+	ownKey(id: CommandId): OwnKey {
+		return {
+			names: () => boundNames(this.bindings, id, onKeyboard),
+			reaches: (e) => {
+				const route = keyDispatch({
+					key: e.key,
+					code: e.code,
+					down: true,
+					repeat: e.repeat,
+					altKey: e.altKey,
+					ctrlKey: e.ctrlKey,
+					metaKey: e.metaKey,
+					editable: isEditable(e.target),
+				});
+				return (
+					route.kind === "key" &&
+					route.oneShot &&
+					resolveKey(this.bindings, {
+						key: route.key,
+						code: e.code,
+						view: this.view,
+					}).includes(id)
+				);
+			},
+		};
 	}
 
 	/**
@@ -8860,10 +8934,16 @@ class Game {
 		// Five sage rounds and 1,110 headless tests had not found it, because
 		// none of them asks whether a player would ever see the line.
 		//
-		// It wins over "press J to cruise" rather than sharing the row, because
-		// cruise is discoverable without this line — the key help along the
-		// bottom of the frame names it — and the jump was not discoverable
-		// anywhere.
+		// It wins over the cruise prompt rather than sharing the row. **The
+		// reason given here was that cruise stays discoverable without this
+		// line, because the key legend along the bottom of the frame named
+		// it** — and #381 S5 deleted that legend on the principal's ruling
+		// (#369 D11: generated or deleted, and this argument moves with it).
+		// What is left is the `Controls` tab, which names every key but only
+		// once it is opened. So a pilot who sets a course before finding
+		// cruise sees the jump line and not the cruise one until the course
+		// is cleared or flown; that is a consequence of the ruling, stated
+		// here rather than argued away.
 		//
 		// **This is the prompt only.** A *persistent* indication that a course is
 		// set is #117's, and it is a real gap: today the set course appears in
@@ -8882,15 +8962,15 @@ class Game {
 			// predicate, read by both.
 			const decision = this.jumpDecision(hop);
 			return decision.ok
-				? `press \` to jump to ${hop.name}`
+				? jumpPrompt(this.bindings, hop.name)
 				: jumpRefusalText(decision.refusal, hop.name);
 		}
-		if (targetKm === null) return "T selects a target";
+		if (targetKm === null) return targetPrompt(this.bindings);
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
 		// argument — and above it the answer is always cruise.
 		if (targetKm < 3600 * ASSIST_CAP_KMS) return "";
-		return "press J to cruise";
+		return cruisePrompt(this.bindings);
 	}
 
 	/**
@@ -13295,12 +13375,15 @@ class Game {
 			// setting is not visible produces judgements that cannot be written
 			// down afterwards, which is the one thing this node has to deliver.
 			[
-				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c [-/=]`,
-				`exp ${p.exponent.toFixed(2)} [ [ / ] ]`,
-				`drop ${p.dropRadiusKm} km [;/']`,
-				`below ${p.dropSpeedKms} km/s [,/.]`,
-				`vicinity ${range(p.vicinityKm)} [n/m]`,
-				`lead ${p.approachLeadS}s [k/l]`,
+				// The keys off the layout in force (#381 S5): every dial is an
+				// ordinary command since D12, so a moved one printed its old key
+				// here.
+				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c ${dialKeys(this.bindings, "vMax")}`,
+				`exp ${p.exponent.toFixed(2)} ${dialKeys(this.bindings, "exponent")}`,
+				`drop ${p.dropRadiusKm} km ${dialKeys(this.bindings, "dropRadius")}`,
+				`below ${p.dropSpeedKms} km/s ${dialKeys(this.bindings, "dropSpeed")}`,
+				`vicinity ${range(p.vicinityKm)} ${dialKeys(this.bindings, "vicinity")}`,
+				`lead ${p.approachLeadS}s ${dialKeys(this.bindings, "approachLead")}`,
 			].join("   "),
 		];
 		// The clock is quantised into the key separately because it is *not* on
@@ -14266,7 +14349,7 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
-		this.combatRig?.drawOverlay(ctx, w, h, this.view);
+		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
 
 		// The selected target owns the amber sky marker. Green remains prograde,
 		// and the other bodies stay cool blue navigation context.
@@ -14980,6 +15063,10 @@ if (query.has("model-viewer")) {
 			openAtBoot = true;
 		}
 	}
+	// One `OwnKey` for the two surfaces that must name the same key — the
+	// overlay's footer and close, and the save-fault badge. It reads the layout
+	// each time it is asked, so one built here follows every rebind.
+	const commanderKey = game.ownKey("system.commander");
 	game.commanderOverlay = mountCommanderOverlay({
 		catalog: plan.writesNothing ? null : catalog,
 		switcher: plan.writesNothing
@@ -15025,8 +15112,12 @@ if (query.has("model-viewer")) {
 			return fault;
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),
+		ownKey: commanderKey,
 	});
-	game.saveBadge = mountSaveBadge(() => game.commanderOverlay?.open());
+	game.saveBadge = mountSaveBadge(
+		() => game.commanderOverlay?.open(),
+		commanderKey.names,
+	);
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
@@ -15109,6 +15200,7 @@ if (query.has("model-viewer")) {
 		// this is a second way in rather than a replacement.
 		game.settingsPanel = mountSettingsPanel(
 			game.settings,
+			game.ownKey("system.settings"),
 			() => game.releaseHeldKeys(),
 			// What the antialiasing row is *actually* rendering at, when the GPU
 			// grants less than the player asked for (#200). Without this the row

@@ -11,7 +11,14 @@
  */
 import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
-import type { RebindRefusal, Surface, TaskGroup, Trigger } from "./commands";
+import type {
+	CommandId,
+	Layout,
+	RebindRefusal,
+	Surface,
+	TaskGroup,
+	Trigger,
+} from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
@@ -117,13 +124,27 @@ export function restoreOnTabPick<T extends string>(
 export const SETTINGS_ACTION = "settings";
 
 /**
+ * The tab's door to the Commander overlay (#381 S5), for `SETTINGS_ACTION`'s
+ * reason.
+ *
+ * `system.commander` was rebindable from the moment the registry existed and
+ * the overlay went on opening on its own listener, so a player who moved it
+ * got the new key printed in this tab, a new key that did nothing, and `9`
+ * still opening the screen. S2 refused to fold that open-trigger until a route
+ * existed that no rebind could lock, and S4 left the Commander out because it
+ * had none. This is the route, and the fold came with it.
+ */
+export const COMMANDER_ACTION = "commander";
+
+/**
  * Every door the tab can carry.
  *
- * A union of one, so a second door is a compile error at every consumer
- * rather than a `string` that silently falls through `main.ts`'s `if`
- * (sage round 4 on #497).
+ * A closed union, so another door is a compile error at `main.ts`'s
+ * dispatch — its `switch` ends in a `never` — rather than a `string` that
+ * silently falls through (sage round 4 on #497, and round 3 on #498, which
+ * found the `never` missing). It held one until #381 S5 added the second.
  */
-export type ControlsAction = typeof SETTINGS_ACTION;
+export type ControlsAction = typeof SETTINGS_ACTION | typeof COMMANDER_ACTION;
 
 export type TreeItem =
 	| { kind: "header"; group: TaskGroup; count: number }
@@ -138,9 +159,9 @@ export const actionFocusId = (action: string) => `controls-action:${action}`;
  * D6: two levels, group header and rows, in task order. A folded group keeps
  * its header — that is what the player opens it again with.
  *
- * **The door comes first**, before any group, so a player who has folded
- * everything still has it in front of them — and because the thing it is for
- * is being lost, which is not a state to go hunting in.
+ * **The doors come first**, before any group, so a player who has folded
+ * everything still has them in front of them — and because the thing they are
+ * for is being lost, which is not a state to go hunting in.
  */
 export function controlsTree(
 	catalogue: ControlsCatalogue,
@@ -148,6 +169,7 @@ export function controlsTree(
 ): TreeItem[] {
 	const items: TreeItem[] = [
 		{ kind: "action", action: SETTINGS_ACTION, label: "Settings" },
+		{ kind: "action", action: COMMANDER_ACTION, label: "Commanders" },
 	];
 	for (const group of TASK_GROUPS) {
 		const rows = catalogue.commands.filter((c) => c.group === group);
@@ -592,3 +614,206 @@ function noticesMarkup(notices: readonly LayoutNotice[]): string {
 		.join("");
 	return `<ul class="lc-controls-notices" data-live-controls-notices>${rows}</ul>`;
 }
+
+// ---------------------------------------------------------------------------
+// Every other surface that names a control (#381 S5)
+// ---------------------------------------------------------------------------
+
+/**
+ * What reaches `id` in `layout`, printed — the one question every surface
+ * that names a control asks (#369 D11).
+ *
+ * **Over a layout, and never over the shipped table.** The tab has printed the
+ * player's layout since the storage slice; every other surface that named a
+ * key typed it in, so a rebind moved the tab and left the prompt, the footers
+ * and the pad hint naming a key that no longer did anything. Each of them asks
+ * this now, and `triggerLabel` is still the only thing that spells a key.
+ *
+ * `keep` narrows it to the triggers a surface can name — a keyboard footer
+ * has no use for a pad button, and the pad hint only for what a console
+ * reads. Repeats are dropped, in the layout's order.
+ */
+export function boundNames(
+	layout: Layout,
+	id: CommandId,
+	keep: (t: Trigger) => boolean = () => true,
+): string[] {
+	const names = layout
+		.filter((b) => b.command === id && keep(b.trigger))
+		.map((b) => triggerLabel(b.trigger));
+	return [...new Set(names)];
+}
+
+/**
+ * Several names for one command, as a player reads them: `j or k`.
+ *
+ * A `hold` every name shares is said once — `hold x or left mouse button` —
+ * because the qualifier is the command's (`movedTrigger`'s table) and a list
+ * that repeated it reads as a list of different gestures. Only when every
+ * name carries it: a press beside a hold keeps both words, since they are.
+ */
+export function anyOf(names: readonly string[]): string {
+	const HOLD = "hold ";
+	return names.length > 1 && names.every((n) => n.startsWith(HOLD))
+		? `${HOLD}${names.map((n) => n.slice(HOLD.length)).join(" or ")}`
+		: names.join(" or ");
+}
+
+/**
+ * Two commands that are a pair, as one segment: `d-pad ↑/↓`, `L1/R1`.
+ *
+ * A shared first word is said once, so a pair reads as one control pushed two
+ * ways rather than two controls. Everything before it is `triggerLabel`'s.
+ */
+function pairOf(a: readonly string[], b: readonly string[]): string {
+	const [first, second] = [anyOf(a), anyOf(b)];
+	const space = first.lastIndexOf(" ");
+	const shared = space === -1 ? "" : first.slice(0, space + 1);
+	return shared && second.startsWith(shared)
+		? `${first}/${second.slice(shared.length)}`
+		: `${first}/${second}`;
+}
+
+/** A key trigger: what a keyboard footer can name. */
+export const onKeyboard = (t: Trigger): boolean => t.kind === "key";
+
+/**
+ * A screen's own command, as the layout in force has it (#381 S5).
+ *
+ * The settings screen and the Commander overlay each open on a command and
+ * close on the same key, and each prints that key in its footer. Both halves
+ * read the layout through this rather than a constant: a footer derived from
+ * the layout beside a close arm comparing `SETTINGS_KEY` would name a key that
+ * does not close the screen, which is the lie the derivation exists to end.
+ *
+ * `main.ts` supplies it, because it holds the layout and the resolver the open
+ * goes through — so the key that opens a screen and the key that closes it are
+ * one answer. A type here and not an import in either panel, because the
+ * Commander overlay is read by `commands.ts` for its default key and a value
+ * import back into this module would close a cycle through the registry.
+ */
+export interface OwnKey {
+	/** Its keyboard triggers, printed. Empty when every one moved to the pad. */
+	readonly names: () => readonly string[];
+	/** Whether this keydown reaches the command in the layout in force. */
+	readonly reaches: (e: KeyboardEvent) => boolean;
+}
+
+/** A pad press a console reads: its grammar, or a button that falls through. */
+const readInConsole = (t: Trigger): boolean =>
+	(t.kind === "pad-intent" || t.kind === "pad-button") &&
+	t.contexts.includes("console");
+
+/**
+ * The line a console shows a pad player, built from what that surface has.
+ *
+ * **Here since #381 S5, and derived.** It lived in `pad-bindings.ts`, "beside
+ * the bindings it names" — it had been written into `live-cockpit.ts` first,
+ * as a third copy of a table that module and `docs/gamepad.md` already owned,
+ * so a rebind moved two of the three. S4 moved the bindings to the registry
+ * and the reason went with them; and it could not ask the registry from
+ * there, because `commands.ts` already reads `pad-bindings.ts` to derive the
+ * pad's rows. So each segment's button is the layout's answer and the verb is
+ * the only word authored here.
+ *
+ * **Assembled rather than picked from near-copies.** It began as one constant,
+ * gained a station variant that was the first minus one segment, and would
+ * have gained a third and fourth for the empty walk — three of them left dead
+ * the moment the function replaced them, which sage then found. A surface with
+ * nothing focusable must not promise a walk, and the station console must not
+ * promise a back: it is reached with the head already forward, so `back`
+ * would turn a forward head forward. It still gets a marker either way,
+ * because the *marker* answers a different question from the *hint*.
+ *
+ * **"CONTROLLER", not "PAD".** On a *station* console the shorter word meets
+ * `CONTEXT.md`'s berth sense, which is the one surface in this game where that
+ * reading is live. The buttons are named by standard-mapping position rather
+ * than drawn as DualSense glyphs, because an Xbox pad reads `a`/`b` literally.
+ *
+ * A segment whose command reaches no console button is left out rather than
+ * printed with a blank where the button goes. No shipped or player layout can
+ * produce that — a panel intent is not offered for rebinding — so it is the
+ * derivation refusing to print a blank, not a case anyone meets.
+ */
+export function padHintFor(
+	layout: Layout,
+	surface: { station: boolean; walkable: boolean },
+): string {
+	const on = (id: CommandId) => boundNames(layout, id, readInConsole);
+	const segment = (names: readonly string[], verb: string) =>
+		names.length > 0 ? [`${anyOf(names)} ${verb}`] : [];
+	const pair = (a: CommandId, b: CommandId, verb: string) =>
+		on(a).length > 0 && on(b).length > 0
+			? [`${pairOf(on(a), on(b))} ${verb}`]
+			: [];
+	return [
+		"CONTROLLER",
+		...(surface.walkable
+			? [
+					...pair("panel.cursorUp", "panel.cursorDown", "WALK"),
+					...segment(on("panel.activate"), "SELECT"),
+				]
+			: []),
+		...(surface.station ? [] : segment(on("panel.back"), "BACK")),
+		...pair("panel.tabPrevious", "panel.tabNext", "TAB"),
+	].join(" · ");
+}
+
+/**
+ * A command as a prompt names it: its keyboard triggers, or — when a player
+ * moved every one of them to the pad — wherever they went.
+ *
+ * The keyboard first because the prompt line has always spoken to it, and a
+ * line naming `Y` beside `j` for a keyboard player is noise on every frame.
+ * The fallback is not decoration: `rebind` moves a trigger and never removes
+ * one, so a command with no key left still has a button, and a prompt that
+ * printed nothing would read `press  to cruise`.
+ */
+function spoken(layout: Layout, id: CommandId): string {
+	return anyOf(keyboardFirst(layout, id));
+}
+
+/** `spoken`'s names before they are joined, for a line that pairs two. */
+function keyboardFirst(layout: Layout, id: CommandId): string[] {
+	const keys = boundNames(layout, id, onKeyboard);
+	return keys.length > 0 ? keys : boundNames(layout, id);
+}
+
+/**
+ * The prompt line's three sentences that name a control (#381 S5).
+ *
+ * `main.ts`'s `cruisePrompt` picks which one shows; these say it. They were
+ * authored there — `press \` to jump`, `T selects a target`, `press J to
+ * cruise` — and in capitals the tab never printed, which is #370 D7's
+ * "every other key prints as the character you type" and the principal's
+ * ruling that the glass follows it rather than the tab following the glass.
+ */
+export const jumpPrompt = (layout: Layout, hop: string): string =>
+	`press ${spoken(layout, "fly.jump")} to jump to ${hop}`;
+export const targetPrompt = (layout: Layout): string =>
+	`${spoken(layout, "fight.targetNext")} selects a target`;
+export const cruisePrompt = (layout: Layout): string =>
+	`press ${spoken(layout, "fly.cruise")} to cruise`;
+
+/**
+ * A cruise dial's two keys, for the legacy HUD's dial line: `(-/=)`.
+ *
+ * In parentheses rather than the brackets the line used, because two of the
+ * dials *are* the bracket keys and `[[/]]` reads as punctuation rather than
+ * as two keys. The keyboard first, and the prompt line's fallback after it:
+ * a dial is a press, which a player may move to a pad button, and a side
+ * with no key printed `(-/)` for a round (sage round 1 on #498).
+ *
+ * **Named by the dial, not by its two commands**, and the stem is read off
+ * `CommandId`: six call sites each typing both ids was six chances to pair the
+ * wrong two, and a stem the registry has no `Down` row for does not compile.
+ */
+export const dialKeys = (layout: Layout, dial: DialStem): string =>
+	`(${pairOf(keyboardFirst(layout, `tune.${dial}Down`), keyboardFirst(layout, `tune.${dial}Up`))})`;
+
+/** The cruise dials, as the registry names their pairs: `vMax`, `exponent`, … */
+export type DialStem = CommandId extends infer C
+	? C extends `tune.${infer S}Down`
+		? S
+		: never
+	: never;

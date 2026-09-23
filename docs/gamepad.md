@@ -46,7 +46,7 @@ buys one thing: `main.ts` is not on the headless list and nothing in the unit
 tier can load it, so a table written there is a table no test can read. The rule
 the contract protects — that the copied module stays game-agnostic — holds.
 
-## Three contexts, and the second one is the interesting one
+## The contexts, and the second one is the interesting one
 
 **`flight`** is the forward view. The pad flies the ship.
 
@@ -88,31 +88,66 @@ flying the ship behind a screen the player was reading. A key is an *event* and
 can be forgotten; a stick is a **position, re-reported every frame**, so there
 is nothing to release and the axes have to be refused instead.
 
+**`capture`** is the rebind modal on the `Controls` tab (#381 S4), and it is
+the one context that exists to *admit* the sticks and triggers — for one
+capture — while refusing everything else. `src/pad-bindings.ts`'s header owns
+why it is a context rather than a hole in `modal`'s suspension.
+
+The heading counted these once and the count went stale twice, as a context
+joined each time; the list is `PadContext` in `src/pad-bindings.ts`.
+
 The mode is a panel's state, never a flag on the pad. So the mouse can act on
 the same panel in the same frame, and whichever device acted last is the one in
 charge — seekolous's rule, inherited with the module.
 
 ## The flight bindings
 
-Names are the W3C standard mapping's positions; DualSense labels in brackets. An
-Xbox pad reads `a`/`b`/`x`/`y` literally.
+Names are the W3C standard mapping's positions, as the `Controls` tab prints
+them. On a DualSense `A` is Cross, `B` Circle, `X` Square, `Y` Triangle,
+`Start` Options and `Select` Create; an Xbox pad reads `A`/`B`/`X`/`Y`
+literally.
 
-| control | does | keyboard |
+**These are the shipped layout's, and they are not typed here** (#381 S5).
+Both tables are rendered from `DEFAULT_BINDINGS` by `tests/gamepad-doc.test.ts`,
+which fails when the file and the registry disagree — this file carried its own
+copy until then, and #369 D11 names it among the copies a rebind could not
+reach. A player's own layout is the `Controls` tab's to print. One row per
+direction, because a stick's two halves are two commands (#369 D2); the sticks
+and triggers are analog.
+
+<!-- generated: flight — tests/gamepad-doc.test.ts renders it from DEFAULT_BINDINGS; do not edit by hand -->
+
+| on the pad | does | keyboard and mouse |
 | --- | --- | --- |
-| right stick | pitch and yaw, analog | `w`/`s`, `a`/`d` |
-| left stick, X | roll, analog | `q`/`e` |
-| `r2` / `l2` | trim the throttle open and shut, analog | `shift` / `control` |
-| `a` (Cross) | launch, or skip the dock traversal | `Enter` |
-| `b` (Circle) | request docking clearance | `c` |
-| `x` (Square) | fire the pulse laser, held | `space` / left mouse |
-| `y` (Triangle) | engage or drop cruise | `j` |
-| `l1` / `r1` | previous and next target | `g` / `t` |
-| `l3` | face the target | `f` |
-| `r3` | cockpit or chase | `v` |
-| `start` (Options) | docking computer | `u` |
-| `select` (Create) | charge the Jump | `` ` `` |
-| d-pad ← / ↑ / → | head-look port, forward, starboard | `1` / `2` / `3` |
-| d-pad ↓ | hand the pad to the frame instrument (Circle gives it back) | — |
+| right stick down | Pitch: nose up | `hold s or ↓` |
+| right stick up | Pitch: nose down | `hold w or ↑` |
+| right stick left | Yaw: nose to port | `hold a or ←` |
+| right stick right | Yaw: nose to starboard | `hold d or →` |
+| left stick left | Roll to port | `hold q` |
+| left stick right | Roll to starboard | `hold e` |
+| R2 | Throttle up | `hold Shift` |
+| L2 | Throttle down | `hold Ctrl` |
+| Y | Engage or drop cruise | `j` |
+| Select | Wind up the jump | `` ` `` |
+| hold X | Fire the pulse laser | `hold Space or left mouse button` |
+| R1 | Next target | `t` |
+| L1 | Previous target | `g` |
+| L3 | Face the target | `f` |
+| B | Request docking clearance | `c` |
+| Start | Docking computer on/off | `u` |
+| A | Launch, or skip the traversal | `Enter` |
+| d-pad ← | Head to port console | `1 or Alt + ←` |
+| d-pad ↑ | Head forward | `2 or Alt + ↑` |
+| d-pad → | Head to starboard console | `3 or Alt + →` |
+| R3 | Cockpit or chase view | `v` |
+| d-pad ↑ | Centre the chase camera | `2` |
+| d-pad ↓ | Hand the pad to the frame instrument, and back | — |
+
+<!-- end generated: flight -->
+
+The d-pad's ↑ appears twice because it means two things by view: head forward
+in the cockpit, and the chase camera's reset in chase. Circle takes the pad back
+from the frame instrument.
 
 **#324 put fire on the controller: Square (`x`), held**, by the principal's
 ruling. Flight assist left the pad for the keyboard's `x`. For one round the
@@ -137,12 +172,29 @@ agrees with the mouse: push right, the nose goes right.
 
 ## The console bindings
 
-| control | does |
+A console's own grammar, rendered like the table above. `B` backs out to the
+forward view, out of a modal, or out of the instrument; the shoulders do
+nothing in the instrument, which has no tabs (#379). The keyboard column is the
+Requests tab's, which walks on the same five keys.
+
+<!-- generated: console — tests/gamepad-doc.test.ts renders it from DEFAULT_BINDINGS; do not edit by hand -->
+
+| on the pad | does | keyboard and mouse |
+| --- | --- | --- |
+| d-pad ↑ | Walk a console's cursor up | `↑ (Requests)` |
+| d-pad ↓ | Walk a console's cursor down | `↓ (Requests)` |
+| L1 | Previous console tab | `← (Requests)` |
+| R1 | Next console tab | `→ (Requests)` |
+| A | Select the row under the cursor | `Enter (Requests)` |
+| B | Close a console, or turn the head forward | — |
+
+<!-- end generated: console -->
+
+And what a console does to everything else, which is a rule rather than a
+binding:
+
+| control | while a console holds the pad |
 | --- | --- |
-| d-pad ↑ / ↓ | walk the cursor |
-| `a` (Cross) | act on the ringed row |
-| `b` (Circle) | back out — to the forward view, out of a modal, or out of the instrument |
-| `l1` / `r1` | previous and next tab; nothing in the instrument, which has no tabs (#379) |
 | sticks, triggers, mouse — its look, its pointer and its button | **suspended** — the ship coasts, and a click on the glass beside the console does not fire (#378) |
 | the keyboard | still flies — the principal's ruling; a key has to be *held* |
 | every other button | still acts on the ship |
@@ -172,7 +224,8 @@ a second one beside it.
 | what | where |
 | --- | --- |
 | the deadzone, the edges, the standard-mapping refusal | `tests/gamepad.test.ts` (bun, no browser) |
-| what a button means in each of the three contexts | `tests/pad-bindings.test.ts` |
+| what a button means in each context | `tests/pad-bindings.test.ts` |
+| the two tables above are the shipped layout's | `tests/gamepad-doc.test.ts` |
 | the shared cursor's arithmetic | `tests/panel-focus.test.ts` |
 | both modules load headless, and one is a leaf | `tests/headless.test.ts` |
 | the pad is read once a frame, and the stick is analog when it reaches the ship | `scripts/probe-gamepad.mjs` |
@@ -203,8 +256,13 @@ evidence, and #283 does not close without it.
   grammar, and one for a single field is not a good enough reason to reopen it.
   The kind chips and the economy chips are what narrow those lists for a pad,
   and both are walkable rows.
-- **Open the settings screen.** `z` on the keyboard is the only way in. Once it
-  is open the pad drives it, and Circle closes it.
+- **Open the settings screen by a button of its own.** Nothing on the pad is
+  bound to it by default. Since #381 S4 the `Controls` tab has a Settings door,
+  and the pad reaches it — d-pad → turns the head to the right console, the
+  shoulders step to the tab, d-pad ↑ walks the ring onto the door, and `A`
+  opens the screen (`scripts/probe-derived-names.mjs` flies that path). Once it is
+  open the pad drives it, and Circle closes it. A player can also bind
+  `system.settings` to a button in that tab.
 - **Type a Commander's name or a seed** (once #306 lands). The new-game form
   pre-fills both — a free default name and a random seed — so a pad player can
   start a game by accepting them, and re-roll the seed; retyping either takes the keyboard, for the
@@ -214,7 +272,10 @@ evidence, and #283 does not close without it.
   `SETTINGS_KEY`. What the pad claims is the flight-critical set; the dials stay
   on the keyboard, and the instrument's switches are reachable through its
   cursor rather than through their letters.
-- **Rebind anything.** There is no rebinding UI.
+- **Rebind a stick, a trigger or a held button.** The `Controls` tab rebinds
+  since #381 S4, and a pad button can be moved there like a key — but the
+  sticks, the two triggers and the held fire button are read in fixed
+  positions, so the rebind refuses them and says why. #496 owns that.
 - **Rumble, adaptive triggers, the touchpad, motion.** All DualSense extras
   behind vendor-specific surfaces. None are in the standard mapping, and none
   are needed to fly.

@@ -4,8 +4,9 @@
  * The second plain-DOM surface beside the settings screen, and for the same
  * reason (§11.1): choosing which save to play is neither station business nor
  * part of the fiction. It opens in front of every player boot, with the clock
- * held until Continue, and on `COMMANDER_KEY` in play, where the world runs
- * under it as it does under settings.
+ * held until Continue, and in play on `system.commander` — `9` unless the
+ * player moved it — or the `Controls` tab's door, where the world runs under
+ * it as it does under settings.
  *
  * Two halves. `commanderMenu` and its helpers are a model with no DOM, so
  * `tests/commander-overlay.test.ts` can check what the overlay offers.
@@ -23,12 +24,20 @@ import {
 	messageOf,
 	randomSeed,
 } from "./commander-flow";
+import type { OwnKey } from "./controls-reference";
 import { isEditable } from "./editable-target";
 import type { CommanderCatalog } from "./save-store";
 
 /**
- * The key that opens it in play, exported so a test can hold it apart from the
- * flight bindings, the perf panel's keys and `SETTINGS_KEY`.
+ * The key `system.commander` ships on, which `commands.ts` authors its default
+ * from and a test holds apart from the perf panel's keys and `SETTINGS_KEY`.
+ *
+ * **The overlay does not read it** (#381 S5). It opens through
+ * `Game.command("system.commander")` and closes on whatever key the layout in
+ * force gives that command, which `OwnKey` carries. Until then it opened on
+ * this constant from its own listener while the registry offered the command
+ * for rebinding — so a moved Commander key was printed in the `Controls` tab,
+ * did nothing, and `9` went on opening the screen.
  *
  * **A digit, because no letter is free.** Every letter is a flight binding, a
  * perf-panel key or settings' `z`; `1`–`3` are head-look and `0` the cruise
@@ -205,6 +214,30 @@ export interface CommanderOverlayOptions {
 	onContinue: (slot: string) => Promise<string | null>;
 	/** Called as the overlay opens, to drop keys the player is still holding. */
 	releaseHeldKeys: () => void;
+	/** `system.commander` in the layout in force: the key that closes the
+	 *  overlay in play and the name its footer prints (#381 S5). */
+	ownKey: OwnKey;
+}
+
+/**
+ * The line under the rows.
+ *
+ * A form goes back with `Esc`; the menu closes only once the game runs, on
+ * `Esc` or on `system.commander`'s keys as the layout has them — `closeKeys`,
+ * so a player who moved it reads the key they chose, and one who moved it to
+ * the pad reads `Esc` alone.
+ */
+export function commanderHint(
+	kind: "menu" | "form",
+	running: boolean,
+	closeKeys: readonly string[],
+): string {
+	if (kind === "form")
+		return "↑↓ choose · type in a field · Enter do it · Esc back";
+	const close = running
+		? ` · ${["Esc", ...closeKeys].join(" or ")} to close`
+		: "";
+	return `↑↓ choose · ←→ action · Enter do it${close}`;
 }
 
 const STYLE_ID = "seelite-commander-style";
@@ -603,10 +636,13 @@ export function mountCommanderOverlay(
 					})
 					.join("");
 		}
-		const hint =
-			view.kind === "menu"
-				? `↑↓ choose · ←→ action · Enter do it${running ? ` · Esc or ${COMMANDER_KEY} to close` : ""}`
-				: "↑↓ choose · type in a field · Enter do it · Esc back";
+		const hint = escapeHtml(
+			commanderHint(
+				view.kind === "menu" ? "menu" : "form",
+				running,
+				options.ownKey.names(),
+			),
+		);
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Commander" aria-busy="${busy}">
   <h2>Commander</h2>
   ${refusal ? faultHtml(refusal) : ""}
@@ -764,17 +800,20 @@ export function mountCommanderOverlay(
 
 	const onKey = (e: KeyboardEvent) => {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
-		if (!root) {
-			if (
-				e.key === COMMANDER_KEY &&
-				!isEditable(e.target) &&
-				!document.querySelector("[data-settings-panel]")
-			) {
-				e.preventDefault();
-				open();
-			}
-			return;
-		}
+		// **Closed, this listener does nothing** (#381 S5), which is S4's
+		// settings fold one screen over. It opened the overlay on
+		// `COMMANDER_KEY` itself, so the key was the panel's rather than the
+		// registry's and a rebound `system.commander` changed nothing a player
+		// could feel. `Game.command("system.commander")` opens it now, and the
+		// `Controls` tab's Commanders door is the route no rebind can lock.
+		//
+		// The two guards the open carried are not restated there. `main.ts`
+		// gates a typed key in a field itself (#380), and the settings screen
+		// takes `keydown` in the capture phase and stops it, so a key pressed
+		// over settings never reaches the bubble-phase dispatch — the guard
+		// here existed because the two screens were *sibling* capture
+		// listeners, where a stop does not reach across.
+		if (!root) return;
 		// While it is open it owns the keyboard, so the ship does not fly off
 		// behind it. A field keeps its typing: only the keys the overlay walks
 		// with are taken from it.
@@ -783,7 +822,7 @@ export function mountCommanderOverlay(
 		if (typing && !["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(e.key))
 			return;
 		e.preventDefault();
-		if (e.key === "Escape" || (!typing && e.key === COMMANDER_KEY)) back();
+		if (e.key === "Escape" || (!typing && options.ownKey.reaches(e))) back();
 		else if (e.key === "ArrowDown") moveCursor(1);
 		else if (e.key === "ArrowUp") moveCursor(-1);
 		else if (e.key === "ArrowRight") stepValue(1);

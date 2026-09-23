@@ -22,6 +22,8 @@
  * `controlsKeyMove`, which the headless tier reaches directly, and `main.ts`
  * calls it with `this.dock.phase` and nothing else.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import {
 	bootedGame,
 	guardedOrigin,

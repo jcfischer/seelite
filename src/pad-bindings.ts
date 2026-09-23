@@ -133,46 +133,6 @@ export type PadContext =
  * discovering it in flight.
  */
 /**
- * The line a console shows a pad player, built from what that surface has.
- *
- * Owned here beside the bindings it names: it was written into
- * `live-cockpit.ts` and was a third copy of a table this module and
- * `docs/gamepad.md` already own, so a rebind moved two of the three.
- *
- * **Assembled rather than picked from near-copies.** It began as one constant,
- * gained a station variant that was the first minus one segment, and would have
- * gained a third and fourth for the empty walk — three of them left dead the
- * moment this function replaced them, which sage then found. A surface with
- * nothing focusable must not promise a walk, and the station console must not
- * promise a back: it is reached with the head already forward, so `back` would
- * turn a forward head forward.
- *
- * **"CONTROLLER", not "PAD".** On a *station* console the shorter word meets
- * `CONTEXT.md`'s berth sense, which is the one surface in this game where that
- * reading is live. The buttons are named by standard-mapping position rather
- * than drawn as DualSense glyphs, because an Xbox pad reads `a`/`b` literally.
- */
-/**
- * The hint a surface should show, built from its two facts.
- *
- * Assembled rather than picked from a list of near-copies: the station line was
- * the console line minus one segment, and the empty-walk case would have been a
- * third and fourth. A surface with nothing focusable must not promise a walk —
- * and it still gets a marker, because the ship is suspended there either way and
- * the *marker* answers a different question from the *hint*.
- */
-export function padHintFor(surface: {
-	station: boolean;
-	walkable: boolean;
-}): string {
-	const segments = ["CONTROLLER"];
-	if (surface.walkable) segments.push("UP/DOWN WALK", "A SELECT");
-	if (!surface.station) segments.push("B BACK");
-	segments.push("L1/R1 TAB");
-	return segments.join(" · ");
-}
-
-/**
  * What the pad asked for this frame, in the game's own words.
  *
  * The deltas are `-1`, `0` or `1` — one row or one tab per press, never per

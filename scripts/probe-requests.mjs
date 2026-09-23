@@ -10,6 +10,8 @@
  * KeyboardEvents and a fake W3C device exercise the public cockpit
  * click/focus dispatch; HEADED=1 captures the same flow.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { mkdirSync, writeFileSync } from "node:fs";
 import {
 	guardedOrigin,

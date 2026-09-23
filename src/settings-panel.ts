@@ -16,11 +16,32 @@ import {
 	type SettingsStore,
 	settingSpec,
 } from "./settings";
+import type { OwnKey } from "./controls-reference";
 import { isEditable } from "./editable-target";
+import { escapeHtml } from "./escape-html";
 
-/** The key that opens it, exported so a test can hold it apart from the flight
- *  bindings and from the perf panel's. */
+/**
+ * The key `system.settings` ships on, exported so a test can hold it apart
+ * from the perf panel's.
+ *
+ * **The screen does not read it** (#381 S5). It opens through
+ * `Game.command("system.settings")` since S4 and closes on whatever key the
+ * layout in force gives that command, which `OwnKey` carries — so this is the
+ * shipped default and nothing more. `commands.ts` restates it rather than
+ * importing it, for the reason its `AUTHORED` doc gives.
+ */
 export const SETTINGS_KEY = "z";
+
+/**
+ * The line under the rows, naming the key that closes the screen.
+ *
+ * The arrows and `Esc` are this screen's own and are not in the registry;
+ * `closeKeys` is `system.settings`'s triggers as the layout has them, so a
+ * player who moved it reads the key they chose. With none left on the
+ * keyboard it says `Esc` alone rather than naming a key that does nothing.
+ */
+export const settingsHint = (closeKeys: readonly string[]): string =>
+	`↑↓ choose · ←→ change · ${["Esc", ...closeKeys].join(" or ")} to close · saved automatically`;
 
 const STYLE_ID = "seelite-settings-style";
 const STYLE = `
@@ -77,7 +98,8 @@ export interface SettingsPanelHandle {
 	/** Whether the screen is currently mounted over the canvas. */
 	readonly isOpen: () => boolean;
 	/**
-	 * Put the screen up — or take it down, which is what `SETTINGS_KEY` does.
+	 * Put the screen up — or take it down, which is what `system.settings`'s
+	 * key does from the layout in force.
 	 *
 	 * Exposed since #381 S4 for the `Controls` tab's door. #369 D12 makes `z`
 	 * remappable, so the key is no longer the only way in and the only way in
@@ -96,6 +118,14 @@ export interface SettingsPanelHandle {
 
 export function mountSettingsPanel(
 	store: SettingsStore,
+	/**
+	 * `system.settings` in the layout in force: the key that closes this
+	 * screen and the name its footer prints (#381 S5). Required, as the
+	 * Commander overlay's is: without it the screen closes on `Esc` alone and
+	 * the footer names nothing, and nothing would say so (sage round 1 on
+	 * #498).
+	 */
+	ownKey: OwnKey,
 	/** Called as the screen opens, to drop keys the player is still holding. */
 	releaseHeldKeys?: () => void,
 	/**
@@ -153,7 +183,7 @@ export function mountSettingsPanel(
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Settings">
   <h2>Settings</h2>
   <div role="listbox">${rows}</div>
-  <div class="hint">↑↓ choose · ←→ change · Esc or ${SETTINGS_KEY.toUpperCase()} to close · saved automatically</div>
+  <div class="hint">${escapeHtml(settingsHint(ownKey.names()))}</div>
 </div>`;
 		for (const [i, el] of [...root.querySelectorAll(".row")].entries())
 			el.addEventListener("click", () => {
@@ -230,7 +260,10 @@ export function mountSettingsPanel(
 		// behind a dialog the player is reading.
 		e.preventDefault();
 		e.stopPropagation();
-		if (e.key === "Escape" || e.key === SETTINGS_KEY) return close();
+		// **The layout's key, not `SETTINGS_KEY`** (#381 S5). The footer names
+		// what `ownKey` says, so the close has to be the same answer or the
+		// line under the rows names a key that does not close the screen.
+		if (e.key === "Escape" || ownKey.reaches(e)) return close();
 		if (e.key === "ArrowDown") moveCursor(1);
 		else if (e.key === "ArrowUp") moveCursor(-1);
 		else if (e.key === "ArrowRight") stepValue(1);

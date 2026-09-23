@@ -16,8 +16,7 @@ body.public-site {
 		monospace;
 }
 .public-site #overlay,
-.public-site #hud,
-.public-site #keys {
+.public-site #hud {
 	display: none;
 }
 .site-shell {

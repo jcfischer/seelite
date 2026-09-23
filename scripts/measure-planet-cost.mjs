@@ -93,6 +93,8 @@
  * like the captures, because a before/after here is two runs at two refs and
  * never a baseline committed to the repo.
  */
+// A default-layout probe (#381 D11): it presses keys by name, as the shipped
+// layout binds them, and a moved default turns it red for that reason.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
