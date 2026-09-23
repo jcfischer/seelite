@@ -98,7 +98,8 @@ export interface SettingsPanelHandle {
 	/** Whether the screen is currently mounted over the canvas. */
 	readonly isOpen: () => boolean;
 	/**
-	 * Put the screen up — or take it down, which is what `SETTINGS_KEY` does.
+	 * Put the screen up — or take it down, which is what `system.settings`'s
+	 * key does from the layout in force.
 	 *
 	 * Exposed since #381 S4 for the `Controls` tab's door. #369 D12 makes `z`
 	 * remappable, so the key is no longer the only way in and the only way in
