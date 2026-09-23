@@ -124,7 +124,10 @@ to reverse at the close.
   `relay-00` and its repair tender `relay-00/tender` are enumerated at
   generator version 7, and a version-6 save — the prototype's relay rows
   included — loads by relabelling. `persistent-world-state.md` §2 records the
-  rule. This document stays the prototype's record and is not updated past
+  rule. The tender is enrolled ahead of its behaviour so both land in one
+  version: #351's recovery binds it as one `tug` per relay, parented to
+  `relay-00`; a different hull, parent or count would be a bump to 8. This
+  document stays the prototype's record and is not updated past
   this line; #351's receipt carries the production decisions.
 
 ## What is measured

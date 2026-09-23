@@ -538,6 +538,42 @@ export function* enumerateCarriers(
 	}
 }
 
+/** The generated type a fingerprint line carries, per kind. */
+const fingerprintType = (c: GeneratedCarrier): string => {
+	switch (c.kind) {
+		case "station":
+			return c.stationType;
+		case "traffic":
+			return `traffic:${c.homeStationType}:${c.hullId}`;
+		case "raider":
+			return `raider:${c.hullId}`;
+		case "relay":
+			return "relay";
+		case "relay-tender":
+			return `relay-tender:${c.hullId}`;
+	}
+};
+
+/**
+ * A fingerprint line's placement, per kind. A raider or tender slot has none,
+ * so its line ends at the parent. The station and Traffic lines are byte for
+ * byte what version 5 hashed and the raider lines what version 6 did, which
+ * `tests/world-state.test.ts` holds against both versions' goldens. A relay's
+ * placement is its plan: the watched station and the standoff.
+ */
+const fingerprintPlacement = (c: GeneratedCarrier): string => {
+	switch (c.kind) {
+		case "station":
+		case "traffic":
+			return `|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`;
+		case "relay":
+			return `|${c.watchedLocalCarrierId}|${c.leadKm.toFixed(6)}|${c.offPlaneKm.toFixed(6)}`;
+		case "raider":
+		case "relay-tender":
+			return "";
+	}
+};
+
 /**
  * §9.1's baseline fingerprint: identity, type, parent and generated placement
  * for a whole galaxy, hashed.
@@ -553,32 +589,10 @@ export const carrierBaselineFingerprint = (
 	galaxyIndex: number,
 ): number => {
 	const parts: string[] = [];
-	for (const c of enumerateCarriers(worldSeed, galaxyIndex)) {
-		const generatedType =
-			c.kind === "station"
-				? c.stationType
-				: c.kind === "traffic"
-					? `traffic:${c.homeStationType}:${c.hullId}`
-					: c.kind === "relay"
-						? "relay"
-						: c.kind === "relay-tender"
-							? `relay-tender:${c.hullId}`
-							: `raider:${c.hullId}`;
-		// A raider or tender slot has no placement, so its line ends at the
-		// parent. The station and Traffic lines are byte for byte what version 5
-		// hashed and the raider lines what version 6 did, which
-		// `tests/world-state.test.ts` holds against both versions' goldens. A
-		// relay's placement is its plan: the watched station and the standoff.
-		const placement =
-			c.kind === "raider" || c.kind === "relay-tender"
-				? ""
-				: c.kind === "relay"
-					? `|${c.watchedLocalCarrierId}|${c.leadKm.toFixed(6)}|${c.offPlaneKm.toFixed(6)}`
-					: `|${c.orbitRadiusKm.toFixed(6)}|${c.orbitTheta0.toFixed(6)}`;
+	for (const c of enumerateCarriers(worldSeed, galaxyIndex))
 		parts.push(
-			`${c.systemIndex}|${c.localCarrierId}|${generatedType}|${c.parentId ?? "-"}${placement}`,
+			`${c.systemIndex}|${c.localCarrierId}|${fingerprintType(c)}|${c.parentId ?? "-"}${fingerprintPlacement(c)}`,
 		);
-	}
 	return fnv1a(parts.join("\n"));
 };
 

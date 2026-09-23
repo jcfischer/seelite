@@ -55,6 +55,7 @@ import {
 	setLegalHeat,
 	setLegalWitnesses,
 	visit,
+	LEGACY_WORLD_GENERATOR_VERSIONS,
 	WORLD_GENERATOR_VERSION,
 	WORLD_SCHEMA_VERSION,
 	type WorldState,
@@ -126,29 +127,25 @@ describe("§9.1 namespace and baseline stability", () => {
 		// and its tender to each of the 2048 systems, 4096 more; the row below
 		// the pin says so by kind rather than by arithmetic on this figure.
 		expect(carriers).toBe(31898);
-		let raiders = 0;
-		let expectedRaiders = 0;
-		for (let galaxy = 0; galaxy < 8; galaxy++) {
-			for (const c of enumerateCarriers(WORLD, galaxy))
-				if (c.kind === "raider") raiders++;
-			for (const record of generateGalaxy(WORLD, galaxy).systems)
-				expectedRaiders += raiderSlotCount(record.government);
-		}
-		expect(raiders).toBe(expectedRaiders);
 		// #351 enrolled the relay and its tender: one of each in every system
-		// with a station to watch, whether or not that system's relay is active,
-		// because activity is a runtime roll and not a generator fact.
+		// with a station to watch.
+		let raiders = 0;
 		let relays = 0;
 		let tenders = 0;
+		let expectedRaiders = 0;
 		let expectedRelays = 0;
 		for (let galaxy = 0; galaxy < 8; galaxy++) {
 			for (const c of enumerateCarriers(WORLD, galaxy)) {
+				if (c.kind === "raider") raiders++;
 				if (c.kind === "relay") relays++;
 				if (c.kind === "relay-tender") tenders++;
 			}
-			for (const record of generateGalaxy(WORLD, galaxy).systems)
+			for (const record of generateGalaxy(WORLD, galaxy).systems) {
+				expectedRaiders += raiderSlotCount(record.government);
 				if (relayPlan(generateContents(record), record.seed)) expectedRelays++;
+			}
 		}
+		expect(raiders).toBe(expectedRaiders);
 		expect(relays).toBe(expectedRelays);
 		expect(tenders).toBe(expectedRelays);
 		expect(carriers - raiders - relays - tenders).toBe(21736);
@@ -265,7 +262,7 @@ describe("§9.1 namespace and baseline stability", () => {
 			3533000626, 1070577234, 2722668670, 3149233322, 2273383725, 63070487,
 			656005811, 694742327,
 		];
-		const withoutRaiders = (galaxy: number) => {
+		const versionFive = (galaxy: number) => {
 			const parts: string[] = [];
 			for (const c of enumerateCarriers(WORLD, galaxy)) {
 				if (c.kind !== "station" && c.kind !== "traffic") continue;
@@ -279,7 +276,7 @@ describe("§9.1 namespace and baseline stability", () => {
 			}
 			return fnv1a(parts.join("\n"));
 		};
-		expect([0, 1, 2, 3, 4, 5, 6, 7].map(withoutRaiders)).toEqual(V5_GOLDEN);
+		expect([0, 1, 2, 3, 4, 5, 6, 7].map(versionFive)).toEqual(V5_GOLDEN);
 	});
 
 	test("every version-6 slot is version 6's, identity and placement", () => {
@@ -314,6 +311,15 @@ describe("§9.1 namespace and baseline stability", () => {
 			return fnv1a(parts.join("\n"));
 		};
 		expect([0, 1, 2, 3, 4, 5, 6, 7].map(versionSix)).toEqual(V6_GOLDEN);
+	});
+
+	test("every legacy generator version has its own golden row above (#351)", () => {
+		// `LEGACY_WORLD_GENERATOR_VERSIONS` loads a listed version by relabelling,
+		// which is safe only while that version's slots are pinned unmoved. The
+		// pins are the rows above, one per version; a version added to the list
+		// without one fails here rather than loading unchecked.
+		const PINNED = [6];
+		expect([...LEGACY_WORLD_GENERATOR_VERSIONS]).toEqual(PINNED);
 	});
 
 	test("the carrier baseline fingerprint is pinned per galaxy", () => {
@@ -2369,7 +2375,10 @@ describe("§9.9 atomicity and integrity", () => {
 		expect(() => parseWorld(raw)).toThrow(/integrity check failed/);
 	});
 
-	test("version 5 is still refused: it lacks slots version 6 added (#351)", () => {
+	test("version 5 is still refused: it is not a listed legacy version (#351)", () => {
+		// 5 → 6 only added the raider slots, so a relabel would be safe in shape;
+		// it is refused because nothing shipped a version-5 save to a player, and
+		// an unlisted version is refused by name.
 		const world = newWorld(WORLD);
 		world.worldGeneratorVersion = 5;
 		expect(() => parseWorld(serializeWorld(world))).toThrow(

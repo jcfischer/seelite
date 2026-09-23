@@ -53,7 +53,9 @@ interface Tier {
 	name: string;
 	systems: number;
 	galaxies: number;
-	traffic: boolean;
+	/** Every carrier, not only the stations: the Traffic roster and the system's
+	 *  own slots (raiders, the relay and its tender). */
+	everyCarrier: boolean;
 	knowledge: boolean;
 	objective: boolean;
 	deficitGoods: number;
@@ -88,7 +90,7 @@ const TIERS: Tier[] = [
 		name: "T1 saturated: every carrier incl. Traffic, all 8 galaxies",
 		systems: 256,
 		galaxies: 8,
-		traffic: true,
+		everyCarrier: true,
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
@@ -99,7 +101,7 @@ const TIERS: Tier[] = [
 		name: "T2 stations only, all 8 galaxies saturated",
 		systems: 256,
 		galaxies: 8,
-		traffic: false,
+		everyCarrier: false,
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
@@ -110,7 +112,7 @@ const TIERS: Tier[] = [
 		name: "T3 one galaxy saturated incl. Traffic",
 		systems: 256,
 		galaxies: 1,
-		traffic: true,
+		everyCarrier: true,
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
@@ -121,7 +123,7 @@ const TIERS: Tier[] = [
 		name: "T4 one galaxy, stations only, saturated",
 		systems: 256,
 		galaxies: 1,
-		traffic: false,
+		everyCarrier: false,
 		knowledge: true,
 		objective: true,
 		deficitGoods: 17,
@@ -132,7 +134,7 @@ const TIERS: Tier[] = [
 		name: "T5 heavy play: 200 systems, stations, knowledge+deficits",
 		systems: 200,
 		galaxies: 1,
-		traffic: false,
+		everyCarrier: false,
 		knowledge: true,
 		objective: false,
 		deficitGoods: 6,
@@ -143,7 +145,7 @@ const TIERS: Tier[] = [
 		name: "T6 typical: 50 systems, stations, knowledge+deficits",
 		systems: 50,
 		galaxies: 1,
-		traffic: false,
+		everyCarrier: false,
 		knowledge: true,
 		objective: false,
 		deficitGoods: 4,
@@ -197,7 +199,7 @@ function build(tier: Tier): Row {
 				const berth = carrierKey(record.index, station.localCarrierId);
 				keys.push(berth);
 				berths.push(berth);
-				if (tier.traffic)
+				if (tier.everyCarrier)
 					for (const actor of stationTrafficRoster(record.index, station)) {
 						keys.push(actor.key);
 						flown.push(actor.key);
@@ -207,7 +209,7 @@ function build(tier: Tier): Row {
 			// tender — ride the saturated tier with the Traffic: each is a carrier
 			// a kill writes a row for. The raiders were missing from this ceiling
 			// between #324 and #351.
-			if (tier.traffic) {
+			if (tier.everyCarrier) {
 				for (const slot of raiderSlots(record.index, record.government))
 					keys.push(slot.key);
 				if (relayPlan(contents, record.seed))
