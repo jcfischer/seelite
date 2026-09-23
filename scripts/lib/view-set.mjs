@@ -142,7 +142,7 @@ export const LEVERS = Object.freeze({
 	300: "every §5 fixture on the surface its own aperture axis looks at",
 	324: "the duel HUD, the canister markers after a kill, and the Communications console's raider log",
 	372: "the Controls tab: every control as a folding tree of task groups",
-	381: "the rebind modal, and the tab's settings door beside it",
+	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 });
 
@@ -854,7 +854,7 @@ export const VIEWS = Object.freeze([
 	{
 		name: "controls-rebind",
 		covers: [381],
-		what: "The rebind modal open on Pitch: nose up with `k` caught, over the Controls tab. The settings door top right; `hold s` and `hold k` where the tab used to print bare characters.",
+		what: "The rebind modal open on Pitch: nose up with `k` caught, over the Controls tab. The Settings and Commanders doors top right; `hold s` and `hold k` where the tab used to print bare characters.",
 		shot: {
 			kind: "controls",
 			view: "cockpit",
