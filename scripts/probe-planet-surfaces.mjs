@@ -2284,7 +2284,8 @@ if (airless) {
 			const background = frame();
 			group.visible = true;
 			const w = fullSize[0];
-			const y = Math.floor(fullSize[1] / 2);
+			const cx = Math.floor(w / 2);
+			const cy = Math.floor(fullSize[1] / 2);
 			const body = game.world.system.byId.get(id);
 			const ship = game.world.ship.pos;
 			const distance = Math.hypot(
@@ -2292,13 +2293,11 @@ if (airless) {
 				body.pos.y - ship.y,
 				body.pos.z - ship.z,
 			);
-			const focal = y / Math.tan((game.approachCamera.fov * Math.PI) / 360);
-			const expectedEdge = Math.round(
-				w / 2 -
-					(focal * body.radiusKm) /
-						Math.sqrt(distance * distance - body.radiusKm * body.radiusKm),
-			);
-			const contrast = (x) => {
+			const focal = cy / Math.tan((game.approachCamera.fov * Math.PI) / 360);
+			const radius =
+				(focal * body.radiusKm) /
+				Math.sqrt(distance * distance - body.radiusKm * body.radiusKm);
+			const contrast = (x, y) => {
 				const i = (y * w + x) * 4;
 				return (
 					Math.abs(full[i] - background[i]) +
@@ -2306,16 +2305,9 @@ if (airless) {
 					Math.abs(full[i + 2] - background[i + 2])
 				);
 			};
-			let edge = -1;
-			for (let x = Math.max(1, expectedEdge - 80); x < expectedEdge + 80; x++) {
-				if (contrast(x) > 10 && contrast(x + 1) > 10) {
-					edge = x;
-					break;
-				}
-			}
 			let changedInterior = 0;
-			for (let yy = y - 210; yy < y - 30; yy++) {
-				for (let xx = w / 2 - 120; xx < w / 2 + 120; xx++) {
+			for (let yy = cy - 210; yy < cy - 30; yy++) {
+				for (let xx = cx - 120; xx < cx + 120; xx++) {
 					const i = (yy * w + xx) * 4;
 					const difference = Math.max(
 						Math.abs(full[i] - half[i]),
@@ -2328,7 +2320,27 @@ if (airless) {
 			let fullStep = 0;
 			let halfStep = 0;
 			let extraStep = 0;
-			if (edge >= 8) {
+			const rows = [];
+			for (const fraction of [-0.7, -0.4, -0.2, 0, 0.2]) {
+				const y = Math.round(cy + fraction * radius);
+				const expectedEdge = Math.round(
+					cx - Math.sqrt(radius * radius - (y - cy) * (y - cy)),
+				);
+				let edge = -1;
+				// Walk out from the planet interior; isolated background stars
+				// cannot masquerade as the first visible atmosphere pixel.
+				for (let x = cx; x >= 3; x--) {
+					if (
+						contrast(x, y) < 10 &&
+						contrast(x - 1, y) < 10 &&
+						contrast(x - 2, y) < 10
+					) {
+						edge = x + 1;
+						break;
+					}
+				}
+				rows.push({ y, expectedEdge, edge, centerContrast: contrast(cx, y) });
+				if (edge < 8) continue;
 				// Cover the atmosphere's first visible edge through the solid
 				// sphere's limb, then compare the same channel at the same pixel.
 				for (let x = edge - 8; x <= edge + 80; x++) {
@@ -2348,9 +2360,8 @@ if (airless) {
 				halfTarget,
 				fullSize,
 				changedInterior,
-				centerContrast: contrast(w / 2),
-				expectedEdge,
-				edge,
+				centerContrast: contrast(cx, cy),
+				rows,
 				fullStep,
 				halfStep,
 				extraStep,
@@ -2371,8 +2382,11 @@ if (airless) {
 		);
 		check(
 			"the full-size limb adds no step above 32 display codes per channel",
-			result.centerContrast > 100 && result.edge > 8 && result.extraStep <= 32,
-			`center contrast ${result.centerContrast}, expected edge ${result.expectedEdge}, measured edge ${result.edge}, full ${result.fullStep}, half ${result.halfStep}, extra ${result.extraStep} (max channel code)`,
+			result.centerContrast > 100 &&
+				result.rows.length === 5 &&
+				result.rows.every((row) => row.edge > 8 && row.centerContrast > 30) &&
+				result.extraStep <= 32,
+			`center contrast ${result.centerContrast}, rows ${JSON.stringify(result.rows)}, full ${result.fullStep}, half ${result.halfStep}, extra ${result.extraStep} (max channel code)`,
 		);
 	}
 	await halfPage.close();

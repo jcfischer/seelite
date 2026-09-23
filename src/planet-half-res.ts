@@ -5,8 +5,8 @@
 import * as THREE from "three";
 import type { SurfaceClass } from "./planet-appearance";
 
-/** CSS-pixel radius: at 900 px height, a disc this wide covers two thirds of
- * the image. Smaller discs keep their surface pixels on the high setting. */
+/** CSS-pixel radius: at 900 px height, a disc this wide spans two thirds of
+ * the viewport height. Smaller discs keep their surface pixels on High. */
 export const HALF_RES_RADIUS_PX = 300;
 
 export function useHalfResolution(
@@ -34,6 +34,7 @@ type SurfaceMesh = THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
 export class PlanetHalfResolution {
 	private target: THREE.WebGLRenderTarget | null = null;
 	private readonly fullSize = new THREE.Vector2(1, 1);
+	private readonly clearColor = new THREE.Color();
 	private readonly composite = new THREE.ShaderMaterial({
 		uniforms: {
 			lowRes: { value: null as THREE.Texture | null },
@@ -151,7 +152,7 @@ export class PlanetHalfResolution {
 		);
 		const beforeTarget = renderer.getRenderTarget();
 		const beforeLayerMask = camera.layers.mask;
-		const beforeClearColor = renderer.getClearColor(new THREE.Color()).clone();
+		const beforeClearColor = renderer.getClearColor(this.clearColor);
 		const beforeClearAlpha = renderer.getClearAlpha();
 		const originals = surfaces.map((surface) => surface.material);
 		try {
