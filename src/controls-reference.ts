@@ -124,13 +124,26 @@ export function restoreOnTabPick<T extends string>(
 export const SETTINGS_ACTION = "settings";
 
 /**
+ * The tab's door to the Commander overlay (#381 S5), for `SETTINGS_ACTION`'s
+ * reason.
+ *
+ * `system.commander` was rebindable from the moment the registry existed and
+ * the overlay went on opening on its own listener, so a player who moved it
+ * got the new key printed in this tab, a new key that did nothing, and `9`
+ * still opening the screen. S2 refused to fold that open-trigger until a route
+ * existed that no rebind could lock, and S4 left the Commander out because it
+ * had none. This is the route, and the fold came with it.
+ */
+export const COMMANDER_ACTION = "commander";
+
+/**
  * Every door the tab can carry.
  *
- * A union of one, so a second door is a compile error at every consumer
- * rather than a `string` that silently falls through `main.ts`'s `if`
- * (sage round 4 on #497).
+ * A closed union, so another door is a compile error at every consumer
+ * rather than a `string` that silently falls through `main.ts`'s dispatch
+ * (sage round 4 on #497). It held one until #381 S5 added the second.
  */
-export type ControlsAction = typeof SETTINGS_ACTION;
+export type ControlsAction = typeof SETTINGS_ACTION | typeof COMMANDER_ACTION;
 
 export type TreeItem =
 	| { kind: "header"; group: TaskGroup; count: number }
@@ -145,9 +158,9 @@ export const actionFocusId = (action: string) => `controls-action:${action}`;
  * D6: two levels, group header and rows, in task order. A folded group keeps
  * its header — that is what the player opens it again with.
  *
- * **The door comes first**, before any group, so a player who has folded
- * everything still has it in front of them — and because the thing it is for
- * is being lost, which is not a state to go hunting in.
+ * **The doors come first**, before any group, so a player who has folded
+ * everything still has them in front of them — and because the thing they are
+ * for is being lost, which is not a state to go hunting in.
  */
 export function controlsTree(
 	catalogue: ControlsCatalogue,
@@ -155,6 +168,7 @@ export function controlsTree(
 ): TreeItem[] {
 	const items: TreeItem[] = [
 		{ kind: "action", action: SETTINGS_ACTION, label: "Settings" },
+		{ kind: "action", action: COMMANDER_ACTION, label: "Commanders" },
 	];
 	for (const group of TASK_GROUPS) {
 		const rows = catalogue.commands.filter((c) => c.group === group);
@@ -642,6 +656,31 @@ function pairOf(a: readonly string[], b: readonly string[]): string {
 	return shared && second.startsWith(shared)
 		? `${first}/${second.slice(shared.length)}`
 		: `${first}/${second}`;
+}
+
+/** A key trigger: what a keyboard footer can name. */
+export const onKeyboard = (t: Trigger): boolean => t.kind === "key";
+
+/**
+ * A screen's own command, as the layout in force has it (#381 S5).
+ *
+ * The settings screen and the Commander overlay each open on a command and
+ * close on the same key, and each prints that key in its footer. Both halves
+ * read the layout through this rather than a constant: a footer derived from
+ * the layout beside a close arm comparing `SETTINGS_KEY` would name a key that
+ * does not close the screen, which is the lie the derivation exists to end.
+ *
+ * `main.ts` supplies it, because it holds the layout and the resolver the open
+ * goes through — so the key that opens a screen and the key that closes it are
+ * one answer. A type here and not an import in either panel, because the
+ * Commander overlay is read by `commands.ts` for its default key and a value
+ * import back into this module would close a cycle through the registry.
+ */
+export interface OwnKey {
+	/** Its keyboard triggers, printed. Empty when every one moved to the pad. */
+	readonly names: () => readonly string[];
+	/** Whether this keydown reaches the command in the layout in force. */
+	readonly reaches: (e: KeyboardEvent) => boolean;
 }
 
 /** A pad press a console reads: its grammar, or a button that falls through. */

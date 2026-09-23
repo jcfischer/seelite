@@ -281,10 +281,13 @@ A plain-DOM overlay beside the settings screen (`settings-panel.ts`), out of the
 fiction. The map's #70 constraint gives every *game* screen a cockpit wall or a
 tab; settings is the precedent for a surface that is neither station business nor
 fiction, and the Commander overlay is the second such surface rather than a
-second grammar (S1). It opens on a key the flight bindings do not hold, exported
-beside `SETTINGS_KEY` and tested apart from the flight bindings the way that key
-is. While open it is a `modal` pad context, so `readPadContext` answers `modal`
-for either screen (`docs/gamepad.md`).
+second grammar (S1). It opens on `system.commander`, which is an ordinary
+command in the binding registry since #381 S5 — `9` by default and movable like
+any other, with the `Controls` tab's Commanders door as the route no rebind can
+lock. (It opened on a key the flight bindings did not hold until then, and the
+registry offered that key for rebinding while the overlay went on reading its
+own constant.) While open it is a `modal` pad context, so `readPadContext`
+answers `modal` for either screen (`docs/gamepad.md`).
 
 ### 11.2 Boot
 

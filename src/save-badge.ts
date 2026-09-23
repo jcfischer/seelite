@@ -12,7 +12,7 @@
  */
 
 import { heldFaultText } from "./commander-flow";
-import { COMMANDER_KEY } from "./commander-overlay";
+import { escapeHtml } from "./escape-html";
 import type { SaveFault, SaveRecordKind } from "./save-store";
 
 /** The dock checkpoint first: it is the record a death restores. */
@@ -62,7 +62,8 @@ export const hasHeldSaveFault = (
 ): boolean => (store === null ? bootFault !== null : store.heldFaults.size > 0);
 
 export interface SaveBadgeHandle {
-	/** Shows or hides the badge; touches the DOM only when that changes. */
+	/** Shows or hides the badge; touches the DOM only when that, or the key it
+	 *  names, changes. */
 	readonly update: (held: boolean) => void;
 }
 
@@ -93,7 +94,25 @@ const STYLE = `
 }
 `;
 
-export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
+/**
+ * What the badge says: the word, and the key that opens the Commander overlay.
+ *
+ * `keys` is `system.commander`'s keyboard triggers as the layout has them
+ * (#381 S5). It printed `COMMANDER_KEY` until the Commander's key became an
+ * ordinary command, and a moved key would have left the badge naming the one
+ * that no longer opens anything. With none on the keyboard it says the word
+ * alone — the badge is a button, and a click is what it asks for anyway.
+ */
+export const saveBadgeMarkup = (keys: readonly string[]): string =>
+	keys.length === 0
+		? "SAVE FAULT"
+		: `SAVE FAULT ${keys.map((k) => `<kbd>${escapeHtml(k)}</kbd>`).join(" or ")}`;
+
+export function mountSaveBadge(
+	onActivate: () => void,
+	/** `system.commander`'s keyboard triggers, printed, in the layout in force. */
+	keyNames: () => readonly string[],
+): SaveBadgeHandle {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
@@ -106,7 +125,16 @@ export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
 	element.dataset.saveBadge = "";
 	element.hidden = true;
 	element.title = "A save did not write — open the Commander overlay";
-	element.innerHTML = `SAVE FAULT <kbd>${COMMANDER_KEY}</kbd>`;
+	// Painted while shown, and only when the words change: a rebind with the
+	// badge up has to reach it, and `update` runs on every frame.
+	let markup = "";
+	const paint = () => {
+		const next = saveBadgeMarkup(keyNames());
+		if (next === markup) return;
+		markup = next;
+		element.innerHTML = next;
+	};
+	paint();
 	element.addEventListener("click", (e) => {
 		e.stopPropagation();
 		// A button keeps focus after a click, and a focused button takes the
@@ -118,6 +146,7 @@ export function mountSaveBadge(onActivate: () => void): SaveBadgeHandle {
 	let shown = false;
 	return {
 		update: (held) => {
+			if (held) paint();
 			if (held === shown) return;
 			shown = held;
 			element.hidden = !held;

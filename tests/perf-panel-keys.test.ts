@@ -22,26 +22,23 @@ import { PERF_CLASSES, PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { COMMANDER_KEY } from "../src/commander-overlay";
 import { SETTINGS_KEY } from "../src/settings-panel";
 import { commandById, DEFAULT_BINDINGS } from "../src/commands";
-import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
 /**
- * Every key the game binds to something that is **not** a panel of its own.
+ * Every key the game binds to something that is **not** a diagnostic.
  *
  * The diagnostics carry `fixed: "diagnostic"`, so that half is a property of
  * the catalogue: a flight command that took `b` tomorrow lands in this set and
  * the row below goes red, which is the failure this file was opened for.
  *
- * **The two player screens are a written list, and that is a gap rather than a
- * shape.** It lives in `PANEL_OWNED_COMMANDS` beside the scanners, so a third
- * panel is one edit rather than two (sage rounds 2 and 3); the registry axis
- * that would make it derived belongs with the capture slice, which is what
- * gives `z` a non-binding route in the first place.
+ * **No panel is exempt any more.** The two player screens were a written
+ * list here, `PANEL_OWNED_COMMANDS`, because each opened on a listener of its
+ * own; `system.settings` left it in #381 S4 and `system.commander` in S5,
+ * when both opens folded into `Game.command` behind a `Controls` tab door.
+ * The list went with its last entry.
  */
 const flightKeys = () =>
 	new Set(
 		DEFAULT_BINDINGS.flatMap((b) =>
-			b.trigger.kind === "key" &&
-			!PANEL_OWNED_COMMANDS.includes(b.command) &&
-			commandById(b.command).fixed !== "diagnostic"
+			b.trigger.kind === "key" && commandById(b.command).fixed !== "diagnostic"
 				? [b.trigger.key]
 				: [],
 		),
@@ -73,9 +70,12 @@ describe("the perf panel stays out of the flight controls", () => {
 	});
 
 	test("and the settings key is one, which is the point of D12", () => {
-		// Guarding the change rather than only removing the old assertion: if
-		// `system.settings` ever goes back to opening on its panel's own
-		// listener, `z` leaves the flight partition and this goes red.
+		// **What this holds is the partition, not the fold.** It read "if
+		// `system.settings` goes back to opening on its panel's own listener,
+		// `z` leaves the flight partition" — true only while a hand-kept panel
+		// list fed the partition, and that list is gone (#381 S5). The fold is
+		// held where it can fail: `controls-catalogue.test.ts` requires every
+		// keyed command at a dispatch site doing what its row says.
 		expect(flightKeys()).toContain(SETTINGS_KEY);
 	});
 
@@ -89,13 +89,17 @@ describe("the perf panel stays out of the flight controls", () => {
 			);
 	});
 
-	test("the Commander overlay's key is no flight binding and no other panel's key", () => {
-		// `persistent-world-state.md` §11.1: it opens on a key the flight bindings
-		// do not hold, and settings and the perf panel listen beside it.
+	test("the Commander overlay's key is a flight binding and no other panel's key", () => {
+		// **Inverted in #381 S5, for `z`'s reason in S4.** It asserted the
+		// opposite — `persistent-world-state.md` §11.1 said the overlay opens
+		// on a key the flight bindings do not hold — while the registry
+		// offered that key for rebinding and the overlay read its own
+		// constant. `system.commander` dispatches through `Game.command` now,
+		// so `9` is on the flight path like `z`. As with `z`, this holds the
+		// partition; the dispatch row in `controls-catalogue.test.ts` is what
+		// goes red if the open moves back onto the overlay's listener.
 		const bound = flightKeys();
-		expect(`${COMMANDER_KEY}: ${bound.has(COMMANDER_KEY)}`).toBe(
-			`${COMMANDER_KEY}: false`,
-		);
+		expect(bound).toContain(COMMANDER_KEY);
 		for (const key of [...PERF_KEYS, RESTORE_KEY, SETTINGS_KEY])
 			expect(`${key} vs commander: ${key === COMMANDER_KEY}`).toBe(
 				`${key} vs commander: false`,

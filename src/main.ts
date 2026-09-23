@@ -556,7 +556,11 @@ import {
 	controlsCatalogue,
 } from "./controls-catalogue";
 import {
+	boundNames,
+	COMMANDER_ACTION,
 	controlsKeyMove,
+	onKeyboard,
+	type OwnKey,
 	restoreOnTabPick,
 	SETTINGS_ACTION,
 } from "./controls-reference";
@@ -3651,7 +3655,16 @@ class Game {
 			 * binding and so cannot be lost by rebinding one.
 			 */
 			onControlsAction: (action) => {
-				if (action === SETTINGS_ACTION) this.settingsPanel?.open();
+				// A `switch` over the union, so a third door is a compile error
+				// here rather than a click that does nothing.
+				switch (action) {
+					case SETTINGS_ACTION:
+						this.settingsPanel?.open();
+						return;
+					case COMMANDER_ACTION:
+						this.commanderOverlay?.open();
+						return;
+				}
 			},
 			onRightTab: (tab) => {
 				// A tab picked by hand moves what `?` will restore (#372).
@@ -8074,6 +8087,17 @@ class Game {
 				// closed.
 				this.settingsPanel?.open();
 				return;
+			// **The Commander overlay's, folded here in #381 S5** for the same
+			// reason and on the same terms. It opened on `COMMANDER_KEY` from
+			// its own listener, so the registry offered a key for rebinding
+			// that moved nothing: rebound to `4`, the tab printed `4`, `4` did
+			// nothing and `9` still opened the screen. The `Controls` tab's
+			// Commanders door is the route no rebind can lock, which is what S2
+			// and S4 waited for. Not behind the settings screen, for the
+			// capture-phase reason the case above gives.
+			case "system.commander":
+				this.commanderOverlay?.open();
+				return;
 			// #377, the principal's ruling: `F1` beside `?`. A bare key with no
 			// Shift in it, so it does not move the throttle on the way in.
 			case "view.reference": {
@@ -8278,6 +8302,45 @@ class Game {
 
 	controlsNow(): ControlsCatalogue {
 		return controlsCatalogue(this.bindings, this.layoutNotices);
+	}
+
+	/**
+	 * A screen's own command, read from the layout in force each time (#381
+	 * S5).
+	 *
+	 * `reaches` asks the same `keyDispatch` and `resolveKey` the open went
+	 * through, so the key that opens a screen, the key that closes it and the
+	 * key its footer prints are one answer. That is the close half of #422's
+	 * question — the panels compared a raw `e.key` against a constant while
+	 * the dispatch lowercased first — answered the way S4 already answered
+	 * the open half. A dispatch that is not a plain press (a chord, a
+	 * release, a typed field) reaches nothing here, as it would open nothing.
+	 */
+	ownKey(id: CommandId): OwnKey {
+		return {
+			names: () => boundNames(this.bindings, id, onKeyboard),
+			reaches: (e) => {
+				const route = keyDispatch({
+					key: e.key,
+					code: e.code,
+					down: true,
+					repeat: e.repeat,
+					altKey: e.altKey,
+					ctrlKey: e.ctrlKey,
+					metaKey: e.metaKey,
+					editable: isEditable(e.target),
+				});
+				return (
+					route.kind === "key" &&
+					route.oneShot &&
+					resolveKey(this.bindings, {
+						key: route.key,
+						code: e.code,
+						view: this.view,
+					}).includes(id)
+				);
+			},
+		};
 	}
 
 	/**
@@ -15025,8 +15088,12 @@ if (query.has("model-viewer")) {
 			return fault;
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),
+		ownKey: game.ownKey("system.commander"),
 	});
-	game.saveBadge = mountSaveBadge(() => game.commanderOverlay?.open());
+	game.saveBadge = mountSaveBadge(
+		() => game.commanderOverlay?.open(),
+		() => game.ownKey("system.commander").names(),
+	);
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends
 	// up asserting on pixels for want of a number.
@@ -15134,6 +15201,7 @@ if (query.has("model-viewer")) {
 						? "unsupported here"
 						: `${got}x here`;
 			},
+			game.ownKey("system.settings"),
 		);
 	});
 

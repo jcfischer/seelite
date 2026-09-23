@@ -22,7 +22,11 @@ import {
 	triggerKey,
 } from "../src/commands";
 import { collisionNotices, proposedRebind } from "../src/layout-notice";
-import { controlsTree, SETTINGS_ACTION } from "../src/controls-reference";
+import {
+	COMMANDER_ACTION,
+	controlsTree,
+	SETTINGS_ACTION,
+} from "../src/controls-reference";
 import { controlsCatalogue } from "../src/controls-catalogue";
 import { codeOf, srcFiles } from "./lib/source-scan";
 
@@ -221,19 +225,23 @@ describe("the door cannot be shut", () => {
 		expect(items[0]?.kind).toBe("action");
 	});
 
-	test("and that row is not a command, so nothing can be bound to it", () => {
+	test("and no door is a command, so nothing can be bound to one", () => {
 		const items = controlsTree(controlsCatalogue(), new Set());
-		const actions = items.filter((i) => i.kind === "action");
-		expect(actions.length).toBe(1);
-		// No command in the registry shares its name, which is what would make
-		// it bindable by the back door.
+		const actions = items.flatMap((i) =>
+			i.kind === "action" ? [i.action] : [],
+		);
+		// Two since #381 S5: the Commanders door joined settings when
+		// `system.commander` stopped opening on a listener of its own.
+		expect(actions).toEqual([SETTINGS_ACTION, COMMANDER_ACTION]);
+		// No command in the registry shares either name, which is what would
+		// make a door bindable by the back door.
 		// **A `string` comparison on purpose, and the compiler already knows.**
 		// `CommandId` and `typeof SETTINGS_ACTION` have no overlap, so TS
 		// reports the direct `===` as unintentional — which is the property
 		// being asserted, one tier earlier. This row holds it at runtime too,
-		// for the day someone authors a command called `settings`.
-		expect(COMMANDS.some((c) => (c.id as string) === SETTINGS_ACTION)).toBe(
-			false,
-		);
+		// for the day someone authors a command called `settings` or
+		// `commander`.
+		for (const action of actions)
+			expect(COMMANDS.some((c) => (c.id as string) === action)).toBe(false);
 	});
 });

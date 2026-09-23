@@ -30,7 +30,6 @@ import { STANDARD_BUTTONS } from "../src/gamepad";
 import { padIntents } from "../src/pad-bindings";
 import { PERF_KEYS, RESTORE_KEY } from "../src/perf-panel";
 import { SETTINGS_KEY } from "../src/settings-panel";
-import { PANEL_OWNED_COMMANDS } from "./lib/panel-owned";
 import { boundKeys, codeOf, dispatchSites } from "./lib/source-scan";
 
 const triggers = (): Trigger[] =>
@@ -164,22 +163,18 @@ describe("the catalogue is complete against the source", () => {
 			reached.has("fight.rigEcm"), // the rig's own command
 		]).toEqual([true, true, true, true, true, true]);
 
-		const PANELS = new Set(PANEL_OWNED_COMMANDS);
+		// **No panel is exempt since #381 S5.** The Commander overlay's open
+		// was the last one on a listener of its own, and a panel exemption
+		// here is what let the registry offer its key for rebinding while
+		// nothing dispatched it.
 		let checked = 0;
 		for (const c of CONTROLS.commands) {
-			if (PANELS.has(c.id) || c.fixed === "diagnostic") continue;
+			if (c.fixed === "diagnostic") continue;
 			if (!c.currentTriggers.some((t) => t.kind === "key")) continue;
 			expect(`${c.id}: ${reached.has(c.id)}`).toBe(`${c.id}: true`);
 			checked++;
 		}
 		expect(checked).toBeGreaterThan(40);
-		// The exemptions are exemptions, not a hole: neither panel's id is at a
-		// dispatch site, so a row that quietly moved to one would be caught by
-		// the loop above rather than excused by this set.
-		for (const id of PANELS)
-			expect(`${id} dispatched: ${reached.has(id)}`).toBe(
-				`${id} dispatched: false`,
-			);
 	});
 
 	/**
@@ -233,6 +228,7 @@ describe("the catalogue is complete against the source", () => {
 			// #381 S4: the settings screen's open key is the registry's now, not
 			// the panel's own listener.
 			"system.settings": "this.settingsPanel?.open()",
+			"system.commander": "this.commanderOverlay?.open()",
 			"view.reference": "controlsKeyMove(",
 			"view.toggle": 'this.view === "cockpit" ? "chase" : "cockpit"',
 			"panel.activate": "this.liveCockpit.activateKeyboardFocus(target)",
