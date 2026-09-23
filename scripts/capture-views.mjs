@@ -754,6 +754,24 @@ try {
 	await mkdir(join(OUT, LABEL), { recursive: true });
 
 	for (const view of VIEWS) {
+		// **Any modal the previous view left up comes down first** (#381 S4).
+		// The rebind modal is a full-screen overlay outside the canvas, and
+		// nothing else in this loop resets the DOM — `ensureFixture` reloads
+		// only when the seed changes and `setView` presses a key. So
+		// `controls-rebind` left its modal standing and it was captured again
+		// in `duel-glass`, the next view to frame the glass: 30.99% of that
+		// frame moved against a same-build control of 0.00%, which reads
+		// exactly like a regression in the duel HUD.
+		//
+		// Dismissed the way a player does, through the modal's own control,
+		// rather than by removing the node: a `remove()` here would leave the
+		// game still believing it is in the `capture` context, and the next
+		// view would be flown with the sticks suspended.
+		await page.evaluate(() => {
+			document
+				.querySelector("[data-capture-modal] [data-capture-cancel]")
+				?.click();
+		});
 		// **Not on the workbench**, which has no view cycle: `v` there is an
 		// unbound key, so `setView` would press it eight times and then throw
 		// about a view the game does not have — on a page that is not the game.
