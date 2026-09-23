@@ -26,6 +26,7 @@
  * Headless: imports the relay's module, the slot ids and the world-state
  * types; nothing that renders.
  */
+import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
 import { HULL_SPECS } from "./hull";
@@ -66,6 +67,15 @@ export const RELAY_TENDER_HIT_RADIUS_KM = (() => {
 	const { lengthKm, beamKm, heightKm } = HULL_SPECS[RELAY_TENDER_HULL_ID].env;
 	return Math.hypot(lengthKm, beamKm, heightKm) / 2;
 })();
+
+/** Whether a shot along the sightline lands on the tender: the duel's own beam
+ *  test against the tender's hull sphere, as `relayInSights` is the relay's. */
+export const tenderInSights = (
+	aimOrigin: Vec3,
+	aimNose: Vec3,
+	tenderPos: Vec3,
+): boolean =>
+	playerLaserHit(aimOrigin, aimNose, tenderPos, RELAY_TENDER_HIT_RADIUS_KM).hit;
 
 /** When a repair's tender arrives: one repair period before it completes. */
 export const tenderArrival = (recovery: { completesAt: number }): number =>

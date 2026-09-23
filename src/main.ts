@@ -407,7 +407,25 @@ import {
 	relaySignal,
 	relayVelocity,
 } from "./pirate-relay";
-import { type RelayPlan, relayPlan, relaySlot } from "./relay-slot";
+import {
+	RELAY_TENDER_HULL_ID,
+	type RelayPlan,
+	relayPlan,
+	relaySlot,
+	relayTenderSlot,
+} from "./relay-slot";
+import {
+	RELAY_TENDER_HIT_RADIUS_KM,
+	RELAY_TENDER_INTEGRITY,
+	RELAY_TENDER_NAME,
+	relaySetBack,
+	tenderDestruction,
+	tenderEntry,
+	tenderInSights,
+	tenderLog,
+	tenderOffset,
+	tenderPresentSince,
+} from "./relay-tender";
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
@@ -2143,6 +2161,33 @@ class Game {
 	private readonly relayMesh = buildRelayMesh();
 	/** What this frame read of the relay, for the renderer and the glass. */
 	private relayView: RelayView | null = null;
+	/** #351: the relay's repair tender, while it is there. Its hull is flight
+	 *  state like the relay's; its kill is the world's. */
+	private tenderView: { key: CarrierKey; since: number; entry: Vec3 } | null =
+		null;
+	tenderHull = RELAY_TENDER_INTEGRITY;
+	private tenderHullInstance = 0;
+	private tenderListed = false;
+	private readonly tenderContact: DisplayContact = {
+		id: "",
+		name: RELAY_TENDER_NAME.toUpperCase(),
+		kind: "ship",
+		pos: v3(),
+		velocity: v3(),
+		radiusKm: RELAY_TENDER_HIT_RADIUS_KM,
+		color: 0xff6a4a,
+		shipType: RELAY_TENDER_HULL_ID,
+		standing: null,
+		scannerClass: "hostile",
+	};
+	private readonly tenderMesh = (() => {
+		const root = buildShipMesh(
+			RELAY_TENDER_HULL_ID,
+			HULL_SPECS[RELAY_TENDER_HULL_ID].variant,
+		).root;
+		root.name = "relay-tender";
+		return root;
+	})();
 	/** Current-system Traffic authority is pure; these are disposable presentation caches. */
 	private trafficSystemIndex = -1;
 	private trafficTick = Number.NaN;
@@ -9140,7 +9185,10 @@ class Game {
 		// relay is one (#43): the principal flew the first build with the beam
 		// held on the boresight and could not hit it beside a planet.
 		const target =
-			this.raiderSelected() || this.relaySelected() || this.trafficSelected()
+			this.raiderSelected() ||
+			this.relaySelected() ||
+			this.tenderSelected() ||
+			this.trafficSelected()
 				? this.targetBody()
 				: null;
 		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
@@ -10157,6 +10205,8 @@ class Game {
 		this.relayPlanCache = null;
 		this.relayHull = RELAY_INTEGRITY;
 		this.relayHullInstance = 0;
+		this.tenderHull = RELAY_TENDER_INTEGRITY;
+		this.tenderHullInstance = 0;
 	}
 
 	/**
@@ -10830,6 +10880,7 @@ class Game {
 		const plan = this.currentRelayPlan();
 		if (!plan) {
 			this.relayView = null;
+			this.tenderView = null;
 			return;
 		}
 		const { record, contents } = this.world.system;
@@ -10907,6 +10958,113 @@ class Game {
 				this.world.system.byId.get(plan.watchedStationId)?.name ??
 				plan.watchedStationId,
 		};
+		this.stepTender(shot, plan);
+	}
+
+	/**
+	 * #351: the relay's repair tender — there while the relay is being replaced
+	 * and the tender's own slot is operational, flown in from its entry point
+	 * and parked at the wreck. The shot is the relay's beam test against the
+	 * tug's hull sphere; the kill is the tender's `destroy` and the relay's
+	 * set-back, both through `applyCarrierTransition`, so both are saved.
+	 *
+	 * **Not gated on the long-range scanner.** The tender is a ship, found the
+	 * way ships are — by the scanner every hull carries — and #479's gate is on
+	 * *reading the relay*, which the tender does not need.
+	 */
+	private stepTender(shot: PlayerShot, plan: RelayPlan) {
+		const { record } = this.world.system;
+		const now = this.world.gameTime;
+		const relayKey = relaySlot(record.index).key;
+		const key = relayTenderSlot(record.index).key;
+		const tender = this.carrierCondition(key);
+		const since = tenderPresentSince(
+			this.carrierCondition(relayKey),
+			tender,
+			now,
+		);
+		if (since === null) {
+			this.tenderView = null;
+			return;
+		}
+		if (tender.instanceOrdinal !== this.tenderHullInstance) {
+			this.tenderHullInstance = tender.instanceOrdinal;
+			this.tenderHull = RELAY_TENDER_INTEGRITY;
+		}
+		const view = { key, since, entry: tenderEntry(record.seed) };
+		this.tenderView = view;
+		const { pos } = this.tenderNow(view, plan);
+		if (
+			shot.fired &&
+			shot.damage > 0 &&
+			tenderInSights(this.cameraPos(), this.beamAim(), pos)
+		) {
+			this.tenderHull = Math.max(0, this.tenderHull - shot.damage);
+			if (this.tenderHull === 0) {
+				this.applyCarrierTransition(key, tenderDestruction(record.index, now));
+				this.applyCarrierTransition(
+					relayKey,
+					relaySetBack(now, `route:${record.index}:${plan.watchedStationId}`),
+				);
+				this.audio.explosion();
+				this.lastExit = "relay tender destroyed";
+				this.tenderView = null;
+			}
+		}
+	}
+
+	/** The tender where the clock stands now, for `relayNow`'s reason: it rides
+	 *  the relay's frame, which moves tens of kilometres a second. */
+	private tenderNow(
+		v: { since: number; entry: Vec3 },
+		plan: RelayPlan,
+	): { pos: Vec3; vel: Vec3 } {
+		const { contents } = this.world.system;
+		const now = this.world.gameTime;
+		const { offset, vel } = tenderOffset(v.entry, now - v.since);
+		return {
+			pos: add(relayPosition(plan, contents, now), offset),
+			vel: add(relayVelocity(plan, contents, now), vel),
+		};
+	}
+
+	/** #351: place the tender's mesh and contact, or take them away. A ship,
+	 *  listed whenever it is there, nose toward the wreck. */
+	private updateTenderPresentation(cameraPos: Vec3) {
+		const v = this.tenderView;
+		const plan = this.currentRelayPlan();
+		const contact = this.tenderContact;
+		if (!v || !plan) {
+			if (this.tenderListed) {
+				this.unregisterContact(contact);
+				this.tenderListed = false;
+				this.selectableCache = null;
+				if (this.targetId === contact.id) this.targetId = null;
+			}
+			this.tenderMesh.removeFromParent();
+			return;
+		}
+		const { pos, vel } = this.tenderNow(v, plan);
+		contact.id = v.key;
+		contact.pos.x = pos.x;
+		contact.pos.y = pos.y;
+		contact.pos.z = pos.z;
+		contact.velocity.x = vel.x;
+		contact.velocity.y = vel.y;
+		contact.velocity.z = vel.z;
+		if (!this.tenderListed) {
+			this.registerContact(contact);
+			this.tenderListed = true;
+			this.selectableCache = null;
+		}
+		const root = this.tenderMesh;
+		if (!root.parent) this.nearScene.add(root);
+		root.position.set(
+			pos.x - cameraPos.x,
+			pos.y - cameraPos.y,
+			pos.z - cameraPos.z,
+		);
+		this.trafficQuaternion({ nose: scale(v.entry, -1) }, root.quaternion);
 	}
 
 	/** #43: what the glass shows of the relay, or null with nothing to show. */
@@ -11021,6 +11179,18 @@ class Game {
 			hull: this.relayHull,
 			listed: this.relayListed,
 			detection: this.relayDetectionNow(),
+			// #351: the repair tender, where the clock stands, while it is there.
+			tender:
+				this.tenderView && plan
+					? {
+							key: this.tenderView.key,
+							since: this.tenderView.since,
+							...this.tenderNow(this.tenderView, plan),
+							hull: this.tenderHull,
+							listed: this.tenderListed,
+							drawn: this.tenderMesh.parent !== null,
+						}
+					: null,
 		};
 	}
 
@@ -11948,6 +12118,7 @@ class Game {
 		this.updateTrafficPresentation(camPos);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
+		this.updateTenderPresentation(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
 		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
@@ -12651,6 +12822,16 @@ class Game {
 							// prototype can hold rows for one, and they stay unread (#351).
 							...(this.currentRelayPlan()
 								? relayLog(
+										this.commerceWorld.galaxies[
+											this.world.system.record.galaxy
+										],
+										this.world.system.record.index,
+										this.world.gameTime,
+									)
+								: []),
+							// #351: the tender's arrival and its kill, beside the relay's.
+							...(this.currentRelayPlan()
+								? tenderLog(
 										this.commerceWorld.galaxies[
 											this.world.system.record.galaxy
 										],
@@ -13567,6 +13748,16 @@ class Game {
 		);
 	}
 
+	/** Whether the relay's tender is the selected target (#351): the fourth
+	 *  combat target, so it pulls the gimbal and earns the mark by name. */
+	private tenderSelected(): boolean {
+		return (
+			this.tenderListed &&
+			this.targetId !== null &&
+			this.targetId === this.tenderContact.id
+		);
+	}
+
 	/** Whether an ordinary carrier is the selected target (civilian-combat H3):
 	 *  the third combat target #43's rule names, so it pulls the gimbal and
 	 *  earns the on-target mark. */
@@ -14426,6 +14617,9 @@ class Game {
 				)) ||
 			(relaySelected &&
 				relayInSights(camPos, this.beamAim(), selectedBody.pos)) ||
+			(selectedBody !== null &&
+				this.tenderSelected() &&
+				tenderInSights(camPos, this.beamAim(), selectedBody.pos)) ||
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
 			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));
