@@ -3659,8 +3659,11 @@ class Game {
 			 * binding and so cannot be lost by rebinding one.
 			 */
 			onControlsAction: (action) => {
-				// A `switch` over the union, so a third door is a compile error
-				// here rather than a click that does nothing.
+				// A `switch` over the union that ends in `never`, so a third door
+				// is a compile error here rather than a click that does nothing.
+				// The first version claimed that without the `default` that
+				// makes it true, and a third member compiled and fell through
+				// (sage round 3 on #498).
 				switch (action) {
 					case SETTINGS_ACTION:
 						this.settingsPanel?.open();
@@ -3668,6 +3671,10 @@ class Game {
 					case COMMANDER_ACTION:
 						this.commanderOverlay?.open();
 						return;
+					default: {
+						const unhandled: never = action;
+						throw new Error(`no route for the Controls door ${unhandled}`);
+					}
 				}
 			},
 			onRightTab: (tab) => {

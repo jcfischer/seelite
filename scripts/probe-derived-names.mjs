@@ -15,8 +15,9 @@
  *    the draw record (`cockpitPrompt`, `overlayLines`) where it is canvas —
  *    and require it to name the new key;
  * 3. press **the name it read**, not the key this file chose, and observe the
- *    effect the screen promised — and, where the old key could still be
- *    reached by accident, press that too and observe nothing.
+ *    effect the screen promised — and press the key the command shipped on
+ *    first, and observe nothing. Every row does, the rig's and the dial's
+ *    since sage round 3 on #498 found them without it.
  *
  * Arm 3 is why the pressed key is parsed out of the text rather than reused
  * from arm 1: a surface that printed the right string by coincidence — or a
@@ -443,6 +444,14 @@ await game.page.close();
 	// stored layout.
 	const moved = await move("fight.fireBeam", "7");
 	await frames();
+	// **The key it shipped on, held first** (sage round 3 on #498): a build
+	// that printed the new key while `x` still fired the beam passed this row
+	// without it. `x` pressed is still flight assist, which fires nothing.
+	await page.keyboard.down("x");
+	await frames(6);
+	const byOld = await firing();
+	await page.keyboard.up("x");
+	await frames();
 	const text = await legend();
 	const named = /hold (\S+) or left mouse button beam/.exec(text)?.[1] ?? null;
 	let beam = null;
@@ -455,8 +464,8 @@ await game.page.close();
 	}
 	check(
 		"rig: the legend names the moved beam key, and holding it fires the beam",
-		moved === null && named === "7" && beam === "beam",
-		`${moved ?? "moved"}; legend "${text}"; named ${named}; firing while held: ${beam}`,
+		moved === null && byOld !== "beam" && named === "7" && beam === "beam",
+		`${moved ?? "moved"}; firing while x held: ${byOld}; legend "${text}"; named ${named}; firing while held: ${beam}`,
 	);
 	await page.close();
 }
@@ -479,6 +488,10 @@ await game.page.close();
 	const vMax = (line) => Number(/^v_max (\d+) c/.exec(line)?.[1] ?? Number.NaN);
 	const moved = await move("tune.vMaxUp", "8");
 	await frames(6);
+	// The key it shipped on first, and the dial must not move (sage round 3).
+	const atMove = await dialLine();
+	await press("=");
+	await frames(6);
 	const before = await dialLine();
 	const named = /^v_max \d+ c \(-\/(\S)\)/.exec(before)?.[1] ?? null;
 	const pressed = await press(named);
@@ -486,8 +499,12 @@ await game.page.close();
 	const after = await dialLine();
 	check(
 		"legacy HUD: the dial line names the moved key, and that key turns the dial up",
-		moved === null && named === "8" && pressed && vMax(after) > vMax(before),
-		`${moved ?? "moved"}; before "${before}"; named ${named}; after "${after}"`,
+		moved === null &&
+			vMax(before) === vMax(atMove) &&
+			named === "8" &&
+			pressed &&
+			vMax(after) > vMax(before),
+		`${moved ?? "moved"}; v_max ${vMax(atMove)} → ${vMax(before)} after "="; before "${before}"; named ${named}; after "${after}"`,
 	);
 	await page.close();
 }

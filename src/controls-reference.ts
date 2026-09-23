@@ -139,9 +139,10 @@ export const COMMANDER_ACTION = "commander";
 /**
  * Every door the tab can carry.
  *
- * A closed union, so another door is a compile error at every consumer
- * rather than a `string` that silently falls through `main.ts`'s dispatch
- * (sage round 4 on #497). It held one until #381 S5 added the second.
+ * A closed union, so another door is a compile error at `main.ts`'s
+ * dispatch — its `switch` ends in a `never` — rather than a `string` that
+ * silently falls through (sage round 4 on #497, and round 3 on #498, which
+ * found the `never` missing). It held one until #381 S5 added the second.
  */
 export type ControlsAction = typeof SETTINGS_ACTION | typeof COMMANDER_ACTION;
 
