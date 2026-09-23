@@ -769,8 +769,13 @@ export function padHintFor(
  * printed nothing would read `press  to cruise`.
  */
 function spoken(layout: Layout, id: CommandId): string {
+	return anyOf(keyboardFirst(layout, id));
+}
+
+/** `spoken`'s names before they are joined, for a line that pairs two. */
+function keyboardFirst(layout: Layout, id: CommandId): string[] {
 	const keys = boundNames(layout, id, onKeyboard);
-	return anyOf(keys.length > 0 ? keys : boundNames(layout, id));
+	return keys.length > 0 ? keys : boundNames(layout, id);
 }
 
 /**
@@ -794,11 +799,20 @@ export const cruisePrompt = (layout: Layout): string =>
  *
  * In parentheses rather than the brackets the line used, because two of the
  * dials *are* the bracket keys and `[[/]]` reads as punctuation rather than
- * as two keys. Keyboard only, which is what that line is for.
+ * as two keys. The keyboard first, and the prompt line's fallback after it:
+ * a dial is a press, which a player may move to a pad button, and a side
+ * with no key printed `(-/)` for a round (sage round 1 on #498).
+ *
+ * **Named by the dial, not by its two commands**, and the stem is read off
+ * `CommandId`: six call sites each typing both ids was six chances to pair the
+ * wrong two, and a stem the registry has no `Down` row for does not compile.
  */
-export const dialKeys = (
-	layout: Layout,
-	down: CommandId,
-	up: CommandId,
-): string =>
-	`(${pairOf(boundNames(layout, down, onKeyboard), boundNames(layout, up, onKeyboard))})`;
+export const dialKeys = (layout: Layout, dial: DialStem): string =>
+	`(${pairOf(keyboardFirst(layout, `tune.${dial}Down`), keyboardFirst(layout, `tune.${dial}Up`))})`;
+
+/** The cruise dials, as the registry names their pairs: `vMax`, `exponent`, … */
+export type DialStem = CommandId extends infer C
+	? C extends `tune.${infer S}Down`
+		? S
+		: never
+	: never;

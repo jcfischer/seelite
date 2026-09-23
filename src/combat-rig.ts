@@ -922,16 +922,6 @@ export class CombatPrototypeRig {
 		ctx.restore();
 	}
 
-	private fitFont(
-		ctx: CanvasRenderingContext2D,
-		key: string,
-		widest: string,
-		startSize: number,
-		w: number,
-	): Fit {
-		return fitLine(ctx, this.statusFit, key, widest, startSize, w);
-	}
-
 	/** Whether the weapon is showing at all. One predicate, because the 3D beam
 	 *  and the glass tracer are two renderings of one thing: spelled twice, a
 	 *  new suppression term would silently reach only one of them. */
@@ -977,7 +967,7 @@ export class CombatPrototypeRig {
 			key: string,
 			widest: string,
 		) => {
-			const fit = this.fitFont(ctx, key, widest, startSize, w);
+			const fit = fitLine(ctx, this.statusFit, key, widest, startSize, w);
 			ctx.font = fit.font;
 			const width = ctx.measureText(text).width;
 			drawnLines.push({ text, font: fit.font, width });

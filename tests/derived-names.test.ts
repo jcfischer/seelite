@@ -294,18 +294,23 @@ describe("the prompt line and the dial legend (#381 S5)", () => {
 	});
 
 	test("the dial legend pairs each dial's two keys off the layout", () => {
-		expect(dialKeys(DEFAULT_BINDINGS, "tune.vMaxDown", "tune.vMaxUp")).toBe(
-			"(-/=)",
+		expect(dialKeys(DEFAULT_BINDINGS, "vMax")).toBe("(-/=)");
+		expect(dialKeys(DEFAULT_BINDINGS, "exponent")).toBe("([/])");
+		expect(dialKeys(movedKey("tune.vicinityUp", "4"), "vicinity")).toBe(
+			"(n/4)",
 		);
-		expect(
-			dialKeys(DEFAULT_BINDINGS, "tune.exponentDown", "tune.exponentUp"),
-		).toBe("([/])");
-		expect(
-			dialKeys(
-				movedKey("tune.vicinityUp", "4"),
-				"tune.vicinityDown",
-				"tune.vicinityUp",
-			),
-		).toBe("(n/4)");
+	});
+
+	test("a dial moved off the keyboard is named where it went, not left blank", () => {
+		// Sage round 1 on #498: `(-/)` for a dial a player moved to the pad.
+		// A press can move to a pad button (`movedTrigger`'s table), so this is
+		// reachable, and it is the prompt line's fallback applied to a pair.
+		const onPad = rebind(
+			DEFAULT_BINDINGS,
+			"tune.vMaxUp",
+			shippedTrigger("tune.vMaxUp"),
+			{ kind: "pad-button", button: "l3", contexts: [] },
+		);
+		expect(dialKeys(onPad, "vMax")).toBe("(-/L3)");
 	});
 });

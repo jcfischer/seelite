@@ -118,6 +118,14 @@ export interface SettingsPanelHandle {
 
 export function mountSettingsPanel(
 	store: SettingsStore,
+	/**
+	 * `system.settings` in the layout in force: the key that closes this
+	 * screen and the name its footer prints (#381 S5). Required, as the
+	 * Commander overlay's is: without it the screen closes on `Esc` alone and
+	 * the footer names nothing, and nothing would say so (sage round 1 on
+	 * #498).
+	 */
+	ownKey: OwnKey,
 	/** Called as the screen opens, to drop keys the player is still holding. */
 	releaseHeldKeys?: () => void,
 	/**
@@ -135,9 +143,6 @@ export function mountSettingsPanel(
 		key: K,
 		value: Settings[K],
 	) => string | null,
-	/** `system.settings` in the layout in force: the key that closes this
-	 *  screen and the name its footer prints (#381 S5). */
-	ownKey?: OwnKey,
 ): SettingsPanelHandle {
 	if (!document.getElementById(STYLE_ID)) {
 		const style = document.createElement("style");
@@ -178,7 +183,7 @@ export function mountSettingsPanel(
 		root.innerHTML = `<div class="box" role="dialog" aria-label="Settings">
   <h2>Settings</h2>
   <div role="listbox">${rows}</div>
-  <div class="hint">${escapeHtml(settingsHint(ownKey?.names() ?? []))}</div>
+  <div class="hint">${escapeHtml(settingsHint(ownKey.names()))}</div>
 </div>`;
 		for (const [i, el] of [...root.querySelectorAll(".row")].entries())
 			el.addEventListener("click", () => {
@@ -258,7 +263,7 @@ export function mountSettingsPanel(
 		// **The layout's key, not `SETTINGS_KEY`** (#381 S5). The footer names
 		// what `ownKey` says, so the close has to be the same answer or the
 		// line under the rows names a key that does not close the screen.
-		if (e.key === "Escape" || ownKey?.reaches(e)) return close();
+		if (e.key === "Escape" || ownKey.reaches(e)) return close();
 		if (e.key === "ArrowDown") moveCursor(1);
 		else if (e.key === "ArrowUp") moveCursor(-1);
 		else if (e.key === "ArrowRight") stepValue(1);

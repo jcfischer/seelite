@@ -22,14 +22,20 @@
  * from arm 1: a surface that printed the right string by coincidence — or a
  * dead string beside a live key — fails here and nowhere else.
  *
- * **What is not read here.** The jump prompt needs a set course and shares its
- * builder and its wiring with the cruise prompt read below; the save-fault
- * badge needs a forced write failure, which `probe-save.mjs` owns and a second
- * copy of would be the interference that file's timing is sensitive to. Both
- * are held headless in `tests/derived-names.test.ts`. The pad hint cannot be
- * moved by any layout — a panel intent is not offered for rebinding — so
- * `probe-pad-panels.mjs` reading it on screen is the whole of its browser
- * evidence.
+ * **Two rows set their stage by assignment**, and it is setup, not the
+ * subject: the target row clears the target so the line asks for one, and
+ * the jump row commits a course and fills the tanks so the line offers a
+ * jump. The save-fault badge is shown by calling its own `update(true)` —
+ * forcing a real write failure is `probe-save.mjs`'s, whose timing a second
+ * copy would disturb — so that row reads the words the badge paints and
+ * presses them, and says nothing about when a fault raises it.
+ *
+ * **What is not read here.** The pad hint cannot be moved by any layout — a
+ * panel intent is not offered for rebinding — so `probe-pad-panels.mjs`
+ * reading it on screen is the whole of its browser evidence, and
+ * `tests/derived-names.test.ts` holds that each segment is the layout's. (This
+ * paragraph listed the jump prompt and the badge as well for a round; sage
+ * round 1 on #498 held the PR's "every name is pressed" against it.)
  */
 // A default-layout probe (#381 D11): it presses keys by name, as the shipped
 // layout binds them, and a moved default turns it red for that reason.
@@ -53,7 +59,13 @@ const browser = await launchChromium();
  * The keys the shipped layout leaves free, which `tests/commands.test.ts`
  * names; one per row on a page, so no row's move collides with another's.
  */
-const FREE = { commander: "4", settings: "5", cruise: "6", target: "7" };
+const FREE = {
+	commander: "4",
+	settings: "5",
+	cruise: "6",
+	target: "7",
+	jump: "8",
+};
 
 /**
  * A page, booted, with the few readers every row uses.
@@ -125,64 +137,96 @@ check(
 );
 
 // ---------------------------------------------------------------------------
-// The settings screen: its footer names the key that closes it
+// The two player screens: each footer names the key that closes it
 // ---------------------------------------------------------------------------
 
+/**
+ * One screen's row: move its command, show the key it shipped on is dead,
+ * open it on the moved key, and close it on the key its footer names.
+ *
+ * One helper for both screens (sage round 1 on #498): the two rows were the
+ * same seven steps with four names changed, so a fix to the three-arm pattern
+ * had to be made twice.
+ */
+async function footerCloses({ command, shipped, free, screen }) {
+	const { drawn, move, press } = game;
+	const moved = await move(command, free);
+	await press(shipped);
+	const openedByOld = (await drawn(screen)) !== null;
+	await press(free);
+	const footer = await drawn(`${screen} .hint`);
+	const named = /Esc or (\S+) to close/.exec(footer ?? "")?.[1] ?? null;
+	const pressed = await press(named);
+	const closed = (await drawn(screen)) === null;
+	if (!closed) await game.page.keyboard.press("Escape");
+	return {
+		ok:
+			moved === null &&
+			!openedByOld &&
+			footer !== null &&
+			named === free &&
+			pressed &&
+			closed,
+		detail: `${moved ?? "moved"}; ${shipped} opened it: ${openedByOld}; footer "${footer}"; named ${named}; closed after pressing it: ${closed}`,
+	};
+}
+
 {
-	const { page, drawn, move, press } = game;
 	// **Mounted first, or the dead-key arm passes on an empty page.** The
 	// screen is a dynamic import that lands after boot (#423), so `z` pressed
 	// before it has nothing to open whatever the layout says — and "z did not
 	// open it" would be true for the wrong reason. S4's round 5 was this
-	// surrogate one row over.
-	const mounted = await waitForSettingsPanel(page);
-	const moved = await move("system.settings", FREE.settings);
-	await press("z");
-	const openedByOld = (await drawn("[data-settings-panel]")) !== null;
-	await press(FREE.settings);
-	const footer = await drawn("[data-settings-panel] .hint");
-	const named = /Esc or (\S+) to close/.exec(footer ?? "")?.[1] ?? null;
-	const pressed = await press(named);
-	const closed = (await drawn("[data-settings-panel]")) === null;
+	// surrogate one row over. The Commander overlay mounts with the boot.
+	const mounted = await waitForSettingsPanel(game.page);
+	const settings = await footerCloses({
+		command: "system.settings",
+		shipped: "z",
+		free: FREE.settings,
+		screen: "[data-settings-panel]",
+	});
 	check(
 		"settings: the footer names the moved key, and that key closes the screen",
-		mounted &&
-			moved === null &&
-			!openedByOld &&
-			footer !== null &&
-			named === FREE.settings &&
-			pressed &&
-			closed,
-		`mounted before z: ${mounted}; ${moved ?? "moved"}; z opened it: ${openedByOld}; footer "${footer}"; named ${named}; closed after pressing it: ${closed}`,
+		mounted && settings.ok,
+		`mounted before z: ${mounted}; ${settings.detail}`,
 	);
-	await page.keyboard.press("Escape");
+	const commander = await footerCloses({
+		command: "system.commander",
+		shipped: "9",
+		free: FREE.commander,
+		screen: "[data-commander-overlay]",
+	});
+	check(
+		"Commander: the footer names the moved key, and that key closes the overlay",
+		commander.ok,
+		commander.detail,
+	);
 }
 
 // ---------------------------------------------------------------------------
-// The Commander overlay: the same, and the key it shipped on is dead
+// The save-fault badge names the key that opens the Commander
 // ---------------------------------------------------------------------------
 
 {
-	const { page, drawn, move, press } = game;
-	const moved = await move("system.commander", FREE.commander);
-	await press("9");
-	const openedByOld = (await drawn("[data-commander-overlay]")) !== null;
-	await press(FREE.commander);
-	const footer = await drawn("[data-commander-overlay] .hint");
-	const named = /Esc or (\S+) to close/.exec(footer ?? "")?.[1] ?? null;
+	const { page, frames, drawn, press } = game;
+	// Shown through its own handle, and read in the same task, before the next
+	// frame's `update` hides it again for want of a fault.
+	const badge = await page.evaluate(() => {
+		const handle = window.__seelite.saveBadge;
+		if (!handle) return null;
+		handle.update(true);
+		const el = document.querySelector("[data-save-badge]");
+		return el?.checkVisibility() ? (el.textContent ?? "").trim() : null;
+	});
+	const named = /^SAVE FAULT (\S+)$/.exec(badge ?? "")?.[1] ?? null;
 	const pressed = await press(named);
-	const closed = (await drawn("[data-commander-overlay]")) === null;
+	const opened = (await drawn("[data-commander-overlay]")) !== null;
 	check(
-		"Commander: the footer names the moved key, and that key closes the overlay",
-		moved === null &&
-			!openedByOld &&
-			footer !== null &&
-			named === FREE.commander &&
-			pressed &&
-			closed,
-		`${moved ?? "moved"}; 9 opened it: ${openedByOld}; footer "${footer}"; named ${named}; closed after pressing it: ${closed}`,
+		"the save-fault badge names the moved Commander key, and that key opens the overlay",
+		named === FREE.commander && pressed && opened,
+		`badge "${badge}"; named ${named}; overlay after pressing it: ${opened}`,
 	);
-	if (!closed) await page.keyboard.press("Escape");
+	if (opened) await page.keyboard.press("Escape");
+	await frames();
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +354,46 @@ check(
 		`on the tab: ${onTab}; ring on the settings door: ${onDoor}; settings drawn: ${opened}`,
 	);
 	if (opened) await tap("b");
+}
+
+// ---------------------------------------------------------------------------
+// The jump prompt, last on this page: a charge that starts ends in a jump
+// ---------------------------------------------------------------------------
+
+{
+	const { page, frames, move, press } = game;
+	const charging = () =>
+		page.evaluate(() => window.__seelite.jumpCharge.toIndex !== null);
+	const moved = await move("fly.jump", FREE.jump);
+	// A course and a full tank, so the line offers the jump: every system in a
+	// galaxy is routable from every other (`galaxy-generation.md` §5), which is
+	// how `probe-live-cockpit.mjs` sets one too.
+	const committed = await page.evaluate(() => {
+		const g = window.__seelite;
+		g.fuelLy = g.fuelCapacityLy;
+		const here = g.world.system.record;
+		const elsewhere = g.world.galaxy.systems.find(
+			(s) => s.galaxy === here.galaxy && s.index !== here.index,
+		);
+		return g.commitCourseTo(elsewhere.index);
+	});
+	await frames();
+	await press("`");
+	const byOld = await charging();
+	const text = await page.evaluate(() => window.__seelite.cockpitPrompt.text);
+	const named = /^press (\S+) to jump to \S/.exec(text ?? "")?.[1] ?? null;
+	const pressed = await press(named);
+	const winding = await charging();
+	check(
+		"the jump prompt names the moved key, and that key winds up the jump",
+		moved === null &&
+			committed === true &&
+			!byOld &&
+			named === FREE.jump &&
+			pressed &&
+			winding,
+		`${moved ?? "moved"}; course set: ${committed}; \` charged it: ${byOld}; prompt "${text}"; named ${named}; charging after pressing it: ${winding}`,
+	);
 }
 
 await game.page.close();

@@ -13371,12 +13371,12 @@ class Game {
 				// The keys off the layout in force (#381 S5): every dial is an
 				// ordinary command since D12, so a moved one printed its old key
 				// here.
-				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c ${dialKeys(this.bindings, "tune.vMaxDown", "tune.vMaxUp")}`,
-				`exp ${p.exponent.toFixed(2)} ${dialKeys(this.bindings, "tune.exponentDown", "tune.exponentUp")}`,
-				`drop ${p.dropRadiusKm} km ${dialKeys(this.bindings, "tune.dropRadiusDown", "tune.dropRadiusUp")}`,
-				`below ${p.dropSpeedKms} km/s ${dialKeys(this.bindings, "tune.dropSpeedDown", "tune.dropSpeedUp")}`,
-				`vicinity ${range(p.vicinityKm)} ${dialKeys(this.bindings, "tune.vicinityDown", "tune.vicinityUp")}`,
-				`lead ${p.approachLeadS}s ${dialKeys(this.bindings, "tune.approachLeadDown", "tune.approachLeadUp")}`,
+				`v_max ${(p.vMaxKms / C_KMS).toFixed(0)} c ${dialKeys(this.bindings, "vMax")}`,
+				`exp ${p.exponent.toFixed(2)} ${dialKeys(this.bindings, "exponent")}`,
+				`drop ${p.dropRadiusKm} km ${dialKeys(this.bindings, "dropRadius")}`,
+				`below ${p.dropSpeedKms} km/s ${dialKeys(this.bindings, "dropSpeed")}`,
+				`vicinity ${range(p.vicinityKm)} ${dialKeys(this.bindings, "vicinity")}`,
+				`lead ${p.approachLeadS}s ${dialKeys(this.bindings, "approachLead")}`,
 			].join("   "),
 		];
 		// The clock is quantised into the key separately because it is *not* on
@@ -15189,6 +15189,7 @@ if (query.has("model-viewer")) {
 		// this is a second way in rather than a replacement.
 		game.settingsPanel = mountSettingsPanel(
 			game.settings,
+			game.ownKey("system.settings"),
 			() => game.releaseHeldKeys(),
 			// What the antialiasing row is *actually* rendering at, when the GPU
 			// grants less than the player asked for (#200). Without this the row
@@ -15214,7 +15215,6 @@ if (query.has("model-viewer")) {
 						? "unsupported here"
 						: `${got}x here`;
 			},
-			game.ownKey("system.settings"),
 		);
 	});
 
