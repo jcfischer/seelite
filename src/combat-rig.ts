@@ -138,18 +138,34 @@ export type FitCache = Map<string, Fit>;
  * **Keyed on the widest text too** (#381 S5). The legend's widest text *is*
  * the legend, and it is read off the layout now, so a rebind changes it;
  * keyed on the role and the width alone, the first legend's fit would be
- * answered for every legend after it, and a longer one would overrun the
- * glass it was measured to fit. Out of the class so the unit tier can hold
- * that, with a context that only measures.
+ * answered for every legend after it, at a size solved for a shorter line.
+ * Out of the class so the unit tier can hold that, with a context that only
+ * measures.
+ *
+ * **Re-solving is not fitting, and the floor is why.** The loop stops at
+ * 8 px whatever the width, so a line longer than the glass holds at 8 px
+ * overruns it — as any line here always could. The legend is the one line a
+ * player can lengthen: a held key moved onto one with a long printed name
+ * (`backspace`, `contextmenu` — a captured key prints as typed) adds its
+ * length, and the shipped 71 characters is what the narrow viewport was
+ * measured at, not a bound (sage round 2 on #498).
  */
 export function fitLine(
 	ctx: Pick<CanvasRenderingContext2D, "font" | "measureText">,
 	cache: FitCache,
-	key: string,
-	widest: string,
-	startSize: number,
-	w: number,
+	line: {
+		/** The line's role, which with the width and the text keys the cache. */
+		readonly key: string;
+		/** The widest text the line can hold, which the size is solved for. */
+		readonly widest: string;
+		readonly startSize: number;
+		/** The glass width, in canvas pixels. */
+		readonly width: number;
+	},
 ): Fit {
+	// One object rather than four positionals (sage round 2 on #498): two
+	// strings and two numbers side by side, where a swap still type-checks.
+	const { key, widest, startSize, width: w } = line;
 	const cacheKey = `${key}|${w}|${widest}`;
 	const held = cache.get(cacheKey);
 	if (held) return held;
@@ -967,7 +983,12 @@ export class CombatPrototypeRig {
 			key: string,
 			widest: string,
 		) => {
-			const fit = fitLine(ctx, this.statusFit, key, widest, startSize, w);
+			const fit = fitLine(ctx, this.statusFit, {
+				key,
+				widest,
+				startSize,
+				width: w,
+			});
 			ctx.font = fit.font;
 			const width = ctx.measureText(text).width;
 			drawnLines.push({ text, font: fit.font, width });

@@ -11,9 +11,11 @@
 import { describe, expect, test } from "bun:test";
 import {
 	type Binding,
+	commandById,
 	DEFAULT_BINDINGS,
 	type Layout,
 	layoutOf,
+	RebindRefused,
 	rebind,
 	type Trigger,
 } from "../src/commands";
@@ -232,6 +234,24 @@ describe("the combat rig's legend (#381 S5)", () => {
 		);
 	});
 
+	test("no layout can leave a segment of it blank", () => {
+		// Sage rounds 1 and 2 on #498 asked for the prompts' fallback here; it
+		// is unreachable, and this row is why rather than an argument. The two
+		// presses are the rig's own, not offered at all …
+		expect(commandById("fight.rigIncoming").rebindable).toBe(false);
+		expect(commandById("fight.rigEcm").rebindable).toBe(false);
+		// … and the two holds cannot leave the keyboard: a held key may move
+		// only to another held key, and no pad button reads a hold (#496).
+		for (const id of ["fight.firePulse", "fight.fireBeam"] as const)
+			expect(() =>
+				rebind(DEFAULT_BINDINGS, id, shippedTrigger(id), {
+					kind: "pad-button",
+					button: "l3",
+					contexts: [],
+				}),
+			).toThrow(RebindRefused);
+	});
+
 	test("the mouse is the rig's reading, printed in triggerLabel's words", () => {
 		expect(triggerLabel(RIG_MOUSE)).toBe("hold left mouse button");
 	});
@@ -255,8 +275,14 @@ describe("the rig's fitter re-solves a legend that changed (#381 S5)", () => {
 	test("a longer legend at the same width gets its own fit", () => {
 		const ctx = measuring();
 		const cache: FitCache = new Map();
-		const short = fitLine(ctx, cache, "legend", "x".repeat(40), 12, 390);
-		const long = fitLine(ctx, cache, "legend", "x".repeat(70), 12, 390);
+		const line = (widest: string) => ({
+			key: "legend",
+			widest,
+			startSize: 12,
+			width: 390,
+		});
+		const short = fitLine(ctx, cache, line("x".repeat(40)));
+		const long = fitLine(ctx, cache, line("x".repeat(70)));
 		// Keyed on the role and the width alone, the second call was answered
 		// out of the first's entry and reported the short line's width.
 		expect(long.worstWidth).toBeGreaterThan(short.worstWidth);

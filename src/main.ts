@@ -15056,6 +15056,10 @@ if (query.has("model-viewer")) {
 			openAtBoot = true;
 		}
 	}
+	// One `OwnKey` for the two surfaces that must name the same key — the
+	// overlay's footer and close, and the save-fault badge. It reads the layout
+	// each time it is asked, so one built here follows every rebind.
+	const commanderKey = game.ownKey("system.commander");
 	game.commanderOverlay = mountCommanderOverlay({
 		catalog: plan.writesNothing ? null : catalog,
 		switcher: plan.writesNothing
@@ -15101,11 +15105,11 @@ if (query.has("model-viewer")) {
 			return fault;
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),
-		ownKey: game.ownKey("system.commander"),
+		ownKey: commanderKey,
 	});
 	game.saveBadge = mountSaveBadge(
 		() => game.commanderOverlay?.open(),
-		() => game.ownKey("system.commander").names(),
+		commanderKey.names,
 	);
 	// The handle probes and the browser console reach the game through. Everything
 	// a probe needs to assert on has to be reachable from here, or the probe ends

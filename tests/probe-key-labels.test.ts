@@ -19,6 +19,16 @@
  * The label is {@link LABEL}, anywhere in the file. Both directions are held:
  * a press without it, and a label on a file that no longer presses one, which
  * would be a claim about a layout the file does not touch.
+ *
+ * **What it sees is three call shapes, and that is its limit.** A literal key
+ * at `keyboard.press`/`down`/`up`, at a helper called `press` — the shape
+ * `probe-derived-names.mjs` wraps its presses in, which the first version
+ * missed while the file passed on a direct `keyboard.press("?")` beside them
+ * (sage round 2 on #498) — and in a synthetic `KeyboardEvent`. A wrapper by
+ * any other name is not seen. The key is anything up to the closing quote,
+ * including the other two quote characters: the first pattern excluded all
+ * three, so a press of `` ` `` or `'` — the jump and a dial — was never
+ * counted.
  */
 import { describe, expect, test } from "bun:test";
 import { codeKey, DEFAULT_BINDINGS } from "../src/commands";
@@ -65,9 +75,10 @@ function registryKey(name: string): string {
 }
 
 /** A literal press, and a synthetic keydown or keyup with a literal key. */
-const PRESS = /keyboard\.(?:press|down|up)\(\s*(["'`])([^"'`$]+)\1/g;
+const PRESS =
+	/(?:keyboard\.(?:press|down|up)|\bpress)\(\s*(["'`])((?:(?!\1)[^$\\])+)\1/g;
 const EVENT =
-	/new KeyboardEvent\(\s*["']key(?:down|up)["']\s*,\s*\{[^}]*?\bkey:\s*(["'`])([^"'`$]+)\1/g;
+	/new KeyboardEvent\(\s*["']key(?:down|up)["']\s*,\s*\{[^}]*?\bkey:\s*(["'`])((?:(?!\1)[^$\\])+)\1/g;
 
 /** The default-bound keys a file presses by name, out of its code alone. */
 function boundPresses(file: string): string[] {
@@ -94,6 +105,11 @@ describe("the probe tier's presses by name (#381 S5)", () => {
 		const found = (pattern: RegExp) =>
 			SCRIPTS.some((f) => [...codeOf(f).matchAll(pattern)].length > 0);
 		expect([found(PRESS), found(EVENT)]).toEqual([true, true]);
+		// A quote character is a key like any other (sage round 2 on #498).
+		expect([...'press("`")'.matchAll(PRESS)].map((m) => m[2])).toEqual(["`"]);
+		expect(
+			[...'keyboard.press("\'")'.matchAll(PRESS)].map((m) => m[2]),
+		).toEqual(["'"]);
 		// And the normaliser's three shapes: a character, a Playwright name
 		// and a chord.
 		expect(registryKey("v")).toBe("v");

@@ -260,57 +260,90 @@ async function footerCloses({ command, shipped, free, screen }) {
 // The prompt line: the key it names reaches the command
 // ---------------------------------------------------------------------------
 
-{
+/**
+ * One prompt row: move the command, stage the line, show the key it shipped
+ * on does nothing, read the key the line names, press it, and observe the
+ * effect.
+ *
+ * One helper for the three prompt rows, as `footerCloses` is for the two
+ * screens (sage round 2 on #498). `stage` is the row's setup — a target
+ * cleared, a course committed — and returns whether it took; `effect` reads
+ * the state the line promises, and must read false before the named key is
+ * pressed and true after.
+ */
+async function promptReaches({
+	command,
+	shipped,
+	free,
+	pattern,
+	stage,
+	effect,
+}) {
 	const { page, frames, move, press } = game;
-	const prompt = () => page.evaluate(() => window.__seelite.cockpitPrompt.text);
-	const spool = () =>
-		page.evaluate(() => {
-			const g = window.__seelite;
-			return g.regime === "cruise" || g.spoolLeftS > 0;
-		});
-	const moved = await move("fly.cruise", FREE.cruise);
+	const moved = await move(command, free);
+	const staged = stage ? await stage() : true;
 	await frames();
-	await press("j");
-	const byOld = await spool();
-	const text = await prompt();
-	const named = /press (\S+) to cruise/.exec(text ?? "")?.[1] ?? null;
+	await press(shipped);
+	const byOld = await effect();
+	const text = await page.evaluate(() => window.__seelite.cockpitPrompt.text);
+	const named = pattern.exec(text ?? "")?.[1] ?? null;
 	const pressed = await press(named);
-	const engaged = await spool();
-	check(
-		"the cruise prompt names the moved key, and that key engages cruise",
-		moved === null && !byOld && named === FREE.cruise && pressed && engaged,
-		`${moved ?? "moved"}; j engaged it: ${byOld}; prompt "${text}"; named ${named}; engaged after pressing it: ${engaged}`,
-	);
-	// Stand the drive down on the key the prompt named, so the next row reads
-	// a prompt line the spool is not holding.
-	if (engaged) await press(named);
+	const happened = await effect();
+	return {
+		named,
+		ok:
+			moved === null &&
+			staged === true &&
+			!byOld &&
+			named === free &&
+			pressed &&
+			happened,
+		detail: `${moved ?? "moved"}; staged: ${staged}; ${shipped} did it: ${byOld}; prompt "${text}"; named ${named}; after pressing it: ${happened}`,
+	};
 }
 
 {
-	const { page, frames, move, press } = game;
-	const target = () => page.evaluate(() => window.__seelite.targetId);
-	const moved = await move("fight.targetNext", FREE.target);
-	// **Cleared by assignment, which is setup and not the subject.** The
-	// prompt asks for a target only when there is none, and this seed boots
-	// with one; the row's subject is what the line then names.
-	await page.evaluate(() => {
-		window.__seelite.targetId = null;
+	const cruise = await promptReaches({
+		command: "fly.cruise",
+		shipped: "j",
+		free: FREE.cruise,
+		pattern: /press (\S+) to cruise/,
+		effect: () =>
+			game.page.evaluate(() => {
+				const g = window.__seelite;
+				return g.regime === "cruise" || g.spoolLeftS > 0;
+			}),
 	});
-	await frames();
-	await press("t");
-	const byOld = await target();
-	const text = await page.evaluate(() => window.__seelite.cockpitPrompt.text);
-	const named = /^(\S+) selects a target$/.exec(text ?? "")?.[1] ?? null;
-	const pressed = await press(named);
-	const chosen = await target();
+	check(
+		"the cruise prompt names the moved key, and that key engages cruise",
+		cruise.ok,
+		cruise.detail,
+	);
+	// Stand the drive down on the key the prompt named, so the next row reads
+	// a prompt line the spool is not holding.
+	if (cruise.ok) await game.press(cruise.named);
+}
+
+{
+	const target = await promptReaches({
+		command: "fight.targetNext",
+		shipped: "t",
+		free: FREE.target,
+		pattern: /^(\S+) selects a target$/,
+		// **Cleared by assignment, which is setup and not the subject.** The
+		// prompt asks for a target only when there is none, and this seed
+		// boots with one; the row's subject is what the line then names.
+		stage: () =>
+			game.page.evaluate(() => {
+				window.__seelite.targetId = null;
+				return true;
+			}),
+		effect: () => game.page.evaluate(() => window.__seelite.targetId !== null),
+	});
 	check(
 		"the target prompt names the moved key, and that key selects a target",
-		moved === null &&
-			byOld === null &&
-			named === FREE.target &&
-			pressed &&
-			chosen !== null,
-		`${moved ?? "moved"}; t chose ${byOld}; prompt "${text}"; named ${named}; target after pressing it: ${chosen}`,
+		target.ok,
+		target.detail,
 	);
 }
 
@@ -361,41 +394,35 @@ async function footerCloses({ command, shipped, free, screen }) {
 // ---------------------------------------------------------------------------
 
 {
-	const { page, frames, move, press } = game;
-	const charging = () =>
-		page.evaluate(() => window.__seelite.jumpCharge.toIndex !== null);
-	const moved = await move("fly.jump", FREE.jump);
-	// Head forward, on a key this page has not moved: the pad row left it on
-	// the right console, and the prompt line is not drawn there.
-	await press("2");
-	// A course and a full tank, so the line offers the jump: every system in a
-	// galaxy is routable from every other (`galaxy-generation.md` §5), which is
-	// how `probe-live-cockpit.mjs` sets one too.
-	const committed = await page.evaluate(() => {
-		const g = window.__seelite;
-		g.fuelLy = g.fuelCapacityLy;
-		const here = g.world.system.record;
-		const elsewhere = g.world.galaxy.systems.find(
-			(s) => s.galaxy === here.galaxy && s.index !== here.index,
-		);
-		return g.commitCourseTo(elsewhere.index);
+	const jump = await promptReaches({
+		command: "fly.jump",
+		shipped: "`",
+		free: FREE.jump,
+		pattern: /^press (\S+) to jump to \S/,
+		// Head forward, on a key this page has not moved — the pad row left it
+		// on the right console, where the prompt line is not drawn — and a
+		// course and a full tank, so the line offers the jump. Every system in
+		// a galaxy is routable from every other (`galaxy-generation.md` §5),
+		// which is how `probe-live-cockpit.mjs` sets one too.
+		stage: async () => {
+			await game.press("2");
+			return game.page.evaluate(() => {
+				const g = window.__seelite;
+				g.fuelLy = g.fuelCapacityLy;
+				const here = g.world.system.record;
+				const elsewhere = g.world.galaxy.systems.find(
+					(s) => s.galaxy === here.galaxy && s.index !== here.index,
+				);
+				return g.commitCourseTo(elsewhere.index);
+			});
+		},
+		effect: () =>
+			game.page.evaluate(() => window.__seelite.jumpCharge.toIndex !== null),
 	});
-	await frames();
-	await press("`");
-	const byOld = await charging();
-	const text = await page.evaluate(() => window.__seelite.cockpitPrompt.text);
-	const named = /^press (\S+) to jump to \S/.exec(text ?? "")?.[1] ?? null;
-	const pressed = await press(named);
-	const winding = await charging();
 	check(
 		"the jump prompt names the moved key, and that key winds up the jump",
-		moved === null &&
-			committed === true &&
-			!byOld &&
-			named === FREE.jump &&
-			pressed &&
-			winding,
-		`${moved ?? "moved"}; course set: ${committed}; \` charged it: ${byOld}; prompt "${text}"; named ${named}; charging after pressing it: ${winding}`,
+		jump.ok,
+		jump.detail,
 	);
 }
 
