@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>The Far Between</title>
     <style>
-      /* Inline and small on purpose. There is one canvas and one line of text;
-         a stylesheet for that would be a file to keep in sync with nothing. */
+      /* Inline and small on purpose: a canvas and two layers over it, and a
+         stylesheet for that would be a file to keep in sync with nothing. The
+         one line of text it also styled was the key legend, which #381 S5
+         deleted - the Controls tab is the reference. */
       html,
       body {
         margin: 0;
@@ -41,24 +43,11 @@
         clip: rect(0 0 0 0);
         pointer-events: none;
       }
-      #keys {
-        position: fixed;
-        right: 12px;
-        bottom: 10px;
-        color: #4d6a80;
-        font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-        pointer-events: none;
-        text-align: right;
-      }
     </style>
   </head>
   <body data-public-page="">
     <canvas id="overlay"></canvas>
     <div id="hud"></div>
-    <div id="keys">
-      W/S or ↑/↓ pitch · A/D or ←/→ yaw · Q/E roll · Shift/Ctrl throttle · Space or click fire<br />
-      J cruise · T/G target · F face target · X assist · V view · 1/2/3 panel left/forward/right, or chase orbit port/astern/starboard · Alt+←/→ head turn · Z settings
-    </div>
     <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>
