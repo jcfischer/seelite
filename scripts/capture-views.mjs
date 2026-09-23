@@ -554,6 +554,46 @@ const PLACERS = {
 			throw new Error(
 				`controls placer: ${unfolded.join(", ")} did not fold — no such group, or the fold was lost`,
 			);
+		if (shot.rebind) {
+			// **The row is clicked and the modal is read back**, on the placer's
+			// own rule two paragraphs up: a selector that matched nothing would
+			// produce the tab with no modal on it, and a sheet captioned
+			// "rebinding" showing a tab reads exactly like a regression in the
+			// modal. A build without one is captured and *said*, which is the
+			// honest `before` of this node.
+			const row = `[data-live-controls-row="${shot.rebind}"]`;
+			const opened = await page.evaluate((sel) => {
+				const el = document.querySelector(sel);
+				if (!el) return false;
+				el.click();
+				return true;
+			}, row);
+			if (!opened) return `no ${shot.rebind} row on this build`;
+			const up = await page
+				.waitForFunction(
+					() => !!document.querySelector("[data-capture-modal]"),
+					undefined,
+					{ timeout: 2000 },
+				)
+				.then(
+					() => true,
+					() => false,
+				);
+			if (!up) return `the ${shot.rebind} row opened no modal on this build`;
+			// The key the modal is shown having caught. A press rather than a
+			// field assignment, for the reason `?` is pressed above: the frame
+			// is what the game does with a keystroke.
+			if (shot.press) {
+				await page.keyboard.press(shot.press);
+				await page.waitForFunction(
+					() =>
+						!!document.querySelector("[data-capture-modal] .capture-caught"),
+					undefined,
+					{ timeout: 2000 },
+				);
+			}
+			return `Rebinding ${shot.rebind}${shot.press ? ` · caught ${shot.press}` : ""}`;
+		}
 		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
 	},
 };

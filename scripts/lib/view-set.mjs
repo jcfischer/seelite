@@ -142,6 +142,7 @@ export const LEVERS = Object.freeze({
 	300: "every §5 fixture on the surface its own aperture axis looks at",
 	324: "the duel HUD, the canister markers after a kill, and the Communications console's raider log",
 	372: "the Controls tab: every control as a folding tree of task groups",
+	381: "the rebind modal, and the tab's settings door beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
 });
 
@@ -822,6 +823,30 @@ export const VIEWS = Object.freeze([
 			kind: "controls",
 			view: "cockpit",
 			folded: ["fly", "fight", "dock", "trade"],
+		},
+	},
+	/**
+	 * #381 S4's frame, and the reason it is here at all: the capture modal is a
+	 * **fourth modal surface**, which #369 D9 names as the cost of hosting the
+	 * rebind on this tab, and a drawn surface with no frame in the set is what
+	 * #177 is open about for the galaxy chart. It is captured mid-session
+	 * rather than empty — a modal listening and a modal holding something are
+	 * different pictures, and the second is the one a player spends time
+	 * reading.
+	 *
+	 * The tab behind it is part of the subject: the frame shows the door, and
+	 * it shows a held row printing `hold` beside a pressed one, which is D3's
+	 * split finally visible on the screen #370 owns.
+	 */
+	{
+		name: "controls-rebind",
+		covers: [381],
+		what: "The rebind modal open on Pitch: nose up with `k` caught, over the Controls tab. The settings door top right; `hold s` and `hold k` where the tab used to print bare characters.",
+		shot: {
+			kind: "controls",
+			view: "cockpit",
+			rebind: "fly.pitchUp",
+			press: "k",
 		},
 	},
 	/**

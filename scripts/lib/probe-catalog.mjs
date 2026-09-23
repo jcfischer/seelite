@@ -197,6 +197,18 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-capture.mjs",
+			"Checks the rebind modal launched from the Controls tab: a stick pushed while it is open is caught by the modal and ignored by the ship, a pad button is captured and then flies the command it was bound to, and moving every door trigger elsewhere still leaves the tab reachable and settings openable from it.",
+			[
+				"rebind modal",
+				"capture context",
+				"gamepad binding",
+				"pad stick",
+				"settings bootstrap",
+				"Controls tab",
+			],
+		),
+		entry(
 			"probe-rebind.mjs",
 			"Checks that rebinding a flight command onto a new key reaches the simulation: the ship answers the new trigger, stops answering the old one, and a rebind off a trigger the command does not have is refused.",
 			[
