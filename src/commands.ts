@@ -70,6 +70,7 @@ import { COMMANDER_KEY } from "./commander-overlay";
 import { type PadButtonName, type PadFrame, STANDARD_BUTTONS } from "./gamepad";
 import {
 	ANALOG_TRIGGERS,
+	isAnalogTrigger,
 	type PadContext,
 	type PadIntents,
 	padFireHeld,
@@ -1712,7 +1713,7 @@ export function capturedTrigger(
 		// The same law `padIntents` applies, asked of the module that owns it:
 		// a full pull reports `pressed`, and a trigger read as a switch is a
 		// key with extra steps.
-		if (ANALOG_TRIGGERS.includes(button)) continue;
+		if (isAnalogTrigger(button)) continue;
 		// **Recorded even when it falls through nowhere, so the modal can say
 		// so** (sage round 2 on #497). This used to `continue`, which left the
 		// doc claiming such a button was "refused" while the player pressing
@@ -1730,7 +1731,7 @@ export function capturedTrigger(
 	// Analog from here down, and all of it needs the frame before.
 	if (previous === null) return null;
 
-	for (const trigger of ["l2", "r2"] as const)
+	for (const trigger of ANALOG_TRIGGERS)
 		if (
 			frame.values[trigger] >= CAPTURE_DEFLECTION &&
 			previous.values[trigger] < CAPTURE_DEFLECTION
@@ -2035,20 +2036,24 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 			// `hold` alone and that is what is compared.
 			if (from.kind === "key") {
 				if (!matchesQualifiers(to, from)) throw keptQualifiers(from, to);
-			} else if ((to.hold ?? false) !== (heldRather(from) ?? false))
-				throw keptQualifiers(from, to);
-			// **A chord's character is the position's, not the event's** — the
+			} else if (!sameHold(from, to)) throw keptQualifiers(from, to);
+			// **A key's character is its position's, not the event's** — the
 			// rule `chordsFor` states and, until sage round 2 on #497, the rule
 			// only `chordsFor` obeyed. On macOS Option changes the character,
 			// so a captured `Alt+D` arrives as `∂` and was stored and printed
 			// as `Alt + ∂`. Normalising here rather than in the capture means
-			// every producer of an Alt trigger gets it, which is what a rule
-			// living in one producer did not.
+			// every producer gets it, which a rule living in one producer did
+			// not.
+			//
+			// **Whenever there is a code, not only under Alt** (round 4). The
+			// first version keyed on `alt`, which left an *ordinary* row
+			// capturing `Alt+Q` on macOS stored as `œ` — the modal's own doc
+			// claimed it would be stored as `q`. Where no Option is involved
+			// the two agree, so the narrower condition bought nothing and was
+			// wrong exactly where it mattered.
 			const { kind: _kind, ...rest } = to;
 			return keyTrigger(
-				rest.alt === true && rest.code !== undefined
-					? { ...rest, key: codeKey(rest.code) }
-					: rest,
+				rest.code === undefined ? rest : { ...rest, key: codeKey(rest.code) },
 			);
 		}
 		case "pad-button": {
@@ -2058,8 +2063,7 @@ function movedTrigger(from: Trigger, to: Trigger): Trigger {
 					to,
 					"a held button is read by padFireHeld, which reads a fixed position and not the layout",
 				);
-			if ((to.hold ?? false) !== (heldRather(from) ?? false))
-				throw keptQualifiers(from, to);
+			if (!sameHold(from, to)) throw keptQualifiers(from, to);
 			// The contexts are the **button's**, asked of `pad-bindings.ts`
 			// through the derivation the shipped rows came from — so a caller
 			// that hands over a set of its own gets the button's anyway.
@@ -2162,6 +2166,16 @@ const keptQualifiers = (from: Trigger, to: Trigger) =>
 		"qualifiers",
 		`a rebind may move a trigger, not its qualifiers: ${triggerKey(from)} -> ${triggerKey(to)}`,
 	);
+
+/**
+ * Whether two triggers agree about being held.
+ *
+ * One owner, because `movedTrigger` asked it in both the cross-device key arm
+ * and the pad-button arm, and "hold is the command's" is one rule (sage round
+ * 4 on #497).
+ */
+const sameHold = (from: Trigger, to: Trigger) =>
+	(heldRather(to) ?? false) === (heldRather(from) ?? false);
 
 /**
  * Whether this trigger is held rather than pressed, on the kinds that say.

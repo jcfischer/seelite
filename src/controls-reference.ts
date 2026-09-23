@@ -116,11 +116,20 @@ export function restoreOnTabPick<T extends string>(
  */
 export const SETTINGS_ACTION = "settings";
 
+/**
+ * Every door the tab can carry.
+ *
+ * A union of one, so a second door is a compile error at every consumer
+ * rather than a `string` that silently falls through `main.ts`'s `if`
+ * (sage round 4 on #497).
+ */
+export type ControlsAction = typeof SETTINGS_ACTION;
+
 export type TreeItem =
 	| { kind: "header"; group: TaskGroup; count: number }
 	| { kind: "row"; command: ControlCommand }
 	/** A door rather than a control; see `SETTINGS_ACTION`. */
-	| { kind: "action"; action: typeof SETTINGS_ACTION; label: string };
+	| { kind: "action"; action: ControlsAction; label: string };
 
 /** The cursor's name for a door, beside `groupFocusId` and `rowFocusId`. */
 export const actionFocusId = (action: string) => `controls-action:${action}`;

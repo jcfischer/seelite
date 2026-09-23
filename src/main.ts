@@ -7452,13 +7452,15 @@ class Game {
 	 * is written every frame, because the frame that *matters* is the one
 	 * before the modal opened and nothing knows that in advance.
 	 *
-	 * **A copy of the numbers and not the frame** (sage round 1 on #497 found
-	 * the symptom; this is the cause). Holding the `PadFrame` made the edge
-	 * depend on that object still reading what it read when it was stored, and
-	 * it did not: the modal was offered the same stick on every one of forty
-	 * frames, so the edge C10 rests on was not holding in the game while the
-	 * unit test — which passes an explicit rest frame — was green. Four
-	 * numbers and seventeen copied by value cannot be moved under this.
+	 * **The frame itself, and a copy of it was the wrong fix.** The modal was
+	 * offered the same stick on every one of forty frames, and this field was
+	 * briefly a per-frame copy of the numbers on the theory that the frame had
+	 * changed under it. It had not: `readPad` freezes every frame it returns,
+	 * axes included. The mutation that would have proved the copy load-bearing
+	 * — putting the frame back — turned nothing red, and that is what found
+	 * the real cause, which is one line below. The copy cost three
+	 * allocations a frame, one of them seventeen fields wide, for the whole
+	 * session (sage rounds 1, 3 and 4 on #497).
 	 */
 	private padAnalogPrevious: PadAnalog | null = null;
 	// The drawn console beside it, for the same reason and with the same caveat: the
@@ -7780,21 +7782,18 @@ class Game {
 		// the `acted` read and the dispatch are both empty by construction
 		// rather than by a branch.
 		// **Advanced before the modal is offered anything, and that ordering is
-		// the fix rather than a tidy-up.** The modal draws inside `offer`, and
-		// a throw there — `escapeHtml` on an undefined sentence, which is what
-		// a refusal keyed on the trigger's *kind* produced — propagates out of
-		// `pollPad` and skips every line after it. So the previous reading
-		// never advanced, `capturedTrigger` compared a deflected stick against
-		// rest forever, and the modal was re-offered the same stick on all
-		// forty frames of the probe's window. One crash, two symptoms, and the
-		// edge C10 rests on was the one that looked like an independent bug.
+		// the whole fix.** The modal draws inside `offer`, and a throw there —
+		// `escapeHtml` on an undefined sentence, which is what a refusal keyed
+		// on the trigger's *kind* produced — propagates out of `pollPad` and
+		// skips every line after it. So the previous reading never advanced,
+		// `capturedTrigger` compared a deflected stick against rest forever,
+		// and the modal was re-offered the same stick on all forty frames of
+		// the probe's window. One crash, two symptoms, and the edge C10 rests
+		// on was the one that looked like an independent bug.
 		//
 		// A consumer must not be able to break an input invariant by failing.
 		const previous = this.padAnalogPrevious;
-		this.padAnalogPrevious = {
-			axes: { ...frame.axes },
-			values: { ...frame.values },
-		};
+		this.padAnalogPrevious = frame;
 		if (context === "capture") {
 			const caught = capturedTrigger(frame, previous);
 			if (caught) this.captureModal?.offer(caught);
@@ -7806,7 +7805,7 @@ class Game {
 		// layout binds to nothing, so counting them would sound the notice for
 		// Square and for `home`.
 		const acted =
-			this.padPressReaches(intents.buttons, context) || intents.activate;
+			this.padPressIds(intents.buttons, context).length > 0 || intents.activate;
 		if (context !== "flight") {
 			this.applyPanelIntents(intents, context);
 			if (acted) this.padAudioNotice();
@@ -7897,7 +7896,13 @@ class Game {
 			// whole `rebind`, a `layoutOf` freeze, a `collisions` scan and an
 			// `innerHTML` replacement at the OS repeat rate, all to produce the
 			// answer already on screen.
-			if (e.repeat || MODIFIER_KEYS.has(e.key)) return;
+			// **And a combination is not a candidate either.** `Cmd+R` reached
+			// this as a plain `r` after `preventDefault` had eaten the reload —
+			// so the shortcut was swallowed *and* the key was offered. This
+			// matches `keyDispatch`, which refuses both: Ctrl is the throttle
+			// and Meta reaches nothing.
+			if (e.repeat || e.metaKey || e.ctrlKey || MODIFIER_KEYS.has(e.key))
+				return;
 			this.captureModal.offer({
 				kind: "key",
 				key: e.key.toLowerCase(),
@@ -8343,14 +8348,6 @@ class Game {
 		return buttons.flatMap((button) =>
 			resolvePad(this.bindings, { button, context, view: this.view }),
 		);
-	}
-
-	/** Whether any of these presses reaches a command in `context`. */
-	private padPressReaches(
-		buttons: readonly PadButtonName[],
-		context: PadContext,
-	): boolean {
-		return this.padPressIds(buttons, context).length > 0;
 	}
 
 	/**

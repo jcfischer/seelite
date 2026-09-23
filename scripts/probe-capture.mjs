@@ -68,14 +68,30 @@ const clickIfShown = async (selector) => {
 /** Open the modal on the first trigger of `command`, through the tab's own row. */
 const openModalOn = async (command) =>
 	clickIfShown(`[data-live-controls-row="${command}"]`);
-const modalText = () =>
+/**
+ * The text of one part of the modal, by class.
+ *
+ * **Never the whole modal** (sage round 4 on #497). The rows below read
+ * `/stick/i` out of it, and the *listening* stage prints "Press a key, or a
+ * button, stick or trigger on the pad" — so a build where the stick never
+ * reached the modal at all passed the row that says it was caught, and passed
+ * the no-hash row after it. A check that cannot fail is the thing this repo
+ * keeps finding, and this one was written into the probe that was supposed to
+ * be the evidence.
+ */
+const partText = (selector) =>
 	page.evaluate(
-		() =>
+		(sel) =>
 			document
-				.querySelector("[data-capture-modal]")
+				.querySelector(`[data-capture-modal] ${sel}`)
 				?.textContent?.replace(/\s+/g, " ")
 				.trim() ?? "",
+		selector,
 	);
+/** What the modal says it caught, and nothing else. */
+const caughtText = () => partText(".capture-caught");
+/** Why it will not take it, in the player's words. */
+const refusedText = () => partText(".capture-refused");
 const view = () => page.evaluate(() => window.__seelite.view);
 
 /**
@@ -167,12 +183,15 @@ await page.evaluate(() => {
 await page.evaluate(() => window.__pad.axes(0, 0, 1, 0));
 const turned = await drift(WINDOW);
 const offers = await page.evaluate(() => window.__offers);
-const caught = await modalText();
+const caught = await caughtText();
+const refused = await refusedText();
 
 check(
 	"a stick pushed while the modal is up is caught by it",
+	// Out of `.capture-caught`, which only a stage that caught something
+	// draws — and it names the stick rather than merely mentioning one.
 	/stick/i.test(caught),
-	caught || "(the modal said nothing)",
+	caught || "(the modal caught nothing)",
 );
 
 check(
@@ -192,8 +211,13 @@ check(
 
 check(
 	"the stick is refused in the player's words, with no trigger hash on screen",
-	!caught.includes("::") && !caught.includes("padFlightAxes"),
-	caught,
+	// A refusal has to be *drawn*, and then it has to be English. The first
+	// version read both out of the whole modal, where the listening prompt
+	// satisfied the first half on its own.
+	refused.length > 0 &&
+		!refused.includes("::") &&
+		!refused.includes("padFlightAxes"),
+	refused || "(the modal drew no refusal)",
 );
 
 check(
@@ -224,8 +248,9 @@ await tapPad(STANDARD_INDEX.home);
 
 check(
 	"a pad button is caught and offered, where the stick was refused",
-	(await page.$("[data-capture-confirm]")) !== null,
-	await modalText(),
+	(await page.$("[data-capture-confirm]")) !== null &&
+		(await refusedText()) === "",
+	`caught ${await caughtText()}`,
 );
 
 await clickIfShown("[data-capture-confirm]");

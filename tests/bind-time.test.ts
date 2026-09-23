@@ -185,12 +185,19 @@ describe("the door cannot be shut", () => {
 		// last trigger off `view.headStarboard` and lose the tab that fixes it,
 		// and answering that needs a fourth `FixedReason` — an amendment to
 		// #369 D12 rather than something this slice may decide in passing.
-		// **Over every module, and by shape rather than by three names** (sage
-		// round 2 on #497 said the first version passed for a removal verb
-		// under any other name, or in any other file, and it did). What an
-		// unbind *is*, is an export whose name says it takes a binding away —
-		// so the scan is a pattern over every source file, and the assertion
-		// prints what it found rather than a bare `false`.
+		// **A name scan over every module, and that is all it is** (sage rounds
+		// 2 and 4 on #497). Round 2 said the first version — three exact names
+		// in one file — passed for a removal verb under any other name or in
+		// any other module, and it did. Round 4 said the replacement still
+		// matches a list of names and called the "by shape" claim on it, which
+		// was also right: a removal verb called `forget` or `reset` walks past
+		// this, and so does a non-exported one.
+		//
+		// It is kept because it catches the obvious and costs nothing, and the
+		// claim is dropped rather than the row. **The guard C9 actually rests
+		// on is the row above**, which is a property and not a name: every
+		// command keeps the trigger count it had across a rebind. A removal
+		// verb under any name fails *that* the moment anything calls it.
 		const removal =
 			/export\s+(?:function|const|async function)\s+(\w*(?:unbind|clearBinding|removeBinding|dropBinding|deleteBinding)\w*)/gi;
 		const found: string[] = [];

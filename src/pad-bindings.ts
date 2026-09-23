@@ -217,7 +217,15 @@ export interface PadIntents {
  * capture must not record a full pull as a button press — and it had the pair
  * written out again (sage round 3 on #497).
  */
-export const ANALOG_TRIGGERS: readonly PadButtonName[] = ["l2", "r2"];
+export const ANALOG_TRIGGERS = [
+	"l2",
+	"r2",
+] as const satisfies readonly PadButtonName[];
+
+/** Whether this button is one of them. A predicate, because `includes` on a
+ *  `as const` tuple narrows its own argument and refuses every other name. */
+export const isAnalogTrigger = (name: PadButtonName): boolean =>
+	(ANALOG_TRIGGERS as readonly PadButtonName[]).includes(name);
 
 const NO_INTENTS: PadIntents = {
 	buttons: [],
@@ -325,7 +333,7 @@ export function padIntents(
 		// table names commands elsewhere now and reports every unclaimed
 		// press, so the law has to be stated or it changes in silence
 		// (#381 S4).
-		if (ANALOG_TRIGGERS.includes(name)) continue;
+		if (isAnalogTrigger(name)) continue;
 		// Unclaimed, so it falls through to the ship. Whether the layout binds
 		// it is the registry's question, asked with this context.
 		buttons.push(name);

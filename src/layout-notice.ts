@@ -227,9 +227,12 @@ const triggerFor = (layout: Layout, collision: Collision): Trigger => {
  * **A refusal carries no layout.** `rebind` throws on a move the registry will
  * not make — a stick, a held button, a qualifier that is the command's — and
  * there is nothing to warn about there, because there is nothing to commit.
- * The sentence comes back so the modal can print it; `REJECTED_WHY` in
- * `controls-reference.ts` is what a *stored* row's refusal prints, and this is
- * the live one.
+ * A **code** comes back, and the sentence beside it is the developer's —
+ * `detail` is for a console and for a probe and nothing prints it. This doc
+ * said the sentence came back "so the modal can print it", which is what the
+ * first version did and the whole reason the codes exist (sage round 4 on
+ * #497). `CAPTURE_REFUSED_WHY` in `controls-reference.ts` is what a player
+ * reads here, as `REJECTED_WHY` there is for a *stored* row's refusal.
  *
  * **Nothing is mutated.** `rebind` returns a new table, so a player who reads
  * the warning and backs out has changed nothing — which is the property a

@@ -53,6 +53,17 @@
  * registry cannot move one — and S4 lifts both together, in one change, which
  * is where that pair has to be re-read.
  *
+ * **The format is forward-only, and a downgrade is not clean** (#381 S4, sage
+ * round 4). This slice widened the blob: a stored trigger may now be a
+ * `pad-button`, and `LAYOUT_VERSION` did not move. A *newer* build reads
+ * everything an older one wrote, which is the direction that matters. An
+ * older build meets a pad row as `unreadable-trigger` — one rejected row,
+ * named on screen — and its next save drops it, because `retiredBySave`
+ * retires that notice. The version was not bumped because a bump is worse in
+ * the direction players actually travel: this build refuses a version it does
+ * not know, so every existing `v1` layout would be abandoned to protect a
+ * downgrade nobody performs. The cost is named here rather than discovered.
+ *
  * **There is no `migrate()`, and that is the honest answer rather than a
  * gap.** Version 1 is the first version this game has ever written, so a
  * migration function here would be a path no red build can reach — and this

@@ -25,6 +25,7 @@ import type { DockPhase } from "./dock-session";
 import type { TaskGroup } from "./commands";
 import { CONTROLS, type ControlsCatalogue } from "./controls-catalogue";
 import {
+	type ControlsAction,
 	controlsBody,
 	controlsTreeMarkup,
 	focusAfterFold,
@@ -235,7 +236,7 @@ export interface LiveCockpitCallbacks {
 	 * #369 D12's bootstrap: `z` is remappable, so the tab carries a route to
 	 * the settings panel that no binding table holds.
 	 */
-	onControlsAction: (action: string) => void;
+	onControlsAction: (action: ControlsAction) => void;
 	/**
 	 * The Galaxy Map tab's chart host has appeared or gone away.
 	 *
@@ -619,8 +620,11 @@ export class LiveCockpit {
 		// tree and `closest` would otherwise never reach it.
 		const door = element.closest<HTMLElement>("[data-live-controls-action]");
 		if (door) {
+			// The cast is the DOM boundary: `dataset` is `string | undefined`
+			// whatever the markup writes, and the union is what every consumer
+			// downstream then gets.
 			this.callbacks.onControlsAction(
-				door.dataset.liveControlsAction as string,
+				door.dataset.liveControlsAction as ControlsAction,
 			);
 			return;
 		}
