@@ -1650,9 +1650,13 @@ export const CAPTURE_DEFLECTION = 0.5;
  * A **press** needs none of this: `readPad` computes that edge itself, against
  * the previous poll.
  *
- * **The cancel is asked for, not listed.** `padIntents` says which button
- * closes the modal, so the one button a capture cannot record is the same
- * button that closes it, by construction rather than by a second table.
+ * **Every button is capturable, including Circle.** The first version
+ * reserved Circle as the modal's way out, which made it the one button a pad
+ * could never bind. The principal's ruling removes the cost rather than
+ * accepting it: the cancel is a *click*, which #370's standing premise
+ * guarantees is always available and which no binding table can hold. So this
+ * records whatever the pad offers and the modal's own control is what closes
+ * it.
  *
  * **The contexts on a captured button are the button's.** #369 D4 gives the
  * player the trigger and the command the context set; a pad button's set is
@@ -1666,8 +1670,6 @@ export function capturedTrigger(
 	previous: PadFrame | null,
 ): Trigger | null {
 	if (!frame?.connected) return null;
-	// The way out wins over the recording, whatever else the frame holds.
-	if (padIntents(frame, "capture").back) return null;
 
 	for (const button of frame.pressed) {
 		if (button === "l2" || button === "r2") continue;

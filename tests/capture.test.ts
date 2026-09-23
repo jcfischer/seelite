@@ -66,7 +66,15 @@ describe("the capture context admits the pad and flies nothing", () => {
 		expect(padFireHeld(press("x", 1, held), "capture")).toBe(false);
 	});
 
-	test("no press falls through to the ship, and only the cancel is reported", () => {
+	test("no press reaches anything at all — every button is swallowed whole", () => {
+		// **Including Circle, and that is the principal's ruling.** The first
+		// version reserved Circle as the way out, because Circle is `back`
+		// everywhere else — and the cost was that Circle became the one button
+		// a pad could never bind. The cancel is a *click* instead: #370's
+		// standing premise is that a screen is always clickable, which is why
+		// the pointer rows carry `fixed: "pointer"` and have no movable
+		// trigger at all. A modal whose way out is a control no binding table
+		// holds is the same argument that gives this tab its settings door.
 		for (const name of STANDARD_BUTTONS) {
 			const out = padIntents(press(name), "capture");
 			expect(out.buttons, name).toEqual([]);
@@ -75,9 +83,7 @@ describe("the capture context admits the pad and flies nothing", () => {
 			expect(out.valueDelta, name).toBe(0);
 			expect(out.activate, name).toBe(false);
 			expect(out.instrument, name).toBe(false);
-			// Circle is the way out, everywhere in this game. Every other button
-			// is swallowed whole, which is what "for one capture" means.
-			expect(out.back, name).toBe(name === "b");
+			expect(out.back, name).toBe(false);
 		}
 	});
 });
@@ -103,8 +109,16 @@ describe("what one capture records", () => {
 		});
 	});
 
-	test("the cancel records nothing — it is the way out, not a trigger", () => {
-		expect(capturedTrigger(press("b"), rest)).toBeNull();
+	test("Circle is recorded like any other button", () => {
+		// The row that changed when the cancel became a click. Circle is
+		// `dock.clearance` on the shipped layout and falls through in flight
+		// alone, so it comes back with that one context — which is also the
+		// proof that this is the ordinary path and not a special case.
+		expect(capturedTrigger(press("b"), rest)).toEqual({
+			kind: "pad-button",
+			button: "b",
+			contexts: ["flight"],
+		});
 	});
 
 	test("a button no context lets through cannot be captured", () => {

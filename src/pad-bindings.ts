@@ -210,17 +210,6 @@ export interface PadIntents {
 	readonly instrument: boolean;
 }
 
-/**
- * The button that closes the capture modal, and is therefore the one button
- * the modal cannot record.
- *
- * Named here rather than in `commands.ts` because it is a property of the
- * context, and `capturedTrigger` asks this module rather than keeping a second
- * copy — the third copy of a table is what this repo's whole drift history is
- * about.
- */
-export const CAPTURE_CANCEL: PadButtonName = "b";
-
 /** The two buttons that are pulls rather than presses; see `padIntents`. */
 const ANALOG_TRIGGERS: readonly PadButtonName[] = ["l2", "r2"];
 
@@ -250,17 +239,25 @@ export function padIntents(
 
 	for (const name of frame.pressed) {
 		if (context === "capture") {
-			// **Nothing but the way out** (#369 D9). The stick and the trigger
-			// are read by `capturedTrigger` off the frame directly, not through
-			// this function, because they are a position rather than a press
-			// and an intent struct has nowhere to put one.
+			// **Nothing at all, and that includes the way out** (#369 D9's
+			// "swallow every input except its own cancel", answered by the
+			// principal's ruling on which input the cancel is).
 			//
-			// Circle is the cancel because Circle is `back` everywhere else in
-			// this game, and a modal that invented a different way out would be
-			// a second grammar beside the one a player already has. The cost is
-			// named rather than discovered: **Circle cannot be captured from a
-			// pad while this modal is open**, and the modal says so.
-			if (name === CAPTURE_CANCEL) back = true;
+			// The first version reserved Circle, because Circle is `back`
+			// everywhere else in this game — and the cost was that Circle
+			// became the one button a pad could never bind. It does not have
+			// to be paid: **the cancel is a click**, and a click is the one
+			// input this game guarantees. #370's standing premise is that a
+			// screen is always clickable, which is why the pointer rows carry
+			// `fixed: "pointer"` — no movable trigger at all. So the modal's
+			// way out is a control that no binding table can hold, by the same
+			// argument that gives the `Controls` tab its settings door, and
+			// every one of the seventeen buttons stays capturable.
+			//
+			// The stick and the trigger are read by `capturedTrigger` off the
+			// frame directly rather than through this function, because they
+			// are a position rather than a press and an intent struct has
+			// nowhere to put one.
 			continue;
 		}
 		if (context === "modal") {
