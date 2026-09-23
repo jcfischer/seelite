@@ -82,8 +82,10 @@ export const WORLD_GENERATOR_VERSION = 7;
  * still enumerated with the same identity, type, parent and placement — then a
  * row it saved names the carrier it named, and the migration is a relabel.
  * `tests/world-state.test.ts` holds that for 6 against version 6's own golden
- * fingerprints. Version 5 is not here: 6 added the raider slots, and nothing
- * shipped a version-5 save to a player.
+ * fingerprints. Version 5 is not here, and listing it would open nothing: saves
+ * shipped on 2026-09-11 at version 5, but `WORLD_SCHEMA_VERSION` 3 arrived on
+ * 09-18 after version 6, so every version-5 snapshot carries schema 2 and the
+ * schema check refuses it first.
  */
 export const LEGACY_WORLD_GENERATOR_VERSIONS: readonly number[] = [6];
 

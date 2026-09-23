@@ -8,10 +8,9 @@
  * is the relay's generated placement and so is part of the fingerprint.
  *
  * **Two slots per system with a station.** `relay-00` is the relay; its
- * `tender` is the repair ship #351's recovery sends to a destroyed one, a
- * carrier of its own so a kill of it saves like any other. Both are enumerated
- * whether or not the system's relay is *active*: activity is a runtime roll
- * (`pirate-relay.ts`), so re-tuning it is not a generator bump.
+ * `tender` is enrolled here for the repair ship #351's recovery will send to
+ * a destroyed relay (slice A3), so that both land in one generator version.
+ * Nothing sends or flies a tender yet.
  *
  * Imports the generator's contents and orbit types, the galaxy's stream helper,
  * the domain table and the hull id type, and nothing that renders or simulates.

@@ -2400,8 +2400,8 @@ describe("§9.9 atomicity and integrity", () => {
 	});
 
 	test("the relabel does not excuse a version-6 body from its hash (#351)", () => {
-		// The hash is over what arrived, so the migration runs after it: a
-		// version-6 body that was edited is refused as edited, not relabelled.
+		// The hash is over the object that arrived (`o`), not over the relabelled
+		// model: a version-6 body that was edited is refused as edited.
 		const world = newWorld(WORLD);
 		world.worldGeneratorVersion = 6;
 		const raw = serializeWorld(world) as Record<string, unknown>;
@@ -2410,9 +2410,10 @@ describe("§9.9 atomicity and integrity", () => {
 	});
 
 	test("version 5 is still refused: it is not a listed legacy version (#351)", () => {
-		// 5 → 6 only added the raider slots, so a relabel would be safe in shape;
-		// it is refused because nothing shipped a version-5 save to a player, and
-		// an unlisted version is refused by name.
+		// 5 → 6 only added the raider slots, so a relabel would be safe in shape.
+		// It is unlisted because every real version-5 save is also schema 2, which
+		// is refused first (`LEGACY_WORLD_GENERATOR_VERSIONS`); an unlisted
+		// version is refused by name.
 		const world = newWorld(WORLD);
 		world.worldGeneratorVersion = 5;
 		expect(() => parseWorld(serializeWorld(world))).toThrow(
