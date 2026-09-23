@@ -171,13 +171,17 @@ test("src/units.ts is a leaf, which is the whole of its job", () => {
 });
 
 /**
+ * A re-export, matched up to the statement's `;` rather than the end of the
+ * line: biome wraps a long `export { … } from` across lines, and a single-line
+ * match reads that form as no re-export at all (sage round 1 on #502). One
+ * copy, so both rows below that look for a re-export read the same form.
+ */
+const RE_EXPORT_FROM = String.raw`^\s*export\b[^;]*?\bfrom\s*["'${"`"}]`;
+
+/**
  * What stops a module from being a types-only leaf: its value imports, static
- * or dynamic, and its re-exports.
- *
- * One copy for every such leaf rather than a regex per row (sage round 1 on
- * #502). The re-export match runs to the statement's `;` rather than the end
- * of the line, because biome wraps a long `export { … } from` across lines and
- * a single-line match reads that form as no re-export at all.
+ * or dynamic, and its re-exports. One copy for every such leaf rather than a
+ * regex per row.
  */
 const typesOnlyViolations = (file: string) => {
 	const code = codeOf(file);
@@ -185,7 +189,7 @@ const typesOnlyViolations = (file: string) => {
 		valueImports:
 			(code.match(/^\s*import\s+(?!type\b)/gm) ?? []).length +
 			(code.match(/\bimport\s*\(/g) ?? []).length,
-		reExports: (code.match(/^\s*export\b[^;]*?\bfrom\s*["'`]/gm) ?? []).length,
+		reExports: (code.match(new RegExp(RE_EXPORT_FROM, "gm")) ?? []).length,
 	};
 };
 
@@ -208,11 +212,13 @@ test("src/knowledge-labels.ts imports types and nothing else", () => {
 });
 
 test("src/key-names.ts imports types and nothing else", () => {
-	// #499 D4: the cycle `commander-overlay` → `key-names` → `commands` →
-	// `commander-overlay` is closed by this row, not by anyone remembering it.
-	// `commands.ts` value-imports the Commander overlay for its default key, and
-	// the overlay reads `OwnKey` from here; one value import back into the
-	// registry would give that loop a runtime edge.
+	// #499 D4. `commands.ts` value-imports the Commander overlay for its
+	// default key, and the overlay imports `OwnKey` from here — as a type
+	// today, so there is no runtime loop yet. The row is what lets the overlay
+	// take a *value* from here later (#498 declined sharing the close phrase
+	// for the want of exactly that): with the leaf's half held type-only,
+	// `commander-overlay` → `key-names` → `commands` → `commander-overlay`
+	// cannot close at runtime whichever way the overlay imports.
 	//
 	// And no re-exports, because the leaf is the one module that spells a key
 	// (#499 D2) and a second import path to its names is the coupling
@@ -227,15 +233,24 @@ test("no module re-exports src/key-names.ts", () => {
 	// The other half of one import path (#499 D2): the leaf re-exporting
 	// nothing does not stop `controls-reference.ts` handing its names on, which
 	// is the arm #499 refused for keeping `derived-names.test.ts` byte-identical.
-	const reExportsLeaf = /^\s*export\b[^;]*?\bfrom\s*["'`]\.\/key-names["'`]/m;
-	const offenders = srcFiles().filter((file) =>
-		reExportsLeaf.test(codeOf(file)),
-	);
-	expect(offenders).toEqual([]);
-	// The control: the scan reads a module that does import the leaf, so a
-	// path or a scanner that saw nothing would not pass as a clean tree.
-	expect(codeOf("src/controls-reference.ts")).toMatch(
-		/\bfrom\s*["'`]\.\/key-names["'`]/,
+	const LEAF = String.raw`\./key-names["'${"`"}]`;
+	const reExportsLeaf = new RegExp(RE_EXPORT_FROM + LEAF, "m");
+	const importsLeaf = new RegExp(String.raw`\bfrom\s*["'${"`"}]` + LEAF);
+	const scanned = srcFiles().map((file) => ({ file, code: codeOf(file) }));
+	expect(
+		scanned.filter(({ code }) => reExportsLeaf.test(code)).map((s) => s.file),
+	).toEqual([]);
+	// The control, over the same scan: it found the modules that import the
+	// leaf, so a scan that read no files, or read them under the wrong paths,
+	// fails here instead of passing as a clean tree (sage round 2 on #502).
+	expect(
+		scanned.filter(({ code }) => importsLeaf.test(code)).map((s) => s.file),
+	).toEqual(
+		expect.arrayContaining([
+			"src/controls-reference.ts",
+			"src/capture-modal.ts",
+			"src/main.ts",
+		]),
 	);
 });
 

@@ -8,10 +8,11 @@
  * rig — is a format over both.
  *
  * **Types only from the registry**, and `tests/headless.test.ts` holds it.
- * `commands.ts` value-imports the Commander overlay for its default key and
- * the overlay reads `OwnKey` from here, so a value import back into the
- * registry would give that loop a runtime edge. Nothing here re-exports, and
- * nothing re-exports this: one module, one import path.
+ * `commands.ts` value-imports the Commander overlay for its default key, and
+ * the overlay imports `OwnKey` from here — a type today. Holding this half
+ * type-only is what leaves the overlay free to take a *value* from here as
+ * well without closing a runtime loop through the registry (#499 D4). Nothing
+ * here re-exports, and nothing re-exports this: one module, one import path.
  */
 import type { CommandId, Layout, Surface, Trigger } from "./commands";
 
