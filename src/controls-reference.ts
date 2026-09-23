@@ -11,7 +11,14 @@
  */
 import type { LayoutNotice, RejectReason } from "./layout-notice";
 import { escapeHtml } from "./escape-html";
-import type { RebindRefusal, Surface, TaskGroup, Trigger } from "./commands";
+import type {
+	CommandId,
+	Layout,
+	RebindRefusal,
+	Surface,
+	TaskGroup,
+	Trigger,
+} from "./commands";
 import { COMMANDS, PAD_CONTEXTS, TASK_GROUPS, VIEW_MODES } from "./commands";
 import type { ControlCommand, ControlsCatalogue } from "./controls-catalogue";
 import type { DockPhase } from "./dock-session";
@@ -591,4 +598,108 @@ function noticesMarkup(notices: readonly LayoutNotice[]): string {
 		)
 		.join("");
 	return `<ul class="lc-controls-notices" data-live-controls-notices>${rows}</ul>`;
+}
+
+// ---------------------------------------------------------------------------
+// Every other surface that names a control (#381 S5)
+// ---------------------------------------------------------------------------
+
+/**
+ * What reaches `id` in `layout`, printed — the one question every surface
+ * that names a control asks (#369 D11).
+ *
+ * **Over a layout, and never over the shipped table.** The tab has printed the
+ * player's layout since the storage slice; every other surface that named a
+ * key typed it in, so a rebind moved the tab and left the prompt, the footers
+ * and the pad hint naming a key that no longer did anything. Each of them asks
+ * this now, and `triggerLabel` is still the only thing that spells a key.
+ *
+ * `keep` narrows it to the triggers a surface can name — a keyboard footer
+ * has no use for a pad button, and the pad hint only for what a console
+ * reads. Repeats are dropped, in the layout's order.
+ */
+export function boundNames(
+	layout: Layout,
+	id: CommandId,
+	keep: (t: Trigger) => boolean = () => true,
+): string[] {
+	const names = layout
+		.filter((b) => b.command === id && keep(b.trigger))
+		.map((b) => triggerLabel(b.trigger));
+	return [...new Set(names)];
+}
+
+/**
+ * Two commands that are a pair, as one segment: `d-pad ↑/↓`, `L1/R1`.
+ *
+ * A shared first word is said once, so a pair reads as one control pushed two
+ * ways rather than two controls. Everything before it is `triggerLabel`'s.
+ */
+function pairOf(a: readonly string[], b: readonly string[]): string {
+	const [first, second] = [a.join(" or "), b.join(" or ")];
+	const space = first.lastIndexOf(" ");
+	const shared = space === -1 ? "" : first.slice(0, space + 1);
+	return shared && second.startsWith(shared)
+		? `${first}/${second.slice(shared.length)}`
+		: `${first}/${second}`;
+}
+
+/** A pad press a console reads: its grammar, or a button that falls through. */
+const readInConsole = (t: Trigger): boolean =>
+	(t.kind === "pad-intent" || t.kind === "pad-button") &&
+	t.contexts.includes("console");
+
+/**
+ * The line a console shows a pad player, built from what that surface has.
+ *
+ * **Here since #381 S5, and derived.** It lived in `pad-bindings.ts`, "beside
+ * the bindings it names" — it had been written into `live-cockpit.ts` first,
+ * as a third copy of a table that module and `docs/gamepad.md` already owned,
+ * so a rebind moved two of the three. S4 moved the bindings to the registry
+ * and the reason went with them; and it could not ask the registry from
+ * there, because `commands.ts` already reads `pad-bindings.ts` to derive the
+ * pad's rows. So each segment's button is the layout's answer and the verb is
+ * the only word authored here.
+ *
+ * **Assembled rather than picked from near-copies.** It began as one constant,
+ * gained a station variant that was the first minus one segment, and would
+ * have gained a third and fourth for the empty walk — three of them left dead
+ * the moment the function replaced them, which sage then found. A surface with
+ * nothing focusable must not promise a walk, and the station console must not
+ * promise a back: it is reached with the head already forward, so `back`
+ * would turn a forward head forward. It still gets a marker either way,
+ * because the *marker* answers a different question from the *hint*.
+ *
+ * **"CONTROLLER", not "PAD".** On a *station* console the shorter word meets
+ * `CONTEXT.md`'s berth sense, which is the one surface in this game where that
+ * reading is live. The buttons are named by standard-mapping position rather
+ * than drawn as DualSense glyphs, because an Xbox pad reads `a`/`b` literally.
+ *
+ * A segment whose command reaches no console button is left out rather than
+ * printed with a blank where the button goes. No shipped or player layout can
+ * produce that — a panel intent is not offered for rebinding — so it is the
+ * derivation refusing to print a blank, not a case anyone meets.
+ */
+export function padHintFor(
+	layout: Layout,
+	surface: { station: boolean; walkable: boolean },
+): string {
+	const on = (id: CommandId) => boundNames(layout, id, readInConsole);
+	const segment = (names: readonly string[], verb: string) =>
+		names.length > 0 ? [`${names.join(" or ")} ${verb}`] : [];
+	const pair = (a: CommandId, b: CommandId, verb: string) =>
+		on(a).length > 0 && on(b).length > 0
+			? [`${pairOf(on(a), on(b))} ${verb}`]
+			: [];
+	return [
+		"CONTROLLER",
+		...(surface.walkable
+			? [
+					...pair("panel.cursorUp", "panel.cursorDown", "WALK"),
+					...segment(on("panel.activate"), "SELECT"),
+				]
+			: []),
+		...(surface.station ? [] : segment(on("panel.back"), "BACK")),
+		...pair("panel.tabPrevious", "panel.tabNext", "TAB"),
+	].join(" · ");
 }
