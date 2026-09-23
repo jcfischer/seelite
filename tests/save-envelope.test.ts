@@ -25,6 +25,7 @@ import {
 	newWorld,
 	setDeficits,
 	visit,
+	WORLD_GENERATOR_VERSION,
 } from "../src/world-state";
 
 const SEED = 0x5ee11e;
@@ -110,6 +111,22 @@ describe("#89 D5 — the save envelope", () => {
 		// save, so a parser that normalised in place would destroy it.
 		expect(raw).toEqual(before);
 		expect(() => parseSave(raw)).not.toThrow();
+	});
+
+	test("a save holding a version-6 world loads, and the record is untouched (#351)", () => {
+		// The player's path to the generator migration: the envelope's hash is
+		// over the version-6 body as stored, and the relabel happens on a copy.
+		const w = world();
+		w.worldGeneratorVersion = 6;
+		const raw = serializeSave({ world: w, commander: commander() }) as {
+			world: { worldGeneratorVersion: number };
+		};
+		const before = structuredClone(raw);
+		const loaded = parseSave(raw);
+		expect(loaded.world.worldGeneratorVersion).toBe(WORLD_GENERATOR_VERSION);
+		expect(loaded.world.galaxies).toEqual(w.galaxies);
+		expect(raw).toEqual(before);
+		expect(raw.world.worldGeneratorVersion).toBe(6);
 	});
 
 	test("obligation 5: truncation and graft fail distinguishably — at the top level", () => {

@@ -1,7 +1,8 @@
 /**
  * Worst-case save size, measured rather than guessed (#89, shipped by #90).
  *
- * Enumerates every generated carrier — stations plus #148's Traffic roster —
+ * Enumerates every generated carrier — stations, #148's Traffic roster, and
+ * the system slots (#324's raiders, #351's relay and tender) —
  * through the real generator, fills the largest representable row in each of
  * `persistent-world-state.md` §9.8's three per-carrier domains, and reports the
  * serialized size and the cost of one round trip.
@@ -33,6 +34,8 @@ import { carrierKey } from "../src/carrier-key";
 import { GALAXY_COUNT } from "../src/world-state";
 import { generateGalaxy } from "../src/galaxy";
 import { COMMODITIES } from "../src/market";
+import { raiderSlots } from "../src/raider-slots";
+import { relayPlan, relaySlot, relayTenderSlot } from "../src/relay-slot";
 import { stationTrafficRoster } from "../src/station-traffic";
 import { generateContents } from "../src/system";
 import {
@@ -199,6 +202,19 @@ function build(tier: Tier): Row {
 						keys.push(actor.key);
 						flown.push(actor.key);
 					}
+			}
+			// The system's own slots — #324's raiders and #351's relay and its
+			// tender — ride the saturated tier with the Traffic: each is a carrier
+			// a kill writes a row for. The raiders were missing from this ceiling
+			// between #324 and #351.
+			if (tier.traffic) {
+				for (const slot of raiderSlots(record.index, record.government))
+					keys.push(slot.key);
+				if (relayPlan(contents, record.seed))
+					keys.push(
+						relaySlot(record.index).key,
+						relayTenderSlot(record.index).key,
+					);
 			}
 			for (const key of keys as ReturnType<typeof carrierKey>[]) {
 				carriers++;
