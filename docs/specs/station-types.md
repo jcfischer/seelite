@@ -672,15 +672,18 @@ piece is welded onto a socket on something already built, leaning the pile to
 one side the assembly seed chooses. Each piece is kept only if its box stays
 inside the pool's 0.42 km and out of the pad's corridor. Every piece but the
 core is in another hull's paint, and the lamps are warm work lamps, not the
-pad's cool floods and never red (`hud-and-scanner.md` §4). It entered the pool
-unselected, for a ranking round beside A–D.
+pad's cool floods and never red (`hud-and-scanner.md` §4). It was ranked
+beside A–D at three plans under five finishes and four framings, and taken
+(2026-09-24).
 
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are
-**A** because round one ranked their slot first. **Refinery and outpost are D
+**A** because round one ranked their slot first. **Refinery and outpost were D
 since 2026-09-06**, on the principal's yes to #257's sheet — the first choice
-either role has had, after two rounds in which `a` was a placeholder that said
-so. The refinery's changes what a running game draws; the outpost's does not,
+either role had, after two rounds in which `a` was a placeholder that said so.
+**The outpost is E since 2026-09-24**, on the principal's yes to #518's sheet,
+because the role became a raider's haven after the Cluster was taken. The
+refinery's choice changes what a running game draws; the outpost's does not,
 because `system.ts` places no outposts.
 
 **The letter carried forward and the geometry did not, which is worth being

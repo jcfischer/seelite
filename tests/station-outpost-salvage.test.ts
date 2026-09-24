@@ -53,7 +53,7 @@ function plan(root: THREE.Object3D) {
 		.join(" ");
 }
 
-describe("outpost E is a candidate, not the choice", () => {
+describe("outpost E is the choice, on the principal's yes", () => {
 	test("it is in the outpost pool at the pool's reach", () => {
 		const form = STATION_FORMS.outpost.find((f) => f.id === "e");
 		expect(form?.name).toBe("Salvage");
@@ -64,8 +64,8 @@ describe("outpost E is a candidate, not the choice", () => {
 		expect(isSolvedForm("outpost", "e")).toBe(true);
 	});
 
-	test("the selected outpost is still the Cluster until the principal says otherwise", () => {
-		expect(SELECTED_FORM.outpost).toBe("d");
+	test("the game builds the outpost as E since the ranking round of 2026-09-24", () => {
+		expect(SELECTED_FORM.outpost).toBe("e");
 	});
 });
 

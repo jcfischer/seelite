@@ -1342,6 +1342,54 @@ const DECLARATIONS: Partial<
 		});
 	},
 
+	/**
+	 * Outpost E — Salvage (#518). On the **core**, because it is the one part
+	 * every plan shares: the rest of the pile is the assembly seed's and this
+	 * declaration never sees the seed. A lattice belt round the freighter
+	 * section's foot, pipe runs up two of its faces toward the deck, and a tank
+	 * rack slung under it. A welded piece may bury part of a run, which is what
+	 * junk does to the plumbing it was built round.
+	 */
+	"outpost/e": ({ pools, mount }) => {
+		const S = SHIP_SCALE;
+		// The core's half-extents in `buildOutpostSalvage`, less half a strut
+		// so the belt's members bite into the plating they are welded to.
+		const hx = 0.055 + S.strutKm * 0.25;
+		const hy = 0.045 + S.strutKm * 0.25;
+		const corners = [
+			V(hx, hy, 0),
+			V(-hx, hy, 0),
+			V(-hx, -hy, 0),
+			V(hx, -hy, 0),
+		];
+		for (let i = 0; i < 4; i++)
+			truss(
+				pools,
+				corners[i].clone().setZ(-0.14),
+				corners[(i + 1) % 4].clone().setZ(-0.14),
+				S.strutKm,
+				V(0, 0, 1),
+			);
+		for (const side of [1, -1])
+			pipeRun(
+				pools,
+				[-0.15, -0.06, 0.03, 0.12].map((z) =>
+					mount(V(side * 0.02, side * 0.045, z), V(0, side, 0), 0.06).add(
+						V(0, side * S.pipeKm, 0),
+					),
+				),
+				S.pipeKm,
+			);
+		tankRack(pools, {
+			origin: mount(V(0, 0, -0.16), V(0, 0, -1), 0.06),
+			along: V(1, 0, 0),
+			up: V(0, 0, -1),
+			count: 4,
+			radiusKm: S.tankKm,
+			lengthKm: S.tankLengthKm,
+		});
+	},
+
 	"outpost/a": ({ group, pools, mount, beaconAt }) => {
 		const r = STATION_GEOMETRY.outpost.coreRadiusKm;
 		const S = SHIP_SCALE;

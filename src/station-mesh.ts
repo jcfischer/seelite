@@ -3570,11 +3570,17 @@ function buildHeatRing(
 // ---------------------------------------------------------------------------
 //
 // A fourth category, asked for as "smaller structures, non-rotating, look like
-// industrial structures with just a landing pad". All three are a *machine with
-// a deck on it* rather than a place anyone lives: no spun habitat, no window
-// bands, and the pad is the largest flat thing on them.
+// industrial structures with just a landing pad". Forms A to D answer that
+// brief: each is a *machine with a deck on it*, and the pad is the largest
+// flat thing on them.
 //
-// They carry no strobes, for the refinery's reason: nothing here turns.
+// **The role changed under them.** #490 made the outpost the raider's haven,
+// and #493 found that nothing in a machine reads as a place where Wanted
+// pilots sell Narcotics. E — Salvage (#518) is the role's own form, and the
+// one the game builds: other ships' wreckage welded round the pad. A–D stay
+// in the pool as the forms it was ranked against.
+//
+// None carries strobes, for the refinery's reason: nothing here turns.
 
 /** A small floodlit pad deck on the +Z face, with its own coaming. Shared by
  *  every outpost form, because the pad is what the category *is* — the rest of
@@ -6067,7 +6073,13 @@ export const SELECTED_FORM: Record<StationType, StationFormId> = {
 	// refineries. The outpost's does not — it places no outposts, because
 	// what one sells and how often one exists are #13's and #6's questions.
 	refinery: "d",
-	outpost: "d",
+	// **E, on the principal's yes to #518's sheet (2026-09-24).** The Cluster
+	// was taken above as an industrial machine, and #490 then made the outpost
+	// a raider's haven; E is the form built for that role — salvage welded
+	// round the pad — ranked beside A–D at three plans under five finishes
+	// and four framings. Still nothing a running game draws until #491 places
+	// outposts.
+	outpost: "e",
 };
 
 const formOf = (type: StationType, id: StationFormId) => {

@@ -211,9 +211,11 @@ export const STATION_GEOMETRY: Record<StationType, StationGeometry> = {
 		spins: false,
 	},
 	outpost: {
-		// A quarter of a trade station's core, which is the point of it: an
-		// industrial structure rather than a habitat, small enough that its whole
-		// silhouette is a machine.
+		// A quarter of a trade station's core, which is the point of it: a raider's
+		// haven welded together from salvage round a landing pad (#490, #518),
+		// small enough that the pile of other ships' wreckage is the silhouette.
+		// Sized in #56 for an industrial machine; the figure stood when the
+		// role changed, and the form grew into it rather than the other way.
 		coreRadiusKm: 0.15,
 		// The Derrick's top deck, which stands proud of its core, 165 m.
 		aperturePlaneKm: 0.165,
