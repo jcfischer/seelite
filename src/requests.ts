@@ -253,6 +253,14 @@ export interface RequestContext {
 	equipment: readonly string[];
 }
 
+/** The name a non-cargo job's target was posted under. The union has two
+ *  members, so a job with no cargo has a target; the throw is for a third. */
+const targetNameOf = (terms: RequestOffer): string => {
+	if (terms.operand.kind !== "target")
+		throw new Error(`${terms.id}: no cargo and no target`);
+	return terms.operand.targetName;
+};
+
 /** #495 D2's refusal, one sentence for both of the actions that owe it. */
 const BOUNTY_NEEDS_CLEAN =
 	"Bounties are paid to Clean pilots only. Wait until your standing is Clean again.";
@@ -542,7 +550,7 @@ export function requestAction(
 						rewardCr: terms.rewardCr,
 						remainingT: ctx.cargo[cargo.goodName] ?? 0,
 					})
-				: `Reported · ${terms.operand.kind === "target" ? terms.operand.targetName : "target"} destroyed, ${terms.rewardCr} Cr paid.`,
+				: `Reported · ${targetNameOf(terms)} destroyed, ${terms.rewardCr} Cr paid.`,
 			{
 				rewardCr: terms.rewardCr,
 				// §4's mark lands exactly here, with the settlement, so a repeated

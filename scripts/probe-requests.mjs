@@ -524,10 +524,12 @@ try {
 		page.evaluate(() => {
 			const g = window.__seelite;
 			g.requestOffersCacheKey = null;
+			// **The operand whole, not two of its fields** (#508). A Bounty's
+			// operand has no `goodName` or `tonnes`, and reading them compared
+			// `undefined` with `undefined` — green for any target at all.
 			return g.requestsView().offers.map((o) => ({
 				id: o.id,
-				goodName: o.operand.goodName,
-				tonnes: o.operand.tonnes,
+				operand: JSON.stringify(o.operand),
 				rewardCr: o.rewardCr,
 				reportAt: o.reportAt,
 				episode: o.episode,

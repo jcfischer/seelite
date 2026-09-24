@@ -12914,7 +12914,8 @@ class Game {
 			// cached on the place alone, because a trade cannot move them and
 			// regenerating a neighbourhood per click is what that would cost.
 			// The clock is deliberately in neither: a board that re-bound every
-			// minute would be the reroll §1 forbids.
+			// minute would be the reroll §1 forbids. (The Bounty target in the
+			// key is a world fact the clock can move; see below.)
 			const settled = settledAt(this.requests, {
 				galaxyIndex: context.galaxyIndex,
 				carrierKey: context.stationKey,
@@ -12926,8 +12927,11 @@ class Game {
 			// **The Bounty target is world state, so it is in the key** (#508).
 			// The relay dies in flight and is replaced on the clock; a board
 			// keyed without it kept posting a Bounty on a wreck to a pilot who
-			// docked after the kill. It is not a reroll (§1): the offer's terms
-			// do not move, the world fact that posts it does.
+			// docked after the kill. So one thing on this board *does* move with
+			// the clock: a repair completing while the pilot is docked posts a
+			// Bounty mid-visit. That is procurement's argument rather than the
+			// reroll §1 forbids — the offer's terms do not move, the world fact
+			// that posts it does.
 			const bountyTarget = bountyTargetOf(
 				this.world.system.record,
 				this.world.system.contents,

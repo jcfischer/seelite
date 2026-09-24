@@ -313,6 +313,37 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 		expect(recordKill(state, KEY, 30)).toBe(state);
 	});
 
+	test("one kill readies every accepted Bounty naming it, one per station (§3)", () => {
+		// The request contract: one act may satisfy several distinct requests,
+		// and rewards are per contract. With a Bounty accepted at each of the
+		// system's lawful stations, one relay kill is worth each of them — the
+		// figure #511's re-tune is read against.
+		const second = bountyAt(1) as JobOffer;
+		const both = [OFFER, second];
+		let state = emptyRequests();
+		for (const offer of both)
+			state = requestAction(state, both, "accept", offer.id, {
+				...ctx(),
+				docked: offer.requester,
+			}).state;
+		const ready = recordKill(state, KEY, 100);
+		expect(both.map((o) => ready.byId[o.id]?.status)).toEqual([
+			"ready-to-report",
+			"ready-to-report",
+		]);
+		let paid = 0;
+		let settled = ready;
+		for (const offer of both) {
+			const result = requestAction(settled, both, "report", offer.id, {
+				...ctx({ now: 120 }),
+				docked: offer.reportAt,
+			});
+			paid += result.rewardCr;
+			settled = result.state;
+		}
+		expect(paid).toBe(2 * OFFER.rewardCr);
+	});
+
 	test("a cancelled request does not listen", () => {
 		const cancelled = act(accepted(), "cancel", { now: 70 }).state;
 		expect(recordKill(cancelled, KEY, 100)).toBe(cancelled);
