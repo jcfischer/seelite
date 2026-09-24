@@ -400,6 +400,7 @@ import {
 	bountyTargetOf,
 	relayDestruction,
 	relayDetection,
+	relayFrameHolds,
 	relayInSights,
 	relayLog,
 	relayActive,
@@ -9077,7 +9078,36 @@ class Game {
 			nose: this.nose(),
 			throttle: this.throttle,
 			assist: this.assist,
-			frameVel: this.localFrame(),
+			frameVel: this.assistFrame().vel,
+		};
+	}
+
+	/**
+	 * The frame the **player's** assist holds, and what the readout names it:
+	 * the selected relay's inside `RELAY_FRAME_KM` (#508 F2), and
+	 * `localFrame`'s otherwise.
+	 *
+	 * **Only the player's.** `localFrame` also feeds a raider's assist and the
+	 * canisters a kill drops, and those pair it with `frameBodyId` — a body id.
+	 * The relay is not a body, so handing them its velocity would split the
+	 * pair. #511's defender, fought beside the relay, inherits that question.
+	 */
+	private assistFrame(): { vel: Vec3; label: string } {
+		const view = this.relayView;
+		if (view && this.proximityFrameBodyId === null) {
+			const { pos, vel } = this.relayNow(view);
+			if (
+				relayFrameHolds(
+					this.relaySelected(),
+					length(sub(pos, this.world.ship.pos)),
+				)
+			)
+				return { vel, label: "RELAY FRAME" };
+		}
+		const body = this.frameBody;
+		return {
+			vel: this.localFrame(),
+			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
 		};
 	}
 
@@ -9141,16 +9171,15 @@ class Game {
 				speed: `${(this.cruiseSpeedKms / C_KMS).toFixed(2)} c`,
 				context: "NOSE-LOCKED CRUISE",
 			};
-		const frameBody = this.frameBody;
-		const frameVelocity = frameBody
-			? bodyVelocity(this.world.system, frameBody.id, this.world.gameTime)
-			: v3();
-		const relativeKms = length(sub(this.world.ship.vel, frameVelocity));
+		// The frame the assist holds, so the readout and the idle throttle
+		// agree about what "at rest" means.
+		const frame = this.assistFrame();
+		const relativeKms = length(sub(this.world.ship.vel, frame.vel));
 		const inertialKms = length(this.world.ship.vel);
 		return {
 			title: "REL. VELOCITY",
 			speed: `${relativeKms.toFixed(3)} km/s`,
-			context: `${frameBody ? `${frameBody.kind.toUpperCase()} FRAME` : "STAR FRAME"} · INERTIAL ${inertialKms.toFixed(0)} km/s`,
+			context: `${frame.label} · INERTIAL ${inertialKms.toFixed(0)} km/s`,
 		};
 	}
 
@@ -11110,6 +11139,9 @@ class Game {
 		// Inside the signal's range only, identified or not: an identified relay a
 		// system away is the Navigation list's to find, not a cue to carry.
 		if (!v?.signal) return null;
+		// **Not while docked** (#508 F3): the station console is the whole view
+		// then, and the cue drew over its corner and hid the station's name.
+		if (this.dock.phase === "docked") return null;
 		// At the clock as it stands, for `relayNow`'s reason: the cue is what
 		// the pilot steers by, and read from the frame start it put the relay
 		// 0.9 km off at 4.9 km in one capture.

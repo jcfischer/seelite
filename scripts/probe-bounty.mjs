@@ -118,6 +118,9 @@ await page.evaluate(async () => {
 			g.encounter = null;
 			frame();
 			const r = g.relayReadout();
+			// Selected first: the relay's frame holds only for a selected relay
+			// (#508 F2), which is what a pilot about to fire has done.
+			g.targetId = r.view.key;
 			g.world.ship.pos = {
 				x: r.view.pos.x + km,
 				y: r.view.pos.y,
@@ -127,8 +130,27 @@ await page.evaluate(async () => {
 			g.throttle = 0;
 			g.setAttitude({ x: -1, y: 0, z: 0 }, g.shipUp());
 			g.setHeadLook("forward");
-			frame();
-			return g.relayReadout().view.condition;
+			// **Settled, because this is a teleport.** On the first frame the
+			// relay is identified inside the step, after the assist has already
+			// read its frame, so that one frame holds the station's — 0.2 km/s
+			// read immediately. A pilot who flew in was listed long before.
+			for (let i = 0; i < 10; i++) frame();
+			return {
+				condition: g.relayReadout().view.condition,
+				km: this.relayKm(),
+				readout: g.velocityReadout(),
+			};
+		},
+		/** Ship to relay, km, with the relay where the clock stands. */
+		relayKm() {
+			const p = g.relayReadout().view.pos;
+			const s = g.world.ship.pos;
+			return Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z);
+		},
+		/** Whether the relay cue is on the glass — drawn, not merely present. */
+		relayCueShown() {
+			const cue = document.querySelector("[data-live-relay-cue]");
+			return cue ? cue.checkVisibility() : false;
 		},
 		/** The pulse laser held on the relay until it dies or `maxSteps` pass. */
 		shoot(maxSteps) {
@@ -282,13 +304,27 @@ check(
 // ---------------------------------------------------------------------------
 // The kill readies it.
 // ---------------------------------------------------------------------------
-const before = await page.evaluate(() => window.__bountyProbe.besideRelay(1));
+const beside = await page.evaluate(() => window.__bountyProbe.besideRelay(1));
+const before = beside.condition;
+check(
+	"beside the selected relay, the assist holds the relay's frame",
+	beside.readout.context.startsWith("RELAY FRAME") &&
+		// Still settling after the teleport; the station frame reads ~0.47 here.
+		Number.parseFloat(beside.readout.speed) < 0.05,
+	`${beside.readout.speed} · ${beside.readout.context}`,
+);
 await capture("04-relay-in-sights");
 // Part of the fight first, so a capture shows the relay under fire.
 await page.evaluate(() => window.__bountyProbe.shoot(40));
 await capture("05-relay-under-fire");
 const shot = await page.evaluate(() => window.__bountyProbe.shoot(4000));
 await capture("06-relay-destroyed");
+const heldKm = await page.evaluate(() => window.__bountyProbe.relayKm());
+check(
+	"parked at zero throttle, the ship holds station on the relay through the kill",
+	Math.abs(heldKm - beside.km) < 0.1,
+	`${beside.km.toFixed(3)} km → ${heldKm.toFixed(3)} km`,
+);
 const ready = await page.evaluate(
 	(id) => window.__bountyProbe.request(id),
 	offer.id,
@@ -312,6 +348,14 @@ await openRequests();
 const creditsBefore = await page.evaluate(() => window.__bountyProbe.credits());
 await openRow(offer.id);
 await capture("07-ready-to-report");
+const cueDocked = await page.evaluate(() =>
+	window.__bountyProbe.relayCueShown(),
+);
+check(
+	"docked with the scanner fitted, the relay cue is not drawn over the console",
+	cueDocked === false,
+	`shown: ${cueDocked}`,
+);
 await actionButton("report", offer.id).click();
 const creditsAfter = await page.evaluate(() => window.__bountyProbe.credits());
 const paid = (await message()) ?? "";

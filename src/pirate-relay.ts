@@ -103,6 +103,35 @@ export const RELAY_SIGNAL_RANGE_KM = 2_500;
 export const RELAY_IDENTIFY_RANGE_KM = 150;
 
 /**
+ * Inside this range of a **selected** relay, the assist holds the relay's frame
+ * rather than the nearest body's (#508 F2).
+ *
+ * The relay stands on its station's orbit a few hundred kilometres ahead or
+ * behind, so it moves against the station at a few tenths of a km/s — measured
+ * in #508's capture at 0.43. The assist holds still in the station's frame
+ * (`localFrame`, since #10), so a pilot parked beside the relay at zero
+ * throttle drifted off it while firing: 1.0 km to 5.2 km across one kill.
+ * `CLAUDE.md`'s rule is that a fight beside a body is flown in that body's
+ * frame, and the relay is what this fight is beside.
+ *
+ * The identification range, because that is where the relay becomes a place
+ * the pilot is at rather than a signal they are following.
+ */
+export const RELAY_FRAME_KM = RELAY_IDENTIFY_RANGE_KM;
+
+/**
+ * Whether the assist holds the relay's frame: selected, and within
+ * `RELAY_FRAME_KM`.
+ *
+ * **Selected, not merely near**, and that is #479's gate reaching the frame:
+ * selecting the relay needs its identification, which needs the Long-Range
+ * Scanner. A proximity rule would change an unfitted pilot's frame, and the
+ * velocity readout that names it, beside a relay they cannot read.
+ */
+export const relayFrameHolds = (selected: boolean, km: number): boolean =>
+	selected && km <= RELAY_FRAME_KM;
+
+/**
  * Both ranges are a **bought module's** reading, not a hull's (#481, #479).
  *
  * The channel is the long-range scanner's: fitted, the cockpit reads strength

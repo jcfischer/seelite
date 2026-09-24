@@ -168,15 +168,17 @@ test("every bodyVelocity call on a selectable id goes through the striker guard"
 	// in the file that takes a selectable id is the one inside it.
 	expect(main).toContain("private velocityOf(id: string)");
 	expect(main.match(/this\.velocityOf\(/g) ?? []).toHaveLength(3);
-	// `bodyVelocity` has six callers and each takes an id the world is
-	// guaranteed to hold: `velocityOf`'s own fallback, `localFrame` and the
-	// velocity readout's frame (both picked by walking `world.system.bodies`),
-	// `stationVelocity`, and `entryPose` — which does `byId.get(id)` and throws
-	// two lines above. The sixth prepares known world masses for the relative
-	// cruise sweep. A seventh is a path that has not answered the question this
-	// file asks, and the count is what makes it say so.
+	// `bodyVelocity` has five callers and each takes an id the world is
+	// guaranteed to hold: `velocityOf`'s own fallback, `localFrame` (its body
+	// picked by walking `world.system.bodies`), `stationVelocity`, and
+	// `entryPose` — which does `byId.get(id)` and throws two lines above. The
+	// fifth prepares known world masses for the relative cruise sweep. The
+	// velocity readout was a sixth until #508 routed it through
+	// `assistFrame`, which reads `localFrame` rather than calling this again.
+	// A sixth now is a path that has not answered the question this file asks,
+	// and the count is what makes it say so.
 	expect(main.match(/bodyVelocity\(this\.world\.system/g) ?? []).toHaveLength(
-		6,
+		5,
 	);
 });
 
