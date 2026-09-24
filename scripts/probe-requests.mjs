@@ -192,8 +192,8 @@ try {
 				.locator("[data-live-station-console] [data-live-request-details]")
 				.innerText()
 		)
-		// The owner in a plain sentence (#508 wording): the glass no longer
-		// says "entrusted", it says who the goods belong to.
+			// The owner in a plain sentence (#508 wording): the glass no longer
+			// says "entrusted", it says who the goods belong to.
 			.includes(
 				offer.operand.entrusted
 					? "The requester owns it"
