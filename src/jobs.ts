@@ -106,14 +106,16 @@ export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
 		rowId: "courier-consignment",
-		revision: 1,
+		// Revision 2: plain words, at the principal's request (#508 follow-up).
+		revision: 2,
 		title: "Consignment run",
 		purpose:
-			"A broker has goods sold and no hull free to move them. The buyer is waiting.",
+			"A broker has sold a load of goods and has no ship to move it. The buyer is waiting.",
 		danger:
-			"An ordinary lane. Raiders work the approaches, and a loaded hull is what they look for.",
-		action: "Carry the consignment and report at the delivery station.",
-		consequence: "The buyer's shelf is supplied, and their price eases.",
+			"A normal route, but raiders watch the approaches for loaded ships.",
+		action: "Take the goods to the delivery station and report there.",
+		consequence:
+			"The buyer gets the goods, and the price there drops a little.",
 		tonnes: 8,
 		payment: { baseCr: 40, perTonneCr: 9, perLyCr: 14, basePriceFactor: 0 },
 	}),
@@ -123,27 +125,28 @@ export const JOB_ROWS: readonly JobRow[] = [
 		// #459 rewrote this row's purpose, danger and consequence. An accepted
 		// offer pins the revision it was taken under, so terms a pilot was shown
 		// get a new number even when only the words moved.
-		revision: 2,
-		title: "Priority consignment",
+		// Revision 3: plain words again, at the principal's request.
+		revision: 3,
+		title: "Urgent delivery",
 		purpose:
-			"A standing order was short-shipped. The station will pay for the expedited shipment of the goods.",
-		danger: "No escort, and raiders know this cargo is moving.",
-		action: "Carry the consignment and report at the delivery station.",
-		consequence: "The order is filled, and the buyer's price settles.",
+			"A regular order arrived short. The station pays extra to get the rest there quickly.",
+		danger: "There is no escort, and raiders have heard about this shipment.",
+		action: "Take the goods to the delivery station and report there.",
+		consequence: "The order is complete, and the price there settles back.",
 		tonnes: 12,
 		payment: { baseCr: 65, perTonneCr: 11, perLyCr: 18, basePriceFactor: 0 },
 	}),
 	job({
 		family: "procurement",
 		rowId: "procurement-shortfall",
-		revision: 1,
-		title: "Shortfall purchase",
-		purpose:
-			"The shelf here is thin and the station is buying, at its own expense and yours.",
+		// Revision 2: plain words, at the principal's request (#508 follow-up).
+		revision: 2,
+		title: "Supply order",
+		purpose: "This station is running low and pays you to bring more.",
 		danger:
-			"Your credits and your hold. Nothing is entrusted, and nothing is refunded.",
-		action: "Source the goods anywhere and report here with them aboard.",
-		consequence: "The shortfall is covered and this market settles.",
+			"You buy the goods with your own money. If you lose them, nobody pays you back.",
+		action: "Buy the goods anywhere, bring them here and report.",
+		consequence: "The station has stock again, and its price drops back.",
 		tonnes: 10,
 		payment: { baseCr: 25, perTonneCr: 0, perLyCr: 0, basePriceFactor: 1.35 },
 	}),

@@ -191,7 +191,14 @@ try {
 			await page
 				.locator("[data-live-station-console] [data-live-request-details]")
 				.innerText()
-		).includes(offer.operand.entrusted ? "entrusted" : "your own"),
+		)
+		// The owner in a plain sentence (#508 wording): the glass no longer
+		// says "entrusted", it says who the goods belong to.
+			.includes(
+				offer.operand.entrusted
+					? "The requester owns it"
+					: "You buy it yourself",
+			),
 	);
 	const ageBefore = await page
 		.locator("[data-live-station-console] [data-live-request-age]")
@@ -706,7 +713,7 @@ try {
 	check(
 		"an entrusted consignment is handed over, never delivered-as-in-supplied",
 		deliverLabel.includes(
-			`Hand over ${offer.operand.tonnes} t ${offer.operand.goodName}`,
+			`Hand over ${offer.operand.tonnes} t of ${offer.operand.goodName}`,
 		) && !/deliver/i.test(deliverLabel),
 		deliverLabel,
 	);
@@ -754,16 +761,13 @@ try {
 		.innerText();
 	check(
 		"the settlement names the tonnes and the pay, and claims nothing about a hold the pilot never had",
-		settled.startsWith("Reported ·") &&
-			settled.includes(
-				`${offer.operand.tonnes} t ${offer.operand.goodName} handed over`,
-			) &&
-			settled.endsWith(`${offer.rewardCr} Cr paid.`) &&
+		settled ===
+			`Paid ${offer.rewardCr} Cr. You handed over ${offer.operand.tonnes} t of ${offer.operand.goodName}.` &&
 			// **Nothing of the pilot's was ever bought in this run**, so after a
-			// hand-over the remainder clause is absent rather than zeroed — and
-			// `no Food left aboard` would be a claim about the pilot's own Food
-			// going, which is the ownership confusion this node removes.
-			!/aboard/.test(settled),
+			// hand-over the remainder sentence is absent rather than zeroed — and
+			// `You have no Food left` would be a claim about the pilot's own
+			// Food going, which is the ownership confusion this node removes.
+			!/You still have|You have no/.test(settled),
 		settled,
 	);
 	await page.screenshot({ path: `${out}/03b-settled.png` });

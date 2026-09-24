@@ -12,6 +12,7 @@ import { cargoOf, missingRequirements, offerRequirements } from "./jobs";
 import {
 	isAcceptedRequest,
 	nextAction,
+	statusLabel,
 	type RequestOffer,
 	type RequestsState,
 	type RequestStation,
@@ -52,10 +53,11 @@ export function deliverAction(
 	// Only the words differ by family; the enablement is one rule, and it was
 	// written twice.
 	const entrustedHint = (): string => {
-		if (!short) return "aboard since you accepted — the requester's";
+		if (!short)
+			return "Aboard since you accepted. It belongs to the requester.";
 		if (aboardT > 0)
-			return `only ${aboardT} t of the ${operand.tonnes} t consignment aboard`;
-		return "the consignment is not aboard";
+			return `Only ${aboardT} t of the ${operand.tonnes} t is aboard.`;
+		return "The goods are not aboard.";
 	};
 	const words = operand.entrusted
 		? {
@@ -63,17 +65,17 @@ export function deliverAction(
 				// is an instruction to supply something, and supplying is
 				// exactly what a consignment does not need (CONTEXT.md
 				// §Language, **Entrusted cargo**).
-				label: `Hand over ${operand.tonnes} t ${operand.goodName}`,
+				label: `Hand over ${operand.tonnes} t of ${operand.goodName}`,
 				hint: entrustedHint(),
 			}
 		: {
-				label: `Deliver ${operand.tonnes} t ${operand.goodName} from your hold`,
+				label: `Deliver ${operand.tonnes} t of ${operand.goodName} from your hold`,
 				// `aboardT` on both arms: a pilot carrying 10 t for an 8 t job
 				// was told "8 t aboard", which is the job's figure and not
 				// theirs.
 				hint: short
-					? `${aboardT} t of ${operand.tonnes} aboard`
-					: `${aboardT} t aboard, yours to hand over`,
+					? `You have ${aboardT} t of the ${operand.tonnes} t.`
+					: `You have ${aboardT} t of your own aboard.`,
 			};
 	return { ...words, enabled: !short };
 }
@@ -120,7 +122,7 @@ const operandLine = (o: RequestOffer): string => {
 	const { operand } = o;
 	switch (operand.kind) {
 		case "cargo":
-			return `${operand.tonnes} t ${operand.goodName}`;
+			return `${operand.tonnes} t of ${operand.goodName}`;
 		case "target":
 			return `bounty: ${operand.targetName}`;
 		default: {
@@ -233,17 +235,17 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			// **Locked on the row, not only in the details** (#489): a pilot
 			// scanning the list learns the requirement without opening it.
 			const missing = r ? [] : missingEquipment(view, o);
-			const label =
-				r?.status ??
-				(missing.length > 0
-					? `locked · needs ${missing.join(", ")}`
+			const label = r
+				? statusLabel(r.status)
+				: missing.length > 0
+					? `locked: needs ${missing.join(", ")}`
 					: state.leadsById[o.id]
-						? "kept · not accepted"
-						: "offer · not accepted");
+						? "kept, not accepted"
+						: "not accepted";
 			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"${missing.length > 0 ? " data-live-request-locked" : ""}><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${esc(operandLine(o))} · report at ${esc(o.reportName)}</small></button>`;
 		})
 		.join("");
-	let details = `<div class="lc-request-details" data-live-request-details><h3>Choose work at your own pace</h3><p>Open a row to read its terms. Reading one, or keeping it for later, commits you to nothing.</p><p>Accept multiple requests. Manually Track one to show its next action in flight.</p></div>`;
+	let details = `<div class="lc-request-details" data-live-request-details><h3>Jobs</h3><p>Select a job to read its terms. Reading it or keeping it for later does not commit you.</p><p>You can take several jobs at once. Track one to see its next step while you fly.</p></div>`;
 	if (selected) {
 		const o = selected;
 		const r = state.byId[o.id];
@@ -271,8 +273,8 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				!cargo
 					? "None"
 					: cargo.entrusted
-						? `${cargo.tonnes} t ${cargo.goodName}, entrusted · it stays the requester's, and you cannot sell it`
-						: `${cargo.tonnes} t ${cargo.goodName}, your own · buy it where you like and carry the loss`,
+						? `${cargo.tonnes} t of ${cargo.goodName}. The requester owns it, so you cannot sell it.`
+						: `${cargo.tonnes} t of ${cargo.goodName}. You buy it yourself and carry any loss.`,
 			],
 			[
 				"Equipment",
@@ -281,27 +283,23 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 					: required
 							.map((item) =>
 								missing.includes(item)
-									? `${item} · not fitted — sold at shipyards`
-									: `${item} · fitted`,
+									? `${item}, not fitted. Shipyards sell it.`
+									: `${item}, fitted`,
 							)
 							.join("; "),
 			],
-			["Payment", `${o.rewardCr} Cr · once, on report at ${o.reportName}`],
-			["Consequence", o.consequence],
 			[
-				"Terms",
-				"No deadline, exclusivity, cancellation fee or reputation penalty",
+				"Payment",
+				`${o.rewardCr} Cr, paid once when you report at ${o.reportName}`,
 			],
+			["Consequence", o.consequence],
+			["Terms", "No deadline. You can cancel for free."],
 		];
 		let actions = button("retain", o.id, "Keep for later");
 		// **No Accept while a requirement is missing** (#489's ruling): not
 		// hidden, and not refused on press — the row says why it is locked.
 		if ((!r || r.status === "cancelled") && atRequester && missing.length === 0)
-			actions += button(
-				"accept",
-				o.id,
-				r ? "Reaccept request" : "Accept request",
-			);
+			actions += button("accept", o.id, r ? "Accept again" : "Accept");
 		const atReport =
 			view.docked?.galaxyIndex === o.reportAt.galaxyIndex &&
 			view.docked?.carrierKey === o.reportAt.carrierKey;
@@ -309,7 +307,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			actions += button(
 				state.trackedRequestId === o.id ? "untrack" : "track",
 				o.id,
-				state.trackedRequestId === o.id ? "Untrack" : "Track request",
+				state.trackedRequestId === o.id ? "Stop tracking" : "Track",
 			);
 			if (r.status === "accepted" && atReport && cargo) {
 				// **The control says whose goods it moves** (#446). One label
@@ -324,8 +322,12 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				});
 			}
 			if (r.status === "ready-to-report" && atReport)
-				actions += button("report", o.id, `Report · receive ${o.rewardCr} Cr`);
-			actions += button("cancel", o.id, "Cancel request · no fee");
+				actions += button(
+					"report",
+					o.id,
+					`Report and collect ${o.rewardCr} Cr`,
+				);
+			actions += button("cancel", o.id, "Cancel (no fee)");
 		}
 		if (
 			r?.status === "cancelled" &&
@@ -336,9 +338,9 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			actions += button(
 				"return-entrusted",
 				o.id,
-				`Return ${cargo.tonnes} t ${esc(cargo.goodName)}`,
+				`Return ${cargo.tonnes} t of ${esc(cargo.goodName)}`,
 			);
-		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Report after docking at ${esc(o.reportName)}. Remote payment is unavailable.</p>` : ""}</div>`;
+		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Dock at ${esc(o.reportName)} to report. You can only be paid there.</p>` : ""}</div>`;
 	}
-	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your work, and what you kept" : "offers posted here, and your work"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "No accepted work. Browse Requests at a station." : "No work posted here."}</p>`}</div>${details}</div></div>`;
+	return `<div class="lc-requests" data-live-requests><p class="lc-request-intro">${count} accepted · ${flight ? "your jobs and the ones you kept" : "jobs posted here and jobs you have taken"}</p><p class="lc-request-message" role="status">${esc(view.message)}</p><div class="lc-request-layout"><div class="lc-request-list">${rows || `<p>${flight ? "You have no jobs. Check Requests at a station." : "No jobs posted here."}</p>`}</div>${details}</div></div>`;
 }

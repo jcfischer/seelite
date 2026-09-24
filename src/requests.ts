@@ -200,8 +200,8 @@ export function settlementMessage(settled: {
 	remainingT: number;
 }): string {
 	const moved = settled.entrusted
-		? `${settled.tonnes} t ${settled.goodName} handed over`
-		: `${settled.tonnes} t ${settled.goodName} delivered from your hold`;
+		? `Paid ${settled.rewardCr} Cr. You handed over ${settled.tonnes} t of ${settled.goodName}.`
+		: `Paid ${settled.rewardCr} Cr for ${settled.tonnes} t of ${settled.goodName} from your hold.`;
 	// **The remainder is the pilot's own, and it is dropped rather than
 	// zeroed.** `0 t Food still aboard` is a line about cargo that is not
 	// there; `no Food left aboard` is worse after a hand-over, because it
@@ -211,17 +211,46 @@ export function settlementMessage(settled: {
 	// clause for the first half of this reason.
 	const left =
 		settled.remainingT > 0
-			? ` · ${settled.remainingT} t ${settled.goodName} still aboard, yours`
+			? ` You still have ${settled.remainingT} t of ${settled.goodName} of your own.`
 			: settled.entrusted
 				? ""
-				: ` · no ${settled.goodName} left aboard`;
-	return `Reported · ${moved}, ${settled.rewardCr} Cr paid${left}.`;
+				: ` You have no ${settled.goodName} left.`;
+	return `${moved}${left}`;
 }
+
+/**
+ * A request's status as the board says it. The enumeration is the save's
+ * spelling (`ready-to-report`), and the board printed it raw.
+ */
+export const statusLabel = (status: RequestStatus): string => {
+	switch (status) {
+		case "accepted":
+			return "accepted";
+		case "ready-to-report":
+			return "ready to report";
+		case "completed":
+			return "done and paid";
+		case "cancelled":
+			return "cancelled";
+		case "failed":
+			return "failed";
+		default: {
+			const unreachable: never = status;
+			return unreachable;
+		}
+	}
+};
 
 export function nextAction(r: AcceptedRequest): string {
 	if (r.status === "ready-to-report")
-		return `Dock at ${r.terms.reportName} and Report`;
-	if (!isAcceptedRequest(r)) return r.outcomeReason ?? r.status;
+		return `Dock at ${r.terms.reportName} and report to get paid.`;
+	if (r.status === "cancelled")
+		return "Cancelled. You can accept it again at the station that posted it.";
+	if (!isAcceptedRequest(r))
+		return (
+			r.outcomeReason ??
+			`${statusLabel(r.status)[0].toUpperCase()}${statusLabel(r.status).slice(1)}.`
+		);
 	const { operand } = r.terms;
 	if (operand.kind === "target")
 		// The region is a label ("The approach to X, Y"), so it stands as its own
@@ -232,8 +261,8 @@ export function nextAction(r: AcceptedRequest): string {
 	// as the same errand at a glance, and a pilot who read the first as the
 	// second bought eight tonnes they were already carrying.
 	return operand.entrusted
-		? `Carry the ${operand.tonnes} t ${operand.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
-		: `Source ${operand.tonnes} t ${operand.goodName} yourself and return to ${r.terms.reportName}`;
+		? `Take the ${operand.tonnes} t of ${operand.goodName} in your hold to ${r.terms.reportName} in ${r.terms.reportSystemName}.`
+		: `Buy ${operand.tonnes} t of ${operand.goodName} and bring it to ${r.terms.reportName}.`;
 }
 
 export interface RequestContext {
@@ -326,7 +355,7 @@ export function requestAction(
 	const offer =
 		existing?.terms ?? offers.find((o) => o.id === id) ?? state.leadsById[id];
 	if (!offer || !Number.isFinite(ctx.now) || ctx.now < offer.observedAt)
-		return refuse("Offer unavailable or invalid observation time.");
+		return refuse("This offer is no longer available.");
 
 	if (action === "retain")
 		return done(
@@ -334,20 +363,20 @@ export function requestAction(
 				...state,
 				leadsById: { ...state.leadsById, [id]: structuredClone(offer) },
 			},
-			"Kept for later. You have accepted nothing.",
+			"Kept for later. You have not accepted it.",
 		);
 
 	if (action === "accept") {
 		if (!sameStation(ctx.docked, offer.requester))
-			return refuse("Dock at the requester to accept or reaccept.");
+			return refuse("Dock at the station that posted this job to accept it.");
 		if (existing && existing.status !== "cancelled")
-			return refuse(
-				"Already accepted or terminal; this offer cannot pay again.",
-			);
+			return refuse("You have already taken or finished this job.");
 		// Request contract §2's eligibility, read before anything is issued.
 		const missing = missingRequirements(offer, ctx.equipment);
 		if (missing.length > 0)
-			return refuse(`Needs a ${missing.join(" and a ")} fitted to accept.`);
+			return refuse(
+				`You need a ${missing.join(" and a ")} fitted to take this job.`,
+			);
 		if (offer.family === "bounty" && ctx.standing !== "clean")
 			return refuse(BOUNTY_NEEDS_CLEAN);
 		const cargo = cargoOf(offer);
@@ -362,13 +391,13 @@ export function requestAction(
 			Object.values(state.entrustedByLotId).some((lot) => lot.offerId === id)
 		)
 			return refuse(
-				"Return the consignment to the requester before reaccepting.",
+				"Return the goods from last time before you take this job again.",
 			);
 		// §4: a hull/equipment state that would leave insufficient capacity is
 		// refused atomically rather than silently discarding goods.
 		if (cargo?.entrusted && ctx.holdRoomT < cargo.tonnes)
 			return refuse(
-				`Needs ${cargo.tonnes} t of free hold; ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
+				`This job needs ${cargo.tonnes} t of free hold. You have ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
 			);
 		const ordinal = (existing?.acceptanceOrdinal ?? 0) + 1;
 		// **§3's reaccept keeps valid non-cargo evidence.** A cargo stage is
@@ -409,11 +438,11 @@ export function requestAction(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
 			!cargo
 				? request.status === "ready-to-report"
-					? "Reaccepted. The kill already stands; report to settle."
+					? "Accepted again. Your earlier kill still counts, so you can report now."
 					: "Accepted. Only a kill made after this counts."
 				: cargo.entrusted
-					? `Accepted. ${cargo.tonnes} t ${cargo.goodName} loaded, and they stay the requester's.`
-					: "Accepted. Source the goods and return with them aboard.",
+					? `Accepted. ${cargo.tonnes} t of ${cargo.goodName} is loaded. It belongs to the requester, so you cannot sell it.`
+					: `Accepted. Buy ${cargo.tonnes} t of ${cargo.goodName} and bring it here.`,
 		);
 	}
 
@@ -421,33 +450,35 @@ export function requestAction(
 		const lot = Object.values(state.entrustedByLotId).find(
 			(l) => l.offerId === id,
 		);
-		if (!lot) return refuse("Nothing entrusted to return for this job.");
+		if (!lot) return refuse("You are not carrying any goods for this job.");
 		// **Only once the job is off.** §3 lists the return against a cancelled
 		// or failed commitment; handing the goods back while the job is still
 		// running would leave a live obligation with nothing aboard to meet it.
 		if (existing && isAcceptedRequest(existing))
-			return refuse("Cancel the job before returning its consignment.");
+			return refuse("Cancel the job first, then return the goods.");
 		if (!sameStation(ctx.docked, lot.returnTo))
-			return refuse("Dock at the requester to return entrusted cargo.");
+			return refuse(
+				"Dock at the station that gave you the goods to return them.",
+			);
 		const entrustedByLotId = { ...state.entrustedByLotId };
 		delete entrustedByLotId[lot.lotId];
 		return done(
 			{ ...state, entrustedByLotId },
-			`${lot.aboardT} t ${lot.goodName} returned. The obligation is settled.`,
+			`${lot.aboardT} t of ${lot.goodName} returned. You owe nothing more.`,
 		);
 	}
 
 	if (!existing || !isAcceptedRequest(existing))
-		return refuse("Choose an accepted request first.");
+		return refuse("Select a job you have accepted first.");
 	if (ctx.now < existing.lastAcceptedAt)
-		return refuse("Action predates acceptance.");
+		return refuse("That happened before you took this job.");
 
 	if (action === "track" || action === "untrack")
 		return done(
 			{ ...state, trackedRequestId: action === "track" ? id : null },
 			action === "track"
-				? "Tracking this request; flight target unchanged."
-				: "Cue cleared; commitments remain.",
+				? "Tracking this job. Your flight target has not changed."
+				: "Stopped tracking. The job is still yours.",
 		);
 
 	const request = { ...existing };
@@ -463,8 +494,8 @@ export function requestAction(
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
 			cargoOf(terms)?.entrusted
-				? "Cancelled. The consignment is still the requester's — return it to them."
-				: "Cancelled without fee. Unfinished work may be reaccepted at the requester.",
+				? "Cancelled. The goods still belong to the requester, so take them back."
+				: "Cancelled, no fee. You can take the job again at the station that posted it.",
 		);
 	}
 
@@ -472,7 +503,7 @@ export function requestAction(
 		const cargo = cargoOf(terms);
 		if (!cargo) return refuse("This job has nothing to deliver.");
 		if (request.status !== "accepted")
-			return refuse("This job's objective is already satisfied.");
+			return refuse("This job is already done. Report to get paid.");
 		if (!sameStation(ctx.docked, terms.reportAt))
 			return refuse(`Dock at ${terms.reportName} to deliver.`);
 		// Unwrapped once per branch. The operand is one level deeper than the
@@ -488,11 +519,11 @@ export function requestAction(
 					l.offerId === id && l.issuedOrdinal === request.acceptanceOrdinal,
 			);
 			if (!lot || lot.aboardT < tonnes)
-				return refuse("The consignment is not aboard.");
+				return refuse("The goods for this job are not in your hold.");
 			delete entrustedByLotId[lot.lotId];
 		} else {
 			if ((ctx.cargo[goodName] ?? 0) < tonnes)
-				return refuse(`Needs ${tonnes} t ${goodName} aboard to deliver.`);
+				return refuse(`You need ${tonnes} t of ${goodName} in your hold.`);
 			cargoDelta = { [goodName]: -tonnes };
 		}
 		request.evidence = [
@@ -509,15 +540,15 @@ export function requestAction(
 			// The two families move different cargo and the message said the
 			// same thing for both (#446).
 			entrusted
-				? `${tonnes} t ${goodName} handed over — the requester's, and out of your hold. Report to settle.`
-				: `${tonnes} t ${goodName} delivered from your hold. Report to settle.`,
+				? `${tonnes} t of ${goodName} handed over. Report to get paid.`
+				: `${tonnes} t of ${goodName} delivered from your hold. Report to get paid.`,
 			{ cargoDelta },
 		);
 	}
 
 	if (action === "report") {
 		if (request.status !== "ready-to-report")
-			return refuse("Finish the objective before reporting.");
+			return refuse("Finish the job before you report.");
 		if (!sameStation(ctx.docked, terms.reportAt))
 			return refuse(`Dock at ${terms.reportName} to report.`);
 		// #495 D2: the fork. A pilot who turned Wanted after the kill waits for
@@ -550,7 +581,7 @@ export function requestAction(
 						rewardCr: terms.rewardCr,
 						remainingT: ctx.cargo[cargo.goodName] ?? 0,
 					})
-				: `Bounty paid for the ${targetNameOf(terms)}: ${terms.rewardCr} Cr.`,
+				: `Paid ${terms.rewardCr} Cr for destroying the ${targetNameOf(terms)}.`,
 			{
 				rewardCr: terms.rewardCr,
 				// §4's mark lands exactly here, with the settlement, so a repeated

@@ -513,9 +513,9 @@ describe("the board (#489's locked row)", () => {
 
 	test("unfitted, the row lists locked, names the module, and draws no Accept", () => {
 		const html = requestsBody(view([]));
-		expect(html).toContain(`locked · needs ${LONG_RANGE_SCANNER}`);
+		expect(html).toContain(`locked: needs ${LONG_RANGE_SCANNER}`);
 		expect(html).toContain("data-live-request-locked");
-		expect(html).toContain(`${LONG_RANGE_SCANNER} · not fitted`);
+		expect(html).toContain(`${LONG_RANGE_SCANNER}, not fitted`);
 		expect(html).not.toContain('data-live-request-action="accept"');
 		// Keeping it for later stays open: browsing is never gated (§2).
 		expect(html).toContain('data-live-request-action="retain"');
@@ -524,7 +524,7 @@ describe("the board (#489's locked row)", () => {
 	test("fitted, the same row unlocks and Accept is drawn", () => {
 		const html = requestsBody(view([LONG_RANGE_SCANNER]));
 		expect(html).not.toContain("data-live-request-locked");
-		expect(html).toContain(`${LONG_RANGE_SCANNER} · fitted`);
+		expect(html).toContain(`${LONG_RANGE_SCANNER}, fitted`);
 		expect(html).toContain('data-live-request-action="accept"');
 	});
 
