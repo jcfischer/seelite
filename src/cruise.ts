@@ -49,6 +49,10 @@
  */
 
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "./hull";
+import {
+	PLANET_APPROACH_RADIUS,
+	planetApproachEntryTime,
+} from "./planet-approach-boundary";
 import { ASSIST_CAP_KMS } from "./sim";
 import { AU_KM } from "./units";
 import { type Vec3, add, dot, length, lengthSq, scale, sub } from "./vec3";
@@ -261,6 +265,8 @@ export const HOST_CLEARANCE_KM = 5;
  *  deliberately not moons, stations or belts (§2.1). */
 export interface Mass {
 	id: string;
+	/** Only planets use #216's 1.2-radius approach boundary. */
+	kind?: string;
 	pos: Vec3;
 	radiusKm: number;
 	/** Frame-start inertial velocity, km/s. Omitted means stationary. */
@@ -268,6 +274,17 @@ export interface Mass {
 	/** Conservative magnitude of orbital acceleration, km/s². */
 	accelerationBoundKms2?: number;
 }
+
+/** The live cruise guard radius for a body, before sweep allowance. */
+export const liveGuardRadiusKm = (
+	mass: Mass,
+	targetParentId: string | null | undefined,
+): number =>
+	mass.kind === "planet"
+		? mass.radiusKm * PLANET_APPROACH_RADIUS
+		: mass.id === targetParentId
+			? mass.radiusKm + HOST_CLEARANCE_KM
+			: mass.radiusKm * SURFACE_MARGIN;
 
 /**
  * The nearest of them, and how far it is — surface-agnostic, centre to centre.
@@ -794,11 +811,19 @@ function guardStopTime(
 	// why, and `in-system-travel.md` §12.1 for what it cost and bought.
 	const guardKm = surfaceOnly
 		? m.radiusKm
-		: m.id === targetParentId
-			? m.radiusKm + HOST_CLEARANCE_KM
-			: m.radiusKm * SURFACE_MARGIN;
+		: liveGuardRadiusKm(m, targetParentId);
 	const centre = motionPosition(m, elapsed);
 	const allowance = motionAllowanceKm(from, velocity, m, centre, frameDt);
+	if (!surfaceOnly && m.kind === "planet")
+		return planetApproachEntryTime({
+			from,
+			velocity,
+			duration,
+			centre,
+			centreVelocity: m.vel ?? { x: 0, y: 0, z: 0 },
+			radiusKm: m.radiusKm,
+			allowanceKm: allowance,
+		});
 	return relativeSphereEntryTime(
 		from,
 		velocity,

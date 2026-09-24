@@ -88,6 +88,32 @@ describe("Traffic destination selection", () => {
 			}),
 		);
 	});
+
+	test("traffic routes around the planet approach boundary", () => {
+		const selected = selectTrafficDestination({
+			actor: ACTOR,
+			homeStationId: "station-home",
+			from: { x: 0, y: 0, z: 0 },
+			candidates: [
+				{
+					id: "station-a",
+					fits: true,
+					hold: { x: 200, y: 0, z: 0 },
+				},
+			],
+			masses: [
+				{
+					id: "planet",
+					kind: "planet",
+					pos: { x: 100, y: 22, z: 0 },
+					radiusKm: 20,
+				},
+			],
+			capacityAu: HULL_SPECS.explorer.chargeAu,
+			awayOrdinal: 0,
+		});
+		expect(selected?.chain).toHaveLength(4);
+	});
 });
 
 describe("terminal-to-terminal route projection", () => {
@@ -998,6 +1024,9 @@ describe("canonical Traffic cruise", () => {
 		expect(recovered.phase).toBe("cruise");
 		expect(recovered.chargeAu).toBeGreaterThan(0);
 		expect(recovered.chargeAu).toBeLessThanOrEqual(18);
+		expect(
+			Math.hypot(recovered.vel.x, recovered.vel.y, recovered.vel.z),
+		).toBeGreaterThan(0);
 	});
 
 	test("an unavailable detour stops in the blocker frame instead of becoming an arrival", () => {

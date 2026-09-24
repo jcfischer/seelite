@@ -30,16 +30,26 @@ import {
 	closingSpeed,
 	cruiseSpeed,
 	legSeconds,
+	liveGuardRadiusKm,
 	speedFor,
 	exitVelocity,
 	nearestMass,
 } from "../src/cruise";
 import { ASSIST_CAP_KMS } from "../src/sim";
+import { PLANET_APPROACH_RADIUS } from "../src/planet-approach-boundary";
 import { ARRIVAL_CLEARANCE_AU, MAX_ORBIT_AU } from "../src/system";
 import { AU_KM, HANDOFF_KM } from "../src/units";
 import { type Vec3, add, length, scale, sub, v3 } from "../src/vec3";
 
 const P = DEFAULT_CRUISE;
+
+test("only explicit planets use the 1.2-radius approach guard", () => {
+	const mass = { id: "body", pos: v3(), radiusKm: 100 };
+	expect(liveGuardRadiusKm(mass, null)).toBe(100 * SURFACE_MARGIN);
+	expect(liveGuardRadiusKm({ ...mass, kind: "planet" }, null)).toBe(
+		100 * PLANET_APPROACH_RADIUS,
+	);
+});
 
 /**
  * #10's own parameters, kept as a fixture.
@@ -103,7 +113,12 @@ function oneMassAt(pos: Vec3, radiusKm = 1) {
 function fly(opts: {
 	from: Vec3;
 	target: { pos: Vec3; radiusKm: number };
-	masses: { id: string; pos: Vec3; radiusKm: number }[];
+	masses: {
+		id: string;
+		kind?: "star" | "planet";
+		pos: Vec3;
+		radiusKm: number;
+	}[];
 	dt: number;
 	limitS?: number;
 	params?: typeof DEFAULT_CRUISE;
@@ -277,7 +292,12 @@ test("a cruise line past a planet never places the ship inside it", () => {
 	// slows the ship as it nears the mass, so the pass costs time and the
 	// trajectory bends around nothing — it simply never gets there fast enough
 	// to step across the body between ticks.
-	const planet = { id: "planet", pos: v3(), radiusKm: 6000 };
+	const planet = {
+		id: "planet",
+		kind: "planet" as const,
+		pos: v3(),
+		radiusKm: 6000,
+	};
 	for (const dt of [0.016, 0.05, 0.1]) {
 		// Outside `SURFACE_MARGIN × radius` (6,300 km): closer than that is not a
 		// pass, it is a collision, and the surface rule ends the run there by
@@ -622,7 +642,7 @@ test("a body's surface stops cruise instead of being flown through", () => {
 	// Just clear of the surface, never inside it.
 	const km = length(sub(pos, planet.pos));
 	expect(km).toBeGreaterThanOrEqual(planet.radiusKm);
-	expect(km).toBeLessThan(planet.radiusKm * SURFACE_MARGIN * 1.01);
+	expect(km).toBeLessThan(planet.radiusKm * 1.2 * 1.01);
 });
 
 test("a grazing pass still passes, rather than dropping the ship every time", () => {
@@ -640,6 +660,40 @@ test("a grazing pass still passes, rather than dropping the ship every time", ()
 		fixedNose: true,
 	});
 	expect(flight.minApproach).toBeGreaterThan(0);
+});
+
+test("a planet's 1.2-radius boundary stops cruise, while a grazing pass clears it", () => {
+	const planet = {
+		id: "planet",
+		kind: "planet" as const,
+		pos: v3(),
+		radiusKm: 100,
+	};
+	const into = advanceCruise({
+		pos: v3(200, 0, 0),
+		nose: v3(-1, 0, 0),
+		throttle: 1,
+		dt: 1,
+		masses: [planet],
+		target: null,
+		params: P,
+		targetParentId: null,
+	});
+	expect(into.exit).toBe("proximity");
+	expect(into.exitBodyId).toBe(planet.id);
+	expect(length(sub(into.pos, planet.pos))).toBeCloseTo(120, 6);
+
+	const grazing = advanceCruise({
+		pos: v3(200, 120, 0),
+		nose: v3(-1, 0, 0),
+		throttle: 1,
+		dt: 1,
+		masses: [planet],
+		target: null,
+		params: P,
+		targetParentId: null,
+	});
+	expect(grazing.exit).not.toBe("proximity");
 });
 
 // ------------------------------------- arrival is relative (this node's finding)
@@ -1072,7 +1126,12 @@ test("a station in clear space is reached, not stopped by its host's shell", () 
 	// sweep against its own host fires first, thousands of km short and still
 	// doing thousands of km/s. How often that happens across the corpus is in
 	// `in-system-travel.md` §12.1, so re-measuring edits one place.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const planet = {
+		id: "planet",
+		kind: "star" as const,
+		pos: v3(),
+		radiusKm: PLANET_R,
+	};
 	const station = stationAt(6150);
 	expect(station.pos.x).toBeLessThan(0); // genuinely on the far side
 	const flight = fly({
@@ -1088,13 +1147,43 @@ test("a station in clear space is reached, not stopped by its host's shell", () 
 	);
 });
 
+test("a station at the generated 1.5-radius floor remains reachable in cruise", () => {
+	const planet = {
+		id: "planet",
+		kind: "planet" as const,
+		pos: v3(),
+		radiusKm: PLANET_R,
+	};
+	const stationRadiusKm = PLANET_R * 1.5;
+	const station = {
+		pos: v3(-Math.sqrt(stationRadiusKm ** 2 - 8000 ** 2), 8000, 0),
+		radiusKm: 1,
+	};
+	const flight = fly({
+		from: v3(0.3 * AU_KM, 0, 0),
+		target: station,
+		masses: [planet],
+		dt: 0.1,
+		targetParentId: planet.id,
+	});
+	expect(flight.exit).toBe("arrival");
+	expect(length(sub(flight.pos, station.pos))).toBeLessThanOrEqual(
+		P.dropRadiusKm,
+	);
+});
+
 test("a host still stops a ship aimed at a station behind it", () => {
 	// The other half, and why the host cannot simply be exempted: at `o⊥` of
 	// 3,000 km the station is *behind six thousand kilometres of planet*, and a
 	// rule that arrives there is one that flies through worlds — which is the
 	// brake #14 closed, handed back for the one world the player most wants to
 	// shed speed at.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const planet = {
+		id: "planet",
+		kind: "star" as const,
+		pos: v3(),
+		radiusKm: PLANET_R,
+	};
 	const flight = fly({
 		from: v3(0.3 * AU_KM, 0, 0),
 		target: stationAt(3000),
@@ -1122,7 +1211,12 @@ test("every body that is not the host keeps its shell", () => {
 	// its true surface is clear of the ray and its shell is not. A body simply
 	// sitting on the ray would be stopped by its surface alone, and the test
 	// would pass with `SURFACE_MARGIN` deleted.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const planet = {
+		id: "planet",
+		kind: "star" as const,
+		pos: v3(),
+		radiusKm: PLANET_R,
+	};
 	const from = v3(0.3 * AU_KM, 0, 0);
 	const station = stationAt(6150);
 	const nose = towards(from, station.pos);
@@ -1165,7 +1259,12 @@ test("being inside a shell does not pin the ship there", () => {
 	//
 	// So the guard fires on **crossing inward**, not on being inside: a ship
 	// pointed away from the body it is beside is not flying into anything.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const planet = {
+		id: "planet",
+		kind: "star" as const,
+		pos: v3(),
+		radiusKm: PLANET_R,
+	};
 	const inside = v3(PLANET_R * 1.02, 0, 0); // inside the shell, clear of the surface
 	const away = fly({
 		from: inside,
@@ -1272,7 +1371,12 @@ test("a body inside whose shell the ship sits is still not enterable", () => {
 test("a chord that misses the body is released, and does lose altitude", () => {
 	// §12.2's narrow promise, flown. Both tests above fly straight at the centre,
 	// so neither can see this case.
-	const planet = { id: "planet", pos: v3(), radiusKm: PLANET_R };
+	const planet = {
+		id: "planet",
+		kind: "star" as const,
+		pos: v3(),
+		radiusKm: PLANET_R,
+	};
 	const from = v3(PLANET_R * 1.04, 0, 0);
 	// A chord whose closest approach is inside the shell and outside the surface:
 	// aimed to pass 1.01 radii from the centre.

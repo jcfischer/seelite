@@ -240,6 +240,7 @@ test("simultaneous incompatible blocker carries terminate", () => {
 test("relative sweep catches a body crossing between both endpoint samples", () => {
 	const body: Mass = {
 		id: "crossing",
+		kind: "star",
 		pos: v3(0, -30, 0),
 		radiusKm: 10,
 		vel: v3(0, 600, 0),
@@ -388,7 +389,7 @@ test("a time-zero arrival carries with its target and still loses a surface tie"
 
 	const blocked = advanceCruise({
 		...input,
-		masses: [{ id: "surface", pos: v3(), radiusKm: 5 }],
+		masses: [{ id: "surface", kind: "star", pos: v3(), radiusKm: 5 }],
 	});
 	expect(blocked.exit).toBe("proximity");
 	expect(blocked.exitBodyId).toBe("surface");
@@ -419,7 +420,9 @@ test("a surface crossing during closest-approach carry overrides arrival", () =>
 		nose: v3(1, 0, 0),
 		throttle: 1,
 		dt: 0.1,
-		masses: [{ id: "carry-blocker", pos: v3(6.9, 0, 0), radiusKm: 0.2 }],
+		masses: [
+			{ id: "carry-blocker", kind: "star", pos: v3(6.9, 0, 0), radiusKm: 0.2 },
+		],
 		target: { pos: v3(5, 2, 0), radiusKm: 1, vel: v3(20, 0, 0) },
 		params: { ...CONSTANT_CRUISE, vicinityKm: 100, approachLeadS: 0.001 },
 		targetParentId: null,
@@ -430,8 +433,13 @@ test("a surface crossing during closest-approach carry overrides arrival", () =>
 });
 
 test("the earliest blocker wins independent of mass order", () => {
-	const near: Mass = { id: "near", pos: v3(10, 0, 0), radiusKm: 1 };
-	const far: Mass = { id: "far", pos: v3(20, 0, 0), radiusKm: 1 };
+	const near: Mass = {
+		id: "near",
+		kind: "star",
+		pos: v3(10, 0, 0),
+		radiusKm: 1,
+	};
+	const far: Mass = { id: "far", kind: "star", pos: v3(20, 0, 0), radiusKm: 1 };
 	const fly = (masses: Mass[]) =>
 		advanceCruise({
 			pos: v3(),
@@ -471,6 +479,7 @@ test("a blocker before the station wins the event ordering", () => {
 test("the acceleration bound conservatively catches curved near-tangencies", () => {
 	const common = {
 		id: "curve",
+		kind: "star" as const,
 		pos: v3(0, 10.6, 0),
 		radiusKm: 10,
 		vel: v3(),

@@ -6,7 +6,7 @@
  * moving-body guard.  Keeping that distinction explicit stops a route preview
  * from becoming a second, weaker collision implementation.
  */
-import { HOST_CLEARANCE_KM, SURFACE_MARGIN, type Mass } from "./cruise";
+import { liveGuardRadiusKm, type Mass } from "./cruise";
 import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 
 export interface DetourPlan {
@@ -37,14 +37,9 @@ const unit = (v: Vec3): Vec3 | null => {
 	return n > EPSILON ? scale(v, 1 / n) : null;
 };
 
-const liveGuardKm = (mass: Mass, targetParentId: string | null): number =>
-	mass.id === targetParentId
-		? mass.radiusKm + HOST_CLEARANCE_KM
-		: mass.radiusKm * SURFACE_MARGIN;
-
 /** The planner keeps a small extra clearance beyond the live guard. */
 const guardKm = (mass: Mass, targetParentId: string | null): number =>
-	liveGuardKm(mass, targetParentId) + ROUTE_MARGIN_KM;
+	liveGuardRadiusKm(mass, targetParentId) + ROUTE_MARGIN_KM;
 
 /** Squared distance from a finite segment to a point, without allocation. */
 function segmentDistanceKm(
@@ -91,7 +86,7 @@ function projectedGuardBlocked(
 	const centreY = mass.pos.y + vy * projectionS;
 	const centreZ = mass.pos.z + vz * projectionS;
 	const guard = guardKm(mass, targetParentId);
-	const liveGuard = liveGuardKm(mass, targetParentId);
+	const liveGuard = liveGuardRadiusKm(mass, targetParentId);
 	const fromX = a.x - centreX;
 	const fromY = a.y - centreY;
 	const fromZ = a.z - centreZ;
@@ -102,15 +97,14 @@ function projectedGuardBlocked(
 
 	const direction = sub(b, a);
 	const directionLength = length(direction);
-	if (directionLength <= EPSILON)
-		return fromX * fromX + fromY * fromY + fromZ * fromZ <= mass.radiusKm ** 2;
+	if (directionLength <= EPSILON) return false;
 	const towardCentre =
 		(-fromX * direction.x - fromY * direction.y - fromZ * direction.z) /
 		directionLength;
 	if (towardCentre <= 0) return false;
 	return (
 		fromX * fromX + fromY * fromY + fromZ * fromZ - towardCentre ** 2 <
-		mass.radiusKm ** 2
+		liveGuard ** 2
 	);
 }
 
