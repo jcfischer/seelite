@@ -111,6 +111,7 @@ import {
 	REFINERY_VOCABULARY,
 } from "./station-plant";
 import { DIRECTIONS } from "./wfc";
+import { mix, seededRand } from "./rng";
 import {
 	STATION_QUALITY,
 	STATION_VISUALS,
@@ -5030,6 +5031,460 @@ function buildOutpostCluster(
 }
 
 /**
+ * The salvage's own draw off the assembly seed. The outpost's forms read one
+ * seed and a station is drawn in one form, so this cannot correlate with the
+ * Cluster's plan — it is a salt, so that seeds 0, 1 and 2 land far apart in
+ * the LCG rather than on its first few correlated steps.
+ */
+const SALVAGE_SALT = 0x5a1e;
+
+/**
+ * Other ships' paint. Every piece of salvage came off a different hull, and a
+ * junk-built form painted in one colour reads as a designed one. The core
+ * keeps the caller's colour (§7's cue); everything welded to it is from here.
+ */
+const SALVAGE_PAINTS = [
+	0x8a8f93, 0x7b6a55, 0x5f6e76, 0x8c8768, 0x9a9da0, 0x6d5f52,
+] as const;
+/** Cargo pods are stencilled freight colours, not hull paint. */
+const POD_PAINTS = [0x9c7a3c, 0x5c7a8a, 0x7d6b45, 0xa8a090, 0x4f6a5a] as const;
+
+/**
+ * Work lamps: warm, and not the pad's cool floods. A raider haven is lit by
+ * whatever lamps were to hand, clamped to the junk where the work is. Not
+ * red — `hud-and-scanner.md` §4 owns red as refusal.
+ */
+const WORK_LAMP_COLOR = 0xffd9a0;
+const WORK_LAMP_MATERIAL = shared(
+	emissiveMaterial(WORK_LAMP_COLOR, STATION_EMISSIVE_INTENSITIES.flood),
+);
+const WORK_LAMP_GLOW = steadyGlowMaterial(
+	WORK_LAMP_COLOR,
+	STATION_EMISSIVE_INTENSITIES.flood,
+	"flood",
+);
+
+/** A place on a built piece where the next one can be welded. */
+interface Socket {
+	/** On the surface, in kilometres. */
+	at: THREE.Vector3;
+	/** The surface's outward normal. */
+	normal: THREE.Vector3;
+	/** The host's own long axis, which a pod strapped to it lies along. */
+	axis: THREE.Vector3;
+	/** A side socket takes a pod or a lamp; an end socket takes a section. */
+	kind: "side" | "end";
+}
+
+/**
+ * Outpost E — Salvage (#518). *Welded together from salvage — hull sections,
+ * cargo pods and a ship's forward half bolted around the pad. Improvised,
+ * asymmetric, lit by work lamps.*
+ *
+ * **Grown, not solved.** The Cluster collapses a grid, and a grid is exactly
+ * what junk is not. This accretes instead: a salvaged freighter section stands
+ * on the axis under the pad as the core, and every later piece is welded onto a
+ * socket on something already built — sunk into it, so the islands row sees
+ * contact rather than a strut. The plan is the assembly seed's (§7.1), and
+ * every seed leans the pile toward one side of the core, because a pile that
+ * balances round its axis reads as designed.
+ *
+ * **Everything stays behind the pad's plane or outside its corridor**, checked
+ * on each piece's box before it is kept, and inside the pool's reach. A piece
+ * that fails is not placed; the socket goes back.
+ */
+function buildOutpostSalvage(
+	color: number,
+	berthSeed: number,
+	assemblySeed: number,
+): BuiltPart {
+	const r = STATION_GEOMETRY.outpost.coreRadiusKm;
+	const plane = STATION_GEOMETRY.outpost.aperturePlaneKm;
+	/** The pad slab's underside, which `buildPadDeck` puts 0.16·r under. */
+	const deckUnder = plane - r * 0.16;
+	const group = new THREE.Group();
+	const fixtures: StationFixture[] = [];
+	const pools = new Pools();
+	const rand = seededRand(mix(assemblySeed, SALVAGE_SALT));
+	const between = (lo: number, hi: number) => lo + (hi - lo) * rand();
+	const pick = <T>(xs: readonly T[]) =>
+		xs[Math.min(xs.length - 1, Math.floor(rand() * xs.length))];
+	const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+	const Z = V(0, 0, 1);
+	/** How far a welded piece is sunk into its host: 3 m, five times the
+	 *  islands row's overlap on this role. */
+	const SINK = 0.003;
+	/** The pool's 0.42 km, less what a lamp or a greeble adds. */
+	const REACH = 0.4;
+
+	// The core: a boxy freighter section standing on the axis, sunk into the
+	// deck slab. It keeps the caller's colour and the name the probe reads.
+	const coreW = 0.055;
+	const coreH = 0.045;
+	const coreBottom = -0.16;
+	group.add(
+		shell(
+			[
+				{ z: coreBottom, w: coreW * 0.9, h: coreH * 0.9, e: 4, hard: true },
+				{ z: coreBottom + 0.012, w: coreW, h: coreH, e: 4, hard: true },
+				{ z: -0.02, w: coreW, h: coreH, e: 4, hard: true },
+				{ z: -0.012, w: coreW * 1.06, h: coreH * 1.06, e: 4, hard: true },
+				{ z: -0.004, w: coreW, h: coreH, e: 4, hard: true },
+				{ z: deckUnder + 0.01, w: coreW, h: coreH, e: 4 },
+			],
+			hullMaterial(color, "outpost"),
+			"core",
+			12,
+			true,
+		),
+	);
+	group.add(buildPadDeck("outpost", fixtures, r, plane, berthSeed));
+
+	/** The direction the pile leans, and so which faces take the big pieces. */
+	const leanAngle = rand() * Math.PI * 2;
+	const lean = V(Math.cos(leanAngle), Math.sin(leanAngle), 0);
+	const coreFaces = [
+		{ normal: V(1, 0, 0), half: coreW, across: coreH },
+		{ normal: V(-1, 0, 0), half: coreW, across: coreH },
+		{ normal: V(0, 1, 0), half: coreH, across: coreW },
+		{ normal: V(0, -1, 0), half: coreH, across: coreW },
+	];
+	const sockets: Socket[] = [];
+	for (const face of coreFaces)
+		for (const z of [-0.12, -0.075, -0.03, 0.02, 0.07]) {
+			const tangent = V(-face.normal.y, face.normal.x, 0);
+			sockets.push({
+				at: face.normal
+					.clone()
+					.multiplyScalar(face.half)
+					.addScaledVector(tangent, between(-0.5, 0.5) * face.across)
+					.setZ(z + between(-0.01, 0.01)),
+				normal: face.normal.clone(),
+				axis: Z.clone(),
+				kind: "side",
+			});
+		}
+
+	/** Whether a box, authored along +Z from 0 to `length` and placed by
+	 *  `matrix`, stays inside the reach and out of the pad's corridor. */
+	const fits = (
+		matrix: THREE.Matrix4,
+		halfX: number,
+		halfY: number,
+		length: number,
+	) => {
+		const corner = new THREE.Vector3();
+		for (const x of [-halfX, halfX])
+			for (const y of [-halfY, halfY])
+				for (const z of [0, length]) {
+					corner.set(x, y, z).applyMatrix4(matrix);
+					if (corner.length() > REACH) return false;
+					// Behind the plane with room for the deck's lamps, or clear
+					// of the corridor's cylinder by a wide margin.
+					if (
+						corner.z > deckUnder - 0.004 &&
+						Math.hypot(corner.x, corner.y) < 0.2
+					)
+						return false;
+				}
+		return true;
+	};
+
+	/** A frame with +Z along `axis` and +Y as near `up` as it can be. */
+	const frame = (at: THREE.Vector3, axis: THREE.Vector3, up: THREE.Vector3) => {
+		const z = axis.clone().normalize();
+		let x = new THREE.Vector3().crossVectors(up, z);
+		if (x.lengthSq() < 1e-8)
+			x = new THREE.Vector3().crossVectors(V(1, 0, 0), z);
+		x.normalize();
+		const y = new THREE.Vector3().crossVectors(z, x);
+		return new THREE.Matrix4().makeBasis(x, y, z).setPosition(at);
+	};
+
+	/** Place a lofted piece by `matrix` and hand out its sockets. */
+	const weld = (
+		mesh: THREE.Mesh,
+		matrix: THREE.Matrix4,
+		halfX: number,
+		halfY: number,
+		length: number,
+		ends: boolean,
+	) => {
+		matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+		group.add(mesh);
+		const x = new THREE.Vector3();
+		const y = new THREE.Vector3();
+		const z = new THREE.Vector3();
+		matrix.extractBasis(x, y, z);
+		const origin = new THREE.Vector3().setFromMatrixPosition(matrix);
+		for (const t of [0.35, 0.7])
+			for (const [normal, half] of [
+				[x, halfX],
+				[x.clone().negate(), halfX],
+				[y, halfY],
+				[y.clone().negate(), halfY],
+			] as const)
+				sockets.push({
+					at: origin
+						.clone()
+						.addScaledVector(z, t * length)
+						.addScaledVector(normal, half),
+					normal: normal.clone(),
+					axis: z.clone(),
+					kind: "side",
+				});
+		if (ends)
+			sockets.push({
+				at: origin.clone().addScaledVector(z, length),
+				normal: z.clone(),
+				axis: z.clone(),
+				kind: "end",
+			});
+	};
+
+	/** Take a socket the filter accepts, at random; `undefined` when none do. */
+	const take = (accept: (s: Socket) => boolean) => {
+		const open = sockets.filter(accept);
+		if (open.length === 0) return undefined;
+		const socket = pick(open);
+		sockets.splice(sockets.indexOf(socket), 1);
+		return socket;
+	};
+	/** A big piece goes on the side the pile leans toward. */
+	const leaning = (s: Socket) => s.normal.dot(lean) > 0.2;
+
+	// **A ship's forward half**, broken off at midship and welded on by the
+	// break. A capital hull's bow at real size: the carrier is 0.38 km long, so
+	// half of one is what a raider would have towed in.
+	for (let attempt = 0; attempt < 12; attempt++) {
+		const socket = take((s) => s.kind === "side" && leaning(s));
+		if (!socket) break;
+		const length = between(0.15, 0.19);
+		const w = between(0.03, 0.038);
+		const h = w * between(0.6, 0.75);
+		const tangent = new THREE.Vector3().crossVectors(Z, socket.normal);
+		const dir = socket.normal
+			.clone()
+			.addScaledVector(tangent, between(-0.5, 0.5))
+			.addScaledVector(Z, between(-0.45, 0.2))
+			.normalize();
+		const start = socket.at.clone().addScaledVector(dir, -SINK * 3);
+		const matrix = frame(
+			start,
+			dir,
+			V(between(-0.4, 0.4), between(-0.4, 0.4), 1),
+		);
+		if (!fits(matrix, w, h, length)) continue;
+		const bow = shell(
+			[
+				{ z: 0, w: w * 0.96, h: h * 0.96, e: 3, hard: true },
+				{ z: length * 0.04, w, h, e: 3 },
+				{ z: length * 0.45, w: w * 0.98, h: h * 1.02, e: 3 },
+				{ z: length * 0.75, w: w * 0.72, h: h * 0.8, y: h * 0.1, e: 2.6 },
+				{ z: length * 0.93, w: w * 0.3, h: h * 0.35, y: h * 0.12, e: 2.2 },
+				{ z: length, w: w * 0.06, h: h * 0.08, y: h * 0.12, e: 2 },
+			],
+			hullMaterial(pick(SALVAGE_PAINTS), "outpost"),
+			"salvage-bow",
+			16,
+			true,
+		);
+		weld(bow, matrix, w, h, length * 0.6, false);
+		// The canopy blister, dark, where the bridge was.
+		const canopy = shell(
+			[
+				{ z: length * 0.62, w: w * 0.2, h: h * 0.18, e: 2.4 },
+				{ z: length * 0.72, w: w * 0.28, h: h * 0.28, e: 2.4 },
+				{ z: length * 0.8, w: w * 0.12, h: h * 0.12, e: 2.4 },
+			],
+			plainMaterial(0x1b2227, 0.25, 0.8),
+			"bow-canopy",
+			10,
+		);
+		canopy.position.y = h * 0.95;
+		bow.add(canopy);
+		// The torn edge at the break: frames and plating left ragged.
+		for (let i = 0; i < 7; i++) {
+			const theta = (i / 7) * Math.PI * 2 + between(-0.2, 0.2);
+			const shard = new THREE.Mesh(
+				new THREE.BoxGeometry(w * 0.35, 0.002, between(0.008, 0.022)),
+				plainMaterial(0x4a4f52, 0.9, 0.5),
+			);
+			shard.position.set(
+				Math.cos(theta) * w * 0.94,
+				Math.sin(theta) * h * 0.94,
+				-shard.geometry.parameters.depth * 0.3,
+			);
+			shard.rotation.z = theta + Math.PI / 2;
+			shard.name = "bow-torn";
+			bow.add(shard);
+		}
+		break;
+	}
+
+	// **Hull sections**, cut out of other wrecks: two or three, each welded to
+	// the core or end to end onto the last one, and each its own paint.
+	const sectionCount = 2 + Math.floor(rand() * 2);
+	let placed = 0;
+	for (let attempt = 0; attempt < 30 && placed < sectionCount; attempt++) {
+		const chain = placed > 0 && rand() < 0.45;
+		const socket = take((s) =>
+			chain ? s.kind === "end" : s.kind === "side" && leaning(s),
+		);
+		if (!socket) continue;
+		const length = between(0.06, 0.11);
+		const w = between(0.024, 0.04);
+		const h = w * between(0.75, 1.0);
+		const e = pick([2, 2.4, 4, 6] as const);
+		const tangent = new THREE.Vector3().crossVectors(Z, socket.normal);
+		if (tangent.lengthSq() < 1e-8) tangent.set(1, 0, 0);
+		const dir = socket.normal
+			.clone()
+			.addScaledVector(tangent.normalize(), between(-0.45, 0.45))
+			.addScaledVector(Z, between(-0.4, 0.15))
+			.normalize();
+		const start = socket.at.clone().addScaledVector(dir, -SINK * 3);
+		const matrix = frame(start, dir, Z);
+		if (!fits(matrix, w, h, length)) {
+			sockets.push(socket);
+			continue;
+		}
+		const section = shell(
+			[
+				{ z: 0, w: w * 1.08, h: h * 1.08, e, hard: true },
+				{ z: 0.004, w, h, e, hard: true },
+				{ z: length - 0.004, w, h, e, hard: true },
+				{ z: length, w: w * 1.08, h: h * 1.08, e },
+			],
+			hullMaterial(pick(SALVAGE_PAINTS), "outpost"),
+			`salvage-section-${placed}`,
+			e > 3 ? 8 : 12,
+			true,
+		);
+		weld(section, matrix, w, h, length, true);
+		placed++;
+	}
+
+	// **Cargo pods**, strapped along whatever they were welded to, in clumps.
+	const podCount = 3 + Math.floor(rand() * 4);
+	let pods = 0;
+	for (let attempt = 0; attempt < 40 && pods < podCount; attempt++) {
+		const socket = take((s) => s.kind === "side");
+		if (!socket) break;
+		const length = between(0.03, 0.055);
+		const half = between(0.012, 0.02);
+		const start = socket.at
+			.clone()
+			.addScaledVector(socket.normal, half - SINK)
+			.addScaledVector(socket.axis, -length / 2);
+		const matrix = frame(start, socket.axis, socket.normal);
+		if (!fits(matrix, half, half, length)) {
+			sockets.push(socket);
+			continue;
+		}
+		const pod = shell(
+			[
+				{ z: 0, w: half * 0.92, h: half * 0.92, e: 8, hard: true },
+				{ z: 0.002, w: half, h: half, e: 8, hard: true },
+				{ z: length - 0.002, w: half, h: half, e: 8, hard: true },
+				{ z: length, w: half * 0.92, h: half * 0.92, e: 8 },
+			],
+			hullMaterial(pick(POD_PAINTS), "outpost"),
+			`salvage-pod-${pods}`,
+			4,
+			true,
+		);
+		// Its own outward faces take the next pod, so they stack.
+		weld(pod, matrix, half, half, length, false);
+		pods++;
+	}
+
+	// Girders from the pad's rim down into the pile: the deck is bolted onto
+	// the junk, not standing on the core alone.
+	for (let i = 0; i < 3; i++) {
+		const socket = take((s) => s.kind === "side" && s.at.z < deckUnder - 0.03);
+		if (!socket) break;
+		const toward = V(socket.at.x, socket.at.y, 0);
+		if (toward.lengthSq() < 1e-8) toward.copy(lean);
+		toward.normalize().multiplyScalar(r * 0.78);
+		truss(
+			pools,
+			V(toward.x, toward.y, deckUnder + 0.004),
+			socket.at.clone().addScaledVector(socket.normal, -SINK),
+			SHIP_SCALE.strutKm,
+			Z,
+		);
+	}
+	pools.emit(group, "module");
+
+	// **Work lamps**, clamped to the junk and facing out from it.
+	const lampCount = 6 + Math.floor(rand() * 4);
+	for (let i = 0; i < lampCount; i++) {
+		const socket = take((s) => s.kind === "side");
+		if (!socket) break;
+		const lamp = new THREE.Mesh(
+			new THREE.BoxGeometry(
+				FITTING_KM.flood[0],
+				FITTING_KM.flood[1],
+				FITTING_KM.flood[2],
+			),
+			WORK_LAMP_MATERIAL,
+		);
+		lamp.position.copy(socket.at);
+		lamp.quaternion.setFromUnitVectors(Z, socket.normal);
+		lamp.name = "bay-flood";
+		detail(lamp, "reduced");
+		glowOnFitting(lamp, FITTING_KM.flood[0] * 1.5, WORK_LAMP_GLOW);
+		group.add(lamp);
+	}
+
+	// Lit ports low on the core's four faces: somebody lives in the freighter
+	// section, which is the one piece that was a habitat before.
+	group.add(
+		portRun("outpost", 6, (i, count, position, normal) => {
+			const face = coreFaces[i % 4];
+			const perFace = Math.max(1, Math.ceil(count / 4));
+			const along = ((Math.floor(i / 4) % perFace) + 0.5) / perFace;
+			const tangent = V(-face.normal.y, face.normal.x, 0);
+			normal.copy(face.normal);
+			position
+				.copy(face.normal)
+				.multiplyScalar(face.half)
+				.addScaledVector(tangent, (along - 0.5) * face.across)
+				.setZ(-0.13 + (i % 3) * 0.022);
+		}),
+	);
+	group.add(
+		greebleRun(
+			"outpost",
+			"outpost-e",
+			[
+				{
+					count: 10,
+					sizeKm: coreW * 0.14,
+					reliefKm: coreW * 0.1,
+					place: (i, count, position, normal) => {
+						const face = coreFaces[i % 4];
+						const tangent = V(-face.normal.y, face.normal.x, 0);
+						normal.copy(face.normal);
+						position
+							.copy(face.normal)
+							.multiplyScalar(face.half)
+							.addScaledVector(
+								tangent,
+								(((i * 7) % count) / count - 0.5) * face.across,
+							)
+							.setZ(0.1 + (i % 2) * 0.016);
+					},
+				},
+			],
+			group,
+		),
+	);
+	return { group, fixtures };
+}
+
+/**
  * Trade E — Wheel (#332). Two rims on one axis, after *2001*'s Space Station V:
  * one rim finished, plated and lit, and the other still being built.
  *
@@ -5538,6 +5993,16 @@ export const STATION_FORMS: Record<StationType, StationForm[]> = {
 			// against it.
 			reachKm: 0.42,
 			build: buildOutpostCluster,
+		},
+		{
+			id: "e",
+			name: "Salvage",
+			thesis:
+				"welded together from salvage — hull sections, cargo pods and a ship's forward half bolted round the pad; improvised, asymmetric, lit by work lamps",
+			// Grown to 0.40 km at most, each piece's box checked as it is kept;
+			// the seed spread is measured against the pool's figure.
+			reachKm: 0.42,
+			build: buildOutpostSalvage,
 		},
 	],
 };

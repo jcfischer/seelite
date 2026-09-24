@@ -77,8 +77,11 @@ describe("trade E — the Wheel", () => {
 		expect(STATION_FORMS.trade.find((form) => form.id === "e")?.name).toBe(
 			"Wheel",
 		);
+		// The Wheel, not the letter: the outpost has an E of its own since #518.
 		for (const type of ["shipyard", "refinery", "outpost"] as const)
-			expect(STATION_FORMS[type].some((form) => form.id === "e")).toBe(false);
+			expect(STATION_FORMS[type].some((form) => form.name === "Wheel")).toBe(
+				false,
+			);
 	});
 
 	test("two rims share the spin axis and stand apart along it", () => {
