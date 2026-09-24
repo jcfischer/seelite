@@ -114,6 +114,11 @@ export const DOMAIN = {
 	/** The relay tender's way in (`relay-tender.ts`, #351): the direction it
 	 *  flies in from. Its own tag, so it moves no relay placement or roll. */
 	RELAY_TENDER: 25,
+	/** The relay's defender (`relay-defender.ts`, #515): which raider slot a hit
+	 *  on the relay or its tender calls, when and where it drops in. Split by
+	 *  the target, its instance and the call ordinal, so no two calls share a
+	 *  draw and a call moves no leg's encounter. */
+	RELAY_DEFENDER: 26,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;

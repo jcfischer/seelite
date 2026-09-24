@@ -82,9 +82,12 @@ parent. Raider hulls stay out of every **Traffic roster**
 _Avoid_: Pirate spawn, random raider
 
 **Encounter**:
-One cruise leg's hostile approach to the player, by one or more raiders, from
-the leg's seeded draw to its end: inbound, contest, duel, and over — missed,
-broken, lost, escaped, fled or destroyed. `combat-model.md` §3's rating-chosen
+One hostile approach to the player, by one or more raiders, from its seeded
+draw to its end: inbound, contest, duel, and over — missed, broken, lost,
+escaped, fled or destroyed. The draw is a cruise leg's, or a **Pirate relay**'s
+call when it or its **Relay tender** is hit (#515): that defender is called in
+normal flight, skips the contest and drops straight into the duel, and
+`src/relay-defender.ts` owns the call rule. `combat-model.md` §3's rating-chosen
 composition makes it a group; today's only composition is a single raider
 filling one **Raider slot** (#324, #183 owns the rest). It is not saved
 history; what a destroyed raider leaves in the world is the slot's own

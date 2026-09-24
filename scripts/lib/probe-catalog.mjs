@@ -342,6 +342,17 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-relay-defender.mjs",
+			"Flies the relay's defender beside a moving relay: a downed drawn slot sends none, and a defended relay kill and a defended tender kill each call one raider that arrives in 3–5 s inside beam range at rest in the target's frame.",
+			[
+				"pirate relay",
+				"relay tender",
+				"raider encounter",
+				"local frame",
+				"combat",
+			],
+		),
+		entry(
 			"probe-requests.mjs",
 			"Exercises Requests-tab accept, track, cancel, report, and cockpit cue flows through real inputs.",
 			["requests", "Requests UI", "tracking", "cockpit cue", "panel focus"],
