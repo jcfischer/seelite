@@ -16,9 +16,11 @@ import {
 } from "../src/galaxy";
 import {
 	COURIER_SPREAD_POOL,
+	type CargoOffer,
 	JOB_ROWS,
 	type JobDestination,
 	type JobOffer,
+	isCargoOffer,
 	bindJobs as bindJobsWith,
 	canPostJobs,
 	deliveryCandidates,
@@ -157,7 +159,7 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 			}),
 		);
 		const terms = (offers: JobOffer[]) =>
-			offers.map((o) => ({
+			offers.filter(isCargoOffer).map((o) => ({
 				id: o.id,
 				goodName: o.operand.goodName,
 				tonnes: o.operand.tonnes,
@@ -244,7 +246,9 @@ describe("§2 — a binder is a pure function of station, world and clock", () =
 		const board = bindJobs(
 			contextAt(HERE.index, HERE.stationId, { deficits, gameTimeMin: 120 }),
 		);
-		const offer = board.find((o) => o.family === "procurement");
+		const offer = board
+			.filter(isCargoOffer)
+			.find((o) => o.family === "procurement");
 		expect(offer?.operand.goodName).toBe("Food");
 		expect(offer?.reportAt.carrierKey).toBe(key);
 	});
@@ -279,9 +283,9 @@ describe("D8 — need is the throttle, so a procurement offer follows it", () =>
 			holdT: 20,
 		});
 		const at = (gameTimeMin: number) =>
-			bindJobs(
-				contextAt(HERE.index, HERE.stationId, { deficits, gameTimeMin }),
-			).find((o) => o.family === "procurement");
+			bindJobs(contextAt(HERE.index, HERE.stationId, { deficits, gameTimeMin }))
+				.filter(isCargoOffer)
+				.find((o) => o.family === "procurement");
 		const fresh = at(0);
 		const later = at(40);
 		expect(fresh?.operand.tonnes).toBeGreaterThan(0);
@@ -318,9 +322,12 @@ describe("§1 — repeating work needs an episode, not a rerolled offer", () => 
 describe("D4 — every job leaves one mark, and only one", () => {
 	test("a courier's mark moves the destination's deficit for its good", () => {
 		const board = bindJobs(contextAt(HERE.index, HERE.stationId));
-		const courier = board.find((o) => o.family === "courier");
+		const courier = board
+			.filter(isCargoOffer)
+			.find((o) => o.family === "courier");
 		if (!courier) throw new Error("no courier offer");
 		const mark = jobMark(courier);
+		if (!mark) throw new Error("a courier's report wrote no mark");
 		expect(mark.key).toBe(courier.reportAt.carrierKey);
 		expect(mark.trade.goodName).toBe(courier.operand.goodName);
 		// Delivering supplies the destination, which is the sale sign (§5.2).
@@ -333,9 +340,12 @@ describe("D4 — every job leaves one mark, and only one", () => {
 		// that forgot one silently gets the courier's 20 t. This module never
 		// sees a commander, so it must not be able to supply either number.
 		const board = bindJobs(contextAt(HERE.index, HERE.stationId));
-		const courier = board.find((o) => o.family === "courier");
+		const courier = board
+			.filter(isCargoOffer)
+			.find((o) => o.family === "courier");
 		if (!courier) throw new Error("no courier offer");
 		const mark = jobMark(courier);
+		if (!mark) throw new Error("a courier's report wrote no mark");
 		expect(Object.keys(mark.trade).sort()).toEqual(["goodName", "units"]);
 		const applied = recordTrade({}, mark.key, {
 			...mark.trade,
@@ -400,7 +410,7 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 		gameTimeMin = 120,
 	) => {
 		const out: {
-			offer: JobOffer;
+			offer: CargoOffer;
 			system: SystemRecord;
 			station: Station;
 			destination: JobDestination;
@@ -410,7 +420,9 @@ describe("#455 — a consignment is drawn from the widest-spread goods", () => {
 				const offer = boardAt(SYSTEMS, system, station, {
 					gameTimeMin,
 					settled,
-				}).find((o) => o.family === "courier");
+				})
+					.filter(isCargoOffer)
+					.find((o) => o.family === "courier");
 				if (!offer) continue;
 				const destination = deliveryCandidates(
 					SYSTEMS,

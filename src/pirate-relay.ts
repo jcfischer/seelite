@@ -45,7 +45,7 @@ import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
-import { type RelayPlan, relaySlot } from "./relay-slot";
+import { type RelayPlan, relayPlan, relaySlot } from "./relay-slot";
 import {
 	type Orbit,
 	type SystemContents,
@@ -54,10 +54,12 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type Vec3, add, length, scale, sub, v3 } from "./vec3";
-import type {
-	GalaxyEnvelope,
-	Provenance,
-	TransitionEvent,
+import type { BountyTarget } from "./jobs";
+import {
+	type GalaxyEnvelope,
+	type Provenance,
+	type TransitionEvent,
+	effectiveCarrier,
 } from "./world-state";
 
 /** What the cockpit calls it once identified, and what the log calls it. */
@@ -285,6 +287,36 @@ export function relayDestruction(
 			consequenceArea: relayRouteArea(systemIndex, watchedStationId),
 			cause: relayReplacementActor(systemIndex),
 		},
+	};
+}
+
+/**
+ * The system's relay as a Bounty target, or null when there is nothing to post
+ * against (#495 D4, #508).
+ *
+ * **The roll first, then the condition.** An inactive relay has no world row,
+ * and an absent row reads `operational` (`effectiveCarrier`, §1), so a check
+ * on the condition alone would post a bounty on a relay that is not there.
+ * While destroyed or repairing it is null too, which is the Bounty's whole
+ * throttle (`ordinary-requests.md` D9): the repair window.
+ */
+export function bountyTargetOf(
+	record: { index: number; seed: number; government: number },
+	contents: SystemContents,
+	env: GalaxyEnvelope,
+	gameTime: number,
+): BountyTarget | null {
+	if (!relayActive(record)) return null;
+	const plan = relayPlan(contents, record.seed);
+	if (!plan) return null;
+	const key = relaySlot(record.index).key;
+	if (effectiveCarrier(env, key, gameTime).condition !== "operational")
+		return null;
+	const watched = contents.stations.find((s) => s.id === plan.watchedStationId);
+	return {
+		carrierKey: key,
+		name: RELAY_NAME,
+		watchedStationName: watched?.name ?? plan.watchedStationId,
 	};
 }
 

@@ -397,6 +397,7 @@ import {
 	RELAY_INTEGRITY,
 	RELAY_NAME,
 	type RelaySignal,
+	bountyTargetOf,
 	relayDestruction,
 	relayDetection,
 	relayInSights,
@@ -435,6 +436,7 @@ import {
 	driftCanister,
 	dropCanisters,
 	dropManifestCanisters,
+	PLAYER_KILL,
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
@@ -625,6 +627,7 @@ import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
 	entrustedTonnesAboard,
+	recordKill,
 	requestAction,
 	settledAt,
 } from "./requests";
@@ -12920,7 +12923,18 @@ class Game {
 			// transaction at this same dock moves the deficit a procurement
 			// binder reads, and the till bumps that counter. Without it a pilot
 			// who bought the shelf out while docked kept reading the old board.
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${this.stationConsoleRevision}`;
+			// **The Bounty target is world state, so it is in the key** (#508).
+			// The relay dies in flight and is replaced on the clock; a board
+			// keyed without it kept posting a Bounty on a wreck to a pilot who
+			// docked after the kill. It is not a reroll (§1): the offer's terms
+			// do not move, the world fact that posts it does.
+			const bountyTarget = bountyTargetOf(
+				this.world.system.record,
+				this.world.system.contents,
+				context.envelope,
+				this.world.gameTime,
+			);
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${settled.bounty}:${bountyTarget?.carrierKey ?? "-"}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
 				// **Keyed on the system, not the station.** Two stations of one
 				// system differ only by which poster is excluded, and that is a
@@ -12951,6 +12965,7 @@ class Game {
 					deficits: context.envelope.deficits,
 					gameTimeMin: context.gameTimeMin,
 					settled,
+					bountyTarget,
 				});
 				this.requestOffersCacheKey = key;
 			}
@@ -12972,6 +12987,7 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
+			equipment: this.commander.ownedEquipment,
 		};
 	}
 
@@ -12993,6 +13009,8 @@ class Game {
 			docked,
 			cargo: this.commander.cargo,
 			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
+			standing: this.legalStanding(),
+			equipment: this.commander.ownedEquipment,
 		};
 	}
 
@@ -13280,6 +13298,20 @@ class Game {
 			key,
 			event,
 		);
+		// **Every accepted Bounty naming this carrier hears the kill** (#508 D1),
+		// here rather than in `stepRelay` so a second target kind (#509) cannot
+		// be destroyed down a path that forgets its bounty. Only the player's
+		// own gun qualifies — H8's "`destroy` with the player's provenance".
+		if (
+			event.kind === "destroy" &&
+			event.cause.actorId === PLAYER_KILL.actorId
+		) {
+			const requests = recordKill(this.requests, key, event.occurredAt);
+			if (requests !== this.requests) {
+				this.requests = requests;
+				this.requestRevision += 1;
+			}
+		}
 		this.saveDirty();
 	}
 

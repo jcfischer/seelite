@@ -42,6 +42,8 @@ const context = (
 	docked: at(courier.requester),
 	cargo: {} as Readonly<Record<string, number>>,
 	holdRoomT: HOLD_T,
+	standing: "clean" as const,
+	equipment: [] as readonly string[],
 	...overrides,
 });
 
@@ -266,6 +268,8 @@ describe("the offer's clock is the journal's clock", () => {
 				docked: at(board.offer.requester),
 				cargo: {},
 				holdRoomT: 40,
+				standing: "clean" as const,
+				equipment: [] as readonly string[],
 			},
 		);
 		expect(early.ok).toBe(false);
@@ -276,6 +280,8 @@ describe("the offer's clock is the journal's clock", () => {
 				docked: at(board.offer.requester),
 				cargo: {},
 				holdRoomT: 40,
+				standing: "clean" as const,
+				equipment: [] as readonly string[],
 			}).ok,
 		).toBe(true);
 	});
@@ -326,6 +332,8 @@ describe("procurement carries the pilot's own goods", () => {
 		docked: at(purchase.requester),
 		cargo: {} as Readonly<Record<string, number>>,
 		holdRoomT: 20,
+		standing: "clean" as const,
+		equipment: [] as readonly string[],
 		...over,
 	});
 
@@ -474,6 +482,8 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		docked: here,
 		cargo,
 		holdRoomT: 20,
+		standing: "clean" as const,
+		equipment: [] as readonly string[],
 	});
 
 	const apply = (

@@ -28,7 +28,7 @@
 import { recordTrade, readDeficit } from "../src/deficits";
 import { generateGalaxy } from "../src/galaxy";
 import { HULL_SPECS, PLAYER_BASELINE_HULL } from "../src/hull";
-import type { JobOffer } from "../src/jobs";
+import { type JobOffer, cargoOf } from "../src/jobs";
 import {
 	boardAt as bindBoard,
 	postingStations,
@@ -235,6 +235,8 @@ for (let world = 0; world < worlds; world++) {
 				(o) => o.family === "procurement",
 			);
 			if (!offer) continue;
+			const cargo = cargoOf(offer);
+			if (!cargo) throw new Error("a procurement offer carried no cargo");
 			// **A tonne is delivered or sold, never both, and the hold that made
 			// the deficit is charged.** The first version added the shortfall
 			// payment to the proceeds of selling the same tonnes — but
@@ -250,7 +252,7 @@ for (let world = 0; world < worlds; world++) {
 			const feeCr = finite("procurement fee", offer.rewardCr);
 			// The whole purchase is a cost in both arms: it is what created the
 			// shortfall, and it is the farm's opening move.
-			const spare = Math.max(0, tonnes - offer.operand.tonnes);
+			const spare = Math.max(0, tonnes - cargo.tonnes);
 			// Arm A: deliver the job's tonnes for the fee, and sell whatever
 			// the purchase left over into the price it raised.
 			const deliverCr = finite("deliver arm", feeCr + raised * spare - costCr);
@@ -261,7 +263,7 @@ for (let world = 0; world < worlds; world++) {
 				good: good.name,
 				costCr,
 				feeCr,
-				tonnes: offer.operand.tonnes,
+				tonnes: cargo.tonnes,
 				netCr,
 				deliverCr,
 				sellCr,

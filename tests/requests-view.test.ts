@@ -298,6 +298,7 @@ describe("the rendered control carries what the builder decided", () => {
 				entrustedT: offer.operand.entrusted ? aboard : 0,
 				lines: aboard ? [line] : [],
 			},
+			equipment: [],
 		};
 		return requestsBody(view);
 	};

@@ -21,7 +21,13 @@
  */
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
 import type { JobFamily, JobMark, JobOffer, JobOperand } from "./jobs";
-import { FAMILY_OPERAND_KIND, jobMark } from "./jobs";
+import {
+	FAMILY_OPERAND_KIND,
+	cargoOf,
+	jobMark,
+	offerRequirements,
+} from "./jobs";
+import type { Standing } from "./legal";
 
 export interface RequestStation {
 	galaxyIndex: number;
@@ -54,10 +60,28 @@ export const stagesFor = (offer: RequestOffer): readonly string[] =>
 export interface RequestEvidence {
 	stageId: string;
 	occurredAt: number;
-	/** What established the stage. `delivery` is the only live source; the
-	 *  retired fixtures wrote `ui-fixture` and no longer load. */
-	source: "delivery";
+	/**
+	 * What established the stage: `delivery` for a cargo family, `kill` for a
+	 * Bounty (#508). The retired fixtures wrote `ui-fixture` and no longer
+	 * load. Which source a family's stage takes is `EVIDENCE_SOURCE`'s.
+	 */
+	source: EvidenceSource;
 }
+
+export type EvidenceSource = "delivery" | "kill";
+
+/**
+ * The one source each family's evidence may come from, as a total record.
+ *
+ * Read by the validator, so a journal pairing a courier with a kill — a record
+ * no action writes — is refused rather than admitted by a list of sources that
+ * knows nothing of families.
+ */
+export const EVIDENCE_SOURCE: Readonly<Record<JobFamily, EvidenceSource>> = {
+	courier: "delivery",
+	procurement: "delivery",
+	bounty: "kill",
+};
 
 export interface AcceptedRequest {
 	offerId: string;
@@ -146,7 +170,7 @@ export function settledAt(
 	state: RequestsState,
 	requester: RequestStation,
 ): Record<JobFamily, number> {
-	const out = { courier: 0, procurement: 0 };
+	const out = { courier: 0, procurement: 0, bounty: 0 };
 	for (const request of Object.values(state.byId))
 		if (
 			request.status === "completed" &&
@@ -198,13 +222,16 @@ export function nextAction(r: AcceptedRequest): string {
 	if (r.status === "ready-to-report")
 		return `Dock at ${r.terms.reportName} and Report`;
 	if (!isAcceptedRequest(r)) return r.outcomeReason ?? r.status;
+	const { operand } = r.terms;
+	if (operand.kind === "target")
+		return `Find and destroy the ${operand.targetName} in ${r.terms.region}, then report to ${r.terms.reportName}`;
 	// **Carried, or sourced — and the first says the goods are already
 	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
 	// as the same errand at a glance, and a pilot who read the first as the
 	// second bought eight tonnes they were already carrying.
-	return r.terms.operand.entrusted
-		? `Carry the ${r.terms.operand.tonnes} t ${r.terms.operand.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
-		: `Source ${r.terms.operand.tonnes} t ${r.terms.operand.goodName} yourself and return to ${r.terms.reportName}`;
+	return operand.entrusted
+		? `Carry the ${operand.tonnes} t ${operand.goodName} aboard to ${r.terms.reportName}, ${r.terms.reportSystemName}`
+		: `Source ${operand.tonnes} t ${operand.goodName} yourself and return to ${r.terms.reportName}`;
 }
 
 export interface RequestContext {
@@ -214,7 +241,21 @@ export interface RequestContext {
 	cargo: Readonly<Record<string, number>>;
 	/** Tonnes the hold still has free, entrusted cargo already deducted. */
 	holdRoomT: number;
+	/**
+	 * The pilot's standing now (`legal.ts`). A Bounty refuses anything but
+	 * Clean at accept and at report (#495 D2). Required, for `holdT`'s reason:
+	 * a caller that forgot it would pay a Wanted pilot, and the two are
+	 * indistinguishable in a diff.
+	 */
+	standing: Standing;
+	/** The commander's fitted equipment, read against `offerRequirements`
+	 *  at acceptance (request contract §2). */
+	equipment: readonly string[];
 }
+
+/** #495 D2's refusal, one sentence for both of the actions that owe it. */
+const BOUNTY_NEEDS_CLEAN =
+	"Bounties are paid to Clean pilots only. Wait until your standing is Clean again.";
 
 export interface RequestResult {
 	state: RequestsState;
@@ -293,6 +334,15 @@ export function requestAction(
 			return refuse(
 				"Already accepted or terminal; this offer cannot pay again.",
 			);
+		// Request contract §2's eligibility, read before anything is issued.
+		const missing = offerRequirements(offer).filter(
+			(item) => !ctx.equipment.includes(item),
+		);
+		if (missing.length > 0)
+			return refuse(`Needs a ${missing.join(" and a ")} fitted to accept.`);
+		if (offer.family === "bounty" && ctx.standing !== "clean")
+			return refuse(BOUNTY_NEEDS_CLEAN);
+		const cargo = cargoOf(offer);
 		// **A consignment still aboard is returned, not duplicated.** `deliver`
 		// removes only the lot of the current acceptance ordinal, so issuing a
 		// second one would strand the first in the hold with no action that
@@ -308,12 +358,19 @@ export function requestAction(
 			);
 		// §4: a hull/equipment state that would leave insufficient capacity is
 		// refused atomically rather than silently discarding goods.
-		if (offer.operand.entrusted && ctx.holdRoomT < offer.operand.tonnes)
+		if (cargo?.entrusted && ctx.holdRoomT < cargo.tonnes)
 			return refuse(
-				`Needs ${offer.operand.tonnes} t of free hold; ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
+				`Needs ${cargo.tonnes} t of free hold; ${Math.max(0, Math.floor(ctx.holdRoomT))} t free.`,
 			);
 		const ordinal = (existing?.acceptanceOrdinal ?? 0) + 1;
-		const evidence: RequestEvidence[] = [];
+		// **§3's reaccept keeps valid non-cargo evidence.** A cargo stage is
+		// re-evaluated for the new issuance, so it starts empty; a Bounty's kill
+		// was recorded while the job was accepted and stays earned — "cancelling
+		// a ready-to-report relay request does not require inventing a
+		// replacement relay to resume it". Nothing recorded while cancelled
+		// exists to keep, because `recordKill` listens only to accepted rows.
+		const evidence: RequestEvidence[] =
+			existing && !cargo ? [...existing.evidence] : [];
 		const stages = stagesFor(offer);
 		const request: AcceptedRequest = {
 			offerId: id,
@@ -329,22 +386,26 @@ export function requestAction(
 			outcomeReason: null,
 		};
 		const entrustedByLotId = { ...state.entrustedByLotId };
-		if (offer.operand.entrusted) {
+		if (cargo?.entrusted) {
 			const lotId = lotIdFor(id, ordinal);
 			entrustedByLotId[lotId] = {
 				lotId,
 				offerId: id,
 				returnTo: offer.requester,
-				goodName: offer.operand.goodName,
-				aboardT: offer.operand.tonnes,
+				goodName: cargo.goodName,
+				aboardT: cargo.tonnes,
 				issuedOrdinal: ordinal,
 			};
 		}
 		return done(
 			{ ...state, byId: { ...state.byId, [id]: request }, entrustedByLotId },
-			offer.operand.entrusted
-				? `Accepted. ${offer.operand.tonnes} t ${offer.operand.goodName} loaded, and they stay the requester's.`
-				: "Accepted. Source the goods and return with them aboard.",
+			!cargo
+				? request.status === "ready-to-report"
+					? "Reaccepted. The kill already stands; report to settle."
+					: "Accepted. The bounty is paid for a kill made from now on."
+				: cargo.entrusted
+					? `Accepted. ${cargo.tonnes} t ${cargo.goodName} loaded, and they stay the requester's.`
+					: "Accepted. Source the goods and return with them aboard.",
 		);
 	}
 
@@ -393,13 +454,15 @@ export function requestAction(
 				trackedRequestId:
 					state.trackedRequestId === id ? null : state.trackedRequestId,
 			},
-			terms.operand.entrusted
+			cargoOf(terms)?.entrusted
 				? "Cancelled. The consignment is still the requester's — return it to them."
 				: "Cancelled without fee. Unfinished work may be reaccepted at the requester.",
 		);
 	}
 
 	if (action === "deliver") {
+		const cargo = cargoOf(terms);
+		if (!cargo) return refuse("This job has nothing to deliver.");
 		if (request.status !== "accepted")
 			return refuse("This job's objective is already satisfied.");
 		if (!sameStation(ctx.docked, terms.reportAt))
@@ -408,7 +471,7 @@ export function requestAction(
 		// three fields it replaced, and spelling the path at every use put
 		// every sentence in this branch over the line width for no reader's
 		// benefit.
-		const { goodName, tonnes, entrusted } = terms.operand;
+		const { goodName, tonnes, entrusted } = cargo;
 		const entrustedByLotId = { ...state.entrustedByLotId };
 		let cargoDelta: Record<string, number> = {};
 		if (entrusted) {
@@ -449,8 +512,13 @@ export function requestAction(
 			return refuse("Finish the objective before reporting.");
 		if (!sameStation(ctx.docked, terms.reportAt))
 			return refuse(`Dock at ${terms.reportName} to report.`);
+		// #495 D2: the fork. A pilot who turned Wanted after the kill waits for
+		// the heat to decay; the earned evidence waits with them.
+		if (terms.family === "bounty" && ctx.standing !== "clean")
+			return refuse(BOUNTY_NEEDS_CLEAN);
 		request.status = "completed";
 		request.settledAt = ctx.now;
+		const cargo = cargoOf(terms);
 		return done(
 			{
 				...state,
@@ -463,16 +531,18 @@ export function requestAction(
 			// identical from the cockpit. The remainder is read off `ctx.cargo`,
 			// which is the pilot's own hold at the moment of the report — the
 			// delivery's delta has already been applied by then.
-			settlementMessage({
-				// Named rather than spread from the operand. A spread would carry
-				// `kind` in too, and the leak this whole change pins at the save
-				// boundary is the same mistake one call deeper.
-				tonnes: terms.operand.tonnes,
-				goodName: terms.operand.goodName,
-				entrusted: terms.operand.entrusted,
-				rewardCr: terms.rewardCr,
-				remainingT: ctx.cargo[terms.operand.goodName] ?? 0,
-			}),
+			cargo
+				? settlementMessage({
+						// Named rather than spread from the operand. A spread would
+						// carry `kind` in too, and the leak this whole change pins
+						// at the save boundary is the same mistake one call deeper.
+						tonnes: cargo.tonnes,
+						goodName: cargo.goodName,
+						entrusted: cargo.entrusted,
+						rewardCr: terms.rewardCr,
+						remainingT: ctx.cargo[cargo.goodName] ?? 0,
+					})
+				: `Reported · ${terms.operand.kind === "target" ? terms.operand.targetName : "target"} destroyed, ${terms.rewardCr} Cr paid.`,
 			{
 				rewardCr: terms.rewardCr,
 				// §4's mark lands exactly here, with the settlement, so a repeated
@@ -483,6 +553,58 @@ export function requestAction(
 	}
 
 	return refuse("Unknown request action.");
+}
+
+/**
+ * A carrier the player destroyed, recorded as evidence on every accepted
+ * Bounty that names it (#508 D1).
+ *
+ * **Recorded when it happens, not read at report.** The kill is already in the
+ * world as the target's `destroy` with the player's provenance, and that is the
+ * mark (`ordinary-requests.md` §4) — but a causal episode is replaced by the
+ * next one, and the request contract (§7) says payment may not depend on a
+ * world episode summary surviving. §3: every accepted request listens for
+ * qualifying progress whether or not it is tracked, and one act may satisfy
+ * several distinct requests, so one kill readies each station's Bounty.
+ *
+ * H8 (`civilian-combat.md`): a kill before acceptance pays nothing, which is
+ * why only an **accepted** row at or after its last acceptance listens. The
+ * caller calls this only for a kill with the player's provenance; the journal
+ * does not see world state.
+ *
+ * Returns the same object when nothing listened, so a caller can tell a kill
+ * that moved no request from one that did without diffing.
+ */
+export function recordKill(
+	state: RequestsState,
+	target: CarrierKey,
+	occurredAt: number,
+): RequestsState {
+	let byId: Record<string, AcceptedRequest> | null = null;
+	for (const request of Object.values(state.byId)) {
+		const { operand } = request.terms;
+		if (
+			request.status !== "accepted" ||
+			operand.kind !== "target" ||
+			operand.carrierKey !== target ||
+			occurredAt < request.lastAcceptedAt
+		)
+			continue;
+		const evidence: RequestEvidence[] = [
+			...request.evidence,
+			{ stageId: request.stageId, occurredAt, source: "kill" },
+		];
+		const stages = stagesFor(request.terms);
+		byId ??= { ...state.byId };
+		byId[request.offerId] = {
+			...request,
+			evidence,
+			stageId: stages[Math.min(evidence.length, stages.length - 1)],
+			status:
+				evidence.length === stages.length ? "ready-to-report" : "accepted",
+		};
+	}
+	return byId ? { ...state, byId } : state;
 }
 
 /** Reject an inconsistent journal; never silently discard settlement. */
@@ -528,9 +650,15 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 	 * record pairing a cargo operand with a family that does not carry one is
 	 * a record no binder wrote.
 	 */
-	const operandOk = (family: unknown, raw: unknown): boolean => {
-		const operand = raw as Partial<JobOperand> | null;
-		if (!operand || typeof operand !== "object") return false;
+	const operandOk = (
+		family: unknown,
+		raw: unknown,
+		requester: RequestStation,
+	): boolean => {
+		if (!raw || typeof raw !== "object") return false;
+		// Read as an open record: the tag is not trusted until it is checked,
+		// so no member of the union describes this object yet.
+		const operand = raw as Record<string, unknown>;
 		if (!knownFamily(family)) return false;
 		const kind = operand.kind as JobOperand["kind"];
 		if (FAMILY_OPERAND_KIND[family] !== kind) return false;
@@ -542,6 +670,18 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 					(operand.tonnes as number) > 0 &&
 					typeof operand.entrusted === "boolean"
 				);
+			case "target": {
+				const key = operand.carrierKey;
+				// #495 D4: a Bounty binder reads only its own system, so a target
+				// in another one is a record no binder wrote.
+				const system = (k: string) => k.slice(0, k.indexOf(":"));
+				return (
+					typeof key === "string" &&
+					isCarrierKey(key) &&
+					system(key) === system(requester.carrierKey) &&
+					text(operand.targetName)
+				);
+			}
 			default: {
 				const unreachable: never = kind;
 				void unreachable;
@@ -595,7 +735,7 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			!text(o.reportSystemName) ||
 			!Number.isFinite(o.distanceLy) ||
 			o.distanceLy < 0 ||
-			!operandOk(o.family, o.operand) ||
+			!operandOk(o.family, o.operand, requester) ||
 			!Number.isFinite(o.rewardCr) ||
 			o.rewardCr < 0 ||
 			!text(o.title) ||
@@ -668,7 +808,9 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			const e = obj(r.evidence[i]);
 			if (
 				e.stageId !== stages[i] ||
-				e.source !== "delivery" ||
+				// The source the family's stage takes, and only that one: a
+				// courier settled by a kill is a record no action writes.
+				e.source !== EVIDENCE_SOURCE[terms.family] ||
 				!time(e.occurredAt) ||
 				e.occurredAt < previous
 			)
@@ -703,7 +845,7 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 			evidence: r.evidence.map((e: any) => ({
 				stageId: e.stageId,
 				occurredAt: e.occurredAt,
-				source: "delivery" as const,
+				source: e.source as EvidenceSource,
 			})),
 			settledAt: r.settledAt,
 			outcomeReason: r.outcomeReason ?? null,
@@ -715,15 +857,16 @@ export function parseRequests(raw: unknown, now: number): RequestsState {
 		if (typeof l.offerId !== "string" || !Object.hasOwn(out.byId, l.offerId))
 			bad();
 		const request = out.byId[l.offerId];
+		const cargo = request ? cargoOf(request.terms) : null;
 		if (
 			l.lotId !== lotId ||
 			!request ||
-			!request.terms.operand.entrusted ||
+			!cargo?.entrusted ||
 			!text(l.goodName) ||
-			l.goodName !== request.terms.operand.goodName ||
+			l.goodName !== cargo.goodName ||
 			!Number.isInteger(l.aboardT) ||
 			l.aboardT <= 0 ||
-			l.aboardT > request.terms.operand.tonnes ||
+			l.aboardT > cargo.tonnes ||
 			!Number.isInteger(l.issuedOrdinal) ||
 			l.issuedOrdinal < 1 ||
 			l.issuedOrdinal > request.acceptanceOrdinal ||
