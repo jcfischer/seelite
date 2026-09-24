@@ -291,16 +291,6 @@ export function relayDestruction(
 }
 
 /**
- * The system's relay as a Bounty target, or null when there is nothing to post
- * against (#495 D4, #508).
- *
- * **The roll first, then the condition.** An inactive relay has no world row,
- * and an absent row reads `operational` (`effectiveCarrier`, §1), so a check
- * on the condition alone would post a bounty on a relay that is not there.
- * While destroyed or repairing it is null too, which is the Bounty's whole
- * throttle (`ordinary-requests.md` D9): the repair window.
- */
-/**
  * The relay as something a job may name. Declared here rather than imported
  * from `jobs.ts`, so a carrier module does not depend on the job board: the
  * board's `BountyTarget` is the same shape and accepts this structurally.
@@ -310,6 +300,17 @@ export interface RelayTarget {
 	name: string;
 	watchedStationName: string;
 }
+
+/**
+ * The system's relay as a Bounty target, or null when there is nothing to post
+ * against (#495 D4, #508).
+ *
+ * **The roll first, then the condition.** An inactive relay has no world row,
+ * and an absent row reads `operational` (`effectiveCarrier`, §1), so a check
+ * on the condition alone would post a bounty on a relay that is not there.
+ * While destroyed or repairing it is null too, which is the Bounty's whole
+ * throttle (`ordinary-requests.md` D9): the repair window.
+ */
 
 export function bountyTargetOf(
 	record: { index: number; seed: number; government: number },

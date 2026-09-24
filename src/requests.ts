@@ -578,12 +578,18 @@ export function requestAction(
  * caller calls this only for a kill with the player's provenance; the journal
  * does not see world state.
  *
+ * **The galaxy is part of the target** (sage round 2). A `CarrierKey` is a
+ * system index and a local id with no galaxy in it, so matching the key alone
+ * readied a Bounty accepted in one galaxy for a kill at the same system index
+ * in another. The reference carries the galaxy the way a station's does, and
+ * a caller cannot pass the key without it.
+ *
  * Returns the same object when nothing listened, so a caller can tell a kill
  * that moved no request from one that did without diffing.
  */
 export function recordKill(
 	state: RequestsState,
-	target: CarrierKey,
+	target: { galaxyIndex: number; carrierKey: CarrierKey },
 	occurredAt: number,
 ): RequestsState {
 	let byId: Record<string, AcceptedRequest> | null = null;
@@ -592,7 +598,10 @@ export function recordKill(
 		if (
 			request.status !== "accepted" ||
 			operand.kind !== "target" ||
-			operand.carrierKey !== target ||
+			operand.carrierKey !== target.carrierKey ||
+			// A Bounty's target is in its requester's own system (#495 D4), so
+			// the requester's galaxy is the target's.
+			request.terms.requester.galaxyIndex !== target.galaxyIndex ||
 			occurredAt < request.lastAcceptedAt
 		)
 			continue;

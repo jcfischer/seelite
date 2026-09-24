@@ -93,6 +93,8 @@ const bountyAt = (
 const OFFER = bountyAt(0) as JobOffer;
 const OFFERS = [OFFER];
 const KEY = relaySlot(HOME.record.index).key;
+/** The relay as a kill names it: the galaxy with the key (sage round 2). */
+const REF = { galaxyIndex: 0, carrierKey: KEY };
 
 const ctx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
 	now: 60,
@@ -262,7 +264,7 @@ describe("Clean only (#495 D2)", () => {
 	});
 
 	test("a pilot who turned Wanted after the kill is refused at report", () => {
-		const ready = recordKill(accepted(), KEY, 100);
+		const ready = recordKill(accepted(), REF, 100);
 		const result = act(ready, "report", { now: 120, standing: "wanted" });
 		expect(result.ok).toBe(false);
 		expect(result.message).toMatch(/Clean/);
@@ -282,7 +284,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 	});
 
 	test("the relay's kill moves the request to ready-to-report", () => {
-		const ready = recordKill(accepted(), KEY, 100);
+		const ready = recordKill(accepted(), REF, 100);
 		const request = ready.byId[OFFER.id];
 		expect(request.status).toBe("ready-to-report");
 		expect(request.evidence).toEqual([
@@ -293,14 +295,21 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 	test("another carrier's kill moves nothing", () => {
 		const state = accepted();
 		expect(
-			recordKill(state, carrierKey(HOME.record.index, "raider-00"), 100),
+			recordKill(
+				state,
+				{
+					galaxyIndex: 0,
+					carrierKey: carrierKey(HOME.record.index, "raider-00"),
+				},
+				100,
+			),
 		).toBe(state);
 	});
 
 	test("a kill made before the job was accepted pays nothing (H8)", () => {
 		// The kill lands first, then the pilot accepts: there was no accepted
 		// request to record it, and reporting has nothing to settle.
-		const before = recordKill(emptyRequests(), KEY, 30);
+		const before = recordKill(emptyRequests(), REF, 30);
 		const state = act(before, "accept", { now: 60 }).state;
 		expect(state.byId[OFFER.id].status).toBe("accepted");
 		expect(act(state, "report", { now: 90 }).ok).toBe(false);
@@ -310,7 +319,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 		// The row above reaches H8 through ordering: no request existed to
 		// hear the kill. This one reaches the guard itself.
 		const state = accepted();
-		expect(recordKill(state, KEY, 30)).toBe(state);
+		expect(recordKill(state, REF, 30)).toBe(state);
 	});
 
 	test("one kill readies every accepted Bounty naming it, one per station (§3)", () => {
@@ -326,7 +335,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 				...ctx(),
 				docked: offer.requester,
 			}).state;
-		const ready = recordKill(state, KEY, 100);
+		const ready = recordKill(state, REF, 100);
 		expect(both.map((o) => ready.byId[o.id]?.status)).toEqual([
 			"ready-to-report",
 			"ready-to-report",
@@ -344,9 +353,17 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 		expect(paid).toBe(2 * OFFER.rewardCr);
 	});
 
+	test("a kill at the same system index in another galaxy moves nothing", () => {
+		// Sage round 2: the key holds no galaxy, so the reference has to.
+		const state = accepted();
+		expect(recordKill(state, { galaxyIndex: 1, carrierKey: KEY }, 100)).toBe(
+			state,
+		);
+	});
+
 	test("a cancelled request does not listen", () => {
 		const cancelled = act(accepted(), "cancel", { now: 70 }).state;
-		expect(recordKill(cancelled, KEY, 100)).toBe(cancelled);
+		expect(recordKill(cancelled, REF, 100)).toBe(cancelled);
 	});
 
 	test("a cancelled Bounty is reaccepted off its pinned terms, with the relay down", () => {
@@ -355,7 +372,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 		// journal row carries its own terms (`requestAction` resolves
 		// `existing?.terms` first), and the board draws the row from the
 		// journal. So this passes an **empty** board.
-		const ready = recordKill(accepted(), KEY, 100);
+		const ready = recordKill(accepted(), REF, 100);
 		const cancelled = act(ready, "cancel", { now: 110 }).state;
 		const back = requestAction(
 			cancelled,
@@ -369,7 +386,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 	});
 
 	test("evidence earned while accepted survives a cancel and reaccept (§3)", () => {
-		const ready = recordKill(accepted(), KEY, 100);
+		const ready = recordKill(accepted(), REF, 100);
 		const cancelled = act(ready, "cancel", { now: 110 }).state;
 		const back = act(cancelled, "accept", { now: 120 });
 		expect(back.ok).toBe(true);
@@ -377,7 +394,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 	});
 
 	test("a Clean report at the posting station pays once, and writes no mark", () => {
-		const ready = recordKill(accepted(), KEY, 100);
+		const ready = recordKill(accepted(), REF, 100);
 		const paid = act(ready, "report", { now: 120 });
 		expect(paid.ok).toBe(true);
 		expect(paid.rewardCr).toBe(400);
@@ -390,7 +407,7 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 	});
 
 	test("report is at the posting station and nowhere else", () => {
-		const ready = recordKill(accepted(), KEY, 100);
+		const ready = recordKill(accepted(), REF, 100);
 		const elsewhere = act(ready, "report", {
 			now: 120,
 			docked: {
@@ -402,20 +419,20 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 	});
 
 	test("a settled bounty is counted for the next episode", () => {
-		const paid = act(recordKill(accepted(), KEY, 100), "report", { now: 120 });
+		const paid = act(recordKill(accepted(), REF, 100), "report", { now: 120 });
 		expect(settledAt(paid.state, OFFER.requester).bounty).toBe(1);
 	});
 });
 
 describe("the journal (#508 D4: no save version bump)", () => {
 	const settled = () =>
-		act(recordKill(accepted(), KEY, 100), "report", { now: 120 }).state;
+		act(recordKill(accepted(), REF, 100), "report", { now: 120 }).state;
 
 	/** Cancelled while ready, then reaccepted: the kill predates the new
 	 *  acceptance, which no other path writes (sage round 1). */
 	const reaccepted = () =>
 		act(
-			act(recordKill(accepted(), KEY, 100), "cancel", { now: 110 }).state,
+			act(recordKill(accepted(), REF, 100), "cancel", { now: 110 }).state,
 			"accept",
 			{
 				now: 120,
@@ -425,7 +442,7 @@ describe("the journal (#508 D4: no save version bump)", () => {
 	test("a bounty journal round-trips at every status", () => {
 		for (const state of [
 			accepted(),
-			recordKill(accepted(), KEY, 100),
+			recordKill(accepted(), REF, 100),
 			settled(),
 			reaccepted(),
 		]) {
@@ -435,7 +452,7 @@ describe("the journal (#508 D4: no save version bump)", () => {
 	});
 
 	test("a bounty's evidence must come from a kill", () => {
-		const raw = JSON.parse(JSON.stringify(recordKill(accepted(), KEY, 100)));
+		const raw = JSON.parse(JSON.stringify(recordKill(accepted(), REF, 100)));
 		raw.byId[OFFER.id].evidence[0].source = "delivery";
 		expect(() => parseRequests(raw, 200)).toThrow();
 	});
@@ -471,7 +488,7 @@ describe("the whole save (#508 D4)", () => {
 		const world = newWorld(WORLD);
 		world.gameTime = 200;
 		const commander = newCommanderRecord("courier");
-		commander.requests = recordKill(accepted(), KEY, 100);
+		commander.requests = recordKill(accepted(), REF, 100);
 		const saved = serializeSave({ world, commander });
 		expect((saved as { saveSchemaVersion: number }).saveSchemaVersion).toBe(5);
 		expect(parseSave(saved)).toEqual({ world, commander });
@@ -527,7 +544,7 @@ describe("the board (#489's locked row)", () => {
 
 	test("a ready bounty draws Report at the posting station", () => {
 		const html = requestsBody(
-			view([LONG_RANGE_SCANNER], recordKill(accepted(), KEY, 100)),
+			view([LONG_RANGE_SCANNER], recordKill(accepted(), REF, 100)),
 		);
 		expect(html).toContain('data-live-request-action="report"');
 	});

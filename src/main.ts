@@ -13316,7 +13316,11 @@ class Game {
 			event.kind === "destroy" &&
 			event.cause.actorId === PLAYER_KILL.actorId
 		) {
-			const requests = recordKill(this.requests, key, event.occurredAt);
+			const requests = recordKill(
+				this.requests,
+				{ galaxyIndex: this.world.system.record.galaxy, carrierKey: key },
+				event.occurredAt,
+			);
 			if (requests !== this.requests) {
 				this.requests = requests;
 				this.requestRevision += 1;
