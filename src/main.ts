@@ -9127,13 +9127,21 @@ class Game {
 
 	/**
 	 * The frame the **player's** assist holds, and what the readout names it:
-	 * the selected relay's inside `RELAY_FRAME_KM` (#508 F2), and
-	 * `localFrame`'s otherwise.
+	 * the relay's inside `RELAY_FRAME_KM` of it while the relay or its tender
+	 * is selected (#508 F2, and #515 for the tender, which parks at the wreck
+	 * and rides its frame), and `localFrame`'s otherwise.
 	 *
-	 * **Only the player's.** `localFrame` also feeds a raider's assist and the
-	 * canisters a kill drops, and those pair it with `frameBodyId` — a body id.
-	 * The relay is not a body, so handing them its velocity would split the
-	 * pair. #511's defender, fought beside the relay, inherits that question.
+	 * **The player's and the raider's (#515).** `DuelPilot.frameVel` is one
+	 * frame for the fight, so both caps are one speed — and a defender fought
+	 * beside the relay in the station's frame while the pilot held the relay's
+	 * measured 0.59 km/s apart at arrival and 2.39 km/s against the relay within
+	 * five seconds. The canisters a kill drops still take `localFrame`: they
+	 * pair it with `frameBodyId`, a body id, and the relay is not a body.
+	 *
+	 * The tender is selectable without the Long-Range Scanner (`stepTender`),
+	 * so a tender selected beside the wreck holds this frame for an unfitted
+	 * pilot. That pilot has already found the wreck by then; what it gives them
+	 * is a fight they can stay in, not a reading of the relay.
 	 */
 	private assistFrame(): { vel: Vec3; label: string } {
 		const view = this.relayView;
@@ -9141,7 +9149,7 @@ class Game {
 			const { pos, vel } = this.relayNow(view);
 			if (
 				relayFrameHolds(
-					this.relaySelected(),
+					this.relaySelected() || this.tenderSelected(),
 					length(sub(pos, this.world.ship.pos)),
 				)
 			)
@@ -10670,8 +10678,9 @@ class Game {
 				// The gimballed beam, not the boresight (#324).
 				aimNose: this.beamAim(),
 				hull: this.condition.hull,
-				// The raider's assist holds speed in the player's frame (#324).
-				frameVel: this.localFrame(),
+				// The raider's assist holds speed in the player's frame (#324) —
+				// the frame the player's own assist holds, relay's included (#515).
+				frameVel: this.assistFrame().vel,
 			},
 			shot,
 		});
