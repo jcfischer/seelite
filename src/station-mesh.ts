@@ -5046,9 +5046,10 @@ function buildOutpostCluster(
 const SALVAGE_SALT = 0x5a1e;
 
 /**
- * Other ships' paint. Every piece of salvage came off a different hull, and a
- * junk-built form painted in one colour reads as a designed one. The core
- * keeps the caller's colour (§7's cue); everything welded to it is from here.
+ * Other ships' paint, drawn per piece with repeats — six colours over the bow,
+ * the sections and the plates, up to a dozen pieces — because a junk-built form
+ * painted in one colour reads as a designed one. The core keeps the caller's
+ * colour (§7's cue); the pods have their own freight colours below.
  */
 const SALVAGE_PAINTS = [
 	0x8a8f93, 0x7b6a55, 0x5f6e76, 0x8c8768, 0x9a9da0, 0x6d5f52,

@@ -669,12 +669,17 @@ hull sections, cargo pods and a ship's forward half bolted around the pad;
 improvised, asymmetric, lit by work lamps.* It is **grown rather than solved**:
 a salvaged freighter section stands on the axis as the core, and every later
 piece is welded onto a socket on something already built, leaning the pile to
-one side the assembly seed chooses. Each piece is kept only if its box stays
-inside the pool's 0.42 km and out of the pad's corridor. Every piece but the
-core is in another hull's paint, and the lamps are warm work lamps, not the
-pad's cool floods and never red (`hud-and-scanner.md` §4). It was ranked
-beside A–D at three plans under five finishes and four framings, and taken
-(2026-09-24).
+one side the assembly seed chooses. Each welded piece — the bow, a section, a
+pod — is kept only if its box stays inside 0.40 km and behind the deck or well
+clear of the corridor; the plates, lamps and girders on them are not checked one
+by one, and what holds the whole form is the corridor and reach rows over the
+seed spread. The bow, the sections and the plates are painted from a palette of
+other hulls' colours, drawn per piece, so a plan repeats some; the pods carry
+freight colours. The lamps are warm work lamps, not the pad's cool floods and
+never red (`hud-and-scanner.md` §4). It was ranked beside A–D at three plans
+under five finishes and four framings, and taken (2026-09-24). Its macro
+fixtures — a belt, two pipe runs and a tank rack on the core — were added after
+that sheet, because a selected form owes them under the industrial finishes.
 
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are
