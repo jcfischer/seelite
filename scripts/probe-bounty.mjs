@@ -363,7 +363,7 @@ await capture("08-reported-paid");
 check(
 	"Report at the posting station pays the pinned figure and names the kill",
 	creditsAfter - creditsBefore === offer.rewardCr &&
-		paid.includes(`${probe.RELAY_NAME} destroyed`),
+		paid.includes(`Bounty paid for the ${probe.RELAY_NAME}`),
 	`${creditsBefore} → ${creditsAfter} · "${paid}"`,
 );
 

@@ -154,14 +154,17 @@ export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "bounty",
 		rowId: "bounty-relay",
-		revision: 1,
-		title: "Bounty on a pirate relay",
+		// Revision 2: the principal read revision 1's words as machine-written.
+		// An accepted offer keeps the words it was taken under.
+		revision: 2,
+		title: "Pirate relay bounty",
 		purpose:
-			"A pirate relay tells the raiders here which ships use this approach. The station pays to have it silenced.",
+			"Someone has put a pirate relay on this approach. It reports passing ships to the raiders. Security wants it gone.",
 		danger:
-			"The relay does not fire back. You have to find it yourself, and the raiders it guides fly the same approach.",
-		action: "Find the relay, destroy it, and report here.",
-		consequence: "The raiders lose the approach until their relay is replaced.",
+			"The relay has no weapons, but raiders use this approach, so expect company while you look for it.",
+		action: "Destroy the relay, then come back here to collect.",
+		consequence:
+			"Raiders stop getting reports on this approach until they replace the relay.",
 		tonnes: 0,
 		// #508 D3: the principal's figure. The kill is undefended until #511
 		// gives the relay a defender, which owes this figure a second look.

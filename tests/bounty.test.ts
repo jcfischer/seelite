@@ -541,7 +541,7 @@ describe("the board (#489's locked row)", () => {
 		// The whole sentence: the region is a label, and spliced into prose it
 		// read "in The approach to" on the first capture the principal saw.
 		expect(nextAction(request)).toBe(
-			`Find and destroy the ${RELAY_NAME} · ${OFFER.region} · then report to ${OFFER.reportName}`,
+			`Destroy the ${RELAY_NAME}. Search area: ${OFFER.region}. Collect at ${OFFER.reportName}.`,
 		);
 	});
 

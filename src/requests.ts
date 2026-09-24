@@ -226,7 +226,7 @@ export function nextAction(r: AcceptedRequest): string {
 	if (operand.kind === "target")
 		// The region is a label ("The approach to X, Y"), so it stands as its own
 		// clause; spliced into the sentence it read "in The approach to" (#508).
-		return `Find and destroy the ${operand.targetName} · ${r.terms.region} · then report to ${r.terms.reportName}`;
+		return `Destroy the ${operand.targetName}. Search area: ${r.terms.region}. Collect at ${r.terms.reportName}.`;
 	// **Carried, or sourced — and the first says the goods are already
 	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
 	// as the same errand at a glance, and a pilot who read the first as the
@@ -265,7 +265,7 @@ const targetNameOf = (terms: RequestOffer): string => {
 
 /** #495 D2's refusal, one sentence for both of the actions that owe it. */
 const BOUNTY_NEEDS_CLEAN =
-	"Bounties are paid to Clean pilots only. Wait until your standing is Clean again.";
+	"Security pays Clean pilots only. Come back when your standing is Clean.";
 
 export interface RequestResult {
 	state: RequestsState;
@@ -410,7 +410,7 @@ export function requestAction(
 			!cargo
 				? request.status === "ready-to-report"
 					? "Reaccepted. The kill already stands; report to settle."
-					: "Accepted. The bounty is paid for a kill made from now on."
+					: "Accepted. Only a kill made after this counts."
 				: cargo.entrusted
 					? `Accepted. ${cargo.tonnes} t ${cargo.goodName} loaded, and they stay the requester's.`
 					: "Accepted. Source the goods and return with them aboard.",
@@ -550,7 +550,7 @@ export function requestAction(
 						rewardCr: terms.rewardCr,
 						remainingT: ctx.cargo[cargo.goodName] ?? 0,
 					})
-				: `Reported · ${targetNameOf(terms)} destroyed, ${terms.rewardCr} Cr paid.`,
+				: `Bounty paid for the ${targetNameOf(terms)}: ${terms.rewardCr} Cr.`,
 			{
 				rewardCr: terms.rewardCr,
 				// §4's mark lands exactly here, with the settlement, so a repeated
