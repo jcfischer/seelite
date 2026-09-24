@@ -224,7 +224,9 @@ export function nextAction(r: AcceptedRequest): string {
 	if (!isAcceptedRequest(r)) return r.outcomeReason ?? r.status;
 	const { operand } = r.terms;
 	if (operand.kind === "target")
-		return `Find and destroy the ${operand.targetName} in ${r.terms.region}, then report to ${r.terms.reportName}`;
+		// The region is a label ("The approach to X, Y"), so it stands as its own
+		// clause; spliced into the sentence it read "in The approach to" (#508).
+		return `Find and destroy the ${operand.targetName} · ${r.terms.region} · then report to ${r.terms.reportName}`;
 	// **Carried, or sourced — and the first says the goods are already
 	// aboard** (#446). "Carry 8 t Food to ARLAON" and "Source 8 t Food" read
 	// as the same errand at a glance, and a pilot who read the first as the

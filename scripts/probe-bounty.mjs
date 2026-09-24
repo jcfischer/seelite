@@ -19,7 +19,17 @@
  * Seed 56 starts in ESLAIN, whose relay rolled active (`probe-relay.mjs` says
  * why that seed, and asserts it). This probe asserts it too rather than
  * assuming it.
+ *
+ * **It is fast because it is not flown in real time**, and that is worth
+ * knowing before reading its timing as a claim: the sim is stepped frame by
+ * frame, the docking computer's traversal is skipped, and the ship is placed a
+ * kilometre off the relay rather than cruised there. What it checks is the
+ * wiring between the board, the journal and the kill — not how long any of it
+ * takes a pilot. `BOUNTY_EVIDENCE=<dir>` (or `HEADED=1`, into
+ * `/tmp/seelite-508-evidence`) writes a 1440x900 capture at each step, for
+ * the principal to look at.
  */
+import { mkdirSync } from "node:fs";
 import {
 	bootedGame,
 	guardedOrigin,
@@ -33,12 +43,19 @@ import { installViewFraming } from "./lib/view-placement.mjs";
 const ORIGIN =
 	process.env.PROBE_ORIGIN ?? process.argv[2] ?? "http://localhost:5173";
 const RELAY_SEED = 56;
+const out =
+	process.env.BOUNTY_EVIDENCE ??
+	(process.env.HEADED === "1" ? "/tmp/seelite-508-evidence" : null);
+if (out) mkdirSync(out, { recursive: true });
 const origin = await guardedOrigin(ORIGIN);
 const browser = await launchChromium({ headless: process.env.HEADED !== "1" });
 const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 watch(page);
+const capture = async (name) => {
+	if (out) await page.screenshot({ path: `${out}/${name}.png` });
+};
 await installViewPlacement(page);
 await installViewFraming(page);
 await page.goto(gameUrl(origin, { seed: RELAY_SEED }), { waitUntil: "load" });
@@ -222,6 +239,7 @@ check(
 		(await actionButton("accept", offer.id).count()) === 0,
 	details.slice(0, 160),
 );
+await capture("01-unfitted-locked");
 
 // ---------------------------------------------------------------------------
 // Fitted but Wanted: Accept is drawn, and refused with its reason.
@@ -237,6 +255,7 @@ const refused = await page.evaluate(
 	offer.id,
 );
 const refusal = (await message()) ?? "";
+await capture("02-wanted-refused");
 check(
 	"a Wanted pilot's Accept is refused with a readable reason, and nothing is taken",
 	wanted === "wanted" && refused === null && /Clean/.test(refusal),
@@ -253,6 +272,7 @@ const taken = await page.evaluate(
 	(id) => window.__bountyProbe.request(id),
 	offer.id,
 );
+await capture("03-clean-accepted");
 check(
 	"a Clean, fitted pilot accepts the Bounty",
 	taken?.status === "accepted",
@@ -263,7 +283,12 @@ check(
 // The kill readies it.
 // ---------------------------------------------------------------------------
 const before = await page.evaluate(() => window.__bountyProbe.besideRelay(1));
+await capture("04-relay-in-sights");
+// Part of the fight first, so a capture shows the relay under fire.
+await page.evaluate(() => window.__bountyProbe.shoot(40));
+await capture("05-relay-under-fire");
 const shot = await page.evaluate(() => window.__bountyProbe.shoot(4000));
+await capture("06-relay-destroyed");
 const ready = await page.evaluate(
 	(id) => window.__bountyProbe.request(id),
 	offer.id,
@@ -286,9 +311,11 @@ await page.evaluate((id) => window.__bountyProbe.dock(id), boot.station);
 await openRequests();
 const creditsBefore = await page.evaluate(() => window.__bountyProbe.credits());
 await openRow(offer.id);
+await capture("07-ready-to-report");
 await actionButton("report", offer.id).click();
 const creditsAfter = await page.evaluate(() => window.__bountyProbe.credits());
 const paid = (await message()) ?? "";
+await capture("08-reported-paid");
 check(
 	"Report at the posting station pays the pinned figure and names the kill",
 	creditsAfter - creditsBefore === offer.rewardCr &&
@@ -315,6 +342,7 @@ check(
 );
 
 const after = await page.evaluate(() => window.__bountyProbe.bounty());
+await capture("09-board-after");
 check(
 	"with the relay down, the board posts no Bounty",
 	after === null,

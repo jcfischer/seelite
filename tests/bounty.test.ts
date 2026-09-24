@@ -538,8 +538,11 @@ describe("the board (#489's locked row)", () => {
 		const html = requestsBody(view([LONG_RANGE_SCANNER], accepted()));
 		expect(html).not.toContain('data-live-request-action="deliver"');
 		const request = accepted().byId[OFFER.id];
-		expect(nextAction(request)).toContain(RELAY_NAME);
-		expect(nextAction(request)).toContain(OFFER.reportName);
+		// The whole sentence: the region is a label, and spliced into prose it
+		// read "in The approach to" on the first capture the principal saw.
+		expect(nextAction(request)).toBe(
+			`Find and destroy the ${RELAY_NAME} · ${OFFER.region} · then report to ${OFFER.reportName}`,
+		);
 	});
 
 	test("a ready bounty draws Report at the posting station", () => {
