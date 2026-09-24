@@ -381,6 +381,14 @@ export const offerRequirements = (offer: {
 	family: JobFamily;
 }): readonly string[] => (offer.family === "bounty" ? BOUNTY_EQUIPMENT : []);
 
+/** What an offer requires that this equipment list lacks — the one rule the
+ *  locked row and the accept refusal both read, so they cannot drift. */
+export const missingRequirements = (
+	offer: { family: JobFamily },
+	equipment: readonly string[],
+): readonly string[] =>
+	offerRequirements(offer).filter((item) => !equipment.includes(item));
+
 /** A bound, offerable job: one row with every operand filled. */
 export interface JobOffer {
 	id: string;

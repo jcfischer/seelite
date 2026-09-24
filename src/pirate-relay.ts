@@ -38,6 +38,7 @@
  * Headless: imports the generator's orbit arithmetic and the world-state types
  * and nothing that renders.
  */
+import type { CarrierKey } from "./carrier-key";
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
@@ -54,7 +55,6 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type Vec3, add, length, scale, sub, v3 } from "./vec3";
-import type { BountyTarget } from "./jobs";
 import {
 	type GalaxyEnvelope,
 	type Provenance,
@@ -300,12 +300,23 @@ export function relayDestruction(
  * While destroyed or repairing it is null too, which is the Bounty's whole
  * throttle (`ordinary-requests.md` D9): the repair window.
  */
+/**
+ * The relay as something a job may name. Declared here rather than imported
+ * from `jobs.ts`, so a carrier module does not depend on the job board: the
+ * board's `BountyTarget` is the same shape and accepts this structurally.
+ */
+export interface RelayTarget {
+	carrierKey: CarrierKey;
+	name: string;
+	watchedStationName: string;
+}
+
 export function bountyTargetOf(
 	record: { index: number; seed: number; government: number },
 	contents: SystemContents,
 	env: GalaxyEnvelope,
 	gameTime: number,
-): BountyTarget | null {
+): RelayTarget | null {
 	if (!relayActive(record)) return null;
 	const plan = relayPlan(contents, record.seed);
 	if (!plan) return null;

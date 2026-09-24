@@ -25,7 +25,7 @@ import {
 	FAMILY_OPERAND_KIND,
 	cargoOf,
 	jobMark,
-	offerRequirements,
+	missingRequirements,
 } from "./jobs";
 import type { Standing } from "./legal";
 
@@ -343,9 +343,7 @@ export function requestAction(
 				"Already accepted or terminal; this offer cannot pay again.",
 			);
 		// Request contract §2's eligibility, read before anything is issued.
-		const missing = offerRequirements(offer).filter(
-			(item) => !ctx.equipment.includes(item),
-		);
+		const missing = missingRequirements(offer, ctx.equipment);
 		if (missing.length > 0)
 			return refuse(`Needs a ${missing.join(" and a ")} fitted to accept.`);
 		if (offer.family === "bounty" && ctx.standing !== "clean")

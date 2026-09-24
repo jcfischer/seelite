@@ -8,7 +8,7 @@
  */
 import { escapeHtml as esc } from "./escape-html";
 import { aboardForOffer, type HoldSummary } from "./hold";
-import { cargoOf, offerRequirements } from "./jobs";
+import { cargoOf, missingRequirements, offerRequirements } from "./jobs";
 import {
 	isAcceptedRequest,
 	nextAction,
@@ -113,17 +113,22 @@ export interface RequestsView {
 export const missingEquipment = (
 	view: Pick<RequestsView, "equipment">,
 	offer: RequestOffer,
-): readonly string[] =>
-	offerRequirements(offer).filter((item) => !view.equipment.includes(item));
+): readonly string[] => missingRequirements(offer, view.equipment);
 
 /** The one line a board row says about what the job is about. */
 const operandLine = (o: RequestOffer): string => {
-	const cargo = cargoOf(o);
-	return cargo
-		? `${cargo.tonnes} t ${cargo.goodName}`
-		: o.operand.kind === "target"
-			? `bounty: ${o.operand.targetName}`
-			: "";
+	const { operand } = o;
+	switch (operand.kind) {
+		case "cargo":
+			return `${operand.tonnes} t ${operand.goodName}`;
+		case "target":
+			return `bounty: ${operand.targetName}`;
+		default: {
+			// A third kind stops this compiling rather than drawing a blank.
+			const unreachable: never = operand;
+			return unreachable;
+		}
+	}
 };
 const button = (
 	action: string,

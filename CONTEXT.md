@@ -190,7 +190,12 @@ The player's per-galaxy offence score: an offence adds to it, it decays lazily
 on a 30-minute half-life, and it reads as Clean, Wanted or Fugitive at its
 thresholds. Saved as `LegalStatus`; the reading is derived. `combat-model.md`
 §4 owns the semantics, `civilian-combat.md` H4 the figures.
-_Avoid_: Bounty, notoriety, wanted level
+_Avoid_: notoriety, wanted level
+
+> **"Bounty" left this line in #508.** It was listed as a word for heat, and it
+> is a job family now — **Bounty** below — so an _Avoid_ entry here banned the
+> canonical name of another term. The rule it carried stands: heat is not a
+> bounty, and nothing pays for heat itself.
 
 **Pirate relay**:
 The first infrastructure **Carrier** (#43, production since #351): one

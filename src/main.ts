@@ -12931,15 +12931,21 @@ class Game {
 			// the clock: a repair completing while the pilot is docked posts a
 			// Bounty mid-visit. That is procurement's argument rather than the
 			// reroll §1 forbids — the offer's terms do not move, the world fact
-			// that posts it does.
-			const bountyTarget = bountyTargetOf(
-				this.world.system.record,
-				this.world.system.contents,
-				context.envelope,
-				this.world.gameTime,
-			);
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${settled.bounty}:${bountyTarget?.carrierKey ?? "-"}:${this.stationConsoleRevision}`;
+			// that posts it does. The key reads it the cheap way — the plan
+			// cached per system and the slot's condition — and the target is
+			// derived only on a miss; `bountyTargetOf` asks the same two
+			// questions in the same order.
+			const relayKey = relaySlot(this.world.system.record.index).key;
+			const relayLive =
+				this.currentRelayPlan() !== null && this.slotOperational(relayKey);
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${settled.bounty}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
+				const bountyTarget = bountyTargetOf(
+					this.world.system.record,
+					this.world.system.contents,
+					context.envelope,
+					this.world.gameTime,
+				);
 				// **Keyed on the system, not the station.** Two stations of one
 				// system differ only by which poster is excluded, and that is a
 				// filter rather than a regeneration — keying on the station made

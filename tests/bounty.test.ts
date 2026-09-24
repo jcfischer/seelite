@@ -349,6 +349,25 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 		expect(recordKill(cancelled, KEY, 100)).toBe(cancelled);
 	});
 
+	test("a cancelled Bounty is reaccepted off its pinned terms, with the relay down", () => {
+		// Sage round 1 read reaccept as needing the offer on the live board,
+		// which posts nothing while the relay is destroyed. It does not: the
+		// journal row carries its own terms (`requestAction` resolves
+		// `existing?.terms` first), and the board draws the row from the
+		// journal. So this passes an **empty** board.
+		const ready = recordKill(accepted(), KEY, 100);
+		const cancelled = act(ready, "cancel", { now: 110 }).state;
+		const back = requestAction(
+			cancelled,
+			[],
+			"accept",
+			OFFER.id,
+			ctx({ now: 120 }),
+		);
+		expect(back.ok).toBe(true);
+		expect(back.state.byId[OFFER.id].status).toBe("ready-to-report");
+	});
+
 	test("evidence earned while accepted survives a cancel and reaccept (§3)", () => {
 		const ready = recordKill(accepted(), KEY, 100);
 		const cancelled = act(ready, "cancel", { now: 110 }).state;
@@ -392,11 +411,23 @@ describe("the journal (#508 D4: no save version bump)", () => {
 	const settled = () =>
 		act(recordKill(accepted(), KEY, 100), "report", { now: 120 }).state;
 
+	/** Cancelled while ready, then reaccepted: the kill predates the new
+	 *  acceptance, which no other path writes (sage round 1). */
+	const reaccepted = () =>
+		act(
+			act(recordKill(accepted(), KEY, 100), "cancel", { now: 110 }).state,
+			"accept",
+			{
+				now: 120,
+			},
+		).state;
+
 	test("a bounty journal round-trips at every status", () => {
 		for (const state of [
 			accepted(),
 			recordKill(accepted(), KEY, 100),
 			settled(),
+			reaccepted(),
 		]) {
 			const raw = JSON.parse(JSON.stringify(state));
 			expect(parseRequests(raw, 200)).toEqual(state);
