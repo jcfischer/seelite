@@ -5151,7 +5151,7 @@ function buildOutpostSalvage(
 	];
 	const sockets: Socket[] = [];
 	for (const face of coreFaces)
-		for (const z of [-0.12, -0.075, -0.03, 0.02, 0.07]) {
+		for (const z of [-0.12, -0.06, 0.0, 0.05, 0.1]) {
 			const tangent = V(-face.normal.y, face.normal.x, 0);
 			sockets.push({
 				at: face.normal
@@ -5259,14 +5259,14 @@ function buildOutpostSalvage(
 	for (let attempt = 0; attempt < 12; attempt++) {
 		const socket = take((s) => s.kind === "side" && leaning(s));
 		if (!socket) break;
-		const length = between(0.15, 0.19);
-		const w = between(0.03, 0.038);
+		const length = between(0.17, 0.21);
+		const w = between(0.045, 0.055);
 		const h = w * between(0.6, 0.75);
 		const tangent = new THREE.Vector3().crossVectors(Z, socket.normal);
 		const dir = socket.normal
 			.clone()
 			.addScaledVector(tangent, between(-0.5, 0.5))
-			.addScaledVector(Z, between(-0.45, 0.2))
+			.addScaledVector(Z, between(-0.2, 0.1))
 			.normalize();
 		const start = socket.at.clone().addScaledVector(dir, -SINK * 3);
 		const matrix = frame(
@@ -5332,8 +5332,8 @@ function buildOutpostSalvage(
 			chain ? s.kind === "end" : s.kind === "side" && leaning(s),
 		);
 		if (!socket) continue;
-		const length = between(0.06, 0.11);
-		const w = between(0.024, 0.04);
+		const length = between(0.08, 0.15);
+		const w = between(0.028, 0.045);
 		const h = w * between(0.75, 1.0);
 		const e = pick([2, 2.4, 4, 6] as const);
 		const tangent = new THREE.Vector3().crossVectors(Z, socket.normal);
@@ -5341,7 +5341,7 @@ function buildOutpostSalvage(
 		const dir = socket.normal
 			.clone()
 			.addScaledVector(tangent.normalize(), between(-0.45, 0.45))
-			.addScaledVector(Z, between(-0.4, 0.15))
+			.addScaledVector(Z, between(-0.3, 0.12))
 			.normalize();
 		const start = socket.at.clone().addScaledVector(dir, -SINK * 3);
 		const matrix = frame(start, dir, Z);
@@ -5399,6 +5399,32 @@ function buildOutpostSalvage(
 		pods++;
 	}
 
+	// **Patch plates**, welded over holes in other hulls' paint: the one cue
+	// that says *repaired by hand* at a range where a seam does not show. Two
+	// thirds sunk, so the islands row reads the weld and the face stands 1 m
+	// proud.
+	const plateCount = 5 + Math.floor(rand() * 4);
+	for (let i = 0; i < plateCount; i++) {
+		const socket = take((s) => s.kind === "side");
+		if (!socket) break;
+		const thick = 0.003;
+		const plate = new THREE.Mesh(
+			new THREE.BoxGeometry(
+				between(0.012, 0.028),
+				between(0.012, 0.028),
+				thick,
+			),
+			hullMaterial(pick(SALVAGE_PAINTS), "outpost"),
+		);
+		plate.position
+			.copy(socket.at)
+			.addScaledVector(socket.normal, thick * (0.5 - 2 / 3));
+		plate.quaternion.setFromUnitVectors(Z, socket.normal);
+		plate.rotateZ(between(-0.4, 0.4));
+		plate.name = `salvage-plate-${i}`;
+		group.add(plate);
+	}
+
 	// Girders from the pad's rim down into the pile: the deck is bolted onto
 	// the junk, not standing on the core alone.
 	for (let i = 0; i < 3; i++) {
@@ -5434,7 +5460,7 @@ function buildOutpostSalvage(
 		lamp.quaternion.setFromUnitVectors(Z, socket.normal);
 		lamp.name = "bay-flood";
 		detail(lamp, "reduced");
-		glowOnFitting(lamp, FITTING_KM.flood[0] * 1.5, WORK_LAMP_GLOW);
+		glowOnFitting(lamp, FITTING_KM.flood[0] * 3, WORK_LAMP_GLOW);
 		group.add(lamp);
 	}
 
