@@ -38,6 +38,8 @@ const requestCtx = (docked: JobOffer["requester"]) => ({
 	docked,
 	cargo: {} as Readonly<Record<string, number>>,
 	holdRoomT: 35,
+	standing: "clean" as const,
+	equipment: [] as readonly string[],
 });
 
 /** Accept, fly, deliver and report one courier run — a settled journal. */

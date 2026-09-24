@@ -221,7 +221,7 @@ it, and what it needs that does not exist.
 | --- | --- | --- | --- |
 | **Courier** | Which route, and whether its risk is worth the fee | A requester with goods to move; always available as D8's floor | Nothing — entrusted cargo is ratified by the request contract's D7 and §4 |
 | **Procurement** | Where to source, and how much of your own capital to risk | A station with a real stock deficit | Nothing |
-| **Bounty** | Whether to take a fight you could have flown past | An operational raider slot in the system | The scan (D10), owned by the identity node in §7 |
+| **Bounty** | Whether to take a fight you could have flown past | An operational target carrier in the system — the pirate relay first ([#495](https://github.com/jcfischer/seelite/issues/495) D3–D4) | Built for the relay in [#508](https://github.com/jcfischer/seelite/issues/508), gated on the Long-Range Scanner. A ship as a target needs the scan (D10) and a ruling #495 left open |
 | **Investigation** | How to read an instrument, and how long to keep looking | A lead whose subject has not been identified | Nothing — the relay prototype flew this loop |
 | **Salvage** | Whether a known wreck is worth the detour | A destroyed carrier row | **A wreck-interaction verb** (D7) |
 
@@ -334,6 +334,8 @@ Two child nodes carry what this spec deliberately does not decide:
 
 Implementation of the catalogue itself attaches beneath #356 once both land,
 because Bounty needs the scan and the repair mark needs the projection.
+(#508 shipped Bounty for the relay, which has no standing to scan; the scan
+is still what a ship target would need.)
 Courier, Procurement and Investigation do not, and can ship first.
 
 ## Scope

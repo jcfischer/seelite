@@ -398,8 +398,10 @@ import {
 	RELAY_INTEGRITY,
 	RELAY_NAME,
 	type RelaySignal,
+	bountyTargetOf,
 	relayDestruction,
 	relayDetection,
+	relayFrameHolds,
 	relayInSights,
 	relayLog,
 	relayActive,
@@ -436,6 +438,7 @@ import {
 	driftCanister,
 	dropCanisters,
 	dropManifestCanisters,
+	PLAYER_KILL,
 	raiderDestruction,
 	stepCanisters,
 } from "./raider-wreck";
@@ -626,6 +629,7 @@ import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
 	entrustedTonnesAboard,
+	recordKill,
 	requestAction,
 	settledAt,
 } from "./requests";
@@ -9105,7 +9109,36 @@ class Game {
 			nose: this.nose(),
 			throttle: this.throttle,
 			assist: this.assist,
-			frameVel: this.localFrame(),
+			frameVel: this.assistFrame().vel,
+		};
+	}
+
+	/**
+	 * The frame the **player's** assist holds, and what the readout names it:
+	 * the selected relay's inside `RELAY_FRAME_KM` (#508 F2), and
+	 * `localFrame`'s otherwise.
+	 *
+	 * **Only the player's.** `localFrame` also feeds a raider's assist and the
+	 * canisters a kill drops, and those pair it with `frameBodyId` — a body id.
+	 * The relay is not a body, so handing them its velocity would split the
+	 * pair. #511's defender, fought beside the relay, inherits that question.
+	 */
+	private assistFrame(): { vel: Vec3; label: string } {
+		const view = this.relayView;
+		if (view && this.proximityFrameBodyId === null) {
+			const { pos, vel } = this.relayNow(view);
+			if (
+				relayFrameHolds(
+					this.relaySelected(),
+					length(sub(pos, this.world.ship.pos)),
+				)
+			)
+				return { vel, label: "RELAY FRAME" };
+		}
+		const body = this.frameBody;
+		return {
+			vel: this.localFrame(),
+			label: body ? `${body.kind.toUpperCase()} FRAME` : "STAR FRAME",
 		};
 	}
 
@@ -9169,16 +9202,15 @@ class Game {
 				speed: `${(this.cruiseSpeedKms / C_KMS).toFixed(2)} c`,
 				context: "NOSE-LOCKED CRUISE",
 			};
-		const frameBody = this.frameBody;
-		const frameVelocity = frameBody
-			? bodyVelocity(this.world.system, frameBody.id, this.world.gameTime)
-			: v3();
-		const relativeKms = length(sub(this.world.ship.vel, frameVelocity));
+		// The frame the assist holds, so the readout and the idle throttle
+		// agree about what "at rest" means.
+		const frame = this.assistFrame();
+		const relativeKms = length(sub(this.world.ship.vel, frame.vel));
 		const inertialKms = length(this.world.ship.vel);
 		return {
 			title: "REL. VELOCITY",
 			speed: `${relativeKms.toFixed(3)} km/s`,
-			context: `${frameBody ? `${frameBody.kind.toUpperCase()} FRAME` : "STAR FRAME"} · INERTIAL ${inertialKms.toFixed(0)} km/s`,
+			context: `${frame.label} · INERTIAL ${inertialKms.toFixed(0)} km/s`,
 		};
 	}
 
@@ -11138,6 +11170,9 @@ class Game {
 		// Inside the signal's range only, identified or not: an identified relay a
 		// system away is the Navigation list's to find, not a cue to carry.
 		if (!v?.signal) return null;
+		// **Not while docked** (#508 F3): the station console is the whole view
+		// then, and the cue drew over its corner and hid the station's name.
+		if (this.dock.phase === "docked") return null;
 		// At the clock as it stands, for `relayNow`'s reason: the cue is what
 		// the pilot steers by, and read from the frame start it put the relay
 		// 0.9 km off at 4.9 km in one capture.
@@ -12942,7 +12977,8 @@ class Game {
 			// cached on the place alone, because a trade cannot move them and
 			// regenerating a neighbourhood per click is what that would cost.
 			// The clock is deliberately in neither: a board that re-bound every
-			// minute would be the reroll §1 forbids.
+			// minute would be the reroll §1 forbids. (The Bounty target in the
+			// key is a world fact the clock can move; see below.)
 			const settled = settledAt(this.requests, {
 				galaxyIndex: context.galaxyIndex,
 				carrierKey: context.stationKey,
@@ -12951,8 +12987,28 @@ class Game {
 			// transaction at this same dock moves the deficit a procurement
 			// binder reads, and the till bumps that counter. Without it a pilot
 			// who bought the shelf out while docked kept reading the old board.
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${this.stationConsoleRevision}`;
+			// **The Bounty target is world state, so it is in the key** (#508).
+			// The relay dies in flight and is replaced on the clock; a board
+			// keyed without it kept posting a Bounty on a wreck to a pilot who
+			// docked after the kill. So one thing on this board *does* move with
+			// the clock: a repair completing while the pilot is docked posts a
+			// Bounty mid-visit. That is procurement's argument rather than the
+			// reroll §1 forbids — the offer's terms do not move, the world fact
+			// that posts it does. The key reads it the cheap way — the plan
+			// cached per system and the slot's condition — and the target is
+			// derived only on a miss; `bountyTargetOf` asks the same two
+			// questions in the same order.
+			const relayKey = relaySlot(this.world.system.record.index).key;
+			const relayLive =
+				this.currentRelayPlan() !== null && this.slotOperational(relayKey);
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${settled.bounty}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
+				const bountyTarget = bountyTargetOf(
+					this.world.system.record,
+					this.world.system.contents,
+					context.envelope,
+					this.world.gameTime,
+				);
 				// **Keyed on the system, not the station.** Two stations of one
 				// system differ only by which poster is excluded, and that is a
 				// filter rather than a regeneration — keying on the station made
@@ -12982,6 +13038,7 @@ class Game {
 					deficits: context.envelope.deficits,
 					gameTimeMin: context.gameTimeMin,
 					settled,
+					bountyTarget,
 				});
 				this.requestOffersCacheKey = key;
 			}
@@ -13003,6 +13060,7 @@ class Game {
 			docked: context
 				? { galaxyIndex: context.galaxyIndex, carrierKey: context.stationKey }
 				: null,
+			equipment: this.commander.ownedEquipment,
 		};
 	}
 
@@ -13024,6 +13082,8 @@ class Game {
 			docked,
 			cargo: this.commander.cargo,
 			holdRoomT: Math.max(0, hold.capacityT - hold.usedT),
+			standing: this.legalStanding(),
+			equipment: this.commander.ownedEquipment,
 		};
 	}
 
@@ -13311,6 +13371,24 @@ class Game {
 			key,
 			event,
 		);
+		// **Every accepted Bounty naming this carrier hears the kill** (#508 D1),
+		// here rather than in `stepRelay` so a second target kind (#509) cannot
+		// be destroyed down a path that forgets its bounty. Only the player's
+		// own gun qualifies — H8's "`destroy` with the player's provenance".
+		if (
+			event.kind === "destroy" &&
+			event.cause.actorId === PLAYER_KILL.actorId
+		) {
+			const requests = recordKill(
+				this.requests,
+				{ galaxyIndex: this.world.system.record.galaxy, carrierKey: key },
+				event.occurredAt,
+			);
+			if (requests !== this.requests) {
+				this.requests = requests;
+				this.requestRevision += 1;
+			}
+		}
 		this.saveDirty();
 	}
 

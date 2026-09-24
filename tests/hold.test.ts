@@ -39,6 +39,8 @@ const withConsignment = (): RequestsState => {
 		docked: at(courier.requester),
 		cargo: {},
 		holdRoomT: COURIER_HOLD_T,
+		standing: "clean" as const,
+		equipment: [] as readonly string[],
 	});
 	expect(result.ok).toBe(true);
 	return result.state;

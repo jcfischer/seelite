@@ -13,11 +13,14 @@ import { type DeficitMap, recordTrade } from "../../src/deficits";
 import type { SystemRecord } from "../../src/galaxy";
 import {
 	type BindContext,
+	type BountyTarget,
+	type CargoOffer,
 	type JobFamily,
 	type JobOffer,
 	bindJobs,
 	canPostJobs,
 	deliveryCandidates,
+	isCargoOffer,
 } from "../../src/jobs";
 import { type Station, generateContents } from "../../src/system";
 
@@ -25,6 +28,9 @@ export interface BoardOptions {
 	deficits?: DeficitMap;
 	gameTimeMin?: number;
 	settled?: Partial<Record<JobFamily, number>>;
+	/** The system's operational Bounty target. Absent means none, so a board
+	 *  built here without one is the courier-and-procurement board. */
+	bountyTarget?: BountyTarget | null;
 }
 
 /** Every station in a system that can post work. */
@@ -55,6 +61,7 @@ export function boardContext(
 		deficits: options.deficits ?? {},
 		gameTimeMin: options.gameTimeMin ?? 0,
 		settled: options.settled ?? {},
+		bountyTarget: options.bountyTarget ?? null,
 	};
 }
 
@@ -83,7 +90,7 @@ export function firstProcurementOffer(
 	record: SystemRecord;
 	station: Station;
 	offers: JobOffer[];
-	offer: JobOffer;
+	offer: CargoOffer;
 } {
 	for (const record of systems)
 		for (const station of postingStations(record)) {
@@ -102,14 +109,39 @@ export function firstProcurementOffer(
 			// asking for Textiles could otherwise be handed a Food job and
 			// test a fixture it did not ask for.
 			const offer = offers.find(
-				(o) => o.family === "procurement" && o.operand.goodName === good,
+				(o): o is CargoOffer =>
+					o.family === "procurement" &&
+					isCargoOffer(o) &&
+					o.operand.goodName === good,
 			);
 			if (offer) return { record, station, offers, offer };
 		}
 	throw new Error("no procurement offer could be bound in this galaxy");
 }
 
-/** The first station in this galaxy whose board carries the wanted family. */
+/** The first station in this galaxy whose board carries the wanted family.
+ *  A cargo family's offer comes back narrowed, so a row reads its good
+ *  without a `kind` test the family already answers. */
+export function firstOffer(
+	systems: readonly SystemRecord[],
+	family: "courier" | "procurement",
+	options?: BoardOptions,
+): {
+	record: SystemRecord;
+	station: Station;
+	offers: JobOffer[];
+	offer: CargoOffer;
+};
+export function firstOffer(
+	systems: readonly SystemRecord[],
+	family: JobFamily,
+	options?: BoardOptions,
+): {
+	record: SystemRecord;
+	station: Station;
+	offers: JobOffer[];
+	offer: JobOffer;
+};
 export function firstOffer(
 	systems: readonly SystemRecord[],
 	family: JobFamily,

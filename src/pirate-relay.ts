@@ -38,6 +38,7 @@
  * Headless: imports the generator's orbit arithmetic and the world-state types
  * and nothing that renders.
  */
+import type { CarrierKey } from "./carrier-key";
 import { playerLaserHit } from "./combat-enemy";
 import { DOMAIN } from "./domains";
 import { stream } from "./galaxy";
@@ -45,7 +46,7 @@ import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
 import type { RouteDetection } from "./raider-slots";
-import { type RelayPlan, relaySlot } from "./relay-slot";
+import { type RelayPlan, relayPlan, relaySlot } from "./relay-slot";
 import {
 	type Orbit,
 	type SystemContents,
@@ -54,10 +55,11 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type Vec3, add, length, scale, sub, v3 } from "./vec3";
-import type {
-	GalaxyEnvelope,
-	Provenance,
-	TransitionEvent,
+import {
+	type GalaxyEnvelope,
+	type Provenance,
+	type TransitionEvent,
+	effectiveCarrier,
 } from "./world-state";
 
 /** What the cockpit calls it once identified, and what the log calls it. */
@@ -99,6 +101,35 @@ export const RELAY_SIGNAL_RANGE_KM = 2_500;
 /** Inside this range the relay is identified: a knowledge row, a contact, a
  *  target. Well under scanner range, so the scanner cannot find it first. */
 export const RELAY_IDENTIFY_RANGE_KM = 150;
+
+/**
+ * Inside this range of a **selected** relay, the assist holds the relay's frame
+ * rather than the nearest body's (#508 F2).
+ *
+ * The relay stands on its station's orbit a few hundred kilometres ahead or
+ * behind, so it moves against the station at a few tenths of a km/s — measured
+ * in #508's capture at 0.43. The assist holds still in the station's frame
+ * (`localFrame`, since #10), so a pilot parked beside the relay at zero
+ * throttle drifted off it while firing: 1.0 km to 5.2 km across one kill.
+ * `CLAUDE.md`'s rule is that a fight beside a body is flown in that body's
+ * frame, and the relay is what this fight is beside.
+ *
+ * The identification range, because that is where the relay becomes a place
+ * the pilot is at rather than a signal they are following.
+ */
+export const RELAY_FRAME_KM = RELAY_IDENTIFY_RANGE_KM;
+
+/**
+ * Whether the assist holds the relay's frame: selected, and within
+ * `RELAY_FRAME_KM`.
+ *
+ * **Selected, not merely near**, and that is #479's gate reaching the frame:
+ * selecting the relay needs its identification, which needs the Long-Range
+ * Scanner. A proximity rule would change an unfitted pilot's frame, and the
+ * velocity readout that names it, beside a relay they cannot read.
+ */
+export const relayFrameHolds = (selected: boolean, km: number): boolean =>
+	selected && km <= RELAY_FRAME_KM;
 
 /**
  * Both ranges are a **bought module's** reading, not a hull's (#481, #479).
@@ -285,6 +316,48 @@ export function relayDestruction(
 			consequenceArea: relayRouteArea(systemIndex, watchedStationId),
 			cause: relayReplacementActor(systemIndex),
 		},
+	};
+}
+
+/**
+ * The relay as something a job may name. Declared here rather than imported
+ * from `jobs.ts`, so a carrier module does not depend on the job board: the
+ * board's `BountyTarget` is the same shape and accepts this structurally.
+ */
+export interface RelayTarget {
+	carrierKey: CarrierKey;
+	name: string;
+	watchedStationName: string;
+}
+
+/**
+ * The system's relay as a Bounty target, or null when there is nothing to post
+ * against (#495 D4, #508).
+ *
+ * **The roll first, then the condition.** An inactive relay has no world row,
+ * and an absent row reads `operational` (`effectiveCarrier`, §1), so a check
+ * on the condition alone would post a bounty on a relay that is not there.
+ * While destroyed or repairing it is null too, which is the Bounty's whole
+ * throttle (`ordinary-requests.md` D9): the repair window.
+ */
+
+export function bountyTargetOf(
+	record: { index: number; seed: number; government: number },
+	contents: SystemContents,
+	env: GalaxyEnvelope,
+	gameTime: number,
+): RelayTarget | null {
+	if (!relayActive(record)) return null;
+	const plan = relayPlan(contents, record.seed);
+	if (!plan) return null;
+	const key = relaySlot(record.index).key;
+	if (effectiveCarrier(env, key, gameTime).condition !== "operational")
+		return null;
+	const watched = contents.stations.find((s) => s.id === plan.watchedStationId);
+	return {
+		carrierKey: key,
+		name: RELAY_NAME,
+		watchedStationName: watched?.name ?? plan.watchedStationId,
 	};
 }
 

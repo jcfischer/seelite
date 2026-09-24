@@ -190,7 +190,12 @@ The player's per-galaxy offence score: an offence adds to it, it decays lazily
 on a 30-minute half-life, and it reads as Clean, Wanted or Fugitive at its
 thresholds. Saved as `LegalStatus`; the reading is derived. `combat-model.md`
 §4 owns the semantics, `civilian-combat.md` H4 the figures.
-_Avoid_: Bounty, notoriety, wanted level
+_Avoid_: notoriety, wanted level
+
+> **"Bounty" left this line in #508.** It was listed as a word for heat, and it
+> is a job family now — **Bounty** below — so an _Avoid_ entry here banned the
+> canonical name of another term. The rule it carried stands: heat is not a
+> bounty, and nothing pays for heat itself.
 
 **Pirate relay**:
 The first infrastructure **Carrier** (#43, production since #351): one
@@ -364,6 +369,17 @@ on the control is what gets acted on, not that the label alone caused it.
 same distinction runs through the in-flight cue (*carried* against *sourced*)
 and the settlement.
 
+**Bounty**:
+A job family (`ordinary-requests.md` D2): a lawful station pays for destroying
+a named **target carrier** in its own system while that target is operational,
+claimed where it was posted (#495). The pirate relay is the first target (#508).
+Only a Clean pilot may accept or report one (#495 D2); the kill is recorded as
+evidence on every accepted Bounty naming that carrier when it happens, not read
+off the world at report. A kill before acceptance pays nothing
+(`civilian-combat.md` H8). The relay's Bounty lists locked without the
+**Long-Range Scanner**. `jobs.ts` owns the binder and the figure.
+_Avoid_: bounty hunting, reward (for the payment)
+
 **System relay**:
 The public station-condition report received when the initial world is
 established or the player later enters a system (#116). It refreshes Last-known
@@ -385,6 +401,8 @@ target, and no identification is recorded. **An identification already
 recorded is not erased, only unread** — the relay goes dark and is found again
 when the module is back. The relay's **Route detection** dial is deliberately
 untouched, so the effect is felt by a pilot who cannot find its cause (#479).
+It is also the requirement a relay **Bounty** carries: without it the offer
+lists locked and draws no Accept (#489, built in #508).
 Not the **Identity Scanner**, which reads a hull held on target.
 _Avoid_: system scanner, sensor upgrade
 

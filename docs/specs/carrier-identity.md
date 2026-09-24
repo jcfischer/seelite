@@ -172,6 +172,12 @@ the module is bought. This needs no amendment to the parent spec: its D12 gates
 jobs on "concrete requirements — a weapon, hold space, equipment", and this is
 one.
 
+**Its reach is a target whose standing is read off its hull** (#508). The first
+Bounty target is the pirate relay, which has no standing to scan, so that offer
+is gated on the **Long-Range Scanner** — the module that finds a relay — and
+not on this one (#489's locked row, the principal's ruling on #508). F4 stands
+for a Wanted carrier as a target, which #495 left for its own ruling.
+
 The recommendation was the ungated version, on the argument that a new pilot in
 their first minutes has no way to participate in the law at all. The principal
 chose the gate knowing that.

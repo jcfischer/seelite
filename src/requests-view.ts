@@ -8,6 +8,7 @@
  */
 import { escapeHtml as esc } from "./escape-html";
 import { aboardForOffer, type HoldSummary } from "./hold";
+import { cargoOf, missingRequirements, offerRequirements } from "./jobs";
 import {
 	isAcceptedRequest,
 	nextAction,
@@ -43,31 +44,35 @@ export function deliverAction(
 	offer: RequestOffer,
 	aboardT: number,
 ): DeliverAction {
-	const short = aboardT < offer.operand.tonnes;
+	const operand = cargoOf(offer);
+	// The screen offers Deliver only on a cargo job; a caller that reached this
+	// with a Bounty has drawn a control the request refuses.
+	if (!operand) throw new Error(`deliverAction: ${offer.id} carries no cargo`);
+	const short = aboardT < operand.tonnes;
 	// Only the words differ by family; the enablement is one rule, and it was
 	// written twice.
 	const entrustedHint = (): string => {
 		if (!short) return "aboard since you accepted — the requester's";
 		if (aboardT > 0)
-			return `only ${aboardT} t of the ${offer.operand.tonnes} t consignment aboard`;
+			return `only ${aboardT} t of the ${operand.tonnes} t consignment aboard`;
 		return "the consignment is not aboard";
 	};
-	const words = offer.operand.entrusted
+	const words = operand.entrusted
 		? {
 				// **Never "Deliver" for a consignment.** In this game that word
 				// is an instruction to supply something, and supplying is
 				// exactly what a consignment does not need (CONTEXT.md
 				// §Language, **Entrusted cargo**).
-				label: `Hand over ${offer.operand.tonnes} t ${offer.operand.goodName}`,
+				label: `Hand over ${operand.tonnes} t ${operand.goodName}`,
 				hint: entrustedHint(),
 			}
 		: {
-				label: `Deliver ${offer.operand.tonnes} t ${offer.operand.goodName} from your hold`,
+				label: `Deliver ${operand.tonnes} t ${operand.goodName} from your hold`,
 				// `aboardT` on both arms: a pilot carrying 10 t for an 8 t job
 				// was told "8 t aboard", which is the job's figure and not
 				// theirs.
 				hint: short
-					? `${aboardT} t of ${offer.operand.tonnes} aboard`
+					? `${aboardT} t of ${operand.tonnes} aboard`
 					: `${aboardT} t aboard, yours to hand over`,
 			};
 	return { ...words, enabled: !short };
@@ -96,7 +101,35 @@ export interface RequestsView {
 	 * `null` where no hold was supplied, which reads as nothing aboard.
 	 */
 	hold: HoldSummary | null;
+	/**
+	 * The commander's fitted equipment, read against an offer's requirement
+	 * (#489's ruling, built in #508): an offer whose requirement is missing
+	 * lists **locked**, names the module on its row and draws no Accept.
+	 */
+	equipment: readonly string[];
 }
+
+/** What an offer requires that the pilot has not fitted. */
+export const missingEquipment = (
+	view: Pick<RequestsView, "equipment">,
+	offer: RequestOffer,
+): readonly string[] => missingRequirements(offer, view.equipment);
+
+/** The one line a board row says about what the job is about. */
+const operandLine = (o: RequestOffer): string => {
+	const { operand } = o;
+	switch (operand.kind) {
+		case "cargo":
+			return `${operand.tonnes} t ${operand.goodName}`;
+		case "target":
+			return `bounty: ${operand.targetName}`;
+		default: {
+			// A third kind stops this compiling rather than drawing a blank.
+			const unreachable: never = operand;
+			return unreachable;
+		}
+	}
+};
 const button = (
 	action: string,
 	id: string,
@@ -133,16 +166,20 @@ const button = (
 export const aboardFor = (
 	view: Pick<RequestsView, "hold">,
 	offer: RequestOffer,
-): number =>
+): number => {
 	// **The pick is built here rather than `hold.ts` taking the offer.** That
 	// module stays below `jobs.ts` (its own header's rule), so the operand is
 	// unwrapped on this side of the boundary and the three fields it reads
-	// stay its signature.
-	aboardForOffer(view.hold, {
-		id: offer.id,
-		goodName: offer.operand.goodName,
-		entrusted: offer.operand.entrusted,
-	});
+	// stay its signature. A job with no cargo has none aboard.
+	const cargo = cargoOf(offer);
+	return cargo
+		? aboardForOffer(view.hold, {
+				id: offer.id,
+				goodName: cargo.goodName,
+				entrusted: cargo.entrusted,
+			})
+		: 0;
+};
 export const REQUESTS_STYLE = `
 .lc-requests { flex: 1; min-height: 0; overflow: auto; }
 .lc-request-intro { color: #cb8c51; margin: 4px 0 18px; }
@@ -193,12 +230,17 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 	const rows = [...entries.values()]
 		.map((o) => {
 			const r = state.byId[o.id];
+			// **Locked on the row, not only in the details** (#489): a pilot
+			// scanning the list learns the requirement without opening it.
+			const missing = r ? [] : missingEquipment(view, o);
 			const label =
 				r?.status ??
-				(state.leadsById[o.id]
-					? "kept · not accepted"
-					: "offer · not accepted");
-			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${o.operand.tonnes} t ${esc(o.operand.goodName)} · report at ${esc(o.reportName)}</small></button>`;
+				(missing.length > 0
+					? `locked · needs ${missing.join(", ")}`
+					: state.leadsById[o.id]
+						? "kept · not accepted"
+						: "offer · not accepted");
+			return `<button type="button" class="lc-request-row" data-live-request-action="details" data-live-request-id="${esc(o.id)}" aria-selected="${selected?.id === o.id}"${missing.length > 0 ? " data-live-request-locked" : ""}><strong>${esc(o.title)}</strong><small>${esc(label)}${state.trackedRequestId === o.id ? " · TRACKED" : ""}</small><small>${o.rewardCr} Cr · ${esc(operandLine(o))} · report at ${esc(o.reportName)}</small></button>`;
 		})
 		.join("");
 	let details = `<div class="lc-request-details" data-live-request-details><h3>Choose work at your own pace</h3><p>Open a row to read its terms. Reading one, or keeping it for later, commits you to nothing.</p><p>Accept multiple requests. Manually Track one to show its next action in flight.</p></div>`;
@@ -208,6 +250,9 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		const atRequester =
 			view.docked?.galaxyIndex === o.requester.galaxyIndex &&
 			view.docked?.carrierKey === o.requester.carrierKey;
+		const cargo = cargoOf(o);
+		const required = offerRequirements(o);
+		const missing = missingEquipment(view, o);
 		const fields: [string, string][] = [
 			["Requester", `${o.requesterName} · posted here`],
 			[
@@ -223,11 +268,24 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			["Danger", o.danger],
 			[
 				"Cargo",
-				o.operand.entrusted
-					? `${o.operand.tonnes} t ${o.operand.goodName}, entrusted · it stays the requester's, and you cannot sell it`
-					: `${o.operand.tonnes} t ${o.operand.goodName}, your own · buy it where you like and carry the loss`,
+				!cargo
+					? "None"
+					: cargo.entrusted
+						? `${cargo.tonnes} t ${cargo.goodName}, entrusted · it stays the requester's, and you cannot sell it`
+						: `${cargo.tonnes} t ${cargo.goodName}, your own · buy it where you like and carry the loss`,
 			],
-			["Equipment", "None"],
+			[
+				"Equipment",
+				required.length === 0
+					? "None"
+					: required
+							.map((item) =>
+								missing.includes(item)
+									? `${item} · not fitted — sold at shipyards`
+									: `${item} · fitted`,
+							)
+							.join("; "),
+			],
 			["Payment", `${o.rewardCr} Cr · once, on report at ${o.reportName}`],
 			["Consequence", o.consequence],
 			[
@@ -236,7 +294,9 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 			],
 		];
 		let actions = button("retain", o.id, "Keep for later");
-		if ((!r || r.status === "cancelled") && atRequester)
+		// **No Accept while a requirement is missing** (#489's ruling): not
+		// hidden, and not refused on press — the row says why it is locked.
+		if ((!r || r.status === "cancelled") && atRequester && missing.length === 0)
 			actions += button(
 				"accept",
 				o.id,
@@ -251,7 +311,7 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 				o.id,
 				state.trackedRequestId === o.id ? "Untrack" : "Track request",
 			);
-			if (r.status === "accepted" && atReport) {
+			if (r.status === "accepted" && atReport && cargo) {
 				// **The control says whose goods it moves** (#446). One label
 				// served both families, so a consignment already aboard read as
 				// a shopping list — and `esc` was applied to the good's name
@@ -269,14 +329,14 @@ export function requestsBody(view?: RequestsView, flight = false): string {
 		}
 		if (
 			r?.status === "cancelled" &&
-			o.operand.entrusted &&
+			cargo?.entrusted &&
 			atRequester &&
 			Object.values(state.entrustedByLotId).some((lot) => lot.offerId === o.id)
 		)
 			actions += button(
 				"return-entrusted",
 				o.id,
-				`Return ${o.operand.tonnes} t ${esc(o.operand.goodName)}`,
+				`Return ${cargo.tonnes} t ${esc(cargo.goodName)}`,
 			);
 		details = `<div class="lc-request-details" data-live-request-details><h3>${esc(o.title)}</h3><p>${r ? esc(nextAction(r)) : "Read the terms before you accept."}</p><dl>${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${k === "Intelligence" ? `${esc(o.region)}. ${esc(o.source)} · <span data-live-request-age="${o.observedAt}">${Math.max(0, Math.floor(view.now - o.observedAt))}s old</span>` : esc(v)}</dd>`).join("")}</dl><div class="lc-request-actions">${actions}</div>${r?.status === "ready-to-report" && !atReport ? `<p>Report after docking at ${esc(o.reportName)}. Remote payment is unavailable.</p>` : ""}</div>`;
 	}

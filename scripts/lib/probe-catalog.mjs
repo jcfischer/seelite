@@ -44,6 +44,17 @@ export const PROBE_CATALOG = Object.freeze(
 			["application boot", "renderer", "seed", "window handle", "page errors"],
 		),
 		entry(
+			"probe-bounty.mjs",
+			"Flies the Bounty checkpoint: a locked row without the Long-Range Scanner, a Wanted refusal, accept, the relay kill, and one paid report.",
+			[
+				"bounty",
+				"Requests UI",
+				"pirate relay",
+				"equipment gate",
+				"legal standing",
+			],
+		),
+		entry(
 			"probe-carrier-scan.mjs",
 			"Exercises the cockpit carrier scan and Target-panel transition from unknown to identified standing.",
 			[

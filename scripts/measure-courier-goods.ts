@@ -42,6 +42,7 @@ import {
 	NO_EXCLUDED_STATION,
 	bindCourier,
 	canPostJobs,
+	cargoOf,
 	deliveryCandidates,
 	type BindContext,
 	type JobDestination,
@@ -191,7 +192,16 @@ const ctxFor = (
 	deficits: {},
 	gameTimeMin: GAME_TIME_MIN,
 	settled,
+	// This instrument measures the courier, which reads no bounty target.
+	bountyTarget: null,
 });
+
+/** A courier offer's cargo; a courier always carries one (#508). */
+const goodOf = (offer: Parameters<typeof cargoOf>[0]): string => {
+	const cargo = cargoOf(offer);
+	if (!cargo) throw new Error("a courier offer carried no cargo");
+	return cargo.goodName;
+};
 
 /** The leg an offer names, recovered from the candidate list it was drawn
  *  from. A miss is drift, never a sample to skip. */
@@ -267,7 +277,7 @@ for (const { system, station } of places) {
 	const top = rankBy("spread", candidateGoods, system, station, destination)
 		.slice(0, COURIER_SPREAD_POOL)
 		.map((c) => c.name);
-	if (top.includes(shipped.operand.goodName)) shippedAgrees += 1;
+	if (top.includes(goodOf(shipped))) shippedAgrees += 1;
 }
 
 const pct = (n: number, of: number) => `${((100 * n) / of).toFixed(1)}%`;
@@ -380,11 +390,9 @@ const sweepEpisodes = (
 				throw new Error(
 					`episode ${episode} bound as ${offer.episode} at ${station.id}`,
 				);
-			counts.set(
-				offer.operand.goodName,
-				(counts.get(offer.operand.goodName) ?? 0) + 1,
-			);
-			here.add(offer.operand.goodName);
+			const good = goodOf(offer);
+			counts.set(good, (counts.get(good) ?? 0) + 1);
+			here.add(good);
 		}
 		if (here.size > 0) perStation.push(here.size);
 	}

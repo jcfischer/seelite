@@ -13,7 +13,9 @@ import {
 	RELAY_REPAIR_S,
 	RELAY_SIGNAL_RANGE_KM,
 	RELAY_WRECK_S,
+	RELAY_FRAME_KM,
 	relayDestruction,
+	relayFrameHolds,
 	relayActive,
 	relayActiveChance,
 	RELAY_ACTIVE_CHANCE,
@@ -319,5 +321,20 @@ describe("which systems have one (#351)", () => {
 				4 * Math.sqrt((p * (1 - p)) / n),
 			);
 		}
+	});
+});
+
+describe("the assist's frame beside the relay (#508 F2)", () => {
+	test("holds inside the range only while the relay is selected", () => {
+		expect(relayFrameHolds(true, 1)).toBe(true);
+		expect(relayFrameHolds(true, RELAY_FRAME_KM)).toBe(true);
+		expect(relayFrameHolds(true, RELAY_FRAME_KM + 1)).toBe(false);
+		// Not merely near: selecting it needs the scanner, a frame change
+		// would tell an unfitted pilot the relay is there.
+		expect(relayFrameHolds(false, 1)).toBe(false);
+	});
+
+	test("the range is where the relay becomes a place, not a signal", () => {
+		expect(RELAY_FRAME_KM).toBe(RELAY_IDENTIFY_RANGE_KM);
 	});
 });

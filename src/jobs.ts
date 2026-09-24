@@ -28,9 +28,10 @@
  * Salvage do not**, so a third family would have had to change the persisted
  * shape and migrate every save in the same change that authored its content.
  * The shape moved first and alone, because the migration is the expensive part
- * and an in-flight shape is cheap to change late. There is one member today;
- * a bounty's operand is a target carrier and a salvage's is a wreck, and
- * neither is written here, which is the point.
+ * and an in-flight shape is cheap to change late. **It paid off in #508**: the
+ * Bounty family's target carrier is a second member of the union, and the save
+ * stayed at version 5 because every v5 journal is still a valid one. A
+ * salvage's wreck is not written yet.
  *
  * It imports no Three.js and must not: a board is arithmetic, and
  * `tests/headless.test.ts` is where that stays true.
@@ -43,6 +44,7 @@ import { JUMP_RANGE_LY, type SystemRecord, distanceLy } from "./galaxy";
 import { reachable } from "./galaxy-route";
 import {
 	type Commodity,
+	LONG_RANGE_SCANNER,
 	marketRowAt,
 	marketStationOf,
 	stationCommodities,
@@ -50,7 +52,7 @@ import {
 import { mix, seededRand } from "./rng";
 import type { Station, SystemContents } from "./system";
 
-export type JobFamily = "courier" | "procurement";
+export type JobFamily = "courier" | "procurement" | "bounty";
 
 /**
  * What a job pays, as a rule rather than a figure.
@@ -85,7 +87,8 @@ export interface JobRow {
 	danger: string;
 	action: string;
 	consequence: string;
-	/** How much the job moves. A quantity is authored; *which good* is not. */
+	/** How much the job moves. A quantity is authored; *which good* is not.
+	 *  Zero for a family that moves no cargo. */
 	tonnes: number;
 	payment: PaymentRule;
 }
@@ -143,6 +146,26 @@ export const JOB_ROWS: readonly JobRow[] = [
 		consequence: "The shortfall is covered and this market settles.",
 		tonnes: 10,
 		payment: { baseCr: 25, perTonneCr: 0, perLyCr: 0, basePriceFactor: 1.35 },
+	}),
+	// **One row, for the one target kind that exists.** #509 adds the raider
+	// outpost, and its row owes the binder a pairing between row and target
+	// kind: `pickRow` draws among a family's rows, and relay prose on an
+	// outpost is the invented fact this table exists to avoid.
+	job({
+		family: "bounty",
+		rowId: "bounty-relay",
+		revision: 1,
+		title: "Bounty on a pirate relay",
+		purpose:
+			"A pirate relay tells the raiders here which ships use this approach. The station pays to have it silenced.",
+		danger:
+			"The relay does not fire back. You have to find it yourself, and the raiders it guides fly the same approach.",
+		action: "Find the relay, destroy it, and report here.",
+		consequence: "The raiders lose the approach until their relay is replaced.",
+		tonnes: 0,
+		// #508 D3: the principal's figure. The kill is undefended until #511
+		// gives the relay a defender, which owes this figure a second look.
+		payment: { baseCr: 400, perTonneCr: 0, perLyCr: 0, basePriceFactor: 0 },
 	}),
 ];
 
@@ -237,6 +260,28 @@ export interface BindContext {
 	 * (`missions-and-requests.md` §1).
 	 */
 	settled: Readonly<Record<string, number>>;
+	/**
+	 * The system's Bounty target, **operational now**, or null (#495 D4).
+	 *
+	 * The caller derives it (`pirate-relay.ts`'s `bountyTargetOf`) because the
+	 * condition is world state this module does not read, and a binder is a
+	 * pure function of what it is handed. Required rather than optional, for
+	 * `holdT`'s reason: a caller that forgot it would post no bounty anywhere
+	 * and look exactly like a galaxy with no relays.
+	 */
+	bountyTarget: BountyTarget | null;
+}
+
+/**
+ * Something a Bounty job may name (#495 D3): a carrier in the posting station's
+ * own system — the binder never reads another system's state (#495 D4).
+ */
+export interface BountyTarget {
+	carrierKey: CarrierKey;
+	/** What the pilot calls it — the name the log and the cockpit use. */
+	name: string;
+	/** The station whose approach it stands on; the offer's region. */
+	watchedStationName: string;
 }
 
 /** A station reference as the journal serializes it (request contract §1). */
@@ -248,25 +293,47 @@ export interface JobStationRef {
 /**
  * What a job is about, tagged by the family that owns the tag (#440).
  *
- * One member, and the union is the point rather than the member: a `switch` on
- * `kind` with a `never` default means the day Bounty's target carrier or
- * Salvage's wreck arrives, every **typed** reader fails to compile instead of
- * quietly reading a field that is not there.
+ * The union is the point rather than any member: a `switch` on `kind` with a
+ * `never` default means that when Salvage's wreck arrives, as Bounty's target
+ * did in #508, every **typed** reader fails to compile instead of quietly
+ * reading a field that is not there.
  *
- * The qualifier is load-bearing. `scripts/probe-requests.mjs` reads
+ * The qualifier matters. `scripts/probe-requests.mjs` reads
  * `offer.operand.goodName` and is not typechecked, so a non-cargo operand
  * reaches it as `undefined` rather than as a build error — the browser tier
  * inherits the question a family adds, and the compiler will not raise it.
  * #453's own round 1 went red there rather than at the compiler.
  */
-export type JobOperand = {
+export type JobOperand = CargoOperand | TargetOperand;
+
+export interface CargoOperand {
 	kind: "cargo";
 	goodName: string;
 	tonnes: number;
 	/** True when the cargo is the requester's (request contract §4's entrusted
 	 *  lot), false when the pilot buys it with their own credits. */
 	entrusted: boolean;
-};
+}
+
+/** A Bounty's target (#495 D3): a carrier key, and the name it was posted
+ *  under. The name is pinned with the terms, as `reportName` is. */
+export interface TargetOperand {
+	kind: "target";
+	carrierKey: CarrierKey;
+	targetName: string;
+}
+
+/** An offer already known to carry cargo — what a courier or procurement
+ *  binder returns, and what a reader that has checked may name. */
+export type CargoOffer = JobOffer & { operand: CargoOperand };
+
+export const isCargoOffer = (offer: JobOffer): offer is CargoOffer =>
+	offer.operand.kind === "cargo";
+
+/** The cargo a job moves, or null for a family that moves none. One question
+ *  asked in one place, rather than a `kind` test at every hold consumer. */
+export const cargoOf = (offer: { operand: JobOperand }): CargoOperand | null =>
+	offer.operand.kind === "cargo" ? offer.operand : null;
 
 /**
  * Which operand each family carries — the pairing, as a total record.
@@ -288,7 +355,39 @@ export const FAMILY_OPERAND_KIND: Readonly<
 > = {
 	courier: "cargo",
 	procurement: "cargo",
+	bounty: "target",
 };
+
+/**
+ * What a Bounty offer requires before it can be accepted (#489's ruling,
+ * built in #508).
+ *
+ * **The Long-Range Scanner, because it is what finds a relay** (#479): without
+ * it the relay gives no cue, no contact and no target, so an unfitted pilot
+ * who accepted would hold a job for something they cannot see.
+ * `carrier-identity.md` F4 gates Bounty on the *Identity Scanner* instead, and
+ * that is the gate for a target whose standing has to be read off its hull —
+ * a Wanted carrier, which #495 left out of scope. A relay has no standing to
+ * scan.
+ */
+export const BOUNTY_EQUIPMENT: readonly string[] = [LONG_RANGE_SCANNER];
+
+/**
+ * The equipment an offer requires, derived from its family rather than pinned
+ * on the offer: `JobOffer` is persisted, and a new field there is a save
+ * version. Acceptance is the only moment it is read (request contract §2).
+ */
+export const offerRequirements = (offer: {
+	family: JobFamily;
+}): readonly string[] => (offer.family === "bounty" ? BOUNTY_EQUIPMENT : []);
+
+/** What an offer requires that this equipment list lacks — the one rule the
+ *  locked row and the accept refusal both read, so they cannot drift. */
+export const missingRequirements = (
+	offer: { family: JobFamily },
+	equipment: readonly string[],
+): readonly string[] =>
+	offerRequirements(offer).filter((item) => !equipment.includes(item));
 
 /** A bound, offerable job: one row with every operand filled. */
 export interface JobOffer {
@@ -348,14 +447,19 @@ export interface JobMark {
  * **flown** hull's hold (#182) and this module never sees a commander.
  *
  * **It stays cargo-shaped, and that is #440's D3** rather than an omission: a
- * mark never reaches a save, so it is split on the day a family has a mark
- * that is not a deficit — late, where the change is cheap.
+ * mark never reaches a save. A Bounty's mark (`ordinary-requests.md` §4) is
+ * the target's `destroy` with the player's provenance, which the kill wrote
+ * when it happened — so its report writes nothing and this returns null.
  */
-export const jobMark = (offer: JobOffer): JobMark => ({
-	key: offer.reportAt.carrierKey,
-	// Supplying a station is the sale sign (`economy-trade.md` §5.2).
-	trade: { goodName: offer.operand.goodName, units: -offer.operand.tonnes },
-});
+export const jobMark = (offer: JobOffer): JobMark | null => {
+	const cargo = cargoOf(offer);
+	if (!cargo) return null;
+	return {
+		key: offer.reportAt.carrierKey,
+		// Supplying a station is the sale sign (`economy-trade.md` §5.2).
+		trade: { goodName: cargo.goodName, units: -cargo.tonnes },
+	};
+};
 
 /**
  * A station can post or receive market-derived work only if the market can
@@ -391,6 +495,21 @@ const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
 	...stationCommodities(marketStationOf(station, system.seed)),
 ];
 
+/**
+ * Each family's sub-stream inside `DOMAIN.JOB_OFFERS`.
+ *
+ * **A total record, not a ternary.** The draw used to split on
+ * `family === "courier" ? 1 : 2`, and a third family would have shared the
+ * second's stream without a word from the compiler — the correlation
+ * `CLAUDE.md`'s per-system RNG rule warns about. The two shipped values are
+ * kept, so no courier or procurement board moves.
+ */
+const FAMILY_STREAM: Readonly<Record<JobFamily, number>> = {
+	courier: 1,
+	procurement: 2,
+	bounty: 3,
+};
+
 /** The episode draw. Its own domain tag, so a board moves no station, berth or
  *  market — and split by the episode, so consecutive episodes of one family do
  *  not repeat one row. */
@@ -410,7 +529,7 @@ const draw = (
 				mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS),
 				axis,
 			),
-			mix(family === "courier" ? 1 : 2, episode),
+			mix(FAMILY_STREAM[family], episode),
 		),
 	)();
 
@@ -665,6 +784,60 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
 }
 
 /**
+ * D8's derivation for Bounty: a station posts one because its system's target
+ * is **actually** operational (#495 D4, #508).
+ *
+ * Every lawful station in the system posts it, and each is claimed where it
+ * was posted. The throttle is the target's own lifecycle — while the relay is
+ * destroyed or repairing, `bountyTarget` is null and nothing posts — so there
+ * is no cooldown here, which is `ordinary-requests.md` D9.
+ *
+ * **The raider outpost is refused here, not in `canPostJobs`.** That guard
+ * exists for the outpost's missing price offset, which #490 D6 removes; this
+ * one exists because a raider haven does not pay to kill raiders' equipment,
+ * and the two must not be one predicate that retires together.
+ */
+export function bindBounty(ctx: BindContext): JobOffer | null {
+	const target = ctx.bountyTarget;
+	if (!target || ctx.station.type === "outpost") return null;
+	const key = stationKeyOf(ctx.system.index, ctx.station);
+	const episode = episodeOf(ctx, "bounty");
+	const row = pickRow(ctx, "bounty", episode);
+	return {
+		id: offerId(ctx, "bounty", episode),
+		family: "bounty",
+		rowId: row.rowId,
+		revision: row.revision,
+		stages: ["destroy"],
+		episode,
+		requester: { galaxyIndex: ctx.galaxyIndex, carrierKey: key },
+		requesterName: ctx.station.name,
+		reportAt: { galaxyIndex: ctx.galaxyIndex, carrierKey: key },
+		reportName: ctx.station.name,
+		reportSystemName: ctx.system.name,
+		distanceLy: 0,
+		operand: {
+			kind: "target",
+			carrierKey: target.carrierKey,
+			targetName: target.name,
+		},
+		rewardCr: round(row.payment.baseCr),
+		title: row.title,
+		purpose: row.purpose,
+		danger: row.danger,
+		action: row.action,
+		consequence: row.consequence,
+		// **The region, not the place** (request contract §2): the approach it
+		// watches, which is `RELAY_REGION_KM`'s search sphere. Posting it
+		// discovers nothing — only a flown identification writes the knowledge
+		// row (#460's provenance-never-discovery constraint).
+		region: `The approach to ${target.watchedStationName}, ${ctx.system.name}`,
+		source: `Security office at ${ctx.station.name}`,
+		observedAt: observedAtOf(ctx),
+	};
+}
+
+/**
  * The board: every family binder that found its world fact, at this station.
  *
  * §3: the offer count is not a configured number. It is however many binders
@@ -672,7 +845,7 @@ export function bindProcurement(ctx: BindContext): JobOffer | null {
  */
 export function bindJobs(ctx: BindContext): JobOffer[] {
 	if (!canPostJobs(ctx.station)) return [];
-	return [bindCourier(ctx), bindProcurement(ctx)].filter(
+	return [bindCourier(ctx), bindProcurement(ctx), bindBounty(ctx)].filter(
 		(offer): offer is JobOffer => offer !== null,
 	);
 }
