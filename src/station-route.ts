@@ -455,6 +455,14 @@ export interface SystemTrafficProjection extends TrafficProjection {
 	laneRequest: LaneRequest | null;
 	/** Actual start of an active non-preemptive lane traversal. */
 	laneStartedAtS: number | null;
+	/**
+	 * When this route gives the Transit lane back (#521): the end of the launch
+	 * or arrival it is queued for or flying, predicted by the same composition
+	 * that flies it. Set on `launch-queued`, `departing`, `lane-queued` and
+	 * `arriving`, and read by the player's wait estimate — never re-derived
+	 * from traversal constants beside it.
+	 */
+	laneEndsAtS?: number;
 	originBerthOccupied: boolean;
 	workTicks: number;
 	berthId: string | null;
@@ -713,6 +721,14 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			movement: "launch",
 		});
 	const departureCommit = { departureStartedAtS: departureAtS };
+	const homeStart = frameAt(record, originStationId, departureAtS);
+	const launch = beginLaunch(
+		homeStart.frame,
+		originInterior,
+		originBerth,
+		departureAtS,
+	);
+	const launchEndS = departureAtS + launch.durationS;
 	if (gameTime < departureAtS)
 		return withRoute(
 			actor,
@@ -728,6 +744,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
 				laneStartedAtS: departureAtS,
+				laneEndsAtS: launchEndS,
 				laneRequest: {
 					participant: { kind: "carrier", key: actor.key },
 					readyAt: readyAtS,
@@ -738,14 +755,6 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			},
 		);
 
-	const homeStart = frameAt(record, originStationId, departureAtS);
-	const launch = beginLaunch(
-		homeStart.frame,
-		originInterior,
-		originBerth,
-		departureAtS,
-	);
-	const launchEndS = departureAtS + launch.durationS;
 	if (gameTime < launchEndS) {
 		const u = arrivalProgress(launch, gameTime);
 		const current = frameAt(record, originStationId, gameTime);
@@ -775,6 +784,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				berthId: originBerth.id,
 				terminalStationId: originStationId,
 				laneStartedAtS: departureAtS,
+				laneEndsAtS: launchEndS,
 				laneRequest: {
 					participant: { kind: "carrier", key: actor.key },
 					readyAt: readyAtS,
@@ -1239,24 +1249,6 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 			key: actor.key,
 			movement: "arrival",
 		});
-	if (gameTime < laneAtS)
-		return withRoute(actor, "lane-queued", holdAt(gameTime), {
-			...departureCommit,
-			destinationStationId: selected.id,
-			terminalStationId: selected.id,
-			chargeAu: drop.chargeAu,
-			pendingIntent,
-			queueRequest: request,
-			laneRequest: {
-				participant: { kind: "carrier", key: actor.key },
-				readyAt: clearanceAtS,
-				kind: "arrival",
-			},
-			originBerthOccupied: false,
-			workTicks: drop.workTicks,
-			berthId: berth.id,
-		});
-
 	const laneFrame = frameAt(record, selected.id, laneAtS);
 	const laneBody = placedBody(laneFrame.system, selected.id);
 	const laneHoldRel = sub(
@@ -1274,6 +1266,43 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		(1.5 * terminalApproachKm) / TRAFFIC_STATION_LOCAL_SPEED_KM_S,
 	);
 	const entryAtS = laneAtS + terminalApproachS;
+	const entryFrame = frameAt(record, selected.id, entryAtS);
+	const entryRel = scale(
+		entryFrame.frame.axis,
+		entryFrame.frame.planeKm + 1e-6,
+	);
+	const arrival = beginArrival(
+		entryFrame.frame,
+		destinationInterior,
+		berth,
+		entryRel,
+		entryAtS,
+		{
+			nose: scale(entryFrame.frame.axis, -1),
+			up: slotBasis(entryFrame.frame).up,
+		},
+	);
+	const arrivalEndS = entryAtS + arrival.durationS;
+
+	if (gameTime < laneAtS)
+		return withRoute(actor, "lane-queued", holdAt(gameTime), {
+			...departureCommit,
+			destinationStationId: selected.id,
+			terminalStationId: selected.id,
+			laneEndsAtS: arrivalEndS,
+			chargeAu: drop.chargeAu,
+			pendingIntent,
+			queueRequest: request,
+			laneRequest: {
+				participant: { kind: "carrier", key: actor.key },
+				readyAt: clearanceAtS,
+				kind: "arrival",
+			},
+			originBerthOccupied: false,
+			workTicks: drop.workTicks,
+			berthId: berth.id,
+		});
+
 	if (gameTime < entryAtS) {
 		const current = frameAt(record, selected.id, gameTime);
 		const body = placedBody(current.system, selected.id);
@@ -1315,6 +1344,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				destinationStationId: selected.id,
 				terminalStationId: selected.id,
 				laneStartedAtS: laneAtS,
+				laneEndsAtS: arrivalEndS,
 				chargeAu: drop.chargeAu,
 				pendingIntent,
 				queueRequest: request,
@@ -1330,23 +1360,6 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		);
 	}
 
-	const entryFrame = frameAt(record, selected.id, entryAtS);
-	const entryRel = scale(
-		entryFrame.frame.axis,
-		entryFrame.frame.planeKm + 1e-6,
-	);
-	const arrival = beginArrival(
-		entryFrame.frame,
-		destinationInterior,
-		berth,
-		entryRel,
-		entryAtS,
-		{
-			nose: scale(entryFrame.frame.axis, -1),
-			up: slotBasis(entryFrame.frame).up,
-		},
-	);
-	const arrivalEndS = entryAtS + arrival.durationS;
 	if (gameTime < arrivalEndS) {
 		const current = frameAt(record, selected.id, gameTime);
 		const body = placedBody(current.system, selected.id);
@@ -1373,6 +1386,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 				destinationStationId: selected.id,
 				terminalStationId: selected.id,
 				laneStartedAtS: laneAtS,
+				laneEndsAtS: arrivalEndS,
 				chargeAu: drop.chargeAu,
 				pendingIntent,
 				queueRequest: request,
