@@ -517,8 +517,9 @@ RNG stream and the `tests/station-orbits.test.ts` fixture is unaffected. Only
 
 ## 6. Clearance
 
-**Decision D5, amended by #148: Oolite's protocol — granted, berth queued,
-lane queued, or denied — and true barging turns the station hostile.**
+**Decision D5, amended by #148 and #521: Oolite's protocol — granted (with or
+without a lane wait), berth queued, or denied — and true barging turns the
+station hostile.**
 
 Requestable when a station is the selected target and range is inside
 **`VICINITY_KM`**, a gameplay constant set to 10,000 km — numerically
@@ -531,7 +532,7 @@ silently retunes both. Same value, two reasons, two constants.
 |---|---|---|
 | **granted** | a fitting berth is reserved and the Transit lane is awarded | a **600 s** window. Expiry returns to `none`; re-request is free |
 | **queued (n)** | no fitting berth is free | promoted when compatible capacity frees; `n` is the live one-based queue position |
-| **lane queued (n)** | a fitting berth is reserved but the Transit lane is unavailable | promoted by station-traffic arbitration; the 600 s window has not started |
+| **granted, lane wait** | a fitting berth is reserved and the grant is live, but Traffic has not given the Transit lane | the 600 s window runs from the grant (#521). The director writes `WAIT · <reason> · ~Ns` in amber; a crossing now is repelled without damage or hostility |
 | **denied** | station already hostile, or #13 §5.1.1's shipyard contraband scan fails | no window; the reason is #8's to compute |
 
 **600 s, because a shorter window expires before the approach can be flown.**
@@ -544,7 +545,7 @@ failure mode of a timer sized against nothing.
 **Clearance is a precondition, evaluated before §3's checks — not check 1.**
 Crossing the slot plane with neither a berth reservation nor a live grant is a
 failed entry *and* turns the station hostile. Crossing with a reserved berth
-while still lane queued is repelled without hostility: #148 distinguishes
+while Traffic holds the lane is repelled without hostility: #148 distinguishes
 disobeying a hold from barging without clearance. The ordering still matters:
 an implementation that read `station.hostile` before applying a true barge flip
 would let it dock cleanly. The entry condition remains `grantLive && !hostile`,
@@ -1648,9 +1649,15 @@ the hull roster rather than against a typed list of names.
 
 **Promotion atomically reserves a currently free, fitting berth.** With the
 Transit lane free, reservation and grant remain one operation as before. When
-the lane is busy, #148 inserts a lane-queued state between them: the berth is
-reserved, but the 600-second entry window starts only when lane arbitration
-awards the grant. A capacity-queued reply's `position` is the live one-based
+the lane is busy the grant is given all the same, and its 600-second window
+starts with it. #148 wrote a lane-queued state whose window started only at the
+lane award; it was never built, and #521 ruled that the grant stands instead,
+because a lane wait is one route or a few, each one launch or arrival long, far
+inside the window. What waiting costs is therefore bounded by the routes queued
+at one station and not by the window — and if a wait did outlast it, the grant
+would lapse, the docking computer would disengage and its lane request would go
+with it. That case is accepted rather than engineered around, and how long lane
+waits run in play is not measured here. A capacity-queued reply's `position` is the live one-based
 place in the real station-local queue, replacing the injected occupancy count.
 Among candidates the allocator chooses the least spare envelope, preserving
 larger capacity; equal fits use a deterministic station-local order rotated by
