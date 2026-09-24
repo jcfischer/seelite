@@ -56,6 +56,7 @@ async function boot() {
 		const duel = await import("/src/duel.ts");
 		const sim = await import("/src/sim.ts");
 		const market = await import("/src/market.ts");
+		const defender = await import("/src/relay-defender.ts");
 		// The Long-Range Scanner fitted, as a Bounty pilot has it (#508): without
 		// it the relay is never identified, so never selectable, and the fight is
 		// flown in the station's frame rather than the relay's (#479, #508 F2).
@@ -77,6 +78,9 @@ async function boot() {
 		window.__defenderProbe = {
 			beamKm: duel.RAIDER_OUT_OF_BEAM_KM,
 			assistCapKms: sim.ASSIST_CAP_KMS,
+			rangeKm: defender.DEFENDER_RANGE_KM,
+			/** One step of the raider's own thrust at the probe's step. */
+			oneStepKms: sim.flightPerformance("raider").thrustKms2 * dt,
 			/** Put the ship `km` beside the target, at rest in its frame. */
 			placeBeside(which, km) {
 				g.dropOut("probe");
@@ -185,7 +189,9 @@ async function boot() {
 					encounterPhase: g.encounter?.phase ?? null,
 				};
 			},
-			/** Hold the trigger on the live defender until it is gone. */
+			/** Hold the trigger on the live defender until it is gone, and chase
+			 *  it: a raider below `FLEE_HULL_FRACTION` runs, and a pilot parked
+			 *  at zero throttle lets it leave the beam as fled. */
 			killDefender(maxSteps) {
 				const e0 = g.encounter;
 				if (!e0 || e0.phase !== "duel") return { phase: e0?.phase ?? null };
@@ -197,10 +203,14 @@ async function boot() {
 				let steps = 0;
 				for (; steps < maxSteps && g.encounter?.phase === "duel"; steps++) {
 					const r = g.encounter.raider;
-					if (r) aimAt(r.flight.ship.pos);
+					if (r) {
+						aimAt(r.flight.ship.pos);
+						g.throttle = dist(r.flight.ship.pos, g.world.ship.pos) > 3 ? 1 : 0;
+					}
 					frame();
 				}
 				g.keys.delete(" ");
+				g.throttle = 0;
 				return {
 					steps,
 					name,
@@ -288,6 +298,8 @@ const capture = async (name) => {
 };
 const beamKm = await page.evaluate(() => window.__defenderProbe.beamKm);
 const capKms = await page.evaluate(() => window.__defenderProbe.assistCapKms);
+const rangeKm = await page.evaluate(() => window.__defenderProbe.rangeKm);
+const oneStepKms = await page.evaluate(() => window.__defenderProbe.oneStepKms);
 
 /** The rows a defended kill owes, the same for the relay and the tender. */
 function defendedRows(label, shot) {
@@ -308,13 +320,19 @@ function defendedRows(label, shot) {
 	check(
 		`${label}: it arrives inside beam range, at rest in the relay's frame, which is the one the pilot flies in`,
 		shot.arrived !== null &&
+			// The drawn range, read after the arrival frame's steps: the pilot's
+			// and the raider's, a few hundred metres at most at `MAX_DT`. A
+			// raider left behind by a frame's travel reads kilometres over.
+			shot.arrived.gapKm >= rangeKm[0] - 0.3 &&
+			shot.arrived.gapKm <= rangeKm[1] + 0.3 &&
 			shot.arrived.gapKm < beamKm &&
 			shot.arrived.frame === "RELAY FRAME" &&
 			shot.arrived.frameOffRelayKms < 1e-6 &&
-			// The arrival is read at the end of the frame it lands in, after one
-			// step of the frame's own acceleration on its orbit.
-			shot.arrived.relKms < 1e-3,
-		JSON.stringify(shot.arrived),
+			// At rest in the frame to one step of its own thrust, flown on the
+			// frame it arrives in.
+			// To a metre a second, for the cap row's reason below.
+			shot.arrived.relKms <= oneStepKms + 1e-3,
+		JSON.stringify({ ...shot.arrived, oneStepKms }),
 	);
 	check(
 		`${label}: for its first five seconds it keeps station in that frame — inside beam range and never faster through it than the assist cap`,
@@ -410,17 +428,12 @@ await capture("02-tender-defender");
 const tenderDefender = await page.evaluate(() =>
 	window.__defenderProbe.killDefender(1200),
 );
-// A raider below `FLEE_HULL_FRACTION` runs, and a rout past the beam ends the
-// fight as fled — so this row takes either end. The relay's row above is the
-// one that holds the kill's wiring.
 check(
-	"tender: the defender's fight ends — destroyed, with its slot down and cargo dropped, or fled",
+	"tender: the defender, killed, is its slot's destruction and drops its cargo",
 	tenderDefender.encounter === null &&
-		((tenderDefender.lastExit === `${tenderDefender.name} destroyed` &&
-			tenderDefender.slotCondition === "destroyed" &&
-			tenderDefender.canistersDropped > 0) ||
-			(tenderDefender.lastExit === `${tenderDefender.name} fled` &&
-				tenderDefender.slotCondition === "operational")),
+		tenderDefender.slotCondition === "destroyed" &&
+		tenderDefender.canistersDropped > 0 &&
+		tenderDefender.lastExit === `${tenderDefender.name} destroyed`,
 	JSON.stringify(tenderDefender),
 );
 

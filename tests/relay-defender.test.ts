@@ -247,10 +247,17 @@ describe("the defender in flight", () => {
 		expect(step.encounter.phase).toBe("duel");
 		expect(step.drop).toBe(false);
 		if (!step.contact) throw new Error("a defender that appears is drawn");
-		const gap = length(sub(step.contact.pos, PILOT));
-		expect(gap).toBeCloseTo(e.rangeKm, 6);
+		// Flown on the frame it arrives in, so it is read where the pilot will
+		// be once the pilot's own step has run: its range from there, not a
+		// frame's travel short of it.
+		const pilotAfter = add(PILOT, scale(add(FRAME_VEL, v3(0, 1.5, 0)), DT));
+		const gap = length(sub(step.contact.pos, pilotAfter));
+		expect(Math.abs(gap - e.rangeKm)).toBeLessThan(0.1);
 		expect(gap).toBeLessThan(RAIDER_OUT_OF_BEAM_KM);
-		expect(step.contact.vel).toEqual(FRAME_VEL);
+		// At rest in the frame, to one step of its own thrust — not at the
+		// pilot's 1.5 km/s drift through it.
+		const rel = length(sub(step.contact.vel, FRAME_VEL));
+		expect(rel).toBeLessThan(0.05);
 	});
 
 	test("keeps station in a moving frame instead of drifting off it", () => {

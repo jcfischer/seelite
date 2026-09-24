@@ -345,22 +345,24 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			// the defender is a ship that arrived there, not one matching the
 			// pilot's own drift through it.
 			const offset = offsetFor(pilot.nose, e.bearing, e.rangeKm, e.rollUnit);
+			//
+			// And stepped on the frame it arrives in, as every later frame is. The
+			// pilot is stepped after this frame's encounter, so a raider placed
+			// and not flown stands one `frameVel × dt` behind at render — 3 km at
+			// `MAX_DT` beside a station, which read 11.4 km off a 10 km draw.
 			const flight = raiderAtDrop(
 				add(pilot.ship.pos, offset),
 				{ pos: pilot.ship.pos, vel: pilot.frameVel },
 				e.seed,
 			);
-			return {
-				encounter: {
+			return stepEncounter(
+				{
 					...e,
 					phase: "duel",
 					raider: { flight, condition: fullCondition(RAIDER_HULL_ID) },
 				},
-				drop: false,
-				raiderHit: null,
-				contact: contactOf(flight.ship.pos, flight.ship.vel, flight.nose),
-				wreck: null,
-			};
+				f,
+			);
 		}
 		// A contest only runs against a contact near enough to lock.
 		if (e.rangeKm > INTERDICTION_RANGE_KM) return over(e, "lost");
