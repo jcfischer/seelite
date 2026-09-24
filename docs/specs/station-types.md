@@ -662,6 +662,19 @@ tells the two ring forms apart. The hub is sized from §13.1's bay rather than
 from the slot, so the bay stands inside it. It entered the pool unselected, for
 a ranking round, as the Assembly did.
 
+The outpost carries a fifth form too, **E — Salvage** (#518), because #490 made
+the outpost the raider's haven and the Cluster was ranked as an industrial
+machine (#493). Its sentence is the role's: *welded together from salvage —
+hull sections, cargo pods and a ship's forward half bolted around the pad;
+improvised, asymmetric, lit by work lamps.* It is **grown rather than solved**:
+a salvaged freighter section stands on the axis as the core, and every later
+piece is welded onto a socket on something already built, leaning the pile to
+one side the assembly seed chooses. Each piece is kept only if its box stays
+inside the pool's 0.42 km and out of the pad's corridor. Every piece but the
+core is in another hull's paint, and the lamps are warm work lamps, not the
+pad's cool floods and never red (`hud-and-scanner.md` §4). It entered the pool
+unselected, for a ranking round beside A–D.
+
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are
 **A** because round one ranked their slot first. **Refinery and outpost are D

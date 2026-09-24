@@ -5867,9 +5867,10 @@ function buildTradeWheel(color: number, berthSeed: number): BuiltPart {
  * Every form, by role.
  *
  * A `Record<StationType, …>` for `station-types.md` §8.5's reason. Three
- * forms a role, a solved fourth on three of them since #202 and #257, and a
- * fifth on trade since #332's Wheel: `STATION_FORM_IDS` is the union of ids a
- * role may use and a role's list is not required to fill it —
+ * forms a role, a solved fourth on three of them since #202 and #257, a fifth
+ * on trade since #332's Wheel, and a fifth on outpost since #518's Salvage:
+ * `STATION_FORM_IDS` is the union of ids a role may use and a role's list is
+ * not required to fill it —
  * `buildStationForm` refuses an id its role does not carry.
  */
 export const STATION_FORMS: Record<StationType, StationForm[]> = {
