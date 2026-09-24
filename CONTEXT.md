@@ -364,6 +364,17 @@ on the control is what gets acted on, not that the label alone caused it.
 same distinction runs through the in-flight cue (*carried* against *sourced*)
 and the settlement.
 
+**Bounty**:
+A job family (`ordinary-requests.md` D2): a lawful station pays for destroying
+a named **target carrier** in its own system while that target is operational,
+claimed where it was posted (#495). The pirate relay is the first target (#508).
+Only a Clean pilot may accept or report one (#495 D2); the kill is recorded as
+evidence on every accepted Bounty naming that carrier when it happens, not read
+off the world at report. A kill before acceptance pays nothing
+(`civilian-combat.md` H8). The relay's Bounty lists locked without the
+**Long-Range Scanner**. `jobs.ts` owns the binder and the figure.
+_Avoid_: bounty hunting, reward (for the payment)
+
 **System relay**:
 The public station-condition report received when the initial world is
 established or the player later enters a system (#116). It refreshes Last-known
@@ -385,6 +396,8 @@ target, and no identification is recorded. **An identification already
 recorded is not erased, only unread** — the relay goes dark and is found again
 when the module is back. The relay's **Route detection** dial is deliberately
 untouched, so the effect is felt by a pilot who cannot find its cause (#479).
+It is also the requirement a relay **Bounty** carries: without it the offer
+lists locked and draws no Accept (#489, built in #508).
 Not the **Identity Scanner**, which reads a hull held on target.
 _Avoid_: system scanner, sensor upgrade
 
