@@ -86,6 +86,17 @@ export function defenderDraw(
 	};
 }
 
+/**
+ * The tender's instance for a call: its carrier instance and the visit.
+ * A tender that leaves when a repair completes keeps its slot's ordinal (sage
+ * #507 round 2), so the ordinal alone would hand the next visit the last
+ * visit's watch and its draws. `sinceS` is `tenderPresentSince`'s answer.
+ */
+export const tenderVisitInstance = (
+	instanceOrdinal: number,
+	sinceS: number,
+): number => mix(instanceOrdinal >>> 0, Math.floor(sinceS) >>> 0);
+
 /** What one target has called this visit. */
 export interface DefenderWatch {
 	instance: number;

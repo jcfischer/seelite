@@ -169,8 +169,8 @@ export const JOB_ROWS: readonly JobRow[] = [
 		consequence:
 			"Raiders stop getting reports on this approach until they replace the relay.",
 		tonnes: 0,
-		// #508 D3: the principal's figure. The kill is undefended until #511
-		// gives the relay a defender, which owes this figure a second look.
+		// #508 D3: the principal's figure, kept fixed by #511 D4 against the
+		// defended kill (#515); the defender's cargo is the extra pay.
 		payment: { baseCr: 400, perTonneCr: 0, perLyCr: 0, basePriceFactor: 0 },
 	}),
 ];

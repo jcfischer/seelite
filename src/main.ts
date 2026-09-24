@@ -460,10 +460,16 @@ import {
 	type EncounterContact,
 	type EncounterEnd,
 	RAIDER_CONTACT_RADIUS_KM,
+	defenderEncounter,
 	forceEncounter,
 	scheduleEncounter,
 	stepEncounter,
 } from "./encounter";
+import {
+	type DefenderWatches,
+	answerHit,
+	tenderVisitInstance,
+} from "./relay-defender";
 import {
 	type EncounterBearing,
 	RAIDER_HULL_ID,
@@ -893,7 +899,9 @@ const playerFullCondition = (): ShipCondition => fullCondition(PLAYER_HULL[0]);
 
 /**
  * `?raider` puts a raider on every cruise leg, five seconds in (#324), and
- * `?raider=off` (or `0`, or `false`) puts one on none.
+ * `?raider=off` (or `0`, or `false`) puts one on none — and calls no
+ * defender to the relay (#515), for the same reason: a script that shoots the
+ * relay about something else should not have a raider shooting back.
  *
  * Both are affordances of `?hull=`'s kind. The leg law is a chance, and a pilot
  * judging the contest should not have to fly legs until one comes; the bearing
@@ -2150,6 +2158,10 @@ class Game {
 	/** The instance the hull belongs to: a replacement starts whole (sage
 	 *  #350 — the replacement inherited the wreck's zero and died on one pulse). */
 	private relayHullInstance = 0;
+	/** #515: what the relay and its tender have called this visit. Flight state
+	 *  like the relay's hull: a jump leaves it, and a reload re-draws the same
+	 *  calls from ordinal zero rather than re-rolling them. */
+	private defenderWatches: DefenderWatches = {};
 	private relayListed = false;
 	private readonly relayContact: DisplayContact = {
 		id: "",
@@ -10270,6 +10282,7 @@ class Game {
 		this.relayPlanCache = null;
 		this.relayHull = RELAY_INTEGRITY;
 		this.relayHullInstance = 0;
+		this.defenderWatches = {};
 		this.tenderCondition = fullCondition(RELAY_TENDER_HULL_ID);
 		this.tenderView = null;
 	}
@@ -11003,6 +11016,7 @@ class Game {
 			relayInSights(this.cameraPos(), this.beamAim(), pos)
 		) {
 			this.relayHull = Math.max(0, this.relayHull - shot.damage);
+			this.callDefender(key, carrier.instanceOrdinal);
 			if (this.relayHull === 0) {
 				this.applyCarrierTransition(
 					key,
@@ -11090,6 +11104,12 @@ class Game {
 				shot.damage,
 				sideStruck(scale(view.entry, -1), sub(this.cameraPos(), pos)),
 			);
+			// #511 D5: the tender calls on the relay's rule. A visit is its own
+			// target instance, for the reason a visit starts whole above.
+			this.callDefender(
+				key,
+				tenderVisitInstance(tender.instanceOrdinal, since),
+			);
 			if (!isAlive(this.tenderCondition)) {
 				for (const t of tenderKill(record.index, now, plan.watchedStationId))
 					this.applyCarrierTransition(t.key, t.event);
@@ -11098,6 +11118,35 @@ class Game {
 				this.tenderView = null;
 			}
 		}
+	}
+
+	/**
+	 * #515: a hit on the relay or its tender calls a raider (#511), unless one
+	 * is already called, the last call sent nobody, or any encounter is live —
+	 * `answerHit` owns that rule. Called here, after `stepRaider` has run
+	 * for the frame, so the new encounter is first stepped on the next one.
+	 */
+	private callDefender(target: CarrierKey, instance: number) {
+		if (this.combatRig || RAIDERS_OFF) return;
+		const record = this.world.system.record;
+		const now = this.world.gameTime;
+		const answer = answerHit(
+			this.defenderWatches,
+			{ target, instance },
+			this.encounter !== null && this.encounter.phase !== "over",
+			(ordinal) =>
+				defenderEncounter(
+					this.slotOperational,
+					record.index,
+					record,
+					target,
+					instance,
+					ordinal,
+					now,
+				),
+		);
+		this.defenderWatches = answer.watches;
+		if (answer.encounter) this.encounter = answer.encounter;
 	}
 
 	/** The tender where the clock stands now, for `relayNow`'s reason: it rides

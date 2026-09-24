@@ -128,6 +128,18 @@ identified inside 150 km, spent by ten seconds of pulse fire, replaced an hour
 later on the clock. `docs/prototypes/relay-codex.md` carries the prototype's
 decisions and `scripts/measure-relay-route.ts` what the dial measures.
 
+**The relay calls a defender, and it is the one encounter outside cruise
+(#511, built in #515).** The first hit on the relay or its repair tender calls
+a raider that drops in beside the pilot a few seconds later, inside beam range
+and at rest in the frame the fight is flown in. It is not the arbitrary
+low-speed spawn the paragraph above rules out: it is called by the pilot's
+attack, and a pilot who only passes calls nothing. Who answers is the leg law's
+rule — a seeded draw over the system's slots, and nobody if the drawn slot is
+destroyed or repairing. A hit calls only while no encounter is live and the
+target has not been answered; a defender's end re-arms the next hit, and a call
+that sent nobody answers that target instance for the visit. `?raider=off`
+calls none. `src/relay-defender.ts` owns the delay, the range and the call rule.
+
 System law supplies the baseline danger, cargo value makes a route attractive, and combat rating chooses a fair encounter composition. Rating does not secretly change enemy stats or simply increase spawn frequency. Harder encounters are small role-based groups: interceptors pressure escape, strikers attack, and higher-risk groups may add a missile carrier or tougher leader. Ships break to recharge or flee when outmatched.
 
 **Out of the beam is out of the fight** is §2.2's routing rule, not a duel rule: the

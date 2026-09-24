@@ -21,6 +21,7 @@ import {
 	type DefenderWatches,
 	answerHit,
 	defenderDraw,
+	tenderVisitInstance,
 } from "../src/relay-defender";
 import { relaySlot, relayTenderSlot } from "../src/relay-slot";
 import { fullCondition } from "../src/ship-condition";
@@ -197,6 +198,15 @@ describe("the call count", () => {
 		const spent = hit({}, RELAY, 0, false, false).watches;
 		const replacement = hit(spent, RELAY, 1, false);
 		expect(replacement.encounter).toEqual(called(RELAY, 1, 0));
+	});
+
+	test("a tender's next visit is a new attack, though its ordinal is kept", () => {
+		const first = tenderVisitInstance(0, 1_000);
+		const spent = hit({}, TENDER, first, false, false).watches;
+		expect(hit(spent, TENDER, first, false).encounter).toBeNull();
+		const next = tenderVisitInstance(0, 5_000);
+		expect(next).not.toBe(first);
+		expect(hit(spent, TENDER, next, false).encounter).not.toBeNull();
 	});
 
 	test("the relay and the tender are watched separately", () => {
