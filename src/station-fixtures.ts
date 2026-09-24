@@ -59,6 +59,7 @@ import type { StationFormId, StationFixture } from "./station-mesh";
 import type { DetailLevel } from "./detail-level";
 import type { StationFixtureKind } from "./station-visuals";
 import { STATION_VISUALS } from "./station-visuals";
+import { SALVAGE_CORE } from "./station-plant";
 
 /** The unit box and the unit tube every member is an instance of. Built once
  *  and marked shared, so a jump's teardown frees the instance data and leaves
@@ -1352,10 +1353,12 @@ const DECLARATIONS: Partial<
 	 */
 	"outpost/e": ({ pools, mount }) => {
 		const S = SHIP_SCALE;
-		// The core's half-extents in `buildOutpostSalvage`, less half a strut
-		// so the belt's members bite into the plating they are welded to.
-		const hx = 0.055 + S.strutKm * 0.25;
-		const hy = 0.045 + S.strutKm * 0.25;
+		const C = SALVAGE_CORE;
+		// The belt's centre line a quarter strut outside each face, so the
+		// inner half of its section is sunk 2 m into the plating it is welded to.
+		const hx = C.halfWidthKm + S.strutKm * 0.25;
+		const hy = C.halfHeightKm + S.strutKm * 0.25;
+		const belt = C.bottomKm + 0.02;
 		const corners = [
 			V(hx, hy, 0),
 			V(-hx, hy, 0),
@@ -1365,8 +1368,8 @@ const DECLARATIONS: Partial<
 		for (let i = 0; i < 4; i++)
 			truss(
 				pools,
-				corners[i].clone().setZ(-0.14),
-				corners[(i + 1) % 4].clone().setZ(-0.14),
+				corners[i].clone().setZ(belt),
+				corners[(i + 1) % 4].clone().setZ(belt),
 				S.strutKm,
 				V(0, 0, 1),
 			);
@@ -1374,14 +1377,16 @@ const DECLARATIONS: Partial<
 			pipeRun(
 				pools,
 				[-0.15, -0.06, 0.03, 0.12].map((z) =>
-					mount(V(side * 0.02, side * 0.045, z), V(0, side, 0), 0.06).add(
-						V(0, side * S.pipeKm, 0),
-					),
+					mount(
+						V(side * 0.02, side * C.halfHeightKm, z),
+						V(0, side, 0),
+						0.06,
+					).add(V(0, side * S.pipeKm, 0)),
 				),
 				S.pipeKm,
 			);
 		tankRack(pools, {
-			origin: mount(V(0, 0, -0.16), V(0, 0, -1), 0.06),
+			origin: mount(V(0, 0, C.bottomKm), V(0, 0, -1), 0.06),
 			along: V(1, 0, 0),
 			up: V(0, 0, -1),
 			count: 4,

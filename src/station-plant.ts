@@ -263,3 +263,23 @@ export const OUTPOST_VOCABULARY: Vocabulary = {
 	],
 	barred: (dx, dy) => (Math.abs(dx) + Math.abs(dy) <= 1 ? 1 << O.TOWER : 0),
 };
+
+// ---------------------------------------------------------------------------
+// Outpost E — Salvage (#518).
+
+/**
+ * The salvage's core, kilometres: the freighter section every plan grows
+ * from, standing on the axis under the deck. Here rather than in the builder
+ * because the core is the one part every plan shares, so it is what the
+ * form's macro fixtures (`station-fixtures.ts`) are mounted on — and a second
+ * copy of these figures there would leave the fixtures floating or buried
+ * the day the core is resized.
+ */
+export const SALVAGE_CORE = Object.freeze({
+	/** Half-width across ±X, and the face the wider sockets are on. */
+	halfWidthKm: 0.055,
+	/** Half-height across ±Y. */
+	halfHeightKm: 0.045,
+	/** Its foot, the far end from the deck. */
+	bottomKm: -0.16,
+});

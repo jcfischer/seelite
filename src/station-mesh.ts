@@ -109,6 +109,7 @@ import {
 	REFINERY,
 	REFINERY_RADIUS,
 	REFINERY_VOCABULARY,
+	SALVAGE_CORE,
 } from "./station-plant";
 import { DIRECTIONS } from "./wfc";
 import { mix, seededRand } from "./rng";
@@ -5060,7 +5061,7 @@ const POD_PAINTS = [0x9c7a3c, 0x5c7a8a, 0x7d6b45, 0xa8a090, 0x4f6a5a] as const;
  * whatever lamps were to hand, clamped to the junk where the work is. Not
  * red — `hud-and-scanner.md` §4 owns red as refusal.
  */
-const WORK_LAMP_COLOR = 0xffd9a0;
+export const WORK_LAMP_COLOR = 0xffd9a0;
 const WORK_LAMP_MATERIAL = shared(
 	emissiveMaterial(WORK_LAMP_COLOR, STATION_EMISSIVE_INTENSITIES.flood),
 );
@@ -5069,6 +5070,21 @@ const WORK_LAMP_GLOW = steadyGlowMaterial(
 	STATION_EMISSIVE_INTENSITIES.flood,
 	"flood",
 );
+/** One lamp's box, kept: every work lamp on every salvage is the same fitting. */
+const WORK_LAMP_GEOMETRY = shared(
+	new THREE.BoxGeometry(
+		FITTING_KM.flood[0],
+		FITTING_KM.flood[1],
+		FITTING_KM.flood[2],
+	),
+);
+/**
+ * A unit box, kept, that a torn shard or a patch plate scales to its own size:
+ * a fresh `BoxGeometry` per piece was a geometry per piece to build and free.
+ */
+const SALVAGE_UNIT_BOX = shared(new THREE.BoxGeometry(1, 1, 1));
+/** The torn edge's bare metal, kept, rather than one material per shard. */
+const TORN_MATERIAL = shared(plainMaterial(0x4a4f52, 0.9, 0.5));
 
 /** A place on a built piece where the next one can be welded. */
 interface Socket {
@@ -5095,9 +5111,15 @@ interface Socket {
  * every seed leans the pile toward one side of the core, because a pile that
  * balances round its axis reads as designed.
  *
- * **Everything stays behind the pad's plane or outside its corridor**, checked
- * on each piece's box before it is kept, and inside the pool's reach. A piece
- * that fails is not placed; the socket goes back.
+ * **Every welded piece — the bow, a section, a pod — is checked on its box
+ * before it is kept**: inside 0.40 km of the pool's 0.42, and behind the
+ * deck's underside unless it is 0.2 km off the axis, well clear of the
+ * corridor. One that fails is not placed and its socket goes back. The rest is
+ * not checked here and does not need to be: plates and lamps sit on the core
+ * or a checked piece, the canopy and the torn shards on the bow, and the
+ * girders run from the deck's rim at 0.78·r to a socket, all behind the
+ * plane. The corridor and reach rows in `tests/station-mesh.test.ts` measure
+ * the whole built form over the seed spread, which is what holds all of it.
  */
 function buildOutpostSalvage(
 	color: number,
@@ -5125,9 +5147,9 @@ function buildOutpostSalvage(
 
 	// The core: a boxy freighter section standing on the axis, sunk into the
 	// deck slab. It keeps the caller's colour and the name the probe reads.
-	const coreW = 0.055;
-	const coreH = 0.045;
-	const coreBottom = -0.16;
+	const coreW = SALVAGE_CORE.halfWidthKm;
+	const coreH = SALVAGE_CORE.halfHeightKm;
+	const coreBottom = SALVAGE_CORE.bottomKm;
 	group.add(
 		shell(
 			[
@@ -5280,7 +5302,10 @@ function buildOutpostSalvage(
 			dir,
 			V(between(-0.4, 0.4), between(-0.4, 0.4), 1),
 		);
-		if (!fits(matrix, w, h, length)) continue;
+		if (!fits(matrix, w, h, length)) {
+			sockets.push(socket);
+			continue;
+		}
 		const bow = shell(
 			[
 				{ z: 0, w: w * 0.96, h: h * 0.96, e: 3, hard: true },
@@ -5312,14 +5337,13 @@ function buildOutpostSalvage(
 		// The torn edge at the break: frames and plating left ragged.
 		for (let i = 0; i < 7; i++) {
 			const theta = (i / 7) * Math.PI * 2 + between(-0.2, 0.2);
-			const shard = new THREE.Mesh(
-				new THREE.BoxGeometry(w * 0.35, 0.002, between(0.008, 0.022)),
-				plainMaterial(0x4a4f52, 0.9, 0.5),
-			);
+			const depth = between(0.008, 0.022);
+			const shard = new THREE.Mesh(SALVAGE_UNIT_BOX, TORN_MATERIAL);
+			shard.scale.set(w * 0.35, 0.002, depth);
 			shard.position.set(
 				Math.cos(theta) * w * 0.94,
 				Math.sin(theta) * h * 0.94,
-				-shard.geometry.parameters.depth * 0.3,
+				-depth * 0.3,
 			);
 			shard.rotation.z = theta + Math.PI / 2;
 			shard.name = "bow-torn";
@@ -5414,14 +5438,15 @@ function buildOutpostSalvage(
 		const socket = take((s) => s.kind === "side");
 		if (!socket) break;
 		const thick = 0.003;
+		// Drawn in this order so the plan is the one the sheet was ranked on:
+		// width, height, then paint.
+		const across = between(0.012, 0.028);
+		const along = between(0.012, 0.028);
 		const plate = new THREE.Mesh(
-			new THREE.BoxGeometry(
-				between(0.012, 0.028),
-				between(0.012, 0.028),
-				thick,
-			),
+			SALVAGE_UNIT_BOX,
 			hullMaterial(pick(SALVAGE_PAINTS), "outpost"),
 		);
+		plate.scale.set(across, along, thick);
 		plate.position
 			.copy(socket.at)
 			.addScaledVector(socket.normal, thick * (0.5 - 2 / 3));
@@ -5454,14 +5479,7 @@ function buildOutpostSalvage(
 	for (let i = 0; i < lampCount; i++) {
 		const socket = take((s) => s.kind === "side");
 		if (!socket) break;
-		const lamp = new THREE.Mesh(
-			new THREE.BoxGeometry(
-				FITTING_KM.flood[0],
-				FITTING_KM.flood[1],
-				FITTING_KM.flood[2],
-			),
-			WORK_LAMP_MATERIAL,
-		);
+		const lamp = new THREE.Mesh(WORK_LAMP_GEOMETRY, WORK_LAMP_MATERIAL);
 		lamp.position.copy(socket.at);
 		lamp.quaternion.setFromUnitVectors(Z, socket.normal);
 		lamp.name = "bay-flood";

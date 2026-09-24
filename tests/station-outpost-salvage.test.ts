@@ -7,8 +7,8 @@
  * The sheet and the principal judge whether it reads as that. What this file
  * holds is the half a row can hold: that each named ingredient is built on
  * every plan, that the plan is the assembly seed's and not the berth seed's,
- * that no two plans in the spread are the same, that no plan is mirrored
- * about the axis, and that no lamp on it is red. Reach, islands, corridor and
+ * that no two plans in the spread are the same, that every plan leans off
+ * the axis, and that no lamp on it is red. Reach, islands, corridor and
  * lamp seating are the pool's rows, and reach this form over the seed spread
  * through `SOLVED_FORMS`.
  */
@@ -18,6 +18,7 @@ import * as THREE from "three";
 import {
 	SELECTED_FORM,
 	STATION_FORMS,
+	WORK_LAMP_COLOR,
 	buildStationForm,
 } from "../src/station-mesh";
 import { ASSEMBLY_SEEDS, isSolvedForm } from "./helpers/solved-forms";
@@ -72,13 +73,28 @@ describe("outpost E is the choice, on the principal's yes", () => {
 describe("the role's sentence, piece by piece", () => {
 	test("every plan carries a ship's forward half, hull sections and cargo pods", () => {
 		for (const seed of ASSEMBLY_SEEDS) {
-			const names = parts(build(seed).root).map(({ name }) => name);
+			const root = build(seed).root;
+			const names = parts(root).map(({ name }) => name);
 			const count = (prefix: string) =>
 				names.filter((n) => n.startsWith(prefix)).length;
 			expect([seed, count("salvage-bow")]).toEqual([seed, 1]);
 			expect([seed, count("salvage-section") >= 2]).toEqual([seed, true]);
 			expect([seed, count("salvage-pod") >= 3]).toEqual([seed, true]);
-			expect([seed, count("bay-flood") > 4]).toEqual([seed, true]);
+			// The work lamps by their own warm colour: they share the name
+			// `bay-flood` with the pad deck's four floods, which the lamp-seating
+			// row keys on, so a count by name would pass a plan with none.
+			let workLamps = 0;
+			root.traverse((object) => {
+				const material = (object as THREE.Mesh).material as
+					| THREE.MeshStandardMaterial
+					| undefined;
+				if (
+					object.name === "bay-flood" &&
+					material?.emissive?.getHex() === WORK_LAMP_COLOR
+				)
+					workLamps += 1;
+			});
+			expect([seed, workLamps >= 6]).toEqual([seed, true]);
 		}
 	});
 
@@ -92,7 +108,11 @@ describe("the role's sentence, piece by piece", () => {
 		expect(plans.size).toBe(ASSEMBLY_SEEDS.length);
 	});
 
-	test("no plan is mirrored about the axis", () => {
+	test("every plan leans off the axis", () => {
+		// A lean, not an asymmetry: a pile mirrored about a plane through the
+		// axis still leans, and would pass. What the lean buys is that no plan
+		// balances round the core, which is what reads as designed.
+
 		// The salvage's own box, not the station's: the pad deck is square
 		// and centred, and would mask a lopsided plant under it.
 		for (const seed of ASSEMBLY_SEEDS) {
@@ -119,7 +139,7 @@ describe("no red lamps — red is refusal (hud-and-scanner.md §4)", () => {
 	};
 
 	test("no emissive surface or glow on any plan is red", () => {
-		for (const seed of ASSEMBLY_SEEDS.slice(0, 4)) {
+		for (const seed of ASSEMBLY_SEEDS) {
 			const red: string[] = [];
 			build(seed).root.traverse((object) => {
 				const material = (object as THREE.Mesh).material as
