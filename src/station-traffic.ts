@@ -340,16 +340,14 @@ export interface LaneRouteView {
 	terminalStationId: string | null;
 	phase: TrafficRoutePhase;
 	laneRequest?: Pick<LaneRequest, "readyAt" | "kind"> | null;
+	/** When the route gives the lane back (#521); `station-route.ts` owns it. */
+	laneEndsAtS?: number;
 }
 
 /**
  * The player's turn at a station's lane, as a reason rather than a yes/no.
  *
- * `null` is the lane. The order is the one `Game` used: a Traffic authority
- * still warming cannot see an actor already committed to the lane, a carrier
- * moving through it is non-preemptive, and otherwise the oldest ready request
- * wins by `playerWinsLane`'s total order. **A refused request that keeps its
- * `readyAt` keeps its place** in that order, which is what a held launch is.
+ * `null` is the lane. The order is `laneBlockers`'s, below.
  */
 export function playerLaneRefusal(input: {
 	authorityReady: boolean;
@@ -358,31 +356,93 @@ export function playerLaneRefusal(input: {
 	readyAt: number;
 	movement: LaneRequest["kind"];
 }): LaneRefusal | null {
-	if (!input.authorityReady) return "traffic-starting";
+	return laneBlockers(input).refusal;
+}
+
+/**
+ * Why the lane is not the player's yet, and how long until it is (#521).
+ *
+ * `null` is the lane. `waitS` is the time until the **last** route the
+ * player waits behind gives the lane back — the one in it, and every older
+ * request `playerLaneRefusal`'s order puts ahead — read off each route's own
+ * `laneEndsAtS`, which the composition that flies it predicts. It is `null`,
+ * never a guess, while Traffic is warming (it cannot see the lane) or when any
+ * blocker carries no predicted end. A collision can still interrupt a route
+ * (#75), so the figure is an estimate and is worded as one.
+ */
+export function playerLaneWait(input: {
+	authorityReady: boolean;
+	routes: readonly LaneRouteView[];
+	stationId: string;
+	readyAt: number;
+	movement: LaneRequest["kind"];
+	gameTime: number;
+}): { refusal: LaneRefusal; waitS: number | null } | null {
+	const { refusal, blockers } = laneBlockers(input);
+	if (refusal === null) return null;
+	if (refusal === "traffic-starting") return { refusal, waitS: null };
+	let releaseAtS = input.gameTime;
+	for (const route of blockers) {
+		if (route.laneEndsAtS === undefined) return { refusal, waitS: null };
+		releaseAtS = Math.max(releaseAtS, route.laneEndsAtS);
+	}
+	return { refusal, waitS: releaseAtS - input.gameTime };
+}
+
+/**
+ * The routes the player waits behind at one station's lane, and the reason
+ * the first of them gives. The reason's order is the one `Game` used: a
+ * Traffic authority still warming cannot see an actor already committed to
+ * the lane, a carrier moving through it is non-preemptive, and otherwise the
+ * oldest ready request wins by `playerWinsLane`'s total order. **A refused
+ * request that keeps its `readyAt` keeps its place** in that order, which is
+ * what a held launch is.
+ */
+function laneBlockers(input: {
+	authorityReady: boolean;
+	routes: readonly LaneRouteView[];
+	stationId: string;
+	readyAt: number;
+	movement: LaneRequest["kind"];
+}): { refusal: LaneRefusal | null; blockers: LaneRouteView[] } {
+	if (!input.authorityReady)
+		return { refusal: "traffic-starting", blockers: [] };
 	const here = input.routes.filter(
 		(route) => route.terminalStationId === input.stationId,
 	);
-	if (
-		here.some(
-			(route) => route.phase === "departing" || route.phase === "arriving",
-		)
-	)
-		return "carrier-in-lane";
-	const contenders: LaneRequest[] = here.flatMap((route) =>
-		route.laneRequest &&
-		(route.phase === "launch-queued" || route.phase === "lane-queued")
-			? [
-					{
-						participant: { kind: "carrier" as const, key: route.key },
-						readyAt: route.laneRequest.readyAt,
-						kind: route.laneRequest.kind,
-					},
-				]
-			: [],
+	const inLane = here.filter(
+		(route) => route.phase === "departing" || route.phase === "arriving",
 	);
-	return playerWinsLane(contenders, input.readyAt, input.movement)
-		? null
-		: "carrier-queued-ahead";
+	const queued = here.filter(
+		(route) =>
+			route.laneRequest &&
+			(route.phase === "launch-queued" || route.phase === "lane-queued"),
+	);
+	const player: StationTurn = {
+		participant: { kind: "player" },
+		readyAt: input.readyAt,
+		kind: input.movement,
+	};
+	const ahead = queued.filter((route) => {
+		const request = route.laneRequest as Pick<LaneRequest, "readyAt" | "kind">;
+		return (
+			compareStationTurns(
+				{
+					participant: { kind: "carrier", key: route.key },
+					readyAt: request.readyAt,
+					kind: request.kind,
+				},
+				player,
+			) < 0
+		);
+	});
+	const refusal =
+		inLane.length > 0
+			? "carrier-in-lane"
+			: ahead.length > 0
+				? "carrier-queued-ahead"
+				: null;
+	return { refusal, blockers: [...inLane, ...ahead] };
 }
 
 /** Station-owned local traversal laws used by route composition. */

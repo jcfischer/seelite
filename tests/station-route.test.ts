@@ -772,6 +772,45 @@ describe("terminal-to-terminal route projection", () => {
 		expect(cruiseCache.size).toBeGreaterThan(0);
 	}, 10_000);
 
+	test("a route gives the lane back when it said it would (#521)", () => {
+		// The player's wait estimate reads `laneEndsAtS` off queued and flying
+		// routes, so the prediction must be the moment the route actually leaves
+		// `departing` or `arriving` — within one step of this walk. A launch and
+		// an arrival are both flown, so both halves of the composition are held.
+		const STEP_S = 0.25;
+		const cruiseCache = new Map();
+		const exits: { movement: string; predicted: number; actual: number }[] = [];
+		let open: { phase: string; predicted: number } | null = null;
+		for (
+			let t = departure - 5;
+			t < departure + actor.schedule.awayS + 900 && exits.length < 2;
+			t += STEP_S
+		) {
+			const projection = projectSystemTrafficAuthority({
+				record,
+				actor,
+				gameTime: t,
+				cruiseCache,
+			});
+			const lanePhase =
+				projection.phase === "departing" || projection.phase === "arriving";
+			if (lanePhase) {
+				expect(projection.laneEndsAtS).toBeDefined();
+				open ??= { phase: projection.phase, predicted: projection.laneEndsAtS ?? Number.NaN };
+				// One prediction for the whole traversal, not one that drifts.
+				expect(projection.laneEndsAtS).toBeCloseTo(open.predicted, 9);
+			} else if (open) {
+				exits.push({ movement: open.phase, predicted: open.predicted, actual: t });
+				open = null;
+			}
+		}
+		expect(exits.map((exit) => exit.movement)).toEqual(["departing", "arriving"]);
+		for (const exit of exits) {
+			expect(exit.actual).toBeGreaterThanOrEqual(exit.predicted);
+			expect(exit.actual - exit.predicted).toBeLessThan(STEP_S);
+		}
+	}, 20_000);
+
 	test("cold cache warm-up obeys a fixed canonical tick budget", () => {
 		const cruiseCache = new Map();
 		const queryAt = departure + 120.25;
