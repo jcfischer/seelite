@@ -11339,6 +11339,8 @@ class Game {
 			hull: this.relayHull,
 			listed: this.relayListed,
 			detection: this.relayDetectionNow(),
+			// #515: what the relay and its tender have called this visit.
+			defenderWatches: this.defenderWatches,
 			// #351: the repair tender, where the clock stands, while it is there.
 			tender:
 				this.tenderView && plan

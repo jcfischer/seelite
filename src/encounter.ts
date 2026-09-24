@@ -349,7 +349,8 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 			// And stepped on the frame it arrives in, as every later frame is. The
 			// pilot is stepped after this frame's encounter, so a raider placed
 			// and not flown stands one `frameVel × dt` behind at render — 3 km at
-			// `MAX_DT` beside a station, which read 11.4 km off a 10 km draw.
+			// `MAX_DT` beside a station. #515's probe read 11.36 km at arrival
+			// against a range drawn under `DEFENDER_RANGE_KM`'s 10.
 			const flight = raiderAtDrop(
 				add(pilot.ship.pos, offset),
 				{ pos: pilot.ship.pos, vel: pilot.frameVel },

@@ -16,8 +16,9 @@
  *   defender, killed, is the slot's world-state destruction and drops cargo;
  * - **a defended tender kill**: the same, on the repair tender (#511 D5).
  *
- * `HEADED=1` also writes 1440x900 captures of each defender on arrival under
- * `DEFENDER_EVIDENCE` (default `/tmp/seelite-515-evidence`).
+ * `HEADED=1` also writes 1440x900 captures under `DEFENDER_EVIDENCE` (default
+ * `/tmp/seelite-515-evidence`): each fight once its target is dead, nose on
+ * the defender that is still in it.
  */
 import { mkdirSync } from "node:fs";
 import { gameUrl } from "./lib/game-url.mjs";
@@ -185,7 +186,7 @@ async function boot() {
 					maxGapKm,
 					maxRelKms,
 					fightFrames,
-					calls: g.defenderWatches[key]?.calls ?? 0,
+					calls: g.relayReadout().defenderWatches[key]?.calls ?? 0,
 					encounterPhase: g.encounter?.phase ?? null,
 				};
 			},
@@ -220,6 +221,15 @@ async function boot() {
 					canistersDropped: g.canisters.length - canistersBefore,
 					pilotHull: g.condition.hull,
 				};
+			},
+			/** Nose on the live defender, drawn without a step, for a capture. */
+			faceDefender() {
+				const r = g.encounter?.raider;
+				if (!r) return false;
+				g.rates = { pitch: 0, yaw: 0, roll: 0 };
+				aimAt(r.flight.ship.pos);
+				g.render(0);
+				return true;
 			},
 			frame,
 		};
@@ -294,7 +304,9 @@ async function boot() {
 // ---------------------------------------------------------------------------
 const page = await boot();
 const capture = async (name) => {
-	if (headed) await page.screenshot({ path: `${out}/${name}.png` });
+	if (!headed) return;
+	await page.evaluate(() => window.__defenderProbe.faceDefender());
+	await page.screenshot({ path: `${out}/${name}.png` });
 };
 const beamKm = await page.evaluate(() => window.__defenderProbe.beamKm);
 const capKms = await page.evaluate(() => window.__defenderProbe.assistCapKms);
