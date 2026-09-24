@@ -306,6 +306,13 @@ describe("the kill is evidence recorded when it happens (#508 D1)", () => {
 		expect(act(state, "report", { now: 90 }).ok).toBe(false);
 	});
 
+	test("an accepted request ignores a kill stamped before its acceptance", () => {
+		// The row above reaches H8 through ordering: no request existed to
+		// hear the kill. This one reaches the guard itself.
+		const state = accepted();
+		expect(recordKill(state, KEY, 30)).toBe(state);
+	});
+
 	test("a cancelled request does not listen", () => {
 		const cancelled = act(accepted(), "cancel", { now: 70 }).state;
 		expect(recordKill(cancelled, KEY, 100)).toBe(cancelled);
