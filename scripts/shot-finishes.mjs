@@ -32,6 +32,12 @@
  * the form is for; a hand-authored form ignores the seed and its rows repeat,
  * which is what a reader should see. The workbench's berth seed stays zero
  * throughout. Default `0`, so a run that does not ask is what it was.
+ *
+ * **`VARIANTS=a,b,c,d,e` is a third** (#518): a ranking round puts a new form
+ * beside the ones it competes with, and one variant per run gave one sheet per
+ * form — the comparison made across browser tabs. Each subject gets a row per
+ * variant it carries; a variant a subject does not carry is skipped, as a
+ * single `VARIANT` always was. `VARIANT=x` is still read, as a one-entry list.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -63,7 +69,9 @@ const SUBJECTS = {
 	// #333: one subject, one concept, one "as-built" finish.
 	rama: (only ?? "rama").split(",").filter(Boolean),
 };
-const VARIANT = process.env.VARIANT ?? "a";
+const VARIANTS = (process.env.VARIANTS ?? process.env.VARIANT ?? "a")
+	.split(",")
+	.filter(Boolean);
 const FINISHES = (
 	process.env.FINISHES ?? "stock,plated,industrial,worn,nostromo"
 ).split(",");
@@ -137,35 +145,44 @@ try {
 						`asked for assembly seed ${seed}, the workbench has ${got.assembly}`,
 					);
 				await fillStage(page);
-				for (const subject of SUBJECTS[family]) {
-					await page.click(`[data-model-asset="${subject}"]`);
-					const variantButton = `[data-model-variant="${VARIANT}"][data-model-role="${subject}"]`;
-					if ((await page.locator(variantButton).count()) === 0) continue;
-					await page.click(variantButton);
-					for (const view of VIEW_NAMES) {
-						const framing = VIEWS[view];
-						if (!framing) throw new Error(`no view named ${view}`);
-						await page.evaluate((v) => {
-							const s = window.__seeliteModelViewer.state;
-							s.azimuth = v.azimuth;
-							s.elevation = v.elevation;
-							if (v.zoom) s.distance *= v.zoom;
-						}, framing);
-						// Two frames: one to apply the orbit, one to draw it.
-						await page.waitForTimeout(250);
-						const file = `${family}-${subject}-${VARIANT}-${finish}-s${seed}-${view}.png`;
-						await page
-							.locator("#model-viewer canvas")
-							.screenshot({ path: join(OUT, file) });
-						captured.push({ family, subject, finish, seed, view, file });
-						// Undo the zoom so the next view starts from the workbench's
-						// own framing rather than compounding it.
-						if (framing.zoom)
-							await page.evaluate((z) => {
-								window.__seeliteModelViewer.state.distance /= z;
-							}, framing.zoom);
+				for (const subject of SUBJECTS[family])
+					for (const variant of VARIANTS) {
+						await page.click(`[data-model-asset="${subject}"]`);
+						const variantButton = `[data-model-variant="${variant}"][data-model-role="${subject}"]`;
+						if ((await page.locator(variantButton).count()) === 0) continue;
+						await page.click(variantButton);
+						for (const view of VIEW_NAMES) {
+							const framing = VIEWS[view];
+							if (!framing) throw new Error(`no view named ${view}`);
+							await page.evaluate((v) => {
+								const s = window.__seeliteModelViewer.state;
+								s.azimuth = v.azimuth;
+								s.elevation = v.elevation;
+								if (v.zoom) s.distance *= v.zoom;
+							}, framing);
+							// Two frames: one to apply the orbit, one to draw it.
+							await page.waitForTimeout(250);
+							const file = `${family}-${subject}-${variant}-${finish}-s${seed}-${view}.png`;
+							await page
+								.locator("#model-viewer canvas")
+								.screenshot({ path: join(OUT, file) });
+							captured.push({
+								family,
+								subject,
+								variant,
+								finish,
+								seed,
+								view,
+								file,
+							});
+							// Undo the zoom so the next view starts from the workbench's
+							// own framing rather than compounding it.
+							if (framing.zoom)
+								await page.evaluate((z) => {
+									window.__seeliteModelViewer.state.distance /= z;
+								}, framing.zoom);
+						}
 					}
-				}
 			}
 	}
 } finally {
@@ -186,27 +203,39 @@ for (const family of FAMILIES)
 		html.push("</tr>");
 		const seeds = family === "station" ? SEEDS : [0];
 		for (const subject of SUBJECTS[family])
-			for (const seed of seeds) {
-				html.push(
-					`<tr><th>${subject} ${VARIANT}${seeds.length > 1 ? ` · seed ${seed}` : ""}</th>`,
-				);
-				for (const finish of FINISHES) {
-					const shot = captured.find(
-						(c) =>
-							c.family === family &&
-							c.subject === subject &&
-							c.finish === finish &&
-							c.seed === seed &&
-							c.view === view,
-					);
+			for (const variant of VARIANTS)
+				for (const seed of seeds) {
+					// A variant the subject does not carry has no captures: no row.
+					if (
+						!captured.some(
+							(c) =>
+								c.family === family &&
+								c.subject === subject &&
+								c.variant === variant,
+						)
+					)
+						continue;
 					html.push(
-						shot
-							? `<td><img src="${shot.file}" alt="${shot.file}"></td>`
-							: "<td>—</td>",
+						`<tr><th>${subject} ${variant}${seeds.length > 1 ? ` · seed ${seed}` : ""}</th>`,
 					);
+					for (const finish of FINISHES) {
+						const shot = captured.find(
+							(c) =>
+								c.family === family &&
+								c.subject === subject &&
+								c.variant === variant &&
+								c.finish === finish &&
+								c.seed === seed &&
+								c.view === view,
+						);
+						html.push(
+							shot
+								? `<td><img src="${shot.file}" alt="${shot.file}"></td>`
+								: "<td>—</td>",
+						);
+					}
+					html.push("</tr>");
 				}
-				html.push("</tr>");
-			}
 		html.push("</table>");
 	}
 await writeFile(join(OUT, "index.html"), html.join("\n"));

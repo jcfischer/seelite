@@ -11,6 +11,7 @@ export const SOLVED_FORMS: readonly [StationType, StationFormId][] = [
 	["trade", "d"],
 	["refinery", "d"],
 	["outpost", "d"],
+	["outpost", "e"],
 ];
 
 /** The full spread, for the cheap rows. */

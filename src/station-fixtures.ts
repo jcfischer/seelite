@@ -59,6 +59,7 @@ import type { StationFormId, StationFixture } from "./station-mesh";
 import type { DetailLevel } from "./detail-level";
 import type { StationFixtureKind } from "./station-visuals";
 import { STATION_VISUALS } from "./station-visuals";
+import { SALVAGE_CORE } from "./station-plant";
 
 /** The unit box and the unit tube every member is an instance of. Built once
  *  and marked shared, so a jump's teardown frees the instance data and leaves
@@ -1339,6 +1340,58 @@ const DECLARATIONS: Partial<
 			count: 6,
 			panelWidthKm: S.panelKm * 0.7,
 			panelHeightKm: S.panelHeightKm * 0.7,
+		});
+	},
+
+	/**
+	 * Outpost E — Salvage (#518). On the **core**, because it is the one part
+	 * every plan shares: the rest of the pile is the assembly seed's and this
+	 * declaration never sees the seed. A lattice belt round the freighter
+	 * section's foot, pipe runs up two of its faces toward the deck, and a tank
+	 * rack slung under it. A welded piece may bury part of a run, which is what
+	 * junk does to the plumbing it was built round.
+	 */
+	"outpost/e": ({ pools, mount }) => {
+		const S = SHIP_SCALE;
+		const C = SALVAGE_CORE;
+		// The belt's centre line a quarter strut outside each face, so the
+		// inner half of its section is sunk 2 m into the plating it is welded to.
+		const hx = C.halfWidthKm + S.strutKm * 0.25;
+		const hy = C.halfHeightKm + S.strutKm * 0.25;
+		const belt = C.bottomKm + 0.02;
+		const corners = [
+			V(hx, hy, 0),
+			V(-hx, hy, 0),
+			V(-hx, -hy, 0),
+			V(hx, -hy, 0),
+		];
+		for (let i = 0; i < 4; i++)
+			truss(
+				pools,
+				corners[i].clone().setZ(belt),
+				corners[(i + 1) % 4].clone().setZ(belt),
+				S.strutKm,
+				V(0, 0, 1),
+			);
+		for (const side of [1, -1])
+			pipeRun(
+				pools,
+				[-0.15, -0.06, 0.03, 0.12].map((z) =>
+					mount(
+						V(side * 0.02, side * C.halfHeightKm, z),
+						V(0, side, 0),
+						0.06,
+					).add(V(0, side * S.pipeKm, 0)),
+				),
+				S.pipeKm,
+			);
+		tankRack(pools, {
+			origin: mount(V(0, 0, C.bottomKm), V(0, 0, -1), 0.06),
+			along: V(1, 0, 0),
+			up: V(0, 0, -1),
+			count: 4,
+			radiusKm: S.tankKm,
+			lengthKm: S.tankLengthKm,
 		});
 	},
 

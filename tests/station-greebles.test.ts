@@ -496,7 +496,8 @@ describe("#129 — the windows are dense enough to read as inhabited", () => {
 			shipyard: { a: 16, b: 16, c: 12 },
 			// The two solved pad forms (#257) post-date #36 for the same reason.
 			refinery: { a: 12, b: 12, c: 10, d: 0 },
-			outpost: { a: 6, b: 6, c: 6, d: 0 },
+			// And the Salvage (#518) post-dates both.
+			outpost: { a: 6, b: 6, c: 6, d: 0, e: 0 },
 		};
 		for (const type of TYPES) {
 			// Every form has a baseline, so a form added without one is a red run

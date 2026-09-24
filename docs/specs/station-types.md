@@ -662,12 +662,33 @@ tells the two ring forms apart. The hub is sized from §13.1's bay rather than
 from the slot, so the bay stands inside it. It entered the pool unselected, for
 a ranking round, as the Assembly did.
 
+The outpost carries a fifth form too, **E — Salvage** (#518), because #490 made
+the outpost the raider's haven and the Cluster was ranked as an industrial
+machine (#493). Its sentence is the role's: *welded together from salvage —
+hull sections, cargo pods and a ship's forward half bolted around the pad;
+improvised, asymmetric, lit by work lamps.* It is **grown rather than solved**:
+a salvaged freighter section stands on the axis as the core, and every later
+piece is welded onto a socket on something already built, leaning the pile to
+one side the assembly seed chooses. Each welded piece — the bow, a section, a
+pod — is kept only if its box stays inside 0.40 km and behind the deck or well
+clear of the corridor; the plates, lamps and girders on them are not checked one
+by one, and what holds the whole form is the corridor and reach rows over the
+seed spread. The bow, the sections and the plates are painted from a palette of
+other hulls' colours, drawn per piece, so a plan repeats some; the pods carry
+freight colours. The lamps are warm work lamps, not the pad's cool floods and
+never red (`hud-and-scanner.md` §4). It was ranked beside A–D at three plans
+under five finishes and four framings, and taken (2026-09-24). Its macro
+fixtures — a belt, two pipe runs and a tank rack on the core — were added after
+that sheet, because a selected form owes them under the industrial finishes.
+
 `SELECTED_FORM` (`station-mesh.ts`) names the one the game builds for each role,
 and is one line per role so a later choice is one edit. Trade and shipyard are
-**A** because round one ranked their slot first. **Refinery and outpost are D
+**A** because round one ranked their slot first. **Refinery and outpost were D
 since 2026-09-06**, on the principal's yes to #257's sheet — the first choice
-either role has had, after two rounds in which `a` was a placeholder that said
-so. The refinery's changes what a running game draws; the outpost's does not,
+either role had, after two rounds in which `a` was a placeholder that said so.
+**The outpost is E since 2026-09-24**, on the principal's yes to #518's sheet,
+because the role became a raider's haven after the Cluster was taken. The
+refinery's choice changes what a running game draws; the outpost's does not,
 because `system.ts` places no outposts.
 
 **The letter carried forward and the geometry did not, which is worth being
