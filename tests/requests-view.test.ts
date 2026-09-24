@@ -43,12 +43,12 @@ describe("the action says whose goods it moves", () => {
 	test("an entrusted consignment is handed over, never supplied", () => {
 		const action = deliverAction(COURIER, COURIER.operand.tonnes);
 		expect(action.label).toBe(
-			`Hand over ${COURIER.operand.tonnes} t ${COURIER.operand.goodName}`,
+			`Hand over ${COURIER.operand.tonnes} t of ${COURIER.operand.goodName}`,
 		);
 		// **Never the word that sent a pilot shopping.** The label may not read
 		// as an instruction to supply anything.
 		expect(action.label).not.toMatch(/deliver/i);
-		expect(action.hint).toMatch(/aboard/);
+		expect(action.hint).toMatch(/aboard/i);
 		expect(action.hint).toMatch(/requester/);
 		expect(action.enabled).toBe(true);
 	});
@@ -56,10 +56,10 @@ describe("the action says whose goods it moves", () => {
 	test("a procurement job says the goods come out of the pilot's hold", () => {
 		const action = deliverAction(PROCUREMENT, PROCUREMENT.operand.tonnes);
 		expect(action.label).toBe(
-			`Deliver ${PROCUREMENT.operand.tonnes} t ${PROCUREMENT.operand.goodName} from your hold`,
+			`Deliver ${PROCUREMENT.operand.tonnes} t of ${PROCUREMENT.operand.goodName} from your hold`,
 		);
 		expect(action.enabled).toBe(true);
-		expect(action.hint).toMatch(/yours/);
+		expect(action.hint).toMatch(/your own/);
 	});
 
 	test("the two families' labels differ, which is the whole node", () => {
@@ -85,7 +85,9 @@ describe("the action says whose goods it moves", () => {
 
 	test("a short hold says how short, and the control is not live", () => {
 		const short = deliverAction(PROCUREMENT, 3);
-		expect(short.hint).toBe(`3 t of ${PROCUREMENT.operand.tonnes} aboard`);
+		expect(short.hint).toBe(
+			`You have 3 t of the ${PROCUREMENT.operand.tonnes} t.`,
+		);
 		expect(short.enabled).toBe(false);
 	});
 
@@ -116,7 +118,7 @@ describe("the action says whose goods it moves", () => {
 		// itself, which is the mixed signal this node exists to remove.
 		const partial = deliverAction(COURIER, 3);
 		expect(partial.hint).toBe(
-			`only 3 t of the ${COURIER.operand.tonnes} t consignment aboard`,
+			`Only 3 t of the ${COURIER.operand.tonnes} t is aboard.`,
 		);
 		expect(partial.enabled).toBe(false);
 	});
@@ -307,7 +309,7 @@ describe("the rendered control carries what the builder decided", () => {
 		const html = accepted(COURIER, COURIER.operand.tonnes);
 		expect(html).toContain('data-live-request-action="deliver"');
 		expect(html).toContain(
-			`Hand over ${COURIER.operand.tonnes} t ${COURIER.operand.goodName}`,
+			`Hand over ${COURIER.operand.tonnes} t of ${COURIER.operand.goodName}`,
 		);
 		expect(html).not.toMatch(/data-live-request-action="deliver"[^>]*disabled/);
 	});
@@ -332,7 +334,9 @@ describe("the rendered control carries what the builder decided", () => {
 	test("a short hold renders the attribute and the hint beside it", () => {
 		const html = accepted(PROCUREMENT, 1);
 		expect(html).toMatch(/data-live-request-action="deliver"[^>]*disabled/);
-		expect(html).toContain(`1 t of ${PROCUREMENT.operand.tonnes} aboard`);
+		expect(html).toContain(
+			`You have 1 t of the ${PROCUREMENT.operand.tonnes} t.`,
+		);
 		// The hint is **outside** the button: a disabled button is not
 		// focusable and browsers suppress its title, so a hint nested in one is
 		// least reachable exactly when it is most needed.
@@ -346,13 +350,14 @@ describe("the rendered control carries what the builder decided", () => {
 describe("the in-flight cue carries the same distinction", () => {
 	test("a consignment is carried and says it is already aboard", () => {
 		const cue = nextAction(acceptedRequest(COURIER));
-		expect(cue).toMatch(/aboard/);
+		// "In your hold" is the plain form of "already aboard" (#508 wording).
+		expect(cue).toMatch(/in your hold/);
 		expect(cue).toContain(COURIER.reportName);
 	});
 
 	test("a procurement job is sourced and says the pilot supplies it", () => {
 		const cue = nextAction(acceptedRequest(PROCUREMENT));
-		expect(cue).toMatch(/[Ss]ource/);
-		expect(cue).not.toMatch(/aboard/);
+		expect(cue).toMatch(/^Buy /);
+		expect(cue).not.toMatch(/aboard|in your hold/);
 	});
 });

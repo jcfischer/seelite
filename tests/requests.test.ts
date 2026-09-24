@@ -83,7 +83,7 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		expect(kept.ok).toBe(true);
 		expect(kept.state.leadsById[courier.id]).toBeDefined();
 		expect(kept.state.byId[courier.id]).toBeUndefined();
-		expect(kept.message).toBe("Kept for later. You have accepted nothing.");
+		expect(kept.message).toBe("Kept for later. You have not accepted it.");
 	});
 
 	/**
@@ -202,7 +202,7 @@ describe("§3 — accept, fly, deliver, report, once", () => {
 		// ownership line — and the settlement has to keep them apart in words
 		// as well as in arithmetic.
 		expect(reported.message).toBe(
-			`Reported · ${courier.operand.tonnes} t ${courier.operand.goodName} handed over, ${courier.rewardCr} Cr paid · ${courier.operand.tonnes} t ${courier.operand.goodName} still aboard, yours.`,
+			`Paid ${courier.rewardCr} Cr. You handed over ${courier.operand.tonnes} t of ${courier.operand.goodName}. You still have ${courier.operand.tonnes} t of ${courier.operand.goodName} of your own.`,
 		);
 	});
 
@@ -273,7 +273,7 @@ describe("the offer's clock is the journal's clock", () => {
 			},
 		);
 		expect(early.ok).toBe(false);
-		expect(early.message).toContain("observation time");
+		expect(early.message).toContain("no longer available");
 		expect(
 			requestAction(emptyRequests(), board.offers, "accept", board.offer.id, {
 				now: board.offer.observedAt,
@@ -556,7 +556,7 @@ describe("a procurement job settles against the pilot's own hold", () => {
 		);
 		expect(reported.ok).toBe(true);
 		expect(reported.message).toBe(
-			`Reported · ${offer.operand.tonnes} t ${offer.operand.goodName} delivered from your hold, ${offer.rewardCr} Cr paid · 2 t ${offer.operand.goodName} still aboard, yours.`,
+			`Paid ${offer.rewardCr} Cr for ${offer.operand.tonnes} t of ${offer.operand.goodName} from your hold. You still have 2 t of ${offer.operand.goodName} of your own.`,
 		);
 	});
 });
@@ -572,7 +572,7 @@ describe("the settlement says what moved", () => {
 				remainingT: 8,
 			}),
 		).toBe(
-			"Reported · 8 t Food handed over, 180 Cr paid · 8 t Food still aboard, yours.",
+			"Paid 180 Cr. You handed over 8 t of Food. You still have 8 t of Food of your own.",
 		);
 	});
 
@@ -586,12 +586,12 @@ describe("the settlement says what moved", () => {
 				remainingT: 0,
 			}),
 		).toBe(
-			"Reported · 5 t Textiles delivered from your hold, 90 Cr paid · no Textiles left aboard.",
+			"Paid 90 Cr for 5 t of Textiles from your hold. You have no Textiles left.",
 		);
 	});
 
 	test("after a hand-over an empty remainder is silence, not a claim", () => {
-		// `no Food left aboard` after a hand-over reads as the pilot's Food
+		// `You have no Food left` after a hand-over reads as the pilot's Food
 		// having gone — the ownership confusion this node removes, pointing the
 		// other way. A pilot who carried none of the good is told about the job
 		// and nothing else.
@@ -603,7 +603,7 @@ describe("the settlement says what moved", () => {
 				rewardCr: 180,
 				remainingT: 0,
 			}),
-		).toBe("Reported · 8 t Food handed over, 180 Cr paid.");
+		).toBe("Paid 180 Cr. You handed over 8 t of Food.");
 	});
 
 	test("after a procurement job an empty hold is worth saying", () => {
@@ -618,6 +618,6 @@ describe("the settlement says what moved", () => {
 				rewardCr: 90,
 				remainingT: 0,
 			}),
-		).toContain("no Textiles left aboard");
+		).toContain("You have no Textiles left.");
 	});
 });

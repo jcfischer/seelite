@@ -249,7 +249,7 @@ const rowText = (await row.textContent()) ?? "";
 check(
 	"unfitted, the row is locked and names the Long-Range Scanner",
 	(await row.getAttribute("data-live-request-locked")) !== null &&
-		rowText.includes(`locked · needs ${probe.LRS}`),
+		rowText.includes(`locked: needs ${probe.LRS}`),
 	rowText,
 );
 await openRow(offer.id);
@@ -257,7 +257,7 @@ const details =
 	(await console_.locator("[data-live-request-details]").textContent()) ?? "";
 check(
 	"unfitted, the details say the module is missing and draw no Accept",
-	details.includes(`${probe.LRS} · not fitted`) &&
+	details.includes(`${probe.LRS}, not fitted`) &&
 		(await actionButton("accept", offer.id).count()) === 0,
 	details.slice(0, 160),
 );
@@ -363,7 +363,8 @@ await capture("08-reported-paid");
 check(
 	"Report at the posting station pays the pinned figure and names the kill",
 	creditsAfter - creditsBefore === offer.rewardCr &&
-		paid.includes(`${probe.RELAY_NAME} destroyed`),
+		paid ===
+			`Paid ${offer.rewardCr} Cr for destroying the ${probe.RELAY_NAME}.`,
 	`${creditsBefore} → ${creditsAfter} · "${paid}"`,
 );
 
