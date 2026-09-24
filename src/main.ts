@@ -11144,15 +11144,12 @@ class Game {
 			{ target, instance },
 			this.encounter !== null && this.encounter.phase !== "over",
 			(ordinal) =>
-				defenderEncounter(
-					this.slotOperational,
-					record.index,
-					record,
+				defenderEncounter(this.slotOperational, record.index, record, {
 					target,
 					instance,
 					ordinal,
-					now,
-				),
+					calledAtS: now,
+				}),
 		);
 		this.defenderWatches = answer.watches;
 		if (answer.encounter) this.encounter = answer.encounter;

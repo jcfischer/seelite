@@ -370,6 +370,19 @@ function defendedRows(label, shot) {
 	);
 }
 
+/** The kill's own wiring: `raiderDestruction`, `dropCanisters` and the exit
+ *  line, the same for either target. */
+function defenderKilledRow(label, result) {
+	check(
+		`${label}: the defender, killed, is its slot's destruction and drops its cargo`,
+		result.encounter === null &&
+			result.slotCondition === "destroyed" &&
+			result.canistersDropped > 0 &&
+			result.lastExit === `${result.name} destroyed`,
+		JSON.stringify(result),
+	);
+}
+
 await page.evaluate(() => window.__defenderProbe.placeBeside("relay", 2));
 const relayShot = await page.evaluate(() =>
 	window.__defenderProbe.shootTarget("relay", 600),
@@ -387,14 +400,7 @@ await capture("01-relay-defender");
 const relayDefender = await page.evaluate(() =>
 	window.__defenderProbe.killDefender(1200),
 );
-check(
-	"relay: the defender, killed, is its slot's destruction and drops its cargo",
-	relayDefender.encounter === null &&
-		relayDefender.slotCondition === "destroyed" &&
-		relayDefender.canistersDropped > 0 &&
-		relayDefender.lastExit === `${relayDefender.name} destroyed`,
-	JSON.stringify(relayDefender),
-);
+defenderKilledRow("relay", relayDefender);
 
 // The tender is there from the relay's repair (kill + `RELAY_WRECK_S`) until
 // it completes; the killed defender's slot is back at its own kill plus
@@ -440,14 +446,7 @@ await capture("02-tender-defender");
 const tenderDefender = await page.evaluate(() =>
 	window.__defenderProbe.killDefender(1200),
 );
-check(
-	"tender: the defender, killed, is its slot's destruction and drops its cargo",
-	tenderDefender.encounter === null &&
-		tenderDefender.slotCondition === "destroyed" &&
-		tenderDefender.canistersDropped > 0 &&
-		tenderDefender.lastExit === `${tenderDefender.name} destroyed`,
-	JSON.stringify(tenderDefender),
-);
+defenderKilledRow("tender", tenderDefender);
 
 await page.close();
 await browser.close();

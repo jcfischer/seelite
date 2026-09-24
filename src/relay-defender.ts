@@ -58,6 +58,8 @@ export interface DefenderDraw {
 	rangeKm: number;
 	/** Which way round "alongside" falls, as a leg's `rollUnit`. */
 	rollUnit: number;
+	/** The duel's seeded stream, from the same key as this draw. */
+	encounterSeed: number;
 }
 
 /**
@@ -72,10 +74,11 @@ export function defenderDraw(
 	instance: number,
 	ordinal: number,
 ): DefenderDraw {
-	const rand = stream(
-		mix(mix(systemSeed, fnv1a(target)), mix(instance >>> 0, ordinal >>> 0)),
-		DOMAIN.RELAY_DEFENDER,
+	const key = mix(
+		mix(systemSeed, fnv1a(target)),
+		mix(instance >>> 0, ordinal >>> 0),
 	);
+	const rand = stream(key, DOMAIN.RELAY_DEFENDER);
 	const count = raiderSlotCount(government);
 	return {
 		slotIndex: Math.min(count - 1, Math.floor(rand() * count)),
@@ -83,6 +86,7 @@ export function defenderDraw(
 		delayS: lerp(DEFENDER_DELAY_S, rand()),
 		rangeKm: lerp(DEFENDER_RANGE_KM, rand()),
 		rollUnit: rand(),
+		encounterSeed: mix(key, 0x5eed),
 	};
 }
 

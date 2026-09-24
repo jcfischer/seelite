@@ -42,15 +42,12 @@ function called(
 	ordinal = 0,
 	calledAtS = 100,
 ): Encounter {
-	const e = defenderEncounter(
-		ALL_UP,
-		SYSTEM,
-		RECORD,
+	const e = defenderEncounter(ALL_UP, SYSTEM, RECORD, {
 		target,
 		instance,
 		ordinal,
 		calledAtS,
-	);
+	});
 	if (!e) throw new Error("every slot is up, so a defender must come");
 	return e;
 }
@@ -133,7 +130,12 @@ describe("who answers", () => {
 		// another slot, as `scheduleEncounter` does not move a leg's.
 		const downOnly = (key: CarrierKey) => key !== slots[drawn.slotIndex].key;
 		expect(
-			defenderEncounter(downOnly, SYSTEM, RECORD, RELAY, 0, 0, 100),
+			defenderEncounter(downOnly, SYSTEM, RECORD, {
+				target: RELAY,
+				instance: 0,
+				ordinal: 0,
+				calledAtS: 100,
+			}),
 		).toBeNull();
 	});
 

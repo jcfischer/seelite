@@ -170,7 +170,8 @@ export const JOB_ROWS: readonly JobRow[] = [
 			"Raiders stop getting reports on this approach until they replace the relay.",
 		tonnes: 0,
 		// #508 D3: the principal's figure, kept fixed by #511 D4 against the
-		// defended kill (#515); the defender's cargo is the extra pay.
+		// defended kill (#515). #511 D4 counts the defender's dropped cargo as
+		// the extra pay; nothing here pays it.
 		payment: { baseCr: 400, perTonneCr: 0, perLyCr: 0, basePriceFactor: 0 },
 	}),
 ];

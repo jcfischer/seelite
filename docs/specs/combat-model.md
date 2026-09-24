@@ -132,8 +132,8 @@ decisions and `scripts/measure-relay-route.ts` what the dial measures.
 (#511, built in #515).** The first hit on the relay or its repair tender calls
 a raider that drops in beside the pilot a few seconds later, inside beam range
 and at rest in the frame the fight is flown in. It is not the arbitrary
-low-speed spawn the paragraph above rules out: it is called by the pilot's
-attack, and a pilot who only passes calls nothing. Who answers is the leg law's
+low-speed appearance the paragraph above rules out: it is called by the
+pilot's attack, and a pilot who only passes calls nothing. Who answers is the leg law's
 rule — a seeded draw over the system's slots, and nobody if the drawn slot is
 destroyed or repairing. A hit calls only while no encounter is live and the
 target has not been answered; a defender's end re-arms the next hit, and a call

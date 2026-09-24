@@ -53,8 +53,8 @@ import {
 	legEncounter,
 	raiderSlots,
 } from "./raider-slots";
-import { type DefenderDraw, defenderDraw } from "./relay-defender";
-import { fnv1a, mix } from "./rng";
+import { defenderDraw } from "./relay-defender";
+import { mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
 import { fullCondition } from "./ship-condition";
 import { flightPerformance } from "./sim";
@@ -261,26 +261,31 @@ export function forceEncounter(
 	);
 }
 
+/** One call on a target: `instance` and `ordinal` are `defenderDraw`'s, and
+ *  `calledAtS` is the hit. */
+export interface DefenderCall {
+	target: CarrierKey;
+	instance: number;
+	ordinal: number;
+	calledAtS: number;
+}
+
 /**
  * The raider a hit on the relay or its tender calls (#515), or `null` when
- * the drawn slot is destroyed or repairing. `instance` and `ordinal` are
- * `defenderDraw`'s; `calledAtS` is the hit.
+ * the drawn slot is destroyed or repairing.
  */
 export function defenderEncounter(
 	operational: SlotOperational,
 	systemIndex: number,
 	record: { seed: number; government: number },
-	target: CarrierKey,
-	instance: number,
-	ordinal: number,
-	calledAtS: number,
+	call: DefenderCall,
 ): Encounter | null {
-	const drawn: DefenderDraw = defenderDraw(
+	const drawn = defenderDraw(
 		record.seed,
 		record.government,
-		target,
-		instance,
-		ordinal,
+		call.target,
+		call.instance,
+		call.ordinal,
 	);
 	const slot = raiderSlots(systemIndex, record.government)[drawn.slotIndex];
 	// Not moved to another slot, for `scheduleEncounter`'s reason (#511 D2).
@@ -292,8 +297,8 @@ export function defenderEncounter(
 		drawn.bearing,
 		drawn.rangeKm,
 		drawn.rollUnit,
-		calledAtS + drawn.delayS,
-		mix(mix(record.seed, fnv1a(target)), mix(instance >>> 0, ordinal ^ 0x5eed)),
+		call.calledAtS + drawn.delayS,
+		drawn.encounterSeed,
 	);
 }
 
