@@ -40,7 +40,7 @@ import {
 	createBakePrograms,
 	startBodyBake,
 } from "./planet-bake";
-import type { SurfacePath } from "./relief-bands";
+import { surfacePathWithClassPolicy, type SurfacePath } from "./relief-bands";
 import { photosphereTintLinear } from "./star-colour";
 import { disposeSubtree, shared } from "./gpu-teardown";
 
@@ -258,6 +258,14 @@ export interface BodyVisual {
 	applyReliefBand(path: ReliefPath): boolean;
 	/** Hand this body back to the bands. The perf panel's restore key. */
 	unpinSurface(): void;
+	/** The class the procedural material is currently compiled for. */
+	surfaceClass(): SurfaceClass;
+	/**
+	 * Change the compiled surface class without pinning its relief selector.
+	 * Used only by renderer warm-up; diagnostic controls keep their scene-walk
+	 * door so they do not need a `Game` handle.
+	 */
+	setSurfaceClass(surface: SurfaceClass): void;
 	/** What it is drawn with now, so the frame loop needs no parallel map. */
 	reliefPath(): ReliefPath;
 	/**
@@ -444,11 +452,13 @@ const ringPlane = () => {
 // Keyed by class *and* relief path: the path is a #define, so the two produce
 // different programs and one cache slot per class would hand back the wrong one.
 const fragmentCache = new Map<string, string>();
+const fragmentCacheKey = (surface: SurfaceClass, relief: ReliefPath) =>
+	`${surface}:${relief}`;
 const cachedFragment = (
 	surface: SurfaceClass,
 	relief: ReliefPath = "four-tap",
 ): string => {
-	const key = `${surface}:${relief}`;
+	const key = fragmentCacheKey(surface, relief);
 	const hit = fragmentCache.get(key);
 	if (hit !== undefined) return hit;
 	const source = fragmentFor(surface, relief);
@@ -751,7 +761,7 @@ export function buildBodyVisual(
 			? "baked"
 			: (planet.userData.reliefPath as ReliefPath);
 
-	planet.userData.setSurfaceClass = (next: SurfaceClass) => {
+	const setSurfaceClass = (next: SurfaceClass) => {
 		// A star keeps its own shader. It is not a planet surface, it is the
 		// brightest thing in the frame and therefore what the bloom pass is
 		// mostly working on, and drawing it as a desert would change the one
@@ -777,6 +787,7 @@ export function buildBodyVisual(
 		proceduralMaterial.needsUpdate = true;
 		planet.userData.surfaceClass = next;
 	};
+	planet.userData.setSurfaceClass = setSurfaceClass;
 	group.add(planet);
 
 	if (look.cloudCover > 0) {
@@ -927,6 +938,10 @@ export function buildBodyVisual(
 		unpinSurface() {
 			planet.userData.surfacePinned = false;
 		},
+		surfaceClass() {
+			return planet.userData.surfaceClass as SurfaceClass;
+		},
+		setSurfaceClass,
 		reliefPath() {
 			return planet.userData.reliefPath as ReliefPath;
 		},
@@ -1012,7 +1027,9 @@ export function buildBodyVisual(
 		applySurfaceBand(path) {
 			if (planet.userData.surfacePinned) return false;
 			const was = surfacePathNow();
-			swapSurfaceProgram(path);
+			swapSurfaceProgram(
+				surfacePathWithClassPolicy(planet.userData.surfaceClass, path),
+			);
 			return surfacePathNow() !== was;
 		},
 		surfacePath() {

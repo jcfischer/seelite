@@ -249,6 +249,7 @@ import { PlanetHalfResolution, useHalfResolution } from "./planet-half-res";
 import { type ReliefPath, RELIEF_PATHS } from "./planet-shaders";
 import {
 	BAKE_FACE_SIZES,
+	PLANET_RELIEF_PATHS,
 	type SurfacePath,
 	bakeFacePxFor,
 	focalPx,
@@ -4402,6 +4403,36 @@ class Game {
 		for (const [id, visual] of this.bodyVisuals) {
 			const was = before.get(id);
 			if (was) visual.applyReliefBand(was);
+		}
+		/**
+		 * The world currently in view need not contain every planet class. A jump
+		 * can make the next system's class appear on its first frame, though, so
+		 * compile the selected #224 variant for the complete policy here rather
+		 * than making that first class transition pay the shader-link hitch.
+		 *
+		 * One existing non-star visual stands in for the complete policy. The
+		 * source is keyed by class and relief path, while its uniforms are not;
+		 * a hidden duplicate would add another geometry and operational condition to keep in
+		 * step solely to compile the same programs.
+		 */
+		const policyVisual = [...this.bodyVisuals.values()].find(
+			(visual) => visual.surface !== "star",
+		);
+		if (policyVisual) {
+			const wasClass = policyVisual.surfaceClass();
+			const wasPath = policyVisual.reliefPath();
+			for (const [surface, path] of Object.entries(PLANET_RELIEF_PATHS)) {
+				policyVisual.setSurfaceClass(surface as SurfaceClass);
+				policyVisual.applyReliefBand(path);
+				for (const [scene, camera] of [
+					[this.farScene, this.farCamera],
+					[this.approachScene, this.approachCamera],
+					[this.nearScene, this.nearCamera],
+				] as const)
+					this.renderer.compile(scene, camera);
+			}
+			policyVisual.setSurfaceClass(wasClass);
+			policyVisual.applyReliefBand(wasPath);
 		}
 		/**
 		 * And the baked programs (#208), which the loop above cannot reach.

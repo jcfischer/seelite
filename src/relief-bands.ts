@@ -8,15 +8,17 @@
  * alone**, four extra `height()` calls per fragment. The bands stop paying for
  * detail there are no pixels to show.
  *
- * **One import, and it is a type**, so nothing of `planet-shaders.ts` — three
- * included — reaches the built module. Not a leaf in the sense `units.ts` and
- * `vec3.ts` are, which have no import line at all; near enough to one that the
- * band rule can be stepped twice and compared in a headless test, which is the
- * only way to check hysteresis. Hysteresis is a state machine, and a state
- * machine inside a render loop is one nothing can drive.
- * `tests/headless.test.ts` holds the type-only property, because a value import
- * of the same name would compile and would drag a renderer in behind it.
+ * **Both imports are types**, so neither the appearance vocabulary nor
+ * `planet-shaders.ts` — three behind it — reaches the built module. Not a leaf
+ * in the sense `units.ts` and `vec3.ts` are, which have no import line at all;
+ * near enough to one that the band rule can be stepped twice and compared in a
+ * headless test, which is the only way to check hysteresis. Hysteresis is a
+ * state machine, and a state machine inside a render loop is one nothing can
+ * drive. `tests/headless.test.ts` holds the type-only property, because a
+ * value import of either name would compile and would drag a renderer in
+ * behind it.
  */
+import type { SurfaceClass } from "./planet-appearance";
 import type { ReliefPath } from "./planet-shaders";
 
 /**
@@ -342,6 +344,53 @@ export function bakeFacePxFor(
  * consumer of it silently accept one.
  */
 export type SurfacePath = "baked" | ReliefPath;
+
+/**
+ * Every drawable planet class; a star has its own fragment program.
+ *
+ * Derived from the appearance vocabulary through a type-only import. If
+ * `SurfaceClass` gains a member, this selector's record no longer type checks
+ * until the policy is amended; the runtime test also compares it to the perf
+ * roster.
+ */
+export type PlanetReliefClass = Exclude<SurfaceClass, "star">;
+
+/**
+ * The full-detail procedural relief program each class ships with (#224).
+ *
+ * This is deliberately a complete record rather than a default plus one
+ * exception. A newly introduced surface class must make the compiler reject
+ * this policy until it has been looked at, instead of quietly inheriting a
+ * path whose visual trade-off was never reviewed. The apparent-size and bake
+ * bands remain separate: this policy only replaces their full-detail
+ * `"four-tap"` rung.
+ */
+export const PLANET_RELIEF_PATHS = {
+	terran: "screen-space",
+	desert: "screen-space",
+	ice: "screen-space",
+	lava: "screen-space",
+	venusian: "screen-space",
+	airless: "four-tap",
+	jovian: "screen-space",
+	iceGiant: "screen-space",
+} as const satisfies Record<
+	PlanetReliefClass,
+	Extract<ReliefPath, "four-tap" | "screen-space">
+>;
+
+/**
+ * Apply #224's class policy after the apparent-size and bake bands chose a
+ * path. Forced perf-panel paths do not call this function, so A/B measurement
+ * can still select either compiled relief program for every class.
+ */
+export function surfacePathWithClassPolicy(
+	surface: SurfaceClass,
+	path: SurfacePath,
+): SurfacePath {
+	if (surface === "star" || path !== "four-tap") return path;
+	return PLANET_RELIEF_PATHS[surface];
+}
 
 /**
  * The program for a disc of this apparent radius — #208's band over #207's.
