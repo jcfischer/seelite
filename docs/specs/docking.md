@@ -618,19 +618,22 @@ that one. Which berth is reserved does not matter while every berth of a station
 shares one clear envelope, and a test holds that as a tripwire rather than as a
 fact.
 
-**The queue was reached in the live game, and the second visitor was the
-player (#520).** This paragraph said nothing could present a station with every
-berth taken, because there is one player and Traffic may not take the visitor
-berth. The principal was queued anyway — `position 8` at a trade station (#421)
-and for minutes outside a refinery. No Traffic path deals the visitor berth:
-`trafficBerths` is the catalogue without its last berth, `clearancePromotion`
-deals only from it, and a cold carrier parks at `berths[ordinal]` with an
-ordinal below that count. So a full station is always one whose visitor berth
-the player itself holds. The caller's occupancy includes this ship's own
+**The queue was reached in the live game, and the second visitor was the player
+(#520).** This paragraph said nothing could present a station with every berth
+taken, because there is one player and Traffic may not take the visitor berth.
+The principal was queued anyway, for minutes outside a refinery, and earlier at
+`position 8` at a trade station (#421). No Traffic path deals the visitor
+berth: `trafficBerths` is the catalogue without its last berth,
+`clearancePromotion` deals only from it, and a cold carrier parks at
+`berths[ordinal]` with an ordinal below that count. So, by reading the code
+rather than by measurement, a full station is one whose visitor berth the
+player itself holds. The caller's occupancy includes this ship's own
 reservation (`occupiedAt`), and a second press of the clearance key re-dealt
 from it: a live grant came back `queued` at the full capacity and was promoted
-only when a Traffic berth freed. A request made while a grant is live now
-returns that grant unchanged, after the hostility and scan branches.
+only when a Traffic berth freed — reproduced at a refinery; the trade station's
+`position 8` is the same arithmetic, seven Traffic berths and the player's own.
+A request made while a grant is live now returns that grant unchanged, after
+the hostility and scan branches.
 
 With that closed, the queued and denied branches are again exercised by
 injected occupancy, from a browser probe as well as the headless tests; #520's

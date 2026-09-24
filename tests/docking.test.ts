@@ -603,14 +603,8 @@ describe("§9.1.9 the clearance state machine", () => {
 	});
 
 	test("asking again while a grant is live keeps the grant and its berth (#520)", () => {
-		// The pilot's clearance key is the only caller, and the arrival lane
-		// wait says nothing, so pressing it again is what a waiting pilot does.
-		// The caller's occupancy includes this ship's own reservation
-		// (`occupiedAt`), so a request that re-dealt from it read its own berth as
-		// another ship's: at a station whose other berths were all held it
-		// answered `queued` at the full capacity and kept the berth, and the
-		// ship waited on itself until an unrelated berth freed — minutes at a
-		// refinery, flown on 2026-09-24.
+		// Flown on 2026-09-24: a second press answered `queued` at the full
+		// capacity and the ship waited minutes at a refinery. Mechanism: §6.1.
 		const granted = requestClearance(newDockingState(), REQ);
 		const own = granted.berthId;
 		expect(own).not.toBeNull();
@@ -623,6 +617,24 @@ describe("§9.1.9 the clearance state machine", () => {
 		expect(again.clearance).toEqual(granted.clearance);
 		expect(again.berthId).toBe(own);
 		expect(grantLive(again, 30)).toBe(true);
+	});
+
+	test("a live grant does not outrank a refusal (#520)", () => {
+		// The early return sits after the hostility, law and scan branches: a
+		// station that has turned on the pilot since the grant still refuses them.
+		const granted = requestClearance(newDockingState(), REQ);
+		expect(
+			requestClearance(granted, { ...REQ, gameTime: 30, refusedByLaw: true })
+				.clearance,
+		).toEqual({ kind: "denied", reason: "hostile" });
+		expect(
+			requestClearance({ ...granted, hostile: true }, { ...REQ, gameTime: 30 })
+				.clearance,
+		).toEqual({ kind: "denied", reason: "hostile" });
+		expect(
+			requestClearance(granted, { ...REQ, gameTime: 30, scanFails: true })
+				.clearance,
+		).toEqual({ kind: "denied", reason: "contraband" });
 	});
 
 	test("releasing the berth spends the grant with it", () => {
