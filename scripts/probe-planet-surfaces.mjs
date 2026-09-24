@@ -760,6 +760,34 @@ await settleBakes();
 	 * entirely unchecked from this round on, with the section still green.
 	 */
 	await page.evaluate(() => window.__seelite.setBakeAllowed(false));
+	/** Put one class on one body without pinning its relief-path selector. */
+	const wearClass = async (id, klass) => {
+		await page.evaluate(
+			([bodyId, surface]) => {
+				const g = window.__seelite;
+				for (const scene of [g.nearScene, g.approachScene, g.farScene])
+					scene
+						.getObjectByName(bodyId)
+						?.traverse((o) => o.userData?.setSurfaceClass?.(surface));
+			},
+			[id, klass],
+		);
+	};
+	const readClass = async (id) =>
+		page.evaluate((bodyId) => {
+			for (const scene of [
+				window.__seelite.nearScene,
+				window.__seelite.approachScene,
+				window.__seelite.farScene,
+			]) {
+				let found = null;
+				scene.getObjectByName(bodyId)?.traverse((o) => {
+					if (o.userData?.surfaceClass) found = o.userData.surfaceClass;
+				});
+				if (found) return found;
+			}
+			return null;
+		}, id);
 
 	const far = await pathAt(30);
 	check(
@@ -773,12 +801,40 @@ await settleBakes();
 		mid === "screen-space",
 		`${subject.id} at 5 radii: ${mid}`,
 	);
-	const near = await pathAt(1.2);
-	check(
-		"and filling the frame it is back on four-tap",
-		near === "four-tap",
-		`${subject.id} at 1.2 radii: ${near}`,
+	const subjectClass = await page.evaluate(
+		(id) => window.__seelite.bodyVisuals.get(id)?.surface ?? null,
+		subject.id,
 	);
+	// Kept independent of the running module: this is the accepted #224 matrix,
+	// so a wrong policy table in the application makes this probe red.
+	const expectedPaths = {
+		terran: "screen-space",
+		desert: "screen-space",
+		ice: "screen-space",
+		lava: "screen-space",
+		venusian: "screen-space",
+		airless: "four-tap",
+		jovian: "screen-space",
+		iceGiant: "screen-space",
+	};
+	if (subjectClass === null)
+		throw new Error(`no surface class for ${subject.id}`);
+	for (const [klass, wanted] of Object.entries(expectedPaths)) {
+		await wearClass(subject.id, klass);
+		const near = await pathAt(1.2);
+		const worn = await readClass(subject.id);
+		check(
+			`${subject.id} changes to ${klass} before its relief path is read`,
+			worn === klass,
+			`${subject.id} asked for ${klass}, wore ${worn}`,
+		);
+		check(
+			`a filling ${klass} planet activates its compiled ${wanted} relief path`,
+			near === wanted,
+			`${subject.id} as ${klass} at 1.2 radii: ${near}`,
+		);
+	}
+	await wearClass(subject.id, subjectClass);
 	// The pin, which every instrument in this repo depends on: an external write
 	// must survive the frame loop. Without it `measure-planet-cost.mjs` would
 	// print the selector's choice under whatever arm it thought it had set.
@@ -797,8 +853,8 @@ await settleBakes();
 	const released = await pathAt(1.2);
 	check(
 		"and un-pinning hands the body back to the bands",
-		released === "four-tap",
-		`un-pinned at 1.2 radii: ${released}`,
+		released === expectedPaths[subjectClass],
+		`un-pinned as ${subjectClass} at 1.2 radii: ${released}`,
 	);
 
 	/**
@@ -865,33 +921,17 @@ await settleBakes();
 		baker !== null,
 		`widest bakeable body: ${baker ?? "none — every body is a giant, a star or a venusian deck"}`,
 	);
-	/**
-	 * Put one class on **one** body.
-	 *
-	 * `setSurfaceAndRelief` walks the scenes and sets every planet, which is what
-	 * an ablation sweep wants and the opposite of what this section wants: the
-	 * first version used it and left every body in the system wearing `lava`,
-	 * which reddened section 3's class-separation check with a repeat noise floor
-	 * of 15.1 against its usual 1.7. Through `userData` because that is the door
-	 * the panel's own class cycle uses, and it is per object.
-	 */
-	const wearClass = async (id, klass) => {
-		await page.evaluate(
-			([bodyId, surface]) => {
-				const g = window.__seelite;
-				for (const scene of [g.nearScene, g.approachScene, g.farScene])
-					scene
-						.getObjectByName(bodyId)
-						?.traverse((o) => o.userData?.setSurfaceClass?.(surface));
-			},
-			[id, klass],
-		);
-	};
-	const bakerClass = await page.evaluate(
-		(id) => window.__seelite.bodyVisuals.get(id)?.surface ?? null,
-		baker,
-	);
 	if (baker !== null) {
+		const bakerClass = await page.evaluate(
+			(id) => window.__seelite.bodyVisuals.get(id)?.surface ?? null,
+			baker,
+		);
+		if (bakerClass === null)
+			throw new Error(`no surface class for bake subject ${baker}`);
+		if (!(bakerClass in expectedPaths))
+			throw new Error(
+				`unexpected surface class for bake subject ${baker}: ${bakerClass}`,
+			);
 		const bakedFar = await pathAt(30, baker);
 		check(
 			"a planet 30 radii away is drawn from its cube, not from noise",
@@ -931,7 +971,7 @@ await settleBakes();
 		const bakedNear = await pathAt(1.2, baker);
 		check(
 			"filling the frame it is procedural again — no face size serves that rung",
-			bakedNear === "four-tap",
+			bakedNear === expectedPaths[bakerClass],
 			// The finding the node's resolution question has as its answer. A 512
 			// face is 11.8 screen pixels per texel at 1.02 radii and it would take
 			// faces around 6,000 px to reach parity, so the band refuses rather

@@ -15,6 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	BAKE_MAX_PX_PER_TEXEL,
+	PLANET_RELIEF_PATHS,
 	RELIEF_BAND_HYSTERESIS,
 	RELIEF_OFF_BELOW_PX,
 	SCREEN_SPACE_BELOW_PX,
@@ -23,11 +24,13 @@ import {
 	peakPxPerCubeTexel,
 	pxPerCubeTexel,
 	reliefPathFor,
+	surfacePathWithClassPolicy,
 	surfacePathFor,
 } from "../src/relief-bands";
 import { radiusAtTexelRatio } from "./lib/texel-radius";
 import { CLASS_GLSL, RELIEF } from "../src/planet-classes.glsl";
 import { fragmentFor } from "../src/planet-shaders";
+import { PERF_CLASSES } from "../src/perf-panel";
 
 describe("the projection the bands read", () => {
 	/**
@@ -187,6 +190,40 @@ describe("the bands", () => {
 		expect(reliefPathFor(atRadii(3), null)).toBe("screen-space");
 		expect(reliefPathFor(atRadii(2), null)).toBe("four-tap");
 		expect(reliefPathFor(atRadii(1.02), null)).toBe("four-tap");
+	});
+});
+
+describe("the per-class relief policy", () => {
+	/**
+	 * #224's approved policy applies only to the full-detail procedural rung.
+	 * The apparent-size bands still own when there is no relief at all, and the
+	 * bake band still owns when a cube can carry the visible surface.
+	 */
+	test("maps every perf class explicitly, retaining four-tap only for craters", () => {
+		const expected = {
+			terran: "screen-space",
+			desert: "screen-space",
+			ice: "screen-space",
+			lava: "screen-space",
+			venusian: "screen-space",
+			airless: "four-tap",
+			jovian: "screen-space",
+			iceGiant: "screen-space",
+		} as const;
+
+		expect(Object.keys(PLANET_RELIEF_PATHS)).toEqual([...PERF_CLASSES]);
+		expect(PLANET_RELIEF_PATHS).toEqual(expected);
+		for (const surface of PERF_CLASSES) {
+			expect(surfacePathWithClassPolicy(surface, "four-tap")).toBe(
+				expected[surface],
+			);
+			expect(surfacePathWithClassPolicy(surface, "screen-space")).toBe(
+				"screen-space",
+			);
+			expect(surfacePathWithClassPolicy(surface, "none")).toBe("none");
+			expect(surfacePathWithClassPolicy(surface, "baked")).toBe("baked");
+		}
+		expect(surfacePathWithClassPolicy("star", "four-tap")).toBe("four-tap");
 	});
 });
 
