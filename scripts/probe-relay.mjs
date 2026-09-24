@@ -1198,6 +1198,7 @@ await capture("06-tender-next");
 // read the tender that comes for that.
 const secondVisit = await page.evaluate(async (killedAt) => {
 	const g = window.__seelite;
+	const { SHIELD_POOL } = await import("/src/ship-condition.ts");
 	const relay = await import("/src/pirate-relay.ts");
 	const tender = await import("/src/relay-tender.ts");
 	const probe = window.__relayProbe;
@@ -1234,8 +1235,8 @@ const secondVisit = await page.evaluate(async (killedAt) => {
 		next: pools(g.relayReadout().tender),
 		// A whole tug: both shields full and its own hull (Q13), off the page.
 		full: {
-			fore: (await import("/src/ship-condition.ts")).SHIELD_POOL,
-			aft: (await import("/src/ship-condition.ts")).SHIELD_POOL,
+			fore: SHIELD_POOL,
+			aft: SHIELD_POOL,
 			hull: tender.RELAY_TENDER_INTEGRITY,
 		},
 	};

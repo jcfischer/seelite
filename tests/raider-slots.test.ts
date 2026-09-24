@@ -141,19 +141,24 @@ describe("route detection (node #43, tuned by #351)", () => {
 		expect(RELAY_WATCHED_LEG_CHANCE).toBeGreaterThan(RAIDER_LEG_CHANCE.anarchy);
 	});
 
-	test("`watched` meets a raider on about 90% of legs in any government, `none` on no leg", () => {
+	test("`watched` meets a raider on about 90% of legs, and government does not move which legs", () => {
 		const record = generateGalaxy(WORLD, 0).systems[5];
 		const legs = 5000;
-		for (const government of [0, 7]) {
-			let met = 0;
-			for (let leg = 0; leg < legs; leg++) {
-				if (legEncounter(record.seed, government, leg, "watched")) met++;
-				expect(legEncounter(record.seed, government, leg, "none")).toBeNull();
-			}
-			// Binomial at p = 0.9 over 5,000: sd 0.42 points, so ±1.5 is 3.5 sd.
-			expect(met / legs).toBeGreaterThan(0.885);
-			expect(met / legs).toBeLessThan(0.915);
+		let met = 0;
+		for (let leg = 0; leg < legs; leg++) {
+			const anarchy = legEncounter(record.seed, 0, leg, "watched");
+			if (anarchy) met++;
+			// The watched threshold ignores government by construction, so the two
+			// extremes meet on exactly the same legs — one measurement, stated as
+			// one (sage #507 round 4), with the equality as the check.
+			expect(legEncounter(record.seed, 7, leg, "watched") !== null).toBe(
+				anarchy !== null,
+			);
+			expect(legEncounter(record.seed, 0, leg, "none")).toBeNull();
 		}
+		// Binomial at p = 0.9 over 5,000: sd 0.42 points, so ±1.5 is 3.5 sd.
+		expect(met / legs).toBeGreaterThan(0.885);
+		expect(met / legs).toBeLessThan(0.915);
 	});
 
 	test("`watched` keeps the draw's own slot, bearing, delay and range", () => {

@@ -16,7 +16,9 @@ binding table that speaks of pressing one.
 
 **Display contact**:
 A targetable presentation identity outside the generated body list. Its producer
-supplies position, velocity, name, hull type and scanner classification;
+supplies position, velocity, name, hull type and scanner classification —
+and, where it knows it, the carrier's operational condition (#351 Q12, the
+relay's, so a wreck does not read as a live target);
 `src/display-contact.ts` owns this shape under work-graph decision #52. A
 contact's display name is a label, with no persistence identity or Carrier slot
 meaning. `ship-visuals.md` §2 owns the review fleet's use of it; the other

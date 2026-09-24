@@ -13805,8 +13805,9 @@ class Game {
 	 * civilian to a threshold, somewhere chosen, was worked to for twenty seconds
 	 * of unbroken beam and shown nothing (#395).
 	 *
-	 * The relay is deliberately absent: it has no condition to show, and a line
-	 * of zeros beside its name would be a reading of a fight it does not have.
+	 * The operational relay shows its hull with both shields at zero, because it
+	 * has none; a wreck shows no line (#351 Q12); the relay's tender shows its
+	 * ship shields and hull (Q13).
 	 */
 	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
