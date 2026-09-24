@@ -320,10 +320,7 @@ describe("shared station arbitration", () => {
 			laneRequest,
 			...(laneEndsAtS === undefined ? {} : { laneEndsAtS }),
 		});
-		const wait = (
-			routes: ReturnType<typeof route>[],
-			authorityReady = true,
-		) =>
+		const wait = (routes: ReturnType<typeof route>[], authorityReady = true) =>
 			playerLaneWait({
 				authorityReady,
 				routes,

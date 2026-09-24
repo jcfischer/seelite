@@ -796,15 +796,25 @@ describe("terminal-to-terminal route projection", () => {
 				projection.phase === "departing" || projection.phase === "arriving";
 			if (lanePhase) {
 				expect(projection.laneEndsAtS).toBeDefined();
-				open ??= { phase: projection.phase, predicted: projection.laneEndsAtS ?? Number.NaN };
+				open ??= {
+					phase: projection.phase,
+					predicted: projection.laneEndsAtS ?? Number.NaN,
+				};
 				// One prediction for the whole traversal, not one that drifts.
 				expect(projection.laneEndsAtS).toBeCloseTo(open.predicted, 9);
 			} else if (open) {
-				exits.push({ movement: open.phase, predicted: open.predicted, actual: t });
+				exits.push({
+					movement: open.phase,
+					predicted: open.predicted,
+					actual: t,
+				});
 				open = null;
 			}
 		}
-		expect(exits.map((exit) => exit.movement)).toEqual(["departing", "arriving"]);
+		expect(exits.map((exit) => exit.movement)).toEqual([
+			"departing",
+			"arriving",
+		]);
 		for (const exit of exits) {
 			expect(exit.actual).toBeGreaterThanOrEqual(exit.predicted);
 			expect(exit.actual - exit.predicted).toBeLessThan(STEP_S);

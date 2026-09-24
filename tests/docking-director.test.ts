@@ -30,6 +30,8 @@ import {
 	DIRECTOR_RANGE_KM,
 	directorEngaged,
 	dockingDirector,
+	LANE_WAIT_STEP_S,
+	laneWaitEstimate,
 } from "../src/docking-director";
 import { TUNNEL_MOUTH_OFFSET_KM } from "../src/docking-tunnel";
 import { type Vec3, add, cross, dot, length, scale, v3 } from "../src/vec3";
@@ -570,5 +572,51 @@ describe("§3: range and closing speed", () => {
 		);
 		expect(far.inVicinity).toBe(false);
 		expect(far.rangeKm).toBeCloseTo(VICINITY_KM * 2, 6);
+	});
+});
+
+describe("#521: a live grant waiting on the lane says so, and how long", () => {
+	const wait = { refusal: "carrier-in-lane" as const, waitS: 12 };
+	const withWait = (state: DockingState, gameTime = 0) => {
+		const frame = frameFor();
+		return dockingDirector({
+			stationId: "station-a",
+			stationPos: v3(1_400, -900, 320),
+			frame,
+			pose: nominal(frame),
+			state,
+			gameTime,
+			laneWait: wait,
+		});
+	};
+
+	test("a live grant carries the wait, and it is not a block", () => {
+		const d = withWait(granted(GRANT_WINDOW_S));
+		expect(d.laneWait).toEqual(wait);
+		// A wait is not a refusal: §4's red, and the block's text, stay unspent.
+		expect(d.blocking).toBeNull();
+	});
+
+	test("no live grant, or a block, leaves no wait to show", () => {
+		expect(
+			withWait(granted(GRANT_WINDOW_S), GRANT_WINDOW_S).laneWait,
+		).toBeNull();
+		expect(withWait(newDockingState()).laneWait).toBeNull();
+		const hostile = withWait({ ...granted(GRANT_WINDOW_S), hostile: true });
+		expect(hostile.blocking?.kind).toBe("hostile");
+		expect(hostile.laneWait).toBeNull();
+	});
+
+	test("the estimate rounds up to its step and never shows less than one", () => {
+		// Rounding up, so the shown figure is never shorter than Traffic's.
+		expect(LANE_WAIT_STEP_S).toBe(5);
+		expect(laneWaitEstimate(0)).toBe("~5s");
+		expect(laneWaitEstimate(0.2)).toBe("~5s");
+		expect(laneWaitEstimate(5)).toBe("~5s");
+		expect(laneWaitEstimate(5.01)).toBe("~10s");
+		expect(laneWaitEstimate(33)).toBe("~35s");
+		// Traffic cannot say: no figure, not a guess.
+		expect(laneWaitEstimate(null)).toBe("");
+		expect(laneWaitEstimate(Number.POSITIVE_INFINITY)).toBe("");
 	});
 });
