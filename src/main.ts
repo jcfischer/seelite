@@ -8876,6 +8876,7 @@ class Game {
 				.filter((b) => b.kind === "star" || b.kind === "planet")
 				.map((b) => ({
 					id: b.id,
+					kind: b.kind,
 					pos: { ...b.pos },
 					radiusKm: b.radiusKm,
 					vel: bodyVelocity(this.world.system, b.id, this.world.gameTime),

@@ -104,9 +104,19 @@ try {
 						0.05;
 					// Position samples are 0.1 s apart. Fifty metres covers integration
 					// and moving-frame curvature at phase boundaries; 2x the trapezoid
-					// distance covers guided acceleration without allowing low-speed
-					// kilometre teleports.
-					const allowedKm = Math.max(0.05, expectedKm * 2);
+					// distance covers guided acceleration. A cruise leg can spend its
+					// previous sample steering at zero, then decelerate within this one,
+					// so its average speed can exceed the ending velocity by a small,
+					// bounded amount. The 5% envelope admits that physical first powered
+					// step while retaining a finite jump allowance for this probe.
+					const allowedKm = Math.max(
+						0.05,
+						expectedKm * 2,
+						Math.max(
+							Math.hypot(prior.vel.x, prior.vel.y, prior.vel.z),
+							Math.hypot(route.vel.x, route.vel.y, route.vel.z),
+						) * 0.105,
+					);
 					if (deltaKm > allowedKm)
 						jumps.push({
 							t,

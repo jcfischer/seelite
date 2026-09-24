@@ -22,7 +22,7 @@
 import { describe, expect, test } from "bun:test";
 // Read off the page, not restated (CLAUDE.md): these are the thresholds the
 // invariants below are stated against.
-import { SURFACE_MARGIN } from "../src/cruise";
+import { PLANET_APPROACH_RADIUS } from "../src/planet-approach-boundary";
 import { STATION_ORBIT_R_OVER_R } from "../src/system";
 import {
 	ALL_GALAXIES,
@@ -101,12 +101,14 @@ describe("station orbits clear their host (node #32)", () => {
 		expect(hostOrbiting).toBeGreaterThan(1000);
 	});
 
-	test("the floor leaves no station inside its host's cruise shell", () => {
-		// The generator can violate §12.2's defect in one of two ways, and this
-		// pins both rather than re-walking the radius floor under a shell-shaped
-		// name: the constants may drift (a shell at 1.6 × R would swallow a 1.5
+	test("the floor leaves no station inside the planet approach boundary", () => {
+		// The generator can violate the approach rule in one of two ways, and this
+		// pins both rather than re-walking the radius floor under a boundary-shaped
+		// name: the constants may drift (a boundary above 1.5 × R would swallow a 1.5
 		// floor), or the generator may stop applying the max.
-		expect(STATION_ORBIT_R_OVER_R).toBeGreaterThanOrEqual(SURFACE_MARGIN);
+		expect(STATION_ORBIT_R_OVER_R).toBeGreaterThanOrEqual(
+			PLANET_APPROACH_RADIUS,
+		);
 		// The defect population directly: 1,059 of 19,202 host-orbiting stations
 		// inside their own shell on the before build over this corpus, zero now.
 		// (The t0 test
@@ -116,7 +118,7 @@ describe("station orbits clear their host (node #32)", () => {
 		forEachHostedStation((s, host) => {
 			hostOrbiting++;
 			expect(s.orbit.radiusKm).toBeGreaterThanOrEqual(
-				host.radiusKm * SURFACE_MARGIN,
+				host.radiusKm * PLANET_APPROACH_RADIUS,
 			);
 		});
 		expect(hostOrbiting).toBeGreaterThan(1000);
@@ -169,8 +171,7 @@ describe("station orbits clear their host (node #32)", () => {
 		// silently replaced the band with a proportional rule and every rocky
 		// world's station would have moved. Two crossovers are in play and the
 		// test names both:
-		//   vs the shell — band top 2,000 km clears 1.05 × R up to
-		//     2,000 / (SURFACE_MARGIN − 1) = 40,000 km of host radius;
+		//   vs the boundary — the 1.5R station floor clears it at every radius;
 		//   vs the floor itself — a band row can only *exist* above the floor
 		//     below 2,000 / (STATION_ORBIT_R_OVER_R − 1) = 4,000 km of host
 		//     radius, which is the tighter bound and the one the census uses.

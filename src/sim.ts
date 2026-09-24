@@ -67,6 +67,7 @@ import {
 	velocityOnOrbit,
 } from "./system";
 import { type PlanetAppearance, appearanceOf } from "./planet-appearance";
+import { planetApproachEntryTime } from "./planet-approach-boundary";
 import { type Vec3, add, cross, dot, length, scale, sub, v3 } from "./vec3";
 
 /**
@@ -1051,8 +1052,37 @@ export function stepWorld(
 	dt: number,
 	perf: FlightPerformance,
 ): void {
+	const from = { ...world.ship.pos };
+	const planetStarts = new Map(
+		world.system.bodies
+			.filter((body) => body.kind === "planet")
+			.map((body) => [body.id, { ...body.pos }]),
+	);
 	advanceWorldClock(world, dt);
 	stepFlight(world.ship, control, dt, perf);
+	if (dt <= 0) return;
+	let earliest: { time: number; body: Body; start: Vec3 } | null = null;
+	for (const body of world.system.bodies) {
+		if (body.kind !== "planet") continue;
+		const start = planetStarts.get(body.id);
+		if (!start) continue;
+		const time = planetApproachEntryTime({
+			from,
+			velocity: scale(sub(world.ship.pos, from), 1 / dt),
+			duration: dt,
+			centre: start,
+			centreVelocity: scale(sub(body.pos, start), 1 / dt),
+			radiusKm: body.radiusKm,
+		});
+		if (time === null || (earliest && time > earliest.time)) continue;
+		earliest = { time, body, start };
+	}
+	if (!earliest) return;
+	const carryVelocity = scale(sub(earliest.body.pos, earliest.start), 1 / dt);
+	const shipVelocity = scale(sub(world.ship.pos, from), 1 / dt);
+	const boundaryPos = add(from, scale(shipVelocity, earliest.time));
+	world.ship.pos = add(boundaryPos, scale(carryVelocity, dt - earliest.time));
+	world.ship.vel = bodyVelocity(world.system, earliest.body.id, world.gameTime);
 }
 
 /**

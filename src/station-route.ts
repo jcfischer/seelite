@@ -236,9 +236,27 @@ const advanceTrafficCruiseStep = (
 			environment.massesAt(atS),
 			environment.targetParentId,
 		);
+		if (chargeAu + 1e-12 >= required) {
+			const resumed: TrafficCruiseState = {
+				...state,
+				phase: "cruise",
+				chargeAu,
+				atS,
+				workTicks: state.workTicks + 1,
+			};
+			const next = advanceTrafficCruiseStep(
+				resumed,
+				CANONICAL_ROUTE_DT_S,
+				environment,
+			);
+			return {
+				...resumed,
+				vel: scale(sub(next.pos, resumed.pos), 1 / CANONICAL_ROUTE_DT_S),
+			};
+		}
 		return {
 			...state,
-			phase: chargeAu + 1e-12 >= required ? "cruise" : "regenerating",
+			phase: "regenerating",
 			chargeAu,
 			atS,
 			workTicks: state.workTicks + 1,
@@ -494,6 +512,7 @@ const massesFromSystem = (
 		.filter((body) => body.kind === "star" || body.kind === "planet")
 		.map((body) => ({
 			id: body.id,
+			kind: body.kind,
 			pos: { ...body.pos },
 			radiusKm: body.radiusKm,
 			vel: bodyVelocity(system, body.id, gameTime),
@@ -909,7 +928,7 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		masses: cruiseMassesAt(spoolEndS),
 		targetParentId: selected.parentId ?? null,
 	});
-	const cruiseInitial: TrafficCruiseState = {
+	let cruiseInitial: TrafficCruiseState = {
 		phase: initialGuidance.error ? "blocked" : "cruise",
 		pos: cruiseStartPos,
 		vel: add(
@@ -983,6 +1002,25 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 	const requestedCanonicalAtS =
 		spoolEndS + Math.max(0, canonicalTicks) * CANONICAL_ROUTE_DT_S;
 	const cached = input.cruiseCache?.get(cacheKey);
+	if (!cached) {
+		// `advanceCruise` derives its powered velocity from position and nose, not
+		// the stored `vel`. Seed a newly visible leg with one canonical step's
+		// average so the first displayed cruise sample agrees with the distance it
+		// covers on the next tick instead of reporting a stationary ship.
+		const firstStep = advanceTrafficCruiseStep(
+			cruiseInitial,
+			CANONICAL_ROUTE_DT_S,
+			cruiseEnvironment,
+		);
+		if (firstStep.phase === "cruise")
+			cruiseInitial = {
+				...cruiseInitial,
+				vel: scale(
+					sub(firstStep.pos, cruiseInitial.pos),
+					1 / CANONICAL_ROUTE_DT_S,
+				),
+			};
+	}
 	const base =
 		cached &&
 		cached.startedAtS === spoolEndS &&

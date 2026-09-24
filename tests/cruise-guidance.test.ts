@@ -7,6 +7,7 @@ import {
 
 const blocker: Mass = {
 	id: "planet",
+	kind: "planet",
 	pos: { x: 100, y: 0, z: 0 },
 	vel: { x: 0, y: 0, z: 0 },
 	radiusKm: 20,
@@ -59,5 +60,30 @@ describe("shared pure cruise guidance", () => {
 		expect(stepped.error).toBeNull();
 		expect(stepped.nose).not.toEqual({ x: 1, y: 0, z: 0 });
 		expect(stepped.throttle).toBe(0);
+	});
+
+	test("guidance detours around the planet approach boundary, not its old shell", () => {
+		const begun = beginCruiseGuidance({
+			from: { x: 0, y: 0, z: 0 },
+			target: { id: "station", pos: { x: 200, y: 0, z: 0 } },
+			masses: [{ ...blocker, pos: { x: 100, y: 22, z: 0 } }],
+			targetParentId: "planet",
+		});
+		expect(begun.error).toBeNull();
+		expect(begun.guidance?.bodyId).toBe("planet");
+	});
+
+	test("guidance rejects a route deeper from inside a planet approach boundary", () => {
+		const begun = beginCruiseGuidance({
+			from: { x: 123, y: 0, z: 0 },
+			target: { id: "station", pos: { x: 122, y: 0, z: 0 } },
+			masses: [blocker],
+			targetParentId: "planet",
+		});
+		expect(begun.guidance).toBeNull();
+		expect(begun.error).toEqual({
+			kind: "detour-unavailable",
+			blockerId: "planet",
+		});
 	});
 });

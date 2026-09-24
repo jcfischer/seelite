@@ -32,6 +32,7 @@ import {
 	stepWorld,
 	flightPerformance,
 } from "../src/sim";
+import { PLANET_APPROACH_RADIUS } from "../src/planet-approach-boundary";
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import {
 	ARRIVAL_CLEARANCE_AU,
@@ -257,6 +258,69 @@ describe("the game clock", () => {
 		expect(length(world.ship.vel)).toBeGreaterThan(0);
 		expect(length(sub(world.system.bodies[1].pos, bodyBefore))).toBeGreaterThan(
 			0,
+		);
+	});
+
+	test("normal flight cannot sweep inside a planet's 1.2-radius boundary", () => {
+		const world = makeWorld(SEED);
+		const planet = world.system.bodies.find((body) => body.kind === "planet");
+		if (!planet) throw new Error("fixture has no planet");
+		const initialVelocity = bodyVelocity(
+			world.system,
+			planet.id,
+			world.gameTime,
+		);
+		world.ship.pos = add(
+			planet.pos,
+			v3(planet.radiusKm * PLANET_APPROACH_RADIUS, 0, 0),
+		);
+		world.ship.vel = add(initialVelocity, v3(-2, 0, 0));
+		stepWorld(
+			world,
+			{ nose: v3(-1, 0, 0), throttle: 0, assist: false },
+			planet.radiusKm * 0.002,
+			BASELINE,
+		);
+		const moved = world.system.bodies.find((body) => body.id === planet.id);
+		if (!moved) throw new Error("planet disappeared");
+		expect(length(sub(world.ship.pos, moved.pos)) / moved.radiusKm).toBeCloseTo(
+			PLANET_APPROACH_RADIUS,
+			5,
+		);
+		expect(
+			length(
+				sub(
+					world.ship.vel,
+					bodyVelocity(world.system, moved.id, world.gameTime),
+				),
+			),
+		).toBeLessThan(1e-9);
+	});
+
+	test("normal flight can graze a planet's 1.2-radius boundary", () => {
+		const world = makeWorld(SEED);
+		const planet = world.system.bodies.find((body) => body.kind === "planet");
+		if (!planet) throw new Error("fixture has no planet");
+		const initialVelocity = bodyVelocity(
+			world.system,
+			planet.id,
+			world.gameTime,
+		);
+		world.ship.pos = add(
+			planet.pos,
+			v3(planet.radiusKm * PLANET_APPROACH_RADIUS, 0, 0),
+		);
+		world.ship.vel = add(initialVelocity, v3(0, 2, 0));
+		stepWorld(
+			world,
+			{ nose: v3(0, 1, 0), throttle: 0, assist: false },
+			planet.radiusKm * 0.002,
+			BASELINE,
+		);
+		const moved = world.system.bodies.find((body) => body.id === planet.id);
+		if (!moved) throw new Error("planet disappeared");
+		expect(length(sub(world.ship.pos, moved.pos))).toBeGreaterThan(
+			moved.radiusKm * PLANET_APPROACH_RADIUS,
 		);
 	});
 });
