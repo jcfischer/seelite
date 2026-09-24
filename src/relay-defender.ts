@@ -82,7 +82,10 @@ export function defenderDraw(
 	const count = raiderSlotCount(government);
 	return {
 		slotIndex: Math.min(count - 1, Math.floor(rand() * count)),
-		bearing: BEARINGS[Math.min(2, Math.floor(rand() * 3))],
+		bearing:
+			BEARINGS[
+				Math.min(BEARINGS.length - 1, Math.floor(rand() * BEARINGS.length))
+			],
 		delayS: lerp(DEFENDER_DELAY_S, rand()),
 		rangeKm: lerp(DEFENDER_RANGE_KM, rand()),
 		rollUnit: rand(),
@@ -106,11 +109,12 @@ export interface DefenderWatch {
 	instance: number;
 	/** Calls made against this instance; the next call's ordinal. */
 	calls: number;
-	/** The last call sent nobody, so this instance's attack is answered. */
-	unanswered: boolean;
+	/** The last call sent nobody, which answers this instance's attack. */
+	spent: boolean;
 }
 
-/** Every target's watch, by carrier key. Flight state: a jump leaves it. */
+/** Every target's watch, by carrier key — which carries the system, so one
+ *  map holds every system's watches apart. */
 export type DefenderWatches = Readonly<Record<string, DefenderWatch>>;
 
 /**
@@ -130,8 +134,8 @@ export function answerHit<E>(
 	const watch: DefenderWatch =
 		known && known.instance === hit.instance
 			? known
-			: { instance: hit.instance, calls: 0, unanswered: false };
-	if (watch.unanswered) return { watches, encounter: null };
+			: { instance: hit.instance, calls: 0, spent: false };
+	if (watch.spent) return { watches, encounter: null };
 	const encounter = send(watch.calls);
 	return {
 		watches: {
@@ -139,7 +143,7 @@ export function answerHit<E>(
 			[hit.target]: {
 				instance: hit.instance,
 				calls: watch.calls + 1,
-				unanswered: encounter === null,
+				spent: encounter === null,
 			},
 		},
 		encounter,

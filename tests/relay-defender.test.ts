@@ -113,7 +113,7 @@ describe("the defender's draw", () => {
 				seen.add(
 					defenderDraw(RECORD.seed, government, RELAY, 0, ordinal).slotIndex,
 				);
-			expect([...seen].sort()).toEqual(
+			expect([...seen].sort((a, b) => a - b)).toEqual(
 				Array.from({ length: raiderSlotCount(government) }, (_, i) => i),
 			);
 		}

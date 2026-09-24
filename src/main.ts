@@ -2158,9 +2158,10 @@ class Game {
 	/** The instance the hull belongs to: a replacement starts whole (sage
 	 *  #350 — the replacement inherited the wreck's zero and died on one pulse). */
 	private relayHullInstance = 0;
-	/** #515: what the relay and its tender have called this visit. Flight state
-	 *  like the relay's hull: a jump leaves it, and a reload re-draws the same
-	 *  calls from ordinal zero rather than re-rolling them. */
+	/** #515: what each relay and tender has called this session. Keyed by
+	 *  carrier key, which carries the system, so a jump keeps it; a reset to the
+	 *  start clears it, and a reload starts it empty and re-draws from ordinal
+	 *  zero rather than re-rolling. */
 	private defenderWatches: DefenderWatches = {};
 	private relayListed = false;
 	private readonly relayContact: DisplayContact = {
@@ -10290,7 +10291,10 @@ class Game {
 		this.relayPlanCache = null;
 		this.relayHull = RELAY_INTEGRITY;
 		this.relayHullInstance = 0;
-		this.defenderWatches = {};
+		// Not `defenderWatches` (#515, sage round 2): its keys carry the system,
+		// and clearing it on a jump replayed ordinal 0 on return — which redraws
+		// the slot whose defender the pilot killed, sends nobody and spends the
+		// instance, so a jump away and back bought a quiet relay.
 		this.tenderCondition = fullCondition(RELAY_TENDER_HULL_ID);
 		this.tenderView = null;
 	}
@@ -10379,6 +10383,8 @@ class Game {
 		// has hit twice now.
 		const replacesSystem = !canResetWorldToStart(this.world);
 		resetWorldToStart(this.world);
+		// A reset is a new start, and its clock runs from zero again (#515).
+		this.defenderWatches = {};
 		if (replacesSystem) {
 			this.rebuildSystem();
 			// **And the state held *about* that system.** Round 3 rebuilt the

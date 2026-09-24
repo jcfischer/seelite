@@ -222,6 +222,33 @@ async function boot() {
 					pilotHull: g.condition.hull,
 				};
 			},
+			/** A jump to the nearest other system and back, through the shipped
+			 *  course and charge (`probe-relay.mjs`'s), with the tank topped up
+			 *  for the return because fuel is not what this row is about. */
+			jumpOutAndBack() {
+				const here = g.world.system.record;
+				const near = g.world.galaxy.systems
+					.filter((s) => s.index !== here.index)
+					.sort((a, b) => dist(a.pos, here.pos) - dist(b.pos, here.pos))[0];
+				g.dropOut("probe");
+				g.encounter = null;
+				const leg = (toIndex) => {
+					g.commitCourseTo(toIndex);
+					g.chargeJump();
+					for (
+						let i = 0;
+						i < 80 && g.world.system.record.index !== toIndex;
+						i++
+					)
+						frame();
+					frame();
+					return g.world.system.record.index === toIndex;
+				};
+				const out = leg(near.index);
+				g.commander = { ...g.commander, fuelLy: 7 };
+				const back = leg(here.index);
+				return { out, back };
+			},
 			/** Nose on the live defender, drawn without a step, for a capture. */
 			faceDefender() {
 				const r = g.encounter?.raider;
@@ -401,6 +428,25 @@ const relayDefender = await page.evaluate(() =>
 	window.__defenderProbe.killDefender(1200),
 );
 defenderKilledRow("relay", relayDefender);
+
+// Sage round 2: a jump away and back must not replay the relay's calls from
+// ordinal zero. That redraws the slot whose defender was just killed, sends
+// nobody, and spends the instance — a quiet relay bought with a jump.
+const jumped = await page.evaluate((key) => {
+	const g = window.__seelite;
+	const before = g.relayReadout().defenderWatches[key] ?? null;
+	const trip = window.__defenderProbe.jumpOutAndBack();
+	const after = g.relayReadout().defenderWatches[key] ?? null;
+	return { trip, before, after };
+}, relayShot.key);
+check(
+	"relay: a jump out and back keeps the relay's calls, so the next call is not ordinal zero again",
+	jumped.trip.out &&
+		jumped.trip.back &&
+		jumped.before?.calls === 1 &&
+		JSON.stringify(jumped.after) === JSON.stringify(jumped.before),
+	JSON.stringify(jumped),
+);
 
 // The tender is there from the relay's repair (kill + `RELAY_WRECK_S`) until
 // it completes; the killed defender's slot is back at its own kill plus
