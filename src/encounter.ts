@@ -15,6 +15,11 @@
  * out of cruise, land the raider's fire through `takeDamage`, and draw the
  * contact. This module owns no world, no renderer and no save.
  *
+ * **A defender skips the first two (#515).** A hit on the pirate relay or its
+ * tender calls one in normal flight beside a body (`relay-defender.ts`): it
+ * waits out its delay as `inbound` and then drops straight into the duel,
+ * beside the pilot and at rest in the pilot's frame.
+ *
  * **Not yet here, by the node's own split:** the world-state `destroy` event
  * and the lifecycle a destroyed slot runs (part d), and a player-initiated
  * interdiction. The raider applies the contest's turn cost here
@@ -48,7 +53,8 @@ import {
 	legEncounter,
 	raiderSlots,
 } from "./raider-slots";
-import { mix } from "./rng";
+import { type DefenderDraw, defenderDraw } from "./relay-defender";
+import { fnv1a, mix } from "./rng";
 import type { ShieldSide } from "./ship-condition";
 import { fullCondition } from "./ship-condition";
 import { flightPerformance } from "./sim";
@@ -80,7 +86,11 @@ export type EncounterEnd =
 	/** The raider's hull reached zero. */
 	| "destroyed";
 
+/** Where an encounter came from: a cruise leg's draw, or a relay's call. */
+export type EncounterOrigin = "leg" | "defender";
+
 export interface Encounter {
+	origin: EncounterOrigin;
 	slot: RaiderSlot;
 	/** The slot's display name. */
 	name: string;
@@ -159,6 +169,7 @@ function offsetFor(
 }
 
 function makeEncounter(
+	origin: EncounterOrigin,
 	slot: RaiderSlot,
 	ordinal: number,
 	bearing: EncounterBearing,
@@ -168,6 +179,7 @@ function makeEncounter(
 	seed: number,
 ): Encounter {
 	return {
+		origin,
 		slot,
 		// The registry, not the drawn name: `carrier-identity.md` §6 keeps a raider
 		// reading as it does today, and the log reports on the slot.
@@ -213,6 +225,7 @@ export function scheduleEncounter(
 	// raider is less dangerous, not equally dangerous with a different name.
 	if (!operational(slot.key)) return null;
 	return makeEncounter(
+		"leg",
 		slot,
 		drawn.slotIndex,
 		drawn.bearing,
@@ -237,6 +250,7 @@ export function forceEncounter(
 	const ordinal = slots.findIndex((s) => operational(s.key));
 	if (ordinal < 0) return null;
 	return makeEncounter(
+		"leg",
 		slots[ordinal],
 		ordinal,
 		bearing,
@@ -244,6 +258,42 @@ export function forceEncounter(
 		0.25,
 		appearsAtS,
 		mix(systemIndex, 0x5eed),
+	);
+}
+
+/**
+ * The raider a hit on the relay or its tender calls (#515), or `null` when
+ * the drawn slot is destroyed or repairing. `instance` and `ordinal` are
+ * `defenderDraw`'s; `calledAtS` is the hit.
+ */
+export function defenderEncounter(
+	operational: SlotOperational,
+	systemIndex: number,
+	record: { seed: number; government: number },
+	target: CarrierKey,
+	instance: number,
+	ordinal: number,
+	calledAtS: number,
+): Encounter | null {
+	const drawn: DefenderDraw = defenderDraw(
+		record.seed,
+		record.government,
+		target,
+		instance,
+		ordinal,
+	);
+	const slot = raiderSlots(systemIndex, record.government)[drawn.slotIndex];
+	// Not moved to another slot, for `scheduleEncounter`'s reason (#511 D2).
+	if (!operational(slot.key)) return null;
+	return makeEncounter(
+		"defender",
+		slot,
+		drawn.slotIndex,
+		drawn.bearing,
+		drawn.rangeKm,
+		drawn.rollUnit,
+		calledAtS + drawn.delayS,
+		mix(mix(record.seed, fnv1a(target)), mix(instance >>> 0, ordinal ^ 0x5eed)),
 	);
 }
 
@@ -283,8 +333,35 @@ export function stepEncounter(e: Encounter, f: EncounterFrame): EncounterStep {
 		// A raider belongs to the leg it was drawn on. The moment that leg ends —
 		// before the raider has appeared or at the frame it would — it is missed,
 		// so it cannot follow the player onto the next leg.
-		if (!f.inCruise) return over(e, "missed");
+		//
+		// A defender is the reverse: it is called in normal flight, and a pilot
+		// who is back in cruise before it arrives has left it behind.
+		if (f.inCruise !== (e.origin === "leg")) return over(e, "missed");
 		if (f.gameTime < e.appearsAtS) return idle(e);
+		if (e.origin === "defender") {
+			// Straight into the duel, with no contest: there is no cruise to
+			// interdict. At rest in the pilot's frame rather than at the pilot's
+			// velocity — beside a station that frame moves ~30 km/s (#104), and
+			// the defender is a ship that arrived there, not one matching the
+			// pilot's own drift through it.
+			const offset = offsetFor(pilot.nose, e.bearing, e.rangeKm, e.rollUnit);
+			const flight = raiderAtDrop(
+				add(pilot.ship.pos, offset),
+				{ pos: pilot.ship.pos, vel: pilot.frameVel },
+				e.seed,
+			);
+			return {
+				encounter: {
+					...e,
+					phase: "duel",
+					raider: { flight, condition: fullCondition(RAIDER_HULL_ID) },
+				},
+				drop: false,
+				raiderHit: null,
+				contact: contactOf(flight.ship.pos, flight.ship.vel, flight.nose),
+				wreck: null,
+			};
+		}
 		// A contest only runs against a contact near enough to lock.
 		if (e.rangeKm > INTERDICTION_RANGE_KM) return over(e, "lost");
 		const offset = offsetFor(pilot.nose, e.bearing, e.rangeKm, e.rollUnit);
