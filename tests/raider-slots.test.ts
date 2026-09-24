@@ -17,6 +17,8 @@ import {
 	ENCOUNTER_DELAY_S,
 	ENCOUNTER_RANGE_KM,
 	RAIDER_HULL_ID,
+	RAIDER_LEG_CHANCE,
+	RELAY_WATCHED_LEG_CHANCE,
 	legEncounter,
 	raiderLegChance,
 	raiderSlotCount,
@@ -119,10 +121,11 @@ describe("the leg law", () => {
 	});
 });
 
-describe("route detection (node #43)", () => {
-	// The pirate relay's dial on the leg law: a watched route is `certain`
-	// while the relay is up and `none` while it is down; every other route is
-	// `law`, the draw above.
+describe("route detection (node #43, tuned by #351)", () => {
+	// The pirate relay's dial on the leg law: a watched route meets a raider on
+	// `RELAY_WATCHED_LEG_CHANCE` of its legs while the relay is up and on none
+	// while it is down; every other route is `law`, the draw above. #43 flew
+	// `certain`; the principal's ruling on #351 is a rate.
 	test("`law` is the default and the same draw", () => {
 		const record = generateGalaxy(WORLD, 0).systems[5];
 		for (let leg = 0; leg < 200; leg++)
@@ -131,23 +134,43 @@ describe("route detection (node #43)", () => {
 			);
 	});
 
-	test("`certain` meets a raider on every leg, `none` on no leg", () => {
-		const record = generateGalaxy(WORLD, 0).systems[5];
-		for (let leg = 0; leg < 500; leg++) {
-			expect(legEncounter(record.seed, 7, leg, "certain")).not.toBeNull();
-			expect(legEncounter(record.seed, 0, leg, "none")).toBeNull();
-		}
+	test("the watched rate is the principal's 90%, above every government's law", () => {
+		expect(RELAY_WATCHED_LEG_CHANCE).toBe(0.9);
+		// Above the worst law, or a relay in an anarchy would make its route
+		// safer than the law it is meant to sharpen.
+		expect(RELAY_WATCHED_LEG_CHANCE).toBeGreaterThan(RAIDER_LEG_CHANCE.anarchy);
 	});
 
-	test("`certain` keeps the draw's own slot, bearing, delay and range", () => {
-		// The dial skips the chance and nothing else, so a leg the law would
-		// have met anyway meets the same raider the same way.
+	test("`watched` meets a raider on about 90% of legs, and government does not move which legs", () => {
+		const record = generateGalaxy(WORLD, 0).systems[5];
+		const legs = 5000;
+		let met = 0;
+		for (let leg = 0; leg < legs; leg++) {
+			const anarchy = legEncounter(record.seed, 0, leg, "watched");
+			if (anarchy) met++;
+			// The watched threshold ignores government by construction, so the two
+			// extremes meet on exactly the same legs — one measurement, stated as
+			// one (sage #507 round 4), with the equality as the check.
+			expect(legEncounter(record.seed, 7, leg, "watched") !== null).toBe(
+				anarchy !== null,
+			);
+			expect(legEncounter(record.seed, 0, leg, "none")).toBeNull();
+		}
+		// Binomial at p = 0.9 over 5,000: sd 0.42 points, so ±1.5 is 3.5 sd.
+		expect(met / legs).toBeGreaterThan(0.885);
+		expect(met / legs).toBeLessThan(0.915);
+	});
+
+	test("`watched` keeps the draw's own slot, bearing, delay and range", () => {
+		// The dial moves the chance's threshold and nothing else, so a leg the
+		// law would have met anyway meets the same raider the same way — every
+		// law is under the watched rate, so no such leg is lost.
 		const record = generateGalaxy(WORLD, 0).systems[5];
 		let compared = 0;
 		for (let leg = 0; leg < 500; leg++) {
 			const law = legEncounter(record.seed, 0, leg);
 			if (!law) continue;
-			expect(legEncounter(record.seed, 0, leg, "certain")).toEqual(law);
+			expect(legEncounter(record.seed, 0, leg, "watched")).toEqual(law);
 			compared++;
 		}
 		expect(compared).toBeGreaterThan(100);

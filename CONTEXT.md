@@ -16,12 +16,14 @@ binding table that speaks of pressing one.
 
 **Display contact**:
 A targetable presentation identity outside the generated body list. Its producer
-supplies position, velocity, name, hull type and scanner classification;
+supplies position, velocity, name, hull type and scanner classification —
+and, where it knows it, the carrier's operational condition (#351 Q12, the
+relay's, so a wreck does not read as a live target);
 `src/display-contact.ts` owns this shape under work-graph decision #52. A
 contact's display name is a label, with no persistence identity or Carrier slot
 meaning. `ship-visuals.md` §2 owns the review fleet's use of it; the other
 producers include the raider, Traffic actors, the combat rig, the **Pirate
-relay** and the **Cargo canister**.
+relay**, its **Relay tender** (a `ship` contact) and the **Cargo canister**.
 
 **Review fleet slot**:
 A `FleetSlot` layout position in the query-gated showroom avenue. Its `slot`
@@ -191,24 +193,39 @@ thresholds. Saved as `LegalStatus`; the reading is derived. `combat-model.md`
 _Avoid_: Bounty, notoriety, wanted level
 
 **Pirate relay**:
-The first infrastructure **Carrier** (#43, prototype): one **Carrier slot** per
-system, `relay-00`, standing a few hundred kilometres off one station's
-approach and moving with it. Its capability is **Route detection**: the
-system's raiders find every ship on the route to the station it watches. It
-is found by its signal, identified inside its own range, destroyed by the
-pulse laser, and replaced on the game clock. `src/relay-slot.ts` owns its
-persistence ids and its plan, `src/pirate-relay.ts` the rest;
-`docs/prototypes/relay-codex.md` records the decisions taken as proposals.
+The first infrastructure **Carrier** (#43, production since #351): one
+**Carrier slot** per system with a station, `relay-00`, standing a few hundred
+kilometres off one station's approach and moving with it. Whether a system's
+relay is *active* is a seeded roll that falls with government, 80% in an
+Anarchy to 10% in a Corporate State; an inactive one is absent. Its capability
+is **Route detection**: the system's raiders find most ships on the route to
+the station it watches. It is found by its signal, identified inside its own
+range, destroyed by the pulse laser, and replaced on the game clock.
+A destroyed relay stays drawn and selectable but is no combat target: the
+gun's aim lets go, there is no on-target mark, and the Target panel reads
+`RELAY · DESTROYED`, then `REPAIRING` (#351 Q12).
+`src/relay-slot.ts` owns its persistence ids and its plan, `src/pirate-relay.ts`
+the rest; `docs/prototypes/relay-codex.md` records the prototype's decisions
+and #351's receipt the production ones.
 Not to be confused with the **System relay**, which is an information channel.
 _Avoid_: Pirate base, sensor buoy, beacon
 
+**Relay tender**:
+The pirate relay's repair ship (#351): a tug, carrier slot `relay-00/tender`,
+that flies in from far out when a destroyed relay starts its repair and parks
+at the wreck. Destroying it sets the repair back by a wreck and a repair
+(`persistent-world-state.md` §4's opposition) and the next tender comes a wreck
+later. It is what makes the relay's recovery interruptible. `src/relay-tender.ts`
+owns it.
+_Avoid_: Repair convoy, repair drone
+
 **Route detection**:
 The pirate relay's dial on the leg law (`raider-slots.ts`' `RouteDetection`):
-`law` is the ordinary draw; `certain` is a watched route while the relay is
-operational, where every leg meets a raider given an operational **Raider
-slot** to send; `none` is that route while the relay is down. The dial skips
-the chance and not the draw, so a `certain` leg meets the raider the law would
-have sent. `combat-model.md` §3 states it beside the law.
+`law` is the ordinary draw; `watched` is a watched route while the relay is
+operational, where 90% of legs meet a raider given an operational **Raider
+slot** to send; `none` is that route while the relay is down. The dial moves
+the chance's threshold and not the draw, so a `watched` leg meets the raider
+the law would have sent. `combat-model.md` §3 states it beside the law.
 _Avoid_: Encounter modifier, danger bonus
 
 **Interdiction contest**:

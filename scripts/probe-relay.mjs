@@ -50,7 +50,16 @@ const { check, watch, exit } = tally();
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 watch(page);
-await page.goto(gameUrl(origin, { seed: 42, "relay-prototype": true }));
+// **A normal boot, no flag (#351).** The relay is production content, active by
+// a seeded roll per system that falls with government, so the probe needs a
+// start system whose roll came up: seed 56 starts in ESLAIN (government 6, a
+// trade station and a shipyard — RAAQU's layout). Seed 42's RAAQU rolled
+// inactive, and the last block below boots it to check the relay is absent.
+// Both are asserted rather than assumed, so a re-tuned chance that flips
+// either one fails here by name.
+const RELAY_SEED = 56;
+const NO_RELAY_SEED = 42;
+await page.goto(gameUrl(origin, { seed: RELAY_SEED }));
 await bootedGame(page);
 const capture = async (name) => {
 	if (headed) await page.screenshot({ path: `${out}/${name}.png` });
@@ -130,6 +139,18 @@ await page.evaluate(() => {
 			g.throttle = 0;
 			frame();
 		},
+		/** #351: put the ship `km` beside the relay's tender, at rest in its frame
+		 *  and with no turn carried over, and return the tender as read. */
+		placeBesideTender(km) {
+			const t = g.relayReadout().tender;
+			g.dropOut("probe");
+			g.encounter = null;
+			g.world.ship.pos = { x: t.pos.x + km, y: t.pos.y, z: t.pos.z };
+			g.world.ship.vel = { ...t.vel };
+			g.throttle = 0;
+			g.rates = { pitch: 0, yaw: 0, roll: 0 };
+			return t;
+		},
 		/** #481: fit or strip the long-range scanner, the module the whole
 		 *  reading channel is gated on. The name comes from `market.ts` rather
 		 *  than from a literal here, because a probe with its own copy of a
@@ -148,6 +169,7 @@ await page.evaluate(() => {
 				strength: r.view?.signal?.strength ?? null,
 				identified: r.view?.identified ?? null,
 				condition: r.view?.condition ?? null,
+				active: r.active,
 				listed: r.listed,
 				hull: r.hull,
 				detection: r.detection,
@@ -259,15 +281,15 @@ const far = await page.evaluate(() => {
 		r.view.pos.z - g.world.ship.pos.z,
 	);
 	return {
-		enabled: r.enabled,
+		active: r.active,
 		watched: r.plan?.watchedStationId,
 		distanceKm: km,
 		...window.__relayProbe.readout(),
 	};
 });
 check(
-	"the prototype is on and the relay watches the trade station",
-	far.enabled && far.watched === "station-trade",
+	"a normal boot: the start system's relay is active and watches the trade station",
+	far.active && far.watched === "station-trade",
 	JSON.stringify(far),
 );
 check(
@@ -287,15 +309,21 @@ check(
 // Before: legs flown to each station with the relay up.
 // ---------------------------------------------------------------------------
 const before = await page.evaluate(() =>
-	window.__relayProbe.flyLegs("station-trade", 6),
-);
-check(
-	"before: every leg to the watched station meets a raider, detection certain",
-	before.met.every(Boolean) && before.detections.join() === "certain",
-	JSON.stringify(before),
+	window.__relayProbe.flyLegs("station-trade", 24),
 );
 const controlBefore = await page.evaluate(() =>
 	window.__relayProbe.flyLegs("station-shipyard", 24),
+);
+const metCount = (arm) => arm.met.filter(Boolean).length;
+check(
+	// #351's rate is 90%: over 24 legs the mean is 21.6 and the sd 1.5, so 16
+	// is almost four below it. The law here is about a quarter, so the
+	// watched route must also out-meet the control flown beside it.
+	"before: most legs to the watched station meet a raider, detection watched, well above the control",
+	before.detections.join() === "watched" &&
+		metCount(before) >= 16 &&
+		metCount(before) > metCount(controlBefore),
+	JSON.stringify({ before, control: metCount(controlBefore) }),
 );
 check(
 	"before: legs to the other station meet raiders at the law — some, not all",
@@ -370,9 +398,9 @@ check(
 );
 check(
 	"#481: the watched route's dial bites all the same — the effect is felt by a pilot who cannot find its cause",
-	unfittedDial.detection === "certain" &&
+	unfittedDial.detection === "watched" &&
 		unfittedDial.condition === "operational" &&
-		// Still nothing to see, at the moment the dial is certain.
+		// Still nothing to see, at the moment the dial is watched.
 		unfittedDial.km === null &&
 		!unfittedDial.identified &&
 		unfittedDial.cueVisible === false,
@@ -470,13 +498,18 @@ const provenance = await page.evaluate(async () => {
 		kind: episode?.initiating.kind,
 		role: episode?.initiating.cause.playerRole,
 		area: env.objective[key]?.scheduled?.consequenceArea,
+		// Read off the page rather than restated: the system is the seed's.
+		expectedArea: `route:${g.world.system.record.index}:${g.relayReadout().plan.watchedStationId}`,
 	};
 });
 check(
 	"the episode records a destroy by the player, and its consequence area is the route",
 	provenance.kind === "destroy" &&
 		provenance.role === "direct" &&
-		provenance.area === "route:58:station-trade",
+		provenance.area === provenance.expectedArea &&
+		// And pinned, so a mis-derived index cannot agree with itself: ESLAIN is
+		// system 244 at seed 56 (`measure-relay-route.ts` prints it).
+		provenance.area === "route:244:station-trade",
 	JSON.stringify(provenance),
 );
 await settle();
@@ -591,7 +624,11 @@ const trip = await page.evaluate(() => window.__relayProbe.jumpOutAndBack());
 check(
 	"a jump out reaches another system, where the relay read is that system's own",
 	trip.outward.arrived &&
-		trip.awayReadout.condition === "operational" &&
+		// #351: the neighbour's relay is its own roll — absent, or present
+		// and un-identified. Either way not this system's wreck.
+		(trip.awayReadout.active
+			? trip.awayReadout.condition === "operational"
+			: trip.awayReadout.condition === null && !trip.awayReadout.meshDrawn) &&
 		!trip.awayReadout.identified,
 	JSON.stringify(trip),
 );
@@ -611,50 +648,71 @@ check(
 
 // The gimbal pulls the beam toward a selected relay as it does toward a
 // raider (the principal flew the first build with the beam on the boresight
-// and could not hit it). Three degrees off the nose, the beam sits on it.
-const gimbal = await page.evaluate(() => {
-	const g = window.__seelite;
-	window.__relayProbe.placeNear(2);
-	g.targetId = g.relayReadout().view.key;
-	const r = g.relayReadout();
-	const p = g.world.ship.pos;
-	const t = r.view.pos;
-	const to = { x: t.x - p.x, y: t.y - p.y, z: t.z - p.z };
-	const len = Math.hypot(to.x, to.y, to.z);
-	// Turn 3° off the relay about the vertical.
-	const a = (3 * Math.PI) / 180;
-	const off = {
-		x: to.x * Math.cos(a) + to.z * Math.sin(a),
-		y: to.y,
-		z: -to.x * Math.sin(a) + to.z * Math.cos(a),
-	};
-	// Rotation has momentum (`stepAngular`); an earlier segment's rates would
-	// carry the nose off the bearing set here.
-	g.rates = { pitch: 0, yaw: 0, roll: 0 };
-	g.setAttitude(off, g.shipUp());
-	for (let i = 0; i < 3; i++) window.__relayProbe.frame();
-	const deg = (u, v) =>
-		(Math.acos(
-			(u.x * v.x + u.y * v.y + u.z * v.z) /
-				(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
-		) *
-			180) /
-		Math.PI;
-	const rr = g.relayReadout().view.pos;
-	const q = g.world.ship.pos;
-	const dir = { x: rr.x - q.x, y: rr.y - q.y, z: rr.z - q.z };
-	return {
-		noseOffDeg: deg(g.nose(), dir),
-		beamOffDeg: deg(g.beamAim(), dir),
-		km: len,
-	};
-});
+// and could not hit it) — while it is operational. Three degrees off the nose
+// it reads where the beam sits, and nose-on it reads the painted on-target
+// mark and the Target panel's designation. Run on the wreck here and on the
+// replacement below (#351 Q12: the principal fired at a wreck for minutes).
+const relayAim = () =>
+	page.evaluate(async () => {
+		const display = await import("/src/display-contact.ts");
+		const g = window.__seelite;
+		window.__relayProbe.placeNear(2);
+		g.targetId = g.relayReadout().view.key;
+		const r = g.relayReadout();
+		const p = g.world.ship.pos;
+		const t = r.view.pos;
+		const to = { x: t.x - p.x, y: t.y - p.y, z: t.z - p.z };
+		const len = Math.hypot(to.x, to.y, to.z);
+		// Turn 3° off the relay about the vertical.
+		const a = (3 * Math.PI) / 180;
+		const off = {
+			x: to.x * Math.cos(a) + to.z * Math.sin(a),
+			y: to.y,
+			z: -to.x * Math.sin(a) + to.z * Math.cos(a),
+		};
+		// Rotation has momentum (`stepAngular`); an earlier segment's rates would
+		// carry the nose off the bearing set here.
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setAttitude(off, g.shipUp());
+		for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+		const deg = (u, v) =>
+			(Math.acos(
+				(u.x * v.x + u.y * v.y + u.z * v.z) /
+					(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
+			) *
+				180) /
+			Math.PI;
+		const rr = g.relayReadout().view.pos;
+		const q = g.world.ship.pos;
+		const dir = { x: rr.x - q.x, y: rr.y - q.y, z: rr.z - q.z };
+		const noseOffDeg = deg(g.nose(), dir);
+		const beamOffDeg = deg(g.beamAim(), dir);
+		// Nose on it: the mark as painted, and the panel's word for it.
+		g.rates = { pitch: 0, yaw: 0, roll: 0 };
+		g.setAttitude(dir, g.shipUp());
+		for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+		return {
+			condition: g.relayReadout().view.condition,
+			selected: g.targetId === g.relayReadout().view.key,
+			noseOffDeg,
+			beamOffDeg,
+			onTarget: g.selectedRender?.onTarget ?? null,
+			designation: display.targetDesignation(g.targetBody()),
+			conditionLine: g.selectedRender?.conditionLine ?? null,
+			km: len,
+		};
+	});
+const wreckAim = await relayAim();
 check(
-	"a selected relay pulls the gimbal: three degrees off the nose, the beam is on it",
-	// The beam aims from the camera, 8 m off the ship's position the row measures
-	// from: a quarter of a degree at 2 km, against a hit sphere 2.4° wide there.
-	gimbal.noseOffDeg > 2.5 && gimbal.noseOffDeg < 3.5 && gimbal.beamOffDeg < 1,
-	JSON.stringify(gimbal),
+	"#351 Q12: a selected wreck stays selectable but is no combat target — no gimbal pull, no on-target mark, no condition line, RELAY · DESTROYED",
+	wreckAim.condition === "destroyed" &&
+		wreckAim.selected &&
+		wreckAim.noseOffDeg > 2.5 &&
+		wreckAim.beamOffDeg > 2.5 &&
+		wreckAim.onTarget === false &&
+		wreckAim.designation === "RELAY · DESTROYED" &&
+		wreckAim.conditionLine === null,
+	JSON.stringify(wreckAim),
 );
 
 // The wreck is on the screen: pixels move when its mesh is hidden.
@@ -741,11 +799,29 @@ check(
 	"the replacement is drawn operational, watches the route again, and the cue is back after a cockpit rebuild",
 	relit.condition === "operational" &&
 		relit.meshCondition === "operational" &&
-		relit.detection === "certain" &&
+		relit.detection === "watched" &&
 		relit.hull === 60 &&
 		relitCue.cueVisible === true &&
 		/IDENTIFIED/.test(relitCue.cueText),
 	JSON.stringify({ relit, relitCue }),
+);
+// The operational replacement is a combat target again: the same pose as the
+// wreck's row above, and here the beam is pulled onto it and the mark lights.
+const liveAim = await relayAim();
+check(
+	"a selected operational relay pulls the gimbal, earns the on-target mark and shows its shields and hull: three degrees off the nose, the beam is on it",
+	// The beam aims from the camera, 8 m off the ship's position the row measures
+	// from: a quarter of a degree at 2 km, against a hit sphere 2.4° wide there.
+	liveAim.condition === "operational" &&
+		liveAim.noseOffDeg > 2.5 &&
+		liveAim.noseOffDeg < 3.5 &&
+		liveAim.beamOffDeg < 1 &&
+		liveAim.onTarget === true &&
+		liveAim.designation === "RELAY · HOSTILE" &&
+		// Its shields and hull under the name, as any ship's in a fight: a relay
+		// has no shields, and the replacement is whole.
+		liveAim.conditionLine === "SHD F 0 A 0  HULL 100%",
+	JSON.stringify(liveAim),
 );
 // The replacement starts whole: one pulse wears it, it does not die (sage
 // #350 — it inherited the wreck's zero hull and fell to the first shot).
@@ -811,6 +887,432 @@ check(
 		refitted.cueVisible === true,
 	JSON.stringify({ beforeStrip, stripped, refitted }),
 );
+
+// ---------------------------------------------------------------------------
+// #351: the recovery you can meet. Kill the replacement, move the clock into
+// its repair, and the tender flies in, parks at the wreck and can be shot —
+// which sets the repair back and brings the next tender a wreck later.
+// ---------------------------------------------------------------------------
+await page.evaluate(() => {
+	window.__relayProbe.placeNear(1.5);
+});
+const secondKill = await page.evaluate(() => window.__relayProbe.shoot(400));
+const tenderAt = await page.evaluate(async (killedAt) => {
+	const g = window.__seelite;
+	const relay = await import("/src/pirate-relay.ts");
+	const tender = await import("/src/relay-tender.ts");
+	const frame = window.__relayProbe.frame;
+	const read = () => {
+		const r = g.relayReadout();
+		const t = r.tender;
+		const rel = r.view?.pos;
+		return {
+			condition: r.view?.condition ?? null,
+			present: t !== null,
+			kmFromRelay:
+				t && rel
+					? Math.hypot(t.pos.x - rel.x, t.pos.y - rel.y, t.pos.z - rel.z)
+					: null,
+			listed: t?.listed ?? false,
+			drawn: t?.drawn ?? false,
+			targetable: t ? g.selectableIds().includes(t.key) : false,
+			key: t?.key ?? null,
+		};
+	};
+	const repairFrom = killedAt + relay.RELAY_WRECK_S;
+	g.world.gameTime = repairFrom - 5;
+	frame();
+	const beforeWindow = read();
+	g.world.gameTime = repairFrom + 1;
+	frame();
+	const arriving = read();
+	g.world.gameTime = repairFrom + tender.RELAY_TENDER_INBOUND_S / 2;
+	frame();
+	const halfway = read();
+	g.world.gameTime = repairFrom + tender.RELAY_TENDER_INBOUND_S + 30;
+	frame();
+	const parked = read();
+	return {
+		beforeWindow,
+		arriving,
+		halfway,
+		parked,
+		entryKm: tender.RELAY_TENDER_ENTRY_KM,
+		parkKm: tender.RELAY_TENDER_PARK_KM,
+	};
+}, secondKill.killedAt);
+check(
+	"#351: no tender while the relay is a fresh wreck; in the repair window it flies in from far out and parks at the wreck",
+	secondKill.hullBefore > 0 &&
+		tenderAt.beforeWindow.condition === "destroyed" &&
+		!tenderAt.beforeWindow.present &&
+		tenderAt.arriving.condition === "repairing" &&
+		tenderAt.arriving.present &&
+		tenderAt.arriving.kmFromRelay > tenderAt.entryKm * 0.9 &&
+		tenderAt.halfway.kmFromRelay < tenderAt.arriving.kmFromRelay &&
+		tenderAt.halfway.kmFromRelay > tenderAt.parkKm &&
+		Math.abs(tenderAt.parked.kmFromRelay - tenderAt.parkKm) < 1e-3,
+	JSON.stringify({ secondKill, tenderAt }),
+);
+check(
+	"#351: the tender is a listed, targetable, drawn contact",
+	tenderAt.parked.listed && tenderAt.parked.targetable && tenderAt.parked.drawn,
+	JSON.stringify(tenderAt.parked),
+);
+// The fourth combat target pulls the gimbal by name (map constraint from #43).
+// Three degrees off the nose with the tender selected the beam is on it; the
+// same pose with nothing selected is the control, and leaves the beam on the
+// boresight — so the pull is `tenderSelected`'s and not the pose's.
+const tenderGimbal = await page.evaluate(() => {
+	const g = window.__seelite;
+	const deg = (u, v) =>
+		(Math.acos(
+			(u.x * v.x + u.y * v.y + u.z * v.z) /
+				(Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z)),
+		) *
+			180) /
+		Math.PI;
+	const arm = (select) => {
+		const t0 = window.__relayProbe.placeBesideTender(2);
+		g.targetId = select ? t0.key : null;
+		const a = (3 * Math.PI) / 180;
+		const to = { x: -2, y: 0, z: 0 };
+		g.setAttitude(
+			{
+				x: to.x * Math.cos(a) + to.z * Math.sin(a),
+				y: to.y,
+				z: -to.x * Math.sin(a) + to.z * Math.cos(a),
+			},
+			g.shipUp(),
+		);
+		for (let i = 0; i < 3; i++) window.__relayProbe.frame();
+		const t = g.relayReadout().tender.pos;
+		const q = g.world.ship.pos;
+		const dir = { x: t.x - q.x, y: t.y - q.y, z: t.z - q.z };
+		return {
+			noseOffDeg: deg(g.nose(), dir),
+			beamOffDeg: deg(g.beamAim(), dir),
+			conditionLine: g.selectedRender?.conditionLine ?? null,
+		};
+	};
+	const selected = arm(true);
+	const control = arm(false);
+	g.targetId = null;
+	return { selected, control };
+});
+check(
+	"#351: a selected tender pulls the gimbal onto it and shows its shields and hull; unselected, the beam stays on the boresight",
+	tenderGimbal.selected.noseOffDeg > 2 &&
+		tenderGimbal.selected.beamOffDeg < 1 &&
+		// And its shields and hull under the name, as any ship's: a ship's shields
+		// (Q13), and whole here.
+		/^SHD F [1-9]\d* A [1-9]\d*  HULL 100%$/.test(
+			tenderGimbal.selected.conditionLine ?? "",
+		) &&
+		tenderGimbal.control.noseOffDeg > 2 &&
+		tenderGimbal.control.beamOffDeg > 2,
+	JSON.stringify(tenderGimbal),
+);
+// Drawn, as pixels: nose on the parked tug at 1.5 km, hiding its mesh moves
+// the frame, and two shown frames of the same build move it by far less.
+await page.evaluate(() => {
+	const g = window.__seelite;
+	window.__relayProbe.placeBesideTender(1.5);
+	g.setAttitude({ x: -1, y: 0, z: 0 }, g.shipUp());
+	g.setHeadLook("forward");
+	for (let i = 0; i < 4; i++) window.__relayProbe.frame();
+});
+const framePng = async () => {
+	// Render without stepping: a step moves the ship and the tug between the
+	// two shots, and the control then reads the motion as a difference.
+	await page.evaluate(() => window.__seelite.render(0));
+	return PNG.sync.read(await page.screenshot());
+};
+const movedBetween = (a, b) => {
+	let moved = 0;
+	for (let i = 0; i < a.data.length; i += 4)
+		if (
+			Math.abs(a.data[i] - b.data[i]) > 24 ||
+			Math.abs(a.data[i + 1] - b.data[i + 1]) > 24 ||
+			Math.abs(a.data[i + 2] - b.data[i + 2]) > 24
+		)
+			moved++;
+	return moved;
+};
+// And hold the page's own loop, as the combat rig does: it steps the world
+// between two screenshots otherwise.
+await page.evaluate(() => {
+	const g = window.__seelite;
+	if (g.animationFrame) cancelAnimationFrame(g.animationFrame);
+	g.animationFrame = 0;
+});
+const tenderShown = await framePng();
+const tenderShownAgain = await framePng();
+await page.evaluate(() => {
+	window.__seelite.tenderMesh.visible = false;
+});
+const tenderHidden = await framePng();
+await page.evaluate(() => {
+	window.__seelite.tenderMesh.visible = true;
+	window.__seelite.render(0);
+	if (!window.__seelite.animationFrame) window.__seelite.animate();
+});
+const tenderPx = {
+	moved: movedBetween(tenderShown, tenderHidden),
+	control: movedBetween(tenderShown, tenderShownAgain),
+};
+check(
+	"#351: the parked tender is drawn: hiding its mesh moves pixels, and a same-build control moves far fewer",
+	tenderPx.moved > 200 && tenderPx.moved > 5 * tenderPx.control,
+	JSON.stringify(tenderPx),
+);
+await capture("05-tender-parked");
+const tenderKill = await page.evaluate(async () => {
+	const g = window.__seelite;
+	const relay = await import("/src/pirate-relay.ts");
+	const frame = window.__relayProbe.frame;
+	const r0 = g.relayReadout();
+	const t0 = r0.tender;
+	// Beside it, at rest in the relay's frame, nose on it. The assist pulls the
+	// ship toward another frame at about 0.6 km/s, which carries it out of beam
+	// range inside the minute a shielded tug takes to kill — so the ship is put back beside
+	// it every fifty steps, as a pilot holds range.
+	window.__relayProbe.placeBesideTender(1.2);
+	g.setHeadLook("forward");
+	frame();
+	g.targetId = t0.key;
+	const hullBefore = g.relayReadout().tender.hull;
+	g.keys.add(" ");
+	const samples = [];
+	let steps = 0;
+	for (; steps < 2000; steps++) {
+		const t = g.relayReadout().tender;
+		if (!t) break;
+		if (steps > 0 && steps % 50 === 0)
+			window.__relayProbe.placeBesideTender(1.2);
+		const p = g.world.ship.pos;
+		if (steps % 100 === 0)
+			samples.push([
+				steps,
+				Math.round(
+					Math.hypot(t.pos.x - p.x, t.pos.y - p.y, t.pos.z - p.z) * 1000,
+				) / 1000,
+				Math.round(t.fore),
+				Math.round(t.aft),
+				Math.round(t.hull * 10) / 10,
+			]);
+		g.setAttitude(
+			{ x: t.pos.x - p.x, y: t.pos.y - p.y, z: t.pos.z - p.z },
+			g.shipUp(),
+		);
+		frame();
+	}
+	g.keys.delete(" ");
+	const env = g.saveEnvelope().world.galaxies[g.world.system.record.galaxy];
+	// The kill's own time, off the saved episode: the loop has stepped once
+	// more by the time it notices the tender is gone.
+	const killedAt = env.episodes[t0.key]?.initiating.occurredAt ?? Number.NaN;
+	const relayKey = r0.view.key;
+	const after = g.relayReadout();
+	g.leftTab = "Communications";
+	g.setHeadLook("left");
+	frame();
+	const lines = [...document.querySelectorAll("[data-live-raider-log] li")].map(
+		(li) => li.textContent,
+	);
+	g.setHeadLook("forward");
+	frame();
+	return {
+		hullBefore,
+		steps,
+		samples,
+		killedAt,
+		lastExit: g.lastExit,
+		tenderGone: after.tender === null,
+		tenderCondition: env.objective[t0.key]?.condition ?? null,
+		relayCondition: g.carrierCondition(relayKey).condition,
+		relayCompletesAt: g.carrierCondition(relayKey).recovery?.completesAt,
+		expectedCompletesAt: killedAt + relay.RELAY_WRECK_S + relay.RELAY_REPAIR_S,
+		lines,
+	};
+});
+check(
+	"#351: shooting the tender destroys it, saves the kill, and sets the relay's repair back by a wreck and a repair",
+	tenderKill.hullBefore > 0 &&
+		tenderKill.tenderGone &&
+		tenderKill.lastExit === "relay tender destroyed" &&
+		tenderKill.tenderCondition === "destroyed" &&
+		tenderKill.relayCondition === "repairing" &&
+		Math.abs(tenderKill.relayCompletesAt - tenderKill.expectedCompletesAt) <
+			1e-6 &&
+		tenderKill.lines.some((l) =>
+			l.endsWith("Relay tender destroyed · relay repair set back"),
+		),
+	JSON.stringify(tenderKill),
+);
+// The kill is the world's: a jump out and back finds the tender destroyed and
+// the relay's set-back where it was.
+const tenderTrip = await page.evaluate(
+	async ({ tenderKey, relayKey }) => {
+		const g = window.__seelite;
+		const trip = await window.__relayProbe.jumpOutAndBack();
+		return {
+			arrived: trip.outward.arrived && trip.back.arrived,
+			gameTime: g.world.gameTime,
+			tender: g.carrierCondition(tenderKey).condition,
+			relayCompletesAt: g.carrierCondition(relayKey).recovery?.completesAt,
+		};
+	},
+	{ tenderKey: tenderAt.parked.key, relayKey: kill.key },
+);
+check(
+	"#351: a jump out and back finds the tender destroyed and the set-back kept",
+	tenderTrip.arrived &&
+		// Inside the first half-wreck, where the tender's slot is `destroyed`
+		// (its replacement starts halfway): so the row reads the kill itself.
+		tenderTrip.gameTime < tenderKill.killedAt + 600 &&
+		tenderTrip.tender === "destroyed" &&
+		tenderTrip.relayCompletesAt === tenderKill.relayCompletesAt,
+	JSON.stringify({ tenderTrip, killedAt: tenderKill.killedAt }),
+);
+const nextTender = await page.evaluate(async (killedAt) => {
+	const g = window.__seelite;
+	const relay = await import("/src/pirate-relay.ts");
+	g.world.gameTime = killedAt + relay.RELAY_WRECK_S - 5;
+	window.__relayProbe.frame();
+	const gap = g.relayReadout().tender;
+	g.world.gameTime = killedAt + relay.RELAY_WRECK_S + 1;
+	window.__relayProbe.frame();
+	const next = g.relayReadout().tender;
+	return { gap, next: next && { listed: next.listed, drawn: next.drawn } };
+}, tenderKill.killedAt);
+check(
+	"#351: no tender for a wreck period, then the next one flies in",
+	nextTender.gap === null && nextTender.next?.listed === true,
+	JSON.stringify(nextTender),
+);
+await capture("06-tender-next");
+// A tender that leaves when its repair completes keeps its slot's ordinal, so
+// the next repair's tender must start whole by being a new visit (sage #507
+// round 2): wear this one, let the repair finish, kill the relay again, and
+// read the tender that comes for that.
+const secondVisit = await page.evaluate(async (killedAt) => {
+	const g = window.__seelite;
+	const { SHIELD_POOL } = await import("/src/ship-condition.ts");
+	const relay = await import("/src/pirate-relay.ts");
+	const tender = await import("/src/relay-tender.ts");
+	const probe = window.__relayProbe;
+	const arrival = killedAt + relay.RELAY_WRECK_S;
+	g.world.gameTime = arrival + tender.RELAY_TENDER_INBOUND_S + 10;
+	probe.frame();
+	const t0 = probe.placeBesideTender(1.2);
+	g.targetId = t0.key;
+	g.keys.add(" ");
+	for (let i = 0; i < 30; i++) {
+		const t = g.relayReadout().tender;
+		const p = g.world.ship.pos;
+		g.setAttitude(
+			{ x: t.pos.x - p.x, y: t.pos.y - p.y, z: t.pos.z - p.z },
+			g.shipUp(),
+		);
+		probe.frame();
+	}
+	g.keys.delete(" ");
+	const pools = (t) => (t ? { fore: t.fore, aft: t.aft, hull: t.hull } : null);
+	const worn = pools(g.relayReadout().tender);
+	g.world.gameTime = arrival + relay.RELAY_REPAIR_S + 5;
+	probe.frame();
+	const afterRepair = g.relayReadout();
+	probe.placeNear(1.5);
+	const third = probe.shoot(400);
+	g.world.gameTime = third.killedAt + relay.RELAY_WRECK_S + 1;
+	probe.frame();
+	return {
+		worn,
+		relayAfterRepair: afterRepair.view?.condition ?? null,
+		tenderAfterRepair: afterRepair.tender,
+		thirdKill: third.steps,
+		next: pools(g.relayReadout().tender),
+		// A whole tug: both shields full and its own hull (Q13), off the page.
+		full: {
+			fore: SHIELD_POOL,
+			aft: SHIELD_POOL,
+			hull: tender.RELAY_TENDER_INTEGRITY,
+		},
+	};
+}, tenderKill.killedAt);
+check(
+	"#351: a tender worn on one visit leaves with the repair, and the next repair's tender arrives whole",
+	secondVisit.worn.fore + secondVisit.worn.aft + secondVisit.worn.hull <
+		secondVisit.full.fore + secondVisit.full.aft + secondVisit.full.hull &&
+		secondVisit.relayAfterRepair === "operational" &&
+		secondVisit.tenderAfterRepair === null &&
+		JSON.stringify(secondVisit.next) === JSON.stringify(secondVisit.full),
+	JSON.stringify(secondVisit),
+);
+
+// ---------------------------------------------------------------------------
+// #351: a system whose relay did not roll active has none — not drawn, no
+// signal even with the module fitted, and the law on every route. Its own
+// page, because a page under measurement is never navigated (#121).
+// ---------------------------------------------------------------------------
+await page.close();
+const quiet = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+watch(quiet);
+await quiet.goto(gameUrl(origin, { seed: NO_RELAY_SEED }));
+await bootedGame(quiet);
+const absent = await quiet.evaluate(async () => {
+	const g = window.__seelite;
+	const dt = g.units.MAX_DT;
+	const market = await import("/src/market.ts");
+	g.commander.ownedEquipment = [market.LONG_RANGE_SCANNER];
+	g.targetId = "station-trade";
+	g.step(dt);
+	g.render(dt);
+	const r = g.relayReadout();
+	const detections = new Set();
+	let met = 0;
+	for (let i = 0; i < 24; i++) {
+		g.targetId = "station-trade";
+		g.engageCruise();
+		for (let s = 0; s < 200 && g.regime !== "cruise"; s++) g.step(dt);
+		if (g.regime !== "cruise")
+			throw new Error(`leg ${i}: never reached cruise (${g.lastExit})`);
+		detections.add(g.relayReadout().detection);
+		if (g.encounter !== null) met++;
+		g.dropOut("probe");
+		g.encounter = null;
+		g.world.gameTime += 1.5;
+		g.step(dt);
+	}
+	const cue = document.querySelector("[data-live-relay-cue]");
+	return {
+		system: g.world.system.record.name,
+		cueFound: cue !== null,
+		meshDrawn: g.relayMesh.root.parent !== null,
+		active: r.active,
+		plan: r.plan,
+		view: r.view,
+		detections: [...detections],
+		met,
+		cueVisible: cue ? cue.checkVisibility() : false,
+	};
+});
+check(
+	"#351: where the relay did not roll active there is none — no plan, nothing drawn, no cue with the module fitted, and the law on the trade route",
+	absent.active === false &&
+		absent.plan === null &&
+		absent.view === null &&
+		absent.detections.join() === "law" &&
+		// The law here is about a quarter and the watched rate 90%: 12 of 24
+		// separates them by more than four sd either way.
+		absent.met <= 12 &&
+		absent.cueFound &&
+		absent.cueVisible === false &&
+		absent.meshDrawn === false,
+	JSON.stringify(absent),
+);
+await quiet.close();
 
 await browser.close();
 exit();

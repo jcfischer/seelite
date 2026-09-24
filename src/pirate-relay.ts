@@ -1,14 +1,17 @@
 /**
- * The pirate sensor relay (node #43): the first infrastructure carrier, and
- * the prototype for #41's discover → intervene → persist → revisit loop.
+ * The pirate sensor relay (node #43, production since #351): the first
+ * infrastructure carrier, and #41's discover → intervene → persist → revisit
+ * loop.
  *
  * **What it is.** One carrier slot per system, `relay-00`, standing a few
  * hundred kilometres off one station's approach and moving with it. Its
  * **capability** (`operational-consequences`, #41) is that the system's raiders
- * are told about every ship on the route to that station: a cruise leg whose
- * target is the watched station meets a raider on **every** leg while the relay
- * is operational (`RouteDetection` `certain`, given an operational raider slot
- * to send), and on **no** leg while it is destroyed or repairing (`none`).
+ * are told about ships on the route to that station: a cruise leg whose target
+ * is the watched station meets a raider on `RELAY_WATCHED_LEG_CHANCE` of legs
+ * while the relay is operational (`RouteDetection` `watched`, given an
+ * operational raider slot to send), and on **no** leg while it is destroyed or
+ * repairing (`none`). Only a system whose relay rolled active
+ * (`relayActive`) has one at all.
  * Every other route keeps the leg law. The consequence area is that one route,
  * which is #41's "most carriers affect one station, one system, or one named
  * route".
@@ -36,6 +39,8 @@
  * and nothing that renders.
  */
 import { playerLaserHit } from "./combat-enemy";
+import { DOMAIN } from "./domains";
+import { stream } from "./galaxy";
 import { equipmentFitted, LONG_RANGE_SCANNER } from "./market";
 import { lifecycleLines, newestFirst, type RaiderLogLine } from "./raider-log";
 import { PLAYER_KILL } from "./raider-wreck";
@@ -57,6 +62,37 @@ import type {
 
 /** What the cockpit calls it once identified, and what the log calls it. */
 export const RELAY_NAME = "Pirate relay";
+
+/**
+ * The chance a system's relay is active, by the principal's ruling on #351:
+ * most lawless systems have one, a corporate state rarely. Linear in
+ * government between the two ends, like `RAIDER_LEG_CHANCE`.
+ */
+export const RELAY_ACTIVE_CHANCE = { anarchy: 0.8, corporate: 0.1 } as const;
+
+export const relayActiveChance = (government: number): number => {
+	const g = Math.max(0, Math.min(7, Math.round(government)));
+	return (
+		RELAY_ACTIVE_CHANCE.anarchy +
+		((RELAY_ACTIVE_CHANCE.corporate - RELAY_ACTIVE_CHANCE.anarchy) * g) / 7
+	);
+};
+
+/**
+ * Is this system's relay active? One seeded draw per system on its own tag.
+ *
+ * **A runtime roll, not a generator fact** (#351, D1). The slot and its plan
+ * are enumerated in every system with a station whatever this says, so
+ * re-tuning the chance moves no identity and owes no generator bump. An
+ * inactive relay is absent from the game: not drawn, no signal, no dial on
+ * the leg law. A row a save already holds for it is kept and read by nothing.
+ */
+export const relayActive = (record: {
+	seed: number;
+	government: number;
+}): boolean =>
+	stream(record.seed, DOMAIN.RELAY_ACTIVE)() <
+	relayActiveChance(record.government);
 
 /** Inside this range of the relay the cockpit reads its signal. */
 export const RELAY_SIGNAL_RANGE_KM = 2_500;
@@ -185,7 +221,7 @@ export function relayVelocity(
 
 /**
  * The capability, as the leg law reads it: the route to the watched station is
- * `certain` while the relay is operational and `none` while it is not; every
+ * `watched` while the relay is operational and `none` while it is not; every
  * other leg is `law`. `legTargetId` is the cruise leg's selected target.
  */
 export function relayDetection(
@@ -194,7 +230,7 @@ export function relayDetection(
 	relayOperational: boolean,
 ): RouteDetection {
 	if (!plan || legTargetId !== plan.watchedStationId) return "law";
-	return relayOperational ? "certain" : "none";
+	return relayOperational ? "watched" : "none";
 }
 
 export interface RelaySignal {
@@ -215,6 +251,13 @@ export function relaySignal(shipPos: Vec3, relayPos: Vec3): RelaySignal | null {
 	);
 	return { km, strength };
 }
+
+/** The consequence area of a relay's capability: the route it watches.
+ *  One spelling, read by the relay's kill and its tender's. */
+export const relayRouteArea = (
+	systemIndex: number,
+	watchedStationId: string,
+): string => `route:${systemIndex}:${watchedStationId}`;
 
 /** Who replaces a system's relay. Out of sight, so it updates no knowledge. */
 export const relayReplacementActor = (systemIndex: number): Provenance => ({
@@ -239,7 +282,7 @@ export function relayDestruction(
 		schedule: {
 			startsAt: now + RELAY_WRECK_S,
 			completesAt: now + RELAY_WRECK_S + RELAY_REPAIR_S,
-			consequenceArea: `route:${systemIndex}:${watchedStationId}`,
+			consequenceArea: relayRouteArea(systemIndex, watchedStationId),
 			cause: relayReplacementActor(systemIndex),
 		},
 	};

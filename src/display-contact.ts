@@ -5,6 +5,7 @@ import type { TrafficPresence } from "./traffic-engagement";
 import { range } from "./units";
 import type { Vec3 } from "./vec3";
 import type { HullId } from "./hull";
+import type { OperationalCondition } from "./world-state";
 
 /** Presentation identity for a target outside the generated body list (#52).
  * Producers own position and velocity; the scene graph never supplies either.
@@ -31,6 +32,11 @@ export interface DisplayContact extends Body {
 	 */
 	standing: CarrierStanding | null;
 	scannerClass: "unknown" | "civilian" | "hostile" | "station";
+	/**
+	 * A carrier's objective condition, where the producer knows it (#351 Q12:
+	 * the relay). A wreck that stays selectable must not read as a live target.
+	 */
+	condition?: OperationalCondition;
 }
 
 export function isDisplayContact(body: Body): body is DisplayContact {
@@ -135,9 +141,11 @@ export function targetDesignation(
 			? `STATION · ${body.stationType.toUpperCase()}`
 			: "STATION";
 	if (body.kind === "relay")
-		return isDisplayContact(body)
-			? `RELAY · ${body.scannerClass.toUpperCase()}`
-			: "RELAY";
+		return !isDisplayContact(body)
+			? "RELAY"
+			: body.condition && body.condition !== "operational"
+				? `RELAY · ${body.condition.toUpperCase()}`
+				: `RELAY · ${body.scannerClass.toUpperCase()}`;
 	if (body.kind !== "ship") return body.kind.toUpperCase();
 	if (!isDisplayContact(body)) return "SHIP · UNKNOWN";
 	const identity = ["SHIP", body.shipType?.toUpperCase()].filter(Boolean);

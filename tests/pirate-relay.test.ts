@@ -14,6 +14,9 @@ import {
 	RELAY_SIGNAL_RANGE_KM,
 	RELAY_WRECK_S,
 	relayDestruction,
+	relayActive,
+	relayActiveChance,
+	RELAY_ACTIVE_CHANCE,
 	relayDetection,
 	relayLog,
 	relayPosition,
@@ -29,6 +32,7 @@ import {
 	relaySlot,
 } from "../src/relay-slot";
 import { PULSE_LASER } from "../src/ship-condition";
+import { relayActiveShare } from "../src/relay-measure";
 import { generateContents, positionOnOrbit } from "../src/system";
 import { makeWorld } from "../src/sim";
 import { add, length, sub, v3 } from "../src/vec3";
@@ -175,8 +179,8 @@ describe("the plan", () => {
 
 describe("the capability", () => {
 	const plan = { watchedStationId: "station-trade" };
-	test("a leg to the watched station is certain while the relay is up and none while it is down", () => {
-		expect(relayDetection(plan, "station-trade", true)).toBe("certain");
+	test("a leg to the watched station is watched while the relay is up and none while it is down", () => {
+		expect(relayDetection(plan, "station-trade", true)).toBe("watched");
 		expect(relayDetection(plan, "station-trade", false)).toBe("none");
 	});
 	test("every other leg keeps the law, whatever the relay's state", () => {
@@ -262,5 +266,58 @@ describe("the lifecycle", () => {
 		expect(texts(500 + RELAY_WRECK_S + RELAY_REPAIR_S)[0]).toBe(
 			"Pirate relay back in service",
 		);
+	});
+});
+
+describe("which systems have one (#351)", () => {
+	// Every system with a station has the slot (`world-state.test.ts`); whether
+	// the relay is *active* there is a seeded roll per system whose chance falls
+	// with government, by the principal's ruling on #351: 80% in an Anarchy to
+	// 10% in a Corporate State, linear between.
+	test("the chance runs from 80% at government 0 to 10% at 7, linearly", () => {
+		expect(RELAY_ACTIVE_CHANCE).toEqual({ anarchy: 0.8, corporate: 0.1 });
+		expect(relayActiveChance(0)).toBeCloseTo(0.8, 12);
+		expect(relayActiveChance(7)).toBeCloseTo(0.1, 12);
+		for (let g = 0; g < 7; g++)
+			expect(relayActiveChance(g) - relayActiveChance(g + 1)).toBeCloseTo(
+				0.1,
+				12,
+			);
+	});
+
+	test("the roll is pinned, and on its own stream", () => {
+		// Pinned outcomes, so a roll moved onto another stream — or a chance
+		// changed — turns this red: 141 of galaxy 0's 256 systems roll active,
+		// and DIANINCE (system 9, government 3) does not.
+		expect(galaxy.systems.filter((r) => relayActive(r)).length).toBe(141);
+		expect(galaxy.systems[9].name).toBe("DIANINCE");
+		expect(relayActive(galaxy.systems[9])).toBe(false);
+		// The placement is unmoved by the roll: a relay's plan is in the carrier
+		// baseline fingerprint (`world-state.test.ts`), whose goldens this node's
+		// roll left as #351's enrolment pinned them. One value restated here so
+		// the row reads on its own.
+		const plan = relayPlan(
+			generateContents(galaxy.systems[9]),
+			galaxy.systems[9].seed,
+		);
+		expect(plan?.leadKm).toBeCloseTo(701.2311429716647, 9);
+	});
+
+	test("the share of active relays tracks the chance in every government", () => {
+		// Over all eight galaxies, per government: the observed share against
+		// the ruled chance, inside four binomial standard deviations. The
+		// buckets are not even — 221, 353, 437, 452, 324, 194, 60 and 7 systems
+		// from Anarchy to Corporate State at this seed — so the band is per
+		// bucket, and the Corporate one is wide because seven systems say little.
+		const seen = relayActiveShare(WORLD);
+		expect(seen.reduce((s, b) => s + b.n, 0)).toBe(8 * 256);
+		for (let government = 0; government < 8; government++) {
+			const { n, active } = seen[government];
+			const p = relayActiveChance(government);
+			expect(n).toBeGreaterThan(0);
+			expect(Math.abs(active / n - p)).toBeLessThan(
+				4 * Math.sqrt((p * (1 - p)) / n),
+			);
+		}
 	});
 });

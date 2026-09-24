@@ -288,6 +288,7 @@ import {
 	offAxisKm,
 } from "./docking";
 import {
+	type ConditionPrint,
 	type ShieldSide,
 	type ShipCondition,
 	applyDamage,
@@ -400,13 +401,30 @@ import {
 	relayDetection,
 	relayInSights,
 	relayLog,
+	relayActive,
 	relayPosition,
 	relayIdentified,
 	relayScannerFitted,
 	relaySignal,
 	relayVelocity,
 } from "./pirate-relay";
-import { type RelayPlan, relayPlan, relaySlot } from "./relay-slot";
+import {
+	RELAY_TENDER_HULL_ID,
+	type RelayPlan,
+	relayPlan,
+	relaySlot,
+	relayTenderSlot,
+} from "./relay-slot";
+import {
+	RELAY_TENDER_HIT_RADIUS_KM,
+	RELAY_TENDER_NAME,
+	tenderEntry,
+	tenderInSights,
+	tenderKill,
+	tenderLog,
+	tenderOffset,
+	tenderPresentSince,
+} from "./relay-tender";
 import { buildRelayMesh } from "./relay-mesh";
 import type { RelayCue } from "./relay-cue";
 import {
@@ -884,22 +902,6 @@ const RAIDER_PARAM = new URLSearchParams(window.location.search).get("raider");
 const RAIDERS_OFF =
 	RAIDER_PARAM !== null && ["off", "0", "false"].includes(RAIDER_PARAM);
 const RAIDER_PLAYTEST = RAIDER_PARAM !== null && !RAIDERS_OFF;
-/**
- * #43's pirate relay prototype: development builds only, on
- * `?relay-prototype=1`, the way #343's Requests trial is gated. The relay's
- * carrier key exists regardless (`pirate-relay.ts`), so nothing about a save
- * depends on the query string; what the flag turns on is the drawn relay, its
- * signal, its target and its dial on the leg law. In a production build the
- * flag is `false` and its branches fold; the relay modules, the mesh and the
- * cue's aside are still in the bundle, inert.
- */
-const RELAY_PARAM = new URLSearchParams(window.location.search).get(
-	"relay-prototype",
-);
-const RELAY_PROTOTYPE =
-	import.meta.env.DEV &&
-	RELAY_PARAM !== null &&
-	!["off", "0", "false"].includes(RELAY_PARAM);
 
 /** What one frame read of the relay (#43), for the renderer and the glass. */
 interface RelayView {
@@ -2158,6 +2160,34 @@ class Game {
 	private readonly relayMesh = buildRelayMesh();
 	/** What this frame read of the relay, for the renderer and the glass. */
 	private relayView: RelayView | null = null;
+	/** #351: the relay's repair tender, while it is there. Its hull is flight
+	 *  state like the relay's; its kill is the world's. */
+	private tenderView: { key: CarrierKey; since: number; entry: Vec3 } | null =
+		null;
+	/** The tug's shields and hull this visit (#351 Q13: ship shields, like any
+	 *  ship in a fight). Flight state like the relay's hull. */
+	private tenderCondition: ShipCondition = fullCondition(RELAY_TENDER_HULL_ID);
+	private tenderListed = false;
+	private readonly tenderContact: DisplayContact = {
+		id: "",
+		name: RELAY_TENDER_NAME.toUpperCase(),
+		kind: "ship",
+		pos: v3(),
+		velocity: v3(),
+		radiusKm: RELAY_TENDER_HIT_RADIUS_KM,
+		color: 0xff6a4a,
+		shipType: RELAY_TENDER_HULL_ID,
+		standing: null,
+		scannerClass: "hostile",
+	};
+	private readonly tenderMesh = (() => {
+		const root = buildShipMesh(
+			RELAY_TENDER_HULL_ID,
+			HULL_SPECS[RELAY_TENDER_HULL_ID].variant,
+		).root;
+		root.name = "relay-tender";
+		return root;
+	})();
 	/** Current-system Traffic authority is pure; these are disposable presentation caches. */
 	private trafficSystemIndex = -1;
 	private trafficTick = Number.NaN;
@@ -9153,9 +9183,14 @@ class Game {
 		// planet selected near the nose would turn it off the boresight, and a
 		// raider on the boresight but not selected would then be missed. The
 		// relay is one (#43): the principal flew the first build with the beam
-		// held on the boresight and could not hit it beside a planet.
+		// held on the boresight and could not hit it beside a planet. A wreck is
+		// not (#351 Q12): it stays selectable, and pulling the beam onto it told
+		// the principal every shot at a dead relay was landing.
 		const target =
-			this.raiderSelected() || this.relaySelected() || this.trafficSelected()
+			this.raiderSelected() ||
+			this.relayShootable() ||
+			this.tenderSelected() ||
+			this.trafficSelected()
 				? this.targetBody()
 				: null;
 		const targetDir = target ? directionTo(this.cameraPos(), target.pos) : null;
@@ -10172,6 +10207,8 @@ class Game {
 		this.relayPlanCache = null;
 		this.relayHull = RELAY_INTEGRITY;
 		this.relayHullInstance = 0;
+		this.tenderCondition = fullCondition(RELAY_TENDER_HULL_ID);
+		this.tenderView = null;
 	}
 
 	/**
@@ -10821,7 +10858,11 @@ class Game {
 		const { record, contents } = this.world.system;
 		if (this.relayPlanSystem !== record.index) {
 			this.relayPlanSystem = record.index;
-			this.relayPlanCache = relayPlan(contents, record.seed);
+			// #351: an inactive relay is absent — no plan, so nothing below draws,
+			// reads or dials it.
+			this.relayPlanCache = relayActive(record)
+				? relayPlan(contents, record.seed)
+				: null;
 		}
 		return this.relayPlanCache;
 	}
@@ -10837,10 +10878,11 @@ class Game {
 	 * through `applyCarrierTransition`, the one writer every carrier
 	 * transition in the game goes through.
 	 */
-	private stepRelay(shot: PlayerShot) {
-		const plan = RELAY_PROTOTYPE ? this.currentRelayPlan() : null;
+	private stepRelay(shot: PlayerShot, dt: number) {
+		const plan = this.currentRelayPlan();
 		if (!plan) {
 			this.relayView = null;
+			this.tenderView = null;
 			return;
 		}
 		const { record, contents } = this.world.system;
@@ -10918,6 +10960,145 @@ class Game {
 				this.world.system.byId.get(plan.watchedStationId)?.name ??
 				plan.watchedStationId,
 		};
+		this.stepTender(shot, plan, carrier, dt);
+	}
+
+	/**
+	 * #351: the relay's repair tender — there while the relay is being replaced
+	 * and the tender's own slot is operational, flown in from its entry point
+	 * and parked at the wreck. The shot is the relay's beam test against the
+	 * tug's hull sphere; the kill is the tender's `destroy` and the relay's
+	 * set-back, both through `applyCarrierTransition`, so both are saved.
+	 *
+	 * **Not gated on the long-range scanner.** The tender is a ship, found the
+	 * way ships are — by the scanner every hull carries — and #479's gate is on
+	 * *reading the relay*, which the tender does not need.
+	 * The counter-case is that a parked tender marks where the wreck is for a
+	 * pilot with no module. It exists only while a destroyed relay is being
+	 * repaired, and in the game only the player destroys a relay. The shot is
+	 * ungated, but an unfitted pilot has no cue, contact or marker to find an
+	 * 83 m object by, so the pilot a tender would inform has in practice
+	 * already found the relay — and what it reveals is a wreck, not a working
+	 * relay.
+	 */
+	private stepTender(
+		shot: PlayerShot,
+		plan: RelayPlan,
+		/** The relay's condition as `stepRelay` read it this frame. */
+		relay: EffectiveCarrier,
+		dt: number,
+	) {
+		const { record } = this.world.system;
+		const now = this.world.gameTime;
+		const key = relayTenderSlot(record.index).key;
+		const tender = this.carrierCondition(key);
+		const since = tenderPresentSince(relay, tender, now);
+		if (since === null) {
+			this.tenderView = null;
+			return;
+		}
+		// A new arrival is a new visit, and a new visit starts whole: a tender that
+		// left when the last repair completed keeps its slot's ordinal, so the
+		// ordinal cannot say so (sage #507 round 2). The entry direction is the
+		// system's, so neither is rebuilt per frame.
+		let view = this.tenderView;
+		if (!view || view.key !== key || view.since !== since) {
+			view = { key, since, entry: tenderEntry(record.seed) };
+			this.tenderCondition = fullCondition(RELAY_TENDER_HULL_ID);
+		}
+		this.tenderView = view;
+		// Its shields recharge on the duel's rule: the tug never fires, so the
+		// step is recovery only, and a pause in the pilot's fire lets them back.
+		this.tenderCondition = stepCondition(
+			this.tenderCondition,
+			dt,
+			false,
+		).condition;
+		const { pos } = this.tenderNow(view, plan);
+		if (
+			shot.fired &&
+			shot.damage > 0 &&
+			tenderInSights(this.cameraPos(), this.beamAim(), pos)
+		) {
+			// The pool the shot meets is the side it comes from, as a raider's: the
+			// tug faces the wreck, nose along `-entry`.
+			this.tenderCondition = applyDamage(
+				this.tenderCondition,
+				shot.damage,
+				sideStruck(scale(view.entry, -1), sub(this.cameraPos(), pos)),
+			);
+			if (!isAlive(this.tenderCondition)) {
+				for (const t of tenderKill(record.index, now, plan.watchedStationId))
+					this.applyCarrierTransition(t.key, t.event);
+				this.audio.explosion();
+				this.lastExit = "relay tender destroyed";
+				this.tenderView = null;
+			}
+		}
+	}
+
+	/** The tender where the clock stands now, for `relayNow`'s reason: it rides
+	 *  the relay's frame, which moves tens of kilometres a second. */
+	private tenderNow(
+		v: { since: number; entry: Vec3 },
+		plan: RelayPlan,
+	): { pos: Vec3; vel: Vec3 } {
+		const { contents } = this.world.system;
+		const now = this.world.gameTime;
+		const { offset, vel } = tenderOffset(v.entry, now - v.since);
+		return {
+			pos: add(relayPosition(plan, contents, now), offset),
+			vel: add(relayVelocity(plan, contents, now), vel),
+		};
+	}
+
+	/** #351: place the tender's mesh and contact, or take them away. A ship,
+	 *  listed whenever it is there, nose toward the wreck. */
+	private updateTenderPresentation(cameraPos: Vec3) {
+		const v = this.tenderView;
+		const plan = this.currentRelayPlan();
+		const contact = this.tenderContact;
+		if (!v || !plan) {
+			if (this.tenderListed) {
+				this.unregisterContact(contact);
+				this.tenderListed = false;
+				this.selectableCache = null;
+				if (this.targetId === contact.id) this.targetId = null;
+			}
+			this.tenderMesh.removeFromParent();
+			return;
+		}
+		const { pos, vel } = this.tenderNow(v, plan);
+		contact.id = v.key;
+		contact.pos.x = pos.x;
+		contact.pos.y = pos.y;
+		contact.pos.z = pos.z;
+		contact.velocity.x = vel.x;
+		contact.velocity.y = vel.y;
+		contact.velocity.z = vel.z;
+		if (!this.tenderListed) {
+			this.registerContact(contact);
+			this.tenderListed = true;
+			this.selectableCache = null;
+		}
+		const root = this.tenderMesh;
+		if (!root.parent) this.nearScene.add(root);
+		root.position.set(
+			pos.x - cameraPos.x,
+			pos.y - cameraPos.y,
+			pos.z - cameraPos.z,
+		);
+		this.trafficQuaternion({ nose: scale(v.entry, -1) }, root.quaternion);
+	}
+
+	/** #43, #351: the relay's and its tender's Communications lines, or none
+	 *  where the relay is inactive. */
+	private relayLogLines(): RaiderLogLine[] {
+		if (!this.currentRelayPlan()) return [];
+		const { galaxy, index } = this.world.system.record;
+		const env = this.commerceWorld.galaxies[galaxy];
+		const now = this.world.gameTime;
+		return [...relayLog(env, index, now), ...tenderLog(env, index, now)];
 	}
 
 	/** #43: what the glass shows of the relay, or null with nothing to show. */
@@ -10980,6 +11161,8 @@ class Game {
 		// the clock, by `advanceSystem`.
 		const { pos, vel } = this.relayNow(v);
 		contact.id = v.key;
+		// The Target panel names a wreck's condition rather than HOSTILE (Q12).
+		contact.condition = v.condition;
 		contact.pos.x = pos.x;
 		contact.pos.y = pos.y;
 		contact.pos.z = pos.z;
@@ -11020,7 +11203,7 @@ class Game {
 		const plan = this.currentRelayPlan();
 		const record = this.world.system.record;
 		return {
-			enabled: RELAY_PROTOTYPE,
+			active: plan !== null,
 			plan,
 			// The relay where the clock stands, for the same reason the
 			// presentation reads it there: a probe aiming at the frame-start
@@ -11032,13 +11215,26 @@ class Game {
 			hull: this.relayHull,
 			listed: this.relayListed,
 			detection: this.relayDetectionNow(),
+			// #351: the repair tender, where the clock stands, while it is there.
+			tender:
+				this.tenderView && plan
+					? {
+							key: this.tenderView.key,
+							since: this.tenderView.since,
+							...this.tenderNow(this.tenderView, plan),
+							hull: this.tenderCondition.hull,
+							fore: this.tenderCondition.fore,
+							aft: this.tenderCondition.aft,
+							listed: this.tenderListed,
+							drawn: this.tenderMesh.parent !== null,
+						}
+					: null,
 		};
 	}
 
 	/** #43: the relay's dial on a leg to the selected target, as it stands.
 	 *  One expression, read by the scheduler and by the probe readout. */
 	private relayDetectionNow(): RouteDetection {
-		if (!RELAY_PROTOTYPE) return "law";
 		const record = this.world.system.record;
 		return relayDetection(
 			this.currentRelayPlan(),
@@ -11475,7 +11671,7 @@ class Game {
 		this.charged.left = Math.max(0, this.charged.left - dt);
 		this.stepGunGimbal(dt);
 		this.stepRaider(dt, shot);
-		this.stepRelay(shot);
+		this.stepRelay(shot, dt);
 		this.stepTrafficEngagements(dt, shot);
 		this.stepCargoCanisters(dt);
 		this.syncCargoContacts();
@@ -11960,6 +12156,7 @@ class Game {
 		this.updateTrafficPresentation(camPos);
 		this.updateEncounterPresentation(camPos);
 		this.updateRelayPresentation(camPos);
+		this.updateTenderPresentation(camPos);
 
 		// §5: the streaks are a marker on the regime, keyed to the *log* of the
 		// speed. A linear fraction of `v_max` sits at nearly zero for the whole
@@ -12659,15 +12856,10 @@ class Game {
 								this.world.gameTime,
 							),
 							// #43: the relay's lifecycle in the same log, same derivation.
-							...(RELAY_PROTOTYPE
-								? relayLog(
-										this.commerceWorld.galaxies[
-											this.world.system.record.galaxy
-										],
-										this.world.system.record.index,
-										this.world.gameTime,
-									)
-								: []),
+							// An inactive relay is absent, log included — a save from the
+							// prototype can hold rows for one, and they stay unread (#351).
+							// #351: and its tender's arrival and kill beside it.
+							...this.relayLogLines(),
 							// #396: the struck carrier's hail. Not a derivation, and
 							// the one line here that is not — see `this.hails`.
 							...this.hails.map((h) => h.line),
@@ -13577,6 +13769,22 @@ class Game {
 		);
 	}
 
+	/** The relay as something to shoot at: selected and operational (#351 Q12). A
+	 *  wreck stays selectable for its range and the tender, and is not one. */
+	private relayShootable(): boolean {
+		return this.relaySelected() && this.relayView?.condition === "operational";
+	}
+
+	/** Whether the relay's tender is the selected target (#351): the fourth
+	 *  combat target, so it pulls the gimbal and earns the mark by name. */
+	private tenderSelected(): boolean {
+		return (
+			this.tenderListed &&
+			this.targetId !== null &&
+			this.targetId === this.tenderContact.id
+		);
+	}
+
 	/** Whether an ordinary carrier is the selected target (civilian-combat H3):
 	 *  the third combat target #43's rule names, so it pulls the gimbal and
 	 *  earns the on-target mark. */
@@ -13597,11 +13805,23 @@ class Game {
 	 * civilian to a threshold, somewhere chosen, was worked to for twenty seconds
 	 * of unbroken beam and shown nothing (#395).
 	 *
-	 * The relay is deliberately absent: it has no condition to show, and a line
-	 * of zeros beside its name would be a reading of a fight it does not have.
+	 * The operational relay shows its hull with both shields at zero, because it
+	 * has none; a wreck shows no line (#351 Q12); the relay's tender shows its
+	 * ship shields and hull (Q13).
 	 */
-	private selectedTargetCondition(): ShipCondition | null {
+	private selectedTargetCondition(): ConditionPrint | null {
 		if (this.raiderSelected()) return this.encounter?.raider?.condition ?? null;
+		// #351: the relay carries hull points and no shields, so its line reads
+		// both pools at zero, in the stripped tone. A wreck is no target to shoot
+		// and gets no line (Q12). The tender is a ship with a ship's shields (Q13).
+		if (this.relayShootable())
+			return {
+				fore: 0,
+				aft: 0,
+				hull: this.relayHull,
+				hullMax: RELAY_INTEGRITY,
+			};
+		if (this.tenderSelected()) return this.tenderCondition;
 		if (this.trafficSelected())
 			return (
 				this.trafficEngagements.get(this.targetId as CarrierKey)?.condition ??
@@ -14425,9 +14645,10 @@ class Game {
 		const selectedColour = raiderSelected
 			? FLOOR_TONE_FILL[raiderTone]
 			: "rgba(255, 214, 120, 0.95)";
-		// The relay earns the mark whenever a shot would land (#43): it has no
-		// phases, and `stepRelay` lands the shot in every one of them.
-		const relaySelected = selectedBody !== null && this.relaySelected();
+		// The relay earns the mark whenever a shot would land (#43), which is
+		// while it is operational: `stepRelay` lands nothing on a wreck, so a
+		// wreck earns no mark (#351 Q12).
+		const relaySelected = selectedBody !== null && this.relayShootable();
 		const onTarget =
 			(raiderSelected &&
 				onTargetMark(
@@ -14436,6 +14657,9 @@ class Game {
 				)) ||
 			(relaySelected &&
 				relayInSights(camPos, this.beamAim(), selectedBody.pos)) ||
+			(selectedBody !== null &&
+				this.tenderSelected() &&
+				tenderInSights(camPos, this.beamAim(), selectedBody.pos)) ||
 			// An ordinary carrier (civilian-combat H3) earns it as the relay does:
 			// `stepTrafficEngagements` lands a shot whenever this test passes.
 			(selectedBody !== null && this.trafficOnTarget(camPos, selectedBody));

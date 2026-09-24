@@ -107,6 +107,13 @@ export const DOMAIN = {
 	 *  orientation are two different questions, and sharing a stream makes a
 	 *  system's band tilt a function of how many stars were scattered. */
 	SKY_FRAME: 23,
+	/** Whether a system's pirate relay is active (`pirate-relay.ts`, #351): one
+	 *  draw per system against a chance that falls with government. Its own tag,
+	 *  so the roll moves neither the relay's placement nor anything else. */
+	RELAY_ACTIVE: 24,
+	/** The relay tender's way in (`relay-tender.ts`, #351): the direction it
+	 *  flies in from. Its own tag, so it moves no relay placement or roll. */
+	RELAY_TENDER: 25,
 } as const;
 
 export type DomainName = keyof typeof DOMAIN;
