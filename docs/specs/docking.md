@@ -618,14 +618,26 @@ that one. Which berth is reserved does not matter while every berth of a station
 shares one clear envelope, and a test holds that as a tripwire rather than as a
 fact.
 
-**The queue is still not reachable in the live game, and D6's bargain stands
-unchanged.** There is one player, Traffic may not take the visitor berth, and no
-other visitor exists — so nothing can present a station with every berth taken.
-The queued and denied branches are exercised the way D6 said they would be: by
-injected occupancy, now from a browser probe as well as the headless tests.
-What would make the queue live is a second visitor — a rule that lets Traffic
-into the visitor berth, or an NPC that docks as a guest — and neither is
-specified here. #8 retains combat AI and interdiction.
+**The queue was reached in the live game, and the second visitor was the
+player (#520).** This paragraph said nothing could present a station with every
+berth taken, because there is one player and Traffic may not take the visitor
+berth. The principal was queued twice anyway — `position 8` at a trade station
+(#421) and minutes outside a refinery. Both were the player's own reservation
+counted against them: the caller's occupancy includes this ship's berth
+(`occupiedAt`), and a second press of the clearance key re-dealt from it, so a
+live grant on the visitor berth came back `queued` at the full capacity and was
+promoted only when a Traffic berth freed. A request made while a grant is live
+now returns that grant unchanged, after the hostility and scan branches.
+
+So what can fill a station is Traffic's share plus the player, and the player
+cannot now fill it twice. Traffic alone did not fill a refinery in 30 minutes of
+flown clock at each of eight seed and start-time pairs, measured on #520's
+branch with a scratch instrument that did not ship — that is a sample, not a
+proof, and the queued and denied branches are still exercised by injected
+occupancy, from a browser probe as well as the headless tests. What would make
+the queue a designed state rather than a defect is a second visitor — a rule
+that lets Traffic into the visitor berth, or an NPC that docks as a guest — and
+neither is specified here. #8 retains combat AI and interdiction.
 
 What is **not** decided here is whether a departed carrier's home berth is held
 while it is away. Today it is not, so a station's free capacity grows with the

@@ -765,6 +765,14 @@ export function requestClearance(
 			hostile: true,
 			hostileUntilS: req.gameTime + HOSTILE_COOLDOWN_S,
 		};
+	// **A live grant is already the answer (#520).** The caller's occupancy
+	// holds this ship's own reservation, so re-dealing from it read that berth
+	// as another ship's: with every other berth held, a second press of the
+	// clearance key turned a live grant into `queued` at the full capacity, and
+	// the ship waited on itself until an unrelated berth freed. After the
+	// hostility and scan branches, because a station that has since turned on
+	// the pilot still refuses them.
+	if (grantLive(state, req.gameTime)) return state;
 	// **The grant *is* the reservation** (§13.2). A protocol that granted first
 	// and assigned a berth on arrival could grant to a ship nothing fits, which
 	// is the one case §13.2 answers with a denial rather than a queue.

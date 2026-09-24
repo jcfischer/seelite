@@ -602,6 +602,29 @@ describe("§9.1.9 the clearance state machine", () => {
 		expect(promoted.berthId).not.toBeNull();
 	});
 
+	test("asking again while a grant is live keeps the grant and its berth (#520)", () => {
+		// The pilot's clearance key is the only caller, and the arrival lane
+		// wait says nothing, so pressing it again is what a waiting pilot does.
+		// The caller's occupancy includes this ship's own reservation
+		// (`occupiedAt`), so a request that re-dealt from it read its own berth as
+		// another ship's: at a station whose other berths were all held it
+		// answered `queued` at the full capacity and kept the berth, and the
+		// ship waited on itself until an unrelated berth freed — minutes at a
+		// refinery, flown on 2026-09-24.
+		const granted = requestClearance(newDockingState(), REQ);
+		const own = granted.berthId;
+		expect(own).not.toBeNull();
+		const everyBerth = new Set(INTERIOR.berths.map((berth) => berth.id));
+		const again = requestClearance(granted, {
+			...REQ,
+			gameTime: 30,
+			occupied: everyBerth,
+		});
+		expect(again.clearance).toEqual(granted.clearance);
+		expect(again.berthId).toBe(own);
+		expect(grantLive(again, 30)).toBe(true);
+	});
+
 	test("releasing the berth spends the grant with it", () => {
 		// §13.2: the grant *is* the reservation, so a grant that outlived its
 		// berth is a clearance no berth answers for — and `attemptEntry` would
