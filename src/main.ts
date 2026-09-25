@@ -3951,8 +3951,13 @@ class Game {
 		// open the settings screen, whose rows write `localStorage`, or rebind a
 		// layout — so none is installed, rather than each being taught to
 		// refuse. The frames it shows are drawn on demand by
-		// `capturePostcardFrame`.
-		if (this.postcardViewer) return;
+		// `capturePostcardFrame`. The one cabin readout posed here is the throttle
+		// fill, at rest: the mesh is built full, and the instruments no loop will
+		// paint are left dark, since a recipe carries none of what they read.
+		if (this.postcardViewer) {
+			this.poseThrottleFill();
+			return;
+		}
 		window.addEventListener("keydown", (e) => this.onKey(e, true));
 		window.addEventListener("keyup", (e) => this.onKey(e, false));
 		// Audio cannot open before a gesture, so it opens on the first one.
@@ -7577,6 +7582,15 @@ class Game {
 		);
 		this.cockpit.flightInstrument.texture.needsUpdate = true;
 		this.cockpit.targetInstrument.texture.needsUpdate = true;
+		this.poseThrottleFill();
+	}
+
+	/**
+	 * The throttle fill for `this.throttle`. The mesh is built full, so a cabin
+	 * no instrument update has reached — the postcard viewer's (#406), which
+	 * runs no loop — draws a full bright bar until this is called.
+	 */
+	private poseThrottleFill() {
 		// The low end is nearest/lower on the sloped deck. Keep it anchored there
 		// and extend toward the windscreen as throttle rises; the old fill started
 		// at the top and slid down, the inverse of a physical throttle cue.
