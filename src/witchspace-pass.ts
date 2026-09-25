@@ -38,10 +38,15 @@
  *
  * ## Where it sits, and why
  *
- * After the bloom and before the output stage. Before the output stage because
- * it is written in **linear light** and the tone map is the output stage's.
- * After the bloom because the streak's lines and the tunnel's mist carry their
- * own glow; a tunnel fed to the bloom would halo into a smear.
+ * **Between the approach layer and the near one**, on the principal's ruling
+ * that the tunnel is outside the canopy. It reads the sky and the bodies
+ * composited so far, twists them into the opening and draws the tunnel over
+ * them; the near pass then draws the cabin and the hull over that, so neither
+ * is ever covered or warped. It is written in **linear light**, and the bloom
+ * and the tone map come after it, so the plasma strands, the rim and the throat
+ * are hot enough to glow and the mist is not. The first build sat after the
+ * bloom and covered the cabin; `probe-witchspace.mjs` holds the order and the
+ * cabin's pixels.
  *
  * ## The `quality` key (#99)
  *
@@ -98,7 +103,7 @@ ${WITCHSPACE_MIST_GLSL}
 // The tunnel's colour along the ray through screen point p (aspect-corrected,
 // centre at the origin), at time t.
 vec3 witchTunnel(vec2 p, float t) {
-	float r = max(length(p), 0.015);
+	float r = max(length(p), 0.012);
 	vec2 dir = p / r;
 	vec3 col = vec3(0.0);
 	float light = 1.0;
@@ -107,32 +112,43 @@ vec3 witchTunnel(vec2 p, float t) {
 		// layer is the wall.
 		float s = float(k) / float(LAYERS);
 		float depth = 0.55 * s / r;
-		float twist = depth * 0.9 + t * 1.3;
+		float twist = depth * 0.8 + t * 1.6;
 		float cs = cos(twist);
 		float sn = sin(twist);
 		vec2 xy = vec2(dir.x * cs - dir.y * sn, dir.x * sn + dir.y * cs) * s;
-		vec3 q = vec3(xy * 1.8, depth * 0.9 - t * 2.2);
-		float warp = witchFbm(q * 0.8 + vec3(0.0, 0.0, t * 0.3));
-		float n = witchFbm(q * 1.4 + warp * 2.2);
+		vec3 q = vec3(xy * 1.8, depth * 0.9 - t * 3.2);
+		float warp = witchFbm(q * 0.8 + vec3(0.0, 0.0, t * 0.4));
+		float n = witchFbm(q * 1.4 + warp * 2.4);
 		float wall = k == LAYERS ? 1.0 : 0.0;
-		float density = mix(smoothstep(0.42, 0.8, n) * 0.6, 0.95, wall);
-		// Hue runs down the tunnel, with the density, and in bands that follow the
-		// spiral, so the colours stream rather than sit.
-		float band = 0.18 * sin(atan(xy.y, xy.x) * 3.0 + depth * 0.7);
-		vec3 tint = witchPalette(depth * 0.16 + n * 1.5 + band + t * 0.12);
-		// Brighter where the mist is thick and toward the far end of the tunnel.
-		// Low on purpose: the tone map saturates anything much above one, and the
-		// first pass at this washed the whole tunnel to one pale yellow.
-		float glow = mix(0.05, 0.12 + 0.55 * n * n, 1.0 - wall * 0.6)
-			+ 0.35 * smoothstep(2.0, 9.0, depth);
-		col += light * density * tint * glow;
+		float density = mix(smoothstep(0.45, 0.85, n) * 0.5, 0.95, wall);
+		// Hue runs down the tunnel, with the density, and in bands that follow
+		// the spiral, so the colours stream rather than sit.
+		float band = 0.2 * sin(atan(xy.y, xy.x) * 3.0 + depth * 0.7);
+		float hue = depth * 0.16 + n * 1.5 + band + t * 0.15;
+		vec3 tint = witchPalette(hue);
+		// Low on purpose: the tone map saturates anything much above one, and
+		// the first pass at this washed the whole tunnel to one pale yellow.
+		float glow = mix(0.04, 0.1 + 0.5 * n * n, 1.0 - wall * 0.6)
+			+ 0.3 * smoothstep(2.0, 9.0, depth);
+		// Plasma: thin strands along the warp field's middle contour, in the
+		// complementary hue and hot enough for the bloom to take.
+		float ridge = 1.0 - abs(2.0 * warp - 1.0);
+		float strand = pow(ridge, 22.0) * smoothstep(0.5, 0.8, n);
+		vec3 hot = witchPalette(hue + 0.5) * 1.6;
+		col += light * (density * tint * glow + strand * hot * (1.0 - 0.5 * wall));
 		light *= 1.0 - density;
 	}
+	// Rings of light rushing past on the wall: speed, read off the depth.
+	float wallDepth = 0.55 / r;
+	float rings = pow(max(0.0, sin(wallDepth * 3.5 - t * 22.0)), 14.0);
+	col += rings * witchPalette(wallDepth * 0.1 + t * 0.2) * 0.45
+		* smoothstep(0.9, 2.5, wallDepth);
 	// Dark toward the rim, which is the tunnel nearest the camera: the depth
 	// reads as light at the far end, not as a flat painted wall.
-	col *= mix(0.3, 1.0, smoothstep(0.95, 0.12, r));
-	// The vanishing point: where the tunnel goes, a bright cold core.
-	col += vec3(0.6, 0.7, 1.2) * exp(-r * r * 90.0) * 0.9;
+	col *= mix(0.25, 1.0, smoothstep(0.95, 0.12, r));
+	// The throat: a white-hot core in a wide cold halo.
+	col += vec3(1.0, 0.95, 1.2) * exp(-r * r * 220.0) * 1.6;
+	col += vec3(0.4, 0.55, 1.2) * exp(-r * r * 18.0) * 0.35;
 	return col;
 }
 
@@ -156,47 +172,81 @@ varying vec2 vUv;
 float hash(float n) { return fract(sin(n) * 43758.5453); }
 ${WITCHSPACE_MIST_GLSL}
 
+vec2 toUv(vec2 p) { return vec2(p.x / uAspect, p.y) + 0.5; }
+
 void main() {
-	vec4 base = texture2D(tDiffuse, vUv);
-	vec3 c = base.rgb;
 	vec2 d = vUv - 0.5;
 	vec2 p = vec2(d.x * uAspect, d.y);
 	float r = length(p);
-	// How much of this pixel the tunnel covers: an opening from the centre with
-	// a ragged, turning edge, full-frame at 1.
-	float cover = 0.0;
-	if (uTunnel > 0.0) {
-		float ang = atan(p.y, p.x);
-		float rag = witchNoise(vec3(cos(ang) * 2.5, sin(ang) * 2.5, uFlow * 1.5));
-		float edge = uTunnel * 1.45 + (rag - 0.5) * 0.35 * (1.0 - uTunnel);
-		cover = 1.0 - smoothstep(edge - 0.3, edge, r);
-	}
-	if (uStreak > 0.0 && cover < 1.0) {
-		// Zoom toward the centre: the frame is pulled into the direction of
-		// travel. Weighted toward the unmoved sample so the subject stays legible
-		// until late in the entry.
+	float ang = atan(p.y, p.x);
+	// The pull: the sky around the centre twists and falls into it, strongest
+	// near the middle. Only the layers behind the cabin are read here, so the
+	// cabin never swims.
+	float pull = max(uStreak * 0.5, uTunnel);
+	vec3 c;
+	if (pull > 0.0) {
+		float twist = pull * 2.2 * exp(-r * 2.2);
+		float zoom = 1.0 - pull * 0.3 * exp(-r * 1.6);
+		float cs = cos(twist);
+		float sn = sin(twist);
+		vec2 q = vec2(p.x * cs - p.y * sn, p.x * sn + p.y * cs) * zoom;
+		// Smeared inward along the pull.
 		vec3 acc = vec3(0.0);
 		float w = 0.0;
 		for (int i = 0; i < SAMPLES; i++) {
 			float k = float(i) / float(SAMPLES);
-			float wt = 1.0 - 0.5 * k;
-			acc += texture2D(tDiffuse, 0.5 + d * (1.0 - 0.3 * uStreak * k)).rgb * wt;
+			float wt = 1.0 - 0.6 * k;
+			acc += texture2D(tDiffuse, toUv(q * (1.0 - 0.25 * uStreak * k))).rgb * wt;
 			w += wt;
 		}
-		c = mix(c, acc / w, uStreak);
-		// The radial lines, from a hash of the angle and not from the sky, and
-		// coloured from the tunnel's palette so the two read as one thing.
-		float lane = floor((atan(p.y, p.x) + 3.14159265) * 60.0);
-		float seed = hash(lane);
-		float line = step(0.72, seed);
+		c = acc / w;
+	} else {
+		c = texture2D(tDiffuse, vUv).rgb;
+	}
+	// How much of this pixel the tunnel covers: an opening from the centre with
+	// a ragged, turning edge, full-frame at 1.
+	float cover = 0.0;
+	float edge = 0.0;
+	if (uTunnel > 0.0) {
+		float rag = witchNoise(vec3(cos(ang) * 2.5, sin(ang) * 2.5, uFlow * 1.5));
+		edge = uTunnel * 1.45 + (rag - 0.5) * 0.35 * (1.0 - uTunnel);
+		cover = 1.0 - smoothstep(edge - 0.25, edge, r);
+	}
+	if (uStreak > 0.0 && cover < 1.0) {
+		// The streak's lines, from a hash of the angle and not from the sky,
+		// bent into the spiral the pull is turning, in the tunnel's palette.
+		float spiral = ang + 3.14159265 + r * 2.0 * pull;
+		float lanes = spiral * 19.099;
+		float seed = hash(floor(lanes));
+		// A thin line down the middle of its lane, not the whole lane: a lane is
+		// a wedge, and at the frame's edge a wedge is a broad pale band.
+		float across = abs(fract(lanes) - 0.5);
+		float line = step(0.7, seed) * (1.0 - smoothstep(0.04, 0.12, across));
 		float flow = fract(r * 2.5 - uFlow * (1.5 + 2.0 * seed) + seed * 7.0);
 		float dash = smoothstep(0.0, 0.25, flow) * (1.0 - smoothstep(0.35, 0.9, flow));
 		float lit = line * dash * smoothstep(0.04, 0.5, r) * uStreak * uStreak;
-		c += witchPalette(seed + uFlow * 0.1) * lit * 4.0;
-		// A cold cast over the whole frame as the drive takes hold.
-		c *= mix(vec3(1.0), vec3(0.8, 0.8, 1.2), 0.5 * uStreak);
+		c += witchPalette(seed + uFlow * 0.1) * 1.4 * lit * 2.0;
 	}
-	if (cover > 0.0) c = mix(c, texture2D(tTunnel, vUv).rgb, cover);
+	if (cover > 0.0) {
+		// A radial colour split, growing toward the frame's edge.
+		vec2 split = d * 0.014 * (0.4 + r);
+		vec3 tunnel = vec3(
+			texture2D(tTunnel, vUv + split).r,
+			texture2D(tTunnel, vUv).g,
+			texture2D(tTunnel, vUv - split).b);
+		c = mix(c, tunnel, cover);
+	}
+	// The opening's rim: a hot ring that flickers round the edge while the
+	// tunnel opens and closes, and is gone when it fills the frame.
+	if (uTunnel > 0.0 && uTunnel < 1.0) {
+		// The ring wanders a little off the edge and crackles along it.
+		float crackle = witchNoise(vec3(cos(ang) * 14.0, sin(ang) * 14.0, uFlow * 9.0));
+		float x = (r - edge + 0.12 + (crackle - 0.5) * 0.03) / 0.016;
+		float ring = exp(-x * x);
+		float flicker = 0.4 + 1.6 * crackle * crackle;
+		c += (witchPalette(ang * 0.16 + uFlow * 0.3) + 0.25) * ring * flicker * 1.3
+			* sin(3.14159265 * uTunnel);
+	}
 	// Shaped, because the mix is in linear light toward a value the tone map
 	// takes to white: a linear weight puts a fifth of the way at nearly white
 	// on screen, and the flash reads as a switch rather than a flash.
@@ -204,7 +254,7 @@ void main() {
 		float k = uWhiteout * uWhiteout;
 		c = mix(c, vec3(WHITEOUT), k * k);
 	}
-	gl_FragColor = vec4(c, base.a);
+	gl_FragColor = vec4(c, 1.0);
 }
 `;
 

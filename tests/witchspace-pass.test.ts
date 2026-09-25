@@ -60,9 +60,12 @@ describe("the witchspace pass", () => {
 	test("each term branches on its own dial", () => {
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uStreak > 0.0 && cover < 1.0)");
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uTunnel > 0.0)");
-		// The tunnel is sampled only inside its opening.
+		// The pull on the sky, the tunnel's samples and the rim each run only
+		// while their own term is up.
+		expect(WITCHSPACE_FRAGMENT).toContain("if (pull > 0.0) {");
+		expect(WITCHSPACE_FRAGMENT).toContain("if (cover > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain(
-			"if (cover > 0.0) c = mix(c, texture2D(tTunnel",
+			"if (uTunnel > 0.0 && uTunnel < 1.0) {",
 		);
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0) {");
 	});

@@ -3736,6 +3736,13 @@ class Game {
 		this.composer.addPass(backdropPass);
 		this.composer.addPass(farPass);
 		this.composer.addPass(approachPass);
+		// #532's transition, **between the approach layer and the near one**: it
+		// reads the sky and the bodies composited so far and draws the tunnel over
+		// them, and the near pass then draws the cabin and the hull over it, so
+		// the tunnel is outside the canopy. `witchspace-pass.ts` says why. Disabled
+		// until a jump, and the composer skips a disabled pass without a swap.
+		this.witchspacePass = new WitchspacePass(this.settings.value.quality);
+		this.composer.addPass(this.witchspacePass);
 		this.composer.addPass(nearPass);
 		// **#201's ambient occlusion, between the near pass and the bloom.**
 		//
@@ -3841,10 +3848,6 @@ class Game {
 			EXPOSURE.bloom.threshold,
 		);
 		this.composer.addPass(this.bloomPass);
-		// #532's transition, after the bloom and before the output stage:
-		// `witchspace-pass.ts` says why on both sides. Disabled until a jump.
-		this.witchspacePass = new WitchspacePass(this.settings.value.quality);
-		this.composer.addPass(this.witchspacePass);
 		// Kept as a field for the same reason `bloomPass` is: the vignette is set
 		// per frame from the view, and the dither has a control arm a probe
 		// switches. #200.

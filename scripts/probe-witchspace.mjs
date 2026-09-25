@@ -194,16 +194,47 @@ if (arrived?.rift) {
 }
 
 // Lit: the held phases change pixels, measured against the same frame unheld.
+// And the tunnel is **behind the cabin**: the principal ruled it goes outside
+// the canopy, so a cabin pixel must not move when the tunnel comes up.
 const lit = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__witch;
 	g.view = "cockpit";
+	// **Bloom off for the occlusion question.** The tunnel's throat is bright
+	// and its halo lands on the scanner deck, which is light and is meant to;
+	// whether the tunnel is drawn *over* the cabin is a different question, and
+	// with the halo in it the first reading counted 28% of the cabin as moved.
+	g.bloomPass.enabled = false;
 	g.holdWitchspace(0);
 	const cut = w.capture();
+	// The cabin's own pixels: where the held frame changes when the cabin is
+	// taken away. `cabinHidden` is what the placement tools use to clear it.
+	g.cabinHidden = true;
+	const cutClear = w.capture();
+	g.cabinHidden = false;
+	g.holdWitchspace(-3);
+	const plain = w.capture();
+	g.bloomPass.enabled = true;
 	g.holdWitchspace(-0.2);
 	const streak = w.capture();
 	g.holdWitchspace(-3);
-	const plain = w.capture();
+	const plainLit = w.capture();
+	const luma = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+	let cabin = 0;
+	let cabinMoved = 0;
+	let outside = 0;
+	let outsideMoved = 0;
+	for (let i = 0; i < cut.data.length; i += 4) {
+		const isCabin = Math.abs(luma(cut.data, i) - luma(cutClear.data, i)) > 10;
+		const moved = Math.abs(luma(cut.data, i) - luma(plain.data, i)) > 10;
+		if (isCabin) {
+			cabin++;
+			if (moved) cabinMoved++;
+		} else {
+			outside++;
+			if (moved) outsideMoved++;
+		}
+	}
 	// Chase, at a phase where the rift is open and the tunnel has collapsed.
 	g.view = "chase";
 	g.holdWitchspace(1.6);
@@ -221,17 +252,37 @@ const lit = await page.evaluate(() => {
 	const reading = g.witchspaceReading();
 	g.view = "cockpit";
 	g.holdWitchspace(null);
+	// Where the pass sits: after the approach layer's pass, before the near's.
+	const passes = g.composer.passes;
+	const at = passes.indexOf(g.witchspacePass);
 	return {
-		cutMoved: w.moved(cut, plain, 10),
-		streakMoved: w.moved(streak, plain, 10),
+		cabinShare: cabin / (cabin + outside),
+		cabinMoved: cabin ? cabinMoved / cabin : null,
+		outsideMoved: outside ? outsideMoved / outside : null,
+		streakMoved: w.moved(streak, plainLit, 10),
 		riftMoved,
 		riftReading: reading.rift,
+		before: passes[at - 1]?.scene === g.approachScene,
+		// The *first* pass holding the near scene, not merely the next one: the
+		// AO pass holds it too, and a pass moved after the near layer passed a
+		// next-one check against it in the red build.
+		after: at + 1 === passes.findIndex((p) => p.scene === g.nearScene),
 	};
 });
 check(
-	"held on the cut, the tunnel covers the frame",
-	lit.cutMoved > 0.95,
-	`${(lit.cutMoved * 100).toFixed(1)}% of pixels moved past 10/255 against the unheld frame`,
+	"the pass is drawn between the approach layer and the near one",
+	lit.before && lit.after,
+	`before is approach: ${lit.before}, after is near: ${lit.after}`,
+);
+check(
+	"held on the cut, the tunnel covers everything outside the cabin",
+	lit.outsideMoved > 0.95,
+	`${((lit.outsideMoved ?? 0) * 100).toFixed(1)}% of outside pixels moved past 10/255`,
+);
+check(
+	"and the cabin is drawn over it, not under it",
+	lit.cabinShare > 0.1 && lit.cabinMoved < 0.2,
+	`the cabin is ${(lit.cabinShare * 100).toFixed(1)}% of the frame and ${((lit.cabinMoved ?? 1) * 100).toFixed(1)}% of it moved`,
 );
 check(
 	"held in the entry, the streak moves the frame",
