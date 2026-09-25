@@ -9514,7 +9514,9 @@ class Game {
 				gameTime: this.world.gameTime,
 				refusedByLaw: this.refusedByLaw(id),
 				// #521: the turn a crossing would be judged on now, so the wait on
-				// the glass and the bounce at the plane cannot disagree.
+				// the glass and the bounce at the plane cannot disagree. The grant
+				// test here only saves the Traffic query; `dockingDirector` owns the
+				// rule that a wait shows under a live grant and no block.
 				laneWait: grantLive(this.dockingStateOf(id), this.world.gameTime)
 					? this.trafficLaneWait(id, this.arrivalReadyAt(id), "arrival")
 					: null,
@@ -9671,24 +9673,24 @@ class Game {
 
 	/** A cancelled computer approach must not keep an invisible arrival turn. */
 	private clearPlayerArrivalLaneRequests() {
-		// **Only the turns no pilot holds (#521).** A turn under a live grant
+		// **Only the turns no pilot owns (#521).** A turn under a live grant
 		// inside director range is the pilot's own now, hand-flown or not, and
 		// it is on the glass — so the computer letting go must not send the
 		// pilot to the back of the lane.
 		for (const [stationId, request] of this.playerLaneRequests)
-			if (request.movement === "arrival" && !this.holdsArrivalTurn(stationId))
+			if (request.movement === "arrival" && !this.ownsArrivalTurn(stationId))
 				this.playerLaneRequests.delete(stationId);
 	}
 
 	/**
-	 * Whether the pilot holds an arrival turn at a station (#521): flying, a
+	 * Whether the pilot owns an arrival turn at a station (#521): flying, a
 	 * live grant there, and inside the director's range. The computer used to
 	 * be the only thing that registered a turn, so a hand-flown ship was asked
 	 * as of *now* on every frame and any carrier that queued after it went
 	 * first — its wait could be overrun without limit. The principal ruled
-	 * that the pilot's turn is held either way.
+	 * that the pilot keeps the turn either way.
 	 */
-	private holdsArrivalTurn(stationId: string): boolean {
+	private ownsArrivalTurn(stationId: string): boolean {
 		return (
 			this.dock.phase === "flying" &&
 			grantLive(this.dockingStateOf(stationId), this.world.gameTime) &&
@@ -9697,7 +9699,7 @@ class Game {
 	}
 
 	/**
-	 * Register the arrival turn a pilot holds, keeping its first stamp, and
+	 * Register the arrival turn a pilot owns, keeping its first stamp, and
 	 * drop one the pilot no longer holds — a lapsed grant, or a ship that left
 	 * the director's range. A launch request is the held launch's and is
 	 * never touched here.
@@ -9706,7 +9708,7 @@ class Game {
 		this.clearPlayerArrivalLaneRequests();
 		for (const [stationId, state] of this.dockingStates) {
 			if (!state.berthId || this.playerLaneRequests.has(stationId)) continue;
-			if (this.holdsArrivalTurn(stationId))
+			if (this.ownsArrivalTurn(stationId))
 				this.playerLaneRequests.set(stationId, {
 					readyAt: this.world.gameTime,
 					movement: "arrival",

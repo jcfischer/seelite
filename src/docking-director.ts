@@ -76,13 +76,15 @@ export const LANE_WAIT_STEP_S = 5;
 
 /**
  * How long after a route gives the lane back the player's turn is actually
- * taken: two Traffic authority ticks at 10 Hz — the route's lane end falls
- * between two ticks, and the turn is read on the step after the tick that
- * sees the lane empty. `probe-lane-wait` measured 0.1–0.2 s against live
- * Traffic; rounding alone does not cover it, because an estimate just under a
+ * taken, with margin. The mechanism is two Traffic authority ticks at 10 Hz —
+ * the route's lane end falls between two ticks, and the turn is read on the
+ * step after the tick that sees the lane empty — and `probe-lane-wait`
+ * measured 0.1–0.2 s against live Traffic, half its samples at the top of
+ * that. So 0.2 s is a bound with no room in it; a third tick is the room.
+ * Rounding alone does not cover any of it, because an estimate just under a
  * step boundary rounds to the boundary itself.
  */
-export const LANE_TURN_LATENCY_S = 0.2;
+export const LANE_TURN_LATENCY_S = 0.3;
 
 /**
  * A lane wait as the pilot reads it: `~10s` — the predicted wait plus

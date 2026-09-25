@@ -218,7 +218,8 @@ The docking director reports the player's live one-based place as
 Transit lane is reported under the live grant as `WAIT · <reason> · ~Ns` (#521):
 the reason is `playerLaneWait`'s, and the figure is the time until the last
 route ahead gives the lane back, read off each route's own `laneEndsAtS`, plus
-the two authority ticks the turn takes to land (`LANE_TURN_LATENCY_S`), rounded
+the time the turn takes to land (`LANE_TURN_LATENCY_S`, two authority ticks and
+one of margin), rounded
 up to 5 s. It is an estimate — a collision can interrupt a route — and
 when Traffic cannot say, no figure is shown. A held launch carries the same
 figure after its reason.
@@ -231,7 +232,8 @@ identity breaks ordinary ties. When an arrival and launch become ready at the
 same instant, the launch goes first because it releases a berth. Player and
 Traffic actors use the same arbitration.
 
-**The player's arrival turn is held from the moment it is owed (#521).** Under
+**The player's arrival turn keeps its first stamp from the moment it is owed
+(#521).** Under
 a live grant and inside the director's range, the game registers the pilot's
 arrival turn and keeps its first stamp — hand-flown or on the docking computer
 — so a carrier that becomes ready later queues behind it. It ends on a dock, a

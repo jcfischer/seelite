@@ -1652,12 +1652,14 @@ Transit lane free, reservation and grant remain one operation as before. When
 the lane is busy the grant is given all the same, and its 600-second window
 starts with it. #148 wrote a lane-queued state whose window started only at the
 lane award; it was never built, and #521 ruled that the grant stands instead,
-because a lane wait is one route or a few, each one launch or arrival long, far
-inside the window. What waiting costs is therefore bounded by the routes queued
+because a lane wait is one route or a few, each one launch or arrival long.
+`probe-lane-wait` prints the waits it meets against live Traffic: single waits
+from seconds to about a minute and a half, inside the window but not far inside
+it once several routes queue. What waiting costs is therefore bounded by the routes queued
 at one station and not by the window — and if a wait did outlast it, the grant
 would lapse, the docking computer would disengage and its lane request would go
-with it. That case is accepted rather than engineered around, and how long lane
-waits run in play is not measured here. A capacity-queued reply's `position` is the live one-based
+with it. That case is accepted rather than engineered around; how often queues stack
+that deep in play is not measured. A capacity-queued reply's `position` is the live one-based
 place in the real station-local queue, replacing the injected occupancy count.
 Among candidates the allocator chooses the least spare envelope, preserving
 larger capacity; equal fits use a deterministic station-local order rotated by
