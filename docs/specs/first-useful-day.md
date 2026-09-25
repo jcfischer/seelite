@@ -1,8 +1,9 @@
 # A new pilot's first useful day
 
 Author: Ivy · 2026-09-25
-Status: principal decisions D1–D6 taken live on 2026-09-25; the slice is a
-prototype until the principal approves it in flight.
+Status: principal decisions D1–D7 and playtest rulings P1–P5 taken live on
+2026-09-25; approved in flight by the principal the same day. A hand dock at a
+fast shipyard stays open as #529 (D7).
 Decision node: [Give a new pilot their first useful day](https://github.com/jcfischer/seelite/issues/408).
 Direction it implements: `product-and-website-direction.md`, principle 2 and the
 player-journey row "First useful day". This spec does not redefine that
