@@ -54,8 +54,9 @@ const UNBOUND_KEY_NAMES = [
  *
  *  29 since #381: the beam sentence used to say "the same key" and now
  *  anchors its own `<kbd>` on `fight.fireBeam`, because D3 split `x` into a
- *  press and a hold and the hold is a command a player can move. */
-const MANUAL_KEY_COUNT = 29;
+ *  press and a hold and the hold is a command a player can move. 30 since
+ *  #406: the Postcard screen's `6`. */
+const MANUAL_KEY_COUNT = 30;
 
 /** The manual page, resolved per row rather than in the `describe` body — a
  *  throw there aborts the file, including the row that names the slugs and

@@ -78,6 +78,24 @@ const SCENES = [
 		mode: "clear",
 	},
 	{
+		name: "planet-close-clear",
+		what: "The same planet inside two radii, where it is drawn from a baked cube (#208)",
+		seed: 47,
+		place: () => ({ planet: true, radii: 1.3, sunAngleDeg: 70 }),
+		view: "cockpit",
+		mode: "clear",
+	},
+	{
+		name: "docked-cockpit",
+		what: "Docked in a trade station's deep overhead berth, the cockpit composition",
+		seed: 47,
+		place: () => ({
+			berth: { station: "station-trade", berth: "overhead-deep" },
+		}),
+		view: "cockpit",
+		mode: "cockpit",
+	},
+	{
 		name: "refinery-exterior",
 		what: "Another world: a refinery's pad, the exterior composition",
 		seed: 2,
@@ -125,6 +143,13 @@ for (const scene of SCENES) {
 	const placed = await page.evaluate(async (s) => {
 		const g = window.__seelite;
 		const bodies = g.world.system.bodies;
+		if (s.berth) {
+			await window.__parkInBerth(s.berth.station, s.berth.berth, {});
+			return {
+				subject: `${s.berth.station} · ${s.berth.berth}`,
+				framing: null,
+			};
+		}
 		if (s.station) {
 			const station =
 				bodies.find(
@@ -198,7 +223,7 @@ for (const scene of SCENES) {
 	);
 	await viewer.screenshot({ path: `${OUT}/${scene.name}-viewer.png` });
 	const rebuilt = await viewer.evaluate(
-		() => window.__seelite.postcardView.rebuiltFragment,
+		() => window.__seelite.postcardViewState.rebuiltFragment,
 	);
 	await viewer.close();
 	rows.push({ scene, placed, state, rebuilt });

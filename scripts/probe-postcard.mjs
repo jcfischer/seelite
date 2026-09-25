@@ -191,7 +191,7 @@ check(
 	await game.evaluate(
 		() =>
 			window.__seelite.postcardViewer === false &&
-			!window.__seelite.postcardView,
+			!window.__seelite.postcardViewState,
 	),
 );
 // A setting in `localStorage` and a Commander in IndexedDB: what the viewer
@@ -430,8 +430,8 @@ const viewerAt = postcardUrl(ORIGIN, recipe);
 await viewer.goto(viewerAt, { waitUntil: "load" });
 await viewer.waitForFunction(
 	() =>
-		window.__seelite?.postcardView?.card &&
-		window.__seelite.postcardView.rebuiltFragment,
+		window.__seelite?.postcardViewState?.card &&
+		window.__seelite.postcardViewState.rebuiltFragment,
 	null,
 	{ timeout: 60000 },
 );
@@ -443,7 +443,7 @@ const rebuilt = await viewer.evaluate(() => {
 	const g = window.__seelite;
 	return {
 		viewer: g.postcardViewer,
-		rebuilt: g.postcardView.rebuiltFragment,
+		rebuilt: g.postcardViewState.rebuiltFragment,
 		seed: g.world.seed,
 		galaxy: g.world.system.record.galaxy,
 		system: g.world.system.record.index,

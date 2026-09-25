@@ -786,6 +786,14 @@ const CHARGE_LOG_KEEP = 12;
  */
 const BAKE_FACES_PER_FRAME = 1;
 
+/**
+ * The most renders a postcard capture spends letting bakes land (#406): the
+ * fourteen-body worst case above is 168 faces at one a render, and this leaves
+ * room over it. A bound, so a bake that never empties its queue costs a slow
+ * card rather than a hung page.
+ */
+const POSTCARD_SETTLE_RENDERS = 256;
+
 /** Scratch vector for aiming a station's aperture, allocated once: the render
  *  loop runs per body per frame, and a `Vector3` built there is garbage by the
  *  time it is read — the same trade `vec3.ts` names for `Vec3`. */
@@ -13146,7 +13154,12 @@ class Game {
 	 * is not preserved, so it is only defined until the page next presents; a
 	 * `drawImage` with an `await` between the two reads a cleared buffer. Two
 	 * renders, not one: the first frame after a composition change is the one
-	 * that builds whatever the new camera has come within reach of.
+	 * that builds whatever the new camera has come within reach of — and then
+	 * on, until the planet bakes queued for this camera are drawn (#208): a bake
+	 * fills one cube face per `render`, and the viewer runs no loop to fill them,
+	 * so a close planet would otherwise rebuild on the procedural program against
+	 * a sent card drawn from its cube. The live game has normally baked already,
+	 * and pays the two.
 	 *
 	 * Everything the capture changes — the view, the head, the orbit, the
 	 * cabin, the drawing size — is put back before it returns, and the next
@@ -13169,8 +13182,13 @@ class Game {
 		try {
 			this.composePostcard(pose);
 			this.sizeDrawing(width, height, 1);
-			this.render(0);
-			this.render(0);
+			for (
+				let drawn = 0;
+				drawn < POSTCARD_SETTLE_RENDERS &&
+				(drawn < 2 || this.bakeQueue.length > 0);
+				drawn++
+			)
+				this.render(0);
 			const ctx = out.getContext("2d");
 			if (!ctx) throw new Error("postcard: no 2D context for the card");
 			ctx.drawImage(this.renderer.domElement, 0, 0, width, height);

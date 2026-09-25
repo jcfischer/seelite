@@ -49,7 +49,7 @@ const STYLE = `
 #seelite-postcard-viewer .status { min-height: 1.6em; margin: 0; color: #ffd479; }
 `;
 
-/** What a probe reads off the page, under `__seelite.postcardView`. */
+/** What a probe reads off the page, under `__seelite.postcardViewState`. */
 export interface PostcardViewState {
 	recipe: PostcardRecipe;
 	/** The recipe the rebuilt game spells back: equal to the link's, or a bug. */
@@ -98,8 +98,8 @@ export function mountPostcardViewer(
 		lastSave: null,
 	};
 	(
-		window as unknown as { __seelite: { postcardView: PostcardViewState } }
-	).__seelite.postcardView = state;
+		window as unknown as { __seelite: { postcardViewState: PostcardViewState } }
+	).__seelite.postcardViewState = state;
 
 	// A different postcard pasted into this tab changes only the fragment, which
 	// a browser does not reload for; the page is built from one recipe.
