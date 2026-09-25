@@ -448,6 +448,11 @@ export const PROBE_CATALOG = Object.freeze(
 			["Traffic", "station mouth", "departure", "occlusion", "bloom"],
 		),
 		entry(
+			"probe-witchspace.mjs",
+			"Flies a real hyperspace jump and checks the witchspace pass, whiteout, arrival rift, cancel retract and arrival-only path.",
+			["hyperspace jump", "witchspace transition", "composer", "arrival rift"],
+		),
+		entry(
 			"probe-witnesses.mjs",
 			"Exercises the live station-witness legal loop: offence attribution, Wanted refusals, persistence across jumps, and heat-decay clearance.",
 			[

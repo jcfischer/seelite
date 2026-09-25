@@ -48,7 +48,7 @@ describe("the witchspace pass", () => {
 
 	test("each term branches on its own dial", () => {
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uStreak > 0.0)");
-		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0)");
+		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0) {");
 	});
 
 	test("the streak's lines are not read from the sky", () => {

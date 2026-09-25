@@ -58,7 +58,7 @@ export const WITCHSPACE = Object.freeze({
 	 * on raw dt would clear during that stall and show the pop-in the white is
 	 * there to cover.
 	 */
-	maxExitDtS: 1 / 30,
+	maxExitDtS: 0.05,
 	/** `hyperspace()`'s sweep, seconds. */
 	sweepS: 1.4,
 	/** The charge hum: the wind-up before the sweep. */

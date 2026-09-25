@@ -89,7 +89,13 @@ void main() {
 		// A cold cast over the whole frame as the drive takes hold.
 		c *= mix(vec3(1.0), vec3(0.75, 0.85, 1.25), 0.6 * uStreak);
 	}
-	if (uWhiteout > 0.0) c = mix(c, vec3(WHITEOUT), uWhiteout);
+	// Shaped, because the mix is in linear light toward a value the tone map
+	// takes to white: a linear weight puts a fifth of the way at nearly white
+	// on screen, and the fade reads as a switch rather than a fade.
+	if (uWhiteout > 0.0) {
+		float k = uWhiteout * uWhiteout;
+		c = mix(c, vec3(WHITEOUT), k * k);
+	}
 	gl_FragColor = vec4(c, base.a);
 }
 `;
