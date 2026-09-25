@@ -1,7 +1,7 @@
 /**
- * The witchspace transition's screen-space term (#532): the entry's streak, the
- * swirling tunnel that covers the cut, and the flash on it, as one composer
- * pass.
+ * The witchspace transition's screen-space term (#532): the starbow and the
+ * streak, the dark that closes to a point, the flash on the cut, and the
+ * tunnel ridden after it, as one pass in the render ladder.
  *
  * ## Why a composer pass
  *
@@ -28,10 +28,12 @@
  * point, and the tunnel opens out of that point after the cut. `witchspace.ts`
  * owns the timeline.
  *
- * Each pixel is a ray down a cylinder of radius one along the direction of
- * travel. The ray is sampled at `LAYERS` depths between the axis and the wall,
- * front to back, and each sample reads a domain-warped noise field in a frame
- * that **twists with depth** and streams toward the camera with the phase. The
+ * Each pixel is a ray down a tube of radius one along the direction of travel.
+ * The ray is sampled at `LAYERS` depths between the axis and the wall, front to
+ * back, and each sample reads a domain-warped noise field that streams toward
+ * the camera with the phase. **Nothing turns** — the principal's fifth flight:
+ * space bends, it does not swirl — so the tube **bends** instead: its axis
+ * drifts off the centre with depth, and the far end curves away ahead. The
  * samples are composited as mist — each one tints what is behind it and takes
  * some of its light — which is what makes the structure read as volume rather
  * than as a pattern painted on a wall. The colour is a cosine palette over
@@ -106,29 +108,38 @@ ${WITCHSPACE_MIST_GLSL}
 
 // The tunnel's colour along the ray through screen point p (aspect-corrected,
 // centre at the origin), at time t.
+//
+// **It does not swirl** (the principal's fifth flight): nothing here rotates
+// with depth or time, the mist streams straight toward the camera, and the
+// colour runs down the tunnel rather than round it. What moves is the tunnel
+// itself — it **bends**. Its far end drifts off the axis, so the tube curves
+// away ahead of the ship the way space does, and the throat goes with it.
 vec3 witchTunnel(vec2 p, float t) {
-	float r = max(length(p), 0.012);
-	vec2 dir = p / r;
+	vec2 throat = 0.16 * vec2(sin(t * 0.55 + 1.3), sin(t * 0.4 - 0.4));
+	float r0 = max(length(p), 0.012);
 	vec3 col = vec3(0.0);
 	float light = 1.0;
+	float wallDepth = 0.55 / r0;
 	for (int k = 1; k <= LAYERS; k++) {
 		// Distance from the axis, and the depth that puts the ray there. The last
-		// layer is the wall.
+		// layer is the wall. The axis at that depth is bent toward the throat:
+		// not at all beside the camera, fully far down the tube.
 		float s = float(k) / float(LAYERS);
+		float bend = smoothstep(0.6, 6.0, 0.55 * s / r0);
+		vec2 pk = p - throat * bend;
+		float r = max(length(pk), 0.012);
+		vec2 xy = (pk / r) * s;
 		float depth = 0.55 * s / r;
-		float twist = depth * 0.8 + t * 1.6;
-		float cs = cos(twist);
-		float sn = sin(twist);
-		vec2 xy = vec2(dir.x * cs - dir.y * sn, dir.x * sn + dir.y * cs) * s;
 		vec3 q = vec3(xy * 1.8, depth * 0.9 - t * 3.2);
 		float warp = witchFbm(q * 0.8 + vec3(0.0, 0.0, t * 0.4));
 		float n = witchFbm(q * 1.4 + warp * 2.4);
 		float wall = k == LAYERS ? 1.0 : 0.0;
+		if (k == LAYERS) wallDepth = depth;
 		float density = mix(smoothstep(0.45, 0.85, n) * 0.5, 0.95, wall);
-		// Hue runs down the tunnel, with the density, and in bands that follow
-		// the spiral, so the colours stream rather than sit.
-		float band = 0.2 * sin(atan(xy.y, xy.x) * 3.0 + depth * 0.7);
-		float hue = depth * 0.16 + n * 1.5 + band + t * 0.15;
+		// Hue runs down the tunnel and with the density, and in stripes along
+		// it — the angle alone, so a stripe is a straight line down the tube.
+		float stripe = 0.2 * sin(atan(xy.y, xy.x) * 3.0);
+		float hue = depth * 0.16 + n * 1.5 + stripe + t * 0.15;
 		vec3 tint = witchPalette(hue);
 		// Low on purpose: the tone map saturates anything much above one, and
 		// the first pass at this washed the whole tunnel to one pale yellow.
@@ -143,16 +154,16 @@ vec3 witchTunnel(vec2 p, float t) {
 		light *= 1.0 - density;
 	}
 	// Rings of light rushing past on the wall: speed, read off the depth.
-	float wallDepth = 0.55 / r;
 	float rings = pow(max(0.0, sin(wallDepth * 3.5 - t * 22.0)), 14.0);
 	col += rings * witchPalette(wallDepth * 0.1 + t * 0.2) * 0.45
 		* smoothstep(0.9, 2.5, wallDepth);
 	// Dark toward the rim, which is the tunnel nearest the camera: the depth
 	// reads as light at the far end, not as a flat painted wall.
-	col *= mix(0.25, 1.0, smoothstep(0.95, 0.12, r));
-	// The throat: a white-hot core in a wide cold halo.
-	col += vec3(1.0, 0.95, 1.2) * exp(-r * r * 220.0) * 1.6;
-	col += vec3(0.4, 0.55, 1.2) * exp(-r * r * 18.0) * 0.35;
+	col *= mix(0.25, 1.0, smoothstep(0.95, 0.12, r0));
+	// The throat, where the bent tube goes: a white-hot core in a cold halo.
+	float rt = length(p - throat);
+	col += vec3(1.0, 0.95, 1.2) * exp(-rt * rt * 220.0) * 1.6;
+	col += vec3(0.4, 0.55, 1.2) * exp(-rt * rt * 18.0) * 0.35;
 	return col;
 }
 

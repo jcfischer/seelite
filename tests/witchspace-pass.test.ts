@@ -101,6 +101,15 @@ describe("the witchspace pass", () => {
 			"return centre + d * (1.0 - einstein * einstein / r2);",
 		);
 		expect(WITCHSPACE_FRAGMENT).not.toContain("twist");
+		// Nor does the tunnel: it bends toward a drifting throat instead (the
+		// fifth flight), and its colour stripes are the angle alone.
+		expect(WITCHSPACE_TUNNEL_FRAGMENT).not.toContain("twist");
+		expect(WITCHSPACE_TUNNEL_FRAGMENT).toContain(
+			"vec2 pk = p - throat * bend;",
+		);
+		expect(WITCHSPACE_TUNNEL_FRAGMENT).toContain(
+			"float stripe = 0.2 * sin(atan(xy.y, xy.x) * 3.0);",
+		);
 		// And the streak's spokes are straight: their lane is the angle alone.
 		expect(WITCHSPACE_FRAGMENT).toContain(
 			"float lanes = (ang + 3.14159265) * 19.099;",
