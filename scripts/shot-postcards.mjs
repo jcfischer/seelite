@@ -77,7 +77,7 @@ const SCENES = [
 	},
 	{
 		name: "planet-clear",
-		what: "A planet, lit from the side, the clear composition",
+		what: "A planet at 2.6 radii, in the band drawn from its baked cube (#208), the clear composition",
 		seed: 47,
 		place: () => ({ planet: true, radii: 2.6, sunAngleDeg: 70 }),
 		view: "cockpit",
@@ -85,7 +85,7 @@ const SCENES = [
 	},
 	{
 		name: "planet-close-clear",
-		what: "The same planet inside two radii, where it is drawn from a baked cube (#208)",
+		what: "The same planet inside two radii, where it is drawn procedurally rather than from its cube",
 		seed: 47,
 		place: () => ({ planet: true, radii: 1.3, sunAngleDeg: 70 }),
 		view: "cockpit",

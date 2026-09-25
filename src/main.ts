@@ -13158,8 +13158,9 @@ class Game {
 	 *
 	 * **Between them, the planet bakes that camera queued are drained** (#208).
 	 * The loop fills one cube face a frame and the viewer runs no loop, so a
-	 * close planet would otherwise rebuild on the procedural program against a
-	 * sent card drawn from its cube. Drained with the bake step alone — a face is
+	 * planet in the baked band — beyond about two radii (`planet-bake.ts`) —
+	 * would otherwise rebuild on the procedural program against a sent card
+	 * drawn from its cube. Drained with the bake step alone — a face is
 	 * one full-screen quad, where a `render` would be the whole composer at the
 	 * card's size per face (sage round 1). The live game has normally baked
 	 * already and drains nothing.
