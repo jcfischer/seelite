@@ -786,6 +786,11 @@ const FIRST_DAY_STANDOFF_KM = 4.5;
  *  game time, eight times the 76.9 s it took when measured. */
 const FIRST_DAY_DOCK_STEPS = 60 * 600;
 
+/** Station control's lines the Communications log keeps (#408). Three, not the
+ *  hails' twelve: the log shows six, and a first day logs five steps, which
+ *  pushed every raider and hail line off the console in the first capture. */
+const FIRST_DAY_LOG_KEEP = 3;
+
 const HAIL_LOG_KEEP = 12;
 
 /** How many charges the session keeps, on the same reasoning as the hails' —
@@ -13922,7 +13927,7 @@ class Game {
 			clearance: spokenCommand(this.bindings, "dock.clearance"),
 			computer: spokenCommand(this.bindings, "dock.computer"),
 			cruise: spokenCommand(this.bindings, "fly.cruise"),
-			target: spokenCommand(this.bindings, "fight.targetNext"),
+			navigation: spokenCommand(this.bindings, "view.headPort"),
 		};
 	}
 
@@ -13948,7 +13953,8 @@ class Game {
 					key: facts.dockedAt ?? facts.running?.reportAt ?? ("" as CarrierKey),
 					text: `STATION CONTROL: ${text}`,
 				});
-			if (this.firstDayLog.length > HAIL_LOG_KEEP) this.firstDayLog.shift();
+			if (this.firstDayLog.length > FIRST_DAY_LOG_KEEP)
+				this.firstDayLog.shift();
 			this.firstDayLastStep = current;
 		}
 		if (this.dockPhase !== "docked") this.firstDayClosingStation = null;

@@ -41,7 +41,7 @@ const KEYS: FirstDayKeys = {
 	clearance: "c",
 	computer: "u",
 	cruise: "j",
-	target: "t",
+	navigation: "1",
 };
 
 describe("#408 — the first day's step", () => {
@@ -108,7 +108,7 @@ describe("#408 — what the pilot is told", () => {
 	test("fly names the delivery station and the keys, as bound", () => {
 		const text = firstDayText(facts({ running }), KEYS);
 		expect(text).toContain("ERMA REFINERY");
-		for (const key of ["t", "j", "c", "u"]) expect(text).toContain(key);
+		for (const key of ["(1)", "j", "c", "u"]) expect(text).toContain(key);
 		const rebound = firstDayText(facts({ running }), { ...KEYS, cruise: "k" });
 		expect(rebound).toContain("k");
 	});

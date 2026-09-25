@@ -69,7 +69,10 @@ export interface FirstDayKeys {
 	clearance: string;
 	computer: string;
 	cruise: string;
-	target: string;
+	/** Head-look to the port console, where the Navigation list selects a
+	 *  station by name. Named rather than the next-target key, which cycles
+	 *  through every contact in the system. */
+	navigation: string;
 }
 
 /**
@@ -107,7 +110,7 @@ export function firstDayText(facts: FirstDayFacts, keys: FirstDayKeys): string {
 	const job = facts.running;
 	switch (step) {
 		case "find-station":
-			return `Select a station with ${keys.target}, cruise to it with ${keys.cruise}, then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`;
+			return `Select a station on the Navigation console (${keys.navigation}), cruise to it with ${keys.cruise}, then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`;
 		case "take-work":
 			return facts.localRunOnBoard
 				? "Open the Requests tab on the station console and accept the Local run. It is a short delivery inside this system."
@@ -117,7 +120,7 @@ export function firstDayText(facts: FirstDayFacts, keys: FirstDayKeys): string {
 		case "fly":
 			if (!job) return "";
 			return job.sameSystem
-				? `Fly to ${whereTo(job)}: select it with ${keys.target}, cruise with ${keys.cruise}, then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`
+				? `Fly to ${whereTo(job)}: select it on the Navigation console (${keys.navigation}), cruise with ${keys.cruise}, then ask for clearance with ${keys.clearance} and dock with ${keys.computer}.`
 				: `Fly to ${whereTo(job)}: set a course on the Galaxy Map and jump, then find the station and dock.`;
 		case "report":
 			return "You are at the delivery station. Open the Requests tab and report the job to get paid.";
@@ -158,7 +161,7 @@ export function firstDayPrompt(
 		if (!job.sameSystem)
 			return `deliver to ${whereTo(job)} · set a course on the Galaxy Map`;
 		if (target?.key !== job.reportAt)
-			return `deliver to ${job.reportName} · ${keys.target} selects a target`;
+			return `deliver to ${job.reportName} · select it on the Navigation console (${keys.navigation})`;
 	} else if (target?.key === null || target === null) return "";
 	if (!target.inVicinity || target.computerEngaged) return "";
 	return target.grantLive
