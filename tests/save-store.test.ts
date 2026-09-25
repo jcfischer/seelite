@@ -541,6 +541,7 @@ describe("#89 D6 — slots, export and import", () => {
 			name: "New Hope",
 			seed: 1,
 			permadeath: false,
+			firstDay: "free",
 		});
 		expect((await h.catalog.resolveActive()).slot).toBe("New Hope");
 	});
@@ -666,7 +667,12 @@ describe("§11.3 — the one-shot continue", () => {
 
 	test("New game: the pending Commander is the one the one-shot names", async () => {
 		const h = harness();
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: true });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: true,
+			firstDay: "free",
+		});
 		expect(await h.catalog.takeOneShot()).toBe("fresh");
 		expect(await h.catalog.takeOneShot()).toBeNull();
 	});
@@ -677,7 +683,12 @@ describe("§11.3 — the one-shot continue", () => {
 		// before the pointer, so a Load that left it there would boot `fresh`.
 		const h = harness();
 		await seeded(h, "jameson");
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		await h.catalog.takeOneShot();
 		await h.catalog.chooseCommander("jameson");
 		expect(await h.catalog.resolveActive()).toEqual({
@@ -701,18 +712,28 @@ describe("§11.3 — the one-shot continue", () => {
 describe("§11.3 — a pending new game", () => {
 	test("a pending new game whose Commander has no record boots into that game, not the default", async () => {
 		const h = harness();
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: true });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: true,
+			firstDay: "free",
+		});
 		expect(await h.backend.has("fresh", "live")).toBe(false);
 		expect(await h.catalog.resolveActive()).toEqual({
 			slot: "fresh",
-			pending: { name: "fresh", seed: 7, permadeath: true },
+			pending: { name: "fresh", seed: 7, permadeath: true, firstDay: "free" },
 			fellBack: false,
 		});
 	});
 
 	test("it survives until its first live record lands, and not a moment earlier", async () => {
 		const h = harness({ slot: "fresh" });
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		await expect(h.catalog.finishNewGame()).rejects.toThrow(/no save yet/);
 		expect((await h.catalog.resolveActive()).pending).not.toBeNull();
 		h.store.markDirty();
@@ -734,7 +755,12 @@ describe("§11.3 — a pending new game", () => {
 		// rename still work, and New game is the way out of the fault.
 		const text = await h.catalog.exportSlot("jameson");
 		await h.catalog.importSlot("copy", text);
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		expect((await h.catalog.resolveActive()).slot).toBe("fresh");
 	});
 
@@ -751,7 +777,12 @@ describe("§11.3 — a pending new game", () => {
 		// `finishNewGame`. A boot that followed `pending.seed` would build a
 		// fresh world over the progress on disk.
 		const h = harness({ slot: "fresh" });
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		h.store.markDirty();
 		await h.store.flush("quit");
 		expect(await h.catalog.resolveActive()).toEqual({
@@ -763,25 +794,41 @@ describe("§11.3 — a pending new game", () => {
 
 	test("a backend that fails to read the pending record refuses a name, not frees it", async () => {
 		const h = harness();
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		const failing = {
 			...h.backend,
 			readMeta: () => Promise.reject(new Error("backend: the read failed")),
 		};
 		const catalog = new CommanderCatalog({ backend: failing, locks: h.locks });
 		await expect(
-			catalog.beginNewGame({ name: "fresh", seed: 9, permadeath: true }),
+			catalog.beginNewGame({
+				name: "fresh",
+				seed: 9,
+				permadeath: true,
+				firstDay: "free",
+			}),
 		).rejects.toThrow(/backend/);
 		expect(await h.backend.readMeta("pending")).toEqual({
 			name: "fresh",
 			seed: 7,
 			permadeath: false,
+			firstDay: "free",
 		});
 	});
 
 	test("a boot that finds a pending record beside a landed save clears it", async () => {
 		const h = harness({ slot: "fresh" });
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		h.store.markDirty();
 		await h.store.flush("quit");
 		await h.catalog.resolveActive();
@@ -793,7 +840,12 @@ describe("§11.3 — a pending new game", () => {
 		// record is still on disk. Once `fresh` has no record, it would win over
 		// the pointer and boot a fresh world under the old name.
 		const h = harness({ slot: "fresh" });
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		h.store.markDirty();
 		await h.store.flush("quit");
 		await h.catalog.renameSlot("fresh", "elite");
@@ -806,7 +858,12 @@ describe("§11.3 — a pending new game", () => {
 
 	test("deleting a Commander a stale pending record names clears the record", async () => {
 		const h = harness({ slot: "fresh" });
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		h.store.markDirty();
 		await h.store.flush("quit");
 		await h.catalog.deleteSlot("fresh");
@@ -836,7 +893,12 @@ describe("§11.3 — a pending new game", () => {
 	test("a New game choice this build cannot write is refused as the choice, not as a record on disk", async () => {
 		const h = harness();
 		await expect(
-			h.catalog.beginNewGame({ name: "fresh", seed: -1, permadeath: false }),
+			h.catalog.beginNewGame({
+				name: "fresh",
+				seed: -1,
+				permadeath: false,
+				firstDay: "free",
+			}),
 		).rejects.toThrow(/New game choice/);
 	});
 });
@@ -848,7 +910,12 @@ describe("§11.3 — one rule for names", () => {
 		await seeded(h, "other");
 		const text = await h.catalog.exportSlot("jameson");
 		await expect(
-			h.catalog.beginNewGame({ name: "jameson", seed: 1, permadeath: false }),
+			h.catalog.beginNewGame({
+				name: "jameson",
+				seed: 1,
+				permadeath: false,
+				firstDay: "free",
+			}),
 		).rejects.toThrow(/already a Commander/);
 		await expect(h.catalog.importSlot("jameson", text)).rejects.toThrow(
 			/already a Commander/,
@@ -863,7 +930,12 @@ describe("§11.3 — one rule for names", () => {
 	test("a name a pending new game holds is taken, although it has no record yet", async () => {
 		const h = harness();
 		await seeded(h, "jameson");
-		await h.catalog.beginNewGame({ name: "fresh", seed: 7, permadeath: false });
+		await h.catalog.beginNewGame({
+			name: "fresh",
+			seed: 7,
+			permadeath: false,
+			firstDay: "free",
+		});
 		const text = await h.catalog.exportSlot("jameson");
 		await expect(h.catalog.importSlot("fresh", text)).rejects.toThrow(
 			/already a Commander/,
@@ -884,6 +956,7 @@ describe("§11.3 — one rule for names", () => {
 				name: "jameson\0x",
 				seed: 1,
 				permadeath: false,
+				firstDay: "free",
 			}),
 		).rejects.toThrow(/Commander name/);
 		await expect(h.catalog.renameSlot("other", "jameson\0x")).rejects.toThrow(

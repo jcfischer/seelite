@@ -8,7 +8,8 @@
  * rows hold: the kill is recorded as **evidence when it happens** rather than
  * read off the world at report (`missions-and-requests.md` §3 and §7), the
  * offer is gated on the Long-Range Scanner and lists **locked** without it
- * (#489's ruling, absorbed here), and the save stays at version 5.
+ * (#489's ruling, absorbed here), and Bounty needed no save version of its
+ * own: the save was 5 then and is 6 since #408's first-day choice.
  */
 import { describe, expect, test } from "bun:test";
 import { carrierKey } from "../src/carrier-key";
@@ -483,14 +484,14 @@ describe("the journal (#508 D4: no save version bump)", () => {
 });
 
 describe("the whole save (#508 D4)", () => {
-	test("stays at schema 5 and carries a bounty through a ready-to-report save", () => {
-		expect(SAVE_SCHEMA_VERSION).toBe(5);
+	test("carries a bounty through a ready-to-report save", () => {
+		expect(SAVE_SCHEMA_VERSION).toBe(6);
 		const world = newWorld(WORLD);
 		world.gameTime = 200;
 		const commander = newCommanderRecord("courier");
 		commander.requests = recordKill(accepted(), REF, 100);
 		const saved = serializeSave({ world, commander });
-		expect((saved as { saveSchemaVersion: number }).saveSchemaVersion).toBe(5);
+		expect((saved as { saveSchemaVersion: number }).saveSchemaVersion).toBe(6);
 		expect(parseSave(saved)).toEqual({ world, commander });
 	});
 });

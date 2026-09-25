@@ -292,12 +292,20 @@ const STYLE = `
 
 type FormRow =
 	| { kind: "input"; label: string; field: "name" | "seed" }
-	| { kind: "toggle"; label: string }
+	| { kind: "toggle"; label: string; field: "guided" | "permadeath" }
 	| { kind: "button"; label: string; run: () => void; enabled?: boolean };
 
 type View =
 	| { kind: "menu" }
-	| { kind: "new-game"; name: string; seed: string; permadeath: boolean }
+	| {
+			kind: "new-game";
+			name: string;
+			seed: string;
+			/** #408 D4: the guided first day. On by default, because a New game is
+			 *  the one moment a pilot is new. */
+			guided: boolean;
+			permadeath: boolean;
+	  }
 	| { kind: "rename"; from: string; name: string; seed: string }
 	| { kind: "delete"; slot: string; name: string; seed: string }
 	| { kind: "import"; text: string; name: string; seed: string };
@@ -443,7 +451,8 @@ export function mountCommanderOverlay(
 							draw();
 						},
 					},
-					{ kind: "toggle", label: "Permadeath" },
+					{ kind: "toggle", label: "First day guidance", field: "guided" },
+					{ kind: "toggle", label: "Permadeath", field: "permadeath" },
 					{
 						kind: "button",
 						label: "Start",
@@ -459,6 +468,7 @@ export function mountCommanderOverlay(
 									name: v.name,
 									seed,
 									permadeath: v.permadeath,
+									firstDay: v.guided ? "guided" : "free",
 								}),
 							);
 						},
@@ -547,6 +557,7 @@ export function mountCommanderOverlay(
 					kind: "new-game",
 					name: freeCommanderName(slots),
 					seed: String(options.boot.seedPrefill ?? randomSeed()),
+					guided: true,
 					permadeath: false,
 				};
 				cursor = 0;
@@ -631,7 +642,7 @@ export function mountCommanderOverlay(
 							return `<div class="row" data-row="${i}" ${selected(i)}><span class="name">${row.label}</span><input type="text" data-field="${row.field}" value="${escapeHtml(value)}" spellcheck="false" autocomplete="off"></div>`;
 						}
 						if (row.kind === "toggle")
-							return `<div class="row" data-row="${i}" data-kind="toggle" ${selected(i)}><span class="name">${row.label}</span><span class="action" data-chosen="true">← ${v.kind === "new-game" && v.permadeath ? "on" : "off"} →</span></div>`;
+							return `<div class="row" data-row="${i}" data-kind="toggle" data-toggle="${row.field}" ${selected(i)}><span class="name">${row.label}</span><span class="action" data-chosen="true">← ${v.kind === "new-game" && v[row.field] ? "on" : "off"} →</span></div>`;
 						return `<div class="row" data-row="${i}" data-kind="button" ${selected(i)}><span class="name">${escapeHtml(row.label)}</span></div>`;
 					})
 					.join("");
@@ -779,7 +790,7 @@ export function mountCommanderOverlay(
 		}
 		const row = formRows()[cursor];
 		if (row?.kind === "toggle" && view.kind === "new-game") {
-			view.permadeath = !view.permadeath;
+			view[row.field] = !view[row.field];
 			draw();
 		}
 	};
