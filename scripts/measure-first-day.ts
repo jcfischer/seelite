@@ -19,7 +19,8 @@
  */
 import { generateGalaxy, startSystem } from "../src/galaxy";
 import { LOCAL_RUN_ROW_ID } from "../src/jobs";
-import { makeWorld } from "../src/sim";
+import { V_GATE_KMS } from "../src/docking";
+import { flightPerformance, makeWorld } from "../src/sim";
 import { generateContents } from "../src/system";
 import { AU_KM } from "../src/units";
 import { boardAt } from "../tests/helpers/job-board";
@@ -31,6 +32,17 @@ const arrivalToTradeAu: number[] = [];
 let floorInSystem = 0;
 let localPosted = 0;
 const localPay = new Set<number>();
+// A station's acceleration is its orbit's r·(2π/T)²: what the assist must match
+// to hold a ship at rest beside it, which it does not yet (#529).
+const accelOf = (s: { orbit: { radiusKm: number; periodS: number } }) =>
+	s.orbit.radiusKm * ((2 * Math.PI) / s.orbit.periodS) ** 2 * 1000;
+// The steady lag a ship at rest in a station's frame keeps is about a × τ, the
+// assist's lateral damping time; "hard" is a lag over half the gate speed.
+const TAU_S = flightPerformance("courier").assistLateralTauS;
+const HARD_LAG_MS = (V_GATE_KMS / 2) * 1000;
+const yardAccels: number[] = [];
+let localToYard = 0;
+let localToHardYard = 0;
 
 for (let n = 1; n <= SEEDS; n++) {
 	const worldSeed = n * 7919;
@@ -43,6 +55,8 @@ for (let n = 1; n <= SEEDS; n++) {
 		.join("+");
 	composition.set(key, (composition.get(key) ?? 0) + 1);
 
+	const yard = stations.find((s) => s.type === "shipyard");
+	if (yard?.parentId) yardAccels.push(accelOf(yard));
 	const trade = stations.find((s) => s.type === "trade");
 	if (!trade) continue;
 	const board = boardAt(galaxy.systems, start, trade);
@@ -54,6 +68,14 @@ for (let n = 1; n <= SEEDS; n++) {
 	if (local) {
 		localPosted++;
 		localPay.add(local.rewardCr);
+		const dest = stations.find((s) =>
+			local.reportAt.carrierKey.endsWith(`:${s.localCarrierId}`),
+		);
+		if (dest?.type === "shipyard") {
+			localToYard++;
+			// Lag ≈ a × the courier's assist τ; "hard" is over half the gate speed.
+			if (accelOf(dest) * TAU_S > HARD_LAG_MS) localToHardYard++;
+		}
 	}
 
 	const world = makeWorld(worldSeed);
@@ -83,6 +105,15 @@ console.log(
 console.log(
 	`floor courier's first offer in-system: ${floorInSystem} of ${SEEDS}`,
 );
+yardAccels.sort((a, b) => a - b);
+const qa = (f: number) =>
+	yardAccels[Math.floor(f * (yardAccels.length - 1))].toFixed(1);
+console.log(
+	`shipyard acceleration, m/s² (#529): median ${qa(0.5)} p90 ${qa(0.9)} max ${qa(1)} over ${yardAccels.length}`,
+);
 console.log(
 	`start trade station posts a Local run: ${localPosted} of ${SEEDS}; pays ${[...localPay].join(", ")} Cr`,
+);
+console.log(
+	`Local run to the shipyard: ${localToYard}; to one whose lag is over ${HARD_LAG_MS} m/s: ${localToHardYard}`,
 );

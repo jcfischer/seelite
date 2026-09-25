@@ -146,6 +146,16 @@ slowly, and the docking key is named only to a pilot who owns one. D1's docked
 start still engages the computer's flag directly, because that is the station
 bringing the ship in before the clock runs, not the pilot flying.
 
+**Open, and owned elsewhere: a hand dock at a fast shipyard.** The flight
+assist holds a ship at rest against its frame's velocity but not its
+acceleration, so beside a station orbiting a gas giant low the ship keeps a
+sideways lag of about a × τ. The principal found the USBISO shipyard (71.7 m/s²)
+impossible to dock by hand. The free computer hid this until D7. The Local
+run goes to the shipyard in 122 of 200 start systems, and in 18 of them that lag
+is over half the gate speed (`scripts/measure-first-day.ts`). The principal
+ruled it a machine-map fix, not this node's:
+[#529](https://github.com/jcfischer/seelite/issues/529).
+
 ## Playtest rulings (2026-09-25)
 
 The principal flew the build and ruled on what the day should say and do. Each
