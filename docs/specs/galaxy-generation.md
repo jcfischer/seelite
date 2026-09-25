@@ -648,7 +648,7 @@ to ~3 AU. A fixed witchpoint would throw that away for no saving.
 | Cost | **0.2 Cr / 0.1 LY — 14 Cr for a full tank** (corrected; see below) |
 | Wind-up | a few seconds, **player is vulnerable** |
 | Interruption | taking damage cancels the charge |
-| Transition | witchspace tunnel |
+| Transition | witchspace transition across the cut (#195 D1; built by #532) |
 | Exit | §7.4 — 1 AU out, on the inbound bearing |
 
 > **The Cost row above was a transcription error and is corrected in place.** It
@@ -736,7 +736,9 @@ goes.
 
 **What #187 did not build.** The Galactic Hyperdrive (§2) — a foreign-galaxy
 destination throws rather than jumping. Misjumps and ambushes, reserved to #8.
-The witchspace tunnel as a rendered thing. And a **hyperspace tank reading on
+The witchspace tunnel as a rendered thing — #195 ruled it a transition that
+straddles the cut rather than a place, and #532 builds it (`src/witchspace.ts`).
+And a **hyperspace tank reading on
 the shipped glass**: `hud-and-scanner.md` §5 fixes the flight floor at four
 cells and gives the tank no home, so it appears on the station console's Fuel
 row and on the legacy HUD only. That is a HUD gap this node surfaced and

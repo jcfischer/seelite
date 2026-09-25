@@ -568,8 +568,10 @@ _Avoid_: Energy (unqualified), capacitor, power
 Where the ship is between two systems. It costs no sim time today: the clock
 advances by the wind-up, which is flown, and by nothing else — so a jump does
 not turn over #25's 30-minute market epoch and is not a way to wait a market
-out. Misjumps and witchspace ambushes are reserved to #8, and the tunnel as a
-*rendered* thing is unbuilt.
+out. Misjumps and witchspace ambushes are reserved to #8. What is *drawn* is a
+transition that straddles the cut (#195 D1, built by #532): the entry in the
+last part of the wind-up, a whiteout on the cut, and an exit with an **arrival
+rift** behind the ship. It is a look, not a place, and adds no clock.
 _Avoid_: Hyperspace (as a place), jump space
 
 **Galactic frame**:
