@@ -34,57 +34,87 @@
 import { JUMP_CHARGE_S } from "./hyperspace";
 
 /**
- * The durations. **Proposals, judged on the strip** — #532 names them as the
- * questions the build settles, and the principal's yes is what settles them.
+ * The timeline. **Proposals, judged on the strip and in flight** — #532 names
+ * them as the questions the build settles, and the principal's yes settles them.
+ *
+ * The shape is the principal's, from the third flight (2026-09-26): *we are
+ * faster than light, so we are escaping the light while accelerating*, and the
+ * whole sequence runs two to three times the first build's. So the entry is
+ * the whole of §8's wind-up rather than its last part, and the arrival is long:
+ *
+ * 1. **The wind-up.** The sky crowds forward into a starbow as the ship nears
+ *    light speed (`beta`): aberration, Doppler colour, the light beamed ahead.
+ * 2. **Escaping the light.** Black closes in from the rim (`dark`) until the
+ *    sky is one blazing point ahead.
+ * 3. **The cut.** A flash; the world is replaced in the dark.
+ * 4. **Witchspace.** The tunnel opens out of the point, is ridden, and closes
+ *    back into it.
+ * 5. **The new light catches up.** The dark recedes from the centre and the
+ *    starbow unwinds to the true sky; the rift opens behind the ship. The
+ *    pilot's controls come back when the sky has (`controlBackS`).
  *
  * `sweepS` is not a proposal: it is `hyperspace()`'s length in `audio.ts`, and
  * D3 places that cue so its end lands on the cut. `humS` is the rest of the
- * wind-up, which is D3's "first 1.6 s".
+ * wind-up, which is D3's "first 1.6 s". The charge itself is §8's and is not
+ * lengthened here: it is shared with cruise's spool by design.
  */
 export const WITCHSPACE = Object.freeze({
-	/** The entry's length, the last part of the wind-up. */
-	entryS: 1.4,
-	/**
-	 * How long before the cut the tunnel starts to open. It opens from the
-	 * centre after the streak has taken hold, and fills the frame on the cut.
-	 */
-	tunnelInS: 0.9,
-	/**
-	 * How long after the cut the tunnel stays full before it collapses. **The
-	 * tunnel is the cover**: it hides the frame the world is replaced on and
-	 * the rebuild's first frames (#208's bakes are queued, not synchronous).
-	 */
-	tunnelHoldS: 0.15,
+	/** The entry's length: the whole wind-up. */
+	entryS: JUMP_CHARGE_S,
+	/** How long before the cut the starbow is complete. */
+	betaFullS: 0.8,
+	/** How long before the cut the dark starts to close in from the rim. */
+	darkInS: 1.2,
+	/** How long before the cut the dark has closed to the point. */
+	pointS: 0.25,
 	/** The flash on the cut: its peak, and how long it takes to rise and fall. */
 	flashPeak: 0.45,
 	flashS: 0.15,
-	/** The exit's screen-space length: tunnel, flash and streak are gone by here. */
-	exitS: 1.6,
-	/** The arrival rift's whole life, from the cut. */
-	riftS: 4,
+	/** After the cut: the tunnel is full by here. */
+	tunnelOpenS: 0.5,
+	/** It starts to close back into the point here, and is gone by here. */
+	tunnelCloseS: 2.4,
+	tunnelGoneS: 3.1,
+	/** The new light arrives: the dark starts to recede and the sky to unfold. */
+	unfoldAtS: 3.0,
+	/** The dark is gone by here, and the controls come back. */
+	controlBackS: 3.8,
+	/** The exit's screen-space length: every screen term is gone by here. */
+	exitS: 4.6,
+	/** The arrival rift opens with the new light, and is gone by here. */
+	riftEndS: 7.5,
+	/**
+	 * The fraction of light speed the look reaches at `beta` one. Under one,
+	 * because a camera cannot see all the way round.
+	 */
+	peakBeta: 0.97,
 	/** How long a cancelled entry takes to fade out. */
 	retractS: 0.35,
 	/**
 	 * The most one frame may advance the exit clock. `rebuildSystem()` is the
 	 * frame before the exit's first, and the frames after it can be long; a fade
-	 * on raw dt would clear during that stall and show the pop-in the tunnel is
-	 * there to cover.
+	 * on raw dt would clear during that stall and show the pop-in the cover is
+	 * there to hide.
 	 */
 	maxExitDtS: 0.05,
 	/** `hyperspace()`'s sweep, seconds. */
 	sweepS: 1.4,
 	/** The charge hum: the wind-up before the sweep. */
 	humS: JUMP_CHARGE_S - 1.4,
-	/** When the exit state ends: the longer of the screen fade and the rift. */
+	/** When the exit state ends: the longer of the screen terms and the rift. */
 	get exitEndS() {
-		return Math.max(this.exitS, this.riftS);
+		return Math.max(this.exitS, this.riftEndS);
 	},
 });
 
 /** What is drawn, each term in `[0, 1]`. */
 export interface WitchspaceLook {
-	/** The radial streak across the frame. */
+	/** The spiral streak across the sky. */
 	streak: number;
+	/** How close to light speed the sky looks: aberration and Doppler. */
+	beta: number;
+	/** Black closing in from the rim: 1 leaves only the point ahead. */
+	dark: number;
 	/** The swirling tunnel, opening from the centre: 1 fills the frame. */
 	tunnel: number;
 	/** A flash of white over the whole frame, on the cut. */
@@ -200,6 +230,8 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 const NOTHING: WitchspaceLook = Object.freeze({
 	streak: 0,
+	beta: 0,
+	dark: 0,
 	tunnel: 0,
 	whiteout: 0,
 	rift: 0,
@@ -207,43 +239,69 @@ const NOTHING: WitchspaceLook = Object.freeze({
 
 /** What the state draws. Pure in the state; nothing is remembered. */
 export function witchspaceLook(state: WitchspaceState): WitchspaceLook {
+	const W = WITCHSPACE;
 	switch (state.kind) {
 		case "idle":
 			return { ...NOTHING };
 		case "entry": {
 			const t = -state.leftS;
-			const { entryS, tunnelInS, flashPeak, flashS } = WITCHSPACE;
-			const u = clamp01((t + entryS) / entryS);
+			const u = clamp01((t + W.entryS) / W.entryS);
 			return {
-				// Quadratic: the streak is barely there for the first half and
-				// builds hard into the cut, which is what a drive spooling reads as.
+				// Quadratic: barely there early and hard into the cut, which is
+				// what a drive spooling reads as.
 				streak: u * u,
-				tunnel: smoothstep(-tunnelInS, 0, t),
-				whiteout: flashPeak * smoothstep(-flashS, 0, t),
+				beta: smoothstep(-W.entryS, -W.betaFullS, t),
+				dark: smoothstep(-W.darkInS, -W.pointS, t),
+				tunnel: 0,
+				whiteout: W.flashPeak * smoothstep(-W.flashS, 0, t),
 				rift: 0,
 			};
 		}
 		case "exit": {
 			const t = state.sinceS;
-			const { tunnelHoldS, exitS, riftS, flashPeak, flashS } = WITCHSPACE;
+			// Both of these are held at one through the ride, and let go when the
+			// new system's light arrives.
+			const unfold = smoothstep(W.unfoldAtS, W.exitS, t);
 			return {
-				streak: 1 - smoothstep(0, exitS * 0.6, t),
-				tunnel: 1 - smoothstep(tunnelHoldS, exitS, t),
-				whiteout: flashPeak * (1 - smoothstep(0, flashS, t)),
-				// Opens as the tunnel collapses, lingers, and closes behind the ship.
-				rift: smoothstep(0, 0.25, t) * (1 - smoothstep(riftS * 0.4, riftS, t)),
+				// The lines come back with the light, and fade as the sky settles.
+				streak:
+					smoothstep(W.unfoldAtS, W.unfoldAtS + 0.3, t) *
+					(1 - smoothstep(W.unfoldAtS + 0.3, W.exitS, t)),
+				beta: 1 - unfold,
+				dark: 1 - smoothstep(W.unfoldAtS, W.controlBackS, t),
+				tunnel:
+					smoothstep(0, W.tunnelOpenS, t) *
+					(1 - smoothstep(W.tunnelCloseS, W.tunnelGoneS, t)),
+				whiteout: W.flashPeak * (1 - smoothstep(0, W.flashS, t)),
+				// Opens with the new light, lingers, and closes behind the ship.
+				rift:
+					smoothstep(W.unfoldAtS, W.unfoldAtS + 0.5, t) *
+					(1 - smoothstep(W.exitS + 1, W.riftEndS, t)),
 			};
 		}
 		case "retract": {
-			const k = 1 - smoothstep(0, WITCHSPACE.retractS, state.sinceS);
+			const k = 1 - smoothstep(0, W.retractS, state.sinceS);
+			const from = state.from;
 			return {
-				streak: state.from.streak * k,
-				tunnel: state.from.tunnel * k,
-				whiteout: state.from.whiteout * k,
-				rift: state.from.rift * k,
+				streak: from.streak * k,
+				beta: from.beta * k,
+				dark: from.dark * k,
+				tunnel: from.tunnel * k,
+				whiteout: from.whiteout * k,
+				rift: from.rift * k,
 			};
 		}
 	}
+}
+
+/**
+ * Whether the pilot's flight controls are held: from the cut until the sky is
+ * back (`controlBackS`), on the principal's ruling. The wind-up is never held —
+ * it is §8's vulnerable window, flown by the pilot. The clock runs throughout;
+ * nothing is near the arrival point.
+ */
+export function witchspaceControlHeld(state: WitchspaceState): boolean {
+	return state.kind === "exit" && state.sinceS < WITCHSPACE.controlBackS;
 }
 
 /**
@@ -271,4 +329,23 @@ export function witchspaceCues(
 	}
 	if (prev.kind === "entry" && next.kind === "retract") return ["stop"];
 	return [];
+}
+
+/**
+ * The sky cameras' zoom at a look's `beta`: relativistic aberration.
+ *
+ * A ship moving at β sees a source at angle θ from its heading at θ', where
+ * `tan(θ'/2) = sqrt((1 - β) / (1 + β)) · tan(θ/2)` — the whole sky crowds
+ * forward. A perspective camera's zoom scales the tangent of its field the same
+ * way, so the sky, far and approach cameras take this factor and the stars from
+ * the sides slide into view round the nose. The near camera does not: the cabin
+ * and the hull are travelling with the pilot.
+ *
+ * It is the half-angle tangent standing in for the full-angle one; the two agree
+ * near the axis, which is where the eye is.
+ */
+export function witchspaceSkyZoom(beta: number): number {
+	if (beta <= 0) return 1;
+	const b = WITCHSPACE.peakBeta * Math.min(1, beta);
+	return Math.sqrt((1 - b) / (1 + b));
 }

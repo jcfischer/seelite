@@ -11,7 +11,8 @@
  * fence that fences on ANGLE Metal, `CLAUDE.md`):
  *
  * - `off` — nothing held, the pass disabled: the frame outside a jump.
- * - `high` — held 0.2 s before the cut, 12 streak samples.
+ * - `high` — held 1.5 s after the cut, riding the tunnel with the sky pulled
+ *   at its hardest: the dearest phase of the sequence.
  * - `low` — the same phase at the `low` side's sample count.
  *
  * The arms are shuffled from a printed seed and reported as medians with the
@@ -77,7 +78,7 @@ const block = (arm) =>
 			if (arm === "off") g.holdWitchspace(null);
 			else {
 				g.witchspacePass.setQuality(arm);
-				g.holdWitchspace(-0.2);
+				g.holdWitchspace(1.5);
 			}
 			// A warm frame: a changed sample count recompiles the program once,
 			// and timing that would price the switch rather than the term.

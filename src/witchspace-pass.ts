@@ -20,8 +20,13 @@
  *
  * The first build covered the cut with a whiteout, and the principal flew it
  * and found it boring: *"a more colorful, swirly tunnel animation, with
- * volumetric mist like structures"*. So the cover is a tunnel now, and the
- * white is only a flash on the cut.
+ * volumetric mist like structures"*. So there is a tunnel, and the white is
+ * only a flash on the cut. On the third flight the principal added *we are
+ * faster than light, so we are escaping the light*: the wind-up now squeezes
+ * the sky into a starbow (the sky cameras' zoom does the aberration, this pass
+ * the Doppler colour and the beaming), black closes in from the rim to one
+ * point, and the tunnel opens out of that point after the cut. `witchspace.ts`
+ * owns the timeline.
  *
  * Each pixel is a ray down a cylinder of radius one along the direction of
  * travel. The ray is sampled at `LAYERS` depths between the axis and the wall,
@@ -32,9 +37,8 @@
  * than as a pattern painted on a wall. The colour is a cosine palette over
  * depth and density, so the tunnel is several colours at once and they flow.
  *
- * The tunnel opens from the centre with a ragged edge and fills the frame on
- * the cut (`witchspace.ts` owns when), and it collapses back into the centre in
- * the new system.
+ * The tunnel opens from the centre with a ragged edge and fills the frame,
+ * and it collapses back into the centre before the new sky unfolds.
  *
  * ## Where it sits, and why
  *
@@ -164,6 +168,8 @@ uniform sampler2D tDiffuse;
 uniform sampler2D tTunnel;
 uniform float uStreak;
 uniform float uTunnel;
+uniform float uBeta;
+uniform float uDark;
 uniform float uWhiteout;
 uniform float uFlow;
 uniform float uAspect;
@@ -174,6 +180,15 @@ ${WITCHSPACE_MIST_GLSL}
 
 vec2 toUv(vec2 p) { return vec2(p.x / uAspect, p.y) + 0.5; }
 
+// The Doppler spectrum across the visible sky: blue-white ahead, through cyan,
+// green and gold, to deep red at the rim. The starbow is this, compressed.
+vec3 starbow(float x) {
+	vec3 c = mix(vec3(0.9, 0.95, 1.7), vec3(0.35, 0.95, 1.5), smoothstep(0.0, 0.25, x));
+	c = mix(c, vec3(0.45, 1.35, 0.5), smoothstep(0.25, 0.5, x));
+	c = mix(c, vec3(1.45, 1.1, 0.3), smoothstep(0.5, 0.75, x));
+	return mix(c, vec3(1.6, 0.3, 0.12), smoothstep(0.75, 1.0, x));
+}
+
 void main() {
 	vec2 d = vUv - 0.5;
 	vec2 p = vec2(d.x * uAspect, d.y);
@@ -182,9 +197,20 @@ void main() {
 	// The pull: the sky around the centre twists and falls into it, strongest
 	// near the middle. Only the layers behind the cabin are read here, so the
 	// cabin never swims.
-	float pull = max(uStreak * 0.5, uTunnel);
+	float pull = max(uStreak * 0.3, uTunnel);
+	// How much of this pixel the tunnel covers: an opening from the centre with
+	// a ragged, turning edge, full-frame at 1.
+	float cover = 0.0;
+	float edge = 0.0;
+	if (uTunnel > 0.0) {
+		float rag = witchNoise(vec3(cos(ang) * 2.5, sin(ang) * 2.5, uFlow * 1.5));
+		edge = uTunnel * 1.45 + (rag - 0.5) * 0.35 * (1.0 - uTunnel);
+		cover = 1.0 - smoothstep(edge - 0.25, edge, r);
+	}
 	vec3 c;
-	if (pull > 0.0) {
+	// Not under a full cover or a closed dark: the sky there is not seen, and
+	// this is the pass's dearest loop outside the tunnel itself.
+	if (pull > 0.0 && cover < 1.0 && uDark < 1.0) {
 		float twist = pull * 2.2 * exp(-r * 2.2);
 		float zoom = 1.0 - pull * 0.3 * exp(-r * 1.6);
 		float cs = cos(twist);
@@ -203,15 +229,6 @@ void main() {
 	} else {
 		c = texture2D(tDiffuse, vUv).rgb;
 	}
-	// How much of this pixel the tunnel covers: an opening from the centre with
-	// a ragged, turning edge, full-frame at 1.
-	float cover = 0.0;
-	float edge = 0.0;
-	if (uTunnel > 0.0) {
-		float rag = witchNoise(vec3(cos(ang) * 2.5, sin(ang) * 2.5, uFlow * 1.5));
-		edge = uTunnel * 1.45 + (rag - 0.5) * 0.35 * (1.0 - uTunnel);
-		cover = 1.0 - smoothstep(edge - 0.25, edge, r);
-	}
 	if (uStreak > 0.0 && cover < 1.0) {
 		// The streak's lines, from a hash of the angle and not from the sky,
 		// bent into the spiral the pull is turning, in the tunnel's palette.
@@ -226,6 +243,29 @@ void main() {
 		float dash = smoothstep(0.0, 0.25, flow) * (1.0 - smoothstep(0.35, 0.9, flow));
 		float lit = line * dash * smoothstep(0.04, 0.5, r) * uStreak * uStreak;
 		c += witchPalette(seed + uFlow * 0.1) * 1.4 * lit * 2.0;
+	}
+	// Escaping the light. The sky left inside the closing dark carries the
+	// Doppler spectrum from its centre to its edge and the light beamed ahead,
+	// so as the dark closes the spectrum closes with it into a ring round the
+	// point: the starbow. The aberration itself is the sky cameras' zoom,
+	// which main.ts sets from the same term.
+	float visible = mix(1.45, 0.0, uDark);
+	if (uBeta > 0.0) {
+		// Across what is on screen: the disc the dark leaves, or the frame's own
+		// corner radius while the dark is still beyond it. Normalised to the
+		// disc alone, the rim's red was off the screen and the probe read the
+		// starbow as bluer at the edge than at the nose.
+		float corner = length(vec2(0.5 * uAspect, 0.5));
+		float x = clamp(r / max(min(visible, corner), 0.02), 0.0, 1.0);
+		float beam = 1.0 + 2.5 * (1.0 - x) * (1.0 - x);
+		c *= mix(vec3(1.0), starbow(x) * beam, uBeta);
+	}
+	if (uDark > 0.0) {
+		c *= 1.0 - smoothstep(visible - 0.18 * (1.0 - uDark) - 0.015, visible, r);
+		// The point ahead: all the light there is once the dark has closed,
+		// and what the tunnel opens out of.
+		c += vec3(1.0, 0.96, 1.15) * exp(-r * r / 0.0005) * 5.0
+			* smoothstep(0.6, 1.0, uDark) * (1.0 - uTunnel);
 	}
 	if (cover > 0.0) {
 		// A radial colour split, growing toward the frame's edge.
@@ -287,6 +327,8 @@ export class WitchspacePass extends ShaderPass {
 				tDiffuse: { value: null },
 				tTunnel: { value: null },
 				uStreak: { value: 0 },
+				uBeta: { value: 0 },
+				uDark: { value: 0 },
 				uTunnel: { value: 0 },
 				uWhiteout: { value: 0 },
 				uFlow: { value: 0 },
@@ -335,10 +377,18 @@ export class WitchspacePass extends ShaderPass {
 	}
 
 	/** What is currently on screen, for a probe to read by name. */
-	get look(): { streak: number; tunnel: number; whiteout: number } {
+	get look(): {
+		streak: number;
+		beta: number;
+		dark: number;
+		tunnel: number;
+		whiteout: number;
+	} {
 		const u = this.material.uniforms;
 		return {
 			streak: u.uStreak.value,
+			beta: u.uBeta.value,
+			dark: u.uDark.value,
 			tunnel: u.uTunnel.value,
 			whiteout: u.uWhiteout.value,
 		};
@@ -369,19 +419,29 @@ export class WitchspacePass extends ShaderPass {
 	 * `flow` is the phase, so a held phase draws the same frame every capture.
 	 */
 	apply(
-		look: Pick<WitchspaceLook, "streak" | "tunnel" | "whiteout">,
+		look: Pick<
+			WitchspaceLook,
+			"streak" | "beta" | "dark" | "tunnel" | "whiteout"
+		>,
 		flow: number,
 		aspect: number,
 	) {
 		const u = this.material.uniforms;
 		u.uStreak.value = look.streak;
 		u.uTunnel.value = look.tunnel;
+		u.uBeta.value = look.beta;
+		u.uDark.value = look.dark;
 		u.uWhiteout.value = look.whiteout;
 		u.uFlow.value = flow;
 		u.uAspect.value = aspect;
 		this.tunnelMaterial.uniforms.uFlow.value = flow;
 		this.tunnelMaterial.uniforms.uAspect.value = aspect;
-		this.enabled = look.streak > 0 || look.tunnel > 0 || look.whiteout > 0;
+		this.enabled =
+			look.streak > 0 ||
+			look.beta > 0 ||
+			look.dark > 0 ||
+			look.tunnel > 0 ||
+			look.whiteout > 0;
 	}
 
 	/** The tunnel into its small target, when it is showing; then the composite. */

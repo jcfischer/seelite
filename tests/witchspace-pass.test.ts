@@ -19,14 +19,26 @@ describe("the witchspace pass", () => {
 
 	test("enables for any lit look and disables again when it is dark", () => {
 		const tunnelOnly = new WitchspacePass("high");
-		tunnelOnly.apply({ streak: 0, tunnel: 0.1, whiteout: 0 }, 0, 1.6);
+		tunnelOnly.apply(
+			{ streak: 0, beta: 0, dark: 0, tunnel: 0.1, whiteout: 0 },
+			0,
+			1.6,
+		);
+		// The starbow alone lights it: it runs from the first second of the charge.
+		const betaOnly = new WitchspacePass("high");
+		betaOnly.apply(
+			{ streak: 0, beta: 0.1, dark: 0, tunnel: 0, whiteout: 0 },
+			0,
+			1.6,
+		);
+		expect(betaOnly.enabled).toBe(true);
 		expect(tunnelOnly.enabled).toBe(true);
 		const pass = new WitchspacePass("high");
 		pass.apply(witchspaceLook(witchspaceAtPhase(-0.5)), -0.5, 1.6);
 		expect(pass.enabled).toBe(true);
 		pass.apply(witchspaceLook(witchspaceAtPhase(0.2)), 0.2, 1.6);
 		expect(pass.enabled).toBe(true);
-		pass.apply({ streak: 0, tunnel: 0, whiteout: 0 }, 0, 1.6);
+		pass.apply({ streak: 0, beta: 0, dark: 0, tunnel: 0, whiteout: 0 }, 0, 1.6);
 		expect(pass.enabled).toBe(false);
 	});
 
@@ -62,12 +74,16 @@ describe("the witchspace pass", () => {
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uTunnel > 0.0)");
 		// The pull on the sky, the tunnel's samples and the rim each run only
 		// while their own term is up.
-		expect(WITCHSPACE_FRAGMENT).toContain("if (pull > 0.0) {");
+		expect(WITCHSPACE_FRAGMENT).toContain(
+			"if (pull > 0.0 && cover < 1.0 && uDark < 1.0) {",
+		);
 		expect(WITCHSPACE_FRAGMENT).toContain("if (cover > 0.0) {");
 		expect(WITCHSPACE_FRAGMENT).toContain(
 			"if (uTunnel > 0.0 && uTunnel < 1.0) {",
 		);
 		expect(WITCHSPACE_FRAGMENT).toContain("if (uWhiteout > 0.0) {");
+		expect(WITCHSPACE_FRAGMENT).toContain("if (uBeta > 0.0) {");
+		expect(WITCHSPACE_FRAGMENT).toContain("if (uDark > 0.0) {");
 	});
 
 	test("nothing it draws is read from the sky", () => {

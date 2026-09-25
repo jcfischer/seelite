@@ -541,9 +541,11 @@ import {
 	jumpedWitchspace,
 	stepWitchspace,
 	witchspaceAtPhase,
+	witchspaceControlHeld,
 	witchspaceCues,
 	witchspaceLook,
 	witchspacePhase,
+	witchspaceSkyZoom,
 } from "./witchspace";
 import { WitchspacePass } from "./witchspace-pass";
 import {
@@ -11802,6 +11804,9 @@ class Game {
 			heldAt: this.witchspaceHeldAt,
 			phase: witchspacePhase(shown),
 			look: witchspaceLook(shown),
+			controlHeld: witchspaceControlHeld(this.witchspace),
+			controlBackS: WITCHSPACE.controlBackS,
+			skyZoom: this.skyZoom,
 			pass: {
 				inComposer: this.composer.passes.includes(this.witchspacePass),
 				enabled: this.witchspacePass.enabled,
@@ -11837,6 +11842,7 @@ class Game {
 		const phase = witchspacePhase(shown) ?? 0;
 		const size = this.renderer.getSize(this.witchspaceSize);
 		this.witchspacePass.apply(look, phase, size.x / Math.max(1, size.y));
+		this.applySkyZoom(witchspaceSkyZoom(look.beta));
 		if (!this.arrivalRift) return;
 		if (held === null && this.witchspace.kind === "idle") {
 			this.clearArrivalRift();
@@ -11845,6 +11851,29 @@ class Game {
 		this.arrivalRift.update(look.rift, phase, camPos);
 	}
 	private readonly witchspaceSize = new THREE.Vector2();
+	/** The sky cameras' current aberration zoom, so the projection is rebuilt
+	 *  only when it moves. */
+	private skyZoom = 1;
+
+	/**
+	 * #532's aberration: the backdrop, far and approach cameras take the zoom
+	 * `witchspaceSkyZoom` gives, so the sky crowds forward round the nose. Not
+	 * the near camera — the cabin and the hull travel with the pilot. Markers are
+	 * projected with the near camera's field (`markerNdc`), so while the sky is
+	 * squeezed they mark true bearings rather than the aberrated ones.
+	 */
+	private applySkyZoom(zoom: number) {
+		if (zoom === this.skyZoom) return;
+		this.skyZoom = zoom;
+		for (const cam of [
+			this.backdropCamera,
+			this.farCamera,
+			this.approachCamera,
+		]) {
+			cam.zoom = zoom;
+			cam.updateProjectionMatrix();
+		}
+	}
 
 	/**
 	 * One frame of the wind-up, and the jump at the end of it.
@@ -12308,9 +12337,16 @@ class Game {
 		const stickToChart = this.chartHasStick();
 		const padYaw = stickToChart ? 0 : padAxes.yaw;
 		const padPitch = stickToChart ? 0 : padAxes.pitch;
-		const yaw = this.axis("fly.yawStarboard", "fly.yawPort") + padYaw;
-		const pitch = this.axis("fly.pitchUp", "fly.pitchDown") + padPitch;
-		const roll = this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll;
+		// #532: from the cut until the sky is back the pilot's hands are held, on
+		// the principal's ruling. The clock runs and the ship flies on; nothing is
+		// near the arrival point, and the wind-up before the cut is never held.
+		const handsHeld = witchspaceControlHeld(this.witchspace);
+		const hands = handsHeld ? 0 : 1;
+		const yaw = hands * (this.axis("fly.yawStarboard", "fly.yawPort") + padYaw);
+		const pitch =
+			hands * (this.axis("fly.pitchUp", "fly.pitchDown") + padPitch);
+		const roll =
+			hands * (this.axis("fly.rollStarboard", "fly.rollPort") + padAxes.roll);
 
 		// §7: any control input cancels the computer. Read before the rates are
 		// stepped, so the cancel and the input land on the same frame rather than
@@ -12401,7 +12437,7 @@ class Game {
 		// nudges without sustained intent. An earlier version of this comment
 		// said the reason "was never about the device", which overreached in the
 		// other direction; sage caught that.
-		const flying = contextFliesShip(this.padContext());
+		const flying = !handsHeld && contextFliesShip(this.padContext());
 		const impulse = flying
 			? {
 					pitch: clampAbs(-this.mouseDy * MOUSE_RAD_PER_PX, MOUSE_MAX_STEP),
@@ -12443,9 +12479,9 @@ class Game {
 		if (orbit !== 0)
 			this.chaseYaw = wrapAngle(this.chaseYaw + orbit * CHASE_ORBIT_RATE * dt);
 
-		if (this.held("fly.throttleUp"))
+		if (!handsHeld && this.held("fly.throttleUp"))
 			this.throttle = Math.min(1, this.throttle + dt * throttleRate);
-		if (this.held("fly.throttleDown"))
+		if (!handsHeld && this.held("fly.throttleDown"))
 			this.throttle = Math.max(0, this.throttle - dt * throttleRate);
 		// The triggers **trim** the throttle rather than setting it (#283's F2).
 		// A pull is a speed, not a position: let go and the throttle stays where
@@ -12453,7 +12489,7 @@ class Game {
 		// which is scaled down near a station so docking stays flyable, and
 		// keeps every existing writer of `this.throttle` from being fought on
 		// the next frame. `pad-bindings.ts` argues the rejected arm.
-		if (padAxes.throttleTrim !== 0)
+		if (!handsHeld && padAxes.throttleTrim !== 0)
 			this.throttle = Math.min(
 				1,
 				Math.max(0, this.throttle + padAxes.throttleTrim * dt * throttleRate),

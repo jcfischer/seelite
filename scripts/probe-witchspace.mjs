@@ -137,6 +137,10 @@ const jump = await page.evaluate(() => {
 			streak: r.pass.streak,
 			tunnel: r.pass.tunnel,
 			whiteout: r.pass.whiteout,
+			beta: r.pass.beta,
+			dark: r.pass.dark,
+			skyZoom: r.skyZoom,
+			controlHeld: r.controlHeld,
 			rift: r.rift,
 		});
 	}
@@ -156,21 +160,29 @@ check(
 	arrived?.system === jump.start.to,
 	`${jump.frames.length} frames, last system ${arrived?.system}`,
 );
-const early = inOld.filter((f) => f.phase !== null && f.phase < -1.5);
+// The entry is the whole wind-up now (the principal's third flight): the sky
+// starts to crowd forward in the charge's first second.
+const early = inOld.filter((f) => f.phase !== null && f.phase < -2.4);
 check(
-	"the wind-up's first part draws nothing — the entry is its last part only",
-	early.length > 0 && early.every((f) => !f.enabled),
-	`${early.length} early frames, ${early.filter((f) => f.enabled).length} enabled`,
+	"the starbow builds from the start of the charge, and the sky cameras widen",
+	early.length > 0 &&
+		early.every((f) => f.enabled) &&
+		early.at(-1).beta > 0 &&
+		early.at(-1).skyZoom < 1,
+	JSON.stringify(early.at(-1)),
 );
 const lastOld = inOld.at(-1);
 check(
-	"the entry is lit and streaking on the old system's last frames",
-	lastOld?.enabled && lastOld.streak > 0.5 && lastOld.tunnel > 0.5,
+	"the old system's last frames are the point: the dark has closed and the sky is squeezed",
+	lastOld?.enabled && lastOld.dark > 0.9 && lastOld.skyZoom < 0.5,
 	JSON.stringify(lastOld),
 );
 check(
-	"the first frame in the new system is under the tunnel, and the exit has begun",
-	arrived?.state === "exit" && arrived.tunnel === 1 && arrived.enabled,
+	"the first frame in the new system is in the dark, and the pilot's hands are held",
+	arrived?.state === "exit" &&
+		arrived.dark === 1 &&
+		arrived.enabled &&
+		arrived.controlHeld === true,
 	JSON.stringify({ ...arrived, rift: undefined }),
 );
 check(
@@ -193,6 +205,29 @@ if (arrived?.rift) {
 	);
 }
 
+// The hands: a real throttle key during the arrival does nothing. This is a
+// default-layout probe (#381 D11): Shift is throttle up in the shipped layout, and the same press is the control after the sky is
+// back, where it must move the throttle — otherwise a dead key would pass.
+const pressThrottle = async () => {
+	await page.evaluate(() => {
+		window.__seelite.throttle = 0;
+	});
+	await page.keyboard.down("Shift");
+	const after = await page.evaluate(() => {
+		const w = window.__witch;
+		for (let i = 0; i < 6; i++) w.frame();
+		return window.__seelite.throttle;
+	});
+	await page.keyboard.up("Shift");
+	return after;
+};
+const heldThrottle = await pressThrottle();
+check(
+	"during the arrival a held throttle key does not move the throttle",
+	heldThrottle === 0,
+	`throttle ${heldThrottle}`,
+);
+
 // Lit: the held phases change pixels, measured against the same frame unheld.
 // And the tunnel is **behind the cabin**: the principal ruled it goes outside
 // the canopy, so a cabin pixel must not move when the tunnel comes up.
@@ -205,17 +240,25 @@ const lit = await page.evaluate(() => {
 	// whether the tunnel is drawn *over* the cabin is a different question, and
 	// with the halo in it the first reading counted 28% of the cabin as moved.
 	g.bloomPass.enabled = false;
-	g.holdWitchspace(0);
+	g.holdWitchspace(1.5);
 	const cut = w.capture();
 	// The cabin's own pixels: where the held frame changes when the cabin is
 	// taken away. `cabinHidden` is what the placement tools use to clear it.
 	g.cabinHidden = true;
 	const cutClear = w.capture();
 	g.cabinHidden = false;
+	// **Cover is independence from the sky**, not difference from it: the
+	// tunnel's dark reaches match black space, so "moved against the plain
+	// frame" read 79% on a frame the tunnel covered whole. Take the sky layers
+	// away and a covered pixel must not change.
+	const skies = [g.backdropScene, g.farScene, g.approachScene];
+	for (const scene of skies) scene.visible = false;
+	const cutNoSky = w.capture();
+	for (const scene of skies) scene.visible = true;
 	g.holdWitchspace(-3);
 	const plain = w.capture();
 	g.bloomPass.enabled = true;
-	g.holdWitchspace(-0.2);
+	g.holdWitchspace(-1.5);
 	const streak = w.capture();
 	g.holdWitchspace(-3);
 	const plainLit = w.capture();
@@ -223,21 +266,49 @@ const lit = await page.evaluate(() => {
 	let cabin = 0;
 	let cabinMoved = 0;
 	let outside = 0;
-	let outsideMoved = 0;
+	let outsideStable = 0;
+	const cabinMask = new Uint8Array(cut.data.length / 4);
 	for (let i = 0; i < cut.data.length; i += 4) {
 		const isCabin = Math.abs(luma(cut.data, i) - luma(cutClear.data, i)) > 10;
 		const moved = Math.abs(luma(cut.data, i) - luma(plain.data, i)) > 10;
 		if (isCabin) {
+			cabinMask[i / 4] = 1;
 			cabin++;
 			if (moved) cabinMoved++;
 		} else {
 			outside++;
-			if (moved) outsideMoved++;
+			if (Math.abs(luma(cut.data, i) - luma(cutNoSky.data, i)) <= 3)
+				outsideStable++;
 		}
 	}
+	// **The starbow is light crowding toward the nose**, so it is read as where
+	// the lit sky pixels are, not how many moved: the field is sparse, and a
+	// moved-pixel count was 4.5% on a frame whose stars had visibly converged.
+	const litRadius = (img) => {
+		const cx = img.width / 2;
+		const cy = img.height / 2;
+		const half = Math.hypot(cx, cy);
+		let n = 0;
+		const band = { inner: [0, 0], outer: [0, 0] };
+		for (let y = 0; y < img.height; y++)
+			for (let x = 0; x < img.width; x++) {
+				const p = y * img.width + x;
+				if (cabinMask[p] || luma(img.data, p * 4) <= 40) continue;
+				n++;
+				const r = Math.hypot(x - cx, y - cy) / half;
+				const which = r < 0.33 ? band.inner : r > 0.66 ? band.outer : null;
+				if (!which) continue;
+				// Blue minus red: Doppler shifts the light ahead blue and the
+				// light at the rim red.
+				which[0] += img.data[p * 4 + 2] - img.data[p * 4];
+				which[1]++;
+			}
+		const mean = ([sum, k]) => (k ? sum / k : null);
+		return { n, inner: mean(band.inner), outer: mean(band.outer) };
+	};
 	// Chase, at a phase where the rift is open and the tunnel has collapsed.
 	g.view = "chase";
-	g.holdWitchspace(1.6);
+	g.holdWitchspace(4.3);
 	const withRift = w.capture();
 	// The control: the same frame with the rift off the camera's layer. Not
 	// `visible`, which `presentWitchspace` rewrites on every render.
@@ -258,8 +329,9 @@ const lit = await page.evaluate(() => {
 	return {
 		cabinShare: cabin / (cabin + outside),
 		cabinMoved: cabin ? cabinMoved / cabin : null,
-		outsideMoved: outside ? outsideMoved / outside : null,
-		streakMoved: w.moved(streak, plainLit, 10),
+		outsideStable: outside ? outsideStable / outside : null,
+		starbow: litRadius(streak),
+		sky: litRadius(plainLit),
 		riftMoved,
 		riftReading: reading.rift,
 		before: passes[at - 1]?.scene === g.approachScene,
@@ -275,9 +347,9 @@ check(
 	`before is approach: ${lit.before}, after is near: ${lit.after}`,
 );
 check(
-	"held on the cut, the tunnel covers everything outside the cabin",
-	lit.outsideMoved > 0.95,
-	`${((lit.outsideMoved ?? 0) * 100).toFixed(1)}% of outside pixels moved past 10/255`,
+	"held in the tunnel, it covers everything outside the cabin",
+	lit.outsideStable > 0.97,
+	`${((lit.outsideStable ?? 0) * 100).toFixed(1)}% of outside pixels unchanged with the sky taken away`,
 );
 check(
 	"and the cabin is drawn over it, not under it",
@@ -285,9 +357,22 @@ check(
 	`the cabin is ${(lit.cabinShare * 100).toFixed(1)}% of the frame and ${((lit.cabinMoved ?? 1) * 100).toFixed(1)}% of it moved`,
 );
 check(
-	"held in the entry, the streak moves the frame",
-	lit.streakMoved > 0.2,
-	`${(lit.streakMoved * 100).toFixed(1)}% of pixels moved past 10/255`,
+	"held in the starbow, more of the sky is in the frame — the aberration",
+	lit.sky.n > 0 && lit.starbow.n > 1.5 * lit.sky.n,
+	`${lit.starbow.n} lit sky pixels against ${lit.sky.n} at rest`,
+);
+// The light-weighted radius was tried first and does not shrink at this
+// phase: the widened frame fills evenly with stars. Checked later in the
+// wind-up it passes only because the dark has cut the rim away, which is a
+// control that removes two things; so beaming is not claimed here.
+check(
+	"and it is Doppler-shifted: bluer toward the nose, redder toward the rim",
+	lit.starbow.inner !== null &&
+		lit.starbow.outer !== null &&
+		lit.sky.inner !== null &&
+		lit.sky.outer !== null &&
+		lit.starbow.inner - lit.starbow.outer > lit.sky.inner - lit.sky.outer + 20,
+	`blue minus red, inner and outer: ${lit.starbow.inner?.toFixed(1)} and ${lit.starbow.outer?.toFixed(1)} against ${lit.sky.inner?.toFixed(1)} and ${lit.sky.outer?.toFixed(1)} at rest`,
 );
 check(
 	"from the chase camera the rift is open and draws pixels",
@@ -302,18 +387,39 @@ const ended = await page.evaluate(() => {
 	const g = window.__seelite;
 	const w = window.__witch;
 	let frames = 0;
+	let handsBackAt = null;
 	while (g.witchspaceReading().state !== "idle" && frames < 600) {
+		const before = g.witchspaceReading();
 		w.frame();
 		frames++;
+		if (
+			handsBackAt === null &&
+			before.controlHeld &&
+			!g.witchspaceReading().controlHeld
+		)
+			handsBackAt = before.phase;
 	}
 	g.render(g.units.MAX_DT);
-	return { frames, reading: g.witchspaceReading() };
+	return { frames, handsBackAt, reading: g.witchspaceReading() };
 });
+check(
+	"the hands come back when the sky has",
+	ended.handsBackAt !== null &&
+		Math.abs(ended.handsBackAt - ended.reading.controlBackS) < 0.1,
+	`at ${ended.handsBackAt} s, controlBackS ${ended.reading.controlBackS}`,
+);
+const liveThrottle = await pressThrottle();
+check(
+	"and the same key moves the throttle once they have",
+	liveThrottle > 0,
+	`throttle ${liveThrottle}`,
+);
 check(
 	"the exit ends idle, the pass disabled and the rift gone",
 	ended.reading.state === "idle" &&
 		!ended.reading.pass.enabled &&
-		ended.reading.rift === null,
+		ended.reading.rift === null &&
+		ended.reading.skyZoom === 1,
 	`${ended.frames} frames; ${JSON.stringify({ ...ended.reading, look: undefined })}`,
 );
 

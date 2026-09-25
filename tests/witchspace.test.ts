@@ -22,7 +22,9 @@ import {
 	jumpedWitchspace,
 	type WitchspaceLook,
 	witchspaceAtPhase,
+	witchspaceControlHeld,
 	witchspaceCues,
+	witchspaceSkyZoom,
 	witchspaceLook,
 	witchspacePhase,
 	stepWitchspace,
@@ -45,6 +47,8 @@ function run(state: ReturnType<typeof idleWitchspace>, seconds: number) {
 
 const dark = (look: WitchspaceLook) =>
 	look.streak === 0 &&
+	look.beta === 0 &&
+	look.dark === 0 &&
 	look.tunnel === 0 &&
 	look.whiteout === 0 &&
 	look.rift === 0;
@@ -67,7 +71,7 @@ describe("the phase", () => {
 		// an entry that ran past zero would show the exit in the old system.
 		const s = run(beginWitchspace(), JUMP_CHARGE_S + 0.5).state;
 		expect(witchspacePhase(s)).toBe(0);
-		expect(witchspaceLook(s).tunnel).toBe(1);
+		expect(witchspaceLook(s).dark).toBe(1);
 	});
 
 	test("the exit counts up from the cut, and ends idle", () => {
@@ -102,30 +106,33 @@ describe("the phase", () => {
 });
 
 describe("the look", () => {
-	test("the start of the wind-up is untouched — the entry is its last part only", () => {
-		const t = -(WITCHSPACE.entryS + 0.01);
-		expect(dark(witchspaceLook(witchspaceAtPhase(t)))).toBe(true);
-		expect(WITCHSPACE.entryS).toBeLessThan(JUMP_CHARGE_S);
+	test("the entry is the whole wind-up, and it starts from nothing", () => {
+		expect(WITCHSPACE.entryS).toBe(JUMP_CHARGE_S);
+		expect(dark(witchspaceLook(witchspaceAtPhase(-JUMP_CHARGE_S)))).toBe(true);
 	});
 
-	test("the streak takes hold first, and the tunnel opens after it", () => {
-		const a = witchspaceLook(witchspaceAtPhase(-1));
-		const b = witchspaceLook(witchspaceAtPhase(-0.2));
-		expect(a.streak).toBeGreaterThan(0);
-		expect(a.tunnel).toBeLessThan(a.streak);
-		expect(b.streak).toBeGreaterThan(a.streak);
-		expect(b.tunnel).toBeGreaterThan(a.tunnel);
-		expect(witchspaceLook(witchspaceAtPhase(0)).tunnel).toBe(1);
+	test("the sky crowds forward through the wind-up: the starbow", () => {
+		const at = (t: number) => witchspaceLook(witchspaceAtPhase(t)).beta;
+		expect(at(-2.5)).toBeGreaterThan(0);
+		expect(at(-1.5)).toBeGreaterThan(at(-2.5));
+		expect(at(-WITCHSPACE.betaFullS)).toBe(1);
 	});
 
-	test("the tunnel covers the frames around the cut, not only the one frame", () => {
+	test("the dark closes in only late, and leaves the point by the cut", () => {
+		const at = (t: number) => witchspaceLook(witchspaceAtPhase(t)).dark;
+		expect(at(-WITCHSPACE.darkInS - 0.01)).toBe(0);
+		expect(at(-0.6)).toBeGreaterThan(0);
+		expect(at(-0.6)).toBeLessThan(1);
+		expect(at(-WITCHSPACE.pointS)).toBe(1);
+	});
+
+	test("the frame is covered from the point until the sky starts to unfold", () => {
 		// The rebuild's first frames are the ones worth covering (#208's bakes
-		// are queued), so the tunnel holds for a moment either side.
-		expect(witchspaceLook(witchspaceAtPhase(-DT)).tunnel).toBeGreaterThan(0.95);
-		expect(witchspaceLook(witchspaceAtPhase(DT)).tunnel).toBe(1);
-		expect(
-			witchspaceLook(witchspaceAtPhase(WITCHSPACE.tunnelHoldS)).tunnel,
-		).toBe(1);
+		// are queued), and the tunnel ride is all of them.
+		for (let t = -WITCHSPACE.pointS; t <= WITCHSPACE.unfoldAtS; t += 0.05) {
+			const look = witchspaceLook(witchspaceAtPhase(t));
+			expect(Math.max(look.dark, look.tunnel)).toBe(1);
+		}
 	});
 
 	test("the flash is a moment on the cut, not the cover", () => {
@@ -136,19 +143,39 @@ describe("the look", () => {
 		expect(witchspaceLook(witchspaceAtPhase(0.5)).whiteout).toBe(0);
 	});
 
-	test("the exit collapses the tunnel back into the new system", () => {
-		const early = witchspaceLook(witchspaceAtPhase(0.3));
-		const late = witchspaceLook(witchspaceAtPhase(1));
-		expect(early.tunnel).toBeGreaterThan(late.tunnel);
-		const done = witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitS));
-		expect(done.tunnel).toBe(0);
-		expect(done.streak).toBe(0);
-		expect(done.whiteout).toBe(0);
+	test("the tunnel opens out of the point after the cut and closes back into it", () => {
+		const at = (t: number) => witchspaceLook(witchspaceAtPhase(t)).tunnel;
+		expect(at(-0.1)).toBe(0);
+		expect(at(0)).toBe(0);
+		expect(at(WITCHSPACE.tunnelOpenS)).toBe(1);
+		expect(at(1.5)).toBe(1);
+		expect(at(WITCHSPACE.tunnelGoneS)).toBe(0);
 	});
 
-	test("the rift is drawn in the exit half and never in the entry half", () => {
+	test("the new system's light catches up: the sky unfolds and the dark recedes", () => {
+		const at = (t: number) => witchspaceLook(witchspaceAtPhase(t));
+		expect(at(WITCHSPACE.unfoldAtS).beta).toBe(1);
+		expect(at(WITCHSPACE.unfoldAtS).dark).toBe(1);
+		const mid = at((WITCHSPACE.unfoldAtS + WITCHSPACE.exitS) / 2);
+		expect(mid.beta).toBeGreaterThan(0);
+		expect(mid.beta).toBeLessThan(1);
+		const done = at(WITCHSPACE.exitS);
+		for (const k of ["streak", "tunnel", "whiteout", "beta", "dark"] as const)
+			expect(done[k]).toBe(0);
+	});
+
+	test("the whole sequence runs two to three times the first build's three seconds", () => {
+		const total = WITCHSPACE.entryS + WITCHSPACE.exitS;
+		expect(total).toBeGreaterThanOrEqual(6);
+		expect(total).toBeLessThanOrEqual(9);
+	});
+
+	test("the rift opens with the unfolding sky, never in the entry half", () => {
 		expect(witchspaceLook(witchspaceAtPhase(-0.2)).rift).toBe(0);
-		expect(witchspaceLook(witchspaceAtPhase(0.3)).rift).toBeGreaterThan(0);
+		expect(witchspaceLook(witchspaceAtPhase(1.5)).rift).toBe(0);
+		expect(
+			witchspaceLook(witchspaceAtPhase(WITCHSPACE.unfoldAtS + 0.6)).rift,
+		).toBeGreaterThan(0);
 		expect(witchspaceLook(witchspaceAtPhase(WITCHSPACE.exitEndS)).rift).toBe(0);
 	});
 
@@ -235,17 +262,16 @@ describe("ending it early", () => {
 		expect(witchspacePhase(cancelled)).toBeNull();
 	});
 
-	test("a cancel before the entry has drawn anything still stops the hum", () => {
+	test("a cancel early in the wind-up stops the hum", () => {
 		const early = run(beginWitchspace(), 0.5).state;
-		expect(dark(witchspaceLook(early))).toBe(true);
 		const cancelled = abortWitchspace(early);
 		expect(witchspaceCues(early, cancelled)).toEqual(["stop"]);
 	});
 
-	test("an abort at the cut — the jump refused under the full tunnel — retracts from the tunnel", () => {
+	test("an abort at the cut — the jump refused in the dark — retracts from the dark", () => {
 		const atCut = run(beginWitchspace(), JUMP_CHARGE_S + 0.1).state;
 		const aborted = abortWitchspace(atCut);
-		expect(witchspaceLook(aborted).tunnel).toBe(1);
+		expect(witchspaceLook(aborted).dark).toBe(1);
 		expect(witchspaceCues(atCut, aborted)).toEqual(["stop"]);
 		expect(run(aborted, WITCHSPACE.retractS + DT).state.kind).toBe("idle");
 	});
@@ -268,11 +294,11 @@ describe("the exit clock", () => {
 	test("one long frame cannot clear the cover", () => {
 		// `rebuildSystem()` rebuilds bodies, the environment and the sky; the
 		// frames after it can be long. A fade that advanced on raw dt would
-		// clear during the stall and show the pop-in the tunnel is there to hide.
+		// clear during the stall and show the pop-in the cover is there to hide.
 		const s = jumpedWitchspace(witchspaceAtPhase(0));
 		const after = stepWitchspace(s, 0.5);
 		expect(witchspacePhase(after)).toBeCloseTo(WITCHSPACE.maxExitDtS, 9);
-		expect(witchspaceLook(after).tunnel).toBe(1);
+		expect(witchspaceLook(after).dark).toBe(1);
 	});
 
 	test("the arrival-only path plays the same exit as a jump", () => {
@@ -287,5 +313,45 @@ describe("the exit clock", () => {
 
 	test("jumped from idle — a jump with no entry — is still an exit", () => {
 		expect(witchspacePhase(jumpedWitchspace(idleWitchspace()))).toBe(0);
+	});
+});
+
+describe("the pilot's hands", () => {
+	test("the arrival holds the controls until the sky is back", () => {
+		const exitAt = (t: number) => witchspaceAtPhase(t);
+		expect(witchspaceControlHeld(exitAt(0))).toBe(true);
+		expect(witchspaceControlHeld(exitAt(2))).toBe(true);
+		expect(witchspaceControlHeld(exitAt(WITCHSPACE.controlBackS))).toBe(false);
+		// The dark has receded by then: the pilot is handed a sky, not a wall.
+		expect(witchspaceLook(exitAt(WITCHSPACE.controlBackS)).dark).toBeLessThan(
+			0.1,
+		);
+	});
+
+	test("the wind-up leaves them live — it is §8's vulnerable window", () => {
+		expect(witchspaceControlHeld(beginWitchspace())).toBe(false);
+		expect(witchspaceControlHeld(witchspaceAtPhase(-0.1))).toBe(false);
+		expect(witchspaceControlHeld(idleWitchspace())).toBe(false);
+	});
+});
+
+describe("the aberration", () => {
+	test("the sky cameras widen as beta rises, and are untouched at rest", () => {
+		expect(witchspaceSkyZoom(0)).toBe(1);
+		expect(witchspaceSkyZoom(0.5)).toBeLessThan(1);
+		expect(witchspaceSkyZoom(1)).toBeLessThan(witchspaceSkyZoom(0.5));
+		// A camera cannot see all the way round: the zoom stays positive, so the
+		// field of view stays under 180 degrees.
+		expect(witchspaceSkyZoom(1)).toBeGreaterThan(0);
+	});
+
+	test("it is the relativistic squeeze, not a guess", () => {
+		// tan(θ'/2) = sqrt((1-β)/(1+β)) tan(θ/2): a field of half-angle θ is seen
+		// inside θ'. The zoom is that factor at the peak speed the look reaches.
+		const b = WITCHSPACE.peakBeta * 0.6;
+		expect(witchspaceSkyZoom(0.6)).toBeCloseTo(
+			Math.sqrt((1 - b) / (1 + b)),
+			12,
+		);
 	});
 });
