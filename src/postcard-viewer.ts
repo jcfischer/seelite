@@ -95,7 +95,7 @@ export function mountPostcardViewer(
 	root.id = "seelite-postcard-viewer";
 	root.innerHTML = `
 		<img class="card" alt="" />
-		<p class="line">A postcard from The Far Between. Opening it changed nothing on this device.</p>
+		<p class="line">A postcard from The Far Between.</p>
 		<div class="actions">
 			<a class="go play" data-action="play" href="${escapeHtml(play)}">Play The Far Between <span aria-hidden="true">→</span></a>
 			<button type="button" data-action="save">Save image</button>
