@@ -42,7 +42,7 @@
  * store does not have.
  */
 
-import { type FirstDayChoice, isFirstDayChoice } from "./first-day";
+import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
 import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
 
 /**

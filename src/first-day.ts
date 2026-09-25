@@ -11,14 +11,11 @@
 
 import type { CarrierKey } from "./carrier-key";
 
-/** New game's choice (D4): guided pilots are pushed the next step, free
- *  pilots are not. Every commander can read the First day tab (D5). */
-export type FirstDayChoice = "guided" | "free";
-
-export const FIRST_DAY_CHOICES: readonly FirstDayChoice[] = ["guided", "free"];
-
-export const isFirstDayChoice = (value: unknown): value is FirstDayChoice =>
-	(FIRST_DAY_CHOICES as readonly unknown[]).includes(value);
+export {
+	FIRST_DAY_CHOICES,
+	type FirstDayChoice,
+	isFirstDayChoice,
+} from "./first-day-choice";
 
 export type FirstDayStepId =
 	| "find-station"

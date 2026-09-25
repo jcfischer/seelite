@@ -15,7 +15,7 @@
  */
 
 import type { BootMode } from "./boot-mode";
-import type { FirstDayChoice } from "./first-day";
+import type { FirstDayChoice } from "./first-day-choice";
 import { type SaveEnvelope } from "./save-envelope";
 import {
 	type CommanderCatalog,

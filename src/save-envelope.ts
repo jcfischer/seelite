@@ -30,7 +30,7 @@
  */
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
-import { type FirstDayChoice, isFirstDayChoice } from "./first-day";
+import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
 import { HULL_IDS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";

@@ -13463,7 +13463,13 @@ class Game {
 			const relayKey = relaySlot(this.world.system.record.index).key;
 			const relayLive =
 				this.currentRelayPlan() !== null && this.slotOperational(relayKey);
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled["courier-local"]}:${settled.procurement}:${settled.bounty}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
+			// Every post's settled count, from the record itself: a post added later
+			// is in the key without an edit here (sage, #528 round 3).
+			const settledKey = Object.entries(settled)
+				.sort(([a], [b]) => (a < b ? -1 : 1))
+				.map(([post, n]) => `${post}=${n}`)
+				.join(",");
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settledKey}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
 				const bountyTarget = bountyTargetOf(
 					this.world.system.record,
@@ -13866,6 +13872,16 @@ class Game {
 			targetId: this.targetId,
 		};
 		const giveUp = (): false => {
+			// An unused grant ends the way its expiry ends it (`docking.ts`): back
+			// to none, and the berth it reserved released, so a failed start does
+			// not hold a berth for a ship that went back to the arrival point.
+			const held = this.dockingStateOf(id);
+			if (held.clearance.kind === "granted")
+				this.dockingStates.set(
+					id,
+					releaseBerth({ ...held, clearance: { kind: "none" } }),
+				);
+			this.clearPlayerArrivalLaneRequests();
 			this.dockingComputerEngaged = false;
 			this.throttle = 0;
 			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);

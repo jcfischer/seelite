@@ -453,6 +453,37 @@ check(
 		failed.phase === "flying",
 	JSON.stringify(failed),
 );
+
+// The second way: granted, but the run-in never ends. `step` is stubbed so the
+// bound runs out; the grant the start was given must end with it.
+const timedOut = await free.evaluate(() => {
+	const g = window.__seelite;
+	const before = { ...g.world.ship.pos };
+	const trade = g.world.system.contents.stations.find(
+		(s) => s.type === "trade",
+	).id;
+	const real = g.step;
+	g.step = () => {};
+	const docked = g.startDockedAtHome();
+	g.step = real;
+	const p = g.world.ship.pos;
+	return {
+		docked,
+		movedKm: Math.hypot(p.x - before.x, p.y - before.y, p.z - before.z),
+		engaged: g.dockingComputerEngaged,
+		clearance: g.dockingSnapshot(trade)?.grantLive ?? null,
+		phase: g.dockPhase,
+	};
+});
+check(
+	"a guided start whose run-in never ends gives the grant back too",
+	!timedOut.docked &&
+		timedOut.movedKm === 0 &&
+		!timedOut.engaged &&
+		timedOut.clearance === false &&
+		timedOut.phase === "flying",
+	JSON.stringify(timedOut),
+);
 await free.evaluate(() => {
 	const g = window.__seelite;
 	g.setHeadLook("left");

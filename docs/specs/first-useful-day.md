@@ -47,8 +47,11 @@ docking computer flies it in with Traffic running
 flight. The clock starts at that dock rather than at zero: 76.9 s of game time
 at each of the ten seeds tried when the path was built, because the run-in is
 the same geometry at every trade station. `probe-first-day` prints it for its
-own seed on every run. A start that cannot dock puts the ship back at the
-arrival point, so it is a free start with the clock moved on.
+own seed on every run. A start that cannot dock ends still flying (a run-in
+already inside the station is finished, not undone), and then puts back what it
+moved: the ship at the arrival point, the computer off, the grant it was given
+released. So it is a free start with the clock moved on. `probe-first-day`
+runs both ways of failing: the clearance refused, and a run-in that never ends.
 
 A free new game, `?boot=direct` and `?system=` keep the in-flight start.
 `?guided` on a direct boot with nothing loaded opts in, for probes and
