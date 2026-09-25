@@ -145,6 +145,7 @@ export const LEVERS = Object.freeze({
 	372: "the Controls tab: every control as a folding tree of task groups",
 	381: "the rebind modal, and the tab's Settings and Commanders doors beside it",
 	431: "the derived sky: real neighbouring systems at true bearings, over the invented field behind them",
+	532: "the witchspace transition: the entry streak, the whiteout on the cut, the exit fade and the arrival rift",
 });
 
 /**
@@ -198,6 +199,10 @@ export const LEVERS = Object.freeze({
  *   head is turned to the right console on its Controls tab (#372). `folded`
  *   names the task groups closed first. The frame is the tab's layout and is
  *   judged as one: #370's §1 risk — a wall of text — is what no probe fails on.
+ * - `witchspace` — #532's transition held at `phase` seconds from the cut
+ *   (#195 D4) with the clock held. Before the cut, a charge to the nearest
+ *   system from the start system; from the cut on, after that jump. The
+ *   placer writes world state (a jump saves), so the next row boots clean.
  */
 export const SHOT_KINDS = Object.freeze([
 	"station-axis",
@@ -207,6 +212,7 @@ export const SHOT_KINDS = Object.freeze([
 	"workbench-interior",
 	"duel",
 	"controls",
+	"witchspace",
 ]);
 
 /**
@@ -899,6 +905,71 @@ export const VIEWS = Object.freeze([
 		shot: { kind: "duel", headLook: "left", aftermath: "log", view: "cockpit" },
 	},
 	/**
+	 * #532's fixed-phase strip (#195 D4). The wind-up runs on wall-clock time,
+	 * so an ordinary capture cannot land on the same frame twice; each row holds
+	 * the transition at a phase through `holdWitchspace` and holds the clock, so
+	 * the charge cannot fire while the frame settles.
+	 *
+	 * Six cockpit rows across the straddle, and two from outside, because
+	 * #195 D2's rift is judged from outside the ship and a cockpit strip shows
+	 * none of it. The phases before the cut are drawn in the start system; the
+	 * ones from the cut on are drawn after a real jump to its nearest
+	 * neighbour, so the new system and the rift are the ones a player gets.
+	 *
+	 * **The `before` arm is the hard cut.** A build without `holdWitchspace` is
+	 * captured through the same placer and captioned as having no transition, the
+	 * way the controls placer captions a build with no Controls tab. Capture it
+	 * with this branch's scripts over the base build's `src/`.
+	 */
+	{
+		name: "witchspace-windup",
+		covers: [532],
+		what: "Cockpit, 2.5 s before the cut: the wind-up's first part, which the entry leaves untouched. The HUD counts down.",
+		shot: { kind: "witchspace", phase: -2.5, view: "cockpit" },
+	},
+	{
+		name: "witchspace-entry",
+		covers: [532],
+		what: "Cockpit, 1 s before the cut: the streak taking hold, the sweep started.",
+		shot: { kind: "witchspace", phase: -1, view: "cockpit" },
+	},
+	{
+		name: "witchspace-entry-late",
+		covers: [532],
+		what: "Cockpit, 0.2 s before the cut: the streak at full, the white rising.",
+		shot: { kind: "witchspace", phase: -0.2, view: "cockpit" },
+	},
+	{
+		name: "witchspace-cut",
+		covers: [532],
+		what: "Cockpit, on the cut, in the new system: the whiteout that covers the world being replaced.",
+		shot: { kind: "witchspace", phase: 0, view: "cockpit" },
+	},
+	{
+		name: "witchspace-exit",
+		covers: [532],
+		what: "Cockpit, 0.3 s after the cut: the white starting to clear over the new system.",
+		shot: { kind: "witchspace", phase: 0.3, view: "cockpit" },
+	},
+	{
+		name: "witchspace-exit-late",
+		covers: [532],
+		what: "Cockpit, 1 s after the cut: the new system with the last of the fade.",
+		shot: { kind: "witchspace", phase: 1, view: "cockpit" },
+	},
+	{
+		name: "witchspace-rift-chase",
+		covers: [532],
+		what: "Chase, 1.2 s after the cut: the arrival rift open behind the ship, from outside.",
+		shot: { kind: "witchspace", phase: 1.2, view: "chase" },
+	},
+	{
+		name: "witchspace-rift-closing",
+		covers: [532],
+		what: "Chase, 2.5 s after the cut: the rift closing behind a ship already in the new system.",
+		shot: { kind: "witchspace", phase: 2.5, view: "chase" },
+	},
+	/**
 	 * §13.6's seven-frame acceptance set, as declared views.
 	 *
 	 * The receipt fixes them and they are transcribed rather than reinterpreted:
@@ -1092,6 +1163,8 @@ const SHOT_REQUIREMENTS = {
 	controls: (s) =>
 		s.folded === undefined ||
 		(Array.isArray(s.folded) && s.folded.every((g) => typeof g === "string")),
+	// A phase in seconds from the cut (#195 D4): negative in the wind-up.
+	witchspace: (s) => finite(s.phase),
 	duel: (s) =>
 		["forward", "right", "left"].includes(s.headLook) &&
 		(s.aftermath === undefined ||

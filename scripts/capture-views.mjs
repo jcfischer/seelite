@@ -615,6 +615,56 @@ const PLACERS = {
 		}
 		return `Controls tab${shot.folded?.length ? ` · folded ${shot.folded.join(", ")}` : ""}`;
 	},
+	/**
+	 * #532's strip. The clock is held first — the capture loop lets it run,
+	 * and a held phase before the cut with a running charge would fire the
+	 * jump during the settle frames — and a phase from the cut on is taken
+	 * after a real jump, driven a step at a time, so the rift and the new
+	 * system are the ones a player gets.
+	 *
+	 * **Read back, not assumed**: a charge the game refused, or a jump that did
+	 * not arrive, throws rather than capturing the start system under a
+	 * caption that says otherwise.
+	 */
+	witchspace: async (page, shot) => {
+		// Marked before placing, like the duel: a jump saves, and a placer that
+		// throws still leaves the page marked.
+		worldWritten = true;
+		const result = await page.evaluate((phase) => {
+			const g = window.__seelite;
+			g.clockHeld = true;
+			g.encounter = null;
+			const here = g.world.system.record;
+			const d = (a, b) =>
+				Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z);
+			const near = g.world.galaxy.systems
+				.filter((s) => s.index !== here.index)
+				.sort((a, b) => d(a, here) - d(b, here))[0];
+			g.commitCourseTo(near.index);
+			if (!g.chargeJump()) return { error: `charge refused: ${g.jumpNotice}` };
+			if (phase >= 0) {
+				const dt = g.units.MAX_DT;
+				for (
+					let i = 0;
+					i < 200 && g.world.system.record.index === here.index;
+					i++
+				)
+					g.step(dt);
+				if (g.world.system.record.index !== near.index)
+					return { error: `the jump to ${near.name} did not arrive` };
+			}
+			// A build before #532 has no handle: its frames are the hard cut, which
+			// is that build's honest `before`, and the caption says so.
+			const held = typeof g.holdWitchspace === "function";
+			if (held) g.holdWitchspace(phase);
+			return { from: here.name, to: near.name, held };
+		}, shot.phase);
+		if (result.error) throw new Error(`witchspace placer: ${result.error}`);
+		const cut = result.held
+			? ""
+			: " · no transition on this build: the hard cut";
+		return `${shot.phase >= 0 ? "+" : ""}${shot.phase} s · ${result.from} → ${result.to}${cut}`;
+	},
 };
 assertPlacersCover(PLACERS);
 
