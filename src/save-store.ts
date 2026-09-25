@@ -42,6 +42,7 @@
  * store does not have.
  */
 
+import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
 import { parseSave, type SaveEnvelope, serializeSave } from "./save-envelope";
 
 /**
@@ -206,6 +207,8 @@ export interface PendingNewGame {
 	name: string;
 	seed: number;
 	permadeath: boolean;
+	/** #408 D4. Absent on a record an older build wrote, which reads as free. */
+	firstDay: FirstDayChoice;
 }
 
 /** The Commander a boot is for, and how it was arrived at (§11.2, §11.4). */
@@ -293,7 +296,8 @@ const parsePending = (
 		!Number.isInteger(o.seed) ||
 		o.seed < 0 ||
 		o.seed > 0xffff_ffff ||
-		typeof o.permadeath !== "boolean"
+		typeof o.permadeath !== "boolean" ||
+		(o.firstDay !== undefined && !isFirstDayChoice(o.firstDay))
 	)
 		fail(refusal);
 	assertSlot(o.name as string);
@@ -301,6 +305,9 @@ const parsePending = (
 		name: o.name as string,
 		seed: o.seed as number,
 		permadeath: o.permadeath as boolean,
+		// A pending record lives only between New game and its reload, so an
+		// absent key is a record written by the build before #408, mid-reload.
+		firstDay: (o.firstDay as FirstDayChoice | undefined) ?? "free",
 	};
 };
 

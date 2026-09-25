@@ -105,7 +105,18 @@ export async function installViewFraming(page) {
 						`occupied ${[...others].join(",")}, ` +
 						`held ${requested.state?.berthId}`,
 				);
-			if (!g.dockingComputerEngaged) g.toggleDockingComputer();
+			if (!g.dockingComputerEngaged) {
+				// A new ship has no docking computer (#408): fit the one this flies.
+				if (!g.hasDockingComputer)
+					g.commander = {
+						...g.commander,
+						ownedEquipment: [
+							...g.commander.ownedEquipment,
+							g.dockingComputerName,
+						],
+					};
+				g.toggleDockingComputer();
+			}
 			// Sub-stepped in sim rather than by animation frames: a capture must
 			// not depend on how fast the machine renders.
 			let arrivingFor = 0;
@@ -119,7 +130,18 @@ export async function installViewFraming(page) {
 				// hanging a kilometre short of a station it was cleared for.
 				if (now.dockPhase === "flying" && !now.computerEngaged) {
 					if (!now.grantLive) g.requestDockingClearance();
-					g.toggleDockingComputer();
+					{
+						// A new ship has no docking computer (#408): fit the one this flies.
+						if (!g.hasDockingComputer)
+							g.commander = {
+								...g.commander,
+								ownedEquipment: [
+									...g.commander.ownedEquipment,
+									g.dockingComputerName,
+								],
+							};
+						g.toggleDockingComputer();
+					}
 				}
 				if (now.dockPhase === "arriving") {
 					arrivingFor += dt;

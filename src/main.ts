@@ -476,7 +476,12 @@ import {
 	RAIDER_HULL_ID,
 	type RouteDetection,
 } from "./raider-slots";
-import { berthCentre, recomposeDirection } from "./arrival";
+import {
+	LAUNCH_CLEAR_HULL_LENGTHS,
+	LAUNCH_EXIT_KMS,
+	berthCentre,
+	recomposeDirection,
+} from "./arrival";
 import {
 	type DockPhase,
 	type DockSession,
@@ -600,6 +605,8 @@ import {
 	jumpPrompt,
 	onKeyboard,
 	type OwnKey,
+	spoken,
+	flightControls,
 	targetPrompt,
 } from "./key-names";
 import type { CaptureModalHandle } from "./capture-modal";
@@ -640,6 +647,7 @@ import { readDeficit, recordTrade } from "./deficits";
 import {
 	emptyRequests,
 	entrustedTonnesAboard,
+	isRunning,
 	recordKill,
 	requestAction,
 	settledAt,
@@ -647,6 +655,7 @@ import {
 import {
 	NO_EXCLUDED_STATION,
 	type JobOffer,
+	LOCAL_RUN_ROW_ID,
 	bindJobs,
 	deliveryCandidates,
 } from "./jobs";
@@ -686,6 +695,7 @@ import {
 import {
 	attachCommander,
 	CommanderSwitch,
+	firstDayAtBoot,
 	flushFault,
 	messageOf,
 	pendingFor,
@@ -696,6 +706,19 @@ import {
 	withRestoreFault,
 	writeFault,
 } from "./commander-flow";
+import {
+	type FirstDayChoice,
+	type FirstDayFacts,
+	type FirstDayKeys,
+	type FirstDayStepId,
+	type FirstDayTarget,
+	firstDayConsoleLine,
+	firstDayLogsStep,
+	firstDayPrompt,
+	firstDayStep,
+	firstDayText,
+} from "./first-day";
+import type { FirstDayPanel } from "./live-cockpit";
 import {
 	COMMANDER_KEY,
 	type CommanderOverlayHandle,
@@ -711,7 +734,12 @@ import { marketStationOf } from "./market";
 import { type HoldBids, holdSummary } from "./hold";
 
 import { exposeMarketLaw } from "./market-probe-hook";
-import { type CarrierKey, carrierKey, compareCarrierKeys } from "./carrier-key";
+import {
+	type CarrierKey,
+	carrierKey,
+	compareCarrierKeys,
+	systemIndexOfKey,
+} from "./carrier-key";
 import { NO_KNOWLEDGE } from "./knowledge-labels";
 import { disposeSubtree } from "./gpu-teardown";
 import {
@@ -761,6 +789,28 @@ import {
 // spellings of the same constant — the two-public-paths pattern this branch
 // removed from `sim.ts` and pinned with a source-scan test.
 import * as units from "./units";
+
+/** #408 D1: where a guided start asks for clearance — outside the docking
+ *  computer's standoff on the aperture axis, the placement `__parkInBerth`
+ *  flies from. Kilometres beyond the aperture plane. */
+const FIRST_DAY_STANDOFF_KM = 4.5;
+/** A bound on the guided start's run-in, in 1/60 s sim steps: 160 s of game
+ *  time, about twice the 76.9 s it took when measured. The steps are
+ *  synchronous at boot, so a stalled approach holds the page for the whole
+ *  bound before the day falls back to an in-flight start (sage, #528 round 1
+ *  — this was ten minutes). */
+const FIRST_DAY_DOCK_STEPS = 60 * 160;
+
+/** Station control's lines the Communications log keeps (#408). Three, not the
+ *  hails' twelve: the log shows six, and a first day logs five steps, which
+ *  pushed every raider and hail line off the console in the first capture. */
+const FIRST_DAY_LOG_KEEP = 3;
+
+/** Where the first day's flight controls sit, as a fraction of the frame's
+ *  height from the top: the top of the glass, which carries nothing else. */
+const FIRST_DAY_CONTROLS_TOP = 0.09;
+/** Dimmer than the prompt's amber: a reference to glance at, not a step. */
+const FIRST_DAY_CONTROLS_FILL = "rgba(255, 214, 120, 0.62)";
 
 /** How many hails the session keeps. The console shows six; the store holds two
  *  screens, and no more, however long the trigger is held. */
@@ -1984,6 +2034,17 @@ class Game {
 	/** #89's D7 flag, chosen at new game and never edited. Read by the death
 	 *  path, not enforced by it — see `save-store.ts`. */
 	private permadeath = false;
+	/** #408 D4: New game's guided or free choice, chosen at new game and never
+	 *  edited. Public because the First day surfaces and the probes read it. */
+	firstDay: FirstDayChoice = "free";
+	/** #408: station control's lines to a guided pilot this session, for the
+	 *  Communications log. Session state for the hails' reason: a line of
+	 *  console text is not a saved fact. */
+	private readonly firstDayLog: RaiderLogLine[] = [];
+	/** The step last logged, so a line is written when the step changes. */
+	private firstDayLastStep: FirstDayStepId | null = null;
+	/** The station the day ended at, while the ship is still in its berth. */
+	private firstDayClosingStation: string | null = null;
 	/** Set by the load arm, read once by the constructor: a restored ship keeps
 	 *  the attitude it was saved with rather than being turned to face a star. */
 	private restoredAttitude = false;
@@ -2080,7 +2141,8 @@ class Game {
 	/** A copy, not the module's object: the dials mutate this, and the spec's
 	 *  own figures stay reachable as `DEFAULT_CRUISE` for the reset key. */
 	cruiseParams: CruiseParams = { ...DEFAULT_CRUISE };
-	/** §7's drive charge, AU. Starts full — a new game docks first. */
+	/** §7's drive charge, AU. Starts full, and a guided new game spends none of
+	 *  it on the docked start (#408); a free one starts in flight with it full. */
 	chargeAu = CHARGE_CAPACITY_AU;
 	/** Seconds left of §4's spool-up before cruise actually engages. */
 	spoolLeftS = 0;
@@ -2390,6 +2452,14 @@ class Game {
 	lastExit = "";
 	/** Internal route state only: targetId remains the selected station. */
 	private detour: CruiseGuidanceState | null = null;
+	/**
+	 * The station a plain cruise leg is tracking (principal, 2026-09-25): F then
+	 * J lost a moving station, while a detour's last leg already steered at its
+	 * live position. So a leg engaged with a station selected and no detour
+	 * steers at it the same way, through `stepCruiseGuidance`'s direct mode,
+	 * until the drop. Control input, a new target or the drop ends it.
+	 */
+	private cruiseTrackId: string | null = null;
 	/** Reused while steering an active detour; cruise must not make per-frame Three allocations. */
 	private readonly detourDirection = new THREE.Vector3();
 	private readonly detourCurrentNose = new THREE.Vector3();
@@ -3106,25 +3176,18 @@ class Game {
 	}
 
 	/**
-	 * Whether the ship carries §7's 1,000 Cr computer.
+	 * Whether the ship carries §7's 1,000 Cr computer: whether the commander
+	 * owns one (`DOCKING_COMPUTER`, sold on the Equipment tab).
 	 *
-	 * `true` because there is nowhere to buy one: the market module has the
-	 * price (`EQUIPMENT`, and this node consumes that rather than pricing it)
-	 * and no screen sells it (#70 owns that). Shipping it fitted rather than
-	 * absent is what makes §7's behaviour reachable at all, and §7.1's reading —
-	 * an early-game skill gate and a late-game option — is a claim about the
-	 * economy that cannot be made until the shop exists.
-	 *
-	 * **The cost of that default is real and it is not the economy.** §3.1's
-	 * open question is whether a *person* can hold the 0.10 km/s gate, and a
-	 * game that boots with the autopilot fitted is a game where the first thing
-	 * anyone flies is the autopilot. The mitigation is that it is off until
-	 * asked for (`u`), and that §9.2's two failure runs disengage it explicitly
-	 * — but the honest reading is that this default makes the skill gate easy to
-	 * never meet, which is the opposite of what §7.1 assumes about the early
-	 * game. Once #70's screen exists this should ship `false`.
+	 * **A new ship has none, on the principal's ruling (#408, 2026-09-25).** It
+	 * shipped fitted while no screen sold it, and this comment said then that
+	 * the default made §7.1's early-game skill gate easy to never meet — the
+	 * first thing anyone flew was the autopilot. The Equipment tab sells it now,
+	 * so it is bought, and a new pilot docks by hand.
 	 */
-	hasDockingComputer = true;
+	get hasDockingComputer(): boolean {
+		return this.commander.ownedEquipment.includes(DOCKING_COMPUTER);
+	}
 
 	/** Whether it is flying. Any control input cancels it (§7). */
 	dockingComputerEngaged = false;
@@ -3392,6 +3455,7 @@ class Game {
 			this.requests = save.commander.requests;
 			this.chargeAu = save.commander.chargeAu;
 			this.permadeath = save.commander.permadeath;
+			this.firstDay = save.commander.firstDay;
 			// **A docked save resumes in flight at the arrival point, and that
 			// is a deliberate scale-down rather than an omission.** Re-entering
 			// a berth means rebuilding a whole dock session — the grant, the
@@ -9173,6 +9237,10 @@ class Game {
 				? jumpPrompt(this.bindings, hop.name)
 				: jumpRefusalText(decision.refusal, hop.name);
 		}
+		// #408: a guided pilot is told which station and which key, where the
+		// lines below would only say "a target" and "cruise".
+		const firstDay = this.firstDayGlassPrompt();
+		if (firstDay) return firstDay;
 		if (targetKm === null) return targetPrompt(this.bindings);
 		// An hour at the cap, which is 7,200 km. Below that the crawl is the
 		// intended experience — #10 §3 bounds the drop radius by exactly this
@@ -10086,6 +10154,19 @@ class Game {
 		// would still be turning on the frame a launch hands control back.
 		this.rates = { pitch: 0, yaw: 0, roll: 0 };
 		this.throttle = 0;
+		// **A launch lets go moving (#408, the principal's playtest).** The law
+		// eases to rest at its release, and with the throttle at zero the assist
+		// held the ship there; it is handed over flying out along the axis at
+		// the gate speed instead, with the throttle that keeps it, so it clears
+		// the station until the pilot takes over.
+		if (wasLaunching && this.dock.phase === "flying" && wasAt) {
+			const { axis } = this.poseOfStation(wasAt);
+			this.world.ship.vel = add(
+				this.world.ship.vel,
+				scale(axis, LAUNCH_EXIT_KMS),
+			);
+			this.throttle = LAUNCH_EXIT_KMS / ASSIST_CAP_KMS;
+		}
 	}
 
 	/**
@@ -10127,6 +10208,8 @@ class Game {
 			this.apertureFrameOf(this.dock.stationId),
 			this.interiorOf(this.dock.stationId),
 			this.world.gameTime,
+			// Fly clear before letting go (#408): two lengths of the hull flown.
+			LAUNCH_CLEAR_HULL_LENGTHS * HULL_SPECS[this.commander.hull].env.lengthKm,
 		);
 		if (this.dock.phase === "launching") {
 			// The console is gone; its last refusal goes with it, or the next
@@ -10553,6 +10636,7 @@ class Game {
 		this.struckFor = 0;
 		this.lastExit = "";
 		this.detour = null;
+		this.cruiseTrackId = null;
 		this.frameBody = null;
 		this.proximityFrameBodyId = null;
 		this.dockingComputerEngaged = false;
@@ -11837,6 +11921,10 @@ class Game {
 			}
 			this.detour = begun.guidance;
 		}
+		// A station with no detour is tracked directly; a detour tracks it on its
+		// last leg already.
+		this.cruiseTrackId =
+			target && targetParentId && !this.detour ? target.id : null;
 		this.spoolLeftS = SPOOL_S;
 		this.lastExit = "";
 	}
@@ -11880,6 +11968,7 @@ class Game {
 		this.saveDirty();
 		this.detour = null;
 		this.cruiseSpeedKms = 0;
+		this.cruiseTrackId = null;
 		this.throttle = 0;
 		this.lastExit = reason;
 		if (this.legStartedAtS !== null) {
@@ -12057,8 +12146,12 @@ class Game {
 			this.dockingComputerEngaged = false;
 			this.clearPlayerArrivalLaneRequests();
 		}
-		if (this.detour && this.hasControlInput(yaw, pitch, roll)) {
+		if (
+			(this.detour || this.cruiseTrackId) &&
+			this.hasControlInput(yaw, pitch, roll)
+		) {
 			this.detour = null;
+			this.cruiseTrackId = null;
 			// A throttle key is the player's chosen value for this same frame.
 			// Do not briefly promote throttle-down to full cruise before its normal
 			// input handling below can apply it.
@@ -12337,9 +12430,47 @@ class Game {
 		if (step.starved) this.dropOut("drive charge exhausted");
 	}
 
+	/**
+	 * Steer a plain cruise leg at the station it was engaged on (see
+	 * `cruiseTrackId`): the detour's last leg, without the detour. Always `true`,
+	 * because tracking cannot fail — with no station left to track it lets go
+	 * and the leg flies on as a nose-locked one.
+	 */
+	private stepCruiseTrack(dt: number): boolean {
+		if (!this.cruiseTrackId) return true;
+		const target = this.targetBody();
+		if (!target || this.cruiseTrackId !== this.targetId) {
+			this.cruiseTrackId = null;
+			return true;
+		}
+		const guided = stepCruiseGuidance({
+			guidance: null,
+			pos: this.world.ship.pos,
+			nose: this.nose(),
+			target,
+			masses: this.masses(),
+			targetParentId: this.targetParentId(),
+			dt,
+			speedKms: this.cruiseSpeedKms,
+			steerDirect: true,
+		});
+		this.throttle = guided.throttle;
+		const desired = this.detourDirection.set(
+			guided.nose.x,
+			guided.nose.y,
+			guided.nose.z,
+		);
+		this.detourCurrentNose
+			.copy(this.detourForward)
+			.applyQuaternion(this.orientation);
+		this.detourOrientation.setFromUnitVectors(this.detourCurrentNose, desired);
+		this.orientation.premultiply(this.detourOrientation).normalize();
+		return true;
+	}
+
 	/** Turn toward the current internal waypoint; physical motion remains cruise. */
 	private stepDetour(dt: number): boolean {
-		if (!this.detour) return true;
+		if (!this.detour) return this.stepCruiseTrack(dt);
 		if (this.detour.targetId !== this.targetId) {
 			this.detour = null;
 			this.throttle = 1;
@@ -13252,6 +13383,12 @@ class Game {
 		// One projection per update, read by the Hold page (#445) and by the
 		// request board's Deliver control (#446).
 		const hold = holdSummary(this.commander, this.requests);
+		// One board per update: the console draws it and the first day asks it
+		// whether a Local run is posted (#408). Station control's log is written
+		// here, once, before the panel reads it.
+		const requests = this.requestsView(dockContext, hold);
+		const firstDayFacts = this.firstDayFacts(requests.offers);
+		this.noteFirstDayStep(firstDayFacts);
 		this.liveCockpit.update({
 			visible: true,
 			dockPhase: this.dock.phase,
@@ -13336,14 +13473,17 @@ class Game {
 							// from the glass — so the sentence the pilot was shown at
 							// the frame it landed is still here after it has faded.
 							...this.charges,
+							// #408: station control's lines to a guided pilot.
+							...this.firstDayLog,
 						])
 							.slice(0, 6)
 							.map(formatRaiderLogLine)
 					: [],
 			relay: this.relayCue(),
 			tuning: this.tuningSummary(),
-			requests: this.requestsView(dockContext, hold),
+			requests,
 			stationConsole: this.stationConsoleState(dockContext),
+			firstDay: this.firstDayPanel(firstDayFacts),
 			launchHold: this.launchHold
 				? {
 						refusal: this.launchHold.refusal,
@@ -13406,7 +13546,13 @@ class Game {
 			const relayKey = relaySlot(this.world.system.record.index).key;
 			const relayLive =
 				this.currentRelayPlan() !== null && this.slotOperational(relayKey);
-			const key = `${context.galaxyIndex}:${context.stationKey}:${settled.courier}:${settled.procurement}:${settled.bounty}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
+			// Every post's settled count, from the record itself: a post added later
+			// is in the key without an edit here (sage, #528 round 3).
+			const settledKey = Object.entries(settled)
+				.sort(([a], [b]) => (a < b ? -1 : 1))
+				.map(([post, n]) => `${post}=${n}`)
+				.join(",");
+			const key = `${context.galaxyIndex}:${context.stationKey}:${settledKey}:${relayLive ? relayKey : "-"}:${this.stationConsoleRevision}`;
 			if (key !== this.requestOffersCacheKey) {
 				const bountyTarget = bountyTargetOf(
 					this.world.system.record,
@@ -13718,6 +13864,7 @@ class Game {
 			dockedAt: station ? this.stationKey(station) : null,
 			chargeAu: this.chargeAu,
 			permadeath: this.permadeath,
+			firstDay: this.firstDay,
 			flight: {
 				pos: [
 					this.world.ship.pos.x,
@@ -13753,6 +13900,297 @@ class Game {
 			throw new Error("permadeath is chosen at new game, not later");
 		this.permadeath = true;
 		this.saveDirty();
+	}
+
+	/** #408 D4, at the one moment it can be chosen — `choosePermadeath`'s rule,
+	 *  for its reason. */
+	chooseFirstDay(choice: FirstDayChoice): void {
+		if (this.commerceWorld.gameTime > 0)
+			throw new Error("the first day is chosen at new game, not later");
+		this.firstDay = choice;
+		this.saveDirty();
+	}
+
+	/**
+	 * #408 D1: a guided new game starts in a berth at its start system's trade
+	 * station.
+	 *
+	 * **Through the docking protocol, never around it** (#9, #147). The ship is
+	 * set on the station's aperture axis, co-moving, outside the computer's
+	 * standoff; it asks for clearance like any pilot, the docking computer flies
+	 * the run-in, and the arrival traversal is skipped as a pilot's Enter skips
+	 * it. The berth is whatever the live allocator grants, with Traffic running.
+	 * So the dock is an ordinary dock, and its flush writes `lastDocked` — which
+	 * is why this runs after the store attaches, and what gives a guided pilot a
+	 * checkpoint before their first flight.
+	 *
+	 * The computer is engaged by setting the flag rather than through
+	 * `toggleDockingComputer`, because a new ship has none (`hasDockingComputer`,
+	 * #408): this is the station bringing the ship in before the clock runs, not
+	 * the pilot flying. The pilot's own first dock is by hand.
+	 *
+	 * Sub-stepped in sim, so the clock starts at the dock rather than at zero;
+	 * `probe-first-day` prints how long the run-in took.
+	 *
+	 * Returns `false` when it cannot dock, and then **puts back what it moved**:
+	 * the ship at the arrival point it was placed from, at rest, facing as it
+	 * was, with nothing selected and the computer off. So a failed guided start
+	 * is a free one's start with the clock moved on, not a ship parked beside a
+	 * station under an autopilot the pilot does not own (sage, #528 round 2).
+	 */
+	startDockedAtHome(): boolean {
+		const id = this.world.system.contents.stations.find(
+			(s) => s.type === "trade",
+		)?.id;
+		if (!id || this.dock.phase !== "flying") return false;
+		const body = this.world.system.byId.get(id);
+		const snap = this.dockingSnapshot(id);
+		if (!body || !snap) return false;
+		const { axis } = this.poseOfStation(id);
+		const rangeKm = snap.planeKm + FIRST_DAY_STANDOFF_KM;
+		const from = {
+			pos: { ...this.world.ship.pos },
+			vel: { ...this.world.ship.vel },
+			orientation: this.orientation.clone(),
+			targetId: this.targetId,
+		};
+		const giveUp = (): false => {
+			// An unused grant ends the way its expiry ends it (`docking.ts`): back
+			// to none, and the berth it reserved released, so a failed start does
+			// not hold a berth for a ship that went back to the arrival point.
+			const held = this.dockingStateOf(id);
+			if (held.clearance.kind === "granted")
+				this.dockingStates.set(
+					id,
+					releaseBerth({ ...held, clearance: { kind: "none" } }),
+				);
+			this.clearPlayerArrivalLaneRequests();
+			this.dockingComputerEngaged = false;
+			this.throttle = 0;
+			this.world.ship.pos = v3(from.pos.x, from.pos.y, from.pos.z);
+			this.world.ship.vel = v3(from.vel.x, from.vel.y, from.vel.z);
+			this.orientation.copy(from.orientation);
+			this.targetId = from.targetId;
+			return false;
+		};
+		this.world.ship.pos = v3(
+			body.pos.x + axis.x * rangeKm,
+			body.pos.y + axis.y * rangeKm,
+			body.pos.z + axis.z * rangeKm,
+		);
+		this.world.ship.vel = this.stationVelocity(id);
+		this.orientation.setFromUnitVectors(
+			new THREE.Vector3(0, 0, -1),
+			new THREE.Vector3(-axis.x, -axis.y, -axis.z),
+		);
+		this.targetId = id;
+		if (this.requestDockingClearance().state?.clearance.kind !== "granted")
+			return giveUp();
+		this.dockingComputerEngaged = true;
+		const dt = 1 / 60;
+		for (
+			let i = 0;
+			i < FIRST_DAY_DOCK_STEPS && this.dockPhase !== "docked";
+			i++
+		) {
+			this.step(dt);
+			// A pilot re-engages a computer that dropped out; so does this.
+			if (this.dockPhase === "flying" && !this.dockingComputerEngaged) {
+				if (!this.dockingSnapshot(id)?.grantLive)
+					this.requestDockingClearance();
+				this.dockingComputerEngaged = true;
+			}
+			if (this.dockPhase === "arriving") this.skipDockTraversal();
+		}
+		// Mid-traversal is on rails into the reserved berth: finish it.
+		if (this.dockPhase === "arriving") this.skipDockTraversal();
+		if (this.dockPhase === "docked") return true;
+		// A launch or an arrival that did not end cannot be undone by moving the
+		// ship; only a ship still flying goes back where it came from.
+		return this.dockPhase === "flying" ? giveUp() : false;
+	}
+
+	/**
+	 * #408: what the first day's step is derived from, read off live state.
+	 * Public so a probe reads the same facts the surfaces do.
+	 *
+	 * `offers` is the board the caller already built, so a cockpit update does
+	 * not build the Requests view twice; without it, the board is asked for.
+	 */
+	firstDayFacts(offers?: readonly JobOffer[]): FirstDayFacts {
+		const docked = this.dockPhase === "docked";
+		const station =
+			this.dock.phase !== "flying" && this.dock.stationId
+				? stationOf(this.world.system, this.dock.stationId)
+				: null;
+		const journal = Object.values(this.requests.byId);
+		const trackedId = this.requests.trackedRequestId;
+		const tracked = trackedId ? this.requests.byId[trackedId] : undefined;
+		// The tracked job when it is running — it is the one the pilot chose to
+		// follow — and otherwise the first running one.
+		const job =
+			tracked && isRunning(tracked.status)
+				? tracked
+				: journal.find((request) => isRunning(request.status));
+		const record = this.world.system.record;
+		return {
+			docked,
+			dockedAt: station ? this.stationKey(station) : null,
+			running: job
+				? {
+						reportAt: job.terms.reportAt.carrierKey,
+						reportName: job.terms.reportName,
+						reportSystemName: job.terms.reportSystemName,
+						sameSystem:
+							job.terms.reportAt.galaxyIndex === record.galaxy &&
+							systemIndexOfKey(job.terms.reportAt.carrierKey) === record.index,
+					}
+				: null,
+			settledAny: journal.some((request) => request.status === "completed"),
+			localRunOnBoard:
+				docked &&
+				(offers ?? this.requestsView().offers).some(
+					(offer) => offer.rowId === LOCAL_RUN_ROW_ID,
+				),
+			computerFitted: this.hasDockingComputer,
+		};
+	}
+
+	/** The keys the first day names, as the player has them bound. */
+	private firstDayKeys(): FirstDayKeys {
+		return {
+			starboard: spoken(this.bindings, "view.headStarboard"),
+			clearance: spoken(this.bindings, "dock.clearance"),
+			computer: spoken(this.bindings, "dock.computer"),
+			cruise: spoken(this.bindings, "fly.cruise"),
+			navigation: spoken(this.bindings, "view.headPort"),
+			forward: spoken(this.bindings, "view.headForward"),
+			face: spoken(this.bindings, "fight.faceTarget"),
+		};
+	}
+
+	/** The selected target as the first day reads it, or `null`. */
+	private firstDayTarget(): FirstDayTarget | null {
+		const selected = this.targetBody();
+		if (!selected) return null;
+		const station = this.world.system.contents.stations.find(
+			(s) => s.id === selected.id,
+		);
+		return {
+			key: station ? this.stationKey(station) : null,
+			name: selected.name,
+			inVicinity: length(sub(selected.pos, this.world.ship.pos)) <= VICINITY_KM,
+			grantLive: station
+				? (this.dockingSnapshot(station.id)?.grantLive ?? false)
+				: false,
+			computerEngaged: this.dockingComputerEngaged,
+		};
+	}
+
+	/**
+	 * Station control's log, kept in step with the day (#408 D3): a line when
+	 * a guided pilot's step changes (`firstDayLogsStep`), and the berth the day
+	 * ended at while the ship is still in it. **The one writer**: the panel
+	 * below only reads what this leaves.
+	 */
+	private noteFirstDayStep(facts: FirstDayFacts): void {
+		if (this.dockPhase !== "docked") this.firstDayClosingStation = null;
+		if (this.firstDay !== "guided") return;
+		const current = firstDayStep(facts);
+		if (current === this.firstDayLastStep) return;
+		// The closing line is said once, at the berth the day ended in.
+		if (current === "trade" && this.firstDayLastStep !== null)
+			this.firstDayClosingStation = this.dock.stationId;
+		if (firstDayLogsStep(this.firstDayLastStep, current)) {
+			this.firstDayLog.push({
+				at: this.world.gameTime,
+				key: facts.dockedAt ?? facts.running?.reportAt ?? ("" as CarrierKey),
+				text: `STATION CONTROL: ${firstDayText(facts, this.firstDayKeys())}`,
+			});
+			if (this.firstDayLog.length > FIRST_DAY_LOG_KEEP)
+				this.firstDayLog.shift();
+		}
+		this.firstDayLastStep = current;
+	}
+
+	/**
+	 * The First day tab's content and station control's lines (#408 D3, D5).
+	 * A pure read: `noteFirstDayStep` has already run for these facts.
+	 */
+	private firstDayPanel(facts: FirstDayFacts): FirstDayPanel {
+		const current = firstDayStep(facts);
+		const keys = this.firstDayKeys();
+		const text = firstDayText(facts, keys);
+		const guided = this.firstDay === "guided";
+		const closing =
+			current === "trade" &&
+			this.firstDayClosingStation !== null &&
+			this.firstDayClosingStation === this.dock.stationId;
+		return {
+			current,
+			text,
+			stationLine:
+				guided && facts.docked && (current !== "trade" || closing)
+					? text
+					: null,
+			consoleLine:
+				guided && !facts.docked
+					? firstDayConsoleLine(facts, this.firstDayTarget(), keys)
+					: null,
+			controls: flightControls(this.bindings),
+		};
+	}
+
+	/**
+	 * The flight controls a guided pilot is shown on the glass (#408, the
+	 * principal's playtest): throttle, pitch, yaw and roll, on the keyboard and
+	 * the controller, as bound. At the top of the glass, which nothing else
+	 * uses, and only while the day has the pilot flying in normal flight — the
+	 * Fly and Dock-at-a-station steps — so a cruise leg and a berth are clear.
+	 * What was drawn is kept on `firstDayControlsShown` for the probe.
+	 */
+	firstDayControlsShown: readonly string[] = [];
+
+	private drawFirstDayControls(
+		ctx: CanvasRenderingContext2D,
+		w: number,
+		h: number,
+	): void {
+		const step =
+			this.firstDay === "guided" &&
+			this.regime === "normal" &&
+			this.dockPhase === "flying"
+				? firstDayStep(this.firstDayFacts())
+				: null;
+		if (step !== "fly" && step !== "find-station") {
+			this.firstDayControlsShown = [];
+			return;
+		}
+		const { keyboard, controller } = flightControls(this.bindings);
+		const lines = [keyboard, `CONTROLLER · ${controller}`];
+		ctx.save();
+		ctx.font = PROMPT_FONT;
+		ctx.textAlign = "center";
+		ctx.fillStyle = FIRST_DAY_CONTROLS_FILL;
+		const top = Math.round(h * FIRST_DAY_CONTROLS_TOP);
+		for (const [i, text] of lines.entries())
+			ctx.fillText(text, w / 2, top + i * PROMPT_LINE_HEIGHT_PX);
+		ctx.restore();
+		this.firstDayControlsShown = lines;
+	}
+
+	/**
+	 * A guided pilot's line on the glass, or `""` (#408 D3). Read by
+	 * `cruisePrompt` below its safety lines and a set course, and above the
+	 * generic target and cruise hints it makes specific.
+	 */
+	private firstDayGlassPrompt(): string {
+		if (this.firstDay !== "guided") return "";
+		return firstDayPrompt(
+			this.firstDayFacts(),
+			this.firstDayTarget(),
+			this.firstDayKeys(),
+		);
 	}
 
 	/**
@@ -15131,6 +15569,7 @@ class Game {
 		} else {
 			this.cockpitPrompt.reset();
 		}
+		this.drawFirstDayControls(ctx, w, h);
 		this.combatRig?.drawOverlay(ctx, w, h, this.view, this.bindings);
 
 		// The selected target owns the amber sky marker. Green remains prograde,
@@ -15874,18 +16313,36 @@ if (postcard) {
 		game.commanderOverlay?.open();
 	};
 	let openAtBoot = plan.mode === "overlay";
+	// #408 D1 and D4: a guided new game is docked at its home station before the
+	// clock runs. **After the attach**, so that dock's flush writes the new
+	// Commander's `lastDocked`. Once per page: Continue on the overlay also
+	// attaches, and a game already flown is not a new game.
+	let firstDayBegun = false;
+	const beginFirstDay = (slot: string | null) => {
+		if (firstDayBegun || plan.loaded !== null) return;
+		firstDayBegun = true;
+		if (firstDayAtBoot(plan, slot, query.has("guided")) !== "guided") return;
+		game.chooseFirstDay("guided");
+		if (!game.startDockedAtHome())
+			console.warn(
+				"first day: the guided start did not dock; it begins in flight",
+			);
+	};
 	if (plan.mode === "direct") {
 		// `plan.writesNothing`, not `?no-save` read off the URL: two things make a
 		// boot write nothing, and the shell that attaches a store has to read the
 		// plan's answer rather than re-derive it from one of the two causes.
 		if (!plan.writesNothing && plan.fault === null) await attach(plan.slot);
+		beginFirstDay(plan.writesNothing ? null : plan.slot);
 		game.clockHeld = false;
 	} else if (plan.mode === "continue") {
 		// §11.3: a one-shot whose Commander another tab took in the meantime is
 		// discarded, and the overlay opens with that fault.
 		const fault = await attach(plan.slot);
-		if (fault === null) game.clockHeld = false;
-		else {
+		if (fault === null) {
+			beginFirstDay(plan.slot);
+			game.clockHeld = false;
+		} else {
 			plan = withLockFault(plan, fault);
 			openAtBoot = true;
 		}
@@ -15935,7 +16392,10 @@ if (postcard) {
 				return null;
 			}
 			const fault = plan.writesNothing ? null : await attach(slot);
-			if (fault === null) game.clockHeld = false;
+			if (fault === null) {
+				beginFirstDay(plan.writesNothing ? null : slot);
+				game.clockHeld = false;
+			}
 			return fault;
 		},
 		releaseHeldKeys: () => game.releaseHeldKeys(),

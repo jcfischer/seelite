@@ -395,7 +395,7 @@ describe("check 4's zero and the aperture-fit measurement agree (#157)", () => {
 			STATION_GEOMETRY.trade.aperturePlaneKm,
 			3,
 		);
-		const law = beginLaunch(frame, interior, interior.berths[0], 0);
+		const law = beginLaunch(frame, interior, interior.berths[0], 0, 0);
 		const settled = arrivalAttitude(law, 1, frame.phaseRad);
 		const beam = beamAxis(settled.nose, settled.up);
 		expect(alignment(beam, basis.across)).toBeCloseTo(1, 6);

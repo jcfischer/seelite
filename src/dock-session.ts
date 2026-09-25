@@ -186,6 +186,8 @@ export function requestLaunch(
 	frame: ApertureFrame,
 	interior: StationInterior,
 	gameTime: number,
+	/** Past the usual release, km (`beginLaunch`'s `clearKm`). */
+	clearKm: number,
 ): DockSession {
 	if (session.phase !== "docked" || !session.stationId || !session.berthId)
 		return session;
@@ -201,6 +203,7 @@ export function requestLaunch(
 			interior,
 			berthOf(interior, session.berthId),
 			gameTime,
+			clearKm,
 		),
 	};
 }

@@ -192,9 +192,10 @@ test("verified schema 2 migrates a copy to empty journal; corrupt and unsupporte
 	// version 2 body out of a current one; if the two ever met, it would be
 	// asserting the migration path against no migration at all. It went red on
 	// #453's bump, which is the tripwire working.
-	expect(SAVE_SCHEMA_VERSION).toBe(5);
+	expect(SAVE_SCHEMA_VERSION).toBe(6);
 	const { integrity, ...body } = current;
 	body.saveSchemaVersion = 2;
+	delete body.commander.firstDay;
 	delete body.commander.requests;
 	const old = { ...body, integrity: fnv1a(JSON.stringify(body)) };
 	const before = JSON.stringify(old);
@@ -297,6 +298,7 @@ test("a schema 3 journal migrates when empty and is refused when it is not", () 
 		);
 		const { integrity, ...body } = current;
 		body.saveSchemaVersion = 3;
+		delete body.commander.firstDay;
 		body.commander.requests = requests;
 		return { ...body, integrity: fnv1a(JSON.stringify(body)) };
 	};
@@ -448,6 +450,7 @@ const asV4 = (
 	const raw = JSON.parse(JSON.stringify(serializeSave(save)));
 	const { integrity: _, ...body } = raw;
 	body.saveSchemaVersion = 4;
+	delete body.commander.firstDay;
 	const offers = [
 		...Object.values(
 			body.commander.requests.byId as Record<string, { terms: JobOffer }>,
@@ -478,7 +481,7 @@ test("a schema 4 journal lifts its flat cargo fields into an operand", () => {
 	expect(parseSave(asV4(save))).toEqual(save);
 });
 
-test("a lifted schema 4 record re-serializes as a native version 5", () => {
+test("a lifted schema 4 record re-serializes as a native current version", () => {
 	// **The flat keys have to be removed, not merely superseded.** `offerOf`
 	// copies the validated offer by spread, so a `goodName` left beside the
 	// operand rides through the load and out into the next write — a v5 record

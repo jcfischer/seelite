@@ -30,6 +30,7 @@
  */
 
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
+import { type FirstDayChoice, isFirstDayChoice } from "./first-day-choice";
 import { HULL_IDS, type HullId } from "./hull";
 import { generateGalaxy } from "./galaxy";
 import { generateContents } from "./system";
@@ -95,8 +96,13 @@ import {
  * cargo family. It is not a promise that a v4 load cannot throw:
  * `migrateV4Requests` below refuses one thing — an offer already carrying
  * `operand` — and `parseRequests` refuses the rest of the shape as always.
+ *
+ * **6 adds `commander.firstDay` (#408 D4)**, New game's guided or free choice.
+ * Every older record loads as `free`: a pilot who already has a save is not a
+ * new pilot, and the guided day's push would otherwise start talking to them
+ * about launching.
  */
-export const SAVE_SCHEMA_VERSION = 5;
+export const SAVE_SCHEMA_VERSION = 6;
 /**
  * Versions this parser still reads but no longer writes.
  *
@@ -113,8 +119,11 @@ export const SAVE_SCHEMA_VERSION = 5;
  * it a new version. So 4 is the first entry in this list whose migration moves
  * data rather than emptying it, and the first with a real population behind
  * it.
+ *
+ * **5 is every save written between #453 and #408**, so it is the population a
+ * player most likely holds.
  */
-export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4] as const;
+export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4, 5] as const;
 
 /**
  * What a legacy version may not contain.
@@ -132,7 +141,12 @@ export const LEGACY_SAVE_SCHEMA_VERSIONS = [2, 3, 4] as const;
  */
 export const LEGACY_SCHEMA_FORBIDS: Readonly<
 	Partial<Record<number, readonly string[]>>
-> = { 2: ["requests"] };
+> = {
+	2: ["requests", "firstDay"],
+	3: ["firstDay"],
+	4: ["firstDay"],
+	5: ["firstDay"],
+};
 
 /**
  * A version 3 record's journal, migrated or refused.
@@ -270,6 +284,8 @@ export interface CommanderRecord {
 	 * enforcement would buy the appearance of rigour rather than rigour.
 	 */
 	permadeath: boolean;
+	/** #408 D4: New game's choice, written at creation and never edited. */
+	firstDay: FirstDayChoice;
 	flight: SavedFlight;
 }
 
@@ -290,6 +306,7 @@ export const newCommanderRecord = (
 	hull: HullId,
 	options: {
 		permadeath?: boolean;
+		firstDay?: FirstDayChoice;
 		galaxyIndex?: number;
 		systemIndex?: number;
 		chargeAu?: number;
@@ -302,6 +319,7 @@ export const newCommanderRecord = (
 	dockedAt: null,
 	chargeAu: options.chargeAu ?? 0,
 	permadeath: options.permadeath ?? false,
+	firstDay: options.firstDay ?? "free",
 	flight: {
 		pos: [0, 0, 0],
 		vel: [0, 0, 0],
@@ -357,6 +375,7 @@ const canonicalCommander = (record: CommanderRecord) => {
 		dockedAt: record.dockedAt,
 		chargeAu: record.chargeAu,
 		permadeath: record.permadeath,
+		firstDay: record.firstDay,
 		flight: {
 			pos: [...record.flight.pos],
 			vel: [...record.flight.vel],
@@ -491,6 +510,15 @@ const parseCommander = (
 		fail(`commander: ${String(dockedAt)} is not a carrier key`);
 	if (typeof o.permadeath !== "boolean")
 		fail("commander: permadeath is not a boolean");
+	// A legacy record has no choice and loads as free — the forbids table above
+	// has already refused one that carries the key. A current record without it
+	// is truncated, and #89's obligation 5 says that must not read as free.
+	const legacy = version !== SAVE_SCHEMA_VERSION;
+	if (!legacy && !isFirstDayChoice(o.firstDay))
+		fail(`commander: firstDay ${String(o.firstDay)} is not guided or free`);
+	const firstDay: FirstDayChoice = legacy
+		? "free"
+		: (o.firstDay as FirstDayChoice);
 	// **Bounded, not merely finite — and bounded on both indices.** For a round
 	// the system index was checked only for being a non-negative integer while
 	// the comment claimed it covered "a system the galaxy does not have", so
@@ -539,6 +567,7 @@ const parseCommander = (
 		dockedAt: (dockedAt as CarrierKey | null) ?? null,
 		chargeAu: num(o, "chargeAu", "commander"),
 		permadeath: o.permadeath as boolean,
+		firstDay,
 		flight: parseFlight(o.flight),
 	};
 };

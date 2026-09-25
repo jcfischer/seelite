@@ -146,6 +146,19 @@ export const PROBE_CATALOG = Object.freeze(
 			["duel", "combat HUD", "raider", "target ring", "on target"],
 		),
 		entry(
+			"probe-first-day.mjs",
+			"Flies a guided new game's first day: docked boot through clearance and its lastDocked checkpoint, station control's line, the First day tab, the Local run accepted, launched, docked, delivered and reported, the glass prompt and the Communications log; and a free pilot left unpushed.",
+			[
+				"first useful day",
+				"onboarding",
+				"guided new game",
+				"docked start",
+				"Local run",
+				"station control",
+				"First day tab",
+			],
+		),
+		entry(
 			"probe-frame-attribution.mjs",
 			"Checks query-gated frame-attribution labels, renderer facts, timer states, and default-route isolation.",
 			["frame attribution", "GPU timer", "performance panel", "render passes"],

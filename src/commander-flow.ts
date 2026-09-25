@@ -15,6 +15,7 @@
  */
 
 import type { BootMode } from "./boot-mode";
+import type { FirstDayChoice } from "./first-day-choice";
 import { type SaveEnvelope } from "./save-envelope";
 import {
 	type CommanderCatalog,
@@ -323,6 +324,33 @@ export function permadeathAtAttach(
 		plan.pending === null &&
 		queryPermadeath
 	);
+}
+
+/**
+ * The first-day choice a new game boots with (#408 D4): New game's, or
+ * `?guided` on a direct boot with nothing loaded. The query is for probes and
+ * playtests, and it follows `permadeathAtAttach`'s rule for the same reason —
+ * it never chooses for a Commander the overlay offered or one that exists.
+ *
+ * `slot` is `null` for a boot that attaches nothing (`?no-save`), which still
+ * has a new game to guide.
+ *
+ * `free` for a loaded Commander means only "choose nothing": a loaded game's
+ * choice is the one its save carries, and the caller applies only `guided`.
+ */
+export function firstDayAtBoot(
+	plan: BootPlan,
+	slot: string | null,
+	queryGuided: boolean,
+): FirstDayChoice {
+	const pending = slot === null ? null : pendingFor(plan, slot);
+	if (pending) return pending.firstDay;
+	return plan.mode === "direct" &&
+		plan.loaded === null &&
+		plan.pending === null &&
+		queryGuided
+		? "guided"
+		: "free";
 }
 
 /** A random galaxy seed, for a boot or a New game with none asked for. */

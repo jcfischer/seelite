@@ -17,6 +17,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	LAUNCH_RELEASE_KM,
+	LAUNCH_CLEAR_HULL_LENGTHS,
 	arrivalAttitude,
 	arrivalProgress,
 	arrivalRel,
@@ -455,8 +456,14 @@ describe("§12.6 obligation 7 — a rolled entry keeps a basis all the way in", 
 });
 
 describe("§13.3 — launch is the route run backwards", () => {
-	const launchFrom = (type: StationType, berthId: string) =>
-		beginLaunch(frameOf(type), interiorOf(type), berthNamed(type, berthId), 0);
+	const launchFrom = (type: StationType, berthId: string, clearKm = 0) =>
+		beginLaunch(
+			frameOf(type),
+			interiorOf(type),
+			berthNamed(type, berthId),
+			0,
+			clearKm,
+		);
 
 	test("it starts at the berth and ends clear of the plane, outward", () => {
 		for (const type of STATION_TYPES)
@@ -476,6 +483,28 @@ describe("§13.3 — launch is the route run backwards", () => {
 					9,
 				);
 			}
+	});
+
+	test("a player's launch flies clear: the release moves out by the clear distance (#408)", () => {
+		// The principal's playtest (2026-09-25): a launch that ends 20 m past the
+		// plane leaves most of a 57 m hull in the mouth. The player's launch passes
+		// a clear distance; Traffic's passes none and releases where it did.
+		const clearKm = 0.115;
+		for (const type of STATION_TYPES)
+			for (const berth of interiorOf(type).berths) {
+				const near = localAt(launchFrom(type, berth.id), 1).axial;
+				const clear = launchFrom(type, berth.id, clearKm);
+				expect(localAt(clear, 1).axial).toBeCloseTo(near + clearKm, 9);
+				// The route is the same route, longer at its outward end.
+				expect(localAt(clear, 0).axial).toBeCloseTo(
+					localAt(launchFrom(type, berth.id), 0).axial,
+					9,
+				);
+			}
+	});
+
+	test("the clear distance is two hull lengths", () => {
+		expect(LAUNCH_CLEAR_HULL_LENGTHS).toBe(2);
 	});
 
 	test("its axial run is monotone outward, so it cannot re-trigger a crossing", () => {

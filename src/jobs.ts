@@ -55,6 +55,19 @@ import type { Station, SystemContents } from "./system";
 export type JobFamily = "courier" | "procurement" | "bounty";
 
 /**
+ * Which offer on a board a row fills (#408 D2).
+ *
+ * A family is what a job *is*; a post is which of a station's offers it
+ * occupies, and it is the key an offer's identity, draw stream and episode
+ * count are filed under. Every family is its own post, and the courier family
+ * has a second one: the Local run, which binds only inside the posting system
+ * and sits beside D8's floor rather than competing with it for one offer.
+ * Keyed by family, the two would share an offer id and one episode count, and
+ * settling a local run would reroll the floor.
+ */
+export type JobPost = JobFamily | "courier-local";
+
+/**
  * What a job pays, as a rule rather than a figure.
  *
  * A row may carry this because it is authored tuning; it may not carry the
@@ -76,6 +89,9 @@ export interface PaymentRule {
 /** One authored job. No operand appears here; see the module header. */
 export interface JobRow {
 	family: JobFamily;
+	/** The board offer this row fills; its family for every row but the Local
+	 *  run. */
+	post: JobPost;
 	/** Stable authored identity, and the first half of an offer's key. Named
 	 *  `rowId` because `CONTEXT.md` reserves the other word for a berth. */
 	rowId: string;
@@ -95,6 +111,9 @@ export interface JobRow {
 
 const job = (row: JobRow): JobRow => row;
 
+/** The Local run's row id (#408 D2), which the first day asks a board for. */
+export const LOCAL_RUN_ROW_ID = "courier-local-run";
+
 /**
  * The shipped catalogue.
  *
@@ -105,6 +124,7 @@ const job = (row: JobRow): JobRow => row;
 export const JOB_ROWS: readonly JobRow[] = [
 	job({
 		family: "courier",
+		post: "courier",
 		rowId: "courier-consignment",
 		// Revision 2: plain words, at the principal's request (#508 follow-up).
 		revision: 2,
@@ -121,6 +141,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	}),
 	job({
 		family: "courier",
+		post: "courier",
 		rowId: "courier-priority",
 		// #459 rewrote this row's purpose, danger and consequence. An accepted
 		// offer pins the revision it was taken under, so terms a pilot was shown
@@ -136,8 +157,29 @@ export const JOB_ROWS: readonly JobRow[] = [
 		tonnes: 12,
 		payment: { baseCr: 65, perTonneCr: 11, perLyCr: 18, basePriceFactor: 0 },
 	}),
+	// **#408 D2: the work a new pilot can fly on their first day**, and posted
+	// for everyone: the binder never asks who is docked. A short in-system run
+	// is what the floor almost never offers — its destination is a uniform draw
+	// over this system and every system one jump out, so it lands in-system in
+	// about one board in fifty at a start station.
+	job({
+		family: "courier",
+		post: "courier-local",
+		rowId: LOCAL_RUN_ROW_ID,
+		revision: 1,
+		title: "Local run",
+		purpose:
+			"Another station in this system needs a small load, and the next freighter is days away.",
+		danger: "A short trip, but raiders sometimes wait between stations.",
+		action:
+			"Take the goods to the delivery station in this system and report there.",
+		consequence: "The goods arrive, and the price there drops a little.",
+		tonnes: 6,
+		payment: { baseCr: 30, perTonneCr: 8, perLyCr: 0, basePriceFactor: 0 },
+	}),
 	job({
 		family: "procurement",
+		post: "procurement",
 		rowId: "procurement-shortfall",
 		// Revision 2: plain words, at the principal's request (#508 follow-up).
 		revision: 2,
@@ -156,6 +198,7 @@ export const JOB_ROWS: readonly JobRow[] = [
 	// outpost is the invented fact this table exists to avoid.
 	job({
 		family: "bounty",
+		post: "bounty",
 		rowId: "bounty-relay",
 		// Revision 2: the principal read revision 1's words as machine-written.
 		// An accepted offer keeps the words it was taken under.
@@ -503,18 +546,21 @@ const listedAt = (station: Station, system: SystemRecord): Commodity[] => [
 ];
 
 /**
- * Each family's sub-stream inside `DOMAIN.JOB_OFFERS`.
+ * Each post's sub-stream inside `DOMAIN.JOB_OFFERS`.
  *
  * **A total record, not a ternary.** The draw used to split on
  * `family === "courier" ? 1 : 2`, and a third family would have shared the
  * second's stream without a word from the compiler — the correlation
  * `CLAUDE.md`'s per-system RNG rule warns about. The two shipped values are
- * kept, so no courier or procurement board moves.
+ * kept, so no courier or procurement board moves. Keyed by post since #408,
+ * which added the Local run as a fourth stream rather than a draw inside the
+ * floor's, so no floor courier moved either.
  */
-const FAMILY_STREAM: Readonly<Record<JobFamily, number>> = {
+const POST_STREAM: Readonly<Record<JobPost, number>> = {
 	courier: 1,
 	procurement: 2,
 	bounty: 3,
+	"courier-local": 4,
 };
 
 /** The episode draw. Its own domain tag, so a board moves no station, berth or
@@ -522,7 +568,7 @@ const FAMILY_STREAM: Readonly<Record<JobFamily, number>> = {
  *  not repeat one row. */
 const draw = (
 	station: Station,
-	family: JobFamily,
+	post: JobPost,
 	episode: number,
 	/** Which operand this draw decides. Its own axis rather than an offset on
 	 *  the episode's, because two sub-streams sharing one namespace is the
@@ -536,7 +582,7 @@ const draw = (
 				mix(station.berthSeed ^ station.assemblySeed, DOMAIN.JOB_OFFERS),
 				axis,
 			),
-			mix(FAMILY_STREAM[family], episode),
+			mix(POST_STREAM[post], episode),
 		),
 	)();
 
@@ -559,27 +605,41 @@ const AXIS = { row: 0, destination: 1, good: 2 } as const;
  */
 export const COURIER_SPREAD_POOL = 3;
 
-const episodeOf = (ctx: BindContext, family: JobFamily): number =>
-	(ctx.settled[family] ?? 0) + 1;
+const episodeOf = (ctx: BindContext, post: JobPost): number =>
+	(ctx.settled[post] ?? 0) + 1;
 
-const offerId = (
-	ctx: BindContext,
-	family: JobFamily,
-	episode: number,
-): string =>
+const offerId = (ctx: BindContext, post: JobPost, episode: number): string =>
 	`request-v1/${ctx.galaxyIndex}/${ctx.system.index}/${encodeURIComponent(
 		ctx.station.localCarrierId,
-	)}/${family}-${episode}`;
+	)}/${post}-${episode}`;
 
-const rowsFor = (family: JobFamily): JobRow[] =>
-	JOB_ROWS.filter((row) => row.family === family);
+const rowsFor = (post: JobPost): JobRow[] =>
+	JOB_ROWS.filter((row) => row.post === post);
 
-const pickRow = (ctx: BindContext, family: JobFamily, episode: number) => {
-	const rows = rowsFor(family);
+/** Every post, for reading one back out of a saved offer id. */
+const JOB_POSTS = Object.keys(POST_STREAM) as JobPost[];
+
+/**
+ * The post a journal entry was taken in, read from its **saved offer id**
+ * (`offerId` ends in `/<post>-<episode>`), not from the current catalogue — a
+ * row retired or renamed later must not move a settled Local run into the
+ * floor's count and reroll that board (sage, #528 round 1).
+ *
+ * An id that names no post falls back to the family, which is where every
+ * offer before #408 lived.
+ */
+export const postOf = (offerIdValue: string, family: JobFamily): JobPost => {
+	const tail = offerIdValue.slice(offerIdValue.lastIndexOf("/") + 1);
+	const post = tail.slice(0, tail.lastIndexOf("-"));
+	return (JOB_POSTS as string[]).includes(post) ? (post as JobPost) : family;
+};
+
+const pickRow = (ctx: BindContext, post: JobPost, episode: number) => {
+	const rows = rowsFor(post);
 	return rows[
 		Math.min(
 			rows.length - 1,
-			Math.floor(draw(ctx.station, family, episode, AXIS.row) * rows.length),
+			Math.floor(draw(ctx.station, post, episode, AXIS.row) * rows.length),
 		)
 	];
 };
@@ -616,15 +676,36 @@ const round = (cr: number): number => Math.round(cr);
  * that answers it. `scripts/measure-courier-goods.ts` prints both tables.
  */
 export function bindCourier(ctx: BindContext): JobOffer | null {
-	if (ctx.destinations.length === 0) return null;
-	const episode = episodeOf(ctx, "courier");
-	const row = pickRow(ctx, "courier", episode);
-	const index = Math.floor(
-		draw(ctx.station, "courier", episode, AXIS.destination) *
-			ctx.destinations.length,
+	return bindConsignment(ctx, "courier", ctx.destinations);
+}
+
+/**
+ * #408 D2's Local run: the floor's rule over this system's own stations only.
+ *
+ * Declines where the posting system has no second station to deliver to, and there the
+ * floor is the only courier on the board.
+ */
+export function bindLocalCourier(ctx: BindContext): JobOffer | null {
+	return bindConsignment(
+		ctx,
+		"courier-local",
+		ctx.destinations.filter((d) => d.distanceLy === 0),
 	);
-	const destination =
-		ctx.destinations[Math.min(index, ctx.destinations.length - 1)];
+}
+
+/** A consignment in one courier post, drawn from the destinations given. */
+function bindConsignment(
+	ctx: BindContext,
+	post: JobPost,
+	destinations: readonly JobDestination[],
+): JobOffer | null {
+	if (destinations.length === 0) return null;
+	const episode = episodeOf(ctx, post);
+	const row = pickRow(ctx, post, episode);
+	const index = Math.floor(
+		draw(ctx.station, post, episode, AXIS.destination) * destinations.length,
+	);
+	const destination = destinations[Math.min(index, destinations.length - 1)];
 
 	const listedThere = new Set(
 		listedAt(destination.station, destination.system).map((c) => c.name),
@@ -658,12 +739,12 @@ export function bindCourier(ctx: BindContext): JobOffer | null {
 		ranked[
 			Math.min(
 				width - 1,
-				Math.floor(draw(ctx.station, "courier", episode, AXIS.good) * width),
+				Math.floor(draw(ctx.station, post, episode, AXIS.good) * width),
 			)
 		].c;
 
 	return {
-		id: offerId(ctx, "courier", episode),
+		id: offerId(ctx, post, episode),
 		family: "courier",
 		rowId: row.rowId,
 		revision: row.revision,
@@ -852,7 +933,10 @@ export function bindBounty(ctx: BindContext): JobOffer | null {
  */
 export function bindJobs(ctx: BindContext): JobOffer[] {
 	if (!canPostJobs(ctx.station)) return [];
-	return [bindCourier(ctx), bindProcurement(ctx), bindBounty(ctx)].filter(
-		(offer): offer is JobOffer => offer !== null,
-	);
+	return [
+		bindCourier(ctx),
+		bindLocalCourier(ctx),
+		bindProcurement(ctx),
+		bindBounty(ctx),
+	].filter((offer): offer is JobOffer => offer !== null);
 }

@@ -727,6 +727,8 @@ function projectTrafficLeg(input: TrafficLegInput): SystemTrafficProjection {
 		originInterior,
 		originBerth,
 		departureAtS,
+		// Traffic releases where it always did (#408 moved only the player's).
+		0,
 	);
 	const launchEndS = departureAtS + launch.durationS;
 	if (gameTime < departureAtS)

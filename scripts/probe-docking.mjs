@@ -212,7 +212,18 @@ async function fly(setup) {
 			// computer under a name that said "hand-flown".
 			g.dockingComputerEngaged = false;
 			if (setup.computer) {
-				g.toggleDockingComputer();
+				{
+					// A new ship has no docking computer (#408): fit the one this flies.
+					if (!g.hasDockingComputer)
+						g.commander = {
+							...g.commander,
+							ownedEquipment: [
+								...g.commander.ownedEquipment,
+								g.dockingComputerName,
+							],
+						};
+					g.toggleDockingComputer();
+				}
 			} else {
 				// A hand-flown profile, aimed at a fixed point on the station and
 				// re-aimed every frame below. The loop owns the aiming; this only sets
@@ -463,7 +474,18 @@ const undock = good.docked
 				// computer fly again.
 				g.targetId = id;
 				g.requestDockingClearance();
-				g.toggleDockingComputer();
+				{
+					// A new ship has no docking computer (#408): fit the one this flies.
+					if (!g.hasDockingComputer)
+						g.commander = {
+							...g.commander,
+							ownedEquipment: [
+								...g.commander.ownedEquipment,
+								g.dockingComputerName,
+							],
+						};
+					g.toggleDockingComputer();
+				}
 				// One step, so what is measured is the autopilot actually flying rather
 				// than a flag having been flipped.
 				g.step(dt);
@@ -543,8 +565,8 @@ if (undock) {
 
 	check(
 		// **After a step**, not straight after the toggle. `toggleDockingComputer`
-		// gates only on `hasDockingComputer`, which is a constant `true`, so
-		// asserting the flag alone cannot fail. What can fail is
+		// gates only on `hasDockingComputer`, which this run makes true by fitting
+		// the computer, so asserting the flag alone cannot fail. What can fail is
 		// `stepDockingComputer`'s `if (… || this.dockedAt) return false` — which
 		// is the latch — so the assertion is that the autopilot is *still*
 		// engaged and commanding a throttle a step later.

@@ -48,6 +48,7 @@ import type {
 import { entrustedClause, priceLabel, signedDelta } from "./station-console";
 import { LANE_WAIT_REASON, withLaneWait } from "./docking-director";
 import type { LaneRefusal } from "./station-traffic";
+import { FIRST_DAY_STEPS, type FirstDayStepId } from "./first-day";
 import {
 	type FocusCursor,
 	NO_FOCUS,
@@ -117,16 +118,45 @@ export type LeftTab =
 	| "Navigation"
 	| "Galaxy Map"
 	| "Communications"
-	| "Requests";
+	| "Requests"
+	// #408 D3 and D5: on-demand guidance, on every commander's console. Last,
+	// because it is the one tab a pilot stops needing.
+	| "First day";
 const LEFT_TABS: readonly LeftTab[] = [
 	"Navigation",
 	"Galaxy Map",
 	"Communications",
 	"Requests",
+	"First day",
 ];
+
+/** What the First day tab shows (#408), all of it derived by `first-day.ts`. */
+export interface FirstDayPanel {
+	current: FirstDayStepId;
+	/** What to do now, in the keys as bound. */
+	text: string;
+	/**
+	 * Station control's line on the docked station console: a guided pilot's
+	 * push (D5), `null` for a free pilot and once the day is over. The docked
+	 * console fills the forward view and the glass prompt is not drawn there, so
+	 * this is where a docked step is said.
+	 */
+	stationLine: string | null;
+	/**
+	 * Station control's line on the port console, where a guided pilot selects
+	 * a station with the head turned and the glass is not drawn (playtest,
+	 * 2026-09-25). `null` docked, for a free pilot, and after the day.
+	 */
+	consoleLine: string | null;
+	/** The flight controls as bound, keyboard and controller (#408). */
+	controls: { keyboard: string; controller: string };
+}
 
 export interface LiveCockpitState {
 	requests?: RequestsView;
+	/** #408: the First day tab's content, and station control's line on the
+	 *  docked console. */
+	firstDay?: FirstDayPanel;
 	visible: boolean;
 	dockPhase: DockPhase;
 	headLook: HeadLook;
@@ -450,6 +480,14 @@ const STYLE = `${REQUESTS_STYLE}${HOLD_STYLE}${RELAY_CUE_STYLE}
    tree; only its margin goes, so there is no gap above the rows. display:none
    would take it out of both, which is the one thing a live region may not do. */
 .lc-station-message:empty { margin: 0; }
+/* #408: station control's line to a guided pilot. Amber is the actionable
+   prompt (hud-and-scanner.md section 4). */
+.lc-station-control { margin: 8px 0 0; color: #ffd17a; font-size: 12px; letter-spacing: .02em; }
+.lc-station-control b { margin-right: 8px; color: #f5bd78; font-size: 10px; letter-spacing: .12em; }
+.lc-first-day-steps { margin: 4px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.9; }
+.lc-first-day-step[data-first-day-state="done"] { color: #9ed89b; }
+.lc-first-day-step[data-first-day-state="current"] { color: #ffd17a; font-weight: 600; }
+.lc-first-day-step[data-first-day-state="ahead"] { color: #a8837f; }
 .lc-launch { margin-top: 12px; border: 1px solid #ffe0a2; background: rgba(223, 122, 20, .28); color: #fff0c9; cursor: pointer; font: inherit; font-size: 13px; letter-spacing: .12em; padding: 8px 18px; }
 .lc-launch-hold { margin-top: 12px; }
 .lc-launch-hold p { margin: 0 0 4px; color: #ff8a73; font-size: 12px; letter-spacing: .08em; }
@@ -473,6 +511,9 @@ export class LiveCockpit {
 	private lastNavKey = "";
 	private lastLogKey: string | null = null;
 	private lastRelayKey = "";
+	/** #408: the port console's station control line last written; `undefined`
+	 *  after a rebuild, so the rebuilt element is always filled. */
+	private lastConsoleLine: string | null | undefined = undefined;
 	private readonly navRowsById = new Map<
 		string,
 		{
@@ -1165,7 +1206,7 @@ export class LiveCockpit {
 		// system from the Navigation list changes it, and a rebuild on that
 		// keystroke would blow away the filter field's focus and caret — the
 		// list would become unusable exactly while it was being used.
-		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}`;
+		const key = `${state.visible}|${state.dockPhase}|${state.headLook}|${state.leftTab}|${state.rightTab}|${state.stationConsole?.label ?? ""}|${state.stationConsole?.tab ?? ""}|${state.stationConsole?.revision ?? 0}|${state.stationConsole?.message ?? ""}|${state.launchHold ? "held" : ""}|${!!state.requests}|${state.requests?.revision ?? 0}|${state.firstDay?.current ?? ""}|${state.firstDay?.text ?? ""}|${state.firstDay?.stationLine ?? ""}|${state.firstDay?.controls.keyboard ?? ""}|${state.firstDay?.controls.controller ?? ""}`;
 		this.setVisible(state.visible);
 		this.root.dataset.liveHeadLook = state.headLook;
 		this.root.dataset.liveDocked = String(state.dockPhase === "docked");
@@ -1184,6 +1225,7 @@ export class LiveCockpit {
 			// The rebuilt aside is empty; without this the cue stays empty until
 			// its key moves (sage #350).
 			this.lastRelayKey = "";
+			this.lastConsoleLine = undefined;
 			this.navRowsById.clear();
 			this.releaseChartHost();
 			this.root.innerHTML = this.markup(state);
@@ -1280,6 +1322,21 @@ export class LiveCockpit {
 				elements.relayCue.innerHTML = state.relay
 					? relayCueMarkup(state.relay)
 					: "";
+			}
+		}
+		// #408: station control on the port console, written in place. It changes
+		// when a station is selected, and a rebuild on selection would take the
+		// filter field's focus — the reason `targetId` is not in the key above.
+		const consoleLine = state.firstDay?.consoleLine ?? null;
+		if (consoleLine !== this.lastConsoleLine) {
+			this.lastConsoleLine = consoleLine;
+			const line = this.root.querySelector<HTMLElement>(
+				"[data-live-console-control]",
+			);
+			if (line) {
+				line.hidden = consoleLine === null;
+				const text = line.querySelector("span");
+				if (text) text.textContent = consoleLine ?? "";
 			}
 		}
 		if (valueKey === this.lastValueKey) return;
@@ -1468,7 +1525,7 @@ export class LiveCockpit {
 					(state.rightTab === "Flight"
 						? '<button class="lc-launch" type="button" data-live-launch>LAUNCH</button>'
 						: "");
-		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
+		return `<main class="lc-director" data-live-director><i class="lc-target-arrow" data-live-target-arrow aria-label="turn toward selected target">➤</i><strong>${targetName}</strong></main>${this.stationConsole(state)}${requestCue(state.requests)}<aside class="lc-relay-cue" data-live-relay-cue hidden></aside><aside class="lc-panel" data-live-panel="left" data-active="${view.activePanel === "left"}"><header><h2>${state.leftTab.toUpperCase()}</h2><small>LOCAL · 24</small></header><nav class="lc-tabs" aria-label="left console tabs">${leftTabs}</nav><p class="lc-station-control lc-console-control" data-live-console-control hidden><b>STATION CONTROL</b> <span></span></p>${this.leftBody(state)}${launchHoldNotice}</aside><aside class="lc-panel" data-live-panel="right" data-active="${view.activePanel === "right"}"><header><h2>${state.rightTab.toUpperCase()}</h2><small>CMDR · SEELITE</small></header><nav class="lc-tabs" aria-label="right console tabs">${rightTabs}</nav>${this.rightBody(state)}${launch}</aside>`;
 	}
 
 	/** A held launch's reason and its way out, for every docked console (#314). */
@@ -1513,6 +1570,17 @@ export class LiveCockpit {
 		return `<p class="lc-station-message" data-live-station-message role="status">${message === null ? "" : escapeHtml(message)}</p>`;
 	}
 
+	/**
+	 * Station control speaking to a guided pilot (#408 D3). Amber, the colour
+	 * `hud-and-scanner.md` §4 gives an actionable prompt, and absent rather than
+	 * empty when there is nothing to say, because it is not a live region.
+	 */
+	private stationControl(line: string | null) {
+		return line === null
+			? ""
+			: `<p class="lc-station-control" data-live-station-control><b>STATION CONTROL</b> ${escapeHtml(line)}</p>`;
+	}
+
 	private stationConsole(state: LiveCockpitState) {
 		const stationConsole = state.stationConsole;
 		if (!stationConsole || state.dockPhase !== "docked") return "";
@@ -1523,7 +1591,7 @@ export class LiveCockpit {
 					`<button class="lc-tab" type="button" data-live-station-tab="${tab}" aria-selected="${stationConsole.tab === tab}">${tab}</button>`,
 			)
 			.join("");
-		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.holdLine(stationConsole.hold)}${this.stationMessage(stationConsole.message)}${
+		return `<section class="lc-station-console" data-live-station-console data-live-station-tab-active="${stationConsole.tab}"><header><h2>STATION</h2><small>${escapeHtml(stationConsole.label)}</small></header><nav class="lc-tabs" aria-label="station console tabs">${tabs}</nav>${this.stationControl(state.firstDay?.stationLine ?? null)}${this.holdLine(stationConsole.hold)}${this.stationMessage(stationConsole.message)}${
 			stationConsole.tab === "Requests"
 				? requestsBody(state.requests)
 				: stationConsole.tab === "Market"
@@ -1626,6 +1694,7 @@ export class LiveCockpit {
 	}
 
 	private leftBody(state: LiveCockpitState) {
+		if (state.leftTab === "First day") return firstDayBody(state.firstDay);
 		if (state.leftTab === "Requests") return requestsBody(state.requests, true);
 		// The chart is the *reading* surface and the list is the *finding* one
 		// (`galaxy-map.md` §5.1), so the map tab gives the chart the full body
@@ -1654,4 +1723,18 @@ export class LiveCockpit {
 		).join("");
 		return `<div class="lc-panel-body"><div class="lc-rail"><b>SYSTEM</b><span>${escapeHtml(state.systemName.toUpperCase())}</span><button type="button" data-live-left-tab="Galaxy Map">GALAXY MAP</button><span>SYSTEM MAP</span></div><div class="lc-panel-copy"><h3>SELECTED TARGET</h3><p data-live-left-copy></p><div class="lc-nav-filters">${chips}<input class="lc-nav-query" type="search" data-live-nav-query placeholder="FILTER" aria-label="filter navigation targets" value="${escapeHtml(state.navFilter.query)}"></div><ul class="lc-nav-list" data-live-nav-list></ul>${LEFT_READOUT}</div></div>`;
 	}
+}
+
+/**
+ * The First day tab (#408 D3, D5): the day's steps, the one the pilot is on,
+ * and what to do now. Every commander has it; it pushes nothing.
+ */
+function firstDayBody(panel: FirstDayPanel | undefined): string {
+	if (!panel) return `<div class="lc-panel-body"></div>`;
+	const at = FIRST_DAY_STEPS.findIndex((step) => step.id === panel.current);
+	const rows = FIRST_DAY_STEPS.map((step, i) => {
+		const state = i < at ? "done" : i === at ? "current" : "ahead";
+		return `<li class="lc-first-day-step" data-first-day-step="${step.id}" data-first-day-state="${state}">${escapeHtml(step.title)}</li>`;
+	}).join("");
+	return `<div class="lc-panel-body" data-live-first-day><div class="lc-rail"><b>FIRST DAY</b><span>A SHORT JOB</span><span>ON YOUR OWN TIME</span></div><div class="lc-panel-copy"><h3>NOW</h3><p data-live-first-day-now>${escapeHtml(panel.text)}</p><h3>THE DAY</h3><ol class="lc-first-day-steps">${rows}</ol><h3>FLYING</h3><p data-live-first-day-controls>${escapeHtml(panel.controls.keyboard)}<br>CONTROLLER · ${escapeHtml(panel.controls.controller)}</p></div></div>`;
 }

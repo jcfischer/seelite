@@ -65,7 +65,18 @@ try {
 			);
 			g.targetId = station.id;
 			const clearance = g.requestDockingClearance().state?.clearance;
-			g.toggleDockingComputer();
+			{
+				// A new ship has no docking computer (#408): fit the one this flies.
+				if (!g.hasDockingComputer)
+					g.commander = {
+						...g.commander,
+						ownedEquipment: [
+							...g.commander.ownedEquipment,
+							g.dockingComputerName,
+						],
+					};
+				g.toggleDockingComputer();
+			}
 
 			let minAxialKm = snap.planeKm + 3.2;
 			let firstGrantAtS = clearance?.kind === "granted" ? startAtS : null;

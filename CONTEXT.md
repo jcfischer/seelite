@@ -345,6 +345,18 @@ _Avoid_: Accepted request (before explicit acceptance)
 Sourced intelligence about an object or search region. `docs/specs/missions-and-requests.md` owns observation, confirmation and refresh rules (§1 and §5). Retaining one is the `retain` action, and that is the word in the code and the save; the screen says **Keep for later** and labels the row **kept**. The principal read `Retain lead` and asked what it meant (#459) — one reader, so this is a ruling rather than a finding about players.
 _Avoid_: Mission, confirmed target (for unconfirmed intelligence)
 
+**Local run**:
+A courier job that delivers inside the posting system, posted by every station whose system has a second station. Its own post on the board beside the courier floor, so settling one never rerolls the other. `docs/specs/first-useful-day.md` D2 owns why it exists; `docs/specs/ordinary-requests.md` §3 records the second post.
+_Avoid_: Tutorial job (it is posted for every pilot)
+
+**First day**:
+A guided new game's first job, from a docked start to a reported delivery, and the port-console tab that lists its steps for every commander. The step is derived from state and never saved; only New game's guided or free choice is. `docs/specs/first-useful-day.md` owns it.
+_Avoid_: Tutorial (there is no separate mode), onboarding (in the pilot's copy)
+
+**Station control**:
+The voice that speaks to a guided pilot on the docked station console and in the Communications log during the first day. `docs/specs/first-useful-day.md` D3 owns where it speaks and when it stops.
+_Avoid_: Dockmaster, tutorial prompt
+
 **Accepted request**:
 A job the pilot has explicitly committed to undertaking for a requester. `docs/specs/missions-and-requests.md` owns concurrent commitments and progress (D1 and §3).
 _Avoid_: Active mission (when implying a single accepted job)

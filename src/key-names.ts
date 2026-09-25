@@ -268,7 +268,7 @@ export function padHintFor(
  * one, so a command with no key left still has a button, and a prompt that
  * printed nothing would read `press  to cruise`.
  */
-function spoken(layout: Layout, id: CommandId): string {
+export function spoken(layout: Layout, id: CommandId): string {
 	return anyOf(keyboardFirst(layout, id));
 }
 
@@ -316,3 +316,44 @@ export type DialStem = CommandId extends infer C
 		? S
 		: never
 	: never;
+
+/** A pad trigger: a button, a stick or a trigger on the controller. */
+const onPad = (t: Trigger): boolean => t.kind.startsWith("pad");
+
+/**
+ * The four flight controls — throttle, pitch, yaw, roll — as two lines, one
+ * for the keyboard and one for the controller (#408, the principal's playtest:
+ * a first flight should say how to fly and steer).
+ *
+ * From the layout in force, like every other surface that names a control:
+ * the first keyboard key of each direction, and every pad trigger. A hold is
+ * the controls' nature and not news, so the keyboard line drops the word. A
+ * control with nothing bound on one side is left out of that line rather than
+ * printed with a blank.
+ */
+export function flightControls(layout: Layout): {
+	keyboard: string;
+	controller: string;
+} {
+	const PAIRS: readonly [string, CommandId, CommandId][] = [
+		["THROTTLE", "fly.throttleUp", "fly.throttleDown"],
+		["PITCH", "fly.pitchDown", "fly.pitchUp"],
+		["YAW", "fly.yawPort", "fly.yawStarboard"],
+		["ROLL", "fly.rollPort", "fly.rollStarboard"],
+	];
+	const firstKey = (id: CommandId) =>
+		boundNames(layout, id, onKeyboard)
+			.slice(0, 1)
+			.map((name) => name.replace(/^hold /, ""));
+	const line = (names: (id: CommandId) => string[]) =>
+		PAIRS.flatMap(([label, a, b]) => {
+			const [one, two] = [names(a), names(b)];
+			return one.length > 0 && two.length > 0
+				? [`${label} ${pairOf(one, two)}`]
+				: [];
+		}).join(" · ");
+	return {
+		keyboard: line(firstKey),
+		controller: line((id) => boundNames(layout, id, onPad)),
+	};
+}

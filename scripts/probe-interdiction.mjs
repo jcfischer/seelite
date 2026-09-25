@@ -237,6 +237,16 @@ const broke = await page.evaluate(() => {
 	// The courier's cruise turn rate, which `scripts/measure-interdiction-contest.ts`
 	// prints: 0.90 rad/s.
 	const rate = 0.9;
+	// **Touched first, as a pilot's turn begins** (#408). The turn is placed by
+	// `setAttitude` for a known rate, which the game does not see as input; with
+	// the leg now tracking its station (in-system-travel.md §12.5) the tracker
+	// steered the nose straight back. A pilot's first touch of the controls ends
+	// the tracking and it never recaptures, so one frame of yaw input stands for
+	// that touch. Held for the whole turn, the key yawed against the placed turn
+	// and the two cancelled.
+	g.keys.add("d");
+	g.step(I.dt);
+	g.keys.delete("d");
 	I.steps(4, () => {
 		// A yaw about the ship's own up axis. Rotating about the world's y axis
 		// instead turns an inclined nose by only `rate × √(1 − n.y²)` — which is

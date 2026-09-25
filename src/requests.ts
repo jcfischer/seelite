@@ -20,12 +20,13 @@
  * No Three.js: a journal is arithmetic and text.
  */
 import { type CarrierKey, isCarrierKey } from "./carrier-key";
-import type { JobFamily, JobMark, JobOffer, JobOperand } from "./jobs";
+import type { JobFamily, JobMark, JobOffer, JobOperand, JobPost } from "./jobs";
 import {
 	FAMILY_OPERAND_KIND,
 	cargoOf,
 	jobMark,
 	missingRequirements,
+	postOf,
 } from "./jobs";
 import type { Standing } from "./legal";
 
@@ -169,15 +170,20 @@ export const isRunning = (status: RequestStatus): boolean =>
 export function settledAt(
 	state: RequestsState,
 	requester: RequestStation,
-): Record<JobFamily, number> {
-	const out = { courier: 0, procurement: 0, bounty: 0 };
+): Record<JobPost, number> {
+	const out: Record<JobPost, number> = {
+		courier: 0,
+		"courier-local": 0,
+		procurement: 0,
+		bounty: 0,
+	};
 	for (const request of Object.values(state.byId))
 		if (
 			request.status === "completed" &&
 			request.terms.requester.galaxyIndex === requester.galaxyIndex &&
 			request.terms.requester.carrierKey === requester.carrierKey
 		)
-			out[request.terms.family]++;
+			out[postOf(request.terms.id, request.terms.family)]++;
 	return out;
 }
 

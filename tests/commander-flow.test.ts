@@ -19,6 +19,7 @@ import {
 	lockRequestFault,
 	messageOf,
 	pendingFor,
+	firstDayAtBoot,
 	permadeathAtAttach,
 	planBoot,
 	recordText,
@@ -126,6 +127,7 @@ describe("planBoot: which Commander a boot is for (§11.2)", () => {
 			name: "Fresh",
 			seed: OTHER_SEED,
 			permadeath: true,
+			firstDay: "free",
 		});
 		const plan = await o.boot();
 		expect(plan.slot).toBe("Fresh");
@@ -133,6 +135,7 @@ describe("planBoot: which Commander a boot is for (§11.2)", () => {
 			name: "Fresh",
 			seed: OTHER_SEED,
 			permadeath: true,
+			firstDay: "free",
 		});
 		expect(plan.loaded).toBeNull();
 		expect(plan.notice).toBeNull();
@@ -142,7 +145,12 @@ describe("planBoot: which Commander a boot is for (§11.2)", () => {
 
 	test("a pending new game that lost its one-shot still offers Continue into it", async () => {
 		const o = origin();
-		await o.catalog.beginNewGame({ name: "Fresh", seed: 9, permadeath: false });
+		await o.catalog.beginNewGame({
+			name: "Fresh",
+			seed: 9,
+			permadeath: false,
+			firstDay: "free",
+		});
 		await o.catalog.takeOneShot();
 		const plan = await o.boot();
 		expect(plan.mode).toBe("overlay");
@@ -189,7 +197,12 @@ describe("the one-shot continue (§11.3)", () => {
 
 	test("after New game, exactly one boot continues into the new Commander", async () => {
 		const o = origin();
-		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: false });
+		await o.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: false,
+			firstDay: "free",
+		});
 		expect((await o.boot()).mode).toBe("continue");
 		expect((await o.boot()).mode).toBe("overlay");
 	});
@@ -417,7 +430,12 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 
 	test("a pending new game survives until its first `live` write lands, and clears after", async () => {
 		const o = origin();
-		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: false });
+		await o.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: false,
+			firstDay: "free",
+		});
 		const plan = await o.boot();
 		o.backend.hold();
 		const attaching = attachCommander({
@@ -440,7 +458,12 @@ describe("attachCommander: no store before the lock (§11.2 step 5, §11.3)", ()
 
 	test("a first write that fails keeps the pending new game on disk and reports the fault", async () => {
 		const o = origin();
-		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: false });
+		await o.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: false,
+			firstDay: "free",
+		});
 		const plan = await o.boot();
 		o.backend.failNextWrite();
 		const result = await attachCommander({
@@ -481,7 +504,12 @@ describe("CommanderSwitch: what reloads, and the awaited flush (§11.3)", () => 
 
 	test("New game, Load and Import each reload once", async () => {
 		const a = await setup();
-		await a.sw.newGame({ name: "N", seed: 1, permadeath: false });
+		await a.sw.newGame({
+			name: "N",
+			seed: 1,
+			permadeath: false,
+			firstDay: "free",
+		});
 		expect(a.reloads()).toBe(1);
 
 		const b = await setup();
@@ -519,7 +547,7 @@ describe("CommanderSwitch: what reloads, and the awaited flush (§11.3)", () => 
 	test("a refused choice reloads nothing", async () => {
 		const s = await setup();
 		await expect(
-			s.sw.newGame({ name: "A", seed: 1, permadeath: false }),
+			s.sw.newGame({ name: "A", seed: 1, permadeath: false, firstDay: "free" }),
 		).rejects.toThrow(/already a Commander/);
 		await expect(s.sw.importCommander("B", "{}")).rejects.toThrow();
 		expect(s.reloads()).toBe(0);
@@ -582,7 +610,12 @@ describe("the overlay's words name the Commander, never the slot (§11.5)", () =
 		await collect(() => ops.catalog.importSlot("Z", "{}"));
 		await collect(() => ops.catalog.renameSlot("A", ""));
 		await collect(() =>
-			ops.catalog.beginNewGame({ name: "A", seed: 1, permadeath: false }),
+			ops.catalog.beginNewGame({
+				name: "A",
+				seed: 1,
+				permadeath: false,
+				firstDay: "free",
+			}),
 		);
 		const held = ops.store("A");
 		await held.hold();
@@ -662,9 +695,86 @@ describe("the rules a boot applies after the plan (§11.2, §11.3, D7, D9)", () 
 		}
 	});
 
+	test("the first-day choice is New game's, or `?guided` on a direct boot with nothing loaded (#408)", async () => {
+		const guided = origin();
+		await guided.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: false,
+			firstDay: "guided",
+		});
+		const guidedPlan = await guided.boot();
+		expect(firstDayAtBoot(guidedPlan, "New", false)).toBe("guided");
+		// The pending record names another Commander.
+		expect(firstDayAtBoot(guidedPlan, "Other", true)).toBe("free");
+
+		const chosenFree = origin();
+		await chosenFree.catalog.beginNewGame({
+			name: "Free",
+			seed: 5,
+			permadeath: false,
+			firstDay: "free",
+		});
+		// The query never overrides what New game chose.
+		expect(
+			firstDayAtBoot(await chosenFree.boot({ boot: "direct" }), "Free", true),
+		).toBe("free");
+
+		const fresh = origin();
+		expect(
+			firstDayAtBoot(await fresh.boot({ boot: "direct" }), DEFAULT_SLOT, true),
+		).toBe("guided");
+		expect(
+			firstDayAtBoot(await fresh.boot({ boot: "direct" }), DEFAULT_SLOT, false),
+		).toBe("free");
+		// `?no-save` attaches nothing, so there is no slot; the query still works.
+		expect(
+			firstDayAtBoot(
+				await fresh.boot({ boot: "direct", noSave: true }),
+				null,
+				true,
+			),
+		).toBe("guided");
+		// Not for a Commander the overlay offered.
+		expect(firstDayAtBoot(await fresh.boot(), DEFAULT_SLOT, true)).toBe("free");
+
+		const loaded = origin();
+		await loaded.save(DEFAULT_SLOT);
+		expect(
+			firstDayAtBoot(await loaded.boot({ boot: "direct" }), DEFAULT_SLOT, true),
+		).toBe("free");
+	});
+
+	test("a pending record from a build before #408 has no choice and reads as free", async () => {
+		const o = origin();
+		await o.backend.writeMeta({
+			pending: { name: "Old", seed: 5, permadeath: false },
+			active: "Old",
+			oneShot: "Old",
+		});
+		expect(pendingFor(await o.boot(), "Old")?.firstDay).toBe("free");
+	});
+
+	test("a pending record with a choice that is neither is refused", async () => {
+		const o = origin();
+		await expect(
+			o.catalog.beginNewGame({
+				name: "Bad",
+				seed: 5,
+				permadeath: false,
+				firstDay: "tutorial" as "free",
+			}),
+		).rejects.toThrow(/New game choice/);
+	});
+
 	test("an attach finishes the pending new game only for the Commander it names", async () => {
 		const o = origin();
-		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: true });
+		await o.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: true,
+			firstDay: "free",
+		});
 		const plan = await o.boot();
 		expect(pendingFor(plan, "New")?.seed).toBe(5);
 		expect(pendingFor(plan, "Other")).toBeNull();
@@ -676,6 +786,7 @@ describe("the rules a boot applies after the plan (§11.2, §11.3, D7, D9)", () 
 			name: "New",
 			seed: 5,
 			permadeath: true,
+			firstDay: "free",
 		});
 		const pendingPlan = await pending.boot();
 		expect(permadeathAtAttach(pendingPlan, "New", false)).toBe(true);
@@ -686,6 +797,7 @@ describe("the rules a boot applies after the plan (§11.2, §11.3, D7, D9)", () 
 			name: "Off",
 			seed: 5,
 			permadeath: false,
+			firstDay: "free",
 		});
 		expect(
 			permadeathAtAttach(await chosenOff.boot({ boot: "direct" }), "Off", true),
@@ -801,7 +913,12 @@ describe("an attach reads the record again once it holds the lock (§11.3)", () 
 		// Two tabs booted while the pending record was on disk. Tab A continued,
 		// played and closed; tab B's attach would write a fresh world over it.
 		const o = origin();
-		await o.catalog.beginNewGame({ name: "New", seed: 5, permadeath: false });
+		await o.catalog.beginNewGame({
+			name: "New",
+			seed: 5,
+			permadeath: false,
+			firstDay: "free",
+		});
 		await o.catalog.takeOneShot();
 		const plan = await o.boot();
 		expect(plan.pending?.name).toBe("New");
