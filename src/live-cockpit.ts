@@ -46,6 +46,7 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { entrustedClause, priceLabel, signedDelta } from "./station-console";
+import { LANE_WAIT_REASON, withLaneWait } from "./docking-director";
 import type { LaneRefusal } from "./station-traffic";
 import {
 	type FocusCursor,
@@ -71,14 +72,25 @@ export type RightTab =
 /**
  * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
  * the keys keep the consequence model's word, and the player reads a ship —
- * a `carrier` is also a capital hull on the roster. Here rather than beside
- * `playerLaneRefusal`: Traffic decides the reason, the console words it.
+ * a `carrier` is also a capital hull on the roster. The reason is
+ * `LANE_WAIT_REASON`'s, the glass's own spelling, so the console and the
+ * arrival wait cannot word one refusal two ways (#521).
  */
-export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
-	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
-	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
-	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
-};
+export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> =
+	Object.fromEntries(
+		Object.entries(LANE_WAIT_REASON).map(([refusal, reason]) => [
+			refusal,
+			`LAUNCH HELD — ${reason.toUpperCase()}`,
+		]),
+	) as Record<LaneRefusal, string>;
+
+/** A held launch's notice: the reason, then Traffic's estimate when it has
+ *  one (#521). Keyed into the value key, so the figure re-renders as it runs
+ *  down rather than freezing at the first frame's. */
+export function launchHoldText(hold: LiveCockpitState["launchHold"]): string {
+	if (!hold) return "";
+	return withLaneWait(LAUNCH_HOLD_NOTICE[hold.refusal], hold.waitS);
+}
 
 // #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
 // on this console that is not fiction.
@@ -204,8 +216,9 @@ export interface LiveCockpitState {
 	 * the stale-number failure `stockResponse`'s screen already guards against.
 	 */
 	holdBids: HoldBids;
-	/** A launch Traffic refused and is holding, and why (#314). */
-	launchHold: { refusal: LaneRefusal } | null;
+	/** A held launch (#314), and Traffic's estimate of how long (#521):
+	 *  `waitS` is `null` when Traffic cannot say, never a guess. */
+	launchHold: { refusal: LaneRefusal; waitS: number | null } | null;
 }
 
 /** Both left tabs' readout block, one copy so the two cannot drift apart. */
@@ -1246,7 +1259,7 @@ export class LiveCockpit {
 		// and the probe's frozen loop is the first caller that ever stood still. A
 		// row whose value can move while the pilot holds the stick still is a row
 		// this key has to name.
-		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${state.launchHold?.refusal ?? ""}|${state.legalStatus}|${state.hails}`;
+		const valueKey = `${state.speed}|${state.mode}|${state.throttle}|${state.assist}|${state.charge}|${duelKey}|${state.target}|${state.rightTab}|${state.tuning}|${state.contacts.length}|${launchHoldText(state.launchHold)}|${state.legalStatus}|${state.hails}`;
 		// #324 part d: the raider lifecycle, a line each, on its own key so a
 		// speed change does not rebuild the list (sage #330). Escaped, although
 		// every line is built from a slot name and a fixed phrase.
@@ -1274,9 +1287,7 @@ export class LiveCockpit {
 		// The reason can change while the hold stands — a carrier clears the lane
 		// and an older one is queued behind it — so it is a value, not structure.
 		for (const notice of elements.launchNotices)
-			notice.textContent = state.launchHold
-				? LAUNCH_HOLD_NOTICE[state.launchHold.refusal]
-				: "";
+			notice.textContent = launchHoldText(state.launchHold);
 		if (elements.leftPanelCopy)
 			elements.leftPanelCopy.textContent = state.target;
 		if (elements.rightPanelCopy)

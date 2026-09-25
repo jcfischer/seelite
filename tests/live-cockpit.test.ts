@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { LAUNCH_HOLD_NOTICE } from "../src/live-cockpit";
+import { LAUNCH_HOLD_NOTICE, launchHoldText } from "../src/live-cockpit";
 
 test("every held-launch notice reads as a hold (#314)", () => {
 	// The record's type already demands a notice per refusal; what it cannot
@@ -87,4 +87,24 @@ test("a value that can move while the stick holds still is named in the console'
 	// to carry them. If a refactor lifts them in front of it, this row is where the
 	// reader learns the key stopped mattering for them.
 	expect(src).toContain("if (valueKey === this.lastValueKey) return;");
+});
+
+test("a held launch adds Traffic's estimate, and only when it has one (#521)", () => {
+	expect(launchHoldText(null)).toBe("");
+	expect(launchHoldText({ refusal: "carrier-in-lane", waitS: 7 })).toBe(
+		`${LAUNCH_HOLD_NOTICE["carrier-in-lane"]} · ~10s`,
+	);
+	expect(launchHoldText({ refusal: "traffic-starting", waitS: null })).toBe(
+		LAUNCH_HOLD_NOTICE["traffic-starting"],
+	);
+});
+
+test("the console's held-launch words are the glass's reasons, as they read before #521", () => {
+	// Derived from `LANE_WAIT_REASON` now; pinned as literals so the derivation
+	// cannot change what a pilot reads, or what `probe-dock-arrival` matches.
+	expect(LAUNCH_HOLD_NOTICE).toEqual({
+		"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
+		"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
+		"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
+	});
 });

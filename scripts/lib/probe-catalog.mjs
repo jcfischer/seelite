@@ -255,6 +255,11 @@ export const PROBE_CATALOG = Object.freeze(
 			],
 		),
 		entry(
+			"probe-lane-wait.mjs",
+			"Checks, against live Traffic at sampled start times, that arrival and launch lane waits show their reason and a figure the measured wait did not exceed.",
+			["lane wait", "Traffic", "docking director", "clearance", "estimate"],
+		),
+		entry(
 			"probe-live-cockpit.mjs",
 			"Checks the normal cockpit route with the real renderer, world contacts, target cues, and head-look states.",
 			["live cockpit", "contacts", "target cues", "head look", "renderer"],

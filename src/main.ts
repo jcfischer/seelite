@@ -491,9 +491,12 @@ import {
 } from "./dock-session";
 import {
 	DIRECTOR_RANGE_KM,
+	type DirectorLaneWait,
 	type DirectorState,
 	dockingDirector,
 	directorEngaged,
+	LANE_WAIT_REASON,
+	withLaneWait,
 } from "./docking-director";
 import { tunnelRailSegments } from "./docking-tunnel";
 import {
@@ -544,6 +547,7 @@ import {
 	type LaneRefusal,
 	type LaneRequest,
 	playerLaneRefusal,
+	playerLaneWait,
 } from "./station-traffic";
 import {
 	projectParkedTrafficActor,
@@ -1437,6 +1441,11 @@ function floorCellValue(cells: readonly FloorCell[], label: string): string {
 	if (cell === undefined)
 		throw new Error(`flight floor: no ${label} cell to read`);
 	return cell.value;
+}
+
+/** The arrival wait as the glass writes it (#521). */
+function laneWaitText(wait: DirectorLaneWait): string {
+	return withLaneWait(`WAIT · ${LANE_WAIT_REASON[wait.refusal]}`, wait.waitS);
 }
 
 function throatColour(state: DirectorState): string {
@@ -9504,6 +9513,13 @@ class Game {
 				state: this.dockingStateOf(id),
 				gameTime: this.world.gameTime,
 				refusedByLaw: this.refusedByLaw(id),
+				// #521: the turn a crossing would be judged on now, so the wait on
+				// the glass and the bounce at the plane cannot disagree. The grant
+				// test here only saves the Traffic query; `dockingDirector` owns the
+				// rule that a wait shows under a live grant and no block.
+				laneWait: grantLive(this.dockingStateOf(id), this.world.gameTime)
+					? this.trafficLaneWait(id, this.arrivalReadyAt(id), "arrival")
+					: null,
 			});
 			return directorEngaged(director) ? director : null;
 		};
@@ -9657,9 +9673,47 @@ class Game {
 
 	/** A cancelled computer approach must not keep an invisible arrival turn. */
 	private clearPlayerArrivalLaneRequests() {
+		// **Only the turns no pilot owns (#521).** A turn under a live grant
+		// inside director range is the pilot's own now, hand-flown or not, and
+		// it is on the glass — so the computer letting go must not send the
+		// pilot to the back of the lane.
 		for (const [stationId, request] of this.playerLaneRequests)
-			if (request.movement === "arrival")
+			if (request.movement === "arrival" && !this.ownsArrivalTurn(stationId))
 				this.playerLaneRequests.delete(stationId);
+	}
+
+	/**
+	 * Whether the pilot owns an arrival turn at a station (#521): flying, a
+	 * live grant there, and inside the director's range. The computer used to
+	 * be the only thing that registered a turn, so a hand-flown ship was asked
+	 * as of *now* on every frame and any carrier that queued after it went
+	 * first — its wait could be overrun without limit. The principal ruled
+	 * that the pilot keeps the turn either way.
+	 */
+	private ownsArrivalTurn(stationId: string): boolean {
+		return (
+			this.dock.phase === "flying" &&
+			grantLive(this.dockingStateOf(stationId), this.world.gameTime) &&
+			length(this.entryPoseOf(stationId).rel) <= DIRECTOR_RANGE_KM
+		);
+	}
+
+	/**
+	 * Register the arrival turn a pilot owns, keeping its first stamp, and
+	 * drop one the pilot no longer holds — a lapsed grant, or a ship that left
+	 * the director's range. A launch request is the held launch's and is
+	 * never touched here.
+	 */
+	private stepArrivalTurns() {
+		this.clearPlayerArrivalLaneRequests();
+		for (const [stationId, state] of this.dockingStates) {
+			if (!state.berthId || this.playerLaneRequests.has(stationId)) continue;
+			if (this.ownsArrivalTurn(stationId))
+				this.playerLaneRequests.set(stationId, {
+					readyAt: this.world.gameTime,
+					movement: "arrival",
+				});
+		}
 	}
 
 	/**
@@ -9702,6 +9756,7 @@ class Game {
 	 */
 	private stepDocking(before: Map<string, DockingApproach>) {
 		this.stepDockingProtocol();
+		this.stepArrivalTurns();
 
 		// **The one-way latch is gone, and so is the block that cleared it.**
 		// #68 shipped an anti-latch here — a range test that dropped `dockedAt`
@@ -9765,9 +9820,7 @@ class Game {
 			gameTime: this.world.gameTime,
 			laneAvailable: this.playerWinsTrafficLane(
 				id,
-				arrivalRequest?.movement === "arrival"
-					? arrivalRequest.readyAt
-					: this.world.gameTime,
+				this.arrivalReadyAt(id),
 				"arrival",
 			),
 			// The crossing is refused for the same reason a request would be, and
@@ -9776,7 +9829,9 @@ class Game {
 			// cooldown for someone else's act.
 			refusedByLaw: this.refusedByLaw(id),
 		});
-		if (arrivalRequest?.movement === "arrival")
+		// A dock spends the turn; a bounce keeps it, so a pilot turned back at
+		// the plane is not sent to the back of the lane as well (#521).
+		if (outcome.docked && arrivalRequest?.movement === "arrival")
 			this.playerLaneRequests.delete(id);
 		this.dockingStates.set(id, outcome.state);
 		this.lastEntry = outcome;
@@ -9990,6 +10045,15 @@ class Game {
 		return this.dock.phase === "launching";
 	}
 
+	/** How long a held launch waits, from the turn it holds (#521). */
+	private launchHoldWaitS(stationId: string): number | null {
+		const request = this.playerLaneRequests.get(stationId);
+		if (request?.movement !== "launch") return null;
+		return (
+			this.trafficLaneWait(stationId, request.readyAt, "launch")?.waitS ?? null
+		);
+	}
+
 	/** Give up a held launch (#314). The request goes with it. */
 	cancelLaunch() {
 		const hold = this.launchHold;
@@ -10012,6 +10076,34 @@ class Game {
 		if (this.dock.phase !== "docked" || this.dock.stationId !== hold.stationId)
 			this.cancelLaunch();
 		else this.launch();
+	}
+
+	/** The arrival turn the player holds at a station: the turn
+	 *  `stepArrivalTurns` registered keeps its first stamp, computer or
+	 *  hand-flown, and only with no turn held is it asked as of now. Read by the
+	 *  crossing and by the wait on the glass, so the two judge the same turn
+	 *  (#521). */
+	private arrivalReadyAt(stationId: string): number {
+		const request = this.playerLaneRequests.get(stationId);
+		return request?.movement === "arrival"
+			? request.readyAt
+			: this.world.gameTime;
+	}
+
+	/** Traffic's reason and wait for the player's turn at a lane (#521). */
+	private trafficLaneWait(
+		stationId: string,
+		readyAt: number,
+		movement: LaneRequest["kind"],
+	) {
+		return playerLaneWait({
+			authorityReady: this.trafficAuthorityReady(),
+			routes: this.trafficRoutes,
+			stationId,
+			readyAt,
+			movement,
+			gameTime: this.world.gameTime,
+		});
 	}
 
 	/** One arbitration rule for the player's two directions through the lane. */
@@ -13008,7 +13100,12 @@ class Game {
 			tuning: this.tuningSummary(),
 			requests: this.requestsView(dockContext, hold),
 			stationConsole: this.stationConsoleState(dockContext),
-			launchHold: this.launchHold ? { refusal: this.launchHold.refusal } : null,
+			launchHold: this.launchHold
+				? {
+						refusal: this.launchHold.refusal,
+						waitS: this.launchHoldWaitS(this.launchHold.stationId),
+					}
+				: null,
 		});
 	}
 
@@ -14424,16 +14521,22 @@ class Game {
 
 		// §3: a positive state and the remaining window, or the refusal *with its
 		// reason* — a red mark alone never carries the consequence.
+		// #521: a live grant waiting on the lane says why and for how long, in
+		// amber — a wait, not a refusal, so §4's red is not spent on it.
 		const clearanceText = state.blocking
 			? state.blocking.text
-			: state.grantRemainingS === null
-				? "NO GRANT"
-				: `CLEARED · ${duration(state.grantRemainingS)} left`;
+			: state.laneWait
+				? laneWaitText(state.laneWait)
+				: state.grantRemainingS === null
+					? "NO GRANT"
+					: `CLEARED · ${duration(state.grantRemainingS)} left`;
 		ctx.font = PROMPT_FONT;
 		ctx.textAlign = "center";
 		ctx.fillStyle = state.blocking
 			? "rgba(255, 110, 96, 0.95)"
-			: "rgba(150, 255, 190, 0.9)";
+			: state.laneWait
+				? "rgba(255, 209, 122, 0.95)"
+				: "rgba(150, 255, 190, 0.9)";
 		// Anchored to the **glass**, not to the ring. Placed relative to the ring
 		// it landed below the clip and was sliced in half by it — a refusal the
 		// pilot could only half read, which is the one line §3 says must carry its

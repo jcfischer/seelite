@@ -9,6 +9,7 @@ import {
 	type LaneRequest,
 	laneWinner,
 	playerLaneRefusal,
+	playerLaneWait,
 	playerWinsLane,
 	materializeTrafficContact,
 	stationTrafficRoster,
@@ -302,6 +303,68 @@ describe("shared station arbitration", () => {
 			expect(
 				refusal([route("launch-queued", { readyAt: 11, kind: "launch" })]),
 			).toBeNull();
+		});
+	});
+
+	describe("a refused turn says how long, and never guesses (#521)", () => {
+		const STATION = "station-trade";
+		const route = (
+			ordinal: number,
+			phase: TrafficRoutePhase,
+			laneEndsAtS?: number,
+			laneRequest?: Pick<LaneRequest, "readyAt" | "kind">,
+		) => ({
+			key: carrierKey(7, `station-trade/traffic-0${ordinal}`),
+			terminalStationId: STATION,
+			phase,
+			laneRequest,
+			...(laneEndsAtS === undefined ? {} : { laneEndsAtS }),
+		});
+		const wait = (routes: ReturnType<typeof route>[], authorityReady = true) =>
+			playerLaneWait({
+				authorityReady,
+				routes,
+				stationId: STATION,
+				readyAt: 10,
+				movement: "arrival",
+				gameTime: 12,
+			});
+
+		test("a clear lane is no wait at all", () => {
+			expect(wait([])).toBeNull();
+		});
+
+		test("the wait runs to the end of the carrier in the lane", () => {
+			expect(wait([route(1, "arriving", 30)])).toEqual({
+				refusal: "carrier-in-lane",
+				waitS: 18,
+			});
+		});
+
+		test("and past every older carrier queued ahead, but no younger one", () => {
+			expect(
+				wait([
+					route(1, "departing", 20),
+					route(2, "lane-queued", 45, { readyAt: 9, kind: "arrival" }),
+					route(3, "launch-queued", 70, { readyAt: 11, kind: "launch" }),
+				]),
+			).toEqual({ refusal: "carrier-in-lane", waitS: 33 });
+		});
+
+		test("a blocker with no predicted end gives no figure rather than a guess", () => {
+			expect(
+				wait([
+					route(1, "arriving", 30),
+					route(2, "launch-queued", undefined, { readyAt: 9, kind: "launch" }),
+				]),
+			).toEqual({ refusal: "carrier-in-lane", waitS: null });
+		});
+
+		test("a warming authority cannot see the lane, so it gives no figure", () => {
+			expect(wait([route(1, "arriving", 30)], false)).toEqual({
+				refusal: "traffic-starting",
+				waitS: null,
+			});
 		});
 	});
 });

@@ -46,6 +46,7 @@ import {
 	type TunnelGeometry,
 	dockingTunnel,
 } from "./docking-tunnel";
+import type { LaneRefusal } from "./station-traffic";
 import { type Vec3, length, v3 } from "./vec3";
 
 /** One measured angle against the tolerance the pilot is flying to. */
@@ -58,6 +59,59 @@ export interface DirectorCue {
 }
 
 export type BlockingKind = "hostile" | "denied" | "no-clearance";
+
+/**
+ * Why Traffic keeps the Transit lane from the pilot, in the pilot's words
+ * (#521). One spelling for the arrival wait on the glass and the held launch
+ * on the console, so the two cannot drift apart.
+ */
+export const LANE_WAIT_REASON: Readonly<Record<LaneRefusal, string>> = {
+	"traffic-starting": "traffic control starting up",
+	"carrier-in-lane": "a ship is in the lane",
+	"carrier-queued-ahead": "a ship is queued ahead",
+};
+
+/** The rounding step of a shown lane wait: the figure is an estimate (#521). */
+export const LANE_WAIT_STEP_S = 5;
+
+/**
+ * How long after a route gives the lane back the player's turn is actually
+ * taken, with margin. The mechanism is two Traffic authority ticks at 10 Hz —
+ * the route's lane end falls between two ticks, and the turn is read on the
+ * step after the tick that sees the lane empty — and `probe-lane-wait`
+ * measured 0.1–0.2 s against live Traffic, half its samples at the top of
+ * that. So 0.2 s is a bound with no room in it; a third tick is the room.
+ * Rounding alone does not cover any of it, because an estimate just under a
+ * step boundary rounds to the boundary itself.
+ */
+export const LANE_TURN_LATENCY_S = 0.3;
+
+/**
+ * A lane wait as the pilot reads it: `~10s` — the predicted wait plus
+ * `LANE_TURN_LATENCY_S`, rounded **up** to `LANE_WAIT_STEP_S` and never below
+ * it, so the figure errs long rather than short. `null` — Traffic cannot say
+ * — is an empty string, not a guess.
+ */
+export function laneWaitEstimate(waitS: number | null): string {
+	if (waitS === null || !Number.isFinite(waitS)) return "";
+	const stepped =
+		Math.max(1, Math.ceil((waitS + LANE_TURN_LATENCY_S) / LANE_WAIT_STEP_S)) *
+		LANE_WAIT_STEP_S;
+	return `~${stepped}s`;
+}
+
+/** A lane wait's words with its estimate after them, when there is one:
+ *  the one place the separator and the no-figure rule live (#521). */
+export function withLaneWait(words: string, waitS: number | null): string {
+	const estimate = laneWaitEstimate(waitS);
+	return estimate ? `${words} · ${estimate}` : words;
+}
+
+/** The lane wait a live grant is under, or `null` when the lane is the pilot's. */
+export interface DirectorLaneWait {
+	refusal: LaneRefusal;
+	waitS: number | null;
+}
 
 /**
  * §3: "Denial or hostility is blocking: the director says **do not enter** and
@@ -89,6 +143,13 @@ export interface DirectorState {
 	 *  "positive state and the remaining window". */
 	grantRemainingS: number | null;
 	blocking: DirectorBlock | null;
+	/**
+	 * A live grant that Traffic has not given the lane yet (#521). **Not a
+	 * block**: the grant stands and nothing is refused, so it is not red — a
+	 * crossing now is turned back without damage, and the wait says how long.
+	 * `null` whenever there is a block or no live grant.
+	 */
+	laneWait: DirectorLaneWait | null;
 	/** Check 2, both halves, so a failing cue says *which* half. */
 	axis: { position: DirectorCue; nose: DirectorCue };
 	/**
@@ -187,12 +248,15 @@ export function dockingDirector(input: {
 	 *  so the mark arrives before the denial does, rather than after a run the
 	 *  pilot could not have known to abort. */
 	refusedByLaw?: boolean;
+	/** Traffic's answer for this station's lane, read only under a live grant. */
+	laneWait?: DirectorLaneWait | null;
 }): DirectorState {
 	const { stationId, stationPos, frame, pose, state, gameTime } = input;
 	const hostile = state.hostile || input.refusedByLaw === true;
 	const evaluation = evaluateEntry(frame, pose, { hostile });
 	const live = grantLive(state, gameTime);
 	const rangeKm = length(pose.rel);
+	const blocking = blockingOf(state, live, hostile);
 
 	return {
 		stationId,
@@ -203,7 +267,8 @@ export function dockingDirector(input: {
 			live && state.clearance.kind === "granted"
 				? state.clearance.expiresAtS - gameTime
 				: null,
-		blocking: blockingOf(state, live, hostile),
+		blocking,
+		laneWait: live && blocking === null ? (input.laneWait ?? null) : null,
 		axis: {
 			position: cue(evaluation.positionAngleDeg, AXIS_TOLERANCE_DEG),
 			nose: cue(evaluation.noseAngleDeg, AXIS_TOLERANCE_DEG),

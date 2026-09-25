@@ -294,6 +294,15 @@ of a request, not a place: a **Traffic hold** is a place. The code calls it
 `LAUNCH_HOLD_NOTICE`); that name means this state and never a place.
 _Avoid_: Launch queue
 
+**Lane wait**:
+How long the player waits for the Transit lane under a live grant or a **held
+launch**, and why: Traffic's reason plus the time until the last route ahead
+gives the lane back (`playerLaneWait`, #521). Shown as `~Ns`: that time plus
+the turn's own latency, rounded up, and never a guess — no figure when Traffic
+cannot say. It is an estimate because a collision can interrupt a route. The
+glass writes it as `WAIT`, not `HOLD`, which already has four senses here.
+_Avoid_: Lane queue position, ETA (the ETA is a target's)
+
 **Instance ordinal**:
 The stable sequence number distinguishing the original carrier instance from its replacements. `docs/specs/persistent-world-state.md` §2 owns its allocation rule.
 
