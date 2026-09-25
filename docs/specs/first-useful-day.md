@@ -121,6 +121,19 @@ would be the compulsory tutorial track the direction rules out. The local run's
 cruise legs roll raiders at the start system's ordinary odds; the report pays
 credits, and the Market is the day's last step.
 
+### D7: A new ship has no docking computer
+
+The principal's ruling on 2026-09-25: the docking computer is not on the
+initial ship; it is bought, at the Equipment tab's 1,000 Cr. It had shipped
+fitted while no screen sold it (`docking.md` §3.1 records what that cost).
+`Game.hasDockingComputer` now reads the commander's equipment.
+
+So a new pilot's first dock is by hand, and the day says so: a pilot without
+the computer is told to ask for clearance, line up with the opening and fly in
+slowly, and the docking key is named only to a pilot who owns one. D1's docked
+start still engages the computer's flag directly, because that is the station
+bringing the ship in before the clock runs, not the pilot flying.
+
 ## The steps
 
 The step is **derived from state**, never stored (`src/first-day.ts`). Only
@@ -133,7 +146,7 @@ job outranks being docked.
 | Trade | A request has been reported | The pay is yours; the Market and more work are on the console |
 | Report | A job running, docked where it reports | Report on the Requests tab |
 | Launch | A job running, docked anywhere else | The launch key |
-| Fly | A job running, not docked | The delivery station, and near it the clearance and docking keys |
+| Fly | A job running, not docked | The delivery station; near it the clearance key, then the docking key if the computer is owned, else to fly in slowly (D7) |
 | Take work | Nothing running, docked | Accept the Local run, or a job when none is posted |
 | Dock at a station | Nothing running, not docked | Select a station, cruise, clearance, dock |
 

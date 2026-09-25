@@ -288,8 +288,10 @@ the assist cancelled the whole commanded closing speed inside one step.
 
 What it does not establish is that 0.10 is the right number. A scripted approach
 has no difficulty, and the question §11.4 records is whether a **person** can
-hold it. Nothing here has asked one, and the game ships with the docking
-computer fitted, so the first approach anyone flies is not a person's either.
+hold it. Nothing here has asked one. Until #408 the game shipped with the
+docking computer fitted, so the first approach anyone flew was not a person's
+either; since #408 a new ship has none (§7.1's reading, made true), so the
+first approach is a person's and the question is now one play can answer.
 The figure stays provisional.
 
 ### 3.2 Why 35° and 50° (chosen, not derived)
