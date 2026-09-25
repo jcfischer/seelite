@@ -496,7 +496,7 @@ import {
 	dockingDirector,
 	directorEngaged,
 	LANE_WAIT_REASON,
-	laneWaitEstimate,
+	withLaneWait,
 } from "./docking-director";
 import { tunnelRailSegments } from "./docking-tunnel";
 import {
@@ -1445,8 +1445,7 @@ function floorCellValue(cells: readonly FloorCell[], label: string): string {
 
 /** The arrival wait as the glass writes it (#521). */
 function laneWaitText(wait: DirectorLaneWait): string {
-	const estimate = laneWaitEstimate(wait.waitS);
-	return `WAIT · ${LANE_WAIT_REASON[wait.refusal]}${estimate ? ` · ${estimate}` : ""}`;
+	return withLaneWait(`WAIT · ${LANE_WAIT_REASON[wait.refusal]}`, wait.waitS);
 }
 
 function throatColour(state: DirectorState): string {
@@ -9672,9 +9671,49 @@ class Game {
 
 	/** A cancelled computer approach must not keep an invisible arrival turn. */
 	private clearPlayerArrivalLaneRequests() {
+		// **Only the turns no pilot holds (#521).** A turn under a live grant
+		// inside director range is the pilot's own now, hand-flown or not, and
+		// it is on the glass — so the computer letting go must not send the
+		// pilot to the back of the lane.
 		for (const [stationId, request] of this.playerLaneRequests)
-			if (request.movement === "arrival")
+			if (request.movement === "arrival" && !this.holdsArrivalTurn(stationId))
 				this.playerLaneRequests.delete(stationId);
+	}
+
+	/**
+	 * Whether the pilot holds an arrival turn at a station (#521): flying, a
+	 * live grant there, and inside the director's range. The computer used to
+	 * be the only thing that registered a turn, so a hand-flown ship was asked
+	 * as of *now* on every frame and any carrier that queued after it went
+	 * first — its wait could be overrun without limit. The principal ruled
+	 * that the pilot's turn is held either way.
+	 */
+	private holdsArrivalTurn(stationId: string): boolean {
+		return (
+			this.dock.phase === "flying" &&
+			grantLive(this.dockingStateOf(stationId), this.world.gameTime) &&
+			length(this.entryPoseOf(stationId).rel) <= DIRECTOR_RANGE_KM
+		);
+	}
+
+	/**
+	 * Register the arrival turn a pilot holds, keeping its first stamp, and
+	 * drop one the pilot no longer holds — a lapsed grant, or a ship that left
+	 * the director's range. A launch request is the held launch's and is
+	 * never touched here.
+	 */
+	private stepArrivalTurns() {
+		for (const [stationId, request] of this.playerLaneRequests)
+			if (request.movement === "arrival" && !this.holdsArrivalTurn(stationId))
+				this.playerLaneRequests.delete(stationId);
+		for (const [stationId, state] of this.dockingStates) {
+			if (!state.berthId || this.playerLaneRequests.has(stationId)) continue;
+			if (this.holdsArrivalTurn(stationId))
+				this.playerLaneRequests.set(stationId, {
+					readyAt: this.world.gameTime,
+					movement: "arrival",
+				});
+		}
 	}
 
 	/**
@@ -9717,6 +9756,7 @@ class Game {
 	 */
 	private stepDocking(before: Map<string, DockingApproach>) {
 		this.stepDockingProtocol();
+		this.stepArrivalTurns();
 
 		// **The one-way latch is gone, and so is the block that cleared it.**
 		// #68 shipped an anti-latch here — a range test that dropped `dockedAt`
@@ -9789,7 +9829,9 @@ class Game {
 			// cooldown for someone else's act.
 			refusedByLaw: this.refusedByLaw(id),
 		});
-		if (arrivalRequest?.movement === "arrival")
+		// A dock spends the turn; a bounce keeps it, so a pilot turned back at
+		// the plane is not sent to the back of the lane as well (#521).
+		if (outcome.docked && arrivalRequest?.movement === "arrival")
 			this.playerLaneRequests.delete(id);
 		this.dockingStates.set(id, outcome.state);
 		this.lastEntry = outcome;

@@ -86,6 +86,13 @@ export function laneWaitEstimate(waitS: number | null): string {
 	return `~${stepped}s`;
 }
 
+/** A lane wait's words with its estimate after them, when there is one:
+ *  the one place the separator and the no-figure rule live (#521). */
+export function withLaneWait(words: string, waitS: number | null): string {
+	const estimate = laneWaitEstimate(waitS);
+	return estimate ? `${words} · ${estimate}` : words;
+}
+
 /** The lane wait a live grant is under, or `null` when the lane is the pilot's. */
 export interface DirectorLaneWait {
 	refusal: LaneRefusal;

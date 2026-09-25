@@ -230,6 +230,14 @@ identity breaks ordinary ties. When an arrival and launch become ready at the
 same instant, the launch goes first because it releases a berth. Player and
 Traffic actors use the same arbitration.
 
+**The player's arrival turn is held from the moment it is owed (#521).** Under
+a live grant and inside the director's range, the game registers the pilot's
+arrival turn and keeps its first stamp — hand-flown or on the docking computer
+— so a carrier that becomes ready later queues behind it. It ends on a dock, a
+lapsed grant, or leaving that range; a bounce at the plane keeps it. Before
+#521 only the computer registered a turn, a hand-flown ship was asked as of the
+current frame every frame, and any later carrier went first.
+
 Transit-lane occupancy remains separate from berth occupancy and from the
 external approach corridor.
 

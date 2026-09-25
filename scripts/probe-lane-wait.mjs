@@ -4,10 +4,12 @@
  * never shorter than the wait it names.
  *
  * Live Traffic, not a fixture. The ship is pinned on the trade station's axis
- * under a live grant and the clock runs until a carrier holds the lane; the
- * player's arrival turn is then registered the way the docking computer does
- * it (`playerLaneRequests`, first stamp kept), and the estimate read at that
- * instant is checked against the moment the lane is actually the player's.
+ * and hand-flown — no docking computer — and the clock runs until a carrier
+ * holds the lane. Clearance is then requested, and the game itself must
+ * register the pilot's arrival turn and keep its first stamp (the principal's
+ * ruling on #521: a hand-flown turn is held, so later carriers queue behind
+ * it). The estimate read at that instant is checked against the moment the
+ * lane is actually the player's.
  * The computer then docks the ship, and the same page runs the clock until a
  * carrier holds the lane again, presses LAUNCH, and times the held launch.
  *
@@ -35,7 +37,9 @@ const { check, watch, exit } = tally();
 
 // Start times spread over a Traffic cycle, so the waits found are not one.
 const STARTS = [120, 700, 1_500, 2_600];
-// One authority tick: the lane is re-decided at 10 Hz.
+// Two authority ticks. The lane is re-decided at 10 Hz, a route's lane end
+// falls between two ticks, and the player's turn is taken on the tick after
+// the one that sees the lane empty.
 const TICK_SLACK_S = 0.2;
 const arrivals = [];
 const launches = [];
@@ -95,8 +99,11 @@ try {
 			}
 			if (!found) return { startAtS, found: false };
 			const clearance = g.requestDockingClearance().state?.clearance?.kind;
-			const t0 = g.world.gameTime;
-			g.playerLaneRequests.set(id, { readyAt: t0, movement: "arrival" });
+			// One step for the game to register the hand-flown turn by itself.
+			g.step(0.1);
+			pin();
+			const turn = g.playerLaneRequests.get(id) ?? null;
+			const t0 = turn?.readyAt ?? Number.NaN;
 			const director = g.directorState();
 			g.render(1 / 60);
 			const sample = {
@@ -107,16 +114,26 @@ try {
 				text: g.directorRender?.clearanceText ?? null,
 				estimateS: director?.laneWait?.waitS ?? null,
 				actualS: null,
+				turn: turn?.movement ?? null,
+				stampKept: null,
 			};
+			// No figure when Traffic cannot say: a warming authority cannot see
+			// the lane, and the glass gives the reason alone.
+			const warmIndex = g.trafficWarmIndex;
+			g.trafficWarmIndex = 0;
+			g.render(1 / 60);
+			sample.warmingText = g.directorRender?.clearanceText ?? null;
+			g.trafficWarmIndex = warmIndex;
+			g.render(1 / 60);
 			for (let i = 0; i < 6_000; i++) {
 				g.step(0.1);
 				pin();
 				if (g.playerWinsTrafficLane(id, t0, "arrival")) {
 					sample.actualS = g.world.gameTime - t0;
+					sample.stampKept = g.playerLaneRequests.get(id)?.readyAt === t0;
 					break;
 				}
 			}
-			g.playerLaneRequests.delete(id);
 			return sample;
 		}, startAtS);
 		arrivals.push(arrival);
@@ -198,6 +215,24 @@ try {
 		"live Traffic produced an arrival wait at two or more start times",
 		seen(arrivals).length >= 2,
 		`${seen(arrivals).length} of ${STARTS.length}`,
+	);
+	check(
+		"a hand-flown ship under a live grant holds a turn the game registered, and keeps its stamp",
+		seen(arrivals).length > 0 &&
+			seen(arrivals).every(
+				(sample) => sample.turn === "arrival" && sample.stampKept === true,
+			),
+		JSON.stringify(
+			seen(arrivals).map(({ turn, stampKept }) => ({ turn, stampKept })),
+		),
+	);
+	check(
+		"with no figure to give, the glass gives the reason alone",
+		seen(arrivals).length > 0 &&
+			seen(arrivals).every(
+				(sample) => sample.warmingText === "WAIT · traffic control starting up",
+			),
+		JSON.stringify(seen(arrivals).map((sample) => sample.warmingText)),
 	);
 	check(
 		"the glass writes the arrival wait in the pilot's words, with its figure",

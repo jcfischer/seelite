@@ -46,7 +46,7 @@ import type {
 	StationConsoleTab,
 } from "./station-console";
 import { entrustedClause, priceLabel, signedDelta } from "./station-console";
-import { laneWaitEstimate } from "./docking-director";
+import { LANE_WAIT_REASON, withLaneWait } from "./docking-director";
 import type { LaneRefusal } from "./station-traffic";
 import {
 	type FocusCursor,
@@ -72,23 +72,25 @@ export type RightTab =
 /**
  * The docked consoles' words for a held launch (#314). **SHIP, not CARRIER**:
  * the keys keep the consequence model's word, and the player reads a ship —
- * a `carrier` is also a capital hull on the roster. Here rather than beside
- * `playerLaneRefusal`: Traffic decides the reason, the console words it.
+ * a `carrier` is also a capital hull on the roster. The reason is
+ * `LANE_WAIT_REASON`'s, the glass's own spelling, so the console and the
+ * arrival wait cannot word one refusal two ways (#521).
  */
+export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> =
+	Object.fromEntries(
+		Object.entries(LANE_WAIT_REASON).map(([refusal, reason]) => [
+			refusal,
+			`LAUNCH HELD — ${reason.toUpperCase()}`,
+		]),
+	) as Record<LaneRefusal, string>;
+
 /** A held launch's notice: the reason, then Traffic's estimate when it has
  *  one (#521). Keyed into the value key, so the figure re-renders as it runs
  *  down rather than freezing at the first frame's. */
 export function launchHoldText(hold: LiveCockpitState["launchHold"]): string {
 	if (!hold) return "";
-	const estimate = laneWaitEstimate(hold.waitS);
-	return `${LAUNCH_HOLD_NOTICE[hold.refusal]}${estimate ? ` · ${estimate}` : ""}`;
+	return withLaneWait(LAUNCH_HOLD_NOTICE[hold.refusal], hold.waitS);
 }
-
-export const LAUNCH_HOLD_NOTICE: Readonly<Record<LaneRefusal, string>> = {
-	"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
-	"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
-	"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
-};
 
 // #370 D1: `Controls` ahead of `Tuning`, which keeps the last slot as the one tab
 // on this console that is not fiction.
@@ -214,7 +216,6 @@ export interface LiveCockpitState {
 	 * the stale-number failure `stockResponse`'s screen already guards against.
 	 */
 	holdBids: HoldBids;
-	/** A launch Traffic refused and is holding, and why (#314). */
 	/** A held launch (#314), and Traffic's estimate of how long (#521):
 	 *  `waitS` is `null` when Traffic cannot say, never a guess. */
 	launchHold: { refusal: LaneRefusal; waitS: number | null } | null;

@@ -98,3 +98,13 @@ test("a held launch adds Traffic's estimate, and only when it has one (#521)", (
 		LAUNCH_HOLD_NOTICE["traffic-starting"],
 	);
 });
+
+test("the console's held-launch words are the glass's reasons, as they read before #521", () => {
+	// Derived from `LANE_WAIT_REASON` now; pinned as literals so the derivation
+	// cannot change what a pilot reads, or what `probe-dock-arrival` matches.
+	expect(LAUNCH_HOLD_NOTICE).toEqual({
+		"traffic-starting": "LAUNCH HELD — TRAFFIC CONTROL STARTING UP",
+		"carrier-in-lane": "LAUNCH HELD — A SHIP IS IN THE LANE",
+		"carrier-queued-ahead": "LAUNCH HELD — A SHIP IS QUEUED AHEAD",
+	});
+});
