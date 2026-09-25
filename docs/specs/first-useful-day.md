@@ -39,13 +39,24 @@ Taken at `origin/main` 96fd436 over 200 world seeds (`seed × 7919`, galaxy 0,
 
 A new game that chose the guided first day starts **docked at the start
 system's trade station**, so the day begins with launch. It gets there through
-the docking protocol (a real clearance, a real berth, the arrival skipped),
-never around it, and that dock writes the `lastDocked` checkpoint like any
-other. A free new game, `?boot=direct` and `?system=` keep the in-flight start.
+the docking protocol, never around it: after the store attaches, the ship is
+set on the station's aperture axis, co-moving, asks for clearance, and the
+docking computer flies it in with Traffic running
+(`Game.startDockedAtHome`). The dock is an ordinary one, so it writes the
+`lastDocked` checkpoint, and a guided pilot has a checkpoint before their first
+flight. The clock starts at that dock rather than at zero: 76.9 s of game time
+on ten seeds.
 
-Rejected: an in-flight start with or without a start checkpoint (the direction
-spec's order is launch first); docking every new game (moves every probe's
-start).
+A free new game, `?boot=direct` and `?system=` keep the in-flight start.
+`?guided` on a direct boot with nothing loaded opts in, for probes and
+playtests, on `?permadeath`'s rule.
+
+A save taken docked still **resumes in flight at the arrival point**
+(`main.ts`'s load arm, pending #72's dock-session extraction). So a guided
+pilot who reloads before launching is in flight, on the Dock at a station step.
+
+The principal chose this on 2026-09-25 over an in-flight start with or
+without a start checkpoint, and over docking every new game.
 
 ### D2: The first job is a "local run"
 
@@ -53,27 +64,44 @@ A new authored courier row, **Local run**, that binds only to a station in the
 posting system. Every station with an in-system neighbour posts it, whoever is
 docked, so it is ordinary work and not a tutorial offer. It is its own slot
 beside D8's floor courier, with its own draw stream, offer identity and
-episode count, so taking or settling one never moves the other.
+episode count, so taking or settling one never moves the other
+(`ordinary-requests.md` §3 records the second slot). It pays 78 Cr for 6 t.
 
-A start system with no second station (16.5% above) posts no local run; the
-guided day then points at the ordinary courier, which is one jump away.
+Measured on the build: 167 of 200 start trade stations post one, which is the
+33 single-station start systems above and no others. Every other offer on the
+first 120 systems of two galaxies is byte-identical to `origin/main`.
+
+A start system with no second station posts no local run; the guided day then
+points at a job the pilot can fly, which is the one-jump courier.
 
 Rejected: using the one-jump courier for everyone; an offer only a new pilot
 sees, which would make a binder read commander state
 (`ordinary-requests.md` §2).
 
-### D3: Guidance is pushed on existing channels and pulled from a tab
+### D3: Guidance is pushed where the pilot is looking, and pulled from a tab
 
-- **Push:** station control speaks in the Communications log, and the prompt
-  line shows the next step.
-- **Pull:** a **First day** tab on the port console shows the steps and which
-  one the pilot is on.
+- **Push, docked:** station control speaks on the **station console**, under
+  its tabs. The docked console fills the forward view and the glass prompt is
+  not drawn there, so the Communications log alone would be out of sight.
+- **Push, in flight:** the prompt line names the delivery station and, beside
+  it, the two keys that dock. A far selected station is left to the ordinary
+  cruise prompt, which already says what to do.
+- **Record:** each line station control says is also written to the
+  Communications log. It keeps the last three, because the log shows six and a
+  first day says five.
+- **Pull:** a **First day** tab on the port console lists the steps and marks
+  the one the pilot is on.
+
+Station selection is named as the Navigation console, not the next-target key:
+that key cycles through every contact in the system.
 
 ### D4: The choice is made at New game and saved
 
-The Commander overlay's new game offers **guided** and **free**. The choice is
-saved on the commander (save schema v6). A save from v2–v5 loads as **free**:
-a pilot who already has a save is not new.
+The Commander overlay's New game has a **First day guidance** row, on by
+default, beside Permadeath. The choice rides the pending record across New
+game's reload and is saved on the commander (save schema v6). A save from v2–v5
+loads as **free**: a pilot who already has a save is not new. A pending record
+written by the build before this one reads as free too.
 
 Rejected: deriving the choice with a settings switch; an in-world offer the
 pilot may ignore.
@@ -81,8 +109,10 @@ pilot may ignore.
 ### D5: Everyone has the tab; only guided pilots are pushed
 
 The tab is on-demand guidance for every commander. Only a guided commander
-gets the log lines and prompt-line steps unasked, and the push stops once the
-pilot has reported a first job. The tab stays.
+gets station control's lines and the prompt-line steps unasked, and the push
+stops once the pilot has reported a first job: station control says one
+closing line at that berth, and nothing after the pilot launches. The tab
+stays.
 
 ### D6: Trouble is not scripted
 
@@ -93,28 +123,31 @@ credits, and the Market is the day's last step.
 
 ## The steps
 
-The step is **derived from state**, never stored. Only the guided/free choice
-(D4) is saved.
+The step is **derived from state**, never stored (`src/first-day.ts`). Only
+the guided/free choice (D4) is saved. The rows overlap, so the order is the
+rule: a reported job ends the day before anything else is asked, and a running
+job outranks being docked.
 
 | Step | Holds while | The pilot is told |
 | --- | --- | --- |
-| Take work | Docked, no running request | Open Requests and accept the Local run |
-| Launch | Docked with a running request | Launch |
-| Fly | In flight with a running request | Select the delivery station, cruise to it, ask for clearance and dock |
-| Report | Docked where the running request reports | Report on the Requests tab |
-| Trade | A request has been reported | The pay is yours: the Market is on the station console |
+| Trade | A request has been reported | The pay is yours; the Market and more work are on the console |
+| Report | A job running, docked where it reports | Report on the Requests tab |
+| Launch | A job running, docked anywhere else | The launch key |
+| Fly | A job running, not docked | The delivery station, and near it the clearance and docking keys |
+| Take work | Nothing running, docked | Accept the Local run, or a job when none is posted |
+| Dock at a station | Nothing running, not docked | Select a station, cruise, clearance, dock |
 
-The day is over when the journal holds a completed request. That is the same
-fact the push reads to stop.
+"Dock at a station" is a free pilot's start, and a guided pilot's after a
+reload (D1).
 
 ## Verification
 
-| Case | Tier |
-| --- | --- |
-| v6 round-trips the choice; v2–v5 load as free | Headless |
-| The local run binds only in-system, is deterministic, declines with no in-system neighbour, and never moves the floor courier | Headless |
-| The step derivation for each row of the table | Headless |
-| A guided new game boots docked at the start trade station through a real clearance and writes `lastDocked` | Browser |
-| A free new game boots in flight, as before | Browser |
-| The day flown end to end: accept, launch, fly, dock, report | Browser |
-| The tab, the log lines and the prompt line read right | Browser captures, then the principal in flight |
+| Case | Tier | Where |
+| --- | --- | --- |
+| v6 round-trips the choice; v2–v5 load as free; an older version carrying the key is refused | Headless | `tests/first-day-save.test.ts` |
+| The choice at boot: New game's, or `?guided` on a direct boot with nothing loaded | Headless | `tests/commander-flow.test.ts` |
+| The local run binds only in-system, is deterministic, declines with no in-system neighbour, and never moves the floor courier | Headless | `tests/local-run.test.ts` |
+| Every step, its precedence, and the in-flight hole | Headless | `tests/first-day.test.ts` |
+| A guided new game boots docked through a real clearance and writes `lastDocked`; a free one boots in flight | Browser | `probe-first-day.mjs` |
+| The day flown end to end: accept, launch, fly, dock, deliver, report, paid | Browser | `probe-first-day.mjs` |
+| The station console line, the tab, the log and the prompt line read right | Captures, then the principal in flight | `probe-first-day.mjs` writes them |
